@@ -7,7 +7,7 @@ time/meal (e.g. WholOmega "with dinner / the heaviest / an oil-rich meal").
 Caps/day = capsules-in-dosage x times-in-frequency (each defaulting to 1); only a
 clean whole-capsule dose is auto-split, so droppers/fractions/"as directed" are
 left as a single entry. Unknown combinations are never dropped; they fall back to
-an "as directed" row so nothing silently disappears from a patient's schedule.
+an "as directed" row so nothing silently disappears from a client's schedule.
 """
 import json
 import re
@@ -108,6 +108,8 @@ def _placement(freq, timing, dosage):
     ms = _meal_slot(t)
     if ms:
         return together(ms, "with food")
+    if any(k in t for k in ("later in the day", "later-day", "later day")):
+        return together("Dinner", "with food" if "with" in t else "")
     if any(k in t for k in ("heaviest meal", "heavier meal", "with the heaviest",
                             "oil-rich", "oil rich", "fattiest", "fatty meal",
                             "largest meal", "biggest meal")):

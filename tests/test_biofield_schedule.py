@@ -70,6 +70,16 @@ def test_with_lunch_places_lunch_slot():
     assert sched["entries"][0]["slots"] == ["Lunch"]
 
 
+def test_with_food_later_in_day_places_dinner():
+    sched = build_schedule([
+        {"name": "Liver Support", "dosage": "1 capsule",
+         "frequency": "daily", "timing": "with food later in the day"}
+    ])
+    entry = sched["entries"][0]
+    assert entry["slots"] == ["Dinner"]
+    assert entry["food"] == "with food"
+
+
 def test_early_in_the_day_is_on_waking():
     sched = build_schedule([
         {"name": "Y", "dosage": "1", "frequency": "daily", "timing": "early in the day"}
