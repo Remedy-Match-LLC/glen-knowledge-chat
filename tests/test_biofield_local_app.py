@@ -60,6 +60,22 @@ def test_index_lists_tests(tmp_path):
     assert b"Lewis Zardo" in r.data and b"/test/10" in r.data
 
 
+def test_view_portal_redirects_to_clients_stable_portal(tmp_path):
+    from dashboard.biofield_authoring import init_auth_tables, create_test
+    db = str(tmp_path / "chat_log.db")
+    with sqlite3.connect(db) as cx:
+        init_auth_tables(cx)
+        tid = create_test(cx, "Jane", "Jane@Example.com", "2026-08-08")
+    seen = {}
+    def fetch(email, name):
+        seen.update(email=email, name=name)
+        return "https://illtowell.com/portal/stable-token"
+    r = create_app(db, portal_link_fetch=fetch).test_client().get(f"/author/{tid}/view-portal")
+    assert r.status_code == 302
+    assert r.headers["Location"] == "https://illtowell.com/portal/stable-token"
+    assert seen == {"email": "jane@example.com", "name": "Jane"}
+
+
 def test_report_page_renders(tmp_path):
     db = str(tmp_path / "chat_log.db")
     _seed(db)
@@ -373,7 +389,7 @@ def test_per_client_tabs_and_invoice_view_page(tmp_path):
 
     ed = client.get("/author/" + tid).data.decode()
     assert ("/author/" + tid + "/invoice-view") in ed       # Invoice tab target
-    for lbl in (">Edit<", ">Report<", ">Invoice<", ">Portal<"):
+    for lbl in (">Edit<", ">Report<", ">Invoice<", ">View Portal<"):
         assert lbl in ed
 
     rep = client.get("/test/" + tid).data.decode()

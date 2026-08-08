@@ -20,6 +20,7 @@ import argparse
 import datetime
 import os
 import sqlite3
+import requests
 
 from flask import Flask, Response, jsonify, redirect, request, send_from_directory
 
@@ -511,7 +512,8 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                fetch_runner=None, fetch_profile=None, fetch_recent_comms=None,
                e4l_db=None, fee_get=None, fee_set=None, fee_clear=None,
                invoice_fetch_catalog=None, invoice_create=None, invoice_link=None,
-               invoice_paid_check=None, invoice_latest=None, ingredients_db=None):
+               invoice_paid_check=None, invoice_latest=None, ingredients_db=None,
+               portal_link_fetch=None):
     app = Flask(__name__)
     # The clinical-tags ledger lives in the SEPARATE local e4l.db (not the app's chat_log.db).
     e4l_db = e4l_db or _e4l_db_path()
@@ -538,6 +540,16 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
     invoice_link = invoice_link or biofield_invoice.default_invoice_link
     invoice_paid_check = invoice_paid_check or biofield_invoice.default_biofield_paid
     invoice_latest = invoice_latest or biofield_invoice.default_latest_invoice
+    def _default_portal_link_fetch(email, name):
+        base = os.environ.get("PUBLIC_BASE_URL", "https://illtowell.com").rstrip("/")
+        key = os.environ.get("CONSOLE_SECRET", "")
+        r = requests.post(base + "/admin/portal/get-or-create-link",
+                          json={"email": email, "name": name},
+                          headers={"X-Console-Key": key}, timeout=30)
+        if not r.ok:
+            raise RuntimeError(f"portal lookup failed ({r.status_code})")
+        return r.json().get("url") or ""
+    portal_link_fetch = portal_link_fetch or _default_portal_link_fetch
 
     def _report_for(cx, test_id):
         return (authored_report(cx, test_id) if str(test_id).startswith("a")
@@ -838,6 +850,20 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
             c_email = ((rep.get("client") or {}).get("email") or "").strip()
         fstate = biofield_fee.build_fee_state(c_email, fee_get)
         return Response(render_invoice_page(rep, fstate), mimetype="text/html")
+
+    @app.route("/author/<test_id>/view-portal")
+    def author_view_portal(test_id):
+        with sqlite3.connect(db_path) as cx:
+            rep = authored_report(cx, test_id)
+        client = rep.get("client") or {}
+        email = (client.get("email") or "").strip().lower()
+        if not email:
+            return Response("Save the client's email before opening their portal.", status=400)
+        try:
+            url = portal_link_fetch(email, (client.get("name") or "").strip())
+        except Exception as e:
+            return Response(f"Could not open client portal: {str(e)[:200]}", status=502)
+        return redirect(url) if url else Response("Client portal link unavailable.", status=502)
 
     @app.route("/author/<test_id>/depth", methods=["POST"])
     def author_depth(test_id):
