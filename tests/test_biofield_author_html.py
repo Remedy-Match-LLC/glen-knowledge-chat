@@ -35,6 +35,7 @@ def test_author_page_has_header_rows_and_endpoints():
     assert "Add remedy" in html and "Add layer" in html      # per-layer + new-layer add
     assert "/test/a1" in html                                # link to the read-only report
     assert "fillDose" in html                                # remedy auto-fills dosing on change
+    assert "View Portal" in html and "/author/a1/view-portal" in html
 
 
 def test_author_chain_is_cards_readable_and_reorderable():
