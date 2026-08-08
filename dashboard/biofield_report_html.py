@@ -754,7 +754,7 @@ async function captureStresses(){rstat('Capturing stresses from transcript…');
 async function mineProfile(){rstat('Mining client profile for stresses…');
  var j=await post('/author/__TID__/mine-profile',{});
  if(j.error){rstat('Mine profile: '+j.error);return}
- rstat('Added '+j.added+' profile stress(es).');loadStress()}
+ rstat(j.added?'Added '+j.added+' profile stress(es).':'No new clinical stresses found.');loadStress()}
 async function mineComms(){rstat('Mining recent comms for stresses…');
  var j=await post('/author/__TID__/mine-comms',{});
  if(j.error){rstat('Mine comms: '+j.error);return}
