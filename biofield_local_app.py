@@ -127,8 +127,7 @@ def deepgram_browser_token():
 
 
 def _default_fetch_profile(email):
-    """Best-effort: pull a client's consolidated profile from the prod People hub
-    (same endpoint e4l-reveal-push.py:fetch_history uses). Returns {} on any failure."""
+    """Pull the prod consolidated clinical profile (People + all portal forms)."""
     import json as _json
     import urllib.parse
     import urllib.request
@@ -138,12 +137,10 @@ def _default_fetch_profile(email):
     try:
         key = os.environ["CONSOLE_SECRET"]
         base = os.environ.get("PUBLIC_BASE_URL", "https://illtowell.com").rstrip("/")
-        url = (f"{base}/api/people?key=" + urllib.parse.quote(key)
-               + "&q=" + urllib.parse.quote(email))
+        url = (f"{base}/api/console/clinical-profile/" + urllib.parse.quote(email, safe="")
+               + "?key=" + urllib.parse.quote(key))
         req = urllib.request.Request(url, headers={"X-Console-Key": key})
-        people = _json.load(urllib.request.urlopen(req, timeout=20)).get("people", [])
-        return next(
-            (p for p in people if (p.get("email") or "").lower() == email.lower()), {})
+        return _json.load(urllib.request.urlopen(req, timeout=20)).get("profile", {})
     except Exception:
         return {}
 
