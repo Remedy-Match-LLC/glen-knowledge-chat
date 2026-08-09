@@ -1,5 +1,5 @@
 {
- "_note": "Curated map of the E4L non-infoceutical ENVIRONMENTAL stress items -> target organs/systems + detox-support remedies, for the clinical glossary. Sourced from a 2026-07-14 toxicology research pass. HONESTY: most of these are cleared by normal liver Phase-II conjugation (glutathione/GST/UGT) + renal/biliary excretion, NOT by a specific product; only PFAS (bile-acid sequestrants) and fluoride (Ca/Mg gut binding) have a documented binder, and asbestos/isocyanates have no metabolic detox (avoidance only). Remedies below are framed as general elimination/conjugation support, not cures. Tiers: strong (agency/IARC) / moderate / weak. `affects` names cross-link to clinical Organ entries where they match.  EXPANDED 2026-08-08 to cover every finding a voice scan reports. Entries marked tier='unverified' come from e4l_items paraphrase and have NOT been checked against the scan source; tier='name-only' entries have no description and none was invented.  EXPANDED 2026-08-08 to cover every finding a voice scan reports. Entries marked tier='unverified' come from e4l_items paraphrase and have NOT been checked against the scan source; tier='name-only' entries have no description and none was invented.  EXPANDED 2026-08-08 to cover every finding a voice scan reports. Entries marked tier='unverified' come from e4l_items paraphrase and have NOT been checked against the scan source; tier='name-only' entries have no description and none was invented.",
+ "_note": "Curated map of the E4L non-infoceutical ENVIRONMENTAL stress items -> target organs/systems + detox-support remedies, for the clinical glossary. Sourced from a 2026-07-14 toxicology research pass. HONESTY: most of these are cleared by normal liver Phase-II conjugation (glutathione/GST/UGT) + renal/biliary excretion, NOT by a specific product; only PFAS (bile-acid sequestrants) and fluoride (Ca/Mg gut binding) have a documented binder, and asbestos/isocyanates have no metabolic detox (avoidance only). Remedies below are framed as general elimination/conjugation support, not cures. Tiers: strong (agency/IARC) / moderate / weak. `affects` names cross-link to clinical Organ entries where they match.  EXPANDED 2026-08-08 to cover every finding a voice scan reports. Entries marked tier='unverified' come from e4l_items paraphrase and have NOT been checked against the scan source; tier='name-only' entries have no description and none was invented.  EXPANDED 2026-08-08 to cover every finding a voice scan reports. Entries marked tier='unverified' come from e4l_items paraphrase and have NOT been checked against the scan source; tier='name-only' entries have no description and none was invented.  EXPANDED 2026-08-08 to cover every finding a voice scan reports. Entries marked tier='unverified' come from e4l_items paraphrase and have NOT been checked against the scan source; tier='name-only' entries have no description and none was invented.  EXPANDED 2026-08-08 to cover every finding a voice scan reports. Entries marked tier='unverified' come from e4l_items paraphrase and have NOT been checked against the scan source; tier='name-only' entries have no description and none was invented.",
  "dimensions": [
   {
    "key": "environmental",
@@ -2375,10 +2375,10 @@
      "code": "ET5",
      "subcategory": "Energetic Terrains",
      "tier": "sourced",
-     "description": "BSV = Broad Spectrum Virus. ET5 addresses broad-spectrum viral terrain.\n\n[SOURCED: atlas-concepts.json label 'ET5 BSV: Broad Spectrum Virus' + 01 Clinical/NES Scan 426 Factors in 10 seconds.md. The previous text was invented as 'blood sugar regulation, vitamin metabolism', which was not in any source.]",
+     "description": "BSV = Broad Spectrum Virus. ET5 addresses broad-spectrum viral terrain.",
      "affects": [],
      "remedies": [],
-     "source": "e4l_items paraphrase (unverified — not ingested from the scan screen or PDF)"
+     "source": "SOURCED: atlas-concepts.json label 'ET5 BSV: Broad Spectrum Virus' + 01 Clinical/NES Scan 426 Factors in 10 seconds.md. The previous text was invented as 'blood sugar regulation, vitamin metabolism', which was not in any source."
     },
     {
      "slug": "et-cfi",
@@ -2386,10 +2386,10 @@
      "code": "ET6",
      "subcategory": "Energetic Terrains",
      "tier": "sourced",
-     "description": "CFI = Cold Flu Immune. ET6 addresses the cold/flu immune terrain.\n\n[SOURCED: 01 Clinical/NES Scan 426 Factors in 10 seconds.md. The previous text was written as 'cold, flu, infection', which was not in any source.]",
+     "description": "CFI = Cold Flu Immune. ET6 addresses the cold/flu immune terrain.",
      "affects": [],
      "remedies": [],
-     "source": "e4l_items paraphrase (unverified — not ingested from the scan screen or PDF)"
+     "source": "SOURCED: 01 Clinical/NES Scan 426 Factors in 10 seconds.md. The previous text was written as 'cold, flu, infection', which was not in any source."
     },
     {
      "slug": "et-cfs",
@@ -3001,10 +3001,10 @@
      "code": "ES13",
      "subcategory": "Energetic Stars",
      "tier": "sourced",
-     "description": "COH = Carbohydrate Metabolism. ES13 links to carbohydrate metabolism.\n\n[SOURCED: 01 Clinical/NES Scan 426 Factors in 10 seconds.md. The previous text was invented as 'carbon, oxygen and hydrogen, the elemental triad', which was not in any source.]",
+     "description": "COH = Carbohydrate Metabolism. ES13 links to carbohydrate metabolism.",
      "affects": [],
      "remedies": [],
-     "source": "e4l_items paraphrase (unverified — not ingested from the scan screen or PDF)"
+     "source": "SOURCED: 01 Clinical/NES Scan 426 Factors in 10 seconds.md. The previous text was invented as 'carbon, oxygen and hydrogen, the elemental triad', which was not in any source."
     },
     {
      "slug": "es-cell-metabolism",
@@ -3158,10 +3158,10 @@
      "code": "MB1",
      "subcategory": "Miscellaneous Bioenergetics",
      "tier": "sourced",
-     "description": "BSH = Brain Stem. MB1 is the Brain Stem hologram, supporting release of unprocessed emotion held at that level.\n\n[SOURCED: 01 Clinical/NES Scan 426 Factors in 10 seconds.md. The previous text was written as 'Brain Hologram', which was not in any source.]",
+     "description": "BSH = Brain Stem. MB1 is the Brain Stem hologram, supporting release of unprocessed emotion held at that level.",
      "affects": [],
      "remedies": [],
-     "source": "e4l_items paraphrase (unverified — not ingested from the scan screen or PDF)"
+     "source": "SOURCED: 01 Clinical/NES Scan 426 Factors in 10 seconds.md. The previous text was written as 'Brain Hologram', which was not in any source."
     },
     {
      "slug": "mb-cmh",
