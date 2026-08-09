@@ -61,6 +61,21 @@ def test_voice_link_uses_account_signal_when_scan_manifest_is_absent():
     assert voice["href"] == "https://portal.e4l.com"
 
 
+def test_voice_link_uses_signup_email_before_first_scan():
+    cx = _cx()
+    from dashboard import e4l_account_notifications as accounts
+    accounts.init_table(cx)
+    cx.execute("""INSERT INTO e4l_accounts
+                  (email,client_name,phone,gmail_msg_id,notification_at,ingested_at)
+                  VALUES (?,?,?,?,?,?)""",
+               ("new@x.com", "New Client", "8085551212", "gmail-1", "", ""))
+    cx.commit()
+    s = ob.build_status(cx, "NEW@x.com")
+    voice = next(st for st in s["phases"][0]["steps"] if st["key"] == "voice")
+    assert voice["done"] is False
+    assert voice["href"] == "https://portal.e4l.com"
+
+
 def test_photo_and_intake_flip_done():
     cx = _cx()
     client_photos.put(cx, "b@x.com", b"\x89PNG", "image/png", source="portal-self")

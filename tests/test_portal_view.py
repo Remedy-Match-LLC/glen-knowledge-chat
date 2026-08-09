@@ -59,6 +59,32 @@ def test_view_composes_account_orders_points_and_stub(tmp_path):
     assert view["biofield"]["visible"] is False
     # no offer flags passed -> upgrade disabled (block hidden)
     assert view["upgrade"] == {"enabled": False}
+    assert view["membership"] == {
+        "level": "Client Portal Access",
+        "status": "Free",
+        "detail": "Your free portal access is active",
+        "next_step": {"label": "Review your recommendations", "href": "#recs"},
+    }
+
+
+def test_view_surfaces_current_membership_tier_and_expiration(tmp_path):
+    from dashboard import portal_view as pv
+    cx = _conn(tmp_path)
+    pid = _add_person(cx, "member@example.com", "Member")
+    cx.execute("""CREATE TABLE memberships (
+        id TEXT PRIMARY KEY, email TEXT, granted_at TEXT, expires_at TEXT,
+        granted_by TEXT, source TEXT, truly_vip_ref TEXT, notes TEXT)""")
+    cx.execute("""INSERT INTO memberships
+                  (id,email,granted_at,expires_at,source)
+                  VALUES (?,?,?,?,?)""",
+               ("m1", "member@example.com", "2026-08-01", "2027-08-01T00:00:00Z",
+                "membership_year_prepay"))
+    cx.commit()
+    view = pv.get_portal_view(cx, pid)
+    assert view["membership"]["level"] == "Annual Membership (full pay)"
+    assert view["membership"]["status"] == "Active"
+    assert view["membership"]["detail"] == "Active through 2027-08-01"
+    assert view["membership"]["next_step"]["href"] == "#recs"
 
 
 def test_view_surfaces_first_eligible_offer(tmp_path):

@@ -1,5 +1,5 @@
-"""Read-only 3-phase onboarding status for the portal tile. Pure computation
-from existing per-email stores; NO writes, NO new tables. Token-agnostic hrefs
+"""Three-phase onboarding status for the portal tile, computed from per-email stores.
+Token-agnostic hrefs
 (anchors) are prefixed with /portal/<token> by the route (Task 2).
 
 NOTE on recommendation_events.product_sources: the brief's sketch assumed a
@@ -11,7 +11,8 @@ _has_source below is written against the real (list) shape.
 from dashboard import (client_scans, intake, client_photos,
                         portal_biofield_reports, recommendation_events,
                         membership_products, portal_health_history,
-                        portal_extended_history, condition_triage)
+                        portal_extended_history, condition_triage,
+                        e4l_account_notifications)
 
 
 def _has_scan(cx, email):
@@ -22,7 +23,12 @@ def _has_scan(cx, email):
 
 
 def _has_e4l_account(cx, email):
-    """A synced scan proves this portal user already has an E4L account."""
+    """A signup notification or synced scan proves an E4L account exists."""
+    try:
+        if e4l_account_notifications.has_account(cx, email):
+            return True
+    except Exception:
+        pass
     if _has_scan(cx, email):
         return True
     try:
