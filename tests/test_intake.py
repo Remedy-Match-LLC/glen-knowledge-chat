@@ -53,6 +53,20 @@ def test_supplement_columns_use_searchable_free_text_suggestions():
     assert columns["name"]["suggestion_kind"] == "supplements"
 
 
+def test_dimensions_are_multi_select_but_commitment_is_single_number():
+    fields = {
+        field["id"]: field
+        for section in intake.INTAKE_FORM["sections"]
+        for field in section["fields"]
+    }
+    for field_id in ("terrain", "penetration", "tissue_layer", "response"):
+        assert fields[field_id]["multi_select"] is True
+        assert fields[field_id]["selection_field"] == f"{field_id}_selections"
+        assert "Check all that apply" in fields[field_id]["help"]
+    assert fields["commitment"].get("multi_select") is not True
+    assert fields["commitment"]["number_only"] is True
+
+
 def test_suggestions_are_seeded_and_new_answers_are_remembered():
     cx = _cx()
     seeded = intake.list_suggestions(cx)

@@ -4601,7 +4601,8 @@ async function renderIntakeForm(host, tokenVal, onDone, options){
     secWrap.appendChild(h3);
     (sec.fields || []).forEach(f => {
       secWrap.appendChild(renderIntakeField(
-        f, answers[f.id], getters, fieldEls, scheduleSave, formDef.suggestions || {}
+        f, answers[f.id], getters, fieldEls, scheduleSave, formDef.suggestions || {},
+        f.selection_field ? answers[f.selection_field] : null
       ));
     });
     host.appendChild(secWrap);
@@ -4722,7 +4723,7 @@ async function renderIntakeForm(host, tokenVal, onDone, options){
 // Builds one field's markup for any INTAKE_FORM field type and wires its
 // getter (into `getters`) + change listener (debounced autosave via
 // `onChange`). Returns the wrapper element to append to the section.
-function renderIntakeField(f, val, getters, fieldEls, onChange, suggestions){
+function renderIntakeField(f, val, getters, fieldEls, onChange, suggestions, savedSelections){
   const ftype = f.type;
 
   if(ftype === "consent"){
@@ -4883,26 +4884,34 @@ function renderIntakeField(f, val, getters, fieldEls, onChange, suggestions){
   if(ftype === "scale"){
     const group = document.createElement("div");
     group.className = "intake-scale";
+    const selectedValues = Array.isArray(savedSelections)
+      ? savedSelections.map(Number)
+      : (val != null ? [Number(val)] : []);
     (f.options || []).forEach(opt => {
       const optLabel = document.createElement("label");
       optLabel.className = "intake-scale-opt";
-      const radio = document.createElement("input");
-      radio.type = "radio";
-      radio.name = "intake-scale-" + f.id;
-      radio.value = String(opt.value);
-      if(val === opt.value) radio.checked = true;
-      radio.addEventListener("change", onChange);
-      optLabel.appendChild(radio);
+      const choice = document.createElement("input");
+      choice.type = f.multi_select ? "checkbox" : "radio";
+      if(!f.multi_select) choice.name = "intake-scale-" + f.id;
+      choice.value = String(opt.value);
+      if(selectedValues.includes(Number(opt.value))) choice.checked = true;
+      choice.addEventListener("change", onChange);
+      optLabel.appendChild(choice);
       const span = document.createElement("span");
-      span.textContent = opt.value + ": " + opt.label;
+      span.textContent = f.number_only ? String(opt.value) : opt.value + ": " + opt.label;
       optLabel.appendChild(span);
       group.appendChild(optLabel);
     });
     wrap.appendChild(group);
     getters[f.id] = ()=>{
-      const checked = group.querySelector("input[type=radio]:checked");
-      return checked ? Number(checked.value) : null;
+      const checked = Array.from(group.querySelectorAll("input:checked"))
+        .map(input => Number(input.value));
+      return checked.length ? Math.min(...checked) : null;
     };
+    if(f.multi_select && f.selection_field){
+      getters[f.selection_field] = ()=> Array.from(group.querySelectorAll("input:checked"))
+        .map(input => Number(input.value)).sort((a, b)=>a-b);
+    }
     fieldEls[f.id] = group;
     return wrap;
   }
