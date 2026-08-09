@@ -117,11 +117,9 @@ def build_status(cx, email):
              "#biofield"),
     ]
     match = [
-        step("history", "Starter remedies from your history",
-             conditions_done,
-             "#recs"),
-        step("scan_match", "Personalized match from your scan",
-             _has_source(cx, email, "scan") or _has_source(cx, email, "biofield"), "#recs"),
+        step("history", "Match Remedies",
+             conditions_done or _has_source(cx, email, "scan")
+             or _has_source(cx, email, "biofield"), "#recs"),
     ]
     heal = [
         step("light", "Light", None, "https://clinicalpraxis.com/photobiomodulation/"),

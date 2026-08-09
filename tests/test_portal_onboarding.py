@@ -78,8 +78,9 @@ def test_scan_match_flips_done_on_biofield_source():
         occurred_at="2026-07-23T00:00:00Z", origin_ref="test")
     s = ob.build_status(cx, "c@x.com")
     match = {st["key"]: st["done"] for st in s["phases"][1]["steps"]}
-    assert match["scan_match"] is True
-    assert match["history"] is False
+    assert match == {"history": True}
+    assert s["phases"][1]["steps"][0]["label"] == "Match Remedies"
+    assert s["phases"][1]["steps"][0]["href"] == "#recs"
 
 
 def test_history_step_requires_only_nonduplicated_condition_section():

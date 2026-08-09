@@ -15,13 +15,14 @@ def test_render_onboarding_emits_phases_done_and_link():
             {key:'intake', label:'Intake', done:false, href:'https://truly.vip/Join'}
           ]},
           {key:'match', title:'Match remedies', steps:[
-            {key:'scan_match', label:'Personalized match from your scan', done:false, href:'#recs'}
+            {key:'history', label:'Match Remedies', done:false, href:'#recs'}
           ]},
           {key:'heal', title:'Accelerate healing', steps:[
             {key:'light', label:'Light', done:null, href:'https://clinicalpraxis.com'},
             {key:'pemf', label:'PEMF', done:null, href:'', soon:true}
           ]}
         ],
+        history_conditions_done: false,
         member: false
       };
       const html = (mod.exports.renderOnboarding || global.renderOnboarding)(status);
@@ -61,13 +62,13 @@ def test_render_onboarding_triage_form_gated_on_history_done():
               {key:'voice', label:'Voice analysis', done:true, href:'https://truly.vip/E4L'}
             ]},
             {key:'match', title:'Match remedies', steps:[
-              {key:'history', label:'Starter remedies from your history', done:historyDone, href:'#recs'},
-              {key:'scan_match', label:'Personalized match from your scan', done:false, href:'#recs'}
+              {key:'history', label:'Match Remedies', done:historyDone, href:'#recs'}
             ]},
             {key:'heal', title:'Accelerate healing', steps:[
               {key:'light', label:'Light', done:null, href:'https://clinicalpraxis.com'}
             ]}
           ],
+          history_conditions_done: historyDone,
           member: member
         };
       }
