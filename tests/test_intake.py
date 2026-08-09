@@ -67,6 +67,21 @@ def test_dimensions_are_multi_select_but_commitment_is_single_number():
     assert fields["commitment"]["number_only"] is True
 
 
+def test_intake_owns_complete_nonduplicated_health_history():
+    fields = {
+        field["id"]: field
+        for section in intake.INTAKE_FORM["sections"]
+        for field in section["fields"]
+    }
+    for field_id in (
+        "physical_trauma", "psychoemotional_trauma", "toxins", "family_history",
+        "surgeries", "vaccinations", "diagnoses", "allergies", "dental", "sleep",
+        "medications", "otc_drugs", "supplements",
+    ):
+        assert field_id in fields
+    assert fields["medications"]["label"].startswith("Prescription medications")
+
+
 def test_suggestions_are_seeded_and_new_answers_are_remembered():
     cx = _cx()
     seeded = intake.list_suggestions(cx)

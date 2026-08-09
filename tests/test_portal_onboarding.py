@@ -74,7 +74,7 @@ def test_scan_match_flips_done_on_biofield_source():
     assert match["history"] is False
 
 
-def test_history_requires_conditions_and_current_products_sections():
+def test_history_step_requires_only_nonduplicated_condition_section():
     cx = _cx()
     condition_triage.init_table(cx)
     condition_triage.seed_from_triage(
@@ -83,7 +83,7 @@ def test_history_requires_conditions_and_current_products_sections():
     match = {st["key"]: st["done"] for st in s["phases"][1]["steps"]}
     assert s["history_conditions_done"] is True
     assert s["history_products_done"] is False
-    assert match["history"] is False
+    assert match["history"] is True
 
     portal_health_history.save(cx, "other@x.com", {
         "prescriptions_yes": False,
@@ -95,7 +95,7 @@ def test_history_requires_conditions_and_current_products_sections():
     match = {st["key"]: st["done"] for st in s["phases"][1]["steps"]}
     assert s["history_products_done"] is True
     assert s["history_extended_done"] is False
-    assert match["history"] is False
+    assert match["history"] is True
 
     portal_extended_history.save(cx, "other@x.com", {
         "surgeries_yes": True,

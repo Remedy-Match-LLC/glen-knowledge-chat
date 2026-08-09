@@ -13,10 +13,14 @@ def consolidate(people=None, intake_row=None, product_history=None, extended_his
     conditions = (_table_values(answers.get("health_concerns"), "concern")
                   + _table_values(answers.get("diagnoses"), "diagnosis", "current")
                   + _table_values(answers.get("allergies"), "sensitivity", "reaction"))
-    narrative = [str(answers.get(k)).strip() for k in ("obstacles", "sleep", "dental", "vaccinations") if answers.get(k)]
+    narrative = [str(answers.get(k)).strip() for k in (
+        "obstacles", "sleep", "dental", "vaccinations", "physical_trauma",
+        "psychoemotional_trauma", "toxins") if answers.get(k)]
     narrative += _table_values(answers.get("medications"), "medication", "reason")
+    narrative += _table_values(answers.get("otc_drugs"), "medication", "reason")
     narrative += _table_values(answers.get("supplements"), "brand", "name", "reason")
     narrative += _table_values(answers.get("surgeries"), "procedure", "reason")
+    narrative += _table_values(answers.get("family_history"), "relative", "condition", "age_onset")
     narrative += [str((product_history or {}).get(k + "_text") or "").strip() for k in ("prescriptions", "otc", "supplements") if (product_history or {}).get(k + "_text")]
     narrative += [str(v).strip() for k, v in (((extended_history or {}).get("answers") or {}).items()) if k.endswith("_text") and str(v or "").strip()]
     existing = profile.get("conditions") or []

@@ -71,50 +71,9 @@ function renderTriageForm(status) {
         '</div>' +
       '</div>';
   }
-  var productSection = '';
-  if (!status.history_products_done) {
-    productSection =
-      '<div class="ob-history-section" data-history-section="products">' +
-        '<p class="ob-followup-title">What are you currently taking?</p>' +
-        '<p class="ob-triage-intro">Check each category that applies. Include the brand and product names so we can review them for analysis and possible supportive remedies.</p>' +
-        _productHistoryChoice('prescriptions', 'Prescription medications') +
-        _productHistoryChoice('otc', 'Over-the-counter drugs') +
-        _productHistoryChoice('supplements', 'Supplements') +
-      '</div>';
-  }
-  var extendedSection = '';
-  if (!status.history_extended_done) {
-    extendedSection =
-      '<div class="ob-history-section" data-history-section="extended">' +
-        '<p class="ob-followup-title">More about your health history</p>' +
-        '<p class="ob-triage-intro">Check every category that applies and add the requested details.</p>' +
-        _extendedHistoryChoice('surgeries', 'Hospitalizations or surgeries',
-          'List each procedure or hospitalization, the reason, and your age at the time.') +
-        _extendedHistoryChoice('physical_trauma', 'Physical trauma or injuries',
-          'Describe what happened, body areas affected, your age, and any lasting effects.') +
-        _extendedHistoryChoice('psychoemotional_trauma', 'Psychoemotional trauma or major stress',
-          'Describe what happened, your approximate age or year, and any lasting effects.') +
-        _extendedHistoryChoice('toxins', 'Toxin or environmental exposures',
-          'List the substance, source, duration, approximate dates, and any reaction.') +
-        _extendedHistoryChoice('vaccinations', 'COVID or other vaccinations',
-          'List the vaccine, brand, date, and any reactions or changes afterward.') +
-        _extendedHistoryChoice('family_history', 'Family health history',
-          'List the parent or grandparent, condition, maternal or paternal side, and age at onset.') +
-        _extendedHistoryChoice('diagnoses', 'Other current or past medical diagnoses',
-          'List the diagnosis, whether it is current or past, and your age at onset.') +
-        _extendedHistoryChoice('allergies', 'Food or environmental allergies or sensitivities',
-          'List each food or environmental sensitivity and the reaction it causes.') +
-        _extendedHistoryChoice('dental', 'Dental issues, amalgams, or root canals',
-          'List the issue or procedure, tooth if known, reason, and approximate date.') +
-        _extendedHistoryChoice('sleep', 'Trouble falling asleep, staying asleep, or waking frequently',
-          'Describe the sleep pattern, frequency, and how long it has been happening.') +
-      '</div>';
-  }
   return '' +
     '<form class="ob-triage-form">' +
       conditionSection +
-      productSection +
-      extendedSection +
       '<button type="submit" class="ob-triage-submit">Show my starter remedies</button>' +
       '<p class="ob-triage-msg" aria-live="polite"></p>' +
     '</form>';
