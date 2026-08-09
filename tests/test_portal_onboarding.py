@@ -26,6 +26,8 @@ def test_all_open_when_nothing_on_file():
     assert be == {"voice": False, "intake": False, "photo": False, "biofield": False}
     assert steps["voice"]["href"] == "https://truly.vip/E4L"
     assert steps["intake"]["href"] == "#intake"
+    light = next(st for st in s["phases"][2]["steps"] if st["key"] == "light")
+    assert light["href"] == "https://clinicalpraxis.com/photobiomodulation/"
     assert s["member"] is False
 
 

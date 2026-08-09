@@ -124,7 +124,7 @@ def build_status(cx, email):
              _has_source(cx, email, "scan") or _has_source(cx, email, "biofield"), "#recs"),
     ]
     heal = [
-        step("light", "Light", None, "https://clinicalpraxis.com"),
+        step("light", "Light", None, "https://clinicalpraxis.com/photobiomodulation/"),
         step("pemf", "PEMF", None, "", soon=True),
         step("h2water", "Molecular hydrogen microwater", None, "", soon=True),
     ]
