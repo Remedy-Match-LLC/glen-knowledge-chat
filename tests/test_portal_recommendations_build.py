@@ -24,8 +24,23 @@ def test_product_appears_in_each_source_section_sorted():
     # neuro-magnesium's icon row carries BOTH its sources with counts
     icons = {i["source"]: i["count"] for i in by["biofield"]["products"][0]["icons"]}
     assert icons == {"self": 1, "biofield": 3}
-    # section order follows the registry (biofield before self)
-    assert [s["source"] for s in secs].index("biofield") < [s["source"] for s in secs].index("self")
+    # The client-facing primary sequence starts with Self. Remaining sources follow.
+    assert [s["source"] for s in secs].index("self") < [s["source"] for s in secs].index("biofield")
+
+
+def test_primary_sections_are_self_history_then_scan_and_show_three():
+    product_sources = []
+    for source in ("scan", "condition", "self"):
+        for index in range(6):
+            product_sources.append({
+                "product_key": f"{source}-{index}", "hidden": False,
+                "sources": [{"source": source, "count": 6 - index,
+                             "first_touch": "d", "last_touch": "d"}],
+            })
+    secs = pr.build_sections(product_sources, {}, {}, _resolve)
+    assert [section["source"] for section in secs[:3]] == ["self", "condition", "scan"]
+    assert all(section["shown"] == 3 for section in secs[:3])
+    assert all(len(section["products"]) == 6 for section in secs[:3])
 
 
 def test_notes_and_collapse_attached_top_n():
