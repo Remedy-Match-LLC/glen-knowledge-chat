@@ -56,6 +56,9 @@ def test_native_intake_is_resumable_and_reports_save_state():
     assert "Section ${sectionIndex + 1} of ${sectionEls.length}" in HTML
     assert 'saveState.textContent = "Saving…"' in HTML
     assert 'saveState.textContent = "Saved"' in HTML
+    assert "allowSubmittedEdit: true" in HTML
+    assert 'editButton.textContent = "Edit my Intake"' in HTML
+    assert 'stateData && stateData.submitted ? "Save changes"' in HTML
 
 
 def test_life_stress_essence_links_are_readable_in_dark_mode():

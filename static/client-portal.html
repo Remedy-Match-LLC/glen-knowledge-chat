@@ -4436,6 +4436,12 @@ function showPortalIntakeComplete(host){
   body.className = "muted";
   body.textContent = "Your clinical health profile is saved and available to your care team.";
   host.appendChild(body);
+  const editButton = document.createElement("button");
+  editButton.type = "button";
+  editButton.className = "btn full";
+  editButton.textContent = "Edit my Intake";
+  editButton.addEventListener("click", ()=>initPortalIntakeCard(true));
+  host.appendChild(editButton);
   const healthPanel = document.querySelector('[data-panel="health"]');
   const button = document.createElement("button");
   button.type = "button";
@@ -4459,6 +4465,7 @@ function initPortalIntakeCard(refreshing){
     title: "Build My Health Profile",
     intro: "Complete each section at your own pace. Your answers save automatically, so you can leave and return anytime.",
     paged: true,
+    allowSubmittedEdit: true,
     loadingText: refreshing ? "Refreshing your saved intake…" : "Loading your intake form…",
   });
 }
@@ -4511,7 +4518,7 @@ async function renderIntakeForm(host, tokenVal, onDone, options){
 
   host.innerHTML = "";
 
-  if(stateData && stateData.submitted){ if(onDone) onDone(); return; }
+  if(stateData && stateData.submitted && !options.allowSubmittedEdit){ if(onDone) onDone(); return; }
   if(!formDef || !Array.isArray(formDef.sections)){
     const err = document.createElement("p");
     err.className = "err small";
@@ -4663,7 +4670,7 @@ async function renderIntakeForm(host, tokenVal, onDone, options){
   submitBtn.type = "button";
   submitBtn.className = "btn full";
   submitBtn.style.marginTop = ".4rem";
-  submitBtn.textContent = "Submit my intake";
+  submitBtn.textContent = stateData && stateData.submitted ? "Save changes" : "Submit my intake";
   submitBtn.addEventListener("click", async ()=>{
     submitBtn.disabled = true;
     errMsg.hidden = true;

@@ -27804,13 +27804,15 @@ def intake_submit():
         if ident is None:
             return jsonify({"error": "not_found"}), 404
         answers = (request.get_json(silent=True) or {}).get("answers") or {}
-        if _intake.is_submitted(cx, ident.email):
-            return jsonify({"error": "already_submitted"}), 409
         errors = _intake.validate_response(answers)
         if errors:
             return jsonify({"error": "invalid", "errors": errors}), 400
-        _intake.submit(cx, ident.email, answers, _hst_now().isoformat())
-    return jsonify({"ok": True})
+        now = _hst_now().isoformat()
+        if _intake.is_submitted(cx, ident.email):
+            _intake.update_submitted(cx, ident.email, answers, now)
+            return jsonify({"ok": True, "updated": True})
+        _intake.submit(cx, ident.email, answers, now)
+    return jsonify({"ok": True, "updated": False})
 
 
 # --- Public funnel intake (truly.vip/join -> /begin/intake) ------------------

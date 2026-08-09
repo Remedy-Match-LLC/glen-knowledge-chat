@@ -215,6 +215,21 @@ def submit(cx, email, answers, now):
     _upsert(cx, email, answers, "submitted", now, now)
 
 
+def update_submitted(cx, email, answers, now):
+    """Replace the client-editable form answers on a completed Intake without
+    reopening it as a draft or changing its original submission timestamp.
+    Preserve internal provenance markers carried by imported/external records
+    and stamp the post-submission edit for the clinical record."""
+    existing = get_response(cx, email)
+    if not existing or existing["status"] != "submitted":
+        raise ValueError("intake is not submitted")
+    current = existing.get("answers") or {}
+    metadata = {k: v for k, v in current.items() if str(k).startswith("_")}
+    payload = {**metadata, **(answers or {}), "self_edited_at": now}
+    _upsert(cx, email, payload, "submitted", now, existing.get("submitted_at"))
+    return payload
+
+
 def is_submitted(cx, email):
     row = cx.execute("SELECT status FROM intake_responses WHERE email=?",
                      ((email or "").strip().lower(),)).fetchone()

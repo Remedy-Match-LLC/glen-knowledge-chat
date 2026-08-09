@@ -75,6 +75,20 @@ def test_draft_then_submit_transitions_status():
     assert row["status"] == "submitted" and row["submitted_at"] == "2026-07-07T01:00:00"
 
 
+def test_update_submitted_preserves_status_time_and_internal_metadata():
+    cx = _cx()
+    intake.import_response(cx, "s@x.com", {"first_name": "Old"},
+                           "2026-07-07T01:00:00")
+    intake.update_submitted(cx, "s@x.com", {"first_name": "New"},
+                            "2026-07-08T02:00:00")
+    row = intake.get_response(cx, "s@x.com")
+    assert row["status"] == "submitted"
+    assert row["submitted_at"] == "2026-07-07T01:00:00"
+    assert row["answers"]["first_name"] == "New"
+    assert row["answers"]["_imported"] == "practice-better"
+    assert row["answers"]["self_edited_at"] == "2026-07-08T02:00:00"
+
+
 def test_list_submitted_only_returns_submitted():
     cx = _cx()
     intake.save_draft(cx, "draft@x.com", {"a": 1}, "2026-07-07T00:00:00")
