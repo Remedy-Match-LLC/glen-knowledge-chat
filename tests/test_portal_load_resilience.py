@@ -31,6 +31,9 @@ def test_shared_portal_hashes_route_to_real_panels_and_cards():
     assert 'window.addEventListener("hashchange", applyPortalHash)' in HTML
     assert 'id="photo-section"' in HTML
     assert 'id="offers-card"' in HTML
+    assert "There isn’t a new upgrade available" not in HTML
+    assert "Next step to consider" in HTML
+    assert "buildMembershipSummaryHtml" in HTML
     assert 'id="biofield-section"' in HTML
     assert 'data-panel="intake"' in HTML
     assert 'id="portal-intake-card"' in HTML

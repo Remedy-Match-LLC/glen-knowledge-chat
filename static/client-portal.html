@@ -1360,9 +1360,24 @@ function buildShopHtml(){
     <p class="muted">Explore remedies, wellness tools, and Dr. Glen’s curated product picks.</p>
     <a class="btn full" href="/begin/explore">Browse the shop</a></div>`;
 }
-function buildOffersEmptyHtml(){
+function buildMembershipSummaryHtml(view){
+  const membership = (view && view.membership) || {};
+  const level = membership.level || "Client Portal Access";
+  const status = membership.status || "Active";
+  const detail = membership.detail || "Your portal access is active";
+  const next = membership.next_step || {label:"Review your recommendations", href:"#recs"};
+  return `<div class="reitem" style="align-items:flex-start">
+      <span><span class="nm">${esc(level)}</span><span class="od">${esc(detail)}</span></span>
+      <span class="dose">${esc(status)}</span>
+    </div>
+    <div style="margin-top:1rem;padding-top:1rem;border-top:1px solid var(--line)">
+      <p class="small" style="margin:0 0 .65rem"><strong>Next step to consider</strong></p>
+      <a class="btn" href="${esc(next.href || "#recs")}">${esc(next.label || "Review your recommendations")}</a>
+    </div>`;
+}
+function buildOffersEmptyHtml(view){
   return `<div class="card" id="offers-card"><h2>Membership &amp; offers</h2>
-    <p class="muted">There isn’t a new upgrade available for your account right now.</p></div>`;
+    ${buildMembershipSummaryHtml(view)}</div>`;
 }
 function loadCart(){
   const host = document.getElementById('cart-body');
@@ -3558,7 +3573,9 @@ function render(d, v){
   if(v && v.upgrade && v.upgrade.enabled && v.upgrade.offer){
     const o = v.upgrade.offer;
     const price = esc(money(o.price_cents)) + (o.period?esc(o.period):"");
-    let offerCard = `<div class="card" id="offers-card"><h2>What's next for you</h2>
+    let offerCard = `<div class="card" id="offers-card"><h2>Membership &amp; offers</h2>
+      ${buildMembershipSummaryHtml(v)}
+      <h3 style="margin:1.2rem 0 .6rem">Available next</h3>
       <div class="reitem"><span class="nm">${esc(o.title)}</span><span class="pr sp">${price}</span></div>
       <p class="muted small" style="margin:.5rem 0 1rem">${esc(o.blurb)}</p>
       <button class="btn full" id="offerBtn" data-path="${esc(o.checkout_path)}">${esc(o.cta_label)}</button>`;
@@ -3822,7 +3839,7 @@ function render(d, v){
       ${_hub && v.oasis && v.oasis.enabled ? (_oasisView = v, `<section data-panel="oasis" hidden>${back}${buildOasisHtml(v)}</section>`) : ""}
       ${_hub && v.cart && v.cart.enabled ? `<section data-panel="cart" hidden>${back}${buildCartHtml()}</section>` : ""}
       <section data-panel="shop" hidden>${back}${buildShopHtml()}</section>
-      <section data-panel="offers" hidden>${back}${_offersHtml || buildOffersEmptyHtml()}</section>
+      <section data-panel="offers" hidden>${back}${_offersHtml || buildOffersEmptyHtml(v)}</section>
       <section data-panel="photo" hidden>${back}${buildPhotoHtml()}</section>
       <section data-panel="finder" hidden>${back}${_finderHtml || '<div class="card quiet"><p class="muted">The practitioner finder is not enabled for your portal yet.</p></div>'}</section>
       <section data-panel="bodymap" hidden>${back}${_bodymapHtml}</section>

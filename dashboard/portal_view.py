@@ -225,6 +225,77 @@ def _upgrade_block(cx, email, roles, enabled_keys):
     return {"enabled": True, "offer": offers[0]}
 
 
+def _membership_block(cx, email):
+    """Current client-facing membership level, independent of upgrade eligibility."""
+    from datetime import datetime, timezone
+    from dashboard import membership_products as _membership_products
+    from dashboard import subscriptions as _subscriptions
+
+    now = datetime.now(timezone.utc).isoformat()
+    source_labels = {
+        tier["source"]: tier["label"] for tier in _membership_products.all_tiers()
+    }
+    try:
+        sources = tuple(source_labels)
+        placeholders = ",".join("?" for _ in sources)
+        row = cx.execute(
+            f"SELECT source,expires_at FROM memberships "
+            f"WHERE lower(email)=lower(?) AND expires_at>? "
+            f"AND source IN ({placeholders}) ORDER BY expires_at DESC LIMIT 1",
+            (email, now, *sources),
+        ).fetchone()
+        if row:
+            source, expires_at = row[0], row[1]
+            return {
+                "level": source_labels.get(source, "Healing Oasis Membership"),
+                "status": "Active",
+                "detail": f"Active through {str(expires_at)[:10]}" if expires_at else "Active",
+                "next_step": {
+                    "label": "Review your current recommendations",
+                    "href": "#recs",
+                },
+            }
+    except Exception:
+        pass
+
+    try:
+        rows = _subscriptions.active_memberships_by_email(cx, email)
+        if rows:
+            sub = rows[0]
+            category = _subscriptions.classify_sub(sub)
+            labels = {
+                "full": "Healing Oasis Membership",
+                "trial": "Trial Membership",
+                "paused": "Paused Membership",
+            }
+            detail = "Active"
+            if category == "paused":
+                detail = "Paused"
+            elif sub.get("next_charge_date"):
+                detail = f"Next renewal {str(sub['next_charge_date'])[:10]}"
+            return {
+                "level": labels.get(category, "Healing Oasis Membership"),
+                "status": category.title(),
+                "detail": detail,
+                "next_step": {
+                    "label": "Review your current recommendations",
+                    "href": "#recs",
+                },
+            }
+    except Exception:
+        pass
+
+    return {
+        "level": "Client Portal Access",
+        "status": "Free",
+        "detail": "Your free portal access is active",
+        "next_step": {
+            "label": "Review your recommendations",
+            "href": "#recs",
+        },
+    }
+
+
 def _ambassador_block(cx, email, quiz_url, public_base_url):
     """Affiliate/ambassador status for the personal portal, by email. None-raising.
     enrolled -> referral links (from slug); pending -> under review; else signup CTA."""
@@ -414,6 +485,7 @@ def get_portal_view(cx, person_id, *, offers_enabled_keys=None, scan_date=None,
         "orders": _orders_block(cx, email, roles),
         "biofield": _biofield_block(cx, email, scan_date=scan_date, unlocked=biofield_unlocked),
         "upgrade": _upgrade_block(cx, email, roles, offers_enabled_keys),
+        "membership": _membership_block(cx, email),
         "ambassador": _ambassador_block(cx, email, quiz_url, public_base_url),
         "practitioner_finder": _practitioner_finder_block(account["address"], finder_enabled),
         "hub_enabled": bool(hub_enabled),
