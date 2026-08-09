@@ -389,7 +389,7 @@ def test_per_client_tabs_and_invoice_view_page(tmp_path):
 
     ed = client.get("/author/" + tid).data.decode()
     assert ("/author/" + tid + "/invoice-view") in ed       # Invoice tab target
-    for lbl in (">Edit<", ">Report<", ">Invoice<", ">View Portal<"):
+    for lbl in (">Edit<", ">Report<", ">Invoice<", ">View Client Portal<", ">Edit Portal<"):
         assert lbl in ed
 
     rep = client.get("/test/" + tid).data.decode()
