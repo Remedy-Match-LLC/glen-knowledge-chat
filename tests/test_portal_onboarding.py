@@ -28,6 +28,12 @@ def test_all_open_when_nothing_on_file():
     assert steps["intake"]["href"] == "#intake"
     light = next(st for st in s["phases"][2]["steps"] if st["key"] == "light")
     assert light["href"] == "https://clinicalpraxis.com/photobiomodulation/"
+    pemf = next(st for st in s["phases"][2]["steps"] if st["key"] == "pemf")
+    water = next(st for st in s["phases"][2]["steps"] if st["key"] == "h2water")
+    assert pemf["href"] == "https://clinicalpraxis.com/pemf/"
+    assert pemf.get("soon", False) is False
+    assert water["href"] == "https://clinicalpraxis.com/molecular-hydrogen-microwater/"
+    assert water.get("soon", False) is False
     assert s["member"] is False
 
 

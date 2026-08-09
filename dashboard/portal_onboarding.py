@@ -125,8 +125,9 @@ def build_status(cx, email):
     ]
     heal = [
         step("light", "Light", None, "https://clinicalpraxis.com/photobiomodulation/"),
-        step("pemf", "PEMF", None, "", soon=True),
-        step("h2water", "Molecular hydrogen microwater", None, "", soon=True),
+        step("pemf", "PEMF", None, "https://clinicalpraxis.com/pemf/"),
+        step("h2water", "Molecular hydrogen microwater", None,
+             "https://clinicalpraxis.com/molecular-hydrogen-microwater/"),
     ]
     return {
         "phases": [
