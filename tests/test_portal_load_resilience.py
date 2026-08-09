@@ -42,6 +42,13 @@ def test_intake_hash_routes_to_terms_prerequisite_when_gate_is_active():
     assert "applyPortalHash();\n    return;   // suppress the home until agreed" in HTML
 
 
+def test_terms_gate_is_an_explicit_first_step_of_intake():
+    assert 'onboardingMount.hidden = d.tos_agreed === false' in HTML
+    assert 'Step 1 of Intake' in HTML
+    assert 'Before opening your Intake form' in HTML
+    assert 'I agree — continue to Intake' in HTML
+
+
 def test_native_intake_is_resumable_and_reports_save_state():
     assert '"My Intake", "Build or continue your clinical health profile"' in HTML
     assert "initPortalIntakeCard();" in HTML
