@@ -2327,6 +2327,43 @@ document.addEventListener("click", async (ev) => {
 // `url` is present and http(s)/relative), the operator's read-only note, and a
 // client-editable note + hide control. Click/save/hide/collapse-toggle wiring
 // is bound by wireRecommendationsCard() below, called once per render().
+function recommendationPriorityHtml(sections){
+  const labels = {};
+  const products = {};
+  sections.forEach(sec=>{
+    labels[String(sec.source || "")] = String(sec.label || sec.source || "");
+    (Array.isArray(sec.products) ? sec.products : []).forEach(product=>{
+      const key = String(product.product_key || "");
+      if(!key || products[key]) return;
+      const sources = Array.isArray(product.icons) ? product.icons : [];
+      const points = sources.reduce((sum, source)=>sum + (Number(source.count) || 0), 0);
+      if(sources.length < 2 && points <= 1) return;
+      products[key] = {product: product, sources: sources, points: points};
+    });
+  });
+  const ranked = Object.values(products).sort((a, b)=>
+    (b.points - a.points) || String(a.product.name || "").localeCompare(String(b.product.name || ""))
+  );
+  if(!ranked.length) return "";
+  const rows = ranked.map(item=>{
+    const product = item.product;
+    const safeUrl = /^(https?:\/\/|\/)/.test(String(product.url || "")) ? product.url : "";
+    const name = safeUrl
+      ? `<a href="${esc(safeUrl)}" target="_blank" rel="noopener">${esc(product.name || product.product_key || "")}</a>`
+      : esc(product.name || product.product_key || "");
+    const listNames = item.sources.map(source=>labels[String(source.source || "")] || String(source.source || ""));
+    return `<li class="rec-priority-row" style="padding:.55rem 0">
+      <div><strong>${name}</strong> <span class="pill">${item.points} point${item.points === 1 ? "" : "s"}</span></div>
+      <p class="muted small" style="margin:.2rem 0 0">Lists: ${listNames.map(esc).join(" · ")}</p>
+    </li>`;
+  }).join("");
+  return `<div class="rec-priority" style="margin:.8rem 0 1.1rem">
+    <h3 style="margin-bottom:.2rem">Your strongest recommendations</h3>
+    <p class="muted small" style="margin-top:0">Items found on more than one list or supported by more than one point, ranked by total points.</p>
+    <ol style="margin:.4rem 0;padding-left:1.4rem">${rows}</ol>
+  </div>`;
+}
+
 function renderRecommendations(sections){
   let secHtml = "";
   sections.forEach(sec=>{
@@ -2388,7 +2425,8 @@ function renderRecommendations(sections){
       </div>
     </div>`;
   });
-  return `<div class="card" id="recsCard"><h2>My Recommendations</h2>${secHtml || '<p class="muted">No recommendations yet.</p>'}</div>`;
+  const priorityHtml = recommendationPriorityHtml(sections);
+  return `<div class="card" id="recsCard"><h2>My Recommendations</h2>${priorityHtml}${secHtml || '<p class="muted">No recommendations yet.</p>'}</div>`;
 }
 
 // Phase 2b-ii: wire the "My Recommendations" card's three writes +
