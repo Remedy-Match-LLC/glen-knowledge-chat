@@ -1005,6 +1005,16 @@ function applyPortalHash(){
   const key = decodeURIComponent((location.hash || "").replace(/^#/, "")).toLowerCase();
   const route = PORTAL_HASH_ROUTES[key];
   if(!route) return false;
+  // The Terms gate intentionally suppresses every portal panel. When an
+  // independently-rendered onboarding link points at Intake, lead the client
+  // to the prerequisite instead of silently falling back to a missing panel.
+  const tosCard = document.getElementById("portal-tos-card");
+  if(key === "intake" && tosCard){
+    tosCard.setAttribute("tabindex", "-1");
+    tosCard.scrollIntoView({behavior:"smooth", block:"start"});
+    tosCard.focus({preventScroll:true});
+    return true;
+  }
   const panel = document.querySelector(`[data-panel="${route.panel}"]`);
   showTab(panel ? route.panel : (document.querySelector('[data-panel="current"]') ? "current" : "hub"));
   window.setTimeout(()=>{
@@ -2638,7 +2648,7 @@ function render(d, v){
     // "I agree" card lands in a still-hidden #app and the spinner never clears.
     document.getElementById("loading").hidden = true;
     document.getElementById("app").hidden = false;
-    var g = '<div class="card"><h2>Welcome to your healing home</h2>'
+    var g = '<div class="card" id="portal-tos-card"><h2>Welcome to your healing home</h2>'
       + '<p>Before we continue, please review and agree to our Terms of Service. '
       + 'These cover both Remedy Match and the Energy For Life (E4L) biofield scan.</p>'
       + (d.tos_covers_dependents
@@ -2664,6 +2674,7 @@ function render(d, v){
         var er = document.getElementById("tosErr"); if (er) { er.textContent = "Please try again."; er.hidden = false; }
       }
     });
+    applyPortalHash();
     return;   // suppress the home until agreed
   }
   const app = document.getElementById("app");
