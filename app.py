@@ -31575,6 +31575,11 @@ def cron_reply_watch():
     try:
         counts = process_inbox_replies(db_path=str(LOG_DB), dry_run=dry_run,
                                        max_messages=max_messages)
+        e4l_counts = {}
+        if not dry_run:
+            from dashboard import e4l_account_notifications as _e4l_accounts
+            with db.connect(LOG_DB) as cx:
+                e4l_counts = _e4l_accounts.ingest_notifications(cx)
     except (_gt.GmailTokenMissing, RefreshError) as e:
         now_iso = datetime.now(timezone.utc).isoformat()
         if _gt.should_send_alert(str(LOG_DB), "inbox_gmail", now_iso):
@@ -31589,7 +31594,9 @@ def cron_reply_watch():
     except Exception as e:  # noqa: BLE001
         return jsonify({"ok": False, "error": str(e)}), 500
     # Drop the per-message `details` blob to keep the cron response small.
-    return jsonify({"ok": True, **{k: v for k, v in counts.items() if k != "details"}})
+    return jsonify({"ok": True,
+                    **{k: v for k, v in counts.items() if k != "details"},
+                    "e4l_accounts": e4l_counts})
 
 
 @app.route("/api/reorder/items", methods=["GET"])
