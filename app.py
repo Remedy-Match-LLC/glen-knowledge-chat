@@ -28729,7 +28729,12 @@ def api_client_portal_view(token):
     if view is None:
         return jsonify({"error": "not found"}), 404
     view["auth_method"] = ident.auth_method
-    return jsonify(view)
+    resp = jsonify(view)
+    # This payload includes the client's freshly saved Intake/Health Profile.
+    # Never let a browser or intermediary reuse the pre-submission response.
+    resp.headers["Cache-Control"] = "private, no-cache, no-store, must-revalidate"
+    resp.headers["Pragma"] = "no-cache"
+    return resp
 
 
 # ── Free product review (dark: SUPPLEMENT_REVIEW_ENABLED) ─────────────────────

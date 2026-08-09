@@ -1068,7 +1068,7 @@ function buildHubHtml(d, v){
   // curated health_profile block is enabled — off-state must add nothing.
   if (v && v.health_profile && v.health_profile.enabled) {
     const pending = v.health_profile.suggestion_count;
-    understandTiles.push(["health", "My Health Profile", "Your history, symptoms and intake",
+    understandTiles.push(["health", "My Health Profile", "Review the details you provided in your Intake",
       (pending > 0) ? pending : undefined]);
   }
   // Task 5: the My Healing Oasis tile is only meaningful (and only rendered)
@@ -1184,7 +1184,13 @@ function buildHealthProfileHtml(v){
   const body = sections.length
     ? sections.map(healthSectionHtml).join("")
     : `<div class="card quiet"><p class="muted">Your health profile will appear here once your intake is on file.</p></div>`;
-  return `<div class="portal-health"><div id="healthSuggestions"></div>${body}</div>`;
+  return `<div class="portal-health">
+    <div class="card quiet health-profile-guide">
+      <h2>Your saved Intake details</h2>
+      <p class="muted">My Health Profile is where you can review the health history, symptoms, and other details you provided in your Intake.</p>
+      <button type="button" class="btn ghost" onclick="showTab('intake')">Open or edit my Intake</button>
+    </div>
+    <div id="healthSuggestions"></div>${body}</div>`;
 }
 // ── Task 5: My Healing Oasis panel (render-only). Consumes v.oasis (Task 4's
 // shape: {enabled, replenish[], build_out:{owned_from_us[], owned_external[],
@@ -1827,6 +1833,7 @@ async function fetchPortalJson(url){
     const response = await fetch(url, {
       signal: controller.signal,
       credentials: "same-origin",
+      cache: "no-store",
     });
     if(!response.ok){
       return {kind:"http", status:response.status, data:null};
@@ -4434,7 +4441,7 @@ function showPortalIntakeComplete(host){
   host.appendChild(title);
   const body = document.createElement("p");
   body.className = "muted";
-  body.textContent = "Your clinical health profile is saved and available to your care team.";
+  body.textContent = "Your answers are saved. You can review the details you provided anytime by opening My Health Profile from the Understand section of your portal home.";
   host.appendChild(body);
   const editButton = document.createElement("button");
   editButton.type = "button";
@@ -4446,7 +4453,7 @@ function showPortalIntakeComplete(host){
   const button = document.createElement("button");
   button.type = "button";
   button.className = "btn full";
-  button.textContent = healthPanel ? "Review My Health Profile" : "Return to my portal";
+  button.textContent = healthPanel ? "Open My Health Profile" : "Return to my portal";
   button.addEventListener("click", async ()=>{
     try{ history.replaceState(null, "", location.pathname + location.search); }catch(e){}
     if(healthPanel) await load();

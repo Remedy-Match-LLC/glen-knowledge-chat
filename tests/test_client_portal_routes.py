@@ -278,6 +278,8 @@ def test_api_portal_view_returns_role_aware_blocks(client):
     assert j["biofield"]["visible"] is True       # seeded portal has layers/video
     assert j["upgrade"] == {"enabled": False}  # offers dark by default
     assert j["auth_method"] == "token"            # session login is dark
+    assert "no-store" in r.headers["Cache-Control"]
+    assert r.headers["Pragma"] == "no-cache"
 
 
 def test_api_portal_view_bad_token_404(client):
