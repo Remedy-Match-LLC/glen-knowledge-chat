@@ -3740,9 +3740,9 @@ function render(d, v){
     html = `${tabbar}${hubPanel}
       <section data-panel="current"${_hub ? " hidden" : ""}>${back}${html}</section>
       <section data-panel="history" hidden>${back}${historyHtml}</section>
-      <section data-panel="orders" hidden>${back}${ordersHtml}</section>${_hub ? `
+      <section data-panel="orders" hidden>${back}${ordersHtml}</section>
+      <section data-panel="intake" hidden>${back}<div class="card" id="portal-intake-card"><div id="portal-intake-host"></div></div></section>${_hub ? `
       <section data-panel="ask" hidden>${back}${_askHtml}</section>
-      <section data-panel="intake" hidden>${back}<div class="card" id="portal-intake-card"><div id="portal-intake-host"></div></div></section>
       ${_hub && v.health_profile && v.health_profile.enabled ? `<section data-panel="health" hidden>${back}${buildHealthProfileHtml(v)}</section>` : ""}
       ${_hub && v.oasis && v.oasis.enabled ? (_oasisView = v, `<section data-panel="oasis" hidden>${back}${buildOasisHtml(v)}</section>`) : ""}
       ${_hub && v.cart && v.cart.enabled ? `<section data-panel="cart" hidden>${back}${buildCartHtml()}</section>` : ""}
@@ -3756,6 +3756,11 @@ function render(d, v){
       <section data-panel="refer" hidden>${back}${_referHtml || '<div class="card quiet"><p class="muted">Ambassador program details will appear here.</p></div>'}</section>
       <section data-panel="referrals" hidden>${back}${_referralsHtml}</section>
       ${_hub && v.remedies && v.remedies.enabled ? `<section data-panel="remedies" hidden>${back}${buildRemediesHtml(v)}</section>` : ""}` : ""}`;
+  } else {
+    // The onboarding checklist is available independently of the hub and scan
+    // history flags, so its #intake link must always have a real panel target.
+    html = `<section data-panel="current">${html}</section>
+      <section data-panel="intake" hidden><div class="card" id="portal-intake-card"><div id="portal-intake-host"></div></div></section>`;
   }
 
   app.innerHTML = html;
