@@ -1,5 +1,5 @@
 {
- "_note": "Curated map of the E4L non-infoceutical ENVIRONMENTAL stress items -> target organs/systems + detox-support remedies, for the clinical glossary. Sourced from a 2026-07-14 toxicology research pass. HONESTY: most of these are cleared by normal liver Phase-II conjugation (glutathione/GST/UGT) + renal/biliary excretion, NOT by a specific product; only PFAS (bile-acid sequestrants) and fluoride (Ca/Mg gut binding) have a documented binder, and asbestos/isocyanates have no metabolic detox (avoidance only). Remedies below are framed as general elimination/conjugation support, not cures. Tiers: strong (agency/IARC) / moderate / weak. `affects` names cross-link to clinical Organ entries where they match.  EXPANDED 2026-08-08 to cover every finding a voice scan reports. Entries marked tier='unverified' come from e4l_items paraphrase and have NOT been checked against the scan source; tier='name-only' entries have no description and none was invented.  EXPANDED 2026-08-08 to cover every finding a voice scan reports. Entries marked tier='unverified' come from e4l_items paraphrase and have NOT been checked against the scan source; tier='name-only' entries have no description and none was invented.  EXPANDED 2026-08-08 to cover every finding a voice scan reports. Entries marked tier='unverified' come from e4l_items paraphrase and have NOT been checked against the scan source; tier='name-only' entries have no description and none was invented.  EXPANDED 2026-08-08 to cover every finding a voice scan reports. Entries marked tier='unverified' come from e4l_items paraphrase and have NOT been checked against the scan source; tier='name-only' entries have no description and none was invented.",
+ "_note": "Curated map of the E4L non-infoceutical ENVIRONMENTAL stress items -> target organs/systems + detox-support remedies, for the clinical glossary. Sourced from a 2026-07-14 toxicology research pass. HONESTY: most of these are cleared by normal liver Phase-II conjugation (glutathione/GST/UGT) + renal/biliary excretion, NOT by a specific product; only PFAS (bile-acid sequestrants) and fluoride (Ca/Mg gut binding) have a documented binder, and asbestos/isocyanates have no metabolic detox (avoidance only). Remedies below are framed as general elimination/conjugation support, not cures. Tiers: strong (agency/IARC) / moderate / weak. `affects` names cross-link to clinical Organ entries where they match.  EXPANDED 2026-08-08 to cover every finding a voice scan reports. Entries marked tier='unverified' come from e4l_items paraphrase and have NOT been checked against the scan source; tier='name-only' entries have no description and none was invented.  EXPANDED 2026-08-08 to cover every finding a voice scan reports. Entries marked tier='unverified' come from e4l_items paraphrase and have NOT been checked against the scan source; tier='name-only' entries have no description and none was invented.  EXPANDED 2026-08-08 to cover every finding a voice scan reports. Entries marked tier='unverified' come from e4l_items paraphrase and have NOT been checked against the scan source; tier='name-only' entries have no description and none was invented.  EXPANDED 2026-08-08 to cover every finding a voice scan reports. Entries marked tier='unverified' come from e4l_items paraphrase and have NOT been checked against the scan source; tier='name-only' entries have no description and none was invented.  EXPANDED 2026-08-08 to cover every finding a voice scan reports. Entries marked tier='unverified' come from e4l_items paraphrase and have NOT been checked against the scan source; tier='name-only' entries have no description and none was invented.",
  "dimensions": [
   {
    "key": "environmental",
@@ -2319,55 +2319,55 @@
      "name": "CNS",
      "code": "ET0",
      "subcategory": "Energetic Terrains",
-     "tier": "unverified",
-     "description": "Energetic Terrains support communication for the body's healing functions. ET0 supports the central nervous system terrain, including neurological resilience.",
+     "tier": "sourced",
+     "description": "Central nervous system (CNS)\nMyocardium\nConsider: Brain Cleanse, WholOmega, Neuroprotect, Neuroceramides, Neuro-Magnesium",
      "affects": [],
      "remedies": [],
-     "source": "e4l_items paraphrase (unverified — not ingested from the scan screen or PDF)"
+     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23 — Glen-authored"
     },
     {
      "slug": "et-immune-1",
      "name": "Immune 1",
      "code": "ET1",
      "subcategory": "Energetic Terrains",
-     "tier": "unverified",
-     "description": "ET1 bioenergetically supports the first tier of immune response, including innate immunity and acute inflammatory signaling.",
+     "tier": "sourced",
+     "description": "Bone marrow\nBlood\nTongue\nHeart\nFront lobes of the brain\nConsider: Lymph Flow, Immune Modulation",
      "affects": [],
      "remedies": [],
-     "source": "e4l_items paraphrase (unverified — not ingested from the scan screen or PDF)"
+     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23 — Glen-authored"
     },
     {
      "slug": "et-immune-2",
      "name": "Immune 2",
      "code": "ET2",
      "subcategory": "Energetic Terrains",
-     "tier": "unverified",
-     "description": "ET2 supports the second tier of immune function, including adaptive immunity and antibody-mediated responses.",
+     "tier": "sourced",
+     "description": "Bone marrow\nBlood\nFrontal lobes of the brain\nConsider: Lymph Flow, Immune Modulation",
      "affects": [],
      "remedies": [],
-     "source": "e4l_items paraphrase (unverified — not ingested from the scan screen or PDF)"
+     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23 — Glen-authored"
     },
     {
      "slug": "et-immune-3",
      "name": "Immune 3",
      "code": "ET3",
      "subcategory": "Energetic Terrains",
-     "tier": "unverified",
-     "description": "ET3 supports the third tier of immune regulation, including regulatory T-cell balance and autoimmune terrain.",
+     "tier": "sourced",
+     "description": "Bone marrow\nSpleen\nFrontal lobes of the brain\nConsider: Lymph Flow, Immune Modulation",
      "affects": [],
      "remedies": [],
-     "source": "e4l_items paraphrase (unverified — not ingested from the scan screen or PDF)"
+     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23 — Glen-authored"
     },
     {
      "slug": "et-nerve",
      "name": "Nerve",
      "code": "ET4",
      "subcategory": "Energetic Terrains",
-     "tier": "unverified",
-     "description": "ET4 supports nerve tissue healing and the neurological terrain, including peripheral neuropathy support.",
+     "tier": "sourced",
+     "description": "Central nervous system (brain and spinal cord)\nPeripheral nervous system\nConsider: Neuroprotect, Neuroceramides, Nerve Pulse, Vagus Nerve Support, Neuro-Magnesium, Snake & Dragon",
      "affects": [],
      "remedies": [],
-     "source": "e4l_items paraphrase (unverified — not ingested from the scan screen or PDF)"
+     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23 — Glen-authored"
     },
     {
      "slug": "et-bsv",
@@ -2396,110 +2396,110 @@
      "name": "CFS",
      "code": "ET7",
      "subcategory": "Energetic Terrains",
-     "tier": "unverified",
-     "description": "ET7 supports the energetic terrain underlying chronic fatigue, post-viral syndromes, and mitochondrial resilience.",
+     "tier": "sourced",
+     "description": "Central nervous system (brain and spinal cord); especially the outer brain\nVisual cortex / eyes\nPituitary gland\nThyroid\nPancreas\nSmall intestine\nLiver\nKidneys\nBladder\nConsider: VirEx, Energessence, Nous Energy, Snake & Dragon",
      "affects": [],
      "remedies": [],
-     "source": "e4l_items paraphrase (unverified — not ingested from the scan screen or PDF)"
+     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23 — Glen-authored"
     },
     {
      "slug": "et-neuro",
      "name": "Neuro",
      "code": "ET8",
      "subcategory": "Energetic Terrains",
-     "tier": "unverified",
-     "description": "ET8 supports the neurological terrain including cognitive function, neuroinflammation, and neuroprotection.",
+     "tier": "sourced",
+     "description": "Coating of the axons (myelin sheath)\nBladder\nConsider: Nerve Pulse, Vagus Nerve Support, Neuroprotect, WholOmega, Neuroceramides, Neuro-Magnesium, Snake & Dragon",
      "affects": [],
      "remedies": [],
-     "source": "e4l_items paraphrase (unverified — not ingested from the scan screen or PDF)"
+     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23 — Glen-authored"
     },
     {
      "slug": "et-stomach",
      "name": "Stomach",
      "code": "ET9",
      "subcategory": "Energetic Terrains",
-     "tier": "unverified",
-     "description": "ET9 supports the stomach's energetic terrain including gastric lining integrity and digestive terrain balance.",
+     "tier": "sourced",
+     "description": "Stomach\nDuodenum (first section of small intestine)\nConsider: GastroZyme, Digestzymes, GERD Guard, GI Repair",
      "affects": [],
      "remedies": [],
-     "source": "e4l_items paraphrase (unverified — not ingested from the scan screen or PDF)"
+     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23 — Glen-authored"
     },
     {
      "slug": "et-liver-1",
      "name": "Liver 1",
      "code": "ET10",
      "subcategory": "Energetic Terrains",
-     "tier": "unverified",
-     "description": "ET10 supports the first layer of liver terrain, related to phase I detoxification and cytochrome P450 function.",
+     "tier": "sourced",
+     "description": "Liver\nChest\nGastrointestinal tract\nConsider: Liver Support, Free & Easy",
      "affects": [],
      "remedies": [],
-     "source": "e4l_items paraphrase (unverified — not ingested from the scan screen or PDF)"
+     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23 — Glen-authored"
     },
     {
      "slug": "et-liver-2",
      "name": "Liver 2",
      "code": "ET11",
      "subcategory": "Energetic Terrains",
-     "tier": "unverified",
-     "description": "ET11 supports the second layer of liver terrain, related to phase II conjugation and bile acid metabolism.",
+     "tier": "sourced",
+     "description": "Liver\nLarge intestine\nConsider: Liver Support, Free & Easy",
      "affects": [],
      "remedies": [],
-     "source": "e4l_items paraphrase (unverified — not ingested from the scan screen or PDF)"
+     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23 — Glen-authored"
     },
     {
      "slug": "et-liver-3",
      "name": "Liver 3",
      "code": "ET12",
      "subcategory": "Energetic Terrains",
-     "tier": "unverified",
-     "description": "ET12 supports the third layer of liver terrain, including deeper hepatic regeneration and antioxidant capacity.",
+     "tier": "sourced",
+     "description": "Liver\nLarge intestine\nConsider: Liver Support, Free & Easy",
      "affects": [],
      "remedies": [],
-     "source": "e4l_items paraphrase (unverified — not ingested from the scan screen or PDF)"
+     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23 — Glen-authored"
     },
     {
      "slug": "et-fungus",
      "name": "Fungus",
      "code": "ET13",
      "subcategory": "Energetic Terrains",
-     "tier": "unverified",
-     "description": "ET13 supports the body's communication for managing fungal overgrowth terrain, including candida and systemic mycotoxin burden.",
+     "tier": "sourced",
+     "description": "Liver\nSkin\nEyes\nLong-term issues of the large intestine\nConsider: Candida Cleanse, Fungifuge",
      "affects": [],
      "remedies": [],
-     "source": "e4l_items paraphrase (unverified — not ingested from the scan screen or PDF)"
+     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23 — Glen-authored"
     },
     {
      "slug": "et-bacteria",
      "name": "Bacteria",
      "code": "ET14",
      "subcategory": "Energetic Terrains",
-     "tier": "unverified",
-     "description": "ET14 supports the body's communication for managing bacterial terrain, including microbiome balance and chronic bacterial burden.",
+     "tier": "sourced",
+     "description": "Skin\nLungs\nConsider: Terrain Restore, Microbiome, Transform",
      "affects": [],
      "remedies": [],
-     "source": "e4l_items paraphrase (unverified — not ingested from the scan screen or PDF)"
+     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23 — Glen-authored"
     },
     {
      "slug": "et-general",
      "name": "General",
      "code": "ET15",
      "subcategory": "Energetic Terrains",
-     "tier": "unverified",
-     "description": "ET15 is a broad-spectrum terrain support addressing general tissue healing communication.",
+     "tier": "sourced",
+     "description": "Communication processes of protecting and healing the body.\nEnergetic immune system.\nDoes not identify a distortion correlated to a particular tissue or correlate to a specific family of microorganisms.\nChronic back and neck aches of muscular origin.\nConsider: Terrain Restore, Microbiome, Transform",
      "affects": [],
      "remedies": [],
-     "source": "e4l_items paraphrase (unverified — not ingested from the scan screen or PDF)"
+     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23 — Glen-authored"
     },
     {
      "slug": "et-glial-cell",
      "name": "Glial Cell",
      "code": "ET16",
      "subcategory": "Energetic Terrains",
-     "tier": "unverified",
-     "description": "ET16 supports glial cell function including astrocytes, microglia, and oligodendrocytes as the brain's support and immune tissue.",
+     "tier": "sourced",
+     "description": "Healing messages through the Energetic Terrain system.\nHealing from serious health problems interrupted by stroke, heart attack, or seizure. Challenges integrating information.\nMatches with ED6 and EI4: emotional changes required for healing.\nPhase correction between the heart field and the body-field. \nLeft and right cortex information regulation.\nConsider: Neuroprotect, WholOmega, Neuro-Magnesium, Brain Cleanse",
      "affects": [],
      "remedies": [],
-     "source": "e4l_items paraphrase (unverified — not ingested from the scan screen or PDF)"
+     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23 — Glen-authored"
     }
    ]
   },
@@ -2513,176 +2513,176 @@
      "name": "Source",
      "code": "ED1",
      "subcategory": "Energetic Drivers",
-     "tier": "unverified",
-     "description": "Energetic Drivers support the strength of various fields in the body. The Source Driver bioenergetically supports the body's fundamental energy source, linking to the heart as the primary rhythmic driver of all body-field activity.",
+     "tier": "sourced",
+     "description": "Phase 1: Energize\nLife force energy, important for those who are tired / exhausted.\nMacrophage system.\nHelps to power all other Drivers and all cells' metabolism.\nConsider: Nous Energy, Holy Grail Full Spectrum ORMUS, Terrain Restore",
      "affects": [],
      "remedies": [],
-     "source": "e4l_items paraphrase (unverified — not ingested from the scan screen or PDF)"
+     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23 — Glen-authored"
     },
     {
      "slug": "ed-heart-imprinter",
      "name": "Heart Imprinter",
      "code": "ED2",
      "subcategory": "Energetic Drivers",
-     "tier": "unverified",
-     "description": "The Heart Imprinter bioenergetically supports the electrical signaling from the heart that entrains other organs and systems throughout the body-field.",
+     "tier": "sourced",
+     "description": "System 2: Support\nMain Driver associated with information transfer.\n4 chambers of the heart.\nRough and smooth endoplasmic reticulum.\nPositive emotions.\nAll meridians connect to both the heart and the eyes.\nConsider: Heart Health, Rhythm Restore",
      "affects": [],
      "remedies": [],
-     "source": "e4l_items paraphrase (unverified — not ingested from the scan screen or PDF)"
+     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23 — Glen-authored"
     },
     {
      "slug": "ed-cell",
      "name": "Cell",
      "code": "ED3",
      "subcategory": "Energetic Drivers",
-     "tier": "unverified",
-     "description": "The Cell Driver bioenergetically supports cellular energy production and the integrity of the cell membrane field.",
+     "tier": "sourced",
+     "description": "Phase 2: Rejuvenate\nCellular energy, metabolism, and communication.\nSpecific cell types, including spleen cells and Von Kupffer cells in the liver.\nVarious immune cells, including mast cells and immunoglobulin E.\nConsider: Mitochondrial Biogenesis, Longevity, Photobiomodulation resources",
      "affects": [],
      "remedies": [],
-     "source": "e4l_items paraphrase (unverified — not ingested from the scan screen or PDF)"
+     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23 — Glen-authored"
     },
     {
      "slug": "ed-nerve",
      "name": "Nerve",
      "code": "ED4",
      "subcategory": "Energetic Drivers",
-     "tier": "unverified",
-     "description": "The Nerve Driver bioenergetically supports the neural networks and the flow of nerve impulses through the body-field.",
+     "tier": "sourced",
+     "description": "System 4: Communicate\nBrainwaves.\nAxons, dendrites, myelin sheath, perineurium.\nHealthy field supports calm and deeper, more restful sleep.\nConsider: Brain Boost, Brain Cleanse",
      "affects": [],
      "remedies": [],
-     "source": "e4l_items paraphrase (unverified — not ingested from the scan screen or PDF)"
+     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23 — Glen-authored"
     },
     {
      "slug": "ed-circulation",
      "name": "Circulation",
      "code": "ED5",
      "subcategory": "Energetic Drivers",
-     "tier": "unverified",
-     "description": "The Circulation Driver bioenergetically supports the cardiovascular and microcirculatory systems, including the energetic patterning of blood flow.",
+     "tier": "sourced",
+     "description": "System 2: Support\nCirculation of the blood.\nBlood vessels and nerve plexuses that affect circulation.\nQuality of the blood; Driver cleanses the blood.\nConsider: Blood Cleanse, Chelation, Energessence, Vein Support",
      "affects": [],
      "remedies": [],
-     "source": "e4l_items paraphrase (unverified — not ingested from the scan screen or PDF)"
+     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23 — Glen-authored"
     },
     {
      "slug": "ed-heart",
      "name": "Heart",
      "code": "ED6",
      "subcategory": "Energetic Drivers",
-     "tier": "unverified",
-     "description": "The Heart Driver bioenergetically supports the heartbeat, as well as the midbrain: auditory, visual, and motor function. It also supports the body's master timing rhythm.",
+     "tier": "sourced",
+     "description": "System 2: Support\nBeating of the heart.\nMidbrain: auditory, visual, and motor function.\nConnection of heart to sympathetic and parasympathetic nervous systems.\nMaturation of platelets, lymphocytes, monocytes.\nEmotional center, matching to positive emotions.\nTCM association is Joy.\nAll meridians connect the eyes and the heart.\nConsider: Heart Health, Rhythm Restore",
      "affects": [],
      "remedies": [],
-     "source": "e4l_items paraphrase (unverified — not ingested from the scan screen or PDF)"
+     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23 — Glen-authored"
     },
     {
      "slug": "ed-lung",
      "name": "Lung",
      "code": "ED7",
      "subcategory": "Energetic Drivers",
-     "tier": "unverified",
-     "description": "The Lung Driver bioenergetically supports the respiratory system and the exchange of oxygen and carbon dioxide in the body-field.",
+     "tier": "sourced",
+     "description": "System 3: Process\nExchange of gasses with the environment.\nMaturation of erythroblasts.\nVitality, immunity, mental acuity.\nTCM association is Grief.\nThe retina and especially the macula need more oxygen than any other tissues.\nConsider: Shields Up - Colds/Flu Formula, Spike Shield, Binder Complex, Microbiome, Transform",
      "affects": [],
      "remedies": [],
-     "source": "e4l_items paraphrase (unverified — not ingested from the scan screen or PDF)"
+     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23 — Glen-authored"
     },
     {
      "slug": "ed-stomach",
      "name": "Stomach",
      "code": "ED8",
      "subcategory": "Energetic Drivers",
-     "tier": "unverified",
-     "description": "The Stomach Driver bioenergetically supports digestive function, gastric acid regulation, and the energetic aspects of nutrient breakdown.",
+     "tier": "sourced",
+     "description": "System 3: Process\nEntire digestive tract; also supports microbiome.\nMaturation of granulocytes and basophils.\nAssociated with muscles, heart, lungs, brain function, and immunity, including autoimmune and allergic issues.\nThe stomach meridian links directly to the macula of the eye.\nConsider: GastroZyme, Digestzymes, GI Repair, GERD Guard",
      "affects": [],
      "remedies": [],
-     "source": "e4l_items paraphrase (unverified — not ingested from the scan screen or PDF)"
+     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23 — Glen-authored"
     },
     {
      "slug": "ed-muscle",
      "name": "Muscle",
      "code": "ED9",
      "subcategory": "Energetic Drivers",
-     "tier": "unverified",
-     "description": "The Muscle Driver bioenergetically supports skeletal muscle energy, repair, and the muscular aspects of the body-field.",
+     "tier": "sourced",
+     "description": "System 1: Flow\nMuscles, joints, connective tissues; not the heart.\nMuscle growth, repair, and metabolism.\nMaturation of monocytes.\nAdditional link to the stomach.\nMuscles store stress and trauma.\nThis can come from underlying liver stress.\nThe 6 muscles that control each eye affect eso vs exophoria, strabismus (crossed or wall eyes)\nThese muscles are associated with the vortex veins that drain the retina, so stress is associated with myopia and glaucoma.\nConsider: TMG Syntropy Powder (Trimethylglycine), Liver Support, Muscle Mass",
      "affects": [],
      "remedies": [],
-     "source": "e4l_items paraphrase (unverified — not ingested from the scan screen or PDF)"
+     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23 — Glen-authored"
     },
     {
      "slug": "ed-skin",
      "name": "Skin",
      "code": "ED10",
      "subcategory": "Energetic Drivers",
-     "tier": "unverified",
-     "description": "The Skin Driver bioenergetically supports the integumentary system, including skin barrier function and the body's external energy exchange.",
+     "tier": "sourced",
+     "description": "System 5: Integrity\nEpithelium (skin inside and out); includes skin of digestive tract and lungs.\nTCM links the skin and lungs.\nSweat glands and mucous membranes; ear, nose, and throat.\nMaturation process of megakaryocytes.\n“Leaky gut” is damage to inner skin of digestive tract; triggers autoimmune issues and more.\nPossible emotional issues.\nConsider: Perfect Skin, MSM Lotion, Ozonated Olive Oil",
      "affects": [],
      "remedies": [],
-     "source": "e4l_items paraphrase (unverified — not ingested from the scan screen or PDF)"
+     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23 — Glen-authored"
     },
     {
      "slug": "ed-liver",
      "name": "Liver",
      "code": "ED11",
      "subcategory": "Energetic Drivers",
-     "tier": "unverified",
-     "description": "The Liver Driver bioenergetically supports liver detoxification pathways, bile production, and the liver's role as the body's central metabolic organ.",
+     "tier": "sourced",
+     "description": "System 3: Process\nLiver function, including detox and waste processing; bile and cholesterol production; storage and processing of fats; pH levels; blood sugar regulation.\nKupffer cells and their role in immunity; reticulocytes; prothrombin.\nLinks to pancreatic cells, lymphatic cells, and the eyes (specifically the retina and optic nerve).\nTCM association is Anger.\nLiver stress causes muscles to produce liver enzymes to help out. This makes muscles sore, tight and more easily injured.\nConsider: Liver Support, Free & Easy, Don’t combine ED11 with ED15",
      "affects": [],
      "remedies": [],
-     "source": "e4l_items paraphrase (unverified — not ingested from the scan screen or PDF)"
+     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23 — Glen-authored"
     },
     {
      "slug": "ed-kidney",
      "name": "Kidney",
      "code": "ED12",
      "subcategory": "Energetic Drivers",
-     "tier": "unverified",
-     "description": "The Kidney Driver bioenergetically supports renal filtration, electrolyte balance, and the kidneys' role in fluid regulation.",
+     "tier": "sourced",
+     "description": "System 1: Flow\nKidneys and adrenal glands.\nBlood filtration, blood pressure, blood cell production.\nFluid regulation, pH balance, energy and stamina.\nLymphocytes and monocytes.\nCell nucleus and genetic material.\nAdditional links to brain, pancreas, intestines, ears, throat, lungs, bladder, and knees.\nTCM association is Fear.\nConsider: Microbiome, Transform, Golden Book",
      "affects": [],
      "remedies": [],
-     "source": "e4l_items paraphrase (unverified — not ingested from the scan screen or PDF)"
+     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23 — Glen-authored"
     },
     {
      "slug": "ed-immunity",
      "name": "Immunity",
      "code": "ED13",
      "subcategory": "Energetic Drivers",
-     "tier": "unverified",
-     "description": "The Immunity Driver bioenergetically supports the immune system's ability to identify and respond to pathogens and aberrant cells.",
+     "tier": "sourced",
+     "description": "System 2: Support\nPrecursors to all immune cells.\nMature cells of the innate immune system.\nSpleen’s role in immunity.\nMay be associated with any type of infection.\nConsider: Lymph Flow, Immune Modulation",
      "affects": [],
      "remedies": [],
-     "source": "e4l_items paraphrase (unverified — not ingested from the scan screen or PDF)"
+     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23 — Glen-authored"
     },
     {
      "slug": "ed-spleen",
      "name": "Spleen",
      "code": "ED14",
      "subcategory": "Energetic Drivers",
-     "tier": "unverified",
-     "description": "The Spleen Driver bioenergetically supports immune surveillance, blood filtration, and the spleen's role in lymphatic health.",
+     "tier": "sourced",
+     "description": "System 2: Support\nLearned immunity.\nSpleen: flow of lymph, cleansing of blood, production of antibodies.\nOmentum and thymus gland; myelocytes.\nResistance to infection, molds, and parasites.\nAllergic and autoimmune reactions.\nTCM association for spleen is Worry.\nSpleen connects to the ciliary body of the left eye.\nSpleen keeps tissues in their proper shape.\nConsider: Immune Modulation, Spleen Support",
      "affects": [],
      "remedies": [],
-     "source": "e4l_items paraphrase (unverified — not ingested from the scan screen or PDF)"
+     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23 — Glen-authored"
     },
     {
      "slug": "ed-pancreas",
      "name": "Pancreas",
      "code": "ED15",
      "subcategory": "Energetic Drivers",
-     "tier": "unverified",
-     "description": "The Pancreas Driver bioenergetically supports both the endocrine (insulin/glucagon) and exocrine (digestive enzymes) functions of the pancreas.",
+     "tier": "sourced",
+     "description": "System 3: Process\nPancreas: digestion and blood sugar regulation.\nAlso other organs of the digestive system.\nAlso the liver, which assists with blood sugar regulation.\nMaturation of lymphocytes in the spleen.\nMay help to clear infection; may stimulate the elimination of latent or chronic viral conditions.\nPancreas connects to the ciliary body of the right eye.\nSugar damage (AGE = advanced glycation endproduct) contributes 1/3 of cellular damage in cataract, macular degeneration and other aging-related degenerations.\nConsider: Glucose Tolerance, Reverse AGE, Don’t combine ED15 with ED11",
      "affects": [],
      "remedies": [],
-     "source": "e4l_items paraphrase (unverified — not ingested from the scan screen or PDF)"
+     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23 — Glen-authored"
     },
     {
      "slug": "ed-bone",
      "name": "Bone",
      "code": "ED16",
      "subcategory": "Energetic Drivers",
-     "tier": "unverified",
-     "description": "The Bone Driver bioenergetically supports skeletal structure, bone density, and the body-field patterning that governs bone remodeling.",
+     "tier": "sourced",
+     "description": "System 2: Support\nBone growth, repair, and detoxification.\nBone marrow (blood cells / immune cells).\nCalcium metabolism (nerve transmission, muscle contractions including the heart, blood pH, immune function, and more).\nHeavy metals / toxins may accumulate in the bones.\nConsider: Bone Builder, Dental Powder, Magnesium Syntropy, Dental Regen Powder",
      "affects": [],
      "remedies": [],
-     "source": "e4l_items paraphrase (unverified — not ingested from the scan screen or PDF)"
+     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23 — Glen-authored"
     }
    ]
   },
@@ -2696,176 +2696,176 @@
      "name": "Neurosensory - Large Intestine",
      "code": "EI1",
      "subcategory": "Energetic Integrators",
-     "tier": "unverified",
-     "description": "Energetic Integrators govern communication pathways between body systems. EI1 links the neurosensory network with large intestine function, including gut-brain signaling.",
+     "tier": "sourced",
+     "description": "System 3: Process; Metal Element\nSystem 4: Communication: Nervous system. \nFrontal lobes, thalamus, and sensory cortex.\nLarge intestine function and mineral absorption.\nEars, nose, throat.\nBronchi and skin (dermis).\nEmotions: holding on/letting go, fulfilment/frustration, hope/despair, self-worth/guilt.\nThe sensorium is received through the metal element of TCM.\nConsider: Microbiome, Transform, Binder Complex",
      "affects": [],
      "remedies": [],
-     "source": "e4l_items paraphrase (unverified — not ingested from the scan screen or PDF)"
+     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23 — Glen-authored"
     },
     {
      "slug": "ei-heart-lung",
      "name": "Heart - Lung",
      "code": "EI2",
      "subcategory": "Energetic Integrators",
-     "tier": "unverified",
-     "description": "EI2 links the energetic fields of the heart and lungs, supporting cardiovascular-respiratory coordination.",
+     "tier": "sourced",
+     "description": "System 3: Process; Metal Element\nCardiac tissue and heart function; hemoglobin.\nLung tissue and heart-lung interaction.\nSciatic nerves and sheath.\nEmotions: charisma, self-confidence, self-esteem, uplifted, integrity, dignity, grief, depression, false pride/humility, tolerance/intolerance, delusion/reality, head/heart conflict.\nThe retina and especially the macula have the highest metabolism of any tissue, so they need the most oxygen from the lungs and heart.\nThe assemblage point in the right thorax receives sensory information to be interpreted in the heart.\nConsider: Binder Complex, Rhythm Restore",
      "affects": [],
      "remedies": [],
-     "source": "e4l_items paraphrase (unverified — not ingested from the scan screen or PDF)"
+     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23 — Glen-authored"
     },
     {
      "slug": "ei-mucous-membranes-small-intestine",
      "name": "Mucous Membranes - Small Intestine",
      "code": "EI3",
      "subcategory": "Energetic Integrators",
-     "tier": "unverified",
-     "description": "EI3 links mucous membrane integrity with small intestine absorption and immune barrier function.",
+     "tier": "sourced",
+     "description": "System 3: Process; Fire Element\nSmall intestine (esp. the ileum); digestion, absorption.\nMucous membranes of the gut, nose, throat, lungs, etc.\nSkin: epithelium.\nBones in relation to calcium metabolism; vertebrae.\nParathyroid gland and hormone.\nEmotions: concentration/confusion, clarity of thought, sorrow and joy; also related to short-term memory.\nConsider: Terrain Restore, Microbiome, Transform",
      "affects": [],
      "remedies": [],
-     "source": "e4l_items paraphrase (unverified — not ingested from the scan screen or PDF)"
+     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23 — Glen-authored"
     },
     {
      "slug": "ei-neurotransmitters-heart",
      "name": "Neurotransmitters - Heart",
      "code": "EI4",
      "subcategory": "Energetic Integrators",
-     "tier": "unverified",
-     "description": "EI4 links neurotransmitter balance with heart-field coherence and emotional regulation.",
+     "tier": "sourced",
+     "description": "System 2: Support; Fire Element\nHeart meridian; hemoglobin and blood plasma.\nNeurotransmitters & midbrain; nerve cell nucleus.\nBronchioles and alveoli. \nUterus, cervix, and ovaries.\nAudio acuity; learning.\nEmotions: enthusiasm, faith, willpower, flexibility/rigidity, depression, loneliness, love, forgiveness.\nConsider: Heart Health, Rhythm Restore, Neuro-Magnesium",
      "affects": [],
      "remedies": [],
-     "source": "e4l_items paraphrase (unverified — not ingested from the scan screen or PDF)"
+     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23 — Glen-authored"
     },
     {
      "slug": "ei-lymphatics-bladder",
      "name": "Lymphatics - Bladder",
      "code": "EI5",
      "subcategory": "Energetic Integrators",
-     "tier": "unverified",
-     "description": "EI5 links lymphatic drainage with bladder function and fluid clearance pathways.",
+     "tier": "sourced",
+     "description": "System 1: Flow: Bladder; Water Element\nSystem 2: Lymph: drainage, nodes, and lymphocytes.\nSpinal nerves, vertebrae, intervertebral discs.\nWhite and grey matter.\nMale genitalia.\nEmotions: self-assertion/timidity, decisiveness/hesitation, endurance/patience, peace/restlessness.\nConsider: Flow Ease, Lymph Flow",
      "affects": [],
      "remedies": [],
-     "source": "e4l_items paraphrase (unverified — not ingested from the scan screen or PDF)"
+     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23 — Glen-authored"
     },
     {
      "slug": "ei-kidney",
      "name": "Kidney",
      "code": "EI6",
      "subcategory": "Energetic Integrators",
-     "tier": "unverified",
-     "description": "EI6 supports the kidney's integrative role in filtering and regulating the body-field's water and electrolyte balance.",
+     "tier": "sourced",
+     "description": "System 1: Flow; Water Element\nKidney organ; blood filtering, mineral and fluid balance.\nAcid-Alkaline or pH regulation.\nEnergy reserves, strength, stamina; adrenaline.\nSystem 4: Communicate: Pineal gland and DHEA.\nThalamus, cerebellum, white matter.\nThymus gland.\nEmotions: courage, willpower, drive, geniality, compassion, discernment, fearfulness, resignation, loneliness, insecurity, hostility, coldness.\nConsider: Microbiome, Transform, Terrain Restore, Alkalize Bicarbonate Blend",
      "affects": [],
      "remedies": [],
-     "source": "e4l_items paraphrase (unverified — not ingested from the scan screen or PDF)"
+     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23 — Glen-authored"
     },
     {
      "slug": "ei-blood-field-gallbladder",
      "name": "Blood Field - Gallbladder",
      "code": "EI7",
      "subcategory": "Energetic Integrators",
-     "tier": "unverified",
-     "description": "EI7 links the blood field and gallbladder, supporting bile flow and the liver-gallbladder axis.",
+     "tier": "sourced",
+     "description": "System 3: Process: Gall Bladder; Wood Element\nUpper digestive tract and gallbladder function.\nSystem 2: Support: Blood cell production; hemoglobin.\nBlood pressure regulation.\nImmune activation, T and NK cells.\nSystem 4: Communication: Motor cortex and grey matter function.\nEmotions: decisiveness, honesty, loyalty, emotional blocks, anger, wrath, bitterness.\nConsider: TMG Syntropy Powder (Trimethylglycine), Liver Support, Free & Easy",
      "affects": [],
      "remedies": [],
-     "source": "e4l_items paraphrase (unverified — not ingested from the scan screen or PDF)"
+     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23 — Glen-authored"
     },
     {
      "slug": "ei-microbes-liver",
      "name": "Microbes - Liver",
      "code": "EI8",
      "subcategory": "Energetic Integrators",
-     "tier": "unverified",
-     "description": "EI8 links microbial terrain awareness with liver detoxification capacity.",
+     "tier": "sourced",
+     "description": "System 3: Process; Wood Element\nMicrobial infection.\nGeneral liver function and nerves to lobes of liver.\nSystem 4: Communicate: Vision; eye conditions.\nPlays a major role in addressing exposure to EMFs.\nAdrenaline and estrogen, among other hormones.\nEmotions: compassion, arrogance, tolerance, calmness, elation; this compartment influences calmness and tolerance, or a lack of these qualities.\nConsider: Liver Support, Free & Easy",
      "affects": [],
      "remedies": [],
-     "source": "e4l_items paraphrase (unverified — not ingested from the scan screen or PDF)"
+     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23 — Glen-authored"
     },
     {
      "slug": "ei-thyroid-triple-burner",
      "name": "Thyroid - Triple Burner",
      "code": "EI9",
      "subcategory": "Energetic Integrators",
-     "tier": "unverified",
-     "description": "EI9 links thyroid hormone signaling with the triple burner meridian's thermodynamic regulation.",
+     "tier": "sourced",
+     "description": "System 4: Communicate; Fire Element\nThyroid gland and thyroid function.\nBody cavities: places of source energy accumulation.\nTriple Burner and homeostasis.\nHormone and body temperature regulation.\nSodium and calcium relationship.\nEmotion: joy, warmth, affection, confidence, courage, expression, timidity, shyness, feeling blue.\nConsider: Thyroid Support, Endocrine Restore, Adrenal Syntropy",
      "affects": [],
      "remedies": [],
-     "source": "e4l_items paraphrase (unverified — not ingested from the scan screen or PDF)"
+     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23 — Glen-authored"
     },
     {
      "slug": "ei-circulation-heart-protector",
      "name": "Circulation - Heart Protector",
      "code": "EI10",
      "subcategory": "Energetic Integrators",
-     "tier": "unverified",
-     "description": "EI10 links the circulatory system with the pericardium field, supporting cardiovascular protection.",
+     "tier": "sourced",
+     "description": "System 2: Support; Fire Element\nCirculatory system: arterial and venous.\nNeuroendocrine regulation (incl. hypothalamus).\nMotor, visual, and auditory regulation (midbrain).\nPylorus; mucous coat of stomach.\nEye lens; pancreas tail; bones.\nFemale sexual system.\nEmotions – love, joy, trust, doubt, intimacy, thoughtfulness, connection, blocked feelings.\nConsider: Blood Cleanse, Energessence, Chelation",
      "affects": [],
      "remedies": [],
-     "source": "e4l_items paraphrase (unverified — not ingested from the scan screen or PDF)"
+     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23 — Glen-authored"
     },
     {
      "slug": "ei-bone-marrow-stomach",
      "name": "Bone Marrow - Stomach",
      "code": "EI11",
      "subcategory": "Energetic Integrators",
-     "tier": "unverified",
-     "description": "EI11 links bone marrow activity and blood cell production with the stomach's digestive and nutritive functions.",
+     "tier": "sourced",
+     "description": "System 3: Process; Earth Element\nStomach & digestion; nourishment.\nBone marrow.\nSympathetic / parasympathetic nerves.\nBronchi; diaphragm; epiglottis; maxillary sinus.\nMale sexual system and testosterone.\nGroin; muscles to front of legs; teeth/gums of lower jaw.\nMay harbor heavy metals.\nEmotions: satisfaction, fulfillment, courage, memory, suspicion, disgust, obsessive compulsiveness, emptiness.\nConsider: GastroZyme, Digestzymes, Chelation, Binder Complex, GI Repair",
      "affects": [],
      "remedies": [],
-     "source": "e4l_items paraphrase (unverified — not ingested from the scan screen or PDF)"
+     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23 — Glen-authored"
     },
     {
      "slug": "ei-shock-spleen",
      "name": "Shock - Spleen",
      "code": "EI12",
      "subcategory": "Energetic Integrators",
-     "tier": "unverified",
-     "description": "EI12 links the body's response to shock or trauma with spleen function and immune resilience.",
+     "tier": "sourced",
+     "description": "System 2: Support; Earth Element\nSpleen; lymphatic fluid.\nSystem 3: Process: Pancreas: sugar metabolism (System 4: Communicate)\nDigestive function, digestive enzymes.\nCollapse, shock, exhaustion.\nUterus and cervix.\nEmotions: worry, pleasure, sympathy, contentment, acceptance, forgiveness, hope, security.\nConsider: Immune Modulation, Spleen Support",
      "affects": [],
      "remedies": [],
-     "source": "e4l_items paraphrase (unverified — not ingested from the scan screen or PDF)"
+     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23 — Glen-authored"
     },
     {
      "slug": "ei-hearing-learning",
      "name": "Hearing & Learning",
      "code": "EI13",
      "subcategory": "Energetic Integrators",
-     "tier": "unverified",
-     "description": "EI13 supports the energetic pathways underlying auditory processing and learning integration.",
+     "tier": "sourced",
+     "description": "System 4: Communicate\nLateral Ventricles\nFourth Ventricle\nCerebrospinal Fluid\nCerebellum\nTemporal Lobes\nOrgan of Corti\nConsider: Brain Boost, Brain Cleanse, Nous Energy, WholOmega",
      "affects": [],
      "remedies": [],
-     "source": "e4l_items paraphrase (unverified — not ingested from the scan screen or PDF)"
+     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23 — Glen-authored"
     },
     {
      "slug": "ei-vision-decisions",
      "name": "Vision & Decisions",
      "code": "EI14",
      "subcategory": "Energetic Integrators",
-     "tier": "unverified",
-     "description": "EI14 supports visual processing pathways and their link to decision-making in the body-field.",
+     "tier": "sourced",
+     "description": "System 4: Communicate\nThird Ventricle\nCerebrospinal Fluid\nVisual Cortex\nOptic Chiasm\nThalamus\nCaudate Nucleus\nNeurons\nSynapses\nConsider: Brain Boost, Brain Cleanse, Nous Energy, WholOmega",
      "affects": [],
      "remedies": [],
-     "source": "e4l_items paraphrase (unverified — not ingested from the scan screen or PDF)"
+     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23 — Glen-authored"
     },
     {
      "slug": "ei-sensing-controlling",
      "name": "Sensing & Controlling",
      "code": "EI15",
      "subcategory": "Energetic Integrators",
-     "tier": "unverified",
-     "description": "EI15 links sensory integration with the body's regulatory and homeostatic control systems.",
+     "tier": "sourced",
+     "description": "System 4: Communicate\nFourth Ventricle\nCerebrospinal Fluid\nThalamus\nHypothalamus\nOrgan of Corti\nNeurons\nSynapses\nConsider: Brain Boost, Brain Cleanse, Nous Energy, WholOmega",
      "affects": [],
      "remedies": [],
-     "source": "e4l_items paraphrase (unverified — not ingested from the scan screen or PDF)"
+     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23 — Glen-authored"
     },
     {
      "slug": "ei-thinking-feeling",
      "name": "Thinking & Feeling",
      "code": "EI16",
      "subcategory": "Energetic Integrators",
-     "tier": "unverified",
-     "description": "EI16 bridges cognitive and emotional processing, supporting the integration of thought and feeling in the body-field.",
+     "tier": "sourced",
+     "description": "System 4: Communicate\nForebrain\nThalamus\nPineal Gland\nLimbic System\nConsider: Brain Boost, Brain Cleanse, Nous Energy, WholOmega",
      "affects": [],
      "remedies": [],
-     "source": "e4l_items paraphrase (unverified — not ingested from the scan screen or PDF)"
+     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23 — Glen-authored"
     }
    ]
   },
@@ -2879,121 +2879,121 @@
      "name": "Lymph",
      "code": "ES1",
      "subcategory": "Energetic Stars",
-     "tier": "unverified",
-     "description": "Energetic Stars are unique formulas that target specific and deep work in the body-field. ES1 bioenergetically supports lymphatic flow, drainage, and immune surveillance.",
+     "tier": "sourced",
+     "description": "System 2: Support\nMost components of the overall immune system, including the thymus, spleen, omentum, and bone marrow.\nThe macrophage system, monocytes, and immune cells of the red and yellow bone marrow.\nCell-mediated immunity; e.g., T-cells that destroy diseased cells.\nElectromagnetic radiation, or e-smog, from both human-made sources and natural ones. There is a strong match between e-smog, the heart, and the immune system.\nConsider: Lymph Flow, Immune Modulation, Microbiome",
      "affects": [],
      "remedies": [],
-     "source": "e4l_items paraphrase (unverified — not ingested from the scan screen or PDF)"
+     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23 — Glen-authored"
     },
     {
      "slug": "es-memory-imprinter",
      "name": "Memory Imprinter",
      "code": "ES2",
      "subcategory": "Energetic Stars",
-     "tier": "unverified",
-     "description": "ES2 supports the clearing of imprinted memories in the body-field that may be driving chronic physiological patterns.",
+     "tier": "sourced",
+     "description": "System 2: Support; Fire Element\nSystem 4: Communicate: The four parts of the brain: cerebral cortex, brainstem, cerebellum and cerebral medulla. For this reason, has sometimes been referred to as a “brain driver.”\nTriglycerides and other lipids or fats, on which the heart imprints emotions / experiences, which then circulate in the blood throughout the body.\nConsider: Infrared, Heart Health, Rhythm Restore",
      "affects": [],
      "remedies": [],
-     "source": "e4l_items paraphrase (unverified — not ingested from the scan screen or PDF)"
+     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23 — Glen-authored"
     },
     {
      "slug": "es-nerve",
      "name": "Nerve",
      "code": "ES3",
      "subcategory": "Energetic Stars",
-     "tier": "unverified",
-     "description": "ES3 provides deep energetic support for nerve regeneration and the correction of distorted nerve field patterns.",
+     "tier": "sourced",
+     "description": "System 4: Communicate\nThe central nervous system, neurotransmitters of all kinds, and specific aspects of the nerves such as axons, neurons, and dendrites.\nAlso heavy metals, such as lead, cadmium, and mercury, which may be implicated bioenergetically to many nervous system conditions. Attempts to clear these and other toxins from the nervous system.\nTriglycerides and their detoxification and metabolism.\nEar function, so it may be related to hearing acuity.\nConsider: Brain Boost, Neuro-Magnesium, Brain Cleanse",
      "affects": [],
      "remedies": [],
-     "source": "e4l_items paraphrase (unverified — not ingested from the scan screen or PDF)"
+     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23 — Glen-authored"
     },
     {
      "slug": "es-triple-cavity",
      "name": "Triple Cavity",
      "code": "ES4",
      "subcategory": "Energetic Stars",
-     "tier": "unverified",
-     "description": "ES4 links to the three major body cavities (cranial, thoracic, abdominal), supporting their collective resonance and structural coherence.",
+     "tier": "sourced",
+     "description": "System 4: Communicate; Fire Element\nThe accumulation of “Source” energy to help power everyday activity.\nThe endocrine system. May provide energy to assist proper hormone production and regulation.\nOrgan detoxification in the 3 primary cavities: the head, chest, and abdomen.\nConsider: Endocrine Restore, Adrenal Syntropy, Thyroid Support",
      "affects": [],
      "remedies": [],
-     "source": "e4l_items paraphrase (unverified — not ingested from the scan screen or PDF)"
+     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23 — Glen-authored"
     },
     {
      "slug": "es-auto-immune",
      "name": "Auto-Immune",
      "code": "ES5",
      "subcategory": "Energetic Stars",
-     "tier": "unverified",
-     "description": "ES5 targets the energetic patterns underlying autoimmune reactivity, supporting self-recognition and immune tolerance.",
+     "tier": "sourced",
+     "description": "System 2: Support\nCell-destroying mechanisms of your immune system; mechanisms.\nConsider: Immune Modulation, EMF reduction resources",
      "affects": [],
      "remedies": [],
-     "source": "e4l_items paraphrase (unverified — not ingested from the scan screen or PDF)"
+     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23 — Glen-authored"
     },
     {
      "slug": "es-circulation",
      "name": "Circulation",
      "code": "ES6",
      "subcategory": "Energetic Stars",
-     "tier": "unverified",
-     "description": "ES6 provides deep support for circulatory coherence including microcirculation, vascular tone, and blood field integrity.",
+     "tier": "sourced",
+     "description": "System 2: Support; Fire Element\nSpecific arteries that are prone to narrowing from fat deposits or the buildup of calcium plaque, and to blood flow overall.\nTissues of ligaments, tendons, and cartilage.\nSeveral anti-inflammatory hormones.\nConsider: Blood Cleanse, Energessence, Fiber Cleanse, Binder Complex, Soothe",
      "affects": [],
      "remedies": [],
-     "source": "e4l_items paraphrase (unverified — not ingested from the scan screen or PDF)"
+     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23 — Glen-authored"
     },
     {
      "slug": "es-muscle",
      "name": "Muscle",
      "code": "ES7",
      "subcategory": "Energetic Stars",
-     "tier": "unverified",
-     "description": "ES7 provides deep support for muscle energetics including myofascial tension patterns and mitochondrial energy in muscle tissue.",
+     "tier": "sourced",
+     "description": "System 1: Flow\nStriated muscles, fascia, and triglycerides. Supports tissue repair.\nEnzyme production and use.\nConsider: TMG Syntropy Powder (Trimethylglycine), Digestzymes, Muscle Mass",
      "affects": [],
      "remedies": [],
-     "source": "e4l_items paraphrase (unverified — not ingested from the scan screen or PDF)"
+     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23 — Glen-authored"
     },
     {
      "slug": "es-chill",
      "name": "Chill",
      "code": "ES8",
      "subcategory": "Energetic Stars",
-     "tier": "unverified",
-     "description": "ES8 supports the body-field's ability to enter parasympathetic rest states, reducing chronic sympathetic activation.",
+     "tier": "sourced",
+     "description": "System 4: Communicate\nPositive emotions. Supports feelings of peace, happiness, openness, and increased relaxation.\nCerebral cortex processing of thoughts and emotions; helps to clear mental overload, especially in relation to persistent thoughts due to worry / anxiety.\nConsider: Holy Grail Full Spectrum ORMUS, Stress Release",
      "affects": [],
      "remedies": [],
-     "source": "e4l_items paraphrase (unverified — not ingested from the scan screen or PDF)"
+     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23 — Glen-authored"
     },
     {
      "slug": "es-audio",
      "name": "Audio",
      "code": "ES9",
      "subcategory": "Energetic Stars",
-     "tier": "unverified",
-     "description": "ES9 supports auditory processing fields, ear anatomy, and the relationship between sound perception and the nervous system.",
+     "tier": "sourced",
+     "description": "System 4: Communicate; Water Element\nBlocks primarily caused by shock and trauma received as sound. E.g., sounds of gunfire, verbal abuse, or car accidents.\nDistortions at the level of the temporal lobe, which is the primary area of the brain that processes sound, and specific sound and speech recognition centers of the brain, such as the Broca area. Also matches to the corpus callosum (joins the hemispheres of the brain).\nConsider: Brain Boost, Neuro-Magnesium, Brain Cleanse, Stress Release",
      "affects": [],
      "remedies": [],
-     "source": "e4l_items paraphrase (unverified — not ingested from the scan screen or PDF)"
+     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23 — Glen-authored"
     },
     {
      "slug": "es-video",
      "name": "Video",
      "code": "ES10",
      "subcategory": "Energetic Stars",
-     "tier": "unverified",
-     "description": "ES10 supports visual processing fields, eye anatomy, and the relationship between light perception and the nervous system.",
+     "tier": "sourced",
+     "description": "System 4: Communicate; Wood Element\nBlocks primarily caused by shock and trauma received visually. E.g., witnessing abuse or crime, observing the effects of war, etc.\nStress-related impaired function of the visual cortex, thalamus, and motor neurons.\nConsider: Brain Boost, Neuro-Magnesium, Brain Cleanse, WholOmega, Night Vision, Macular Wellness, OcuFlow, Crystalline Clarity, Clarity",
      "affects": [],
      "remedies": [],
-     "source": "e4l_items paraphrase (unverified — not ingested from the scan screen or PDF)"
+     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23 — Glen-authored"
     },
     {
      "slug": "es-female",
      "name": "Female",
      "code": "ES12",
      "subcategory": "Energetic Stars",
-     "tier": "unverified",
-     "description": "ES12 provides deep energetic support for the female hormonal and reproductive body-field.",
+     "tier": "sourced",
+     "description": "System 4: Communicate; Fire Element\nCommunication link between the female endocrine glands and Source Driver, helping to energize the glands, stimulate circulation to them, and support their detoxification.\nSupports femaleness not only in terms of gender but also as a foundation for identity.\nSupports female charisma, confidence, willpower, social warmth, and well-being.\nConsider: Adrenal Syntropy, Endocrine Restore, PMS Relief",
      "affects": [],
      "remedies": [],
-     "source": "e4l_items paraphrase (unverified — not ingested from the scan screen or PDF)"
+     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23 — Glen-authored"
     },
     {
      "slug": "es-coh",
@@ -3011,22 +3011,22 @@
      "name": "Cell Metabolism",
      "code": "ES14",
      "subcategory": "Energetic Stars",
-     "tier": "unverified",
-     "description": "ES14 supports the energetic patterns governing cellular metabolism, ATP production, and metabolic flexibility.",
+     "tier": "sourced",
+     "description": "Cell detoxification or resisting the effects of environmental toxins, which in turn assists metabolic function.\nA wide range of detrimental effects from a variety of environmental toxins, including but not limited to those commonly found in dyes, car exhaust, some fungicides and pesticides, and the like.\nPCPs and PCBs, DDT, vinyl acetates and chlorides, some dioxins, methyl mercury and methyl tin, benzols, and nitrates.\nConsider: Mitochondrial Biogenesis, Longevity, Photobiomodulation resources",
      "affects": [],
      "remedies": [],
-     "source": "e4l_items paraphrase (unverified — not ingested from the scan screen or PDF)"
+     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23 — Glen-authored"
     },
     {
      "slug": "es-heavy-metals-detox",
      "name": "Heavy Metals Detox",
      "code": "ES15",
      "subcategory": "Energetic Stars",
-     "tier": "unverified",
-     "description": "ES15 supports the body-field's communication for heavy metal chelation and detoxification processes.",
+     "tier": "sourced",
+     "description": "Cellular metabolism in relation to the bioenergetic effects of heavy metals, especially the residue of lead, mercury, and cadmium salts in the circulatory system, nervous system, and body organs.\nDendrites damaged by mercury. These are essential to receiving corrective information into the nervous system to be sent to the body through the Energetic Terrains.\nConsider: Chelation, Binder Complex, Glutathione Syntropy, Sulfur Syntropy, Mercury Detox Syntropy Powder",
      "affects": [],
      "remedies": [],
-     "source": "e4l_items paraphrase (unverified — not ingested from the scan screen or PDF)"
+     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23 — Glen-authored"
     }
    ]
   },
@@ -3168,77 +3168,77 @@
      "name": "CMH",
      "code": "MB2",
      "subcategory": "Miscellaneous Bioenergetics",
-     "tier": "unverified",
-     "description": "MB2 (Cerebral Medulla) supports the release of emotional and memory imprints stored in the midbrain and limbic structures. Links to emotional memory, the HPA axis, and subconscious patterning.",
+     "tier": "sourced",
+     "description": "System 4: Communicate\n   Inner mesoderm tissues in general\n   Skull\n   Teeth\n   Cervical spine\n   Shoulder, arm, and hand\n   Cardiac muscle\n   Thoracic spine\n   Adrenal cortex\n   Lumbar spine\n   Pelvis and pubic bone\n   Spleen\n   Knee\n   Foot\n   Kidneys\n   Ovaries / Testicles\nConsider: Brain Boost, Brain Cleanse, Nous Energy, WholOmega",
      "affects": [],
      "remedies": [],
-     "source": "e4l_items paraphrase (unverified — not ingested from the scan screen or PDF)"
+     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23 — Glen-authored"
     },
     {
      "slug": "mb-cbh",
      "name": "CBH",
      "code": "MB3",
      "subcategory": "Miscellaneous Bioenergetics",
-     "tier": "unverified",
-     "description": "MB3 (Cerebellum) links to coordination, balance, proprioception, and the subconscious integration of learned movement and behavior patterns.",
+     "tier": "sourced",
+     "description": "System 5: Integrity: Skin. \n   Outer mesoderm tissues in general\n   Mammary glands\n   Corium\n   Pericardium\n   Peritoneum\n   Pleura\nCan relate to dry eye, irritation, swelling, stye, hordeolum, chalazion, ocular microbiome.  The crystalline lens develops embryologically from the skin, so CBH can also relate to accommodation (focus), presbyopia, and cataract.\nConsider: Brain Boost, Brain Cleanse, Nous Energy, WholOmega",
      "affects": [],
      "remedies": [],
-     "source": "e4l_items paraphrase (unverified — not ingested from the scan screen or PDF)"
+     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23 — Glen-authored"
     },
     {
      "slug": "mb-cch",
      "name": "CCH",
      "code": "MB4",
      "subcategory": "Miscellaneous Bioenergetics",
-     "tier": "unverified",
-     "description": "MB4 (Cerebral Cortex) supports the release of higher-order cognitive and emotional imprints, including conscious belief patterns, identity, and executive function.",
+     "tier": "sourced",
+     "description": "System 4: Communicate\n   Ectodermal tissues, Tongue, Thyroid duct, Teeth enamel, Alpha and beta islets of pancreas, Larynx muscle and mucosa, Bronchial muscle and mucosa, Coronary circulation, Neck of uterus, Rectal mucosa, Pancreas mucosa, Mucosa of the stomach, liver, gallbladder, and bladder, Retina, Vitreous body of the eye, Breast ducts\nMotor Cortex affects skeletal muscles, and can leave you feeling stuck in life.\nPost Sensory Cortex affects wanting or avoiding touch.\nPre-Motor Sensory Cortex relates to visual separation. The right eye is affected by father/child conflict in right-handed cases, and mother/child conflict if left handed. The opposite patterns affect the left eye.\nTemporal Lobe relates to territorial conflicts.\nFrontal Lobe relates to fear and powerlessness.\nFronto-Occipital Constellation can affect panic, the retina and the vitreous body of the eyes, such as floaters.\nConsider: Brain Boost, Brain Cleanse, Nous Energy, WholOmega",
      "affects": [],
      "remedies": [],
-     "source": "e4l_items paraphrase (unverified — not ingested from the scan screen or PDF)"
+     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23 — Glen-authored"
     },
     {
      "slug": "mb-esr",
      "name": "ESR",
      "code": "MB5",
      "subcategory": "Miscellaneous Bioenergetics",
-     "tier": "unverified",
-     "description": "MB5 targets the energetic release of stored emotional stress that manifests as chronic physiological dysfunction.",
+     "tier": "sourced",
+     "description": "Stress results when incoming data is not correctly processed into patterns.\nSystem 4: Communicate\nESR has the effect of helping the medulla process data faster and thus resolves issues into correct patterns.\nWhen a person is “stressed” their ability to absorb food is compromised as is their ability to process thoughts. For this reason ESR has been found helpful in aiding nutrient absorption.\nConsider: Holy Grail Full Spectrum ORMUS, Stress Release, Rescue",
      "affects": [],
      "remedies": [],
-     "source": "e4l_items paraphrase (unverified — not ingested from the scan screen or PDF)"
+     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23 — Glen-authored"
     },
     {
      "slug": "mb-liberator",
      "name": "Liberator",
      "code": "MB6",
      "subcategory": "Miscellaneous Bioenergetics",
-     "tier": "unverified",
-     "description": "MB6 supports liberation from deep-seated holding patterns that limit growth, healing, and self-expression.",
+     "tier": "sourced",
+     "description": "System 4: Communicate\nPatterns of the past. \nEmotions associated with the brainstem, cerebellum, cerebral medulla, and cerebral cortex.\nShock and trauma.\nSubconscious emotional issues.\nInformation flow between the central nervous system, heart, and connective tissue matrix.\nDreams, daydreaming, mood, sleep, problem solving abilities, and anxiety. \nHearing.\nConsider: Holy Grail Full Spectrum ORMUS, Nous Energy, Brain Boost, Brain Cleanse",
      "affects": [],
      "remedies": [],
-     "source": "e4l_items paraphrase (unverified — not ingested from the scan screen or PDF)"
+     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23 — Glen-authored"
     },
     {
      "slug": "mb-peace",
      "name": "Peace",
      "code": "MB7",
      "subcategory": "Miscellaneous Bioenergetics",
-     "tier": "unverified",
-     "description": "MB7 supports the emergence of inner peace by clearing energetic turbulence in the emotional body-field.",
+     "tier": "sourced",
+     "description": "System 4: Communicate\nHarmony of cellular and body-field memory, which is necessary in maintaining physical and psychological health.\nHonesty with oneself and vocalization of one’s truth to help integrate memory with the body.\nHarmony with the primitive emotions associated with the old brain, or brainstem, including emotions arising from things heard.\nCorrection of mental confusion and the inability to learn due to not hearing what is said.\nConsider: Holy Grail Full Spectrum ORMUS, Stress Release",
      "affects": [],
      "remedies": [],
-     "source": "e4l_items paraphrase (unverified — not ingested from the scan screen or PDF)"
+     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23 — Glen-authored"
     },
     {
      "slug": "mb-love",
      "name": "Love",
      "code": "MB8",
      "subcategory": "Miscellaneous Bioenergetics",
-     "tier": "unverified",
-     "description": "MB8 supports the energetic field of love and heart-centered coherence, clearing blocks to giving and receiving love.",
+     "tier": "sourced",
+     "description": "System 4: Communicate\nLove in this context refers to a sense of unity or connection with all things in a way that inspires unconditional love.\nImbalances can include giving too much of yourself / having others take advantage of you -- this involves a one-way street rather than the beautiful \"give and take\" inherent in balanced love. Another version of this is being unable to give or receive love. We may withhold love because of fear, or not receive love from a false sense of protecting ourselves.\nAnother form of imbalance is when we feel cut off from source, disconnected, or lacking in strong positive emotional feelings.\nConsider: Holy Grail Full Spectrum ORMUS, Nous Energy",
      "affects": [],
      "remedies": [],
-     "source": "e4l_items paraphrase (unverified — not ingested from the scan screen or PDF)"
+     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23 — Glen-authored"
     }
    ]
   },
@@ -3252,11 +3252,11 @@
      "name": "Big Field Aligner",
      "code": "BFA",
      "subcategory": "Big Field Aligners",
-     "tier": "name-only",
-     "description": "",
+     "tier": "sourced",
+     "description": "Alignment with Earth’s Fields:\nThe Equatorial Axis is formed by the Earth’s rotation. \nThe Vertical Axis is generated by gravity.\nThe Magnetic Polar Axis is generated by the magnetic poles of the Earth. \nGrounding requires your bare skin to be in direct contact with the earth. This skin-to-ground contact provides the body with electrons, helping to give it a negative charge that helps to both energize and stabilize it. The earth is the largest anti-oxidant since anti-oxidants are electron donors. You can also add Epsom salts to a bath or in a shower if you block the drain so you are standing in the water.\nConsider: Holy Grail Full Spectrum ORMUS, Nous Energy, Spleen Support",
      "affects": [],
      "remedies": [],
-     "source": "E4L scan (name only)"
+     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23 — Glen-authored"
     },
     {
      "slug": "bfa-grounding",
