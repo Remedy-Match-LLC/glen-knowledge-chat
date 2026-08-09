@@ -677,15 +677,15 @@
     {
      "slug": "belt-vessel",
      "name": "Belt Vessel",
-     "alt_name": "",
-     "description": "(Meridian Komplex 15)The Belt Vessel is the first meridian to form, when the fertilized egg divides into two cells defining the cephalo-caudal dimension of the body",
+     "alt_name": "Meridian Komplex 15",
+     "description": "The Belt Vessel is the first meridian to form, when the fertilized egg divides into two cells defining the cephalo-caudal dimension of the body",
      "remedies": []
     },
     {
      "slug": "bladder-meridian",
      "name": "Bladder Meridian",
-     "alt_name": "",
-     "description": "(Meridian Komplex 12)The Bladder Meridian is a Yang Vessel in the Water Element complementary to the Yin Kidney Meridian.This pattern is also related to Chakra 2 in the Kern-Pharma system.Consider Microbiome and Flow Ease for Bladder Meridian support",
+     "alt_name": "Meridian Komplex 12",
+     "description": "The Bladder Meridian is a Yang Vessel in the Water Element complementary to the Yin Kidney Meridian.This pattern is also related to Chakra 2 in the Kern-Pharma system.Consider Microbiome and Flow Ease for Bladder Meridian support",
      "remedies": [
       {
        "name": "Microbiome",
@@ -700,8 +700,8 @@
     {
      "slug": "circulation-meridian",
      "name": "Circulation Meridian",
-     "alt_name": "",
-     "description": "(Meridian Komplex 10)The Circulation Meridian is also called the Heart Protector, or the Circulation/Sex Meridian.The Circulation Meridian is a Yin Vessel in the Fire Element complementary to the Yang Triple Warmer Meridian.This pattern is also related to Chakras 5 & 7 in the Kern-Pharma system.Consider Spike Shield and Chelation for Circulation Meridian support",
+     "alt_name": "Meridian Komplex 10",
+     "description": "The Circulation Meridian is also called the Heart Protector, or the Circulation/Sex Meridian.The Circulation Meridian is a Yin Vessel in the Fire Element complementary to the Yang Triple Warmer Meridian.This pattern is also related to Chakras 5 & 7 in the Kern-Pharma system.Consider Spike Shield and Chelation for Circulation Meridian support",
      "remedies": [
       {
        "name": "Spike Shield",
@@ -716,15 +716,15 @@
     {
      "slug": "conception-vessel",
      "name": "Conception Vessel",
-     "alt_name": "",
-     "description": "(Meridian Komplex 14)The Yang Conception Vessel on the anterior midline of the body, paired with the Yin Governing Vessel on the posterior midline, are the second set of Meridians to form, when the zygote's cells divide mitotically a second time, defining the axis of bilateral symmetry of the body",
+     "alt_name": "Meridian Komplex 14",
+     "description": "The Yang Conception Vessel on the anterior midline of the body, paired with the Yin Governing Vessel on the posterior midline, are the second set of Meridians to form, when the zygote's cells divide mitotically a second time, defining the axis of bilateral symmetry of the body",
      "remedies": []
     },
     {
      "slug": "gall-bladder-meridian",
      "name": "Gall Bladder Meridian",
-     "alt_name": "",
-     "description": "(Meridian Komplex 8)The Gall Bladder Meridian is a Yang Vessel in the Wood Element complementary to the Yin Liver Meridian.This pattern is also related to Chakras 3, 4 & 7 in the Kern-Pharma system.Consider TMG Powder and Stone Solvent for Gall Bladder Meridian support",
+     "alt_name": "Meridian Komplex 8",
+     "description": "The Gall Bladder Meridian is a Yang Vessel in the Wood Element complementary to the Yin Liver Meridian.This pattern is also related to Chakras 3, 4 & 7 in the Kern-Pharma system.Consider TMG Powder and Stone Solvent for Gall Bladder Meridian support",
      "remedies": [
       {
        "name": "TMG Powder",
@@ -739,15 +739,15 @@
     {
      "slug": "governing-vessel",
      "name": "Governing Vessel",
-     "alt_name": "",
-     "description": "(Meridian Komplex 13)The Yin Governing Vessel Vessel on the posterior midline of the body, paired with the Yang Conception Vessel on the anterior midline, are the second set of Meridians to form, when the zygote's cells divide mitotically a second time, defining the axis of bilateral symmetry of the body",
+     "alt_name": "Meridian Komplex 13",
+     "description": "The Yin Governing Vessel Vessel on the posterior midline of the body, paired with the Yang Conception Vessel on the anterior midline, are the second set of Meridians to form, when the zygote's cells divide mitotically a second time, defining the axis of bilateral symmetry of the body",
      "remedies": []
     },
     {
      "slug": "heart-meridian",
      "name": "Heart Meridian",
-     "alt_name": "",
-     "description": "(Meridian Komplex 2)The Heart Meridian is a Yin Vessel in the Fire Element complementary to the Yang Small Intestine Meridian.This pattern is also related to Chakras 4, 5 & 7 in the Kern-Pharma system.Consider Heart Health and Rhythm Restore for Heart Meridian support",
+     "alt_name": "Meridian Komplex 2",
+     "description": "The Heart Meridian is a Yin Vessel in the Fire Element complementary to the Yang Small Intestine Meridian.This pattern is also related to Chakras 4, 5 & 7 in the Kern-Pharma system.Consider Heart Health and Rhythm Restore for Heart Meridian support",
      "remedies": [
       {
        "name": "Heart Health",
@@ -762,8 +762,8 @@
     {
      "slug": "kidney-meridian",
      "name": "Kidney Meridian",
-     "alt_name": "",
-     "description": "(Meridian Komplex 11)The Kidney Meridian is a Yin Vessel in the Water Element complementary to the Yang Bladder Meridian.This pattern is also related to Chakra 1 in the Kern-Pharma system.Consider Microbiome and Flow Ease for Kidney Meridian support",
+     "alt_name": "Meridian Komplex 11",
+     "description": "The Kidney Meridian is a Yin Vessel in the Water Element complementary to the Yang Bladder Meridian.This pattern is also related to Chakra 1 in the Kern-Pharma system.Consider Microbiome and Flow Ease for Kidney Meridian support",
      "remedies": [
       {
        "name": "Microbiome",
@@ -778,8 +778,8 @@
     {
      "slug": "large-intestine-meridian",
      "name": "Large Intestine Meridian",
-     "alt_name": "",
-     "description": "(Meridian Komplex 5)The Large Intestine Meridian is a Yang Vessel in the Metal Element complementary to the Yin Lung Meridian.This pattern is also related to Chakras 1 & 2 in the Kern-Pharma system.Consider Terrain Restore and Soothe for Large Intestine Meridian support",
+     "alt_name": "Meridian Komplex 5",
+     "description": "The Large Intestine Meridian is a Yang Vessel in the Metal Element complementary to the Yin Lung Meridian.This pattern is also related to Chakras 1 & 2 in the Kern-Pharma system.Consider Terrain Restore and Soothe for Large Intestine Meridian support",
      "remedies": [
       {
        "name": "Terrain Restore",
@@ -794,43 +794,43 @@
     {
      "slug": "liver-meridian",
      "name": "Liver Meridian",
-     "alt_name": "",
-     "description": "(Meridian Komplex 7)The Liver Meridian is a Yin Vessel in the Wood Element complementary to the Yang Gall Bladder Meridian.This pattern is also related to Chakras 3 & 6 in the Kern-Pharma system.Consider Liver Support and Free & Easy for Liver Meridian support",
+     "alt_name": "Meridian Komplex 7",
+     "description": "The Liver Meridian is a Yin Vessel in the Wood Element complementary to the Yang Gall Bladder Meridian.This pattern is also related to Chakras 3 & 6 in the Kern-Pharma system.Consider Liver Support and Free & Easy for Liver Meridian support",
      "remedies": []
     },
     {
      "slug": "lung-meridian",
      "name": "Lung Meridian",
-     "alt_name": "",
-     "description": "(Meridian Komplex 6)The Lung Meridian is a Yin Vessel in the Metal Element complementary to the Yang Large Intestine Meridian.This pattern is also related to Chakra 4 in the Kern-Pharma system.Consider Oxygen Therapy and Lymph Flow for Lung Meridian support",
+     "alt_name": "Meridian Komplex 6",
+     "description": "The Lung Meridian is a Yin Vessel in the Metal Element complementary to the Yang Large Intestine Meridian.This pattern is also related to Chakra 4 in the Kern-Pharma system.Consider Oxygen Therapy and Lymph Flow for Lung Meridian support",
      "remedies": []
     },
     {
      "slug": "small-intestine-meridian",
      "name": "Small Intestine Meridian",
-     "alt_name": "",
-     "description": "(Meridian Komplex 1)The Small Intestine Meridian is a Yang Vessel in the Fire Element complementary to the Yin Heart Meridian.This pattern is also related to Chakras 1 & 6 in the Kern-Pharma system.Consider Microbiome and Terrain Restore for Small Intestine Meridian support",
+     "alt_name": "Meridian Komplex 1",
+     "description": "The Small Intestine Meridian is a Yang Vessel in the Fire Element complementary to the Yin Heart Meridian.This pattern is also related to Chakras 1 & 6 in the Kern-Pharma system.Consider Microbiome and Terrain Restore for Small Intestine Meridian support",
      "remedies": []
     },
     {
      "slug": "spleen-meridian",
      "name": "Spleen Meridian",
-     "alt_name": "",
-     "description": "(Meridian Komplex 3)The Spleen Meridian is a Yin Vessel in the Earth Element complementary to the Yang Stomach Meridian.In German Diagnostic Electroacupuncture the Spleen Meridian on the right side of the body is termed the Pancreas Meridian.This pattern is also related to Chakras 2 & 3 in the Kern-Pharma system.Consider Spleen Support and Glucose Tolerance for Spleen/Pancreas Meridian support",
+     "alt_name": "Meridian Komplex 3",
+     "description": "The Spleen Meridian is a Yin Vessel in the Earth Element complementary to the Yang Stomach Meridian.In German Diagnostic Electroacupuncture the Spleen Meridian on the right side of the body is termed the Pancreas Meridian.This pattern is also related to Chakras 2 & 3 in the Kern-Pharma system.Consider Spleen Support and Glucose Tolerance for Spleen/Pancreas Meridian support",
      "remedies": []
     },
     {
      "slug": "stomach-meridian",
      "name": "Stomach Meridian",
-     "alt_name": "",
-     "description": "(Meridian Komplex 4)The Stomach Meridian is a Yang Vessel in the Earth Element complementary to the Yin Spleen Meridian.Consider GastroZyme, GERD Guard and GI Repair for Stomach Meridian support",
+     "alt_name": "Meridian Komplex 4",
+     "description": "The Stomach Meridian is a Yang Vessel in the Earth Element complementary to the Yin Spleen Meridian.Consider GastroZyme, GERD Guard and GI Repair for Stomach Meridian support",
      "remedies": []
     },
     {
      "slug": "triple-warmer-meridian",
      "name": "Triple Warmer Meridian",
-     "alt_name": "",
-     "description": "(Meridian Komplex 9)The Triple Warmer Meridian is also called the Triple Cavity, Three Heater, or Triple Burner Meridian, and we also refer to it as the Endocrine Meridian.The Triple Warmer Meridian is a Yang Vessel in the Fire Element complementary to the Yin Circulation Meridian.This pattern is also related to Chakra 6 in the Kern-Pharma system.Consider formulas including Endocrine Repair, Adrenal Repair: Sublingual 7-Keto, Stress Release, and Sleep Synergy for Endocrine Meridian support.[*\"The statements herein have not been evaluated by the Food and Drug Administration. This is not intended to diagnose, treat, cure, or prevent any disease.\"] T.D.C.",
+     "alt_name": "Meridian Komplex 9",
+     "description": "The Triple Warmer Meridian is also called the Triple Cavity, Three Heater, or Triple Burner Meridian, and we also refer to it as the Endocrine Meridian.The Triple Warmer Meridian is a Yang Vessel in the Fire Element complementary to the Yin Circulation Meridian.This pattern is also related to Chakra 6 in the Kern-Pharma system.Consider formulas including Endocrine Repair, Adrenal Repair: Sublingual 7-Keto, Stress Release, and Sleep Synergy for Endocrine Meridian support.[*\"The statements herein have not been evaluated by the Food and Drug Administration. This is not intended to diagnose, treat, cure, or prevent any disease.\"] T.D.C.",
      "remedies": [],
      "description_snapshot_2026_07_14": "(Meridian Komplex 9)The Triple Warmer Meridian is also called the Triple Cavity, Three Heater, or Triple Burner Meridian, and we also refer to it as the Endocrine Meridian.The Triple Warmer Meridian is a Yang Vessel in the Fire Element complementary to the Yin Circulation Meridian.This pattern is also related to Chakra 6 in the Kern-Pharma system.Consider formulas including Endocrine Repair, Adrenal Repair: Sublingual 7-Keto, Stress Release, and Sleep Synergy for Endocrine Meridian support. Learn More © Copyclaim 2023Remedy Match LLC, DBA Healing Oasis[email protected]PO Box 126 Hilo, Hawai'i-"
     }
@@ -1088,36 +1088,36 @@
     {
      "slug": "phase-1-energize",
      "name": "Phase 1: Energize",
-     "alt_name": "",
-     "description": "(Oligo Elements Cu, Au, and Ag) Phase 1 terrain relates to susceptibility to viral activity, degenerative changes and cancer.Phase 1 healing is the most foundational step in recovering health as without energy, a cell can do nothing.Cellular energy comes from a combination of oxidative respiration in the mitochondria as well as photonic light energy",
+     "alt_name": "Oligo Elements Cu, Au, and Ag",
+     "description": "Phase 1 terrain relates to susceptibility to viral activity, degenerative changes and cancer.Phase 1 healing is the most foundational step in recovering health as without energy, a cell can do nothing.Cellular energy comes from a combination of oxidative respiration in the mitochondria as well as photonic light energy",
      "remedies": []
     },
     {
      "slug": "phase-2-rejuvenate",
      "name": "Phase 2: Rejuvenate",
-     "alt_name": "",
-     "description": "(Oligo Elements Mn and Co)Phase 2 terrain relates to susceptibility to overgrowth of pathogenic bacteria and parasites as well as rapid aging.In healing Phase 2, the metabolic enzymes are being repaired to restore cellular function",
+     "alt_name": "Oligo Elements Mn and Co",
+     "description": "Phase 2 terrain relates to susceptibility to overgrowth of pathogenic bacteria and parasites as well as rapid aging.In healing Phase 2, the metabolic enzymes are being repaired to restore cellular function",
      "remedies": []
     },
     {
      "slug": "phase-3-regenerate",
      "name": "Phase 3: Regenerate",
-     "alt_name": "",
-     "description": "(Oligo Elements Mn and Cu)Phase 3 terrain is susceptible to slow metabolism and fungal activity.In healing Phase 3, new cells can be made through mitosis and through stem cell activation",
+     "alt_name": "Oligo Elements Mn and Cu",
+     "description": "Phase 3 terrain is susceptible to slow metabolism and fungal activity.In healing Phase 3, new cells can be made through mitosis and through stem cell activation",
      "remedies": []
     },
     {
      "slug": "phase-4-cleanse",
      "name": "Phase 4: Cleanse",
-     "alt_name": "",
-     "description": "(Oligo Element Mn)Phase 4 terrain is susceptible to symptoms of allergy and toxicity.In Phase 4 healing, the connective tissue matrix in which the cells live is being cleared of wastes and toxins",
+     "alt_name": "Oligo Element Mn",
+     "description": "Phase 4 terrain is susceptible to symptoms of allergy and toxicity.In Phase 4 healing, the connective tissue matrix in which the cells live is being cleared of wastes and toxins",
      "remedies": []
     },
     {
      "slug": "phase-5-balance",
      "name": "Phase 5: Balance",
-     "alt_name": "",
-     "description": "(Oligo Elements Zn, Ni, Co, Cu)Phase 5 deals with balancing life stresses as well as hormonal regulation.Biochemistry:﻿",
+     "alt_name": "Oligo Elements Zn, Ni, Co, Cu",
+     "description": "Phase 5 deals with balancing life stresses as well as hormonal regulation.Biochemistry:﻿",
      "remedies": [],
      "description_snapshot_2026_07_14": "(Oligo Elements Zn, Ni, Co, Cu)Phase 5 deals with balancing life stresses as well as hormonal regulation"
     },
@@ -1304,9 +1304,9 @@
     },
     {
      "slug": "oxygen",
-     "name": "Oxygen",
-     "alt_name": "",
-     "description": "(Sulfur D200)We certainly need oxygen to survive, and the mitochondria in our cells need it to support respiration for ATP energy production.Oxygen therapy with intermittent oxygen deprivation can be even more effective than hyperbaric oxygen.Visit our page on Oxygen Therapies, and ask us for a referral to learn more.For oral Oxygen delivery to the intestinal tract, see Oxygen Cleanse.",
+     "name": "Oxygen; Hypoxia",
+     "alt_name": "Sulfur D200",
+     "description": "We certainly need oxygen to survive, and the mitochondria in our cells need it to support respiration for ATP energy production.Oxygen therapy with intermittent oxygen deprivation can be even more effective than hyperbaric oxygen.Visit our page on Oxygen Therapies, and ask us for a referral to learn more.For oral Oxygen delivery to the intestinal tract, see Oxygen Cleanse.",
      "remedies": [
       {
        "name": "Oxygen Cleanse",
@@ -1603,7 +1603,7 @@
     },
     {
      "slug": "breakfast",
-     "name": "Breakfast",
+     "name": "Breakfast: Rise & Shine",
      "alt_name": "",
      "description": "Rise & Shine",
      "remedies": [
@@ -1615,7 +1615,7 @@
     },
     {
      "slug": "lunch",
-     "name": "Lunch",
+     "name": "Lunch: Vital Energy Be",
      "alt_name": "",
      "description": "Vital Energy Be",
      "remedies": [
@@ -1627,7 +1627,7 @@
     },
     {
      "slug": "supper",
-     "name": "Supper",
+     "name": "Supper: Sustain",
      "alt_name": "",
      "description": "Sustain",
      "remedies": [
@@ -1682,8 +1682,8 @@
     {
      "slug": "vitamin-b8-coenzyme-a-adenosine-monophosphate",
      "name": "Vitamin B8: Coenzyme A: Adenosine Monophosphate",
-     "alt_name": "AMP",
-     "description": "(AMP)AMP regulates metabolism in ratio with Adenosine Triphosphate (ATP) by activating the enzyme AMPK, an important pathway in the science of longevity.",
+     "alt_name": "AMP; AMP",
+     "description": "AMP regulates metabolism in ratio with Adenosine Triphosphate (ATP) by activating the enzyme AMPK, an important pathway in the science of longevity.",
      "remedies": [],
      "description_snapshot_2026_07_14": "AMP regulates metabolism in ratio with Adenosine Triphosphate (ATP) by activating the enzyme AMPK, an important pathway in the science of longevity"
     },
@@ -1697,8 +1697,8 @@
     {
      "slug": "vitamin-b10-para-aminobenzoic-acid",
      "name": "Vitamin B10: Para-aminobenzoic Acid",
-     "alt_name": "PABA",
-     "description": "(PABA)PABA supports healthy skin, hair, and digestive function.PABA is not classified as a vitamin by regulatory agencies of earthly governments because it can be produced by bacteria in the gut.",
+     "alt_name": "PABA; PABA",
+     "description": "PABA supports healthy skin, hair, and digestive function.PABA is not classified as a vitamin by regulatory agencies of earthly governments because it can be produced by bacteria in the gut.",
      "remedies": [],
      "description_snapshot_2026_07_14": "PABA supports healthy skin, hair, and digestive function.PABA is not classified as a vitamin by regulatory agencies of earthly governments because it can be produced by bacteria in the gut"
     },
@@ -1724,8 +1724,8 @@
     {
      "slug": "vitamin-b15-trimethylglycine",
      "name": "Vitamin B15: Trimethylglycine",
-     "alt_name": "TMG",
-     "description": "(TMG)TMG has three methyl groups it can donate, so it is the best methyl donor.It is derived from beets, and must be extracted and purified to avoid getting an excess of Iron when taking a therapeutic dose.Researchers use up to 4 grams a day, and we often recommend 500 milligrams of TMG Powder dissolved in the mouth or in water up to 3 times a day.",
+     "alt_name": "TMG; TMG",
+     "description": "TMG has three methyl groups it can donate, so it is the best methyl donor.It is derived from beets, and must be extracted and purified to avoid getting an excess of Iron when taking a therapeutic dose.Researchers use up to 4 grams a day, and we often recommend 500 milligrams of TMG Powder dissolved in the mouth or in water up to 3 times a day.",
      "remedies": [
       {
        "name": "TMG Powder",
@@ -1737,8 +1737,8 @@
     {
      "slug": "vitamin-b16-dimethylglycine",
      "name": "Vitamin B16: Dimethylglycine",
-     "alt_name": "DMG",
-     "description": "(DMG)When TMG donates its first methyl group, it becomes DMG.DMG is known for enhancing cellular Oxygen utilization.",
+     "alt_name": "DMG; DMG",
+     "description": "When TMG donates its first methyl group, it becomes DMG.DMG is known for enhancing cellular Oxygen utilization.",
      "remedies": [],
      "description_snapshot_2026_07_14": "When TMG donates its first methyl group, it becomes DMG.DMG is known for enhancing cellular Oxygen utilization"
     },
@@ -1757,8 +1757,8 @@
     {
      "slug": "vitamin-b20-acetyl-l-carnitine",
      "name": "Vitamin B20: Acetyl L-Carnitine",
-     "alt_name": "ALCAR",
-     "description": "(ALCAR)(See also Acetyl L-Carnitine in the section on Amines)",
+     "alt_name": "ALCAR; ALCAR; See also Acetyl L-Carnitine in the section on Amines",
+     "description": "",
      "remedies": [],
      "description_snapshot_2026_07_14": "(See also Acetyl L-Carnitine in the section on Amines)"
     },
@@ -1880,16 +1880,16 @@
     {
      "slug": "5-hydroxytryptophan",
      "name": "5-Hydroxytryptophan",
-     "alt_name": "5-HTP",
-     "description": "(5-HTP)5-HTP provides a precursor for production of Serotonin which supports emotional health, optimism and self confidence.This also supports sleep via Melatonin which is produced from Serotonin.",
+     "alt_name": "5-HTP; 5-HTP",
+     "description": "5-HTP provides a precursor for production of Serotonin which supports emotional health, optimism and self confidence.This also supports sleep via Melatonin which is produced from Serotonin.",
      "remedies": [],
      "description_snapshot_2026_07_14": "5-HTP provides a precursor for production of Serotonin which supports emotional health, optimism and self confidence.This also supports sleep via Melatonin which is produced from Serotonin"
     },
     {
      "slug": "acetyl-l-carnitine",
      "name": "Acetyl L-Carnitine",
-     "alt_name": "ALCAR",
-     "description": "(ALCAR)Also identified as Vitamin B20, ALCAR is important for the brain as a nootropic for focus and cognition, being a precursor of Acetylcholine, as well as providing neuroprotection and mitochondrial support.ALCAR can help with anti-aging, slowing memory loss, while supporting appetite, energy, tingling extremeties, and cholesterol regulation.",
+     "alt_name": "ALCAR; ALCAR",
+     "description": "Also identified as Vitamin B20, ALCAR is important for the brain as a nootropic for focus and cognition, being a precursor of Acetylcholine, as well as providing neuroprotection and mitochondrial support.ALCAR can help with anti-aging, slowing memory loss, while supporting appetite, energy, tingling extremeties, and cholesterol regulation.",
      "remedies": [],
      "description_snapshot_2026_07_14": "Also identified as Vitamin B20, ALCAR is important for the brain as a nootropic for focus and cognition, being a precursor of Acetylcholine, as well as providing neuroprotection and mitochondrial support.ALCAR can help with anti-aging, slowing memory loss, while supporting appetite, energy, tingling extremeties, and cholesterol regulation"
     },
@@ -1943,8 +1943,8 @@
     {
      "slug": "gamma-aminobutyric-acid",
      "name": "Gamma Aminobutyric Acid",
-     "alt_name": "GABA",
-     "description": "(GABA)GABA is a neurotransmitter that supports relaxation, sleep and relief of muscular pain.GABA is synergistic with Taurine and Theanine.Glutamine can be made into Glutamic Acid which is a precursor of GABA.",
+     "alt_name": "GABA; GABA",
+     "description": "GABA is a neurotransmitter that supports relaxation, sleep and relief of muscular pain.GABA is synergistic with Taurine and Theanine.Glutamine can be made into Glutamic Acid which is a precursor of GABA.",
      "remedies": [],
      "description_snapshot_2026_07_14": "GABA is a neurotransmitter that supports relaxation, sleep and relief of muscular pain.GABA is synergistic with Taurine and Theanine.Glutamine can be made into Glutamic Acid which is a precursor of GABA"
     },
@@ -1966,8 +1966,8 @@
     {
      "slug": "glutathione",
      "name": "Glutathione",
-     "alt_name": "GSH",
-     "description": "(GSH)Glutathione is a tripeptide that is extremely important for both anti-oxidant protection and cellular detoxification.We include many precursors and synergists along with Glutathione and S-Acetyl Glutathione in our Glutathione Synergy.",
+     "alt_name": "GSH; GSH",
+     "description": "Glutathione is a tripeptide that is extremely important for both anti-oxidant protection and cellular detoxification.We include many precursors and synergists along with Glutathione and S-Acetyl Glutathione in our Glutathione Synergy.",
      "remedies": [
       {
        "name": "Glutathione Synergy",
@@ -1993,8 +1993,8 @@
     {
      "slug": "hydroxyproline",
      "name": "Hydroxyproline",
-     "alt_name": "Hyp",
-     "description": "(Hyp)Hydroxyproline stabilizes Collagen's triple helix.Increased levels in blood or urine are used as an indicator of connective tissue degeneration.",
+     "alt_name": "Hyp; Hyp",
+     "description": "Hydroxyproline stabilizes Collagen's triple helix.Increased levels in blood or urine are used as an indicator of connective tissue degeneration.",
      "remedies": [],
      "description_snapshot_2026_07_14": "Hydroxyproline stabilizes Collagen's triple helix.Increased levels in blood or urine are used as an indicator of connective tissue degeneration"
     },
@@ -2034,8 +2034,8 @@
     {
      "slug": "n-acetyl-cysteine",
      "name": "N-Acetyl Cysteine",
-     "alt_name": "NAC",
-     "description": "(NAC)NAC liquefies the Lymph and boosts cellular production of Glutathione.You'll find a good dose along with synergists in formulations including Lymph Flow and Glutathione Synergy.",
+     "alt_name": "NAC; NAC",
+     "description": "NAC liquefies the Lymph and boosts cellular production of Glutathione.You'll find a good dose along with synergists in formulations including Lymph Flow and Glutathione Synergy.",
      "remedies": [
       {
        "name": "Lymph Flow",
@@ -2058,8 +2058,8 @@
     {
      "slug": "para-aminobenzoic-acid",
      "name": "Para-Aminobenzoic Acid",
-     "alt_name": "PABA",
-     "description": "(PABA)PABA helps rejuvenate hair and skin and supports red blood cell production.It is important in protein metabolism.It also supports maintenance of a healthy microbiome.(see also Vitamin B10)",
+     "alt_name": "PABA; PABA",
+     "description": "PABA helps rejuvenate hair and skin and supports red blood cell production.It is important in protein metabolism.It also supports maintenance of a healthy microbiome.(see also Vitamin B10)",
      "remedies": [],
      "description_snapshot_2026_07_14": "PABA helps rejuvenate hair and skin and supports red blood cell production.It is important in protein metabolism.It also supports maintenance of a healthy microbiome.(see also Vitamin B10)"
     },
@@ -2087,8 +2087,8 @@
     {
      "slug": "s-adenosyl-methionine",
      "name": "S-Adenosyl Methionine",
-     "alt_name": "SAMe",
-     "description": "(SAMe)SAMe elevates mood, helps repair serious liver damage, and regenerates cartilage.SAMe becomes Homocysteine when it donates its Methyl group.Homocysteine is strongly linked to atherosclerosis, so our SAMe Synergy includes a full range of Methyl donors to recycle Homocysteine back to the beneficial SAMe form.That way the dosage of SAMe also keeps working longer and better.",
+     "alt_name": "SAMe; SAMe",
+     "description": "SAMe elevates mood, helps repair serious liver damage, and regenerates cartilage.SAMe becomes Homocysteine when it donates its Methyl group.Homocysteine is strongly linked to atherosclerosis, so our SAMe Synergy includes a full range of Methyl donors to recycle Homocysteine back to the beneficial SAMe form.That way the dosage of SAMe also keeps working longer and better.",
      "remedies": [
       {
        "name": "SAMe Synergy",
@@ -2121,8 +2121,8 @@
     {
      "slug": "trimethylglycine",
      "name": "Trimethylglycine",
-     "alt_name": "TMG",
-     "description": "(TMG)TMG is the most powerful nutritional methyl donor.It is purified from beets so that a therapeutic dose can be achieved without taking in a toxic level of Iron.For a high dose of yummy TMG, check out our TMG Powder.",
+     "alt_name": "TMG; TMG",
+     "description": "TMG is the most powerful nutritional methyl donor.It is purified from beets so that a therapeutic dose can be achieved without taking in a toxic level of Iron.For a high dose of yummy TMG, check out our TMG Powder.",
      "remedies": [
       {
        "name": "TMG Powder",
@@ -2178,8 +2178,8 @@
     {
      "slug": "7-keto-dehydroepiandrosterone",
      "name": "7-Keto Dehydroepiandrosterone",
-     "alt_name": "7-Keto DHEA",
-     "description": "(7-Keto DHEA)7-Keto is a metabolite of DHEA that retains its benefits for supporting adrenal recovery from chronic stress and Rx steroid treatments, without converting into the sex hormones, so it preserves the hormonal status quo otherwise.We supply a gentle, sustainable dose of 7-Keto in Adrenal Repair: Sublingual 7-Keto.",
+     "alt_name": "7-Keto DHEA; 7-Keto DHEA",
+     "description": "7-Keto is a metabolite of DHEA that retains its benefits for supporting adrenal recovery from chronic stress and Rx steroid treatments, without converting into the sex hormones, so it preserves the hormonal status quo otherwise.We supply a gentle, sustainable dose of 7-Keto in Adrenal Repair: Sublingual 7-Keto.",
      "remedies": [
       {
        "name": "Adrenal Repair: Sublingual 7-Keto",
@@ -2207,8 +2207,8 @@
     {
      "slug": "dehydroepiandrosterone",
      "name": "Dehydroepiandrosterone",
-     "alt_name": "DHEA",
-     "description": "(DHEA)DHEA is a natural adrenal steroid hormone that reduces inflammation.In controlled studies, doctors prescribed lower doses of Rx steroid medications when subjects received supplemental DHEA.We support the function of DHEA with either Endocrine Restore or Adrenal Repair: Sublingual 7-Keto.",
+     "alt_name": "DHEA; DHEA",
+     "description": "DHEA is a natural adrenal steroid hormone that reduces inflammation.In controlled studies, doctors prescribed lower doses of Rx steroid medications when subjects received supplemental DHEA.We support the function of DHEA with either Endocrine Restore or Adrenal Repair: Sublingual 7-Keto.",
      "remedies": [
       {
        "name": "Endocrine Restore",
@@ -2224,8 +2224,8 @@
     {
      "slug": "dihydrotestosterone",
      "name": "Dihydrotestosterone",
-     "alt_name": "DHT",
-     "description": "(DHT)DHT is a metabolite of Testosterone that contributes to male pattern baldness and head hair loss in both males and females, as well as Prostate issues.We designed DHT Blocker to help solve these issues.",
+     "alt_name": "DHT; DHT",
+     "description": "DHT is a metabolite of Testosterone that contributes to male pattern baldness and head hair loss in both males and females, as well as Prostate issues.We designed DHT Blocker to help solve these issues.",
      "remedies": [
       {
        "name": "DHT Blocker",
