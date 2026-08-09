@@ -24,3 +24,19 @@ def test_fireside_bounds_agent_and_tts_waits():
     assert "if (activeReplyController) activeReplyController.abort();" in FIRESIDE
     assert "var ttsController = new AbortController();" in FIRESIDE
     assert "ttsController.abort()" in FIRESIDE
+
+
+def test_fireside_queues_submit_during_welcome_and_has_media_fallback():
+    """A stalled welcome video must not make typed submissions inert."""
+    welcome = FIRESIDE.split("function toWelcome()", 1)[1].split(
+        "// --- Voice-first input", 1
+    )[0]
+    submit = FIRESIDE.split("composer.addEventListener('submit'", 1)[1].split(
+        "say.addEventListener('input'", 1
+    )[0]
+
+    assert "welcomeTimer = setTimeout(finishWelcome, 8000);" in welcome
+    assert "if (pendingTypedMessage)" in welcome
+    assert "sendTurn(queued);" in welcome
+    assert "state === 'intro' || state === 'intro-welcome'" in submit
+    assert "pendingTypedMessage = m;" in submit

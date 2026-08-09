@@ -211,6 +211,7 @@
 
   var manifest = null;
   var state = 'intro';
+  var pendingTypedMessage = '';
   var replyFinished = false;
   var lastFiller = null, lastInter = null;
   var travelerTurns = 0, interjections = 0, turnsSinceInterjection = 99;
@@ -502,6 +503,22 @@
   function toWelcome() {
     if (state !== 'intro') return;
     state = 'intro-welcome';
+    var welcomeFinished = false;
+    var welcomeTimer = null;
+    function finishWelcome() {
+      if (welcomeFinished) return;
+      welcomeFinished = true;
+      if (welcomeTimer) clearTimeout(welcomeTimer);
+      stage.onended = null;
+      listening();
+      if (pendingTypedMessage) {
+        var queued = pendingTypedMessage;
+        pendingTypedMessage = '';
+        sendTurn(queued);
+      } else {
+        say.focus();
+      }
+    }
     var wv = rotate(manifest.intro_welcomes, 'fs_intro_welcome') || manifest.intro_welcome;
     var wa = rotate(manifest.intro_welcome_audios, 'fs_intro_welcome_audio') || manifest.intro_welcome_audio;
     if (wv) {
@@ -510,9 +527,12 @@
       if (wa) {
         try { replyAudio.src = wa; replyAudio.play().catch(function () {}); } catch (e) {}
       }
-      stage.onended = function () { listening(); say.focus(); };
-      stage.play().catch(function () { listening(); say.focus(); });
-    } else { listening(); say.focus(); }
+      stage.onended = finishWelcome;
+      stage.play().catch(finishWelcome);
+      // Some browsers can accept the video but never emit ended (codec/media
+      // pipeline stalls). Never leave the traveler trapped in intro-welcome.
+      welcomeTimer = setTimeout(finishWelcome, 8000);
+    } else { finishWelcome(); }
   }
 
   // --- Voice-first input (speak to Glendalf; typing stays as fallback) ---
@@ -614,7 +634,13 @@
   composer.addEventListener('submit', function (e) {
     e.preventDefault();
     var m = say.value.trim();
-    if (!m || state === 'intro' || state === 'intro-welcome' || state === 'pondering' || state === 'speaking' || state === 'ended') return;
+    if (!m || state === 'pondering' || state === 'speaking' || state === 'ended') return;
+    if (state === 'intro' || state === 'intro-welcome') {
+      pendingTypedMessage = m;
+      say.value = '';
+      armWelcome();
+      return;
+    }
     say.value = '';
     sendTurn(m);
   });
