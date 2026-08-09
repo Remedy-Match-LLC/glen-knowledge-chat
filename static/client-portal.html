@@ -2577,6 +2577,9 @@ function renderEyeVisionReport(report){
     </div>`).join("");
   const limitations = (Array.isArray(report.limitations) ? report.limitations : [])
     .map(item=>`<li>${esc(item)}</li>`).join("");
+  const resourceLinks = (Array.isArray(report.resource_links) ? report.resource_links : [])
+    .map(item=>`<li><a href="${esc(item.href || "#recs")}">${esc(item.label || "Portal resources")}</a>${item.description ? ` — ${esc(item.description)}` : ""}</li>`)
+    .join("");
   const rr = report.review_request || {};
   let reviewAction = "";
   if(rr.eligible){
@@ -2604,7 +2607,7 @@ function renderEyeVisionReport(report){
       ${report.scan_date ? `<p class="muted small">E4L scan: ${esc(report.scan_date)}</p>` : ""}
       ${rows || `<p class="muted">${esc(report.empty_state || "No eye- or vision-mapped patterns were found.")}</p>`}
       ${reviewAction}
-      ${limitations ? `<details style="margin-top:.8rem"><summary>Important context</summary><ul class="muted small">${limitations}</ul></details>` : ""}
+      ${(limitations || resourceLinks) ? `<details style="margin-top:.8rem"><summary>Important context</summary><ul class="muted small">${limitations}${resourceLinks ? `<li>Continue with these resources:<ul>${resourceLinks}</ul></li>` : ""}</ul></details>` : ""}
     </div>
   </div>`;
 }
