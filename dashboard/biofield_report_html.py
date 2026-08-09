@@ -234,12 +234,19 @@ def _client_tabs(active, tid, email=""):
     of edit|report|invoice|portal. Portal opens the operator biofield-portal view
     for the client, key-carried like the other local->prod links."""
     tid_s = _e(str(tid or ""))
+    base = os.environ.get("PUBLIC_BASE_URL", "https://illtowell.com").rstrip("/")
+    secret = os.environ.get("CONSOLE_SECRET", "")
     email = (email or "").strip()
     portal = "/author/" + tid_s + "/view-portal"
+    editor = base + "/console/biofield-portal"
+    q = ([("email=" + _q(email))] if email else []) + ([("key=" + _q(secret))] if secret else [])
+    if q:
+        editor += "?" + "&".join(q)
     items = (("edit", "Edit", "/author/" + tid_s),
              ("report", "Report", "/test/" + tid_s),
              ("invoice", "Invoice", "/author/" + tid_s + "/invoice-view"),
-             ("portal", "View Portal", portal))
+             ("portal", "View Client Portal", portal),
+             ("portal-edit", "Edit Portal", editor))
     tabs = "".join(
         f"<a class=\"{'active' if k == active else ''}\" href=\"{_e(url)}\">{lbl}</a>"
         for k, lbl, url in items)
