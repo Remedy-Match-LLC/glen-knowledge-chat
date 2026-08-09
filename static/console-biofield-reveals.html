@@ -148,6 +148,14 @@ async function api(method, path, body){
   return { ok: r.ok, status: r.status, json: await r.json().catch(function(){ return {}; }) };
 }
 
+async function viewClientPortal(email){
+  var win = window.open('about:blank', '_blank');
+  var r = await api('GET', '/api/console/portal-link?email=' + encodeURIComponent(email || ''));
+  if(r.ok && r.json && r.json.found && r.json.link){ win.location = r.json.link; return; }
+  if(win) win.close();
+  alert('No client portal exists for this email yet. Publish the portal first.');
+}
+
 function boot(){
   if(!key()){ document.getElementById('gate').style.display = 'flex'; return; }
   document.getElementById('app').style.display = 'block';
@@ -734,12 +742,18 @@ function buildCard(d){
     row.appendChild(sendBtn);
   }
 
+  var viewPortal = document.createElement('button');
+  viewPortal.className = 'btn ghost';
+  viewPortal.textContent = 'View Client Portal';
+  viewPortal.onclick = function(){ viewClientPortal(d.email || ''); };
+  row.appendChild(viewPortal);
+
   var portalLink = document.createElement('a');
   portalLink.href = '/console/biofield-portal?email=' + encodeURIComponent(d.email || '')
                   + '&key=' + encodeURIComponent(key());
   portalLink.target = '_blank';
   portalLink.rel = 'noopener';
-  portalLink.textContent = 'Open Portal →';
+  portalLink.textContent = 'Edit Portal →';
   portalLink.style.cssText = 'margin-left:10px;color:var(--gold,#d4a843);text-decoration:none;font-size:13px';
   row.appendChild(portalLink);
 
