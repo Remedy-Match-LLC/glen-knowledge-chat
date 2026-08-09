@@ -61,7 +61,7 @@ INTAKE_FORM = {
             {"id": "relationship_status", "type": "single_choice", "label": "Relationship status",
              "options": ["Single", "Partnered", "Married", "Divorced", "Widowed", "Prefer not to say"]},
             {"id": "gender", "type": "single_choice", "label": "Gender",
-             "options": ["Woman/Girl", "Man/Boy", "Nonbinary", "Prefer not to say"]},
+             "options": ["Male", "Female"]},
             {"id": "occupation", "type": "text", "label": "Occupation"},
             {"id": "hours_per_week", "type": "number", "label": "Hours per week"},
             {"id": "referred_by", "type": "text", "label": "Referred by"},

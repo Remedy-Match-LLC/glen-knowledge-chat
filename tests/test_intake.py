@@ -29,6 +29,16 @@ def test_form_structure_integrity():
     assert sorted(dim_fields) == ["commitment", "penetration", "response", "terrain", "tissue_layer"]
 
 
+def test_gender_options_are_male_or_female():
+    gender = next(
+        field
+        for section in intake.INTAKE_FORM["sections"]
+        for field in section["fields"]
+        if field["id"] == "gender"
+    )
+    assert gender["options"] == ["Male", "Female"]
+
+
 def test_validate_missing_required():
     errors = intake.validate_response({})
     for req in ("first_name", "last_name", "email", "dob", "terrain", "terms"):
