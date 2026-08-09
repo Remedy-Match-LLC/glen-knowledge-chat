@@ -118,7 +118,7 @@ def build_status(cx, email):
     ]
     match = [
         step("history", "Starter remedies from your history",
-             conditions_done and products_done and extended_done,
+             conditions_done,
              "#recs"),
         step("scan_match", "Personalized match from your scan",
              _has_source(cx, email, "scan") or _has_source(cx, email, "biofield"), "#recs"),

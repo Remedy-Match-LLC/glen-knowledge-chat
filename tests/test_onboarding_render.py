@@ -86,24 +86,8 @@ def test_render_onboarding_triage_form_gated_on_history_done():
       if (!/name="other_condition"/.test(htmlNotDone)) {
         console.error('missing Other free-text field'); process.exit(1);
       }
-      for (const kind of ['prescriptions','otc','supplements']) {
-        if (!htmlNotDone.includes('name="' + kind + '_yes"') ||
-            !htmlNotDone.includes('name="' + kind + '_text"')) {
-          console.error('missing current-products fields for ' + kind); process.exit(1);
-        }
-      }
-      for (const kind of ['surgeries','physical_trauma','psychoemotional_trauma',
-                           'toxins','vaccinations','family_history','diagnoses',
-                           'allergies','dental','sleep']) {
-        if (!htmlNotDone.includes('name="' + kind + '_yes"') ||
-            !htmlNotDone.includes('name="' + kind + '_text"')) {
-          console.error('missing extended-history fields for ' + kind); process.exit(1);
-        }
-      }
-      if (!/parent or grandparent/.test(htmlNotDone) ||
-          !/current or past/.test(htmlNotDone) ||
-          !/age at the time/.test(htmlNotDone)) {
-        console.error('extended history is missing intake-parallel details'); process.exit(1);
+      if (/What are you currently taking|More about your health history/.test(htmlNotDone)) {
+        console.error('duplicated Intake history sections are still visible'); process.exit(1);
       }
 
       // (a) history IS done -> the triage form is absent.

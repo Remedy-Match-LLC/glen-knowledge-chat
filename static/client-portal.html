@@ -1068,7 +1068,7 @@ function buildHubHtml(d, v){
   // curated health_profile block is enabled — off-state must add nothing.
   if (v && v.health_profile && v.health_profile.enabled) {
     const pending = v.health_profile.suggestion_count;
-    understandTiles.push(["health", "My Health Profile", "Your history, symptoms and intake",
+    understandTiles.push(["health", "My Health Profile", "Review the details you provided in your Intake",
       (pending > 0) ? pending : undefined]);
   }
   // Task 5: the My Healing Oasis tile is only meaningful (and only rendered)
@@ -1184,7 +1184,13 @@ function buildHealthProfileHtml(v){
   const body = sections.length
     ? sections.map(healthSectionHtml).join("")
     : `<div class="card quiet"><p class="muted">Your health profile will appear here once your intake is on file.</p></div>`;
-  return `<div class="portal-health"><div id="healthSuggestions"></div>${body}</div>`;
+  return `<div class="portal-health">
+    <div class="card quiet health-profile-guide">
+      <h2>Your saved Intake details</h2>
+      <p class="muted">My Health Profile is where you can review the health history, symptoms, and other details you provided in your Intake.</p>
+      <button type="button" class="btn ghost" onclick="showTab('intake')">Open or edit my Intake</button>
+    </div>
+    <div id="healthSuggestions"></div>${body}</div>`;
 }
 // ── Task 5: My Healing Oasis panel (render-only). Consumes v.oasis (Task 4's
 // shape: {enabled, replenish[], build_out:{owned_from_us[], owned_external[],
@@ -1827,6 +1833,7 @@ async function fetchPortalJson(url){
     const response = await fetch(url, {
       signal: controller.signal,
       credentials: "same-origin",
+      cache: "no-store",
     });
     if(!response.ok){
       return {kind:"http", status:response.status, data:null};
@@ -4434,13 +4441,19 @@ function showPortalIntakeComplete(host){
   host.appendChild(title);
   const body = document.createElement("p");
   body.className = "muted";
-  body.textContent = "Your clinical health profile is saved and available to your care team.";
+  body.textContent = "Your answers are saved. You can review the details you provided anytime by opening My Health Profile from the Understand section of your portal home.";
   host.appendChild(body);
+  const editButton = document.createElement("button");
+  editButton.type = "button";
+  editButton.className = "btn full";
+  editButton.textContent = "Edit my Intake";
+  editButton.addEventListener("click", ()=>initPortalIntakeCard(true));
+  host.appendChild(editButton);
   const healthPanel = document.querySelector('[data-panel="health"]');
   const button = document.createElement("button");
   button.type = "button";
   button.className = "btn full";
-  button.textContent = healthPanel ? "Review My Health Profile" : "Return to my portal";
+  button.textContent = healthPanel ? "Open My Health Profile" : "Return to my portal";
   button.addEventListener("click", async ()=>{
     try{ history.replaceState(null, "", location.pathname + location.search); }catch(e){}
     if(healthPanel) await load();
@@ -4459,6 +4472,7 @@ function initPortalIntakeCard(refreshing){
     title: "Build My Health Profile",
     intro: "Complete each section at your own pace. Your answers save automatically, so you can leave and return anytime.",
     paged: true,
+    allowSubmittedEdit: true,
     loadingText: refreshing ? "Refreshing your saved intake…" : "Loading your intake form…",
   });
 }
@@ -4511,7 +4525,7 @@ async function renderIntakeForm(host, tokenVal, onDone, options){
 
   host.innerHTML = "";
 
-  if(stateData && stateData.submitted){ if(onDone) onDone(); return; }
+  if(stateData && stateData.submitted && !options.allowSubmittedEdit){ if(onDone) onDone(); return; }
   if(!formDef || !Array.isArray(formDef.sections)){
     const err = document.createElement("p");
     err.className = "err small";
@@ -4593,7 +4607,10 @@ async function renderIntakeForm(host, tokenVal, onDone, options){
     h3.textContent = sec.title || "";
     secWrap.appendChild(h3);
     (sec.fields || []).forEach(f => {
-      secWrap.appendChild(renderIntakeField(f, answers[f.id], getters, fieldEls, scheduleSave));
+      secWrap.appendChild(renderIntakeField(
+        f, answers[f.id], getters, fieldEls, scheduleSave, formDef.suggestions || {},
+        f.selection_field ? answers[f.selection_field] : null
+      ));
     });
     host.appendChild(secWrap);
     sectionEls.push(secWrap);
@@ -4663,7 +4680,7 @@ async function renderIntakeForm(host, tokenVal, onDone, options){
   submitBtn.type = "button";
   submitBtn.className = "btn full";
   submitBtn.style.marginTop = ".4rem";
-  submitBtn.textContent = "Submit my intake";
+  submitBtn.textContent = stateData && stateData.submitted ? "Save changes" : "Submit my intake";
   submitBtn.addEventListener("click", async ()=>{
     submitBtn.disabled = true;
     errMsg.hidden = true;
@@ -4713,7 +4730,7 @@ async function renderIntakeForm(host, tokenVal, onDone, options){
 // Builds one field's markup for any INTAKE_FORM field type and wires its
 // getter (into `getters`) + change listener (debounced autosave via
 // `onChange`). Returns the wrapper element to append to the section.
-function renderIntakeField(f, val, getters, fieldEls, onChange){
+function renderIntakeField(f, val, getters, fieldEls, onChange, suggestions, savedSelections){
   const ftype = f.type;
 
   if(ftype === "consent"){
@@ -4777,6 +4794,7 @@ function renderIntakeField(f, val, getters, fieldEls, onChange){
     tableWrap.appendChild(rowsBox);
     const rows = [];
     const columns = f.columns || [];
+    let suggestionListSeq = 0;
 
     const addRow = (rowVal)=>{
       const row = document.createElement("div");
@@ -4814,6 +4832,19 @@ function renderIntakeField(f, val, getters, fieldEls, onChange){
           input = document.createElement("input");
           input.type = "text";
           input.className = "intake-input";
+          if(col.suggestion_kind){
+            const listId = `intake-options-${f.id}-${col.id}-${++suggestionListSeq}`;
+            const dataList = document.createElement("datalist");
+            dataList.id = listId;
+            ((suggestions && suggestions[col.suggestion_kind]) || []).forEach(value => {
+              const option = document.createElement("option");
+              option.value = value;
+              dataList.appendChild(option);
+            });
+            input.setAttribute("list", listId);
+            input.setAttribute("autocomplete", "off");
+            colWrap.appendChild(dataList);
+          }
           input.value = (rowVal && rowVal[col.id]) || "";
           input.addEventListener("input", onChange);
           colGetters[col.id] = ()=> input.value;
@@ -4860,26 +4891,34 @@ function renderIntakeField(f, val, getters, fieldEls, onChange){
   if(ftype === "scale"){
     const group = document.createElement("div");
     group.className = "intake-scale";
+    const selectedValues = Array.isArray(savedSelections)
+      ? savedSelections.map(Number)
+      : (val != null ? [Number(val)] : []);
     (f.options || []).forEach(opt => {
       const optLabel = document.createElement("label");
       optLabel.className = "intake-scale-opt";
-      const radio = document.createElement("input");
-      radio.type = "radio";
-      radio.name = "intake-scale-" + f.id;
-      radio.value = String(opt.value);
-      if(val === opt.value) radio.checked = true;
-      radio.addEventListener("change", onChange);
-      optLabel.appendChild(radio);
+      const choice = document.createElement("input");
+      choice.type = f.multi_select ? "checkbox" : "radio";
+      if(!f.multi_select) choice.name = "intake-scale-" + f.id;
+      choice.value = String(opt.value);
+      if(selectedValues.includes(Number(opt.value))) choice.checked = true;
+      choice.addEventListener("change", onChange);
+      optLabel.appendChild(choice);
       const span = document.createElement("span");
-      span.textContent = opt.value + ": " + opt.label;
+      span.textContent = f.number_only ? String(opt.value) : opt.value + ": " + opt.label;
       optLabel.appendChild(span);
       group.appendChild(optLabel);
     });
     wrap.appendChild(group);
     getters[f.id] = ()=>{
-      const checked = group.querySelector("input[type=radio]:checked");
-      return checked ? Number(checked.value) : null;
+      const checked = Array.from(group.querySelectorAll("input:checked"))
+        .map(input => Number(input.value));
+      return checked.length ? Math.min(...checked) : null;
     };
+    if(f.multi_select && f.selection_field){
+      getters[f.selection_field] = ()=> Array.from(group.querySelectorAll("input:checked"))
+        .map(input => Number(input.value)).sort((a, b)=>a-b);
+    }
     fieldEls[f.id] = group;
     return wrap;
   }

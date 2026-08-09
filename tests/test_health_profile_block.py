@@ -27,3 +27,24 @@ def test_build_block_carries_dominant_terrain_options():
         {"value": 4, "label": "Allergy or Toxicity"},
         {"value": 5, "label": "Stress or Hormonal Imbalance"},
     ]
+
+
+def test_build_block_reads_freshly_submitted_intake_values():
+    from dashboard import intake
+    cx = sqlite3.connect(":memory:")
+    cx.row_factory = sqlite3.Row
+    intake.init_intake_table(cx)
+    intake.submit(cx, "a@b.com", {
+        "terrain": 2,
+        "sleep": "Wake around 3 a.m.",
+        "supplements": [{"brand": "Remedy Match", "name": "Terrain Restore"}],
+    }, "2026-08-09T12:00:00")
+    block = health_profile.build_block(cx, "a@b.com", True)
+    fields = {
+        field["id"]: field["value"]
+        for section in block["sections"]
+        for field in section["fields"]
+    }
+    assert fields["terrain"] == 2
+    assert fields["sleep"] == "Wake around 3 a.m."
+    assert fields["supplements"][0]["name"] == "Terrain Restore"

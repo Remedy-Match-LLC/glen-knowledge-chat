@@ -27715,9 +27715,22 @@ def intake_form():
     from dashboard import intake as _intake
     with db.connect(LOG_DB) as cx:
         cx.row_factory = sqlite3.Row
+        _intake.init_intake_table(cx)
         if _evox_ident(cx, request.args.get("token", "")) is None:
             return jsonify({"error": "not_found"}), 404
-    return jsonify(_intake.INTAKE_FORM)
+        # Keep the supplement chooser aligned with the live Remedy Match
+        # catalog. Non-supplement services and apparel are intentionally
+        # excluded; client-entered values are added by each draft/submit save.
+        remedy_names = sorted({
+            str(p.get("name") or "").strip()
+            for p in (_PRODUCTS.get("products") or {}).values()
+            if p.get("name") and not p.get("inactive") and not p.get("service")
+            and not p.get("info_only") and p.get("bottle_type") != "own-box"
+        }, key=str.casefold)
+        _intake.seed_suggestions(cx, supplements=remedy_names)
+        cx.commit()
+        suggestions = _intake.list_suggestions(cx)
+    return jsonify({**_intake.INTAKE_FORM, "suggestions": suggestions})
 
 
 @app.route("/api/intake/state")
@@ -27804,13 +27817,15 @@ def intake_submit():
         if ident is None:
             return jsonify({"error": "not_found"}), 404
         answers = (request.get_json(silent=True) or {}).get("answers") or {}
-        if _intake.is_submitted(cx, ident.email):
-            return jsonify({"error": "already_submitted"}), 409
         errors = _intake.validate_response(answers)
         if errors:
             return jsonify({"error": "invalid", "errors": errors}), 400
-        _intake.submit(cx, ident.email, answers, _hst_now().isoformat())
-    return jsonify({"ok": True})
+        now = _hst_now().isoformat()
+        if _intake.is_submitted(cx, ident.email):
+            _intake.update_submitted(cx, ident.email, answers, now)
+            return jsonify({"ok": True, "updated": True})
+        _intake.submit(cx, ident.email, answers, now)
+    return jsonify({"ok": True, "updated": False})
 
 
 # --- Public funnel intake (truly.vip/join -> /begin/intake) ------------------
@@ -28714,7 +28729,12 @@ def api_client_portal_view(token):
     if view is None:
         return jsonify({"error": "not found"}), 404
     view["auth_method"] = ident.auth_method
-    return jsonify(view)
+    resp = jsonify(view)
+    # This payload includes the client's freshly saved Intake/Health Profile.
+    # Never let a browser or intermediary reuse the pre-submission response.
+    resp.headers["Cache-Control"] = "private, no-cache, no-store, must-revalidate"
+    resp.headers["Pragma"] = "no-cache"
+    return resp
 
 
 # ── Free product review (dark: SUPPLEMENT_REVIEW_ENABLED) ─────────────────────

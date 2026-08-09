@@ -9,6 +9,14 @@ def test_portal_fetches_are_bounded_and_settled_independently():
     assert "const PORTAL_FETCH_TIMEOUT_MS = 10000;" in HTML
     assert "new AbortController()" in HTML
     assert "Promise.allSettled([" in HTML
+    assert 'cache: "no-store"' in HTML
+
+
+def test_intake_completion_explains_where_saved_details_live():
+    assert "opening My Health Profile from the Understand section" in HTML
+    assert 'button.textContent = healthPanel ? "Open My Health Profile"' in HTML
+    assert "My Health Profile is where you can review" in HTML
+    assert "Review the details you provided in your Intake" in HTML
 
 
 def test_portal_distinguishes_invalid_link_from_transient_failure():
@@ -56,6 +64,9 @@ def test_native_intake_is_resumable_and_reports_save_state():
     assert "Section ${sectionIndex + 1} of ${sectionEls.length}" in HTML
     assert 'saveState.textContent = "Saving…"' in HTML
     assert 'saveState.textContent = "Saved"' in HTML
+    assert "allowSubmittedEdit: true" in HTML
+    assert 'editButton.textContent = "Edit my Intake"' in HTML
+    assert 'stateData && stateData.submitted ? "Save changes"' in HTML
 
 
 def test_life_stress_essence_links_are_readable_in_dark_mode():
