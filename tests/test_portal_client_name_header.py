@@ -13,7 +13,8 @@ def test_client_name_header_is_at_top_of_portal():
 
     assert identity < onboarding < app
     assert 'id="portal-client-name"' in HTML
-    assert "Healing Oasis client portal" in HTML
+    assert "My Healing Oasis" in HTML
+    assert "Healing Oasis client portal" not in HTML
     assert HTML.count('id="client-photo"') == 1
     assert (
         HTML.index('id="client-photo"')
