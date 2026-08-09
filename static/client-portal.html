@@ -4600,7 +4600,9 @@ async function renderIntakeForm(host, tokenVal, onDone, options){
     h3.textContent = sec.title || "";
     secWrap.appendChild(h3);
     (sec.fields || []).forEach(f => {
-      secWrap.appendChild(renderIntakeField(f, answers[f.id], getters, fieldEls, scheduleSave));
+      secWrap.appendChild(renderIntakeField(
+        f, answers[f.id], getters, fieldEls, scheduleSave, formDef.suggestions || {}
+      ));
     });
     host.appendChild(secWrap);
     sectionEls.push(secWrap);
@@ -4720,7 +4722,7 @@ async function renderIntakeForm(host, tokenVal, onDone, options){
 // Builds one field's markup for any INTAKE_FORM field type and wires its
 // getter (into `getters`) + change listener (debounced autosave via
 // `onChange`). Returns the wrapper element to append to the section.
-function renderIntakeField(f, val, getters, fieldEls, onChange){
+function renderIntakeField(f, val, getters, fieldEls, onChange, suggestions){
   const ftype = f.type;
 
   if(ftype === "consent"){
@@ -4784,6 +4786,7 @@ function renderIntakeField(f, val, getters, fieldEls, onChange){
     tableWrap.appendChild(rowsBox);
     const rows = [];
     const columns = f.columns || [];
+    let suggestionListSeq = 0;
 
     const addRow = (rowVal)=>{
       const row = document.createElement("div");
@@ -4821,6 +4824,19 @@ function renderIntakeField(f, val, getters, fieldEls, onChange){
           input = document.createElement("input");
           input.type = "text";
           input.className = "intake-input";
+          if(col.suggestion_kind){
+            const listId = `intake-options-${f.id}-${col.id}-${++suggestionListSeq}`;
+            const dataList = document.createElement("datalist");
+            dataList.id = listId;
+            ((suggestions && suggestions[col.suggestion_kind]) || []).forEach(value => {
+              const option = document.createElement("option");
+              option.value = value;
+              dataList.appendChild(option);
+            });
+            input.setAttribute("list", listId);
+            input.setAttribute("autocomplete", "off");
+            colWrap.appendChild(dataList);
+          }
           input.value = (rowVal && rowVal[col.id]) || "";
           input.addEventListener("input", onChange);
           colGetters[col.id] = ()=> input.value;

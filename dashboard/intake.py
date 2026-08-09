@@ -43,7 +43,7 @@ _RESPONSE = _scale([
 _COMMITMENT = _scale([(n, str(n)) for n in range(1, 11)])
 
 INTAKE_FORM = {
-    "version": "2026-07-07",
+    "version": "2026-08-09",
     "sections": [
         {"id": "personal", "title": "Personal Information", "fields": [
             {"id": "first_name", "type": "text", "label": "Legal first name", "required": True},
@@ -112,8 +112,10 @@ INTAKE_FORM = {
             {"id": "supplements", "type": "table", "label": "Supplements you take now",
              "help": "Include vitamins, herbs, minerals. Rate how certain you are each is needed, 1 to 10.",
              "columns": [
-                 {"id": "brand", "type": "text", "label": "Brand name"},
-                 {"id": "name", "type": "text", "label": "Supplement name"},
+                 {"id": "brand", "type": "text", "label": "Brand name",
+                  "suggestion_kind": "brands"},
+                 {"id": "name", "type": "text", "label": "Supplement name",
+                  "suggestion_kind": "supplements"},
                  {"id": "reason", "type": "text", "label": "Reason"},
                  {"id": "need", "type": "number", "label": "Need (1-10)"},
              ]},
@@ -192,6 +194,54 @@ def init_intake_table(cx):
         " answers_json TEXT NOT NULL,"
         " created_at TEXT NOT NULL,"
         " submitted_at TEXT)")
+    cx.execute(
+        "CREATE TABLE IF NOT EXISTS intake_suggestions ("
+        " kind TEXT NOT NULL,"
+        " value TEXT NOT NULL,"
+        " value_key TEXT NOT NULL,"
+        " source TEXT NOT NULL,"
+        " created_at TEXT NOT NULL,"
+        " PRIMARY KEY(kind, value_key))")
+    seed_suggestions(cx, brands=["Remedy Match", "E4L", "PRL", "Fullscript"])
+
+
+def _remember_values(cx, kind, values, source, now):
+    for raw in values or []:
+        value = " ".join(str(raw or "").split()).strip()
+        if not value:
+            continue
+        cx.execute(
+            "INSERT INTO intake_suggestions (kind, value, value_key, source, created_at)"
+            " VALUES (?,?,?,?,?) ON CONFLICT(kind, value_key) DO NOTHING",
+            (kind, value, value.casefold(), source, now))
+
+
+def seed_suggestions(cx, brands=None, supplements=None, now="seed"):
+    """Idempotently add curated/catalog choices without replacing client entries."""
+    _remember_values(cx, "brands", brands, "seed", now)
+    _remember_values(cx, "supplements", supplements, "seed", now)
+
+
+def remember_answer_suggestions(cx, answers, now):
+    rows = (answers or {}).get("supplements") or []
+    if not isinstance(rows, list):
+        return
+    _remember_values(cx, "brands", (r.get("brand") for r in rows if isinstance(r, dict)),
+                     "client", now)
+    _remember_values(cx, "supplements", (r.get("name") for r in rows if isinstance(r, dict)),
+                     "client", now)
+
+
+def list_suggestions(cx):
+    rows = cx.execute(
+        "SELECT kind, value FROM intake_suggestions ORDER BY kind, lower(value)"
+    ).fetchall()
+    result = {"brands": [], "supplements": []}
+    for row in rows:
+        kind, value = row[0], row[1]
+        if kind in result:
+            result[kind].append(value)
+    return result
 
 
 def _upsert(cx, email, answers, status, now, submitted_at):
@@ -204,6 +254,7 @@ def _upsert(cx, email, answers, status, now, submitted_at):
         "   answers_json=excluded.answers_json,"
         "   submitted_at=COALESCE(excluded.submitted_at, intake_responses.submitted_at)",
         (email, INTAKE_FORM["version"], status, json.dumps(answers), now, submitted_at))
+    remember_answer_suggestions(cx, answers, now)
     cx.commit()
 
 

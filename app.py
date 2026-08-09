@@ -27715,9 +27715,22 @@ def intake_form():
     from dashboard import intake as _intake
     with db.connect(LOG_DB) as cx:
         cx.row_factory = sqlite3.Row
+        _intake.init_intake_table(cx)
         if _evox_ident(cx, request.args.get("token", "")) is None:
             return jsonify({"error": "not_found"}), 404
-    return jsonify(_intake.INTAKE_FORM)
+        # Keep the supplement chooser aligned with the live Remedy Match
+        # catalog. Non-supplement services and apparel are intentionally
+        # excluded; client-entered values are added by each draft/submit save.
+        remedy_names = sorted({
+            str(p.get("name") or "").strip()
+            for p in (_PRODUCTS.get("products") or {}).values()
+            if p.get("name") and not p.get("inactive") and not p.get("service")
+            and not p.get("info_only") and p.get("bottle_type") != "own-box"
+        }, key=str.casefold)
+        _intake.seed_suggestions(cx, supplements=remedy_names)
+        cx.commit()
+        suggestions = _intake.list_suggestions(cx)
+    return jsonify({**_intake.INTAKE_FORM, "suggestions": suggestions})
 
 
 @app.route("/api/intake/state")

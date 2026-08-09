@@ -42,6 +42,19 @@ def test_form_endpoint_returns_sections(client):
     assert r.status_code == 200
     assert r.get_json()["version"]
     assert any(s["id"] == "dimensions" for s in r.get_json()["sections"])
+    assert {"Remedy Match", "E4L", "PRL", "Fullscript"}.issubset(
+        set(r.get_json()["suggestions"]["brands"])
+    )
+    assert r.get_json()["suggestions"]["supplements"]
+
+
+def test_draft_entry_is_added_to_form_suggestions(client):
+    client.post("/api/intake/save-draft?token=good", json={"answers": {
+        "supplements": [{"brand": "Client Brand", "name": "Client Formula"}]
+    }})
+    suggestions = client.get("/api/intake/form?token=good").get_json()["suggestions"]
+    assert "Client Brand" in suggestions["brands"]
+    assert "Client Formula" in suggestions["supplements"]
 
 
 def test_form_endpoint_requires_token(client):

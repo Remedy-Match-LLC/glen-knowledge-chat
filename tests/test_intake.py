@@ -39,6 +39,34 @@ def test_gender_options_are_male_or_female():
     assert gender["options"] == ["Male", "Female"]
 
 
+def test_supplement_columns_use_searchable_free_text_suggestions():
+    supplements = next(
+        field
+        for section in intake.INTAKE_FORM["sections"]
+        for field in section["fields"]
+        if field["id"] == "supplements"
+    )
+    columns = {column["id"]: column for column in supplements["columns"]}
+    assert columns["brand"]["type"] == "text"
+    assert columns["brand"]["suggestion_kind"] == "brands"
+    assert columns["name"]["type"] == "text"
+    assert columns["name"]["suggestion_kind"] == "supplements"
+
+
+def test_suggestions_are_seeded_and_new_answers_are_remembered():
+    cx = _cx()
+    seeded = intake.list_suggestions(cx)
+    assert seeded["brands"] == ["E4L", "Fullscript", "PRL", "Remedy Match"]
+
+    intake.save_draft(cx, "s@x.com", {"supplements": [
+        {"brand": "  New   Brand ", "name": " Custom Formula "},
+        {"brand": "new brand", "name": "custom formula"},
+    ]}, "2026-08-09T00:00:00")
+    suggestions = intake.list_suggestions(cx)
+    assert suggestions["brands"].count("New Brand") == 1
+    assert suggestions["supplements"].count("Custom Formula") == 1
+
+
 def test_validate_missing_required():
     errors = intake.validate_response({})
     for req in ("first_name", "last_name", "email", "dob", "terrain", "terms"):
