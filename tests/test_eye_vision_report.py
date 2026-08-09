@@ -52,6 +52,19 @@ def test_history_opens_by_default_and_saved_preference_wins(tmp_path):
     assert relationship["symptom_context"]
     assert relationship["condition_context"]
     assert "diagnose" in block["findings"][0]["history_context"]
+    assert all("outside this phase" not in item for item in block["limitations"])
+    assert block["resource_links"] == [
+        {
+            "label": "My Recommendations",
+            "href": "#recs",
+            "description": "matched remedies, product options, and available dosing guidance",
+        },
+        {
+            "label": "Biofield Analysis",
+            "href": "#biofield",
+            "description": "scan-based protocols and consultation or support options",
+        },
+    ]
     saved_closed = report.build_portal_block(
         cx, "a@example.com", "2026-07-25", saved_collapsed=True,
         db_path=e4l_path)

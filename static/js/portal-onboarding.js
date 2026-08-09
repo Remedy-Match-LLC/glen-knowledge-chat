@@ -19,8 +19,7 @@ function renderOnboarding(status) {
     if (ph.key === 'match') {
       // Ask about every condition with an authored protocol until at least one
       // condition-sourced recommendation has been saved.
-      var historyStep = _stepByKey(ph.steps, 'history');
-      if (historyStep && historyStep.done === false) {
+      if (status.history_conditions_done === false) {
         extra += renderTriageForm(status);
       }
       // Task 6 / P1.T3 fast-follow: surface status.member as a quiet inline

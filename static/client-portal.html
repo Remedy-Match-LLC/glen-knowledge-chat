@@ -637,7 +637,7 @@
       <span class="portal-client-photo-placeholder" id="client-photo-placeholder" aria-hidden="true"></span>
     </span>
     <span class="portal-client-identity-copy">
-      <span class="portal-client-identity-label">Healing Oasis client portal</span>
+      <span class="portal-client-identity-label">My Healing Oasis</span>
       <strong class="portal-client-identity-name" id="portal-client-name"></strong>
     </span>
   </header>
@@ -2322,11 +2322,48 @@ document.addEventListener("click", async (ev) => {
 // "My Recommendations" (Phase 2b-ii Task 1): one collapsible sub-section per
 // recommendation source, shared by the initial payload render — sections come
 // from GET /api/portal/<token>/recommendations, fetched alongside d/v in load().
-// Each section lists up to `shown` products (with a "show all N" affordance
-// when `total > shown`) as: an icon row of source chips, the name (linked when
+// Each section lists 3 products initially, then progressively reveals 5 and
+// finally all products. Rows render as: an icon row of source chips, the name (linked when
 // `url` is present and http(s)/relative), the operator's read-only note, and a
 // client-editable note + hide control. Click/save/hide/collapse-toggle wiring
 // is bound by wireRecommendationsCard() below, called once per render().
+function recommendationPriorityHtml(sections){
+  const labels = {};
+  const products = {};
+  sections.forEach(sec=>{
+    labels[String(sec.source || "")] = String(sec.label || sec.source || "");
+    (Array.isArray(sec.products) ? sec.products : []).forEach(product=>{
+      const key = String(product.product_key || "");
+      if(!key || products[key]) return;
+      const sources = Array.isArray(product.icons) ? product.icons : [];
+      const points = sources.reduce((sum, source)=>sum + (Number(source.count) || 0), 0);
+      if(sources.length < 2 && points <= 1) return;
+      products[key] = {product: product, sources: sources, points: points};
+    });
+  });
+  const ranked = Object.values(products).sort((a, b)=>
+    (b.points - a.points) || String(a.product.name || "").localeCompare(String(b.product.name || ""))
+  );
+  if(!ranked.length) return "";
+  const rows = ranked.map(item=>{
+    const product = item.product;
+    const safeUrl = /^(https?:\/\/|\/)/.test(String(product.url || "")) ? product.url : "";
+    const name = safeUrl
+      ? `<a href="${esc(safeUrl)}" target="_blank" rel="noopener">${esc(product.name || product.product_key || "")}</a>`
+      : esc(product.name || product.product_key || "");
+    const listNames = item.sources.map(source=>labels[String(source.source || "")] || String(source.source || ""));
+    return `<li class="rec-priority-row" style="padding:.55rem 0">
+      <div><strong>${name}</strong> <span class="pill">${item.points} point${item.points === 1 ? "" : "s"}</span></div>
+      <p class="muted small" style="margin:.2rem 0 0">Lists: ${listNames.map(esc).join(" · ")}</p>
+    </li>`;
+  }).join("");
+  return `<div class="rec-priority" style="margin:.8rem 0 1.1rem">
+    <h3 style="margin-bottom:.2rem">Your strongest recommendations</h3>
+    <p class="muted small" style="margin-top:0">Items found on more than one list or supported by more than one point, ranked by total points.</p>
+    <ol style="margin:.4rem 0;padding-left:1.4rem">${rows}</ol>
+  </div>`;
+}
+
 function renderRecommendations(sections){
   let secHtml = "";
   sections.forEach(sec=>{
@@ -2370,8 +2407,9 @@ function renderRecommendations(sections){
         </div>
       </div>`;
     });
+    const moreLabel = total > 5 ? "See more (5)" : `See all (${total})`;
     const moreHtml = total > shown
-      ? `<button type="button" class="btn ghost small rec-showmore" data-section="${src}" style="margin-top:.5rem">Show all ${total}</button>`
+      ? `<button type="button" class="btn ghost small rec-showmore" data-section="${src}" data-visible="${shown}" data-total="${total}" style="margin-top:.5rem">${moreLabel}</button>`
       : "";
     secHtml += `<div class="rec-section" data-section="${src}" style="margin:.9rem 0">
       <div class="rec-section-header" data-section-toggle="${src}" data-collapsed="${collapsed ? "1" : "0"}"
@@ -2387,11 +2425,12 @@ function renderRecommendations(sections){
       </div>
     </div>`;
   });
-  return `<div class="card" id="recsCard"><h2>My Recommendations</h2>${secHtml || '<p class="muted">No recommendations yet.</p>'}</div>`;
+  const priorityHtml = recommendationPriorityHtml(sections);
+  return `<div class="card" id="recsCard"><h2>My Recommendations</h2>${priorityHtml}${secHtml || '<p class="muted">No recommendations yet.</p>'}</div>`;
 }
 
 // Phase 2b-ii: wire the "My Recommendations" card's three writes +
-// the client-side "Show all N" reveal. Called once per render() (like the
+// the client-side 3 → 5 → all reveal. Called once per render() (like the
 // wishlist/ff-matches wiring above it) — app.innerHTML is rebuilt on every
 // load(), so every .rec-* element here is fresh and re-querying + re-binding
 // each time cannot double-fire (the previous elements, and their listeners,
@@ -2486,15 +2525,20 @@ function wireRecommendationsCard(){
     });
   });
 
-  // "Show all N": build_sections now sends every product in the payload
-  // (`shown` is only the initial-visible hint) — the extra rows already exist
-  // in the DOM with `hidden`, so revealing them is a pure client-side flip,
-  // no re-fetch needed.
+  // Progressive reveal: build_sections sends every product in the payload.
+  // Show 3 initially, then 5, then all, without another request.
   card.querySelectorAll(".rec-showmore").forEach(mb=>{
     mb.addEventListener("click", ()=>{
       const body = mb.closest(".rec-section-body");
-      if(body) body.querySelectorAll(".rec-row[hidden]").forEach(row=>{ row.hidden = false; });
-      mb.remove();
+      const total = Number(mb.getAttribute("data-total")) || 0;
+      const visible = Number(mb.getAttribute("data-visible")) || 3;
+      const target = visible < 5 ? Math.min(5, total) : total;
+      if(body) body.querySelectorAll(".rec-row").forEach(row=>{
+        row.hidden = Number(row.getAttribute("data-row-idx")) >= target;
+      });
+      if(target >= total){ mb.remove(); return; }
+      mb.setAttribute("data-visible", String(target));
+      mb.textContent = `See all (${total})`;
     });
   });
 }
@@ -2533,6 +2577,9 @@ function renderEyeVisionReport(report){
     </div>`).join("");
   const limitations = (Array.isArray(report.limitations) ? report.limitations : [])
     .map(item=>`<li>${esc(item)}</li>`).join("");
+  const resourceLinks = (Array.isArray(report.resource_links) ? report.resource_links : [])
+    .map(item=>`<li><a href="${esc(item.href || "#recs")}">${esc(item.label || "Portal resources")}</a>${item.description ? ` — ${esc(item.description)}` : ""}</li>`)
+    .join("");
   const rr = report.review_request || {};
   let reviewAction = "";
   if(rr.eligible){
@@ -2560,7 +2607,7 @@ function renderEyeVisionReport(report){
       ${report.scan_date ? `<p class="muted small">E4L scan: ${esc(report.scan_date)}</p>` : ""}
       ${rows || `<p class="muted">${esc(report.empty_state || "No eye- or vision-mapped patterns were found.")}</p>`}
       ${reviewAction}
-      ${limitations ? `<details style="margin-top:.8rem"><summary>Important context</summary><ul class="muted small">${limitations}</ul></details>` : ""}
+      ${(limitations || resourceLinks) ? `<details style="margin-top:.8rem"><summary>Important context</summary><ul class="muted small">${limitations}${resourceLinks ? `<li>Continue with these resources:<ul>${resourceLinks}</ul></li>` : ""}</ul></details>` : ""}
     </div>
   </div>`;
 }

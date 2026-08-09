@@ -27,7 +27,18 @@ LIMITATIONS = [
     "This report describes E4L Infoceutical pattern-to-structure relationships.",
     "It does not diagnose an eye condition or establish damage, severity, prognosis, or causation.",
     "It does not replace an eye examination or other appropriate clinical assessment.",
-    "Remedies, products, protocols, dosing, and support suggestions are outside this phase.",
+]
+RESOURCE_LINKS = [
+    {
+        "label": "My Recommendations",
+        "href": "#recs",
+        "description": "matched remedies, product options, and available dosing guidance",
+    },
+    {
+        "label": "Biofield Analysis",
+        "href": "#biofield",
+        "description": "scan-based protocols and consultation or support options",
+    },
 ]
 CLINICAL_CONTEXT_USAGE = (
     "Related symptoms and conditions organize reported history only. "
@@ -612,6 +623,7 @@ def build_portal_block(cx, email, today, saved_collapsed=None, db_path=None):
         "empty_state": ("This scan did not contain a canonical eye- or "
                         "vision-mapped Infoceutical pattern.") if not findings else None,
         "limitations": LIMITATIONS,
+        "resource_links": RESOURCE_LINKS,
         "open": is_open,
         "default_open": default_open,
         "preference_saved": saved_collapsed is not None,

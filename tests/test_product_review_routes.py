@@ -93,6 +93,10 @@ def test_intake_page_serves_when_live(monkeypatch, tmp_path):
     _setup(monkeypatch, tmp_path)  # flag on
     r = app.app.test_client().get("/product-review")
     assert r.status_code == 200 and b"reviewed" in r.data.lower()
+    assert b"Get your supplement <em>reviewed</em>" in r.data
+    assert b"Get your supplements" not in r.data
+    assert b'<label for="brand">Brand</label>' in r.data
+    assert b"Brand (optional)" not in r.data
 
 
 def test_intake_page_redirects_to_begin_when_dark(monkeypatch, tmp_path):

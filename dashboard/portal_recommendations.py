@@ -6,7 +6,10 @@ from dashboard.recommendation_sources import RECOMMENDATION_SOURCES
 from dashboard.order_destination import destination_for
 
 
-def build_sections(product_sources, notes, section_state, resolve_product, *, top_n=5):
+PRIMARY_SECTION_ORDER = ("self", "condition", "scan")
+
+
+def build_sections(product_sources, notes, section_state, resolve_product, *, top_n=3):
     by_source = {}
     for p in product_sources:
         if p.get("hidden"):
@@ -39,4 +42,10 @@ def build_sections(product_sources, notes, section_state, resolve_product, *, to
             # ALL products travel to the client — `shown` is only the initial-visible
             # hint; the "Show all N" affordance reveals the remainder with no re-fetch.
             "products": [{k: v for k, v in e.items() if not k.startswith("_")} for e in prods]})
+    priority = {key: index for index, key in enumerate(PRIMARY_SECTION_ORDER)}
+    registry_order = {key: index for index, key in enumerate(RECOMMENDATION_SOURCES)}
+    out.sort(key=lambda section: (
+        priority.get(section["source"], len(priority)),
+        registry_order.get(section["source"], len(registry_order)),
+    ))
     return out

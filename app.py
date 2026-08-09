@@ -21699,7 +21699,7 @@ def api_portal_onboarding(token):
 def api_portal_recommendations(token):
     """Read-only: a client's recommended-products sections, grouped by source
     (biofield/intake/scan/.../purchased), each ranked by that source's touch count
-    then recency, top 5 shown + a total count. Token-authed like the other
+    then recency, top 3 shown + a total count. Token-authed like the other
     /api/portal/<token>/... routes — identity comes ONLY from the portal token."""
     from dashboard import (client_portal as _cp, recommendation_events as _re,
                             recommendation_prefs as _rp, portal_recommendations as _pr,
