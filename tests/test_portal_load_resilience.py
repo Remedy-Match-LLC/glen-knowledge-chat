@@ -28,6 +28,13 @@ def test_shared_portal_hashes_route_to_real_panels_and_cards():
     assert 'id="portal-intake-card"' in HTML
 
 
+def test_intake_panel_is_rendered_for_hub_and_legacy_portals():
+    # One panel lives in the shared wrapped-panel path (hub or scan history),
+    # and the other is the legacy fallback when neither feature is enabled.
+    assert HTML.count('data-panel="intake" hidden') == 2
+    assert "The onboarding checklist is available independently" in HTML
+
+
 def test_native_intake_is_resumable_and_reports_save_state():
     assert '"My Intake", "Build or continue your clinical health profile"' in HTML
     assert "initPortalIntakeCard();" in HTML
