@@ -6,9 +6,10 @@ Flow (mirrors the E4L Gmail watcher):
      Confirmation" emails from noreply-ecns@usps.com.
   2. Parse each into shipments (tracking #, recipient, address).
   3. Match each recipient name -> GHL contact email (with a confidence score).
-  4. Build Glen's "tracking number" email and CREATE IT AS A DRAFT (To: prefilled
-     for high/medium-confidence matches, blank + flagged needs_review otherwise).
-  5. Record to the shipments table so re-runs never double-draft.
+  4. Send high-confidence tracking notices through the client's GHL contact.
+     Fuzzy/unresolved matches stay Gmail drafts for human review.
+  5. Record tracking, scheduled delivery, notification audit, and the safe order
+     link in shipments so re-runs never double-send.
 
 DEFAULT IS DRY-RUN: prints what it would do and mutates nothing (no drafts, no
 DB writes). Pass --live to actually create drafts.
@@ -40,6 +41,7 @@ import argparse
 import base64
 import os
 import sqlite3
+from datetime import datetime, timezone
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from pathlib import Path
@@ -50,6 +52,9 @@ from dashboard.tracking import (
     init_tracking_schema,
     record_shipment,
     shipment_exists,
+    shipment_by_tracking,
+    link_shipment_to_orders,
+    normalize_delivery_date,
 )
 
 # Confidence tiers we trust enough to email the customer without a human glance.
@@ -71,6 +76,10 @@ SCOPES = [
 def _db_path():
     base = os.environ.get("DATA_DIR", str(Path(__file__).resolve().parent))
     return str(Path(base) / "chat_log.db")
+
+
+def _iso_now():
+    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
 
 # ── Gmail plumbing (thin; the testable logic is handle_confirmation) ─────────
@@ -118,13 +127,12 @@ def make_draft_fn(service):
     return draft_fn
 
 
-def make_send_fn(service):
-    """Send the tracking email outright (gmail.compose scope covers messages.send).
-    Only ever called for AUTO_SEND_CONFIDENCES recipients with a non-blank To:."""
+def make_ghl_send_fn():
+    """Send through the client's GHL contact and return its conversation message id."""
+    from dashboard import ghl_email
     def send_fn(to, subject, html, text):
-        raw = build_raw(subject, html, text, to=to)
-        res = service.users().messages().send(
-            userId="me", body={"raw": raw}).execute()
+        res = ghl_email.send_via_ghl(
+            to, subject, html=html, text=text, from_name="Dr. Glen Swartwout")
         return res.get("id")
     return send_fn
 
@@ -189,7 +197,7 @@ def make_persist_contact():
 
 def handle_confirmation(html, msg_id, cx, find_contact, draft_fn,
                         harvest_fn=None, persist_contact=None, send_fn=None,
-                        auto_send=False, dry_run=True):
+                        auto_send=False, dry_run=True, link_orders=False):
     """Process one confirmation email's HTML. Returns a list of per-shipment
     result dicts. In dry-run, no drafts/sends/GHL writes/DB writes happen.
 
@@ -201,9 +209,24 @@ def handle_confirmation(html, msg_id, cx, find_contact, draft_fn,
     results = []
     for s in parsed["shipments"]:
         if shipment_exists(cx, s["tracking"]):
-            results.append({"tracking": s["tracking"],
-                            "recipient": s["recipient_name"],
-                            "action": "skipped (already processed)"})
+            result = {"tracking": s["tracking"],
+                      "recipient": s["recipient_name"],
+                      "action": "skipped (already processed)"}
+            # Backfill order links for confirmations processed before this feature
+            # shipped. This never creates another draft or customer email.
+            if link_orders and not dry_run:
+                row = shipment_by_tracking(cx, s["tracking"])
+                try:
+                    shipment_id = row["id"] if hasattr(row, "keys") else row[0]
+                    resolved = (row["resolved_email"] if hasattr(row, "keys")
+                                else row[5])
+                    linked = link_shipment_to_orders(
+                        cx, shipment_id, s, resolved_email=(resolved or ""))
+                    result["order_link"] = linked
+                except Exception as exc:
+                    result["order_link"] = {"status": "error", "order_ids": [],
+                                            "reason": str(exc)}
+            results.append(result)
             continue
 
         match = find_contact(s["recipient_name"])
@@ -228,6 +251,7 @@ def handle_confirmation(html, msg_id, cx, find_contact, draft_fn,
 
         draft_id = None
         onboarded = False
+        notification_error = None
         if dry_run:
             verb = "would send" if send_eligible else "would draft"
             action = f"{verb} (harvested)" if conf == "harvested" else verb
@@ -237,25 +261,54 @@ def handle_confirmation(html, msg_id, cx, find_contact, draft_fn,
                 ghl_contact_id = pc.get("contact_id") or ghl_contact_id
                 onboarded = bool(pc.get("onboarded"))
             if send_eligible and send_fn is not None:
-                draft_id = send_fn(to=to, subject=email["subject"],
-                                   html=email["html"], text=email["text"])
-                action = "sent"
+                try:
+                    draft_id = send_fn(to=to, subject=email["subject"],
+                                       html=email["html"], text=email["text"])
+                    action = "sent via GHL"
+                except Exception as exc:
+                    # Never substitute a different outbound channel. Keep a Gmail
+                    # draft for review and audit the GHL failure for operations.
+                    notification_error = f"{type(exc).__name__}: {exc}"
+                    draft_id = draft_fn(to=to, subject=email["subject"],
+                                        html=email["html"], text=email["text"])
+                    status = "send_failed"
+                    action = "drafted (GHL send failed)"
             else:
                 status = "drafted" if to else "needs_review"  # never sent
                 draft_id = draft_fn(to=to, subject=email["subject"],
                                     html=email["html"], text=email["text"])
                 action = "drafted"
-            record_shipment(
+            shipment_id = record_shipment(
                 cx, tracking_number=s["tracking"], order_uuid=parsed["order_uuid"],
                 recipient_name=s["recipient_name"], address_block=s["address_block"],
                 resolved_email=to, match_confidence=conf,
                 ghl_contact_id=ghl_contact_id,
-                draft_id=draft_id, status=status, source_msg_id=msg_id)
+                draft_id=draft_id, status=status, source_msg_id=msg_id,
+                scheduled_delivery_date=normalize_delivery_date(s.get("delivery_date")),
+                notification_channel=("ghl" if status == "sent" else None),
+                notification_sent_at=(_iso_now() if status == "sent" else None),
+                notification_error=notification_error)
+
+            order_link = None
+            if link_orders and shipment_id is not None:
+                try:
+                    order_link = link_shipment_to_orders(
+                        cx, shipment_id, s, resolved_email=to or "")
+                except Exception as exc:
+                    # Tracking delivery is more important than the order-board join;
+                    # preserve the shipment/email and surface the linking error.
+                    order_link = {"status": "error", "order_ids": [],
+                                  "reason": str(exc)}
 
         results.append({"tracking": s["tracking"], "recipient": s["recipient_name"],
                         "to": to or "(blank — needs review)", "confidence": conf,
                         "status": status, "action": action, "draft_id": draft_id,
-                        "onboarded": onboarded})
+                        "onboarded": onboarded,
+                        "scheduled_delivery_date": normalize_delivery_date(
+                            s.get("delivery_date")),
+                        "notification_channel": "ghl" if status == "sent" else None,
+                        "notification_error": notification_error,
+                        "order_link": order_link if not dry_run else None})
     return results
 
 
@@ -266,8 +319,8 @@ def main():
     ap.add_argument("--live", action="store_true",
                     help="actually create Gmail drafts + record (default: dry-run)")
     ap.add_argument("--auto-send", action="store_true",
-                    help="email high-confidence + harvested recipients outright "
-                         "instead of drafting; fuzzy/unresolved still draft")
+                    help="email high-confidence + harvested recipients through GHL; "
+                         "fuzzy/unresolved and GHL failures stay drafts")
     ap.add_argument("--days", type=int, default=14,
                     help="how many days back to scan (default 14)")
     ap.add_argument("--max", type=int, default=25, help="max emails to scan")
@@ -282,7 +335,7 @@ def main():
 
     svc = gmail_service()
     draft_fn = make_draft_fn(svc) if not dry_run else (lambda **k: None)
-    send_fn = make_send_fn(svc) if (not dry_run and args.auto_send) else None
+    send_fn = make_ghl_send_fn() if (not dry_run and args.auto_send) else None
     harvest_fn = make_harvest_fn(make_gmail_search_fn(svc))
     persist_contact = None if dry_run else make_persist_contact()
 
@@ -308,11 +361,15 @@ def main():
                                          draft_fn, harvest_fn=harvest_fn,
                                          persist_contact=persist_contact,
                                          send_fn=send_fn, auto_send=args.auto_send,
-                                         dry_run=dry_run):
+                                         dry_run=dry_run, link_orders=True):
                 totals[r["action"]] = totals.get(r["action"], 0) + 1
                 line = (f"  [{r.get('confidence','-'):>6}] {r['recipient']:<22} "
                         f"{r['tracking']}  -> {r.get('to','')}  ({r['action']})")
                 print(line)
+                link = r.get("order_link")
+                if link:
+                    print(f"           order-link: {link['status']} "
+                          f"{link.get('order_ids') or ''} — {link.get('reason','')}")
 
     print("\nSummary:", ", ".join(f"{k}: {v}" for k, v in totals.items() if v))
     if dry_run:

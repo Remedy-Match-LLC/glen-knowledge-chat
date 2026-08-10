@@ -9,6 +9,7 @@ CONF = """<html><body>
       <table><tbody><tr><td>
         <p class="bold"> Priority Mail&#174;</p>
         <a href="x">4200000000009405530109355300000001</a>
+        <p class="bold">Scheduled delivery date: 08/13/2026</p>
         <p class="bold">Shipped To:</p>
         <p class="pt-5">New Buyer</p>
         <p class="pt-5">1 A St</p>
@@ -88,10 +89,23 @@ def test_auto_send_high_confidence_sends_not_drafts():
     res = handle_confirmation(CONF, "AS1", _cx(), _high_match, draft_fn,
                               send_fn=send_fn, auto_send=True, dry_run=False)[0]
     assert res["status"] == "sent"
-    assert res["action"] == "sent"
+    assert res["action"] == "sent via GHL"
     assert res["draft_id"] == "SENT1"
+    assert res["notification_channel"] == "ghl"
+    assert res["scheduled_delivery_date"] == "2026-08-13"
     assert sent == ["known@example.com"]
     assert drafted == []          # never also drafts
+
+    cx = _cx()
+    handle_confirmation(CONF, "AS1-DB", cx, _high_match, draft_fn,
+                        send_fn=send_fn, auto_send=True, dry_run=False)
+    row = cx.execute(
+        "SELECT scheduled_delivery_date, notification_channel, "
+        "notification_sent_at, notification_error FROM shipments").fetchone()
+    assert row[0] == "2026-08-13"
+    assert row[1] == "ghl"
+    assert row[2]
+    assert row[3] is None
 
 
 def test_auto_send_harvested_sends_and_persists():
@@ -113,6 +127,28 @@ def test_auto_send_harvested_sends_and_persists():
     assert sent == ["harv@example.com"]
     assert drafted == []
     assert persisted["email"] == "harv@example.com"   # still ingests the buyer
+
+
+def test_ghl_send_failure_is_audited_and_never_falls_back_to_another_send_channel():
+    cx = _cx()
+    drafted = []
+    def send_fn(**kwargs):
+        raise RuntimeError("GHL unavailable")
+    def draft_fn(to, subject, html, text):
+        drafted.append(to)
+        return "REVIEW-DRAFT"
+    res = handle_confirmation(CONF, "AS-FAIL", cx, _high_match, draft_fn,
+                              send_fn=send_fn, auto_send=True, dry_run=False)[0]
+    assert res["status"] == "send_failed"
+    assert res["action"] == "drafted (GHL send failed)"
+    assert res["notification_channel"] is None
+    assert "GHL unavailable" in res["notification_error"]
+    assert drafted == ["known@example.com"]
+    row = cx.execute(
+        "SELECT notification_channel, notification_sent_at, notification_error "
+        "FROM shipments").fetchone()
+    assert row[0] is None and row[1] is None
+    assert "GHL unavailable" in row[2]
 
 
 def test_auto_send_medium_confidence_still_drafts():

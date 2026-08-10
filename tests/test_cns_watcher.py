@@ -5,6 +5,7 @@ import sqlite3
 import pytest
 
 from dashboard.tracking import init_tracking_schema, shipment_exists
+from dashboard import orders as O
 from cns_tracking_watcher import handle_confirmation, build_raw
 
 
@@ -59,6 +60,38 @@ def test_live_high_confidence_prefills_to_and_records(cx):
     assert draft_fn.calls[0]["to"] == "cyndi@example.com"
     assert draft_fn.calls[0]["subject"] == "tracking number"
     assert shipment_exists(cx, "9405530109355381515251")
+
+
+def test_live_ingest_links_tracking_to_exact_open_order(cx):
+    O.init_orders_table(cx)
+    oid = O.upsert_order(
+        cx, source="manual", external_ref="INH-LINK", name="Cyndi O'Brien",
+        email="cyndi@example.com", status="new",
+        address={"name": "Cyndi O'Brien", "street": "1016 W Chicago Ct",
+                 "city": "Chandler", "state": "AZ", "zip": "85224"})
+    res = handle_confirmation(ONE_SHIPMENT, "m-link", cx, HIGH,
+                              _recording_draft_fn(), dry_run=False,
+                              link_orders=True)
+    assert res[0]["order_link"]["status"] == "linked"
+    assert res[0]["order_link"]["order_ids"] == [oid]
+    assert cx.execute("SELECT tracking_number FROM orders WHERE id=?", (oid,)).fetchone()[0] \
+        == "9405530109355381515251"
+
+
+def test_existing_confirmation_backfills_order_link_without_second_draft(cx):
+    O.init_orders_table(cx)
+    oid = O.upsert_order(
+        cx, source="manual", external_ref="INH-BACKFILL", name="Cyndi O'Brien",
+        email="cyndi@example.com", status="new",
+        address={"name": "Cyndi O'Brien", "street": "1016 W Chicago Ct",
+                 "city": "Chandler", "state": "AZ", "zip": "85224"})
+    drafts = _recording_draft_fn()
+    handle_confirmation(ONE_SHIPMENT, "m-old", cx, HIGH, drafts, dry_run=False)
+    res = handle_confirmation(ONE_SHIPMENT, "m-old", cx, HIGH, drafts,
+                              dry_run=False, link_orders=True)
+    assert res[0]["action"] == "skipped (already processed)"
+    assert res[0]["order_link"]["order_ids"] == [oid]
+    assert len(drafts.calls) == 1
 
 
 def test_live_no_match_is_needs_review_blank_to(cx):

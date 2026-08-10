@@ -32,7 +32,9 @@ from __future__ import annotations
 
 import re
 import sqlite3
-from datetime import datetime
+import json
+import unicodedata
+from datetime import datetime, timezone
 from html import escape, unescape
 from typing import Dict, List, Optional
 
@@ -244,8 +246,9 @@ def build_tracking_email(tracking: str, recipient_name: Optional[str] = None,
 #
 # One row per tracking number. status:
 #   'drafted'      — Gmail draft created, awaiting Glen/Rae review + send
-#   'sent'         — Glen/Rae sent it (set later if we wire send-detection)
+#   'sent'         — delivered to GHL's outbound conversation-message API
 #   'needs_review' — parsed, but no confident GHL email match (To: left blank)
+#   'send_failed'  — GHL failed; a Gmail review draft was created, not sent
 #
 # tracking_number is UNIQUE so re-running the watcher over the same confirmation
 # email is a no-op (we never double-draft).
@@ -268,6 +271,16 @@ def init_tracking_schema(cx: sqlite3.Connection) -> None:
                 draft_id        TEXT,
                 status          TEXT    NOT NULL DEFAULT 'needs_review',
                 source_msg_id   TEXT,
+                scheduled_delivery_date TEXT,
+                notification_channel TEXT,
+                notification_sent_at TEXT,
+                notification_error TEXT,
+                delivered_at TEXT,
+                coaching_opened INTEGER NOT NULL DEFAULT 0,
+                easypost_tracker_id TEXT,
+                order_link_status TEXT,
+                order_link_reason TEXT,
+                linked_order_ids TEXT,
                 created_at      TEXT    NOT NULL DEFAULT (now()::text),
                 updated_at      TEXT
             )
@@ -286,6 +299,16 @@ def init_tracking_schema(cx: sqlite3.Connection) -> None:
                 draft_id        TEXT,
                 status          TEXT    NOT NULL DEFAULT 'needs_review',
                 source_msg_id   TEXT,
+                scheduled_delivery_date TEXT,
+                notification_channel TEXT,
+                notification_sent_at TEXT,
+                notification_error TEXT,
+                delivered_at TEXT,
+                coaching_opened INTEGER NOT NULL DEFAULT 0,
+                easypost_tracker_id TEXT,
+                order_link_status TEXT,
+                order_link_reason TEXT,
+                linked_order_ids TEXT,
                 created_at      TEXT    NOT NULL DEFAULT (datetime('now')),
                 updated_at      TEXT
             )
@@ -293,6 +316,19 @@ def init_tracking_schema(cx: sqlite3.Connection) -> None:
     cx.execute(
         "CREATE INDEX IF NOT EXISTS idx_shipments_status ON shipments(status)"
     )
+    # Order-link audit fields. `orders.shipment_id` is the operational join;
+    # these fields preserve why an automatic link was (or was not) made.
+    for column in (
+        "scheduled_delivery_date", "notification_channel",
+        "notification_sent_at", "notification_error",
+        "delivered_at", "easypost_tracker_id",
+        "order_link_status", "order_link_reason", "linked_order_ids",
+    ):
+        if not db.column_exists(cx, "shipments", column):
+            cx.execute(f"ALTER TABLE shipments ADD COLUMN {column} TEXT")
+    if not db.column_exists(cx, "shipments", "coaching_opened"):
+        cx.execute(
+            "ALTER TABLE shipments ADD COLUMN coaching_opened INTEGER NOT NULL DEFAULT 0")
     cx.commit()
 
 
@@ -313,7 +349,8 @@ def record_shipment(cx: sqlite3.Connection, **fields) -> Optional[int]:
     cols = [
         "tracking_number", "order_uuid", "recipient_name", "address_block",
         "resolved_email", "match_confidence", "ghl_contact_id", "draft_id",
-        "status", "source_msg_id",
+        "status", "source_msg_id", "scheduled_delivery_date",
+        "notification_channel", "notification_sent_at", "notification_error",
     ]
     vals = [fields.get(c) for c in cols]
     placeholders = ", ".join("?" for _ in cols)
@@ -326,22 +363,179 @@ def record_shipment(cx: sqlite3.Connection, **fields) -> Optional[int]:
     return int(new_id)
 
 
+def _norm_match_text(value: object) -> str:
+    """Case/punctuation/diacritic-insensitive text for identity comparisons."""
+    raw = unicodedata.normalize("NFKD", str(value or ""))
+    ascii_text = "".join(ch for ch in raw if not unicodedata.combining(ch))
+    return "".join(ch.lower() for ch in ascii_text if ch.isalnum())
+
+
+def _zip5(value: object) -> str:
+    digits = re.sub(r"\D", "", str(value or ""))
+    return digits[:5]
+
+
+def _order_address(order: dict) -> dict:
+    try:
+        address = json.loads(order.get("address_json") or "{}")
+    except (TypeError, ValueError):
+        address = {}
+    return address if isinstance(address, dict) else {}
+
+
+def _address_key(address: dict) -> tuple:
+    return (
+        _norm_match_text(address.get("street") or address.get("address1")),
+        _norm_match_text(address.get("city")),
+        _norm_match_text(address.get("state")),
+        _zip5(address.get("zip") or address.get("postal_code")),
+    )
+
+
+def _shipment_address_key(shipment: dict) -> tuple:
+    return (
+        _norm_match_text(shipment.get("street")),
+        _norm_match_text(shipment.get("city")),
+        _norm_match_text(shipment.get("state")),
+        _zip5(shipment.get("zip")),
+    )
+
+
+def _audit_order_link(cx, shipment_id: int, status: str, reason: str,
+                      order_ids: List[int]) -> dict:
+    cx.execute(
+        "UPDATE shipments SET order_link_status=?, order_link_reason=?, "
+        "linked_order_ids=?, updated_at=? WHERE id=?",
+        (status, reason, json.dumps(order_ids), _iso_now(), shipment_id),
+    )
+    cx.commit()
+    return {"status": status, "order_ids": order_ids, "reason": reason}
+
+
+def link_shipment_to_orders(cx: sqlite3.Connection, shipment_id: int,
+                            shipment: dict, resolved_email: str = "") -> dict:
+    """Safely attach an ingested USPS tracking number to one open client order.
+
+    Exact structured shipping address is authoritative. Email/name/ZIP may
+    disambiguate or provide a fallback, but a non-unique result is never written.
+    The order lifecycle is deliberately unchanged: buying a label is not carrier
+    acceptance, and the tracking-status sync advances it once USPS reports motion.
+    """
+    existing_cur = cx.execute(
+        "SELECT tracking_number, order_link_status, order_link_reason, "
+        "linked_order_ids FROM shipments WHERE id=?", (shipment_id,)
+    )
+    existing = existing_cur.fetchone()
+    if not existing:
+        raise ValueError(f"shipment #{shipment_id} not found")
+    prior = (dict(existing) if hasattr(existing, "keys") else
+             dict(zip((d[0] for d in existing_cur.description), existing)))
+    if prior.get("order_link_status") == "linked":
+        try:
+            ids = [int(v) for v in json.loads(prior.get("linked_order_ids") or "[]")]
+        except (TypeError, ValueError):
+            ids = []
+        return {"status": "linked", "order_ids": ids,
+                "reason": prior.get("order_link_reason") or "previously linked"}
+
+    orders_cur = cx.execute(
+        "SELECT id, email, name, address_json FROM orders "
+        "WHERE status IN ('new','packed') "
+        "AND (tracking_number IS NULL OR trim(tracking_number)='') "
+        "ORDER BY id DESC"
+    )
+    rows = orders_cur.fetchall()
+    if rows and hasattr(rows[0], "keys"):
+        orders = [dict(row) for row in rows]
+    else:
+        columns = [d[0] for d in orders_cur.description]
+        orders = [dict(zip(columns, row)) for row in rows]
+    recipient = _norm_match_text(shipment.get("recipient_name"))
+    target_email = str(resolved_email or "").strip().lower()
+    ship_key = _shipment_address_key(shipment)
+
+    def order_name(order):
+        addr = _order_address(order)
+        return _norm_match_text(addr.get("name") or order.get("name"))
+
+    def email_matches(order):
+        return bool(target_email and
+                    str(order.get("email") or "").strip().lower() == target_email)
+
+    # Require every structured component so a partial/blank address cannot look exact.
+    exact_address = []
+    if all(ship_key):
+        exact_address = [o for o in orders if _address_key(_order_address(o)) == ship_key]
+    if len(exact_address) == 1:
+        chosen, reason = exact_address, "exact shipping address"
+    elif len(exact_address) > 1:
+        by_email = [o for o in exact_address if email_matches(o)]
+        by_name = [o for o in exact_address if recipient and order_name(o) == recipient]
+        if len(by_email) == 1:
+            chosen, reason = by_email, "exact address + client email"
+        elif len(by_name) == 1:
+            chosen, reason = by_name, "exact address + recipient name"
+        else:
+            ids = [int(o["id"]) for o in exact_address]
+            return _audit_order_link(cx, shipment_id, "ambiguous",
+                                     "multiple open orders at exact address", ids)
+    else:
+        email_name = [o for o in orders if email_matches(o) and recipient
+                      and order_name(o) == recipient]
+        if len(email_name) == 1:
+            chosen, reason = email_name, "exact client email + recipient name"
+        elif len(email_name) > 1:
+            ids = [int(o["id"]) for o in email_name]
+            return _audit_order_link(cx, shipment_id, "ambiguous",
+                                     "multiple open orders for client", ids)
+        else:
+            ship_zip = ship_key[3]
+            name_zip = [o for o in orders if recipient and ship_zip
+                        and order_name(o) == recipient
+                        and _address_key(_order_address(o))[3] == ship_zip]
+            if len(name_zip) == 1:
+                chosen, reason = name_zip, "exact recipient name + ZIP"
+            elif len(name_zip) > 1:
+                ids = [int(o["id"]) for o in name_zip]
+                return _audit_order_link(cx, shipment_id, "ambiguous",
+                                         "multiple open orders for recipient + ZIP", ids)
+            else:
+                return _audit_order_link(cx, shipment_id, "unmatched",
+                                         "no safe open-order match", [])
+
+    order_id = int(chosen[0]["id"])
+    cx.execute(
+        "UPDATE orders SET tracking_number=?, shipment_id=?, updated_at=? WHERE id=?",
+        (prior["tracking_number"], shipment_id, _iso_now(), order_id),
+    )
+    return _audit_order_link(cx, shipment_id, "linked", reason, [order_id])
+
+
 def _iso_now() -> str:
-    return datetime.utcnow().isoformat() + "Z"
+    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def normalize_delivery_date(value: str) -> str:
+    """USPS MM/DD/YYYY scheduled date -> ISO YYYY-MM-DD; preserve unknown forms."""
+    raw = str(value or "").strip()
+    if not raw:
+        return ""
+    try:
+        return datetime.strptime(raw, "%m/%d/%Y").date().isoformat()
+    except ValueError:
+        return raw
 
 
 def migrate_add_delivery_columns(cx) -> None:
     """Add delivery-tracking columns to shipments if missing. Safe on every startup."""
-    for ddl in (
-        "ALTER TABLE shipments ADD COLUMN delivered_at TEXT",
-        "ALTER TABLE shipments ADD COLUMN coaching_opened INTEGER NOT NULL DEFAULT 0",
-        "ALTER TABLE shipments ADD COLUMN easypost_tracker_id TEXT",
-    ):
-        try:
-            cx.execute(ddl)
-            cx.commit()
-        except Exception:
-            pass
+    from dashboard import db
+    for column in ("delivered_at", "easypost_tracker_id"):
+        if not db.column_exists(cx, "shipments", column):
+            cx.execute(f"ALTER TABLE shipments ADD COLUMN {column} TEXT")
+    if not db.column_exists(cx, "shipments", "coaching_opened"):
+        cx.execute(
+            "ALTER TABLE shipments ADD COLUMN coaching_opened INTEGER NOT NULL DEFAULT 0")
+    cx.commit()
 
 
 def shipment_by_tracking(cx, tracking_number):

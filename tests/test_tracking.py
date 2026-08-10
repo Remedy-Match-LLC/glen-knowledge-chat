@@ -9,8 +9,14 @@ from dashboard.tracking import (
     build_tracking_email,
     init_tracking_schema,
     record_shipment,
+    normalize_delivery_date,
     shipment_exists,
 )
+
+
+def test_scheduled_delivery_date_normalizes_to_iso():
+    assert normalize_delivery_date("08/13/2026") == "2026-08-13"
+    assert normalize_delivery_date("") == ""
 
 
 # A faithful slice of a real noreply-ecns@usps.com "Payment Confirmation" email.
