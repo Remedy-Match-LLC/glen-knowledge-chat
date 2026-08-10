@@ -448,6 +448,17 @@ def _caregiver_pay_block(cx, email, enabled):
     return {"members": members, "orders": orders}
 
 
+def _brain_block(enabled, url):
+    """Link out to the published Clinical Theory of Everything brain.
+
+    No client data is involved, so the whole block is a flag and a URL. Both are
+    required: a flag flipped on with no URL configured would otherwise ship a tile
+    pointing at an empty href.
+    """
+    url = (url or "").strip()
+    return {"enabled": bool(enabled and url), "url": url}
+
+
 def get_portal_view(cx, person_id, *, offers_enabled_keys=None, scan_date=None,
                     quiz_url="", public_base_url="", finder_enabled=False,
                     hub_enabled=False, health_profile_enabled=False,
@@ -455,6 +466,7 @@ def get_portal_view(cx, person_id, *, offers_enabled_keys=None, scan_date=None,
                     biofield_unlocked=True, supplement_review_enabled=False,
                     oasis_enabled=False, terrain_phase=None,
                     cart_enabled=False,
+                    brain_enabled=False, brain_url="",
                     caregiver_pay_enabled=False):
     import sqlite3
     cx.row_factory = sqlite3.Row
@@ -496,6 +508,7 @@ def get_portal_view(cx, person_id, *, offers_enabled_keys=None, scan_date=None,
         "remedies": _rb.build_block(cx, email, remedies_enabled),
         "oasis": _ob.build_block(cx, email, oasis_enabled, terrain_phase),
         "cart": _cb.build_block(cx, email, cart_enabled),
+        "brain": _brain_block(brain_enabled, brain_url),
         "caregiver_pay": _caregiver_pay_block(cx, email, caregiver_pay_enabled),
         "caregiver_pay_enabled": bool(caregiver_pay_enabled),
     }

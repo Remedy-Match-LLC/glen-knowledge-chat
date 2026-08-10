@@ -455,7 +455,7 @@
   @media (max-width:760px){ .hub-tiles { grid-template-columns:repeat(2,1fr); } }
   @media (max-width:480px){ .hub-tiles { grid-template-columns:1fr; } }
   .hub-tile { text-align:left; cursor:pointer; background:var(--card); border:1px solid var(--line); border-radius:12px;
-    padding:.8rem; min-height:5.5rem; display:flex; flex-direction:column; gap:.35rem; font:inherit; color:var(--ink); }
+    padding:.8rem; min-height:5.5rem; display:flex; flex-direction:column; gap:.35rem; font:inherit; color:var(--ink); text-decoration:none; }
   .hub-tile:hover,.hub-tile:focus-visible { border-color:#2f6f5e; box-shadow:0 6px 18px rgba(24,36,32,.08); outline:none; }
   .hub-tile .tname { font-weight:650; font-size:.95rem; }
   .hub-tile .tdesc { font-size:.78rem; color:var(--muted); }
@@ -1100,6 +1100,9 @@ function buildHubHtml(d, v){
       ["ask",     "Ask Dr. Glen", "Chat about your terrain and remedies"],
       ["bodymap", "Body Map", "Your systems, personalized"],
       ["classes", "MasterClasses", "Free courses and teachings"],
+      ...((v && v.brain && v.brain.enabled)
+        ? [{ext:[v.brain.url, "Clinical Theory of Everything",
+                 "Explore the map of how healing works"]}] : []),
     ]],
     ["Track", [
       ["photo",   "My Photo", "Add or update your profile photo"],
@@ -1115,9 +1118,14 @@ function buildHubHtml(d, v){
   const tile = ([panel,name,desc,badge]) =>
     `<button type="button" class="hub-tile" data-tile="${esc(panel)}" onclick="showTab('${panel}')">
        <span class="tname">${esc(name)}${badge?` <span class="pill">${esc(badge)}</span>`:""}</span><span class="tdesc">${esc(desc)}</span></button>`;
+  // External-destination tile. Same .hub-tile look as its neighbours; an <a> rather
+  // than a button because showTab() only resolves panels that exist in the DOM.
+  const extTile = ([href,name,desc]) =>
+    `<a class="hub-tile" href="${esc(href)}" target="_blank" rel="noopener">
+       <span class="tname">${esc(name)}</span><span class="tdesc">${esc(desc)}</span></a>`;
   const grp = ([label,tiles]) =>
     `<div class="hub-grid-group"><p class="glabel">${esc(label)}</p>
-       <div class="hub-tiles">${tiles.map(tile).join("")}</div></div>`;
+       <div class="hub-tiles">${tiles.map(t => t.ext ? extTile(t.ext) : tile(t)).join("")}</div></div>`;
   const next = (d.next_step_label)
     ? `<div class="next"><div class="eyebrow">Your next step</div><div>${esc(d.next_step_label)}</div></div>`
     : "";
