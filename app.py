@@ -6273,6 +6273,12 @@ _PORTAL_OASIS_ENABLED = os.environ.get("PORTAL_OASIS_ENABLED", "").strip().lower
 # routes 404, the product page shows no Add to cart control, and the portal
 # payload is byte-identical to pre-cart.
 _PORTAL_CART_ENABLED = os.environ.get("PORTAL_CART_ENABLED", "").strip().lower() in ("1", "true", "yes", "on")
+# "Clinical Theory of Everything" hub tile: a link out to Glen's published TheBrain
+# view (bra.in/6j852k). Ships dark; same truthy set as the other portal flags. With
+# this off the portal payload carries brain.enabled false and no tile renders.
+_PORTAL_BRAIN_TILE_ENABLED = os.environ.get("PORTAL_BRAIN_TILE_ENABLED", "").strip().lower() in ("1", "true", "yes", "on")
+# The published brain's short link. Overridable so a re-publish does not need a deploy.
+_PORTAL_BRAIN_URL = os.environ.get("PORTAL_BRAIN_URL", "https://bra.in/6j852k").strip()
 # Staged portal-link rollout via GHL. Both must be set for /admin/portal/rollout-enroll
 # to do anything (else it 503s, inert): the GHL contact custom-field key that holds
 # the portal URL, and the workflow id that emails it.
@@ -28725,6 +28731,8 @@ def api_client_portal_view(token):
                                        oasis_enabled=_PORTAL_OASIS_ENABLED,
                                        terrain_phase=_resolve_oasis_terrain_phase(cx, ident.email),
                                        cart_enabled=_PORTAL_CART_ENABLED,
+                                       brain_enabled=_PORTAL_BRAIN_TILE_ENABLED,
+                                       brain_url=_PORTAL_BRAIN_URL,
                                        caregiver_pay_enabled=_caregiver_pay_enabled())
     if view is None:
         return jsonify({"error": "not found"}), 404
