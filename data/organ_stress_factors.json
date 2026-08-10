@@ -718,6 +718,7 @@
   "Testes": "testes",
   "Conception Vessel": "conception_vessel",
   "Belt Vessel": "belt_vessel",
-  "Coronary Arteries": "blood_vessels"
+  "Coronary Arteries": "blood_vessels",
+  "Kidney": "kidney"
  }
 }
