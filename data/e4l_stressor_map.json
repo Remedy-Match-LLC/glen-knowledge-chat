@@ -1,5 +1,5 @@
 {
- "_note": "Curated map of the E4L non-infoceutical ENVIRONMENTAL stress items -> target organs/systems + detox-support remedies, for the clinical glossary. Sourced from a 2026-07-14 toxicology research pass. HONESTY: most of these are cleared by normal liver Phase-II conjugation (glutathione/GST/UGT) + renal/biliary excretion, NOT by a specific product; only PFAS (bile-acid sequestrants) and fluoride (Ca/Mg gut binding) have a documented binder, and asbestos/isocyanates have no metabolic detox (avoidance only). Remedies below are framed as general elimination/conjugation support, not cures. Tiers: strong (agency/IARC) / moderate / weak. `affects` names cross-link to clinical Organ entries where they match.  EXPANDED 2026-08-08 to cover every finding a voice scan reports. Entries marked tier='unverified' come from e4l_items paraphrase and have NOT been checked against the scan source; tier='name-only' entries have no description and none was invented.  EXPANDED 2026-08-08 to cover every finding a voice scan reports. Entries marked tier='unverified' come from e4l_items paraphrase and have NOT been checked against the scan source; tier='name-only' entries have no description and none was invented.  EXPANDED 2026-08-08 to cover every finding a voice scan reports. Entries marked tier='unverified' come from e4l_items paraphrase and have NOT been checked against the scan source; tier='name-only' entries have no description and none was invented.  EXPANDED 2026-08-08 to cover every finding a voice scan reports. Entries marked tier='unverified' come from e4l_items paraphrase and have NOT been checked against the scan source; tier='name-only' entries have no description and none was invented.  EXPANDED 2026-08-08 to cover every finding a voice scan reports. Entries marked tier='unverified' come from e4l_items paraphrase and have NOT been checked against the scan source; tier='name-only' entries have no description and none was invented.",
+ "_note": "Curated map of the E4L non-infoceutical ENVIRONMENTAL stress items -> target organs/systems + detox-support remedies, for the clinical glossary. Sourced from a 2026-07-14 toxicology research pass. HONESTY: most of these are cleared by normal liver Phase-II conjugation (glutathione/GST/UGT) + renal/biliary excretion, NOT by a specific product; only PFAS (bile-acid sequestrants) and fluoride (Ca/Mg gut binding) have a documented binder, and asbestos/isocyanates have no metabolic detox (avoidance only). Remedies below are framed as general elimination/conjugation support, not cures. Tiers: strong (agency/IARC) / moderate / weak. `affects` names cross-link to clinical Organ entries where they match.  EXPANDED 2026-08-08 to cover every finding a voice scan reports. Entries marked tier='unverified' come from e4l_items paraphrase and have NOT been checked against the scan source; tier='name-only' entries have no description and none was invented.  EXPANDED 2026-08-08 to cover every finding a voice scan reports. Entries marked tier='unverified' come from e4l_items paraphrase and have NOT been checked against the scan source; tier='name-only' entries have no description and none was invented.  EXPANDED 2026-08-08 to cover every finding a voice scan reports. Entries marked tier='unverified' come from e4l_items paraphrase and have NOT been checked against the scan source; tier='name-only' entries have no description and none was invented.  EXPANDED 2026-08-08 to cover every finding a voice scan reports. Entries marked tier='unverified' come from e4l_items paraphrase and have NOT been checked against the scan source; tier='name-only' entries have no description and none was invented.  EXPANDED 2026-08-08 to cover every finding a voice scan reports. Entries marked tier='unverified' come from e4l_items paraphrase and have NOT been checked against the scan source; tier='name-only' entries have no description and none was invented.  EXPANDED 2026-08-08 to cover every finding a voice scan reports. Entries marked tier='unverified' come from e4l_items paraphrase and have NOT been checked against the scan source; tier='name-only' entries have no description and none was invented.",
  "dimensions": [
   {
    "key": "environmental",
@@ -3314,22 +3314,22 @@
      "name": "Sensory Cortex",
      "code": "ER1",
      "subcategory": "Energetic Rejuvenators (body structures)",
-     "tier": "name-only",
-     "description": "",
+     "tier": "assembled",
+     "description": "Associated emotional conflict: Identity. Supportive essences: True to Self Flower Essence, Self-Image Flower Essence.",
      "affects": [],
      "remedies": [],
-     "source": "E4L scan (name only)"
+     "source": "from e4l_pattern_structures + life_stress_emotion_map — joined from sourced data, no new clinical claims"
     },
     {
      "slug": "er-large-intestine",
      "name": "Large Intestine",
      "code": "ER2",
      "subcategory": "Energetic Rejuvenators (body structures)",
-     "tier": "name-only",
-     "description": "",
+     "tier": "assembled",
+     "description": "Associated emotional conflict: Letting Go. Supportive essences: Honeysuckle Flower Essence, Life's Transitions Flower Essence.",
      "affects": [],
      "remedies": [],
-     "source": "E4L scan (name only)"
+     "source": "from e4l_pattern_structures + life_stress_emotion_map — joined from sourced data, no new clinical claims"
     },
     {
      "slug": "er-bronchial",
@@ -3347,66 +3347,66 @@
      "name": "Fingers",
      "code": "ER4",
      "subcategory": "Energetic Rejuvenators (body structures)",
-     "tier": "name-only",
-     "description": "",
+     "tier": "assembled",
+     "description": "Associated emotional conflict: Letting Go. Supportive essences: Honeysuckle Flower Essence, Life's Transitions Flower Essence.",
      "affects": [],
      "remedies": [],
-     "source": "E4L scan (name only)"
+     "source": "from e4l_pattern_structures + life_stress_emotion_map — joined from sourced data, no new clinical claims"
     },
     {
      "slug": "er-myocardia",
      "name": "Myocardia",
      "code": "ER5",
      "subcategory": "Energetic Rejuvenators (body structures)",
-     "tier": "name-only",
-     "description": "",
+     "tier": "assembled",
+     "description": "Myocardia (Cor) — listed among the organ and tissue stresses. Associated emotional conflicts: Love, Fear, Trust. Supportive essences: Heart Chakra Flower Essence, Love Within Flower Essence, Mimulus Flower Essence, Aspen Flower Essence.",
      "affects": [],
      "remedies": [],
-     "source": "E4L scan (name only)"
+     "source": "from clinicaltheory Organs + e4l_pattern_structures + life_stress_emotion_map — joined from sourced data, no new clinical claims"
     },
     {
      "slug": "er-lungs",
      "name": "Lungs",
      "code": "ER6",
      "subcategory": "Energetic Rejuvenators (body structures)",
-     "tier": "name-only",
-     "description": "",
+     "tier": "assembled",
+     "description": "Lungs (Pulmonary) — listed among the organ and tissue stresses. Associated emotional conflicts: Fear, Grief, Trust. Supportive essences: Mimulus Flower Essence, Aspen Flower Essence, Honeysuckle Flower Essence, Sweet Chestnut Flower Essence.",
      "affects": [],
      "remedies": [],
-     "source": "E4L scan (name only)"
+     "source": "from clinicaltheory Organs + e4l_pattern_structures + life_stress_emotion_map — joined from sourced data, no new clinical claims"
     },
     {
      "slug": "er-sciatic-nerve",
      "name": "Sciatic Nerve",
      "code": "ER7",
      "subcategory": "Energetic Rejuvenators (body structures)",
-     "tier": "name-only",
-     "description": "",
+     "tier": "assembled",
+     "description": "Sciatic Nerve (Nervus Ischiaticus) — listed among the organ and tissue stresses. Associated emotional conflicts: Fear, Guilt, Self-Worth. Supportive essences: Mimulus Flower Essence, Aspen Flower Essence, Pine Flower Essence, Crab Apple Flower Essence.",
      "affects": [],
      "remedies": [],
-     "source": "E4L scan (name only)"
+     "source": "from clinicaltheory Organs + e4l_pattern_structures + life_stress_emotion_map — joined from sourced data, no new clinical claims"
     },
     {
      "slug": "er-lumbar-spine",
      "name": "Lumbar Spine",
      "code": "ER8",
      "subcategory": "Energetic Rejuvenators (body structures)",
-     "tier": "name-only",
-     "description": "",
+     "tier": "assembled",
+     "description": "Associated emotional conflicts: Worry, Self-Worth. Supportive essences: White Chestnut Flower Essence, Inner Peace Flower Essence, Self-Esteem Flower Essence, Worthiness Flower Essence.",
      "affects": [],
      "remedies": [],
-     "source": "E4L scan (name only)"
+     "source": "from e4l_pattern_structures + life_stress_emotion_map — joined from sourced data, no new clinical claims"
     },
     {
      "slug": "er-tailbone",
      "name": "Tailbone",
      "code": "ER9",
      "subcategory": "Energetic Rejuvenators (body structures)",
-     "tier": "name-only",
-     "description": "",
+     "tier": "assembled",
+     "description": "Associated emotional conflicts: Guilt, Self-Worth. Supportive essences: Pine Flower Essence, Crab Apple Flower Essence, Self-Esteem Flower Essence, Worthiness Flower Essence.",
      "affects": [],
      "remedies": [],
-     "source": "E4L scan (name only)"
+     "source": "from e4l_pattern_structures + life_stress_emotion_map — joined from sourced data, no new clinical claims"
     },
     {
      "slug": "er-jejunum",
@@ -3424,55 +3424,55 @@
      "name": "Parathyroid",
      "code": "ER11",
      "subcategory": "Energetic Rejuvenators (body structures)",
-     "tier": "name-only",
-     "description": "",
+     "tier": "assembled",
+     "description": "Associated emotional conflict: Self-Worth. Supportive essences: Self-Esteem Flower Essence, Worthiness Flower Essence.",
      "affects": [],
      "remedies": [],
-     "source": "E4L scan (name only)"
+     "source": "from clinicaltheory Organs + e4l_pattern_structures + life_stress_emotion_map — joined from sourced data, no new clinical claims"
     },
     {
      "slug": "er-appendix",
      "name": "Appendix",
      "code": "ER12",
      "subcategory": "Energetic Rejuvenators (body structures)",
-     "tier": "name-only",
-     "description": "",
+     "tier": "assembled",
+     "description": "Appendix (Appendix Vermiformis) — listed among the organ and tissue stresses. The Appendix functions as a Lymph Node for the gut, and secretes immune compounds to regulate growth of bacteria in the colon and prevent colonic bacteria from invading the Small Intestine. Microbiome and Lymph Flow provide excellent support for the Appendix. In case of parasite involvement with the Appendix, consider Para-Cleanse. Associated emotional conflicts: Guilt, Fear. Supportive essences: Pine Flower Essence, Crab Apple Flower Essence, Mimulus Flower Essence, Aspen Flower Essence.",
      "affects": [],
      "remedies": [],
-     "source": "E4L scan (name only)"
+     "source": "from clinicaltheory Organs + e4l_pattern_structures + life_stress_emotion_map — joined from sourced data, no new clinical claims"
     },
     {
      "slug": "er-av-nodes",
      "name": "AV Nodes",
      "code": "ER13",
      "subcategory": "Energetic Rejuvenators (body structures)",
-     "tier": "name-only",
-     "description": "",
+     "tier": "assembled",
+     "description": "Associated emotional conflicts: Love, Fear. Supportive essences: Heart Chakra Flower Essence, Love Within Flower Essence, Mimulus Flower Essence, Aspen Flower Essence.",
      "affects": [],
      "remedies": [],
-     "source": "E4L scan (name only)"
+     "source": "from e4l_pattern_structures + life_stress_emotion_map — joined from sourced data, no new clinical claims"
     },
     {
      "slug": "er-bladder",
      "name": "Bladder",
      "code": "ER14",
      "subcategory": "Energetic Rejuvenators (body structures)",
-     "tier": "name-only",
-     "description": "",
+     "tier": "assembled",
+     "description": "Bladder (Urinary) — listed among the organ and tissue stresses. Our Flow Ease formula makes a pleasant drink that is very soothing and healing for the Urinary Tract. It was inspired by clients with chronic Interstitial Cystitis, which means inflammation in the bladder. Associated emotional conflicts: Fear, Letting Go. Supportive essences: Mimulus Flower Essence, Aspen Flower Essence, Honeysuckle Flower Essence, Life's Transitions Flower Essence.",
      "affects": [],
      "remedies": [],
-     "source": "E4L scan (name only)"
+     "source": "from clinicaltheory Organs + e4l_pattern_structures + life_stress_emotion_map — joined from sourced data, no new clinical claims"
     },
     {
      "slug": "er-midbrain",
      "name": "Midbrain",
      "code": "ER15",
      "subcategory": "Energetic Rejuvenators (body structures)",
-     "tier": "name-only",
-     "description": "",
+     "tier": "assembled",
+     "description": "Associated emotional conflict: Identity. Supportive essences: True to Self Flower Essence, Self-Image Flower Essence.",
      "affects": [],
      "remedies": [],
-     "source": "E4L scan (name only)"
+     "source": "from e4l_pattern_structures + life_stress_emotion_map — joined from sourced data, no new clinical claims"
     },
     {
      "slug": "er-scapula",
@@ -3490,33 +3490,33 @@
      "name": "Gall Bladder",
      "code": "ER17",
      "subcategory": "Energetic Rejuvenators (body structures)",
-     "tier": "name-only",
-     "description": "",
+     "tier": "assembled",
+     "description": "Gall Bladder (Vesica Fellea) — listed among the organ and tissue stresses. Associated emotional conflicts: Fear, Anger. Supportive essences: Mimulus Flower Essence, Aspen Flower Essence, Holly Flower Essence, Willow Flower Essence.",
      "affects": [],
      "remedies": [],
-     "source": "E4L scan (name only)"
+     "source": "from clinicaltheory Organs + e4l_pattern_structures + life_stress_emotion_map — joined from sourced data, no new clinical claims"
     },
     {
      "slug": "er-cervical-spine",
      "name": "Cervical Spine",
      "code": "ER18",
      "subcategory": "Energetic Rejuvenators (body structures)",
-     "tier": "name-only",
-     "description": "",
+     "tier": "assembled",
+     "description": "Associated emotional conflicts: Love, Trust. Supportive essences: Heart Chakra Flower Essence, Love Within Flower Essence, Trust Flower Essence, Holly Flower Essence.",
      "affects": [],
      "remedies": [],
-     "source": "E4L scan (name only)"
+     "source": "from e4l_pattern_structures + life_stress_emotion_map — joined from sourced data, no new clinical claims"
     },
     {
      "slug": "er-thoracic-spine",
      "name": "Thoracic Spine",
      "code": "ER19",
      "subcategory": "Energetic Rejuvenators (body structures)",
-     "tier": "name-only",
-     "description": "",
+     "tier": "assembled",
+     "description": "Associated emotional conflicts: Guilt, Self-Worth. Supportive essences: Pine Flower Essence, Crab Apple Flower Essence, Self-Esteem Flower Essence, Worthiness Flower Essence.",
      "affects": [],
      "remedies": [],
-     "source": "E4L scan (name only)"
+     "source": "from e4l_pattern_structures + life_stress_emotion_map — joined from sourced data, no new clinical claims"
     },
     {
      "slug": "er-kidneys",
@@ -3534,99 +3534,99 @@
      "name": "Pineal Gland",
      "code": "ER21",
      "subcategory": "Energetic Rejuvenators (body structures)",
-     "tier": "name-only",
-     "description": "",
+     "tier": "assembled",
+     "description": "Associated emotional conflict: Identity. Supportive essences: True to Self Flower Essence, Self-Image Flower Essence.",
      "affects": [],
      "remedies": [],
-     "source": "E4L scan (name only)"
+     "source": "from e4l_pattern_structures + life_stress_emotion_map — joined from sourced data, no new clinical claims"
     },
     {
      "slug": "er-rectum",
      "name": "Rectum",
      "code": "ER22",
      "subcategory": "Energetic Rejuvenators (body structures)",
-     "tier": "name-only",
-     "description": "",
+     "tier": "assembled",
+     "description": "Associated emotional conflict: Self-Worth. Supportive essences: Self-Esteem Flower Essence, Worthiness Flower Essence.",
      "affects": [],
      "remedies": [],
-     "source": "E4L scan (name only)"
+     "source": "from clinicaltheory Organs + e4l_pattern_structures + life_stress_emotion_map — joined from sourced data, no new clinical claims"
     },
     {
      "slug": "er-atlas",
      "name": "Atlas",
      "code": "ER23",
      "subcategory": "Energetic Rejuvenators (body structures)",
-     "tier": "name-only",
-     "description": "",
+     "tier": "assembled",
+     "description": "Associated emotional conflicts: Love, Trust. Supportive essences: Heart Chakra Flower Essence, Love Within Flower Essence, Trust Flower Essence, Holly Flower Essence.",
      "affects": [],
      "remedies": [],
-     "source": "E4L scan (name only)"
+     "source": "from e4l_pattern_structures + life_stress_emotion_map — joined from sourced data, no new clinical claims"
     },
     {
      "slug": "er-knee-joints",
      "name": "Knee Joints",
      "code": "ER24",
      "subcategory": "Energetic Rejuvenators (body structures)",
-     "tier": "name-only",
-     "description": "",
+     "tier": "assembled",
+     "description": "Associated emotional conflicts: Self-Worth, Identity. Supportive essences: Self-Esteem Flower Essence, Worthiness Flower Essence, True to Self Flower Essence, Self-Image Flower Essence.",
      "affects": [],
      "remedies": [],
-     "source": "E4L scan (name only)"
+     "source": "from e4l_pattern_structures + life_stress_emotion_map — joined from sourced data, no new clinical claims"
     },
     {
      "slug": "er-stomach",
      "name": "Stomach",
      "code": "ER25",
      "subcategory": "Energetic Rejuvenators (body structures)",
-     "tier": "name-only",
-     "description": "",
+     "tier": "assembled",
+     "description": "Stomach (Gastric) — listed among the organ and tissue stresses. Associated emotional conflict: Worry. Supportive essences: White Chestnut Flower Essence, Inner Peace Flower Essence.",
      "affects": [],
      "remedies": [],
-     "source": "E4L scan (name only)"
+     "source": "from clinicaltheory Organs + e4l_pattern_structures + life_stress_emotion_map — joined from sourced data, no new clinical claims"
     },
     {
      "slug": "er-brain",
      "name": "Brain",
      "code": "ER26",
      "subcategory": "Energetic Rejuvenators (body structures)",
-     "tier": "name-only",
-     "description": "",
+     "tier": "assembled",
+     "description": "Brain (Cerebrum) — listed among the organ and tissue stresses. Associated emotional conflicts: Identity, Self-Worth. Supportive essences: True to Self Flower Essence, Self-Image Flower Essence, Self-Esteem Flower Essence, Worthiness Flower Essence.",
      "affects": [],
      "remedies": [],
-     "source": "E4L scan (name only)"
+     "source": "from clinicaltheory Organs + e4l_pattern_structures + life_stress_emotion_map — joined from sourced data, no new clinical claims"
     },
     {
      "slug": "er-hip-joint",
      "name": "Hip Joint",
      "code": "ER27",
      "subcategory": "Energetic Rejuvenators (body structures)",
-     "tier": "name-only",
-     "description": "",
+     "tier": "assembled",
+     "description": "Associated emotional conflicts: Fear, Self-Worth. Supportive essences: Mimulus Flower Essence, Aspen Flower Essence, Self-Esteem Flower Essence, Worthiness Flower Essence.",
      "affects": [],
      "remedies": [],
-     "source": "E4L scan (name only)"
+     "source": "from e4l_pattern_structures + life_stress_emotion_map — joined from sourced data, no new clinical claims"
     },
     {
      "slug": "er-ankle-joints",
      "name": "Ankle Joints",
      "code": "ER28",
      "subcategory": "Energetic Rejuvenators (body structures)",
-     "tier": "name-only",
-     "description": "",
+     "tier": "assembled",
+     "description": "Associated emotional conflict: Fear. Supportive essences: Mimulus Flower Essence, Aspen Flower Essence.",
      "affects": [],
      "remedies": [],
-     "source": "E4L scan (name only)"
+     "source": "from e4l_pattern_structures + life_stress_emotion_map — joined from sourced data, no new clinical claims"
     },
     {
      "slug": "er-liver",
      "name": "Liver",
      "code": "ER29",
      "subcategory": "Energetic Rejuvenators (body structures)",
-     "tier": "name-only",
-     "description": "",
+     "tier": "assembled",
+     "description": "Liver (Hepatic) — listed among the organ and tissue stresses. Associated emotional conflict: Anger. Supportive essences: Holly Flower Essence, Willow Flower Essence.",
      "affects": [],
      "remedies": [],
-     "source": "E4L scan (name only)"
+     "source": "from clinicaltheory Organs + e4l_pattern_structures + life_stress_emotion_map — joined from sourced data, no new clinical claims"
     },
     {
      "slug": "er-diaphragm",
@@ -3666,44 +3666,44 @@
      "name": "Thyroid",
      "code": "ER33",
      "subcategory": "Energetic Rejuvenators (body structures)",
-     "tier": "name-only",
-     "description": "",
+     "tier": "assembled",
+     "description": "Associated emotional conflict: Self-Worth. Supportive essences: Self-Esteem Flower Essence, Worthiness Flower Essence.",
      "affects": [],
      "remedies": [],
-     "source": "E4L scan (name only)"
+     "source": "from clinicaltheory Organs + e4l_pattern_structures + life_stress_emotion_map — joined from sourced data, no new clinical claims"
     },
     {
      "slug": "er-adrenals",
      "name": "Adrenals",
      "code": "ER34",
      "subcategory": "Energetic Rejuvenators (body structures)",
-     "tier": "name-only",
-     "description": "",
+     "tier": "assembled",
+     "description": "Our top Adrenal remedy is Adrenal Repair: Sublingual 7-Keto. 7-Keto DHEA is a natural metabolite of the adrenal gland's over-the-counter (in the States) Dehydroepiandrosterone (DHEA). While it delivers the same anti-inflammatory benefits, reducing the need for prescription steroids, and easing tapering off the Rx forms, it support restoration of the adrenals' anti-inflammatory function without affecting other hormone levels such as Estrogen and Testosterone for which DHEA is a precursor. Associated emotional conflict: Self-Worth. Supportive essences: Self-Esteem Flower Essence, Worthiness Flower Essence.",
      "affects": [],
      "remedies": [],
-     "source": "E4L scan (name only)"
+     "source": "from clinicaltheory Organs + e4l_pattern_structures + life_stress_emotion_map — joined from sourced data, no new clinical claims"
     },
     {
      "slug": "er-trigeminal-nerve",
      "name": "Trigeminal Nerve",
      "code": "ER35",
      "subcategory": "Energetic Rejuvenators (body structures)",
-     "tier": "name-only",
-     "description": "",
+     "tier": "assembled",
+     "description": "Trigeminal Nerve (Nervus Trigeminus) — listed among the organ and tissue stresses.",
      "affects": [],
      "remedies": [],
-     "source": "E4L scan (name only)"
+     "source": "from clinicaltheory Organs — joined from sourced data, no new clinical claims"
     },
     {
      "slug": "er-wrists",
      "name": "Wrists",
      "code": "ER36",
      "subcategory": "Energetic Rejuvenators (body structures)",
-     "tier": "name-only",
-     "description": "",
+     "tier": "assembled",
+     "description": "Associated emotional conflict: Identity. Supportive essences: True to Self Flower Essence, Self-Image Flower Essence.",
      "affects": [],
      "remedies": [],
-     "source": "E4L scan (name only)"
+     "source": "from e4l_pattern_structures + life_stress_emotion_map — joined from sourced data, no new clinical claims"
     },
     {
      "slug": "er-heart",
@@ -3721,55 +3721,55 @@
      "name": "Larynx",
      "code": "ER38",
      "subcategory": "Energetic Rejuvenators (body structures)",
-     "tier": "name-only",
-     "description": "",
+     "tier": "assembled",
+     "description": "Associated emotional conflicts: Anger, Self-Worth, Letting Go. Supportive essences: Holly Flower Essence, Willow Flower Essence, Self-Esteem Flower Essence, Worthiness Flower Essence.",
      "affects": [],
      "remedies": [],
-     "source": "E4L scan (name only)"
+     "source": "from e4l_pattern_structures + life_stress_emotion_map — joined from sourced data, no new clinical claims"
     },
     {
      "slug": "er-shoulder-joint",
      "name": "Shoulder Joint",
      "code": "ER39",
      "subcategory": "Energetic Rejuvenators (body structures)",
-     "tier": "name-only",
-     "description": "",
+     "tier": "assembled",
+     "description": "Associated emotional conflicts: Anger, Worry. Supportive essences: Holly Flower Essence, Willow Flower Essence, White Chestnut Flower Essence, Inner Peace Flower Essence.",
      "affects": [],
      "remedies": [],
-     "source": "E4L scan (name only)"
+     "source": "from e4l_pattern_structures + life_stress_emotion_map — joined from sourced data, no new clinical claims"
     },
     {
      "slug": "er-paranasal-sinuses",
      "name": "Paranasal Sinuses",
      "code": "ER40",
      "subcategory": "Energetic Rejuvenators (body structures)",
-     "tier": "name-only",
-     "description": "",
+     "tier": "assembled",
+     "description": "Associated emotional conflicts: Anger, Fear. Supportive essences: Holly Flower Essence, Willow Flower Essence, Mimulus Flower Essence, Aspen Flower Essence.",
      "affects": [],
      "remedies": [],
-     "source": "E4L scan (name only)"
+     "source": "from e4l_pattern_structures + life_stress_emotion_map — joined from sourced data, no new clinical claims"
     },
     {
      "slug": "er-jaw-tmj",
      "name": "Jaw/TMJ",
      "code": "ER41",
      "subcategory": "Energetic Rejuvenators (body structures)",
-     "tier": "name-only",
-     "description": "",
+     "tier": "assembled",
+     "description": "Associated emotional conflicts: Anger, Fear, Letting Go. Supportive essences: Holly Flower Essence, Willow Flower Essence, Mimulus Flower Essence, Aspen Flower Essence.",
      "affects": [],
      "remedies": [],
-     "source": "E4L scan (name only)"
+     "source": "from e4l_pattern_structures + life_stress_emotion_map — joined from sourced data, no new clinical claims"
     },
     {
      "slug": "er-pancreas",
      "name": "Pancreas",
      "code": "ER42",
      "subcategory": "Energetic Rejuvenators (body structures)",
-     "tier": "name-only",
-     "description": "",
+     "tier": "assembled",
+     "description": "Pancreas (Pancreatic) — listed among the organ and tissue stresses.",
      "affects": [],
      "remedies": [],
-     "source": "E4L scan (name only)"
+     "source": "from clinicaltheory Organs — joined from sourced data, no new clinical claims"
     },
     {
      "slug": "er-spleen",
@@ -3787,55 +3787,55 @@
      "name": "Tonsils",
      "code": "ER44",
      "subcategory": "Energetic Rejuvenators (body structures)",
-     "tier": "name-only",
-     "description": "",
+     "tier": "assembled",
+     "description": "Tonsils (Tonsilae Palatinae) — listed among the organ and tissue stresses. Associated emotional conflicts: Anger, Letting Go. Supportive essences: Holly Flower Essence, Willow Flower Essence, Honeysuckle Flower Essence, Life's Transitions Flower Essence.",
      "affects": [],
      "remedies": [],
-     "source": "E4L scan (name only)"
+     "source": "from clinicaltheory Organs + e4l_pattern_structures + life_stress_emotion_map — joined from sourced data, no new clinical claims"
     },
     {
      "slug": "er-groin-lymph",
      "name": "Groin Lymph",
      "code": "ER45",
      "subcategory": "Energetic Rejuvenators (body structures)",
-     "tier": "name-only",
-     "description": "",
+     "tier": "assembled",
+     "description": "Associated emotional conflicts: Identity, Trust. Supportive essences: True to Self Flower Essence, Self-Image Flower Essence, Trust Flower Essence, Holly Flower Essence.",
      "affects": [],
      "remedies": [],
-     "source": "E4L scan (name only)"
+     "source": "from e4l_pattern_structures + life_stress_emotion_map — joined from sourced data, no new clinical claims"
     },
     {
      "slug": "er-elbow-joints",
      "name": "Elbow Joints",
      "code": "ER46",
      "subcategory": "Energetic Rejuvenators (body structures)",
-     "tier": "name-only",
-     "description": "",
+     "tier": "assembled",
+     "description": "Associated emotional conflicts: Anger, Letting Go. Supportive essences: Holly Flower Essence, Willow Flower Essence, Honeysuckle Flower Essence, Life's Transitions Flower Essence.",
      "affects": [],
      "remedies": [],
-     "source": "E4L scan (name only)"
+     "source": "from e4l_pattern_structures + life_stress_emotion_map — joined from sourced data, no new clinical claims"
     },
     {
      "slug": "er-toes",
      "name": "Toes",
      "code": "ER47",
      "subcategory": "Energetic Rejuvenators (body structures)",
-     "tier": "name-only",
-     "description": "",
+     "tier": "assembled",
+     "description": "Associated emotional conflicts: Self-Worth, Guilt, Fear. Supportive essences: Self-Esteem Flower Essence, Worthiness Flower Essence, Pine Flower Essence, Crab Apple Flower Essence.",
      "affects": [],
      "remedies": [],
-     "source": "E4L scan (name only)"
+     "source": "from e4l_pattern_structures + life_stress_emotion_map — joined from sourced data, no new clinical claims"
     },
     {
      "slug": "er-pharynx",
      "name": "Pharynx",
      "code": "ER48",
      "subcategory": "Energetic Rejuvenators (body structures)",
-     "tier": "name-only",
-     "description": "",
+     "tier": "assembled",
+     "description": "Associated emotional conflict: Fear. Supportive essences: Mimulus Flower Essence, Aspen Flower Essence.",
      "affects": [],
      "remedies": [],
-     "source": "E4L scan (name only)"
+     "source": "from e4l_pattern_structures + life_stress_emotion_map — joined from sourced data, no new clinical claims"
     },
     {
      "slug": "er-skin",
@@ -3853,55 +3853,55 @@
      "name": "Ovaries",
      "code": "ER50",
      "subcategory": "Energetic Rejuvenators (body structures)",
-     "tier": "name-only",
-     "description": "",
+     "tier": "assembled",
+     "description": "Associated emotional conflicts: Identity, Self-Worth, Guilt. Supportive essences: True to Self Flower Essence, Self-Image Flower Essence, Self-Esteem Flower Essence, Worthiness Flower Essence.",
      "affects": [],
      "remedies": [],
-     "source": "E4L scan (name only)"
+     "source": "from e4l_pattern_structures + life_stress_emotion_map — joined from sourced data, no new clinical claims"
     },
     {
      "slug": "er-coronary-vascular",
      "name": "Coronary Vascular",
      "code": "ER52",
      "subcategory": "Energetic Rejuvenators (body structures)",
-     "tier": "name-only",
-     "description": "",
+     "tier": "assembled",
+     "description": "Associated emotional conflicts: Love, Fear, Trust. Supportive essences: Heart Chakra Flower Essence, Love Within Flower Essence, Mimulus Flower Essence, Aspen Flower Essence.",
      "affects": [],
      "remedies": [],
-     "source": "E4L scan (name only)"
+     "source": "from e4l_pattern_structures + life_stress_emotion_map — joined from sourced data, no new clinical claims"
     },
     {
      "slug": "er-retina",
      "name": "Retina",
      "code": "ER53",
      "subcategory": "Energetic Rejuvenators (body structures)",
-     "tier": "name-only",
-     "description": "",
+     "tier": "assembled",
+     "description": "Associated emotional conflict: Grief. Supportive essences: Honeysuckle Flower Essence, Sweet Chestnut Flower Essence.",
      "affects": [],
      "remedies": [],
-     "source": "E4L scan (name only)"
+     "source": "from clinicaltheory Organs + e4l_pattern_structures + life_stress_emotion_map — joined from sourced data, no new clinical claims"
     },
     {
      "slug": "er-pericardium",
      "name": "Pericardium",
      "code": "ER54",
      "subcategory": "Energetic Rejuvenators (body structures)",
-     "tier": "name-only",
-     "description": "",
+     "tier": "assembled",
+     "description": "Associated emotional conflicts: Love, Fear, Trust. Supportive essences: Heart Chakra Flower Essence, Love Within Flower Essence, Mimulus Flower Essence, Aspen Flower Essence.",
      "affects": [],
      "remedies": [],
-     "source": "E4L scan (name only)"
+     "source": "from e4l_pattern_structures + life_stress_emotion_map — joined from sourced data, no new clinical claims"
     },
     {
      "slug": "er-uterus",
      "name": "Uterus",
      "code": "ER55",
      "subcategory": "Energetic Rejuvenators (body structures)",
-     "tier": "name-only",
-     "description": "",
+     "tier": "assembled",
+     "description": "Uterus (Genital) — listed among the organ and tissue stresses. Associated emotional conflicts: Fear, Guilt. Supportive essences: Mimulus Flower Essence, Aspen Flower Essence, Pine Flower Essence, Crab Apple Flower Essence.",
      "affects": [],
      "remedies": [],
-     "source": "E4L scan (name only)"
+     "source": "from clinicaltheory Organs + e4l_pattern_structures + life_stress_emotion_map — joined from sourced data, no new clinical claims"
     },
     {
      "slug": "er-prostate",
@@ -3919,33 +3919,33 @@
      "name": "Teeth",
      "code": "ER57",
      "subcategory": "Energetic Rejuvenators (body structures)",
-     "tier": "name-only",
-     "description": "",
+     "tier": "assembled",
+     "description": "Associated emotional conflicts: Anger, Self-Worth. Supportive essences: Holly Flower Essence, Willow Flower Essence, Self-Esteem Flower Essence, Worthiness Flower Essence.",
      "affects": [],
      "remedies": [],
-     "source": "E4L scan (name only)"
+     "source": "from e4l_pattern_structures + life_stress_emotion_map — joined from sourced data, no new clinical claims"
     },
     {
      "slug": "er-duodenum",
      "name": "Duodenum",
      "code": "ER58",
      "subcategory": "Energetic Rejuvenators (body structures)",
-     "tier": "name-only",
-     "description": "",
+     "tier": "assembled",
+     "description": "Associated emotional conflicts: Fear, Worry. Supportive essences: Mimulus Flower Essence, Aspen Flower Essence, White Chestnut Flower Essence, Inner Peace Flower Essence.",
      "affects": [],
      "remedies": [],
-     "source": "E4L scan (name only)"
+     "source": "from clinicaltheory Organs + e4l_pattern_structures + life_stress_emotion_map — joined from sourced data, no new clinical claims"
     },
     {
      "slug": "er-oesophagus",
      "name": "Oesophagus",
      "code": "ER59",
      "subcategory": "Energetic Rejuvenators (body structures)",
-     "tier": "name-only",
-     "description": "",
+     "tier": "assembled",
+     "description": "Associated emotional conflict: Fear. Supportive essences: Mimulus Flower Essence, Aspen Flower Essence.",
      "affects": [],
      "remedies": [],
-     "source": "E4L scan (name only)"
+     "source": "from e4l_pattern_structures + life_stress_emotion_map — joined from sourced data, no new clinical claims"
     },
     {
      "slug": "er-peritoneum",
@@ -3996,11 +3996,11 @@
      "name": "Pelvis",
      "code": "ER64",
      "subcategory": "Energetic Rejuvenators (body structures)",
-     "tier": "name-only",
-     "description": "",
+     "tier": "assembled",
+     "description": "Associated emotional conflicts: Identity, Fear. Supportive essences: True to Self Flower Essence, Self-Image Flower Essence, Mimulus Flower Essence, Aspen Flower Essence.",
      "affects": [],
      "remedies": [],
-     "source": "E4L scan (name only)"
+     "source": "from e4l_pattern_structures + life_stress_emotion_map — joined from sourced data, no new clinical claims"
     },
     {
      "slug": "er-feet",
@@ -4018,22 +4018,22 @@
      "name": "Bronchial Mucosa",
      "code": "ER66",
      "subcategory": "Energetic Rejuvenators (body structures)",
-     "tier": "name-only",
-     "description": "",
+     "tier": "assembled",
+     "description": "Associated emotional conflicts: Anger, Letting Go. Supportive essences: Holly Flower Essence, Willow Flower Essence, Honeysuckle Flower Essence, Life's Transitions Flower Essence.",
      "affects": [],
      "remedies": [],
-     "source": "E4L scan (name only)"
+     "source": "from e4l_pattern_structures + life_stress_emotion_map — joined from sourced data, no new clinical claims"
     },
     {
      "slug": "er-shoulder-arm",
      "name": "Shoulder & Arm",
      "code": "ER67",
      "subcategory": "Energetic Rejuvenators (body structures)",
-     "tier": "name-only",
-     "description": "",
+     "tier": "assembled",
+     "description": "Associated emotional conflicts: Anger, Worry. Supportive essences: Holly Flower Essence, Willow Flower Essence, White Chestnut Flower Essence, Inner Peace Flower Essence.",
      "affects": [],
      "remedies": [],
-     "source": "E4L scan (name only)"
+     "source": "from e4l_pattern_structures + life_stress_emotion_map — joined from sourced data, no new clinical claims"
     },
     {
      "slug": "er-acoustic-nerve",
@@ -4051,22 +4051,22 @@
      "name": "Breasts",
      "code": "ER69",
      "subcategory": "Energetic Rejuvenators (body structures)",
-     "tier": "name-only",
-     "description": "",
+     "tier": "assembled",
+     "description": "Breasts (Mamma Dextra, Mamma Sinistra) — listed among the organ and tissue stresses. Associated emotional conflicts: Anger, Grief, Self-Worth. Supportive essences: Holly Flower Essence, Willow Flower Essence, Honeysuckle Flower Essence, Sweet Chestnut Flower Essence.",
      "affects": [],
      "remedies": [],
-     "source": "E4L scan (name only)"
+     "source": "from clinicaltheory Organs + e4l_pattern_structures + life_stress_emotion_map — joined from sourced data, no new clinical claims"
     },
     {
      "slug": "er-larynx-mucosa",
      "name": "Larynx Mucosa",
      "code": "ER70",
      "subcategory": "Energetic Rejuvenators (body structures)",
-     "tier": "name-only",
-     "description": "",
+     "tier": "assembled",
+     "description": "Associated emotional conflicts: Anger, Identity. Supportive essences: Holly Flower Essence, Willow Flower Essence, True to Self Flower Essence, Self-Image Flower Essence.",
      "affects": [],
      "remedies": [],
-     "source": "E4L scan (name only)"
+     "source": "from e4l_pattern_structures + life_stress_emotion_map — joined from sourced data, no new clinical claims"
     }
    ]
   }
