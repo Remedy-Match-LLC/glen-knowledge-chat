@@ -197,8 +197,8 @@
     },
     {
      "slug": "coronary-ateries",
-     "name": "Coronary Ateries",
-     "alt_name": "Ateria Coronaria",
+     "name": "Coronary Arteries",
+     "alt_name": "Arteriae Coronariae",
      "description": "",
      "remedies": []
     },
@@ -470,7 +470,7 @@
     },
     {
      "slug": "tempero-mandibular-joint",
-     "name": "Tempero-Mandibular Joint",
+     "name": "Temporo-Mandibular Joint",
      "alt_name": "TMJ",
      "description": "",
      "remedies": []
