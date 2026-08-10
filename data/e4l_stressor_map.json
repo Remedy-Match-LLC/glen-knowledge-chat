@@ -186,7 +186,7 @@
      "code": "ENV-Parabens",
      "subcategory": "Home, Work & Personal Care",
      "tier": "moderate",
-     "description": "Weakly estrogenic; mainly a skin/mucosal irritant-sensitizer. Rapidly hydrolyzed by esterases (>70% renal in 24 h) — organ-specific systemic toxicology is thin.",
+     "description": "Weakly estrogenic; mainly a skin/mucosal irritant-sensitizer. Rapidly hydrolyzed by esterases (>70% renal in 24 h), organ-specific systemic toxicology is thin.",
      "affects": [],
      "remedies": [
       {
@@ -232,7 +232,7 @@
      "code": "ENV-Teflon",
      "subcategory": "Home, Work & Personal Care",
      "tier": "strong",
-     "description": "PFOA/PFOS are persistent and NOT metabolized (half-life ~5 yr) — liver accumulation, immune suppression, cholesterol, thyroid. Documented binder: bile-acid sequestrants interrupt enterohepatic recirculation (~38% serum drop).",
+     "description": "PFOA/PFOS are persistent and NOT metabolized (half-life ~5 yr), liver accumulation, immune suppression, cholesterol, thyroid. Documented binder: bile-acid sequestrants interrupt enterohepatic recirculation (~38% serum drop).",
      "affects": [
       "Liver",
       "Thymus"
@@ -286,7 +286,7 @@
      "code": "ENV-AzoDyes",
      "subcategory": "Home, Work & Personal Care",
      "tier": "moderate",
-     "description": "Gut/hepatic azoreductase splits the azo bond → aromatic amines. Benzidine-class dyes are IARC Group 1 bladder carcinogens; common FOOD azo colorants (tartrazine, Allura Red) do NOT share that mechanism — don't treat all as one carcinogenic block.",
+     "description": "Gut/hepatic azoreductase splits the azo bond → aromatic amines. Benzidine-class dyes are IARC Group 1 bladder carcinogens; common FOOD azo colorants (tartrazine, Allura Red) do NOT share that mechanism, don't treat all as one carcinogenic block.",
      "affects": [
       "Bladder",
       "Liver"
@@ -312,7 +312,7 @@
      "code": "ENV-Butanols",
      "subcategory": "Solvents",
      "tier": "weak",
-     "description": "n-Butanol is an ethanol-like CNS depressant and an eye/skin/respiratory irritant. Cleared within hours (ADH→ALDH, mostly exhaled). Little organ-specific systemic toxicity — mainly avoidance/ventilation.",
+     "description": "n-Butanol is an ethanol-like CNS depressant and an eye/skin/respiratory irritant. Cleared within hours (ADH→ALDH, mostly exhaled). Little organ-specific systemic toxicity, mainly avoidance/ventilation.",
      "affects": [
       "Brain"
      ],
@@ -327,7 +327,7 @@
      "code": "ENV-Carbonyls",
      "subcategory": "Solvents",
      "tier": "moderate",
-     "description": "Reactive aldehydes (acrolein, acetaldehyde) deplete glutathione and form protein/DNA adducts — respiratory tract, eyes, and (acetaldehyde) upper GI/liver. GSH conjugation → mercapturic acids → urine is central.",
+     "description": "Reactive aldehydes (acrolein, acetaldehyde) deplete glutathione and form protein/DNA adducts, respiratory tract, eyes, and (acetaldehyde) upper GI/liver. GSH conjugation → mercapturic acids → urine is central.",
      "affects": [
       "Lung",
       "Liver"
@@ -398,7 +398,7 @@
      "code": "ENV-Isocyanate",
      "subcategory": "Home, Work & Personal Care",
      "tier": "strong",
-     "description": "Reactive N=C=O haptenates self-proteins → sensitization and occupational asthma; direct airway/skin irritant. Harm is a local immune reaction, not a circulating toxin cleared by the liver — prevention is avoidance.",
+     "description": "Reactive N=C=O haptenates self-proteins → sensitization and occupational asthma; direct airway/skin irritant. Harm is a local immune reaction, not a circulating toxin cleared by the liver, prevention is avoidance.",
      "affects": [
       "Lung"
      ],
@@ -512,7 +512,7 @@
      "code": "ENV-Smoke",
      "subcategory": "Home, Work & Personal Care",
      "tier": "strong",
-     "description": "PAHs (cigarette/wood smoke) are pro-carcinogens bioactivated by CYP1A1/1B1 → diol-epoxide DNA adducts — lung primary, also skin, bladder, GI. Cleared by GST conjugation + glucuronidation → bile/feces + urine.",
+     "description": "PAHs (cigarette/wood smoke) are pro-carcinogens bioactivated by CYP1A1/1B1 → diol-epoxide DNA adducts, lung primary, also skin, bladder, GI. Cleared by GST conjugation + glucuronidation → bile/feces + urine.",
      "affects": [
       "Lung",
       "Bladder"
@@ -538,7 +538,7 @@
      "code": "ENV-SLS",
      "subcategory": "Home, Work & Personal Care",
      "tier": "weak",
-     "description": "Anionic surfactant that denatures barrier proteins → irritant contact dermatitis (skin/eyes/mucosa); not a true sensitizer. Poorly absorbed; rinsing removes it — no systemic detox needed.",
+     "description": "Anionic surfactant that denatures barrier proteins → irritant contact dermatitis (skin/eyes/mucosa); not a true sensitizer. Poorly absorbed; rinsing removes it, no systemic detox needed.",
      "affects": [],
      "remedies": [],
      "source": "CIR Safety",
@@ -551,7 +551,7 @@
      "code": "ENV-Asbestos",
      "subcategory": "Home, Work & Personal Care",
      "tier": "strong",
-     "description": "IARC Group 1. Biopersistent fiber → frustrated phagocytosis, chronic ROS/inflammation, fibrosis (lung parenchyma, pleura/peritoneum). NOT metabolized — removed only physically; durable fibers are retained for years. No binder or metabolic detox exists; the intervention is avoidance.",
+     "description": "IARC Group 1. Biopersistent fiber → frustrated phagocytosis, chronic ROS/inflammation, fibrosis (lung parenchyma, pleura/peritoneum). NOT metabolized, removed only physically; durable fibers are retained for years. No binder or metabolic detox exists; the intervention is avoidance.",
      "affects": [
       "Lung"
      ],
@@ -586,7 +586,7 @@
      "code": "ENV-Furnishings",
      "subcategory": "Home, Work & Personal Care",
      "tier": "weak",
-     "description": "An off-gassing composite (formaldehyde, flame retardants, VOCs, isocyanates from foams/finishes) rather than a single agent — see those entries for organ targets. Reduce exposure and support liver Phase-II conjugation.",
+     "description": "An off-gassing composite (formaldehyde, flame retardants, VOCs, isocyanates from foams/finishes) rather than a single agent, see those entries for organ targets. Reduce exposure and support liver Phase-II conjugation.",
      "affects": [],
      "remedies": [
       {
@@ -608,7 +608,7 @@
      "description": "",
      "affects": [],
      "remedies": [],
-     "source": "E4L scan ENVIRONMENTAL section (name only — not yet researched)",
+     "source": "E4L scan ENVIRONMENTAL section (name only, not yet researched)",
      "provenance": "name-only"
     },
     {
@@ -619,7 +619,7 @@
      "description": "",
      "affects": [],
      "remedies": [],
-     "source": "E4L scan ENVIRONMENTAL section (name only — not yet researched)",
+     "source": "E4L scan ENVIRONMENTAL section (name only, not yet researched)",
      "provenance": "name-only"
     },
     {
@@ -630,7 +630,7 @@
      "description": "",
      "affects": [],
      "remedies": [],
-     "source": "E4L scan ENVIRONMENTAL section (name only — not yet researched)",
+     "source": "E4L scan ENVIRONMENTAL section (name only, not yet researched)",
      "provenance": "name-only"
     },
     {
@@ -641,7 +641,7 @@
      "description": "",
      "affects": [],
      "remedies": [],
-     "source": "E4L scan ENVIRONMENTAL section (name only — not yet researched)",
+     "source": "E4L scan ENVIRONMENTAL section (name only, not yet researched)",
      "provenance": "name-only"
     },
     {
@@ -652,7 +652,7 @@
      "description": "",
      "affects": [],
      "remedies": [],
-     "source": "E4L scan ENVIRONMENTAL section (name only — not yet researched)",
+     "source": "E4L scan ENVIRONMENTAL section (name only, not yet researched)",
      "provenance": "name-only"
     },
     {
@@ -663,7 +663,7 @@
      "description": "",
      "affects": [],
      "remedies": [],
-     "source": "E4L scan ENVIRONMENTAL section (name only — not yet researched)",
+     "source": "E4L scan ENVIRONMENTAL section (name only, not yet researched)",
      "provenance": "name-only"
     },
     {
@@ -674,7 +674,7 @@
      "description": "",
      "affects": [],
      "remedies": [],
-     "source": "E4L scan ENVIRONMENTAL section (name only — not yet researched)",
+     "source": "E4L scan ENVIRONMENTAL section (name only, not yet researched)",
      "provenance": "name-only"
     },
     {
@@ -685,7 +685,7 @@
      "description": "",
      "affects": [],
      "remedies": [],
-     "source": "E4L scan ENVIRONMENTAL section (name only — not yet researched)",
+     "source": "E4L scan ENVIRONMENTAL section (name only, not yet researched)",
      "provenance": "name-only"
     },
     {
@@ -696,7 +696,7 @@
      "description": "",
      "affects": [],
      "remedies": [],
-     "source": "E4L scan ENVIRONMENTAL section (name only — not yet researched)",
+     "source": "E4L scan ENVIRONMENTAL section (name only, not yet researched)",
      "provenance": "name-only"
     },
     {
@@ -707,7 +707,7 @@
      "description": "",
      "affects": [],
      "remedies": [],
-     "source": "E4L scan ENVIRONMENTAL section (name only — not yet researched)",
+     "source": "E4L scan ENVIRONMENTAL section (name only, not yet researched)",
      "provenance": "name-only"
     },
     {
@@ -718,7 +718,7 @@
      "description": "",
      "affects": [],
      "remedies": [],
-     "source": "E4L scan ENVIRONMENTAL section (name only — not yet researched)",
+     "source": "E4L scan ENVIRONMENTAL section (name only, not yet researched)",
      "provenance": "name-only"
     },
     {
@@ -729,7 +729,7 @@
      "description": "",
      "affects": [],
      "remedies": [],
-     "source": "E4L scan ENVIRONMENTAL section (name only — not yet researched)",
+     "source": "E4L scan ENVIRONMENTAL section (name only, not yet researched)",
      "provenance": "name-only"
     },
     {
@@ -740,7 +740,7 @@
      "description": "",
      "affects": [],
      "remedies": [],
-     "source": "E4L scan ENVIRONMENTAL section (name only — not yet researched)",
+     "source": "E4L scan ENVIRONMENTAL section (name only, not yet researched)",
      "provenance": "name-only"
     },
     {
@@ -751,7 +751,7 @@
      "description": "",
      "affects": [],
      "remedies": [],
-     "source": "E4L scan ENVIRONMENTAL section (name only — not yet researched)",
+     "source": "E4L scan ENVIRONMENTAL section (name only, not yet researched)",
      "provenance": "name-only"
     },
     {
@@ -762,7 +762,7 @@
      "description": "",
      "affects": [],
      "remedies": [],
-     "source": "E4L scan ENVIRONMENTAL section (name only — not yet researched)",
+     "source": "E4L scan ENVIRONMENTAL section (name only, not yet researched)",
      "provenance": "name-only"
     },
     {
@@ -773,7 +773,7 @@
      "description": "",
      "affects": [],
      "remedies": [],
-     "source": "E4L scan ENVIRONMENTAL section (name only — not yet researched)",
+     "source": "E4L scan ENVIRONMENTAL section (name only, not yet researched)",
      "provenance": "name-only"
     },
     {
@@ -784,7 +784,7 @@
      "description": "",
      "affects": [],
      "remedies": [],
-     "source": "E4L scan ENVIRONMENTAL section (name only — not yet researched)",
+     "source": "E4L scan ENVIRONMENTAL section (name only, not yet researched)",
      "provenance": "name-only"
     },
     {
@@ -795,7 +795,7 @@
      "description": "",
      "affects": [],
      "remedies": [],
-     "source": "E4L scan ENVIRONMENTAL section (name only — not yet researched)",
+     "source": "E4L scan ENVIRONMENTAL section (name only, not yet researched)",
      "provenance": "name-only"
     },
     {
@@ -806,7 +806,7 @@
      "description": "",
      "affects": [],
      "remedies": [],
-     "source": "E4L scan ENVIRONMENTAL section (name only — not yet researched)",
+     "source": "E4L scan ENVIRONMENTAL section (name only, not yet researched)",
      "provenance": "name-only"
     },
     {
@@ -817,7 +817,7 @@
      "description": "",
      "affects": [],
      "remedies": [],
-     "source": "E4L scan ENVIRONMENTAL section (name only — not yet researched)",
+     "source": "E4L scan ENVIRONMENTAL section (name only, not yet researched)",
      "provenance": "name-only"
     },
     {
@@ -828,7 +828,7 @@
      "description": "",
      "affects": [],
      "remedies": [],
-     "source": "E4L scan ENVIRONMENTAL section (name only — not yet researched)",
+     "source": "E4L scan ENVIRONMENTAL section (name only, not yet researched)",
      "provenance": "name-only"
     },
     {
@@ -839,7 +839,7 @@
      "description": "",
      "affects": [],
      "remedies": [],
-     "source": "E4L scan ENVIRONMENTAL section (name only — not yet researched)",
+     "source": "E4L scan ENVIRONMENTAL section (name only, not yet researched)",
      "provenance": "name-only"
     },
     {
@@ -850,7 +850,7 @@
      "description": "",
      "affects": [],
      "remedies": [],
-     "source": "E4L scan ENVIRONMENTAL section (name only — not yet researched)",
+     "source": "E4L scan ENVIRONMENTAL section (name only, not yet researched)",
      "provenance": "name-only"
     },
     {
@@ -861,7 +861,7 @@
      "description": "",
      "affects": [],
      "remedies": [],
-     "source": "E4L scan ENVIRONMENTAL section (name only — not yet researched)",
+     "source": "E4L scan ENVIRONMENTAL section (name only, not yet researched)",
      "provenance": "name-only"
     },
     {
@@ -872,7 +872,7 @@
      "description": "",
      "affects": [],
      "remedies": [],
-     "source": "E4L scan ENVIRONMENTAL section (name only — not yet researched)",
+     "source": "E4L scan ENVIRONMENTAL section (name only, not yet researched)",
      "provenance": "name-only"
     },
     {
@@ -883,7 +883,7 @@
      "description": "",
      "affects": [],
      "remedies": [],
-     "source": "E4L scan ENVIRONMENTAL section (name only — not yet researched)",
+     "source": "E4L scan ENVIRONMENTAL section (name only, not yet researched)",
      "provenance": "name-only"
     },
     {
@@ -894,7 +894,7 @@
      "description": "",
      "affects": [],
      "remedies": [],
-     "source": "E4L scan ENVIRONMENTAL section (name only — not yet researched)",
+     "source": "E4L scan ENVIRONMENTAL section (name only, not yet researched)",
      "provenance": "name-only"
     },
     {
@@ -905,7 +905,7 @@
      "description": "",
      "affects": [],
      "remedies": [],
-     "source": "E4L scan ENVIRONMENTAL section (name only — not yet researched)",
+     "source": "E4L scan ENVIRONMENTAL section (name only, not yet researched)",
      "provenance": "name-only"
     },
     {
@@ -916,7 +916,7 @@
      "description": "",
      "affects": [],
      "remedies": [],
-     "source": "E4L scan ENVIRONMENTAL section (name only — not yet researched)",
+     "source": "E4L scan ENVIRONMENTAL section (name only, not yet researched)",
      "provenance": "name-only"
     },
     {
@@ -927,7 +927,7 @@
      "description": "",
      "affects": [],
      "remedies": [],
-     "source": "E4L scan ENVIRONMENTAL section (name only — not yet researched)",
+     "source": "E4L scan ENVIRONMENTAL section (name only, not yet researched)",
      "provenance": "name-only"
     },
     {
@@ -938,7 +938,7 @@
      "description": "",
      "affects": [],
      "remedies": [],
-     "source": "E4L scan ENVIRONMENTAL section (name only — not yet researched)",
+     "source": "E4L scan ENVIRONMENTAL section (name only, not yet researched)",
      "provenance": "name-only"
     },
     {
@@ -949,7 +949,7 @@
      "description": "",
      "affects": [],
      "remedies": [],
-     "source": "E4L scan ENVIRONMENTAL section (name only — not yet researched)",
+     "source": "E4L scan ENVIRONMENTAL section (name only, not yet researched)",
      "provenance": "name-only"
     },
     {
@@ -960,7 +960,7 @@
      "description": "",
      "affects": [],
      "remedies": [],
-     "source": "E4L scan ENVIRONMENTAL section (name only — not yet researched)",
+     "source": "E4L scan ENVIRONMENTAL section (name only, not yet researched)",
      "provenance": "name-only"
     },
     {
@@ -971,7 +971,7 @@
      "description": "",
      "affects": [],
      "remedies": [],
-     "source": "E4L scan ENVIRONMENTAL section (name only — not yet researched)",
+     "source": "E4L scan ENVIRONMENTAL section (name only, not yet researched)",
      "provenance": "name-only"
     },
     {
@@ -982,7 +982,7 @@
      "description": "",
      "affects": [],
      "remedies": [],
-     "source": "E4L scan ENVIRONMENTAL section (name only — not yet researched)",
+     "source": "E4L scan ENVIRONMENTAL section (name only, not yet researched)",
      "provenance": "name-only"
     },
     {
@@ -993,7 +993,7 @@
      "description": "",
      "affects": [],
      "remedies": [],
-     "source": "E4L scan ENVIRONMENTAL section (name only — not yet researched)",
+     "source": "E4L scan ENVIRONMENTAL section (name only, not yet researched)",
      "provenance": "name-only"
     },
     {
@@ -1004,7 +1004,7 @@
      "description": "",
      "affects": [],
      "remedies": [],
-     "source": "E4L scan ENVIRONMENTAL section (name only — not yet researched)",
+     "source": "E4L scan ENVIRONMENTAL section (name only, not yet researched)",
      "provenance": "name-only"
     },
     {
@@ -1015,7 +1015,7 @@
      "description": "",
      "affects": [],
      "remedies": [],
-     "source": "E4L scan ENVIRONMENTAL section (name only — not yet researched)",
+     "source": "E4L scan ENVIRONMENTAL section (name only, not yet researched)",
      "provenance": "name-only"
     }
    ]
@@ -1081,7 +1081,7 @@
      "name": "Cobalt",
      "code": "NUT-Co",
      "subcategory": "Mineral Fields",
-     "description": "Its only biological role is as the central atom of vitamin B12 (cobalamin) — a cobalt 'stress' reads as B12 status (megaloblastic anemia, neuropathy).",
+     "description": "Its only biological role is as the central atom of vitamin B12 (cobalamin), a cobalt 'stress' reads as B12 status (megaloblastic anemia, neuropathy).",
      "affects": [
       "Blood",
       "Brain"
@@ -1223,7 +1223,7 @@
      "name": "Potassium",
      "code": "NUT-K",
      "subcategory": "Mineral Fields",
-     "description": "The principal intracellular cation — membrane potential, nerve/muscle function, blood-pressure regulation. Low status → weakness, cramps, arrhythmia, higher BP/stroke risk.",
+     "description": "The principal intracellular cation, membrane potential, nerve/muscle function, blood-pressure regulation. Low status → weakness, cramps, arrhythmia, higher BP/stroke risk.",
      "affects": [
       "Heart",
       "Muscle",
@@ -1244,7 +1244,7 @@
      "name": "Selenium",
      "code": "NUT-Se",
      "subcategory": "Mineral Fields",
-     "description": "Component of glutathione peroxidase and thyroid deiodinases — antioxidant, thyroid and immune support. Deficiency → Keshan cardiomyopathy, impaired immunity/thyroid.",
+     "description": "Component of glutathione peroxidase and thyroid deiodinases, antioxidant, thyroid and immune support. Deficiency → Keshan cardiomyopathy, impaired immunity/thyroid.",
      "affects": [
       "Thymus",
       "Heart"
@@ -1275,7 +1275,7 @@
      "name": "Sodium",
      "code": "NUT-Na",
      "subcategory": "Mineral Fields",
-     "description": "The principal extracellular cation — fluid balance, blood pressure, nerve/muscle function. Dietary deficiency rare; excess is the public-health issue.",
+     "description": "The principal extracellular cation, fluid balance, blood pressure, nerve/muscle function. Dietary deficiency rare; excess is the public-health issue.",
      "affects": [
       "Heart"
      ],
@@ -1290,7 +1290,7 @@
      "name": "Zinc",
      "code": "NUT-Zn",
      "subcategory": "Mineral Fields",
-     "description": "Catalytic/structural cofactor for 300+ enzymes — immune function, wound healing, DNA synthesis, taste/smell. Deficiency → poor immunity/healing, hair loss, dermatitis, taste loss.",
+     "description": "Catalytic/structural cofactor for 300+ enzymes, immune function, wound healing, DNA synthesis, taste/smell. Deficiency → poor immunity/healing, hair loss, dermatitis, taste loss.",
      "affects": [
       "Thymus",
       "Testes"
@@ -1310,7 +1310,7 @@
      "name": "Cholesterol",
      "code": "NUT-Chol",
      "subcategory": "Fat Fields",
-     "description": "A structural component of cell membranes and precursor to steroid hormones, vitamin D and bile acids. Endogenously made — a scan 'stress' signals DYSREGULATION (oxidized/LDL imbalance or impaired synthesis), not simple dietary lack.",
+     "description": "A structural component of cell membranes and precursor to steroid hormones, vitamin D and bile acids. Endogenously made, a scan 'stress' signals DYSREGULATION (oxidized/LDL imbalance or impaired synthesis), not simple dietary lack.",
      "affects": [
       "Liver",
       "Brain"
@@ -1326,7 +1326,7 @@
      "name": "Conjugated Linoleic Acid (CLA)",
      "code": "NUT-CLA",
      "subcategory": "Fat Fields",
-     "description": "Conjugated isomers of linoleic acid from ruminant fat/dairy; studied for body-composition and immune modulation. Not an essential nutrient — no deficiency state.",
+     "description": "Conjugated isomers of linoleic acid from ruminant fat/dairy; studied for body-composition and immune modulation. Not an essential nutrient, no deficiency state.",
      "affects": [],
      "remedies": [],
      "tier": "strong",
@@ -1359,7 +1359,7 @@
      "name": "Omega 3 - DHA",
      "code": "NUT-DHA",
      "subcategory": "Fat Fields",
-     "description": "The major structural lipid of neural and retinal membranes — critical for brain and vision. Low status → suboptimal cognition/retinal function.",
+     "description": "The major structural lipid of neural and retinal membranes, critical for brain and vision. Low status → suboptimal cognition/retinal function.",
      "affects": [
       "Brain"
      ],
@@ -1378,7 +1378,7 @@
      "name": "Omega 3 - EPA",
      "code": "NUT-EPA",
      "subcategory": "Fat Fields",
-     "description": "Precursor to anti-inflammatory eicosanoids/resolvins — anti-inflammatory and cardiovascular support. Imbalance → pro-inflammatory state, high triglycerides.",
+     "description": "Precursor to anti-inflammatory eicosanoids/resolvins, anti-inflammatory and cardiovascular support. Imbalance → pro-inflammatory state, high triglycerides.",
      "affects": [
       "Heart"
      ],
@@ -1410,7 +1410,7 @@
      "name": "Omega 6 - LA",
      "code": "NUT-LA",
      "subcategory": "Fat Fields",
-     "description": "The essential parent omega-6 — membrane structure, skin barrier, precursor to arachidonic acid/eicosanoids. Deficiency (rare) → scaly dermatitis, impaired skin barrier.",
+     "description": "The essential parent omega-6, membrane structure, skin barrier, precursor to arachidonic acid/eicosanoids. Deficiency (rare) → scaly dermatitis, impaired skin barrier.",
      "affects": [],
      "remedies": [],
      "tier": "strong",
@@ -1423,7 +1423,7 @@
      "name": "Omega 9 - OA",
      "code": "NUT-OA",
      "subcategory": "Fat Fields",
-     "description": "A non-essential monounsaturated fat (main fat of olive oil) — membrane fluidity and a favorable lipid profile. Body synthesizes it; valued as a saturated-fat replacement.",
+     "description": "A non-essential monounsaturated fat (main fat of olive oil), membrane fluidity and a favorable lipid profile. Body synthesizes it; valued as a saturated-fat replacement.",
      "affects": [
       "Heart"
      ],
@@ -1566,7 +1566,7 @@
      "name": "Vitamin B8 (Inositol)",
      "code": "NUT-B8",
      "subcategory": "Vitamin Fields",
-     "description": "Cell-membrane phospholipid component and second-messenger signaling (metabolic/insulin regulation). NOT a true vitamin — the body synthesizes it from glucose, so there's no classic deficiency.",
+     "description": "Cell-membrane phospholipid component and second-messenger signaling (metabolic/insulin regulation). NOT a true vitamin, the body synthesizes it from glucose, so there's no classic deficiency.",
      "affects": [
       "Brain"
      ],
@@ -1601,7 +1601,7 @@
      "name": "Vitamin B10 (PABA)",
      "code": "NUT-B10",
      "subcategory": "Vitamin Fields",
-     "description": "A folate building block (in bacteria) and UV-absorbing compound. NOT essential in humans — there is no human deficiency syndrome.",
+     "description": "A folate building block (in bacteria) and UV-absorbing compound. NOT essential in humans, there is no human deficiency syndrome.",
      "affects": [],
      "remedies": [],
      "tier": "strong",
@@ -1764,7 +1764,7 @@
       }
      ],
      "provenance": "sourced",
-     "source": "01 Clinical/Life Journey — Essence Map.md — theme names from the E4L scan's Life Journey section; essence pairings from inventory; rationale model-drafted and reviewed by Glen (upgraded from unverified on his ruling, 2026-08-10)"
+     "source": "01 Clinical/Life Journey, Essence Map.md, theme names from the E4L scan's Life Journey section; essence pairings from inventory; rationale model-drafted and reviewed by Glen (upgraded from unverified on his ruling, 2026-08-10)"
     },
     {
      "slug": "lj-intuition",
@@ -1785,7 +1785,7 @@
       }
      ],
      "provenance": "sourced",
-     "source": "01 Clinical/Life Journey — Essence Map.md — theme names from the E4L scan's Life Journey section; essence pairings from inventory; rationale model-drafted and reviewed by Glen (upgraded from unverified on his ruling, 2026-08-10)"
+     "source": "01 Clinical/Life Journey, Essence Map.md, theme names from the E4L scan's Life Journey section; essence pairings from inventory; rationale model-drafted and reviewed by Glen (upgraded from unverified on his ruling, 2026-08-10)"
     },
     {
      "slug": "lj-endings",
@@ -1806,7 +1806,7 @@
       }
      ],
      "provenance": "sourced",
-     "source": "01 Clinical/Life Journey — Essence Map.md — theme names from the E4L scan's Life Journey section; essence pairings from inventory; rationale model-drafted and reviewed by Glen (upgraded from unverified on his ruling, 2026-08-10)"
+     "source": "01 Clinical/Life Journey, Essence Map.md, theme names from the E4L scan's Life Journey section; essence pairings from inventory; rationale model-drafted and reviewed by Glen (upgraded from unverified on his ruling, 2026-08-10)"
     },
     {
      "slug": "lj-empathy",
@@ -1824,7 +1824,7 @@
       }
      ],
      "provenance": "sourced",
-     "source": "01 Clinical/Life Journey — Essence Map.md — theme names from the E4L scan's Life Journey section; essence pairings from inventory; rationale model-drafted and reviewed by Glen (upgraded from unverified on his ruling, 2026-08-10)"
+     "source": "01 Clinical/Life Journey, Essence Map.md, theme names from the E4L scan's Life Journey section; essence pairings from inventory; rationale model-drafted and reviewed by Glen (upgraded from unverified on his ruling, 2026-08-10)"
     },
     {
      "slug": "lj-signs",
@@ -1842,7 +1842,7 @@
       }
      ],
      "provenance": "sourced",
-     "source": "01 Clinical/Life Journey — Essence Map.md — theme names from the E4L scan's Life Journey section; essence pairings from inventory; rationale model-drafted and reviewed by Glen (upgraded from unverified on his ruling, 2026-08-10)"
+     "source": "01 Clinical/Life Journey, Essence Map.md, theme names from the E4L scan's Life Journey section; essence pairings from inventory; rationale model-drafted and reviewed by Glen (upgraded from unverified on his ruling, 2026-08-10)"
     },
     {
      "slug": "lj-creator",
@@ -1860,7 +1860,7 @@
       }
      ],
      "provenance": "sourced",
-     "source": "01 Clinical/Life Journey — Essence Map.md — theme names from the E4L scan's Life Journey section; essence pairings from inventory; rationale model-drafted and reviewed by Glen (upgraded from unverified on his ruling, 2026-08-10)"
+     "source": "01 Clinical/Life Journey, Essence Map.md, theme names from the E4L scan's Life Journey section; essence pairings from inventory; rationale model-drafted and reviewed by Glen (upgraded from unverified on his ruling, 2026-08-10)"
     },
     {
      "slug": "lj-illusions",
@@ -1878,7 +1878,7 @@
       }
      ],
      "provenance": "sourced",
-     "source": "01 Clinical/Life Journey — Essence Map.md — theme names from the E4L scan's Life Journey section; essence pairings from inventory; rationale model-drafted and reviewed by Glen (upgraded from unverified on his ruling, 2026-08-10)"
+     "source": "01 Clinical/Life Journey, Essence Map.md, theme names from the E4L scan's Life Journey section; essence pairings from inventory; rationale model-drafted and reviewed by Glen (upgraded from unverified on his ruling, 2026-08-10)"
     },
     {
      "slug": "lj-destiny",
@@ -1896,7 +1896,7 @@
       }
      ],
      "provenance": "sourced",
-     "source": "01 Clinical/Life Journey — Essence Map.md — theme names from the E4L scan's Life Journey section; essence pairings from inventory; rationale model-drafted and reviewed by Glen (upgraded from unverified on his ruling, 2026-08-10)"
+     "source": "01 Clinical/Life Journey, Essence Map.md, theme names from the E4L scan's Life Journey section; essence pairings from inventory; rationale model-drafted and reviewed by Glen (upgraded from unverified on his ruling, 2026-08-10)"
     },
     {
      "slug": "lj-define-your-purpose",
@@ -1917,7 +1917,7 @@
       }
      ],
      "provenance": "sourced",
-     "source": "01 Clinical/Life Journey — Essence Map.md — theme names from the E4L scan's Life Journey section; essence pairings from inventory; rationale model-drafted and reviewed by Glen (upgraded from unverified on his ruling, 2026-08-10)"
+     "source": "01 Clinical/Life Journey, Essence Map.md, theme names from the E4L scan's Life Journey section; essence pairings from inventory; rationale model-drafted and reviewed by Glen (upgraded from unverified on his ruling, 2026-08-10)"
     },
     {
      "slug": "lj-align-your-purpose",
@@ -1935,7 +1935,7 @@
       }
      ],
      "provenance": "sourced",
-     "source": "01 Clinical/Life Journey — Essence Map.md — theme names from the E4L scan's Life Journey section; essence pairings from inventory; rationale model-drafted and reviewed by Glen (upgraded from unverified on his ruling, 2026-08-10)"
+     "source": "01 Clinical/Life Journey, Essence Map.md, theme names from the E4L scan's Life Journey section; essence pairings from inventory; rationale model-drafted and reviewed by Glen (upgraded from unverified on his ruling, 2026-08-10)"
     },
     {
      "slug": "lj-choice-point",
@@ -1953,7 +1953,7 @@
       }
      ],
      "provenance": "sourced",
-     "source": "01 Clinical/Life Journey — Essence Map.md — theme names from the E4L scan's Life Journey section; essence pairings from inventory; rationale model-drafted and reviewed by Glen (upgraded from unverified on his ruling, 2026-08-10)"
+     "source": "01 Clinical/Life Journey, Essence Map.md, theme names from the E4L scan's Life Journey section; essence pairings from inventory; rationale model-drafted and reviewed by Glen (upgraded from unverified on his ruling, 2026-08-10)"
     },
     {
      "slug": "lj-wake-up",
@@ -1971,7 +1971,7 @@
       }
      ],
      "provenance": "sourced",
-     "source": "01 Clinical/Life Journey — Essence Map.md — theme names from the E4L scan's Life Journey section; essence pairings from inventory; rationale model-drafted and reviewed by Glen (upgraded from unverified on his ruling, 2026-08-10)"
+     "source": "01 Clinical/Life Journey, Essence Map.md, theme names from the E4L scan's Life Journey section; essence pairings from inventory; rationale model-drafted and reviewed by Glen (upgraded from unverified on his ruling, 2026-08-10)"
     },
     {
      "slug": "lj-engage-with-passion",
@@ -1992,7 +1992,7 @@
       }
      ],
      "provenance": "sourced",
-     "source": "01 Clinical/Life Journey — Essence Map.md — theme names from the E4L scan's Life Journey section; essence pairings from inventory; rationale model-drafted and reviewed by Glen (upgraded from unverified on his ruling, 2026-08-10)"
+     "source": "01 Clinical/Life Journey, Essence Map.md, theme names from the E4L scan's Life Journey section; essence pairings from inventory; rationale model-drafted and reviewed by Glen (upgraded from unverified on his ruling, 2026-08-10)"
     },
     {
      "slug": "lj-wisdom",
@@ -2010,7 +2010,7 @@
       }
      ],
      "provenance": "sourced",
-     "source": "01 Clinical/Life Journey — Essence Map.md — theme names from the E4L scan's Life Journey section; essence pairings from inventory; rationale model-drafted and reviewed by Glen (upgraded from unverified on his ruling, 2026-08-10)"
+     "source": "01 Clinical/Life Journey, Essence Map.md, theme names from the E4L scan's Life Journey section; essence pairings from inventory; rationale model-drafted and reviewed by Glen (upgraded from unverified on his ruling, 2026-08-10)"
     },
     {
      "slug": "lj-humility",
@@ -2028,7 +2028,7 @@
       }
      ],
      "provenance": "sourced",
-     "source": "01 Clinical/Life Journey — Essence Map.md — theme names from the E4L scan's Life Journey section; essence pairings from inventory; rationale model-drafted and reviewed by Glen (upgraded from unverified on his ruling, 2026-08-10)"
+     "source": "01 Clinical/Life Journey, Essence Map.md, theme names from the E4L scan's Life Journey section; essence pairings from inventory; rationale model-drafted and reviewed by Glen (upgraded from unverified on his ruling, 2026-08-10)"
     },
     {
      "slug": "lj-i-am-lovable",
@@ -2049,7 +2049,7 @@
       }
      ],
      "provenance": "sourced",
-     "source": "01 Clinical/Life Journey — Essence Map.md — theme names from the E4L scan's Life Journey section; essence pairings from inventory; rationale model-drafted and reviewed by Glen (upgraded from unverified on his ruling, 2026-08-10)"
+     "source": "01 Clinical/Life Journey, Essence Map.md, theme names from the E4L scan's Life Journey section; essence pairings from inventory; rationale model-drafted and reviewed by Glen (upgraded from unverified on his ruling, 2026-08-10)"
     },
     {
      "slug": "lj-i-am-good-enough-as-i-am",
@@ -2070,7 +2070,7 @@
       }
      ],
      "provenance": "sourced",
-     "source": "01 Clinical/Life Journey — Essence Map.md — theme names from the E4L scan's Life Journey section; essence pairings from inventory; rationale model-drafted and reviewed by Glen (upgraded from unverified on his ruling, 2026-08-10)"
+     "source": "01 Clinical/Life Journey, Essence Map.md, theme names from the E4L scan's Life Journey section; essence pairings from inventory; rationale model-drafted and reviewed by Glen (upgraded from unverified on his ruling, 2026-08-10)"
     },
     {
      "slug": "lj-i-feel-safe-in-the-world",
@@ -2091,7 +2091,7 @@
       }
      ],
      "provenance": "sourced",
-     "source": "01 Clinical/Life Journey — Essence Map.md — theme names from the E4L scan's Life Journey section; essence pairings from inventory; rationale model-drafted and reviewed by Glen (upgraded from unverified on his ruling, 2026-08-10)"
+     "source": "01 Clinical/Life Journey, Essence Map.md, theme names from the E4L scan's Life Journey section; essence pairings from inventory; rationale model-drafted and reviewed by Glen (upgraded from unverified on his ruling, 2026-08-10)"
     },
     {
      "slug": "lj-i-can-trust",
@@ -2109,7 +2109,7 @@
       }
      ],
      "provenance": "sourced",
-     "source": "01 Clinical/Life Journey — Essence Map.md — theme names from the E4L scan's Life Journey section; essence pairings from inventory; rationale model-drafted and reviewed by Glen (upgraded from unverified on his ruling, 2026-08-10)"
+     "source": "01 Clinical/Life Journey, Essence Map.md, theme names from the E4L scan's Life Journey section; essence pairings from inventory; rationale model-drafted and reviewed by Glen (upgraded from unverified on his ruling, 2026-08-10)"
     },
     {
      "slug": "lj-my-life-is-full-of-hope",
@@ -2130,7 +2130,7 @@
       }
      ],
      "provenance": "sourced",
-     "source": "01 Clinical/Life Journey — Essence Map.md — theme names from the E4L scan's Life Journey section; essence pairings from inventory; rationale model-drafted and reviewed by Glen (upgraded from unverified on his ruling, 2026-08-10)"
+     "source": "01 Clinical/Life Journey, Essence Map.md, theme names from the E4L scan's Life Journey section; essence pairings from inventory; rationale model-drafted and reviewed by Glen (upgraded from unverified on his ruling, 2026-08-10)"
     },
     {
      "slug": "lj-i-am-capable",
@@ -2148,7 +2148,7 @@
       }
      ],
      "provenance": "sourced",
-     "source": "01 Clinical/Life Journey — Essence Map.md — theme names from the E4L scan's Life Journey section; essence pairings from inventory; rationale model-drafted and reviewed by Glen (upgraded from unverified on his ruling, 2026-08-10)"
+     "source": "01 Clinical/Life Journey, Essence Map.md, theme names from the E4L scan's Life Journey section; essence pairings from inventory; rationale model-drafted and reviewed by Glen (upgraded from unverified on his ruling, 2026-08-10)"
     },
     {
      "slug": "lj-i-am-unaffected-by-what-others-think-of-me",
@@ -2166,7 +2166,7 @@
       }
      ],
      "provenance": "sourced",
-     "source": "01 Clinical/Life Journey — Essence Map.md — theme names from the E4L scan's Life Journey section; essence pairings from inventory; rationale model-drafted and reviewed by Glen (upgraded from unverified on his ruling, 2026-08-10)"
+     "source": "01 Clinical/Life Journey, Essence Map.md, theme names from the E4L scan's Life Journey section; essence pairings from inventory; rationale model-drafted and reviewed by Glen (upgraded from unverified on his ruling, 2026-08-10)"
     },
     {
      "slug": "lj-i-feel-supported-by-others",
@@ -2184,7 +2184,7 @@
       }
      ],
      "provenance": "sourced",
-     "source": "01 Clinical/Life Journey — Essence Map.md — theme names from the E4L scan's Life Journey section; essence pairings from inventory; rationale model-drafted and reviewed by Glen (upgraded from unverified on his ruling, 2026-08-10)"
+     "source": "01 Clinical/Life Journey, Essence Map.md, theme names from the E4L scan's Life Journey section; essence pairings from inventory; rationale model-drafted and reviewed by Glen (upgraded from unverified on his ruling, 2026-08-10)"
     },
     {
      "slug": "lj-love",
@@ -2205,7 +2205,7 @@
       }
      ],
      "provenance": "sourced",
-     "source": "01 Clinical/Life Journey — Essence Map.md — theme names from the E4L scan's Life Journey section; essence pairings from inventory; rationale model-drafted and reviewed by Glen (upgraded from unverified on his ruling, 2026-08-10)"
+     "source": "01 Clinical/Life Journey, Essence Map.md, theme names from the E4L scan's Life Journey section; essence pairings from inventory; rationale model-drafted and reviewed by Glen (upgraded from unverified on his ruling, 2026-08-10)"
     },
     {
      "slug": "lj-focus",
@@ -2226,7 +2226,7 @@
       }
      ],
      "provenance": "sourced",
-     "source": "01 Clinical/Life Journey — Essence Map.md — theme names from the E4L scan's Life Journey section; essence pairings from inventory; rationale model-drafted and reviewed by Glen (upgraded from unverified on his ruling, 2026-08-10)"
+     "source": "01 Clinical/Life Journey, Essence Map.md, theme names from the E4L scan's Life Journey section; essence pairings from inventory; rationale model-drafted and reviewed by Glen (upgraded from unverified on his ruling, 2026-08-10)"
     },
     {
      "slug": "lj-honesty",
@@ -2244,7 +2244,7 @@
       }
      ],
      "provenance": "sourced",
-     "source": "01 Clinical/Life Journey — Essence Map.md — theme names from the E4L scan's Life Journey section; essence pairings from inventory; rationale model-drafted and reviewed by Glen (upgraded from unverified on his ruling, 2026-08-10)"
+     "source": "01 Clinical/Life Journey, Essence Map.md, theme names from the E4L scan's Life Journey section; essence pairings from inventory; rationale model-drafted and reviewed by Glen (upgraded from unverified on his ruling, 2026-08-10)"
     },
     {
      "slug": "lj-gratitude",
@@ -2259,7 +2259,7 @@
       }
      ],
      "provenance": "sourced",
-     "source": "01 Clinical/Life Journey — Essence Map.md — theme names from the E4L scan's Life Journey section; essence pairings from inventory; rationale model-drafted and reviewed by Glen (upgraded from unverified on his ruling, 2026-08-10)"
+     "source": "01 Clinical/Life Journey, Essence Map.md, theme names from the E4L scan's Life Journey section; essence pairings from inventory; rationale model-drafted and reviewed by Glen (upgraded from unverified on his ruling, 2026-08-10)"
     },
     {
      "slug": "lj-willpower",
@@ -2280,7 +2280,7 @@
       }
      ],
      "provenance": "sourced",
-     "source": "01 Clinical/Life Journey — Essence Map.md — theme names from the E4L scan's Life Journey section; essence pairings from inventory; rationale model-drafted and reviewed by Glen (upgraded from unverified on his ruling, 2026-08-10)"
+     "source": "01 Clinical/Life Journey, Essence Map.md, theme names from the E4L scan's Life Journey section; essence pairings from inventory; rationale model-drafted and reviewed by Glen (upgraded from unverified on his ruling, 2026-08-10)"
     },
     {
      "slug": "lj-compassion",
@@ -2298,7 +2298,7 @@
       }
      ],
      "provenance": "sourced",
-     "source": "01 Clinical/Life Journey — Essence Map.md — theme names from the E4L scan's Life Journey section; essence pairings from inventory; rationale model-drafted and reviewed by Glen (upgraded from unverified on his ruling, 2026-08-10)"
+     "source": "01 Clinical/Life Journey, Essence Map.md, theme names from the E4L scan's Life Journey section; essence pairings from inventory; rationale model-drafted and reviewed by Glen (upgraded from unverified on his ruling, 2026-08-10)"
     },
     {
      "slug": "lj-trust",
@@ -2313,7 +2313,7 @@
       }
      ],
      "provenance": "sourced",
-     "source": "01 Clinical/Life Journey — Essence Map.md — theme names from the E4L scan's Life Journey section; essence pairings from inventory; rationale model-drafted and reviewed by Glen (upgraded from unverified on his ruling, 2026-08-10)"
+     "source": "01 Clinical/Life Journey, Essence Map.md, theme names from the E4L scan's Life Journey section; essence pairings from inventory; rationale model-drafted and reviewed by Glen (upgraded from unverified on his ruling, 2026-08-10)"
     },
     {
      "slug": "lj-intention-ed1",
@@ -2331,7 +2331,7 @@
       }
      ],
      "provenance": "sourced",
-     "source": "01 Clinical/Life Journey — Essence Map.md — theme names from the E4L scan's Life Journey section; essence pairings from inventory; rationale model-drafted and reviewed by Glen (upgraded from unverified on his ruling, 2026-08-10)"
+     "source": "01 Clinical/Life Journey, Essence Map.md, theme names from the E4L scan's Life Journey section; essence pairings from inventory; rationale model-drafted and reviewed by Glen (upgraded from unverified on his ruling, 2026-08-10)"
     },
     {
      "slug": "lj-communicate-ed2",
@@ -2346,7 +2346,7 @@
       }
      ],
      "provenance": "sourced",
-     "source": "01 Clinical/Life Journey — Essence Map.md — theme names from the E4L scan's Life Journey section; essence pairings from inventory; rationale model-drafted and reviewed by Glen (upgraded from unverified on his ruling, 2026-08-10)"
+     "source": "01 Clinical/Life Journey, Essence Map.md, theme names from the E4L scan's Life Journey section; essence pairings from inventory; rationale model-drafted and reviewed by Glen (upgraded from unverified on his ruling, 2026-08-10)"
     },
     {
      "slug": "lj-identity-ed3",
@@ -2364,7 +2364,7 @@
       }
      ],
      "provenance": "sourced",
-     "source": "01 Clinical/Life Journey — Essence Map.md — theme names from the E4L scan's Life Journey section; essence pairings from inventory; rationale model-drafted and reviewed by Glen (upgraded from unverified on his ruling, 2026-08-10)"
+     "source": "01 Clinical/Life Journey, Essence Map.md, theme names from the E4L scan's Life Journey section; essence pairings from inventory; rationale model-drafted and reviewed by Glen (upgraded from unverified on his ruling, 2026-08-10)"
     },
     {
      "slug": "lj-emotion-ed6",
@@ -2382,7 +2382,7 @@
       }
      ],
      "provenance": "sourced",
-     "source": "01 Clinical/Life Journey — Essence Map.md — theme names from the E4L scan's Life Journey section; essence pairings from inventory; rationale model-drafted and reviewed by Glen (upgraded from unverified on his ruling, 2026-08-10)"
+     "source": "01 Clinical/Life Journey, Essence Map.md, theme names from the E4L scan's Life Journey section; essence pairings from inventory; rationale model-drafted and reviewed by Glen (upgraded from unverified on his ruling, 2026-08-10)"
     },
     {
      "slug": "lj-boundary-ed10",
@@ -2397,7 +2397,7 @@
       }
      ],
      "provenance": "sourced",
-     "source": "01 Clinical/Life Journey — Essence Map.md — theme names from the E4L scan's Life Journey section; essence pairings from inventory; rationale model-drafted and reviewed by Glen (upgraded from unverified on his ruling, 2026-08-10)"
+     "source": "01 Clinical/Life Journey, Essence Map.md, theme names from the E4L scan's Life Journey section; essence pairings from inventory; rationale model-drafted and reviewed by Glen (upgraded from unverified on his ruling, 2026-08-10)"
     },
     {
      "slug": "lj-transform-ed11",
@@ -2415,7 +2415,7 @@
       }
      ],
      "provenance": "sourced",
-     "source": "01 Clinical/Life Journey — Essence Map.md — theme names from the E4L scan's Life Journey section; essence pairings from inventory; rationale model-drafted and reviewed by Glen (upgraded from unverified on his ruling, 2026-08-10)"
+     "source": "01 Clinical/Life Journey, Essence Map.md, theme names from the E4L scan's Life Journey section; essence pairings from inventory; rationale model-drafted and reviewed by Glen (upgraded from unverified on his ruling, 2026-08-10)"
     },
     {
      "slug": "lj-centred-ed14",
@@ -2433,7 +2433,7 @@
       }
      ],
      "provenance": "sourced",
-     "source": "01 Clinical/Life Journey — Essence Map.md — theme names from the E4L scan's Life Journey section; essence pairings from inventory; rationale model-drafted and reviewed by Glen (upgraded from unverified on his ruling, 2026-08-10)"
+     "source": "01 Clinical/Life Journey, Essence Map.md, theme names from the E4L scan's Life Journey section; essence pairings from inventory; rationale model-drafted and reviewed by Glen (upgraded from unverified on his ruling, 2026-08-10)"
     },
     {
      "slug": "lj-flow-ed5",
@@ -2448,7 +2448,7 @@
       }
      ],
      "provenance": "sourced",
-     "source": "01 Clinical/Life Journey — Essence Map.md — theme names from the E4L scan's Life Journey section; essence pairings from inventory; rationale model-drafted and reviewed by Glen (upgraded from unverified on his ruling, 2026-08-10)"
+     "source": "01 Clinical/Life Journey, Essence Map.md, theme names from the E4L scan's Life Journey section; essence pairings from inventory; rationale model-drafted and reviewed by Glen (upgraded from unverified on his ruling, 2026-08-10)"
     }
    ]
   },
@@ -2465,7 +2465,7 @@
      "description": "Central nervous system (CNS)\nMyocardium\nConsider: Brain Cleanse, WholOmega, Neuroprotect, Neuroceramides, Neuro-Magnesium\n\nPrimarily the central nervous system (CNS) and myocardium. Also the cortex, midbrain tegmentum, auditory nerve, vestibular nerve, thalamus, medulla oblongata, inner testes, renal tubules, and sphincter muscles. May be related to mental confusion, poor learning processes, and delayed development in children, especially those strongly affected by childhood viruses.",
      "affects": [],
      "remedies": [],
-     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23 — Glen-authored | SOURCED: E4L scan report text, harvested from the client PDFs — E4L's own wording",
+     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23, Glen-authored | SOURCED: E4L scan report text, harvested from the client PDFs, E4L's own wording",
      "provenance": "sourced"
     },
     {
@@ -2476,7 +2476,7 @@
      "description": "Bone marrow\nBlood\nTongue\nHeart\nFront lobes of the brain\nConsider: Lymph Flow, Immune Modulation\n\nBone marrow, blood, tongue, heart, and frontal lobes of the brain. Chronically weak immune function. May be related to health conditions with long incubation periods and persistent infection. Can take a long time to resolve.",
      "affects": [],
      "remedies": [],
-     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23 — Glen-authored | SOURCED: E4L scan report text, harvested from the client PDFs — E4L's own wording",
+     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23, Glen-authored | SOURCED: E4L scan report text, harvested from the client PDFs, E4L's own wording",
      "provenance": "sourced"
     },
     {
@@ -2487,7 +2487,7 @@
      "description": "Bone marrow\nBlood\nFrontal lobes of the brain\nConsider: Lymph Flow, Immune Modulation\n\nBone marrow, blood, and frontal lobes of the brain. Chronically weak immune function, especially involving heavy metals. May be related to health conditions with long incubation periods and persistent infection. Can take a long time to resolve.",
      "affects": [],
      "remedies": [],
-     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23 — Glen-authored | SOURCED: E4L scan report text, harvested from the client PDFs — E4L's own wording",
+     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23, Glen-authored | SOURCED: E4L scan report text, harvested from the client PDFs, E4L's own wording",
      "provenance": "sourced"
     },
     {
@@ -2498,7 +2498,7 @@
      "description": "Bone marrow\nSpleen\nFrontal lobes of the brain\nConsider: Lymph Flow, Immune Modulation\n\nBone marrow, spleen, and frontal lobes of the brain. Chronically weak immune function, especially following some sort of trauma. May be related to health conditions with long incubation periods and persistent infection. Can take a long time to resolve.",
      "affects": [],
      "remedies": [],
-     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23 — Glen-authored | SOURCED: E4L scan report text, harvested from the client PDFs — E4L's own wording",
+     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23, Glen-authored | SOURCED: E4L scan report text, harvested from the client PDFs, E4L's own wording",
      "provenance": "sourced"
     },
     {
@@ -2509,7 +2509,7 @@
      "description": "Central nervous system (brain and spinal cord)\nPeripheral nervous system\nConsider: Neuroprotect, Neuroceramides, Nerve Pulse, Vagus Nerve Support, Neuro-Magnesium, Snake & Dragon\n\nPrimarily the brain and the central and peripheral nervous systems. Also arteries, blood, post sensory cortex, and periosteum (outer lining of the bones).",
      "affects": [],
      "remedies": [],
-     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23 — Glen-authored | SOURCED: E4L scan report text, harvested from the client PDFs — E4L's own wording",
+     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23, Glen-authored | SOURCED: E4L scan report text, harvested from the client PDFs, E4L's own wording",
      "provenance": "sourced"
     },
     {
@@ -2520,7 +2520,7 @@
      "description": "BSV = Broad Spectrum Virus. ET5 addresses broad-spectrum viral terrain.\n\nSkin, lungs, larynx, neural ganglia, and motor cortex. May be related to warts, any form of herpes, and past breast malignancies.",
      "affects": [],
      "remedies": [],
-     "source": "SOURCED: atlas-concepts.json label 'ET5 BSV: Broad Spectrum Virus' + 01 Clinical/NES Scan 426 Factors in 10 seconds.md. The previous text read 'blood sugar regulation, vitamin metabolism', which describes a different item; E4L's own scan text for ET5 is skin, lungs, neural ganglia, warts and herpes — viral, consistent with this expansion. | SOURCED: E4L scan report text, harvested from the client PDFs — E4L's own wording",
+     "source": "SOURCED: atlas-concepts.json label 'ET5 BSV: Broad Spectrum Virus' + 01 Clinical/NES Scan 426 Factors in 10 seconds.md. The previous text read 'blood sugar regulation, vitamin metabolism', which describes a different item; E4L's own scan text for ET5 is skin, lungs, neural ganglia, warts and herpes, viral, consistent with this expansion. | SOURCED: E4L scan report text, harvested from the client PDFs, E4L's own wording",
      "provenance": "sourced"
     },
     {
@@ -2531,7 +2531,7 @@
      "description": "CFI = Cold Flu Immune. ET6 addresses the cold/flu immune terrain.\n\nPrimarily the nose, throat, lungs, and bronchi. Also the large intestine, pleura, larynx, and sensory cortex. May be related to chronic chest ailments with no known cause.",
      "affects": [],
      "remedies": [],
-     "source": "SOURCED: 01 Clinical/NES Scan 426 Factors in 10 seconds.md. | SOURCED: E4L scan report text, harvested from the client PDFs — E4L's own wording",
+     "source": "SOURCED: 01 Clinical/NES Scan 426 Factors in 10 seconds.md. | SOURCED: E4L scan report text, harvested from the client PDFs, E4L's own wording",
      "provenance": "sourced"
     },
     {
@@ -2542,7 +2542,7 @@
      "description": "Central nervous system (brain and spinal cord); especially the outer brain\nVisual cortex / eyes\nPituitary gland\nThyroid\nPancreas\nSmall intestine\nLiver\nKidneys\nBladder\nConsider: VirEx, Energessence, Nous Energy, Snake & Dragon\n\nEncephalon of the brain (problems here may mimic encephalitis), the central nervous system, pituitary gland, thyroid, pancreas, small intestine, liver, kidneys, bladder, visual cortex, and the eyes. May be related to chronic exhaustion.",
      "affects": [],
      "remedies": [],
-     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23 — Glen-authored | SOURCED: E4L scan report text, harvested from the client PDFs — E4L's own wording",
+     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23, Glen-authored | SOURCED: E4L scan report text, harvested from the client PDFs, E4L's own wording",
      "provenance": "sourced"
     },
     {
@@ -2553,7 +2553,7 @@
      "description": "Coating of the axons (myelin sheath)\nBladder\nConsider: Nerve Pulse, Vagus Nerve Support, Neuroprotect, WholOmega, Neuroceramides, Neuro-Magnesium, Snake & Dragon\n\nPrimarily the coating of axons (myelin sheath). Also the bladder and most organs and tissues found in Energetic Integrator 5. Also the eyes, liver, and peritoneum. May be related to slowness or degeneration of the nervous system as well as lack of coordination.",
      "affects": [],
      "remedies": [],
-     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23 — Glen-authored | SOURCED: E4L scan report text, harvested from the client PDFs — E4L's own wording",
+     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23, Glen-authored | SOURCED: E4L scan report text, harvested from the client PDFs, E4L's own wording",
      "provenance": "sourced"
     },
     {
@@ -2564,7 +2564,7 @@
      "description": "Stomach\nDuodenum (first section of small intestine)\nConsider: GastroZyme, Digestzymes, GERD Guard, GI Repair\n\nPrimarily the stomach and duodenum. Also the gallbladder, liver, breast ducts, and sensory cortex. Often seen in those with gastric reflux and acid stomach in general, or chronic sensitivity of the digestive system. May affect the bowels and even the throat.",
      "affects": [],
      "remedies": [],
-     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23 — Glen-authored | SOURCED: E4L scan report text, harvested from the client PDFs — E4L's own wording",
+     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23, Glen-authored | SOURCED: E4L scan report text, harvested from the client PDFs, E4L's own wording",
      "provenance": "sourced"
     },
     {
@@ -2575,7 +2575,7 @@
      "description": "Liver\nChest\nGastrointestinal tract\nConsider: Liver Support, Free & Easy\n\nPrimarily the liver, chest, and gastrointestinal tract. Also the gallbladder, breast gland, and motor and sensory cortex. May be related to a sore liver, cold, or flu symptoms with no known cause.",
      "affects": [],
      "remedies": [],
-     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23 — Glen-authored | SOURCED: E4L scan report text, harvested from the client PDFs — E4L's own wording",
+     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23, Glen-authored | SOURCED: E4L scan report text, harvested from the client PDFs, E4L's own wording",
      "provenance": "sourced"
     },
     {
@@ -2586,7 +2586,7 @@
      "description": "Liver\nLarge intestine\nConsider: Liver Support, Free & Easy\n\nPrimarily the liver and large intestine. Also the stomach, oesophagus, ileum, and motor and sensory cortexes. May be related to general lethargy / exhaustion with no known cause; also poor appetite.",
      "affects": [],
      "remedies": [],
-     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23 — Glen-authored | SOURCED: E4L scan report text, harvested from the client PDFs — E4L's own wording",
+     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23, Glen-authored | SOURCED: E4L scan report text, harvested from the client PDFs, E4L's own wording",
      "provenance": "sourced"
     },
     {
@@ -2597,7 +2597,7 @@
      "description": "Liver\nLarge intestine\nConsider: Liver Support, Free & Easy\n\nPrimarily the liver and large intestine. Also the larynx, skin, and motor and sensory cortexes. May be related to chronic exhaustion.",
      "affects": [],
      "remedies": [],
-     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23 — Glen-authored | SOURCED: E4L scan report text, harvested from the client PDFs — E4L's own wording",
+     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23, Glen-authored | SOURCED: E4L scan report text, harvested from the client PDFs, E4L's own wording",
      "provenance": "sourced"
     },
     {
@@ -2608,7 +2608,7 @@
      "description": "Liver\nSkin\nEyes\nLong-term issues of the large intestine\nConsider: Candida Cleanse, Fungifuge\n\nPrimarily liver, skin, eyes, and chronic conditions of the large intestine. Also a wide array of cells, tissues, and organs, including the blood, chest cavity, lungs, nasal cavity, paranasal sinuses, ears, spleen, pancreas (including alpha and beta cells), bones, and various neurons. Yeast, molds, fungi, and protozoa, including amoebas, as well as parasites. May be related to hyperactive brains, depressed moods, and conditions that cause paralysis.",
      "affects": [],
      "remedies": [],
-     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23 — Glen-authored | SOURCED: E4L scan report text, harvested from the client PDFs — E4L's own wording",
+     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23, Glen-authored | SOURCED: E4L scan report text, harvested from the client PDFs, E4L's own wording",
      "provenance": "sourced"
     },
     {
@@ -2619,7 +2619,7 @@
      "description": "Skin\nLungs\nConsider: Terrain Restore, Microbiome, Transform\n\nPrimarily skin and lungs. Associated particularly strongly with low Source energy. Also ear, nose, and throat issues, and chronic chest ailments. Also Corti's organ (involved in hearing), cerebral nerves, and frontal lobes of the brain. May be seen in those who work indoors for extended periods, especially in air-conditioned rooms, or those who are not exposed to enough natural sunlight and fresh air.",
      "affects": [],
      "remedies": [],
-     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23 — Glen-authored | SOURCED: E4L scan report text, harvested from the client PDFs — E4L's own wording",
+     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23, Glen-authored | SOURCED: E4L scan report text, harvested from the client PDFs, E4L's own wording",
      "provenance": "sourced"
     },
     {
@@ -2630,7 +2630,7 @@
      "description": "Communication processes of protecting and healing the body.\nEnergetic immune system.\nDoes not identify a distortion correlated to a particular tissue or correlate to a specific family of microorganisms.\nChronic back and neck aches of muscular origin.\nConsider: Terrain Restore, Microbiome, Transform\n\nNo specific tissues or pathogens. Used as an adjunct when other Terrains are not achieving desired results. Links generally to damage of cell nuclei in all Terrains. May stimulate the thymus and the secretion functions of the kidneys and bladder.",
      "affects": [],
      "remedies": [],
-     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23 — Glen-authored | SOURCED: E4L scan report text, harvested from the client PDFs — E4L's own wording",
+     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23, Glen-authored | SOURCED: E4L scan report text, harvested from the client PDFs, E4L's own wording",
      "provenance": "sourced"
     },
     {
@@ -2641,7 +2641,7 @@
      "description": "Healing messages through the Energetic Terrain system.\nHealing from serious health problems interrupted by stroke, heart attack, or seizure. Challenges integrating information.\nMatches with ED6 and EI4: emotional changes required for healing.\nPhase correction between the heart field and the body-field. \nLeft and right cortex information regulation.\nConsider: Neuroprotect, WholOmega, Neuro-Magnesium, Brain Cleanse",
      "affects": [],
      "remedies": [],
-     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23 — Glen-authored",
+     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23, Glen-authored",
      "provenance": "sourced"
     }
    ]
@@ -2659,7 +2659,7 @@
      "description": "Phase 1: Energize\nLife force energy, important for those who are tired / exhausted.\nMacrophage system.\nHelps to power all other Drivers and all cells' metabolism.\nConsider: Nous Energy, Holy Grail Full Spectrum ORMUS, Terrain Restore",
      "affects": [],
      "remedies": [],
-     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23 — Glen-authored",
+     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23, Glen-authored",
      "provenance": "sourced"
     },
     {
@@ -2670,7 +2670,7 @@
      "description": "System 2: Support\nMain Driver associated with information transfer.\n4 chambers of the heart.\nRough and smooth endoplasmic reticulum.\nPositive emotions.\nAll meridians connect to both the heart and the eyes.\nConsider: Heart Health, Rhythm Restore",
      "affects": [],
      "remedies": [],
-     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23 — Glen-authored",
+     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23, Glen-authored",
      "provenance": "sourced"
     },
     {
@@ -2681,7 +2681,7 @@
      "description": "Phase 2: Rejuvenate\nCellular energy, metabolism, and communication.\nSpecific cell types, including spleen cells and Von Kupffer cells in the liver.\nVarious immune cells, including mast cells and immunoglobulin E.\nConsider: Mitochondrial Biogenesis, Longevity, Photobiomodulation resources",
      "affects": [],
      "remedies": [],
-     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23 — Glen-authored",
+     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23, Glen-authored",
      "provenance": "sourced"
     },
     {
@@ -2692,7 +2692,7 @@
      "description": "System 4: Communicate\nBrainwaves.\nAxons, dendrites, myelin sheath, perineurium.\nHealthy field supports calm and deeper, more restful sleep.\nConsider: Brain Boost, Brain Cleanse",
      "affects": [],
      "remedies": [],
-     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23 — Glen-authored",
+     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23, Glen-authored",
      "provenance": "sourced"
     },
     {
@@ -2703,7 +2703,7 @@
      "description": "System 2: Support\nCirculation of the blood.\nBlood vessels and nerve plexuses that affect circulation.\nQuality of the blood; Driver cleanses the blood.\nConsider: Blood Cleanse, Chelation, Energessence, Vein Support",
      "affects": [],
      "remedies": [],
-     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23 — Glen-authored",
+     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23, Glen-authored",
      "provenance": "sourced"
     },
     {
@@ -2714,7 +2714,7 @@
      "description": "System 2: Support\nBeating of the heart.\nMidbrain: auditory, visual, and motor function.\nConnection of heart to sympathetic and parasympathetic nervous systems.\nMaturation of platelets, lymphocytes, monocytes.\nEmotional center, matching to positive emotions.\nTCM association is Joy.\nAll meridians connect the eyes and the heart.\nConsider: Heart Health, Rhythm Restore",
      "affects": [],
      "remedies": [],
-     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23 — Glen-authored",
+     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23, Glen-authored",
      "provenance": "sourced"
     },
     {
@@ -2725,7 +2725,7 @@
      "description": "System 3: Process\nExchange of gasses with the environment.\nMaturation of erythroblasts.\nVitality, immunity, mental acuity.\nTCM association is Grief.\nThe retina and especially the macula need more oxygen than any other tissues.\nConsider: Shields Up - Colds/Flu Formula, Spike Shield, Binder Complex, Microbiome, Transform",
      "affects": [],
      "remedies": [],
-     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23 — Glen-authored",
+     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23, Glen-authored",
      "provenance": "sourced"
     },
     {
@@ -2736,7 +2736,7 @@
      "description": "System 3: Process\nEntire digestive tract; also supports microbiome.\nMaturation of granulocytes and basophils.\nAssociated with muscles, heart, lungs, brain function, and immunity, including autoimmune and allergic issues.\nThe stomach meridian links directly to the macula of the eye.\nConsider: GastroZyme, Digestzymes, GI Repair, GERD Guard",
      "affects": [],
      "remedies": [],
-     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23 — Glen-authored",
+     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23, Glen-authored",
      "provenance": "sourced"
     },
     {
@@ -2747,7 +2747,7 @@
      "description": "System 1: Flow\nMuscles, joints, connective tissues; not the heart.\nMuscle growth, repair, and metabolism.\nMaturation of monocytes.\nAdditional link to the stomach.\nMuscles store stress and trauma.\nThis can come from underlying liver stress.\nThe 6 muscles that control each eye affect eso vs exophoria, strabismus (crossed or wall eyes)\nThese muscles are associated with the vortex veins that drain the retina, so stress is associated with myopia and glaucoma.\nConsider: TMG Syntropy Powder (Trimethylglycine), Liver Support, Muscle Mass",
      "affects": [],
      "remedies": [],
-     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23 — Glen-authored",
+     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23, Glen-authored",
      "provenance": "sourced"
     },
     {
@@ -2758,7 +2758,7 @@
      "description": "System 5: Integrity\nEpithelium (skin inside and out); includes skin of digestive tract and lungs.\nTCM links the skin and lungs.\nSweat glands and mucous membranes; ear, nose, and throat.\nMaturation process of megakaryocytes.\n“Leaky gut” is damage to inner skin of digestive tract; triggers autoimmune issues and more.\nPossible emotional issues.\nConsider: Perfect Skin, MSM Lotion, Ozonated Olive Oil",
      "affects": [],
      "remedies": [],
-     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23 — Glen-authored",
+     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23, Glen-authored",
      "provenance": "sourced"
     },
     {
@@ -2769,7 +2769,7 @@
      "description": "System 3: Process\nLiver function, including detox and waste processing; bile and cholesterol production; storage and processing of fats; pH levels; blood sugar regulation.\nKupffer cells and their role in immunity; reticulocytes; prothrombin.\nLinks to pancreatic cells, lymphatic cells, and the eyes (specifically the retina and optic nerve).\nTCM association is Anger.\nLiver stress causes muscles to produce liver enzymes to help out. This makes muscles sore, tight and more easily injured.\nConsider: Liver Support, Free & Easy, Don’t combine ED11 with ED15",
      "affects": [],
      "remedies": [],
-     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23 — Glen-authored",
+     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23, Glen-authored",
      "provenance": "sourced"
     },
     {
@@ -2780,7 +2780,7 @@
      "description": "System 1: Flow\nKidneys and adrenal glands.\nBlood filtration, blood pressure, blood cell production.\nFluid regulation, pH balance, energy and stamina.\nLymphocytes and monocytes.\nCell nucleus and genetic material.\nAdditional links to brain, pancreas, intestines, ears, throat, lungs, bladder, and knees.\nTCM association is Fear.\nConsider: Microbiome, Transform, Golden Book",
      "affects": [],
      "remedies": [],
-     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23 — Glen-authored",
+     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23, Glen-authored",
      "provenance": "sourced"
     },
     {
@@ -2791,7 +2791,7 @@
      "description": "System 2: Support\nPrecursors to all immune cells.\nMature cells of the innate immune system.\nSpleen’s role in immunity.\nMay be associated with any type of infection.\nConsider: Lymph Flow, Immune Modulation",
      "affects": [],
      "remedies": [],
-     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23 — Glen-authored",
+     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23, Glen-authored",
      "provenance": "sourced"
     },
     {
@@ -2802,7 +2802,7 @@
      "description": "System 2: Support\nLearned immunity.\nSpleen: flow of lymph, cleansing of blood, production of antibodies.\nOmentum and thymus gland; myelocytes.\nResistance to infection, molds, and parasites.\nAllergic and autoimmune reactions.\nTCM association for spleen is Worry.\nSpleen connects to the ciliary body of the left eye.\nSpleen keeps tissues in their proper shape.\nConsider: Immune Modulation, Spleen Support",
      "affects": [],
      "remedies": [],
-     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23 — Glen-authored",
+     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23, Glen-authored",
      "provenance": "sourced"
     },
     {
@@ -2813,7 +2813,7 @@
      "description": "System 3: Process\nPancreas: digestion and blood sugar regulation.\nAlso other organs of the digestive system.\nAlso the liver, which assists with blood sugar regulation.\nMaturation of lymphocytes in the spleen.\nMay help to clear infection; may stimulate the elimination of latent or chronic viral conditions.\nPancreas connects to the ciliary body of the right eye.\nSugar damage (AGE = advanced glycation endproduct) contributes 1/3 of cellular damage in cataract, macular degeneration and other aging-related degenerations.\nConsider: Glucose Tolerance, Reverse AGE, Don’t combine ED15 with ED11\n\nPancreas: digestion and blood sugar regulation. Also with other organs of the digestive system. Also with the liver, which assists with blood sugar regulation. Maturation of lymphocytes in the spleen. May help to clear infection; may stimulate the elimination of latent or chronic viral conditions.",
      "affects": [],
      "remedies": [],
-     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23 — Glen-authored | SOURCED: E4L scan report text, harvested from the client PDFs — E4L's own wording",
+     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23, Glen-authored | SOURCED: E4L scan report text, harvested from the client PDFs, E4L's own wording",
      "provenance": "sourced"
     },
     {
@@ -2824,7 +2824,7 @@
      "description": "System 2: Support\nBone growth, repair, and detoxification.\nBone marrow (blood cells / immune cells).\nCalcium metabolism (nerve transmission, muscle contractions including the heart, blood pH, immune function, and more).\nHeavy metals / toxins may accumulate in the bones.\nConsider: Bone Builder, Dental Powder, Magnesium Syntropy, Dental Regen Powder",
      "affects": [],
      "remedies": [],
-     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23 — Glen-authored",
+     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23, Glen-authored",
      "provenance": "sourced"
     }
    ]
@@ -2842,7 +2842,7 @@
      "description": "System 3: Process; Metal Element\nSystem 4: Communication: Nervous system. \nFrontal lobes, thalamus, and sensory cortex.\nLarge intestine function and mineral absorption.\nEars, nose, throat.\nBronchi and skin (dermis).\nEmotions: holding on/letting go, fulfilment/frustration, hope/despair, self-worth/guilt.\nThe sensorium is received through the metal element of TCM.\nConsider: Microbiome, Transform, Binder Complex",
      "affects": [],
      "remedies": [],
-     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23 — Glen-authored",
+     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23, Glen-authored",
      "provenance": "sourced"
     },
     {
@@ -2853,7 +2853,7 @@
      "description": "System 3: Process; Metal Element\nCardiac tissue and heart function; hemoglobin.\nLung tissue and heart-lung interaction.\nSciatic nerves and sheath.\nEmotions: charisma, self-confidence, self-esteem, uplifted, integrity, dignity, grief, depression, false pride/humility, tolerance/intolerance, delusion/reality, head/heart conflict.\nThe retina and especially the macula have the highest metabolism of any tissue, so they need the most oxygen from the lungs and heart.\nThe assemblage point in the right thorax receives sensory information to be interpreted in the heart.\nConsider: Binder Complex, Rhythm Restore",
      "affects": [],
      "remedies": [],
-     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23 — Glen-authored",
+     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23, Glen-authored",
      "provenance": "sourced"
     },
     {
@@ -2864,7 +2864,7 @@
      "description": "System 3: Process; Fire Element\nSmall intestine (esp. the ileum); digestion, absorption.\nMucous membranes of the gut, nose, throat, lungs, etc.\nSkin: epithelium.\nBones in relation to calcium metabolism; vertebrae.\nParathyroid gland and hormone.\nEmotions: concentration/confusion, clarity of thought, sorrow and joy; also related to short-term memory.\nConsider: Terrain Restore, Microbiome, Transform",
      "affects": [],
      "remedies": [],
-     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23 — Glen-authored",
+     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23, Glen-authored",
      "provenance": "sourced"
     },
     {
@@ -2875,7 +2875,7 @@
      "description": "System 2: Support; Fire Element\nHeart meridian; hemoglobin and blood plasma.\nNeurotransmitters & midbrain; nerve cell nucleus.\nBronchioles and alveoli. \nUterus, cervix, and ovaries.\nAudio acuity; learning.\nEmotions: enthusiasm, faith, willpower, flexibility/rigidity, depression, loneliness, love, forgiveness.\nConsider: Heart Health, Rhythm Restore, Neuro-Magnesium",
      "affects": [],
      "remedies": [],
-     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23 — Glen-authored",
+     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23, Glen-authored",
      "provenance": "sourced"
     },
     {
@@ -2886,7 +2886,7 @@
      "description": "System 1: Flow: Bladder; Water Element\nSystem 2: Lymph: drainage, nodes, and lymphocytes.\nSpinal nerves, vertebrae, intervertebral discs.\nWhite and grey matter.\nMale genitalia.\nEmotions: self-assertion/timidity, decisiveness/hesitation, endurance/patience, peace/restlessness.\nConsider: Flow Ease, Lymph Flow",
      "affects": [],
      "remedies": [],
-     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23 — Glen-authored",
+     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23, Glen-authored",
      "provenance": "sourced"
     },
     {
@@ -2897,7 +2897,7 @@
      "description": "System 1: Flow; Water Element\nKidney organ; blood filtering, mineral and fluid balance.\nAcid-Alkaline or pH regulation.\nEnergy reserves, strength, stamina; adrenaline.\nSystem 4: Communicate: Pineal gland and DHEA.\nThalamus, cerebellum, white matter.\nThymus gland.\nEmotions: courage, willpower, drive, geniality, compassion, discernment, fearfulness, resignation, loneliness, insecurity, hostility, coldness.\nConsider: Microbiome, Transform, Terrain Restore, Alkalize Bicarbonate Blend",
      "affects": [],
      "remedies": [],
-     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23 — Glen-authored",
+     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23, Glen-authored",
      "provenance": "sourced"
     },
     {
@@ -2908,7 +2908,7 @@
      "description": "System 3: Process: Gall Bladder; Wood Element\nUpper digestive tract and gallbladder function.\nSystem 2: Support: Blood cell production; hemoglobin.\nBlood pressure regulation.\nImmune activation, T and NK cells.\nSystem 4: Communication: Motor cortex and grey matter function.\nEmotions: decisiveness, honesty, loyalty, emotional blocks, anger, wrath, bitterness.\nConsider: TMG Syntropy Powder (Trimethylglycine), Liver Support, Free & Easy",
      "affects": [],
      "remedies": [],
-     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23 — Glen-authored",
+     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23, Glen-authored",
      "provenance": "sourced"
     },
     {
@@ -2919,7 +2919,7 @@
      "description": "System 3: Process; Wood Element\nMicrobial infection.\nGeneral liver function and nerves to lobes of liver.\nSystem 4: Communicate: Vision; eye conditions.\nPlays a major role in addressing exposure to EMFs.\nAdrenaline and estrogen, among other hormones.\nEmotions: compassion, arrogance, tolerance, calmness, elation; this compartment influences calmness and tolerance, or a lack of these qualities.\nConsider: Liver Support, Free & Easy",
      "affects": [],
      "remedies": [],
-     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23 — Glen-authored",
+     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23, Glen-authored",
      "provenance": "sourced"
     },
     {
@@ -2930,7 +2930,7 @@
      "description": "System 4: Communicate; Fire Element\nThyroid gland and thyroid function.\nBody cavities: places of source energy accumulation.\nTriple Burner and homeostasis.\nHormone and body temperature regulation.\nSodium and calcium relationship.\nEmotion: joy, warmth, affection, confidence, courage, expression, timidity, shyness, feeling blue.\nConsider: Thyroid Support, Endocrine Restore, Adrenal Syntropy",
      "affects": [],
      "remedies": [],
-     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23 — Glen-authored",
+     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23, Glen-authored",
      "provenance": "sourced"
     },
     {
@@ -2941,7 +2941,7 @@
      "description": "System 2: Support; Fire Element\nCirculatory system: arterial and venous.\nNeuroendocrine regulation (incl. hypothalamus).\nMotor, visual, and auditory regulation (midbrain).\nPylorus; mucous coat of stomach.\nEye lens; pancreas tail; bones.\nFemale sexual system.\nEmotions – love, joy, trust, doubt, intimacy, thoughtfulness, connection, blocked feelings.\nConsider: Blood Cleanse, Energessence, Chelation",
      "affects": [],
      "remedies": [],
-     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23 — Glen-authored",
+     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23, Glen-authored",
      "provenance": "sourced"
     },
     {
@@ -2952,7 +2952,7 @@
      "description": "System 3: Process; Earth Element\nStomach & digestion; nourishment.\nBone marrow.\nSympathetic / parasympathetic nerves.\nBronchi; diaphragm; epiglottis; maxillary sinus.\nMale sexual system and testosterone.\nGroin; muscles to front of legs; teeth/gums of lower jaw.\nMay harbor heavy metals.\nEmotions: satisfaction, fulfillment, courage, memory, suspicion, disgust, obsessive compulsiveness, emptiness.\nConsider: GastroZyme, Digestzymes, Chelation, Binder Complex, GI Repair",
      "affects": [],
      "remedies": [],
-     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23 — Glen-authored",
+     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23, Glen-authored",
      "provenance": "sourced"
     },
     {
@@ -2963,7 +2963,7 @@
      "description": "System 2: Support; Earth Element\nSpleen; lymphatic fluid.\nSystem 3: Process: Pancreas: sugar metabolism (System 4: Communicate)\nDigestive function, digestive enzymes.\nCollapse, shock, exhaustion.\nUterus and cervix.\nEmotions: worry, pleasure, sympathy, contentment, acceptance, forgiveness, hope, security.\nConsider: Immune Modulation, Spleen Support",
      "affects": [],
      "remedies": [],
-     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23 — Glen-authored",
+     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23, Glen-authored",
      "provenance": "sourced"
     },
     {
@@ -2974,7 +2974,7 @@
      "description": "System 4: Communicate\nLateral Ventricles\nFourth Ventricle\nCerebrospinal Fluid\nCerebellum\nTemporal Lobes\nOrgan of Corti\nConsider: Brain Boost, Brain Cleanse, Nous Energy, WholOmega",
      "affects": [],
      "remedies": [],
-     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23 — Glen-authored",
+     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23, Glen-authored",
      "provenance": "sourced"
     },
     {
@@ -2985,7 +2985,7 @@
      "description": "System 4: Communicate\nThird Ventricle\nCerebrospinal Fluid\nVisual Cortex\nOptic Chiasm\nThalamus\nCaudate Nucleus\nNeurons\nSynapses\nConsider: Brain Boost, Brain Cleanse, Nous Energy, WholOmega",
      "affects": [],
      "remedies": [],
-     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23 — Glen-authored",
+     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23, Glen-authored",
      "provenance": "sourced"
     },
     {
@@ -2996,7 +2996,7 @@
      "description": "System 4: Communicate\nFourth Ventricle\nCerebrospinal Fluid\nThalamus\nHypothalamus\nOrgan of Corti\nNeurons\nSynapses\nConsider: Brain Boost, Brain Cleanse, Nous Energy, WholOmega",
      "affects": [],
      "remedies": [],
-     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23 — Glen-authored",
+     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23, Glen-authored",
      "provenance": "sourced"
     },
     {
@@ -3007,7 +3007,7 @@
      "description": "System 4: Communicate\nForebrain\nThalamus\nPineal Gland\nLimbic System\nConsider: Brain Boost, Brain Cleanse, Nous Energy, WholOmega",
      "affects": [],
      "remedies": [],
-     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23 — Glen-authored",
+     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23, Glen-authored",
      "provenance": "sourced"
     }
    ]
@@ -3025,7 +3025,7 @@
      "description": "System 2: Support\nMost components of the overall immune system, including the thymus, spleen, omentum, and bone marrow.\nThe macrophage system, monocytes, and immune cells of the red and yellow bone marrow.\nCell-mediated immunity; e.g., T-cells that destroy diseased cells.\nElectromagnetic radiation, or e-smog, from both human-made sources and natural ones. There is a strong match between e-smog, the heart, and the immune system.\nConsider: Lymph Flow, Immune Modulation, Microbiome\n\nMost components of the overall immune system, including the thymus, spleen, omentum, and bone marrow. Also the macrophage system, monocytes, and the immune cells of the red and yellow bone marrow. Also to cell-mediated immunity; e.g., T-cells that destroy diseased cells. Also to the heart. There is a strong match between the heart, the immune system, and electromagnetic radiation, or e-smog, from both manmade sources and natural ones. May be related to conditions of the chest and viral problems of the nervous system.",
      "affects": [],
      "remedies": [],
-     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23 — Glen-authored | SOURCED: E4L scan report text, harvested from the client PDFs — E4L's own wording",
+     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23, Glen-authored | SOURCED: E4L scan report text, harvested from the client PDFs, E4L's own wording",
      "provenance": "sourced"
     },
     {
@@ -3036,7 +3036,7 @@
      "description": "System 2: Support; Fire Element\nSystem 4: Communicate: The four parts of the brain: cerebral cortex, brainstem, cerebellum and cerebral medulla. For this reason, has sometimes been referred to as a “brain driver.”\nTriglycerides and other lipids or fats, on which the heart imprints emotions / experiences, which then circulate in the blood throughout the body.\nConsider: Infrared, Heart Health, Rhythm Restore",
      "affects": [],
      "remedies": [],
-     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23 — Glen-authored",
+     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23, Glen-authored",
      "provenance": "sourced"
     },
     {
@@ -3047,7 +3047,7 @@
      "description": "System 4: Communicate\nThe central nervous system, neurotransmitters of all kinds, and specific aspects of the nerves such as axons, neurons, and dendrites.\nAlso heavy metals, such as lead, cadmium, and mercury, which may be implicated bioenergetically to many nervous system conditions. Attempts to clear these and other toxins from the nervous system.\nTriglycerides and their detoxification and metabolism.\nEar function, so it may be related to hearing acuity.\nConsider: Brain Boost, Neuro-Magnesium, Brain Cleanse",
      "affects": [],
      "remedies": [],
-     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23 — Glen-authored",
+     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23, Glen-authored",
      "provenance": "sourced"
     },
     {
@@ -3058,7 +3058,7 @@
      "description": "System 4: Communicate; Fire Element\nThe accumulation of “Source” energy to help power everyday activity.\nThe endocrine system. May provide energy to assist proper hormone production and regulation.\nOrgan detoxification in the 3 primary cavities: the head, chest, and abdomen.\nConsider: Endocrine Restore, Adrenal Syntropy, Thyroid Support",
      "affects": [],
      "remedies": [],
-     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23 — Glen-authored",
+     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23, Glen-authored",
      "provenance": "sourced"
     },
     {
@@ -3069,7 +3069,7 @@
      "description": "System 2: Support\nCell-destroying mechanisms of your immune system; mechanisms.\nConsider: Immune Modulation, EMF reduction resources",
      "affects": [],
      "remedies": [],
-     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23 — Glen-authored",
+     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23, Glen-authored",
      "provenance": "sourced"
     },
     {
@@ -3080,7 +3080,7 @@
      "description": "System 2: Support; Fire Element\nSpecific arteries that are prone to narrowing from fat deposits or the buildup of calcium plaque, and to blood flow overall.\nTissues of ligaments, tendons, and cartilage.\nSeveral anti-inflammatory hormones.\nConsider: Blood Cleanse, Energessence, Fiber Cleanse, Binder Complex, Soothe",
      "affects": [],
      "remedies": [],
-     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23 — Glen-authored",
+     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23, Glen-authored",
      "provenance": "sourced"
     },
     {
@@ -3091,7 +3091,7 @@
      "description": "System 1: Flow\nStriated muscles, fascia, and triglycerides. Supports tissue repair.\nEnzyme production and use.\nConsider: TMG Syntropy Powder (Trimethylglycine), Digestzymes, Muscle Mass\n\nStriated muscles, fascia, and triglycerides. Designed to support tissue repair. May help to unblock shocks and traumas stored in the muscles, supporting muscle metabolism and excretion. Enzyme production and use. May support hormones and neurotransmitters matched to muscles, including GABA, serotonin, dopamine, norepinephrine, and melatonin. May be related to mental deterioration or any rapid onset of aging. Designed to bioenergetically stimulate stem cell activity.",
      "affects": [],
      "remedies": [],
-     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23 — Glen-authored | SOURCED: E4L scan report text, harvested from the client PDFs — E4L's own wording",
+     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23, Glen-authored | SOURCED: E4L scan report text, harvested from the client PDFs, E4L's own wording",
      "provenance": "sourced"
     },
     {
@@ -3102,7 +3102,7 @@
      "description": "System 4: Communicate\nPositive emotions. Supports feelings of peace, happiness, openness, and increased relaxation.\nCerebral cortex processing of thoughts and emotions; helps to clear mental overload, especially in relation to persistent thoughts due to worry / anxiety.\nConsider: Holy Grail Full Spectrum ORMUS, Stress Release",
      "affects": [],
      "remedies": [],
-     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23 — Glen-authored",
+     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23, Glen-authored",
      "provenance": "sourced"
     },
     {
@@ -3113,7 +3113,7 @@
      "description": "System 4: Communicate; Water Element\nBlocks primarily caused by shock and trauma received as sound. E.g., sounds of gunfire, verbal abuse, or car accidents.\nDistortions at the level of the temporal lobe, which is the primary area of the brain that processes sound, and specific sound and speech recognition centers of the brain, such as the Broca area. Also matches to the corpus callosum (joins the hemispheres of the brain).\nConsider: Brain Boost, Neuro-Magnesium, Brain Cleanse, Stress Release\n\nBlocks primarily caused by shock and trauma received as sound. E.g., sounds of gunfire, verbal abuse, or car accidents. These shocks can store in energetic memory systems, affecting cells, muscles, nerves, etc. Clearing them may help to restore functional integrity while supporting learning skills where learning from hearing is compromised. Bioenergetically supports distortions at the level of the temporal lobe, which is the primary area of the brain that processes sound, and specific sound and speech recognition centers of the brain, such as the Broca area. Also matches to the corpus callosum (joins the hemispheres of the brain). Does not address functional or structural auditory difficulties.",
      "affects": [],
      "remedies": [],
-     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23 — Glen-authored | SOURCED: E4L scan report text, harvested from the client PDFs — E4L's own wording",
+     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23, Glen-authored | SOURCED: E4L scan report text, harvested from the client PDFs, E4L's own wording",
      "provenance": "sourced"
     },
     {
@@ -3124,7 +3124,7 @@
      "description": "System 4: Communicate; Wood Element\nBlocks primarily caused by shock and trauma received visually. E.g., witnessing abuse or crime, observing the effects of war, etc.\nStress-related impaired function of the visual cortex, thalamus, and motor neurons.\nConsider: Brain Boost, Neuro-Magnesium, Brain Cleanse, WholOmega, Night Vision, Macular Wellness, OcuFlow, Crystalline Clarity, Clarity",
      "affects": [],
      "remedies": [],
-     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23 — Glen-authored",
+     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23, Glen-authored",
      "provenance": "sourced"
     },
     {
@@ -3135,7 +3135,7 @@
      "description": "System 4: Communicate; Fire Element\nCommunication link between the female endocrine glands and Source Driver, helping to energize the glands, stimulate circulation to them, and support their detoxification.\nSupports femaleness not only in terms of gender but also as a foundation for identity.\nSupports female charisma, confidence, willpower, social warmth, and well-being.\nConsider: Adrenal Syntropy, Endocrine Restore, PMS Relief\n\nCommunication link between the female endocrine glands and Source Driver, helping to energize them, stimulate circulation to them, and support their detoxification. May assist with sexual fears or frigidity, fear of people, or a lack of confidence. May support being in the mood for sexual relations, but does not affect the physical aspects of this. May have a regulating effect, at the bioenergetic level, on menstrual cycles, but is not intended as a correction for irregularity or dysfunction.",
      "affects": [],
      "remedies": [],
-     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23 — Glen-authored | SOURCED: E4L scan report text, harvested from the client PDFs — E4L's own wording",
+     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23, Glen-authored | SOURCED: E4L scan report text, harvested from the client PDFs, E4L's own wording",
      "provenance": "sourced"
     },
     {
@@ -3146,7 +3146,7 @@
      "description": "COH = Carbohydrate Metabolism. ES13 links to carbohydrate metabolism.\n\nCarbon, oxygen, and hydrogen - central to physiology, especially in their roles in metabolism, energy production and use. An intimate tie to the citric acid cycle (Krebs cycle). Lactic acid production in muscles and calcium metabolism, especially in relation to the creation of stones; also other calcification processes. Supports toxin excretion, thus aids cellular metabolism and correlates it to the liver and pancreas. Supports functions of enzymes and hormones. May help to connect the subconscious and conscious minds and release images from the memory as dreams.",
      "affects": [],
      "remedies": [],
-     "source": "SOURCED: 01 Clinical/NES Scan 426 Factors in 10 seconds.md — the COH expansion. An earlier revision deleted the carbon/oxygen/hydrogen text as invented; it is E4L's own wording and has been restored. | SOURCED: E4L scan report text, harvested from the client PDFs — E4L's own wording",
+     "source": "SOURCED: 01 Clinical/NES Scan 426 Factors in 10 seconds.md, the COH expansion. An earlier revision deleted the carbon/oxygen/hydrogen text as invented; it is E4L's own wording and has been restored. | SOURCED: E4L scan report text, harvested from the client PDFs, E4L's own wording",
      "provenance": "sourced"
     },
     {
@@ -3157,7 +3157,7 @@
      "description": "Cell detoxification or resisting the effects of environmental toxins, which in turn assists metabolic function.\nA wide range of detrimental effects from a variety of environmental toxins, including but not limited to those commonly found in dyes, car exhaust, some fungicides and pesticides, and the like.\nPCPs and PCBs, DDT, vinyl acetates and chlorides, some dioxins, methyl mercury and methyl tin, benzols, and nitrates.\nConsider: Mitochondrial Biogenesis, Longevity, Photobiomodulation resources",
      "affects": [],
      "remedies": [],
-     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23 — Glen-authored",
+     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23, Glen-authored",
      "provenance": "sourced"
     },
     {
@@ -3168,7 +3168,7 @@
      "description": "Cellular metabolism in relation to the bioenergetic effects of heavy metals, especially the residue of lead, mercury, and cadmium salts in the circulatory system, nervous system, and body organs.\nDendrites damaged by mercury. These are essential to receiving corrective information into the nervous system to be sent to the body through the Energetic Terrains.\nConsider: Chelation, Binder Complex, Glutathione Syntropy, Sulfur Syntropy, Mercury Detox Syntropy Powder",
      "affects": [],
      "remedies": [],
-     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23 — Glen-authored",
+     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23, Glen-authored",
      "provenance": "sourced"
     }
    ]
@@ -3186,7 +3186,7 @@
      "description": "Matrix Regulators work at the deepest level of the body-field matrix. MR1 amplifies cellular energy production and supports the foundational energetics of every cell in the body.",
      "affects": [],
      "remedies": [],
-     "source": "Name confirmed against E4L's own scan-report legend (checked across 40 client PDFs, all 10 names match exactly). The description is model-written and unreviewed: E4L publishes no per-item prose for the Matrix Regulators in any source we hold — the PDFs carry the codes only as a name grid.",
+     "source": "Name confirmed against E4L's own scan-report legend (checked across 40 client PDFs, all 10 names match exactly). The description is model-written and unreviewed: E4L publishes no per-item prose for the Matrix Regulators in any source we hold, the PDFs carry the codes only as a name grid.",
      "provenance": "unverified",
      "name_provenance": "sourced"
     },
@@ -3198,7 +3198,7 @@
      "description": "MR2 supports mental calmness, reducing neurological overstimulation and anxious patterns in the body-field matrix.",
      "affects": [],
      "remedies": [],
-     "source": "Name confirmed against E4L's own scan-report legend (checked across 40 client PDFs, all 10 names match exactly). The description is model-written and unreviewed: E4L publishes no per-item prose for the Matrix Regulators in any source we hold — the PDFs carry the codes only as a name grid.",
+     "source": "Name confirmed against E4L's own scan-report legend (checked across 40 client PDFs, all 10 names match exactly). The description is model-written and unreviewed: E4L publishes no per-item prose for the Matrix Regulators in any source we hold, the PDFs carry the codes only as a name grid.",
      "provenance": "unverified",
      "name_provenance": "sourced"
     },
@@ -3210,7 +3210,7 @@
      "description": "MR3 supports the restoration of the body's connective tissue matrix, including fascia, extracellular matrix, and the ground regulation system.",
      "affects": [],
      "remedies": [],
-     "source": "Name confirmed against E4L's own scan-report legend (checked across 40 client PDFs, all 10 names match exactly). The description is model-written and unreviewed: E4L publishes no per-item prose for the Matrix Regulators in any source we hold — the PDFs carry the codes only as a name grid.",
+     "source": "Name confirmed against E4L's own scan-report legend (checked across 40 client PDFs, all 10 names match exactly). The description is model-written and unreviewed: E4L publishes no per-item prose for the Matrix Regulators in any source we hold, the PDFs carry the codes only as a name grid.",
      "provenance": "unverified",
      "name_provenance": "sourced"
     },
@@ -3222,7 +3222,7 @@
      "description": "MR4 supports microtubule integrity and function, which governs intracellular transport, cell division, and quantum coherence in the cytoskeleton.",
      "affects": [],
      "remedies": [],
-     "source": "Name confirmed against E4L's own scan-report legend (checked across 40 client PDFs, all 10 names match exactly). The description is model-written and unreviewed: E4L publishes no per-item prose for the Matrix Regulators in any source we hold — the PDFs carry the codes only as a name grid.",
+     "source": "Name confirmed against E4L's own scan-report legend (checked across 40 client PDFs, all 10 names match exactly). The description is model-written and unreviewed: E4L publishes no per-item prose for the Matrix Regulators in any source we hold, the PDFs carry the codes only as a name grid.",
      "provenance": "unverified",
      "name_provenance": "sourced"
     },
@@ -3234,7 +3234,7 @@
      "description": "MR5 supports the harmonization of emotional fields at the matrix level, helping to integrate conflicting emotional patterns.",
      "affects": [],
      "remedies": [],
-     "source": "Name confirmed against E4L's own scan-report legend (checked across 40 client PDFs, all 10 names match exactly). The description is model-written and unreviewed: E4L publishes no per-item prose for the Matrix Regulators in any source we hold — the PDFs carry the codes only as a name grid.",
+     "source": "Name confirmed against E4L's own scan-report legend (checked across 40 client PDFs, all 10 names match exactly). The description is model-written and unreviewed: E4L publishes no per-item prose for the Matrix Regulators in any source we hold, the PDFs carry the codes only as a name grid.",
      "provenance": "unverified",
      "name_provenance": "sourced"
     },
@@ -3246,7 +3246,7 @@
      "description": "MR6 supports reconnection of disrupted field lines in the body-field matrix, particularly after injury, surgery, or trauma.",
      "affects": [],
      "remedies": [],
-     "source": "Name confirmed against E4L's own scan-report legend (checked across 40 client PDFs, all 10 names match exactly). The description is model-written and unreviewed: E4L publishes no per-item prose for the Matrix Regulators in any source we hold — the PDFs carry the codes only as a name grid.",
+     "source": "Name confirmed against E4L's own scan-report legend (checked across 40 client PDFs, all 10 names match exactly). The description is model-written and unreviewed: E4L publishes no per-item prose for the Matrix Regulators in any source we hold, the PDFs carry the codes only as a name grid.",
      "provenance": "unverified",
      "name_provenance": "sourced"
     },
@@ -3258,7 +3258,7 @@
      "description": "MR7 supports calcium signaling across all terrains, linking mineral metabolism to the body-field's terrain regulation.",
      "affects": [],
      "remedies": [],
-     "source": "Name confirmed against E4L's own scan-report legend (checked across 40 client PDFs, all 10 names match exactly). The description is model-written and unreviewed: E4L publishes no per-item prose for the Matrix Regulators in any source we hold — the PDFs carry the codes only as a name grid.",
+     "source": "Name confirmed against E4L's own scan-report legend (checked across 40 client PDFs, all 10 names match exactly). The description is model-written and unreviewed: E4L publishes no per-item prose for the Matrix Regulators in any source we hold, the PDFs carry the codes only as a name grid.",
      "provenance": "unverified",
      "name_provenance": "sourced"
     },
@@ -3270,7 +3270,7 @@
      "description": "MR8 supports neuronal growth cone activity and axonal regeneration, governing the regrowth and remapping of neural pathways.",
      "affects": [],
      "remedies": [],
-     "source": "Name confirmed against E4L's own scan-report legend (checked across 40 client PDFs, all 10 names match exactly). The description is model-written and unreviewed: E4L publishes no per-item prose for the Matrix Regulators in any source we hold — the PDFs carry the codes only as a name grid.",
+     "source": "Name confirmed against E4L's own scan-report legend (checked across 40 client PDFs, all 10 names match exactly). The description is model-written and unreviewed: E4L publishes no per-item prose for the Matrix Regulators in any source we hold, the PDFs carry the codes only as a name grid.",
      "provenance": "unverified",
      "name_provenance": "sourced"
     },
@@ -3282,7 +3282,7 @@
      "description": "MR9 supports the energetic release of deep structural restrictions, allowing greater freedom of movement and expression in the body-field.",
      "affects": [],
      "remedies": [],
-     "source": "Name confirmed against E4L's own scan-report legend (checked across 40 client PDFs, all 10 names match exactly). The description is model-written and unreviewed: E4L publishes no per-item prose for the Matrix Regulators in any source we hold — the PDFs carry the codes only as a name grid.",
+     "source": "Name confirmed against E4L's own scan-report legend (checked across 40 client PDFs, all 10 names match exactly). The description is model-written and unreviewed: E4L publishes no per-item prose for the Matrix Regulators in any source we hold, the PDFs carry the codes only as a name grid.",
      "provenance": "unverified",
      "name_provenance": "sourced"
     },
@@ -3294,7 +3294,7 @@
      "description": "MR10 supports the integration of the central nervous system and heart field at the matrix level, governing the coherent relationship between brain and heart.",
      "affects": [],
      "remedies": [],
-     "source": "Name confirmed against E4L's own scan-report legend (checked across 40 client PDFs, all 10 names match exactly). The description is model-written and unreviewed: E4L publishes no per-item prose for the Matrix Regulators in any source we hold — the PDFs carry the codes only as a name grid.",
+     "source": "Name confirmed against E4L's own scan-report legend (checked across 40 client PDFs, all 10 names match exactly). The description is model-written and unreviewed: E4L publishes no per-item prose for the Matrix Regulators in any source we hold, the PDFs carry the codes only as a name grid.",
      "provenance": "unverified",
      "name_provenance": "sourced"
     }
@@ -3324,7 +3324,7 @@
      "description": "System 4: Communicate\n   Inner mesoderm tissues in general\n   Skull\n   Teeth\n   Cervical spine\n   Shoulder, arm, and hand\n   Cardiac muscle\n   Thoracic spine\n   Adrenal cortex\n   Lumbar spine\n   Pelvis and pubic bone\n   Spleen\n   Knee\n   Foot\n   Kidneys\n   Ovaries / Testicles\nConsider: Brain Boost, Brain Cleanse, Nous Energy, WholOmega",
      "affects": [],
      "remedies": [],
-     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23 — Glen-authored",
+     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23, Glen-authored",
      "provenance": "sourced"
     },
     {
@@ -3335,7 +3335,7 @@
      "description": "System 5: Integrity: Skin. \n   Outer mesoderm tissues in general\n   Mammary glands\n   Corium\n   Pericardium\n   Peritoneum\n   Pleura\nCan relate to dry eye, irritation, swelling, stye, hordeolum, chalazion, ocular microbiome.  The crystalline lens develops embryologically from the skin, so CBH can also relate to accommodation (focus), presbyopia, and cataract.\nConsider: Brain Boost, Brain Cleanse, Nous Energy, WholOmega",
      "affects": [],
      "remedies": [],
-     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23 — Glen-authored",
+     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23, Glen-authored",
      "provenance": "sourced"
     },
     {
@@ -3346,7 +3346,7 @@
      "description": "System 4: Communicate\n   Ectodermal tissues, Tongue, Thyroid duct, Teeth enamel, Alpha and beta islets of pancreas, Larynx muscle and mucosa, Bronchial muscle and mucosa, Coronary circulation, Neck of uterus, Rectal mucosa, Pancreas mucosa, Mucosa of the stomach, liver, gallbladder, and bladder, Retina, Vitreous body of the eye, Breast ducts\nMotor Cortex affects skeletal muscles, and can leave you feeling stuck in life.\nPost Sensory Cortex affects wanting or avoiding touch.\nPre-Motor Sensory Cortex relates to visual separation. The right eye is affected by father/child conflict in right-handed cases, and mother/child conflict if left handed. The opposite patterns affect the left eye.\nTemporal Lobe relates to territorial conflicts.\nFrontal Lobe relates to fear and powerlessness.\nFronto-Occipital Constellation can affect panic, the retina and the vitreous body of the eyes, such as floaters.\nConsider: Brain Boost, Brain Cleanse, Nous Energy, WholOmega",
      "affects": [],
      "remedies": [],
-     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23 — Glen-authored",
+     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23, Glen-authored",
      "provenance": "sourced"
     },
     {
@@ -3357,7 +3357,7 @@
      "description": "Stress results when incoming data is not correctly processed into patterns.\nSystem 4: Communicate\nESR has the effect of helping the medulla process data faster and thus resolves issues into correct patterns.\nWhen a person is “stressed” their ability to absorb food is compromised as is their ability to process thoughts. For this reason ESR has been found helpful in aiding nutrient absorption.\nConsider: Holy Grail Full Spectrum ORMUS, Stress Release, Rescue",
      "affects": [],
      "remedies": [],
-     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23 — Glen-authored",
+     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23, Glen-authored",
      "provenance": "sourced"
     },
     {
@@ -3368,7 +3368,7 @@
      "description": "System 4: Communicate\nPatterns of the past. \nEmotions associated with the brainstem, cerebellum, cerebral medulla, and cerebral cortex.\nShock and trauma.\nSubconscious emotional issues.\nInformation flow between the central nervous system, heart, and connective tissue matrix.\nDreams, daydreaming, mood, sleep, problem solving abilities, and anxiety. \nHearing.\nConsider: Holy Grail Full Spectrum ORMUS, Nous Energy, Brain Boost, Brain Cleanse",
      "affects": [],
      "remedies": [],
-     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23 — Glen-authored",
+     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23, Glen-authored",
      "provenance": "sourced"
     },
     {
@@ -3379,7 +3379,7 @@
      "description": "System 4: Communicate\nHarmony of cellular and body-field memory, which is necessary in maintaining physical and psychological health.\nHonesty with oneself and vocalization of one’s truth to help integrate memory with the body.\nHarmony with the primitive emotions associated with the old brain, or brainstem, including emotions arising from things heard.\nCorrection of mental confusion and the inability to learn due to not hearing what is said.\nConsider: Holy Grail Full Spectrum ORMUS, Stress Release",
      "affects": [],
      "remedies": [],
-     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23 — Glen-authored",
+     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23, Glen-authored",
      "provenance": "sourced"
     },
     {
@@ -3390,7 +3390,7 @@
      "description": "System 4: Communicate\nLove in this context refers to a sense of unity or connection with all things in a way that inspires unconditional love.\nImbalances can include giving too much of yourself / having others take advantage of you -- this involves a one-way street rather than the beautiful \"give and take\" inherent in balanced love. Another version of this is being unable to give or receive love. We may withhold love because of fear, or not receive love from a false sense of protecting ourselves.\nAnother form of imbalance is when we feel cut off from source, disconnected, or lacking in strong positive emotional feelings.\nConsider: Holy Grail Full Spectrum ORMUS, Nous Energy",
      "affects": [],
      "remedies": [],
-     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23 — Glen-authored",
+     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23, Glen-authored",
      "provenance": "sourced"
     }
    ]
@@ -3408,7 +3408,7 @@
      "description": "Alignment with Earth’s Fields:\nThe Equatorial Axis is formed by the Earth’s rotation. \nThe Vertical Axis is generated by gravity.\nThe Magnetic Polar Axis is generated by the magnetic poles of the Earth. \nGrounding requires your bare skin to be in direct contact with the earth. This skin-to-ground contact provides the body with electrons, helping to give it a negative charge that helps to both energize and stabilize it. The earth is the largest anti-oxidant since anti-oxidants are electron donors. You can also add Epsom salts to a bath or in a shower if you block the drain so you are standing in the water.\nConsider: Holy Grail Full Spectrum ORMUS, Nous Energy, Spleen Support",
      "affects": [],
      "remedies": [],
-     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23 — Glen-authored",
+     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23, Glen-authored",
      "provenance": "sourced"
     },
     {
@@ -3419,7 +3419,7 @@
      "description": "BFA Grounding relates to the body's electrical connection with the Earth's field, supporting electron donation, free radical neutralization, and parasympathetic tone.",
      "affects": [],
      "remedies": [],
-     "source": "e4l_items paraphrase (unverified — not ingested from the scan screen or PDF)",
+     "source": "e4l_items paraphrase (unverified, not ingested from the scan screen or PDF)",
      "provenance": "unverified"
     },
     {
@@ -3430,7 +3430,7 @@
      "description": "BFA Magnetic relates to the body's alignment with and sensitivity to the Earth's magnetic field, affecting orientation, circadian rhythm, and magnetoreception.",
      "affects": [],
      "remedies": [],
-     "source": "e4l_items paraphrase (unverified — not ingested from the scan screen or PDF)",
+     "source": "e4l_items paraphrase (unverified, not ingested from the scan screen or PDF)",
      "provenance": "unverified"
     },
     {
@@ -3441,7 +3441,7 @@
      "description": "BFA Equatorial relates to the horizontal plane of the body-field and its alignment with equatorial energy flows.",
      "affects": [],
      "remedies": [],
-     "source": "e4l_items paraphrase (unverified — not ingested from the scan screen or PDF)",
+     "source": "e4l_items paraphrase (unverified, not ingested from the scan screen or PDF)",
      "provenance": "unverified"
     },
     {
@@ -3452,7 +3452,7 @@
      "description": "BFA Vertical relates to the vertical axis of the body-field and its alignment with gravitational and geomagnetic vertical forces.",
      "affects": [],
      "remedies": [],
-     "source": "e4l_items paraphrase (unverified — not ingested from the scan screen or PDF)",
+     "source": "e4l_items paraphrase (unverified, not ingested from the scan screen or PDF)",
      "provenance": "unverified"
     }
    ]
@@ -3491,7 +3491,7 @@
        "catalog": "exact"
       }
      ],
-     "source": "ASSEMBLED from e4l_pattern_structures + life_stress_emotion_map — joined from sourced data, no new clinical claims",
+     "source": "ASSEMBLED from e4l_pattern_structures + life_stress_emotion_map joined from sourced data, no new clinical claims",
      "provenance": "assembled",
      "remedy_source": "FMP vl_bio_main_stress (category Scan), extract 2026-05-23 — Glen-authored product recommendations"
     },
@@ -3519,7 +3519,7 @@
        "catalog": "exact"
       }
      ],
-     "source": "ASSEMBLED from e4l_pattern_structures + life_stress_emotion_map — joined from sourced data, no new clinical claims",
+     "source": "ASSEMBLED from e4l_pattern_structures + life_stress_emotion_map joined from sourced data, no new clinical claims",
      "provenance": "assembled",
      "remedy_source": "FMP vl_bio_main_stress (category Scan), extract 2026-05-23 — Glen-authored product recommendations"
     },
@@ -3567,7 +3567,7 @@
        "catalog": "exact"
       }
      ],
-     "source": "ASSEMBLED from e4l_pattern_structures + life_stress_emotion_map — joined from sourced data, no new clinical claims",
+     "source": "ASSEMBLED from e4l_pattern_structures + life_stress_emotion_map joined from sourced data, no new clinical claims",
      "provenance": "assembled",
      "remedy_source": "FMP vl_bio_main_stress (category Scan), extract 2026-05-23 — Glen-authored product recommendations"
     },
@@ -3576,7 +3576,7 @@
      "name": "Myocardia",
      "code": "ER5",
      "subcategory": "Energetic Rejuvenators (body structures)",
-     "description": "Myocardia (Cor) — listed among the organ and tissue stresses. Associated emotional conflicts: Love, Fear, Trust. Supportive essences: Heart Chakra Flower Essence, Love Within Flower Essence, Mimulus Flower Essence, Aspen Flower Essence.",
+     "description": "Myocardia (Cor), listed among the organ and tissue stresses. Associated emotional conflicts: Love, Fear, Trust. Supportive essences: Heart Chakra Flower Essence, Love Within Flower Essence, Mimulus Flower Essence, Aspen Flower Essence.",
      "affects": [],
      "remedies": [
       {
@@ -3590,7 +3590,7 @@
        "catalog": "exact"
       }
      ],
-     "source": "ASSEMBLED from clinicaltheory Organs + e4l_pattern_structures + life_stress_emotion_map — joined from sourced data, no new clinical claims",
+     "source": "ASSEMBLED from clinicaltheory Organs + e4l_pattern_structures + life_stress_emotion_map joined from sourced data, no new clinical claims",
      "provenance": "assembled",
      "remedy_source": "FMP vl_bio_main_stress (category Scan), extract 2026-05-23 — Glen-authored product recommendations"
     },
@@ -3599,7 +3599,7 @@
      "name": "Lungs",
      "code": "ER6",
      "subcategory": "Energetic Rejuvenators (body structures)",
-     "description": "Lungs (Pulmonary) — listed among the organ and tissue stresses. Associated emotional conflicts: Fear, Grief, Trust. Supportive essences: Mimulus Flower Essence, Aspen Flower Essence, Honeysuckle Flower Essence, Sweet Chestnut Flower Essence.",
+     "description": "Lungs (Pulmonary), listed among the organ and tissue stresses. Associated emotional conflicts: Fear, Grief, Trust. Supportive essences: Mimulus Flower Essence, Aspen Flower Essence, Honeysuckle Flower Essence, Sweet Chestnut Flower Essence.",
      "affects": [],
      "remedies": [
       {
@@ -3613,7 +3613,7 @@
        "catalog": "exact"
       }
      ],
-     "source": "ASSEMBLED from clinicaltheory Organs + e4l_pattern_structures + life_stress_emotion_map — joined from sourced data, no new clinical claims",
+     "source": "ASSEMBLED from clinicaltheory Organs + e4l_pattern_structures + life_stress_emotion_map joined from sourced data, no new clinical claims",
      "provenance": "assembled",
      "remedy_source": "FMP vl_bio_main_stress (category Scan), extract 2026-05-23 — Glen-authored product recommendations"
     },
@@ -3622,7 +3622,7 @@
      "name": "Sciatic Nerve",
      "code": "ER7",
      "subcategory": "Energetic Rejuvenators (body structures)",
-     "description": "Sciatic Nerve (Nervus Ischiaticus) — listed among the organ and tissue stresses. Associated emotional conflicts: Fear, Guilt, Self-Worth. Supportive essences: Mimulus Flower Essence, Aspen Flower Essence, Pine Flower Essence, Crab Apple Flower Essence.",
+     "description": "Sciatic Nerve (Nervus Ischiaticus), listed among the organ and tissue stresses. Associated emotional conflicts: Fear, Guilt, Self-Worth. Supportive essences: Mimulus Flower Essence, Aspen Flower Essence, Pine Flower Essence, Crab Apple Flower Essence.",
      "affects": [],
      "remedies": [
       {
@@ -3631,7 +3631,7 @@
        "catalog": "exact"
       }
      ],
-     "source": "ASSEMBLED from clinicaltheory Organs + e4l_pattern_structures + life_stress_emotion_map — joined from sourced data, no new clinical claims",
+     "source": "ASSEMBLED from clinicaltheory Organs + e4l_pattern_structures + life_stress_emotion_map joined from sourced data, no new clinical claims",
      "provenance": "assembled",
      "remedy_source": "FMP vl_bio_main_stress (category Scan), extract 2026-05-23 — Glen-authored product recommendations"
     },
@@ -3659,7 +3659,7 @@
        "catalog": "exact"
       }
      ],
-     "source": "ASSEMBLED from e4l_pattern_structures + life_stress_emotion_map — joined from sourced data, no new clinical claims",
+     "source": "ASSEMBLED from e4l_pattern_structures + life_stress_emotion_map joined from sourced data, no new clinical claims",
      "provenance": "assembled",
      "remedy_source": "FMP vl_bio_main_stress (category Scan), extract 2026-05-23 — Glen-authored product recommendations"
     },
@@ -3682,7 +3682,7 @@
        "catalog": "exact"
       }
      ],
-     "source": "ASSEMBLED from e4l_pattern_structures + life_stress_emotion_map — joined from sourced data, no new clinical claims",
+     "source": "ASSEMBLED from e4l_pattern_structures + life_stress_emotion_map joined from sourced data, no new clinical claims",
      "provenance": "assembled",
      "remedy_source": "FMP vl_bio_main_stress (category Scan), extract 2026-05-23 — Glen-authored product recommendations"
     },
@@ -3728,7 +3728,7 @@
        "catalog": "exact"
       }
      ],
-     "source": "ASSEMBLED from clinicaltheory Organs + e4l_pattern_structures + life_stress_emotion_map — joined from sourced data, no new clinical claims",
+     "source": "ASSEMBLED from clinicaltheory Organs + e4l_pattern_structures + life_stress_emotion_map joined from sourced data, no new clinical claims",
      "provenance": "assembled",
      "remedy_source": "FMP vl_bio_main_stress (category Scan), extract 2026-05-23 — Glen-authored product recommendations"
     },
@@ -3737,7 +3737,7 @@
      "name": "Appendix",
      "code": "ER12",
      "subcategory": "Energetic Rejuvenators (body structures)",
-     "description": "Appendix (Appendix Vermiformis) — listed among the organ and tissue stresses. The Appendix functions as a Lymph Node for the gut, and secretes immune compounds to regulate growth of bacteria in the colon and prevent colonic bacteria from invading the Small Intestine. Microbiome and Lymph Flow provide excellent support for the Appendix. In case of parasite involvement with the Appendix, consider Para-Cleanse. Associated emotional conflicts: Guilt, Fear. Supportive essences: Pine Flower Essence, Crab Apple Flower Essence, Mimulus Flower Essence, Aspen Flower Essence.",
+     "description": "Appendix (Appendix Vermiformis), listed among the organ and tissue stresses. The Appendix functions as a Lymph Node for the gut, and secretes immune compounds to regulate growth of bacteria in the colon and prevent colonic bacteria from invading the Small Intestine. Microbiome and Lymph Flow provide excellent support for the Appendix. In case of parasite involvement with the Appendix, consider Para-Cleanse. Associated emotional conflicts: Guilt, Fear. Supportive essences: Pine Flower Essence, Crab Apple Flower Essence, Mimulus Flower Essence, Aspen Flower Essence.",
      "affects": [],
      "remedies": [
       {
@@ -3761,7 +3761,7 @@
        "catalog": "exact"
       }
      ],
-     "source": "ASSEMBLED from clinicaltheory Organs + e4l_pattern_structures + life_stress_emotion_map — joined from sourced data, no new clinical claims",
+     "source": "ASSEMBLED from clinicaltheory Organs + e4l_pattern_structures + life_stress_emotion_map joined from sourced data, no new clinical claims",
      "provenance": "assembled",
      "remedy_source": "FMP vl_bio_main_stress (category Scan), extract 2026-05-23 — Glen-authored product recommendations"
     },
@@ -3779,7 +3779,7 @@
        "catalog": "exact"
       }
      ],
-     "source": "ASSEMBLED from e4l_pattern_structures + life_stress_emotion_map — joined from sourced data, no new clinical claims",
+     "source": "ASSEMBLED from e4l_pattern_structures + life_stress_emotion_map joined from sourced data, no new clinical claims",
      "provenance": "assembled",
      "remedy_source": "FMP vl_bio_main_stress (category Scan), extract 2026-05-23 — Glen-authored product recommendations"
     },
@@ -3788,7 +3788,7 @@
      "name": "Bladder",
      "code": "ER14",
      "subcategory": "Energetic Rejuvenators (body structures)",
-     "description": "Bladder (Urinary) — listed among the organ and tissue stresses. Our Flow Ease formula makes a pleasant drink that is very soothing and healing for the Urinary Tract. It was inspired by clients with chronic Interstitial Cystitis, which means inflammation in the bladder. Associated emotional conflicts: Fear, Letting Go. Supportive essences: Mimulus Flower Essence, Aspen Flower Essence, Honeysuckle Flower Essence, Life's Transitions Flower Essence.",
+     "description": "Bladder (Urinary), listed among the organ and tissue stresses. Our Flow Ease formula makes a pleasant drink that is very soothing and healing for the Urinary Tract. It was inspired by clients with chronic Interstitial Cystitis, which means inflammation in the bladder. Associated emotional conflicts: Fear, Letting Go. Supportive essences: Mimulus Flower Essence, Aspen Flower Essence, Honeysuckle Flower Essence, Life's Transitions Flower Essence.",
      "affects": [],
      "remedies": [
       {
@@ -3807,7 +3807,7 @@
        "catalog": "exact"
       }
      ],
-     "source": "ASSEMBLED from clinicaltheory Organs + e4l_pattern_structures + life_stress_emotion_map — joined from sourced data, no new clinical claims",
+     "source": "ASSEMBLED from clinicaltheory Organs + e4l_pattern_structures + life_stress_emotion_map joined from sourced data, no new clinical claims",
      "provenance": "assembled",
      "remedy_source": "FMP vl_bio_main_stress (category Scan), extract 2026-05-23 — Glen-authored product recommendations"
     },
@@ -3840,7 +3840,7 @@
        "catalog": "exact"
       }
      ],
-     "source": "ASSEMBLED from e4l_pattern_structures + life_stress_emotion_map — joined from sourced data, no new clinical claims",
+     "source": "ASSEMBLED from e4l_pattern_structures + life_stress_emotion_map joined from sourced data, no new clinical claims",
      "provenance": "assembled",
      "remedy_source": "FMP vl_bio_main_stress (category Scan), extract 2026-05-23 — Glen-authored product recommendations"
     },
@@ -3877,7 +3877,7 @@
      "name": "Gall Bladder",
      "code": "ER17",
      "subcategory": "Energetic Rejuvenators (body structures)",
-     "description": "Gall Bladder (Vesica Fellea) — listed among the organ and tissue stresses. Associated emotional conflicts: Fear, Anger. Supportive essences: Mimulus Flower Essence, Aspen Flower Essence, Holly Flower Essence, Willow Flower Essence.",
+     "description": "Gall Bladder (Vesica Fellea), listed among the organ and tissue stresses. Associated emotional conflicts: Fear, Anger. Supportive essences: Mimulus Flower Essence, Aspen Flower Essence, Holly Flower Essence, Willow Flower Essence.",
      "affects": [],
      "remedies": [
       {
@@ -3902,7 +3902,7 @@
        "catalog": "exact"
       }
      ],
-     "source": "ASSEMBLED from clinicaltheory Organs + e4l_pattern_structures + life_stress_emotion_map — joined from sourced data, no new clinical claims",
+     "source": "ASSEMBLED from clinicaltheory Organs + e4l_pattern_structures + life_stress_emotion_map joined from sourced data, no new clinical claims",
      "provenance": "assembled",
      "remedy_source": "FMP vl_bio_main_stress (category Scan), extract 2026-05-23 — Glen-authored product recommendations"
     },
@@ -3925,7 +3925,7 @@
        "catalog": "exact"
       }
      ],
-     "source": "ASSEMBLED from e4l_pattern_structures + life_stress_emotion_map — joined from sourced data, no new clinical claims",
+     "source": "ASSEMBLED from e4l_pattern_structures + life_stress_emotion_map joined from sourced data, no new clinical claims",
      "provenance": "assembled",
      "remedy_source": "FMP vl_bio_main_stress (category Scan), extract 2026-05-23 — Glen-authored product recommendations"
     },
@@ -3948,7 +3948,7 @@
        "catalog": "exact"
       }
      ],
-     "source": "ASSEMBLED from e4l_pattern_structures + life_stress_emotion_map — joined from sourced data, no new clinical claims",
+     "source": "ASSEMBLED from e4l_pattern_structures + life_stress_emotion_map joined from sourced data, no new clinical claims",
      "provenance": "assembled",
      "remedy_source": "FMP vl_bio_main_stress (category Scan), extract 2026-05-23 — Glen-authored product recommendations"
     },
@@ -4000,7 +4000,7 @@
        "matched_by": "slug"
       }
      ],
-     "source": "ASSEMBLED from e4l_pattern_structures + life_stress_emotion_map — joined from sourced data, no new clinical claims",
+     "source": "ASSEMBLED from e4l_pattern_structures + life_stress_emotion_map joined from sourced data, no new clinical claims",
      "provenance": "assembled",
      "remedy_source": "FMP vl_bio_main_stress (category Scan), extract 2026-05-23 — Glen-authored product recommendations"
     },
@@ -4028,7 +4028,7 @@
        "catalog": "exact"
       }
      ],
-     "source": "ASSEMBLED from clinicaltheory Organs + e4l_pattern_structures + life_stress_emotion_map — joined from sourced data, no new clinical claims",
+     "source": "ASSEMBLED from clinicaltheory Organs + e4l_pattern_structures + life_stress_emotion_map joined from sourced data, no new clinical claims",
      "provenance": "assembled",
      "remedy_source": "FMP vl_bio_main_stress (category Scan), extract 2026-05-23 — Glen-authored product recommendations"
     },
@@ -4051,7 +4051,7 @@
        "catalog": "exact"
       }
      ],
-     "source": "ASSEMBLED from e4l_pattern_structures + life_stress_emotion_map — joined from sourced data, no new clinical claims",
+     "source": "ASSEMBLED from e4l_pattern_structures + life_stress_emotion_map joined from sourced data, no new clinical claims",
      "provenance": "assembled",
      "remedy_source": "FMP vl_bio_main_stress (category Scan), extract 2026-05-23 — Glen-authored product recommendations"
     },
@@ -4074,7 +4074,7 @@
        "catalog": "exact"
       }
      ],
-     "source": "ASSEMBLED from e4l_pattern_structures + life_stress_emotion_map — joined from sourced data, no new clinical claims",
+     "source": "ASSEMBLED from e4l_pattern_structures + life_stress_emotion_map joined from sourced data, no new clinical claims",
      "provenance": "assembled",
      "remedy_source": "FMP vl_bio_main_stress (category Scan), extract 2026-05-23 — Glen-authored product recommendations"
     },
@@ -4083,7 +4083,7 @@
      "name": "Stomach",
      "code": "ER25",
      "subcategory": "Energetic Rejuvenators (body structures)",
-     "description": "Stomach (Gastric) — listed among the organ and tissue stresses. Associated emotional conflict: Worry. Supportive essences: White Chestnut Flower Essence, Inner Peace Flower Essence.",
+     "description": "Stomach (Gastric), listed among the organ and tissue stresses. Associated emotional conflict: Worry. Supportive essences: White Chestnut Flower Essence, Inner Peace Flower Essence.",
      "affects": [],
      "remedies": [
       {
@@ -4108,7 +4108,7 @@
        "catalog": "exact"
       }
      ],
-     "source": "ASSEMBLED from clinicaltheory Organs + e4l_pattern_structures + life_stress_emotion_map — joined from sourced data, no new clinical claims",
+     "source": "ASSEMBLED from clinicaltheory Organs + e4l_pattern_structures + life_stress_emotion_map joined from sourced data, no new clinical claims",
      "provenance": "assembled",
      "remedy_source": "FMP vl_bio_main_stress (category Scan), extract 2026-05-23 — Glen-authored product recommendations"
     },
@@ -4117,7 +4117,7 @@
      "name": "Brain",
      "code": "ER26",
      "subcategory": "Energetic Rejuvenators (body structures)",
-     "description": "Brain (Cerebrum) — listed among the organ and tissue stresses. Associated emotional conflicts: Identity, Self-Worth. Supportive essences: True to Self Flower Essence, Self-Image Flower Essence, Self-Esteem Flower Essence, Worthiness Flower Essence.",
+     "description": "Brain (Cerebrum), listed among the organ and tissue stresses. Associated emotional conflicts: Identity, Self-Worth. Supportive essences: True to Self Flower Essence, Self-Image Flower Essence, Self-Esteem Flower Essence, Worthiness Flower Essence.",
      "affects": [],
      "remedies": [
       {
@@ -4146,7 +4146,7 @@
        "catalog": "exact"
       }
      ],
-     "source": "ASSEMBLED from clinicaltheory Organs + e4l_pattern_structures + life_stress_emotion_map — joined from sourced data, no new clinical claims",
+     "source": "ASSEMBLED from clinicaltheory Organs + e4l_pattern_structures + life_stress_emotion_map joined from sourced data, no new clinical claims",
      "provenance": "assembled",
      "remedy_source": "FMP vl_bio_main_stress (category Scan), extract 2026-05-23 — Glen-authored product recommendations"
     },
@@ -4183,7 +4183,7 @@
        ]
       }
      ],
-     "source": "ASSEMBLED from e4l_pattern_structures + life_stress_emotion_map — joined from sourced data, no new clinical claims",
+     "source": "ASSEMBLED from e4l_pattern_structures + life_stress_emotion_map joined from sourced data, no new clinical claims",
      "provenance": "assembled",
      "remedy_source": "FMP vl_bio_main_stress (category Scan), extract 2026-05-23 — Glen-authored product recommendations"
     },
@@ -4211,7 +4211,7 @@
        "catalog": "exact"
       }
      ],
-     "source": "ASSEMBLED from e4l_pattern_structures + life_stress_emotion_map — joined from sourced data, no new clinical claims",
+     "source": "ASSEMBLED from e4l_pattern_structures + life_stress_emotion_map joined from sourced data, no new clinical claims",
      "provenance": "assembled",
      "remedy_source": "FMP vl_bio_main_stress (category Scan), extract 2026-05-23 — Glen-authored product recommendations"
     },
@@ -4220,7 +4220,7 @@
      "name": "Liver",
      "code": "ER29",
      "subcategory": "Energetic Rejuvenators (body structures)",
-     "description": "Liver (Hepatic) — listed among the organ and tissue stresses. Associated emotional conflict: Anger. Supportive essences: Holly Flower Essence, Willow Flower Essence.",
+     "description": "Liver (Hepatic), listed among the organ and tissue stresses. Associated emotional conflict: Anger. Supportive essences: Holly Flower Essence, Willow Flower Essence.",
      "affects": [],
      "remedies": [
       {
@@ -4234,7 +4234,7 @@
        "catalog": "exact"
       }
      ],
-     "source": "ASSEMBLED from clinicaltheory Organs + e4l_pattern_structures + life_stress_emotion_map — joined from sourced data, no new clinical claims",
+     "source": "ASSEMBLED from clinicaltheory Organs + e4l_pattern_structures + life_stress_emotion_map joined from sourced data, no new clinical claims",
      "provenance": "assembled",
      "remedy_source": "FMP vl_bio_main_stress (category Scan), extract 2026-05-23 — Glen-authored product recommendations"
     },
@@ -4380,7 +4380,7 @@
        "catalog": "exact"
       }
      ],
-     "source": "ASSEMBLED from clinicaltheory Organs + e4l_pattern_structures + life_stress_emotion_map — joined from sourced data, no new clinical claims",
+     "source": "ASSEMBLED from clinicaltheory Organs + e4l_pattern_structures + life_stress_emotion_map joined from sourced data, no new clinical claims",
      "provenance": "assembled",
      "remedy_source": "FMP vl_bio_main_stress (category Scan), extract 2026-05-23 — Glen-authored product recommendations"
     },
@@ -4403,7 +4403,7 @@
        "catalog": "exact"
       }
      ],
-     "source": "ASSEMBLED from clinicaltheory Organs + e4l_pattern_structures + life_stress_emotion_map — joined from sourced data, no new clinical claims",
+     "source": "ASSEMBLED from clinicaltheory Organs + e4l_pattern_structures + life_stress_emotion_map joined from sourced data, no new clinical claims",
      "provenance": "assembled",
      "remedy_source": "FMP vl_bio_main_stress (category Scan), extract 2026-05-23 — Glen-authored product recommendations"
     },
@@ -4449,7 +4449,7 @@
        "catalog": "exact"
       }
      ],
-     "source": "ASSEMBLED from e4l_pattern_structures + life_stress_emotion_map — joined from sourced data, no new clinical claims",
+     "source": "ASSEMBLED from e4l_pattern_structures + life_stress_emotion_map joined from sourced data, no new clinical claims",
      "provenance": "assembled",
      "remedy_source": "FMP vl_bio_main_stress (category Scan), extract 2026-05-23 — Glen-authored product recommendations"
     },
@@ -4502,7 +4502,7 @@
        "note": "Glen's ruling 2026-08-10: Immune Intelligence is the product at slug immune-intelligence, branded Happy Cow Colostrum."
       }
      ],
-     "source": "ASSEMBLED from e4l_pattern_structures + life_stress_emotion_map — joined from sourced data, no new clinical claims",
+     "source": "ASSEMBLED from e4l_pattern_structures + life_stress_emotion_map joined from sourced data, no new clinical claims",
      "provenance": "assembled",
      "remedy_source": "FMP vl_bio_main_stress (category Scan), extract 2026-05-23 — Glen-authored product recommendations"
     },
@@ -4534,7 +4534,7 @@
        ]
       }
      ],
-     "source": "ASSEMBLED from e4l_pattern_structures + life_stress_emotion_map — joined from sourced data, no new clinical claims",
+     "source": "ASSEMBLED from e4l_pattern_structures + life_stress_emotion_map joined from sourced data, no new clinical claims",
      "provenance": "assembled",
      "remedy_source": "FMP vl_bio_main_stress (category Scan), extract 2026-05-23 — Glen-authored product recommendations"
     },
@@ -4557,7 +4557,7 @@
        "catalog": "exact"
       }
      ],
-     "source": "ASSEMBLED from e4l_pattern_structures + life_stress_emotion_map — joined from sourced data, no new clinical claims",
+     "source": "ASSEMBLED from e4l_pattern_structures + life_stress_emotion_map joined from sourced data, no new clinical claims",
      "provenance": "assembled",
      "remedy_source": "FMP vl_bio_main_stress (category Scan), extract 2026-05-23 — Glen-authored product recommendations"
     },
@@ -4590,7 +4590,7 @@
        "catalog": "exact"
       }
      ],
-     "source": "ASSEMBLED from e4l_pattern_structures + life_stress_emotion_map — joined from sourced data, no new clinical claims",
+     "source": "ASSEMBLED from e4l_pattern_structures + life_stress_emotion_map joined from sourced data, no new clinical claims",
      "provenance": "assembled",
      "remedy_source": "FMP vl_bio_main_stress (category Scan), extract 2026-05-23 — Glen-authored product recommendations"
     },
@@ -4650,7 +4650,7 @@
      "name": "Tonsils",
      "code": "ER44",
      "subcategory": "Energetic Rejuvenators (body structures)",
-     "description": "Tonsils (Tonsilae Palatinae) — listed among the organ and tissue stresses. Associated emotional conflicts: Anger, Letting Go. Supportive essences: Holly Flower Essence, Willow Flower Essence, Honeysuckle Flower Essence, Life's Transitions Flower Essence.",
+     "description": "Tonsils (Tonsilae Palatinae), listed among the organ and tissue stresses. Associated emotional conflicts: Anger, Letting Go. Supportive essences: Holly Flower Essence, Willow Flower Essence, Honeysuckle Flower Essence, Life's Transitions Flower Essence.",
      "affects": [],
      "remedies": [
       {
@@ -4676,7 +4676,7 @@
        "catalog": "exact"
       }
      ],
-     "source": "ASSEMBLED from clinicaltheory Organs + e4l_pattern_structures + life_stress_emotion_map — joined from sourced data, no new clinical claims",
+     "source": "ASSEMBLED from clinicaltheory Organs + e4l_pattern_structures + life_stress_emotion_map joined from sourced data, no new clinical claims",
      "provenance": "assembled",
      "remedy_source": "FMP vl_bio_main_stress (category Scan), extract 2026-05-23 — Glen-authored product recommendations"
     },
@@ -4699,7 +4699,7 @@
        "catalog": "exact"
       }
      ],
-     "source": "ASSEMBLED from e4l_pattern_structures + life_stress_emotion_map — joined from sourced data, no new clinical claims",
+     "source": "ASSEMBLED from e4l_pattern_structures + life_stress_emotion_map joined from sourced data, no new clinical claims",
      "provenance": "assembled",
      "remedy_source": "FMP vl_bio_main_stress (category Scan), extract 2026-05-23 — Glen-authored product recommendations"
     },
@@ -4717,7 +4717,7 @@
        "catalog": "exact"
       }
      ],
-     "source": "ASSEMBLED from e4l_pattern_structures + life_stress_emotion_map — joined from sourced data, no new clinical claims",
+     "source": "ASSEMBLED from e4l_pattern_structures + life_stress_emotion_map joined from sourced data, no new clinical claims",
      "provenance": "assembled",
      "remedy_source": "FMP vl_bio_main_stress (category Scan), extract 2026-05-23 — Glen-authored product recommendations"
     },
@@ -4740,7 +4740,7 @@
        "catalog": "exact"
       }
      ],
-     "source": "ASSEMBLED from e4l_pattern_structures + life_stress_emotion_map — joined from sourced data, no new clinical claims",
+     "source": "ASSEMBLED from e4l_pattern_structures + life_stress_emotion_map joined from sourced data, no new clinical claims",
      "provenance": "assembled",
      "remedy_source": "FMP vl_bio_main_stress (category Scan), extract 2026-05-23 — Glen-authored product recommendations"
     },
@@ -4765,7 +4765,7 @@
        "note": "Glen's ruling 2026-08-10: Immune Intelligence is the product at slug immune-intelligence, branded Happy Cow Colostrum."
       }
      ],
-     "source": "ASSEMBLED from e4l_pattern_structures + life_stress_emotion_map — joined from sourced data, no new clinical claims",
+     "source": "ASSEMBLED from e4l_pattern_structures + life_stress_emotion_map joined from sourced data, no new clinical claims",
      "provenance": "assembled",
      "remedy_source": "FMP vl_bio_main_stress (category Scan), extract 2026-05-23 — Glen-authored product recommendations"
     },
@@ -4821,7 +4821,7 @@
        "catalog": "exact"
       }
      ],
-     "source": "ASSEMBLED from e4l_pattern_structures + life_stress_emotion_map — joined from sourced data, no new clinical claims",
+     "source": "ASSEMBLED from e4l_pattern_structures + life_stress_emotion_map joined from sourced data, no new clinical claims",
      "provenance": "assembled",
      "remedy_source": "FMP vl_bio_main_stress (category Scan), extract 2026-05-23 — Glen-authored product recommendations"
     },
@@ -4849,7 +4849,7 @@
        "catalog": "exact"
       }
      ],
-     "source": "ASSEMBLED from e4l_pattern_structures + life_stress_emotion_map — joined from sourced data, no new clinical claims",
+     "source": "ASSEMBLED from e4l_pattern_structures + life_stress_emotion_map joined from sourced data, no new clinical claims",
      "provenance": "assembled",
      "remedy_source": "FMP vl_bio_main_stress (category Scan), extract 2026-05-23 — Glen-authored product recommendations"
     },
@@ -4911,7 +4911,7 @@
        "catalog": "exact"
       }
      ],
-     "source": "ASSEMBLED from clinicaltheory Organs + e4l_pattern_structures + life_stress_emotion_map — joined from sourced data, no new clinical claims",
+     "source": "ASSEMBLED from clinicaltheory Organs + e4l_pattern_structures + life_stress_emotion_map joined from sourced data, no new clinical claims",
      "provenance": "assembled",
      "remedy_source": "FMP vl_bio_main_stress (category Scan), extract 2026-05-23 — Glen-authored product recommendations"
     },
@@ -4929,7 +4929,7 @@
        "catalog": "exact"
       }
      ],
-     "source": "ASSEMBLED from e4l_pattern_structures + life_stress_emotion_map — joined from sourced data, no new clinical claims",
+     "source": "ASSEMBLED from e4l_pattern_structures + life_stress_emotion_map joined from sourced data, no new clinical claims",
      "provenance": "assembled",
      "remedy_source": "FMP vl_bio_main_stress (category Scan), extract 2026-05-23 — Glen-authored product recommendations"
     },
@@ -4938,7 +4938,7 @@
      "name": "Uterus",
      "code": "ER55",
      "subcategory": "Energetic Rejuvenators (body structures)",
-     "description": "Uterus (Genital) — listed among the organ and tissue stresses. Associated emotional conflicts: Fear, Guilt. Supportive essences: Mimulus Flower Essence, Aspen Flower Essence, Pine Flower Essence, Crab Apple Flower Essence.",
+     "description": "Uterus (Genital), listed among the organ and tissue stresses. Associated emotional conflicts: Fear, Guilt. Supportive essences: Mimulus Flower Essence, Aspen Flower Essence, Pine Flower Essence, Crab Apple Flower Essence.",
      "affects": [],
      "remedies": [
       {
@@ -4952,7 +4952,7 @@
        "catalog": "exact"
       }
      ],
-     "source": "ASSEMBLED from clinicaltheory Organs + e4l_pattern_structures + life_stress_emotion_map — joined from sourced data, no new clinical claims",
+     "source": "ASSEMBLED from clinicaltheory Organs + e4l_pattern_structures + life_stress_emotion_map joined from sourced data, no new clinical claims",
      "provenance": "assembled",
      "remedy_source": "FMP vl_bio_main_stress (category Scan), extract 2026-05-23 — Glen-authored product recommendations"
     },
@@ -5003,7 +5003,7 @@
        "catalog": "exact"
       }
      ],
-     "source": "ASSEMBLED from e4l_pattern_structures + life_stress_emotion_map — joined from sourced data, no new clinical claims",
+     "source": "ASSEMBLED from e4l_pattern_structures + life_stress_emotion_map joined from sourced data, no new clinical claims",
      "provenance": "assembled",
      "remedy_source": "FMP vl_bio_main_stress (category Scan), extract 2026-05-23 — Glen-authored product recommendations"
     },
@@ -5041,7 +5041,7 @@
        "catalog": "exact"
       }
      ],
-     "source": "ASSEMBLED from clinicaltheory Organs + e4l_pattern_structures + life_stress_emotion_map — joined from sourced data, no new clinical claims",
+     "source": "ASSEMBLED from clinicaltheory Organs + e4l_pattern_structures + life_stress_emotion_map joined from sourced data, no new clinical claims",
      "provenance": "assembled",
      "remedy_source": "FMP vl_bio_main_stress (category Scan), extract 2026-05-23 — Glen-authored product recommendations"
     },
@@ -5071,7 +5071,7 @@
        "note": "Glen's ruling 2026-08-10: Immune Intelligence is the product at slug immune-intelligence, branded Happy Cow Colostrum."
       }
      ],
-     "source": "ASSEMBLED from e4l_pattern_structures + life_stress_emotion_map — joined from sourced data, no new clinical claims",
+     "source": "ASSEMBLED from e4l_pattern_structures + life_stress_emotion_map joined from sourced data, no new clinical claims",
      "provenance": "assembled",
      "remedy_source": "FMP vl_bio_main_stress (category Scan), extract 2026-05-23 — Glen-authored product recommendations"
     },
@@ -5195,7 +5195,7 @@
        ]
       }
      ],
-     "source": "ASSEMBLED from e4l_pattern_structures + life_stress_emotion_map — joined from sourced data, no new clinical claims",
+     "source": "ASSEMBLED from e4l_pattern_structures + life_stress_emotion_map joined from sourced data, no new clinical claims",
      "provenance": "assembled",
      "remedy_source": "FMP vl_bio_main_stress (category Scan), extract 2026-05-23 — Glen-authored product recommendations"
     },
@@ -5243,7 +5243,7 @@
        "note": "Glen's ruling 2026-08-10: Immune Intelligence is the product at slug immune-intelligence, branded Happy Cow Colostrum."
       }
      ],
-     "source": "ASSEMBLED from e4l_pattern_structures + life_stress_emotion_map — joined from sourced data, no new clinical claims",
+     "source": "ASSEMBLED from e4l_pattern_structures + life_stress_emotion_map joined from sourced data, no new clinical claims",
      "provenance": "assembled",
      "remedy_source": "FMP vl_bio_main_stress (category Scan), extract 2026-05-23 — Glen-authored product recommendations"
     },
@@ -5266,7 +5266,7 @@
        "catalog": "exact"
       }
      ],
-     "source": "ASSEMBLED from e4l_pattern_structures + life_stress_emotion_map — joined from sourced data, no new clinical claims",
+     "source": "ASSEMBLED from e4l_pattern_structures + life_stress_emotion_map joined from sourced data, no new clinical claims",
      "provenance": "assembled",
      "remedy_source": "FMP vl_bio_main_stress (category Scan), extract 2026-05-23 — Glen-authored product recommendations"
     },
@@ -5313,7 +5313,7 @@
      "name": "Breasts",
      "code": "ER69",
      "subcategory": "Energetic Rejuvenators (body structures)",
-     "description": "Breasts (Mamma Dextra, Mamma Sinistra) — listed among the organ and tissue stresses. Associated emotional conflicts: Anger, Grief, Self-Worth. Supportive essences: Holly Flower Essence, Willow Flower Essence, Honeysuckle Flower Essence, Sweet Chestnut Flower Essence.",
+     "description": "Breasts (Mamma Dextra, Mamma Sinistra), listed among the organ and tissue stresses. Associated emotional conflicts: Anger, Grief, Self-Worth. Supportive essences: Holly Flower Essence, Willow Flower Essence, Honeysuckle Flower Essence, Sweet Chestnut Flower Essence.",
      "affects": [],
      "remedies": [
       {
@@ -5322,7 +5322,7 @@
        "catalog": "exact"
       }
      ],
-     "source": "ASSEMBLED from clinicaltheory Organs + e4l_pattern_structures + life_stress_emotion_map — joined from sourced data, no new clinical claims",
+     "source": "ASSEMBLED from clinicaltheory Organs + e4l_pattern_structures + life_stress_emotion_map joined from sourced data, no new clinical claims",
      "provenance": "assembled",
      "remedy_source": "FMP vl_bio_main_stress (category Scan), extract 2026-05-23 — Glen-authored product recommendations"
     },
@@ -5347,7 +5347,7 @@
        "note": "Glen's ruling 2026-08-10: Immune Intelligence is the product at slug immune-intelligence, branded Happy Cow Colostrum."
       }
      ],
-     "source": "ASSEMBLED from e4l_pattern_structures + life_stress_emotion_map — joined from sourced data, no new clinical claims",
+     "source": "ASSEMBLED from e4l_pattern_structures + life_stress_emotion_map joined from sourced data, no new clinical claims",
      "provenance": "assembled",
      "remedy_source": "FMP vl_bio_main_stress (category Scan), extract 2026-05-23 — Glen-authored product recommendations"
     }
