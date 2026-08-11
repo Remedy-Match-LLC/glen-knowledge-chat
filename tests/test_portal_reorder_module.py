@@ -330,15 +330,21 @@ def test_saved_client_price_matches_your_remedies_and_checkout(client):
     assert subtotal == 8400
 
 
-def test_baked_portal_price_still_outranks_saved_client_price(client):
-    """A price Dr. Glen explicitly published on this portal remains strongest."""
+def test_saved_client_price_outranks_older_baked_portal_price(client):
+    """Glen's CURRENT saved per-SKU price wins over an older baked line price.
+
+    Inverted with the precedence change in "Make current client special prices
+    authoritative": the order is now current per-SKU special > current FF flat >
+    older baked override > regular. This test pinned the old rule in its own name
+    and was missed when the sibling assertions in test_client_portal_routes.py
+    were updated."""
     _c, appmod = client
     email = "baked@example.com"
     _seed_client_price(appmod, email, "neuro-magnesium", 4200)
     _lines, items, subtotal = appmod._portal_priced_lines(
         [{"slug": "neuro-magnesium", "qty": 1, "price_cents": 3900}], email=email)
-    assert items[0]["unit_cents"] == 3900
-    assert subtotal == 3900
+    assert items[0]["unit_cents"] == 4200
+    assert subtotal == 4200
 
 
 # ── (c) membership_upsell for a non-member ───────────────────────────────────
