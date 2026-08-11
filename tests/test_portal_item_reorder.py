@@ -214,6 +214,19 @@ def test_order_catalog_search_and_add_authorizes_same_checkout(client, monkeypat
         "neuro-magnesium", "nous-energy"]
 
 
+def test_life_stress_essence_can_join_the_same_portal_basket(client):
+    c, appmod = client
+    tok = _seed_portal(appmod, email="essence-basket@example.com", content={
+        "greeting": "hi", "video": {}, "layers": [], "reorder_items": [],
+    })
+    slug = "mimulus-flower-essence-in-terrain-restore"
+
+    added = c.post(f"/api/portal/{tok}/order-add", json={"slug": slug})
+
+    assert added.status_code == 200
+    assert added.get_json()["item"]["slug"] == slug
+
+
 def test_portal_page_ships_add_to_current_order_controls():
     body = open("static/client-portal.html", encoding="utf-8").read()
     assert 'id="orderAddSearch"' in body
