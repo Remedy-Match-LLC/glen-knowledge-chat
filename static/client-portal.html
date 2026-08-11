@@ -1911,7 +1911,19 @@ function showPortalPartialWarning(results){
   app.prepend(warning);
 }
 
-async function load(){
+function portalIntakeIsActive(){
+  const panel = document.querySelector('[data-panel="intake"]');
+  return !!panel && !panel.hidden;
+}
+
+async function load(options){
+  options = options || {};
+  // Pending-analysis polling is background work. It must never replace the
+  // live Intake DOM: doing so discards focused controls and any values still
+  // inside the 1.2-second autosave debounce window. Check both before and
+  // after the network wait so a client who opens Intake during an in-flight
+  // poll is protected too.
+  if(options.preserveActiveIntake && portalIntakeIsActive()) return false;
   // Two independent sources: content (biofield + reorder, token-or-session) and
   // the role-aware view (account/orders/upgrade, identity seam). Which one MUST
   // succeed depends on the page: a token link lives on its content; the logged-in
@@ -1946,11 +1958,13 @@ async function load(){
     else showPortalLoadFailure(required);
     return;
   }
+  if(options.preserveActiveIntake && portalIntakeIsActive()) return false;
   _recoPayload = recoResult.kind === "ok" ? recoResult.data : null;
   render(dataResult.data, viewResult.data);
   // Content and account/view can degrade independently. Recommendations are
   // optional and intentionally remain quiet when absent.
   showPortalPartialWarning([dataResult, viewResult].filter(result=>result !== required));
+  return true;
 }
 
 // Poll loop for the cold-portal "Preparing your analysis…" state. Each tick
@@ -1958,13 +1972,17 @@ async function load(){
 // no longer "pending" and render() stops the timer. After PP_MAX ticks (~2 min)
 // we give up the spinner and show the "we'll text you" line (request stays queued).
 function pollPending(){
+  // Keep polling armed, but do not spend a retry or replace the form while a
+  // client is working in Intake. The next interval tick after they leave will
+  // refresh the pending analysis normally.
+  if(portalIntakeIsActive()) return;
   _ppPolls++;
   if(_ppPolls > PP_MAX){
     clearInterval(_ppTimer); _ppTimer = null;
-    load(); // final re-render swaps the spinner for the "we'll text you" line.
+    load({preserveActiveIntake:true}); // final re-render swaps the spinner for the "we'll text you" line.
     return;
   }
-  load();
+  load({preserveActiveIntake:true});
 }
 
 // Entity hover/tap pop-ups (stress patterns, remedies, functions) + link-out are
