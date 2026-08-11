@@ -52,6 +52,14 @@
     overflow:hidden;border:2px solid var(--brand);background:var(--brand-soft);
     display:flex;align-items:center;justify-content:center}
   .portal-client-photo{width:100%;height:100%;object-fit:cover;display:none}
+  .avatar-crop-stage{width:180px;height:180px;border-radius:50%;overflow:hidden;
+    border:3px solid var(--brand);background:var(--brand-soft);touch-action:none;
+    cursor:grab;position:relative;flex:0 0 auto}
+  .avatar-crop-stage:active{cursor:grabbing}
+  .avatar-crop-stage img{width:100%;height:100%;object-fit:cover;display:block;
+    user-select:none;pointer-events:none}
+  .avatar-crop-controls{min-width:190px;flex:1}
+  .avatar-crop-controls input[type=range]{width:100%;accent-color:var(--brand)}
   .portal-client-photo-placeholder{color:var(--brand);font-size:1rem;font-weight:700;
     letter-spacing:.02em}
   .portal-client-identity-copy{text-align:left;min-width:0}
@@ -1354,12 +1362,22 @@ function buildPhotoHtml(){
   return `<div class="card" id="photo-section">
     <h2>My Photo</h2>
     <p class="muted small">Add a clear photo for your profile and personalized visual tools.</p>
-    <div class="client-photo-box" style="display:flex;gap:14px;align-items:center">
-      <img id="client-photo-panel-preview" alt="Your uploaded photo" style="width:76px;height:76px;border-radius:12px;object-fit:cover;display:none">
-      <div><label class="btn" style="cursor:pointer;display:inline-block">
+    <div class="client-photo-box" style="display:flex;gap:18px;align-items:center;flex-wrap:wrap">
+      <div class="avatar-crop-stage" id="client-photo-crop-stage" hidden>
+        <img id="client-photo-panel-preview" alt="Circular preview of your profile photo">
+      </div>
+      <div class="avatar-crop-controls"><label class="btn" style="cursor:pointer;display:inline-block">
         <span id="client-photo-label">Choose photo</span>
         <input id="client-photo-file" type="file" accept="image/jpeg,image/png,image/webp" style="display:none">
-      </label><span id="client-photo-stat" class="dose" style="display:block;margin-top:.45rem"></span></div>
+      </label>
+      <div id="client-photo-adjust" hidden style="margin-top:.8rem">
+        <label for="client-photo-zoom" class="small"><strong>Magnification</strong></label>
+        <input id="client-photo-zoom" type="range" min="1" max="3" step=".01" value="1">
+        <p class="muted small" style="margin:.25rem 0 .55rem">Drag the photo to center your face.</p>
+        <button class="btn" id="client-photo-reset" type="button">Reset</button>
+        <button class="btn" id="client-photo-save" type="button">Save framing</button>
+      </div>
+      <span id="client-photo-stat" class="dose" style="display:block;margin-top:.45rem"></span></div>
     </div>
   </div>`;
 }
@@ -3914,11 +3932,36 @@ function render(d, v){
     const stat = document.getElementById("client-photo-stat");
     const placeholder = document.getElementById("client-photo-placeholder");
     const panelPreview = document.getElementById("client-photo-panel-preview");
+    const cropStage = document.getElementById("client-photo-crop-stage");
+    const adjust = document.getElementById("client-photo-adjust");
+    const zoomInput = document.getElementById("client-photo-zoom");
+    const resetBtn = document.getElementById("client-photo-reset");
+    const saveBtn = document.getElementById("client-photo-save");
     if (!img || !file) return;
+    let framing = {focus_x:50, focus_y:42, zoom:1};
+    function applyFraming(){
+      const pos = framing.focus_x + "% " + framing.focus_y + "%";
+      [img, panelPreview].forEach(function(el){ if(!el) return;
+        el.style.objectPosition = pos; el.style.transformOrigin = pos;
+        el.style.transform = "scale(" + framing.zoom + ")";
+      });
+      if(zoomInput) zoomInput.value = framing.zoom;
+    }
+    async function loadFraming(){
+      try {
+        const r = await fetch("/api/portal/" + encodeURIComponent(token) + "/photo/framing", {credentials:"same-origin"});
+        const j = await r.json();
+        if(j.ok) framing = {focus_x:j.focus_x, focus_y:j.focus_y, zoom:j.zoom};
+      } catch(e) {}
+      applyFraming();
+    }
     function show(){
       img.onload = function(){
         img.style.display = "block";
         if(panelPreview){ panelPreview.src = img.src; panelPreview.style.display = "block"; }
+        if(cropStage) cropStage.hidden = false;
+        if(adjust) adjust.hidden = false;
+        loadFraming();
         if (placeholder) placeholder.style.display = "none";
         if (label) label.textContent = "Change photo";
         if (stat && !stat.textContent) stat.textContent = "Photo uploaded — under review.";
@@ -3930,21 +3973,56 @@ function render(d, v){
       img.src = "/api/portal/" + encodeURIComponent(token) + "/photo?t=" + Date.now();
     }
     show();
+    async function suggestedFraming(photoFile){
+      const fallback = {focus_x:50, focus_y:42, zoom:1};
+      if(!window.FaceDetector) return fallback;
+      const bitmap = await createImageBitmap(photoFile);
+      try {
+        const faces = await new FaceDetector({fastMode:true, maxDetectedFaces:1}).detect(bitmap);
+        if(!faces.length) return fallback;
+        const b = faces[0].boundingBox;
+        return {focus_x:100*(b.x+b.width/2)/bitmap.width,
+                focus_y:100*(b.y+b.height*.42)/bitmap.height,
+                zoom:Math.max(1, Math.min(2.2, Math.min(bitmap.width, bitmap.height)/(b.height*2.35)))};
+      } finally { if(bitmap.close) bitmap.close(); }
+    }
     file.addEventListener("change", async function(){
       if (!file.files || !file.files[0]) return;
       stat.textContent = "Uploading…";
+      try { framing = await suggestedFraming(file.files[0]); } catch(e) { framing = {focus_x:50, focus_y:42, zoom:1}; }
       const fd = new FormData(); fd.append("photo", file.files[0]);
       try {
         const r = await fetch("/api/portal/" + encodeURIComponent(token) + "/photo",
                               {method: "POST", body: fd, credentials: "same-origin"});
         const j = await r.json();
         if (j.ok) {
-          stat.textContent = "Photo uploaded — under review.";
+          await fetch("/api/portal/" + encodeURIComponent(token) + "/photo/framing", {
+            method:"POST", credentials:"same-origin", headers:{"Content-Type":"application/json"},
+            body:JSON.stringify(framing)});
+          stat.textContent = "Photo uploaded. Adjust the circle, then save framing.";
           show();
           if(window.refreshPortalOnboarding) window.refreshPortalOnboarding();
         }
         else { stat.textContent = j.error || "Upload failed"; }
       } catch (e) { stat.textContent = "Upload failed"; }
+    });
+    if(zoomInput) zoomInput.addEventListener("input", function(){ framing.zoom=Number(this.value); applyFraming(); });
+    if(resetBtn) resetBtn.addEventListener("click", function(){ framing={focus_x:50,focus_y:42,zoom:1}; applyFraming(); });
+    if(cropStage){
+      let drag=null;
+      cropStage.addEventListener("pointerdown", function(e){ drag={x:e.clientX,y:e.clientY,fx:framing.focus_x,fy:framing.focus_y}; cropStage.setPointerCapture(e.pointerId); });
+      cropStage.addEventListener("pointermove", function(e){ if(!drag) return;
+        framing.focus_x=Math.max(0,Math.min(100,drag.fx-(e.clientX-drag.x)*100/cropStage.clientWidth/framing.zoom));
+        framing.focus_y=Math.max(0,Math.min(100,drag.fy-(e.clientY-drag.y)*100/cropStage.clientHeight/framing.zoom)); applyFraming(); });
+      cropStage.addEventListener("pointerup", function(){ drag=null; });
+      cropStage.addEventListener("pointercancel", function(){ drag=null; });
+    }
+    if(saveBtn) saveBtn.addEventListener("click", async function(){
+      stat.textContent="Saving framing…";
+      try { const r=await fetch("/api/portal/"+encodeURIComponent(token)+"/photo/framing", {
+        method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/json"},body:JSON.stringify(framing)});
+        const j=await r.json(); stat.textContent=j.ok?"Framing saved.":(j.error||"Save failed");
+      } catch(e){ stat.textContent="Save failed"; }
     });
   })();
   wireEntityRefs(document.getElementById("app") || document);

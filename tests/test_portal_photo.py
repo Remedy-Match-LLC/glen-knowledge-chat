@@ -78,6 +78,25 @@ def test_unknown_token_404(tmp_path, monkeypatch):
     assert _upload(c, "nope").status_code == 404
 
 
+def test_portal_owner_can_save_and_read_photo_framing(tmp_path, monkeypatch):
+    appmod = _app(tmp_path, monkeypatch)
+    token = _seed_portal(appmod, "client@x.com")
+    c = appmod.app.test_client()
+    _upload(c, token)
+    url = f"/api/portal/{token}/photo/framing"
+    r = c.post(url, json={"focus_x": 61.5, "focus_y": 38, "zoom": 1.7})
+    assert r.status_code == 200 and r.get_json()["ok"] is True
+    got = c.get(url).get_json()
+    assert got == {"ok": True, "focus_x": 61.5, "focus_y": 38.0, "zoom": 1.7}
+
+
+def test_photo_framing_requires_owned_photo(tmp_path, monkeypatch):
+    appmod = _app(tmp_path, monkeypatch)
+    token = _seed_portal(appmod, "client@x.com")
+    c = appmod.app.test_client()
+    assert c.get(f"/api/portal/{token}/photo/framing").status_code == 404
+
+
 def test_console_photo_endpoint_respects_force(tmp_path, monkeypatch):
     appmod = _app(tmp_path, monkeypatch)
     from dashboard import client_photos as cp
