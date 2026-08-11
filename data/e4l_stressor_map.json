@@ -1909,7 +1909,9 @@
      "provenance": "sourced",
      "source": "01 Clinical/Life Journey, Essence Map.md, theme names from the E4L scan's Life Journey section; essence pairings from inventory; rationale model-drafted and reviewed by Glen (upgraded from unverified on his ruling, 2026-08-10)",
      "scan_position": 10,
-     "position_source": "Position read from E4L's own scan reports (Life Purpose section, 60 client PDFs)."
+     "position_source": "Position read from E4L's own scan reports (Life Purpose section, 60 client PDFs).",
+     "heros_journey_position": 1,
+     "heros_journey_source": "E4L scan report, Hero's Journey section, harvested from 80 client PDFs (identical in all)"
     },
     {
      "slug": "lj-destiny",
@@ -1933,7 +1935,9 @@
      "provenance": "sourced",
      "source": "01 Clinical/Life Journey, Essence Map.md, theme names from the E4L scan's Life Journey section; essence pairings from inventory; rationale model-drafted and reviewed by Glen (upgraded from unverified on his ruling, 2026-08-10)",
      "scan_position": 9,
-     "position_source": "Position read from E4L's own scan reports (Life Purpose section, 60 client PDFs)."
+     "position_source": "Position read from E4L's own scan reports (Life Purpose section, 60 client PDFs).",
+     "heros_journey_position": 5,
+     "heros_journey_source": "E4L scan report, Hero's Journey section, harvested from 80 client PDFs (identical in all)"
     },
     {
      "slug": "lj-define-your-purpose",
@@ -1982,7 +1986,9 @@
      "provenance": "sourced",
      "source": "01 Clinical/Life Journey, Essence Map.md, theme names from the E4L scan's Life Journey section; essence pairings from inventory; rationale model-drafted and reviewed by Glen (upgraded from unverified on his ruling, 2026-08-10)",
      "scan_position": 16,
-     "position_source": "Position read from E4L's own scan reports (Life Purpose section, 60 client PDFs)."
+     "position_source": "Position read from E4L's own scan reports (Life Purpose section, 60 client PDFs).",
+     "heros_journey_position": 7,
+     "heros_journey_source": "E4L scan report, Hero's Journey section, harvested from 80 client PDFs (identical in all)"
     },
     {
      "slug": "lj-choice-point",
@@ -2006,7 +2012,9 @@
      "provenance": "sourced",
      "source": "01 Clinical/Life Journey, Essence Map.md, theme names from the E4L scan's Life Journey section; essence pairings from inventory; rationale model-drafted and reviewed by Glen (upgraded from unverified on his ruling, 2026-08-10)",
      "scan_position": 12,
-     "position_source": "Position read from E4L's own scan reports (Life Purpose section, 60 client PDFs)."
+     "position_source": "Position read from E4L's own scan reports (Life Purpose section, 60 client PDFs).",
+     "heros_journey_position": 8,
+     "heros_journey_source": "E4L scan report, Hero's Journey section, harvested from 80 client PDFs (identical in all)"
     },
     {
      "slug": "lj-wake-up",
@@ -2030,7 +2038,9 @@
      "provenance": "sourced",
      "source": "01 Clinical/Life Journey, Essence Map.md, theme names from the E4L scan's Life Journey section; essence pairings from inventory; rationale model-drafted and reviewed by Glen (upgraded from unverified on his ruling, 2026-08-10)",
      "scan_position": 14,
-     "position_source": "Position read from E4L's own scan reports (Life Purpose section, 60 client PDFs)."
+     "position_source": "Position read from E4L's own scan reports (Life Purpose section, 60 client PDFs).",
+     "heros_journey_position": 3,
+     "heros_journey_source": "E4L scan report, Hero's Journey section, harvested from 80 client PDFs (identical in all)"
     },
     {
      "slug": "lj-engage-with-passion",
@@ -2053,7 +2063,9 @@
       }
      ],
      "provenance": "sourced",
-     "source": "01 Clinical/Life Journey, Essence Map.md, theme names from the E4L scan's Life Journey section; essence pairings from inventory; rationale model-drafted and reviewed by Glen (upgraded from unverified on his ruling, 2026-08-10)"
+     "source": "01 Clinical/Life Journey, Essence Map.md, theme names from the E4L scan's Life Journey section; essence pairings from inventory; rationale model-drafted and reviewed by Glen (upgraded from unverified on his ruling, 2026-08-10)",
+     "heros_journey_position": 9,
+     "heros_journey_source": "E4L scan report, Hero's Journey section, harvested from 80 client PDFs (identical in all)"
     },
     {
      "slug": "lj-wisdom",
@@ -2071,7 +2083,9 @@
       }
      ],
      "provenance": "sourced",
-     "source": "01 Clinical/Life Journey, Essence Map.md, theme names from the E4L scan's Life Journey section; essence pairings from inventory; rationale model-drafted and reviewed by Glen (upgraded from unverified on his ruling, 2026-08-10)"
+     "source": "01 Clinical/Life Journey, Essence Map.md, theme names from the E4L scan's Life Journey section; essence pairings from inventory; rationale model-drafted and reviewed by Glen (upgraded from unverified on his ruling, 2026-08-10)",
+     "heros_journey_position": 11,
+     "heros_journey_source": "E4L scan report, Hero's Journey section, harvested from 80 client PDFs (identical in all)"
     },
     {
      "slug": "lj-humility",
@@ -2119,8 +2133,8 @@
      ],
      "provenance": "sourced",
      "source": "01 Clinical/Life Journey, Essence Map.md, theme names from the E4L scan's Life Journey section; essence pairings from inventory; rationale model-drafted and reviewed by Glen (upgraded from unverified on his ruling, 2026-08-10)",
-     "needs_mapping": true,
-     "mapping_note": "Not one of E4L's 13 belief statements. Kept because it carries Glen's essence pairings; several E4L statements are plausible targets but more than one of ours competes for the same one, so the mapping is Glen's call, not a guess."
+     "mapping_note": "Checked against 60 E4L scan reports: this phrasing appears in none of them, while every E4L belief statement appears in all 60. So this is Glen's own addition rather than a paraphrase of an E4L statement, and it is kept as written with its essence pairings. Nothing to map (resolved 2026-08-10).",
+     "origin": "glen"
     },
     {
      "slug": "lj-i-am-good-enough-as-i-am",
@@ -2148,8 +2162,8 @@
      ],
      "provenance": "sourced",
      "source": "01 Clinical/Life Journey, Essence Map.md, theme names from the E4L scan's Life Journey section; essence pairings from inventory; rationale model-drafted and reviewed by Glen (upgraded from unverified on his ruling, 2026-08-10)",
-     "needs_mapping": true,
-     "mapping_note": "Not one of E4L's 13 belief statements. Kept because it carries Glen's essence pairings; several E4L statements are plausible targets but more than one of ours competes for the same one, so the mapping is Glen's call, not a guess."
+     "mapping_note": "Checked against 60 E4L scan reports: this phrasing appears in none of them, while every E4L belief statement appears in all 60. So this is Glen's own addition rather than a paraphrase of an E4L statement, and it is kept as written with its essence pairings. Nothing to map (resolved 2026-08-10).",
+     "origin": "glen"
     },
     {
      "slug": "lj-i-feel-safe-in-the-world",
@@ -2175,8 +2189,8 @@
      ],
      "provenance": "sourced",
      "source": "01 Clinical/Life Journey, Essence Map.md, theme names from the E4L scan's Life Journey section; essence pairings from inventory; rationale model-drafted and reviewed by Glen (upgraded from unverified on his ruling, 2026-08-10)",
-     "needs_mapping": true,
-     "mapping_note": "Not one of E4L's 13 belief statements. Kept because it carries Glen's essence pairings; several E4L statements are plausible targets but more than one of ours competes for the same one, so the mapping is Glen's call, not a guess."
+     "mapping_note": "Checked against 60 E4L scan reports: this phrasing appears in none of them, while every E4L belief statement appears in all 60. So this is Glen's own addition rather than a paraphrase of an E4L statement, and it is kept as written with its essence pairings. Nothing to map (resolved 2026-08-10).",
+     "origin": "glen"
     },
     {
      "slug": "lj-i-can-trust",
@@ -2197,8 +2211,8 @@
      ],
      "provenance": "sourced",
      "source": "01 Clinical/Life Journey, Essence Map.md, theme names from the E4L scan's Life Journey section; essence pairings from inventory; rationale model-drafted and reviewed by Glen (upgraded from unverified on his ruling, 2026-08-10)",
-     "needs_mapping": true,
-     "mapping_note": "Not one of E4L's 13 belief statements. Kept because it carries Glen's essence pairings; several E4L statements are plausible targets but more than one of ours competes for the same one, so the mapping is Glen's call, not a guess."
+     "mapping_note": "Checked against 60 E4L scan reports: this phrasing appears in none of them, while every E4L belief statement appears in all 60. So this is Glen's own addition rather than a paraphrase of an E4L statement, and it is kept as written with its essence pairings. Nothing to map (resolved 2026-08-10).",
+     "origin": "glen"
     },
     {
      "slug": "lj-i-am-hopeful-about-the-future",
@@ -2269,8 +2283,8 @@
      ],
      "provenance": "sourced",
      "source": "01 Clinical/Life Journey, Essence Map.md, theme names from the E4L scan's Life Journey section; essence pairings from inventory; rationale model-drafted and reviewed by Glen (upgraded from unverified on his ruling, 2026-08-10)",
-     "needs_mapping": true,
-     "mapping_note": "Not one of E4L's 13 belief statements. Kept because it carries Glen's essence pairings; several E4L statements are plausible targets but more than one of ours competes for the same one, so the mapping is Glen's call, not a guess."
+     "mapping_note": "Checked against 60 E4L scan reports: this phrasing appears in none of them, while every E4L belief statement appears in all 60. So this is Glen's own addition rather than a paraphrase of an E4L statement, and it is kept as written with its essence pairings. Nothing to map (resolved 2026-08-10).",
+     "origin": "glen"
     },
     {
      "slug": "lj-i-am-supported-by-others",
@@ -2704,7 +2718,9 @@
       "deficient": "Fearful",
       "excess": "Reckless"
      },
-     "spectrum_source": "E4L scan report, Life Journey section, harvested from 120 client PDFs (consistent across all of them)"
+     "spectrum_source": "E4L scan report, Life Journey section, harvested from 120 client PDFs (consistent across all of them)",
+     "heros_journey_position": 6,
+     "heros_journey_source": "E4L scan report, Hero's Journey section, harvested from 80 client PDFs (identical in all)"
     },
     {
      "slug": "lj-faith",
@@ -3102,12 +3118,76 @@
      "provenance": "name-only",
      "name_provenance": "sourced",
      "source": "E4L's own taxonomy, 02 Skills/data/e4l_pattern_matrix_raw.json (category lifejourney_beliefs). E4L states the belief; no per-belief prose exists in the scan report."
+    },
+    {
+     "slug": "lj-enquirer",
+     "name": "Enquirer",
+     "code": "LJ-enquirer",
+     "subcategory": "Understand Your World",
+     "description": "",
+     "affects": [],
+     "remedies": [],
+     "provenance": "name-only",
+     "name_provenance": "sourced",
+     "source": "E4L scan report, Hero's Journey section, harvested from 80 client PDFs (identical in all)",
+     "scan_position": 1,
+     "position_source": "E4L scan report, Life Purpose section",
+     "heros_journey_position": 2,
+     "heros_journey_source": "E4L scan report, Hero's Journey section, harvested from 80 client PDFs (identical in all)"
+    },
+    {
+     "slug": "lj-ask-questions",
+     "name": "Ask Questions",
+     "code": "LJ-ask-questions",
+     "subcategory": "Understand Your World",
+     "description": "",
+     "affects": [],
+     "remedies": [],
+     "provenance": "name-only",
+     "name_provenance": "sourced",
+     "source": "E4L scan report, Hero's Journey section, harvested from 80 client PDFs (identical in all)",
+     "scan_position": 5,
+     "position_source": "E4L scan report, Life Purpose section",
+     "heros_journey_position": 4,
+     "heros_journey_source": "E4L scan report, Hero's Journey section, harvested from 80 client PDFs (identical in all)"
+    },
+    {
+     "slug": "lj-transform-patterns",
+     "name": "Transform Patterns",
+     "code": "LJ-transform-patterns",
+     "subcategory": "Hero's Journey",
+     "description": "",
+     "affects": [],
+     "remedies": [],
+     "provenance": "name-only",
+     "name_provenance": "sourced",
+     "source": "E4L scan report, Hero's Journey section, harvested from 80 client PDFs (identical in all)",
+     "heros_journey_position": 10,
+     "heros_journey_source": "E4L scan report, Hero's Journey section, harvested from 80 client PDFs (identical in all)"
+    },
+    {
+     "slug": "lj-avatar",
+     "name": "Avatar",
+     "code": "LJ-avatar",
+     "subcategory": "Hero's Journey",
+     "description": "",
+     "affects": [],
+     "remedies": [],
+     "provenance": "name-only",
+     "name_provenance": "sourced",
+     "source": "E4L scan report, Hero's Journey section, harvested from 80 client PDFs (identical in all)",
+     "heros_journey_position": 12,
+     "heros_journey_source": "E4L scan report, Hero's Journey section, harvested from 80 client PDFs (identical in all)"
     }
    ],
    "subcategory_notes": {
     "Archetypes": {
      "description": "Archetypes represent templates or patterns of human behaviour, called on to fill different roles in life. Each focuses on skills or traits that are neither positive nor negative in themselves: all can be beneficial used at the right time in the right way, and all can become a problem used in unbalanced ways. Everyone has some access to all of them, and the aim is to move easily between them as circumstances ask. A stressful or shocking situation can build an unconscious habit of reaching for one archetype every time, which is when the choice stops being conscious.",
      "source": "E4L scan report, Archetypes section, harvested from 120 client PDFs (consistent across all of them)"
+    },
+    "Hero's Journey": {
+     "description": "The Hero's Journey is a template of the human story: someone living an ordinary life in an ordinary world, pressed by life to wake up and start an adventure toward their destiny. After great tribulation and finally overcoming, the hero returns to the ordinary world transformed, able to bring the lessons back for others.",
+     "source": "E4L scan report, Hero's Journey section, harvested from 80 client PDFs (identical in all)"
     }
    }
   },
