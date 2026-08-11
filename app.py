@@ -25064,7 +25064,11 @@ def api_portal_chat(token):
                 for tok in stream.text_stream:
                     tok = _strip_dash(tok); full.append(tok); yield sse({"token": tok})
         except Exception as e:
-            yield sse({"error": f"Claude error: {e}"}); return
+            # Never expose provider/network internals in a member's portal.
+            # The browser keeps the original message in the composer so it can
+            # be retried after a transient deployment or provider interruption.
+            print(f"[portal-concierge] response failed: {e!r}", flush=True)
+            yield sse({"error": "assistant temporarily unavailable"}); return
         answer = "".join(full)
         try:
             import threading as _t
