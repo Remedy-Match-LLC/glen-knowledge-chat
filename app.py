@@ -24895,6 +24895,17 @@ def api_portal_chat(token):
     data = request.get_json() or {}
     query = (data.get("query") or "").strip()
     history = data.get("history") or []
+    raw_page = data.get("page_context") or {}
+    page_context = {}
+    if isinstance(raw_page, dict):
+        for key in ("panel", "title", "hash"):
+            val = str(raw_page.get(key) or "").strip()
+            if val:
+                page_context[key] = val[:160]
+        headings = raw_page.get("headings") or []
+        if isinstance(headings, list):
+            page_context["headings"] = [str(v).strip()[:120] for v in headings[:8]
+                                        if str(v).strip()]
     with db.connect(LOG_DB) as cx:
         from dashboard import client_portal as _cp
         _cp.init_client_portal_table(cx)
@@ -24913,6 +24924,15 @@ def api_portal_chat(token):
     from dashboard import portal_concierge as _pcz
     ctx = _pcz.build_context(content, client_orders)
     _sys = _pcz.system_prompt(ctx)
+    if page_context:
+        page_lines = [f"Current portal panel: {page_context.get('panel', 'unknown')}."]
+        if page_context.get("title"):
+            page_lines.append(f"Page title: {page_context['title']}.")
+        if page_context.get("headings"):
+            page_lines.append("Visible sections: " + "; ".join(page_context["headings"]) + ".")
+        _sys += ("\n\nPAGE AWARENESS:\n" + "\n".join(page_lines) +
+                 "\nUse this only to orient the member, explain the visible page, and suggest a relevant next step. "
+                 "Do not claim they clicked, read, or completed anything merely because it is visible.")
     _ally_ov = ash_ally.ally_overlay(LOG_DB, email)
     if _ally_ov:
         _sys = _ally_ov + "\n\n" + _sys
