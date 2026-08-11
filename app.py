@@ -23481,6 +23481,33 @@ def _portal_cart_payload(cx, cart_token, portal):
         item["is_special"] = bool(
             item["price_cents"] is not None and item["regular_price_cents"] is not None
             and int(item["price_cents"]) < int(item["regular_price_cents"]))
+    # Reconnect a refreshed/reopened basket to its newest matching unpaid portal
+    # order. This both gives the client a visible Sell order number and lets the
+    # next checkout request reuse the same idempotency reference instead of
+    # creating another order row for the same basket.
+    wanted = sorted(
+        ((it.get("slug") or "").strip().lower(), int(it.get("qty") or 1))
+        for it in raw_items if (it.get("slug") or "").strip())
+    if wanted:
+        try:
+            cx.row_factory = sqlite3.Row
+            candidates = cx.execute(
+                "SELECT id, external_ref, items_json FROM orders "
+                "WHERE lower(email)=? AND source='portal-reorder' "
+                "AND status NOT IN ('cancelled','done','shipped','delivered') "
+                "AND COALESCE(pay_status,'unpaid')!='paid' ORDER BY id DESC LIMIT 50",
+                (email,)).fetchall()
+            for row in candidates:
+                saved = json.loads(row["items_json"] or "[]")
+                have = sorted(
+                    ((it.get("slug") or "").strip().lower(), int(it.get("qty") or 1))
+                    for it in saved if isinstance(it, dict) and (it.get("slug") or "").strip())
+                if have == wanted:
+                    payload["order_id"] = int(row["id"])
+                    payload["order_ref"] = row["external_ref"]
+                    break
+        except Exception as exc:
+            print(f"[portal-cart] order-number lookup skipped: {exc!r}", flush=True)
     return payload
 
 
@@ -25853,10 +25880,11 @@ def api_client_portal_checkout(token):
                "doc_number": "", "total": round(order_total_cents / 100.0, 2),
                "cancel_url": f"{portal_base()}/portal/{_urlquote(token, safe='')}",
                "stripe_line_items": stripe_line_items}
-        _ingest_order(source="portal-reorder", external_ref=checkout_ref, email=email,
-                      name=ship.get("name", ""), items=items_rec,
-                      total_cents=order_total_cents, shipping_cents=shipping_cents,
-                      address=ship, channel="retail")
+        order_id = _ingest_order(
+            source="portal-reorder", external_ref=checkout_ref, email=email,
+            name=ship.get("name", ""), items=items_rec,
+            total_cents=order_total_cents, shipping_cents=shipping_cents,
+            address=ship, channel="retail")
         try:
             with db.connect(LOG_DB) as _lcx:
                 _bos_orders.set_order_qbo_lines(_lcx, checkout_ref, qbo_payload)
@@ -25865,6 +25893,7 @@ def api_client_portal_checkout(token):
         if method == "zelle":
             zelle = _ALT_PAY["zelle"]
             return jsonify({"ok": True, "method": "zelle", "order_ref": checkout_ref,
+                            "order_id": order_id,
                             "total_cents": order_total_cents,
                             "shipping_cents": shipping_cents, "pay_instructions": {
                                 "label": zelle["label"], "to": zelle["to"],
@@ -25874,7 +25903,8 @@ def api_client_portal_checkout(token):
         stripe_url = _stripe_checkout_url_for_reorder(out, email)
         if not stripe_url:
             return jsonify({"error": _CARD_UNAVAILABLE}), 502
-        return jsonify({"ok": True, "stripe_url": stripe_url})
+        return jsonify({"ok": True, "stripe_url": stripe_url,
+                        "order_id": order_id, "order_ref": checkout_ref})
     except Exception as e:
         app.logger.exception("portal checkout failed")
         return jsonify({"error": f"{type(e).__name__}: {e}"}), 500
@@ -44699,6 +44729,8 @@ def _ingest_order(*, source, external_ref, email="", name="", phone="",
             cx.close()
     except Exception as e:
         print(f"[orders] ingest {source}/{external_ref}: {e!r}", flush=True)
+        return None
+    return _oid
 
 
 def _role_for_token(token):

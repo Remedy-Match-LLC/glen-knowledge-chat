@@ -199,6 +199,41 @@ def test_checkout_rejects_invalid_idempotency_key(client):
     assert r.status_code == 400
 
 
+def test_cart_shows_and_reuses_latest_matching_unpaid_order(client):
+    c, appmod = client
+    email = "numbered-basket@example.com"
+    tok = _seed_portal(appmod, email=email, content={
+        "greeting": "hi", "video": {}, "layers": [],
+        "reorder_items": [{"slug": "nous-energy", "qty": 1}],
+    })
+    # Seed the member cart, then simulate an earlier checkout attempt recorded
+    # on the Sell board for the exact same basket.
+    c.get(f"/api/portal/{tok}/cart")
+    with sqlite3.connect(appmod.LOG_DB) as cx:
+        appmod._bos_orders.init_orders_table(cx)
+        oid = appmod._bos_orders.upsert_order(
+            cx, source="portal-reorder", external_ref="portal-reuse_12345678",
+            email=email, items=[{"slug": "nous-energy", "qty": 1}],
+            total_cents=6997, status="new")
+
+    cart = c.get(f"/api/portal/{tok}/cart").get_json()
+    assert cart["order_id"] == oid
+    assert cart["order_ref"] == "portal-reuse_12345678"
+
+
+def test_ingest_order_returns_sell_order_number(client):
+    _, appmod = client
+    with sqlite3.connect(appmod.LOG_DB) as cx:
+        appmod._bos_orders.init_orders_table(cx)
+    oid = appmod._ingest_order(
+        source="portal-reorder", external_ref="portal-number_12345678",
+        email="number@example.com", items=[{"slug": "nous-energy", "qty": 1}],
+        total_cents=6997)
+    assert isinstance(oid, int)
+    with sqlite3.connect(appmod.LOG_DB) as cx:
+        assert cx.execute("SELECT id FROM orders WHERE id=?", (oid,)).fetchone()[0] == oid
+
+
 def test_portal_zelle_option_returns_exact_total_recipient_and_memo(client, monkeypatch):
     c, appmod = client
     email = "zelle-client@example.com"
