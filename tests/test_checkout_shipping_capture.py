@@ -36,7 +36,7 @@ def test_create_checkout_session_collect_shipping_true(monkeypatch):
     monkeypatch.setenv("STRIPE_SECRET_KEY", "sk_test")
     captured = {}
 
-    def _post(url, data=None, auth=None, timeout=None):
+    def _post(url, data=None, auth=None, headers=None, timeout=None):
         captured["data"] = data
         return _Resp({"id": "cs_1", "url": "https://checkout.stripe.com/cs_1"})
 
@@ -54,7 +54,7 @@ def test_create_checkout_session_default_no_shipping_collection(monkeypatch):
     monkeypatch.setenv("STRIPE_SECRET_KEY", "sk_test")
     captured = {}
 
-    def _post(url, data=None, auth=None, timeout=None):
+    def _post(url, data=None, auth=None, headers=None, timeout=None):
         captured["data"] = data
         return _Resp({"id": "cs_1", "url": "https://checkout.stripe.com/cs_1"})
 
