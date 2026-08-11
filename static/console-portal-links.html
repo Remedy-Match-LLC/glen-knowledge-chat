@@ -97,12 +97,37 @@
       + '<td class="email">'+e+'</td>'
       + '<td class="muted">'+esc((p.updated_at||'').slice(0,10))+'</td>'
       + '<td>'+pill+'</td>'
-      + '<td><button onclick="getLink(this,\''+e+'\')">Get link</button> '
+      + '<td><button class="gold" onclick="openPortal(this,\''+e+'\')">Open portal</button> '
+      +     '<button onclick="getLink(this,\''+e+'\')">Get link</button> '
       +     '<button onclick="resend(this,\''+e+'\')">Re-send email</button>'
       +     '<div class="note"></div></td>'
       + '</tr>';
   }
   function noteEl(btn){ return btn.closest('td').querySelector('.note'); }
+  async function openPortal(btn, email){
+    // Open the tab during the click event so browsers do not block it while the
+    // console fetches the client's tokenized URL.
+    var portalTab = window.open('about:blank', '_blank');
+    var note = noteEl(btn); note.innerHTML = '<span class="muted">Opening portal…</span>';
+    if(!portalTab){ note.innerHTML = '<span class="err">Pop-up blocked. Allow pop-ups and try again.</span>'; return; }
+    portalTab.opener = null;
+    try {
+      var r = await fetch('/api/console/portal-link?email='+encodeURIComponent(email), { headers: hdr() });
+      var j = await r.json();
+      if(!r.ok || !j.ok || !j.found){
+        portalTab.close();
+        note.innerHTML = '<span class="err">No portal for that email.</span>';
+        return;
+      }
+      portalTab.location.replace(j.link);
+      note.innerHTML = j.reissued
+        ? '<span class="warn">Opened with a freshly issued link; the old link no longer works.</span>'
+        : '<span class="ok">Opened in a new tab.</span>';
+    } catch(err) {
+      portalTab.close();
+      note.innerHTML = '<span class="err">Could not open the portal. Try again.</span>';
+    }
+  }
   async function getLink(btn, email){
     var note = noteEl(btn); note.innerHTML = '<span class="muted">…</span>';
     var r = await fetch('/api/console/portal-link?email='+encodeURIComponent(email), { headers: hdr() });
