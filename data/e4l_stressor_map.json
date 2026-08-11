@@ -4293,8 +4293,12 @@
      "integrator": [
       "EI-1"
      ],
-     "meridian": "large intestine",
-     "element": "Metal"
+     "meridians": [
+      "large intestine"
+     ],
+     "elements": [
+      "Metal"
+     ]
     },
     {
      "slug": "er-large-intestine",
@@ -4327,8 +4331,15 @@
       "EI-1",
       "EI-11"
      ],
-     "meridian": "large intestine and stomach",
-     "body_mind_theme": "our ability to let go"
+     "body_mind_theme": "our ability to let go",
+     "meridians": [
+      "large intestine",
+      "stomach"
+     ],
+     "elements": [
+      "Earth",
+      "Metal"
+     ]
     },
     {
      "slug": "er-bronchial",
@@ -4359,8 +4370,12 @@
       "EI-5",
       "EI-11"
      ],
-     "meridian": "stomach",
-     "element": "Earth"
+     "meridians": [
+      "stomach"
+     ],
+     "elements": [
+      "Earth"
+     ]
     },
     {
      "slug": "er-fingers",
@@ -4387,9 +4402,13 @@
      "integrator": [
       "EI-1"
      ],
-     "meridian": "large intestine",
-     "element": "Metal",
-     "body_mind_theme": "dexterity"
+     "body_mind_theme": "dexterity",
+     "meridians": [
+      "large intestine"
+     ],
+     "elements": [
+      "Metal"
+     ]
     },
     {
      "slug": "er-myocardia",
@@ -4417,8 +4436,15 @@
       "EI-2",
       "EI-8"
      ],
-     "meridian": "lung and liver",
-     "body_mind_theme": "our emotional center and governs our emotional balance"
+     "body_mind_theme": "our emotional center and governs our emotional balance",
+     "meridians": [
+      "lung",
+      "liver"
+     ],
+     "elements": [
+      "Metal",
+      "Wood"
+     ]
     },
     {
      "slug": "er-lungs",
@@ -4445,9 +4471,13 @@
      "integrator": [
       "EI-2"
      ],
-     "meridian": "lung",
-     "element": "Metal",
-     "body_mind_theme": "our capacity to give and receive"
+     "body_mind_theme": "our capacity to give and receive",
+     "meridians": [
+      "lung"
+     ],
+     "elements": [
+      "Metal"
+     ]
     },
     {
      "slug": "er-sciatic-nerve",
@@ -4501,8 +4531,15 @@
       "EI-2",
       "EI-5"
      ],
-     "meridian": "lung and bladder",
-     "body_mind_theme": "feeling that we have abundance in our lives"
+     "body_mind_theme": "feeling that we have abundance in our lives",
+     "meridians": [
+      "lung",
+      "bladder"
+     ],
+     "elements": [
+      "Metal",
+      "Water"
+     ]
     },
     {
      "slug": "er-tailbone",
@@ -4529,9 +4566,13 @@
      "integrator": [
       "EI-3"
      ],
-     "meridian": "small intestine",
-     "element": "Fire",
-     "body_mind_theme": "our fundamental needs"
+     "body_mind_theme": "our fundamental needs",
+     "meridians": [
+      "small intestine"
+     ],
+     "elements": [
+      "Fire"
+     ]
     },
     {
      "slug": "er-jejunum",
@@ -4565,9 +4606,13 @@
       "EI-7",
       "EI-11"
      ],
-     "meridian": "stomach",
-     "element": "Earth",
-     "body_mind_theme": "our ability to absorb and retain what is needed for growth"
+     "body_mind_theme": "our ability to absorb and retain what is needed for growth",
+     "meridians": [
+      "stomach"
+     ],
+     "elements": [
+      "Earth"
+     ]
     },
     {
      "slug": "er-parathyroid",
@@ -4589,9 +4634,13 @@
      "integrator": [
       "EI-3"
      ],
-     "meridian": "small intestine",
-     "element": "Fire",
-     "body_mind_theme": "personal power"
+     "body_mind_theme": "personal power",
+     "meridians": [
+      "small intestine"
+     ],
+     "elements": [
+      "Fire"
+     ]
     },
     {
      "slug": "er-appendix",
@@ -4629,8 +4678,15 @@
       "EI-3",
       "EI-5"
      ],
-     "meridian": "small intestine and bladder",
-     "body_mind_theme": "repressed emotions especially around an authoritarian figure"
+     "body_mind_theme": "repressed emotions especially around an authoritarian figure",
+     "meridians": [
+      "small intestine",
+      "bladder"
+     ],
+     "elements": [
+      "Fire",
+      "Water"
+     ]
     },
     {
      "slug": "er-av-nodes",
@@ -4652,9 +4708,13 @@
      "integrator": [
       "EI-4"
      ],
-     "meridian": "heart",
-     "element": "Fire",
-     "body_mind_theme": "our emotional center and governs our emotional balance"
+     "body_mind_theme": "our emotional center and governs our emotional balance",
+     "meridians": [
+      "heart"
+     ],
+     "elements": [
+      "Fire"
+     ]
     },
     {
      "slug": "er-bladder",
@@ -4687,8 +4747,15 @@
       "EI-5",
       "EI-9"
      ],
-     "meridian": "bladder and triple warmer",
-     "body_mind_theme": "our ability to expand and adapt"
+     "body_mind_theme": "our ability to expand and adapt",
+     "meridians": [
+      "bladder",
+      "triple warmer"
+     ],
+     "elements": [
+      "Fire",
+      "Water"
+     ]
     },
     {
      "slug": "er-midbrain",
@@ -4725,8 +4792,12 @@
      "integrator": [
       "EI-4"
      ],
-     "meridian": "heart",
-     "element": "Fire"
+     "meridians": [
+      "heart"
+     ],
+     "elements": [
+      "Fire"
+     ]
     },
     {
      "slug": "er-scapula",
@@ -4759,7 +4830,13 @@
       "EI3",
       "EI4"
      ],
-     "meridian": "small intestine and heart"
+     "meridians": [
+      "small intestine",
+      "heart"
+     ],
+     "elements": [
+      "Fire"
+     ]
     },
     {
      "slug": "er-gall-bladder",
@@ -4798,8 +4875,15 @@
       "EI-5",
       "EI-7"
      ],
-     "meridian": "bladder and gallbladder",
-     "body_mind_theme": "courage and decision making ability"
+     "body_mind_theme": "courage and decision making ability",
+     "meridians": [
+      "bladder",
+      "gall bladder"
+     ],
+     "elements": [
+      "Water",
+      "Wood"
+     ]
     },
     {
      "slug": "er-cervical-spine",
@@ -4826,9 +4910,13 @@
      "integrator": [
       "EI-5"
      ],
-     "meridian": "bladder",
-     "element": "Water",
-     "body_mind_theme": "feeling loved"
+     "body_mind_theme": "feeling loved",
+     "meridians": [
+      "bladder"
+     ],
+     "elements": [
+      "Water"
+     ]
     },
     {
      "slug": "er-thoracic-spine",
@@ -4855,9 +4943,13 @@
      "integrator": [
       "EI-5"
      ],
-     "meridian": "bladder",
-     "element": "Water",
-     "body_mind_theme": "our ability to cope with guilt"
+     "body_mind_theme": "our ability to cope with guilt",
+     "meridians": [
+      "bladder"
+     ],
+     "elements": [
+      "Water"
+     ]
     },
     {
      "slug": "er-kidneys",
@@ -4889,9 +4981,13 @@
      "integrator": [
       "EI-6"
      ],
-     "meridian": "kidney",
-     "element": "Water",
-     "body_mind_theme": "the balance in our lives"
+     "body_mind_theme": "the balance in our lives",
+     "meridians": [
+      "kidney"
+     ],
+     "elements": [
+      "Water"
+     ]
     },
     {
      "slug": "er-pineal-gland",
@@ -4919,7 +5015,12 @@
      "integrator": [
       "EI-6"
      ],
-     "meridian": "field and the kidney"
+     "meridians": [
+      "kidney"
+     ],
+     "elements": [
+      "Water"
+     ]
     },
     {
      "slug": "er-rectum",
@@ -4951,8 +5052,12 @@
      "integrator": [
       "EI-6"
      ],
-     "meridian": "kidney",
-     "element": "Water"
+     "meridians": [
+      "kidney"
+     ],
+     "elements": [
+      "Water"
+     ]
     },
     {
      "slug": "er-atlas",
@@ -4979,9 +5084,13 @@
      "integrator": [
       "EI-6"
      ],
-     "meridian": "kidney",
-     "element": "Water",
-     "body_mind_theme": "feeling loved"
+     "body_mind_theme": "feeling loved",
+     "meridians": [
+      "kidney"
+     ],
+     "elements": [
+      "Water"
+     ]
     },
     {
      "slug": "er-knee-joints",
@@ -5008,9 +5117,13 @@
      "integrator": [
       "EI-6"
      ],
-     "meridian": "kidney",
-     "element": "Water",
-     "body_mind_theme": "pride"
+     "body_mind_theme": "pride",
+     "meridians": [
+      "kidney"
+     ],
+     "elements": [
+      "Water"
+     ]
     },
     {
      "slug": "er-stomach",
@@ -5050,9 +5163,13 @@
       "EI-10",
       "EI-11"
      ],
-     "meridian": "stomach",
-     "element": "Earth",
-     "body_mind_theme": "the ability to digest and absorb what we need both emotionally and physically"
+     "body_mind_theme": "the ability to digest and absorb what we need both emotionally and physically",
+     "meridians": [
+      "stomach"
+     ],
+     "elements": [
+      "Earth"
+     ]
     },
     {
      "slug": "er-brain",
@@ -5094,8 +5211,12 @@
      "integrator": [
       "EI-7"
      ],
-     "meridian": "gall bladder",
-     "element": "Wood"
+     "meridians": [
+      "gall bladder"
+     ],
+     "elements": [
+      "Wood"
+     ]
     },
     {
      "slug": "er-hip-joint",
@@ -5136,8 +5257,13 @@
      "integrator": [
       "EI-7"
      ],
-     "meridian": "gallbladder",
-     "body_mind_theme": "decisions in life"
+     "body_mind_theme": "decisions in life",
+     "meridians": [
+      "gall bladder"
+     ],
+     "elements": [
+      "Wood"
+     ]
     },
     {
      "slug": "er-ankle-joints",
@@ -5169,8 +5295,13 @@
      "integrator": [
       "EI-7"
      ],
-     "meridian": "gallbladder",
-     "body_mind_theme": "support"
+     "body_mind_theme": "support",
+     "meridians": [
+      "gall bladder"
+     ],
+     "elements": [
+      "Wood"
+     ]
     },
     {
      "slug": "er-liver",
@@ -5197,9 +5328,13 @@
      "integrator": [
       "EI-8"
      ],
-     "meridian": "liver",
-     "element": "Wood",
-     "body_mind_theme": "our ability to maintain a healthy happy life and to keep the body free of toxins"
+     "body_mind_theme": "our ability to maintain a healthy happy life and to keep the body free of toxins",
+     "meridians": [
+      "liver"
+     ],
+     "elements": [
+      "Wood"
+     ]
     },
     {
      "slug": "er-diaphragm",
@@ -5231,9 +5366,13 @@
      "integrator": [
       "EI-8"
      ],
-     "meridian": "liver",
-     "element": "Wood",
-     "body_mind_theme": "the link between the upper and lower body and the link between higher thoughts and sexual energy"
+     "body_mind_theme": "the link between the upper and lower body and the link between higher thoughts and sexual energy",
+     "meridians": [
+      "liver"
+     ],
+     "elements": [
+      "Wood"
+     ]
     },
     {
      "slug": "er-eyes",
@@ -5305,8 +5444,15 @@
       "EI-8",
       "EI-10"
      ],
-     "meridian": "liver and heart protector",
-     "body_mind_theme": "our ability to see clearly"
+     "body_mind_theme": "our ability to see clearly",
+     "meridians": [
+      "liver",
+      "heart protector"
+     ],
+     "elements": [
+      "Fire",
+      "Wood"
+     ]
     },
     {
      "slug": "er-hypothalamus",
@@ -5338,8 +5484,12 @@
      "integrator": [
       "EI-8"
      ],
-     "meridian": "liver",
-     "element": "Wood"
+     "meridians": [
+      "liver"
+     ],
+     "elements": [
+      "Wood"
+     ]
     },
     {
      "slug": "er-thyroid",
@@ -5368,9 +5518,13 @@
       "EI-5",
       "EI-9"
      ],
-     "meridian": "triple warmer",
-     "element": "Fire",
-     "body_mind_theme": "personal power"
+     "body_mind_theme": "personal power",
+     "meridians": [
+      "triple warmer"
+     ],
+     "elements": [
+      "Fire"
+     ]
     },
     {
      "slug": "er-adrenals",
@@ -5397,9 +5551,13 @@
      "integrator": [
       "EI-9"
      ],
-     "meridian": "triple warmer",
-     "element": "Fire",
-     "body_mind_theme": "our ability to cope with all that life throws at us"
+     "body_mind_theme": "our ability to cope with all that life throws at us",
+     "meridians": [
+      "triple warmer"
+     ],
+     "elements": [
+      "Fire"
+     ]
     },
     {
      "slug": "er-trigeminal-nerve",
@@ -5421,8 +5579,12 @@
      "integrator": [
       "EI-9"
      ],
-     "meridian": "triple warmer",
-     "element": "Fire"
+     "meridians": [
+      "triple warmer"
+     ],
+     "elements": [
+      "Fire"
+     ]
     },
     {
      "slug": "er-wrists",
@@ -5454,8 +5616,12 @@
      "integrator": [
       "EI-9"
      ],
-     "meridian": "triple warmer",
-     "element": "Fire"
+     "meridians": [
+      "triple warmer"
+     ],
+     "elements": [
+      "Fire"
+     ]
     },
     {
      "slug": "er-heart",
@@ -5487,9 +5653,13 @@
      "integrator": [
       "EI-10"
      ],
-     "meridian": "heart protector",
-     "element": "Fire",
-     "body_mind_theme": "our emotional centre and governs our emotional balance"
+     "body_mind_theme": "our emotional centre and governs our emotional balance",
+     "meridians": [
+      "heart protector"
+     ],
+     "elements": [
+      "Fire"
+     ]
     },
     {
      "slug": "er-larynx",
@@ -5518,9 +5688,13 @@
      "integrator": [
       "EI-10"
      ],
-     "meridian": "heart protector",
-     "element": "Fire",
-     "body_mind_theme": "our ability to speak our truth"
+     "body_mind_theme": "our ability to speak our truth",
+     "meridians": [
+      "heart protector"
+     ],
+     "elements": [
+      "Fire"
+     ]
     },
     {
      "slug": "er-shoulder-joint",
@@ -5556,9 +5730,13 @@
      "integrator": [
       "EI-10"
      ],
-     "meridian": "heart protector",
-     "element": "Fire",
-     "body_mind_theme": "our capacity to shoulder our responsibilities with ease"
+     "body_mind_theme": "our capacity to shoulder our responsibilities with ease",
+     "meridians": [
+      "heart protector"
+     ],
+     "elements": [
+      "Fire"
+     ]
     },
     {
      "slug": "er-paranasal-sinuses",
@@ -5585,8 +5763,12 @@
      "integrator": [
       "EI-11"
      ],
-     "meridian": "stomach",
-     "element": "Earth"
+     "meridians": [
+      "stomach"
+     ],
+     "elements": [
+      "Earth"
+     ]
     },
     {
      "slug": "er-jaw-tmj",
@@ -5620,9 +5802,13 @@
      "source": "Written for the public glossary from E4L's own scan panels and Glen's knowledge base (meridian Element, mapped emotional conflicts), approved by Glen 2026-08-11. E4L's own wording is held internally and is not reproduced.",
      "provenance": "sourced",
      "remedy_source": "FMP vl_bio_main_stress (category Scan), extract 2026-05-23 — Glen-authored product recommendations",
-     "meridian": "stomach",
-     "element": "Earth",
-     "body_mind_theme": "our ability to express our emotions"
+     "body_mind_theme": "our ability to express our emotions",
+     "meridians": [
+      "stomach"
+     ],
+     "elements": [
+      "Earth"
+     ]
     },
     {
      "slug": "er-pancreas",
@@ -5659,9 +5845,13 @@
      "integrator": [
       "EI-12"
      ],
-     "meridian": "spleen",
-     "element": "Earth",
-     "body_mind_theme": "our ability to savour the sweet things in life"
+     "body_mind_theme": "our ability to savour the sweet things in life",
+     "meridians": [
+      "spleen"
+     ],
+     "elements": [
+      "Earth"
+     ]
     },
     {
      "slug": "er-spleen",
@@ -5683,9 +5873,13 @@
      "integrator": [
       "EI-12"
      ],
-     "meridian": "spleen",
-     "element": "Earth",
-     "body_mind_theme": "clarity"
+     "body_mind_theme": "clarity",
+     "meridians": [
+      "spleen"
+     ],
+     "elements": [
+      "Earth"
+     ]
     },
     {
      "slug": "er-tonsils",
@@ -5724,9 +5918,13 @@
      "integrator": [
       "EI-12"
      ],
-     "meridian": "spleen",
-     "element": "Earth",
-     "body_mind_theme": "our ability to speak our truth"
+     "body_mind_theme": "our ability to speak our truth",
+     "meridians": [
+      "spleen"
+     ],
+     "elements": [
+      "Earth"
+     ]
     },
     {
      "slug": "er-groin-lymph",
@@ -5753,9 +5951,13 @@
      "integrator": [
       "EI-12"
      ],
-     "meridian": "spleen",
-     "element": "Earth",
-     "body_mind_theme": "balance and stability in our lives"
+     "body_mind_theme": "balance and stability in our lives",
+     "meridians": [
+      "spleen"
+     ],
+     "elements": [
+      "Earth"
+     ]
     },
     {
      "slug": "er-elbow-joints",
@@ -5777,9 +5979,13 @@
      "integrator": [
       "EI-1"
      ],
-     "meridian": "large intestine",
-     "element": "Metal",
-     "body_mind_theme": "movement"
+     "body_mind_theme": "movement",
+     "meridians": [
+      "large intestine"
+     ],
+     "elements": [
+      "Metal"
+     ]
     },
     {
      "slug": "er-toes",
@@ -5806,9 +6012,13 @@
      "integrator": [
       "EI-12"
      ],
-     "meridian": "spleen",
-     "element": "Earth",
-     "body_mind_theme": "our awareness of the smaller issues in our lives"
+     "body_mind_theme": "our awareness of the smaller issues in our lives",
+     "meridians": [
+      "spleen"
+     ],
+     "elements": [
+      "Earth"
+     ]
     },
     {
      "slug": "er-pharynx",
@@ -5837,9 +6047,13 @@
      "integrator": [
       "EI-10"
      ],
-     "meridian": "heart protector",
-     "element": "Fire",
-     "body_mind_theme": "expression"
+     "body_mind_theme": "expression",
+     "meridians": [
+      "heart protector"
+     ],
+     "elements": [
+      "Fire"
+     ]
     },
     {
      "slug": "er-skin",
@@ -5876,16 +6090,20 @@
      "integrator": [
       "EI-3"
      ],
-     "meridian": "small intestine",
-     "element": "Fire",
-     "body_mind_theme": "protection"
+     "body_mind_theme": "protection",
+     "meridians": [
+      "small intestine"
+     ],
+     "elements": [
+      "Fire"
+     ]
     },
     {
      "slug": "er-ovaries",
      "name": "Ovaries",
      "code": "ER50",
      "subcategory": "Energetic Rejuvenators (body structures)",
-     "description": "Associated emotional conflicts: Identity, Self-Worth, Guilt. Supportive essences: True to Self Flower Essence, Self-Image Flower Essence, Self-Esteem Flower Essence, Worthiness Flower Essence.",
+     "description": "The source of life and creativity. Worked over the lower abdomen and lower back. Its conflicts gather around creating: ambivalence about a child, and the older conditioning that reads being a woman as being lesser. The work is valuing both the feminine and the masculine in oneself rather than trading one for the other.",
      "affects": [],
      "remedies": [
       {
@@ -5899,9 +6117,19 @@
        "catalog": "exact"
       }
      ],
-     "source": "ASSEMBLED from e4l_pattern_structures + life_stress_emotion_map joined from sourced data, no new clinical claims",
-     "provenance": "assembled",
-     "remedy_source": "FMP vl_bio_main_stress (category Scan), extract 2026-05-23 — Glen-authored product recommendations"
+     "source": "Written for the public glossary from E4L's own scan panels and Glen's knowledge base, approved by Glen 2026-08-11. E4L's own wording is held internally and is not reproduced.",
+     "provenance": "sourced",
+     "remedy_source": "FMP vl_bio_main_stress (category Scan), extract 2026-05-23 — Glen-authored product recommendations",
+     "integrator": [
+      "EI-4"
+     ],
+     "body_mind_theme": "the source of life and creativity",
+     "meridians": [
+      "heart protector"
+     ],
+     "elements": [
+      "Fire"
+     ]
     },
     {
      "slug": "er-coronary-vascular",
@@ -5933,9 +6161,13 @@
      "integrator": [
       "EI-2"
      ],
-     "meridian": "lung",
-     "element": "Metal",
-     "body_mind_theme": "our emotional center and governs our emotional balance"
+     "body_mind_theme": "our emotional center and governs our emotional balance",
+     "meridians": [
+      "lung"
+     ],
+     "elements": [
+      "Metal"
+     ]
     },
     {
      "slug": "er-retina",
@@ -6001,9 +6233,13 @@
      "integrator": [
       "EI-8"
      ],
-     "meridian": "liver",
-     "element": "Wood",
-     "body_mind_theme": "our ability to see clearly"
+     "body_mind_theme": "our ability to see clearly",
+     "meridians": [
+      "liver"
+     ],
+     "elements": [
+      "Wood"
+     ]
     },
     {
      "slug": "er-pericardium",
@@ -6025,16 +6261,20 @@
      "integrator": [
       "EI-2"
      ],
-     "meridian": "lung",
-     "element": "Metal",
-     "body_mind_theme": "our emotional centre and governs our emotional balance"
+     "body_mind_theme": "our emotional centre and governs our emotional balance",
+     "meridians": [
+      "lung"
+     ],
+     "elements": [
+      "Metal"
+     ]
     },
     {
      "slug": "er-uterus",
      "name": "Uterus",
      "code": "ER55",
      "subcategory": "Energetic Rejuvenators (body structures)",
-     "description": "Uterus (Genital), listed among the organ and tissue stresses. Associated emotional conflicts: Fear, Guilt. Supportive essences: Mimulus Flower Essence, Aspen Flower Essence, Pine Flower Essence, Crab Apple Flower Essence.",
+     "description": "Creativity, and giving birth to what is new, which need not be a child. Worked over the lower abdomen or the lumbar area behind it, drawing on Integrators 4 and 12 together. Fear sits here around conception of any kind, as does guilt about nurture not given and doubt about whether a nurturing home can be made at all.",
      "affects": [],
      "remedies": [
       {
@@ -6048,9 +6288,22 @@
        "catalog": "exact"
       }
      ],
-     "source": "ASSEMBLED from clinicaltheory Organs + e4l_pattern_structures + life_stress_emotion_map joined from sourced data, no new clinical claims",
-     "provenance": "assembled",
-     "remedy_source": "FMP vl_bio_main_stress (category Scan), extract 2026-05-23 — Glen-authored product recommendations"
+     "source": "Written for the public glossary from E4L's own scan panels and Glen's knowledge base, approved by Glen 2026-08-11. E4L's own wording is held internally and is not reproduced.",
+     "provenance": "sourced",
+     "remedy_source": "FMP vl_bio_main_stress (category Scan), extract 2026-05-23 — Glen-authored product recommendations",
+     "integrator": [
+      "EI-4",
+      "EI-12"
+     ],
+     "body_mind_theme": "creativity and giving birth to new life",
+     "meridians": [
+      "heart",
+      "spleen"
+     ],
+     "elements": [
+      "Earth",
+      "Fire"
+     ]
     },
     {
      "slug": "er-prostate",
@@ -6082,9 +6335,13 @@
      "integrator": [
       "EI-5"
      ],
-     "meridian": "bladder",
-     "element": "Water",
-     "body_mind_theme": "a man's self-worth"
+     "body_mind_theme": "a man's self-worth",
+     "meridians": [
+      "bladder"
+     ],
+     "elements": [
+      "Water"
+     ]
     },
     {
      "slug": "er-teeth",
@@ -6112,8 +6369,15 @@
       "EI-5",
       "EI-11"
      ],
-     "meridian": "bladder and stomach",
-     "body_mind_theme": "the boundary between ourselves and others (teeth physically protect the entrance to your inside)"
+     "body_mind_theme": "the boundary between ourselves and others (teeth physically protect the entrance to your inside)",
+     "meridians": [
+      "bladder",
+      "stomach"
+     ],
+     "elements": [
+      "Earth",
+      "Water"
+     ]
     },
     {
      "slug": "er-duodenum",
@@ -6155,8 +6419,12 @@
      "integrator": [
       "EI-3"
      ],
-     "meridian": "small intestine",
-     "element": "Fire"
+     "meridians": [
+      "small intestine"
+     ],
+     "elements": [
+      "Fire"
+     ]
     },
     {
      "slug": "er-oesophagus",
@@ -6190,9 +6458,13 @@
      "integrator": [
       "EI-11"
      ],
-     "meridian": "stomach",
-     "element": "Earth",
-     "body_mind_theme": "an ability to 'swallow' or take in a situation or person"
+     "body_mind_theme": "an ability to 'swallow' or take in a situation or person",
+     "meridians": [
+      "stomach"
+     ],
+     "elements": [
+      "Earth"
+     ]
     },
     {
      "slug": "er-peritoneum",
@@ -6214,8 +6486,12 @@
      "integrator": [
       "EI-1"
      ],
-     "meridian": "large intestine",
-     "element": "Metal"
+     "meridians": [
+      "large intestine"
+     ],
+     "elements": [
+      "Metal"
+     ]
     },
     {
      "slug": "er-skull",
@@ -6242,8 +6518,12 @@
      "integrator": [
       "EI-3"
      ],
-     "meridian": "small intestine",
-     "element": "Fire"
+     "meridians": [
+      "small intestine"
+     ],
+     "elements": [
+      "Fire"
+     ]
     },
     {
      "slug": "er-digestive-ducts",
@@ -6266,8 +6546,12 @@
       "EI-7",
       "EI-12"
      ],
-     "meridian": "spleen",
-     "element": "Earth"
+     "meridians": [
+      "spleen"
+     ],
+     "elements": [
+      "Earth"
+     ]
     },
     {
      "slug": "er-cranial-nerves",
@@ -6304,8 +6588,12 @@
      "integrator": [
       "EI-1"
      ],
-     "meridian": "large intestine",
-     "element": "Metal"
+     "meridians": [
+      "large intestine"
+     ],
+     "elements": [
+      "Metal"
+     ]
     },
     {
      "slug": "er-pelvis",
@@ -6341,9 +6629,13 @@
      "integrator": [
       "EI-7"
      ],
-     "meridian": "gall bladder",
-     "element": "Wood",
-     "body_mind_theme": "balance and stability in our lives"
+     "body_mind_theme": "balance and stability in our lives",
+     "meridians": [
+      "gall bladder"
+     ],
+     "elements": [
+      "Wood"
+     ]
     },
     {
      "slug": "er-feet",
@@ -6370,9 +6662,13 @@
      "integrator": [
       "EI-8"
      ],
-     "meridian": "liver",
-     "element": "Wood",
-     "body_mind_theme": "grounding"
+     "body_mind_theme": "grounding",
+     "meridians": [
+      "liver"
+     ],
+     "elements": [
+      "Wood"
+     ]
     },
     {
      "slug": "er-bronchial-mucosa",
@@ -6401,8 +6697,12 @@
      "integrator": [
       "EI-1"
      ],
-     "meridian": "large intestine",
-     "element": "Metal"
+     "meridians": [
+      "large intestine"
+     ],
+     "elements": [
+      "Metal"
+     ]
     },
     {
      "slug": "er-shoulder-arm",
@@ -6429,8 +6729,13 @@
      "integrator": [
       "EI-1"
      ],
-     "meridian": "arm field and large intestine",
-     "body_mind_theme": "our capacity to shoulder our responsibilities with ease"
+     "body_mind_theme": "our capacity to shoulder our responsibilities with ease",
+     "meridians": [
+      "large intestine"
+     ],
+     "elements": [
+      "Metal"
+     ]
     },
     {
      "slug": "er-acoustic-nerve",
@@ -6472,16 +6777,20 @@
      "integrator": [
       "EI-3"
      ],
-     "meridian": "small intestine",
-     "element": "Fire",
-     "body_mind_theme": "our ability to hear"
+     "body_mind_theme": "our ability to hear",
+     "meridians": [
+      "small intestine"
+     ],
+     "elements": [
+      "Fire"
+     ]
     },
     {
      "slug": "er-breasts",
      "name": "Breasts",
      "code": "ER69",
      "subcategory": "Energetic Rejuvenators (body structures)",
-     "description": "Breasts (Mamma Dextra, Mamma Sinistra), listed among the organ and tissue stresses. Associated emotional conflicts: Anger, Grief, Self-Worth. Supportive essences: Holly Flower Essence, Willow Flower Essence, Honeysuckle Flower Essence, Sweet Chestnut Flower Essence.",
+     "description": "Nurture, in both directions. On the stomach meridian and the Earth Element, with the rest of the taking-in group. The conflicts here are failing to nurture oneself, and the loss of a child. Because the breast also carries femininity, questioning of those qualities lands here, and deep anger can settle in the tissue.",
      "affects": [],
      "remedies": [
       {
@@ -6490,9 +6799,19 @@
        "catalog": "exact"
       }
      ],
-     "source": "ASSEMBLED from clinicaltheory Organs + e4l_pattern_structures + life_stress_emotion_map joined from sourced data, no new clinical claims",
-     "provenance": "assembled",
-     "remedy_source": "FMP vl_bio_main_stress (category Scan), extract 2026-05-23 — Glen-authored product recommendations"
+     "source": "Written for the public glossary from E4L's own scan panels and Glen's knowledge base, approved by Glen 2026-08-11. E4L's own wording is held internally and is not reproduced.",
+     "provenance": "sourced",
+     "remedy_source": "FMP vl_bio_main_stress (category Scan), extract 2026-05-23 — Glen-authored product recommendations",
+     "integrator": [
+      "EI-11"
+     ],
+     "body_mind_theme": "nurturing",
+     "meridians": [
+      "stomach"
+     ],
+     "elements": [
+      "Earth"
+     ]
     },
     {
      "slug": "er-larynx-mucosa",
@@ -6521,9 +6840,13 @@
      "integrator": [
       "EI-10"
      ],
-     "meridian": "heart protector",
-     "element": "Fire",
-     "body_mind_theme": "our ability to speak our truth"
+     "body_mind_theme": "our ability to speak our truth",
+     "meridians": [
+      "heart protector"
+     ],
+     "elements": [
+      "Fire"
+     ]
     }
    ]
   }
