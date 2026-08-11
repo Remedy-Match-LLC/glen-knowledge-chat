@@ -73,7 +73,7 @@
   /* Fireside controls live BOTTOM-right (the top-right is owned by the journey nav
      shell / "My Path" quest button) and sit above that shell's z-index (9999) so
      they aren't buried. See portal nav-shell (js-shell / jq-overlay) layering. */
-  .sound-toggle{position:fixed;bottom:18px;right:18px;z-index:10000;width:48px;height:48px;
+  .sound-toggle{position:fixed;bottom:18px;right:90px;z-index:10000;width:48px;height:48px;
     border-radius:50%;border:1px solid rgba(255,255,255,.28);background:#1F5A4D;color:#fff;
     cursor:pointer;display:none;align-items:center;justify-content:center;
     box-shadow:0 4px 16px rgba(0,0,0,.38)}
@@ -352,6 +352,33 @@
   .chat-sugg-name{font-weight:600;font-size:.9rem}
   .chat-sugg-price{color:var(--muted);font-size:.86rem}
   .chat-sugg-btn{font-size:.82rem;padding:5px 12px;border-radius:8px;text-decoration:none;margin-left:auto;display:inline-block}
+  /* Persistent Mentorship University concierge. The full Ask Dr. Glen card remains
+     available; this compact shell follows the member across every portal panel. */
+  .mentor-launcher{position:fixed;right:18px;bottom:18px;z-index:10020;width:62px;height:62px;
+    border:0;border-radius:50%;background:var(--brand);color:#fff;cursor:pointer;
+    box-shadow:0 10px 28px rgba(0,0,0,.34);display:flex;flex-direction:column;
+    align-items:center;justify-content:center;font-family:"Raleway",sans-serif;font-weight:700}
+  .mentor-launcher-mark{font-size:1.05rem;line-height:1}.mentor-launcher-label{font-size:.54rem;letter-spacing:.08em;margin-top:4px}
+  .mentor-launcher[aria-expanded="true"]{box-shadow:0 0 0 3px var(--brand-soft),0 10px 28px rgba(0,0,0,.34)}
+  .mentor-panel{position:fixed;right:18px;bottom:92px;z-index:10019;width:min(390px,calc(100vw - 28px));
+    max-height:min(650px,calc(100vh - 118px));background:var(--card);color:var(--ink);
+    border:1px solid var(--line);border-radius:18px;box-shadow:0 18px 48px rgba(0,0,0,.38);
+    display:flex;flex-direction:column;overflow:hidden}
+  .mentor-panel[hidden]{display:none}.mentor-head{background:var(--brand);color:#fff;padding:11px 13px;
+    display:flex;align-items:center;gap:8px}.mentor-head-copy{flex:1;min-width:0}
+  .mentor-title{display:block;font-family:"Raleway",sans-serif;font-weight:700}.mentor-context{display:block;font-size:.7rem;opacity:.83;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .mentor-icon-btn{width:34px;height:34px;border:1px solid rgba(255,255,255,.38);border-radius:50%;
+    background:transparent;color:#fff;cursor:pointer;display:grid;place-items:center;font-size:1rem}
+  .mentor-icon-btn.is-on{background:#fff;color:var(--brand)}.mentor-msgs{min-height:160px;max-height:360px;
+    overflow:auto;padding:13px;display:flex;flex-direction:column;gap:8px}
+  .mentor-bubble{max-width:86%;padding:9px 11px;border-radius:12px;white-space:pre-wrap;line-height:1.45;font-size:.9rem}
+  .mentor-bubble.user{align-self:flex-end;background:var(--brand);color:#fff}.mentor-bubble.assistant{align-self:flex-start;background:var(--card2);border:1px solid var(--line)}
+  .mentor-guide{padding:8px 13px;border-top:1px solid var(--line);font-size:.76rem;color:var(--muted);display:flex;align-items:center;gap:7px}
+  .mentor-compose{border-top:1px solid var(--line);padding:10px;display:flex;gap:7px}.mentor-compose input{flex:1;min-width:0;
+    border:1px solid var(--line);border-radius:18px;padding:9px 12px;background:var(--card2);color:var(--ink);font:inherit}
+  .mentor-send{border:0;border-radius:18px;padding:8px 13px;background:var(--btn-bg);color:var(--btn-fg);font-weight:700;cursor:pointer}
+  .mentor-listening{animation:mentorPulse 1s ease-in-out infinite}@keyframes mentorPulse{50%{transform:scale(1.09);box-shadow:0 0 0 5px rgba(255,255,255,.2)}}
+  @media(max-width:480px){.mentor-launcher{right:12px;bottom:12px;width:56px;height:56px}.mentor-panel{right:7px;bottom:76px;width:calc(100vw - 14px);max-height:calc(100vh - 90px)}}
 
   /* ── Print / Save-as-PDF: a self-contained doc in #print-root. On screen it is
      hidden; when printing we hide everything ELSE so the PDF is ONLY this doc
@@ -624,6 +651,20 @@
   <div id="el-scrim" aria-hidden="true"></div>
   <div class="theme-toggle" id="themeToggle" role="group" aria-label="Theme mode"></div>
   <button class="sound-toggle" id="soundToggle" aria-label="Turn ambient sound on or off" title="Ambient sound" aria-pressed="false"></button>
+  <button class="mentor-launcher" id="mentorLauncher" aria-label="Open Mentorship University mentor" aria-expanded="false">
+    <span class="mentor-launcher-mark">MU</span><span class="mentor-launcher-label">MENTOR</span>
+  </button>
+  <aside class="mentor-panel" id="mentorPanel" aria-label="Mentorship University mentor" hidden>
+    <div class="mentor-head">
+      <div class="mentor-head-copy"><span class="mentor-title">Ask Dr. Glen</span><span class="mentor-context" id="mentorContext">Your portal mentor</span></div>
+      <button class="mentor-icon-btn" id="mentorMic" aria-label="Use microphone" title="Microphone">🎙</button>
+      <button class="mentor-icon-btn" id="mentorSpeaker" aria-label="Toggle spoken replies" title="Spoken replies">🔊</button>
+      <button class="mentor-icon-btn" id="mentorClose" aria-label="Close mentor">×</button>
+    </div>
+    <div class="mentor-msgs" id="mentorMsgs" aria-live="polite"></div>
+    <label class="mentor-guide"><input type="checkbox" id="mentorAutoGuide"> Guide me automatically on each page</label>
+    <div class="mentor-compose"><input id="mentorInput" type="text" placeholder="Ask about this page…" autocomplete="off"><button class="mentor-send" id="mentorSend">Send</button></div>
+  </aside>
   <select class="el-picker" id="elPicker" aria-label="Fireside scene" title="Fireside scene"></select>
   <script>
     (function(){
@@ -975,6 +1016,7 @@ function showTab(name){
   document.querySelectorAll('[data-panel]').forEach(p =>
     p.hidden = (p.dataset.panel !== name));
   try{ sessionStorage.setItem('rm_portal_tab', name); }catch(e){}
+  if(typeof window.mentorPageChanged === "function") window.mentorPageChanged(name);
   // Task 7: fetch the suggestions queue every time the health panel becomes
   // active (fresh each visit -- a clinician or chat turn may have added one
   // since it was last open). loadHealthSuggestions() itself no-ops if
@@ -3960,6 +4002,7 @@ function render(d, v){
     });
   }
   repopulateChatHistory();
+  if(typeof window.syncMentorHistory === "function") window.syncMentorHistory();
 
   const btn = document.getElementById("reorderBtn");
   if(btn) btn.addEventListener("click", reorder);
@@ -6564,6 +6607,7 @@ async function sendChatMessage(){
 
 load();
 </script>
+<script src="/static/portal-mentor.js"></script>
 <script type="module">
   // Element backdrop controller: shows the member's deficient-element Glendalf loop
   // + (opt-in) its ambient soundtrack. Reuses the fireside video-stage machinery.
