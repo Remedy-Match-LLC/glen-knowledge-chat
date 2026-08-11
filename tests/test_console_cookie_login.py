@@ -82,6 +82,25 @@ def test_cookie_authenticates_without_key(client):
     assert r2.status_code == 200
 
 
+def test_cookie_authenticates_legacy_header_only_people_route(client):
+    """The browser cookie is bridged to routes that still inspect the header."""
+    c, appmod = client
+    appmod._init_people_table()
+    c.get("/console?key=test-secret", headers={"Accept": "text/html"})
+    r = c.get("/api/people?q=Symons")
+    assert r.status_code == 200
+
+
+def test_auth_status_reports_cookie_session_without_exposing_key(client):
+    c, _ = client
+    assert c.get("/api/console/auth-status").status_code == 401
+    c.get("/console?key=test-secret", headers={"Accept": "text/html"})
+    r = c.get("/api/console/auth-status")
+    assert r.status_code == 200
+    assert r.get_json() == {"authenticated": True}
+    assert "test-secret" not in r.get_data(as_text=True)
+
+
 def test_query_key_on_api_still_works(client):
     c, _ = client
     r = c.get("/api/console/next-actions?key=test-secret")

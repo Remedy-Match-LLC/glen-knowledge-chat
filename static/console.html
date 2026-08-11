@@ -1047,13 +1047,25 @@ function saveSettings() {
   document.getElementById('settings-panel').classList.add('hidden');
 }
 
-function initKey() {
+async function initKey() {
   const stored = localStorage.getItem('console_key');
   if (stored) {
     consoleKey = stored;
     document.getElementById('key-overlay').classList.add('hidden');
     refresh();
     _applyConsoleDeepLink();
+  } else {
+    // A prior browser login stores an HttpOnly signed cookie, not the master
+    // key. Ask the server whether that session is still valid so the console can
+    // reopen without prompting or putting the secret back into localStorage.
+    try {
+      const auth = await fetch('/api/console/auth-status', {credentials:'same-origin'});
+      if (auth.ok) {
+        document.getElementById('key-overlay').classList.add('hidden');
+        refresh();
+        _applyConsoleDeepLink();
+      }
+    } catch (e) { /* leave the unlock overlay visible */ }
   }
   document.getElementById('key-input').addEventListener('keydown', e => {
     if (e.key === 'Enter') saveKey();

@@ -34434,6 +34434,15 @@ def _console_browser_login():
     is stored as its HMAC (never the secret itself); an owner token is stored as
     itself (httponly), so that cookie authenticates only as that revocable token
     and never escalates to the master secret."""
+    # Bridge the signed browser session to legacy console routes that still read
+    # X-Console-Key directly instead of going through _present_console_key().
+    # This keeps the master secret out of JavaScript/localStorage while allowing
+    # the existing API surface to migrate incrementally to cookie-aware auth.
+    if not request.headers.get("X-Console-Key") and not request.args.get("key"):
+        cookie_key = _present_console_key()
+        if cookie_key:
+            request.environ["HTTP_X_CONSOLE_KEY"] = cookie_key
+
     if request.method != "GET":
         return None
     key = request.args.get("key", "")
@@ -34458,6 +34467,14 @@ def _console_browser_login():
         max_age=CONSOLE_COOKIE_MAX_AGE, httponly=True,
         secure=request.is_secure, samesite="Lax")
     return resp
+
+
+@app.route("/api/console/auth-status", methods=["GET"])
+def console_auth_status():
+    """Small browser bootstrap endpoint; never returns the presented credential."""
+    if not _console_key_ok():
+        return jsonify({"authenticated": False}), 401
+    return jsonify({"authenticated": True})
 
 
 @app.after_request
