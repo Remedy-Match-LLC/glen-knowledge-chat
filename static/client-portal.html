@@ -3415,7 +3415,17 @@ function render(d, v){
     const note = d.pricing_note ? `<p class="note small">${esc(d.pricing_note)}</p>` : "";
     html += `<div class="card"><h2>Order your remedies</h2>
       ${note}
-      <div>${rows}</div>
+      <div id="curatedOrderItems">${rows}</div>
+      <div style="margin-top:1rem;padding-top:.8rem;border-top:1px dashed var(--line)">
+        <label for="orderAddSearch" class="small"><strong>Add another remedy</strong></label>
+        <div style="display:flex;gap:8px;margin-top:.35rem">
+          <input id="orderAddSearch" placeholder="Type at least 2 letters" style="flex:1;background:var(--card2);color:var(--ink);border:1px solid var(--line);border-radius:8px;padding:8px 10px">
+          <button type="button" class="btn ghost" id="orderFindBtn">Find</button>
+        </div>
+        <select id="orderAddResults" hidden style="width:100%;margin-top:.5rem;background:var(--card2);color:var(--ink);border:1px solid var(--line);border-radius:8px;padding:8px 10px"></select>
+        <button type="button" class="btn" id="orderAddBtn" hidden style="margin-top:.5rem">Add to this order</button>
+        <p class="small muted" id="orderAddStatus" style="margin:.35rem 0 0"></p>
+      </div>
       <p class="muted small" style="margin:.7rem 0 1rem">Shipping calculated at checkout.</p>
       <button class="btn full" id="reorderBtn">Review my order</button>
       <div id="reorderReview" hidden></div>
@@ -3935,14 +3945,68 @@ function render(d, v){
 
   const btn = document.getElementById("reorderBtn");
   if(btn) btn.addEventListener("click", reorder);
-  app.querySelectorAll(".curated-remove").forEach(removeBtn => {
-    removeBtn.addEventListener("click", () => {
-      const row = removeBtn.closest(".curated-order-item");
-      if(row) row.remove();
+  const orderCard = btn && btn.closest(".card");
+  if(orderCard) orderCard.addEventListener("click", ev => {
+    const removeBtn = ev.target.closest(".curated-remove");
+    if(!removeBtn) return;
+    const row = removeBtn.closest(".curated-order-item");
+    if(row) row.remove();
+    const review = document.getElementById("reorderReview");
+    if(review){ review.hidden = true; review.innerHTML = ""; }
+    if(btn){ btn.dataset.reviewed = ""; btn.textContent = "Review my order"; }
+  });
+
+  const findBtn = document.getElementById("orderFindBtn");
+  const addBtn = document.getElementById("orderAddBtn");
+  const searchInput = document.getElementById("orderAddSearch");
+  const results = document.getElementById("orderAddResults");
+  const addStatus = document.getElementById("orderAddStatus");
+  if(findBtn) findBtn.addEventListener("click", async () => {
+    const q = (searchInput.value || "").trim();
+    if(q.length < 2){ addStatus.textContent = "Type at least 2 letters."; return; }
+    findBtn.disabled = true; addStatus.textContent = "Searching…";
+    try{
+      const r = await fetch(`/api/portal/${encodeURIComponent(token)}/order-catalog?q=${encodeURIComponent(q)}`);
+      const j = await r.json();
+      results.innerHTML = "";
+      (j.products || []).forEach(p => {
+        const opt = document.createElement("option");
+        opt.value = p.slug;
+        opt.textContent = `${p.name} — ${money(p.price_cents)}`;
+        results.appendChild(opt);
+      });
+      const found = results.options.length > 0;
+      results.hidden = !found; addBtn.hidden = !found;
+      addStatus.textContent = found ? "Choose a remedy, then add it." : "No matching remedies found.";
+    }catch(e){ addStatus.textContent = "Search is temporarily unavailable."; }
+    finally{ findBtn.disabled = false; }
+  });
+  if(addBtn) addBtn.addEventListener("click", async () => {
+    const slug = results.value;
+    if(!slug) return;
+    if(orderCard.querySelector(`.curated-order-item[data-slug="${CSS.escape(slug)}"]`)){
+      addStatus.textContent = "That remedy is already in this order."; return;
+    }
+    addBtn.disabled = true; addStatus.textContent = "Adding…";
+    try{
+      const r = await fetch(`/api/portal/${encodeURIComponent(token)}/order-add`, {
+        method:"POST", headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({slug})
+      });
+      const j = await r.json();
+      if(!r.ok || !j.item) throw new Error(j.error || "Could not add that remedy.");
+      const item = j.item;
+      const row = document.createElement("div");
+      row.className = "reitem curated-order-item";
+      row.setAttribute("data-slug", item.slug); row.setAttribute("data-qty", item.qty || 1);
+      row.innerHTML = `<span class="nm">${esc(item.name)}</span><span class="pr">${esc(money(item.price_cents))}</span><button type="button" class="wishRemBtn curated-remove" aria-label="Remove ${esc(item.name)} from this order">×</button>`;
+      document.getElementById("curatedOrderItems").appendChild(row);
       const review = document.getElementById("reorderReview");
       if(review){ review.hidden = true; review.innerHTML = ""; }
-      if(btn){ btn.dataset.reviewed = ""; btn.textContent = "Review my order"; }
-    });
+      btn.dataset.reviewed = ""; btn.textContent = "Review my order";
+      addStatus.textContent = `${item.name} was added to this order.`;
+    }catch(e){ addStatus.textContent = e.message || "Could not add that remedy."; }
+    finally{ addBtn.disabled = false; }
   });
 
   const raBtn = document.getElementById("recoAcceptBtn");

@@ -186,6 +186,42 @@ def test_portal_checkout_passes_itemized_lines_to_stripe(client, monkeypatch):
     ]
 
 
+def test_order_catalog_search_and_add_authorizes_same_checkout(client, monkeypatch):
+    c, appmod = client
+    email = "add-remedy@example.com"
+    tok = _seed_portal(appmod, email=email, content={
+        "greeting": "hi", "video": {}, "layers": [],
+        "reorder_items": [{"slug": "neuro-magnesium", "qty": 1}],
+    })
+
+    search = c.get(f"/api/portal/{tok}/order-catalog?q=nous")
+    assert search.status_code == 200
+    products = search.get_json()["products"]
+    assert any(p["slug"] == "nous-energy" for p in products)
+
+    added = c.post(f"/api/portal/{tok}/order-add", json={"slug": "nous-energy"})
+    assert added.status_code == 200
+    assert added.get_json()["item"]["name"] == "Nous Energy"
+
+    ingested = {}
+    _mock_checkout(appmod, monkeypatch, capture_ingest=ingested)
+    checkout = c.post(f"/api/portal/{tok}/checkout", json={"items": [
+        {"slug": "neuro-magnesium", "qty": 1},
+        {"slug": "nous-energy", "qty": 1},
+    ]})
+    assert checkout.status_code == 200
+    assert [i["slug"] for i in ingested["items"]] == [
+        "neuro-magnesium", "nous-energy"]
+
+
+def test_portal_page_ships_add_to_current_order_controls():
+    body = open("static/client-portal.html", encoding="utf-8").read()
+    assert 'id="orderAddSearch"' in body
+    assert 'id="orderAddBtn"' in body
+    assert "/order-catalog?q=" in body
+    assert "/order-add" in body
+
+
 # ── (c) posting a slug NOT in the client's entitlement is rejected ──────────
 
 def test_item_reorder_rejects_unentitled_slug(client, monkeypatch):

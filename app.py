@@ -23297,6 +23297,67 @@ def api_portal_wishlist_toggle(token):
         return jsonify({"error": "failed"}), 500
 
 
+@app.route("/api/portal/<token>/order-catalog", methods=["GET"])
+def api_portal_order_catalog(token):
+    """Search sellable remedies for the portal's add-to-current-order control."""
+    with db.connect(LOG_DB) as cx:
+        portal = _portal_record_for(cx, token)
+    if not portal:
+        return jsonify({"error": "not found"}), 404
+    email = (portal.get("email") or "").strip().lower()
+    query = (request.args.get("q") or "").strip().lower()
+    if len(query) < 2:
+        return jsonify({"products": []})
+    matches = []
+    for product in _catalog_products():
+        slug = (product.get("slug") or "").strip().lower()
+        name = (product.get("name") or slug).strip()
+        if (not slug or product.get("inactive") or product.get("info_only")
+                or query not in f"{name} {slug}".lower()):
+            continue
+        _lines, items_rec, _subtotal = _portal_priced_lines(
+            [{"slug": slug, "qty": 1}], email=email)
+        if not items_rec:
+            continue
+        matches.append({"slug": slug, "name": items_rec[0]["name"],
+                        "price_cents": items_rec[0]["unit_cents"]})
+        if len(matches) >= 20:
+            break
+    return jsonify({"products": matches})
+
+
+@app.route("/api/portal/<token>/order-add", methods=["POST"])
+def api_portal_order_add(token):
+    """Authorize and price one catalog remedy for the portal's current order."""
+    from dashboard import wishlist as _wl
+    slug = ((request.get_json(silent=True) or {}).get("slug") or "").strip().lower()
+    with db.connect(LOG_DB) as cx:
+        portal = _portal_record_for(cx, token)
+    if not portal:
+        return jsonify({"error": "not found"}), 404
+    email = (portal.get("email") or "").strip().lower()
+    product = _get_product(slug)
+    if not product or product.get("inactive") or product.get("info_only"):
+        return jsonify({"error": "That remedy is not available."}), 400
+    _lines, items_rec, _subtotal = _portal_priced_lines(
+        [{"slug": slug, "qty": 1}], email=email)
+    if not items_rec:
+        return jsonify({"error": "That remedy is not available."}), 400
+    with _db_lock, db.connect(LOG_DB) as cx:
+        # Wishlist membership is the checkout authorization already consumed by
+        # api_client_portal_checkout. Ensure-add (never toggle off) also makes the
+        # selection survive if the client leaves the page before paying.
+        _wl.init_wishlist_table(cx)
+        owner = _wl.resolve_owner(email, None)
+        if slug not in _wl.slugs_for(cx, owner):
+            _wl.toggle(cx, owner, slug)
+    item = items_rec[0]
+    return jsonify({"ok": True, "item": {
+        "slug": item["slug"], "name": item["name"], "qty": item["qty"],
+        "price_cents": item["unit_cents"],
+    }})
+
+
 @app.route("/api/portal/<token>/scene-pref", methods=["POST"])
 def api_portal_scene_pref(token):
     """Persist the member's fireside backdrop choice server-side so it follows them
@@ -25457,18 +25518,17 @@ def api_client_portal_checkout(token):
         curated = (portal.get("content") or {}).get("reorder_items") or []
         entitled |= {(it.get("slug") or "").strip().lower()
                      for it in curated if isinstance(it, dict) and it.get("slug")}
-        if _WISHLIST_ENABLED:
-            # The customer's own saved-and-chosen wishlist item is authorization
-            # to buy it, same as an accepted recommendation. Union those slugs so
-            # a wishlist-only (never-before-purchased) slug is purchasable at the
-            # member price. Failure must never break checkout.
-            try:
-                from dashboard import wishlist as _wl
-                with db.connect(LOG_DB) as _wcx:
-                    _wl.init_wishlist_table(_wcx)
-                    entitled = entitled | _wl.slugs_for(_wcx, "email:" + email)
-            except Exception:
-                pass
+        # The customer's own saved-and-chosen wishlist item is authorization to
+        # buy it, same as an accepted recommendation. This read is unconditional:
+        # the order-review add control uses the same private store even when the
+        # separate wishlist card is hidden by its presentation flag.
+        try:
+            from dashboard import wishlist as _wl
+            with db.connect(LOG_DB) as _wcx:
+                _wl.init_wishlist_table(_wcx)
+                entitled = entitled | _wl.slugs_for(_wcx, "email:" + email)
+        except Exception:
+            pass
         items = []
         for it in posted:
             if not isinstance(it, dict):
