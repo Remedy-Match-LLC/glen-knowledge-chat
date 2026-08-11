@@ -80,3 +80,13 @@ def test_would_skip_precedence():
     assert cp.would_skip_precedence(cx, "a@b.com", "fmp") is False        # fmp(2) > ghl(1)
     cp.put(cx, "a@b.com", b"y", "image/png", source="portal-self")
     assert cp.would_skip_precedence(cx, "a@b.com", "fmp") is True         # portal-self(4) > fmp(2)
+
+
+def test_framing_roundtrip_and_clamps_values():
+    cx = _cx()
+    cp.put(cx, "a@b.com", b"photo", "image/png")
+    assert cp.set_framing(cx, "a@b.com", -5, 125, 9) is True
+    got = cp.get(cx, "a@b.com")
+    assert got["focus_x"] == 0
+    assert got["focus_y"] == 100
+    assert got["zoom"] == 3

@@ -22164,6 +22164,30 @@ def api_portal_photo_upload(token):
     return jsonify({"ok": True})
 
 
+@app.route("/api/portal/<token>/photo/framing", methods=["GET", "POST"])
+def api_portal_photo_framing(token):
+    """Read or update the token owner's nondestructive circular-avatar crop."""
+    from dashboard import client_photos as _cph
+    from dashboard import client_portal as _cp
+    with _db_lock, db.connect(LOG_DB) as cx:
+        _cp.init_client_portal_table(cx)
+        portal = _portal_record_for(cx, token)
+        email = (portal.get("email") or "").strip().lower() if portal else ""
+        rec = _cph.get(cx, email) if email else None
+        if not rec:
+            return jsonify({"ok": False, "error": "not found"}), 404
+        if request.method == "POST":
+            data = request.get_json(silent=True) or {}
+            try:
+                _cph.set_framing(cx, email, data.get("focus_x", 50),
+                                 data.get("focus_y", 42), data.get("zoom", 1))
+            except (TypeError, ValueError):
+                return jsonify({"ok": False, "error": "invalid framing"}), 400
+            rec = _cph.get(cx, email)
+    return jsonify({"ok": True, "focus_x": rec["focus_x"],
+                    "focus_y": rec["focus_y"], "zoom": rec["zoom"]})
+
+
 @app.route("/api/portal/<token>/photo", methods=["GET"])
 def api_portal_photo_serve(token):
     """Serve the token owner's OWN photo (token-scoped). 404 when none so the

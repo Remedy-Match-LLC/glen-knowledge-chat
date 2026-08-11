@@ -7,6 +7,8 @@ rendering. See docs/superpowers/specs/2026-07-14-client-photos-design.md.
 """
 import datetime
 
+from dashboard import db
+
 
 def _now():
     return datetime.datetime.utcnow().isoformat() + "Z"
@@ -27,7 +29,15 @@ def init_table(cx):
     cx.execute(
         "CREATE TABLE IF NOT EXISTS client_photos("
         "email TEXT PRIMARY KEY, image_blob BLOB, content_type TEXT, "
-        "source TEXT, updated_at TEXT)")
+        "source TEXT, updated_at TEXT, focus_x REAL NOT NULL DEFAULT 50, "
+        "focus_y REAL NOT NULL DEFAULT 42, zoom REAL NOT NULL DEFAULT 1)")
+    # Existing installations predate nondestructive avatar framing.
+    for column, declaration in (
+            ("focus_x", "REAL NOT NULL DEFAULT 50"),
+            ("focus_y", "REAL NOT NULL DEFAULT 42"),
+            ("zoom", "REAL NOT NULL DEFAULT 1")):
+        if not db.column_exists(cx, "client_photos", column):
+            cx.execute(f"ALTER TABLE client_photos ADD COLUMN {column} {declaration}")
 
 
 def would_skip_precedence(cx, email, source):
@@ -68,11 +78,31 @@ def get(cx, email):
         return None
     init_table(cx)
     row = cx.execute(
-        "SELECT image_blob, content_type FROM client_photos WHERE email=?", (e,)
+        "SELECT image_blob, content_type, focus_x, focus_y, zoom "
+        "FROM client_photos WHERE email=?", (e,)
     ).fetchone()
     if not row or row[0] is None:
         return None
-    return {"blob": row[0], "content_type": row[1] or "image/jpeg"}
+    return {"blob": row[0], "content_type": row[1] or "image/jpeg",
+            "focus_x": float(row[2] if row[2] is not None else 50),
+            "focus_y": float(row[3] if row[3] is not None else 42),
+            "zoom": float(row[4] if row[4] is not None else 1)}
+
+
+def set_framing(cx, email, focus_x, focus_y, zoom):
+    """Save a client's chosen crop without modifying the original image."""
+    e = _norm(email)
+    if not e:
+        return False
+    init_table(cx)
+    focus_x = max(0.0, min(100.0, float(focus_x)))
+    focus_y = max(0.0, min(100.0, float(focus_y)))
+    zoom = max(1.0, min(3.0, float(zoom)))
+    cur = cx.execute(
+        "UPDATE client_photos SET focus_x=?, focus_y=?, zoom=?, updated_at=? "
+        "WHERE email=?", (focus_x, focus_y, zoom, _now(), e))
+    cx.commit()
+    return cur.rowcount > 0
 
 
 def has(cx, email):
