@@ -20049,8 +20049,8 @@ def _enabled_offer_keys() -> set:
 
 def _portal_priced_lines(items, email=None):
     """Build QBO invoice lines from a portal's reorder items, honoring an optional
-    per-item ``price_cents`` override (the practitioner-special price); else a
-    volume rate — the order-wide mix/match rate for a paid member, the same-SKU
+    per-item ``price_cents`` override (the practitioner-published price), then the
+    client's saved per-SKU/FF-flat price; else a volume rate — the order-wide mix/match rate for a paid member, the same-SKU
     (this line's own qty) rate for a non-member (Glen 2026-07 policy; see
     _inhouse_ff_unit_cents) — with a paid member's repertoire SKUs at their flat
     reorder rate (Task 5b — this is the ACTUAL checkout charge path, so it must
@@ -20064,6 +20064,17 @@ def _portal_priced_lines(items, email=None):
     total_ff_qty = _inhouse_total_ff_qty(items or [])
     rep_slugs = _resolve_repertoire_slugs(email)
     program_member = _is_paid_member(email)
+    client_by_slug, client_ff_flat = {}, None
+    if email:
+        try:
+            from dashboard import client_prices as _client_prices
+            with db.connect(LOG_DB) as _price_cx:
+                _client_prices.init_table(_price_cx)
+                client_ff_flat = _client_prices.get_ff_flat(_price_cx, email)
+                client_by_slug = _client_prices.price_map(_price_cx, email)
+        except Exception as e:
+            print(f"[portal-checkout] client-price lookup failed for {email!r}: {e!r}", flush=True)
+            client_by_slug, client_ff_flat = {}, None
     lines, items_rec, subtotal_cents = [], [], 0
     for it in (items or []):
         slug = (it.get("slug") or "").strip()
@@ -20074,7 +20085,15 @@ def _portal_priced_lines(items, email=None):
             qty = max(1, min(int(it.get("qty", 1) or 1), 99))
         except Exception:
             qty = 1
-        unit_cents = _inhouse_line_unit_cents(p, it.get("price_cents"), total_ff_qty, settings,
+        # The practitioner-baked line price remains the strongest override. For
+        # shared-basket items (which intentionally carry no browser-supplied
+        # price), apply the same saved client price shown throughout the portal.
+        override = it.get("price_cents")
+        if override is None and slug in client_by_slug:
+            override = client_by_slug[slug]
+        elif override is None and client_ff_flat is not None and _qty_eligible(p):
+            override = int(client_ff_flat)
+        unit_cents = _inhouse_line_unit_cents(p, override, total_ff_qty, settings,
                                               repertoire_slugs=rep_slugs,
                                               program_member=program_member, line_qty=qty)
         subtotal_cents += unit_cents * qty
@@ -20201,6 +20220,14 @@ def _portal_reorder_module(email):
         return {}
     with db.connect(LOG_DB) as cx:
         cx.row_factory = sqlite3.Row
+        client_by_slug, client_ff_flat = {}, None
+        try:
+            from dashboard import client_prices as _client_prices
+            _client_prices.init_table(cx)
+            client_ff_flat = _client_prices.get_ff_flat(cx, email)
+            client_by_slug = _client_prices.price_map(cx, email)
+        except Exception as e:
+            print(f"[portal-reorder] client-price read failed for {email!r}: {e!r}", flush=True)
         try:
             repertoire.init_repertoire_table(cx)  # fresh-DB guard
             rep_slugs = repertoire.repertoire_slugs(cx, email)
@@ -20278,7 +20305,11 @@ def _portal_reorder_module(email):
             regular_cents = int(p.get("price_cents") or 0)
             in_rep = slug in rep_slugs  # full set: display "in your repertoire" regardless of FF-ness
             your_cents = regular_cents
-            if member and slug in rep_slugs_ff:  # FF-only: pricing
+            if slug in client_by_slug:
+                your_cents = client_by_slug[slug]
+            elif client_ff_flat is not None and _qty_eligible(p):
+                your_cents = int(client_ff_flat)
+            elif member and slug in rep_slugs_ff:  # FF-only: pricing
                 your_cents = _rep_priced_unit_cents(p, repertoire_slugs=rep_slugs_ff, settings=settings)
             reorder.append({
                 "slug": slug, "name": p.get("name", slug), "qty": qty,
@@ -20400,7 +20431,11 @@ def _portal_reorder_module(email):
         seen.add(slug)
         regular_cents = int(p.get("price_cents") or 0)
         your_cents = regular_cents
-        if member and slug in rep_slugs_ff:
+        if slug in client_by_slug:
+            your_cents = client_by_slug[slug]
+        elif client_ff_flat is not None and _qty_eligible(p):
+            your_cents = int(client_ff_flat)
+        elif member and slug in rep_slugs_ff:
             your_cents = _rep_priced_unit_cents(p, repertoire_slugs=rep_slugs_ff, settings=settings)
         reorder.append({
             "slug": slug, "name": p.get("name", slug), "qty": qty,
