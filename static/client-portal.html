@@ -4162,7 +4162,9 @@ function render(d, v){
       const j = await r.json();
       const z = j.zelle || {};
       const link = z.pay_link || z.bank_url || "";
-      zellePreview.innerHTML = `<strong>Pay with Zelle</strong><br>Open Zelle in your banking app and send payment to <strong>${esc(z.to || "")}</strong>. Your exact total and order-reference memo will appear after you continue.${link ? `<br><a href="${esc(link)}" target="_blank" rel="noopener">${z.pay_link ? "Open our Zelle payment link" : "Find or open your bank for Zelle"}</a>` : ""}`;
+      zellePreview.innerHTML = `<strong>Pay with Zelle</strong><br>Open Zelle in your banking app and send payment to <strong>${esc(z.to || "")}</strong>. Your exact total and order-reference memo will appear after you continue.
+        ${z.qr_image_url ? `<div style="margin:.75rem 0"><img src="${esc(z.qr_image_url)}" alt="Scan to pay Remedy Match with Zelle" style="display:block;width:190px;max-width:100%;background:#fff;padding:8px;border-radius:8px"></div><span>Scan this code from your banking app.</span>` : ""}
+        ${link ? `<br><a class="btn ghost" href="${esc(link)}" rel="noopener">${z.pay_link ? "Open Zelle payment page" : "Find or open your bank for Zelle"}</a>` : ""}`;
     }catch(e){ zellePreview.textContent = "Open Zelle in your banking app. Recipient and memo details will appear after you continue."; }
   });
   if(findBtn) findBtn.addEventListener("click", async () => {
@@ -6515,13 +6517,16 @@ async function reorder(){
     if(cj.method === "zelle" && cj.pay_instructions){
       const z = cj.pay_instructions;
       const amount = money(cj.total_cents || 0);
+      const shipping = money(cj.shipping_cents || 0);
       const link = z.pay_link || z.bank_url || "";
       review.innerHTML = `<div class="note" style="margin-top:1rem"><strong>Your Zelle payment instructions</strong>
         <div class="kv"><span>Amount</span><strong>${esc(amount)}</strong></div>
+        <div class="kv"><span>Shipping included</span><strong>${esc(shipping)}</strong></div>
         <div class="kv"><span>Send to</span><strong>${esc(z.to || "")}</strong></div>
         <div class="kv"><span>Memo / order reference</span><strong>${esc(z.memo || "")}</strong></div>
         <p class="small">In your bank’s Zelle screen, enter the recipient, exact amount, and memo above. Confirm the recipient name in your bank before sending.</p>
-        ${link ? `<a class="btn" href="${esc(link)}" target="_blank" rel="noopener">${z.pay_link ? "Open Zelle payment link" : "Find or open your bank for Zelle"}</a>` : ""}
+        ${z.qr_image_url ? `<div style="margin:.75rem 0"><img src="${esc(z.qr_image_url)}" alt="Scan to pay Remedy Match with Zelle" style="display:block;width:220px;max-width:100%;background:#fff;padding:8px;border-radius:8px"></div><strong class="small">Scan this code with Zelle in your banking app.</strong>` : ""}
+        ${link ? `<p><a class="btn" href="${esc(link)}" rel="noopener">${z.pay_link ? "Open Zelle payment page" : "Find or open your bank for Zelle"}</a></p>` : ""}
         <p class="small muted">${esc(z.note || "")}</p></div>`;
       review.hidden = false;
       btn.disabled = false;

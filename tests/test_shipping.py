@@ -481,6 +481,13 @@ def test_add_and_update_bottle_with_dims(tmp_path):
 
 # ── Product override resolver ────────────────────────────────────────────────────
 
+def test_product_override_resolver_falls_back_before_schema_init(tmp_path):
+    from dashboard.shipping import resolve_bottle_type
+    db = str(tmp_path / "brand-new.db")
+    assert resolve_bottle_type(
+        "nous-energy", {"bottle_type": "30ml"}, db_path=db) == "30ml"
+
+
 def test_product_override_crud_and_resolution(tmp_path):
     import sqlite3
     from dashboard.shipping import (init_shipping_schema, set_product_bottle_override,

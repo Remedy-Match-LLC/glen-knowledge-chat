@@ -842,10 +842,19 @@ def is_shippable(product) -> bool:
 
 
 def resolve_bottle_type(slug, product, db_path=None):
-    with _connect(db_path) as cx:
-        row = cx.execute(
-            "SELECT bottle_type FROM product_bottle_types WHERE slug=?", (slug,)
-        ).fetchone()
+    try:
+        with _connect(db_path) as cx:
+            row = cx.execute(
+                "SELECT bottle_type FROM product_bottle_types WHERE slug=?", (slug,)
+            ).fetchone()
+    except sqlite3.OperationalError as exc:
+        # A brand-new or temporarily redirected database may be consulted before
+        # the shipping migration has run. Catalog metadata is the documented
+        # fallback, so absence of this optional override table must not make a
+        # client checkout fail with HTTP 500.
+        if "no such table" not in str(exc).lower():
+            raise
+        row = None
     if row:
         return row["bottle_type"]
     return (product or {}).get("bottle_type") or "default"

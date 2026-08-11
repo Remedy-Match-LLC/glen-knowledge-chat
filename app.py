@@ -23502,7 +23502,27 @@ def api_portal_payment_options(token):
     zelle = _ALT_PAY["zelle"]
     return jsonify({"card": {"label": "Credit or debit card"}, "zelle": {
         "label": zelle["label"], "to": zelle["to"], "pay_link": zelle["pay_link"],
+        "qr_image_url": f"/api/portal/{token}/zelle-qr.png",
         "bank_url": zelle["bank_url"], "note": zelle["note"]}})
+
+
+@app.route("/api/portal/<token>/zelle-qr.png", methods=["GET"])
+def api_portal_zelle_qr(token):
+    with db.connect(LOG_DB) as cx:
+        portal = _portal_record_for(cx, token)
+    if not portal:
+        return ("", 404)
+    pay_link = (_ALT_PAY["zelle"].get("pay_link") or "").strip()
+    if not pay_link:
+        return ("", 404)
+    import io
+    import qrcode
+    image = qrcode.make(pay_link)
+    buf = io.BytesIO()
+    image.save(buf, format="PNG")
+    response = Response(buf.getvalue(), mimetype="image/png")
+    response.headers["Cache-Control"] = "private, max-age=3600"
+    return response
 
 
 @app.route("/api/portal/<token>/cart/set-qty", methods=["POST"])
@@ -25816,20 +25836,26 @@ def api_client_portal_checkout(token):
         # payload is persisted via set_order_qbo_lines for /begin/checkout-return
         # (kind=="reorder", set by _stripe_checkout_url_for_reorder below) to book a
         # line-faithful QBO Sales Receipt once the customer actually pays.
+        shipping_cents = int(_price_cart(items, ship=ship, email=email)["shipping_cents"])
+        order_total_cents = int(subtotal_cents) + shipping_cents
         checkout_ref = (f"portal-{checkout_request_id}" if checkout_request_id
                         else _uuid.uuid4().hex)
-        qbo_payload = {"lines": lines, "discount_cents": 0, "tax_cents": 0}
+        qbo_payload = {"lines": lines + _shipping_line(shipping_cents),
+                       "discount_cents": 0, "tax_cents": 0}
         from urllib.parse import quote as _urlquote
+        stripe_line_items = [
+            {"name": it["name"], "qty": it["qty"], "unit_cents": it["unit_cents"]}
+            for it in items_rec]
+        if shipping_cents:
+            stripe_line_items.append({"name": "Shipping (USPS)", "qty": 1,
+                                      "unit_cents": shipping_cents})
         out = {"invoice_id": checkout_ref, "customer_id": "",
-               "doc_number": "", "total": round(subtotal_cents / 100.0, 2),
+               "doc_number": "", "total": round(order_total_cents / 100.0, 2),
                "cancel_url": f"{portal_base()}/portal/{_urlquote(token, safe='')}",
-               "stripe_line_items": [
-                   {"name": it["name"], "qty": it["qty"],
-                    "unit_cents": it["unit_cents"]} for it in items_rec
-               ]}
+               "stripe_line_items": stripe_line_items}
         _ingest_order(source="portal-reorder", external_ref=checkout_ref, email=email,
                       name=ship.get("name", ""), items=items_rec,
-                      total_cents=int(subtotal_cents),
+                      total_cents=order_total_cents, shipping_cents=shipping_cents,
                       address=ship, channel="retail")
         try:
             with db.connect(LOG_DB) as _lcx:
@@ -25839,9 +25865,11 @@ def api_client_portal_checkout(token):
         if method == "zelle":
             zelle = _ALT_PAY["zelle"]
             return jsonify({"ok": True, "method": "zelle", "order_ref": checkout_ref,
-                            "total_cents": int(subtotal_cents), "pay_instructions": {
+                            "total_cents": order_total_cents,
+                            "shipping_cents": shipping_cents, "pay_instructions": {
                                 "label": zelle["label"], "to": zelle["to"],
                                 "memo": checkout_ref, "pay_link": zelle["pay_link"],
+                                "qr_image_url": f"/api/portal/{token}/zelle-qr.png",
                                 "bank_url": zelle["bank_url"], "note": zelle["note"]}})
         stripe_url = _stripe_checkout_url_for_reorder(out, email)
         if not stripe_url:

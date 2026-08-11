@@ -352,14 +352,19 @@ def test_portal_checkout_resolves_via_session(client, monkeypatch):
     monkeypatch.setattr(qbo_billing, "create_invoice",
                         lambda cust, lines, **kw: {"Id": "INV1", "DocNumber": "1", "TotalAmt": 25.0})
     monkeypatch.setattr(appmod, "_ingest_order", lambda *a, **k: None)
+    monkeypatch.setattr(appmod, "_shipping_for_cart", lambda *a, **k: 595)
     monkeypatch.setattr(appmod, "_STRIPE_ACTIVE", True)
+    captured = {}
     monkeypatch.setattr(appmod, "_stripe_checkout_url_for_reorder",
-                        lambda out, email: "https://checkout.stripe/me")
+                        lambda out, email: captured.update(out=out) or "https://checkout.stripe/me")
     c.set_cookie("rm_portal_session", sess)
 
     r = c.post("/api/portal/me/checkout")
     assert r.status_code == 200
     assert r.get_json()["stripe_url"] == "https://checkout.stripe/me"
+    assert captured["out"]["total"] == 30.95
+    assert captured["out"]["stripe_line_items"][-1] == {
+        "name": "Shipping (USPS)", "qty": 1, "unit_cents": 595}
 
 
 # ── Group-join offer checkout (mirrors the studio card-vault flow) ───────────
@@ -506,17 +511,23 @@ def test_portal_checkout_charges_special_price(client, monkeypatch):
     monkeypatch.setattr(qbo_billing, "find_or_create_customer",
                         lambda *a, **k: {"Id": "C1"})
     monkeypatch.setattr(appmod, "_ingest_order", lambda *a, **k: None)
+    monkeypatch.setattr(appmod, "_shipping_for_cart", lambda *a, **k: 595)
     monkeypatch.setattr(appmod._bos_orders, "set_order_qbo_lines",
                         lambda cx, ref, payload: captured.setdefault("payload", payload))
     monkeypatch.setattr(appmod, "_STRIPE_ACTIVE", True)
+    def capture_stripe(out, email):
+        captured["stripe"] = out
+        return "https://checkout.stripe/x"
     monkeypatch.setattr(appmod, "_stripe_checkout_url_for_reorder",
-                        lambda out, email: "https://checkout.stripe/x")
+                        capture_stripe)
 
     r = c.post(f"/api/portal/{tok}/checkout")
     assert r.status_code == 200
     assert r.get_json()["stripe_url"] == "https://checkout.stripe/x"
     # charged the special price, not catalog
     assert captured["payload"]["lines"][0]["amount"] == 25.0
+    assert captured["payload"]["lines"][-1]["amount"] == 5.95
+    assert captured["stripe"]["total"] == 30.95
 
 
 def test_portal_checkout_bad_token_404(client):
