@@ -5885,7 +5885,7 @@
      "name": "Ovaries",
      "code": "ER50",
      "subcategory": "Energetic Rejuvenators (body structures)",
-     "description": "Associated emotional conflicts: Identity, Self-Worth, Guilt. Supportive essences: True to Self Flower Essence, Self-Image Flower Essence, Self-Esteem Flower Essence, Worthiness Flower Essence.",
+     "description": "The source of life and creativity. Worked over the lower abdomen and lower back. Its conflicts gather around creating: ambivalence about a child, and the older conditioning that reads being a woman as being lesser. The work is valuing both the feminine and the masculine in oneself rather than trading one for the other.",
      "affects": [],
      "remedies": [
       {
@@ -5899,9 +5899,15 @@
        "catalog": "exact"
       }
      ],
-     "source": "ASSEMBLED from e4l_pattern_structures + life_stress_emotion_map joined from sourced data, no new clinical claims",
-     "provenance": "assembled",
-     "remedy_source": "FMP vl_bio_main_stress (category Scan), extract 2026-05-23 — Glen-authored product recommendations"
+     "source": "Written for the public glossary from E4L's own scan panels and Glen's knowledge base, approved by Glen 2026-08-11. E4L's own wording is held internally and is not reproduced.",
+     "provenance": "sourced",
+     "remedy_source": "FMP vl_bio_main_stress (category Scan), extract 2026-05-23 — Glen-authored product recommendations",
+     "integrator": [
+      "EI-4"
+     ],
+     "meridian": "heart protector",
+     "element": "Fire",
+     "body_mind_theme": "the source of life and creativity"
     },
     {
      "slug": "er-coronary-vascular",
@@ -6034,7 +6040,7 @@
      "name": "Uterus",
      "code": "ER55",
      "subcategory": "Energetic Rejuvenators (body structures)",
-     "description": "Uterus (Genital), listed among the organ and tissue stresses. Associated emotional conflicts: Fear, Guilt. Supportive essences: Mimulus Flower Essence, Aspen Flower Essence, Pine Flower Essence, Crab Apple Flower Essence.",
+     "description": "Creativity, and giving birth to what is new, which need not be a child. Worked over the lower abdomen or the lumbar area behind it, drawing on Integrators 4 and 12 together. Fear sits here around conception of any kind, as does guilt about nurture not given and doubt about whether a nurturing home can be made at all.",
      "affects": [],
      "remedies": [
       {
@@ -6048,9 +6054,16 @@
        "catalog": "exact"
       }
      ],
-     "source": "ASSEMBLED from clinicaltheory Organs + e4l_pattern_structures + life_stress_emotion_map joined from sourced data, no new clinical claims",
-     "provenance": "assembled",
-     "remedy_source": "FMP vl_bio_main_stress (category Scan), extract 2026-05-23 — Glen-authored product recommendations"
+     "source": "Written for the public glossary from E4L's own scan panels and Glen's knowledge base, approved by Glen 2026-08-11. E4L's own wording is held internally and is not reproduced.",
+     "provenance": "sourced",
+     "remedy_source": "FMP vl_bio_main_stress (category Scan), extract 2026-05-23 — Glen-authored product recommendations",
+     "integrator": [
+      "EI-4",
+      "EI-12"
+     ],
+     "meridian": "heart and spleen",
+     "element": "Fire",
+     "body_mind_theme": "creativity and giving birth to new life"
     },
     {
      "slug": "er-prostate",
@@ -6481,7 +6494,7 @@
      "name": "Breasts",
      "code": "ER69",
      "subcategory": "Energetic Rejuvenators (body structures)",
-     "description": "Breasts (Mamma Dextra, Mamma Sinistra), listed among the organ and tissue stresses. Associated emotional conflicts: Anger, Grief, Self-Worth. Supportive essences: Holly Flower Essence, Willow Flower Essence, Honeysuckle Flower Essence, Sweet Chestnut Flower Essence.",
+     "description": "Nurture, in both directions. On the stomach meridian and the Earth Element, with the rest of the taking-in group. The conflicts here are failing to nurture oneself, and the loss of a child. Because the breast also carries femininity, questioning of those qualities lands here, and deep anger can settle in the tissue.",
      "affects": [],
      "remedies": [
       {
@@ -6490,9 +6503,15 @@
        "catalog": "exact"
       }
      ],
-     "source": "ASSEMBLED from clinicaltheory Organs + e4l_pattern_structures + life_stress_emotion_map joined from sourced data, no new clinical claims",
-     "provenance": "assembled",
-     "remedy_source": "FMP vl_bio_main_stress (category Scan), extract 2026-05-23 — Glen-authored product recommendations"
+     "source": "Written for the public glossary from E4L's own scan panels and Glen's knowledge base, approved by Glen 2026-08-11. E4L's own wording is held internally and is not reproduced.",
+     "provenance": "sourced",
+     "remedy_source": "FMP vl_bio_main_stress (category Scan), extract 2026-05-23 — Glen-authored product recommendations",
+     "integrator": [
+      "EI-11"
+     ],
+     "meridian": "stomach",
+     "element": "Earth",
+     "body_mind_theme": "nurturing"
     },
     {
      "slug": "er-larynx-mucosa",
