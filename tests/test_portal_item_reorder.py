@@ -143,6 +143,49 @@ def test_item_reorder_absent_body_charges_curated_cart(client, monkeypatch):
     assert captured["lines"][0]["amount"] == 25.0  # curated special price, unchanged
 
 
+def test_curated_subset_can_be_submitted_for_checkout(client, monkeypatch):
+    """The review UI may remove any curated line and POST only what remains."""
+    c, appmod = client
+    tok = _seed_portal(appmod, content={
+        "greeting": "hi", "video": {}, "layers": [],
+        "reorder_items": [
+            {"slug": "nous-energy", "qty": 1, "price_cents": 2500},
+            {"slug": "neuro-magnesium", "qty": 1},
+        ],
+    })
+    ingested = {}
+    _mock_checkout(appmod, monkeypatch, capture_ingest=ingested)
+
+    r = c.post(f"/api/portal/{tok}/checkout",
+               json={"items": [{"slug": "neuro-magnesium", "qty": 1}]})
+
+    assert r.status_code == 200
+    assert [it["slug"] for it in ingested["items"]] == ["neuro-magnesium"]
+
+
+def test_portal_checkout_passes_itemized_lines_to_stripe(client, monkeypatch):
+    c, appmod = client
+    tok = _seed_portal(appmod, content={
+        "greeting": "hi", "video": {}, "layers": [],
+        "reorder_items": [{"slug": "nous-energy", "qty": 2, "price_cents": 2500}],
+    })
+    captured = {}
+    monkeypatch.setattr(appmod, "_ingest_order", lambda *a, **k: None)
+    monkeypatch.setattr(appmod, "_STRIPE_ACTIVE", True)
+
+    def fake_stripe(out, email):
+        captured.update(out)
+        return "https://checkout.stripe/itemized"
+
+    monkeypatch.setattr(appmod, "_stripe_checkout_url_for_reorder", fake_stripe)
+    r = c.post(f"/api/portal/{tok}/checkout")
+
+    assert r.status_code == 200
+    assert captured["stripe_line_items"] == [
+        {"name": "Nous Energy", "qty": 2, "unit_cents": 2500}
+    ]
+
+
 # ── (c) posting a slug NOT in the client's entitlement is rejected ──────────
 
 def test_item_reorder_rejects_unentitled_slug(client, monkeypatch):

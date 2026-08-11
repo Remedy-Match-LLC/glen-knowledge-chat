@@ -18735,14 +18735,21 @@ def _stripe_checkout_url_for_reorder(out, email):
             return ""
         success = (f"{PUBLIC_BASE_URL}/begin/checkout-return"
                    f"?session_id={{CHECKOUT_SESSION_ID}}")
-        sess = stripe_pay.create_checkout_session(
-            total_cents, customer_email=email,
-            description=f"Remedy Match reorder #{out.get('doc_number')}",
-            metadata={"invoice_id": out.get("invoice_id"),
-                      "customer_id": out.get("customer_id"), "kind": "reorder"},
-            success_url=success,
-            cancel_url=f"{PUBLIC_BASE_URL}/reorder",
-            collect_shipping=True)
+        metadata = {"invoice_id": out.get("invoice_id"),
+                    "customer_id": out.get("customer_id"), "kind": "reorder"}
+        cancel_url = out.get("cancel_url") or f"{PUBLIC_BASE_URL}/reorder"
+        stripe_items = out.get("stripe_line_items") or []
+        if stripe_items:
+            sess = stripe_pay.create_itemized_checkout_session(
+                stripe_items, customer_email=email, metadata=metadata,
+                success_url=success, cancel_url=cancel_url,
+                collect_shipping=True)
+        else:
+            sess = stripe_pay.create_checkout_session(
+                total_cents, customer_email=email,
+                description=f"Remedy Match reorder #{out.get('doc_number')}",
+                metadata=metadata, success_url=success,
+                cancel_url=cancel_url, collect_shipping=True)
         return sess.get("url") or ""
     except Exception as e:
         print(f"[stripe-reorder] session create failed: {e!r}", flush=True)
@@ -25444,6 +25451,12 @@ def api_client_portal_checkout(token):
                 entitled = entitled | _accepted_recommendation_slugs(_rcx, email)
         except Exception:
             pass  # entitlement-union failure must never break checkout
+        # The practitioner-curated list displayed in this portal is also an
+        # explicit authorization to purchase. This lets the client submit a
+        # reviewed subset instead of forcing the entire list into checkout.
+        curated = (portal.get("content") or {}).get("reorder_items") or []
+        entitled |= {(it.get("slug") or "").strip().lower()
+                     for it in curated if isinstance(it, dict) and it.get("slug")}
         if _WISHLIST_ENABLED:
             # The customer's own saved-and-chosen wishlist item is authorization
             # to buy it, same as an accepted recommendation. Union those slugs so
@@ -25501,8 +25514,14 @@ def api_client_portal_checkout(token):
         # line-faithful QBO Sales Receipt once the customer actually pays.
         checkout_ref = _uuid.uuid4().hex
         qbo_payload = {"lines": lines, "discount_cents": 0, "tax_cents": 0}
+        from urllib.parse import quote as _urlquote
         out = {"invoice_id": checkout_ref, "customer_id": "",
-               "doc_number": "", "total": round(subtotal_cents / 100.0, 2)}
+               "doc_number": "", "total": round(subtotal_cents / 100.0, 2),
+               "cancel_url": f"{portal_base()}/portal/{_urlquote(token, safe='')}",
+               "stripe_line_items": [
+                   {"name": it["name"], "qty": it["qty"],
+                    "unit_cents": it["unit_cents"]} for it in items_rec
+               ]}
         _ingest_order(source="portal-reorder", external_ref=checkout_ref, email=email,
                       name=ship.get("name", ""), items=items_rec,
                       total_cents=int(subtotal_cents),
