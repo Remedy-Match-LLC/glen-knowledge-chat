@@ -108,7 +108,7 @@
           ? "View remedy order cart with " + count + " item" + (count === 1 ? "" : "s")
           : "View remedy order cart");
       };
-      window.setPortalHeaderCartCount(0);
+      window.setPortalHeaderCartCount(window.__portalCartCount || 0);
       bar.appendChild(cartBtn);
     }
 

@@ -1497,7 +1497,8 @@ function renderUnifiedPortalCart(d){
   if(cartHost) cartHost.innerHTML = rows || '<p class="muted">Your cart is empty.</p>';
   const empty = document.getElementById('orderEmpty');
   if(empty) empty.hidden = !!items.length;
-  if(typeof window.setPortalHeaderCartCount === 'function') window.setPortalHeaderCartCount((d && d.count) || 0);
+  window.__portalCartCount = (d && d.count) || 0;
+  if(typeof window.setPortalHeaderCartCount === 'function') window.setPortalHeaderCartCount(window.__portalCartCount);
 }
 function loadCart(){
   fetch('/api/portal/' + encodeURIComponent(token) + '/cart', {credentials: 'same-origin'})
