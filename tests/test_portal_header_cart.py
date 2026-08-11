@@ -28,3 +28,5 @@ def test_header_cart_count_tracks_shared_remedy_basket():
     assert 'class="js-cart-badge"' in SHELL
     assert 'cartBadge.textContent = String(count)' in SHELL
     assert 'cartBadge.hidden = count === 0' in SHELL
+    assert 'window.setPortalHeaderCartCount(window.__portalCartCount || 0)' in SHELL
+    assert 'window.__portalCartCount = (d && d.count) || 0' in PORTAL
