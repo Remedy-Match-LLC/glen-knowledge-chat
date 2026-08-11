@@ -20049,9 +20049,9 @@ def _enabled_offer_keys() -> set:
 
 
 def _portal_priced_lines(items, email=None):
-    """Build QBO invoice lines from a portal's reorder items, honoring an optional
-    per-item ``price_cents`` override (the practitioner-published price), then the
-    client's saved per-SKU/FF-flat price; else a volume rate — the order-wide mix/match rate for a paid member, the same-SKU
+    """Build QBO invoice lines from a portal's reorder items, honoring the client's
+    current saved per-SKU/FF-flat price first, then an older per-item ``price_cents``
+    embedded in published portal content; else a volume rate — the order-wide mix/match rate for a paid member, the same-SKU
     (this line's own qty) rate for a non-member (Glen 2026-07 policy; see
     _inhouse_ff_unit_cents) — with a paid member's repertoire SKUs at their flat
     reorder rate (Task 5b — this is the ACTUAL checkout charge path, so it must
@@ -20086,14 +20086,15 @@ def _portal_priced_lines(items, email=None):
             qty = max(1, min(int(it.get("qty", 1) or 1), 99))
         except Exception:
             qty = 1
-        # The practitioner-baked line price remains the strongest override. For
-        # shared-basket items (which intentionally carry no browser-supplied
-        # price), apply the same saved client price shown throughout the portal.
-        override = it.get("price_cents")
-        if override is None and slug in client_by_slug:
+        # Current client pricing is authoritative across every cart source. An
+        # older practitioner-baked line price is only a fallback when no current
+        # saved per-SKU or eligible FF-flat price exists.
+        if slug in client_by_slug:
             override = client_by_slug[slug]
-        elif override is None and client_ff_flat is not None and _qty_eligible(p):
+        elif client_ff_flat is not None and _qty_eligible(p):
             override = int(client_ff_flat)
+        else:
+            override = it.get("price_cents")
         unit_cents = _inhouse_line_unit_cents(p, override, total_ff_qty, settings,
                                               repertoire_slugs=rep_slugs,
                                               program_member=program_member, line_qty=qty)
@@ -20973,9 +20974,10 @@ def api_client_portal(token):
     # Unified client FF pricing: for a reorder item with no per-item baked override,
     # the display price follows the same precedence the invoice pricer uses —
     # per-SKU client special, then the client's FF flat (client_prices.__all_ff__)
-    # for FF-eligible products. One number (set on the composer's Invoice panel)
+    # for FF-eligible products, then any older baked portal override. One number
+    # (set on the composer's Invoice panel)
     # drives both the invoice and the portal. Best-effort: a lookup failure just
-    # falls back to override-or-regular. Baked overrides on live portals still win.
+    # falls back to the baked override or regular price.
     _cp_ff_flat, _cp_by_slug = None, {}
     if email_for_reports:
         try:
@@ -20992,12 +20994,12 @@ def api_client_portal(token):
         p = _get_product(slug) if slug else None
         regular = (p or {}).get("price_cents")
         override = it.get("price_cents")
-        if override is not None:
-            special = int(override)
-        elif slug in _cp_by_slug:
+        if slug in _cp_by_slug:
             special = int(_cp_by_slug[slug])
         elif _cp_ff_flat is not None and p and _qty_eligible(p):
             special = int(_cp_ff_flat)
+        elif override is not None:
+            special = int(override)
         else:
             special = regular
         display.append({
