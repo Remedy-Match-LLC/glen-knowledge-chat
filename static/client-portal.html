@@ -1039,6 +1039,20 @@ function showTab(name){
   if (name === 'intake') initPortalIntakeCard(true);
 }
 
+function syncPortalHeaderCartCount(){
+  const count = Array.from(document.querySelectorAll("#curatedOrderItems .curated-order-item"))
+    .reduce((total, row) => total + Math.max(1, parseInt(row.getAttribute("data-qty"), 10) || 1), 0);
+  if(typeof window.setPortalHeaderCartCount === "function") window.setPortalHeaderCartCount(count);
+}
+function openPortalOrderBasket(){
+  showTab("current");
+  window.setTimeout(function(){
+    const card = document.getElementById("portal-order-basket");
+    if(card) card.scrollIntoView({behavior:"smooth", block:"start"});
+  }, 0);
+}
+window.openPortalOrderBasket = openPortalOrderBasket;
+
 // Stable deep links used by email/SMS CTAs. A hash names a destination, not a
 // fragile DOM layout: first reveal its owning panel, then focus/scroll the card.
 const PORTAL_HASH_ROUTES = {
@@ -3480,7 +3494,7 @@ function render(d, v){
       </div>`;
     });
     const note = d.pricing_note ? `<p class="note small">${esc(d.pricing_note)}</p>` : "";
-    html += `<div class="card"><h2>Order your remedies</h2>
+    html += `<div class="card" id="portal-order-basket"><h2>Order your remedies</h2>
       ${note}
       <div id="curatedOrderItems">${rows}</div>
       <p class="small muted" id="orderEmpty" ${rows ? "hidden" : ""}>Your basket is empty. Add remedies using any “Add to basket” button.</p>
@@ -4080,6 +4094,7 @@ function render(d, v){
     if(!removeBtn) return;
     const row = removeBtn.closest(".curated-order-item");
     if(row) row.remove();
+    syncPortalHeaderCartCount();
     const empty = document.getElementById("orderEmpty");
     if(empty) empty.hidden = !!document.querySelector("#curatedOrderItems .curated-order-item");
     const review = document.getElementById("reorderReview");
@@ -4122,6 +4137,8 @@ function render(d, v){
     }catch(e){ addStatus.textContent = e.message || "Could not add that remedy."; }
     finally{ addBtn.disabled = false; }
   });
+
+  syncPortalHeaderCartCount();
 
   app.querySelectorAll(".scan-order-btn").forEach(scanBtn => {
     scanBtn.addEventListener("click", async () => {
@@ -6440,6 +6457,7 @@ async function addItemToBasket(slug, qty=1){
   row.setAttribute("data-qty", Math.max(1, parseInt(qty, 10) || 1));
   row.innerHTML = `<span class="nm">${esc(item.name)}</span><span class="pr">${esc(money(item.price_cents))}</span><button type="button" class="wishRemBtn curated-remove" aria-label="Remove ${esc(item.name)} from this order">×</button>`;
   list.appendChild(row);
+  syncPortalHeaderCartCount();
   const empty = document.getElementById("orderEmpty");
   if(empty) empty.hidden = true;
   const review = document.getElementById("reorderReview");
