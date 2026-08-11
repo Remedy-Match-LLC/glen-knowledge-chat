@@ -91,18 +91,24 @@
     // Give it a persistent wayfinding control beside My Path without routing
     // members into the unrelated storefront cookie cart.
     if (/^\/portal\/(?:me|[^/]+)/.test(location.pathname)) {
-      var cartBtn = el("button", "js-mypath-btn js-portal-cart-btn", "Cart");
+      var cartBtn = el("button", "js-mypath-btn js-portal-cart-btn",
+        '<span class="js-cart-icon" aria-hidden="true">🛒</span>' +
+        '<span class="js-cart-label">Cart</span>' +
+        '<span class="js-cart-badge" aria-hidden="true">0</span>');
+      var cartBadge = cartBtn.querySelector(".js-cart-badge");
       cartBtn.setAttribute("aria-label", "View remedy order cart");
       cartBtn.onclick = function () {
         if (typeof window.openPortalOrderBasket === "function") window.openPortalOrderBasket(true);
       };
       window.setPortalHeaderCartCount = function (count) {
         count = Math.max(0, parseInt(count, 10) || 0);
-        cartBtn.textContent = count ? "Cart (" + count + ")" : "Cart";
+        cartBadge.textContent = String(count);
+        cartBadge.hidden = count === 0;
         cartBtn.setAttribute("aria-label", count
           ? "View remedy order cart with " + count + " item" + (count === 1 ? "" : "s")
           : "View remedy order cart");
       };
+      window.setPortalHeaderCartCount(0);
       bar.appendChild(cartBtn);
     }
 
