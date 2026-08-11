@@ -2107,7 +2107,12 @@
      "provenance": "sourced",
      "source": "01 Clinical/Life Journey, Essence Map.md, theme names from the E4L scan's Life Journey section; essence pairings from inventory; rationale model-drafted and reviewed by Glen (upgraded from unverified on his ruling, 2026-08-10)",
      "scan_position": 13,
-     "position_source": "Position read from E4L's own scan reports (Life Purpose section, 60 client PDFs)."
+     "position_source": "Position read from E4L's own scan reports (Life Purpose section, 60 client PDFs).",
+     "attraction_position": 8,
+     "paired_with": "Envy",
+     "also_on": [
+      "Emotional Attraction"
+     ]
     },
     {
      "slug": "lj-i-am-lovable",
@@ -2333,7 +2338,12 @@
       "deficient": "Hateful",
       "excess": "Obsessed"
      },
-     "spectrum_source": "E4L scan report, Life Journey section, harvested from 120 client PDFs (consistent across all of them)"
+     "spectrum_source": "E4L scan report, Life Journey section, harvested from 120 client PDFs (consistent across all of them)",
+     "attraction_position": 1,
+     "paired_with": "Fear",
+     "also_on": [
+      "Emotional Attraction"
+     ]
     },
     {
      "slug": "lj-focus",
@@ -2410,7 +2420,12 @@
       "deficient": "Thankless",
       "excess": "Obliged"
      },
-     "spectrum_source": "E4L scan report, Life Journey section, harvested from 120 client PDFs (consistent across all of them)"
+     "spectrum_source": "E4L scan report, Life Journey section, harvested from 120 client PDFs (consistent across all of them)",
+     "attraction_position": 9,
+     "paired_with": "Grief",
+     "also_on": [
+      "Emotional Attraction"
+     ]
     },
     {
      "slug": "lj-willpower",
@@ -2467,7 +2482,12 @@
       "deficient": "Indifferent",
       "excess": "Empathic"
      },
-     "spectrum_source": "E4L scan report, Life Journey section, harvested from 120 client PDFs (consistent across all of them)"
+     "spectrum_source": "E4L scan report, Life Journey section, harvested from 120 client PDFs (consistent across all of them)",
+     "attraction_position": 2,
+     "paired_with": "Despair",
+     "also_on": [
+      "Emotional Attraction"
+     ]
     },
     {
      "slug": "lj-trust",
@@ -2487,7 +2507,12 @@
       "deficient": "Suspicious",
       "excess": "Gullible"
      },
-     "spectrum_source": "E4L scan report, Life Journey section, harvested from 120 client PDFs (consistent across all of them)"
+     "spectrum_source": "E4L scan report, Life Journey section, harvested from 120 client PDFs (consistent across all of them)",
+     "attraction_position": 5,
+     "paired_with": "Shock",
+     "also_on": [
+      "Emotional Attraction"
+     ]
     },
     {
      "slug": "lj-intention-ed1",
@@ -2514,7 +2539,9 @@
       "name": "Source",
       "relation": "experiential/consciousness aspect",
       "note": "Glen's ruling 2026-08-10: the experiential and consciousness aspect of the organ/tissue finding carried by this ED code. A valid cross-map, not a mis-merge."
-     }
+     },
+     "cycle_position": 1,
+     "driver": "ED1"
     },
     {
      "slug": "lj-communicate-ed2",
@@ -2536,7 +2563,9 @@
       "name": "Heart Imprinter",
       "relation": "experiential/consciousness aspect",
       "note": "Glen's ruling 2026-08-10: the experiential and consciousness aspect of the organ/tissue finding carried by this ED code. A valid cross-map, not a mis-merge."
-     }
+     },
+     "cycle_position": 2,
+     "driver": "ED2"
     },
     {
      "slug": "lj-identity-ed3",
@@ -2563,7 +2592,9 @@
       "name": "Cell",
       "relation": "experiential/consciousness aspect",
       "note": "Glen's ruling 2026-08-10: the experiential and consciousness aspect of the organ/tissue finding carried by this ED code. A valid cross-map, not a mis-merge."
-     }
+     },
+     "cycle_position": 3,
+     "driver": "ED3"
     },
     {
      "slug": "lj-emotion-ed6",
@@ -2588,7 +2619,9 @@
       "name": "Heart",
       "relation": "experiential/consciousness aspect",
       "note": "Glen's ruling 2026-08-10: the experiential and consciousness aspect of the organ/tissue finding carried by this ED code. A valid cross-map, not a mis-merge."
-     }
+     },
+     "cycle_position": 6,
+     "driver": "ED6"
     },
     {
      "slug": "lj-boundary-ed10",
@@ -2612,7 +2645,9 @@
       "name": "Skin",
       "relation": "experiential/consciousness aspect",
       "note": "Glen's ruling 2026-08-10: the experiential and consciousness aspect of the organ/tissue finding carried by this ED code. A valid cross-map, not a mis-merge."
-     }
+     },
+     "cycle_position": 10,
+     "driver": "ED10"
     },
     {
      "slug": "lj-transform-ed11",
@@ -2637,7 +2672,9 @@
       "name": "Liver",
       "relation": "experiential/consciousness aspect",
       "note": "Glen's ruling 2026-08-10: the experiential and consciousness aspect of the organ/tissue finding carried by this ED code. A valid cross-map, not a mis-merge."
-     }
+     },
+     "cycle_position": 11,
+     "driver": "ED11"
     },
     {
      "slug": "lj-centred-ed14",
@@ -2662,7 +2699,9 @@
       "name": "Spleen",
       "relation": "experiential/consciousness aspect",
       "note": "Glen's ruling 2026-08-10: the experiential and consciousness aspect of the organ/tissue finding carried by this ED code. A valid cross-map, not a mis-merge."
-     }
+     },
+     "cycle_position": 14,
+     "driver": "ED14"
     },
     {
      "slug": "lj-flow-ed5",
@@ -2684,7 +2723,9 @@
       "name": "Circulation",
       "relation": "experiential/consciousness aspect",
       "note": "Glen's ruling 2026-08-10: the experiential and consciousness aspect of the organ/tissue finding carried by this ED code. A valid cross-map, not a mis-merge."
-     }
+     },
+     "cycle_position": 5,
+     "driver": "ED5"
     },
     {
      "slug": "lj-calm",
@@ -2771,7 +2812,12 @@
       "deficient": "Depressed",
       "excess": "Ecstatic"
      },
-     "spectrum_source": "E4L scan report, Life Journey section, harvested from 120 client PDFs (consistent across all of them)"
+     "spectrum_source": "E4L scan report, Life Journey section, harvested from 120 client PDFs (consistent across all of them)",
+     "attraction_position": 3,
+     "paired_with": "Guilt",
+     "also_on": [
+      "Emotional Attraction"
+     ]
     },
     {
      "slug": "lj-prudence",
@@ -2949,7 +2995,15 @@
      "remedies": [],
      "provenance": "name-only",
      "name_provenance": "sourced",
-     "source": "E4L scan report, Archetypes section, harvested from 120 client PDFs (consistent across all of them). The report describes the archetypes as a group, not one by one."
+     "source": "E4L scan report, Archetypes section, harvested from 120 client PDFs (consistent across all of them). The report describes the archetypes as a group, not one by one.",
+     "spectrum": {
+      "deficient": "Hurts Oneself",
+      "excess": "Hurts Others"
+     },
+     "spectrum_source": "Written for the public glossary from E4L's own scan screens, structure recorded from the same source. E4L's wording is held internally and not reproduced.",
+     "also_on": [
+      "Unconscious Patterns"
+     ]
     },
     {
      "slug": "arch-lover",
@@ -2961,7 +3015,15 @@
      "remedies": [],
      "provenance": "name-only",
      "name_provenance": "sourced",
-     "source": "E4L scan report, Archetypes section, harvested from 120 client PDFs (consistent across all of them). The report describes the archetypes as a group, not one by one."
+     "source": "E4L scan report, Archetypes section, harvested from 120 client PDFs (consistent across all of them). The report describes the archetypes as a group, not one by one.",
+     "spectrum": {
+      "deficient": "Powerless",
+      "excess": "Addicted"
+     },
+     "spectrum_source": "Written for the public glossary from E4L's own scan screens, structure recorded from the same source. E4L's wording is held internally and not reproduced.",
+     "also_on": [
+      "Unconscious Patterns"
+     ]
     },
     {
      "slug": "arch-jester",
@@ -3178,6 +3240,424 @@
      "source": "E4L scan report, Hero's Journey section, harvested from 80 client PDFs (identical in all)",
      "heros_journey_position": 12,
      "heros_journey_source": "E4L scan report, Hero's Journey section, harvested from 80 client PDFs (identical in all)"
+    },
+    {
+     "slug": "lj-awareness-ed4",
+     "name": "Awareness (ED4)",
+     "code": "LJ-ed4",
+     "subcategory": "Creative Cycle",
+     "description": "Feedback: sensing the environment and yourself, and coming back to your senses. The nervous system is the network that makes noticing possible.",
+     "affects": [],
+     "remedies": [],
+     "provenance": "sourced",
+     "source": "Written for the public glossary from E4L's own scan screens, structure recorded from the same source. E4L's wording is held internally and not reproduced.",
+     "cycle_position": 4,
+     "driver": "ED4",
+     "cross_map": {
+      "dimension": "ed",
+      "code": "ED4",
+      "relation": "experiential/consciousness aspect",
+      "note": "The Creative Cycle position is the Energy Driver number; E4L labels these with the Driver outright."
+     }
+    },
+    {
+     "slug": "lj-exchange-ed7",
+     "name": "Exchange (ED7)",
+     "code": "LJ-ed7",
+     "subcategory": "Creative Cycle",
+     "description": "Give and take, and the rhythm between them. Receiving as well as releasing, which is where most people are lopsided.",
+     "affects": [],
+     "remedies": [],
+     "provenance": "sourced",
+     "source": "Written for the public glossary from E4L's own scan screens, structure recorded from the same source. E4L's wording is held internally and not reproduced.",
+     "cycle_position": 7,
+     "driver": "ED7",
+     "cross_map": {
+      "dimension": "ed",
+      "code": "ED7",
+      "relation": "experiential/consciousness aspect",
+      "note": "The Creative Cycle position is the Energy Driver number; E4L labels these with the Driver outright."
+     }
+    },
+    {
+     "slug": "lj-assimilate-ed8",
+     "name": "Assimilate (ED8)",
+     "code": "LJ-ed8",
+     "subcategory": "Creative Cycle",
+     "description": "Taking the good in and breaking it into pieces small enough to use. Nourishment, and the satisfaction that follows it.",
+     "affects": [],
+     "remedies": [],
+     "provenance": "sourced",
+     "source": "Written for the public glossary from E4L's own scan screens, structure recorded from the same source. E4L's wording is held internally and not reproduced.",
+     "cycle_position": 8,
+     "driver": "ED8",
+     "cross_map": {
+      "dimension": "ed",
+      "code": "ED8",
+      "relation": "experiential/consciousness aspect",
+      "note": "The Creative Cycle position is the Energy Driver number; E4L labels these with the Driver outright."
+     }
+    },
+    {
+     "slug": "lj-animate-ed9",
+     "name": "Animate (ED9)",
+     "code": "LJ-ed9",
+     "subcategory": "Creative Cycle",
+     "description": "Expression and movement: independence, cooperation, and the strength and stamina to act on either.",
+     "affects": [],
+     "remedies": [],
+     "provenance": "sourced",
+     "source": "Written for the public glossary from E4L's own scan screens, structure recorded from the same source. E4L's wording is held internally and not reproduced.",
+     "cycle_position": 9,
+     "driver": "ED9",
+     "cross_map": {
+      "dimension": "ed",
+      "code": "ED9",
+      "relation": "experiential/consciousness aspect",
+      "note": "The Creative Cycle position is the Energy Driver number; E4L labels these with the Driver outright."
+     }
+    },
+    {
+     "slug": "lj-analyze-ed12",
+     "name": "Analyze (ED12)",
+     "code": "LJ-ed12",
+     "subcategory": "Creative Cycle",
+     "description": "Distinguishing real from perceived, and deciding what you actually want. The filter that keeps inner balance honest.",
+     "affects": [],
+     "remedies": [],
+     "provenance": "sourced",
+     "source": "Written for the public glossary from E4L's own scan screens, structure recorded from the same source. E4L's wording is held internally and not reproduced.",
+     "cycle_position": 12,
+     "driver": "ED12",
+     "cross_map": {
+      "dimension": "ed",
+      "code": "ED12",
+      "relation": "experiential/consciousness aspect",
+      "note": "The Creative Cycle position is the Energy Driver number; E4L labels these with the Driver outright."
+     }
+    },
+    {
+     "slug": "lj-security-ed13",
+     "name": "Security (ED13)",
+     "code": "LJ-ed13",
+     "subcategory": "Creative Cycle",
+     "description": "Being decisive and committed enough to face things. Instinct, and knowing what is yours to stand on.",
+     "affects": [],
+     "remedies": [],
+     "provenance": "sourced",
+     "source": "Written for the public glossary from E4L's own scan screens, structure recorded from the same source. E4L's wording is held internally and not reproduced.",
+     "cycle_position": 13,
+     "driver": "ED13",
+     "cross_map": {
+      "dimension": "ed",
+      "code": "ED13",
+      "relation": "experiential/consciousness aspect",
+      "note": "The Creative Cycle position is the Energy Driver number; E4L labels these with the Driver outright."
+     }
+    },
+    {
+     "slug": "lj-manage-ed15",
+     "name": "Manage (ED15)",
+     "code": "LJ-ed15",
+     "subcategory": "Creative Cycle",
+     "description": "Regulating and coordinating: directing energy rather than merely producing it, and delegating what is not yours.",
+     "affects": [],
+     "remedies": [],
+     "provenance": "sourced",
+     "source": "Written for the public glossary from E4L's own scan screens, structure recorded from the same source. E4L's wording is held internally and not reproduced.",
+     "cycle_position": 15,
+     "driver": "ED15",
+     "cross_map": {
+      "dimension": "ed",
+      "code": "ED15",
+      "relation": "experiential/consciousness aspect",
+      "note": "The Creative Cycle position is the Energy Driver number; E4L labels these with the Driver outright."
+     }
+    },
+    {
+     "slug": "lj-support-ed16",
+     "name": "Support (ED16)",
+     "code": "LJ-ed16",
+     "subcategory": "Creative Cycle",
+     "description": "Structure and network. What absorbs the knocks, holds the attachment, and completes the matrix everything else rests on.",
+     "affects": [],
+     "remedies": [],
+     "provenance": "sourced",
+     "source": "Written for the public glossary from E4L's own scan screens, structure recorded from the same source. E4L's wording is held internally and not reproduced.",
+     "cycle_position": 16,
+     "driver": "ED16",
+     "cross_map": {
+      "dimension": "ed",
+      "code": "ED16",
+      "relation": "experiential/consciousness aspect",
+      "note": "The Creative Cycle position is the Energy Driver number; E4L labels these with the Driver outright."
+     }
+    },
+    {
+     "slug": "lj-fear",
+     "name": "Fear",
+     "code": "LJ-ea-1-fear",
+     "subcategory": "Emotional Attraction",
+     "description": "Anticipation of pain or danger that has not arrived. Fear lives in the future rather than the present, which is why it cannot be resolved there.",
+     "affects": [],
+     "remedies": [],
+     "provenance": "sourced",
+     "source": "Written for the public glossary from E4L's own scan screens, structure recorded from the same source. E4L's wording is held internally and not reproduced.",
+     "attraction_position": 1,
+     "paired_with": "Love"
+    },
+    {
+     "slug": "lj-despair",
+     "name": "Despair",
+     "code": "LJ-ea-2-despair",
+     "subcategory": "Emotional Attraction",
+     "description": "The collapse of the sense that anything can change.",
+     "affects": [],
+     "remedies": [],
+     "provenance": "sourced",
+     "source": "Written for the public glossary from E4L's own scan screens, structure recorded from the same source. E4L's wording is held internally and not reproduced.",
+     "attraction_position": 2,
+     "paired_with": "Compassion"
+    },
+    {
+     "slug": "lj-guilt",
+     "name": "Guilt",
+     "code": "LJ-ea-3-guilt",
+     "subcategory": "Emotional Attraction",
+     "description": "The verdict carried forward about something already done.",
+     "affects": [],
+     "remedies": [],
+     "provenance": "sourced",
+     "source": "Written for the public glossary from E4L's own scan screens, structure recorded from the same source. E4L's wording is held internally and not reproduced.",
+     "attraction_position": 3,
+     "paired_with": "Joy"
+    },
+    {
+     "slug": "lj-peace",
+     "name": "Peace",
+     "code": "LJ-ea-4-peace",
+     "subcategory": "Emotional Attraction",
+     "description": "Settledness that does not depend on circumstances staying still.",
+     "affects": [],
+     "remedies": [],
+     "provenance": "sourced",
+     "source": "Written for the public glossary from E4L's own scan screens, structure recorded from the same source. E4L's wording is held internally and not reproduced.",
+     "attraction_position": 4,
+     "paired_with": "Anger"
+    },
+    {
+     "slug": "lj-anger",
+     "name": "Anger",
+     "code": "LJ-ea-4-anger",
+     "subcategory": "Emotional Attraction",
+     "description": "The force that rises when a boundary is crossed, useful when it moves and corrosive when it does not.",
+     "affects": [],
+     "remedies": [],
+     "provenance": "sourced",
+     "source": "Written for the public glossary from E4L's own scan screens, structure recorded from the same source. E4L's wording is held internally and not reproduced.",
+     "attraction_position": 4,
+     "paired_with": "Peace"
+    },
+    {
+     "slug": "lj-shock",
+     "name": "Shock",
+     "code": "LJ-ea-5-shock",
+     "subcategory": "Emotional Attraction",
+     "description": "The system arrested mid-response, holding a moment that has not finished.",
+     "affects": [],
+     "remedies": [],
+     "provenance": "sourced",
+     "source": "Written for the public glossary from E4L's own scan screens, structure recorded from the same source. E4L's wording is held internally and not reproduced.",
+     "attraction_position": 5,
+     "paired_with": "Trust"
+    },
+    {
+     "slug": "lj-acceptance",
+     "name": "Acceptance",
+     "code": "LJ-ea-6-acceptance",
+     "subcategory": "Emotional Attraction",
+     "description": "Meeting what is, without the argument that it should be otherwise.",
+     "affects": [],
+     "remedies": [],
+     "provenance": "sourced",
+     "source": "Written for the public glossary from E4L's own scan screens, structure recorded from the same source. E4L's wording is held internally and not reproduced.",
+     "attraction_position": 6,
+     "paired_with": "Resentment"
+    },
+    {
+     "slug": "lj-resentment",
+     "name": "Resentment",
+     "code": "LJ-ea-6-resentment",
+     "subcategory": "Emotional Attraction",
+     "description": "Anger that has gone quiet and stayed.",
+     "affects": [],
+     "remedies": [],
+     "provenance": "sourced",
+     "source": "Written for the public glossary from E4L's own scan screens, structure recorded from the same source. E4L's wording is held internally and not reproduced.",
+     "attraction_position": 6,
+     "paired_with": "Acceptance"
+    },
+    {
+     "slug": "lj-contentment",
+     "name": "Contentment",
+     "code": "LJ-ea-7-contentment",
+     "subcategory": "Emotional Attraction",
+     "description": "Enough, recognised as enough.",
+     "affects": [],
+     "remedies": [],
+     "provenance": "sourced",
+     "source": "Written for the public glossary from E4L's own scan screens, structure recorded from the same source. E4L's wording is held internally and not reproduced.",
+     "attraction_position": 7,
+     "paired_with": "Abandonment"
+    },
+    {
+     "slug": "lj-abandonment",
+     "name": "Abandonment",
+     "code": "LJ-ea-7-abandonment",
+     "subcategory": "Emotional Attraction",
+     "description": "The expectation that support will withdraw, learned once and applied since.",
+     "affects": [],
+     "remedies": [],
+     "provenance": "sourced",
+     "source": "Written for the public glossary from E4L's own scan screens, structure recorded from the same source. E4L's wording is held internally and not reproduced.",
+     "attraction_position": 7,
+     "paired_with": "Contentment"
+    },
+    {
+     "slug": "lj-envy",
+     "name": "Envy",
+     "code": "LJ-ea-8-envy",
+     "subcategory": "Emotional Attraction",
+     "description": "Wanting what another has, and the self-diminishment that rides along.",
+     "affects": [],
+     "remedies": [],
+     "provenance": "sourced",
+     "source": "Written for the public glossary from E4L's own scan screens, structure recorded from the same source. E4L's wording is held internally and not reproduced.",
+     "attraction_position": 8,
+     "paired_with": "Humility"
+    },
+    {
+     "slug": "lj-grief",
+     "name": "Grief",
+     "code": "LJ-ea-9-grief",
+     "subcategory": "Emotional Attraction",
+     "description": "Love with nowhere left to land.",
+     "affects": [],
+     "remedies": [],
+     "provenance": "sourced",
+     "source": "Written for the public glossary from E4L's own scan screens, structure recorded from the same source. E4L's wording is held internally and not reproduced.",
+     "attraction_position": 9,
+     "paired_with": "Gratitude"
+    },
+    {
+     "slug": "lj-empowerment",
+     "name": "Empowerment",
+     "code": "LJ-ea-10-empowerment",
+     "subcategory": "Emotional Attraction",
+     "description": "The sense that your action changes something.",
+     "affects": [],
+     "remedies": [],
+     "provenance": "sourced",
+     "source": "Written for the public glossary from E4L's own scan screens, structure recorded from the same source. E4L's wording is held internally and not reproduced.",
+     "attraction_position": 10,
+     "paired_with": "Worry"
+    },
+    {
+     "slug": "lj-worry",
+     "name": "Worry",
+     "code": "LJ-ea-10-worry",
+     "subcategory": "Emotional Attraction",
+     "description": "Rehearsal of a future you cannot act on yet.",
+     "affects": [],
+     "remedies": [],
+     "provenance": "sourced",
+     "source": "Written for the public glossary from E4L's own scan screens, structure recorded from the same source. E4L's wording is held internally and not reproduced.",
+     "attraction_position": 10,
+     "paired_with": "Empowerment"
+    },
+    {
+     "slug": "lj-meaningfulness",
+     "name": "Meaningfulness",
+     "code": "LJ-ea-11-meaningfulness",
+     "subcategory": "Emotional Attraction",
+     "description": "The sense that what you do connects to something beyond the doing.",
+     "affects": [],
+     "remedies": [],
+     "provenance": "sourced",
+     "source": "Written for the public glossary from E4L's own scan screens, structure recorded from the same source. E4L's wording is held internally and not reproduced.",
+     "attraction_position": 11,
+     "paired_with": "Blame"
+    },
+    {
+     "slug": "lj-blame",
+     "name": "Blame",
+     "code": "LJ-ea-11-blame",
+     "subcategory": "Emotional Attraction",
+     "description": "Locating a cause outside yourself so the feeling has somewhere to go.",
+     "affects": [],
+     "remedies": [],
+     "provenance": "sourced",
+     "source": "Written for the public glossary from E4L's own scan screens, structure recorded from the same source. E4L's wording is held internally and not reproduced.",
+     "attraction_position": 11,
+     "paired_with": "Meaningfulness"
+    },
+    {
+     "slug": "lj-security",
+     "name": "Security",
+     "code": "LJ-ea-12-security",
+     "subcategory": "Emotional Attraction",
+     "description": "Ground beneath you that you do not have to keep checking.",
+     "affects": [],
+     "remedies": [],
+     "provenance": "sourced",
+     "source": "Written for the public glossary from E4L's own scan screens, structure recorded from the same source. E4L's wording is held internally and not reproduced.",
+     "attraction_position": 12,
+     "paired_with": "Regret"
+    },
+    {
+     "slug": "lj-regret",
+     "name": "Regret",
+     "code": "LJ-ea-12-regret",
+     "subcategory": "Emotional Attraction",
+     "description": "The wish to have chosen otherwise, aimed at a moment now closed.",
+     "affects": [],
+     "remedies": [],
+     "provenance": "sourced",
+     "source": "Written for the public glossary from E4L's own scan screens, structure recorded from the same source. E4L's wording is held internally and not reproduced.",
+     "attraction_position": 12,
+     "paired_with": "Security"
+    },
+    {
+     "slug": "lj-king-and-queen",
+     "name": "King and Queen",
+     "code": "LJ-up-king-and-queen",
+     "subcategory": "Unconscious Patterns",
+     "description": "The most complete of the four, holding warrior, magician and lover in balance. It fails in two directions: collapsing into helplessness, or ruling by force.",
+     "affects": [],
+     "remedies": [],
+     "provenance": "sourced",
+     "source": "Written for the public glossary from E4L's own scan screens, structure recorded from the same source. E4L's wording is held internally and not reproduced.",
+     "spectrum": {
+      "deficient": "Helpless",
+      "excess": "Bully"
+     },
+     "spectrum_source": "Written for the public glossary from E4L's own scan screens, structure recorded from the same source. E4L's wording is held internally and not reproduced."
+    },
+    {
+     "slug": "lj-magician",
+     "name": "Magician",
+     "code": "LJ-up-magician",
+     "subcategory": "Unconscious Patterns",
+     "description": "The one who knows how things work. Unowned, that knowledge does damage while claiming innocence; owned badly, it manipulates.",
+     "affects": [],
+     "remedies": [],
+     "provenance": "sourced",
+     "source": "Written for the public glossary from E4L's own scan screens, structure recorded from the same source. E4L's wording is held internally and not reproduced.",
+     "spectrum": {
+      "deficient": "Innocent Perpetrator",
+      "excess": "Manipulator"
+     },
+     "spectrum_source": "Written for the public glossary from E4L's own scan screens, structure recorded from the same source. E4L's wording is held internally and not reproduced."
     }
    ],
    "subcategory_notes": {

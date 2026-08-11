@@ -7916,7 +7916,11 @@ def begin_product_data(slug):
         formats = _FORMATS
     _comp = p.get("competitor") if isinstance(p.get("competitor"), dict) else None
     data = {
-        "slug": slug, "name": p["name"],
+        # display_name lets a page title differ from the QBO/invoice identity in `name`.
+        # Immune Intelligence is sold under the brand "Happy Cow Colostrum", so a client
+        # arriving from an Immune Intelligence recommendation would otherwise land on a
+        # page titled something else. Invoices are unaffected.
+        "slug": slug, "name": p.get("display_name") or p["name"],
         "price_cents": p["price_cents"], "price": f"${p['price_cents']/100:.2f}",
         # Real product photo (physical goods). Optional: only apparel/devices carry it.
         "image": p.get("image", ""),
