@@ -14,7 +14,7 @@ def test_portal_shell_cart_sits_before_my_path_and_is_portal_only():
 
 
 def test_header_cart_opens_remedy_order_basket_not_storefront_cart():
-    assert 'window.openPortalOrderBasket' in SHELL
+    assert 'window.openPortalOrderBasket(true)' in SHELL
     assert 'showTab("current")' in PORTAL
     assert 'id="portal-order-basket"' in PORTAL
     assert 'document.getElementById("portal-order-basket")' in PORTAL

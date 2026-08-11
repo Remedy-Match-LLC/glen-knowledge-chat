@@ -23386,9 +23386,123 @@ def api_portal_order_catalog(token):
     return jsonify({"products": matches})
 
 
+def _portal_open_cart(cx, portal, *, seed=True):
+    """Resolve the one persistent cart owned by a portal member.
+
+    The portal token supplies identity, so this does not depend on funnel/login
+    cookies. The browser's anonymous storefront cart is folded into that member
+    cart when present. Practitioner-curated remedies are seeded exactly once per
+    member/SKU; removing one therefore remains removed on refresh.
+    """
+    email = (portal.get("email") or "").strip().lower()
+    _cart_store.init_cart_tables(cx)
+    anon_token = _cart_token_from_cookie()
+    token = _cart_store.merge(cx, anon_token, email)
+    if not seed:
+        return token
+    cx.execute(
+        "CREATE TABLE IF NOT EXISTS portal_cart_seeded ("
+        "email TEXT NOT NULL, slug TEXT NOT NULL, seeded_at TEXT NOT NULL, "
+        "PRIMARY KEY(email, slug))"
+    )
+    curated = (portal.get("content") or {}).get("reorder_items") or []
+    try:
+        curated = _merge_accepted_recommendation_items(cx, email, curated)
+    except Exception:
+        pass
+    for item in curated:
+        slug = (item.get("slug") or "").strip().lower() if isinstance(item, dict) else ""
+        if not slug or not _get_product(slug):
+            continue
+        already = cx.execute(
+            "SELECT 1 FROM portal_cart_seeded WHERE email=? AND slug=?", (email, slug)
+        ).fetchone()
+        if already:
+            continue
+        try:
+            qty = max(1, min(int(item.get("qty", 1) or 1), 99))
+        except Exception:
+            qty = 1
+        _cart_store.add_item(cx, token, slug, qty=qty, source="portal-curated")
+        try:
+            cx.execute(
+                "INSERT INTO portal_cart_seeded(email, slug, seeded_at) VALUES (?,?,?)",
+                (email, slug, datetime.now(timezone.utc).isoformat()))
+            cx.commit()
+        except Exception:
+            cx.rollback()  # a concurrent seed won; the cart add is idempotently bounded
+    return token
+
+
+def _portal_cart_response(portal, *, seed=True):
+    email = (portal.get("email") or "").strip().lower()
+    with db.connect(LOG_DB) as cx:
+        cart_token = _portal_open_cart(cx, portal, seed=seed)
+        payload = _portal_cart_payload(cx, cart_token, portal)
+    resp = jsonify(payload)
+    if cart_token != _cart_token_from_cookie():
+        resp.set_cookie(_CART_COOKIE, cart_token, max_age=60 * 60 * 24 * 365,
+                        httponly=True, samesite="Lax", secure=request.is_secure)
+    return resp
+
+
+def _portal_cart_payload(cx, cart_token, portal):
+    email = (portal.get("email") or "").strip().lower()
+    payload = _cart_payload(cx, cart_token)
+    raw_items = payload.get("items") or []
+    # Preserve practitioner-specific prices from the curated order while cart
+    # quantities live in the canonical cart table. The generic cart rows do not
+    # carry prices (intentionally), so pricing is always reconstructed server-side.
+    curated_by_slug = {
+        (it.get("slug") or "").strip().lower(): it
+        for it in ((portal.get("content") or {}).get("reorder_items") or [])
+        if isinstance(it, dict) and it.get("slug")
+    }
+    price_input = []
+    for item in raw_items:
+        priced_item = dict(item)
+        curated = curated_by_slug.get(item["slug"]) or {}
+        if curated.get("price_cents") is not None:
+            priced_item["price_cents"] = curated["price_cents"]
+        price_input.append(priced_item)
+    _lines, priced, _subtotal = _portal_priced_lines(price_input, email=email)
+    priced_by_slug = {item["slug"]: item for item in priced}
+    for item in raw_items:
+        detail = priced_by_slug.get(item["slug"]) or {}
+        product = _get_product(item["slug"]) or {}
+        item["price_cents"] = detail.get("unit_cents")
+        item["regular_price_cents"] = product.get("price_cents")
+        item["is_special"] = bool(
+            item["price_cents"] is not None and item["regular_price_cents"] is not None
+            and int(item["price_cents"]) < int(item["regular_price_cents"]))
+    return payload
+
+
+@app.route("/api/portal/<token>/cart", methods=["GET"])
+def api_portal_cart(token):
+    with db.connect(LOG_DB) as cx:
+        portal = _portal_record_for(cx, token)
+    if not portal:
+        return jsonify({"error": "not found"}), 404
+    return _portal_cart_response(portal)
+
+
+@app.route("/api/portal/<token>/cart/set-qty", methods=["POST"])
+def api_portal_cart_set_qty(token):
+    data = request.get_json(silent=True) or {}
+    with db.connect(LOG_DB) as cx:
+        portal = _portal_record_for(cx, token)
+        if not portal:
+            return jsonify({"error": "not found"}), 404
+        cart_token = _portal_open_cart(cx, portal)
+        _cart_store.set_qty(cx, cart_token, data.get("slug"), data.get("format", ""),
+                            data.get("qty", 0))
+        return jsonify(_portal_cart_payload(cx, cart_token, portal))
+
+
 @app.route("/api/portal/<token>/order-add", methods=["POST"])
 def api_portal_order_add(token):
-    """Authorize and price one catalog remedy for the portal's current order."""
+    """Add one catalog remedy to the member's single persistent portal cart."""
     from dashboard import wishlist as _wl
     slug = ((request.get_json(silent=True) or {}).get("slug") or "").strip().lower()
     with db.connect(LOG_DB) as cx:
@@ -23411,11 +23525,22 @@ def api_portal_order_add(token):
         owner = _wl.resolve_owner(email, None)
         if slug not in _wl.slugs_for(cx, owner):
             _wl.toggle(cx, owner, slug)
+        cart_token = _portal_open_cart(cx, portal)
+        try:
+            qty = max(1, min(int((request.get_json(silent=True) or {}).get("qty", 1) or 1), 99))
+        except Exception:
+            qty = 1
+        _cart_store.add_item(cx, cart_token, slug, qty=qty, source="portal-order")
+        cart_payload = _portal_cart_payload(cx, cart_token, portal)
     item = items_rec[0]
-    return jsonify({"ok": True, "item": {
+    response = jsonify({"ok": True, "item": {
         "slug": item["slug"], "name": item["name"], "qty": item["qty"],
         "price_cents": item["unit_cents"],
-    }})
+    }, "cart": cart_payload})
+    if cart_token != _cart_token_from_cookie():
+        response.set_cookie(_CART_COOKIE, cart_token, max_age=60 * 60 * 24 * 365,
+                            httponly=True, samesite="Lax", secure=request.is_secure)
+    return response
 
 
 @app.route("/api/portal/<token>/scene-pref", methods=["POST"])

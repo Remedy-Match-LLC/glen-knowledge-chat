@@ -227,12 +227,57 @@ def test_life_stress_essence_can_join_the_same_portal_basket(client):
     assert added.get_json()["item"]["slug"] == slug
 
 
+def test_portal_cart_is_persistent_shared_and_removed_curated_item_stays_removed(client):
+    c, appmod = client
+    tok = _seed_portal(appmod, email="one-cart@example.com", content={
+        "greeting": "hi", "video": {}, "layers": [],
+        "reorder_items": [{"slug": "nous-energy", "qty": 1, "price_cents": 2500}],
+    })
+
+    seeded = c.get(f"/api/portal/{tok}/cart")
+    assert seeded.status_code == 200
+    assert [(i["slug"], i["qty"]) for i in seeded.get_json()["items"]] == [
+        ("nous-energy", 1)]
+    assert seeded.get_json()["items"][0]["price_cents"] == 2500
+    assert seeded.get_json()["items"][0]["is_special"] is True
+
+    added = c.post(f"/api/portal/{tok}/order-add",
+                   json={"slug": "neuro-magnesium", "qty": 2})
+    assert added.status_code == 200
+    assert {(i["slug"], i["qty"]) for i in added.get_json()["cart"]["items"]} == {
+        ("nous-energy", 1), ("neuro-magnesium", 2)}
+
+    removed = c.post(f"/api/portal/{tok}/cart/set-qty",
+                     json={"slug": "nous-energy", "qty": 0})
+    assert removed.status_code == 200
+    assert [i["slug"] for i in removed.get_json()["items"]] == ["neuro-magnesium"]
+    # The curated seed is one-time: refresh/navigation must not resurrect it.
+    refreshed = c.get(f"/api/portal/{tok}/cart")
+    assert [i["slug"] for i in refreshed.get_json()["items"]] == ["neuro-magnesium"]
+
+
+def test_repeat_order_button_adds_quantity_to_same_cart_row(client):
+    c, appmod = client
+    tok = _seed_portal(appmod, email="repeat-add@example.com", content={
+        "greeting": "hi", "video": {}, "layers": [], "reorder_items": [],
+    })
+    c.post(f"/api/portal/{tok}/order-add", json={"slug": "nous-energy"})
+    again = c.post(f"/api/portal/{tok}/order-add", json={"slug": "nous-energy"})
+    items = again.get_json()["cart"]["items"]
+    assert len(items) == 1
+    assert items[0]["slug"] == "nous-energy"
+    assert items[0]["qty"] == 2
+
+
 def test_portal_page_ships_add_to_current_order_controls():
     body = open("static/client-portal.html", encoding="utf-8").read()
     assert 'id="orderAddSearch"' in body
     assert 'id="orderAddBtn"' in body
     assert "/order-catalog?q=" in body
     assert "/order-add" in body
+    assert "Continue Shopping" in body
+    assert "portal-shopping-return" in body
+    assert "/cart/set-qty" in body
 
 
 def test_all_portal_remedy_order_buttons_feed_shared_basket():
