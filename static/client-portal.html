@@ -6639,9 +6639,23 @@ async function sendChatMessage(){
   input.value = "";
   input.disabled = true;
   sendBtn.disabled = true;
+  var completed = false;
+  var failed = false;
+  function showChatRetry(message){
+    failed = true;
+    if(assistantBubble){
+      assistantBubble.className = "chat-bubble error";
+      assistantBubble.textContent = message || "Dr. Glen’s assistant is briefly unavailable. Your message is ready to retry.";
+    }
+    // Do not make the member retype a message after a network, deployment, or
+    // AI-provider interruption. Only restore it when she has not started typing
+    // something new while the request was in flight.
+    if(input && !(input.value || "").trim()) input.value = query;
+  }
+  var assistantBubble = null;
   try{
     appendChatBubble("user", query);
-    var assistantBubble = appendChatBubble("assistant", "");
+    assistantBubble = appendChatBubble("assistant", "");
     var assistantText = "";
     var resp = await fetch(
       "/api/portal/" + encodeURIComponent(token) + "/chat",
@@ -6656,10 +6670,7 @@ async function sendChatMessage(){
       }
     );
     if(!resp.ok){
-      if(assistantBubble){
-        assistantBubble.className = "chat-bubble error";
-        assistantBubble.textContent = "Unable to reach Dr. Glen right now. Please try again.";
-      }
+      showChatRetry("Dr. Glen’s assistant is briefly unavailable. Your message is ready to retry.");
     } else {
       var reader = resp.body.getReader();
       var decoder = new TextDecoder();
@@ -6690,23 +6701,23 @@ async function sendChatMessage(){
               var relEl = renderRelated(evt.related);
               if(relEl && msgs){ msgs.appendChild(relEl); msgs.scrollTop = msgs.scrollHeight; }
             } else if(evt.error){
-              if(assistantBubble){
-                assistantBubble.className = "chat-bubble error";
-                assistantBubble.textContent = String(evt.error);
-              }
+              showChatRetry("Dr. Glen’s assistant is briefly unavailable. Your message is ready to retry.");
             } else if(evt.done){
               streamDone = true;
+              completed = true;
               chatHistory.push({role: "user", content: query});
               chatHistory.push({role: "assistant", content: assistantText});
             }
           } catch(parseErr){ /* skip malformed SSE lines */ }
         }
       }
+      if(!completed && !failed){
+        showChatRetry("The reply was interrupted. Your message is ready to retry.");
+      }
     }
   } catch(err){
-    try{
-      appendChatBubble("error", (err && err.message) ? err.message : "Something went wrong. Please try again.");
-    } catch(innerErr){ /* never break the portal */ }
+    try{ showChatRetry("The connection was interrupted. Your message is ready to retry."); }
+    catch(innerErr){ /* never break the portal */ }
   } finally {
     if(input) input.disabled = false;
     if(sendBtn) sendBtn.disabled = false;
