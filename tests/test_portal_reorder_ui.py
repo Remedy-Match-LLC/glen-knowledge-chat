@@ -103,8 +103,9 @@ def test_reorder_button_has_one_shot_latch():
     assert guard_idx < disable_idx < first_await_idx
 
 
-def test_reorder_uses_existing_checkout_endpoint_not_a_new_one():
+def test_reorder_adds_to_shared_basket_instead_of_opening_side_checkout():
     m = re.search(r"async function reorderItem\(btn\)\{[\s\S]*?\n\}\n", HTML)
     fn = m.group(0)
-    assert "/api/portal/${encodeURIComponent(token)}/checkout" in fn
-    assert "stripe_url" in fn  # redirects to Stripe's hosted confirm page, never charges inline
+    assert "await addItemToBasket(slug, qty)" in fn
+    assert "/checkout" not in fn
+    assert "stripe_url" not in fn
