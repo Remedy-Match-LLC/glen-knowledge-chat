@@ -101,8 +101,8 @@ def test_api_portal_emits_token_safe_timing_headers(client):
 
 def test_portal_reorder_uses_client_ff_price(client, monkeypatch):
     # Unified FF pricing: the client's FF flat (client_prices.__all_ff__) drives the
-    # portal reorder prices, with the same precedence as the invoice — baked per-item
-    # override > per-SKU client special > FF flat (FF-eligible only) > regular.
+    # portal reorder prices, with the same precedence as the invoice — current
+    # per-SKU client special > current FF flat > older baked override > regular.
     c, appmod = client
     prods = {
         "ff-prod": {"name": "FF Prod", "price_cents": 6997, "qty_pricing": True},
@@ -123,14 +123,14 @@ def test_portal_reorder_uses_client_ff_price(client, monkeypatch):
         "reorder_items": [
             {"slug": "ff-prod", "qty": 1},                      # FF, no override -> flat 5000
             {"slug": "non-ff", "qty": 1},                       # not FF -> regular 7000
-            {"slug": "ff-ov", "qty": 1, "price_cents": 3000},   # baked override wins -> 3000
+            {"slug": "ff-ov", "qty": 1, "price_cents": 3000},   # current flat wins -> 5000
             {"slug": "ff-sku", "qty": 1},                       # per-SKU special -> 4000
         ]})
     j = c.get(f"/api/portal/{tok}").get_json()
     items = {it["slug"]: it for it in j["reorder_items"]}
     assert items["ff-prod"]["price_cents"] == 5000 and items["ff-prod"]["is_special"] is True
     assert items["non-ff"]["price_cents"] == 7000 and items["non-ff"]["is_special"] is False
-    assert items["ff-ov"]["price_cents"] == 3000    # per-item baked override wins
+    assert items["ff-ov"]["price_cents"] == 5000    # current saved flat wins over old baked price
     assert items["ff-sku"]["price_cents"] == 4000   # per-SKU client special wins over the flat
 
 
