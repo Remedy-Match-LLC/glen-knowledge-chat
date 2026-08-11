@@ -1498,6 +1498,11 @@ function renderUnifiedPortalCart(d){
   const empty = document.getElementById('orderEmpty');
   if(empty) empty.hidden = !!items.length;
   window.__portalCartCount = (d && d.count) || 0;
+  window.__portalCartOrderRef = (d && d.order_ref) || "";
+  const orderNo = document.getElementById('portalBasketOrderNo');
+  if(orderNo){
+    orderNo.textContent = d && d.order_id ? `Order #${d.order_id}` : "Order number assigned at checkout";
+  }
   if(typeof window.setPortalHeaderCartCount === 'function') window.setPortalHeaderCartCount(window.__portalCartCount);
 }
 function loadCart(){
@@ -3534,6 +3539,7 @@ function render(d, v){
     });
     const note = d.pricing_note ? `<p class="note small">${esc(d.pricing_note)}</p>` : "";
     html += `<div class="card" id="portal-order-basket"><h2>Order your remedies</h2>
+      <p class="small muted" id="portalBasketOrderNo">${d.order_id ? `Order #${esc(d.order_id)}` : "Order number assigned at checkout"}</p>
       ${note}
       <div id="curatedOrderItems">${rows}</div>
       <p class="small muted" id="orderEmpty" ${rows ? "hidden" : ""}>Your basket is empty. Add remedies using any “Add to basket” button.</p>
@@ -6492,8 +6498,11 @@ async function reorder(){
     // it as their idempotency key, so a transient response failure can never mint
     // a second order/session.
     if(!btn.dataset.checkoutRequestId){
-      btn.dataset.checkoutRequestId = (crypto.randomUUID ? crypto.randomUUID() :
-        (Date.now().toString(36) + Math.random().toString(36).slice(2)));
+      const existingRef = String(window.__portalCartOrderRef || "");
+      btn.dataset.checkoutRequestId = existingRef.startsWith("portal-")
+        ? existingRef.slice(7)
+        : (crypto.randomUUID ? crypto.randomUUID() :
+          (Date.now().toString(36) + Math.random().toString(36).slice(2)));
     }
     const payload = JSON.stringify({
       checkout_request_id:btn.dataset.checkoutRequestId,
@@ -6520,6 +6529,7 @@ async function reorder(){
       const shipping = money(cj.shipping_cents || 0);
       const link = z.pay_link || z.bank_url || "";
       review.innerHTML = `<div class="note" style="margin-top:1rem"><strong>Your Zelle payment instructions</strong>
+        ${cj.order_id ? `<div class="kv"><span>Order</span><strong>#${esc(cj.order_id)}</strong></div>` : ""}
         <div class="kv"><span>Amount</span><strong>${esc(amount)}</strong></div>
         <div class="kv"><span>Shipping included</span><strong>${esc(shipping)}</strong></div>
         <div class="kv"><span>Send to</span><strong>${esc(z.to || "")}</strong></div>
