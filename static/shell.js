@@ -87,6 +87,25 @@
       toggle.onclick = function () { path.classList.toggle("js-hide"); mnav.classList.toggle("js-hide"); };
     }
 
+    // The Healing Oasis owns one remedy-order basket inside the portal page.
+    // Give it a persistent wayfinding control beside My Path without routing
+    // members into the unrelated storefront cookie cart.
+    if (/^\/portal\/(?:me|[^/]+)/.test(location.pathname)) {
+      var cartBtn = el("button", "js-mypath-btn js-portal-cart-btn", "Cart");
+      cartBtn.setAttribute("aria-label", "View remedy order cart");
+      cartBtn.onclick = function () {
+        if (typeof window.openPortalOrderBasket === "function") window.openPortalOrderBasket();
+      };
+      window.setPortalHeaderCartCount = function (count) {
+        count = Math.max(0, parseInt(count, 10) || 0);
+        cartBtn.textContent = count ? "Cart (" + count + ")" : "Cart";
+        cartBtn.setAttribute("aria-label", count
+          ? "View remedy order cart with " + count + " item" + (count === 1 ? "" : "s")
+          : "View remedy order cart");
+      };
+      bar.appendChild(cartBtn);
+    }
+
     bar.appendChild(mypathBtn);
 
     if (REWARDS) {
