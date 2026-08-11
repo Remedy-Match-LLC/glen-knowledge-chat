@@ -185,7 +185,10 @@ def test_curated_subset_keeps_server_special_price_and_stable_retry_ref(client, 
     assert r.status_code == 200
     assert ingested["external_ref"] == "portal-checkout_retry_123456"
     assert ingested["items"][0]["unit_cents"] == 2200
-    assert ingested["total_cents"] == 4400
+    expected_ship = appmod._price_cart(
+        [{"slug": "nous-energy", "qty": 2}], ship={}, email=email)["shipping_cents"]
+    assert ingested["shipping_cents"] == expected_ship
+    assert ingested["total_cents"] == 4400 + expected_ship
 
 
 def test_checkout_rejects_invalid_idempotency_key(client):
@@ -217,6 +220,11 @@ def test_portal_zelle_option_returns_exact_total_recipient_and_memo(client, monk
     options = c.get(f"/api/portal/{tok}/payment-options").get_json()
     assert options["zelle"]["to"] == "pay@example.com"
     assert options["zelle"]["pay_link"] == "https://bank.example/zelle/qr"
+    assert options["zelle"]["qr_image_url"].endswith("/zelle-qr.png")
+    qr = c.get(options["zelle"]["qr_image_url"])
+    assert qr.status_code == 200
+    assert qr.mimetype == "image/png"
+    assert qr.data.startswith(b"\x89PNG")
 
     r = c.post(f"/api/portal/{tok}/checkout", json={
         "method": "zelle", "checkout_request_id": "zelle_order_12345678",
@@ -225,10 +233,14 @@ def test_portal_zelle_option_returns_exact_total_recipient_and_memo(client, monk
     assert r.status_code == 200
     body = r.get_json()
     assert body["method"] == "zelle"
-    assert body["total_cents"] == 4400
+    expected_ship = appmod._price_cart(
+        [{"slug": "nous-energy", "qty": 2}], ship={}, email=email)["shipping_cents"]
+    assert body["shipping_cents"] == expected_ship
+    assert body["total_cents"] == 4400 + expected_ship
     assert body["pay_instructions"]["to"] == "pay@example.com"
     assert body["pay_instructions"]["memo"] == "portal-zelle_order_12345678"
-    assert ingested["total_cents"] == 4400
+    assert ingested["shipping_cents"] == expected_ship
+    assert ingested["total_cents"] == 4400 + expected_ship
 
 
 def test_portal_checkout_passes_itemized_lines_to_stripe(client, monkeypatch):
@@ -249,8 +261,11 @@ def test_portal_checkout_passes_itemized_lines_to_stripe(client, monkeypatch):
     r = c.post(f"/api/portal/{tok}/checkout")
 
     assert r.status_code == 200
+    expected_ship = appmod._price_cart(
+        [{"slug": "nous-energy", "qty": 2}], ship={})["shipping_cents"]
     assert captured["stripe_line_items"] == [
-        {"name": "Nous Energy", "qty": 2, "unit_cents": 2500}
+        {"name": "Nous Energy", "qty": 2, "unit_cents": 2500},
+        {"name": "Shipping (USPS)", "qty": 1, "unit_cents": expected_ship},
     ]
 
 
