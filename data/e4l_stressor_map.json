@@ -3927,7 +3927,14 @@
      "remedies": [],
      "source": "Name confirmed against E4L's own scan-report legend (checked across 40 client PDFs, all 10 names match exactly). The description below is model-written and unreviewed: E4L publishes no per-item prose for the Matrix Regulators in any source we hold. Kept, rather than left bare, because it is the only description that exists (Glen 2026-08-10); replace it if a real source turns up.",
      "provenance": "unverified",
-     "name_provenance": "sourced"
+     "name_provenance": "sourced",
+     "application_site": "both hands",
+     "connects_integrators": [
+      "EI7-EI8",
+      "EI9-EI10",
+      "EI11-EI12"
+     ],
+     "structure_source": "Assembled from E4L's own per-item panels (application site, Integrator bridges and wave positions), rewritten for the public glossary. Glen's ruling 2026-08-11."
     },
     {
      "slug": "mr-calm-mind",
@@ -3939,7 +3946,12 @@
      "remedies": [],
      "source": "Name confirmed against E4L's own scan-report legend (checked across 40 client PDFs, all 10 names match exactly). The description below is model-written and unreviewed: E4L publishes no per-item prose for the Matrix Regulators in any source we hold. Kept, rather than left bare, because it is the only description that exists (Glen 2026-08-10); replace it if a real source turns up.",
      "provenance": "unverified",
-     "name_provenance": "sourced"
+     "name_provenance": "sourced",
+     "application_site": "top of the head",
+     "connects_integrators": [
+      "EI6-EI7"
+     ],
+     "structure_source": "Assembled from E4L's own per-item panels (application site, Integrator bridges and wave positions), rewritten for the public glossary. Glen's ruling 2026-08-11."
     },
     {
      "slug": "mr-restore-matrix",
@@ -3951,7 +3963,14 @@
      "remedies": [],
      "source": "Name confirmed against E4L's own scan-report legend (checked across 40 client PDFs, all 10 names match exactly). The description below is model-written and unreviewed: E4L publishes no per-item prose for the Matrix Regulators in any source we hold. Kept, rather than left bare, because it is the only description that exists (Glen 2026-08-10); replace it if a real source turns up.",
      "provenance": "unverified",
-     "name_provenance": "sourced"
+     "name_provenance": "sourced",
+     "application_site": "over the stomach region",
+     "connects_integrators": [
+      "EI1-EI2",
+      "EI3-EI4",
+      "EI5-EI6"
+     ],
+     "structure_source": "Assembled from E4L's own per-item panels (application site, Integrator bridges and wave positions), rewritten for the public glossary. Glen's ruling 2026-08-11."
     },
     {
      "slug": "mr-microtubule-function",
@@ -3963,7 +3982,12 @@
      "remedies": [],
      "source": "Name confirmed against E4L's own scan-report legend (checked across 40 client PDFs, all 10 names match exactly). The description below is model-written and unreviewed: E4L publishes no per-item prose for the Matrix Regulators in any source we hold. Kept, rather than left bare, because it is the only description that exists (Glen 2026-08-10); replace it if a real source turns up.",
      "provenance": "unverified",
-     "name_provenance": "sourced"
+     "name_provenance": "sourced",
+     "application_site": "soles of the feet",
+     "connects_integrators": [
+      "EI10-EI11"
+     ],
+     "structure_source": "Assembled from E4L's own per-item panels (application site, Integrator bridges and wave positions), rewritten for the public glossary. Glen's ruling 2026-08-11."
     },
     {
      "slug": "mr-harmonize-emotions",
@@ -3975,7 +3999,12 @@
      "remedies": [],
      "source": "Name confirmed against E4L's own scan-report legend (checked across 40 client PDFs, all 10 names match exactly). The description below is model-written and unreviewed: E4L publishes no per-item prose for the Matrix Regulators in any source we hold. Kept, rather than left bare, because it is the only description that exists (Glen 2026-08-10); replace it if a real source turns up.",
      "provenance": "unverified",
-     "name_provenance": "sourced"
+     "name_provenance": "sourced",
+     "application_site": "over the navel",
+     "connects_integrators": [
+      "EI4-EI5"
+     ],
+     "structure_source": "Assembled from E4L's own per-item panels (application site, Integrator bridges and wave positions), rewritten for the public glossary. Glen's ruling 2026-08-11."
     },
     {
      "slug": "mr-reconnection",
@@ -3987,7 +4016,12 @@
      "remedies": [],
      "source": "Name confirmed against E4L's own scan-report legend (checked across 40 client PDFs, all 10 names match exactly). The description below is model-written and unreviewed: E4L publishes no per-item prose for the Matrix Regulators in any source we hold. Kept, rather than left bare, because it is the only description that exists (Glen 2026-08-10); replace it if a real source turns up.",
      "provenance": "unverified",
-     "name_provenance": "sourced"
+     "name_provenance": "sourced",
+     "application_site": "around the neck",
+     "connects_integrators": [
+      "EI2-EI3"
+     ],
+     "structure_source": "Assembled from E4L's own per-item panels (application site, Integrator bridges and wave positions), rewritten for the public glossary. Glen's ruling 2026-08-11."
     },
     {
      "slug": "mr-calcium-and-terrains",
@@ -3999,7 +4033,13 @@
      "remedies": [],
      "source": "Name confirmed against E4L's own scan-report legend (checked across 40 client PDFs, all 10 names match exactly). The description below is model-written and unreviewed: E4L publishes no per-item prose for the Matrix Regulators in any source we hold. Kept, rather than left bare, because it is the only description that exists (Glen 2026-08-10); replace it if a real source turns up.",
      "provenance": "unverified",
-     "name_provenance": "sourced"
+     "name_provenance": "sourced",
+     "application_site": "toes",
+     "connects_integrators": [
+      "EI12-EI1"
+     ],
+     "wave_position": "end of the wave, hands off to MR10",
+     "structure_source": "Assembled from E4L's own per-item panels (application site, Integrator bridges and wave positions), rewritten for the public glossary. Glen's ruling 2026-08-11."
     },
     {
      "slug": "mr-growth-cone-regeneration",
@@ -4011,7 +4051,13 @@
      "remedies": [],
      "source": "Name confirmed against E4L's own scan-report legend (checked across 40 client PDFs, all 10 names match exactly). The description below is model-written and unreviewed: E4L publishes no per-item prose for the Matrix Regulators in any source we hold. Kept, rather than left bare, because it is the only description that exists (Glen 2026-08-10); replace it if a real source turns up.",
      "provenance": "unverified",
-     "name_provenance": "sourced"
+     "name_provenance": "sourced",
+     "application_site": "ears",
+     "connects_integrators": [
+      "EI8-EI9"
+     ],
+     "wave_position": "peak of the wave (Fire of Heaven)",
+     "structure_source": "Assembled from E4L's own per-item panels (application site, Integrator bridges and wave positions), rewritten for the public glossary. Glen's ruling 2026-08-11."
     },
     {
      "slug": "mr-freedom",
@@ -4023,7 +4069,10 @@
      "remedies": [],
      "source": "Name confirmed against E4L's own scan-report legend (checked across 40 client PDFs, all 10 names match exactly). The description below is model-written and unreviewed: E4L publishes no per-item prose for the Matrix Regulators in any source we hold. Kept, rather than left bare, because it is the only description that exists (Glen 2026-08-10); replace it if a real source turns up.",
      "provenance": "unverified",
-     "name_provenance": "sourced"
+     "name_provenance": "sourced",
+     "application_site": "heart region of the chest",
+     "wave_position": "trough of the wave (Fire of Earth)",
+     "structure_source": "Assembled from E4L's own per-item panels (application site, Integrator bridges and wave positions), rewritten for the public glossary. Glen's ruling 2026-08-11."
     },
     {
      "slug": "mr-cns-heart-matrix",
@@ -4035,9 +4084,17 @@
      "remedies": [],
      "source": "Name confirmed against E4L's own scan-report legend (checked across 40 client PDFs, all 10 names match exactly). The description below is model-written and unreviewed: E4L publishes no per-item prose for the Matrix Regulators in any source we hold. Kept, rather than left bare, because it is the only description that exists (Glen 2026-08-10); replace it if a real source turns up.",
      "provenance": "unverified",
-     "name_provenance": "sourced"
+     "name_provenance": "sourced",
+     "application_site": "around the head",
+     "connects_integrators": [
+      "EI12-EI1"
+     ],
+     "wave_position": "beginning of the wave, receives from MR7",
+     "structure_source": "Assembled from E4L's own per-item panels (application site, Integrator bridges and wave positions), rewritten for the public glossary. Glen's ruling 2026-08-11."
     }
-   ]
+   ],
+   "description": "The Matrix Regulators are not ten separate remedies. They sit at positions along one continuous wave through the body field, and each bridges a specific pair of Energetic Integrators, so the set is a circuit rather than a list. MR7 sits at the end of the wave and hands information to MR10 at the beginning, across the gap between Integrators 12 and 1, which closes the loop. MR8 sits at the peak, the Fire of Heaven in Chinese medicine, and MR9 at the trough, the Fire of Earth. Reading them this way tells you why one shows as a priority alongside another: they are neighbours on the same wave, not coincidences.",
+   "description_source": "Assembled from E4L's own per-item panels (application site, Integrator bridges and wave positions), rewritten for the public glossary. Glen's ruling 2026-08-11."
   },
   {
    "key": "mb",
