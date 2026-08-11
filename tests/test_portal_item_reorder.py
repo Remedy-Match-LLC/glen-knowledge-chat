@@ -196,6 +196,41 @@ def test_checkout_rejects_invalid_idempotency_key(client):
     assert r.status_code == 400
 
 
+def test_portal_zelle_option_returns_exact_total_recipient_and_memo(client, monkeypatch):
+    c, appmod = client
+    email = "zelle-client@example.com"
+    tok = _seed_portal(appmod, email=email, content={
+        "greeting": "hi", "video": {}, "layers": [],
+        "reorder_items": [{"slug": "nous-energy", "qty": 1}],
+    })
+    from dashboard import client_prices
+    with sqlite3.connect(appmod.LOG_DB) as cx:
+        client_prices.init_table(cx)
+        client_prices.set_price(cx, email, "nous-energy", 2200)
+    monkeypatch.setitem(appmod._ALT_PAY, "zelle", {
+        "label": "Zelle (US)", "to": "pay@example.com",
+        "pay_link": "https://bank.example/zelle/qr", "bank_url": "https://enroll.zellepay.com/",
+        "note": "Use the order reference as the memo."})
+    ingested = {}
+    monkeypatch.setattr(appmod, "_ingest_order", lambda **kw: ingested.update(kw))
+
+    options = c.get(f"/api/portal/{tok}/payment-options").get_json()
+    assert options["zelle"]["to"] == "pay@example.com"
+    assert options["zelle"]["pay_link"] == "https://bank.example/zelle/qr"
+
+    r = c.post(f"/api/portal/{tok}/checkout", json={
+        "method": "zelle", "checkout_request_id": "zelle_order_12345678",
+        "items": [{"slug": "nous-energy", "qty": 2}],
+    })
+    assert r.status_code == 200
+    body = r.get_json()
+    assert body["method"] == "zelle"
+    assert body["total_cents"] == 4400
+    assert body["pay_instructions"]["to"] == "pay@example.com"
+    assert body["pay_instructions"]["memo"] == "portal-zelle_order_12345678"
+    assert ingested["total_cents"] == 4400
+
+
 def test_portal_checkout_passes_itemized_lines_to_stripe(client, monkeypatch):
     c, appmod = client
     tok = _seed_portal(appmod, content={
@@ -311,6 +346,9 @@ def test_portal_page_ships_add_to_current_order_controls():
     assert "Continue Shopping" in body
     assert "portal-shopping-return" in body
     assert "/cart/set-qty" in body
+    assert 'name="portalPayMethod" value="zelle"' in body
+    assert "/payment-options" in body
+    assert "Your Zelle payment instructions" in body
 
 
 def test_all_portal_remedy_order_buttons_feed_shared_basket():

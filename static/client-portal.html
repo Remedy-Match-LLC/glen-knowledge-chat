@@ -3548,6 +3548,12 @@ function render(d, v){
         <p class="small muted" id="orderAddStatus" style="margin:.35rem 0 0"></p>
       </div>
       <p class="muted small" style="margin:.7rem 0 1rem">Shipping calculated at checkout.</p>
+      <fieldset id="portalPaymentMethods" style="border:1px solid var(--line);border-radius:10px;padding:.8rem;margin:0 0 .8rem">
+        <legend class="small"><strong>Payment method</strong></legend>
+        <label style="display:block;margin:.25rem 0"><input type="radio" name="portalPayMethod" value="card" checked> Credit or debit card</label>
+        <label style="display:block;margin:.45rem 0 .25rem"><input type="radio" name="portalPayMethod" value="zelle"> Zelle (US)</label>
+        <div id="portalZellePreview" class="note small" hidden style="margin-top:.6rem">Loading Zelle instructions…</div>
+      </fieldset>
       <button type="button" class="btn ghost full portal-continue-shopping" style="margin-bottom:.5rem">Continue Shopping</button>
       <button class="btn full" id="reorderBtn">Review my order</button>
       <div id="reorderReview" hidden></div>
@@ -4145,6 +4151,20 @@ function render(d, v){
   const searchInput = document.getElementById("orderAddSearch");
   const results = document.getElementById("orderAddResults");
   const addStatus = document.getElementById("orderAddStatus");
+  const paymentMethods = document.getElementById("portalPaymentMethods");
+  const zellePreview = document.getElementById("portalZellePreview");
+  if(paymentMethods) paymentMethods.addEventListener("change", async () => {
+    const method = (paymentMethods.querySelector('input[name="portalPayMethod"]:checked') || {}).value || "card";
+    if(method !== "zelle"){ zellePreview.hidden = true; return; }
+    zellePreview.hidden = false;
+    try{
+      const r = await fetch(`/api/portal/${encodeURIComponent(token)}/payment-options`);
+      const j = await r.json();
+      const z = j.zelle || {};
+      const link = z.pay_link || z.bank_url || "";
+      zellePreview.innerHTML = `<strong>Pay with Zelle</strong><br>Open Zelle in your banking app and send payment to <strong>${esc(z.to || "")}</strong>. Your exact total and order-reference memo will appear after you continue.${link ? `<br><a href="${esc(link)}" target="_blank" rel="noopener">${z.pay_link ? "Open our Zelle payment link" : "Find or open your bank for Zelle"}</a>` : ""}`;
+    }catch(e){ zellePreview.textContent = "Open Zelle in your banking app. Recipient and memo details will appear after you continue."; }
+  });
   if(findBtn) findBtn.addEventListener("click", async () => {
     const q = (searchInput.value || "").trim();
     if(q.length < 2){ addStatus.textContent = "Type at least 2 letters."; return; }
@@ -6475,6 +6495,7 @@ async function reorder(){
     }
     const payload = JSON.stringify({
       checkout_request_id:btn.dataset.checkoutRequestId,
+      method:((document.querySelector('input[name="portalPayMethod"]:checked') || {}).value || "card"),
       items:items.map(it => ({slug:it.slug, qty:it.qty}))
     });
     let cj = null;
@@ -6491,6 +6512,22 @@ async function reorder(){
       }
     }
     if(cj.stripe_url){ location.href = cj.stripe_url; return; }
+    if(cj.method === "zelle" && cj.pay_instructions){
+      const z = cj.pay_instructions;
+      const amount = money(cj.total_cents || 0);
+      const link = z.pay_link || z.bank_url || "";
+      review.innerHTML = `<div class="note" style="margin-top:1rem"><strong>Your Zelle payment instructions</strong>
+        <div class="kv"><span>Amount</span><strong>${esc(amount)}</strong></div>
+        <div class="kv"><span>Send to</span><strong>${esc(z.to || "")}</strong></div>
+        <div class="kv"><span>Memo / order reference</span><strong>${esc(z.memo || "")}</strong></div>
+        <p class="small">In your bank’s Zelle screen, enter the recipient, exact amount, and memo above. Confirm the recipient name in your bank before sending.</p>
+        ${link ? `<a class="btn" href="${esc(link)}" target="_blank" rel="noopener">${z.pay_link ? "Open Zelle payment link" : "Find or open your bank for Zelle"}</a>` : ""}
+        <p class="small muted">${esc(z.note || "")}</p></div>`;
+      review.hidden = false;
+      btn.disabled = false;
+      btn.textContent = "Zelle instructions ready";
+      return;
+    }
     throw new Error(cj.error || "Checkout is temporarily unavailable. Please reach out to us and we’ll help.");
   }catch(e){
     err.textContent = e.message || "Something went wrong. Please reach out and we’ll help.";

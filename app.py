@@ -6479,7 +6479,10 @@ except Exception:
     stripe_pay = None  # type: ignore[assignment]
 _ALT_PAY = {
     "zelle": {"label": "Zelle (US)",
-              "to": os.environ.get("ZELLE_PAY_TO", "(set ZELLE_PAY_TO)"),
+              "to": (os.environ.get("ZELLE_PAY_TO") or os.environ.get("GLEN_EMAIL")
+                     or "drglenswartwout@gmail.com"),
+              "pay_link": os.environ.get("ZELLE_PAY_LINK", ""),
+              "bank_url": "https://enroll.zellepay.com/",
               "note": "Send the invoice total via Zelle, using the invoice number as the memo. "
                       "You earn extra loyalty points for choosing a fee-free method."},
     "wise":  {"label": "Wise (International)",
@@ -23490,6 +23493,18 @@ def api_portal_cart(token):
     return _portal_cart_response(portal)
 
 
+@app.route("/api/portal/<token>/payment-options", methods=["GET"])
+def api_portal_payment_options(token):
+    with db.connect(LOG_DB) as cx:
+        portal = _portal_record_for(cx, token)
+    if not portal:
+        return jsonify({"error": "not found"}), 404
+    zelle = _ALT_PAY["zelle"]
+    return jsonify({"card": {"label": "Credit or debit card"}, "zelle": {
+        "label": zelle["label"], "to": zelle["to"], "pay_link": zelle["pay_link"],
+        "bank_url": zelle["bank_url"], "note": zelle["note"]}})
+
+
 @app.route("/api/portal/<token>/cart/set-qty", methods=["POST"])
 def api_portal_cart_set_qty(token):
     data = request.get_json(silent=True) or {}
@@ -25708,6 +25723,9 @@ def api_client_portal_checkout(token):
         return jsonify({"error": "not found"}), 404
     email = (portal.get("email") or "").strip().lower()
     body = request.get_json(silent=True) or {}
+    method = (body.get("method") or "card").strip().lower()
+    if method not in ("card", "zelle"):
+        return jsonify({"error": "Unsupported payment method."}), 400
     checkout_request_id = (body.get("checkout_request_id") or "").strip().lower()
     if checkout_request_id and not re.fullmatch(r"[a-z0-9_-]{16,80}", checkout_request_id):
         return jsonify({"error": "Invalid checkout request."}), 400
@@ -25781,7 +25799,7 @@ def api_client_portal_checkout(token):
     lines, items_rec, subtotal_cents = _portal_priced_lines(items, email=email)
     if not lines:
         return jsonify({"error": "Your remedies are no longer available — please reach out and we'll help."}), 400
-    if not _STRIPE_ACTIVE:
+    if method == "card" and not _STRIPE_ACTIVE:
         return jsonify({"error": "Card checkout is temporarily unavailable. Please reach out and we'll help."}), 503
     try:
         ship = {}
@@ -25818,6 +25836,13 @@ def api_client_portal_checkout(token):
                 _bos_orders.set_order_qbo_lines(_lcx, checkout_ref, qbo_payload)
         except Exception as _e:
             print(f"[portal-reorder] persist qbo_lines failed: {_e!r}", flush=True)
+        if method == "zelle":
+            zelle = _ALT_PAY["zelle"]
+            return jsonify({"ok": True, "method": "zelle", "order_ref": checkout_ref,
+                            "total_cents": int(subtotal_cents), "pay_instructions": {
+                                "label": zelle["label"], "to": zelle["to"],
+                                "memo": checkout_ref, "pay_link": zelle["pay_link"],
+                                "bank_url": zelle["bank_url"], "note": zelle["note"]}})
         stripe_url = _stripe_checkout_url_for_reorder(out, email)
         if not stripe_url:
             return jsonify({"error": _CARD_UNAVAILABLE}), 502
