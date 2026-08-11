@@ -28,6 +28,14 @@ body.js-shell-on { padding-top: var(--jshell-h); }
 .js-hide { display: none !important; }
 #journey-shell .js-mypath-btn { background: none; border: 1px solid var(--border, #3a4a3f);
   border-radius: 14px; padding: 4px 10px; cursor: pointer; color: var(--text, #cfc9b8); }
+#journey-shell .js-portal-cart-btn { position: relative; display: inline-flex; align-items: center;
+  gap: 5px; min-height: 30px; padding-right: 11px; overflow: visible; }
+#journey-shell .js-cart-icon { font-size: 17px; line-height: 1; }
+#journey-shell .js-cart-badge { position: absolute; top: -8px; right: -7px; min-width: 18px;
+  height: 18px; box-sizing: border-box; padding: 0 5px; border: 2px solid var(--surface, #14201a);
+  border-radius: 999px; background: var(--gold, #d4a843); color: #14201a;
+  font-size: 11px; font-weight: 800; line-height: 14px; text-align: center; }
+#journey-shell .js-cart-badge[hidden] { display: none; }
 .js-mypath { position: fixed; top: var(--jshell-h); right: 8px; width: 280px; max-height: 60vh;
   overflow-y: auto; background: var(--surface, #1a261f); color: var(--text, #e9e2cf);
   border: 1px solid var(--border, #2c4233); border-radius: 10px;
@@ -63,6 +71,8 @@ body.js-shell-on { padding-top: var(--jshell-h); }
   #journey-shell .js-mnav { display: none; }
   #journey-shell .js-path .js-land:not(.next) { display: none; }
   #journey-shell .js-path .js-trail-link { display: none; }
+  #journey-shell .js-portal-cart-btn .js-cart-label { display: none; }
+  #journey-shell .js-portal-cart-btn { padding: 5px 8px; }
   .js-count { display: inline; }
 }
 
