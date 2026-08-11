@@ -165,10 +165,15 @@ def test_curated_subset_can_be_submitted_for_checkout(client, monkeypatch):
 
 def test_curated_subset_keeps_server_special_price_and_stable_retry_ref(client, monkeypatch):
     c, appmod = client
+    email = "current-price-wins@example.com"
     tok = _seed_portal(appmod, content={
         "greeting": "hi", "video": {}, "layers": [],
         "reorder_items": [{"slug": "nous-energy", "qty": 1, "price_cents": 2500}],
-    })
+    }, email=email)
+    from dashboard import client_prices
+    with sqlite3.connect(appmod.LOG_DB) as cx:
+        client_prices.init_table(cx)
+        client_prices.set_price(cx, email, "nous-energy", 2200)
     ingested = {}
     _mock_checkout(appmod, monkeypatch, capture_ingest=ingested)
 
@@ -179,8 +184,8 @@ def test_curated_subset_keeps_server_special_price_and_stable_retry_ref(client, 
 
     assert r.status_code == 200
     assert ingested["external_ref"] == "portal-checkout_retry_123456"
-    assert ingested["items"][0]["unit_cents"] == 2500
-    assert ingested["total_cents"] == 5000
+    assert ingested["items"][0]["unit_cents"] == 2200
+    assert ingested["total_cents"] == 4400
 
 
 def test_checkout_rejects_invalid_idempotency_key(client):
