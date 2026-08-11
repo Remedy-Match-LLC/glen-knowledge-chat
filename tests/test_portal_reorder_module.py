@@ -79,6 +79,13 @@ def _seed_active_membership(appmod, email, *, source="founding"):
         cx.commit()
 
 
+def _seed_client_price(appmod, email, slug, cents):
+    from dashboard import client_prices
+    with sqlite3.connect(appmod.LOG_DB) as cx:
+        client_prices.init_table(cx)
+        client_prices.set_price(cx, email, slug, cents)
+
+
 # ── (a) distinct SKUs from portal-channel history ────────────────────────────
 
 def test_reorder_list_has_distinct_skus_from_portal_history(client):
@@ -299,6 +306,39 @@ def test_non_member_pays_regular_price(client):
     row = next(r for r in j["reorder"] if r["slug"] == "neuro-magnesium")
     assert row["your_cents"] == row["regular_cents"] == 6997
     assert row["is_member_price"] is False
+
+
+def test_saved_client_price_matches_your_remedies_and_checkout(client):
+    """The history-based Your Remedies card and shared-basket checkout must use
+    the same saved per-client price as the curated Order your remedies card."""
+    c, appmod = client
+    email = "special@example.com"
+    tok = _seed_portal(appmod, email)
+    _seed_order(appmod, source="reorder", email=email,
+                slugs_qty=[("neuro-magnesium", 1)], days_ago=5)
+    _seed_client_price(appmod, email, "neuro-magnesium", 4200)
+
+    payload = c.get(f"/api/portal/{tok}").get_json()
+    row = next(r for r in payload["reorder"] if r["slug"] == "neuro-magnesium")
+    assert row["regular_cents"] == 6997
+    assert row["your_cents"] == 4200
+    assert row["is_member_price"] is True
+
+    _lines, items, subtotal = appmod._portal_priced_lines(
+        [{"slug": "neuro-magnesium", "qty": 2}], email=email)
+    assert items[0]["unit_cents"] == 4200
+    assert subtotal == 8400
+
+
+def test_baked_portal_price_still_outranks_saved_client_price(client):
+    """A price Dr. Glen explicitly published on this portal remains strongest."""
+    _c, appmod = client
+    email = "baked@example.com"
+    _seed_client_price(appmod, email, "neuro-magnesium", 4200)
+    _lines, items, subtotal = appmod._portal_priced_lines(
+        [{"slug": "neuro-magnesium", "qty": 1, "price_cents": 3900}], email=email)
+    assert items[0]["unit_cents"] == 3900
+    assert subtotal == 3900
 
 
 # ── (c) membership_upsell for a non-member ───────────────────────────────────
