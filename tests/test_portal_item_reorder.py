@@ -222,6 +222,16 @@ def test_portal_page_ships_add_to_current_order_controls():
     assert "/order-add" in body
 
 
+def test_all_portal_remedy_order_buttons_feed_shared_basket():
+    body = open("static/client-portal.html", encoding="utf-8").read()
+    assert 'class="btn ghost scan-order-btn"' in body
+    assert '>Add to basket</button>' in body
+    assert 'id="wishOrderBtn" disabled>Add selected to basket</button>' in body
+    assert "await addItemToBasket(scanBtn.dataset.slug" in body
+    assert "for(const item of items) await addItemToBasket(item.slug, item.qty)" in body
+    assert "await addItemToBasket(slug, qty)" in body
+
+
 # ── (c) posting a slug NOT in the client's entitlement is rejected ──────────
 
 def test_item_reorder_rejects_unentitled_slug(client, monkeypatch):
