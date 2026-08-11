@@ -1270,7 +1270,7 @@ function oasisReplenishRowHtml(item){
     : esc(item.name);
   return `<div class="reitem">
     <span class="nm">${name}${low}<br>${last}</span>
-    <button type="button" class="btn" data-oasis-reorder="${esc(item.slug)}">Reorder</button>
+    <button type="button" class="btn" data-oasis-reorder="${esc(item.slug)}">Add to basket</button>
   </div>`;
 }
 function buildOasisReplenishHtml(oasis){
@@ -1507,30 +1507,18 @@ document.addEventListener("click", async function(ev){
   if (!addBtn && !rmBtn && !wantBtn && !reorderBtn) return;
 
   if (reorderBtn) {
-    // Task 7: wire Replenish's "Reorder" button through the SAME existing
-    // portal checkout the "Your Remedies" per-row reorder uses (see
-    // reorderItem() above) -- add-then-confirm, never a silent charge: this
-    // posts {items:[{slug, qty:1}]} to /api/portal/<token>/checkout, which
-    // returns a live Stripe Checkout URL; the charge only happens if the
-    // client confirms on Stripe's hosted page. No new endpoint. The slug is
-    // already in the client's own purchase history (that's WHY it's in
-    // Replenish), so it's already in _portal_entitled_slugs server-side.
-    // One-shot latch: disabled immediately, before any await.
+    // Replenish joins the same open basket as every other first-party product.
+    // Only the basket's review button can begin checkout.
     if (reorderBtn.disabled) return;
     reorderBtn.disabled = true;
     const slug = reorderBtn.getAttribute("data-oasis-reorder");
-    const label = reorderBtn.textContent; reorderBtn.textContent = "Setting up your order…";
+    const label = reorderBtn.textContent; reorderBtn.textContent = "Adding…";
     const row = reorderBtn.closest(".reitem");
     const existingMsg = row && row.querySelector(".oasis-reorder-msg");
     if (existingMsg) existingMsg.remove();
     try {
-      const r = await fetch(`/api/portal/${encodeURIComponent(token)}/checkout`, {
-        method: "POST", headers: {"Content-Type": "application/json"}, credentials: "same-origin",
-        body: JSON.stringify({items: [{slug, qty: 1}]})
-      });
-      const j = await r.json();
-      if (j.stripe_url) { location.href = j.stripe_url; return; }
-      throw new Error(j.error || "Checkout is temporarily unavailable. Please reach out to us and we’ll help.");
+      await addItemToBasket(slug, 1);
+      reorderBtn.textContent = "In basket";
     } catch (e) {
       reorderBtn.disabled = false; reorderBtn.textContent = label;
       if (row) {
@@ -6574,13 +6562,28 @@ function renderSuggestion(sugg){
   var name = (sugg.name != null) ? String(sugg.name) : "";
   var price = (sugg.price != null) ? String(sugg.price) : "";
   var url = (sugg.url != null) ? String(sugg.url) : "";
+  var slug = (sugg.slug != null) ? String(sugg.slug) : "";
   var el = document.createElement("div");
   el.className = "chat-sugg";
   var safeUrl = /^https?:\/\//i.test(url) ? url : "";   // only http(s) hrefs (defense-in-depth)
   var inner = '<span class="chat-sugg-name">' + esc(name) + "</span>";
   if(price){ inner += '<span class="chat-sugg-price"> &middot; ' + esc(price) + "</span>"; }
-  if(safeUrl){ inner += '<a class="btn chat-sugg-btn" href="' + esc(safeUrl) + '" target="_blank" rel="noopener">Order now</a>'; }
+  if(slug){
+    inner += '<button type="button" class="btn chat-sugg-btn chat-order-btn" data-slug="' + esc(slug) + '">Add to basket</button>';
+  } else if(safeUrl){
+    inner += '<a class="btn chat-sugg-btn" href="' + esc(safeUrl) + '" target="_blank" rel="noopener">View product</a>';
+  }
   el.innerHTML = inner;
+  var orderBtn = el.querySelector(".chat-order-btn");
+  if(orderBtn) orderBtn.addEventListener("click", async function(){
+    if(orderBtn.disabled) return;
+    orderBtn.disabled = true;
+    var label = orderBtn.textContent; orderBtn.textContent = "Adding…";
+    try{
+      await addItemToBasket(orderBtn.getAttribute("data-slug") || "");
+      orderBtn.textContent = "In basket";
+    }catch(e){ orderBtn.disabled = false; orderBtn.textContent = label; }
+  });
   return el;
 }
 
