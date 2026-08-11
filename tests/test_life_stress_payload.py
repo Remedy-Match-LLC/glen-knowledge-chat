@@ -194,6 +194,13 @@ def test_uncurated_client_keeps_phase1_shape(app_env, monkeypatch):
         [it["slug"] for it in POOL["items"]]
 
 
+def test_portal_essences_offer_the_shared_basket_control():
+    body = Path("static/client-portal.html").read_text()
+    assert 'class="btn ghost essence-order-btn"' in body
+    assert 'await addItemToBasket(essenceBtn.dataset.slug' in body
+    assert 'essenceBtn.textContent = "In basket"' in body
+
+
 def test_real_builder_uses_selected_scan_mirror_not_bundled_e4l_db(app_env, monkeypatch):
     """The selected/newest portal scan supplies the essence inputs from the prod
     mirror. A stale bundled e4l.db must never choose an older scan's flowers."""

@@ -844,9 +844,8 @@ function supportProgramCardHtml(sp){
 }
 // Life Stress essence card body (Task 6): essences matched to the emotional/stress
 // patterns found in this client's scan (E4L + journal), flag-gated at the card block
-// below (d.life_stress_enabled). Each essence links to its product page when a URL
-// is present; the muted note names the pattern it was matched to (e.g. "for the fear
-// pattern in your scan").
+// below (d.life_stress_enabled). Every essence with a catalog slug can be added
+// to the same shared portal basket as scan remedies and Infoceuticals.
 function lifeStressBodyHtml(ls){
   ls = ls || {};
   const items = Array.isArray(ls.items) ? ls.items : [];
@@ -856,7 +855,8 @@ function lifeStressBodyHtml(ls){
       const nm = esc(it.name || "");
       const nameHtml = it.url ? `<a href="${esc(it.url)}" target="_blank" rel="noopener">${nm}</a>` : nm;
       const note = it.note ? `<div class="muted" style="font-size:.9em">${esc(it.note)}</div>` : "";
-      return `<li>${nameHtml}${note}</li>`;
+      const add = it.slug ? ` <button type="button" class="btn ghost essence-order-btn" data-slug="${esc(it.slug)}">Add to basket</button>` : "";
+      return `<li>${nameHtml}${add}${note}</li>`;
     }).join("");
     return `<p class="muted">Recommended for you by Dr. Glen.</p><ul>${rows}</ul>`;
   }
@@ -867,7 +867,8 @@ function lifeStressBodyHtml(ls){
     const nm = esc(it.name || "");
     const nameHtml = it.url ? `<a href="${esc(it.url)}" target="_blank" rel="noopener">${nm}</a>` : nm;
     const note = it.note ? `<div class="muted" style="font-size:.9em">${esc(it.note)}</div>` : "";
-    return `<li><input type="checkbox" class="ls-pick" data-slug="${slug}"${checked}> ${nameHtml}${note}</li>`;
+    const add = it.slug ? ` <button type="button" class="btn ghost essence-order-btn" data-slug="${slug}">Add to basket</button>` : "";
+    return `<li><input type="checkbox" class="ls-pick" data-slug="${slug}"${checked}> ${nameHtml}${add}${note}</li>`;
   }).join("");
   return `<p class="muted">Choose the essences that resonate — your picks are saved for Dr. Glen and Rae.</p><ul>${rows}</ul>`
        + `<button type="button" id="lsSaveBtn">Save my selections</button> <span id="lsSaveMsg" class="muted" hidden></span>`;
@@ -4640,6 +4641,22 @@ function render(d, v){
       const j = await r.json().catch(()=>null);
       if(lsMsg){ lsMsg.textContent = (r.ok && j && j.ok) ? "Saved — Dr. Glen and Rae can see your picks." : "Something went wrong — please try again."; lsMsg.hidden = false; }
     } catch(e){ if(lsMsg){ lsMsg.textContent = "Something went wrong — please try again."; lsMsg.hidden = false; } }
+  });
+
+  app.querySelectorAll(".essence-order-btn").forEach(essenceBtn => {
+    essenceBtn.addEventListener("click", async () => {
+      if(essenceBtn.disabled) return;
+      essenceBtn.disabled = true;
+      const label = essenceBtn.textContent;
+      essenceBtn.textContent = "Adding…";
+      try{
+        await addItemToBasket(essenceBtn.dataset.slug || "");
+        essenceBtn.textContent = "In basket";
+      }catch(e){
+        essenceBtn.disabled = false;
+        essenceBtn.textContent = label;
+      }
+    });
   });
 
   // Apply inbound links only after all panels and their event handlers exist.
