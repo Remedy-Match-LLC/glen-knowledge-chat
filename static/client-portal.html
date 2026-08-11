@@ -1044,7 +1044,13 @@ function syncPortalHeaderCartCount(){
     .reduce((total, row) => total + Math.max(1, parseInt(row.getAttribute("data-qty"), 10) || 1), 0);
   if(typeof window.setPortalHeaderCartCount === "function") window.setPortalHeaderCartCount(count);
 }
-function openPortalOrderBasket(){
+function rememberPortalShoppingContext(){
+  const active = Array.from(document.querySelectorAll("[data-panel]")).find(p => !p.hidden);
+  const context = {panel:(active && active.dataset.panel) || "current", scrollY:window.scrollY || 0};
+  try{ sessionStorage.setItem("portal-shopping-return", JSON.stringify(context)); }catch(e){}
+}
+function openPortalOrderBasket(captureContext){
+  if(captureContext) rememberPortalShoppingContext();
   showTab("current");
   window.setTimeout(function(){
     const card = document.getElementById("portal-order-basket");
@@ -1052,6 +1058,12 @@ function openPortalOrderBasket(){
   }, 0);
 }
 window.openPortalOrderBasket = openPortalOrderBasket;
+function continuePortalShopping(){
+  let context = {panel:"hub", scrollY:0};
+  try{ context = JSON.parse(sessionStorage.getItem("portal-shopping-return") || "null") || context; }catch(e){}
+  showTab(context.panel || "hub");
+  window.setTimeout(function(){ window.scrollTo({top:Number(context.scrollY)||0, behavior:"smooth"}); }, 0);
+}
 
 // Stable deep links used by email/SMS CTAs. A hash names a destination, not a
 // fragile DOM layout: first reveal its owning panel, then focus/scroll the card.
@@ -1413,7 +1425,11 @@ function buildOasisHtml(v){
 // another tab, or this panel's own qty edits) is always reflected on next
 // visit without needing the whole portal payload re-fetched.
 function buildCartHtml(){
-  return `<div class="card"><h2>My Cart</h2><div id="cart-body" class="muted">Loading…</div></div>`;
+  return `<div class="card"><h2>My Cart</h2><div id="cart-body" class="muted">Loading…</div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:1rem">
+      <button type="button" class="btn ghost portal-continue-shopping">Continue Shopping</button>
+      <button type="button" class="btn portal-review-order">Review my order</button>
+    </div></div>`;
 }
 function buildPhotoHtml(){
   return `<div class="card" id="photo-section">
@@ -1462,22 +1478,31 @@ function buildOffersEmptyHtml(view){
   return `<div class="card" id="offers-card"><h2>Membership &amp; offers</h2>
     ${buildMembershipSummaryHtml(view)}</div>`;
 }
+function renderUnifiedPortalCart(d){
+  const items = (d && d.items) || [];
+  const rows = items.map(it => {
+    const price = (it.is_special && it.regular_price_cents)
+      ? `<span class="pr"><span class="reg">${esc(money(it.regular_price_cents))}</span><span class="sp">${esc(money(it.price_cents))}</span></span>`
+      : `<span class="pr">${esc(money(it.price_cents))}</span>`;
+    return `<div class="reitem curated-order-item" data-slug="${esc(it.slug)}" data-qty="${esc(it.qty)}">
+      <span class="nm">${esc(it.name || it.slug)}${it.available ? '' : ' <span class="small err">No longer available</span>'}</span>
+      ${price}<input type="number" min="0" max="99" value="${esc(it.qty)}" aria-label="Quantity for ${esc(it.name || it.slug)}"
+        data-cart-qty="${esc(it.slug)}" data-cart-fmt="${esc(it.format || '')}" style="width:56px">
+      <button type="button" class="wishRemBtn unified-cart-remove" data-cart-slug="${esc(it.slug)}" data-cart-fmt="${esc(it.format || '')}" aria-label="Remove ${esc(it.name || it.slug)}">×</button>
+    </div>`;
+  }).join('');
+  const orderHost = document.getElementById('curatedOrderItems');
+  if(orderHost) orderHost.innerHTML = rows;
+  const cartHost = document.getElementById('cart-body');
+  if(cartHost) cartHost.innerHTML = rows || '<p class="muted">Your cart is empty.</p>';
+  const empty = document.getElementById('orderEmpty');
+  if(empty) empty.hidden = !!items.length;
+  if(typeof window.setPortalHeaderCartCount === 'function') window.setPortalHeaderCartCount((d && d.count) || 0);
+}
 function loadCart(){
-  const host = document.getElementById('cart-body');
-  if (!host) return;  // panel not in the DOM (flag off) -- nothing to do
-  fetch('/api/cart', {credentials: 'same-origin'})
+  fetch('/api/portal/' + encodeURIComponent(token) + '/cart', {credentials: 'same-origin'})
     .then(r => r.json())
-    .then(d => {
-      const items = (d && d.items) || [];
-      if (!items.length) { host.innerHTML = '<p class="muted">Your cart is empty.</p>'; return; }
-      host.innerHTML = items.map(it => `
-        <div class="reitem">
-          <span class="nm">${esc(it.name || it.slug)}${it.available ? '' : ' <span class="small err">No longer available</span>'}</span>
-          <input type="number" min="0" max="99" value="${esc(it.qty)}"
-                 data-cart-qty="${esc(it.slug)}" data-cart-fmt="${esc(it.format || '')}"
-                 style="width:56px">
-        </div>`).join('');
-    })
+    .then(renderUnifiedPortalCart)
     .catch(() => {});
 }
 // Delegated once: any qty input inside the cart panel re-render is still
@@ -1491,11 +1516,24 @@ document.addEventListener("change", function(ev){
   let qty = parseInt(inp.value, 10);
   if (!Number.isFinite(qty) || qty < 0) qty = 0;
   inp.disabled = true;
-  fetch('/api/cart/set-qty', {
+  fetch('/api/portal/' + encodeURIComponent(token) + '/cart/set-qty', {
     method: 'POST', credentials: 'same-origin',
     headers: {'Content-Type': 'application/json'},
     body: JSON.stringify({slug: slug, format: fmt, qty: qty})
-  }).then(r => r.json()).then(() => { loadCart(); }).catch(() => { inp.disabled = false; });
+  }).then(r => r.json()).then(renderUnifiedPortalCart).catch(() => { inp.disabled = false; });
+});
+
+document.addEventListener("click", function(ev){
+  const remove = ev.target.closest(".unified-cart-remove");
+  if(remove){
+    fetch('/api/portal/' + encodeURIComponent(token) + '/cart/set-qty', {
+      method:'POST', credentials:'same-origin', headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({slug:remove.dataset.cartSlug, format:remove.dataset.cartFmt || '', qty:0})
+    }).then(r=>r.json()).then(renderUnifiedPortalCart);
+    return;
+  }
+  if(ev.target.closest(".portal-continue-shopping")){ continuePortalShopping(); return; }
+  if(ev.target.closest(".portal-review-order")){ openPortalOrderBasket(false); }
 });
 
 // Task 6: wires the three Build-Out actions Task 5 left inert (tool add/remove,
@@ -3509,6 +3547,7 @@ function render(d, v){
         <p class="small muted" id="orderAddStatus" style="margin:.35rem 0 0"></p>
       </div>
       <p class="muted small" style="margin:.7rem 0 1rem">Shipping calculated at checkout.</p>
+      <button type="button" class="btn ghost full portal-continue-shopping" style="margin-bottom:.5rem">Continue Shopping</button>
       <button class="btn full" id="reorderBtn">Review my order</button>
       <div id="reorderReview" hidden></div>
       <p class="small err" id="reorderErr" hidden></p></div>`;
@@ -4093,13 +4132,11 @@ function render(d, v){
     const removeBtn = ev.target.closest(".curated-remove");
     if(!removeBtn) return;
     const row = removeBtn.closest(".curated-order-item");
-    if(row) row.remove();
-    syncPortalHeaderCartCount();
-    const empty = document.getElementById("orderEmpty");
-    if(empty) empty.hidden = !!document.querySelector("#curatedOrderItems .curated-order-item");
-    const review = document.getElementById("reorderReview");
-    if(review){ review.hidden = true; review.innerHTML = ""; }
-    if(btn){ btn.dataset.reviewed = ""; btn.textContent = "Review my order"; }
+    if(!row) return;
+    fetch('/api/portal/' + encodeURIComponent(token) + '/cart/set-qty', {
+      method:'POST', credentials:'same-origin', headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({slug:row.dataset.slug || '', format:'', qty:0})
+    }).then(r=>r.json()).then(renderUnifiedPortalCart);
   });
 
   const findBtn = document.getElementById("orderFindBtn");
@@ -4138,7 +4175,7 @@ function render(d, v){
     finally{ addBtn.disabled = false; }
   });
 
-  syncPortalHeaderCartCount();
+  loadCart();
 
   app.querySelectorAll(".scan-order-btn").forEach(scanBtn => {
     scanBtn.addEventListener("click", async () => {
@@ -4195,7 +4232,11 @@ function render(d, v){
             body: JSON.stringify({slug})
           });
           const j = await r.json();
-          if(j.ok){ oasisBtn.textContent = "Added to your Oasis"; return; }
+          if(j.ok){
+            await addItemToBasket(slug);
+            oasisBtn.textContent = "Added to your Oasis and cart";
+            return;
+          }
           oasisBtn.disabled = false; oasisBtn.textContent = label;
         }catch(e){ oasisBtn.disabled = false; oasisBtn.textContent = label; }
         return;
@@ -6440,32 +6481,19 @@ async function reorder(){
 
 async function addItemToBasket(slug, qty=1){
   if(!slug) throw new Error("That remedy is not available.");
-  const list = document.getElementById("curatedOrderItems");
-  if(!list) throw new Error("Your basket is temporarily unavailable.");
-  const existing = list.querySelector(`.curated-order-item[data-slug="${CSS.escape(slug)}"]`);
-  if(existing) return {slug, name:(existing.querySelector(".nm") || {}).textContent || "Remedy"};
+  rememberPortalShoppingContext();
   const r = await fetch(`/api/portal/${encodeURIComponent(token)}/order-add`, {
     method:"POST", headers:{"Content-Type":"application/json"},
-    body:JSON.stringify({slug})
+    body:JSON.stringify({slug, qty})
   });
   const j = await r.json();
   if(!r.ok || !j.item) throw new Error(j.error || "Could not add that remedy.");
-  const item = j.item;
-  const row = document.createElement("div");
-  row.className = "reitem curated-order-item";
-  row.setAttribute("data-slug", item.slug);
-  row.setAttribute("data-qty", Math.max(1, parseInt(qty, 10) || 1));
-  row.innerHTML = `<span class="nm">${esc(item.name)}</span><span class="pr">${esc(money(item.price_cents))}</span><button type="button" class="wishRemBtn curated-remove" aria-label="Remove ${esc(item.name)} from this order">×</button>`;
-  list.appendChild(row);
-  syncPortalHeaderCartCount();
-  const empty = document.getElementById("orderEmpty");
-  if(empty) empty.hidden = true;
+  renderUnifiedPortalCart(j.cart || {items:[]});
   const review = document.getElementById("reorderReview");
   if(review){ review.hidden = true; review.innerHTML = ""; }
   const checkout = document.getElementById("reorderBtn");
   if(checkout){ checkout.dataset.reviewed = ""; checkout.textContent = "Review my order"; }
-  list.scrollIntoView({behavior:"smooth", block:"nearest"});
-  return item;
+  return j.item;
 }
 
 async function orderWishlist(btn){

@@ -94,7 +94,7 @@
       var cartBtn = el("button", "js-mypath-btn js-portal-cart-btn", "Cart");
       cartBtn.setAttribute("aria-label", "View remedy order cart");
       cartBtn.onclick = function () {
-        if (typeof window.openPortalOrderBasket === "function") window.openPortalOrderBasket();
+        if (typeof window.openPortalOrderBasket === "function") window.openPortalOrderBasket(true);
       };
       window.setPortalHeaderCartCount = function (count) {
         count = Math.max(0, parseInt(count, 10) || 0);
