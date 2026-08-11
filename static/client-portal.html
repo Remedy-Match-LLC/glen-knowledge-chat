@@ -6466,12 +6466,30 @@ async function reorder(){
   }
   btn.disabled = true; const label = btn.textContent; btn.textContent = "Setting up your order…";
   try{
-    // One call: builds a live Stripe checkout at the client's portal price.
-    const c = await fetch(`/api/portal/${encodeURIComponent(token)}/checkout`, {
-      method:"POST", headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({items:items.map(it => ({slug:it.slug, qty:it.qty}))})
+    // Keep one request id across the automatic retry. The server and Stripe use
+    // it as their idempotency key, so a transient response failure can never mint
+    // a second order/session.
+    if(!btn.dataset.checkoutRequestId){
+      btn.dataset.checkoutRequestId = (crypto.randomUUID ? crypto.randomUUID() :
+        (Date.now().toString(36) + Math.random().toString(36).slice(2)));
+    }
+    const payload = JSON.stringify({
+      checkout_request_id:btn.dataset.checkoutRequestId,
+      items:items.map(it => ({slug:it.slug, qty:it.qty}))
     });
-    const cj = await c.json();
+    let cj = null;
+    for(let attempt=0; attempt<2; attempt++){
+      try{
+        const c = await fetch(`/api/portal/${encodeURIComponent(token)}/checkout`, {
+          method:"POST", headers:{"Content-Type":"application/json"}, body:payload
+        });
+        cj = await c.json();
+        if(!c.ok) throw new Error(cj.error || "Checkout is temporarily unavailable.");
+        break;
+      }catch(fetchErr){
+        if(attempt) throw fetchErr;
+      }
+    }
     if(cj.stripe_url){ location.href = cj.stripe_url; return; }
     throw new Error(cj.error || "Checkout is temporarily unavailable. Please reach out to us and we’ll help.");
   }catch(e){

@@ -18743,7 +18743,8 @@ def _stripe_checkout_url_for_reorder(out, email):
             sess = stripe_pay.create_itemized_checkout_session(
                 stripe_items, customer_email=email, metadata=metadata,
                 success_url=success, cancel_url=cancel_url,
-                collect_shipping=True)
+                collect_shipping=True,
+                idempotency_key=(out.get("invoice_id") or ""))
         else:
             sess = stripe_pay.create_checkout_session(
                 total_cents, customer_email=email,
@@ -25705,6 +25706,9 @@ def api_client_portal_checkout(token):
         return jsonify({"error": "not found"}), 404
     email = (portal.get("email") or "").strip().lower()
     body = request.get_json(silent=True) or {}
+    checkout_request_id = (body.get("checkout_request_id") or "").strip().lower()
+    if checkout_request_id and not re.fullmatch(r"[a-z0-9_-]{16,80}", checkout_request_id):
+        return jsonify({"error": "Invalid checkout request."}), 400
     posted = body.get("items")
     if posted is None and (body.get("slug") or "").strip():
         posted = [{"slug": body.get("slug"), "qty": body.get("qty", 1)}]
@@ -25725,6 +25729,10 @@ def api_client_portal_checkout(token):
         # explicit authorization to purchase. This lets the client submit a
         # reviewed subset instead of forcing the entire list into checkout.
         curated = (portal.get("content") or {}).get("reorder_items") or []
+        curated_by_slug = {
+            (it.get("slug") or "").strip().lower(): it
+            for it in curated if isinstance(it, dict) and it.get("slug")
+        }
         entitled |= {(it.get("slug") or "").strip().lower()
                      for it in curated if isinstance(it, dict) and it.get("slug")}
         # The customer's own saved-and-chosen wishlist item is authorization to
@@ -25749,7 +25757,14 @@ def api_client_portal_checkout(token):
                 qty = max(1, min(int(it.get("qty", 1) or 1), 99))
             except Exception:
                 qty = 1
-            items.append({"slug": slug, "qty": qty})  # price_cents NEVER accepted from the client
+            # A posted price is NEVER trusted. Reattach only the practitioner's
+            # server-stored override so the reviewed subset keeps Carol's special
+            # price all the way into Stripe Checkout.
+            priced_item = {"slug": slug, "qty": qty}
+            curated_item = curated_by_slug.get(slug) or {}
+            if curated_item.get("price_cents") is not None:
+                priced_item["price_cents"] = curated_item["price_cents"]
+            items.append(priced_item)
     else:
         # No body = the "Order my remedies" button. Charge the SAME merged set the
         # portal display shows (curated reorder_items + accepted-rec items), so an
@@ -25781,7 +25796,8 @@ def api_client_portal_checkout(token):
         # payload is persisted via set_order_qbo_lines for /begin/checkout-return
         # (kind=="reorder", set by _stripe_checkout_url_for_reorder below) to book a
         # line-faithful QBO Sales Receipt once the customer actually pays.
-        checkout_ref = _uuid.uuid4().hex
+        checkout_ref = (f"portal-{checkout_request_id}" if checkout_request_id
+                        else _uuid.uuid4().hex)
         qbo_payload = {"lines": lines, "discount_cents": 0, "tax_cents": 0}
         from urllib.parse import quote as _urlquote
         out = {"invoice_id": checkout_ref, "customer_id": "",

@@ -163,6 +163,34 @@ def test_curated_subset_can_be_submitted_for_checkout(client, monkeypatch):
     assert [it["slug"] for it in ingested["items"]] == ["neuro-magnesium"]
 
 
+def test_curated_subset_keeps_server_special_price_and_stable_retry_ref(client, monkeypatch):
+    c, appmod = client
+    tok = _seed_portal(appmod, content={
+        "greeting": "hi", "video": {}, "layers": [],
+        "reorder_items": [{"slug": "nous-energy", "qty": 1, "price_cents": 2500}],
+    })
+    ingested = {}
+    _mock_checkout(appmod, monkeypatch, capture_ingest=ingested)
+
+    r = c.post(f"/api/portal/{tok}/checkout", json={
+        "checkout_request_id": "checkout_retry_123456",
+        "items": [{"slug": "nous-energy", "qty": 2, "price_cents": 1}],
+    })
+
+    assert r.status_code == 200
+    assert ingested["external_ref"] == "portal-checkout_retry_123456"
+    assert ingested["items"][0]["unit_cents"] == 2500
+    assert ingested["total_cents"] == 5000
+
+
+def test_checkout_rejects_invalid_idempotency_key(client):
+    c, appmod = client
+    tok = _seed_portal(appmod)
+    r = c.post(f"/api/portal/{tok}/checkout", json={
+        "checkout_request_id": "bad key!", "items": [{"slug": "nous-energy", "qty": 1}]})
+    assert r.status_code == 400
+
+
 def test_portal_checkout_passes_itemized_lines_to_stripe(client, monkeypatch):
     c, appmod = client
     tok = _seed_portal(appmod, content={

@@ -24,3 +24,21 @@ def test_itemized_checkout_builds_one_visible_line_per_remedy(monkeypatch):
     assert captured["line_items[0][price_data][unit_amount]"] == "6997"
     assert captured["line_items[1][price_data][product_data][name]"] == "Heart Health"
     assert captured["line_items[1][quantity]"] == "2"
+
+
+def test_itemized_checkout_forwards_idempotency_key(monkeypatch):
+    seen = {}
+
+    def fake_post(path, params, **kwargs):
+        seen.update(kwargs)
+        return {"id": "cs_same", "url": "https://stripe.test/cs_same"}
+
+    monkeypatch.setattr(stripe_pay, "_post", fake_post)
+    stripe_pay.create_itemized_checkout_session(
+        [{"name": "Heart Health", "qty": 1, "unit_cents": 2500}],
+        customer_email="carol@example.com", metadata={"kind": "reorder"},
+        success_url="https://example.test/success", cancel_url="https://example.test/cancel",
+        idempotency_key="portal-checkout_retry_123456",
+    )
+
+    assert seen["idempotency_key"] == "portal-checkout_retry_123456"
