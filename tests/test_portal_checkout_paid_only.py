@@ -58,6 +58,8 @@ def _prep(monkeypatch, tmp_path, email="brooke@example.com"):
 
     import dashboard.stripe_pay as sp
     monkeypatch.setattr(sp, "create_checkout_session", lambda *a, **k: {"url": "https://s.test"})
+    monkeypatch.setattr(sp, "create_itemized_checkout_session",
+                        lambda *a, **k: {"url": "https://s.test"})
     monkeypatch.setattr(app, "_STRIPE_ACTIVE", True)
     return db, tok
 
