@@ -19570,6 +19570,7 @@ def _scan_recommendations_for(email, scan_date=None):
             out_info.append({"code": r["item_code"],
                              "label": _scan_rec_label(r["item_code"], r["label"]),
                              "rank": r["priority_rank"], "protocol_days": r["protocol_days"],
+                             "slug": slug,
                              "order_url": destination_for(slug)})
         out_mih = [{"code": r["item_code"], "label": (r["label"] or r["item_code"]),
                     "rank": r["priority_rank"], "protocol_days": r["protocol_days"]}

@@ -3309,7 +3309,7 @@ function render(d, v){
   }
 
   // Your scan's own matches, straight from E4L. Free, and orderable.
-  // Infoceuticals get an order link to the new-style product page. miHealth cycles
+  // Infoceuticals add to the portal's shared basket. miHealth cycles
   // (ER/MR) are what your practitioner runs on the device — shown, never a button.
   if (d.scan_recommendations) {
     const sr = d.scan_recommendations;
@@ -3321,8 +3321,8 @@ function render(d, v){
       s += sr.infoceuticals.map(i => {
         const name = esc(i.label);
         const days = i.protocol_days ? ` <span class="muted">· ${i.protocol_days}-day protocol</span>` : "";
-        return i.order_url
-          ? `<p style="margin:.25rem 0">${name}${days} — <a href="${esc(i.order_url)}" target="_blank" rel="noopener">order</a></p>`
+        return i.slug
+          ? `<p style="margin:.25rem 0">${name}${days} — <button type="button" class="btn ghost scan-order-btn" data-slug="${esc(i.slug)}">Add to basket</button></p>`
           : `<p style="margin:.25rem 0">${name}${days}</p>`;
       }).join("");
     }
@@ -3478,7 +3478,7 @@ function render(d, v){
       <p class="small err" id="recoErr" hidden></p></div>`;
   }
 
-  if(Array.isArray(d.reorder_items) && d.reorder_items.length){
+  if(Array.isArray(d.reorder_items)){
     let rows = "";
     d.reorder_items.forEach(it=>{
       const price = (it.is_special && it.regular_price_cents)
@@ -3494,6 +3494,7 @@ function render(d, v){
     html += `<div class="card"><h2>Order your remedies</h2>
       ${note}
       <div id="curatedOrderItems">${rows}</div>
+      <p class="small muted" id="orderEmpty" ${rows ? "hidden" : ""}>Your basket is empty. Add remedies using any “Add to basket” button.</p>
       <div style="margin-top:1rem;padding-top:.8rem;border-top:1px dashed var(--line)">
         <label for="orderAddSearch" class="small"><strong>Add another remedy</strong></label>
         <div style="display:flex;gap:8px;margin-top:.35rem">
@@ -3548,7 +3549,7 @@ function render(d, v){
             <button type="button" class="qtybtn" data-dir="1" aria-label="Increase quantity">+</button>
           </span>
           ${save}
-          <button class="btn remBtn" data-slug="${slug}">${esc(cta)}</button>
+          <button class="btn remBtn" data-slug="${slug}">Add to basket</button>
         </div>
       </div>`;
     });
@@ -3585,8 +3586,8 @@ function render(d, v){
     });
     html += `<div class="card" id="wishlistCard"><h2>Your wishlist</h2>
       <div>${wrows}</div>
-      <button class="btn full" id="wishOrderBtn" disabled>Order selected</button>
-      <p class="muted small" style="margin:.7rem 0 0">Select items, set how many, and order them together. Member price and shipping are calculated at checkout.</p>
+      <button class="btn full" id="wishOrderBtn" disabled>Add selected to basket</button>
+      <p class="muted small" style="margin:.7rem 0 0">Select items and add them to the same basket. Review everything together before checkout.</p>
       <p class="small err" id="wishErr" hidden></p></div>`;
   }
 
@@ -4090,6 +4091,8 @@ function render(d, v){
     if(!removeBtn) return;
     const row = removeBtn.closest(".curated-order-item");
     if(row) row.remove();
+    const empty = document.getElementById("orderEmpty");
+    if(empty) empty.hidden = !!document.querySelector("#curatedOrderItems .curated-order-item");
     const review = document.getElementById("reorderReview");
     if(review){ review.hidden = true; review.innerHTML = ""; }
     if(btn){ btn.dataset.reviewed = ""; btn.textContent = "Review my order"; }
@@ -4123,29 +4126,24 @@ function render(d, v){
   if(addBtn) addBtn.addEventListener("click", async () => {
     const slug = results.value;
     if(!slug) return;
-    if(orderCard.querySelector(`.curated-order-item[data-slug="${CSS.escape(slug)}"]`)){
-      addStatus.textContent = "That remedy is already in this order."; return;
-    }
     addBtn.disabled = true; addStatus.textContent = "Adding…";
     try{
-      const r = await fetch(`/api/portal/${encodeURIComponent(token)}/order-add`, {
-        method:"POST", headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({slug})
-      });
-      const j = await r.json();
-      if(!r.ok || !j.item) throw new Error(j.error || "Could not add that remedy.");
-      const item = j.item;
-      const row = document.createElement("div");
-      row.className = "reitem curated-order-item";
-      row.setAttribute("data-slug", item.slug); row.setAttribute("data-qty", item.qty || 1);
-      row.innerHTML = `<span class="nm">${esc(item.name)}</span><span class="pr">${esc(money(item.price_cents))}</span><button type="button" class="wishRemBtn curated-remove" aria-label="Remove ${esc(item.name)} from this order">×</button>`;
-      document.getElementById("curatedOrderItems").appendChild(row);
-      const review = document.getElementById("reorderReview");
-      if(review){ review.hidden = true; review.innerHTML = ""; }
-      btn.dataset.reviewed = ""; btn.textContent = "Review my order";
-      addStatus.textContent = `${item.name} was added to this order.`;
+      const item = await addItemToBasket(slug);
+      addStatus.textContent = `${item.name} is in your basket.`;
     }catch(e){ addStatus.textContent = e.message || "Could not add that remedy."; }
     finally{ addBtn.disabled = false; }
+  });
+
+  app.querySelectorAll(".scan-order-btn").forEach(scanBtn => {
+    scanBtn.addEventListener("click", async () => {
+      if(scanBtn.disabled) return;
+      scanBtn.disabled = true;
+      const label = scanBtn.textContent; scanBtn.textContent = "Adding…";
+      try{
+        await addItemToBasket(scanBtn.dataset.slug || "");
+        scanBtn.textContent = "In basket";
+      }catch(e){ scanBtn.disabled = false; scanBtn.textContent = label; }
+    });
   });
 
   const raBtn = document.getElementById("recoAcceptBtn");
@@ -4516,10 +4514,10 @@ function render(d, v){
     if(btn.dataset.busy === "1") return;
     const n = card.querySelectorAll(".wishSel:checked").length;
     btn.disabled = n === 0;
-    btn.textContent = n ? `Order selected (${n})` : "Order selected";
+    btn.textContent = n ? `Add selected to basket (${n})` : "Add selected to basket";
   }
 
-  app.querySelectorAll(".wishRemBtn").forEach(wb=>{
+  app.querySelectorAll(".wishitem .wishRemBtn").forEach(wb=>{
     wb.addEventListener("click", async ()=>{
       if(wb.disabled) return;
       wb.disabled = true;
@@ -6418,12 +6416,38 @@ async function reorder(){
   }
 }
 
+async function addItemToBasket(slug, qty=1){
+  if(!slug) throw new Error("That remedy is not available.");
+  const list = document.getElementById("curatedOrderItems");
+  if(!list) throw new Error("Your basket is temporarily unavailable.");
+  const existing = list.querySelector(`.curated-order-item[data-slug="${CSS.escape(slug)}"]`);
+  if(existing) return {slug, name:(existing.querySelector(".nm") || {}).textContent || "Remedy"};
+  const r = await fetch(`/api/portal/${encodeURIComponent(token)}/order-add`, {
+    method:"POST", headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({slug})
+  });
+  const j = await r.json();
+  if(!r.ok || !j.item) throw new Error(j.error || "Could not add that remedy.");
+  const item = j.item;
+  const row = document.createElement("div");
+  row.className = "reitem curated-order-item";
+  row.setAttribute("data-slug", item.slug);
+  row.setAttribute("data-qty", Math.max(1, parseInt(qty, 10) || 1));
+  row.innerHTML = `<span class="nm">${esc(item.name)}</span><span class="pr">${esc(money(item.price_cents))}</span><button type="button" class="wishRemBtn curated-remove" aria-label="Remove ${esc(item.name)} from this order">×</button>`;
+  list.appendChild(row);
+  const empty = document.getElementById("orderEmpty");
+  if(empty) empty.hidden = true;
+  const review = document.getElementById("reorderReview");
+  if(review){ review.hidden = true; review.innerHTML = ""; }
+  const checkout = document.getElementById("reorderBtn");
+  if(checkout){ checkout.dataset.reviewed = ""; checkout.textContent = "Review my order"; }
+  list.scrollIntoView({behavior:"smooth", block:"nearest"});
+  return item;
+}
+
 async function orderWishlist(btn){
-  // Move-to-order: post every checked wishlist row's {slug, qty} as ONE checkout
-  // so the selected items are ordered together (folded), each at its chosen qty.
-  // Add-then-confirm: the endpoint returns a live Stripe URL; the charge only
-  // happens if the client confirms on Stripe's page. One-shot latch (disabled
-  // before any await) so a double-click can't double-fire.
+  // Selected wishlist remedies join the shared basket. Checkout happens only
+  // from the basket review, so these never create a separate Stripe order.
   if(btn.disabled) return;
   const card = document.getElementById("wishlistCard");
   const err = document.getElementById("wishErr");
@@ -6440,16 +6464,16 @@ async function orderWishlist(btn){
   if(!items.length) return;
   btn.dataset.busy = "1";  // latch against refreshWishOrder re-enabling mid-flight
   btn.disabled = true;
-  const label = btn.textContent; btn.textContent = "Setting up your order…";
+  const label = btn.textContent; btn.textContent = "Adding to basket…";
   try{
-    const c = await fetch(`/api/portal/${encodeURIComponent(token)}/checkout`, {
-      method: "POST",
-      headers: {"Content-Type": "application/json"},
-      body: JSON.stringify({items}),
-    });
-    const cj = await c.json();
-    if(cj.stripe_url){ location.href = cj.stripe_url; return; }
-    throw new Error(cj.error || "Checkout is temporarily unavailable. Please reach out to us and we’ll help.");
+    for(const item of items) await addItemToBasket(item.slug, item.qty);
+    card.querySelectorAll(".wishSel:checked").forEach(cb => { cb.checked = false; });
+    btn.textContent = "Added to basket";
+    setTimeout(()=>{
+      btn.dataset.busy = "";
+      btn.disabled = true;
+      btn.textContent = "Add selected to basket";
+    }, 1200);
   }catch(e){
     if(err){ err.textContent = e.message || "Something went wrong. Please reach out and we’ll help."; err.hidden = false; }
     btn.dataset.busy = "";  // clear latch so the button recovers after a failed order
@@ -6458,33 +6482,20 @@ async function orderWishlist(btn){
 }
 
 async function reorderItem(btn){
-  // Task 6b: per-row "Reorder" button on the "Your Remedies" module now posts
-  // THIS row's slug+qty, so clicking it reorders that product — not the whole
-  // practitioner-curated cart. The stepper next to it now actually drives the
-  // sent qty (previously display-only). Still add-then-confirm, never a
-  // silent charge: the checkout endpoint returns a live Stripe Checkout URL —
-  // the actual charge only happens if the client confirms on Stripe's hosted
-  // page. One-shot latch: disabled immediately on click (before any await),
-  // so a double-click or a slow network can't double-fire it. (This codebase
-  // has been bitten by double-fire before — see feedback_print_once_guard.)
+  // Every per-remedy action joins the shared basket instead of opening a
+  // one-item checkout. The basket's review button is the only checkout path.
   if(btn.disabled) return;
   btn.disabled = true;
   const err = document.getElementById("remErr");
   if(err) err.hidden = true;
-  const label = btn.textContent; btn.textContent = "Setting up your order…";
+  const label = btn.textContent; btn.textContent = "Adding…";
   const row = btn.closest(".remitem");
   const slug = btn.getAttribute("data-slug") || (row && row.getAttribute("data-slug")) || "";
   const qtyVal = row && row.querySelector(".qtyval");
   const qty = Math.max(1, parseInt(qtyVal && qtyVal.getAttribute("data-qty"), 10) || 1);
   try{
-    const c = await fetch(`/api/portal/${encodeURIComponent(token)}/checkout`, {
-      method: "POST",
-      headers: {"Content-Type": "application/json"},
-      body: JSON.stringify({items: [{slug, qty}]}),
-    });
-    const cj = await c.json();
-    if(cj.stripe_url){ location.href = cj.stripe_url; return; }
-    throw new Error(cj.error || "Checkout is temporarily unavailable. Please reach out to us and we’ll help.");
+    await addItemToBasket(slug, qty);
+    btn.textContent = "In basket";
   }catch(e){
     if(err){ err.textContent = e.message || "Something went wrong. Please reach out and we’ll help."; err.hidden = false; }
     btn.disabled = false; btn.textContent = label;
