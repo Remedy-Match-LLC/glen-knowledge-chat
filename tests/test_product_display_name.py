@@ -34,3 +34,14 @@ def test_display_name_is_optional():
     for slug, v in prods.items():
         if v.get("name"):
             assert (v.get("display_name") or v["name"]), slug
+
+
+def test_the_route_the_page_reads_uses_display_name():
+    """Regression: display_name was first added to /begin/product-data, which the page
+    does NOT read. The page reads /begin/product-page-data, so the title never changed.
+    Pin BOTH routes, since the names differ by one word."""
+    src = open("app.py").read()
+    for marker in ('"slug": slug, "name": p.get("display_name") or p["name"],',):
+        assert src.count(marker) == 2, (
+            f"expected display_name preference in BOTH product routes, found "
+            f"{src.count(marker)}")
