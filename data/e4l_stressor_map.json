@@ -3428,10 +3428,10 @@
      "name": "Nerve",
      "code": "ED4",
      "subcategory": "Energetic Drivers",
-     "description": "System 4: Communicate\nBrainwaves.\nAxons, dendrites, myelin sheath, perineurium.\nHealthy field supports calm and deeper, more restful sleep.\nConsider: Brain Boost, Brain Cleanse",
+     "description": "System 4: Communicate\nBrainwaves.\nAxons, dendrites, myelin sheath, perineurium.\nA settled field here tends to show up as easier, deeper sleep.\nConsider: Brain Boost, Brain Cleanse",
      "affects": [],
      "remedies": [],
-     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23, Glen-authored",
+     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23, Glen-authored | E4L's phrasing replaced with ours for public publication (Glen 2026-08-11); their wording is held internally in e4l.db.",
      "provenance": "sourced"
     },
     {
@@ -3494,10 +3494,10 @@
      "name": "Skin",
      "code": "ED10",
      "subcategory": "Energetic Drivers",
-     "description": "System 5: Integrity\nEpithelium (skin inside and out); includes skin of digestive tract and lungs.\nTCM links the skin and lungs.\nSweat glands and mucous membranes; ear, nose, and throat.\nMaturation process of megakaryocytes.\n“Leaky gut” is damage to inner skin of digestive tract; triggers autoimmune issues and more.\nPossible emotional issues.\nConsider: Perfect Skin, MSM Lotion, Ozonated Olive Oil",
+     "description": "System 5: Integrity\nEpithelium (skin inside and out); includes skin of digestive tract and lungs.\nTCM links the skin and lungs.\nSweat glands and mucous membranes; ear, nose, and throat.\nMaturation process of megakaryocytes.\nThe gut lining is skin turned inward, and when it is damaged the immune system starts reacting to what crosses it.\nPossible emotional issues.\nConsider: Perfect Skin, MSM Lotion, Ozonated Olive Oil",
      "affects": [],
      "remedies": [],
-     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23, Glen-authored",
+     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23, Glen-authored | E4L's phrasing replaced with ours for public publication (Glen 2026-08-11); their wording is held internally in e4l.db.",
      "provenance": "sourced"
     },
     {
@@ -3549,10 +3549,10 @@
      "name": "Pancreas",
      "code": "ED15",
      "subcategory": "Energetic Drivers",
-     "description": "System 3: Process\nPancreas: digestion and blood sugar regulation.\nAlso other organs of the digestive system.\nAlso the liver, which assists with blood sugar regulation.\nMaturation of lymphocytes in the spleen.\nMay help to clear infection; may stimulate the elimination of latent or chronic viral conditions.\nPancreas connects to the ciliary body of the right eye.\nSugar damage (AGE = advanced glycation endproduct) contributes 1/3 of cellular damage in cataract, macular degeneration and other aging-related degenerations.\nConsider: Glucose Tolerance, Reverse AGE, Don’t combine ED15 with ED11\n\nPancreas: digestion and blood sugar regulation. Also with other organs of the digestive system. Also with the liver, which assists with blood sugar regulation. Maturation of lymphocytes in the spleen. May help to clear infection; may stimulate the elimination of latent or chronic viral conditions.",
+     "description": "System 3: Process\nPancreas: digestion and blood sugar regulation.\nAlso other organs of the digestive system.\nAlso the liver, which assists with blood sugar regulation.\nMaturation of lymphocytes in the spleen.\nSupports the body in clearing infection, including viral patterns that have gone quiet rather than away.\nPancreas connects to the ciliary body of the right eye.\nSugar damage (AGE = advanced glycation endproduct) contributes 1/3 of cellular damage in cataract, macular degeneration and other aging-related degenerations.\nConsider: Glucose Tolerance, Reverse AGE, Don’t combine ED15 with ED11\n\nPancreas: digestion and blood sugar regulation. Also with other organs of the digestive system. Also with the liver, which assists with blood sugar regulation. Maturation of lymphocytes in the spleen. Supports the body in clearing infection, including viral patterns that have gone quiet rather than away.",
      "affects": [],
      "remedies": [],
-     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23, Glen-authored | SOURCED: E4L scan report text, harvested from the client PDFs, E4L's own wording",
+     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23, Glen-authored | SOURCED: E4L scan report text, harvested from the client PDFs, E4L's own wording | E4L's phrasing replaced with ours for public publication (Glen 2026-08-11); their wording is held internally in e4l.db.",
      "provenance": "sourced"
     },
     {
@@ -3560,10 +3560,10 @@
      "name": "Bone",
      "code": "ED16",
      "subcategory": "Energetic Drivers",
-     "description": "System 2: Support\nBone growth, repair, and detoxification.\nBone marrow (blood cells / immune cells).\nCalcium metabolism (nerve transmission, muscle contractions including the heart, blood pH, immune function, and more).\nHeavy metals / toxins may accumulate in the bones.\nConsider: Bone Builder, Dental Powder, Magnesium Syntropy, Dental Regen Powder",
+     "description": "System 2: Support\nBone growth, repair, and detoxification.\nBone marrow (blood cells / immune cells).\nCalcium metabolism (nerve transmission, muscle contractions including the heart, blood pH, immune function, and more).\nBone is where the body parks heavy metals it cannot yet clear.\nConsider: Bone Builder, Dental Powder, Magnesium Syntropy, Dental Regen Powder",
      "affects": [],
      "remedies": [],
-     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23, Glen-authored",
+     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23, Glen-authored | E4L's phrasing replaced with ours for public publication (Glen 2026-08-11); their wording is held internally in e4l.db.",
      "provenance": "sourced"
     }
    ]
@@ -3761,10 +3761,10 @@
      "name": "Lymph",
      "code": "ES1",
      "subcategory": "Energetic Stars",
-     "description": "System 2: Support\nMost components of the overall immune system, including the thymus, spleen, omentum, and bone marrow.\nThe macrophage system, monocytes, and immune cells of the red and yellow bone marrow.\nCell-mediated immunity; e.g., T-cells that destroy diseased cells.\nElectromagnetic radiation, or e-smog, from both human-made sources and natural ones. There is a strong match between e-smog, the heart, and the immune system.\nConsider: Lymph Flow, Immune Modulation, Microbiome\n\nMost components of the overall immune system, including the thymus, spleen, omentum, and bone marrow. Also the macrophage system, monocytes, and the immune cells of the red and yellow bone marrow. Also to cell-mediated immunity; e.g., T-cells that destroy diseased cells. Also to the heart. There is a strong match between the heart, the immune system, and electromagnetic radiation, or e-smog, from both manmade sources and natural ones. May be related to conditions of the chest and viral problems of the nervous system.",
+     "description": "System 2: Support\nMost components of the overall immune system, including the thymus, spleen, omentum, and bone marrow.\nThe macrophage system, monocytes, and immune cells of the red and yellow bone marrow.\nCell-mediated immunity; e.g., T-cells that destroy diseased cells.\nElectromagnetic radiation, or e-smog, from both human-made sources and natural ones. Electromagnetic load, the heart and immune function track together closely here.\nConsider: Lymph Flow, Immune Modulation, Microbiome\n\nMost components of the overall immune system, including the thymus, spleen, omentum, and bone marrow. Also the macrophage system, monocytes, and the immune cells of the red and yellow bone marrow. Also to cell-mediated immunity; e.g., T-cells that destroy diseased cells. Also to the heart. There is a strong match between the heart, the immune system, and electromagnetic radiation, or e-smog, from both manmade sources and natural ones. May be related to conditions of the chest and viral problems of the nervous system.",
      "affects": [],
      "remedies": [],
-     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23, Glen-authored | SOURCED: E4L scan report text, harvested from the client PDFs, E4L's own wording",
+     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23, Glen-authored | SOURCED: E4L scan report text, harvested from the client PDFs, E4L's own wording | E4L's phrasing replaced with ours for public publication (Glen 2026-08-11); their wording is held internally in e4l.db.",
      "provenance": "sourced"
     },
     {
@@ -3783,10 +3783,10 @@
      "name": "Nerve",
      "code": "ES3",
      "subcategory": "Energetic Stars",
-     "description": "System 4: Communicate\nThe central nervous system, neurotransmitters of all kinds, and specific aspects of the nerves such as axons, neurons, and dendrites.\nAlso heavy metals, such as lead, cadmium, and mercury, which may be implicated bioenergetically to many nervous system conditions. Attempts to clear these and other toxins from the nervous system.\nTriglycerides and their detoxification and metabolism.\nEar function, so it may be related to hearing acuity.\nConsider: Brain Boost, Neuro-Magnesium, Brain Cleanse",
+     "description": "System 4: Communicate\nThe central nervous system, neurotransmitters of all kinds, and specific aspects of the nerves such as axons, neurons, and dendrites.\nHeavy metals belong here too: lead, cadmium and mercury sit behind a great deal of nervous system terrain. Attempts to clear these and other toxins from the nervous system.\nTriglycerides and their detoxification and metabolism.\nTakes in ear function, so hearing sharpness sits in its range.\nConsider: Brain Boost, Neuro-Magnesium, Brain Cleanse",
      "affects": [],
      "remedies": [],
-     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23, Glen-authored",
+     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23, Glen-authored | E4L's phrasing replaced with ours for public publication (Glen 2026-08-11); their wording is held internally in e4l.db.",
      "provenance": "sourced"
     },
     {
@@ -3794,10 +3794,10 @@
      "name": "Triple Cavity",
      "code": "ES4",
      "subcategory": "Energetic Stars",
-     "description": "System 4: Communicate; Fire Element\nThe accumulation of “Source” energy to help power everyday activity.\nThe endocrine system. May provide energy to assist proper hormone production and regulation.\nOrgan detoxification in the 3 primary cavities: the head, chest, and abdomen.\nConsider: Endocrine Restore, Adrenal Syntropy, Thyroid Support",
+     "description": "System 4: Communicate; Fire Element\nThe accumulation of “Source” energy to help power everyday activity.\nThe endocrine system. Lends energy to hormone production and its regulation.\nOrgan detoxification in the 3 primary cavities: the head, chest, and abdomen.\nConsider: Endocrine Restore, Adrenal Syntropy, Thyroid Support",
      "affects": [],
      "remedies": [],
-     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23, Glen-authored",
+     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23, Glen-authored | E4L's phrasing replaced with ours for public publication (Glen 2026-08-11); their wording is held internally in e4l.db.",
      "provenance": "sourced"
     },
     {
@@ -3827,10 +3827,10 @@
      "name": "Muscle",
      "code": "ES7",
      "subcategory": "Energetic Stars",
-     "description": "System 1: Flow\nStriated muscles, fascia, and triglycerides. Supports tissue repair.\nEnzyme production and use.\nConsider: TMG Syntropy Powder (Trimethylglycine), Digestzymes, Muscle Mass\n\nStriated muscles, fascia, and triglycerides. Designed to support tissue repair. May help to unblock shocks and traumas stored in the muscles, supporting muscle metabolism and excretion. Enzyme production and use. May support hormones and neurotransmitters matched to muscles, including GABA, serotonin, dopamine, norepinephrine, and melatonin. May be related to mental deterioration or any rapid onset of aging. Designed to bioenergetically stimulate stem cell activity.",
+     "description": "System 1: Flow\nStriated muscles, fascia, and triglycerides. Supports tissue repair.\nEnzyme production and use.\nConsider: TMG Syntropy Powder (Trimethylglycine), Digestzymes, Muscle Mass\n\nStriated muscles, fascia, and triglycerides. Designed to support tissue repair. May help to unblock shocks and traumas stored in the muscles, supporting muscle metabolism and excretion. Enzyme production and use. Reaches the messengers muscle depends on: GABA, serotonin, dopamine, norepinephrine and melatonin. May be related to mental deterioration or any rapid onset of aging. Designed to bioenergetically stimulate stem cell activity.",
      "affects": [],
      "remedies": [],
-     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23, Glen-authored | SOURCED: E4L scan report text, harvested from the client PDFs, E4L's own wording",
+     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23, Glen-authored | SOURCED: E4L scan report text, harvested from the client PDFs, E4L's own wording | E4L's phrasing replaced with ours for public publication (Glen 2026-08-11); their wording is held internally in e4l.db.",
      "provenance": "sourced"
     },
     {
@@ -3838,10 +3838,10 @@
      "name": "Chill",
      "code": "ES8",
      "subcategory": "Energetic Stars",
-     "description": "System 4: Communicate\nPositive emotions. Supports feelings of peace, happiness, openness, and increased relaxation.\nCerebral cortex processing of thoughts and emotions; helps to clear mental overload, especially in relation to persistent thoughts due to worry / anxiety.\nConsider: Holy Grail Full Spectrum ORMUS, Stress Release",
+     "description": "System 4: Communicate\nPositive emotions. Supports feelings of peace, happiness, openness, and increased relaxation.\nWhere the cortex works through thought and feeling. For mental overload, and for the thought that will not stop circling.\nConsider: Holy Grail Full Spectrum ORMUS, Stress Release",
      "affects": [],
      "remedies": [],
-     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23, Glen-authored",
+     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23, Glen-authored | E4L's phrasing replaced with ours for public publication (Glen 2026-08-11); their wording is held internally in e4l.db.",
      "provenance": "sourced"
     },
     {
@@ -3849,10 +3849,10 @@
      "name": "Audio",
      "code": "ES9",
      "subcategory": "Energetic Stars",
-     "description": "System 4: Communicate; Water Element\nBlocks primarily caused by shock and trauma received as sound. E.g., sounds of gunfire, verbal abuse, or car accidents.\nDistortions at the level of the temporal lobe, which is the primary area of the brain that processes sound, and specific sound and speech recognition centers of the brain, such as the Broca area. Also matches to the corpus callosum (joins the hemispheres of the brain).\nConsider: Brain Boost, Neuro-Magnesium, Brain Cleanse, Stress Release\n\nBlocks primarily caused by shock and trauma received as sound. E.g., sounds of gunfire, verbal abuse, or car accidents. These shocks can store in energetic memory systems, affecting cells, muscles, nerves, etc. Clearing them may help to restore functional integrity while supporting learning skills where learning from hearing is compromised. Bioenergetically supports distortions at the level of the temporal lobe, which is the primary area of the brain that processes sound, and specific sound and speech recognition centers of the brain, such as the Broca area. Also matches to the corpus callosum (joins the hemispheres of the brain). Does not address functional or structural auditory difficulties.",
+     "description": "System 4: Communicate; Water Element\nBlocks primarily caused by shock and trauma received as sound. E.g., sounds of gunfire, verbal abuse, or car accidents.\nDistortion in the temporal lobe, where sound is processed, and in the speech recognition centres including Broca's area. Also matches to the corpus callosum (joins the hemispheres of the brain).\nConsider: Brain Boost, Neuro-Magnesium, Brain Cleanse, Stress Release\n\nBlocks primarily caused by shock and trauma received as sound. E.g., sounds of gunfire, verbal abuse, or car accidents. These shocks can store in energetic memory systems, affecting cells, muscles, nerves, etc. Clearing that can restore function, and with it the kind of learning that depends on listening. Bioenergetically supports distortions at the level of the temporal lobe, which is the primary area of the brain that processes sound, and specific sound and speech recognition centers of the brain, such as the Broca area. Also matches to the corpus callosum (joins the hemispheres of the brain). Does not address functional or structural auditory difficulties.",
      "affects": [],
      "remedies": [],
-     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23, Glen-authored | SOURCED: E4L scan report text, harvested from the client PDFs, E4L's own wording",
+     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23, Glen-authored | SOURCED: E4L scan report text, harvested from the client PDFs, E4L's own wording | E4L's phrasing replaced with ours for public publication (Glen 2026-08-11); their wording is held internally in e4l.db.",
      "provenance": "sourced"
     },
     {
@@ -3904,10 +3904,10 @@
      "name": "Heavy Metals Detox",
      "code": "ES15",
      "subcategory": "Energetic Stars",
-     "description": "Cellular metabolism in relation to the bioenergetic effects of heavy metals, especially the residue of lead, mercury, and cadmium salts in the circulatory system, nervous system, and body organs.\nDendrites damaged by mercury. These are essential to receiving corrective information into the nervous system to be sent to the body through the Energetic Terrains.\nConsider: Chelation, Binder Complex, Glutathione Syntropy, Sulfur Syntropy, Mercury Detox Syntropy Powder",
+     "description": "Cellular metabolism in relation to the bioenergetic effects of heavy metals, especially the residue of lead, mercury, and cadmium salts in the circulatory system, nervous system, and body organs.\nDendrites damaged by mercury. These are how corrective information reaches the nervous system, and from there the body by way of the Terrains.\nConsider: Chelation, Binder Complex, Glutathione Syntropy, Sulfur Syntropy, Mercury Detox Syntropy Powder",
      "affects": [],
      "remedies": [],
-     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23, Glen-authored",
+     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23, Glen-authored | E4L's phrasing replaced with ours for public publication (Glen 2026-08-11); their wording is held internally in e4l.db.",
      "provenance": "sourced"
     }
    ]
@@ -4150,10 +4150,10 @@
      "name": "ESR",
      "code": "MB5",
      "subcategory": "Miscellaneous Bioenergetics",
-     "description": "Stress results when incoming data is not correctly processed into patterns.\nSystem 4: Communicate\nESR has the effect of helping the medulla process data faster and thus resolves issues into correct patterns.\nWhen a person is “stressed” their ability to absorb food is compromised as is their ability to process thoughts. For this reason ESR has been found helpful in aiding nutrient absorption.\nConsider: Holy Grail Full Spectrum ORMUS, Stress Release, Rescue",
+     "description": "Stress is what happens when what comes in never resolves into a pattern the system can use.\nSystem 4: Communicate\nESR has the effect of helping the medulla process data faster and thus resolves issues into correct patterns.\nUnder stress, absorbing a meal and absorbing a thought both suffer, and for the same reason. For this reason ESR has been found helpful in aiding nutrient absorption.\nConsider: Holy Grail Full Spectrum ORMUS, Stress Release, Rescue",
      "affects": [],
      "remedies": [],
-     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23, Glen-authored",
+     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23, Glen-authored | E4L's phrasing replaced with ours for public publication (Glen 2026-08-11); their wording is held internally in e4l.db.",
      "provenance": "sourced"
     },
     {
@@ -4172,10 +4172,10 @@
      "name": "Peace",
      "code": "MB7",
      "subcategory": "Miscellaneous Bioenergetics",
-     "description": "System 4: Communicate\nHarmony of cellular and body-field memory, which is necessary in maintaining physical and psychological health.\nHonesty with oneself and vocalization of one’s truth to help integrate memory with the body.\nHarmony with the primitive emotions associated with the old brain, or brainstem, including emotions arising from things heard.\nCorrection of mental confusion and the inability to learn due to not hearing what is said.\nConsider: Holy Grail Full Spectrum ORMUS, Stress Release",
+     "description": "System 4: Communicate\nHarmony of cellular and body-field memory, which is necessary in maintaining physical and psychological health.\nTelling yourself the truth, and then saying it out loud, is what lets a memory settle into the body.\nHarmony with the primitive emotions associated with the old brain, or brainstem, including emotions arising from things heard.\nFor confusion, and for the kind of not-learning that starts with not hearing what was said.\nConsider: Holy Grail Full Spectrum ORMUS, Stress Release",
      "affects": [],
      "remedies": [],
-     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23, Glen-authored",
+     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23, Glen-authored | E4L's phrasing replaced with ours for public publication (Glen 2026-08-11); their wording is held internally in e4l.db.",
      "provenance": "sourced"
     },
     {
@@ -4183,10 +4183,10 @@
      "name": "Love",
      "code": "MB8",
      "subcategory": "Miscellaneous Bioenergetics",
-     "description": "System 4: Communicate\nLove in this context refers to a sense of unity or connection with all things in a way that inspires unconditional love.\nImbalances can include giving too much of yourself / having others take advantage of you -- this involves a one-way street rather than the beautiful \"give and take\" inherent in balanced love. Another version of this is being unable to give or receive love. We may withhold love because of fear, or not receive love from a false sense of protecting ourselves.\nAnother form of imbalance is when we feel cut off from source, disconnected, or lacking in strong positive emotional feelings.\nConsider: Holy Grail Full Spectrum ORMUS, Nous Energy",
+     "description": "System 4: Communicate\nLove in this context refers to a sense of unity or connection with all things in a way that inspires unconditional love.\nGiving past your own limit, and being taken up on it. Love in balance moves both ways; this is energy travelling one way only. The same imbalance can show as being unable to give love, or to take it in. Fear holds love back; a mistaken idea of self-protection keeps it out.\nIt can also read as disconnection: cut off from source, with the warmer feelings out of reach.\nConsider: Holy Grail Full Spectrum ORMUS, Nous Energy",
      "affects": [],
      "remedies": [],
-     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23, Glen-authored",
+     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23, Glen-authored | E4L's phrasing replaced with ours for public publication (Glen 2026-08-11); their wording is held internally in e4l.db.",
      "provenance": "sourced"
     }
    ]
@@ -4201,10 +4201,10 @@
      "name": "Big Field Aligner",
      "code": "BFA",
      "subcategory": "Big Field Aligners",
-     "description": "Alignment with Earth’s Fields:\nThe Equatorial Axis is formed by the Earth’s rotation. \nThe Vertical Axis is generated by gravity.\nThe Magnetic Polar Axis is generated by the magnetic poles of the Earth. \nGrounding requires your bare skin to be in direct contact with the earth. This skin-to-ground contact provides the body with electrons, helping to give it a negative charge that helps to both energize and stabilize it. The earth is the largest anti-oxidant since anti-oxidants are electron donors. You can also add Epsom salts to a bath or in a shower if you block the drain so you are standing in the water.\nConsider: Holy Grail Full Spectrum ORMUS, Nous Energy, Spleen Support",
+     "description": "Alignment with Earth’s Fields:\nThe Equatorial Axis is formed by the Earth’s rotation. \nThe Vertical Axis is generated by gravity.\nThe Magnetic Polar Axis comes from the Earth's own magnetic poles. \nGrounding means bare skin on the ground, with nothing in between. That contact lets electrons flow in, and the negative charge they carry both steadies and energises the body. The earth is the largest anti-oxidant since anti-oxidants are electron donors. You can also add Epsom salts to a bath or in a shower if you block the drain so you are standing in the water.\nConsider: Holy Grail Full Spectrum ORMUS, Nous Energy, Spleen Support",
      "affects": [],
      "remedies": [],
-     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23, Glen-authored",
+     "source": "SOURCED: FMP vl_bio_main_stress (category NES), extract 2026-05-23, Glen-authored | E4L's phrasing replaced with ours for public publication (Glen 2026-08-11); their wording is held internally in e4l.db.",
      "provenance": "sourced"
     },
     {
