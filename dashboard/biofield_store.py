@@ -21,10 +21,14 @@ def init_table(cx):
           photo_on_file INTEGER NOT NULL DEFAULT 0, photo_path TEXT,
           intake_confirmed INTEGER NOT NULL DEFAULT 0,
           scan_confirmed INTEGER NOT NULL DEFAULT 0,
+          completed_at TEXT,
           booked_at TEXT, created_at TEXT, updated_at TEXT
         )
         """
     )
+    cols = {r[1] for r in cx.execute("PRAGMA table_info(biofield_readiness)").fetchall()}
+    if "completed_at" not in cols:
+        cx.execute("ALTER TABLE biofield_readiness ADD COLUMN completed_at TEXT")
     cx.commit()
 
 
@@ -80,6 +84,21 @@ def set_scan_confirmed(cx, email, value):
     cx.execute(
         "UPDATE biofield_readiness SET scan_confirmed=?, updated_at=? WHERE email=?",
         (1 if value else 0, now, email),
+    )
+    cx.commit()
+
+
+def set_completed(cx, email, value=True):
+    """Record that the practitioner actually performed the Biofield Analysis.
+
+    This is deliberately separate from payment and report publication: courtesy
+    work can be complete before its client-facing report is published.
+    """
+    _ensure_row(cx, email)
+    now = _now()
+    cx.execute(
+        "UPDATE biofield_readiness SET completed_at=?, updated_at=? WHERE email=?",
+        (now if value else None, now, email),
     )
     cx.commit()
 

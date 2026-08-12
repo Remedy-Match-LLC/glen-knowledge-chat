@@ -5,7 +5,7 @@ from dashboard import portal_onboarding as ob
 from dashboard import (client_scans, intake, client_photos, portal_biofield_reports,
                         recommendation_events, condition_triage,
                         portal_health_history, portal_extended_history,
-                        scan_freshness)
+                        scan_freshness, biofield_store)
 
 
 def _cx():
@@ -84,6 +84,17 @@ def test_photo_and_intake_flip_done():
     be = {st["key"]: st["done"] for st in s["phases"][0]["steps"]}
     assert be["photo"] is True and be["intake"] is True
     assert be["voice"] is False
+
+
+def test_performed_courtesy_biofield_flips_done_before_report_publish():
+    cx = _cx()
+    biofield_store.init_table(cx)
+    biofield_store.seed_paid(cx, "courtesy@x.com", via="owner_console_courtesy",
+                             order_ref="courtesy")
+    biofield_store.set_completed(cx, "courtesy@x.com")
+    s = ob.build_status(cx, "courtesy@x.com")
+    be = {st["key"]: st["done"] for st in s["phases"][0]["steps"]}
+    assert be["biofield"] is True
 
 
 def test_scan_match_flips_done_on_biofield_source():
