@@ -12,7 +12,7 @@ from dashboard import (client_scans, intake, client_photos,
                         portal_biofield_reports, recommendation_events,
                         membership_products, portal_health_history,
                         portal_extended_history, condition_triage,
-                        e4l_account_notifications)
+                        e4l_account_notifications, biofield_store)
 
 
 def _has_scan(cx, email):
@@ -71,6 +71,22 @@ def _safe(fn, cx, email):
         return False
 
 
+def _biofield_completed(cx, email):
+    """A performed analysis or a published report completes the portal step."""
+    try:
+        biofield_store.init_table(cx)
+        row = cx.execute(
+            "SELECT completed_at FROM biofield_readiness WHERE lower(email)=lower(?)",
+            (email,),
+        ).fetchone()
+        if row and row[0]:
+            return True
+    except Exception:
+        pass
+    return _safe(lambda c, e: portal_biofield_reports.latest_report(c, e) is not None,
+                 cx, email)
+
+
 def build_status(cx, email):
     email = (email or "").strip().lower()
     conditions_done = (
@@ -118,9 +134,7 @@ def build_status(cx, email):
         step("intake", "Intake", intake_done, "#intake",
              in_progress=intake_in_progress),
         step("photo", "Photo", _safe(client_photos.has, cx, email), "#photo"),
-        step("biofield", "Biofield Analysis",
-             _safe(lambda c, e: portal_biofield_reports.latest_report(c, e) is not None, cx, email),
-             "#biofield"),
+        step("biofield", "Biofield Analysis", _biofield_completed(cx, email), "#biofield"),
     ]
     match = [
         step("history", "Match Remedies",

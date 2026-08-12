@@ -14015,8 +14015,11 @@ def api_console_biofield_mark_paid():
         _bf.init_table(cx)
         _bf.seed_paid(cx, email, via=(body.get("via") or "owner_console"),
                       order_ref=(body.get("order_ref") or "manual-unblur"))
+        if body.get("completed"):
+            _bf.set_completed(cx, email, True)
     return jsonify({"ok": True, "email": email, "paid_biofield": _has_paid_biofield(email),
-                    "unlocked": _portal_biofield_unlocked(email)})
+                    "unlocked": _portal_biofield_unlocked(email),
+                    "completed": bool(body.get("completed"))})
 
 
 @app.route("/api/console/client-scans/sync", methods=["POST"])
