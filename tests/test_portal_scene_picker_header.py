@@ -17,3 +17,10 @@ def test_scene_picker_is_not_a_bottom_right_floater():
     assert "position:fixed" not in picker_css
     assert "bottom:" not in picker_css
     assert ".portal-header-controls{position:fixed;top:14px;right:14px" in HTML
+
+
+def test_header_controls_reserve_separate_space_without_overlap():
+    assert ".portal-header-controls .theme-toggle{position:static;flex:0 0 auto" in HTML
+    assert ".portal-header-controls .rm-theme-seg-btn" in HTML
+    assert "flex:0 1 132px" in HTML
+    assert "max-width:calc(100vw - 28px)" in HTML

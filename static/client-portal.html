@@ -86,20 +86,31 @@
     box-shadow:0 4px 16px rgba(0,0,0,.38)}
   body.has-bg .sound-toggle{display:flex}
   .portal-header-controls{position:fixed;top:14px;right:14px;z-index:10000;
-    display:flex;align-items:center;gap:8px}
-  .el-picker{height:34px;border-radius:17px;border:1px solid var(--line);
-    background:var(--card);color:var(--ink);cursor:pointer;padding:0 11px;
-    font-size:.82rem;font-weight:600;box-shadow:0 4px 14px rgba(0,0,0,.18);
-    display:none;max-width:38vw}
+    display:flex;align-items:center;gap:7px;max-width:calc(100vw - 28px);
+    padding:4px;border:1px solid var(--line);border-radius:22px;
+    background:var(--card);box-shadow:0 4px 14px rgba(0,0,0,.18)}
+  .el-picker{height:30px;min-width:0;max-width:132px;flex:0 1 132px;
+    border-radius:15px;border:0;background:var(--card2);color:var(--ink);cursor:pointer;
+    padding:0 9px;font-size:.8rem;font-weight:600;display:none}
   .el-picker option{color:#111;background:#fff}
+  .portal-header-controls .theme-toggle{position:static;flex:0 0 auto;min-width:max-content}
+  .portal-header-controls .rm-theme-seg{display:inline-flex;vertical-align:middle;
+    border:1px solid var(--line);border-radius:999px;overflow:hidden;white-space:nowrap}
+  .portal-header-controls .rm-theme-seg-btn{appearance:none;border:0;background:transparent;
+    color:var(--muted);width:31px;height:30px;padding:0;cursor:pointer;display:inline-flex;
+    align-items:center;justify-content:center;line-height:0;flex:0 0 31px}
+  .portal-header-controls .rm-theme-seg-btn+.rm-theme-seg-btn{border-left:1px solid var(--line)}
+  .portal-header-controls .rm-theme-seg-btn svg{width:15px;height:15px}
+  .portal-header-controls .rm-theme-seg-btn[aria-pressed="true"]{background:var(--btn-bg);color:var(--btn-fg)}
   /* The scene picker stays available whenever the feature is on, even with no
      active backdrop — so "Automatic" (which can resolve to no scene) never strands
      the member with no way to pick one back. The sound toggle stays has-bg-gated. */
   body.has-bg .el-picker,
   body.scene-capable .el-picker{display:inline-block}
   @media(max-width:480px){
-    .portal-header-controls{top:8px;right:8px;gap:5px}
-    .el-picker{height:32px;max-width:34vw;padding:0 7px;font-size:.74rem}
+    .portal-header-controls{top:8px;right:8px;gap:4px;max-width:calc(100vw - 16px);padding:3px}
+    .el-picker{height:28px;max-width:108px;flex-basis:108px;padding:0 6px;font-size:.72rem}
+    .portal-header-controls .rm-theme-seg-btn{width:29px;height:28px;flex-basis:29px}
   }
   /* hero text sits directly on the scene (not a card) -> theme-aware halo for
      legibility on any backdrop (shadow uses --bg, which is opposite the text). */
