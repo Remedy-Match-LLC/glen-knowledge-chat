@@ -354,6 +354,7 @@ _init_shortlink_cache()
 import hashlib, hmac, secrets
 
 AUTH_TOKEN_TTL_MIN  = 1440         # magic-link token validity window (24 hours, so a delayed email check still works)
+CONSOLE_OWNER_MAGIC_TTL_MIN = 15
 AUTH_TOKEN_TTL_LABEL = "24 hours"  # human-readable form of AUTH_TOKEN_TTL_MIN for email/UI copy
 LEAD_MAGNET_GUIDE_TTL_DAYS = 30    # free-guide download link; the pending page quotes this
 MEMBERSHIP_MAGIC_TTL_MIN = AUTH_TOKEN_TTL_MIN   # sign-in link the member asked for, seconds ago
@@ -496,6 +497,112 @@ _migrate_orders_portal_published()
 
 def _hash_token(t: str) -> str:
     return hashlib.sha256(t.encode("utf-8")).hexdigest()
+
+
+def _console_owner_emails():
+    """Explicit owner allowlist; falls back to Glen's configured console identity."""
+    configured = os.environ.get("CONSOLE_OWNER_EMAILS", "")
+    if configured.strip():
+        return {e.strip().lower() for e in configured.split(",") if "@" in e}
+    fallback = os.environ.get("GLEN_CONSULT_EMAIL", "drglenswartwout@gmail.com")
+    return {fallback.strip().lower()} if "@" in fallback else set()
+
+
+_CONSOLE_LOGIN_HTML = """<!doctype html><meta charset=utf-8><meta name=viewport content='width=device-width,initial-scale=1'>
+<title>Owner sign in — Remedy Match Console</title>
+<style>body{font:16px/1.5 system-ui;margin:0;background:#f6f8f7;color:#1a2b26}.box{max-width:440px;margin:12vh auto;padding:28px;background:white;border:1px solid #dce5e1;border-radius:14px}input,button{box-sizing:border-box;width:100%;padding:12px;margin-top:10px;font:inherit}button{background:#255f50;color:white;border:0;border-radius:8px}.muted{color:#63736e;font-size:14px}</style>
+<div class=box><h1>Sign in as owner</h1><p>Enter your authorized owner email. We’ll send a one-time sign-in link.</p>
+<form method=post action='/console/login/request'><input type=email name=email autocomplete=email required placeholder='Owner email'><button>Send secure sign-in link</button></form>
+<p class=muted>The shared Console Key remains available only as an emergency fallback.</p></div>"""
+
+
+@app.route("/console/login", methods=["GET"])
+def console_owner_login_page():
+    if _console_key_ok():
+        return redirect("/console")
+    return _CONSOLE_LOGIN_HTML
+
+
+@app.route("/console/login/request", methods=["POST"])
+def console_owner_login_request():
+    """Email a short-lived owner link; always returns the same anti-enumeration page."""
+    email = (request.form.get("email") or (request.get_json(silent=True) or {}).get("email") or "").strip().lower()
+    generic = ("<!doctype html><meta charset=utf-8><title>Check your email</title>"
+               "<div style='font:16px/1.5 system-ui;max-width:520px;margin:12vh auto'>"
+               "<h1>Check your email</h1><p>If that address is authorized, a secure console sign-in link is on its way.</p>"
+               "<p>The link expires in 15 minutes.</p></div>")
+    if email not in _console_owner_emails():
+        return generic, 200
+    token = secrets.token_urlsafe(32)
+    now = _now_utc()
+    expires = now + timedelta(minutes=CONSOLE_OWNER_MAGIC_TTL_MIN)
+    with _db_lock, db.connect(LOG_DB) as cx:
+        # Quietly rate-limit repeat requests for the same owner to one per minute.
+        recent = cx.execute(
+            "SELECT 1 FROM auth_tokens WHERE email=? AND purpose='console_owner_magic' "
+            "AND consumed_at IS NULL AND created_at>=? LIMIT 1",
+            (email, (now - timedelta(minutes=1)).isoformat())).fetchone()
+        if recent:
+            return generic, 200
+        cx.execute(
+            "INSERT INTO auth_tokens (token_hash,email,purpose,created_at,expires_at) VALUES (?,?,?,?,?)",
+            (_hash_token(token), email, "console_owner_magic", now.isoformat(), expires.isoformat()))
+        cx.commit()
+    link = f"{PUBLIC_BASE_URL}/console/login/verify?token={token}"
+    subject = "Your Remedy Match Console sign-in link"
+    body = ("Use this one-time link to sign in to the Remedy Match Console:\n\n"
+            f"{link}\n\nThis link expires in 15 minutes. If you did not request it, ignore this email.")
+    try:
+        _send_full_report_email(email, "Dr. Glen", subject, body)
+    except Exception:
+        app.logger.exception("owner console magic-link send failed")
+    return generic, 200
+
+
+@app.route("/console/login/verify", methods=["GET", "POST"])
+def console_owner_login_verify():
+    """Confirm and consume an owner link, then mint a revocable owner session."""
+    token = (request.args.get("token") or request.form.get("token") or "").strip()
+    th = _hash_token(token)
+    invalid = "This sign-in link is invalid, expired, or already used."
+    with _db_lock, db.connect(LOG_DB) as cx:
+        cx.row_factory = sqlite3.Row
+        row = cx.execute(
+            "SELECT email,expires_at,consumed_at FROM auth_tokens "
+            "WHERE token_hash=? AND purpose='console_owner_magic'", (th,)).fetchone()
+        valid = bool(row and not row["consumed_at"] and row["email"] in _console_owner_emails())
+        if valid:
+            try:
+                valid = _parse_utc(row["expires_at"]) >= _now_utc()
+            except Exception:
+                valid = False
+        if not valid:
+            return invalid, 400
+        if request.method == "GET":
+            return _confirm_post_page(
+                "/console/login/verify", title="Owner sign in", heading="Open the console",
+                blurb="Confirm this trusted-device sign in.", button="Open console",
+                hidden={"token": token})
+        cur = cx.execute(
+            "UPDATE auth_tokens SET consumed_at=? WHERE token_hash=? AND consumed_at IS NULL",
+            (_now_utc().isoformat(), th))
+        if cur.rowcount != 1:
+            return invalid, 400
+        email = row["email"]
+        uname = "console-owner-" + hashlib.sha256(email.encode()).hexdigest()[:12]
+        cx.execute(
+            "INSERT INTO workspace_users (name,display_name,scope) VALUES (?,?,?) "
+            "ON CONFLICT(name) DO UPDATE SET display_name=excluded.display_name,scope=excluded.scope",
+            (uname, "Console Owner", "workspace:glen"))
+        uid = cx.execute("SELECT id FROM workspace_users WHERE name=?", (uname,)).fetchone()[0]
+        owner_token = secrets.token_urlsafe(32)
+        cx.execute("INSERT INTO access_tokens (token,user_id,note) VALUES (?,?,?)",
+                   (owner_token, uid, "owner magic-link session"))
+        cx.commit()
+    resp = redirect("/console", code=302)
+    resp.set_cookie(CONSOLE_COOKIE, owner_token, max_age=CONSOLE_COOKIE_MAX_AGE,
+                    httponly=True, secure=request.is_secure, samesite="Lax")
+    return resp
 
 
 def _now_utc():
