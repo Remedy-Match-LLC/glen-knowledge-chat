@@ -40007,6 +40007,20 @@ def api_money_week():
     except Exception as e: return fail(e)
 
 
+@app.route("/api/money/stripe-lookup")
+@require_console_key
+def api_money_stripe_lookup():
+    """Read-only Stripe lookup for Rae; response deliberately omits payment details."""
+    try:
+        from dashboard import stripe_lookup as _stripe_lookup
+        return ok(_stripe_lookup.lookup(request.args.get("q") or ""))
+    except ValueError as e:
+        return fail(e, status=400)
+    except Exception as e:
+        app.logger.warning("Stripe Console lookup failed: %r", e)
+        return fail("Stripe lookup is temporarily unavailable", status=502)
+
+
 @app.route("/api/money/banks")
 @require_console_key
 def api_money_banks():
