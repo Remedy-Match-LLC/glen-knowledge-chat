@@ -8362,7 +8362,11 @@ def begin_product_page_data(slug):
             print(f"[img-pick] page-data skipped: {_e}", flush=True)
     _pc = p.get("competitor") if isinstance(p.get("competitor"), dict) else None
     _page_data = {
-        "slug": slug, "name": p["name"], "price_cents": p["price_cents"],
+        # display_name lets the PAGE title differ from the QBO/invoice identity in
+        # `name`. This is the route the product page actually reads; /begin/product-data
+        # is a different endpoint and patching that one alone changed nothing on screen.
+        "slug": slug, "name": p.get("display_name") or p["name"],
+        "price_cents": p["price_cents"],
         "price": f"${p['price_cents']/100:.2f}", "cta_url": f"/begin/buy/{slug}",
         # Real product photo (physical goods only), compare-at SRP, and named-competitor anchor.
         "image": p.get("image", ""),
