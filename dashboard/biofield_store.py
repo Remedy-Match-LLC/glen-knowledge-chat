@@ -26,8 +26,8 @@ def init_table(cx):
         )
         """
     )
-    cols = {r[1] for r in cx.execute("PRAGMA table_info(biofield_readiness)").fetchall()}
-    if "completed_at" not in cols:
+    from dashboard import db as _db
+    if not _db.column_exists(cx, "biofield_readiness", "completed_at"):
         cx.execute("ALTER TABLE biofield_readiness ADD COLUMN completed_at TEXT")
     cx.commit()
 
