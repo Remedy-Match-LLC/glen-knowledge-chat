@@ -368,10 +368,9 @@
   /* Persistent Mentorship University concierge. The full Ask Dr. Glen card remains
      available; this compact shell follows the member across every portal panel. */
   .mentor-launcher{position:fixed;right:18px;bottom:18px;z-index:10020;width:62px;height:62px;
-    border:0;border-radius:50%;background:var(--brand);color:#fff;cursor:pointer;
-    box-shadow:0 10px 28px rgba(0,0,0,.34);display:flex;flex-direction:column;
-    align-items:center;justify-content:center;font-family:"Raleway",sans-serif;font-weight:700}
-  .mentor-launcher-mark{font-size:1.05rem;line-height:1}.mentor-launcher-label{font-size:.54rem;letter-spacing:.08em;margin-top:4px}
+    border:0;border-radius:50%;background:transparent;color:#fff;cursor:pointer;padding:0;
+    box-shadow:0 10px 28px rgba(0,0,0,.34);display:flex;align-items:center;justify-content:center}
+  .mentor-launcher-logo{display:block;width:100%;height:100%;object-fit:contain;border-radius:50%}
   .mentor-launcher[aria-expanded="true"]{box-shadow:0 0 0 3px var(--brand-soft),0 10px 28px rgba(0,0,0,.34)}
   .mentor-panel{position:fixed;right:18px;bottom:92px;z-index:10019;width:min(390px,calc(100vw - 28px));
     max-height:min(650px,calc(100vh - 118px));background:var(--card);color:var(--ink);
@@ -668,7 +667,7 @@
   </div>
   <button class="sound-toggle" id="soundToggle" aria-label="Turn ambient sound on or off" title="Ambient sound" aria-pressed="false"></button>
   <button class="mentor-launcher" id="mentorLauncher" aria-label="Open Mentorship University mentor" aria-expanded="false">
-    <span class="mentor-launcher-mark">MU</span><span class="mentor-launcher-label">MENTOR</span>
+    <img class="mentor-launcher-logo" src="/static/logo.png" alt="" aria-hidden="true">
   </button>
   <aside class="mentor-panel" id="mentorPanel" aria-label="Mentorship University mentor" hidden>
     <div class="mentor-head">
