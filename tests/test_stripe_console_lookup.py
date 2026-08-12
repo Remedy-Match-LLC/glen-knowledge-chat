@@ -41,6 +41,10 @@ def test_console_money_exposes_stripe_lookup_ui():
     assert "Stripe Lookup" in html
     assert "/api/money/stripe-lookup?q=" in html
     assert "no card or bank details" in html
+    payments_tab = html.index('data-tab="payments"')
+    lookup_tab = html.index('data-tab="lookup"')
+    receivables_tab = html.index('data-tab="receivables"')
+    assert payments_tab < lookup_tab < receivables_tab
 
 
 def test_lookup_route_uses_protected_helper(monkeypatch):
