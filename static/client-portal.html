@@ -78,24 +78,29 @@
   body.has-bg{background:transparent}
   body.has-bg #el-bg{opacity:1}
   body.has-bg #el-scrim{opacity:.5}
-  /* Fireside controls live BOTTOM-right (the top-right is owned by the journey nav
-     shell / "My Path" quest button) and sit above that shell's z-index (9999) so
-     they aren't buried. See portal nav-shell (js-shell / jq-overlay) layering. */
+  /* Ambient sound stays near the mentor; the scene picker belongs with the visual
+     light/dark control in the top-right header controls. */
   .sound-toggle{position:fixed;bottom:18px;right:90px;z-index:10000;width:48px;height:48px;
     border-radius:50%;border:1px solid rgba(255,255,255,.28);background:#1F5A4D;color:#fff;
     cursor:pointer;display:none;align-items:center;justify-content:center;
     box-shadow:0 4px 16px rgba(0,0,0,.38)}
   body.has-bg .sound-toggle{display:flex}
-  .el-picker{position:fixed;bottom:18px;right:76px;z-index:10000;height:48px;
-    border-radius:24px;border:1px solid rgba(255,255,255,.28);background:#1F5A4D;color:#fff;
-    cursor:pointer;padding:0 16px;font-size:.9rem;font-weight:600;
-    box-shadow:0 4px 16px rgba(0,0,0,.38);display:none;max-width:42vw}
+  .portal-header-controls{position:fixed;top:14px;right:14px;z-index:10000;
+    display:flex;align-items:center;gap:8px}
+  .el-picker{height:34px;border-radius:17px;border:1px solid var(--line);
+    background:var(--card);color:var(--ink);cursor:pointer;padding:0 11px;
+    font-size:.82rem;font-weight:600;box-shadow:0 4px 14px rgba(0,0,0,.18);
+    display:none;max-width:38vw}
   .el-picker option{color:#111;background:#fff}
   /* The scene picker stays available whenever the feature is on, even with no
      active backdrop — so "Automatic" (which can resolve to no scene) never strands
      the member with no way to pick one back. The sound toggle stays has-bg-gated. */
   body.has-bg .el-picker,
   body.scene-capable .el-picker{display:inline-block}
+  @media(max-width:480px){
+    .portal-header-controls{top:8px;right:8px;gap:5px}
+    .el-picker{height:32px;max-width:34vw;padding:0 7px;font-size:.74rem}
+  }
   /* hero text sits directly on the scene (not a card) -> theme-aware halo for
      legibility on any backdrop (shadow uses --bg, which is opposite the text). */
   body.has-bg .hero .hello,
@@ -156,7 +161,7 @@
   .btn:focus-visible{outline:2px solid var(--btn-bg);outline-offset:3px}
   .btn.full{display:block;width:100%;text-align:center}
   /* theme toggle */
-  .theme-toggle{position:fixed;top:14px;right:14px;z-index:20}
+  .theme-toggle{position:static}
   /* journey path */
   .path{position:relative;margin:6px 0 0;padding:0}
   .layer{position:relative;padding:2px 0 18px 40px}
@@ -657,7 +662,10 @@
   <video id="el-bg" playsinline muted loop preload="none" aria-hidden="true" tabindex="-1"></video>
   <video id="el-bg2" playsinline muted preload="none" aria-hidden="true" tabindex="-1"></video>
   <div id="el-scrim" aria-hidden="true"></div>
-  <div class="theme-toggle" id="themeToggle" role="group" aria-label="Theme mode"></div>
+  <div class="portal-header-controls">
+    <select class="el-picker" id="elPicker" aria-label="Fireside scene" title="Fireside scene"></select>
+    <div class="theme-toggle" id="themeToggle" role="group" aria-label="Theme mode"></div>
+  </div>
   <button class="sound-toggle" id="soundToggle" aria-label="Turn ambient sound on or off" title="Ambient sound" aria-pressed="false"></button>
   <button class="mentor-launcher" id="mentorLauncher" aria-label="Open Mentorship University mentor" aria-expanded="false">
     <span class="mentor-launcher-mark">MU</span><span class="mentor-launcher-label">MENTOR</span>
@@ -673,7 +681,6 @@
     <label class="mentor-guide"><input type="checkbox" id="mentorAutoGuide"> Guide me automatically on each page</label>
     <div class="mentor-compose"><input id="mentorInput" type="text" placeholder="Ask about this page…" autocomplete="off"><button class="mentor-send" id="mentorSend">Send</button></div>
   </aside>
-  <select class="el-picker" id="elPicker" aria-label="Fireside scene" title="Fireside scene"></select>
   <script>
     (function(){
       var host = document.getElementById('themeToggle');
