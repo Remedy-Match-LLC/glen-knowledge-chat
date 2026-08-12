@@ -290,7 +290,8 @@ function showGate(){
   document.getElementById("gate").innerHTML =
     "<p class=empty>Enter a console key to view.</p>"+
     "<input id='gate-key' type='password' placeholder='console key' style='padding:8px;width:220px'> "+
-    "<button id='gate-unlock'>Unlock</button>";
+    "<button id='gate-unlock'>Unlock</button>"+
+    "<p><a href='/console/login'>Sign in as owner by email</a></p>";
   document.getElementById("gate-unlock").addEventListener("click",function(){
     var v=document.getElementById("gate-key").value.trim();
     if(v) localStorage.setItem("console_key",v);
