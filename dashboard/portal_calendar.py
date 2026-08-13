@@ -6,6 +6,8 @@ are only added after the caller establishes entitlement server-side.
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
+from dashboard import db
+
 
 def _now_iso():
     return datetime.now(timezone.utc).replace(tzinfo=None).isoformat(timespec="seconds")
@@ -169,6 +171,8 @@ def build_block(cx, *, email="", group_coaching_entitled=False,
     concrete_group_starts = {e.get("start", "")[:19] for e in events
                              if e.get("type") == "group_coaching"}
     try:
+        if not db.column_exists(cx, "masterclass_events", "id"):
+            raise LookupError("masterclass_events unavailable")
         cur = cx.execute(
             "SELECT id, topic, description, start_ts, duration_min "
             "FROM masterclass_events WHERE lower(topic) LIKE '%wellness whispering%' "
@@ -189,10 +193,12 @@ def build_block(cx, *, email="", group_coaching_entitled=False,
                     "action_url": f"/masterclass/{item['id']}",
                     "action_label": "View & register",
                     "registered": base_key in registered_keys})
-    except (ValueError, TypeError):
+    except (LookupError, ValueError, TypeError):
         pass
 
     try:
+        if not db.column_exists(cx, "calendar_events", "id"):
+            raise LookupError("calendar_events unavailable")
         cur = cx.execute(
             'SELECT id, summary, start, "end", location FROM calendar_events '
             "WHERE status='visible' AND (lower(summary) LIKE '%group coaching%' "
@@ -222,7 +228,7 @@ def build_block(cx, *, email="", group_coaching_entitled=False,
                     "action_label": (("Join session" if join_url else "Access details coming soon")
                                      if entitled else "Upgrade to access"),
                     "registered": key in registered_keys})
-    except (ValueError, TypeError):
+    except (LookupError, ValueError, TypeError):
         pass
 
     events.sort(key=lambda e: (e.get("start") or "", e.get("title") or ""))
