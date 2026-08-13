@@ -100,6 +100,20 @@ def test_biofield_analysis_paid_endpoint(monkeypatch, tmp_path):
     assert r3["biofield_paid"] is True and r3["paid_order_id"] == oid
 
 
+def test_completed_paid_biofield_does_not_prepay_next_test(monkeypatch, tmp_path):
+    db = _auth(monkeypatch, tmp_path)
+    oid = _seed_order(db, "steve@x.com", "Steve Fox")
+    _mark_paid(db, oid)
+    cx = sqlite3.connect(db)
+    from dashboard import portal_biofield_reports as reports
+    reports.init_table(cx)
+    reports.upsert_report(cx, "steve@x.com", "2026-07-03", "s1", {}, "confirmed")
+    cx.close()
+    r = app.app.test_client().get(
+        "/api/console/biofield-analysis-paid?email=steve@x.com&key=sek").get_json()
+    assert r["ok"] and r["paid"] is False
+
+
 def test_cancel_open_handoff_orders(tmp_path):
     # Idempotent hand-off helper: cancel OPEN proposed unpublished drafts, leave
     # published or paid orders alone.

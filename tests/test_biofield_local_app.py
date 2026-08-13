@@ -148,6 +148,41 @@ def test_authoring_flow(tmp_path):
     assert cat.status_code == 200 and "catalog" in cat.get_json()
 
 
+def test_new_test_header_creates_biofield_fee_line_once(tmp_path):
+    db = str(tmp_path / "chat_log.db")
+    _seed(db)
+    calls = []
+    client = create_app(
+        db,
+        invoice_latest=lambda email: {"ok": False},
+        invoice_paid_check=lambda email: {"paid": False},
+        invoice_create=lambda customer, lines, **kwargs:
+            calls.append((customer, lines)) or {"ok": True, "order_id": 41},
+    ).test_client()
+    tid = client.post("/author/new").headers["Location"].rsplit("/", 1)[-1]
+    payload = {"name": "New Client", "email": "new@x.com", "date": "2026-08-12"}
+    first = client.post(f"/author/{tid}/header", json=payload).get_json()
+    assert first["invoice"]["ok"] is True
+    assert calls[0][1] == [{"slug": "biofield-analysis", "qty": 1}]
+
+
+def test_new_test_header_uses_pending_prepayment_without_new_fee(tmp_path):
+    db = str(tmp_path / "chat_log.db")
+    _seed(db)
+    calls = []
+    client = create_app(
+        db,
+        invoice_latest=lambda email: {"ok": False},
+        invoice_paid_check=lambda email: {"paid": True, "order_id": 37},
+        invoice_create=lambda *args, **kwargs: calls.append(args),
+    ).test_client()
+    tid = client.post("/author/new").headers["Location"].rsplit("/", 1)[-1]
+    out = client.post(f"/author/{tid}/header", json={
+        "name": "Prepaid", "email": "prepaid@x.com", "date": "2026-08-12"}).get_json()
+    assert out["invoice"] == {"ok": True, "order_id": 37, "reason": "prepaid"}
+    assert calls == []
+
+
 def test_deepgram_token_endpoint(tmp_path):
     db = str(tmp_path / "chat_log.db")
     _seed(db)

@@ -45532,6 +45532,41 @@ def _biofield_paid_order(cx, email):
     return {"order_id": r[0], "paid_at": r[1]} if r else None
 
 
+def _biofield_pending_prepaid_order(cx, email):
+    """Latest Biofield prepayment that still belongs to an unfinished test.
+
+    A paid Biofield order is not a lifetime entitlement. Once that order is
+    fulfilled and a confirmed report exists, its fee has been consumed and it
+    must not suppress the fee on the client's next test.
+    """
+    paid = _biofield_paid_order(cx, email)
+    if not paid:
+        return None
+    row = cx.execute("SELECT COALESCE(status,'') FROM orders WHERE id=?",
+                     (paid["order_id"],)).fetchone()
+    fulfilled = bool(row and row[0] in ("shipped", "delivered", "done", "fulfilled"))
+    if not fulfilled:
+        return paid
+    try:
+        report = cx.execute(
+            "SELECT 1 FROM portal_biofield_reports WHERE lower(email)=lower(?) "
+            "AND status='confirmed' LIMIT 1", ((email or "").strip(),)).fetchone()
+    except Exception:
+        report = None
+    if report:
+        return None
+    try:
+        portal = cx.execute(
+            "SELECT content_json FROM client_portals WHERE lower(email)=lower(?) "
+            "ORDER BY updated_at DESC LIMIT 1", ((email or "").strip(),)).fetchone()
+        content = json.loads(portal[0] or "{}") if portal else {}
+        if (content.get("biofield_status") or "") == "confirmed":
+            return None
+    except Exception:
+        pass
+    return paid
+
+
 @app.route("/api/console/biofield-analysis-paid", methods=["GET"])
 def console_biofield_analysis_paid():
     """Has this client already paid for a Biofield Analysis? Drives the raise-guard
@@ -45540,7 +45575,7 @@ def console_biofield_analysis_paid():
     if actor is None:
         return jsonify({"ok": False, "error": "unauthorized"}), 401
     with _db_lock, db.connect(LOG_DB) as cx:
-        paid = _biofield_paid_order(cx, request.args.get("email") or "")
+        paid = _biofield_pending_prepaid_order(cx, request.args.get("email") or "")
     if paid:
         return jsonify({"ok": True, "paid": True, "order_id": paid["order_id"],
                         "paid_at": paid["paid_at"]})
@@ -45565,7 +45600,7 @@ def console_client_invoice():
             "COALESCE(items_json,'[]') items FROM orders "
             "WHERE lower(COALESCE(email,''))=? AND COALESCE(status,'')<>'cancelled' "
             "ORDER BY id DESC LIMIT 1", (email,)).fetchone()
-        paid = _biofield_paid_order(cx, email)
+        paid = _biofield_pending_prepaid_order(cx, email)
     biofield_paid = {"biofield_paid": bool(paid),
                      "paid_order_id": paid["order_id"] if paid else None}
     if not r:

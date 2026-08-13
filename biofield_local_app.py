@@ -883,7 +883,27 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                           date=d.get("date"))
             ctx, _ = _e4l(cx, test_id)  # client now known -> pull recent E4L scan
             _seed_stresses(cx, test_id)  # synthesize + seed stress coverage if scan found
-        return {"ok": True, "e4l": ctx, "html": render_e4l_panel(ctx)}
+        invoice = {"ok": False, "reason": "no_email"}
+        email = (d.get("email") or "").strip()
+        if email:
+            previous = invoice_latest(email) or {}
+            if (previous.get("ok") and previous.get("status") not in
+                    ("cancelled", "delivered", "done") and
+                    previous.get("pay_status") != "paid"):
+                invoice = {"ok": True, "order_id": previous.get("order_id"),
+                           "reason": "existing"}
+            else:
+                paid = invoice_paid_check(email) or {}
+                if paid.get("paid"):
+                    invoice = {"ok": True, "order_id": paid.get("order_id"),
+                               "reason": "prepaid"}
+                else:
+                    invoice = invoice_create(
+                        {"name": d.get("name") or "", "email": email},
+                        [{"slug": biofield_invoice.BIOFIELD_SLUG, "qty": 1}],
+                        invoice_note=biofield_invoice.DEFAULT_INVOICE_NOTE)
+        return {"ok": True, "e4l": ctx, "html": render_e4l_panel(ctx),
+                "invoice": invoice}
 
     @app.route("/author/<test_id>/fee", methods=["POST"])
     def author_fee(test_id):
