@@ -4,7 +4,16 @@ Monkeypatches: _practitioner_session_pid, _pp.portal_data, appmod._dropship.buil
 _ingest_order, _STRIPE_ACTIVE.
 """
 
+from pathlib import Path
+
 import app as appmod
+
+
+def test_dropship_order_card_has_product_lookup():
+    page = (Path(__file__).parents[1] / "static" / "practitioner-dropship.html").read_text()
+    assert 'id="product-search"' in page
+    assert "/api/practitioner/catalog" in page
+    assert "addProduct(product.slug)" in page
 
 
 def _auth(monkeypatch):
@@ -19,6 +28,30 @@ def test_dropship_quote_requires_auth(monkeypatch):
     monkeypatch.setattr(appmod, "_practitioner_session_pid", lambda: None)
     assert appmod.app.test_client().post(
         "/api/practitioner/dropship/quote", json={}).status_code == 401
+
+
+def test_practitioner_catalog_search_requires_auth(monkeypatch):
+    monkeypatch.setattr(appmod, "_practitioner_session_pid", lambda: None)
+    assert appmod.app.test_client().get(
+        "/api/practitioner/catalog?q=brain").status_code == 401
+
+
+def test_practitioner_catalog_search_returns_only_orderable_matches(monkeypatch):
+    _auth(monkeypatch)
+    monkeypatch.setattr(appmod._pp.pricing, "_load_catalog", lambda: {
+        "brain-boost": {"name": "Brain Boost", "price_cents": 6997},
+        "brain-external": {"name": "Brain External", "price_cents": 0,
+                           "info_only": True},
+        "liver-support": {"name": "Liver Support", "price_cents": 5997},
+    })
+
+    r = appmod.app.test_client().get("/api/practitioner/catalog?q=brain")
+
+    assert r.status_code == 200
+    assert r.get_json() == {
+        "ok": True,
+        "products": [{"slug": "brain-boost", "name": "Brain Boost"}],
+    }
 
 
 def test_dropship_quote_uses_canonical_practitioner_quote(monkeypatch):

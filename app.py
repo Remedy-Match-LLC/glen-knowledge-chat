@@ -16187,6 +16187,28 @@ def api_practitioner_cart():
     return jsonify({"ok": True, **(_pp.portal_data(pid) or {})})
 
 
+@app.route("/api/practitioner/catalog", methods=["GET"])
+def api_practitioner_catalog():
+    """Small authenticated product lookup for practitioner order builders."""
+    if not _practitioner_session_pid():
+        return jsonify({"ok": False, "error": "not signed in"}), 401
+    query = (request.args.get("q") or "").strip().lower()
+    if len(query) < 2:
+        return jsonify({"ok": True, "products": []})
+    products = []
+    for slug, product in _pp.pricing._load_catalog().items():
+        if product.get("info_only") or not _pp.is_orderable(slug):
+            continue
+        name = (product.get("name") or slug).strip()
+        haystack = f"{name} {slug} {product.get('pinecone_title') or ''}".lower()
+        if query not in haystack:
+            continue
+        products.append({"slug": slug, "name": name})
+    products.sort(key=lambda p: (not p["name"].lower().startswith(query),
+                                 p["name"].lower()))
+    return jsonify({"ok": True, "products": products[:25]})
+
+
 @app.route("/api/practitioner/quote", methods=["POST"])
 def api_practitioner_quote():
     pid = _practitioner_session_pid()
