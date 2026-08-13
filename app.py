@@ -501,12 +501,15 @@ def _hash_token(t: str) -> str:
 
 
 def _console_owner_emails():
-    """Explicit owner allowlist; falls back to Glen's configured console identity."""
+    """Explicit owner allowlist; otherwise use Glen's two known owner identities."""
     configured = os.environ.get("CONSOLE_OWNER_EMAILS", "")
     if configured.strip():
         return {e.strip().lower() for e in configured.split(",") if "@" in e}
     fallback = os.environ.get("GLEN_CONSULT_EMAIL", "drglenswartwout@gmail.com")
-    return {fallback.strip().lower()} if "@" in fallback else set()
+    owners = {"drglenswartwout@gmail.com", "this.elf@gmail.com"}
+    if "@" in fallback:
+        owners.add(fallback.strip().lower())
+    return owners
 
 
 _CONSOLE_LOGIN_HTML = """<!doctype html><meta charset=utf-8><meta name=viewport content='width=device-width,initial-scale=1'>
@@ -554,7 +557,11 @@ def console_owner_login_request():
     body = ("Use this one-time link to sign in to the Remedy Match Console:\n\n"
             f"{link}\n\nThis link expires in 15 minutes. If you did not request it, ignore this email.")
     try:
-        _send_full_report_email(email, "Dr. Glen", subject, body)
+        # A user-requested authentication message must never be blocked by the
+        # proactive-client-email suppression list.  A stale bounce flag would
+        # otherwise lock the owner out of the console indefinitely.
+        _send_full_report_email(
+            email, "Dr. Glen", subject, body, respect_suppression=False)
     except Exception:
         app.logger.exception("owner console magic-link send failed")
     return generic, 200
@@ -12197,7 +12204,8 @@ def _generate_full_answer(query: str, level: str, is_logged_in: bool = False):
 
 
 def _send_full_report_email(to_email: str, name: str,
-                            subject: str, body: str):
+                            subject: str, body: str, *,
+                            respect_suppression: bool = True):
     """Send the full report — tries Gmail API → SMTP → GHL/Mailgun → console log.
     Returns (sent_via, error_or_none).
 
@@ -12208,15 +12216,16 @@ def _send_full_report_email(to_email: str, name: str,
     """
     # Suppression guard: this is a proactive client report — skip suppressed
     # (hard-bounced) addresses on BOTH the Gmail and SMTP-fallback paths. Fail-open.
-    from dashboard import email_suppression as _es
-    try:
-        with db.connect(str(LOG_DB)) as _cx:
-            _es.init_table(_cx)
-            if _es.is_suppressed(_cx, to_email):
-                print(f"[suppressed] skip full-report to {to_email}", flush=True)
-                return ("suppressed", None)
-    except Exception as _e:  # noqa: BLE001 — never block a send on a check failure
-        print(f"[suppress-check] full-report skipped: {_e!r}", flush=True)
+    if respect_suppression:
+        from dashboard import email_suppression as _es
+        try:
+            with db.connect(str(LOG_DB)) as _cx:
+                _es.init_table(_cx)
+                if _es.is_suppressed(_cx, to_email):
+                    print(f"[suppressed] skip full-report to {to_email}", flush=True)
+                    return ("suppressed", None)
+        except Exception as _e:  # noqa: BLE001 — never block a send on a check failure
+            print(f"[suppress-check] full-report skipped: {_e!r}", flush=True)
 
     # Path 1: Gmail API (preferred — reuses inbox auth)
     try:
