@@ -33,8 +33,8 @@
   table.lines { width:100%; min-width:1000px; border-collapse:collapse; }
   table.lines th { text-align:left; font-size:10px; text-transform:uppercase; color:var(--muted); padding:6px 6px; border-bottom:1px solid var(--border); }
   table.lines td { padding:6px 6px; border-bottom:1px solid var(--border); vertical-align:middle; }
-  table.lines th:nth-child(9), table.lines td:nth-child(9) { min-width:310px; }
-  table.lines th:nth-child(10), table.lines td:nth-child(10) { min-width:74px; text-align:right; }
+  table.lines th:nth-child(8), table.lines td:nth-child(8) { min-width:310px; }
+  table.lines th:nth-child(9), table.lines td:nth-child(9) { min-width:74px; text-align:right; }
   table.lines input { width:100%; }
   .drag-cell { width:70px; white-space:nowrap; }
   .drag-handle { cursor:grab; color:var(--muted); font-size:18px; padding:3px 6px; user-select:none; touch-action:none; }
@@ -117,7 +117,7 @@
       <div id="snippet-mgr-list"></div>
     </div>
     <div class="lines-scroll">
-      <table class="lines"><thead><tr><th>Order</th><th>Product</th><th>Qty</th><th>Format</th><th>Unit $</th><th>Vol price</th><th>Line</th><th>Source</th><th>Note (shown to customer)</th><th></th></tr></thead>
+      <table class="lines"><thead><tr><th>Product</th><th>Qty</th><th>Format</th><th>Unit $</th><th>Vol price</th><th>Line</th><th>Source</th><th>Note (shown to customer)</th><th></th><th>Order</th></tr></thead>
         <tbody id="lines"></tbody></table>
     </div>
     <div class="addline">
@@ -347,7 +347,6 @@ async function savePickupDefault(){
 function renderLines(){
   const tb=$("lines");
   tb.innerHTML = LINES.map((l,i)=>`<tr data-line-index="${i}">
-    <td class="drag-cell"><span class="drag-handle" draggable="true" title="Drag to reorder" aria-label="Drag ${esc(l.name)} to reorder">☰</span><button class="mini move-btn" type="button" onclick="moveLine(${i},-1)" aria-label="Move ${esc(l.name)} up"${i===0?' disabled':''}>↑</button><button class="mini move-btn" type="button" onclick="moveLine(${i},1)" aria-label="Move ${esc(l.name)} down"${i===LINES.length-1?' disabled':''}>↓</button></td>
     <td>${esc(l.name)}</td>
     <td><input type="number" min="1" value="${l.qty}" onchange="editLine(${i},'qty',this.value)" style="width:70px"></td>
     <td><select onchange="editLine(${i},'format',this.value)">
@@ -363,7 +362,8 @@ function renderLines(){
       <select onchange="applySnippet(${i},this.value); this.selectedIndex=0" title="Insert a saved message" style="max-width:130px">${snippetOptions()}</select>
     </td>
     <td><button class="mini danger" type="button" onclick="rmLine(${i})"
-      aria-label="Delete ${esc(l.name)}">${EDIT_OID?'Delete':'Remove'}</button></td></tr>`).join("");
+      aria-label="Delete ${esc(l.name)}">${EDIT_OID?'Delete':'Remove'}</button></td>
+    <td class="drag-cell"><span class="drag-handle" draggable="true" title="Drag to reorder" aria-label="Drag ${esc(l.name)} to reorder">☰</span><button class="mini move-btn" type="button" onclick="moveLine(${i},-1)" aria-label="Move ${esc(l.name)} up"${i===0?' disabled':''}>↑</button><button class="mini move-btn" type="button" onclick="moveLine(${i},1)" aria-label="Move ${esc(l.name)} down"${i===LINES.length-1?' disabled':''}>↓</button></td></tr>`).join("");
   wireLineDragging(tb);
   refreshPreview();
   recalc();
