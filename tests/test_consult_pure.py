@@ -78,6 +78,21 @@ def test_create_meeting_builds_request_and_parses_response():
     assert captured["body"]["type"] == 2 and captured["body"]["duration"] == 30
     assert captured["body"]["settings"]["waiting_room"] is True
 
+def test_create_meeting_supports_fixed_weekly_recurrence():
+    from dashboard import zoom
+    import io, json as _json3
+    captured = {}
+    def fake_opener(req, timeout=None):
+        captured["body"] = _json3.loads(req.data.decode())
+        return io.BytesIO(b'{"id":87654321,"join_url":"https://zoom.us/j/87654321"}')
+    recurrence = {"type": 2, "repeat_interval": 1, "weekly_days": "4", "end_times": 60}
+    out = zoom.create_meeting("tok", host="me", topic="Group Coaching",
+        start_iso="2026-08-19T14:00:00-10:00", duration_min=60,
+        recurrence=recurrence, opener=fake_opener)
+    assert out["join_url"] == "https://zoom.us/j/87654321"
+    assert captured["body"]["type"] == 8
+    assert captured["body"]["recurrence"] == recurrence
+
 from datetime import datetime
 def test_within_join_window():
     from dashboard import consult
