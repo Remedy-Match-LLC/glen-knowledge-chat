@@ -14,7 +14,8 @@ def owner_client(monkeypatch, tmp_path):
     sent = []
     monkeypatch.setattr(
         appmod, "_send_full_report_email",
-        lambda email, name, subject, body: sent.append((email, subject, body)) or ("test", None))
+        lambda email, name, subject, body, **kwargs:
+            sent.append((email, subject, body, kwargs)) or ("test", None))
     appmod.app.config["TESTING"] = True
     return appmod.app.test_client(), appmod, sent
 
@@ -25,6 +26,19 @@ def _request_link(client, sent, email="owner@example.com"):
     assert email not in r.get_data(as_text=True)
     assert len(sent) == 1
     return re.search(r"https?://[^\s]+token=([^\s]+)", sent[0][2]).group(1)
+
+
+def test_owner_auth_email_bypasses_client_suppression(owner_client):
+    c, _, sent = owner_client
+    _request_link(c, sent)
+    assert sent[0][3] == {"respect_suppression": False}
+
+
+def test_known_owner_addresses_are_allowed_without_explicit_env(owner_client, monkeypatch):
+    _, appmod, _ = owner_client
+    monkeypatch.delenv("CONSOLE_OWNER_EMAILS")
+    assert appmod._console_owner_emails() >= {
+        "drglenswartwout@gmail.com", "this.elf@gmail.com"}
 
 
 def test_unknown_email_gets_generic_response_and_no_email(owner_client):
@@ -65,4 +79,3 @@ def test_owner_request_is_rate_limited_without_changing_response(owner_client):
     second = c.post("/console/login/request", data={"email": "owner@example.com"})
     assert first.status_code == second.status_code == 200
     assert len(sent) == 1
-
