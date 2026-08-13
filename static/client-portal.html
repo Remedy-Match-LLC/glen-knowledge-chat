@@ -268,6 +268,12 @@
   .calendar-summary{margin:0 0 18px;border-color:var(--brand);box-shadow:0 0 0 3px var(--brand-soft)}
   .calendar-summary-head{display:flex;align-items:center;justify-content:space-between;gap:12px}
   .calendar-summary-head h2{margin:0}
+  .appt-proposal{border-top:1px solid var(--line);padding-top:12px;margin-top:12px}
+  .appt-thread{display:grid;gap:7px;margin:.7rem 0}
+  .appt-msg{padding:8px 10px;border-radius:9px;background:var(--brand-soft)}
+  .appt-msg.staff{border-left:3px solid var(--brand)}
+  .appt-msg audio{width:100%;margin-top:5px}
+  .appt-form{display:grid;gap:8px;margin-top:10px}
   .calendar-fold{background:none;border:1px solid var(--line);border-radius:999px;color:var(--ink);cursor:pointer;padding:5px 11px}
   .calendar-tz{margin:.35rem 0 0;color:var(--muted);font-size:.78rem}
   /* Task 6: portal reorder module — remedies with qty, locked (forward-framed)
@@ -1239,6 +1245,7 @@ function buildHubHtml(d, v){
     : "";
   return `<div class="portal-hub">
     ${buildCalendarHtml(v,true)}
+    ${buildAppointmentProposalHtml()}
     <div class="hub-banner"><div class="where">
       <div class="eyebrow">Where you are</div>
       <h2>${esc(d.hub_headline || "Your healing home")}</h2></div>${next}
@@ -1309,6 +1316,38 @@ function buildCalendarHtml(v,compact){
   }
   return `<div class="card" id="calendar-card"><h2>Live Calendar</h2><p class="calendar-tz">Times shown in ${esc(portalTimeZone())}</p>
     <p class="muted small">See what’s coming up. Events marked for paid members stay visible so you can plan ahead.</p><div class="calendar-list">${rows || '<p class="muted">No upcoming events are scheduled yet.</p>'}</div></div>`;
+}
+function buildAppointmentProposalHtml(){
+  return `<div class="card" id="appointment-proposals-card"><h2>Private Appointments</h2>
+    <p class="muted small">Propose a Biofield consultation with Dr. Glen or an EVOX session with Rae. The appointment is booked after both sides confirm.</p>
+    <details><summary class="btn full">Propose an appointment</summary><form class="appt-form" id="appt-proposal-form">
+      <select name="session_type"><option value="biofield-consult">Biofield Analysis Consultation · Dr. Glen · Zoom</option><option value="evox">EVOX Session · Rae · Phone</option></select>
+      <input name="proposed_start" type="datetime-local" required><select name="billing_mode"><option value="paid">Paid session</option><option value="prepaid">Pre-paid / session credit</option></select>
+      <button class="btn" type="submit">Send proposal</button><span class="small err" data-appt-error></span></form></details>
+    <div id="appointment-proposals-list"><p class="muted small">Loading appointments…</p></div></div>`;
+}
+async function loadAppointmentProposals(){
+  const host=document.getElementById("appointment-proposals-list"); if(!host)return;
+  try{
+    const r=await fetch(`/api/portal/${encodeURIComponent(seg)}/appointment-proposals`), d=await r.json();
+    if(!r.ok)throw new Error();
+    host.innerHTML=(d.proposals||[]).map(p=>{
+      const mine=!!p.client_confirmed;
+      const status=p.status==="confirmed"?"Confirmed":p.status==="conflict"?"Time conflict — please propose another time":(mine?`Waiting for ${p.practitioner==="glen"?"Dr. Glen":"Rae"}`:"Waiting for your confirmation");
+      const messages=(p.messages||[]).map(m=>`<div class="appt-msg ${m.sender==='client'?'':'staff'}"><b>${m.sender==='client'?'You':esc(m.sender==='glen'?'Dr. Glen':'Rae')}</b>${m.text?`<div>${esc(m.text)}</div>`:''}${m.audio_filename?`<audio controls preload="none" src="/api/portal/${encodeURIComponent(seg)}/appointment-proposals/${p.id}/audio/${m.id}"></audio>`:''}</div>`).join('');
+      return `<div class="appt-proposal"><b>${esc(p.session_label)}</b><div class="small">${esc(new Intl.DateTimeFormat(undefined,{dateStyle:'medium',timeStyle:'short'}).format(new Date(p.start_iso||p.proposed_start)))} · ${esc(p.medium)} · ${esc(p.billing_mode)}</div><span class="badge">${esc(status)}</span>
+        ${!mine?`<button class="btn appt-confirm" data-id="${p.id}">Confirm this time</button>`:''}<div class="appt-thread">${messages}</div>
+        <form class="appt-form appt-message" data-id="${p.id}"><textarea name="text" rows="2" placeholder="Send a private message…"></textarea><input name="audio" type="file" accept="audio/*"><button class="btn" type="submit">Send message</button></form></div>`;
+    }).join('')||'<p class="muted small">No appointment proposals yet.</p>';
+    host.querySelectorAll('.appt-confirm').forEach(b=>b.onclick=async()=>{b.disabled=true;const r=await fetch(`/api/portal/${encodeURIComponent(seg)}/appointment-proposals/${b.dataset.id}/confirm`,{method:'POST'});if(r.ok)loadAppointmentProposals();else{const d=await r.json();alert(d.error==='slot_conflict'?'That time was just taken. Please propose another time.':'Could not confirm.')}});
+    host.querySelectorAll('.appt-message').forEach(f=>f.onsubmit=async e=>{e.preventDefault();const r=await fetch(`/api/portal/${encodeURIComponent(seg)}/appointment-proposals/${f.dataset.id}/messages`,{method:'POST',body:new FormData(f)});if(r.ok)loadAppointmentProposals();else alert('Could not send that message.');});
+  }catch(e){host.innerHTML='<p class="err small">Appointments could not load. Please try again.</p>'}
+}
+function initAppointmentProposals(){
+  loadAppointmentProposals(); const f=document.getElementById('appt-proposal-form');if(!f)return;
+  f.onsubmit=async e=>{e.preventDefault();const fd=new FormData(f),body=Object.fromEntries(fd.entries()),err=f.querySelector('[data-appt-error]');body.timezone=portalTimeZone();
+    const r=await fetch(`/api/portal/${encodeURIComponent(seg)}/appointment-proposals`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}),d=await r.json();
+    if(r.status===402&&d.upgrade_url){location.href=d.upgrade_url;return}if(!r.ok){err.textContent='Could not send proposal.';return}f.reset();loadAppointmentProposals();};
 }
 // My Health Profile panel body. Renders v.health_profile.sections (curated
 // goals/dimensions/history from dashboard/health_profile.py) as label/value
@@ -3090,7 +3129,7 @@ function render(d, v){
 
   const _calendarCard = buildCalendarHtml(v,true);
   _calendarHtml = buildCalendarHtml(v,false);
-  if (!_hub) html += _calendarCard;
+  if (!_hub) html += _calendarCard + buildAppointmentProposalHtml();
 
   // "Ask Dr. Glen" concierge chat — promoted to the TOP of the portal (first card
   // below the hero) so it's the first thing the client sees. Always shown.
@@ -4137,6 +4176,7 @@ function render(d, v){
       await load();
     }catch(e){btn.disabled=false;btn.textContent=old;alert("We couldn't reserve your spot. Please try again.")}
   }));
+  initAppointmentProposals();
 
   initOnboardingCard();
   initCoachesCard();

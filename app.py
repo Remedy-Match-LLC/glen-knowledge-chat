@@ -29293,6 +29293,248 @@ def api_client_portal_view(token):
     return resp
 
 
+def _appointment_client_identity(cx, token):
+    from dashboard import client_portal as _cp
+    from dashboard import portal_identity as _pi
+    _cp.init_client_portal_table(cx)
+    return _pi.resolve_identity(
+        cx, token=token, session_token=request.cookies.get("rm_portal_session", ""),
+        client_login_enabled=_client_login_enabled())
+
+
+def _appointment_client_entitled(cx, email, session_type):
+    if _is_paid_member(email):
+        return True
+    try:
+        if session_type == "evox":
+            from dashboard import evox as _ev
+            _ev.init_evox_tables(cx)
+            return _ev.session_credit_balance(cx, email) > 0
+        if session_type == "biofield-consult":
+            from dashboard import consult as _co
+            _co.init_consult_tables(cx)
+            return _co.has_paid_purchase(cx, email, _co.CONSULT["test_slug"])
+    except db.Error:
+        return False
+    return False
+
+
+def _finalize_appointment(cx, proposal):
+    """Create one calendar booking after both parties confirm."""
+    if not proposal or proposal.get("booking_id"):
+        return proposal
+    from dashboard import evox as _ev
+    _init_calendar_table()
+    _ev.init_evox_tables(cx)
+    try:
+        booked = _ev.create_booking(
+            cx, proposal["client_email"], proposal["proposed_start"],
+            duration_min=int(proposal["duration_min"]),
+            prepaid=(proposal["billing_mode"] == "prepaid"),
+            practitioner=proposal["practitioner"],
+            session_type=proposal["session_type"],
+            medium=("video" if proposal["medium"] == "zoom" else proposal["medium"]))
+    except _ev.SlotTaken:
+        cx.execute("UPDATE appointment_proposals SET status='conflict',updated_at=? WHERE id=?",
+                   (datetime.now(timezone.utc).isoformat(), proposal["id"]))
+        cx.commit()
+        return None
+    cx.execute("UPDATE appointment_proposals SET booking_id=?,status='confirmed',updated_at=? WHERE id=?",
+               (booked["id"], datetime.now(timezone.utc).isoformat(), proposal["id"]))
+    cx.commit()
+    return booked
+
+
+@app.route("/api/portal/<token>/appointment-proposals", methods=["GET", "POST"])
+def api_portal_appointment_proposals(token):
+    from dashboard import appointment_proposals as _ap
+    with _db_lock, db.connect(LOG_DB) as cx:
+        cx.row_factory = sqlite3.Row
+        ident = _appointment_client_identity(cx, token)
+        if ident is None:
+            return jsonify({"error": "unauthorized"}), 401
+        if request.method == "GET":
+            return jsonify({"ok": True, "proposals": _ap.list_for_client(cx, ident.email),
+                            "is_paid_member": bool(_is_paid_member(ident.email)),
+                            "upgrade_url": "/membership"})
+        body = request.get_json(silent=True) or {}
+        kind = (body.get("session_type") or "").strip()
+        if not _appointment_client_entitled(cx, ident.email, kind):
+            return jsonify({"error": "upgrade_required", "upgrade_url": "/membership"}), 402
+        try:
+            from zoneinfo import ZoneInfo
+            local_start = datetime.fromisoformat((body.get("proposed_start") or "").strip())
+            client_tz = (body.get("timezone") or "UTC").strip()
+            hawaii_start = local_start.replace(tzinfo=ZoneInfo(client_tz)).astimezone(
+                ZoneInfo("Pacific/Honolulu")).replace(tzinfo=None).isoformat(timespec="seconds")
+            pid = _ap.create(
+                cx, email=ident.email, session_type=kind, start=hawaii_start,
+                proposed_by="client", billing_mode=(body.get("billing_mode") or "paid").strip(),
+                proposed_timezone=client_tz)
+        except (ValueError, KeyError) as exc:
+            return jsonify({"error": str(exc)}), 400
+        return jsonify({"ok": True, "proposal_id": pid}), 201
+
+
+@app.route("/api/portal/<token>/appointment-proposals/<int:proposal_id>/confirm", methods=["POST"])
+def api_portal_appointment_confirm(token, proposal_id):
+    from dashboard import appointment_proposals as _ap
+    with _db_lock, db.connect(LOG_DB) as cx:
+        cx.row_factory = sqlite3.Row
+        ident = _appointment_client_identity(cx, token)
+        proposal = _ap.get(cx, proposal_id) if ident else None
+        if not proposal or proposal["client_email"].lower() != ident.email.lower():
+            return jsonify({"error": "not_found"}), 404
+        proposal = _ap.confirm(cx, proposal_id, "client")
+        if proposal["client_confirmed"] and proposal["staff_confirmed"] and not proposal.get("booking_id"):
+            if not _finalize_appointment(cx, proposal):
+                return jsonify({"error": "slot_conflict"}), 409
+        return jsonify({"ok": True})
+
+
+def _save_appointment_audio(file_obj, proposal_id):
+    raw = file_obj.read(10 * 1024 * 1024 + 1)
+    if len(raw) > 10 * 1024 * 1024:
+        raise ValueError("audio_too_large")
+    ext = {"audio/mpeg": "mp3", "audio/mp4": "m4a", "audio/webm": "webm",
+           "audio/wav": "wav", "audio/x-wav": "wav"}.get(file_obj.mimetype)
+    if not ext:
+        raise ValueError("unsupported_audio")
+    name = f"appt-{proposal_id}-{secrets.token_hex(12)}.{ext}"
+    _PORTAL_ASSETS_DIR.mkdir(parents=True, exist_ok=True)
+    (_PORTAL_ASSETS_DIR / name).write_bytes(raw)
+    return name
+
+
+@app.route("/api/portal/<token>/appointment-proposals/<int:proposal_id>/messages", methods=["POST"])
+def api_portal_appointment_message(token, proposal_id):
+    from dashboard import appointment_proposals as _ap
+    with _db_lock, db.connect(LOG_DB) as cx:
+        cx.row_factory = sqlite3.Row
+        ident = _appointment_client_identity(cx, token)
+        proposal = _ap.get(cx, proposal_id) if ident else None
+        if not proposal or proposal["client_email"].lower() != ident.email.lower():
+            return jsonify({"error": "not_found"}), 404
+        try:
+            audio = _save_appointment_audio(request.files["audio"], proposal_id) if "audio" in request.files else ""
+            _ap.add_message(cx, proposal_id, "client", request.form.get("text", ""), audio)
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+        return jsonify({"ok": True})
+
+
+@app.route("/api/portal/<token>/appointment-proposals/<int:proposal_id>/audio/<int:message_id>")
+def api_portal_appointment_audio(token, proposal_id, message_id):
+    from dashboard import appointment_proposals as _ap
+    with db.connect(LOG_DB) as cx:
+        ident = _appointment_client_identity(cx, token)
+        proposal = _ap.get(cx, proposal_id) if ident else None
+        if not proposal or proposal["client_email"].lower() != ident.email.lower():
+            return jsonify({"error": "not_found"}), 404
+        row = cx.execute("SELECT audio_filename FROM appointment_proposal_messages "
+                         "WHERE id=? AND proposal_id=?", (message_id, proposal_id)).fetchone()
+    if not row or not row[0]:
+        return jsonify({"error": "not_found"}), 404
+    return send_from_directory(str(_PORTAL_ASSETS_DIR), row[0])
+
+
+def _appointment_staff_actor():
+    key = _present_console_key()
+    if CONSOLE_SECRET and key == CONSOLE_SECRET:
+        return "glen"
+    try:
+        with db.connect(LOG_DB) as cx:
+            row = cx.execute(
+                "SELECT lower(u.name) FROM access_tokens t JOIN workspace_users u ON u.id=t.user_id "
+                "WHERE t.token=? AND t.revoked_at IS NULL", (key,)).fetchone()
+        return row[0] if row and row[0] in ("glen", "rae") else None
+    except db.Error:
+        return None
+
+
+@app.route("/console/appointment-proposals")
+def console_appointment_proposals_page():
+    if not _appointment_staff_actor():
+        return jsonify({"error": "unauthorized"}), 401
+    return send_from_directory(STATIC, "appointment-proposals.html")
+
+
+@app.route("/api/console/appointment-proposals", methods=["GET", "POST"])
+def api_console_appointment_proposals():
+    from dashboard import appointment_proposals as _ap
+    actor = _appointment_staff_actor()
+    if not actor:
+        return jsonify({"error": "unauthorized"}), 401
+    with _db_lock, db.connect(LOG_DB) as cx:
+        cx.row_factory = sqlite3.Row
+        if request.method == "GET":
+            return jsonify({"ok": True, "proposals": _ap.list_for_staff(cx, actor), "actor": actor})
+        body = request.get_json(silent=True) or {}
+        try:
+            pid = _ap.create(
+                cx, email=body.get("email", ""),
+                session_type=(body.get("session_type") or "").strip(),
+                start=(body.get("proposed_start") or "").strip(), proposed_by=actor,
+                billing_mode=(body.get("billing_mode") or "paid").strip(),
+                price_cents=int(body.get("price_cents") or 0), practitioner=actor,
+                proposed_timezone="Pacific/Honolulu")
+        except (ValueError, TypeError) as exc:
+            return jsonify({"error": str(exc)}), 400
+        return jsonify({"ok": True, "proposal_id": pid}), 201
+
+
+@app.route("/api/console/appointment-proposals/<int:proposal_id>/confirm", methods=["POST"])
+def api_console_appointment_confirm(proposal_id):
+    from dashboard import appointment_proposals as _ap
+    actor = _appointment_staff_actor()
+    if not actor:
+        return jsonify({"error": "unauthorized"}), 401
+    with _db_lock, db.connect(LOG_DB) as cx:
+        proposal = _ap.get(cx, proposal_id)
+        if not proposal or proposal["practitioner"] != actor:
+            return jsonify({"error": "not_found"}), 404
+        proposal = _ap.confirm(cx, proposal_id, "staff")
+        if proposal["client_confirmed"] and proposal["staff_confirmed"] and not proposal.get("booking_id"):
+            if not _finalize_appointment(cx, proposal):
+                return jsonify({"error": "slot_conflict"}), 409
+        return jsonify({"ok": True})
+
+
+@app.route("/api/console/appointment-proposals/<int:proposal_id>/messages", methods=["POST"])
+def api_console_appointment_message(proposal_id):
+    from dashboard import appointment_proposals as _ap
+    actor = _appointment_staff_actor()
+    if not actor:
+        return jsonify({"error": "unauthorized"}), 401
+    with _db_lock, db.connect(LOG_DB) as cx:
+        proposal = _ap.get(cx, proposal_id)
+        if not proposal or proposal["practitioner"] != actor:
+            return jsonify({"error": "not_found"}), 404
+        try:
+            audio = _save_appointment_audio(request.files["audio"], proposal_id) if "audio" in request.files else ""
+            _ap.add_message(cx, proposal_id, actor, request.form.get("text", ""), audio)
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+        return jsonify({"ok": True})
+
+
+@app.route("/api/console/appointment-proposals/<int:proposal_id>/audio/<int:message_id>")
+def api_console_appointment_audio(proposal_id, message_id):
+    from dashboard import appointment_proposals as _ap
+    actor = _appointment_staff_actor()
+    if not actor:
+        return jsonify({"error": "unauthorized"}), 401
+    with db.connect(LOG_DB) as cx:
+        proposal = _ap.get(cx, proposal_id)
+        if not proposal or proposal["practitioner"] != actor:
+            return jsonify({"error": "not_found"}), 404
+        row = cx.execute("SELECT audio_filename FROM appointment_proposal_messages "
+                         "WHERE id=? AND proposal_id=?", (message_id, proposal_id)).fetchone()
+    if not row or not row[0]:
+        return jsonify({"error": "not_found"}), 404
+    return send_from_directory(str(_PORTAL_ASSETS_DIR), row[0])
+
+
 @app.route("/api/portal/<token>/calendar/register", methods=["POST"])
 def api_portal_calendar_register(token):
     """One-click portal registration. Identity and event access are rechecked
