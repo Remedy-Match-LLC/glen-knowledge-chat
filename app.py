@@ -6744,6 +6744,27 @@ def _is_paid_member(email):
         return False
 
 
+def _is_certification_student(email):
+    """Whether the authoritative practitioner record marks this email as a
+    certification student. Fail closed so a lookup error never exposes coaching."""
+    if not email:
+        return False
+    try:
+        from db_supabase import supabase_cursor
+        with supabase_cursor() as cur:
+            cur.execute(
+                "SELECT 1 FROM practitioners WHERE lower(email)=lower(%s) "
+                "AND portal_role='coach' LIMIT 1", (str(email).strip(),))
+            return cur.fetchone() is not None
+    except Exception:
+        app.logger.exception("certification-student lookup failed for %s", email)
+        return False
+
+
+def _group_coaching_entitled(email):
+    return _is_paid_member(email) or _is_certification_student(email)
+
+
 # Recurring membership tiers (Group Coaching). One QBO Item, price set per tier.
 # The founders monthly rate is sourced from the prepay ladder's single source of
 # truth (prepay.MONTHLY_ANCHOR_CENTS, in cents) so the $99/mo price lives in one
@@ -29241,6 +29262,12 @@ def api_client_portal_view(token):
                                        brain_enabled=_PORTAL_BRAIN_TILE_ENABLED,
                                        brain_url=_PORTAL_BRAIN_URL,
                                        caregiver_pay_enabled=_caregiver_pay_enabled())
+            if view is not None:
+                from dashboard import portal_calendar as _portal_cal
+                view["calendar"] = _portal_cal.build_block(
+                    cx, email=ident.email,
+                    group_coaching_entitled=_group_coaching_entitled(ident.email),
+                    upgrade_url="/membership")
     if view is None:
         return jsonify({"error": "not found"}), 404
     view["auth_method"] = ident.auth_method
@@ -29250,6 +29277,83 @@ def api_client_portal_view(token):
     resp.headers["Cache-Control"] = "private, no-cache, no-store, must-revalidate"
     resp.headers["Pragma"] = "no-cache"
     return resp
+
+
+@app.route("/api/portal/<token>/calendar/register", methods=["POST"])
+def api_portal_calendar_register(token):
+    """One-click portal registration. Identity and event access are rechecked
+    server-side; the browser's rendered lock state is never trusted."""
+    from dashboard import client_portal as _cp
+    from dashboard import masterclass as _mc
+    from dashboard import portal_calendar as _pc
+    from dashboard import portal_identity as _pi
+
+    body = request.get_json(silent=True) or {}
+    event_key = (body.get("event_id") or "").strip().lower()
+    sess = request.cookies.get("rm_portal_session", "")
+    with _db_lock, db.connect(LOG_DB) as cx:
+        cx.row_factory = sqlite3.Row
+        _cp.init_client_portal_table(cx)
+        ident = _pi.resolve_identity(
+            cx, token=token, session_token=sess,
+            client_login_enabled=_client_login_enabled())
+        if ident is None:
+            return jsonify({"error": "unauthorized"}), 401
+        person = cx.execute("SELECT name FROM people WHERE id=?", (ident.person_id,)).fetchone()
+        name = (person[0] if person else "") or ""
+        email = ident.email
+
+        if event_key.startswith("group-"):
+            if not _group_coaching_entitled(email):
+                return jsonify({"error": "membership_required",
+                                "upgrade_url": "/membership"}), 402
+            try:
+                event_id = int(event_key.split("-", 1)[1])
+            except ValueError:
+                return jsonify({"error": "not_found"}), 404
+            row = cx.execute(
+                'SELECT location FROM calendar_events WHERE id=? AND status="visible"',
+                (event_id,)).fetchone()
+            if not row:
+                return jsonify({"error": "not_found"}), 404
+            _pc.register_group(cx, event_key, email)
+            join = (row[0] or "").strip()
+            return jsonify({"ok": True, "registered": True,
+                "join_url": join if join.lower().startswith(("http://", "https://")) else ""})
+
+        if not event_key.startswith("masterclass-"):
+            return jsonify({"error": "not_found"}), 404
+        try:
+            event_id = int(event_key.split("-", 1)[1])
+        except ValueError:
+            return jsonify({"error": "not_found"}), 404
+        _mc.init_masterclass_tables(cx)
+        event = _mc.get_event(cx, event_id)
+        if not event:
+            return jsonify({"error": "not_found"}), 404
+        member = _is_paid_member(email)
+        amount = _mc.price_for(event, member)
+        if amount <= 0:
+            _mc.register(cx, event_id, email, name, member, 0, paid=True)
+
+    if amount <= 0:
+        _masterclass_send_confirmation(event, email, name)
+        return jsonify({"ok": True, "registered": True,
+                        "join_url": event.get("zoom_join_url") or ""})
+    if not _STRIPE_ACTIVE:
+        return jsonify({"error": "payment_unavailable"}), 503
+    from dashboard import stripe_pay as _sp
+    checkout = _sp.create_checkout_session(
+        amount, customer_email=email, description=f"MasterClass: {event['topic']}",
+        metadata={"kind": "masterclass", "event_id": str(event_id),
+                  "email": email, "name": name},
+        success_url=f"{PUBLIC_BASE_URL}/masterclass/{event_id}?paid=1",
+        cancel_url=f"{PUBLIC_BASE_URL}/masterclass/{event_id}")
+    with _db_lock, db.connect(LOG_DB) as cx:
+        cx.row_factory = sqlite3.Row
+        _mc.init_masterclass_tables(cx)
+        _mc.register(cx, event_id, email, name, member, amount, paid=False)
+    return jsonify({"ok": True, "checkout_url": checkout.get("url")})
 
 
 # ── Free product review (dark: SUPPLEMENT_REVIEW_ENABLED) ─────────────────────
