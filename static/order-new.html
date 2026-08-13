@@ -36,6 +36,12 @@
   table.lines th:nth-child(8), table.lines td:nth-child(8) { min-width:310px; }
   table.lines th:nth-child(9), table.lines td:nth-child(9) { min-width:74px; text-align:right; }
   table.lines input { width:100%; }
+  .drag-cell { width:70px; white-space:nowrap; }
+  .drag-handle { cursor:grab; color:var(--muted); font-size:18px; padding:3px 6px; user-select:none; touch-action:none; }
+  .drag-handle:active { cursor:grabbing; }
+  table.lines tr.dragging { opacity:.45; }
+  table.lines tr.drag-over { outline:2px solid var(--accent); outline-offset:-2px; }
+  .move-btn { padding:3px 5px!important; min-width:24px; }
   .addline { display:grid; grid-template-columns:2fr .7fr 1fr auto; gap:8px; margin-top:12px; align-items:end; }
   .totals { margin-top:14px; font-size:14px; }
   .totals .row { display:flex; justify-content:space-between; padding:3px 0; color:var(--muted); }
@@ -111,7 +117,7 @@
       <div id="snippet-mgr-list"></div>
     </div>
     <div class="lines-scroll">
-      <table class="lines"><thead><tr><th>Product</th><th>Qty</th><th>Format</th><th>Unit $</th><th>Vol price</th><th>Line</th><th>Source</th><th>Note (shown to customer)</th><th></th></tr></thead>
+      <table class="lines"><thead><tr><th>Product</th><th>Qty</th><th>Format</th><th>Unit $</th><th>Vol price</th><th>Line</th><th>Source</th><th>Note (shown to customer)</th><th></th><th>Order</th></tr></thead>
         <tbody id="lines"></tbody></table>
     </div>
     <div class="addline">
@@ -340,7 +346,7 @@ async function savePickupDefault(){
 }
 function renderLines(){
   const tb=$("lines");
-  tb.innerHTML = LINES.map((l,i)=>`<tr>
+  tb.innerHTML = LINES.map((l,i)=>`<tr data-line-index="${i}">
     <td>${esc(l.name)}</td>
     <td><input type="number" min="1" value="${l.qty}" onchange="editLine(${i},'qty',this.value)" style="width:70px"></td>
     <td><select onchange="editLine(${i},'format',this.value)">
@@ -356,10 +362,38 @@ function renderLines(){
       <select onchange="applySnippet(${i},this.value); this.selectedIndex=0" title="Insert a saved message" style="max-width:130px">${snippetOptions()}</select>
     </td>
     <td><button class="mini danger" type="button" onclick="rmLine(${i})"
-      aria-label="Delete ${esc(l.name)}">${EDIT_OID?'Delete':'Remove'}</button></td></tr>`).join("");
+      aria-label="Delete ${esc(l.name)}">${EDIT_OID?'Delete':'Remove'}</button></td>
+    <td class="drag-cell"><span class="drag-handle" draggable="true" title="Drag to reorder" aria-label="Drag ${esc(l.name)} to reorder">☰</span><button class="mini move-btn" type="button" onclick="moveLine(${i},-1)" aria-label="Move ${esc(l.name)} up"${i===0?' disabled':''}>↑</button><button class="mini move-btn" type="button" onclick="moveLine(${i},1)" aria-label="Move ${esc(l.name)} down"${i===LINES.length-1?' disabled':''}>↓</button></td></tr>`).join("");
+  wireLineDragging(tb);
   refreshPreview();
   recalc();
   syncShippingUI();
+}
+function moveLine(i,delta){
+  const to=i+delta;
+  if(i<0||to<0||i>=LINES.length||to>=LINES.length) return;
+  const moved=LINES.splice(i,1)[0]; LINES.splice(to,0,moved); renderLines();
+}
+let DRAG_LINE_INDEX=null;
+function wireLineDragging(tb){
+  Array.from(tb.querySelectorAll('tr[data-line-index]')).forEach(row=>{
+    row.addEventListener('dragstart',e=>{
+      DRAG_LINE_INDEX=Number(row.dataset.lineIndex); row.classList.add('dragging');
+      e.dataTransfer.effectAllowed='move'; e.dataTransfer.setData('text/plain',String(DRAG_LINE_INDEX));
+    });
+    row.addEventListener('dragover',e=>{ e.preventDefault(); e.dataTransfer.dropEffect='move'; row.classList.add('drag-over'); });
+    row.addEventListener('dragleave',()=>row.classList.remove('drag-over'));
+    row.addEventListener('drop',e=>{
+      e.preventDefault(); row.classList.remove('drag-over');
+      const from=DRAG_LINE_INDEX==null?Number(e.dataTransfer.getData('text/plain')):DRAG_LINE_INDEX;
+      const to=Number(row.dataset.lineIndex);
+      if(Number.isInteger(from)&&Number.isInteger(to)&&from!==to&&LINES[from]){
+        const moved=LINES.splice(from,1)[0]; LINES.splice(to,0,moved); renderLines();
+      }
+      DRAG_LINE_INDEX=null;
+    });
+    row.addEventListener('dragend',()=>{ DRAG_LINE_INDEX=null; row.classList.remove('dragging'); Array.from(tb.children).forEach(r=>r.classList.remove('drag-over')); });
+  });
 }
 function editLine(i,f,v){ if(f==='qty') LINES[i].qty=Math.max(1,parseInt(v,10)||1); else if(f==='format') LINES[i].format=v; else { LINES[i].unit_cents=Math.round(parseFloat(v)*100)||0; LINES[i].edited=true; } renderLines(); }
 function rmLine(i){
