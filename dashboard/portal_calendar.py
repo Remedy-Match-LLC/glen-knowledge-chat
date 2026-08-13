@@ -3,7 +3,7 @@
 Titles and times are visible to every portal holder. Private join destinations
 are only added after the caller establishes entitlement server-side.
 """
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 
@@ -27,6 +27,29 @@ def _zoned_iso(value):
         return parsed.isoformat()
     except (ValueError, TypeError):
         return raw
+
+
+def _weekly_starts(template_start, now_iso, count=8):
+    """Return the next weekly local-time occurrences after ``now_iso``.
+
+    Zoom uses recurring meeting links, while our database historically stored only
+    one dated occurrence. Expanding at read time keeps upcoming community activities
+    visible without manufacturing new Zoom meetings or requiring weekly data entry.
+    """
+    template = datetime.fromisoformat((template_start or "").replace("Z", "+00:00"))
+    now = datetime.fromisoformat((now_iso or "").replace("Z", "+00:00"))
+    if template.tzinfo:
+        template = template.astimezone(ZoneInfo("Pacific/Honolulu")).replace(tzinfo=None)
+    if now.tzinfo:
+        now = now.astimezone(ZoneInfo("Pacific/Honolulu")).replace(tzinfo=None)
+    candidate = template
+    if candidate <= now:
+        candidate += timedelta(weeks=((now - candidate).days // 7) + 1)
+    return [candidate + timedelta(weeks=i) for i in range(count)]
+
+
+def _occurrence_key(prefix, row_id, start):
+    return f"{prefix}-{row_id}-{start.strftime('%Y%m%d')}"
 
 
 def init_registration_table(cx):
@@ -54,6 +77,7 @@ def _registered_keys(cx, email):
             ((email or "").strip().lower(),)).fetchall())
     except Exception:
         pass
+
     try:
         keys.update(f"masterclass-{r[0]}" for r in cx.execute(
             "SELECT event_id FROM masterclass_registrations "
@@ -135,6 +159,70 @@ def build_block(cx, *, email="", group_coaching_entitled=False,
                                  if entitled else "Upgrade to access"),
                 "registered": key in registered_keys})
     except Exception:
+        pass
+
+    # These are recurring community activities whose Zoom links remain stable from
+    # week to week. Materialize the next eight Wednesdays from the latest authored
+    # occurrence. Concrete future rows win for matching start times.
+    concrete_masterclass_starts = {e.get("start", "")[:19] for e in events
+                                   if e.get("type") == "masterclass"}
+    concrete_group_starts = {e.get("start", "")[:19] for e in events
+                             if e.get("type") == "group_coaching"}
+    try:
+        cur = cx.execute(
+            "SELECT id, topic, description, start_ts, duration_min "
+            "FROM masterclass_events WHERE lower(topic) LIKE '%wellness whispering%' "
+            "ORDER BY start_ts DESC LIMIT 1")
+        row = cur.fetchone()
+        if row:
+            item = _row_dict(cur, row)
+            base_key = f"masterclass-{item['id']}"
+            for start in _weekly_starts(item["start_ts"], now_iso):
+                raw = start.isoformat(timespec="seconds")
+                if raw in concrete_masterclass_starts:
+                    continue
+                events.append({"id": _occurrence_key("masterclass", item["id"], start),
+                    "type": "masterclass", "title": item.get("topic") or "MasterClass",
+                    "description": item.get("description") or "", "start": _zoned_iso(raw),
+                    "duration_min": int(item.get("duration_min") or 60),
+                    "members_only": False, "locked": False,
+                    "action_url": f"/masterclass/{item['id']}",
+                    "action_label": "View & register",
+                    "registered": base_key in registered_keys})
+    except (ValueError, TypeError):
+        pass
+
+    try:
+        cur = cx.execute(
+            'SELECT id, summary, start, "end", location FROM calendar_events '
+            "WHERE status='visible' AND (lower(summary) LIKE '%group coaching%' "
+            "OR lower(calendar_name) LIKE '%group coaching%') "
+            "ORDER BY start DESC LIMIT 1")
+        row = cur.fetchone()
+        if row:
+            item = _row_dict(cur, row)
+            template_start = datetime.fromisoformat(item["start"].replace("Z", "+00:00"))
+            template_end = datetime.fromisoformat(item["end"].replace("Z", "+00:00"))
+            duration = template_end - template_start
+            entitled = bool(group_coaching_entitled)
+            location = (item.get("location") or "").strip()
+            join_url = location if location.lower().startswith(("https://", "http://")) else ""
+            for start in _weekly_starts(item["start"], now_iso):
+                raw = start.isoformat(timespec="seconds")
+                if raw in concrete_group_starts:
+                    continue
+                key = _occurrence_key("group", item["id"], start)
+                events.append({"id": key, "type": "group_coaching",
+                    "title": item.get("summary") or "Group Coaching",
+                    "description": "Live group coaching with Dr. Glen.",
+                    "start": _zoned_iso(raw),
+                    "end": _zoned_iso((start + duration).isoformat(timespec="seconds")),
+                    "members_only": True, "locked": not entitled,
+                    "action_url": join_url if entitled else upgrade_url,
+                    "action_label": (("Join session" if join_url else "Access details coming soon")
+                                     if entitled else "Upgrade to access"),
+                    "registered": key in registered_keys})
+    except (ValueError, TypeError):
         pass
 
     events.sort(key=lambda e: (e.get("start") or "", e.get("title") or ""))
