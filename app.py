@@ -2423,11 +2423,12 @@ RULES:
 - A TABLE URL BELONGS TO ITS OWN PRODUCT ONLY: each injection-table row pairs ONE product name with ONE URL. Never attach a row's URL (or its price) to a DIFFERENT product, even a related one. If you name a product that has no row of its own, describe it WITHOUT a link rather than borrowing a neighbour's — a link that opens the wrong product page is worse than no link, because the client buys the wrong thing.
 - NEVER INVENT A PRICE: the PRODUCT LINK INJECTION TABLE carries each product's LIST price. Quote ONLY that figure, and only for products in the table. Do NOT take a price from a retrieved snippet, do NOT infer one, and do NOT carry a price or shipping figure over from another product — snippets are often years out of date and shipping differs per product. If a product has no price in the table, do not state one: say the product page shows current pricing and give the link. When you do quote the list price, note that the page shows their actual price, since membership, volume and any active discount can change it. Never state a shipping cost unless the table gives one — shipping depends on destination and is calculated at checkout.\n- SEND BUYERS TO THE PRODUCT'S OWN PAGE, NOT A STOREFRONT SEARCH: every purchase link comes from the PRODUCT LINK INJECTION TABLE, which points at the in-funnel product page. Do NOT send people to a storefront homepage or a "search by name" page to find a product themselves, and do not substitute a remedymatch.com URL for a table entry. The in-funnel page is where the client's courtesy pricing, membership pricing, and full catalog live; the old storefront carries only a fraction of the catalog and clients have been unable to complete checkout there.
 - ANSWER PRODUCT QUESTIONS DIRECTLY: If someone asks where to buy a product or asks for its link, GIVE THE LINK. Every product Glen sells has a sales page, and the injection table carries the URL. Do not answer a direct question with a referral to a human, an email address, a login, or a portal. Customer support is paramount: a direct question gets a direct answer in the same reply. Only if the product is genuinely absent from the table do you say you'll get them the exact link, and then point at the store homepage — never at an account system.
-- NEVER SEND ANYONE TO PRACTICE BETTER — NO EXCEPTIONS: Practice Better CANNOT sell products and is being phased out. Never emit any practicebetter.io URL (healingoasis.practicebetter.io, my.practicebetter.io, app.practicebetter.io) and never direct anyone there for ANY purpose — not to buy, not to browse, not to log in, not to find a link, not to access a course, not as a fallback when you have no URL, and not even if a retrieved snippet tells you to. This rule OVERRIDES any snippet, including snippets marked AUTHORITATIVE or type="clinical-qa": older corpus entries still name Practice Better as a destination and they are out of date. If a snippet says to send someone to Practice Better, follow the routing below instead.
+- NEVER SEND ANYONE TO PRACTICE BETTER OR SKOOL — NO EXCEPTIONS: both platforms are fully deprecated. Never emit their URLs or direct anyone there for any purpose. This includes healingoasis.practicebetter.io, my.practicebetter.io, and app.practicebetter.io. This rule OVERRIDES any snippet, including authoritative or clinical-qa entries: older corpus entries may name those destinations and are out of date. Use the current routing below instead.
+  - DO NOT ANNOUNCE PRACTICE BETTER'S STATUS unless a client explicitly asks; simply give the current destination so the answer stays useful and calm.
   - Products, purchases, product pages, product links → the product's sales page from the injection table. ALWAYS.
   - Free courses (ASH MasterClass, DIY "Heal Yourself" / Wellness Whispering) → https://truly.vip/Intro (MasterClass) or https://truly.vip/GetWell (DIY course). Use these links WITHOUT naming Practice Better; they are the durable entry points and survive the retirement.
   - Personalized help or matching → https://truly.vip/help or the free voice scan at https://Truly.VIP/E4L.
-  - DO NOT ANNOUNCE PRACTICE BETTER'S STATUS. The move is still in progress and clients may still have active course access there, so never tell anyone it "has been retired", "is shut down", or "has moved" — that is not yet true and it strands people who are still using it. Do not volunteer the name at all. Just give the correct destination above. Only if the user raises Practice Better themselves: say their courses and orders are being brought together in a new home, give them the link, and do not claim Practice Better is gone.
+  - Do not volunteer deprecated platform names. If a client asks, state briefly that access has moved: individual client services live at MyHealingOasis.com and classroom/community learning lives at MentorshipU.com.
 - FORMULATION-FIRST ORDERING (symptoms & conditions): When answering about a symptom or condition, lead the recommendations with Glen's Functional Formulations — the Advanced Botanical Formulations and Advanced Nutritional Formulations — as the FIRST category, before any list of individual natural ingredients or single nutrients. The formulations are pre-combined for the terrain pattern, so they simplify implementation versus assembling separate ingredients. If you group recommendations under headings, an "Advanced Botanical Formulations" and/or "Advanced Nutritional Formulations" heading comes first; present individual ingredients only afterward, as an optional layer or as the mechanism behind the formulations. Within a formulation category, list the most condition-specific formulation first.
 - ACTIVE DISCOUNT CODE: When the request includes an ACTIVE DISCOUNT block, include today's code naturally — once per response, only when at least one product is recommended.
 - SELLABLE BUT NOT RECOMMENDED (distinct from discontinued): "AllerFree" (AllerFree HomeoEnergetic Drops) is still sold and can still be bought. Do NOT volunteer it — when recommending for allergy or immune terrain, recommend "Immune Modulation" instead. But NEVER tell anyone AllerFree is retired, discontinued, or unavailable, because it is none of those. If a client asks for AllerFree by name or asks where to buy it, give them its product page link from the injection table so they can complete the purchase, and you may add that Immune Modulation is Glen's current preference. "Not recommended" is about what you proactively suggest; it never means refusing a client the ability to buy something Glen still sells.
@@ -6742,6 +6743,27 @@ def _is_paid_member(email):
         return membership_category(email) != "trial"
     except Exception:
         return False
+
+
+def _is_certification_student(email):
+    """Whether the authoritative practitioner record marks this email as a
+    certification student. Fail closed so a lookup error never exposes coaching."""
+    if not email:
+        return False
+    try:
+        from db_supabase import supabase_cursor
+        with supabase_cursor() as cur:
+            cur.execute(
+                "SELECT 1 FROM practitioners WHERE lower(email)=lower(%s) "
+                "AND portal_role='coach' LIMIT 1", (str(email).strip(),))
+            return cur.fetchone() is not None
+    except Exception:
+        app.logger.exception("certification-student lookup failed for %s", email)
+        return False
+
+
+def _group_coaching_entitled(email):
+    return _is_paid_member(email) or _is_certification_student(email)
 
 
 # Recurring membership tiers (Group Coaching). One QBO Item, price set per tier.
@@ -13140,26 +13162,40 @@ def _init_referral_tables():
                 "WHERE name='Free Bioenergetic Wellness Scan' AND instructions != ?",
                 (E4L_INSTRUCTIONS, E4L_INSTRUCTIONS),
             )
-        # Seed ASH MasterClass (free evergreen intro on Practice Better)
+        # Seed ASH MasterClass (free evergreen intro in MentorshipU)
         if not cx.execute("SELECT id FROM affiliate_offers WHERE name='Free ASH MasterClass'").fetchone():
             cx.execute("""
                 INSERT INTO affiliate_offers (sort_order, name, description, url_template, instructions, active)
                 VALUES (3, 'Free ASH MasterClass',
-                    'Dr. Glen''s evergreen introduction to the Accelerated Self Healing™ method. Free MasterClass on Practice Better — always available.',
+                    'Dr. Glen''s evergreen introduction to the Accelerated Self Healing™ method. Free MasterClass in MentorshipU — always available.',
                     'https://truly.vip/Intro?utm_source={slug}&utm_medium=affiliate&utm_campaign=ash-masterclass',
-                    'Free on Practice Better — students create a free account to access. Affiliates can share the link as-is.',
+                    'Free in MentorshipU — students create a free account to access. Affiliates can share the link as-is.',
                     1)
             """)
-        # Seed DIY ASH Course — Heal Yourself (free self-paced on Practice Better)
+        cx.execute(
+            "UPDATE affiliate_offers SET description=?, instructions=? "
+            "WHERE name='Free ASH MasterClass'",
+            ("Dr. Glen's evergreen introduction to the Accelerated Self Healing™ method. "
+             "Free MasterClass in MentorshipU — always available.",
+             "Free in MentorshipU — students create a free account to access. "
+             "Affiliates can share the link as-is."))
+        # Seed DIY ASH Course — Heal Yourself (free self-paced in MentorshipU)
         if not cx.execute("SELECT id FROM affiliate_offers WHERE name='Free DIY Accelerated Self Healing Course — Heal Yourself'").fetchone():
             cx.execute("""
                 INSERT INTO affiliate_offers (sort_order, name, description, url_template, instructions, active)
                 VALUES (4, 'Free DIY Accelerated Self Healing Course — Heal Yourself',
-                    'The full DIY protocol for Accelerated Self Healing™. Free self-paced course on Practice Better — work through the modules at your own pace.',
+                    'The full DIY protocol for Accelerated Self Healing™. Free self-paced course in MentorshipU — work through the modules at your own pace.',
                     'https://truly.vip/GetWell?utm_source={slug}&utm_medium=affiliate&utm_campaign=ash-diy-course',
-                    'Free on Practice Better — students create a free account to access. Affiliates can share the link as-is.',
+                    'Free in MentorshipU — students create a free account to access. Affiliates can share the link as-is.',
                     1)
             """)
+        cx.execute(
+            "UPDATE affiliate_offers SET description=?, instructions=? "
+            "WHERE name='Free DIY Accelerated Self Healing Course — Heal Yourself'",
+            ("The full DIY protocol for Accelerated Self Healing™. Free self-paced "
+             "course in MentorshipU — work through the modules at your own pace.",
+             "Free in MentorshipU — students create a free account to access. "
+             "Affiliates can share the link as-is."))
         # Seed Shop for Remedies (the GrooveKart store)
         if not cx.execute("SELECT id FROM affiliate_offers WHERE name='Shop for Remedies'").fetchone():
             cx.execute("""
@@ -29241,6 +29277,12 @@ def api_client_portal_view(token):
                                        brain_enabled=_PORTAL_BRAIN_TILE_ENABLED,
                                        brain_url=_PORTAL_BRAIN_URL,
                                        caregiver_pay_enabled=_caregiver_pay_enabled())
+            if view is not None:
+                from dashboard import portal_calendar as _portal_cal
+                view["calendar"] = _portal_cal.build_block(
+                    cx, email=ident.email,
+                    group_coaching_entitled=_group_coaching_entitled(ident.email),
+                    upgrade_url="/membership")
     if view is None:
         return jsonify({"error": "not found"}), 404
     view["auth_method"] = ident.auth_method
@@ -29250,6 +29292,325 @@ def api_client_portal_view(token):
     resp.headers["Cache-Control"] = "private, no-cache, no-store, must-revalidate"
     resp.headers["Pragma"] = "no-cache"
     return resp
+
+
+def _appointment_client_identity(cx, token):
+    from dashboard import client_portal as _cp
+    from dashboard import portal_identity as _pi
+    _cp.init_client_portal_table(cx)
+    return _pi.resolve_identity(
+        cx, token=token, session_token=request.cookies.get("rm_portal_session", ""),
+        client_login_enabled=_client_login_enabled())
+
+
+def _appointment_client_entitled(cx, email, session_type):
+    if _is_paid_member(email):
+        return True
+    try:
+        if session_type == "evox":
+            from dashboard import evox as _ev
+            _ev.init_evox_tables(cx)
+            return _ev.session_credit_balance(cx, email) > 0
+        if session_type == "biofield-consult":
+            from dashboard import consult as _co
+            _co.init_consult_tables(cx)
+            return _co.has_paid_purchase(cx, email, _co.CONSULT["test_slug"])
+    except db.Error:
+        return False
+    return False
+
+
+def _finalize_appointment(cx, proposal):
+    """Create one calendar booking after both parties confirm."""
+    if not proposal or proposal.get("booking_id"):
+        return proposal
+    from dashboard import evox as _ev
+    _init_calendar_table()
+    _ev.init_evox_tables(cx)
+    try:
+        booked = _ev.create_booking(
+            cx, proposal["client_email"], proposal["proposed_start"],
+            duration_min=int(proposal["duration_min"]),
+            prepaid=(proposal["billing_mode"] == "prepaid"),
+            practitioner=proposal["practitioner"],
+            session_type=proposal["session_type"],
+            medium=("video" if proposal["medium"] == "zoom" else proposal["medium"]))
+    except _ev.SlotTaken:
+        cx.execute("UPDATE appointment_proposals SET status='conflict',updated_at=? WHERE id=?",
+                   (datetime.now(timezone.utc).isoformat(), proposal["id"]))
+        cx.commit()
+        return None
+    cx.execute("UPDATE appointment_proposals SET booking_id=?,status='confirmed',updated_at=? WHERE id=?",
+               (booked["id"], datetime.now(timezone.utc).isoformat(), proposal["id"]))
+    cx.commit()
+    return booked
+
+
+@app.route("/api/portal/<token>/appointment-proposals", methods=["GET", "POST"])
+def api_portal_appointment_proposals(token):
+    from dashboard import appointment_proposals as _ap
+    with _db_lock, db.connect(LOG_DB) as cx:
+        cx.row_factory = sqlite3.Row
+        ident = _appointment_client_identity(cx, token)
+        if ident is None:
+            return jsonify({"error": "unauthorized"}), 401
+        if request.method == "GET":
+            return jsonify({"ok": True, "proposals": _ap.list_for_client(cx, ident.email),
+                            "is_paid_member": bool(_is_paid_member(ident.email)),
+                            "upgrade_url": "/membership"})
+        body = request.get_json(silent=True) or {}
+        kind = (body.get("session_type") or "").strip()
+        if not _appointment_client_entitled(cx, ident.email, kind):
+            return jsonify({"error": "upgrade_required", "upgrade_url": "/membership"}), 402
+        try:
+            from zoneinfo import ZoneInfo
+            local_start = datetime.fromisoformat((body.get("proposed_start") or "").strip())
+            client_tz = (body.get("timezone") or "UTC").strip()
+            hawaii_start = local_start.replace(tzinfo=ZoneInfo(client_tz)).astimezone(
+                ZoneInfo("Pacific/Honolulu")).replace(tzinfo=None).isoformat(timespec="seconds")
+            pid = _ap.create(
+                cx, email=ident.email, session_type=kind, start=hawaii_start,
+                proposed_by="client", billing_mode=(body.get("billing_mode") or "paid").strip(),
+                proposed_timezone=client_tz)
+        except (ValueError, KeyError) as exc:
+            return jsonify({"error": str(exc)}), 400
+        return jsonify({"ok": True, "proposal_id": pid}), 201
+
+
+@app.route("/api/portal/<token>/appointment-proposals/<int:proposal_id>/confirm", methods=["POST"])
+def api_portal_appointment_confirm(token, proposal_id):
+    from dashboard import appointment_proposals as _ap
+    with _db_lock, db.connect(LOG_DB) as cx:
+        cx.row_factory = sqlite3.Row
+        ident = _appointment_client_identity(cx, token)
+        proposal = _ap.get(cx, proposal_id) if ident else None
+        if not proposal or proposal["client_email"].lower() != ident.email.lower():
+            return jsonify({"error": "not_found"}), 404
+        proposal = _ap.confirm(cx, proposal_id, "client")
+        if proposal["client_confirmed"] and proposal["staff_confirmed"] and not proposal.get("booking_id"):
+            if not _finalize_appointment(cx, proposal):
+                return jsonify({"error": "slot_conflict"}), 409
+        return jsonify({"ok": True})
+
+
+def _save_appointment_audio(file_obj, proposal_id):
+    raw = file_obj.read(10 * 1024 * 1024 + 1)
+    if len(raw) > 10 * 1024 * 1024:
+        raise ValueError("audio_too_large")
+    ext = {"audio/mpeg": "mp3", "audio/mp4": "m4a", "audio/webm": "webm",
+           "audio/wav": "wav", "audio/x-wav": "wav"}.get(file_obj.mimetype)
+    if not ext:
+        raise ValueError("unsupported_audio")
+    name = f"appt-{proposal_id}-{secrets.token_hex(12)}.{ext}"
+    _PORTAL_ASSETS_DIR.mkdir(parents=True, exist_ok=True)
+    (_PORTAL_ASSETS_DIR / name).write_bytes(raw)
+    return name
+
+
+@app.route("/api/portal/<token>/appointment-proposals/<int:proposal_id>/messages", methods=["POST"])
+def api_portal_appointment_message(token, proposal_id):
+    from dashboard import appointment_proposals as _ap
+    with _db_lock, db.connect(LOG_DB) as cx:
+        cx.row_factory = sqlite3.Row
+        ident = _appointment_client_identity(cx, token)
+        proposal = _ap.get(cx, proposal_id) if ident else None
+        if not proposal or proposal["client_email"].lower() != ident.email.lower():
+            return jsonify({"error": "not_found"}), 404
+        try:
+            audio = _save_appointment_audio(request.files["audio"], proposal_id) if "audio" in request.files else ""
+            _ap.add_message(cx, proposal_id, "client", request.form.get("text", ""), audio)
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+        return jsonify({"ok": True})
+
+
+@app.route("/api/portal/<token>/appointment-proposals/<int:proposal_id>/audio/<int:message_id>")
+def api_portal_appointment_audio(token, proposal_id, message_id):
+    from dashboard import appointment_proposals as _ap
+    with db.connect(LOG_DB) as cx:
+        ident = _appointment_client_identity(cx, token)
+        proposal = _ap.get(cx, proposal_id) if ident else None
+        if not proposal or proposal["client_email"].lower() != ident.email.lower():
+            return jsonify({"error": "not_found"}), 404
+        row = cx.execute("SELECT audio_filename FROM appointment_proposal_messages "
+                         "WHERE id=? AND proposal_id=?", (message_id, proposal_id)).fetchone()
+    if not row or not row[0]:
+        return jsonify({"error": "not_found"}), 404
+    return send_from_directory(str(_PORTAL_ASSETS_DIR), row[0])
+
+
+def _appointment_staff_actor():
+    key = _present_console_key()
+    if CONSOLE_SECRET and key == CONSOLE_SECRET:
+        return "glen"
+    try:
+        with db.connect(LOG_DB) as cx:
+            row = cx.execute(
+                "SELECT lower(u.name) FROM access_tokens t JOIN workspace_users u ON u.id=t.user_id "
+                "WHERE t.token=? AND t.revoked_at IS NULL", (key,)).fetchone()
+        return row[0] if row and row[0] in ("glen", "rae") else None
+    except db.Error:
+        return None
+
+
+@app.route("/console/appointment-proposals")
+def console_appointment_proposals_page():
+    if not _appointment_staff_actor():
+        return jsonify({"error": "unauthorized"}), 401
+    return send_from_directory(STATIC, "appointment-proposals.html")
+
+
+@app.route("/api/console/appointment-proposals", methods=["GET", "POST"])
+def api_console_appointment_proposals():
+    from dashboard import appointment_proposals as _ap
+    actor = _appointment_staff_actor()
+    if not actor:
+        return jsonify({"error": "unauthorized"}), 401
+    with _db_lock, db.connect(LOG_DB) as cx:
+        cx.row_factory = sqlite3.Row
+        if request.method == "GET":
+            return jsonify({"ok": True, "proposals": _ap.list_for_staff(cx, actor), "actor": actor})
+        body = request.get_json(silent=True) or {}
+        try:
+            pid = _ap.create(
+                cx, email=body.get("email", ""),
+                session_type=(body.get("session_type") or "").strip(),
+                start=(body.get("proposed_start") or "").strip(), proposed_by=actor,
+                billing_mode=(body.get("billing_mode") or "paid").strip(),
+                price_cents=int(body.get("price_cents") or 0), practitioner=actor,
+                proposed_timezone="Pacific/Honolulu")
+        except (ValueError, TypeError) as exc:
+            return jsonify({"error": str(exc)}), 400
+        return jsonify({"ok": True, "proposal_id": pid}), 201
+
+
+@app.route("/api/console/appointment-proposals/<int:proposal_id>/confirm", methods=["POST"])
+def api_console_appointment_confirm(proposal_id):
+    from dashboard import appointment_proposals as _ap
+    actor = _appointment_staff_actor()
+    if not actor:
+        return jsonify({"error": "unauthorized"}), 401
+    with _db_lock, db.connect(LOG_DB) as cx:
+        proposal = _ap.get(cx, proposal_id)
+        if not proposal or proposal["practitioner"] != actor:
+            return jsonify({"error": "not_found"}), 404
+        proposal = _ap.confirm(cx, proposal_id, "staff")
+        if proposal["client_confirmed"] and proposal["staff_confirmed"] and not proposal.get("booking_id"):
+            if not _finalize_appointment(cx, proposal):
+                return jsonify({"error": "slot_conflict"}), 409
+        return jsonify({"ok": True})
+
+
+@app.route("/api/console/appointment-proposals/<int:proposal_id>/messages", methods=["POST"])
+def api_console_appointment_message(proposal_id):
+    from dashboard import appointment_proposals as _ap
+    actor = _appointment_staff_actor()
+    if not actor:
+        return jsonify({"error": "unauthorized"}), 401
+    with _db_lock, db.connect(LOG_DB) as cx:
+        proposal = _ap.get(cx, proposal_id)
+        if not proposal or proposal["practitioner"] != actor:
+            return jsonify({"error": "not_found"}), 404
+        try:
+            audio = _save_appointment_audio(request.files["audio"], proposal_id) if "audio" in request.files else ""
+            _ap.add_message(cx, proposal_id, actor, request.form.get("text", ""), audio)
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+        return jsonify({"ok": True})
+
+
+@app.route("/api/console/appointment-proposals/<int:proposal_id>/audio/<int:message_id>")
+def api_console_appointment_audio(proposal_id, message_id):
+    from dashboard import appointment_proposals as _ap
+    actor = _appointment_staff_actor()
+    if not actor:
+        return jsonify({"error": "unauthorized"}), 401
+    with db.connect(LOG_DB) as cx:
+        proposal = _ap.get(cx, proposal_id)
+        if not proposal or proposal["practitioner"] != actor:
+            return jsonify({"error": "not_found"}), 404
+        row = cx.execute("SELECT audio_filename FROM appointment_proposal_messages "
+                         "WHERE id=? AND proposal_id=?", (message_id, proposal_id)).fetchone()
+    if not row or not row[0]:
+        return jsonify({"error": "not_found"}), 404
+    return send_from_directory(str(_PORTAL_ASSETS_DIR), row[0])
+
+
+@app.route("/api/portal/<token>/calendar/register", methods=["POST"])
+def api_portal_calendar_register(token):
+    """One-click portal registration. Identity and event access are rechecked
+    server-side; the browser's rendered lock state is never trusted."""
+    from dashboard import client_portal as _cp
+    from dashboard import masterclass as _mc
+    from dashboard import portal_calendar as _pc
+    from dashboard import portal_identity as _pi
+
+    body = request.get_json(silent=True) or {}
+    event_key = (body.get("event_id") or "").strip().lower()
+    sess = request.cookies.get("rm_portal_session", "")
+    with _db_lock, db.connect(LOG_DB) as cx:
+        cx.row_factory = sqlite3.Row
+        _cp.init_client_portal_table(cx)
+        ident = _pi.resolve_identity(
+            cx, token=token, session_token=sess,
+            client_login_enabled=_client_login_enabled())
+        if ident is None:
+            return jsonify({"error": "unauthorized"}), 401
+        person = cx.execute("SELECT name FROM people WHERE id=?", (ident.person_id,)).fetchone()
+        name = (person[0] if person else "") or ""
+        email = ident.email
+
+        if event_key.startswith("group-"):
+            if not _group_coaching_entitled(email):
+                return jsonify({"error": "membership_required",
+                                "upgrade_url": "/membership"}), 402
+            try:
+                event_id = int(event_key.split("-", 1)[1])
+            except ValueError:
+                return jsonify({"error": "not_found"}), 404
+            row = cx.execute(
+                'SELECT location FROM calendar_events WHERE id=? AND status="visible"',
+                (event_id,)).fetchone()
+            if not row:
+                return jsonify({"error": "not_found"}), 404
+            _pc.register_group(cx, event_key, email)
+            join = (row[0] or "").strip()
+            return jsonify({"ok": True, "registered": True,
+                "join_url": join if join.lower().startswith(("http://", "https://")) else ""})
+
+        if not event_key.startswith("masterclass-"):
+            return jsonify({"error": "not_found"}), 404
+        try:
+            event_id = int(event_key.split("-", 1)[1])
+        except ValueError:
+            return jsonify({"error": "not_found"}), 404
+        _mc.init_masterclass_tables(cx)
+        event = _mc.get_event(cx, event_id)
+        if not event:
+            return jsonify({"error": "not_found"}), 404
+        member = _is_paid_member(email)
+        amount = _mc.price_for(event, member)
+        if amount <= 0:
+            _mc.register(cx, event_id, email, name, member, 0, paid=True)
+
+    if amount <= 0:
+        _masterclass_send_confirmation(event, email, name)
+        return jsonify({"ok": True, "registered": True,
+                        "join_url": event.get("zoom_join_url") or ""})
+    if not _STRIPE_ACTIVE:
+        return jsonify({"error": "payment_unavailable"}), 503
+    from dashboard import stripe_pay as _sp
+    checkout = _sp.create_checkout_session(
+        amount, customer_email=email, description=f"MasterClass: {event['topic']}",
+        metadata={"kind": "masterclass", "event_id": str(event_id),
+                  "email": email, "name": name},
+        success_url=f"{PUBLIC_BASE_URL}/masterclass/{event_id}?paid=1",
+        cancel_url=f"{PUBLIC_BASE_URL}/masterclass/{event_id}")
+    with _db_lock, db.connect(LOG_DB) as cx:
+        cx.row_factory = sqlite3.Row
+        _mc.init_masterclass_tables(cx)
+        _mc.register(cx, event_id, email, name, member, amount, paid=False)
+    return jsonify({"ok": True, "checkout_url": checkout.get("url")})
 
 
 # ── Free product review (dark: SUPPLEMENT_REVIEW_ENABLED) ─────────────────────
@@ -37754,8 +38115,8 @@ TODO_TOOLS = [
         "description": (
             "Generate a draft reply (via Claude) for an actionable email-derived "
             "todo, typically E4L client messages. Returns the draft text — the "
-            "user still has to send it via the original channel (Practice Better, "
-            "Gmail, etc.)."
+            "user still has to send it via the appropriate active channel "
+            "(GoHighLevel or Gmail)."
         ),
         "input_schema": {
             "type": "object",

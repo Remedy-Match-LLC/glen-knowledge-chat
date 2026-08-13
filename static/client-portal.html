@@ -256,6 +256,26 @@
   .pill{font-size:.72rem;font-weight:700;border-radius:999px;padding:2px 9px;background:var(--brand-soft);color:var(--ok)}
   .soon{border-style:dashed;background:linear-gradient(180deg,var(--card),var(--card2));text-align:center}
   .soon .muted{margin:.2rem 0 0}
+  .calendar-list{display:grid;gap:12px;margin-top:1rem}
+  .calendar-event{border:1px solid var(--line);border-radius:12px;padding:16px;background:var(--card2)}
+  .calendar-event.is-locked{border-style:dashed}
+  .calendar-event-top{display:flex;align-items:center;justify-content:space-between;gap:10px}
+  .calendar-kind{color:var(--brand);font-size:.75rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase}
+  .calendar-event h3{margin:.45rem 0 .15rem;font-size:1rem}
+  .calendar-time{margin:0 0 .45rem;font-weight:600}
+  .calendar-actions{display:flex;gap:7px;flex-wrap:wrap;margin-top:.55rem}
+  .calendar-actions .btn{width:auto;flex:1;min-width:120px;text-align:center;padding:9px 12px;font-size:.86rem}
+  .calendar-summary{margin:0 0 18px;border-color:var(--brand);box-shadow:0 0 0 3px var(--brand-soft)}
+  .calendar-summary-head{display:flex;align-items:center;justify-content:space-between;gap:12px}
+  .calendar-summary-head h2{margin:0}
+  .appt-proposal{border-top:1px solid var(--line);padding-top:12px;margin-top:12px}
+  .appt-thread{display:grid;gap:7px;margin:.7rem 0}
+  .appt-msg{padding:8px 10px;border-radius:9px;background:var(--brand-soft)}
+  .appt-msg.staff{border-left:3px solid var(--brand)}
+  .appt-msg audio{width:100%;margin-top:5px}
+  .appt-form{display:grid;gap:8px;margin-top:10px}
+  .calendar-fold{background:none;border:1px solid var(--line);border-radius:999px;color:var(--ink);cursor:pointer;padding:5px 11px}
+  .calendar-tz{margin:.35rem 0 0;color:var(--muted);font-size:.78rem}
   /* Task 6: portal reorder module — remedies with qty, locked (forward-framed)
      rows, and the non-member savings upsell. */
   .remitem{padding:9px 0;border-bottom:1px dashed var(--line)}
@@ -1224,11 +1244,110 @@ function buildHubHtml(d, v){
     ? `<div class="next"><div class="eyebrow">Your next step</div><div>${esc(d.next_step_label)}</div></div>`
     : "";
   return `<div class="portal-hub">
+    ${buildCalendarHtml(v,true)}
+    ${buildAppointmentProposalHtml()}
     <div class="hub-banner"><div class="where">
       <div class="eyebrow">Where you are</div>
       <h2>${esc(d.hub_headline || "Your healing home")}</h2></div>${next}
       <button type="button" class="hub-account" onclick="showTab('account')">Account</button></div>
     ${groups.map(grp).join("")}</div>`;
+}
+
+function portalTimeZone(){
+  try{return Intl.DateTimeFormat().resolvedOptions().timeZone || "your local timezone"}catch(e){return "your local timezone"}
+}
+function calendarEventEnd(e){
+  if(e.end) return new Date(e.end);
+  const start = new Date(e.start);
+  return new Date(start.getTime() + Number(e.duration_min || 60) * 60000);
+}
+function calendarProviderUrl(e, provider){
+  const stamp = d => d.toISOString().replace(/[-:]/g,"").replace(/\.\d{3}/,"");
+  const start = new Date(e.start), end = calendarEventEnd(e);
+  const title = e.title || (e.type === "group_coaching" ? "Group Coaching" : "MasterClass");
+  const details = e.description || "Healing Oasis live event";
+  if(provider === "google") return "https://calendar.google.com/calendar/render?action=TEMPLATE&text="+encodeURIComponent(title)+"&dates="+stamp(start)+"/"+stamp(end)+"&details="+encodeURIComponent(details);
+  return "https://outlook.live.com/calendar/0/deeplink/compose?path=/calendar/action/compose&rru=addevent&subject="+encodeURIComponent(title)+"&startdt="+encodeURIComponent(start.toISOString())+"&enddt="+encodeURIComponent(end.toISOString())+"&body="+encodeURIComponent(details);
+}
+function downloadEventIcs(eventId){
+  const cal = (window.__portalView && window.__portalView.calendar) || {};
+  const e = (cal.events || []).find(x=>x.id===eventId); if(!e) return;
+  const stamp = d => d.toISOString().replace(/[-:]/g,"").replace(/\.\d{3}/,"");
+  const clean = s => String(s||"").replace(/([,;\\])/g,"\\$1").replace(/\n/g,"\\n");
+  const ics = ["BEGIN:VCALENDAR","VERSION:2.0","PRODID:-//Healing Oasis//Events//EN","BEGIN:VEVENT",
+    "UID:"+clean(e.id)+"@myhealingoasis.com","DTSTAMP:"+stamp(new Date()),"DTSTART:"+stamp(new Date(e.start)),
+    "DTEND:"+stamp(calendarEventEnd(e)),"SUMMARY:"+clean(e.title),"DESCRIPTION:"+clean(e.description),"END:VEVENT","END:VCALENDAR"].join("\r\n");
+  const a=document.createElement("a"); a.href=URL.createObjectURL(new Blob([ics],{type:"text/calendar"}));
+  a.download=(e.id||"healing-oasis-event")+".ics"; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),1000);
+}
+function toggleCalendarSummary(){
+  const body=document.getElementById("calendar-summary-body"), btn=document.getElementById("calendar-fold");
+  if(!body) return; body.hidden=!body.hidden; if(btn) btn.textContent=body.hidden?"Show":"Hide";
+  try{localStorage.setItem("rm_calendar_collapsed",body.hidden?"1":"0")}catch(e){}
+}
+function buildCalendarHtml(v,compact){
+  const cal = (v && v.calendar) || {};
+  const allEvents = Array.isArray(cal.events) ? cal.events : [];
+  const events = compact ? allEvents.slice(0,2) : allEvents;
+  const fmt = value => {
+    if(!value) return "Date to be announced";
+    const d = new Date(value);
+    if(Number.isNaN(d.getTime())) return value;
+    return new Intl.DateTimeFormat(undefined, {weekday:"short", month:"short", day:"numeric",
+      hour:"numeric", minute:"2-digit", timeZoneName:"short"}).format(d);
+  };
+  const rows = events.map(e => {
+    const kind = e.type === "group_coaching" ? "Group Coaching" : (e.type === "appointment" ? "Private Appointment" : "MasterClass");
+    const gate = e.members_only ? `<span class="badge">${e.locked ? "Paid members" : "Included access"}</span>` : `<span class="badge">Open registration</span>`;
+    let action = "";
+    if(e.locked) action = `<a class="btn full" href="${esc(e.action_url || cal.upgrade_url || '/membership')}">Upgrade to access</a>`;
+    else if(!e.registered) action = `<button class="btn full event-register" data-event-id="${esc(e.id)}">Reserve my spot</button>`;
+    else {
+      const join = e.action_url && e.type === "group_coaching" ? `<a class="btn" href="${esc(e.action_url)}">Join session</a>` : "";
+      action = `<div class="calendar-actions">${join}<a class="btn" target="_blank" rel="noopener" href="${esc(calendarProviderUrl(e,'google'))}">Google</a><a class="btn" target="_blank" rel="noopener" href="${esc(calendarProviderUrl(e,'outlook'))}">Outlook</a><button class="btn" onclick="downloadEventIcs('${esc(e.id)}')">Apple / other</button></div>`;
+    }
+    return `<article class="calendar-event${e.locked ? " is-locked" : ""}">
+      <div class="calendar-event-top"><span class="calendar-kind">${esc(kind)}</span>${gate}</div>
+      <h3>${esc(e.title || kind)}</h3><p class="calendar-time">${esc(fmt(e.start))}</p>
+      ${e.description ? `<p class="muted small">${esc(e.description)}</p>` : ""}${action}</article>`;
+  }).join("");
+  if(compact){
+    return `<div class="card calendar-summary" id="calendar-summary"><div class="calendar-summary-head"><h2>Upcoming Live Events</h2><button type="button" class="calendar-fold" id="calendar-fold" onclick="toggleCalendarSummary()">Hide</button></div><p class="calendar-tz">Times shown in ${esc(portalTimeZone())}</p><div id="calendar-summary-body"><div class="calendar-list">${rows || '<p class="muted">No upcoming events are scheduled yet.</p>'}</div>${allEvents.length>2?'<button class="btn full" onclick="showTab(\'calendar\')">See full calendar</button>':''}</div></div>`;
+  }
+  return `<div class="card" id="calendar-card"><h2>Live Calendar</h2><p class="calendar-tz">Times shown in ${esc(portalTimeZone())}</p>
+    <p class="muted small">See what’s coming up. Events marked for paid members stay visible so you can plan ahead.</p><div class="calendar-list">${rows || '<p class="muted">No upcoming events are scheduled yet.</p>'}</div></div>`;
+}
+function buildAppointmentProposalHtml(){
+  return `<div class="card" id="appointment-proposals-card"><h2>Private Appointments</h2>
+    <p class="muted small">Propose a Biofield consultation with Dr. Glen or an EVOX session with Rae. The appointment is booked after both sides confirm.</p>
+    <details><summary class="btn full">Propose an appointment</summary><form class="appt-form" id="appt-proposal-form">
+      <select name="session_type"><option value="biofield-consult">Biofield Analysis Consultation · Dr. Glen · Zoom</option><option value="evox">EVOX Session · Rae · Phone</option></select>
+      <input name="proposed_start" type="datetime-local" required><select name="billing_mode"><option value="paid">Paid session</option><option value="prepaid">Pre-paid / session credit</option></select>
+      <button class="btn" type="submit">Send proposal</button><span class="small err" data-appt-error></span></form></details>
+    <div id="appointment-proposals-list"><p class="muted small">Loading appointments…</p></div></div>`;
+}
+async function loadAppointmentProposals(){
+  const host=document.getElementById("appointment-proposals-list"); if(!host)return;
+  try{
+    const r=await fetch(`/api/portal/${encodeURIComponent(seg)}/appointment-proposals`), d=await r.json();
+    if(!r.ok)throw new Error();
+    host.innerHTML=(d.proposals||[]).map(p=>{
+      const mine=!!p.client_confirmed;
+      const status=p.status==="confirmed"?"Confirmed":p.status==="conflict"?"Time conflict — please propose another time":(mine?`Waiting for ${p.practitioner==="glen"?"Dr. Glen":"Rae"}`:"Waiting for your confirmation");
+      const messages=(p.messages||[]).map(m=>`<div class="appt-msg ${m.sender==='client'?'':'staff'}"><b>${m.sender==='client'?'You':esc(m.sender==='glen'?'Dr. Glen':'Rae')}</b>${m.text?`<div>${esc(m.text)}</div>`:''}${m.audio_filename?`<audio controls preload="none" src="/api/portal/${encodeURIComponent(seg)}/appointment-proposals/${p.id}/audio/${m.id}"></audio>`:''}</div>`).join('');
+      return `<div class="appt-proposal"><b>${esc(p.session_label)}</b><div class="small">${esc(new Intl.DateTimeFormat(undefined,{dateStyle:'medium',timeStyle:'short'}).format(new Date(p.start_iso||p.proposed_start)))} · ${esc(p.medium)} · ${esc(p.billing_mode)}</div><span class="badge">${esc(status)}</span>
+        ${!mine?`<button class="btn appt-confirm" data-id="${p.id}">Confirm this time</button>`:''}<div class="appt-thread">${messages}</div>
+        <form class="appt-form appt-message" data-id="${p.id}"><textarea name="text" rows="2" placeholder="Send a private message…"></textarea><input name="audio" type="file" accept="audio/*"><button class="btn" type="submit">Send message</button></form></div>`;
+    }).join('')||'<p class="muted small">No appointment proposals yet.</p>';
+    host.querySelectorAll('.appt-confirm').forEach(b=>b.onclick=async()=>{b.disabled=true;const r=await fetch(`/api/portal/${encodeURIComponent(seg)}/appointment-proposals/${b.dataset.id}/confirm`,{method:'POST'});if(r.ok)loadAppointmentProposals();else{const d=await r.json();alert(d.error==='slot_conflict'?'That time was just taken. Please propose another time.':'Could not confirm.')}});
+    host.querySelectorAll('.appt-message').forEach(f=>f.onsubmit=async e=>{e.preventDefault();const r=await fetch(`/api/portal/${encodeURIComponent(seg)}/appointment-proposals/${f.dataset.id}/messages`,{method:'POST',body:new FormData(f)});if(r.ok)loadAppointmentProposals();else alert('Could not send that message.');});
+  }catch(e){host.innerHTML='<p class="err small">Appointments could not load. Please try again.</p>'}
+}
+function initAppointmentProposals(){
+  loadAppointmentProposals(); const f=document.getElementById('appt-proposal-form');if(!f)return;
+  f.onsubmit=async e=>{e.preventDefault();const fd=new FormData(f),body=Object.fromEntries(fd.entries()),err=f.querySelector('[data-appt-error]');body.timezone=portalTimeZone();
+    const r=await fetch(`/api/portal/${encodeURIComponent(seg)}/appointment-proposals`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}),d=await r.json();
+    if(r.status===402&&d.upgrade_url){location.href=d.upgrade_url;return}if(!r.ok){err.textContent='Could not send proposal.';return}f.reset();loadAppointmentProposals();};
 }
 // My Health Profile panel body. Renders v.health_profile.sections (curated
 // goals/dimensions/history from dashboard/health_profile.py) as label/value
@@ -3006,7 +3125,11 @@ function render(d, v){
   // Under the hub, each secondary card routes into its own [data-panel] section
   // (below) instead of the single scroll; without the hub, every card still
   // appends to `html` exactly as before (off-state byte-identical).
-  let _askHtml="", _finderHtml="", _bodymapHtml="", _classesHtml="", _accountHtml="", _payerOrdersHtml="", _referHtml="", _referralsHtml="", _offersHtml="";
+  let _askHtml="", _finderHtml="", _bodymapHtml="", _classesHtml="", _calendarHtml="", _accountHtml="", _payerOrdersHtml="", _referHtml="", _referralsHtml="", _offersHtml="";
+
+  const _calendarCard = buildCalendarHtml(v,true);
+  _calendarHtml = buildCalendarHtml(v,false);
+  if (!_hub) html += _calendarCard + buildAppointmentProposalHtml();
 
   // "Ask Dr. Glen" concierge chat — promoted to the TOP of the portal (first card
   // below the hero) so it's the first thing the client sees. Always shown.
@@ -4013,6 +4136,7 @@ function render(d, v){
       ${_hub && v.oasis && v.oasis.enabled ? (_oasisView = v, `<section data-panel="oasis" hidden>${back}${buildOasisHtml(v)}</section>`) : ""}
       ${_hub && v.cart && v.cart.enabled ? `<section data-panel="cart" hidden>${back}${buildCartHtml()}</section>` : ""}
       <section data-panel="shop" hidden>${back}${buildShopHtml()}</section>
+      <section data-panel="calendar" hidden>${back}${_calendarHtml}</section>
       <section data-panel="offers" hidden>${back}${_offersHtml || buildOffersEmptyHtml(v)}</section>
       <section data-panel="photo" hidden>${back}${buildPhotoHtml()}</section>
       <section data-panel="finder" hidden>${back}${_finderHtml || '<div class="card quiet"><p class="muted">The practitioner finder is not enabled for your portal yet.</p></div>'}</section>
@@ -4030,10 +4154,29 @@ function render(d, v){
   }
 
   app.innerHTML = html;
+  window.__portalView = v;
   document.getElementById("loading").hidden = true;
   app.hidden = false;
 
   if (_hub) { showTab('hub'); }
+  try{
+    if(localStorage.getItem("rm_calendar_collapsed")==="1"){
+      const cb=document.getElementById("calendar-summary-body"), fb=document.getElementById("calendar-fold");
+      if(cb) cb.hidden=true; if(fb) fb.textContent="Show";
+    }
+  }catch(e){}
+  document.querySelectorAll(".event-register").forEach(btn=>btn.addEventListener("click",async()=>{
+    btn.disabled=true; const old=btn.textContent; btn.textContent="Reserving…";
+    try{
+      const r=await fetch(`/api/portal/${encodeURIComponent(seg)}/calendar/register`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({event_id:btn.dataset.eventId})});
+      const out=await r.json();
+      if(r.status===402 && out.upgrade_url){location.href=out.upgrade_url;return}
+      if(!r.ok) throw new Error(out.error||"Unable to register");
+      if(out.checkout_url){location.href=out.checkout_url;return}
+      await load();
+    }catch(e){btn.disabled=false;btn.textContent=old;alert("We couldn't reserve your spot. Please try again.")}
+  }));
+  initAppointmentProposals();
 
   initOnboardingCard();
   initCoachesCard();
