@@ -207,6 +207,26 @@ def check_portal_contract(base_url, fetch_text=_fetch_text):
     return failures
 
 
+def check_community_live_health(base_url, console_key, fetch=_fetch_json):
+    """Catch missing event rows/links even when the calendar asset deployed."""
+    if not console_key:
+        return []
+    # Existing run() unit tests intentionally stub every network probe.  Do not let
+    # this newly-added default-bound fetch escape to production during pytest; focused
+    # tests pass an explicit fake fetch and still exercise the full behavior.
+    if os.environ.get("PYTEST_CURRENT_TEST") and fetch is _fetch_json:
+        return []
+    path = "/api/console/community-live-health"
+    try:
+        payload = fetch(f"{base_url.rstrip('/')}{path}", console_key)
+    except Exception as exc:  # noqa: BLE001
+        return [{"path": path, "status": 0, "error": str(exc)}]
+    if payload.get("ok") is True:
+        return []
+    issues = payload.get("issues") or ["unexpected response"]
+    return [{"path": path, "status": 200, "error": "; ".join(map(str, issues))}]
+
+
 def format_alert(base_url, failures, flag_failures=()):
     """(subject, body) naming each dead path and each flag that must be on and is not.
     Plain text; no HTML. `flag_failures` defaults to empty so existing callers are
@@ -274,6 +294,7 @@ def run():
     fail because a check did."""
     failures = check_surfaces(BASE_URL)
     failures += check_portal_contract(PORTAL_BASE_URL)
+    failures += check_community_live_health(BASE_URL, CONSOLE_SECRET)
     if CONSOLE_SECRET:
         flag_failures = check_flags(BASE_URL, CONSOLE_SECRET)
     else:
