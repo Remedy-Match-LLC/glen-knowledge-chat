@@ -23,11 +23,14 @@ def get_token(account_id, client_id, client_secret, *, _now=None):
 
 
 def create_meeting(token, *, host, topic, start_iso, duration_min,
-                   timezone="Pacific/Honolulu", waiting_room=True, opener=None):
+                   timezone="Pacific/Honolulu", waiting_room=True, opener=None,
+                   recurrence=None):
     opener = opener or urllib.request.urlopen
-    body = {"topic": topic, "type": 2, "start_time": start_iso,
+    body = {"topic": topic, "type": 8 if recurrence else 2, "start_time": start_iso,
             "duration": int(duration_min), "timezone": timezone,
             "settings": {"waiting_room": waiting_room, "join_before_host": False}}
+    if recurrence:
+        body["recurrence"] = recurrence
     req = urllib.request.Request(
         f"https://api.zoom.us/v2/users/{host}/meetings",
         data=json.dumps(body).encode(), method="POST",

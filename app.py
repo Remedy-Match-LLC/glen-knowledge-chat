@@ -25,6 +25,7 @@ import threading
 from contextlib import contextmanager
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone, timedelta
+from zoneinfo import ZoneInfo
 from pathlib import Path
 from typing import Optional, Tuple
 from flask import (Flask, request, jsonify, send_from_directory, Response,
@@ -29645,6 +29646,75 @@ def api_console_community_live_health():
     return jsonify({"ok": not issues, "issues": issues,
                     "future_masterclasses": len(masterclasses),
                     "future_group_coaching": len(coaching)})
+
+
+@app.route("/api/console/community-live/bootstrap", methods=["POST"])
+def api_console_community_live_bootstrap():
+    """Idempotently create the canonical Wednesday recurring community calls."""
+    if not _portal_console_ok():
+        return jsonify({"error": "unauthorized"}), 401
+    from dashboard import masterclass as _mc
+    from dashboard import zoom as _zoom
+    local_tz = ZoneInfo("Pacific/Honolulu")
+    now = datetime.now(local_tz)
+    days = (2 - now.weekday()) % 7
+    group_start = (now + timedelta(days=days)).replace(
+        hour=14, minute=0, second=0, microsecond=0)
+    if group_start <= now:
+        group_start += timedelta(days=7)
+    master_start = group_start.replace(hour=15)
+    recurrence = {"type": 2, "repeat_interval": 1,
+                  "weekly_days": "4", "end_times": 60}
+    zoom_token = _zoom.get_token(
+        os.environ["ZOOM_ACCOUNT_ID"], os.environ["ZOOM_CLIENT_ID"],
+        os.environ["ZOOM_CLIENT_SECRET"])
+    created = []
+    with _db_lock, db.connect(LOG_DB) as cx:
+        cx.row_factory = sqlite3.Row
+        _mc.init_masterclass_tables(cx)
+        try:
+            group = cx.execute(
+                "SELECT id,location FROM calendar_events WHERE status='visible' "
+                "AND lower(summary) LIKE '%group coaching%' ORDER BY start DESC LIMIT 1"
+            ).fetchone()
+        except Exception:
+            group = None
+        if not group or not (group[1] or "").lower().startswith("https://"):
+            meeting = _zoom.create_meeting(
+                zoom_token, host=GLEN_ZOOM_USER, topic="Group Coaching",
+                start_iso=group_start.isoformat(timespec="seconds"), duration_min=60,
+                waiting_room=True, recurrence=recurrence)
+            cx.execute(
+                "INSERT INTO calendar_events (pushed_at,google_cal_id,google_event_id,"
+                'calendar_name,summary,start,"end",location,owner,status,cal_alert) '
+                "VALUES (?, 'community', ?, 'Group Coaching', 'Group Coaching', ?, ?, ?, "
+                "'glen', 'visible', 0)",
+                (datetime.now(timezone.utc).isoformat(), f"zoom-{meeting['meeting_id']}",
+                 group_start.replace(tzinfo=None).isoformat(),
+                 (group_start + timedelta(hours=1)).replace(tzinfo=None).isoformat(),
+                 meeting["join_url"]))
+            created.append("group_coaching")
+        master = cx.execute(
+            "SELECT id,zoom_join_url FROM masterclass_events "
+            "WHERE lower(topic) LIKE '%wellness whispering%' "
+            "ORDER BY start_ts DESC LIMIT 1").fetchone()
+        if not master or not (master[1] or "").lower().startswith("https://"):
+            meeting = _zoom.create_meeting(
+                zoom_token, host=GLEN_ZOOM_USER,
+                topic="Free Wellness Whispering MasterClass",
+                start_iso=master_start.isoformat(timespec="seconds"), duration_min=60,
+                waiting_room=False, recurrence=recurrence)
+            event_id = _mc.create_event(
+                cx, topic="Free Wellness Whispering MasterClass",
+                description="Free live community MasterClass with Dr. Glen.",
+                start_ts=master_start.replace(tzinfo=None).isoformat(), duration_min=60,
+                price_cents=0, member_price_cents=0)
+            _mc.set_zoom(cx, event_id, meeting["join_url"], meeting["meeting_id"])
+            created.append("masterclass")
+        cx.commit()
+    return jsonify({"ok": True, "created": created,
+                    "group_start_hst": group_start.isoformat(),
+                    "masterclass_start_hst": master_start.isoformat()})
 
 
 # ── Free product review (dark: SUPPLEMENT_REVIEW_ENABLED) ─────────────────────
