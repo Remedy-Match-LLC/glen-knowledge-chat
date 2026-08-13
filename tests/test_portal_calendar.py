@@ -3,6 +3,13 @@ import sqlite3
 from dashboard import portal_calendar
 
 
+def test_row_dict_accepts_postgres_mapping_without_cursor_description():
+    class PgCursor:
+        pass
+    assert portal_calendar._row_dict(PgCursor(), {"id": 7, "topic": "T"}) == {
+        "id": 7, "topic": "T"}
+
+
 def _cx():
     cx = sqlite3.connect(":memory:")
     cx.execute("CREATE TABLE masterclass_events (id INTEGER, topic TEXT, description TEXT, start_ts TEXT, duration_min INTEGER)")

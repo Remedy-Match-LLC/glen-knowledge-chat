@@ -14,6 +14,10 @@ def _now_iso():
 
 
 def _row_dict(cur, row):
+    # SQLite exposes cursor.description + tuple rows. The PostgreSQL adapter returns
+    # mapping rows and intentionally does not emulate cursor.description.
+    if hasattr(row, "keys"):
+        return dict(row)
     return dict(zip((c[0] for c in cur.description), row))
 
 
