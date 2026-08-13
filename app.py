@@ -29565,7 +29565,7 @@ def api_portal_calendar_register(token):
                 return jsonify({"error": "membership_required",
                                 "upgrade_url": "/membership"}), 402
             try:
-                event_id = int(event_key.split("-", 1)[1])
+                event_id = int(event_key.split("-")[1])
             except ValueError:
                 return jsonify({"error": "not_found"}), 404
             row = cx.execute(
@@ -29581,7 +29581,7 @@ def api_portal_calendar_register(token):
         if not event_key.startswith("masterclass-"):
             return jsonify({"error": "not_found"}), 404
         try:
-            event_id = int(event_key.split("-", 1)[1])
+            event_id = int(event_key.split("-")[1])
         except ValueError:
             return jsonify({"error": "not_found"}), 404
         _mc.init_masterclass_tables(cx)

@@ -16,7 +16,7 @@ def _cx():
 def test_free_member_sees_events_but_not_private_join_url():
     block = portal_calendar.build_block(_cx(), group_coaching_entitled=False,
                                         now_iso="2099-01-01T00:00:00")
-    assert [e["type"] for e in block["events"]] == ["masterclass", "group_coaching"]
+    assert [e["type"] for e in block["events"][:2]] == ["masterclass", "group_coaching"]
     coaching = block["events"][1]
     assert coaching["locked"] is True
     assert coaching["action_url"] == "/membership"
@@ -51,3 +51,40 @@ def test_confirmed_private_appointment_appears_only_for_its_client():
     other = portal_calendar.build_block(db, email="other@x.com", now_iso="2099-01-01T00:00:00")
     assert any(e["id"] == "appointment-7" for e in own["events"])
     assert not any(e["id"] == "appointment-7" for e in other["events"])
+
+
+def test_recurring_community_events_expand_into_next_eight_weeks():
+    db = _cx()
+    db.execute("DELETE FROM masterclass_events")
+    db.execute("DELETE FROM calendar_events")
+    db.execute("INSERT INTO masterclass_events VALUES "
+               "(3,'Free Wellness Whispering MasterClass','Free live class',"
+               "'2026-08-12T15:00:00',60)")
+    db.execute("INSERT INTO calendar_events VALUES "
+               "(4,'Group Coaching','Group Coaching','2026-08-12T13:00:00',"
+               "'2026-08-12T14:00:00','https://zoom.test/weekly','visible')")
+    block = portal_calendar.build_block(
+        db, group_coaching_entitled=True, now_iso="2026-08-13T00:00:00")
+    masterclasses = [e for e in block["events"]
+                     if e["title"] == "Free Wellness Whispering MasterClass"]
+    coaching = [e for e in block["events"] if e["title"] == "Group Coaching"]
+    assert len(masterclasses) == 8
+    assert len(coaching) == 8
+    assert masterclasses[0]["start"] == "2026-08-19T15:00:00-10:00"
+    assert coaching[0]["start"] == "2026-08-19T13:00:00-10:00"
+    assert coaching[0]["action_url"] == "https://zoom.test/weekly"
+    assert masterclasses[-1]["start"] == "2026-10-07T15:00:00-10:00"
+
+
+def test_concrete_future_occurrence_is_not_duplicated_by_weekly_expansion():
+    db = _cx()
+    db.execute("INSERT INTO masterclass_events VALUES "
+               "(3,'Free Wellness Whispering MasterClass','Free live class',"
+               "'2026-08-12T15:00:00',60)")
+    db.execute("INSERT INTO masterclass_events VALUES "
+               "(4,'Free Wellness Whispering MasterClass','Free live class',"
+               "'2026-08-19T15:00:00',60)")
+    block = portal_calendar.build_block(db, now_iso="2026-08-13T00:00:00")
+    starts = [e["start"] for e in block["events"]
+              if e["title"] == "Free Wellness Whispering MasterClass"]
+    assert starts.count("2026-08-19T15:00:00-10:00") == 1
