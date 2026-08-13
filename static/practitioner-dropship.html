@@ -44,6 +44,13 @@
     .auth-notice{ text-align:center; padding:40px 20px; }
     .auth-notice a{ color:var(--gold); }
     .billing-note{ font-size:13px; color:var(--muted); margin-top:8px; border-left:3px solid var(--border); padding-left:10px; }
+    .product-lookup{ position:relative; margin:12px 0 4px; }
+    .product-lookup input{ width:100%; }
+    .product-results{ position:absolute; z-index:20; left:0; right:0; max-height:260px; overflow:auto; background:var(--surface-2); border:1px solid var(--border); border-radius:8px; box-shadow:0 10px 24px rgba(0,0,0,.28); }
+    .product-result{ display:flex; justify-content:space-between; gap:12px; align-items:center; width:100%; padding:10px 12px; text-align:left; background:transparent; color:var(--cream); border:0; border-bottom:1px solid var(--border); border-radius:0; }
+    .product-result:last-child{ border-bottom:0; }
+    .product-result:hover,.product-result:focus{ background:var(--surface); }
+    .product-result small{ color:var(--muted); }
   </style>
   <script>(function(){var t=localStorage.getItem('rm-theme');if(t)document.documentElement.setAttribute('data-theme',t);})();</script>
   <script src="/static/theme-mode.js"></script>
@@ -96,7 +103,12 @@
     <div class="panel">
       <h2>Your editable order draft</h2>
       <div class="muted" style="font-size:13px;margin:4px 0 10px">Add products or adjust quantities before checkout. Cart changes save automatically. The price shown here is the same price used at checkout.</div>
-      <div id="empty-cart" class="notice" style="display:none">Your cart is empty. Add products from your <a href="/practitioner/portal" style="color:var(--gold)">wholesale portal</a> first.</div>
+      <div class="product-lookup">
+        <label for="product-search" style="display:block;font-size:13px;color:var(--muted);margin-bottom:4px">Add a product</label>
+        <input id="product-search" type="search" placeholder="Search by product name…" autocomplete="off" aria-controls="product-results" aria-expanded="false">
+        <div id="product-results" class="product-results" style="display:none" role="listbox"></div>
+      </div>
+      <div id="empty-cart" class="notice" style="display:none">Your cart is empty. Search above to add a product.</div>
       <table id="cart-table" style="display:none">
         <thead>
           <tr>
@@ -174,6 +186,7 @@ var cartData = [];  // [{slug, qty, unit_cents, line_cents}]
 var quoteLoaded = false;
 var practitionerName = '';
 var DRAFT_KEY = 'rm-practitioner-dropship-draft';
+var productSearchTimer = null;
 
 // Light/Dark/Auto (diurnal) toggle — shared RMTheme component (theme-mode.js).
 if (window.RMTheme) window.RMTheme.mountToggle(document.getElementById('themeToggle'));
@@ -255,6 +268,73 @@ function stepQty(btn){
     if(d.ok) loadQuote();
   });
 }
+
+function setCartQty(slug, qty){
+  return fetch('/api/practitioner/cart', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({token: TOKEN, slug: slug, qty: qty})
+  }).then(function(r){ return r.json(); });
+}
+
+function addProduct(slug){
+  var current = cartData.filter(function(x){ return x.slug === slug; })[0];
+  setMsg('Adding product…', false);
+  setCartQty(slug, current ? current.qty + 1 : 1).then(function(d){
+    if(!d.ok){ setMsg(d.error || 'Could not add that product.', true); return; }
+    $('product-search').value = '';
+    hideProductResults();
+    setMsg('Product added.', false);
+    loadQuote();
+  }).catch(function(){ setMsg('Network error adding product.', true); });
+}
+
+function hideProductResults(){
+  $('product-results').style.display = 'none';
+  $('product-results').innerHTML = '';
+  $('product-search').setAttribute('aria-expanded', 'false');
+}
+
+function renderProductResults(products){
+  var host = $('product-results');
+  host.innerHTML = '';
+  (products || []).forEach(function(product){
+    var button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'product-result';
+    button.setAttribute('role', 'option');
+    button.innerHTML = '<span>'+escHtml(product.name)+'</span><small>Add</small>';
+    button.addEventListener('click', function(){ addProduct(product.slug); });
+    host.appendChild(button);
+  });
+  if(!(products || []).length){
+    var empty = document.createElement('div');
+    empty.className = 'muted';
+    empty.style.padding = '10px 12px';
+    empty.textContent = 'No matching products found.';
+    host.appendChild(empty);
+  }
+  host.style.display = 'block';
+  $('product-search').setAttribute('aria-expanded', 'true');
+}
+
+$('product-search').addEventListener('input', function(){
+  var query = this.value.trim();
+  clearTimeout(productSearchTimer);
+  if(query.length < 2){ hideProductResults(); return; }
+  productSearchTimer = setTimeout(function(){
+    fetch('/api/practitioner/catalog?token=' + encodeURIComponent(TOKEN) + '&q=' + encodeURIComponent(query))
+      .then(function(r){ return r.json(); })
+      .then(function(d){
+        if(d.ok && $('product-search').value.trim() === query) renderProductResults(d.products);
+      })
+      .catch(function(){ hideProductResults(); });
+  }, 200);
+});
+
+document.addEventListener('click', function(ev){
+  if(!ev.target.closest('.product-lookup')) hideProductResults();
+});
 
 function loadQuote(){
   fetch('/api/practitioner/dropship/quote?token=' + encodeURIComponent(TOKEN))
