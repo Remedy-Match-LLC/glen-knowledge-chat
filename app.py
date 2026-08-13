@@ -29613,6 +29613,40 @@ def api_portal_calendar_register(token):
     return jsonify({"ok": True, "checkout_url": checkout.get("url")})
 
 
+@app.route("/api/console/community-live-health", methods=["GET"])
+def api_console_community_live_health():
+    """Verify recurring community events and their production destinations."""
+    if not _portal_console_ok():
+        return jsonify({"error": "unauthorized"}), 401
+    from dashboard import portal_calendar as _pc
+    issues = []
+    with db.connect(LOG_DB) as cx:
+        cx.row_factory = sqlite3.Row
+        events = (_pc.build_block(cx, email="", group_coaching_entitled=True)
+                  .get("events") or [])
+        masterclasses = [e for e in events if e.get("type") == "masterclass"]
+        coaching = [e for e in events if e.get("type") == "group_coaching"]
+        if not masterclasses:
+            issues.append("no future Free Wellness Whispering MasterClass occurrence")
+        if not coaching:
+            issues.append("no future Group Coaching occurrence")
+        if coaching and not any((e.get("action_url") or "").lower().startswith("https://")
+                                for e in coaching):
+            issues.append("Group Coaching Zoom link missing")
+        try:
+            row = cx.execute(
+                "SELECT zoom_join_url FROM masterclass_events "
+                "WHERE lower(topic) LIKE '%wellness whispering%' "
+                "ORDER BY start_ts DESC LIMIT 1").fetchone()
+            if not row or not (row[0] or "").lower().startswith("https://"):
+                issues.append("MasterClass Zoom link missing")
+        except Exception:
+            issues.append("masterclass event table unavailable")
+    return jsonify({"ok": not issues, "issues": issues,
+                    "future_masterclasses": len(masterclasses),
+                    "future_group_coaching": len(coaching)})
+
+
 # ── Free product review (dark: SUPPLEMENT_REVIEW_ENABLED) ─────────────────────
 # A client submits a supplement they take; Glen's formulation-analyzer produces a
 # review that lands in their portal after his console confirm. Mirrors the

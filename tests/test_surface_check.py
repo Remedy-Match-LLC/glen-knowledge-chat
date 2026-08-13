@@ -92,6 +92,21 @@ def test_portal_contract_catches_deprecated_destinations():
                          "error": "deprecated destination present: skool.com"}]
 
 
+def test_community_live_health_passes_when_healthy():
+    assert S.check_community_live_health(
+        "https://illtowell.test", "secret",
+        fetch=lambda _url, _key: {"ok": True, "issues": []}) == []
+
+
+def test_community_live_health_reports_runtime_gaps():
+    got = S.check_community_live_health(
+        "https://illtowell.test", "secret",
+        fetch=lambda _url, _key: {"ok": False, "issues": [
+            "no future Group Coaching occurrence", "MasterClass Zoom link missing"]})
+    assert got == [{"path": "/api/console/community-live-health", "status": 200,
+                   "error": "no future Group Coaching occurrence; MasterClass Zoom link missing"}]
+
+
 def test_format_alert_names_paths_and_statuses():
     subject, body = S.format_alert("https://illtowell.com", [
         {"path": "/begin/fireside", "status": 404, "error": ""}])
