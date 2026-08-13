@@ -147,6 +147,7 @@ def test_run_calls_check_flags_and_alerts(monkeypatch):
     """Guards against check_flags() existing while nothing invokes it."""
     sent = {}
     monkeypatch.setattr(S, "check_surfaces", lambda *a, **k: [])
+    monkeypatch.setattr(S, "check_portal_contract", lambda *a, **k: [])
     monkeypatch.setattr(S, "check_flags", lambda *a, **k: [
         {"flag": "REPERTOIRE_ENABLED", "reason": "env var is MISSING (deleted)"}])
     monkeypatch.setattr(S, "CONSOLE_SECRET", "k")
@@ -160,6 +161,7 @@ def test_run_calls_check_flags_and_alerts(monkeypatch):
 def test_run_is_quiet_when_everything_is_healthy(monkeypatch):
     called = []
     monkeypatch.setattr(S, "check_surfaces", lambda *a, **k: [])
+    monkeypatch.setattr(S, "check_portal_contract", lambda *a, **k: [])
     monkeypatch.setattr(S, "check_flags", lambda *a, **k: [])
     monkeypatch.setattr(S, "CONSOLE_SECRET", "k")
     monkeypatch.setattr(S, "send_alert", lambda *a, **k: called.append(True) or True)
@@ -191,6 +193,7 @@ def test_run_never_raises_on_a_malformed_flags_payload(monkeypatch):
     real_check_flags = S.check_flags
     bad_fetch = lambda url, key, timeout=0: [1, 2, 3]
     monkeypatch.setattr(S, "check_surfaces", lambda *a, **k: [])
+    monkeypatch.setattr(S, "check_portal_contract", lambda *a, **k: [])
     monkeypatch.setattr(S, "CONSOLE_SECRET", "k")
     monkeypatch.setattr(
         S, "check_flags",
@@ -221,6 +224,7 @@ def test_run_never_raises_on_a_malformed_per_flag_entry(monkeypatch):
     real = S.check_flags
     bad = {"ok": True, "data": {"flags": {n: "true" for n in S.REQUIRED_ON}}}
     monkeypatch.setattr(S, "check_surfaces", lambda *a, **k: [])
+    monkeypatch.setattr(S, "check_portal_contract", lambda *a, **k: [])
     monkeypatch.setattr(S, "CONSOLE_SECRET", "k")
     monkeypatch.setattr(S, "check_flags",
                         lambda b, k, **kw: real(b, k, fetch=lambda u, key, timeout=0: bad))
