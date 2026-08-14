@@ -67,6 +67,38 @@ def test_bundle_empty_client(tmp_path):
     assert b["process"]["source"] is None
 
 
+def test_optional_person_schema_failure_does_not_poison_postgres_reads():
+    class AbortingConnection:
+        backend = "postgres"
+
+        def __init__(self, inner):
+            self.inner = inner
+            self.aborted = False
+            self.fail_people = True
+
+        def execute(self, sql, params=()):
+            if self.aborted:
+                raise RuntimeError("current transaction is aborted")
+            if self.fail_people and "FROM people" in sql:
+                self.fail_people = False
+                self.aborted = True
+                raise sqlite3.OperationalError("no such column: profession")
+            return self.inner.execute(sql, params)
+
+        def rollback(self):
+            self.inner.rollback()
+            self.aborted = False
+
+    inner = _cx()
+    inner.execute("INSERT INTO orders (email,status,pay_status,invoice_sent_at,total_cents,created_at) "
+                  "VALUES ('steve@example.com','confirmed','unpaid','',5000,'2026-08-14')")
+    inner.commit()
+    cx = AbortingConnection(inner)
+
+    assert client_360._person(cx, "steve@example.com")["name"] == ""
+    assert client_360.process_strip(cx, "steve@example.com")["order_id"] == 1
+
+
 def test_process_reads_after_fmp_history_call(tmp_path):
     """Regression: _invoices() calls fmp_orders.client_order_history(cx, ...),
     which sets cx.row_factory = None and never restores it (there's no
