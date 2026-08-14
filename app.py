@@ -20670,6 +20670,47 @@ def _portal_reorder_module(email):
             "is_reorder": slug in ph_slugs,
         })
 
+    # Keep portal-published, unpaid invoice lines visibly separate from purchase
+    # history. They still belong in the remedies surface (the client needs to see
+    # what Dr. Glen just prescribed), but they are not purchases yet and must not
+    # look like ordinary reorder rows. Most-recent invoice wins when the same SKU
+    # appears on more than one open invoice, matching the list's existing newest-
+    # first dedupe behavior. Services such as Biofield Analysis remain visible in
+    # the invoice group without receiving a product reorder control.
+    current_invoice_by_slug = {}
+    for o in orders:
+        if not o.get("portal_published") or (o.get("pay_status") or "") == "paid":
+            continue
+        if (o.get("status") or "") in ("cancelled", "delivered", "done"):
+            continue
+        token = (o.get("invoice_token") or "").strip()
+        if not token:
+            continue
+        invoice_ref = (o.get("external_ref") or "").strip()
+        for it in (o.get("items") or []):
+            slug = _superseded((it.get("slug") or "").strip().lower()) or ""
+            if not slug or slug in current_invoice_by_slug:
+                continue
+            try:
+                invoice_unit_cents = max(0, int(it.get("unit_cents") or 0))
+            except (TypeError, ValueError):
+                invoice_unit_cents = 0
+            try:
+                invoice_qty = max(1, int(it.get("qty") or 1))
+            except (TypeError, ValueError):
+                invoice_qty = 1
+            current_invoice_by_slug[slug] = {
+                "reference": invoice_ref,
+                "url": f"/invoice/{token}",
+                "unit_cents": invoice_unit_cents,
+                "qty": invoice_qty,
+                "service": bool(it.get("service")),
+            }
+    for row in reorder:
+        invoice = current_invoice_by_slug.get(row.get("slug"))
+        if invoice:
+            row["current_invoice"] = invoice
+
     return {
         "reorder": reorder,
         "locked_rows": locked_rows,

@@ -3727,8 +3727,9 @@ function render(d, v){
   // of this renders. Never touches d.reorder_items above (that's the
   // practitioner-curated list the /checkout endpoint sources from).
   if(Array.isArray(d.reorder) && d.reorder.length){
-    let rrows = "";
-    d.reorder.forEach(it=>{
+    const currentInvoiceRows = d.reorder.filter(it=>it.current_invoice);
+    const historyRows = d.reorder.filter(it=>!it.current_invoice);
+    const renderHistoryRows = items => items.map(it=>{
       const slug = esc(it.slug||"");
       const qty = Math.max(1, parseInt(it.qty,10) || 1);
       const regular = it.regular_cents!=null ? it.regular_cents : 0;
@@ -3750,7 +3751,7 @@ function render(d, v){
           : it.channel === "clinic" ? "Ordered with Healing Oasis"
           : "Ordered on illtowell.com");
       const cta = it.is_reorder ? "Reorder" : "Order";
-      rrows += `<div class="remitem" data-slug="${slug}" data-unit-cents="${yours}">
+      return `<div class="remitem" data-slug="${slug}" data-unit-cents="${yours}">
         <div class="remitem-top"><span class="nm-wrap"><span class="nm">${esc(it.name||it.slug||"")}</span><span class="prov">${esc(prov)}</span></span><span class="pr">${price}</span></div>
         <div class="remitem-bot">
           <span class="qty-ctl">
@@ -3762,10 +3763,41 @@ function render(d, v){
           <button class="btn remBtn" data-slug="${slug}">Add to basket</button>
         </div>
       </div>`;
+    }).join("");
+    let invoiceGroups = "";
+    const groupedInvoices = new Map();
+    currentInvoiceRows.forEach(it=>{
+      const inv = it.current_invoice || {};
+      const key = inv.url || inv.reference || "current";
+      if(!groupedInvoices.has(key)) groupedInvoices.set(key, {invoice:inv, items:[]});
+      groupedInvoices.get(key).items.push(it);
     });
+    groupedInvoices.forEach(group=>{
+      const inv = group.invoice || {};
+      const ref = inv.reference ? ` &middot; ${esc(inv.reference)}` : "";
+      const invoiceItems = group.items.map(it=>{
+        const line = it.current_invoice || {};
+        const qty = Math.max(1, parseInt(line.qty,10) || 1);
+        const price = Math.max(0, parseInt(line.unit_cents,10) || 0) * qty;
+        const kind = line.service ? `<span class="prov">Service</span>` : `<span class="prov">Remedy</span>`;
+        return `<div class="remitem current-invoice-item">
+          <div class="remitem-top"><span class="nm-wrap"><span class="nm">${esc(it.name||it.slug||"")}${qty>1?` ×${qty}`:""}</span>${kind}</span><span class="pr">${esc(money(price))}</span></div>
+        </div>`;
+      }).join("");
+      const link = inv.url ? `<a class="btn full" href="${esc(inv.url)}">View &amp; pay invoice</a>` : "";
+      invoiceGroups += `<div class="remedy-group current-invoice-group">
+        <h3 style="margin:.2rem 0 .25rem">Current invoice${ref}</h3>
+        <p class="muted small" style="margin:0 0 .65rem">Newly prescribed items awaiting payment.</p>
+        ${invoiceItems}${link}
+      </div>`;
+    });
+    const historyHtml = historyRows.length ? `<div class="remedy-group remedy-history-group">
+      <h3 style="margin:1.25rem 0 .65rem">Previously ordered</h3>
+      ${renderHistoryRows(historyRows)}
+    </div>` : "";
     html += `<div class="card"><h2>Your Remedies</h2>
-      <div>${rrows}</div>
-      <p class="muted small" style="margin:.7rem 0 0">Shipping calculated at checkout.</p>
+      <div>${invoiceGroups}${historyHtml}</div>
+      ${historyRows.length ? `<p class="muted small" style="margin:.7rem 0 0">Shipping calculated at checkout.</p>` : ""}
       <p class="small err" id="remErr" hidden></p></div>`;
   }
 
