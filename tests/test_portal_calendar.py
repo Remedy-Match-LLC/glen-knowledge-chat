@@ -10,6 +10,34 @@ def test_row_dict_accepts_postgres_mapping_without_cursor_description():
         "id": 7, "topic": "T"}
 
 
+def test_missing_optional_table_does_not_poison_postgres_transaction():
+    class AbortingConnection:
+        def __init__(self):
+            self.inner = _cx()
+            self.aborted = False
+
+        def execute(self, sql, params=()):
+            if self.aborted:
+                raise RuntimeError("current transaction is aborted")
+            try:
+                return self.inner.execute(sql, params)
+            except Exception:
+                self.aborted = True
+                raise
+
+        def commit(self):
+            self.inner.commit()
+
+        def rollback(self):
+            self.inner.rollback()
+            self.aborted = False
+
+    block = portal_calendar.build_block(
+        AbortingConnection(), email="steve@example.com",
+        now_iso="2099-01-01T00:00:00")
+    assert any(event["type"] == "masterclass" for event in block["events"])
+
+
 def _cx():
     cx = sqlite3.connect(":memory:")
     cx.execute("CREATE TABLE masterclass_events (id INTEGER, topic TEXT, description TEXT, start_ts TEXT, duration_min INTEGER)")

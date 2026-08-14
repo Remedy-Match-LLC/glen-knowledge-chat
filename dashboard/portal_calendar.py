@@ -58,6 +58,14 @@ def _occurrence_key(prefix, row_id, start):
     return f"{prefix}-{row_id}-{start.strftime('%Y%m%d')}"
 
 
+def _recover_optional_query(cx):
+    """Clear PostgreSQL's failed-transaction state after an optional read fails."""
+    try:
+        cx.rollback()
+    except Exception:
+        pass
+
+
 def init_registration_table(cx):
     cx.execute("""CREATE TABLE IF NOT EXISTS portal_event_registrations (
         id INTEGER PRIMARY KEY AUTOINCREMENT, event_key TEXT NOT NULL,
@@ -82,14 +90,14 @@ def _registered_keys(cx, email):
             "SELECT event_key FROM portal_event_registrations WHERE lower(email)=?",
             ((email or "").strip().lower(),)).fetchall())
     except Exception:
-        pass
+        _recover_optional_query(cx)
 
     try:
         keys.update(f"masterclass-{r[0]}" for r in cx.execute(
             "SELECT event_id FROM masterclass_registrations "
             "WHERE lower(email)=? AND paid=1", ((email or "").strip().lower(),)).fetchall())
     except Exception:
-        pass
+        _recover_optional_query(cx)
     return keys
 
 
@@ -121,7 +129,7 @@ def build_block(cx, *, email="", group_coaching_entitled=False,
                     "action_url": "", "action_label": "Confirmed",
                     "prepaid": bool(item.get("prepaid"))})
         except Exception:
-            pass
+            _recover_optional_query(cx)
 
     try:
         cur = cx.execute(
@@ -140,7 +148,7 @@ def build_block(cx, *, email="", group_coaching_entitled=False,
                 "action_url": f"/masterclass/{item['id']}",
                 "action_label": "View & register", "registered": key in registered_keys})
     except Exception:
-        pass
+        _recover_optional_query(cx)
 
     try:
         cur = cx.execute(
@@ -165,7 +173,7 @@ def build_block(cx, *, email="", group_coaching_entitled=False,
                                  if entitled else "Upgrade to access"),
                 "registered": key in registered_keys})
     except Exception:
-        pass
+        _recover_optional_query(cx)
 
     # These are recurring community activities whose Zoom links remain stable from
     # week to week. Materialize the next eight Wednesdays from the latest authored
@@ -197,8 +205,8 @@ def build_block(cx, *, email="", group_coaching_entitled=False,
                     "action_url": f"/masterclass/{item['id']}",
                     "action_label": "View & register",
                     "registered": base_key in registered_keys})
-    except (LookupError, ValueError, TypeError):
-        pass
+    except Exception:
+        _recover_optional_query(cx)
 
     try:
         if not db.column_exists(cx, "calendar_events", "id"):
@@ -232,8 +240,8 @@ def build_block(cx, *, email="", group_coaching_entitled=False,
                     "action_label": (("Join session" if join_url else "Access details coming soon")
                                      if entitled else "Upgrade to access"),
                     "registered": key in registered_keys})
-    except (LookupError, ValueError, TypeError):
-        pass
+    except Exception:
+        _recover_optional_query(cx)
 
     events.sort(key=lambda e: (e.get("start") or "", e.get("title") or ""))
     return {"enabled": True, "events": events,
