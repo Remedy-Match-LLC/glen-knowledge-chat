@@ -513,14 +513,14 @@
   .hub-banner { display:flex; gap:1rem; align-items:center; flex-wrap:wrap;
     background:var(--brand-soft,#e5efea); border:1px solid var(--line); border-radius:14px; padding:1rem 1.15rem; }
   .hub-banner .where { flex:1; min-width:12rem; }
-  .hub-banner .eyebrow { font-size:.7rem; letter-spacing:.1em; text-transform:uppercase; color:var(--brand); font-weight:700; }
+  .hub-banner .eyebrow { font-size:.78rem; letter-spacing:.01em; text-transform:none; color:var(--brand); font-weight:700; }
   .hub-banner h2 { font-size:1.15rem; margin:.15rem 0 .2rem; }
   .hub-banner .next { background:#f6ecd2; border:1px solid var(--line); border-radius:10px; padding:.6rem .75rem; max-width:16rem; color:#1E2A2A; }
   .hub-account { align-self:flex-start; background:transparent; border:1px solid var(--line); border-radius:999px;
     padding:.3rem .8rem; font:inherit; font-size:.8rem; color:var(--muted); cursor:pointer; }
   .hub-account:hover,.hub-account:focus-visible { border-color:var(--brand); color:var(--brand); outline:none; }
   .hub-grid-group { margin-top:1rem; }
-  .hub-grid-group .glabel { font-size:.68rem; letter-spacing:.11em; text-transform:uppercase; color:var(--muted); font-weight:700; margin:.1rem 0 .5rem; }
+  .hub-grid-group .glabel { font-size:.78rem; letter-spacing:.01em; text-transform:none; color:var(--muted); font-weight:700; margin:.1rem 0 .5rem; }
   .hub-tiles { display:grid; grid-template-columns:repeat(3,1fr); gap:.7rem; }
   @media (max-width:760px){ .hub-tiles { grid-template-columns:repeat(2,1fr); } }
   @media (max-width:480px){ .hub-tiles { grid-template-columns:1fr; } }
@@ -1244,12 +1244,13 @@ function buildHubHtml(d, v){
     ? `<div class="next"><div class="eyebrow">Your next step</div><div>${esc(d.next_step_label)}</div></div>`
     : "";
   return `<div class="portal-hub">
-    ${buildCalendarHtml(v,true)}
-    ${buildAppointmentProposalHtml()}
     <div class="hub-banner"><div class="where">
       <div class="eyebrow">Where you are</div>
       <h2>${esc(d.hub_headline || "Your healing home")}</h2></div>${next}
       <button type="button" class="hub-account" onclick="showTab('account')">Account</button></div>
+    <div id="portal-onboarding-slot"></div>
+    ${buildCalendarHtml(v,true)}
+    ${buildAppointmentProposalHtml()}
     ${groups.map(grp).join("")}</div>`;
 }
 
@@ -4214,6 +4215,8 @@ function render(d, v){
   }
 
   app.innerHTML = html;
+  const onboardingSlot = document.getElementById("portal-onboarding-slot");
+  if(onboardingMount && onboardingSlot) onboardingSlot.appendChild(onboardingMount);
   window.__portalView = v;
   document.getElementById("loading").hidden = true;
   app.hidden = false;

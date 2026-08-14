@@ -3,7 +3,24 @@
 // Consumes GET /api/portal/<token>/onboarding -> {enabled, status:{phases:[{key,title,steps:[{key,label,done,href,soon?}]}], member}}.
 function renderOnboarding(status) {
   if (!status || !status.phases || !status.phases.length) return '';
-  const phases = status.phases.map(function (ph) {
+  var sourcePhases = status.phases || [];
+  var discover = sourcePhases.find(function (ph) { return ph.key === 'be_read'; });
+  var match = sourcePhases.find(function (ph) { return ph.key === 'match'; });
+  var phases = sourcePhases.filter(function (ph) {
+    return ph.key !== 'be_read' && ph.key !== 'match';
+  });
+  if (discover || match) {
+    phases.unshift({
+      key: 'discover',
+      title: 'Discover what your body is saying',
+      steps: (discover ? discover.steps || [] : []).concat(
+        match ? match.steps || [] : [],
+        [{key:'member', label:'Member', done:!!status.member,
+          href:status.member ? '' : '#offers'}]
+      )
+    });
+  }
+  const html = phases.map(function (ph) {
     const steps = (ph.steps || []).map(function (st) {
       const mark = st.done === true ? '✓' : (st.in_progress ? '◐' : (st.done === false ? '○' : '•'));
       const markClass = st.done === true ? 'ob-mark-done' : (st.in_progress ? 'ob-mark-progress' : (st.done === false ? 'ob-mark-open' : 'ob-mark-resource'));
@@ -16,19 +33,16 @@ function renderOnboarding(status) {
       return '<li class="ob-step"><span class="ob-mark ' + markClass + '">' + mark + '</span> ' + text + '</li>';
     }).join('');
     var extra = '';
-    if (ph.key === 'match') {
+    if (ph.key === 'discover') {
       // Ask about every condition with an authored protocol until at least one
       // condition-sourced recommendation has been saved.
       if (status.history_conditions_done === false) {
         extra += renderTriageForm(status);
       }
-      // Task 6 / P1.T3 fast-follow: surface status.member as a quiet inline
-      // thread near Match/Heal -- not a checklist item.
-      extra += renderMemberThread(status.member);
     }
     return '<div class="ob-phase"><h3>' + escapeHtml(ph.title) + '</h3><ul class="ob-steps">' + steps + '</ul>' + extra + '</div>';
   }).join('');
-  return '<section class="portal-onboarding">' + phases + '</section>';
+  return '<section class="portal-onboarding">' + html + '</section>';
 }
 
 function _stepByKey(steps, key) {
