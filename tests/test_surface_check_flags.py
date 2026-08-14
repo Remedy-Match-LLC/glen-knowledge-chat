@@ -88,6 +88,15 @@ def test_unwatched_flag_being_off_is_not_a_failure():
     assert S.check_flags("https://x.test", "k", fetch=_fetch_ok(p)) == []
 
 
+def test_retired_biofield_trial_flag_is_not_required():
+    """The $1 Biofield lifetime-unlock offer is intentionally disabled in production."""
+    assert "BIOFIELD_TRIAL_ENABLED" not in S.REQUIRED_ON
+    p = _payload(**{n: _on() for n in S.REQUIRED_ON})
+    p["data"]["flags"]["BIOFIELD_TRIAL_ENABLED"] = {
+        "value": False, "env_present": True, "source": "import"}
+    assert S.check_flags("https://x.test", "k", fetch=_fetch_ok(p)) == []
+
+
 def test_unreachable_endpoint_is_not_reported_as_drift():
     """The surfaces list already alarms when the app is down. One outage must not
     produce two contradictory stories."""
