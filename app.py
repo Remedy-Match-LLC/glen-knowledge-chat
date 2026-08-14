@@ -25726,6 +25726,41 @@ def api_console_portal_message(email):
     return jsonify({"ok": mid is not None, "id": mid, "notified": notified})
 
 
+@app.route("/api/console/portal/<path:email>/import-email", methods=["POST"])
+def api_console_portal_import_email(email):
+    """Import one inbound email as correctly attributed client chat context.
+
+    This is deliberately separate from the practitioner-reply route: imported
+    customer words must never appear as if Dr. Glen authored them. The rendered
+    content is deterministic, so retries are exact-message deduplicated.
+    """
+    if not _portal_console_ok():
+        return jsonify({"error": "unauthorized"}), 401
+    data = request.get_json(silent=True) or {}
+    sender = (data.get("sender") or "").strip()
+    received_at = (data.get("received_at") or "").strip()
+    subject = (data.get("subject") or "").strip()
+    body = (data.get("body") or "").strip()
+    attachment_note = (data.get("attachment_note") or "").strip()
+    source_message_id = (data.get("source_message_id") or "").strip()
+    if not sender or not received_at or not subject or not body or not source_message_id:
+        return jsonify({"ok": False, "error":
+                        "sender, received_at, subject, body, and source_message_id required"}), 400
+    label = ("Imported from email for reference. (You can now communicate directly "
+             "in here, either in writing or by voice.)")
+    parts = [label, "", f"From: {sender}", f"Received: {received_at}",
+             f"Subject: {subject}", "", body]
+    if attachment_note:
+        parts.extend(["", f"Attachment: {attachment_note}"])
+    content = "\n".join(parts)
+    from dashboard import portal_chat as _pchat
+    with _db_lock, db.connect(LOG_DB) as cx:
+        mid, created = _pchat.add_message_once(
+            cx, email, _pchat.CLIENT, content, author=sender)
+    return jsonify({"ok": mid is not None, "id": mid, "created": created,
+                    "source_message_id": source_message_id})
+
+
 @app.route("/api/console/portal/<path:email>/draft-reply", methods=["POST"])
 def api_console_portal_draft_reply(email):
     """Console: AI-draft Dr. Glen's personal reply to a client's latest portal-chat

@@ -36,3 +36,16 @@ def test_list_limit_returns_recent_in_order():
         pc.add_message(cx, "a@x.com", pc.CLIENT, f"m{i}")
     msgs = pc.list_messages(cx, "a@x.com", limit=3)
     assert [m["content"] for m in msgs] == ["m7", "m8", "m9"]   # last 3, oldest-first
+
+
+def test_add_message_once_is_retry_safe():
+    cx = sqlite3.connect(":memory:")
+    first_id, first_created = pc.add_message_once(
+        cx, "A@X.com", pc.CLIENT, "Imported email", author="Ashley")
+    retry_id, retry_created = pc.add_message_once(
+        cx, "a@x.com", pc.CLIENT, "Imported email", author="Ashley")
+
+    assert first_created is True
+    assert retry_created is False
+    assert retry_id == first_id
+    assert len(pc.list_messages(cx, "a@x.com")) == 1
