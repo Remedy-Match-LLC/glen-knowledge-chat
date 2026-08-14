@@ -267,6 +267,50 @@ def test_reorder_dedupes_keeping_most_recent_qty(client):
     assert rows[0]["qty"] == 3
 
 
+def test_published_unpaid_invoice_lines_are_annotated_not_treated_as_history(client):
+    c, appmod = client
+    email = "invoicegroup@example.com"
+    tok = _seed_portal(appmod, email)
+    _seed_order(appmod, source="in-house", email=email,
+                slugs_qty=[("biofield-analysis", 1), ("nous-energy", 2)],
+                status="proposed", external_ref="INH-CURRENT")
+    appmod._migrate_orders_portal_published()
+    with sqlite3.connect(appmod.LOG_DB) as cx:
+        cx.execute(
+            "UPDATE orders SET portal_published=1, pay_status='unpaid', invoice_token='inv-token' "
+            "WHERE external_ref='INH-CURRENT'")
+        items = json.loads(cx.execute(
+            "SELECT items_json FROM orders WHERE external_ref='INH-CURRENT'").fetchone()[0])
+        items[0]["service"] = True
+        cx.execute("UPDATE orders SET items_json=? WHERE external_ref='INH-CURRENT'",
+                   (json.dumps(items),))
+        cx.commit()
+
+    rows = {r["slug"]: r for r in c.get(f"/api/portal/{tok}").get_json()["reorder"]}
+    assert rows["biofield-analysis"]["current_invoice"] == {
+        "reference": "INH-CURRENT", "url": "/invoice/inv-token",
+        "unit_cents": 6997, "qty": 1, "service": True,
+    }
+    assert rows["nous-energy"]["current_invoice"]["qty"] == 2
+
+
+def test_paid_invoice_lines_remain_purchase_history_rows(client):
+    c, appmod = client
+    email = "paidinvoice@example.com"
+    tok = _seed_portal(appmod, email)
+    _seed_order(appmod, source="in-house", email=email,
+                slugs_qty=[("nous-energy", 1)], status="done",
+                external_ref="INH-PAID")
+    appmod._migrate_orders_portal_published()
+    with sqlite3.connect(appmod.LOG_DB) as cx:
+        cx.execute("UPDATE orders SET portal_published=1, pay_status='paid', "
+                   "invoice_token='paid-token' WHERE external_ref='INH-PAID'")
+        cx.commit()
+
+    row = c.get(f"/api/portal/{tok}").get_json()["reorder"][0]
+    assert "current_invoice" not in row
+
+
 # ── (b) member repertoire pricing matches the real pricing engine ───────────
 
 def test_member_repertoire_price_below_regular_and_matches_price_cart(client):
