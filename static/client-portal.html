@@ -2092,7 +2092,7 @@ function notFound(){
 
 const PORTAL_FETCH_TIMEOUT_MS = 10000;
 
-async function fetchPortalJson(url){
+async function fetchPortalJsonOnce(url){
   const controller = new AbortController();
   const timer = setTimeout(()=>controller.abort(), PORTAL_FETCH_TIMEOUT_MS);
   try{
@@ -2116,6 +2116,18 @@ async function fetchPortalJson(url){
   }
 }
 
+async function fetchPortalJson(url){
+  let result = await fetchPortalJsonOnce(url);
+  // A portal visit should survive one cold-start or momentary network failure.
+  // Invalid/unauthorized links are not retried because their response is final.
+  if(result.kind === "network" || result.kind === "timeout" ||
+     (result.kind === "http" && result.status >= 500)){
+    await new Promise(resolve=>setTimeout(resolve, 250));
+    result = await fetchPortalJsonOnce(url);
+  }
+  return result;
+}
+
 function portalLoadMessage(result){
   if(result && result.kind === "timeout"){
     return "This is taking longer than expected. Your information is safe.";
@@ -2132,6 +2144,7 @@ function showPortalLoadFailure(result){
     <h2>We couldn’t finish loading your healing home</h2>
     <p>${esc(portalLoadMessage(result))} Please try again.</p>
     <button type="button" class="btn" data-portal-retry>Try again</button>
+    <a class="btn" data-portal-home href="${esc(location.pathname)}">Back to portal home</a>
   </div>`;
   app.querySelector("[data-portal-retry]").addEventListener("click", ()=>{
     app.hidden = true;
