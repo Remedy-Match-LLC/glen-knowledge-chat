@@ -26,8 +26,10 @@ def test_render_onboarding_emits_phases_done_and_link():
         member: false
       };
       const html = (mod.exports.renderOnboarding || global.renderOnboarding)(status);
-      if (!/Discover What Your Body Is Saying/.test(html)) { console.error('missing be_read title'); process.exit(1); }
-      if (!/Match remedies/.test(html)) { console.error('missing match title'); process.exit(1); }
+      if (!/Discover what your body is saying/.test(html)) { console.error('missing discover title'); process.exit(1); }
+      if ((html.match(/<h3>/g) || []).length !== 2) { console.error('match rendered as a duplicate heading'); process.exit(1); }
+      if (!/<a[^>]*href="#recs"[^>]*>Match Remedies<\\/a>/.test(html)) { console.error('match is not in discover checklist'); process.exit(1); }
+      if (!/>Member<\\/a>|>Member<\\/li>/.test(html)) { console.error('member is not in discover checklist'); process.exit(1); }
       if (!/Accelerate healing/.test(html)) { console.error('missing heal title'); process.exit(1); }
       if (!/\\u2713/.test(html)) { console.error('missing done check'); process.exit(1); }
       if (!/<a[^>]*href="https:\\/\\/clinicalpraxis\\.com"[^>]*>Light<\\/a>/.test(html)) {
@@ -125,14 +127,14 @@ def test_render_onboarding_member_thread():
       }
 
       const htmlNonMember = render(baseStatus(false));
-      if (!/Upgrade/.test(htmlNonMember)) { console.error('missing Upgrade affordance for non-member'); process.exit(1); }
-      if (/Member ✓/.test(htmlNonMember)) { console.error('non-member should not show member marker'); process.exit(1); }
+      if (!/href="#offers"[^>]*>Member<\\/a>/.test(htmlNonMember)) { console.error('missing Member upgrade link'); process.exit(1); }
+      if (/ob-mark-done">✓<\\/span> Member/.test(htmlNonMember)) { console.error('non-member should not show member check'); process.exit(1); }
 
       const htmlMember = render(baseStatus(true));
-      if (!/Member/.test(htmlMember) || !/\\u2713/.test(htmlMember)) {
+      if (!/ob-mark-done">\\u2713<\/span> Member/.test(htmlMember)) {
         console.error('missing member marker for member:true'); process.exit(1);
       }
-      if (/Upgrade/.test(htmlMember)) { console.error('member should not see Upgrade affordance'); process.exit(1); }
+      if (/href="#offers"[^>]*>Member<\\/a>/.test(htmlMember)) { console.error('member should not see Member upgrade link'); process.exit(1); }
 
       console.log('ok');
     ''')

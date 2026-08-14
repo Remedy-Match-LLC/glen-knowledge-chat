@@ -23,6 +23,16 @@ def test_client_name_header_is_at_top_of_portal():
     )
 
 
+def test_hub_places_where_you_are_before_the_onboarding_checklist():
+    banner = HTML.index('<div class="hub-banner"><div class="where">')
+    slot = HTML.index('id="portal-onboarding-slot"')
+    calendar = HTML.index('${buildCalendarHtml(v,true)}', banner)
+
+    assert banner < slot < calendar
+    assert 'if(onboardingMount && onboardingSlot) onboardingSlot.appendChild(onboardingMount);' in HTML
+    assert '.hub-banner .eyebrow' in HTML and 'text-transform:none' in HTML
+
+
 def test_client_name_header_uses_account_name_without_email_fallback():
     assert (
         'const portalClientName = d.name || (v && v.account && v.account.name) || "";'
