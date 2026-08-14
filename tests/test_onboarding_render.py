@@ -18,8 +18,8 @@ def test_render_onboarding_emits_phases_done_and_link():
             {key:'history', label:'Match Remedies', done:false, href:'#recs'}
           ]},
           {key:'heal', title:'Accelerate healing', steps:[
-            {key:'light', label:'Light', done:null, href:'https://clinicalpraxis.com'},
-            {key:'pemf', label:'PEMF', done:null, href:'', soon:true}
+            {key:'light', label:'Light', done:false, href:'https://clinicalpraxis.com', checkable:true},
+            {key:'pemf', label:'PEMF', done:false, href:'', soon:true, checkable:true}
           ]}
         ],
         history_conditions_done: false,
@@ -36,6 +36,9 @@ def test_render_onboarding_emits_phases_done_and_link():
         console.error('missing heal link anchor'); process.exit(1);
       }
       if (!/coming soon/.test(html)) { console.error('missing soon badge'); process.exit(1); }
+      if ((html.match(/class="ob-accelerator-check"/g) || []).length !== 2) {
+        console.error('accelerator steps are not checkable'); process.exit(1);
+      }
       if (!/<span class="ob-mark ob-mark-done">\\u2713<\\/span>/.test(html)) {
         console.error('done step missing ob-mark-done class'); process.exit(1);
       }

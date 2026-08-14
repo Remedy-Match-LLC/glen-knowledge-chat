@@ -22012,6 +22012,32 @@ def api_portal_onboarding(token):
     return jsonify({"enabled": _PORTAL_ONBOARDING_ENABLED, "status": status})
 
 
+@app.route("/api/portal/<token>/onboarding/accelerator", methods=["POST"])
+def api_portal_onboarding_accelerator(token):
+    """Let a client record accelerator equipment they already own.
+
+    Paid purchases are detected automatically; this write path covers outside
+    ownership such as an existing BEMER. Identity comes only from the portal token.
+    """
+    from dashboard import (client_facts as _cf, client_portal as _cp,
+                           portal_onboarding as _ob)
+    body = request.get_json(silent=True) or {}
+    key = (body.get("key") or "").strip()
+    fact_key = _ob.ACCELERATOR_FACT_KEYS.get(key)
+    if not fact_key:
+        return jsonify({"error": "unknown accelerator"}), 400
+    with db.connect(LOG_DB) as cx:
+        cx.row_factory = sqlite3.Row
+        _cp.init_client_portal_table(cx)
+        portal = _portal_record_for(cx, token)
+        if not portal:
+            return jsonify({"error": "not found"}), 404
+        email = (portal.get("email") or "").strip().lower()
+        _cf.set_fact(cx, email, fact_key, bool(body.get("value")))
+        status = _ob.build_status(cx, email)
+    return jsonify({"ok": True, "status": status})
+
+
 @app.route("/api/portal/<token>/recommendations", methods=["GET"])
 def api_portal_recommendations(token):
     """Read-only: a client's recommended-products sections, grouped by source

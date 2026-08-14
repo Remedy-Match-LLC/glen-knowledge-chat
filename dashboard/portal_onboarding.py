@@ -8,11 +8,61 @@ LIST of per-product dicts: [{"product_key":..., "hidden":..., "sources":
 [{"source": sk, "count":..., "first_touch":..., "last_touch":...}, ...]}, ...].
 _has_source below is written against the real (list) shape.
 """
+import json
+
 from dashboard import (client_scans, intake, client_photos,
                         portal_biofield_reports, recommendation_events,
                         membership_products, portal_health_history,
                         portal_extended_history, condition_triage,
-                        e4l_account_notifications, biofield_store)
+                        e4l_account_notifications, biofield_store, client_facts)
+
+
+ACCELERATOR_FACT_KEYS = {
+    "light": "accelerate_light",
+    "pemf": "accelerate_pemf",
+    "h2water": "accelerate_h2water",
+}
+
+ACCELERATOR_PURCHASE_SLUGS = {
+    "light": {"nir-nasal-clip", "nir-brain-frequency-helmet", "hair-growth-helmet",
+              "photobiomodulation-package", "therapeutic-nightlight", "harmony-laser"},
+    "pemf": {"kloud-pemf-mini", "kloud-pemf-maxi", "nes-mihealth"},
+    "h2water": {"water-ionizer-5plate", "water-ionizer-9plate",
+                "water-ionizer-15plate", "molecular-hydrogen-bottle",
+                "miracule-water-system"},
+}
+
+
+def _purchased_slugs(cx, email):
+    """Paid order lines that prove ownership of an accelerator device."""
+    try:
+        rows = cx.execute(
+            "SELECT items_json FROM orders WHERE lower(email)=lower(?) "
+            "AND lower(COALESCE(pay_status,''))='paid'", (email,)).fetchall()
+    except Exception:
+        return set()
+    out = set()
+    for row in rows:
+        try:
+            out.update((line.get("slug") or "").strip() for line in
+                       (json.loads(row[0] or "[]") or []) if isinstance(line, dict))
+        except Exception:
+            continue
+    return {slug for slug in out if slug}
+
+
+def accelerator_status(cx, email):
+    """Merge automatic purchase proof with client-reported equipment ownership."""
+    purchased = _purchased_slugs(cx, email)
+    try:
+        client_facts.init_table(cx)
+        rows = cx.execute("SELECT fact_key,value FROM client_facts WHERE email=?",
+                          ((email or "").strip().lower(),)).fetchall()
+        facts = {row[0]: bool(row[1]) for row in rows}
+    except Exception:
+        facts = {}
+    return {key: bool(purchased & slugs) or bool(facts.get(ACCELERATOR_FACT_KEYS[key]))
+            for key, slugs in ACCELERATOR_PURCHASE_SLUGS.items()}
 
 
 def _has_scan(cx, email):
@@ -141,11 +191,14 @@ def build_status(cx, email):
              conditions_done or _has_source(cx, email, "scan")
              or _has_source(cx, email, "biofield"), "#recs"),
     ]
+    accelerators = accelerator_status(cx, email)
     heal = [
-        step("light", "Light", None, "https://clinicalpraxis.com/photobiomodulation/"),
-        step("pemf", "PEMF", None, "https://clinicalpraxis.com/pemf/"),
-        step("h2water", "Molecular hydrogen microwater", None,
-             "https://clinicalpraxis.com/molecular-hydrogen-microwater/"),
+        step("light", "Light", accelerators["light"],
+             "https://clinicalpraxis.com/photobiomodulation/", checkable=True),
+        step("pemf", "PEMF", accelerators["pemf"],
+             "https://clinicalpraxis.com/pemf/", checkable=True),
+        step("h2water", "Molecular hydrogen microwater", accelerators["h2water"],
+             "https://clinicalpraxis.com/molecular-hydrogen-microwater/", checkable=True),
     ]
     return {
         "phases": [

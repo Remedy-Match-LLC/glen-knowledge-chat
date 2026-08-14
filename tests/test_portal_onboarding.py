@@ -1,11 +1,12 @@
 import datetime
+import json
 import sqlite3
 import uuid
 from dashboard import portal_onboarding as ob
 from dashboard import (client_scans, intake, client_photos, portal_biofield_reports,
                         recommendation_events, condition_triage,
                         portal_health_history, portal_extended_history,
-                        scan_freshness, biofield_store)
+                        scan_freshness, biofield_store, orders, client_facts)
 
 
 def _cx():
@@ -15,7 +16,48 @@ def _cx():
     client_photos.init_table(cx)
     portal_biofield_reports.init_table(cx)
     recommendation_events.init_recommendation_events(cx)
+    orders.init_orders_table(cx)
     return cx
+
+
+def _accelerators(status):
+    return {step["key"]: step for step in status["phases"][2]["steps"]}
+
+
+def test_paid_kloud_purchase_checks_pemf_automatically():
+    cx = _cx()
+    cx.execute(
+        "INSERT INTO orders (created_at,source,external_ref,email,items_json,status,pay_status) "
+        "VALUES ('2026-08-14','test','kloud-1','owner@example.com',?,'done','paid')",
+        (json.dumps([{"slug": "kloud-pemf-mini"}]),))
+    cx.commit()
+
+    accelerators = _accelerators(ob.build_status(cx, "owner@example.com"))
+    assert accelerators["pemf"]["done"] is True
+    assert accelerators["pemf"]["checkable"] is True
+    assert accelerators["light"]["done"] is False
+
+
+def test_existing_bemer_can_be_checked_as_manual_pemf_ownership():
+    cx = _cx()
+    client_facts.set_fact(cx, "bemer@example.com", "accelerate_pemf", True)
+
+    accelerators = _accelerators(ob.build_status(cx, "bemer@example.com"))
+    assert accelerators["pemf"]["done"] is True
+
+
+def test_light_and_hydrogen_purchases_check_their_accelerators():
+    cx = _cx()
+    cx.execute(
+        "INSERT INTO orders (created_at,source,external_ref,email,items_json,status,pay_status) "
+        "VALUES ('2026-08-14','test','devices-1','devices@example.com',?,'done','paid')",
+        (json.dumps([{"slug": "nir-brain-frequency-helmet"},
+                     {"slug": "molecular-hydrogen-bottle"}]),))
+    cx.commit()
+
+    accelerators = _accelerators(ob.build_status(cx, "devices@example.com"))
+    assert accelerators["light"]["done"] is True
+    assert accelerators["h2water"]["done"] is True
 
 
 def test_all_open_when_nothing_on_file():
