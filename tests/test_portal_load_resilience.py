@@ -10,6 +10,9 @@ def test_portal_fetches_are_bounded_and_settled_independently():
     assert "new AbortController()" in HTML
     assert "Promise.allSettled([" in HTML
     assert 'cache: "no-store"' in HTML
+    assert "async function fetchPortalJsonOnce(url)" in HTML
+    assert "result.status >= 500" in HTML
+    assert "result = await fetchPortalJsonOnce(url)" in HTML
 
 
 def test_intake_completion_explains_where_saved_details_live():
@@ -23,6 +26,8 @@ def test_portal_distinguishes_invalid_link_from_transient_failure():
     assert 'required.status === 404) notFound()' in HTML
     assert "showPortalLoadFailure(required)" in HTML
     assert "Retry missing information" in HTML
+    assert 'data-portal-home href="${esc(location.pathname)}"' in HTML
+    assert "Back to portal home" in HTML
 
 
 def test_shared_portal_hashes_route_to_real_panels_and_cards():
