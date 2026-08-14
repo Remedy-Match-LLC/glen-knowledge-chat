@@ -233,12 +233,28 @@ def bundle(cx, email, *, e4l_path=None):
     """Assemble the full client-360 payload. cx: LOG_DB connection
     (row_factory=sqlite3.Row). Read-only; never raises on missing data."""
     e = (email or "").strip().lower()
+    # Each section is optional and several legacy readers intentionally swallow
+    # missing-table errors. PostgreSQL still marks the transaction failed even
+    # when a nested reader catches the exception, so end each read-only section
+    # before starting the next required one.
+    person = _person(cx, e)
+    _recover_optional_read(cx)
+    tests = _tests(cx, e)
+    _recover_optional_read(cx)
+    invoices = _invoices(cx, e)
+    _recover_optional_read(cx)
+    comms = _comms(cx, e)
+    _recover_optional_read(cx)
+    process = process_strip(cx, e)
+    _recover_optional_read(cx)
+    recommendations = _recommendations(cx, e)
+    _recover_optional_read(cx)
     return {
-        "person": _person(cx, e),
+        "person": person,
         "clinical": client_tags_for_email(e, e4l_path=e4l_path),
-        "tests": _tests(cx, e),
-        "invoices": _invoices(cx, e),
-        "comms": _comms(cx, e),
-        "process": process_strip(cx, e),
-        "recommendations": _recommendations(cx, e),
+        "tests": tests,
+        "invoices": invoices,
+        "comms": comms,
+        "process": process,
+        "recommendations": recommendations,
     }
