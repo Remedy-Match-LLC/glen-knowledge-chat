@@ -423,7 +423,14 @@ def _caregiver_pay_block(cx, email, enabled):
         from dashboard import household as _hh
         members = _hh.payable_members_for(cx, email)
     except Exception:
-        return {"members": [], "orders": []}
+        # Earlier optional portal blocks may swallow a missing-schema error while
+        # PostgreSQL keeps the shared read transaction aborted. Recover once and
+        # retry this consent-gated block instead of silently hiding payable orders.
+        try:
+            cx.rollback()
+            members = _hh.payable_members_for(cx, email)
+        except Exception:
+            return {"members": [], "orders": []}
     orders = []
     for mem in members:
         scope = mem["pay_share_scope"]
@@ -435,7 +442,16 @@ def _caregiver_pay_block(cx, email, enabled):
                 "AND coalesce(status,'') NOT IN ('cancelled','delivered','done') "
                 "ORDER BY id DESC", (mem["member_email"],)).fetchall()
         except Exception:
-            rows = []
+            try:
+                cx.rollback()
+                rows = cx.execute(
+                    "SELECT id, total_cents, COALESCE(invoice_token,''), COALESCE(items_json,'[]') "
+                    "FROM orders WHERE lower(coalesce(email,''))=? "
+                    "AND coalesce(pay_status,'')<>'paid' AND coalesce(invoice_token,'')<>'' "
+                    "AND coalesce(status,'') NOT IN ('cancelled','delivered','done') "
+                    "ORDER BY id DESC", (mem["member_email"],)).fetchall()
+            except Exception:
+                rows = []
         for oid, tc, tok, items in rows:
             orders.append({
                 "order_id": oid,
