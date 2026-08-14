@@ -7,6 +7,7 @@ def test_client_proposal_email_points_staff_to_console(monkeypatch):
                         lambda *args: sent.append(args))
 
     appmod._notify_staff_of_appointment_proposal({
+        "id": 7,
         "client_email": "steve@example.com",
         "practitioner": "glen",
         "session_type": "biofield-consult",
@@ -18,6 +19,9 @@ def test_client_proposal_email_points_staff_to_console(monkeypatch):
     assert "steve@example.com" in sent[0][2]
     assert "2026-08-14 11:00:00 HST" in sent[0][3]
     assert "/console/appointment-proposals" in sent[0][3]
+    assert "Confirm this time" in sent[0][3]
+    assert "?proposal=" in sent[0][3]
+    assert "Next Action" in sent[0][3]
 
 
 def test_evox_proposal_notifies_rae(monkeypatch):
@@ -29,6 +33,7 @@ def test_evox_proposal_notifies_rae(monkeypatch):
                         lambda *args: sent.append(args))
 
     appmod._notify_staff_of_appointment_proposal({
+        "id": 8,
         "client_email": "client@example.com",
         "practitioner": "rae",
         "session_type": "evox",

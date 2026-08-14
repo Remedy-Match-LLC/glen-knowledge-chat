@@ -8,7 +8,7 @@ import json
 import os
 import urllib.parse
 
-TYPE_PRIORITY = ["order", "invoice", "household", "biofield_reveal", "handoff", "ff_match_draft", "reward_grant"]
+TYPE_PRIORITY = ["appointment", "order", "invoice", "household", "biofield_reveal", "handoff", "ff_match_draft", "reward_grant"]
 
 _DONE = {"actionable": False}
 
@@ -41,6 +41,29 @@ def resolve_order(rec):
         "action": {"kind": "link", "url": "/console/orders"},
         "confirm": False, "secondary": None,
         "summary": summary, "age_ts": age,
+    }
+
+
+def resolve_appointment(rec):
+    if rec.get("status") != "proposed" or rec.get("staff_confirmed"):
+        return dict(_DONE)
+    pid = rec.get("id")
+    who = rec.get("client_email") or "unknown"
+    label = rec.get("session_label") or rec.get("session_type") or "Appointment"
+    start = (rec.get("proposed_start") or "").replace("T", " ")
+    return {
+        "type": "appointment", "id": pid, "actionable": True,
+        "state": "awaiting_staff_confirmation", "label": "Confirm this time",
+        "action": {"kind": "post",
+                   "url": f"/api/console/appointment-proposals/{pid}/confirm",
+                   "body": {}},
+        "confirm": True,
+        "secondary": {"label": "Propose a different time",
+                      "action": {"kind": "link",
+                                 "url": f"/console/appointment-proposals?proposal={pid}"},
+                      "confirm": False},
+        "summary": f"{who} · {label} · {start} HST",
+        "age_ts": rec.get("age_ts", ""),
     }
 
 
@@ -220,6 +243,25 @@ def _invoice_records(cx):
     return out
 
 
+def _appointment_records(cx, practitioner=None):
+    query = ("SELECT id,client_email,session_type,practitioner,proposed_start,status,"
+             "staff_confirmed,created_at FROM appointment_proposals "
+             "WHERE status='proposed' AND staff_confirmed=0")
+    args = ()
+    if practitioner in ("glen", "rae"):
+        query += " AND practitioner=?"
+        args = (practitioner,)
+    try:
+        rows = cx.execute(query, args)
+    except Exception:
+        return []
+    from dashboard.appointment_proposals import SESSION_TYPES
+    return [{**dict(r),
+             "session_label": SESSION_TYPES.get(r["session_type"], {}).get(
+                 "label", r["session_type"]),
+             "age_ts": r["created_at"]} for r in rows]
+
+
 def _household_hold_records(cx):
     from dashboard import household_holds as _hh
     now_iso = _hh._iso(_hh._now())
@@ -285,8 +327,9 @@ def _reward_records(cx):
              "tier": r["tier"], "age_ts": r["granted_at"]} for r in rows]
 
 
-def list_actionable(cx):
-    items = ([resolve_order(r) for r in _order_records(cx)]
+def list_actionable(cx, practitioner=None):
+    items = ([resolve_appointment(r) for r in _appointment_records(cx, practitioner)]
+             + [resolve_order(r) for r in _order_records(cx)]
              + [resolve_invoice(r) for r in _invoice_records(cx)]
              + [resolve_household_hold(r) for r in _household_hold_records(cx)]
              + [resolve_biofield_reveal(r) for r in _reveal_records(cx)]
