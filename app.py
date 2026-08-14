@@ -29451,6 +29451,37 @@ def _finalize_appointment(cx, proposal):
     return booked
 
 
+def _appointment_notification_recipient(practitioner):
+    """Return the operational inbox for the practitioner assigned to a proposal."""
+    if practitioner == "rae":
+        return EVOX_RAE_EMAIL, "Rae"
+    return GLEN_CONSULT_EMAIL, "Glen"
+
+
+def _queue_appointment_email(to_email, to_name, subject, body):
+    """Send appointment alerts without delaying or breaking the portal request."""
+    def _send():
+        try:
+            _send_full_report_email(to_email, to_name, subject, body)
+        except Exception:
+            app.logger.exception("appointment notification failed to %s", to_email)
+    threading.Thread(target=_send, daemon=True).start()
+
+
+def _notify_staff_of_appointment_proposal(proposal):
+    to_email, to_name = _appointment_notification_recipient(proposal["practitioner"])
+    label = proposal.get("session_label") or proposal["session_type"]
+    start = proposal["proposed_start"].replace("T", " ")
+    body = (
+        f"{proposal['client_email']} proposed {start} HST for {label}.\n\n"
+        "Open Appointment Proposals in your business console to confirm it or "
+        "propose a different time:\n"
+        f"{PUBLIC_BASE_URL}/console/appointment-proposals"
+    )
+    _queue_appointment_email(
+        to_email, to_name, f"Appointment time proposed by {proposal['client_email']}", body)
+
+
 @app.route("/api/portal/<token>/appointment-proposals", methods=["GET", "POST"])
 def api_portal_appointment_proposals(token):
     from dashboard import appointment_proposals as _ap
@@ -29477,8 +29508,10 @@ def api_portal_appointment_proposals(token):
                 cx, email=ident.email, session_type=kind, start=hawaii_start,
                 proposed_by="client", billing_mode=(body.get("billing_mode") or "paid").strip(),
                 proposed_timezone=client_tz)
+            proposal = _ap.decorate(cx, _ap.get(cx, pid))
         except (ValueError, KeyError) as exc:
             return jsonify({"error": str(exc)}), 400
+        _notify_staff_of_appointment_proposal(proposal)
         return jsonify({"ok": True, "proposal_id": pid}), 201
 
 

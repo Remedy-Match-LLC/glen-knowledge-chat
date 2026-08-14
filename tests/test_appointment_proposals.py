@@ -1,4 +1,5 @@
 import sqlite3
+from pathlib import Path
 
 from dashboard import appointment_proposals as ap
 
@@ -41,3 +42,10 @@ def test_wrong_session_type_rejected():
         assert str(exc) == "bad_session_type"
     else:
         raise AssertionError("expected bad session type")
+
+
+def test_console_offers_confirm_and_different_time_actions():
+    html = (Path(__file__).parents[1] / "static" / "appointment-proposals.html").read_text()
+    assert "Confirm this time" in html
+    assert "Propose a different time" in html
+    assert "f.proposed_start.focus()" in html
