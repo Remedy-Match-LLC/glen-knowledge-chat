@@ -511,6 +511,9 @@ async function consolidateBalances(source,sel){var target=Number(sel.value||0);
  astat('Consolidating balanced stresses…');
  var j=await post('/author/__TID__/layer/'+source+'/consolidate-balances',{target_layer:target});
  if(j&&j.ok)location.reload()}
+async function deleteStress(sid,label){if(!confirm('Delete tag "'+label+'" from this intake?'))return;
+ const j=await post('/author/__TID__/stress/'+sid+'/delete',{});
+ astat(j&&j.ok?'Tag deleted.':((j&&j.error)||'Delete failed.'));if(j&&j.ok)loadStress()}
 async function addStress(label,layer){label=(label||'').trim();if(!label)return;
  astat('Adding stress…');
  const body=(layer==null?{label:label}:{label:label,layer:layer});
@@ -1463,12 +1466,18 @@ def render_stress_panel(data):
         # Unassigned stresses: an Assign button auto-picks the best-fit layer (LLM).
         assign_btn = (f" <button class='btn ghost' style='font-size:11px' "
                       f"onclick=\"assignStress({sid})\">Assign</button>" if drag else "")
+        delete_btn = ""
+        if s.get("source") == "tag":
+            label_js = str(s.get("label") or "").replace("\\", "\\\\").replace("'", "\\'")
+            delete_btn = (f" <button class='btn ghost' style='font-size:11px;color:var(--err)' "
+                          f"onclick=\"deleteStress({sid},'{_e(label_js)}')\" "
+                          "title='Delete this tag from the intake'>Delete</button>")
         # …and are still draggable onto a layer card as a manual override.
         drag_attr = (f" class=sdrag draggable=true ondragstart=\"stressDragStart(event,{sid})\" "
                      "ondragend=stressDragEnd(event) title='Drag onto a layer to cover it'"
                      if drag else "")
         return (f"<li{drag_attr}><b>{_e(s.get('code') or '')}</b> {_e(s.get('label') or '')} "
-                f"<span class=pill>{tag}</span>{bytxt} {btn}{assign_btn}</li>")
+                f"<span class=pill>{tag}</span>{bytxt} {btn}{assign_btn}{delete_btn}</li>")
     if "by_layer" in data:
         # Per-layer grouping: every AI-created stress under each causal-chain layer
         # (covered-by-remedy or head match), a stress may appear under several layers.

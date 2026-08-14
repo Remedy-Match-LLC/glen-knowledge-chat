@@ -81,6 +81,24 @@ def test_manual_balance_toggle(tmp_path, monkeypatch):
     assert "MR2" in {s["code"] for s in j["data"]["balanced"]}
 
 
+def test_delete_profile_tag_from_intake(tmp_path, monkeypatch):
+    monkeypatch.setattr(RI, "synthesize_reveal_layers", lambda *a, **k: _NONE)
+    db = str(tmp_path / "c.db")
+    client = _app(db)
+    tid = _new(client, "nobody@x.com")
+    from dashboard import biofield_stress as stress
+    with sqlite3.connect(db) as cx:
+        stress.add_stress(cx, tid, "a fib", source="tag")
+        sid = cx.execute("SELECT id FROM biofield_auth_stress WHERE test_id=?",
+                         (int(tid.lstrip("a")),)).fetchone()[0]
+
+    page = client.get(f"/author/{tid}/stresses").get_json()
+    assert "deleteStress" in page["html"]
+    assert client.post(f"/author/{tid}/stress/{sid}/delete", json={}).get_json() == {"ok": True}
+    assert client.post(f"/author/{tid}/stress/{sid}/delete", json={}).status_code == 404
+    assert not client.get(f"/author/{tid}/stresses").get_json()["data"]["active"]
+
+
 def test_import_reveal_synthesizes_exactly_once(tmp_path, monkeypatch):
     """synthesize_reveal_layers must run ONCE per import-reveal call: once inside
     the route itself, zero times inside the subsequent _seed_stresses call (which
