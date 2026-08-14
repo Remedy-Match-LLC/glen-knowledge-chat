@@ -31,3 +31,37 @@ def test_client_360_requires_auth(client, monkeypatch):
     r = client.get("/api/console/client-360?email=a@b.com")
     assert r.status_code == 401
     assert r.get_json()["ok"] is False
+
+
+def test_failed_optional_recommendation_ingest_does_not_poison_bundle(client, monkeypatch):
+    class FakeConnection:
+        row_factory = None
+        aborted = False
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def rollback(self):
+            self.aborted = False
+
+    cx = FakeConnection()
+    monkeypatch.setattr(app_module, "_bos_actor", lambda: object())
+    monkeypatch.setattr(app_module.db, "connect", lambda _path: cx)
+
+    def fail_init(_cx):
+        _cx.aborted = True
+        raise RuntimeError("optional table unavailable")
+
+    monkeypatch.setattr(app_module.recommendation_events, "init_recommendation_events", fail_init)
+
+    def bundle(_cx, _email):
+        assert _cx.aborted is False
+        return {"person": {"name": "Steve Fox"}}
+
+    monkeypatch.setattr(app_module.client_360, "bundle", bundle)
+    response = client.get("/api/console/client-360?email=sfnase@hotmail.com")
+    assert response.status_code == 200
+    assert response.get_json()["person"]["name"] == "Steve Fox"

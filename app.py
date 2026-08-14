@@ -45741,7 +45741,10 @@ def console_client_360():
                 recommendation_events.init_recommendation_events(cx)
                 recommendation_events.ingest_purchased(cx, email)   # Phase 1: purchased is the only recorded action
             except Exception:
-                pass
+                # Optional recommendation history may be unavailable on an older
+                # schema. PostgreSQL keeps the whole transaction failed until a
+                # rollback, which would otherwise break the required 360 bundle.
+                cx.rollback()
         cx.row_factory = sqlite3.Row   # ingest readers may reset it; restore before bundle
         data = client_360.bundle(cx, email)
         if email and not (data.get("person") or {}).get("name"):
