@@ -6836,6 +6836,19 @@ def _order_pack_breakdown(order):
         return {"bottle_units": 0, "cello_pack_units": 0}
 
 
+def _packaging_review_for_lines(lines):
+    """Names of physical products whose package type/size is unspecified."""
+    missing = []
+    for line in (lines or []):
+        p = _get_product((line.get("slug") or "").strip())
+        if not p or not _shipping.is_shippable(p):
+            continue
+        fmt = (line.get("format") or "").strip().lower()
+        if _shipping.packing_bottle_type(p, fmt) == _shipping.UNKNOWN_BOTTLE_TYPE:
+            missing.append(p.get("name") or p.get("slug"))
+    return list(dict.fromkeys(missing))
+
+
 def _get_product(slug):
     """The sellable product for a slug, following a retired duplicate to its live twin.
 
@@ -7022,7 +7035,7 @@ def _cart_has_noautoship_bundle(cart):
 def _price_cart(cart, *, ship, coupon_pct=None, subscriber_tier_pct=None,
                 subscriber_order_count=None, subscriber_active=True,
                 points_to_redeem_cents=0, channel="retail", program_member=False,
-                email=None):
+                email=None, allow_unknown_packaging=False):
     """Price a reorder/checkout cart through the pricing engine + shipping.
     Returns {priced, qbo_lines, discount_cents, points_redeemed_cents, shipping_cents,
     items_rec, subtotal_list_cents}. Raises CheckoutError for non-US ship-to.
@@ -7103,6 +7116,13 @@ def _price_cart(cart, *, ship, coupon_pct=None, subscriber_tier_pct=None,
                     raise CheckoutError(str(e))
                 for _comp in _comps:
                     _bt = _shipping.packing_bottle_type(_comp, _fmt)
+                    if _bt == _shipping.UNKNOWN_BOTTLE_TYPE:
+                        if allow_unknown_packaging:
+                            continue
+                        raise CheckoutError(
+                            f"Packaging specifications required for {_comp['name']}. "
+                            "Enter its package type and size before using automatic shipping."
+                        )
                     box_counts[_bt] = box_counts.get(_bt, 0) + qty
                     if _bt == _shipping.CELLO_BOTTLE_TYPE:
                         total_cello += qty
@@ -7110,6 +7130,13 @@ def _price_cart(cart, *, ship, coupon_pct=None, subscriber_tier_pct=None,
                         total_bottles += qty
             else:
                 bt = _shipping.packing_bottle_type(p, _fmt)
+                if bt == _shipping.UNKNOWN_BOTTLE_TYPE:
+                    if allow_unknown_packaging:
+                        continue
+                    raise CheckoutError(
+                        f"Packaging specifications required for {p['name']}. "
+                        "Enter its package type and size before using automatic shipping."
+                    )
                 box_counts[bt] = box_counts.get(bt, 0) + qty
                 if bt == _shipping.CELLO_BOTTLE_TYPE:
                     total_cello += qty
@@ -46309,7 +46336,9 @@ def _price_inhouse_invoice(lines_in, *, email, pickup, ship,
     if pickup:
         ship = {**(ship or {}), "country": "US"}
     try:
-        pc = _price_cart(cart, ship=ship, channel="retail")
+        pc = _price_cart(
+            cart, ship=ship, channel="retail",
+            allow_unknown_packaging=(pickup or shipping_override_cents_in not in (None, "")))
         shipping_cents = _bos_orders.effective_shipping_cents(pickup, pc.get("shipping_cents"))
         get_cents = int((pc.get("priced") or {}).get("get_cents") or 0)
     except CheckoutError:
@@ -46913,7 +46942,8 @@ def api_orders_price_preview():
     return jsonify({"ok": True, "total_ff_qty": total_ff_qty,
                     "subtotal_cents": subtotal, "lines": out_lines,
                     "physical_units": _order_physical_units({"items": lines_in}),
-                    "pack_breakdown": _order_pack_breakdown({"items": lines_in})})
+                    "pack_breakdown": _order_pack_breakdown({"items": lines_in}),
+                    "packaging_review": _packaging_review_for_lines(lines_in)})
 
 
 @app.route("/api/orders/shipping-preview", methods=["POST"])

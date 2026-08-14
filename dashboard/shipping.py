@@ -857,6 +857,9 @@ def is_shippable(product) -> bool:
                 or p.get("vendor_shipped"))
 
 
+UNKNOWN_BOTTLE_TYPE = "unknown"
+
+
 def resolve_bottle_type(slug, product, db_path=None):
     try:
         with _connect(db_path) as cx:
@@ -871,9 +874,11 @@ def resolve_bottle_type(slug, product, db_path=None):
         if "no such table" not in str(exc).lower():
             raise
         row = None
-    if row:
+    if row and row["bottle_type"]:
         return row["bottle_type"]
-    return (product or {}).get("bottle_type") or "default"
+    # Missing packaging data is not a bottle-size guess. Keep it explicit so
+    # callers can stop auto-pricing and ask an operator to enter dimensions.
+    return (product or {}).get("bottle_type") or UNKNOWN_BOTTLE_TYPE
 
 
 # Cart-line formats that ship as a cello (cellophane) refill pack instead of a rigid

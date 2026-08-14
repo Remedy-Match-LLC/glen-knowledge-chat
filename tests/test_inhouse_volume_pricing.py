@@ -31,13 +31,13 @@ def _app():
         pytest.skip(f"app not importable: {e}")
 
 
-FF = {"slug": "brain", "qty_pricing": True, "price_cents": 6997, "name": "Brain Boost"}
-FF2 = {"slug": "bone", "qty_pricing": True, "price_cents": 6997, "name": "Bone Builder"}
-FF3 = {"slug": "calm", "qty_pricing": True, "price_cents": 6997, "name": "Calm"}
-FF4 = {"slug": "detox", "qty_pricing": True, "price_cents": 6997, "name": "Detox"}
-FF5 = {"slug": "focus", "qty_pricing": True, "price_cents": 6997, "name": "Focus"}
-FF6 = {"slug": "sleep", "qty_pricing": True, "price_cents": 6997, "name": "Sleep"}
-NONFF = {"slug": "mix", "price_cents": 7000, "name": "Drink Mix"}
+FF = {"slug": "brain", "qty_pricing": True, "price_cents": 6997, "name": "Brain Boost", "bottle_type": "30 Caps"}
+FF2 = {"slug": "bone", "qty_pricing": True, "price_cents": 6997, "name": "Bone Builder", "bottle_type": "30 Caps"}
+FF3 = {"slug": "calm", "qty_pricing": True, "price_cents": 6997, "name": "Calm", "bottle_type": "30 Caps"}
+FF4 = {"slug": "detox", "qty_pricing": True, "price_cents": 6997, "name": "Detox", "bottle_type": "30 Caps"}
+FF5 = {"slug": "focus", "qty_pricing": True, "price_cents": 6997, "name": "Focus", "bottle_type": "30 Caps"}
+FF6 = {"slug": "sleep", "qty_pricing": True, "price_cents": 6997, "name": "Sleep", "bottle_type": "30 Caps"}
+NONFF = {"slug": "mix", "price_cents": 7000, "name": "Drink Mix", "bottle_type": "30 Caps"}
 _CAT = {"brain": FF, "bone": FF2, "calm": FF3, "detox": FF4, "focus": FF5, "sleep": FF6,
         "mix": NONFF}
 _SIX_FF_SLUGS = ["brain", "bone", "calm", "detox", "focus", "sleep"]
