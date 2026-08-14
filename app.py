@@ -16828,14 +16828,17 @@ def api_console_next_actions():
         return jsonify({"error": "unauthorized"}), 401
     from dashboard import (console_next_action as _na, biofield_reveals as _br,
                            ff_match_drafts as _ff, client_portal as _cp, orders as _ord,
-                           household_holds as _hh, data_sharing_rewards as _dr)
+                           household_holds as _hh, data_sharing_rewards as _dr,
+                           appointment_proposals as _ap)
+    actor = _appointment_staff_actor()
     with _db_lock, db.connect(LOG_DB) as cx:
         _br.init_table(cx); _ff.init_table(cx)
         _cp.init_client_portal_table(cx); _ord.init_orders_table(cx)
         _hh.init_hold_tables(cx)
         _dr.init_reward_tables(cx)
+        _ap.init_tables(cx)
         cx.row_factory = sqlite3.Row
-        items = _na.list_actionable(cx)
+        items = _na.list_actionable(cx, practitioner=actor)
     return jsonify({"items": items})
 
 
@@ -29472,11 +29475,13 @@ def _notify_staff_of_appointment_proposal(proposal):
     to_email, to_name = _appointment_notification_recipient(proposal["practitioner"])
     label = proposal.get("session_label") or proposal["session_type"]
     start = proposal["proposed_start"].replace("T", " ")
+    confirm_url = (f"{PUBLIC_BASE_URL}/console/appointment-proposals"
+                   f"?proposal={proposal['id']}#proposal-{proposal['id']}")
     body = (
         f"{proposal['client_email']} proposed {start} HST for {label}.\n\n"
-        "Open Appointment Proposals in your business console to confirm it or "
-        "propose a different time:\n"
-        f"{PUBLIC_BASE_URL}/console/appointment-proposals"
+        "Confirm this time or propose a different time:\n"
+        f"{confirm_url}\n\n"
+        "This proposal also appears in Next Action on your business console."
     )
     _queue_appointment_email(
         to_email, to_name, f"Appointment time proposed by {proposal['client_email']}", body)
