@@ -30,6 +30,11 @@ function renderOnboarding(status) {
       var text = st.href
         ? '<a href="' + st.href + '">' + label + '</a>'
         : label;
+      if (st.checkable) {
+        return '<li class="ob-step"><input class="ob-accelerator-check" type="checkbox" ' +
+          'data-accelerator="' + escapeHtml(st.key) + '" aria-label="Mark ' + label +
+          ' as owned"' + (st.done === true ? ' checked' : '') + '> ' + text + '</li>';
+      }
       return '<li class="ob-step"><span class="ob-mark ' + markClass + '">' + mark + '</span> ' + text + '</li>';
     }).join('');
     var extra = '';
@@ -311,6 +316,24 @@ if (typeof window !== 'undefined' && typeof document !== 'undefined') {
       event.preventDefault();
       if (location.hash !== url.hash) history.pushState(null, '', url.hash);
       if (typeof window.applyPortalHash === 'function') window.applyPortalHash();
+    });
+
+    mount.addEventListener('change', function (event) {
+      var checkbox = event.target.closest && event.target.closest('.ob-accelerator-check');
+      if (!checkbox) return;
+      checkbox.disabled = true;
+      fetch('/api/portal/' + token + '/onboarding/accelerator', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({key: checkbox.getAttribute('data-accelerator'),
+                             value: checkbox.checked})
+      }).then(function (response) {
+        if (!response.ok) throw new Error('save failed');
+        return loadAndRender();
+      }).catch(function () {
+        checkbox.checked = !checkbox.checked;
+        checkbox.disabled = false;
+      });
     });
 
     function _num(v) {
