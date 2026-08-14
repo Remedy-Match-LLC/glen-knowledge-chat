@@ -29512,6 +29512,21 @@ def _save_appointment_audio(file_obj, proposal_id):
     return name
 
 
+def _appointment_audio_from_request(proposal_id):
+    """Persist the optional appointment audio attachment, if one was selected.
+
+    Browsers include an empty ``audio`` part when ``new FormData(form)`` is built
+    from a form whose file input was left untouched. Werkzeug exposes that blank
+    part in ``request.files`` with an empty filename and a generic MIME type. It
+    is not an upload and must not be sent through audio validation, otherwise a
+    normal text-only private message fails as ``unsupported_audio``.
+    """
+    file_obj = request.files.get("audio")
+    if not file_obj or not (file_obj.filename or "").strip():
+        return ""
+    return _save_appointment_audio(file_obj, proposal_id)
+
+
 @app.route("/api/portal/<token>/appointment-proposals/<int:proposal_id>/messages", methods=["POST"])
 def api_portal_appointment_message(token, proposal_id):
     from dashboard import appointment_proposals as _ap
@@ -29522,7 +29537,7 @@ def api_portal_appointment_message(token, proposal_id):
         if not proposal or proposal["client_email"].lower() != ident.email.lower():
             return jsonify({"error": "not_found"}), 404
         try:
-            audio = _save_appointment_audio(request.files["audio"], proposal_id) if "audio" in request.files else ""
+            audio = _appointment_audio_from_request(proposal_id)
             _ap.add_message(cx, proposal_id, "client", request.form.get("text", ""), audio)
         except ValueError as exc:
             return jsonify({"error": str(exc)}), 400
@@ -29617,7 +29632,7 @@ def api_console_appointment_message(proposal_id):
         if not proposal or proposal["practitioner"] != actor:
             return jsonify({"error": "not_found"}), 404
         try:
-            audio = _save_appointment_audio(request.files["audio"], proposal_id) if "audio" in request.files else ""
+            audio = _appointment_audio_from_request(proposal_id)
             _ap.add_message(cx, proposal_id, actor, request.form.get("text", ""), audio)
         except ValueError as exc:
             return jsonify({"error": str(exc)}), 400
