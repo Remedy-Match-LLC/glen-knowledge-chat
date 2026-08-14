@@ -114,6 +114,15 @@
 
     bar.appendChild(mypathBtn);
 
+    // A portal opened by an authenticated console owner keeps a visible route
+    // back without ever placing the console key in the cross-domain URL.
+    if (/^\/portal\/[^/]+/.test(location.pathname) &&
+        new URLSearchParams(location.search).get("from") === "console") {
+      var consoleReturn = el("a", "js-mypath-btn js-console-return", "Back to client list");
+      consoleReturn.href = "https://illtowell.com/console/portal-links";
+      bar.appendChild(consoleReturn);
+    }
+
     if (REWARDS) {
       var orb = el("span", "js-orb"); orb.setAttribute("data-lit", "0"); orb.title = "Your biofield";
       bar.appendChild(orb);

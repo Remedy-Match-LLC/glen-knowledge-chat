@@ -69,7 +69,6 @@
   function unlock(){ localStorage.setItem('console_key', document.getElementById('key-input').value); boot(); }
 
   function boot(){
-    if(!key()){ document.getElementById('gate').style.display='flex'; return; }
     document.getElementById('gate').style.display='none';
     load();
   }
@@ -119,7 +118,9 @@
         note.innerHTML = '<span class="err">No portal for that email.</span>';
         return;
       }
-      portalTab.location.replace(j.link);
+      var portalUrl = new URL(j.link, location.href);
+      portalUrl.searchParams.set('from', 'console');
+      portalTab.location.replace(portalUrl.toString());
       note.innerHTML = j.reissued
         ? '<span class="warn">Opened with a freshly issued link; the old link no longer works.</span>'
         : '<span class="ok">Opened in a new tab.</span>';

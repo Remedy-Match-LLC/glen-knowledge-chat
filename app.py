@@ -45744,7 +45744,64 @@ def console_client_360():
                 pass
         cx.row_factory = sqlite3.Row   # ingest readers may reset it; restore before bundle
         data = client_360.bundle(cx, email)
+        if email and not (data.get("person") or {}).get("name"):
+            from dashboard import client_portal as _cp
+            _cp.init_client_portal_table(cx)
+            portal = _cp.get_portal_content_by_email(cx, email)
+            if portal and portal.get("name"):
+                data.setdefault("person", {})["name"] = portal["name"]
     return jsonify({"ok": True, **data})
+
+
+@app.route("/api/console/client-search", methods=["GET"])
+def console_client_search():
+    """Search the client hub across CRM people and portal-only clients."""
+    if _bos_actor() is None:
+        return jsonify({"ok": False, "error": "unauthorized"}), 401
+    query = (request.args.get("q") or "").strip().lower()
+    if len(query) < 2:
+        return jsonify({"ok": True, "clients": []})
+    like = f"%{query}%"
+    merged = {}
+    from dashboard import client_portal as _cp
+    with _db_lock, db.connect(LOG_DB) as cx:
+        cx.row_factory = sqlite3.Row
+        _cp.init_client_portal_table(cx)
+        try:
+            rows = cx.execute(
+                "SELECT email, name FROM people "
+                "WHERE lower(COALESCE(email,'')) LIKE ? "
+                "OR lower(COALESCE(name,'')) LIKE ? LIMIT 20",
+                (like, like),
+            ).fetchall()
+            for row in rows:
+                email = (row[0] or "").strip().lower()
+                if email:
+                    merged[email] = {"email": email, "name": row[1] or "",
+                                     "has_portal": False}
+        except Exception:
+            pass
+        rows = cx.execute(
+            "SELECT email, name FROM client_portals "
+            "WHERE lower(COALESCE(email,'')) LIKE ? "
+            "OR lower(COALESCE(name,'')) LIKE ? LIMIT 20",
+            (like, like),
+        ).fetchall()
+        for row in rows:
+            email = (row[0] or "").strip().lower()
+            if not email:
+                continue
+            current = merged.setdefault(email, {"email": email, "name": "",
+                                                "has_portal": True})
+            current["has_portal"] = True
+            if not current["name"] and row[1]:
+                current["name"] = row[1]
+    clients = sorted(merged.values(), key=lambda item: (
+        not ((item["name"] or "").lower().startswith(query)
+             or item["email"].startswith(query)),
+        (item["name"] or item["email"]).lower(),
+    ))[:20]
+    return jsonify({"ok": True, "clients": clients})
 
 
 @app.route("/api/console/client/recommendation/operator-note", methods=["POST"])
