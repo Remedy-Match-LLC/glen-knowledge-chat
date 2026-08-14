@@ -393,6 +393,9 @@ function loadPortalData(){
       $('main-content').style.display = 'block';
       restoreAddressDraft();
       showOrderConfirmation();
+      if(new URLSearchParams(location.search).get('payment') === 'cancelled'){
+        setMsg('Payment was not completed. Your order draft is still here so you can try again.', true);
+      }
       loadQuote();
     })
     .catch(function(){ showAuthWall(); });

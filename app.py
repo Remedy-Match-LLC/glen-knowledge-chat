@@ -16444,7 +16444,12 @@ def api_practitioner_dropship_checkout():
         print(f"[dropship-checkout] failed: {e!r}", flush=True)
         return jsonify({"ok": False, "error": "Checkout failed. Please try again."}), 500
     if out.get("ok"):
-        _pp.cart_clear(pid)
+        # Alt-pay is an order commitment, so clear it now. Card carts remain
+        # resumable until Stripe confirms payment; the return consumes only the
+        # paid quantities, preserving anything added in another tab meanwhile.
+        if method in ("zelle", "wise"):
+            _pp.cart_clear(pid)
+        out["practitioner_id"] = pid
         _ingest_order(source="dropship",
                       external_ref=str(out.get("invoice_id") or ""),
                       email=(prac.get("email") or ""),
@@ -33290,14 +33295,19 @@ def _stripe_checkout_url_for_order(out, email, session_token):
             return ""
         success = (f"{PUBLIC_BASE_URL}/practitioner/checkout-return"
                    f"?session_id={{CHECKOUT_SESSION_ID}}&t={_up.quote(session_token)}")
+        source = out.get("source") or "wholesale"
+        cancel_path = ("/practitioner/dropship" if source == "dropship"
+                       else "/practitioner/portal")
         sess = stripe_pay.create_checkout_session(
             total_cents, customer_email=email,
             description=f"Remedy Match wholesale order #{out.get('doc_number')}",
             metadata={"invoice_id": out.get("invoice_id"),
                       "customer_id": out.get("customer_id"),
-                      "kind": out.get("source") or "wholesale"},
+                      "kind": source,
+                      "practitioner_id": out.get("practitioner_id")},
             success_url=success,
-            cancel_url=f"{PUBLIC_BASE_URL}/practitioner/portal?token={_up.quote(session_token)}")
+            cancel_url=(f"{PUBLIC_BASE_URL}{cancel_path}?payment=cancelled"
+                        f"&token={_up.quote(session_token)}"))
         return sess.get("url") or ""
     except Exception as e:
         print(f"[stripe] session create failed: {e!r}", flush=True)
@@ -33350,6 +33360,19 @@ def practitioner_checkout_return():
                             _pcx.close()
                     except Exception as _e:
                         print(f"[practitioner-return] paid-only book: {_e!r}", flush=True)
+                if checkout_kind == "dropship" and inv:
+                    try:
+                        with db.connect(LOG_DB) as _ccx:
+                            _ccx.row_factory = _sqlite3.Row
+                            _co = _bos_orders.find_order_by_external_ref(_ccx, inv)
+                        practitioner_id = str(
+                            md.get("practitioner_id")
+                            or (_co or {}).get("practitioner_id") or "")
+                        if practitioner_id and _co:
+                            _pp.cart_clear_if_matches(
+                                practitioner_id, _co.get("items") or [])
+                    except Exception as _e:
+                        print(f"[practitioner-return] cart clear skipped: {_e!r}", flush=True)
         except Exception as e:
             print(f"[stripe-return] {e!r}", flush=True)
     dest = ("/practitioner/dropship" if checkout_kind == "dropship"
@@ -33361,6 +33384,16 @@ def practitioner_checkout_return():
     if token:
         dest += "&token=" + _up.quote(token)
     return _redir(dest)
+
+
+@app.route("/api/console/practitioners/<pid>/cart", methods=["GET"])
+def api_console_practitioner_cart(pid):
+    """Read-only recovery aid for diagnosing abandoned practitioner checkouts."""
+    if not _console_key_ok():
+        return jsonify({"ok": False, "error": "Unauthorized"}), 401
+    items = _pp.cart_items(pid)
+    return jsonify({"ok": True, "practitioner_id": pid, "items": items,
+                    "item_count": sum(int(x.get("qty") or 0) for x in items)})
 
 
 @app.route("/api/practitioner/admin/clear-orders", methods=["POST"])
@@ -34871,6 +34904,13 @@ def webhook_stripe():
                                         from dashboard import qbo_sale as _wqs
                                         _wqs.book_sale_on_payment(
                                             _wcx, dict(_bos_orders.find_order_by_external_ref(_wcx, inv)))
+                                    _wmd = sess.get("metadata") or {}
+                                    if (_wmd.get("kind") == "dropship"):
+                                        _wpid = str(_wmd.get("practitioner_id")
+                                                    or _wo.get("practitioner_id") or "")
+                                        if _wpid:
+                                            _pp.cart_clear_if_matches(
+                                                _wpid, _wo.get("items") or [])
                                     # Settle per-kind side-effects INDEPENDENTLY of booking, gated on
                                     # settled_at. Closes the crash-strand: a hard crash between booking
                                     # and settling leaves settled_at NULL + no 200 -> Stripe redelivers
@@ -34879,7 +34919,6 @@ def webhook_stripe():
                                     # 500 the webhook or block booking.
                                     if not _wo["settled_at"]:
                                         try:
-                                            _wmd = sess.get("metadata") or {}
                                             _wro = _bos_orders.find_order_by_external_ref(_wcx, inv)
                                             from dashboard import order_settlement as _wosx
                                             _res = _wosx.settle_paid_order_effects(

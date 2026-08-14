@@ -101,6 +101,31 @@ def cart_clear(practitioner_id, *, db_path=None) -> None:
         cx.commit()
 
 
+def cart_clear_if_matches(practitioner_id, items, *, db_path=None) -> bool:
+    """Clear a paid draft only when it still exactly matches the purchased cart.
+
+    A delayed webhook must never erase products added for a later order. The
+    exact-match guard also makes Stripe webhook/redirect replays idempotent.
+    """
+    p = db_path or _db_path()
+    init_cart_table(p)
+    expected = sorted(
+        ((x.get("slug") or "").strip(), max(0, int(x.get("qty") or 0)))
+        for x in (items or []) if (x.get("slug") or "").strip() and int(x.get("qty") or 0) > 0
+    )
+    with db.connect(p) as cx:
+        current = sorted(cx.execute(
+            "SELECT slug, qty FROM wholesale_cart WHERE practitioner_id=?",
+            (str(practitioner_id),),
+        ).fetchall())
+        if not expected or current != expected:
+            return False
+        cx.execute("DELETE FROM wholesale_cart WHERE practitioner_id=?",
+                   (str(practitioner_id),))
+        cx.commit()
+    return True
+
+
 # ── order history (local record, written at checkout) ─────────────────────────
 
 def _ensure_orders_table(cx) -> None:
