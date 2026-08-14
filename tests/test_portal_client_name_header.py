@@ -31,6 +31,7 @@ def test_hub_places_where_you_are_before_the_onboarding_checklist():
     assert banner < slot < calendar
     assert 'if(onboardingMount && onboardingSlot) onboardingSlot.appendChild(onboardingMount);' in HTML
     assert '.hub-banner .eyebrow' in HTML and 'text-transform:none' in HTML
+    assert '/static/js/portal-onboarding.js?v=20260814-card-hierarchy' in HTML
 
 
 def test_client_name_header_uses_account_name_without_email_fallback():
