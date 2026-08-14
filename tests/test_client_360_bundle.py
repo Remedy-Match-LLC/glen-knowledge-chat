@@ -99,6 +99,35 @@ def test_optional_person_schema_failure_does_not_poison_postgres_reads():
     assert client_360.process_strip(cx, "steve@example.com")["order_id"] == 1
 
 
+def test_bundle_recovers_when_nested_optional_reader_swallows_error(monkeypatch):
+    class PgConnection:
+        backend = "postgres"
+        aborted = False
+
+        def rollback(self):
+            self.aborted = False
+
+    cx = PgConnection()
+    monkeypatch.setattr(client_360, "_person", lambda *_: {"name": "Steve"})
+    monkeypatch.setattr(client_360, "client_tags_for_email", lambda *_, **__: {})
+    monkeypatch.setattr(client_360, "_tests", lambda *_: [])
+    monkeypatch.setattr(client_360, "_invoices", lambda *_: {})
+
+    def swallowed_failure(conn, _email):
+        conn.aborted = True
+        return []
+
+    monkeypatch.setattr(client_360, "_comms", swallowed_failure)
+
+    def process(conn, _email):
+        assert conn.aborted is False
+        return {"stages": []}
+
+    monkeypatch.setattr(client_360, "process_strip", process)
+    monkeypatch.setattr(client_360, "_recommendations", lambda *_: [])
+    assert client_360.bundle(cx, "steve@example.com")["process"] == {"stages": []}
+
+
 def test_process_reads_after_fmp_history_call(tmp_path):
     """Regression: _invoices() calls fmp_orders.client_order_history(cx, ...),
     which sets cx.row_factory = None and never restores it (there's no
