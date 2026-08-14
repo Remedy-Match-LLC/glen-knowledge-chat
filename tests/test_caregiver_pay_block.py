@@ -41,3 +41,27 @@ def test_block_firewall_keys_only():
     assert block["orders"], "expected at least one order to check keys against"
     for o in block["orders"]:
         assert set(o.keys()) <= allowed
+
+
+def test_block_recovers_from_an_aborted_shared_transaction():
+    inner = _cx()
+    hh.add_member(inner, "steve@x.com", "michael@x.com", relationship="partner")
+    hh.set_pay_consent(inner, "steve@x.com", "michael@x.com", 1,
+                       share_scope="line_items")
+
+    class AbortedConnection:
+        def __init__(self):
+            self.aborted = True
+
+        def execute(self, sql, params=()):
+            if self.aborted:
+                raise RuntimeError("current transaction is aborted")
+            return inner.execute(sql, params)
+
+        def rollback(self):
+            inner.rollback()
+            self.aborted = False
+
+    block = pv._caregiver_pay_block(AbortedConnection(), "steve@x.com", True)
+    assert block["members"][0]["member_email"] == "michael@x.com"
+    assert block["orders"][0]["order_id"] == 1
