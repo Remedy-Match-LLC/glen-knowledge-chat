@@ -2204,11 +2204,26 @@ async function load(options){
   if(options.preserveActiveIntake && portalIntakeIsActive()) return false;
   _recoPayload = recoResult.kind === "ok" ? recoResult.data : null;
   render(dataResult.data, viewResult.data);
+  window.__portalLastLoadedAt = Date.now();
   // Content and account/view can degrade independently. Recommendations are
   // optional and intentionally remain quiet when absent.
   showPortalPartialWarning([dataResult, viewResult].filter(result=>result !== required));
   return true;
 }
+
+// A portal is often left open while Dr. Glen publishes a report, invoice, or
+// live event in the console. Refresh its data when the member returns to the
+// tab/window so an old "No upcoming events" snapshot cannot linger. The short
+// freshness window avoids duplicate fetches from focus + visibilitychange firing
+// together, and preserveActiveIntake protects any form currently being edited.
+function refreshPortalWhenReturning(){
+  if(document.visibilityState === "hidden") return;
+  const lastLoadedAt = Number(window.__portalLastLoadedAt || 0);
+  if(Date.now() - lastLoadedAt < 30000) return;
+  load({preserveActiveIntake:true});
+}
+document.addEventListener("visibilitychange", refreshPortalWhenReturning);
+window.addEventListener("focus", refreshPortalWhenReturning);
 
 // Poll loop for the cold-portal "Preparing your analysis…" state. Each tick
 // re-fetches via load(); when the watcher has published the draft, the status is
