@@ -44,14 +44,23 @@ def test_shipping_for_cart_falls_back_on_empty_catalog(_seeded_shipping):
     assert appmod._shipping_for_cart({}, 0) == 0
 
 
-def test_price_cart_shipping_never_crashes(monkeypatch, _seeded_shipping):
+def test_price_cart_blocks_unknown_packaging_instead_of_guessing(monkeypatch, _seeded_shipping):
     # The original bug: _price_cart keyed shipping by product NAME -> UnknownBottleType -> 500.
     # Now it keys by bottle_type and falls back, so checkout always gets a shipping charge.
     monkeypatch.setattr(appmod, "_get_product",
         lambda s: {"slug": s, "name": "Brain Boost", "price_cents": 7000,
                    "qty_pricing": True, "qbo_item_id": "27", "bottle_type": None} if s == "brain-boost" else None)
-    pc = appmod._price_cart([{"slug": "brain-boost", "qty": 6}],
-                            ship={"state": "CA", "country": "US", "name": "B"})
-    assert pc["shipping_cents"] == _rates()["M"]["charged_cents"]    # 6 bottles -> M fallback
-    # and pricing still computed
-    assert pc["priced"]["lines"][0]["qty"] == 6
+    with pytest.raises(appmod.CheckoutError, match="Packaging specifications required"):
+        appmod._price_cart([{"slug": "brain-boost", "qty": 6}],
+                           ship={"state": "CA", "country": "US", "name": "B"})
+
+
+def test_owner_override_may_bypass_unknown_geometry(monkeypatch, _seeded_shipping):
+    monkeypatch.setattr(appmod, "_get_product",
+        lambda s: {"slug": s, "name": "Unknown Widget", "price_cents": 1000,
+                   "bottle_type": None} if s == "widget" else None)
+    pc = appmod._price_cart(
+        [{"slug": "widget", "qty": 1}],
+        ship={"state": "CA", "country": "US", "name": "B"},
+        allow_unknown_packaging=True)
+    assert pc["shipping_cents"] == 0

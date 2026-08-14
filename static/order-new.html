@@ -110,6 +110,7 @@
       <span id="units-to-ship" style="font-size:13px;color:var(--muted)">Total units to ship: 0</span>
       <button class="mini" type="button" onclick="openSnippetManager()">Manage saved messages</button>
     </div>
+    <div id="packaging-review" style="display:none;border:1px solid #c77b00;background:#fff4dc;color:#6b3d00;padding:10px;margin-bottom:8px;border-radius:6px"></div>
     <div id="snippet-mgr" style="display:none;border:1px solid var(--border);padding:10px;margin-bottom:8px;border-radius:6px">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
         <strong style="font-size:13px">Saved messages (shared across all line items)</strong>
@@ -437,15 +438,23 @@ function updateUnitsToShip(pb){
   el.textContent = "Total units to ship: " + b + " bottle" + (b===1?'':'s')
     + (c ? " + " + c + " cello pack" + (c===1?'':'s') : "");
 }
+function updatePackagingReview(items){
+  const el=$("packaging-review"), missing=items||[];
+  if (!el) return;
+  if (!missing.length){ el.style.display="none"; el.textContent=""; return; }
+  el.textContent="Packaging review required: "+missing.join(", ")+" has unknown package type or size. Enter its specifications before using automatic shipping, or enter a reviewed shipping amount manually.";
+  el.style.display="block";
+}
 function refreshPreview(){
   clearTimeout(previewTimer);
-  if (!LINES.length){ PREVIEW={subtotal_cents:0, lines:[]}; updateUnitsToShip({bottle_units:0,cello_pack_units:0}); recalc(); refreshMembershipOffer(); return; }
+  if (!LINES.length){ PREVIEW={subtotal_cents:0, lines:[]}; updateUnitsToShip({bottle_units:0,cello_pack_units:0}); updatePackagingReview([]); recalc(); refreshMembershipOffer(); return; }
   previewTimer = setTimeout(async ()=>{
     try{
       const r = await fetch("/api/orders/price-preview", {method:"POST", headers:HEADERS, body:JSON.stringify({lines:linesPayload(), email:$("c-email").value.trim()})});
       const j = await r.json(); if (!j.ok) return;
-      PREVIEW = {subtotal_cents:j.subtotal_cents, lines:j.lines, physical_units:j.physical_units, pack_breakdown:j.pack_breakdown};
+      PREVIEW = {subtotal_cents:j.subtotal_cents, lines:j.lines, physical_units:j.physical_units, pack_breakdown:j.pack_breakdown, packaging_review:j.packaging_review||[]};
       updateUnitsToShip(j.pack_breakdown);
+      updatePackagingReview(j.packaging_review);
       (j.lines||[]).forEach((pl,i)=>{
         if (!LINES[i]) return;
         if (!LINES[i].edited){ LINES[i].unit_cents = pl.effective_unit_cents; const ui=$("u-"+i); if (ui) ui.value=(pl.effective_unit_cents/100).toFixed(2); }

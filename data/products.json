@@ -22068,8 +22068,6 @@
   "emf-free-headset": {
    "name": "EMF Free Headset",
    "price_cents": 997,
-   "bottle_type": "own-box",
-   "flat_shipping_cents": 1300,
    "source": "gk-physical-goods-import-2026-07-20",
    "intro": "Our EMF Free 'Air-Buds' Headset uses air tubes to conduct the sound to your ears, so there is no conductive wire that would connect to your head as an antenna."
   },
