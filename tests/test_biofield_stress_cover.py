@@ -41,6 +41,28 @@ def test_cover_stress_ignores_missing_or_remedyless():
     assert {s["code"] for s in d["unassigned"]} == {"loose ends"} # still unassigned
 
 
+def test_consolidate_layer_balances_moves_all_coverage():
+    cx = sqlite3.connect(":memory:")
+    rid, sid = _setup(cx)
+    add_chain_row(cx, "9", 2, "Target", "", "Calm Current", "", "", "")
+    st.add_stress(cx, "9", "Second stress", source="scan", balance="required")
+    sid2 = cx.execute("SELECT id FROM biofield_auth_stress ORDER BY id DESC").fetchone()[0]
+    st.cover_stress(cx, "9", sid, [rid])
+    st.cover_stress(cx, "9", sid2, [rid])
+    assert st.consolidate_layer_balances(cx, "9", 1, 2) == 2
+    rows = cx.execute("SELECT remedy,code FROM biofield_auth_remedy_coverage ORDER BY code").fetchall()
+    assert rows == [("calm current", "loose ends"), ("calm current", "second stress")]
+
+
+def test_consolidate_layer_balances_rejects_same_or_missing_target():
+    cx = sqlite3.connect(":memory:")
+    _setup(cx)
+    with pytest.raises(ValueError, match="must differ"):
+        st.consolidate_layer_balances(cx, "9", 1, 1)
+    with pytest.raises(ValueError, match="target layer has no remedies"):
+        st.consolidate_layer_balances(cx, "9", 1, 2)
+
+
 def test_card_shows_covered_chips_and_unassigned_is_draggable():
     rep = {"test_id": "a1", "client": {"name": "J", "email": ""}, "date": "",
            "layers": [{"layer": 1, "head": "H", "most_affected": "", "remedy": "R",
@@ -70,3 +92,37 @@ def test_cover_route(tmp_path, monkeypatch):
     assert j["ok"] is True and j["code"] == "loose ends"
     # editor page now renders without error and lists the covered stress inline
     assert client.get(f"/author/{tid}").status_code == 200
+
+
+def test_each_layer_card_has_consolidation_picker_for_other_layers():
+    rep = {"test_id": "a1", "client": {"name": "J", "email": ""}, "date": "",
+           "layers": [
+               {"layer": 1, "head": "H1", "most_affected": "", "remedy": "R1", "rid": 5},
+               {"layer": 2, "head": "H2", "most_affected": "", "remedy": "R2", "rid": 6}],
+           "schedule": {"slots": [], "entries": []}}
+    html = render_author_html(rep, [], "")
+    assert html.count("Consolidate balances</button>") == 2
+    assert "consolidateBalances(1" in html and "consolidateBalances(2" in html
+
+
+def test_consolidate_balances_route(tmp_path, monkeypatch):
+    monkeypatch.delenv("CONSOLE_SECRET", raising=False)
+    import dashboard as _d; monkeypatch.setattr(_d, "CONSOLE_SECRET", "", raising=False)
+    db = str(tmp_path / "c.db")
+    client = create_app(db, scan_lookup=lambda e: {"status": "none", "found": False,
+                                                   "findings": [], "fresh": False}).test_client()
+    tid = client.post("/author/new").headers["Location"].rstrip("/").rsplit("/", 1)[-1]
+    source_rid = client.post(f"/author/{tid}/row", json={
+        "layer": 1, "head": "H", "remedy": "Nerve Pulse"}).get_json()["rid"]
+    client.post(f"/author/{tid}/row", json={
+        "layer": 2, "head": "H2", "remedy": "Calm Current"})
+    with sqlite3.connect(db) as cx:
+        st.add_stress(cx, tid, "Loose ends", source="scan", balance="required")
+        sid = cx.execute("SELECT id FROM biofield_auth_stress").fetchone()[0]
+        st.cover_stress(cx, tid, sid, [source_rid])
+    res = client.post(f"/author/{tid}/layer/1/consolidate-balances",
+                      json={"target_layer": 2})
+    assert res.status_code == 200 and res.get_json()["moved"] == 1
+    with sqlite3.connect(db) as cx:
+        assert cx.execute("SELECT remedy FROM biofield_auth_remedy_coverage").fetchall() == [
+            ("calm current",)]

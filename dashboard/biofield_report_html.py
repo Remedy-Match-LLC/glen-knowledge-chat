@@ -500,6 +500,12 @@ async function loadE4L(){try{setE4L(await (await fetch('/author/__TID__/e4l')).j
 function setStress(j){if(j&&j.html!==undefined)document.getElementById('stresspanel').innerHTML=j.html}
 async function loadStress(){try{setStress(await (await fetch('/author/__TID__/stresses')).json())}catch(e){}}
 async function balanceStress(sid,val){await post('/author/__TID__/stress/'+sid+'/balance',{value:val});loadStress()}
+async function consolidateBalances(source,sel){var target=Number(sel.value||0);
+ if(!target){astat('Choose the destination layer first.');return}
+ if(!confirm('Move all balanced stresses from layer '+source+' to layer '+target+'?'))return;
+ astat('Consolidating balanced stresses…');
+ var j=await post('/author/__TID__/layer/'+source+'/consolidate-balances',{target_layer:target});
+ if(j&&j.ok)location.reload()}
 async function addStress(label,layer){label=(label||'').trim();if(!label)return;
  astat('Adding stress…');
  const body=(layer==null?{label:label}:{label:label,layer:layer});
@@ -1025,13 +1031,24 @@ def _covered_html(stresses):
 def _render_chain_cards(report, depth_values, covered_by_layer=None):
     covered_by_layer = covered_by_layer or {}
     cards = ""
-    for gi, g in enumerate(group_layers(report.get("layers") or [])):
+    groups = group_layers(report.get("layers") or [])
+    for gi, g in enumerate(groups):
         gid = "g" + str(gi)
         rids = ",".join(str(r.get("rid")) for r in g["rows"] if r.get("rid") is not None)
         he, me, n = _e(g["head"]), _e(g["most_affected"]), g["layer"]
         lines = "".join(_remedy_line(r, depth_values) for r in g["rows"])
         head_in = _xwrap(f'<input id={gid}_head list=vocab value="{he}" title="{he}" oninput="dirtyLayer(this)">')
         tail_in = _xwrap(f'<input id={gid}_most list=vocab value="{me}" title="{me}" oninput="dirtyLayer(this)">')
+        source_layer = int(g["rows"][0].get("layer") or n)
+        targets = "".join(
+            f"<option value='{int(other['rows'][0].get('layer') or other['layer'])}'>"
+            f"Layer {other['layer']}</option>"
+            for other in groups if other["layer"] != n)
+        consolidate = (
+            f"<span class=consolidate><select id={gid}_consolidate>"
+            f"<option value=''>Move balances to…</option>{targets}</select> "
+            f"<button class='btn ghost' onclick=\"consolidateBalances({source_layer},document.getElementById('{gid}_consolidate'))\">"
+            "Consolidate balances</button></span>" if targets else "")
         cards += (
             f"<div class=lcard draggable=true data-gid={gid} data-rids=\"{rids}\" "
             "ondragstart=dragStart(event) ondragend=dragEnd(event) ondragover=dragOver(event) "
@@ -1042,7 +1059,7 @@ def _render_chain_cards(report, depth_values, covered_by_layer=None):
             f"<label>Tail</label>{tail_in}"
             f"</div><input type=hidden id={gid}_layer value=\"{n}\"></div>"
             + lines + _covered_html(covered_by_layer.get(n)) + _new_remedy_line(gid, "Add remedy") +
-            f"<div class=lfoot><span class=food>Layer {n}</span>"
+            f"<div class=lfoot><span class=food>Layer {n}</span>{consolidate}"
             f"<button class='btn ghost savebtn' data-dirty='Update layer' "
             f"onclick=\"saveLayer('{gid}',this)\">Save layer</button></div></div>")
     # trailing card to start a brand-new layer

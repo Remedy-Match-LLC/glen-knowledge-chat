@@ -332,6 +332,53 @@ def cover_stress(cx, tid, stress_id, rids):
     return code
 
 
+def consolidate_layer_balances(cx, tid, source_layer, target_layer):
+    """Move remedy-linked stress coverage from one layer to another.
+
+    Coverage is stored by normalized remedy name rather than layer number. Copy
+    every code covered by a source remedy to every target remedy, then remove the
+    source links unless that remedy also belongs to the target layer. Returns the
+    number of distinct stress codes moved.
+    """
+    init_stress_tables(cx)
+    t = _num(tid)
+    try:
+        source, target = int(source_layer), int(target_layer)
+    except (TypeError, ValueError):
+        raise ValueError("invalid layer")
+    if source == target:
+        raise ValueError("source and target layers must differ")
+
+    def remedies(layer):
+        return {((r[0] or "").strip().lower()) for r in cx.execute(
+            "SELECT remedy FROM biofield_auth_chain WHERE test_id=? AND layer=? "
+            "AND TRIM(COALESCE(remedy,''))<>''", (t, layer)).fetchall()}
+
+    source_remedies, target_remedies = remedies(source), remedies(target)
+    if not source_remedies:
+        raise ValueError("source layer has no remedies")
+    if not target_remedies:
+        raise ValueError("target layer has no remedies")
+
+    marks = ",".join("?" for _ in source_remedies)
+    codes = {r[0] for r in cx.execute(
+        f"SELECT DISTINCT code FROM biofield_auth_remedy_coverage "
+        f"WHERE test_id=? AND remedy IN ({marks})", (t, *source_remedies)).fetchall()}
+    for remedy in target_remedies:
+        for code in codes:
+            cx.execute("INSERT OR IGNORE INTO biofield_auth_remedy_coverage"
+                       "(test_id,remedy,code) VALUES(?,?,?)", (t, remedy, code))
+    removable = source_remedies - target_remedies
+    if removable and codes:
+        rem_marks = ",".join("?" for _ in removable)
+        code_marks = ",".join("?" for _ in codes)
+        cx.execute(f"DELETE FROM biofield_auth_remedy_coverage WHERE test_id=? "
+                   f"AND remedy IN ({rem_marks}) AND code IN ({code_marks})",
+                   (t, *removable, *codes))
+    cx.commit()
+    return len(codes)
+
+
 def layer_rids(chain_layers, layer_num):
     """Chain-row ids for a layer number (a layer may have several remedy rows)."""
     out = []

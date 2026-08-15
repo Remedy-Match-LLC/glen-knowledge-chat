@@ -1438,6 +1438,18 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
             code = cover_stress(cx, test_id, sid, rids)
         return {"ok": code is not None, "code": code}
 
+    @app.route("/author/<test_id>/layer/<int:source>/consolidate-balances", methods=["POST"])
+    def author_layer_consolidate_balances(test_id, source):
+        from dashboard.biofield_stress import consolidate_layer_balances
+        target = (request.get_json(silent=True) or {}).get("target_layer")
+        try:
+            with sqlite3.connect(db_path) as cx:
+                moved = consolidate_layer_balances(cx, test_id, source, target)
+        except ValueError as e:
+            return {"ok": False, "error": str(e)}, 400
+        return {"ok": True, "moved": moved, "source_layer": source,
+                "target_layer": int(target)}
+
     @app.route("/author/<test_id>/stress/add", methods=["POST"])
     def author_stress_add(test_id):
         from dashboard import biofield_stress as _st
