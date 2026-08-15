@@ -25706,6 +25706,28 @@ def console_intake(email):
     return jsonify(row)
 
 
+@app.route("/api/console/clinical-profile/<path:email>")
+def console_clinical_profile(email):
+    """One mineable profile: People + Intake + portal-entered health history."""
+    if not _portal_console_ok():
+        return jsonify({"error": "unauthorized"}), 401
+    from dashboard import (clinical_profile as _clinical, intake as _intake,
+                           portal_health_history as _health,
+                           portal_extended_history as _extended)
+    email = (email or "").strip().lower()
+    with db.connect(LOG_DB) as cx:
+        cx.row_factory = sqlite3.Row
+        row = cx.execute("SELECT * FROM people WHERE lower(email)=lower(?) LIMIT 1",
+                         (email,)).fetchone()
+        person = _merge_canonical_into_person(cx, dict(row)) if row else {"email": email}
+        _intake.init_intake_table(cx)
+        intake_row = _intake.get_response(cx, email)
+        health = _health.get(cx, email)
+        extended = _extended.get(cx, email)
+        profile = _clinical.consolidate(person, intake_row, health, extended)
+    return jsonify({"ok": True, "profile": profile})
+
+
 @app.route("/api/console/intake-submissions")
 def console_intake_submissions():
     if not _portal_console_ok():
