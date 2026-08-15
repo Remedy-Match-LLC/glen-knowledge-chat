@@ -1,9 +1,18 @@
 import sqlite3
 from dashboard import masterclass as mc
+from dashboard.pgcompat import HybridRow
 
 def _cx():
     cx = sqlite3.connect(":memory:"); cx.row_factory = sqlite3.Row
     mc.init_masterclass_tables(cx); return cx
+
+
+def test_row_dict_accepts_postgres_mapping_without_cursor_description():
+    class PgCursor:
+        pass
+
+    row = HybridRow(["id", "topic"], [7, "Terrain 101"])
+    assert mc._row_dict(PgCursor(), row) == {"id": 7, "topic": "Terrain 101"}
 
 def test_event_create_get_zoom_price():
     cx = _cx()

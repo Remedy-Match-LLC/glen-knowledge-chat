@@ -7,6 +7,13 @@ from dashboard import db, dbwrite
 def _now():
     return datetime.now(timezone.utc).isoformat()
 
+
+def _row_dict(cur, row):
+    """Return a row mapping on SQLite and the PostgreSQL compatibility layer."""
+    if hasattr(row, "keys"):
+        return {key: row[key] for key in row.keys()}
+    return dict(zip((column[0] for column in cur.description), row))
+
 def init_masterclass_tables(cx) -> None:
     cx.execute("""CREATE TABLE IF NOT EXISTS masterclass_events (
         id INTEGER PRIMARY KEY AUTOINCREMENT, topic TEXT, description TEXT,
@@ -52,8 +59,8 @@ def create_event(cx, *, topic, description, start_ts, duration_min,
 
 def get_event(cx, event_id):
     cur = cx.execute("SELECT * FROM masterclass_events WHERE id=?", (event_id,))
-    cols = [c[0] for c in cur.description]; r = cur.fetchone()
-    return dict(zip(cols, r)) if r is not None else None
+    row = cur.fetchone()
+    return _row_dict(cur, row) if row is not None else None
 
 def set_zoom(cx, event_id, join_url, meeting_id, *, registration_url="",
              occurrence_id="") -> None:
@@ -92,9 +99,8 @@ def get_registration(cx, event_id, email):
     cur = cx.execute("SELECT * FROM masterclass_registrations "
                      "WHERE event_id=? AND lower(email)=?",
                      (event_id, (email or "").strip().lower()))
-    cols = [c[0] for c in cur.description]
     row = cur.fetchone()
-    return dict(zip(cols, row)) if row is not None else None
+    return _row_dict(cur, row) if row is not None else None
 
 
 def set_referrer_if_empty(cx, event_id, email, referrer_slug) -> bool:
