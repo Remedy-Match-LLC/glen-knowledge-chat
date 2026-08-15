@@ -1306,13 +1306,19 @@ function buildCalendarHtml(v,compact){
     if(e.locked) action = `<a class="btn full" href="${esc(e.action_url || cal.upgrade_url || '/membership')}">Upgrade to access</a>`;
     else if(!e.registered) action = `<button class="btn full event-register" data-event-id="${esc(e.id)}">Reserve my spot</button>`;
     else {
-      const join = e.action_url && e.type === "group_coaching" ? `<a class="btn" href="${esc(e.action_url)}">Join session</a>` : "";
+      const join = e.action_url && (e.type === "group_coaching" || e.type === "masterclass")
+        ? `<a class="btn" href="${esc(e.action_url)}">Join session</a>`
+        : ((e.type === "group_coaching" || e.type === "masterclass")
+          ? `<span class="muted small">Your private join link is being prepared.</span>` : "");
       action = `<div class="calendar-actions">${join}<a class="btn" target="_blank" rel="noopener" href="${esc(calendarProviderUrl(e,'google'))}">Google</a><a class="btn" target="_blank" rel="noopener" href="${esc(calendarProviderUrl(e,'outlook'))}">Outlook</a><button class="btn" onclick="downloadEventIcs('${esc(e.id)}')">Apple / other</button></div>`;
     }
+    const share = e.share_url
+      ? `<button type="button" class="btn full event-share" data-share-url="${esc(e.share_url)}" data-share-title="${esc(e.title || kind)}">Invite a friend</button>`
+      : "";
     return `<article class="calendar-event${e.locked ? " is-locked" : ""}">
       <div class="calendar-event-top"><span class="calendar-kind">${esc(kind)}</span>${gate}</div>
       <h3>${esc(e.title || kind)}</h3><p class="calendar-time">${esc(fmt(e.start))}</p>
-      ${e.description ? `<p class="muted small">${esc(e.description)}</p>` : ""}${action}</article>`;
+      ${e.description ? `<p class="muted small">${esc(e.description)}</p>` : ""}${action}${share}</article>`;
   }).join("");
   if(compact){
     return `<div class="card calendar-summary" id="calendar-summary"><div class="calendar-summary-head"><h2>Upcoming Live Events</h2><button type="button" class="calendar-fold" id="calendar-fold" onclick="toggleCalendarSummary()">Hide</button></div><p class="calendar-tz">Times shown in ${esc(portalTimeZone())}</p><div id="calendar-summary-body"><div class="calendar-list">${rows || '<p class="muted">No upcoming events are scheduled yet.</p>'}</div>${allEvents.length>2?'<button class="btn full" onclick="showTab(\'calendar\')">See full calendar</button>':''}</div></div>`;
@@ -4240,6 +4246,20 @@ function render(d, v){
       if(out.checkout_url){location.href=out.checkout_url;return}
       await load();
     }catch(e){btn.disabled=false;btn.textContent=old;alert("We couldn't reserve your spot. Please try again.")}
+  }));
+  document.querySelectorAll(".event-share").forEach(btn=>btn.addEventListener("click",async()=>{
+    const old=btn.textContent;
+    const url=new URL(btn.dataset.shareUrl,location.origin).href;
+    try{
+      if(navigator.share){
+        await navigator.share({title:btn.dataset.shareTitle||"Free live session",
+          text:"Join me for this free Healing Oasis live session.",url});
+      }else{
+        await navigator.clipboard.writeText(url);
+        btn.textContent="Invitation link copied";
+        setTimeout(()=>{btn.textContent=old},1800);
+      }
+    }catch(e){if(e.name!=="AbortError") window.prompt("Copy your invitation link:",url)}
   }));
   initAppointmentProposals();
 
