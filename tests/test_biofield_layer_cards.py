@@ -69,3 +69,45 @@ def test_reorder_layers_route(tmp_path, monkeypatch):
     with sqlite3.connect(db) as cx:
         heads = [l["head"] for l in ordered_chain(cx, tid)]
     assert heads == ["Second", "First"]                      # order flipped + persisted
+
+
+def test_add_remedy_inherits_unconfirmed_scan_layer_zone(tmp_path, monkeypatch):
+    monkeypatch.delenv("CONSOLE_SECRET", raising=False)
+    import dashboard as _d; monkeypatch.setattr(_d, "CONSOLE_SECRET", "", raising=False)
+    db = str(tmp_path / "c.db")
+    client = create_app(db, scan_lookup=lambda e: {"status": "none", "found": False,
+                                                    "findings": [], "fresh": False}).test_client()
+    tid = client.post("/author/new").headers["Location"].rstrip("/").rsplit("/", 1)[-1]
+    with sqlite3.connect(db) as cx:
+        live = add_chain_row(cx, tid, 1, "Live", "", "R1", confirmed=1, origin="live")
+        scan = add_chain_row(cx, tid, 2, "Scan", "", "R2", confirmed=0, origin="scan")
+    response = client.post(f"/author/{tid}/row", json={
+        "layer": 2, "anchor_rid": scan, "head": "Scan", "remedy": "R3"})
+    assert response.status_code == 200
+    with sqlite3.connect(db) as cx:
+        rows = ordered_chain(cx, tid)
+    assert [r["head"] for r in rows] == ["Live", "Scan", "Scan"]
+    assert [r["zone"] for r in rows] == ["top", "bottom", "bottom"]
+
+
+def test_add_remedy_fills_empty_layer_anchor_instead_of_adding_row(tmp_path, monkeypatch):
+    monkeypatch.delenv("CONSOLE_SECRET", raising=False)
+    import dashboard as _d; monkeypatch.setattr(_d, "CONSOLE_SECRET", "", raising=False)
+    from dashboard.biofield_authoring import remove_remedy_preserving_layer
+    db = str(tmp_path / "c.db")
+    client = create_app(db, scan_lookup=lambda e: {"status": "none", "found": False,
+                                                    "findings": [], "fresh": False}).test_client()
+    tid = client.post("/author/new").headers["Location"].rstrip("/").rsplit("/", 1)[-1]
+    with sqlite3.connect(db) as cx:
+        rid = add_chain_row(cx, tid, 1, "Head", "Tail", "Old remedy")
+        remove_remedy_preserving_layer(cx, tid, rid)
+
+    response = client.post(f"/author/{tid}/row", json={
+        "layer": 1, "anchor_rid": rid, "head": "Head", "most_affected": "Tail",
+        "remedy": "New remedy", "dosage": "1 cap", "frequency": "daily"})
+
+    assert response.get_json() == {"ok": True, "rid": rid, "filled_anchor": True}
+    with sqlite3.connect(db) as cx:
+        rows = cx.execute("SELECT id, remedy, dosage FROM biofield_auth_chain WHERE test_id=?",
+                          (int(tid[1:]),)).fetchall()
+    assert rows == [(rid, "New remedy", "1 cap")]

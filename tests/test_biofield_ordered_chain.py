@@ -39,3 +39,14 @@ def test_authored_report_uses_display_numbering(tmp_path):
     rep = authored_report(cx, tid)
     assert [l["layer"] for l in rep["layers"]] == [1, 2, 3]
     assert rep["layers"][0]["head"] == "Live"
+
+
+def test_ordered_chain_retains_stored_layer_for_grouped_remedy_adds(tmp_path):
+    cx = sqlite3.connect(str(tmp_path / "c.db"))
+    tid = create_test(cx, "J", "j@x.com", "2026-06-25")
+    add_chain_row(cx, tid, 1, "First", "", "R1")
+    add_chain_row(cx, tid, 1, "First", "", "R2")
+    add_chain_row(cx, tid, 2, "Second", "", "R3")
+    rows = ordered_chain(cx, tid)
+    assert [r["layer"] for r in rows] == [1, 2, 3]
+    assert [r["stored_layer"] for r in rows] == [1, 1, 2]

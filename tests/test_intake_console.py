@@ -36,6 +36,12 @@ def test_console_clinical_profile_includes_submitted_intake(client):
     assert r.get_json()["profile"]["intake_submitted"] is True
 
 
+def test_console_clinical_profile_includes_submitted_intake(client):
+    r = client.get("/api/console/clinical-profile/seed@x.com?key=K")
+    assert r.status_code == 200
+    assert r.get_json()["profile"]["intake_submitted"] is True
+
+
 def test_console_submissions_list(client):
     r = client.get("/api/console/intake-submissions?key=K")
     assert any(x["email"] == "seed@x.com" for x in r.get_json()["submissions"])

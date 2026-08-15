@@ -47,6 +47,25 @@ def test_none_order_is_noop(cx):
     assert app_mod._grant_membership_line_on_paid(cx, None) == "none"
 
 
+def test_paid_300_biofield_line_grants_care_taster(cx):
+    oid = orders.upsert_order(
+        cx, source="inhouse", external_ref="INH-BF300", email="bf@example.com",
+        total_cents=30000, items=[{"slug": "biofield-analysis", "qty": 1,
+                                  "unit_cents": 30000, "line_cents": 30000}])
+    o = orders.get_order(cx, oid)
+    assert app_mod._grant_biofield_line_on_paid(cx, o) == "granted"
+    assert app_mod._grant_biofield_line_on_paid(cx, o) == "already"
+    assert cx.execute("SELECT source FROM memberships WHERE email=?",
+                      ("bf@example.com",)).fetchone()[0] == "care_taster"
+
+
+def test_discounted_biofield_line_does_not_grant(cx):
+    o = {"id": 78, "external_ref": "INH-BF200", "email": "bf2@example.com",
+         "items": [{"slug": "biofield-analysis", "unit_cents": 20000,
+                    "line_cents": 20000}]}
+    assert app_mod._grant_biofield_line_on_paid(cx, o) == "none"
+
+
 def test_already_member_does_not_regrant(cx, monkeypatch):
     monkeypatch.setattr(app_mod._mp, "owns_group", lambda _cx, _e: True)
     o = _order_with_membership(cx, email="already@example.com", ref="INH-ALREADY")

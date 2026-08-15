@@ -65,3 +65,21 @@ def test_price_inhouse_invoice_membership_line_flips_products_to_member():
         assert r["unit_cents"] < 6997, r
 
     assert priced["subtotal_cents"] == sum(r["line_cents"] for r in items_rec)
+
+
+def test_biofield_line_flips_products_to_member_in_preview_and_invoice(client):
+    ffs = [{"slug": s, "qty": 1} for s in
+           ["paracleanse", "nerve-repair", "neuroceramides",
+            "microbiome", "oxygen-cleanse", "macular-wellness-lycopene"]]
+    lines = [{"slug": "biofield-analysis", "qty": 1}] + ffs
+
+    preview = _preview(client, lines, email="biofield-client@example.com")
+    preview_ffs = [l for l in preview["lines"] if l["slug"] != "biofield-analysis"]
+    assert len(preview_ffs) == 6
+    assert all(l["effective_unit_cents"] < l["list_cents"] for l in preview_ffs)
+
+    priced = app_mod._price_inhouse_invoice(
+        lines, email="biofield-client@example.com", pickup=True, ship=None)
+    invoice_ffs = [r for r in priced["items_rec"] if r["slug"] != "biofield-analysis"]
+    assert len(invoice_ffs) == 6
+    assert all(r["unit_cents"] < 6997 for r in invoice_ffs)

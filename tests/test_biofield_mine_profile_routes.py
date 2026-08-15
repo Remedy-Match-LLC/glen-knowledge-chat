@@ -80,6 +80,14 @@ def test_mine_profile_zero_result_has_visible_message(tmp_path):
     assert "No new clinical stresses found." in client.get(f"/author/{tid}").get_data(as_text=True)
 
 
+def test_mine_profile_zero_result_has_visible_message(tmp_path):
+    db = str(tmp_path / "c.db")
+    client = _app(db, {}, []).test_client()
+    tid = _new(client, "nobody@x.com")
+    html = client.get(f"/author/{tid}").get_data(as_text=True)
+    assert "No new clinical stresses found." in html
+
+
 def test_mine_profile_failure_is_best_effort(tmp_path):
     db = str(tmp_path / "c.db")
     def boom(e):

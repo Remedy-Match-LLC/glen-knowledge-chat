@@ -83,8 +83,10 @@ def _mock_checkout(appmod, monkeypatch, stripe_url="https://checkout.stripe/x",
     else:
         monkeypatch.setattr(appmod, "_ingest_order", lambda *a, **k: None)
     monkeypatch.setattr(appmod, "_STRIPE_ACTIVE", True)
-    monkeypatch.setattr(appmod, "_stripe_checkout_url_for_reorder",
-                        lambda out, email: stripe_url)
+    def fake_stripe(out, email):
+        captured["stripe_lines"] = out.get("stripe_line_items") or []
+        return stripe_url
+    monkeypatch.setattr(appmod, "_stripe_checkout_url_for_reorder", fake_stripe)
     return captured
 
 
@@ -118,10 +120,11 @@ def test_item_reorder_charges_clicked_item_at_member_price(client, monkeypatch):
                json={"items": [{"slug": "neuro-magnesium", "qty": 2}]})
     assert r.status_code == 200
     assert r.get_json()["stripe_url"] == "https://checkout.stripe/item"
-    assert len(captured["lines"]) == 1
-    assert captured["lines"][0]["qty"] == 2
-    # "amount" is the PER-UNIT price (qty is separate) — line total is amount*qty.
-    assert round(captured["lines"][0]["amount"] * 100) == expected_unit
+    remedy_lines = [line for line in captured["stripe_lines"]
+                    if not line["name"].startswith("Shipping")]
+    assert len(remedy_lines) == 1
+    assert remedy_lines[0]["qty"] == 2
+    assert remedy_lines[0]["unit_cents"] == expected_unit
     # Only the clicked SKU was ingested as the order — not the other history item.
     assert len(ingested["items"]) == 1
     assert ingested["items"][0]["slug"] == "neuro-magnesium"
@@ -140,7 +143,64 @@ def test_item_reorder_absent_body_charges_curated_cart(client, monkeypatch):
     r = c.post(f"/api/portal/{tok}/checkout")  # no body at all
     assert r.status_code == 200
     assert r.get_json()["stripe_url"] == "https://checkout.stripe/curated"
-    assert captured["lines"][0]["amount"] == 25.0  # curated special price, unchanged
+    assert captured["stripe_lines"][0]["unit_cents"] == 2500
+
+
+def test_curated_subset_can_be_submitted_for_checkout(client, monkeypatch):
+    """The review UI may remove any curated line and POST only what remains."""
+    c, appmod = client
+    tok = _seed_portal(appmod, content={
+        "greeting": "hi", "video": {}, "layers": [],
+        "reorder_items": [
+            {"slug": "nous-energy", "qty": 1, "price_cents": 2500},
+            {"slug": "neuro-magnesium", "qty": 1},
+        ],
+    })
+    ingested = {}
+    _mock_checkout(appmod, monkeypatch, capture_ingest=ingested)
+
+    r = c.post(f"/api/portal/{tok}/checkout",
+               json={"items": [{"slug": "neuro-magnesium", "qty": 1}]})
+
+    assert r.status_code == 200
+    assert [it["slug"] for it in ingested["items"]] == ["neuro-magnesium"]
+
+
+def test_curated_subset_preserves_server_stored_special_price(client, monkeypatch):
+    c, appmod = client
+    tok = _seed_portal(appmod, content={
+        "greeting": "hi", "video": {}, "layers": [],
+        "reorder_items": [{"slug": "nous-energy", "qty": 1, "price_cents": 2500}],
+    })
+    captured = _mock_checkout(appmod, monkeypatch)
+    r = c.post(f"/api/portal/{tok}/checkout",
+               json={"items": [{"slug": "nous-energy", "qty": 1, "price_cents": 1}]})
+    assert r.status_code == 200
+    assert captured["stripe_lines"][0]["unit_cents"] == 2500
+
+
+def test_portal_checkout_passes_itemized_lines_to_stripe(client, monkeypatch):
+    c, appmod = client
+    tok = _seed_portal(appmod, content={
+        "greeting": "hi", "video": {}, "layers": [],
+        "reorder_items": [{"slug": "nous-energy", "qty": 2, "price_cents": 2500}],
+    })
+    captured = {}
+    monkeypatch.setattr(appmod, "_ingest_order", lambda *a, **k: None)
+    monkeypatch.setattr(appmod._bos_orders, "set_order_qbo_lines", lambda *a, **k: None)
+    monkeypatch.setattr(appmod, "_STRIPE_ACTIVE", True)
+
+    def fake_stripe(out, email):
+        captured.update(out)
+        return "https://checkout.stripe/itemized"
+
+    monkeypatch.setattr(appmod, "_stripe_checkout_url_for_reorder", fake_stripe)
+    r = c.post(f"/api/portal/{tok}/checkout")
+
+    assert r.status_code == 200
+    assert captured["stripe_line_items"] == [
+        {"name": "Nous Energy", "qty": 2, "unit_cents": 2500}
+    ]
 
 
 def test_curated_subset_can_be_submitted_for_checkout(client, monkeypatch):
@@ -458,5 +518,5 @@ def test_item_reorder_ignores_client_posted_price(client, monkeypatch):
                json={"items": [{"slug": "nous-energy", "qty": 1, "price_cents": 1}]})
     assert r.status_code == 200
     # 1 cent posted price must be ignored — server prices it from the catalog.
-    assert captured["lines"][0]["amount"] != 0.01
-    assert captured["lines"][0]["amount"] == 69.97
+    assert captured["stripe_lines"][0]["unit_cents"] != 1
+    assert captured["stripe_lines"][0]["unit_cents"] == 6997

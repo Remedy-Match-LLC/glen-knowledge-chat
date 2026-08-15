@@ -7727,11 +7727,16 @@ def _grant_membership_line_dep(order):
     # paid orders carry no membership line, and opening+discarding a sqlite
     # connection for every one of them is pure waste. (_grant_membership_line_on_paid
     # re-checks this too; this only avoids the connection when there's nothing to do.)
-    if not _mp.cart_has_membership_tier(order.get("items") or []):
+    _items = order.get("items") or []
+    _has_biofield = any((it.get("slug") or "").strip() == "biofield-analysis"
+                        and int(it.get("line_cents") or it.get("unit_cents") or 0) >= 30000
+                        for it in _items)
+    if not (_mp.cart_has_membership_tier(_items) or _has_biofield):
         return
     with db.connect(LOG_DB) as _mcx:
         _mcx.row_factory = sqlite3.Row
         _grant_membership_line_on_paid(_mcx, order)
+        _grant_biofield_line_on_paid(_mcx, order)
 
 
 from types import SimpleNamespace as _SimpleNamespace  # noqa: E402
@@ -13770,6 +13775,41 @@ def _grant_membership_line_on_paid(cx, order):
     # skip_customer_upsert: we already upserted above (pre-claim), so _grant_membership
     # must NOT re-run find_or_create's mid-grant commit between the claim and the grant.
     _grant_membership(cx, email, days, _mp.get_tier(tier_key)["source"],
+                      skip_customer_upsert=True)
+    cx.commit()
+    return "granted"
+
+
+def _grant_biofield_line_on_paid(cx, order):
+    """Grant the included 30-day care window for a fully-paid $300 Biofield line."""
+    if not order:
+        return "none"
+    qualifies = any(
+        (it.get("slug") or "").strip() == "biofield-analysis"
+        and int(it.get("line_cents") or it.get("unit_cents") or 0) >= 30000
+        for it in (order.get("items") or []))
+    email = (order.get("email") or "").strip().lower()
+    if not (qualifies and email):
+        return "none"
+    ref = order.get("external_ref") or f"id:{order.get('id')}"
+    cx.execute("CREATE TABLE IF NOT EXISTS care_taster_grants "
+               "(order_ref TEXT PRIMARY KEY, email TEXT, granted_at TEXT)")
+    if cx.execute("SELECT 1 FROM care_taster_grants WHERE order_ref=?", (ref,)).fetchone():
+        return "already"
+    if _mp.owns_group(cx, email):
+        return "member"
+    try:
+        from dashboard import customers as _customers
+        _customers.find_or_create_by_email(cx, email=email)
+    except Exception as _e:
+        print(f"[biofield-grant] people upsert skipped: {_e!r}", flush=True)
+    claim = cx.execute(
+        "INSERT INTO care_taster_grants (order_ref,email,granted_at) VALUES (?,?,?) "
+        "ON CONFLICT(order_ref) DO NOTHING",
+        (ref, email, datetime.utcnow().isoformat() + "Z"))
+    if not claim.rowcount:
+        return "already"
+    _grant_membership(cx, email, PROGRAM_CARE_TASTER_DAYS, CARE_TASTER_SOURCE,
                       skip_customer_upsert=True)
     cx.commit()
     return "granted"
@@ -46736,7 +46776,15 @@ def _price_inhouse_invoice(lines_in, *, email, pickup, ship,
     # resolved ONCE for the whole order, same as repertoire below. A membership
     # line in the cart provisionally flips the buyer to member pricing too
     # (computed only — never persisted until payment; see Task 2 brief).
-    program_member = _is_paid_member(email) or bool(_mp.cart_has_membership_tier(lines_in))
+    # A Biofield Analysis includes one month of membership benefits once paid, so
+    # its accompanying remedies must already be quoted at member pricing on the
+    # invoice. Like a membership-product line, this is provisional pricing only;
+    # the actual care_taster grant is still created by payment fulfillment.
+    _has_biofield = any((ln.get("slug") or "").strip() == "biofield-analysis"
+                        for ln in (lines_in or []))
+    program_member = (_is_paid_member(email)
+                      or bool(_mp.cart_has_membership_tier(lines_in))
+                      or _has_biofield)
     # A paid member's repertoire SKU set, resolved ONCE for the whole order (Task 5b —
     # this also makes the owner in-house INVOICE honor repertoire pricing for members,
     # not just the portal checkout). Only ever consulted below when a line has no
@@ -47371,7 +47419,11 @@ def api_orders_price_preview():
     _pemail = (_body.get("email") or "").strip().lower()
     # A membership line in the cart provisionally flips the buyer to member
     # pricing (computed only — never persisted until payment; see Task 2 brief).
-    _ppm = _is_paid_member(_pemail) or bool(_mp.cart_has_membership_tier(lines_in))
+    _has_biofield = any((ln.get("slug") or "").strip() == "biofield-analysis"
+                        for ln in (lines_in or []))
+    _ppm = (_is_paid_member(_pemail)
+            or bool(_mp.cart_has_membership_tier(lines_in))
+            or _has_biofield)
     # The order-wide mix/match rate — a paid-member-only perk (Glen 2026-07); a
     # non-member's per-line vol_pct is computed inside the loop below, off that
     # line's own qty (same-SKU rate), since it isn't a single order-wide number.

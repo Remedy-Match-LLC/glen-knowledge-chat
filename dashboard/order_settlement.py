@@ -63,7 +63,12 @@ def settle_paid_order_effects(*, kind, order, md, pi_id, sid, deps):
     # redirect and the webhook route through here, so a closed tab still delivers.
     if order:
         from . import membership_products as _mp
-        if _mp.cart_has_membership_tier(order.get("items") or []):
+        _items = order.get("items") or []
+        _has_paid_biofield = any(
+            (it.get("slug") or "").strip() == "biofield-analysis"
+            and int(it.get("line_cents") or it.get("unit_cents") or 0) >= 30000
+            for it in _items)
+        if _mp.cart_has_membership_tier(_items) or _has_paid_biofield:
             _do("membership_line", lambda: deps.grant_membership_line(order))
 
     return {"kind": kind, "settled": settled, "skipped": skipped}

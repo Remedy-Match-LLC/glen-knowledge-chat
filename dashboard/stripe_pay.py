@@ -97,17 +97,21 @@ def create_itemized_checkout_session(items, *, customer_email, metadata,
         params["customer_email"] = customer_email
     if collect_shipping:
         params["shipping_address_collection[allowed_countries][0]"] = "US"
-    for idx, item in enumerate(items or []):
+    line_idx = 0
+    for item in items or []:
         qty = max(1, int(item.get("qty") or 1))
         unit_cents = int(item.get("unit_cents") or 0)
         if unit_cents <= 0:
             continue
-        prefix = f"line_items[{idx}]"
+        prefix = f"line_items[{line_idx}]"
         params[f"{prefix}[quantity]"] = str(qty)
         params[f"{prefix}[price_data][currency]"] = currency
         params[f"{prefix}[price_data][unit_amount]"] = str(unit_cents)
         params[f"{prefix}[price_data][product_data][name]"] = (
             item.get("name") or "Remedy Match remedy")
+        line_idx += 1
+    if not line_idx:
+        raise ValueError("itemized checkout requires at least one priced item")
     for k, v in (metadata or {}).items():
         if v is None:
             continue
