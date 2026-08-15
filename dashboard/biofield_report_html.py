@@ -643,7 +643,8 @@ async function saveRemedy(rid,btn){var card=btn.closest('.lcard');var gid=card.d
  for(var i=0;i<rids.length;i++){if(rids[i]!==String(rid)){
    await post('/author/__TID__/row/'+rids[i],{head:head,most_affected:most})}}
  setSaved(btn);pulse(btn.closest('.rline'));
- setSaved(card.querySelector('.lfoot .savebtn'));astat('Remedy saved.')}
+ setSaved(card.querySelector('.lfoot .savebtn'));astat('Remedy saved. Updating report and schedule…');
+ rememberView(card);location.reload()}
  finally{btn.disabled=false}}
 async function saveLayer(gid,btn){var card=document.querySelector('[data-gid="'+gid+'"]');if(!card)return;
  var head=val(gid+'_head'),most=val(gid+'_most');if(btn)btn.disabled=true;
