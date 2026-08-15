@@ -30,6 +30,11 @@ def test_console_intake_returns_response(client):
     r = client.get("/api/console/intake/seed@x.com?key=K")
     assert r.status_code == 200 and r.get_json()["answers"]["first_name"] == "Seed"
 
+def test_console_clinical_profile_includes_submitted_intake(client):
+    r = client.get("/api/console/clinical-profile/seed@x.com?key=K")
+    assert r.status_code == 200
+    assert r.get_json()["profile"]["intake_submitted"] is True
+
 
 def test_console_clinical_profile_includes_submitted_intake(client):
     r = client.get("/api/console/clinical-profile/seed@x.com?key=K")

@@ -42,6 +42,19 @@ def test_form_endpoint_returns_sections(client):
     assert r.status_code == 200
     assert r.get_json()["version"]
     assert any(s["id"] == "dimensions" for s in r.get_json()["sections"])
+    assert {"Remedy Match", "E4L", "PRL", "Fullscript"}.issubset(
+        set(r.get_json()["suggestions"]["brands"])
+    )
+    assert r.get_json()["suggestions"]["supplements"]
+
+
+def test_draft_entry_is_added_to_form_suggestions(client):
+    client.post("/api/intake/save-draft?token=good", json={"answers": {
+        "supplements": [{"brand": "Client Brand", "name": "Client Formula"}]
+    }})
+    suggestions = client.get("/api/intake/form?token=good").get_json()["suggestions"]
+    assert "Client Brand" in suggestions["brands"]
+    assert "Client Formula" in suggestions["supplements"]
 
 
 def test_form_endpoint_requires_token(client):
@@ -52,6 +65,24 @@ def test_form_endpoint_requires_token(client):
 def test_state_bad_token_404(client):
     r = client.get("/api/intake/state?token=bad")
     assert r.status_code == 404 and r.get_json()["error"] == "not_found"
+
+
+def test_state_prefills_authenticated_email(client):
+    body = client.get("/api/intake/state?token=good").get_json()
+    assert body["answers"]["email"] == "member@x.com"
+
+
+def test_state_prefers_reviewed_portal_name(client, monkeypatch):
+    import app as appmod
+    monkeypatch.setattr(
+        appmod, "_portal_record_for",
+        lambda cx, token: {
+            "email": "member@x.com", "name": "Glen Swartwout", "content": "{}"
+        },
+    )
+    body = client.get("/api/intake/state?token=good").get_json()
+    assert body["answers"]["first_name"] == "Glen"
+    assert body["answers"]["last_name"] == "Swartwout"
 
 
 def test_token_gate_precedes_body_on_submit(client):
@@ -82,15 +113,19 @@ def test_submit_validation_error_lists_fields(client):
     assert "first_name" in r.get_json()["errors"]
 
 
-def test_submit_success_then_double_submit_409(client):
+def test_submit_success_then_second_submit_updates_completed_intake(client):
     good = {"answers": {
         "first_name": "Ann", "last_name": "Lee", "email": "a@x.com", "dob": "1970-01-01",
         "terrain": 1, "penetration": 5, "tissue_layer": 3, "response": 3, "commitment": 8,
         "terms": {"agreed": True, "signature": "Ann Lee", "date": "2026-07-07"}}}
     assert client.post("/api/intake/submit?token=good", json=good).status_code == 200
     assert client.get("/api/intake/state?token=good").get_json()["submitted"] is True
-    r2 = client.post("/api/intake/submit?token=good", json=good)
-    assert r2.status_code == 409 and r2.get_json()["error"] == "already_submitted"
+    changed = {"answers": {**good["answers"], "first_name": "Annie"}}
+    r2 = client.post("/api/intake/submit?token=good", json=changed)
+    assert r2.status_code == 200 and r2.get_json()["updated"] is True
+    state = client.get("/api/intake/state?token=good").get_json()
+    assert state["submitted"] is True
+    assert state["answers"]["first_name"] == "Annie"
 
 
 def test_save_draft_after_submit_is_noop(client):

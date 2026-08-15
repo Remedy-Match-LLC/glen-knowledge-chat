@@ -64,6 +64,49 @@ def test_fireside_is_watched():
     assert "/begin/fireside" in S.PUBLIC_SURFACES
 
 
+def test_portal_contract_accepts_deployed_calendar():
+    body = ("Upcoming Live Events /calendar/register calendar-summary "
+            "Private Appointments /appointment-proposals")
+    assert S.check_portal_contract(
+        "https://portal.test", fetch_text=lambda _url: (200, body)) == []
+
+
+def test_portal_contract_catches_local_only_feature():
+    failures = S.check_portal_contract(
+        "https://portal.test", fetch_text=lambda _url: (200, "ordinary portal"))
+    assert {f["error"] for f in failures} == {
+        "deployment marker missing: Upcoming Live Events",
+        "deployment marker missing: /calendar/register",
+        "deployment marker missing: calendar-summary",
+        "deployment marker missing: Private Appointments",
+        "deployment marker missing: /appointment-proposals",
+    }
+
+
+def test_portal_contract_catches_deprecated_destinations():
+    body = ("Upcoming Live Events /calendar/register calendar-summary "
+            "Private Appointments /appointment-proposals https://skool.com/x")
+    failures = S.check_portal_contract(
+        "https://portal.test", fetch_text=lambda _url: (200, body))
+    assert failures == [{"path": "/static/client-portal.html", "status": 200,
+                         "error": "deprecated destination present: skool.com"}]
+
+
+def test_community_live_health_passes_when_healthy():
+    assert S.check_community_live_health(
+        "https://illtowell.test", "secret",
+        fetch=lambda _url, _key: {"ok": True, "issues": []}) == []
+
+
+def test_community_live_health_reports_runtime_gaps():
+    got = S.check_community_live_health(
+        "https://illtowell.test", "secret",
+        fetch=lambda _url, _key: {"ok": False, "issues": [
+            "no future Group Coaching occurrence", "MasterClass Zoom link missing"]})
+    assert got == [{"path": "/api/console/community-live-health", "status": 200,
+                   "error": "no future Group Coaching occurrence; MasterClass Zoom link missing"}]
+
+
 def test_format_alert_names_paths_and_statuses():
     subject, body = S.format_alert("https://illtowell.com", [
         {"path": "/begin/fireside", "status": 404, "error": ""}])

@@ -175,6 +175,15 @@ def test_pick_box_empty_order_returns_none(seeded_db):
     assert pick_box({}, db_path=seeded_db) is None
 
 
+def test_four_30_cap_ff_plus_two_infoceuticals_fit_small(tmp_path):
+    """Rae-confirmed mixed pack: 4 FF 30-cap bottles + 2 Infoceuticals = Small."""
+    from dashboard.shipping import init_shipping_schema, pick_box
+    db_path = str(tmp_path / "chat_log.db")
+    with sqlite3.connect(db_path) as cx:
+        init_shipping_schema(cx)
+    assert pick_box({"30 Caps": 4, "30ml": 2}, db_path=db_path) == "S"
+
+
 # ── Rate retrieval ────────────────────────────────────────────────────────────
 
 def test_get_current_rates_returns_all_three_sizes(seeded_db):
@@ -480,6 +489,13 @@ def test_add_and_update_bottle_with_dims(tmp_path):
 
 
 # ── Product override resolver ────────────────────────────────────────────────────
+
+def test_product_override_resolver_falls_back_before_schema_init(tmp_path):
+    from dashboard.shipping import resolve_bottle_type
+    db = str(tmp_path / "brand-new.db")
+    assert resolve_bottle_type(
+        "nous-energy", {"bottle_type": "30ml"}, db_path=db) == "30ml"
+
 
 def test_product_override_crud_and_resolution(tmp_path):
     import sqlite3

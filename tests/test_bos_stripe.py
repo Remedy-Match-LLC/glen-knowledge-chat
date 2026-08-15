@@ -16,7 +16,7 @@ def test_refund_full_and_partial(monkeypatch):
     from dashboard import stripe_pay as S
     monkeypatch.setenv("STRIPE_SECRET_KEY", "sk_test")
     captured = {}
-    def _post(url, data=None, auth=None, timeout=None):
+    def _post(url, data=None, auth=None, headers=None, timeout=None):
         captured["url"] = url; captured["data"] = data
         return _Resp({"id": "re_1", "status": "succeeded", "amount": data.get("amount", 0)})
     monkeypatch.setattr(S.requests, "post", _post)

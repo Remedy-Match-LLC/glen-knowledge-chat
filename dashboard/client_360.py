@@ -16,11 +16,18 @@ _SOURCE_LABEL = {"biofield": "Biofield", "scan": "Scan",
 _FULFILLED = ("shipped", "delivered", "done", "fulfilled")
 
 
+def _recover_optional_read(cx):
+    """Clear PostgreSQL's failed transaction after an optional schema read."""
+    if db.backend_of(cx) == "postgres":
+        cx.rollback()
+
+
 def _exists(cx, sql, params):
     """True if the query returns a row; False if the table is absent."""
     try:
         return cx.execute(sql, params).fetchone() is not None
     except db.OperationalError:
+        _recover_optional_read(cx)
         return False
 
 
@@ -49,6 +56,7 @@ def process_strip(cx, email):
             "WHERE lower(COALESCE(email,''))=? AND COALESCE(status,'')<>'cancelled' "
             "ORDER BY id DESC LIMIT 1", (e,)).fetchone()
     except db.OperationalError:
+        _recover_optional_read(cx)
         order = None
     oid = order["id"] if order else None
     status = order["status"] if order else ""
@@ -118,6 +126,7 @@ def _person(cx, email):
             "COALESCE(last_order_date,'') lod FROM people WHERE lower(email)=? LIMIT 1",
             (email,)).fetchone()
     except db.OperationalError:
+        _recover_optional_read(cx)
         return empty
     if not r:
         return empty
@@ -134,11 +143,13 @@ def _tests(cx, email):
         for s in client_scans.scans_for(cx, email):
             by_date[s["scan_date"]] = "scan"
     except db.OperationalError:
+        _recover_optional_read(cx)
         pass
     try:
         for rv in biofield_reveals.list_for_email(cx, email):
             by_date[rv["scan_date"]] = "biofield"   # biofield wins on a shared date
     except Exception:
+        _recover_optional_read(cx)
         pass
     return [{"date": d, "type": t}
             for d, t in sorted(by_date.items(), key=lambda kv: kv[0], reverse=True)]
@@ -154,11 +165,13 @@ def _invoices(cx, email):
             "WHERE lower(COALESCE(email,''))=? AND COALESCE(status,'')<>'cancelled' "
             "ORDER BY id DESC", (email,)).fetchall()
     except db.OperationalError:
+        _recover_optional_read(cx)
         rows = []
     for r in rows:
         try:
             bal = order_payments.balance(cx, r["id"])
         except db.OperationalError:
+            _recover_optional_read(cx)
             continue
         out["orders"].append({
             "id": r["id"], "date": r["created_at"], "status": r["status"],
@@ -171,6 +184,7 @@ def _invoices(cx, email):
     try:
         out["fmp"] = fmp_orders.client_order_history(cx, email=email)
     except Exception:
+        _recover_optional_read(cx)
         out["fmp"] = []
     finally:
         cx.row_factory = sqlite3.Row
@@ -182,6 +196,7 @@ def _comms(cx, email):
     try:
         rc = recent_comms.recent_comms(cx, email, days_window=3650)
     except Exception:
+        _recover_optional_read(cx)
         return []
     out = []
     for q in rc.get("recent_inquiries", []):
@@ -210,6 +225,7 @@ def _recommendations(cx, email):
             p["client_note"] = n.get("client_note", "")
         return prods
     except Exception:
+        _recover_optional_read(cx)
         return []
 
 
@@ -217,12 +233,28 @@ def bundle(cx, email, *, e4l_path=None):
     """Assemble the full client-360 payload. cx: LOG_DB connection
     (row_factory=sqlite3.Row). Read-only; never raises on missing data."""
     e = (email or "").strip().lower()
+    # Each section is optional and several legacy readers intentionally swallow
+    # missing-table errors. PostgreSQL still marks the transaction failed even
+    # when a nested reader catches the exception, so end each read-only section
+    # before starting the next required one.
+    person = _person(cx, e)
+    _recover_optional_read(cx)
+    tests = _tests(cx, e)
+    _recover_optional_read(cx)
+    invoices = _invoices(cx, e)
+    _recover_optional_read(cx)
+    comms = _comms(cx, e)
+    _recover_optional_read(cx)
+    process = process_strip(cx, e)
+    _recover_optional_read(cx)
+    recommendations = _recommendations(cx, e)
+    _recover_optional_read(cx)
     return {
-        "person": _person(cx, e),
+        "person": person,
         "clinical": client_tags_for_email(e, e4l_path=e4l_path),
-        "tests": _tests(cx, e),
-        "invoices": _invoices(cx, e),
-        "comms": _comms(cx, e),
-        "process": process_strip(cx, e),
-        "recommendations": _recommendations(cx, e),
+        "tests": tests,
+        "invoices": invoices,
+        "comms": comms,
+        "process": process,
+        "recommendations": recommendations,
     }

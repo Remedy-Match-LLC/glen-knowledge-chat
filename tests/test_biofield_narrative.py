@@ -93,6 +93,23 @@ def test_prompt_omits_terrain_block_without_phase():
     assert "TERRAIN READING" not in p["user"]
 
 
+def test_prompt_keeps_multiple_remedies_on_one_numbered_layer():
+    report = {**_report(), "client": {"name": "Michael Hill"}, "layers": [
+        {"layer": 2, "head": "Spleen", "most_affected": "Spleen",
+         "remedy": "Fibrosolve", "dosage": "1-2 caps", "frequency": "daily",
+         "timing": "on an empty stomach"},
+        {"layer": 2, "head": "Spleen", "most_affected": "Spleen",
+         "remedy": "Fibrolysis Factors", "dosage": "1 cap", "frequency": "daily",
+         "timing": "with food"},
+    ]}
+    p = build_narrative_prompt(report, "splenic infarct")
+    assert p["user"].count("- Layer 2 ") == 1
+    assert "Layer 2 (ONE layer; 2 remedies)" in p["user"]
+    assert "Fibrosolve" in p["user"] and "Fibrolysis Factors" in p["user"]
+    assert "same layer number" in p["system"]
+    assert "never describe them as separate layers" in p["system"]
+
+
 def test_video_script_roundtrip(tmp_path):
     db = str(tmp_path / "chat_log.db")
     cx = sqlite3.connect(db)

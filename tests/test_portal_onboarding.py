@@ -1,10 +1,12 @@
 import datetime
+import json
 import sqlite3
 import uuid
 from dashboard import portal_onboarding as ob
 from dashboard import (client_scans, intake, client_photos, portal_biofield_reports,
                         recommendation_events, condition_triage,
-                        portal_health_history, portal_extended_history)
+                        portal_health_history, portal_extended_history,
+                        scan_freshness, biofield_store, orders, client_facts)
 
 
 def _cx():
@@ -14,15 +16,106 @@ def _cx():
     client_photos.init_table(cx)
     portal_biofield_reports.init_table(cx)
     recommendation_events.init_recommendation_events(cx)
+    orders.init_orders_table(cx)
     return cx
+
+
+def _accelerators(status):
+    return {step["key"]: step for step in status["phases"][2]["steps"]}
+
+
+def test_paid_kloud_purchase_checks_pemf_automatically():
+    cx = _cx()
+    cx.execute(
+        "INSERT INTO orders (created_at,source,external_ref,email,items_json,status,pay_status) "
+        "VALUES ('2026-08-14','test','kloud-1','owner@example.com',?,'done','paid')",
+        (json.dumps([{"slug": "kloud-pemf-mini"}]),))
+    cx.commit()
+
+    accelerators = _accelerators(ob.build_status(cx, "owner@example.com"))
+    assert accelerators["pemf"]["done"] is True
+    assert accelerators["pemf"]["checkable"] is True
+    assert accelerators["light"]["done"] is False
+
+
+def test_existing_bemer_can_be_checked_as_manual_pemf_ownership():
+    cx = _cx()
+    client_facts.set_fact(cx, "bemer@example.com", "accelerate_pemf", True)
+
+    accelerators = _accelerators(ob.build_status(cx, "bemer@example.com"))
+    assert accelerators["pemf"]["done"] is True
+
+
+def test_light_and_hydrogen_purchases_check_their_accelerators():
+    cx = _cx()
+    cx.execute(
+        "INSERT INTO orders (created_at,source,external_ref,email,items_json,status,pay_status) "
+        "VALUES ('2026-08-14','test','devices-1','devices@example.com',?,'done','paid')",
+        (json.dumps([{"slug": "nir-brain-frequency-helmet"},
+                     {"slug": "molecular-hydrogen-bottle"}]),))
+    cx.commit()
+
+    accelerators = _accelerators(ob.build_status(cx, "devices@example.com"))
+    assert accelerators["light"]["done"] is True
+    assert accelerators["h2water"]["done"] is True
 
 
 def test_all_open_when_nothing_on_file():
     cx = _cx()
     s = ob.build_status(cx, "a@x.com")
-    be = {st["key"]: st["done"] for st in s["phases"][0]["steps"]}
+    steps = {st["key"]: st for st in s["phases"][0]["steps"]}
+    be = {key: st["done"] for key, st in steps.items()}
     assert be == {"voice": False, "intake": False, "photo": False, "biofield": False}
+    assert steps["voice"]["href"] == "https://truly.vip/E4L"
+    assert steps["intake"]["href"] == "#intake"
+    light = next(st for st in s["phases"][2]["steps"] if st["key"] == "light")
+    assert light["href"] == "https://clinicalpraxis.com/photobiomodulation/"
+    pemf = next(st for st in s["phases"][2]["steps"] if st["key"] == "pemf")
+    water = next(st for st in s["phases"][2]["steps"] if st["key"] == "h2water")
+    assert pemf["href"] == "https://clinicalpraxis.com/pemf/"
+    assert pemf.get("soon", False) is False
+    assert water["href"] == "https://clinicalpraxis.com/molecular-hydrogen-microwater/"
+    assert water.get("soon", False) is False
     assert s["member"] is False
+
+
+def test_voice_link_opens_e4l_portal_for_existing_account():
+    cx = _cx()
+    client_scans.upsert_scans(
+        cx, "existing@x.com",
+        [{"scan_date": "2026-07-28", "scan_id": "123"}],
+    )
+    s = ob.build_status(cx, "existing@x.com")
+    voice = next(st for st in s["phases"][0]["steps"] if st["key"] == "voice")
+    assert voice["done"] is True
+    assert voice["href"] == "https://portal.e4l.com"
+
+
+def test_voice_link_uses_account_signal_when_scan_manifest_is_absent():
+    cx = _cx()
+    scan_freshness.init_table(cx)
+    scan_freshness.upsert(
+        cx, [{"email": "known@x.com", "last_scan_date": "2026-07-28"}]
+    )
+    s = ob.build_status(cx, "known@x.com")
+    voice = next(st for st in s["phases"][0]["steps"] if st["key"] == "voice")
+    assert voice["done"] is False
+    assert voice["href"] == "https://portal.e4l.com"
+
+
+def test_voice_link_uses_signup_email_before_first_scan():
+    cx = _cx()
+    from dashboard import e4l_account_notifications as accounts
+    accounts.init_table(cx)
+    cx.execute("""INSERT INTO e4l_accounts
+                  (email,client_name,phone,gmail_msg_id,notification_at,ingested_at)
+                  VALUES (?,?,?,?,?,?)""",
+               ("new@x.com", "New Client", "8085551212", "gmail-1", "", ""))
+    cx.commit()
+    s = ob.build_status(cx, "NEW@x.com")
+    voice = next(st for st in s["phases"][0]["steps"] if st["key"] == "voice")
+    assert voice["done"] is False
+    assert voice["href"] == "https://portal.e4l.com"
 
 
 def test_photo_and_intake_flip_done():
@@ -35,6 +128,17 @@ def test_photo_and_intake_flip_done():
     assert be["voice"] is False
 
 
+def test_performed_courtesy_biofield_flips_done_before_report_publish():
+    cx = _cx()
+    biofield_store.init_table(cx)
+    biofield_store.seed_paid(cx, "courtesy@x.com", via="owner_console_courtesy",
+                             order_ref="courtesy")
+    biofield_store.set_completed(cx, "courtesy@x.com")
+    s = ob.build_status(cx, "courtesy@x.com")
+    be = {st["key"]: st["done"] for st in s["phases"][0]["steps"]}
+    assert be["biofield"] is True
+
+
 def test_scan_match_flips_done_on_biofield_source():
     cx = _cx()
     recommendation_events.record_event(
@@ -42,11 +146,12 @@ def test_scan_match_flips_done_on_biofield_source():
         occurred_at="2026-07-23T00:00:00Z", origin_ref="test")
     s = ob.build_status(cx, "c@x.com")
     match = {st["key"]: st["done"] for st in s["phases"][1]["steps"]}
-    assert match["scan_match"] is True
-    assert match["history"] is False
+    assert match == {"history": True}
+    assert s["phases"][1]["steps"][0]["label"] == "Match Remedies"
+    assert s["phases"][1]["steps"][0]["href"] == "#recs"
 
 
-def test_history_requires_conditions_and_current_products_sections():
+def test_history_step_requires_only_nonduplicated_condition_section():
     cx = _cx()
     condition_triage.init_table(cx)
     condition_triage.seed_from_triage(
@@ -55,7 +160,7 @@ def test_history_requires_conditions_and_current_products_sections():
     match = {st["key"]: st["done"] for st in s["phases"][1]["steps"]}
     assert s["history_conditions_done"] is True
     assert s["history_products_done"] is False
-    assert match["history"] is False
+    assert match["history"] is True
 
     portal_health_history.save(cx, "other@x.com", {
         "prescriptions_yes": False,
@@ -67,7 +172,7 @@ def test_history_requires_conditions_and_current_products_sections():
     match = {st["key"]: st["done"] for st in s["phases"][1]["steps"]}
     assert s["history_products_done"] is True
     assert s["history_extended_done"] is False
-    assert match["history"] is False
+    assert match["history"] is True
 
     portal_extended_history.save(cx, "other@x.com", {
         "surgeries_yes": True,

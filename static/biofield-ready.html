@@ -97,10 +97,8 @@
         <span class="dot" id="dot-pay"></span>
         <div class="body">
           <b>Payment</b>
-          <small>If you paid inside Practice Better, confirm it here with your receipt reference.</small>
+          <small>Your MyHealingOasis payment is confirmed automatically. If a completed payment is not showing, contact support@RemedyMatch.com.</small>
           <div id="pay-actions">
-            <input type="text" id="receipt" placeholder="Practice Better receipt reference (optional)">
-            <button class="small" onclick="confirmPayment()">I paid in Practice Better</button>
           </div>
           <span class="status" id="st-pay"></span>
         </div>
@@ -177,16 +175,6 @@ async function confirmItem(item) {
   const r = await fetch("/api/biofield/confirm", {
     method: "POST", headers: { "Content-Type": "application/json" },
     credentials: "same-origin", body: JSON.stringify({ item })
-  });
-  if (r.ok) render(await r.json());
-}
-
-async function confirmPayment() {
-  const receipt = (document.getElementById("receipt").value || "").trim();
-  const r = await fetch("/api/biofield/confirm", {
-    method: "POST", headers: { "Content-Type": "application/json" },
-    credentials: "same-origin",
-    body: JSON.stringify({ item: "payment", receipt })
   });
   if (r.ok) render(await r.json());
 }

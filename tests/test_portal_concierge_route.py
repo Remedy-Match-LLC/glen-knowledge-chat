@@ -81,3 +81,27 @@ def test_portal_chat_bad_token_returns_404(app_client):
         content_type="application/json",
     )
     assert resp.status_code == 404
+
+
+def test_portal_chat_hides_provider_error_and_allows_retry(app_client, monkeypatch):
+    """Provider failures become a safe SSE error instead of leaking internals."""
+    app_mod, client = app_client
+    token = _mint_portal(app_mod)
+
+    class BrokenMessages:
+        def stream(self, **_kwargs):
+            raise RuntimeError("secret provider detail")
+
+    class BrokenClient:
+        messages = BrokenMessages()
+
+    monkeypatch.setattr(app_mod, "_cl", BrokenClient())
+    resp = client.post(
+        f"/api/portal/{token}/chat",
+        data=json.dumps({"query": "please help"}),
+        content_type="application/json",
+    )
+    body = resp.data.decode("utf-8")
+    assert resp.status_code == 200
+    assert '"error": "assistant temporarily unavailable"' in body
+    assert "secret provider detail" not in body

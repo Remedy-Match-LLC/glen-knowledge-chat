@@ -508,6 +508,11 @@ def list_authored(cx):
 
 
 def _has(cx, table):
+    if db.backend_of(cx) == "postgres":
+        return cx.execute(
+            "SELECT 1 FROM information_schema.tables "
+            "WHERE table_schema=current_schema() AND table_name=? LIMIT 1",
+            (table,),).fetchone() is not None
     return cx.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
                       (table,)).fetchone() is not None
 

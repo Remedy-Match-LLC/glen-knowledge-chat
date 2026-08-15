@@ -120,9 +120,11 @@ def test_item_reorder_charges_clicked_item_at_member_price(client, monkeypatch):
                json={"items": [{"slug": "neuro-magnesium", "qty": 2}]})
     assert r.status_code == 200
     assert r.get_json()["stripe_url"] == "https://checkout.stripe/item"
-    assert len(captured["stripe_lines"]) == 1
-    assert captured["stripe_lines"][0]["qty"] == 2
-    assert captured["stripe_lines"][0]["unit_cents"] == expected_unit
+    remedy_lines = [line for line in captured["stripe_lines"]
+                    if not line["name"].startswith("Shipping")]
+    assert len(remedy_lines) == 1
+    assert remedy_lines[0]["qty"] == 2
+    assert remedy_lines[0]["unit_cents"] == expected_unit
     # Only the clicked SKU was ingested as the order — not the other history item.
     assert len(ingested["items"]) == 1
     assert ingested["items"][0]["slug"] == "neuro-magnesium"
@@ -199,6 +201,274 @@ def test_portal_checkout_passes_itemized_lines_to_stripe(client, monkeypatch):
     assert captured["stripe_line_items"] == [
         {"name": "Nous Energy", "qty": 2, "unit_cents": 2500}
     ]
+
+
+def test_curated_subset_can_be_submitted_for_checkout(client, monkeypatch):
+    """The review UI may remove any curated line and POST only what remains."""
+    c, appmod = client
+    tok = _seed_portal(appmod, content={
+        "greeting": "hi", "video": {}, "layers": [],
+        "reorder_items": [
+            {"slug": "nous-energy", "qty": 1, "price_cents": 2500},
+            {"slug": "neuro-magnesium", "qty": 1},
+        ],
+    })
+    ingested = {}
+    _mock_checkout(appmod, monkeypatch, capture_ingest=ingested)
+
+    r = c.post(f"/api/portal/{tok}/checkout",
+               json={"items": [{"slug": "neuro-magnesium", "qty": 1}]})
+
+    assert r.status_code == 200
+    assert [it["slug"] for it in ingested["items"]] == ["neuro-magnesium"]
+
+
+def test_curated_subset_keeps_server_special_price_and_stable_retry_ref(client, monkeypatch):
+    c, appmod = client
+    email = "current-price-wins@example.com"
+    tok = _seed_portal(appmod, content={
+        "greeting": "hi", "video": {}, "layers": [],
+        "reorder_items": [{"slug": "nous-energy", "qty": 1, "price_cents": 2500}],
+    }, email=email)
+    from dashboard import client_prices
+    with sqlite3.connect(appmod.LOG_DB) as cx:
+        client_prices.init_table(cx)
+        client_prices.set_price(cx, email, "nous-energy", 2200)
+    ingested = {}
+    _mock_checkout(appmod, monkeypatch, capture_ingest=ingested)
+
+    r = c.post(f"/api/portal/{tok}/checkout", json={
+        "checkout_request_id": "checkout_retry_123456",
+        "items": [{"slug": "nous-energy", "qty": 2, "price_cents": 1}],
+    })
+
+    assert r.status_code == 200
+    assert ingested["external_ref"] == "portal-checkout_retry_123456"
+    assert ingested["items"][0]["unit_cents"] == 2200
+    expected_ship = appmod._price_cart(
+        [{"slug": "nous-energy", "qty": 2}], ship={}, email=email)["shipping_cents"]
+    assert ingested["shipping_cents"] == expected_ship
+    assert ingested["total_cents"] == 4400 + expected_ship
+
+
+def test_checkout_rejects_invalid_idempotency_key(client):
+    c, appmod = client
+    tok = _seed_portal(appmod)
+    r = c.post(f"/api/portal/{tok}/checkout", json={
+        "checkout_request_id": "bad key!", "items": [{"slug": "nous-energy", "qty": 1}]})
+    assert r.status_code == 400
+
+
+def test_cart_shows_and_reuses_latest_matching_unpaid_order(client):
+    c, appmod = client
+    email = "numbered-basket@example.com"
+    tok = _seed_portal(appmod, email=email, content={
+        "greeting": "hi", "video": {}, "layers": [],
+        "reorder_items": [{"slug": "nous-energy", "qty": 1}],
+    })
+    # Seed the member cart, then simulate an earlier checkout attempt recorded
+    # on the Sell board for the exact same basket.
+    c.get(f"/api/portal/{tok}/cart")
+    with sqlite3.connect(appmod.LOG_DB) as cx:
+        appmod._bos_orders.init_orders_table(cx)
+        oid = appmod._bos_orders.upsert_order(
+            cx, source="portal-reorder", external_ref="portal-reuse_12345678",
+            email=email, items=[{"slug": "nous-energy", "qty": 1}],
+            total_cents=6997, status="new")
+
+    cart = c.get(f"/api/portal/{tok}/cart").get_json()
+    assert cart["order_id"] == oid
+    assert cart["order_ref"] == "portal-reuse_12345678"
+
+
+def test_ingest_order_returns_sell_order_number(client):
+    _, appmod = client
+    with sqlite3.connect(appmod.LOG_DB) as cx:
+        appmod._bos_orders.init_orders_table(cx)
+    oid = appmod._ingest_order(
+        source="portal-reorder", external_ref="portal-number_12345678",
+        email="number@example.com", items=[{"slug": "nous-energy", "qty": 1}],
+        total_cents=6997)
+    assert isinstance(oid, int)
+    with sqlite3.connect(appmod.LOG_DB) as cx:
+        assert cx.execute("SELECT id FROM orders WHERE id=?", (oid,)).fetchone()[0] == oid
+
+
+def test_portal_zelle_option_returns_exact_total_recipient_and_memo(client, monkeypatch):
+    c, appmod = client
+    email = "zelle-client@example.com"
+    tok = _seed_portal(appmod, email=email, content={
+        "greeting": "hi", "video": {}, "layers": [],
+        "reorder_items": [{"slug": "nous-energy", "qty": 1}],
+    })
+    from dashboard import client_prices
+    with sqlite3.connect(appmod.LOG_DB) as cx:
+        client_prices.init_table(cx)
+        client_prices.set_price(cx, email, "nous-energy", 2200)
+    monkeypatch.setitem(appmod._ALT_PAY, "zelle", {
+        "label": "Zelle (US)", "to": "pay@example.com",
+        "pay_link": "https://bank.example/zelle/qr", "bank_url": "https://enroll.zellepay.com/",
+        "note": "Use the order reference as the memo."})
+    ingested = {}
+    monkeypatch.setattr(appmod, "_ingest_order", lambda **kw: ingested.update(kw))
+
+    options = c.get(f"/api/portal/{tok}/payment-options").get_json()
+    assert options["zelle"]["to"] == "pay@example.com"
+    assert options["zelle"]["pay_link"] == "https://bank.example/zelle/qr"
+    assert options["zelle"]["qr_image_url"].endswith("/zelle-qr.png")
+    qr = c.get(options["zelle"]["qr_image_url"])
+    assert qr.status_code == 200
+    assert qr.mimetype == "image/png"
+    assert qr.data.startswith(b"\x89PNG")
+
+    r = c.post(f"/api/portal/{tok}/checkout", json={
+        "method": "zelle", "checkout_request_id": "zelle_order_12345678",
+        "items": [{"slug": "nous-energy", "qty": 2}],
+    })
+    assert r.status_code == 200
+    body = r.get_json()
+    assert body["method"] == "zelle"
+    expected_ship = appmod._price_cart(
+        [{"slug": "nous-energy", "qty": 2}], ship={}, email=email)["shipping_cents"]
+    assert body["shipping_cents"] == expected_ship
+    assert body["total_cents"] == 4400 + expected_ship
+    assert body["pay_instructions"]["to"] == "pay@example.com"
+    assert body["pay_instructions"]["memo"] == "portal-zelle_order_12345678"
+    assert ingested["shipping_cents"] == expected_ship
+    assert ingested["total_cents"] == 4400 + expected_ship
+
+
+def test_portal_checkout_passes_itemized_lines_to_stripe(client, monkeypatch):
+    c, appmod = client
+    tok = _seed_portal(appmod, content={
+        "greeting": "hi", "video": {}, "layers": [],
+        "reorder_items": [{"slug": "nous-energy", "qty": 2, "price_cents": 2500}],
+    })
+    captured = {}
+    monkeypatch.setattr(appmod, "_ingest_order", lambda *a, **k: None)
+    monkeypatch.setattr(appmod, "_STRIPE_ACTIVE", True)
+
+    def fake_stripe(out, email):
+        captured.update(out)
+        return "https://checkout.stripe/itemized"
+
+    monkeypatch.setattr(appmod, "_stripe_checkout_url_for_reorder", fake_stripe)
+    r = c.post(f"/api/portal/{tok}/checkout")
+
+    assert r.status_code == 200
+    expected_ship = appmod._price_cart(
+        [{"slug": "nous-energy", "qty": 2}], ship={})["shipping_cents"]
+    assert captured["stripe_line_items"] == [
+        {"name": "Nous Energy", "qty": 2, "unit_cents": 2500},
+        {"name": "Shipping (USPS)", "qty": 1, "unit_cents": expected_ship},
+    ]
+
+
+def test_order_catalog_search_and_add_authorizes_same_checkout(client, monkeypatch):
+    c, appmod = client
+    email = "add-remedy@example.com"
+    tok = _seed_portal(appmod, email=email, content={
+        "greeting": "hi", "video": {}, "layers": [],
+        "reorder_items": [{"slug": "neuro-magnesium", "qty": 1}],
+    })
+
+    search = c.get(f"/api/portal/{tok}/order-catalog?q=nous")
+    assert search.status_code == 200
+    products = search.get_json()["products"]
+    assert any(p["slug"] == "nous-energy" for p in products)
+
+    added = c.post(f"/api/portal/{tok}/order-add", json={"slug": "nous-energy"})
+    assert added.status_code == 200
+    assert added.get_json()["item"]["name"] == "Nous Energy"
+
+    ingested = {}
+    _mock_checkout(appmod, monkeypatch, capture_ingest=ingested)
+    checkout = c.post(f"/api/portal/{tok}/checkout", json={"items": [
+        {"slug": "neuro-magnesium", "qty": 1},
+        {"slug": "nous-energy", "qty": 1},
+    ]})
+    assert checkout.status_code == 200
+    assert [i["slug"] for i in ingested["items"]] == [
+        "neuro-magnesium", "nous-energy"]
+
+
+def test_life_stress_essence_can_join_the_same_portal_basket(client):
+    c, appmod = client
+    tok = _seed_portal(appmod, email="essence-basket@example.com", content={
+        "greeting": "hi", "video": {}, "layers": [], "reorder_items": [],
+    })
+    slug = "mimulus-flower-essence-in-terrain-restore"
+
+    added = c.post(f"/api/portal/{tok}/order-add", json={"slug": slug})
+
+    assert added.status_code == 200
+    assert added.get_json()["item"]["slug"] == slug
+
+
+def test_portal_cart_is_persistent_shared_and_removed_curated_item_stays_removed(client):
+    c, appmod = client
+    tok = _seed_portal(appmod, email="one-cart@example.com", content={
+        "greeting": "hi", "video": {}, "layers": [],
+        "reorder_items": [{"slug": "nous-energy", "qty": 1, "price_cents": 2500}],
+    })
+
+    seeded = c.get(f"/api/portal/{tok}/cart")
+    assert seeded.status_code == 200
+    assert [(i["slug"], i["qty"]) for i in seeded.get_json()["items"]] == [
+        ("nous-energy", 1)]
+    assert seeded.get_json()["items"][0]["price_cents"] == 2500
+    assert seeded.get_json()["items"][0]["is_special"] is True
+
+    added = c.post(f"/api/portal/{tok}/order-add",
+                   json={"slug": "neuro-magnesium", "qty": 2})
+    assert added.status_code == 200
+    assert {(i["slug"], i["qty"]) for i in added.get_json()["cart"]["items"]} == {
+        ("nous-energy", 1), ("neuro-magnesium", 2)}
+
+    removed = c.post(f"/api/portal/{tok}/cart/set-qty",
+                     json={"slug": "nous-energy", "qty": 0})
+    assert removed.status_code == 200
+    assert [i["slug"] for i in removed.get_json()["items"]] == ["neuro-magnesium"]
+    # The curated seed is one-time: refresh/navigation must not resurrect it.
+    refreshed = c.get(f"/api/portal/{tok}/cart")
+    assert [i["slug"] for i in refreshed.get_json()["items"]] == ["neuro-magnesium"]
+
+
+def test_repeat_order_button_adds_quantity_to_same_cart_row(client):
+    c, appmod = client
+    tok = _seed_portal(appmod, email="repeat-add@example.com", content={
+        "greeting": "hi", "video": {}, "layers": [], "reorder_items": [],
+    })
+    c.post(f"/api/portal/{tok}/order-add", json={"slug": "nous-energy"})
+    again = c.post(f"/api/portal/{tok}/order-add", json={"slug": "nous-energy"})
+    items = again.get_json()["cart"]["items"]
+    assert len(items) == 1
+    assert items[0]["slug"] == "nous-energy"
+    assert items[0]["qty"] == 2
+
+
+def test_portal_page_ships_add_to_current_order_controls():
+    body = open("static/client-portal.html", encoding="utf-8").read()
+    assert 'id="orderAddSearch"' in body
+    assert 'id="orderAddBtn"' in body
+    assert "/order-catalog?q=" in body
+    assert "/order-add" in body
+    assert "Continue Shopping" in body
+    assert "portal-shopping-return" in body
+    assert "/cart/set-qty" in body
+    assert 'name="portalPayMethod" value="zelle"' in body
+    assert "/payment-options" in body
+    assert "Your Zelle payment instructions" in body
+
+
+def test_all_portal_remedy_order_buttons_feed_shared_basket():
+    body = open("static/client-portal.html", encoding="utf-8").read()
+    assert 'class="btn ghost scan-order-btn"' in body
+    assert '>Add to basket</button>' in body
+    assert 'id="wishOrderBtn" disabled>Add selected to basket</button>' in body
+    assert "await addItemToBasket(scanBtn.dataset.slug" in body
+    assert "for(const item of items) await addItemToBasket(item.slug, item.qty)" in body
+    assert "await addItemToBasket(slug, qty)" in body
 
 
 # ── (c) posting a slug NOT in the client's entitlement is rejected ──────────

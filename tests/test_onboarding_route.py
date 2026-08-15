@@ -45,6 +45,22 @@ def test_onboarding_unknown_token_404(tmp_path, monkeypatch):
     appmod = _app(tmp_path, monkeypatch)
     assert appmod.app.test_client().get("/api/portal/nope/onboarding").status_code == 404
 
+
+def test_client_can_check_existing_pemf_ownership(tmp_path, monkeypatch):
+    appmod = _app(tmp_path, monkeypatch)
+    tok = _seed(appmod, "bemer@x.com")
+    client = appmod.app.test_client()
+
+    saved = client.post(f"/api/portal/{tok}/onboarding/accelerator",
+                        json={"key": "pemf", "value": True})
+    assert saved.status_code == 200
+    heal = saved.get_json()["status"]["phases"][2]["steps"]
+    assert next(step for step in heal if step["key"] == "pemf")["done"] is True
+
+    invalid = client.post(f"/api/portal/{tok}/onboarding/accelerator",
+                          json={"key": "unknown", "value": True})
+    assert invalid.status_code == 400
+
 def test_onboarding_disabled_by_default_when_sub_flag_unset(tmp_path, monkeypatch):
     """Dedicated dark-launch flag: PORTAL_HUB_ENABLED alone must NOT flip the
     onboarding tile on -- PORTAL_ONBOARDING_ENABLED must be set independently."""

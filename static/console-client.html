@@ -39,6 +39,7 @@
   <div id="hub" style="display:none">
     <h1 id="c-name">—</h1>
     <p class="sub" id="c-meta"></p>
+    <p><button id="open-portal" style="display:none">Open portal</button></p>
 
     <div class="strip" id="strip"></div>
 
@@ -290,7 +291,8 @@ function showGate(){
   document.getElementById("gate").innerHTML =
     "<p class=empty>Enter a console key to view.</p>"+
     "<input id='gate-key' type='password' placeholder='console key' style='padding:8px;width:220px'> "+
-    "<button id='gate-unlock'>Unlock</button>";
+    "<button id='gate-unlock'>Unlock</button>"+
+    "<p><a href='/console/login'>Sign in as owner by email</a></p>";
   document.getElementById("gate-unlock").addEventListener("click",function(){
     var v=document.getElementById("gate-key").value.trim();
     if(v) localStorage.setItem("console_key",v);
@@ -298,11 +300,26 @@ function showGate(){
   });
 }
 
+function openPortal(email){
+  var portalTab=window.open("about:blank","_blank");
+  if(!portalTab){ alert("Pop-up blocked. Allow pop-ups and try again."); return; }
+  portalTab.opener=null;
+  fetch("/api/console/portal-link?email="+encodeURIComponent(email),{headers:hdr()})
+    .then(function(r){return r.json().then(function(j){return {r:r,j:j};});})
+    .then(function(x){
+      if(!x.r.ok || !x.j.ok || !x.j.found){ portalTab.close(); alert("No portal exists for this client."); return; }
+      var portalUrl=new URL(x.j.link,location.href); portalUrl.searchParams.set("from","console");
+      portalTab.location.replace(portalUrl.toString());
+    }).catch(function(){portalTab.close(); alert("Could not open the portal.");});
+}
+
 function load(email){
   fetch("/api/console/client-360?email="+encodeURIComponent(email),{headers:hdr()})
-    .then(function(r){return r.json();})
-    .then(function(d){
-      if(!d.ok){ showGate(); return; }
+    .then(function(r){return r.json().then(function(d){return {r:r,d:d};});})
+    .then(function(x){
+      if(x.r.status===401){ showGate(); return; }
+      if(!x.r.ok || !x.d.ok){ throw new Error("client unavailable"); }
+      var d=x.d;
       document.getElementById("picker").style.display="none";
       document.getElementById("hub").style.display="block";
       document.getElementById("c-name").textContent = d.person.name || email;
@@ -310,9 +327,12 @@ function load(email){
         [email, d.person.phone, d.person.location, d.person.profession].filter(Boolean).join(" · ");
       renderStrip(d.process); renderClinical(d.clinical); renderTests(d.tests);
       renderInvoices(d.invoices); renderComms(d.comms); renderRecommendations(d.recommendations);
+      var portalBtn=document.getElementById("open-portal");
+      portalBtn.style.display="inline-block";
+      portalBtn.onclick=function(){openPortal(email);};
       loadDocuments();
     })
-    .catch(function(){ showGate(); });
+    .catch(function(){ document.getElementById("gate").innerHTML="<p class='empty'>This client record is temporarily unavailable.</p>"; });
 }
 
 function initPicker(){
@@ -320,13 +340,14 @@ function initPicker(){
   var q=document.getElementById("q"), out=document.getElementById("results");
   q.addEventListener("input",function(){
     if(q.value.trim().length<2){ out.innerHTML=""; return; }
-    fetch("/api/people?q="+encodeURIComponent(q.value.trim())+"&limit=8",{headers:hdr()})
-      .then(function(r){return r.json();})
-      .then(function(d){
-        var people=d.people||d.results||d;
-        if(!Array.isArray(people)) people=[];
+    fetch("/api/console/client-search?q="+encodeURIComponent(q.value.trim()),{headers:hdr()})
+      .then(function(r){return r.json().then(function(d){return {r:r,d:d};});})
+      .then(function(x){
+        if(x.r.status===401){showGate();return;}
+        var people=x.d.clients||[];
         out.innerHTML=people.map(function(p){
-          return "<li><a href='/console/client?email="+encodeURIComponent(p.email)+"&key="+encodeURIComponent(key())+"'>"+esc(p.name||p.email)+" — "+esc(p.email)+"</a></li>";}).join("");
+          var portal=p.has_portal?" · portal":"";
+          return "<li><a href='/console/client?email="+encodeURIComponent(p.email)+"'>"+esc(p.name||p.email)+" — "+esc(p.email)+portal+"</a></li>";}).join("");
       })
       .catch(function(){ out.innerHTML=""; });
   });

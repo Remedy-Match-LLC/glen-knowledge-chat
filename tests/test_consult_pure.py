@@ -72,11 +72,55 @@ def test_create_meeting_builds_request_and_parses_response():
                               start_iso="2026-07-06T13:00:00", duration_min=30,
                               opener=fake_opener)
     assert out == {"join_url": "https://zoom.us/j/87654321",
-                   "meeting_id": "87654321", "start_url": "https://zoom.us/s/87654321"}
+                   "meeting_id": "87654321", "start_url": "https://zoom.us/s/87654321",
+                   "registration_url": None}
     assert captured["url"] == "https://api.zoom.us/v2/users/me/meetings"
     assert captured["auth"] == "Bearer tok123"
     assert captured["body"]["type"] == 2 and captured["body"]["duration"] == 30
     assert captured["body"]["settings"]["waiting_room"] is True
+
+def test_create_meeting_supports_fixed_weekly_recurrence():
+    from dashboard import zoom
+    import io, json as _json3
+    captured = {}
+    def fake_opener(req, timeout=None):
+        captured["body"] = _json3.loads(req.data.decode())
+        return io.BytesIO(b'{"id":87654321,"join_url":"https://zoom.us/j/87654321"}')
+    recurrence = {"type": 2, "repeat_interval": 1, "weekly_days": "4", "end_times": 60}
+    out = zoom.create_meeting("tok", host="me", topic="Group Coaching",
+        start_iso="2026-08-19T14:00:00-10:00", duration_min=60,
+        recurrence=recurrence, opener=fake_opener)
+    assert out["join_url"] == "https://zoom.us/j/87654321"
+    assert captured["body"]["type"] == 8
+    assert captured["body"]["recurrence"] == recurrence
+
+def test_create_registered_meeting_and_add_registrant():
+    from dashboard import zoom
+    import io, json as _json2
+    calls = []
+    def fake_opener(req, timeout=None):
+        calls.append({"url": req.full_url, "body": _json2.loads(req.data.decode())})
+        if req.full_url.endswith("/registrants"):
+            return io.BytesIO(_json2.dumps({
+                "registrant_id": "reg-1", "join_url": "https://zoom.us/w/private-1"
+            }).encode())
+        return io.BytesIO(_json2.dumps({
+            "id": 87654321, "join_url": "https://zoom.us/j/87654321",
+            "start_url": "https://zoom.us/s/87654321",
+            "registration_url": "https://zoom.us/meeting/register/public"
+        }).encode())
+    meeting = zoom.create_meeting(
+        "tok", host="me", topic="Free MasterClass", start_iso="2026-08-19T15:00:00",
+        duration_min=60, registration_required=True, opener=fake_opener)
+    assert calls[0]["body"]["settings"]["approval_type"] == 0
+    assert meeting["registration_url"].endswith("/public")
+    registrant = zoom.add_meeting_registrant(
+        "tok", meeting_id=87654321, email="Person@Example.com",
+        first_name="Person", last_name="Example", opener=fake_opener)
+    assert registrant["join_url"] == "https://zoom.us/w/private-1"
+    assert calls[1]["url"].endswith("/meetings/87654321/registrants")
+    assert calls[1]["body"]["email"] == "person@example.com"
+    assert zoom.meeting_id_from_url("https://zoom.us/j/98765432101?pwd=secret") == "98765432101"
 
 from datetime import datetime
 def test_within_join_window():

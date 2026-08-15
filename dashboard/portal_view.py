@@ -110,6 +110,21 @@ def _biofield_block(cx, email, scan_date=None, unlocked=True):
         dates = _pbr.list_report_dates(cx, email)
     except Exception:
         dates = []
+    try:
+        from dashboard import biofield_reveals as _br
+        _reveals = _br.list_for_email(cx, email)
+    except Exception:
+        _reveals = []
+    _reveal_by_date = {r["scan_date"]: r for r in _reveals}
+    _all_dates = sorted(set(dates) | set(_reveal_by_date), reverse=True)
+
+    if scan_date in _reveal_by_date and scan_date not in dates:
+        _content = _reveal_as_report_content(_reveal_by_date[scan_date])
+        if not _content["layers"] and not _content["greeting"]:
+            return {"visible": False}
+        return _assemble_biofield(cx, _content, "confirmed", scan_date=scan_date,
+                                  scan_dates=_all_dates, actionable=False,
+                                  unlocked=unlocked)
     if dates:
         picked = scan_date if (scan_date in dates) else dates[0]
         rep = _pbr.get_report(cx, email, picked) or {}
@@ -118,18 +133,14 @@ def _biofield_block(cx, email, scan_date=None, unlocked=True):
         today = datetime.date.today().isoformat()
         actionable = (status != "confirmed") and _pbr.is_actionable(picked, today)
         return _assemble_biofield(cx, content, status, scan_date=picked,
-                                  scan_dates=dates, actionable=actionable, unlocked=unlocked)
+                                  scan_dates=_all_dates, actionable=actionable,
+                                  unlocked=unlocked)
     # System A: the funnel reveal (biofield_reveals). Rendered as the portal scan
     # when the client has no System B report. Blur is binary (paid -> remedies).
-    try:
-        from dashboard import biofield_reveals as _br
-        _reveals = _br.list_for_email(cx, email)
-    except Exception:
-        _reveals = []
     if _reveals:
-        _rev_dates = [r["scan_date"] for r in _reveals]
+        _rev_dates = list(_reveal_by_date)
         _picked = scan_date if (scan_date in _rev_dates) else _rev_dates[0]
-        _row = next((r for r in _reveals if r["scan_date"] == _picked), _reveals[0])
+        _row = _reveal_by_date[_picked]
         _content = _reveal_as_report_content(_row)
         if not _content["layers"] and not _content["greeting"]:
             return {"visible": False}
@@ -214,12 +225,85 @@ def _upgrade_block(cx, email, roles, enabled_keys):
     return {"enabled": True, "offer": offers[0]}
 
 
+def _membership_block(cx, email):
+    """Current client-facing membership level, independent of upgrade eligibility."""
+    from datetime import datetime, timezone
+    from dashboard import membership_products as _membership_products
+    from dashboard import subscriptions as _subscriptions
+
+    now = datetime.now(timezone.utc).isoformat()
+    source_labels = {
+        tier["source"]: tier["label"] for tier in _membership_products.all_tiers()
+    }
+    try:
+        sources = tuple(source_labels)
+        placeholders = ",".join("?" for _ in sources)
+        row = cx.execute(
+            f"SELECT source,expires_at FROM memberships "
+            f"WHERE lower(email)=lower(?) AND expires_at>? "
+            f"AND source IN ({placeholders}) ORDER BY expires_at DESC LIMIT 1",
+            (email, now, *sources),
+        ).fetchone()
+        if row:
+            source, expires_at = row[0], row[1]
+            return {
+                "level": source_labels.get(source, "Healing Oasis Membership"),
+                "status": "Active",
+                "detail": f"Active through {str(expires_at)[:10]}" if expires_at else "Active",
+                "next_step": {
+                    "label": "Review your current recommendations",
+                    "href": "#recs",
+                },
+            }
+    except Exception:
+        pass
+
+    try:
+        rows = _subscriptions.active_memberships_by_email(cx, email)
+        if rows:
+            sub = rows[0]
+            category = _subscriptions.classify_sub(sub)
+            labels = {
+                "full": "Healing Oasis Membership",
+                "trial": "Trial Membership",
+                "paused": "Paused Membership",
+            }
+            detail = "Active"
+            if category == "paused":
+                detail = "Paused"
+            elif sub.get("next_charge_date"):
+                detail = f"Next renewal {str(sub['next_charge_date'])[:10]}"
+            return {
+                "level": labels.get(category, "Healing Oasis Membership"),
+                "status": category.title(),
+                "detail": detail,
+                "next_step": {
+                    "label": "Review your current recommendations",
+                    "href": "#recs",
+                },
+            }
+    except Exception:
+        pass
+
+    return {
+        "level": "Client Portal Access",
+        "status": "Free",
+        "detail": "Your free portal access is active",
+        "next_step": {
+            "label": "Review your recommendations",
+            "href": "#recs",
+        },
+    }
+
+
 def _ambassador_block(cx, email, quiz_url, public_base_url):
     """Affiliate/ambassador status for the personal portal, by email. None-raising.
     enrolled -> referral links (from slug); pending -> under review; else signup CTA."""
     em = (email or "").strip().lower()
     base = (public_base_url or "").rstrip("/")
-    signup = {"status": "none", "signup_url": f"{base}/affiliate/apply-form"}
+    # The public GET page contains the simple application form. /apply-form is
+    # POST-only and must never be used as a navigation link.
+    signup = {"status": "none", "signup_url": f"{base}/affiliate"}
     if not em:
         return signup
     try:
@@ -237,10 +321,11 @@ def _ambassador_block(cx, email, quiz_url, public_base_url):
             return signup
     slug, status = row[0], (row[1] or "")
     if status != "approved":
-        return {"status": "pending"}
+        return {"status": "pending", "portal_url": f"{base}/affiliate"}
     block = {
         "status": "enrolled",
         "slug": slug,
+        "portal_url": f"{base}/affiliate",
         "referral_url": f"{quiz_url}?utm_source={slug}&utm_medium=affiliate&utm_campaign=scoreapp-quiz",
         "recruit_url": f"{base}/affiliate?ref={slug}",
     }
@@ -338,7 +423,14 @@ def _caregiver_pay_block(cx, email, enabled):
         from dashboard import household as _hh
         members = _hh.payable_members_for(cx, email)
     except Exception:
-        return {"members": [], "orders": []}
+        # Earlier optional portal blocks may swallow a missing-schema error while
+        # PostgreSQL keeps the shared read transaction aborted. Recover once and
+        # retry this consent-gated block instead of silently hiding payable orders.
+        try:
+            cx.rollback()
+            members = _hh.payable_members_for(cx, email)
+        except Exception:
+            return {"members": [], "orders": []}
     orders = []
     for mem in members:
         scope = mem["pay_share_scope"]
@@ -350,7 +442,16 @@ def _caregiver_pay_block(cx, email, enabled):
                 "AND coalesce(status,'') NOT IN ('cancelled','delivered','done') "
                 "ORDER BY id DESC", (mem["member_email"],)).fetchall()
         except Exception:
-            rows = []
+            try:
+                cx.rollback()
+                rows = cx.execute(
+                    "SELECT id, total_cents, COALESCE(invoice_token,''), COALESCE(items_json,'[]') "
+                    "FROM orders WHERE lower(coalesce(email,''))=? "
+                    "AND coalesce(pay_status,'')<>'paid' AND coalesce(invoice_token,'')<>'' "
+                    "AND coalesce(status,'') NOT IN ('cancelled','delivered','done') "
+                    "ORDER BY id DESC", (mem["member_email"],)).fetchall()
+            except Exception:
+                rows = []
         for oid, tc, tok, items in rows:
             orders.append({
                 "order_id": oid,
@@ -363,6 +464,17 @@ def _caregiver_pay_block(cx, email, enabled):
     return {"members": members, "orders": orders}
 
 
+def _brain_block(enabled, url):
+    """Link out to the published Clinical Theory of Everything brain.
+
+    No client data is involved, so the whole block is a flag and a URL. Both are
+    required: a flag flipped on with no URL configured would otherwise ship a tile
+    pointing at an empty href.
+    """
+    url = (url or "").strip()
+    return {"enabled": bool(enabled and url), "url": url}
+
+
 def get_portal_view(cx, person_id, *, offers_enabled_keys=None, scan_date=None,
                     quiz_url="", public_base_url="", finder_enabled=False,
                     hub_enabled=False, health_profile_enabled=False,
@@ -370,6 +482,7 @@ def get_portal_view(cx, person_id, *, offers_enabled_keys=None, scan_date=None,
                     biofield_unlocked=True, supplement_review_enabled=False,
                     oasis_enabled=False, terrain_phase=None,
                     cart_enabled=False,
+                    brain_enabled=False, brain_url="",
                     caregiver_pay_enabled=False):
     import sqlite3
     cx.row_factory = sqlite3.Row
@@ -400,6 +513,7 @@ def get_portal_view(cx, person_id, *, offers_enabled_keys=None, scan_date=None,
         "orders": _orders_block(cx, email, roles),
         "biofield": _biofield_block(cx, email, scan_date=scan_date, unlocked=biofield_unlocked),
         "upgrade": _upgrade_block(cx, email, roles, offers_enabled_keys),
+        "membership": _membership_block(cx, email),
         "ambassador": _ambassador_block(cx, email, quiz_url, public_base_url),
         "practitioner_finder": _practitioner_finder_block(account["address"], finder_enabled),
         "hub_enabled": bool(hub_enabled),
@@ -410,6 +524,7 @@ def get_portal_view(cx, person_id, *, offers_enabled_keys=None, scan_date=None,
         "remedies": _rb.build_block(cx, email, remedies_enabled),
         "oasis": _ob.build_block(cx, email, oasis_enabled, terrain_phase),
         "cart": _cb.build_block(cx, email, cart_enabled),
+        "brain": _brain_block(brain_enabled, brain_url),
         "caregiver_pay": _caregiver_pay_block(cx, email, caregiver_pay_enabled),
         "caregiver_pay_enabled": bool(caregiver_pay_enabled),
     }

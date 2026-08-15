@@ -1,5 +1,5 @@
-"""Read-only 3-phase onboarding status for the portal tile. Pure computation
-from existing per-email stores; NO writes, NO new tables. Token-agnostic hrefs
+"""Three-phase onboarding status for the portal tile, computed from per-email stores.
+Token-agnostic hrefs
 (anchors) are prefixed with /portal/<token> by the route (Task 2).
 
 NOTE on recommendation_events.product_sources: the brief's sketch assumed a
@@ -8,15 +8,84 @@ LIST of per-product dicts: [{"product_key":..., "hidden":..., "sources":
 [{"source": sk, "count":..., "first_touch":..., "last_touch":...}, ...]}, ...].
 _has_source below is written against the real (list) shape.
 """
+import json
+
 from dashboard import (client_scans, intake, client_photos,
                         portal_biofield_reports, recommendation_events,
                         membership_products, portal_health_history,
-                        portal_extended_history)
+                        portal_extended_history, condition_triage,
+                        e4l_account_notifications, biofield_store, client_facts)
+
+
+ACCELERATOR_FACT_KEYS = {
+    "light": "accelerate_light",
+    "pemf": "accelerate_pemf",
+    "h2water": "accelerate_h2water",
+}
+
+ACCELERATOR_PURCHASE_SLUGS = {
+    "light": {"nir-nasal-clip", "nir-brain-frequency-helmet", "hair-growth-helmet",
+              "photobiomodulation-package", "therapeutic-nightlight", "harmony-laser"},
+    "pemf": {"kloud-pemf-mini", "kloud-pemf-maxi", "nes-mihealth"},
+    "h2water": {"water-ionizer-5plate", "water-ionizer-9plate",
+                "water-ionizer-15plate", "molecular-hydrogen-bottle",
+                "miracule-water-system"},
+}
+
+
+def _purchased_slugs(cx, email):
+    """Paid order lines that prove ownership of an accelerator device."""
+    try:
+        rows = cx.execute(
+            "SELECT items_json FROM orders WHERE lower(email)=lower(?) "
+            "AND lower(COALESCE(pay_status,''))='paid'", (email,)).fetchall()
+    except Exception:
+        return set()
+    out = set()
+    for row in rows:
+        try:
+            out.update((line.get("slug") or "").strip() for line in
+                       (json.loads(row[0] or "[]") or []) if isinstance(line, dict))
+        except Exception:
+            continue
+    return {slug for slug in out if slug}
+
+
+def accelerator_status(cx, email):
+    """Merge automatic purchase proof with client-reported equipment ownership."""
+    purchased = _purchased_slugs(cx, email)
+    try:
+        client_facts.init_table(cx)
+        rows = cx.execute("SELECT fact_key,value FROM client_facts WHERE email=?",
+                          ((email or "").strip().lower(),)).fetchall()
+        facts = {row[0]: bool(row[1]) for row in rows}
+    except Exception:
+        facts = {}
+    return {key: bool(purchased & slugs) or bool(facts.get(ACCELERATOR_FACT_KEYS[key]))
+            for key, slugs in ACCELERATOR_PURCHASE_SLUGS.items()}
 
 
 def _has_scan(cx, email):
     try:
         return bool(client_scans.scans_for(cx, email))
+    except Exception:
+        return False
+
+
+def _has_e4l_account(cx, email):
+    """A signup notification or synced scan proves an E4L account exists."""
+    try:
+        if e4l_account_notifications.has_account(cx, email):
+            return True
+    except Exception:
+        pass
+    if _has_scan(cx, email):
+        return True
+    try:
+        return cx.execute(
+            "SELECT 1 FROM scan_freshness WHERE lower(email)=lower(?) LIMIT 1",
+            (email,),
+        ).fetchone() is not None
     except Exception:
         return False
 
@@ -52,6 +121,22 @@ def _safe(fn, cx, email):
         return False
 
 
+def _biofield_completed(cx, email):
+    """A performed analysis or a published report completes the portal step."""
+    try:
+        biofield_store.init_table(cx)
+        row = cx.execute(
+            "SELECT completed_at FROM biofield_readiness WHERE lower(email)=lower(?)",
+            (email,),
+        ).fetchone()
+        if row and row[0]:
+            return True
+    except Exception:
+        pass
+    return _safe(lambda c, e: portal_biofield_reports.latest_report(c, e) is not None,
+                 cx, email)
+
+
 def build_status(cx, email):
     email = (email or "").strip().lower()
     conditions_done = (
@@ -59,35 +144,69 @@ def build_status(cx, email):
     )
     products_done = _safe(portal_health_history.has, cx, email)
     extended_done = _safe(portal_extended_history.has, cx, email)
+    condition_triage.init_table(cx)
+    condition_rows = cx.execute(
+        "SELECT condition FROM condition_triage WHERE lower(email)=lower(?) "
+        "ORDER BY updated_at", (email,)
+    ).fetchall()
+    conditions = []
+    for row in condition_rows:
+        condition = row[0]
+        answers = condition_triage.get_triage(cx, email, condition) or {}
+        answers.pop("resolved_programs", None)
+        conditions.append({"condition": condition, "answers": answers})
+    product_history = portal_health_history.get(cx, email) or {}
+    extended_record = portal_extended_history.get(cx, email) or {}
 
     def step(k, label, done, href, **extra):
         d = {"key": k, "label": label, "done": done, "href": href}
         d.update(extra)
         return d
 
+    has_scan = _has_scan(cx, email)
+    voice_href = (
+        "https://portal.e4l.com"
+        if _has_e4l_account(cx, email)
+        else "https://truly.vip/E4L"
+    )
+    intake_done = _safe(intake.is_submitted, cx, email)
+    intake_in_progress = False
+    try:
+        intake_status = cx.execute(
+            "SELECT status FROM intake_responses WHERE email=?", (email,)
+        ).fetchone()
+        intake_in_progress = bool(intake_status and intake_status[0] == "draft")
+    except Exception:
+        pass
+
     be_read = [
-        step("voice", "Voice analysis", _has_scan(cx, email), "https://truly.vip/E4L"),
-        step("intake", "Intake", _safe(intake.is_submitted, cx, email), "https://truly.vip/Join"),
+        step("voice", "Voice analysis", has_scan, voice_href),
+        step("intake", "Intake", intake_done, "#intake",
+             in_progress=intake_in_progress),
         step("photo", "Photo", _safe(client_photos.has, cx, email), "#photo"),
-        step("biofield", "Biofield Analysis",
-             _safe(lambda c, e: portal_biofield_reports.latest_report(c, e) is not None, cx, email),
-             "#biofield"),
+        step("biofield", "Biofield Analysis", _biofield_completed(cx, email), "#biofield"),
     ]
     match = [
-        step("history", "Starter remedies from your history",
-             conditions_done and products_done and extended_done,
-             "#recs"),
-        step("scan_match", "Personalized match from your scan",
-             _has_source(cx, email, "biofield"), "#recs"),
+        step("history", "Match Remedies",
+             conditions_done or _has_source(cx, email, "scan")
+             or _has_source(cx, email, "biofield"), "#recs"),
     ]
+    accelerators = accelerator_status(cx, email)
     heal = [
-        step("light", "Light", None, "https://clinicalpraxis.com"),
-        step("pemf", "PEMF", None, "", soon=True),
-        step("h2water", "Molecular hydrogen microwater", None, "", soon=True),
+        step("light", "Light", accelerators["light"],
+             "https://clinicalpraxis.com/photobiomodulation/", checkable=True),
+        step("pemf", "PEMF", accelerators["pemf"],
+             "https://clinicalpraxis.com/pemf/", checkable=True),
+        step("h2water", "Molecular hydrogen microwater", accelerators["h2water"],
+             "https://clinicalpraxis.com/molecular-hydrogen-microwater/", checkable=True),
     ]
     return {
         "phases": [
-            {"key": "be_read", "title": "Be read", "steps": be_read},
+            {
+                "key": "be_read",
+                "title": "Discover What Your Body Is Saying",
+                "steps": be_read,
+            },
             {"key": "match", "title": "Match remedies", "steps": match},
             {"key": "heal", "title": "Accelerate healing", "steps": heal},
         ],
@@ -95,4 +214,9 @@ def build_status(cx, email):
         "history_conditions_done": conditions_done,
         "history_products_done": products_done,
         "history_extended_done": extended_done,
+        "history_prefill": {
+            "conditions": conditions,
+            "products": product_history,
+            "extended": extended_record.get("answers") or {},
+        },
     }

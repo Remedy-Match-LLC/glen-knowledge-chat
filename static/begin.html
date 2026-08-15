@@ -992,8 +992,18 @@
     document.querySelectorAll('[data-name]').forEach(function(el){ el.textContent = name; });
     document.querySelectorAll('[data-name-prefix]').forEach(function(el){ el.style.display = 'inline'; });
   }
+  function campaignAttribution(){
+    var keys=['utm_source','utm_medium','utm_campaign','utm_content','utm_term','gclid'];
+    var saved={};
+    try { saved=JSON.parse(sessionStorage.getItem('begin_campaign_attribution')||'{}')||{}; } catch(e) {}
+    var query=new URLSearchParams(window.location.search);
+    keys.forEach(function(key){ var value=query.get(key); if(value) saved[key]=value.slice(0,200); });
+    try { sessionStorage.setItem('begin_campaign_attribution',JSON.stringify(saved)); } catch(e) {}
+    return saved;
+  }
+  var CAMPAIGN_ATTRIBUTION=campaignAttribution();
   function unlock(trigger, extra){
-    var body = Object.assign({ trigger: trigger, ref: getRef() }, extra||{});
+    var body = Object.assign({ trigger: trigger, ref: getRef(), campaign: CAMPAIGN_ATTRIBUTION }, extra||{});
     return fetch('/begin/unlock',{method:'POST',headers:{'Content-Type':'application/json'},
       credentials:'same-origin',body:JSON.stringify(body)})
       .then(function(r){ return r.ok ? r.json() : Promise.reject(r); })
@@ -1126,10 +1136,22 @@
     function streamMatch(query){
       var box = heroAppend('assistant', '');
       var acc = '';
+      var controller = new AbortController();
+      var watchdog = null;
+      var timedOut = false;
+      function armWatchdog(){
+        if (watchdog) clearTimeout(watchdog);
+        watchdog = setTimeout(function(){
+          timedOut = true;
+          controller.abort();
+        }, 20000);
+      }
+      armWatchdog();
       return fetch('/begin/match/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'same-origin',
+        signal: controller.signal,
         body: JSON.stringify({
           query: query, history: heroHistory.slice(),
           for_whom: 'me', session_id: '', name: '', email: ''
@@ -1141,7 +1163,15 @@
         var buf = '';
         function pump(){
           return reader.read().then(function(chunk){
-            if (chunk.done) { box.innerHTML = heroLinkify(acc); heroSpeak(box, acc); heroHistory.push({ role: 'assistant', content: acc }); heroSave(); return; }
+            armWatchdog();
+            if (chunk.done) {
+              clearTimeout(watchdog);
+              if (!acc.trim()) {
+                box.textContent = 'I didn’t receive a reply. Please try sending that again.';
+                return;
+              }
+              box.innerHTML = heroLinkify(acc); heroSpeak(box, acc); heroHistory.push({ role: 'assistant', content: acc }); heroSave(); return;
+            }
             buf += decoder.decode(chunk.value, { stream: true });
             var lines = buf.split('\n'); buf = lines.pop();
             lines.forEach(function(line){
@@ -1155,7 +1185,12 @@
           });
         }
         return pump();
-      }).catch(function(){ box.textContent = 'Something went sideways. Please try again.'; });
+      }).catch(function(){
+        clearTimeout(watchdog);
+        box.textContent = timedOut
+          ? 'That reply took too long. Please try sending your message again.'
+          : 'Something went sideways. Please try again.';
+      });
     }
 
     function send(){
@@ -1254,7 +1289,7 @@
     { key:'scan', label:'Scan', paren:'Your Biofield',     href:'https://truly.vip/E4L',   status:'available', fill:0, steps:[] },
     { key:'find', label:'Find', paren:'Your Remedy Match', href:'/begin/match',             status:'available', fill:0, steps:[] },
     { key:'heal', label:'Heal', paren:'the root causes',   href:'https://truly.vip/Join',  status:'available', fill:0, steps:[] },
-    { key:'give', label:'Give', paren:'lift others',       href:'/affiliate/apply',         status:'available', fill:0, steps:[] }
+    { key:'give', label:'Give', paren:'lift others',       href:'/affiliate',               status:'available', fill:0, steps:[] }
   ];
   var journeyUnfolded = false;
 
@@ -1279,7 +1314,9 @@
       a.href = s.href || '#';
       // External destinations (e.g. Scan -> E4L, Heal -> truly.vip) open in a new
       // tab, matching the surfaced-card behavior; internal (/...) navigate in place.
-      if (s.href && s.href.charAt(0) !== '/') { a.target = '_blank'; a.rel = 'noopener noreferrer'; }
+      if (s.key === 'give' || (s.href && s.href.charAt(0) !== '/')) {
+        a.target = '_blank'; a.rel = 'noopener noreferrer';
+      }
       var lab = document.createElement('span');
       lab.className = 'jc-label';
       lab.textContent = s.label;                       // static server label - textContent (XSS-safe)

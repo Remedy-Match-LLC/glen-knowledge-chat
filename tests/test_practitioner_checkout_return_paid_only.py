@@ -80,7 +80,7 @@ def test_paid_only_wholesale_card_return_marks_paid_and_books_one_receipt(
     calls = {"n": 0}
 
     def _fake_create_sales_receipt(customer, lines, *, discount_cents=0, tax_cents=0,
-                                    email_to=None):
+                                    email_to=None, private_note=None):
         calls["n"] += 1
         return {"Id": "SR1"}
 
@@ -118,7 +118,7 @@ def test_paid_only_wholesale_card_return_rehit_is_idempotent(monkeypatch, tmp_pa
     calls = {"n": 0}
 
     def _fake_create_sales_receipt(customer, lines, *, discount_cents=0, tax_cents=0,
-                                    email_to=None):
+                                    email_to=None, private_note=None):
         calls["n"] += 1
         return {"Id": "SR2"}
 

@@ -87,7 +87,41 @@
       toggle.onclick = function () { path.classList.toggle("js-hide"); mnav.classList.toggle("js-hide"); };
     }
 
+    // The Healing Oasis owns one remedy-order basket inside the portal page.
+    // Give it a persistent wayfinding control beside My Path without routing
+    // members into the unrelated storefront cookie cart.
+    if (/^\/portal\/(?:me|[^/]+)/.test(location.pathname)) {
+      var cartBtn = el("button", "js-mypath-btn js-portal-cart-btn",
+        '<span class="js-cart-icon" aria-hidden="true">🛒</span>' +
+        '<span class="js-cart-label">Cart</span>' +
+        '<span class="js-cart-badge" aria-hidden="true">0</span>');
+      var cartBadge = cartBtn.querySelector(".js-cart-badge");
+      cartBtn.setAttribute("aria-label", "View remedy order cart");
+      cartBtn.onclick = function () {
+        if (typeof window.openPortalOrderBasket === "function") window.openPortalOrderBasket(true);
+      };
+      window.setPortalHeaderCartCount = function (count) {
+        count = Math.max(0, parseInt(count, 10) || 0);
+        cartBadge.textContent = String(count);
+        cartBadge.hidden = count === 0;
+        cartBtn.setAttribute("aria-label", count
+          ? "View remedy order cart with " + count + " item" + (count === 1 ? "" : "s")
+          : "View remedy order cart");
+      };
+      window.setPortalHeaderCartCount(window.__portalCartCount || 0);
+      bar.appendChild(cartBtn);
+    }
+
     bar.appendChild(mypathBtn);
+
+    // A portal opened by an authenticated console owner keeps a visible route
+    // back without ever placing the console key in the cross-domain URL.
+    if (/^\/portal\/[^/]+/.test(location.pathname) &&
+        new URLSearchParams(location.search).get("from") === "console") {
+      var consoleReturn = el("a", "js-mypath-btn js-console-return", "Back to client list");
+      consoleReturn.href = "https://illtowell.com/console/portal-links";
+      bar.appendChild(consoleReturn);
+    }
 
     if (REWARDS) {
       var orb = el("span", "js-orb"); orb.setAttribute("data-lit", "0"); orb.title = "Your biofield";

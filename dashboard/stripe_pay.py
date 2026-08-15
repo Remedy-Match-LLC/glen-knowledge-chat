@@ -17,10 +17,11 @@ def _key() -> str:
     return k
 
 
-def _post(path: str, params: dict) -> dict:
+def _post(path: str, params: dict, *, idempotency_key="") -> dict:
     """POST form-encoded params to the Stripe API. Returns the parsed JSON dict."""
     url = path if path.startswith("http") else f"{STRIPE_API}{path}"
-    r = requests.post(url, data=params, auth=(_key(), ""), timeout=20)
+    headers = {"Idempotency-Key": idempotency_key} if idempotency_key else None
+    r = requests.post(url, data=params, auth=(_key(), ""), headers=headers, timeout=20)
     r.raise_for_status()
     return r.json()
 
@@ -85,7 +86,7 @@ def create_checkout_session(amount_cents, *, customer_email, description, metada
 
 def create_itemized_checkout_session(items, *, customer_email, metadata,
                                      success_url, cancel_url, currency="usd",
-                                     collect_shipping=False):
+                                     collect_shipping=False, idempotency_key=""):
     """Create a one-time Checkout Session with one visible Stripe line per item."""
     params = {
         "mode": "payment",
@@ -116,7 +117,8 @@ def create_itemized_checkout_session(items, *, customer_email, metadata,
             continue
         params[f"metadata[{k}]"] = str(v)
         params[f"payment_intent_data[metadata][{k}]"] = str(v)
-    j = _post("/checkout/sessions", params)
+    j = (_post("/checkout/sessions", params, idempotency_key=idempotency_key)
+         if idempotency_key else _post("/checkout/sessions", params))
     return {"id": j.get("id"), "url": j.get("url")}
 
 

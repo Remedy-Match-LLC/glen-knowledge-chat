@@ -86,10 +86,23 @@ def test_api_portal_returns_enriched_content(client):
     assert j["reorder_items"][0].get("name")  # enriched from the catalog
 
 
+def test_api_portal_emits_token_safe_timing_headers(client):
+    c, appmod = client
+    tok = _seed_portal(appmod)
+    r = c.get(f"/api/portal/{tok}",
+              headers={"X-Request-ID": "portal-test-request"})
+    assert r.status_code == 200
+    assert r.headers["X-Request-ID"] == "portal-test-request"
+    timing = r.headers["Server-Timing"]
+    assert "app;dur=" in timing
+    assert "identity;dur=" in timing
+    assert tok not in timing
+
+
 def test_portal_reorder_uses_client_ff_price(client, monkeypatch):
     # Unified FF pricing: the client's FF flat (client_prices.__all_ff__) drives the
-    # portal reorder prices, with the same precedence as the invoice — baked per-item
-    # override > per-SKU client special > FF flat (FF-eligible only) > regular.
+    # portal reorder prices, with the same precedence as the invoice — current
+    # per-SKU client special > current FF flat > older baked override > regular.
     c, appmod = client
     prods = {
         "ff-prod": {"name": "FF Prod", "price_cents": 6997, "qty_pricing": True},
@@ -110,14 +123,14 @@ def test_portal_reorder_uses_client_ff_price(client, monkeypatch):
         "reorder_items": [
             {"slug": "ff-prod", "qty": 1},                      # FF, no override -> flat 5000
             {"slug": "non-ff", "qty": 1},                       # not FF -> regular 7000
-            {"slug": "ff-ov", "qty": 1, "price_cents": 3000},   # baked override wins -> 3000
+            {"slug": "ff-ov", "qty": 1, "price_cents": 3000},   # current flat wins -> 5000
             {"slug": "ff-sku", "qty": 1},                       # per-SKU special -> 4000
         ]})
     j = c.get(f"/api/portal/{tok}").get_json()
     items = {it["slug"]: it for it in j["reorder_items"]}
     assert items["ff-prod"]["price_cents"] == 5000 and items["ff-prod"]["is_special"] is True
     assert items["non-ff"]["price_cents"] == 7000 and items["non-ff"]["is_special"] is False
-    assert items["ff-ov"]["price_cents"] == 3000    # per-item baked override wins
+    assert items["ff-ov"]["price_cents"] == 5000    # current saved flat wins over old baked price
     assert items["ff-sku"]["price_cents"] == 4000   # per-SKU client special wins over the flat
 
 
@@ -265,6 +278,8 @@ def test_api_portal_view_returns_role_aware_blocks(client):
     assert j["biofield"]["visible"] is True       # seeded portal has layers/video
     assert j["upgrade"] == {"enabled": False}  # offers dark by default
     assert j["auth_method"] == "token"            # session login is dark
+    assert "no-store" in r.headers["Cache-Control"]
+    assert r.headers["Pragma"] == "no-cache"
 
 
 def test_api_portal_view_bad_token_404(client):
@@ -337,14 +352,19 @@ def test_portal_checkout_resolves_via_session(client, monkeypatch):
     monkeypatch.setattr(qbo_billing, "create_invoice",
                         lambda cust, lines, **kw: {"Id": "INV1", "DocNumber": "1", "TotalAmt": 25.0})
     monkeypatch.setattr(appmod, "_ingest_order", lambda *a, **k: None)
+    monkeypatch.setattr(appmod, "_shipping_for_cart", lambda *a, **k: 595)
     monkeypatch.setattr(appmod, "_STRIPE_ACTIVE", True)
+    captured = {}
     monkeypatch.setattr(appmod, "_stripe_checkout_url_for_reorder",
-                        lambda out, email: "https://checkout.stripe/me")
+                        lambda out, email: captured.update(out=out) or "https://checkout.stripe/me")
     c.set_cookie("rm_portal_session", sess)
 
     r = c.post("/api/portal/me/checkout")
     assert r.status_code == 200
     assert r.get_json()["stripe_url"] == "https://checkout.stripe/me"
+    assert captured["out"]["total"] == 30.95
+    assert captured["out"]["stripe_line_items"][-1] == {
+        "name": "Shipping (USPS)", "qty": 1, "unit_cents": 595}
 
 
 # ── Group-join offer checkout (mirrors the studio card-vault flow) ───────────
@@ -491,17 +511,23 @@ def test_portal_checkout_charges_special_price(client, monkeypatch):
     monkeypatch.setattr(qbo_billing, "find_or_create_customer",
                         lambda *a, **k: {"Id": "C1"})
     monkeypatch.setattr(appmod, "_ingest_order", lambda *a, **k: None)
+    monkeypatch.setattr(appmod, "_shipping_for_cart", lambda *a, **k: 595)
     monkeypatch.setattr(appmod._bos_orders, "set_order_qbo_lines",
                         lambda cx, ref, payload: captured.setdefault("payload", payload))
     monkeypatch.setattr(appmod, "_STRIPE_ACTIVE", True)
+    def capture_stripe(out, email):
+        captured["stripe"] = out
+        return "https://checkout.stripe/x"
     monkeypatch.setattr(appmod, "_stripe_checkout_url_for_reorder",
-                        lambda out, email: "https://checkout.stripe/x")
+                        capture_stripe)
 
     r = c.post(f"/api/portal/{tok}/checkout")
     assert r.status_code == 200
     assert r.get_json()["stripe_url"] == "https://checkout.stripe/x"
     # charged the special price, not catalog
     assert captured["payload"]["lines"][0]["amount"] == 25.0
+    assert captured["payload"]["lines"][-1]["amount"] == 5.95
+    assert captured["stripe"]["total"] == 30.95
 
 
 def test_portal_checkout_bad_token_404(client):

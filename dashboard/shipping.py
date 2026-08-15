@@ -352,6 +352,22 @@ def init_shipping_schema(cx: sqlite3.Connection) -> None:
                              [_osid, _bs, _q],
                              conflict_cols=["bottle_type_id", "box_size"])
 
+    # Mixed FF + Infoceutical Small-box fit, confirmed by Rae 2026-08-11:
+    # four 30-capsule FF bottles plus two 30ml Infoceuticals fit one Small.
+    # Both types therefore occupy one-sixth of a Small in the fractional mixed-
+    # order model: 4/6 + 2/6 = 1.0. Prod already has Rae's 30 Caps S=6 row,
+    # while 30ml previously had dimensions only; ensuring both makes the rule
+    # deterministic on prod and fresh databases. INSERT OR IGNORE preserves any
+    # later operator adjustment made through /admin/shipping.
+    for _type_name in ("30 Caps", "30ml"):
+        _bt = cx.execute(
+            "SELECT id FROM bottle_types WHERE name=?", (_type_name,)).fetchone()
+        if _bt:
+            insert_or_ignore(cx, "box_capacity",
+                             ["bottle_type_id", "box_size", "qty"],
+                             [_bt[0], "S", 6],
+                             conflict_cols=["bottle_type_id", "box_size"])
+
     # First-run seed: only if the table is empty
     has_any = cx.execute("SELECT 1 FROM usps_rates LIMIT 1").fetchone()
     if not has_any:
@@ -841,14 +857,28 @@ def is_shippable(product) -> bool:
                 or p.get("vendor_shipped"))
 
 
+UNKNOWN_BOTTLE_TYPE = "unknown"
+
+
 def resolve_bottle_type(slug, product, db_path=None):
-    with _connect(db_path) as cx:
-        row = cx.execute(
-            "SELECT bottle_type FROM product_bottle_types WHERE slug=?", (slug,)
-        ).fetchone()
-    if row:
+    try:
+        with _connect(db_path) as cx:
+            row = cx.execute(
+                "SELECT bottle_type FROM product_bottle_types WHERE slug=?", (slug,)
+            ).fetchone()
+    except sqlite3.OperationalError as exc:
+        # A brand-new or temporarily redirected database may be consulted before
+        # the shipping migration has run. Catalog metadata is the documented
+        # fallback, so absence of this optional override table must not make a
+        # client checkout fail with HTTP 500.
+        if "no such table" not in str(exc).lower():
+            raise
+        row = None
+    if row and row["bottle_type"]:
         return row["bottle_type"]
-    return (product or {}).get("bottle_type") or "default"
+    # Missing packaging data is not a bottle-size guess. Keep it explicit so
+    # callers can stop auto-pricing and ask an operator to enter dimensions.
+    return (product or {}).get("bottle_type") or UNKNOWN_BOTTLE_TYPE
 
 
 # Cart-line formats that ship as a cello (cellophane) refill pack instead of a rigid

@@ -101,6 +101,31 @@ def cart_clear(practitioner_id, *, db_path=None) -> None:
         cx.commit()
 
 
+def cart_clear_if_matches(practitioner_id, items, *, db_path=None) -> bool:
+    """Clear a paid draft only when it still exactly matches the purchased cart.
+
+    A delayed webhook must never erase products added for a later order. The
+    exact-match guard also makes Stripe webhook/redirect replays idempotent.
+    """
+    p = db_path or _db_path()
+    init_cart_table(p)
+    expected = sorted(
+        ((x.get("slug") or "").strip(), max(0, int(x.get("qty") or 0)))
+        for x in (items or []) if (x.get("slug") or "").strip() and int(x.get("qty") or 0) > 0
+    )
+    with db.connect(p) as cx:
+        current = sorted(cx.execute(
+            "SELECT slug, qty FROM wholesale_cart WHERE practitioner_id=?",
+            (str(practitioner_id),),
+        ).fetchall())
+        if not expected or current != expected:
+            return False
+        cx.execute("DELETE FROM wholesale_cart WHERE practitioner_id=?",
+                   (str(practitioner_id),))
+        cx.commit()
+    return True
+
+
 # ── order history (local record, written at checkout) ─────────────────────────
 
 def _ensure_orders_table(cx) -> None:
@@ -224,11 +249,12 @@ def client_belongs_to_practitioner(practitioner_id, email, *, db_path=None) -> b
 
 
 def search_clients(practitioner_id, q, *, limit=8, db_path=None) -> List[dict]:
-    """The practitioner's own dispensary clients matching `q` (email substring or joined
-    people.name), for the chat client-focus picker. Includes the most recent ship-to
-    address from that practitioner's orders when available, so selecting a client can
-    populate the drop-ship recipient fields. Deduped by email; scoped to the
-    practitioner (never returns another practitioner's client). Empty q -> []."""
+    """Search the practitioner's attributed client history.
+
+    Includes both patient-paid dispensary history and practitioner-paid drop-ship
+    orders, with the latest scoped ship-to address when available. Results are
+    deduped and never cross practitioner boundaries.
+    """
     qq = (q or "").strip().lower()
     if not practitioner_id or not qq:
         return []
@@ -236,7 +262,7 @@ def search_clients(practitioner_id, q, *, limit=8, db_path=None) -> List[dict]:
     p = db_path or _db_path()
     with db.connect(p) as cx:
         _ensure_dispensary_table(cx)
-        rows = cx.execute(
+        rows = list(cx.execute(
             "SELECT DISTINCT d.customer_email AS email, COALESCE(pe.name,'') AS name "
             "FROM dispensary_orders d "
             "LEFT JOIN people pe ON lower(pe.email) = lower(d.customer_email) "
@@ -245,27 +271,49 @@ def search_clients(practitioner_id, q, *, limit=8, db_path=None) -> List[dict]:
             "  AND (lower(d.customer_email) LIKE ? OR lower(COALESCE(pe.name,'')) LIKE ?) "
             "ORDER BY name, email LIMIT ?",
             (str(practitioner_id), like, like, int(limit)),
-        ).fetchall()
-        clients = []
-        for r in rows:
+        ).fetchall())
+        # Practitioner-paid drop-ships live in the unified orders table rather
+        # than dispensary_orders. Older databases may not have that table yet.
+        try:
+            order_rows = cx.execute(
+                "SELECT email, COALESCE(name,'') AS name, address_json "
+                "FROM orders WHERE practitioner_id=? AND source='dropship' "
+                "AND (lower(COALESCE(email,'')) LIKE ? "
+                "OR lower(COALESCE(name,'')) LIKE ?) "
+                "ORDER BY id DESC LIMIT ?",
+                (str(practitioner_id), like, like, int(limit)),
+            ).fetchall()
+        except Exception:
+            order_rows = []
+        out, seen = [], set()
+        for r in list(rows) + list(order_rows):
+            email = (r[0] or "").strip()
+            name = (r[1] or "").strip()
+            key = email.lower() or name.lower()
+            if not key or key in seen:
+                continue
+            seen.add(key)
             ship = {}
+            address_json = r[2] if len(r) > 2 else None
             try:
-                order_row = cx.execute(
-                    "SELECT address_json FROM orders "
-                    "WHERE practitioner_id=? AND lower(email)=lower(?) "
-                    "  AND address_json IS NOT NULL AND address_json <> '' "
-                    "ORDER BY id DESC LIMIT 1",
-                    (str(practitioner_id), r[0]),
-                ).fetchone()
-                if order_row and order_row[0]:
-                    parsed = json.loads(order_row[0])
-                    if isinstance(parsed, dict):
-                        ship = parsed
+                if not address_json and email:
+                    latest = cx.execute(
+                        "SELECT address_json FROM orders "
+                        "WHERE practitioner_id=? AND lower(email)=lower(?) "
+                        "AND address_json IS NOT NULL AND address_json <> '' "
+                        "ORDER BY id DESC LIMIT 1",
+                        (str(practitioner_id), email),
+                    ).fetchone()
+                    address_json = latest[0] if latest else None
+                parsed = json.loads(address_json) if address_json else {}
+                if isinstance(parsed, dict):
+                    ship = parsed
             except (sqlite3.OperationalError, ValueError, TypeError):
-                # Older/test databases may not have the unified orders table yet.
                 ship = {}
-            clients.append({"email": r[0], "name": r[1], "ship": ship})
-    return clients
+            out.append({"email": email, "name": name, "ship": ship})
+            if len(out) >= int(limit):
+                break
+    return out
 
 
 def practitioner_id_by_dispensary_code(code) -> Optional[str]:

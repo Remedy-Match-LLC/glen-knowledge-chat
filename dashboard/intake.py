@@ -43,7 +43,7 @@ _RESPONSE = _scale([
 _COMMITMENT = _scale([(n, str(n)) for n in range(1, 11)])
 
 INTAKE_FORM = {
-    "version": "2026-07-07",
+    "version": "2026-08-09",
     "sections": [
         {"id": "personal", "title": "Personal Information", "fields": [
             {"id": "first_name", "type": "text", "label": "Legal first name", "required": True},
@@ -61,7 +61,7 @@ INTAKE_FORM = {
             {"id": "relationship_status", "type": "single_choice", "label": "Relationship status",
              "options": ["Single", "Partnered", "Married", "Divorced", "Widowed", "Prefer not to say"]},
             {"id": "gender", "type": "single_choice", "label": "Gender",
-             "options": ["Woman/Girl", "Man/Boy", "Nonbinary", "Prefer not to say"]},
+             "options": ["Male", "Female"]},
             {"id": "occupation", "type": "text", "label": "Occupation"},
             {"id": "hours_per_week", "type": "number", "label": "Hours per week"},
             {"id": "referred_by", "type": "text", "label": "Referred by"},
@@ -81,29 +81,49 @@ INTAKE_FORM = {
          "fields": [
             {"id": "terrain", "type": "scale", "maps_to": "terrain", "required": True,
              "label": "Dominant Terrain",
-             "help": "Select the lowest number that applies to current issues.",
+             "help": "Check all that apply. Scoring uses the lowest selected number.",
+             "multi_select": True, "selection_field": "terrain_selections",
              "options": _TERRAIN},
             {"id": "penetration", "type": "scale", "maps_to": "penetration", "required": True,
              "label": "Penetration of the Body Sanctuary",
-             "help": "Select the lowest number that applies to current issues.",
+             "help": "Check all that apply. Scoring uses the lowest selected number.",
+             "multi_select": True, "selection_field": "penetration_selections",
              "options": _PENETRATION},
             {"id": "tissue_layer", "type": "scale", "maps_to": "tissue_layer", "required": True,
              "label": "Dominant Embryological Tissue Layer",
-             "help": "Select the lowest number that applies to your current issues.",
+             "help": "Check all that apply. Scoring uses the lowest selected number.",
+             "multi_select": True, "selection_field": "tissue_layer_selections",
              "options": _TISSUE},
             {"id": "response", "type": "scale", "maps_to": "response", "required": True,
              "label": "Dominant Healing Response",
-             "help": "Your most typical response to well-selected natural therapies.",
+             "help": "Check all that apply. Scoring uses the lowest selected number.",
+             "multi_select": True, "selection_field": "response_selections",
              "options": _RESPONSE},
             {"id": "commitment", "type": "scale", "maps_to": "commitment", "required": True,
              "label": "Level of commitment to improving your health",
-             "help": "1 is lowest, 10 is highest.", "options": _COMMITMENT},
+             "help": "1 is lowest, 10 is highest.", "number_only": True,
+             "options": _COMMITMENT},
             {"id": "obstacles", "type": "textarea",
              "label": "Is there anything that will get in the way of following a plan?"},
             {"id": "budget_monthly", "type": "number", "label": "Current budget",
              "help": "Estimated USD per month available to invest in better health."},
         ]},
         {"id": "history", "title": "Personal Health History", "fields": [
+            {"id": "physical_trauma", "type": "textarea",
+             "label": "Physical trauma or injuries",
+             "help": "Describe what happened, body areas affected, your age, and any lasting effects."},
+            {"id": "psychoemotional_trauma", "type": "textarea",
+             "label": "Psychoemotional trauma or major stress",
+             "help": "Describe what happened, your approximate age or year, and any lasting effects."},
+            {"id": "toxins", "type": "textarea",
+             "label": "Toxin or environmental exposures",
+             "help": "List the substance, source, duration, approximate dates, and any reaction."},
+            {"id": "family_history", "type": "table", "label": "Family health history",
+             "columns": [
+                 {"id": "relative", "type": "text", "label": "Relative / side of family"},
+                 {"id": "condition", "type": "text", "label": "Condition"},
+                 {"id": "age_onset", "type": "number", "label": "Age at onset"},
+             ]},
             {"id": "sleep", "type": "textarea",
              "label": "Do you have trouble falling asleep, staying asleep, or wake frequently?"},
             {"id": "dental", "type": "textarea", "label": "Dental issues: any amalgams or root canals?"},
@@ -112,8 +132,10 @@ INTAKE_FORM = {
             {"id": "supplements", "type": "table", "label": "Supplements you take now",
              "help": "Include vitamins, herbs, minerals. Rate how certain you are each is needed, 1 to 10.",
              "columns": [
-                 {"id": "brand", "type": "text", "label": "Brand name"},
-                 {"id": "name", "type": "text", "label": "Supplement name"},
+                 {"id": "brand", "type": "text", "label": "Brand name",
+                  "suggestion_kind": "brands"},
+                 {"id": "name", "type": "text", "label": "Supplement name",
+                  "suggestion_kind": "supplements"},
                  {"id": "reason", "type": "text", "label": "Reason"},
                  {"id": "need", "type": "number", "label": "Need (1-10)"},
              ]},
@@ -122,9 +144,14 @@ INTAKE_FORM = {
                  {"id": "current", "type": "single_choice", "label": "Status", "options": ["Current", "Past"]},
                  {"id": "age_onset", "type": "number", "label": "Age at onset"},
             ]},
-            {"id": "medications", "type": "table", "label": "Medications you are currently taking",
+            {"id": "medications", "type": "table", "label": "Prescription medications you are currently taking",
              "columns": [
                  {"id": "medication", "type": "text", "label": "Medication"},
+                 {"id": "reason", "type": "text", "label": "Reason"},
+             ]},
+            {"id": "otc_drugs", "type": "table", "label": "Over-the-counter drugs you are currently taking",
+             "columns": [
+                 {"id": "medication", "type": "text", "label": "Drug"},
                  {"id": "reason", "type": "text", "label": "Reason"},
              ]},
             {"id": "surgeries", "type": "table", "label": "Past hospitalizations or surgeries",
@@ -192,6 +219,54 @@ def init_intake_table(cx):
         " answers_json TEXT NOT NULL,"
         " created_at TEXT NOT NULL,"
         " submitted_at TEXT)")
+    cx.execute(
+        "CREATE TABLE IF NOT EXISTS intake_suggestions ("
+        " kind TEXT NOT NULL,"
+        " value TEXT NOT NULL,"
+        " value_key TEXT NOT NULL,"
+        " source TEXT NOT NULL,"
+        " created_at TEXT NOT NULL,"
+        " PRIMARY KEY(kind, value_key))")
+    seed_suggestions(cx, brands=["Remedy Match", "E4L", "PRL", "Fullscript"])
+
+
+def _remember_values(cx, kind, values, source, now):
+    for raw in values or []:
+        value = " ".join(str(raw or "").split()).strip()
+        if not value:
+            continue
+        cx.execute(
+            "INSERT INTO intake_suggestions (kind, value, value_key, source, created_at)"
+            " VALUES (?,?,?,?,?) ON CONFLICT(kind, value_key) DO NOTHING",
+            (kind, value, value.casefold(), source, now))
+
+
+def seed_suggestions(cx, brands=None, supplements=None, now="seed"):
+    """Idempotently add curated/catalog choices without replacing client entries."""
+    _remember_values(cx, "brands", brands, "seed", now)
+    _remember_values(cx, "supplements", supplements, "seed", now)
+
+
+def remember_answer_suggestions(cx, answers, now):
+    rows = (answers or {}).get("supplements") or []
+    if not isinstance(rows, list):
+        return
+    _remember_values(cx, "brands", (r.get("brand") for r in rows if isinstance(r, dict)),
+                     "client", now)
+    _remember_values(cx, "supplements", (r.get("name") for r in rows if isinstance(r, dict)),
+                     "client", now)
+
+
+def list_suggestions(cx):
+    rows = cx.execute(
+        "SELECT kind, value FROM intake_suggestions ORDER BY kind, lower(value)"
+    ).fetchall()
+    result = {"brands": [], "supplements": []}
+    for row in rows:
+        kind, value = row[0], row[1]
+        if kind in result:
+            result[kind].append(value)
+    return result
 
 
 def _upsert(cx, email, answers, status, now, submitted_at):
@@ -204,6 +279,7 @@ def _upsert(cx, email, answers, status, now, submitted_at):
         "   answers_json=excluded.answers_json,"
         "   submitted_at=COALESCE(excluded.submitted_at, intake_responses.submitted_at)",
         (email, INTAKE_FORM["version"], status, json.dumps(answers), now, submitted_at))
+    remember_answer_suggestions(cx, answers, now)
     cx.commit()
 
 
@@ -213,6 +289,21 @@ def save_draft(cx, email, answers, now):
 
 def submit(cx, email, answers, now):
     _upsert(cx, email, answers, "submitted", now, now)
+
+
+def update_submitted(cx, email, answers, now):
+    """Replace the client-editable form answers on a completed Intake without
+    reopening it as a draft or changing its original submission timestamp.
+    Preserve internal provenance markers carried by imported/external records
+    and stamp the post-submission edit for the clinical record."""
+    existing = get_response(cx, email)
+    if not existing or existing["status"] != "submitted":
+        raise ValueError("intake is not submitted")
+    current = existing.get("answers") or {}
+    metadata = {k: v for k, v in current.items() if str(k).startswith("_")}
+    payload = {**metadata, **(answers or {}), "self_edited_at": now}
+    _upsert(cx, email, payload, "submitted", now, existing.get("submitted_at"))
+    return payload
 
 
 def is_submitted(cx, email):

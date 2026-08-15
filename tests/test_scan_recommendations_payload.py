@@ -82,6 +82,13 @@ def test_every_infoceutical_has_a_working_order_url(app_db, monkeypatch):
         assert "remedymatch.com" not in i["order_url"]
 
 
+def test_every_infoceutical_exposes_its_basket_slug(app_db, monkeypatch):
+    monkeypatch.setenv("SCAN_RECOMMENDATIONS_ENABLED", "1")
+    for i in app_db._scan_recommendations_for(CARE)["infoceuticals"]:
+        assert i["slug"]
+        assert i["order_url"].endswith("/" + i["slug"])
+
+
 def test_bfa_renders_glens_label(app_db, monkeypatch):
     monkeypatch.setenv("SCAN_RECOMMENDATIONS_ENABLED", "1")
     bfa = app_db._scan_recommendations_for(CARE)["infoceuticals"][0]

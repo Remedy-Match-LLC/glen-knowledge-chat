@@ -34,3 +34,21 @@ def test_itemized_checkout_rejects_an_empty_priced_cart(monkeypatch):
             [{"name": "Free", "qty": 1, "unit_cents": 0}],
             customer_email="", metadata={}, success_url="https://x/success",
             cancel_url="https://x/cancel")
+
+
+def test_itemized_checkout_forwards_idempotency_key(monkeypatch):
+    seen = {}
+
+    def fake_post(path, params, **kwargs):
+        seen.update(kwargs)
+        return {"id": "cs_same", "url": "https://stripe.test/cs_same"}
+
+    monkeypatch.setattr(stripe_pay, "_post", fake_post)
+    stripe_pay.create_itemized_checkout_session(
+        [{"name": "Heart Health", "qty": 1, "unit_cents": 2500}],
+        customer_email="carol@example.com", metadata={"kind": "reorder"},
+        success_url="https://example.test/success", cancel_url="https://example.test/cancel",
+        idempotency_key="portal-checkout_retry_123456",
+    )
+
+    assert seen["idempotency_key"] == "portal-checkout_retry_123456"

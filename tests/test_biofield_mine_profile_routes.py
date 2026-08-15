@@ -74,6 +74,11 @@ def test_mine_profile_empty_profile(tmp_path):
     tid = _new(client, "nobody@x.com")
     assert client.post(f"/author/{tid}/mine-profile", json={}).get_json()["added"] == 0
 
+def test_mine_profile_zero_result_has_visible_message(tmp_path):
+    db = str(tmp_path / "c.db"); client = _app(db, {}, []).test_client()
+    tid = _new(client, "nobody@x.com")
+    assert "No new clinical stresses found." in client.get(f"/author/{tid}").get_data(as_text=True)
+
 
 def test_mine_profile_zero_result_has_visible_message(tmp_path):
     db = str(tmp_path / "c.db")

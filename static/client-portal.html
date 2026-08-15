@@ -44,6 +44,29 @@
     transition:background-color .25s ease,color .25s ease;}
   h1,h2,h3{font-family:"Raleway",-apple-system,"Segoe UI",sans-serif;}
   .wrap{max-width:648px;margin:0 auto;padding:28px 18px 72px}
+  .portal-client-identity{max-width:648px;margin:18px auto 0;padding:0 18px;
+    display:flex;align-items:center;justify-content:center;gap:12px;
+    font-family:"Raleway",-apple-system,"Segoe UI",sans-serif}
+  .portal-client-identity[hidden]{display:none}
+  .portal-client-avatar{width:52px;height:52px;flex:0 0 52px;border-radius:50%;
+    overflow:hidden;border:2px solid var(--brand);background:var(--brand-soft);
+    display:flex;align-items:center;justify-content:center}
+  .portal-client-photo{width:100%;height:100%;object-fit:cover;display:none}
+  .avatar-crop-stage{width:180px;height:180px;border-radius:50%;overflow:hidden;
+    border:3px solid var(--brand);background:var(--brand-soft);touch-action:none;
+    cursor:grab;position:relative;flex:0 0 auto}
+  .avatar-crop-stage:active{cursor:grabbing}
+  .avatar-crop-stage img{width:100%;height:100%;object-fit:cover;display:block;
+    user-select:none;pointer-events:none}
+  .avatar-crop-controls{min-width:190px;flex:1}
+  .avatar-crop-controls input[type=range]{width:100%;accent-color:var(--brand)}
+  .portal-client-photo-placeholder{color:var(--brand);font-size:1rem;font-weight:700;
+    letter-spacing:.02em}
+  .portal-client-identity-copy{text-align:left;min-width:0}
+  .portal-client-identity-label{display:block;color:var(--muted);font-size:.72rem;
+    font-weight:700;letter-spacing:.025em;text-transform:none}
+  .portal-client-identity-name{display:block;color:var(--ink);font-size:1.08rem;
+    font-weight:700;line-height:1.35;margin-top:2px}
   /* Per-element Glendalf backdrop (premium tier). Shown only when the member has a
      computed deficient element (element_state.setting). The video sits behind
      everything; a theme-colored scrim keeps portal text readable; cards keep their
@@ -55,24 +78,40 @@
   body.has-bg{background:transparent}
   body.has-bg #el-bg{opacity:1}
   body.has-bg #el-scrim{opacity:.5}
-  /* Fireside controls live BOTTOM-right (the top-right is owned by the journey nav
-     shell / "My Path" quest button) and sit above that shell's z-index (9999) so
-     they aren't buried. See portal nav-shell (js-shell / jq-overlay) layering. */
-  .sound-toggle{position:fixed;bottom:18px;right:18px;z-index:10000;width:48px;height:48px;
+  /* Ambient sound stays near the mentor; the scene picker belongs with the visual
+     light/dark control in the top-right header controls. */
+  .sound-toggle{position:fixed;bottom:18px;right:90px;z-index:10000;width:48px;height:48px;
     border-radius:50%;border:1px solid rgba(255,255,255,.28);background:#1F5A4D;color:#fff;
     cursor:pointer;display:none;align-items:center;justify-content:center;
     box-shadow:0 4px 16px rgba(0,0,0,.38)}
   body.has-bg .sound-toggle{display:flex}
-  .el-picker{position:fixed;bottom:18px;right:76px;z-index:10000;height:48px;
-    border-radius:24px;border:1px solid rgba(255,255,255,.28);background:#1F5A4D;color:#fff;
-    cursor:pointer;padding:0 16px;font-size:.9rem;font-weight:600;
-    box-shadow:0 4px 16px rgba(0,0,0,.38);display:none;max-width:42vw}
+  .portal-header-controls{position:fixed;top:14px;right:14px;z-index:10000;
+    display:flex;align-items:center;gap:7px;max-width:calc(100vw - 28px);
+    padding:4px;border:1px solid var(--line);border-radius:22px;
+    background:var(--card);box-shadow:0 4px 14px rgba(0,0,0,.18)}
+  .el-picker{height:30px;min-width:0;max-width:132px;flex:0 1 132px;
+    border-radius:15px;border:0;background:var(--card2);color:var(--ink);cursor:pointer;
+    padding:0 9px;font-size:.8rem;font-weight:600;display:none}
   .el-picker option{color:#111;background:#fff}
+  .portal-header-controls .theme-toggle{position:static;flex:0 0 auto;min-width:max-content}
+  .portal-header-controls .rm-theme-seg{display:inline-flex;vertical-align:middle;
+    border:1px solid var(--line);border-radius:999px;overflow:hidden;white-space:nowrap}
+  .portal-header-controls .rm-theme-seg-btn{appearance:none;border:0;background:transparent;
+    color:var(--muted);width:31px;height:30px;padding:0;cursor:pointer;display:inline-flex;
+    align-items:center;justify-content:center;line-height:0;flex:0 0 31px}
+  .portal-header-controls .rm-theme-seg-btn+.rm-theme-seg-btn{border-left:1px solid var(--line)}
+  .portal-header-controls .rm-theme-seg-btn svg{width:15px;height:15px}
+  .portal-header-controls .rm-theme-seg-btn[aria-pressed="true"]{background:var(--btn-bg);color:var(--btn-fg)}
   /* The scene picker stays available whenever the feature is on, even with no
      active backdrop — so "Automatic" (which can resolve to no scene) never strands
      the member with no way to pick one back. The sound toggle stays has-bg-gated. */
   body.has-bg .el-picker,
   body.scene-capable .el-picker{display:inline-block}
+  @media(max-width:480px){
+    .portal-header-controls{top:8px;right:8px;gap:4px;max-width:calc(100vw - 16px);padding:3px}
+    .el-picker{height:28px;max-width:108px;flex-basis:108px;padding:0 6px;font-size:.72rem}
+    .portal-header-controls .rm-theme-seg-btn{width:29px;height:28px;flex-basis:29px}
+  }
   /* hero text sits directly on the scene (not a card) -> theme-aware halo for
      legibility on any backdrop (shadow uses --bg, which is opposite the text). */
   body.has-bg .hero .hello,
@@ -133,7 +172,7 @@
   .btn:focus-visible{outline:2px solid var(--btn-bg);outline-offset:3px}
   .btn.full{display:block;width:100%;text-align:center}
   /* theme toggle */
-  .theme-toggle{position:fixed;top:14px;right:14px;z-index:20}
+  .theme-toggle{position:static}
   /* journey path */
   .path{position:relative;margin:6px 0 0;padding:0}
   .layer{position:relative;padding:2px 0 18px 40px}
@@ -164,11 +203,45 @@
   .sp{color:var(--brand);font-weight:700}
   .note{background:var(--brand-soft);border-radius:8px;padding:9px 11px;margin:0 0 .7rem;color:var(--ink)}
   .note b{color:var(--brand)}
+  /* Essence product names are links. Do not let the browser's default dark blue
+     disappear into the green card in the default/dark portal theme. */
+  :root:not([data-theme]) .life-stress-card a,
+  :root:not([data-theme]) .remitem a,
+  :root:not([data-theme]) .reitem a,
+  :root:not([data-theme]) .rec-row-name a,
+  :root:not([data-theme]) .rx a,
+  :root:not([data-theme]) .support-program-card a,
+  :root[data-theme="dark"] .life-stress-card a,
+  :root[data-theme="dark"] .remitem a,
+  :root[data-theme="dark"] .reitem a,
+  :root[data-theme="dark"] .rec-row-name a,
+  :root[data-theme="dark"] .rx a,
+  :root[data-theme="dark"] .support-program-card a,
+  :root:not([data-theme]) .life-stress-card a:visited,
+  :root:not([data-theme]) .remitem a:visited,
+  :root:not([data-theme]) .reitem a:visited,
+  :root:not([data-theme]) .rec-row-name a:visited,
+  :root:not([data-theme]) .rx a:visited,
+  :root:not([data-theme]) .support-program-card a:visited,
+  :root[data-theme="dark"] .life-stress-card a:visited,
+  :root[data-theme="dark"] .remitem a:visited,
+  :root[data-theme="dark"] .reitem a:visited,
+  :root[data-theme="dark"] .rec-row-name a:visited,
+  :root[data-theme="dark"] .rx a:visited,
+  :root[data-theme="dark"] .support-program-card a:visited{color:#8ecbff}
+  :root[data-theme="light"] .life-stress-card a,
+  :root[data-theme="light"] .remitem a,
+  :root[data-theme="light"] .reitem a,
+  :root[data-theme="light"] .rec-row-name a,
+  :root[data-theme="light"] .rx a,
+  :root[data-theme="light"] .support-program-card a{color:#245f9e}
   .muted{color:var(--muted)} .small{font-size:.86rem}
   .foot{text-align:center;color:var(--muted);font-size:.86rem;margin-top:26px}
   .state{max-width:32rem;margin:18vh auto;text-align:center;color:var(--muted);padding:0 18px}
   .err{color:var(--err)}
   #loading{opacity:.6}
+  .portal-load-alert{border-color:#d6aa61;background:#fffaf0}
+  .portal-load-alert .btn{margin-top:.35rem}
   /* role badges + account */
   .badges{display:flex;gap:6px;justify-content:center;flex-wrap:wrap;margin:.4rem 0 0}
   .badge{background:var(--brand-soft);color:var(--brand);border-radius:999px;
@@ -183,6 +256,26 @@
   .pill{font-size:.72rem;font-weight:700;border-radius:999px;padding:2px 9px;background:var(--brand-soft);color:var(--ok)}
   .soon{border-style:dashed;background:linear-gradient(180deg,var(--card),var(--card2));text-align:center}
   .soon .muted{margin:.2rem 0 0}
+  .calendar-list{display:grid;gap:12px;margin-top:1rem}
+  .calendar-event{border:1px solid var(--line);border-radius:12px;padding:16px;background:var(--card2)}
+  .calendar-event.is-locked{border-style:dashed}
+  .calendar-event-top{display:flex;align-items:center;justify-content:space-between;gap:10px}
+  .calendar-kind{color:var(--brand);font-size:.75rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase}
+  .calendar-event h3{margin:.45rem 0 .15rem;font-size:1rem}
+  .calendar-time{margin:0 0 .45rem;font-weight:600}
+  .calendar-actions{display:flex;gap:7px;flex-wrap:wrap;margin-top:.55rem}
+  .calendar-actions .btn{width:auto;flex:1;min-width:120px;text-align:center;padding:9px 12px;font-size:.86rem}
+  .calendar-summary{margin:0 0 18px;border-color:var(--brand);box-shadow:0 0 0 3px var(--brand-soft)}
+  .calendar-summary-head{display:flex;align-items:center;justify-content:space-between;gap:12px}
+  .calendar-summary-head h2{margin:0}
+  .appt-proposal{border-top:1px solid var(--line);padding-top:12px;margin-top:12px}
+  .appt-thread{display:grid;gap:7px;margin:.7rem 0}
+  .appt-msg{padding:8px 10px;border-radius:9px;background:var(--brand-soft)}
+  .appt-msg.staff{border-left:3px solid var(--brand)}
+  .appt-msg audio{width:100%;margin-top:5px}
+  .appt-form{display:grid;gap:8px;margin-top:10px}
+  .calendar-fold{background:none;border:1px solid var(--line);border-radius:999px;color:var(--ink);cursor:pointer;padding:5px 11px}
+  .calendar-tz{margin:.35rem 0 0;color:var(--muted);font-size:.78rem}
   /* Task 6: portal reorder module — remedies with qty, locked (forward-framed)
      rows, and the non-member savings upsell. */
   .remitem{padding:9px 0;border-bottom:1px dashed var(--line)}
@@ -303,6 +396,32 @@
   .chat-sugg-name{font-weight:600;font-size:.9rem}
   .chat-sugg-price{color:var(--muted);font-size:.86rem}
   .chat-sugg-btn{font-size:.82rem;padding:5px 12px;border-radius:8px;text-decoration:none;margin-left:auto;display:inline-block}
+  /* Persistent Mentorship University concierge. The full Ask Dr. Glen card remains
+     available; this compact shell follows the member across every portal panel. */
+  .mentor-launcher{position:fixed;right:18px;bottom:18px;z-index:10020;width:62px;height:62px;
+    border:0;border-radius:50%;background:transparent;color:#fff;cursor:pointer;padding:0;
+    box-shadow:0 10px 28px rgba(0,0,0,.34);display:flex;align-items:center;justify-content:center}
+  .mentor-launcher-logo{display:block;width:100%;height:100%;object-fit:contain;border-radius:50%}
+  .mentor-launcher[aria-expanded="true"]{box-shadow:0 0 0 3px var(--brand-soft),0 10px 28px rgba(0,0,0,.34)}
+  .mentor-panel{position:fixed;right:18px;bottom:92px;z-index:10019;width:min(390px,calc(100vw - 28px));
+    max-height:min(650px,calc(100vh - 118px));background:var(--card);color:var(--ink);
+    border:1px solid var(--line);border-radius:18px;box-shadow:0 18px 48px rgba(0,0,0,.38);
+    display:flex;flex-direction:column;overflow:hidden}
+  .mentor-panel[hidden]{display:none}.mentor-head{background:var(--brand);color:#fff;padding:11px 13px;
+    display:flex;align-items:center;gap:8px}.mentor-head-copy{flex:1;min-width:0}
+  .mentor-title{display:block;font-family:"Raleway",sans-serif;font-weight:700}.mentor-context{display:block;font-size:.7rem;opacity:.83;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .mentor-icon-btn{width:34px;height:34px;border:1px solid rgba(255,255,255,.38);border-radius:50%;
+    background:transparent;color:#fff;cursor:pointer;display:grid;place-items:center;font-size:1rem}
+  .mentor-icon-btn.is-on{background:#fff;color:var(--brand)}.mentor-msgs{min-height:160px;max-height:360px;
+    overflow:auto;padding:13px;display:flex;flex-direction:column;gap:8px}
+  .mentor-bubble{max-width:86%;padding:9px 11px;border-radius:12px;white-space:pre-wrap;line-height:1.45;font-size:.9rem}
+  .mentor-bubble.user{align-self:flex-end;background:var(--brand);color:#fff}.mentor-bubble.assistant{align-self:flex-start;background:var(--card2);border:1px solid var(--line)}
+  .mentor-guide{padding:8px 13px;border-top:1px solid var(--line);font-size:.76rem;color:var(--muted);display:flex;align-items:center;gap:7px}
+  .mentor-compose{border-top:1px solid var(--line);padding:10px;display:flex;gap:7px}.mentor-compose input{flex:1;min-width:0;
+    border:1px solid var(--line);border-radius:18px;padding:9px 12px;background:var(--card2);color:var(--ink);font:inherit}
+  .mentor-send{border:0;border-radius:18px;padding:8px 13px;background:var(--btn-bg);color:var(--btn-fg);font-weight:700;cursor:pointer}
+  .mentor-listening{animation:mentorPulse 1s ease-in-out infinite}@keyframes mentorPulse{50%{transform:scale(1.09);box-shadow:0 0 0 5px rgba(255,255,255,.2)}}
+  @media(max-width:480px){.mentor-launcher{right:12px;bottom:12px;width:56px;height:56px}.mentor-panel{right:7px;bottom:76px;width:calc(100vw - 14px);max-height:calc(100vh - 90px)}}
 
   /* ── Print / Save-as-PDF: a self-contained doc in #print-root. On screen it is
      hidden; when printing we hide everything ELSE so the PDF is ONLY this doc
@@ -379,24 +498,34 @@
   .intake-consent input{margin-top:.25rem}
   .intake-sublabel{display:block;font-weight:600;font-size:.85rem;margin:.4rem 0 .25rem}
   .intake-err{border:1px solid var(--err) !important;border-radius:8px;box-shadow:0 0 0 1px var(--err)}
+  .intake-progress{display:flex;align-items:center;justify-content:space-between;gap:12px;
+    margin:.25rem 0 1rem;padding:.65rem .8rem;border:1px solid var(--line);
+    border-radius:10px;background:var(--card2)}
+  .intake-progress-label{font-size:.84rem;font-weight:600}
+  .intake-save-state{font-size:.8rem;color:var(--muted);white-space:nowrap}
+  .intake-save-state.is-saved{color:var(--ok)}
+  .intake-save-state.is-error{color:var(--err)}
+  .intake-nav{display:flex;align-items:center;justify-content:space-between;gap:10px;
+    margin-top:.8rem}
+  .intake-nav .btn{flex:1;padding:10px 14px;font-size:.9rem}
 
   .portal-hub { margin: 0 0 1.25rem; }
   .hub-banner { display:flex; gap:1rem; align-items:center; flex-wrap:wrap;
     background:var(--brand-soft,#e5efea); border:1px solid var(--line); border-radius:14px; padding:1rem 1.15rem; }
   .hub-banner .where { flex:1; min-width:12rem; }
-  .hub-banner .eyebrow { font-size:.7rem; letter-spacing:.1em; text-transform:uppercase; color:var(--brand); font-weight:700; }
+  .hub-banner .eyebrow { font-size:.78rem; letter-spacing:.01em; text-transform:none; color:var(--brand); font-weight:700; }
   .hub-banner h2 { font-size:1.15rem; margin:.15rem 0 .2rem; }
   .hub-banner .next { background:#f6ecd2; border:1px solid var(--line); border-radius:10px; padding:.6rem .75rem; max-width:16rem; color:#1E2A2A; }
   .hub-account { align-self:flex-start; background:transparent; border:1px solid var(--line); border-radius:999px;
     padding:.3rem .8rem; font:inherit; font-size:.8rem; color:var(--muted); cursor:pointer; }
   .hub-account:hover,.hub-account:focus-visible { border-color:var(--brand); color:var(--brand); outline:none; }
   .hub-grid-group { margin-top:1rem; }
-  .hub-grid-group .glabel { font-size:.68rem; letter-spacing:.11em; text-transform:uppercase; color:var(--muted); font-weight:700; margin:.1rem 0 .5rem; }
+  .hub-grid-group .glabel { font-size:.78rem; letter-spacing:.01em; text-transform:none; color:var(--muted); font-weight:700; margin:.1rem 0 .5rem; }
   .hub-tiles { display:grid; grid-template-columns:repeat(3,1fr); gap:.7rem; }
   @media (max-width:760px){ .hub-tiles { grid-template-columns:repeat(2,1fr); } }
   @media (max-width:480px){ .hub-tiles { grid-template-columns:1fr; } }
   .hub-tile { text-align:left; cursor:pointer; background:var(--card); border:1px solid var(--line); border-radius:12px;
-    padding:.8rem; min-height:5.5rem; display:flex; flex-direction:column; gap:.35rem; font:inherit; color:var(--ink); }
+    padding:.8rem; min-height:5.5rem; display:flex; flex-direction:column; gap:.35rem; font:inherit; color:var(--ink); text-decoration:none; }
   .hub-tile:hover,.hub-tile:focus-visible { border-color:#2f6f5e; box-shadow:0 6px 18px rgba(24,36,32,.08); outline:none; }
   .hub-tile .tname { font-weight:650; font-size:.95rem; }
   .hub-tile .tdesc { font-size:.78rem; color:var(--muted); }
@@ -473,8 +602,11 @@
   .ob-mark{display:inline-block;width:1.15em;flex:0 0 auto;text-align:center;
     font-weight:700}
   .ob-mark-done{color:var(--brand)}
+  .ob-mark-progress{color:var(--brand)}
   .ob-mark-open{color:var(--muted)}
   .ob-mark-resource{color:var(--muted)}
+  .ob-accelerator-check{width:1.15em;height:1.15em;flex:0 0 auto;margin:.15em 0 0;
+    accent-color:var(--brand);cursor:pointer}
   .ob-member-thread{color:var(--muted);font-size:.85rem;margin:.7rem 0 0}
   .ob-member-thread a{color:var(--brand);font-weight:600;text-decoration:none}
   .ob-member-thread a:hover,.ob-member-thread a:focus-visible{text-decoration:underline}
@@ -562,15 +694,41 @@
   <video id="el-bg" playsinline muted loop preload="none" aria-hidden="true" tabindex="-1"></video>
   <video id="el-bg2" playsinline muted preload="none" aria-hidden="true" tabindex="-1"></video>
   <div id="el-scrim" aria-hidden="true"></div>
-  <div class="theme-toggle" id="themeToggle" role="group" aria-label="Theme mode"></div>
+  <div class="portal-header-controls">
+    <select class="el-picker" id="elPicker" aria-label="Fireside scene" title="Fireside scene"></select>
+    <div class="theme-toggle" id="themeToggle" role="group" aria-label="Theme mode"></div>
+  </div>
   <button class="sound-toggle" id="soundToggle" aria-label="Turn ambient sound on or off" title="Ambient sound" aria-pressed="false"></button>
-  <select class="el-picker" id="elPicker" aria-label="Fireside scene" title="Fireside scene"></select>
+  <button class="mentor-launcher" id="mentorLauncher" aria-label="Open Mentorship University mentor" aria-expanded="false">
+    <img class="mentor-launcher-logo" src="/static/logo.png" alt="" aria-hidden="true">
+  </button>
+  <aside class="mentor-panel" id="mentorPanel" aria-label="Mentorship University mentor" hidden>
+    <div class="mentor-head">
+      <div class="mentor-head-copy"><span class="mentor-title">Ask Dr. Glen</span><span class="mentor-context" id="mentorContext">Your portal mentor</span></div>
+      <button class="mentor-icon-btn" id="mentorMic" aria-label="Use microphone" title="Microphone">🎙</button>
+      <button class="mentor-icon-btn" id="mentorSpeaker" aria-label="Toggle spoken replies" title="Spoken replies">🔊</button>
+      <button class="mentor-icon-btn" id="mentorClose" aria-label="Close mentor">×</button>
+    </div>
+    <div class="mentor-msgs" id="mentorMsgs" aria-live="polite"></div>
+    <label class="mentor-guide"><input type="checkbox" id="mentorAutoGuide"> Guide me automatically on each page</label>
+    <div class="mentor-compose"><input id="mentorInput" type="text" placeholder="Ask about this page…" autocomplete="off"><button class="mentor-send" id="mentorSend">Send</button></div>
+  </aside>
   <script>
     (function(){
       var host = document.getElementById('themeToggle');
       if (host && window.RMTheme) window.RMTheme.mountToggle(host);
     })();
   </script>
+  <header class="portal-client-identity" id="portal-client-identity" hidden>
+    <span class="portal-client-avatar">
+      <img class="portal-client-photo" id="client-photo" alt="Client profile photo">
+      <span class="portal-client-photo-placeholder" id="client-photo-placeholder" aria-hidden="true"></span>
+    </span>
+    <span class="portal-client-identity-copy">
+      <span class="portal-client-identity-label">My Healing Oasis</span>
+      <strong class="portal-client-identity-name" id="portal-client-name"></strong>
+    </span>
+  </header>
   <!-- Task 4: Onboarding tile. Sibling of #app (not nested inside it), positioned
        ABOVE the hub so it survives render()'s poll re-renders, which fully replace
        app.innerHTML; filled/emptied by static/js/portal-onboarding.js's own fetch + mount. -->
@@ -594,7 +752,7 @@
 <script src="/static/entity-ref.js"></script>
 <script src="/static/js/portal-library.js"></script>
 <script src="/static/js/portal-documents.js"></script>
-<script src="/static/js/portal-onboarding.js"></script>
+<script src="/static/js/portal-onboarding.js?v=20260814-accelerators"></script>
 <script>
 // The last path segment is either an emailed portal token or the literal "me"
 // (the tokenless logged-in home, authed by the rm_portal_session cookie). Tokens
@@ -654,7 +812,7 @@ function ffMatchesBodyHtml(block){
     : "matched automatically from your scan";
   let rows = items.map(it => {
     const nm = esc(it.name || it.label || it.item_code || "");
-    const nameHtml = it.url ? `<a href="${esc(it.url)}">${nm}</a>` : nm;
+    const nameHtml = it.url ? `<a href="${esc(it.url)}" target="_blank" rel="noopener">${nm}</a>` : nm;
     const meaning = it.meaning ? `<div class="muted" style="font-size:.9em">${esc(it.meaning)}</div>` : "";
     const dosing = (block.covered && it.dosing) ? `<div class="dose">${esc(it.dosing)}</div>` : "";
     return `<p style="margin:.5rem 0"><strong>${nameHtml}</strong>${meaning}${dosing}</p>`;
@@ -680,7 +838,7 @@ function supportProgramBodyHtml(sp){
     : "";
   let rows = items.map(it => {
     const nm = esc(it.name || "");
-    const nameHtml = it.url ? `<a href="${esc(it.url)}">${nm}</a>` : nm;
+    const nameHtml = it.url ? `<a href="${esc(it.url)}" target="_blank" rel="noopener">${nm}</a>` : nm;
     const dose = it.dose ? `<div class="dose">${esc(it.dose)}</div>` : "";
     const note = it.note ? `<div class="muted" style="font-size:.9em">${esc(it.note)}</div>` : "";
     const alts = Array.isArray(it.alts) && it.alts.length
@@ -725,9 +883,8 @@ function supportProgramCardHtml(sp){
 }
 // Life Stress essence card body (Task 6): essences matched to the emotional/stress
 // patterns found in this client's scan (E4L + journal), flag-gated at the card block
-// below (d.life_stress_enabled). Each essence links to its product page when a URL
-// is present; the muted note names the pattern it was matched to (e.g. "for the fear
-// pattern in your scan").
+// below (d.life_stress_enabled). Every essence with a catalog slug can be added
+// to the same shared portal basket as scan remedies and Infoceuticals.
 function lifeStressBodyHtml(ls){
   ls = ls || {};
   const items = Array.isArray(ls.items) ? ls.items : [];
@@ -737,7 +894,8 @@ function lifeStressBodyHtml(ls){
       const nm = esc(it.name || "");
       const nameHtml = it.url ? `<a href="${esc(it.url)}" target="_blank" rel="noopener">${nm}</a>` : nm;
       const note = it.note ? `<div class="muted" style="font-size:.9em">${esc(it.note)}</div>` : "";
-      return `<li>${nameHtml}${note}</li>`;
+      const add = it.slug ? ` <button type="button" class="btn ghost essence-order-btn" data-slug="${esc(it.slug)}">Add to basket</button>` : "";
+      return `<li>${nameHtml}${add}${note}</li>`;
     }).join("");
     return `<p class="muted">Recommended for you by Dr. Glen.</p><ul>${rows}</ul>`;
   }
@@ -748,7 +906,8 @@ function lifeStressBodyHtml(ls){
     const nm = esc(it.name || "");
     const nameHtml = it.url ? `<a href="${esc(it.url)}" target="_blank" rel="noopener">${nm}</a>` : nm;
     const note = it.note ? `<div class="muted" style="font-size:.9em">${esc(it.note)}</div>` : "";
-    return `<li><input type="checkbox" class="ls-pick" data-slug="${slug}"${checked}> ${nameHtml}${note}</li>`;
+    const add = it.slug ? ` <button type="button" class="btn ghost essence-order-btn" data-slug="${slug}">Add to basket</button>` : "";
+    return `<li><input type="checkbox" class="ls-pick" data-slug="${slug}"${checked}> ${nameHtml}${add}${note}</li>`;
   }).join("");
   return `<p class="muted">Choose the essences that resonate — your picks are saved for Dr. Glen and Rae.</p><ul>${rows}</ul>`
        + `<button type="button" id="lsSaveBtn">Save my selections</button> <span id="lsSaveMsg" class="muted" hidden></span>`;
@@ -772,7 +931,7 @@ function prlSupplementBodyHtml(sp){
       ? `<div class="muted" style="font-size:.85em;margin:.1rem 0 .4rem">${fa.items.map(esc).join(" · ")}</div>` : "";
     const rows = prods.map(p => {
       const purl = safeUrl(p.url);
-      const nm = purl ? `<a href="${esc(purl)}">${esc(p.name||"")}</a>` : esc(p.name||"");
+      const nm = purl ? `<a href="${esc(purl)}" target="_blank" rel="noopener">${esc(p.name||"")}</a>` : esc(p.name||"");
       const ff = p.ff && p.ff.name
         ? `<div class="muted" style="font-size:.9em">${esc(relLabel[p.ff.relation]||"related")}: ${esc(p.ff.name)}</div>` : "";
       return `<p style="margin:.35rem 0"><strong>${nm}</strong>${ff}</p>`;
@@ -905,6 +1064,7 @@ function showTab(name){
   document.querySelectorAll('[data-panel]').forEach(p =>
     p.hidden = (p.dataset.panel !== name));
   try{ sessionStorage.setItem('rm_portal_tab', name); }catch(e){}
+  if(typeof window.mentorPageChanged === "function") window.mentorPageChanged(name);
   // Task 7: fetch the suggestions queue every time the health panel becomes
   // active (fresh each visit -- a clinician or chat turn may have added one
   // since it was last open). loadHealthSuggestions() itself no-ops if
@@ -915,7 +1075,85 @@ function showTab(name){
   // it was last open). loadCart() itself no-ops if #cart-body isn't in the
   // DOM (panel disabled/absent).
   if (name === 'cart') loadCart();
+  if (name === 'intake') initPortalIntakeCard(true);
 }
+
+function syncPortalHeaderCartCount(){
+  const count = Array.from(document.querySelectorAll("#curatedOrderItems .curated-order-item"))
+    .reduce((total, row) => total + Math.max(1, parseInt(row.getAttribute("data-qty"), 10) || 1), 0);
+  if(typeof window.setPortalHeaderCartCount === "function") window.setPortalHeaderCartCount(count);
+}
+function rememberPortalShoppingContext(){
+  const active = Array.from(document.querySelectorAll("[data-panel]")).find(p => !p.hidden);
+  const context = {panel:(active && active.dataset.panel) || "current", scrollY:window.scrollY || 0};
+  try{ sessionStorage.setItem("portal-shopping-return", JSON.stringify(context)); }catch(e){}
+}
+function openPortalOrderBasket(captureContext){
+  if(captureContext) rememberPortalShoppingContext();
+  showTab("current");
+  window.setTimeout(function(){
+    const card = document.getElementById("portal-order-basket");
+    if(card) card.scrollIntoView({behavior:"smooth", block:"start"});
+  }, 0);
+}
+window.openPortalOrderBasket = openPortalOrderBasket;
+function continuePortalShopping(){
+  let context = {panel:"hub", scrollY:0};
+  try{ context = JSON.parse(sessionStorage.getItem("portal-shopping-return") || "null") || context; }catch(e){}
+  showTab(context.panel || "hub");
+  window.setTimeout(function(){ window.scrollTo({top:Number(context.scrollY)||0, behavior:"smooth"}); }, 0);
+}
+
+// Stable deep links used by email/SMS CTAs. A hash names a destination, not a
+// fragile DOM layout: first reveal its owning panel, then focus/scroll the card.
+const PORTAL_HASH_ROUTES = {
+  biofield: {panel:"current", target:"biofield-section"},
+  recs:     {panel:"current", target:"recsCard"},
+  recommendations: {panel:"current", target:"recsCard"},
+  intake:   {panel:"intake", target:"portal-intake-card"},
+  offers:   {panel:"offers", target:"offers-card"},
+  photo:    {panel:"photo", target:"photo-section"},
+  cart:     {panel:"cart", target:"cart-body"},
+  shop:     {panel:"shop", target:"shop-panel"},
+};
+
+function applyPortalHash(){
+  const key = decodeURIComponent((location.hash || "").replace(/^#/, "")).toLowerCase();
+  const route = PORTAL_HASH_ROUTES[key];
+  if(!route) return false;
+  // The Terms gate intentionally suppresses every portal panel. When an
+  // independently-rendered onboarding link points at Intake, lead the client
+  // to the prerequisite instead of silently falling back to a missing panel.
+  const tosCard = document.getElementById("portal-tos-card");
+  if(key === "intake" && tosCard){
+    tosCard.setAttribute("tabindex", "-1");
+    tosCard.scrollIntoView({behavior:"smooth", block:"start"});
+    tosCard.focus({preventScroll:true});
+    return true;
+  }
+  const panel = document.querySelector(`[data-panel="${route.panel}"]`);
+  showTab(panel ? route.panel : (document.querySelector('[data-panel="current"]') ? "current" : "hub"));
+  window.setTimeout(()=>{
+    const target = document.getElementById(route.target);
+    if(target){
+      target.setAttribute("tabindex", "-1");
+      target.scrollIntoView({behavior:"smooth", block:"start"});
+      target.focus({preventScroll:true});
+    }
+  }, 0);
+  return true;
+}
+
+window.addEventListener("hashchange", applyPortalHash);
+document.addEventListener("click", function(event){
+  const link = event.target.closest('a[href^="#"]');
+  if(!link) return;
+  const key = decodeURIComponent((link.getAttribute("href") || "").replace(/^#/, "")).toLowerCase();
+  if(!PORTAL_HASH_ROUTES[key]) return;
+  event.preventDefault();
+  if(location.hash === "#" + key) applyPortalHash();
+  else location.hash = key;
+});
 // Task 5: local in-panel toggle for the Oasis panel's two modes (Replenish /
 // Build Out). Scoped to [data-oasis-mode] so it never touches the real
 // showTab()/[data-panel] state or the top-level #portalTabs tab bar.
@@ -933,6 +1171,7 @@ function backToHub(){
 function buildHubHtml(d, v){
   const understandTiles = [
     ["current", "My Analysis", "Your current scan, matches and healing path"],
+    ["intake", "My Intake", "Build or continue your clinical health profile"],
   ];
   // Gated on the flag: the "remedies" [data-panel] section itself only renders
   // when v.remedies.enabled (see the panel wrap below), so the tile must not
@@ -945,7 +1184,7 @@ function buildHubHtml(d, v){
   // curated health_profile block is enabled — off-state must add nothing.
   if (v && v.health_profile && v.health_profile.enabled) {
     const pending = v.health_profile.suggestion_count;
-    understandTiles.push(["health", "My Health Profile", "Your history, symptoms and intake",
+    understandTiles.push(["health", "My Health Profile", "Review the details you provided in your Intake",
       (pending > 0) ? pending : undefined]);
   }
   // Task 5: the My Healing Oasis tile is only meaningful (and only rendered)
@@ -965,6 +1204,8 @@ function buildHubHtml(d, v){
       (v.cart.count > 0) ? v.cart.count : undefined]);
   }
   actTiles.push(
+    ["shop",   "Shop Products", "Remedies, wellness tools and curated picks"],
+    ["offers", "Membership & Offers", "Available upgrades and member tools"],
     ["finder", "Find a Practitioner", "Certified practitioners near you"],
     ["refer",  "Refer a Friend", "Share healing and earn as an Ambassador"],
   );
@@ -975,8 +1216,12 @@ function buildHubHtml(d, v){
       ["ask",     "Ask Dr. Glen", "Chat about your terrain and remedies"],
       ["bodymap", "Body Map", "Your systems, personalized"],
       ["classes", "MasterClasses", "Free courses and teachings"],
+      ...((v && v.brain && v.brain.enabled)
+        ? [{ext:[v.brain.url, "Clinical Theory of Everything",
+                 "Explore the map of how healing works"]}] : []),
     ]],
     ["Track", [
+      ["photo",   "My Photo", "Add or update your profile photo"],
       ["history", "Scan History", "Every scan over time"],
       ["orders",  "Orders & Invoices", "Receipts and anything unpaid"],
       ["referrals","Referrals", "Who you've referred and your rewards"],
@@ -989,9 +1234,14 @@ function buildHubHtml(d, v){
   const tile = ([panel,name,desc,badge]) =>
     `<button type="button" class="hub-tile" data-tile="${esc(panel)}" onclick="showTab('${panel}')">
        <span class="tname">${esc(name)}${badge?` <span class="pill">${esc(badge)}</span>`:""}</span><span class="tdesc">${esc(desc)}</span></button>`;
+  // External-destination tile. Same .hub-tile look as its neighbours; an <a> rather
+  // than a button because showTab() only resolves panels that exist in the DOM.
+  const extTile = ([href,name,desc]) =>
+    `<a class="hub-tile" href="${esc(href)}" target="_blank" rel="noopener">
+       <span class="tname">${esc(name)}</span><span class="tdesc">${esc(desc)}</span></a>`;
   const grp = ([label,tiles]) =>
     `<div class="hub-grid-group"><p class="glabel">${esc(label)}</p>
-       <div class="hub-tiles">${tiles.map(tile).join("")}</div></div>`;
+       <div class="hub-tiles">${tiles.map(t => t.ext ? extTile(t.ext) : tile(t)).join("")}</div></div>`;
   const next = (d.next_step_label)
     ? `<div class="next"><div class="eyebrow">Your next step</div><div>${esc(d.next_step_label)}</div></div>`
     : "";
@@ -1000,7 +1250,113 @@ function buildHubHtml(d, v){
       <div class="eyebrow">Where you are</div>
       <h2>${esc(d.hub_headline || "Your healing home")}</h2></div>${next}
       <button type="button" class="hub-account" onclick="showTab('account')">Account</button></div>
+    <div id="portal-onboarding-slot"></div>
+    ${buildCalendarHtml(v,true)}
+    ${buildAppointmentProposalHtml()}
     ${groups.map(grp).join("")}</div>`;
+}
+
+function portalTimeZone(){
+  try{return Intl.DateTimeFormat().resolvedOptions().timeZone || "your local timezone"}catch(e){return "your local timezone"}
+}
+function calendarEventEnd(e){
+  if(e.end) return new Date(e.end);
+  const start = new Date(e.start);
+  return new Date(start.getTime() + Number(e.duration_min || 60) * 60000);
+}
+function calendarProviderUrl(e, provider){
+  const stamp = d => d.toISOString().replace(/[-:]/g,"").replace(/\.\d{3}/,"");
+  const start = new Date(e.start), end = calendarEventEnd(e);
+  const title = e.title || (e.type === "group_coaching" ? "Group Coaching" : "MasterClass");
+  const details = e.description || "Healing Oasis live event";
+  if(provider === "google") return "https://calendar.google.com/calendar/render?action=TEMPLATE&text="+encodeURIComponent(title)+"&dates="+stamp(start)+"/"+stamp(end)+"&details="+encodeURIComponent(details);
+  return "https://outlook.live.com/calendar/0/deeplink/compose?path=/calendar/action/compose&rru=addevent&subject="+encodeURIComponent(title)+"&startdt="+encodeURIComponent(start.toISOString())+"&enddt="+encodeURIComponent(end.toISOString())+"&body="+encodeURIComponent(details);
+}
+function downloadEventIcs(eventId){
+  const cal = (window.__portalView && window.__portalView.calendar) || {};
+  const e = (cal.events || []).find(x=>x.id===eventId); if(!e) return;
+  const stamp = d => d.toISOString().replace(/[-:]/g,"").replace(/\.\d{3}/,"");
+  const clean = s => String(s||"").replace(/([,;\\])/g,"\\$1").replace(/\n/g,"\\n");
+  const ics = ["BEGIN:VCALENDAR","VERSION:2.0","PRODID:-//Healing Oasis//Events//EN","BEGIN:VEVENT",
+    "UID:"+clean(e.id)+"@myhealingoasis.com","DTSTAMP:"+stamp(new Date()),"DTSTART:"+stamp(new Date(e.start)),
+    "DTEND:"+stamp(calendarEventEnd(e)),"SUMMARY:"+clean(e.title),"DESCRIPTION:"+clean(e.description),"END:VEVENT","END:VCALENDAR"].join("\r\n");
+  const a=document.createElement("a"); a.href=URL.createObjectURL(new Blob([ics],{type:"text/calendar"}));
+  a.download=(e.id||"healing-oasis-event")+".ics"; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),1000);
+}
+function toggleCalendarSummary(){
+  const body=document.getElementById("calendar-summary-body"), btn=document.getElementById("calendar-fold");
+  if(!body) return; body.hidden=!body.hidden; if(btn) btn.textContent=body.hidden?"Show":"Hide";
+  try{localStorage.setItem("rm_calendar_collapsed",body.hidden?"1":"0")}catch(e){}
+}
+function buildCalendarHtml(v,compact){
+  const cal = (v && v.calendar) || {};
+  const allEvents = Array.isArray(cal.events) ? cal.events : [];
+  const events = compact ? allEvents.slice(0,2) : allEvents;
+  const fmt = value => {
+    if(!value) return "Date to be announced";
+    const d = new Date(value);
+    if(Number.isNaN(d.getTime())) return value;
+    return new Intl.DateTimeFormat(undefined, {weekday:"short", month:"short", day:"numeric",
+      hour:"numeric", minute:"2-digit", timeZoneName:"short"}).format(d);
+  };
+  const rows = events.map(e => {
+    const kind = e.type === "group_coaching" ? "Group Coaching" : (e.type === "appointment" ? "Private Appointment" : "MasterClass");
+    const gate = e.members_only ? `<span class="badge">${e.locked ? "Paid members" : "Included access"}</span>` : `<span class="badge">Open registration</span>`;
+    let action = "";
+    if(e.locked) action = `<a class="btn full" href="${esc(e.action_url || cal.upgrade_url || '/membership')}">Upgrade to access</a>`;
+    else if(!e.registered) action = `<button class="btn full event-register" data-event-id="${esc(e.id)}">Reserve my spot</button>`;
+    else {
+      const join = e.action_url && (e.type === "group_coaching" || e.type === "masterclass")
+        ? `<a class="btn" href="${esc(e.action_url)}">Join session</a>`
+        : ((e.type === "group_coaching" || e.type === "masterclass")
+          ? `<span class="muted small">Your private join link is being prepared.</span>` : "");
+      action = `<div class="calendar-actions">${join}<a class="btn" target="_blank" rel="noopener" href="${esc(calendarProviderUrl(e,'google'))}">Google</a><a class="btn" target="_blank" rel="noopener" href="${esc(calendarProviderUrl(e,'outlook'))}">Outlook</a><button class="btn" onclick="downloadEventIcs('${esc(e.id)}')">Apple / other</button></div>`;
+    }
+    const share = e.share_url
+      ? `<button type="button" class="btn full event-share" data-share-url="${esc(e.share_url)}" data-share-title="${esc(e.title || kind)}">Invite a friend</button>`
+      : "";
+    return `<article class="calendar-event${e.locked ? " is-locked" : ""}">
+      <div class="calendar-event-top"><span class="calendar-kind">${esc(kind)}</span>${gate}</div>
+      <h3>${esc(e.title || kind)}</h3><p class="calendar-time">${esc(fmt(e.start))}</p>
+      ${e.description ? `<p class="muted small">${esc(e.description)}</p>` : ""}${action}${share}</article>`;
+  }).join("");
+  if(compact){
+    return `<div class="card calendar-summary" id="calendar-summary"><div class="calendar-summary-head"><h2>Upcoming Live Events</h2><button type="button" class="calendar-fold" id="calendar-fold" onclick="toggleCalendarSummary()">Hide</button></div><p class="calendar-tz">Times shown in ${esc(portalTimeZone())}</p><div id="calendar-summary-body"><div class="calendar-list">${rows || '<p class="muted">No upcoming events are scheduled yet.</p>'}</div>${allEvents.length>2?'<button class="btn full" onclick="showTab(\'calendar\')">See full calendar</button>':''}</div></div>`;
+  }
+  return `<div class="card" id="calendar-card"><h2>Live Calendar</h2><p class="calendar-tz">Times shown in ${esc(portalTimeZone())}</p>
+    <p class="muted small">See what’s coming up. Events marked for paid members stay visible so you can plan ahead.</p><div class="calendar-list">${rows || '<p class="muted">No upcoming events are scheduled yet.</p>'}</div></div>`;
+}
+function buildAppointmentProposalHtml(){
+  return `<div class="card" id="appointment-proposals-card"><h2>Private Appointments</h2>
+    <p class="muted small">Propose a Biofield consultation with Dr. Glen or an EVOX session with Rae. The appointment is booked after both sides confirm.</p>
+    <details><summary class="btn full">Propose an appointment</summary><form class="appt-form" id="appt-proposal-form">
+      <select name="session_type"><option value="biofield-consult">Biofield Analysis Consultation · Dr. Glen · Zoom</option><option value="evox">EVOX Session · Rae · Phone</option></select>
+      <input name="proposed_start" type="datetime-local" required><select name="billing_mode"><option value="paid">Paid session</option><option value="prepaid">Pre-paid / session credit</option></select>
+      <button class="btn" type="submit">Send proposal</button><span class="small err" data-appt-error></span></form></details>
+    <div id="appointment-proposals-list"><p class="muted small">Loading appointments…</p></div></div>`;
+}
+async function loadAppointmentProposals(){
+  const host=document.getElementById("appointment-proposals-list"); if(!host)return;
+  try{
+    const r=await fetch(`/api/portal/${encodeURIComponent(seg)}/appointment-proposals`), d=await r.json();
+    if(!r.ok)throw new Error();
+    host.innerHTML=(d.proposals||[]).map(p=>{
+      const mine=!!p.client_confirmed;
+      const status=p.status==="confirmed"?"Confirmed":p.status==="conflict"?"Time conflict — please propose another time":(mine?`Waiting for ${p.practitioner==="glen"?"Dr. Glen":"Rae"}`:"Waiting for your confirmation");
+      const messages=(p.messages||[]).map(m=>`<div class="appt-msg ${m.sender==='client'?'':'staff'}"><b>${m.sender==='client'?'You':esc(m.sender==='glen'?'Dr. Glen':'Rae')}</b>${m.text?`<div>${esc(m.text)}</div>`:''}${m.audio_filename?`<audio controls preload="none" src="/api/portal/${encodeURIComponent(seg)}/appointment-proposals/${p.id}/audio/${m.id}"></audio>`:''}</div>`).join('');
+      return `<div class="appt-proposal"><b>${esc(p.session_label)}</b><div class="small">${esc(new Intl.DateTimeFormat(undefined,{dateStyle:'medium',timeStyle:'short'}).format(new Date(p.start_iso||p.proposed_start)))} · ${esc(p.medium)} · ${esc(p.billing_mode)}</div><span class="badge">${esc(status)}</span>
+        ${!mine?`<button class="btn appt-confirm" data-id="${p.id}">Confirm this time</button>`:''}<div class="appt-thread">${messages}</div>
+        <form class="appt-form appt-message" data-id="${p.id}"><textarea name="text" rows="2" placeholder="Send a private message…"></textarea><input name="audio" type="file" accept="audio/*"><button class="btn" type="submit">Send message</button></form></div>`;
+    }).join('')||'<p class="muted small">No appointment proposals yet.</p>';
+    host.querySelectorAll('.appt-confirm').forEach(b=>b.onclick=async()=>{b.disabled=true;const r=await fetch(`/api/portal/${encodeURIComponent(seg)}/appointment-proposals/${b.dataset.id}/confirm`,{method:'POST'});if(r.ok)loadAppointmentProposals();else{const d=await r.json();alert(d.error==='slot_conflict'?'That time was just taken. Please propose another time.':'Could not confirm.')}});
+    host.querySelectorAll('.appt-message').forEach(f=>f.onsubmit=async e=>{e.preventDefault();const r=await fetch(`/api/portal/${encodeURIComponent(seg)}/appointment-proposals/${f.dataset.id}/messages`,{method:'POST',body:new FormData(f)});if(r.ok)loadAppointmentProposals();else alert('Could not send that message.');});
+  }catch(e){host.innerHTML='<p class="err small">Appointments could not load. Please try again.</p>'}
+}
+function initAppointmentProposals(){
+  loadAppointmentProposals(); const f=document.getElementById('appt-proposal-form');if(!f)return;
+  f.onsubmit=async e=>{e.preventDefault();const fd=new FormData(f),body=Object.fromEntries(fd.entries()),err=f.querySelector('[data-appt-error]');body.timezone=portalTimeZone();
+    const r=await fetch(`/api/portal/${encodeURIComponent(seg)}/appointment-proposals`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}),d=await r.json();
+    if(r.status===402&&d.upgrade_url){location.href=d.upgrade_url;return}if(!r.ok){err.textContent='Could not send proposal.';return}f.reset();loadAppointmentProposals();};
 }
 // My Health Profile panel body. Renders v.health_profile.sections (curated
 // goals/dimensions/history from dashboard/health_profile.py) as label/value
@@ -1023,9 +1379,17 @@ function healthFieldValueHtml(f){
     }).join("")}</ul>`;
   }
   const val = f.value;
+  const options = Array.isArray(f.options) ? f.options : [];
+  const selected = options.find(opt => {
+    const optionValue = (opt && typeof opt === "object") ? opt.value : opt;
+    return String(optionValue) === String(val);
+  });
+  const displayValue = selected
+    ? ((selected && typeof selected === "object") ? selected.label : selected)
+    : val;
   return (val === null || val === undefined || val === "")
     ? `<p class="muted small">Not provided yet.</p>`
-    : `<p class="health-value">${esc(val)}</p>`;
+    : `<p class="health-value">${esc(displayValue)}</p>`;
 }
 function healthFieldHtml(f){
   // data-value carries the current scalar so Edit can open the input pre-filled
@@ -1050,7 +1414,13 @@ function buildHealthProfileHtml(v){
   const body = sections.length
     ? sections.map(healthSectionHtml).join("")
     : `<div class="card quiet"><p class="muted">Your health profile will appear here once your intake is on file.</p></div>`;
-  return `<div class="portal-health"><div id="healthSuggestions"></div>${body}</div>`;
+  return `<div class="portal-health">
+    <div class="card quiet health-profile-guide">
+      <h2>Your saved Intake details</h2>
+      <p class="muted">My Health Profile is where you can review the health history, symptoms, and other details you provided in your Intake.</p>
+      <button type="button" class="btn ghost" onclick="showTab('intake')">Open or edit my Intake</button>
+    </div>
+    <div id="healthSuggestions"></div>${body}</div>`;
 }
 // ── Task 5: My Healing Oasis panel (render-only). Consumes v.oasis (Task 4's
 // shape: {enabled, replenish[], build_out:{owned_from_us[], owned_external[],
@@ -1071,7 +1441,7 @@ function oasisReplenishRowHtml(item){
     : esc(item.name);
   return `<div class="reitem">
     <span class="nm">${name}${low}<br>${last}</span>
-    <button type="button" class="btn" data-oasis-reorder="${esc(item.slug)}">Reorder</button>
+    <button type="button" class="btn" data-oasis-reorder="${esc(item.slug)}">Add to basket</button>
   </div>`;
 }
 function buildOasisReplenishHtml(oasis){
@@ -1200,24 +1570,90 @@ function buildOasisHtml(v){
 // another tab, or this panel's own qty edits) is always reflected on next
 // visit without needing the whole portal payload re-fetched.
 function buildCartHtml(){
-  return `<div class="card"><h2>My Cart</h2><div id="cart-body" class="muted">Loading…</div></div>`;
+  return `<div class="card"><h2>My Cart</h2><div id="cart-body" class="muted">Loading…</div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:1rem">
+      <button type="button" class="btn ghost portal-continue-shopping">Continue Shopping</button>
+      <button type="button" class="btn portal-review-order">Review my order</button>
+    </div></div>`;
+}
+function buildPhotoHtml(){
+  return `<div class="card" id="photo-section">
+    <h2>My Photo</h2>
+    <p class="muted small">Add a clear photo for your profile and personalized visual tools.</p>
+    <div class="client-photo-box" style="display:flex;gap:18px;align-items:center;flex-wrap:wrap">
+      <div class="avatar-crop-stage" id="client-photo-crop-stage" hidden>
+        <img id="client-photo-panel-preview" alt="Circular preview of your profile photo">
+      </div>
+      <div class="avatar-crop-controls"><label class="btn" style="cursor:pointer;display:inline-block">
+        <span id="client-photo-label">Choose photo</span>
+        <input id="client-photo-file" type="file" accept="image/jpeg,image/png,image/webp" style="display:none">
+      </label>
+      <div id="client-photo-adjust" hidden style="margin-top:.8rem">
+        <label for="client-photo-zoom" class="small"><strong>Magnification</strong></label>
+        <input id="client-photo-zoom" type="range" min="1" max="3" step=".01" value="1">
+        <p class="muted small" style="margin:.25rem 0 .55rem">Drag the photo to center your face.</p>
+        <button class="btn" id="client-photo-reset" type="button">Reset</button>
+        <button class="btn" id="client-photo-save" type="button">Save framing</button>
+      </div>
+      <span id="client-photo-stat" class="dose" style="display:block;margin-top:.45rem"></span></div>
+    </div>
+  </div>`;
+}
+function buildShopHtml(){
+  return `<div class="card" id="shop-panel"><h2>Shop wellness products</h2>
+    <p class="muted">Explore remedies, wellness tools, and Dr. Glen’s curated product picks.</p>
+    <a class="btn full" href="/begin/explore">Browse the shop</a></div>`;
+}
+function buildMembershipSummaryHtml(view){
+  const membership = (view && view.membership) || {};
+  const level = membership.level || "Client Portal Access";
+  const status = membership.status || "Active";
+  const detail = membership.detail || "Your portal access is active";
+  const next = membership.next_step || {label:"Review your recommendations", href:"#recs"};
+  return `<div class="reitem" style="align-items:flex-start">
+      <span><span class="nm">${esc(level)}</span><span class="od">${esc(detail)}</span></span>
+      <span class="dose">${esc(status)}</span>
+    </div>
+    <div style="margin-top:1rem;padding-top:1rem;border-top:1px solid var(--line)">
+      <p class="small" style="margin:0 0 .65rem"><strong>Next step to consider</strong></p>
+      <a class="btn" href="${esc(next.href || "#recs")}">${esc(next.label || "Review your recommendations")}</a>
+    </div>`;
+}
+function buildOffersEmptyHtml(view){
+  return `<div class="card" id="offers-card"><h2>Membership &amp; offers</h2>
+    ${buildMembershipSummaryHtml(view)}</div>`;
+}
+function renderUnifiedPortalCart(d){
+  const items = (d && d.items) || [];
+  const rows = items.map(it => {
+    const price = (it.is_special && it.regular_price_cents)
+      ? `<span class="pr"><span class="reg">${esc(money(it.regular_price_cents))}</span><span class="sp">${esc(money(it.price_cents))}</span></span>`
+      : `<span class="pr">${esc(money(it.price_cents))}</span>`;
+    return `<div class="reitem curated-order-item" data-slug="${esc(it.slug)}" data-qty="${esc(it.qty)}">
+      <span class="nm">${esc(it.name || it.slug)}${it.available ? '' : ' <span class="small err">No longer available</span>'}</span>
+      ${price}<input type="number" min="0" max="99" value="${esc(it.qty)}" aria-label="Quantity for ${esc(it.name || it.slug)}"
+        data-cart-qty="${esc(it.slug)}" data-cart-fmt="${esc(it.format || '')}" style="width:56px">
+      <button type="button" class="wishRemBtn unified-cart-remove" data-cart-slug="${esc(it.slug)}" data-cart-fmt="${esc(it.format || '')}" aria-label="Remove ${esc(it.name || it.slug)}">×</button>
+    </div>`;
+  }).join('');
+  const orderHost = document.getElementById('curatedOrderItems');
+  if(orderHost) orderHost.innerHTML = rows;
+  const cartHost = document.getElementById('cart-body');
+  if(cartHost) cartHost.innerHTML = rows || '<p class="muted">Your cart is empty.</p>';
+  const empty = document.getElementById('orderEmpty');
+  if(empty) empty.hidden = !!items.length;
+  window.__portalCartCount = (d && d.count) || 0;
+  window.__portalCartOrderRef = (d && d.order_ref) || "";
+  const orderNo = document.getElementById('portalBasketOrderNo');
+  if(orderNo){
+    orderNo.textContent = d && d.order_id ? `Order #${d.order_id}` : "Order number assigned at checkout";
+  }
+  if(typeof window.setPortalHeaderCartCount === 'function') window.setPortalHeaderCartCount(window.__portalCartCount);
 }
 function loadCart(){
-  const host = document.getElementById('cart-body');
-  if (!host) return;  // panel not in the DOM (flag off) -- nothing to do
-  fetch('/api/cart', {credentials: 'same-origin'})
+  fetch('/api/portal/' + encodeURIComponent(token) + '/cart', {credentials: 'same-origin'})
     .then(r => r.json())
-    .then(d => {
-      const items = (d && d.items) || [];
-      if (!items.length) { host.innerHTML = '<p class="muted">Your cart is empty.</p>'; return; }
-      host.innerHTML = items.map(it => `
-        <div class="reitem">
-          <span class="nm">${esc(it.name || it.slug)}${it.available ? '' : ' <span class="small err">No longer available</span>'}</span>
-          <input type="number" min="0" max="99" value="${esc(it.qty)}"
-                 data-cart-qty="${esc(it.slug)}" data-cart-fmt="${esc(it.format || '')}"
-                 style="width:56px">
-        </div>`).join('');
-    })
+    .then(renderUnifiedPortalCart)
     .catch(() => {});
 }
 // Delegated once: any qty input inside the cart panel re-render is still
@@ -1231,11 +1667,24 @@ document.addEventListener("change", function(ev){
   let qty = parseInt(inp.value, 10);
   if (!Number.isFinite(qty) || qty < 0) qty = 0;
   inp.disabled = true;
-  fetch('/api/cart/set-qty', {
+  fetch('/api/portal/' + encodeURIComponent(token) + '/cart/set-qty', {
     method: 'POST', credentials: 'same-origin',
     headers: {'Content-Type': 'application/json'},
     body: JSON.stringify({slug: slug, format: fmt, qty: qty})
-  }).then(r => r.json()).then(() => { loadCart(); }).catch(() => { inp.disabled = false; });
+  }).then(r => r.json()).then(renderUnifiedPortalCart).catch(() => { inp.disabled = false; });
+});
+
+document.addEventListener("click", function(ev){
+  const remove = ev.target.closest(".unified-cart-remove");
+  if(remove){
+    fetch('/api/portal/' + encodeURIComponent(token) + '/cart/set-qty', {
+      method:'POST', credentials:'same-origin', headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({slug:remove.dataset.cartSlug, format:remove.dataset.cartFmt || '', qty:0})
+    }).then(r=>r.json()).then(renderUnifiedPortalCart);
+    return;
+  }
+  if(ev.target.closest(".portal-continue-shopping")){ continuePortalShopping(); return; }
+  if(ev.target.closest(".portal-review-order")){ openPortalOrderBasket(false); }
 });
 
 // Task 6: wires the three Build-Out actions Task 5 left inert (tool add/remove,
@@ -1261,30 +1710,18 @@ document.addEventListener("click", async function(ev){
   if (!addBtn && !rmBtn && !wantBtn && !reorderBtn) return;
 
   if (reorderBtn) {
-    // Task 7: wire Replenish's "Reorder" button through the SAME existing
-    // portal checkout the "Your Remedies" per-row reorder uses (see
-    // reorderItem() above) -- add-then-confirm, never a silent charge: this
-    // posts {items:[{slug, qty:1}]} to /api/portal/<token>/checkout, which
-    // returns a live Stripe Checkout URL; the charge only happens if the
-    // client confirms on Stripe's hosted page. No new endpoint. The slug is
-    // already in the client's own purchase history (that's WHY it's in
-    // Replenish), so it's already in _portal_entitled_slugs server-side.
-    // One-shot latch: disabled immediately, before any await.
+    // Replenish joins the same open basket as every other first-party product.
+    // Only the basket's review button can begin checkout.
     if (reorderBtn.disabled) return;
     reorderBtn.disabled = true;
     const slug = reorderBtn.getAttribute("data-oasis-reorder");
-    const label = reorderBtn.textContent; reorderBtn.textContent = "Setting up your order…";
+    const label = reorderBtn.textContent; reorderBtn.textContent = "Adding…";
     const row = reorderBtn.closest(".reitem");
     const existingMsg = row && row.querySelector(".oasis-reorder-msg");
     if (existingMsg) existingMsg.remove();
     try {
-      const r = await fetch(`/api/portal/${encodeURIComponent(token)}/checkout`, {
-        method: "POST", headers: {"Content-Type": "application/json"}, credentials: "same-origin",
-        body: JSON.stringify({items: [{slug, qty: 1}]})
-      });
-      const j = await r.json();
-      if (j.stripe_url) { location.href = j.stripe_url; return; }
-      throw new Error(j.error || "Checkout is temporarily unavailable. Please reach out to us and we’ll help.");
+      await addItemToBasket(slug, 1);
+      reorderBtn.textContent = "In basket";
     } catch (e) {
       reorderBtn.disabled = false; reorderBtn.textContent = label;
       if (row) {
@@ -1662,12 +2099,100 @@ function notFound(){
   document.getElementById("notfound").hidden = false;
 }
 
-async function load(){
+const PORTAL_FETCH_TIMEOUT_MS = 10000;
+
+async function fetchPortalJsonOnce(url){
+  const controller = new AbortController();
+  const timer = setTimeout(()=>controller.abort(), PORTAL_FETCH_TIMEOUT_MS);
+  try{
+    const response = await fetch(url, {
+      signal: controller.signal,
+      credentials: "same-origin",
+      cache: "no-store",
+    });
+    if(!response.ok){
+      return {kind:"http", status:response.status, data:null};
+    }
+    return {kind:"ok", status:response.status, data:await response.json()};
+  }catch(error){
+    return {
+      kind: error && error.name === "AbortError" ? "timeout" : "network",
+      status: 0,
+      data: null,
+    };
+  }finally{
+    clearTimeout(timer);
+  }
+}
+
+async function fetchPortalJson(url){
+  let result = await fetchPortalJsonOnce(url);
+  // A portal visit should survive one cold-start or momentary network failure.
+  // Invalid/unauthorized links are not retried because their response is final.
+  if(result.kind === "network" || result.kind === "timeout" ||
+     (result.kind === "http" && result.status >= 500)){
+    await new Promise(resolve=>setTimeout(resolve, 250));
+    result = await fetchPortalJsonOnce(url);
+  }
+  return result;
+}
+
+function portalLoadMessage(result){
+  if(result && result.kind === "timeout"){
+    return "This is taking longer than expected. Your information is safe.";
+  }
+  return "We couldn't reach part of your healing home just now.";
+}
+
+function showPortalLoadFailure(result){
+  document.getElementById("loading").hidden = true;
+  document.getElementById("notfound").hidden = true;
+  const app = document.getElementById("app");
+  app.hidden = false;
+  app.innerHTML = `<div class="card portal-load-alert" role="alert">
+    <h2>We couldn’t finish loading your healing home</h2>
+    <p>${esc(portalLoadMessage(result))} Please try again.</p>
+    <button type="button" class="btn" data-portal-retry>Try again</button>
+    <a class="btn" data-portal-home href="${esc(location.pathname)}">Back to portal home</a>
+  </div>`;
+  app.querySelector("[data-portal-retry]").addEventListener("click", ()=>{
+    app.hidden = true;
+    document.getElementById("loading").hidden = false;
+    load();
+  });
+}
+
+function showPortalPartialWarning(results){
+  const failed = results.find(result=>result && result.kind !== "ok");
+  if(!failed) return;
+  const app = document.getElementById("app");
+  const warning = document.createElement("div");
+  warning.className = "card portal-load-alert";
+  warning.setAttribute("role", "status");
+  warning.innerHTML = `<b>Part of this page is temporarily unavailable.</b>
+    <p class="muted small">${esc(portalLoadMessage(failed))}</p>
+    <button type="button" class="btn" data-portal-retry>Retry missing information</button>`;
+  warning.querySelector("[data-portal-retry]").addEventListener("click", load);
+  app.prepend(warning);
+}
+
+function portalIntakeIsActive(){
+  const panel = document.querySelector('[data-panel="intake"]');
+  return !!panel && !panel.hidden;
+}
+
+async function load(options){
+  options = options || {};
+  // Pending-analysis polling is background work. It must never replace the
+  // live Intake DOM: doing so discards focused controls and any values still
+  // inside the 1.2-second autosave debounce window. Check both before and
+  // after the network wait so a client who opens Intake during an in-flight
+  // poll is protected too.
+  if(options.preserveActiveIntake && portalIntakeIsActive()) return false;
   // Two independent sources: content (biofield + reorder, token-or-session) and
   // the role-aware view (account/orders/upgrade, identity seam). Which one MUST
   // succeed depends on the page: a token link lives on its content; the logged-in
   // /me home lives on its session (the view), and biofield content is optional.
-  const fetchJson = async (u)=>{ try{ const r=await fetch(u); return r.ok?await r.json():null; }catch(e){ return null; } };
   // When a specific scan is selected, both endpoints take ?scan_date=<YYYY-MM-DD>.
   // The content endpoint ALSO takes ?member= — without it the caregiver's switcher
   // reloads the page, highlights the member's tab, and re-fetches the PRIMARY's
@@ -1679,31 +2204,65 @@ async function load(){
   const sd = selectedScanDate ? `?scan_date=${encodeURIComponent(selectedScanDate)}` : "";
   if (memberParam) q.set("member", memberParam);
   const dq = q.toString() ? `?${q.toString()}` : "";
-  const [data, view, reco] = await Promise.all([
-    fetchJson(`/api/portal/${encodeURIComponent(seg)}${dq}`),
-    fetchJson(`/api/portal/${encodeURIComponent(seg)}/view${sd}`),
+  const settled = await Promise.allSettled([
+    fetchPortalJson(`/api/portal/${encodeURIComponent(seg)}${dq}`),
+    fetchPortalJson(`/api/portal/${encodeURIComponent(seg)}/view${sd}`),
     // My Recommendations (Phase 2b-ii): independent of data/view — a null/absent
     // payload (flag off, no sections) simply renders no card, never blocks the page.
-    fetchJson(`/api/portal/${encodeURIComponent(seg)}/recommendations`),
+    fetchPortalJson(`/api/portal/${encodeURIComponent(seg)}/recommendations${dq}`),
   ]);
-  const ok = isMe ? !!view : !!data;
-  if(!ok){ notFound(); return; }
-  _recoPayload = reco;
-  render(data, view);
+  const resultAt = index => settled[index].status === "fulfilled"
+    ? settled[index].value
+    : {kind:"network", status:0, data:null};
+  const dataResult = resultAt(0);
+  const viewResult = resultAt(1);
+  const recoResult = resultAt(2);
+  const required = isMe ? viewResult : dataResult;
+  if(required.kind !== "ok"){
+    if(required.kind === "http" && required.status === 404) notFound();
+    else showPortalLoadFailure(required);
+    return;
+  }
+  if(options.preserveActiveIntake && portalIntakeIsActive()) return false;
+  _recoPayload = recoResult.kind === "ok" ? recoResult.data : null;
+  render(dataResult.data, viewResult.data);
+  window.__portalLastLoadedAt = Date.now();
+  // Content and account/view can degrade independently. Recommendations are
+  // optional and intentionally remain quiet when absent.
+  showPortalPartialWarning([dataResult, viewResult].filter(result=>result !== required));
+  return true;
 }
+
+// A portal is often left open while Dr. Glen publishes a report, invoice, or
+// live event in the console. Refresh its data when the member returns to the
+// tab/window so an old "No upcoming events" snapshot cannot linger. The short
+// freshness window avoids duplicate fetches from focus + visibilitychange firing
+// together, and preserveActiveIntake protects any form currently being edited.
+function refreshPortalWhenReturning(){
+  if(document.visibilityState === "hidden") return;
+  const lastLoadedAt = Number(window.__portalLastLoadedAt || 0);
+  if(Date.now() - lastLoadedAt < 30000) return;
+  load({preserveActiveIntake:true});
+}
+document.addEventListener("visibilitychange", refreshPortalWhenReturning);
+window.addEventListener("focus", refreshPortalWhenReturning);
 
 // Poll loop for the cold-portal "Preparing your analysis…" state. Each tick
 // re-fetches via load(); when the watcher has published the draft, the status is
 // no longer "pending" and render() stops the timer. After PP_MAX ticks (~2 min)
 // we give up the spinner and show the "we'll text you" line (request stays queued).
 function pollPending(){
+  // Keep polling armed, but do not spend a retry or replace the form while a
+  // client is working in Intake. The next interval tick after they leave will
+  // refresh the pending analysis normally.
+  if(portalIntakeIsActive()) return;
   _ppPolls++;
   if(_ppPolls > PP_MAX){
     clearInterval(_ppTimer); _ppTimer = null;
-    load(); // final re-render swaps the spinner for the "we'll text you" line.
+    load({preserveActiveIntake:true}); // final re-render swaps the spinner for the "we'll text you" line.
     return;
   }
-  load();
+  load({preserveActiveIntake:true});
 }
 
 // Entity hover/tap pop-ups (stress patterns, remedies, functions) + link-out are
@@ -1799,6 +2358,17 @@ function healthEditInputHtml(fieldId, fieldType, rawValue){
   const val = (rawValue === null || rawValue === undefined) ? "" : rawValue;
   if (fieldType === "textarea") return `<textarea class="health-edit-input" rows="3">${esc(val)}</textarea>`;
   if (fieldType === "number") return `<input type="number" class="health-edit-input" value="${esc(val)}">`;
+  const field = findHealthField(_healthProfileBlock, fieldId);
+  const options = (field && Array.isArray(field.options)) ? field.options : [];
+  if (options.length) {
+    const choices = options.map(opt => {
+      const optionValue = (opt && typeof opt === "object") ? opt.value : opt;
+      const optionLabel = (opt && typeof opt === "object") ? opt.label : opt;
+      const selected = String(optionValue) === String(val) ? " selected" : "";
+      return `<option value="${esc(optionValue)}"${selected}>${esc(optionLabel)}</option>`;
+    }).join("");
+    return `<select class="health-edit-input"><option value="">Select an option</option>${choices}</select>`;
+  }
   if (fieldType === "scale") {
     const max = HEALTH_SCALE_MAX[fieldId] || 5;
     return `<input type="number" class="health-edit-input" min="1" max="${max}" step="1" value="${esc(val)}">`;
@@ -2073,11 +2643,48 @@ document.addEventListener("click", async (ev) => {
 // "My Recommendations" (Phase 2b-ii Task 1): one collapsible sub-section per
 // recommendation source, shared by the initial payload render — sections come
 // from GET /api/portal/<token>/recommendations, fetched alongside d/v in load().
-// Each section lists up to `shown` products (with a "show all N" affordance
-// when `total > shown`) as: an icon row of source chips, the name (linked when
+// Each section lists 3 products initially, then progressively reveals 5 and
+// finally all products. Rows render as: an icon row of source chips, the name (linked when
 // `url` is present and http(s)/relative), the operator's read-only note, and a
 // client-editable note + hide control. Click/save/hide/collapse-toggle wiring
 // is bound by wireRecommendationsCard() below, called once per render().
+function recommendationPriorityHtml(sections){
+  const labels = {};
+  const products = {};
+  sections.forEach(sec=>{
+    labels[String(sec.source || "")] = String(sec.label || sec.source || "");
+    (Array.isArray(sec.products) ? sec.products : []).forEach(product=>{
+      const key = String(product.product_key || "");
+      if(!key || products[key]) return;
+      const sources = Array.isArray(product.icons) ? product.icons : [];
+      const points = sources.reduce((sum, source)=>sum + (Number(source.count) || 0), 0);
+      if(sources.length < 2 && points <= 1) return;
+      products[key] = {product: product, sources: sources, points: points};
+    });
+  });
+  const ranked = Object.values(products).sort((a, b)=>
+    (b.points - a.points) || String(a.product.name || "").localeCompare(String(b.product.name || ""))
+  );
+  if(!ranked.length) return "";
+  const rows = ranked.map(item=>{
+    const product = item.product;
+    const safeUrl = /^(https?:\/\/|\/)/.test(String(product.url || "")) ? product.url : "";
+    const name = safeUrl
+      ? `<a href="${esc(safeUrl)}" target="_blank" rel="noopener">${esc(product.name || product.product_key || "")}</a>`
+      : esc(product.name || product.product_key || "");
+    const listNames = item.sources.map(source=>labels[String(source.source || "")] || String(source.source || ""));
+    return `<li class="rec-priority-row" style="padding:.55rem 0">
+      <div><strong>${name}</strong> <span class="pill">${item.points} point${item.points === 1 ? "" : "s"}</span></div>
+      <p class="muted small" style="margin:.2rem 0 0">Lists: ${listNames.map(esc).join(" · ")}</p>
+    </li>`;
+  }).join("");
+  return `<div class="rec-priority" style="margin:.8rem 0 1.1rem">
+    <h3 style="margin-bottom:.2rem">Your strongest recommendations</h3>
+    <p class="muted small" style="margin-top:0">Items found on more than one list or supported by more than one point, ranked by total points.</p>
+    <ol style="margin:.4rem 0;padding-left:1.4rem">${rows}</ol>
+  </div>`;
+}
+
 function renderRecommendations(sections){
   let secHtml = "";
   sections.forEach(sec=>{
@@ -2094,7 +2701,7 @@ function renderRecommendations(sections){
       const pk = esc(p.product_key || "");
       const safeUrl = /^(https?:\/\/|\/)/.test(String(p.url||"")) ? p.url : "";
       const nameHtml = safeUrl
-        ? `<a href="${esc(safeUrl)}">${esc(p.name || "")}</a>`
+        ? `<a href="${esc(safeUrl)}" target="_blank" rel="noopener">${esc(p.name || "")}</a>`
         : esc(p.name || "");
       const icons = Array.isArray(p.icons) ? p.icons : [];
       const chips = icons.map(ic=>{
@@ -2121,8 +2728,9 @@ function renderRecommendations(sections){
         </div>
       </div>`;
     });
+    const moreLabel = total > 5 ? "See more (5)" : `See all (${total})`;
     const moreHtml = total > shown
-      ? `<button type="button" class="btn ghost small rec-showmore" data-section="${src}" style="margin-top:.5rem">Show all ${total}</button>`
+      ? `<button type="button" class="btn ghost small rec-showmore" data-section="${src}" data-visible="${shown}" data-total="${total}" style="margin-top:.5rem">${moreLabel}</button>`
       : "";
     secHtml += `<div class="rec-section" data-section="${src}" style="margin:.9rem 0">
       <div class="rec-section-header" data-section-toggle="${src}" data-collapsed="${collapsed ? "1" : "0"}"
@@ -2138,11 +2746,12 @@ function renderRecommendations(sections){
       </div>
     </div>`;
   });
-  return `<div class="card" id="recsCard"><h2>My Recommendations</h2>${secHtml || '<p class="muted">No recommendations yet.</p>'}</div>`;
+  const priorityHtml = recommendationPriorityHtml(sections);
+  return `<div class="card" id="recsCard"><h2>My Recommendations</h2>${priorityHtml}${secHtml || '<p class="muted">No recommendations yet.</p>'}</div>`;
 }
 
 // Phase 2b-ii: wire the "My Recommendations" card's three writes +
-// the client-side "Show all N" reveal. Called once per render() (like the
+// the client-side 3 → 5 → all reveal. Called once per render() (like the
 // wishlist/ff-matches wiring above it) — app.innerHTML is rebuilt on every
 // load(), so every .rec-* element here is fresh and re-querying + re-binding
 // each time cannot double-fire (the previous elements, and their listeners,
@@ -2237,15 +2846,20 @@ function wireRecommendationsCard(){
     });
   });
 
-  // "Show all N": build_sections now sends every product in the payload
-  // (`shown` is only the initial-visible hint) — the extra rows already exist
-  // in the DOM with `hidden`, so revealing them is a pure client-side flip,
-  // no re-fetch needed.
+  // Progressive reveal: build_sections sends every product in the payload.
+  // Show 3 initially, then 5, then all, without another request.
   card.querySelectorAll(".rec-showmore").forEach(mb=>{
     mb.addEventListener("click", ()=>{
       const body = mb.closest(".rec-section-body");
-      if(body) body.querySelectorAll(".rec-row[hidden]").forEach(row=>{ row.hidden = false; });
-      mb.remove();
+      const total = Number(mb.getAttribute("data-total")) || 0;
+      const visible = Number(mb.getAttribute("data-visible")) || 3;
+      const target = visible < 5 ? Math.min(5, total) : total;
+      if(body) body.querySelectorAll(".rec-row").forEach(row=>{
+        row.hidden = Number(row.getAttribute("data-row-idx")) >= target;
+      });
+      if(target >= total){ mb.remove(); return; }
+      mb.setAttribute("data-visible", String(target));
+      mb.textContent = `See all (${total})`;
     });
   });
 }
@@ -2284,6 +2898,9 @@ function renderEyeVisionReport(report){
     </div>`).join("");
   const limitations = (Array.isArray(report.limitations) ? report.limitations : [])
     .map(item=>`<li>${esc(item)}</li>`).join("");
+  const resourceLinks = (Array.isArray(report.resource_links) ? report.resource_links : [])
+    .map(item=>`<li><a href="${esc(item.href || "#recs")}">${esc(item.label || "Portal resources")}</a>${item.description ? ` — ${esc(item.description)}` : ""}</li>`)
+    .join("");
   const rr = report.review_request || {};
   let reviewAction = "";
   if(rr.eligible){
@@ -2311,7 +2928,7 @@ function renderEyeVisionReport(report){
       ${report.scan_date ? `<p class="muted small">E4L scan: ${esc(report.scan_date)}</p>` : ""}
       ${rows || `<p class="muted">${esc(report.empty_state || "No eye- or vision-mapped patterns were found.")}</p>`}
       ${reviewAction}
-      ${limitations ? `<details style="margin-top:.8rem"><summary>Important context</summary><ul class="muted small">${limitations}</ul></details>` : ""}
+      ${(limitations || resourceLinks) ? `<details style="margin-top:.8rem"><summary>Important context</summary><ul class="muted small">${limitations}${resourceLinks ? `<li>Continue with these resources:<ul>${resourceLinks}</ul></li>` : ""}</ul></details>` : ""}
     </div>
   </div>`;
 }
@@ -2367,6 +2984,27 @@ function wireEyeVisionReport(){
 
 function render(d, v){
   d = d || {};
+  const onboardingMount = document.getElementById("portal-onboarding-mount");
+  // The onboarding checklist must not compete with its own legal prerequisite.
+  // Once Terms are accepted, the next load restores the checklist normally.
+  if(onboardingMount) onboardingMount.hidden = d.tos_agreed === false;
+  const displayName = d.name || (v && v.account && v.account.name) || "";
+  // The portal record is clinician-reviewed and is the same name used by the
+  // greeting. Prefer it over an account name that may have been seeded from the
+  // email username during an older import.
+  const portalClientName = d.name || (v && v.account && v.account.name) || "";
+  const identity = document.getElementById("portal-client-identity");
+  const identityName = document.getElementById("portal-client-name");
+  const safeClientName = /[@]/.test(portalClientName) ? "" : portalClientName.trim();
+  if (identity && identityName) {
+    identityName.textContent = safeClientName;
+    identity.hidden = !safeClientName;
+    const photoPlaceholder = document.getElementById("client-photo-placeholder");
+    if (photoPlaceholder) {
+      photoPlaceholder.textContent = safeClientName
+        .split(/\s+/).filter(Boolean).slice(0, 2).map(part => part[0]).join("").toUpperCase();
+    }
+  }
   // Hub landing (flagged). Prepended above existing cards; panels below unchanged.
   let hubHtml = (v && v.hub_enabled) ? buildHubHtml(d, v) : "";
   const recSections = (_recoPayload && Array.isArray(_recoPayload.sections)) ? _recoPayload.sections : [];
@@ -2389,8 +3027,12 @@ function render(d, v){
     // "I agree" card lands in a still-hidden #app and the spinner never clears.
     document.getElementById("loading").hidden = true;
     document.getElementById("app").hidden = false;
-    var g = '<div class="card"><h2>Welcome to your healing home</h2>'
-      + '<p>Before we continue, please review and agree to our Terms of Service. '
+    var intakeEntry = (location.hash || "").toLowerCase() === "#intake";
+    var g = '<div class="card" id="portal-tos-card">'
+      + (intakeEntry ? '<p class="eyebrow">Step 1 of Intake</p><h2>Review and accept the Terms</h2>'
+                     : '<h2>Welcome to your healing home</h2>')
+      + '<p>' + (intakeEntry ? 'Before opening your Intake form, ' : 'Before we continue, ')
+      + 'please review and agree to our Terms of Service. '
       + 'These cover both Remedy Match and the Energy For Life (E4L) biofield scan.</p>'
       + (d.tos_covers_dependents
           ? '<p>By agreeing, you accept these Terms on your own behalf and on behalf of those '
@@ -2400,7 +3042,9 @@ function render(d, v){
       + '<p><a href="' + esc((window.TOS_URL || "/terms")) + '" target="_blank" rel="noopener">Read the Remedy Match Terms</a>'
       + ' &nbsp;·&nbsp; '
       + '<a href="' + esc((window.E4L_TOS_URL || "https://e4l.com/terms-and-conditions")) + '" target="_blank" rel="noopener">Read the E4L Terms</a></p>'
-      + '<button class="btn" id="tosAgreeBtn">I agree to both Terms</button>'
+      + '<button class="btn" id="tosAgreeBtn">'
+      + (intakeEntry ? 'I agree — continue to Intake' : 'I agree to both Terms')
+      + '</button>'
       + '<div class="err" id="tosErr" hidden></div></div>';
     document.getElementById("app").innerHTML = g;
     var b = document.getElementById("tosAgreeBtn");
@@ -2415,11 +3059,11 @@ function render(d, v){
         var er = document.getElementById("tosErr"); if (er) { er.textContent = "Please try again."; er.hidden = false; }
       }
     });
+    applyPortalHash();
     return;   // suppress the home until agreed
   }
   const app = document.getElementById("app");
   try{ window.__reportData = d; }catch(e){}   // for printReport()
-  const displayName = d.name || (v && v.account && v.account.name) || "";
   // Greet by real first name; never show an email-derived token. A name that is
   // blank, or whose first word contains "@" or "." (e.g. "bob@x.com" stored as a
   // name, or "this.elf" mis-synced as a first name) falls back to "friend". Real
@@ -2427,16 +3071,16 @@ function render(d, v){
   let first = (displayName||"").split(" ")[0] || "";
   if (!first || /[@.]/.test(first)) first = "friend";
   const badges = (v && v.account && v.account.role_badges) || [];
+  const _hub = !!(v && v.hub_enabled);
   let html = `
     <div class="hero">
-      <div class="client-photo-box" style="display:flex;gap:14px;align-items:center;margin:0 0 14px">
-        <img id="client-photo" alt="" style="width:88px;height:88px;object-fit:cover;border-radius:12px;display:none">
+      ${_hub ? "" : `<div class="client-photo-box" id="photo-section" style="display:flex;gap:14px;align-items:center;margin:0 0 14px">
         <label class="btn" style="cursor:pointer;display:inline-block">
           <span id="client-photo-label">Add your photo</span>
           <input id="client-photo-file" type="file" accept="image/jpeg,image/png,image/webp" style="display:none">
         </label>
         <span id="client-photo-stat" class="dose"></span>
-      </div>
+      </div>`}
       <div class="hello">${d.is_animal
           ? 'Give our Aloha to ' + esc(d.animal_name || first)
           : 'Aloha ' + esc(first)}</div>
@@ -2518,8 +3162,11 @@ function render(d, v){
   // Under the hub, each secondary card routes into its own [data-panel] section
   // (below) instead of the single scroll; without the hub, every card still
   // appends to `html` exactly as before (off-state byte-identical).
-  const _hub = !!(v && v.hub_enabled);
-  let _askHtml="", _finderHtml="", _bodymapHtml="", _classesHtml="", _accountHtml="", _referHtml="", _referralsHtml="";
+  let _askHtml="", _finderHtml="", _bodymapHtml="", _classesHtml="", _calendarHtml="", _accountHtml="", _payerOrdersHtml="", _referHtml="", _referralsHtml="", _offersHtml="";
+
+  const _calendarCard = buildCalendarHtml(v,true);
+  _calendarHtml = buildCalendarHtml(v,false);
+  if (!_hub) html += _calendarCard + buildAppointmentProposalHtml();
 
   // "Ask Dr. Glen" concierge chat — promoted to the TOP of the portal (first card
   // below the hero) so it's the first thing the client sees. Always shown.
@@ -2683,7 +3330,7 @@ function render(d, v){
     const line = capped
       ? "Still working on your Biofield Analysis, we'll text you the moment it's ready."
       : "This usually takes about a minute. It will appear right here.";
-    html += `<div class="card prep"><h2>Preparing your Biofield Analysis…</h2>
+    html += `<div class="card prep" id="biofield-section"><h2>Preparing your Biofield Analysis…</h2>
       ${capped ? "" : '<div class="spinner" aria-hidden="true"></div>'}
       <p class="prepline">${esc(line)}</p></div>`;
     // Kick the producer once per page load, then poll.
@@ -2793,7 +3440,7 @@ function render(d, v){
       const cta = actionable
         ? `<button class="btn full" id="bfInterestBtn" data-scan="${esc(curDate||"")}">View your scan analysis</button>`
         : `<p class="scan-old">This analysis is from an earlier scan.</p>`;
-      html += `<div class="card primary"><h2>Your scan analysis</h2>
+      html += `<div class="card primary" id="biofield-section"><h2>Your scan analysis</h2>
         ${tabs}
         ${patternsBlock}
         ${bf.greeting?`<div class="muted${rvlCls}" style="margin:.1rem 0 .6rem${firstTime?";animation-delay:"+(findingsCount*120+300)+"ms":""}">${escGreeting(bf.greeting)}</div>`:""}
@@ -2869,7 +3516,7 @@ function render(d, v){
           const badge = document.getElementById("rr-new");
           if (badge) badge.remove();
         };
-        html += `<div class="card">
+        html += `<div class="card" id="biofield-section">
           <div class="rr-header" data-scan="${esc(sd)}" style="display:flex;align-items:center;gap:10px;cursor:pointer">
             <strong>Biofield report — ${esc(sd || "")}</strong>
             ${isNew ? `<span id="rr-new" style="background:#d4a843;color:#000;font-size:.72rem;font-weight:700;padding:1px 7px;border-radius:10px">New</span>` : ""}
@@ -2879,14 +3526,14 @@ function render(d, v){
         </div>`;
       } else {
         // flag off: existing report body markup, unchanged
-        html += `<div class="card"><h2>Your healing path</h2>
+        html += `<div class="card" id="biofield-section"><h2>Your healing path</h2>
           ${reportBody}</div>`;
       }
     }
   }
 
   // Your scan's own matches, straight from E4L. Free, and orderable.
-  // Infoceuticals get an order link to the new-style product page. miHealth cycles
+  // Infoceuticals add to the portal's shared basket. miHealth cycles
   // (ER/MR) are what your practitioner runs on the device — shown, never a button.
   if (d.scan_recommendations) {
     const sr = d.scan_recommendations;
@@ -2898,8 +3545,8 @@ function render(d, v){
       s += sr.infoceuticals.map(i => {
         const name = esc(i.label);
         const days = i.protocol_days ? ` <span class="muted">· ${i.protocol_days}-day protocol</span>` : "";
-        return i.order_url
-          ? `<p style="margin:.25rem 0">${name}${days} — <a href="${esc(i.order_url)}">order</a></p>`
+        return i.slug
+          ? `<p style="margin:.25rem 0">${name}${days} — <button type="button" class="btn ghost scan-order-btn" data-slug="${esc(i.slug)}">Add to basket</button></p>`
           : `<p style="margin:.25rem 0">${name}${days}</p>`;
       }).join("");
     }
@@ -3055,7 +3702,7 @@ function render(d, v){
       <p class="small err" id="recoErr" hidden></p></div>`;
   }
 
-  if(Array.isArray(d.reorder_items) && d.reorder_items.length){
+  if(Array.isArray(d.reorder_items)){
     let rows = "";
     d.reorder_items.forEach(it=>{
       const price = (it.is_special && it.regular_price_cents)
@@ -3068,10 +3715,29 @@ function render(d, v){
       </div>`;
     });
     const note = d.pricing_note ? `<p class="note small">${esc(d.pricing_note)}</p>` : "";
-    html += `<div class="card"><h2>Order your remedies</h2>
+    html += `<div class="card" id="portal-order-basket"><h2>Order your remedies</h2>
+      <p class="small muted" id="portalBasketOrderNo">${d.order_id ? `Order #${esc(d.order_id)}` : "Order number assigned at checkout"}</p>
       ${note}
-      <div>${rows}</div>
+      <div id="curatedOrderItems">${rows}</div>
+      <p class="small muted" id="orderEmpty" ${rows ? "hidden" : ""}>Your basket is empty. Add remedies using any “Add to basket” button.</p>
+      <div style="margin-top:1rem;padding-top:.8rem;border-top:1px dashed var(--line)">
+        <label for="orderAddSearch" class="small"><strong>Add another remedy</strong></label>
+        <div style="display:flex;gap:8px;margin-top:.35rem">
+          <input id="orderAddSearch" placeholder="Type at least 2 letters" style="flex:1;background:var(--card2);color:var(--ink);border:1px solid var(--line);border-radius:8px;padding:8px 10px">
+          <button type="button" class="btn ghost" id="orderFindBtn">Find</button>
+        </div>
+        <select id="orderAddResults" hidden style="width:100%;margin-top:.5rem;background:var(--card2);color:var(--ink);border:1px solid var(--line);border-radius:8px;padding:8px 10px"></select>
+        <button type="button" class="btn" id="orderAddBtn" hidden style="margin-top:.5rem">Add to this order</button>
+        <p class="small muted" id="orderAddStatus" style="margin:.35rem 0 0"></p>
+      </div>
       <p class="muted small" style="margin:.7rem 0 1rem">Shipping calculated at checkout.</p>
+      <fieldset id="portalPaymentMethods" style="border:1px solid var(--line);border-radius:10px;padding:.8rem;margin:0 0 .8rem">
+        <legend class="small"><strong>Payment method</strong></legend>
+        <label style="display:block;margin:.25rem 0"><input type="radio" name="portalPayMethod" value="card" checked> Credit or debit card</label>
+        <label style="display:block;margin:.45rem 0 .25rem"><input type="radio" name="portalPayMethod" value="zelle"> Zelle (US)</label>
+        <div id="portalZellePreview" class="note small" hidden style="margin-top:.6rem">Loading Zelle instructions…</div>
+      </fieldset>
+      <button type="button" class="btn ghost full portal-continue-shopping" style="margin-bottom:.5rem">Continue Shopping</button>
       <button class="btn full" id="reorderBtn">Review my order</button>
       <div id="reorderReview" hidden></div>
       <p class="small err" id="reorderErr" hidden></p></div>`;
@@ -3083,8 +3749,9 @@ function render(d, v){
   // of this renders. Never touches d.reorder_items above (that's the
   // practitioner-curated list the /checkout endpoint sources from).
   if(Array.isArray(d.reorder) && d.reorder.length){
-    let rrows = "";
-    d.reorder.forEach(it=>{
+    const currentInvoiceRows = d.reorder.filter(it=>it.current_invoice);
+    const historyRows = d.reorder.filter(it=>!it.current_invoice);
+    const renderHistoryRows = items => items.map(it=>{
       const slug = esc(it.slug||"");
       const qty = Math.max(1, parseInt(it.qty,10) || 1);
       const regular = it.regular_cents!=null ? it.regular_cents : 0;
@@ -3106,7 +3773,7 @@ function render(d, v){
           : it.channel === "clinic" ? "Ordered with Healing Oasis"
           : "Ordered on illtowell.com");
       const cta = it.is_reorder ? "Reorder" : "Order";
-      rrows += `<div class="remitem" data-slug="${slug}" data-unit-cents="${yours}">
+      return `<div class="remitem" data-slug="${slug}" data-unit-cents="${yours}">
         <div class="remitem-top"><span class="nm-wrap"><span class="nm">${esc(it.name||it.slug||"")}</span><span class="prov">${esc(prov)}</span></span><span class="pr">${price}</span></div>
         <div class="remitem-bot">
           <span class="qty-ctl">
@@ -3115,13 +3782,44 @@ function render(d, v){
             <button type="button" class="qtybtn" data-dir="1" aria-label="Increase quantity">+</button>
           </span>
           ${save}
-          <button class="btn remBtn" data-slug="${slug}">${esc(cta)}</button>
+          <button class="btn remBtn" data-slug="${slug}">Add to basket</button>
         </div>
       </div>`;
+    }).join("");
+    let invoiceGroups = "";
+    const groupedInvoices = new Map();
+    currentInvoiceRows.forEach(it=>{
+      const inv = it.current_invoice || {};
+      const key = inv.url || inv.reference || "current";
+      if(!groupedInvoices.has(key)) groupedInvoices.set(key, {invoice:inv, items:[]});
+      groupedInvoices.get(key).items.push(it);
     });
+    groupedInvoices.forEach(group=>{
+      const inv = group.invoice || {};
+      const ref = inv.reference ? ` &middot; ${esc(inv.reference)}` : "";
+      const invoiceItems = group.items.map(it=>{
+        const line = it.current_invoice || {};
+        const qty = Math.max(1, parseInt(line.qty,10) || 1);
+        const price = Math.max(0, parseInt(line.unit_cents,10) || 0) * qty;
+        const kind = line.service ? `<span class="prov">Service</span>` : `<span class="prov">Remedy</span>`;
+        return `<div class="remitem current-invoice-item">
+          <div class="remitem-top"><span class="nm-wrap"><span class="nm">${esc(it.name||it.slug||"")}${qty>1?` ×${qty}`:""}</span>${kind}</span><span class="pr">${esc(money(price))}</span></div>
+        </div>`;
+      }).join("");
+      const link = inv.url ? `<a class="btn full" href="${esc(inv.url)}">View &amp; pay invoice</a>` : "";
+      invoiceGroups += `<div class="remedy-group current-invoice-group">
+        <h3 style="margin:.2rem 0 .25rem">Current invoice${ref}</h3>
+        <p class="muted small" style="margin:0 0 .65rem">Newly prescribed items awaiting payment.</p>
+        ${invoiceItems}${link}
+      </div>`;
+    });
+    const historyHtml = historyRows.length ? `<div class="remedy-group remedy-history-group">
+      <h3 style="margin:1.25rem 0 .65rem">Previously ordered</h3>
+      ${renderHistoryRows(historyRows)}
+    </div>` : "";
     html += `<div class="card"><h2>Your Remedies</h2>
-      <div>${rrows}</div>
-      <p class="muted small" style="margin:.7rem 0 0">Shipping calculated at checkout.</p>
+      <div>${invoiceGroups}${historyHtml}</div>
+      ${historyRows.length ? `<p class="muted small" style="margin:.7rem 0 0">Shipping calculated at checkout.</p>` : ""}
       <p class="small err" id="remErr" hidden></p></div>`;
   }
 
@@ -3137,7 +3835,7 @@ function render(d, v){
       const img = it.image ? `<img class="wishitem-img" src="${esc(it.image)}" alt="" loading="lazy">` : "";
       wrows += `<div class="wishitem" data-slug="${slug}">
         <label class="wishitem-pick"><input type="checkbox" class="wishSel"></label>
-        <a class="wishitem-link" href="${esc(it.url||"#")}">
+        <a class="wishitem-link" href="${esc(it.url||"#")}" target="_blank" rel="noopener">
           ${img}
           <span class="nm-wrap"><span class="nm">${esc(it.name||it.slug||"")}</span></span>
           <span class="pr">${esc(it.price||"")}</span>
@@ -3152,8 +3850,8 @@ function render(d, v){
     });
     html += `<div class="card" id="wishlistCard"><h2>Your wishlist</h2>
       <div>${wrows}</div>
-      <button class="btn full" id="wishOrderBtn" disabled>Order selected</button>
-      <p class="muted small" style="margin:.7rem 0 0">Select items, set how many, and order them together. Member price and shipping are calculated at checkout.</p>
+      <button class="btn full" id="wishOrderBtn" disabled>Add selected to basket</button>
+      <p class="muted small" style="margin:.7rem 0 0">Select items and add them to the same basket. Review everything together before checkout.</p>
       <p class="small err" id="wishErr" hidden></p></div>`;
   }
 
@@ -3231,25 +3929,30 @@ function render(d, v){
         <button class="btn cg-pay" data-order="${esc(String(o.order_id))}">Pay $${esc(o.amount_dollars)}</button>
         ${items}</div>`;
     });
-    html += `<div class="card"><h2>Orders you're paying for</h2>
+    const payerOrdersCard = `<div class="card"><h2>Orders you're paying for</h2>
       <p class="muted small">A household member asked you to cover these. Your payment is recorded as yours; their order and health records stay theirs.</p>
       <div>${rows}</div></div>`;
+    if (_hub) { _payerOrdersHtml += payerOrdersCard; } else { html += payerOrdersCard; }
   }
 
   // Sales / upgrade (feature #2): the single next eligible ladder rung + CTA.
   if(v && v.upgrade && v.upgrade.enabled && v.upgrade.offer){
     const o = v.upgrade.offer;
     const price = esc(money(o.price_cents)) + (o.period?esc(o.period):"");
-    html += `<div class="card"><h2>What's next for you</h2>
+    let offerCard = `<div class="card" id="offers-card"><h2>Membership &amp; offers</h2>
+      ${buildMembershipSummaryHtml(v)}
+      <h3 style="margin:1.2rem 0 .6rem">Available next</h3>
       <div class="reitem"><span class="nm">${esc(o.title)}</span><span class="pr sp">${price}</span></div>
       <p class="muted small" style="margin:.5rem 0 1rem">${esc(o.blurb)}</p>
       <button class="btn full" id="offerBtn" data-path="${esc(o.checkout_path)}">${esc(o.cta_label)}</button>`;
     if(String(o.checkout_path||"").includes("live-group")){
-      html += `<input id="offerRef" type="text" autocomplete="off"
+      offerCard += `<input id="offerRef" type="text" autocomplete="off"
         placeholder="Referral code (optional)"
         style="width:100%;margin-top:.5rem;background:var(--card2);color:var(--ink);border:1px solid var(--line);border-radius:8px;padding:8px 10px;font-size:.9rem;font-family:inherit" />`;
     }
-    html += `<p class="small err" id="offerErr" hidden></p></div>`;
+    offerCard += `<p class="small err" id="offerErr" hidden></p></div>`;
+    if(_hub) _offersHtml += offerCard;
+    else html += offerCard;
   }
 
   // Ambassador — enrolled (referral + recruit links) / pending (under review) / none (become CTA).
@@ -3285,6 +3988,8 @@ function render(d, v){
           ).join("")
         : `<p class="muted small">No social shares yet.</p>`;
       const _ambCard = `<div class="card quiet"><h2>Your Ambassador links</h2>
+        <p class="muted">Open your dashboard for all shareable links and directions for using each one.</p>
+        <a class="btn full" href="${esc(amb.portal_url || '/affiliate')}" target="_blank" rel="noopener">Open Ambassador Dashboard</a>
         <div class="kv"><span class="k">Share &amp; earn</span><span class="v"><a href="${esc(amb.referral_url)}" target="_blank" rel="noopener">${esc(amb.referral_url)}</a></span></div>
         <div class="kv"><span class="k">Invite ambassadors</span><span class="v"><a href="${esc(amb.recruit_url)}" target="_blank" rel="noopener">${esc(amb.recruit_url)}</a></span></div>
         ${statsHtml}
@@ -3307,12 +4012,13 @@ function render(d, v){
         _referralsHtml += `<div class="card quiet"><h2>Recent referrals</h2>${recentHtml}</div>`;
       }
     } else if(amb.status === "pending"){
-      const _ambCard = `<div class="card quiet"><h2>Ambassador</h2><p class="muted">Your ambassador application is under review.</p></div>`;
+      const _ambCard = `<div class="card quiet"><h2>Ambassador</h2><p class="muted">Your ambassador application is under review.</p>
+        <a class="btn full" href="${esc(amb.portal_url || '/affiliate')}" target="_blank" rel="noopener">Check Application / Sign In</a></div>`;
       if (_hub) { _referHtml += _ambCard; } else { html += _ambCard; }
     } else {
       const _ambCard = `<div class="card quiet"><h2>Become an Ambassador</h2>
-        <p class="muted">Earn rewards by sharing.</p>
-        <a class="btn full" href="${esc(amb.signup_url)}" target="_blank" rel="noopener">Become an Ambassador</a></div>`;
+        <p class="muted">Sign up to receive your shareable links, directions, and referral dashboard.</p>
+        <a class="btn full" href="${esc(amb.signup_url)}" target="_blank" rel="noopener">Sign Up as an Ambassador</a></div>`;
       if (_hub) { _referHtml += _ambCard; } else { html += _ambCard; }
     }
   }
@@ -3439,8 +4145,9 @@ function render(d, v){
         <input type="checkbox" class="hh-pay" data-care="${esc(c.primary_email)}" ${ck}>
         Let ${esc(c.primary_email)} pay for my orders</label>${scopeSel}`;
     }
-    html += `<div class="card quiet"><h2 style="font-size:1rem">Caregiver payments</h2>${rows}
+    const caregiverPaymentsCard = `<div class="card quiet"><h2 style="font-size:1rem">Caregiver payments</h2>${rows}
       <p class="muted small">They can pay your open invoices, and it shows as their expense. Your order and health records stay yours. Turn this off any time.</p></div>`;
+    if (_hub) { _accountHtml += caregiverPaymentsCard; } else { html += caregiverPaymentsCard; }
   }
   if (d.household && d.household.length && d.household_cc) {
     let rows = "";
@@ -3478,7 +4185,7 @@ function render(d, v){
   const _showOldTabs = d.scan_history_enabled && !_hub;
   if (_wrapPanels) {
     const historyHtml = buildScanHistoryHtml(d);
-    const ordersHtml = buildOrdersHtml(d);
+    const ordersHtml = _payerOrdersHtml + buildOrdersHtml(d);
     const tabbar = _showOldTabs ? `<div class="tabbar" id="portalTabs">
         <button type="button" class="tab is-active" data-tab="current" onclick="showTab('current')">Current Analysis</button>
         <button type="button" class="tab" data-tab="history" onclick="showTab('history')">Scan History</button>
@@ -3491,11 +4198,16 @@ function render(d, v){
     html = `${tabbar}${hubPanel}
       <section data-panel="current"${_hub ? " hidden" : ""}>${back}${html}</section>
       <section data-panel="history" hidden>${back}${historyHtml}</section>
-      <section data-panel="orders" hidden>${back}${ordersHtml}</section>${_hub ? `
+      <section data-panel="orders" hidden>${back}${ordersHtml}</section>
+      <section data-panel="intake" hidden>${back}<div class="card" id="portal-intake-card"><div id="portal-intake-host"></div></div></section>${_hub ? `
       <section data-panel="ask" hidden>${back}${_askHtml}</section>
       ${_hub && v.health_profile && v.health_profile.enabled ? `<section data-panel="health" hidden>${back}${buildHealthProfileHtml(v)}</section>` : ""}
       ${_hub && v.oasis && v.oasis.enabled ? (_oasisView = v, `<section data-panel="oasis" hidden>${back}${buildOasisHtml(v)}</section>`) : ""}
       ${_hub && v.cart && v.cart.enabled ? `<section data-panel="cart" hidden>${back}${buildCartHtml()}</section>` : ""}
+      <section data-panel="shop" hidden>${back}${buildShopHtml()}</section>
+      <section data-panel="calendar" hidden>${back}${_calendarHtml}</section>
+      <section data-panel="offers" hidden>${back}${_offersHtml || buildOffersEmptyHtml(v)}</section>
+      <section data-panel="photo" hidden>${back}${buildPhotoHtml()}</section>
       <section data-panel="finder" hidden>${back}${_finderHtml || '<div class="card quiet"><p class="muted">The practitioner finder is not enabled for your portal yet.</p></div>'}</section>
       <section data-panel="bodymap" hidden>${back}${_bodymapHtml}</section>
       <section data-panel="classes" hidden>${back}${_classesHtml}</section>
@@ -3503,41 +4215,157 @@ function render(d, v){
       <section data-panel="refer" hidden>${back}${_referHtml || '<div class="card quiet"><p class="muted">Ambassador program details will appear here.</p></div>'}</section>
       <section data-panel="referrals" hidden>${back}${_referralsHtml}</section>
       ${_hub && v.remedies && v.remedies.enabled ? `<section data-panel="remedies" hidden>${back}${buildRemediesHtml(v)}</section>` : ""}` : ""}`;
+  } else {
+    // The onboarding checklist is available independently of the hub and scan
+    // history flags, so its #intake link must always have a real panel target.
+    html = `<section data-panel="current">${html}</section>
+      <section data-panel="intake" hidden><div class="card" id="portal-intake-card"><div id="portal-intake-host"></div></div></section>`;
   }
 
   app.innerHTML = html;
+  const onboardingSlot = document.getElementById("portal-onboarding-slot");
+  if(onboardingMount && onboardingSlot) onboardingSlot.appendChild(onboardingMount);
+  window.__portalView = v;
   document.getElementById("loading").hidden = true;
   app.hidden = false;
 
   if (_hub) { showTab('hub'); }
+  try{
+    if(localStorage.getItem("rm_calendar_collapsed")==="1"){
+      const cb=document.getElementById("calendar-summary-body"), fb=document.getElementById("calendar-fold");
+      if(cb) cb.hidden=true; if(fb) fb.textContent="Show";
+    }
+  }catch(e){}
+  document.querySelectorAll(".event-register").forEach(btn=>btn.addEventListener("click",async()=>{
+    btn.disabled=true; const old=btn.textContent; btn.textContent="Reserving…";
+    try{
+      const r=await fetch(`/api/portal/${encodeURIComponent(seg)}/calendar/register`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({event_id:btn.dataset.eventId})});
+      const out=await r.json();
+      if(r.status===402 && out.upgrade_url){location.href=out.upgrade_url;return}
+      if(!r.ok) throw new Error(out.error||"Unable to register");
+      if(out.checkout_url){location.href=out.checkout_url;return}
+      await load();
+    }catch(e){btn.disabled=false;btn.textContent=old;alert("We couldn't reserve your spot. Please try again.")}
+  }));
+  document.querySelectorAll(".event-share").forEach(btn=>btn.addEventListener("click",async()=>{
+    const old=btn.textContent;
+    const url=new URL(btn.dataset.shareUrl,location.origin).href;
+    try{
+      if(navigator.share){
+        await navigator.share({title:btn.dataset.shareTitle||"Free live session",
+          text:"Join me for this free Healing Oasis live session.",url});
+      }else{
+        await navigator.clipboard.writeText(url);
+        btn.textContent="Invitation link copied";
+        setTimeout(()=>{btn.textContent=old},1800);
+      }
+    }catch(e){if(e.name!=="AbortError") window.prompt("Copy your invitation link:",url)}
+  }));
+  initAppointmentProposals();
 
   initOnboardingCard();
   initCoachesCard();
   initPeerCard();
   initConsultIntakeCard();
+  initPortalIntakeCard();
   (function initClientPhoto(){
     const img = document.getElementById("client-photo");
     const file = document.getElementById("client-photo-file");
     const label = document.getElementById("client-photo-label");
     const stat = document.getElementById("client-photo-stat");
+    const placeholder = document.getElementById("client-photo-placeholder");
+    const panelPreview = document.getElementById("client-photo-panel-preview");
+    const cropStage = document.getElementById("client-photo-crop-stage");
+    const adjust = document.getElementById("client-photo-adjust");
+    const zoomInput = document.getElementById("client-photo-zoom");
+    const resetBtn = document.getElementById("client-photo-reset");
+    const saveBtn = document.getElementById("client-photo-save");
     if (!img || !file) return;
+    let framing = {focus_x:50, focus_y:42, zoom:1};
+    function applyFraming(){
+      const pos = framing.focus_x + "% " + framing.focus_y + "%";
+      [img, panelPreview].forEach(function(el){ if(!el) return;
+        el.style.objectPosition = pos; el.style.transformOrigin = pos;
+        el.style.transform = "scale(" + framing.zoom + ")";
+      });
+      if(zoomInput) zoomInput.value = framing.zoom;
+    }
+    async function loadFraming(){
+      try {
+        const r = await fetch("/api/portal/" + encodeURIComponent(token) + "/photo/framing", {credentials:"same-origin"});
+        const j = await r.json();
+        if(j.ok) framing = {focus_x:j.focus_x, focus_y:j.focus_y, zoom:j.zoom};
+      } catch(e) {}
+      applyFraming();
+    }
     function show(){
-      img.onload = function(){ img.style.display = "block"; if (label) label.textContent = "Change photo"; };
-      img.onerror = function(){ img.style.display = "none"; };
+      img.onload = function(){
+        img.style.display = "block";
+        if(panelPreview){ panelPreview.src = img.src; panelPreview.style.display = "block"; }
+        if(cropStage) cropStage.hidden = false;
+        if(adjust) adjust.hidden = false;
+        loadFraming();
+        if (placeholder) placeholder.style.display = "none";
+        if (label) label.textContent = "Change photo";
+        if (stat && !stat.textContent) stat.textContent = "Photo uploaded — under review.";
+      };
+      img.onerror = function(){
+        img.style.display = "none";
+        if (placeholder) placeholder.style.display = "";
+      };
       img.src = "/api/portal/" + encodeURIComponent(token) + "/photo?t=" + Date.now();
     }
     show();
+    async function suggestedFraming(photoFile){
+      const fallback = {focus_x:50, focus_y:42, zoom:1};
+      if(!window.FaceDetector) return fallback;
+      const bitmap = await createImageBitmap(photoFile);
+      try {
+        const faces = await new FaceDetector({fastMode:true, maxDetectedFaces:1}).detect(bitmap);
+        if(!faces.length) return fallback;
+        const b = faces[0].boundingBox;
+        return {focus_x:100*(b.x+b.width/2)/bitmap.width,
+                focus_y:100*(b.y+b.height*.42)/bitmap.height,
+                zoom:Math.max(1, Math.min(2.2, Math.min(bitmap.width, bitmap.height)/(b.height*2.35)))};
+      } finally { if(bitmap.close) bitmap.close(); }
+    }
     file.addEventListener("change", async function(){
       if (!file.files || !file.files[0]) return;
       stat.textContent = "Uploading…";
+      try { framing = await suggestedFraming(file.files[0]); } catch(e) { framing = {focus_x:50, focus_y:42, zoom:1}; }
       const fd = new FormData(); fd.append("photo", file.files[0]);
       try {
         const r = await fetch("/api/portal/" + encodeURIComponent(token) + "/photo",
                               {method: "POST", body: fd, credentials: "same-origin"});
         const j = await r.json();
-        if (j.ok) { stat.textContent = "Saved."; show(); }
+        if (j.ok) {
+          await fetch("/api/portal/" + encodeURIComponent(token) + "/photo/framing", {
+            method:"POST", credentials:"same-origin", headers:{"Content-Type":"application/json"},
+            body:JSON.stringify(framing)});
+          stat.textContent = "Photo uploaded. Adjust the circle, then save framing.";
+          show();
+          if(window.refreshPortalOnboarding) window.refreshPortalOnboarding();
+        }
         else { stat.textContent = j.error || "Upload failed"; }
       } catch (e) { stat.textContent = "Upload failed"; }
+    });
+    if(zoomInput) zoomInput.addEventListener("input", function(){ framing.zoom=Number(this.value); applyFraming(); });
+    if(resetBtn) resetBtn.addEventListener("click", function(){ framing={focus_x:50,focus_y:42,zoom:1}; applyFraming(); });
+    if(cropStage){
+      let drag=null;
+      cropStage.addEventListener("pointerdown", function(e){ drag={x:e.clientX,y:e.clientY,fx:framing.focus_x,fy:framing.focus_y}; cropStage.setPointerCapture(e.pointerId); });
+      cropStage.addEventListener("pointermove", function(e){ if(!drag) return;
+        framing.focus_x=Math.max(0,Math.min(100,drag.fx-(e.clientX-drag.x)*100/cropStage.clientWidth/framing.zoom));
+        framing.focus_y=Math.max(0,Math.min(100,drag.fy-(e.clientY-drag.y)*100/cropStage.clientHeight/framing.zoom)); applyFraming(); });
+      cropStage.addEventListener("pointerup", function(){ drag=null; });
+      cropStage.addEventListener("pointercancel", function(){ drag=null; });
+    }
+    if(saveBtn) saveBtn.addEventListener("click", async function(){
+      stat.textContent="Saving framing…";
+      try { const r=await fetch("/api/portal/"+encodeURIComponent(token)+"/photo/framing", {
+        method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/json"},body:JSON.stringify(framing)});
+        const j=await r.json(); stat.textContent=j.ok?"Framing saved.":(j.error||"Save failed");
+      } catch(e){ stat.textContent="Save failed"; }
     });
   })();
   wireEntityRefs(document.getElementById("app") || document);
@@ -3553,16 +4381,85 @@ function render(d, v){
     });
   }
   repopulateChatHistory();
+  if(typeof window.syncMentorHistory === "function") window.syncMentorHistory();
 
   const btn = document.getElementById("reorderBtn");
   if(btn) btn.addEventListener("click", reorder);
-  app.querySelectorAll(".curated-remove").forEach(removeBtn => {
-    removeBtn.addEventListener("click", () => {
-      const row = removeBtn.closest(".curated-order-item");
-      if(row) row.remove();
-      const review = document.getElementById("reorderReview");
-      if(review){ review.hidden = true; review.innerHTML = ""; }
-      if(btn){ btn.dataset.reviewed = ""; btn.textContent = "Review my order"; }
+  const orderCard = btn && btn.closest(".card");
+  if(orderCard) orderCard.addEventListener("click", ev => {
+    const removeBtn = ev.target.closest(".curated-remove");
+    if(!removeBtn) return;
+    const row = removeBtn.closest(".curated-order-item");
+    if(!row) return;
+    fetch('/api/portal/' + encodeURIComponent(token) + '/cart/set-qty', {
+      method:'POST', credentials:'same-origin', headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({slug:row.dataset.slug || '', format:'', qty:0})
+    }).then(r=>r.json()).then(renderUnifiedPortalCart);
+  });
+
+  const findBtn = document.getElementById("orderFindBtn");
+  const addBtn = document.getElementById("orderAddBtn");
+  const searchInput = document.getElementById("orderAddSearch");
+  const results = document.getElementById("orderAddResults");
+  const addStatus = document.getElementById("orderAddStatus");
+  const paymentMethods = document.getElementById("portalPaymentMethods");
+  const zellePreview = document.getElementById("portalZellePreview");
+  if(paymentMethods) paymentMethods.addEventListener("change", async () => {
+    const method = (paymentMethods.querySelector('input[name="portalPayMethod"]:checked') || {}).value || "card";
+    if(method !== "zelle"){ zellePreview.hidden = true; return; }
+    zellePreview.hidden = false;
+    try{
+      const r = await fetch(`/api/portal/${encodeURIComponent(token)}/payment-options`);
+      const j = await r.json();
+      const z = j.zelle || {};
+      const link = z.pay_link || z.bank_url || "";
+      zellePreview.innerHTML = `<strong>Pay with Zelle</strong><br>Open Zelle in your banking app and send payment to <strong>${esc(z.to || "")}</strong>. Your exact total and order-reference memo will appear after you continue.
+        ${z.qr_image_url ? `<div style="margin:.75rem 0"><img src="${esc(z.qr_image_url)}" alt="Scan to pay Remedy Match with Zelle" style="display:block;width:190px;max-width:100%;background:#fff;padding:8px;border-radius:8px"></div><span>Scan this code from your banking app.</span>` : ""}
+        ${link ? `<br><a class="btn ghost" href="${esc(link)}" rel="noopener">${z.pay_link ? "Open Zelle payment page" : "Find or open your bank for Zelle"}</a>` : ""}`;
+    }catch(e){ zellePreview.textContent = "Open Zelle in your banking app. Recipient and memo details will appear after you continue."; }
+  });
+  if(findBtn) findBtn.addEventListener("click", async () => {
+    const q = (searchInput.value || "").trim();
+    if(q.length < 2){ addStatus.textContent = "Type at least 2 letters."; return; }
+    findBtn.disabled = true; addStatus.textContent = "Searching…";
+    try{
+      const r = await fetch(`/api/portal/${encodeURIComponent(token)}/order-catalog?q=${encodeURIComponent(q)}`);
+      const j = await r.json();
+      results.innerHTML = "";
+      (j.products || []).forEach(p => {
+        const opt = document.createElement("option");
+        opt.value = p.slug;
+        opt.textContent = `${p.name} — ${money(p.price_cents)}`;
+        results.appendChild(opt);
+      });
+      const found = results.options.length > 0;
+      results.hidden = !found; addBtn.hidden = !found;
+      addStatus.textContent = found ? "Choose a remedy, then add it." : "No matching remedies found.";
+    }catch(e){ addStatus.textContent = "Search is temporarily unavailable."; }
+    finally{ findBtn.disabled = false; }
+  });
+  if(addBtn) addBtn.addEventListener("click", async () => {
+    const slug = results.value;
+    if(!slug) return;
+    addBtn.disabled = true; addStatus.textContent = "Adding…";
+    try{
+      const item = await addItemToBasket(slug);
+      addStatus.textContent = `${item.name} is in your basket.`;
+    }catch(e){ addStatus.textContent = e.message || "Could not add that remedy."; }
+    finally{ addBtn.disabled = false; }
+  });
+
+  loadCart();
+
+  app.querySelectorAll(".scan-order-btn").forEach(scanBtn => {
+    scanBtn.addEventListener("click", async () => {
+      if(scanBtn.disabled) return;
+      scanBtn.disabled = true;
+      const label = scanBtn.textContent; scanBtn.textContent = "Adding…";
+      try{
+        await addItemToBasket(scanBtn.dataset.slug || "");
+        scanBtn.textContent = "In basket";
+      }catch(e){ scanBtn.disabled = false; scanBtn.textContent = label; }
     });
   });
 
@@ -3609,7 +4506,11 @@ function render(d, v){
             body: JSON.stringify({slug})
           });
           const j = await r.json();
-          if(j.ok){ oasisBtn.textContent = "Added to your Oasis"; return; }
+          if(j.ok){
+            await addItemToBasket(slug);
+            oasisBtn.textContent = "Added to your Oasis and cart";
+            return;
+          }
           oasisBtn.disabled = false; oasisBtn.textContent = label;
         }catch(e){ oasisBtn.disabled = false; oasisBtn.textContent = label; }
         return;
@@ -3934,10 +4835,10 @@ function render(d, v){
     if(btn.dataset.busy === "1") return;
     const n = card.querySelectorAll(".wishSel:checked").length;
     btn.disabled = n === 0;
-    btn.textContent = n ? `Order selected (${n})` : "Order selected";
+    btn.textContent = n ? `Add selected to basket (${n})` : "Add selected to basket";
   }
 
-  app.querySelectorAll(".wishRemBtn").forEach(wb=>{
+  app.querySelectorAll(".wishitem .wishRemBtn").forEach(wb=>{
     wb.addEventListener("click", async ()=>{
       if(wb.disabled) return;
       wb.disabled = true;
@@ -3988,7 +4889,11 @@ function render(d, v){
       const memberParam = new URLSearchParams(location.search).get("member");
       const u = `/api/portal/${encodeURIComponent(token)}/ff-matches`
         + (memberParam ? `?member=${encodeURIComponent(memberParam)}` : "");
-      const r = await fetch(u, {method:"POST"});
+      const r = await fetch(u, {
+        method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({scan_date:selectedScanDate || ""}),
+      });
       const j = await r.json();
       const body = document.getElementById("ffMatchesBody");
       if(j && j.ff_matches && body) body.innerHTML = ffMatchesBodyHtml(j.ff_matches);
@@ -4057,6 +4962,26 @@ function render(d, v){
       if(lsMsg){ lsMsg.textContent = (r.ok && j && j.ok) ? "Saved — Dr. Glen and Rae can see your picks." : "Something went wrong — please try again."; lsMsg.hidden = false; }
     } catch(e){ if(lsMsg){ lsMsg.textContent = "Something went wrong — please try again."; lsMsg.hidden = false; } }
   });
+
+  app.querySelectorAll(".essence-order-btn").forEach(essenceBtn => {
+    essenceBtn.addEventListener("click", async () => {
+      if(essenceBtn.disabled) return;
+      essenceBtn.disabled = true;
+      const label = essenceBtn.textContent;
+      essenceBtn.textContent = "Adding…";
+      try{
+        await addItemToBasket(essenceBtn.dataset.slug || "");
+        essenceBtn.textContent = "In basket";
+      }catch(e){
+        essenceBtn.disabled = false;
+        essenceBtn.textContent = label;
+      }
+    });
+  });
+
+  // Apply inbound links only after all panels and their event handlers exist.
+  // Without a recognized hash, preserve the existing hub/session tab behavior.
+  applyPortalHash();
 }
 
 // Consult-CTA fix (Slice 4a finding, wired in 4b): makes the support-program
@@ -4133,6 +5058,49 @@ async function consultJoin(){
 // options come from Glen's own INTAKE_FORM (dashboard/intake.py) but are still
 // built via createElement/textContent only — never innerHTML — matching the
 // coaches-card pattern above.
+function showPortalIntakeComplete(host){
+  host.innerHTML = "";
+  const title = document.createElement("h2");
+  title.textContent = "Your intake is complete";
+  host.appendChild(title);
+  const body = document.createElement("p");
+  body.className = "muted";
+  body.textContent = "Your answers are saved. You can review the details you provided anytime by opening My Health Profile from the Understand section of your portal home.";
+  host.appendChild(body);
+  const editButton = document.createElement("button");
+  editButton.type = "button";
+  editButton.className = "btn full";
+  editButton.textContent = "Edit my Intake";
+  editButton.addEventListener("click", ()=>initPortalIntakeCard(true));
+  host.appendChild(editButton);
+  const healthPanel = document.querySelector('[data-panel="health"]');
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "btn full";
+  button.textContent = healthPanel ? "Open My Health Profile" : "Return to my portal";
+  button.addEventListener("click", async ()=>{
+    try{ history.replaceState(null, "", location.pathname + location.search); }catch(e){}
+    if(healthPanel) await load();
+    showTab(healthPanel ? "health" : "hub");
+  });
+  host.appendChild(button);
+}
+
+function initPortalIntakeCard(refreshing){
+  const host = document.getElementById("portal-intake-host");
+  if(!host) return;
+  renderIntakeForm(host, seg, function(){
+    showPortalIntakeComplete(host);
+    if(window.refreshPortalOnboarding) window.refreshPortalOnboarding();
+  }, {
+    title: "Build My Health Profile",
+    intro: "Complete each section at your own pace. Your answers save automatically, so you can leave and return anytime.",
+    paged: true,
+    allowSubmittedEdit: true,
+    loadingText: refreshing ? "Refreshing your saved intake…" : "Loading your intake form…",
+  });
+}
+
 async function initConsultIntakeCard(){
   const schedBtn = document.getElementById("consult-sched");
   const host = document.getElementById("consult-intake-host");
@@ -4161,11 +5129,12 @@ async function initConsultIntakeCard(){
   });
 }
 
-async function renderIntakeForm(host, tokenVal, onDone){
+async function renderIntakeForm(host, tokenVal, onDone, options){
+  options = options || {};
   host.innerHTML = "";
   const loading = document.createElement("p");
   loading.className = "muted small";
-  loading.textContent = "Loading your intake form…";
+  loading.textContent = options.loadingText || "Loading your intake form…";
   host.appendChild(loading);
 
   let formDef = null, stateData = null;
@@ -4180,7 +5149,7 @@ async function renderIntakeForm(host, tokenVal, onDone){
 
   host.innerHTML = "";
 
-  if(stateData && stateData.submitted){ if(onDone) onDone(); return; }
+  if(stateData && stateData.submitted && !options.allowSubmittedEdit){ if(onDone) onDone(); return; }
   if(!formDef || !Array.isArray(formDef.sections)){
     const err = document.createElement("p");
     err.className = "err small";
@@ -4194,11 +5163,11 @@ async function renderIntakeForm(host, tokenVal, onDone){
   const fieldEls = {};  // field id -> element to highlight on a 400
 
   const title = document.createElement("h2");
-  title.textContent = "Before your consult";
+  title.textContent = options.title || "Before your consult";
   host.appendChild(title);
   const intro = document.createElement("p");
   intro.className = "muted small";
-  intro.textContent = "Please complete your intake so Dr. Glen can prepare for your consult.";
+  intro.textContent = options.intro || "Please complete your intake so Dr. Glen can prepare for your consult.";
   host.appendChild(intro);
 
   const collectAnswers = ()=>{
@@ -4207,30 +5176,124 @@ async function renderIntakeForm(host, tokenVal, onDone){
     return out;
   };
 
+  const progress = document.createElement("div");
+  progress.className = "intake-progress";
+  const progressLabel = document.createElement("span");
+  progressLabel.className = "intake-progress-label";
+  progressLabel.textContent = options.paged ? "Preparing your sections…" : "Intake draft";
+  progress.appendChild(progressLabel);
+  const saveState = document.createElement("span");
+  saveState.className = "intake-save-state";
+  saveState.setAttribute("role", "status");
+  saveState.setAttribute("aria-live", "polite");
+  saveState.textContent = stateData && stateData.status === "draft" ? "Draft restored" : "Not saved yet";
+  progress.appendChild(saveState);
+  host.appendChild(progress);
+
   let saveTimer = null;
+  let saveChain = Promise.resolve(true);
+  const saveSnapshot = async snapshot=>{
+    saveState.className = "intake-save-state";
+    saveState.textContent = "Saving…";
+    try{
+      const r = await fetch(`/api/intake/save-draft?token=${encodeURIComponent(tokenVal)}`, {
+        method: "POST", headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({answers: snapshot}),
+      });
+      if(!r.ok) throw new Error("save failed");
+      saveState.className = "intake-save-state is-saved";
+      saveState.textContent = "Saved";
+      return true;
+    }catch(e){
+      saveState.className = "intake-save-state is-error";
+      saveState.textContent = "Could not save";
+      return false;
+    }
+  };
+  const saveNow = ()=>{
+    const snapshot = collectAnswers();
+    saveChain = saveChain.then(()=>saveSnapshot(snapshot));
+    return saveChain;
+  };
   const scheduleSave = ()=>{
     if(saveTimer) clearTimeout(saveTimer);
-    saveTimer = setTimeout(async ()=>{
-      try{
-        await fetch(`/api/intake/save-draft?token=${encodeURIComponent(tokenVal)}`, {
-          method: "POST", headers: {"Content-Type": "application/json"},
-          body: JSON.stringify({answers: collectAnswers()}),
-        });
-      }catch(e){ /* best-effort autosave; Submit re-sends everything anyway */ }
-    }, 1200);
+    saveState.className = "intake-save-state";
+    saveState.textContent = "Unsaved changes";
+    saveTimer = setTimeout(saveNow, 1200);
   };
 
+  const sectionEls = [];
   formDef.sections.forEach(sec => {
     const secWrap = document.createElement("div");
     secWrap.className = "intake-sec";
+    secWrap.dataset.intakeSection = sec.id || "";
     const h3 = document.createElement("h3");
     h3.textContent = sec.title || "";
     secWrap.appendChild(h3);
     (sec.fields || []).forEach(f => {
-      secWrap.appendChild(renderIntakeField(f, answers[f.id], getters, fieldEls, scheduleSave));
+      secWrap.appendChild(renderIntakeField(
+        f, answers[f.id], getters, fieldEls, scheduleSave, formDef.suggestions || {},
+        f.selection_field ? answers[f.selection_field] : null
+      ));
     });
     host.appendChild(secWrap);
+    sectionEls.push(secWrap);
   });
+
+  let showIntakeSection = null;
+  if(options.paged && sectionEls.length){
+    let sectionIndex = 0;
+    const nav = document.createElement("div");
+    nav.className = "intake-nav";
+    const prev = document.createElement("button");
+    prev.type = "button";
+    prev.className = "btn ghost";
+    prev.textContent = "Previous";
+    const next = document.createElement("button");
+    next.type = "button";
+    next.className = "btn";
+    next.textContent = "Next section";
+    nav.appendChild(prev);
+    nav.appendChild(next);
+    const showSection = index=>{
+      sectionIndex = Math.max(0, Math.min(sectionEls.length - 1, index));
+      sectionEls.forEach((el, i)=> { el.hidden = i !== sectionIndex; });
+      progressLabel.textContent = `Section ${sectionIndex + 1} of ${sectionEls.length}`;
+      prev.disabled = sectionIndex === 0;
+      next.hidden = sectionIndex === sectionEls.length - 1;
+      sectionEls[sectionIndex].scrollIntoView({behavior:"smooth", block:"start"});
+    };
+    showIntakeSection = showSection;
+    prev.addEventListener("click", async ()=>{
+      if(saveTimer) clearTimeout(saveTimer);
+      await saveNow();
+      showSection(sectionIndex - 1);
+    });
+    next.addEventListener("click", async ()=>{
+      if(saveTimer) clearTimeout(saveTimer);
+      await saveNow();
+      showSection(sectionIndex + 1);
+    });
+    host.appendChild(nav);
+
+    const finishLater = document.createElement("button");
+    finishLater.type = "button";
+    finishLater.className = "btn ghost full";
+    finishLater.style.marginTop = ".6rem";
+    finishLater.textContent = "Save and finish later";
+    finishLater.addEventListener("click", async ()=>{
+      if(saveTimer) clearTimeout(saveTimer);
+      if(await saveNow()){
+        if(window.refreshPortalOnboarding) window.refreshPortalOnboarding();
+        try{ history.replaceState(null, "", location.pathname + location.search); }catch(e){}
+        showTab("hub");
+      }
+    });
+    host.appendChild(finishLater);
+    showSection(0);
+  } else {
+    progressLabel.textContent = "Intake draft";
+  }
 
   const errMsg = document.createElement("p");
   errMsg.className = "err small";
@@ -4241,7 +5304,7 @@ async function renderIntakeForm(host, tokenVal, onDone){
   submitBtn.type = "button";
   submitBtn.className = "btn full";
   submitBtn.style.marginTop = ".4rem";
-  submitBtn.textContent = "Submit my intake";
+  submitBtn.textContent = stateData && stateData.submitted ? "Save changes" : "Submit my intake";
   submitBtn.addEventListener("click", async ()=>{
     submitBtn.disabled = true;
     errMsg.hidden = true;
@@ -4250,6 +5313,9 @@ async function renderIntakeForm(host, tokenVal, onDone){
       if(el && el.classList) el.classList.remove("intake-err");
     });
     if(saveTimer) clearTimeout(saveTimer);
+    await saveChain;
+    saveState.className = "intake-save-state";
+    saveState.textContent = "Submitting…";
     let r, d;
     try{
       r = await fetch(`/api/intake/submit?token=${encodeURIComponent(tokenVal)}`, {
@@ -4267,11 +5333,19 @@ async function renderIntakeForm(host, tokenVal, onDone){
         const el = fieldEls[fid];
         if(el && el.classList) el.classList.add("intake-err");
       });
+      if(options.paged){
+        const firstErrorIndex = sectionEls.findIndex(el => el.querySelector(".intake-err"));
+        if(firstErrorIndex >= 0 && showIntakeSection) showIntakeSection(firstErrorIndex);
+      }
+      saveState.className = "intake-save-state is-saved";
+      saveState.textContent = "Answers saved";
       submitBtn.disabled = false;
       return;
     }
     errMsg.textContent = "Something went wrong saving your intake. Please try again.";
     errMsg.hidden = false;
+    saveState.className = "intake-save-state is-error";
+    saveState.textContent = "Could not submit";
     submitBtn.disabled = false;
   });
   host.appendChild(submitBtn);
@@ -4280,7 +5354,7 @@ async function renderIntakeForm(host, tokenVal, onDone){
 // Builds one field's markup for any INTAKE_FORM field type and wires its
 // getter (into `getters`) + change listener (debounced autosave via
 // `onChange`). Returns the wrapper element to append to the section.
-function renderIntakeField(f, val, getters, fieldEls, onChange){
+function renderIntakeField(f, val, getters, fieldEls, onChange, suggestions, savedSelections){
   const ftype = f.type;
 
   if(ftype === "consent"){
@@ -4344,6 +5418,7 @@ function renderIntakeField(f, val, getters, fieldEls, onChange){
     tableWrap.appendChild(rowsBox);
     const rows = [];
     const columns = f.columns || [];
+    let suggestionListSeq = 0;
 
     const addRow = (rowVal)=>{
       const row = document.createElement("div");
@@ -4381,6 +5456,19 @@ function renderIntakeField(f, val, getters, fieldEls, onChange){
           input = document.createElement("input");
           input.type = "text";
           input.className = "intake-input";
+          if(col.suggestion_kind){
+            const listId = `intake-options-${f.id}-${col.id}-${++suggestionListSeq}`;
+            const dataList = document.createElement("datalist");
+            dataList.id = listId;
+            ((suggestions && suggestions[col.suggestion_kind]) || []).forEach(value => {
+              const option = document.createElement("option");
+              option.value = value;
+              dataList.appendChild(option);
+            });
+            input.setAttribute("list", listId);
+            input.setAttribute("autocomplete", "off");
+            colWrap.appendChild(dataList);
+          }
           input.value = (rowVal && rowVal[col.id]) || "";
           input.addEventListener("input", onChange);
           colGetters[col.id] = ()=> input.value;
@@ -4427,26 +5515,34 @@ function renderIntakeField(f, val, getters, fieldEls, onChange){
   if(ftype === "scale"){
     const group = document.createElement("div");
     group.className = "intake-scale";
+    const selectedValues = Array.isArray(savedSelections)
+      ? savedSelections.map(Number)
+      : (val != null ? [Number(val)] : []);
     (f.options || []).forEach(opt => {
       const optLabel = document.createElement("label");
       optLabel.className = "intake-scale-opt";
-      const radio = document.createElement("input");
-      radio.type = "radio";
-      radio.name = "intake-scale-" + f.id;
-      radio.value = String(opt.value);
-      if(val === opt.value) radio.checked = true;
-      radio.addEventListener("change", onChange);
-      optLabel.appendChild(radio);
+      const choice = document.createElement("input");
+      choice.type = f.multi_select ? "checkbox" : "radio";
+      if(!f.multi_select) choice.name = "intake-scale-" + f.id;
+      choice.value = String(opt.value);
+      if(selectedValues.includes(Number(opt.value))) choice.checked = true;
+      choice.addEventListener("change", onChange);
+      optLabel.appendChild(choice);
       const span = document.createElement("span");
-      span.textContent = opt.value + ": " + opt.label;
+      span.textContent = f.number_only ? String(opt.value) : opt.value + ": " + opt.label;
       optLabel.appendChild(span);
       group.appendChild(optLabel);
     });
     wrap.appendChild(group);
     getters[f.id] = ()=>{
-      const checked = group.querySelector("input[type=radio]:checked");
-      return checked ? Number(checked.value) : null;
+      const checked = Array.from(group.querySelectorAll("input:checked"))
+        .map(input => Number(input.value));
+      return checked.length ? Math.min(...checked) : null;
     };
+    if(f.multi_select && f.selection_field){
+      getters[f.selection_field] = ()=> Array.from(group.querySelectorAll("input:checked"))
+        .map(input => Number(input.value)).sort((a, b)=>a-b);
+    }
     fieldEls[f.id] = group;
     return wrap;
   }
@@ -5643,13 +6739,55 @@ async function reorder(){
   }
   btn.disabled = true; const label = btn.textContent; btn.textContent = "Setting up your order…";
   try{
-    // One call: builds a live Stripe checkout at the client's portal price.
-    const c = await fetch(`/api/portal/${encodeURIComponent(token)}/checkout`, {
-      method:"POST", headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({items:items.map(it => ({slug:it.slug, qty:it.qty}))})
+    // Keep one request id across the automatic retry. The server and Stripe use
+    // it as their idempotency key, so a transient response failure can never mint
+    // a second order/session.
+    if(!btn.dataset.checkoutRequestId){
+      const existingRef = String(window.__portalCartOrderRef || "");
+      btn.dataset.checkoutRequestId = existingRef.startsWith("portal-")
+        ? existingRef.slice(7)
+        : (crypto.randomUUID ? crypto.randomUUID() :
+          (Date.now().toString(36) + Math.random().toString(36).slice(2)));
+    }
+    const payload = JSON.stringify({
+      checkout_request_id:btn.dataset.checkoutRequestId,
+      method:((document.querySelector('input[name="portalPayMethod"]:checked') || {}).value || "card"),
+      items:items.map(it => ({slug:it.slug, qty:it.qty}))
     });
-    const cj = await c.json();
+    let cj = null;
+    for(let attempt=0; attempt<2; attempt++){
+      try{
+        const c = await fetch(`/api/portal/${encodeURIComponent(token)}/checkout`, {
+          method:"POST", headers:{"Content-Type":"application/json"}, body:payload
+        });
+        cj = await c.json();
+        if(!c.ok) throw new Error(cj.error || "Checkout is temporarily unavailable.");
+        break;
+      }catch(fetchErr){
+        if(attempt) throw fetchErr;
+      }
+    }
     if(cj.stripe_url){ location.href = cj.stripe_url; return; }
+    if(cj.method === "zelle" && cj.pay_instructions){
+      const z = cj.pay_instructions;
+      const amount = money(cj.total_cents || 0);
+      const shipping = money(cj.shipping_cents || 0);
+      const link = z.pay_link || z.bank_url || "";
+      review.innerHTML = `<div class="note" style="margin-top:1rem"><strong>Your Zelle payment instructions</strong>
+        ${cj.order_id ? `<div class="kv"><span>Order</span><strong>#${esc(cj.order_id)}</strong></div>` : ""}
+        <div class="kv"><span>Amount</span><strong>${esc(amount)}</strong></div>
+        <div class="kv"><span>Shipping included</span><strong>${esc(shipping)}</strong></div>
+        <div class="kv"><span>Send to</span><strong>${esc(z.to || "")}</strong></div>
+        <div class="kv"><span>Memo / order reference</span><strong>${esc(z.memo || "")}</strong></div>
+        <p class="small">In your bank’s Zelle screen, enter the recipient, exact amount, and memo above. Confirm the recipient name in your bank before sending.</p>
+        ${z.qr_image_url ? `<div style="margin:.75rem 0"><img src="${esc(z.qr_image_url)}" alt="Scan to pay Remedy Match with Zelle" style="display:block;width:220px;max-width:100%;background:#fff;padding:8px;border-radius:8px"></div><strong class="small">Scan this code with Zelle in your banking app.</strong>` : ""}
+        ${link ? `<p><a class="btn" href="${esc(link)}" rel="noopener">${z.pay_link ? "Open Zelle payment page" : "Find or open your bank for Zelle"}</a></p>` : ""}
+        <p class="small muted">${esc(z.note || "")}</p></div>`;
+      review.hidden = false;
+      btn.disabled = false;
+      btn.textContent = "Zelle instructions ready";
+      return;
+    }
     throw new Error(cj.error || "Checkout is temporarily unavailable. Please reach out to us and we’ll help.");
   }catch(e){
     err.textContent = e.message || "Something went wrong. Please reach out and we’ll help.";
@@ -5657,12 +6795,26 @@ async function reorder(){
   }
 }
 
+async function addItemToBasket(slug, qty=1){
+  if(!slug) throw new Error("That remedy is not available.");
+  rememberPortalShoppingContext();
+  const r = await fetch(`/api/portal/${encodeURIComponent(token)}/order-add`, {
+    method:"POST", headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({slug, qty})
+  });
+  const j = await r.json();
+  if(!r.ok || !j.item) throw new Error(j.error || "Could not add that remedy.");
+  renderUnifiedPortalCart(j.cart || {items:[]});
+  const review = document.getElementById("reorderReview");
+  if(review){ review.hidden = true; review.innerHTML = ""; }
+  const checkout = document.getElementById("reorderBtn");
+  if(checkout){ checkout.dataset.reviewed = ""; checkout.textContent = "Review my order"; }
+  return j.item;
+}
+
 async function orderWishlist(btn){
-  // Move-to-order: post every checked wishlist row's {slug, qty} as ONE checkout
-  // so the selected items are ordered together (folded), each at its chosen qty.
-  // Add-then-confirm: the endpoint returns a live Stripe URL; the charge only
-  // happens if the client confirms on Stripe's page. One-shot latch (disabled
-  // before any await) so a double-click can't double-fire.
+  // Selected wishlist remedies join the shared basket. Checkout happens only
+  // from the basket review, so these never create a separate Stripe order.
   if(btn.disabled) return;
   const card = document.getElementById("wishlistCard");
   const err = document.getElementById("wishErr");
@@ -5679,16 +6831,16 @@ async function orderWishlist(btn){
   if(!items.length) return;
   btn.dataset.busy = "1";  // latch against refreshWishOrder re-enabling mid-flight
   btn.disabled = true;
-  const label = btn.textContent; btn.textContent = "Setting up your order…";
+  const label = btn.textContent; btn.textContent = "Adding to basket…";
   try{
-    const c = await fetch(`/api/portal/${encodeURIComponent(token)}/checkout`, {
-      method: "POST",
-      headers: {"Content-Type": "application/json"},
-      body: JSON.stringify({items}),
-    });
-    const cj = await c.json();
-    if(cj.stripe_url){ location.href = cj.stripe_url; return; }
-    throw new Error(cj.error || "Checkout is temporarily unavailable. Please reach out to us and we’ll help.");
+    for(const item of items) await addItemToBasket(item.slug, item.qty);
+    card.querySelectorAll(".wishSel:checked").forEach(cb => { cb.checked = false; });
+    btn.textContent = "Added to basket";
+    setTimeout(()=>{
+      btn.dataset.busy = "";
+      btn.disabled = true;
+      btn.textContent = "Add selected to basket";
+    }, 1200);
   }catch(e){
     if(err){ err.textContent = e.message || "Something went wrong. Please reach out and we’ll help."; err.hidden = false; }
     btn.dataset.busy = "";  // clear latch so the button recovers after a failed order
@@ -5697,33 +6849,20 @@ async function orderWishlist(btn){
 }
 
 async function reorderItem(btn){
-  // Task 6b: per-row "Reorder" button on the "Your Remedies" module now posts
-  // THIS row's slug+qty, so clicking it reorders that product — not the whole
-  // practitioner-curated cart. The stepper next to it now actually drives the
-  // sent qty (previously display-only). Still add-then-confirm, never a
-  // silent charge: the checkout endpoint returns a live Stripe Checkout URL —
-  // the actual charge only happens if the client confirms on Stripe's hosted
-  // page. One-shot latch: disabled immediately on click (before any await),
-  // so a double-click or a slow network can't double-fire it. (This codebase
-  // has been bitten by double-fire before — see feedback_print_once_guard.)
+  // Every per-remedy action joins the shared basket instead of opening a
+  // one-item checkout. The basket's review button is the only checkout path.
   if(btn.disabled) return;
   btn.disabled = true;
   const err = document.getElementById("remErr");
   if(err) err.hidden = true;
-  const label = btn.textContent; btn.textContent = "Setting up your order…";
+  const label = btn.textContent; btn.textContent = "Adding…";
   const row = btn.closest(".remitem");
   const slug = btn.getAttribute("data-slug") || (row && row.getAttribute("data-slug")) || "";
   const qtyVal = row && row.querySelector(".qtyval");
   const qty = Math.max(1, parseInt(qtyVal && qtyVal.getAttribute("data-qty"), 10) || 1);
   try{
-    const c = await fetch(`/api/portal/${encodeURIComponent(token)}/checkout`, {
-      method: "POST",
-      headers: {"Content-Type": "application/json"},
-      body: JSON.stringify({items: [{slug, qty}]}),
-    });
-    const cj = await c.json();
-    if(cj.stripe_url){ location.href = cj.stripe_url; return; }
-    throw new Error(cj.error || "Checkout is temporarily unavailable. Please reach out to us and we’ll help.");
+    await addItemToBasket(slug, qty);
+    btn.textContent = "In basket";
   }catch(e){
     if(err){ err.textContent = e.message || "Something went wrong. Please reach out and we’ll help."; err.hidden = false; }
     btn.disabled = false; btn.textContent = label;
@@ -5785,13 +6924,28 @@ function renderSuggestion(sugg){
   var name = (sugg.name != null) ? String(sugg.name) : "";
   var price = (sugg.price != null) ? String(sugg.price) : "";
   var url = (sugg.url != null) ? String(sugg.url) : "";
+  var slug = (sugg.slug != null) ? String(sugg.slug) : "";
   var el = document.createElement("div");
   el.className = "chat-sugg";
   var safeUrl = /^https?:\/\//i.test(url) ? url : "";   // only http(s) hrefs (defense-in-depth)
   var inner = '<span class="chat-sugg-name">' + esc(name) + "</span>";
   if(price){ inner += '<span class="chat-sugg-price"> &middot; ' + esc(price) + "</span>"; }
-  if(safeUrl){ inner += '<a class="btn chat-sugg-btn" href="' + esc(safeUrl) + '" target="_blank" rel="noopener">Order now</a>'; }
+  if(slug){
+    inner += '<button type="button" class="btn chat-sugg-btn chat-order-btn" data-slug="' + esc(slug) + '">Add to basket</button>';
+  } else if(safeUrl){
+    inner += '<a class="btn chat-sugg-btn" href="' + esc(safeUrl) + '" target="_blank" rel="noopener">View product</a>';
+  }
   el.innerHTML = inner;
+  var orderBtn = el.querySelector(".chat-order-btn");
+  if(orderBtn) orderBtn.addEventListener("click", async function(){
+    if(orderBtn.disabled) return;
+    orderBtn.disabled = true;
+    var label = orderBtn.textContent; orderBtn.textContent = "Adding…";
+    try{
+      await addItemToBasket(orderBtn.getAttribute("data-slug") || "");
+      orderBtn.textContent = "In basket";
+    }catch(e){ orderBtn.disabled = false; orderBtn.textContent = label; }
+  });
   return el;
 }
 
@@ -5847,9 +7001,23 @@ async function sendChatMessage(){
   input.value = "";
   input.disabled = true;
   sendBtn.disabled = true;
+  var completed = false;
+  var failed = false;
+  function showChatRetry(message){
+    failed = true;
+    if(assistantBubble){
+      assistantBubble.className = "chat-bubble error";
+      assistantBubble.textContent = message || "Dr. Glen’s assistant is briefly unavailable. Your message is ready to retry.";
+    }
+    // Do not make the member retype a message after a network, deployment, or
+    // AI-provider interruption. Only restore it when she has not started typing
+    // something new while the request was in flight.
+    if(input && !(input.value || "").trim()) input.value = query;
+  }
+  var assistantBubble = null;
   try{
     appendChatBubble("user", query);
-    var assistantBubble = appendChatBubble("assistant", "");
+    assistantBubble = appendChatBubble("assistant", "");
     var assistantText = "";
     var resp = await fetch(
       "/api/portal/" + encodeURIComponent(token) + "/chat",
@@ -5864,10 +7032,7 @@ async function sendChatMessage(){
       }
     );
     if(!resp.ok){
-      if(assistantBubble){
-        assistantBubble.className = "chat-bubble error";
-        assistantBubble.textContent = "Unable to reach Dr. Glen right now. Please try again.";
-      }
+      showChatRetry("Dr. Glen’s assistant is briefly unavailable. Your message is ready to retry.");
     } else {
       var reader = resp.body.getReader();
       var decoder = new TextDecoder();
@@ -5898,23 +7063,23 @@ async function sendChatMessage(){
               var relEl = renderRelated(evt.related);
               if(relEl && msgs){ msgs.appendChild(relEl); msgs.scrollTop = msgs.scrollHeight; }
             } else if(evt.error){
-              if(assistantBubble){
-                assistantBubble.className = "chat-bubble error";
-                assistantBubble.textContent = String(evt.error);
-              }
+              showChatRetry("Dr. Glen’s assistant is briefly unavailable. Your message is ready to retry.");
             } else if(evt.done){
               streamDone = true;
+              completed = true;
               chatHistory.push({role: "user", content: query});
               chatHistory.push({role: "assistant", content: assistantText});
             }
           } catch(parseErr){ /* skip malformed SSE lines */ }
         }
       }
+      if(!completed && !failed){
+        showChatRetry("The reply was interrupted. Your message is ready to retry.");
+      }
     }
   } catch(err){
-    try{
-      appendChatBubble("error", (err && err.message) ? err.message : "Something went wrong. Please try again.");
-    } catch(innerErr){ /* never break the portal */ }
+    try{ showChatRetry("The connection was interrupted. Your message is ready to retry."); }
+    catch(innerErr){ /* never break the portal */ }
   } finally {
     if(input) input.disabled = false;
     if(sendBtn) sendBtn.disabled = false;
@@ -5924,6 +7089,7 @@ async function sendChatMessage(){
 
 load();
 </script>
+<script src="/static/portal-mentor.js"></script>
 <script type="module">
   // Element backdrop controller: shows the member's deficient-element Glendalf loop
   // + (opt-in) its ambient soundtrack. Reuses the fireside video-stage machinery.

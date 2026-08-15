@@ -14,6 +14,13 @@ if str(repo) not in sys.path:
 from dashboard import shipping as S
 
 
+def test_missing_package_spec_is_explicitly_unknown(tmp_path):
+    db_path = str(tmp_path / "chat_log.db")
+    with sqlite3.connect(db_path) as cx:
+        S.init_shipping_schema(cx)
+    assert S.resolve_bottle_type("widget", {"slug": "widget"}, db_path=db_path) == S.UNKNOWN_BOTTLE_TYPE
+
+
 def test_packing_bottle_type_maps_cello_and_passes_through(monkeypatch):
     prod = {"slug": "mag", "bottle_type": "default"}
     # A cello/refill line short-circuits to the cello unit WITHOUT touching the DB

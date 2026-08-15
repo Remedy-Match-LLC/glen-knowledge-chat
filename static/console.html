@@ -683,6 +683,7 @@
     <p>Enter the console key to continue</p>
     <input type="password" id="key-input" placeholder="Console key" autocomplete="off">
     <button onclick="saveKey()">Unlock</button>
+    <p style="margin-top:16px"><a href="/console/login" style="color:var(--glen)">Sign in as owner by email</a></p>
   </div>
 </div>
 
@@ -1047,13 +1048,25 @@ function saveSettings() {
   document.getElementById('settings-panel').classList.add('hidden');
 }
 
-function initKey() {
+async function initKey() {
   const stored = localStorage.getItem('console_key');
   if (stored) {
     consoleKey = stored;
     document.getElementById('key-overlay').classList.add('hidden');
     refresh();
     _applyConsoleDeepLink();
+  } else {
+    // A prior browser login stores an HttpOnly signed cookie, not the master
+    // key. Ask the server whether that session is still valid so the console can
+    // reopen without prompting or putting the secret back into localStorage.
+    try {
+      const auth = await fetch('/api/console/auth-status', {credentials:'same-origin'});
+      if (auth.ok) {
+        document.getElementById('key-overlay').classList.add('hidden');
+        refresh();
+        _applyConsoleDeepLink();
+      }
+    } catch (e) { /* leave the unlock overlay visible */ }
   }
   document.getElementById('key-input').addEventListener('keydown', e => {
     if (e.key === 'Enter') saveKey();
@@ -1629,15 +1642,11 @@ function todoCard(t) {
   const gmailBtn = mailLink
     ? `<a class="btn-action btn-gmail" href="${mailLink.url}" target="_blank" rel="noopener">${escHtml(mailLink.label)}</a>`
     : '';
-  const pbCategories = ['E4L — Client Messages', 'E4L — New Signups', 'Clients — Direct'];
-  const pbBtn = pbCategories.some(c => t.category && t.category.startsWith('E4L'))
-    ? `<a class="btn-action btn-gmail" href="https://healingoasis.practicebetter.io/" target="_blank" rel="noopener">Open Practice Better ↗</a>`
-    : '';
   const actions = isDone || isDelegated ? `
-    ${gmailBtn}${pbBtn}
+    ${gmailBtn}
     <button class="btn-action btn-reopen" onclick="doReopen(${t.id})">Reopen</button>
   ` : `
-    ${gmailBtn}${pbBtn}
+    ${gmailBtn}
     <button class="btn-action btn-read" onclick="doDone(${t.id})">Read</button>
     <button class="btn-action btn-done" onclick="doDone(${t.id})">Done</button>
     <button class="btn-action btn-draft" onclick="toggleDraftReply(${t.id})">Draft Reply ✉</button>

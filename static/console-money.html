@@ -65,6 +65,20 @@
   #p-err { color:var(--red); margin-top:16px; font-size:13px; display:none; }
   #p-empty { color:var(--muted); font-size:13px; margin-top:16px; display:none; }
 
+  /* ---- Stripe customer lookup ---- */
+  #panel-lookup .sub { color:var(--muted); font-size:13px; margin-bottom:16px; }
+  .lookup-form { display:flex; gap:8px; margin-bottom:18px; max-width:720px; }
+  .lookup-form input { flex:1; padding:9px 11px; border-radius:6px; border:1px solid var(--border); background:#0d1117; color:var(--cream); }
+  .lookup-form button { padding:9px 16px; border-radius:6px; border:1px solid var(--gold); background:transparent; color:var(--gold); cursor:pointer; }
+  .lookup-card { background:var(--surface); border:1px solid var(--border); border-radius:10px; padding:16px; margin-bottom:14px; }
+  .lookup-card h2 { font-size:17px; margin-bottom:3px; }
+  .lookup-card .email,.lookup-note { color:var(--muted); font-size:12px; }
+  .lookup-section { margin-top:16px; }
+  .lookup-section h3 { font-size:12px; text-transform:uppercase; letter-spacing:.06em; color:var(--gold); margin-bottom:7px; }
+  .lookup-row { display:grid; grid-template-columns:140px 120px 1fr; gap:10px; padding:7px 0; border-top:1px solid var(--border); font-size:13px; }
+  .lookup-status.good { color:#7bc58d; } .lookup-status.bad { color:var(--red); }
+  #l-err { color:var(--red); font-size:13px; display:none; }
+
   /* ---- Receivables panel CSS (panel-scoped) ---- */
   #panel-receivables h1 { font-family:"Raleway",sans-serif; font-size:22px; margin-bottom:2px; }
   #panel-receivables .sub { color:var(--muted); font-size:13px; margin-bottom:20px; }
@@ -115,6 +129,7 @@
   <div class="money-head"><h1>Money</h1></div>
   <div class="money-tabs">
     <button class="mtab active" data-tab="payments" onclick="showMoneyTab('payments')">Payments</button>
+    <button class="mtab" data-tab="lookup" onclick="showMoneyTab('lookup')">Stripe Lookup</button>
     <button class="mtab" data-tab="receivables" onclick="showMoneyTab('receivables')">Receivables</button>
   </div>
 
@@ -167,6 +182,16 @@
     <div id="f-err"></div>
     <div id="f-empty">No open invoices.</div>
   </div>
+
+  <div id="panel-lookup" class="money-panel" style="display:none">
+    <h1>Stripe Customer Lookup</h1>
+    <div class="sub">Search live Stripe records by customer name or email. Read-only; no card or bank details are shown.</div>
+    <form class="lookup-form" onsubmit="MoneyLookup.search();return false">
+      <input id="l-query" autocomplete="off" placeholder="Customer name or email" aria-label="Customer name or email">
+      <button type="submit">Search</button>
+    </form>
+    <div id="l-err"></div><div id="l-results"></div>
+  </div>
 </div>
 
 <script>
@@ -178,14 +203,19 @@
 
   function unlock(){ localStorage.setItem('console_key', document.getElementById('key').value); document.getElementById('gate').style.display='none'; reveal(); }
 
-  var _moneyLoaded = { payments:false, receivables:false };
+  var _moneyLoaded = { payments:false, receivables:false, lookup:true };
   function showMoneyTab(t){
-    if (t!=='payments' && t!=='receivables') t='payments';
+    if (t!=='payments' && t!=='receivables' && t!=='lookup') t='payments';
     document.querySelectorAll('.mtab').forEach(function(b){ b.classList.toggle('active', b.dataset.tab===t); });
     document.getElementById('panel-payments').style.display    = (t==='payments') ? '' : 'none';
     document.getElementById('panel-receivables').style.display = (t==='receivables') ? '' : 'none';
+    document.getElementById('panel-lookup').style.display = (t==='lookup') ? '' : 'none';
     if (location.hash !== '#'+t) location.hash = t;
-    if (!_moneyLoaded[t]) { _moneyLoaded[t]=true; (t==='payments' ? MoneyPayments : MoneyReceivables).load(); }
+    if (!_moneyLoaded[t]) {
+      _moneyLoaded[t]=true;
+      if(t==='payments') MoneyPayments.load();
+      if(t==='receivables') MoneyReceivables.load();
+    }
   }
   function reveal(){ document.getElementById('money-wrap').style.display=''; var t=(location.hash||'').replace('#',''); showMoneyTab(t); }
 
@@ -260,6 +290,44 @@
     }
 
     return { load: load, setFilter: setFilter };
+  })();
+
+  // ---- Stripe lookup module ----
+  var MoneyLookup = (function(){
+    function money(cents,currency){ return new Intl.NumberFormat(undefined,{style:'currency',currency:(currency||'usd').toUpperCase()}).format((Number(cents)||0)/100); }
+    function when(epoch){ return epoch ? new Date(Number(epoch)*1000).toLocaleDateString() : '—'; }
+    function statusClass(ok){ return ok ? 'good' : 'bad'; }
+    function section(title, rows){
+      if(!rows.length) return '<div class="lookup-section"><h3>'+esc(title)+'</h3><div class="lookup-note">None found</div></div>';
+      return '<div class="lookup-section"><h3>'+esc(title)+'</h3>'+rows.join('')+'</div>';
+    }
+    function paymentRow(p){
+      var label=p.refunded?'refunded':(p.disputed?'disputed':p.status||'unknown');
+      return '<div class="lookup-row"><span>'+when(p.created)+'</span><strong>'+money(p.amount,p.currency)+'</strong><span class="lookup-status '+statusClass(p.paid&&!p.refunded&&!p.disputed)+'">'+esc(label)+(p.kind?' · '+esc(p.kind):'')+'</span></div>';
+    }
+    function invoiceRow(i){
+      var label=esc(i.status||'unknown')+(i.number?' · '+esc(i.number):'');
+      if(i.hosted_invoice_url) label='<a href="'+esc(i.hosted_invoice_url)+'" target="_blank" rel="noopener">'+label+'</a>';
+      return '<div class="lookup-row"><span>'+when(i.created)+'</span><strong>'+money(i.amount_due,i.currency)+'</strong><span class="lookup-status '+statusClass(i.paid)+'">'+label+'</span></div>';
+    }
+    function subscriptionRow(s){
+      var active=['active','trialing'].indexOf(s.status)>=0;
+      var amt=s.amount==null?'—':money(s.amount,s.currency)+(s.interval?' / '+esc(s.interval):'');
+      return '<div class="lookup-row"><span>Renews '+when(s.current_period_end)+'</span><strong>'+amt+'</strong><span class="lookup-status '+statusClass(active)+'">'+esc(s.status||'unknown')+(s.kind?' · '+esc(s.kind):'')+'</span></div>';
+    }
+    function card(m){ var c=m.customer||{}; return '<div class="lookup-card"><h2>'+esc(c.name||'Unnamed customer')+'</h2><div class="email">'+esc(c.email||'No email')+(c.delinquent?' · delinquent':'')+'</div>'+section('Payments',(m.payments||[]).map(paymentRow))+section('Stripe invoices',(m.invoices||[]).map(invoiceRow))+section('Subscriptions',(m.subscriptions||[]).map(subscriptionRow))+'</div>'; }
+    async function search(){
+      var q=document.getElementById('l-query').value.trim(), err=document.getElementById('l-err'), out=document.getElementById('l-results');
+      err.style.display='none'; out.innerHTML='<div class="lookup-note">Searching live Stripe records…</div>';
+      try {
+        var r=await fetch('/api/money/stripe-lookup?q='+encodeURIComponent(q),{headers:hdr()});
+        if(r.status===401){ document.getElementById('gate').style.display='flex'; return; }
+        var res=await r.json(); if(!res.ok) throw new Error(res.error||'Lookup failed');
+        var matches=(res.data||{}).matches||[];
+        out.innerHTML=matches.length?matches.map(card).join(''):'<div class="lookup-note">No matching Stripe customers found.</div>';
+      } catch(e){ out.innerHTML=''; err.textContent=e.message; err.style.display='block'; }
+    }
+    return {search:search};
   })();
 
   // ---- Receivables module ----

@@ -272,6 +272,58 @@ def test_grant_custom_days_when_specified(app_client_mem):
     cx.close()
 
 
+def test_lifetime_grant_is_open_ended_and_audited(app_client_mem):
+    client, app_module, db = app_client_mem
+    r = client.post(
+        "/admin/membership/grant",
+        json={
+            "email": "lifetime@example.com",
+            "source": "owner_lifetime",
+            "lifetime": True,
+            "notes": "Founder-approved permanent access",
+        },
+        headers={**_ckey(), "X-Console-Granted-By": "glen"},
+    )
+    assert r.status_code == 200, r.get_json()
+    assert r.get_json()["lifetime"] is True
+    assert r.get_json()["expires_at"] is None
+    cx = sqlite3.connect(db)
+    expires_at, granted_by, notes = cx.execute(
+        "SELECT expires_at, granted_by, notes FROM memberships "
+        "WHERE email='lifetime@example.com'"
+    ).fetchone()
+    detail = cx.execute(
+        "SELECT detail FROM journey_events WHERE email='lifetime@example.com' "
+        "AND trigger='membership_granted'"
+    ).fetchone()[0]
+    cx.close()
+    assert expires_at is None
+    assert granted_by == "glen"
+    assert notes == "Founder-approved permanent access"
+    assert _json.loads(detail)["lifetime"] is True
+    active = app_module._active_membership_for_email("lifetime@example.com")
+    assert active["lifetime"] is True
+    assert active["days_remaining"] is None
+
+
+def test_lifetime_grant_requires_explicit_source_and_notes(app_client_mem):
+    client, _, _ = app_client_mem
+    no_notes = client.post(
+        "/admin/membership/grant",
+        json={"email": "x@example.com", "source": "owner_lifetime",
+              "lifetime": True},
+        headers=_ckey(),
+    )
+    wrong_source = client.post(
+        "/admin/membership/grant",
+        json={"email": "x@example.com", "source": "video",
+              "lifetime": True, "notes": "approved"},
+        headers=_ckey(),
+    )
+    assert no_notes.status_code == 400
+    assert wrong_source.status_code == 400
+
+
 def test_admin_escalations_requires_console_key(app_client_mem):
     client, _, _ = app_client_mem
     r = client.get("/admin/escalations")
@@ -436,6 +488,25 @@ def test_coaching_active_renders_iframe_and_days_remaining(app_client_member):
     assert b"Remedy" in r.data
     # First name from inbound_leads or email local-part
     assert b"Jane" in r.data or b"jane" in r.data
+
+
+def test_coaching_lifetime_membership_renders_without_renewal_copy(app_client_member):
+    client, _, db = app_client_member
+    cx = sqlite3.connect(db)
+    cx.execute(
+        "UPDATE memberships SET expires_at=NULL WHERE email='jane@example.com'"
+    )
+    cx.commit()
+    cx.close()
+
+    client.set_cookie("rm_member_email", "jane@example.com")
+    r = client.get("/coaching")
+
+    assert r.status_code == 200
+    assert b"Lifetime access" in r.data
+    assert b"Your membership does not expire." in r.data
+    assert b"None days remaining" not in r.data
+    assert b"When your access ends" not in r.data
 
 
 def test_coaching_lapsed_renders_truly_vip_cta(app_client_member):

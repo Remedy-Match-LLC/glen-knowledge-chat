@@ -4,7 +4,16 @@ Monkeypatches: _practitioner_session_pid, _pp.portal_data, appmod._dropship.buil
 _ingest_order, _STRIPE_ACTIVE.
 """
 
+from pathlib import Path
+
 import app as appmod
+
+
+def test_dropship_order_card_has_product_lookup():
+    page = (Path(__file__).parents[1] / "static" / "practitioner-dropship.html").read_text()
+    assert 'id="product-search"' in page
+    assert "/api/practitioner/catalog" in page
+    assert "addProduct(product.slug)" in page
 
 
 def _auth(monkeypatch):
@@ -19,6 +28,47 @@ def test_dropship_quote_requires_auth(monkeypatch):
     monkeypatch.setattr(appmod, "_practitioner_session_pid", lambda: None)
     assert appmod.app.test_client().post(
         "/api/practitioner/dropship/quote", json={}).status_code == 401
+
+
+def test_practitioner_catalog_search_requires_auth(monkeypatch):
+    monkeypatch.setattr(appmod, "_practitioner_session_pid", lambda: None)
+    assert appmod.app.test_client().get(
+        "/api/practitioner/catalog?q=brain").status_code == 401
+
+
+def test_practitioner_catalog_search_returns_only_orderable_matches(monkeypatch):
+    _auth(monkeypatch)
+    monkeypatch.setattr(appmod._pp.pricing, "_load_catalog", lambda: {
+        "brain-boost": {"name": "Brain Boost", "price_cents": 6997},
+        "brain-external": {"name": "Brain External", "price_cents": 0,
+                           "info_only": True},
+        "liver-support": {"name": "Liver Support", "price_cents": 5997},
+    })
+
+    r = appmod.app.test_client().get("/api/practitioner/catalog?q=brain")
+
+    assert r.status_code == 200
+    assert r.get_json() == {
+        "ok": True,
+        "products": [{"slug": "brain-boost", "name": "Brain Boost"}],
+    }
+
+
+def test_dropship_quote_uses_canonical_practitioner_quote(monkeypatch):
+    _auth(monkeypatch)
+    captured = {}
+    def fake_quote(items, practitioner):
+        captured.update({"items": items, "practitioner": practitioner})
+        return {"lines": [{"slug": "brain-boost", "qty": 6,
+                           "unit_cents": 4000, "line_cents": 24000}],
+                "subtotal_cents": 24000}
+    monkeypatch.setattr(appmod._dropship, "quote_dropship_cart", fake_quote)
+
+    r = appmod.app.test_client().get("/api/practitioner/dropship/quote")
+
+    assert r.status_code == 200
+    assert r.get_json()["subtotal_cents"] == 24000
+    assert captured["practitioner"] == {"id": "p1", "modules_completed": 0}
 
 
 def test_dropship_checkout_ships_to_patient(monkeypatch):
@@ -44,6 +94,50 @@ def test_dropship_checkout_ships_to_patient(monkeypatch):
     assert cap["source"] == "dropship"
     assert cap["address"]["name"] == "Pat"
     assert cap["shipping_cents"] == 1300
+
+
+def test_card_checkout_keeps_cart_until_payment(monkeypatch):
+    _auth(monkeypatch)
+    monkeypatch.setattr(appmod, "_price_cart", lambda *a, **k: {"shipping_cents": 1300})
+    monkeypatch.setattr(appmod._dropship, "build_dropship_order", lambda *a, **k: {
+        "ok": True, "invoice_id": "INV", "total": 69.0, "source": "dropship",
+        "qbo_payload": {}, "get_cents": 0, "shipping_cents": 1300,
+    })
+    cleared = []
+    monkeypatch.setattr(appmod._pp, "cart_clear", lambda pid: cleared.append(pid))
+    monkeypatch.setattr(appmod, "_ingest_order", lambda **kw: None)
+    monkeypatch.setattr(appmod, "_STRIPE_ACTIVE", True)
+    monkeypatch.setattr(appmod, "_stripe_checkout_url_for_order",
+                        lambda *a, **k: "https://checkout.stripe.test/session")
+    r = appmod.app.test_client().post("/api/practitioner/dropship/checkout", json={
+        "method": "card", "token": "tok",
+        "patient_address": {"name": "Pat", "street": "1 Main", "city": "Austin",
+                            "state": "TX", "zip": "78701", "country": "US"},
+    })
+    assert r.status_code == 200
+    assert r.get_json()["stripe_url"].startswith("https://checkout.stripe.test/")
+    assert cleared == []
+
+
+def test_dropship_stripe_cancel_returns_to_draft(monkeypatch):
+    from dashboard import stripe_pay
+    captured = {}
+    monkeypatch.setattr(stripe_pay, "create_checkout_session",
+                        lambda *a, **kw: captured.update(kw) or {"url": "https://stripe.test"})
+    out = {"total": 93, "invoice_id": "ref", "source": "dropship",
+           "practitioner_id": "p1"}
+    assert appmod._stripe_checkout_url_for_order(out, "doc@example.com", "tok")
+    assert "/practitioner/dropship?payment=cancelled&token=tok" in captured["cancel_url"]
+    assert captured["metadata"]["practitioner_id"] == "p1"
+
+
+def test_console_can_inspect_practitioner_cart(monkeypatch):
+    monkeypatch.setattr(appmod, "_console_key_ok", lambda: True)
+    monkeypatch.setattr(appmod._pp, "cart_items",
+                        lambda pid: [{"slug": "iron-out", "qty": 2}])
+    r = appmod.app.test_client().get("/api/console/practitioners/p1/cart")
+    assert r.status_code == 200
+    assert r.get_json()["item_count"] == 2
 
 
 def test_dropship_checkout_requires_patient_address(monkeypatch):

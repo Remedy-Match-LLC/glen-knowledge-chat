@@ -164,3 +164,105 @@ def test_direction_queue_surfaces_only_the_unconfident(cx):
     pr.set_direction(cx, "crosses", "substrate")
     assert [d["effect_key"] for d in pr.direction_queue(cx)] == ["feeds"]
     assert pr.set_direction(cx, "feeds", "sideways") is None
+
+
+def _verdicts(cx, rows):
+    cx.executemany("INSERT INTO pathway_review_verdicts"
+                   "(atom_key,reviewed_label,verdict,reason,round) VALUES(?,?,?,?,2)", rows)
+    cx.commit()
+
+
+def test_verdict_shows_when_the_mapping_still_matches(cx):
+    _verdicts(cx, [("nf kappab", "NF-κB", "wrong", "isoform confusion")])
+    v = pr.verdict_for(cx, "nf kappab", "NF-κB")
+    assert v["verdict"] == "wrong" and v["reason"] == "isoform confusion"
+
+
+def test_verdict_goes_stale_when_the_canonical_changed(cx):
+    """The load-bearing guard. A 'correct' verdict against a since-split
+    canonical would read as endorsement of a mapping nobody reviewed — 21% of
+    stored verdicts are in this state after the vocabulary repair."""
+    _verdicts(cx, [("cyclooxygenase", "COX-2", "correct", None)])
+    v = pr.verdict_for(cx, "cyclooxygenase", "Cyclooxygenase (unspecified isoform)")
+    assert v["verdict"] == "stale"
+    assert "COX-2" in v["reason"]
+
+
+def test_not_a_pathway_survives_a_relabel_because_it_judges_the_atom(cx):
+    """`not_a_pathway` says the FRAGMENT is not a mechanism — true regardless of
+    which canonical it is later pointed at. Treating it as pair-scoped hid 47 of
+    70 atom-level rejections, including two rounds on `retinol` that had already
+    diagnosed a defect a whole family pass then spent effort rediscovering."""
+    _verdicts(cx, [("retinol", "Retinoid / RAR-RXR", "not_a_pathway",
+                    "nutrient/molecule name, not a mechanism")])
+    v = pr.verdict_for(cx, "retinol", "Retinoid bioactivation (BCO1 / RDH / RALDH)")
+    assert v["verdict"] == "not_a_pathway"
+    assert "nutrient/molecule" in v["reason"]
+
+
+def test_pair_scoped_verdicts_still_go_stale_on_a_relabel(cx):
+    """The other half of the same guard: `wrong`, `too_coarse` and `correct` are
+    statements about the PAIRING, so a relabel must still invalidate them."""
+    _verdicts(cx, [("nf kappab", "NF-κB", "correct", None),
+                   ("nrf2", "Nrf2", "too_coarse", None),
+                   ("aromatase", "Aromatase", "wrong", None)])
+    for atom in ("nf kappab", "nrf2", "aromatase"):
+        assert pr.verdict_for(cx, atom, "Something Else Entirely")["verdict"] == "stale"
+
+
+def test_no_verdict_is_not_an_endorsement(cx):
+    assert pr.verdict_for(cx, "never reviewed", "NF-κB") is None
+
+
+def test_queue_attaches_the_verdict_to_each_card(cx):
+    cx.execute("INSERT INTO pathway_atoms(pathway_row_id,ingredient_id,position,"
+               "atom,atom_key,is_annotation) VALUES(2,2,1,'NF-kB','nf kappab',0)")
+    _verdicts(cx, [("nf kappab", "NF-κB", "too_coarse", "spans too much")])
+    cx.commit()
+    card = next(r for r in pr.queue(cx) if r["atom_key"] == "nf kappab")
+    assert card["verdict"]["verdict"] == "too_coarse"
+
+
+def _conflicts(cx, rows):
+    cx.execute("""CREATE TABLE IF NOT EXISTS pathway_direction_conflicts (
+        atom_key TEXT NOT NULL, kind TEXT NOT NULL, ingredient_id INTEGER,
+        pathway_row_id INTEGER, directions TEXT NOT NULL,
+        n_rows INTEGER NOT NULL DEFAULT 0, detail TEXT, detected_at TEXT NOT NULL)""")
+    cx.executemany("INSERT INTO pathway_direction_conflicts (atom_key,kind,"
+                   "ingredient_id,pathway_row_id,directions,n_rows,detail,detected_at) "
+                   "VALUES(?,?,?,?,?,?,?,datetime('now'))", rows)
+    cx.commit()
+
+
+def test_a_confident_contradiction_is_invisible_to_the_direction_queue(cx):
+    """The load-bearing test for this surface. direction_queue asks "was the
+    classifier unsure?"; a direction assigned confidently to the WRONG SUBJECT
+    is confident and wrong, so it can never appear there. 71 of 73 contradictory
+    atoms are high-confidence on every conflicting row — if the two surfaces
+    ever collapse into one, that whole class stops being reviewable."""
+    cx.execute("INSERT INTO pathway_effect_direction(effect_key,direction,"
+               "confidence,decision,n_rows) VALUES"
+               "('upward modulation of antioxidant capacity','up','high','proposed',9)")
+    _conflicts(cx, [("free radical scavenging", "same_ingredient", 4, None,
+                     "down/up", 6, "mediator vs function")])
+    assert [d["effect_key"] for d in pr.direction_queue(cx)] == []
+    assert [c["atom_key"] for c in pr.direction_conflicts(cx)] == ["free radical scavenging"]
+
+
+def test_certain_defects_rank_above_the_heuristic_screen(cx):
+    _conflicts(cx, [("mmp 1", "multi_target", None, 2727, "up/down", 9, "collagen up; MMP down"),
+                    ("insulin", "same_ingredient", 7, None, "down/up", 2, "levels vs sensitivity")])
+    assert [c["kind"] for c in pr.direction_conflicts(cx)] == \
+        ["same_ingredient", "multi_target"]
+
+
+def test_conflicts_are_empty_until_the_vault_rebuild_has_run(cx):
+    assert pr.direction_conflicts(cx) == []
+
+
+def test_missing_verdict_table_does_not_break_the_queue(cx):
+    """A fresh db has no verdicts table; the queue must still render."""
+    cx.execute("DROP TABLE pathway_review_verdicts")
+    cx.commit()
+    assert pr.verdict_for(cx, "nf kappab", "NF-κB") is None
+    assert pr.queue(cx, include_singletons=True) is not None

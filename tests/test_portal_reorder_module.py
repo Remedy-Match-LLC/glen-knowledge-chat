@@ -79,6 +79,13 @@ def _seed_active_membership(appmod, email, *, source="founding"):
         cx.commit()
 
 
+def _seed_client_price(appmod, email, slug, cents):
+    from dashboard import client_prices
+    with sqlite3.connect(appmod.LOG_DB) as cx:
+        client_prices.init_table(cx)
+        client_prices.set_price(cx, email, slug, cents)
+
+
 # ── (a) distinct SKUs from portal-channel history ────────────────────────────
 
 def test_reorder_list_has_distinct_skus_from_portal_history(client):
@@ -260,6 +267,50 @@ def test_reorder_dedupes_keeping_most_recent_qty(client):
     assert rows[0]["qty"] == 3
 
 
+def test_published_unpaid_invoice_lines_are_annotated_not_treated_as_history(client):
+    c, appmod = client
+    email = "invoicegroup@example.com"
+    tok = _seed_portal(appmod, email)
+    _seed_order(appmod, source="in-house", email=email,
+                slugs_qty=[("biofield-analysis", 1), ("nous-energy", 2)],
+                status="proposed", external_ref="INH-CURRENT")
+    appmod._migrate_orders_portal_published()
+    with sqlite3.connect(appmod.LOG_DB) as cx:
+        cx.execute(
+            "UPDATE orders SET portal_published=1, pay_status='unpaid', invoice_token='inv-token' "
+            "WHERE external_ref='INH-CURRENT'")
+        items = json.loads(cx.execute(
+            "SELECT items_json FROM orders WHERE external_ref='INH-CURRENT'").fetchone()[0])
+        items[0]["service"] = True
+        cx.execute("UPDATE orders SET items_json=? WHERE external_ref='INH-CURRENT'",
+                   (json.dumps(items),))
+        cx.commit()
+
+    rows = {r["slug"]: r for r in c.get(f"/api/portal/{tok}").get_json()["reorder"]}
+    assert rows["biofield-analysis"]["current_invoice"] == {
+        "reference": "INH-CURRENT", "url": "/invoice/inv-token",
+        "unit_cents": 6997, "qty": 1, "service": True,
+    }
+    assert rows["nous-energy"]["current_invoice"]["qty"] == 2
+
+
+def test_paid_invoice_lines_remain_purchase_history_rows(client):
+    c, appmod = client
+    email = "paidinvoice@example.com"
+    tok = _seed_portal(appmod, email)
+    _seed_order(appmod, source="in-house", email=email,
+                slugs_qty=[("nous-energy", 1)], status="done",
+                external_ref="INH-PAID")
+    appmod._migrate_orders_portal_published()
+    with sqlite3.connect(appmod.LOG_DB) as cx:
+        cx.execute("UPDATE orders SET portal_published=1, pay_status='paid', "
+                   "invoice_token='paid-token' WHERE external_ref='INH-PAID'")
+        cx.commit()
+
+    row = c.get(f"/api/portal/{tok}").get_json()["reorder"][0]
+    assert "current_invoice" not in row
+
+
 # ── (b) member repertoire pricing matches the real pricing engine ───────────
 
 def test_member_repertoire_price_below_regular_and_matches_price_cart(client):
@@ -299,6 +350,45 @@ def test_non_member_pays_regular_price(client):
     row = next(r for r in j["reorder"] if r["slug"] == "neuro-magnesium")
     assert row["your_cents"] == row["regular_cents"] == 6997
     assert row["is_member_price"] is False
+
+
+def test_saved_client_price_matches_your_remedies_and_checkout(client):
+    """The history-based Your Remedies card and shared-basket checkout must use
+    the same saved per-client price as the curated Order your remedies card."""
+    c, appmod = client
+    email = "special@example.com"
+    tok = _seed_portal(appmod, email)
+    _seed_order(appmod, source="reorder", email=email,
+                slugs_qty=[("neuro-magnesium", 1)], days_ago=5)
+    _seed_client_price(appmod, email, "neuro-magnesium", 4200)
+
+    payload = c.get(f"/api/portal/{tok}").get_json()
+    row = next(r for r in payload["reorder"] if r["slug"] == "neuro-magnesium")
+    assert row["regular_cents"] == 6997
+    assert row["your_cents"] == 4200
+    assert row["is_member_price"] is True
+
+    _lines, items, subtotal = appmod._portal_priced_lines(
+        [{"slug": "neuro-magnesium", "qty": 2}], email=email)
+    assert items[0]["unit_cents"] == 4200
+    assert subtotal == 8400
+
+
+def test_saved_client_price_outranks_older_baked_portal_price(client):
+    """Glen's CURRENT saved per-SKU price wins over an older baked line price.
+
+    Inverted with the precedence change in "Make current client special prices
+    authoritative": the order is now current per-SKU special > current FF flat >
+    older baked override > regular. This test pinned the old rule in its own name
+    and was missed when the sibling assertions in test_client_portal_routes.py
+    were updated."""
+    _c, appmod = client
+    email = "baked@example.com"
+    _seed_client_price(appmod, email, "neuro-magnesium", 4200)
+    _lines, items, subtotal = appmod._portal_priced_lines(
+        [{"slug": "neuro-magnesium", "qty": 1, "price_cents": 3900}], email=email)
+    assert items[0]["unit_cents"] == 4200
+    assert subtotal == 4200
 
 
 # ── (c) membership_upsell for a non-member ───────────────────────────────────

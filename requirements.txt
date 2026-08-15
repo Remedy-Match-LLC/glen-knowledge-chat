@@ -19,6 +19,7 @@ scikit-learn
 boto3
 imageio-ffmpeg
 Pillow
+qrcode[pil]>=7.4
 psycopg[binary]>=3.1
 psycopg_pool>=3.2
 python-frontmatter

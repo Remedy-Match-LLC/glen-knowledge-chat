@@ -44,6 +44,28 @@ def add_message(cx, email, role, content, author=None):
     return new_id
 
 
+def add_message_once(cx, email, role, content, author=None):
+    """Append an exact message only when it is not already in the thread.
+
+    Returns ``(id, created)``. Existing rows return their id with ``False``;
+    this gives console-driven email imports retry-safe semantics without adding
+    transport metadata to the client-visible chat schema.
+    """
+    init_table(cx)
+    e = (email or "").strip().lower()
+    c = (content or "").strip()
+    if not e or not c:
+        return None, False
+    row = cx.execute(
+        "SELECT id FROM portal_chat_messages "
+        "WHERE email=? AND role=? AND content=? ORDER BY id LIMIT 1",
+        (e, role, c)).fetchone()
+    if row:
+        existing_id = row["id"] if hasattr(row, "keys") else row[0]
+        return int(existing_id), False
+    return add_message(cx, e, role, c, author=author), True
+
+
 def list_messages(cx, email, limit=100):
     """The client's thread in chronological order (oldest first), capped at `limit`
     most-recent messages."""

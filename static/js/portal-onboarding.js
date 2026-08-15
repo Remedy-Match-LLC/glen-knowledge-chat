@@ -3,32 +3,51 @@
 // Consumes GET /api/portal/<token>/onboarding -> {enabled, status:{phases:[{key,title,steps:[{key,label,done,href,soon?}]}], member}}.
 function renderOnboarding(status) {
   if (!status || !status.phases || !status.phases.length) return '';
-  const phases = status.phases.map(function (ph) {
+  var sourcePhases = status.phases || [];
+  var discover = sourcePhases.find(function (ph) { return ph.key === 'be_read'; });
+  var match = sourcePhases.find(function (ph) { return ph.key === 'match'; });
+  var phases = sourcePhases.filter(function (ph) {
+    return ph.key !== 'be_read' && ph.key !== 'match';
+  });
+  if (discover || match) {
+    phases.unshift({
+      key: 'discover',
+      title: 'Discover what your body is saying',
+      steps: (discover ? discover.steps || [] : []).concat(
+        match ? match.steps || [] : [],
+        [{key:'member', label:'Member', done:!!status.member,
+          href:status.member ? '' : '#offers'}]
+      )
+    });
+  }
+  const html = phases.map(function (ph) {
     const steps = (ph.steps || []).map(function (st) {
-      const mark = st.done === true ? '✓' : (st.done === false ? '○' : '•');
-      const markClass = st.done === true ? 'ob-mark-done' : (st.done === false ? 'ob-mark-open' : 'ob-mark-resource');
+      const mark = st.done === true ? '✓' : (st.in_progress ? '◐' : (st.done === false ? '○' : '•'));
+      const markClass = st.done === true ? 'ob-mark-done' : (st.in_progress ? 'ob-mark-progress' : (st.done === false ? 'ob-mark-open' : 'ob-mark-resource'));
       var label = escapeHtml(st.label);
+      if (st.in_progress) label += ' (in progress)';
       if (st.soon) label += ' (coming soon)';
       var text = st.href
         ? '<a href="' + st.href + '">' + label + '</a>'
         : label;
+      if (st.checkable) {
+        return '<li class="ob-step"><input class="ob-accelerator-check" type="checkbox" ' +
+          'data-accelerator="' + escapeHtml(st.key) + '" aria-label="Mark ' + label +
+          ' as owned"' + (st.done === true ? ' checked' : '') + '> ' + text + '</li>';
+      }
       return '<li class="ob-step"><span class="ob-mark ' + markClass + '">' + mark + '</span> ' + text + '</li>';
     }).join('');
     var extra = '';
-    if (ph.key === 'match') {
+    if (ph.key === 'discover') {
       // Ask about every condition with an authored protocol until at least one
       // condition-sourced recommendation has been saved.
-      var historyStep = _stepByKey(ph.steps, 'history');
-      if (historyStep && historyStep.done === false) {
+      if (status.history_conditions_done === false) {
         extra += renderTriageForm(status);
       }
-      // Task 6 / P1.T3 fast-follow: surface status.member as a quiet inline
-      // thread near Match/Heal -- not a checklist item.
-      extra += renderMemberThread(status.member);
     }
     return '<div class="ob-phase"><h3>' + escapeHtml(ph.title) + '</h3><ul class="ob-steps">' + steps + '</ul>' + extra + '</div>';
   }).join('');
-  return '<section class="portal-onboarding">' + phases + '</section>';
+  return '<section class="portal-onboarding">' + html + '</section>';
 }
 
 function _stepByKey(steps, key) {
@@ -70,50 +89,9 @@ function renderTriageForm(status) {
         '</div>' +
       '</div>';
   }
-  var productSection = '';
-  if (!status.history_products_done) {
-    productSection =
-      '<div class="ob-history-section" data-history-section="products">' +
-        '<p class="ob-followup-title">What are you currently taking?</p>' +
-        '<p class="ob-triage-intro">Check each category that applies. Include the brand and product names so we can review them for analysis and possible supportive remedies.</p>' +
-        _productHistoryChoice('prescriptions', 'Prescription medications') +
-        _productHistoryChoice('otc', 'Over-the-counter drugs') +
-        _productHistoryChoice('supplements', 'Supplements') +
-      '</div>';
-  }
-  var extendedSection = '';
-  if (!status.history_extended_done) {
-    extendedSection =
-      '<div class="ob-history-section" data-history-section="extended">' +
-        '<p class="ob-followup-title">More about your health history</p>' +
-        '<p class="ob-triage-intro">Check every category that applies and add the requested details.</p>' +
-        _extendedHistoryChoice('surgeries', 'Hospitalizations or surgeries',
-          'List each procedure or hospitalization, the reason, and your age at the time.') +
-        _extendedHistoryChoice('physical_trauma', 'Physical trauma or injuries',
-          'Describe what happened, body areas affected, your age, and any lasting effects.') +
-        _extendedHistoryChoice('psychoemotional_trauma', 'Psychoemotional trauma or major stress',
-          'Describe what happened, your approximate age or year, and any lasting effects.') +
-        _extendedHistoryChoice('toxins', 'Toxin or environmental exposures',
-          'List the substance, source, duration, approximate dates, and any reaction.') +
-        _extendedHistoryChoice('vaccinations', 'COVID or other vaccinations',
-          'List the vaccine, brand, date, and any reactions or changes afterward.') +
-        _extendedHistoryChoice('family_history', 'Family health history',
-          'List the parent or grandparent, condition, maternal or paternal side, and age at onset.') +
-        _extendedHistoryChoice('diagnoses', 'Other current or past medical diagnoses',
-          'List the diagnosis, whether it is current or past, and your age at onset.') +
-        _extendedHistoryChoice('allergies', 'Food or environmental allergies or sensitivities',
-          'List each food or environmental sensitivity and the reaction it causes.') +
-        _extendedHistoryChoice('dental', 'Dental issues, amalgams, or root canals',
-          'List the issue or procedure, tooth if known, reason, and approximate date.') +
-        _extendedHistoryChoice('sleep', 'Trouble falling asleep, staying asleep, or waking frequently',
-          'Describe the sleep pattern, frequency, and how long it has been happening.') +
-      '</div>';
-  }
   return '' +
     '<form class="ob-triage-form">' +
       conditionSection +
-      productSection +
-      extendedSection +
       '<button type="submit" class="ob-triage-submit">Show my starter remedies</button>' +
       '<p class="ob-triage-msg" aria-live="polite"></p>' +
     '</form>';
@@ -239,13 +217,124 @@ if (typeof window !== 'undefined' && typeof document !== 'undefined') {
     var m = location.pathname.match(/\/portal\/([^\/]+)/);
     if (!m) return;
     var token = m[1];
+    var draftKey = 'rm_portal_onboarding_draft:' + token;
+    var draftTimer = null;
+
+    function formValues(form) {
+      var values = {};
+      Array.prototype.forEach.call(form.querySelectorAll('input,select,textarea'), function (field) {
+        if (!field.name) return;
+        if (field.type === 'checkbox') {
+          if (field.name === 'conditions') {
+            if (!values.conditions) values.conditions = [];
+            if (field.checked) values.conditions.push(field.value);
+          } else {
+            values[field.name] = field.checked;
+          }
+        } else {
+          values[field.name] = field.value;
+        }
+      });
+      return values;
+    }
+
+    function applyFormValues(form, values) {
+      values = values || {};
+      Array.prototype.forEach.call(form.querySelectorAll('input,select,textarea'), function (field) {
+        if (!field.name) return;
+        if (field.name === 'conditions') {
+          field.checked = (values.conditions || []).indexOf(field.value) !== -1;
+        } else if (field.type === 'checkbox') {
+          if (values[field.name] !== undefined) field.checked = !!values[field.name];
+        } else if (values[field.name] !== undefined && values[field.name] !== null) {
+          field.value = values[field.name];
+        }
+      });
+      Array.prototype.forEach.call(form.querySelectorAll('input[name="conditions"]'), function (field) {
+        var detail = form.querySelector('[data-condition-detail="' + field.value + '"]');
+        if (detail) detail.hidden = !field.checked;
+      });
+      Array.prototype.forEach.call(form.querySelectorAll('[data-product-kind]'), function (field) {
+        var detail = form.querySelector('[data-product-detail="' + field.getAttribute('data-product-kind') + '"]');
+        if (detail) detail.hidden = !field.checked;
+      });
+      Array.prototype.forEach.call(form.querySelectorAll('[data-extended-kind]'), function (field) {
+        var detail = form.querySelector('[data-extended-detail="' + field.getAttribute('data-extended-kind') + '"]');
+        if (detail) detail.hidden = !field.checked;
+      });
+    }
+
+    function serverPrefill(status) {
+      var prefill = (status && status.history_prefill) || {};
+      var values = {};
+      var selected = [];
+      (prefill.conditions || []).forEach(function (item) {
+        if (!item || !item.condition) return;
+        selected.push(item.condition);
+        Object.keys(item.answers || {}).forEach(function (key) {
+          values[key] = item.answers[key];
+        });
+      });
+      values.conditions = selected;
+      Object.keys(prefill.products || {}).forEach(function (key) {
+        if (key !== 'updated_at') values[key] = prefill.products[key];
+      });
+      Object.keys(prefill.extended || {}).forEach(function (key) {
+        values[key] = prefill.extended[key];
+      });
+      return values;
+    }
+
+    function hydrateDraft(status) {
+      var form = mount.querySelector('.ob-triage-form');
+      if (!form) return;
+      var values = serverPrefill(status);
+      try {
+        var saved = JSON.parse(localStorage.getItem(draftKey) || 'null');
+        if (saved && saved.values) values = Object.assign(values, saved.values);
+      } catch (_error) {}
+      applyFormValues(form, values);
+    }
 
     function loadAndRender() {
       return fetch('/api/portal/' + token + '/onboarding')
         .then(function (r) { return r.ok ? r.json() : {enabled:false, status:null}; })
-        .then(function (d) { mount.innerHTML = d.enabled ? renderOnboarding(d.status) : ''; })
+        .then(function (d) {
+          mount.innerHTML = d.enabled ? renderOnboarding(d.status) : '';
+          if (d.enabled) hydrateDraft(d.status);
+        })
         .catch(function () {});
     }
+    window.refreshPortalOnboarding = loadAndRender;
+
+    mount.addEventListener('click', function (event) {
+      var link = event.target.closest && event.target.closest('a[href]');
+      if (!link) return;
+      var url;
+      try { url = new URL(link.href, location.href); } catch (_error) { return; }
+      if (url.origin !== location.origin || url.pathname !== location.pathname || !url.hash) return;
+      event.preventDefault();
+      if (location.hash !== url.hash) history.pushState(null, '', url.hash);
+      if (typeof window.applyPortalHash === 'function') window.applyPortalHash();
+    });
+
+    mount.addEventListener('change', function (event) {
+      var checkbox = event.target.closest && event.target.closest('.ob-accelerator-check');
+      if (!checkbox) return;
+      checkbox.disabled = true;
+      fetch('/api/portal/' + token + '/onboarding/accelerator', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({key: checkbox.getAttribute('data-accelerator'),
+                             value: checkbox.checked})
+      }).then(function (response) {
+        if (!response.ok) throw new Error('save failed');
+        return loadAndRender();
+      }).catch(function () {
+        checkbox.checked = !checkbox.checked;
+        checkbox.disabled = false;
+      });
+    });
 
     function _num(v) {
       if (v === '' || v == null) return undefined;
@@ -273,18 +362,7 @@ if (typeof window !== 'undefined' && typeof document !== 'undefined') {
       return payload;
     }
 
-    function submitCondition(form, condition) {
-      return fetch('/api/portal/' + token + '/triage', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify(conditionPayload(form, condition))
-      })
-        .then(function (r) {
-          return r.ok ? r.json() : Promise.reject(new Error('bad response'));
-        });
-    }
-
-    function submitProducts(form) {
+    function productsPayload(form) {
       var payload = {};
       ['prescriptions', 'otc', 'supplements'].forEach(function (kind) {
         var yes = form.querySelector('input[name="' + kind + '_yes"]');
@@ -292,16 +370,10 @@ if (typeof window !== 'undefined' && typeof document !== 'undefined') {
         payload[kind + '_yes'] = !!(yes && yes.checked);
         payload[kind + '_text'] = text ? text.value.trim() : '';
       });
-      return fetch('/api/portal/' + token + '/health-history/products', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify(payload)
-      }).then(function (r) {
-        return r.ok ? r.json() : Promise.reject(new Error('bad response'));
-      });
+      return payload;
     }
 
-    function submitExtendedHistory(form) {
+    function extendedHistoryPayload(form) {
       var payload = {};
       [
         'surgeries', 'physical_trauma', 'psychoemotional_trauma', 'toxins',
@@ -313,13 +385,37 @@ if (typeof window !== 'undefined' && typeof document !== 'undefined') {
         payload[kind + '_yes'] = !!(yes && yes.checked);
         payload[kind + '_text'] = text ? text.value.trim() : '';
       });
-      return fetch('/api/portal/' + token + '/health-history/extended', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify(payload)
-      }).then(function (r) {
-        return r.ok ? r.json() : Promise.reject(new Error('bad response'));
-      });
+      return payload;
+    }
+
+    function submitStarterRemedies(form, selected) {
+      var payload = {
+        conditions: selected.map(function (condition) {
+          return conditionPayload(form, condition);
+        }),
+        products: productsPayload(form),
+        extended: extendedHistoryPayload(form)
+      };
+      function send(attempt) {
+        return fetch('/api/portal/' + token + '/starter-remedies', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify(payload)
+        }).then(function (r) {
+          return r.json().catch(function () { return {}; }).then(function (body) {
+            if (r.status === 503 && attempt < 1) {
+              return new Promise(function (resolve) {
+                setTimeout(resolve, 800);
+              }).then(function () { return send(attempt + 1); });
+            }
+            if (!r.ok) {
+              throw new Error(body.error || 'We could not save your answers.');
+            }
+            return body;
+          });
+        });
+      }
+      return send(0);
     }
 
     // Delegated listeners: the tile's innerHTML is replaced wholesale on every
@@ -384,25 +480,15 @@ if (typeof window !== 'undefined' && typeof document !== 'undefined') {
       }
       msg.textContent = 'Saving…';
       msg.className = 'ob-triage-msg';
-      var consult = false;
-      selected.reduce(function (chain, condition) {
-        return chain.then(function () {
-          return submitCondition(form, condition).then(function (body) {
-            consult = consult || !!(body && body.consult_recommended);
-          });
-        });
-      }, Promise.resolve()).then(function () {
-        return form.querySelector('[data-history-section="products"]')
-          ? submitProducts(form) : null;
-      }).then(function () {
-        return form.querySelector('[data-history-section="extended"]')
-          ? submitExtendedHistory(form) : null;
-      }).then(function () {
-        msg.textContent = _triageSuccessMessage(consult);
+      submitStarterRemedies(form, selected).then(function (body) {
+        msg.textContent = _triageSuccessMessage(
+          !!(body && body.consult_recommended));
         msg.className = 'ob-triage-msg ob-triage-ok';
+        try { localStorage.removeItem(draftKey); } catch (_error) {}
         setTimeout(loadAndRender, 900);
-      }).catch(function () {
-        msg.textContent = 'Something went wrong — please try again.';
+      }).catch(function (error) {
+        msg.textContent = (error && error.message) ||
+          'Something went wrong — please try again.';
         msg.className = 'ob-triage-msg ob-triage-err';
       });
     });
@@ -426,6 +512,19 @@ if (typeof window !== 'undefined' && typeof document !== 'undefined') {
           checkbox.getAttribute('data-extended-kind') + '"]');
         if (extendedDetail) extendedDetail.hidden = !checkbox.checked;
       }
+    });
+    mount.addEventListener('input', function (e) {
+      var form = e.target && e.target.closest ? e.target.closest('.ob-triage-form') : null;
+      if (!form) return;
+      clearTimeout(draftTimer);
+      draftTimer = setTimeout(function () {
+        try {
+          localStorage.setItem(draftKey, JSON.stringify({
+            saved_at: new Date().toISOString(),
+            values: formValues(form)
+          }));
+        } catch (_error) {}
+      }, 250);
     });
 
     loadAndRender();

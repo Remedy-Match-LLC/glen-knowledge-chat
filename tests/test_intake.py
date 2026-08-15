@@ -29,6 +29,73 @@ def test_form_structure_integrity():
     assert sorted(dim_fields) == ["commitment", "penetration", "response", "terrain", "tissue_layer"]
 
 
+def test_gender_options_are_male_or_female():
+    gender = next(
+        field
+        for section in intake.INTAKE_FORM["sections"]
+        for field in section["fields"]
+        if field["id"] == "gender"
+    )
+    assert gender["options"] == ["Male", "Female"]
+
+
+def test_supplement_columns_use_searchable_free_text_suggestions():
+    supplements = next(
+        field
+        for section in intake.INTAKE_FORM["sections"]
+        for field in section["fields"]
+        if field["id"] == "supplements"
+    )
+    columns = {column["id"]: column for column in supplements["columns"]}
+    assert columns["brand"]["type"] == "text"
+    assert columns["brand"]["suggestion_kind"] == "brands"
+    assert columns["name"]["type"] == "text"
+    assert columns["name"]["suggestion_kind"] == "supplements"
+
+
+def test_dimensions_are_multi_select_but_commitment_is_single_number():
+    fields = {
+        field["id"]: field
+        for section in intake.INTAKE_FORM["sections"]
+        for field in section["fields"]
+    }
+    for field_id in ("terrain", "penetration", "tissue_layer", "response"):
+        assert fields[field_id]["multi_select"] is True
+        assert fields[field_id]["selection_field"] == f"{field_id}_selections"
+        assert "Check all that apply" in fields[field_id]["help"]
+    assert fields["commitment"].get("multi_select") is not True
+    assert fields["commitment"]["number_only"] is True
+
+
+def test_intake_owns_complete_nonduplicated_health_history():
+    fields = {
+        field["id"]: field
+        for section in intake.INTAKE_FORM["sections"]
+        for field in section["fields"]
+    }
+    for field_id in (
+        "physical_trauma", "psychoemotional_trauma", "toxins", "family_history",
+        "surgeries", "vaccinations", "diagnoses", "allergies", "dental", "sleep",
+        "medications", "otc_drugs", "supplements",
+    ):
+        assert field_id in fields
+    assert fields["medications"]["label"].startswith("Prescription medications")
+
+
+def test_suggestions_are_seeded_and_new_answers_are_remembered():
+    cx = _cx()
+    seeded = intake.list_suggestions(cx)
+    assert seeded["brands"] == ["E4L", "Fullscript", "PRL", "Remedy Match"]
+
+    intake.save_draft(cx, "s@x.com", {"supplements": [
+        {"brand": "  New   Brand ", "name": " Custom Formula "},
+        {"brand": "new brand", "name": "custom formula"},
+    ]}, "2026-08-09T00:00:00")
+    suggestions = intake.list_suggestions(cx)
+    assert suggestions["brands"].count("New Brand") == 1
+    assert suggestions["supplements"].count("Custom Formula") == 1
+
+
 def test_validate_missing_required():
     errors = intake.validate_response({})
     for req in ("first_name", "last_name", "email", "dob", "terrain", "terms"):
@@ -63,6 +130,20 @@ def test_draft_then_submit_transitions_status():
     assert intake.is_submitted(cx, "s@x.com") is True
     row = intake.get_response(cx, "s@x.com")
     assert row["status"] == "submitted" and row["submitted_at"] == "2026-07-07T01:00:00"
+
+
+def test_update_submitted_preserves_status_time_and_internal_metadata():
+    cx = _cx()
+    intake.import_response(cx, "s@x.com", {"first_name": "Old"},
+                           "2026-07-07T01:00:00")
+    intake.update_submitted(cx, "s@x.com", {"first_name": "New"},
+                            "2026-07-08T02:00:00")
+    row = intake.get_response(cx, "s@x.com")
+    assert row["status"] == "submitted"
+    assert row["submitted_at"] == "2026-07-07T01:00:00"
+    assert row["answers"]["first_name"] == "New"
+    assert row["answers"]["_imported"] == "practice-better"
+    assert row["answers"]["self_edited_at"] == "2026-07-08T02:00:00"
 
 
 def test_list_submitted_only_returns_submitted():

@@ -34,6 +34,7 @@ import urllib.request
 PUBLIC_SURFACES = ("/", "/begin", "/begin/fireside", "/prepay", "/results")
 
 BASE_URL = os.environ.get("PUBLIC_BASE_URL", "https://illtowell.com").rstrip("/")
+PORTAL_BASE_URL = os.environ.get("PORTAL_BASE_URL", "https://myhealingoasis.com").rstrip("/")
 OWNER_EMAIL = os.environ.get("GLEN_EMAIL", "drglenswartwout@gmail.com")
 
 CONSOLE_SECRET = os.environ.get("CONSOLE_SECRET", "")
@@ -170,6 +171,62 @@ def check_surfaces(base_url, paths=PUBLIC_SURFACES, fetch=_fetch):
     return failures
 
 
+def _fetch_text(url, timeout=20):
+    req = urllib.request.Request(url, method="GET",
+                                 headers={"User-Agent": "surface-check/1.0"})
+    with urllib.request.urlopen(req, timeout=timeout) as response:
+        return response.status, response.read().decode("utf-8", "replace")
+
+
+def check_portal_contract(base_url, fetch_text=_fetch_text):
+    """Verify that the deployed MyHealingOasis asset contains the release contract.
+
+    Route-only probes missed the calendar incident because the core portal still
+    returned 200. A content contract catches code that was built locally but never
+    reached production, as well as a regression to deprecated destinations.
+    """
+    path = "/static/client-portal.html"
+    try:
+        status, body = fetch_text(f"{base_url.rstrip('/')}{path}")
+    except Exception as exc:  # noqa: BLE001
+        return [{"path": path, "status": 0, "error": str(exc)}]
+    if int(status) >= 400:
+        return [{"path": path, "status": int(status), "error": ""}]
+    failures = []
+    required = ("Upcoming Live Events", "/calendar/register", "calendar-summary",
+                "Private Appointments", "/appointment-proposals")
+    for marker in required:
+        if marker not in body:
+            failures.append({"path": path, "status": 200,
+                             "error": f"deployment marker missing: {marker}"})
+    lower = body.lower()
+    for deprecated in ("practicebetter.io", "skool.com", "clientclub.net"):
+        if deprecated in lower:
+            failures.append({"path": path, "status": 200,
+                             "error": f"deprecated destination present: {deprecated}"})
+    return failures
+
+
+def check_community_live_health(base_url, console_key, fetch=_fetch_json):
+    """Catch missing event rows/links even when the calendar asset deployed."""
+    if not console_key:
+        return []
+    # Existing run() unit tests intentionally stub every network probe.  Do not let
+    # this newly-added default-bound fetch escape to production during pytest; focused
+    # tests pass an explicit fake fetch and still exercise the full behavior.
+    if os.environ.get("PYTEST_CURRENT_TEST") and fetch is _fetch_json:
+        return []
+    path = "/api/console/community-live-health"
+    try:
+        payload = fetch(f"{base_url.rstrip('/')}{path}", console_key)
+    except Exception as exc:  # noqa: BLE001
+        return [{"path": path, "status": 0, "error": str(exc)}]
+    if payload.get("ok") is True:
+        return []
+    issues = payload.get("issues") or ["unexpected response"]
+    return [{"path": path, "status": 200, "error": "; ".join(map(str, issues))}]
+
+
 def format_alert(base_url, failures, flag_failures=()):
     """(subject, body) naming each dead path and each flag that must be on and is not.
     Plain text; no HTML. `flag_failures` defaults to empty so existing callers are
@@ -236,6 +293,8 @@ def run():
     Best-effort by contract: the caller is the personal-email cron, which must never
     fail because a check did."""
     failures = check_surfaces(BASE_URL)
+    failures += check_portal_contract(PORTAL_BASE_URL)
+    failures += check_community_live_health(BASE_URL, CONSOLE_SECRET)
     if CONSOLE_SECRET:
         flag_failures = check_flags(BASE_URL, CONSOLE_SECRET)
     else:

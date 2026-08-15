@@ -60,6 +60,22 @@ def test_index_lists_tests(tmp_path):
     assert b"Lewis Zardo" in r.data and b"/test/10" in r.data
 
 
+def test_view_portal_redirects_to_clients_stable_portal(tmp_path):
+    from dashboard.biofield_authoring import init_auth_tables, create_test
+    db = str(tmp_path / "chat_log.db")
+    with sqlite3.connect(db) as cx:
+        init_auth_tables(cx)
+        tid = create_test(cx, "Jane", "Jane@Example.com", "2026-08-08")
+    seen = {}
+    def fetch(email, name):
+        seen.update(email=email, name=name)
+        return "https://illtowell.com/portal/stable-token"
+    r = create_app(db, portal_link_fetch=fetch).test_client().get(f"/author/{tid}/view-portal")
+    assert r.status_code == 302
+    assert r.headers["Location"] == "https://illtowell.com/portal/stable-token"
+    assert seen == {"email": "jane@example.com", "name": "Jane"}
+
+
 def test_report_page_renders(tmp_path):
     db = str(tmp_path / "chat_log.db")
     _seed(db)
@@ -130,6 +146,41 @@ def test_authoring_flow(tmp_path):
     assert client.post(f"/author/{tid}/row/{rid}/delete", json={}).status_code == 200
     cat = client.get("/api/catalog?q=x")
     assert cat.status_code == 200 and "catalog" in cat.get_json()
+
+
+def test_new_test_header_creates_biofield_fee_line_once(tmp_path):
+    db = str(tmp_path / "chat_log.db")
+    _seed(db)
+    calls = []
+    client = create_app(
+        db,
+        invoice_latest=lambda email: {"ok": False},
+        invoice_paid_check=lambda email: {"paid": False},
+        invoice_create=lambda customer, lines, **kwargs:
+            calls.append((customer, lines)) or {"ok": True, "order_id": 41},
+    ).test_client()
+    tid = client.post("/author/new").headers["Location"].rsplit("/", 1)[-1]
+    payload = {"name": "New Client", "email": "new@x.com", "date": "2026-08-12"}
+    first = client.post(f"/author/{tid}/header", json=payload).get_json()
+    assert first["invoice"]["ok"] is True
+    assert calls[0][1] == [{"slug": "biofield-analysis", "qty": 1}]
+
+
+def test_new_test_header_uses_pending_prepayment_without_new_fee(tmp_path):
+    db = str(tmp_path / "chat_log.db")
+    _seed(db)
+    calls = []
+    client = create_app(
+        db,
+        invoice_latest=lambda email: {"ok": False},
+        invoice_paid_check=lambda email: {"paid": True, "order_id": 37},
+        invoice_create=lambda *args, **kwargs: calls.append(args),
+    ).test_client()
+    tid = client.post("/author/new").headers["Location"].rsplit("/", 1)[-1]
+    out = client.post(f"/author/{tid}/header", json={
+        "name": "Prepaid", "email": "prepaid@x.com", "date": "2026-08-12"}).get_json()
+    assert out["invoice"] == {"ok": True, "order_id": 37, "reason": "prepaid"}
+    assert calls == []
 
 
 def test_deepgram_token_endpoint(tmp_path):
@@ -520,8 +571,11 @@ def test_build_invoice_lines_include_fee_false():
     cat = [{"name": "Liver Support", "slug": "liver-support"}]
     built = biofield_invoice.build_invoice_lines(
         {"email": "x@x.com"}, [{"name": "Liver Support", "qty": 2}], cat, include_fee=False)
-    assert built["lines"] == [{"slug": "liver-support", "qty": 2,
-                                "source": "biofield"}]     # no biofield-analysis
+    # source='biofield' is load-bearing, not decoration: merge_manual_invoice_lines
+    # keys off it to tell authored-analysis remedies from invoice-editor additions,
+    # so assert it rather than loosening the comparison.
+    assert built["lines"] == [
+        {"slug": "liver-support", "qty": 2, "source": "biofield"}]     # no biofield-analysis
     # no remedies + no fee -> empty (caller skips the raise)
     assert biofield_invoice.build_invoice_lines({}, [], cat, include_fee=False)["lines"] == []
 
@@ -606,8 +660,10 @@ def test_handoff_route_raises_invoice(tmp_path, monkeypatch):
     assert j["invoice"]["ok"] is True and j["invoice"]["order_id"] == 77
     slugs = [l["slug"] for l in captured["lines"]]
     assert slugs[0] == "biofield-analysis"           # fee always first
+    # 2 bottles for twice-daily, carrying the authored-analysis provenance through
+    # order creation (see build_invoice_lines).
     assert {"slug": "liver-support", "qty": 2,
-            "source": "biofield"} in captured["lines"]   # 2 bottles for twice-daily
+            "source": "biofield"} in captured["lines"]
 
 
 def test_delete_only_remedy_can_remove_entire_layer(tmp_path):

@@ -5,6 +5,28 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import dashboard.console_next_action as na
 
 
+def test_appointment_proposal_is_first_and_directly_confirmable():
+    d = na.resolve_appointment({
+        "id": 17, "client_email": "steve@example.com",
+        "session_type": "biofield-consult",
+        "session_label": "Biofield Analysis Consultation",
+        "proposed_start": "2026-08-14T11:00:00", "status": "proposed",
+        "staff_confirmed": 0, "age_ts": "2026-08-14T10:00:00",
+    })
+    assert na.TYPE_PRIORITY[0] == "appointment"
+    assert d["label"] == "Confirm this time"
+    assert d["action"] == {
+        "kind": "post", "url": "/api/console/appointment-proposals/17/confirm",
+        "body": {}}
+    assert d["secondary"]["label"] == "Propose a different time"
+    assert "steve@example.com" in d["summary"]
+
+
+def test_confirmed_appointment_is_not_actionable():
+    assert na.resolve_appointment({"status": "confirmed", "staff_confirmed": 1}) == {
+        "actionable": False}
+
+
 def test_reveal_draft_offers_approve_send_plus_approve_only():
     d = na.resolve_biofield_reveal(
         {"id": 7, "email": "a@b.co", "scan_date": "2026-07-01",
@@ -89,7 +111,7 @@ def test_order_terminal_states_are_done():
 
 
 def test_order_first_in_priority():
-    assert na.TYPE_PRIORITY[0] == "order"
+    assert na.TYPE_PRIORITY[:2] == ["appointment", "order"]
 
 
 def test_invoice_unsent_offers_send():
@@ -126,7 +148,7 @@ def test_invoice_sent_and_paid_is_done():
 
 
 def test_invoice_priority_after_order():
-    assert na.TYPE_PRIORITY[:2] == ["order", "invoice"]
+    assert na.TYPE_PRIORITY[:3] == ["appointment", "order", "invoice"]
 
 
 def test_aggregate_orders_before_invoices(monkeypatch):
@@ -235,7 +257,7 @@ def test_household_holding_shows_due_date_and_singular():
 
 
 def test_household_priority_position():
-    assert na.TYPE_PRIORITY[:3] == ["order", "invoice", "household"]
+    assert na.TYPE_PRIORITY[:4] == ["appointment", "order", "invoice", "household"]
 
 
 def test_household_lister_marks_overdue(monkeypatch):

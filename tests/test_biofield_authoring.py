@@ -1,6 +1,7 @@
 """Increment 4a: writable authoring store. Authored tests render through the same
 report shape as the FMP snapshot, so schedule/narrative/audio reuse unchanged."""
 import sqlite3
+from dashboard import biofield_authoring as biofield_authoring
 from dashboard.biofield_authoring import (
     init_auth_tables, create_test, add_chain_row, update_chain_row,
     delete_chain_row, update_header, list_authored, authored_report,
@@ -12,6 +13,29 @@ def _cx(tmp_path):
     cx = sqlite3.connect(str(tmp_path / "chat_log.db"))
     init_auth_tables(cx)
     return cx
+
+
+def test_resolve_remedy_name_uses_postgres_table_catalog():
+    class FakePostgresConnection:
+        backend = "postgres"
+
+        def __init__(self):
+            self.queries = []
+
+        def execute(self, sql, params=()):
+            self.queries.append((sql, params))
+            return self
+
+        def fetchone(self):
+            return None
+
+    cx = FakePostgresConnection()
+
+    assert resolve_remedy_name(cx, "unlisted remedy") == "Unlisted Remedy"
+    assert len(cx.queries) == 1
+    assert "information_schema.tables" in cx.queries[0][0]
+    assert "sqlite_master" not in cx.queries[0][0]
+    assert cx.queries[0][1] == ("fmp_snap_products",)
 
 
 def test_create_author_and_render(tmp_path):

@@ -211,6 +211,7 @@
 
   var manifest = null;
   var state = 'intro';
+  var pendingTypedMessage = '';
   var replyFinished = false;
   var lastFiller = null, lastInter = null;
   var travelerTurns = 0, interjections = 0, turnsSinceInterjection = 99;
@@ -219,6 +220,7 @@
   var replyAudio = new Audio();
   var murmurAudio = new Audio();                 // soft "thinking" hum that bridges the processing gap
   var replyStarted = false, murmurTimer = null, lastMurmur = null;
+  var activeReplyController = null, replyWatchdog = null;
   // Reaction director + ambience (initialized after manifest loads, via module script)
   var director = null, ambience = null;
   var lastInputMs = 0;
@@ -362,13 +364,27 @@
   function streamReply(message) {
     replyFinished = false;
     var full = '';
+    activeReplyController = new AbortController();
+    var timedOut = false;
+    function armReplyWatchdog() {
+      if (replyWatchdog) clearTimeout(replyWatchdog);
+      replyWatchdog = setTimeout(function () {
+        timedOut = true;
+        if (activeReplyController) activeReplyController.abort();
+      }, 20000);
+    }
+    armReplyWatchdog();
     fetch('/begin/fireside/agent', {
       method: 'POST', headers: {'Content-Type': 'application/json'},
+      signal: activeReplyController.signal,
       body: JSON.stringify({message: message})
     }).then(function (r) {
+      if (!r.ok || !r.body) throw new Error('agent ' + r.status);
       var reader = r.body.getReader(), dec = new TextDecoder(), buf = '';
-      (function pump() {
+      return (function pump() {
         return reader.read().then(function (res) {
+          if (replyFinished) { try { reader.cancel(); } catch (_error) {} return; }
+          armReplyWatchdog();
           if (res.done) return finishReply(full, false);
           buf += dec.decode(res.value, {stream: true});
           var parts = buf.split('\n\n'); buf = parts.pop();
@@ -386,22 +402,35 @@
           return pump();
         });
       })();
-    }).catch(function () { finishReply('My thoughts wandered. Tell me again?', false); });
+    }).catch(function () {
+      finishReply(timedOut
+        ? 'I lost the thread while listening. Please tell me that again.'
+        : 'My thoughts wandered. Tell me again?', false);
+    });
   }
 
   function finishReply(text, hook) {
     if (replyFinished) return;
     replyFinished = true;
+    if (replyWatchdog) { clearTimeout(replyWatchdog); replyWatchdog = null; }
+    activeReplyController = null;
+    // The text is ready, so the thinking bridge is finished. Do not keep humming
+    // while a separate voice-render request waits or fails.
+    replyStarted = true;
+    stopMurmur();
     sub.textContent = text;
     // render the reply voice (parallel path); play when ready, then return to listening
+    var ttsController = new AbortController();
+    var ttsTimer = setTimeout(function () { ttsController.abort(); }, 12000);
     fetch('/chat/tts', {
       method: 'POST', headers: {'Content-Type': 'application/json'},
+      signal: ttsController.signal,
       body: JSON.stringify({text: text})
     }).then(function (r) {
       if (!r.ok) throw new Error('tts ' + r.status);
       return r.blob();
     }).then(function (blob) {
-      replyStarted = true; stopMurmur();          // reply audio is ready — the murmur's job is done
+      clearTimeout(ttsTimer);
       var url = URL.createObjectURL(blob);
       replyAudio.src = url; replyAudio.muted = false;
       speakingLoop(); state = 'speaking';
@@ -410,7 +439,7 @@
       replyAudio.onerror = function () { URL.revokeObjectURL(url); afterReply(text, hook); };
       replyAudio.play().catch(function () { afterReply(text, hook); });
     }).catch(function () {
-      replyStarted = true; stopMurmur();          // reply resolved (fallback) — stop bridging
+      clearTimeout(ttsTimer);
       // voice failed -> speechSynthesis fallback via TTS helper, then continue
       if (window.TTS && window.TTS.attachAndSpeak) { try { window.TTS.attachAndSpeak(sub, text); } catch (e) {} }
       setTimeout(function () { afterReply(text, hook); }, 600);
@@ -474,6 +503,22 @@
   function toWelcome() {
     if (state !== 'intro') return;
     state = 'intro-welcome';
+    var welcomeFinished = false;
+    var welcomeTimer = null;
+    function finishWelcome() {
+      if (welcomeFinished) return;
+      welcomeFinished = true;
+      if (welcomeTimer) clearTimeout(welcomeTimer);
+      stage.onended = null;
+      listening();
+      if (pendingTypedMessage) {
+        var queued = pendingTypedMessage;
+        pendingTypedMessage = '';
+        sendTurn(queued);
+      } else {
+        say.focus();
+      }
+    }
     var wv = rotate(manifest.intro_welcomes, 'fs_intro_welcome') || manifest.intro_welcome;
     var wa = rotate(manifest.intro_welcome_audios, 'fs_intro_welcome_audio') || manifest.intro_welcome_audio;
     if (wv) {
@@ -482,9 +527,12 @@
       if (wa) {
         try { replyAudio.src = wa; replyAudio.play().catch(function () {}); } catch (e) {}
       }
-      stage.onended = function () { listening(); say.focus(); };
-      stage.play().catch(function () { listening(); say.focus(); });
-    } else { listening(); say.focus(); }
+      stage.onended = finishWelcome;
+      stage.play().catch(finishWelcome);
+      // Some browsers can accept the video but never emit ended (codec/media
+      // pipeline stalls). Never leave the traveler trapped in intro-welcome.
+      welcomeTimer = setTimeout(finishWelcome, 8000);
+    } else { finishWelcome(); }
   }
 
   // --- Voice-first input (speak to Glendalf; typing stays as fallback) ---
@@ -586,7 +634,13 @@
   composer.addEventListener('submit', function (e) {
     e.preventDefault();
     var m = say.value.trim();
-    if (!m || state === 'intro' || state === 'intro-welcome' || state === 'pondering' || state === 'speaking' || state === 'ended') return;
+    if (!m || state === 'pondering' || state === 'speaking' || state === 'ended') return;
+    if (state === 'intro' || state === 'intro-welcome') {
+      pendingTypedMessage = m;
+      say.value = '';
+      armWelcome();
+      return;
+    }
     say.value = '';
     sendTurn(m);
   });

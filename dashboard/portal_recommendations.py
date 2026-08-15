@@ -3,9 +3,13 @@ section per source category; a product appears in each source it has an event fo
 that source's count (desc) then recency (desc); top_n shown + a remainder count. Hidden
 products excluded. Sections ordered by the registry."""
 from dashboard.recommendation_sources import RECOMMENDATION_SOURCES
+from dashboard.order_destination import destination_for
 
 
-def build_sections(product_sources, notes, section_state, resolve_product, *, top_n=5):
+PRIMARY_SECTION_ORDER = ("self", "condition", "scan")
+
+
+def build_sections(product_sources, notes, section_state, resolve_product, *, top_n=3):
     by_source = {}
     for p in product_sources:
         if p.get("hidden"):
@@ -18,7 +22,8 @@ def build_sections(product_sources, notes, section_state, resolve_product, *, to
                   "first_touch": s.get("first_touch", "")} for s in p["sources"]]
         for s in p["sources"]:
             by_source.setdefault(s["source"], []).append({
-                "product_key": pk, "name": prod.get("name") or pk, "url": prod.get("url") or "",
+                "product_key": pk, "name": prod.get("name") or pk,
+                "url": destination_for(pk),
                 "icons": icons,
                 "operator_note": n.get("operator_note", ""), "client_note": n.get("client_note", ""),
                 "_count": s["count"], "_recent": s.get("last_touch", "") or ""})
@@ -37,4 +42,10 @@ def build_sections(product_sources, notes, section_state, resolve_product, *, to
             # ALL products travel to the client — `shown` is only the initial-visible
             # hint; the "Show all N" affordance reveals the remainder with no re-fetch.
             "products": [{k: v for k, v in e.items() if not k.startswith("_")} for e in prods]})
+    priority = {key: index for index, key in enumerate(PRIMARY_SECTION_ORDER)}
+    registry_order = {key: index for index, key in enumerate(RECOMMENDATION_SOURCES)}
+    out.sort(key=lambda section: (
+        priority.get(section["source"], len(priority)),
+        registry_order.get(section["source"], len(registry_order)),
+    ))
     return out
