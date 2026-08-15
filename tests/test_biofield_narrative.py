@@ -155,6 +155,9 @@ def test_life_stress_prompt_describes_associated_and_therapeutic_essences(monkey
     assert "restore motivation, focus" in user
     assert "do not list ai-matched" in system.lower()
     assert "associated essence identifies the pattern" in system
+    assert "MUST name that associated essence" in system
+    assert "at least two of its supplied indications" in system
+    assert "Never omit either half" in system
 
 
 def test_essence_at_tail_triggers_indications_without_life_stress_head(monkeypatch):
