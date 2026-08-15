@@ -1,6 +1,7 @@
 """Increment 2: verbal-notes + narrative store, the Glen-voice prompt, and a
 generate function with an injectable LLM (no live API call in tests)."""
 import sqlite3
+import dashboard.biofield_narrative as narrative_mod
 from dashboard.biofield_narrative import (
     init_notes_tables, get_notes, save_notes, get_narrative, save_narrative,
     build_narrative_prompt, generate_narrative,
@@ -129,6 +130,31 @@ def test_prompt_uses_authored_stored_layer_not_per_remedy_display_position():
     assert user.count("- Layer 1 ") == 1
     assert "Layer 1 (ONE layer; 2 remedies): Spleen" in user
     assert "Layer 2 (ONE layer; 1 remedy): Liver" in user
+
+
+def test_life_stress_prompt_describes_associated_and_therapeutic_essences(monkeypatch):
+    descriptions = {
+        "Spectrolite Gem Elixir": "Indications: cloudy or outdated perspective on life.",
+        "Motivation Flower Essence (Fox) in Terrain Restore":
+            "Helps restore motivation, focus, and efficient action.",
+    }
+    monkeypatch.setattr(narrative_mod, "_catalog_description",
+                        lambda name: descriptions.get(name, ""))
+    report = {**_report(), "layers": [{
+        "layer": 1, "stored_layer": 5, "head": "Life Stress",
+        "most_affected": "Spectrolite Gem Elixir",
+        "remedy": "Motivation Flower Essence (Fox) in Terrain Restore",
+        "dosage": "10 drops", "frequency": "3 times a day", "timing": "before meals",
+    }]}
+    prompt = build_narrative_prompt(report, "")
+    user, system = prompt["user"], prompt["system"]
+
+    assert "LIFE STRESS ASSOCIATED ESSENCE / PATTERN: Spectrolite Gem Elixir" in user
+    assert "cloudy or outdated perspective" in user
+    assert "THERAPEUTIC ESSENCE: Motivation Flower Essence (Fox)" in user
+    assert "restore motivation, focus" in user
+    assert "do not list AI-matched" in system
+    assert "associated essence identifies the pattern" in system
 
 
 def test_video_script_roundtrip(tmp_path):

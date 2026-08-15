@@ -103,6 +103,11 @@ _SYSTEM = (
     "- OBSERVATION LANGUAGE ONLY: the body 'identified' / 'showed coherence with' / the remedy "
     "was 'detected as best suited'. NEVER 'probably', 'should', 'most likely', or any hedge.\n"
     "- Fold the clinician's verbal notes in naturally where they fit; do not quote them as a list.\n"
+    "- LIFE STRESS LAYERS: do not list AI-matched or 'supportive' essences. First describe the "
+    "indications of the LIFE STRESS ASSOCIATED ESSENCE (or named head of the causal chain), then "
+    "describe the healing qualities of the THERAPEUTIC ESSENCE actually prescribed as the remedy. "
+    "Keep those roles distinct; the associated essence identifies the pattern, while the therapeutic "
+    "essence is the treatment. Use only the catalog descriptions supplied in the layer block.\n"
     "- Plain English; translate any technical codes. No jargon, no emojis, no AI-pleasantry "
     "filler ('I hope you're well'). Open with substance.\n"
     "- GROUNDED VOICE: write the way a calm clinician speaks to a patient -- concrete, warm, "
@@ -211,13 +216,27 @@ def _user_block(report, notes, scan=None, profile=None):
         by_number[key].append(l)
     for display_ln, (_, layer_rows) in enumerate(grouped, 1):
         first = layer_rows[0]
+        head = (first.get("head") or "").strip()
+        affected = (first.get("most_affected") or "").strip()
         lines.append(
             f"- Layer {display_ln} (ONE layer; {len(layer_rows)} remed{'y' if len(layer_rows) == 1 else 'ies'}): "
-            f"{first.get('head') or ''} (most affected: {first.get('most_affected') or ''})")
-        for l in layer_rows:
+            f"{head} (most affected: {affected})")
+        is_life_stress = "life stress" in head.lower() or "psychoemotional" in head.lower()
+        if is_life_stress:
+            associated = affected if affected else head
+            associated_desc = _catalog_description(associated)
             lines.append(
-                f"  - remedy: {l.get('remedy') or ''}; dose: {l.get('dosage') or ''}"
-                f" {l.get('frequency') or ''} {l.get('timing') or ''}".rstrip())
+                f"  - LIFE STRESS ASSOCIATED ESSENCE / PATTERN: {associated}"
+                f"; indications: {associated_desc or '(catalog description unavailable)'}")
+        for l in layer_rows:
+            remedy = l.get("remedy") or ""
+            role = "THERAPEUTIC ESSENCE" if is_life_stress else "remedy"
+            qualities = _catalog_description(remedy) if is_life_stress else ""
+            lines.append(
+                f"  - {role}: {remedy}"
+                f"{('; healing qualities: ' + qualities) if qualities else ''}; "
+                f"dose: {l.get('dosage') or ''} {l.get('frequency') or ''} "
+                f"{l.get('timing') or ''}".rstrip())
     sb = _scan_block(scan)
     if sb:
         lines += ["", sb]
@@ -226,6 +245,36 @@ def _user_block(report, notes, scan=None, profile=None):
         lines += ["", pb]
     lines += ["", "CLINICIAN VERBAL NOTES (weave in naturally):", (notes or "(none)")]
     return "\n".join(lines)
+
+
+def _catalog_description(name):
+    """Best-effort catalog description for a named associated/remedy essence."""
+    if not (name or "").strip():
+        return ""
+    try:
+        import re
+        from dashboard.biofield_portal_publish import load_catalog
+        from dashboard.practitioner_portal import name_to_slug
+        catalog = load_catalog()
+        wanted = re.sub(r"[^a-z0-9]", "", name.lower())
+        exact_slug = next((s for s, p in catalog.items()
+                           if re.sub(r"[^a-z0-9]", "", ((p or {}).get("name") or "").lower())
+                           == wanted), None)
+        try:
+            slug = exact_slug or name_to_slug(name, catalog)
+        except Exception:
+            slug = exact_slug
+        if not slug:
+            # Practitioner-store resolution intentionally excludes some local-only
+            # Terrain Restore essences. Narrative context still needs their catalog
+            # descriptions, so fall back to an exact punctuation-insensitive name.
+            slug = next((s for s, p in catalog.items()
+                         if re.sub(r"[^a-z0-9]", "", ((p or {}).get("name") or "").lower())
+                         == wanted), None)
+        product = catalog.get(slug) if slug else None
+        return ((product or {}).get("description") or "").strip()
+    except Exception:
+        return ""
 
 
 def _system_with_scan(base, scan):
