@@ -3061,14 +3061,19 @@ function render(d, v){
       const price = (it.is_special && it.regular_price_cents)
         ? `<span class="reg">${esc(money(it.regular_price_cents))}</span><span class="sp">${esc(money(it.price_cents))}</span>`
         : `${esc(money(it.price_cents))}`;
-      rows += `<div class="reitem"><span class="nm">${esc(it.name||it.slug)}${it.qty>1?` ×${esc(it.qty)}`:""}</span><span class="pr">${price}</span></div>`;
+      rows += `<div class="reitem curated-order-item" data-slug="${esc(it.slug||"")}" data-qty="${esc(it.qty||1)}">
+        <span class="nm">${esc(it.name||it.slug)}${it.qty>1?` ×${esc(it.qty)}`:""}</span>
+        <span class="pr">${price}</span>
+        <button type="button" class="wishRemBtn curated-remove" aria-label="Remove ${esc(it.name||it.slug)} from this order">×</button>
+      </div>`;
     });
     const note = d.pricing_note ? `<p class="note small">${esc(d.pricing_note)}</p>` : "";
     html += `<div class="card"><h2>Order your remedies</h2>
       ${note}
       <div>${rows}</div>
       <p class="muted small" style="margin:.7rem 0 1rem">Shipping calculated at checkout.</p>
-      <button class="btn full" id="reorderBtn">Order my remedies</button>
+      <button class="btn full" id="reorderBtn">Review my order</button>
+      <div id="reorderReview" hidden></div>
       <p class="small err" id="reorderErr" hidden></p></div>`;
   }
 
@@ -3551,6 +3556,15 @@ function render(d, v){
 
   const btn = document.getElementById("reorderBtn");
   if(btn) btn.addEventListener("click", reorder);
+  app.querySelectorAll(".curated-remove").forEach(removeBtn => {
+    removeBtn.addEventListener("click", () => {
+      const row = removeBtn.closest(".curated-order-item");
+      if(row) row.remove();
+      const review = document.getElementById("reorderReview");
+      if(review){ review.hidden = true; review.innerHTML = ""; }
+      if(btn){ btn.dataset.reviewed = ""; btn.textContent = "Review my order"; }
+    });
+  });
 
   const raBtn = document.getElementById("recoAcceptBtn");
   if(raBtn) raBtn.addEventListener("click", acceptRecommendation);
@@ -5603,10 +5617,37 @@ async function dismissRecommendation(){
 async function reorder(){
   const btn = document.getElementById("reorderBtn");
   const err = document.getElementById("reorderErr");
-  err.hidden = true; btn.disabled = true; const label = btn.textContent; btn.textContent = "Setting up your order…";
+  const card = btn && btn.closest(".card");
+  const review = document.getElementById("reorderReview");
+  const rows = Array.from(card ? card.querySelectorAll(".curated-order-item") : []);
+  const items = rows.map(row => ({
+    slug: row.getAttribute("data-slug") || "",
+    qty: Math.max(1, parseInt(row.getAttribute("data-qty"), 10) || 1),
+    name: (row.querySelector(".nm") || {}).textContent || "Remedy",
+    price: (row.querySelector(".pr") || {}).textContent || "",
+  })).filter(it => it.slug);
+  err.hidden = true;
+  if(!items.length){
+    err.textContent = "Please keep at least one remedy in your order.";
+    err.hidden = false;
+    return;
+  }
+  if(btn.dataset.reviewed !== "1"){
+    review.innerHTML = `<div class="note" style="margin-top:1rem"><strong>Please confirm your order</strong>
+      ${items.map(it => `<div class="kv"><span>${esc(it.name)}</span><span>${esc(it.price)}</span></div>`).join("")}
+      <p class="small muted" style="margin:.7rem 0 0">These are the remedies that will appear at secure checkout. Shipping is calculated there.</p></div>`;
+    review.hidden = false;
+    btn.dataset.reviewed = "1";
+    btn.textContent = "Continue to secure checkout";
+    return;
+  }
+  btn.disabled = true; const label = btn.textContent; btn.textContent = "Setting up your order…";
   try{
     // One call: builds a live Stripe checkout at the client's portal price.
-    const c = await fetch(`/api/portal/${encodeURIComponent(token)}/checkout`, {method:"POST"});
+    const c = await fetch(`/api/portal/${encodeURIComponent(token)}/checkout`, {
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({items:items.map(it => ({slug:it.slug, qty:it.qty}))})
+    });
     const cj = await c.json();
     if(cj.stripe_url){ location.href = cj.stripe_url; return; }
     throw new Error(cj.error || "Checkout is temporarily unavailable. Please reach out to us and we’ll help.");
