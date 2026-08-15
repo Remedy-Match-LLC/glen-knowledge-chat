@@ -95,7 +95,7 @@ _SYSTEM = (
     "in order lets the chain unwind and the body self-correct.\n"
     "- One short plain-English paragraph per NUMBERED layer, top-down (Layer 1 = most "
     "recent/surface first, down to the deepest root). A numbered layer may contain multiple "
-    "remedies. Keep all remedies carrying the same layer number together in that one paragraph; "
+    "remedies. Keep all remedies carrying the same causal-layer identifier together in that one paragraph; "
     "never describe them as separate layers. Name every remedy and its dosing for that layer.\n"
     "- DRAW THE RELATIONSHIPS: explain how each layer connects to the others -- how a surface "
     "layer sits on or is driven by a deeper root -- so the chain reads as one connected story, "
@@ -198,16 +198,21 @@ def _user_block(report, notes, scan=None, profile=None):
     grouped = []
     by_number = {}
     for l in report.get("layers") or []:
-        ln = l.get("layer")
-        key = ln if ln is not None else "?"
+        # Authored reports give each remedy row its own display position in `layer`,
+        # while `stored_layer` preserves the actual card/layer shared by its remedies.
+        # FileMaker reports do not have `stored_layer`, and their `layer` is already
+        # the causal-layer identifier.
+        stored = l.get("stored_layer")
+        key = stored if stored is not None else l.get("layer")
+        key = key if key is not None else "?"
         if key not in by_number:
             by_number[key] = []
             grouped.append((key, by_number[key]))
         by_number[key].append(l)
-    for ln, layer_rows in grouped:
+    for display_ln, (_, layer_rows) in enumerate(grouped, 1):
         first = layer_rows[0]
         lines.append(
-            f"- Layer {ln} (ONE layer; {len(layer_rows)} remed{'y' if len(layer_rows) == 1 else 'ies'}): "
+            f"- Layer {display_ln} (ONE layer; {len(layer_rows)} remed{'y' if len(layer_rows) == 1 else 'ies'}): "
             f"{first.get('head') or ''} (most affected: {first.get('most_affected') or ''})")
         for l in layer_rows:
             lines.append(

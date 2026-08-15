@@ -108,11 +108,27 @@ def test_prompt_keeps_multiple_remedies_on_one_numbered_layer():
          "timing": "with food"},
     ]}
     p = build_narrative_prompt(report, "splenic infarct")
-    assert p["user"].count("- Layer 2 ") == 1
-    assert "Layer 2 (ONE layer; 2 remedies)" in p["user"]
+    assert p["user"].count("- Layer 1 ") == 1
+    assert "Layer 1 (ONE layer; 2 remedies)" in p["user"]
     assert "Fibrosolve" in p["user"] and "Fibrolysis Factors" in p["user"]
-    assert "same layer number" in p["system"]
+    assert "same causal-layer identifier" in p["system"]
     assert "never describe them as separate layers" in p["system"]
+
+
+def test_prompt_uses_authored_stored_layer_not_per_remedy_display_position():
+    report = {**_report(), "layers": [
+        {"layer": 1, "stored_layer": 4, "head": "Spleen", "most_affected": "Spleen",
+         "remedy": "Fibrosolve", "dosage": "1 cap", "frequency": "daily", "timing": ""},
+        {"layer": 2, "stored_layer": 4, "head": "Spleen", "most_affected": "Spleen",
+         "remedy": "Fibrolysis Factors", "dosage": "1 cap", "frequency": "daily", "timing": ""},
+        {"layer": 3, "stored_layer": 5, "head": "Liver", "most_affected": "Liver",
+         "remedy": "Liver Support", "dosage": "1 cap", "frequency": "daily", "timing": ""},
+    ]}
+    user = build_narrative_prompt(report, "")["user"]
+
+    assert user.count("- Layer 1 ") == 1
+    assert "Layer 1 (ONE layer; 2 remedies): Spleen" in user
+    assert "Layer 2 (ONE layer; 1 remedy): Liver" in user
 
 
 def test_video_script_roundtrip(tmp_path):
