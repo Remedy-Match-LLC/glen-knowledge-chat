@@ -9,6 +9,9 @@ def client(monkeypatch, tmp_path):
     monkeypatch.setattr(appmod, "LOG_DB", str(tmp_path / "chat_log.db"))
     monkeypatch.setattr(appmod, "CONSOLE_SECRET", "test-secret")
     monkeypatch.setattr(appmod, "send_evox_email", lambda *a, **k: ("console-log", None), raising=False)
+    monkeypatch.setenv("ZOOM_ACCOUNT_ID", "test-account")
+    monkeypatch.setenv("ZOOM_CLIENT_ID", "test-client")
+    monkeypatch.setenv("ZOOM_CLIENT_SECRET", "test-secret")
     monkeypatch.setattr("dashboard.zoom.get_token", lambda *a, **k: "tok")
     monkeypatch.setattr("dashboard.zoom.create_meeting",
                         lambda *a, **k: {"join_url": "https://zoom.us/j/mc", "meeting_id": "mc1", "start_url": "x"})

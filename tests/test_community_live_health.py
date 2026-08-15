@@ -75,6 +75,9 @@ def test_bootstrap_creates_distinct_registration_required_occurrences(monkeypatc
     path = tmp_path / "bootstrap.db"
     monkeypatch.setattr(appmod, "LOG_DB", str(path))
     monkeypatch.setattr(appmod, "CONSOLE_SECRET", "secret")
+    monkeypatch.setenv("ZOOM_ACCOUNT_ID", "test-account")
+    monkeypatch.setenv("ZOOM_CLIENT_ID", "test-client")
+    monkeypatch.setenv("ZOOM_CLIENT_SECRET", "test-secret")
     monkeypatch.setattr("dashboard.zoom.get_token", lambda *a, **k: "token")
     calls = []
     def fake_create(token, **kwargs):
