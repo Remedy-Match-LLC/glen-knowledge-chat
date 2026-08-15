@@ -171,6 +171,11 @@
     background: var(--glen);
     color: #fff;
   }
+  .catalog-search { margin: .25rem 0 .5rem; }
+  .catalog-search label { display: block; color: var(--muted); font-size: .85rem; margin-bottom: .35rem; }
+  .catalog-search input { width: 100%; padding: .65rem .75rem; border: 1px solid var(--border); border-radius: 8px; font: inherit; color: var(--ink); background: var(--surface); }
+  .catalog-search-meta { color: var(--muted); font-size: .8rem; margin: .4rem 0; }
+  .catalog-empty { color: var(--muted); padding: 1rem 0; text-align: center; }
 
   /* Cart summary */
   .cart-items { margin-bottom: .75rem; }
@@ -435,6 +440,11 @@
     <!-- Product list -->
     <div class="card">
       <div class="card-title">Available formulations</div>
+      <div class="catalog-search">
+        <label for="catalog-search">Find a formulation</label>
+        <input id="catalog-search" type="search" placeholder="Search by product name…" autocomplete="off" aria-describedby="catalog-search-meta">
+      </div>
+      <div id="catalog-search-meta" class="catalog-search-meta" aria-live="polite"></div>
       <div id="product-list"></div>
     </div>
 
@@ -611,6 +621,7 @@
   var practiceName = '';       // for the rewards line
   var lastPointsEmail = '';    // dedupe balance fetches
   var selectedTierKey = '1mo'; // Continuous Care term selector (default Monthly)
+  var catalogQuery = '';
 
   function $(sel) { return document.querySelector(sel); }
   function show(id) { var el = document.getElementById(id); if (el) el.classList.remove('hidden'); }
@@ -701,6 +712,10 @@
       document.getElementById('sub').textContent =
         'Professional-grade formulations recommended by ' + (((data.branding || {}).practice_name) || pName) + ', shipped directly to you.';
       renderProducts();
+      document.getElementById('catalog-search').addEventListener('input', function () {
+        catalogQuery = normalizeSearch(this.value);
+        renderProducts();
+      });
       wireForm();
       show('main');
       if (data.chat_enabled) {
@@ -713,9 +728,25 @@
     });
 
   // ── Render product list ───────────────────────────────────────────────────────
+  function normalizeSearch(value) {
+    return String(value || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+  }
+
   function renderProducts() {
     var list = document.getElementById('product-list');
-    list.innerHTML = catalog.map(function (p) {
+    var visible = catalog.filter(function (p) {
+      if (!catalogQuery) return true;
+      return normalizeSearch(p.name + ' ' + p.slug).indexOf(catalogQuery) !== -1;
+    });
+    var meta = document.getElementById('catalog-search-meta');
+    meta.textContent = catalogQuery
+      ? visible.length + (visible.length === 1 ? ' formulation found' : ' formulations found')
+      : catalog.length + (catalog.length === 1 ? ' formulation available' : ' formulations available');
+    if (!visible.length) {
+      list.innerHTML = '<div class="catalog-empty">No matching formulations. Try another product name.</div>';
+      return;
+    }
+    list.innerHTML = visible.map(function (p) {
       var inCart = (cart[p.slug] || 0) > 0;
       return '<div class="product-row" id="pr-' + esc(p.slug) + '">'
         + '<span class="product-name">' + esc(p.name) + '</span>'

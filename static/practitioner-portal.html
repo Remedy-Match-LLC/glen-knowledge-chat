@@ -35,6 +35,13 @@
   input{ padding:9px 10px; border:1px solid var(--border); border-radius:8px; font-size:14px; font-family:inherit; background:var(--surface-2); color:var(--cream); }
   input::placeholder{ color:#6f7d6f; }
   input.slug{ flex:1; } input.qty{ width:80px; }
+  .product-lookup{ position:relative; flex:1; }
+  .product-lookup input{ width:100%; }
+  .product-results{ position:absolute; z-index:20; left:0; right:0; max-height:260px; overflow:auto; background:var(--surface-2); border:1px solid var(--border); border-radius:8px; box-shadow:0 10px 24px rgba(0,0,0,.28); }
+  .product-result{ display:flex; justify-content:space-between; gap:12px; align-items:center; width:100%; padding:10px 12px; text-align:left; background:transparent; color:var(--cream); border:0; border-bottom:1px solid var(--border); border-radius:0; }
+  .product-result:last-child{ border-bottom:0; }
+  .product-result:hover,.product-result:focus{ background:var(--surface); }
+  .product-result small{ color:var(--muted); }
   input[type=range]{ accent-color:var(--gold); height:6px; padding:0; background:transparent; border:0; }
   /* Pricing panel (practitioner-set patient discount dials) */
   #pricing-panel .kicker{ font-size:12px; font-weight:700; letter-spacing:.03em; color:var(--gold); }
@@ -313,9 +320,12 @@
     <h2>Your personal order</h2>
     <div class="muted" style="font-size:13px;margin:4px 0 12px">Order for yourself at your certification-level price, shipped to you. Completing more certification modules lowers your per-bottle price. Wellness Credit covers up to half of a product order. Personal orders are taxed.</div>
     <div class="row">
-      <input class="slug" id="slug" placeholder="Product slug (e.g. bone-builder)">
+      <div class="product-lookup">
+        <label for="product-search" class="muted" style="display:block;font-size:13px;margin-bottom:4px">Add a product</label>
+        <input id="product-search" type="search" placeholder="Search by product name…" autocomplete="off" aria-controls="product-results" aria-expanded="false">
+        <div id="product-results" class="product-results" style="display:none" role="listbox"></div>
+      </div>
       <input class="qty" id="qty" type="number" min="1" value="1">
-      <button id="add">Add</button>
     </div>
     <table id="cart"><thead><tr><th>Product</th><th>Qty</th><th></th></tr></thead><tbody></tbody></table>
     <div id="quote"></div>
@@ -1608,7 +1618,9 @@ function render(d){
     tr.innerHTML = '<td>'+it.slug+'</td><td>'+it.qty+'</td><td><button class="ghost rm" data-slug="'+it.slug+'">remove</button></td>';
     tb.appendChild(tr);
   });
-  tb.querySelectorAll('.rm').forEach(function(b){ b.addEventListener('click', function(){ setLine(b.getAttribute('data-slug'), 0); }); });
+  tb.querySelectorAll('.rm').forEach(function(b){ b.addEventListener('click', function(){
+    setLine(b.getAttribute('data-slug'), 0).catch(function(err){ $('msg').textContent = err.message; });
+  }); });
   var q = d.quote;
   if(q){
     $('quote').innerHTML = '<div class="muted" style="font-size:13px;margin-top:10px">'+q.total_bottles+' bottles · '+money(q.blended_unit_price_cents)+' per bottle</div>';
@@ -1807,13 +1819,63 @@ $('qualificationForm').addEventListener('submit', function(ev){
     .finally(function(){ $('qualificationSave').disabled = false; });
 });
 function setLine(slug, qty){
-  fetch('/api/practitioner/cart', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({token:TOKEN, slug:slug, qty:qty})})
-    .then(function(r){ return r.json(); }).then(function(d){ if(d.ok) render(d); });
+  return fetch('/api/practitioner/cart', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({token:TOKEN, slug:slug, qty:qty})})
+    .then(function(r){ return r.json(); }).then(function(d){
+      if(!d.ok) throw new Error(d.error || 'Could not add that product.');
+      render(d);
+      return d;
+    });
 }
-$('add').addEventListener('click', function(){
-  var slug = $('slug').value.trim(); var qty = parseInt($('qty').value,10)||1;
-  if(!slug) return; setLine(slug, qty); $('slug').value='';
+var productSearchTimer = null;
+function hideOrderProductResults(){
+  $('product-results').style.display = 'none';
+  $('product-results').innerHTML = '';
+  $('product-search').setAttribute('aria-expanded', 'false');
+}
+function addOrderProduct(product){
+  var qty = Math.max(1, parseInt($('qty').value, 10) || 1);
+  $('msg').textContent = 'Adding '+product.name+'…';
+  setLine(product.slug, qty).then(function(){
+    $('product-search').value = '';
+    hideOrderProductResults();
+    $('msg').textContent = product.name+' added to your order.';
+  }).catch(function(err){ $('msg').textContent = err.message; });
+}
+function renderOrderProductResults(products){
+  var host = $('product-results');
+  host.innerHTML = '';
+  (products || []).forEach(function(product){
+    var button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'product-result';
+    button.setAttribute('role', 'option');
+    button.innerHTML = '<span>'+escapeHtml(product.name)+'</span><small>Add</small>';
+    button.addEventListener('click', function(){ addOrderProduct(product); });
+    host.appendChild(button);
+  });
+  if(!(products || []).length){
+    var empty = document.createElement('div');
+    empty.className = 'muted'; empty.style.padding = '10px 12px';
+    empty.textContent = 'No matching products found.';
+    host.appendChild(empty);
+  }
+  host.style.display = 'block';
+  $('product-search').setAttribute('aria-expanded', 'true');
+}
+$('product-search').addEventListener('input', function(){
+  var query = this.value.trim();
+  clearTimeout(productSearchTimer);
+  if(query.length < 2){ hideOrderProductResults(); return; }
+  productSearchTimer = setTimeout(function(){
+    fetch('/api/practitioner/catalog?token='+encodeURIComponent(TOKEN)+'&q='+encodeURIComponent(query))
+      .then(function(r){ return r.json(); })
+      .then(function(d){
+        if(d.ok && $('product-search').value.trim() === query) renderOrderProductResults(d.products);
+      })
+      .catch(function(){ $('msg').textContent = 'Could not search products. Please try again.'; hideOrderProductResults(); });
+  }, 200);
 });
+document.addEventListener('click', function(ev){ if(!ev.target.closest('.product-lookup')) hideOrderProductResults(); });
 $('checkout').addEventListener('click', function(){
   var method = (document.querySelector('input[name=pm]:checked')||{}).value || 'zelle';
   var street=($('ship-street').value||'').trim(), city=($('ship-city').value||'').trim(),
