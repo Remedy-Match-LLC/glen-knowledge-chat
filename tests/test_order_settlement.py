@@ -100,6 +100,14 @@ def test_membership_line_dispatched_only_when_line_present():
     assert d2.calls == ["points", "referral", "membership_line"]
     assert "membership_line" in out["settled"]
 
+def test_paid_300_biofield_line_dispatches_member_benefit():
+    order = {"id": 3, "email": "bf@b.com",
+             "items": [{"slug": "biofield-analysis", "unit_cents": 30000,
+                        "line_cents": 30000}]}
+    d = _Deps(); out = _run("retail", d, order=order)
+    assert d.calls == ["points", "referral", "membership_line"]
+    assert "membership_line" in out["settled"]
+
 def test_membership_grant_that_raises_lands_in_skipped():
     d = _Deps(raise_on={"membership_line"})
     out = _run("retail", d, order=_MEMBERSHIP_ORDER)
