@@ -373,7 +373,7 @@ def test_per_client_tabs_and_invoice_view_page(tmp_path):
 
     ed = client.get("/author/" + tid).data.decode()
     assert ("/author/" + tid + "/invoice-view") in ed       # Invoice tab target
-    for lbl in (">Edit<", ">Report<", ">Invoice<", ">Portal<"):
+    for lbl in (">Edit<", ">Report<", ">Invoice<", ">View Client Portal<", ">Edit Portal<"):
         assert lbl in ed
 
     rep = client.get("/test/" + tid).data.decode()
@@ -520,7 +520,8 @@ def test_build_invoice_lines_include_fee_false():
     cat = [{"name": "Liver Support", "slug": "liver-support"}]
     built = biofield_invoice.build_invoice_lines(
         {"email": "x@x.com"}, [{"name": "Liver Support", "qty": 2}], cat, include_fee=False)
-    assert built["lines"] == [{"slug": "liver-support", "qty": 2}]     # no biofield-analysis
+    assert built["lines"] == [{"slug": "liver-support", "qty": 2,
+                                "source": "biofield"}]     # no biofield-analysis
     # no remedies + no fee -> empty (caller skips the raise)
     assert biofield_invoice.build_invoice_lines({}, [], cat, include_fee=False)["lines"] == []
 
@@ -605,4 +606,70 @@ def test_handoff_route_raises_invoice(tmp_path, monkeypatch):
     assert j["invoice"]["ok"] is True and j["invoice"]["order_id"] == 77
     slugs = [l["slug"] for l in captured["lines"]]
     assert slugs[0] == "biofield-analysis"           # fee always first
-    assert {"slug": "liver-support", "qty": 2} in captured["lines"]   # 2 bottles for twice-daily
+    assert {"slug": "liver-support", "qty": 2,
+            "source": "biofield"} in captured["lines"]   # 2 bottles for twice-daily
+
+
+def test_delete_only_remedy_can_remove_entire_layer(tmp_path):
+    from dashboard.biofield_authoring import init_auth_tables, create_test, add_chain_row
+    db = str(tmp_path / "chat_log.db")
+    with sqlite3.connect(db) as cx:
+        init_auth_tables(cx)
+        tid = create_test(cx, "Pt", "pt@x.com", "2026-08-04")
+        rid = add_chain_row(cx, tid, 1, "Head", "Tail", "Liver Support")
+    client = create_app(db).test_client()
+
+    response = client.post(f"/author/{tid}/row/{rid}/delete",
+                           json={"remove_layer": True, "layer_rids": [rid]})
+
+    assert response.get_json()["ok"] is True
+    with sqlite3.connect(db) as cx:
+        assert cx.execute("SELECT 1 FROM biofield_auth_chain WHERE id=?", (rid,)).fetchone() is None
+
+
+def test_delete_layer_returns_covered_stress_to_unbalanced(tmp_path):
+    from dashboard.biofield_authoring import init_auth_tables, create_test, add_chain_row
+    from dashboard import biofield_stress as st
+    db = str(tmp_path / "chat_log.db")
+    with sqlite3.connect(db) as cx:
+        init_auth_tables(cx)
+        tid = create_test(cx, "Pt", "pt@x.com", "2026-08-04")
+        rid = add_chain_row(cx, tid, 1, "Head", "Tail", "Liver Support")
+        st.add_stress(cx, tid, "Loose ends", source="scan", balance="required")
+        sid = cx.execute("SELECT id FROM biofield_auth_stress WHERE test_id=?", (int(tid[1:]),)).fetchone()[0]
+        assert st.cover_stress(cx, tid, sid, [rid]) == "loose ends"
+    client = create_app(db).test_client()
+
+    response = client.post(f"/author/{tid}/row/{rid}/delete",
+                           json={"remove_layer": True, "layer_rids": [rid]})
+
+    assert response.get_json()["ok"] is True
+    with sqlite3.connect(db) as cx:
+        data = st.list_stresses(cx, tid, [])
+        assert {s["code"] for s in data["active"]} == {"loose ends"}
+        assert {s["code"] for s in data["unassigned"]} == {"loose ends"}
+        assert cx.execute("SELECT 1 FROM biofield_auth_remedy_coverage WHERE test_id=?",
+                          (int(tid[1:]),)).fetchone() is None
+
+
+def test_delete_layer_keeps_coverage_when_remedy_exists_on_another_layer(tmp_path):
+    from dashboard.biofield_authoring import init_auth_tables, create_test, add_chain_row
+    from dashboard import biofield_stress as st
+    db = str(tmp_path / "chat_log.db")
+    with sqlite3.connect(db) as cx:
+        init_auth_tables(cx)
+        tid = create_test(cx, "Pt", "pt@x.com", "2026-08-04")
+        rid1 = add_chain_row(cx, tid, 1, "Head one", "", "Liver Support")
+        rid2 = add_chain_row(cx, tid, 2, "Head two", "", "Liver Support")
+        st.add_stress(cx, tid, "Loose ends", source="scan", balance="required")
+        sid = cx.execute("SELECT id FROM biofield_auth_stress WHERE test_id=?", (int(tid[1:]),)).fetchone()[0]
+        st.cover_stress(cx, tid, sid, [rid1])
+    client = create_app(db).test_client()
+
+    client.post(f"/author/{tid}/row/{rid1}/delete",
+                json={"remove_layer": True, "layer_rids": [rid1]})
+
+    with sqlite3.connect(db) as cx:
+        data = st.list_stresses(cx, tid, [{"layer": 1, "head": "Head two",
+                                          "remedy": "Liver Support", "rid": rid2}])
+        assert {s["code"] for s in data["balanced"]} == {"loose ends"}

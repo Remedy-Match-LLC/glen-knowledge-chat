@@ -237,14 +237,16 @@ def _client_tabs(active, tid, email=""):
     base = os.environ.get("PUBLIC_BASE_URL", "https://illtowell.com").rstrip("/")
     secret = os.environ.get("CONSOLE_SECRET", "")
     email = (email or "").strip()
-    portal = base + "/console/biofield-portal"
+    portal = "/author/" + tid_s + "/view-portal"
+    editor = base + "/console/biofield-portal"
     q = ([("email=" + _q(email))] if email else []) + ([("key=" + _q(secret))] if secret else [])
     if q:
-        portal += "?" + "&".join(q)
+        editor += "?" + "&".join(q)
     items = (("edit", "Edit", "/author/" + tid_s),
              ("report", "Report", "/test/" + tid_s),
              ("invoice", "Invoice", "/author/" + tid_s + "/invoice-view"),
-             ("portal", "Portal", portal))
+             ("portal", "View Client Portal", portal),
+             ("portal-edit", "Edit Portal", editor))
     tabs = "".join(
         f"<a class=\"{'active' if k == active else ''}\" href=\"{_e(url)}\">{lbl}</a>"
         for k, lbl, url in items)
@@ -500,6 +502,9 @@ async function loadE4L(){try{setE4L(await (await fetch('/author/__TID__/e4l')).j
 function setStress(j){if(j&&j.html!==undefined)document.getElementById('stresspanel').innerHTML=j.html}
 async function loadStress(){try{setStress(await (await fetch('/author/__TID__/stresses')).json())}catch(e){}}
 async function balanceStress(sid,val){await post('/author/__TID__/stress/'+sid+'/balance',{value:val});loadStress()}
+async function balanceToLayer(sid,sel){var rids=(sel.value||'').split(',').filter(Boolean);
+ if(!rids.length){astat('Select a layer first.');return}
+ await post('/author/__TID__/stress/'+sid+'/cover',{rids:rids});location.reload()}
 async function consolidateBalances(source,sel){var target=Number(sel.value||0);
  if(!target){astat('Choose the destination layer first.');return}
  if(!confirm('Move all balanced stresses from layer '+source+' to layer '+target+'?'))return;
@@ -566,8 +571,14 @@ async function checkE4L(){
 async function addRow(){var b=rowVals('new');if(!b.head&&!b.remedy){astat('Enter a stress and a remedy.');return}
  await post('/author/__TID__/row',b);location.reload()}
 async function saveRow(rid){await post('/author/__TID__/row/'+rid,rowVals('r'+rid));astat('Row saved.')}
-async function delRow(rid){if(!confirm('Delete this row?'))return;
- await post('/author/__TID__/row/'+rid+'/delete',{});location.reload()}
+async function delRow(rid,removeLayer){
+ var question=removeLayer?'Remove this entire layer?':'Remove this remedy? The layer will remain.';
+ if(!confirm(question))return;
+ var line=document.querySelector('.rline[data-rid="'+rid+'"]'),card=line&&line.closest('.lcard');
+ rememberView(card);
+ var layerRids=card?(card.dataset.rids||'').split(',').filter(Boolean):[String(rid)];
+ await post('/author/__TID__/row/'+rid+'/delete',
+  {remove_layer:!!removeLayer,layer_rids:layerRids});location.reload()}
 // Fill dose/freq/timing from the catalog. Default: only fill EMPTY fields, so
 // correcting a remedy's name never overwrites a dose already captured from the
 // transcript. force=true (the explicit "dose" button) refreshes all fields.
@@ -640,11 +651,44 @@ async function saveLayer(gid,btn){var card=document.querySelector('[data-gid="'+
  for(var i=0;i<rids.length;i++)await post('/author/__TID__/row/'+rids[i],{head:head,most_affected:most});
  setSaved(btn);pulse(card);astat('Layer saved.')}
  finally{if(btn)btn.disabled=false}}
+async function savePendingEditor(){
+ await post('/author/__TID__/header',{name:val('h_name'),email:val('h_email'),date:val('h_date')});
+ var cards=[].slice.call(document.querySelectorAll('.lcard[data-rids]'));
+ for(var ci=0;ci<cards.length;ci++){var card=cards[ci],gid=card.dataset.gid;
+  var rids=(card.dataset.rids||'').split(',').filter(Boolean);
+  for(var ri=0;ri<rids.length;ri++){var rid=rids[ri],p='r'+rid;
+   await post('/author/__TID__/row/'+rid,{head:val(gid+'_head'),most_affected:val(gid+'_most'),
+    remedy:val(p+'_remedy'),dosage:val(p+'_dosage'),frequency:val(p+'_frequency'),timing:val(p+'_timing')})}}
+}
 async function addRemedy(gid){var rem=val(gid+'_nr_remedy');if(!rem){astat('Enter a remedy.');return}
- var layer=val(gid+'_layer');if(!layer)layer=document.querySelectorAll('.lcard').length;
- await post('/author/__TID__/row',{layer:layer,head:val(gid+'_head'),most_affected:val(gid+'_most'),
+ var layer=val(gid+'_layer');if(!layer){var nums=[].slice.call(document.querySelectorAll('.lcard[data-rids] input[id$="_layer"]'))
+  .map(function(e){return Number(e.value)||0});layer=(nums.length?Math.max.apply(null,nums):0)+1}
+ var card=document.querySelector('.lcard[data-gid="'+gid+'"]');rememberView(card);
+ var anchorRid=card&&((card.dataset.rids||'').split(',').filter(Boolean)[0]||'');
+ astat('Saving pending edits…');await savePendingEditor();
+ await post('/author/__TID__/row',{layer:layer,anchor_rid:anchorRid,head:val(gid+'_head'),most_affected:val(gid+'_most'),
   remedy:rem,dosage:val(gid+'_nr_dosage'),frequency:val(gid+'_nr_frequency'),timing:val(gid+'_nr_timing')});
  location.reload()}
+var _viewKey='biofield-view-__TID__';
+function rememberView(card){
+ var anchor=card&&card.querySelector('.rline[data-rid]');
+ var state={rid:anchor?anchor.dataset.rid:'',top:card?card.getBoundingClientRect().top:null,y:window.scrollY};
+ try{sessionStorage.setItem(_viewKey,JSON.stringify(state));history.scrollRestoration='manual'}catch(e){}}
+function rememberScroll(){
+ try{var raw=sessionStorage.getItem(_viewKey),state=raw?JSON.parse(raw):{};
+  state.y=window.scrollY;sessionStorage.setItem(_viewKey,JSON.stringify(state));
+  history.scrollRestoration='manual'}catch(e){}}
+window.addEventListener('beforeunload',rememberScroll);
+function restoreView(){
+ var raw=null;try{history.scrollRestoration='manual';raw=sessionStorage.getItem(_viewKey);
+  sessionStorage.removeItem(_viewKey)}catch(e){}
+ if(!raw)return;
+ var state;try{state=JSON.parse(raw)}catch(e){return}
+ function place(){var anchor=state.rid&&document.querySelector('.rline[data-rid="'+state.rid+'"]');
+  var card=anchor&&anchor.closest('.lcard');
+  if(card&&state.top!=null)window.scrollBy(0,card.getBoundingClientRect().top-state.top);
+  else if(state.y!=null)window.scrollTo(0,state.y)}
+ requestAnimationFrame(function(){place();setTimeout(place,80);setTimeout(place,300)})}
 // Generic drag-reorder: works for both the full cards (#chaintbl) and the left
 // layer rail (#layerrail). Only reorders within one container; the trailing
 // "new layer" card and anything marked data-nodrop are inert.
@@ -760,7 +804,7 @@ async function captureStresses(){rstat('Capturing stresses from transcript…');
 async function mineProfile(){rstat('Mining client profile for stresses…');
  var j=await post('/author/__TID__/mine-profile',{});
  if(j.error){rstat('Mine profile: '+j.error);return}
- rstat('Added '+j.added+' profile stress(es).');loadStress()}
+ rstat(j.added?'Added '+j.added+' profile stress(es).':'No new clinical stresses found.');loadStress()}
 async function mineComms(){rstat('Mining recent comms for stresses…');
  var j=await post('/author/__TID__/mine-comms',{});
  if(j.error){rstat('Mine comms: '+j.error);return}
@@ -819,6 +863,7 @@ loadStress();
 suggestPreserved();
 setPhase(1);
 restoreDepth();
+restoreView();
 </script>"""
 
 
@@ -922,6 +967,7 @@ def group_layers(layers):
         g = by_head.get(key) if key is not None else None
         if g is None:
             g = {"head": head, "most_affected": (l.get("most_affected") or "").strip(),
+                 "stored_layer": l.get("stored_layer", l.get("layer")),
                  "zone": l.get("zone") or "top", "rows": []}
             groups.append(g)
             if key is not None:
@@ -966,7 +1012,7 @@ def _xwrap(inp):
             "title='Show full text'>&#8690;</button><div class=full></div></span>")
 
 
-def _remedy_line(l, depth_values):
+def _remedy_line(l, depth_values, only_remedy=False):
     rid = _e(str(l.get("rid") or ""))
     p = "r" + rid
     g = lambda k: _e(l.get(k) or "")
@@ -976,6 +1022,12 @@ def _remedy_line(l, depth_values):
     depth = ("<span class=dcol><span class=food>depth</span> "
              + _depth_select(l.get("rid"), "stress", l.get("stress_depth"), depth_values)
              + _depth_select(l.get("rid"), "remedy", l.get("remedy_depth"), depth_values) + "</span>")
+    remedy = (l.get("remedy") or "").strip()
+    remove_buttons = (f"<button class='btn ghost' onclick=\"delRow('{rid}',false)\">Remove remedy</button>"
+                      if remedy else "")
+    if only_remedy:
+        remove_buttons += (f"<button class='btn ghost danger' "
+                           f"onclick=\"delRow('{rid}',true)\">Remove layer</button>")
     return (f"<div class='rline{unconf}' data-rid=\"{rid}\">"
             f"<input id=\"{p}_remedy\" class=rem list=catalog value=\"{g('remedy')}\" "
             f"title=\"{g('remedy')}\" oninput=\"dirtyRow(this)\" onchange=\"fillDose('{p}')\">"
@@ -987,7 +1039,7 @@ def _remedy_line(l, depth_values):
             f"<button class=chip onclick=\"suggestFor(this,'{p}')\">uses</button>"
             f"{confirm_btn}"
             f"<button class='btn savebtn' data-dirty=Update onclick=\"saveRemedy('{rid}',this)\">Save</button>"
-            f"<button class='btn ghost' onclick=\"delRow('{rid}')\">Del</button>"
+            + remove_buttons +
             f"<span id=\"{p}_sug\" class=food style='flex-basis:100%'></span></div>")
 
 
@@ -1036,12 +1088,16 @@ def _render_chain_cards(report, depth_values, covered_by_layer=None):
         gid = "g" + str(gi)
         rids = ",".join(str(r.get("rid")) for r in g["rows"] if r.get("rid") is not None)
         he, me, n = _e(g["head"]), _e(g["most_affected"]), g["layer"]
-        lines = "".join(_remedy_line(r, depth_values) for r in g["rows"])
+        stored_layer = _e(str(g.get("stored_layer") or n))
+        remedy_rows = [r for r in g["rows"] if (r.get("remedy") or "").strip()]
+        only_remedy = len(remedy_rows) <= 1
+        lines = "".join(_remedy_line(r, depth_values, only_remedy=only_remedy)
+                        for r in g["rows"])
         head_in = _xwrap(f'<input id={gid}_head list=vocab value="{he}" title="{he}" oninput="dirtyLayer(this)">')
         tail_in = _xwrap(f'<input id={gid}_most list=vocab value="{me}" title="{me}" oninput="dirtyLayer(this)">')
-        source_layer = int(g["rows"][0].get("layer") or n)
+        source_layer = int(g.get("stored_layer") or n)
         targets = "".join(
-            f"<option value='{int(other['rows'][0].get('layer') or other['layer'])}'>"
+            f"<option value='{int(other.get('stored_layer') or other['layer'])}'>"
             f"Layer {other['layer']}</option>"
             for other in groups if other["layer"] != n)
         consolidate = (
@@ -1057,7 +1113,7 @@ def _render_chain_cards(report, depth_values, covered_by_layer=None):
             f"<span class=lnum>{n}</span><div class=htfields>"
             f"<label>Head</label>{head_in}"
             f"<label>Tail</label>{tail_in}"
-            f"</div><input type=hidden id={gid}_layer value=\"{n}\"></div>"
+            f"</div><input type=hidden id={gid}_layer value=\"{stored_layer}\"></div>"
             + lines + _covered_html(covered_by_layer.get(n)) + _new_remedy_line(gid, "Add remedy") +
             f"<div class=lfoot><span class=food>Layer {n}</span>{consolidate}"
             f"<button class='btn ghost savebtn' data-dirty='Update layer' "
@@ -1382,14 +1438,26 @@ def render_layer_candidates_panel(layer_candidates):
 
 def render_stress_panel(data):
     data = data or {}
+    layer_options = "<option value=''>Select layer…</option>"
+    for layer in data.get("by_layer") or []:
+        rids = ",".join(str(r) for r in layer.get("rids") or [])
+        label = f"#{int(layer.get('layer') or 0)} — {(layer.get('head') or '(no head)').strip()}"
+        layer_options += f"<option value='{_e(rids)}'>{_e(label)}</option>"
     def _row(s, active, drag=False):
         sid = int(s.get("id") or 0)
         tag = _e(s.get("balance") or "")
         by = _e(s.get("balanced_by") or "")
         bytxt = f" <span class=food>&middot; {by}</span>" if (not active and by) else ""
-        btn = (f"<button class='btn ghost' style='font-size:11px' "
-               f"onclick=\"balanceStress({sid},{'true' if active else 'false'})\">"
-               f"{'Balance' if active else 'Reactivate'}</button>")
+        if drag:
+            select_id = f"stress-layer-{sid}"
+            btn = (f"<select id='{select_id}' style='font-size:11px'>{layer_options}</select> "
+                   f"<button class='btn ghost' style='font-size:11px' "
+                   f"onclick=\"balanceToLayer({sid},document.getElementById('{select_id}'))\">"
+                   "Balance</button>")
+        else:
+            btn = (f"<button class='btn ghost' style='font-size:11px' "
+                   f"onclick=\"balanceStress({sid},{'true' if active else 'false'})\">"
+                   f"{'Balance' if active else 'Reactivate'}</button>")
         # Unassigned stresses: an Assign button auto-picks the best-fit layer (LLM).
         assign_btn = (f" <button class='btn ghost' style='font-size:11px' "
                       f"onclick=\"assignStress({sid})\">Assign</button>" if drag else "")

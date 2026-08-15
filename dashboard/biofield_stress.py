@@ -263,8 +263,14 @@ def _group_by_layer(cx, tid, chain_rows, items):
         except (TypeError, ValueError):
             continue
         if ln not in layers:
-            layers[ln] = {"head": "", "remedies": [], "remedies_disp": []}
+            layers[ln] = {"head": "", "remedies": [], "remedies_disp": [], "rids": []}
             order.append(ln)
+        try:
+            rid = int(r.get("rid"))
+        except (TypeError, ValueError):
+            rid = None
+        if rid is not None and rid not in layers[ln]["rids"]:
+            layers[ln]["rids"].append(rid)
         head = (r.get("head") or "").strip()
         if head and not layers[ln]["head"]:
             layers[ln]["head"] = head
@@ -294,7 +300,8 @@ def _group_by_layer(cx, tid, chain_rows, items):
                 assigned.add(it["id"])
         by_layer.append({"layer": ln, "head": L["head"],
                          "remedy": ", ".join(L["remedies_disp"]),
-                         "remedies": L["remedies_disp"], "stresses": stresses})
+                         "remedies": L["remedies_disp"], "rids": L["rids"],
+                         "stresses": stresses})
     unassigned = [it for it in items if it["id"] not in assigned]
     return by_layer, unassigned
 
@@ -335,9 +342,9 @@ def cover_stress(cx, tid, stress_id, rids):
 def consolidate_layer_balances(cx, tid, source_layer, target_layer):
     """Move remedy-linked stress coverage from one layer to another.
 
-    Coverage is stored by normalized remedy name rather than layer number. Copy
+    Coverage is stored by normalized remedy name rather than layer number.  Copy
     every code covered by a source remedy to every target remedy, then remove the
-    source links unless that remedy also belongs to the target layer. Returns the
+    source links unless that remedy also belongs to the target layer.  Returns the
     number of distinct stress codes moved.
     """
     init_stress_tables(cx)

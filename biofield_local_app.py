@@ -20,6 +20,7 @@ import argparse
 import datetime
 import os
 import sqlite3
+import requests
 
 from flask import Flask, Response, jsonify, redirect, request, send_from_directory
 
@@ -39,6 +40,7 @@ from dashboard.biofield_narrative import (
 from dashboard.biofield_authoring import (
     add_chain_row, authored_report, confirm_all, confirm_row, create_test,
     delete_chain_row, delete_test, list_authored, merge_dosing, remedy_catalog,
+    remove_remedy_preserving_layer,
     remedy_dosing, resolve_remedy_name, resolve_stress_name, stress_suggestions,
     stress_vocab, update_chain_row, update_header, update_terrain)
 from dashboard.biofield_dimensions import (
@@ -511,7 +513,8 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                fetch_runner=None, fetch_profile=None, fetch_recent_comms=None,
                e4l_db=None, fee_get=None, fee_set=None, fee_clear=None,
                invoice_fetch_catalog=None, invoice_create=None, invoice_link=None,
-               invoice_paid_check=None, invoice_latest=None, ingredients_db=None):
+               invoice_paid_check=None, invoice_latest=None, ingredients_db=None,
+               portal_link_fetch=None):
     app = Flask(__name__)
     # The clinical-tags ledger lives in the SEPARATE local e4l.db (not the app's chat_log.db).
     e4l_db = e4l_db or _e4l_db_path()
@@ -538,6 +541,16 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
     invoice_link = invoice_link or biofield_invoice.default_invoice_link
     invoice_paid_check = invoice_paid_check or biofield_invoice.default_biofield_paid
     invoice_latest = invoice_latest or biofield_invoice.default_latest_invoice
+    def _default_portal_link_fetch(email, name):
+        base = os.environ.get("PUBLIC_BASE_URL", "https://illtowell.com").rstrip("/")
+        key = os.environ.get("CONSOLE_SECRET", "")
+        r = requests.post(base + "/admin/portal/get-or-create-link",
+                          json={"email": email, "name": name},
+                          headers={"X-Console-Key": key}, timeout=30)
+        if not r.ok:
+            raise RuntimeError(f"portal lookup failed ({r.status_code})")
+        return r.json().get("url") or ""
+    portal_link_fetch = portal_link_fetch or _default_portal_link_fetch
 
     def _report_for(cx, test_id):
         return (authored_report(cx, test_id) if str(test_id).startswith("a")
@@ -838,6 +851,20 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
             c_email = ((rep.get("client") or {}).get("email") or "").strip()
         fstate = biofield_fee.build_fee_state(c_email, fee_get)
         return Response(render_invoice_page(rep, fstate), mimetype="text/html")
+
+    @app.route("/author/<test_id>/view-portal")
+    def author_view_portal(test_id):
+        with sqlite3.connect(db_path) as cx:
+            rep = authored_report(cx, test_id)
+        client = rep.get("client") or {}
+        email = (client.get("email") or "").strip().lower()
+        if not email:
+            return Response("Save the client's email before opening their portal.", status=400)
+        try:
+            url = portal_link_fetch(email, (client.get("name") or "").strip())
+        except Exception as e:
+            return Response(f"Could not open client portal: {str(e)[:200]}", status=502)
+        return redirect(url) if url else Response("Client portal link unavailable.", status=502)
 
     @app.route("/author/<test_id>/depth", methods=["POST"])
     def author_depth(test_id):
@@ -1385,9 +1412,32 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
     def author_row_add(test_id):
         d = request.get_json(silent=True) or {}
         with sqlite3.connect(db_path) as cx:
-            rid = add_chain_row(cx, test_id, _layer_int(d.get("layer")), d.get("head", ""),
+            layer = _layer_int(d.get("layer"))
+            confirmed, origin = 1, "live"
+            anchor_rid = d.get("anchor_rid")
+            if anchor_rid not in (None, ""):
+                try:
+                    anchor_id = int(anchor_rid)
+                except (TypeError, ValueError):
+                    anchor_id = None
+                anchor = (cx.execute(
+                    "SELECT layer, confirmed, origin, remedy FROM biofield_auth_chain "
+                    "WHERE id=? AND test_id=?", (anchor_id, int(str(test_id).lstrip("a")))
+                ).fetchone() if anchor_id is not None else None)
+                if anchor:
+                    layer, confirmed, origin = anchor[0], anchor[1], anchor[2]
+                    if not (anchor[3] or "").strip():
+                        update_chain_row(
+                            cx, anchor_id, head=d.get("head", ""),
+                            most_affected=d.get("most_affected", ""),
+                            remedy=d.get("remedy", ""), dosage=d.get("dosage", ""),
+                            frequency=d.get("frequency", ""), timing=d.get("timing", ""),
+                        )
+                        return {"ok": True, "rid": anchor_id, "filled_anchor": True}
+            rid = add_chain_row(cx, test_id, layer, d.get("head", ""),
                                 d.get("most_affected", ""), d.get("remedy", ""),
-                                d.get("dosage", ""), d.get("frequency", ""), d.get("timing", ""))
+                                d.get("dosage", ""), d.get("frequency", ""), d.get("timing", ""),
+                                confirmed=confirmed, origin=origin)
         return {"ok": True, "rid": rid}
 
     @app.route("/author/<test_id>/row/<int:rid>", methods=["POST"])
@@ -1415,9 +1465,51 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
 
     @app.route("/author/<test_id>/row/<int:rid>/delete", methods=["POST"])
     def author_row_delete(test_id, rid):
+        remove_layer = bool((request.get_json(silent=True) or {}).get("remove_layer"))
+        body = request.get_json(silent=True) or {}
         with sqlite3.connect(db_path) as cx:
-            delete_chain_row(cx, rid)
-        return {"ok": True}
+            if remove_layer:
+                from dashboard import biofield_stress as _st
+                _st.init_stress_tables(cx)
+                tnum = int(str(test_id).lstrip("a"))
+                layer_rids = []
+                for value in body.get("layer_rids") or []:
+                    try:
+                        layer_rids.append(int(value))
+                    except (TypeError, ValueError):
+                        continue
+                if rid not in layer_rids:
+                    layer_rids.append(rid)
+                placeholders = ",".join("?" for _ in layer_rids)
+                valid = [r[0] for r in cx.execute(
+                    f"SELECT id FROM biofield_auth_chain WHERE test_id=? AND id IN ({placeholders})",
+                    [tnum, *layer_rids],
+                ).fetchall()]
+                if rid in valid:
+                    marks = ",".join("?" for _ in valid)
+                    removed_remedies = [r[0] for r in cx.execute(
+                        f"SELECT DISTINCT LOWER(TRIM(remedy)) FROM biofield_auth_chain "
+                        f"WHERE test_id=? AND id IN ({marks}) AND TRIM(COALESCE(remedy,''))<>''",
+                        [tnum, *valid],
+                    ).fetchall()]
+                    cx.execute(f"DELETE FROM biofield_auth_chain WHERE test_id=? AND id IN ({marks})",
+                               [tnum, *valid])
+                    # Coverage added by dragging a stress onto this layer must not
+                    # survive after the layer's remedy is gone. Preserve it when the
+                    # same remedy still exists on another layer in this analysis.
+                    for remedy in removed_remedies:
+                        remains = cx.execute(
+                            "SELECT 1 FROM biofield_auth_chain WHERE test_id=? "
+                            "AND LOWER(TRIM(remedy))=? LIMIT 1", (tnum, remedy),
+                        ).fetchone()
+                        if not remains:
+                            cx.execute("DELETE FROM biofield_auth_remedy_coverage "
+                                       "WHERE test_id=? AND remedy=?", (tnum, remedy))
+                    cx.commit()
+                found = rid in valid
+            else:
+                found = remove_remedy_preserving_layer(cx, test_id, rid)
+        return ({"ok": True} if found else ({"ok": False, "error": "row not found"}, 404))
 
     @app.route("/author/<test_id>/reorder-layers", methods=["POST"])
     def author_reorder_layers(test_id):

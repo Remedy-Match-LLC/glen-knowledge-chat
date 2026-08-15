@@ -464,6 +464,36 @@ def delete_chain_row(cx, rid):
     cx.commit()
 
 
+def remove_remedy_preserving_layer(cx, tid, rid):
+    """Remove a remedy while retaining the final row as its layer anchor."""
+    row = cx.execute(
+        "SELECT test_id, head FROM biofield_auth_chain WHERE id=? AND test_id=?",
+        (rid, _num(tid)),
+    ).fetchone()
+    if not row:
+        return False
+    head = (row[1] or "").strip()
+    if head:
+        sibling_count = cx.execute(
+            "SELECT COUNT(*) FROM biofield_auth_chain "
+            "WHERE test_id=? AND id<>? AND LOWER(TRIM(COALESCE(head,'')))=LOWER(?) "
+            "AND TRIM(COALESCE(remedy,''))<>''",
+            (row[0], rid, head),
+        ).fetchone()[0]
+    else:
+        sibling_count = 0
+    if sibling_count:
+        cx.execute("DELETE FROM biofield_auth_chain WHERE id=?", (rid,))
+    else:
+        cx.execute(
+            "UPDATE biofield_auth_chain SET remedy='', dosage='', frequency='', "
+            "timing='', schedule_slot='', updated_at=? WHERE id=?",
+            (_now(), rid),
+        )
+    cx.commit()
+    return True
+
+
 def list_authored(cx):
     init_auth_tables(cx)
     cx.row_factory = sqlite3.Row
@@ -643,7 +673,9 @@ def stress_suggestions(cx, stress, limit=8):
 
 
 def ordered_chain(cx, tid):
-    """Remedy-bearing chain rows in display order with two-zone numbering.
+    """Chain rows in display order with two-zone numbering.
+
+    Head/Tail-only rows remain as anchors for layers whose last remedy was removed.
     Top zone = live + confirmed rows (manual order); bottom zone = unbalanced
     scan rows (origin='scan' AND confirmed=0), trailing. Display `layer` = 1..k."""
     cx.row_factory = sqlite3.Row
@@ -651,7 +683,9 @@ def ordered_chain(cx, tid):
         "SELECT id, layer, head, most_affected, remedy, dosage, frequency, timing, "
         "schedule_slot, "
         "confirmed, origin FROM biofield_auth_chain "
-        "WHERE test_id=? AND TRIM(COALESCE(remedy,''))<>''", (_num(tid),)).fetchall()
+        "WHERE test_id=? AND (TRIM(COALESCE(remedy,''))<>'' "
+        "OR TRIM(COALESCE(head,''))<>'' OR TRIM(COALESCE(most_affected,''))<>'')",
+        (_num(tid),)).fetchall()
 
     def unbalanced_scan(r):
         return (r["origin"] == "scan") and (r["confirmed"] == 0)
@@ -661,7 +695,8 @@ def ordered_chain(cx, tid):
     bottom = sorted([r for r in rows if unbalanced_scan(r)], key=key)
     out = []
     for i, r in enumerate(top + bottom, 1):
-        out.append({"id": r["id"], "layer": i, "head": r["head"] or "",
+        out.append({"id": r["id"], "layer": i, "stored_layer": r["layer"],
+                    "head": r["head"] or "",
                     "most_affected": r["most_affected"] or "", "remedy": r["remedy"] or "",
                     "dosage": r["dosage"] or "", "frequency": r["frequency"] or "",
                     "timing": r["timing"] or "",
@@ -722,7 +757,7 @@ def authored_report(cx, tid):
     schedule = build_schedule([
         {"name": l["remedy"], "dosage": l["dosage"], "frequency": l["frequency"],
          "timing": l["timing"], "schedule_slot": l["schedule_slot"],
-         "source_rids": [l["rid"]]} for l in layers])
+         "source_rids": [l["rid"]]} for l in layers if (l["remedy"] or "").strip()])
     tk = t.keys() if t else []
     return {"test_id": str(tid),
             "client": {"name": (t["name"] if t else "") or "",

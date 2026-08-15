@@ -35,6 +35,9 @@ def test_author_page_has_header_rows_and_endpoints():
     assert "Add remedy" in html and "Add layer" in html      # per-layer + new-layer add
     assert "/test/a1" in html                                # link to the read-only report
     assert "fillDose" in html                                # remedy auto-fills dosing on change
+    assert "View Client Portal" in html                      # client-aware portal link
+    assert "/author/a1/view-portal" in html
+    assert "Edit Portal" in html
 
 
 def test_author_chain_is_cards_readable_and_reorderable():
@@ -77,6 +80,11 @@ def test_save_buttons_track_saved_and_dirty_state():
     # editing a field marks its button dirty; saving turns it green + keeps it
     assert 'oninput="dirtyRow(this)"' in html and 'oninput="dirtyLayer(this)"' in html
     assert "function setSaved" in html and "function markDirty" in html
+    assert "async function savePendingEditor()" in html
+    assert "astat('Saving pending edits…');await savePendingEditor()" in html
+    assert "Math.max.apply(null,nums)" in html
+    assert "window.addEventListener('beforeunload',rememberScroll)" in html
+    assert "window.scrollTo(0,state.y)" in html
 
 
 def test_editor_has_narrative_generate_and_prefill():
@@ -114,6 +122,10 @@ def test_author_page_delete_confirm_and_unconfirmed_highlight():
     assert "delTest()" in html and "confirmAll()" in html
     assert "rline unconf" in html              # unconfirmed remedy line highlighted for Rae
     assert "confirmRow('5')" in html           # per-row confirm (rid 5)
+    assert "Remove remedy" in html
+    assert "Remove layer" in html
+    assert "remove_layer:!!removeLayer" in html
+    assert "layer_rids:layerRids" in html
 
 
 def test_author_page_prefills_saved_transcript():
