@@ -103,8 +103,10 @@ _SYSTEM = (
     "- OBSERVATION LANGUAGE ONLY: the body 'identified' / 'showed coherence with' / the remedy "
     "was 'detected as best suited'. NEVER 'probably', 'should', 'most likely', or any hedge.\n"
     "- Fold the clinician's verbal notes in naturally where they fit; do not quote them as a list.\n"
-    "- LIFE STRESS LAYERS: do not list AI-matched or 'supportive' essences. First describe the "
-    "indications of the LIFE STRESS ASSOCIATED ESSENCE (or named head of the causal chain), then "
+    "- LIFE STRESS / ESSENCE LAYERS: inspect BOTH the Head and Tail of every causal layer for an "
+    "essence, even when the Head is not labeled Life Stress or Psychoemotional Stress. Do not list "
+    "AI-matched or 'supportive' essences. First describe the indications of the LIFE STRESS "
+    "ASSOCIATED ESSENCE found at the Head or Tail, then "
     "describe the healing qualities of the THERAPEUTIC ESSENCE actually prescribed as the remedy. "
     "Keep those roles distinct; the associated essence identifies the pattern, while the therapeutic "
     "essence is the treatment. Use only the catalog descriptions supplied in the layer block.\n"
@@ -221,9 +223,15 @@ def _user_block(report, notes, scan=None, profile=None):
         lines.append(
             f"- Layer {display_ln} (ONE layer; {len(layer_rows)} remed{'y' if len(layer_rows) == 1 else 'ies'}): "
             f"{head} (most affected: {affected})")
-        is_life_stress = "life stress" in head.lower() or "psychoemotional" in head.lower()
+        head_is_essence = _is_essence(head)
+        tail_is_essence = _is_essence(affected)
+        is_life_stress = ("life stress" in head.lower() or
+                          "psychoemotional" in head.lower() or
+                          head_is_essence or tail_is_essence)
         if is_life_stress:
-            associated = affected if affected else head
+            associated = affected if tail_is_essence else head
+            if not associated:
+                associated = affected or head
             associated_desc = _catalog_description(associated)
             lines.append(
                 f"  - LIFE STRESS ASSOCIATED ESSENCE / PATTERN: {associated}"
@@ -249,8 +257,13 @@ def _user_block(report, notes, scan=None, profile=None):
 
 def _catalog_description(name):
     """Best-effort catalog description for a named associated/remedy essence."""
+    return (_catalog_product(name).get("description") or "").strip()
+
+
+def _catalog_product(name):
+    """Best-effort catalog product resolution, including local-only essences."""
     if not (name or "").strip():
-        return ""
+        return {}
     try:
         import re
         from dashboard.biofield_portal_publish import load_catalog
@@ -272,9 +285,17 @@ def _catalog_description(name):
                          if re.sub(r"[^a-z0-9]", "", ((p or {}).get("name") or "").lower())
                          == wanted), None)
         product = catalog.get(slug) if slug else None
-        return ((product or {}).get("description") or "").strip()
+        return product or {}
     except Exception:
-        return ""
+        return {}
+
+
+def _is_essence(name):
+    """Whether a Head/Tail value resolves to an essence-class catalog remedy."""
+    product = _catalog_product(name)
+    catalog_name = ((product or {}).get("name") or "").lower()
+    return any(term in catalog_name for term in (
+        "essence", "gem elixir", "flower enhancer", "flower remedy"))
 
 
 def _system_with_scan(base, scan):

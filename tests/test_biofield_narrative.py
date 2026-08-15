@@ -153,8 +153,32 @@ def test_life_stress_prompt_describes_associated_and_therapeutic_essences(monkey
     assert "cloudy or outdated perspective" in user
     assert "THERAPEUTIC ESSENCE: Motivation Flower Essence (Fox)" in user
     assert "restore motivation, focus" in user
-    assert "do not list AI-matched" in system
+    assert "do not list ai-matched" in system.lower()
     assert "associated essence identifies the pattern" in system
+
+
+def test_essence_at_tail_triggers_indications_without_life_stress_head(monkeypatch):
+    descriptions = {
+        "Ecstasy": "Indicated for rigidity, bitterness, jealousy, and feeling unloved.",
+        "Green Jasper Gem Elixir in Terrain Restore":
+            "Supports steadiness, renewal, and compassionate emotional healing.",
+    }
+    monkeypatch.setattr(narrative_mod, "_catalog_description",
+                        lambda name: descriptions.get(name, ""))
+    monkeypatch.setattr(narrative_mod, "_is_essence", lambda name: name == "Ecstasy")
+    report = {**_report(), "layers": [{
+        "layer": 1, "head": "Stomach Driver, ED8", "most_affected": "Ecstasy",
+        "remedy": "Green Jasper Gem Elixir in Terrain Restore",
+        "dosage": "10 drops", "frequency": "3 times a day", "timing": "before meals",
+    }]}
+    prompt = build_narrative_prompt(report, "")
+    user, system = prompt["user"], prompt["system"]
+
+    assert "LIFE STRESS ASSOCIATED ESSENCE / PATTERN: Ecstasy" in user
+    assert "rigidity, bitterness, jealousy" in user
+    assert "THERAPEUTIC ESSENCE: Green Jasper Gem Elixir" in user
+    assert "compassionate emotional healing" in user
+    assert "inspect BOTH the Head and Tail" in system
 
 
 def test_video_script_roundtrip(tmp_path):
