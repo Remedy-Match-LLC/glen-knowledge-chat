@@ -80,6 +80,7 @@ def test_save_buttons_track_saved_and_dirty_state():
     # editing a field marks its button dirty; saving turns it green + keeps it
     assert "Remedy saved. Updating report and schedule" in html
     assert "rememberView(card);location.reload()" in html
+    assert "reset_schedule_from_dosing:true" in html
     assert 'oninput="dirtyRow(this)"' in html and 'oninput="dirtyLayer(this)"' in html
     assert "function setSaved" in html and "function markDirty" in html
     assert "async function savePendingEditor()" in html

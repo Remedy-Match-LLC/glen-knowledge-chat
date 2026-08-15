@@ -143,12 +143,19 @@ def test_authoring_flow(tmp_path):
     assert rep.status_code == 200 and b"Sterol Max" in rep.data and b"Jane Doe" in rep.data
     assert client.post(f"/author/{tid}/row/{rid}", json={"remedy": "Sterol Max XR"}).status_code == 200
     assert b"Sterol Max XR" in client.get("/test/" + tid).data
+    assert client.post(f"/author/{tid}/row/{rid}", json={"schedule_slots": [
+        "Mid-morning", "Mid-afternoon", "Bedtime"
+    ]}).status_code == 200
     assert client.post(f"/author/{tid}/row/{rid}", json={
-        "dosage": "1 capsule", "frequency": "twice a day", "timing": "between meals"
+        "dosage": "1 capsule", "frequency": "twice a day", "timing": "between meals",
+        "reset_schedule_from_dosing": True,
     }).status_code == 200
     refreshed = client.get("/test/" + tid).data
     assert b"1 capsule" in refreshed and b"between meals" in refreshed
     assert b"Mid-morning" in refreshed and b"Mid-afternoon" in refreshed
+    with sqlite3.connect(db) as cx:
+        assert cx.execute("SELECT schedule_slot FROM biofield_auth_chain WHERE id=?",
+                          (rid,)).fetchone()[0] == ""
     assert client.post(f"/author/{tid}/row/{rid}/delete", json={}).status_code == 200
     cat = client.get("/api/catalog?q=x")
     assert cat.status_code == 200 and "catalog" in cat.get_json()

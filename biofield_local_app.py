@@ -1463,6 +1463,12 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
     @app.route("/author/<test_id>/row/<int:rid>", methods=["POST"])
     def author_row_save(test_id, rid):
         d = request.get_json(silent=True) or {}
+        if d.get("reset_schedule_from_dosing"):
+            # A manual drag stores schedule_slot(s), which intentionally override
+            # calculated placement. Saving revised dosing means the dose/frequency/
+            # timing is authoritative again, so discard that older override and let
+            # authored_report rebuild the schedule from the new instructions.
+            d["schedule_slot"] = ""
         if isinstance(d.get("schedule_slots"), list):
             import json as _json
             d["schedule_slot"] = _json.dumps(d["schedule_slots"])

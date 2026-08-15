@@ -638,7 +638,8 @@ async function saveRemedy(rid,btn){var card=btn.closest('.lcard');var gid=card.d
  var head=val(gid+'_head'),most=val(gid+'_most');btn.disabled=true;
  try{await post('/author/__TID__/row/'+rid,{head:head,most_affected:most,
   remedy:val('r'+rid+'_remedy'),dosage:val('r'+rid+'_dosage'),
-  frequency:val('r'+rid+'_frequency'),timing:val('r'+rid+'_timing')});
+  frequency:val('r'+rid+'_frequency'),timing:val('r'+rid+'_timing'),
+  reset_schedule_from_dosing:true});
  var rids=(card.dataset.rids||'').split(',').filter(Boolean);
  for(var i=0;i<rids.length;i++){if(rids[i]!==String(rid)){
    await post('/author/__TID__/row/'+rids[i],{head:head,most_affected:most})}}
