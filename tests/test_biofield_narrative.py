@@ -86,6 +86,11 @@ def test_prompt_carries_voice_rules_layers_and_notes():
     assert "first paragraph" in sys
     assert "Phase 4, Cleanse" in usr
     assert "located this phase at Liver" in usr
+    assert "If you tend to be highly sensitive or reactive" in sys
+    assert "introduce each layer or each remedy one at a time" in sys
+    assert "visualize the desired healing effects" in sys
+    assert "portal chat interface" in sys
+    assert "do not need to absorb every detail" not in sys
 
 
 def test_prompt_omits_terrain_block_without_phase():
