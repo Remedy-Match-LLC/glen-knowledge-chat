@@ -112,11 +112,26 @@ def _registration_records(cx, email):
     return records
 
 
+def _approved_ambassador_slug(cx, email):
+    """Return the portal client's approved affiliate slug, if one exists."""
+    if not email:
+        return ""
+    try:
+        row = cx.execute(
+            "SELECT slug FROM affiliate_signups WHERE lower(email)=? "
+            "AND status='approved' LIMIT 1",
+            ((email or "").strip().lower(),)).fetchone()
+        return (row[0] or "").strip() if row else ""
+    except Exception:
+        return ""
+
+
 def build_block(cx, *, email="", group_coaching_entitled=False,
                 now_iso=None, upgrade_url="/membership"):
     now_iso = (now_iso or _now_iso()).strip()
     events = []
     registrations = _registration_records(cx, email)
+    ambassador_slug = _approved_ambassador_slug(cx, email)
 
     if email:
         try:
@@ -144,7 +159,7 @@ def build_block(cx, *, email="", group_coaching_entitled=False,
 
     try:
         cur = cx.execute(
-            "SELECT id, topic, description, start_ts, duration_min "
+            "SELECT id, topic, description, start_ts, duration_min, price_cents "
             "FROM masterclass_events WHERE start_ts>=? ORDER BY start_ts ASC LIMIT 50",
             (now_iso,))
         for row in cur.fetchall():
@@ -162,7 +177,10 @@ def build_block(cx, *, email="", group_coaching_entitled=False,
                                else f"/masterclass/{item['id']}"),
                 "action_label": ("Join session" if registration.get("join_url")
                                  else "View & register"),
-                "registered": registered})
+                "registered": registered,
+                "share_url": (f"/masterclass/{item['id']}?ref={ambassador_slug}"
+                              if ambassador_slug and int(item.get("price_cents") or 0) == 0
+                              else "")})
     except Exception:
         _recover_optional_query(cx)
 

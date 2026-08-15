@@ -13,22 +13,24 @@ def init_masterclass_tables(cx) -> None:
         start_ts TEXT, duration_min INTEGER DEFAULT 60,
         price_cents INTEGER DEFAULT 0, member_price_cents INTEGER DEFAULT 0,
         zoom_join_url TEXT, zoom_meeting_id TEXT, zoom_registration_url TEXT,
-        zoom_occurrence_id TEXT, registration_required INTEGER DEFAULT 1,
+        zoom_occurrence_id TEXT, registration_required INTEGER DEFAULT 0,
         created_at TEXT)""")
     cx.execute("""CREATE TABLE IF NOT EXISTS masterclass_registrations (
         id INTEGER PRIMARY KEY AUTOINCREMENT, event_id INTEGER, email TEXT, name TEXT,
         is_member INTEGER, amount_cents INTEGER, paid INTEGER DEFAULT 0, created_at TEXT,
         zoom_registrant_id TEXT, zoom_join_url TEXT, zoom_occurrence_id TEXT,
         zoom_registered_at TEXT, zoom_registration_error TEXT,
+        referrer_slug TEXT, referred_at TEXT,
         UNIQUE(event_id, email))""")
     event_columns = {
         "zoom_registration_url": "TEXT", "zoom_occurrence_id": "TEXT",
-        "registration_required": "INTEGER DEFAULT 1",
+        "registration_required": "INTEGER DEFAULT 0",
     }
     registration_columns = {
         "zoom_registrant_id": "TEXT", "zoom_join_url": "TEXT",
         "zoom_occurrence_id": "TEXT", "zoom_registered_at": "TEXT",
-        "zoom_registration_error": "TEXT",
+        "zoom_registration_error": "TEXT", "referrer_slug": "TEXT",
+        "referred_at": "TEXT",
     }
     for column, declaration in event_columns.items():
         if not db.column_exists(cx, "masterclass_events", column):
@@ -93,6 +95,20 @@ def get_registration(cx, event_id, email):
     cols = [c[0] for c in cur.description]
     row = cur.fetchone()
     return dict(zip(cols, row)) if row is not None else None
+
+
+def set_referrer_if_empty(cx, event_id, email, referrer_slug) -> bool:
+    """Persist the first approved ambassador attributed to this event RSVP."""
+    slug = (referrer_slug or "").strip()
+    if not slug:
+        return False
+    cur = cx.execute(
+        "UPDATE masterclass_registrations SET referrer_slug=?, referred_at=? "
+        "WHERE event_id=? AND lower(email)=? "
+        "AND COALESCE(referrer_slug,'')=''",
+        (slug, _now(), event_id, (email or "").strip().lower()))
+    cx.commit()
+    return cur.rowcount > 0
 
 
 def set_zoom_registration(cx, event_id, email, *, registrant_id, join_url,

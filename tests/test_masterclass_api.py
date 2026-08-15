@@ -36,7 +36,9 @@ def test_console_create_makes_event_and_zoom(client):
     with sqlite3.connect(appmod.LOG_DB) as cx:
         cx.row_factory = sqlite3.Row
         ev = mc.get_event(cx, d["event_id"])
-        assert ev["zoom_join_url"] == "https://zoom.us/j/mc"
+        assert ev["zoom_join_url"] == ""
+        assert ev["zoom_meeting_id"] == "mc1"
+        assert ev["registration_required"] == 1
 
 
 def _mk_event(client, price=0, mprice=0):
@@ -44,6 +46,20 @@ def _mk_event(client, price=0, mprice=0):
                     json={"topic": "T", "description": "d", "start_ts": "2026-07-10T18:00:00",
                           "duration_min": 60, "price_cents": price, "member_price_cents": mprice}, headers=ADMIN)
     return r.get_json()["event_id"]
+
+
+def _seed_ambassador(slug="ambassador-one", email="member@example.com"):
+    with appmod.db.connect(appmod.LOG_DB) as cx:
+        cx.execute("CREATE TABLE IF NOT EXISTS affiliate_signups ("
+                   "id INTEGER PRIMARY KEY AUTOINCREMENT,name TEXT,email TEXT,"
+                   "slug TEXT,status TEXT)")
+        cx.execute("CREATE TABLE IF NOT EXISTS referral_events ("
+                   "id INTEGER PRIMARY KEY AUTOINCREMENT,received_at TEXT,lead_id INTEGER,"
+                   "email TEXT,first_name TEXT,last_name TEXT,utm_source TEXT,utm_medium TEXT,"
+                   "utm_campaign TEXT,utm_content TEXT,utm_term TEXT,quiz_score TEXT,raw_json TEXT)")
+        cx.execute("INSERT INTO affiliate_signups (name,email,slug,status) VALUES (?,?,?,'approved')",
+                   ("Morgan Ambassador", email, slug))
+        cx.commit()
 
 def test_public_get_event(client):
     eid = _mk_event(client, price=5000)
@@ -60,6 +76,39 @@ def test_register_free_emails_and_stores_private_link_without_exposing_it(client
     with appmod.db.connect(appmod.LOG_DB) as cx:
         registration = mc.get_registration(cx, eid, "free@x.com")
     assert registration["zoom_join_url"] == "https://zoom.us/w/private-person"
+
+
+def test_free_registration_links_guest_to_approved_ambassador(client):
+    _seed_ambassador()
+    eid = _mk_event(client, price=0, mprice=0)
+    page = client.get(f"/masterclass/{eid}?ref=ambassador-one")
+    assert "rm_ref=ambassador-one" in page.headers.get("Set-Cookie", "")
+    event = client.get(f"/api/masterclass/{eid}?ref=ambassador-one").get_json()
+    assert event["invited_by"] == "Morgan Ambassador"
+    response = client.post(
+        f"/api/masterclass/{eid}/register",
+        json={"email": "guest@example.com", "name": "Guest Person",
+              "ref": "ambassador-one"})
+    assert response.status_code == 200
+    assert "join_url" not in response.get_json()
+    with appmod.db.connect(appmod.LOG_DB) as cx:
+        registration = mc.get_registration(cx, eid, "guest@example.com")
+        event_referrals = cx.execute(
+            "SELECT COUNT(*) FROM referral_events WHERE email=? AND utm_source=? "
+            "AND utm_medium='event-invite'",
+            ("guest@example.com", "ambassador-one")).fetchone()[0]
+    assert registration["referrer_slug"] == "ambassador-one"
+    assert event_referrals == 1
+
+    self_event = _mk_event(client, price=0, mprice=0)
+    self_response = client.post(
+        f"/api/masterclass/{self_event}/register",
+        json={"email": "member@example.com", "name": "Morgan Ambassador",
+              "ref": "ambassador-one"})
+    assert self_response.status_code == 200
+    with appmod.db.connect(appmod.LOG_DB) as cx:
+        self_registration = mc.get_registration(cx, self_event, "member@example.com")
+    assert not self_registration["referrer_slug"]
 
 def test_register_nonmember_paid_returns_checkout(client, monkeypatch):
     monkeypatch.setattr(appmod, "_STRIPE_ACTIVE", True, raising=False)

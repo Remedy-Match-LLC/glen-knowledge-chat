@@ -17530,7 +17530,7 @@ def api_console_masterclass_create():
                                  waiting_room=False, registration_required=True)
         with _db_lock, db.connect(LOG_DB) as cx2:
             _mc.init_masterclass_tables(cx2)
-            _mc.set_zoom(cx2, eid, m.get("join_url"), m.get("meeting_id"),
+            _mc.set_zoom(cx2, eid, "", m.get("meeting_id"),
                          registration_url=m.get("registration_url") or "")
         zoom_ok = bool(m.get("meeting_id"))
     except Exception:
@@ -17562,9 +17562,75 @@ def api_console_masterclass_zoom_url(event_id):
 MASTERCLASS_FROM = os.environ.get("GLEN_CONSULT_EMAIL", "drglenswartwout@gmail.com")
 
 
+def _masterclass_inviter(event_id, ref_slug):
+    """Resolve an approved ambassador for a genuinely free event."""
+    from dashboard import masterclass as _mc
+    slug = (ref_slug or "").strip()
+    if not re.match(r"^[A-Za-z0-9_-]{1,64}$", slug):
+        return None
+    try:
+        with db.connect(LOG_DB) as cx:
+            cx.row_factory = sqlite3.Row
+            _mc.init_masterclass_tables(cx)
+            event = _mc.get_event(cx, event_id)
+            if not event or int(event.get("price_cents") or 0) != 0:
+                return None
+            row = cx.execute(
+                "SELECT name,email,slug FROM affiliate_signups "
+                "WHERE slug=? AND status='approved' LIMIT 1", (slug,)).fetchone()
+            if not row:
+                return None
+            return {"name": row[0] or "", "email": (row[1] or "").strip().lower(),
+                    "slug": row[2] or ""}
+    except Exception:
+        return None
+
+
+def _capture_masterclass_referral(event_id, guest_email, guest_name, ref_slug):
+    """First-touch event attribution plus the existing ambassador journey record."""
+    from dashboard import masterclass as _mc
+    inviter = _masterclass_inviter(event_id, ref_slug)
+    guest_email = (guest_email or "").strip().lower()
+    if not inviter or inviter["email"] == guest_email:
+        return ""
+    campaign = f"free-masterclass-{event_id}"
+    first_name, last_name = _zoom_name_parts(guest_name, guest_email)
+    with _db_lock, db.connect(LOG_DB) as cx:
+        cx.row_factory = sqlite3.Row
+        _mc.init_masterclass_tables(cx)
+        _mc.set_referrer_if_empty(cx, event_id, guest_email, inviter["slug"])
+        registration = _mc.get_registration(cx, event_id, guest_email)
+        actual_slug = (registration.get("referrer_slug") or "") if registration else ""
+        if actual_slug != inviter["slug"]:
+            return actual_slug
+        try:
+            exists = cx.execute(
+                "SELECT 1 FROM referral_events WHERE lower(email)=? AND utm_source=? "
+                "AND utm_medium='event-invite' AND utm_campaign=? LIMIT 1",
+                (guest_email, actual_slug, campaign)).fetchone()
+            if not exists:
+                cx.execute(
+                    "INSERT INTO referral_events (received_at,lead_id,email,first_name,"
+                    "last_name,utm_source,utm_medium,utm_campaign,utm_content,utm_term,"
+                    "quiz_score,raw_json) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+                    (datetime.now(timezone.utc).isoformat(), None, guest_email,
+                     first_name, last_name, actual_slug, "event-invite", campaign,
+                     f"masterclass-{event_id}", "", "",
+                     json.dumps({"event_id": event_id, "source": "masterclass-share"})))
+                cx.commit()
+        except Exception:
+            app.logger.exception("masterclass referral-event capture failed")
+        return actual_slug
+
+
 @app.route("/masterclass/<int:event_id>")
 def masterclass_page(event_id):
-    return send_from_directory(STATIC, "masterclass.html")
+    resp = send_from_directory(STATIC, "masterclass.html")
+    inviter = _masterclass_inviter(event_id, request.args.get("ref") or "")
+    if inviter:
+        resp.set_cookie("rm_ref", inviter["slug"], max_age=90 * 24 * 3600,
+                        samesite="Lax", secure=request.is_secure)
+    return resp
 
 
 @app.route("/api/masterclass/<int:event_id>")
@@ -17576,9 +17642,13 @@ def api_masterclass_get(event_id):
         ev = _mc.get_event(cx, event_id)
     if not ev:
         return jsonify({"error": "not_found"}), 404
+    inviter = _masterclass_inviter(
+        event_id, request.args.get("ref") or request.cookies.get("rm_ref") or "")
     return jsonify({"topic": ev["topic"], "description": ev["description"],
                     "start_ts": ev["start_ts"], "duration_min": ev["duration_min"],
-                    "price_cents": ev["price_cents"], "member_price_cents": ev["member_price_cents"]})
+                    "price_cents": ev["price_cents"], "member_price_cents": ev["member_price_cents"],
+                    "invited_by": (inviter.get("name") or "A Healing Oasis ambassador")
+                                  if inviter else ""})
 
 
 def _zoom_name_parts(name, email):
@@ -17667,6 +17737,7 @@ def api_masterclass_register(event_id):
     body = request.get_json(silent=True) or {}
     email = (body.get("email") or "").strip().lower()
     name = (body.get("name") or "").strip()
+    ref_slug = (body.get("ref") or request.cookies.get("rm_ref") or "").strip()
     if "@" not in email:
         return jsonify({"error": "email required"}), 400
     with _db_lock, db.connect(LOG_DB) as cx:
@@ -17680,6 +17751,7 @@ def api_masterclass_register(event_id):
         if amount <= 0:
             _mc.register(cx, event_id, email, name, is_member, 0, paid=True)
     if amount <= 0:
+        _capture_masterclass_referral(event_id, email, name, ref_slug)
         zoom_registration = _masterclass_zoom_registration(event_id, email, name)
         _masterclass_send_confirmation(ev, email, name,
                                        zoom_registration.get("join_url") or "")
@@ -29835,7 +29907,6 @@ def api_portal_calendar_register(token):
     from dashboard import masterclass as _mc
     from dashboard import portal_calendar as _pc
     from dashboard import portal_identity as _pi
-    from dashboard import zoom as _zoom
 
     body = request.get_json(silent=True) or {}
     event_key = (body.get("event_id") or "").strip().lower()
@@ -29864,7 +29935,8 @@ def api_portal_calendar_register(token):
             except ValueError:
                 return jsonify({"error": "not_found"}), 404
             row = cx.execute(
-                'SELECT location FROM calendar_events WHERE id=? AND status="visible"',
+                'SELECT zoom_meeting_id,zoom_occurrence_id,zoom_registration_required '
+                'FROM calendar_events WHERE id=? AND status="visible"',
                 (event_id,)).fetchone()
             if not row:
                 return jsonify({"error": "not_found"}), 404
@@ -29873,11 +29945,14 @@ def api_portal_calendar_register(token):
                 return jsonify({"ok": True, "registered": True,
                                 "join_url": existing["zoom_join_url"],
                                 "join_status": "ready"})
-            meeting_id = _zoom.meeting_id_from_url(row[0] or "")
-            if not meeting_id:
+            meeting_id = (row[0] or "").strip()
+            occurrence_id = (row[1] or "").strip()
+            if not meeting_id or not bool(row[2]):
                 return jsonify({"error": "zoom_registration_unavailable",
-                                "detail": "This event has no registrable Zoom meeting ID."}), 409
-            group_registration = {"meeting_id": meeting_id, "event_key": event_key}
+                                "detail": "This event is not configured for private Zoom registration."}), 409
+            group_registration = {"meeting_id": meeting_id,
+                                  "occurrence_id": occurrence_id,
+                                  "event_key": event_key}
 
         elif not event_key.startswith("masterclass-"):
             return jsonify({"error": "not_found"}), 404
@@ -29898,7 +29973,8 @@ def api_portal_calendar_register(token):
     if group_registration:
         try:
             zoom_registration = _zoom_register_person(
-                group_registration["meeting_id"], email, name)
+                group_registration["meeting_id"], email, name,
+                occurrence_id=group_registration["occurrence_id"])
             if not zoom_registration.get("join_url"):
                 raise RuntimeError("Zoom returned no registrant join URL")
         except Exception:
@@ -29910,6 +29986,7 @@ def api_portal_calendar_register(token):
             _pc.register_group(
                 cx, group_registration["event_key"], email,
                 meeting_id=group_registration["meeting_id"],
+                occurrence_id=group_registration["occurrence_id"],
                 registrant_id=zoom_registration.get("registrant_id") or "",
                 join_url=zoom_registration["join_url"])
         return jsonify({"ok": True, "registered": True,
@@ -29942,7 +30019,7 @@ def api_portal_calendar_register(token):
 
 @app.route("/api/console/community-live-health", methods=["GET"])
 def api_console_community_live_health():
-    """Verify recurring community events and their production destinations."""
+    """Verify concrete community events and private-registration readiness."""
     if not _portal_console_ok():
         return jsonify({"error": "unauthorized"}), 401
     from dashboard import portal_calendar as _pc
@@ -29957,18 +30034,31 @@ def api_console_community_live_health():
             issues.append("no future Free Wellness Whispering MasterClass occurrence")
         if not coaching:
             issues.append("no future Group Coaching occurrence")
-        if coaching and not any((e.get("action_url") or "").lower().startswith("https://")
-                                for e in coaching):
-            issues.append("Group Coaching Zoom link missing")
         try:
-            row = cx.execute(
-                "SELECT zoom_join_url FROM masterclass_events "
-                "WHERE lower(topic) LIKE '%wellness whispering%' "
-                "ORDER BY start_ts DESC LIMIT 1").fetchone()
-            if not row or not (row[0] or "").lower().startswith("https://"):
-                issues.append("MasterClass Zoom link missing")
+            group_ready = cx.execute(
+                "SELECT COUNT(*) FROM calendar_events WHERE status='visible' AND start>=? "
+                "AND lower(summary) LIKE '%group coaching%' "
+                "AND COALESCE(zoom_meeting_id,'')!='' "
+                "AND zoom_registration_required=1", (_hst_now().replace(tzinfo=None).isoformat(),)
+            ).fetchone()[0]
+            if coaching and int(group_ready or 0) < len(coaching):
+                issues.append("Group Coaching private Zoom registration missing")
+            exposed = cx.execute(
+                "SELECT COUNT(*) FROM calendar_events WHERE status='visible' AND start>=? "
+                "AND lower(summary) LIKE '%group coaching%' "
+                "AND lower(location) LIKE 'http%'", (_hst_now().replace(tzinfo=None).isoformat(),)
+            ).fetchone()[0]
+            if exposed:
+                issues.append("Group Coaching shared Zoom link exposed")
+            master_ready = cx.execute(
+                "SELECT COUNT(*) FROM masterclass_events WHERE start_ts>=? "
+                "AND lower(topic) LIKE '%wellness whispering%' "
+                "AND COALESCE(zoom_meeting_id,'')!='' AND registration_required=1",
+                (_hst_now().replace(tzinfo=None).isoformat(),)).fetchone()[0]
+            if masterclasses and int(master_ready or 0) < len(masterclasses):
+                issues.append("MasterClass private Zoom registration missing")
         except Exception:
-            issues.append("masterclass event table unavailable")
+            issues.append("live event registration metadata unavailable")
     return jsonify({"ok": not issues, "issues": issues,
                     "future_masterclasses": len(masterclasses),
                     "future_group_coaching": len(coaching)})
@@ -29976,7 +30066,7 @@ def api_console_community_live_health():
 
 @app.route("/api/console/community-live/bootstrap", methods=["POST"])
 def api_console_community_live_bootstrap():
-    """Idempotently create the canonical Wednesday recurring community calls."""
+    """Idempotently create this Wednesday's identity-bound community calls."""
     if not _portal_console_ok():
         return jsonify({"error": "unauthorized"}), 401
     from dashboard import masterclass as _mc
@@ -29989,8 +30079,9 @@ def api_console_community_live_bootstrap():
     if group_start <= now:
         group_start += timedelta(days=7)
     master_start = group_start.replace(hour=15)
-    recurrence = {"type": 2, "repeat_interval": 1,
-                  "weekly_days": "4", "end_times": 60}
+    group_start_raw = group_start.replace(tzinfo=None).isoformat()
+    master_start_raw = master_start.replace(tzinfo=None).isoformat()
+    _init_calendar_table()
     zoom_token = _zoom.get_token(
         os.environ["ZOOM_ACCOUNT_ID"], os.environ["ZOOM_CLIENT_ID"],
         os.environ["ZOOM_CLIENT_SECRET"])
@@ -29998,44 +30089,67 @@ def api_console_community_live_bootstrap():
     with _db_lock, db.connect(LOG_DB) as cx:
         cx.row_factory = sqlite3.Row
         _mc.init_masterclass_tables(cx)
-        try:
-            group = cx.execute(
-                "SELECT id,location FROM calendar_events WHERE status='visible' "
-                "AND lower(summary) LIKE '%group coaching%' ORDER BY start DESC LIMIT 1"
-            ).fetchone()
-        except Exception:
-            group = None
-        if not group or not (group[1] or "").lower().startswith("https://"):
-            meeting = _zoom.create_meeting(
-                zoom_token, host=GLEN_ZOOM_USER, topic="Group Coaching",
-                start_iso=group_start.isoformat(timespec="seconds"), duration_min=60,
-                waiting_room=True, recurrence=recurrence)
-            cx.execute(
-                "INSERT INTO calendar_events (pushed_at,google_cal_id,google_event_id,"
-                'calendar_name,summary,start,"end",location,owner,status,cal_alert) '
-                "VALUES (?, 'community', ?, 'Group Coaching', 'Group Coaching', ?, ?, ?, "
-                "'glen', 'visible', 0)",
-                (datetime.now(timezone.utc).isoformat(), f"zoom-{meeting['meeting_id']}",
-                 group_start.replace(tzinfo=None).isoformat(),
-                 (group_start + timedelta(hours=1)).replace(tzinfo=None).isoformat(),
-                 meeting["join_url"]))
-            created.append("group_coaching")
+        group = cx.execute(
+            "SELECT id,zoom_meeting_id,zoom_registration_required FROM calendar_events "
+            "WHERE status='visible' AND lower(summary) LIKE '%group coaching%' "
+            "AND start=? ORDER BY id DESC LIMIT 1", (group_start_raw,)).fetchone()
         master = cx.execute(
-            "SELECT id,zoom_join_url FROM masterclass_events "
+            "SELECT id,zoom_meeting_id,registration_required FROM masterclass_events "
             "WHERE lower(topic) LIKE '%wellness whispering%' "
-            "ORDER BY start_ts DESC LIMIT 1").fetchone()
-        if not master or not (master[1] or "").lower().startswith("https://"):
-            meeting = _zoom.create_meeting(
-                zoom_token, host=GLEN_ZOOM_USER,
-                topic="Free Wellness Whispering MasterClass",
-                start_iso=master_start.isoformat(timespec="seconds"), duration_min=60,
-                waiting_room=False, recurrence=recurrence)
-            event_id = _mc.create_event(
-                cx, topic="Free Wellness Whispering MasterClass",
-                description="Free live community MasterClass with Dr. Glen.",
-                start_ts=master_start.replace(tzinfo=None).isoformat(), duration_min=60,
-                price_cents=0, member_price_cents=0)
-            _mc.set_zoom(cx, event_id, meeting["join_url"], meeting["meeting_id"])
+            "AND start_ts=? ORDER BY id DESC LIMIT 1", (master_start_raw,)).fetchone()
+    group_ready = bool(group and group[1] and group[2])
+    master_ready = bool(master and master[1] and master[2])
+    group_meeting = None
+    master_meeting = None
+    if not group_ready:
+        group_meeting = _zoom.create_meeting(
+            zoom_token, host=GLEN_ZOOM_USER, topic="Group Coaching",
+            start_iso=group_start.isoformat(timespec="seconds"), duration_min=60,
+            waiting_room=True, registration_required=True)
+    if not master_ready:
+        master_meeting = _zoom.create_meeting(
+            zoom_token, host=GLEN_ZOOM_USER,
+            topic="Free Wellness Whispering MasterClass",
+            start_iso=master_start.isoformat(timespec="seconds"), duration_min=60,
+            waiting_room=False, registration_required=True)
+    with _db_lock, db.connect(LOG_DB) as cx:
+        cx.row_factory = sqlite3.Row
+        _mc.init_masterclass_tables(cx)
+        if group_meeting:
+            if group:
+                cx.execute(
+                    "UPDATE calendar_events SET location='Zoom',zoom_meeting_id=?,"
+                    "zoom_occurrence_id='',zoom_registration_url=?,"
+                    "zoom_registration_required=1 WHERE id=?",
+                    (group_meeting["meeting_id"],
+                     group_meeting.get("registration_url") or "", group[0]))
+            else:
+                cx.execute(
+                    "INSERT INTO calendar_events (pushed_at,google_cal_id,google_event_id,"
+                    'calendar_name,summary,start,"end",location,owner,status,cal_alert,'
+                    "zoom_meeting_id,zoom_occurrence_id,zoom_registration_url,"
+                    "zoom_registration_required) VALUES (?, 'community', ?, "
+                    "'Group Coaching', 'Group Coaching', ?, ?, 'Zoom', 'glen', "
+                    "'visible', 0, ?, '', ?, 1)",
+                    (datetime.now(timezone.utc).isoformat(),
+                     f"zoom-{group_meeting['meeting_id']}", group_start_raw,
+                     (group_start + timedelta(hours=1)).replace(tzinfo=None).isoformat(),
+                     group_meeting["meeting_id"],
+                     group_meeting.get("registration_url") or ""))
+            created.append("group_coaching")
+        if master_meeting:
+            if master:
+                event_id = master[0]
+            else:
+                event_id = _mc.create_event(
+                    cx, topic="Free Wellness Whispering MasterClass",
+                    description="Free live community MasterClass with Dr. Glen.",
+                    start_ts=master_start_raw, duration_min=60,
+                    price_cents=0, member_price_cents=0)
+            _mc.set_zoom(
+                cx, event_id, "",
+                master_meeting["meeting_id"],
+                registration_url=master_meeting.get("registration_url") or "")
             created.append("masterclass")
         cx.commit()
     return jsonify({"ok": True, "created": created,
@@ -35594,13 +35708,23 @@ def _init_calendar_table():
                 owner           TEXT DEFAULT 'glen',
                 status          TEXT DEFAULT 'visible',
                 cal_alert       INTEGER DEFAULT 0,
+                zoom_meeting_id TEXT DEFAULT '',
+                zoom_occurrence_id TEXT DEFAULT '',
+                zoom_registration_url TEXT DEFAULT '',
+                zoom_registration_required INTEGER DEFAULT 0,
                 UNIQUE(google_cal_id, google_event_id)
             )
         """)
-        try:
-            cx.execute("ALTER TABLE calendar_events ADD COLUMN cal_alert INTEGER DEFAULT 0")
-        except Exception:
-            pass
+        calendar_columns = {
+            "cal_alert": "INTEGER DEFAULT 0",
+            "zoom_meeting_id": "TEXT DEFAULT ''",
+            "zoom_occurrence_id": "TEXT DEFAULT ''",
+            "zoom_registration_url": "TEXT DEFAULT ''",
+            "zoom_registration_required": "INTEGER DEFAULT 0",
+        }
+        for column, declaration in calendar_columns.items():
+            if not db.column_exists(cx, "calendar_events", column):
+                cx.execute(f"ALTER TABLE calendar_events ADD COLUMN {column} {declaration}")
         cx.execute("""
             CREATE TABLE IF NOT EXISTS calendar_suppressed (
                 id            INTEGER PRIMARY KEY AUTOINCREMENT,

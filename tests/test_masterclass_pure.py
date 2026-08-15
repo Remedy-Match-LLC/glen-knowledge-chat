@@ -43,3 +43,15 @@ def test_private_zoom_registration_is_stored_per_email():
     assert row["zoom_registrant_id"] == "reg-1"
     assert row["zoom_join_url"] == "https://zoom.us/w/private-person"
     assert "private-person" not in str(mc.get_event(cx, eid))
+
+
+def test_first_ambassador_referrer_is_persisted_without_overwrite():
+    cx = _cx()
+    eid = mc.create_event(cx, topic="T", description="", start_ts="2026-08-19T15:00:00",
+                          duration_min=60, price_cents=0, member_price_cents=0)
+    mc.register(cx, eid, "guest@example.com", "Guest", False, 0, paid=True)
+    assert mc.set_referrer_if_empty(cx, eid, "guest@example.com", "ambassador-one") is True
+    assert mc.set_referrer_if_empty(cx, eid, "guest@example.com", "ambassador-two") is False
+    row = mc.get_registration(cx, eid, "guest@example.com")
+    assert row["referrer_slug"] == "ambassador-one"
+    assert row["referred_at"]

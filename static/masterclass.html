@@ -9,7 +9,7 @@
 </style></head><body>
 <div id="v-load"><p class="muted">Loading...</p></div>
 <div id="v-event" class="hidden">
-  <h1 id="topic"></h1><p id="when" class="muted"></p><p id="price"></p><p id="desc"></p>
+  <h1 id="topic"></h1><p id="invited-by" class="muted hidden"></p><p id="when" class="muted"></p><p id="price"></p><p id="desc"></p>
   <input id="f-name" placeholder="Your name">
   <input id="f-email" placeholder="you@email.com" type="email">
   <p id="err" class="muted"></p>
@@ -19,12 +19,15 @@
   <p id="join-wrap" class="hidden">Join link: <a id="join-link" target="_blank" rel="noopener"></a></p></div>
 <script>
 const ID = (location.pathname.split("/masterclass/")[1]||"").split(/[?#]/)[0];
+const REF = new URLSearchParams(location.search).get("ref")||"";
 const $=id=>document.getElementById(id), show=v=>{for(const x of ["load","event","done"])$("v-"+x).classList.toggle("hidden",x!==v)};
 function money(c){return "$"+(c/100).toFixed(2);}
 async function load(){
-  const r=await fetch(`/api/masterclass/${encodeURIComponent(ID)}`); if(!r.ok){$("v-load").innerHTML='<p class="muted">This class was not found.</p>';return;}
+  const q=REF?`?ref=${encodeURIComponent(REF)}`:"";
+  const r=await fetch(`/api/masterclass/${encodeURIComponent(ID)}${q}`); if(!r.ok){$("v-load").innerHTML='<p class="muted">This class was not found.</p>';return;}
   const e=await r.json();
   $("topic").textContent=e.topic; $("when").textContent=(e.start_ts||"").replace("T"," ")+" HST · "+e.duration_min+" min";
+  if(e.invited_by){$("invited-by").textContent=`You were invited by ${e.invited_by}.`;$("invited-by").classList.remove("hidden");}
   $("desc").textContent=e.description||"";
   $("price").textContent = e.price_cents>0
     ? (e.member_price_cents>0 ? (money(e.member_price_cents)+" for members, "+money(e.price_cents)+" otherwise")
@@ -35,7 +38,7 @@ async function load(){
 async function register(){
   const email=($("f-email").value||"").trim(), name=($("f-name").value||"").trim();
   if(email.indexOf("@")<0){$("err").textContent="Please enter your email.";return;}
-  const r=await fetch(`/api/masterclass/${encodeURIComponent(ID)}/register`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({email,name})});
+  const r=await fetch(`/api/masterclass/${encodeURIComponent(ID)}/register`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({email,name,ref:REF})});
   const d=await r.json();
   if(d.checkout_url){ window.location=d.checkout_url; return; }
   if(d.registered){
