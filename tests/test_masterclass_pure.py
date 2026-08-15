@@ -16,6 +16,7 @@ def test_event_create_get_zoom_price():
     assert mc.price_for(ev, is_member=False) == 5000
     mc.set_zoom(cx, eid, "https://zoom.us/j/123", "123")
     assert mc.get_event(cx, eid)["zoom_join_url"] == "https://zoom.us/j/123"
+    assert mc.get_event(cx, eid)["registration_required"] == 1
 
 def test_register_upsert_and_mark_paid():
     cx = _cx()
@@ -29,3 +30,16 @@ def test_register_upsert_and_mark_paid():
     mc.register(cx, eid, "a@x.com", "A", is_member=True, amount_cents=0, paid=True)
     n = cx.execute("SELECT COUNT(*) FROM masterclass_registrations WHERE event_id=?", (eid,)).fetchone()[0]
     assert n == 1 and mc.is_registered(cx, eid, "a@x.com") is True
+
+
+def test_private_zoom_registration_is_stored_per_email():
+    cx = _cx()
+    eid = mc.create_event(cx, topic="T", description="", start_ts="2026-08-19T15:00:00",
+                          duration_min=60, price_cents=0, member_price_cents=0)
+    mc.register(cx, eid, "Person@Example.com", "Person", True, 0, paid=True)
+    mc.set_zoom_registration(cx, eid, "person@example.com", registrant_id="reg-1",
+                             join_url="https://zoom.us/w/private-person")
+    row = mc.get_registration(cx, eid, "PERSON@example.com")
+    assert row["zoom_registrant_id"] == "reg-1"
+    assert row["zoom_join_url"] == "https://zoom.us/w/private-person"
+    assert "private-person" not in str(mc.get_event(cx, eid))

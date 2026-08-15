@@ -40,7 +40,6 @@ async function register(){
   if(d.checkout_url){ window.location=d.checkout_url; return; }
   if(d.registered){
     $("done-msg").textContent="Check your email for the calendar invite and join link.";
-    if(d.join_url){ $("join-link").href=d.join_url; $("join-link").textContent=d.join_url; $("join-wrap").classList.remove("hidden"); }
     show("done"); return;
   }
   $("err").textContent = (d.error==="payment_unavailable") ? "Registration is not open yet. Please try again soon." : "Something went wrong. Please try again.";

@@ -2,6 +2,7 @@ import os, pytest
 if not os.environ.get("PINECONE_API_KEY"):
     pytest.skip("needs doppler env for import app", allow_module_level=True)
 import app as appmod
+from dashboard import masterclass as mc
 
 @pytest.fixture
 def client(monkeypatch, tmp_path):
@@ -11,6 +12,9 @@ def client(monkeypatch, tmp_path):
     monkeypatch.setattr("dashboard.zoom.get_token", lambda *a, **k: "tok")
     monkeypatch.setattr("dashboard.zoom.create_meeting",
                         lambda *a, **k: {"join_url": "https://zoom.us/j/mc", "meeting_id": "mc1", "start_url": "x"})
+    monkeypatch.setattr("dashboard.zoom.add_meeting_registrant",
+                        lambda *a, **k: {"registrant_id": "reg-1",
+                                        "join_url": "https://zoom.us/w/private-person"})
     appmod.app.config["TESTING"] = True
     return appmod.app.test_client()
 
@@ -46,11 +50,16 @@ def test_public_get_event(client):
     d = client.get(f"/api/masterclass/{eid}").get_json()
     assert d["topic"] == "T" and d["price_cents"] == 5000 and "zoom_join_url" not in d
 
-def test_register_free_returns_join_link(client, monkeypatch):
+def test_register_free_emails_and_stores_private_link_without_exposing_it(client, monkeypatch):
     eid = _mk_event(client, price=0, mprice=0)
     r = client.post(f"/api/masterclass/{eid}/register", json={"email": "free@x.com", "name": "F"})
     d = r.get_json()
-    assert r.status_code == 200 and d["registered"] is True and d["join_url"] == "https://zoom.us/j/mc"
+    assert r.status_code == 200 and d["registered"] is True
+    assert "join_url" not in d
+    assert d["join_status"] == "ready"
+    with appmod.db.connect(appmod.LOG_DB) as cx:
+        registration = mc.get_registration(cx, eid, "free@x.com")
+    assert registration["zoom_join_url"] == "https://zoom.us/w/private-person"
 
 def test_register_nonmember_paid_returns_checkout(client, monkeypatch):
     monkeypatch.setattr(appmod, "_STRIPE_ACTIVE", True, raising=False)

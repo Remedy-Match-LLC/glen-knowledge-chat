@@ -11227,8 +11227,12 @@ def _fulfill_masterclass(session_id):
             _mc.init_masterclass_tables(cx)
             _mc.mark_paid(cx, event_id, email)
             ev = _mc.get_event(cx, event_id)
-        _masterclass_send_confirmation(ev, email, md.get("name") or "")
-        return {"ok": True, "email": email, "event_id": event_id}
+        zoom_registration = _masterclass_zoom_registration(
+            event_id, email, md.get("name") or "")
+        _masterclass_send_confirmation(
+            ev, email, md.get("name") or "", zoom_registration.get("join_url") or "")
+        return {"ok": True, "email": email, "event_id": event_id,
+                "zoom_registered": bool(zoom_registration.get("join_url"))}
     except Exception as e:
         print(f"[masterclass] fulfill failed: {e!r}", flush=True)
         return {"ok": False, "reason": "error"}
@@ -17522,11 +17526,13 @@ def api_console_masterclass_create():
         tok = _zoom.get_token(os.environ["ZOOM_ACCOUNT_ID"], os.environ["ZOOM_CLIENT_ID"],
                               os.environ["ZOOM_CLIENT_SECRET"])
         m = _zoom.create_meeting(tok, host=GLEN_ZOOM_USER, topic=f"MasterClass: {topic}",
-                                 start_iso=start_ts, duration_min=duration, waiting_room=False)
+                                 start_iso=start_ts, duration_min=duration,
+                                 waiting_room=False, registration_required=True)
         with _db_lock, db.connect(LOG_DB) as cx2:
             _mc.init_masterclass_tables(cx2)
-            _mc.set_zoom(cx2, eid, m.get("join_url"), m.get("meeting_id"))
-        zoom_ok = bool(m.get("join_url"))
+            _mc.set_zoom(cx2, eid, m.get("join_url"), m.get("meeting_id"),
+                         registration_url=m.get("registration_url") or "")
+        zoom_ok = bool(m.get("meeting_id"))
     except Exception:
         app.logger.exception("masterclass zoom create failed")
     return jsonify({"ok": True, "event_id": eid,
@@ -17538,11 +17544,18 @@ def api_console_masterclass_zoom_url(event_id):
     if not _portal_console_ok():
         return jsonify({"error": "unauthorized"}), 401
     from dashboard import masterclass as _mc
-    url = ((request.get_json(silent=True) or {}).get("url") or "").strip()
+    from dashboard import zoom as _zoom
+    body = request.get_json(silent=True) or {}
+    url = (body.get("url") or "").strip()
+    meeting_id = (body.get("meeting_id") or _zoom.meeting_id_from_url(url)).strip()
+    registration_url = (body.get("registration_url") or "").strip()
+    if not meeting_id:
+        return jsonify({"error": "meeting_id required for private registration"}), 400
     with _db_lock, db.connect(LOG_DB) as cx:
         cx.row_factory = sqlite3.Row
         _mc.init_masterclass_tables(cx)
-        _mc.set_zoom(cx, event_id, url, "")
+        _mc.set_zoom(cx, event_id, url, meeting_id,
+                     registration_url=registration_url)
     return jsonify({"ok": True})
 
 
@@ -17568,13 +17581,68 @@ def api_masterclass_get(event_id):
                     "price_cents": ev["price_cents"], "member_price_cents": ev["member_price_cents"]})
 
 
-def _masterclass_send_confirmation(event, email, name):
-    """Best-effort confirmation email with the Zoom join link + an .ics invite.
+def _zoom_name_parts(name, email):
+    parts = [part for part in (name or "").strip().split() if part]
+    if not parts:
+        return (email or "attendee").split("@", 1)[0], ""
+    return parts[0], " ".join(parts[1:])
+
+
+def _zoom_register_person(meeting_id, email, name, *, occurrence_id=""):
+    """Create a Zoom registrant outside the database lock."""
+    from dashboard import zoom as _zoom
+    token = _zoom.get_token(os.environ["ZOOM_ACCOUNT_ID"], os.environ["ZOOM_CLIENT_ID"],
+                            os.environ["ZOOM_CLIENT_SECRET"])
+    first_name, last_name = _zoom_name_parts(name, email)
+    return _zoom.add_meeting_registrant(
+        token, meeting_id=meeting_id, email=email, first_name=first_name,
+        last_name=last_name, occurrence_id=occurrence_id)
+
+
+def _masterclass_zoom_registration(event_id, email, name):
+    """Idempotently obtain and persist one client's private Zoom join URL."""
+    from dashboard import masterclass as _mc
+    with _db_lock, db.connect(LOG_DB) as cx:
+        cx.row_factory = sqlite3.Row
+        _mc.init_masterclass_tables(cx)
+        event = _mc.get_event(cx, event_id)
+        registration = _mc.get_registration(cx, event_id, email)
+    if not event or not registration or not registration.get("paid"):
+        return {"join_url": "", "error": "registration_not_paid"}
+    if registration.get("zoom_join_url"):
+        return {"join_url": registration["zoom_join_url"],
+                "registrant_id": registration.get("zoom_registrant_id") or ""}
+    meeting_id = (event.get("zoom_meeting_id") or "").strip()
+    if not meeting_id:
+        return {"join_url": "", "error": "zoom_meeting_missing"}
+    try:
+        result = _zoom_register_person(
+            meeting_id, email, name,
+            occurrence_id=event.get("zoom_occurrence_id") or "")
+        if not result.get("join_url"):
+            raise RuntimeError("Zoom returned no registrant join URL")
+        with _db_lock, db.connect(LOG_DB) as cx:
+            _mc.init_masterclass_tables(cx)
+            _mc.set_zoom_registration(
+                cx, event_id, email, registrant_id=result.get("registrant_id") or "",
+                join_url=result["join_url"],
+                occurrence_id=event.get("zoom_occurrence_id") or "")
+        return result
+    except Exception as exc:
+        app.logger.exception("masterclass Zoom registration failed for event %s", event_id)
+        with _db_lock, db.connect(LOG_DB) as cx:
+            _mc.init_masterclass_tables(cx)
+            _mc.set_zoom_registration_error(cx, event_id, email, str(exc))
+        return {"join_url": "", "error": "zoom_registration_failed"}
+
+
+def _masterclass_send_confirmation(event, email, name, join_url=""):
+    """Best-effort confirmation email with a private join link + .ics invite.
     Swallows send errors (logs) — never raises into the register response."""
     try:
         from dashboard import evox as _ev
         start = event["start_ts"]; nice = start.replace("T", " ")
-        join = event.get("zoom_join_url") or ""
+        join = join_url or ""
         join_line = (f"Join here: {join}" if join else "Your join link will follow by email.")
         try:
             end = (datetime.fromisoformat(start[:19]) + timedelta(minutes=int(event["duration_min"]))).isoformat()
@@ -17612,8 +17680,12 @@ def api_masterclass_register(event_id):
         if amount <= 0:
             _mc.register(cx, event_id, email, name, is_member, 0, paid=True)
     if amount <= 0:
-        _masterclass_send_confirmation(ev, email, name)
-        return jsonify({"ok": True, "registered": True, "join_url": ev.get("zoom_join_url")})
+        zoom_registration = _masterclass_zoom_registration(event_id, email, name)
+        _masterclass_send_confirmation(ev, email, name,
+                                       zoom_registration.get("join_url") or "")
+        return jsonify({"ok": True, "registered": True,
+                        "join_status": ("ready" if zoom_registration.get("join_url")
+                                        else "pending")})
     # paid non-member
     if not _STRIPE_ACTIVE:
         return jsonify({"error": "payment_unavailable"}), 503
@@ -29763,10 +29835,14 @@ def api_portal_calendar_register(token):
     from dashboard import masterclass as _mc
     from dashboard import portal_calendar as _pc
     from dashboard import portal_identity as _pi
+    from dashboard import zoom as _zoom
 
     body = request.get_json(silent=True) or {}
     event_key = (body.get("event_id") or "").strip().lower()
     sess = request.cookies.get("rm_portal_session", "")
+    group_registration = None
+    event = None
+    amount = None
     with _db_lock, db.connect(LOG_DB) as cx:
         cx.row_factory = sqlite3.Row
         _cp.init_client_portal_table(cx)
@@ -29792,30 +29868,62 @@ def api_portal_calendar_register(token):
                 (event_id,)).fetchone()
             if not row:
                 return jsonify({"error": "not_found"}), 404
-            _pc.register_group(cx, event_key, email)
-            join = (row[0] or "").strip()
-            return jsonify({"ok": True, "registered": True,
-                "join_url": join if join.lower().startswith(("http://", "https://")) else ""})
+            existing = _pc.get_registration(cx, event_key, email)
+            if existing and existing.get("zoom_join_url"):
+                return jsonify({"ok": True, "registered": True,
+                                "join_url": existing["zoom_join_url"],
+                                "join_status": "ready"})
+            meeting_id = _zoom.meeting_id_from_url(row[0] or "")
+            if not meeting_id:
+                return jsonify({"error": "zoom_registration_unavailable",
+                                "detail": "This event has no registrable Zoom meeting ID."}), 409
+            group_registration = {"meeting_id": meeting_id, "event_key": event_key}
 
-        if not event_key.startswith("masterclass-"):
+        elif not event_key.startswith("masterclass-"):
             return jsonify({"error": "not_found"}), 404
+        else:
+            try:
+                event_id = int(event_key.split("-")[1])
+            except ValueError:
+                return jsonify({"error": "not_found"}), 404
+            _mc.init_masterclass_tables(cx)
+            event = _mc.get_event(cx, event_id)
+            if not event:
+                return jsonify({"error": "not_found"}), 404
+            member = _is_paid_member(email)
+            amount = _mc.price_for(event, member)
+            if amount <= 0:
+                _mc.register(cx, event_id, email, name, member, 0, paid=True)
+
+    if group_registration:
         try:
-            event_id = int(event_key.split("-")[1])
-        except ValueError:
-            return jsonify({"error": "not_found"}), 404
-        _mc.init_masterclass_tables(cx)
-        event = _mc.get_event(cx, event_id)
-        if not event:
-            return jsonify({"error": "not_found"}), 404
-        member = _is_paid_member(email)
-        amount = _mc.price_for(event, member)
-        if amount <= 0:
-            _mc.register(cx, event_id, email, name, member, 0, paid=True)
+            zoom_registration = _zoom_register_person(
+                group_registration["meeting_id"], email, name)
+            if not zoom_registration.get("join_url"):
+                raise RuntimeError("Zoom returned no registrant join URL")
+        except Exception:
+            app.logger.exception("group coaching Zoom registration failed for %s",
+                                 group_registration["event_key"])
+            return jsonify({"error": "zoom_registration_failed",
+                            "detail": "Your spot was not reserved. Please retry."}), 502
+        with _db_lock, db.connect(LOG_DB) as cx:
+            _pc.register_group(
+                cx, group_registration["event_key"], email,
+                meeting_id=group_registration["meeting_id"],
+                registrant_id=zoom_registration.get("registrant_id") or "",
+                join_url=zoom_registration["join_url"])
+        return jsonify({"ok": True, "registered": True,
+                        "join_url": zoom_registration["join_url"],
+                        "join_status": "ready"})
 
     if amount <= 0:
-        _masterclass_send_confirmation(event, email, name)
+        zoom_registration = _masterclass_zoom_registration(event_id, email, name)
+        _masterclass_send_confirmation(
+            event, email, name, zoom_registration.get("join_url") or "")
         return jsonify({"ok": True, "registered": True,
-                        "join_url": event.get("zoom_join_url") or ""})
+                        "join_url": zoom_registration.get("join_url") or "",
+                        "join_status": ("ready" if zoom_registration.get("join_url")
+                                        else "pending")})
     if not _STRIPE_ACTIVE:
         return jsonify({"error": "payment_unavailable"}), 503
     from dashboard import stripe_pay as _sp
