@@ -49,3 +49,18 @@ def test_add_message_once_is_retry_safe():
     assert retry_created is False
     assert retry_id == first_id
     assert len(pc.list_messages(cx, "a@x.com")) == 1
+
+
+def test_import_email_once_dedupes_by_gmail_message_id():
+    cx = sqlite3.connect(":memory:")
+    first_id, first_created = pc.import_email_once(
+        cx, "a@x.com", "Original import", "gmail-123", author="Alice")
+    retry_id, retry_created = pc.import_email_once(
+        cx, "a@x.com", "Changed rendering", "gmail-123", author="Alice")
+
+    assert first_created is True
+    assert retry_created is False
+    assert retry_id == first_id
+    assert [m["content"] for m in pc.list_messages(cx, "a@x.com")] == [
+        "Original import"
+    ]

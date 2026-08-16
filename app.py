@@ -25939,8 +25939,8 @@ def api_console_portal_import_email(email):
     content = "\n".join(parts)
     from dashboard import portal_chat as _pchat
     with _db_lock, db.connect(LOG_DB) as cx:
-        mid, created = _pchat.add_message_once(
-            cx, email, _pchat.CLIENT, content, author=sender)
+        mid, created = _pchat.import_email_once(
+            cx, email, content, source_message_id, author=sender)
     return jsonify({"ok": mid is not None, "id": mid, "created": created,
                     "source_message_id": source_message_id})
 
