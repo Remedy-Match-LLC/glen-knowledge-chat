@@ -153,6 +153,15 @@ def _seed_min_schema(db: str):
             );
             INSERT INTO users (id, email, name)
               VALUES (42, 'a@x.com', 'Alice');
+            CREATE TABLE client_portals (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                token_hash TEXT UNIQUE,
+                email TEXT,
+                name TEXT,
+                content_json TEXT,
+                created_at TEXT,
+                updated_at TEXT
+            );
             """
         )
         cx.commit()
@@ -222,6 +231,62 @@ def test_process_inbox_replies_dry_run_skips_writes(tmp_path, monkeypatch):
 
     # No label modifications in dry_run
     svc.users().messages().modify.assert_not_called()
+
+
+def test_known_portal_client_email_is_imported_once(tmp_path):
+    db = str(tmp_path / "test.db")
+    _seed_min_schema(db)
+    with sqlite3.connect(db) as cx:
+        cx.execute(
+            "INSERT INTO client_portals(email,name,content_json) VALUES(?,?,?)",
+            ("client@x.com", "Aviva", "{}"))
+        cx.commit()
+
+    message = {
+        "id": "gmail-aviva-1",
+        "payload": {
+            "headers": [
+                {"name": "From", "value": "Aviva <client@x.com>"},
+                {"name": "Date", "value": "Thu, 13 Aug 2026 20:34:44 -1000"},
+                {"name": "Subject", "value": "Portal question"},
+            ],
+            "mimeType": "text/plain",
+            "body": {"data": "SSBoYXZlIGEgcXVlc3Rpb24u"},
+        },
+        "snippet": "I have a question.",
+    }
+    svc = _build_mock_svc(
+        messages_resp={"messages": [{"id": "gmail-aviva-1"}]},
+        msg_get_resp=message,
+    )
+
+    from reply_watcher import process_inbox_replies
+
+    first = process_inbox_replies(svc=svc, db_path=db, dry_run=False)
+    retry = process_inbox_replies(svc=svc, db_path=db, dry_run=False)
+
+    assert first["portal_imported"] == 1
+    assert retry["portal_already_imported"] == 1
+    with sqlite3.connect(db) as cx:
+        cx.row_factory = sqlite3.Row
+        rows = cx.execute(
+            "SELECT role,author,content FROM portal_chat_messages"
+        ).fetchall()
+        triage = cx.execute(
+            "SELECT email,category,urgency,summary,recommendation "
+            "FROM portal_triage"
+        ).fetchall()
+    assert len(rows) == 1
+    assert rows[0]["role"] == "client"
+    assert rows[0]["author"] == "Aviva"
+    assert "Imported from email for reference." in rows[0]["content"]
+    assert "Subject: Portal question" in rows[0]["content"]
+    assert "I have a question." in rows[0]["content"]
+    assert len(triage) == 1
+    assert triage[0]["email"] == "client@x.com"
+    assert triage[0]["category"] == "question"
+    assert triage[0]["urgency"] == "medium"
+    assert triage[0]["summary"] == "Email imported: Portal question"
 
 
 def test_process_inbox_replies_unknown_sender_gets_nonuser_label(

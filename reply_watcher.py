@@ -157,6 +157,64 @@ def _extract_sender_email(headers_lower: dict) -> str:
     return bare
 
 
+def _extract_sender_name(headers_lower: dict) -> str:
+    """Return the display name without treating the address as a name."""
+    sender_raw = (headers_lower.get("from", "") or "").strip()
+    if "<" in sender_raw:
+        name = sender_raw.split("<", 1)[0].strip().strip('"')
+        if name:
+            return name
+    return _extract_sender_email(headers_lower)
+
+
+def _attachment_note(payload: dict) -> str:
+    """Describe attachments by filename only; never claim uninspected content."""
+    names = []
+    stack = [payload or {}]
+    while stack:
+        part = stack.pop()
+        filename = (part.get("filename") or "").strip()
+        if filename:
+            names.append(filename)
+        stack.extend(part.get("parts") or [])
+    if not names:
+        return ""
+    return ", ".join(dict.fromkeys(names))
+
+
+def _portal_exists(email: str, db_path: str) -> bool:
+    if not email:
+        return False
+    from dashboard import client_portal, db
+    with db.connect(db_path) as cx:
+        return client_portal.get_portal_content_by_email(cx, email) is not None
+
+
+def _import_portal_email(db_path, email, sender_name, headers, body, payload, msg_id):
+    """Persist a Gmail reply in an existing client's portal conversation."""
+    label = ("Imported from email for reference. (You can now communicate directly "
+             "in here, either in writing or by voice.)")
+    received_at = (headers.get("date") or "Unknown").strip()
+    subject = (headers.get("subject") or "(no subject)").strip()
+    parts = [label, "", f"From: {sender_name}", f"Received: {received_at}",
+             f"Subject: {subject}", "", body]
+    attachment_note = _attachment_note(payload)
+    if attachment_note:
+        parts.extend(["", f"Attachment: {attachment_note}"])
+    content = "\n".join(parts)
+    from dashboard import db, portal_chat, portal_triage
+    with db.connect(db_path) as cx:
+        message_id, created = portal_chat.import_email_once(
+            cx, email, content, msg_id, author=sender_name)
+        if created:
+            portal_triage.add_item(
+                cx, email, sender_name, "question", "medium",
+                f"Email imported: {subject}",
+                "Reply in the portal chat, then send a brief bridge reply in Gmail.",
+                body, "")
+        return message_id, created
+
+
 def process_inbox_replies(
     svc=None,
     db_path: Optional[str] = None,
@@ -222,6 +280,8 @@ def _scan_and_process(
     counts = {
         "processed": 0,
         "skipped_nonuser": 0,
+        "portal_imported": 0,
+        "portal_already_imported": 0,
         "errored": 0,
         "details": [],
     }
@@ -244,6 +304,22 @@ def _scan_and_process(
             }
             sender = _extract_sender_email(headers_lower)
 
+            body = _extract_plain_body(msg.get("payload", {})) or msg.get(
+                "snippet", ""
+            )
+            cleaned = _strip_quoted_reply(body)
+            if not cleaned.strip():
+                cleaned = msg.get("snippet", "")
+
+            if not dry_run and _portal_exists(sender, db_path):
+                _portal_mid, portal_created = _import_portal_email(
+                    db_path, sender, _extract_sender_name(headers_lower),
+                    headers_lower, cleaned, msg.get("payload", {}), mid)
+                if portal_created:
+                    counts["portal_imported"] += 1
+                else:
+                    counts["portal_already_imported"] += 1
+
             user_id = _resolve_user_id(sender, db_path)
             if user_id is None:
                 if not dry_run:
@@ -261,13 +337,6 @@ def _scan_and_process(
                     }
                 )
                 continue
-
-            body = _extract_plain_body(msg.get("payload", {})) or msg.get(
-                "snippet", ""
-            )
-            cleaned = _strip_quoted_reply(body)
-            if not cleaned.strip():
-                cleaned = msg.get("snippet", "")
 
             result = process_reply(
                 user_id=user_id,

@@ -28,6 +28,15 @@ def init_table(cx):
     cx.commit()
 
 
+def init_email_import_table(cx):
+    """Durable Gmail-message ledger for retry-safe email imports."""
+    cx.execute("""CREATE TABLE IF NOT EXISTS portal_email_imports(
+        source_message_id TEXT PRIMARY KEY, portal_message_id INTEGER NOT NULL,
+        email TEXT NOT NULL, imported_at TEXT)""")
+    cx.execute("CREATE INDEX IF NOT EXISTS idx_pei_email ON portal_email_imports(email)")
+    cx.commit()
+
+
 def add_message(cx, email, role, content, author=None):
     """Append a message to a client's thread. role = client|assistant|practitioner.
     Returns the new row id, or None if email/content is empty (no-op)."""
@@ -64,6 +73,36 @@ def add_message_once(cx, email, role, content, author=None):
         existing_id = row["id"] if hasattr(row, "keys") else row[0]
         return int(existing_id), False
     return add_message(cx, e, role, c, author=author), True
+
+
+def import_email_once(cx, email, content, source_message_id, author=None):
+    """Import one Gmail message as client-authored context exactly once.
+
+    ``source_message_id`` is Gmail's immutable message id. Exact-content
+    deduplication remains as a compatibility fallback for imports made before
+    the ledger existed.
+    """
+    init_email_import_table(cx)
+    source_id = (source_message_id or "").strip()
+    if not source_id:
+        return None, False
+    row = cx.execute(
+        "SELECT portal_message_id FROM portal_email_imports "
+        "WHERE source_message_id=?", (source_id,)).fetchone()
+    if row:
+        existing_id = row["portal_message_id"] if hasattr(row, "keys") else row[0]
+        return int(existing_id), False
+
+    message_id, created = add_message_once(
+        cx, email, CLIENT, content, author=author)
+    if message_id is None:
+        return None, False
+    cx.execute(
+        "INSERT INTO portal_email_imports"
+        "(source_message_id,portal_message_id,email,imported_at) VALUES(?,?,?,?)",
+        (source_id, int(message_id), (email or "").strip().lower(), _now()))
+    cx.commit()
+    return int(message_id), bool(created)
 
 
 def list_messages(cx, email, limit=100):
