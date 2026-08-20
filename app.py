@@ -21908,7 +21908,8 @@ def api_ebook_optin():
 def api_portal_library(token):
     """The token owner's granted ebook Starters. `enabled` mirrors the hub flag so
     the My Library tile stays dark until the flag flips; items are always computed."""
-    from dashboard import client_portal as _cp, portal_library as _lib, ebook_catalog as _cat
+    from dashboard import (client_portal as _cp, portal_library as _lib,
+                           ebook_catalog as _cat, course_entitlements as _ce)
     with db.connect(LOG_DB) as cx:
         _cp.init_client_portal_table(cx)
         _lib.init_table(cx)
@@ -21917,17 +21918,73 @@ def api_portal_library(token):
             return jsonify({"error": "not found"}), 404
         email = (portal.get("email") or "").strip().lower()
         granted = _lib.list_for_email(cx, email) if email else []
+        course_qualified = bool(email and (
+            _ce.paid_level_for(cx, email) == 2 or _ce.drip_active(cx, email)))
+    course_qualified = course_qualified or _is_certification_student(email)
     items = []
     for g in granted:
         meta = _cat.get(g["slug"])
         if not meta:
             continue
         items.append({
-            "slug": g["slug"], "title": meta["title"], "granted_at": g["granted_at"],
+            "kind": "ebook", "slug": g["slug"], "title": meta["title"], "granted_at": g["granted_at"],
             "pdf_url": f"/api/portal/{token}/library/{g['slug']}/pdf",
             "audio_url": f"/api/portal/{token}/library/{g['slug']}/audio",
         })
+    if course_qualified:
+        items.append({
+            "kind": "course", "slug": _ASH_CERT_COURSE,
+            "title": "ASH Certification",
+            "description": "Your Accelerated Self Healing certification curriculum",
+            "course_url": f"/api/portal/{token}/courses/{_ASH_CERT_COURSE}",
+        })
     return jsonify({"enabled": _PORTAL_HUB_ENABLED, "items": items})
+
+
+def _portal_course_qualified(cx, email, course_slug):
+    if course_slug != _ASH_CERT_COURSE or not email:
+        return False
+    from dashboard import course_entitlements as _ce
+    return (_ce.paid_level_for(cx, email) == 2 or _ce.drip_active(cx, email)
+            or _is_certification_student(email))
+
+
+@app.route("/api/portal/<token>/courses/<course_slug>", methods=["GET"])
+def api_portal_course_link(token, course_slug):
+    """Bridge an authenticated healing portal into its qualified course."""
+    from dashboard import client_portal as _cp, course_entitlements as _ce, course_tokens as _ct
+    with _db_lock, db.connect(LOG_DB) as cx:
+        _cp.init_client_portal_table(cx)
+        portal = _portal_record_for(cx, token)
+        if not portal:
+            return Response("", status=404)
+        email = (portal.get("email") or "").strip().lower()
+        if not _portal_course_qualified(cx, email, course_slug):
+            return Response("", status=403)
+        if _ce.paid_level_for(cx, email) < 2 and _is_certification_student(email):
+            _ce.grant_cert(cx, email, source="certification_roster")
+        course_token = _ct.mint_course_token(cx, email, portal.get("name") or "")
+    from urllib.parse import quote
+    next_path = quote(f"/learn/{course_slug}", safe="/")
+    return redirect(f"{mentorship_base()}/learn?token={course_token}&next={next_path}", code=302)
+
+
+@app.route("/api/portal/<token>/courses", methods=["GET"])
+def api_portal_courses_link(token):
+    """Open MentorshipU from Learn & Ask, preserving qualified paid access."""
+    from dashboard import client_portal as _cp, course_entitlements as _ce, course_tokens as _ct
+    with _db_lock, db.connect(LOG_DB) as cx:
+        _cp.init_client_portal_table(cx)
+        portal = _portal_record_for(cx, token)
+        if not portal:
+            return Response("", status=404)
+        email = (portal.get("email") or "").strip().lower()
+        if not email:
+            return Response("", status=403)
+        if email and _is_certification_student(email) and _ce.paid_level_for(cx, email) < 2:
+            _ce.grant_cert(cx, email, source="certification_roster")
+        course_token = _ct.mint_course_token(cx, email, portal.get("name") or "")
+    return redirect(f"{mentorship_base()}/learn?token={course_token}", code=302)
 
 
 @app.route("/api/portal/<token>/library/<slug>/<asset>", methods=["GET"])

@@ -10,7 +10,7 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 from flask import (Blueprint, request, jsonify, redirect, make_response,
-                    render_template_string, abort, send_from_directory)
+                    render_template_string, abort, send_from_directory, g)
 
 try:
     from markupsafe import escape
@@ -202,18 +202,43 @@ def _paid_module_open(cx, email, course_obj, module_slug) -> bool:
     if module is None:
         return False
     lesson_slugs = [l.slug for l in module.lessons]
-    full_cert = course_entitlements.paid_level_for(cx, email) == 2
+    full_cert = (course_entitlements.paid_level_for(cx, email) == 2
+                 or _certification_roster_access(email, course_obj.slug))
     completed = course_progress.module_completed(cx, email, course_obj.slug, module_slug, lesson_slugs)
     unlocked = module_slug in course_module_unlocks.unlocked_modules(cx, email, course_obj.slug)
     drip = course_entitlements.drip_active(cx, email)
     return ca.module_access(full_cert=full_cert, completed=completed, unlocked=unlocked, drip_active=drip)
 
 
+def _certification_roster_access(email, course_slug) -> bool:
+    """Initial ASH cohorts predate the course-entitlement table.
+
+    Their authoritative practitioner-roster role must therefore count on every
+    MentorshipU request, including old emailed course links that never pass
+    through the healing portal. Cache within the request because course_home
+    checks this once per module.
+    """
+    if course_slug != "ash-certification" or not email:
+        return False
+    cache = getattr(g, "_mu_cert_roster_access", {})
+    key = email.strip().lower()
+    if key not in cache:
+        import app as appmod
+        cache[key] = bool(appmod._is_certification_student(key))
+        g._mu_cert_roster_access = cache
+    return cache[key]
+
+
 def learn_home():
     # Following an emailed link sets the member cookie, then redirects clean.
     token = request.args.get("token")
     if token:
-        resp = make_response(redirect("/learn", code=302))
+        next_path = request.args.get("next") or "/learn"
+        # Only permit an on-site course path; the token endpoint must never be
+        # usable as an open redirect.
+        if not next_path.startswith("/learn") or next_path.startswith("//"):
+            next_path = "/learn"
+        resp = make_response(redirect(next_path, code=302))
         resp.set_cookie("mu_token", token, httponly=True, samesite="Lax", secure=True, max_age=60 * 60 * 24 * 30)
         return resp
     level = _member_level()

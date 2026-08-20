@@ -1215,7 +1215,7 @@ function buildHubHtml(d, v){
     ["Learn & Ask", [
       ["ask",     "Ask Dr. Glen", "Chat about your terrain and remedies"],
       ["bodymap", "Body Map", "Your systems, personalized"],
-      ["classes", "MasterClasses", "Free courses and teachings"],
+      ["classes", "My Courses", "Your courses and free MasterClasses"],
       ...((v && v.brain && v.brain.enabled)
         ? [{ext:[v.brain.url, "Clinical Theory of Everything",
                  "Explore the map of how healing works"]}] : []),
@@ -3201,9 +3201,9 @@ function render(d, v){
     <a class="btn full" href="/portal/${encodeURIComponent(seg)}/bodymap">Open your Body Map</a></div>`;
   if (_hub) { _bodymapHtml += _bodymapCard; } else { html += _bodymapCard; }
 
-  const _classesCard = `<div class="card quiet"><h2>Free MasterClasses</h2>
-    <p class="muted small" style="margin:.3rem 0 .7rem">Watch Dr. Glen's free MasterClasses on Accelerated Self Healing and Wellness Whispering, with full videos and chaptered transcripts, at no cost.</p>
-    <a class="btn full" href="https://courses.mentorshipu.com/learn">Explore free MasterClasses</a></div>`;
+  const _classesCard = `<div class="card quiet"><h2>My Courses</h2>
+    <p class="muted small" style="margin:.3rem 0 .7rem">Open the certification courses you qualify for, along with Dr. Glen's free MasterClasses and teachings.</p>
+    <a class="btn full" href="/api/portal/${encodeURIComponent(seg)}/courses">Open MentorshipU</a></div>`;
   if (_hub) { _classesHtml += _classesCard; } else { html += _classesCard; }
 
   // Account snapshot — always shown when we have an identity.
