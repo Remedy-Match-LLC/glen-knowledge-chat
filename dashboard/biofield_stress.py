@@ -457,6 +457,24 @@ def add_voice_stress(cx, tid, label):
     return add_stress(cx, tid, label, source="voice", balance="required")
 
 
+def delete_stress(cx, tid, stress_id):
+    """Delete one stress owned by this test and its now-orphaned coverage rows."""
+    init_stress_tables(cx)
+    t = _num(tid)
+    row = cx.execute(
+        "SELECT code FROM biofield_auth_stress WHERE test_id=? AND id=?",
+        (t, int(stress_id)),
+    ).fetchone()
+    if not row:
+        return False
+    cx.execute("DELETE FROM biofield_auth_stress WHERE test_id=? AND id=?",
+               (t, int(stress_id)))
+    cx.execute("DELETE FROM biofield_auth_remedy_coverage WHERE test_id=? AND code=?",
+               (t, row[0]))
+    cx.commit()
+    return True
+
+
 def stress_id_for(cx, tid, label):
     """id of the test's stress whose label normalizes to `label` (any source), or None.
     Matches by normalized label — mirrors add_stress's dedup — so it also finds a stress

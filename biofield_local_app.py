@@ -1428,6 +1428,15 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
             _st.set_manual_balanced(cx, test_id, sid, value)
         return {"ok": True}
 
+    @app.route("/author/<test_id>/stress/<int:sid>/delete", methods=["POST"])
+    def author_stress_delete(test_id, sid):
+        from dashboard import biofield_stress as _st
+        with sqlite3.connect(db_path) as cx:
+            deleted = _st.delete_stress(cx, test_id, sid)
+        if not deleted:
+            return {"ok": False, "error": "Tag not found."}, 404
+        return {"ok": True}
+
     @app.route("/author/<test_id>/row", methods=["POST"])
     def author_row_add(test_id):
         d = request.get_json(silent=True) or {}
