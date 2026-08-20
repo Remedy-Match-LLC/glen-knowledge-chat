@@ -410,6 +410,7 @@
   .mentor-bubble{max-width:86%;padding:9px 11px;border-radius:12px;white-space:pre-wrap;line-height:1.45;font-size:.9rem}
   .mentor-bubble.user{align-self:flex-end;background:var(--brand);color:#fff}.mentor-bubble.assistant{align-self:flex-start;background:var(--card2);border:1px solid var(--line)}
   .mentor-guide{padding:8px 13px;border-top:1px solid var(--line);font-size:.76rem;color:var(--muted);display:flex;align-items:center;gap:7px}
+  .mentor-guide[hidden]{display:none}
   .mentor-compose{border-top:1px solid var(--line);padding:10px;display:flex;gap:7px}.mentor-compose input{flex:1;min-width:0;
     border:1px solid var(--line);border-radius:18px;padding:9px 12px;background:var(--card2);color:var(--ink);font:inherit}
   .mentor-send{border:0;border-radius:18px;padding:8px 13px;background:var(--btn-bg);color:var(--btn-fg);font-weight:700;cursor:pointer}
@@ -716,6 +717,7 @@
     </div>
     <div class="mentor-msgs" id="mentorMsgs" aria-live="polite"></div>
     <label class="mentor-guide"><input type="checkbox" id="mentorAutoGuide"> Guide me automatically on each page</label>
+    <label class="mentor-guide" id="mentorContinuousWrap" hidden><input type="checkbox" id="mentorContinuous"> Continuous two-way conversation</label>
     <div class="mentor-compose"><input id="mentorInput" type="text" placeholder="Ask about this page…" autocomplete="off"><button class="mentor-send" id="mentorSend">Send</button></div>
   </aside>
   <script>
