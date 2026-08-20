@@ -21932,6 +21932,7 @@ def api_portal_library(token):
             return jsonify({"error": "not found"}), 404
         email = (portal.get("email") or "").strip().lower()
         granted = _lib.list_for_email(cx, email) if email else []
+        _ce.init_course_entitlements_table(cx)
         course_qualified = bool(email and (
             _ce.paid_level_for(cx, email) == 2 or _ce.drip_active(cx, email)))
     course_qualified = (_map.override_for(email) is not False and
@@ -21962,6 +21963,7 @@ def _portal_course_qualified(cx, email, course_slug):
     from dashboard import course_entitlements as _ce, member_access_policy as _map
     if _map.override_for(email) is False:
         return False
+    _ce.init_course_entitlements_table(cx)
     return (_ce.paid_level_for(cx, email) == 2 or _ce.drip_active(cx, email)
             or _is_certification_student(email))
 
