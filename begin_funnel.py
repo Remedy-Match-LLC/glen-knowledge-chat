@@ -432,9 +432,13 @@ CARD_CATALOG = {
     "remedy_match":       {"title": "Find Your Perfect Remedy Match",
                            "sub": "A few questions to match you to your one perfect remedy",
                            "base_url": "/begin/match", "internal": True},
+    # Internal on purpose: the old remedymatch.com storefront carries only a
+    # fraction of the catalog, clients have been unable to check out there, and
+    # it is currently serving a maintenance page. Every catalog slug has a live
+    # page at /begin/product/<slug>, reached from the matcher.
     "product":            {"title": "Formulations Matched to You",
                            "sub": "Explore remedies suited to what your body needs",
-                           "base_url": "https://remedymatch.com", "internal": False},
+                           "base_url": "/begin/match", "internal": True},
     "founding_offer":     {"title": "Neuro Magnesium - Founding Batch",
                            "sub": "Reserve your bottle from the first founding batch",
                            "base_url": "/begin/product/neuro-magnesium", "internal": True},

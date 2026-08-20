@@ -5693,9 +5693,12 @@ def _resolve_remedy_url(name):
             return (url, "trusted")
     return (None, None)
 
-def _store_search_url(name):
-    from urllib.parse import quote_plus
-    return f"https://remedymatch.com/?controller=search&s={quote_plus(name or '')}"
+def _is_legacy_storefront_url(url):
+    """True for a remedymatch.com link. The legacy storefront carries only a
+    fraction of the catalog, clients have been unable to complete checkout on
+    it, and it is being retired — so it must never be a client-facing CTA. The
+    chat prompt already says this; this enforces it in the code that renders."""
+    return "remedymatch.com" in (url or "").lower()
 
 _REMEDY_MATCH_SYSTEM = (
     "You are RemedyMatch, Dr. Glen Swartwout's warm, Socratic remedy-matching guide "
@@ -5910,11 +5913,12 @@ def begin_match_chat():
             obj = json.loads(txt)
             if obj.get("matched") and obj.get("name"):
                 url, src = _resolve_remedy_url(obj["name"])
+                if _is_legacy_storefront_url(url):
+                    url, src = (None, None)
                 buy_slug = _resolve_buy_slug(obj["name"])
                 match_evt = {"name": obj["name"], "kind": obj.get("kind", ""),
                              "why": obj.get("why", ""), "url": url, "url_source": src,
                              "buy_url": (f"/begin/buy/{buy_slug}" if buy_slug else ""),
-                             "search_url": "" if url else _store_search_url(obj["name"]),
                              "product_url": _sales_page_url(obj["name"])}
         except Exception as e:
             print(f"[match] extract: {e!r}", flush=True)

@@ -320,7 +320,9 @@ def test_card_builds_full_dict():
     c = bf._card("product", "Jane")
     assert c["key"] == "product"
     assert c["title"] and c["sub"]
-    assert c["href"].startswith("https://remedymatch.com")
+    # Inverted 2026-08-20: the card used to point at the remedymatch.com
+    # storefront. It is now internal -- see test_no_legacy_storefront_links.py.
+    assert c["href"] == "/begin/match"
 
 
 # ---------------------------------------------------------------------------
