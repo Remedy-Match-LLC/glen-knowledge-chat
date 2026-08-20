@@ -17,6 +17,16 @@ import scripts.surface_check as S
 
 BASELINE = pathlib.Path("scripts/flags_expected.json")
 
+# Deliberate tripwire: changing this number has to be an explicit edit in the same
+# PR that adds or retires a flag, so the count cannot drift silently. Both count
+# assertions read it, so they can never disagree with each other -- they did, and
+# CI stayed red for six days over it.
+#   38 -> 37 on 2026-08-14: BIOFIELD_TRIAL_ENABLED retired in #1364 (the $1
+#   Biofield lifetime-unlock offer is intentionally off in production). That PR
+#   dropped the flag and added the companion assertion in
+#   tests/test_surface_check_flags.py, but left these two counts at 38.
+EXPECTED_FLAG_COUNT = 37
+
 
 def _baseline():
     return json.loads(BASELINE.read_text())["expected_on"]
@@ -25,7 +35,7 @@ def _baseline():
 def test_baseline_file_is_a_clean_sorted_unique_list():
     flags = _baseline()
     assert isinstance(flags, list)
-    assert len(flags) == 38, len(flags)
+    assert len(flags) == EXPECTED_FLAG_COUNT, len(flags)
     assert all(isinstance(f, str) and f for f in flags)
     assert flags == sorted(flags), "keep it sorted so a diff is readable"
     assert len(set(flags)) == len(flags), "no duplicates"
@@ -44,7 +54,7 @@ def test_every_baseline_entry_is_a_flag_name():
 
 def test_required_on_is_derived_from_the_file_not_hardcoded():
     assert set(S.REQUIRED_ON) == set(_baseline())
-    assert len(S.REQUIRED_ON) == 38
+    assert len(S.REQUIRED_ON) == EXPECTED_FLAG_COUNT
 
 
 def test_the_four_flags_759_watched_are_still_covered():
