@@ -466,7 +466,8 @@ async function loadProductBottles() {
     tbody.innerHTML = `<tr><td colspan="4" style="color:var(--muted); text-align:center; padding:24px">No products found.</td></tr>`;
     return;
   }
-  // Sort: unassigned (resolved === "default") first, then alphabetical
+  // Sort: unassigned (no override and no catalog bottle_type) first, then alphabetical.
+  // Do NOT test resolved === "default": #1346 retired that sentinel for "unknown".
   items.sort((a, b) => {
     const aDefault = !a.override && !a.baseline;
     const bDefault = !b.override && !b.baseline;
@@ -495,7 +496,12 @@ async function loadProductBottles() {
       </td>
       <td>
         <select class="bottle-select" onchange="setProductBottle('${item.slug.replace(/'/g, "\\'")}', this.value)">
-          <option value="default"${item.resolved === "default" ? " selected" : ""}>default</option>
+          <!-- value stays "default": setProductBottle treats it as "clear the override".
+               Selected state keys off the product having no packaging at all, since
+               #1346 made that resolve to "unknown" instead of "default" -- so this
+               option silently stopped being selected and an unmeasured product looked
+               like it was assigned to whichever bottle sorted first. -->
+          <option value="default"${(!item.override && !item.baseline) ? " selected" : ""}>unassigned &mdash; needs measuring</option>
           ${bottleOptions.replace(
             `value="${escapeHtml(item.resolved)}"`,
             `value="${escapeHtml(item.resolved)}" selected`

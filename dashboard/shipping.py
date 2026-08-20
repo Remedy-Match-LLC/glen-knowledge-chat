@@ -859,6 +859,21 @@ def is_shippable(product) -> bool:
 
 UNKNOWN_BOTTLE_TYPE = "unknown"
 
+# What a CLIENT-facing cart packs an unspecified item as. Glen, 2026-08-20: single
+# ingredient Pure Powders go in the bottle used for 120 caps unless the powder is
+# expensive, in which case it is a SMALLER bottle -- "so the larger bottle can be
+# the fallback for shipping size." That is this row: 250 ml wide-mouth, 72 x 100 mm,
+# already described in _STANDARD_BOTTLES as "120 caps / pure powder".
+#
+# Deliberately NOT the largest type in the table. `own-box` (250 x 450) is oversized
+# and routes to its own parcel, which would wildly overcharge a client for a single
+# powder. This is the smallest bottle that still covers the whole powder line.
+#
+# It is a floor, not an answer: an item genuinely bigger than this (a salt tub, a
+# litre of water) is still under-rated here, so every substitution is reported in
+# the cart's `packaging_review` so an operator can enter the real dimensions.
+FALLBACK_BOTTLE_TYPE = "120 caps"
+
 
 def resolve_bottle_type(slug, product, db_path=None):
     try:

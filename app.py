@@ -7039,7 +7039,7 @@ def _cart_has_noautoship_bundle(cart):
 def _price_cart(cart, *, ship, coupon_pct=None, subscriber_tier_pct=None,
                 subscriber_order_count=None, subscriber_active=True,
                 points_to_redeem_cents=0, channel="retail", program_member=False,
-                email=None, allow_unknown_packaging=False):
+                email=None, allow_unknown_packaging=False, strict_packaging=False):
     """Price a reorder/checkout cart through the pricing engine + shipping.
     Returns {priced, qbo_lines, discount_cents, points_redeemed_cents, shipping_cents,
     items_rec, subtotal_list_cents}. Raises CheckoutError for non-US ship-to.
@@ -7066,6 +7066,9 @@ def _price_cart(cart, *, ship, coupon_pct=None, subscriber_tier_pct=None,
     items, qbo_lines, items_rec, box_counts, subtotal_list, total_bottles = [], [], [], {}, 0, 0
     total_cello = 0
     flat_ship_cents = 0   # sum of per-product fixed shipping overrides (own-parcel items)
+    # Names of lines packed at FALLBACK_BOTTLE_TYPE because their real packaging is
+    # unspecified. Returned so an operator surface can list what needs measuring.
+    packaging_review = []
     for c in (cart or []):
         p = _get_product((c.get("slug") or "").strip())
         if not p:
@@ -7123,10 +7126,13 @@ def _price_cart(cart, *, ship, coupon_pct=None, subscriber_tier_pct=None,
                     if _bt == _shipping.UNKNOWN_BOTTLE_TYPE:
                         if allow_unknown_packaging:
                             continue
-                        raise CheckoutError(
-                            f"Packaging specifications required for {_comp['name']}. "
-                            "Enter its package type and size before using automatic shipping."
-                        )
+                        if strict_packaging:
+                            raise CheckoutError(
+                                f"Packaging specifications required for {_comp['name']}. "
+                                "Enter its package type and size before using automatic shipping."
+                            )
+                        _bt = _shipping.FALLBACK_BOTTLE_TYPE
+                        packaging_review.append(_comp.get("name") or _comp.get("slug"))
                     box_counts[_bt] = box_counts.get(_bt, 0) + qty
                     if _bt == _shipping.CELLO_BOTTLE_TYPE:
                         total_cello += qty
@@ -7137,10 +7143,13 @@ def _price_cart(cart, *, ship, coupon_pct=None, subscriber_tier_pct=None,
                 if bt == _shipping.UNKNOWN_BOTTLE_TYPE:
                     if allow_unknown_packaging:
                         continue
-                    raise CheckoutError(
-                        f"Packaging specifications required for {p['name']}. "
-                        "Enter its package type and size before using automatic shipping."
-                    )
+                    if strict_packaging:
+                        raise CheckoutError(
+                            f"Packaging specifications required for {p['name']}. "
+                            "Enter its package type and size before using automatic shipping."
+                        )
+                    bt = _shipping.FALLBACK_BOTTLE_TYPE
+                    packaging_review.append(p.get("name") or p.get("slug"))
                 box_counts[bt] = box_counts.get(bt, 0) + qty
                 if bt == _shipping.CELLO_BOTTLE_TYPE:
                     total_cello += qty
@@ -7169,6 +7178,7 @@ def _price_cart(cart, *, ship, coupon_pct=None, subscriber_tier_pct=None,
         "shipping_cents": shipping_cents,
         "bottle_units": total_bottles,
         "cello_pack_units": total_cello,
+        "packaging_review": list(dict.fromkeys(packaging_review)),
     }
 
 
@@ -46841,7 +46851,8 @@ def _earned_reorder_slugs(cx, email):
 
 def _price_inhouse_invoice(lines_in, *, email, pickup, ship,
                            discount_cents_in=None, points_redeem_cents_in=None,
-                           adjustment_cents_in=None, shipping_override_cents_in=None):
+                           adjustment_cents_in=None, shipping_override_cents_in=None,
+                           strict_packaging=False):
     """Shared server-authoritative pricing for the in-house order builder AND the
     console invoice editor. Honors per-line unit_cents overrides; FF capsules get a
     volume rate — the order-wide mix/match rate for a paid member, the same-SKU
@@ -46976,7 +46987,13 @@ def _price_inhouse_invoice(lines_in, *, email, pickup, ship,
     try:
         pc = _price_cart(
             cart, ship=ship, channel="retail",
-            allow_unknown_packaging=(pickup or shipping_override_cents_in not in (None, "")))
+            allow_unknown_packaging=(pickup or shipping_override_cents_in not in (None, "")),
+            # Operator-driven callers pass strict_packaging=True to keep the #1346
+            # hard stop: Rae can enter the real dimensions on the spot, so guessing
+            # would hide the gap. This function is ALSO reached by the token-authed
+            # customer membership control on an invoice, which has no operator --
+            # there it substitutes the fallback rather than refusing the customer.
+            strict_packaging=strict_packaging)
         shipping_cents = _bos_orders.effective_shipping_cents(pickup, pc.get("shipping_cents"))
         get_cents = int((pc.get("priced") or {}).get("get_cents") or 0)
     except CheckoutError:
@@ -47071,7 +47088,8 @@ def _harvest_line_note_snippets(cx, items):
 
 def _reprice_and_persist_invoice(cx, order, lines_in, *, pickup, discount_cents_in=None,
                                  adjustment_cents_in=None, invoice_note=None,
-                                 address_override=None, shipping_override_cents_in=None):
+                                 address_override=None, shipping_override_cents_in=None,
+                                 strict_packaging=False):
     """Reprice an order's line items at the current pricing (membership-aware) and
     persist the invoice. Shared by the manual invoice editor (/api/orders/<oid>/edit)
     and the one-click grant-and-reprice button. Carries the order's existing points +
@@ -47103,7 +47121,8 @@ def _reprice_and_persist_invoice(cx, order, lines_in, *, pickup, discount_cents_
         discount_cents_in=discount_cents_in,
         adjustment_cents_in=adjustment_cents_in,
         shipping_override_cents_in=shipping_override_cents_in,
-        points_redeem_cents_in=None)
+        points_redeem_cents_in=None,
+        strict_packaging=strict_packaging)
     if priced is None:
         return None, None
     existing_points = int(order.get("points_redeemed_cents") or 0)
@@ -47177,7 +47196,8 @@ def api_orders_edit(oid):
                 adjustment_cents_in=body.get("adjustment_cents"),
                 shipping_override_cents_in=body.get("shipping_cents"),
                 invoice_note=body.get("invoice_note"),
-                address_override=(_addr_in if isinstance(_addr_in, dict) else None))
+                address_override=(_addr_in if isinstance(_addr_in, dict) else None),
+                strict_packaging=True)
         except CheckoutError as e:
             return jsonify({"ok": False, "error": str(e)}), 400
         if priced is None:
@@ -47256,7 +47276,8 @@ def api_orders_grant_member_access(oid):
         pickup = (order.get("channel") == "pickup")
         try:
             priced, was_paid = _reprice_and_persist_invoice(
-                cx, order, lines_in, pickup=pickup)   # invoice_note=None -> note preserved
+                cx, order, lines_in, pickup=pickup,   # invoice_note=None -> note preserved
+                strict_packaging=True)
         except CheckoutError as e:
             return jsonify({"ok": False, "error": str(e)}), 400
         if priced is None:
@@ -47401,7 +47422,8 @@ def api_orders_manual():
             discount_cents_in=body.get("discount_cents"),
             adjustment_cents_in=body.get("adjustment_cents"),
             shipping_override_cents_in=body.get("shipping_cents"),
-            points_redeem_cents_in=body.get("points_redeem_cents"))
+            points_redeem_cents_in=body.get("points_redeem_cents"),
+            strict_packaging=True)
     except CheckoutError as e:
         return jsonify({"ok": False, "error": str(e)}), 400
     if priced is None:
