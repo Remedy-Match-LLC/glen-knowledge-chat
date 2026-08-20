@@ -2,6 +2,7 @@ flask
 flask-cors
 gunicorn
 gevent
+packaging
 anthropic
 openai
 pinecone
