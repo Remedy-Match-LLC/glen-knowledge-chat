@@ -18,7 +18,12 @@ from pathlib import Path
 
 import pytest
 
-BOTTLE = {"slug": "mix", "price_cents": 7000, "name": "Drink Mix"}
+# bottle_type is not incidental: /api/orders/manual is an OPERATOR route and passes
+# strict_packaging=True, so a stub with no packaging is refused outright (#1346).
+# A real catalog line always carries one; leaving it off made these pickup tests
+# assert against a 400 they never intended to exercise.
+BOTTLE = {"slug": "mix", "price_cents": 7000, "name": "Drink Mix",
+          "bottle_type": "120 g"}
 _CAT = {"mix": BOTTLE}
 
 

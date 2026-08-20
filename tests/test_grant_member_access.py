@@ -73,10 +73,11 @@ def _spy_pricer(appmod, monkeypatch, captured):
     still runs."""
     def spy(lines_in, *, email, pickup, ship, discount_cents_in=None,
             adjustment_cents_in=None, points_redeem_cents_in=None,
-            shipping_override_cents_in=None):
+            shipping_override_cents_in=None, strict_packaging=False):
         captured["lines"] = lines_in
         captured["email"] = email
         captured["is_paid_member"] = appmod._is_paid_member(email)
+        captured["strict_packaging"] = strict_packaging
         items_rec = [dict(l, name=l["slug"], unit_cents=l.get("unit_cents", 5000))
                      for l in lines_in]
         return {"items_rec": items_rec, "total_cents": 22000, "subtotal_cents": 22000,
@@ -107,6 +108,11 @@ def test_grants_care_taster_then_reprices_as_member(env, monkeypatch):
     # The grant is a care_taster membership for this order's email.
     rows = _member_rows(db, EMAIL)
     assert len(rows) == 1 and rows[0][0] == appmod.CARE_TASTER_SOURCE
+
+    # Operator route: it must ask for the packaging hard stop rather than let a
+    # persisted invoice silently re-rate at the client fallback bottle. See
+    # tests/test_unknown_packaging_fallback.py.
+    assert captured["strict_packaging"] is True
 
     # Member pricing was active by the time the reprice ran.
     assert captured["is_paid_member"] is True

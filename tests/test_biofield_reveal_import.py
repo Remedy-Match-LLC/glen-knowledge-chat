@@ -20,9 +20,18 @@ def test_import_creates_unconfirmed_rows(tmp_path):
     assert n == 2                       # both layers written
     rep = authored_report(cx, tid)
     rows = {r["layer"]: r for r in rep["layers"]}
-    assert set(rows) == {1}            # only the remedy-bearing layer surfaces
+    # Inverted 2026-08-20. This asserted set(rows) == {1}, "only the remedy-bearing
+    # layer surfaces". 7d3622bb ("Improve Biofield layer editing workflow")
+    # deliberately reversed that: ordered_chain now also keeps rows carrying only a
+    # head or a most_affected, so "Head/Tail-only rows remain as anchors for layers
+    # whose last remedy was removed" (its docstring). That commit updated five test
+    # files and missed this one.
+    assert set(rows) == {1, 2}
     assert rows[1]["remedy"] == "Neuro Magnesium" and rows[1]["confirmed"] == 0
     assert rows[1]["most_affected"] == "Cell membrane, Mitochondria"
+    # Layer 2 is the anchor: it survives on most_affected alone, with no remedy.
+    assert rows[2]["remedy"] == ""
+    assert rows[2]["most_affected"] == "Lymphatics"
     cx.close()
 
 _RAW = [

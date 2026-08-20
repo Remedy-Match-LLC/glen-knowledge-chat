@@ -500,13 +500,16 @@ def test_product_override_resolver_falls_back_before_schema_init(tmp_path):
 def test_product_override_crud_and_resolution(tmp_path):
     import sqlite3
     from dashboard.shipping import (init_shipping_schema, set_product_bottle_override,
-        clear_product_bottle_override, list_product_bottle_overrides, resolve_bottle_type)
+        clear_product_bottle_override, list_product_bottle_overrides, resolve_bottle_type,
+        UNKNOWN_BOTTLE_TYPE)
     db = str(tmp_path / "chat_log.db")
     with sqlite3.connect(db) as cx:
         init_shipping_schema(cx)
-    # resolution with no override falls to products.json value, then default
+    # resolution with no override falls to products.json value, then to an explicit
+    # "unknown" -- #1346 replaced the old "default" placeholder, which silently
+    # mis-rated a whole cart, with a value callers can branch on.
     assert resolve_bottle_type("x", {"bottle_type": "15ml"}, db_path=db) == "15ml"
-    assert resolve_bottle_type("y", {}, db_path=db) == "default"
+    assert resolve_bottle_type("y", {}, db_path=db) == UNKNOWN_BOTTLE_TYPE
     # override wins
     set_product_bottle_override("x", "30ml", db_path=db)
     assert resolve_bottle_type("x", {"bottle_type": "15ml"}, db_path=db) == "30ml"
