@@ -13942,6 +13942,13 @@ def _active_membership_for_email(email):
     """Return the active membership row as a dict (with derived days_remaining), or None."""
     if not email:
         return None
+    from dashboard import member_access_policy as _map
+    policy = _map.override_for(email)
+    if policy is True:
+        return _map.permanent_member_row(email)
+    if policy is False:
+        return None
+    email = _map.normalized(email)
     with db.connect(LOG_DB) as cx:
         cx.row_factory = sqlite3.Row
         row = cx.execute(
@@ -14669,6 +14676,12 @@ def membership_category(email):
     'none' so a lookup hiccup never grants the discount."""
     email = (email or "").strip().lower()
     if not email:
+        return "none"
+    from dashboard import member_access_policy as _map
+    policy = _map.override_for(email)
+    if policy is True:
+        return "full"
+    if policy is False:
         return "none"
     try:
         from dashboard import subscriptions as _subs
