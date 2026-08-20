@@ -32230,6 +32230,24 @@ def api_page_share_link():
     })
 
 
+@app.route("/portal/logout", methods=["POST"])
+def client_portal_logout():
+    """End this browser's portal session without affecting other devices."""
+    from flask import make_response as _mkresp
+    if not _client_login_enabled():
+        return jsonify({"error": "not found"}), 404
+    from dashboard import portal_identity as _pi
+    sess = request.cookies.get("rm_portal_session", "")
+    if sess:
+        with _db_lock, db.connect(LOG_DB) as cx:
+            _pi.revoke_client_session(cx, sess)
+    resp = _mkresp(jsonify({"ok": True}))
+    resp.set_cookie("rm_portal_session", "", max_age=0, httponly=True,
+                    samesite="Lax", secure=request.is_secure)
+    resp.headers["Cache-Control"] = "no-store"
+    return resp
+
+
 # ── Portal "What's next" offer checkouts (dark behind PORTAL_OFFERS_ENABLED) ──
 # The Live Group rung has no standalone checkout elsewhere, so we add one here:
 # a $0 Stripe setup session vaults the card; the membership row is created on

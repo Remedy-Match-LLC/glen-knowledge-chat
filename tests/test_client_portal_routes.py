@@ -1,5 +1,6 @@
 # tests/test_client_portal_routes.py
 import sqlite3
+from pathlib import Path
 import pytest
 from urllib.parse import parse_qs, urlparse
 
@@ -394,6 +395,48 @@ def test_portal_me_page_served_when_enabled(client, monkeypatch):
     c, appmod = client
     monkeypatch.setattr(appmod, "_client_login_enabled", lambda: True)
     assert c.get("/portal/me").status_code == 200
+
+
+def test_portal_logout_dark_by_default(client, monkeypatch):
+    c, appmod = client
+    monkeypatch.setattr(appmod, "_client_login_enabled", lambda: False)
+    assert c.post("/portal/logout").status_code == 404
+
+
+def test_portal_logout_revokes_session_and_clears_cookie(client, monkeypatch):
+    c, appmod = client
+    monkeypatch.setattr(appmod, "_client_login_enabled", lambda: True)
+    sess = _login_cookie(appmod, "logout@example.com", "Logout Client")
+    c.set_cookie("rm_portal_session", sess)
+
+    r = c.post("/portal/logout")
+
+    assert r.status_code == 200
+    assert r.get_json() == {"ok": True}
+    cookie = r.headers.get("Set-Cookie", "")
+    assert "rm_portal_session=" in cookie
+    assert "Max-Age=0" in cookie
+    assert r.headers["Cache-Control"] == "no-store"
+    from dashboard import portal_identity as pi
+    cx = sqlite3.connect(appmod.LOG_DB)
+    assert pi.identity_from_session(cx, sess) is None
+    cx.close()
+
+
+def test_portal_logout_is_idempotent_without_cookie(client, monkeypatch):
+    c, appmod = client
+    monkeypatch.setattr(appmod, "_client_login_enabled", lambda: True)
+    r = c.post("/portal/logout")
+    assert r.status_code == 200
+    assert r.get_json() == {"ok": True}
+
+
+def test_client_portal_has_sign_out_and_switch_account_controls():
+    html = Path("static/client-portal.html").read_text()
+    assert 'fetch("/portal/logout"' in html
+    assert ">Sign out</button>" in html
+    assert ">Switch account</button>" in html
+    assert 'endPortalSession("/portal/login?switch=1"' in html
 
 
 def test_portal_checkout_resolves_via_session(client, monkeypatch):

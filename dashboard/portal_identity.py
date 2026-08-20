@@ -128,6 +128,19 @@ def create_client_session(cx, person_id, email="", *, ttl_days=CLIENT_SESSION_TT
     return tok
 
 
+def revoke_client_session(cx, session_token) -> bool:
+    """Revoke exactly the client session presented by this browser."""
+    if not session_token:
+        return False
+    _ensure_auth_tokens(cx)
+    cur = cx.execute(
+        "DELETE FROM auth_tokens WHERE token_hash=? AND purpose=?",
+        (_hash(session_token), _SESSION_PURPOSE),
+    )
+    cx.commit()
+    return cur.rowcount == 1
+
+
 _MAGIC_PURPOSE = "client_magic_link"
 CLIENT_MAGIC_TTL_MIN = 24 * 60
 CLIENT_MAGIC_TTL_LABEL = "24 hours"
