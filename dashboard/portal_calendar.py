@@ -187,7 +187,7 @@ def build_block(cx, *, email="", group_coaching_entitled=False,
     try:
         cur = cx.execute(
             'SELECT id, summary, start, "end", location FROM calendar_events '
-            "WHERE status='visible' AND start>=? "
+            "WHERE status='visible' AND COALESCE(NULLIF(\"end\", ''), start)>=? "
             "AND (lower(summary) LIKE '%group coaching%' "
             "OR lower(calendar_name) LIKE '%group coaching%') "
             "ORDER BY start ASC LIMIT 50", (now_iso,))

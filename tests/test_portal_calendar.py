@@ -81,6 +81,20 @@ def test_group_registration_is_remembered():
     assert block["events"][1]["action_url"] == "https://zoom.test/private-member"
 
 
+def test_group_session_remains_visible_until_its_end_time():
+    block = portal_calendar.build_block(
+        _cx(), group_coaching_entitled=True,
+        now_iso="2099-02-02T10:30:00")
+    assert any(e["type"] == "group_coaching" for e in block["events"])
+
+
+def test_group_session_disappears_after_its_end_time():
+    block = portal_calendar.build_block(
+        _cx(), group_coaching_entitled=True,
+        now_iso="2099-02-02T11:00:01")
+    assert not any(e["type"] == "group_coaching" for e in block["events"])
+
+
 def test_approved_ambassador_gets_share_link_for_free_masterclass_only():
     cx = _cx()
     cx.execute("INSERT INTO affiliate_signups VALUES "
