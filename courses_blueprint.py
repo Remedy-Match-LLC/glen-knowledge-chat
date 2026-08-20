@@ -197,7 +197,10 @@ def _paid_module_open(cx, email, course_obj, module_slug) -> bool:
     """Per-module access for a `paid` module: full-cert holder, OR the module is
     completed (banked for life), OR unlocked and the learner's drip membership
     is currently active. Anonymous (email == "") is always False."""
-    from dashboard import course_entitlements, course_module_unlocks, course_progress
+    from dashboard import (course_entitlements, course_module_unlocks,
+                           course_progress, member_access_policy)
+    if member_access_policy.override_for(email) is False:
+        return False
     module = next((m for m in course_obj.modules if m.slug == module_slug), None)
     if module is None:
         return False
@@ -219,6 +222,9 @@ def _certification_roster_access(email, course_slug) -> bool:
     checks this once per module.
     """
     if course_slug != "ash-certification" or not email:
+        return False
+    from dashboard import member_access_policy
+    if member_access_policy.override_for(email) is False:
         return False
     cache = getattr(g, "_mu_cert_roster_access", {})
     key = email.strip().lower()

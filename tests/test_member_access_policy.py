@@ -29,3 +29,15 @@ def test_app_membership_readers_enforce_both_test_accounts(monkeypatch):
     assert appmod._active_membership_for_email("this.elf@gmail.com") is None
     assert appmod.membership_category("this.elf@gmail.com") == "none"
     assert appmod._is_paid_member("this.elf@gmail.com") is False
+
+
+def test_explicit_free_account_course_identity_ignores_stale_paid_entitlement(tmp_path):
+    import sqlite3
+    from dashboard import course_entitlements, course_tokens, courses_identity
+
+    with sqlite3.connect(tmp_path / "courses.db") as cx:
+        course_entitlements.grant_cert(
+            cx, "this.elf@gmail.com", source="stale_test_entitlement")
+        token = course_tokens.mint_course_token(
+            cx, "this.elf@gmail.com", "Free Test Account")
+        assert courses_identity.member_level_for(cx, token) == 1
