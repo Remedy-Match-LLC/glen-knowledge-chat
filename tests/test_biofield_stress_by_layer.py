@@ -66,5 +66,12 @@ def test_render_panel_shows_layers_and_unassigned():
     assert "Layer 1" in html
     assert "Membrane" in html and "Neuro Magnesium" in html
     assert "Calm" in html and "Unassigned" in html
-    assert "balanceStress(1" in html          # unassigned item still toggleable
-    assert "balanceStress(2" in html          # layer item still toggleable
+    # Inverted 2026-08-20. This asserted "balanceStress(1", the plain toggle the
+    # unassigned row used to render. 7d3622bb replaced it for unassigned stresses
+    # with the assign-to-a-layer controls, which is the point of the workflow: an
+    # unassigned stress wants a layer, not an on/off flip.
+    assert "balanceStress(1" not in html
+    assert "assignStress(1" in html           # auto-pick the best-fit layer
+    assert "balanceToLayer(1" in html         # or choose one from the dropdown
+    assert "stressDragStart(event,1" in html  # or drag it onto a layer card
+    assert "balanceStress(2" in html          # a layer item is still a plain toggle
