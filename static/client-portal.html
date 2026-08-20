@@ -519,6 +519,12 @@
   .hub-account { align-self:flex-start; background:transparent; border:1px solid var(--line); border-radius:999px;
     padding:.3rem .8rem; font:inherit; font-size:.8rem; color:var(--muted); cursor:pointer; }
   .hub-account:hover,.hub-account:focus-visible { border-color:var(--brand); color:var(--brand); outline:none; }
+  .account-session-actions { display:flex; flex-wrap:wrap; gap:.55rem; margin-top:1rem; padding-top:.9rem;
+    border-top:1px solid var(--line); }
+  .account-session-actions .btn { flex:1 1 9rem; text-align:center; }
+  .account-session-actions .btn.ghost { background:transparent; color:var(--brand); border:1px solid var(--brand); }
+  .account-session-actions .btn.ghost:hover,.account-session-actions .btn.ghost:focus-visible {
+    background:var(--brand-soft,#e5efea); outline:none; }
   .hub-grid-group { margin-top:1rem; }
   .hub-grid-group .glabel { font-size:.78rem; letter-spacing:.01em; text-transform:none; color:var(--muted); font-weight:700; margin:.1rem 0 .5rem; }
   .hub-tiles { display:grid; grid-template-columns:repeat(3,1fr); gap:.7rem; }
@@ -1254,6 +1260,31 @@ function buildHubHtml(d, v){
     ${buildCalendarHtml(v,true)}
     ${buildAppointmentProposalHtml()}
     ${groups.map(grp).join("")}</div>`;
+}
+
+async function endPortalSession(destination, button){
+  const original = button ? button.textContent : "";
+  if(button){ button.disabled = true; button.textContent = "Signing out…"; }
+  try{
+    const response = await fetch("/portal/logout", {
+      method:"POST",
+      headers:{"Accept":"application/json"},
+      credentials:"same-origin"
+    });
+    if(!response.ok) throw new Error("sign out failed");
+    location.assign(destination);
+  }catch(error){
+    if(button){ button.disabled = false; button.textContent = original; }
+    alert("We couldn't sign you out. Please try again.");
+  }
+}
+
+function signOutPortal(button){
+  return endPortalSession("/", button);
+}
+
+function switchPortalAccount(button){
+  return endPortalSession("/portal/login?switch=1", button);
 }
 
 function portalTimeZone(){
@@ -3211,10 +3242,15 @@ function render(d, v){
     const a = v.account;
     const addr = a.address||{};
     const cityline = [addr.city, addr.state, addr.zip].filter(Boolean).join(", ");
+    const _sessionActions = (v.auth_method === "session") ? `<div class="account-session-actions">
+      <button type="button" class="btn ghost" onclick="signOutPortal(this)">Sign out</button>
+      <button type="button" class="btn" onclick="switchPortalAccount(this)">Switch account</button>
+    </div>` : "";
     const _accountCard = `<div class="card quiet"><h2>Your account</h2>
       <div class="kv"><span class="k">Email</span><span class="v">${esc(a.email||"")}</span></div>
       ${cityline?`<div class="kv"><span class="k">Location</span><span class="v">${esc(cityline)}</span></div>`:""}
       ${a.points_cents?`<div class="kv"><span class="k">Reward points</span><span class="v">${esc(money(a.points_cents))}</span></div>`:""}
+      ${_sessionActions}
     </div>`;
     if (_hub) { _accountHtml += _accountCard; } else { html += _accountCard; }
   }
