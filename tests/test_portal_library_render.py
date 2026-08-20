@@ -14,6 +14,12 @@ def test_render_library_emits_read_and_listen():
          audio_url:'/api/portal/T/library/healing-glaucoma-starter/audio'}]);
       if (!/Healing Glaucoma/.test(html)) { console.error('missing title'); process.exit(1); }
       if (!/\\/pdf/.test(html) || !/<audio/.test(html)) { console.error('missing read/listen'); process.exit(1); }
+      const course = (mod.exports.renderLibrary || global.renderLibrary)([
+        {kind:'course', title:'ASH Certification', description:'Your curriculum',
+         course_url:'/api/portal/T/courses/ash-certification'}]);
+      if (!/ASH Certification/.test(course) || !/Open course/.test(course) || /<audio/.test(course)) {
+        console.error('missing course'); process.exit(1);
+      }
       console.log('ok');
     ''')
     out = subprocess.run(["node", "-e", js], cwd=".", capture_output=True, text=True)

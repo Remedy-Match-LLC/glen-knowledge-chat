@@ -4,6 +4,13 @@
 function renderLibrary(items) {
   if (!items || !items.length) return '';
   const rows = items.map(function (it) {
+    if (it.kind === 'course') {
+      return '<li class="lib-item lib-course">' +
+        '<span class="lib-title">' + escapeHtml(it.title) +
+          '<small>' + escapeHtml(it.description || '') + '</small></span>' +
+        '<a class="lib-read" href="' + it.course_url + '">Open course</a>' +
+      '</li>';
+    }
     return '<li class="lib-item">' +
       '<span class="lib-title">' + escapeHtml(it.title) + '</span>' +
       '<a class="lib-read" href="' + it.pdf_url + '" target="_blank" rel="noopener">Read</a>' +
