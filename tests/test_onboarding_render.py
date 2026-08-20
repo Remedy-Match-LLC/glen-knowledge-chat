@@ -174,3 +174,17 @@ def test_triage_success_message_adds_biofield_nudge_when_consult_recommended():
     ''')
     out = subprocess.run(["node", "-e", js], cwd=".", capture_output=True, text=True)
     assert out.returncode == 0, out.stderr
+
+
+def test_successful_triage_refreshes_full_portal_and_opens_remedies():
+    """Saving starter remedies must refresh v.remedies, not just remove the
+    completed onboarding form from its independent mount."""
+    onboarding = open("static/js/portal-onboarding.js", encoding="utf-8").read()
+    portal = open("static/client-portal.html", encoding="utf-8").read()
+
+    assert "window.refreshPortalAfterStarterRemedies();" in onboarding
+    assert "window.refreshPortalAfterStarterRemedies = async function()" in portal
+    assert 'history.pushState(null, "", "#remedies")' in portal
+    assert "await load();" in portal
+    assert 'remedies: {panel:"remedies", target:"remedies-panel"}' in portal
+    assert 'id="remedies-panel" data-panel="remedies"' in portal
