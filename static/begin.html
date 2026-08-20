@@ -618,8 +618,9 @@
   .ns-chip:hover { background:#1F5A4D; color:#fff; }
   .ns-chip.secondary { border-color:#9aa; color:#5a6; background:transparent; }
   .ns-prompt { margin:8px 0 2px; font-weight:600; }
-  /* Hero headline name-prefix (the comma) stays hidden until a name is known. */
-  .hero-head [data-name-prefix] { display: none; }
+  /* The name separator stays hidden until a name is actually known, so an
+     un-personalised page reads as clean copy instead of a dangling comma. */
+  [data-name-prefix] { display: none; }
   @media (max-width: 760px) {
     .hero-grid { grid-template-columns: 1fr; }
     .hero-head h1 { font-size: 24px; }
@@ -728,7 +729,7 @@
       <span class="brand-name">Remedy&nbsp;Match &nbsp;·&nbsp; Healing&nbsp;Oasis</span>
     </div>
     <p class="shell reveal" style="text-align:center;margin-top:18px;font-size:15px;color:var(--muted);">
-      Welcome, <span data-name>there</span>. Let&rsquo;s begin.
+      Welcome<span data-name-prefix>, </span><span data-name></span>. Let&rsquo;s begin.
     </p>
   </div>
 
@@ -740,7 +741,7 @@
   <section class="hero" data-layer="hero">
     <div class="hero-head">
       <div class="eyebrow-k">Bioenergetic voice analysis</div>
-      <h1><span data-name-prefix></span><span data-name></span>Your body is always speaking. <em>Start by telling me what&rsquo;s on your mind.</em></h1>
+      <h1><span data-name></span><span data-name-prefix>. </span>Your body is always speaking. <em>Start by telling me what&rsquo;s on your mind.</em></h1>
       <p>A short, private conversation reads your body&rsquo;s signal and points you toward the remedies it is actually asking for. No guesswork, no generic supplements.</p>
     </div>
     <div class="hero-grid">

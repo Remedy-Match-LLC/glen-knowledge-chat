@@ -321,7 +321,6 @@
 
       const buyUrl = (match.buy_url || '').trim();
       const url = (match.url || '').trim();
-      const searchUrl = (match.search_url || '').trim();
       const amazon = /amzn\.to|amazon\.[a-z.]+/i.test(url);
 
       const productUrl = (match.product_url || '').trim();
@@ -339,10 +338,10 @@
         const rel = amazon ? 'noopener sponsored nofollow' : 'noopener';
         html += '<a class="mc-open" href="' + escAttr(url) + '" target="_blank" rel="' + rel + '">' + label + '</a>';
         if (amazon) html += '<div class="mc-disclosure">As an Amazon Associate, Healing Oasis earns from qualifying purchases.</div>';
-      } else if (searchUrl) {
-        // No direct page: offer a search link, do NOT auto-open.
-        html += '<a class="mc-search" href="' + escAttr(searchUrl) + '" target="_blank" rel="noopener">Search it ↗</a>';
       }
+      // No in-funnel page and no trusted off-catalog link: show the match with
+      // no CTA rather than sending anyone to the retired storefront. The chat
+      // and its next-step chips continue below, so this is not a dead end.
       card.innerHTML = html;
       msgs.appendChild(card);
       msgs.scrollTop = msgs.scrollHeight;
