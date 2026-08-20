@@ -26,6 +26,9 @@ def member_level_for(cx, token: str | None) -> int:
         return 0
     if not email:
         return 0
+    from dashboard import member_access_policy
+    if member_access_policy.override_for(email) is False:
+        return 1
     try:
         from dashboard import course_entitlements
         return max(1, course_entitlements.paid_level_for(cx, email))

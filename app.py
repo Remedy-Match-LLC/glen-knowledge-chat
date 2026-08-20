@@ -21922,7 +21922,8 @@ def api_portal_library(token):
     """The token owner's granted ebook Starters. `enabled` mirrors the hub flag so
     the My Library tile stays dark until the flag flips; items are always computed."""
     from dashboard import (client_portal as _cp, portal_library as _lib,
-                           ebook_catalog as _cat, course_entitlements as _ce)
+                           ebook_catalog as _cat, course_entitlements as _ce,
+                           member_access_policy as _map)
     with db.connect(LOG_DB) as cx:
         _cp.init_client_portal_table(cx)
         _lib.init_table(cx)
@@ -21933,7 +21934,8 @@ def api_portal_library(token):
         granted = _lib.list_for_email(cx, email) if email else []
         course_qualified = bool(email and (
             _ce.paid_level_for(cx, email) == 2 or _ce.drip_active(cx, email)))
-    course_qualified = course_qualified or _is_certification_student(email)
+    course_qualified = (_map.override_for(email) is not False and
+                        (course_qualified or _is_certification_student(email)))
     items = []
     for g in granted:
         meta = _cat.get(g["slug"])
@@ -21957,7 +21959,9 @@ def api_portal_library(token):
 def _portal_course_qualified(cx, email, course_slug):
     if course_slug != _ASH_CERT_COURSE or not email:
         return False
-    from dashboard import course_entitlements as _ce
+    from dashboard import course_entitlements as _ce, member_access_policy as _map
+    if _map.override_for(email) is False:
+        return False
     return (_ce.paid_level_for(cx, email) == 2 or _ce.drip_active(cx, email)
             or _is_certification_student(email))
 
@@ -21985,7 +21989,8 @@ def api_portal_course_link(token, course_slug):
 @app.route("/api/portal/<token>/courses", methods=["GET"])
 def api_portal_courses_link(token):
     """Open MentorshipU from Learn & Ask, preserving qualified paid access."""
-    from dashboard import client_portal as _cp, course_entitlements as _ce, course_tokens as _ct
+    from dashboard import (client_portal as _cp, course_entitlements as _ce,
+                           course_tokens as _ct, member_access_policy as _map)
     with _db_lock, db.connect(LOG_DB) as cx:
         _cp.init_client_portal_table(cx)
         portal = _portal_record_for(cx, token)
@@ -21994,7 +21999,8 @@ def api_portal_courses_link(token):
         email = (portal.get("email") or "").strip().lower()
         if not email:
             return Response("", status=403)
-        if email and _is_certification_student(email) and _ce.paid_level_for(cx, email) < 2:
+        if (_map.override_for(email) is not False and
+                _is_certification_student(email) and _ce.paid_level_for(cx, email) < 2):
             _ce.grant_cert(cx, email, source="certification_roster")
         course_token = _ct.mint_course_token(cx, email, portal.get("name") or "")
     return redirect(f"{mentorship_base()}/learn?token={course_token}", code=302)

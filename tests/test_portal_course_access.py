@@ -68,6 +68,33 @@ def test_paid_entitlement_appears_without_roster_role(tmp_path, monkeypatch):
     assert any(i.get("slug") == "ash-certification" for i in library["items"])
 
 
+def test_explicit_free_account_cannot_inherit_paid_or_roster_course_access(tmp_path, monkeypatch):
+    appmod = _app(tmp_path, monkeypatch)
+    email = "this.elf@gmail.com"
+    monkeypatch.setattr(appmod, "_is_certification_student", lambda candidate: candidate == email)
+    tok = _portal(appmod, email)
+    from dashboard import course_entitlements as ce, course_tokens
+    with sqlite3.connect(appmod.LOG_DB) as cx:
+        ce.grant_cert(cx, email, source="stale_test_entitlement")
+        course_token = course_tokens.mint_course_token(cx, email, "Free Test Account")
+
+    client = appmod.app.test_client()
+    library = client.get(f"/api/portal/{tok}/library").get_json()
+    assert not any(i.get("kind") == "course" for i in library["items"])
+    assert client.get(f"/api/portal/{tok}/courses/ash-certification").status_code == 403
+
+    home = client.get(f"/learn/ash-certification?token={course_token}",
+                      base_url="https://courses.mentorshipu.test")
+    body = home.get_data(as_text=True)
+    assert home.status_code == 200
+    assert '(certification module)' in body
+    assert '/learn/ash-certification/02-body/01-minding-body-1' not in body
+    paid = client.get(
+        f"/learn/ash-certification/02-body/01-minding-body-1?token={course_token}",
+        base_url="https://courses.mentorshipu.test")
+    assert paid.status_code in (302, 403)
+
+
 def test_initial_cohort_existing_course_token_opens_all_certification_links(tmp_path, monkeypatch):
     appmod = _app(tmp_path, monkeypatch)
     monkeypatch.setattr(appmod, "_is_certification_student", lambda email: email == "cohort@x.com")
