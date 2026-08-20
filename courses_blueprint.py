@@ -201,6 +201,12 @@ def _paid_module_open(cx, email, course_obj, module_slug) -> bool:
                            course_progress, member_access_policy)
     if member_access_policy.override_for(email) is False:
         return False
+    # Read helpers intentionally fail closed when their table is absent.  On
+    # PostgreSQL, however, that failed SELECT also aborts the transaction and
+    # poisons every later lookup.  Ensure all three tables before the read set.
+    course_entitlements.init_course_entitlements_table(cx)
+    course_progress.init_progress_tables(cx)
+    course_module_unlocks.init_unlock_tables(cx)
     module = next((m for m in course_obj.modules if m.slug == module_slug), None)
     if module is None:
         return False
