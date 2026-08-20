@@ -429,42 +429,48 @@ def push_calendar_events(days=14):
     for cal in cal_list:
         cal_id   = cal['id']
         cal_name = cal.get('summary', cal_id)
-        try:
-            result = svc.events().list(
-                calendarId=cal_id,
-                timeMin=today_start.isoformat(),
-                timeMax=end.isoformat(),
-                singleEvents=True,
-                orderBy='startTime',
-                maxResults=50,
-            ).execute()
-        except Exception:
-            continue
-        for ev in result.get('items', []):
-            start   = ev.get('start', {})
-            end_    = ev.get('end', {})
-            summary = ev.get('summary', '(no title)')
-            is_flight  = any(w in summary.lower() for w in ['flight', 'wn ', 'aa ', 'ua ', 'dl ', 'southwest', 'american airlines', 'united airlines', 'delta'])
-            is_payment = bool(re.search(r'\$[\d,]+\.?\d*', summary))
-            # Payment reminders (dollar amounts in title) belong to Rae
-            event_owner = 'rae' if is_payment else 'glen'
-            base_ev = {
-                'google_cal_id':   cal_id,
-                'google_event_id': ev['id'],
-                'calendar_name':   cal_name,
-                'summary':         summary,
-                'start':           start.get('dateTime') or start.get('date', ''),
-                'end':             end_.get('dateTime')  or end_.get('date', ''),
-                'location':        ev.get('location', ''),
-                'owner':           event_owner,
-            }
-            events.append(base_ev)
-            # Mirror flights to Rae's calendar
-            if is_flight:
-                rae_ev = dict(base_ev)
-                rae_ev['google_event_id'] = ev['id'] + '_rae'
-                rae_ev['owner'] = 'rae'
-                events.append(rae_ev)
+        page_token = None
+        while True:
+            try:
+                result = svc.events().list(
+                    calendarId=cal_id,
+                    timeMin=today_start.isoformat(),
+                    timeMax=end.isoformat(),
+                    singleEvents=True,
+                    orderBy='startTime',
+                    maxResults=2500,
+                    pageToken=page_token,
+                ).execute()
+            except Exception:
+                break
+            for ev in result.get('items', []):
+                start   = ev.get('start', {})
+                end_    = ev.get('end', {})
+                summary = ev.get('summary', '(no title)')
+                is_flight  = any(w in summary.lower() for w in ['flight', 'wn ', 'aa ', 'ua ', 'dl ', 'southwest', 'american airlines', 'united airlines', 'delta'])
+                is_payment = bool(re.search(r'\$[\d,]+\.?\d*', summary))
+                # Payment reminders (dollar amounts in title) belong to Rae
+                event_owner = 'rae' if is_payment else 'glen'
+                base_ev = {
+                    'google_cal_id':   cal_id,
+                    'google_event_id': ev['id'],
+                    'calendar_name':   cal_name,
+                    'summary':         summary,
+                    'start':           start.get('dateTime') or start.get('date', ''),
+                    'end':             end_.get('dateTime')  or end_.get('date', ''),
+                    'location':        ev.get('location', ''),
+                    'owner':           event_owner,
+                }
+                events.append(base_ev)
+                # Mirror flights to Rae's calendar
+                if is_flight:
+                    rae_ev = dict(base_ev)
+                    rae_ev['google_event_id'] = ev['id'] + '_rae'
+                    rae_ev['owner'] = 'rae'
+                    events.append(rae_ev)
+            page_token = result.get('nextPageToken')
+            if not page_token:
+                break
 
     print(f'  {len(events)} upcoming event(s) across {len(cal_list)} calendar(s)')
     if not events:
