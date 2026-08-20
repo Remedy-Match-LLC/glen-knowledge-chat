@@ -10199,6 +10199,15 @@
       "pinecone_title": "Gingerol",
       "url": "https://remedymatch.com/remedies/481-gingerol"
     },
+    "magnesium-glycinate": {
+      "name": "Magnesium Glycinate",
+      "price_cents": 4000,
+      "pinecone_title": "Magnesium Glycinate",
+      "qty_pricing": false,
+      "fmp_id": "1113",
+      "ingredients_source": "fmp_snap",
+      "no_groovekart": true
+    },
     "et5-bsv": {
       "name": "ET5 BSV: Broad Spectrum Virus",
       "price_cents": 3997,

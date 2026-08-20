@@ -58,6 +58,21 @@ def test_build_entry_essence_no_volume_pricing():
     assert e["qty_pricing"] is False         # non-FF -> list price only
 
 
+def test_select_includes_both_singular_and_plural_pure_powder_types():
+    rows = [
+        {"product_name": "Magnesium Glycinate", "type": "Pure Powder",
+         "active": "Yes", "sold_price": "40", "id_pk": "1"},
+        {"product_name": "MSM Powder", "type": "Pure Powders",
+         "active": "Yes", "sold_price": "$40", "id_pk": "2"},
+    ]
+    additions, skipped, collisions, by_type = select_and_build(rows, {})
+    assert set(additions) == {"magnesium-glycinate", "msm-powder"}
+    assert additions["magnesium-glycinate"]["qty_pricing"] is False
+    assert additions["msm-powder"]["qty_pricing"] is False
+    assert not skipped and not collisions
+    assert by_type == {"Pure Powder": 1, "Pure Powders": 1}
+
+
 def test_build_entry_skips_no_price():
     assert build_entry({"product_name": "X", "type": "Essence", "sold_price": ""}) is None
 

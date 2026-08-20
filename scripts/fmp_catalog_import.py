@@ -20,7 +20,7 @@ import sqlite3
 from collections import Counter
 
 TYPE_WHITELIST = {
-    "Essence", "Functional Formulation", "Tincture", "Pure Powders",
+    "Essence", "Functional Formulation", "Tincture", "Pure Powder", "Pure Powders",
     "Homeopathic", "Gemmotherapy", "Spirit Mineral", "Simple Solution", "Infoceutical",
 }
 FF_VOLUME_TYPES = {"Functional Formulation"}
