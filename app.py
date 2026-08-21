@@ -5969,6 +5969,45 @@ def _email_remedy_match_once(email, name, session_id, match):
         raise
 
 
+@app.route("/begin/match/e4l-link")
+def begin_match_e4l_link():
+    """Send the signed-in member to E4L login when their account exists."""
+    import urllib.parse as _up
+
+    ref = (request.cookies.get("rm_ref") or request.args.get("ref")
+           or "remedy-match").strip()[:100]
+    signup_url = (
+        "https://truly.vip/E4L?utm_source=" + _up.quote_plus(ref)
+        + "&utm_medium=affiliate&utm_campaign=begin-match-e4l"
+    )
+    auth_user = get_authenticated_user(request)
+    email = ((auth_user or {}).get("email") or "").strip().lower()
+
+    # A member may be signed into the client portal rather than the main site.
+    if not email:
+        try:
+            from dashboard import portal_identity as _pi
+            sess = request.cookies.get("rm_portal_session", "")
+            if sess:
+                with _db_lock, db.connect(LOG_DB) as cx:
+                    ident = _pi.identity_from_session(cx, sess)
+                email = ((ident.email if ident else "") or "").strip().lower()
+        except Exception:
+            email = ""
+
+    href = signup_url
+    if email:
+        try:
+            from dashboard import portal_onboarding as _portal_onboarding
+            with _db_lock, db.connect(LOG_DB) as cx:
+                href = _portal_onboarding.e4l_href(cx, email, signup_url)
+        except Exception as e:
+            print(f"[match] E4L account lookup skipped: {e!r}", flush=True)
+    resp = redirect(href, code=302)
+    resp.headers["Cache-Control"] = "no-store"
+    return resp
+
+
 @app.route("/begin/match/chat", methods=["POST", "OPTIONS"])
 def begin_match_chat():
     if request.method == "OPTIONS":

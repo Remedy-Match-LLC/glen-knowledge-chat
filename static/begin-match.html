@@ -531,7 +531,7 @@
       const e = document.getElementById('scan-link');
       if (!e) return;
       const slug = encodeURIComponent(getRefSafe() || 'remedy-match');
-      /* the bridge threads utm from the rm_ref cookie at handoff time */
+      e.setAttribute('href', BASE + '/begin/match/e4l-link?ref=' + slug);
     })();
 
     // ── Helpers ────────────────────────────────────────────────────────────
