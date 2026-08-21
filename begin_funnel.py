@@ -6,6 +6,7 @@ docs/superpowers/specs/2026-05-28-progressive-disclosure-funnel-design.md
 """
 
 import json
+import re
 import sqlite3
 import urllib.parse
 
@@ -222,6 +223,61 @@ def reveal_for(rung, awareness="unknown"):
 # Private helpers
 # ---------------------------------------------------------------------------
 
+# Strings the funnel itself puts in front of a client as a tappable first reply.
+# Whatever they tap becomes the first message, and the hero used to store that as
+# their name -- so four real CRM contacts ended up called "Sharper vision" and got
+# "Hi Sharper vision," from the sequences. We own this list, so refusing it at the
+# writer is exact: no heuristic, no false positive on a real name like "Mary Alice".
+# Built lazily because the chip constants are defined further down this module.
+_CHIP_LABELS_CACHE = None
+
+
+def _norm_label(s):
+    """Lowercase, drop commas, collapse whitespace. Applied to BOTH sides of the
+    comparison so "Actually, let me explore instead" cannot slip through on its
+    punctuation."""
+    return " ".join((s or "").lower().replace(",", " ").split())
+
+
+def _chip_labels():
+    global _CHIP_LABELS_CACHE
+    if _CHIP_LABELS_CACHE is None:
+        _CHIP_LABELS_CACHE = frozenset(
+            _norm_label(l) for l in (
+                list(SEED_OUTCOME_CHIPS)
+                + [c["label"] for c in _STYLE_FORK_CHIPS]
+                + [_CROSSOVER_TO_MISSION["label"], _CROSSOVER_TO_ADVENTURE["label"]]))
+    return _CHIP_LABELS_CACHE
+
+
+def _clean_name_like(raw):
+    """Python mirror of the hero's cleanName(): strip a lead-in, drop punctuation,
+    keep the first two words. "I'm on a mission" -> "on a". Kept in step with
+    static/begin.html so the writer refuses exactly what the reader could produce."""
+    s = re.sub(r"^(i\s*am|i'?m|my name is|it'?s|this is|call me)\s+", "",
+               (raw or "").strip(), flags=re.I)
+    s = re.sub(r"[^A-Za-z' -]", " ", s).strip()
+    return " ".join(s.split()[:2])[:40] if s else ""
+
+
+def _chip_label_fragment(name):
+    """True if `name` is one of our chip labels, or the fragment cleanName() leaves
+    of one. Exact set membership, never a heuristic."""
+    n = _norm_label(name)
+    if not n:
+        return False
+    labels = _chip_labels()
+    return n in labels or n in {_norm_label(_clean_name_like(l)) for l in labels}
+
+
+def scrub_first_name(name):
+    """A first name we are willing to store. Empty for anything that is really one
+    of our own chip labels. Deliberately narrow: guessing whether free text is a
+    name is what caused the damage, so this only refuses what we KNOW we emitted."""
+    n = (name or "").strip()
+    return "" if _chip_label_fragment(n) else n
+
+
 def _row_for_session(cx, session_id):
     cx.row_factory = sqlite3.Row
     return cx.execute(
@@ -258,7 +314,8 @@ def record_unlock(cx, *, session_id, trigger, email="", detail="",
     if trigger in GATE_TRIGGERS:
         gates.add(trigger)
     new_email = (email or existing.get("email") or "").strip().lower()
-    new_first = (first_name or existing.get("first_name") or "").strip()
+    new_first = scrub_first_name(first_name) or existing.get("first_name") or ""
+    new_first = new_first.strip()
     new_last = (last_name or existing.get("last_name") or "").strip()
     new_ref = (ref_slug or existing.get("ref_slug") or "").strip()
     tos_at = existing.get("tos_agreed_at")
