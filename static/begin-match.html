@@ -531,7 +531,7 @@
       const e = document.getElementById('scan-link');
       if (!e) return;
       const slug = encodeURIComponent(getRefSafe() || 'remedy-match');
-      e.setAttribute('href', 'https://truly.vip/E4L?utm_source=' + slug + '&utm_medium=affiliate&utm_campaign=begin-match-e4l');
+      e.setAttribute('href', BASE + '/begin/match/e4l-link?ref=' + slug);
     })();
 
     // ── Helpers ────────────────────────────────────────────────────────────
