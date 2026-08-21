@@ -94,7 +94,10 @@ def test_begin_serves_hero(monkeypatch, tmp_path):
     assert 'class="hero"' in html
     assert 'id="hero-chat"' in html
     assert 'id="hero-messages"' in html
-    assert "health goals" in html
+    # Was "health goals", a phrase from the old name-first greeting that 2026-08-20
+    # removed. Pin the scripted opener's presence, not its wording -- the copy is
+    # covered in tests/test_hero_first_ask.py.
+    assert "var GREETING" in html
     # The hero video is present (relocated, single instance kept in the hero).
     assert 'class="video"' in html
 
@@ -103,7 +106,12 @@ def test_hero_chat_scripted_greeting_and_no_feedback_controls(monkeypatch, tmp_p
     app_module = _load_app()
     monkeypatch.setattr(app_module, "LOG_DB", str(tmp_path / "chat_log.db"))
     html = app_module.app.test_client().get("/begin").get_data(as_text=True)
-    assert "what should I call you" in html
+    # Inverted 2026-08-20: the scripted opener asks for the OUTCOME, not the name.
+    # Asking the name first contradicted the headline directly above it and, worse,
+    # stored whatever came back as first_name -- six live CRM contacts are named
+    # after funnel chips. See tests/test_hero_first_ask.py.
+    assert "what should I call you" not in html
+    assert "what you would love to change" in html
     assert "id=\"hero-send\"" in html
     # Hero chat surface must not render Rate / feedback controls.
     hero_start = html.index('id="hero-chat"')

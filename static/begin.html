@@ -1091,9 +1091,12 @@
       location.reload();
     };
 
-    // Scripted first assistant message asks the name (instant, no model call).
-    var GREETING = "Aloha. I am here to help with your health goals. So I can "
-      + "tailor this and remember you - what should I call you?";
+    // Scripted first assistant message (instant, no model call). It asks for the
+    // OUTCOME, not the name: the headline directly above it says "Start by telling
+    // me what's on your mind", and asking for a name first both contradicted that
+    // and swallowed the answer. Mirrors begin_funnel.MISSION_PROMPT.
+    var GREETING = "Aloha. Tell me what you would love to change, and I will help "
+      + "you find what your body is asking for.";
     // Resume a saved conversation (within TTL) instead of starting fresh.
     var heroRestored = false;
     try {
@@ -1206,24 +1209,35 @@
       if (!firstQuestionFired) { firstQuestionFired = true; unlock('question'); }
       loading = true; sendEl.disabled = true;
 
-      // First reply after the scripted name-ask = the name. Capture it, warmly
-      // acknowledge, and invite the email (optional, never a gate) before the
-      // conversation proper begins.
+      // The greeting asks what they would love to change, so the first message is
+      // their CONCERN. Only treat it as a name when it actually looks like one --
+      // someone who answers "Glen". Everything else gets ANSWERED.
+      //
+      // This used to run cleanName() over whatever they typed and store the result
+      // as their first name, unguarded. "my eyes are getting worse" became "my
+      // eyes", "I'm on a mission" became "on a", and the seed chips stored their
+      // own labels: four real GHL contacts are named "Sharper vision" and receive
+      // "Hi Sharper vision," from the sequences. isLikelyName already existed --
+      // it just guarded the on-page personalisation and not the server write.
       if (!nameCaptured) {
         nameCaptured = true;
         var nm = cleanName(q);
-        var afterName = function(){
-          var _nameMsg = 'Lovely to meet you' + (nm ? ', ' + nm : '') + '. Would you like to share your email, so I can remember you next time and we can stay connected? It is completely optional. You can skip it and just tell me what is on your mind.';
-          heroSpeak(heroAppend('assistant', _nameMsg), _nameMsg);
-          heroHistory.push({ role: 'assistant', content: 'Would you like to share your email, so I can remember you and we can stay connected? It is optional.' });
+        if (isLikelyName(nm)) {
+          var greet = 'Lovely to meet you, ' + nm + '. What would you love to change?';
+          try {
+            unlock('name', { name: nm, first_name: nm })
+              .then(function(){ personalize(nm); }).catch(function(){});
+          } catch (e) {}
+          heroSpeak(heroAppend('assistant', greet), greet);
+          heroHistory.push({ role: 'assistant', content: greet });
           heroSave();
           loading = false; sendEl.disabled = false;
           if (typeof unfoldJourney === 'function') unfoldJourney('chat');
           if (typeof window.heroMaybeActivate === 'function') window.heroMaybeActivate();
-        };
-        if (nm) { try { unlock('name', { name: nm, first_name: nm }).then(function(){ personalize(nm); }).catch(function(){}); } catch (e) {} }
-        afterName();  // never block the acknowledgement/invite on the network call
-        return;
+          return;   // never blocks on the network call
+        }
+        // Not a name. Fall through: answer what they actually said. The email
+        // invite still surfaces via heroMaybeActivate() once this reply lands.
       }
       var done = Promise.resolve();
       done.then(function(){ return streamMatch(q); })
