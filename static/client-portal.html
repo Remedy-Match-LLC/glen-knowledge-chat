@@ -6746,6 +6746,8 @@ async function reorder(){
     qty: Math.max(1, parseInt(row.getAttribute("data-qty"), 10) || 1),
     name: (row.querySelector(".nm") || {}).textContent || "Remedy",
     price: (row.querySelector(".pr") || {}).textContent || "",
+    regularPrice: (row.querySelector(".pr .reg") || {}).textContent || "",
+    specialPrice: (row.querySelector(".pr .sp") || {}).textContent || "",
   })).filter(it => it.slug);
   err.hidden = true;
   if(!items.length){
@@ -6755,7 +6757,12 @@ async function reorder(){
   }
   if(btn.dataset.reviewed !== "1"){
     review.innerHTML = `<div class="note" style="margin-top:1rem"><strong>Please confirm your order</strong>
-      ${items.map(it => `<div class="kv"><span>${esc(it.name)}</span><span>${esc(it.price)}</span></div>`).join("")}
+      ${items.map(it => {
+        const price = it.regularPrice && it.specialPrice
+          ? `<span class="pr"><span class="reg">${esc(it.regularPrice)}</span><span class="sp">${esc(it.specialPrice)}</span></span>`
+          : `<span class="pr">${esc(it.price)}</span>`;
+        return `<div class="kv"><span>${esc(it.name)}</span>${price}</div>`;
+      }).join("")}
       <p class="small muted" style="margin:.7rem 0 0">These are the remedies that will appear at secure checkout. Shipping is calculated there.</p></div>`;
     review.hidden = false;
     btn.dataset.reviewed = "1";
