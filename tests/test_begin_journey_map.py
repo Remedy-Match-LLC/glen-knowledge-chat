@@ -62,12 +62,11 @@ def test_give_routes_new_ambassadors_to_application_page():
 
 def test_smart_scan_href():
     bf = _bf()
-    sign = bf.journey_map(_state([]), "slug", {"has_e4l": False})
-    nos = {c["key"]: c for c in sign}
-    assert nos["scan"]["href"].startswith("https://truly.vip/E4L")
-    have = bf.journey_map(_state([]), "slug", {"has_e4l": True})
-    yes = {c["key"]: c for c in have}
-    assert yes["scan"]["href"].startswith("https://portal.e4l.com")
+    # Inverted 2026-08-20: the Scan card hands off to /begin/scan in both states.
+    # The bridge does the has_e4l lookup, so portal-vs-signup is decided once.
+    for signals in ({"has_e4l": False}, {"has_e4l": True}):
+        card = {c["key"]: c for c in bf.journey_map(_state([]), "slug", signals)}["scan"]
+        assert card["href"].startswith("/begin/scan")
 
 
 def test_thread_href_external_threads_utm():

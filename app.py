@@ -2981,6 +2981,73 @@ def begin_explore():
     return resp
 
 
+E4L_SIGNUP_URL = "https://truly.vip/E4L"
+E4L_PORTAL_URL = "https://portal.e4l.com"
+_SCAN_CAMPAIGN_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
+
+
+@app.route("/begin/scan")
+def begin_scan():
+    """The E4L bridge: our own page between the funnel and the Energy4Life signup.
+
+    That signup is titled "Sign Up", not "Voice Scan", and asks for eight fields
+    including a full address and a password before anything happens. Dropping a
+    client onto it straight from a "Start your voice scan" chip was the single
+    biggest break in the journey: total brand discontinuity, nothing prefilled,
+    and no way back.
+
+    This page says what is coming, captures the email on OUR side first (which is
+    the only thing that lets /api/e4l/scan-freshness match the scan back to this
+    client later -- _has_e4l keys on email alone), and hands off.
+
+    Flag off: 302 straight through, same destination, same utm. One extra hop."""
+    arg_ref = (request.args.get("ref") or "").strip()
+    campaign = (request.args.get("c") or "").strip()
+    if not _SCAN_CAMPAIGN_RE.match(campaign):
+        campaign = "begin-scan"
+
+    session_id = (request.cookies.get("amg_session") or "").strip()
+    auth_user = get_authenticated_user(request)
+    auth_email = auth_user["email"] if auth_user else ""
+    with _db_lock, db.connect(LOG_DB) as cx:
+        state = begin_funnel.get_state(cx, session_id=session_id, email=auth_email)
+    email = (state.get("email") or auth_email or "").strip()
+    # Attribution: the cookie is the common case, but a ?want= deep link records
+    # its ref into journey_state without ever setting rm_ref. Falling back to the
+    # stored slug means the referral survives the hop through the bridge on every
+    # path, not just the cookie one.
+    ref = ((request.cookies.get("rm_ref") or "").strip() or arg_ref
+           or (state.get("ref_slug") or "").strip())
+    with db.connect(LOG_DB) as cx:
+        has_e4l = _has_e4l(cx, email, state)
+
+    # One place decides portal-vs-signup. Someone who already has an account must
+    # never be walked through creating a second one.
+    href = begin_funnel.outbound_href(
+        E4L_PORTAL_URL if has_e4l else E4L_SIGNUP_URL, ref, campaign)
+
+    if not E4L_BRIDGE_ENABLED:
+        return redirect(href, code=302)
+
+    payload = {"href": href, "skip_href": href, "email": email,
+               "has_e4l": has_e4l, "first_name": (state.get("first_name") or "")}
+    html = (STATIC / "begin-scan.html").read_text(encoding="utf-8")
+    injection = ("<script>window.__SCAN__ = "
+                 + json.dumps(payload).replace("<", "\\u003c").replace(">", "\\u003e")
+                 + ";</script>")
+    html = html.replace("</head>", injection + "\n</head>")
+    resp = Response(html, mimetype="text/html")
+    resp.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+    if arg_ref and _SCAN_CAMPAIGN_RE.match(arg_ref):
+        resp.set_cookie("rm_ref", arg_ref, max_age=90 * 24 * 3600,
+                        samesite="Lax", secure=request.is_secure)
+    if not request.cookies.get("amg_session"):
+        resp.set_cookie("amg_session", session_id or uuid.uuid4().hex,
+                        max_age=60 * 60 * 24 * 365, httponly=True,
+                        samesite="Lax", secure=request.is_secure)
+    return resp
+
+
 @app.route("/begin/tools")
 def begin_tools():
     """Recommended Tools & Partners — the dedicated partner page reached from a
@@ -5716,7 +5783,7 @@ _REMEDY_MATCH_SYSTEM = (
     "Do not guess or list many options.\n"
     "- When you ARE confident in the single best match, name it clearly, say in 1-2 sentences why "
     "it fits THIS person, and invite them to open its page.\n"
-    "- You may suggest a quick 10-second E4L voice scan (truly.vip/E4L) to read current stress "
+    "- You may suggest a quick 10-second E4L voice scan (illtowell.com/begin/scan) to read current stress "
     "patterns when that would sharpen the match.\n"
     "- Never invent product URLs or prices. Keep replies short. Sign off warmly as Dr. Glen."
     " \nQUICK-REPLY CHIPS: When the question you ask has a few discrete answers"
@@ -6473,6 +6540,11 @@ def _cohort_pricing_enabled():
     return os.environ.get("COHORT_PRICING_ENABLED", "").strip().lower() in ("1", "true", "yes", "on")
 BIOFIELD_CART_ENABLED = os.environ.get("BIOFIELD_CART_ENABLED", "").strip().lower() in ("1", "true", "yes", "on")
 ASCEND_PERSONALIZED_ENABLED = os.environ.get("ASCEND_PERSONALIZED_ENABLED", "").strip().lower() in ("1", "true", "yes", "on")
+# The E4L bridge page. OFF is today's behavior exactly: /begin/scan 302s straight
+# through to the Energy4Life signup with the same utm threading, one hop later.
+# Every emitter points at /begin/scan either way, so the flag changes what the
+# route DOES, not what 11 surfaces emit.
+E4L_BRIDGE_ENABLED = os.environ.get("E4L_BRIDGE_ENABLED", "").strip().lower() in ("1", "true", "yes", "on")
 JOURNEY_SHELL_ENABLED = os.environ.get("JOURNEY_SHELL_ENABLED", "").strip().lower() in ("1", "true", "yes", "on")
 JOURNEY_QUEST_ENABLED = os.environ.get("JOURNEY_QUEST_ENABLED", "").strip().lower() in ("1", "true", "yes", "on")
 REWARDS_1B_ENABLED = os.environ.get("REWARDS_1B_ENABLED", "").strip().lower() in ("1", "true", "yes", "on")
@@ -13194,7 +13266,8 @@ def _init_referral_tables():
                 (f"{PUBLIC_BASE_URL}/begin/doorway?ref={{slug}}",))
         # Seed E4L bioenergetic wellness scan
         E4L_INSTRUCTIONS = (
-            "New here? Get a free account at https://truly.vip/E4L\n"
+            "New here? Start at https://illtowell.com/begin/scan -- it walks them\n"
+            "through what E4L will ask for, then hands off to the signup.\n"
             "Already have an account? Log in at https://portal.E4L.com\n"
             "\n"
             "Once logged in:\n"
@@ -13211,16 +13284,21 @@ def _init_referral_tables():
                 INSERT INTO affiliate_offers (sort_order, name, description, url_template, instructions, active)
                 VALUES (2, 'Free Bioenergetic Wellness Scan',
                     'A free voice-based bioenergetic scan from E4L — reveals the body''s current wellness priorities in minutes.',
-                    'https://truly.vip/E4L?utm_source={slug}&utm_medium=affiliate&utm_campaign=e4l-scan',
+                    'https://illtowell.com/begin/scan?ref={slug}&c=affiliate-e4l',
                     ?,
                     1)
             """, (E4L_INSTRUCTIONS,))
         else:
-            # Keep existing prod row's instructions in sync with the canonical seed.
+            # Keep the existing prod row in sync with the canonical seed. The URL is
+            # synced too, not just the instructions: prod's row still carries the raw
+            # truly.vip/E4L link, so affiliates would keep sharing the unprepared
+            # handoff long after the bridge shipped.
+            E4L_OFFER_URL = 'https://illtowell.com/begin/scan?ref={slug}&c=affiliate-e4l'
             cx.execute(
-                "UPDATE affiliate_offers SET instructions=? "
-                "WHERE name='Free Bioenergetic Wellness Scan' AND instructions != ?",
-                (E4L_INSTRUCTIONS, E4L_INSTRUCTIONS),
+                "UPDATE affiliate_offers SET instructions=?, url_template=? "
+                "WHERE name='Free Bioenergetic Wellness Scan' "
+                "AND (instructions != ? OR url_template != ?)",
+                (E4L_INSTRUCTIONS, E4L_OFFER_URL, E4L_INSTRUCTIONS, E4L_OFFER_URL),
             )
         # Seed ASH MasterClass (free evergreen intro in MentorshipU)
         if not cx.execute("SELECT id FROM affiliate_offers WHERE name='Free ASH MasterClass'").fetchone():

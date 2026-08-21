@@ -120,7 +120,9 @@ def test_state_scan_gate_routes_to_portal(monkeypatch, tmp_path):
                                    email="p@x.com", tos=True)
     body = client.get("/begin/state").get_json()
     scan = [c for c in body["journey_map"] if c["key"] == "scan"][0]
-    assert scan["href"].startswith("https://portal.e4l.com")
+    # Inverted 2026-08-20: the map hands off to the bridge, which is what now
+    # routes a known scanner to the portal (tests/test_e4l_bridge.py covers that).
+    assert scan["href"].startswith("/begin/scan")
 
 
 def test_pb_completion_sets_gate(monkeypatch, tmp_path):
