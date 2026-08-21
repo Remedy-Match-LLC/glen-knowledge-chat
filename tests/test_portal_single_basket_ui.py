@@ -35,3 +35,11 @@ def test_only_shared_basket_review_starts_product_checkout():
     checkout = _function("reorder")
     assert "/api/portal/${encodeURIComponent(token)}/checkout" in checkout
     assert "Please confirm your order" in checkout
+
+
+def test_shared_basket_review_preserves_special_price_strikethrough():
+    checkout = _function("reorder")
+    assert 'row.querySelector(".pr .reg")' in checkout
+    assert 'row.querySelector(".pr .sp")' in checkout
+    assert '<span class="reg">${esc(it.regularPrice)}</span>' in checkout
+    assert '<span class="sp">${esc(it.specialPrice)}</span>' in checkout
