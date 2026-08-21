@@ -50,3 +50,12 @@ def test_header_photo_keeps_upload_and_initials_fallback():
     assert 'placeholder.style.display = "none"' in HTML
     assert 'placeholder.style.display = ""' in HTML
     assert ".portal-client-identity[hidden]{display:none}" in HTML
+
+
+def test_my_remedies_falls_back_to_independent_recommendations_payload():
+    """A degraded /view remedies block must not hide condition matches that
+    arrived successfully from the independently fetched recommendations API."""
+    assert "const fallbackSections = (_recoPayload" in HTML
+    assert 'source === "condition"' in HTML
+    assert 'fallbackProducts("condition")' in HTML
+    assert 'fallbackProducts("ranked").slice(0, 5)' in HTML
