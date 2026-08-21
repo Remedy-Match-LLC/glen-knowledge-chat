@@ -752,7 +752,7 @@
 <script src="/static/entity-ref.js"></script>
 <script src="/static/js/portal-library.js"></script>
 <script src="/static/js/portal-documents.js"></script>
-<script src="/static/js/portal-onboarding.js?v=20260814-accelerators"></script>
+<script src="/static/js/portal-onboarding.js?v=20260820-starter-remedies"></script>
 <script>
 // The last path segment is either an emailed portal token or the literal "me"
 // (the tokenless logged-in home, authed by the rm_portal_session cookie). Tokens
@@ -1110,6 +1110,7 @@ const PORTAL_HASH_ROUTES = {
   biofield: {panel:"current", target:"biofield-section"},
   recs:     {panel:"current", target:"recsCard"},
   recommendations: {panel:"current", target:"recsCard"},
+  remedies: {panel:"remedies", target:"remedies-panel"},
   intake:   {panel:"intake", target:"portal-intake-card"},
   offers:   {panel:"offers", target:"offers-card"},
   photo:    {panel:"photo", target:"photo-section"},
@@ -2232,6 +2233,16 @@ async function load(options){
   showPortalPartialWarning([dataResult, viewResult].filter(result=>result !== required));
   return true;
 }
+
+// Onboarding saves condition-matched remedies through a separate script and
+// mount. Give it one stable handoff that refreshes the portal view (including
+// v.remedies) before revealing the destination, so a successful submission
+// cannot collapse into a stale or empty page.
+window.refreshPortalAfterStarterRemedies = async function(){
+  if(location.hash !== "#remedies") history.pushState(null, "", "#remedies");
+  await load();
+  applyPortalHash();
+};
 
 // A portal is often left open while Dr. Glen publishes a report, invoice, or
 // live event in the console. Refresh its data when the member returns to the
@@ -4214,7 +4225,7 @@ function render(d, v){
       <section data-panel="account" hidden>${back}${_accountHtml}</section>
       <section data-panel="refer" hidden>${back}${_referHtml || '<div class="card quiet"><p class="muted">Ambassador program details will appear here.</p></div>'}</section>
       <section data-panel="referrals" hidden>${back}${_referralsHtml}</section>
-      ${_hub && v.remedies && v.remedies.enabled ? `<section data-panel="remedies" hidden>${back}${buildRemediesHtml(v)}</section>` : ""}` : ""}`;
+      ${_hub && v.remedies && v.remedies.enabled ? `<section id="remedies-panel" data-panel="remedies" hidden>${back}${buildRemediesHtml(v)}</section>` : ""}` : ""}`;
   } else {
     // The onboarding checklist is available independently of the hub and scan
     // history flags, so its #intake link must always have a real panel target.

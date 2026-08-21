@@ -485,7 +485,20 @@ if (typeof window !== 'undefined' && typeof document !== 'undefined') {
           !!(body && body.consult_recommended));
         msg.className = 'ob-triage-msg ob-triage-ok';
         try { localStorage.removeItem(draftKey); } catch (_error) {}
-        setTimeout(loadAndRender, 900);
+        // The newly seeded remedies live in the main portal payload, not in
+        // this independently-rendered onboarding tile. Refreshing only this
+        // mount makes the completed form disappear while the stale remedies
+        // panel remains unchanged. Let the portal refresh its full payload and
+        // route directly to My Remedies after the success message is visible.
+        setTimeout(function () {
+          if (typeof window.refreshPortalAfterStarterRemedies === 'function') {
+            window.refreshPortalAfterStarterRemedies();
+          } else {
+            // Older cached portal shells do not expose the full-refresh helper.
+            // Keep their checklist state accurate until the shell is refreshed.
+            loadAndRender();
+          }
+        }, 900);
       }).catch(function (error) {
         msg.textContent = (error && error.message) ||
           'Something went wrong — please try again.';
