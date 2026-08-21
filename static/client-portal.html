@@ -1922,9 +1922,40 @@ function buildOrdersHtml(d){
 // redraw after any action never orphans its own listeners.
 function buildRemediesHtml(v){
   const rem = (v && v.remedies) || {};
-  const ranked = Array.isArray(rem.ranked) ? rem.ranked : [];
+  // The recommendations endpoint is fetched independently alongside /view.
+  // Keep it as a display fallback: one defensive failure inside the combined
+  // portal-view assembler must not turn a successfully saved condition match
+  // into an empty My Remedies panel. Both payloads use the same authoritative
+  // recommendation_events source; this only chooses the healthy read path.
+  const fallbackSections = (_recoPayload && Array.isArray(_recoPayload.sections))
+    ? _recoPayload.sections : [];
+  const fallbackProducts = source => {
+    const seen = new Set();
+    const rows = [];
+    fallbackSections.forEach(sec => {
+      const matches = source === "condition"
+        ? sec.source === "condition" : sec.source !== "condition";
+      if(!matches) return;
+      (sec.products || []).forEach(prod => {
+        const key = prod && prod.product_key;
+        if(!key || seen.has(key)) return;
+        seen.add(key);
+        rows.push({
+          product_key:key,
+          name:prod.name || key,
+          url:prod.url || "",
+          source:sec.source,
+          reason:prod.client_note || ""
+        });
+      });
+    });
+    return rows;
+  };
+  const serverRanked = Array.isArray(rem.ranked) ? rem.ranked : [];
+  const ranked = serverRanked.length ? serverRanked : fallbackProducts("ranked").slice(0, 5);
   const external = Array.isArray(rem.external) ? rem.external : [];
-  const fromHistory = Array.isArray(rem.from_history) ? rem.from_history : [];
+  const serverHistory = Array.isArray(rem.from_history) ? rem.from_history : [];
+  const fromHistory = serverHistory.length ? serverHistory : fallbackProducts("condition");
   const STATUS_PILL = {listed:"On your list", requested:"Review in progress", ai_draft:"Review in progress", confirmed:"Reviewed"};
 
   const rankedRows = ranked.length
