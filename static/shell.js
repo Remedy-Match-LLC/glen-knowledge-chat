@@ -144,6 +144,14 @@
       if (_stray) _stray.remove();
     }
 
+    // Some portal surfaces add a scene selector. It belongs in this header's flex
+    // layout immediately before theme mode—not in a fixed layer over the header.
+    var scenePicker = document.getElementById("elPicker");
+    if (scenePicker) {
+      var themeControl = bar.querySelector(".rm-theme-seg");
+      bar.insertBefore(scenePicker, themeControl || null);
+    }
+
     document.body.appendChild(bar);
     document.body.classList.add("js-shell-on");
 

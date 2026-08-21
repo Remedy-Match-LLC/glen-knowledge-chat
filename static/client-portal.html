@@ -78,39 +78,24 @@
   body.has-bg{background:transparent}
   body.has-bg #el-bg{opacity:1}
   body.has-bg #el-scrim{opacity:.5}
-  /* Ambient sound stays near the mentor; the scene picker belongs with the visual
-     light/dark control in the top-right header controls. */
+  /* Ambient sound stays near the mentor; the scene picker is mounted by shell.js
+     directly into the journey header beside its light/dark control. */
   .sound-toggle{position:fixed;bottom:18px;right:90px;z-index:10000;width:48px;height:48px;
     border-radius:50%;border:1px solid rgba(255,255,255,.28);background:#1F5A4D;color:#fff;
     cursor:pointer;display:none;align-items:center;justify-content:center;
     box-shadow:0 4px 16px rgba(0,0,0,.38)}
   body.has-bg .sound-toggle{display:flex}
-  .portal-header-controls{position:fixed;top:14px;right:14px;z-index:10000;
-    display:flex;align-items:center;gap:7px;max-width:calc(100vw - 28px);
-    padding:4px;border:1px solid var(--line);border-radius:22px;
-    background:var(--card);box-shadow:0 4px 14px rgba(0,0,0,.18)}
   .el-picker{height:30px;min-width:0;max-width:132px;flex:0 1 132px;
-    border-radius:15px;border:0;background:var(--card2);color:var(--ink);cursor:pointer;
+    border-radius:15px;border:1px solid var(--line);background:var(--card2);color:var(--ink);cursor:pointer;
     padding:0 9px;font-size:.8rem;font-weight:600;display:none}
   .el-picker option{color:#111;background:#fff}
-  .portal-header-controls .theme-toggle{position:static;flex:0 0 auto;min-width:max-content}
-  .portal-header-controls .rm-theme-seg{display:inline-flex;vertical-align:middle;
-    border:1px solid var(--line);border-radius:999px;overflow:hidden;white-space:nowrap}
-  .portal-header-controls .rm-theme-seg-btn{appearance:none;border:0;background:transparent;
-    color:var(--muted);width:31px;height:30px;padding:0;cursor:pointer;display:inline-flex;
-    align-items:center;justify-content:center;line-height:0;flex:0 0 31px}
-  .portal-header-controls .rm-theme-seg-btn+.rm-theme-seg-btn{border-left:1px solid var(--line)}
-  .portal-header-controls .rm-theme-seg-btn svg{width:15px;height:15px}
-  .portal-header-controls .rm-theme-seg-btn[aria-pressed="true"]{background:var(--btn-bg);color:var(--btn-fg)}
   /* The scene picker stays available whenever the feature is on, even with no
      active backdrop — so "Automatic" (which can resolve to no scene) never strands
      the member with no way to pick one back. The sound toggle stays has-bg-gated. */
   body.has-bg .el-picker,
   body.scene-capable .el-picker{display:inline-block}
   @media(max-width:480px){
-    .portal-header-controls{top:8px;right:8px;gap:4px;max-width:calc(100vw - 16px);padding:3px}
-    .el-picker{height:28px;max-width:108px;flex-basis:108px;padding:0 6px;font-size:.72rem}
-    .portal-header-controls .rm-theme-seg-btn{width:29px;height:28px;flex-basis:29px}
+    #journey-shell .el-picker{height:28px;max-width:96px;flex-basis:96px;padding:0 6px;font-size:.72rem}
   }
   /* hero text sits directly on the scene (not a card) -> theme-aware halo for
      legibility on any backdrop (shadow uses --bg, which is opposite the text). */
@@ -694,10 +679,8 @@
   <video id="el-bg" playsinline muted loop preload="none" aria-hidden="true" tabindex="-1"></video>
   <video id="el-bg2" playsinline muted preload="none" aria-hidden="true" tabindex="-1"></video>
   <div id="el-scrim" aria-hidden="true"></div>
-  <div class="portal-header-controls">
-    <select class="el-picker" id="elPicker" aria-label="Fireside scene" title="Fireside scene"></select>
-    <div class="theme-toggle" id="themeToggle" role="group" aria-label="Theme mode"></div>
-  </div>
+  <select class="el-picker" id="elPicker" aria-label="Fireside scene" title="Fireside scene"></select>
+  <div class="theme-toggle" id="themeToggle" role="group" aria-label="Theme mode"></div>
   <button class="sound-toggle" id="soundToggle" aria-label="Turn ambient sound on or off" title="Ambient sound" aria-pressed="false"></button>
   <button class="mentor-launcher" id="mentorLauncher" aria-label="Open Mentorship University mentor" aria-expanded="false">
     <img class="mentor-launcher-logo" src="/static/logo.png" alt="" aria-hidden="true">
