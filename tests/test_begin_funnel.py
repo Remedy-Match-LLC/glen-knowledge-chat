@@ -377,7 +377,15 @@ def test_surface_caps_at_three():
 def test_surface_most_aware_masterclass_when_no_specific():
     import begin_funnel as bf
     st = {"awareness_stage": "most", "current_rung": "arrival", "unlocked_gates": []}
-    assert _keys(bf.surface(st, ["hello"], "")) == ["ash_masterclass"]
+    keys = _keys(bf.surface(st, ["hello"], ""))
+    # Inverted 2026-08-21: this asserted the rail rendered ash_masterclass ALONE,
+    # which is the defect -- a lone "01" under "Choose the doorway that meets you
+    # where you are", and that one doorway the $300-$50,000 ladder. The ranking it
+    # was really pinning (most-aware -> masterclass first) still holds; the rail is
+    # now topped up so there is always a free way in. See tests/test_doorway_rail.py.
+    assert keys[0] == "ash_masterclass"
+    assert len(keys) == 3
+    assert {"quiz", "e4l_scan", "intake"} & set(keys)
 
 
 def test_resolve_want_voice_is_internal_room_no_utm():

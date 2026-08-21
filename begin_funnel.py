@@ -943,12 +943,36 @@ def _match_card_keys(state, query_texts):
     return keys
 
 
+def _pad_to(keys, cap):
+    """Top a matched key list up to `cap` from the default trio, preserving match
+    order and skipping anything already present.
+
+    Only ever called with a NON-empty match set. `surface()` used to fall back to
+    the trio only when nothing matched, so a single match rendered a single card:
+    across 675 simulated states, 44% showed one card and 228 of those showed a paid
+    or ladder door alone -- under a header that says "Choose the doorway that meets
+    you where you are". The most engaged non-buyer in the funnel, typing "hello
+    there", was offered nothing but the $300-$50,000 ladder.
+
+    A no-signal state keeps its own deliberate fallback and never reaches here."""
+    out = list(keys)
+    for k in _DEFAULT_TRIO:
+        if len(out) >= cap:
+            break
+        if k not in out:
+            out.append(k)
+    return out[:cap]
+
+
 def surface(state, query_texts, ref=""):
     """Return an ordered, deduped, capped-at-3 list of card dicts for the visitor's
-    signals. Falls back to the default trio when no contextual signal fires."""
+    signals. Falls back to the default trio when no contextual signal fires, and
+    tops a shorter match up to three so the rail always offers a free way in."""
     keys = _match_card_keys(state, query_texts)
     if not keys:
         keys = list(_DEFAULT_TRIO)
+    else:
+        keys = _pad_to(keys, 3)
     return [_card(k, ref) for k in keys[:3]]
 
 
@@ -964,10 +988,15 @@ def surface_with_founding(state, query_texts, ref="", founding_open=False):
 
 def surface_for_chat(state, query_texts, ref=""):
     """Return an ordered, deduped, capped-at-2 list of card dicts for chat context.
-    Falls back to a single gentle quiz card when no contextual signal fires."""
+
+    A no-signal turn keeps its single gentle quiz card -- padding there would only
+    make the conversation pushier. A MATCHED single card is topped up, so a lone
+    ladder door never stands alone here either."""
     keys = _match_card_keys(state, query_texts)
     if not keys:
         keys = ["quiz"]
+    else:
+        keys = _pad_to(keys, 2)
     return [_card(k, ref) for k in keys[:2]]
 
 
