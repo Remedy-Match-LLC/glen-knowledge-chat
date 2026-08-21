@@ -1,0 +1,190 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Your Voice Scan · Dr. Glen Swartwout</title>
+<style>
+  :root{
+    --bg:#0A150D; --panel:#111F16; --border:#1E3327; --ink:#EFE7D6; --muted:#9FB0A4;
+    --gold:#D9B25A; --green:#1F5A4D;
+    --serif:Georgia,'Times New Roman',serif;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+       font:16px/1.6 -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;}
+  .wrap{max-width:640px;margin:0 auto;padding:38px 20px 64px}
+  .eyebrow{text-align:center;color:var(--gold);font-size:12px;letter-spacing:.16em;
+           text-transform:uppercase;font-weight:700;margin:0 0 10px}
+  h1{font-family:var(--serif);font-weight:600;font-size:clamp(26px,4.4vw,36px);
+     line-height:1.22;text-align:center;margin:0 0 14px;text-wrap:balance}
+  .lede{text-align:center;color:var(--muted);margin:0 auto 30px;max-width:46ch}
+  .panel{background:var(--panel);border:1px solid var(--border);border-radius:14px;
+         padding:22px 20px;margin:0 0 22px}
+  .panel h2{font-size:13px;letter-spacing:.1em;text-transform:uppercase;color:var(--gold);
+            margin:0 0 12px;font-weight:700}
+  ol,ul{margin:0;padding-left:20px}
+  li{margin:0 0 8px}
+  li:last-child{margin-bottom:0}
+  .heads-up{border-left:3px solid var(--gold)}
+  .heads-up li{color:var(--muted)}
+  .heads-up b{color:var(--ink);font-weight:600}
+  label{display:block;font-size:14px;color:var(--muted);margin:0 0 6px}
+  input[type=email]{width:100%;padding:12px 13px;border-radius:9px;font-size:16px;
+    background:#0A150D;border:1px solid var(--border);color:var(--ink)}
+  input[type=email]:focus{outline:none;border-color:var(--green)}
+  input[readonly]{color:var(--muted)}
+  .why{font-size:13px;color:var(--muted);margin:8px 0 0}
+  .go{display:block;width:100%;margin:18px 0 0;padding:15px 18px;border:0;border-radius:999px;
+      background:var(--gold);color:#20160A;font-size:16px;font-weight:700;cursor:pointer;
+      text-align:center;text-decoration:none}
+  .go:hover{filter:brightness(1.06)}
+  .skip{display:block;text-align:center;margin:14px 0 0;color:var(--muted);font-size:14px}
+  .skip:hover{color:var(--ink)}
+  .back{display:block;text-align:center;margin:26px 0 0;color:var(--muted);font-size:14px}
+  .done{display:none}
+  .done.on{display:block}
+  .start.off{display:none}
+  .err{color:#E2A2A2;font-size:13px;margin:8px 0 0;min-height:1em}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="start" id="start">
+    <p class="eyebrow">Bioenergetic Voice Analysis</p>
+    <h1 id="head">Your scan takes about ten seconds. Setting up the account takes a few minutes.</h1>
+    <p class="lede" id="lede">The scan itself is free, and it runs on Energy4Life, our scanning
+      platform. Here is exactly what happens next, so none of it is a surprise.</p>
+
+    <div class="panel">
+      <h2>What you will do</h2>
+      <ol>
+        <li>Create your free Energy4Life account.</li>
+        <li>Open the Scans tab and choose Voice Scan.</li>
+        <li>Count out loud, one to ten, somewhere quiet.</li>
+        <li>Come back here. Your results find their way to us.</li>
+      </ol>
+    </div>
+
+    <div class="panel heads-up">
+      <h2>Heads up before you go</h2>
+      <ul>
+        <li>Energy4Life looks nothing like this page. Different name, different design.
+          That is expected, not a wrong turn.</li>
+        <li>Their signup asks for your <b>name, email, country, address, phone number and
+          a password</b>. The address is how any physical remedy would reach you.</li>
+        <li>It opens in a new tab, so this page stays right here.</li>
+      </ul>
+    </div>
+
+    <div class="panel">
+      <label for="email">Your email</label>
+      <input type="email" id="email" autocomplete="email" placeholder="you@example.com">
+      <p class="why" id="why">Use the same address on the Energy4Life signup. That is how your
+        scan finds its way back to your results here.</p>
+      <p class="err" id="err"></p>
+      <a class="go" id="go" href="#">Start my voice scan</a>
+      <a class="skip" id="skip" href="#">Skip this, just take me to the scan</a>
+    </div>
+
+    <a class="back" href="/begin">Back to your journey</a>
+  </div>
+
+  <div class="done" id="done">
+    <p class="eyebrow">Bioenergetic Voice Analysis</p>
+    <h1>Your scan is open in the other tab.</h1>
+    <p class="lede">Count out loud, one to ten. When you are done, come back here and
+      keep going. Your results are read and interpreted on our side, so there is
+      nothing else for you to upload.</p>
+    <div class="panel">
+      <h2>If you get stuck</h2>
+      <ul>
+        <li>No Scans tab? You may still be on the signup step. Finish creating the account first.</li>
+        <li>Still nothing? Write to <a href="mailto:support@remedymatch.com"
+            style="color:var(--gold)">support@remedymatch.com</a> and we will sort it out.</li>
+      </ul>
+    </div>
+    <a class="go" href="/begin">Keep going</a>
+    <a class="skip" id="reopen" href="#">Reopen the scan tab</a>
+  </div>
+
+</div>
+
+<script>
+(function(){
+  var D = window.__SCAN__ || {};
+  var go = document.getElementById('go');
+  var skip = document.getElementById('skip');
+  var input = document.getElementById('email');
+  var err = document.getElementById('err');
+  var startPane = document.getElementById('start');
+  var donePane = document.getElementById('done');
+
+  go.href = D.href || '/begin';
+  skip.href = D.skip_href || D.href || '/begin';
+  document.getElementById('reopen').href = D.href || '/begin';
+
+  // Someone who already has an account is not signing up again.
+  if (D.has_e4l) {
+    document.getElementById('head').textContent =
+      'Welcome back. Your Energy4Life account is already set up.';
+    document.getElementById('lede').textContent =
+      'Sign in, open the Scans tab, and record a fresh voice scan. It takes about ten seconds.';
+    go.textContent = 'Open my Energy4Life portal';
+  }
+  if (D.first_name) {
+    document.getElementById('lede').textContent =
+      D.first_name + ', ' + document.getElementById('lede').textContent;
+  }
+  if (D.email) {
+    input.value = D.email;
+    input.setAttribute('readonly', 'readonly');
+    document.getElementById('why').textContent =
+      'Use this same address on the Energy4Life signup. That is how your scan finds its way back to your results here.';
+  }
+
+  function valid(v){ return v.indexOf('@') > 0 && v.indexOf('.', v.indexOf('@')) > 0; }
+
+  function handoff(){
+    startPane.classList.add('off');
+    donePane.classList.add('on');
+    window.scrollTo(0, 0);
+  }
+
+  // Capture the email on OUR side before the jump. Best-effort: a failed save
+  // must never stand between a client and a free scan.
+  go.addEventListener('click', function(e){
+    var v = (input.value || '').trim();
+    if (v && !D.email && !valid(v)) {
+      e.preventDefault();
+      err.textContent = 'That does not look like an email address.';
+      input.focus();
+      return;
+    }
+    err.textContent = '';
+    if (v && !D.email) {
+      try {
+        fetch('/begin/unlock', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          credentials: 'same-origin',
+          body: JSON.stringify({trigger: 'email', email: v, path: '/begin/scan'})
+        }).catch(function(){});
+      } catch (_) {}
+    }
+    window.open(go.href, '_blank', 'noopener');
+    e.preventDefault();
+    handoff();
+  });
+
+  skip.addEventListener('click', function(e){
+    window.open(skip.href, '_blank', 'noopener');
+    e.preventDefault();
+    handoff();
+  });
+})();
+</script>
+</body>
+</html>

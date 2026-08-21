@@ -84,7 +84,7 @@
         </span>
       </a>
 
-      <a class="card" id="d-e4l" href="https://truly.vip/E4L" target="_blank" rel="noopener">
+      <a class="card" id="d-e4l" href="/begin/scan?c=begin-voice-e4l">
         <span class="card-num">03</span>
         <span class="card-body">
           <span class="card-title">E4L Bioenergetic Wellness Scan</span>
@@ -130,7 +130,7 @@
     // thread ref onto the external E4L link; choosing it = escalation (→ assess rung)
     (function(){ var e=document.getElementById('d-e4l'); if(!e) return;
       var slug=encodeURIComponent(getRef()||'remedy-match');
-      e.setAttribute('href','https://truly.vip/E4L?utm_source='+slug+'&utm_medium=affiliate&utm_campaign=begin-voice-e4l');
+      /* the bridge threads utm from the rm_ref cookie at handoff time */
       e.addEventListener('click', function(){ unlock('scan'); });
     })();
   </script>

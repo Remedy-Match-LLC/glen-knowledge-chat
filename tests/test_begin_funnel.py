@@ -385,10 +385,16 @@ def test_resolve_want_voice_is_internal_room_no_utm():
     assert bf.resolve_want("voice", "Jane") == "/begin/voice"   # internal — no utm threading
 
 
-def test_resolve_want_external_still_threads():
+def test_resolve_want_e4l_goes_through_the_bridge():
+    # Inverted 2026-08-20: every 'go scan' surface now hands off to our own
+    # /begin/scan bridge, which prepares the client for the Energy4Life signup
+    # and decides portal-vs-signup itself. See tests/test_e4l_bridge.py.
     import begin_funnel as bf
     h = bf.resolve_want("e4l", "Jane")
-    assert h.startswith("https://truly.vip/E4L") and "utm_source=Jane" in h
+    assert h.startswith("/begin/scan")
+    # Internal target, so no utm here: the bridge threads the ref from the rm_ref
+    # cookie at handoff time, which also covers arriving on the bridge directly.
+    assert "utm_source" not in h
 
 
 def test_voice_distinctions_card_points_to_room():
@@ -784,11 +790,11 @@ def test_adventure_scan_href_honors_has_e4l_signal():
     def _scan_href(chips):
         return next(c["href"] for c in chips if c["label"] == "Explore my biofield")
 
-    # returning E4L client -> Scan chip points at the portal
-    assert _scan_href(bf.next_step_chips(st, signals={"has_e4l": True})) \
-        .startswith("https://portal.e4l.com")
-    # new visitor -> generic signup
-    assert _scan_href(bf.next_step_chips(st, signals={"has_e4l": False})) \
-        .startswith("https://truly.vip/E4L")
-    # no signals passed -> defaults to signup (back-compat with prior callers)
-    assert _scan_href(bf.next_step_chips(st)).startswith("https://truly.vip/E4L")
+    # Inverted 2026-08-20. #863 made this chip resolve portal-vs-signup from the
+    # has_e4l signal. The bridge runs that same lookup itself, so the chip hands
+    # off unconditionally and ONE place decides. Both signal states, and the
+    # no-signals back-compat case, land on the bridge.
+    for signals in ({"has_e4l": True}, {"has_e4l": False}, None):
+        chips = bf.next_step_chips(st, signals=signals) if signals is not None \
+            else bf.next_step_chips(st)
+        assert _scan_href(chips).startswith("/begin/scan")

@@ -170,8 +170,12 @@ def test_begin_unlock_deep_link_returns_redirect(monkeypatch, tmp_path):
     r = client.post("/begin/unlock", json={"trigger": "deep_link", "want": "e4l", "ref": "Jane"})
     body = r.get_json()
     assert body["awareness_stage"] == "most"
-    assert body["redirect"].startswith("https://truly.vip/E4L")
-    assert "utm_source=Jane" in body["redirect"]
+    # Inverted 2026-08-20: the ?want=e4l deep link lands on our bridge. The ref is
+    # already captured server-side by this point, so attribution improves.
+    assert body["redirect"].startswith("/begin/scan")
+    # No utm on an internal path. The ref is already in journey_state by now, and
+    # the bridge falls back to it when rm_ref is absent -- which is exactly this
+    # flow. Covered by test_e4l_bridge.py::test_ref_survives_a_deep_link_with_no_cookie.
 
 
 def test_begin_unlock_deep_link_unbuilt_target_no_redirect(monkeypatch, tmp_path):

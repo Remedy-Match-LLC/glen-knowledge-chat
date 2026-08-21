@@ -135,8 +135,20 @@ def infer_awareness_heuristic(want, gates, query_texts):
     return "unknown"
 
 
+# The E4L handoff goes through our own bridge page, never straight to the
+# Energy4Life signup. The bridge names what that form will ask for, captures the
+# email so the async scan-freshness ingest can match the scan back to this
+# client, and decides portal-vs-signup in ONE place. `?c=` carries the surface
+# that sent them, so per-surface attribution survives the extra hop.
+SCAN_BRIDGE = "/begin/scan"
+
+
+def scan_bridge_href(campaign="begin-scan"):
+    return f"{SCAN_BRIDGE}?c={campaign}"
+
+
 WANT_TARGETS = {
-    "e4l":     "https://truly.vip/E4L",
+    "e4l":     scan_bridge_href("begin-deeplink-e4l"),
     "quiz":    "/begin/doorway",
     "join":    "https://truly.vip/Join",
     "results": "https://truly.vip/Results",
@@ -422,7 +434,8 @@ CARD_CATALOG = {
                            "base_url": "/begin/doorway", "internal": True},
     "e4l_scan":           {"title": "Your Voice Reveals What Your Body Knows",
                            "sub": "A 10-second scan shows your body's current priorities",
-                           "base_url": "https://truly.vip/E4L", "internal": False},
+                           "base_url": scan_bridge_href("begin-card-e4l_scan"),
+                           "internal": True},
     "intake":             {"title": "Begin Your Journey",
                            "sub": "Personalized guidance starts with understanding your story",
                            "base_url": "https://truly.vip/Join", "internal": False},
@@ -611,8 +624,22 @@ def _step_done(step, gates, signals):
 
 
 def _scan_first_href(signals, ref):
-    base = "https://portal.e4l.com" if (signals or {}).get("has_e4l") else "https://truly.vip/E4L"
-    return _thread_href(base, ref, "begin-journey-scan")
+    """The Scan card's destination: always the bridge.
+
+    #863 threaded `signals` through here so a returning client resolved to the
+    portal rather than the signup. The bridge runs that same _has_e4l lookup
+    itself, so this hands off unconditionally and there is one place that decides
+    portal-vs-signup instead of two that can drift. `signals` and `ref` stay in
+    the signature because journey_map passes them; the bridge reads the ref from
+    the rm_ref cookie at handoff time, which also survives a client who arrives
+    on the bridge from somewhere else."""
+    return scan_bridge_href("begin-journey-scan")
+
+
+def outbound_href(base_url, ref="", campaign="begin-scan"):
+    """Thread the ref-based utm onto an external destination. Public wrapper so
+    callers outside this module (the bridge route) do not reach into _thread_href."""
+    return _thread_href(base_url, ref, campaign)
 
 
 def journey_map(state, ref="", signals=None):
