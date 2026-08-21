@@ -59,17 +59,30 @@ def test_travel_style_route_rejects_bad_value(monkeypatch, tmp_path):
     assert r.status_code == 400
 
 
-def test_travel_style_route_threads_has_e4l_to_scan_href(monkeypatch, tmp_path):
+def test_travel_style_route_still_builds_signals(monkeypatch, tmp_path):
+    """Inverted 2026-08-20. This used to force has_e4l and assert the Scan chip
+    resolved to portal.e4l.com, because #863 fixed the route failing to thread
+    `signals` into next_step_chips. The chip now hands off to /begin/scan in both
+    states, and the bridge makes the portal-vs-signup call itself
+    (tests/test_e4l_bridge.py::test_a_returning_scanner_goes_to_the_portal_not_the_signup).
+
+    The #863 regression guard is kept, not dropped: signals still drive the Give
+    card's done-detection, so the route must still BUILD them. Asserting _has_e4l
+    was actually consulted keeps that honest without depending on an href that no
+    longer varies."""
     app_module = _load_app()
     c = _client(app_module, monkeypatch, tmp_path)
-    # Force the has_e4l signal (a returning client known by email) WITHOUT
-    # unlocking this session's scan gate, so voice_scan is still the first
-    # undone step and its href is chosen by the signal. This asserts the route
-    # actually threads signals into next_step_chips (regression guard).
-    monkeypatch.setattr(app_module, "_has_e4l", lambda cx, email, state: True)
+    seen = []
+
+    def _spy(cx, email, state):
+        seen.append(email)
+        return True
+
+    monkeypatch.setattr(app_module, "_has_e4l", _spy)
     c.set_cookie("amg_session", "ns-route-e4l")
     r = c.post("/begin/travel-style", json={"style": "adventure"})
     assert r.status_code == 200
+    assert seen, "route stopped building journey signals"
     scan = next(ch for ch in r.get_json()["next_step"]["chips"]
                 if ch["label"] == "Explore my biofield")
-    assert scan["href"].startswith("https://portal.e4l.com")
+    assert scan["href"].startswith("/begin/scan")
