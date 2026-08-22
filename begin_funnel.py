@@ -580,11 +580,15 @@ def _card(key, ref=""):
 
 
 def next_step_prompt(state, query_texts=None):
+    """The line ABOVE the chips. Empty on the root turn on purpose.
+
+    The hero's scripted greeting already asks what they would love to change, so a
+    prompt here stacked a second question in the same viewport -- and the chips
+    beneath answered that second one, leaving the greeting's question hanging."""
     style = (state or {}).get("travel_style", "unknown")
-    if style == "unknown":
-        return OPENING_PROMPT
-    if style == "mission" and not _match_card_keys(state, query_texts):
-        return MISSION_PROMPT
+    if style in ("unknown", "mission") and not _match_card_keys(state, query_texts):
+        # The greeting is the question on the root turn; do not repeat it.
+        return "" if style == "unknown" else MISSION_PROMPT
     return ""
 
 
@@ -644,12 +648,23 @@ def _adventure_chips(state, ref="", query_texts=None, signals=None):
 
 
 def next_step_chips(state, ref="", query_texts=None, signals=None):
+    """Chips that ANSWER the question currently on screen.
+
+    The root turn used to show the two style chips under OPENING_PROMPT ("mission
+    or adventure?"). That asked the client how they would like to be navigated
+    before they had said anything about themselves, and it competed with the
+    greeting directly above it.
+
+    Travel style is now INFERRED instead: an unknown style behaves as `mission`,
+    so the root turn offers the seed outcome chips, which answer the greeting.
+    Someone who names a concrete outcome is on a mission by definition, and the
+    standing "Actually, let me explore instead" secondary is how they cross over --
+    the same escape hatch every other block already had. OPENING_PROMPT and
+    _STYLE_FORK_CHIPS are kept for the explicit switcher, not the root turn."""
     style = (state or {}).get("travel_style", "unknown")
-    if style == "mission":
-        return _mission_chips(state, ref, query_texts)
     if style == "adventure":
         return _adventure_chips(state, ref, query_texts, signals)
-    return [dict(c) for c in _STYLE_FORK_CHIPS]
+    return _mission_chips(state, ref, query_texts)
 
 
 # ---------------------------------------------------------------------------
@@ -926,6 +941,17 @@ def explore_sections(ref="", trusted_links=None):
 
 _REMEDY_MATCH_CUES = ["remedy for", "what helps", "support for", "what should i take",
                       "what should i use", "help with my"]
+
+
+def _outcome_cues():
+    """The seed chip labels, lowercased, as match cues.
+
+    Derived from SEED_OUTCOME_CHIPS rather than written out, so the outcomes we
+    OFFER are by construction the outcomes we RECOGNISE. Before this, all five
+    chips were dead ends: a client tapped "Deeper sleep", the label was submitted
+    as their message, it matched no card, and the same five chips came back. The
+    safety net looped. Adding a chip now wires it up automatically."""
+    return [c.strip().lower() for c in SEED_OUTCOME_CHIPS if c.strip()]
 _GENERIC_PRODUCT_CUES = ["products", "supplements", "what do you sell",
                          "what do you have", "browse", "store", "shop"]
 _VOICE_KEYWORDS = ["voice", "frequency", "evox", "toning", "vibration",
@@ -954,7 +980,8 @@ def _match_card_keys(state, query_texts):
             keys.append(k)
     if any(k in text for k in _PRACTITIONER_KEYWORDS):
         add("practitioner")
-    remedy_intent = any(c in text for c in _REMEDY_MATCH_CUES)
+    remedy_intent = (any(c in text for c in _REMEDY_MATCH_CUES)
+                     or any(o in text for o in _outcome_cues()))
     specific_product = (any(k in text for k in _PRODUCT_KEYWORDS) or remedy_intent)
     if remedy_intent:
         add("remedy_match")   # Socratic matcher → /begin/match (before generic browse)
