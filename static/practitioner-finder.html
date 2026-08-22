@@ -481,6 +481,8 @@
       <button class="chip" data-parent="eye_care" aria-pressed="false">Eye Care</button>
       <button class="chip" data-parent="dental" aria-pressed="false">Dental</button>
       <button class="chip" data-parent="holistic_health" aria-pressed="false">Holistic Health</button>
+      <button class="chip" data-parent="occupational_therapy" aria-pressed="false">Occupational Therapy</button>
+      <button class="chip" data-parent="physical_therapy" aria-pressed="false">Physical Therapy</button>
       <button class="chip" data-parent="certification" aria-pressed="false">Certification</button>
       <button class="chip" data-parent="healing_oasis" aria-pressed="false" title="Wholistic Healing Oasis&trade; locations open to connection">&#127807; Healing Oasis</button>
       <button class="chip" data-parent="regenerative_farms" aria-pressed="false" title="Regenerative-agriculture farms &amp; ranches near you">&#127793; Regenerative Farms</button>
@@ -735,6 +737,10 @@
           ? ['panel_in_cert', 'panel_certified']
           : [filterState.sub];
         tiers.forEach(t => params.append('tier[]', t));
+      } else if (filterState.parent === 'occupational_therapy') {
+        params.set('profession', 'occupational_therapist');
+      } else if (filterState.parent === 'physical_therapy') {
+        params.set('profession', 'physical_therapist');
       } else if (filterState.parent && filterState.parent !== '__all__') {
         if (filterState.sub === '__all__') {
           params.append('specialties[]', filterState.parent);

@@ -4,6 +4,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from scrapers.practitioner_finder.db import (
     build_search_sql,
+    profession_specialties,
     upsert_sql_and_params,
 )
 
@@ -130,6 +131,49 @@ def test_search_sql_countries_default_omits_clause():
         specialties=None, tiers=None, limit=200,
     )
     assert "country = ANY(%s)" not in sql
+
+
+def test_search_sql_occupational_therapist_profession_filter():
+    sql, params = build_search_sql(
+        lat=42.75, lng=-73.76, radius_miles=25,
+        specialties=None, tiers=None, limit=200,
+        profession="occupational_therapist",
+    )
+    assert "specialties && %s" in sql
+    assert ["occupational_therapy"] in params
+    assert "%occupational therapist%" in params
+
+
+def test_search_sql_default_omits_profession_filter():
+    sql, _ = build_search_sql(
+        lat=42.75, lng=-73.76, radius_miles=25,
+        specialties=None, tiers=None, limit=200,
+    )
+    assert "%occupational therapist%" not in sql
+
+
+def test_search_sql_physical_therapist_profession_filter():
+    sql, params = build_search_sql(
+        lat=42.75, lng=-73.76, radius_miles=25,
+        specialties=None, tiers=None, limit=200,
+        profession="physical_therapist",
+    )
+    assert "COALESCE(credentials, '') ~* %s" in sql
+    assert ["physical_therapy"] in params
+    assert "%physical therapist%" in params
+    assert "(^|[^A-Za-z])(DPT|MPT|MSPT|PT)([^A-Za-z]|$)" in params
+
+
+def test_profession_specialties_classifies_ot_and_pt_credentials():
+    assert profession_specialties("OTR/L, FNORA") == ["occupational_therapy"]
+    assert profession_specialties("DPT, OCS") == ["physical_therapy"]
+    assert profession_specialties("Physical Therapist, ATP") == ["physical_therapy"]
+    assert profession_specialties("Occupational Therapist, CHT") == ["occupational_therapy"]
+
+
+def test_profession_specialties_avoids_substring_false_positives():
+    assert profession_specialties("OPT, BC-HIS") == []
+    assert profession_specialties("Doctor of Optometry") == []
 
 
 def test_upsert_sql_params_match_dict():

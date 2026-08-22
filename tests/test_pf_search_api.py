@@ -111,3 +111,38 @@ def test_search_with_specialties(mock_geocode, mock_run_search):
     assert resp.status_code == 200
     call_kwargs = mock_run_search.call_args.kwargs
     assert call_kwargs["specialties"] == ["eye_care", "syntonic"]
+
+
+@patch("scrapers.practitioner_finder.db.run_search")
+@patch("scrapers.practitioner_finder.geocode.geocode_place")
+def test_search_with_occupational_therapist_filter(mock_geocode, mock_run_search):
+    mock_geocode.return_value = (21.3, -157.8)
+    mock_run_search.return_value = []
+    client = app.app.test_client()
+    resp = client.get(
+        "/api/practitioner-finder/search?location=96813&profession=occupational_therapist"
+    )
+    assert resp.status_code == 200
+    assert mock_run_search.call_args.kwargs["profession"] == "occupational_therapist"
+
+
+@patch("scrapers.practitioner_finder.db.run_search")
+@patch("scrapers.practitioner_finder.geocode.geocode_place")
+def test_search_with_physical_therapist_filter(mock_geocode, mock_run_search):
+    mock_geocode.return_value = (21.3, -157.8)
+    mock_run_search.return_value = []
+    client = app.app.test_client()
+    resp = client.get(
+        "/api/practitioner-finder/search?location=96813&profession=physical_therapist"
+    )
+    assert resp.status_code == 200
+    assert mock_run_search.call_args.kwargs["profession"] == "physical_therapist"
+
+
+def test_search_rejects_unknown_profession_filter():
+    client = app.app.test_client()
+    resp = client.get(
+        "/api/practitioner-finder/search?location=96813&profession=unknown"
+    )
+    assert resp.status_code == 400
+    assert "profession" in resp.get_json()["error"]
