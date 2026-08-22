@@ -19891,6 +19891,12 @@ def _public_surface_enabled():
         "1", "true", "yes", "on")
 
 
+def _page_referral_sharing_enabled():
+    """Personal links for approved public pages. Default OFF for dark launch."""
+    return (os.environ.get("PAGE_REFERRAL_SHARING_ENABLED", "") or "").strip().lower() in (
+        "1", "true", "yes", "on")
+
+
 def _life_stress_enabled():
     """The Life Stress essence-recommendation portal card. Default OFF — mirrors
     _support_programs_enabled exactly: when off, the portal payload never gains the
@@ -31185,6 +31191,46 @@ def client_portal_me():
     if not _client_login_enabled():
         return ("Not found", 404)
     return send_from_directory(STATIC, "client-portal.html")
+
+
+@app.route("/api/page-share-link", methods=["GET"])
+def api_page_share_link():
+    """Return the signed-in client's personal link for an approved public page.
+
+    The caller supplies only a path. Identity, affiliate slug, host and final URL
+    are all resolved server-side. Anonymous visitors receive 401, which lets the
+    shared page script remain invisible without exposing login state in markup.
+    """
+    if not (_page_referral_sharing_enabled() and _client_login_enabled()):
+        return ("", 404)
+    from dashboard import affiliate_dashboard as _ad
+    from dashboard import page_sharing as _ps
+    from dashboard import portal_identity as _pi
+
+    page = _ps.resolve_shareable_page(
+        request.args.get("path", ""), product_lookup=_get_product)
+    if not page:
+        return jsonify({"ok": False, "error": "not_shareable"}), 404
+
+    session = (request.cookies.get("rm_portal_session") or "").strip()
+    with _db_lock, db.connect(LOG_DB) as cx:
+        ident = _pi.identity_from_session(cx, session) if session else None
+        if not ident:
+            return jsonify({"ok": False, "error": "sign_in_required"}), 401
+        row = cx.execute("SELECT name FROM people WHERE id=?", (ident.person_id,)).fetchone()
+        affiliate = _ad.ensure_affiliate(
+            cx, ident.email, name=(row[0] if row and row[0] else ""))
+    if not affiliate or affiliate.get("status") != "approved":
+        return jsonify({"ok": False, "error": "unavailable"}), 503
+
+    share_url = _ps.canonical_share_url(PUBLIC_BASE_URL, page, affiliate["slug"])
+    return jsonify({
+        "ok": True,
+        "title": page["title"],
+        "page_key": page["page_key"],
+        "share_url": share_url,
+        "disclosure": "I may receive rewards if you purchase through this link.",
+    })
 
 
 # ── Portal "What's next" offer checkouts (dark behind PORTAL_OFFERS_ENABLED) ──
