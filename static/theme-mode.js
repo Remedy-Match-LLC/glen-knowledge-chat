@@ -91,7 +91,7 @@
       b.dataset.mode = m;
       b.title = LABELS[m];
       b.setAttribute('aria-label', LABELS[m]);
-      b.innerHTML = ICONS[m];
+      b.textContent = LABELS[m];
       b.onclick = function(){ setMode(m); };
       seg.appendChild(b);
     });

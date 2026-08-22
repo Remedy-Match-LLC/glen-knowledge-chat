@@ -5,32 +5,28 @@ body.js-shell-on { padding-top: var(--jshell-h); }
    illtowell.com), and the [data-theme="light"] override flips them to light — so the
    ribbon always matches the page instead of being permanently light-cream. */
 #journey-shell { position: fixed; top: 0; left: 0; right: 0; height: var(--jshell-h);
-  display: flex; align-items: center; gap: 12px; padding: 0 12px; z-index: 9999;
+  display: flex; align-items: center; gap: 7px; padding: 0 10px; z-index: 9999;
   background: var(--surface, #14201a); border-bottom: 1px solid var(--border, #25402d);
   color: var(--text, #e9e2cf); font: 14px/1.2 system-ui, sans-serif; }
-#journey-shell .js-home, #journey-shell .js-back, #journey-shell .js-theme { background: none;
-  border: none; cursor: pointer; font-size: 18px; color: var(--muted, #9aa08f);
-  padding: 4px 6px; border-radius: 6px; }
-#journey-shell .js-theme { font-size: 15px; }
-#journey-shell .js-home:hover, #journey-shell .js-back:hover,
-#journey-shell .js-theme:hover { background: rgba(127,127,127,.16); }
-#journey-shell .js-path { flex: 1; display: flex; align-items: center; gap: 6px;
-  overflow-x: auto; cursor: pointer; }
-.js-land { display: flex; align-items: center; gap: 6px; white-space: nowrap;
-  padding: 4px 8px; border-radius: 14px; color: var(--muted, #9aa08f); opacity: .7; }
-.js-land .js-icon { font-size: 16px; }
+#journey-shell button, #journey-shell .js-mypath-btn, #journey-shell .js-mnav a {
+  box-sizing: border-box; min-height: 30px; padding: 5px 10px; border: 1px solid var(--border, #3a4a3f);
+  border-radius: 999px; background: transparent; color: var(--text, #cfc9b8);
+  font: 600 12px/1.2 system-ui, sans-serif; text-decoration: none; cursor: pointer; white-space: nowrap; }
+#journey-shell button:hover, #journey-shell .js-mypath-btn:hover, #journey-shell .js-mnav a:hover {
+  background: rgba(127,127,127,.16); }
+#journey-shell .js-home, #journey-shell .js-back, #journey-shell .js-theme { color: var(--text, #cfc9b8); }
+#journey-shell .js-path { flex: 1; min-width: 0; display: flex; align-items: center; justify-content: center; gap: 5px;
+  overflow: hidden; cursor: pointer; }
+.js-land { display: inline-flex; align-items: center; justify-content: center; color: var(--muted, #9aa08f); opacity: .72; }
+.js-label-mobile { display: none; }
 .js-land.done { opacity: 1; color: var(--green, #6aa37a); }
 .js-land.next { opacity: 1; color: var(--gold, #d4a843); font-weight: 600; }
-.js-land.next::after { content: "💎"; margin-left: 2px; }   /* gold gem on current */
 .js-land.fog { opacity: .35; filter: blur(.3px); }
 .js-trail-link { color: var(--muted, #6b6f63); }            /* drawn path between lands */
 .js-trail-link.done { color: var(--green, #6aa37a); }
 .js-hide { display: none !important; }
-#journey-shell .js-mypath-btn { background: none; border: 1px solid var(--border, #3a4a3f);
-  border-radius: 14px; padding: 4px 10px; cursor: pointer; color: var(--text, #cfc9b8); }
 #journey-shell .js-portal-cart-btn { position: relative; display: inline-flex; align-items: center;
   gap: 5px; min-height: 30px; padding-right: 11px; overflow: visible; }
-#journey-shell .js-cart-icon { font-size: 17px; line-height: 1; }
 #journey-shell .js-cart-badge { position: absolute; top: -8px; right: -7px; min-width: 18px;
   height: 18px; box-sizing: border-box; padding: 0 5px; border: 2px solid var(--surface, #14201a);
   border-radius: 999px; background: var(--gold, #d4a843); color: #14201a;
@@ -47,9 +43,7 @@ body.js-shell-on { padding-top: var(--jshell-h); }
 .js-mypath a:hover { background: rgba(127,127,127,.14); }
 .js-ext-mark { font-size: .8em; opacity: .6; margin-left: 2px; }
 /* member efficient nav */
-#journey-shell .js-mnav { display: flex; gap: 10px; }
-#journey-shell .js-mnav a { color: #555; text-decoration: none; padding: 4px 6px; }
-#journey-shell .js-maptoggle { font-size: 18px; background: none; border: none; cursor: pointer; }
+#journey-shell .js-mnav { display: flex; gap: 5px; }
 /* expand-to-map overlay */
 .js-overlay { position: fixed; inset: 0; background: rgba(28,24,18,.78); z-index: 10000;
   display: none; align-items: center; justify-content: center; }
@@ -68,11 +62,17 @@ body.js-shell-on { padding-top: var(--jshell-h); }
 
 /* mobile: collapse the path to the current land + a compact "n / total" */
 @media (max-width: 640px) {
+  :root { --jshell-h: 48px; }
+  #journey-shell { gap: 4px; padding: 0 6px; }
+  #journey-shell button, #journey-shell .js-mypath-btn { min-height: 28px; padding: 4px 7px; font-size: 11px; }
   #journey-shell .js-mnav { display: none; }
   #journey-shell .js-path .js-land:not(.next) { display: none; }
   #journey-shell .js-path .js-trail-link { display: none; }
   #journey-shell .js-portal-cart-btn .js-cart-label { display: none; }
   #journey-shell .js-portal-cart-btn { padding: 5px 8px; }
+  #journey-shell .js-label-desktop { display: none; }
+  #journey-shell .js-label-mobile { display: inline; }
+  #journey-shell .js-trail-link { display: none; }
   .js-count { display: inline; }
 }
 
@@ -95,10 +95,10 @@ body.js-shell-on { padding-top: var(--jshell-h); }
 .js-wallet-coupon .js-exp { color: var(--muted,#a89870); font-size: 11px; }
 
 /* Shared three-state theme toggle (rendered by theme-mode.js mountToggle). */
-.rm-theme-seg{display:inline-flex;border:1px solid var(--hair,#21472d);border-radius:999px;overflow:hidden}
+.rm-theme-seg{display:inline-flex;border:1px solid var(--hair,#21472d);border-radius:999px;overflow:hidden;flex:0 0 auto}
 .rm-theme-seg-btn{appearance:none;border:none;background:transparent;color:var(--dim,#8fa89b);
   padding:5px 8px;cursor:pointer;display:inline-flex;align-items:center;line-height:0}
 .rm-theme-seg-btn+.rm-theme-seg-btn{border-left:1px solid var(--hair,#21472d)}
-.rm-theme-seg-btn svg{width:15px;height:15px}
+.rm-theme-seg-btn svg{display:none}
 .rm-theme-seg-btn[aria-pressed="true"]{background:var(--gold,#d4a843);color:#22160a}
 .rm-theme-seg-btn:focus-visible{outline:2px solid var(--gold,#d4a843);outline-offset:2px}

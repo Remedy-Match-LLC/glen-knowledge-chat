@@ -72,9 +72,9 @@ def inject_shell_html(html: str, mode: str, rewards1b: bool = False, rewards_gif
     rg = "true" if rewards_gift else "false"
     qe = "true" if quest_enabled else "false"
     tags = (
-        f'<link {_MARKER} rel="stylesheet" href="/static/shell.css?v=20260810-cart-badge">'
+        f'<link {_MARKER} rel="stylesheet" href="/static/shell.css?v=20260822-clean-header">'
         f'<script>window.__SHELL__={{"mode":"{mode}","rewards1b":{r1},"rewardsGift":{rg},"questEnabled":{qe}}};</script>'
-        f'<script defer src="/static/shell.js?v=20260810-cart-badge"></script>'
+        f'<script defer src="/static/shell.js?v=20260822-clean-header"></script>'
     )
     if quest_enabled:
         tags += (
