@@ -16,3 +16,16 @@ def test_finder_page_prefills_from_url_and_autosearches():
     assert "applyUrlPrefill" in html
     # applyUrlPrefill triggers a search when a location is supplied
     assert "runSearch();" in html
+
+
+def test_finder_has_occupational_therapist_filter():
+    html = pathlib.Path("static/practitioner-finder.html").read_text()
+    assert 'data-parent="occupational_therapy"' in html
+    assert 'data-sub="occupational_therapist"' not in html
+    assert "params.set('profession', 'occupational_therapist')" in html
+
+
+def test_finder_has_physical_therapist_filter():
+    html = pathlib.Path("static/practitioner-finder.html").read_text()
+    assert 'data-parent="physical_therapy"' in html
+    assert "params.set('profession', 'physical_therapist')" in html
