@@ -43,6 +43,10 @@
                          color:var(--muted); margin-bottom:4px; }
   #panel-payments .summary-tile .value { font-size:20px; font-weight:700; font-family:"Raleway",sans-serif; }
   #panel-payments .filters { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:16px; }
+  #panel-payments .date-tools { display:flex; gap:8px; flex-wrap:wrap; align-items:end; margin-bottom:12px; }
+  #panel-payments .date-tools label { color:var(--muted); font-size:11px; }
+  #panel-payments .date-tools input { display:block; margin-top:3px; padding:6px 8px; color:var(--cream); background:var(--surface); border:1px solid var(--border); border-radius:6px; }
+  #panel-payments .date-tools button { font-size:12px; border:1px solid var(--border); background:transparent; color:var(--muted); border-radius:6px; padding:7px 11px; cursor:pointer; }
   #panel-payments .filters button { font-size:12px; border:1px solid var(--border); background:transparent;
                     color:var(--muted); border-radius:14px; padding:5px 14px; cursor:pointer; }
   #panel-payments .filters button:hover { border-color:var(--gold); color:var(--gold); }
@@ -141,6 +145,17 @@
 
     <div class="summary-strip" id="p-summary"></div>
 
+    <div class="date-tools">
+      <button onclick="MoneyPayments.preset('july')">July</button>
+      <button onclick="MoneyPayments.preset('august')">August to date</button>
+      <label>From<input id="p-start" type="date"></label>
+      <label>Through<input id="p-end" type="date"></label>
+      <button onclick="MoneyPayments.applyDates()">Apply</button>
+      <button onclick="MoneyPayments.preset('all')">All dates</button>
+      <button onclick="MoneyPayments.exportCsv()">Export CSV</button>
+      <button onclick="window.print()">Print</button>
+    </div>
+
     <div class="filters" id="p-filters">
       <button data-src="" class="active" onclick="MoneyPayments.setFilter(this)">All</button>
       <button data-src="subscription" onclick="MoneyPayments.setFilter(this)">Subscriptions</button>
@@ -152,7 +167,7 @@
 
     <table id="p-tbl" style="display:none">
       <thead><tr>
-        <th>When</th><th>Customer</th><th>Source</th><th>Amount</th><th>Status</th><th>PaymentIntent</th>
+        <th>When</th><th>Customer</th><th>Method</th><th>Source</th><th>Amount</th><th>Status</th><th>Reference</th>
       </tr></thead>
       <tbody id="p-board"></tbody>
     </table>
@@ -224,7 +239,15 @@
     function fmt(cents){ return '$'+((Number(cents)||0)/100).toFixed(2); }
     function when(s){ if(!s) return ''; var d=new Date(s); return isNaN(d)? esc(s) : d.toLocaleString(undefined,{month:'short',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'}); }
 
-    var curSrc = '';
+    var curSrc = '', curRows = [];
+    function applyDates(){ load(); }
+    function preset(which){
+      var now=new Date(), y=now.getFullYear(), mm=String(now.getMonth()+1).padStart(2,'0'), dd=String(now.getDate()).padStart(2,'0');
+      var a='', b='';
+      if(which==='july'){ a=y+'-07-01'; b=y+'-07-31'; }
+      if(which==='august'){ a=y+'-08-01'; b=(mm==='08' ? y+'-'+mm+'-'+dd : y+'-08-31'); }
+      document.getElementById('p-start').value=a; document.getElementById('p-end').value=b; load();
+    }
     function setFilter(btn){
       curSrc = btn.getAttribute('data-src') || '';
       var bs = document.querySelectorAll('#p-filters button');
@@ -244,6 +267,7 @@
       return '<tr>'
         + '<td class="when">'+when(r.paid_at||r.created_at)+'</td>'
         + '<td class="who">'+nm+em+'</td>'
+        + '<td>'+esc(r.payment_method||'Other')+'</td>'
         + '<td><span class="'+srcCls+'">'+esc(r.source||'')+'</span></td>'
         + '<td class="amt">'+fmt(r.amount_cents)+'</td>'
         + '<td>'+esc(r.pay_status||'paid')+'</td>'
@@ -269,7 +293,12 @@
           tbl=document.getElementById('p-tbl');
       errEl.style.display='none'; emptyEl.style.display='none';
 
-      var q = curSrc ? ('?source='+encodeURIComponent(curSrc)) : '';
+      var params=new URLSearchParams();
+      params.set('limit','1000');
+      if(curSrc) params.set('source',curSrc);
+      var start=document.getElementById('p-start').value, end=document.getElementById('p-end').value;
+      if(start) params.set('start',start); if(end) params.set('end',end);
+      var q=params.toString() ? ('?'+params.toString()) : '';
       var r = await fetch('/api/payments'+q, {headers:hdr()});
       if (r.status===401){ document.getElementById('gate').style.display='flex'; return; }
       var res = await r.json();
@@ -277,19 +306,35 @@
         errEl.textContent='Error: '+esc(res.error||'unknown'); errEl.style.display='block';
         board.innerHTML=''; sumEl.innerHTML=''; tbl.style.display='none'; return;
       }
-      // The failures banner + summary reflect ALL payments, independent of the row filter.
+      // Summary reconciles exactly to the selected rows/date range.
       renderFailures(res.failures);
       var s = res.summary||{};
-      sumEl.innerHTML = tile('Captured charges', esc(s.count||0))
+      sumEl.innerHTML = tile('Payments', esc(s.count||0))
         + tile('Total collected', fmt(s.total_cents));
+      Object.keys(s.by_method||{}).sort().forEach(function(method){
+        var m=s.by_method[method]; sumEl.innerHTML += tile(method+' · '+m.count, fmt(m.total_cents));
+      });
 
       var rows = res.data||[];
+      curRows = rows;
       if (!rows.length){ tbl.style.display='none'; board.innerHTML=''; emptyEl.style.display='block'; return; }
       board.innerHTML = rows.map(rowHtml).join('');
       tbl.style.display='table';
     }
 
-    return { load: load, setFilter: setFilter };
+    function csvCell(v){ return '"'+String(v==null?'':v).replace(/"/g,'""')+'"'; }
+    function exportCsv(){
+      var head=['Date','Customer','Email','Payment method','Source','Amount','Status','Reference'];
+      var lines=[head.map(csvCell).join(',')];
+      curRows.forEach(function(r){ lines.push([
+        (r.paid_at||r.created_at||'').slice(0,10),r.name,r.email,r.payment_method,r.source,
+        ((Number(r.amount_cents)||0)/100).toFixed(2),r.pay_status,r.stripe_payment_intent||r.external_ref
+      ].map(csvCell).join(',')); });
+      var blob=new Blob([lines.join('\n')],{type:'text/csv;charset=utf-8'}), a=document.createElement('a');
+      a.href=URL.createObjectURL(blob); a.download='paid-invoices-'+(document.getElementById('p-start').value||'all')+'-to-'+(document.getElementById('p-end').value||'today')+'.csv';
+      document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(a.href);
+    }
+    return { load: load, setFilter: setFilter, preset:preset, applyDates:applyDates, exportCsv:exportCsv };
   })();
 
   // ---- Stripe lookup module ----
