@@ -951,11 +951,12 @@ def send_evox_email(to_email, name, subject, html_body, text_body, ics_bytes):
     alt.attach(MIMEText(text_body, "plain"))
     alt.attach(MIMEText(html_body, "html"))
     msg.attach(alt)
-    part = MIMEBase("text", "calendar", method="REQUEST", name="invite.ics")
-    part.set_payload(ics_bytes)
-    encoders.encode_base64(part)
-    part.add_header("Content-Disposition", "attachment", filename="invite.ics")
-    msg.attach(part)
+    if ics_bytes:
+        part = MIMEBase("text", "calendar", method="REQUEST", name="invite.ics")
+        part.set_payload(ics_bytes)
+        encoders.encode_base64(part)
+        part.add_header("Content-Disposition", "attachment", filename="invite.ics")
+        msg.attach(part)
     port = int(os.environ.get("SMTP_PORT", "587"))
     with smtplib.SMTP(SMTP_HOST, port) as s:
         s.starttls(); s.login(SMTP_USER, SMTP_PASS)
@@ -5731,6 +5732,20 @@ _TRUSTED_LINKS = _load_json(DATA_DIR / "trusted-links.json", default={"links": {
 MATCH_NAMESPACES = ["specific-formulations", "clinical-qa", "e4l-protocols",
                     "ingredients", "glen-authored-works"]
 
+# Conversational shorthand occasionally differs from the exact orderable catalog
+# name.  Normalize only aliases Glen has explicitly confirmed; never fuzzy-invent
+# a product page.  Maria Sutryn exposed the first case on 2026-08-21.
+_MATCH_NAME_ALIASES = {
+    "trauma & shock release": "Trauma Relief in Terrain Restore",
+    "trauma and shock release": "Trauma Relief in Terrain Restore",
+    "trauma & shock release formulation": "Trauma Relief in Terrain Restore",
+    "trauma and shock release formulation": "Trauma Relief in Terrain Restore",
+}
+
+def _canonical_match_name(name):
+    raw = (name or "").strip()
+    return _MATCH_NAME_ALIASES.get(raw.lower(), raw)
+
 def _match_query_namespaces(vec):
     out = []
     with ThreadPoolExecutor(max_workers=len(MATCH_NAMESPACES)) as pool:
@@ -5745,6 +5760,7 @@ def _resolve_remedy_url(name):
     prefers the remedymatch.com canonical) or 'trusted' (trusted-links.json)."""
     if not name:
         return (None, None)
+    name = _canonical_match_name(name)
     nl = name.strip().lower()
     for key, info in (_PRODUCT_ALIASES.get("aliases", {}) or {}).items():
         kl = (key or "").lower()
@@ -5818,6 +5834,53 @@ def begin_match_page():
     return resp
 
 
+def _email_remedy_match_once(email, name, session_id, match):
+    """Email a completed Glendalf/RemedyMatch result once per session + product.
+
+    The chat used to promise an emailed match after collecting an address but
+    only rendered the card in-browser.  Persist-before-send prevents duplicate
+    mail when the SSE request is retried; a failed send removes the claim so the
+    next turn can retry.
+    """
+    email = (email or "").strip().lower()
+    product = _canonical_match_name((match or {}).get("name"))
+    if "@" not in email or not product:
+        return False
+    key = f"{(session_id or '').strip()}|{product.lower()}"
+    with _db_lock, db.connect(LOG_DB) as cx:
+        cx.execute("""CREATE TABLE IF NOT EXISTS remedy_match_email_sent (
+            email TEXT NOT NULL, match_key TEXT NOT NULL, sent_at TEXT NOT NULL,
+            PRIMARY KEY(email, match_key))""")
+        try:
+            cx.execute("INSERT INTO remedy_match_email_sent(email,match_key,sent_at) VALUES (?,?,?)",
+                       (email, key, datetime.now(timezone.utc).isoformat()))
+            cx.commit()
+        except Exception:
+            return False
+    page = (match or {}).get("product_url") or (match or {}).get("buy_url") or ""
+    if page.startswith("/"):
+        page = PUBLIC_BASE_URL.rstrip("/") + page
+    safe_product = (product.replace("&", "&amp;").replace("<", "&lt;")
+                    .replace(">", "&gt;"))
+    safe_why = (str((match or {}).get("why") or "").replace("&", "&amp;")
+                .replace("<", "&lt;").replace(">", "&gt;"))
+    link = f'<p><a href="{page}">View {safe_product}</a></p>' if page else ""
+    html = (f"<p>Aloha{(' ' + name.strip()) if (name or '').strip() else ''},</p>"
+            f"<p>Your remedy match is <b>{safe_product}</b>.</p>"
+            f"<p>{safe_why}</p>{link}<p>Aloha,<br>Dr. Glen</p>")
+    text = (f"Your remedy match is {product}.\n\n{(match or {}).get('why') or ''}\n\n"
+            f"{page}\n\nAloha,\nDr. Glen")
+    try:
+        send_evox_email(email, name or "", f"Your remedy match: {product}",
+                        html, text, b"")
+        return True
+    except Exception:
+        with _db_lock, db.connect(LOG_DB) as cx:
+            cx.execute("DELETE FROM remedy_match_email_sent WHERE email=? AND match_key=?",
+                       (email, key)); cx.commit()
+        raise
+
+
 @app.route("/begin/match/chat", methods=["POST", "OPTIONS"])
 def begin_match_chat():
     if request.method == "OPTIONS":
@@ -5836,6 +5899,11 @@ def begin_match_chat():
         if not name and auth_user.get("name"):
             name = auth_user["name"]
     _tier, _eff_email = _resolve_chat_tier(request, session_id, email)
+    # The opt-in gate stores the verified/consented email in journey state.  The
+    # browser intentionally does not echo it back in JSON, so use the effective
+    # server-side identity instead of discarding it.
+    if not email and _eff_email:
+        email = _eff_email
     _blocked = _velocity_guard(request, _tier, session_id)
     if _blocked is not None:
         return _blocked
@@ -5979,20 +6047,26 @@ def begin_match_chat():
                 if txt.startswith("json\n"): txt = txt[5:]
             obj = json.loads(txt)
             if obj.get("matched") and obj.get("name"):
-                url, src = _resolve_remedy_url(obj["name"])
+                canonical_name = _canonical_match_name(obj["name"])
+                url, src = _resolve_remedy_url(canonical_name)
                 if _is_legacy_storefront_url(url):
                     url, src = (None, None)
-                buy_slug = _resolve_buy_slug(obj["name"])
-                match_evt = {"name": obj["name"], "kind": obj.get("kind", ""),
+                buy_slug = _resolve_buy_slug(canonical_name)
+                match_evt = {"name": canonical_name, "kind": obj.get("kind", ""),
                              "why": obj.get("why", ""), "url": url, "url_source": src,
                              "buy_url": (f"/begin/buy/{buy_slug}" if buy_slug else ""),
-                             "product_url": _sales_page_url(obj["name"])}
+                             "product_url": _sales_page_url(canonical_name)}
         except Exception as e:
             print(f"[match] extract: {e!r}", flush=True)
         # Withhold the named product + Buy button until the visitor is a Member
         # (recommending a remedy for their condition requires ToS agreement).
         if match_evt and _member:
             yield sse({"match": match_evt})
+            if email:
+                try:
+                    _email_remedy_match_once(email, name, session_id, match_evt)
+                except Exception as e:
+                    print(f"[match] result email failed for {email}: {e!r}", flush=True)
 
         try:
             _q_texts = [m.get("content", "") for m in (history or []) if m.get("role") == "user"]
@@ -8011,10 +8085,18 @@ def _resolve_buy_slug(name):
     RemedyMatch can offer a Buy button. Returns slug or None."""
     if not name:
         return None
+    name = _canonical_match_name(name)
     nl = name.strip().lower()
-    for slug, p in (_PRODUCTS.get("products") or {}).items():
+    products = _PRODUCTS.get("products") or {}
+    # Exact name wins before containment.  Otherwise a specific formulation such
+    # as "Trauma Relief in Terrain Restore" is swallowed by the generic
+    # "Terrain Restore" entry simply because that row appears first.
+    for slug, p in products.items():
+        if (p.get("name") or "").strip().lower() == nl:
+            return slug
+    for slug, p in products.items():
         pn = (p.get("name") or "").lower()
-        if pn and (nl == pn or (len(nl) > 4 and (nl in pn or pn in nl))):
+        if pn and len(nl) > 4 and (nl in pn or pn in nl):
             return slug
     return None
 
@@ -21287,10 +21369,13 @@ def evox_book():
 
 @app.route("/api/evox/run-reminders", methods=["POST"])
 def evox_run_reminders():
-    """Console-gated daily cron: reminds clients with a 'booked' EVOX session
+    """Cron/console-gated daily job: reminds clients with a 'booked' EVOX session
     starting in the next 24-48h (HST) who haven't been reminded yet. Idempotent
     via the lazily-added reminded_at stamp."""
-    if request.headers.get("X-Console-Key") != CONSOLE_SECRET:
+    supplied = (request.headers.get("X-Cron-Secret", "")
+                or request.headers.get("X-Console-Key", ""))
+    expected = os.environ.get("CRON_SECRET") or CONSOLE_SECRET
+    if not supplied or supplied not in {expected, CONSOLE_SECRET}:
         return jsonify({"error": "unauthorized"}), 401
     from dashboard import evox as _ev
     now = _hst_now()
