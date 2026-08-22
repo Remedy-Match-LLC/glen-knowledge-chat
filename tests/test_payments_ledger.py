@@ -62,6 +62,7 @@ def test_ledger_includes_membership_recurring_charge():
     refs = {r["external_ref"] for r in rows}
     assert refs == {"pi_mem99"}
     assert rows[0]["stripe_payment_intent"] == "pi_mem99"
+    assert rows[0]["payment_method"] == "Stripe"
 
 
 def test_ledger_normalizes_subscription_pi_from_external_ref():
@@ -155,6 +156,24 @@ def test_summary_counts_and_totals_captured_set():
     s = P.payments_summary(cx)
     assert s["count"] == 2
     assert s["total_cents"] == 7000 + 9900
+
+
+def test_report_date_range_and_method_totals_include_refunds():
+    rows = [
+        {"paid_at": "2026-07-02T10:00:00Z", "payment_method": "Stripe", "amount_cents": 10000},
+        {"paid_at": "2026-07-15", "payment_method": "Zelle", "amount_cents": 7500},
+        {"paid_at": "2026-07-20", "payment_method": "Zelle", "amount_cents": -500},
+        {"paid_at": "2026-08-05", "payment_method": "Check", "amount_cents": 2000},
+    ]
+    selected, summary = P.filter_and_summarize(
+        rows, start="2026-07-01", end="2026-07-31")
+    assert len(selected) == 3
+    assert summary["count"] == 3
+    assert summary["total_cents"] == 17000
+    assert summary["by_method"] == {
+        "Stripe": {"count": 1, "total_cents": 10000},
+        "Zelle": {"count": 2, "total_cents": 7000},
+    }
 
 
 def test_recent_failures_newest_first_with_fields():

@@ -49215,6 +49215,8 @@ def bos_payments_list():
         except (TypeError, ValueError):
             limit = 200
         src = request.args.get("source")
+        start = (request.args.get("start") or "").strip()
+        end = (request.args.get("end") or "").strip()
         # Union in the manual ledger (Zelle/check/cash/etc. recorded via
         # order_payments) so they show alongside Stripe charges — only for the
         # unfiltered/"All" view or the "manual" filter; a Stripe `source` value
@@ -49232,7 +49234,8 @@ def bos_payments_list():
                 rows.sort(key=lambda r: r.get("paid_at") or r.get("created_at") or "",
                           reverse=True)
                 rows = rows[:limit]
-        summary = _bos_payments.payments_summary(cx)
+        # Apply one inclusive calendar range after combining Stripe + manual rows.
+        rows, summary = _bos_payments.filter_and_summarize(rows, start=start, end=end)
         failures = _bos_payments.recent_failures(cx)
     finally:
         cx.close()

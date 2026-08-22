@@ -99,6 +99,7 @@ def ledger_rows_for_payments_view(cx, *, limit=200):
             "email": r["email"] or "",
             "name": r["name"] or "",
             "source": tag,
+            "payment_method": "Stripe" if (r["op_source"] or "") == "stripe" else method,
             "channel": r["channel"] or "",
             "amount_cents": amt,
             "pay_status": "refunded" if r["kind"] == "refund" else "paid",

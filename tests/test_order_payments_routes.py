@@ -241,6 +241,26 @@ def test_payments_list_includes_manual_payments(tmp_path, monkeypatch):
         "voided manual payment leaked into /api/payments"
 
 
+def test_payments_report_filters_dates_and_totals_by_method(tmp_path, monkeypatch):
+    appmod, client = _client(tmp_path, monkeypatch)
+    monkeypatch.setattr(appmod, "_bos_actor",
+                         lambda: _rbac.Actor(role="owner", name="owner"))
+    client.post("/api/orders/1/payments", json={
+        "amount": 75, "method": "Zelle", "paid_at": "2026-07-15T12:00:00+00:00"})
+    client.post("/api/orders/1/payments", json={
+        "amount": 20, "method": "Check", "paid_at": "2026-08-05T12:00:00+00:00"})
+
+    july = client.get("/api/payments?start=2026-07-01&end=2026-07-31&limit=1000").get_json()
+    assert july["ok"] is True
+    assert len(july["data"]) == 1
+    assert july["data"][0]["payment_method"] == "Zelle"
+    assert july["summary"] == {
+        "count": 1, "total_cents": 7500,
+        "by_method": {"Zelle": {"count": 1, "total_cents": 7500}},
+        "start": "2026-07-01", "end": "2026-07-31",
+    }
+
+
 def test_orders_list_annotates_ledger_balance_only_when_activity(tmp_path, monkeypatch):
     """GET /api/orders attaches ledger_paid_cents/ledger_balance_cents ONLY to
     orders that have active ledger rows; orders with no ledger activity (incl.

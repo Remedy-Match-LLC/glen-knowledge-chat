@@ -78,6 +78,7 @@ def _row_to_payment(row):
         "email": _payer_email(row),
         "name": row["name"] or "",
         "source": row["source"],
+        "payment_method": "Stripe",
         "channel": row["channel"] or "",
         "amount_cents": paid if paid else total,
         "pay_status": _status(row),
@@ -123,6 +124,37 @@ def payments_summary(cx):
         f"COALESCE(SUM(CASE WHEN paid_cents > 0 THEN paid_cents ELSE total_cents END), 0) AS cents "
         f"FROM orders WHERE {_CAPTURED}").fetchone()
     return {"count": int(row["n"] or 0), "total_cents": int(row["cents"] or 0)}
+
+
+def filter_and_summarize(rows, *, start="", end=""):
+    """Apply inclusive YYYY-MM-DD boundaries to a combined money ledger.
+
+    Returns the filtered rows plus a summary that reconciles exactly to them.
+    Refund rows already carry negative amounts, so both the overall and method
+    totals correctly report net collected cash.
+    """
+    start, end = (start or "").strip(), (end or "").strip()
+    selected = list(rows)
+    if start:
+        selected = [r for r in selected
+                    if (r.get("paid_at") or r.get("created_at") or "")[:10] >= start]
+    if end:
+        selected = [r for r in selected
+                    if (r.get("paid_at") or r.get("created_at") or "")[:10] <= end]
+    by_method = {}
+    for row in selected:
+        method = (row.get("payment_method") or "Other").strip() or "Other"
+        key = method.title()
+        bucket = by_method.setdefault(key, {"count": 0, "total_cents": 0})
+        bucket["count"] += 1
+        bucket["total_cents"] += int(row.get("amount_cents") or 0)
+    return selected, {
+        "count": len(selected),
+        "total_cents": sum(int(r.get("amount_cents") or 0) for r in selected),
+        "by_method": by_method,
+        "start": start,
+        "end": end,
+    }
 
 
 def backfill_trial_orders(cx, fetch_session, *, dry_run=False, now=None):
