@@ -103,6 +103,23 @@ class _PgConn:
     def execute(self, sql, params=()):
         cur = self._conn.cursor()
         return _PgCursor(cur).execute(sql, params)
+    def cursor(self):
+        """sqlite3.Connection.cursor() parity.
+
+        `cur = cx.cursor(); cur.execute(...).fetchall()` is ordinary sqlite3, and
+        26 call sites across seven dashboard modules are written that way --
+        topic_pages, mentor_pages, ingredient_pages, product_reviews,
+        review_gifts, biofield_reveals. Without this they raise
+        `AttributeError: '_PgConn' object has no attribute 'cursor'` on Postgres,
+        which took /learn, /learn/sitemap.xml, /learn/<slug> and /mentors to 500
+        in production: the SEO hub and its sitemap, unreachable and uncrawlable.
+
+        Fixed here rather than at the call sites so every current and future
+        caller of the idiom is covered by one change. Callers that follow it with
+        `cur.row_factory = sqlite3.Row` are fine: _PgCursor has no __slots__ so
+        the assignment is a harmless no-op, and HybridRow already supports the
+        string-key access that row_factory exists to provide."""
+        return _PgCursor(self._conn.cursor())
     def executescript(self, script):
         # sqlite3.Connection.executescript runs a whole ';'-separated DDL script
         # in one call; Postgres' extended protocol is one-command-per-execute, so
