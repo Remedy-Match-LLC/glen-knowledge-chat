@@ -59,6 +59,29 @@ def test_signed_in_client_gets_personal_page_link(share_client):
     assert "may receive rewards" in body["disclosure"]
 
 
+def test_durable_portal_link_establishes_share_session(share_client):
+    client, appmod, _ = share_client
+    from dashboard import client_portal as cp
+
+    with sqlite3.connect(appmod.LOG_DB) as cx:
+        cp.init_client_portal_table(cx)
+        token, _ = cp.upsert_portal(
+            cx, "jane@example.com", "Jane Doe", {"greeting": "Aloha Jane."})
+
+    client.delete_cookie("rm_portal_session")
+    portal = client.get(f"/portal/{token}")
+    assert portal.status_code == 200
+    assert "rm_portal_session=" in portal.headers.get("Set-Cookie", "")
+
+    # The browser follows a relative portal link to the public page. The new
+    # session cookie follows it, so the page-share API now recognizes the same
+    # client without exposing the durable portal token.
+    assert client.get("/begin/explore").status_code == 200
+    share = client.get("/api/page-share-link?path=/begin/explore")
+    assert share.status_code == 200
+    assert "ref=jane-doe" in share.get_json()["share_url"]
+
+
 def test_anonymous_visitor_cannot_mint_link(share_client):
     client, _, _ = share_client
     response = client.get("/api/page-share-link?path=/begin/explore")
