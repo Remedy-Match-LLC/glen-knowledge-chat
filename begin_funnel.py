@@ -657,17 +657,49 @@ def next_step_chips(state, ref="", query_texts=None, signals=None):
 # All copy provisional (BNSN site pass later). done_gate/click_trigger are all
 # existing VALID_TRIGGERS - no new gates.
 # ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# The ladder, named once.
+# ---------------------------------------------------------------------------
+# Four stages, each with a branded name and a plain verb. Both halves already
+# existed and had drifted apart: the ribbon and the quest used the brands, the
+# how-it-works block used bare verbs and only listed THREE of them, and the
+# journey cards used ad-hoc parentheticals ("Your Biofield", "the root causes")
+# of which only one was an actual stage name. A client cannot read a progress
+# indicator whose stages they cannot name.
+#
+# This is the single source. static/shell-map.json must agree with it, and
+# tests/test_ladder_naming.py fails if the two ever drift.
+LADDER = {
+    "scan": {"brand": "Wellness Whispering",       "verb": "Scan"},
+    "find": {"brand": "Remedy Match",              "verb": "Find"},
+    "heal": {"brand": "Accelerated Self Healing\u2122", "verb": "Heal"},
+    "give": {"brand": "Healing Oasis",             "verb": "Give"},
+}
+
+LADDER_ORDER = ["scan", "find", "heal", "give"]
+
+
+def stage_label(key):
+    """The plain verb. Leads where the ladder is being EXPLAINED."""
+    return LADDER[key]["verb"]
+
+
+def stage_brand(key):
+    """The branded name. Leads on the ribbon, where it is wayfinding."""
+    return LADDER[key]["brand"]
+
+
 JOURNEY_STEPS = [
-    {"key": "scan", "label": "Scan", "paren": "Your Biofield", "steps": [
+    {"key": "scan", "label": stage_label("scan"), "paren": stage_brand("scan"), "steps": [
         {"key": "voice_scan", "label": "Voice scan",          "src": ("gate", "scan"),       "href": None},
         {"key": "ww_course",  "label": "Wellness Whispering MasterClass & Community", "src": ("gate", "course_ww"),  "href": "https://truly.vip/WellnessWhispering"}]},
-    {"key": "find", "label": "Find", "paren": "Your Remedy Match", "steps": [
+    {"key": "find", "label": stage_label("find"), "paren": stage_brand("find"), "steps": [
         {"key": "match_chat", "label": "Match via chat",      "src": ("gate", "question"),   "href": "/begin/match"},
         {"key": "biofield",   "label": "Biofield interpretation", "src": ("gate", "biofield"), "href": "/begin/match"}]},
-    {"key": "heal", "label": "Heal", "paren": "the root causes", "steps": [
+    {"key": "heal", "label": stage_label("heal"), "paren": stage_brand("heal"), "steps": [
         {"key": "intake",      "label": "Intake form",        "src": ("gate", "intake"),      "href": "https://truly.vip/Join"},
         {"key": "masterclass", "label": "Accelerated Self Healing™ MasterClass & Community",    "src": ("gate", "masterclass"), "href": "https://truly.vip/Intro"}]},
-    {"key": "give", "label": "Give", "paren": "lift others", "steps": [
+    {"key": "give", "label": stage_label("give"), "paren": stage_brand("give"), "steps": [
         {"key": "ambassador",   "label": "Be an Ambassador",  "src": ("predicate", "ambassador"),     "href": "/affiliate"},
         {"key": "bring_friend", "label": "Bring a friend",    "src": ("predicate", "referred_friend"), "href": "/begin/path"}]},
 ]

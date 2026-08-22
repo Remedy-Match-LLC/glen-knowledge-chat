@@ -630,11 +630,16 @@
   .how-cap { text-align: center; color: var(--muted); font-size: 12px; letter-spacing: 0.14em; text-transform: uppercase; font-weight: 700; margin: 0; }
   .how-h { font-family: var(--serif); text-align: center; font-weight: 600; font-size: clamp(22px, 2.8vw, 32px); margin: 6px 0 4px; text-wrap: balance; }
   .how-lede { text-align: center; color: var(--muted); max-width: 52ch; margin: 0 auto 26px; font-size: 15px; line-height: 1.55; }
-  .how-flow { display: grid; grid-template-columns: 1fr auto 1fr auto 1fr; align-items: start; gap: 6px; }
+  .how-flow { display: grid; grid-template-columns: 1fr auto 1fr auto 1fr auto 1fr; align-items: start; gap: 6px; }
   .how-cell { text-align: center; padding: 8px 12px; }
   .how-motif { width: 100%; max-width: 220px; height: 74px; margin: 0 auto 12px; display: block; border: 1px solid var(--border); border-radius: 9px; background: #0c1e14; }
   .how-n { font-size: 12px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--gold); font-weight: 700; }
-  .how-cell b { display: block; font-size: 18px; margin: 4px 0 6px; }
+  .how-cell b { display: block; font-size: 18px; margin: 4px 0 2px; }
+  /* The branded half of each stage name. The verb leads here because this block
+     is EXPLAINING the ladder; the ribbon leads with the brand because it is
+     wayfinding. Both always show the pair. */
+  .how-brand { display: block; font-style: normal; font-size: 12.5px; color: var(--gold);
+               letter-spacing: 0.02em; margin: 0 0 6px; }
   .how-cell span { color: var(--muted); font-size: 15px; line-height: 1.5; }
   .how-arw { align-self: center; color: var(--border); }
   .how-arw svg { width: 26px; height: 26px; display: block; }
@@ -772,25 +777,31 @@
 
   <section class="how reveal" aria-label="How it works">
     <p class="how-cap">How it works</p>
-    <h2 class="how-h">Three steps to a protocol matched to you</h2>
+    <h2 class="how-h">Four stages to a protocol matched to you</h2>
     <p class="how-lede">Not another shelf of generic supplements. Your body&rsquo;s own signal, matched to what it is asking for, guided all the way to coherence.</p>
     <div class="how-flow">
       <div class="how-cell">
         <canvas class="how-motif" id="m-scan" width="240" height="76" aria-hidden="true"></canvas>
-        <div class="how-n">Step 01</div><b>Scan</b>
+        <div class="how-n">Stage 01</div><b>Scan</b><i class="how-brand">Wellness Whispering</i>
         <span>A short voice sample captures your body&rsquo;s raw energy signature in seconds.</span>
       </div>
       <div class="how-arw" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M5 12h14M13 6l6 6-6 6"/></svg></div>
       <div class="how-cell">
         <canvas class="how-motif" id="m-find" width="240" height="76" aria-hidden="true"></canvas>
-        <div class="how-n">Step 02</div><b>Find</b>
+        <div class="how-n">Stage 02</div><b>Find</b><i class="how-brand">Remedy Match</i>
         <span>Your signal is compared to remedy after remedy until the right ones resonate.</span>
       </div>
       <div class="how-arw" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M5 12h14M13 6l6 6-6 6"/></svg></div>
       <div class="how-cell">
         <canvas class="how-motif" id="m-heal" width="240" height="76" aria-hidden="true"></canvas>
-        <div class="how-n">Step 03</div><b>Heal</b>
+        <div class="how-n">Stage 03</div><b>Heal</b><i class="how-brand">Accelerated Self Healing&trade;</i>
         <span>Your field settles into coherence, the body&rsquo;s own return to order and syntropy.</span>
+      </div>
+      <div class="how-arw" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M5 12h14M13 6l6 6-6 6"/></svg></div>
+      <div class="how-cell">
+        <canvas class="how-motif" id="m-give" width="240" height="76" aria-hidden="true"></canvas>
+        <div class="how-n">Stage 04</div><b>Give</b><i class="how-brand">Healing Oasis</i>
+        <span>What you found, you pass on. The last stage of healing is helping someone else begin.</span>
       </div>
     </div>
     <p class="how-foot">A <b>welcome call</b> is offered right after you start. You are never alone in this.</p>
@@ -1301,10 +1312,10 @@
 
   // ---- Begin #2: journey strip ----
   var JOURNEY_FALLBACK = [
-    { key:'scan', label:'Scan', paren:'Your Biofield',     href:'https://truly.vip/E4L',   status:'available', fill:0, steps:[] },
-    { key:'find', label:'Find', paren:'Your Remedy Match', href:'/begin/match',             status:'available', fill:0, steps:[] },
-    { key:'heal', label:'Heal', paren:'the root causes',   href:'https://truly.vip/Join',  status:'available', fill:0, steps:[] },
-    { key:'give', label:'Give', paren:'lift others',       href:'/affiliate',               status:'available', fill:0, steps:[] }
+    { key:'scan', label:'Scan', paren:'Wellness Whispering',     href:'/begin/scan?c=begin-journey-scan',   status:'available', fill:0, steps:[] },
+    { key:'find', label:'Find', paren:'Remedy Match', href:'/begin/match',             status:'available', fill:0, steps:[] },
+    { key:'heal', label:'Heal', paren:'Accelerated Self Healing\u2122',   href:'https://truly.vip/Join',  status:'available', fill:0, steps:[] },
+    { key:'give', label:'Give', paren:'Healing Oasis',       href:'/affiliate',               status:'available', fill:0, steps:[] }
   ];
   var journeyUnfolded = false;
 
@@ -1628,9 +1639,25 @@
     reduce?draw(0):requestAnimationFrame(draw);
   }
 
+  // Give: the settled wave hands its shape to a second, travelling outward.
+  function give(o){
+    function draw(t){
+      var x=o.x,W=o.W,H=o.H;x.clearRect(0,0,W,H);
+      var ph=reduce?0:t*0.0013;
+      line(o,function(u){return H*0.40 - Math.sin(u*Math.PI*2 + ph)*H*0.17;},
+           'rgba(212,168,67,.95)','rgba(212,168,67,.45)',8);
+      var passed=reduce?0.7:(0.4+0.32*(0.5+0.5*Math.sin(t*0.0009)));
+      line(o,function(u){return H*0.72 - Math.sin(u*Math.PI*2 + ph - 0.85)*H*0.17*passed;},
+           'rgba(95,174,110,.9)','rgba(95,174,110,.4)',8);
+      if(!reduce)requestAnimationFrame(draw);
+    }
+    reduce?draw(0):requestAnimationFrame(draw);
+  }
+
   var s=grab('m-scan'); if(s) scan(s);
   var f=grab('m-find'); if(f) find(f);
   var h=grab('m-heal'); if(h) heal(h);
+  var gv=grab('m-give'); if(gv) give(gv);
 })();
 </script>
 
