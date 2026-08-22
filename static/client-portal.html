@@ -510,7 +510,15 @@
   @media (max-width:760px){ .hub-tiles { grid-template-columns:repeat(2,1fr); } }
   @media (max-width:480px){ .hub-tiles { grid-template-columns:1fr; } }
   .hub-tile { text-align:left; cursor:pointer; background:var(--card); border:1px solid var(--line); border-radius:12px;
-    padding:.8rem; min-height:5.5rem; display:flex; flex-direction:column; gap:.35rem; font:inherit; color:var(--ink); text-decoration:none; }
+    padding:.8rem; min-height:5.5rem; display:flex; flex-direction:column; gap:.35rem; font:inherit; color:var(--ink); text-decoration:none;
+    position:relative; overflow:hidden; transition:border-color .25s ease,box-shadow .25s ease,background-color .25s ease; }
+  .hub-tile:not(.is-visited){ background:color-mix(in srgb,var(--card) 88%,var(--card2)); border-color:color-mix(in srgb,var(--line) 82%,transparent); }
+  .hub-tile:not(.is-visited) .tname{ color:color-mix(in srgb,var(--ink) 86%,var(--muted)); }
+  .hub-tile.is-visited{ border-color:color-mix(in srgb,var(--brand) 42%,var(--line)); }
+  .hub-tile .tile-progress{ position:absolute; inset:0 0 auto; height:4px; background:var(--card2); }
+  .hub-tile .tile-progress span{ display:block; height:100%; width:var(--tile-progress,0%); background:var(--brand); transition:width .35s ease; }
+  .hub-tile .tnext{ margin-top:auto; font-size:.76rem; color:var(--brand); font-weight:650; }
+  .hub-tile:not(.is-visited) .tile-progress,.hub-tile:not(.is-visited) .tnext{ display:none; }
   .hub-tile:hover,.hub-tile:focus-visible { border-color:#2f6f5e; box-shadow:0 6px 18px rgba(24,36,32,.08); outline:none; }
   .hub-tile .tname { font-weight:650; font-size:.95rem; }
   .hub-tile .tdesc { font-size:.78rem; color:var(--muted); }
@@ -1153,16 +1161,31 @@ function backToHub(){
 // Journey-grouped hub landing. Each tile routes via the existing showTab() to a
 // [data-panel] section. Groups encode the healing journey. Later phases add tiles.
 function buildHubHtml(d, v){
+  const cardStates = (v && v.card_states) || {};
+  const journeySteps = (((v || {}).journey || {}).phases || []).reduce((all, phase) =>
+    all.concat(Array.isArray(phase.steps) ? phase.steps : []), []);
+  const milestone = key => journeySteps.find(step => step.key === key);
+  const progressFor = (stepKey, openLabel, doneLabel) => {
+    const step = milestone(stepKey);
+    if(!step) return null;
+    return {
+      percent: step.done ? 100 : (step.in_progress ? 50 : 0),
+      next_action: step.done ? doneLabel : openLabel
+    };
+  };
   const understandTiles = [
-    ["current", "My Analysis", "Your current scan, matches and healing path"],
-    ["intake", "My Intake", "Build or continue your clinical health profile"],
+    ["current", "My Analysis", "Your current scan, matches and healing path", undefined,
+      progressFor("biofield", "Complete your Biofield Analysis", "Review your latest analysis")],
+    ["intake", "My Intake", "Build or continue your clinical health profile", undefined,
+      progressFor("intake", "Complete your health intake", "Review or update your intake")],
   ];
   // Gated on the flag: the "remedies" [data-panel] section itself only renders
   // when v.remedies.enabled (see the panel wrap below), so the tile must not
   // be offered when that's off — otherwise it's a dead/bouncing tile (showTab
   // falls back to hub when the target panel doesn't exist in the DOM).
   if(v && v.remedies && v.remedies.enabled){
-    understandTiles.push(["remedies", "My Remedies", "Your ranked matches and the stack you take"]);
+    understandTiles.push(["remedies", "My Remedies", "Your ranked matches and the stack you take", undefined,
+      progressFor("history", "Match your remedies", "Review your remedy matches")]);
   }
   // Task 2: the health tile is only meaningful (and only rendered) once the
   // curated health_profile block is enabled — off-state must add nothing.
@@ -1205,7 +1228,8 @@ function buildHubHtml(d, v){
                  "Explore the map of how healing works"]}] : []),
     ]],
     ["Track", [
-      ["photo",   "My Photo", "Add or update your profile photo"],
+      ["photo",   "My Photo", "Add or update your profile photo", undefined,
+        progressFor("photo", "Add your profile photo", "Update your profile photo")],
       ["history", "Scan History", "Every scan over time"],
       ["orders",  "Orders & Invoices", "Receipts and anything unpaid"],
       ["referrals","Referrals", "Who you've referred and your rewards"],
@@ -1215,13 +1239,21 @@ function buildHubHtml(d, v){
   // renders exactly as before; reuses the existing .pill style, no new CSS.
   // data-tile carries the panel name so Task 7's suggestion-resolve handler can
   // find and live-update this tile's badge count without a full re-render.
-  const tile = ([panel,name,desc,badge]) =>
-    `<button type="button" class="hub-tile" data-tile="${esc(panel)}" onclick="showTab('${panel}')">
-       <span class="tname">${esc(name)}${badge?` <span class="pill">${esc(badge)}</span>`:""}</span><span class="tdesc">${esc(desc)}</span></button>`;
+  const tile = ([panel,name,desc,badge,progress]) => {
+    const state = cardStates[panel] || {};
+    const visited = !!state.visited;
+    const measurable = progress && Number.isFinite(progress.percent);
+    const progressHtml = measurable
+      ? `<span class="tile-progress" role="progressbar" aria-label="${esc(name)} progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${esc(progress.percent)}" style="--tile-progress:${esc(progress.percent)}%"><span></span></span>` : "";
+    const nextHtml = (progress && progress.next_action)
+      ? `<span class="tnext">Next: ${esc(progress.next_action)}</span>` : "";
+    return `<button type="button" class="hub-tile${visited?" is-visited":""}" data-tile="${esc(panel)}" onclick="openHubCard('${panel}',this)">
+       ${progressHtml}<span class="tname">${esc(name)}${badge?` <span class="pill">${esc(badge)}</span>`:""}</span><span class="tdesc">${esc(desc)}</span>${nextHtml}</button>`;
+  };
   // External-destination tile. Same .hub-tile look as its neighbours; an <a> rather
   // than a button because showTab() only resolves panels that exist in the DOM.
   const extTile = ([href,name,desc]) =>
-    `<a class="hub-tile" href="${esc(href)}" target="_blank" rel="noopener">
+    `<a class="hub-tile${cardStates.brain&&cardStates.brain.visited?" is-visited":""}" data-tile="brain" href="${esc(href)}" target="_blank" rel="noopener" onclick="markHubCardOpened('brain',this)">
        <span class="tname">${esc(name)}</span><span class="tdesc">${esc(desc)}</span></a>`;
   const grp = ([label,tiles]) =>
     `<div class="hub-grid-group"><p class="glabel">${esc(label)}</p>
@@ -1238,6 +1270,19 @@ function buildHubHtml(d, v){
     ${buildCalendarHtml(v,true)}
     ${buildAppointmentProposalHtml()}
     ${groups.map(grp).join("")}</div>`;
+}
+
+function openHubCard(panel, el){
+  if(el) el.classList.add("is-visited");
+  showTab(panel);
+  markHubCardOpened(panel, el);
+}
+
+function markHubCardOpened(panel, el){
+  if(el) el.classList.add("is-visited");
+  fetch(`/api/portal/${encodeURIComponent(seg)}/cards/${encodeURIComponent(panel)}/open`, {
+    method:"POST", headers:{"Content-Type":"application/json"}, body:"{}"
+  }).catch(()=>{});
 }
 
 function portalTimeZone(){
