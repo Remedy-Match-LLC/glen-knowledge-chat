@@ -29917,6 +29917,9 @@ def api_client_portal_view(token):
                                        brain_url=_PORTAL_BRAIN_URL,
                                        caregiver_pay_enabled=_caregiver_pay_enabled())
             if view is not None:
+                from dashboard import portal_card_state as _portal_cards
+                _portal_cards.init_table(cx)
+                view["card_states"] = _portal_cards.list_for_person(cx, ident.person_id)
                 from dashboard import portal_calendar as _portal_cal
                 view["calendar"] = _portal_cal.build_block(
                     cx, email=ident.email,
@@ -29931,6 +29934,34 @@ def api_client_portal_view(token):
     resp.headers["Cache-Control"] = "private, no-cache, no-store, must-revalidate"
     resp.headers["Pragma"] = "no-cache"
     return resp
+
+
+@app.route("/api/portal/<token>/cards/<card_key>/open", methods=["POST"])
+def api_portal_card_open(token, card_key):
+    """Persist first/open-again engagement for one known portal hub card."""
+    from dashboard import client_portal as _cp
+    from dashboard import portal_card_state as _pcs
+    from dashboard import portal_identity as _pi
+
+    allowed = {
+        "current", "intake", "remedies", "health", "oasis", "cart", "shop",
+        "offers", "finder", "refer", "ask", "bodymap", "classes", "brain",
+        "photo", "history", "orders", "referrals", "account",
+    }
+    key = (card_key or "").strip().lower()
+    if key not in allowed:
+        return jsonify({"error": "unknown card"}), 400
+    sess = request.cookies.get("rm_portal_session", "")
+    with _db_lock, db.connect(LOG_DB) as cx:
+        _cp.init_client_portal_table(cx)
+        ident = _pi.resolve_identity(
+            cx, token=token, session_token=sess,
+            client_login_enabled=_client_login_enabled())
+        if ident is None:
+            return jsonify({"error": "not found"}), 404
+        _pcs.init_table(cx)
+        state = _pcs.mark_opened(cx, ident.person_id, key)
+    return jsonify({"ok": True, "state": state})
 
 
 def _appointment_client_identity(cx, token):

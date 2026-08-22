@@ -413,6 +413,15 @@ def _onboarding_block(cx, email):
         return {"eligible": False, "booked_start": None}
 
 
+def _journey_block(cx, email):
+    """Authoritative milestone state used by hub-card progress treatments."""
+    try:
+        from dashboard import portal_onboarding as _journey
+        return _journey.build_status(cx, email)
+    except Exception:
+        return {"phases": []}
+
+
 def _caregiver_pay_block(cx, email, enabled):
     """Orders this person may pay for household members who granted pay-consent.
     Thin + firewall-safe: amounts/status only, line items only when the member's
@@ -520,6 +529,7 @@ def get_portal_view(cx, person_id, *, offers_enabled_keys=None, scan_date=None,
         "health_profile": _hp.build_block(cx, email, health_profile_enabled),
         "consult": _consult_block(cx, email),
         "onboarding": _onboarding_block(cx, email),
+        "journey": _journey_block(cx, email),
         "supplement_review": _supplement_reviews_block(cx, email, supplement_review_enabled),
         "remedies": _rb.build_block(cx, email, remedies_enabled),
         "oasis": _ob.build_block(cx, email, oasis_enabled, terrain_phase),
