@@ -43550,6 +43550,9 @@ def practitioner_finder_search():
 
     specialties = request.args.getlist("specialties[]") or None
     tiers = request.args.getlist("tier[]") or None
+    profession = request.args.get("profession", "").strip().lower() or None
+    if profession not in (None, "occupational_therapist", "physical_therapist"):
+        return jsonify({"error": "unsupported profession filter"}), 400
     fellowship_only = request.args.get("fellowship_only", "").lower() in ("1", "true", "yes")
 
     # Geocode the typed place to a search centre, biased to the chosen country.
@@ -43565,6 +43568,7 @@ def practitioner_finder_search():
         specialties=specialties, tiers=tiers, limit=200,
         fellowship_only=fellowship_only,
         countries=None if international else [country],
+        profession=profession,
     )
     # Certification-track practitioners: never expose raw email/phone in the
     # public payload — contact is routed through the inquiry form (which fetches

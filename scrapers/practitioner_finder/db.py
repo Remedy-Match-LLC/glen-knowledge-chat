@@ -4,6 +4,7 @@ Two SQL-building functions are unit-tested as pure strings (build_search_sql,
 upsert_sql_and_params). The actual execution helpers (run_upsert, run_search,
 list_ungeocoded, update_geocode) are thin shims over psycopg2 — integration
 tested in Task 13 against the real Supabase instance."""
+import re
 from typing import Optional, Tuple
 
 from db_supabase import supabase_cursor
@@ -11,6 +12,31 @@ from scrapers.practitioner_finder.normalize import normalize_country
 
 
 MILES_TO_METERS = 1609.344
+
+_OT_CREDENTIAL_RE = re.compile(
+    r"(^|[^A-Za-z])(OTR/L|OTR|OTD|MOT|MSOT|OT)([^A-Za-z]|$)", re.I,
+)
+_PT_CREDENTIAL_RE = re.compile(
+    r"(^|[^A-Za-z])(DPT|MPT|MSPT|PT)([^A-Za-z]|$)", re.I,
+)
+
+
+def profession_specialties(credentials: Optional[str]) -> list[str]:
+    """Return explicit profession tags found in a qualified source row.
+
+    This does not qualify a practitioner by itself; adapters already represent
+    vetted organizations or advanced credentials. It only makes profession a
+    first-class, cross-specialty Finder facet for those curated rows.
+    """
+    value = credentials or ""
+    lowered = value.lower()
+    tags: list[str] = []
+    if "occupational therapist" in lowered or _OT_CREDENTIAL_RE.search(value):
+        tags.append("occupational_therapy")
+    if ("physical therapist" in lowered or "physiotherapist" in lowered
+            or _PT_CREDENTIAL_RE.search(value)):
+        tags.append("physical_therapy")
+    return tags
 
 
 def build_search_sql(
@@ -23,6 +49,7 @@ def build_search_sql(
     limit: int,
     fellowship_only: bool = False,
     countries: Optional[list[str]] = None,
+    profession: Optional[str] = None,
 ) -> Tuple[str, list]:
     """Build the search SQL string and parameter tuple.
 
@@ -68,6 +95,31 @@ def build_search_sql(
         # never surface in a domestic search. See geocode.mapbox_country_filter.
         where_clauses.append("country = ANY(%s)")
         where_params.append(countries)
+
+    if profession == "occupational_therapist":
+        # NORA exposes the provider's profession in its credentials field.
+        # Match the full role name rather than the ambiguous abbreviation
+        # "OT", which appears in unrelated words and credentials.
+        where_clauses.append(
+            "(specialties && %s OR LOWER(COALESCE(credentials, '')) LIKE %s "
+            "OR COALESCE(credentials, '') ~* %s)"
+        )
+        where_params.extend([
+            ["occupational_therapy"], "%occupational therapist%",
+            "(^|[^A-Za-z])(OTR/L|OTR|OTD|MOT|MSOT|OT)([^A-Za-z]|$)",
+        ])
+    elif profession == "physical_therapist":
+        # Source directories variously publish the full profession or a
+        # standalone PT-family credential. The surrounding non-letter guards
+        # prevent short "PT" from matching unrelated words.
+        where_clauses.append(
+            "(specialties && %s OR LOWER(COALESCE(credentials, '')) LIKE %s OR "
+            "COALESCE(credentials, '') ~* %s)"
+        )
+        where_params.extend([
+            ["physical_therapy"], "%physical therapist%",
+            "(^|[^A-Za-z])(DPT|MPT|MSPT|PT)([^A-Za-z]|$)",
+        ])
 
     if fellowship_only:
         where_clauses.append("fellowship_level = true")
@@ -120,6 +172,11 @@ def _normalize_for_write(row_dict: dict) -> dict:
     # every scraped row stores a clean value (adapters stay unchanged).
     if "country" in row_dict:
         row_dict["country"] = normalize_country(row_dict.get("country"))
+    existing = list(row_dict.get("specialties") or [])
+    for tag in profession_specialties(row_dict.get("credentials")):
+        if tag not in existing:
+            existing.append(tag)
+    row_dict["specialties"] = existing
     return row_dict
 
 
@@ -159,11 +216,13 @@ def run_search(
     limit: int = 200,
     fellowship_only: bool = False,
     countries: Optional[list[str]] = None,
+    profession: Optional[str] = None,
 ) -> list[dict]:
     sql, params = build_search_sql(
         lat=lat, lng=lng, radius_miles=radius_miles,
         specialties=specialties, tiers=tiers, limit=limit,
         fellowship_only=fellowship_only, countries=countries,
+        profession=profession,
     )
     with supabase_cursor() as cur:
         cur.execute(sql, params)
