@@ -21340,7 +21340,32 @@ def evox_run_reminders():
 
 @app.route("/portal/<token>")
 def client_portal_page(token):
-    return send_from_directory(STATIC, "client-portal.html")
+    resp = send_from_directory(STATIC, "client-portal.html")
+    if not _client_login_enabled() or token == "me":
+        return resp
+
+    # A durable portal link is already an authentication credential. Bridge it
+    # to the same short-lived browser session used by /portal/me so relative
+    # links to public education/product pages can offer "Share this page"
+    # without ever putting the durable portal token into those public URLs.
+    try:
+        from dashboard import portal_identity as _pi
+        current = (request.cookies.get("rm_portal_session") or "").strip()
+        with _db_lock, db.connect(LOG_DB) as cx:
+            token_ident = _pi.identity_from_token(cx, token)
+            if not token_ident:
+                return resp
+            session_ident = _pi.identity_from_session(cx, current) if current else None
+            if session_ident and session_ident.person_id == token_ident.person_id:
+                return resp
+            session = _pi.create_client_session(
+                cx, token_ident.person_id, token_ident.email)
+        resp.set_cookie("rm_portal_session", session, max_age=30 * 86400,
+                        httponly=True, samesite="Lax", secure=request.is_secure)
+    except Exception as e:
+        # Portal rendering must never depend on the convenience bridge.
+        print(f"[portal-session-bridge] {e!r}", flush=True)
+    return resp
 
 
 @app.route("/portal/<token>/practitioner-account")
