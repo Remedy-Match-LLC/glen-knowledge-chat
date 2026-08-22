@@ -214,6 +214,20 @@ def test_reminders_send_once_deterministic(client, monkeypatch):
     assert r_wrongauth.status_code == 401
     assert sent == []
 
+    # Render's dedicated cron uses the separately rotated CRON_SECRET.
+    monkeypatch.setenv("CRON_SECRET", "cron-secret")
+    r_cron = client.post("/api/evox/run-reminders",
+                         headers={"X-Cron-Secret": "cron-secret"}).get_json()
+    assert r_cron["sent"] == 1
+    assert sent == ["r@x.com"]
+
+    # Reset the reminder so the existing console-key assertions below still
+    # exercise first-send and idempotency independently.
+    with sqlite3.connect(appmod.LOG_DB) as cx:
+        cx.execute("UPDATE evox_bookings SET reminded_at=NULL WHERE email='r@x.com'")
+        cx.commit()
+    sent.clear()
+
     # First run: only the in-window booking is reminded; the out-of-window
     # control is left alone.
     r1 = client.post("/api/evox/run-reminders", headers=hdr).get_json()

@@ -121,6 +121,22 @@ services:
           name: glen-knowledge-chat
           envVarKey: CONSOLE_SECRET
 
+  # Daily EVOX appointment reminders. Use the web service's CRON_SECRET by
+  # reference so secret rotation cannot leave this job sending a stale
+  # X-Console-Key (the cause of the Aug 20-22 401 failures).
+  - type: cron
+    name: glen-evox-reminders
+    runtime: python
+    schedule: "0 17 * * *"
+    buildCommand: "true"
+    startCommand: >-
+      python -c "import urllib.request,os;r=urllib.request.Request('https://glen-knowledge-chat.onrender.com/api/evox/run-reminders',method='POST',headers={'X-Cron-Secret':os.environ['CRON_SECRET']});print(urllib.request.urlopen(r,timeout=60).read().decode())"
+    envVars:
+      - fromService:
+          type: web
+          name: glen-knowledge-chat
+          envVarKey: CRON_SECRET
+
   # Daily testimonial-invite scan — mines recent client comms + Gmail (from known
   # clients) for positive results, adding review candidates to the Invite Queue.
   # Cross-container pattern: cron curls the web service (which holds the Gmail token + DB).
