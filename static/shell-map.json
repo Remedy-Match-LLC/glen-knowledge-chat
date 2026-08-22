@@ -1,15 +1,15 @@
 {
   "lands": {
-    "scan": {"name": "Wellness Whispering", "category": "scan", "thumb": "/static/journey/thumb-scan.webp",
+    "scan": {"name": "Wellness Whispering", "nav_name": "Wellness", "mobile_name": "Scan", "category": "scan", "thumb": "/static/journey/thumb-scan.webp",
              "intrigue": "Your body is already speaking. Step in and listen.",
              "featured": {"product_slug": "terrain-restore", "product_name": "Terrain Restore", "healing_power": "supports your foundational terrain"}},
-    "find": {"name": "Remedy Match", "category": "find", "thumb": "/static/journey/thumb-find.webp",
+    "find": {"name": "Remedy Match", "nav_name": "Remedies", "mobile_name": "Match", "category": "find", "thumb": "/static/journey/thumb-find.webp",
              "intrigue": "See the one remedy your body is asking for.",
              "featured": {"product_slug": "nous-energy", "product_name": "Nous Energy", "healing_power": "supports clear, energized focus"}},
-    "heal": {"name": "Accelerated Self Healing™", "category": "heal", "thumb": "/static/journey/thumb-heal.webp",
+    "heal": {"name": "Accelerated Self Healing™", "nav_name": "Healing", "mobile_name": "Heal", "category": "heal", "thumb": "/static/journey/thumb-heal.webp",
              "intrigue": "Where the root causes finally settle.",
              "featured": {"product_slug": "microbiome", "product_name": "Microbiome", "healing_power": "supports your gut and inner terrain"}},
-    "give": {"name": "Healing Oasis", "category": "give", "thumb": "/static/journey/thumb-give.webp",
+    "give": {"name": "Healing Oasis", "nav_name": "Oasis", "mobile_name": "Oasis", "category": "give", "thumb": "/static/journey/thumb-give.webp",
              "intrigue": "the gift of healing"}
   },
   "categories": {

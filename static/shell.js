@@ -65,14 +65,14 @@
   // --- ribbon scaffold ---
   function buildRibbon(trail) {
     var bar = el("div"); bar.id = "journey-shell";
-    var home = el("button", "js-home", "🏠"); home.title = "Home";
+    var home = el("button", "js-home", "Home"); home.title = "Home";
     home.onclick = function () { location.href = "/"; };
-    var back = el("button", "js-back", "←"); back.title = "Back";
+    var back = el("button", "js-back", "Back"); back.title = "Back";
     back.onclick = function () {
       if (document.referrer && new URL(document.referrer).origin === location.origin) history.back();
       else location.href = "/";
     };
-    var mapBtn = el("button", "js-mapbtn", "🗺️"); mapBtn.title = "Open your journey map";
+    var mapBtn = el("button", "js-mapbtn", "Map"); mapBtn.title = "Open your journey map";
     var path = el("div", "js-path"); path.id = "js-path";
     var mypathBtn = el("button", "js-mypath-btn", "My Path");
     bar.appendChild(home); bar.appendChild(back); bar.appendChild(mapBtn); bar.appendChild(path);
@@ -81,7 +81,7 @@
       var mnav = el("div", "js-mnav",
         '<a href="/client-portal">Journal</a><a href="/coaching">Coaching</a>' +
         '<a href="/client-portal">Account</a>');
-      var toggle = el("button", "js-maptoggle", "🗺️"); toggle.title = "Map / nav";
+      var toggle = el("button", "js-maptoggle", "Menu"); toggle.title = "Map / navigation";
       bar.insertBefore(toggle, home);  // unobtrusive upper-left toggle
       bar.appendChild(mnav);
       toggle.onclick = function () { path.classList.toggle("js-hide"); mnav.classList.toggle("js-hide"); };
@@ -92,7 +92,6 @@
     // members into the unrelated storefront cookie cart.
     if (/^\/portal\/(?:me|[^/]+)/.test(location.pathname)) {
       var cartBtn = el("button", "js-mypath-btn js-portal-cart-btn",
-        '<span class="js-cart-icon" aria-hidden="true">🛒</span>' +
         '<span class="js-cart-label">Cart</span>' +
         '<span class="js-cart-badge" aria-hidden="true">0</span>');
       var cartBadge = cartBtn.querySelector(".js-cart-badge");
@@ -174,7 +173,6 @@
   function renderLands(pathEl, journey, mapCfg) {
     pathEl.innerHTML = "";
     var lands = (mapCfg && mapCfg.lands) || {};
-    var cats = (mapCfg && mapCfg.categories) || {};
     var seenNext = false;
     journey.forEach(function (card, i) {
       if (i > 0) {
@@ -182,16 +180,18 @@
         pathEl.appendChild(link);
       }
       var meta = lands[card.key] || {};
-      var icon = (cats[meta.category] || {}).icon || "•";
       var cls = "js-land";
       if (card.status === "done") cls += " done";
       else if (card.status === "next") { cls += " next"; seenNext = true; }
       else if (seenNext) cls += " fog";  // fog upcoming lands beyond the current next
-      var land = el("div", cls,
-        '<span class="js-icon">' + icon + '</span>' +
-        '<span>' + (meta.name || card.label) + '</span>');
+      var fullName = meta.name || card.label;
+      var land = el("button", cls,
+        '<span class="js-label-desktop">' + (meta.nav_name || fullName) + '</span>' +
+        '<span class="js-label-mobile">' + (meta.mobile_name || meta.nav_name || fullName) + '</span>');
+      land.type = "button";
       land.setAttribute("data-key", card.key);
-      land.title = (meta.intrigue || card.paren || "");
+      land.setAttribute("aria-label", fullName);
+      land.title = fullName + ((meta.intrigue || card.paren) ? ": " + (meta.intrigue || card.paren) : "");
       land.onclick = function (e) {
         e.stopPropagation();
         if (!card.href) return;

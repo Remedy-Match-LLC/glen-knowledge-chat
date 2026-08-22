@@ -52,6 +52,27 @@ def test_trademark_names_present():
     assert names["give"] == "Healing Oasis"
 
 
+def test_header_has_short_desktop_and_phone_labels():
+    cfg = json.loads(CFG.read_text())
+    assert [cfg["lands"][key]["nav_name"] for key in _land_keys()] == [
+        "Wellness", "Remedies", "Healing", "Oasis"
+    ]
+    assert [cfg["lands"][key]["mobile_name"] for key in _land_keys()] == [
+        "Scan", "Match", "Heal", "Oasis"
+    ]
+
+
+def test_header_controls_are_text_only_and_use_responsive_labels():
+    shell = (CFG.parent / "shell.js").read_text()
+    assert '"Home"' in shell
+    assert '"Back"' in shell
+    assert '"Map"' in shell
+    assert 'js-label-desktop' in shell
+    assert 'js-label-mobile' in shell
+    for icon in ("🏠", "←", "🗺️", "🛒", "💎"):
+        assert icon not in shell
+
+
 def test_scene_block_image_and_thumbs_exist_on_disk():
     base = CFG.parent  # static/
     cfg = json.loads(CFG.read_text())
