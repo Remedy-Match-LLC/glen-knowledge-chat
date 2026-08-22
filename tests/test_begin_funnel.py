@@ -725,14 +725,20 @@ def _state(**over):
     return base
 
 
-def test_unknown_style_shows_opening_fork():
+def test_unknown_style_answers_the_greeting():
+    # Inverted 2026-08-22: the root turn no longer ASKS the style fork. The
+    # greeting asks what they would love to change, so the chips answer THAT;
+    # style is inferred (unknown behaves as mission) and the standing
+    # 'Actually, let me explore instead' secondary is how a client crosses
+    # over. See tests/test_first_turn_chips.py.
     import begin_funnel as bf
     st = _state(travel_style="unknown")
-    assert bf.next_step_prompt(st) == bf.OPENING_PROMPT
+    assert bf.next_step_prompt(st) == ""          # the greeting IS the question
     chips = bf.next_step_chips(st)
-    vals = {c["value"] for c in chips if c["action"] == "style"}
-    assert vals == {"mission", "adventure"}
-    assert all(c["role"] == "primary" for c in chips)
+    primary = [c for c in chips if c["role"] == "primary"]
+    assert [c["label"] for c in primary] == list(bf.SEED_OUTCOME_CHIPS)
+    secondary = [c for c in chips if c["role"] == "secondary"]
+    assert len(secondary) == 1 and secondary[0]["value"] == "adventure"
 
 
 def test_mission_without_outcome_shows_seed_chips_and_prompt():

@@ -34,9 +34,14 @@ def test_begin_state_includes_next_step_block(monkeypatch, tmp_path):
     body = r.get_json()
     assert "next_step" in body
     assert "prompt" in body["next_step"] and "chips" in body["next_step"]
-    # cold visitor -> opening fork
-    vals = {ch.get("value") for ch in body["next_step"]["chips"] if ch["action"] == "style"}
-    assert vals == {"mission", "adventure"}
+    # Inverted 2026-08-22: a cold visitor gets the seed OUTCOME chips, which answer
+    # the greeting, plus one 'explore instead' escape hatch. The route contract this
+    # test really guards -- next_step carrying prompt + chips -- is asserted above.
+    chips = body["next_step"]["chips"]
+    primary = [c for c in chips if c["role"] == "primary"]
+    assert primary and all(c["action"] == "text" for c in primary)
+    secondary = [c for c in chips if c["role"] == "secondary"]
+    assert len(secondary) == 1 and secondary[0].get("value") == "adventure"
 
 
 def test_travel_style_route_sets_and_returns_block(monkeypatch, tmp_path):
