@@ -1408,6 +1408,10 @@ def _begin_signals(cx, sig_email, state):
         "ambassador": _is_ambassador(cx, sig_email),
         "referred_friend": _has_referred_friend(cx, sig_email),
         "has_e4l": _has_e4l(cx, sig_email, state),
+        # Glen 2026-08-22: stop offering the matcher to someone who just bought,
+        # for about a month. Recency, not the permanent gate.
+        "purchased_recently": begin_funnel.purchased_recently(
+            cx, email=sig_email, session_id=(state or {}).get("session_id", "")),
     }
 
 
@@ -10510,11 +10514,15 @@ def begin_checkout(slug):
            "method": method, "customer_id": ""}
     try:
         with _db_lock, db.connect(LOG_DB) as cx:
-            cx.execute("INSERT INTO journey_events (ts, session_id, email, trigger, detail, rung_before, rung_after) "
-                       "VALUES (?,?,?,?,?,?,?)",
-                       (begin_funnel._now(), session_id, email, "purchase",
-                        f"buy-{slug}-{method}", "", ""))
-            cx.commit()
+            # record_unlock, not a bare INSERT: this wrote the audit row and stopped,
+            # so the `purchase` GATE was never set on journey_state. compute_rung
+            # therefore topped out at choose_path and the top two rungs of the ladder
+            # -- ascend and advocate -- were unreachable by any client. record_unlock
+            # sets the gate AND writes the same timestamped event, so there is no
+            # double-logging.
+            begin_funnel.record_unlock(
+                cx, session_id=session_id, trigger="purchase", email=email,
+                detail=f"buy-{slug}-{method}")
     except Exception:
         pass
     _ingest_order(source="funnel", external_ref=checkout_ref, email=email, name=name,

@@ -10,7 +10,7 @@ import re
 import sqlite3
 import urllib.parse
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 
 def _now():
@@ -592,12 +592,51 @@ def next_step_prompt(state, query_texts=None):
     return ""
 
 
-def _mission_chips(state, ref="", query_texts=None):
+# Glen's ruling 2026-08-22: after a purchase, stop offering the remedy matcher --
+# but only for about a month. Their terrain moves; at some point a fresh match is
+# the right next step again, not an insult.
+PURCHASE_RECENCY_DAYS = 30
+
+
+def purchased_recently(cx, email="", session_id="", days=PURCHASE_RECENCY_DAYS):
+    """True if a purchase was recorded within the window.
+
+    Reads journey_events, not the gate: a gate is permanent and cannot express
+    "recently". The checkout already wrote a timestamped event here; it just was
+    not being read, and the gate it should have set was never written at all.
+
+    ISO-8601 UTC sorts lexicographically, so a string compare is a date compare."""
+    if not (email or session_id):
+        return False
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=int(days))).isoformat()
+    try:
+        if email:
+            row = cx.execute(
+                "SELECT 1 FROM journey_events WHERE trigger='purchase' "
+                "AND LOWER(email)=? AND ts >= ? LIMIT 1",
+                (email.strip().lower(), cutoff)).fetchone()
+            if row:
+                return True
+        if session_id:
+            return cx.execute(
+                "SELECT 1 FROM journey_events WHERE trigger='purchase' "
+                "AND session_id=? AND ts >= ? LIMIT 1",
+                (session_id, cutoff)).fetchone() is not None
+    except Exception:
+        return False
+    return False
+
+
+def _mission_chips(state, ref="", query_texts=None, signals=None):
     keys = _match_card_keys(state, query_texts) or []
-    gates = set((state or {}).get("unlocked_gates") or ())
+    recent_buyer = bool((signals or {}).get("purchased_recently"))
     dest_key = None
     for k in keys:
-        if k == "remedy_match" and "purchase" in gates:   # already bought -> don't re-offer
+        # Bought in the last PURCHASE_RECENCY_DAYS -> don't send them back to the
+        # matcher. Keyed on RECENCY, not on the permanent gate: the gate would
+        # suppress the matcher forever, and a client whose terrain has moved on
+        # should be matched again.
+        if k == "remedy_match" and recent_buyer:
             continue
         dest_key = k
         break
@@ -664,7 +703,7 @@ def next_step_chips(state, ref="", query_texts=None, signals=None):
     style = (state or {}).get("travel_style", "unknown")
     if style == "adventure":
         return _adventure_chips(state, ref, query_texts, signals)
-    return _mission_chips(state, ref, query_texts)
+    return _mission_chips(state, ref, query_texts, signals)
 
 
 # ---------------------------------------------------------------------------
@@ -710,7 +749,11 @@ JOURNEY_STEPS = [
         {"key": "ww_course",  "label": "Wellness Whispering MasterClass & Community", "src": ("gate", "course_ww"),  "href": "https://truly.vip/WellnessWhispering"}]},
     {"key": "find", "label": stage_label("find"), "paren": stage_brand("find"), "steps": [
         {"key": "match_chat", "label": "Match via chat",      "src": ("gate", "question"),   "href": "/begin/match"},
-        {"key": "biofield",   "label": "Biofield interpretation", "src": ("gate", "biofield"), "href": "/begin/match"}]},
+        {"key": "biofield",   "label": "Biofield interpretation", "src": ("gate", "biofield"), "href": "/begin/match"},
+        # The map used to stop before the money. A purchase is the completion of
+        # finding your remedy, so it belongs to Find rather than to a fifth stage
+        # the four-stage canon (and the 5-hotspot quest scene) has no room for.
+        {"key": "first_order", "label": "Your first order",   "src": ("gate", "purchase"),   "href": "/begin/match"}]},
     {"key": "heal", "label": stage_label("heal"), "paren": stage_brand("heal"), "steps": [
         {"key": "intake",      "label": "Intake form",        "src": ("gate", "intake"),      "href": "https://truly.vip/Join"},
         {"key": "masterclass", "label": "Accelerated Self Healing™ MasterClass & Community",    "src": ("gate", "masterclass"), "href": "https://truly.vip/Intro"}]},
