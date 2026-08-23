@@ -1904,6 +1904,22 @@ function buildScanHistoryHtml(d){
 }
 // Orders & Invoices panel body — the same invoices/past_invoices data the old
 // combined "History & receipts" card rendered, just moved to its own tab.
+function pastInvoiceItemsHtml(inv){
+  const items = Array.isArray(inv.items) ? inv.items : [];
+  if(!items.length) return "";
+  const productCount = items.filter(it => it.is_product).length;
+  const summary = productCount
+    ? `${productCount} product line${productCount===1?"":"s"}`
+    : `${items.length} invoice line${items.length===1?"":"s"}`;
+  return `<details class="invoice-lines" style="margin:.25rem 0 .65rem .6rem">
+    <summary class="small">${esc(summary)}</summary>
+    <ul class="small" style="margin:.35rem 0 .2rem;padding-left:1.2rem">${items.map(it => {
+      const qty = Number(it.qty || 0);
+      const prefix = qty > 0 ? `${esc(qty)} × ` : "";
+      const adjustment = it.is_product ? "" : ` <span class="muted">(adjustment or unmapped line)</span>`;
+      return `<li>${prefix}${esc(it.description || it.product_name || "Invoice line")}${adjustment}</li>`;
+    }).join("")}</ul></details>`;
+}
 function buildOrdersHtml(d){
   const invs = Array.isArray(d.invoices) ? d.invoices : [];
   const past = Array.isArray(d.past_invoices) ? d.past_invoices : [];
@@ -1920,9 +1936,10 @@ function buildOrdersHtml(d){
       + past.map(inv => {
           const state = inv.paid ? "paid" : esc(inv.status || "invoice");
           const label = `$${esc(inv.amount_dollars)} ${state}${inv.when?" &middot; "+esc(inv.when):""}`;
-          return inv.link
+          const heading = inv.link
             ? `<p style="margin:.25rem 0"><a href="${esc(inv.link)}" target="_blank" rel="noopener">${label} ↗</a></p>`
             : `<p class="muted" style="margin:.25rem 0">${label}</p>`;
+          return heading + pastInvoiceItemsHtml(inv);
         }).join("")
       + `</div>`;
   }
@@ -3382,9 +3399,10 @@ function render(d, v){
         + pastInv.map(inv => {
             const state = inv.paid ? "paid" : esc(inv.status || "invoice");
             const label = `$${esc(inv.amount_dollars)} — ${state}${inv.when?" · "+esc(inv.when):""}`;
-            return inv.link
+            const heading = inv.link
               ? `<p style="margin:.25rem 0"><a href="${esc(inv.link)}" target="_blank" rel="noopener">${label} ↗</a></p>`
               : `<p class="muted" style="margin:.25rem 0">${label}</p>`;
+            return heading + pastInvoiceItemsHtml(inv);
           }).join("");
     }
     hist += `</div>`;
