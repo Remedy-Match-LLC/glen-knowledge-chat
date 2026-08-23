@@ -161,10 +161,17 @@ def test_something_records_the_purchase_gate():
 # ---------------------------------------------------------------------------
 
 def test_find_now_carries_the_first_order():
+    """Re-pointed 2026-08-22, not relaxed. This pinned first_order as the LAST
+    step because at the time the card stopped at the money. `reorder` now sits
+    after it, so the position pin moved to "immediately before reorder" -- the
+    property being protected is that the purchase step is still IN the card and
+    still driven by the purchase gate, which both assertions below still fail on
+    if first_order is dropped or its src is changed."""
     import begin_funnel as bf
     find = {c["key"]: c for c in bf.JOURNEY_STEPS}["find"]
-    assert [s["key"] for s in find["steps"]][-1] == "first_order"
-    assert find["steps"][-1]["src"] == ("gate", "purchase")
+    keys = [s["key"] for s in find["steps"]]
+    assert keys[-2:] == ["first_order", "reorder"]
+    assert find["steps"][-2]["src"] == ("gate", "purchase")
 
 
 def test_the_first_order_step_lights_up_on_purchase():
