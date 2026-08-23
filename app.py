@@ -27111,6 +27111,23 @@ def api_console_portal_backfill_scan_history():
     return jsonify({"ok": True, **result})
 
 
+@app.route("/api/console/portal/release-shipped-reports", methods=["POST"])
+def api_console_portal_release_shipped_reports():
+    """Reconcile approved reports for historical shipped-product orders.
+
+    Dry-run is the default.  This never confirms clinical drafts; it only creates
+    or advances portals for reports that were already confirmed.
+    """
+    if not _portal_console_ok():
+        return jsonify({"error": "unauthorized"}), 401
+    body = request.get_json(silent=True) or {}
+    commit = bool(body.get("commit"))
+    from dashboard import shipped_report_release as _release
+    with _db_lock, db.connect(LOG_DB) as cx:
+        result = _release.backfill(cx, dry_run=not commit)
+    return jsonify({"ok": True, "committed": commit, **result})
+
+
 @app.route("/api/console/portal/notify-scan", methods=["POST"])
 def api_console_portal_notify_scan():
     """Operator confirm-to-send: email the client that a new analysis is ready.
