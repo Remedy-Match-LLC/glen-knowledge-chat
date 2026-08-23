@@ -137,6 +137,18 @@ def test_same_slug_in_two_orders_is_a_reorder():
     assert app._has_reordered(cx, "jane@example.com") is True
 
 
+def test_two_of_the_same_thing_in_ONE_order_is_not_a_reorder():
+    """Buying two bottles at once is a bigger first order, not a second one.
+    The pre-refactor loop walked line items across all orders into one set, so
+    two lines of the same slug in a SINGLE order tripped `repeated` -- untested
+    in either direction. _order_slug_counts dedupes within an order, which makes
+    the count mean "orders containing this slug"; that is the meaning the portal
+    CTA needs too, and both surfaces now read it from the same function."""
+    app = _app()
+    cx = _cx_with_orders([("paid", ["terrain-restore", "terrain-restore"])])
+    assert app._has_reordered(cx, "jane@example.com") is False
+
+
 def test_two_orders_of_different_things_is_not_a_reorder():
     """Buying more is not buying again."""
     app = _app()
