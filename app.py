@@ -1400,6 +1400,27 @@ def _has_e4l(cx, email, state):
         return False
 
 
+def _order_slug_counts(orders):
+    """slug -> how many non-cancelled orders contain it, retired slugs folded to
+    their live twin. ONE definition of "bought more than once", shared by the
+    journey's `has_reordered` signal and the portal's per-row `is_reorder` flag,
+    so the two surfaces cannot drift into disagreeing about the same client.
+
+    Takes already-read order dicts rather than a connection: the portal has its
+    rows in hand and must not pay for a second read."""
+    counts = {}
+    for o in (orders or []):
+        if (o.get("status") or "") == "cancelled":
+            continue
+        for sl in {(it.get("slug") or "").strip().lower()
+                   for it in (o.get("items") or []) if isinstance(it, dict)}:
+            if not sl:
+                continue
+            sl = _superseded(sl) or sl
+            counts[sl] = counts.get(sl, 0) + 1
+    return counts
+
+
 def _has_reordered(cx, email):
     """True when this client has bought the same formulation more than once.
 
@@ -1435,17 +1456,9 @@ def _has_reordered(cx, email):
             cx.row_factory = sqlite3.Row
         except Exception:
             pass                                  # PG adapter: no-op, HybridRow already keys
-        for o in _o.list_orders_by_email(cx, email, limit=200):
-            if (o.get("status") or "") == "cancelled":
-                continue
-            for it in (o.get("items") or []):
-                sl = (it.get("slug") or "").strip().lower()
-                if not sl:
-                    continue
-                sl = _superseded(sl) or sl        # a retired slug and its twin are one product
-                if sl in slugs:
-                    repeated = True
-                slugs.add(sl)
+        counts = _order_slug_counts(_o.list_orders_by_email(cx, email, limit=200))
+        slugs = set(counts)
+        repeated = any(n >= 2 for n in counts.values())
     except Exception as e:
         print(f"[journey] reorder read (orders) failed for {email!r}: {e!r}", flush=True)
     finally:
@@ -20949,6 +20962,19 @@ def _portal_reorder_module(email):
     # purchases (storefront GrooveKart slice + fmp/clinic slice) that survive only
     # here (they predate the orders-table webhook / were never in the orders board)
     # and would otherwise never surface: slug -> (most-recent purchased_at, channel). ---
+    # A portal/funnel purchase is NEVER written to purchase_history (its only
+    # writers are the fmp and groovekart backfills), so `ph_slugs` alone made the
+    # CTA read "Order" on a client's second, third and fourth portal purchase of
+    # the same SKU -- forever, for anyone whose buying started after the
+    # migration. `repeat_slugs` closes that: a slug sitting in two or more
+    # non-cancelled orders has demonstrably been bought again.
+    #
+    # It is deliberately an OR rather than a replacement. The pinned contract is
+    # narrower than "has bought before": a single legacy purchase IS framed as a
+    # reorder (it is a pre-existing record), while a single portal purchase is
+    # not (that purchase is the row you are looking at). Counting occurrences
+    # instead would have flipped both storefront-history cases to "Order".
+    repeat_slugs = {sl for sl, n in _order_slug_counts(orders).items() if n >= 2}
     ph_slugs, ph_other = set(), {}
     for r in ph_rows:
         s = _superseded((r["slug"] or "").strip().lower()) or ""
@@ -21000,7 +21026,7 @@ def _portal_reorder_module(email):
                 "in_repertoire": in_rep,
                 "channel": "portal",
                 "source_label": _portal_source_label("portal"),
-                "is_reorder": slug in ph_slugs,
+                "is_reorder": (slug in ph_slugs) or (slug in repeat_slugs),
             })
 
     # --- locked_rows: FF SKUs (_qty_eligible — Glen 2026-07: the repertoire
@@ -21126,7 +21152,7 @@ def _portal_reorder_module(email):
             "in_repertoire": slug in rep_slugs,
             "channel": channel,
             "source_label": _portal_source_label(channel),
-            "is_reorder": slug in ph_slugs,
+            "is_reorder": (slug in ph_slugs) or (slug in repeat_slugs),
         })
 
     # Keep portal-published, unpaid invoice lines visibly separate from purchase

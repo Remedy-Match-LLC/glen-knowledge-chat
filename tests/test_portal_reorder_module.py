@@ -554,3 +554,56 @@ def test_fresh_db_no_repertoire_table_does_not_crash(client):
     assert r.status_code == 200
     j = r.get_json()
     assert j["reorder"][0]["slug"] == "nous-energy"
+
+
+def test_a_repeated_portal_purchase_is_a_reorder(client):
+    """THE DEFECT (flagged 2026-08-22, fixed 2026-08-23). A portal or funnel
+    purchase is never written to purchase_history -- its only writers are the
+    `fmp` and `groovekart` backfills. So `is_reorder = slug in ph_slugs` read
+    False on a client's second, third and fourth portal purchase of the same
+    SKU, forever, for anyone whose buying started after the migration. They were
+    shown "Order" every single time, and the one client-facing word that
+    acknowledges a returning buyer never appeared for them."""
+    c, appmod = client
+    email = "portalrepeat@example.com"
+    tok = _seed_portal(appmod, email)
+    _seed_order(appmod, source="portal-reorder", email=email,
+                slugs_qty=[("nous-energy", 1)], days_ago=40)
+    _seed_order(appmod, source="portal-reorder", email=email,
+                slugs_qty=[("nous-energy", 1)], days_ago=5)
+
+    j = c.get(f"/api/portal/{tok}").get_json()
+    by_slug = {r["slug"]: r for r in j["reorder"]}
+    assert by_slug["nous-energy"]["is_reorder"] is True
+
+
+def test_a_single_portal_purchase_is_still_not_a_reorder(client):
+    """The other half of the contract, unchanged: the row you are looking at IS
+    that purchase, so it is not yet a repeat. Guards against 'fixing' the flag by
+    making it constant-true, which would pass the test above and destroy the
+    distinction the CTA exists to draw."""
+    c, appmod = client
+    email = "portalonce@example.com"
+    tok = _seed_portal(appmod, email)
+    _seed_order(appmod, source="portal-reorder", email=email,
+                slugs_qty=[("nous-energy", 1)], days_ago=5)
+
+    j = c.get(f"/api/portal/{tok}").get_json()
+    by_slug = {r["slug"]: r for r in j["reorder"]}
+    assert by_slug["nous-energy"]["is_reorder"] is False
+
+
+def test_a_cancelled_repeat_does_not_earn_the_reorder_word(client):
+    """A cancelled order is not a purchase. Two rows where one is cancelled is
+    one purchase."""
+    c, appmod = client
+    email = "portalcancelled@example.com"
+    tok = _seed_portal(appmod, email)
+    _seed_order(appmod, source="portal-reorder", email=email,
+                slugs_qty=[("nous-energy", 1)], days_ago=40)
+    _seed_order(appmod, source="portal-reorder", email=email,
+                slugs_qty=[("nous-energy", 1)], days_ago=5, status="cancelled")
+
+    j = c.get(f"/api/portal/{tok}").get_json()
+    by_slug = {r["slug"]: r for r in j["reorder"]}
+    assert by_slug["nous-energy"]["is_reorder"] is False
