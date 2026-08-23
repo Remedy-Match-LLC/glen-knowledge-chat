@@ -470,17 +470,23 @@ def test_record_unlock_stores_last_name():
     assert st.get("last_name") == "Swartwout"
 
 
-def test_tier_catalog_has_six_paid_tiers():
+def test_tier_catalog_has_seven_paid_tiers():
+    """Was six. Membership was added as rung 3 on 2026-08-23 — the ladder ran
+    Free -> Free -> $300 while a $99/month membership already existed and was
+    invisible on it. The exact-set assertion is the point of this test: it stops a
+    tier being added or dropped without a deliberate edit here."""
     import begin_funnel
-    assert len(begin_funnel.TIER_CATALOG) == 6
+    assert len(begin_funnel.TIER_CATALOG) == 7
     assert set(begin_funnel.TIER_CATALOG) == {
+        "membership",
         "biofield-analysis","certification","one-to-one",
         "healing-oasis-tools","hawaii-immersion","consultant-package"}
 
 def test_tier_for_known_and_unknown():
     import begin_funnel
     t = begin_funnel.tier_for("hawaii-immersion")
-    assert t and t["n"] == 7 and "Hawai" in t["title"]
+    # 7 -> 8: membership took rung 3, shifting every paid tier above it up one.
+    assert t and t["n"] == 8 and "Hawai" in t["title"]
     assert begin_funnel.tier_for("nope") is None
 
 
