@@ -49650,6 +49650,21 @@ def api_console_legacy_fmp_reports_ingest():
     return jsonify({"ok": True, **result})
 
 
+@app.route("/api/console/legacy-fmp-invoices-ingest", methods=["POST"])
+def api_console_legacy_fmp_invoices_ingest():
+    """Merge authoritative Invoices.fmp12 rows; never replace newer FMP data."""
+    if _bos_actor() is None:
+        return jsonify({"ok": False, "error": "unauthorized"}), 401
+    from dashboard import legacy_fmp_invoices as _legacy
+    payload = request.get_json(silent=True) or {}
+    if not isinstance(payload.get("invoices"), list):
+        return jsonify({"ok": False, "error": "invoices[] required"}), 400
+    commit = request.args.get("commit", "0") == "1"
+    with _db_lock, db.connect(LOG_DB) as cx:
+        result = _legacy.ingest_payload(cx, payload, commit=commit)
+    return jsonify({"ok": True, **result})
+
+
 @app.route("/api/console/fmp-orders", methods=["GET"])
 def api_console_fmp_orders():
     """Look up a client's FMP order history (orders + line items + addresses on
