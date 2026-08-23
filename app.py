@@ -22872,6 +22872,20 @@ def _remedies_product_key(name, brand):
     return _sr.product_key(name, brand)
 
 
+def _remedies_catalog_product(name, brand=""):
+    """Resolve a stack-entry name to our active catalog, returning canonical data."""
+    slug = _resolve_buy_slug(name)
+    product = _get_product(slug) if slug else None
+    if not product:
+        return None
+    brand_norm = (brand or "").strip().lower()
+    if brand_norm and brand_norm not in ("remedy match", "remedymatch", "syntropy",
+                                         "functional formulations"):
+        return None
+    return {"slug": slug, "name": product.get("name") or name,
+            "brand": "Remedy Match"}
+
+
 @app.route("/api/portal/<token>/remedies/add", methods=["POST"])
 def api_portal_remedies_add(token):
     """Client adds a supplement to their externally-maintained stack. Token-authed:
@@ -22884,13 +22898,19 @@ def api_portal_remedies_add(token):
     brand = (data.get("product_brand") or "").strip()
     reason = (data.get("reason") or "").strip()
     importance = _remedies_coerce_importance(data.get("importance"))
+    catalog_product = _remedies_catalog_product(name, brand)
+    if catalog_product:
+        name = catalog_product["name"]
+        brand = catalog_product["brand"]
+    source = "portal-catalog" if catalog_product else "portal"
     with _db_lock, db.connect(LOG_DB) as cx:
         _cp.init_client_portal_table(cx); _sr.init_table(cx)
         portal = _portal_record_for(cx, token)
         if not portal:
             return jsonify({"ok": False, "error": "not found"}), 404
         email = (portal.get("email") or "").strip().lower()
-        _sr.add_listed(cx, email, name, product_brand=brand, reason=reason, importance=importance)
+        _sr.add_listed(cx, email, name, product_brand=brand, reason=reason,
+                       importance=importance, source=source)
         block = _rb.build_block(cx, email, True)
     return jsonify(block)
 

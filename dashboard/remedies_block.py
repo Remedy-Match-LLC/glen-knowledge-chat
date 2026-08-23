@@ -126,6 +126,7 @@ def _build_external(cx, email):
             "reason": r.get("reason"),
             "importance": r.get("importance"),
             "status": r.get("status"),
+            "is_ours": r.get("source") == "portal-catalog",
         }
         if r.get("status") == "confirmed":
             item["review"] = r.get("review_text") or ""
