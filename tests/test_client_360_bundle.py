@@ -62,7 +62,9 @@ def test_bundle_empty_client(tmp_path):
     b = client_360.bundle(cx, "nobody@x.com", e4l_path=str(tmp_path / "missing.db"))
     assert b["person"]["name"] == ""
     assert b["tests"] == []
-    assert b["invoices"] == {"total_paid_cents": 0, "open_balance_cents": 0, "orders": [], "fmp": []}
+    assert b["invoices"] == {"total_paid_cents": 0, "open_balance_cents": 0,
+                              "orders": [], "legacy_orders": [], "fmp": []}
+    assert b["reports"] == []
     assert b["comms"] == []
     assert b["process"]["source"] is None
 
@@ -156,3 +158,35 @@ def test_process_reads_after_fmp_history_call(tmp_path):
     assert proc["order_id"] == 1
     assert proc["stages"][1]["done"] is True   # "invoice" stage read fine
     assert proc["stages"][2]["done"] is False  # "sent" stage read fine (no sent date)
+
+
+def test_console_bundle_flattens_legacy_invoices_and_lists_all_reports(tmp_path):
+    from dashboard import fmp_orders, portal_biofield_reports
+    cx = _cx()
+    fmp_orders.ensure_tables(cx)
+    cx.execute("INSERT INTO fmp_clients (id_pk,name_first,name_last,email) VALUES "
+               "('c1','Krist','Symons','k.symons@yahoo.com')")
+    cx.execute("INSERT INTO fmp_invoices "
+               "(id_pk,id_fk_client,invoice_date,status,subtotal,total,shipping,outstanding) "
+               "VALUES ('i1','c1','2025-10-19','Active','150','160','10','20')")
+    cx.execute("INSERT INTO fmp_invoice_items "
+               "(id_pk,id_fk_invoice,id_fk_product,description,qty,price,ext_price) "
+               "VALUES ('li1','i1','p1','Remedy','2','75','150')")
+    portal_biofield_reports.init_table(cx)
+    portal_biofield_reports.upsert_report(
+        cx, "k.symons@yahoo.com", "2026-08-01", "s1",
+        {"report_pdf": {"url": "https://example.test/report.pdf"}}, "confirmed")
+    portal_biofield_reports.upsert_report(
+        cx, "k.symons@yahoo.com", "2026-07-01", "s0", {}, "ai_draft")
+
+    result = client_360.bundle(cx, "k.symons@yahoo.com", e4l_path=str(tmp_path / "missing.db"))
+
+    legacy = result["invoices"]["legacy_orders"]
+    assert legacy == [{"id": "i1", "date": "2025-10-19", "status": "Active",
+                       "total_cents": 16000, "paid_cents": 14000,
+                       "balance_cents": 2000, "items": [{"description": "Remedy",
+                       "qty": "2", "price": "75", "ext_price": "150", "product_id": "p1"}],
+                       "source": "FileMaker"}]
+    assert [(r["date"], r["status"]) for r in result["reports"]] == [
+        ("2026-08-01", "confirmed"), ("2026-07-01", "ai_draft")]
+    assert result["reports"][0]["pdf_url"] == "https://example.test/report.pdf"

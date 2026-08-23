@@ -3,6 +3,7 @@ about one client (by email). Pure functions take open sqlite connections so
 they are testable offline. No writes."""
 import json
 import sqlite3
+import urllib.parse
 from dashboard import db
 
 _SOURCE_ACTION = {
@@ -157,7 +158,8 @@ def _tests(cx, email):
 
 def _invoices(cx, email):
     from dashboard import order_payments, fmp_orders
-    out = {"total_paid_cents": 0, "open_balance_cents": 0, "orders": [], "fmp": []}
+    out = {"total_paid_cents": 0, "open_balance_cents": 0, "orders": [],
+           "legacy_orders": [], "fmp": []}
     try:
         rows = cx.execute(
             "SELECT id, COALESCE(status,'') status, COALESCE(created_at,'') created_at "
@@ -183,12 +185,64 @@ def _invoices(cx, email):
             out["open_balance_cents"] += bal["balance_cents"]
     try:
         out["fmp"] = fmp_orders.client_order_history(cx, email=email)
+        for client in out["fmp"]:
+            for inv in client.get("orders") or []:
+                def cents(value):
+                    try:
+                        return round(float(str(value or "0").replace("$", "").replace(",", "")) * 100)
+                    except (TypeError, ValueError):
+                        return 0
+                total = cents(inv.get("total"))
+                balance = cents(inv.get("outstanding"))
+                out["legacy_orders"].append({
+                    "id": inv.get("id") or "", "date": inv.get("date") or "",
+                    "status": inv.get("status") or "", "total_cents": total,
+                    "paid_cents": max(0, total - balance), "balance_cents": balance,
+                    "items": inv.get("items") or [], "source": "FileMaker",
+                })
+        out["legacy_orders"].sort(key=lambda r: r.get("date") or "", reverse=True)
     except Exception:
         _recover_optional_read(cx)
         out["fmp"] = []
     finally:
         cx.row_factory = sqlite3.Row
     return out
+
+
+def _reports(cx, email):
+    """Every portal/reveal report for the console, newest first.
+
+    The console previously showed only generic test dates. This reads the same
+    per-scan sources as the client portal and exposes status plus approved PDF
+    links, without exposing draft report content in the list payload.
+    """
+    from dashboard import biofield_reveals, portal_biofield_reports
+    by_date = {}
+    try:
+        portal_biofield_reports.init_table(cx)
+        for date in portal_biofield_reports.list_report_dates(cx, email):
+            rep = portal_biofield_reports.get_report(cx, email, date) or {}
+            content = rep.get("content") or {}
+            pdf = ((content.get("report_pdf") or {}).get("url") or "").strip()
+            by_date[date] = {
+                "date": date, "status": rep.get("status") or "confirmed",
+                "source": "portal", "pdf_url": pdf,
+            }
+    except Exception:
+        _recover_optional_read(cx)
+    try:
+        for reveal in biofield_reveals.list_for_email(cx, email):
+            date = reveal.get("scan_date") or ""
+            if date and date not in by_date:
+                by_date[date] = {"date": date, "status": "confirmed",
+                                 "source": "reveal", "pdf_url": ""}
+    except Exception:
+        _recover_optional_read(cx)
+    qemail = urllib.parse.quote(email, safe="")
+    for row in by_date.values():
+        row["composer_url"] = (f"/console/biofield-portal?email={qemail}&scan_date="
+                               f"{urllib.parse.quote(row['date'], safe='')}")
+    return sorted(by_date.values(), key=lambda r: r["date"], reverse=True)
 
 
 def _comms(cx, email):
@@ -243,6 +297,8 @@ def bundle(cx, email, *, e4l_path=None):
     _recover_optional_read(cx)
     invoices = _invoices(cx, e)
     _recover_optional_read(cx)
+    reports = _reports(cx, e)
+    _recover_optional_read(cx)
     comms = _comms(cx, e)
     _recover_optional_read(cx)
     process = process_strip(cx, e)
@@ -253,6 +309,7 @@ def bundle(cx, email, *, e4l_path=None):
         "person": person,
         "clinical": client_tags_for_email(e, e4l_path=e4l_path),
         "tests": tests,
+        "reports": reports,
         "invoices": invoices,
         "comms": comms,
         "process": process,

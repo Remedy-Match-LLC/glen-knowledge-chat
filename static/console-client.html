@@ -47,6 +47,8 @@
       <div class="sec-body" id="b-clinical"></div></details>
     <details id="sec-tests"><summary>Tests <span class="head-note" id="h-tests"></span></summary>
       <div class="sec-body" id="b-tests"></div></details>
+    <details id="sec-reports"><summary>Biofield reports <span class="head-note" id="h-reports"></span></summary>
+      <div class="sec-body" id="b-reports"></div></details>
     <details id="sec-invoices"><summary>Invoices <span class="head-note" id="h-invoices"></span></summary>
       <div class="sec-body" id="b-invoices"></div></details>
     <details id="sec-comms"><summary>Comms <span class="head-note" id="h-comms"></span></summary>
@@ -111,6 +113,18 @@ function renderTests(ts){
     ? "<table>"+ts.map(function(t){return "<tr><td>"+esc(t.date)+"</td><td><span class=pill>"+esc(t.type)+"</span></td></tr>";}).join("")+"</table>"
     : "<p class=empty>No tests.</p>";
 }
+function renderReports(reports){
+  reports=reports||[];
+  document.getElementById("h-reports").textContent=reports.length?reports.length+" reports":"no reports";
+  document.getElementById("b-reports").innerHTML=reports.length
+    ? "<table><tr><th>Date</th><th>Status</th><th>Source</th><th></th></tr>"+
+      reports.map(function(r){
+        var links="<a href='"+escAttr(r.composer_url||"#")+"'>open</a>";
+        if(r.pdf_url) links+=" &middot; <a href='"+escAttr(r.pdf_url)+"' target='_blank' rel='noopener'>PDF</a>";
+        return "<tr><td>"+esc(r.date)+"</td><td>"+esc(r.status)+"</td><td>"+esc(r.source)+"</td><td>"+links+"</td></tr>";
+      }).join("")+"</table>"
+    : "<p class=empty>No biofield reports.</p>";
+}
 function renderInvoices(inv){
   document.getElementById("h-invoices").textContent =
     money(inv.total_paid_cents)+" paid · "+money(inv.open_balance_cents)+" open";
@@ -119,10 +133,11 @@ function renderInvoices(inv){
     return "<tr><td>"+esc((o.date||"").slice(0,10))+"</td><td>"+esc(o.status)+"</td><td>"+money(o.total_cents)+
       "</td><td>"+money(o.paid_cents)+"</td><td>"+money(o.balance_cents)+
       "</td><td><a href='"+esc(o.edit_url)+"&key="+encodeURIComponent(key())+"'>edit</a>"+pdf+"</td></tr>";});
-  var fmp=(inv.fmp||[]).map(function(o){
-    return "<tr><td>"+esc((o.date||"").slice(0,10))+"</td><td>FMP</td><td>"+
-      (o.total!=null?money(Math.round(o.total*100)):"")+"</td><td></td><td>"+
-      (o.outstanding!=null?money(Math.round(o.outstanding*100)):"")+"</td><td></td></tr>";});
+  var fmp=(inv.legacy_orders||[]).map(function(o){
+    var itemCount=(o.items||[]).length;
+    return "<tr><td>"+esc((o.date||"").slice(0,10))+"</td><td>"+esc(o.status||"FMP")+"</td><td>"+
+      money(o.total_cents)+"</td><td>"+money(o.paid_cents)+"</td><td>"+
+      money(o.balance_cents)+"</td><td>"+(itemCount?esc(itemCount+" items"):"")+"</td></tr>";});
   document.getElementById("b-invoices").innerHTML =
     (rows.length||fmp.length)
     ? "<table><tr><th>Date</th><th>Status</th><th>Total</th><th>Paid</th><th>Balance</th><th></th></tr>"+rows.join("")+fmp.join("")+"</table>"
@@ -326,7 +341,7 @@ function load(email){
       document.getElementById("c-meta").textContent =
         [email, d.person.phone, d.person.location, d.person.profession].filter(Boolean).join(" · ");
       renderStrip(d.process); renderClinical(d.clinical); renderTests(d.tests);
-      renderInvoices(d.invoices); renderComms(d.comms); renderRecommendations(d.recommendations);
+      renderReports(d.reports); renderInvoices(d.invoices); renderComms(d.comms); renderRecommendations(d.recommendations);
       var portalBtn=document.getElementById("open-portal");
       portalBtn.style.display="inline-block";
       portalBtn.onclick=function(){openPortal(email);};
