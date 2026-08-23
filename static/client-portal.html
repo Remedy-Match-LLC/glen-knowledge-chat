@@ -3871,6 +3871,12 @@ function render(d, v){
             <span class="qtyval" data-qty="${qty}">${qty}</span>
             <button type="button" class="qtybtn" data-dir="1" aria-label="Increase quantity">+</button>
           </span>
+          <label class="small">Packaging
+            <select class="remFormat" aria-label="Packaging for ${esc(it.name||it.slug||"")}">
+              <option value="">Standard bottle</option>
+              <option value="refill">Cellophane refill packs</option>
+            </select>
+          </label>
           ${save}
           <button class="btn remBtn" data-slug="${slug}">Add to basket</button>
         </div>
@@ -6892,12 +6898,12 @@ async function reorder(){
   }
 }
 
-async function addItemToBasket(slug, qty=1){
+async function addItemToBasket(slug, qty=1, format=""){
   if(!slug) throw new Error("That remedy is not available.");
   rememberPortalShoppingContext();
   const r = await fetch(`/api/portal/${encodeURIComponent(token)}/order-add`, {
     method:"POST", headers:{"Content-Type":"application/json"},
-    body:JSON.stringify({slug, qty})
+    body:JSON.stringify({slug, qty, format})
   });
   const j = await r.json();
   if(!r.ok || !j.item) throw new Error(j.error || "Could not add that remedy.");
@@ -6957,8 +6963,10 @@ async function reorderItem(btn){
   const slug = btn.getAttribute("data-slug") || (row && row.getAttribute("data-slug")) || "";
   const qtyVal = row && row.querySelector(".qtyval");
   const qty = Math.max(1, parseInt(qtyVal && qtyVal.getAttribute("data-qty"), 10) || 1);
+  const formatEl = row && row.querySelector(".remFormat");
+  const format = (formatEl && formatEl.value) || "";
   try{
-    await addItemToBasket(slug, qty);
+    await addItemToBasket(slug, qty, format);
     btn.textContent = "In basket";
   }catch(e){
     if(err){ err.textContent = e.message || "Something went wrong. Please reach out and we’ll help."; err.hidden = false; }

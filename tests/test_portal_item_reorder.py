@@ -392,6 +392,23 @@ def test_order_catalog_search_and_add_authorizes_same_checkout(client, monkeypat
         "neuro-magnesium", "nous-energy"]
 
 
+def test_portal_reorder_can_request_cellophane_refill_packs(client):
+    c, appmod = client
+    tok = _seed_portal(appmod, email="refill@example.com", content={
+        "greeting": "hi", "video": {}, "layers": [], "reorder_items": [],
+    })
+    added = c.post(f"/api/portal/{tok}/order-add", json={
+        "slug": "wholomega", "format": "refill", "qty": 2,
+    })
+    assert added.status_code == 200
+    item = added.get_json()["item"]
+    assert item["format"] == "refill"
+    assert item["name"] == "WholOmega (Cellophane refill packs)"
+    cart = c.get(f"/api/portal/{tok}/cart").get_json()["items"]
+    assert [(row["slug"], row["format"], row["qty"]) for row in cart] == [
+        ("wholomega", "refill", 2)]
+
+
 def test_life_stress_essence_can_join_the_same_portal_basket(client):
     c, appmod = client
     tok = _seed_portal(appmod, email="essence-basket@example.com", content={
@@ -468,7 +485,7 @@ def test_all_portal_remedy_order_buttons_feed_shared_basket():
     assert 'id="wishOrderBtn" disabled>Add selected to basket</button>' in body
     assert "await addItemToBasket(scanBtn.dataset.slug" in body
     assert "for(const item of items) await addItemToBasket(item.slug, item.qty)" in body
-    assert "await addItemToBasket(slug, qty)" in body
+    assert "await addItemToBasket(slug, qty, format)" in body
 
 
 # ── (c) posting a slug NOT in the client's entitlement is rejected ──────────
