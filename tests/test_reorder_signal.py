@@ -211,3 +211,75 @@ def test_the_signal_is_exposed_to_the_journey():
     keys = [k.value for n in ast.walk(fn[0]) if isinstance(n, ast.Dict)
             for k in n.keys if isinstance(k, ast.Constant)]
     assert "has_reordered" in keys, "the journey never receives the signal"
+
+
+# ---------------------------------------------------------------------------
+# `reorder` must not tell a fresh buyer to go shopping
+# ---------------------------------------------------------------------------
+# Adding the step re-introduced, by the side door, the behaviour Glen asked to
+# suppress: because a card is only "done" at fill >= 1.0, a client who had
+# scanned, taken the course, been matched AND bought dropped from "Find: done"
+# to "3 of 4", which handed Find the "your next step" tag pointing at the
+# matcher -- a person who paid days ago told to go get their remedy match.
+# `defer_while` removes a not-yet-due step from the card entirely rather than
+# showing it undone, because an undone step is what drags fill below 1.0.
+
+_SCAN = ["scan", "course_ww"]
+_ALL = _SCAN + ["question", "biofield", "purchase"]
+
+
+def _map(gates, sig):
+    import begin_funnel as bf
+    return {c["key"]: c for c in bf.journey_map(_state(gates), signals=sig)}
+
+
+def test_a_fresh_buyer_is_not_sent_back_to_the_matcher():
+    m = _map(_ALL, {"purchased_recently": True, "has_reordered": False})
+    assert m["find"]["status"] == "done", "a client who just paid reads as incomplete"
+    nxt = [k for k, c in m.items() if c["status"] == "next"]
+    assert "find" not in nxt, "the matcher is being offered to someone who just bought"
+
+
+def test_the_reorder_step_is_hidden_while_the_purchase_is_fresh():
+    m = _map(_ALL, {"purchased_recently": True, "has_reordered": False})
+    assert "reorder" not in [s["key"] for s in m["find"]["steps"]]
+    assert len(m["find"]["steps"]) == 3
+
+
+def test_it_comes_back_once_the_supply_would_have_run_out():
+    m = _map(_ALL, {"purchased_recently": False, "has_reordered": False})
+    keys = [s["key"] for s in m["find"]["steps"]]
+    assert "reorder" in keys and len(keys) == 4
+    assert m["find"]["status"] == "next"
+    assert m["find"]["href"].startswith("/reorder"), m["find"]["href"]
+
+
+def test_a_client_who_reordered_completes_the_card():
+    m = _map(_ALL, {"purchased_recently": False, "has_reordered": True})
+    assert m["find"]["status"] == "done"
+    assert [k for k, c in m.items() if c["status"] == "next"] == ["heal"]
+
+
+def test_the_step_points_at_the_reorder_cart_not_the_matcher():
+    """A client reordering wants the thing they already chose. /begin/match
+    would re-run the matcher on somebody who has already decided."""
+    import begin_funnel as bf
+    find = {c["key"]: c for c in bf.JOURNEY_STEPS}["find"]
+    step = [s for s in find["steps"] if s["key"] == "reorder"][0]
+    assert step["href"] == "/reorder"
+
+
+def test_deferring_never_hides_a_step_that_is_already_done():
+    """Guards the interaction: purchased_recently and has_reordered can BOTH be
+    true (bought twice, most recently last week). Hiding a completed step would
+    silently un-credit work the client actually did."""
+    m = _map(_ALL, {"purchased_recently": True, "has_reordered": True})
+    assert m["find"]["status"] == "done"
+    assert m["find"]["fill"] == 1.0
+
+
+def test_no_other_card_defers_anything_by_accident():
+    import begin_funnel as bf
+    deferring = [(c["key"], s["key"]) for c in bf.JOURNEY_STEPS
+                 for s in c["steps"] if s.get("defer_while")]
+    assert deferring == [("find", "reorder")], deferring
