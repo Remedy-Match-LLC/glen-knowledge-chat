@@ -205,6 +205,39 @@ def test_portal_past_invoices_in_history(client):
     assert "tok-open" in live and "tok-open" not in past       # unpaid stays a live pay card
 
 
+def test_portal_past_invoices_include_full_filemaker_history(client):
+    c, appmod = client
+    from dashboard import fmp_orders
+    from dashboard import orders as _orders
+    email = "krist@symons.test"
+    cx = sqlite3.connect(appmod.LOG_DB)
+    _orders.init_orders_table(cx)
+    fmp_orders.ensure_tables(cx)
+    cx.execute("INSERT INTO fmp_clients (id_pk,name_first,name_last,email) VALUES (?,?,?,?)",
+               ("symons-1", "Krist", "Symons", email))
+    cx.execute("INSERT INTO fmp_invoices "
+               "(id_pk,id_fk_client,invoice_date,status,subtotal,total,shipping,outstanding) "
+               "VALUES (?,?,?,?,?,?,?,?)",
+               ("old-1", "symons-1", "2024-01-10", "Closed", "95", "100", "5", "0"))
+    cx.execute("INSERT INTO fmp_invoices "
+               "(id_pk,id_fk_client,invoice_date,status,subtotal,total,shipping,outstanding) "
+               "VALUES (?,?,?,?,?,?,?,?)",
+               ("old-2", "symons-1", "2023-06-05", "Closed", "75", "80", "5", "0"))
+    cx.execute("INSERT INTO orders (source,external_ref,name,email,status,pay_status,total_cents,"
+               "items_json,address_json,created_at,paid_at) VALUES "
+               "('t','NEW','Krist Symons',?,'done','paid',12000,'[]','{}','2026-08-01','2026-08-02')",
+               (email,))
+    cx.commit(); cx.close()
+    tok = _seed_portal(appmod, email=email, name="Krist Symons",
+                       content={"biofield_status": "confirmed", "layers": []})
+
+    past = c.get(f"/api/portal/{tok}").get_json()["past_invoices"]
+
+    assert [(p["when"], p["amount_dollars"]) for p in past] == [
+        ("2026-08-02", "120.00"), ("2024-01-10", "100.00"), ("2023-06-05", "80.00")]
+    assert past[1]["source"] == "filemaker" and past[1]["paid"] is True
+
+
 def test_api_portal_bad_token_404(client):
     c, _ = client
     r = c.get("/api/portal/not-a-real-token")

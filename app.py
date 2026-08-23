@@ -46454,10 +46454,13 @@ def _published_invoices_for(cx, email):
 
 
 def _past_invoices_for(cx, email):
-    """EVERY paid order for an email — receipts for the portal's History tab, whether or
-    not the invoice was ever portal-published (e.g. a payment taken outside the portal).
-    A `link` is provided only when the order carries an invoice_token (a viewable
-    receipt page); tokenless paid orders still list as a dated receipt. Read-only."""
+    """All modern receipts plus legacy FileMaker invoices for a client's portal.
+
+    The orders table only covers the modern system, so reading it alone made a
+    long-standing client appear to have only their newest invoice.  The read-only
+    FMP projection is the historical source of truth.  Duplicate date/amount pairs
+    are suppressed in favor of the modern row (which can carry a receipt link).
+    """
     email = (email or "").strip().lower()
     if not email:
         return []
@@ -46470,10 +46473,48 @@ def _past_invoices_for(cx, email):
     except Exception:
         return []
     base = PUBLIC_BASE_URL.rstrip("/")
-    return [{"token": tok, "amount_dollars": f"{(tc or 0) / 100:.2f}",
-             "paid": True, "when": (when or "")[:10],
-             "physical_units": _order_physical_units({"items_json": items_json}),
-             "link": (f"{base}/invoice/{tok}" if tok else "")} for tc, tok, when, items_json in rows]
+    out = [{"token": tok, "amount_dollars": f"{(tc or 0) / 100:.2f}",
+            "paid": True, "status": "paid", "when": (when or "")[:10],
+            "physical_units": _order_physical_units({"items_json": items_json}),
+            "link": (f"{base}/invoice/{tok}" if tok else ""), "source": "orders"}
+           for tc, tok, when, items_json in rows]
+    seen = {(r["when"], r["amount_dollars"]) for r in out}
+
+    def _amount(raw):
+        try:
+            return f"{float(str(raw or '0').replace('$', '').replace(',', '')):.2f}"
+        except (TypeError, ValueError):
+            return "0.00"
+
+    try:
+        from dashboard import fmp_orders as _fmp
+        history = _fmp.client_order_history(cx, email=email)
+        for client in history:
+            for inv in client.get("orders") or []:
+                when = (inv.get("date") or "")[:10]
+                amount = _amount(inv.get("total"))
+                if (when, amount) in seen:
+                    continue
+                outstanding = _amount(inv.get("outstanding"))
+                paid = outstanding == "0.00"
+                out.append({
+                    "token": "", "amount_dollars": amount, "paid": paid,
+                    "status": "paid" if paid else (inv.get("status") or "invoice"),
+                    "when": when, "physical_units": 0, "link": "",
+                    "source": "filemaker", "legacy_id": inv.get("id") or "",
+                })
+                seen.add((when, amount))
+    except Exception:
+        pass
+    finally:
+        # fmp_orders intentionally uses tuple rows internally; do not leak that
+        # row_factory change into later portal assemblers sharing this connection.
+        try:
+            cx.row_factory = _sqlite3.Row
+        except Exception:
+            pass
+    return sorted(out, key=lambda r: (r.get("when") or "", r.get("legacy_id") or ""),
+                  reverse=True)
 
 
 @app.route("/api/console/order/<int:oid>/publish-to-portal", methods=["POST"])
