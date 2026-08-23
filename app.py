@@ -49631,6 +49631,25 @@ def api_console_fmp_orders_ingest():
     return jsonify({"ok": True, "counts": counts})
 
 
+@app.route("/api/console/legacy-fmp-reports-ingest", methods=["POST"])
+def api_console_legacy_fmp_reports_ingest():
+    """Add the privacy-bounded Records/Electronic report projection.
+
+    Dry-run by default. Existing (email, scan_date) reports always win, so this
+    cannot replace a newer portal-authored report.
+    """
+    if _bos_actor() is None:
+        return jsonify({"ok": False, "error": "unauthorized"}), 401
+    from dashboard import legacy_fmp_reports as _legacy
+    payload = request.get_json(silent=True) or {}
+    if not isinstance(payload.get("reports"), list):
+        return jsonify({"ok": False, "error": "reports[] required"}), 400
+    commit = request.args.get("commit", "0") == "1"
+    with _db_lock, db.connect(LOG_DB) as cx:
+        result = _legacy.ingest_payload(cx, payload, commit=commit)
+    return jsonify({"ok": True, **result})
+
+
 @app.route("/api/console/fmp-orders", methods=["GET"])
 def api_console_fmp_orders():
     """Look up a client's FMP order history (orders + line items + addresses on
