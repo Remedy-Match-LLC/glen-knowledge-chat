@@ -753,7 +753,14 @@ JOURNEY_STEPS = [
         # The map used to stop before the money. A purchase is the completion of
         # finding your remedy, so it belongs to Find rather than to a fifth stage
         # the four-stage canon (and the 5-hotspot quest scene) has no room for.
-        {"key": "first_order", "label": "Your first order",   "src": ("gate", "purchase"),   "href": "/begin/match"}]},
+        {"key": "first_order", "label": "Your first order",   "src": ("gate", "purchase"),   "href": "/begin/match"},
+        # The arc reads matched -> interpreted -> ordered -> ordered again. A
+        # reorder belongs to Find rather than Heal: it is the same act as the
+        # first order, repeated, and Glen confirms clients do it sometimes -- so
+        # it lights for some and stays grey for others, which is what a progress
+        # map is for. Predicate, not a gate: nothing writes a "reorder" trigger,
+        # and inventing one would give us a step that could never light up.
+        {"key": "reorder",     "label": "Your reorder",       "src": ("predicate", "has_reordered"), "href": "/begin/match"}]},
     {"key": "heal", "label": stage_label("heal"), "paren": stage_brand("heal"), "steps": [
         {"key": "intake",      "label": "Intake form",        "src": ("gate", "intake"),      "href": "https://truly.vip/Join"},
         {"key": "masterclass", "label": "Accelerated Self Healing™ MasterClass & Community",    "src": ("gate", "masterclass"), "href": "https://truly.vip/Intro"}]},

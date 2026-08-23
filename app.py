@@ -1400,6 +1400,76 @@ def _has_e4l(cx, email, state):
         return False
 
 
+def _has_reordered(cx, email):
+    """True when this client has bought the same formulation more than once.
+
+    Two sources, because neither alone is complete:
+
+      * the ORDERS table -- the same slug appearing in two or more of their
+        non-cancelled orders. This is the only place a portal/funnel repeat
+        purchase shows up.
+      * purchase_history -- the FMP + GrooveKart backfill. A slug they bought
+        before the migration AND have bought again since is also a reorder.
+
+    The portal's per-row `is_reorder` flag checks the second source only, which is
+    why a client who buys the same thing twice through the portal is labelled
+    "Order" both times: neither purchase was ever written to purchase_history
+    ("portal purchases come from the orders table, not here"). Flagged separately;
+    not changed here.
+
+    Best-effort: a read failure returns False rather than raising into the
+    journey-state payload, matching every other signal in _begin_signals."""
+    email = (email or "").strip().lower()
+    if not email:
+        return False
+    slugs, repeated = set(), False
+    try:
+        from dashboard import orders as _o
+        # list_orders_by_email's contract: "Caller sets cx.row_factory =
+        # sqlite3.Row". Without it _row_to_dict gets plain tuples and this signal
+        # silently returns False forever -- a step that can never light up, which
+        # is the exact defect this whole piece exists to avoid. Restored after so
+        # a shared connection is not left changed underneath another reader.
+        _prev_rf = getattr(cx, "row_factory", None)
+        try:
+            cx.row_factory = sqlite3.Row
+        except Exception:
+            pass                                  # PG adapter: no-op, HybridRow already keys
+        for o in _o.list_orders_by_email(cx, email, limit=200):
+            if (o.get("status") or "") == "cancelled":
+                continue
+            for it in (o.get("items") or []):
+                sl = (it.get("slug") or "").strip().lower()
+                if not sl:
+                    continue
+                sl = _superseded(sl) or sl        # a retired slug and its twin are one product
+                if sl in slugs:
+                    repeated = True
+                slugs.add(sl)
+    except Exception as e:
+        print(f"[journey] reorder read (orders) failed for {email!r}: {e!r}", flush=True)
+    finally:
+        try:
+            cx.row_factory = _prev_rf
+        except Exception:
+            pass
+    if repeated:
+        return True
+    if not slugs:
+        return False
+    try:
+        rows = cx.execute(
+            "SELECT slug FROM purchase_history WHERE email=?", (email,)).fetchall()
+        for r in rows:
+            sl = (r[0] if not hasattr(r, "keys") else r["slug"]) or ""
+            sl = _superseded(sl.strip().lower()) or sl.strip().lower()
+            if sl and sl in slugs:
+                return True
+    except Exception as e:
+        print(f"[journey] reorder read (history) failed for {email!r}: {e!r}", flush=True)
+    return False
+
+
 def _begin_signals(cx, sig_email, state):
     """Journey signals for a visitor (drives Scan href portal-vs-signup + Give
     predicate done-detection). Shared by /begin/state, /begin/travel-style, and
@@ -1412,6 +1482,7 @@ def _begin_signals(cx, sig_email, state):
         # for about a month. Recency, not the permanent gate.
         "purchased_recently": begin_funnel.purchased_recently(
             cx, email=sig_email, session_id=(state or {}).get("session_id", "")),
+        "has_reordered": _has_reordered(cx, sig_email),
     }
 
 
