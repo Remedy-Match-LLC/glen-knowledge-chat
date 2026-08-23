@@ -117,10 +117,23 @@
         includedEl.textContent = tier.included;
         ctaEl.textContent = tier.cta_label;
 
-        // build CTA href with ref/utm threading
+        // build CTA href with ref/utm threading.
+        // A tier may declare its own cta_href. Every tier used to land on the
+        // intake form regardless of what its cta_label promised, so a self-serve
+        // rung (Membership) had no way to actually be self-serve. An internal
+        // href is used as-is; same-origin needs no utm threading.
         var ref = getRef() || 'remedy-match';
-        var ctaHref = 'https://truly.vip/Join?utm_source=' + encodeURIComponent(ref) +
-          '&utm_medium=affiliate&utm_campaign=begin-ascend-' + encodeURIComponent(slug);
+        var ctaHref;
+        if (tier.cta_href && tier.cta_href.charAt(0) === '/') {
+          ctaHref = tier.cta_href;
+        } else if (tier.cta_href) {
+          ctaHref = tier.cta_href + (tier.cta_href.indexOf('?') > -1 ? '&' : '?') +
+            'utm_source=' + encodeURIComponent(ref) +
+            '&utm_medium=affiliate&utm_campaign=begin-ascend-' + encodeURIComponent(slug);
+        } else {
+          ctaHref = 'https://truly.vip/Join?utm_source=' + encodeURIComponent(ref) +
+            '&utm_medium=affiliate&utm_campaign=begin-ascend-' + encodeURIComponent(slug);
+        }
         ctaEl.setAttribute('href', ctaHref);
 
         // fire paid_fork unlock on load

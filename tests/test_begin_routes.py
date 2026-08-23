@@ -465,7 +465,8 @@ def test_ascend_tier_data_json(monkeypatch, tmp_path):
     c = app_module.app.test_client()
     r = c.get("/begin/ascend-tier?slug=certification")
     assert r.status_code == 200
-    assert r.get_json()["n"] == 4
+    # 4 -> 5: membership took rung 3, shifting the paid tiers above it up one.
+    assert r.get_json()["n"] == 5
     assert c.get("/begin/ascend-tier?slug=nope").status_code == 404
 
 

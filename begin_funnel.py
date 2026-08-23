@@ -1106,29 +1106,42 @@ def surface_for_chat(state, query_texts, ref=""):
 # Piece 4 -- per-tier ascension catalog (paid tiers 3-8, slug-keyed)
 # ---------------------------------------------------------------------------
 TIER_CATALOG = {
-    "biofield-analysis": {"slug": "biofield-analysis", "n": 3,
+    # Rung 3, added 2026-08-23. The ladder ran Free -> Free -> $300 -> $3,600 while
+    # a $99/month membership and the whole formulation line existed and were
+    # invisible here: a client who had just bought a $70 formulation was shown a
+    # $300 consultation as their next step. This is also the ladder's FIRST
+    # self-serve rung -- every other tier says "Book your consultation", so someone
+    # ready to spend money had to schedule a call before they could.
+    "membership": {"slug": "membership", "n": 3,
+        "title": "Healing Oasis Membership",
+        "price": "$99/month", "value": "cancel anytime",
+        "included": "Member pricing on every formulation, your own client portal, "
+                    "and the guidance to use them well.",
+        "cta_label": "Start your membership",
+        "cta_href": "/membership"},
+    "biofield-analysis": {"slug": "biofield-analysis", "n": 4,
         "title": "Causal Biofield Analysis + Program Design + Consultation",
         "price": "$300", "value": "$1,000 value",
         "included": "Your ASH Causal Biofield Analysis, a Functional Formulations™ program designed for you, and a consultation.",
         "cta_label": "Book your consultation"},
-    "certification": {"slug": "certification", "n": 4,
+    "certification": {"slug": "certification", "n": 5,
         "title": "ASH Certification Training", "price": "~$3,600", "value": "",
         "included": "Train in the Accelerated Self Healing™™ method.",
         "cta_label": "Book your consultation"},
-    "one-to-one": {"slug": "one-to-one", "n": 5,
+    "one-to-one": {"slug": "one-to-one", "n": 6,
         "title": "ASH 1:1 Live Support + Certification", "price": "~$8,500", "value": "6 months",
         "included": "Six months of live one-to-one support alongside your certification.",
         "cta_label": "Book your consultation"},
-    "healing-oasis-tools": {"slug": "healing-oasis-tools", "n": 6,
+    "healing-oasis-tools": {"slug": "healing-oasis-tools", "n": 7,
         "title": "Healing Oasis Tools Installation + Training + Certification",
         "price": "~$14,000", "value": "",
         "included": "Your own Healing Oasis tools installed, full tools training, and ASH certification.",
         "cta_label": "Book your consultation"},
-    "hawaii-immersion": {"slug": "hawaii-immersion", "n": 7,
+    "hawaii-immersion": {"slug": "hawaii-immersion", "n": 8,
         "title": "Hawaii Island Technology Detox at The Shire", "price": "~$25,000", "value": "1 week",
         "included": "A one-week immersion on Hawaiʻi Island: Healing Oasis package, training, and ASH certification.",
         "cta_label": "Book your consultation"},
-    "consultant-package": {"slug": "consultant-package", "n": 8,
+    "consultant-package": {"slug": "consultant-package", "n": 9,
         "title": "Complete Consultant Package", "price": "~$50,000", "value": "",
         "included": "Everything, including the software, to run your own Accelerated Self Healing™ practice.",
         "cta_label": "Book your consultation"},
