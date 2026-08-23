@@ -60,6 +60,16 @@ def test_foreign_brand_with_similar_name_stays_external(tmp_path, monkeypatch):
     assert item["is_ours"] is False
 
 
+def test_external_product_requires_brand(tmp_path, monkeypatch):
+    db, token = _seed(tmp_path, monkeypatch)
+    c = app_module.app.test_client()
+    r = c.post(f"/api/portal/{token}/remedies/add", json={
+        "product_name": "Vitamin D3", "product_brand": "",
+    })
+    assert r.status_code == 400
+    assert r.get_json()["error"] == "Brand is required for products from other companies."
+
+
 def test_importance_copy_states_scale_direction():
     body = open("static/client-portal.html", encoding="utf-8").read()
     assert "1 = least important · 10 = most important" in body
@@ -154,9 +164,11 @@ def test_cross_client_isolation(tmp_path, monkeypatch):
     app_module.app.config["TESTING"] = True
     c = app_module.app.test_client()
 
-    c.post(f"/api/portal/{token_a}/remedies/add", json={"product_name": "A's Supp"})
+    c.post(f"/api/portal/{token_a}/remedies/add",
+           json={"product_name": "A's Supp", "product_brand": "Brand A"})
 
-    body_b = c.post(f"/api/portal/{token_b}/remedies/add", json={"product_name": "B's Supp"}).get_json()
+    body_b = c.post(f"/api/portal/{token_b}/remedies/add",
+                    json={"product_name": "B's Supp", "product_brand": "Brand B"}).get_json()
     assert len(body_b["external"]) == 1
     assert body_b["external"][0]["product_name"] == "B's Supp"
 

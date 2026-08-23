@@ -22908,6 +22908,9 @@ def api_portal_remedies_add(token):
         portal = _portal_record_for(cx, token)
         if not portal:
             return jsonify({"ok": False, "error": "not found"}), 404
+        if not catalog_product and not brand:
+            return jsonify({"ok": False,
+                            "error": "Brand is required for products from other companies."}), 400
         email = (portal.get("email") or "").strip().lower()
         _sr.add_listed(cx, email, name, product_brand=brand, reason=reason,
                        importance=importance, source=source)
