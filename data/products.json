@@ -1907,7 +1907,8 @@
    "bottle_type": "30 g",
    "fmp_id": "875",
    "qty_pricing": true,
-   "inactive": true
+   "inactive": true,
+   "superseded_by": "stress-release"
   },
   "moisturize": {
    "name": "Moisturize",
@@ -3946,7 +3947,6 @@
   },
   "comfort": {
    "name": "Comfort",
-   "inactive": true,
    "price_cents": 6997,
    "pinecone_title": "Comfort",
    "url": "https://remedymatch.com/remedies/syntropy/428-comfort",
@@ -4233,7 +4233,6 @@
   },
   "endocrine-restore": {
    "name": "Endocrine Restore",
-   "inactive": true,
    "price_cents": 6997,
    "pinecone_title": "Endocrine Restore",
    "url": "https://remedymatch.com/remedies/syntropy/34-endocrine-restore",
@@ -9349,7 +9348,8 @@
    "description": "Connective Tissue Support . Connective Tissue Support Connective Tissue Support Connective Tissue Support is inspired by the special needs of the body's connective tissues. The included nutrients and ratios are established by recommended combinations for those with conditions like Ehlers Danlos Syndrome with certain enhancements for better absorption and utilization. Connective Tissue Support . Each Chlorophyll Vegicap supplies: Vitamin C (from Magnesium Ascorbate, Ascorbyl Palmitate and L-Ascorbic Acid) 47 mg 79% Ascorbyl Palmitate 8 mg L-Ascorbic Acid 16 mg Magnesium Ascorbate 32 mg...",
    "inactive": true,
    "bottle_type": "30 Caps",
-   "fmp_id": "402"
+   "fmp_id": "402",
+   "superseded_by": "comfort"
   },
   "wash--rinse": {
    "name": "Wash & Rinse",
@@ -10825,7 +10825,8 @@
    "gk_extra_accepted": true,
    "bottle_type": "30 g",
    "fmp_id": "449",
-   "qty_pricing": true
+   "qty_pricing": true,
+   "superseded_by": "dental-powder"
   },
   "inositol": {
    "name": "Inositol",

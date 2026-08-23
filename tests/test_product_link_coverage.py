@@ -134,14 +134,45 @@ def test_curated_aliases_point_in_funnel_not_at_groovekart():
 
 
 def test_retired_alias_gets_no_purchase_link_at_all():
-    """A retired SKU must not fall back to its old storefront URL — that hands
-    out a buy link for a product the prompt forbids recommending."""
+    """A SKU retired with NO SUCCESSOR must not fall back to its old storefront
+    URL — that hands out a buy link for a product the prompt forbids recommending.
+
+    Trimmed 2026-08-22. Two of the three original names changed state on Glen's
+    ruling and are no longer retired-without-successor:
+      * Endocrine Restore is a CURRENT product — it was mis-flagged `inactive`,
+        so it belongs in the table WITH a link (asserted just below).
+      * Dental Regen Powder now has `superseded_by: dental-powder`, so it follows
+        its successor exactly like WholOmega does in
+        test_alias_follows_superseded_sku_to_its_successor.
+    Electrolyte Mineral Manna stays: still retired, no successor, and on the
+    do-not-recommend list."""
     directive = app.build_product_directive(query_text="what do you recommend")
-    for name in ("Dental Regen Powder", "Endocrine Restore", "Electrolyte Mineral Manna"):
+    for name in ("Electrolyte Mineral Manna",):
         row = [l for l in directive.splitlines() if l.strip().startswith(f"• {name} ")]
         assert row, f"{name} missing from table"
         assert "DESCRIBE-ONLY" in row[0], row[0]
         assert "http" not in row[0], f"{name} still carries a purchase URL: {row[0]}"
+
+
+def test_reactivated_product_gets_a_purchase_link():
+    """Endocrine Restore is a current product (Glen 2026-08-22). While it carried
+    `inactive: true` it resolved to nothing: a 404 page and no way to buy it."""
+    directive = app.build_product_directive(query_text="what do you recommend")
+    row = [l for l in directive.splitlines() if l.strip().startswith("• Endocrine Restore ")]
+    assert row, "Endocrine Restore missing from the table"
+    assert "DESCRIBE-ONLY" not in row[0], row[0]
+    assert "/begin/product/" in row[0], row[0]
+
+
+def test_superseded_sku_links_to_its_successor_not_the_storefront():
+    """Dental Regen Powder -> Dental Powder. The link must be in-funnel; what it
+    must never do is fall back to the dead remedymatch.com storefront."""
+    directive = app.build_product_directive(query_text="what do you recommend")
+    row = [l for l in directive.splitlines() if l.strip().startswith("• Dental Regen Powder ")]
+    assert row, "Dental Regen Powder missing from the table"
+    assert "remedymatch.com" not in row[0], row[0]
+    if "DESCRIBE-ONLY" not in row[0]:
+        assert "/begin/product/" in row[0], row[0]
 
 
 def test_alias_follows_superseded_sku_to_its_successor():
