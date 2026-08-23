@@ -760,7 +760,20 @@ JOURNEY_STEPS = [
         # it lights for some and stays grey for others, which is what a progress
         # map is for. Predicate, not a gate: nothing writes a "reorder" trigger,
         # and inventing one would give us a step that could never light up.
-        {"key": "reorder",     "label": "Your reorder",       "src": ("predicate", "has_reordered"), "href": "/begin/match"}]},
+        # href is /reorder (the magic-link reorder cart), NOT /begin/match: a
+        # client reordering wants the thing they already chose, not to be matched
+        # from scratch.
+        #
+        # defer_while purchased_recently: without it, a client who has scanned,
+        # taken the course, been matched and JUST BOUGHT drops from "Find: done"
+        # to "3 of 4" and the card is tagged "your next step" -- pointing a person
+        # who paid days ago back at the matcher. That is the exact behaviour Glen
+        # asked to suppress for ~30 days, so adding this step re-introduced it by
+        # the side door. A reorder is not due while the last order is still fresh;
+        # once PURCHASE_RECENCY_DAYS has passed the supply is running out and the
+        # step becomes both visible and the honest next thing to do.
+        {"key": "reorder",     "label": "Your reorder",       "src": ("predicate", "has_reordered"),
+         "href": "/reorder", "defer_while": "purchased_recently"}]},
     {"key": "heal", "label": stage_label("heal"), "paren": stage_brand("heal"), "steps": [
         {"key": "intake",      "label": "Intake form",        "src": ("gate", "intake"),      "href": "https://truly.vip/Join"},
         {"key": "masterclass", "label": "Accelerated Self Healing™ MasterClass & Community",    "src": ("gate", "masterclass"), "href": "https://truly.vip/Intro"}]},
@@ -807,7 +820,15 @@ def journey_map(state, ref="", signals=None):
         steps_out = []
         done_count = 0
         first_undone_href = None
-        for step in card["steps"]:
+        # A step may declare `defer_while: <signal>` -- "not due yet". A deferred
+        # step leaves the card entirely (not merely shown-and-undone), because an
+        # undone step keeps fill below 1.0, which keeps the card off "done" and
+        # can hand it the "your next step" tag for something the client should not
+        # be doing yet.
+        card_steps = [st for st in card["steps"]
+                      if not (st.get("defer_while")
+                              and bool((signals or {}).get(st["defer_while"])))]
+        for step in card_steps:
             done = _step_done(step, gates, signals)
             if done:
                 done_count += 1
@@ -817,7 +838,7 @@ def journey_map(state, ref="", signals=None):
                 else:
                     first_undone_href = _thread_href(step["href"], ref, f"begin-journey-{card['key']}")
             steps_out.append({"key": step["key"], "label": step["label"], "done": done})
-        total = len(card["steps"])
+        total = len(card_steps)
         fill = round(done_count / total, 3) if total else 0.0
         if fill >= 1.0:
             status = "done"
@@ -829,7 +850,7 @@ def journey_map(state, ref="", signals=None):
             if card["key"] == "scan":
                 first_undone_href = _scan_first_href(signals, ref)
             else:
-                first_undone_href = _thread_href(card["steps"][0]["href"], ref, f"begin-journey-{card['key']}")
+                first_undone_href = _thread_href((card_steps or card["steps"])[0]["href"], ref, f"begin-journey-{card['key']}")
         out.append({"key": card["key"], "label": card["label"], "paren": card["paren"],
                     "href": first_undone_href, "status": status, "fill": fill, "steps": steps_out})
     return out
