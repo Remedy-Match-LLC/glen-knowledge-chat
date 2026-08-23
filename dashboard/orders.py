@@ -350,6 +350,12 @@ def set_order_status(cx, order_id, status):
             _holds.remove_from_hold(cx, order_id)
         except Exception as e:  # never let hold cleanup block the cancel
             print(f"[orders] hold-remove-on-cancel skipped for #{order_id}: {e!r}", flush=True)
+    if status in ("shipped", "delivered", "done") and cur.rowcount:
+        try:
+            from . import shipped_report_release as _report_release
+            _report_release.release_for_order(cx, order_id)
+        except Exception as e:  # shipment must never fail because portal release did
+            print(f"[orders] shipped report release skipped for #{order_id}: {e!r}", flush=True)
     return cur.rowcount > 0
 
 
