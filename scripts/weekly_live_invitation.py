@@ -112,6 +112,12 @@ def _create_contact(email, name=""):
         "source": "MyHealingOasis weekly live community",
     }, write=True)
     if status >= 400:
+        # HighLevel can report the authoritative membership email as an
+        # additional address on an existing contact.  Reuse that contact instead
+        # of creating a duplicate; _send pins emailTo to this verified address.
+        existing_id = ((data.get("meta") or {}).get("contactId") or "").strip()
+        if status == 400 and existing_id:
+            return {"id": existing_id, "email": email}
         return None
     return data.get("contact") or data
 
@@ -269,11 +275,15 @@ def _record_recipient(cx, campaign_id, email, contact_id, message_id, status, er
     cx.commit()
 
 
-def _send(contact_id, subject, text, body_html):
-    status, data = _api("POST", "/conversations/messages", GHL_MESSAGES_VERSION, {
+def _send(contact_id, subject, text, body_html, *, email_to=""):
+    body = {
         "type": "Email", "contactId": contact_id, "subject": subject,
         "html": body_html, "message": text, "emailFrom": FROM_ADDRESS,
-    }, write=True)
+    }
+    if email_to:
+        body["emailTo"] = email_to
+    status, data = _api("POST", "/conversations/messages", GHL_MESSAGES_VERSION,
+                        body, write=True)
     message_id = (data.get("messageId") or data.get("id")
                   or (data.get("message") or {}).get("id") or "")
     return status, message_id, data
@@ -353,7 +363,8 @@ def run(args):
                        for bad in ("practicebetter", "practice better", "skool", "zoom.us/")):
                     raise RuntimeError("deprecated or private destination found in invitation copy")
                 status, message_id, response = _send(
-                    contact.get("id") or "", subject, text, body_html)
+                    contact.get("id") or "", subject, text, body_html,
+                    email_to=email)
                 if status < 400 and message_id:
                     counts["queued"] += 1
                     _record_recipient(cx, campaign_id, email, contact.get("id") or "",
