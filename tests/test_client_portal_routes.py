@@ -489,6 +489,7 @@ def test_client_login_page_carries_join_wiring(client, monkeypatch):
     r = c.get("/portal/login")
     assert r.status_code == 200
     body = r.get_data(as_text=True)
+    assert "Enter your email, then open the sign-in link we send." in body
     assert "/api/healing-oasis/status" in body
     assert "/api/healing-oasis/request" in body
     assert 'id="joinGo"' in body
