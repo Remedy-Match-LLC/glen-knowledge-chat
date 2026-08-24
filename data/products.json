@@ -4,6 +4,43 @@
  "default_bottle_type": "default",
  "_wholesale_schema": "Phase 1 wholesale pricing engine (dashboard/wholesale_pricing.py): a product MAY add optional fields — bottle_type (string; matches dashboard.shipping bottle_types.name, used to source the box-fit large-box capacity B), cogs_cents (int; landed product cost), fulfillment_cents (int; per-bottle pick/pack/ship), wholesale_discount_pct (int 0-100; fixed percent off retail for devices or other products that must not use the remedy volume curve). Retail = price_cents. cogs+fulfillment gate the wholesale margin floor; when unset the margin is left unverified (loud warning). Populate per product before wholesale go-live (data task, see spec 2026-06-01 section 5).",
  "products": {
+  "myelin-syntropy": {
+   "name": "Myelin Syntropy",
+   "price_cents": 6997,
+   "regular_cents": 8000,
+   "pinecone_title": "Myelin Syntropy",
+   "qty_pricing": true,
+   "no_groovekart": true,
+   "bottle_type": "120 caps",
+   "net_weight_g": 106.7,
+   "serving_size_g": 3.5,
+   "servings_per_container": 30,
+   "directions": "Mix up to 1 scoop in water three times daily, or as guided.",
+   "description": "Neural Membrane Support Powder formulated with N-acetyl-D-glucosamine, creatine monohydrate, and magnesium taurate. Each 3.5 g scoop supplies 48 mg elemental magnesium and 493 mg taurate from magnesium taurate.",
+   "ingredients": [
+    {
+     "name": "N-Acetyl-D-Glucosamine",
+     "dose": "1.97 g",
+     "compound_mg": 1974.2
+    },
+    {
+     "name": "Creatine Monohydrate",
+     "dose": "984 mg",
+     "compound_mg": 984.4
+    },
+    {
+     "name": "Magnesium Taurate",
+     "dose": "541 mg",
+     "grade": "8.9% magnesium, 91.1% taurate",
+     "compound_mg": 541.4,
+     "standardized_pct": 8.9,
+     "standardized_as": "magnesium",
+     "active_mg": 48.2
+    }
+   ],
+   "ingredients_source": "production-sheet-2026-08-24",
+   "source": "manual-add-2026-08-24-myelin-syntropy"
+  },
   "mithreal-silver-baseball-cap": {
    "name": "Baseball Cap with Mithreal Silver",
    "image": "/static/product-photos/mithreal-silver-baseball-cap.png",
