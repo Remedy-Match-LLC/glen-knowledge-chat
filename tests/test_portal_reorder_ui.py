@@ -17,7 +17,7 @@ HTML = pathlib.Path("static/client-portal.html").read_text()
 # single source of truth this test pins the UI against.
 REORDER_FIELDS = {"slug", "name", "qty", "regular_cents", "your_cents",
                    "is_member_price", "in_repertoire", "channel", "is_reorder",
-                   "source_label"}
+                   "source_label", "refill_eligible"}
 LOCKED_FIELDS = {"slug", "name", "regular_cents", "tier"}
 UPSELL_FIELDS = {"reorders_30d", "spend_30d_cents", "member_would_pay_cents",
                   "savings_cents", "net_after_fee_cents", "already_member"}
@@ -109,3 +109,10 @@ def test_reorder_adds_to_shared_basket_instead_of_opening_side_checkout():
     assert "await addItemToBasket(slug, qty, format)" in fn
     assert "/checkout" not in fn
     assert "stripe_url" not in fn
+
+
+def test_portal_exposes_and_saves_global_cello_default():
+    assert 'id="celloRefillDefault"' in HTML
+    assert 'cello_refill_default:wanted' in HTML
+    assert '/packaging-preference' in HTML
+    assert 'data-refill-eligible' in HTML

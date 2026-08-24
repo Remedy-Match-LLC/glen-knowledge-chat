@@ -21030,6 +21030,7 @@ def _portal_reorder_module(email):
                 "regular_cents": regular_cents, "your_cents": your_cents,
                 "is_member_price": your_cents < regular_cents,
                 "in_repertoire": in_rep,
+                "refill_eligible": bool(_qty_eligible(p)),
                 "channel": "portal",
                 "source_label": _portal_source_label("portal"),
                 "is_reorder": (slug in ph_slugs) or (slug in repeat_slugs),
@@ -21156,6 +21157,7 @@ def _portal_reorder_module(email):
             "regular_cents": regular_cents, "your_cents": your_cents,
             "is_member_price": your_cents < regular_cents,
             "in_repertoire": slug in rep_slugs,
+            "refill_eligible": bool(_qty_eligible(p)),
             "channel": channel,
             "source_label": _portal_source_label(channel),
             "is_reorder": (slug in ph_slugs) or (slug in repeat_slugs),
@@ -21788,6 +21790,7 @@ def api_client_portal(token):
             "name": (p or {}).get("name", slug), "price_cents": special,
             "regular_price_cents": regular,
             "is_special": bool(special is not None and regular is not None and int(special) < int(regular)),
+            "refill_eligible": bool(p and _qty_eligible(p)),
             "available": bool(p)})
     client_findings = [{"code": f.get("code", ""), "name": f.get("name", ""),
                         "description": f.get("description", ""), "rank": f.get("rank")}
@@ -21843,6 +21846,15 @@ def api_client_portal(token):
         "element_state": element_state,
         "element_backdrop_enabled": ELEMENT_BACKDROP_ENABLED,
     }
+    try:
+        from dashboard import client_prefs as _cpf
+        with db.connect(LOG_DB) as _cx_pref:
+            _cpf.init_table(_cx_pref)
+            payload["cello_refill_default"] = _cpf.get_cello_refill_default(
+                _cx_pref, email_for_reports)
+    except Exception as _e:
+        print(f"[portal-pref] cello default read skipped: {_e!r}", flush=True)
+        payload["cello_refill_default"] = False
     # Task 2 (scan-history spec): expose per-client scan-history prefs + the resolved
     # current scan date behind PORTAL_SCAN_HISTORY_ENABLED. Additive keys only, mirrors
     # _ff_matches_enabled/_support_programs_enabled — flag off => payload byte-identical.
@@ -24463,15 +24475,27 @@ def api_portal_order_add(token):
     from dashboard import wishlist as _wl
     body = request.get_json(silent=True) or {}
     slug = (body.get("slug") or "").strip().lower()
+    cello_default = False
     with db.connect(LOG_DB) as cx:
         portal = _portal_record_for(cx, token)
+        if portal:
+            try:
+                from dashboard import client_prefs as _cpf
+                _cpf.init_table(cx)
+                cello_default = _cpf.get_cello_refill_default(
+                    cx, portal.get("email") or "")
+            except Exception:
+                cello_default = False
     if not portal:
         return jsonify({"error": "not found"}), 404
     email = (portal.get("email") or "").strip().lower()
     product = _get_product(slug)
     if not product or product.get("inactive") or product.get("info_only"):
         return jsonify({"error": "That remedy is not available."}), 400
+    explicit_format = "format" in body and body.get("format") not in (None, "")
     fmt = (body.get("format") or "").strip().lower()
+    if not explicit_format and cello_default and _qty_eligible(product):
+        fmt = "refill"
     if fmt not in ("", "bottle", "refill"):
         return jsonify({"error": "That packaging option is not available."}), 400
     if fmt == "refill" and not _qty_eligible(product):
@@ -24504,6 +24528,24 @@ def api_portal_order_add(token):
         response.set_cookie(_CART_COOKIE, cart_token, max_age=60 * 60 * 24 * 365,
                             httponly=True, samesite="Lax", secure=request.is_secure)
     return response
+
+
+@app.route("/api/portal/<token>/packaging-preference", methods=["POST"])
+def api_portal_packaging_preference(token):
+    """Save this client's default packaging for eligible capsule products."""
+    body = request.get_json(silent=True) or {}
+    if "cello_refill_default" not in body or not isinstance(
+            body.get("cello_refill_default"), bool):
+        return jsonify({"error": "cello_refill_default must be true or false"}), 400
+    from dashboard import client_prefs as _cpf
+    with _db_lock, db.connect(LOG_DB) as cx:
+        portal = _portal_record_for(cx, token)
+        if not portal:
+            return jsonify({"error": "not found"}), 404
+        email = (portal.get("email") or "").strip().lower()
+        _cpf.set_cello_refill_default(cx, email, body["cello_refill_default"])
+        saved = _cpf.get_cello_refill_default(cx, email)
+    return jsonify({"ok": True, "cello_refill_default": saved})
 
 
 @app.route("/api/portal/<token>/scene-pref", methods=["POST"])
