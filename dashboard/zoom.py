@@ -1,5 +1,7 @@
 """Zoom Server-to-Server OAuth + meeting registration helpers. Stdlib-only."""
 import json, base64, re, urllib.request, urllib.parse
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 _TOKEN_CACHE = {}  # client_id -> (token, expiry_epoch)
 
@@ -31,6 +33,11 @@ def create_meeting(token, *, host, topic, start_iso, duration_min,
         # approval_type=0 means registration is required and automatically approved.
         # Each approved registrant receives an individual join_url from Zoom.
         settings["approval_type"] = 0
+        if recurrence:
+            # Register once for the series and use the same private join URL for
+            # every occurrence.  Weekly event rows still retain occurrence IDs
+            # for participant-report reconciliation.
+            settings["registration_type"] = 1
     body = {"topic": topic, "type": 8 if recurrence else 2, "start_time": start_iso,
             "duration": int(duration_min), "timezone": timezone,
             "settings": settings}
@@ -44,7 +51,42 @@ def create_meeting(token, *, host, topic, start_iso, duration_min,
         d = json.load(r)
     return {"join_url": d.get("join_url"), "meeting_id": str(d.get("id") or ""),
             "start_url": d.get("start_url"),
-            "registration_url": d.get("registration_url")}
+            "registration_url": d.get("registration_url"),
+            "type": d.get("type"), "occurrences": d.get("occurrences") or []}
+
+
+def get_meeting(token, meeting_id, *, opener=None):
+    """Return the meeting metadata needed to recover weekly occurrences."""
+    opener = opener or urllib.request.urlopen
+    encoded_id = urllib.parse.quote(str(meeting_id or "").strip(), safe="")
+    req = urllib.request.Request(
+        f"https://api.zoom.us/v2/meetings/{encoded_id}",
+        headers={"Authorization": f"Bearer {token}", "Accept": "application/json"})
+    with opener(req, timeout=30) as r:
+        d = json.load(r)
+    return {"meeting_id": str(d.get("id") or meeting_id or ""),
+            "registration_url": d.get("registration_url") or "",
+            "type": d.get("type"), "occurrences": d.get("occurrences") or [],
+            "settings": d.get("settings") or {}}
+
+
+def occurrence_id_for(meeting, target_start, *, timezone="Pacific/Honolulu"):
+    """Pick the Zoom occurrence matching one concrete local start time."""
+    target = target_start
+    if target.tzinfo is None:
+        target = target.replace(tzinfo=ZoneInfo(timezone))
+    target = target.astimezone(ZoneInfo(timezone)).replace(second=0, microsecond=0)
+    for occurrence in meeting.get("occurrences") or []:
+        raw = occurrence.get("start_time") or ""
+        if not raw:
+            continue
+        try:
+            parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+        except ValueError:
+            continue
+        if parsed.astimezone(ZoneInfo(timezone)).replace(second=0, microsecond=0) == target:
+            return str(occurrence.get("occurrence_id") or "")
+    return ""
 
 
 def add_meeting_registrant(token, *, meeting_id, email, first_name,
