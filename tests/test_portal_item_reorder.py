@@ -376,6 +376,7 @@ def test_order_catalog_search_and_add_authorizes_same_checkout(client, monkeypat
     assert search.status_code == 200
     products = search.get_json()["products"]
     assert any(p["slug"] == "nous-energy" for p in products)
+    assert next(p for p in products if p["slug"] == "nous-energy")["refill_eligible"] is True
 
     added = c.post(f"/api/portal/{tok}/order-add", json={"slug": "nous-energy"})
     assert added.status_code == 200

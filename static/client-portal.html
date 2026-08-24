@@ -3826,6 +3826,12 @@ function render(d, v){
           <button type="button" class="btn ghost" id="orderFindBtn">Find</button>
         </div>
         <select id="orderAddResults" hidden style="width:100%;margin-top:.5rem;background:var(--card2);color:var(--ink);border:1px solid var(--line);border-radius:8px;padding:8px 10px"></select>
+        <label id="orderAddFormatWrap" class="small" hidden style="margin-top:.5rem"><strong>Packaging for this purchase</strong>
+          <select id="orderAddFormat" style="width:100%;margin-top:.3rem;background:var(--card2);color:var(--ink);border:1px solid var(--line);border-radius:8px;padding:8px 10px">
+            <option value="bottle">Bottle</option>
+            <option value="refill">Cellophane pack + label</option>
+          </select>
+        </label>
         <button type="button" class="btn" id="orderAddBtn" hidden style="margin-top:.5rem">Add to this order</button>
         <p class="small muted" id="orderAddStatus" style="margin:.35rem 0 0"></p>
       </div>
@@ -4533,6 +4539,8 @@ function render(d, v){
   const addBtn = document.getElementById("orderAddBtn");
   const searchInput = document.getElementById("orderAddSearch");
   const results = document.getElementById("orderAddResults");
+  const addFormatWrap = document.getElementById("orderAddFormatWrap");
+  const addFormat = document.getElementById("orderAddFormat");
   const addStatus = document.getElementById("orderAddStatus");
   const paymentMethods = document.getElementById("portalPaymentMethods");
   const zellePreview = document.getElementById("portalZellePreview");
@@ -4561,21 +4569,32 @@ function render(d, v){
       (j.products || []).forEach(p => {
         const opt = document.createElement("option");
         opt.value = p.slug;
+        opt.dataset.refillEligible = p.refill_eligible ? "1" : "0";
         opt.textContent = `${p.name} — ${money(p.price_cents)}`;
         results.appendChild(opt);
       });
       const found = results.options.length > 0;
       results.hidden = !found; addBtn.hidden = !found;
+      updateFirstPurchasePackaging();
       addStatus.textContent = found ? "Choose a remedy, then add it." : "No matching remedies found.";
     }catch(e){ addStatus.textContent = "Search is temporarily unavailable."; }
     finally{ findBtn.disabled = false; }
   });
+  function updateFirstPurchasePackaging(){
+    const selected = results && results.options[results.selectedIndex];
+    const eligible = !!selected && selected.dataset.refillEligible === "1";
+    if(addFormatWrap) addFormatWrap.hidden = !eligible;
+    if(addFormat && eligible) addFormat.value = d.cello_refill_default ? "refill" : "bottle";
+  }
+  if(results) results.addEventListener("change", updateFirstPurchasePackaging);
   if(addBtn) addBtn.addEventListener("click", async () => {
     const slug = results.value;
     if(!slug) return;
     addBtn.disabled = true; addStatus.textContent = "Adding…";
     try{
-      const item = await addItemToBasket(slug);
+      const selected = results.options[results.selectedIndex];
+      const format = selected && selected.dataset.refillEligible === "1" ? addFormat.value : "";
+      const item = await addItemToBasket(slug, 1, format);
       addStatus.textContent = `${item.name} is in your basket.`;
     }catch(e){ addStatus.textContent = e.message || "Could not add that remedy."; }
     finally{ addBtn.disabled = false; }
