@@ -265,7 +265,7 @@ def _send(contact_id, subject, text, body_html):
     status, data = _api("POST", "/conversations/messages", GHL_MESSAGES_VERSION, {
         "type": "Email", "contactId": contact_id, "subject": subject,
         "html": body_html, "message": text, "emailFrom": FROM_ADDRESS,
-    })
+    }, write=True)
     message_id = (data.get("messageId") or data.get("id")
                   or (data.get("message") or {}).get("id") or "")
     return status, message_id, data

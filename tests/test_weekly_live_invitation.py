@@ -32,3 +32,19 @@ def test_free_copy_states_group_coaching_is_upgrade_benefit():
     assert "MasterClass is open to you" in text
     assert "upgrade benefit" in text
     assert "current access does not include" in text
+
+
+def test_send_uses_write_token(monkeypatch):
+    seen = {}
+
+    def fake_api(method, path, version, body=None, *, write=False):
+        seen.update(method=method, path=path, version=version, body=body, write=write)
+        return 201, {"messageId": "msg-1"}
+
+    monkeypatch.setattr(weekly, "_api", fake_api)
+    status, message_id, _ = weekly._send("contact-1", "Subject", "plain", "<p>html</p>")
+
+    assert status == 201
+    assert message_id == "msg-1"
+    assert seen["write"] is True
+    assert seen["body"]["emailFrom"] == weekly.FROM_ADDRESS
