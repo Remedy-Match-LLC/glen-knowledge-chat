@@ -32,19 +32,38 @@ def _default_resolve(slug):
     return superseded_slug(slug)
 
 
-def add_skus(cx, email, slugs, *, at=None, resolve=None):
+def would_add(cx, email, slugs, *, resolve=None):
+    """Exactly the slugs `add_skus` would INSERT: retired slugs resolved to their
+    live twin, deduped, minus the ones already stored. Writes nothing.
+
+    Exists so a dry run and the real run cannot disagree -- `add_skus` below
+    delegates its selection here rather than keeping a second copy of the same
+    resolve/dedupe walk. A preview that drifts from the write it previews is
+    worse than no preview, because it is believed."""
     resolve = resolve or _default_resolve
     email = _norm(email)
-    at = at or _now_iso()
-    seen, added = set(), 0
+    out = set()
     for s in slugs:
         s = (s or "").strip().lower()
         if not s:
             continue
         s = (resolve(s) or "").strip().lower()
-        if not s or s in seen:
+        if not s or s in out:
             continue
-        seen.add(s)
+        if cx.execute("SELECT 1 FROM repertoire WHERE email=? AND slug=?",
+                      (email, s)).fetchone():
+            continue
+        out.add(s)
+    return out
+
+
+def add_skus(cx, email, slugs, *, at=None, resolve=None):
+    email = _norm(email)
+    at = at or _now_iso()
+    added = 0
+    # INSERT OR IGNORE is kept even though would_add already excluded existing
+    # rows: it is the race guard if a concurrent writer inserts between the two.
+    for s in sorted(would_add(cx, email, slugs, resolve=resolve)):
         if cx.execute(
             "INSERT OR IGNORE INTO repertoire(email, slug, added_at) VALUES (?,?,?)",
             (email, s, at),
