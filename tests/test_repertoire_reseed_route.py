@@ -225,3 +225,115 @@ def test_a_non_member_is_never_reseeded_from_orders(client, appmod):
     assert r.get_json()["data"]["members_seen"] == 0
     with sqlite3.connect(appmod.LOG_DB) as cx:
         assert _rep.repertoire_slugs(cx, email) == set()
+
+
+# ---------------------------------------------------------------------------
+# ?dry_run=1 -- added because I sized this route's impact from the wrong table
+# ---------------------------------------------------------------------------
+# I read /api/console/members (2 members, both trial), concluded the blast
+# radius was zero, and said so. The real run moved 11 members and 162 SKUs: the
+# board reads `subscriptions` alone, the route's candidates are
+# `subscriptions UNION memberships`. Repertoire drives member reorder pricing,
+# so the question "how many does this move" must be answerable WITHOUT writing.
+
+def _post(client, qs=""):
+    return client.post("/api/console/repertoire-reseed" + qs,
+                       headers={"X-Console-Key": "test-secret"}).get_json()
+
+
+def test_dry_run_writes_nothing(client, appmod):
+    from dashboard import repertoire as _rep
+    email = "dryrun@example.com"
+    _seed_active_membership(appmod, email)
+    _seed_order(appmod, email, ["terrain-restore", "nous-energy"])
+
+    d = _post(client, "?dry_run=1")["data"]
+    assert d["dry_run"] is True
+    assert d["slugs_added"] == 2, "the preview must still COUNT what it would do"
+    with sqlite3.connect(appmod.LOG_DB) as cx:
+        assert _rep.repertoire_slugs(cx, email) == set(), "dry run wrote to repertoire"
+
+
+def test_the_preview_agrees_with_the_write_it_previews(client, appmod):
+    """The whole point. A preview that disagrees with the real run is worse than
+    no preview, because it gets believed -- which is exactly how the wrong number
+    reached Glen. Both paths select through repertoire.would_add, so this pins
+    that they cannot drift."""
+    email = "agree@example.com"
+    _seed_active_membership(appmod, email)
+    _seed_purchase_history(appmod, email, ["wholomega"])
+    _seed_order(appmod, email, ["terrain-restore", "nous-energy"])
+
+    preview = _post(client, "?dry_run=1")["data"]
+    real = _post(client)["data"]
+    for k in ("members_seen", "members_reseeded", "slugs_added"):
+        assert preview[k] == real[k], f"{k}: preview {preview[k]} != real {real[k]}"
+
+
+def test_the_preview_names_the_slugs_not_just_a_count(client, appmod):
+    """A bare number is what let me be confidently wrong. The breakdown makes the
+    claim checkable before it is believed."""
+    email = "detail@example.com"
+    _seed_active_membership(appmod, email)
+    _seed_order(appmod, email, ["terrain-restore"])
+
+    d = _post(client, "?dry_run=1")["data"]
+    rows = {r["email"]: r for r in d["detail"]}
+    assert rows[email]["would_add"] == ["terrain-restore"]
+
+
+def test_a_second_preview_after_a_real_run_reports_nothing_left(client, appmod):
+    email = "settled@example.com"
+    _seed_active_membership(appmod, email)
+    _seed_order(appmod, email, ["terrain-restore"])
+
+    _post(client)
+    d = _post(client, "?dry_run=1")["data"]
+    assert d["members_reseeded"] == 0 and d["slugs_added"] == 0
+    assert d["members_seen"] == 1, "it must still SEE the member, just have nothing to add"
+
+
+def test_a_real_run_reports_dry_run_false_and_no_preview_detail(client, appmod):
+    email = "notdry@example.com"
+    _seed_active_membership(appmod, email)
+    _seed_order(appmod, email, ["terrain-restore"])
+    d = _post(client)["data"]
+    assert d["dry_run"] is False and d["detail"] == []
+
+
+def test_a_retired_slug_is_previewed_and_stored_as_its_live_twin(client, appmod):
+    """A dead slug in repertoire silently costs a member their reorder discount:
+    pricing tests `slug in repertoire_slugs` against the RESOLVED cart slug, so an
+    unresolved row never matches. The preview must resolve exactly as the write
+    does -- otherwise the number Glen reads describes SKUs that will never price.
+    Left untested, removing the resolve from would_add kept every test green."""
+    from dashboard import repertoire as _rep
+    # Resolve through the SAME function the code path uses. My first version
+    # computed `live` with app._superseded, which passes app's IN-MEMORY catalog,
+    # while would_add goes through repertoire._default_resolve -> products.
+    # superseded_slug() on the module default. Locally the two agree; in the full
+    # CI suite another test had mutated the in-memory catalog and they diverged,
+    # so this passed alone and failed in CI. Expectation and code must read one
+    # source. The guard also has to compare -- superseded_slug returns the slug
+    # UNCHANGED when it is live or unknown, never None, so the old
+    # `if _superseded(s)` was truthy for every candidate and never skipped.
+    resolve = _rep._default_resolve
+    retired = next((s for s in ("relax", "dental-regen-powder",
+                                "connective-tissue-support")
+                    if (resolve(s) or s) != s), None)
+    if not retired:
+        pytest.skip("no retired slug with a superseded_by pointer in the catalog")
+    live = resolve(retired)
+
+    email = "retiredslug@example.com"
+    _seed_active_membership(appmod, email)
+    _seed_order(appmod, email, [retired])
+
+    d = _post(client, "?dry_run=1")["data"]
+    rows = {r["email"]: r for r in d["detail"]}
+    assert rows[email]["would_add"] == [live], (
+        f"preview offered {rows[email]['would_add']} not the live twin {live!r}")
+
+    _post(client)
+    with sqlite3.connect(appmod.LOG_DB) as cx:
+        assert _rep.repertoire_slugs(cx, email) == {live}

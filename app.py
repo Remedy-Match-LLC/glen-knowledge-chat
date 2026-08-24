@@ -49800,7 +49800,17 @@ def api_console_gk_email_history_rebuild():
 @require_console_key
 def api_console_repertoire_reseed():
     """One-shot admin trigger: retroactively populate dashboard.repertoire for
-    every CURRENTLY-PAID member from their purchase_history (365-day window).
+    every CURRENTLY-PAID member from their orders AND purchase_history (365-day
+    window).
+
+    Pass ?dry_run=1 to PREVIEW: writes nothing, and returns the same counts plus
+    a per-member breakdown. This exists because I sized this route's impact from
+    /api/console/members (2 members, both trial) and told Glen the blast radius
+    was zero -- the real run touched 11 members and added 162 SKUs, because the
+    board reads `subscriptions` alone while the candidate query below is
+    `subscriptions UNION memberships` (founding/comped/granted members the board
+    never shows). Repertoire drives member reorder pricing, so "how many does
+    this move" must be answerable WITHOUT writing.
 
     The repertoire is normally only populated for a member at the moment they
     convert to paid membership. Members who converted BEFORE a purchase_history
@@ -49824,6 +49834,9 @@ def api_console_repertoire_reseed():
     from dashboard import purchase_history as _ph
     from dashboard import repertoire as _rep
 
+    dry = (request.args.get("dry_run") or "").strip().lower() in ("1", "true", "yes")
+    detail = []
+
     with _db_lock, db.connect(LOG_DB) as cx:
         _ph.init_purchase_history_table(cx)
         _rep.init_repertoire_table(cx)
@@ -49844,6 +49857,28 @@ def api_console_repertoire_reseed():
                 continue
             members_seen += 1
             try:
+                if dry:
+                    # Same two sources, same selection function the writer uses.
+                    _want = set()
+                    try:
+                        _bos_orders.init_orders_table(cx)
+                        _prev_rf = getattr(cx, "row_factory", None)
+                        try:
+                            _want |= _rep.would_add(
+                                cx, email, _order_slugs_since(cx, email, 365) or [])
+                        finally:
+                            cx.row_factory = _prev_rf
+                    except Exception as _oe:
+                        app.logger.warning(
+                            "repertoire-reseed[dry]: orders half failed for %r: %r",
+                            email, _oe)
+                    _want |= _rep.would_add(
+                        cx, email, list(_ph.slugs_since(cx, email, 365) or []))
+                    if _want:
+                        members_reseeded += 1
+                        slugs_added += len(_want)
+                    detail.append({"email": email, "would_add": sorted(_want)})
+                    continue
                 before = len(_rep.repertoire_slugs(cx, email))
                 # Both sources, because purchase_history alone is a LEGACY record:
                 # its only writers are the fmp and groovekart backfills, so nothing
@@ -49888,6 +49923,8 @@ def api_console_repertoire_reseed():
                 app.logger.warning("repertoire-reseed: failed for %r: %r", email, e)
 
     return ok({
+        "dry_run": dry,
+        "detail": detail,
         "members_seen": members_seen,
         "members_reseeded": members_reseeded,
         "slugs_added": slugs_added,
