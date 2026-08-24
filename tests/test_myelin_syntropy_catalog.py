@@ -28,3 +28,15 @@ def test_myelin_syntropy_formula_matches_the_approved_label():
     assert magnesium_taurate["compound_mg"] == 541.4
     assert magnesium_taurate["standardized_pct"] == 8.9
     assert magnesium_taurate["active_mg"] == 48.2
+
+
+def test_neuroceramides_remains_active_for_one_bottle_sell_through():
+    products = json.loads(CATALOG.read_text())["products"]
+
+    for slug in ("neuroceramides", "myelin-repair-neuroceramides"):
+        legacy = products[slug]
+        assert legacy["remaining_inventory_units"] == 1
+        assert legacy["sell_through"] is True
+        assert legacy["discontinue_when_sold_out"] is True
+        assert legacy["successor_slug"] == "myelin-syntropy"
+        assert legacy.get("inactive") is not True

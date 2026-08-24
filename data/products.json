@@ -2204,6 +2204,10 @@
   "neuroceramides": {
    "name": "Neuroceramides",
    "price_cents": 6997,
+   "remaining_inventory_units": 1,
+   "sell_through": true,
+   "discontinue_when_sold_out": true,
+   "successor_slug": "myelin-syntropy",
    "pinecone_title": "Neuroceramides",
    "url": "https://remedymatch.com/remedies/syntropy/81-neuroceramides",
    "qty_pricing": true,
@@ -12770,6 +12774,10 @@
   "myelin-repair-neuroceramides": {
    "name": "Myelin Repair Neuroceramides",
    "price_cents": 6997,
+   "remaining_inventory_units": 1,
+   "sell_through": true,
+   "discontinue_when_sold_out": true,
+   "successor_slug": "myelin-syntropy",
    "pinecone_title": "Myelin Repair Neuroceramides",
    "qty_pricing": true,
    "fmp_id": "315",
