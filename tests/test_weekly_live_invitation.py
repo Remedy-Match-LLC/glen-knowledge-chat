@@ -44,13 +44,14 @@ def test_send_uses_write_token(monkeypatch):
     monkeypatch.setattr(weekly, "_api", fake_api)
     status, message_id, _ = weekly._send(
         "contact-1", "Subject", "plain", "<p>html</p>",
-        email_to="member@example.com")
+        email_to="member@example.com", scheduled_timestamp=1_800_000_000)
 
     assert status == 201
     assert message_id == "msg-1"
     assert seen["write"] is True
     assert seen["body"]["emailFrom"] == weekly.FROM_ADDRESS
     assert seen["body"]["emailTo"] == "member@example.com"
+    assert seen["body"]["scheduledTimestamp"] == 1_800_000_000
 
 
 def test_create_contact_reuses_contact_when_email_is_an_additional_address(monkeypatch):
