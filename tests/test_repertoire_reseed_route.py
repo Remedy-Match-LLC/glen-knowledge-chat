@@ -143,3 +143,85 @@ def test_reseed_candidate_from_subscription_and_grant_is_not_double_counted(appm
     assert body["members_reseeded"] == 1
     assert body["slugs_added"] == 1
     assert _repertoire_slugs(appmod, "erin@x.com") == {"terrain-restore"}
+
+
+def _seed_order(appmod, email, slugs, *, days_ago=10, status="paid", ref=None):
+    """A modern purchase: orders table only, nothing in purchase_history --
+    which is what every portal, funnel and current-storefront sale looks like."""
+    import json
+    from dashboard.orders import init_orders_table
+    created = (datetime.utcnow() - timedelta(days=days_ago)).isoformat() + "Z"
+    with sqlite3.connect(appmod.LOG_DB) as cx:
+        init_orders_table(cx)
+        cx.execute(
+            "INSERT INTO orders (created_at, source, external_ref, channel, email, "
+            "items_json, total_cents, status) VALUES (?,?,?,?,?,?,?,?)",
+            (created, "portal-reorder", ref or f"o-{email}-{days_ago}-{slugs[0]}",
+             "retail", email, json.dumps([{"slug": s, "qty": 1} for s in slugs]),
+             1000, status))
+        cx.commit()
+
+
+def test_a_member_whose_purchases_are_only_in_orders_is_reseeded(client, appmod):
+    """THE DEFECT. purchase_history's only writers are the fmp and groovekart
+    backfills, so nothing bought through the portal, the funnel or the current
+    storefront is ever in it. This route read purchase_history and `continue`d
+    when it was empty, so for any member whose buying began after the migration
+    it seeded NOTHING -- every day, via the daily cron, reporting success.
+    Repertoire drives member reorder pricing, so those members were being
+    under-credited on every order."""
+    from dashboard import repertoire as _rep
+    email = "modernmember@example.com"
+    _seed_active_membership(appmod, email)
+    _seed_order(appmod, email, ["terrain-restore", "nous-energy"])
+
+    r = client.post("/api/console/repertoire-reseed",
+                    headers={"X-Console-Key": "test-secret"})
+    assert r.status_code == 200
+    data = r.get_json()["data"]
+    assert data["members_seen"] == 1
+    assert data["members_reseeded"] == 1, "the modern member was skipped again"
+    assert data["slugs_added"] == 2
+
+    with sqlite3.connect(appmod.LOG_DB) as cx:
+        assert _rep.repertoire_slugs(cx, email) == {"terrain-restore", "nous-energy"}
+
+
+def test_both_sources_are_unioned_not_one_or_the_other(client, appmod):
+    """A member who bought before the migration AND since gets both. Guards
+    against 'fixing' this by swapping purchase_history out for orders, which
+    would silently drop every legacy purchase from member pricing."""
+    from dashboard import repertoire as _rep
+    email = "bothsources@example.com"
+    _seed_active_membership(appmod, email)
+    _seed_purchase_history(appmod, email, ["wholomega"])
+    _seed_order(appmod, email, ["terrain-restore"])
+
+    client.post("/api/console/repertoire-reseed", headers={"X-Console-Key": "test-secret"})
+    with sqlite3.connect(appmod.LOG_DB) as cx:
+        assert _rep.repertoire_slugs(cx, email) == {"wholomega", "terrain-restore"}
+
+
+def test_a_cancelled_order_does_not_earn_repertoire_credit(client, appmod):
+    """Repertoire grants a price discount. A cancelled order is not a purchase."""
+    from dashboard import repertoire as _rep
+    email = "cancelledorder@example.com"
+    _seed_active_membership(appmod, email)
+    _seed_order(appmod, email, ["terrain-restore"], status="cancelled")
+
+    client.post("/api/console/repertoire-reseed", headers={"X-Console-Key": "test-secret"})
+    with sqlite3.connect(appmod.LOG_DB) as cx:
+        assert _rep.repertoire_slugs(cx, email) == set()
+
+
+def test_a_non_member_is_never_reseeded_from_orders(client, appmod):
+    """The orders half must respect the same paid-member gate as the history
+    half; repertoire is member pricing, not a purchase log."""
+    from dashboard import repertoire as _rep
+    email = "notamember@example.com"
+    _seed_order(appmod, email, ["terrain-restore"])
+
+    r = client.post("/api/console/repertoire-reseed", headers={"X-Console-Key": "test-secret"})
+    assert r.get_json()["data"]["members_seen"] == 0
+    with sqlite3.connect(appmod.LOG_DB) as cx:
+        assert _rep.repertoire_slugs(cx, email) == set()

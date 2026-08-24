@@ -49776,11 +49776,40 @@ def api_console_repertoire_reseed():
                 continue
             members_seen += 1
             try:
-                hist = _ph.slugs_since(cx, email, 365)
-                if not hist:
-                    continue
                 before = len(_rep.repertoire_slugs(cx, email))
-                _rep.add_skus(cx, email, list(hist))
+                # Both sources, because purchase_history alone is a LEGACY record:
+                # its only writers are the fmp and groovekart backfills, so nothing
+                # a member has bought through the portal, the funnel or the current
+                # storefront is in it. This route used to read purchase_history and
+                # `continue` when it was empty -- meaning for any member whose
+                # buying started after the migration it seeded nothing, every day,
+                # and reported success. Repertoire drives member reorder pricing,
+                # so the members it silently skipped are the ones being under-
+                # credited. The three membership-conversion paths already union
+                # both sources (seed_from_history + slugs_since); this one did not.
+                # Each source is INDEPENDENTLY best-effort. My first version let
+                # one shared try cover both, and a missing orders table took the
+                # purchase_history half down with it -- seeding nothing at all,
+                # which is strictly worse than the bug being fixed. Caught by
+                # test_reseed_is_idempotent_on_rerun going 2 -> 0.
+                try:
+                    _bos_orders.init_orders_table(cx)      # fresh-DB guard
+                    _prev_rf = getattr(cx, "row_factory", None)
+                    try:
+                        # add_skus resolves retired slugs, so raw order slugs are
+                        # safe here -- a dead slug in repertoire silently costs a
+                        # member their reorder discount.
+                        _rep.seed_from_history(cx, email, 365,
+                                               order_slugs_fn=_order_slugs_since)
+                    finally:
+                        cx.row_factory = _prev_rf   # _order_slugs_since sets Row
+                                                    # and never restores it
+                except Exception as _oe:
+                    app.logger.warning(
+                        "repertoire-reseed: orders half failed for %r: %r", email, _oe)
+                hist = _ph.slugs_since(cx, email, 365)
+                if hist:
+                    _rep.add_skus(cx, email, list(hist))
                 after = len(_rep.repertoire_slugs(cx, email))
                 delta = after - before
                 if delta > 0:
