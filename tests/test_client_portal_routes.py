@@ -223,6 +223,14 @@ def test_portal_past_invoices_include_full_filemaker_history(client):
                "(id_pk,id_fk_client,invoice_date,status,subtotal,total,shipping,outstanding) "
                "VALUES (?,?,?,?,?,?,?,?)",
                ("old-2", "symons-1", "2023-06-05", "Closed", "75", "80", "5", "0"))
+    cx.execute("INSERT INTO fmp_invoice_items "
+               "(id_pk,id_fk_invoice,id_fk_product,description,qty,price,ext_price) "
+               "VALUES (?,?,?,?,?,?,?)",
+               ("line-1", "old-1", "1085", "WholOmega 2 bottles 4 cello", "6", "70", "420"))
+    cx.execute("INSERT INTO fmp_invoice_items "
+               "(id_pk,id_fk_invoice,id_fk_product,description,qty,price,ext_price) "
+               "VALUES (?,?,?,?,?,?,?)",
+               ("line-2", "old-1", "952", "Courtesy", "6", "-10", "-60"))
     cx.execute("INSERT INTO orders (source,external_ref,name,email,status,pay_status,total_cents,"
                "items_json,address_json,created_at,paid_at) VALUES "
                "('t','NEW','Krist Symons',?,'done','paid',12000,'[]','{}','2026-08-01','2026-08-02')",
@@ -236,6 +244,20 @@ def test_portal_past_invoices_include_full_filemaker_history(client):
     assert [(p["when"], p["amount_dollars"]) for p in past] == [
         ("2026-08-02", "120.00"), ("2024-01-10", "100.00"), ("2023-06-05", "80.00")]
     assert past[1]["source"] == "filemaker" and past[1]["paid"] is True
+    assert past[1]["physical_units"] == 6
+    assert past[1]["items"] == [
+        {"description": "WholOmega 2 bottles 4 cello", "qty": 6,
+         "slug": "wholomega", "product_name": "WholOmega",
+         "amount_dollars": "420.00", "is_product": True},
+        {"description": "Courtesy", "qty": 6, "slug": "", "product_name": "",
+         "amount_dollars": "-60.00", "is_product": False},
+    ]
+
+
+def test_portal_invoice_markup_renders_filemaker_line_items():
+    body = open("static/client-portal.html", encoding="utf-8").read()
+    assert "function pastInvoiceItemsHtml(inv)" in body
+    assert "adjustment or unmapped line" in body
 
 
 def test_api_portal_bad_token_404(client):

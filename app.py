@@ -46486,6 +46486,19 @@ def _past_invoices_for(cx, email):
         except (TypeError, ValueError):
             return "0.00"
 
+    def _legacy_qty(raw):
+        try:
+            return max(0, int(float(str(raw or "0").replace(",", ""))))
+        except (TypeError, ValueError):
+            return 0
+
+    try:
+        with open(os.path.join(os.path.dirname(__file__), "data", "fmp_slug_map.json"),
+                  encoding="utf-8") as _fh:
+            _fmp_resolved = (json.load(_fh).get("resolved") or {})
+    except Exception:
+        _fmp_resolved = {}
+
     try:
         from dashboard import fmp_orders as _fmp
         history = _fmp.client_order_history(cx, email=email)
@@ -46497,10 +46510,30 @@ def _past_invoices_for(cx, email):
                     continue
                 outstanding = _amount(inv.get("outstanding"))
                 paid = outstanding == "0.00"
+                legacy_items = []
+                physical_items = []
+                for raw_item in inv.get("items") or []:
+                    product_id = str(raw_item.get("product_id") or "").strip()
+                    slug = (_fmp_resolved.get(product_id) or "").strip()
+                    product = _get_product(slug) if slug else None
+                    qty = _legacy_qty(raw_item.get("qty"))
+                    description = (raw_item.get("description") or "").strip()
+                    ext_amount = _amount(raw_item.get("ext_price"))
+                    is_product = bool(product and qty > 0)
+                    legacy_items.append({
+                        "description": description or (product or {}).get("name") or "Invoice line",
+                        "qty": qty, "slug": slug if product else "",
+                        "product_name": (product or {}).get("name") or "",
+                        "amount_dollars": ext_amount, "is_product": is_product,
+                    })
+                    if is_product:
+                        physical_items.append({"slug": slug, "qty": qty})
                 out.append({
                     "token": "", "amount_dollars": amount, "paid": paid,
                     "status": "paid" if paid else (inv.get("status") or "invoice"),
-                    "when": when, "physical_units": 0, "link": "",
+                    "when": when,
+                    "physical_units": _order_physical_units({"items": physical_items}),
+                    "items": legacy_items, "link": "",
                     "source": "filemaker", "legacy_id": inv.get("id") or "",
                 })
                 seen.add((when, amount))
