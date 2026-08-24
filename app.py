@@ -17988,6 +17988,32 @@ def _zoom_register_person(meeting_id, email, name, *, occurrence_id=""):
         last_name=last_name, occurrence_id=occurrence_id)
 
 
+def _zoom_register_for_series(series_key, meeting_id, email, name):
+    """Return one saved private Zoom registration for an entire recurring series."""
+    from dashboard import live_event_series as _les
+    with _db_lock, db.connect(LOG_DB) as cx:
+        _les.init_tables(cx)
+        existing = _les.get_registration(cx, series_key, email)
+    if existing and existing.get("zoom_join_url"):
+        return {"join_url": existing["zoom_join_url"],
+                "registrant_id": existing.get("zoom_registrant_id") or ""}
+    result = _zoom_register_person(meeting_id, email, name)
+    if not result.get("join_url"):
+        raise RuntimeError("Zoom returned no registrant join URL")
+    with _db_lock, db.connect(LOG_DB) as cx:
+        _les.init_tables(cx)
+        # A retry/race that completed while Zoom was responding wins; all future
+        # calls return the first persisted private link.
+        existing = _les.get_registration(cx, series_key, email)
+        if existing and existing.get("zoom_join_url"):
+            return {"join_url": existing["zoom_join_url"],
+                    "registrant_id": existing.get("zoom_registrant_id") or ""}
+        _les.set_registration(
+            cx, series_key, email, result.get("registrant_id") or "",
+            result["join_url"])
+    return result
+
+
 def _masterclass_zoom_registration(event_id, email, name):
     """Idempotently obtain and persist one client's private Zoom join URL."""
     from dashboard import masterclass as _mc
@@ -18005,9 +18031,16 @@ def _masterclass_zoom_registration(event_id, email, name):
     if not meeting_id:
         return {"join_url": "", "error": "zoom_meeting_missing"}
     try:
-        result = _zoom_register_person(
-            meeting_id, email, name,
-            occurrence_id=event.get("zoom_occurrence_id") or "")
+        from dashboard import live_event_series as _les
+        with _db_lock, db.connect(LOG_DB) as cx:
+            series = _les.get_series_for_meeting(cx, meeting_id)
+        if series:
+            result = _zoom_register_for_series(
+                series["series_key"], meeting_id, email, name)
+        else:
+            result = _zoom_register_person(
+                meeting_id, email, name,
+                occurrence_id=event.get("zoom_occurrence_id") or "")
         if not result.get("join_url"):
             raise RuntimeError("Zoom returned no registrant join URL")
         with _db_lock, db.connect(LOG_DB) as cx:
@@ -30506,9 +30539,25 @@ def api_portal_calendar_register(token):
             if not meeting_id or not bool(row[2]):
                 return jsonify({"error": "zoom_registration_unavailable",
                                 "detail": "This event is not configured for private Zoom registration."}), 409
+            from dashboard import live_event_series as _les
+            series = _les.get_series_for_meeting(cx, meeting_id)
+            if not series:
+                return jsonify({"error": "zoom_registration_unavailable",
+                                "detail": "This event is not linked to its recurring Zoom series."}), 409
+            stable = _les.get_registration(cx, series["series_key"], email)
+            if stable and stable.get("zoom_join_url"):
+                _pc.register_group(
+                    cx, event_key, email, meeting_id=meeting_id,
+                    occurrence_id=occurrence_id,
+                    registrant_id=stable.get("zoom_registrant_id") or "",
+                    join_url=stable["zoom_join_url"])
+                return jsonify({"ok": True, "registered": True,
+                                "join_url": stable["zoom_join_url"],
+                                "join_status": "ready"})
             group_registration = {"meeting_id": meeting_id,
                                   "occurrence_id": occurrence_id,
-                                  "event_key": event_key}
+                                  "event_key": event_key,
+                                  "series_key": series["series_key"]}
 
         elif not event_key.startswith("masterclass-"):
             return jsonify({"error": "not_found"}), 404
@@ -30528,9 +30577,9 @@ def api_portal_calendar_register(token):
 
     if group_registration:
         try:
-            zoom_registration = _zoom_register_person(
-                group_registration["meeting_id"], email, name,
-                occurrence_id=group_registration["occurrence_id"])
+            zoom_registration = _zoom_register_for_series(
+                group_registration["series_key"],
+                group_registration["meeting_id"], email, name)
             if not zoom_registration.get("join_url"):
                 raise RuntimeError("Zoom returned no registrant join URL")
         except Exception:
@@ -30579,6 +30628,7 @@ def api_console_community_live_health():
     if not _portal_console_ok():
         return jsonify({"error": "unauthorized"}), 401
     from dashboard import portal_calendar as _pc
+    from dashboard import live_event_series as _les
     issues = []
     with db.connect(LOG_DB) as cx:
         cx.row_factory = sqlite3.Row
@@ -30591,6 +30641,17 @@ def api_console_community_live_health():
         if not coaching:
             issues.append("no future Group Coaching occurrence")
         try:
+            _les.init_tables(cx)
+            series_rows = cx.execute(
+                "SELECT series_key,zoom_meeting_id,registration_required,recurring "
+                "FROM live_event_series WHERE series_key IN "
+                "('group-coaching','free-masterclass')").fetchall()
+            series = {row[0]: row for row in series_rows}
+            for key, label in (("group-coaching", "Group Coaching"),
+                               ("free-masterclass", "MasterClass")):
+                row = series.get(key)
+                if not row or not row[1] or not bool(row[2]) or not bool(row[3]):
+                    issues.append(f"{label} stable recurring Zoom series missing")
             group_ready = cx.execute(
                 "SELECT COUNT(*) FROM calendar_events WHERE status='visible' AND start>=? "
                 "AND lower(summary) LIKE '%group coaching%' "
@@ -30599,6 +30660,13 @@ def api_console_community_live_health():
             ).fetchone()[0]
             if coaching and int(group_ready or 0) < len(coaching):
                 issues.append("Group Coaching private Zoom registration missing")
+            group_occurrences = cx.execute(
+                "SELECT COUNT(*) FROM calendar_events WHERE status='visible' AND start>=? "
+                "AND lower(summary) LIKE '%group coaching%' "
+                "AND COALESCE(zoom_occurrence_id,'')!=''",
+                (_hst_now().replace(tzinfo=None).isoformat(),)).fetchone()[0]
+            if coaching and int(group_occurrences or 0) < len(coaching):
+                issues.append("Group Coaching Zoom occurrence identity missing")
             exposed = cx.execute(
                 "SELECT COUNT(*) FROM calendar_events WHERE status='visible' AND start>=? "
                 "AND lower(summary) LIKE '%group coaching%' "
@@ -30613,6 +30681,13 @@ def api_console_community_live_health():
                 (_hst_now().replace(tzinfo=None).isoformat(),)).fetchone()[0]
             if masterclasses and int(master_ready or 0) < len(masterclasses):
                 issues.append("MasterClass private Zoom registration missing")
+            master_occurrences = cx.execute(
+                "SELECT COUNT(*) FROM masterclass_events WHERE start_ts>=? "
+                "AND lower(topic) LIKE '%wellness whispering%' "
+                "AND COALESCE(zoom_occurrence_id,'')!=''",
+                (_hst_now().replace(tzinfo=None).isoformat(),)).fetchone()[0]
+            if masterclasses and int(master_occurrences or 0) < len(masterclasses):
+                issues.append("MasterClass Zoom occurrence identity missing")
         except Exception:
             issues.append("live event registration metadata unavailable")
     return jsonify({"ok": not issues, "issues": issues,
@@ -30622,11 +30697,12 @@ def api_console_community_live_health():
 
 @app.route("/api/console/community-live/bootstrap", methods=["POST"])
 def api_console_community_live_bootstrap():
-    """Idempotently create this Wednesday's identity-bound community calls."""
+    """Publish this Wednesday from two stable identity-bound recurring series."""
     if not _portal_console_ok():
         return jsonify({"error": "unauthorized"}), 401
     from dashboard import masterclass as _mc
     from dashboard import zoom as _zoom
+    from dashboard import live_event_series as _les
     local_tz = ZoneInfo("Pacific/Honolulu")
     now = datetime.now(local_tz)
     days = (2 - now.weekday()) % 7
@@ -30642,9 +30718,13 @@ def api_console_community_live_bootstrap():
         os.environ["ZOOM_ACCOUNT_ID"], os.environ["ZOOM_CLIENT_ID"],
         os.environ["ZOOM_CLIENT_SECRET"])
     created = []
+    series_created = []
     with _db_lock, db.connect(LOG_DB) as cx:
         cx.row_factory = sqlite3.Row
         _mc.init_masterclass_tables(cx)
+        _les.init_tables(cx)
+        group_series = _les.get_series(cx, "group-coaching")
+        master_series = _les.get_series(cx, "free-masterclass")
         group = cx.execute(
             "SELECT id,zoom_meeting_id,zoom_registration_required FROM calendar_events "
             "WHERE status='visible' AND lower(summary) LIKE '%group coaching%' "
@@ -30653,62 +30733,99 @@ def api_console_community_live_bootstrap():
             "SELECT id,zoom_meeting_id,registration_required FROM masterclass_events "
             "WHERE lower(topic) LIKE '%wellness whispering%' "
             "AND start_ts=? ORDER BY id DESC LIMIT 1", (master_start_raw,)).fetchone()
-    group_ready = bool(group and group[1] and group[2])
-    master_ready = bool(master and master[1] and master[2])
-    group_meeting = None
-    master_meeting = None
-    if not group_ready:
-        group_meeting = _zoom.create_meeting(
-            zoom_token, host=GLEN_ZOOM_USER, topic="Group Coaching",
-            start_iso=group_start.isoformat(timespec="seconds"), duration_min=60,
-            waiting_room=True, registration_required=True)
-    if not master_ready:
-        master_meeting = _zoom.create_meeting(
-            zoom_token, host=GLEN_ZOOM_USER,
-            topic="Free Wellness Whispering MasterClass",
-            start_iso=master_start.isoformat(timespec="seconds"), duration_min=60,
-            waiting_room=False, registration_required=True)
+    recurrence = {"type": 2, "repeat_interval": 1,
+                  "weekly_days": "4", "end_times": 50}
+
+    def ensure_series(series, key, title, start, waiting_room):
+        if series and series.get("zoom_meeting_id"):
+            meeting = _zoom.get_meeting(zoom_token, series["zoom_meeting_id"])
+            settings = meeting.get("settings") or {}
+            if (int(meeting.get("type") or 0) != 8
+                    or int(settings.get("approval_type", 2)) != 0
+                    or int(settings.get("registration_type", 0)) != 1):
+                raise RuntimeError(f"{title} recurring registration state is invalid")
+            return meeting
+        meeting = _zoom.create_meeting(
+            zoom_token, host=GLEN_ZOOM_USER, topic=title,
+            start_iso=start.isoformat(timespec="seconds"), duration_min=60,
+            waiting_room=waiting_room, registration_required=True,
+            recurrence=recurrence)
+        meeting["settings"] = {"approval_type": 0, "registration_type": 1}
+        # Persist each successful create immediately.  If the second Zoom call
+        # fails, a retry reuses this series instead of orphaning and duplicating it.
+        with _db_lock, db.connect(LOG_DB) as series_cx:
+            _les.upsert_series(series_cx, key, title, meeting["meeting_id"],
+                               meeting.get("registration_url") or "")
+        series_created.append(key)
+        return meeting
+
+    try:
+        group_meeting = ensure_series(
+            group_series, "group-coaching", "Group Coaching", group_start, True)
+        master_meeting = ensure_series(
+            master_series, "free-masterclass",
+            "Free Wellness Whispering MasterClass", master_start, False)
+        group_occurrence = _zoom.occurrence_id_for(group_meeting, group_start)
+        master_occurrence = _zoom.occurrence_id_for(master_meeting, master_start)
+        if not group_occurrence or not master_occurrence:
+            raise RuntimeError("Zoom did not return both Wednesday occurrence IDs")
+    except Exception as exc:
+        app.logger.exception("community live recurring-series bootstrap failed")
+        return jsonify({"ok": False, "error": "zoom_series_invalid",
+                        "detail": str(exc)}), 502
+
     with _db_lock, db.connect(LOG_DB) as cx:
         cx.row_factory = sqlite3.Row
         _mc.init_masterclass_tables(cx)
-        if group_meeting:
-            if group:
-                cx.execute(
-                    "UPDATE calendar_events SET location='Zoom',zoom_meeting_id=?,"
-                    "zoom_occurrence_id='',zoom_registration_url=?,"
-                    "zoom_registration_required=1 WHERE id=?",
-                    (group_meeting["meeting_id"],
-                     group_meeting.get("registration_url") or "", group[0]))
-            else:
-                cx.execute(
-                    "INSERT INTO calendar_events (pushed_at,google_cal_id,google_event_id,"
-                    'calendar_name,summary,start,"end",location,owner,status,cal_alert,'
-                    "zoom_meeting_id,zoom_occurrence_id,zoom_registration_url,"
-                    "zoom_registration_required) VALUES (?, 'community', ?, "
-                    "'Group Coaching', 'Group Coaching', ?, ?, 'Zoom', 'glen', "
-                    "'visible', 0, ?, '', ?, 1)",
-                    (datetime.now(timezone.utc).isoformat(),
-                     f"zoom-{group_meeting['meeting_id']}", group_start_raw,
-                     (group_start + timedelta(hours=1)).replace(tzinfo=None).isoformat(),
-                     group_meeting["meeting_id"],
-                     group_meeting.get("registration_url") or ""))
+        _les.init_tables(cx)
+        _les.upsert_series(cx, "group-coaching", "Group Coaching",
+                           group_meeting["meeting_id"],
+                           group_meeting.get("registration_url") or "")
+        _les.upsert_series(cx, "free-masterclass",
+                           "Free Wellness Whispering MasterClass",
+                           master_meeting["meeting_id"],
+                           master_meeting.get("registration_url") or "")
+        if group:
+            cx.execute(
+                "UPDATE calendar_events SET location='Zoom',zoom_meeting_id=?,"
+                "zoom_occurrence_id=?,zoom_registration_url=?,"
+                "zoom_registration_required=1 WHERE id=?",
+                (group_meeting["meeting_id"], group_occurrence,
+                 group_meeting.get("registration_url") or "", group[0]))
+        else:
+            cx.execute(
+                "INSERT INTO calendar_events (pushed_at,google_cal_id,google_event_id,"
+                'calendar_name,summary,start,"end",location,owner,status,cal_alert,'
+                "zoom_meeting_id,zoom_occurrence_id,zoom_registration_url,"
+                "zoom_registration_required) VALUES (?, 'community', ?, "
+                "'Group Coaching', 'Group Coaching', ?, ?, 'Zoom', 'glen', "
+                "'visible', 0, ?, ?, ?, 1)",
+                (datetime.now(timezone.utc).isoformat(),
+                 f"zoom-{group_meeting['meeting_id']}-{group_occurrence}", group_start_raw,
+                 (group_start + timedelta(hours=1)).replace(tzinfo=None).isoformat(),
+                 group_meeting["meeting_id"], group_occurrence,
+                 group_meeting.get("registration_url") or ""))
             created.append("group_coaching")
-        if master_meeting:
-            if master:
-                event_id = master[0]
-            else:
-                event_id = _mc.create_event(
-                    cx, topic="Free Wellness Whispering MasterClass",
-                    description="Free live community MasterClass with Dr. Glen.",
-                    start_ts=master_start_raw, duration_min=60,
-                    price_cents=0, member_price_cents=0)
-            _mc.set_zoom(
-                cx, event_id, "",
-                master_meeting["meeting_id"],
-                registration_url=master_meeting.get("registration_url") or "")
+        if master:
+            event_id = master[0]
+        else:
+            event_id = _mc.create_event(
+                cx, topic="Free Wellness Whispering MasterClass",
+                description="Free live community MasterClass with Dr. Glen.",
+                start_ts=master_start_raw, duration_min=60,
+                price_cents=0, member_price_cents=0)
             created.append("masterclass")
+        _mc.set_zoom(
+            cx, event_id, "", master_meeting["meeting_id"],
+            registration_url=master_meeting.get("registration_url") or "",
+            occurrence_id=master_occurrence)
         cx.commit()
     return jsonify({"ok": True, "created": created,
+                    "series_created": series_created,
+                    "group_meeting_id": group_meeting["meeting_id"],
+                    "group_occurrence_id": group_occurrence,
+                    "masterclass_meeting_id": master_meeting["meeting_id"],
+                    "masterclass_occurrence_id": master_occurrence,
                     "group_start_hst": group_start.isoformat(),
                     "masterclass_start_hst": master_start.isoformat()})
 

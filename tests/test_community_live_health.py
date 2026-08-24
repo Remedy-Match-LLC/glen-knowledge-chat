@@ -27,10 +27,21 @@ def _seed(path, *, master_ready, group_ready, exposed_group_link=False):
                    ((start + timedelta(hours=1)).isoformat(),
                     "22222222222" if master_ready else "", 1 if master_ready else 0))
         cx.execute("INSERT INTO calendar_events VALUES "
-                   "(2,'Group Coaching',?,?,?,'visible','Group Coaching',?,'','',?)",
+                   "(2,'Group Coaching',?,?,?,'visible','Group Coaching',?,'group-occ','',?)",
                    (start.isoformat(), (start + timedelta(hours=1)).isoformat(),
                     "https://zoom.test/shared" if exposed_group_link else "Zoom",
                     "11111111111" if group_ready else "", 1 if group_ready else 0))
+        cx.execute("ALTER TABLE masterclass_events ADD COLUMN zoom_occurrence_id TEXT")
+        cx.execute("UPDATE masterclass_events SET zoom_occurrence_id='master-occ'")
+        cx.execute("CREATE TABLE live_event_series (series_key TEXT PRIMARY KEY,title TEXT,"
+                   "zoom_meeting_id TEXT,zoom_registration_url TEXT,"
+                   "registration_required INTEGER,recurring INTEGER,created_at TEXT,updated_at TEXT)")
+        cx.execute("INSERT INTO live_event_series VALUES "
+                   "('group-coaching','Group Coaching',?,'',?,1,'','')",
+                   ("11111111111" if group_ready else "", 1 if group_ready else 0))
+        cx.execute("INSERT INTO live_event_series VALUES "
+                   "('free-masterclass','Free MasterClass',?,'',?,1,'','')",
+                   ("22222222222" if master_ready else "", 1 if master_ready else 0))
         cx.commit()
 
 
@@ -71,7 +82,7 @@ def test_health_endpoint_rejects_shared_group_zoom_location(monkeypatch, tmp_pat
     assert "Group Coaching shared Zoom link exposed" in body["issues"]
 
 
-def test_bootstrap_creates_distinct_registration_required_occurrences(monkeypatch, tmp_path):
+def test_bootstrap_creates_distinct_registration_required_series(monkeypatch, tmp_path):
     path = tmp_path / "bootstrap.db"
     monkeypatch.setattr(appmod, "LOG_DB", str(path))
     monkeypatch.setattr(appmod, "CONSOLE_SECRET", "secret")
@@ -85,8 +96,19 @@ def test_bootstrap_creates_distinct_registration_required_occurrences(monkeypatc
         meeting_id = "11111111111" if kwargs["topic"] == "Group Coaching" else "22222222222"
         return {"meeting_id": meeting_id, "join_url": f"https://zoom.test/j/{meeting_id}",
                 "registration_url": f"https://zoom.test/register/{meeting_id}",
-                "start_url": ""}
+                "start_url": "", "type": 8,
+                "occurrences": [{"occurrence_id": meeting_id + "-occ",
+                                  "start_time": kwargs["start_iso"]}]}
     monkeypatch.setattr("dashboard.zoom.create_meeting", fake_create)
+    def fake_get(token, meeting_id):
+        start = next(c["start_iso"] for c in calls
+                     if ((c["topic"] == "Group Coaching") == (meeting_id == "11111111111")))
+        return {"meeting_id": meeting_id, "type": 8,
+                "registration_url": f"https://zoom.test/register/{meeting_id}",
+                "settings": {"approval_type": 0, "registration_type": 1},
+                "occurrences": [{"occurrence_id": meeting_id + "-occ",
+                                  "start_time": start}]}
+    monkeypatch.setattr("dashboard.zoom.get_meeting", fake_get)
     client = appmod.app.test_client()
     first = client.post(
         "/api/console/community-live/bootstrap", headers={"X-Console-Key": "secret"})
@@ -94,17 +116,36 @@ def test_bootstrap_creates_distinct_registration_required_occurrences(monkeypatc
     assert first.get_json()["created"] == ["group_coaching", "masterclass"]
     assert len(calls) == 2
     assert all(call["registration_required"] is True for call in calls)
-    assert all("recurrence" not in call for call in calls)
+    assert all(call["recurrence"]["weekly_days"] == "4" for call in calls)
     with db.connect(str(path)) as cx:
         group = cx.execute(
-            "SELECT location,zoom_meeting_id,zoom_registration_required FROM calendar_events"
+            "SELECT location,zoom_meeting_id,zoom_occurrence_id,zoom_registration_required "
+            "FROM calendar_events"
         ).fetchone()
         master = cx.execute(
-            "SELECT zoom_join_url,zoom_meeting_id,registration_required FROM masterclass_events"
+            "SELECT zoom_join_url,zoom_meeting_id,zoom_occurrence_id,registration_required "
+            "FROM masterclass_events"
         ).fetchone()
-    assert tuple(group) == ("Zoom", "11111111111", 1)
-    assert tuple(master) == ("", "22222222222", 1)
+    assert tuple(group) == ("Zoom", "11111111111", "11111111111-occ", 1)
+    assert tuple(master) == ("", "22222222222", "22222222222-occ", 1)
     second = client.post(
         "/api/console/community-live/bootstrap", headers={"X-Console-Key": "secret"})
     assert second.get_json()["created"] == []
     assert len(calls) == 2
+
+
+def test_series_registration_reuses_saved_private_link(monkeypatch, tmp_path):
+    path = tmp_path / "series-registration.db"
+    monkeypatch.setattr(appmod, "LOG_DB", str(path))
+    calls = []
+    monkeypatch.setattr(
+        appmod, "_zoom_register_person",
+        lambda meeting_id, email, name, occurrence_id="":
+            calls.append((meeting_id, email)) or {
+                "registrant_id": "reg-1", "join_url": "https://zoom.test/private"})
+    first = appmod._zoom_register_for_series(
+        "group-coaching", "11111111111", "member@example.com", "Member")
+    second = appmod._zoom_register_for_series(
+        "group-coaching", "11111111111", "MEMBER@example.com", "Member")
+    assert first["join_url"] == second["join_url"] == "https://zoom.test/private"
+    assert calls == [("11111111111", "member@example.com")]
