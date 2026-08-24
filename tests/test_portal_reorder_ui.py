@@ -106,6 +106,6 @@ def test_reorder_button_has_one_shot_latch():
 def test_reorder_adds_to_shared_basket_instead_of_opening_side_checkout():
     m = re.search(r"async function reorderItem\(btn\)\{[\s\S]*?\n\}\n", HTML)
     fn = m.group(0)
-    assert "await addItemToBasket(slug, qty)" in fn
+    assert "await addItemToBasket(slug, qty, format)" in fn
     assert "/checkout" not in fn
     assert "stripe_url" not in fn
