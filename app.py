@@ -6853,7 +6853,7 @@ _FF_SRP_CENTS  = 8000     # $80.00 — FF SRP/Value anchor (shown above the $69.
 _FORMATS = [
     {"id": "bottle", "label": "Standard bottles", "note": "30 capsules per bottle"},
     {"id": "larger", "label": "Larger bottle", "note": "90, 180, or 360 capsules in one bottle (quantity 3, 6, or 12)"},
-    {"id": "refill", "label": "Cellophane refill packs", "note": "Capsules only, no bottle"},
+    {"id": "refill", "label": "Cellophane refill packs", "note": "Capsules and product label; no bottle"},
 ]
 # id -> label for the non-default packaging formats. "bottle" (the default) is omitted
 # on purpose: only a non-standard choice becomes a fulfillment note on the order line.

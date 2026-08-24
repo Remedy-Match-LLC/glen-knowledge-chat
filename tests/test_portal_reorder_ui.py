@@ -113,6 +113,9 @@ def test_reorder_adds_to_shared_basket_instead_of_opening_side_checkout():
 
 def test_portal_exposes_and_saves_global_cello_default():
     assert 'id="celloRefillDefault"' in HTML
+    assert 'Send all eligible capsules in cellophane packs by default' in HTML
+    assert 'This includes first-time purchases and reorders.' in HTML
+    assert 'Each pack comes with a product label for your own bottle.' in HTML
     assert 'cello_refill_default:wanted' in HTML
     assert '/packaging-preference' in HTML
     assert 'data-refill-eligible' in HTML
