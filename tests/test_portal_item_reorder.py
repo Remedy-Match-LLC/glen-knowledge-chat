@@ -409,11 +409,12 @@ def test_portal_reorder_can_request_cellophane_refill_packs(client):
         ("wholomega", "refill", 2)]
 
 
-def test_client_can_save_cello_default_and_it_applies_to_eligible_capsules(client):
+def test_client_cello_default_applies_to_first_time_capsule_purchase(client):
     c, appmod = client
     tok = _seed_portal(appmod, email="cello-default@example.com", content={
         "greeting": "hi", "video": {}, "layers": [], "reorder_items": [],
     })
+    # No reorder items or imported purchase history: this is a first purchase.
     saved = c.post(f"/api/portal/{tok}/packaging-preference",
                    json={"cello_refill_default": True})
     assert saved.status_code == 200

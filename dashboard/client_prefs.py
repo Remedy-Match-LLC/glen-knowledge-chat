@@ -1,8 +1,8 @@
 """Persistent per-client fulfillment preferences.
 
 ``pickup_default`` lets the order builder pre-check Pickup.  The client-facing
-``cello_refill_default`` makes eligible capsule products default to cellophane
-refill packs in the portal. Mirrors client_prices.py — pure functions over a
+``cello_refill_default`` makes eligible capsule products, including first-time
+purchases, default to cellophane packs in the portal. Mirrors client_prices.py — pure functions over a
 database connection (testable).
 
 Nothing writes this except an explicit operator toggle on the order builder.
@@ -75,7 +75,7 @@ def get_pickup_default(cx, email):
 
 
 def set_cello_refill_default(cx, email, value):
-    """Persist whether eligible capsule products should default to refill packs."""
+    """Persist whether all eligible capsule purchases default to cello packs."""
     email = _norm(email)
     if not email:
         raise ValueError("email required")

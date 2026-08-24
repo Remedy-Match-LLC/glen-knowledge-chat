@@ -3813,8 +3813,8 @@ function render(d, v){
       ${note}
       <label style="display:flex;gap:.55rem;align-items:flex-start;margin:.6rem 0 .8rem">
         <input type="checkbox" id="celloRefillDefault" ${d.cello_refill_default ? "checked" : ""} style="margin-top:.25rem">
-        <span><strong>Default eligible capsules to cellophane refill packs</strong><br>
-          <span class="small muted">This preference is remembered for future orders. You can still change an individual item.</span></span>
+        <span><strong>Send all eligible capsules in cellophane packs by default</strong><br>
+          <span class="small muted">This includes first-time purchases and reorders. Each pack comes with a product label for your own bottle. Your preference is remembered, and you can still change an individual item.</span></span>
       </label>
       <p class="small muted" id="celloRefillStatus" style="margin:-.35rem 0 .65rem"></p>
       <div id="curatedOrderItems">${rows}</div>
@@ -3875,7 +3875,7 @@ function render(d, v){
       const formatControl = it.refill_eligible ? `<label class="small">Packaging
             <select class="remFormat" aria-label="Packaging for ${esc(it.name||it.slug||"")}">
               <option value="bottle" ${d.cello_refill_default ? "" : "selected"}>Standard bottle</option>
-              <option value="refill" ${d.cello_refill_default ? "selected" : ""}>Cellophane refill packs</option>
+              <option value="refill" ${d.cello_refill_default ? "selected" : ""}>Cellophane pack + label</option>
             </select>
           </label>` : "";
       return `<div class="remitem" data-slug="${slug}" data-unit-cents="${yours}" data-refill-eligible="${it.refill_eligible ? "1" : "0"}">
