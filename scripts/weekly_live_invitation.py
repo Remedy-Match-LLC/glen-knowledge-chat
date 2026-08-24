@@ -284,8 +284,11 @@ def _send(contact_id, subject, text, body_html, *, email_to=""):
         body["emailTo"] = email_to
     status, data = _api("POST", "/conversations/messages", GHL_MESSAGES_VERSION,
                         body, write=True)
+    nested_message = data.get("message")
+    if not isinstance(nested_message, dict):
+        nested_message = {}
     message_id = (data.get("messageId") or data.get("id")
-                  or (data.get("message") or {}).get("id") or "")
+                  or nested_message.get("id") or "")
     return status, message_id, data
 
 

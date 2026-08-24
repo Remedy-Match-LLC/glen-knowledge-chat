@@ -67,3 +67,18 @@ def test_create_contact_reuses_contact_when_email_is_an_additional_address(monke
     contact = weekly._create_contact("member@example.com")
 
     assert contact == {"id": "existing-1", "email": "member@example.com"}
+
+
+def test_send_preserves_string_error_response_without_crashing(monkeypatch):
+    monkeypatch.setattr(
+        weekly, "_api",
+        lambda *args, **kwargs: (422, {"message": "email address is invalid"}),
+    )
+
+    status, message_id, response = weekly._send(
+        "contact-1", "Subject", "plain", "<p>html</p>",
+        email_to="bad@example.com")
+
+    assert status == 422
+    assert message_id == ""
+    assert response["message"] == "email address is invalid"
