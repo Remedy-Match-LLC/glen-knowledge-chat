@@ -16,7 +16,12 @@ import time
 import urllib.error
 import urllib.request
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from zoneinfo import ZoneInfo
+
+# Render invokes operational scripts by file path as well as with ``python -m``.
+# Keep the repository root importable in both modes.
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import app as appmod
 from dashboard import client_portal, email_suppression
@@ -133,7 +138,10 @@ def _authoritative_access_sets():
         with supabase_cursor() as cur:
             cur.execute("SELECT lower(email) FROM practitioners "
                         "WHERE portal_role='coach' AND email IS NOT NULL")
-            certification = {_email(row[0]) for row in cur.fetchall()}
+            certification = {
+                _email(row.get("email") if hasattr(row, "get") else row[0])
+                for row in cur.fetchall()
+            }
             certification.discard("")
     except Exception as exc:
         raise RuntimeError(f"certification roster unavailable: {exc}") from exc
