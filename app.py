@@ -16248,6 +16248,14 @@ def _practitioner_session_pid():
     return _pp.practitioner_id_from_session(token) if token else None
 
 
+def _practitioner_return_to(value):
+    """Allow magic links to return only to known practitioner surfaces."""
+    path = (value or "").strip()
+    if path in {"/practitioner/portal", "/practitioner/dropship"}:
+        return path
+    return "/practitioner/portal"
+
+
 @app.route("/practitioner/portal")
 def practitioner_portal_page():
     return send_from_directory(STATIC, "practitioner-portal.html")
@@ -16357,7 +16365,9 @@ def api_practitioner_resale_apply():
 
 @app.route("/practitioner/login-request", methods=["POST"])
 def practitioner_login_request():
-    email = ((request.get_json(silent=True) or {}).get("email") or "").strip().lower()
+    body = request.get_json(silent=True) or {}
+    email = (body.get("email") or "").strip().lower()
+    return_to = _practitioner_return_to(body.get("return_to"))
     if "@" in email:
         try:
             pid = _pp.find_practitioner_id_by_email(email)
@@ -16365,8 +16375,10 @@ def practitioner_login_request():
             pid = None
         if pid:
             magic = _pp.create_magic_link_token(pid, email)
+            import urllib.parse as _up
+            query = _up.urlencode({"token": magic, "return_to": return_to})
             _send_practitioner_magic_link(
-                email, "", f"{PUBLIC_BASE_URL}/practitioner/login-verify?token={magic}")
+                email, "", f"{PUBLIC_BASE_URL}/practitioner/login-verify?{query}")
     return jsonify({"ok": True,
                     "message": "If that email has a portal account, a sign-in link is on its way."})
 
@@ -16377,18 +16389,23 @@ def practitioner_login_verify():
     the practitioner's sign-in link. See _confirm_post_page."""
     from flask import redirect as _redir
     token = (request.args.get("token") or request.form.get("token") or "").strip()
+    return_to = _practitioner_return_to(
+        request.args.get("return_to") or request.form.get("return_to"))
     if request.method == "GET":
         if not token or not _pp.validate_magic_link(token):
             return _redir("/practitioner/register?error=link")
         return _confirm_post_page(
             "/practitioner/login-verify", title="Sign in",
             heading="Welcome back",
-            blurb="Continue to open your practitioner portal.",
-            button="Continue", hidden={"token": token})
+            blurb="Continue to return to your practitioner order.",
+            button="Continue to my order",
+            hidden={"token": token, "return_to": return_to})
     pid = _pp.consume_magic_link(token) if token else None
     if not pid:
         return _redir("/practitioner/register?error=link")
-    return _redir(f"/practitioner/portal?token={_pp.create_session_token(pid)}")
+    session = _pp.create_session_token(pid)
+    separator = "&" if "?" in return_to else "?"
+    return _redir(f"{return_to}{separator}token={session}")
 
 
 @app.route("/api/practitioner/portal-data", methods=["GET"])

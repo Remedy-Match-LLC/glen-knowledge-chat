@@ -16,6 +16,56 @@ def test_dropship_order_card_has_product_lookup():
     assert "addProduct(product.slug)" in page
 
 
+def test_dropship_auth_wall_requests_link_that_returns_to_order():
+    page = (Path(__file__).parents[1] / "static" / "practitioner-dropship.html").read_text()
+    assert 'id="signin-email"' in page
+    assert 'id="signin-send"' in page
+    assert "return_to:'/practitioner/dropship'" in page
+    assert "brings you directly back to this order page" in page
+
+
+def test_practitioner_login_request_carries_safe_dropship_return(monkeypatch):
+    monkeypatch.setattr(appmod._pp, "find_practitioner_id_by_email", lambda email: "p1")
+    monkeypatch.setattr(appmod._pp, "create_magic_link_token", lambda pid, email: "MAGIC")
+    sent = []
+    monkeypatch.setattr(appmod, "_send_practitioner_magic_link",
+                        lambda email, name, url: sent.append(url))
+
+    response = appmod.app.test_client().post(
+        "/practitioner/login-request",
+        json={"email": "doc@example.com", "return_to": "/practitioner/dropship"})
+
+    assert response.status_code == 200
+    assert "return_to=%2Fpractitioner%2Fdropship" in sent[0]
+
+
+def test_practitioner_login_verify_returns_to_dropship(monkeypatch):
+    monkeypatch.setattr(appmod._pp, "consume_magic_link", lambda token: "p1")
+    monkeypatch.setattr(appmod._pp, "create_session_token", lambda pid: "SESSION")
+
+    response = appmod.app.test_client().post(
+        "/practitioner/login-verify",
+        data={"token": "MAGIC", "return_to": "/practitioner/dropship"},
+        follow_redirects=False)
+
+    assert response.status_code == 302
+    assert response.headers["Location"].endswith(
+        "/practitioner/dropship?token=SESSION")
+
+
+def test_practitioner_login_verify_rejects_external_return(monkeypatch):
+    monkeypatch.setattr(appmod._pp, "consume_magic_link", lambda token: "p1")
+    monkeypatch.setattr(appmod._pp, "create_session_token", lambda pid: "SESSION")
+
+    response = appmod.app.test_client().post(
+        "/practitioner/login-verify",
+        data={"token": "MAGIC", "return_to": "https://evil.example/steal"},
+        follow_redirects=False)
+
+    assert response.headers["Location"].endswith(
+        "/practitioner/portal?token=SESSION")
+
+
 def _auth(monkeypatch):
     monkeypatch.setattr(appmod, "_practitioner_session_pid", lambda: "p1")
     monkeypatch.setattr(appmod._pp, "portal_data",

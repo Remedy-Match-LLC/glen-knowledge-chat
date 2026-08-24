@@ -43,6 +43,9 @@
     #msg.err{ color:#e09080; }
     .auth-notice{ text-align:center; padding:40px 20px; }
     .auth-notice a{ color:var(--gold); }
+    .auth-form{ max-width:420px; margin:18px auto 0; text-align:left; }
+    .auth-form label{ display:block; font-size:13px; color:var(--muted); margin-bottom:5px; }
+    .auth-form .row input{ flex:1; min-width:0; }
     .billing-note{ font-size:13px; color:var(--muted); margin-top:8px; border-left:3px solid var(--border); padding-left:10px; }
     .product-lookup{ position:relative; margin:12px 0 4px; }
     .product-lookup input{ width:100%; }
@@ -72,9 +75,16 @@
   </div>
 
   <div id="auth-wall" class="auth-notice" style="display:none">
-    <div style="font-size:18px;font-weight:700;font-family:var(--heading);margin-bottom:10px">Sign in required</div>
-    <p>Please sign in to your practitioner portal first.</p>
-    <a href="/practitioner/portal">Go to practitioner portal &rarr;</a>
+    <div style="font-size:18px;font-weight:700;font-family:var(--heading);margin-bottom:10px">Sign in to continue your drop-ship order</div>
+    <p>Enter the email address for your practitioner account. We’ll email you a secure sign-in link that brings you directly back to this order page.</p>
+    <form id="signin-form" class="auth-form">
+      <label for="signin-email">Practitioner account email</label>
+      <div class="row">
+        <input id="signin-email" type="email" autocomplete="email" placeholder="you@example.com" required>
+        <button id="signin-send" type="submit">Email my sign-in link</button>
+      </div>
+      <div id="signin-status" class="muted" role="status" aria-live="polite" style="font-size:13px;margin-top:8px"></div>
+    </form>
   </div>
 
   <div id="main-content" style="display:none">
@@ -419,6 +429,25 @@ function showAuthWall(){
   $('main-content').style.display = 'none';
   $('who').textContent = '';
 }
+
+$('signin-form').addEventListener('submit', function(ev){
+  ev.preventDefault();
+  var email = $('signin-email').value.trim();
+  if(!email) return;
+  $('signin-send').disabled = true;
+  $('signin-status').textContent = 'Sending your secure sign-in link…';
+  fetch('/practitioner/login-request', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({email:email, return_to:'/practitioner/dropship'})
+  }).then(function(r){ return r.json(); }).then(function(d){
+    $('signin-status').textContent = d.message || 'Check your email for the sign-in link.';
+    $('signin-send').textContent = 'Send another link';
+    $('signin-send').disabled = false;
+  }).catch(function(){
+    $('signin-status').textContent = 'We could not send the link. Please try again.';
+    $('signin-send').disabled = false;
+  });
+});
 
 $('checkout-btn').addEventListener('click', function(){
   if(!quoteLoaded || !cartData.length){
