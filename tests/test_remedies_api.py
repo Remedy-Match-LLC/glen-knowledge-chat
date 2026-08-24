@@ -35,6 +35,46 @@ def test_add_listed_appears_in_block(tmp_path, monkeypatch):
     assert ext[0]["importance"] == 7
 
 
+def test_add_recognizes_our_catalog_product(tmp_path, monkeypatch):
+    db, token = _seed(tmp_path, monkeypatch)
+    c = app_module.app.test_client()
+    r = c.post(f"/api/portal/{token}/remedies/add", json={
+        "product_name": "wholomega", "product_brand": "Syntropy", "importance": 10,
+    })
+    assert r.status_code == 200
+    item = r.get_json()["external"][0]
+    assert item["product_name"] == "WholOmega"
+    assert item["product_brand"] == "Remedy Match"
+    assert item["is_ours"] is True
+    assert item["importance"] == 10
+
+
+def test_foreign_brand_with_similar_name_stays_external(tmp_path, monkeypatch):
+    db, token = _seed(tmp_path, monkeypatch)
+    c = app_module.app.test_client()
+    r = c.post(f"/api/portal/{token}/remedies/add", json={
+        "product_name": "WholOmega", "product_brand": "Another Company",
+    })
+    item = r.get_json()["external"][0]
+    assert item["product_brand"] == "Another Company"
+    assert item["is_ours"] is False
+
+
+def test_external_product_requires_brand(tmp_path, monkeypatch):
+    db, token = _seed(tmp_path, monkeypatch)
+    c = app_module.app.test_client()
+    r = c.post(f"/api/portal/{token}/remedies/add", json={
+        "product_name": "Vitamin D3", "product_brand": "",
+    })
+    assert r.status_code == 400
+    assert r.get_json()["error"] == "Brand is required for products from other companies."
+
+
+def test_importance_copy_states_scale_direction():
+    body = open("static/client-portal.html", encoding="utf-8").read()
+    assert "1 = least important · 10 = most important" in body
+
+
 def _add(c, token, name="Vitamin D3", brand="NOW", reason="sun", importance=7):
     r = c.post(f"/api/portal/{token}/remedies/add",
                json={"product_name": name, "product_brand": brand, "reason": reason, "importance": importance})
@@ -124,9 +164,11 @@ def test_cross_client_isolation(tmp_path, monkeypatch):
     app_module.app.config["TESTING"] = True
     c = app_module.app.test_client()
 
-    c.post(f"/api/portal/{token_a}/remedies/add", json={"product_name": "A's Supp"})
+    c.post(f"/api/portal/{token_a}/remedies/add",
+           json={"product_name": "A's Supp", "product_brand": "Brand A"})
 
-    body_b = c.post(f"/api/portal/{token_b}/remedies/add", json={"product_name": "B's Supp"}).get_json()
+    body_b = c.post(f"/api/portal/{token_b}/remedies/add",
+                    json={"product_name": "B's Supp", "product_brand": "Brand B"}).get_json()
     assert len(body_b["external"]) == 1
     assert body_b["external"][0]["product_name"] == "B's Supp"
 

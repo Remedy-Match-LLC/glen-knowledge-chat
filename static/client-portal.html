@@ -2035,7 +2035,7 @@ function buildRemediesHtml(v){
   const externalRows = external.length
     ? external.map(e=>{
         const label = (e.product_brand ? `${esc(e.product_brand)} &middot; ` : "") + esc(e.product_name||"");
-        const pillText = STATUS_PILL[e.status] || esc(e.status||"");
+        const pillText = e.is_ours ? "Remedy Match product" : (STATUS_PILL[e.status] || esc(e.status||""));
         const meta = [];
         if(e.reason) meta.push(esc(e.reason));
         if(e.importance!=null && e.importance!=="") meta.push(`Importance ${esc(e.importance)}/10`);
@@ -2049,7 +2049,7 @@ function buildRemediesHtml(v){
           : "";
         const isListed = e.status === "listed";
         const actionBtns = [];
-        if(isListed){
+        if(isListed && !e.is_ours){
           actionBtns.push(`<button type="button" class="btn" data-req-name="${esc(e.product_name||"")}" data-req-brand="${esc(e.product_brand||"")}">Request a review</button>`);
         }
         actionBtns.push(`<button type="button" class="btn ghost small" data-remedy-edit="${esc(e.product_key||"")}">Edit</button>`);
@@ -2060,7 +2060,8 @@ function buildRemediesHtml(v){
         const editArea = `<div class="remitem-edit" hidden style="margin:.4rem 0">
           <label class="small muted">Why are you taking it?</label>
           <textarea data-edit-reason rows="2" style="width:100%;background:var(--card2);color:var(--ink);border:1px solid var(--line);border-radius:8px;padding:8px 10px;font-size:.9rem;margin:.2rem 0;font-family:inherit;resize:vertical">${esc(e.reason||"")}</textarea>
-          <label class="small muted">Importance to you (1 to 10)</label>
+          <label class="small muted">How important is this to you?</label>
+          <p class="small muted" style="margin:.1rem 0"><strong>1 = least important · 10 = most important</strong></p>
           <input data-edit-importance type="number" min="1" max="10" step="1" value="${e.importance!=null?esc(e.importance):""}" style="width:100%;background:var(--card2);color:var(--ink);border:1px solid var(--line);border-radius:8px;padding:8px 10px;font-size:.9rem;margin:.2rem 0 .4rem;font-family:inherit">
           <button type="button" class="btn" data-remedy-save="${esc(e.product_key||"")}">Save</button>
         </div>`;
@@ -2076,11 +2077,13 @@ function buildRemediesHtml(v){
 
   const addForm = `<div class="card quiet" id="ext-add-card" style="margin-top:.7rem">
     <h3 style="margin:.2rem 0 .5rem;font-size:.9rem">Add a product you take</h3>
-    <input id="ext-brand" placeholder="Brand" style="width:100%;background:var(--card2);color:var(--ink);border:1px solid var(--line);border-radius:8px;padding:8px 10px;font-size:.9rem;margin-bottom:.4rem;font-family:inherit">
+    <p class="small muted">You can add Remedy Match and Syntropy products here too—we'll recognize them automatically.</p>
+    <input id="ext-brand" placeholder="Brand (required unless it is ours)" style="width:100%;background:var(--card2);color:var(--ink);border:1px solid var(--line);border-radius:8px;padding:8px 10px;font-size:.9rem;margin-bottom:.4rem;font-family:inherit">
     <input id="ext-product" placeholder="Product name" style="width:100%;background:var(--card2);color:var(--ink);border:1px solid var(--line);border-radius:8px;padding:8px 10px;font-size:.9rem;margin-bottom:.4rem;font-family:inherit">
     <textarea id="ext-reason" rows="2" placeholder="Why are you taking it?" style="width:100%;background:var(--card2);color:var(--ink);border:1px solid var(--line);border-radius:8px;padding:8px 10px;font-size:.9rem;margin-bottom:.4rem;font-family:inherit;resize:vertical"></textarea>
-    <label class="small muted" for="ext-importance">Importance to you (1 to 10)</label>
-    <input id="ext-importance" type="number" min="1" max="10" step="1" placeholder="1 to 10" style="width:100%;background:var(--card2);color:var(--ink);border:1px solid var(--line);border-radius:8px;padding:8px 10px;font-size:.9rem;margin:.3rem 0 .5rem;font-family:inherit">
+    <label class="small muted" for="ext-importance">How important is this to you?</label>
+    <p class="small muted" id="ext-importance-help" style="margin:.1rem 0"><strong>1 = least important · 10 = most important</strong></p>
+    <input id="ext-importance" type="number" min="1" max="10" step="1" placeholder="Choose 1–10" aria-describedby="ext-importance-help" style="width:100%;background:var(--card2);color:var(--ink);border:1px solid var(--line);border-radius:8px;padding:8px 10px;font-size:.9rem;margin:.3rem 0 .5rem;font-family:inherit">
     <button type="button" class="btn full" id="ext-add-btn">Add to my stack</button>
     <p class="small muted" id="ext-add-status" style="margin-top:.4rem"></p>
   </div>`;
@@ -2091,7 +2094,7 @@ function buildRemediesHtml(v){
 
   return `<div class="card"><h2>Top recommended for you</h2><div>${rankedRows}</div></div>
     ${fromHistoryCard}
-    <div class="card"><h2>What you take from other companies</h2><div>${externalRows}</div>${addForm}</div>`;
+    <div class="card"><h2>Products and supplements you take</h2><div>${externalRows}</div>${addForm}</div>`;
 }
 
 // The biofield scan the page is currently viewing (null = newest, server default).
@@ -3871,6 +3874,12 @@ function render(d, v){
             <span class="qtyval" data-qty="${qty}">${qty}</span>
             <button type="button" class="qtybtn" data-dir="1" aria-label="Increase quantity">+</button>
           </span>
+          <label class="small">Packaging
+            <select class="remFormat" aria-label="Packaging for ${esc(it.name||it.slug||"")}">
+              <option value="">Standard bottle</option>
+              <option value="refill">Cellophane refill packs</option>
+            </select>
+          </label>
           ${save}
           <button class="btn remBtn" data-slug="${slug}">Add to basket</button>
         </div>
@@ -6892,12 +6901,12 @@ async function reorder(){
   }
 }
 
-async function addItemToBasket(slug, qty=1){
+async function addItemToBasket(slug, qty=1, format=""){
   if(!slug) throw new Error("That remedy is not available.");
   rememberPortalShoppingContext();
   const r = await fetch(`/api/portal/${encodeURIComponent(token)}/order-add`, {
     method:"POST", headers:{"Content-Type":"application/json"},
-    body:JSON.stringify({slug, qty})
+    body:JSON.stringify({slug, qty, format})
   });
   const j = await r.json();
   if(!r.ok || !j.item) throw new Error(j.error || "Could not add that remedy.");
@@ -6957,8 +6966,10 @@ async function reorderItem(btn){
   const slug = btn.getAttribute("data-slug") || (row && row.getAttribute("data-slug")) || "";
   const qtyVal = row && row.querySelector(".qtyval");
   const qty = Math.max(1, parseInt(qtyVal && qtyVal.getAttribute("data-qty"), 10) || 1);
+  const formatEl = row && row.querySelector(".remFormat");
+  const format = (formatEl && formatEl.value) || "";
   try{
-    await addItemToBasket(slug, qty);
+    await addItemToBasket(slug, qty, format);
     btn.textContent = "In basket";
   }catch(e){
     if(err){ err.textContent = e.message || "Something went wrong. Please reach out and we’ll help."; err.hidden = false; }

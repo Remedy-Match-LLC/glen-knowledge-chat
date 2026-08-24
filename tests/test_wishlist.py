@@ -1,6 +1,13 @@
 import sqlite3
 from dashboard import wishlist as w
 
+
+class _PgLikeConnection:
+    def __init__(self, cx): self.cx = cx
+    def execute(self, sql, params=()):
+        assert "rowid" not in sql.lower()
+        return self.cx.execute(sql, params)
+
 def _cx():
     cx = sqlite3.connect(":memory:")
     w.init_wishlist_table(cx)
@@ -29,6 +36,12 @@ def test_list_for_is_newest_first():
     for s in ["a", "b", "c"]:
         w.toggle(cx, "sess:s1", s)
     assert w.list_for(cx, "sess:s1") == ["c", "b", "a"]
+
+
+def test_list_for_is_postgres_portable():
+    cx = _cx()
+    w.toggle(cx, "sess:s1", "a")
+    assert w.list_for(_PgLikeConnection(cx), "sess:s1") == ["a"]
 
 def test_merge_moves_session_into_email_without_downgrade():
     cx = _cx()

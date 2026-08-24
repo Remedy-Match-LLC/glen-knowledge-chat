@@ -20779,6 +20779,11 @@ def _portal_priced_lines(items, email=None):
             qty = max(1, min(int(it.get("qty", 1) or 1), 99))
         except Exception:
             qty = 1
+        fmt = (it.get("format") or "").strip().lower()
+        if fmt not in ("", "bottle", "refill") or (fmt == "refill" and not _qty_eligible(p)):
+            fmt = ""
+        fmt_label = _FORMAT_LABELS.get(fmt, "")
+        display_name = f'{p["name"]} ({fmt_label})' if fmt_label else p["name"]
         # Current client pricing is authoritative across every cart source. An
         # older practitioner-baked line price is only a fallback when no current
         # saved per-SKU or eligible FF-flat price exists.
@@ -20793,9 +20798,10 @@ def _portal_priced_lines(items, email=None):
                                               program_member=program_member, line_qty=qty)
         subtotal_cents += unit_cents * qty
         lines.append({"name": p["name"], "amount": round(unit_cents / 100.0, 2),
-                      "qty": qty, "item_id": p.get("qbo_item_id"), "description": p["name"]})
-        items_rec.append({"name": p["name"], "qty": qty, "desc": p["name"],
-                          "slug": slug, "unit_cents": unit_cents, "line_cents": unit_cents * qty})
+                      "qty": qty, "item_id": p.get("qbo_item_id"), "description": display_name})
+        items_rec.append({"name": display_name, "qty": qty, "desc": display_name,
+                          "slug": slug, "format": fmt, "unit_cents": unit_cents,
+                          "line_cents": unit_cents * qty})
     return lines, items_rec, subtotal_cents
 
 
@@ -22866,6 +22872,20 @@ def _remedies_product_key(name, brand):
     return _sr.product_key(name, brand)
 
 
+def _remedies_catalog_product(name, brand=""):
+    """Resolve a stack-entry name to our active catalog, returning canonical data."""
+    slug = _resolve_buy_slug(name)
+    product = _get_product(slug) if slug else None
+    if not product:
+        return None
+    brand_norm = (brand or "").strip().lower()
+    if brand_norm and brand_norm not in ("remedy match", "remedymatch", "syntropy",
+                                         "functional formulations"):
+        return None
+    return {"slug": slug, "name": product.get("name") or name,
+            "brand": "Remedy Match"}
+
+
 @app.route("/api/portal/<token>/remedies/add", methods=["POST"])
 def api_portal_remedies_add(token):
     """Client adds a supplement to their externally-maintained stack. Token-authed:
@@ -22878,13 +22898,22 @@ def api_portal_remedies_add(token):
     brand = (data.get("product_brand") or "").strip()
     reason = (data.get("reason") or "").strip()
     importance = _remedies_coerce_importance(data.get("importance"))
+    catalog_product = _remedies_catalog_product(name, brand)
+    if catalog_product:
+        name = catalog_product["name"]
+        brand = catalog_product["brand"]
+    source = "portal-catalog" if catalog_product else "portal"
     with _db_lock, db.connect(LOG_DB) as cx:
         _cp.init_client_portal_table(cx); _sr.init_table(cx)
         portal = _portal_record_for(cx, token)
         if not portal:
             return jsonify({"ok": False, "error": "not found"}), 404
+        if not catalog_product and not brand:
+            return jsonify({"ok": False,
+                            "error": "Brand is required for products from other companies."}), 400
         email = (portal.get("email") or "").strip().lower()
-        _sr.add_listed(cx, email, name, product_brand=brand, reason=reason, importance=importance)
+        _sr.add_listed(cx, email, name, product_brand=brand, reason=reason,
+                       importance=importance, source=source)
         block = _rb.build_block(cx, email, True)
     return jsonify(block)
 
@@ -24432,7 +24461,8 @@ def api_portal_cart_set_qty(token):
 def api_portal_order_add(token):
     """Add one catalog remedy to the member's single persistent portal cart."""
     from dashboard import wishlist as _wl
-    slug = ((request.get_json(silent=True) or {}).get("slug") or "").strip().lower()
+    body = request.get_json(silent=True) or {}
+    slug = (body.get("slug") or "").strip().lower()
     with db.connect(LOG_DB) as cx:
         portal = _portal_record_for(cx, token)
     if not portal:
@@ -24441,8 +24471,13 @@ def api_portal_order_add(token):
     product = _get_product(slug)
     if not product or product.get("inactive") or product.get("info_only"):
         return jsonify({"error": "That remedy is not available."}), 400
+    fmt = (body.get("format") or "").strip().lower()
+    if fmt not in ("", "bottle", "refill"):
+        return jsonify({"error": "That packaging option is not available."}), 400
+    if fmt == "refill" and not _qty_eligible(product):
+        return jsonify({"error": "Cellophane refill packs are available for capsule formulations only."}), 400
     _lines, items_rec, _subtotal = _portal_priced_lines(
-        [{"slug": slug, "qty": 1}], email=email)
+        [{"slug": slug, "qty": 1, "format": fmt}], email=email)
     if not items_rec:
         return jsonify({"error": "That remedy is not available."}), 400
     with _db_lock, db.connect(LOG_DB) as cx:
@@ -24458,12 +24493,12 @@ def api_portal_order_add(token):
             qty = max(1, min(int((request.get_json(silent=True) or {}).get("qty", 1) or 1), 99))
         except Exception:
             qty = 1
-        _cart_store.add_item(cx, cart_token, slug, qty=qty, source="portal-order")
+        _cart_store.add_item(cx, cart_token, slug, fmt=fmt, qty=qty, source="portal-order")
         cart_payload = _portal_cart_payload(cx, cart_token, portal)
     item = items_rec[0]
     response = jsonify({"ok": True, "item": {
         "slug": item["slug"], "name": item["name"], "qty": item["qty"],
-        "price_cents": item["unit_cents"],
+        "format": item.get("format", ""), "price_cents": item["unit_cents"],
     }, "cart": cart_payload})
     if cart_token != _cart_token_from_cookie():
         response.set_cookie(_CART_COOKIE, cart_token, max_age=60 * 60 * 24 * 365,
