@@ -3,7 +3,7 @@
 
 The script is intended for a Render one-off job so it has the same production
 database and secret environment as MyHealingOasis.  It is idempotent by logical
-campaign ID and deliberately sends in batches of at most 100 every 15 minutes.
+campaign ID and schedules batches of at most 100 at 15-minute intervals.
 """
 
 import argparse
@@ -275,13 +275,16 @@ def _record_recipient(cx, campaign_id, email, contact_id, message_id, status, er
     cx.commit()
 
 
-def _send(contact_id, subject, text, body_html, *, email_to=""):
+def _send(contact_id, subject, text, body_html, *, email_to="",
+          scheduled_timestamp=None):
     body = {
         "type": "Email", "contactId": contact_id, "subject": subject,
         "html": body_html, "message": text, "emailFrom": FROM_ADDRESS,
     }
     if email_to:
         body["emailTo"] = email_to
+    if scheduled_timestamp is not None:
+        body["scheduledTimestamp"] = int(scheduled_timestamp)
     status, data = _api("POST", "/conversations/messages", GHL_MESSAGES_VERSION,
                         body, write=True)
     nested_message = data.get("message")
@@ -351,8 +354,11 @@ def run(args):
                 continue
             sendable.append((email, contact))
 
+        schedule_anchor = int(time.time())
         for batch_no, offset in enumerate(range(0, len(sendable), 100), start=1):
             batch = sendable[offset:offset + 100]
+            scheduled_timestamp = (None if batch_no == 1 else
+                                   schedule_anchor + (batch_no - 1) * 900)
             for email, contact in batch:
                 token = client_portal.ensure_token(
                     cx, email, (contact.get("name") or
@@ -367,7 +373,7 @@ def run(args):
                     raise RuntimeError("deprecated or private destination found in invitation copy")
                 status, message_id, response = _send(
                     contact.get("id") or "", subject, text, body_html,
-                    email_to=email)
+                    email_to=email, scheduled_timestamp=scheduled_timestamp)
                 if status < 400 and message_id:
                     counts["queued"] += 1
                     _record_recipient(cx, campaign_id, email, contact.get("id") or "",
@@ -381,9 +387,10 @@ def run(args):
             print(json.dumps({"campaign_id": campaign_id, "batch": batch_no,
                               "batch_size": len(batch), "queued_total": counts["queued"],
                               "failed_total": counts["failed"], "time_hst":
-                              datetime.now(HST).isoformat()}, sort_keys=True), flush=True)
-            if offset + len(batch) < len(sendable):
-                time.sleep(900)
+                              datetime.now(HST).isoformat(), "scheduled_for_hst":
+                              (datetime.fromtimestamp(scheduled_timestamp, HST).isoformat()
+                               if scheduled_timestamp else "immediate")},
+                             sort_keys=True), flush=True)
 
         final = "verified_queued" if counts["failed"] == 0 else "needs_attention"
         cx.execute("UPDATE weekly_live_invitation_runs SET status=?,counts_json=?,updated_at=? "
