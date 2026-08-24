@@ -119,3 +119,12 @@ def test_portal_exposes_and_saves_global_cello_default():
     assert 'cello_refill_default:wanted' in HTML
     assert '/packaging-preference' in HTML
     assert 'data-refill-eligible' in HTML
+
+
+def test_first_purchase_offers_explicit_bottle_or_cello_choice():
+    assert 'id="orderAddFormat"' in HTML
+    assert 'Packaging for this purchase' in HTML
+    assert '<option value="bottle">Bottle</option>' in HTML
+    assert '<option value="refill">Cellophane pack + label</option>' in HTML
+    assert 'opt.dataset.refillEligible = p.refill_eligible ? "1" : "0"' in HTML
+    assert 'addItemToBasket(slug, 1, format)' in HTML

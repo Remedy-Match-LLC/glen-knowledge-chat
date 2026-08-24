@@ -24323,7 +24323,8 @@ def api_portal_order_catalog(token):
         if not items_rec:
             continue
         matches.append({"slug": slug, "name": items_rec[0]["name"],
-                        "price_cents": items_rec[0]["unit_cents"]})
+                        "price_cents": items_rec[0]["unit_cents"],
+                        "refill_eligible": bool(_qty_eligible(product))})
         if len(matches) >= 20:
             break
     return jsonify({"products": matches})
