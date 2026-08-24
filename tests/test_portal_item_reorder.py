@@ -409,6 +409,55 @@ def test_portal_reorder_can_request_cellophane_refill_packs(client):
         ("wholomega", "refill", 2)]
 
 
+def test_client_can_save_cello_default_and_it_applies_to_eligible_capsules(client):
+    c, appmod = client
+    tok = _seed_portal(appmod, email="cello-default@example.com", content={
+        "greeting": "hi", "video": {}, "layers": [], "reorder_items": [],
+    })
+    saved = c.post(f"/api/portal/{tok}/packaging-preference",
+                   json={"cello_refill_default": True})
+    assert saved.status_code == 200
+    assert saved.get_json()["cello_refill_default"] is True
+
+    added = c.post(f"/api/portal/{tok}/order-add",
+                   json={"slug": "wholomega", "qty": 2})
+    assert added.status_code == 200
+    assert added.get_json()["item"]["format"] == "refill"
+    assert added.get_json()["item"]["name"] == "WholOmega (Cellophane refill packs)"
+
+    portal = c.get(f"/api/portal/{tok}").get_json()
+    assert portal["cello_refill_default"] is True
+
+
+def test_explicit_bottle_overrides_saved_cello_default_for_one_item(client):
+    c, appmod = client
+    tok = _seed_portal(appmod, email="bottle-override@example.com", content={
+        "greeting": "hi", "video": {}, "layers": [], "reorder_items": [],
+    })
+    c.post(f"/api/portal/{tok}/packaging-preference",
+           json={"cello_refill_default": True})
+    added = c.post(f"/api/portal/{tok}/order-add", json={
+        "slug": "wholomega", "format": "bottle", "qty": 1,
+    })
+    assert added.status_code == 200
+    assert added.get_json()["item"]["format"] == "bottle"
+    assert added.get_json()["item"]["name"] == "WholOmega"
+
+
+def test_cello_default_does_not_apply_to_ineligible_products(client):
+    c, appmod = client
+    tok = _seed_portal(appmod, email="noncapsule-default@example.com", content={
+        "greeting": "hi", "video": {}, "layers": [], "reorder_items": [],
+    })
+    c.post(f"/api/portal/{tok}/packaging-preference",
+           json={"cello_refill_default": True})
+    added = c.post(f"/api/portal/{tok}/order-add", json={
+        "slug": "mimulus-flower-essence-in-terrain-restore", "qty": 1,
+    })
+    assert added.status_code == 200
+    assert added.get_json()["item"]["format"] == ""
+
+
 def test_life_stress_essence_can_join_the_same_portal_basket(client):
     c, appmod = client
     tok = _seed_portal(appmod, email="essence-basket@example.com", content={

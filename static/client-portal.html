@@ -1658,7 +1658,7 @@ function renderUnifiedPortalCart(d){
     const price = (it.is_special && it.regular_price_cents)
       ? `<span class="pr"><span class="reg">${esc(money(it.regular_price_cents))}</span><span class="sp">${esc(money(it.price_cents))}</span></span>`
       : `<span class="pr">${esc(money(it.price_cents))}</span>`;
-    return `<div class="reitem curated-order-item" data-slug="${esc(it.slug)}" data-qty="${esc(it.qty)}">
+    return `<div class="reitem curated-order-item" data-slug="${esc(it.slug)}" data-qty="${esc(it.qty)}" data-format="${esc(it.format || '')}">
       <span class="nm">${esc(it.name || it.slug)}${it.available ? '' : ' <span class="small err">No longer available</span>'}</span>
       ${price}<input type="number" min="0" max="99" value="${esc(it.qty)}" aria-label="Quantity for ${esc(it.name || it.slug)}"
         data-cart-qty="${esc(it.slug)}" data-cart-fmt="${esc(it.format || '')}" style="width:56px">
@@ -3801,7 +3801,7 @@ function render(d, v){
       const price = (it.is_special && it.regular_price_cents)
         ? `<span class="reg">${esc(money(it.regular_price_cents))}</span><span class="sp">${esc(money(it.price_cents))}</span>`
         : `${esc(money(it.price_cents))}`;
-      rows += `<div class="reitem curated-order-item" data-slug="${esc(it.slug||"")}" data-qty="${esc(it.qty||1)}">
+      rows += `<div class="reitem curated-order-item" data-slug="${esc(it.slug||"")}" data-qty="${esc(it.qty||1)}" data-format="${esc(it.format||"")}">
         <span class="nm">${esc(it.name||it.slug)}${it.qty>1?` ×${esc(it.qty)}`:""}</span>
         <span class="pr">${price}</span>
         <button type="button" class="wishRemBtn curated-remove" aria-label="Remove ${esc(it.name||it.slug)} from this order">×</button>
@@ -3811,6 +3811,12 @@ function render(d, v){
     html += `<div class="card" id="portal-order-basket"><h2>Order your remedies</h2>
       <p class="small muted" id="portalBasketOrderNo">${d.order_id ? `Order #${esc(d.order_id)}` : "Order number assigned at checkout"}</p>
       ${note}
+      <label style="display:flex;gap:.55rem;align-items:flex-start;margin:.6rem 0 .8rem">
+        <input type="checkbox" id="celloRefillDefault" ${d.cello_refill_default ? "checked" : ""} style="margin-top:.25rem">
+        <span><strong>Default eligible capsules to cellophane refill packs</strong><br>
+          <span class="small muted">This preference is remembered for future orders. You can still change an individual item.</span></span>
+      </label>
+      <p class="small muted" id="celloRefillStatus" style="margin:-.35rem 0 .65rem"></p>
       <div id="curatedOrderItems">${rows}</div>
       <p class="small muted" id="orderEmpty" ${rows ? "hidden" : ""}>Your basket is empty. Add remedies using any “Add to basket” button.</p>
       <div style="margin-top:1rem;padding-top:.8rem;border-top:1px dashed var(--line)">
@@ -3866,7 +3872,13 @@ function render(d, v){
           : it.channel === "clinic" ? "Ordered with Healing Oasis"
           : "Ordered on illtowell.com");
       const cta = it.is_reorder ? "Reorder" : "Order";
-      return `<div class="remitem" data-slug="${slug}" data-unit-cents="${yours}">
+      const formatControl = it.refill_eligible ? `<label class="small">Packaging
+            <select class="remFormat" aria-label="Packaging for ${esc(it.name||it.slug||"")}">
+              <option value="bottle" ${d.cello_refill_default ? "" : "selected"}>Standard bottle</option>
+              <option value="refill" ${d.cello_refill_default ? "selected" : ""}>Cellophane refill packs</option>
+            </select>
+          </label>` : "";
+      return `<div class="remitem" data-slug="${slug}" data-unit-cents="${yours}" data-refill-eligible="${it.refill_eligible ? "1" : "0"}">
         <div class="remitem-top"><span class="nm-wrap"><span class="nm">${esc(it.name||it.slug||"")}</span><span class="prov">${esc(prov)}</span></span><span class="pr">${price}</span></div>
         <div class="remitem-bot">
           <span class="qty-ctl">
@@ -3874,12 +3886,7 @@ function render(d, v){
             <span class="qtyval" data-qty="${qty}">${qty}</span>
             <button type="button" class="qtybtn" data-dir="1" aria-label="Increase quantity">+</button>
           </span>
-          <label class="small">Packaging
-            <select class="remFormat" aria-label="Packaging for ${esc(it.name||it.slug||"")}">
-              <option value="">Standard bottle</option>
-              <option value="refill">Cellophane refill packs</option>
-            </select>
-          </label>
+          ${formatControl}
           ${save}
           <button class="btn remBtn" data-slug="${slug}">Add to basket</button>
         </div>
@@ -4327,6 +4334,32 @@ function render(d, v){
   window.__portalView = v;
   document.getElementById("loading").hidden = true;
   app.hidden = false;
+
+  const celloPref = document.getElementById("celloRefillDefault");
+  if(celloPref){
+    celloPref.addEventListener("change", async()=>{
+      const status = document.getElementById("celloRefillStatus");
+      const wanted = !!celloPref.checked;
+      celloPref.disabled = true;
+      if(status) status.textContent = "Saving…";
+      try{
+        const r = await fetch(`/api/portal/${encodeURIComponent(token)}/packaging-preference`, {
+          method:"POST", headers:{"Content-Type":"application/json"},
+          body:JSON.stringify({cello_refill_default:wanted})
+        });
+        const out = await r.json();
+        if(!r.ok) throw new Error(out.error || "Could not save packaging preference.");
+        document.querySelectorAll('.remitem[data-refill-eligible="1"] .remFormat')
+          .forEach(sel=>{ sel.value = wanted ? "refill" : "bottle"; });
+        if(status) status.textContent = "Preference saved.";
+      }catch(e){
+        celloPref.checked = !wanted;
+        if(status) status.textContent = e.message || "Could not save packaging preference.";
+      }finally{
+        celloPref.disabled = false;
+      }
+    });
+  }
 
   if (_hub) { showTab('hub'); }
   try{
@@ -6818,6 +6851,7 @@ async function reorder(){
   const items = rows.map(row => ({
     slug: row.getAttribute("data-slug") || "",
     qty: Math.max(1, parseInt(row.getAttribute("data-qty"), 10) || 1),
+    format: row.getAttribute("data-format") || "",
     name: (row.querySelector(".nm") || {}).textContent || "Remedy",
     price: (row.querySelector(".pr") || {}).textContent || "",
     regularPrice: (row.querySelector(".pr .reg") || {}).textContent || "",
@@ -6858,7 +6892,7 @@ async function reorder(){
     const payload = JSON.stringify({
       checkout_request_id:btn.dataset.checkoutRequestId,
       method:((document.querySelector('input[name="portalPayMethod"]:checked') || {}).value || "card"),
-      items:items.map(it => ({slug:it.slug, qty:it.qty}))
+      items:items.map(it => ({slug:it.slug, qty:it.qty, format:it.format}))
     });
     let cj = null;
     for(let attempt=0; attempt<2; attempt++){

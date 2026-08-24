@@ -1,7 +1,9 @@
-"""Persistent per-client fulfillment preferences. Today there is exactly one:
-whether this client (by email) collects in person, so the order builder can
-pre-check Pickup for them. Mirrors client_prices.py — pure functions over a
-sqlite connection (testable).
+"""Persistent per-client fulfillment preferences.
+
+``pickup_default`` lets the order builder pre-check Pickup.  The client-facing
+``cello_refill_default`` makes eligible capsule products default to cellophane
+refill packs in the portal. Mirrors client_prices.py — pure functions over a
+database connection (testable).
 
 Nothing writes this except an explicit operator toggle on the order builder.
 Creating or saving an order NEVER writes it: ticking Pickup on one order is an
@@ -28,10 +30,15 @@ def init_table(cx):
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             email TEXT NOT NULL,
             pickup_default INTEGER NOT NULL DEFAULT 0,
+            cello_refill_default INTEGER NOT NULL DEFAULT 0,
             updated_at TEXT NOT NULL,
             UNIQUE(email)
         )
     """)
+    if not db.column_exists(cx, "client_prefs", "cello_refill_default"):
+        cx.execute(
+            "ALTER TABLE client_prefs ADD COLUMN cello_refill_default "
+            "INTEGER NOT NULL DEFAULT 0")
     cx.commit()
 
 
@@ -64,4 +71,34 @@ def get_pickup_default(cx, email):
                          (email,)).fetchone()
     except db.OperationalError:
         return False          # table absent — nobody has set a preference yet
+    return bool(row[0]) if row else False
+
+
+def set_cello_refill_default(cx, email, value):
+    """Persist whether eligible capsule products should default to refill packs."""
+    email = _norm(email)
+    if not email:
+        raise ValueError("email required")
+    init_table(cx)
+    cx.execute(
+        "INSERT INTO client_prefs "
+        "(email, pickup_default, cello_refill_default, updated_at) VALUES (?,?,?,?) "
+        "ON CONFLICT(email) DO UPDATE SET "
+        "cello_refill_default=excluded.cello_refill_default, "
+        "updated_at=excluded.updated_at",
+        (email, 0, 1 if value else 0, _now()))
+    cx.commit()
+
+
+def get_cello_refill_default(cx, email):
+    """True when eligible capsules should use cello refills by default."""
+    email = _norm(email)
+    if not email:
+        return False
+    try:
+        row = cx.execute(
+            "SELECT cello_refill_default FROM client_prefs WHERE email=?",
+            (email,)).fetchone()
+    except db.OperationalError:
+        return False
     return bool(row[0]) if row else False

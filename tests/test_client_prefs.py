@@ -59,6 +59,27 @@ def test_init_table_is_idempotent():
     assert C.get_pickup_default(cx, "a@x.com") is True
 
 
+def test_cello_refill_default_round_trip_is_scoped_and_reversible():
+    C, cx = _cx()
+    assert C.get_cello_refill_default(cx, "capsules@x.com") is False
+    C.set_cello_refill_default(cx, "Capsules@X.com", True)
+    assert C.get_cello_refill_default(cx, "capsules@x.com") is True
+    assert C.get_cello_refill_default(cx, "other@x.com") is False
+    C.set_cello_refill_default(cx, "capsules@x.com", False)
+    assert C.get_cello_refill_default(cx, "capsules@x.com") is False
+
+
+def test_init_table_adds_cello_default_to_legacy_table():
+    from dashboard import client_prefs as C
+    cx = sqlite3.connect(":memory:")
+    cx.execute("CREATE TABLE client_prefs (id INTEGER PRIMARY KEY AUTOINCREMENT, "
+               "email TEXT NOT NULL UNIQUE, pickup_default INTEGER NOT NULL DEFAULT 0, "
+               "updated_at TEXT NOT NULL)")
+    C.init_table(cx)
+    cols = {r[1] for r in cx.execute("PRAGMA table_info(client_prefs)")}
+    assert "cello_refill_default" in cols
+
+
 def test_only_the_console_endpoint_writes_the_pickup_default():
     """The design's load-bearing promise: creating or saving an order never
     writes a client's pickup default. Exactly one call site in app.py may write
