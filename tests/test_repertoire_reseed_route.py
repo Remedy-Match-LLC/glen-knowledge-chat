@@ -308,13 +308,22 @@ def test_a_retired_slug_is_previewed_and_stored_as_its_live_twin(client, appmod)
     does -- otherwise the number Glen reads describes SKUs that will never price.
     Left untested, removing the resolve from would_add kept every test green."""
     from dashboard import repertoire as _rep
-    import app as _app
+    # Resolve through the SAME function the code path uses. My first version
+    # computed `live` with app._superseded, which passes app's IN-MEMORY catalog,
+    # while would_add goes through repertoire._default_resolve -> products.
+    # superseded_slug() on the module default. Locally the two agree; in the full
+    # CI suite another test had mutated the in-memory catalog and they diverged,
+    # so this passed alone and failed in CI. Expectation and code must read one
+    # source. The guard also has to compare -- superseded_slug returns the slug
+    # UNCHANGED when it is live or unknown, never None, so the old
+    # `if _superseded(s)` was truthy for every candidate and never skipped.
+    resolve = _rep._default_resolve
     retired = next((s for s in ("relax", "dental-regen-powder",
                                 "connective-tissue-support")
-                    if _app._superseded(s)), None)
+                    if (resolve(s) or s) != s), None)
     if not retired:
         pytest.skip("no retired slug with a superseded_by pointer in the catalog")
-    live = _app._superseded(retired)
+    live = resolve(retired)
 
     email = "retiredslug@example.com"
     _seed_active_membership(appmod, email)
