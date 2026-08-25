@@ -97,7 +97,7 @@
       var cartBadge = cartBtn.querySelector(".js-cart-badge");
       cartBtn.setAttribute("aria-label", "View remedy order cart");
       cartBtn.onclick = function () {
-        if (typeof window.openPortalOrderBasket === "function") window.openPortalOrderBasket(true);
+        if (typeof window.openPortalCart === "function") window.openPortalCart(true);
       };
       window.setPortalHeaderCartCount = function (count) {
         count = Math.max(0, parseInt(count, 10) || 0);

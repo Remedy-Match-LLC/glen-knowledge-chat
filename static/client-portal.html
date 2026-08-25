@@ -1079,6 +1079,12 @@ function rememberPortalShoppingContext(){
   const context = {panel:(active && active.dataset.panel) || "current", scrollY:window.scrollY || 0};
   try{ sessionStorage.setItem("portal-shopping-return", JSON.stringify(context)); }catch(e){}
 }
+function openPortalCart(captureContext){
+  if(captureContext) rememberPortalShoppingContext();
+  showTab("cart");
+  window.setTimeout(function(){ window.scrollTo({top:0, behavior:"smooth"}); }, 0);
+}
+window.openPortalCart = openPortalCart;
 function openPortalOrderBasket(captureContext){
   if(captureContext) rememberPortalShoppingContext();
   showTab("current");
