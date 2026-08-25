@@ -1,7 +1,7 @@
 # Client Portal Password + Federated Login Plan
 
 **Date:** 2026-08-25
-**Status:** Proposed
+**Status:** Password live; Google and Apple implemented dark pending provider credentials
 **Scope:** A second path into an existing client's portal, alongside today's emailed magic link and durable `/portal/<token>` links.
 
 ## Outcome

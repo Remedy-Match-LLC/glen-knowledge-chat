@@ -1,6 +1,7 @@
 # tests/test_client_portal_routes.py
 import sqlite3
 import pytest
+from urllib.parse import parse_qs, urlparse
 
 
 # ── Data layer (dashboard/client_portal.py) ─────────────────────────────────
@@ -503,6 +504,70 @@ def test_password_routes_dark_by_default(client, monkeypatch):
     assert c.post("/portal/password-reset-request", json={"email": "a@b.com"}).status_code == 404
     assert c.get("/portal/password-reset?token=x").status_code == 404
     assert c.get("/api/portal/login-methods").get_json()["password"] is False
+
+
+def test_provider_routes_dark_without_flags_or_credentials(client, monkeypatch):
+    c, appmod = client
+    monkeypatch.setattr(appmod, "_client_login_enabled", lambda: True)
+    monkeypatch.setattr(appmod, "_portal_google_login_enabled", lambda: False)
+    monkeypatch.setattr(appmod, "_portal_apple_login_enabled", lambda: False)
+    assert c.get("/portal/auth/google/start").status_code == 404
+    assert c.get("/portal/auth/google/callback").status_code == 404
+    assert c.get("/portal/auth/apple/start").status_code == 404
+    assert c.post("/portal/auth/apple/callback").status_code == 404
+    methods = c.get("/api/portal/login-methods").get_json()
+    assert methods["google"] is False
+    assert methods["apple"] is False
+
+
+def test_google_first_login_sends_confirmation_then_links(client, monkeypatch):
+    c, appmod = client
+    monkeypatch.setattr(appmod, "_client_login_enabled", lambda: True)
+    monkeypatch.setattr(appmod, "_portal_google_login_enabled", lambda: True)
+    monkeypatch.setenv("PORTAL_GOOGLE_CLIENT_ID", "google-client")
+    monkeypatch.setenv("PORTAL_GOOGLE_CLIENT_SECRET", "google-secret")
+    _seed_person(appmod, "google-route@example.com", "Google Route")
+    sent = {}
+    monkeypatch.setattr(appmod, "_send_full_report_email",
+                        lambda to, name, subject, body, **kw: sent.update(body=body) or ("test", None))
+    from dashboard import portal_providers as providers
+    monkeypatch.setattr(providers, "exchange_google", lambda *a, **k: {
+        "provider": "google", "subject": "google-subject",
+        "email": "google-route@example.com", "name": "Google Route"})
+
+    start = c.get("/portal/auth/google/start")
+    assert start.status_code in (302, 303)
+    state = parse_qs(urlparse(start.headers["Location"]).query)["state"][0]
+    callback = c.get(f"/portal/auth/google/callback?state={state}&code=code")
+    assert callback.status_code == 200
+    import re
+    token = re.search(r"token=([^\s]+)", sent["body"]).group(1)
+    assert c.get(f"/portal/auth/link-confirm?token={token}").status_code == 200
+    linked = c.post("/portal/auth/link-confirm", data={"token": token})
+    assert linked.status_code in (302, 303)
+    assert linked.headers["Location"] == "/portal/me"
+    assert "rm_portal_session=" in linked.headers.get("Set-Cookie", "")
+
+
+def test_known_provider_subject_signs_in_without_second_email(client, monkeypatch):
+    c, appmod = client
+    monkeypatch.setattr(appmod, "_client_login_enabled", lambda: True)
+    monkeypatch.setattr(appmod, "_portal_google_login_enabled", lambda: True)
+    monkeypatch.setenv("PORTAL_GOOGLE_CLIENT_ID", "google-client")
+    monkeypatch.setenv("PORTAL_GOOGLE_CLIENT_SECRET", "google-secret")
+    _seed_person(appmod, "known-google@example.com", "Known Google")
+    from dashboard import portal_auth as pa, portal_providers as providers
+    cx = sqlite3.connect(appmod.LOG_DB)
+    pid = cx.execute("SELECT id FROM people WHERE email=?", ("known-google@example.com",)).fetchone()[0]
+    pa.link_external_identity(cx, pid, "google", "known-sub", "known-google@example.com")
+    cx.close()
+    monkeypatch.setattr(providers, "exchange_google", lambda *a, **k: {
+        "provider": "google", "subject": "known-sub", "email": "known-google@example.com", "name": ""})
+    start = c.get("/portal/auth/google/start")
+    state = parse_qs(urlparse(start.headers["Location"]).query)["state"][0]
+    callback = c.get(f"/portal/auth/google/callback?state={state}&code=code")
+    assert callback.status_code in (302, 303)
+    assert callback.headers["Location"] == "/portal/me"
 
 
 def test_password_reset_and_login_routes(client, monkeypatch):

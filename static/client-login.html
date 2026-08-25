@@ -43,6 +43,10 @@
   .password-login label{display:block;color:var(--muted);font-size:.85rem;margin:0 0 5px}
   .password-actions{display:flex;justify-content:flex-end;margin-top:8px}
   .link-btn{background:none;border:0;color:var(--brand);padding:0;cursor:pointer;font:inherit;font-size:.9rem}
+  .provider-login{display:grid;gap:10px;margin:0 0 18px}
+  .provider-login[hidden],.provider-btn[hidden]{display:none!important}
+  .provider-btn{display:block;width:100%;background:var(--card);color:var(--ink);border:1px solid var(--line);
+    cursor:pointer;font-size:1rem;font-weight:600;border-radius:10px;padding:12px 18px;text-decoration:none;text-align:center}
   .join-sep{color:var(--muted);font-size:.85rem;font-weight:600;letter-spacing:.03em;margin:0 0 4px;text-align:center}
   .join-sub{color:var(--muted);font-size:.9rem;margin:0 0 12px;text-align:center}
   .theme-toggle{position:fixed;top:14px;right:14px}
@@ -59,6 +63,10 @@
   <div class="wrap"><div class="card">
     <h1>Welcome to your healing home</h1>
     <p class="sub">Choose how you’d like to sign in.</p>
+    <div class="provider-login" id="providerLogin" hidden>
+      <a class="provider-btn" id="googleGo" href="/portal/auth/google/start" hidden>Continue with Google</a>
+      <a class="provider-btn" id="appleGo" href="/portal/auth/apple/start" hidden>Continue with Apple</a>
+    </div>
     <input id="email" type="email" placeholder="you@example.com" autocomplete="email">
     <div class="password-login" id="passwordLogin" hidden>
       <label for="password">Password</label>
@@ -84,6 +92,9 @@ const go = document.getElementById("go"), msg = document.getElementById("msg");
 const passwordLogin = document.getElementById("passwordLogin");
 fetch('/api/portal/login-methods').then(r=>r.json()).then(d=>{
   if(d && d.password) passwordLogin.hidden=false;
+  if(d && d.google) document.getElementById('googleGo').hidden=false;
+  if(d && d.apple) document.getElementById('appleGo').hidden=false;
+  if(d && (d.google || d.apple)) document.getElementById('providerLogin').hidden=false;
 }).catch(()=>{});
 
 document.getElementById('passwordGo').addEventListener('click', async ()=>{

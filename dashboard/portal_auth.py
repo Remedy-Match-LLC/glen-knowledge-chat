@@ -18,6 +18,7 @@ from dashboard.timeutil import is_expired as _is_expired
 
 
 RESET_PURPOSE = "client_password_reset"
+PROVIDER_LINK_PURPOSE = "client_provider_link"
 RESET_TTL_MIN = 30
 MIN_PASSWORD_LENGTH = 12
 MAX_PASSWORD_LENGTH = 1024
@@ -36,6 +37,25 @@ def _hash_token(token):
 
 
 def init_portal_auth_tables(cx):
+    cx.execute(
+        """
+        CREATE TABLE IF NOT EXISTS portal_external_identities (
+            identity_id       TEXT PRIMARY KEY,
+            person_id         INTEGER NOT NULL,
+            provider          TEXT NOT NULL,
+            provider_subject  TEXT NOT NULL,
+            email_at_link     TEXT,
+            email_verified_at TEXT,
+            created_at        TEXT NOT NULL,
+            last_login_at     TEXT NOT NULL,
+            UNIQUE(provider, provider_subject)
+        )
+        """
+    )
+    cx.execute(
+        "CREATE INDEX IF NOT EXISTS idx_portal_external_person "
+        "ON portal_external_identities(person_id, provider)"
+    )
     cx.execute(
         """
         CREATE TABLE IF NOT EXISTS portal_credentials (
@@ -70,6 +90,94 @@ def init_portal_auth_tables(cx):
         "ON portal_auth_events(person_id, created_at)"
     )
     cx.commit()
+
+
+def identity_by_provider_subject(cx, provider, subject):
+    init_portal_auth_tables(cx)
+    row = cx.execute(
+        "SELECT person_id FROM portal_external_identities "
+        "WHERE provider=? AND provider_subject=?",
+        ((provider or "").lower(), subject or ""),
+    ).fetchone()
+    return row[0] if row else None
+
+
+def person_by_verified_email(cx, email):
+    """A unique canonical person match, or None. The production schema keeps
+    email unique; the explicit two-row check also fails closed for legacy data."""
+    rows = cx.execute(
+        "SELECT id FROM people WHERE lower(email)=? LIMIT 2",
+        ((email or "").strip().lower(),),
+    ).fetchall()
+    return rows[0][0] if len(rows) == 1 else None
+
+
+def link_external_identity(cx, person_id, provider, subject, email=""):
+    init_portal_auth_tables(cx)
+    now = _now().isoformat()
+    existing = identity_by_provider_subject(cx, provider, subject)
+    if existing is not None and int(existing) != int(person_id):
+        raise ValueError("provider identity is already linked")
+    cx.execute(
+        "INSERT INTO portal_external_identities "
+        "(identity_id,person_id,provider,provider_subject,email_at_link,email_verified_at,created_at,last_login_at) "
+        "VALUES (?,?,?,?,?,?,?,?) ON CONFLICT(provider,provider_subject) DO UPDATE SET "
+        "last_login_at=excluded.last_login_at",
+        (secrets.token_hex(16), person_id, (provider or "").lower(), subject or "",
+         (email or "").strip().lower(), now if email else None, now, now),
+    )
+    cx.commit()
+    _record_event(cx, "provider_linked", person_id=person_id, email=email,
+                  metadata={"provider": provider})
+    return person_id
+
+
+def create_provider_link_confirmation(cx, person_id, provider, subject, email, name=""):
+    _ensure_auth_tokens(cx)
+    token = secrets.token_urlsafe(32)
+    now = _now()
+    extra = {"person_id": person_id, "provider": (provider or "").lower(),
+             "subject": subject, "email": (email or "").lower(), "name": name or ""}
+    cx.execute(
+        "INSERT INTO auth_tokens (token_hash,email,purpose,extra,created_at,expires_at) VALUES (?,?,?,?,?,?)",
+        (_hash_token(token), (email or "").lower(), PROVIDER_LINK_PURPOSE,
+         json.dumps(extra), now.isoformat(), (now + timedelta(minutes=30)).isoformat()),
+    )
+    cx.commit()
+    return token
+
+
+def _live_provider_link(cx, token):
+    _ensure_auth_tokens(cx)
+    row = cx.execute(
+        "SELECT extra,expires_at,consumed_at FROM auth_tokens WHERE token_hash=? AND purpose=?",
+        (_hash_token(token), PROVIDER_LINK_PURPOSE),
+    ).fetchone()
+    if not row or row[2] or _is_expired(row[1]):
+        return None
+    try:
+        return json.loads(row[0] or "{}") or None
+    except json.JSONDecodeError:
+        return None
+
+
+def validate_provider_link_confirmation(cx, token):
+    return _live_provider_link(cx, token)
+
+
+def consume_provider_link_confirmation(cx, token):
+    pending = _live_provider_link(cx, token)
+    if not pending:
+        return None
+    cur = cx.execute(
+        "UPDATE auth_tokens SET consumed_at=? WHERE token_hash=? AND purpose=? AND consumed_at IS NULL",
+        (_now().isoformat(), _hash_token(token), PROVIDER_LINK_PURPOSE),
+    )
+    cx.commit()
+    if cur.rowcount != 1:
+        return None
+    return link_external_identity(
+        cx, pending["person_id"], pending["provider"], pending["subject"], pending.get("email", ""))
 
 
 def validate_password(password):
