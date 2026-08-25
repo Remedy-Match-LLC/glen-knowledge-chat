@@ -19994,6 +19994,13 @@ def _client_login_enabled() -> bool:
         "1", "true", "yes", "on")
 
 
+def _portal_password_login_enabled() -> bool:
+    """Additive email/password access to the existing client-session seam."""
+    return _client_login_enabled() and os.environ.get(
+        "PORTAL_PASSWORD_LOGIN_ENABLED", "").strip().lower() in (
+            "1", "true", "yes", "on")
+
+
 def _household_view_enabled():
     """Household/family portal-view switcher (Task 3). Default OFF — when off, the
     portal payload never gains a 'household' key and ?member= is ignored, so the
@@ -31453,6 +31460,14 @@ def client_login_page():
     return send_from_directory(STATIC, "client-login.html")
 
 
+@app.route("/api/portal/login-methods", methods=["GET"])
+def client_login_methods():
+    if not _client_login_enabled():
+        return jsonify({"error": "not found"}), 404
+    return jsonify({"password": _portal_password_login_enabled(),
+                    "google": False, "apple": False})
+
+
 @app.route("/portal/login-request", methods=["POST"])
 def client_login_request():
     if not _client_login_enabled():
@@ -31475,6 +31490,102 @@ def client_login_request():
     # No account enumeration: same response whether or not the email exists.
     return jsonify({"ok": True,
                     "message": "If that email has a portal, a sign-in link is on its way."})
+
+
+@app.route("/portal/password-login", methods=["POST"])
+def client_password_login():
+    if not _portal_password_login_enabled():
+        return jsonify({"error": "not found"}), 404
+    from flask import make_response as _mkresp, redirect as _redir
+    from dashboard import portal_auth as _pa, portal_identity as _pi
+    body = request.get_json(silent=True) or request.form
+    email = (body.get("email") or "").strip().lower()
+    password = body.get("password") or ""
+    ip = (request.headers.get("X-Forwarded-For", "") or request.remote_addr or "").split(",")[0].strip()
+    with _db_lock, db.connect(LOG_DB) as cx:
+        pid = _pa.verify_password(cx, email, password, ip=ip,
+                                  user_agent=request.headers.get("User-Agent", ""))
+        if not pid:
+            return jsonify({"ok": False,
+                            "message": "Email or password was not recognized."}), 401
+        sess = _pi.create_client_session(cx, pid, email)
+    if request.is_json:
+        resp = _mkresp(jsonify({"ok": True, "redirect": "/portal/me"}))
+    else:
+        resp = _mkresp(_redir("/portal/me"))
+    resp.set_cookie("rm_portal_session", sess, max_age=30 * 86400,
+                    httponly=True, samesite="Lax", secure=request.is_secure)
+    return resp
+
+
+@app.route("/portal/password-reset-request", methods=["POST"])
+def client_password_reset_request():
+    if not _portal_password_login_enabled():
+        return jsonify({"error": "not found"}), 404
+    from dashboard import portal_auth as _pa
+    email = ((request.get_json(silent=True) or {}).get("email") or "").strip().lower()
+    if "@" in email:
+        with _db_lock, db.connect(LOG_DB) as cx:
+            row = cx.execute("SELECT id,name FROM people WHERE lower(email)=?", (email,)).fetchone()
+            if row:
+                token = _pa.create_password_reset(cx, row[0], email)
+                try:
+                    _send_full_report_email(
+                        email, row[1] or "", "Set your Healing Oasis password",
+                        "Aloha,\n\nSet or reset your password here:\n"
+                        f"{portal_base()}/portal/password-reset?token={token}\n\n"
+                        f"This link expires in {_pa.RESET_TTL_MIN} minutes. If you did not request it, ignore this email.")
+                except Exception as e:
+                    print(f"[client-password-reset] email failed: {e!r}", flush=True)
+    return jsonify({"ok": True,
+                    "message": "If that email has a portal, password instructions are on the way."})
+
+
+@app.route("/portal/password-reset", methods=["GET", "POST"])
+def client_password_reset():
+    if not _portal_password_login_enabled():
+        return ("Not found", 404)
+    from flask import make_response as _mkresp, redirect as _redir
+    from dashboard import portal_auth as _pa, portal_identity as _pi
+    token = (request.args.get("token") or (request.get_json(silent=True) or {}).get("token") or "").strip()
+    if request.method == "GET":
+        with _db_lock, db.connect(LOG_DB) as cx:
+            if not _pa.validate_password_reset(cx, token):
+                return _redir("/portal/login?error=reset")
+        resp = _mkresp(send_from_directory(STATIC, "client-password-reset.html"))
+        resp.headers["Cache-Control"] = "no-store"
+        return resp
+    password = (request.get_json(silent=True) or {}).get("password") or ""
+    ok, message = _pa.validate_password(password)
+    if not ok:
+        return jsonify({"ok": False, "message": message}), 400
+    ip = (request.headers.get("X-Forwarded-For", "") or request.remote_addr or "").split(",")[0].strip()
+    with _db_lock, db.connect(LOG_DB) as cx:
+        pid = _pa.consume_password_reset(cx, token, password, ip=ip,
+                                         user_agent=request.headers.get("User-Agent", ""))
+        if not pid:
+            return jsonify({"ok": False, "message": "This password link is invalid or has expired."}), 400
+        sess = _pi.create_client_session(cx, pid, "")
+    resp = _mkresp(jsonify({"ok": True, "redirect": "/portal/me"}))
+    resp.set_cookie("rm_portal_session", sess, max_age=30 * 86400,
+                    httponly=True, samesite="Lax", secure=request.is_secure)
+    return resp
+
+
+@app.route("/portal/logout", methods=["POST"])
+def client_portal_logout():
+    if not _client_login_enabled():
+        return jsonify({"error": "not found"}), 404
+    from flask import make_response as _mkresp
+    from dashboard import portal_auth as _pa
+    sess = request.cookies.get("rm_portal_session", "")
+    if sess:
+        with _db_lock, db.connect(LOG_DB) as cx:
+            _pa.revoke_session(cx, sess)
+    resp = _mkresp(jsonify({"ok": True, "redirect": "/portal/login"}))
+    resp.delete_cookie("rm_portal_session", httponly=True, samesite="Lax",
+                       secure=request.is_secure)
+    return resp
 
 
 @app.route("/portal/login-verify", methods=["GET", "POST"])

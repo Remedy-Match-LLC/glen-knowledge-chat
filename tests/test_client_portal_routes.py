@@ -489,10 +489,71 @@ def test_client_login_page_carries_join_wiring(client, monkeypatch):
     r = c.get("/portal/login")
     assert r.status_code == 200
     body = r.get_data(as_text=True)
-    assert "Enter your email, then open the sign-in link we send." in body
+    assert "Choose how you’d like to sign in." in body
     assert "/api/healing-oasis/status" in body
     assert "/api/healing-oasis/request" in body
     assert 'id="joinGo"' in body
+
+
+def test_password_routes_dark_by_default(client, monkeypatch):
+    c, appmod = client
+    monkeypatch.setattr(appmod, "_client_login_enabled", lambda: True)
+    monkeypatch.setattr(appmod, "_portal_password_login_enabled", lambda: False)
+    assert c.post("/portal/password-login", json={"email": "a@b.com", "password": "x"}).status_code == 404
+    assert c.post("/portal/password-reset-request", json={"email": "a@b.com"}).status_code == 404
+    assert c.get("/portal/password-reset?token=x").status_code == 404
+    assert c.get("/api/portal/login-methods").get_json()["password"] is False
+
+
+def test_password_reset_and_login_routes(client, monkeypatch):
+    c, appmod = client
+    monkeypatch.setattr(appmod, "_client_login_enabled", lambda: True)
+    monkeypatch.setattr(appmod, "_portal_password_login_enabled", lambda: True)
+    _seed_person(appmod, "route-password@example.com", "Route Password")
+    sent = {}
+    def capture(to, name, subject, body, *args, **kwargs):
+        sent.update(to=to, subject=subject, body=body)
+        return "test", None
+    monkeypatch.setattr(appmod, "_send_full_report_email", capture)
+
+    known = c.post("/portal/password-reset-request", json={"email": "route-password@example.com"})
+    unknown = c.post("/portal/password-reset-request", json={"email": "unknown@example.com"})
+    assert known.status_code == unknown.status_code == 200
+    assert known.get_json()["message"] == unknown.get_json()["message"]
+    import re
+    token = re.search(r"token=([^\s]+)", sent["body"]).group(1)
+    assert c.get(f"/portal/password-reset?token={token}").status_code == 200
+    reset = c.post("/portal/password-reset", json={
+        "token": token, "password": "route password is long enough"})
+    assert reset.status_code == 200
+    assert "rm_portal_session=" in reset.headers.get("Set-Cookie", "")
+
+    bad = c.post("/portal/password-login", json={
+        "email": "route-password@example.com", "password": "wrong password value"})
+    assert bad.status_code == 401
+    login = c.post("/portal/password-login", json={
+        "email": "route-password@example.com", "password": "route password is long enough"})
+    assert login.status_code == 200
+    assert login.get_json()["redirect"] == "/portal/me"
+    assert "rm_portal_session=" in login.headers.get("Set-Cookie", "")
+
+
+def test_portal_logout_revokes_cookie_session(client, monkeypatch):
+    c, appmod = client
+    monkeypatch.setattr(appmod, "_client_login_enabled", lambda: True)
+    _seed_person(appmod, "logout-route@example.com", "Logout")
+    from dashboard import portal_identity as pi
+    cx = sqlite3.connect(appmod.LOG_DB)
+    pid = cx.execute("SELECT id FROM people WHERE email=?", ("logout-route@example.com",)).fetchone()[0]
+    session = pi.create_client_session(cx, pid, "logout-route@example.com")
+    cx.close()
+    c.set_cookie("rm_portal_session", session)
+    response = c.post("/portal/logout")
+    assert response.status_code == 200
+    cx = sqlite3.connect(appmod.LOG_DB)
+    assert pi.identity_from_session(cx, session) is None
+    cx.close()
+    assert "rm_portal_session=;" in response.headers.get("Set-Cookie", "")
 
 
 def test_client_login_verify_sets_session_when_enabled(client, monkeypatch):
