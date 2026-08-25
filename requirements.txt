@@ -1,4 +1,5 @@
 flask
+argon2-cffi>=23.1,<26
 flask-cors
 gunicorn
 gevent

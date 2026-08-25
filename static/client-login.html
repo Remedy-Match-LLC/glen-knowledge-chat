@@ -38,6 +38,11 @@
   /* New-visitor join path — revealed only when HEALING_OASIS_ENABLED (see script). */
   .join{margin-top:20px;border-top:1px solid var(--line);padding-top:16px;text-align:left}
   .join[hidden]{display:none}
+  .password-login{margin:0 0 20px;padding-bottom:20px;border-bottom:1px solid var(--line);text-align:left}
+  .password-login[hidden]{display:none}
+  .password-login label{display:block;color:var(--muted);font-size:.85rem;margin:0 0 5px}
+  .password-actions{display:flex;justify-content:flex-end;margin-top:8px}
+  .link-btn{background:none;border:0;color:var(--brand);padding:0;cursor:pointer;font:inherit;font-size:.9rem}
   .join-sep{color:var(--muted);font-size:.85rem;font-weight:600;letter-spacing:.03em;margin:0 0 4px;text-align:center}
   .join-sub{color:var(--muted);font-size:.9rem;margin:0 0 12px;text-align:center}
   .theme-toggle{position:fixed;top:14px;right:14px}
@@ -53,8 +58,14 @@
   </script>
   <div class="wrap"><div class="card">
     <h1>Welcome to your healing home</h1>
-    <p class="sub">Enter your email, then open the sign-in link we send.</p>
+    <p class="sub">Choose how you’d like to sign in.</p>
     <input id="email" type="email" placeholder="you@example.com" autocomplete="email">
+    <div class="password-login" id="passwordLogin" hidden>
+      <label for="password">Password</label>
+      <input id="password" type="password" autocomplete="current-password">
+      <button class="btn" id="passwordGo">Sign in</button>
+      <div class="password-actions"><button class="link-btn" id="resetGo" type="button">Set or reset password</button></div>
+    </div>
     <button class="btn" id="go">Send my sign-in link</button>
     <p class="msg" id="msg"></p>
 
@@ -70,6 +81,34 @@
   </div></div>
 <script>
 const go = document.getElementById("go"), msg = document.getElementById("msg");
+const passwordLogin = document.getElementById("passwordLogin");
+fetch('/api/portal/login-methods').then(r=>r.json()).then(d=>{
+  if(d && d.password) passwordLogin.hidden=false;
+}).catch(()=>{});
+
+document.getElementById('passwordGo').addEventListener('click', async ()=>{
+  const email=(document.getElementById('email').value||'').trim();
+  const password=document.getElementById('password').value||'';
+  if(!email||!password){msg.textContent='Enter your email and password.';return;}
+  const button=document.getElementById('passwordGo'); button.disabled=true;
+  try{
+    const r=await fetch('/portal/password-login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email,password})});
+    const j=await r.json(); msg.textContent=j.message||'';
+    if(r.ok&&j.redirect) location.assign(j.redirect);
+  }catch(e){msg.textContent='Something went wrong — please try again.';}
+  button.disabled=false;
+});
+
+document.getElementById('resetGo').addEventListener('click', async ()=>{
+  const email=(document.getElementById('email').value||'').trim();
+  if(!email){msg.textContent='Enter your email first.';return;}
+  msg.textContent='Sending…';
+  try{
+    const r=await fetch('/portal/password-reset-request',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email})});
+    const j=await r.json(); msg.textContent=j.message||'Check your email.';
+  }catch(e){msg.textContent='Something went wrong — please try again.';}
+});
+
 go.addEventListener("click", async ()=>{
   const email = (document.getElementById("email").value||"").trim();
   if(!email){ msg.textContent = "Please enter your email."; return; }
