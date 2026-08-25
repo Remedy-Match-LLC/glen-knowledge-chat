@@ -199,10 +199,12 @@
 
   function cardHtml(o){
     var total = o.total_cents ? '$'+(o.total_cents/100).toFixed(2) : '';
-    // Drop-ship cards are identified by the client receiving the parcel. The
-    // practitioner/payer remains in o.name/o.email and appears in the details.
-    var displayName = (o.source==='dropship' && o.address && o.address.name)
-      ? o.address.name : (o.name||o.email||'Order #'+o.id);
+    // Make both parties visible at a glance: the practitioner placed/paid for
+    // the order, while the client is the parcel recipient.
+    var displayName = (o.source==='dropship')
+      ? (o.name||o.email||'Practitioner')+' dropship to: '
+        +((o.address&&o.address.name)||'Client')
+      : (o.name||o.email||'Order #'+o.id);
     var items = (o.items||[]).map(function(i){ return (i.qty?i.qty+'x ':'')+esc(i.name||i.slug||''); }).join(', ');
     var acts = '';
     if (o.status==='proposed') acts = editBtn(o.id) + ' ' + btn(o.id,'orders.confirm','Confirm') + ' ' + sendInvBtn(o) + ' ' + payBtn(o.id);
