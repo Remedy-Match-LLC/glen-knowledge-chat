@@ -4,7 +4,13 @@ from dashboard import order_payments as op
 def _cx():
     cx = sqlite3.connect(":memory:"); cx.row_factory = sqlite3.Row
     op.ensure_table(cx)
-    cx.execute("CREATE TABLE orders (id INTEGER PRIMARY KEY, email TEXT, name TEXT, channel TEXT)")
+    # Keep the money-view fixture aligned with the payment fields on the real
+    # orders table. ledger_rows_for_payments_view uses these to suppress only
+    # exact historical Stripe shadow rows.
+    cx.execute("CREATE TABLE orders (id INTEGER PRIMARY KEY, email TEXT, name TEXT, "
+               "channel TEXT, stripe_payment_intent TEXT, external_ref TEXT, "
+               "source TEXT, paid_cents INTEGER DEFAULT 0, total_cents INTEGER DEFAULT 0, "
+               "paid_at TEXT)")
     cx.execute("INSERT INTO orders (id, email, name, channel) VALUES (1,'michael@x.com','Michael','web')")
     return cx
 
