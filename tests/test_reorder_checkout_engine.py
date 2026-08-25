@@ -4,6 +4,7 @@ import app as appmod
 import begin_funnel
 
 def _setup(monkeypatch):
+    monkeypatch.setattr(appmod, "_STRIPE_ACTIVE", True)
     monkeypatch.setattr(appmod, "_reorder_email_from_cookie", lambda: "a@x.com")
     with sqlite3.connect(appmod.LOG_DB) as _cx:
         begin_funnel.init_journey_tables(_cx)
@@ -42,18 +43,17 @@ def test_reorder_checkout_uses_engine_discount(monkeypatch):
 
 
 def test_reorder_checkout_card_failure_surfaces_payment_error(monkeypatch):
-    _setup(monkeypatch)
+    captured = _setup(monkeypatch)
     monkeypatch.setattr(appmod, "_STRIPE_ACTIVE", True)
     # Stripe failed -> helper swallowed it + returned "" (the _alert_stripe path).
     monkeypatch.setattr(appmod, "_stripe_checkout_url_for_reorder", lambda *a, **k: "")
     c = appmod.app.test_client()
     r = c.post("/reorder/checkout", json={"items": [{"slug": "brain-boost", "qty": 6}],
                                           "address": {"state": "CA", "country": "US", "name": "A"}})
-    assert r.status_code == 200            # graceful, not a 500
+    assert r.status_code == 503
     body = r.get_json()
-    assert body["ok"] is True
-    assert body["stripe_url"] == ""
-    assert body["payment_error"] == appmod._CARD_UNAVAILABLE
+    assert body == {"ok": False, "error": appmod._CARD_UNAVAILABLE}
+    assert "order" not in captured
 
 
 def test_reorder_checkout_success_has_no_payment_error(monkeypatch):

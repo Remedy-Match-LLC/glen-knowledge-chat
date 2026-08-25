@@ -101,3 +101,13 @@ def test_expanded_cards_put_actions_above_products():
 
     assert order_body.index(actions) < order_body.index(products)
     assert shipment_body.index(actions) < shipment_body.index(products)
+
+
+def test_old_orders_are_grouped_by_month_and_remain_findable():
+    html = _html()
+    assert "Date.now() - (30 * 24 * 60 * 60 * 1000)" in html
+    assert "function renderPastOrders(pastOrders, query)" in html
+    assert "document.createElement('details')" in html
+    assert "section.addEventListener('beforematch'" in html
+    assert "Command-F can find and reveal orders inside closed months" in html
+    assert "fetch('/api/orders?limit=2000'" in html

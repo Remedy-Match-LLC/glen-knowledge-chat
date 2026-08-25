@@ -174,12 +174,8 @@ def test_checkout_error_is_surfaced_not_swallowed(client, db, monkeypatch):
         cx.close()
 
 
-def test_no_stripe_url_returns_ok_with_payment_error_and_closes_cart(client, db, monkeypatch):
-    """CRITICAL 1: `_checkout_cart` ingests the order BEFORE minting the Stripe URL, so
-    a blank `stripe_url` must NOT be a 502 telling the customer to retry (each retry
-    would mint a fresh order -- orphans pile up). It must match the sibling
-    /reorder/checkout contract: ok:true, the payment_error key, and the cart closed
-    so exactly one order exists per attempt."""
+def test_no_stripe_url_returns_503_and_reopens_cart(client, db, monkeypatch):
+    """A failed Stripe mint creates no order, so the cart reopens for retry."""
     monkeypatch.setattr(app, "is_member", lambda sid, email: True)
     monkeypatch.setattr(app, "_cart_email", lambda: "a@x.com")
     monkeypatch.setattr(app, "_STRIPE_ACTIVE", True)
@@ -189,18 +185,13 @@ def test_no_stripe_url_returns_ok_with_payment_error_and_closes_cart(client, db,
                                   "stripe_url": ""})
     client.post("/api/cart/add", json={"slug": "brain-boost"})
     r = client.post("/api/cart/checkout", json={"address": ADDRESS})
-    assert r.status_code == 200
+    assert r.status_code == 503
     body = r.get_json()
-    assert body["ok"] is True
-    assert body["stripe_url"] == ""
-    assert body["payment_error"] == app._CARD_UNAVAILABLE
+    assert body == {"ok": False, "error": app._CARD_UNAVAILABLE}
 
     cx = sqlite3.connect(app.LOG_DB)
     try:
-        assert CS.open_token_for_email(cx, "a@x.com") == ""
-        row = cx.execute(
-            "SELECT status FROM carts WHERE checkout_ref='r1'").fetchone()
-        assert row[0] == "ordered"
+        assert CS.open_token_for_email(cx, "a@x.com") != ""
     finally:
         cx.close()
 
@@ -709,8 +700,8 @@ def test_mark_ordered_failure_does_not_lock_the_member_out(client, db, monkeypat
     monkeypatch.setattr(app, "_CART_CLAIM_STALE_SECONDS", 0)
 
     def fake_checkout_that_really_ingests(email, cart, **k):
-        # Mirrors what the real _checkout_cart does: the order is ingested BEFORE
-        # this function returns, regardless of what happens to mark_ordered after.
+        # Mirrors the post-Stripe half of real _checkout_cart: once a URL exists,
+        # the order is ingested before cart-state mark_ordered runs.
         ocx = sqlite3.connect(app.LOG_DB)
         try:
             O.init_orders_table(ocx)

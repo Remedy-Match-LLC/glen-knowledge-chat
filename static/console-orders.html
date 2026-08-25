@@ -47,6 +47,20 @@
   .order-details .detail-label { color:var(--muted); }
   .acts { margin-top:9px; display:flex; flex-wrap:wrap; gap:6px; }
   .card-body > .acts:first-child { margin-top:0; margin-bottom:9px; }
+  #past-orders { margin-top:22px; }
+  #past-orders > h2 { font-family:"Raleway",sans-serif; font-size:15px; color:var(--cream);
+                      margin-bottom:9px; }
+  #past-orders > .past-note { color:var(--muted); font-size:12px; margin-bottom:10px; }
+  .past-month { background:var(--surface); border:1px solid var(--border); border-radius:10px;
+                margin-bottom:9px; overflow:hidden; }
+  .past-month summary { cursor:pointer; padding:11px 14px; color:var(--cream); font-weight:600;
+                        list-style-position:inside; }
+  .past-month summary .n { color:var(--gold); font-size:12px; margin-left:5px; }
+  .past-month-body { padding:2px 14px 10px; display:grid;
+                     grid-template-columns:repeat(3,minmax(0,1fr)); gap:10px; }
+  .past-month-body .card { margin-bottom:0; }
+  @media (max-width:1000px){ .past-month-body { grid-template-columns:repeat(2,minmax(0,1fr)); } }
+  @media (max-width:650px){ .past-month-body { grid-template-columns:1fr; } }
   .acts button { font-size:11px; border:1px solid var(--border); background:transparent;
                  color:var(--cream); border-radius:6px; padding:3px 9px; cursor:pointer; }
   .acts button:hover { border-color:var(--gold); color:var(--gold); }
@@ -122,6 +136,7 @@
   <div class="sub">Every order, from every channel, through one lifecycle.</div>
   <div id="hhbanner"></div>
   <div class="cols" id="board"></div>
+  <section id="past-orders"></section>
   <div id="hhbar">
     <span id="hhbar-label"></span>
     <button onclick="combineSelected()">Combine into shipment &rarr;</button>
@@ -458,7 +473,7 @@
   }
 
   async function load(){
-    var r = await fetch('/api/orders?limit=300', {headers:hdr()});
+    var r = await fetch('/api/orders?limit=2000', {headers:hdr()});
     if (r.status===401){ document.getElementById('gate').style.display='flex'; return; }
     var orders = (await r.json()).data || [];
     // Combined-shipment feature flag + auto-suggest clusters (best-effort).
@@ -476,6 +491,16 @@
         });
       });
     }
+    // The operational board stays light: anything over 30 days old moves into
+    // click-open calendar-month batches below. The cards remain in the DOM inside
+    // native <details>, so browser Find can discover them and open their month.
+    var monthCutoff = Date.now() - (30 * 24 * 60 * 60 * 1000);
+    var pastOrders = [], currentOrders = [];
+    orders.forEach(function(o){
+      var ts = Date.parse(o.created_at || '');
+      ((isFinite(ts) && ts < monthCutoff) ? pastOrders : currentOrders).push(o);
+    });
+    orders = currentOrders;
     var board = document.getElementById('board'); board.innerHTML='';
     if (q) {
       var note = document.createElement('div');
@@ -525,9 +550,47 @@
         + doneGids.map(function(id){ return shipmentCardHtml(id, groups[id]); }).join('');
       board.appendChild(dcol);
     }
+    renderPastOrders(pastOrders, q);
     renderBanner();
     updateBar();
     maybeHighlight();
+  }
+
+  function orderMonthKey(o){
+    var d = new Date(o.created_at || 0);
+    if (isNaN(d.getTime())) return 'Unknown date';
+    return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0');
+  }
+  function orderMonthLabel(key){
+    if (key === 'Unknown date') return key;
+    var p = key.split('-');
+    return new Date(Number(p[0]), Number(p[1])-1, 1).toLocaleDateString(
+      undefined, {month:'long', year:'numeric'});
+  }
+  function renderPastOrders(pastOrders, query){
+    var host = document.getElementById('past-orders');
+    host.innerHTML = '';
+    if (!pastOrders.length) return;
+    var byMonth = {};
+    pastOrders.forEach(function(o){
+      var k = orderMonthKey(o); (byMonth[k] = byMonth[k] || []).push(o);
+    });
+    var keys = Object.keys(byMonth).sort().reverse();
+    host.innerHTML = '<h2>Past orders <span class="n">'+pastOrders.length+'</span></h2>'
+      + '<div class="past-note">Older than 30 days, grouped by month. Command-F can find and reveal orders inside closed months.</div>';
+    keys.forEach(function(k){
+      var section = document.createElement('details');
+      section.className = 'past-month';
+      if (query) section.open = true;
+      var monthOrders = byMonth[k];
+      section.innerHTML = '<summary>'+esc(orderMonthLabel(k))+' <span class="n">'
+        +monthOrders.length+' order'+(monthOrders.length===1?'':'s')+'</span></summary>'
+        +'<div class="past-month-body">'+monthOrders.map(cardHtml).join('')+'</div>';
+      // Chromium fires beforematch for find-in-page hidden content. Native details
+      // also auto-open in current browsers; this listener makes the reveal explicit.
+      section.addEventListener('beforematch', function(){ section.open = true; });
+      host.appendChild(section);
+    });
   }
 
   // One card summarizing a combined shipment (status/tracking are lockstep across
