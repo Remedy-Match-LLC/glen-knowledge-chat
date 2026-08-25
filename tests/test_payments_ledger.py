@@ -176,6 +176,24 @@ def test_report_date_range_and_method_totals_include_refunds():
     }
 
 
+def test_manual_shadow_of_stripe_capture_is_hidden_but_a_real_split_is_kept():
+    cx = _cx()
+    oid = _mk_order(cx, source="in-house", external_ref="INV-shadow", total_cents=30000)
+    O.set_order_stripe_pi(cx, oid, "pi_shadow")
+    O.set_order_payment(cx, oid, method="card", amount_cents=30000)
+    paid_at = cx.execute("SELECT paid_at FROM orders WHERE id=?", (oid,)).fetchone()[0]
+
+    OP.ensure_table(cx)
+    # Historical bridge duplicate: same order, full captured amount, exact timestamp.
+    OP.add_payment(cx, oid, 30000, "card", source="manual", paid_at=paid_at)
+    # A genuine additional/split payment must remain visible.
+    OP.add_payment(cx, oid, 5000, "Zelle", source="manual",
+                   paid_at="2026-07-05T00:00:00+00:00")
+
+    rows = OP.ledger_rows_for_payments_view(cx)
+    assert [(r["payment_method"], r["amount_cents"]) for r in rows] == [("Zelle", 5000)]
+
+
 def test_recent_failures_newest_first_with_fields():
     cx = _cx()
     SA.record_failure(cx, "checkout session create", "card declined",

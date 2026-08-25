@@ -67,7 +67,11 @@ def ledger_rows_for_payments_view(cx, *, limit=200):
     (status != 'active') are excluded. Stripe-sourced PAYMENTS are excluded —
     they already appear via dashboard.payments' charge ledger — but Stripe-sourced
     REFUNDS ARE included (a card refund has no row in the charge ledger, so this is
-    its only appearance), tagged 'card:refund'. Read-only; caller sets
+    its only appearance), tagged 'card:refund'. Historical card/QBO shadow rows
+    created while a successful Stripe checkout was also copied into this ledger are
+    suppressed when order, amount, and paid timestamp all match the captured charge.
+    The rows remain in the database for audit; they simply cannot double-count the
+    Money report. Read-only; caller sets
     cx.row_factory = sqlite3.Row."""
     rows = cx.execute(
         "SELECT op.id AS op_id, op.kind, op.amount_cents, op.method, op.source AS op_source, "
@@ -80,6 +84,15 @@ def ledger_rows_for_payments_view(cx, *, limit=200):
         # Stripe PAYMENTS (card charges) stay excluded — they're already there.
         "WHERE op.status='active' AND (op.source != 'stripe' OR op.kind='refund') "
         "AND op.kind IN ('payment','refund') "
+        # The pre-ledger bridge wrote a second manual/QBO payment at the exact
+        # moment orders.set_order_payment recorded the real Stripe capture. Match
+        # all three stable facts so a legitimate split/manual payment is preserved.
+        "AND NOT (op.kind='payment' "
+        "  AND ((o.stripe_payment_intent IS NOT NULL AND TRIM(o.stripe_payment_intent)!='') "
+        "       OR o.external_ref LIKE 'pi\\_%' ESCAPE '\\' "
+        "       OR o.source IN ('subscription','membership')) "
+        "  AND op.amount_cents = CASE WHEN o.paid_cents > 0 THEN o.paid_cents ELSE o.total_cents END "
+        "  AND COALESCE(op.paid_at,'') = COALESCE(o.paid_at,'')) "
         "ORDER BY COALESCE(op.paid_at, op.created_at) DESC, op.id DESC "
         "LIMIT ?", (int(limit),)).fetchall()
     out = []
