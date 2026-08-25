@@ -16489,7 +16489,10 @@ def practitioner_to_client_account():
         if not _cp.get_portal_content_by_email(cx, email):
             _cp.upsert_portal(cx, email, name, {})
         link, _reissued = _cp.portal_link_for(cx, email, portal_base())
-    return redirect(link or "/portal/login")
+    destination = link or "/portal/login"
+    if request.args.get("section") == "messages" and link:
+        destination = f"{link}#ask"
+    return redirect(destination)
 
 
 @app.route("/api/practitioner/qualifications", methods=["POST"])

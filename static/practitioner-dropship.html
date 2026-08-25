@@ -54,6 +54,9 @@
     .product-result:last-child{ border-bottom:0; }
     .product-result:hover,.product-result:focus{ background:var(--surface); }
     .product-result small{ color:var(--muted); }
+    .workspace-nav{position:sticky;top:0;z-index:50;display:flex;gap:8px;overflow-x:auto;margin:14px 0 18px;padding:10px;background:var(--surface);border:1px solid var(--border);border-radius:12px;box-shadow:0 8px 24px rgba(0,0,0,.22);-webkit-overflow-scrolling:touch}
+    .workspace-nav a{min-height:44px;display:inline-flex;align-items:center;padding:8px 12px;color:var(--gold);font-size:13px;font-weight:700;text-decoration:none;white-space:nowrap;border-radius:8px}
+    .workspace-nav a.primary{background:var(--green);color:#fff}
   </style>
   <script>(function(){var t=localStorage.getItem('rm-theme');if(t)document.documentElement.setAttribute('data-theme',t);})();</script>
   <script src="/static/theme-mode.js"></script>
@@ -68,13 +71,16 @@
         <div class="muted" id="who">Loading&hellip;</div>
       </div>
     </div>
-    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:flex-end;font-size:13px">
-      <a href="/practitioner/portal" style="color:var(--gold)">Practitioner Home</a>
-      <a href="/practitioner/settings" style="color:var(--gold)">Practice Settings</a>
-      <a href="/practitioner/client-account" style="color:var(--gold)">My Client Portal</a>
+    <div>
       <span class="theme-toggle" id="themeToggle" role="group" aria-label="Theme mode"></span>
     </div>
   </div>
+  <nav class="workspace-nav" aria-label="Practitioner workspace">
+    <a href="/practitioner/portal">Practitioner Home</a>
+    <a class="primary" href="/practitioner/dropship">Drop-Ship Order</a>
+    <a href="/practitioner/settings">Practice Settings</a>
+    <a href="/practitioner/client-account?section=messages">Messages &amp; Order Help</a>
+  </nav>
 
   <div id="auth-wall" class="auth-notice" style="display:none">
     <div style="font-size:18px;font-weight:700;font-family:var(--heading);margin-bottom:10px">Sign in to continue your drop-ship order</div>
