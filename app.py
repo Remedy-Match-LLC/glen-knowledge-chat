@@ -20141,6 +20141,21 @@ def _portal_password_login_enabled() -> bool:
             "1", "true", "yes", "on")
 
 
+def _portal_google_login_enabled() -> bool:
+    return (_client_login_enabled()
+            and os.environ.get("PORTAL_GOOGLE_LOGIN_ENABLED", "").strip().lower() in ("1", "true", "yes", "on")
+            and bool(os.environ.get("PORTAL_GOOGLE_CLIENT_ID"))
+            and bool(os.environ.get("PORTAL_GOOGLE_CLIENT_SECRET")))
+
+
+def _portal_apple_login_enabled() -> bool:
+    required = ("PORTAL_APPLE_SERVICES_ID", "PORTAL_APPLE_TEAM_ID",
+                "PORTAL_APPLE_KEY_ID", "PORTAL_APPLE_PRIVATE_KEY")
+    return (_client_login_enabled()
+            and os.environ.get("PORTAL_APPLE_LOGIN_ENABLED", "").strip().lower() in ("1", "true", "yes", "on")
+            and all(os.environ.get(k) for k in required))
+
+
 def _household_view_enabled():
     """Household/family portal-view switcher (Task 3). Default OFF — when off, the
     portal payload never gains a 'household' key and ?member= is ignored, so the
@@ -31695,7 +31710,157 @@ def client_login_methods():
     if not _client_login_enabled():
         return jsonify({"error": "not found"}), 404
     return jsonify({"password": _portal_password_login_enabled(),
-                    "google": False, "apple": False})
+                    "google": _portal_google_login_enabled(),
+                    "apple": _portal_apple_login_enabled()})
+
+
+def _portal_provider_redirect_uri(provider):
+    return f"{portal_base()}/portal/auth/{provider}/callback"
+
+
+def _provider_state_cookie(provider):
+    return f"rm_portal_{provider}_state"
+
+
+@app.route("/portal/auth/google/start", methods=["GET"])
+def client_google_start():
+    if not _portal_google_login_enabled():
+        return ("Not found", 404)
+    from flask import make_response as _mkresp, redirect as _redir
+    from dashboard import portal_providers as _providers
+    redirect_uri = _portal_provider_redirect_uri("google")
+    with _db_lock, db.connect(LOG_DB) as cx:
+        state, nonce, verifier = _providers.create_transaction(cx, "google", redirect_uri)
+    url = _providers.google_authorization_url(
+        os.environ["PORTAL_GOOGLE_CLIENT_ID"], redirect_uri, state, nonce, verifier)
+    resp = _mkresp(_redir(url))
+    resp.set_cookie(_provider_state_cookie("google"), state, max_age=600,
+                    httponly=True, secure=True, samesite="None")
+    return resp
+
+
+@app.route("/portal/auth/apple/start", methods=["GET"])
+def client_apple_start():
+    if not _portal_apple_login_enabled():
+        return ("Not found", 404)
+    from flask import make_response as _mkresp, redirect as _redir
+    from dashboard import portal_providers as _providers
+    redirect_uri = _portal_provider_redirect_uri("apple")
+    with _db_lock, db.connect(LOG_DB) as cx:
+        state, nonce, _ = _providers.create_transaction(cx, "apple", redirect_uri)
+    url = _providers.apple_authorization_url(
+        os.environ["PORTAL_APPLE_SERVICES_ID"], redirect_uri, state, nonce)
+    resp = _mkresp(_redir(url))
+    resp.set_cookie(_provider_state_cookie("apple"), state, max_age=600,
+                    httponly=True, secure=True, samesite="None")
+    return resp
+
+
+def _finish_external_provider(profile):
+    """Sign in a known provider subject, or require canonical-email proof before
+    first link. Never provisions a person from a returning-client login."""
+    from flask import make_response as _mkresp, redirect as _redir
+    from dashboard import portal_auth as _pa, portal_identity as _pi
+    provider, subject = profile["provider"], profile["subject"]
+    with _db_lock, db.connect(LOG_DB) as cx:
+        pid = _pa.identity_by_provider_subject(cx, provider, subject)
+        if pid:
+            sess = _pi.create_client_session(cx, pid, profile.get("email", ""))
+            resp = _mkresp(_redir("/portal/me"))
+            resp.set_cookie("rm_portal_session", sess, max_age=30 * 86400,
+                            httponly=True, samesite="Lax", secure=request.is_secure)
+            return resp
+        email = profile.get("email", "")
+        pid = _pa.person_by_verified_email(cx, email) if email else None
+        if not pid:
+            return _redir("/portal/login?error=provider")
+        token = _pa.create_provider_link_confirmation(
+            cx, pid, provider, subject, email, profile.get("name", ""))
+        row = cx.execute("SELECT name FROM people WHERE id=?", (pid,)).fetchone()
+    _send_full_report_email(
+        email, row[0] if row else "", "Confirm your Healing Oasis sign-in",
+        "Aloha,\n\nConfirm that you want to use " + provider.title() + " to sign in:\n"
+        f"{portal_base()}/portal/auth/link-confirm?token={token}\n\n"
+        "This link expires in 30 minutes. If you did not request it, ignore this email.",
+        respect_suppression=False)
+    return ("<!doctype html><meta charset=utf-8><meta name=viewport content='width=device-width,initial-scale=1'>"
+            "<title>Check your email</title><div style='font-family:system-ui;max-width:520px;margin:12vh auto;padding:20px'>"
+            "<h1>Check your email</h1><p>We sent a confirmation link to the email on your portal. "
+            "Open it to finish connecting this sign-in method.</p></div>")
+
+
+@app.route("/portal/auth/google/callback", methods=["GET"])
+def client_google_callback():
+    if not _portal_google_login_enabled():
+        return ("Not found", 404)
+    from flask import redirect as _redir
+    from dashboard import portal_providers as _providers
+    state = (request.args.get("state") or "").strip()
+    if not state or state != request.cookies.get(_provider_state_cookie("google"), ""):
+        return _redir("/portal/login?error=provider")
+    with _db_lock, db.connect(LOG_DB) as cx:
+        transaction = _providers.consume_transaction(cx, state, "google")
+    if not transaction:
+        return _redir("/portal/login?error=provider")
+    try:
+        profile = _providers.exchange_google(
+            request.args.get("code", ""), os.environ["PORTAL_GOOGLE_CLIENT_ID"],
+            os.environ["PORTAL_GOOGLE_CLIENT_SECRET"], transaction)
+    except Exception as exc:
+        app.logger.warning("Google portal login failed: %r", exc)
+        return _redir("/portal/login?error=provider")
+    return _finish_external_provider(profile)
+
+
+@app.route("/portal/auth/apple/callback", methods=["POST"])
+def client_apple_callback():
+    if not _portal_apple_login_enabled():
+        return ("Not found", 404)
+    from flask import redirect as _redir
+    from dashboard import portal_providers as _providers
+    state = (request.form.get("state") or "").strip()
+    if not state or state != request.cookies.get(_provider_state_cookie("apple"), ""):
+        return _redir("/portal/login?error=provider")
+    with _db_lock, db.connect(LOG_DB) as cx:
+        transaction = _providers.consume_transaction(cx, state, "apple")
+    if not transaction:
+        return _redir("/portal/login?error=provider")
+    try:
+        profile = _providers.exchange_apple(
+            request.form.get("code", ""), request.form.get("id_token", ""),
+            os.environ["PORTAL_APPLE_SERVICES_ID"], os.environ["PORTAL_APPLE_TEAM_ID"],
+            os.environ["PORTAL_APPLE_KEY_ID"],
+            os.environ["PORTAL_APPLE_PRIVATE_KEY"].replace("\\n", "\n"), transaction,
+            request.form.get("user"))
+    except Exception as exc:
+        app.logger.warning("Apple portal login failed: %r", exc)
+        return _redir("/portal/login?error=provider")
+    return _finish_external_provider(profile)
+
+
+@app.route("/portal/auth/link-confirm", methods=["GET", "POST"])
+def client_provider_link_confirm():
+    from flask import make_response as _mkresp, redirect as _redir
+    from dashboard import portal_auth as _pa, portal_identity as _pi
+    token = (request.args.get("token") or request.form.get("token") or "").strip()
+    if request.method == "GET":
+        with _db_lock, db.connect(LOG_DB) as cx:
+            pending = _pa.validate_provider_link_confirmation(cx, token)
+        if not pending:
+            return _redir("/portal/login?error=provider")
+        return _confirm_post_page(
+            "/portal/auth/link-confirm", title="Confirm sign in", heading="Connect your account",
+            blurb=f"Use {pending['provider'].title()} to sign in to your Healing Oasis.",
+            button="Connect and sign in", hidden={"token": token})
+    with _db_lock, db.connect(LOG_DB) as cx:
+        pid = _pa.consume_provider_link_confirmation(cx, token)
+        if not pid:
+            return _redir("/portal/login?error=provider")
+        sess = _pi.create_client_session(cx, pid, "")
+    resp = _mkresp(_redir("/portal/me"))
+    resp.set_cookie("rm_portal_session", sess, max_age=30 * 86400,
+                    httponly=True, samesite="Lax", secure=request.is_secure)
+    return resp
 
 
 @app.route("/portal/login-request", methods=["POST"])
