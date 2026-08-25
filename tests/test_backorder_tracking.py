@@ -66,6 +66,19 @@ def test_fulfill_lines_action_partial_then_done():
     assert O.get_order(cx, oid)["status"] == "done"
 
 
+def test_fulfill_lines_records_tracking_with_shipment():
+    O, cx = _db()
+    oid = _order(O, cx, "INH-TRACK", [{"slug": "a", "name": "A", "qty": 1}],
+                 status="packed")
+    res = O._fulfill_lines_exec({
+        "order_id": oid,
+        "tracking_number": "9400111899223",
+        "lines": [{"index": 0, "qty": 1}],
+    }, {"cx": cx})
+    assert res["tracking_number"] == "9400111899223"
+    assert O.get_order(cx, oid)["tracking_number"] == "9400111899223"
+
+
 def test_fulfill_lines_requires_a_quantity():
     O, cx = _db()
     oid = _order(O, cx, "INH-4", [{"slug": "a", "name": "A", "qty": 2}], status="packed")

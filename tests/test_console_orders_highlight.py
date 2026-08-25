@@ -75,6 +75,18 @@ def test_easypost_tracking_can_be_emailed_without_retyping():
     assert "prompt('Tracking number (optional):', saved)" in html
 
 
+def test_record_shipment_requests_missing_tracking_and_done_card_can_reveal_or_add_it():
+    html = _html()
+    assert "id=\"ff-track-" in html
+    assert "id=\"ff-track-row-" in html
+    assert "tracking.focus()" in html
+    assert "tracking_number: tracking ? tracking.value.trim() : ''" in html
+    assert "else if (o.status==='done') acts = trackingBtn(o)" in html
+    assert ">Tracking Number</button>" in html
+    assert "id=\"done-track-" in html
+    assert "function saveTracking(id)" in html
+
+
 def test_expanded_cards_put_actions_above_products():
     html = _html()
     actions = "+ '<div class=\"acts\">'+acts+'</div>'"
