@@ -2,7 +2,7 @@ import sqlite3
 
 import app as app_module
 import dashboard
-from dashboard import client_prefs, client_prices
+from dashboard import client_prefs, client_prices, cart_store, points, subscriptions, client_portal
 
 
 def test_commerce_status_reports_pricing_shipping_and_membership(monkeypatch, tmp_path):
@@ -17,6 +17,14 @@ def test_commerce_status_reports_pricing_shipping_and_membership(monkeypatch, tm
         client_prices.set_ff_flat(cx, "a@b.com", 4200)
         app_module.init_membership_tables(cx)
         app_module._grant_membership(cx, "a@b.com", 30, "membership_month")
+        cart_store.init_cart_tables(cx)
+        cart_store.get_or_create(cx, "cart-a", email="a@b.com")
+        cart_store.add_item(cx, "cart-a", "vitreous-vitality", qty=2)
+        points.init_points_table(cx)
+        points.earn(cx, "a@b.com", full_price_cents=10000, earn_pct=.05, order_ref="order-a")
+        subscriptions.init_subscriptions_table(cx)
+        client_portal.init_client_portal_table(cx)
+        client_portal.upsert_portal(cx, "a@b.com", "A", {})
         cx.commit()
 
     response = app_module.app.test_client().get(
@@ -27,6 +35,9 @@ def test_commerce_status_reports_pricing_shipping_and_membership(monkeypatch, tm
     assert data["shipping"]["pickup_default"] is True
     assert data["membership"]["active"] is True
     assert data["membership"]["tier"] == "month"
+    assert data["account_health"]["cart_count"] == 2
+    assert data["account_health"]["points_cents"] == 500
+    assert data["account_health"]["portal_active"] is True
     assert {t["key"] for t in data["membership_tiers"]} == {
         "month", "year_monthly", "year_prepay"}
 

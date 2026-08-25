@@ -30,3 +30,5 @@ def test_client_page_exposes_editable_commerce_status():
     assert "/api/console/client-prefs" in body
     assert "/api/console/membership/enroll" in body
     assert "/api/console/membership/revoke" in body
+    assert 'id="account-health"' in body
+    assert "Address needed" in body

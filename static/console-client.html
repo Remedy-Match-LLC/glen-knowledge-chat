@@ -33,6 +33,10 @@
   .commerce-actions{display:flex;gap:6px;flex-wrap:wrap}
   .commerce-note{min-height:18px;margin-top:5px;color:#667770;font-size:12px}
   .danger{color:#8b2d2d}
+  .health{display:flex;gap:8px;flex-wrap:wrap;margin:2px 0 14px}
+  .health-item{background:#fff;border:1px solid #dce4e0;border-radius:999px;padding:7px 11px;font-size:13px}
+  .health-item.good{border-color:#a8cdbd;background:#f0f8f4}
+  .health-item.attn{border-color:#e1b5a9;background:#fff5f2}
   @media(max-width:700px){.commerce{grid-template-columns:1fr}}
 </style>
 </head>
@@ -50,6 +54,7 @@
     <h1 id="c-name">—</h1>
     <p class="sub" id="c-meta"></p>
     <p><button id="open-portal" style="display:none">Open portal</button></p>
+    <div class="health" id="account-health" aria-label="Account health"></div>
 
     <section class="commerce" aria-label="Client commerce status">
       <div class="commerce-card">
@@ -384,6 +389,16 @@ function renderCommerce(d){
   commerceMessage("membership-note",detail);
   document.getElementById("revoke-membership").disabled=!m.active;
   document.getElementById("membership-tier").innerHTML=(d.membership_tiers||[]).map(function(t){return "<option value='"+escAttr(t.key)+"'>"+esc(t.label)+"</option>";}).join("");
+  var h=d.account_health||{};
+  var health=[
+    {label:h.cart_count?"Cart: "+h.cart_count+" item"+(h.cart_count===1?"":"s"):"Cart empty",attn:false},
+    {label:h.open_balance_cents?"Balance due: "+money(h.open_balance_cents):"No balance due",attn:!!h.open_balance_cents},
+    {label:(h.points_cents||h.ship_credit_cents)?"Credits: "+money((h.points_cents||0)+(h.ship_credit_cents||0)):"No credits",attn:false},
+    {label:h.active_subscription_count?"Subscription active":"No subscription",attn:false},
+    {label:h.portal_active?"Portal active":"Portal missing",attn:!h.portal_active},
+    {label:h.address_ready?"Address ready":"Address needed",attn:!h.address_ready}
+  ];
+  document.getElementById("account-health").innerHTML=health.map(function(x){return "<span class='health-item "+(x.attn?"attn":"good")+"'>"+esc(x.label)+"</span>";}).join("");
 }
 function loadCommerce(){
   return fetch("/api/console/client-commerce-status?email="+encodeURIComponent(qsEmail()),{headers:hdr()})
