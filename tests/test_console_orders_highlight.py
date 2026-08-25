@@ -29,7 +29,9 @@ def test_dropship_cards_show_recipient_and_shipping_address():
     assert "Client / ship to:" in html
     assert "Shipping address:" in html
     assert "+ dropShipDetailsHtml(o)" in html
-    assert "var displayName = (o.source==='dropship' && o.address && o.address.name)" in html
+    assert "var displayName = (o.source==='dropship')" in html
+    assert "(o.name||o.email||'Practitioner')+' dropship to: '" in html
+    assert "((o.address&&o.address.name)||'Client')" in html
     assert "esc(displayName)" in html
 
 
