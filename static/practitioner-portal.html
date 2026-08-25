@@ -20,6 +20,9 @@
   *{box-sizing:border-box}
   body{ margin:0; background:var(--bg); color:var(--cream); font-family:var(--font); line-height:1.6; }
   .wrap{ max-width:960px; margin:0 auto; padding:34px 20px; }
+  .workspace-nav{position:sticky;top:0;z-index:50;display:flex;gap:8px;overflow-x:auto;margin:14px 0 18px;padding:10px;background:var(--surface);border:1px solid var(--border);border-radius:12px;box-shadow:0 8px 24px rgba(0,0,0,.22);-webkit-overflow-scrolling:touch}
+  .workspace-nav a{min-height:44px;display:inline-flex;align-items:center;padding:8px 12px;color:var(--gold);font-size:13px;font-weight:700;text-decoration:none;white-space:nowrap;border-radius:8px}
+  .workspace-nav a.primary{background:var(--green);color:#fff}
   h1,h2{ font-family:var(--heading); font-weight:700; margin:0; }
   h1{ font-size:24px; } h2{ font-size:17px; }
   .muted{ color:var(--muted); }
@@ -199,14 +202,16 @@
       <img id="brand-logo" src="" alt="" style="display:none;width:40px;height:40px;object-fit:contain;border-radius:6px;background:rgba(255,255,255,.08)">
       <div><h1>Practitioner Portal</h1><div class="muted" id="who">Loading…</div></div>
     </div>
-    <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;justify-content:flex-end;font-size:13px;font-weight:600">
-      <a href="/practitioner/portal" style="color:var(--gold)">Practitioner Home</a>
-      <a href="/practitioner/dropship" style="color:var(--gold)">Drop-Ship Orders</a>
-      <a href="/practitioner/settings" style="color:var(--gold)">Practice Settings</a>
-      <a id="clientAccountLink" href="/practitioner/client-account" style="color:var(--gold)">My Client Portal</a>
+    <div>
       <span class="theme-toggle" id="themeToggle" role="group" aria-label="Theme mode"></span>
     </div>
   </div>
+  <nav class="workspace-nav" aria-label="Practitioner workspace">
+    <a href="/practitioner/portal">Practitioner Home</a>
+    <a class="primary" href="/practitioner/dropship">Drop-Ship Order</a>
+    <a href="/practitioner/settings">Practice Settings</a>
+    <a id="clientAccountLink" href="/practitioner/client-account?section=messages">Messages &amp; Order Help</a>
+  </nav>
   <!-- Ask Dr. Glen + Assignment: persistent ABOVE the tabs so they stay visible on
        every tab (answers product/condition questions AND suggests Functional
        Formulations to add to your order). Shown to all practitioners. -->
@@ -1560,7 +1565,7 @@ function renderTraining(d){
 function render(d){
   var practiceName = (d.branding && d.branding.practice_name) || d.practice_name || '';
   $('who').textContent = (d.name || '') + (practiceName ? ' · ' + practiceName : '');
-  $('clientAccountLink').href = '/practitioner/client-account';
+  $('clientAccountLink').href = '/practitioner/client-account?section=messages';
   if (d.qualification_required || !d.qualification_completed) {
     $('qualificationCredentials').value = d.credentials || '';
     $('qualificationGate').classList.add('open');
