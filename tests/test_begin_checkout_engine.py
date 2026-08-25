@@ -2,6 +2,7 @@
 import app as appmod
 
 def _setup(monkeypatch):
+    monkeypatch.setattr(appmod, "_STRIPE_ACTIVE", True)
     monkeypatch.setattr(appmod, "is_member", lambda sid, email: True)   # consent satisfied
     monkeypatch.setattr(appmod, "_get_product",
         lambda s: {"slug":s,"name":"Brain Boost","price_cents":7000,"qty_pricing":True,"qbo_item_id":"27"} if s=="brain-boost" else None)

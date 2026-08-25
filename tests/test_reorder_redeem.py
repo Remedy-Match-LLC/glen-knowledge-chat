@@ -5,6 +5,7 @@ from dashboard import points
 
 
 def _setup(monkeypatch, tmp_path):
+    monkeypatch.setattr(appmod, "_STRIPE_ACTIVE", True)
     db = str(tmp_path / "t.db"); monkeypatch.setattr(appmod, "LOG_DB", db)
     cx = sqlite3.connect(db); points.init_points_table(cx)
     begin_funnel.init_journey_tables(cx)
@@ -20,7 +21,7 @@ def _setup(monkeypatch, tmp_path):
     monkeypatch.setattr(appmod.qb, "create_invoice",
         lambda *a, **k: cap.update(k) or {"Id": "INV", "TotalAmt": 68.0})
     monkeypatch.setattr(appmod, "_ingest_order", lambda **kw: cap.setdefault("order", kw))
-    monkeypatch.setattr(appmod, "_stripe_checkout_url_for_reorder", lambda *a, **k: "")
+    monkeypatch.setattr(appmod, "_stripe_checkout_url_for_reorder", lambda *a, **k: "https://stripe/x")
     monkeypatch.setenv("PRICING_ENGINE_CHECKOUT", "true")
     return cap
 
