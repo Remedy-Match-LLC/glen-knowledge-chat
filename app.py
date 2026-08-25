@@ -50084,7 +50084,7 @@ def bos_orders_create():
             try:
                 rows = _bos_orders.list_orders(
                     cx, status=request.args.get("status"),
-                    limit=min(int(request.args.get("limit", 200) or 200), 500),
+                    limit=min(int(request.args.get("limit", 200) or 200), 2000),
                     include_cancelled=request.args.get("include_cancelled") == "1")
             except (TypeError, ValueError):
                 rows = _bos_orders.list_orders(cx, include_cancelled=False)
