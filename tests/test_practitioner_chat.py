@@ -46,3 +46,28 @@ def test_all_four_banned_brands_scrubbed(monkeypatch):
     assert "http" not in reply
     # exact-match slug with whitespace is NOT in catalog → dropped
     assert out["suggested_slugs"] == ["bone-builder"]
+
+
+def test_product_markers_render_only_from_catalog(monkeypatch):
+    monkeypatch.setattr(pc, "_llm_json", lambda system, messages: {
+        "reply": "Use [[brain-boost]], not [[invented-glow]].",
+        "suggested_slugs": ["brain-boost", "invented-glow"]})
+
+    out = pc.scoped_reply("focus", [], CATALOG)
+
+    assert out["reply"] == "Use Brain Boost, not a catalog product."
+    assert out["suggested_slugs"] == ["brain-boost"]
+
+
+def test_skin_support_phrase_is_corrected_to_perfect_skin(monkeypatch):
+    catalog = CATALOG + [{
+        "slug": "perfect-skin", "name": "Perfect Skin",
+        "description": "skin barrier support"}]
+    monkeypatch.setattr(pc, "_llm_json", lambda system, messages: {
+        "reply": "Skin Support is the primary choice.",
+        "suggested_slugs": ["perfect-skin"]})
+
+    out = pc.scoped_reply("skin", [], catalog)
+
+    assert out["reply"] == "Perfect Skin is the primary choice."
+    assert out["suggested_slugs"] == ["perfect-skin"]

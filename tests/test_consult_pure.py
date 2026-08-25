@@ -73,7 +73,7 @@ def test_create_meeting_builds_request_and_parses_response():
                               opener=fake_opener)
     assert out == {"join_url": "https://zoom.us/j/87654321",
                    "meeting_id": "87654321", "start_url": "https://zoom.us/s/87654321",
-                   "registration_url": None}
+                   "registration_url": None, "occurrences": [], "type": None}
     assert captured["url"] == "https://api.zoom.us/v2/users/me/meetings"
     assert captured["auth"] == "Bearer tok123"
     assert captured["body"]["type"] == 2 and captured["body"]["duration"] == 30

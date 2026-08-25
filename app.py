@@ -16873,6 +16873,23 @@ _ASSIST_EXTRACT_SYSTEM = (
     "Output ONLY the JSON, no prose, no code fences."
 )
 
+# Practitioner-confirmed corrections for legacy/descriptive names that are not
+# themselves orderable products.  The canonical name is still resolved against
+# today's live catalog before it can be shown or added.
+_ASSIST_NAME_CORRECTIONS = {
+    "skin support": "Perfect Skin",
+}
+
+
+def _assist_orderable_catalog_text():
+    """Compact, deterministic allowlist injected into every assistant turn."""
+    rows = []
+    for slug, product in sorted((_PRODUCTS.get("products") or {}).items()):
+        if not product or product.get("inactive") or product.get("info_only"):
+            continue
+        rows.append(f"- {slug}: {product.get('name') or slug}")
+    return "\n".join(rows)
+
 
 def _assist_resolve_products(items):
     """Resolve assistant-named products to addable cart slugs: fuzzy name/title
@@ -16884,6 +16901,7 @@ def _assist_resolve_products(items):
         nm = (it.get("name") or "").strip()
         if not nm:
             continue
+        nm = _ASSIST_NAME_CORRECTIONS.get(nm.lower(), nm)
         slug = _pp.name_to_slug(nm, cat)
         if not slug:
             try:
@@ -16897,8 +16915,39 @@ def _assist_resolve_products(items):
         if not slug or slug in seen or (cat.get(slug) or {}).get("info_only"):
             continue
         seen.add(slug)
-        out.append({"name": nm, "why": (it.get("why") or "").strip(), "slug": slug})
+        canonical = (cat.get(slug) or {}).get("name") or slug
+        out.append({"name": canonical, "why": (it.get("why") or "").strip(),
+                    "slug": slug, "source_name": (it.get("name") or "").strip()})
     return out
+
+
+def _assist_ground_answer(answer, extracted_items, resolved_products):
+    """Replace AI-written product labels with server-owned catalog names.
+
+    Every extracted recommendation is either replaced by its canonical catalog
+    name or removed from the prose.  Explicit practitioner corrections are also
+    applied even if the extractor omitted the phrase.  This is the final gate
+    before any assistant prose reaches the browser.
+    """
+    grounded = answer or ""
+    by_source = {(p.get("source_name") or "").strip().lower(): p
+                 for p in (resolved_products or []) if p.get("source_name")}
+    for item in (extracted_items or []):
+        source = (item.get("name") or "").strip()
+        if not source:
+            continue
+        resolved = by_source.get(source.lower())
+        replacement = resolved.get("name") if resolved else "a catalog-confirmed formulation"
+        grounded = re.sub(re.escape(source), replacement, grounded, flags=re.I)
+        if not resolved:
+            print(f"[catalog-grounding] blocked non-catalog recommendation {source!r}",
+                  flush=True)
+    for source, canonical in _ASSIST_NAME_CORRECTIONS.items():
+        product = next((p for p in (resolved_products or [])
+                        if (p.get("name") or "").lower() == canonical.lower()), None)
+        replacement = product.get("name") if product else "a catalog-confirmed formulation"
+        grounded = re.sub(re.escape(source), replacement, grounded, flags=re.I)
+    return grounded
 
 
 @app.route("/api/practitioner/assist", methods=["POST", "OPTIONS"])
@@ -16928,6 +16977,8 @@ def api_practitioner_assist():
         messages.append({"role": "user", "content":
             f"PRACTITIONER MESSAGE: {query}\n\n"
             f"RETRIEVED SNIPPETS:\n{context_str}\n\n"
+            f"ORDERABLE PRODUCT CATALOG (the only product names you may recommend):\n"
+            f"{_assist_orderable_catalog_text()}\n\n"
             "Continue the clinical formulation match. If you can name the best primary Functional "
             "Formulation (and any adjuncts), name them with brief clinical rationale; otherwise ask "
             "the single best clinical question."})
@@ -16936,12 +16987,14 @@ def api_practitioner_assist():
             with _cl.messages.stream(model="claude-haiku-4-5-20251001", max_tokens=900,
                                      system=_PRACTITIONER_ASSIST_SYSTEM, messages=messages) as stream:
                 for tok in stream.text_stream:
-                    tok = _strip_dash(tok); full.append(tok); yield sse({"token": tok})
+                    tok = _strip_dash(tok); full.append(tok)
         except Exception as e:
             yield sse({"error": f"Claude error: {e}"}); return
         answer = "".join(full)
 
         products = []
+        extracted_items = []
+        extraction_ok = False
         try:
             convo = "\n".join(f"{m['role']}: {m['content']}" for m in messages[-3:]) + f"\nassistant: {answer}"
             mx = _cl.messages.create(model="claude-haiku-4-5-20251001", max_tokens=400,
@@ -16952,9 +17005,18 @@ def api_practitioner_assist():
                 txt = txt.split("```", 2)[1]
                 if txt.startswith("json\n"): txt = txt[5:]
             obj = json.loads(txt)
-            products = _assist_resolve_products(obj.get("products") or [])
+            extracted_items = obj.get("products") or []
+            products = _assist_resolve_products(extracted_items)
+            extraction_ok = True
         except Exception as e:
             print(f"[assist] extract: {e!r}", flush=True)
+        if not extraction_ok:
+            yield sse({"error": "I could not verify this recommendation against the live catalog. Please try again."})
+            yield sse({"done": True, "sources": sources_list,
+                       "chunks_retrieved": len(matches)})
+            return
+        grounded_answer = _assist_ground_answer(answer, extracted_items, products)
+        yield sse({"token": grounded_answer})
         if products:
             yield sse({"products": products})
         yield sse({"done": True, "sources": sources_list, "chunks_retrieved": len(matches)})

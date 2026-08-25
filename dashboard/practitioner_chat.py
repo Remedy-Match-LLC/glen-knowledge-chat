@@ -6,7 +6,10 @@ _SYSTEM = (
     "You are a product-selection assistant for a natural-health practitioner's own "
     "dispensary. You may ONLY discuss and recommend products from the CATALOG provided "
     "below. Never mention, link to, or price any other store, website, or 'online' option. "
-    "Never invent products not in the catalog. Keep replies short and supportive. "
+    "Never invent products not in the catalog. In the reply, write every product "
+    "as [[its-catalog-slug]]; never type a product name yourself. The server replaces "
+    "valid markers with current catalog names and blocks invalid markers. Keep replies "
+    "short and supportive. "
     "Return JSON: {\"reply\": str, \"suggested_slugs\": [slugs from the catalog]}.\n\nCATALOG:\n"
 )
 _URL_RE = re.compile(r"https?://\S+", re.I)
@@ -30,6 +33,30 @@ def _scrub(text):
     return text.strip()
 
 
+_CONFIRMED_NAME_CORRECTIONS = {"skin support": "perfect-skin"}
+
+
+def _ground_product_names(text, catalog):
+    """Render product markers from the catalog and block unknown markers/names."""
+    by_slug = {c["slug"]: c for c in (catalog or [])}
+
+    def marker(match):
+        slug = match.group(1).strip()
+        product = by_slug.get(slug)
+        if product:
+            return product.get("name") or slug
+        print(f"[catalog-grounding] blocked unknown product slug {slug!r}", flush=True)
+        return "a catalog product"
+
+    grounded = re.sub(r"\[\[([^\]]+)\]\]", marker, text or "")
+    for phrase, slug in _CONFIRMED_NAME_CORRECTIONS.items():
+        product = by_slug.get(slug)
+        replacement = ((product.get("name") or slug) if product
+                       else "a catalog product")
+        grounded = re.sub(re.escape(phrase), replacement, grounded, flags=re.I)
+    return grounded
+
+
 def scoped_reply(message, history, catalog, overlay=""):
     """Return {reply, suggested_slugs} grounded only in `catalog`
     ([{slug,name,description}]). Suggested slugs are validated against the catalog;
@@ -42,5 +69,11 @@ def scoped_reply(message, history, catalog, overlay=""):
         out = _llm_json(_SYSTEM + (overlay + "\n\n" if overlay else "") + cat_txt, msgs)
     except Exception:
         return {"reply": "Sorry, I had trouble — please pick from the list.", "suggested_slugs": []}
-    slugs = [s for s in (out.get("suggested_slugs") or []) if s in valid]
-    return {"reply": _scrub(out.get("reply", "")), "suggested_slugs": slugs}
+    suggested = out.get("suggested_slugs") or []
+    slugs = [s for s in suggested if s in valid]
+    for slug in suggested:
+        if slug not in valid:
+            print(f"[catalog-grounding] blocked unknown suggested slug {slug!r}",
+                  flush=True)
+    reply = _ground_product_names(_scrub(out.get("reply", "")), catalog)
+    return {"reply": reply, "suggested_slugs": slugs}
