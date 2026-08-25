@@ -29,6 +29,12 @@ def test_review_order_still_opens_embedded_checkout():
     assert 'document.getElementById("portal-order-basket")' in PORTAL
 
 
+def test_legacy_portals_always_render_a_dedicated_cart_panel():
+    assert 'actTiles.push(["cart", "My Cart"' in PORTAL
+    assert '${_hub ? `<section data-panel="cart" hidden>' in PORTAL
+    assert '_hub && v.cart && v.cart.enabled ? `<section data-panel="cart"' not in PORTAL
+
+
 def test_header_cart_count_tracks_shared_remedy_basket():
     assert '#curatedOrderItems .curated-order-item' in PORTAL
     assert 'row.getAttribute("data-qty")' in PORTAL

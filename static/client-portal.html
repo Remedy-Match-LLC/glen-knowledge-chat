@@ -1211,15 +1211,11 @@ function buildHubHtml(d, v){
   if (v && v.oasis && v.oasis.enabled) {
     actTiles.push(["oasis", "My Healing Oasis", "Your remedies to reorder and tools to build out"]);
   }
-  // Cart tile: only meaningful (and only rendered) once v.cart.enabled is true --
-  // off-state must add nothing, same gating as Oasis/Health Profile above, since
-  // the [data-panel="cart"] section itself only renders when v.cart.enabled (see
-  // the panel wrap below) and showTab bounces back to the hub on a tile whose
-  // panel is not in the DOM.
-  if (v && v.cart && v.cart.enabled) {
-    actTiles.push(["cart", "My Cart", "What you're ready to order",
-      (v.cart.count > 0) ? v.cart.count : undefined]);
-  }
+  // Every portal already has the shared order basket and token-scoped cart API.
+  // Keep the dedicated cart panel available for legacy portal payloads that do
+  // not include v.cart, otherwise the persistent header Cart control is a no-op.
+  actTiles.push(["cart", "My Cart", "What you're ready to order",
+    (v && v.cart && v.cart.count > 0) ? v.cart.count : undefined]);
   actTiles.push(
     ["shop",   "Shop Products", "Remedies, wellness tools and curated picks"],
     ["offers", "Membership & Offers", "Available upgrades and member tools"],
@@ -4325,7 +4321,7 @@ function render(d, v){
       <section data-panel="ask" hidden>${back}${_askHtml}</section>
       ${_hub && v.health_profile && v.health_profile.enabled ? `<section data-panel="health" hidden>${back}${buildHealthProfileHtml(v)}</section>` : ""}
       ${_hub && v.oasis && v.oasis.enabled ? (_oasisView = v, `<section data-panel="oasis" hidden>${back}${buildOasisHtml(v)}</section>`) : ""}
-      ${_hub && v.cart && v.cart.enabled ? `<section data-panel="cart" hidden>${back}${buildCartHtml()}</section>` : ""}
+      ${_hub ? `<section data-panel="cart" hidden>${back}${buildCartHtml()}</section>` : ""}
       <section data-panel="shop" hidden>${back}${buildShopHtml()}</section>
       <section data-panel="calendar" hidden>${back}${_calendarHtml}</section>
       <section data-panel="offers" hidden>${back}${_offersHtml || buildOffersEmptyHtml(v)}</section>
