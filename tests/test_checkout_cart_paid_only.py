@@ -42,6 +42,7 @@ def _prep(monkeypatch, tmp_path, email="a@x.com"):
     monkeypatch.setattr(qbo_billing, "find_or_create_customer", lambda *a, **k: {"Id": "C1"})
 
     monkeypatch.setattr(app, "_reorder_email_from_cookie", lambda: email)
+    monkeypatch.setattr(app, "_STRIPE_ACTIVE", True)
     monkeypatch.setattr(app, "is_member", lambda sid, email: True)
     monkeypatch.setattr(
         app, "_get_product",

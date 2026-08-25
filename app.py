@@ -10474,15 +10474,6 @@ def biofield_checkout():
     out = {"ok": True, "invoice_id": checkout_ref, "doc_number": "",
            "customer_id": "", "total": round(charged_cents / 100.0, 2)}
 
-    _ingest_order(source="biofield", external_ref=checkout_ref, email=email, name=name,
-                  items=pc["items_rec"], total_cents=charged_cents, channel="retail",
-                  get_cents=pc["priced"]["get_cents"], discount_cents=pc["discount_cents"],
-                  points_redeemed_cents=redeemed, shipping_cents=pc["shipping_cents"])
-    try:
-        with db.connect(LOG_DB) as _lcx:
-            _bos_orders.set_order_qbo_lines(_lcx, checkout_ref, qbo_payload)
-    except Exception as _e:
-        print(f"[biofield] persist qbo_lines failed: {_e!r}", flush=True)
     try:
         from dashboard import stripe_pay
         success = (f"{PUBLIC_BASE_URL}/begin/checkout-return"
@@ -10501,6 +10492,16 @@ def biofield_checkout():
     except Exception as e:
         print(f"[biofield] session create failed: {e!r}", flush=True)
         out["stripe_url"] = ""
+    if out.get("stripe_url"):
+        _ingest_order(source="biofield", external_ref=checkout_ref, email=email, name=name,
+                      items=pc["items_rec"], total_cents=charged_cents, channel="retail",
+                      get_cents=pc["priced"]["get_cents"], discount_cents=pc["discount_cents"],
+                      points_redeemed_cents=redeemed, shipping_cents=pc["shipping_cents"])
+        try:
+            with db.connect(LOG_DB) as _lcx:
+                _bos_orders.set_order_qbo_lines(_lcx, checkout_ref, qbo_payload)
+        except Exception as _e:
+            print(f"[biofield] persist qbo_lines failed: {_e!r}", flush=True)
     return jsonify(out)
 
 
@@ -10609,20 +10610,24 @@ def begin_checkout(slug):
                 detail=f"buy-{slug}-{method}")
     except Exception:
         pass
-    _ingest_order(source="funnel", external_ref=checkout_ref, email=email, name=name,
-                  items=pc["items_rec"],
-                  total_cents=_charged,
-                  address=ship, channel="retail", get_cents=pc["priced"]["get_cents"],
-                  discount_cents=pc["discount_cents"],
-                  points_redeemed_cents=pc["points_redeemed_cents"],
-                  shipping_cents=pc["shipping_cents"],
-                  ship_credit_applied_cents=_sc_apply)
-    try:
-        with db.connect(LOG_DB) as _lcx:
-            _bos_orders.set_order_qbo_lines(_lcx, checkout_ref, qbo_payload)
-    except Exception as _e:
-        print(f"[funnel] persist qbo_lines failed: {_e!r}", flush=True)
+    def persist_funnel_order():
+        _ingest_order(source="funnel", external_ref=checkout_ref, email=email, name=name,
+                      items=pc["items_rec"], total_cents=_charged,
+                      address=ship, channel="retail", get_cents=pc["priced"]["get_cents"],
+                      discount_cents=pc["discount_cents"],
+                      points_redeemed_cents=pc["points_redeemed_cents"],
+                      shipping_cents=pc["shipping_cents"],
+                      ship_credit_applied_cents=_sc_apply)
+        try:
+            with db.connect(LOG_DB) as _lcx:
+                _bos_orders.set_order_qbo_lines(_lcx, checkout_ref, qbo_payload)
+        except Exception as _e:
+            print(f"[funnel] persist qbo_lines failed: {_e!r}", flush=True)
+
+    order_persisted = False
     if method in ("zelle", "wise"):
+        persist_funnel_order()
+        order_persisted = True
         out["pay_instructions"] = _ALT_PAY.get(method, {})
     elif method == "card" and _STRIPE_ACTIVE:
         # Group-bundle opt-in: when the flag is on AND the buyer opted in AND the buyer
@@ -10638,11 +10643,19 @@ def begin_checkout(slug):
                 pc["priced"].get("volume_months", 0))
         out["stripe_url"] = _stripe_checkout_url_for_retail(
             out, email, slug, group_bundle_months=_gb_months)
-        if _STRIPE_ACTIVE and not out.get("stripe_url"):
+        if _charged == 0:
+            # A fully credited checkout needs no Stripe session; the deliberate
+            # checkout submit itself is the successful completion event.
+            persist_funnel_order()
+            order_persisted = True
+        elif _STRIPE_ACTIVE and not out.get("stripe_url"):
             out["payment_error"] = _CARD_UNAVAILABLE
+        else:
+            persist_funnel_order()
+            order_persisted = True
     try:
         disp = (request.cookies.get("rm_dispensary") or "").strip()
-        if disp:
+        if disp and order_persisted:
             _record_dispensary_sale(disp, email, qty, checkout_ref)
     except Exception as e:
         print(f"[dispensary] hook: {e!r}", flush=True)
@@ -19761,11 +19774,10 @@ def api_cart_checkout():
     so the page can show the shared window.OptinGate exactly as reorder.html and
     begin-buy.html already do. Membership itself is written by /begin/unlock.
 
-    Contract matches the sibling /reorder/checkout (app.py ~31042) exactly: ok:true
-    with a `payment_error` key when Stripe could not mint a URL (never a 502 -- the
-    order already exists by that point, so the caller must not be told to retry into
-    a fresh reference), and a catch-all except so an unexpected failure still comes
-    back as JSON instead of an HTML 500 that a fetch().json() client chokes on."""
+    A customer order is durable only after Stripe successfully mints its hosted
+    checkout.  A failed mint releases the cart claim so the customer can retry;
+    no unpaid orphan is created.  Unexpected failures still come back as JSON
+    instead of an HTML 500 that a fetch().json() client chokes on."""
     if not _PORTAL_CART_ENABLED:
         return jsonify({"ok": False, "error": "not found"}), 404
     data = request.get_json(silent=True) or {}
@@ -19874,18 +19886,16 @@ def api_cart_checkout():
 
         out = res.get("out") or {}
         stripe_url = res.get("stripe_url") or ""
-        # _checkout_cart already ingested the order by this point regardless of
-        # whether Stripe minted a URL, so the cart is marked ordered on EVERY path
-        # from here -- a retry after an empty stripe_url must not mint a second
-        # order. Retried once and never raised (see _mark_ordered_resilient): the
-        # order and (if present) the Stripe session already exist, and the customer
-        # must still get the payment link back even if this write keeps failing --
-        # a persistent failure here is recovered later by the stale-claim check
-        # above, not by raising into the 500 handler.
-        _mark_ordered_resilient(token, out.get("invoice_id", ""))
+        if not stripe_url and not res.get("no_payment_required"):
+            with db.connect(LOG_DB) as cx:
+                _cart_store.release_claim(cx, token)
+            return jsonify({"ok": False, "error": _CARD_UNAVAILABLE}), 503
 
-        _pe = {"payment_error": _CARD_UNAVAILABLE} if (_STRIPE_ACTIVE and not stripe_url) else {}
-        return jsonify({"ok": True, "stripe_url": stripe_url, **out, **_pe})
+        # Stripe and the order now both exist. Retried once and never raised (see
+        # _mark_ordered_resilient); stale-claim recovery handles a persistent cart
+        # state write failure without creating a second checkout.
+        _mark_ordered_resilient(token, out.get("invoice_id", ""))
+        return jsonify({"ok": True, "stripe_url": stripe_url, **out})
     except Exception as e:
         if claimed and token:
             try:
@@ -26855,17 +26865,20 @@ def api_client_portal_checkout(token):
                "doc_number": "", "total": round(order_total_cents / 100.0, 2),
                "cancel_url": f"{portal_base()}/portal/{_urlquote(token, safe='')}",
                "stripe_line_items": stripe_line_items}
-        order_id = _ingest_order(
-            source="portal-reorder", external_ref=checkout_ref, email=email,
-            name=ship.get("name", ""), items=items_rec,
-            total_cents=order_total_cents, shipping_cents=shipping_cents,
-            address=ship, channel="retail")
-        try:
-            with db.connect(LOG_DB) as _lcx:
-                _bos_orders.set_order_qbo_lines(_lcx, checkout_ref, qbo_payload)
-        except Exception as _e:
-            print(f"[portal-reorder] persist qbo_lines failed: {_e!r}", flush=True)
+        def persist_portal_order():
+            oid = _ingest_order(
+                source="portal-reorder", external_ref=checkout_ref, email=email,
+                name=ship.get("name", ""), items=items_rec,
+                total_cents=order_total_cents, shipping_cents=shipping_cents,
+                address=ship, channel="retail")
+            try:
+                with db.connect(LOG_DB) as _lcx:
+                    _bos_orders.set_order_qbo_lines(_lcx, checkout_ref, qbo_payload)
+            except Exception as _e:
+                print(f"[portal-reorder] persist qbo_lines failed: {_e!r}", flush=True)
+            return oid
         if method == "zelle":
+            order_id = persist_portal_order()
             zelle = _ALT_PAY["zelle"]
             return jsonify({"ok": True, "method": "zelle", "order_ref": checkout_ref,
                             "order_id": order_id,
@@ -26878,6 +26891,7 @@ def api_client_portal_checkout(token):
         stripe_url = _stripe_checkout_url_for_reorder(out, email)
         if not stripe_url:
             return jsonify({"error": _CARD_UNAVAILABLE}), 502
+        order_id = persist_portal_order()
         return jsonify({"ok": True, "stripe_url": stripe_url,
                         "order_id": order_id, "order_ref": checkout_ref})
     except Exception as e:
@@ -33743,6 +33757,16 @@ def _checkout_cart(email, cart, *, ship, points_to_redeem_cents=0, referral_code
     # floored at 0 (a credit can never make the charge negative).
     _charge_cents = max(0, (int(pc["priced"]["total_cents"]) - int(pc["priced"]["get_cents"])
                             + int(pc["shipping_cents"])) - _sc_apply)
+    out = {"invoice_id": checkout_ref, "doc_number": "",
+           "customer_id": "", "total": round(_charge_cents / 100.0, 2)}
+    stripe_url = _stripe_checkout_url_for_reorder(out, email) if _STRIPE_ACTIVE else ""
+    no_payment_required = (_charge_cents == 0)
+    if not stripe_url and not no_payment_required:
+        return {"out": out, "stripe_url": ""}
+
+    # Persistence intentionally follows successful Stripe-session creation.  A
+    # transient Stripe failure therefore leaves neither an unpaid order nor a
+    # consumed referral behind.
     _ingest_order(source="reorder", external_ref=checkout_ref, email=email,
                   name=ship.get("name", ""), items=pc["items_rec"],
                   total_cents=_charge_cents,
@@ -33751,17 +33775,16 @@ def _checkout_cart(email, cart, *, ship, points_to_redeem_cents=0, referral_code
                   discount_cents=pc["discount_cents"],
                   points_redeemed_cents=pc["points_redeemed_cents"],
                   shipping_cents=pc["shipping_cents"],
-                  ship_credit_applied_cents=_sc_apply)
+                  ship_credit_applied_cents=_sc_apply,
+                  paid_cents=(0 if no_payment_required else None))
     try:
         with db.connect(LOG_DB) as _lcx:
             _bos_orders.set_order_qbo_lines(_lcx, checkout_ref, qbo_payload)
     except Exception as _e:
         print(f"[reorder] persist qbo_lines failed: {_e!r}", flush=True)
     _record_referral_if_any(_ref_ctx, email, checkout_ref)
-    out = {"invoice_id": checkout_ref, "doc_number": "",
-           "customer_id": "", "total": round(_charge_cents / 100.0, 2)}
-    stripe_url = _stripe_checkout_url_for_reorder(out, email) if _STRIPE_ACTIVE else ""
-    return {"out": out, "stripe_url": stripe_url}
+    return {"out": out, "stripe_url": stripe_url,
+            "no_payment_required": no_payment_required}
 
 
 @app.route("/reorder/checkout", methods=["POST"])
@@ -33793,8 +33816,9 @@ def reorder_checkout():
         except CheckoutError as e:
             return jsonify({"ok": False, "error": str(e)}), 400
         out, stripe_url = res["out"], res["stripe_url"]
-        _pe = {"payment_error": _CARD_UNAVAILABLE} if (_STRIPE_ACTIVE and not stripe_url) else {}
-        return jsonify({"ok": True, "stripe_url": stripe_url, **out, **_pe})
+        if not stripe_url and not res.get("no_payment_required"):
+            return jsonify({"ok": False, "error": _CARD_UNAVAILABLE}), 503
+        return jsonify({"ok": True, "stripe_url": stripe_url, **out})
     except Exception as e:
         app.logger.exception("reorder checkout (engine) failed")
         return jsonify({"ok": False, "error": f"{type(e).__name__}: {e}"}), 500
@@ -50053,12 +50077,17 @@ def bos_orders_create():
         cx = db.connect(LOG_DB)
         cx.row_factory = _sqlite3.Row
         try:
+            # Customer checkouts are short-lived operational carts.  Age them out
+            # before applying the board limit so abandoned rows cannot crowd real
+            # orders out of the response.  Rows remain retained as cancelled history.
+            _bos_orders.expire_abandoned_checkouts(cx)
             try:
                 rows = _bos_orders.list_orders(
                     cx, status=request.args.get("status"),
-                    limit=min(int(request.args.get("limit", 200) or 200), 500))
+                    limit=min(int(request.args.get("limit", 200) or 200), 500),
+                    include_cancelled=request.args.get("include_cancelled") == "1")
             except (TypeError, ValueError):
-                rows = _bos_orders.list_orders(cx)
+                rows = _bos_orders.list_orders(cx, include_cancelled=False)
             # Annotate each order with per-line fulfillment + backorder units, using a
             # single grouped query over order_fulfillments (no per-order round-trips).
             try:

@@ -20,6 +20,12 @@ _OPEN = ("new", "packed")  # unfulfilled
 _PRE_FULFILL = ("proposed", "confirmed")
 _TERMINAL_STATUSES = ("shipped", "delivered", "done", "cancelled")
 
+# Customer-created hosted checkouts are operational carts until payment lands.
+# Staff invoices and practitioner drop-ships are intentionally excluded: those
+# remain actionable until a person resolves them.
+_ABANDONABLE_CHECKOUT_SOURCES = ("funnel", "reorder", "portal-reorder", "biofield")
+ABANDONED_CHECKOUT_TTL_HOURS = 24
+
 
 def _now():
     return datetime.now(timezone.utc).isoformat()
@@ -286,10 +292,32 @@ def get_order(cx, order_id):
     return _row_to_dict(cur.fetchone())
 
 
-def list_orders(cx, *, status=None, limit=200):
+def expire_abandoned_checkouts(cx, *, now=None, ttl_hours=ABANDONED_CHECKOUT_TTL_HOURS):
+    """Cancel stale customer checkouts so they leave the live Orders board.
+
+    The rows are retained for audit/search history.  Only an unpaid ``new`` row
+    from a customer checkout source is eligible; proposals, confirmed invoices,
+    manual orders, and practitioner flows are never aged out here.
+    """
+    now = now or datetime.now(timezone.utc)
+    cutoff = (now - timedelta(hours=int(ttl_hours))).isoformat()
+    placeholders = ",".join("?" for _ in _ABANDONABLE_CHECKOUT_SOURCES)
+    cur = cx.execute(
+        f"UPDATE orders SET status='cancelled', updated_at=? "
+        f"WHERE status='new' AND COALESCE(pay_status,'unpaid')='unpaid' "
+        f"AND source IN ({placeholders}) AND datetime(created_at) < datetime(?)",
+        (_now(), *_ABANDONABLE_CHECKOUT_SOURCES, cutoff))
+    cx.commit()
+    return cur.rowcount
+
+
+def list_orders(cx, *, status=None, limit=200, include_cancelled=True):
     if status:
         cur = cx.execute("SELECT * FROM orders WHERE status=? ORDER BY id DESC LIMIT ?",
                          (status, limit))
+    elif not include_cancelled:
+        cur = cx.execute("SELECT * FROM orders WHERE status!='cancelled' ORDER BY id DESC LIMIT ?",
+                         (limit,))
     else:
         cur = cx.execute("SELECT * FROM orders ORDER BY id DESC LIMIT ?", (limit,))
     return [_row_to_dict(r) for r in cur.fetchall()]

@@ -35,6 +35,7 @@ def _prep(monkeypatch, tmp_path, method="card"):
     tests/test_begin_checkout_engine.py's _setup fixture), guard against any QBO
     invoice write, and stub Stripe session creation so no network call happens."""
     db = _isolate_db(monkeypatch, tmp_path)
+    monkeypatch.setattr(app, "_STRIPE_ACTIVE", True)
 
     def boom(*a, **k):
         raise AssertionError("begin_checkout must not call create_invoice (paid-only)")
