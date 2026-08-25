@@ -13,8 +13,17 @@ def test_portal_shell_cart_sits_before_my_path_and_is_portal_only():
     assert '/^\\/portal\\/' in SHELL
 
 
-def test_header_cart_opens_remedy_order_basket_not_storefront_cart():
-    assert 'window.openPortalOrderBasket(true)' in SHELL
+def test_header_cart_opens_dedicated_portal_cart_not_embedded_checkout():
+    assert 'window.openPortalCart(true)' in SHELL
+    assert 'window.openPortalOrderBasket(true)' not in SHELL
+    assert 'function openPortalCart(captureContext)' in PORTAL
+    assert 'showTab("cart")' in PORTAL
+    assert 'window.openPortalCart = openPortalCart' in PORTAL
+    assert 'if (name === \'cart\') loadCart()' in PORTAL
+
+
+def test_review_order_still_opens_embedded_checkout():
+    assert 'openPortalOrderBasket(false)' in PORTAL
     assert 'showTab("current")' in PORTAL
     assert 'id="portal-order-basket"' in PORTAL
     assert 'document.getElementById("portal-order-basket")' in PORTAL
