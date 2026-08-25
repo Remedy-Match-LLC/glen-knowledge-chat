@@ -47070,12 +47070,48 @@ def console_client_commerce_status():
     from dashboard import client_prefs as _cpf
     from dashboard import client_prices as _cp
     from dashboard import membership_products as _mp
+    from dashboard import cart_store as _cart_store
+    from dashboard import points as _points
+    from dashboard import ship_credit as _ship_credit
+    from dashboard import subscriptions as _subs
+    from dashboard import client_portal as _portal
     with _db_lock, db.connect(LOG_DB) as cx:
+        cx.row_factory = sqlite3.Row
         _cpf.init_table(cx)
         _cp.init_table(cx)
         prices = _cp.list_for(cx, email)
         ff_flat_cents = _cp.get_ff_flat(cx, email)
         pickup_default = _cpf.get_pickup_default(cx, email)
+        _cart_store.init_cart_tables(cx)
+        cart_token = _cart_store.open_token_for_email(cx, email)
+        cart_count = sum(int(i.get("qty") or 0) for i in _cart_store.items(cx, cart_token)) if cart_token else 0
+        _points.init_points_table(cx)
+        points_cents = max(0, _points.balance(cx, email))
+        ship_credit_cents = max(0, _ship_credit.balance(cx, email))
+        _subs.init_subscriptions_table(cx)
+        active_subscriptions = _subs.get_active_by_email(cx, email)
+        _portal.init_client_portal_table(cx)
+        portal_active = bool(cx.execute(
+            "SELECT 1 FROM client_portals WHERE lower(email)=? LIMIT 1", (email,)).fetchone())
+        address = {}
+        try:
+            row = cx.execute(
+                "SELECT address_json FROM orders WHERE lower(email)=? "
+                "AND COALESCE(address_json,'')<>'' ORDER BY created_at DESC,id DESC LIMIT 1",
+                (email,)).fetchone()
+            address = json.loads(row[0]) if row and row[0] else {}
+        except Exception:
+            address = {}
+        if not address and active_subscriptions:
+            address = active_subscriptions[0].get("ship_address") or {}
+        street = address.get("address1") or address.get("street") or address.get("line1")
+        postal = address.get("zip") or address.get("postal_code")
+        address_ready = bool(street and postal and all(
+            str(address.get(k) or "").strip() for k in ("city", "state", "country")))
+        try:
+            open_balance_cents = client_360._invoices(cx, email)["open_balance_cents"]
+        except Exception:
+            open_balance_cents = 0
 
     member = _active_membership_for_email(email)
     membership = {"active": bool(member)}
@@ -47099,6 +47135,15 @@ def console_client_commerce_status():
         "shipping": {"pickup_default": bool(pickup_default)},
         "membership": membership,
         "membership_tiers": tiers,
+        "account_health": {
+            "cart_count": cart_count,
+            "open_balance_cents": open_balance_cents,
+            "points_cents": points_cents,
+            "ship_credit_cents": ship_credit_cents,
+            "active_subscription_count": len(active_subscriptions),
+            "portal_active": portal_active,
+            "address_ready": address_ready,
+        },
     })
 
 
