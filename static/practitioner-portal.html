@@ -199,8 +199,11 @@
       <img id="brand-logo" src="" alt="" style="display:none;width:40px;height:40px;object-fit:contain;border-radius:6px;background:rgba(255,255,255,.08)">
       <div><h1>Practitioner Portal</h1><div class="muted" id="who">Loading…</div></div>
     </div>
-    <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;justify-content:flex-end">
-      <a id="clientAccountLink" href="#" style="color:var(--gold);font-size:13px;font-weight:600">My Client Portal</a>
+    <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;justify-content:flex-end;font-size:13px;font-weight:600">
+      <a href="/practitioner/portal" style="color:var(--gold)">Practitioner Home</a>
+      <a href="/practitioner/dropship" style="color:var(--gold)">Drop-Ship Orders</a>
+      <a href="/practitioner/settings" style="color:var(--gold)">Practice Settings</a>
+      <a id="clientAccountLink" href="/practitioner/client-account" style="color:var(--gold)">My Client Portal</a>
       <span class="theme-toggle" id="themeToggle" role="group" aria-label="Theme mode"></span>
     </div>
   </div>
@@ -1557,7 +1560,7 @@ function renderTraining(d){
 function render(d){
   var practiceName = (d.branding && d.branding.practice_name) || d.practice_name || '';
   $('who').textContent = (d.name || '') + (practiceName ? ' · ' + practiceName : '');
-  $('clientAccountLink').href = '/practitioner/client-account?token=' + encodeURIComponent(TOKEN);
+  $('clientAccountLink').href = '/practitioner/client-account';
   if (d.qualification_required || !d.qualification_completed) {
     $('qualificationCredentials').value = d.credentials || '';
     $('qualificationGate').classList.add('open');

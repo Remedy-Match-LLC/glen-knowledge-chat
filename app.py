@@ -16245,6 +16245,8 @@ def _practitioner_session_pid():
         token = ((request.get_json(silent=True) or {}).get("token") or "").strip()
     if not token:
         token = (request.headers.get("X-Practitioner-Token") or "").strip()
+    if not token:
+        token = (request.cookies.get("rm_practitioner_session") or "").strip()
     return _pp.practitioner_id_from_session(token) if token else None
 
 
@@ -16256,16 +16258,32 @@ def _practitioner_return_to(value):
     return "/practitioner/portal"
 
 
+def _practitioner_page(filename):
+    """Serve a practitioner surface and retain a valid URL session in a cookie.
+
+    Existing emailed and cross-account links carry ``?token=``. Capturing that
+    scoped token once lets every practitioner surface behave as one signed-in
+    application without copying credentials into every navigation link.
+    """
+    resp = send_from_directory(STATIC, filename)
+    resp.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+    token = (request.args.get("token") or "").strip()
+    if token and _pp.practitioner_id_from_session(token):
+        resp.set_cookie(
+            "rm_practitioner_session", token,
+            max_age=_pp.SESSION_TTL_DAYS * 86400,
+            httponly=True, secure=request.is_secure, samesite="Lax")
+    return resp
+
+
 @app.route("/practitioner/portal")
 def practitioner_portal_page():
-    return send_from_directory(STATIC, "practitioner-portal.html")
+    return _practitioner_page("practitioner-portal.html")
 
 
 @app.route("/practitioner/dropship")
 def practitioner_dropship_page():
-    resp = send_from_directory(STATIC, "practitioner-dropship.html")
-    resp.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
-    return resp
+    return _practitioner_page("practitioner-dropship.html")
 
 
 @app.route("/practitioner/register", methods=["GET"])
@@ -16457,8 +16475,7 @@ def api_practitioner_portal_data():
 def practitioner_to_client_account():
     """Reciprocal account bridge from a practitioner session to their own
     email-matched client portal. Provision the client side on first use."""
-    token = (request.args.get("token") or "").strip()
-    pid = _pp.practitioner_id_from_session(token) if token else None
+    pid = _practitioner_session_pid()
     if not pid:
         return redirect("/practitioner")
     pdata = _pp.portal_data(pid)
@@ -16945,9 +16962,7 @@ def api_practitioner_assist():
 
 @app.route("/practitioner/settings")
 def practitioner_settings_page():
-    resp = send_from_directory(STATIC, "practitioner-settings.html")
-    resp.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
-    return resp
+    return _practitioner_page("practitioner-settings.html")
 
 
 @app.route("/console/biofield-portal")
@@ -21633,7 +21648,8 @@ def client_to_practitioner_account(token):
     if not pid:
         return redirect("/practitioner/register")
     session = _pp.create_session_token(pid)
-    return redirect(f"/practitioner/portal?token={session}&linked=client")
+    return redirect(
+        f"{PUBLIC_BASE_URL.rstrip('/')}/practitioner/portal?token={session}&linked=client")
 
 
 @app.route("/portal/<token>/bodymap")
