@@ -66,47 +66,21 @@ def test_block_never_raises_into_the_payload(cx):
     assert CB.build_block(cx, "a@x.com", True) == {"enabled": True, "count": 0}
 
 
-def test_hub_tile_is_gated_on_enabled():
-    """Pinned to the ACTUAL actTiles.push(["cart" ...]) call site, not a bare
-    substring search over the whole file. The gate condition
-    `v.cart && v.cart.enabled` also appears at the separate panel-wrap call
-    site (see test_cart_panel_is_gated_on_enabled below) -- a substring
-    search that doesn't anchor to a specific call site can go green while
-    ONE of the two occurrences is silently broken, because the other
-    occurrence keeps the substring alive in the file. This regex requires
-    the gate's `{` to be followed (allowing only whitespace) directly by
-    `actTiles.push(["cart"`, so it can only be satisfied by the tile-push
-    gate itself."""
+def test_hub_tile_is_available_for_legacy_portals():
+    """Legacy-token payloads can omit v.cart, but must still expose My Cart."""
     html = open("static/client-portal.html", encoding="utf-8").read()
-    pattern = re.compile(
-        r'if\s*\(\s*v\s*&&\s*v\.cart\s*&&\s*v\.cart\.enabled\s*\)\s*\{\s*'
-        r'actTiles\.push\(\["cart"',
-        re.DOTALL,
-    )
-    assert pattern.search(html), (
-        "the actTiles.push for the cart tile must be immediately gated on "
-        "v.cart.enabled"
+    assert 'actTiles.push(["cart", "My Cart"' in html, (
+        "the cart tile must remain available for legacy hub portals"
     )
 
 
-def test_cart_panel_is_gated_on_enabled():
-    """The separate panel-wrap gate (` _hub && v.cart && v.cart.enabled ? `,
-    guarding the [data-panel="cart"] <section>) is its own regression
-    surface, distinct from the tile-push gate above. If this gate were
-    dropped, the <section data-panel="cart"> would always render into the
-    DOM even with the flag off. showTab() only bounces back to the hub when
-    the target [data-panel] is ABSENT from the DOM -- so a stale
-    sessionStorage('rm_portal_tab')=='cart' left over from a session where
-    the flag was previously on (or any direct navigation to the cart tab)
-    would land on a live (if now-empty/broken) cart panel instead of
-    bouncing home, even though the flag is off and no tile is offered to
-    reach it. That is a real, if narrow, off-state leak, so it gets its own
-    pinned assertion rather than relying on the tile-push test to cover it."""
+def test_cart_panel_is_available_for_legacy_portals():
+    """The cart target must exist when a legacy hub portal opens it."""
     html = open("static/client-portal.html", encoding="utf-8").read()
     pattern = re.compile(
-        r'_hub\s*&&\s*v\.cart\s*&&\s*v\.cart\.enabled\s*\?\s*'
+        r'_hub\s*\?\s*'
         r'`<section data-panel="cart"',
     )
     assert pattern.search(html), (
-        "the cart panel section wrap must be gated on v.cart.enabled"
+        "the cart panel must remain available for legacy hub portals"
     )
