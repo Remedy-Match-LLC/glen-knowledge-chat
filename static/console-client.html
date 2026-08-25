@@ -24,6 +24,16 @@
   .pill{background:#eef2f0;border-radius:20px;padding:2px 8px;font-size:12px}
   .empty{color:#8a9a95}
   #picker input{padding:8px;width:260px}
+  .commerce{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin:14px 0}
+  .commerce-card{background:#fff;border:1px solid #dce4e0;border-radius:12px;padding:13px;min-width:0}
+  .commerce-label{font-size:12px;color:#667770;text-transform:uppercase;letter-spacing:.05em}
+  .commerce-value{font-size:17px;font-weight:650;margin:3px 0 9px}
+  .commerce-card input,.commerce-card select{box-sizing:border-box;width:100%;padding:7px;border:1px solid #bdcbc5;border-radius:7px;background:#fff;margin-bottom:6px}
+  .commerce-card button{padding:6px 9px}
+  .commerce-actions{display:flex;gap:6px;flex-wrap:wrap}
+  .commerce-note{min-height:18px;margin-top:5px;color:#667770;font-size:12px}
+  .danger{color:#8b2d2d}
+  @media(max-width:700px){.commerce{grid-template-columns:1fr}}
 </style>
 </head>
 <body>
@@ -40,6 +50,33 @@
     <h1 id="c-name">—</h1>
     <p class="sub" id="c-meta"></p>
     <p><button id="open-portal" style="display:none">Open portal</button></p>
+
+    <section class="commerce" aria-label="Client commerce status">
+      <div class="commerce-card">
+        <div class="commerce-label">Product pricing</div>
+        <div class="commerce-value" id="pricing-status">Loading…</div>
+        <label class="sub" for="ff-price">All Functional Formulations</label>
+        <input id="ff-price" inputmode="decimal" placeholder="Standard pricing">
+        <div class="commerce-actions"><button id="save-pricing">Save</button><button id="clear-pricing">Use standard</button></div>
+        <div class="commerce-note" id="pricing-note"></div>
+      </div>
+      <div class="commerce-card">
+        <div class="commerce-label">Shipping</div>
+        <div class="commerce-value" id="shipping-status">Loading…</div>
+        <label class="sub" for="shipping-default">Default for new orders</label>
+        <select id="shipping-default"><option value="ship">Ship to client</option><option value="pickup">Pickup — no shipping</option></select>
+        <div class="commerce-actions"><button id="save-shipping">Save</button></div>
+        <div class="commerce-note" id="shipping-note"></div>
+      </div>
+      <div class="commerce-card">
+        <div class="commerce-label">Membership</div>
+        <div class="commerce-value" id="membership-status">Loading…</div>
+        <label class="sub" for="membership-tier">Manual membership grant</label>
+        <select id="membership-tier"></select>
+        <div class="commerce-actions"><button id="grant-membership">Grant</button><button class="danger" id="revoke-membership">Revoke</button></div>
+        <div class="commerce-note" id="membership-note"></div>
+      </div>
+    </section>
 
     <div class="strip" id="strip"></div>
 
@@ -328,6 +365,65 @@ function openPortal(email){
     }).catch(function(){portalTab.close(); alert("Could not open the portal.");});
 }
 
+var commerceState=null;
+function commerceMessage(id,text,isError){
+  var el=document.getElementById(id); el.textContent=text||""; el.style.color=isError?"#8b2d2d":"#667770";
+}
+function renderCommerce(d){
+  commerceState=d;
+  var cents=d.pricing.ff_flat_cents;
+  document.getElementById("pricing-status").textContent = cents==null ? "Standard pricing" : money(cents)+" FF flat rate";
+  document.getElementById("ff-price").value = cents==null ? "" : (cents/100).toFixed(2);
+  commerceMessage("pricing-note",d.pricing.custom_product_count ? d.pricing.custom_product_count+" additional product-specific price"+(d.pricing.custom_product_count===1?"":"s") : "");
+  var pickup=!!d.shipping.pickup_default;
+  document.getElementById("shipping-status").textContent=pickup?"Pickup by default":"Ship by default";
+  document.getElementById("shipping-default").value=pickup?"pickup":"ship";
+  var m=d.membership;
+  document.getElementById("membership-status").textContent=m.active?(m.label||"Active membership"):"Not active";
+  var detail=m.active?(m.lifetime?"Lifetime":(m.expires_at?"Through "+String(m.expires_at).slice(0,10):"Active")):"No member pricing or group access";
+  commerceMessage("membership-note",detail);
+  document.getElementById("revoke-membership").disabled=!m.active;
+  document.getElementById("membership-tier").innerHTML=(d.membership_tiers||[]).map(function(t){return "<option value='"+escAttr(t.key)+"'>"+esc(t.label)+"</option>";}).join("");
+}
+function loadCommerce(){
+  return fetch("/api/console/client-commerce-status?email="+encodeURIComponent(qsEmail()),{headers:hdr()})
+    .then(function(r){return r.json().then(function(d){if(!r.ok) throw new Error(d.error||"Unable to load");return d;});})
+    .then(renderCommerce).catch(function(e){
+      ["pricing-status","shipping-status","membership-status"].forEach(function(id){document.getElementById(id).textContent="Unavailable";});
+      commerceMessage("membership-note",e.message,true);
+    });
+}
+function postCommerce(url,body,noteId){
+  commerceMessage(noteId,"Saving…");
+  return fetch(url,{method:"POST",headers:Object.assign({"Content-Type":"application/json"},hdr()),body:JSON.stringify(body)})
+    .then(function(r){return r.json().then(function(d){if(!r.ok) throw new Error(d.error||"Could not save");return d;});})
+    .then(function(){return loadCommerce();}).then(function(){commerceMessage(noteId,"Saved");})
+    .catch(function(e){commerceMessage(noteId,e.message,true);});
+}
+document.getElementById("save-pricing").onclick=function(){
+  var value=document.getElementById("ff-price").value.trim();
+  if(!value || !isFinite(Number(value)) || Number(value)<0){commerceMessage("pricing-note","Enter a valid dollar amount.",true);return;}
+  postCommerce("/api/console/client-prices",{email:qsEmail(),ff_flat_cents:Math.round(Number(value)*100)},"pricing-note");
+};
+document.getElementById("clear-pricing").onclick=function(){
+  commerceMessage("pricing-note","Saving…");
+  fetch("/api/console/client-prices",{method:"DELETE",headers:Object.assign({"Content-Type":"application/json"},hdr()),body:JSON.stringify({email:qsEmail(),slug:"__all_ff__"})})
+    .then(function(r){if(!r.ok) throw new Error("Could not save");return loadCommerce();}).then(function(){commerceMessage("pricing-note","Using standard pricing");})
+    .catch(function(e){commerceMessage("pricing-note",e.message,true);});
+};
+document.getElementById("save-shipping").onclick=function(){
+  postCommerce("/api/console/client-prefs",{email:qsEmail(),pickup_default:document.getElementById("shipping-default").value==="pickup"},"shipping-note");
+};
+document.getElementById("grant-membership").onclick=function(){
+  var tier=document.getElementById("membership-tier").value;
+  if(!tier)return;
+  postCommerce("/api/console/membership/enroll",{email:qsEmail(),tier:tier},"membership-note");
+};
+document.getElementById("revoke-membership").onclick=function(){
+  if(!commerceState || !commerceState.membership.active || !confirm("Revoke this client's active membership access?"))return;
+  postCommerce("/api/console/membership/revoke",{email:qsEmail()},"membership-note");
+};
+
 function load(email){
   fetch("/api/console/client-360?email="+encodeURIComponent(email),{headers:hdr()})
     .then(function(r){return r.json().then(function(d){return {r:r,d:d};});})
@@ -345,6 +441,7 @@ function load(email){
       var portalBtn=document.getElementById("open-portal");
       portalBtn.style.display="inline-block";
       portalBtn.onclick=function(){openPortal(email);};
+      loadCommerce();
       loadDocuments();
     })
     .catch(function(){ document.getElementById("gate").innerHTML="<p class='empty'>This client record is temporarily unavailable.</p>"; });

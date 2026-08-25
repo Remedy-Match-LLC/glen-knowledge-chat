@@ -47057,6 +47057,51 @@ def console_client_360():
     return jsonify({"ok": True, **data})
 
 
+@app.route("/api/console/client-commerce-status", methods=["GET"])
+def console_client_commerce_status():
+    """Owner-facing pricing, fulfillment, and membership status for People: Client."""
+    actor = _bos_actor()
+    if actor is None or actor.role != _bos_rbac.OWNER:
+        return jsonify({"ok": False, "error": "unauthorized"}), 401
+    email = (request.args.get("email") or "").strip().lower()
+    if not email:
+        return jsonify({"ok": False, "error": "email required"}), 400
+
+    from dashboard import client_prefs as _cpf
+    from dashboard import client_prices as _cp
+    from dashboard import membership_products as _mp
+    with _db_lock, db.connect(LOG_DB) as cx:
+        _cpf.init_table(cx)
+        _cp.init_table(cx)
+        prices = _cp.list_for(cx, email)
+        ff_flat_cents = _cp.get_ff_flat(cx, email)
+        pickup_default = _cpf.get_pickup_default(cx, email)
+
+    member = _active_membership_for_email(email)
+    membership = {"active": bool(member)}
+    if member:
+        source = member.get("source") or ""
+        tier = next((t for t in _mp.all_tiers() if t["source"] == source), None)
+        membership.update({
+            "tier": tier["key"] if tier else None,
+            "label": tier["label"] if tier else source.replace("_", " ").title(),
+            "source": source,
+            "expires_at": member.get("expires_at"),
+            "lifetime": bool(member.get("lifetime")),
+            "days_remaining": member.get("days_remaining"),
+        })
+    tiers = [{"key": t["key"], "label": t["label"]} for t in _mp.all_tiers()]
+    return jsonify({
+        "ok": True,
+        "email": email,
+        "pricing": {"ff_flat_cents": ff_flat_cents,
+                    "custom_product_count": len([p for p in prices if p.get("slug") != "__all_ff__"])},
+        "shipping": {"pickup_default": bool(pickup_default)},
+        "membership": membership,
+        "membership_tiers": tiers,
+    })
+
+
 @app.route("/api/console/client-search", methods=["GET"])
 def console_client_search():
     """Search the client hub across CRM people and portal-only clients."""
