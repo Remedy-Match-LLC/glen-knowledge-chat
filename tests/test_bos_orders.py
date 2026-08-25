@@ -111,6 +111,20 @@ def test_set_tracking_action_records_and_ships():
     assert row["tracking_number"] == "9400111899223"
 
 
+def test_setting_tracking_on_done_order_does_not_reopen_it():
+    from dashboard import orders as O
+    cx = sqlite3.connect(":memory:")
+    cx.row_factory = sqlite3.Row
+    O.init_orders_table(cx)
+    oid = O.upsert_order(cx, source="funnel", external_ref="T-DONE", status="done")
+    res = O._set_tracking_exec(
+        {"order_id": oid, "tracking_number": "9400999999999"}, {"cx": cx})
+    assert res["status"] == "done"
+    row = O.get_order(cx, oid)
+    assert row["status"] == "done"
+    assert row["tracking_number"] == "9400999999999"
+
+
 def test_stripe_pi_column_and_lookup():
     from dashboard import orders as O
     cx = sqlite3.connect(":memory:"); cx.row_factory = sqlite3.Row

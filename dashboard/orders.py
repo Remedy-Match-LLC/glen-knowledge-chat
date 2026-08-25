@@ -1127,11 +1127,14 @@ def _set_tracking_exec(params, ctx):
         raise ValueError("no db connection")
     oid = int(params["order_id"])
     tn = str(params.get("tracking_number", "")).strip()
-    if not set_order_tracking(cx, oid, tn):
+    order = get_order(cx, oid)
+    if not order:
         raise ValueError(f"order #{oid} not found")
-    set_order_status(cx, oid, "shipped")
-    return {"order_id": oid, "tracking_number": tn, "status": "shipped",
-            "message": f"Order #{oid} shipped" + (f" (tracking {tn})." if tn else ".")}
+    set_order_tracking(cx, oid, tn)
+    status = order.get("status") if order.get("status") in ("done", "delivered") else "shipped"
+    set_order_status(cx, oid, status)
+    return {"order_id": oid, "tracking_number": tn, "status": status,
+            "message": f"Order #{oid} tracking updated" + (f" ({tn})." if tn else ".")}
 
 
 action(key="orders.set_tracking", module="orders", title="Set tracking + ship",
@@ -1183,6 +1186,9 @@ def _fulfill_lines_exec(params, ctx):
             f"order #{oid} is '{order.get('status')}' — only paid orders in "
             "fulfillment (new/packed/shipped) can be fulfilled")
     note = params.get("note")
+    tracking_number = str(params.get("tracking_number") or "").strip()
+    if tracking_number:
+        set_order_tracking(cx, oid, tracking_number)
     recorded = []
     for ln in (params.get("lines") or []):
         try:
@@ -1200,6 +1206,7 @@ def _fulfill_lines_exec(params, ctx):
     set_order_status(cx, oid, new_status)
     sent = sum(r["qty"] for r in recorded)
     return {"order_id": oid, "fulfilled": recorded, "backorder_units": back,
+            "tracking_number": tracking_number or order.get("tracking_number") or "",
             "status": new_status,
             "message": f"Order #{oid}: recorded {sent} unit(s) shipped"
                        + (f", {back} still backordered." if back else " — fully fulfilled.")}

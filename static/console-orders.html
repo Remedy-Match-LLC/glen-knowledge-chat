@@ -214,6 +214,7 @@
     else if (o.status==='packed') acts = editBtn(o.id) + ' ' + labelBtn(o) + ' '
       + (o.tracking_number ? btn(o.id,'orders.send_tracking','Send tracking') + ' ' : '') + shipBtn(o.id);
     else if (o.status==='shipped') acts = editBtn(o.id) + ' ' + labelBtn(o) + ' ' + btn(o.id,'orders.send_tracking','Send tracking') + ' ' + btn(o.id,'orders.mark_delivered','Mark delivered') + ' ' + btn(o.id,'orders.mark_done','Mark done');
+    else if (o.status==='done') acts = trackingBtn(o);
     if (o.pay_status === 'claimed') acts = '<button onclick="confirmClaimed(' + Number(o.id) + ",'" + String(o.pay_method || '').replace(/'/g, '') + "'" + ')">Confirm payment' + (o.pay_method ? ' (' + esc(o.pay_method) + ')' : '') + '</button> ' + acts;
     if (o.status!=='done' && o.status!=='delivered' && o.status!=='cancelled') acts += ' <button class="cancel" onclick="act('+Number(o.id)+',\'orders.cancel\',{})">Cancel</button>';
     // Grouped into a combined shipment: fulfillment is driven by the shipment
@@ -317,7 +318,10 @@
         + '<input type="number" min="0" max="'+f.backordered+'" value="0" id="ff-'+Number(o.id)+'-'+f.index+'"></div>';
     }).join('');
     if (!rows) return '';
-    return '<details class="fulfill"><summary>Fulfill lines</summary>'+rows
+    var tracking = o.tracking_number ? ''
+      : '<div class="ffline" id="ff-track-row-'+Number(o.id)+'" style="display:none"><label for="ff-track-'+Number(o.id)+'">Tracking number</label>'
+        + '<input type="text" id="ff-track-'+Number(o.id)+'" placeholder="Enter tracking number"></div>';
+    return '<details class="fulfill"><summary>Fulfill lines</summary>'+rows+tracking
       + '<button class="ff-rec" onclick="fillAllLines('+Number(o.id)+')">Fill all</button> '
       + '<button class="ff-rec" onclick="fulfillLines('+Number(o.id)+')">Record shipment</button></details>';
   }
@@ -335,10 +339,36 @@
       if (q>0) lines.push({index: parseInt(inp.id.split('-').pop(),10), qty: q});
     });
     if (!lines.length){ alert('Enter a quantity to ship on at least one line.'); return; }
-    act(id, 'orders.fulfill_lines', {lines: lines});
+    var tracking = document.getElementById('ff-track-'+id);
+    if (tracking && !tracking.value.trim()){
+      var row = document.getElementById('ff-track-row-'+id);
+      if (row) row.style.display = 'flex';
+      tracking.focus();
+      return;
+    }
+    act(id, 'orders.fulfill_lines', {lines: lines, tracking_number: tracking ? tracking.value.trim() : ''});
   }
   function btn(id,key,label){ return '<button onclick="act('+Number(id)+',\''+key+'\',{})">'+label+'</button>'; }
   function shipBtn(id){ return '<button onclick="ship('+Number(id)+')">Ship + tracking</button>'; }
+  function trackingBtn(o){
+    return '<button onclick="toggleTracking('+Number(o.id)+')">Tracking Number</button>'
+      + '<span id="tracking-'+Number(o.id)+'" style="display:none"> '
+      + (o.tracking_number
+          ? '<span class="meta">'+esc(o.tracking_number)+'</span>'
+          : '<input type="text" id="done-track-'+Number(o.id)+'" placeholder="Enter tracking number"> '
+            + '<button onclick="saveTracking('+Number(o.id)+')">Save</button>')
+      + '</span>';
+  }
+  function toggleTracking(id){
+    var el = document.getElementById('tracking-'+id);
+    if (el) el.style.display = el.style.display === 'none' ? 'inline' : 'none';
+  }
+  function saveTracking(id){
+    var inp = document.getElementById('done-track-'+id);
+    var tn = inp ? inp.value.trim() : '';
+    if (!tn){ alert('Enter a tracking number.'); return; }
+    act(id, 'orders.set_tracking', {tracking_number: tn});
+  }
   function payBtn(id){ return '<button onclick="recordPay('+Number(id)+')">Record payment</button>'; }
   function printInvBtn(id){ return '<button onclick="printInvoice('+Number(id)+')">Print invoice</button>'; }
   function labelBtn(o){
