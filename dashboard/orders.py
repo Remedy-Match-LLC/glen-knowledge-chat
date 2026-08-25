@@ -305,7 +305,9 @@ def expire_abandoned_checkouts(cx, *, now=None, ttl_hours=ABANDONED_CHECKOUT_TTL
     cur = cx.execute(
         f"UPDATE orders SET status='cancelled', updated_at=? "
         f"WHERE status='new' AND COALESCE(pay_status,'unpaid')='unpaid' "
-        f"AND source IN ({placeholders}) AND datetime(created_at) < datetime(?)",
+        # ISO-8601 timestamps sort chronologically as text. Keep this comparison
+        # portable across SQLite and PostgreSQL (Postgres has no datetime(text)).
+        f"AND source IN ({placeholders}) AND created_at < ?",
         (_now(), *_ABANDONABLE_CHECKOUT_SOURCES, cutoff))
     cx.commit()
     return cur.rowcount
