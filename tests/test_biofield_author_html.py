@@ -40,6 +40,13 @@ def test_author_page_has_header_rows_and_endpoints():
     assert "/console/biofield-portal?email=jane%40x.com" in html
 
 
+def test_author_header_shows_selected_clients_headshot():
+    html = render_author_html(_report())
+    assert "id=authorclientphoto" in html
+    assert "/client-photo/jane%40x.com" in html
+    assert "refreshHeaderPhoto();checkE4L()" in html
+
+
 def test_author_chain_is_cards_readable_and_reorderable():
     html = render_author_html(_report(), [], "")
     assert "class=lcard" in html and "data-gid=g0" in html   # a layer card

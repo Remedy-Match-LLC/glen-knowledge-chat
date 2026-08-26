@@ -520,6 +520,12 @@ async function assignStress(sid){astat('Assigning…');const j=await post('/auth
 async function assignAllStresses(){astat('Assigning all…');const j=await post('/author/__TID__/stresses/assign-all',{});astat(j&&j.ok?('Assigned '+(j.assigned||0)+' stress(es).'):((j&&j.error)||'Assign failed.'));setStress(j)}
 async function saveHeader(){const j=await post('/author/__TID__/header',
  {name:val('h_name'),email:val('h_email'),date:val('h_date')});astat('Header saved.');setE4L(j)}
+function refreshHeaderPhoto(){
+ var img=document.getElementById('authorclientphoto'),email=val('h_email').trim();
+ if(!img)return;
+ if(!email){img.removeAttribute('src');img.style.display='none';return}
+ img.style.display='none';img.src='/client-photo/'+encodeURIComponent(email)+'?t='+Date.now();
+}
 // --- E4L client picker: name autocomplete -> email (dropdown if duplicates) -> date
 var E4L_CLIENT_ID=null;
 function _esc(s){var e=document.createElement('div');e.textContent=(s==null?'':s);return e.innerHTML}
@@ -551,7 +557,7 @@ function pickName(c){
  else{showEmailPicker(c.emails)}
 }
 function pickEmail(e){set('h_email',e.email);E4L_CLIENT_ID=e.client_id!=null?e.client_id:null;hideDD();afterClientSelected()}
-async function afterClientSelected(){set('h_client_id',E4L_CLIENT_ID==null?'':E4L_CLIENT_ID);await saveHeader();checkE4L()}
+async function afterClientSelected(){set('h_client_id',E4L_CLIENT_ID==null?'':E4L_CLIENT_ID);await saveHeader();refreshHeaderPhoto();checkE4L()}
 document.addEventListener('click',function(ev){
  var d=document.getElementById('h_dd');if(!d)return;
  var it=ev.target.closest?ev.target.closest('.ddi'):null;
@@ -1229,12 +1235,22 @@ def render_fee_panel(state):
 def render_author_html(report, depth_values=None, transcript="", covered_by_layer=None, narrative="", fee_state=None, transcript_updated=""):
     tid = _e(report.get("test_id") or "")
     c = report.get("client") or {}
+    import urllib.parse as _up
+    photo_email = (c.get("email") or "").strip()
+    photo_src = (f"/client-photo/{_up.quote(photo_email, safe='')}" if photo_email else "")
     head = (_workflow_nav("intake", c.get("email") or "")
             + _client_tabs("edit", tid, c.get("email") or "")
             + f"<p><a href='/'>&larr; All tests</a> &nbsp;&middot;&nbsp; "
             f"<a href='/test/{tid}'>View report &rarr;</a> &nbsp;&middot;&nbsp; "
             f"<a href='/test/{tid}/report.pdf' target='_blank'>&#128424; Print report (PDF) &rarr;</a>"
-            "</p><h1>Edit Biofield Test</h1>"
+            "</p><div style='display:flex;align-items:center;justify-content:space-between;gap:20px'>"
+            "<h1 style='margin:0'>Edit Biofield Test</h1>"
+            "<img id=authorclientphoto alt='Selected client headshot' "
+            "style='width:96px;height:96px;object-fit:cover;border-radius:10px;"
+            "border:1px solid var(--line);background:#0c0e12;flex:0 0 auto;"
+            f"display:{'block' if photo_src else 'none'}' src='{_e(photo_src)}' "
+            "onload=\"this.style.display='block'\" onerror=\"this.style.display='none'\">"
+            "</div>"
             "<div class=btnrow><button class=btn onclick=confirmAll()>&#10003; Confirm all rows</button>"
             "<button class='btn ghost' onclick=delTest()>Delete test</button></div>")
     hdr = (
