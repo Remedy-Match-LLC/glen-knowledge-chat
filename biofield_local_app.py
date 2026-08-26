@@ -533,6 +533,7 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
     fetch_runner = fetch_runner  # None -> fetch_live uses the real scraper+parser
     using_default_fetch_profile = fetch_profile is None
     fetch_profile = fetch_profile or _default_fetch_profile
+    using_default_fetch_recent_comms = fetch_recent_comms is None
     fetch_recent_comms = fetch_recent_comms or _default_fetch_recent_comms
     fee_get = fee_get or biofield_fee.default_fee_get
     fee_set = fee_set or biofield_fee.default_fee_set
@@ -839,6 +840,7 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
         from dashboard.biofield_report_html import group_layers
         from dashboard.biofield_stress import list_stresses
         from dashboard.biofield_clinical_checklist import build as build_clinical_checklist
+        from dashboard.biofield_clinical_proposals import accepted_labels
         from dashboard.biofield_authoring import stress_suggestions
         with sqlite3.connect(db_path) as cx:
             rep = authored_report(cx, test_id)
@@ -862,6 +864,13 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                 if c_email and not (using_default_fetch_profile and os.environ.get("CI"))
                 else {}
             )
+            accepted = accepted_labels(cx, test_id)
+            if accepted:
+                profile = dict(profile or {})
+                current = profile.get("conditions") or []
+                if isinstance(current, str):
+                    current = [x.strip() for x in current.replace(";", ",").split(",") if x.strip()]
+                profile["conditions"] = list(current) + accepted
             clinical_checklist = build_clinical_checklist(
                 profile, rep.get("layers") or [], sdata,
                 remedy_lookup=lambda label: stress_suggestions(cx, label),
@@ -1810,6 +1819,46 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
     def author_mine_comms(test_id):
         with sqlite3.connect(db_path) as cx:
             return _mine_comms(cx, test_id)
+
+    @app.route("/author/<test_id>/clinical-proposals")
+    def author_clinical_proposals(test_id):
+        """Suggest, but never auto-assert, clinical items found in communications."""
+        from dashboard.biofield_comms import comms_to_text
+        from dashboard.biofield_interpret import interpret_stresses
+        from dashboard.biofield_clinical_checklist import profile_labels
+        from dashboard.biofield_clinical_proposals import decisions, proposals
+        with sqlite3.connect(db_path) as cx:
+            rep = authored_report(cx, test_id)
+            email = ((rep.get("client") or {}).get("email") or "").strip()
+            prior = decisions(cx, test_id)
+        if not email:
+            return {"ok": True, "items": []}
+        if using_default_fetch_recent_comms and os.environ.get("CI"):
+            return {"ok": True, "items": []}
+        context = fetch_recent_comms(email) or {}
+        labels = []
+        for feedback in context.get("recent_feedback") or []:
+            labels.extend(feedback.get("conditions") or [])
+        text = comms_to_text(context)
+        if text.strip():
+            try:
+                labels.extend(interpret_stresses(text, interpret_complete))
+            except Exception:
+                pass
+        profile = fetch_profile(email) or {}
+        return {"ok": True, "items": proposals(
+            context, labels, profile_labels(profile), prior)}
+
+    @app.route("/author/<test_id>/clinical-proposals", methods=["POST"])
+    def author_decide_clinical_proposal(test_id):
+        from dashboard.biofield_clinical_proposals import decide
+        body = request.get_json(silent=True) or {}
+        status = body.get("status")
+        if status not in ("accepted", "dismissed"):
+            return {"ok": False, "error": "Invalid decision"}, 400
+        with sqlite3.connect(db_path) as cx:
+            ok = decide(cx, test_id, body.get("label"), status, body.get("evidence"))
+        return {"ok": ok}
 
     @app.route("/author/<test_id>/capture-stresses", methods=["POST"])
     def author_capture_stresses(test_id):

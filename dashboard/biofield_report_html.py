@@ -821,6 +821,22 @@ async function mineComms(){rstat('Mining recent comms for stresses…');
  var j=await post('/author/__TID__/mine-comms',{});
  if(j.error){rstat('Mine comms: '+j.error);return}
  rstat('Added '+j.added+' comm stress(es).');loadStress()}
+async function loadClinicalProposals(){
+ var box=document.getElementById('clinicalProposals');if(!box)return;
+ try{var j=await (await fetch('/author/__TID__/clinical-proposals')).json(),items=j.items||[];
+  if(!items.length){box.innerHTML='';return}
+  box.innerHTML='<div class=proposal-head><b>Proposed from communications</b>'+
+   '<span>Confirm these describe the client—not a family member.</span></div>'+
+   items.map(function(x,i){return '<div class=proposal-row><div><b>'+_esc(x.label)+'</b>'+
+    '<div class=proposal-evidence>'+_esc(x.evidence)+(x.when?' · '+_esc(x.when):'')+'</div></div>'+
+    '<div class=proposal-actions><button class=btn data-i="'+i+'" data-status=accepted>Add</button>'+
+    '<button class="btn ghost" data-i="'+i+'" data-status=dismissed>Not relevant</button></div></div>'}).join('');
+  box.querySelectorAll('button[data-i]').forEach(function(btn){btn.onclick=async function(){
+   var x=items[Number(btn.dataset.i)];btn.disabled=true;
+   var r=await post('/author/__TID__/clinical-proposals',{label:x.label,evidence:x.evidence,status:btn.dataset.status});
+   if(r.ok&&btn.dataset.status==='accepted'){location.reload()}else if(r.ok){btn.closest('.proposal-row').remove()}
+   else{btn.disabled=false}}})
+ }catch(e){box.innerHTML=''}}
 // Clicking "Suggest" resolves AND persists the set per test, so it survives the
 // page reloads a live biofield recording triggers.
 async function suggestRemedies(){
@@ -1274,6 +1290,18 @@ def render_clinical_checklist(items):
             f"<div class=clinical-grid>{rows}</div></section>")
 
 
+def render_clinical_proposals():
+    return ("<style>.clinical-proposals{margin:18px 0 8px}.proposal-head{display:flex;gap:10px;"
+            "align-items:baseline;padding:10px 12px;border:1px solid #a56a25;border-radius:9px 9px 0 0;"
+            "background:rgba(196,125,39,.11)}.proposal-head span{font-size:12px;color:var(--muted)}"
+            ".proposal-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:12px;align-items:center;"
+            "padding:10px 12px;border:1px solid var(--line);border-top:0;background:var(--card)}"
+            ".proposal-row:last-child{border-radius:0 0 9px 9px}.proposal-evidence{max-width:760px;margin-top:3px;"
+            "font-size:11px;line-height:1.35;color:var(--muted)}.proposal-actions{display:flex;gap:6px}"
+            "@media(max-width:700px){.proposal-head{display:block}.proposal-row{grid-template-columns:1fr}}"
+            "</style><section id=clinicalProposals class=clinical-proposals aria-live=polite></section>")
+
+
 def render_author_html(report, depth_values=None, transcript="", covered_by_layer=None,
                        narrative="", fee_state=None, transcript_updated="",
                        clinical_checklist=None):
@@ -1374,9 +1402,11 @@ def render_author_html(report, depth_values=None, transcript="", covered_by_laye
                  "<div class=btnrow style='margin:6px 0'>"
                  "<button class='btn ghost' onclick=suggestRemedies()>Suggest minimal remedies</button>"
                  "</div>"
-                 "<div id=suggestpanel></div>" + render_clinical_checklist(clinical_checklist)
+                 "<div id=suggestpanel></div>" + render_clinical_proposals()
+                 + render_clinical_checklist(clinical_checklist)
                  + chain + session + narrative_section
-                 + _AUTHOR_JS.replace("__TID__", tid))
+                 + _AUTHOR_JS.replace("__TID__", tid)
+                 + "<script>loadClinicalProposals()</script>")
 
 
 def render_list_html(tests, q="", authored=None):
