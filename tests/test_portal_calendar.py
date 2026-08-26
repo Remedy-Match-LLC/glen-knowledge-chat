@@ -1,4 +1,5 @@
 import sqlite3
+from datetime import datetime
 
 from dashboard import portal_calendar
 
@@ -49,6 +50,17 @@ def _cx():
     cx.execute("CREATE TABLE evox_bookings (id INTEGER, email TEXT, session_type TEXT, practitioner TEXT, medium TEXT, start_ts TEXT, end_ts TEXT, prepaid INTEGER, status TEXT)")
     cx.execute("CREATE TABLE affiliate_signups (email TEXT, slug TEXT, status TEXT)")
     return cx
+
+
+def test_default_clock_uses_hawaii_wall_time(monkeypatch):
+    class FrozenDateTime:
+        @classmethod
+        def now(cls, tz):
+            assert str(tz) == "Pacific/Honolulu"
+            return datetime(2026, 8, 26, 11, 30, tzinfo=tz)
+
+    monkeypatch.setattr(portal_calendar, "datetime", FrozenDateTime)
+    assert portal_calendar._now_iso() == "2026-08-26T11:30:00"
 
 
 def test_free_member_sees_events_but_not_private_join_url():
