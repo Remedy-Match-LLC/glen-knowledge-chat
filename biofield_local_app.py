@@ -840,7 +840,7 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
         from dashboard.biofield_report_html import group_layers
         from dashboard.biofield_stress import list_stresses
         from dashboard.biofield_clinical_checklist import build as build_clinical_checklist
-        from dashboard.biofield_clinical_proposals import accepted_labels
+        from dashboard.biofield_clinical_proposals import accepted_labels, dismissed_labels, item_key
         from dashboard.biofield_authoring import stress_suggestions
         with sqlite3.connect(db_path) as cx:
             rep = authored_report(cx, test_id)
@@ -875,6 +875,9 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                 profile, rep.get("layers") or [], sdata,
                 remedy_lookup=lambda label: stress_suggestions(cx, label),
             )
+            hidden = {item_key(label) for label in dismissed_labels(cx, test_id)}
+            clinical_checklist = [item for item in clinical_checklist
+                                  if item_key(item.get("label")) not in hidden]
         fstate = biofield_fee.build_fee_state(c_email, fee_get)
         return Response(render_author_html(rep, dv, transcript, covered_by_layer=covered,
                                            narrative=narrative, fee_state=fstate,
@@ -1858,6 +1861,22 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
             return {"ok": False, "error": "Invalid decision"}, 400
         with sqlite3.connect(db_path) as cx:
             ok = decide(cx, test_id, body.get("label"), status, body.get("evidence"))
+        return {"ok": ok}
+
+    @app.route("/author/<test_id>/clinical-items", methods=["POST"])
+    def author_edit_clinical_items(test_id):
+        """Local checklist override: add an item or hide it for this Biofield test."""
+        from dashboard.biofield_clinical_proposals import decide
+        body = request.get_json(silent=True) or {}
+        action = body.get("action")
+        label = str(body.get("label") or "").strip()
+        if action not in ("add", "remove") or not label:
+            return {"ok": False, "error": "Item name is required"}, 400
+        with sqlite3.connect(db_path) as cx:
+            ok = decide(cx, test_id, label,
+                        "accepted" if action == "add" else "dismissed",
+                        "Manually added to clinical checklist" if action == "add"
+                        else "Hidden from this Biofield test")
         return {"ok": ok}
 
     @app.route("/author/<test_id>/capture-stresses", methods=["POST"])

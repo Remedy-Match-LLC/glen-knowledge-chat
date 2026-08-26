@@ -54,3 +54,5 @@ def test_checklist_renders_directly_before_causal_chain():
     assert "1 of 2 covered" in html
     assert "Neuroprotect" in html
     assert "Needs remedy coverage" in html
+    assert "+ Add item" in html
+    assert "removeClinicalItem" in html

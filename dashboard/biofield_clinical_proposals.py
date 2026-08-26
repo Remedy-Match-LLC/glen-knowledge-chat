@@ -7,6 +7,10 @@ def _key(value):
     return re.sub(r"[^a-z0-9]+", " ", str(value or "").lower()).strip()
 
 
+def item_key(value):
+    return _key(value)
+
+
 def ensure_schema(cx):
     cx.execute("""
         CREATE TABLE IF NOT EXISTS biofield_clinical_proposals (
@@ -54,6 +58,11 @@ def decide(cx, test_id, label, status, evidence=""):
 def accepted_labels(cx, test_id):
     return [row["label"] for row in decisions(cx, test_id).values()
             if row["status"] == "accepted"]
+
+
+def dismissed_labels(cx, test_id):
+    return [row["label"] for row in decisions(cx, test_id).values()
+            if row["status"] == "dismissed"]
 
 
 def _evidence_lines(context):

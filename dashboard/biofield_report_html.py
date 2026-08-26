@@ -837,6 +837,16 @@ async function loadClinicalProposals(){
    if(r.ok&&btn.dataset.status==='accepted'){location.reload()}else if(r.ok){btn.closest('.proposal-row').remove()}
    else{btn.disabled=false}}})
  }catch(e){box.innerHTML=''}}
+async function addClinicalItem(){
+ var input=document.getElementById('clinicalNew'),label=(input&&input.value||'').trim();
+ if(!label)return;
+ var j=await post('/author/__TID__/clinical-items',{action:'add',label:label});
+ if(j.ok)location.reload()}
+async function removeClinicalItem(btn){
+ var row=btn.closest('.clinical-item'),label=row&&row.dataset.label;if(!label)return;
+ if(!confirm('Remove "'+label+'" from this Biofield checklist?'))return;
+ var j=await post('/author/__TID__/clinical-items',{action:'remove',label:label});
+ if(j.ok)location.reload()}
 // Clicking "Suggest" resolves AND persists the set per test, so it survives the
 // page reloads a live biofield recording triggers.
 async function suggestRemedies(){
@@ -1253,12 +1263,8 @@ def render_fee_panel(state):
 
 
 def render_clinical_checklist(items):
-    """Scannable read-only checklist; completion follows the current remedy program."""
+    """Scannable editable checklist; completion follows the current remedy program."""
     items = items or []
-    if not items:
-        return ("<section class='clinical-summary'><div class=clinical-title>"
-                "Clinical summary</div><div class=food>"
-                "No structured symptoms or conditions are on file.</div></section>")
     checked = sum(1 for item in items if item.get("checked"))
     rows = ""
     for item in items:
@@ -1267,14 +1273,18 @@ def render_clinical_checklist(items):
         mark = "&#10003;" if done else ""
         remedy = (f"<span class=clinical-remedy>{_e(item.get('covered_by') or '')}</span>"
                   if done else "<span class=clinical-open>Needs remedy coverage</span>")
-        rows += (f"<div class='{cls}'><span class=clinical-check aria-hidden=true>{mark}</span>"
-                 f"<span class=clinical-label>{_e(item.get('label') or '')}</span>{remedy}</div>")
+        label = item.get("label") or ""
+        rows += (f"<div class='{cls}' data-label=\"{_e(label)}\">"
+                 f"<span class=clinical-check aria-hidden=true>{mark}</span>"
+                 f"<span class=clinical-label>{_e(label)}</span>{remedy}"
+                 "<button class=clinical-remove onclick=removeClinicalItem(this) "
+                 "title='Remove from this checklist' aria-label='Remove item'>&times;</button></div>")
     return ("<style>.clinical-summary{margin:18px 0 14px;padding:14px 16px;border:1px solid var(--line);"
             "border-left:4px solid var(--accent);border-radius:10px;background:var(--card)}"
             ".clinical-head{display:flex;justify-content:space-between;gap:12px;align-items:baseline;margin-bottom:10px}"
             ".clinical-title{font-size:18px;font-weight:700}.clinical-count{font-size:12px;color:var(--muted)}"
             ".clinical-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px}"
-            ".clinical-item{display:grid;grid-template-columns:22px minmax(0,1fr);gap:0 8px;align-items:center;"
+            ".clinical-item{position:relative;display:grid;grid-template-columns:22px minmax(0,1fr);gap:0 8px;align-items:center;"
             "padding:9px 10px;border:1px solid var(--line);border-radius:8px;background:rgba(255,255,255,.025)}"
             ".clinical-item.done{border-color:rgba(88,190,135,.45);background:rgba(88,190,135,.08)}"
             ".clinical-check{grid-row:1/3;width:18px;height:18px;border:2px solid var(--muted);border-radius:4px;"
@@ -1282,12 +1292,18 @@ def render_clinical_checklist(items):
             ".done .clinical-check{border-color:var(--ok);background:var(--ok);color:#07140d}"
             ".clinical-label{font-weight:650;line-height:1.25}.clinical-remedy,.clinical-open{font-size:11px;margin-top:2px}"
             ".clinical-remedy{color:var(--ok)}.clinical-open{color:var(--muted)}"
+            ".clinical-remove{position:absolute;right:7px;top:5px;border:0;background:transparent;color:var(--muted);"
+            "font-size:18px;line-height:1;cursor:pointer}.clinical-remove:hover{color:#ef8d8d}"
+            ".clinical-add{display:flex;gap:7px;margin-top:10px}.clinical-add input{margin:0;max-width:360px}"
             "@media(max-width:760px){.clinical-grid{grid-template-columns:1fr}}</style>"
             "<section class=clinical-summary><div class=clinical-head>"
             "<div><div class=clinical-title>Clinical summary</div>"
             "<div class=food>Significant symptoms and conditions from intake</div></div>"
             f"<div class=clinical-count>{checked} of {len(items)} covered</div></div>"
-            f"<div class=clinical-grid>{rows}</div></section>")
+            f"<div class=clinical-grid>{rows}</div>"
+            "<div class=clinical-add><input id=clinicalNew placeholder='Add symptom or condition…' "
+            "onkeydown=\"if(event.key==='Enter'){event.preventDefault();addClinicalItem()}\">"
+            "<button class='btn ghost' onclick=addClinicalItem()>+ Add item</button></div></section>")
 
 
 def render_clinical_proposals():
