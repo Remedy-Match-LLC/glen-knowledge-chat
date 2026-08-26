@@ -1236,7 +1236,47 @@ def render_fee_panel(state):
     return head + cur + controls + js + "</div>"
 
 
-def render_author_html(report, depth_values=None, transcript="", covered_by_layer=None, narrative="", fee_state=None, transcript_updated=""):
+def render_clinical_checklist(items):
+    """Scannable read-only checklist; completion follows the current remedy program."""
+    items = items or []
+    if not items:
+        return ("<section class='clinical-summary'><div class=clinical-title>"
+                "Clinical summary</div><div class=food>"
+                "No structured symptoms or conditions are on file.</div></section>")
+    checked = sum(1 for item in items if item.get("checked"))
+    rows = ""
+    for item in items:
+        done = bool(item.get("checked"))
+        cls = "clinical-item done" if done else "clinical-item"
+        mark = "&#10003;" if done else ""
+        remedy = (f"<span class=clinical-remedy>{_e(item.get('covered_by') or '')}</span>"
+                  if done else "<span class=clinical-open>Needs remedy coverage</span>")
+        rows += (f"<div class='{cls}'><span class=clinical-check aria-hidden=true>{mark}</span>"
+                 f"<span class=clinical-label>{_e(item.get('label') or '')}</span>{remedy}</div>")
+    return ("<style>.clinical-summary{margin:18px 0 14px;padding:14px 16px;border:1px solid var(--line);"
+            "border-left:4px solid var(--accent);border-radius:10px;background:var(--card)}"
+            ".clinical-head{display:flex;justify-content:space-between;gap:12px;align-items:baseline;margin-bottom:10px}"
+            ".clinical-title{font-size:18px;font-weight:700}.clinical-count{font-size:12px;color:var(--muted)}"
+            ".clinical-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px}"
+            ".clinical-item{display:grid;grid-template-columns:22px minmax(0,1fr);gap:0 8px;align-items:center;"
+            "padding:9px 10px;border:1px solid var(--line);border-radius:8px;background:rgba(255,255,255,.025)}"
+            ".clinical-item.done{border-color:rgba(88,190,135,.45);background:rgba(88,190,135,.08)}"
+            ".clinical-check{grid-row:1/3;width:18px;height:18px;border:2px solid var(--muted);border-radius:4px;"
+            "display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800}"
+            ".done .clinical-check{border-color:var(--ok);background:var(--ok);color:#07140d}"
+            ".clinical-label{font-weight:650;line-height:1.25}.clinical-remedy,.clinical-open{font-size:11px;margin-top:2px}"
+            ".clinical-remedy{color:var(--ok)}.clinical-open{color:var(--muted)}"
+            "@media(max-width:760px){.clinical-grid{grid-template-columns:1fr}}</style>"
+            "<section class=clinical-summary><div class=clinical-head>"
+            "<div><div class=clinical-title>Clinical summary</div>"
+            "<div class=food>Significant symptoms and conditions from intake</div></div>"
+            f"<div class=clinical-count>{checked} of {len(items)} covered</div></div>"
+            f"<div class=clinical-grid>{rows}</div></section>")
+
+
+def render_author_html(report, depth_values=None, transcript="", covered_by_layer=None,
+                       narrative="", fee_state=None, transcript_updated="",
+                       clinical_checklist=None):
     tid = _e(report.get("test_id") or "")
     c = report.get("client") or {}
     import urllib.parse as _up
@@ -1334,7 +1374,8 @@ def render_author_html(report, depth_values=None, transcript="", covered_by_laye
                  "<div class=btnrow style='margin:6px 0'>"
                  "<button class='btn ghost' onclick=suggestRemedies()>Suggest minimal remedies</button>"
                  "</div>"
-                 "<div id=suggestpanel></div>" + chain + session + narrative_section
+                 "<div id=suggestpanel></div>" + render_clinical_checklist(clinical_checklist)
+                 + chain + session + narrative_section
                  + _AUTHOR_JS.replace("__TID__", tid))
 
 

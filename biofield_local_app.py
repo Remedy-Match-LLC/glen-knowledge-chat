@@ -531,6 +531,7 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
     # can pull their newest scan straight from the live E4L portal). Both injectable.
     client_search = client_search or (lambda q: _search_clients(q))
     fetch_runner = fetch_runner  # None -> fetch_live uses the real scraper+parser
+    using_default_fetch_profile = fetch_profile is None
     fetch_profile = fetch_profile or _default_fetch_profile
     fetch_recent_comms = fetch_recent_comms or _default_fetch_recent_comms
     fee_get = fee_get or biofield_fee.default_fee_get
@@ -837,6 +838,8 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
     def author_edit(test_id):
         from dashboard.biofield_report_html import group_layers
         from dashboard.biofield_stress import list_stresses
+        from dashboard.biofield_clinical_checklist import build as build_clinical_checklist
+        from dashboard.biofield_authoring import stress_suggestions
         with sqlite3.connect(db_path) as cx:
             rep = authored_report(cx, test_id)
             dv = dimension_values(cx, DEPTH_KEY)
@@ -851,9 +854,22 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
             covered = {L["layer"]: L["stresses"] for L in sdata.get("by_layer") or []}
             narrative = get_narrative(cx, test_id)
             c_email = ((rep.get("client") or {}).get("email") or "").strip()
+            # CI intentionally supplies a fake console secret.  Do not let the
+            # default live-profile lookup turn author-page tests into repeated
+            # external requests; injected test/profile providers still run.
+            profile = (
+                fetch_profile(c_email)
+                if c_email and not (using_default_fetch_profile and os.environ.get("CI"))
+                else {}
+            )
+            clinical_checklist = build_clinical_checklist(
+                profile, rep.get("layers") or [], sdata,
+                remedy_lookup=lambda label: stress_suggestions(cx, label),
+            )
         fstate = biofield_fee.build_fee_state(c_email, fee_get)
         return Response(render_author_html(rep, dv, transcript, covered_by_layer=covered,
-                                           narrative=narrative, fee_state=fstate),
+                                           narrative=narrative, fee_state=fstate,
+                                           clinical_checklist=clinical_checklist),
                         mimetype="text/html")
 
     @app.route("/author/<test_id>/invoice-view")
