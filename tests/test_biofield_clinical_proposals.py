@@ -4,7 +4,7 @@ import sqlite3
 from biofield_local_app import create_app
 from dashboard.biofield_authoring import create_test, init_auth_tables
 from dashboard.biofield_clinical_proposals import (
-    accepted_labels, decide, decisions, dismissed_labels, proposals,
+    accepted_labels, apply_order, decide, decisions, dismissed_labels, proposals, save_order,
 )
 
 
@@ -84,3 +84,32 @@ def test_manual_checklist_add_and_remove_routes(tmp_path, monkeypatch):
     page = client.get(f"/author/{tid}").data
     assert b"Fatigue" not in page
     assert b"Dry eyes" in page
+
+
+def test_checklist_order_persists_and_new_items_append(tmp_path):
+    with sqlite3.connect(tmp_path / "x.db") as cx:
+        assert save_order(cx, "a1", ["Fatigue", "Migraine"]) == 2
+        items = [{"label": "Migraine"}, {"label": "New symptom"}, {"label": "Fatigue"}]
+        assert [x["label"] for x in apply_order(cx, "a1", items)] == [
+            "Fatigue", "Migraine", "New symptom",
+        ]
+
+
+def test_checklist_order_route_restores_sequence(tmp_path, monkeypatch):
+    monkeypatch.delenv("CONSOLE_SECRET", raising=False)
+    import dashboard
+    monkeypatch.setattr(dashboard, "CONSOLE_SECRET", "", raising=False)
+    db = str(tmp_path / "chat_log.db")
+    with sqlite3.connect(db) as cx:
+        init_auth_tables(cx)
+        tid = create_test(cx, "Pam", "pam@example.com", "2026-08-26")
+    profile = {"conditions": ["Fatigue", "Migraine", "Dry eyes"]}
+    client = create_app(db, fetch_profile=lambda email: profile).test_client()
+
+    response = client.post(f"/author/{tid}/clinical-items/order", json={
+        "labels": ["Dry eyes", "Migraine", "Fatigue"],
+    })
+    assert response.get_json() == {"ok": True, "count": 3}
+    page = client.get(f"/author/{tid}").data.decode()
+    assert page.index('data-label="Dry eyes"') < page.index('data-label="Migraine"')
+    assert page.index('data-label="Migraine"') < page.index('data-label="Fatigue"')

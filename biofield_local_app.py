@@ -840,7 +840,9 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
         from dashboard.biofield_report_html import group_layers
         from dashboard.biofield_stress import list_stresses
         from dashboard.biofield_clinical_checklist import build as build_clinical_checklist
-        from dashboard.biofield_clinical_proposals import accepted_labels, dismissed_labels, item_key
+        from dashboard.biofield_clinical_proposals import (
+            accepted_labels, apply_order, dismissed_labels, item_key,
+        )
         from dashboard.biofield_authoring import stress_suggestions
         with sqlite3.connect(db_path) as cx:
             rep = authored_report(cx, test_id)
@@ -878,6 +880,7 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
             hidden = {item_key(label) for label in dismissed_labels(cx, test_id)}
             clinical_checklist = [item for item in clinical_checklist
                                   if item_key(item.get("label")) not in hidden]
+            clinical_checklist = apply_order(cx, test_id, clinical_checklist)
         fstate = biofield_fee.build_fee_state(c_email, fee_get)
         return Response(render_author_html(rep, dv, transcript, covered_by_layer=covered,
                                            narrative=narrative, fee_state=fstate,
@@ -1878,6 +1881,16 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                         "Manually added to clinical checklist" if action == "add"
                         else "Hidden from this Biofield test")
         return {"ok": ok}
+
+    @app.route("/author/<test_id>/clinical-items/order", methods=["POST"])
+    def author_order_clinical_items(test_id):
+        from dashboard.biofield_clinical_proposals import save_order
+        labels = (request.get_json(silent=True) or {}).get("labels")
+        if not isinstance(labels, list):
+            return {"ok": False, "error": "Ordered labels are required"}, 400
+        with sqlite3.connect(db_path) as cx:
+            count = save_order(cx, test_id, labels)
+        return {"ok": True, "count": count}
 
     @app.route("/author/<test_id>/capture-stresses", methods=["POST"])
     def author_capture_stresses(test_id):

@@ -23,6 +23,16 @@ def ensure_schema(cx):
             PRIMARY KEY (test_id, item_key)
         )
     """)
+    cx.execute("""
+        CREATE TABLE IF NOT EXISTS biofield_clinical_order (
+            test_id TEXT NOT NULL,
+            item_key TEXT NOT NULL,
+            label TEXT NOT NULL,
+            position INTEGER NOT NULL,
+            updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (test_id, item_key)
+        )
+    """)
 
 
 def decisions(cx, test_id):
@@ -63,6 +73,42 @@ def accepted_labels(cx, test_id):
 def dismissed_labels(cx, test_id):
     return [row["label"] for row in decisions(cx, test_id).values()
             if row["status"] == "dismissed"]
+
+
+def save_order(cx, test_id, labels):
+    ensure_schema(cx)
+    test_id = str(test_id)
+    cleaned, seen = [], set()
+    for label in labels or []:
+        label = str(label or "").strip()[:160]
+        key = _key(label)
+        if key and key not in seen:
+            seen.add(key)
+            cleaned.append((key, label))
+    cx.execute("DELETE FROM biofield_clinical_order WHERE test_id=?", (test_id,))
+    cx.executemany(
+        """INSERT INTO biofield_clinical_order
+           (test_id,item_key,label,position,updated_at)
+           VALUES (?,?,?,?,CURRENT_TIMESTAMP)""",
+        [(test_id, key, label, pos) for pos, (key, label) in enumerate(cleaned)],
+    )
+    return len(cleaned)
+
+
+def apply_order(cx, test_id, items):
+    """Apply remembered positions; unseen/new profile items follow in natural order."""
+    ensure_schema(cx)
+    positions = {row[0]: row[1] for row in cx.execute(
+        "SELECT item_key,position FROM biofield_clinical_order WHERE test_id=?",
+        (str(test_id),),
+    ).fetchall()}
+    indexed = list(enumerate(items or []))
+    indexed.sort(key=lambda pair: (
+        0 if _key(pair[1].get("label")) in positions else 1,
+        positions.get(_key(pair[1].get("label")), pair[0]),
+        pair[0],
+    ))
+    return [item for _, item in indexed]
 
 
 def _evidence_lines(context):
