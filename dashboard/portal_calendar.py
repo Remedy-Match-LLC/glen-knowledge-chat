@@ -3,14 +3,17 @@
 Titles and times are visible to every portal holder. Private join destinations
 are only added after the caller establishes entitlement server-side.
 """
-from datetime import datetime, timezone
+from datetime import datetime
 from zoneinfo import ZoneInfo
 
 from dashboard import db
 
 
 def _now_iso():
-    return datetime.now(timezone.utc).replace(tzinfo=None).isoformat(timespec="seconds")
+    # Portal-authored event timestamps are stored as naive Hawai'i wall time.
+    # Comparing them to naive UTC hides every event ten hours too early.
+    return (datetime.now(ZoneInfo("Pacific/Honolulu"))
+            .replace(tzinfo=None).isoformat(timespec="seconds"))
 
 
 def _row_dict(cur, row):

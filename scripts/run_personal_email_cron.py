@@ -22,6 +22,7 @@ import json
 import urllib.request
 import urllib.error
 from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 
 from _cron_http import post_with_retry
 
@@ -166,6 +167,16 @@ def run_daily_piggybacks():
                     "X-Console-Key", CONSOLE_SECRET)
     _piggyback_post("repertoire-reseed", "/api/console/repertoire-reseed",
                     "X-Console-Key", CONSOLE_SECRET)
+    # Publish the identity-safe recurring Zoom occurrences every Wednesday morning
+    # before the 2 PM HST coaching call. The endpoint is idempotent, so retries do
+    # not duplicate either the portal event or the Zoom series.
+    if datetime.now(ZoneInfo("Pacific/Honolulu")).weekday() == 2:  # Wednesday HST
+        _piggyback_post("weekly-live-bootstrap",
+                        "/api/console/community-live/bootstrap",
+                        "X-Console-Key", CONSOLE_SECRET, timeout=180)
+    else:
+        print("[weekly-live-bootstrap] not Wednesday (HST) — skip", flush=True)
+
     if datetime.now(timezone.utc).weekday() == 0:  # Monday
         _piggyback_post("usps-rate-check", "/cron/usps-rate-check", "X-Cron-Secret", CRON_SECRET)
     else:
