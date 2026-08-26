@@ -847,6 +847,26 @@ async function removeClinicalItem(btn){
  if(!confirm('Remove "'+label+'" from this Biofield checklist?'))return;
  var j=await post('/author/__TID__/clinical-items',{action:'remove',label:label});
  if(j.ok)location.reload()}
+function initClinicalDrag(){
+ var grid=document.querySelector('.clinical-grid');if(!grid)return;var moving=null;
+ grid.querySelectorAll('.clinical-item').forEach(function(row){
+  row.draggable=true;
+  row.addEventListener('dragstart',function(e){moving=row;row.classList.add('dragging');
+   row.setAttribute('aria-grabbed','true');e.dataTransfer.effectAllowed='move'});
+  row.addEventListener('dragend',function(){row.classList.remove('dragging');
+   row.setAttribute('aria-grabbed','false');moving=null});
+ });
+ grid.addEventListener('dragover',function(e){e.preventDefault();if(!moving)return;
+  var target=e.target.closest('.clinical-item');if(!target||target===moving)return;
+  var r=target.getBoundingClientRect(),after=(e.clientY>r.top+r.height/2)||
+   (Math.abs(e.clientY-(r.top+r.height/2))<r.height/3&&e.clientX>r.left+r.width/2);
+  grid.insertBefore(moving,after?target.nextSibling:target)});
+ grid.addEventListener('drop',async function(e){e.preventDefault();if(!moving)return;
+  var labels=[].slice.call(grid.querySelectorAll('.clinical-item')).map(function(x){return x.dataset.label});
+  var stat=document.getElementById('clinicalOrderStat');stat.textContent='Saving order…';
+  var j=await post('/author/__TID__/clinical-items/order',{labels:labels});
+  stat.textContent=j.ok?'Order saved':'Could not save order'});
+}
 // Clicking "Suggest" resolves AND persists the set per test, so it survives the
 // page reloads a live biofield recording triggers.
 async function suggestRemedies(){
@@ -1274,7 +1294,8 @@ def render_clinical_checklist(items):
         remedy = (f"<span class=clinical-remedy>{_e(item.get('covered_by') or '')}</span>"
                   if done else "<span class=clinical-open>Needs remedy coverage</span>")
         label = item.get("label") or ""
-        rows += (f"<div class='{cls}' data-label=\"{_e(label)}\">"
+        rows += (f"<div class='{cls}' data-label=\"{_e(label)}\" aria-grabbed=false>"
+                 "<span class=clinical-grip title='Drag to reorder' aria-hidden=true>&#8942;&#8942;</span>"
                  f"<span class=clinical-check aria-hidden=true>{mark}</span>"
                  f"<span class=clinical-label>{_e(label)}</span>{remedy}"
                  "<button class=clinical-remove onclick=removeClinicalItem(this) "
@@ -1284,9 +1305,12 @@ def render_clinical_checklist(items):
             ".clinical-head{display:flex;justify-content:space-between;gap:12px;align-items:baseline;margin-bottom:10px}"
             ".clinical-title{font-size:18px;font-weight:700}.clinical-count{font-size:12px;color:var(--muted)}"
             ".clinical-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px}"
-            ".clinical-item{position:relative;display:grid;grid-template-columns:22px minmax(0,1fr);gap:0 8px;align-items:center;"
+            ".clinical-item{position:relative;display:grid;grid-template-columns:12px 22px minmax(0,1fr);gap:0 8px;align-items:center;"
             "padding:9px 10px;border:1px solid var(--line);border-radius:8px;background:rgba(255,255,255,.025)}"
             ".clinical-item.done{border-color:rgba(88,190,135,.45);background:rgba(88,190,135,.08)}"
+            ".clinical-grip{grid-row:1/3;color:var(--muted);font-size:12px;letter-spacing:-3px;cursor:grab}"
+            ".clinical-item.dragging{opacity:.45;border-color:var(--accent)}"
+            ".clinical-item[draggable=true]{cursor:grab}.clinical-item[draggable=true]:active{cursor:grabbing}"
             ".clinical-check{grid-row:1/3;width:18px;height:18px;border:2px solid var(--muted);border-radius:4px;"
             "display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800}"
             ".done .clinical-check{border-color:var(--ok);background:var(--ok);color:#07140d}"
@@ -1299,7 +1323,8 @@ def render_clinical_checklist(items):
             "<section class=clinical-summary><div class=clinical-head>"
             "<div><div class=clinical-title>Clinical summary</div>"
             "<div class=food>Significant symptoms and conditions from intake</div></div>"
-            f"<div class=clinical-count>{checked} of {len(items)} covered</div></div>"
+            f"<div class=clinical-count>{checked} of {len(items)} covered"
+            "<span id=clinicalOrderStat style='margin-left:8px'></span></div></div>"
             f"<div class=clinical-grid>{rows}</div>"
             "<div class=clinical-add><input id=clinicalNew placeholder='Add symptom or condition…' "
             "onkeydown=\"if(event.key==='Enter'){event.preventDefault();addClinicalItem()}\">"
@@ -1422,7 +1447,7 @@ def render_author_html(report, depth_values=None, transcript="", covered_by_laye
                  + render_clinical_checklist(clinical_checklist)
                  + chain + session + narrative_section
                  + _AUTHOR_JS.replace("__TID__", tid)
-                 + "<script>loadClinicalProposals()</script>")
+                 + "<script>loadClinicalProposals();initClinicalDrag()</script>")
 
 
 def render_list_html(tests, q="", authored=None):

@@ -56,3 +56,6 @@ def test_checklist_renders_directly_before_causal_chain():
     assert "Needs remedy coverage" in html
     assert "+ Add item" in html
     assert "removeClinicalItem" in html
+    assert "initClinicalDrag" in html
+    assert "clinical-items/order" in html
+    assert "Drag to reorder" in html
