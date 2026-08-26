@@ -675,6 +675,43 @@ def test_api_portal_shows_regular_and_special_price(client):
     assert j["pricing_note"] == "Your certified-practitioner price."
 
 
+def test_client_login_request_sends_auth_mail_without_suppression(client, monkeypatch):
+    c, appmod = client
+    monkeypatch.setattr(appmod, "_client_login_enabled", lambda: True)
+    captured = {}
+
+    def fake_send(*args, **kwargs):
+        captured["args"] = args
+        captured["kwargs"] = kwargs
+        return "test", None
+
+    monkeypatch.setattr(appmod, "_send_full_report_email", fake_send)
+    with appmod.db.connect(appmod.LOG_DB) as cx:
+        from dashboard import portal_identity as pi
+        pi._ensure_people_table(cx)
+        cx.execute("INSERT INTO people (email, name) VALUES (?, ?)",
+                   ("valid-portal@example.com", "Valid Portal"))
+        cx.commit()
+
+    r = c.post("/portal/login-request", json={"email": " Valid-Portal@Example.com "})
+
+    assert r.status_code == 200
+    assert captured["args"][0] == "valid-portal@example.com"
+    assert captured["kwargs"]["respect_suppression"] is False
+    assert "/portal/login-verify?token=" in captured["args"][3]
+
+
+def test_client_login_page_uses_submit_form(client, monkeypatch):
+    c, appmod = client
+    monkeypatch.setattr(appmod, "_client_login_enabled", lambda: True)
+
+    html = c.get("/portal/login").get_data(as_text=True)
+
+    assert '<form id="loginForm">' in html
+    assert 'type="submit"' in html
+    assert 'form.addEventListener("submit"' in html
+
+
 def test_portal_checkout_charges_special_price(client, monkeypatch):
     # Paid-only (QBO Stage 3): api_client_portal_checkout no longer calls
     # create_invoice -- the exact QBO line payload is persisted via
