@@ -12523,8 +12523,9 @@ def _send_full_report_email(to_email: str, name: str,
     fallback matters when consumer Gmail hits its daily cap: without it a real
     client report (invoice/portal link) silently console-logs and never arrives.
     """
-    # Suppression guard: this is a proactive client report — skip suppressed
-    # (hard-bounced) addresses on BOTH the Gmail and SMTP-fallback paths. Fail-open.
+    # Suppression is for proactive mail, never user-requested authentication.
+    # Callers sending a sign-in/recovery link must pass respect_suppression=False
+    # so a stale bounce record cannot lock a real client out of their account.
     if respect_suppression:
         from dashboard import email_suppression as _es
         try:
@@ -31875,13 +31876,18 @@ def client_login_request():
             if row:
                 magic = _pi.create_client_magic_link(cx, row[0], email)
                 try:
-                    _send_full_report_email(
+                    sent_via, send_err = _send_full_report_email(
                         email, row[1] or "", "Your Remedy Match sign-in link",
                         "Aloha,\n\nClick to sign in to your healing home:\n"
                         f"{portal_base()}/portal/login-verify?token={magic}\n\n"
-                        f"This link expires in {_pi.CLIENT_MAGIC_TTL_LABEL}.")
+                        f"This link expires in {_pi.CLIENT_MAGIC_TTL_LABEL}.",
+                        respect_suppression=False)
+                    print(f"[client-login] requested account=found delivery={sent_via} "
+                          f"error={bool(send_err)}", flush=True)
                 except Exception as e:
                     print(f"[client-login] email failed: {e!r}", flush=True)
+            else:
+                print("[client-login] requested account=missing", flush=True)
     # No account enumeration: same response whether or not the email exists.
     return jsonify({"ok": True,
                     "message": "If that email has a portal, a sign-in link is on its way."})
