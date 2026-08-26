@@ -43,6 +43,11 @@ def test_author_page_has_header_rows_and_endpoints():
 def test_author_header_shows_selected_clients_headshot():
     html = render_author_html(_report())
     assert "id=authorclientphoto" in html
+    assert "class=authorheadgrid" in html
+    assert "class=authorheadphoto" in html
+    assert "min-height:300px" in html
+    assert "object-position:50% 42%" in html
+    assert "/client-photo-framing/" in html
     assert "/client-photo/jane%40x.com" in html
     assert "refreshHeaderPhoto();checkE4L()" in html
 

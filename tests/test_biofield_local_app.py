@@ -60,6 +60,17 @@ def test_index_lists_tests(tmp_path):
     assert b"Lewis Zardo" in r.data and b"/test/10" in r.data
 
 
+def test_client_photo_framing_returns_saved_face_focus(tmp_path):
+    from dashboard import client_photos
+    db = str(tmp_path / "chat_log.db")
+    with sqlite3.connect(db) as cx:
+        client_photos.put(cx, "pam@example.com", b"portrait", "image/jpeg")
+        client_photos.set_framing(cx, "pam@example.com", 51, 27, 1.2)
+    r = create_app(db).test_client().get("/client-photo-framing/pam@example.com")
+    assert r.status_code == 200
+    assert r.get_json() == {"ok": True, "focus_x": 51.0, "focus_y": 27.0, "zoom": 1.2}
+
+
 def test_view_portal_redirects_to_clients_stable_portal(tmp_path):
     from dashboard.biofield_authoring import init_auth_tables, create_test
     db = str(tmp_path / "chat_log.db")
