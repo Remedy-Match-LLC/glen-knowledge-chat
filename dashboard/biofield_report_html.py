@@ -520,10 +520,14 @@ async function assignStress(sid){astat('Assigning…');const j=await post('/auth
 async function assignAllStresses(){astat('Assigning all…');const j=await post('/author/__TID__/stresses/assign-all',{});astat(j&&j.ok?('Assigned '+(j.assigned||0)+' stress(es).'):((j&&j.error)||'Assign failed.'));setStress(j)}
 async function saveHeader(){const j=await post('/author/__TID__/header',
  {name:val('h_name'),email:val('h_email'),date:val('h_date')});astat('Header saved.');setE4L(j)}
-function refreshHeaderPhoto(){
+async function refreshHeaderPhoto(){
  var img=document.getElementById('authorclientphoto'),email=val('h_email').trim();
  if(!img)return;
  if(!email){img.removeAttribute('src');img.style.display='none';return}
+ try{
+  var j=await (await fetch('/client-photo-framing/'+encodeURIComponent(email))).json();
+  if(j.ok)img.style.objectPosition=j.focus_x+'% '+j.focus_y+'%';
+ }catch(e){img.style.objectPosition='50% 42%'}
  img.style.display='none';img.src='/client-photo/'+encodeURIComponent(email)+'?t='+Date.now();
 }
 // --- E4L client picker: name autocomplete -> email (dropdown if duplicates) -> date
@@ -1243,22 +1247,18 @@ def render_author_html(report, depth_values=None, transcript="", covered_by_laye
             + f"<p><a href='/'>&larr; All tests</a> &nbsp;&middot;&nbsp; "
             f"<a href='/test/{tid}'>View report &rarr;</a> &nbsp;&middot;&nbsp; "
             f"<a href='/test/{tid}/report.pdf' target='_blank'>&#128424; Print report (PDF) &rarr;</a>"
-            "</p><div style='display:flex;align-items:center;justify-content:space-between;gap:20px'>"
-            "<h1 style='margin:0'>Edit Biofield Test</h1>"
-            "<img id=authorclientphoto alt='Selected client headshot' "
-            "style='width:96px;height:96px;object-fit:cover;border-radius:10px;"
-            "border:1px solid var(--line);background:#0c0e12;flex:0 0 auto;"
-            f"display:{'block' if photo_src else 'none'}' src='{_e(photo_src)}' "
-            "onload=\"this.style.display='block'\" onerror=\"this.style.display='none'\">"
-            "</div>"
-            "<div class=btnrow><button class=btn onclick=confirmAll()>&#10003; Confirm all rows</button>"
-            "<button class='btn ghost' onclick=delTest()>Delete test</button></div>")
+            "</p>")
     hdr = (
         "<style>.dd{position:absolute;top:100%;left:0;display:none;background:var(--card);"
         "border:1px solid var(--line);border-radius:6px;margin-top:2px;min-width:320px;"
         "max-width:520px;max-height:280px;overflow:auto;z-index:50}"
         ".ddi{padding:6px 10px;cursor:pointer;border-bottom:1px solid var(--line)}"
-        ".ddi:hover{background:rgba(255,255,255,.06)}</style>"
+        ".ddi:hover{background:rgba(255,255,255,.06)}"
+        ".authorheadgrid{display:grid;grid-template-columns:minmax(0,1fr) 240px;gap:18px;align-items:stretch}"
+        ".authorheadphoto{width:240px;height:100%;min-height:300px;object-fit:cover;border-radius:10px;"
+        "object-position:50% 42%;border:1px solid var(--line);background:#0c0e12}"
+        "@media(max-width:720px){.authorheadgrid{grid-template-columns:1fr}.authorheadphoto{width:100%;height:240px;min-height:0}}"
+        "</style>"
         "<div class=card>"
         "<input type=hidden id=h_client_id value=''>"
         "<label>Client name</label>"
@@ -1269,6 +1269,16 @@ def render_author_html(report, depth_values=None, transcript="", covered_by_laye
         f"<label>Date</label><input id=h_date value=\"{_e(report.get('date') or '')}\" style='width:160px'>"
         "<div class=btnrow><button class=btn onclick=saveHeader()>Save header</button>"
         "<span id=astat class=food></span></div></div>")
+    editor_header = (
+        "<div class=authorheadgrid><div>"
+        "<h1 style='margin:0'>Edit Biofield Test</h1>"
+        "<div class=btnrow><button class=btn onclick=confirmAll()>&#10003; Confirm all rows</button>"
+        "<button class='btn ghost' onclick=delTest()>Delete test</button></div>"
+        + hdr + "</div>"
+        "<img id=authorclientphoto class=authorheadphoto alt='Selected client headshot' "
+        f"style='display:{'block' if photo_src else 'none'}' src='{_e(photo_src)}' "
+        "onload=\"this.style.display='block'\" onerror=\"this.style.display='none'\">"
+        "</div>")
     groups = group_layers(report.get("layers") or [])
     chain = ("<h2>Causal chain "
              "<button class='btn ghost' id=depthbtn onclick=toggleDepth() "
@@ -1315,7 +1325,7 @@ def render_author_html(report, depth_values=None, transcript="", covered_by_laye
         f"{_e(narrative)}</textarea>")
     fee_html = render_fee_panel(fee_state) if fee_state else ""
     return _page("Edit Biofield Test",
-                 head + hdr + fee_html + "<div id=e4lpanel></div>"
+                 head + editor_header + fee_html + "<div id=e4lpanel></div>"
                  "<div class=btnrow style='margin:6px 0'>"
                  "<button class='btn ghost' onclick=mineProfile()>Mine profile &rarr; stresses</button>"
                  "<button class='btn ghost' onclick=mineComms()>Mine recent comms &rarr; stresses</button>"

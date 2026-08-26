@@ -749,6 +749,18 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
         resp.headers["Cache-Control"] = "no-store"
         return resp
 
+    @app.route("/client-photo-framing/<path:email>")
+    def client_photo_framing(email):
+        """Return the same nondestructive face focal point used by portal avatars."""
+        from dashboard import client_photos as _cph
+        with sqlite3.connect(db_path) as cx:
+            rec = _cph.get(cx, email)
+        if not rec:
+            return jsonify({"ok": False, "error": "not found"}), 404
+        return jsonify({"ok": True, "focus_x": rec.get("focus_x", 50),
+                        "focus_y": rec.get("focus_y", 42),
+                        "zoom": rec.get("zoom", 1)})
+
     @app.route("/test/<test_id>/photo", methods=["POST"])
     def upload_client_photo(test_id):
         """Operator upload on the Biofield Intake page: save the photo to the local

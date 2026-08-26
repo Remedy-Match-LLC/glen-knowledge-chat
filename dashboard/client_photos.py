@@ -72,7 +72,7 @@ def put(cx, email, blob, content_type, source="upload", force=True):
 
 
 def get(cx, email):
-    """Return {'blob': bytes, 'content_type': str} for the email, or None."""
+    """Return the photo bytes plus nondestructive face framing, or None."""
     e = _norm(email)
     if not e:
         return None
