@@ -85,6 +85,7 @@
   "biofield-analysis": {
    "name": "Biofield Analysis",
    "price_cents": 30000,
+   "member_price_cents": 20000,
    "pinecone_title": "Biofield Analysis",
    "info_only": true,
    "service": true,

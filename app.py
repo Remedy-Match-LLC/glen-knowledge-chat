@@ -7016,6 +7016,41 @@ def _inhouse_total_ff_qty(lines_in):
     return tot
 
 
+def _member_price_cents(p, email):
+    """A SKU's FULL-MEMBER price, or None.
+
+    Glen 2026-08-27: Biofield Analysis is $200 for a full member and $300 for
+    everyone else, and the $100 difference IS the included month of access. So
+    this must key off REAL membership, never off `program_member`.
+
+    That distinction is the whole trap here. `program_member` is set true merely
+    by a biofield line being present in the cart (it exists so the accompanying
+    remedies quote at member rates). Pricing the member rate off it would be
+    self-fulfilling: any non-member adding Biofield would flip themselves to
+    $200 and collect the month for free. `_is_paid_member` is the real check and
+    it already excludes the $1-trial cohort, which is what "full member" means.
+
+    Returns None when the SKU declares no member price or the email is not a
+    full member, so callers fall through to their existing pricing unchanged."""
+    mp = p.get("member_price_cents")
+    if not mp:
+        return None
+    if not (email and _is_paid_member(email)):
+        return None
+    return int(mp)
+
+
+def _member_priced_product(p, email):
+    """`p` with price_cents swapped for its full-member price when one applies.
+    A copy — never mutate the shared catalog dict, which is process-global."""
+    mp = _member_price_cents(p, email)
+    if mp is None:
+        return p
+    q = dict(p)
+    q["price_cents"] = mp
+    return q
+
+
 def _inhouse_line_unit_cents(p, override, total_ff_qty, settings, repertoire_slugs=None,
                              program_member=False, line_qty=1):
     """Explicit owner override wins; else FF capsules get a volume rate — the
@@ -7418,6 +7453,10 @@ def _price_cart(cart, *, ship, coupon_pct=None, subscriber_tier_pct=None,
         p = _get_product((c.get("slug") or "").strip())
         if not p:
             continue
+        # Full-member SKU price (Biofield $200 vs $300). Keyed off the REAL
+        # member check inside the helper, not `program_member` -- see
+        # _member_price_cents for why that distinction matters.
+        p = _member_priced_product(p, email)
         qty = max(1, min(int(c.get("qty", 1) or 1), 99))
         it = _engine_item(p, qty)
         items.append(it)
@@ -21100,6 +21139,7 @@ def _portal_priced_lines(items, email=None):
         p = _get_product(slug) if slug else None
         if not p:
             continue
+        p = _member_priced_product(p, email)
         try:
             qty = max(1, min(int(it.get("qty", 1) or 1), 99))
         except Exception:
@@ -48759,6 +48799,7 @@ def _price_inhouse_invoice(lines_in, *, email, pickup, ship,
         p = _get_product(slug)
         if not p:
             continue
+        p = _member_priced_product(p, email)
         qty = max(1, min(int(ln.get("qty") or 1), 99))
         # Precedence: explicit per-line edit > per-SKU client price > client's flat
         # FF rate (FF products only) > LOWEST of {standard volume/list, held cohort
@@ -49403,6 +49444,7 @@ def api_orders_price_preview():
         p = _get_product(slug)
         if not p:
             continue
+        p = _member_priced_product(p, _pemail)
         qty = max(1, min(int(ln.get("qty") or 1), 99))
         ov = ln.get("unit_cents")
         is_ff = _qty_eligible(p)
