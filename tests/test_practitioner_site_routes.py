@@ -96,10 +96,20 @@ def test_alias_301s_to_canonical(client, tmp_path):
 
 
 def test_alias_does_not_serve_content(client):
-    """Alternates redirect; they never render, so they cannot duplicate content."""
+    """Alternates redirect; they never render the storefront, so they cannot
+    compete with the canonical URL as duplicate content.
+
+    Note the assertion is against STOREFRONT markers, not against "<html".
+    Werkzeug's 301 always emits a small "Redirecting..." HTML stub, which is
+    correct and conventional -- crawlers follow the redirect and never index
+    the stub. What must never appear here is the practitioner's actual page.
+    """
     _claim(appmod.LOG_DB, "boyd-coaching")
     r = client.get("/boyd-coaching", base_url=f"http://{PORTAL_HOST}")
-    assert b"<html" not in r.data.lower()
+    assert r.status_code == 301
+    assert b'id="bio"' not in r.data
+    assert b"Browse the full catalog" not in r.data
+    assert b"Redirecting" in r.data
 
 
 def test_legacy_p_slug_301s_to_canonical_on_portal_host(client):
