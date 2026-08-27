@@ -16,6 +16,16 @@ _SINGLE_PROGRAM = {
     "retinitis-pigmentosa": "retinitis-pigmentosa",
     "diabetic-retinopathy": "diabetic-retinopathy",
     "vision-improvement": "vision-improvement",
+    "symptom-fatigue": "symptom-fatigue",
+    "symptom-brain-fog": "symptom-brain-fog",
+    "symptom-stress": "symptom-stress",
+    "symptom-sleep": "symptom-sleep",
+    "symptom-headache": "symptom-headache",
+    "symptom-digestion": "symptom-digestion",
+    "symptom-constipation": "symptom-constipation",
+    "symptom-immune": "symptom-immune",
+    "symptom-skin": "symptom-skin",
+    "symptom-blood-sugar": "symptom-blood-sugar",
 }
 
 # Cataract "not sure" risk flags (Dr. Glen): none of these change routing

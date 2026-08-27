@@ -25,6 +25,8 @@ def test_form_structure_integrity():
                 assert f["options"] and all("value" in o and "label" in o for o in f["options"])
             if f["type"] == "table":
                 assert f["columns"] and all("id" in c and "type" in c for c in f["columns"])
+            if f["type"] == "multi_choice":
+                assert f["options"] and all("value" in o and "label" in o for o in f["options"])
     assert len(ids) == len(set(ids)), "field ids must be unique"
     assert sorted(dim_fields) == ["commitment", "penetration", "response", "terrain", "tissue_layer"]
 
@@ -105,6 +107,17 @@ def test_validate_missing_required():
 def test_validate_scale_out_of_range():
     errors = intake.validate_response({"terrain": 9})
     assert "terrain" in errors
+
+
+def test_systemic_symptom_checklist_uses_stable_matching_keys():
+    fields = {f["id"]: f for sec in intake.INTAKE_FORM["sections"] for f in sec["fields"]}
+    symptom_field = fields["systemic_symptoms"]
+    values = [o["value"] for o in symptom_field["options"]]
+    assert len(values) == 10
+    assert all(v.startswith("symptom-") for v in values)
+    assert "systemic_symptoms" not in intake.validate_response({"systemic_symptoms": values})
+    assert "systemic_symptoms" in intake.validate_response(
+        {"systemic_symptoms": ["not-a-real-symptom"]})
 
 
 def test_validate_consent_unsigned():

@@ -6,6 +6,7 @@ def test_form_outline_lists_fields_and_scale_meanings():
     assert "terrain" in txt and "commitment" in txt
     assert "health_concerns" in txt and "concern" in txt          # table columns
     assert "Stress or Hormonal Imbalance" in txt                  # scale label surfaced
+    assert "systemic_symptoms" in txt and "symptom-fatigue=Fatigue or low energy" in txt
     assert "Key Dimensions of the Clinical Theory of Everything" in txt
 
 

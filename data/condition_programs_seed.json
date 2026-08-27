@@ -2,6 +2,7 @@
   "condition_programs": {
     "glaucoma-elevated-iop": {
       "label": "Glaucoma \u2014 Elevated IOP",
+      "symptoms": ["Often no symptoms early", "Gradual peripheral vision loss", "Blind spots or tunnel vision later"],
       "consult_recommended": false,
       "items": [
         {
@@ -40,6 +41,7 @@
     },
     "glaucoma-normal-iop": {
       "label": "Glaucoma \u2014 Normal / Low IOP",
+      "symptoms": ["Often no symptoms early", "Gradual peripheral vision loss", "Blind spots or tunnel vision later"],
       "consult_recommended": false,
       "items": [
         {
@@ -77,6 +79,7 @@
     },
     "dry-amd": {
       "label": "Dry AMD",
+      "symptoms": ["Often no symptoms early", "Blurred central vision", "Difficulty seeing in low light", "Colors may look less bright"],
       "consult_recommended": false,
       "items": [
         {
@@ -148,6 +151,7 @@
     },
     "wet-amd": {
       "label": "Wet AMD",
+      "symptoms": ["New or worsening central blur", "Straight lines look wavy or crooked", "Dark or blank spots in central vision", "Colors may look less bright"],
       "consult_recommended": true,
       "items": [
         {
@@ -239,8 +243,38 @@
         }
       ]
     },
+    "macular-pucker": {
+      "label": "Macular Pucker (Epiretinal Membrane)",
+      "symptoms": ["Blurry or wavy central vision", "Straight lines look bent", "Trouble reading or seeing fine detail"],
+      "consult_recommended": false,
+      "items": [
+        {
+          "slug": "scar-silk",
+          "name": "Scar Silk",
+          "alts": [
+            {
+              "slug": "clear-the-way",
+              "name": "Clear the Way"
+            }
+          ]
+        },
+        {
+          "slug": "scar-solve",
+          "name": "Scar Solve"
+        },
+        {
+          "slug": "scar-soft-drink",
+          "name": "Scar Soft (when available)"
+        },
+        {
+          "slug": "ocuheal-eye-drops",
+          "name": "OcuHeal Eye Drops"
+        }
+      ]
+    },
     "senile-cataract": {
       "label": "Senile (Age-Related) Cataract",
+      "symptoms": ["Cloudy, blurry, or hazy vision", "Faded colors", "Glare or halos around lights", "Difficulty seeing at night"],
       "consult_recommended": false,
       "items": [
         {
@@ -283,6 +317,7 @@
     },
     "psc-cataract": {
       "label": "PSC Cataract (Posterior Subcapsular)",
+      "symptoms": ["Glare or halos, especially in bright light", "Blurred near vision", "Difficulty seeing in low light", "Vision may worsen quickly"],
       "consult_recommended": false,
       "items": [
         {
@@ -311,6 +346,7 @@
     },
     "dry-eye": {
       "label": "Dry Eye",
+      "symptoms": ["Burning, stinging, or scratchy eyes", "Redness or watering", "Fluctuating blurry vision", "Light sensitivity"],
       "consult_recommended": false,
       "items": [
         {
@@ -364,6 +400,7 @@
     },
     "retinitis-pigmentosa": {
       "label": "Retinitis Pigmentosa",
+      "symptoms": ["Night blindness", "Loss of peripheral vision", "Tunnel vision", "Light sensitivity or reduced color vision"],
       "consult_recommended": false,
       "items": [
         {
@@ -387,6 +424,7 @@
     },
     "diabetic-retinopathy": {
       "label": "Diabetic Retinopathy",
+      "symptoms": ["Often no symptoms early", "Blurred or fluctuating vision", "Floaters or dark spots", "Progressive vision loss"],
       "consult_recommended": false,
       "items": [
         {
@@ -435,6 +473,66 @@
           ]
         }
       ]
+    },
+    "symptom-fatigue": {
+      "label": "Fatigue / Low Energy",
+      "symptoms": ["Persistent tiredness", "Low stamina", "Slow recovery after activity"],
+      "consult_recommended": false,
+      "items": [{"slug": "vitality", "name": "Vitality"}, {"slug": "sustain", "name": "Sustain"}, {"slug": "mitochondrial-biogenesis", "name": "Mitochondrial Biogenesis"}]
+    },
+    "symptom-brain-fog": {
+      "label": "Brain Fog / Poor Focus",
+      "symptoms": ["Trouble concentrating", "Forgetfulness", "Slowed or cloudy thinking"],
+      "consult_recommended": false,
+      "items": [{"slug": "nous-energy", "name": "Nous Energy"}, {"slug": "neuro-magnesium", "name": "Neuro Magnesium"}, {"slug": "brain-cleanse", "name": "Brain Cleanse"}]
+    },
+    "symptom-stress": {
+      "label": "Stress / Anxious Tension",
+      "symptoms": ["Feeling overwhelmed or tense", "Irritability", "Difficulty relaxing"],
+      "consult_recommended": false,
+      "items": [{"slug": "stress-release", "name": "Stress Release"}, {"slug": "nous-energy", "name": "Nous Energy"}, {"slug": "free-and-easy", "name": "Free and Easy"}]
+    },
+    "symptom-sleep": {
+      "label": "Sleep Difficulty",
+      "symptoms": ["Trouble falling asleep", "Waking during the night", "Unrefreshing sleep"],
+      "consult_recommended": false,
+      "items": [{"slug": "sleep-syntropy", "name": "Sleep Syntropy"}, {"slug": "neuro-magnesium", "name": "Neuro Magnesium"}]
+    },
+    "symptom-headache": {
+      "label": "Headache / Migraine",
+      "symptoms": ["Recurring head pain or pressure", "Light or sound sensitivity", "Nausea or visual disturbance with headaches"],
+      "consult_recommended": false,
+      "items": [{"slug": "neuro-magnesium", "name": "Neuro Magnesium"}, {"slug": "brain-cleanse", "name": "Brain Cleanse"}, {"slug": "stress-release", "name": "Stress Release"}]
+    },
+    "symptom-digestion": {
+      "label": "Digestive Discomfort / Bloating",
+      "symptoms": ["Bloating or gas", "Indigestion after meals", "Abdominal discomfort"],
+      "consult_recommended": false,
+      "items": [{"slug": "microbiome", "name": "Microbiome"}, {"slug": "fiber-cleanse", "name": "Fiber Cleanse"}]
+    },
+    "symptom-constipation": {
+      "label": "Constipation / Irregularity",
+      "symptoms": ["Infrequent bowel movements", "Hard or difficult stools", "Feeling incompletely emptied"],
+      "consult_recommended": false,
+      "items": [{"slug": "fiber-cleanse", "name": "Fiber Cleanse"}, {"slug": "microbiome", "name": "Microbiome"}]
+    },
+    "symptom-immune": {
+      "label": "Frequent Illness / Immune Support",
+      "symptoms": ["Frequent colds or infections", "Slow recovery from illness", "Recurrent immune challenges"],
+      "consult_recommended": false,
+      "items": [{"slug": "immune-modulation", "name": "Immune Modulation"}, {"slug": "vitamin-c-syntropy", "name": "Vitamin C Syntropy"}, {"slug": "glutathione-syntropy", "name": "Glutathione Syntropy"}]
+    },
+    "symptom-skin": {
+      "label": "Common Skin Concerns",
+      "symptoms": ["Dry or irritated skin", "Recurring blemishes or rashes", "Slow skin repair"],
+      "consult_recommended": false,
+      "items": [{"slug": "perfect-skin", "name": "Perfect Skin"}, {"slug": "glutathione-syntropy", "name": "Glutathione Syntropy"}, {"slug": "vitamin-c-syntropy", "name": "Vitamin C Syntropy"}]
+    },
+    "symptom-blood-sugar": {
+      "label": "Blood Sugar Swings / Cravings",
+      "symptoms": ["Energy crashes between meals", "Sugar or carbohydrate cravings", "Shakiness or irritability when hungry"],
+      "consult_recommended": false,
+      "items": [{"slug": "glucose-tolerance", "name": "Glucose Tolerance"}, {"slug": "fiber-cleanse", "name": "Fiber Cleanse"}]
     }
   },
   "broad_benefit_slugs": [

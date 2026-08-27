@@ -4,8 +4,8 @@
   <link rel="icon" type="image/png" href="/static/favicon.png">
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Eye Support Programs · Clinical Reference · Remedy Match</title>
-<meta name="description" content="Adjunctive eye-condition support protocols for practitioners: base items, dosing, alternatives, and stage-based modifiers for each condition.">
+<title>Condition & Symptom Support Programs · Remedy Match</title>
+<meta name="description" content="Adjunctive eye-condition and systemic-symptom support programs with remedies, dosing, alternatives, and stage-based modifiers.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;1,400&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
@@ -89,6 +89,7 @@
   }
 
   main.wrap{padding:8px 24px 72px}
+  .group-title{font-family:'Cormorant Garamond',serif;font-size:30px;font-weight:500;margin:28px 0 14px}
 
   .program-card{
     background:var(--panel-solid);
@@ -106,6 +107,8 @@
     margin:0 0 14px;
     color:var(--ink);
   }
+  .symptoms{margin:-4px 0 16px;color:var(--muted);font-size:14px}
+  .symptoms strong{color:var(--ink);font-weight:600}
   .consult-banner{
     display:flex;
     gap:10px;
@@ -183,8 +186,8 @@
 
 <header class="cover">
   <div class="eyebrow">Functional Formulations™ · Practitioner Reference</div>
-  <h1 class="title">Eye Support Programs · Clinical Reference</h1>
-  <p class="intro">Adjunctive protocols for practitioners, organized by condition, with dosing, alternatives, and stage-based adjustments.</p>
+  <h1 class="title">Condition & Symptom Support Programs</h1>
+  <p class="intro">Adjunctive programs organized by diagnosed eye conditions and standalone whole-body symptoms, with dosing, alternatives, and stage-based adjustments.</p>
   <p class="note">Ordering links go to the retail store.</p>
 </header>
 
@@ -305,6 +308,17 @@
     label.textContent = program.label || program.condition_key || '';
     card.appendChild(label);
 
+    var symptoms = program.symptoms || [];
+    if (symptoms.length) {
+      var symptomLine = document.createElement('p');
+      symptomLine.className = 'symptoms';
+      var symptomLabel = document.createElement('strong');
+      symptomLabel.textContent = 'Common symptoms: ';
+      symptomLine.appendChild(symptomLabel);
+      symptomLine.appendChild(document.createTextNode(symptoms.join(' · ')));
+      card.appendChild(symptomLine);
+    }
+
     if (program.consult_recommended) {
       var banner = document.createElement('div');
       banner.className = 'consult-banner';
@@ -341,9 +355,18 @@
       stateMessage('Programs are being finalized.');
       return;
     }
-    programs.forEach(function (program) {
-      container.appendChild(buildCard(program));
-    });
+    var eyePrograms = programs.filter(function (p) { return (p.condition_key || '').indexOf('symptom-') !== 0; });
+    var symptomPrograms = programs.filter(function (p) { return (p.condition_key || '').indexOf('symptom-') === 0; });
+    var eyeHeading = document.createElement('h2');
+    eyeHeading.className = 'group-title'; eyeHeading.textContent = 'Eye and vision conditions';
+    container.appendChild(eyeHeading);
+    eyePrograms.forEach(function (program) { container.appendChild(buildCard(program)); });
+    if (symptomPrograms.length) {
+      var symptomHeading = document.createElement('h2');
+      symptomHeading.className = 'group-title'; symptomHeading.textContent = 'Common systemic symptoms';
+      container.appendChild(symptomHeading);
+      symptomPrograms.forEach(function (program) { container.appendChild(buildCard(program)); });
+    }
   }
 
   fetch('/api/eye-programs')
