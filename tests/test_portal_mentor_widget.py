@@ -26,6 +26,15 @@ def test_continuous_voice_is_explicit_and_only_available_after_both_channels_act
     assert "u.onend=u.onerror" in MENTOR
     assert "scheduleListening()" in MENTOR
 
+def test_continuous_voice_recovers_from_transient_recognition_shutdowns():
+    assert "recognitionStarting" in MENTOR
+    assert "recognitionFatal" in MENTOR
+    assert "Math.min(250*Math.pow(2,restartAttempts++),4000)" in MENTOR
+    assert "catch(e){recognitionStarting=false;scheduleListening(true)}" in MENTOR
+    assert "else if(continuousOn){scheduleListening(true)}" in MENTOR
+    assert "if(continuousOn)scheduleListening();else paintMicActive(false)" in MENTOR
+    assert "if(continuousOn&&!speaking)scheduleListening()" in MENTOR
+
 def test_continuous_voice_is_never_remembered_and_resets_when_mentor_closes():
     assert 'localStorage.setItem("rm_mentor_continuous"' not in MENTOR
     assert 'localStorage.getItem("rm_mentor_continuous"' not in MENTOR
