@@ -1053,7 +1053,7 @@ def _match_card_keys(state, query_texts):
         add("practitioner")
     remedy_intent = (any(c in text for c in _REMEDY_MATCH_CUES)
                      or any(o in text for o in _outcome_cues()))
-    specific_product = any(k in text for k in _PRODUCT_KEYWORDS)
+    specific_product = (any(k in text for k in _PRODUCT_KEYWORDS) or remedy_intent)
     if remedy_intent:
         add("remedy_match")   # Socratic matcher → /begin/match (before generic browse)
     if specific_product:

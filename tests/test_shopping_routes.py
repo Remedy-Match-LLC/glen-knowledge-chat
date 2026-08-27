@@ -16,10 +16,10 @@ def test_generic_shop_language_surfaces_the_shopping_card_not_voice_tools():
     assert cards[0]["href"] == "/begin/match"
 
 
-def test_remedy_need_surfaces_one_guided_match_card_without_duplicate_destination():
+def test_remedy_need_surfaces_guided_match_before_product_browse():
     cards = begin_funnel.surface_for_chat({}, ["what remedy for dry eyes?"], "")
     assert [c["key"] for c in cards][0] == "remedy_match"
-    assert "product" not in [c["key"] for c in cards]
+    assert "product" in [c["key"] for c in cards]
     assert cards[0]["href"] == "/begin/match"
 
 

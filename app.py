@@ -27196,7 +27196,7 @@ def api_client_portal_checkout(token):
             product = _get_product(slug) if slug else None
             if (not slug or not product or product.get("inactive")
                     or product.get("info_only")):
-                return jsonify({"error": "That item isn't available to order."}), 400
+                return jsonify({"error": "That item isn't available to reorder."}), 400
             if not catalog_order and slug not in entitled:
                 return jsonify({"error": "That item isn't available to reorder."}), 400
             try:

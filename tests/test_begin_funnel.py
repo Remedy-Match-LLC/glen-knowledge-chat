@@ -346,7 +346,7 @@ def test_surface_remedy_match_is_product():
     st = {"awareness_stage": "unknown", "current_rung": "inquire", "unlocked_gates": []}
     cards = bf.surface(st, ["what helps with my insomnia"], "")
     assert _keys(cards)[0] == "remedy_match"
-    assert "product" not in _keys(cards)
+    assert "product" in _keys(cards)
     assert cards[0]["href"] == "/begin/match"
 
 
