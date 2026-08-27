@@ -94,40 +94,52 @@ def test_bootstrap_creates_distinct_registration_required_series(monkeypatch, tm
     def fake_create(token, **kwargs):
         calls.append(kwargs)
         meeting_id = "11111111111" if kwargs["topic"] == "Group Coaching" else "22222222222"
+        first = datetime.fromisoformat(kwargs["start_iso"])
         return {"meeting_id": meeting_id, "join_url": f"https://zoom.test/j/{meeting_id}",
                 "registration_url": f"https://zoom.test/register/{meeting_id}",
                 "start_url": "", "type": 8,
-                "occurrences": [{"occurrence_id": meeting_id + "-occ",
-                                  "start_time": kwargs["start_iso"]}]}
+                "occurrences": [
+                    {"occurrence_id": meeting_id + "-occ", "start_time": first.isoformat()},
+                    {"occurrence_id": meeting_id + "-next-occ",
+                     "start_time": (first + timedelta(days=7)).isoformat()}]}
     monkeypatch.setattr("dashboard.zoom.create_meeting", fake_create)
     def fake_get(token, meeting_id):
         start = next(c["start_iso"] for c in calls
                      if ((c["topic"] == "Group Coaching") == (meeting_id == "11111111111")))
+        first = datetime.fromisoformat(start)
         return {"meeting_id": meeting_id, "type": 8,
                 "registration_url": f"https://zoom.test/register/{meeting_id}",
                 "settings": {"approval_type": 0, "registration_type": 1},
-                "occurrences": [{"occurrence_id": meeting_id + "-occ",
-                                  "start_time": start}]}
+                "occurrences": [
+                    {"occurrence_id": meeting_id + "-occ", "start_time": first.isoformat()},
+                    {"occurrence_id": meeting_id + "-next-occ",
+                     "start_time": (first + timedelta(days=7)).isoformat()}]}
     monkeypatch.setattr("dashboard.zoom.get_meeting", fake_get)
     client = appmod.app.test_client()
     first = client.post(
         "/api/console/community-live/bootstrap", headers={"X-Console-Key": "secret"})
     assert first.status_code == 200
-    assert first.get_json()["created"] == ["group_coaching", "masterclass"]
+    assert first.get_json()["created"] == [
+        "group_coaching", "masterclass", "group_coaching", "masterclass"]
     assert len(calls) == 2
     assert all(call["registration_required"] is True for call in calls)
     assert all(call["recurrence"]["weekly_days"] == "4" for call in calls)
     with db.connect(str(path)) as cx:
-        group = cx.execute(
+        groups = cx.execute(
             "SELECT location,zoom_meeting_id,zoom_occurrence_id,zoom_registration_required "
             "FROM calendar_events"
-        ).fetchone()
-        master = cx.execute(
+            " ORDER BY start"
+        ).fetchall()
+        masters = cx.execute(
             "SELECT zoom_join_url,zoom_meeting_id,zoom_occurrence_id,registration_required "
             "FROM masterclass_events"
-        ).fetchone()
-    assert tuple(group) == ("Zoom", "11111111111", "11111111111-occ", 1)
-    assert tuple(master) == ("", "22222222222", "22222222222-occ", 1)
+            " ORDER BY start_ts"
+        ).fetchall()
+    assert len(groups) == len(masters) == 2
+    assert tuple(groups[0]) == ("Zoom", "11111111111", "11111111111-occ", 1)
+    assert tuple(groups[1]) == ("Zoom", "11111111111", "11111111111-next-occ", 1)
+    assert tuple(masters[0]) == ("", "22222222222", "22222222222-occ", 1)
+    assert tuple(masters[1]) == ("", "22222222222", "22222222222-next-occ", 1)
     second = client.post(
         "/api/console/community-live/bootstrap", headers={"X-Console-Key": "secret"})
     assert second.get_json()["created"] == []

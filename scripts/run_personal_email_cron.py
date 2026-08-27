@@ -167,9 +167,9 @@ def run_daily_piggybacks():
                     "X-Console-Key", CONSOLE_SECRET)
     _piggyback_post("repertoire-reseed", "/api/console/repertoire-reseed",
                     "X-Console-Key", CONSOLE_SECRET)
-    # Publish both Wednesday live events on Monday morning HST, giving members two
-    # days' notice. The endpoint creates Group Coaching and Wellness Whispering
-    # together and is idempotent, so retries cannot duplicate either occurrence.
+    # Publish this and next Wednesday's live events on Monday morning HST. Keeping
+    # a two-Wednesday horizon means the portal always shows at least next week's
+    # meetings. The endpoint is idempotent, so retries cannot duplicate occurrences.
     if monday_publish_due():
         _piggyback_post("weekly-live-bootstrap",
                         "/api/console/community-live/bootstrap",
