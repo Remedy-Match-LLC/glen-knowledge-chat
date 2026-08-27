@@ -7236,6 +7236,9 @@ async function sendChatMessage(){
               completed = true;
               chatHistory.push({role: "user", content: query});
               chatHistory.push({role: "assistant", content: assistantText});
+              if(assistantBubble && assistantText && window.TTS){
+                window.TTS.attachReply(assistantBubble, assistantText);
+              }
             }
           } catch(parseErr){ /* skip malformed SSE lines */ }
         }
@@ -7257,6 +7260,7 @@ async function sendChatMessage(){
 load();
 </script>
 <script src="/static/portal-mentor.js"></script>
+<script src="/static/tts-output.js"></script>
 <script type="module">
   // Element backdrop controller: shows the member's deficient-element Glendalf loop
   // + (opt-in) its ambient soundtrack. Reuses the fireside video-stage machinery.

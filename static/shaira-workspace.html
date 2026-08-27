@@ -1028,6 +1028,8 @@ async function sendGeneralAsk() {
           streamingEl.classList.remove('streaming');
           streamingEl.id = '';
           GENERAL_HISTORY.push({ role: 'assistant', content: accumulated });
+          const reply = streamingEl.querySelector('.msg-content');
+          if (reply && window.TTS) window.TTS.attachReply(reply, accumulated);
         }
       } catch { /* */ }
     }
@@ -1328,5 +1330,6 @@ document.addEventListener('keydown', e => {
   if (document.getElementById('justus-drawer').classList.contains('open')) closeDrawer();
 });
 </script>
+<script src="/static/tts-output.js"></script>
 </body>
 </html>

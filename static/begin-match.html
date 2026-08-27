@@ -302,7 +302,7 @@
       msgs.appendChild(div);
       if (role === 'assistant' && window.TTS) {
         const body = div.querySelector('.message-body');
-        if (body) window.TTS.attach(div, body.innerText);
+        if (body) window.TTS.attachReply(div, body.innerText);
       }
       msgs.scrollTop = msgs.scrollHeight;
     }
@@ -464,7 +464,7 @@
                 if (evt.session_id) sessionId = evt.session_id;
                 if (streamDiv) {
                   // Leave the streamed assistant text in place (already rendered).
-                  if (window.TTS && bodyDiv) window.TTS.attach(streamDiv, bodyDiv.innerText);
+                  if (window.TTS && bodyDiv) window.TTS.attachReply(streamDiv, bodyDiv.innerText);
                 }
                 history.push({ role: 'user', content: query });
                 if (accumulated) history.push({ role: 'assistant', content: accumulated });

@@ -1461,6 +1461,12 @@
     }
     msgs.appendChild(div);
 
+    if (role === 'assistant' && window.TTS) {
+      const bar = div.querySelector('.msg-actions') || div;
+      const body = div.querySelector('.message-body');
+      if (body) window.TTS.attachReply(bar, body.innerText);
+    }
+
     if (role === 'assistant' && chunksRetrieved !== undefined) {
       const meta = document.createElement('div');
       meta.className = 'meta-bar';
@@ -1812,5 +1818,6 @@
     return html;
   }
 </script>
+<script src="/static/tts-output.js"></script>
 </body>
 </html>

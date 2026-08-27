@@ -326,7 +326,7 @@ $("#mode-chat").addEventListener("click",()=>{ showChatAndForm(); $("#form-title
 
 // ---- chat ----
 function addMsg(role,text){ const m=document.createElement("div"); m.className="msg "+(role==="me"?"me":"bot"); m.textContent=text;
-  $("#chatlog").appendChild(m); $("#chatlog").scrollTop=$("#chatlog").scrollHeight; }
+  $("#chatlog").appendChild(m); $("#chatlog").scrollTop=$("#chatlog").scrollHeight; return m; }
 async function botTurn(first){
   $("#chat-send").disabled=true;
   try{
@@ -335,7 +335,7 @@ async function botTurn(first){
     const d=await r.json().catch(()=>({}));
     if(d.error){ addMsg("bot","(Our guide is unavailable right now — you can fill the form yourself below.)"); }
     else {
-      if(d.say){ S.chat.push({role:"assistant",content:d.say}); addMsg("bot",d.say); }
+      if(d.say){ S.chat.push({role:"assistant",content:d.say}); const reply=addMsg("bot",d.say); if(window.TTS) window.TTS.attachReply(reply,d.say); }
       applyUpdates(d.updates||{});
       if(d.done){ $("#chat-input").placeholder="All set — review and submit below."; }
     }
@@ -380,5 +380,6 @@ $("#submit-btn").addEventListener("click",submit);
 $("#print-btn").addEventListener("click",()=>window.print());
 $("#print-done").addEventListener("click",()=>window.print());
 </script>
+<script src="/static/tts-output.js"></script>
 </body>
 </html>

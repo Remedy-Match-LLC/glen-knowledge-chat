@@ -2793,6 +2793,7 @@ async function sendAI() {
     bubble.textContent = "Justus didn't respond — try again, or check the Render log if it keeps happening.";
   }
   _aiHistory.push({role:'assistant', content:accumulated});
+  if (!sawError && accumulated && window.TTS) window.TTS.attachReply(bubble, accumulated);
   _aiStreaming = false;
   document.getElementById('btn-send-ai').disabled = false;
   msgs.scrollTop = msgs.scrollHeight;
@@ -3480,5 +3481,6 @@ initKey();
 </dialog>
 
 <script src="/static/mic-input.js"></script>
+<script src="/static/tts-output.js"></script>
 </body>
 </html>
