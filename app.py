@@ -23838,6 +23838,123 @@ def api_portal_documents(token):
     return jsonify({"enabled": _PORTAL_HUB_ENABLED, "items": items})
 
 
+@app.route("/api/portal/<token>/clinical-record/intakes", methods=["GET"])
+def api_portal_historical_intakes(token):
+    """Return reviewed historical intake snapshots for the token owner only."""
+    from dashboard import client_portal as _cp
+    from dashboard import health_profile as _hp
+    from dashboard import historical_intakes as _hi
+    from dashboard import intake as _intake
+    with db.connect(LOG_DB) as cx:
+        cx.row_factory = sqlite3.Row
+        _cp.init_client_portal_table(cx)
+        portal = _portal_record_for(cx, token)
+        if not portal:
+            return jsonify({"error": "not found"}), 404
+        email = (portal.get("email") or "").strip().lower()
+        snapshots = _hi.list_visible_for_email(cx, email)
+        _intake.init_intake_table(cx)
+        current = (_intake.get_response(cx, email) or {}).get("answers") or {}
+    definitions = {
+        field["id"]: field
+        for section in _hp.curated_fields() for field in section["fields"]
+    }
+    items = []
+    for snapshot in snapshots:
+        fields = []
+        for field_id, value in snapshot["answers"].items():
+            definition = definitions.get(field_id)
+            if not definition:
+                continue
+            display_value = value
+            if definition.get("options"):
+                selected = next((opt for opt in definition["options"]
+                                 if str(opt.get("value")) == str(value)), None)
+                if selected:
+                    display_value = selected.get("label")
+            fields.append({
+                "id": field_id,
+                "label": definition.get("label") or field_id,
+                "value": display_value,
+                "copyable": field_id in _hp.EDITABLE_FIELD_IDS,
+                "differs_from_current": field_id in current and current.get(field_id) != value,
+            })
+        items.append({
+            "id": snapshot["id"], "form_date": snapshot["form_date"],
+            "form_name": snapshot["form_name"], "source_label": "Practice Better"
+            if snapshot["source_system"] == "practice-better" else "Imported record",
+            "fields": fields,
+        })
+    return jsonify({"enabled": _PORTAL_HUB_ENABLED, "items": items})
+
+
+@app.route("/api/portal/<token>/clinical-record/intakes/<int:snapshot_id>/copy-to-current",
+           methods=["POST"])
+def api_portal_historical_intake_copy(token, snapshot_id):
+    """Copy selected historical values into the token owner's current profile."""
+    from dashboard import client_portal as _cp
+    from dashboard import health_profile as _hp
+    from dashboard import historical_intakes as _hi
+    from dashboard import intake as _intake
+    body = request.get_json(silent=True) or {}
+    selected = body.get("fields") or []
+    if not isinstance(selected, list) or not selected:
+        return jsonify({"error": "fields required"}), 400
+    selected = {str(field).strip() for field in selected}
+    if not selected <= _hp.EDITABLE_FIELD_IDS:
+        return jsonify({"error": "non-editable field"}), 400
+    with _db_lock, db.connect(LOG_DB) as cx:
+        cx.row_factory = sqlite3.Row
+        _cp.init_client_portal_table(cx)
+        portal = _portal_record_for(cx, token)
+        if not portal:
+            return jsonify({"error": "not found"}), 404
+        email = (portal.get("email") or "").strip().lower()
+        snapshot = _hi.get_for_email(cx, snapshot_id, email, visible_only=True)
+        if not snapshot:
+            return jsonify({"error": "not found"}), 404
+        copied = {field: snapshot["answers"][field] for field in selected
+                  if field in snapshot["answers"]}
+        if not copied:
+            return jsonify({"error": "selected fields unavailable"}), 400
+        _intake.init_intake_table(cx)
+        _intake.save_self_edit(cx, email, copied, _hst_now().isoformat())
+    return jsonify({"ok": True, "copied_fields": sorted(copied)})
+
+
+@app.route("/api/console/client-historical-intakes", methods=["GET"])
+def api_console_historical_intakes():
+    guard = _console_guard()
+    if guard:
+        return jsonify(guard[0]), guard[1]
+    from dashboard import historical_intakes as _hi
+    email = (request.args.get("email") or "").strip().lower()
+    if not email:
+        return jsonify({"error": "email required"}), 400
+    with db.connect(LOG_DB) as cx:
+        items = _hi.list_for_email(cx, email)
+    return jsonify({"ok": True, "items": items})
+
+
+@app.route("/api/console/historical-intake/<int:snapshot_id>/review", methods=["POST"])
+def api_console_historical_intake_review(snapshot_id):
+    guard = _console_guard()
+    if guard:
+        return jsonify(guard[0]), guard[1]
+    from dashboard import historical_intakes as _hi
+    body = request.get_json(silent=True) or {}
+    approved = bool(body.get("approved"))
+    visible = bool(body.get("visible"))
+    with _db_lock, db.connect(LOG_DB) as cx:
+        changed = _hi.review(cx, snapshot_id, approved=approved, visible=visible,
+                             reviewed_by=body.get("reviewed_by") or "console")
+    if not changed:
+        return jsonify({"error": "not found"}), 404
+    return jsonify({"ok": True, "id": snapshot_id,
+                    "review_status": "approved" if approved else "rejected",
+                    "client_visible": bool(approved and visible)})
+
+
 # Content types safe to render `inline` in a browser at our own origin. Anything
 # not on this list (including any image/* the upload route happens to accept,
 # e.g. image/svg+xml or image/heic) is served as attachment/octet-stream instead —
