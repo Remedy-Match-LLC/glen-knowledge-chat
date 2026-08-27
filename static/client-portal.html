@@ -755,10 +755,14 @@
   <!-- My Records tile. Sibling of #app, filled by static/js/portal-documents.js's
        own fetch + mount, same pattern as the library tile above. -->
   <div id="portal-documents-mount"></div>
+  <!-- Reviewed imported intakes remain separate immutable snapshots; clients may
+       explicitly copy selected health fields into their current profile. -->
+  <div id="portal-historical-intakes-mount"></div>
 
 <script src="/static/entity-ref.js"></script>
 <script src="/static/js/portal-library.js"></script>
 <script src="/static/js/portal-documents.js"></script>
+<script src="/static/js/portal-historical-intakes.js"></script>
 <script src="/static/js/portal-onboarding.js?v=20260820-starter-remedies"></script>
 <script>
 // The last path segment is either an emailed portal token or the literal "me"
