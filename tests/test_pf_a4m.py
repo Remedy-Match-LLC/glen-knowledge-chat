@@ -51,6 +51,7 @@ from scrapers.practitioner_finder.a4m import (  # noqa: E402
     _has_fellowship,
     _is_provider,
     _normalize_website,
+    _specialties,
 )
 
 
@@ -128,10 +129,21 @@ def test_all_rows_carry_locked_invariants():
     for r in rows:
         assert r.tier == "org_member"
         assert r.source_org == "A4M"
-        assert r.specialties == ["anti_aging_regenerative", "holistic_health"]
+        assert r.specialties[:2] == ["anti_aging_regenerative", "holistic_health"]
         assert r.source_url  # stable, present
         assert r.photo_url is None  # portal-managed
         assert r.bio is None
+
+
+def test_compounding_pharmacy_property_adds_searchable_specialty():
+    assert _specialties({"properties": [{"name": "Compounding Pharmacies"}]}) == [
+        "anti_aging_regenerative", "holistic_health", "compounding_pharmacy",
+    ]
+    assert _specialties({"properties": [{"name": "A4M Membership"}]}) == [
+        "anti_aging_regenerative", "holistic_health",
+    ]
+    pharmacy = next(r for r in _rows() if r.name == "Josie Ross")
+    assert "compounding_pharmacy" in pharmacy.specialties
 
 
 def test_source_url_is_unique_per_practitioner():

@@ -155,6 +155,8 @@ US_WIDE_RADIUS_MILES = 3000
 PROVIDER_TYPE = "fd6334c22b25d2dbd8b4f0ab910395fd"
 
 LOCKED_SPECIALTIES = ["anti_aging_regenerative", "holistic_health"]
+COMPOUNDING_PHARMACY_SPECIALTY = "compounding_pharmacy"
+_COMPOUNDING_PHARMACY_PROPERTY = "compounding pharmacies"
 
 # Fellowship marker: the bare token FAARM or FAARFM, on word boundaries so
 # we don't false-match the sibling fellowships FAAMFM / FAAMM. Case-
@@ -408,6 +410,15 @@ def _property_names(rec: dict) -> list[str]:
     return out
 
 
+def _specialties(rec: dict) -> list[str]:
+    """Base A4M specialties plus the directory's pharmacy classification."""
+    specialties = list(LOCKED_SPECIALTIES)
+    property_names = {name.casefold() for name in _property_names(rec)}
+    if _COMPOUNDING_PHARMACY_PROPERTY in property_names:
+        specialties.append(COMPOUNDING_PHARMACY_SPECIALTY)
+    return specialties
+
+
 def _has_fellowship(rec: dict) -> bool:
     """LOCKED: True iff FAARM or FAARFM appears (word-bounded) in the
     ``degrees`` string OR any ``properties[].name``. ABAARM / ABAAHP /
@@ -508,7 +519,7 @@ def _record_to_row(rec: dict) -> Optional[NormalizedPractitionerRow]:
     return NormalizedPractitionerRow(
         tier="org_member",
         name=name,
-        specialties=list(LOCKED_SPECIALTIES),
+        specialties=_specialties(rec),
         source_org="A4M",
         source_url=source_url,
         fellowship_level=_has_fellowship(rec),
