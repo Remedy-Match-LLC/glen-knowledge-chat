@@ -90,6 +90,11 @@ def _has_e4l_account(cx, email):
         return False
 
 
+def e4l_href(cx, email, signup_url="https://truly.vip/E4L"):
+    """Route a known E4L client to sign-in; only new clients see signup."""
+    return "https://portal.e4l.com" if _has_e4l_account(cx, email) else signup_url
+
+
 def _has_source(cx, email, source_key):
     # recommendation_events.product_sources(cx, email) -> list of
     # {"product_key":..., "sources": [{"source": sk, ...}, ...]}
@@ -164,11 +169,7 @@ def build_status(cx, email):
         return d
 
     has_scan = _has_scan(cx, email)
-    voice_href = (
-        "https://portal.e4l.com"
-        if _has_e4l_account(cx, email)
-        else "https://truly.vip/E4L"
-    )
+    voice_href = e4l_href(cx, email)
     intake_done = _safe(intake.is_submitted, cx, email)
     intake_in_progress = False
     try:

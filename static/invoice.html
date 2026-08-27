@@ -545,7 +545,8 @@ async function sendChat(){
   $('chatlog').innerHTML += '<div class="u">You: '+esc(m)+'</div>'; HIST.push({role:'user',content:m});
   const r=await fetch(API+'/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:m,history:HIST})});
   const j=await r.json(); if(!j.ok){return;}
-  $('chatlog').innerHTML += '<div class="a">'+esc(j.reply||'')+'</div>'; HIST.push({role:'assistant',content:j.reply||''});
+  const reply=document.createElement('div'); reply.className='a'; reply.textContent=j.reply||''; $('chatlog').appendChild(reply); HIST.push({role:'assistant',content:j.reply||''});
+  if(window.TTS) window.TTS.attachReply(reply,j.reply||'');
   $('chatlog').scrollTop=$('chatlog').scrollHeight;
   $('sugg').innerHTML = (j.suggestions||[]).map(s=>'<button class="ghost" onclick="addBySlug(\''+s.slug+'\')">+ '+esc(s.name)+' '+money(s.price_cents)+'</button>').join('');
 }
@@ -553,5 +554,6 @@ function addBySlug(slug){ const p=CATALOG.find(x=>x.slug===slug)|| {slug,name:sl
 function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 load();
 </script>
+<script src="/static/tts-output.js"></script>
 </body>
 </html>

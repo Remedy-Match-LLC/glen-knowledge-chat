@@ -1189,6 +1189,7 @@
       el.textContent = text;
       document.getElementById('scoped-chat-log').appendChild(el);
       document.getElementById('scoped-chat-log').scrollTop = 99999;
+      return el;
     }
 
     function scopedChatAppendBot(text, suggestions) {
@@ -1213,6 +1214,7 @@
       }
       document.getElementById('scoped-chat-log').appendChild(el);
       document.getElementById('scoped-chat-log').scrollTop = 99999;
+      return el;
     }
 
     window.scopedChatSend = function () {
@@ -1245,7 +1247,8 @@
           return;
         }
         chatHistory.push({role: 'assistant', content: data.reply});
-        scopedChatAppendBot(data.reply, data.suggestions || []);
+        var replyEl = scopedChatAppendBot(data.reply, data.suggestions || []);
+        if (replyEl && window.TTS) window.TTS.attachReply(replyEl, data.reply);
       })
       .catch(function () {
         sendBtn.disabled = false;
@@ -1293,5 +1296,6 @@
 
 })();
 </script>
+<script src="/static/tts-output.js"></script>
 </body>
 </html>

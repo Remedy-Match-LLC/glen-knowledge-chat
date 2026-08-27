@@ -13,6 +13,12 @@ def test_portal_shell_cart_sits_before_my_path_and_is_portal_only():
     assert '/^\\/portal\\/' in SHELL
 
 
+def test_portal_home_opens_the_hub_instead_of_the_login_page():
+    assert 'typeof window.showTab === "function"' in SHELL
+    assert 'window.showTab("hub")' in SHELL
+    assert 'location.href = "/"' in SHELL
+
+
 def test_header_cart_opens_dedicated_portal_cart_not_embedded_checkout():
     assert 'window.openPortalCart(true)' in SHELL
     assert 'window.openPortalOrderBasket(true)' not in SHELL
@@ -45,3 +51,19 @@ def test_header_cart_count_tracks_shared_remedy_basket():
     assert 'cartBadge.hidden = count === 0' in SHELL
     assert 'window.setPortalHeaderCartCount(window.__portalCartCount || 0)' in SHELL
     assert 'window.__portalCartCount = (d && d.count) || 0' in PORTAL
+
+
+def test_header_uses_button_highlights_instead_of_the_fuzzy_rewards_orb():
+    css = (ROOT / "static" / "shell.css").read_text()
+    assert 'js-orb' not in SHELL
+    assert 'js-orb' not in css
+    assert 'walletBtn.setAttribute("data-glow", "0")' in SHELL
+    assert '.js-mypath-btn[data-glow="3"]' in css
+
+
+def test_header_controls_show_active_and_content_states():
+    css = (ROOT / "static" / "shell.css").read_text()
+    assert 'function setButtonActive(button, active)' in SHELL
+    assert 'cartBtn.classList.toggle("js-header-active", count > 0)' in SHELL
+    assert 'setButtonActive(mypathBtn, drawer.classList.contains("open"))' in SHELL
+    assert '#journey-shell .js-header-active' in css

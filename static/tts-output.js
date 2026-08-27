@@ -115,5 +115,13 @@
     return btn;
   }
 
-  window.TTS = { attach: attach, attachAndSpeak: attachAndSpeak, stop: stopActive };
+  // Speak new replies only after the visitor has interacted with the page. This
+  // avoids narrating restored history (and paying for audio nobody can hear)
+  // while still making every live chat reply use Dr. Glen's ElevenLabs voice.
+  function attachReply(container, text) {
+    var activated = !!(navigator.userActivation && navigator.userActivation.hasBeenActive);
+    return activated ? attachAndSpeak(container, text) : attach(container, text);
+  }
+
+  window.TTS = { attach: attach, attachAndSpeak: attachAndSpeak, attachReply: attachReply, stop: stopActive };
 })();

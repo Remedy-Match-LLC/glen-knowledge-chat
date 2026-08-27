@@ -5969,6 +5969,45 @@ def _email_remedy_match_once(email, name, session_id, match):
         raise
 
 
+@app.route("/begin/match/e4l-link")
+def begin_match_e4l_link():
+    """Send the signed-in member to E4L login when their account exists."""
+    import urllib.parse as _up
+
+    ref = (request.cookies.get("rm_ref") or request.args.get("ref")
+           or "remedy-match").strip()[:100]
+    signup_url = (
+        "https://truly.vip/E4L?utm_source=" + _up.quote_plus(ref)
+        + "&utm_medium=affiliate&utm_campaign=begin-match-e4l"
+    )
+    auth_user = get_authenticated_user(request)
+    email = ((auth_user or {}).get("email") or "").strip().lower()
+
+    # A member may be signed into the client portal rather than the main site.
+    if not email:
+        try:
+            from dashboard import portal_identity as _pi
+            sess = request.cookies.get("rm_portal_session", "")
+            if sess:
+                with _db_lock, db.connect(LOG_DB) as cx:
+                    ident = _pi.identity_from_session(cx, sess)
+                email = ((ident.email if ident else "") or "").strip().lower()
+        except Exception:
+            email = ""
+
+    href = signup_url
+    if email:
+        try:
+            from dashboard import portal_onboarding as _portal_onboarding
+            with _db_lock, db.connect(LOG_DB) as cx:
+                href = _portal_onboarding.e4l_href(cx, email, signup_url)
+        except Exception as e:
+            print(f"[match] E4L account lookup skipped: {e!r}", flush=True)
+    resp = redirect(href, code=302)
+    resp.headers["Cache-Control"] = "no-store"
+    return resp
+
+
 @app.route("/begin/match/chat", methods=["POST", "OPTIONS"])
 def begin_match_chat():
     if request.method == "OPTIONS":
@@ -5979,6 +6018,11 @@ def begin_match_chat():
     for_whom = (data.get("for_whom") or "").strip().lower()   # "me" | "someone-else" | ""
     name    = (data.get("name") or "").strip()
     email   = (data.get("email") or "").strip().lower()
+    subject_name = (data.get("subject_name") or "").strip()
+    # This third-party identity is reference-only: never use it for contact,
+    # membership, personalization, chat logs, or memory.
+    subject_email = (data.get("subject_email") or "").strip().lower()
+    ref_slug = (request.cookies.get("rm_ref") or (data.get("ref") or "")).strip()
     session_id = (request.cookies.get("amg_session")
                   or (data.get("session_id") or "").strip() or uuid.uuid4().hex)
     auth_user = get_authenticated_user(request)
@@ -5997,6 +6041,20 @@ def begin_match_chat():
         return _blocked
     if not query:
         return jsonify({"error": "Empty query"}), 400
+
+    # Preserve approved-affiliate attribution for the recipient without
+    # creating an account or contacting them. The helper is idempotent.
+    if for_whom == "someone-else" and subject_email and ref_slug:
+        try:
+            subject_parts = subject_name.split(None, 1)
+            _capture_concierge_referral(
+                subject_email,
+                subject_parts[0] if subject_parts else "",
+                subject_parts[1] if len(subject_parts) > 1 else "",
+                ref_slug,
+            )
+        except Exception as e:
+            print(f"[match] recipient referral capture skipped: {e!r}", flush=True)
 
     images_consented = bool(data.get("images_consented"))
     raw_images = data.get("images") or []
@@ -6048,7 +6106,11 @@ def begin_match_chat():
 
         whom_line = {
             "me": "This match is FOR THE PERSON THEMSELVES.",
-            "someone-else": "This match is FOR SOMEONE ELSE — do not apply the chatter's personal data.",
+            "someone-else": (
+                "This match is FOR SOMEONE ELSE — do not apply the chatter's personal data. "
+                f"The recipient's name is {subject_name or 'not provided'}. "
+                "Use the recipient's name naturally. Never suggest that we will contact them."
+            ),
         }.get(for_whom, "The person hasn't said who this is for — gently confirm it's for them or someone else.")
 
         # Glen's recommended off-catalog tools/products (trusted-links.json) — give
@@ -24731,6 +24793,89 @@ def api_portal_scene_pref(token):
             return jsonify({"error": "not found"}), 404
         _mes.set_override(cx, (portal.get("email") or "").strip().lower(), saved)
     return jsonify({"ok": True, "element": saved})
+
+
+@app.route("/api/portal/<token>/five-element-voice", methods=["POST"])
+def api_portal_five_element_voice(token):
+    """Analyze a portal member's short voice reflection.
+
+    The portal token (or the authenticated ``/portal/me`` session) supplies the
+    identity. Audio is used only for transcription and is deleted immediately;
+    the member's five-element score vector is retained to drive their portal
+    experience. This is deliberately separate from the public Voice Journal,
+    whose historical records are not member scoped.
+    """
+    from dashboard import client_portal as _cp
+    from dashboard import member_element_state as _mes
+    from dashboard.tcm_analysis import _haiku_analyze
+    from journal_blueprint import _lexical_features, _whisper_transcribe
+    import tempfile as _tempfile
+
+    with db.connect(LOG_DB) as cx:
+        _cp.init_client_portal_table(cx)
+        portal = _portal_record_for(cx, token)
+    if not portal:
+        return jsonify({"error": "not found"}), 404
+
+    audio = request.files.get("audio")
+    if not audio:
+        return jsonify({"error": "missing audio file"}), 400
+    try:
+        duration = float(request.form.get("duration_seconds", 0) or 0)
+    except (TypeError, ValueError):
+        return jsonify({"error": "invalid recording duration"}), 400
+    if duration < 3 or duration > 95:
+        return jsonify({"error": "recording must be between 3 and 90 seconds"}), 400
+
+    # Keep this endpoint's practical ceiling far below the app-wide upload cap.
+    raw = audio.read(12 * 1024 * 1024 + 1)
+    if len(raw) > 12 * 1024 * 1024:
+        return jsonify({"error": "recording is too large"}), 413
+    suffix = Path(audio.filename or "voice.webm").suffix or ".webm"
+    tmp_name = None
+    try:
+        with _tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tf:
+            tf.write(raw)
+            tmp_name = tf.name
+        whisper = _whisper_transcribe(tmp_name)
+    except Exception as exc:
+        print(f"[portal-five-element] transcription failed: {exc!r}", flush=True)
+        return jsonify({"error": "We couldn't hear that recording. Please try again."}), 502
+    finally:
+        if tmp_name:
+            try:
+                os.unlink(tmp_name)
+            except OSError:
+                pass
+
+    transcript = (whisper.get("text") or "").strip()
+    words = whisper.get("words") or []
+    if not transcript:
+        return jsonify({"error": "No speech was detected. Please try again."}), 422
+    lexical = _lexical_features(words, duration)
+    try:
+        analysis = _haiku_analyze(transcript, lexical)
+    except Exception as exc:
+        print(f"[portal-five-element] analysis failed: {exc!r}", flush=True)
+        return jsonify({"error": "Your recording was heard, but the analysis could not finish. Please try again."}), 502
+
+    elements = analysis.get("elements") or {}
+    if not elements:
+        return jsonify({"error": "The analysis did not return an element pattern."}), 502
+    email = (portal.get("email") or "").strip().lower()
+    with _db_lock, db.connect(LOG_DB) as cx:
+        state = _mes.upsert(cx, email, elements, source="portal_voice")
+    return jsonify({
+        "ok": True,
+        "element_scores": elements,
+        "dominant_element": state.get("dominant_element") if state else None,
+        "element_to_nourish": state.get("deficient_element") if state else None,
+        "top_emotions": sorted(
+            (analysis.get("emotions") or {}).items(), key=lambda item: item[1], reverse=True
+        )[:3],
+        "top_themes": analysis.get("top_themes") or [],
+        "transcript": transcript,
+    })
 
 
 @app.route("/api/portal/<token>/open", methods=["POST"])
@@ -47307,6 +47452,35 @@ def console_client_invoice():
         "pay_status": r["pay"], "total_dollars": f"{(r['total'] or 0) / 100:.2f}",
         "physical_units": _order_physical_units({"items": items}),
         "edit_url": edit_url, "lines": lines}, **biofield_paid})
+
+
+@app.route("/api/console/client-recommended-products", methods=["GET"])
+def console_client_recommended_products():
+    """Return the latest Biofield products as a read-only invoice-editor seed."""
+    actor = _bos_actor()
+    if actor is None:
+        return jsonify({"ok": False, "error": "unauthorized"}), 401
+    email = (request.args.get("email") or "").strip().lower()
+    if not email:
+        return jsonify({"ok": True, "products": [], "scan_date": ""})
+    from dashboard import portal_biofield_reports as _pbr
+    with _db_lock, db.connect(LOG_DB) as cx:
+        _pbr.init_table(cx)
+        report = _pbr.latest_report(cx, email)
+    content = (report or {}).get("content") or {}
+    products, seen = [], set()
+    for item in content.get("reorder_items") or []:
+        slug = (item.get("slug") or "").strip()
+        if not slug or slug in seen:
+            continue
+        seen.add(slug)
+        try:
+            qty = max(1, int(item.get("qty") or 1))
+        except (TypeError, ValueError):
+            qty = 1
+        products.append({"slug": slug, "qty": qty, "source": "biofield"})
+    return jsonify({"ok": True, "products": products,
+                    "scan_date": (report or {}).get("scan_date") or ""})
 
 
 @app.route("/api/console/client-360", methods=["GET"])

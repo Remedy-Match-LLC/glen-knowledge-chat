@@ -77,6 +77,25 @@ def test_client_invoice_endpoint(monkeypatch, tmp_path):
     assert r2["ok"] and r2["order"] is None
 
 
+def test_client_recommended_products_endpoint(monkeypatch, tmp_path):
+    db = _auth(monkeypatch, tmp_path)
+    cx = sqlite3.connect(db)
+    from dashboard import portal_biofield_reports as reports
+    reports.init_table(cx)
+    reports.upsert_report(cx, "pt@x.com", "2026-08-21", "scan-1", {
+        "reorder_items": [
+            {"slug": "brain-boost", "qty": 2}, {"slug": "microbiome", "qty": 1},
+            {"slug": "brain-boost", "qty": 1}, {"slug": "", "qty": 4},
+        ]}, "confirmed")
+    cx.close()
+    j = app.app.test_client().get(
+        "/api/console/client-recommended-products?email=pt@x.com&key=sek").get_json()
+    assert j == {"ok": True, "scan_date": "2026-08-21", "products": [
+        {"slug": "brain-boost", "qty": 2, "source": "biofield"},
+        {"slug": "microbiome", "qty": 1, "source": "biofield"},
+    ]}
+
+
 def _mark_paid(db, oid):
     cx = sqlite3.connect(db)
     cx.execute("UPDATE orders SET pay_status='paid', status='done', paid_at=? WHERE id=?",

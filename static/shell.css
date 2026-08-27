@@ -11,10 +11,16 @@ body.js-shell-on { padding-top: var(--jshell-h); }
 #journey-shell button, #journey-shell .js-mypath-btn, #journey-shell .js-mnav a {
   box-sizing: border-box; min-height: 30px; padding: 5px 10px; border: 1px solid var(--border, #3a4a3f);
   border-radius: 999px; background: transparent; color: var(--text, #cfc9b8);
-  font: 600 12px/1.2 system-ui, sans-serif; text-decoration: none; cursor: pointer; white-space: nowrap; }
+  font: 600 12px/1.2 system-ui, sans-serif; text-decoration: none; cursor: pointer; white-space: nowrap;
+  transition: color .25s, border-color .25s, background .25s, box-shadow .25s; }
 #journey-shell button:hover, #journey-shell .js-mypath-btn:hover, #journey-shell .js-mnav a:hover {
   background: rgba(127,127,127,.16); }
 #journey-shell .js-home, #journey-shell .js-back, #journey-shell .js-theme { color: var(--text, #cfc9b8); }
+#journey-shell .js-header-active,
+#journey-shell .js-mypath-btn[aria-expanded="true"] {
+  color: var(--gold,#d4a843); border-color: var(--gold,#d4a843);
+  background: color-mix(in srgb, var(--gold,#d4a843) 12%, transparent);
+  box-shadow: 0 0 10px 1px color-mix(in srgb, var(--gold,#d4a843) 58%, transparent); }
 #journey-shell .js-path { flex: 1; min-width: 0; display: flex; align-items: center; justify-content: center; gap: 5px;
   overflow: hidden; cursor: pointer; }
 .js-land { display: inline-flex; align-items: center; justify-content: center; color: var(--muted, #9aa08f); opacity: .72; }
@@ -76,13 +82,14 @@ body.js-shell-on { padding-top: var(--jshell-h); }
   .js-count { display: inline; }
 }
 
-/* 1b reward layer */
-#journey-shell .js-orb { width: 26px; height: 26px; border-radius: 50%; margin-left: 4px;
-  background: radial-gradient(circle at 50% 40%, var(--gold,#d4a843), transparent 70%);
-  box-shadow: 0 0 0 0 var(--gold,#d4a843); opacity: .4; transition: opacity .4s, box-shadow .4s; }
-#journey-shell .js-orb[data-lit="1"] { opacity: .7; box-shadow: 0 0 8px 1px var(--gold,#d4a843); }
-#journey-shell .js-orb[data-lit="2"] { opacity: .85; box-shadow: 0 0 12px 2px var(--gold,#d4a843); }
-#journey-shell .js-orb[data-lit="3"] { opacity: 1; box-shadow: 0 0 18px 3px var(--gold,#d4a843); }
+/* 1b reward layer: earned offers illuminate the useful control itself. */
+#journey-shell .js-mypath-btn[data-glow="1"] { border-color: var(--gold,#d4a843);
+  box-shadow: 0 0 7px 1px color-mix(in srgb, var(--gold,#d4a843) 45%, transparent); }
+#journey-shell .js-mypath-btn[data-glow="2"] { color: var(--gold,#d4a843); border-color: var(--gold,#d4a843);
+  box-shadow: 0 0 11px 2px color-mix(in srgb, var(--gold,#d4a843) 60%, transparent); }
+#journey-shell .js-mypath-btn[data-glow="3"] { color: var(--gold,#d4a843); border-color: var(--gold,#d4a843);
+  background: color-mix(in srgb, var(--gold,#d4a843) 12%, transparent);
+  box-shadow: 0 0 16px 3px color-mix(in srgb, var(--gold,#d4a843) 72%, transparent); }
 .js-pav-featured { margin: 4px 0 8px; padding: 8px; border-radius: 8px;
   background: var(--surface-2,#162318); }
 .js-pav-featured .js-fname { font-weight: 600; color: var(--gold,#d4a843); }

@@ -9,6 +9,20 @@
  * overlaps. One source of truth — every console page includes this same file.
  */
 (function () {
+  function voiceReply(container, text) {
+    if (!text) return;
+    if (window.TTS) { window.TTS.attachReply(container, text); return; }
+    var script = document.querySelector('script[data-justus-tts]');
+    if (!script) {
+      script = document.createElement('script');
+      script.src = '/static/tts-output.js';
+      script.dataset.justusTts = '1';
+      document.head.appendChild(script);
+    }
+    script.addEventListener('load', function () {
+      if (window.TTS) window.TTS.attachReply(container, text);
+    }, { once: true });
+  }
   'use strict';
   if (window.__justusWidgetLoaded) return;
   window.__justusWidgetLoaded = true;
@@ -240,7 +254,10 @@
     } catch (e) {
       bubble.textContent = 'Error: ' + e.message;
     }
-    if (acc) history.push({ role: 'assistant', content: acc });
+    if (acc) {
+      history.push({ role: 'assistant', content: acc });
+      voiceReply(bubble, acc);
+    }
     streaming = false; sendBtn.disabled = false;
     messagesEl.scrollTop = messagesEl.scrollHeight;
   }

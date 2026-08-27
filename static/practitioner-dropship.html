@@ -693,6 +693,7 @@ loadPortalData();
     el.textContent = text;
     document.getElementById('scoped-chat-log').appendChild(el);
     scopedChatScrollBottom();
+    return el;
   }
 
   function scopedChatAppendBot(text, suggestions) {
@@ -713,6 +714,7 @@ loadPortalData();
     }
     document.getElementById('scoped-chat-log').appendChild(el);
     scopedChatScrollBottom();
+    return el;
   }
 
   function scopedChatScrollBottom() {
@@ -745,7 +747,8 @@ loadPortalData();
         return;
       }
       chatHistory.push({role: 'assistant', content: data.reply});
-      scopedChatAppendBot(data.reply, data.suggestions || []);
+      var replyEl = scopedChatAppendBot(data.reply, data.suggestions || []);
+      if (replyEl && window.TTS) window.TTS.attachReply(replyEl, data.reply);
     })
     .catch(function () {
       sendBtn.disabled = false;
@@ -759,5 +762,6 @@ loadPortalData();
   scopedChatGreet();
 })();
 </script>
+<script src="/static/tts-output.js"></script>
 </body>
 </html>

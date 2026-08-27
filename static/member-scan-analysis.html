@@ -173,6 +173,7 @@
       .then(function(res){
         btn.disabled=false;
         t.textContent = res.answer || 'Sorry, that did not go through. Please try again.';
+        if(window.TTS) window.TTS.attachReply(t, t.textContent);
         if(res.upsell){
           addMsg('ai','Want answers grounded in your own scan history? '+
             '<a href="/begin" style="color:var(--gold)">Unlock your full analysis</a>.', true);
@@ -184,5 +185,6 @@
   input.addEventListener('keydown', function(e){ if(e.key==='Enter') send(); });
 })();
 </script>
+<script src="/static/tts-output.js"></script>
 </body>
 </html>
