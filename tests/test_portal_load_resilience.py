@@ -44,6 +44,26 @@ def test_shared_portal_hashes_route_to_real_panels_and_cards():
     assert 'id="portal-intake-card"' in HTML
 
 
+def test_hub_restores_selected_card_after_background_render():
+    """A hub-only portal must not bounce back home after an async refresh."""
+    assert "function showTab(name, options)" in HTML
+    assert "if(options.persist !== false)" in HTML
+    assert "showTab('hub', {persist:false})" in HTML
+    assert "if (_wrapPanels) {" in HTML
+    restore = HTML.index("if (_wrapPanels) {")
+    scan_only = HTML.index("if (d.scan_history_enabled) {", restore)
+    selected = HTML.index('sessionStorage.getItem("rm_portal_tab")', restore)
+    show = HTML.index("showTab(wantTab);", selected)
+    assert restore < selected < show < scan_only
+
+
+def test_background_refresh_does_not_replace_an_open_card():
+    assert "function portalDetailPanelIsActive()" in HTML
+    assert "options.preserveActivePanel && portalDetailPanelIsActive()" in HTML
+    assert HTML.count("options.preserveActivePanel && portalDetailPanelIsActive()") == 2
+    assert HTML.count("preserveActiveIntake:true, preserveActivePanel:true") == 3
+
+
 def test_intake_panel_is_rendered_for_hub_and_legacy_portals():
     # One panel lives in the shared wrapped-panel path (hub or scan history),
     # and the other is the legacy fallback when neither feature is enabled.
