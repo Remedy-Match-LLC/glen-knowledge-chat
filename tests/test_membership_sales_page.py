@@ -12,7 +12,8 @@ def test_membership_page_lists_individual_household_and_biofield_benefits():
     assert "Individual membership" in text
     assert "Household membership" in text
     assert "$1,497/yr" in text
-    assert "Automated Biofield Analysis" in text
+    assert "Remedy Match" in text
+    assert "Two levels of personalized guidance" in text
     assert "Included with membership" in text
     assert "Personal Causal Biofield Analysis" in text
     assert "$200 for active members" in text
