@@ -1,6 +1,7 @@
 # tests/test_practitioner_site_routes.py
 """Routes for the practitioner site at myhealingoasis.com/<slug>."""
 import os
+import pathlib
 import sqlite3
 
 import pytest
@@ -149,3 +150,11 @@ def test_alias_redirect_sets_cookie_to_canonical_not_alias(client):
                     follow_redirects=True)
     assert r.status_code == 200
     assert "rm_ref=mary-boyd" in r.headers.get("Set-Cookie", "")
+
+
+def test_settings_page_shows_the_current_storefront_url():
+    """The settings copy must not advertise the retired illtowell.com/p/ form."""
+    html = pathlib.Path(
+        appmod.STATIC, "practitioner-settings.html").read_text(encoding="utf-8")
+    assert "illtowell.com/p/" not in html
+    assert "myhealingoasis.com/" in html
