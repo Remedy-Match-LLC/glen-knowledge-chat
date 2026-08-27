@@ -30155,13 +30155,27 @@ def api_console_portal_links():
     return jsonify({"ok": True, "portals": portals})
 
 
-@app.route("/api/console/client-photo", methods=["POST"])
+@app.route("/api/console/client-photo", methods=["GET", "POST"])
 def api_console_client_photo():
     """Store a client's photo (base64), keyed by email. Pushed from the local intake
     app's upload or a console upload. Console-key gated. See client-photos Slice 1."""
     if not _portal_console_ok():
         return jsonify({"error": "unauthorized"}), 401
     import base64 as _b64
+    if request.method == "GET":
+        email = (request.args.get("email") or "").strip().lower()
+        if not email:
+            return jsonify({"ok": False, "error": "email required"}), 400
+        from dashboard import client_photos as _cph
+        with db.connect(LOG_DB) as cx:
+            rec = _cph.get(cx, email)
+        if not rec:
+            return jsonify({"ok": False, "error": "not found"}), 404
+        return jsonify({"ok": True, "email": email,
+                        "image": _b64.b64encode(rec["blob"]).decode(),
+                        "content_type": rec["content_type"], "source": rec["source"],
+                        "updated_at": rec["updated_at"], "focus_x": rec["focus_x"],
+                        "focus_y": rec["focus_y"], "zoom": rec["zoom"]})
     body = request.get_json(silent=True) or {}
     email = (body.get("email") or "").strip().lower()
     img_b64 = body.get("image") or ""

@@ -71,6 +71,26 @@ def test_client_photo_framing_returns_saved_face_focus(tmp_path):
     assert r.get_json() == {"ok": True, "focus_x": 51.0, "focus_y": 27.0, "zoom": 1.2}
 
 
+def test_client_photo_pulls_portal_image_and_framing_into_local_store(tmp_path):
+    from dashboard import client_photos
+    db = str(tmp_path / "chat_log.db")
+    calls = []
+    def fetch(email):
+        calls.append(email)
+        return {"blob": b"new-portal-photo", "content_type": "image/webp",
+                "source": "portal-self", "focus_x": 47, "focus_y": 29, "zoom": 1.8}
+    client = create_app(db, fetch_client_photo=fetch).test_client()
+
+    framing = client.get("/client-photo-framing/pam@example.com").get_json()
+    photo = client.get("/client-photo/pam@example.com")
+
+    assert framing == {"ok": True, "focus_x": 47.0, "focus_y": 29.0, "zoom": 1.8}
+    assert photo.data == b"new-portal-photo" and photo.mimetype == "image/webp"
+    assert calls == ["pam@example.com"]  # paired framing/image requests share refresh
+    with sqlite3.connect(db) as cx:
+        assert client_photos.get(cx, "pam@example.com")["source"] == "portal-self"
+
+
 def test_view_portal_redirects_to_clients_stable_portal(tmp_path):
     from dashboard.biofield_authoring import init_auth_tables, create_test
     db = str(tmp_path / "chat_log.db")
