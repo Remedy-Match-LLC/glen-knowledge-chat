@@ -1980,6 +1980,37 @@ def _alias_price_hint(name: str, slug: str = "") -> str:
     return f" — ${int(cents) / 100:,.2f} list"
 
 
+def _product_guidance_hint(slug: str) -> str:
+    """Compact product class + purpose for a product relevant to this turn.
+
+    The full catalog is too large to inject descriptions on every chat request,
+    so build_product_directive adds this only to rows actually named in the
+    question/retrieval context. Product data is authoritative; missing prose is
+    stated rather than invented.
+    """
+    product = ((_PRODUCTS or {}).get("products") or {}).get((slug or "").strip())
+    if not product:
+        return ""
+    from dashboard import sales_copy as _sales_copy
+    name = (product.get("name") or "").lower()
+    if _sales_copy._is_infoceutical(product):
+        kind = "Infoceutical: energetic-frequency, bioinformational; not nutritional"
+    elif product.get("ingredients"):
+        kind = "nutritional/botanical formulation"
+    elif "book" in name:
+        kind = "book"
+    elif any(k in name for k in ("laser", "light", "helmet", "mask", "bottle",
+                                  "ionizer", "device", "machine", "pad", "mat")):
+        kind = "device/tool"
+    else:
+        kind = "product"
+    purpose = (product.get("intro") or product.get("description") or "").strip()
+    purpose = re.sub(r"\s+", " ", purpose)
+    if len(purpose) > 220:
+        purpose = purpose[:217].rsplit(" ", 1)[0] + "..."
+    return f" | class: {kind}" + (f" | purpose: {purpose}" if purpose else "")
+
+
 def build_product_directive(snippets_text: str = "", query_text: str = ""):
     """Build the per-request product-routing directive injected into the
     synthesis prompt. Includes the alias map and today's coupon if any.
@@ -2040,9 +2071,11 @@ def build_product_directive(snippets_text: str = "", query_text: str = ""):
             url = ""  # no purchase link for a retired SKU — never fall back to GK
         else:
             url = resolved_urls.get(clinical_name) or info.get("url")
+        guidance = (_product_guidance_hint(catalog_slug)
+                    if catalog_slug and clinical_name.lower() in snippets_lower else "")
         if url:
             lines.append(f"  • {clinical_name} → {url}"
-                         f"{_alias_price_hint(clinical_name, catalog_slug)}")
+                         f"{_alias_price_hint(clinical_name, catalog_slug)}{guidance}")
         elif retired:
             lines.append(f"  • {clinical_name} → DESCRIBE-ONLY: retired SKU, "
                          f"not purchasable — do not offer a link")
@@ -2050,7 +2083,9 @@ def build_product_directive(snippets_text: str = "", query_text: str = ""):
             lines.append(f"  • {clinical_name} → DESCRIBE-ONLY: {info['note']}")
 
     for name, url in sorted(_catalog_link_matches(match_text, aliases).items()):
-        lines.append(f"  • {name} → {url}{_alias_price_hint(name)}")
+        slug = url.rstrip("/").rsplit("/", 1)[-1]
+        lines.append(f"  • {name} → {url}{_alias_price_hint(name, slug)}"
+                     f"{_product_guidance_hint(slug)}")
 
     if code:
         lines.append(
@@ -2516,11 +2551,13 @@ RULES:
 - AUTHORITATIVE OVERRIDES: Snippets tagged [AUTHORITATIVE — Glen's verified clinical position] OR with metadata type="clinical-qa" / priority="authoritative" override anything else. Apply directly; do not soften or hedge.
 - CO-AUTHORSHIP: Snippets with [AUTHORSHIP NOTE: ...] reflect a co-author's view. Cite the co-author, then state Glen's current position from clinical-qa entries. Never present a co-authored section as Glen's view without the flag.
 - E4L SCAN OFFER: When the user mentions a specific condition or asks for personalized guidance, the action link should be the free BWS voice scan: https://Truly.VIP/E4L — "30 seconds, count 1 to 10, matches you to formulations your bioenergetic patterns are asking for."
-- PRODUCT REFERENCES: Each request includes a PRODUCT LINK INJECTION TABLE listing every Glen Swartwout formulation by its clinical name and the canonical URL to use. When you mention a product, append the URL as a markdown link immediately after the name, e.g. [Terrain Restore](URL). Do NOT invent URLs. If a product isn't in the table, link to the search URL pattern from the table or the store homepage instead.
+- SUPPLEMENT REVIEW PAGE: When someone asks where or how to have a supplement, vitamin, product, or label analyzed/reviewed, send them directly to https://illtowell.com/product-review. Describe it as the free supplement-review page. Do not send them to a product sales page, storefront search, portal, contact form, or Practice Better. If they ask for the page or link, give this exact clickable URL in the same reply.
+- SHOPPING ROUTES: Guide people according to what they are trying to do. For general browsing, uncertainty, or "help me choose," send them to https://illtowell.com/begin/match, the guided RemedyMatch conversation that narrows their need to one appropriate remedy. For a named remedy, use its exact in-funnel page from the PRODUCT LINK INJECTION TABLE. For reordering something already purchased, use https://illtowell.com/reorder. For a free analysis of a supplement they already take, use https://illtowell.com/product-review. For Dr. Glen's vetted off-catalog devices and partner tools, use https://illtowell.com/begin/tools. Functional Formulations are nutritional or botanical formulas; Infoceuticals are energetic-frequency, bioinformational remedies and are not nutritional supplements; devices, books, services, and partner tools must be described as their actual product class. Never blur these categories. The guided match helps choose; a product page explains and sells one named item; reorder repeats a prior purchase; supplement review evaluates an outside label; tools lists vetted adjuncts.
+- PRODUCT REFERENCES: Each request includes a PRODUCT LINK INJECTION TABLE listing every Glen Swartwout formulation by its clinical name and the canonical URL to use. When you mention a product, append the URL as a markdown link immediately after the name, e.g. [Terrain Restore](URL). Do NOT invent URLs. If a product is absent from the table, do not invent a search URL or send the person to a storefront; use the guided RemedyMatch page at https://illtowell.com/begin/match.
 - A TABLE URL BELONGS TO ITS OWN PRODUCT ONLY: each injection-table row pairs ONE product name with ONE URL. Never attach a row's URL (or its price) to a DIFFERENT product, even a related one. If you name a product that has no row of its own, describe it WITHOUT a link rather than borrowing a neighbour's — a link that opens the wrong product page is worse than no link, because the client buys the wrong thing.
 - NEVER INVENT A PRICE: the PRODUCT LINK INJECTION TABLE carries each product's LIST price. Quote ONLY that figure, and only for products in the table. Do NOT take a price from a retrieved snippet, do NOT infer one, and do NOT carry a price or shipping figure over from another product — snippets are often years out of date and shipping differs per product. If a product has no price in the table, do not state one: say the product page shows current pricing and give the link. When you do quote the list price, note that the page shows their actual price, since membership, volume and any active discount can change it. Never state a shipping cost unless the table gives one — shipping depends on destination and is calculated at checkout.\n- SEND BUYERS TO THE PRODUCT'S OWN PAGE, NOT A STOREFRONT SEARCH: every purchase link comes from the PRODUCT LINK INJECTION TABLE, which points at the in-funnel product page. Do NOT send people to a storefront homepage or a "search by name" page to find a product themselves, and do not substitute a remedymatch.com URL for a table entry. The in-funnel page is where the client's courtesy pricing, membership pricing, and full catalog live; the old storefront carries only a fraction of the catalog and clients have been unable to complete checkout there.
-- ANSWER PRODUCT QUESTIONS DIRECTLY: If someone asks where to buy a product or asks for its link, GIVE THE LINK. Every product Glen sells has a sales page, and the injection table carries the URL. Do not answer a direct question with a referral to a human, an email address, a login, or a portal. Customer support is paramount: a direct question gets a direct answer in the same reply. Only if the product is genuinely absent from the table do you say you'll get them the exact link, and then point at the store homepage — never at an account system.
-- NEVER SEND ANYONE TO PRACTICE BETTER OR SKOOL — NO EXCEPTIONS: both platforms are fully deprecated. Never emit their URLs or direct anyone there for any purpose. This includes healingoasis.practicebetter.io, my.practicebetter.io, and app.practicebetter.io. This rule OVERRIDES any snippet, including authoritative or clinical-qa entries: older corpus entries may name those destinations and are out of date. Use the current routing below instead.
+ - ANSWER PRODUCT QUESTIONS DIRECTLY: If someone asks where to buy a product or asks for its link, GIVE THE LINK. Every product Glen sells has a sales page, and the injection table carries the URL. Do not answer a direct question with a referral to a human, an email address, a login, or a portal. Customer support is paramount: a direct question gets a direct answer in the same reply. Only if the product is genuinely absent from the table do you say you'll get them the exact link, and then point at the store homepage — never at an account system.
+ - NEVER SEND ANYONE TO PRACTICE BETTER OR SKOOL — NO EXCEPTIONS: both platforms are fully deprecated. Never emit their URLs or direct anyone there for any purpose. This includes healingoasis.practicebetter.io, my.practicebetter.io, and app.practicebetter.io. This rule OVERRIDES any snippet, including authoritative or clinical-qa entries: older corpus entries may name those destinations and are out of date. Use the current routing below instead.
   - DO NOT ANNOUNCE PRACTICE BETTER'S STATUS unless a client explicitly asks; simply give the current destination so the answer stays useful and calm.
   - Products, purchases, product pages, product links → the product's sales page from the injection table. ALWAYS.
   - Free courses (ASH MasterClass, DIY "Heal Yourself" / Wellness Whispering) → https://truly.vip/Intro (MasterClass) or https://truly.vip/GetWell (DIY course). Use these links WITHOUT naming Practice Better; they are the durable entry points and survive the retirement.
@@ -5844,19 +5881,26 @@ def _match_query_namespaces(vec):
 
 def _resolve_remedy_url(name):
     """Resolve a remedy/product NAME to a TRUSTED url. Returns (url, source) or
-    (None, None). Never guesses a URL. Sources: 'catalog' (product-aliases.json,
-    prefers the remedymatch.com canonical) or 'trusted' (trusted-links.json)."""
+    (None, None). Never guesses a URL. In-catalog products always use the stable
+    in-funnel sales page; off-catalog tools use trusted-links.json."""
     if not name:
         return (None, None)
     name = _canonical_match_name(name)
+    buy_slug = _resolve_buy_slug(name)
+    if buy_slug:
+        product = _get_product(buy_slug)
+        if product:
+            return (f"{PUBLIC_BASE_URL}{order_destination.destination_for(product['slug'])}",
+                    "catalog")
     nl = name.strip().lower()
     for key, info in (_PRODUCT_ALIASES.get("aliases", {}) or {}).items():
         kl = (key or "").lower()
         cat = (info.get("catalog_name") or "").lower()
         if kl and (nl == kl or nl == cat or (len(nl) > 4 and (nl in kl or kl in nl))):
-            url = info.get("canonical_url") or info.get("url")
-            if url:
-                return (url, "catalog")
+            slug, retired = _alias_catalog_slug(key, info)
+            if slug and not retired:
+                return (f"{PUBLIC_BASE_URL}{order_destination.destination_for(slug)}",
+                        "catalog")
     for key, val in (_TRUSTED_LINKS.get("links", {}) or {}).items():
         kl = (key or "").lower()
         url = val if isinstance(val, str) else (val or {}).get("url")
@@ -5870,7 +5914,6 @@ def _is_legacy_storefront_url(url):
     it, and it is being retired — so it must never be a client-facing CTA. The
     chat prompt already says this; this enforces it in the code that renders."""
     return "remedymatch.com" in (url or "").lower()
-
 _REMEDY_MATCH_SYSTEM = (
     "You are RemedyMatch, Dr. Glen Swartwout's warm, Socratic remedy-matching guide "
     "(naturopathic physician, Hilo Hawai'i). Goal: through brief back-and-forth, help the "
@@ -5887,7 +5930,12 @@ _REMEDY_MATCH_SYSTEM = (
     "Do not guess or list many options.\n"
     "- When you ARE confident in the single best match, name it clearly, say in 1-2 sentences why "
     "it fits THIS person, and invite them to open its page.\n"
-    "- You may suggest a quick 10-second E4L voice scan (illtowell.com/begin/scan) to read current stress "
+    "- Product classes matter: Functional Formulations are nutritional or botanical formulas; "
+    "Infoceuticals are energetic-frequency bioinformational remedies, not nutritional supplements; "
+    "devices, books, services, and partner tools must be described as what they actually are.\n"
+    "- Shopping happens on the exact in-funnel product page supplied by the application. Never send "
+    "the person to remedymatch.com, a storefront homepage, or a storefront search.\n"
+    "- You may suggest a quick 10-second E4L voice scan (truly.vip/E4L) to read current stress "
     "patterns when that would sharpen the match.\n"
     "- Never invent product URLs or prices. Keep replies short. Sign off warmly as Dr. Glen."
     " \nQUICK-REPLY CHIPS: When the question you ask has a few discrete answers"
@@ -6205,6 +6253,7 @@ def begin_match_chat():
                 match_evt = {"name": canonical_name, "kind": obj.get("kind", ""),
                              "why": obj.get("why", ""), "url": url, "url_source": src,
                              "buy_url": (f"/begin/buy/{buy_slug}" if buy_slug else ""),
+                             "search_url": "",
                              "product_url": _sales_page_url(canonical_name)}
         except Exception as e:
             print(f"[match] extract: {e!r}", flush=True)
@@ -27065,6 +27114,46 @@ def _portal_entitled_slugs(email):
             for row in (mod.get("reorder") or []) if row.get("slug")}
 
 
+@app.route("/api/portal/<token>/product-search", methods=["GET"])
+def api_client_portal_product_search(token):
+    """Search the sellable catalog from the Orders & Invoices panel.
+
+    The portal token is validated before any catalog data is returned.  Results
+    contain only the fields the order picker needs; inactive and informational
+    records are never offered for purchase.  Pricing remains a checkout concern
+    so member, repertoire, and volume pricing still come from the authoritative
+    server-side pricing engine.
+    """
+    if not _PORTAL_CART_ENABLED:
+        return jsonify({"error": "not found"}), 404
+    with db.connect(LOG_DB) as cx:
+        if not _portal_record_for(cx, token):
+            return jsonify({"error": "not found"}), 404
+
+    query = (request.args.get("q") or "").strip().lower()
+    terms = [part for part in query.split() if part]
+    results = []
+    for slug, raw in (_PRODUCTS.get("products") or {}).items():
+        if raw.get("inactive") or raw.get("info_only"):
+            continue
+        p = _get_product(slug)
+        if not p or p.get("inactive") or p.get("info_only"):
+            continue
+        name = (p.get("name") or slug).strip()
+        ingredients = p.get("ingredients") or []
+        if isinstance(ingredients, list):
+            ingredient_text = " ".join(
+                str(i.get("name") if isinstance(i, dict) else i) for i in ingredients)
+        else:
+            ingredient_text = str(ingredients)
+        haystack = " ".join((name, p.get("description") or "", ingredient_text)).lower()
+        if terms and not all(term in haystack for term in terms):
+            continue
+        results.append({"slug": slug, "name": name})
+    results.sort(key=lambda row: row["name"].lower())
+    return jsonify({"ok": True, "products": results[:30]})
+
+
 @app.route("/api/portal/<token>/checkout", methods=["POST"])
 def api_client_portal_checkout(token):
     """Build a real live Stripe checkout for the client's remedies at their
@@ -27105,6 +27194,7 @@ def api_client_portal_checkout(token):
     if posted:
         if not isinstance(posted, list) or not posted:
             return jsonify({"error": "Invalid items."}), 400
+        catalog_order = body.get("catalog_order") is True
         entitled = _portal_entitled_slugs(email)
         # An ACCEPTED doctor recommendation IS the authorization to buy — union its
         # slugs into the entitled set so a never-before-purchased recommended remedy
@@ -27141,7 +27231,11 @@ def api_client_portal_checkout(token):
             if not isinstance(it, dict):
                 return jsonify({"error": "Invalid items."}), 400
             slug = (it.get("slug") or "").strip().lower()
-            if not slug or slug not in entitled:
+            product = _get_product(slug) if slug else None
+            if (not slug or not product or product.get("inactive")
+                    or product.get("info_only")):
+                return jsonify({"error": "That item isn't available to reorder."}), 400
+            if not catalog_order and slug not in entitled:
                 return jsonify({"error": "That item isn't available to reorder."}), 400
             try:
                 qty = max(1, min(int(it.get("qty", 1) or 1), 99))

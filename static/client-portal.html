@@ -1085,6 +1085,7 @@ function showTab(name, options){
   // it was last open). loadCart() itself no-ops if #cart-body isn't in the
   // DOM (panel disabled/absent).
   if (name === 'cart') loadCart();
+  if (name === 'orders') renderOrdersBasket();
   if (name === 'intake') initPortalIntakeCard(true);
 }
 
@@ -1974,7 +1975,18 @@ function pastInvoiceItemsHtml(inv){
 function buildOrdersHtml(d){
   const invs = Array.isArray(d.invoices) ? d.invoices : [];
   const past = Array.isArray(d.past_invoices) ? d.past_invoices : [];
-  let body = "";
+  let body = `<div class="card" id="orders-product-picker">
+    <h2>Order products</h2>
+    <p class="muted small">Search our products, add what you need to your basket, then continue to secure checkout.</p>
+    <form id="orders-product-search-form" style="display:flex;gap:.5rem;margin:.7rem 0">
+      <input id="orders-product-search" type="search" aria-label="Search products"
+             placeholder="Search products" autocomplete="off"
+             style="min-width:0;flex:1;background:var(--card2);color:var(--ink);border:1px solid var(--line);border-radius:8px;padding:9px 10px">
+      <button class="btn" type="submit">Search</button>
+    </form>
+    <div id="orders-product-results" class="muted small">Search by product or ingredient.</div>
+    <div id="orders-basket" style="margin-top:1rem"></div>
+  </div>`;
   invs.forEach(inv => {
     body += `<div class="card invoice-card">
       <h2>Your invoice</h2>
@@ -1995,10 +2007,98 @@ function buildOrdersHtml(d){
       + `</div>`;
   }
   if(!invs.length && !past.length){
-    body = `<div class="card"><h2>Orders &amp; Invoices</h2><p class="muted">No invoices yet.</p></div>`;
+    body += `<div class="card"><h2>Orders &amp; Invoices</h2><p class="muted">No invoices yet.</p></div>`;
   }
   return body;
 }
+
+let ordersBasket = [];
+try { ordersBasket = JSON.parse(sessionStorage.getItem("rm_orders_basket") || "[]"); }
+catch(e) { ordersBasket = []; }
+
+function saveOrdersBasket(){
+  try { sessionStorage.setItem("rm_orders_basket", JSON.stringify(ordersBasket)); } catch(e) {}
+}
+
+function renderOrdersBasket(){
+  const host = document.getElementById("orders-basket");
+  if(!host) return;
+  if(!ordersBasket.length){ host.innerHTML = `<p class="muted small">Your basket is empty.</p>`; return; }
+  const rows = ordersBasket.map(it => `<div class="reitem">
+    <span class="nm">${esc(it.name)}</span>
+    <span style="display:flex;align-items:center;gap:.45rem">
+      <input type="number" min="1" max="99" value="${esc(it.qty)}" data-orders-qty="${esc(it.slug)}"
+             aria-label="Quantity for ${esc(it.name)}" style="width:58px">
+      <button type="button" class="linkbtn" data-orders-remove="${esc(it.slug)}">Remove</button>
+    </span></div>`).join("");
+  host.innerHTML = `<h3 style="margin:.3rem 0">Your basket</h3>${rows}
+    <button type="button" class="btn full" id="orders-place-order">Place order</button>
+    <p id="orders-order-message" class="small" hidden></p>`;
+}
+
+document.addEventListener("submit", async function(ev){
+  if(ev.target.id !== "orders-product-search-form") return;
+  ev.preventDefault();
+  const q = (document.getElementById("orders-product-search").value || "").trim();
+  const host = document.getElementById("orders-product-results");
+  if(!q){ host.textContent = "Enter a product or ingredient to search."; return; }
+  host.textContent = "Searching…";
+  try {
+    const r = await fetch(`/api/portal/${encodeURIComponent(token)}/product-search?q=${encodeURIComponent(q)}`,
+                          {credentials:"same-origin"});
+    const j = await r.json();
+    if(!r.ok) throw new Error(j.error || "Search is unavailable.");
+    const products = Array.isArray(j.products) ? j.products : [];
+    host.innerHTML = products.length ? products.map(p => `<div class="reitem">
+      <span class="nm">${esc(p.name)}</span>
+      <button type="button" class="btn" data-orders-add="${esc(p.slug)}" data-orders-name="${esc(p.name)}">Add to basket</button>
+    </div>`).join("") : `<p class="muted">No matching products found.</p>`;
+  } catch(e) { host.textContent = e.message || "Search is unavailable."; }
+});
+
+document.addEventListener("click", async function(ev){
+  const add = ev.target.closest("[data-orders-add]");
+  const remove = ev.target.closest("[data-orders-remove]");
+  const place = ev.target.closest("#orders-place-order");
+  if(add){
+    const slug = add.getAttribute("data-orders-add");
+    const existing = ordersBasket.find(it => it.slug === slug);
+    if(existing) existing.qty += 1;
+    else ordersBasket.push({slug, name:add.getAttribute("data-orders-name") || slug, qty:1});
+    saveOrdersBasket(); renderOrdersBasket();
+    add.textContent = "Added"; window.setTimeout(()=>{ add.textContent = "Add to basket"; }, 900);
+    return;
+  }
+  if(remove){
+    const slug = remove.getAttribute("data-orders-remove");
+    ordersBasket = ordersBasket.filter(it => it.slug !== slug);
+    saveOrdersBasket(); renderOrdersBasket(); return;
+  }
+  if(!place || place.disabled) return;
+  const msg = document.getElementById("orders-order-message");
+  place.disabled = true; place.textContent = "Setting up your order…";
+  if(msg) msg.hidden = true;
+  try {
+    const r = await fetch(`/api/portal/${encodeURIComponent(token)}/checkout`, {
+      method:"POST", credentials:"same-origin", headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({catalog_order:true, items:ordersBasket.map(it=>({slug:it.slug, qty:it.qty}))})
+    });
+    const j = await r.json();
+    if(j.stripe_url){ location.href = j.stripe_url; return; }
+    throw new Error(j.error || "Checkout is temporarily unavailable.");
+  } catch(e) {
+    if(msg){ msg.textContent = e.message || "Checkout is temporarily unavailable."; msg.className="small err"; msg.hidden=false; }
+    place.disabled = false; place.textContent = "Place order";
+  }
+});
+
+document.addEventListener("change", function(ev){
+  if(!ev.target.matches || !ev.target.matches("[data-orders-qty]")) return;
+  const item = ordersBasket.find(it => it.slug === ev.target.getAttribute("data-orders-qty"));
+  if(!item) return;
+  item.qty = Math.max(1, Math.min(99, parseInt(ev.target.value, 10) || 1));
+  ev.target.value = item.qty; saveOrdersBasket();
+});
 // My Remedies panel body: sections built from Task 3's v.remedies payload.
 // "Top recommended for you" lists the ranked matches (v.remedies.ranked), each
 // with an "Add to my Oasis / order" button carrying data-oasis-add, wired by
