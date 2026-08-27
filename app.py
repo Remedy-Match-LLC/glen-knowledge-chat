@@ -13620,9 +13620,10 @@ def _init_referral_tables():
              "to the consultant package. Best for warm people ready to see their options.",
              f"{PUBLIC_BASE_URL}/?ref={{slug}}&want=ascend", ''),
             (5, 'Talk to Dr. Glen (Join)',
-             "Routes to the consultative intake to start working with Dr. Glen directly. "
+             "Opens the consultative intake to start working with Dr. Glen directly. "
              "Best for the most ready, high-intent people.",
-             f"{PUBLIC_BASE_URL}/?ref={{slug}}&want=join", ''),
+             "https://illtowell.com/begin/intake?utm_source={slug}"
+             "&utm_medium=affiliate&utm_campaign=begin-deeplink-join", ''),
             (6, 'Explore Everything: the full map',
              "Opens the full table of contents of everything available, every room on "
              "one page, so people can wander and pick what draws them. Best for "
@@ -13748,6 +13749,28 @@ def init_inquiry_tables(cx):
           email           TEXT PRIMARY KEY,
           ts              TEXT NOT NULL,
           practitioner_id TEXT
+        );
+
+        CREATE TABLE IF NOT EXISTS practitioner_suggestions (
+          id                 TEXT PRIMARY KEY,
+          created_at         TEXT NOT NULL,
+          session_id         TEXT,
+          ip                 TEXT,
+          practitioner_name  TEXT NOT NULL,
+          practice_name      TEXT,
+          profession         TEXT,
+          city               TEXT,
+          state_region       TEXT,
+          country            TEXT,
+          website            TEXT,
+          practitioner_email TEXT,
+          practitioner_phone TEXT,
+          recommender_name   TEXT,
+          recommender_email  TEXT,
+          relationship       TEXT,
+          recommendation     TEXT,
+          additional_details TEXT,
+          notification_sent  INTEGER NOT NULL DEFAULT 0
         );
     """)
     # Additive migration: ip column for per-IP rate limiting (mirrors schema-evolution pattern)
@@ -44681,6 +44704,86 @@ def practitioner_finder_countries():
         for r in rows
     ]
     return jsonify({"countries": countries})
+
+
+@app.route("/api/practitioner-finder/suggest", methods=["POST", "OPTIONS"])
+def practitioner_finder_suggest():
+    """Record a client-recommended practitioner and notify the review team."""
+    if request.method == "OPTIONS":
+        return "", 200
+
+    data = request.get_json(silent=True) or {}
+    if (data.get("company") or "").strip():  # honeypot
+        return jsonify({"ok": True}), 200
+
+    fields = {
+        "practitioner_name": 200, "practice_name": 200, "profession": 200,
+        "city": 120, "state_region": 120, "country": 120, "website": 500,
+        "practitioner_email": 254, "practitioner_phone": 80,
+        "recommender_name": 200, "recommender_email": 254,
+        "relationship": 500, "recommendation": 3000, "additional_details": 3000,
+    }
+    values = {key: str(data.get(key) or "").strip() for key in fields}
+    if not values["practitioner_name"]:
+        return jsonify({"error": "Practitioner name is required."}), 400
+    for key, limit in fields.items():
+        if len(values[key]) > limit:
+            return jsonify({"error": f"{key} is too long (maximum {limit} characters)."}), 400
+    for key in ("practitioner_email", "recommender_email"):
+        email = values[key]
+        if email and ("@" not in email or "." not in email.rsplit("@", 1)[-1]):
+            return jsonify({"error": f"{key} must be a valid email address."}), 400
+
+    ip = request.headers.get("X-Forwarded-For", request.remote_addr or "").split(",")[0].strip()
+    session_id = (request.cookies.get("amg_session") or "").strip()
+    suggestion_id = secrets.token_urlsafe(12)
+    created_at = _now_utc().isoformat()
+
+    with _db_lock, db.connect(LOG_DB) as cx:
+        init_inquiry_tables(cx)
+        if ip:
+            recent = cx.execute(
+                "SELECT COUNT(*) FROM practitioner_suggestions "
+                "WHERE ip=? AND created_at > datetime('now','-24 hour')", (ip,)
+            ).fetchone()[0]
+            if recent >= 5:
+                return jsonify({"error": "Too many suggestions from this network today."}), 429
+        columns = ["practitioner_name", "practice_name", "profession", "city",
+                   "state_region", "country", "website", "practitioner_email",
+                   "practitioner_phone", "recommender_name", "recommender_email",
+                   "relationship", "recommendation", "additional_details"]
+        cx.execute(
+            "INSERT INTO practitioner_suggestions "
+            "(id, created_at, session_id, ip, " + ", ".join(columns) + ") "
+            "VALUES (?,?,?,?" + ",?" * len(columns) + ")",
+            [suggestion_id, created_at, session_id or None, ip or None]
+            + [values[key] or None for key in columns],
+        )
+        cx.commit()
+
+    labels = {
+        "practitioner_name": "Practitioner", "practice_name": "Practice",
+        "profession": "Profession / specialty", "city": "City",
+        "state_region": "State / region", "country": "Country",
+        "website": "Website", "practitioner_email": "Practitioner email",
+        "practitioner_phone": "Practitioner phone", "recommender_name": "Recommended by",
+        "recommender_email": "Recommender email", "relationship": "Relationship",
+        "recommendation": "Why they are recommended", "additional_details": "Additional details",
+    }
+    body = "New practitioner suggestion\n\n" + "\n".join(
+        f"{labels[key]}: {values[key]}" for key in labels if values[key]
+    ) + f"\n\nSuggestion ID: {suggestion_id}"
+    sent = _send_inquiry_email(
+        os.environ.get("RAE_EMAIL", "suerae1111@gmail.com"),
+        f"Practitioner suggestion: {values['practitioner_name']}", body,
+        reply_to=values["recommender_email"] or None,
+    )
+    if sent:
+        with _db_lock, db.connect(LOG_DB) as cx:
+            cx.execute("UPDATE practitioner_suggestions SET notification_sent=1 WHERE id=?",
+                       (suggestion_id,))
+            cx.commit()
+    return jsonify({"ok": True, "suggestion_id": suggestion_id}), 201
 
 
 @app.route("/practitioner-finder", methods=["GET"])

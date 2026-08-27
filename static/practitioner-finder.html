@@ -66,6 +66,8 @@
     }
 
     header { padding: clamp(1rem, 3vw, 2.5rem) clamp(1rem, 4vw, 3rem) 0.5rem; }
+    .header-row { display: flex; align-items: flex-end; justify-content: space-between; gap: 1rem; }
+    .header-copy { min-width: 0; }
     header h1 {
       font-family: "Raleway", sans-serif;
       margin: 0 0 0.4rem;
@@ -74,6 +76,16 @@
       color: var(--cream);
     }
     header p { margin: 0; color: var(--muted); max-width: 60ch; }
+    .suggest-btn {
+      flex: 0 0 auto; background: transparent; color: var(--gold);
+      border: 1px solid var(--gold); border-radius: 999px; padding: 0.65rem 1.15rem;
+      min-height: 44px; font: inherit; font-weight: 700; cursor: pointer;
+    }
+    .suggest-btn:hover { background: rgba(212,168,67,0.12); }
+    @media (max-width: 680px) {
+      .header-row { align-items: flex-start; flex-direction: column; }
+      .suggest-btn { width: 100%; }
+    }
 
     .controls {
       padding: 1rem clamp(1rem, 4vw, 3rem);
@@ -366,7 +378,8 @@
     }
     .inquiry-modal label:first-of-type { margin-top: 0; }
     .inquiry-modal input,
-    .inquiry-modal textarea {
+    .inquiry-modal textarea,
+    .inquiry-modal select {
       display: block;
       width: 100%;
       background: var(--surface-2);
@@ -381,7 +394,15 @@
       resize: vertical;
     }
     .inquiry-modal input:focus,
-    .inquiry-modal textarea:focus { border-color: var(--gold); }
+    .inquiry-modal textarea:focus,
+    .inquiry-modal select:focus { border-color: var(--gold); }
+    .inquiry-modal .form-intro { color: var(--muted); margin: -0.6rem 0 1rem; font-size: 0.9rem; }
+    .suggestion-modal { max-width: 680px; max-height: calc(100vh - 24px); overflow-y: auto; }
+    .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 1rem; }
+    .form-grid .full { grid-column: 1 / -1; }
+    .optional { font-weight: 400; color: var(--muted); }
+    .hp-field { position: absolute !important; left: -10000px !important; width: 1px !important; height: 1px !important; overflow: hidden !important; }
+    @media (max-width: 560px) { .form-grid { grid-template-columns: 1fr; } .form-grid .full { grid-column: auto; } }
     .inquiry-modal-actions {
       display: flex;
       gap: 0.75rem;
@@ -425,6 +446,7 @@
       font-size: 0.95rem;
       line-height: 1.6;
     }
+    .modal-confirm.hidden, .inquiry-modal form.hidden { display: none; }
     .modal-confirm p { margin: 0 0 0.6rem; }
     .modal-confirm .note { color: var(--muted); font-size: 0.85rem; }
     .modal-close-btn {
@@ -453,8 +475,13 @@
   </div>
 
   <header>
-    <h1>Find a Practitioner</h1>
-    <p>Practitioners aligned with Functional Formulations™ across functional eye care, biological dentistry, and integrative health.</p>
+    <div class="header-row">
+      <div class="header-copy">
+        <h1>Find a Practitioner</h1>
+        <p>Practitioners aligned with Functional Formulations™ across functional eye care, biological dentistry, and integrative health.</p>
+      </div>
+      <button class="suggest-btn" id="suggest-practitioner-btn" type="button">Suggest a Practitioner</button>
+    </div>
   </header>
 
   <div class="controls">
@@ -586,10 +613,124 @@
     <div class="inquiry-modal" id="inquiry-modal"></div>
   </div>
 
+  <div class="inquiry-modal-overlay hidden" id="suggestion-modal-overlay" role="dialog" aria-modal="true" aria-labelledby="suggestion-modal-title">
+    <div class="inquiry-modal suggestion-modal">
+      <h3 id="suggestion-modal-title">Suggest a Practitioner</h3>
+      <p class="form-intro">Know someone who belongs in this directory? Share whatever you know. Only the practitioner's name is required.</p>
+      <form id="suggestion-form">
+        <div class="form-grid">
+          <label>Practitioner name *
+            <input name="practitioner_name" required maxlength="200" autocomplete="name">
+          </label>
+          <label>Practice name <span class="optional">(optional)</span>
+            <input name="practice_name" maxlength="200" autocomplete="organization">
+          </label>
+          <label>Profession or specialty <span class="optional">(optional)</span>
+            <input name="profession" maxlength="200" placeholder="e.g., functional medicine, optometry">
+          </label>
+          <label>Website <span class="optional">(optional)</span>
+            <input name="website" type="url" maxlength="500" placeholder="https://">
+          </label>
+          <label>City <span class="optional">(optional)</span>
+            <input name="city" maxlength="120" autocomplete="address-level2">
+          </label>
+          <label>State or region <span class="optional">(optional)</span>
+            <input name="state_region" maxlength="120" autocomplete="address-level1">
+          </label>
+          <label>Country <span class="optional">(optional)</span>
+            <input name="country" maxlength="120" autocomplete="country-name">
+          </label>
+          <label>Practitioner email <span class="optional">(optional)</span>
+            <input name="practitioner_email" type="email" maxlength="254" autocomplete="off">
+          </label>
+          <label>Practitioner phone <span class="optional">(optional)</span>
+            <input name="practitioner_phone" type="tel" maxlength="80" autocomplete="off">
+          </label>
+          <label>Your relationship <span class="optional">(optional)</span>
+            <input name="relationship" maxlength="500" placeholder="e.g., client, colleague, friend">
+          </label>
+          <label class="full">Why do you recommend them? <span class="optional">(optional)</span>
+            <textarea name="recommendation" rows="3" maxlength="3000"></textarea>
+          </label>
+          <label class="full">Anything else we should know? <span class="optional">(optional)</span>
+            <textarea name="additional_details" rows="3" maxlength="3000"></textarea>
+          </label>
+          <label>Your name <span class="optional">(optional)</span>
+            <input name="recommender_name" maxlength="200" autocomplete="name">
+          </label>
+          <label>Your email <span class="optional">(optional)</span>
+            <input name="recommender_email" type="email" maxlength="254" autocomplete="email">
+          </label>
+          <label class="hp-field" aria-hidden="true">Company<input name="company" tabindex="-1" autocomplete="off"></label>
+        </div>
+        <div class="modal-err" id="suggestion-error" role="alert"></div>
+        <div class="inquiry-modal-actions">
+          <button class="modal-cancel-btn" id="suggestion-cancel" type="button">Cancel</button>
+          <button class="modal-submit-btn" id="suggestion-submit" type="submit">Send suggestion</button>
+        </div>
+      </form>
+      <div class="modal-confirm hidden" id="suggestion-confirmation">
+        <p>Thank you. We received your suggestion and will review the practitioner for the directory.</p>
+        <button class="modal-close-btn" id="suggestion-close" type="button">Close</button>
+      </div>
+    </div>
+  </div>
+
   <script src="https://api.mapbox.com/mapbox-gl-js/v3.6.0/mapbox-gl.js"></script>
   <script src="/ref-capture.js"></script>
   <script>
     const MAPBOX_TOKEN = window.__MAPBOX_TOKEN__ || '';
+
+    // Practitioner suggestion modal
+    const suggestionOverlay = document.getElementById('suggestion-modal-overlay');
+    const suggestionForm = document.getElementById('suggestion-form');
+    const suggestionConfirmation = document.getElementById('suggestion-confirmation');
+    const suggestionError = document.getElementById('suggestion-error');
+    function openSuggestionModal() {
+      suggestionForm.classList.remove('hidden');
+      suggestionConfirmation.classList.add('hidden');
+      suggestionError.textContent = '';
+      suggestionOverlay.classList.remove('hidden');
+      suggestionOverlay.setAttribute('aria-hidden', 'false');
+      setTimeout(() => suggestionForm.elements.practitioner_name.focus(), 0);
+    }
+    function closeSuggestionModal() {
+      suggestionOverlay.classList.add('hidden');
+      suggestionOverlay.setAttribute('aria-hidden', 'true');
+    }
+    document.getElementById('suggest-practitioner-btn').addEventListener('click', openSuggestionModal);
+    document.getElementById('suggestion-cancel').addEventListener('click', closeSuggestionModal);
+    document.getElementById('suggestion-close').addEventListener('click', closeSuggestionModal);
+    suggestionOverlay.addEventListener('click', (event) => {
+      if (event.target === suggestionOverlay) closeSuggestionModal();
+    });
+    document.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape' && !suggestionOverlay.classList.contains('hidden')) closeSuggestionModal();
+    });
+    suggestionForm.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      suggestionError.textContent = '';
+      const submit = document.getElementById('suggestion-submit');
+      submit.disabled = true;
+      submit.textContent = 'Sending…';
+      const payload = Object.fromEntries(new FormData(suggestionForm).entries());
+      try {
+        const response = await fetch('/api/practitioner-finder/suggest', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          credentials: 'same-origin', body: JSON.stringify(payload)
+        });
+        const result = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(result.error || 'Could not send your suggestion.');
+        suggestionForm.classList.add('hidden');
+        suggestionConfirmation.classList.remove('hidden');
+        suggestionForm.reset();
+      } catch (error) {
+        suggestionError.textContent = error.message || 'Could not send your suggestion. Please try again.';
+      } finally {
+        submit.disabled = false;
+        submit.textContent = 'Send suggestion';
+      }
+    });
 
     // ── Slice 4: multi-select state ──
     const selectedIds = new Set();
