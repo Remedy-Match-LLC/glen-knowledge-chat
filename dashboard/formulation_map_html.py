@@ -21,9 +21,12 @@ def render_code_row(code, name, mappings):
             f"<span class=fmn>{len(mappings or [])}</span></div>"
             f"<ol class=fmlist>{lis}{empty}</ol>"
             "<div class=fmadd>"
-            "<input class=fminput list=fmcatalog placeholder='add a remedy…' "
+            "<input class=fminput placeholder='add a remedy…' autocomplete=off "
+            "oninput='fmMatch(this)' onfocus='fmMatch(this)' "
+            "onblur='setTimeout(function(){fmCloseMatches()},150)' "
             "onkeydown='if(event.key===\"Enter\"){fmAdd(this);event.preventDefault()}'>"
-            "<button type=button class='btn ghost' onclick=fmAdd(this.previousElementSibling)>+ add</button>"
+            "<div class=fmmatches></div>"
+            "<button type=button class='btn ghost' onclick=fmAdd(fmRow(this).querySelector('.fminput'))>+ add</button>"
             "<button type=button class='btn ghost' onclick=fmSuggest(this)>suggest &#9662;</button>"
             "<div class=fmprops></div></div></div>")
 
@@ -36,8 +39,11 @@ _STYLE = """<style>
 .fmmap{display:flex;align-items:center;gap:8px;padding:4px 6px;border:1px solid #1c2029;border-radius:7px;margin:3px 0;background:#0f1218}
 .fmmap.fmover{border-color:#d4a843}.fmgrip{cursor:grab;color:#556}.fmname{flex:1;font-size:13px}
 .fmx{background:none;border:0;color:#a55;font-size:16px;cursor:pointer;line-height:1}
-.fmadd{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.fmadd{display:flex;gap:6px;flex-wrap:wrap;align-items:center;position:relative}
 .fminput{background:#0f1218;border:1px solid #222;border-radius:7px;color:#cfd6df;padding:5px 8px;font-size:12px;min-width:180px}
+.fmmatches{display:none;position:absolute;z-index:20;top:31px;left:0;min-width:280px;max-height:230px;overflow:auto;background:#11151c;border:1px solid #343b48;border-radius:7px;box-shadow:0 8px 24px #000;padding:4px}
+.fmmatches button{display:block;width:100%;border:0;background:none;color:#cfd6df;text-align:left;padding:7px 8px;border-radius:5px;cursor:pointer}
+.fmmatches button:hover,.fmmatches button:focus{background:#252c38;outline:none}
 .fmprops{flex-basis:100%;margin-top:4px}
 .fmchip{font-size:11px;margin:2px 4px 2px 0}.food{color:var(--muted,#8a93a0)}
 #fmfilter{width:100%;max-width:300px;background:#0f1218;border:1px solid #222;border-radius:7px;color:#cfd6df;padding:6px 10px;margin:6px 0}
@@ -47,6 +53,17 @@ _JS = """<script>
 async function fmPost(p,b){const r=await fetch(p,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)});return r.json()}
 function fmRow(el){return el.closest('.fmcode')}
 function fmCode(el){return fmRow(el).getAttribute('data-code')}
+function fmCloseMatches(){document.querySelectorAll('.fmmatches').forEach(function(x){x.style.display='none'})}
+function fmMatch(inp){
+ var q=(inp.value||'').trim().toLowerCase(),box=fmRow(inp).querySelector('.fmmatches');box.innerHTML='';
+ if(!q){box.style.display='none';return}
+ var seen={},matches=[].slice.call(document.querySelectorAll('#fmcatalog option')).map(function(o){return o.value})
+  .filter(function(n){var k=n.toLowerCase();if(seen[k]||k.indexOf(q)<0)return false;seen[k]=1;return true})
+  .sort(function(a,b){var ap=a.toLowerCase().indexOf(q)===0?0:1,bp=b.toLowerCase().indexOf(q)===0?0:1;return ap-bp||a.localeCompare(b)})
+  .slice(0,12);
+ matches.forEach(function(n){var b=document.createElement('button');b.type='button';b.textContent=n;
+  b.onmousedown=function(e){e.preventDefault();inp.value=n;box.style.display='none';inp.focus()};box.appendChild(b)});
+ box.style.display=matches.length?'block':'none'}
 function fmPaint(el,mappings){
  var ol=fmRow(el).querySelector('.fmlist');ol.innerHTML='';
  (mappings||[]).forEach(function(m){
@@ -58,7 +75,7 @@ function fmPaint(el,mappings){
  if(!(mappings||[]).length){ol.innerHTML='<li class=food style="list-style:none">no remedies mapped yet</li>'}
  fmRow(el).querySelector('.fmn').textContent=(mappings||[]).length}
 async function fmAdd(inp){var name=(inp.value||'').trim();if(!name)return;
- var j=await fmPost('/api/formulation-map/add',{code:fmCode(inp),remedy:name});inp.value='';if(j.ok)fmPaint(inp,j.mappings)}
+ fmCloseMatches();var j=await fmPost('/api/formulation-map/add',{code:fmCode(inp),remedy:name});inp.value='';if(j.ok)fmPaint(inp,j.mappings)}
 async function fmRemove(btn){var fid=btn.closest('.fmmap').getAttribute('data-fid');
  var j=await fmPost('/api/formulation-map/remove',{code:fmCode(btn),formulation_id:parseInt(fid)});if(j.ok)fmPaint(btn,j.mappings)}
 async function fmSuggest(btn){var box=fmRow(btn).querySelector('.fmprops');box.textContent='loading…';

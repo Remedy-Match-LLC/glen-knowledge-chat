@@ -523,6 +523,9 @@ async function addStress(label,layer){label=(label||'').trim();if(!label)return;
  const body=(layer==null?{label:label}:{label:label,layer:layer});
  const j=await post('/author/__TID__/stress/add',body);
  astat(j&&j.ok?'Stress added.':((j&&j.error)||'Add failed.'));loadStress()}
+async function addLayerStress(input,layer){var label=(input.value||'').trim();if(!label)return;
+ input.disabled=true;
+ try{await addStress(label,layer);location.reload()}finally{input.disabled=false}}
 async function assignStress(sid){astat('Assigning…');const j=await post('/author/__TID__/stress/'+sid+'/assign',{});astat(j&&j.ok?('Assigned to its layer.'):((j&&j.error)||'Assign failed.'));setStress(j)}
 async function assignAllStresses(){astat('Assigning all…');const j=await post('/author/__TID__/stresses/assign-all',{});astat(j&&j.ok?('Assigned '+(j.assigned||0)+' stress(es).'):((j&&j.error)||'Assign failed.'));setStress(j)}
 async function saveHeader(){const j=await post('/author/__TID__/header',
@@ -586,7 +589,7 @@ async function checkE4L(){
  }catch(e){var s3=document.getElementById('e4lchk');if(s3)s3.textContent='E4L check failed.'}
 }
 async function addRow(){var b=rowVals('new');if(!b.head&&!b.remedy){astat('Enter a stress and a remedy.');return}
- await post('/author/__TID__/row',b);location.reload()}
+ await post('/author/__TID__/row',b);reloadKeepingView()}
 async function saveRow(rid){await post('/author/__TID__/row/'+rid,rowVals('r'+rid));astat('Row saved.')}
 async function delRow(rid,removeLayer){
  var question=removeLayer?'Remove this entire layer?':'Remove this remedy? The layer will remain.';
@@ -595,7 +598,7 @@ async function delRow(rid,removeLayer){
  rememberView(card);
  var layerRids=card?(card.dataset.rids||'').split(',').filter(Boolean):[String(rid)];
  await post('/author/__TID__/row/'+rid+'/delete',
-  {remove_layer:!!removeLayer,layer_rids:layerRids});location.reload()}
+  {remove_layer:!!removeLayer,layer_rids:layerRids});reloadKeepingView()}
 // Fill dose/freq/timing from the catalog. Default: only fill EMPTY fields, so
 // correcting a remedy's name never overwrites a dose already captured from the
 // transcript. force=true (the explicit "dose" button) refreshes all fields.
@@ -687,8 +690,9 @@ async function addRemedy(gid){var rem=val(gid+'_nr_remedy');if(!rem){astat('Ente
  astat('Saving pending edits…');await savePendingEditor();
  await post('/author/__TID__/row',{layer:layer,anchor_rid:anchorRid,head:val(gid+'_head'),most_affected:val(gid+'_most'),
   remedy:rem,dosage:val(gid+'_nr_dosage'),frequency:val(gid+'_nr_frequency'),timing:val(gid+'_nr_timing')});
- location.reload()}
+ reloadKeepingView()}
 var _viewKey='biofield-view-__TID__';
+function reloadKeepingView(){rememberScroll();location.reload()}
 function rememberView(card){
  var anchor=card&&card.querySelector('.rline[data-rid]');
  var state={rid:anchor?anchor.dataset.rid:'',top:card?card.getBoundingClientRect().top:null,y:window.scrollY};
@@ -706,7 +710,7 @@ function restoreView(){
  function place(){var anchor=state.rid&&document.querySelector('.rline[data-rid="'+state.rid+'"]');
   var card=anchor&&anchor.closest('.lcard');
   if(card&&state.top!=null)window.scrollBy(0,card.getBoundingClientRect().top-state.top);
-  else if(state.y!=null)window.scrollTo(0,state.y)}
+ else if(state.y!=null)window.scrollTo(0,state.y)}
  requestAnimationFrame(function(){place();setTimeout(place,80);setTimeout(place,300)})}
 // Generic drag-reorder: works for both the full cards (#chaintbl) and the left
 // layer rail (#layerrail). Only reorders within one container; the trailing
@@ -743,6 +747,22 @@ function focusCard(gid){var c=document.querySelector('.lcard[data-gid="'+gid+'"]
  setTimeout(function(){c.classList.remove('over')},900)}
 function rstat(t){document.getElementById('rstat').textContent=t}
 var _mr,_dg,_sess='';
+var _sessSaveTimer=null,_sessSaving=null;
+function scheduleSessionSave(){
+ clearTimeout(_sessSaveTimer);
+ var ss=document.getElementById('sessSaved');if(ss)ss.textContent='Unsaved changes…';
+ _sessSaveTimer=setTimeout(function(){saveSessionNow(false)},600)}
+async function saveSessionNow(showStatus){
+ clearTimeout(_sessSaveTimer);
+ var box=document.getElementById('sessText');if(!box)return {ok:true};
+ var txt=box.value;if(!txt.trim())return {ok:true,skipped:'empty'};
+ if(_sessSaving)await _sessSaving;
+ _sessSaving=post('/author/__TID__/session',{transcript:txt});
+ var sv;try{sv=await _sessSaving}finally{_sessSaving=null}
+ var ss=document.getElementById('sessSaved');
+ if(ss&&sv&&sv.saved_label)ss.textContent='Autosaved: '+sv.saved_label;
+ if(showStatus)rstat('Saved to Capture Stresses.');
+ return sv||{ok:false}}
 async function recStart(){
  rstat('Getting token...');
  _sess=(document.getElementById('sessText').value||'');
@@ -766,7 +786,8 @@ async function recStart(){
   if(d.type&&d.type!=='Results')return;
   var a=d.channel&&d.channel.alternatives&&d.channel.alternatives[0];if(!a)return;
   if(d.is_final&&a.transcript){_sess+=(_sess?' ':'')+a.transcript;
-   document.getElementById('sessText').value=_sess;document.getElementById('interim').textContent=''}
+   document.getElementById('sessText').value=_sess;document.getElementById('interim').textContent='';
+   scheduleSessionSave()}
   else if(a.transcript){document.getElementById('interim').textContent=a.transcript}};
  _dg.onerror=function(e){rstat('WebSocket error (see console).');console.log('dg error',e)};
  _dg.onclose=function(e){console.log('dg close',e.code,e.reason);
@@ -778,10 +799,9 @@ async function recStop(){
  if(_mr&&_mr.stream)_mr.stream.getTracks().forEach(function(t){t.stop()});
  if(_dg&&_dg.readyState===1){_dg.send(JSON.stringify({type:'CloseStream'}));_dg.close()}
  rstat('Saving\\u2026');
- var sv=await post('/author/__TID__/session',{transcript:document.getElementById('sessText').value});
- var ss=document.getElementById('sessSaved');if(ss&&sv&&sv.saved_label)ss.textContent='Last saved: '+sv.saved_label;
- rstat('Saved to notes; it feeds the narrative.')}
+ await saveSessionNow(true)}
 async function interpret(){rstat('Interpreting transcript into chain rows\\u2026');
+ await saveSessionNow(false);
  var r=await post('/author/__TID__/interpret',{});
  if(r.error){rstat('Interpret: '+r.error);return}
  rstat('Filled '+r.added+' row(s) \\u2014 highlighted for review; reloading\\u2026');
@@ -817,6 +837,7 @@ function setPhase(p){window._phase=p;
  document.getElementById('phaseAct').textContent=(p==1?'Capture stresses → list':'Interpret → fill fields')}
 async function phaseRun(){if((window._phase||1)==1){captureStresses()}else{interpret()}}
 async function captureStresses(){rstat('Capturing stresses from transcript…');
+ await saveSessionNow(false);
  var j=await post('/author/__TID__/capture-stresses',{});
  if(j.error){rstat('Capture: '+j.error);return}
  rstat('Added '+j.added+' stress(es).');loadStress()}
@@ -1103,7 +1124,7 @@ def _remedy_line(l, depth_values, only_remedy=False):
             f"<button class=chip onclick=\"fillDose('{p}',true)\">dose</button>"
             f"<button class=chip onclick=\"suggestFor(this,'{p}')\">uses</button>"
             f"{confirm_btn}"
-            f"<button class='btn savebtn' data-dirty=Update onclick=\"saveRemedy('{rid}',this)\">Save</button>"
+            f"<button class='btn savebtn saved' data-dirty=Update onclick=\"saveRemedy('{rid}',this)\">Saved &#10003;</button>"
             + remove_buttons +
             f"<span id=\"{p}_sug\" class=food style='flex-basis:100%'></span></div>")
 
@@ -1134,15 +1155,21 @@ def _render_layer_rail(groups):
     return f"<div id=layerrail class=rail>{items}</div>"
 
 
-def _covered_html(stresses):
+def _covered_html(stresses, layer=None):
     """Inline 'balances:' chips of the stresses a layer's remedies cover."""
     stresses = stresses or []
-    if not stresses:
-        return ("<div class=covered><span class=food>balances: &mdash; "
-                "drag an unbalanced stress here</span></div>")
     chips = " ".join(f"<span class=cchip>{_e(s.get('code') or '')} {_e(s.get('label') or '')}</span>"
                      for s in stresses)
-    return f"<div class=covered><span class=food>balances:</span> {chips}</div>"
+    shown = chips or "<span class=food>&mdash; drag an unbalanced stress here</span>"
+    add = ""
+    if layer is not None:
+        add = (f"<div class=stress-inline><input class=stress-add list=vocab "
+               f"placeholder='add balanced stress to layer {int(layer)}…' "
+               f"onkeydown=\"if(event.key==='Enter'){{event.preventDefault();"
+               f"addLayerStress(this,{int(layer)})}}\">"
+               f"<button class='btn ghost' onclick=\"addLayerStress(this.previousElementSibling,"
+               f"{int(layer)})\">Add stress</button></div>")
+    return f"<div class=covered><span class=food>balances:</span> {shown}{add}</div>"
 
 
 def _render_chain_cards(report, depth_values, covered_by_layer=None):
@@ -1179,10 +1206,10 @@ def _render_chain_cards(report, depth_values, covered_by_layer=None):
             f"<label>Head</label>{head_in}"
             f"<label>Tail</label>{tail_in}"
             f"</div><input type=hidden id={gid}_layer value=\"{stored_layer}\"></div>"
-            + lines + _covered_html(covered_by_layer.get(n)) + _new_remedy_line(gid, "Add remedy") +
+            + lines + _covered_html(covered_by_layer.get(n), n) + _new_remedy_line(gid, "Add remedy") +
             f"<div class=lfoot><span class=food>Layer {n}</span>{consolidate}"
-            f"<button class='btn ghost savebtn' data-dirty='Update layer' "
-            f"onclick=\"saveLayer('{gid}',this)\">Save layer</button></div></div>")
+            f"<button class='btn ghost savebtn saved' data-dirty='Update layer' "
+            f"onclick=\"saveLayer('{gid}',this)\">Saved &#10003;</button></div></div>")
     # trailing card to start a brand-new layer
     cards += (
         "<div class=lcard data-gid=gnew data-nodrop=1><div class=lhdr><span class=lnum>+</span>"
@@ -1416,7 +1443,7 @@ def render_author_html(report, depth_values=None, transcript="", covered_by_laye
         "the codes.</p>"
         "<div class=btnrow style='margin-bottom:6px'>"
         "<button id=phaseCap class=btn onclick='setPhase(1)'>Phase 1 &middot; Capture stresses</button>"
-        "<button id=phaseBal class='btn ghost' onclick='setPhase(2)'>Phase 2 &middot; Balance</button>"
+        "<button id=phaseBal class='btn ghost' onclick='setPhase(2)'>Phase 2 &middot; Rejuvenate</button>"
         "</div>"
         "<div class=btnrow>"
         "<button class=btn onclick=recStart()>&#9679; Record</button>"
@@ -1424,7 +1451,8 @@ def render_author_html(report, depth_values=None, transcript="", covered_by_laye
         "<button id=phaseAct class=btn onclick=phaseRun()>Capture stresses &rarr; list</button>"
         "<span id=rstat class=food></span></div>"
         "<div class=food><em id=interim></em></div>"
-        f"<textarea id=sessText rows=6 placeholder='Live transcript appears here as you speak..."
+        f"<textarea id=sessText rows=6 oninput='scheduleSessionSave()' "
+        f"placeholder='Live transcript appears here as you speak..."
         f"'>{_e(transcript)}</textarea>"
         f"<div id=sessSaved class=food>{('Last saved: ' + _e(fmt_saved_hst(transcript_updated))) if transcript_updated else ''}</div>")
     narrative_section = (

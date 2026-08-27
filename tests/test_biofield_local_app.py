@@ -168,6 +168,9 @@ def test_authoring_flow(tmp_path):
         assert cx.execute("SELECT schedule_slot FROM biofield_auth_chain WHERE id=?",
                           (rid,)).fetchone()[0] == ""
     assert client.post(f"/author/{tid}/row/{rid}/delete", json={}).status_code == 200
+    author = client.get("/author/" + tid).data
+    assert b"Acid" in author and b"Liver" in author
+    assert b"Sterol Max XR" not in author
     cat = client.get("/api/catalog?q=x")
     assert cat.status_code == 200 and "catalog" in cat.get_json()
 

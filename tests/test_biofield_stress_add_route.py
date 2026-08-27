@@ -59,6 +59,21 @@ def test_add_balanced_on_layer(tmp_path):
     assert "Liver Congestion" not in {x["label"] for x in s["active"]}
 
 
+def test_add_balanced_to_layer_without_remedy(tmp_path):
+    client = _app(str(tmp_path / "c.db")).test_client()
+    tid = _new(client)
+    # Empty remedy anchors are valid layers.
+    client.post(f"/author/{tid}/row",
+                json={"layer": 1, "head": "Liver", "most_affected": "Gallbladder"})
+
+    j = client.post(f"/author/{tid}/stress/add",
+                    json={"label": "Liver Congestion", "layer": 1}).get_json()
+
+    assert j["ok"] and j["layer"] == 1
+    layer = _stress_state(client, tid)["by_layer"][0]
+    assert "Liver Congestion" in {x["label"] for x in layer["stresses"]}
+
+
 def test_add_empty_label_rejected(tmp_path):
     client = _app(str(tmp_path / "c.db")).test_client()
     tid = _new(client)
