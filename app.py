@@ -15264,6 +15264,128 @@ def _open_coaching_for_order(cx, email, order_id, source, window_source="self_se
     return {"ok": True, "created": res["created"], "ends_at": res["window"]["ends_at"]}
 
 
+BIOFIELD_MONTH_SOURCE = "biofield_month_delivery"
+
+
+def _order_has_remedy_line(order):
+    """True when an order carries at least one NON-service line.
+
+    A Biofield purchase is a service and ships nothing, so the delivery of a
+    service-only order must not start the month -- the month runs from receipt
+    of the client's REMEDIES."""
+    for it in ((order or {}).get("items") or []):
+        slug = (it.get("slug") or "").strip().lower()
+        if not slug:
+            continue
+        prod = _get_product(slug) or {}
+        if not prod.get("service"):
+            return True
+    return False
+
+
+def _qualifying_biofield_order(cx, email):
+    """The client's earliest paid $300 Biofield order that has not yet had its
+    included month started, or None.
+
+    $300 only: a full member pays $200 precisely BECAUSE they have already paid
+    for that month (Glen 2026-08-27), so a $200 line earns no time."""
+    try:
+        from dashboard import orders as _o
+        _prev_rf = getattr(cx, "row_factory", None)
+        try:
+            cx.row_factory = sqlite3.Row
+        except Exception:
+            pass
+        try:
+            rows = _o.list_orders_by_email(cx, email, limit=200)
+        finally:
+            try:
+                cx.row_factory = _prev_rf
+            except Exception:
+                pass
+    except Exception as e:
+        print(f"[biofield-month] order read failed for {email!r}: {e!r}", flush=True)
+        return None
+    # oldest first: the FIRST qualifying purchase owns the month
+    for o in sorted(rows, key=lambda r: str(r.get("created_at") or "")):
+        if (o.get("status") or "") == "cancelled":
+            continue
+        for it in (o.get("items") or []):
+            if (it.get("slug") or "").strip() != "biofield-analysis":
+                continue
+            if int(it.get("line_cents") or it.get("unit_cents") or 0) < 30000:
+                continue
+            ref = o.get("external_ref") or f"id:{o.get('id')}"
+            already = cx.execute(
+                "SELECT 1 FROM biofield_month_grants WHERE biofield_ref=?", (ref,)).fetchone()
+            if already:
+                continue
+            return o
+    return None
+
+
+def _extend_biofield_month_on_delivery(cx, email, delivered_order):
+    """Start the included month at RECEIPT OF REMEDIES, not at payment.
+
+    Glen 2026-08-27: a $300 Biofield buyer gets immediate access on payment (that
+    grant already exists -- _grant_biofield_line_on_paid) AND the 30-day month
+    runs from delivery of their first remedy order, so they get somewhat over a
+    month in total. Before this, the 30 days started at payment; since the
+    prerequisites (photo, intake, voice scan, biofield report) all clear before
+    remedies ship, a client could burn most of the month before anything arrived.
+
+    EXTENDS rather than restarts. _grant_membership writes `now + days`, and the
+    read path takes the furthest expiry -- so granting "now + 30" to somebody who
+    already holds longer access is a silent no-op and the month simply vanishes.
+    The days are therefore computed from the END of any current access.
+
+    Idempotent per BIOFIELD order (not per delivery): one purchase, one month,
+    however many parcels arrive. Best-effort -- never raises into the delivery
+    path, because a failed grant must not block marking a shipment delivered."""
+    try:
+        cx.execute("CREATE TABLE IF NOT EXISTS biofield_month_grants "
+                   "(biofield_ref TEXT PRIMARY KEY, email TEXT, delivered_ref TEXT, "
+                   " granted_at TEXT, days INTEGER)")
+        if not (email and _order_has_remedy_line(delivered_order)):
+            return "none"
+        bo = _qualifying_biofield_order(cx, email)
+        if not bo:
+            return "none"
+        ref = bo.get("external_ref") or f"id:{bo.get('id')}"
+        now = datetime.utcnow()
+        # Extend from the end of current access, so an existing window is not lost.
+        end = now
+        cur = _active_membership_for_email(email) or {}
+        if cur.get("lifetime"):
+            days = 0
+        else:
+            exp = (cur.get("expires_at") or "").replace("Z", "")
+            if exp:
+                try:
+                    parsed = datetime.fromisoformat(exp)
+                    if parsed > end:
+                        end = parsed
+                except ValueError:
+                    pass
+            days = (end - now).days + PROGRAM_CARE_TASTER_DAYS
+        claim = cx.execute(
+            "INSERT INTO biofield_month_grants (biofield_ref, email, delivered_ref, granted_at, days) "
+            "VALUES (?,?,?,?,?) ON CONFLICT(biofield_ref) DO NOTHING",
+            (ref, email, (delivered_order or {}).get("external_ref") or "",
+             now.isoformat() + "Z", days))
+        if not claim.rowcount:
+            return "already"
+        if days <= 0:
+            cx.commit()
+            return "lifetime"
+        _grant_membership(cx, email, days, BIOFIELD_MONTH_SOURCE)
+        cx.commit()
+        return "granted"
+    except Exception as e:
+        print(f"[biofield-month] extend failed for {email!r}: {e!r}", flush=True)
+        return "error"
+
+
 def _activate_coaching_for_shipment(cx, shipment, *, delivered_at):
     """Idempotent: on first delivery signal for a shipment, mark delivered_at and
     open a coaching window (source='delivery') for EVERY qualifying+eligible member
@@ -15298,6 +15420,11 @@ def _activate_coaching_for_shipment(cx, shipment, *, delivered_at):
             continue
         res = _open_coaching_for_order(cx, email, m["id"], m["source"], window_source="delivery")
         results.append({"order_id": m["id"], **res})
+        # The Biofield month runs from receipt of remedies. Placed here so every
+        # delivery path gets it -- carrier status, and both manual "mark
+        # delivered" routes all funnel through this function. Best-effort by
+        # contract: it never raises, so a grant failure cannot block delivery.
+        _extend_biofield_month_on_delivery(cx, email, _bos_orders.get_order(cx, m["id"]))
         if res.get("ok"):
             opened += 1
     if opened:
