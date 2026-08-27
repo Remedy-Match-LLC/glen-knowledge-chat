@@ -410,6 +410,7 @@
   .mentor-bubble{max-width:86%;padding:9px 11px;border-radius:12px;white-space:pre-wrap;line-height:1.45;font-size:.9rem}
   .mentor-bubble.user{align-self:flex-end;background:var(--brand);color:#fff}.mentor-bubble.assistant{align-self:flex-start;background:var(--card2);border:1px solid var(--line)}
   .mentor-guide{padding:8px 13px;border-top:1px solid var(--line);font-size:.76rem;color:var(--muted);display:flex;align-items:center;gap:7px}
+  .mentor-guide[hidden]{display:none}
   .mentor-compose{border-top:1px solid var(--line);padding:10px;display:flex;gap:7px}.mentor-compose input{flex:1;min-width:0;
     border:1px solid var(--line);border-radius:18px;padding:9px 12px;background:var(--card2);color:var(--ink);font:inherit}
   .mentor-send{border:0;border-radius:18px;padding:8px 13px;background:var(--btn-bg);color:var(--btn-fg);font-weight:700;cursor:pointer}
@@ -716,6 +717,7 @@
     </div>
     <div class="mentor-msgs" id="mentorMsgs" aria-live="polite"></div>
     <label class="mentor-guide"><input type="checkbox" id="mentorAutoGuide"> Guide me automatically on each page</label>
+    <label class="mentor-guide" id="mentorContinuousWrap" hidden><input type="checkbox" id="mentorContinuous"> Continuous two-way conversation</label>
     <div class="mentor-compose"><input id="mentorInput" type="text" placeholder="Ask about this page…" autocomplete="off"><button class="mentor-send" id="mentorSend">Send</button></div>
   </aside>
   <script>
@@ -1062,13 +1064,16 @@ function terrainBanner(d, kind){
 // Global (not inside render()) since the tab buttons' onclick="showTab(...)"
 // runs in global scope. Remembers the last-viewed tab in sessionStorage so a
 // household member switch (a full page nav) can land back on the same tab.
-function showTab(name){
+function showTab(name, options){
+  options = options || {};
   if(!document.querySelector('[data-panel="'+name+'"]')){ name = document.querySelector('[data-panel="hub"]') ? 'hub' : 'current'; }
   document.querySelectorAll('#portalTabs .tab').forEach(b =>
     b.classList.toggle('is-active', b.dataset.tab === name));
   document.querySelectorAll('[data-panel]').forEach(p =>
     p.hidden = (p.dataset.panel !== name));
-  try{ sessionStorage.setItem('rm_portal_tab', name); }catch(e){}
+  if(options.persist !== false){
+    try{ sessionStorage.setItem('rm_portal_tab', name); }catch(e){}
+  }
   if(typeof window.mentorPageChanged === "function") window.mentorPageChanged(name);
   // Task 7: fetch the suggestions queue every time the health panel becomes
   // active (fresh each visit -- a clinician or chat turn may have added one
@@ -2308,6 +2313,12 @@ function portalIntakeIsActive(){
   return !!panel && !panel.hidden;
 }
 
+function portalDetailPanelIsActive(){
+  const panel = Array.from(document.querySelectorAll('[data-panel]'))
+    .find(candidate => !candidate.hidden);
+  return !!panel && panel.dataset.panel !== "hub";
+}
+
 async function load(options){
   options = options || {};
   // Pending-analysis polling is background work. It must never replace the
@@ -2316,6 +2327,10 @@ async function load(options){
   // after the network wait so a client who opens Intake during an in-flight
   // poll is protected too.
   if(options.preserveActiveIntake && portalIntakeIsActive()) return false;
+  // Background refreshes must not replace a card while the client is reading
+  // or using it. Rebuilding #app resets the visible panel and destroys local UI
+  // state; the next background refresh can safely run once they return home.
+  if(options.preserveActivePanel && portalDetailPanelIsActive()) return false;
   // Two independent sources: content (biofield + reorder, token-or-session) and
   // the role-aware view (account/orders/upgrade, identity seam). Which one MUST
   // succeed depends on the page: a token link lives on its content; the logged-in
@@ -2351,6 +2366,7 @@ async function load(options){
     return;
   }
   if(options.preserveActiveIntake && portalIntakeIsActive()) return false;
+  if(options.preserveActivePanel && portalDetailPanelIsActive()) return false;
   _recoPayload = recoResult.kind === "ok" ? recoResult.data : null;
   render(dataResult.data, viewResult.data);
   window.__portalLastLoadedAt = Date.now();
@@ -2379,6 +2395,7 @@ function refreshPortalWhenReturning(){
   if(document.visibilityState === "hidden") return;
   const lastLoadedAt = Number(window.__portalLastLoadedAt || 0);
   if(Date.now() - lastLoadedAt < 30000) return;
+  if(portalDetailPanelIsActive()) return;
   load({preserveActiveIntake:true});
 }
 document.addEventListener("visibilitychange", refreshPortalWhenReturning);
@@ -2396,10 +2413,10 @@ function pollPending(){
   _ppPolls++;
   if(_ppPolls > PP_MAX){
     clearInterval(_ppTimer); _ppTimer = null;
-    load({preserveActiveIntake:true}); // final re-render swaps the spinner for the "we'll text you" line.
+    load({preserveActiveIntake:true, preserveActivePanel:true}); // final re-render swaps the spinner for the "we'll text you" line.
     return;
   }
-  load({preserveActiveIntake:true});
+  load({preserveActiveIntake:true, preserveActivePanel:true});
 }
 
 // Entity hover/tap pop-ups (stress patterns, remedies, functions) + link-out are
@@ -4537,7 +4554,10 @@ function render(d, v){
     });
   }
 
-  if (_hub) { showTab('hub'); }
+  // Establish a visible default while render wiring finishes, but do not erase
+  // the card the client selected. The restoration block below reads that saved
+  // value after the new panel DOM is ready.
+  if (_hub) { showTab('hub', {persist:false}); }
   try{
     if(localStorage.getItem("rm_calendar_collapsed")==="1"){
       const cb=document.getElementById("calendar-summary-body"), fb=document.getElementById("calendar-fold");
@@ -4964,12 +4984,21 @@ function render(d, v){
   const ssel = document.getElementById("bfScanSel");
   if(ssel) ssel.addEventListener("change", ()=>selectScan(ssel.value));
 
-  // Task 7: tab bar + Scan History rows + preference toggles. Everything here is
-  // additive and only wired when the flag put the tab bar in the DOM.
-  if (d.scan_history_enabled) {
+  // Restore the selected panel after every full render. Portal data can refresh
+  // in the background (pending-analysis polling, focus/visibility refreshes, or
+  // another action's load()), and the hub is also panel-based when scan history
+  // is disabled. Limiting restoration to scan-history portals made the first
+  // card click briefly open its panel, then bounce back home when an in-flight
+  // refresh completed.
+  if (_wrapPanels) {
     let wantTab = "current";
     try{ wantTab = sessionStorage.getItem("rm_portal_tab") || "current"; }catch(e){}
     showTab(wantTab);
+  }
+
+  // Task 7: Scan History rows + preference toggles. These controls only exist
+  // when the scan-history flag put them in the DOM.
+  if (d.scan_history_enabled) {
     app.querySelectorAll(".histrow").forEach(el => el.addEventListener("click", () => {
       if (el.getAttribute("data-viewmember") === "1") {
         if (window.__hhGo) window.__hhGo(el.getAttribute("data-member"));

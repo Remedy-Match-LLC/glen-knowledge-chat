@@ -6,6 +6,7 @@
   const send=document.getElementById("mentorSend"), msgs=document.getElementById("mentorMsgs");
   const mic=document.getElementById("mentorMic"), speaker=document.getElementById("mentorSpeaker");
   const autoGuide=document.getElementById("mentorAutoGuide"), contextLabel=document.getElementById("mentorContext");
+  const continuous=document.getElementById("mentorContinuous"), continuousWrap=document.getElementById("mentorContinuousWrap");
   if(!launcher||!panel||!input||!send||!msgs) return;
 
   const panelNames={hub:"your healing home",current:"your current analysis",history:"your scan history",
@@ -14,10 +15,17 @@
     offers:"membership and offers",photo:"your profile photo",finder:"the practitioner finder",
     bodymap:"the body map",classes:"your classes",account:"your account",remedies:"your remedies",
     refer:"the ambassador program",referrals:"your referrals"};
-  let speakerOn=true,recognition=null,sending=false,lastGuidedPanel="";
+  let speakerOn=true,recognition=null,sending=false,lastGuidedPanel="",micActivated=false;
+  let listening=false,speaking=false,continuousOn=false,restartTimer=null,restartAttempts=0;
+  let recognitionStarting=false,recognitionFatal=false;
   try{speakerOn=localStorage.getItem("rm_mentor_speaker")!=="off";autoGuide.checked=localStorage.getItem("rm_mentor_auto_guide")==="on"}catch(e){}
 
-  function syncAudioButtons(){speaker.classList.toggle("is-on",speakerOn);speaker.setAttribute("aria-pressed",speakerOn?"true":"false")}
+  function syncContinuousControl(){
+    const available=!!(recognition&&micActivated&&speakerOn);
+    continuousWrap.hidden=!available;
+    if(!available&&continuousOn){continuousOn=false;continuous.checked=false}
+  }
+  function syncAudioButtons(){speaker.classList.toggle("is-on",speakerOn);speaker.setAttribute("aria-pressed",speakerOn?"true":"false");syncContinuousControl()}
   function activePanel(){const el=Array.from(document.querySelectorAll("[data-panel]")).find(p=>!p.hidden);return el?(el.dataset.panel||"current"):"current"}
   function pageContext(){const key=activePanel(),root=document.querySelector('[data-panel="'+key+'"]')||document.getElementById("app")||document;
     const headings=Array.from(root.querySelectorAll("h1,h2,h3")).filter(h=>h.offsetParent!==null)
@@ -30,21 +38,59 @@
   function firstName(){const raw=(document.getElementById("portal-client-name")||{}).textContent||"";return raw.trim().split(/\s+/)[0]||""}
   function greeting(){const name=firstName(),c=pageContext();if(c.panel==="hub")return(name?"Aloha, "+name+". ":"Aloha. ")+"Would you like me to guide you through your healing home?";
     return(name?"Welcome back, "+name+". ":"Welcome. ")+"I can help with "+c.title+". What would you like to understand or do next?"}
-  function speak(text){if(!speakerOn||!window.speechSynthesis||!text)return;try{speechSynthesis.cancel();const u=new SpeechSynthesisUtterance(text);u.rate=.96;speechSynthesis.speak(u)}catch(e){}}
+  function paintMicActive(active){
+    mic.classList.toggle("mentor-listening",active);mic.classList.toggle("is-on",active);
+    mic.setAttribute("aria-pressed",active?"true":"false");
+  }
+  function startListening(){
+    if(!recognition||listening||recognitionStarting||speaking||sending||panel.hidden||recognitionFatal)return;
+    recognitionStarting=true;
+    try{recognition.start()}
+    catch(e){recognitionStarting=false;scheduleListening(true)}
+  }
+  function scheduleListening(retry){
+    window.clearTimeout(restartTimer);
+    if(!continuousOn||recognitionFatal||panel.hidden)return;
+    // SpeechRecognition may still be tearing down when onend fires. Retry with a
+    // short bounded backoff instead of letting one InvalidStateError kill the mic.
+    const delay=retry?Math.min(250*Math.pow(2,restartAttempts++),4000):250;
+    paintMicActive(true);
+    restartTimer=window.setTimeout(startListening,delay);
+  }
+  function speak(text,listenAfter){
+    if(!speakerOn||!window.speechSynthesis||!text){if(listenAfter)startListening();else scheduleListening();return}
+    try{
+      speaking=true;if(listening)recognition.stop();speechSynthesis.cancel();
+      const u=new SpeechSynthesisUtterance(text);u.rate=.96;
+      u.onend=u.onerror=()=>{speaking=false;if(listenAfter)startListening();else scheduleListening()};speechSynthesis.speak(u)
+    }catch(e){speaking=false;if(listenAfter)startListening();else scheduleListening()}
+  }
+  function disableContinuous(){
+    continuousOn=false;continuous.checked=false;window.clearTimeout(restartTimer);
+    restartAttempts=0;recognitionStarting=false;paintMicActive(listening);
+  }
   function openMentor(activateVoice){panel.hidden=false;launcher.setAttribute("aria-expanded","true");setContext();syncHistory();
-    if(!chatHistory.length&&!msgs.children.length){const g=greeting();append("assistant",g);if(activateVoice)speak(g)}input.focus();if(activateVoice&&recognition)try{recognition.start()}catch(e){}}
-  function closeMentor(){panel.hidden=true;launcher.setAttribute("aria-expanded","false")}
+    let greeted=false;if(!chatHistory.length&&!msgs.children.length){const g=greeting();append("assistant",g);greeted=true;if(activateVoice)speak(g,true)}input.focus();if(activateVoice&&recognition&&!greeted)startListening()}
+  function closeMentor(){panel.hidden=true;launcher.setAttribute("aria-expanded","false");disableContinuous();if(listening)try{recognition.stop()}catch(e){}}
 
   const Recognition=window.SpeechRecognition||window.webkitSpeechRecognition;
   if(Recognition){recognition=new Recognition();recognition.lang="en-US";recognition.interimResults=false;recognition.continuous=false;
-    recognition.onstart=()=>mic.classList.add("mentor-listening","is-on");
-    recognition.onend=recognition.onerror=()=>mic.classList.remove("mentor-listening","is-on");
-    recognition.onresult=e=>{input.value=Array.from(e.results).map(r=>r[0].transcript).join(" ");input.focus()}}
+    recognition.onstart=()=>{recognitionStarting=false;restartAttempts=0;listening=true;micActivated=true;recognitionFatal=false;paintMicActive(true);syncContinuousControl()};
+    recognition.onend=()=>{recognitionStarting=false;listening=false;if(continuousOn)scheduleListening();else paintMicActive(false)};
+    recognition.onerror=e=>{recognitionStarting=false;
+      if(e.error==="not-allowed"||e.error==="service-not-allowed"){
+        recognitionFatal=true;continuousOn=false;continuous.checked=false;micActivated=false;paintMicActive(false);syncContinuousControl()
+      }else if(continuousOn){scheduleListening(true)}
+    };
+    recognition.onresult=e=>{input.value=Array.from(e.results).map(r=>r[0].transcript).join(" ");input.focus();if(continuousOn)submit()}}
   else mic.hidden=true;
   syncAudioButtons();
   launcher.addEventListener("click",()=>{if(panel.hidden){speakerOn=true;try{localStorage.setItem("rm_mentor_speaker","on")}catch(e){}syncAudioButtons();openMentor(true)}else closeMentor()});
-  close.addEventListener("click",closeMentor);mic.addEventListener("click",()=>{if(recognition)try{recognition.start()}catch(e){}});
-  speaker.addEventListener("click",()=>{speakerOn=!speakerOn;try{localStorage.setItem("rm_mentor_speaker",speakerOn?"on":"off")}catch(e){}syncAudioButtons();if(!speakerOn&&window.speechSynthesis)speechSynthesis.cancel()});
+  close.addEventListener("click",closeMentor);mic.addEventListener("click",()=>{if(!recognition)return;if(listening){disableContinuous();try{recognition.stop()}catch(e){}}else startListening()});
+  speaker.addEventListener("click",()=>{speakerOn=!speakerOn;try{localStorage.setItem("rm_mentor_speaker",speakerOn?"on":"off")}catch(e){}syncAudioButtons();if(!speakerOn&&window.speechSynthesis){speaking=false;speechSynthesis.cancel()}});
+  continuous.addEventListener("change",()=>{continuousOn=continuous.checked;recognitionFatal=false;restartAttempts=0;
+    if(continuousOn){const t="Continuous conversation is on. Speak naturally, and I’ll listen again after each reply.";append("assistant",t);speak(t)}
+    else{disableContinuous();if(listening)try{recognition.stop()}catch(e){}}});
   autoGuide.addEventListener("change",()=>{try{localStorage.setItem("rm_mentor_auto_guide",autoGuide.checked?"on":"off")}catch(e){}
     if(autoGuide.checked){const t="Automatic guidance is on. I’ll quietly orient you when you move to a new part of your portal.";append("assistant",t);speak(t)}});
 
@@ -58,7 +104,7 @@
           else if(evt.error)throw new Error(String(evt.error));else if(evt.done)done=true}catch(e){if(e instanceof SyntaxError)continue;throw e}}}
       chatHistory.push({role:"user",content:query},{role:"assistant",content:answer});repopulateChatHistory();speak(answer)
     }catch(e){answerBubble.textContent=(e&&e.message)||"Something went wrong. Please try again.";answerBubble.classList.add("error")}
-    finally{sending=false;input.disabled=false;send.disabled=false;input.focus()}}
+    finally{sending=false;input.disabled=false;send.disabled=false;input.focus();if(continuousOn&&!speaking)scheduleListening()}}
   send.addEventListener("click",submit);input.addEventListener("keydown",e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();submit()}});
   window.mentorPageChanged=function(name){window.setTimeout(()=>{setContext();if(!autoGuide.checked||name===lastGuidedPanel)return;lastGuidedPanel=name;
     const text="You’re now viewing "+(panelNames[name]||"this part of your portal")+". Open me if you’d like an explanation or a recommended next step.";
