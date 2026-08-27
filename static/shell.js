@@ -32,6 +32,11 @@
     if (html != null) e.innerHTML = html;
     return e;
   }
+  function setButtonActive(button, active) {
+    if (!button) return;
+    button.classList.toggle("js-header-active", !!active);
+    button.setAttribute("aria-expanded", active ? "true" : "false");
+  }
   function isExternal(href) {
     if (!href) return false;
     if (/^(mailto:|tel:|#|javascript:)/i.test(href)) return false;
@@ -66,7 +71,14 @@
   function buildRibbon(trail) {
     var bar = el("div"); bar.id = "journey-shell";
     var home = el("button", "js-home", "Home"); home.title = "Home";
-    home.onclick = function () { location.href = "/"; };
+    home.onclick = function () {
+      if (/^\/portal\/(?:me|[^/]+)/.test(location.pathname) && typeof window.showTab === "function") {
+        window.showTab("hub");
+        window.scrollTo({top: 0, behavior: "smooth"});
+      } else {
+        location.href = "/";
+      }
+    };
     var back = el("button", "js-back", "Back"); back.title = "Back";
     back.onclick = function () {
       if (document.referrer && new URL(document.referrer).origin === location.origin) history.back();
@@ -84,7 +96,10 @@
       var toggle = el("button", "js-maptoggle", "Menu"); toggle.title = "Map / navigation";
       bar.insertBefore(toggle, home);  // unobtrusive upper-left toggle
       bar.appendChild(mnav);
-      toggle.onclick = function () { path.classList.toggle("js-hide"); mnav.classList.toggle("js-hide"); };
+      toggle.onclick = function () {
+        path.classList.toggle("js-hide"); mnav.classList.toggle("js-hide");
+        setButtonActive(toggle, !mnav.classList.contains("js-hide"));
+      };
     }
 
     // The Healing Oasis owns one remedy-order basket inside the portal page.
@@ -103,6 +118,7 @@
         count = Math.max(0, parseInt(count, 10) || 0);
         cartBadge.textContent = String(count);
         cartBadge.hidden = count === 0;
+        cartBtn.classList.toggle("js-header-active", count > 0);
         cartBtn.setAttribute("aria-label", count
           ? "View remedy order cart with " + count + " item" + (count === 1 ? "" : "s")
           : "View remedy order cart");
@@ -123,15 +139,17 @@
     }
 
     if (REWARDS) {
-      var orb = el("span", "js-orb"); orb.setAttribute("data-lit", "0"); orb.title = "Your biofield";
-      bar.appendChild(orb);
       var walletBtn = el("button", "js-mypath-btn", "Wallet");
+      walletBtn.setAttribute("data-glow", "0");
       bar.appendChild(walletBtn);
       var wp = el("div", "js-mypath"); wp.id = "js-wallet";
       wp.appendChild(el("h4", null, "Your offers"));
       var walletBody = el("div"); walletBody.id = "js-wallet-body"; wp.appendChild(walletBody);
       document.body.appendChild(wp);
-      walletBtn.onclick = function () { wp.classList.toggle("open"); };
+      walletBtn.onclick = function () {
+        wp.classList.toggle("open");
+        setButtonActive(walletBtn, wp.classList.contains("open"));
+      };
     }
 
     // Light/Dark/Auto toggle — rendered and owned by theme-mode.js. The ribbon owns
@@ -155,7 +173,10 @@
     document.body.classList.add("js-shell-on");
 
     var drawer = buildMyPath(trail);
-    mypathBtn.onclick = function () { drawer.classList.toggle("open"); };
+    mypathBtn.onclick = function () {
+      drawer.classList.toggle("open");
+      setButtonActive(mypathBtn, drawer.classList.contains("open"));
+    };
     return { path: path, mapBtn: mapBtn };
   }
 
@@ -210,7 +231,10 @@
     var cats = (mapCfg && mapCfg.categories) || {};
     var ov = el("div", "js-overlay");
     var close = el("button", "js-overlay-close", "×");
-    close.onclick = function () { ov.classList.remove("open"); };
+    close.onclick = function () {
+      ov.classList.remove("open");
+      setButtonActive(document.querySelector("#journey-shell .js-mapbtn"), false);
+    };
     var inner = el("div", "js-overlay-inner");
     var seenNext = false;
     journey.forEach(function (card) {
@@ -280,8 +304,8 @@
       .then(function (r) { return r.json(); })
       .then(function (j) {
         var coupons = (j && j.coupons) || [];
-        var orb = document.querySelector("#journey-shell .js-orb");
-        if (orb) orb.setAttribute("data-lit", String(Math.min(coupons.length, 3)));
+        var walletButton = document.querySelector("#journey-shell [data-glow]");
+        if (walletButton) walletButton.setAttribute("data-glow", String(Math.min(coupons.length, 3)));
         var panel = document.getElementById("js-wallet-body");
         if (panel) {
           panel.innerHTML = coupons.length ? "" : "<p class='js-fpower'>No offers yet — complete a step to earn one.</p>";
@@ -339,11 +363,15 @@
           ui.mapBtn.onclick = function () {
             if (window.__JQUEST__ && typeof window.__JQUEST__.open === "function") {
               window.__JQUEST__.open();
+              setButtonActive(ui.mapBtn, true);
             }
           };
         } else {
           var overlay = buildOverlay(journey, res[1]);
-          ui.mapBtn.onclick = function () { overlay.classList.add("open"); };
+          ui.mapBtn.onclick = function () {
+            overlay.classList.add("open");
+            setButtonActive(ui.mapBtn, true);
+          };
         }
         refreshWallet();
       } else ui.path.appendChild(el("span", "js-land", "illtowell.com"));
