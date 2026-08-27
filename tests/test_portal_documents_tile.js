@@ -6,7 +6,7 @@ const { renderDocuments } = require('../static/js/portal-documents.js');
 // empty -> the tile still renders, WITH the upload control (otherwise a
 // client can never make a first upload), but no doc list.
 const empty = renderDocuments([]);
-assert.ok(empty.includes('My Records'));
+assert.ok(empty.includes('Documents'));
 assert.ok(empty.includes('doc-upload'));
 assert.ok(/<input type=["']file["']/.test(empty));
 assert.ok(!empty.includes('doc-list'));
@@ -21,7 +21,7 @@ const pending = renderDocuments([{
   status: 'under_review', file_url: '/api/portal/t/documents/1/file',
   narrative_md: ''
 }]);
-assert.ok(pending.includes('My Records'));
+assert.ok(pending.includes('Documents'));
 assert.ok(pending.includes('/api/portal/t/documents/1/file'));
 assert.ok(pending.includes('Received — under review'));
 

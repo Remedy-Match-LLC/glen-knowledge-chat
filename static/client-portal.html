@@ -752,10 +752,6 @@
        survives render()'s poll re-renders, which fully replace app.innerHTML;
        filled/emptied by static/js/portal-library.js's own fetch + mount. -->
   <div id="portal-library-mount"></div>
-  <!-- My Records tile. Sibling of #app, filled by static/js/portal-documents.js's
-       own fetch + mount, same pattern as the library tile above. -->
-  <div id="portal-documents-mount"></div>
-
 <script src="/static/entity-ref.js"></script>
 <script src="/static/js/portal-library.js"></script>
 <script src="/static/js/portal-documents.js"></script>
@@ -1129,6 +1125,8 @@ const PORTAL_HASH_ROUTES = {
   recommendations: {panel:"current", target:"recsCard"},
   remedies: {panel:"remedies", target:"remedies-panel"},
   intake:   {panel:"intake", target:"portal-intake-card"},
+  health:   {panel:"records", target:"portal-health-profile"},
+  documents:{panel:"records", target:"portal-documents-mount"},
   offers:   {panel:"offers", target:"offers-card"},
   photo:    {panel:"photo", target:"photo-section"},
   cart:     {panel:"cart", target:"cart-body"},
@@ -1218,7 +1216,7 @@ function buildHubHtml(d, v){
   // curated health_profile block is enabled — off-state must add nothing.
   if (v && v.health_profile && v.health_profile.enabled) {
     const pending = v.health_profile.suggestion_count;
-    understandTiles.push(["health", "My Health Profile", "Review the details you provided in your Intake",
+    understandTiles.push(["records", "My Clinical Record", "Your health profile, documents and past intakes",
       (pending > 0) ? pending : undefined]);
   }
   // Task 5: the My Healing Oasis tile is only meaningful (and only rendered)
@@ -1502,6 +1500,19 @@ function buildHealthProfileHtml(v){
       <button type="button" class="btn ghost" onclick="showTab('intake')">Open or edit my Intake</button>
     </div>
     <div id="healthSuggestions"></div>${body}</div>`;
+}
+function buildClinicalRecordHtml(v){
+  const health = v && v.health_profile && v.health_profile.enabled
+    ? buildHealthProfileHtml(v)
+    : `<div class="card quiet"><p class="muted">Your health profile will appear here once your intake is on file.</p></div>`;
+  return `<div id="portal-clinical-record" class="portal-clinical-record">
+    <div class="card quiet"><div class="eyebrow">Your private health record</div>
+      <h1>My Clinical Record</h1>
+      <p class="muted">Review your current health profile and keep your clinical documents together.</p></div>
+    <div id="portal-health-profile">${health}</div>
+    <div id="portal-documents-mount"><div class="card quiet"><p class="muted">Loading your documents…</p></div></div>
+    <div id="portal-historical-intakes-mount"><div class="card quiet"><p class="muted">Loading past intake…</p></div></div>
+  </div>`;
 }
 // ── Task 5: My Healing Oasis panel (render-only). Consumes v.oasis (Task 4's
 // shape: {enabled, replenish[], build_out:{owned_from_us[], owned_external[],
@@ -2736,9 +2747,9 @@ function findHealthFieldEl(fieldId){
     .find(el => el.getAttribute("data-field-id") === fieldId) || null;
 }
 // Live-updates the hub tile's pending-count badge (the .pill inside
-// [data-tile="health"]) after a resolve, without a full hub re-render.
+// [data-tile="records"]) after a resolve, without a full hub re-render.
 function updateHealthTileBadge(count){
-  const tile = document.querySelector('.hub-tile[data-tile="health"]');
+  const tile = document.querySelector('.hub-tile[data-tile="records"]');
   if (!tile) return;
   const tname = tile.querySelector(".tname");
   let pill = tile.querySelector(".pill");
@@ -2783,7 +2794,7 @@ function renderHealthSuggestions(list){
     ${list.map(healthSuggestionItemHtml).join("")}</div>`;
 }
 // GET the pending queue and render it. Called every time the health panel
-// becomes active (showTab('health'), wired above) -- no-ops quietly if the
+// becomes active (showTab('records'), wired above) -- no-ops quietly if the
 // panel/host isn't in the DOM (feature off) or the request fails.
 function loadHealthSuggestions(){
   const host = document.getElementById("healthSuggestions");
@@ -4600,7 +4611,7 @@ function render(d, v){
       <section data-panel="intake" hidden>${back}<div class="card" id="portal-intake-card"><div id="portal-intake-host"></div></div></section>${_hub ? `
       <section data-panel="ask" hidden>${back}${_askHtml}</section>
       <section data-panel="voice" hidden>${back}${_voiceHtml}</section>
-      ${_hub && v.health_profile && v.health_profile.enabled ? `<section data-panel="health" hidden>${back}${buildHealthProfileHtml(v)}</section>` : ""}
+      <section data-panel="records" hidden>${back}${buildClinicalRecordHtml(v)}</section>
       ${_hub && v.oasis && v.oasis.enabled ? (_oasisView = v, `<section data-panel="oasis" hidden>${back}${buildOasisHtml(v)}</section>`) : ""}
       ${_hub ? `<section data-panel="cart" hidden>${back}${buildCartHtml()}</section>` : ""}
       <section data-panel="shop" hidden>${back}${buildShopHtml()}</section>
@@ -4705,6 +4716,8 @@ function render(d, v){
   initPeerCard();
   initConsultIntakeCard();
   initPortalIntakeCard();
+  if(window.loadPortalDocuments) window.loadPortalDocuments();
+  if(window.loadHistoricalIntakes) window.loadHistoricalIntakes();
   (function initClientPhoto(){
     const img = document.getElementById("client-photo");
     const file = document.getElementById("client-photo-file");
@@ -5524,7 +5537,7 @@ function showPortalIntakeComplete(host){
   host.appendChild(title);
   const body = document.createElement("p");
   body.className = "muted";
-  body.textContent = "Your answers are saved. You can review the details you provided anytime by opening My Health Profile from the Understand section of your portal home.";
+  body.textContent = "Your answers are saved. You can review them anytime in My Clinical Record from the Understand section of your portal home.";
   host.appendChild(body);
   const editButton = document.createElement("button");
   editButton.type = "button";
@@ -5532,15 +5545,15 @@ function showPortalIntakeComplete(host){
   editButton.textContent = "Edit my Intake";
   editButton.addEventListener("click", ()=>initPortalIntakeCard(true));
   host.appendChild(editButton);
-  const healthPanel = document.querySelector('[data-panel="health"]');
+  const healthPanel = document.querySelector('[data-panel="records"]');
   const button = document.createElement("button");
   button.type = "button";
   button.className = "btn full";
-  button.textContent = healthPanel ? "Open My Health Profile" : "Return to my portal";
+  button.textContent = healthPanel ? "Open My Clinical Record" : "Return to my portal";
   button.addEventListener("click", async ()=>{
     try{ history.replaceState(null, "", location.pathname + location.search); }catch(e){}
     if(healthPanel) await load();
-    showTab(healthPanel ? "health" : "hub");
+    showTab(healthPanel ? "records" : "hub");
   });
   host.appendChild(button);
 }
