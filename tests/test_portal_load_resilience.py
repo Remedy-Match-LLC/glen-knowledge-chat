@@ -61,7 +61,8 @@ def test_background_refresh_does_not_replace_an_open_card():
     assert "function portalDetailPanelIsActive()" in HTML
     assert "options.preserveActivePanel && portalDetailPanelIsActive()" in HTML
     assert HTML.count("options.preserveActivePanel && portalDetailPanelIsActive()") == 2
-    assert HTML.count("preserveActiveIntake:true, preserveActivePanel:true") == 3
+    assert HTML.count("preserveActiveIntake:true, preserveActivePanel:true") == 2
+    assert "if(portalDetailPanelIsActive()) return;" in HTML
 
 
 def test_intake_panel_is_rendered_for_hub_and_legacy_portals():

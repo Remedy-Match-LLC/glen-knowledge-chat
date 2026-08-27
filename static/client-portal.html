@@ -2395,7 +2395,8 @@ function refreshPortalWhenReturning(){
   if(document.visibilityState === "hidden") return;
   const lastLoadedAt = Number(window.__portalLastLoadedAt || 0);
   if(Date.now() - lastLoadedAt < 30000) return;
-  load({preserveActiveIntake:true, preserveActivePanel:true});
+  if(portalDetailPanelIsActive()) return;
+  load({preserveActiveIntake:true});
 }
 document.addEventListener("visibilitychange", refreshPortalWhenReturning);
 window.addEventListener("focus", refreshPortalWhenReturning);
