@@ -13,7 +13,10 @@ alternate, nor any canonical, nor any reserved route segment.
 Imports no Flask app, so it is unit-testable on its own.
 """
 
+import datetime
 import re
+
+from dashboard import db
 
 MIN_LEN = 3
 MAX_LEN = 40
@@ -88,3 +91,87 @@ def check_not_reserved(slug, reserved):
     """Raise SlugError if `slug` is a reserved word."""
     if slug in reserved:
         raise SlugError(f"'{slug}' is reserved")
+
+
+def _now():
+    return datetime.datetime.now(datetime.timezone.utc).isoformat()
+
+
+def init_tables(cx):
+    """Create the alias table. Idempotent; safe to call on every read path,
+    matching dashboard.referrals.init_tables."""
+    cx.execute("CREATE TABLE IF NOT EXISTS practitioner_slug_aliases ("
+               "alias TEXT PRIMARY KEY, canonical_slug TEXT NOT NULL,"
+               " created_at TEXT NOT NULL)")
+    cx.commit()
+
+
+def canonical_exists(cx, slug):
+    """True iff `slug` is an APPROVED practitioner's canonical slug."""
+    row = cx.execute(
+        "SELECT 1 FROM affiliate_signups WHERE slug=? AND status='approved'",
+        (normalize(slug),)).fetchone()
+    return row is not None
+
+
+def slug_is_taken(cx, slug):
+    """True iff `slug` is ANY practitioner's canonical slug, at any status.
+
+    Deliberately broader than canonical_exists: claiming is about the whole
+    namespace, serving is about approved practitioners only. If an alias could
+    take a PENDING practitioner's slug, then on that practitioner's approval
+    resolve() -- which checks canonical first -- would silently start shadowing
+    a published alias. A published URL must never break that way.
+    """
+    row = cx.execute("SELECT 1 FROM affiliate_signups WHERE slug=?",
+                     (normalize(slug),)).fetchone()
+    return row is not None
+
+
+def alias_owner(cx, alias):
+    """The canonical slug an alias points at, or '' when the alias is unknown."""
+    init_tables(cx)
+    row = cx.execute(
+        "SELECT canonical_slug FROM practitioner_slug_aliases WHERE alias=?",
+        (normalize(alias),)).fetchone()
+    return (row[0] or "") if row else ""
+
+
+def resolve(cx, slug):
+    """Resolve a URL slug to ('canonical'|'alias'|'', canonical_slug).
+
+    Canonical is checked FIRST. A canonical slug can never be shadowed by an
+    alias, because claim_alias refuses to create one that collides.
+    """
+    s = normalize(slug)
+    if canonical_exists(cx, s):
+        return ("canonical", s)
+    owner = alias_owner(cx, s)
+    if owner and canonical_exists(cx, owner):
+        return ("alias", owner)
+    return ("", "")
+
+
+def claim_alias(cx, canonical, alias, reserved):
+    """Reserve `alias` as a redirect to `canonical`. Raises SlugError if the
+    alias is malformed, reserved, already an alias, or anyone's canonical.
+
+    Fails closed: every check runs before the insert, and the alias PRIMARY KEY
+    is the backstop against a concurrent duplicate.
+    """
+    init_tables(cx)
+    a = normalize(alias)
+    c = normalize(canonical)
+    check_shape(a)
+    check_not_reserved(a, reserved)
+    if slug_is_taken(cx, a):
+        raise SlugError(f"'{a}' is already a practitioner's canonical slug")
+    if alias_owner(cx, a):
+        raise SlugError(f"'{a}' is already claimed as an alias")
+    try:
+        cx.execute("INSERT INTO practitioner_slug_aliases"
+                   " (alias, canonical_slug, created_at) VALUES (?,?,?)",
+                   (a, c, _now()))
+        cx.commit()
+    except db.IntegrityError as e:           # concurrent claim won the race
+        raise SlugError(f"'{a}' is already claimed as an alias") from e
