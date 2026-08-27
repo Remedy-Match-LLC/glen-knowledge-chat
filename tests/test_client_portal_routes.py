@@ -1,5 +1,6 @@
 # tests/test_client_portal_routes.py
 import sqlite3
+from pathlib import Path
 import pytest
 from urllib.parse import parse_qs, urlparse
 
@@ -394,6 +395,14 @@ def test_portal_me_page_served_when_enabled(client, monkeypatch):
     c, appmod = client
     monkeypatch.setattr(appmod, "_client_login_enabled", lambda: True)
     assert c.get("/portal/me").status_code == 200
+
+
+def test_client_portal_has_sign_out_and_switch_account_controls():
+    html = Path("static/client-portal.html").read_text()
+    assert 'fetch("/portal/logout"' in html
+    assert ">Sign out</button>" in html
+    assert ">Switch account</button>" in html
+    assert 'endPortalSession("/portal/login?switch=1"' in html
 
 
 def test_portal_checkout_resolves_via_session(client, monkeypatch):
