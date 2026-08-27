@@ -145,3 +145,21 @@ def test_save_draft_after_submit_is_noop(client):
     assert body["submitted"] is True
     assert body["status"] == "submitted"
     assert body["answers"]["first_name"] == "Ann"
+
+
+def test_submit_systemic_checklist_seeds_starter_remedies(client):
+    answers = {
+        "first_name": "Ann", "last_name": "Lee", "email": "a@x.com",
+        "dob": "1970-01-01", "terrain": 1, "penetration": 5,
+        "tissue_layer": 3, "response": 3, "commitment": 8,
+        "systemic_symptoms": ["symptom-sleep", "symptom-fatigue"],
+        "terms": {"agreed": True, "signature": "Ann Lee", "date": "2026-08-08"},
+    }
+    assert client.post("/api/intake/submit?token=good",
+                       json={"answers": answers}).status_code == 200
+    import app as appmod
+    with sqlite3.connect(appmod.LOG_DB) as cx:
+        origins = {r[0] for r in cx.execute(
+            "SELECT DISTINCT origin_ref FROM recommendation_events "
+            "WHERE client_email=? AND source_key='condition'", ("member@x.com",))}
+    assert {"symptom-sleep", "symptom-fatigue"} <= origins

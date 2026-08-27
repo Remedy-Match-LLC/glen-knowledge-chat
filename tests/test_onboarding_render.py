@@ -89,6 +89,14 @@ def test_render_onboarding_triage_form_gated_on_history_done():
           console.error('missing condition ' + condition); process.exit(1);
         }
       }
+      const systemic = ['symptom-fatigue','symptom-brain-fog','symptom-stress',
+        'symptom-sleep','symptom-headache','symptom-digestion','symptom-constipation',
+        'symptom-immune','symptom-skin','symptom-blood-sugar'];
+      for (const symptom of systemic) {
+        if (!htmlNotDone.includes('value="' + symptom + '"')) {
+          console.error('missing systemic symptom ' + symptom); process.exit(1);
+        }
+      }
       if (!/name="other_condition"/.test(htmlNotDone)) {
         console.error('missing Other free-text field'); process.exit(1);
       }

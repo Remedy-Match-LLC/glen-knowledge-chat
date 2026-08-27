@@ -87,6 +87,19 @@ function renderTriageForm(status) {
           '<label class="ob-triage-field">Other eye or vision issue' +
             '<textarea name="other_condition" rows="3"></textarea></label>' +
         '</div>' +
+        '<p class="ob-triage-intro" style="margin-top:1rem">Do you commonly experience any of these whole-body symptoms? Check all that apply.</p>' +
+        '<div class="ob-condition-list ob-systemic-symptom-list">' +
+          _conditionChoice('symptom-fatigue', 'Fatigue or low energy') +
+          _conditionChoice('symptom-brain-fog', 'Brain fog or poor focus') +
+          _conditionChoice('symptom-stress', 'Stress or anxious tension') +
+          _conditionChoice('symptom-sleep', 'Trouble sleeping') +
+          _conditionChoice('symptom-headache', 'Headache or migraine') +
+          _conditionChoice('symptom-digestion', 'Digestive discomfort or bloating') +
+          _conditionChoice('symptom-constipation', 'Constipation or irregularity') +
+          _conditionChoice('symptom-immune', 'Frequent illness or slow recovery') +
+          _conditionChoice('symptom-skin', 'Common skin concerns') +
+          _conditionChoice('symptom-blood-sugar', 'Blood sugar swings or cravings') +
+        '</div>' +
       '</div>';
   }
   return '' +

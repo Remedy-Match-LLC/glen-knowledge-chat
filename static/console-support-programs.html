@@ -66,7 +66,7 @@
 </style>
 <script src="/static/op-nav.js" data-active="clinical"></script>
 <h1>Support Program Editor</h1>
-<p class="sub">Glen's 9 authored condition support programs. Edit item dose/note, reorder, add/remove items, and toggle the consult-recommended flag. Console-only — no client-facing surface yet.</p>
+<p class="sub">Authored eye-condition and systemic-symptom support programs. Edit symptoms, item dose/note, ordering, and consult status.</p>
 <div id="content"><p class="sub">Loading…</p></div>
 <div id="bb-content"></div>
 <div id="cc-content"></div>
@@ -122,6 +122,8 @@
     var itemsHtml = items.map(function(it, ii){ return itemBlock(pi, ii, it); }).join('');
     return '<div class="pcard" data-pi="'+pi+'">'
       + '<div class="phead"><h2>'+esc(p.label)+'<span class="key">'+esc(p.condition_key)+'</span></h2></div>'
+      + '<label class="flabel">Common symptoms (one per line)</label>'
+      + '<textarea class="plabel-input f-symptoms" data-pi="'+pi+'" rows="4">'+esc((p.symptoms||[]).join('\n'))+'</textarea>'
       + '<div class="consult-row"><label><input type="checkbox" class="f-consult" data-pi="'+pi+'"'
       + (p.consult_recommended ? ' checked' : '') + '> Consult recommended</label></div>'
       + '<div class="items" data-pi="'+pi+'">' + itemsHtml + '</div>'
@@ -168,6 +170,9 @@
 
     el.querySelector('.f-consult').addEventListener('change', function(e){
       PROGRAMS[pi].consult_recommended = e.target.checked;
+    });
+    el.querySelector('.f-symptoms').addEventListener('input', function(e){
+      PROGRAMS[pi].symptoms = e.target.value.split('\n').map(function(s){ return s.trim(); }).filter(Boolean);
     });
 
     el.querySelectorAll('.up').forEach(function(btn){
@@ -235,6 +240,8 @@
   async function save(pi){
     var p = PROGRAMS[pi];
     p.items = readItemsFromDom(pi);
+    p.symptoms = document.querySelector('.f-symptoms[data-pi="'+pi+'"]').value
+      .split('\n').map(function(s){ return s.trim(); }).filter(Boolean);
     var statusEl = document.querySelector('[data-pi-status="'+pi+'"]');
     var btn = document.querySelector('button.save[data-pi="'+pi+'"]');
     btn.disabled = true;
@@ -246,7 +253,8 @@
         method: 'POST', headers: hdr(),
         body: JSON.stringify({
           condition_key: p.condition_key, label: p.label,
-          consult_recommended: !!p.consult_recommended, items: p.items
+          consult_recommended: !!p.consult_recommended, symptoms: p.symptoms,
+          items: p.items, modifiers: p.modifiers || []
         })
       });
     } catch(e){

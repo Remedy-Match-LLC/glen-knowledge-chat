@@ -306,6 +306,23 @@ function field(f,val){
     sel.value=(typeof val==="string")?val:""; sel.addEventListener("change",scheduleSave); wrap.appendChild(sel);
     S.getters[f.id]=()=>sel.value||""; S.setters[f.id]=v=>{sel.value=v||"";}; S.fieldEls[f.id]=sel; return wrap;
   }
+  if(f.type==="multi_choice"){
+    const g=document.createElement("div"); g.className="scale";
+    const selected=new Set(Array.isArray(val)?val:[]);
+    (f.options||[]).forEach(o=>{
+      const value=(typeof o==="string")?o:o.value;
+      const text=(typeof o==="string")?o:o.label;
+      const ol=document.createElement("label"); ol.className="scale-opt";
+      const cb=document.createElement("input"); cb.type="checkbox"; cb.value=value;
+      cb.checked=selected.has(value); cb.addEventListener("change",scheduleSave);
+      const sp=document.createElement("span"); sp.textContent=text;
+      ol.appendChild(cb); ol.appendChild(sp); g.appendChild(ol);
+    });
+    wrap.appendChild(g);
+    S.getters[f.id]=()=>Array.from(g.querySelectorAll("input:checked")).map(cb=>cb.value);
+    S.setters[f.id]=v=>{const chosen=new Set(Array.isArray(v)?v:[]);g.querySelectorAll("input").forEach(cb=>{cb.checked=chosen.has(cb.value);});};
+    S.fieldEls[f.id]=g; return wrap;
+  }
   if(f.type==="textarea"){
     const ta=document.createElement("textarea"); ta.value=(typeof val==="string")?val:""; ta.addEventListener("input",scheduleSave); wrap.appendChild(ta);
     S.getters[f.id]=()=>ta.value; S.setters[f.id]=v=>{ta.value=(v==null)?"":String(v);}; S.fieldEls[f.id]=ta; return wrap;

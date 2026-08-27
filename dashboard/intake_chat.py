@@ -25,6 +25,9 @@ def form_outline():
                 out.append(f"- {fid} (list of rows, each {{{cols}}}): {f['label']}")
             elif ftype == "single_choice":
                 out.append(f"- {fid} (choose one of {f['options']}): {f['label']}")
+            elif ftype == "multi_choice":
+                opts = "; ".join(f"{o['value']}={o['label']}" for o in f["options"])
+                out.append(f"- {fid} (choose any; record a list of values): {f['label']} [{opts}]")
             elif ftype == "consent":
                 out.append(f"- {fid} (consent — leave for the final review/sign step): {f['label']}")
             else:
@@ -51,6 +54,8 @@ def build_system(base_voice, name):
         f"- Their name and email are already on file; do NOT ask for {', '.join(PREFILLED)}.\n"
         "- For scale questions, explain the choices simply and record the single number "
         "the person lands on.\n"
+        "- For multi-choice symptom questions, record a list containing only the exact "
+        "option values from the form outline.\n"
         "- Record ONLY what they actually tell you. If they decline or have none, skip the "
         "field — never invent an answer.\n"
         "- Leave the consent/terms for the final review-and-sign step; do not collect it here.\n\n"

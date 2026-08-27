@@ -22792,13 +22792,17 @@ def api_portal_starter_remedies(token):
     conditions = data.get("conditions") or []
     products = data.get("products") or {}
     extended = data.get("extended") or {}
-    if not isinstance(conditions, list) or len(conditions) > 8:
+    if not isinstance(conditions, list) or len(conditions) > 18:
         return jsonify({"error": "Invalid condition list."}), 400
 
     allowed = {
         "glaucoma", "cataract", "macular", "dry-eye",
         "retinitis-pigmentosa", "diabetic-retinopathy",
         "vision-improvement", "other",
+        "symptom-fatigue", "symptom-brain-fog", "symptom-stress",
+        "symptom-sleep", "symptom-headache", "symptom-digestion",
+        "symptom-constipation", "symptom-immune", "symptom-skin",
+        "symptom-blood-sugar",
     }
     clean_conditions = []
     for item in conditions:
@@ -25315,6 +25319,22 @@ def _init_support_programs_tables(cx):
         [{"slug": "wholomega-120-gelcaps", "name": "WholOmega 120 gelcaps",
           "dose": "4 times a day"},
          {"slug": "nous-energy", "name": "Nous Energy"}])
+    condition_programs.ensure_program(
+        cx, "macular-pucker", "Macular Pucker (Epiretinal Membrane)",
+        [{"slug": "scar-silk", "name": "Scar Silk",
+          "alts": [{"slug": "clear-the-way", "name": "Clear the Way"}]},
+         {"slug": "scar-solve", "name": "Scar Solve"},
+         {"slug": "scar-soft-drink", "name": "Scar Soft (when available)"},
+         {"slug": "ocuheal-eye-drops", "name": "OcuHeal Eye Drops"}],
+        symptoms=["Blurry or wavy central vision", "Straight lines look bent",
+                  "Trouble reading or seeing fine detail"])
+    for key, prog in (seed.get("condition_programs") or {}).items():
+        if key.startswith("symptom-"):
+            condition_programs.ensure_program(
+                cx, key, prog.get("label") or "", prog.get("items") or [],
+                bool(prog.get("consult_recommended")), prog.get("symptoms") or [])
+    condition_programs.seed_symptoms_once(
+        cx, seed.get("condition_programs") or {})
     # One-time, marker-guarded restructure of dry-eye into base items + the
     # aqueous_deficiency/severe modifiers, for stores seeded long ago (before
     # this shape existed) where seed_if_empty's once-ever marker already
@@ -25338,6 +25358,7 @@ def _eye_program_public_view(prog):
     return {
         "condition_key": prog.get("condition_key"),
         "label": prog.get("label"),
+        "symptoms": prog.get("symptoms") or [],
         "consult_recommended": bool(prog.get("consult_recommended")),
         "items": [_support_program_item_view(it) for it in (prog.get("items") or [])],
         "modifiers": [_mod(m) for m in (prog.get("modifiers") or [])],
@@ -25415,7 +25436,7 @@ def api_console_condition_programs_upsert():
         _init_support_programs_tables(cx)
         condition_programs.upsert(cx, key, body.get("label") or "",
                                    bool(body.get("consult_recommended")),
-                                   items, modifiers)
+                                   items, modifiers, body.get("symptoms") or [])
     return jsonify({"ok": True, "unknown_slugs": unknown_slugs})
 
 
@@ -25453,6 +25474,7 @@ def api_console_broad_benefit_toggle():
 
 _SUPPORT_PROGRAM_CONDITION_KEYS = (
     "glaucoma-elevated-iop", "glaucoma-normal-iop", "dry-amd", "wet-amd",
+    "macular-pucker",
     "senile-cataract", "psc-cataract", "dry-eye", "retinitis-pigmentosa",
     "diabetic-retinopathy",
 )
@@ -25464,6 +25486,10 @@ _SUPPORT_PROGRAM_CONDITION_KEYS = (
 # to skip, not a match, so the operator must set the specific one via the
 # client_conditions override rather than have the resolver guess.
 _CONDITION_TAG_MAP = {
+    "macular pucker": "macular-pucker",
+    "macular puckering": "macular-pucker",
+    "epiretinal membrane": "macular-pucker",
+    "cellophane maculopathy": "macular-pucker",
     "wet amd": "wet-amd",
     "neovascular amd": "wet-amd",
     "exudative amd": "wet-amd",
@@ -25855,6 +25881,7 @@ def _support_program_for(email):
         result = {
             "condition_key": prog["condition_key"],
             "label": prog["label"],
+            "symptoms": prog.get("symptoms") or [],
             "consult_recommended": bool(prog["consult_recommended"]),
             "items": [_support_program_item_view(it) for it in resolved],
         }
@@ -29640,6 +29667,18 @@ def intake_save_draft():
     return jsonify({"ok": True})
 
 
+def _seed_intake_systemic_symptoms(cx, email, answers):
+    """Turn intake checklist selections into auditable condition recommendations."""
+    from dashboard import condition_triage as _ct
+    selected = (answers or {}).get("systemic_symptoms") or []
+    if not isinstance(selected, list):
+        return
+    _init_support_programs_tables(cx)
+    for key in selected:
+        if isinstance(key, str) and key.startswith("symptom-"):
+            _ct.seed_from_triage(cx, email, key, {})
+
+
 @app.route("/api/intake/submit", methods=["POST"])
 def intake_submit():
     from dashboard import intake as _intake
@@ -29656,8 +29695,10 @@ def intake_submit():
         now = _hst_now().isoformat()
         if _intake.is_submitted(cx, ident.email):
             _intake.update_submitted(cx, ident.email, answers, now)
+            _seed_intake_systemic_symptoms(cx, ident.email, answers)
             return jsonify({"ok": True, "updated": True})
         _intake.submit(cx, ident.email, answers, now)
+        _seed_intake_systemic_symptoms(cx, ident.email, answers)
     return jsonify({"ok": True, "updated": False})
 
 
@@ -29763,6 +29804,8 @@ def intake_public_submit():
         if errors:
             return jsonify({"error": "invalid", "errors": errors}), 400
         res = _ip.public_submit(cx, email, answers, now.isoformat())
+        if res != "already":
+            _seed_intake_systemic_symptoms(cx, email, answers)
     if res == "already":
         return jsonify({"error": "already_submitted"}), 409
     return jsonify({"ok": True})

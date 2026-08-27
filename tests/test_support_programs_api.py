@@ -43,17 +43,24 @@ def test_get_condition_programs_requires_console_key(app_mod):
     assert r.status_code in (401, 403)
 
 
-def test_get_condition_programs_seeds_and_returns_ten(app_mod, tmp_db):
+def test_get_condition_programs_seeds_and_returns_all_programs(app_mod, tmp_db):
     client = app_mod.app.test_client()
     r = client.get("/api/console/condition-programs", headers=HDRS)
     assert r.status_code == 200
     j = r.get_json()
-    assert len(j["programs"]) == 10
+    assert len(j["programs"]) == 21
     keys = {p["condition_key"] for p in j["programs"]}
-    assert keys == {
+    assert {
         "glaucoma-elevated-iop", "glaucoma-normal-iop", "dry-amd", "wet-amd",
         "senile-cataract", "psc-cataract", "dry-eye", "retinitis-pigmentosa",
         "diabetic-retinopathy", "vision-improvement",
+    } <= keys
+    assert "macular-pucker" in keys
+    assert {key for key in keys if key.startswith("symptom-")} == {
+        "symptom-fatigue", "symptom-brain-fog", "symptom-stress",
+        "symptom-sleep", "symptom-headache", "symptom-digestion",
+        "symptom-constipation", "symptom-immune", "symptom-skin",
+        "symptom-blood-sugar",
     }
     assert isinstance(j["broad_benefit"], list)
     assert "wholomega" in j["broad_benefit"]
@@ -63,7 +70,7 @@ def test_get_condition_programs_seed_is_idempotent(app_mod, tmp_db):
     client = app_mod.app.test_client()
     client.get("/api/console/condition-programs", headers=HDRS)
     r2 = client.get("/api/console/condition-programs", headers=HDRS)
-    assert len(r2.get_json()["programs"]) == 10
+    assert len(r2.get_json()["programs"]) == 21
 
 
 # ---------------------------------------------------------------------------
@@ -222,7 +229,9 @@ def test_real_seed_content_loads_correctly_through_seed_path(app_mod, tmp_db):
     j = r.get_json()
 
     programs = {p["condition_key"]: p for p in j["programs"]}
-    assert len(programs) == 10
+    assert len(programs) == 21
+    assert "macular-pucker" in programs
+    assert "symptom-fatigue" in programs
 
     assert len(EXPECTED_BROAD_BENEFIT_SLUGS) == 26
     assert set(j["broad_benefit"]) == EXPECTED_BROAD_BENEFIT_SLUGS

@@ -294,6 +294,15 @@ def test_resolver_canonical_drives_program_when_no_override(app_mod, tmp_db):
     assert app_mod._client_condition_for("jane@example.com") == "glaucoma-elevated-iop"
 
 
+@pytest.mark.parametrize("condition", [
+    "Macular Pucker", "Macular Puckering", "Epiretinal Membrane",
+    "Cellophane Maculopathy",
+])
+def test_resolver_recognizes_macular_pucker_aliases(app_mod, tmp_db, condition):
+    _seed_canonical(tmp_db, "jane@example.com", [condition])
+    assert app_mod._client_condition_for("jane@example.com") == "macular-pucker"
+
+
 def test_resolver_canonical_outranks_conflicting_people_tag(app_mod, tmp_db):
     _seed_person(tmp_db, "jane@example.com", tags=["pb:dry-amd"])
     _seed_canonical(tmp_db, "jane@example.com", ["wet amd"])

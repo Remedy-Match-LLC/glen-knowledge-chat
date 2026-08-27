@@ -16,6 +16,7 @@ def _load_app():
 def test_view_builder_shows_all_modifiers_and_urls():
     app = _load_app()
     prog = {"condition_key": "dry-amd", "label": "Dry AMD", "consult_recommended": False,
+            "symptoms": ["Blurred central vision"],
             "items": [{"slug": "wholomega", "name": "WholOmega", "dose": "4/day",
                        "alts": [{"slug": "brain-cleanse", "name": "Brain Cleanse"}]}],
             "modifiers": [{"when": "drusen", "action": "add", "source": "diagnosis-implied",
@@ -24,6 +25,7 @@ def test_view_builder_shows_all_modifiers_and_urls():
     v = app._eye_program_public_view(prog)
     assert v["condition_key"] == "dry-amd" and v["label"] == "Dry AMD"
     assert v["consult_recommended"] is False
+    assert v["symptoms"] == ["Blurred central vision"]
     assert v["items"][0]["name"] == "WholOmega" and v["items"][0]["dose"] == "4/day"
     assert v["items"][0]["url"]                              # store URL present
     assert v["items"][0]["alts"][0]["name"] == "Brain Cleanse"

@@ -9,6 +9,7 @@ SEED = {
     "dry-eye": {
         "label": "Dry Eye",
         "consult_recommended": False,
+        "symptoms": ["Burning eyes", "Fluctuating blurry vision"],
         "items": [
             {"slug": "aces-eye-drops", "name": "ACES Eye Drops",
              "alts": [{"slug": "ocuheal-eye-drops", "name": "OcuHeal Eye Drops"}]},
@@ -36,7 +37,7 @@ def test_init_table_creates_schema(tmp_db):
     cp.init_table(cx)
     cols = {r[1] for r in cx.execute("PRAGMA table_info(condition_programs)")}
     assert cols == {"condition_key", "label", "consult_recommended", "items_json",
-                     "modifiers_json", "updated_at"}
+                     "modifiers_json", "symptoms_json", "updated_at"}
 
 
 def test_seed_if_empty_populates_table(tmp_db):
@@ -69,6 +70,7 @@ def test_seed_if_empty_never_overwrites_operator_edit(tmp_db):
     got = cp.get(cx, "dry-eye")
     assert got["label"] == "Dry Eye (edited)"
     assert got["consult_recommended"] is True
+    assert got["symptoms"] == []
     assert got["items"] == [{"slug": "moisturize", "name": "Moisturize"}]
 
 
@@ -108,11 +110,27 @@ def test_upsert_inserts_new_program(tmp_db):
     cx = _cx(tmp_db)
     cp.init_table(cx)
     cp.upsert(cx, "dry-eye", "Dry Eye", False,
-               [{"slug": "moisturize", "name": "Moisturize"}])
+               [{"slug": "moisturize", "name": "Moisturize"}],
+              symptoms=["Burning eyes", "Scratchy eyes"])
     got = cp.get(cx, "dry-eye")
     assert got["label"] == "Dry Eye"
     assert got["consult_recommended"] is False
     assert got["items"] == [{"slug": "moisturize", "name": "Moisturize"}]
+    assert got["symptoms"] == ["Burning eyes", "Scratchy eyes"]
+
+
+def test_symptom_backfill_is_once_only_and_preserves_operator_edits(tmp_db):
+    cx = _cx(tmp_db)
+    cp.init_table(cx)
+    cp.seed_if_empty(cx, SEED)
+    cx.execute("UPDATE condition_programs SET symptoms_json='[]' WHERE condition_key='dry-eye'")
+    cx.commit()
+    cp.seed_symptoms_once(cx, SEED)
+    assert cp.get(cx, "dry-eye")["symptoms"] == SEED["dry-eye"]["symptoms"]
+    cp.upsert(cx, "dry-eye", "Dry Eye", False, [],
+              symptoms=["Operator wording"])
+    cp.seed_symptoms_once(cx, SEED)
+    assert cp.get(cx, "dry-eye")["symptoms"] == ["Operator wording"]
 
 
 def test_upsert_updates_existing_program_and_bumps_updated_at(tmp_db):
@@ -140,8 +158,12 @@ def test_all_returns_list(tmp_db):
 
 CLINICAL_ORDER = [
     "glaucoma-elevated-iop", "glaucoma-normal-iop", "dry-amd", "wet-amd",
+    "macular-pucker",
     "senile-cataract", "psc-cataract", "dry-eye", "retinitis-pigmentosa",
     "diabetic-retinopathy",
+    "symptom-fatigue", "symptom-brain-fog", "symptom-stress", "symptom-sleep",
+    "symptom-headache", "symptom-digestion", "symptom-constipation",
+    "symptom-immune", "symptom-skin", "symptom-blood-sugar",
 ]
 
 

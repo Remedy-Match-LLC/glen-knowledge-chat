@@ -38,6 +38,12 @@ def test_single_program_conditions_resolve_with_no_triage_questions():
     assert ct.resolve_programs("retinitis-pigmentosa", {}) == ["retinitis-pigmentosa"]
     assert ct.resolve_programs("diabetic-retinopathy", {}) == ["diabetic-retinopathy"]
     assert ct.resolve_programs("vision-improvement", {}) == ["vision-improvement"]
+    for key in (
+        "symptom-fatigue", "symptom-brain-fog", "symptom-stress", "symptom-sleep",
+        "symptom-headache", "symptom-digestion", "symptom-constipation",
+        "symptom-immune", "symptom-skin", "symptom-blood-sugar",
+    ):
+        assert ct.resolve_programs(key, {}) == [key]
     assert ct.resolve_programs("other", {"other_condition": "Uveitis"}) == []
 
 

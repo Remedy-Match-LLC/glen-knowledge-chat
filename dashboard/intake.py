@@ -3,7 +3,8 @@ plus pure store logic. No Flask, no network. The form definition is the single
 source of truth for the questions; the local tagger consumes the `maps_to` hints.
 
 Response shape: answers is a dict field_id -> value. Scalars for text/number/
-scale/single_choice; a list of row-dicts for `table` fields; `terms` is
+scale/single_choice; a list of strings for `multi_choice`; a list of row-dicts
+for `table` fields; `terms` is
 {"agreed": bool, "signature": str, "date": str}."""
 import json
 from datetime import datetime, timezone, timedelta
@@ -42,6 +43,19 @@ _RESPONSE = _scale([
 ])
 _COMMITMENT = _scale([(n, str(n)) for n in range(1, 11)])
 
+SYSTEMIC_SYMPTOM_OPTIONS = [
+    {"value": "symptom-fatigue", "label": "Fatigue or low energy"},
+    {"value": "symptom-brain-fog", "label": "Brain fog or poor focus"},
+    {"value": "symptom-stress", "label": "Stress or anxious tension"},
+    {"value": "symptom-sleep", "label": "Trouble sleeping"},
+    {"value": "symptom-headache", "label": "Headache or migraine"},
+    {"value": "symptom-digestion", "label": "Digestive discomfort or bloating"},
+    {"value": "symptom-constipation", "label": "Constipation or irregularity"},
+    {"value": "symptom-immune", "label": "Frequent illness or slow recovery"},
+    {"value": "symptom-skin", "label": "Common skin concerns"},
+    {"value": "symptom-blood-sugar", "label": "Blood sugar swings or cravings"},
+]
+
 INTAKE_FORM = {
     "version": "2026-08-09",
     "sections": [
@@ -76,6 +90,13 @@ INTAKE_FORM = {
                  {"id": "rating", "type": "number", "label": "Rating (1-10)"},
                  {"id": "years_since_onset", "type": "number", "label": "Years since onset"},
              ]},
+            {"id": "systemic_symptoms", "type": "multi_choice",
+             "label": "Common whole-body symptoms",
+             "help": "Check every symptom you commonly experience. These help us identify possible starter remedies; they are not diagnoses.",
+             "options": SYSTEMIC_SYMPTOM_OPTIONS},
+            {"id": "other_symptoms", "type": "textarea",
+             "label": "Other symptoms not listed above",
+             "help": "Include where you feel them, how often they occur, and what makes them better or worse."},
         ]},
         {"id": "dimensions", "title": "Key Dimensions of the Clinical Theory of Everything",
          "fields": [
@@ -204,6 +225,11 @@ def validate_response(answers):
                 errors.append(fid)
         elif ftype == "table":
             continue  # optional in v1
+        elif ftype == "multi_choice":
+            allowed = {o["value"] for o in f.get("options") or []}
+            if not isinstance(val, list) or any(v not in allowed for v in val):
+                if val not in (None, []):
+                    errors.append(fid)
         else:
             if req and not str(val or "").strip():
                 errors.append(fid)

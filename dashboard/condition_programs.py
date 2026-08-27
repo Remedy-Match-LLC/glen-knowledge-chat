@@ -1,5 +1,5 @@
-"""Slice 1 of Condition Support Programs: sqlite store for Glen's 9
-authored eye-condition support programs. Pure sqlite, no Flask.
+"""Condition Support Programs: sqlite store for authored eye-condition and
+standalone systemic-symptom support programs. Pure sqlite, no Flask.
 
 `seed_if_empty` loads Glen-approved content from data/condition_programs_seed.json
 exactly ONCE per store, tracked by a persisted `_seed_state` marker — never on
@@ -19,14 +19,19 @@ def _now():
 
 
 _SEED_NAME = "condition_programs"
+_SYMPTOMS_SEED_NAME = "condition_program_symptoms_v1"
 
 # Clinical (not alphabetical) display order Glen authored these programs in.
 # A key not present here sorts after all listed keys, by key, so an
 # operator-added program never disappears — it just lands at the end.
 _CLINICAL_ORDER = [
     "glaucoma-elevated-iop", "glaucoma-normal-iop", "dry-amd", "wet-amd",
+    "macular-pucker",
     "senile-cataract", "psc-cataract", "dry-eye", "retinitis-pigmentosa",
     "diabetic-retinopathy",
+    "symptom-fatigue", "symptom-brain-fog", "symptom-stress", "symptom-sleep",
+    "symptom-headache", "symptom-digestion", "symptom-constipation",
+    "symptom-immune", "symptom-skin", "symptom-blood-sugar",
 ]
 
 
@@ -49,6 +54,9 @@ def init_table(cx):
     if not db.column_exists(cx, "condition_programs", "modifiers_json"):
         cx.execute("ALTER TABLE condition_programs "
                    "ADD COLUMN modifiers_json TEXT NOT NULL DEFAULT '[]'")
+    if not db.column_exists(cx, "condition_programs", "symptoms_json"):
+        cx.execute("ALTER TABLE condition_programs "
+                   "ADD COLUMN symptoms_json TEXT NOT NULL DEFAULT '[]'")
     _ensure_seed_state_table(cx)
 
 
@@ -70,6 +78,7 @@ def _row(r):
         "condition_key": r["condition_key"],
         "label": r["label"],
         "consult_recommended": bool(r["consult_recommended"]),
+        "symptoms": json.loads((r["symptoms_json"] if "symptoms_json" in r.keys() else None) or "[]"),
         "items": json.loads(r["items_json"] or "[]"),
         "modifiers": json.loads((r["modifiers_json"] if "modifiers_json" in r.keys() else None) or "[]"),
         "updated_at": r["updated_at"],
@@ -91,20 +100,23 @@ def all(cx):
     return parsed
 
 
-def upsert(cx, key, label, consult_recommended, items, modifiers=None):
+def upsert(cx, key, label, consult_recommended, items, modifiers=None, symptoms=None):
     now = _now()
     cx.execute("""
         INSERT INTO condition_programs
-            (condition_key, label, consult_recommended, items_json, modifiers_json, updated_at)
-        VALUES (?,?,?,?,?,?)
+            (condition_key, label, consult_recommended, items_json, modifiers_json,
+             symptoms_json, updated_at)
+        VALUES (?,?,?,?,?,?,?)
         ON CONFLICT(condition_key) DO UPDATE SET
             label=excluded.label,
             consult_recommended=excluded.consult_recommended,
             items_json=excluded.items_json,
             modifiers_json=excluded.modifiers_json,
+            symptoms_json=excluded.symptoms_json,
             updated_at=excluded.updated_at
         """, (key, label, 1 if consult_recommended else 0,
-              json.dumps(items or []), json.dumps(modifiers or []), now))
+              json.dumps(items or []), json.dumps(modifiers or []),
+              json.dumps(symptoms or []), now))
     cx.commit()
 
 
@@ -129,18 +141,46 @@ def seed_if_empty(cx, seed_dict):
         for key, prog in (seed_dict or {}).items():
             cx.execute("""
                 INSERT OR IGNORE INTO condition_programs
-                    (condition_key, label, consult_recommended, items_json, modifiers_json, updated_at)
-                VALUES (?,?,?,?,?,?)
+                    (condition_key, label, consult_recommended, items_json, modifiers_json,
+                     symptoms_json, updated_at)
+                VALUES (?,?,?,?,?,?,?)
                 """, (key, prog.get("label") or "",
                       1 if prog.get("consult_recommended") else 0,
                       json.dumps(prog.get("items") or []),
-                      json.dumps(prog.get("modifiers") or []), now))
+                      json.dumps(prog.get("modifiers") or []),
+                      json.dumps(prog.get("symptoms") or []), now))
     cx.execute("INSERT OR IGNORE INTO _seed_state (name, seeded_at) VALUES (?,?)",
                (_SEED_NAME, now))
     cx.commit()
 
 
-def ensure_program(cx, key, label, items, consult_recommended=False):
+def seed_symptoms_once(cx, seed_dict):
+    """Backfill the new symptoms field for stores seeded before it existed.
+
+    This has its own one-time marker and only fills empty symptom lists, so an
+    operator-authored value is never replaced and a later intentional edit is
+    not resurrected on boot.
+    """
+    _ensure_seed_state_table(cx)
+    if cx.execute("SELECT 1 FROM _seed_state WHERE name=?",
+                  (_SYMPTOMS_SEED_NAME,)).fetchone():
+        return
+    now = _now()
+    for key, prog in (seed_dict or {}).items():
+        symptoms = prog.get("symptoms") or []
+        if symptoms:
+            cx.execute("""
+                UPDATE condition_programs
+                   SET symptoms_json=?, updated_at=?
+                 WHERE condition_key=?
+                   AND (symptoms_json IS NULL OR symptoms_json='' OR symptoms_json='[]')
+                """, (json.dumps(symptoms), now, key))
+    cx.execute("INSERT OR IGNORE INTO _seed_state (name, seeded_at) VALUES (?,?)",
+               (_SYMPTOMS_SEED_NAME, now))
+    cx.commit()
+
+
+def ensure_program(cx, key, label, items, consult_recommended=False, symptoms=None):
     """Idempotent-ensure for a single program key, INDEPENDENT of the
     once-ever seed_if_empty marker. Inserts the program ONLY if that key is
     currently absent; if the row already exists (whether from the original
@@ -153,11 +193,13 @@ def ensure_program(cx, key, label, items, consult_recommended=False):
     now = _now()
     cx.execute("""
         INSERT INTO condition_programs
-            (condition_key, label, consult_recommended, items_json, modifiers_json, updated_at)
-        VALUES (?,?,?,?,?,?)
+            (condition_key, label, consult_recommended, items_json, modifiers_json,
+             symptoms_json, updated_at)
+        VALUES (?,?,?,?,?,?,?)
         ON CONFLICT(condition_key) DO NOTHING
         """, (key, label or "", 1 if consult_recommended else 0,
-              json.dumps(items or []), json.dumps([]), now))
+              json.dumps(items or []), json.dumps([]),
+              json.dumps(symptoms or []), now))
     cx.commit()
 
 
@@ -222,7 +264,7 @@ def migrate_dry_eye_modifiers(cx):
              "items": [night_oil]},
         ]
         upsert(cx, "dry-eye", prog["label"], prog["consult_recommended"],
-               new_items, new_modifiers)
+               new_items, new_modifiers, prog.get("symptoms"))
     cx.execute("INSERT OR IGNORE INTO _seed_state (name, seeded_at) VALUES (?,?)",
                (_DRY_EYE_MIGRATION_NAME, now))
     cx.commit()
@@ -265,7 +307,7 @@ def migrate_cataract_brunescent(cx):
                            "name": lens_zyme.get("name") or "Lens-Zyme Brunescence Buster"}],
             })
             upsert(cx, "senile-cataract", prog["label"], prog["consult_recommended"],
-                   remaining, mods)
+                   remaining, mods, prog.get("symptoms"))
     cx.execute("INSERT OR IGNORE INTO _seed_state (name, seeded_at) VALUES (?,?)",
                (_CATARACT_BRUNESCENT_MARKER, now))
     cx.commit()

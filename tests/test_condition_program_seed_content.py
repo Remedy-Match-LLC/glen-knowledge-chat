@@ -35,6 +35,8 @@ def test_dr_proliferative_modifier_and_ocuflow():
 def test_ocuheal_in_every_program():
     progs = _seed()["condition_programs"]
     for key, p in progs.items():
+        if key.startswith("symptom-"):
+            continue
         slugs = set(_slugs(p))
         for it in p["items"]:
             slugs.update(a["slug"] for a in it.get("alts", []))
@@ -58,3 +60,32 @@ def test_wet_amd_leakage_scar_default_off_in_composer():
         m = [x for x in p["modifiers"] if x["when"] == w][0]
         assert m["source"] == "diagnosis-implied" and m["client_default"] is True
         assert m["composer_default"] is False, w
+
+
+def test_macular_pucker_focuses_on_scar_reduction():
+    p = _seed()["condition_programs"]["macular-pucker"]
+    assert p["label"] == "Macular Pucker (Epiretinal Membrane)"
+    assert p["consult_recommended"] is False
+    assert _slugs(p) == [
+        "scar-silk", "scar-solve", "scar-soft-drink", "ocuheal-eye-drops"
+    ]
+    assert p["items"][0]["alts"] == [
+        {"slug": "clear-the-way", "name": "Clear the Way"}
+    ]
+    assert p["items"][2]["name"] == "Scar Soft (when available)"
+
+
+def test_every_condition_includes_common_symptoms_for_matching_context():
+    for key, program in _seed()["condition_programs"].items():
+        symptoms = program.get("symptoms")
+        assert isinstance(symptoms, list) and len(symptoms) >= 3, key
+        assert all(isinstance(s, str) and s.strip() for s in symptoms), key
+
+
+def test_systemic_symptoms_are_standalone_programs_with_remedy_items():
+    progs = _seed()["condition_programs"]
+    systemic = {k: v for k, v in progs.items() if k.startswith("symptom-")}
+    assert len(systemic) == 10
+    for key, program in systemic.items():
+        assert len(program["items"]) >= 2, key
+        assert all(item.get("slug") and item.get("name") for item in program["items"]), key
