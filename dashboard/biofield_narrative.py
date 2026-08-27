@@ -6,6 +6,7 @@ generates the narrative via an injected LLM callable `complete(system, user) -> 
 so the logic is testable without a live API call.
 """
 import datetime
+import re
 import sqlite3
 
 
@@ -90,7 +91,10 @@ _SYSTEM = (
     "patient about their Biofield Analysis (a Causal Chain Report). RULES:\n"
     "- Open with 'Aloha <first name>,' then, when a TERRAIN READING is present, make the "
     "first paragraph a plain-language description of that terrain phase and its location. "
-    "Do not omit, rename, or infer a different phase or location. Then use 2-3 warm sentences framing the causal chain: "
+    "Do not omit, rename, or infer a different phase or location. The authoritative clinical "
+    "phase names are: Phase 1 = Energize; Phase 2 = Rejuvenate; Phase 3 = Regenerate; "
+    "Phase 4 = Cleanse; Phase 5 = Balance. In particular, NEVER call Phase 2 'Regenerate'—"
+    "Regenerate belongs only to Phase 3. Then use 2-3 warm sentences framing the causal chain: "
     "the most recent layer sits on top, deeper and older roots beneath, and supporting them "
     "in order lets the chain unwind and the body self-correct.\n"
     "- One short plain-English paragraph per NUMBERED layer, top-down (Layer 1 = most "
@@ -318,7 +322,25 @@ def build_narrative_prompt(report, notes, scan=None, profile=None):
 def generate_narrative(report, notes, complete, scan=None, profile=None):
     """complete(system, user) -> narrative text. scan = E4L context; profile = People-hub context."""
     p = build_narrative_prompt(report, notes, scan, profile)
-    return complete(p["system"], p["user"])
+    text = complete(p["system"], p["user"])
+    return _enforce_phase_name(text, report.get("phase"))
+
+
+def _enforce_phase_name(text, phase):
+    """Correct an LLM phase-name slip while preserving the rest of its draft."""
+    from dashboard.terrain_phase import PHASE_CLINICAL_NAMES, phase_num
+    n = phase_num(phase)
+    if not n:
+        return text
+    expected = PHASE_CLINICAL_NAMES[n]
+    other = "|".join(re.escape(v) for k, v in PHASE_CLINICAL_NAMES.items() if k != n)
+    # Covers “Phase 2, Regenerate”, “Phase 2: Regenerate”, and “Phase 2 Regenerate”.
+    return re.sub(
+        rf"(\bPhase\s*{n}\s*(?:[,:\u2014-]\s*)?)(?:{other})\b",
+        rf"\1{expected}",
+        text or "",
+        flags=re.IGNORECASE,
+    )
 
 
 _VIDEO_SYSTEM = (

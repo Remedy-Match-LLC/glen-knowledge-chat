@@ -66,6 +66,23 @@ def test_author_chain_is_cards_readable_and_reorderable():
     assert "class=dcol" in html and "function restoreDepth" in html
 
 
+def test_add_remedy_uses_stable_stored_layer_and_preserves_viewport():
+    rep = {"test_id": "a1", "client": {"name": "J", "email": ""}, "date": "",
+           "layers": [
+               {"layer": 1, "stored_layer": 1, "head": "First", "remedy": "R1", "rid": 5},
+               {"layer": 2, "stored_layer": 1, "head": "First", "remedy": "R2", "rid": 6},
+               {"layer": 3, "stored_layer": 2, "head": "Second", "remedy": "R3", "rid": 7}],
+           "schedule": {"slots": [], "entries": []}}
+    html = render_author_html(rep, [], "")
+
+    # The second displayed card is Layer 2, and adding to it must use its stable
+    # database position (2), not a remedy-row-derived display position.
+    assert 'id=g1_layer value="2"' in html
+    assert "function reloadKeepingView" in html
+    assert "sessionStorage.setItem(_viewKey" in html
+    assert "restoreView();" in html
+
+
 def test_author_has_left_layer_rail_reorderable():
     rep = {"test_id": "a1", "client": {"name": "J", "email": "j@x.com"}, "date": "",
            "layers": [
@@ -87,8 +104,9 @@ def test_save_buttons_track_saved_and_dirty_state():
                        "rid": 5, "confirmed": 1}], "schedule": {"slots": [], "entries": []}}
     html = render_author_html(rep, [], "")
     # save buttons are tagged for the saved/dirty toggle
-    assert "class='btn savebtn' data-dirty=Update" in html          # remedy Save
-    assert "savebtn' data-dirty='Update layer'" in html             # layer Save
+    assert "class='btn savebtn saved' data-dirty=Update" in html    # saved remedy
+    assert "savebtn saved' data-dirty='Update layer'" in html       # saved layer
+    assert html.count("Saved &#10003;") == 2
     # editing a field marks its button dirty; saving turns it green + keeps it
     assert "Remedy saved. Updating report and schedule" in html
     assert "rememberView(card);location.reload()" in html
@@ -128,6 +146,10 @@ def test_author_page_has_session_recording_ui():
     assert "/api/deepgram-token" in html      # browser fetches a short-lived token
     assert "/author/a1/session" in html        # transcript save endpoint
     assert "sessText" in html                  # live transcript box
+    assert "oninput='scheduleSessionSave()'" in html
+    assert "await saveSessionNow(false)" in html
+    assert "Autosaved:" in html
+    assert "Phase 2 &middot; Rejuvenate" in html
 
 
 def test_author_page_delete_confirm_and_unconfirmed_highlight():

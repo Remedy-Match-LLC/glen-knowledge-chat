@@ -852,7 +852,8 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
             # Stresses each layer's remedies cover, keyed by card layer number so the
             # cards can show them inline (chain_rows grouped to match the head cards).
             groups = group_layers(rep.get("layers") or [])
-            chain_rows = [{"layer": g["layer"], "head": g["head"], "remedy": r.get("remedy")}
+            chain_rows = [{"layer": g["layer"], "head": g["head"], "remedy": r.get("remedy"),
+                           "rid": r.get("rid")}
                           for g in groups for r in g["rows"]]
             sdata = list_stresses(cx, test_id, chain_rows)
             covered = {L["layer"]: L["stresses"] for L in sdata.get("by_layer") or []}
@@ -1233,7 +1234,7 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
         with sqlite3.connect(db_path) as cx:
             rep = _report_for(cx, test_id)
             chain_rows = [{"layer": l.get("layer"), "head": l.get("head"),
-                           "remedy": l.get("remedy")}
+                           "remedy": l.get("remedy"), "rid": l.get("rid")}
                           for l in (rep.get("layers") or [])]
             data = _st.list_stresses(cx, test_id, chain_rows)
         return {"data": data, "html": render_stress_panel(data)}
@@ -1247,7 +1248,8 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
             rep = _report_for(cx, test_id)
             layers_full = rep.get("layers") or []
             chain_rows = [{"layer": l.get("layer"), "head": l.get("head"),
-                           "remedy": l.get("remedy")} for l in layers_full]
+                           "remedy": l.get("remedy"), "rid": l.get("rid")}
+                          for l in layers_full]
             data = _st.list_stresses(cx, test_id, chain_rows)
             unassigned = data.get("unassigned") or []
             if stress_ids is None:
@@ -1286,7 +1288,8 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
         return _do_stress_assign(test_id, None)
 
     def _chain_rows_for(rep):
-        return [{"layer": l.get("layer"), "head": l.get("head"), "remedy": l.get("remedy")}
+        return [{"layer": l.get("layer"), "head": l.get("head"),
+                 "remedy": l.get("remedy"), "rid": l.get("rid")}
                 for l in (rep.get("layers") or [])]
 
     def _suggest_payload(data, layer_candidates=None):
@@ -1572,6 +1575,11 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                     ).fetchall()]
                     cx.execute(f"DELETE FROM biofield_auth_chain WHERE test_id=? AND id IN ({marks})",
                                [tnum, *valid])
+                    cx.execute(
+                        f"DELETE FROM biofield_auth_layer_stress "
+                        f"WHERE test_id=? AND chain_rid IN ({marks})",
+                        [tnum, *valid],
+                    )
                     # Coverage added by dragging a stress onto this layer must not
                     # survive after the layer's remedy is gone. Preserve it when the
                     # same remedy still exists on another layer in this analysis.

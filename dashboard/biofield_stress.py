@@ -49,6 +49,11 @@ def init_stress_tables(cx):
     cx.execute("""CREATE TABLE IF NOT EXISTS biofield_auth_remedy_coverage(
         id INTEGER PRIMARY KEY AUTOINCREMENT, test_id INTEGER, remedy TEXT, code TEXT,
         UNIQUE(test_id, remedy, code))""")
+    # Explicit stress-to-layer placement. Unlike remedy coverage, this also works
+    # when a layer intentionally has no remedy yet.
+    cx.execute("""CREATE TABLE IF NOT EXISTS biofield_auth_layer_stress(
+        test_id INTEGER, stress_id INTEGER, chain_rid INTEGER,
+        UNIQUE(test_id, stress_id, chain_rid))""")
     # Per-test edited/ordered minimal-remedy set (survives reload).
     cx.execute("""CREATE TABLE IF NOT EXISTS biofield_auth_remedy_set(
         test_id INTEGER PRIMARY KEY, remedies_json TEXT, updated_at TEXT)""")
@@ -204,6 +209,11 @@ def list_stresses(cx, tid, chain_rows):
     t = _num(tid)
     remedy_names, head_pairs = _chain_parts(chain_rows)
     covered = covered_codes(cx, tid, remedy_names)
+    directly_placed = {
+        r[0] for r in cx.execute(
+            "SELECT DISTINCT stress_id FROM biofield_auth_layer_stress WHERE test_id=?",
+            (t,)).fetchall()
+    }
     head_map = {}
     for h, rem in head_pairs:
         head_map.setdefault(h, rem)
@@ -225,7 +235,9 @@ def list_stresses(cx, tid, chain_rows):
             hist = historical_remedies(cx, r["label"]) & chain_rem_lower
             if hist:
                 hist_rem = sorted(hist)[0]                # deterministic
-        is_bal = bool(r["manual_balanced"]) or is_cov or (lbl_rem is not None) or (hist_rem is not None)
+        is_direct = r["id"] in directly_placed
+        is_bal = (bool(r["manual_balanced"]) or is_direct or is_cov
+                  or (lbl_rem is not None) or (hist_rem is not None))
         if is_cov:
             cvs = _coverers(cx, tid, r["code"], remedy_names)
             by = cvs[0] if cvs else ""
@@ -233,6 +245,8 @@ def list_stresses(cx, tid, chain_rows):
             by = lbl_rem
         elif hist_rem is not None:
             by = hist_rem
+        elif is_direct:
+            by = "assigned layer"
         elif r["manual_balanced"]:
             by = "manual"
         else:
@@ -265,12 +279,14 @@ def _group_by_layer(cx, tid, chain_rows, items):
         if ln not in layers:
             layers[ln] = {"head": "", "remedies": [], "remedies_disp": [], "rids": []}
             order.append(ln)
-        try:
-            rid = int(r.get("rid"))
-        except (TypeError, ValueError):
-            rid = None
-        if rid is not None and rid not in layers[ln]["rids"]:
-            layers[ln]["rids"].append(rid)
+        rid = r.get("rid") if r.get("rid") is not None else r.get("id")
+        if rid is not None:
+            try:
+                rid = int(rid)
+                if rid not in layers[ln]["rids"]:
+                    layers[ln]["rids"].append(rid)
+            except (TypeError, ValueError):
+                pass
         head = (r.get("head") or "").strip()
         if head and not layers[ln]["head"]:
             layers[ln]["head"] = head
@@ -287,6 +303,15 @@ def _group_by_layer(cx, tid, chain_rows, items):
                 f"WHERE test_id=? AND remedy IN ({ph})", (_num(tid), *all_rem)).fetchall():
             cov.setdefault(rem, set()).add(code)
     by_layer, assigned = [], set()
+    direct = {}
+    all_rids = [rid for L in layers.values() for rid in L["rids"]]
+    if all_rids:
+        ph = ",".join("?" for _ in all_rids)
+        for stress_id, chain_rid in cx.execute(
+                f"SELECT stress_id, chain_rid FROM biofield_auth_layer_stress "
+                f"WHERE test_id=? AND chain_rid IN ({ph})",
+                (_num(tid), *all_rids)).fetchall():
+            direct.setdefault(chain_rid, set()).add(stress_id)
     for ln in order:
         L = layers[ln]
         head_norm = _norm(L["head"])
@@ -295,7 +320,9 @@ def _group_by_layer(cx, tid, chain_rows, items):
             rem_codes |= cov.get(rl, set())
         stresses = []
         for it in items:
-            if it["code"] in rem_codes or (head_norm and _norm(it["label"]) == head_norm):
+            directly_placed = any(it["id"] in direct.get(rid, set()) for rid in L["rids"])
+            if (directly_placed or it["code"] in rem_codes
+                    or (head_norm and _norm(it["label"]) == head_norm)):
                 stresses.append(it)
                 assigned.add(it["id"])
         by_layer.append({"layer": ln, "head": L["head"],
@@ -331,6 +358,10 @@ def cover_stress(cx, tid, stress_id, rids):
             continue
         rr = cx.execute("SELECT remedy FROM biofield_auth_chain WHERE id=? AND test_id=?",
                         (rid, t)).fetchone()
+        if rr:
+            cx.execute("INSERT OR IGNORE INTO biofield_auth_layer_stress"
+                       "(test_id,stress_id,chain_rid) VALUES(?,?,?)",
+                       (t, stress_id, rid))
         remedy = ((rr[0] if rr else "") or "").strip().lower()
         if remedy:
             cx.execute("INSERT OR IGNORE INTO biofield_auth_remedy_coverage"
@@ -493,13 +524,13 @@ def stress_id_for(cx, tid, label):
 
 
 def layer_chain_rids(cx, tid, layer):
-    """Remedy-bearing chain-row ids on a given layer of a test (inputs to cover_stress)."""
+    """Chain-row ids on a given layer of a test (inputs to cover_stress)."""
     try:
         ln = int(layer)
     except (TypeError, ValueError):
         return []
     rows = cx.execute("SELECT id FROM biofield_auth_chain "
-                      "WHERE test_id=? AND layer=? AND TRIM(COALESCE(remedy,''))<>''",
+                      "WHERE test_id=? AND layer=?",
                       (_num(tid), ln)).fetchall()
     return [r[0] for r in rows]
 

@@ -222,3 +222,17 @@ def test_generate_uses_injected_llm_and_returns_text():
     out = generate_narrative(_report(), "mercury history", fake_llm)
     assert out.startswith("Aloha Lewis,")
     assert "mercury history" in seen["user"]
+
+
+def test_phase_2_is_rejuvenate_and_wrong_llm_term_is_corrected():
+    report = {**_report(), "phase": 2, "location": "toxicity"}
+    prompt = build_narrative_prompt(report, "")
+    assert "Phase 2, Rejuvenate" in prompt["user"]
+    assert "Phase 2 = Rejuvenate" in prompt["system"]
+    assert "Regenerate belongs only to Phase 3" in prompt["system"]
+
+    out = generate_narrative(
+        report, "", lambda _system, _user: "Aloha Lewis,\n\nPhase 2, Regenerate, was identified."
+    )
+    assert "Phase 2, Rejuvenate" in out
+    assert "Phase 2, Regenerate" not in out
