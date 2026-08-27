@@ -11329,7 +11329,9 @@ def _book_membership_qbo(email, tier):
         cust = qb.find_or_create_customer(email, "")
         qb.create_sales_receipt(
             cust,
-            [{"name": tier["label"], "amount": tier["price_cents"] / 100.0, "qty": 1}],
+            [{"name": "Order Total",
+              "description": tier["label"],
+              "amount": tier["price_cents"] / 100.0, "qty": 1}],
             email_to=email)
     except Exception as e:
         print(f"[membership] QBO booking skipped for {email}/{tier.get('key')}: {e!r}",
@@ -21129,6 +21131,19 @@ def _portal_source_label(channel):
     return f"Ordered on {urlparse(portal_base()).hostname or 'illtowell.com'}"  # portal
 
 
+def _order_board_source_label(source):
+    """Specific provenance label for the internal Orders board.
+
+    Funnel orders used to appear as the ambiguous ``Website``.  Resolve the
+    configured public host at response time so the board names the site and
+    automatically follows a future domain change.
+    """
+    if source == "funnel":
+        from urllib.parse import urlparse
+        return urlparse(PUBLIC_BASE_URL).hostname or "illtowell.com"
+    return ""
+
+
 def _portal_reorder_module(email):
     """REPERTOIRE_ENABLED-gated portal payload extension (Task 5): the client's
     real, portal-channel purchase history, re-priced through the actual
@@ -29394,7 +29409,7 @@ def onboarding_availability():
         booked = _ev.booked_starts(cx)
         slots = _ev.available_slots(days, EVOX_HOURS, busy, booked, _hst_now(),
                                     duration_min=_ob.ONBOARDING["duration_min"])
-        return jsonify({"slots": slots})
+        return jsonify({"slots": _ob.daily_slot_sample(slots)})
 
 
 @app.route("/api/onboarding/book", methods=["POST"])
@@ -36368,6 +36383,87 @@ def scoreapp_webhook():
                     "utm_source": utm_source or None}), 200
 
 
+_KLOUD_ORDER_URL = "https://centropix.us/remedy/products"
+_KLOUD_INFO_URLS = {
+    "mini": "https://myhealingoasis.com/begin/product/kloud-pemf-mini",
+    "maxi": "https://myhealingoasis.com/begin/product/kloud-pemf-maxi",
+}
+
+
+def _send_kloud_order_instructions(email, first_name, product_names, order_ref):
+    """Send the off-site ordering instructions once per GrooveKart order.
+
+    The $0 RemedyMatch item is informational: the actual purchase, tax, shipping,
+    and any financing are completed at Centropix.  The guard prevents duplicate
+    messages when GrooveKart retries the webhook.  A failed send removes the guard
+    so a later retry can try again.
+    """
+    matches = []
+    for name in product_names:
+        low = name.lower()
+        if "kloud" not in low or ("mat" not in low and "pemf" not in low):
+            continue
+        variant = "maxi" if "maxi" in low else "mini" if "mini" in low else None
+        if variant and variant not in matches:
+            matches.append(variant)
+    if not matches:
+        return
+
+    em = (email or "").strip().lower()
+    ref = str(order_ref or "unknown")
+    guard_key = ref + ":" + ",".join(matches)
+    try:
+        with _db_lock, db.connect(LOG_DB) as cx:
+            cx.execute("CREATE TABLE IF NOT EXISTS kloud_instruction_emails ("
+                       "order_key TEXT PRIMARY KEY, email TEXT, sent_at TEXT)")
+            cur = cx.execute(
+                "INSERT OR IGNORE INTO kloud_instruction_emails(order_key,email,sent_at) "
+                "VALUES (?,?,NULL)", (guard_key, em))
+            if cur.rowcount == 0:
+                return
+
+        label = " and ".join("Kloud " + v.title() for v in matches)
+        info_lines = "\n".join(
+            f"{('Kloud ' + v.title())} product information: {_KLOUD_INFO_URLS[v]}"
+            for v in matches)
+        html_links = "".join(
+            f'<li><a href="{_KLOUD_INFO_URLS[v]}">Kloud {v.title()} product information</a></li>'
+            for v in matches)
+        greeting = (first_name or "").strip()
+        body = (f"Aloha{(' ' + greeting) if greeting else ''},\n\n"
+                f"Thank you for your interest in the {label}. The $0 RemedyMatch order "
+                "reserves your interest; the Kloud itself is ordered and shipped directly "
+                "through our Centropix store.\n\n"
+                "1. Open our Centropix store page.\n"
+                "2. Choose the Kloud Mini or Kloud Maxi.\n"
+                "3. Complete checkout with Centropix; shipping and tax are calculated there.\n\n"
+                f"Order through our Centropix store: {_KLOUD_ORDER_URL}\n\n"
+                f"{info_lines}\n\nWith aloha,\nDr. Glen & Rae")
+        html = (f"<p>Aloha{(' ' + greeting) if greeting else ''},</p>"
+                f"<p>Thank you for your interest in the {label}. The $0 RemedyMatch order "
+                "reserves your interest; the Kloud itself is ordered and shipped directly "
+                "through our Centropix store.</p>"
+                "<ol><li>Open our Centropix store page.</li>"
+                "<li>Choose the Kloud Mini or Kloud Maxi.</li>"
+                "<li>Complete checkout with Centropix; shipping and tax are calculated there.</li></ol>"
+                f'<p><a href="{_KLOUD_ORDER_URL}"><strong>Order through our Centropix store</strong></a></p>'
+                f"<ul>{html_links}</ul><p>With aloha,<br>Dr. Glen &amp; Rae</p>")
+        from dashboard import inbox as _inbox
+        _inbox.send_bulk(em, "How to order your Kloud Mat", body,
+                         from_name="Dr. Glen & Rae", html=html)
+        with _db_lock, db.connect(LOG_DB) as cx:
+            cx.execute("UPDATE kloud_instruction_emails SET sent_at=? WHERE order_key=?",
+                       (datetime.now(timezone.utc).isoformat(), guard_key))
+    except Exception as e:
+        try:
+            with _db_lock, db.connect(LOG_DB) as cx:
+                cx.execute("DELETE FROM kloud_instruction_emails "
+                           "WHERE order_key=? AND sent_at IS NULL", (guard_key,))
+        except Exception:
+            pass
+        print(f"[gk-webhook] Kloud instructions send failed: {e!r}", flush=True)
+
+
 @app.route("/webhook/groovekart", methods=["POST"])
 def groovekart_webhook():
     """GrooveKart order → GHL E4L pipeline with purchase tag."""
@@ -36458,6 +36554,12 @@ def groovekart_webhook():
                   email=email, name=(first + " " + last).strip(), phone=phone,
                   items=[{"name": n} for n in product_names],
                   total_cents=int(round(float(order_total or 0) * 100)), channel="retail")
+    threading.Thread(
+        target=_send_kloud_order_instructions,
+        args=(email, first, product_names,
+              data.get("id") or data.get("order_id") or data.get("reference")),
+        daemon=True,
+    ).start()
     return jsonify({"ok": True, "ghl": ghl_result, "affiliate_credited": credited}), 200
 
 
@@ -50960,6 +51062,8 @@ def bos_orders_create():
                     include_cancelled=request.args.get("include_cancelled") == "1")
             except (TypeError, ValueError):
                 rows = _bos_orders.list_orders(cx, include_cancelled=False)
+            for o in rows:
+                o["source_label"] = _order_board_source_label(o.get("source"))
             # Annotate each order with per-line fulfillment + backorder units, using a
             # single grouped query over order_fulfillments (no per-order round-trips).
             try:

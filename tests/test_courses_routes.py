@@ -28,6 +28,15 @@ def test_public_lesson_open_to_anon(client):
     assert b"<h2>Out-takes</h2>" in r.data
 
 
+def test_course_page_body_uses_shared_theme(client):
+    c, _ = client
+    r = c.get("/learn/ash-intro", base_url=_MHOST)
+    assert r.status_code == 200
+    assert b':root[data-theme="dark"]' in r.data
+    assert b'background: var(--mu-bg)' in r.data
+    assert b'<body style="font-family:system-ui,sans-serif"><main>' in r.data
+
+
 def test_member_lesson_blocked_for_anon(client):
     c, _ = client
     r = c.get("/learn/ash-intro/01-intro/02-welcome", base_url=_MHOST)

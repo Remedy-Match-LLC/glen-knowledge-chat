@@ -1,15 +1,15 @@
-"""Paid-only QBO booking: create ONE line-faithful Sales Receipt for an order the
-moment it is confirmed paid. Idempotent (never re-books) and best-effort (never
-raises into the payment path). See docs/superpowers/specs/2026-07-15-qbo-paid-only-
-stage2-checkout-design.md."""
+"""Paid-only QBO booking: create one summarized Sales Receipt for an order when
+it is confirmed paid. Stripe/client detail stays itemized; QBO receives net
+Physical Goods and Digital / Services totals. Idempotent and best-effort."""
 import json
 
 from . import qbo_billing
 from . import orders
+from . import qbo_summary
 
 
 def book_sale_on_payment(cx, order):
-    """Book a QBO SalesReceipt for a PAID order from its stored qbo_lines_json.
+    """Book a summarized QBO SalesReceipt from stored itemized checkout lines.
     Returns the receipt Id (existing one if already booked; None on any failure,
     when there is nothing to book, or when this caller lost the atomic claim).
     Never raises.
@@ -31,7 +31,11 @@ def book_sale_on_payment(cx, order):
         if not raw:
             return None
         payload = json.loads(raw) if isinstance(raw, str) else raw
-        lines = payload.get("lines") or []
+        detail_lines = payload.get("lines") or []
+        if not detail_lines:
+            return None
+        lines = qbo_summary.summarize(
+            detail_lines, order.get("total_cents"), source=order.get("source") or "")
         if not lines:
             return None
         oid = order.get("id")
@@ -43,12 +47,17 @@ def book_sale_on_payment(cx, order):
             return None
         cust = qbo_billing.find_or_create_customer(order.get("email") or "",
                                                    order.get("name") or "")
+        receipt_kwargs = {
+            # The two summary lines are already net of cart discounts and must
+            # add up exactly to the Stripe/order total.
+            "discount_cents": 0,
+            "tax_cents": int(payload.get("tax_cents") or 0),
+            "email_to": order.get("email") or None,
+            "private_note": f"order:{order.get('external_ref')}",
+        }
         sr = qbo_billing.create_sales_receipt(
             cust, lines,
-            discount_cents=int(payload.get("discount_cents") or 0),
-            tax_cents=int(payload.get("tax_cents") or 0),
-            email_to=order.get("email") or None,
-            private_note=f"order:{order.get('external_ref')}")
+            **receipt_kwargs)
         sr_id = sr.get("Id")
         if sr_id:
             orders.set_order_sales_receipt_id(cx, oid, sr_id)  # 'PENDING' -> real id

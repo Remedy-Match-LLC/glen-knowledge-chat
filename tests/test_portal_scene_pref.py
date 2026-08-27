@@ -65,3 +65,13 @@ def test_scene_pref_bad_token_404(monkeypatch, tmp_db):
     client = app.app.test_client()
     r = client.post("/api/portal/BADTOKEN/scene-pref", json={"element": "fire"})
     assert r.status_code == 404
+
+
+def test_scene_picker_is_mounted_in_portal_header():
+    """The picker must share the shell layout with, rather than cover, theme mode."""
+    portal = (Path(__file__).resolve().parent.parent / "static" / "client-portal.html").read_text()
+
+    assert "header.insertBefore(elPicker, theme || null)" in portal
+    picker_rule = portal.split(".el-picker{", 1)[1].split("}", 1)[0]
+    assert "position:fixed" not in picker_rule
+    assert "z-index:10000" not in picker_rule

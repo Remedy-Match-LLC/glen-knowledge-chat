@@ -8,6 +8,8 @@ QBO note: an invoice line REQUIRES a SalesItemLineDetail.ItemRef to an existing
 Item, so we resolve/create a Service item (which needs an income account).
 """
 
+import os
+
 import requests
 from . import money
 
@@ -69,10 +71,37 @@ def list_items():
     return rs.get("QueryResponse", {}).get("Item", [])
 
 
-def _first_income_account_id():
+def _product_income_account_id():
+    """Return a deterministic sales-income account, never Billable Expenses.
+
+    QBO does not guarantee query order.  Taking the first Income account caused
+    newly-created products to land in Billable Expense Income.  An explicit env
+    ID wins; otherwise prefer QBO's SalesOfProductIncome subtype and familiar
+    product-sales names, then any non-billable Income account.
+    """
+    configured = os.environ.get("QBO_PRODUCT_INCOME_ACCOUNT_ID", "").strip()
+    if configured:
+        return configured
     rs = _query("SELECT * FROM Account WHERE AccountType = 'Income'")
     accts = rs.get("QueryResponse", {}).get("Account", [])
-    return accts[0]["Id"] if accts else None
+    eligible = [a for a in accts if "billable expense" not in
+                (a.get("Name") or a.get("FullyQualifiedName") or "").lower()]
+
+    def rank(account):
+        name = (account.get("Name") or account.get("FullyQualifiedName") or "").lower()
+        subtype = (account.get("AccountSubType") or "").lower()
+        if subtype == "salesofproductincome":
+            return 0
+        if name in ("sales of product income", "product sales", "sales - products"):
+            return 1
+        if "product" in name and "sale" in name:
+            return 2
+        if name in ("sales", "sales income"):
+            return 3
+        return 10
+
+    eligible.sort(key=lambda a: (rank(a), (a.get("Name") or "").lower()))
+    return eligible[0].get("Id") if eligible and rank(eligible[0]) < 10 else None
 
 
 def _first_bank_account_id():
@@ -182,10 +211,19 @@ def find_or_create_item(name, price=None, income_account_id=None):
     rs = _query(f"SELECT * FROM Item WHERE Name = '{_esc(name)}'")
     arr = rs.get("QueryResponse", {}).get("Item", [])
     if arr:
-        return arr[0]
-    inc = income_account_id or _first_income_account_id()
+        item = arr[0]
+        income_name = (item.get("IncomeAccountRef", {}).get("name") or "").lower()
+        if "billable expense" not in income_name:
+            return item
+        inc = income_account_id or _product_income_account_id()
+        if not inc:
+            raise RuntimeError("No product-sales income account found in QBO")
+        body = {"Id": str(item["Id"]), "SyncToken": str(item["SyncToken"]),
+                "sparse": True, "IncomeAccountRef": {"value": str(inc)}}
+        return _post("/item", body).get("Item")
+    inc = income_account_id or _product_income_account_id()
     if not inc:
-        raise RuntimeError("No income account found to create a QBO item")
+        raise RuntimeError("No product-sales income account found in QBO")
     body = {"Name": name[:100], "Type": "Service",
             "IncomeAccountRef": {"value": inc}}
     if price is not None:
@@ -213,12 +251,13 @@ def _build_invoice_lines(lines, discount_cents=0):
     for ln in lines:
         qty = int(ln.get("qty", 1) or 1)
         unit = round(float(ln["amount"]), 2)
+        detail = {"ItemRef": {"value": str(ln["item_id"])},
+                  "Qty": qty, "UnitPrice": unit}
         inv_lines.append({
             "DetailType": "SalesItemLineDetail",
             "Amount": round(unit * qty, 2),
             "Description": ln.get("description") or ln.get("name", ""),
-            "SalesItemLineDetail": {"ItemRef": {"value": str(ln["item_id"])},
-                                    "Qty": qty, "UnitPrice": unit},
+            "SalesItemLineDetail": detail,
         })
     disc = _discount_line(discount_cents)
     if disc:
@@ -274,11 +313,12 @@ def add_invoice_line(invoice_id, *, name, amount, qty=1, item_id=None, descripti
         item_id = find_or_create_item(name, unit)["Id"]
     qty = int(qty or 1)
     keep = [l for l in inv.get("Line", []) if l.get("DetailType") == "SalesItemLineDetail"]
+    detail = {"ItemRef": {"value": str(item_id)}, "Qty": qty, "UnitPrice": unit}
     keep.append({
         "DetailType": "SalesItemLineDetail",
         "Amount": round(unit * qty, 2),
         "Description": description or name,
-        "SalesItemLineDetail": {"ItemRef": {"value": str(item_id)}, "Qty": qty, "UnitPrice": unit},
+        "SalesItemLineDetail": detail,
     })
     body = {"Id": str(invoice_id), "SyncToken": inv["SyncToken"], "sparse": True, "Line": keep}
     return _post("/invoice", body).get("Invoice")

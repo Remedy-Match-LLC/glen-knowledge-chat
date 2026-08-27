@@ -25,6 +25,11 @@
   .col h2 { font-family:"Raleway",sans-serif; font-size:13px; letter-spacing:.08em;
             text-transform:uppercase; color:var(--muted); margin-bottom:10px; }
   .col h2 .n { color:var(--gold); }
+  .source-group + .source-group { margin-top:16px; padding-top:12px; border-top:1px solid var(--border); }
+  .source-head { display:flex; align-items:center; justify-content:space-between; gap:8px;
+                 margin:1px 2px 8px; color:var(--gold); font-size:11px; font-weight:700;
+                 letter-spacing:.06em; text-transform:uppercase; }
+  .source-head .n { color:var(--muted); font-size:10px; }
   .card { background:var(--surface2); border:1px solid var(--border); border-radius:9px;
           padding:11px 12px; margin-bottom:10px; }
   .card .who { font-weight:600; font-size:14px; }
@@ -316,10 +321,52 @@
   // Friendly "where/how placed" label from the order source (+ pickup), plain text (esc'd by caller).
   function whereLabel(o){
     var m={'in-house':'In-house (phone/email)','portal-reorder':'Portal order','reorder':'Order','dropship':'Drop ship',
-           'funnel':'Website','biofield_trial':'Biofield trial','biofield':'Biofield'};
+           'funnel':o.source_label||'illtowell.com','biofield_trial':'Biofield trial','biofield':'Biofield'};
     var lbl = m[(o.source||'')] || srcLabel(o.source) || o.source || '—';
     if (o.channel==='pickup') lbl += ' · Pickup';
     return lbl;
+  }
+  // Business-facing source names used to organize every lifecycle lane. Keep
+  // the stored source values intact; this is display-only and unknown sources
+  // still receive their own readable section instead of being mixed together.
+  function sourceGroupLabel(o){
+    var source = String(o.source||'').toLowerCase();
+    var labels = {
+      'groovekart':'GrooveKart (RemedyMatch)',
+      'in-house':'Email',
+      'e4l':'E4L',
+      'portal-reorder':'Client Portal',
+      'reorder':'Client Portal',
+      'dispensary':'Practitioner Dispensary',
+      'dropship':'Drop Ship',
+      'wholesale':'Wholesale',
+      'personal':'Personal Order',
+      'biofield':'Biofield',
+      'biofield_trial':'Biofield Trial',
+      'prepay_term':'Prepaid Program',
+      'continuous_care_monthly':'Continuous Care',
+      'membership':'Membership',
+      'subscription':'Subscription',
+      'subscribe':'Subscription'
+    };
+    if (source==='funnel') return o.source_label||'illtowell.com';
+    if (labels[source]) return labels[source];
+    if (!source) return 'Other';
+    return source.replace(/[-_]+/g,' ').replace(/\b\w/g,function(c){ return c.toUpperCase(); });
+  }
+  function groupedCardsHtml(orders){
+    var groups = {}, sequence = [];
+    orders.forEach(function(o){
+      var label = sourceGroupLabel(o);
+      if (!groups[label]) { groups[label]=[]; sequence.push(label); }
+      groups[label].push(o);
+    });
+    return sequence.map(function(label){
+      var members = groups[label];
+      return '<section class="source-group"><div class="source-head"><span>'+esc(label)
+        +'</span><span class="n">'+members.length+'</span></div>'
+        +members.map(cardHtml).join('')+'</section>';
+    }).join('');
   }
   // Per-line partial fulfillment (Phase 2): record qty shipped; shortfall stays backordered.
   function showFulfill(o){ return o.status==='new' || o.status==='packed' || o.status==='shipped'; }
@@ -538,7 +585,7 @@
       var inLane = orders.filter(pred);
       var col = document.createElement('div'); col.className='col';
       col.innerHTML = '<h2>'+l[1]+' <span class="n">'+inLane.length+'</span></h2>'
-        + inLane.map(cardHtml).join('');
+        + groupedCardsHtml(inLane);
       board.appendChild(col);
     });
     // Households Done: completed combined shipments, kept as one grouped card
