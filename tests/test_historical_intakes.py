@@ -17,6 +17,7 @@ def _app(tmp_path, monkeypatch, console_secret="secret"):
         sys.path.insert(0, str(repo))
     import app as appmod
     monkeypatch.setattr(appmod, "LOG_DB", str(tmp_path / "chat_log.db"))
+    monkeypatch.setattr(appmod, "CONSOLE_SECRET", console_secret)
     monkeypatch.setattr(appmod, "_PORTAL_HUB_ENABLED", True)
     monkeypatch.setattr(appmod, "_PORTAL_HEALTH_PROFILE_ENABLED", True)
     return appmod
