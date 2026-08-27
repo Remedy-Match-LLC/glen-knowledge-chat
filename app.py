@@ -14596,16 +14596,21 @@ def api_console_client_scans_sync():
                 for row in new_rows:
                     em, sd, sid = row["email"], row["scan_date"], row["scan_id"]
                     try:
-                        # anti-nag: only when the owner can actually act on it
-                        can_act = _is_paid_member(em) or not _aq.claimed_this_month(cx, em)
-                        if can_act and not _es.is_suppressed(cx, em):
+                        paid_member = _is_paid_member(em)
+                        monthly_used = (not paid_member and
+                                        _aq.claimed_this_month(cx, em))
+                        if not _es.is_suppressed(cx, em):
                             # lookup-only: the stable raw token stashed by client_portal
                             # (upsert_portal/ensure_token) in portal_notify_state. Never
                             # mints a portal for an email that doesn't have one.
                             _stt = _ns2.get_state(cx, em)
                             tok = _stt.get("portal_token")
                             if tok and _stt.get("opt_status") != "out":   # respect notify_state opt-out
-                                _send_new_scan_email(em, sd, sid, tok)
+                                _send_new_scan_email(
+                                    em, sd, sid, tok,
+                                    paid_member=paid_member,
+                                    monthly_used=monthly_used,
+                                )
                     except Exception as _e:
                         print(f"[new-scan-email] {em}: {_e!r}", flush=True)
                     _cs.mark_notified(cx, em, sd)   # mark regardless, so we never re-nag
@@ -15053,15 +15058,35 @@ def api_console_scan_pull_get(req_id):
     return jsonify({"ok": True, "request": row})
 
 
-def _send_new_scan_email(email, scan_date, scan_id, token):
-    """New-scan invite: a one-click analyze link + the client's limit + upgrade path. Best-effort.
-    Cc'd (private separate copy) to consented+subscribed caregivers via household.cc_recipients_for."""
+def _send_new_scan_email(email, scan_date, scan_id, token, *,
+                         paid_member=False, monthly_used=False):
+    """Send one membership-aware new-scan CTA through the client's GHL record."""
     base = "https://illtowell.com"
     link = f"{base}/portal/{token}/analyze?scan_id={scan_id}&scan_date={scan_date}"
     subj = "Your new biofield scan is ready to analyze"
-    body = (f"A new biofield scan ({scan_date}) is on file for you.\n\n"
-            f"Would you like it analyzed? Free members get one analysis per month; members get unlimited.\n\n"
-            f"Analyze this scan: {link}\n\nUpgrade for unlimited: {base}/prepay")
+    intro = f"A new biofield scan ({scan_date}) is on file for you."
+    if paid_member:
+        body = f"{intro}\n\nSee your scan analysis: {link}"
+        html = f'<p>{intro}</p><p><a href="{link}">See your scan analysis</a></p>'
+    elif monthly_used:
+        benefits = ("• Unlimited Biofield Scan analyses\n"
+                    "• Ongoing protocol re-matching as you progress\n"
+                    "• Live group coaching and AI support")
+        body = (f"{intro}\n\nYou've already used your free analysis this month. "
+                f"Upgrade to Continuous Care for:\n\n{benefits}\n\n"
+                f"Upgrade for unlimited analyses: {base}/prepay")
+        html = (f"<p>{intro}</p><p>You've already used your free analysis this month. "
+                "Upgrade to Continuous Care for:</p>"
+                "<ul><li>Unlimited Biofield Scan analyses</li>"
+                "<li>Ongoing protocol re-matching as you progress</li>"
+                "<li>Live group coaching and AI support</li></ul>"
+                f'<p><a href="{base}/prepay">Upgrade for unlimited analyses</a></p>')
+    else:
+        body = (f"{intro}\n\nFree members get one analysis per month; paid members "
+                f"get unlimited analyses.\n\nAnalyze this scan: {link}")
+        html = (f"<p>{intro}</p>"
+                "<p>Free members get one analysis per month; paid members get unlimited analyses.</p>"
+                f'<p><a href="{link}">Analyze this scan</a></p>')
     recips = [email]
     try:
         from dashboard import household as _hh
@@ -15070,7 +15095,8 @@ def _send_new_scan_email(email, scan_date, scan_id, token):
             recips += _hh.cc_recipients_for(_cxh, email)   # caregivers get their own copy
     except Exception:
         pass
-    for to in dict.fromkeys(recips):   # de-dup, private separate copies
+    from dashboard import ghl_email as _ghl
+    for to in dict.fromkeys(recips):
         try:
             try:
                 from dashboard import email_suppression as _es
@@ -15079,9 +15105,9 @@ def _send_new_scan_email(email, scan_date, scan_id, token):
                         continue
             except Exception as _se:
                 print(f"[new-scan-email] suppression check failed for {to}: {_se!r}", flush=True)
-            _send_inquiry_email(to, subj, body)
+            _ghl.send_via_ghl(to, subj, html=html, text=body)
         except Exception as _e:
-            print(f"[new-scan-email] to {to}: {_e!r}", flush=True)
+            print(f"[new-scan-email] GHL send to {to} failed: {_e!r}", flush=True)
 
 
 def membership_category(email):
