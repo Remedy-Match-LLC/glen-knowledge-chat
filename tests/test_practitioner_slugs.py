@@ -1,4 +1,6 @@
 """Unit tests for the practitioner slug namespace. Imports no Flask app."""
+import sqlite3
+
 import pytest
 from werkzeug.routing import Map, Rule
 
@@ -75,9 +77,6 @@ def test_check_not_reserved_rejects_a_reserved_word():
 
 def test_check_not_reserved_accepts_a_free_word():
     ps.check_not_reserved("mary-boyd", ps.reserved_for(_fake_map()))
-
-
-import sqlite3
 
 
 def _cx(tmp_path):
@@ -162,3 +161,29 @@ def test_claim_alias_is_idempotent_only_by_raising_not_by_overwriting(tmp_path):
     with pytest.raises(ps.SlugError):
         ps.claim_alias(cx, "pending-pat", "shared-name", frozenset())
     assert ps.alias_owner(cx, "shared-name") == "mary-boyd"
+
+
+def test_claim_alias_converts_a_real_integrity_violation_to_slug_error(tmp_path, monkeypatch):
+    """Exercises the try/except db.IntegrityError backstop in claim_alias with a
+    REAL sqlite PRIMARY KEY violation, not a mocked exception.
+
+    In production, the race is: two processes both call alias_owner(cx, a),
+    both see it unclaimed, and both proceed toward the INSERT before either
+    commits. Here we simulate that window by patching the pre-check seam
+    (alias_owner) to report "unclaimed" while the alias row genuinely already
+    exists in practitioner_slug_aliases. claim_alias's own pre-check is
+    therefore fooled exactly as it would be in the real race, and the
+    exception that stops it comes from sqlite itself enforcing the alias
+    PRIMARY KEY on the real table -- not from anything we constructed.
+    """
+    cx = _cx(tmp_path)
+    ps.init_tables(cx)
+    cx.execute(
+        "INSERT INTO practitioner_slug_aliases (alias, canonical_slug, created_at)"
+        " VALUES ('shared-name', 'mary-boyd', '2026-01-01T00:00:00+00:00')")
+    cx.commit()
+
+    monkeypatch.setattr(ps, "alias_owner", lambda cx, alias: "")
+
+    with pytest.raises(ps.SlugError):
+        ps.claim_alias(cx, "pending-pat", "shared-name", frozenset())
