@@ -45,6 +45,15 @@
   .whom-opt span{ font-size:14.5px; color:var(--cream); }
   .whom-note{ font-size:12.5px; color:var(--muted); margin-top:10px; min-height:1em; }
   .whom-note.warn{ color:var(--gold); }
+  .recipient-fields{ margin-top:14px; display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+  .recipient-fields[hidden]{ display:none; }
+  .recipient-field{ display:flex; flex-direction:column; gap:5px; }
+  .recipient-field label{ font-size:12.5px; font-weight:600; color:var(--cream); }
+  .recipient-field input{ width:100%; background:var(--surface-2); border:1px solid var(--border);
+    border-radius:9px; color:var(--cream); font-family:var(--font); font-size:14px; padding:9px 11px; outline:none; }
+  .recipient-field input:focus{ border-color:var(--gold); }
+  .recipient-field input::placeholder{ color:var(--muted); opacity:.7; }
+  .recipient-privacy{ grid-column:1/-1; font-size:11.5px; line-height:1.5; color:var(--muted); }
 
   /* ── Chat panel ── */
   .chat-wrap{ margin:22px 0 0; background:var(--surface); border:1px solid var(--border);
@@ -141,6 +150,8 @@
     .shell{ padding:0 18px; }
     .whom-opts{ flex-direction:column; }
     .whom-opt{ min-width:0; }
+    .recipient-fields{ grid-template-columns:1fr; }
+    .recipient-privacy{ grid-column:auto; }
     #messages{ max-height:52vh; }
   }
 </style>
@@ -174,6 +185,17 @@
         </label>
       </div>
       <div class="whom-note" id="whom-note">Pick one to get started. It helps me tune the conversation.</div>
+      <div class="recipient-fields" id="recipient-fields" hidden>
+        <div class="recipient-field">
+          <label for="recipient-name">Their name</label>
+          <input id="recipient-name" type="text" autocomplete="off" placeholder="First and last name" />
+        </div>
+        <div class="recipient-field">
+          <label for="recipient-email">Their email <span style="font-weight:400;color:var(--muted)">(optional)</span></label>
+          <input id="recipient-email" type="email" autocomplete="off" inputmode="email" placeholder="name@example.com" />
+        </div>
+        <div class="recipient-privacy">Their email is used only to identify the correct person and preserve referral credit if they later create an account. We won&rsquo;t contact them.</div>
+      </div>
     </div>
   </section>
 
@@ -235,6 +257,8 @@
           document.querySelectorAll('.whom-opt').forEach(function(o){ o.classList.remove('active'); });
           const lab = r.closest('.whom-opt');
           if (lab) lab.classList.add('active');
+          const recipientFields = document.getElementById('recipient-fields');
+          if (recipientFields) recipientFields.hidden = forWhom !== 'someone-else';
           if (note) {
             note.classList.remove('warn');
             note.textContent = forWhom === 'someone-else'
@@ -363,6 +387,23 @@
         return;
       }
 
+      const recipientNameEl = document.getElementById('recipient-name');
+      const recipientEmailEl = document.getElementById('recipient-email');
+      const recipientName = forWhom === 'someone-else' ? (recipientNameEl.value || '').trim() : '';
+      const recipientEmail = forWhom === 'someone-else' ? (recipientEmailEl.value || '').trim() : '';
+      if (forWhom === 'someone-else' && !recipientName) {
+        const note = document.getElementById('whom-note');
+        if (note) { note.classList.add('warn'); note.textContent = 'Please add their name so I know who we are helping.'; }
+        recipientNameEl.focus();
+        return;
+      }
+      if (forWhom === 'someone-else' && recipientEmail && !recipientEmailEl.checkValidity()) {
+        const note = document.getElementById('whom-note');
+        if (note) { note.classList.add('warn'); note.textContent = 'Please check that their email address is entered correctly.'; }
+        recipientEmailEl.focus();
+        return;
+      }
+
       inp.value = ''; inp.style.height = 'auto';
       const empty = document.getElementById('empty-state');
       if (empty) empty.remove();
@@ -386,6 +427,9 @@
             session_id: sessionId,
             name: '',
             email: '',
+            subject_name: recipientName,
+            subject_email: recipientEmail,
+            ref: getRefSafe(),
             images: _att.images || [],
             documents: _att.documents || [],
             images_consented: !!_att.consented

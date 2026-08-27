@@ -6018,6 +6018,11 @@ def begin_match_chat():
     for_whom = (data.get("for_whom") or "").strip().lower()   # "me" | "someone-else" | ""
     name    = (data.get("name") or "").strip()
     email   = (data.get("email") or "").strip().lower()
+    subject_name = (data.get("subject_name") or "").strip()
+    # This third-party identity is reference-only: never use it for contact,
+    # membership, personalization, chat logs, or memory.
+    subject_email = (data.get("subject_email") or "").strip().lower()
+    ref_slug = (request.cookies.get("rm_ref") or (data.get("ref") or "")).strip()
     session_id = (request.cookies.get("amg_session")
                   or (data.get("session_id") or "").strip() or uuid.uuid4().hex)
     auth_user = get_authenticated_user(request)
@@ -6036,6 +6041,20 @@ def begin_match_chat():
         return _blocked
     if not query:
         return jsonify({"error": "Empty query"}), 400
+
+    # Preserve approved-affiliate attribution for the recipient without
+    # creating an account or contacting them. The helper is idempotent.
+    if for_whom == "someone-else" and subject_email and ref_slug:
+        try:
+            subject_parts = subject_name.split(None, 1)
+            _capture_concierge_referral(
+                subject_email,
+                subject_parts[0] if subject_parts else "",
+                subject_parts[1] if len(subject_parts) > 1 else "",
+                ref_slug,
+            )
+        except Exception as e:
+            print(f"[match] recipient referral capture skipped: {e!r}", flush=True)
 
     images_consented = bool(data.get("images_consented"))
     raw_images = data.get("images") or []
@@ -6087,7 +6106,11 @@ def begin_match_chat():
 
         whom_line = {
             "me": "This match is FOR THE PERSON THEMSELVES.",
-            "someone-else": "This match is FOR SOMEONE ELSE — do not apply the chatter's personal data.",
+            "someone-else": (
+                "This match is FOR SOMEONE ELSE — do not apply the chatter's personal data. "
+                f"The recipient's name is {subject_name or 'not provided'}. "
+                "Use the recipient's name naturally. Never suggest that we will contact them."
+            ),
         }.get(for_whom, "The person hasn't said who this is for — gently confirm it's for them or someone else.")
 
         # Glen's recommended off-catalog tools/products (trusted-links.json) — give
