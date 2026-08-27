@@ -116,3 +116,18 @@ def test_console_photo_endpoint_respects_force(tmp_path, monkeypatch):
            json={"email": "c@x.com", "image": b64, "content_type": "image/jpeg", "source": "console"})
     with sqlite3.connect(appmod.LOG_DB) as cx:
         assert cp.get(cx, "c@x.com")["blob"] == b"from-fmp"
+
+
+def test_console_can_pull_photo_with_framing_for_biofield(tmp_path, monkeypatch):
+    appmod = _app(tmp_path, monkeypatch)
+    from dashboard import client_photos as cp
+    with sqlite3.connect(appmod.LOG_DB) as cx:
+        cp.put(cx, "pam@x.com", b"portal-photo", "image/png", source="portal-self")
+        cp.set_framing(cx, "pam@x.com", 48, 31, 1.6)
+    response = appmod.app.test_client().get(
+        "/api/console/client-photo?email=pam%40x.com")
+    data = response.get_json()
+    assert response.status_code == 200
+    assert base64.b64decode(data["image"]) == b"portal-photo"
+    assert data["source"] == "portal-self"
+    assert (data["focus_x"], data["focus_y"], data["zoom"]) == (48, 31, 1.6)
