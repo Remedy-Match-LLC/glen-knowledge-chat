@@ -19112,6 +19112,42 @@ def practitioner_storefront(slug):
     return resp
 
 
+@app.route("/<slug>")
+def practitioner_site(slug):
+    """Practitioner site at myhealingoasis.com/<slug>.
+
+    Host-gated: this catch-all exists only on the portal host, so it can never
+    shadow a route on the funnel domain. Werkzeug already prefers static rules,
+    so named routes win here too; tests/test_slug_route_collision.py is the
+    guard that keeps it that way as routes are added.
+
+    Serves the existing storefront page unchanged. Server-rendering and lifting
+    noindex are section 5 of the spec, not this route.
+    """
+    if not _on_portal_host():
+        return ("", 404)
+    if not _public_surface_enabled():
+        return ("", 404)
+    from dashboard import practitioner_slugs as _ps
+    s = _ps.normalize(slug)
+    try:
+        _ps.check_shape(s)
+    except _ps.SlugError:
+        return ("", 404)
+    with db.connect(LOG_DB) as cx:
+        kind, canonical = _ps.resolve(cx, s)
+    if kind == "alias":
+        return redirect(f"/{canonical}", code=301)
+    if kind != "canonical":
+        return ("", 404)
+    resp = send_from_directory(STATIC, "practitioner-storefront.html")
+    resp.headers["X-Robots-Tag"] = "noindex"
+    resp.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+    resp.set_cookie("rm_ref", canonical, max_age=90 * 24 * 3600,
+                    samesite="Lax", secure=request.is_secure)
+    return resp
+
+
 @app.route("/api/client/<code>/catalog")
 def api_client_catalog(code):
     """Return sellable Functional Formulations at the practitioner's price (>= MAP).
