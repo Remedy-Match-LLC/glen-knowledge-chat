@@ -40,19 +40,23 @@ This is a **multi-tenant product where Mary is tenant #1**, not a bespoke site. 
 
 **URL shape: `myhealingoasis.com/<slug>`.** The catch-all registers **last** so every named route wins on match order, and it is **host-gated** with the existing `_on_portal_host()` helper (`app.py:392`) so it cannot shadow anything on illtowell.com. `/p/<slug>` stays alive as a permanent redirect so no already-distributed link breaks.
 
-**Slug becomes a claim flow, not a mint.** The practitioner proposes a slug, validated against:
+**Two kinds of slug: one canonical, zero or more alternates.** Confirmed with Glen 2026-08-27.
+
+**Canonical slug** is the standard personal-name form, minted as today by `_mint_affiliate_slug`. **Mary's canonical slug is `mary-boyd`.** (`mary-boyd-rn` was an illustration in conversation, never a reservation.) The canonical slug is what `/<slug>` serves, what the canonical tag points at, and what the sitemap lists. It is **immutable after publish**, because it goes on a printed card.
+
+**Alternate slugs** are practitioner-chosen vanity names, typically a business or practice name, and they **301 to the canonical**. They never serve content and never appear in the sitemap, so they cannot create duplicate-content competition with the canonical URL. Alternates are additive: once published, an alternate forwards forever even if the practitioner later adds another, since the whole point is that it may be in print somewhere.
+
+**Both kinds live in one namespace** and every claim, canonical or alternate, is validated against:
 1. A **reserved-word blocklist** seeded from the real top-level route segments plus a buffer of words we may want later.
-2. Uniqueness across `affiliate_signups`.
+2. Uniqueness across the combined set of all canonical slugs and all alternates. An alternate must not collide with another practitioner's canonical.
 3. Shape: lowercase, 3-40 chars, no leading/trailing/doubled hyphens.
 4. Glen's review before it goes live (profanity, impersonation, credential claims).
 
-**Slug is immutable after publish.** The premise is that it goes on a printed card. If Glen ever approves a change, the old slug 301s forever.
-
-**Credential suffixes are verified, not self-asserted.** Mary's suggested `mary-boyd-rn` puts a licensure claim in a URL on a domain Remedy Match owns. Active RN: fine and good credentialing. Lapsed, or a title implying a scope she is not practicing, and it is Remedy Match's exposure. Ask Mary before reserving it, and apply the rule generally.
+**Credential suffixes are verified, not self-asserted.** This rule now attaches to the alternate-claim flow, since the canonical is a plain name. An alternate like `mary-boyd-rn` puts a licensure claim in a URL on a domain Remedy Match owns. Active RN: fine and good credentialing. Lapsed, or a title implying a scope she is not practicing, and it is Remedy Match's exposure. Verify before approving any alternate carrying a credential or a protected title.
 
 **Known inconsistency to fix:** `static/practitioner-settings.html:153` currently tells practitioners their storefront is at `illtowell.com/p/your-slug`. That contradicts `PORTAL_BASE_URL` and must be updated as part of this work.
 
-**Required guard.** A root catch-all means any future route can silently steal a live practitioner's URL, and we would hear it from a practitioner, not from CI. Ship a test that walks the app's registered URL map and fails if any rule collides with a published slug. **Mutation-test it:** plant a deliberate collision, confirm the test goes red, then remove it. A guard never observed failing is not known to work.
+**Required guard.** A root catch-all means any future route can silently steal a live practitioner's URL, and we would hear it from a practitioner, not from CI. Ship a test that walks the app's registered URL map and fails if any rule collides with any published slug, canonical or alternate. **Mutation-test it:** plant a deliberate collision, confirm the test goes red, then remove it. A guard never observed failing is not known to work.
 
 ---
 
@@ -96,13 +100,15 @@ Generalization is therefore confined to four named places: `GLEN_CONSULT_HOURS` 
 
 **Per-practitioner booking data:** office-hours spec, session types (Mary needs at least one, e.g. a free 20-minute intro call), duration, medium, timezone.
 
+**The practitioner supplies all of this herself, so this section ships a data-entry form.** Confirmed with Glen 2026-08-27: these are not values we configure on her behalf. The practitioner portal gains a booking-configuration surface covering session types (label, duration, medium), weekly office hours, timezone, and buffer/notice rules. It is subject to the same draft-and-review treatment as the profile content in section 2 only where it is publicly visible; hours and availability are operational rather than published claims and do not need Glen's approval to change.
+
 **Calendar sync: full Google OAuth.** Glen chose this over the cheaper ICS-feed option; recorded as his decision.
 
 What already exists: an `oauth_tokens` table keyed by `name` (rows like `glen_gmail`, `rae_gmail`, `inbox_gmail`, see `dashboard/gmail_token.py`), and `console_push_cron.py:393` already requests `calendar.readonly` and `calendar.events`. The Google Cloud project exists and calendar scopes are already in use. Per-practitioner tokens are a `name` convention, not a new storage model.
 
 What must be built: a **web consent flow**. Existing tokens are minted by a CLI script (`scripts/gmail_reauth_full.py`) for accounts we control. Mary clicking "connect my calendar" needs a redirect endpoint, a callback with CSRF state, per-practitioner token rows, refresh handling, and revocation.
 
-**Schedule risk we do not control.** `calendar.events` is a Google **sensitive scope**. Until the OAuth app passes Google verification, third parties can only connect as one of 100 test users, behind an "unverified app" warning, and **testing-mode refresh tokens expire after 7 days** - Mary's sync would silently die a week in. Verification needs a verified domain, a published privacy policy, and a demo video, and runs on Google's clock. Plan: Mary connects as a test user so the beta is not blocked; verification proceeds in parallel.
+**Schedule risk we do not control.** `calendar.events` is a Google **sensitive scope**. Until the OAuth app passes Google verification, third parties can only connect as one of 100 test users, behind an "unverified app" warning, and **testing-mode refresh tokens expire after 7 days** - Mary's sync would silently die a week in. Verification needs a verified domain, a published privacy policy, and a demo video, and runs on Google's clock. Plan, confirmed with Glen 2026-08-27: **start Google verification now**, in parallel with the build, since the latency is Google's and not ours. Mary connects as a test user in the meantime so the beta is not blocked.
 
 **Fail closed on a dead token.** If we cannot read a practitioner's busy time, stop offering slots. Do not offer them blindly. Failing open here double-books a real person.
 
@@ -126,7 +132,7 @@ Glen's rule: **public referrers (no portal) get no affiliate benefit; members (h
 - `is_member(session_id, email)` (`app.py:1312`) is **Tier-1: ToS agreed** (`journey_state.tos_agreed_at`), unioned across email and session. Its docstring calls it "deliberately distinct from the paid-coaching membership." **This is the correct gate.**
 - `_is_paid_member(email)` (`app.py:6814`) is an active paid membership excluding trial, and exists to decide volume pricing. Using it would deny the link to exactly the free-tier members Glen intends to include.
 
-Pin: the gate reads `is_member`. Glen said "members have a portal," and portal access is a token from `client_portal.ensure_token`, which is a different field from ToS agreement. They almost certainly coincide. `is_member` is chosen because it is the consent gate the codebase already uses wherever it hands out individualized advice and ordering. **Flagged for Glen to overrule in review if wrong.**
+Pin confirmed by Glen 2026-08-27: **all members agree to the ToS**, so ToS agreement and membership are the same population and the ambiguity raised in brainstorming is void. The gate reads `is_member`, which is also the consent gate the codebase already uses wherever it hands out individualized advice and ordering.
 
 **Do NOT change the `referral_redemptions` primary key.** An earlier draft of this design proposed a composite `(referee_email, kind)` key. That is wrong:
 - `referee_email TEXT PRIMARY KEY` (`dashboard/referrals.py:19`) is deliberate, and **pinned by existing tests**: `tests/test_referral_kind.py:33` writes a second row commented `# same referee PK`, and `tests/test_portal_referral_capture.py:30` asserts an existing ambassador lineage is `# unchanged` after a dispensary capture.
@@ -158,7 +164,7 @@ Shape of that record: one row per `(patient_email, practitioner_id)` with a firs
 
 **A practitioner sitemap on the portal host**, following the `render_sitemap_xml(rows, base)` pattern from `app.py:9067`/`app.py:9136`, listing only indexable profiles. It must bind to `PORTAL_BASE_URL`, not `PUBLIC_BASE_URL` - the two existing sitemaps hardcode the funnel host, and copying that would emit wrong-host URLs for every practitioner.
 
-**Canonical tag** on every practitioner page pointing at `https://myhealingoasis.com/<slug>`, collapsing the legacy `/p/<slug>` path and any host duplication to one URL.
+**Canonical tag** on every practitioner page pointing at the practitioner's **canonical** slug at `https://myhealingoasis.com/<canonical-slug>`, collapsing the legacy `/p/<slug>` path, every alternate slug, and any host duplication to one URL.
 
 **Structured data: `Person` plus `ProfessionalService`.** Deliberately **not** `MedicalBusiness` or `Physician`. Those schema types assert a medical practice to Google in machine-readable form. For a health coach that is inaccurate and it is not a claim to emit from Remedy Match's domain. Same reasoning as credential verification in section 1.
 
@@ -182,9 +188,15 @@ Everything ships behind flags, dark, with Mary as the only enabled tenant. Note 
 
 Sequence: server-rendering and slug governance first (they unblock sharing, which is the live demand), then the publish gate, then booking, then referral attribution, then indexing last - indexing is the only step that is hard to walk back, since a page Google has crawled stays in the index after the page changes.
 
-## Open for Glen's review
+## Resolved in review, 2026-08-27
 
-1. **Mary's slug.** Confirm `mary-boyd-rn` against her actual current RN licensure before reserving it, or pick a slug without the credential.
-2. **The `is_member` pin** in section 4, if portal-token existence and ToS agreement diverge in a way not anticipated here.
-3. **Session types Mary actually wants to offer**, and her office hours and timezone.
-4. **Whether Google OAuth verification starts now**, in parallel with the build, given its external latency.
+All four items raised at first review are settled and folded into the sections above.
+
+1. **Mary's slug** is the standard `mary-boyd`. `mary-boyd-rn` was an example, not a reservation. She may claim an alternate, such as a practice name, which forwards to the canonical. See section 1.
+2. **The `is_member` pin holds.** All members agree to the ToS, so the two populations are identical. See section 4.
+3. **Booking details come from the practitioner**, so section 3 now ships a data-entry form rather than assuming we configure her hours and session types.
+4. **Google OAuth verification starts now**, in parallel with the build.
+
+## Still needed before implementation
+
+- Nothing blocking. The remaining unknowns (Mary's actual session types, hours, and timezone) are data she enters through the form specced in section 3, not design decisions.
