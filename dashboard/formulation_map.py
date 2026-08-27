@@ -9,6 +9,35 @@ import sqlite3
 from dashboard import dbwrite
 
 
+_ER_ANATOMICAL_NAMES = {
+    "ER20": "Kidneys",
+    "ER42": "Pancreas",
+    "ER43": "Spleen",
+    "ER49": "Skin",
+    "ER56": "Prostate",
+    "ER65": "Feet",
+    "ER68": "Acoustic Nerve",
+}
+
+
+def correct_er_anatomical_names(cx):
+    """Replace legacy numbered placeholders with the canonical anatomical names."""
+    table = cx.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='e4l_items'"
+    ).fetchone()
+    if not table:
+        return
+    columns = {r[1] for r in cx.execute("PRAGMA table_info(e4l_items)")}
+    if not {"code", "name", "full_name"}.issubset(columns):
+        return
+    for code, anatomy in _ER_ANATOMICAL_NAMES.items():
+        cx.execute(
+            "UPDATE e4l_items SET name=?, full_name=? WHERE code=?",
+            (anatomy, f"{anatomy} Rejuvenator", code),
+        )
+    cx.commit()
+
+
 def init_tables(cx):
     """Ensure the two tables exist (real e4l.db already has them; this lets tests and a
     fresh db work). Mirrors the columns the ingest + synthesis rely on."""
@@ -21,6 +50,7 @@ def init_tables(cx):
         score_min DOUBLE PRECISION, formulation_id INTEGER, priority INTEGER,
         other_therapies TEXT, notes TEXT, source TEXT)""")
     cx.commit()
+    correct_er_anatomical_names(cx)
 
 
 def _formulation_id(cx, name):

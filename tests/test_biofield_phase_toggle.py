@@ -9,7 +9,7 @@ def _html():
 
 def test_phase_toggle_present():
     h = _html()
-    assert "Capture stresses" in h and "Balance" in h
+    assert "Capture stresses" in h and "Rejuvenate" in h
     assert "setPhase(" in h            # toggle handler
     assert "function captureStresses" in h
 

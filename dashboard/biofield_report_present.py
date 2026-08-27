@@ -3,6 +3,9 @@ Shared renderer for the print/PDF (and later portal) skins. Pure function:
 takes the report dict + narrative text, returns a complete print-styled HTML doc.
 Section order is schedule-forward (the printed sheet ships with the bottles)."""
 
+import os as _os
+import re as _re
+
 WORDMARK = "Accelerated Self Healing™"
 FOOTER = "In wellness, Dr. Glen & Rae · illtowell.com"
 
@@ -128,14 +131,78 @@ def _narrative(narrative):
     return f'<h2>Narrative</h2><div class="narrative">{paras}</div>'
 
 
-def _life_stress(report):
-    """AI-matched supportive essences are internal suggestions, not report content.
+def _essence_benefit(description):
+    text = _re.sub(r"\s+", " ", description or "").strip()
+    text = _re.split(r"\b(?:10 drops?|take \d+ drops?|dosage:)\b", text,
+                     maxsplit=1, flags=_re.I)[0].strip(" •-;,")
+    if not text:
+        return "Included to provide the supportive energetic benefits Dr. Glen tested for you."
+    if len(text) > 420:
+        cut = text.rfind(".", 0, 421)
+        text = text[:cut + 1] if cut >= 120 else text[:417].rstrip() + "..."
+    return text
 
-    The patient-facing Life Stress explanation belongs in the reviewed narrative:
-    the associated/head essence indications followed by the prescribed therapeutic
-    essence's healing qualities.
-    """
-    return ""
+
+def _essence_name(value):
+    return _re.sub(r"\s+in\s+Terrain Restore\s*$", "", value or "", flags=_re.I).strip()
+
+
+def _essence_product(value, products):
+    wanted = _essence_name(value).casefold()
+    if not wanted or "essence" not in wanted:
+        return "", {}
+    for slug, product in (products.get("products") or {}).items():
+        if _essence_name((product or {}).get("name")).casefold() == wanted:
+            return slug, product or {}
+    return "", {}
+
+
+def _stress_essence_for(remedy_item, layers, products):
+    remedy_slug = remedy_item.get("slug") or _essence_product(
+        remedy_item.get("name"), products)[0]
+    for row in layers or []:
+        if _essence_product(row.get("remedy"), products)[0] != remedy_slug:
+            continue
+        stress_name = (row.get("head") or row.get("head_chain") or "").strip()
+        _stress_slug, product = _essence_product(stress_name, products)
+        if product:
+            return {"name": product.get("name") or stress_name,
+                    "description": product.get("description") or ""}
+    return None
+
+
+def _life_stress(report):
+    """Render only hand-tested Terrain Restore essences, never an AI fallback."""
+    if _os.environ.get("LIFE_STRESS_ENABLED", "").strip().lower() not in ("1", "true", "yes", "on"):
+        return ""
+    try:
+        curation = (report or {}).get("life_stress_curation")
+        if not curation or not curation.get("slugs"):
+            return ""
+        from dashboard import life_stress_curation as _lsc
+        from dashboard.life_stress import _load_json, _PRODUCTS_PATH
+        products = _load_json(_PRODUCTS_PATH)
+        ls = _lsc.apply_data(curation, {}, products)
+        if not ls or not ls.get("curated") or not ls.get("items"):
+            return ""
+        rows = []
+        for item in ls["items"]:
+            stress = _stress_essence_for(item, (report or {}).get("layers"), products)
+            indication = ""
+            if stress:
+                indication = (f'<div><span class="food">Stress indication &mdash; '
+                              f'{_e(_essence_name(stress.get("name")))}</span>: '
+                              f'{_e(_essence_benefit(stress.get("description")))}</div>')
+            rows.append(
+                f'<li>{indication}<div><strong>Balancing essence &mdash; '
+                f'{_e(_essence_name(item.get("name")))}</strong>: '
+                f'{_e(_essence_benefit(item.get("description")))}</div></li>')
+        return ("<h2>Supportive Life Stress Essences</h2>"
+                '<p class="food">These essences were tested and selected for you '
+                "by hand for inclusion in your Terrain Restore. Their supportive "
+                "benefits are described below.</p><ul>" + "".join(rows) + "</ul>")
+    except Exception:
+        return ""
 
 
 def _chain(report):

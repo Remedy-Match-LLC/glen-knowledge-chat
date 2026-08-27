@@ -90,9 +90,11 @@ def apply_data(curation, block, products=None):
             slug, name = _resolve(entry, products)
             if not slug:
                 continue
+            product = ((products or {}).get("products") or {}).get(slug) or {}
             items.append({"slug": slug, "name": name,
                           "url": order_destination.destination_for(slug),
-                          "note": c.get("note") or ""})
+                          "note": c.get("note") or "",
+                          "description": product.get("description") or ""})
         if not items:
             return block
         label = (block or {}).get("label", "Life Stress")

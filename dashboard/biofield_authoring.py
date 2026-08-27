@@ -465,14 +465,20 @@ def delete_chain_row(cx, rid):
 
 
 def remove_remedy_preserving_layer(cx, tid, rid):
-    """Remove a remedy while retaining the final row as its layer anchor."""
+    """Remove one remedy without deleting its layer when it is the last remedy.
+
+    A chain row carries both the layer's Head/Tail and a remedy.  Deleting the
+    final row therefore used to erase the layer itself.  Keep that row as the
+    layer anchor and clear only remedy-specific fields; when sibling remedies
+    exist on the same stored layer, the row can safely be deleted.
+    """
     row = cx.execute(
-        "SELECT test_id, head FROM biofield_auth_chain WHERE id=? AND test_id=?",
+        "SELECT test_id, layer, head FROM biofield_auth_chain WHERE id=? AND test_id=?",
         (rid, _num(tid)),
     ).fetchone()
     if not row:
         return False
-    head = (row[1] or "").strip()
+    head = (row[2] or "").strip()
     if head:
         sibling_count = cx.execute(
             "SELECT COUNT(*) FROM biofield_auth_chain "
@@ -481,6 +487,7 @@ def remove_remedy_preserving_layer(cx, tid, rid):
             (row[0], rid, head),
         ).fetchone()[0]
     else:
+        # Empty-head rows are deliberately rendered as separate layers.
         sibling_count = 0
     if sibling_count:
         cx.execute("DELETE FROM biofield_auth_chain WHERE id=?", (rid,))
@@ -680,7 +687,7 @@ def stress_suggestions(cx, stress, limit=8):
 def ordered_chain(cx, tid):
     """Chain rows in display order with two-zone numbering.
 
-    Head/Tail-only rows remain as anchors for layers whose last remedy was removed.
+    Rows with a Head or Tail but no remedy are retained as empty layer anchors.
     Top zone = live + confirmed rows (manual order); bottom zone = unbalanced
     scan rows (origin='scan' AND confirmed=0), trailing. Display `layer` = 1..k."""
     cx.row_factory = sqlite3.Row

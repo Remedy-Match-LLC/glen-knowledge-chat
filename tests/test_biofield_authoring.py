@@ -5,6 +5,7 @@ from dashboard import biofield_authoring as biofield_authoring
 from dashboard.biofield_authoring import (
     init_auth_tables, create_test, add_chain_row, update_chain_row,
     delete_chain_row, update_header, list_authored, authored_report,
+    remove_remedy_preserving_layer,
     delete_test, confirm_row, resolve_remedy_name, resolve_stress_name,
     remedy_catalog, remedy_dosing, _title_case_name)
 
@@ -76,6 +77,48 @@ def test_update_and_delete_row(tmp_path):
     assert stored == 3
     delete_chain_row(cx, rid)
     assert authored_report(cx, tid)["layers"] == []
+
+
+def test_remove_last_remedy_keeps_layer_anchor(tmp_path):
+    cx = _cx(tmp_path)
+    tid = create_test(cx, "J", "j@x.com", "2026-06-23")
+    rid = add_chain_row(cx, tid, 1, "Night", "Nervous system", "TMG",
+                        "1 scoop", "daily", "at night")
+
+    assert remove_remedy_preserving_layer(cx, tid, rid) is True
+
+    layer = authored_report(cx, tid)["layers"][0]
+    assert layer["head"] == "Night"
+    assert layer["most_affected"] == "Nervous system"
+    assert layer["remedy"] == ""
+    assert authored_report(cx, tid)["schedule"]["entries"] == []
+
+
+def test_remove_grouped_remedy_recognizes_sibling_at_older_stored_position(tmp_path):
+    cx = _cx(tmp_path)
+    tid = create_test(cx, "J", "j@x.com", "2026-06-23")
+    first = add_chain_row(cx, tid, 2, "Night", "Nervous system", "TMG")
+    second = add_chain_row(cx, tid, 3, "Night", "Nervous system", "Magnesium")
+
+    assert remove_remedy_preserving_layer(cx, tid, first) is True
+    assert cx.execute("SELECT 1 FROM biofield_auth_chain WHERE id=?", (first,)).fetchone() is None
+    assert cx.execute("SELECT remedy FROM biofield_auth_chain WHERE id=?", (second,)).fetchone()[0] == "Magnesium"
+
+
+def test_remove_one_of_multiple_remedies_deletes_only_that_row(tmp_path):
+    cx = _cx(tmp_path)
+    tid = create_test(cx, "J", "j@x.com", "2026-06-23")
+    rid1 = add_chain_row(cx, tid, 1, "Night", "Nervous system", "TMG",
+                         "1 scoop", "daily", "at night")
+    add_chain_row(cx, tid, 1, "Night", "Nervous system", "Magnesium",
+                  "1 cap", "daily", "at night")
+
+    assert remove_remedy_preserving_layer(cx, tid, rid1) is True
+
+    layers = authored_report(cx, tid)["layers"]
+    assert [(layer["head"], layer["remedy"]) for layer in layers] == [
+        ("Night", "Magnesium")
+    ]
 
 
 def test_manual_schedule_slot_survives_report_rebuild(tmp_path):

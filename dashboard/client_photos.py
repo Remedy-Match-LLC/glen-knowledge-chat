@@ -78,7 +78,7 @@ def get(cx, email):
         return None
     init_table(cx)
     row = cx.execute(
-        "SELECT image_blob, content_type, focus_x, focus_y, zoom "
+        "SELECT image_blob, content_type, focus_x, focus_y, zoom, source, updated_at "
         "FROM client_photos WHERE email=?", (e,)
     ).fetchone()
     if not row or row[0] is None:
@@ -86,7 +86,8 @@ def get(cx, email):
     return {"blob": row[0], "content_type": row[1] or "image/jpeg",
             "focus_x": float(row[2] if row[2] is not None else 50),
             "focus_y": float(row[3] if row[3] is not None else 42),
-            "zoom": float(row[4] if row[4] is not None else 1)}
+            "zoom": float(row[4] if row[4] is not None else 1),
+            "source": row[5] or "", "updated_at": row[6] or ""}
 
 
 def set_framing(cx, email, focus_x, focus_y, zoom):

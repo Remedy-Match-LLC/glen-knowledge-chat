@@ -70,6 +70,8 @@ def test_card_shows_covered_chips_and_unassigned_is_draggable():
                        "rid": 5, "confirmed": 1}], "schedule": {"slots": [], "entries": []}}
     html = render_author_html(rep, [], "", covered_by_layer={1: [{"code": "ED1", "label": "Membrane"}]})
     assert "class=covered" in html and "balances:" in html and "ED1" in html
+    assert "add balanced stress to layer 1" in html
+    assert "addLayerStress(this,1)" in html
     assert "function coverStress" in html and "function stressDragStart" in html
     panel = render_stress_panel({"by_layer": [
         {"layer": 3, "head": "Neural", "rids": [41, 42], "stresses": []}], "unassigned": [

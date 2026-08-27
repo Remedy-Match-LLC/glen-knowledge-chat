@@ -130,7 +130,9 @@ def test_new_scan_email_gated_and_once(tmp_path, monkeypatch):
     appmod = _app(tmp_path, monkeypatch)
     monkeypatch.setattr(appmod, "_is_paid_member", lambda e: False)   # free member
     sent = []
-    monkeypatch.setattr(appmod, "_send_inquiry_email", lambda to, s, b, **k: sent.append(to) or (True, ""))
+    from dashboard import ghl_email
+    monkeypatch.setattr(ghl_email, "send_via_ghl",
+                        lambda to, s, **k: sent.append(to) or {"id": "msg-1", "via": "ghl"})
     # need a portal token so the email can carry a one-click link
     from dashboard import client_portal as cp
     with sqlite3.connect(appmod.LOG_DB) as cx:
@@ -143,6 +145,43 @@ def test_new_scan_email_gated_and_once(tmp_path, monkeypatch):
     # re-sync same scan → no re-email (notified_at set)
     c.post("/api/console/client-scans/sync", json={"email": "k@x.com", "scans": [{"scan_date": "2026-06-28", "scan_id": 9}]})
     assert sent == []
+
+
+def test_new_scan_email_has_one_cta_for_each_membership_state(tmp_path, monkeypatch):
+    appmod = _app(tmp_path, monkeypatch)
+    from dashboard import ghl_email
+    sent = []
+    monkeypatch.setattr(ghl_email, "send_via_ghl",
+                        lambda to, subject, **kw: sent.append(kw) or {"via": "ghl"})
+
+    common = ("k@x.com", "2026-08-08", 9, "portal-token")
+    appmod._send_new_scan_email(*common)
+    appmod._send_new_scan_email(*common, paid_member=True)
+    appmod._send_new_scan_email(*common, monthly_used=True)
+
+    free, paid, used = [message["text"] for message in sent]
+    assert "Analyze this scan:" in free and "/prepay" not in free
+    assert "See your scan analysis:" in paid and "/prepay" not in paid
+    assert "Analyze this scan:" not in paid
+    assert "Upgrade for unlimited analyses:" in used
+    assert "Analyze this scan:" not in used
+    assert "• Unlimited Biofield Scan analyses" in used
+
+
+def test_new_scan_email_uses_ghl_without_gmail_fallback(tmp_path, monkeypatch, capsys):
+    appmod = _app(tmp_path, monkeypatch)
+    from dashboard import ghl_email
+
+    monkeypatch.setattr(ghl_email, "send_via_ghl",
+                        lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("GHL unavailable")))
+    gmail_calls = []
+    monkeypatch.setattr(appmod, "_send_inquiry_email",
+                        lambda *args, **kwargs: gmail_calls.append((args, kwargs)))
+
+    appmod._send_new_scan_email("k@x.com", "2026-08-08", 9, "portal-token")
+
+    assert gmail_calls == []
+    assert "GHL send to k@x.com failed" in capsys.readouterr().out
 
 
 def test_worker_endpoints_require_console_key(tmp_path, monkeypatch):

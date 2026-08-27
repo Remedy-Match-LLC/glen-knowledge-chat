@@ -139,6 +139,15 @@ def _default_fetch_profile(email):
     try:
         key = os.environ["CONSOLE_SECRET"]
         base = os.environ.get("PUBLIC_BASE_URL", "https://illtowell.com").rstrip("/")
+        url = (f"{base}/api/people/recent-comms?key=" + urllib.parse.quote(key)
+               + "&q=" + urllib.parse.quote(email))
+        req = urllib.request.Request(url, headers={"X-Console-Key": key})
+        return _json.load(urllib.request.urlopen(req, timeout=20)) or {}
+    except Exception:
+        return {}
+    try:
+        key = os.environ["CONSOLE_SECRET"]
+        base = os.environ.get("PUBLIC_BASE_URL", "https://illtowell.com").rstrip("/")
         url = (f"{base}/api/console/clinical-profile/" + urllib.parse.quote(email, safe="")
                + "?key=" + urllib.parse.quote(key))
         req = urllib.request.Request(url, headers={"X-Console-Key": key})
@@ -156,15 +165,30 @@ def _default_fetch_recent_comms(email):
     email = (email or "").strip()
     if not email:
         return {}
+
+
+def _default_fetch_client_photo(email):
+    """Pull the portal's current client photo + nondestructive framing."""
+    import base64 as _b64
+    import json as _json
+    import urllib.parse
+    import urllib.request
+    email = (email or "").strip().lower()
+    if not email:
+        return None
     try:
         key = os.environ["CONSOLE_SECRET"]
         base = os.environ.get("PUBLIC_BASE_URL", "https://illtowell.com").rstrip("/")
-        url = (f"{base}/api/people/recent-comms?key=" + urllib.parse.quote(key)
-               + "&q=" + urllib.parse.quote(email))
+        url = (base + "/api/console/client-photo?email=" + urllib.parse.quote(email)
+               + "&key=" + urllib.parse.quote(key))
         req = urllib.request.Request(url, headers={"X-Console-Key": key})
-        return _json.load(urllib.request.urlopen(req, timeout=20)) or {}
+        data = _json.load(urllib.request.urlopen(req, timeout=20))
+        if not data.get("ok") or not data.get("image"):
+            return None
+        data["blob"] = _b64.b64decode(data.pop("image"))
+        return data
     except Exception:
-        return {}
+        return None
 
 
 def _fetch_life_stress_curation(email):
@@ -511,6 +535,7 @@ document.getElementById("parse-btn").addEventListener("click", iiParse);
 def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                interpret_complete=None, scan_lookup=None, client_search=None,
                fetch_runner=None, fetch_profile=None, fetch_recent_comms=None,
+               fetch_client_photo=None,
                e4l_db=None, fee_get=None, fee_set=None, fee_clear=None,
                invoice_fetch_catalog=None, invoice_create=None, invoice_link=None,
                invoice_paid_check=None, invoice_latest=None, ingredients_db=None,
@@ -535,6 +560,34 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
     fetch_profile = fetch_profile or _default_fetch_profile
     using_default_fetch_recent_comms = fetch_recent_comms is None
     fetch_recent_comms = fetch_recent_comms or _default_fetch_recent_comms
+    using_default_fetch_client_photo = fetch_client_photo is None
+    fetch_client_photo = fetch_client_photo or _default_fetch_client_photo
+    photo_refresh_at = {}
+
+    def _refresh_client_photo(email):
+        """Best-effort portal -> local sync, throttled across the paired image/framing reads."""
+        import time
+        from dashboard import client_photos as _cph
+        email = (email or "").strip().lower()
+        if not email or (using_default_fetch_client_photo and os.environ.get("CI")):
+            return False
+        now = time.monotonic()
+        if now - photo_refresh_at.get(email, 0) < 30:
+            return False
+        photo_refresh_at[email] = now
+        try:
+            rec = fetch_client_photo(email) or {}
+            if not rec.get("blob"):
+                return False
+            with sqlite3.connect(db_path) as cx:
+                written = _cph.put(cx, email, rec["blob"], rec.get("content_type"),
+                                   source=rec.get("source") or "portal-self", force=False)
+                if written:
+                    _cph.set_framing(cx, email, rec.get("focus_x", 50),
+                                     rec.get("focus_y", 42), rec.get("zoom", 1))
+            return bool(written)
+        except Exception:
+            return False
     fee_get = fee_get or biofield_fee.default_fee_get
     fee_set = fee_set or biofield_fee.default_fee_set
     fee_clear = fee_clear or biofield_fee.default_fee_clear
@@ -743,6 +796,7 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
         """Serve a client's photo (local store). Gated by the console cookie like the
         rest of the intake app. 404 when absent so <img onerror> hides cleanly."""
         from dashboard import client_photos as _cph
+        _refresh_client_photo(email)
         with sqlite3.connect(db_path) as cx:
             rec = _cph.get(cx, email)
         if not rec:
@@ -755,6 +809,7 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
     def client_photo_framing(email):
         """Return the same nondestructive face focal point used by portal avatars."""
         from dashboard import client_photos as _cph
+        _refresh_client_photo(email)
         with sqlite3.connect(db_path) as cx:
             rec = _cph.get(cx, email)
         if not rec:
@@ -852,7 +907,8 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
             # Stresses each layer's remedies cover, keyed by card layer number so the
             # cards can show them inline (chain_rows grouped to match the head cards).
             groups = group_layers(rep.get("layers") or [])
-            chain_rows = [{"layer": g["layer"], "head": g["head"], "remedy": r.get("remedy")}
+            chain_rows = [{"layer": g["layer"], "head": g["head"], "remedy": r.get("remedy"),
+                           "rid": r.get("rid")}
                           for g in groups for r in g["rows"]]
             sdata = list_stresses(cx, test_id, chain_rows)
             covered = {L["layer"]: L["stresses"] for L in sdata.get("by_layer") or []}
@@ -1233,7 +1289,7 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
         with sqlite3.connect(db_path) as cx:
             rep = _report_for(cx, test_id)
             chain_rows = [{"layer": l.get("layer"), "head": l.get("head"),
-                           "remedy": l.get("remedy")}
+                           "remedy": l.get("remedy"), "rid": l.get("rid")}
                           for l in (rep.get("layers") or [])]
             data = _st.list_stresses(cx, test_id, chain_rows)
         return {"data": data, "html": render_stress_panel(data)}
@@ -1247,7 +1303,8 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
             rep = _report_for(cx, test_id)
             layers_full = rep.get("layers") or []
             chain_rows = [{"layer": l.get("layer"), "head": l.get("head"),
-                           "remedy": l.get("remedy")} for l in layers_full]
+                           "remedy": l.get("remedy"), "rid": l.get("rid")}
+                          for l in layers_full]
             data = _st.list_stresses(cx, test_id, chain_rows)
             unassigned = data.get("unassigned") or []
             if stress_ids is None:
@@ -1286,7 +1343,8 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
         return _do_stress_assign(test_id, None)
 
     def _chain_rows_for(rep):
-        return [{"layer": l.get("layer"), "head": l.get("head"), "remedy": l.get("remedy")}
+        return [{"layer": l.get("layer"), "head": l.get("head"),
+                 "remedy": l.get("remedy"), "rid": l.get("rid")}
                 for l in (rep.get("layers") or [])]
 
     def _suggest_payload(data, layer_candidates=None):
@@ -1572,6 +1630,11 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                     ).fetchall()]
                     cx.execute(f"DELETE FROM biofield_auth_chain WHERE test_id=? AND id IN ({marks})",
                                [tnum, *valid])
+                    cx.execute(
+                        f"DELETE FROM biofield_auth_layer_stress "
+                        f"WHERE test_id=? AND chain_rid IN ({marks})",
+                        [tnum, *valid],
+                    )
                     # Coverage added by dragging a stress onto this layer must not
                     # survive after the layer's remedy is gone. Preserve it when the
                     # same remedy still exists on another layer in this analysis.

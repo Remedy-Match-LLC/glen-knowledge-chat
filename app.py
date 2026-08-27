@@ -14596,16 +14596,21 @@ def api_console_client_scans_sync():
                 for row in new_rows:
                     em, sd, sid = row["email"], row["scan_date"], row["scan_id"]
                     try:
-                        # anti-nag: only when the owner can actually act on it
-                        can_act = _is_paid_member(em) or not _aq.claimed_this_month(cx, em)
-                        if can_act and not _es.is_suppressed(cx, em):
+                        paid_member = _is_paid_member(em)
+                        monthly_used = (not paid_member and
+                                        _aq.claimed_this_month(cx, em))
+                        if not _es.is_suppressed(cx, em):
                             # lookup-only: the stable raw token stashed by client_portal
                             # (upsert_portal/ensure_token) in portal_notify_state. Never
                             # mints a portal for an email that doesn't have one.
                             _stt = _ns2.get_state(cx, em)
                             tok = _stt.get("portal_token")
                             if tok and _stt.get("opt_status") != "out":   # respect notify_state opt-out
-                                _send_new_scan_email(em, sd, sid, tok)
+                                _send_new_scan_email(
+                                    em, sd, sid, tok,
+                                    paid_member=paid_member,
+                                    monthly_used=monthly_used,
+                                )
                     except Exception as _e:
                         print(f"[new-scan-email] {em}: {_e!r}", flush=True)
                     _cs.mark_notified(cx, em, sd)   # mark regardless, so we never re-nag
@@ -15053,15 +15058,35 @@ def api_console_scan_pull_get(req_id):
     return jsonify({"ok": True, "request": row})
 
 
-def _send_new_scan_email(email, scan_date, scan_id, token):
-    """New-scan invite: a one-click analyze link + the client's limit + upgrade path. Best-effort.
-    Cc'd (private separate copy) to consented+subscribed caregivers via household.cc_recipients_for."""
+def _send_new_scan_email(email, scan_date, scan_id, token, *,
+                         paid_member=False, monthly_used=False):
+    """Send one membership-aware new-scan CTA through the client's GHL record."""
     base = "https://illtowell.com"
     link = f"{base}/portal/{token}/analyze?scan_id={scan_id}&scan_date={scan_date}"
     subj = "Your new biofield scan is ready to analyze"
-    body = (f"A new biofield scan ({scan_date}) is on file for you.\n\n"
-            f"Would you like it analyzed? Free members get one analysis per month; members get unlimited.\n\n"
-            f"Analyze this scan: {link}\n\nUpgrade for unlimited: {base}/prepay")
+    intro = f"A new biofield scan ({scan_date}) is on file for you."
+    if paid_member:
+        body = f"{intro}\n\nSee your scan analysis: {link}"
+        html = f'<p>{intro}</p><p><a href="{link}">See your scan analysis</a></p>'
+    elif monthly_used:
+        benefits = ("• Unlimited Biofield Scan analyses\n"
+                    "• Ongoing protocol re-matching as you progress\n"
+                    "• Live group coaching and AI support")
+        body = (f"{intro}\n\nYou've already used your free analysis this month. "
+                f"Upgrade to Continuous Care for:\n\n{benefits}\n\n"
+                f"Upgrade for unlimited analyses: {base}/prepay")
+        html = (f"<p>{intro}</p><p>You've already used your free analysis this month. "
+                "Upgrade to Continuous Care for:</p>"
+                "<ul><li>Unlimited Biofield Scan analyses</li>"
+                "<li>Ongoing protocol re-matching as you progress</li>"
+                "<li>Live group coaching and AI support</li></ul>"
+                f'<p><a href="{base}/prepay">Upgrade for unlimited analyses</a></p>')
+    else:
+        body = (f"{intro}\n\nFree members get one analysis per month; paid members "
+                f"get unlimited analyses.\n\nAnalyze this scan: {link}")
+        html = (f"<p>{intro}</p>"
+                "<p>Free members get one analysis per month; paid members get unlimited analyses.</p>"
+                f'<p><a href="{link}">Analyze this scan</a></p>')
     recips = [email]
     try:
         from dashboard import household as _hh
@@ -15070,7 +15095,8 @@ def _send_new_scan_email(email, scan_date, scan_id, token):
             recips += _hh.cc_recipients_for(_cxh, email)   # caregivers get their own copy
     except Exception:
         pass
-    for to in dict.fromkeys(recips):   # de-dup, private separate copies
+    from dashboard import ghl_email as _ghl
+    for to in dict.fromkeys(recips):
         try:
             try:
                 from dashboard import email_suppression as _es
@@ -15079,9 +15105,9 @@ def _send_new_scan_email(email, scan_date, scan_id, token):
                         continue
             except Exception as _se:
                 print(f"[new-scan-email] suppression check failed for {to}: {_se!r}", flush=True)
-            _send_inquiry_email(to, subj, body)
+            _ghl.send_via_ghl(to, subj, html=html, text=body)
         except Exception as _e:
-            print(f"[new-scan-email] to {to}: {_e!r}", flush=True)
+            print(f"[new-scan-email] GHL send to {to} failed: {_e!r}", flush=True)
 
 
 def membership_category(email):
@@ -23812,6 +23838,123 @@ def api_portal_documents(token):
     return jsonify({"enabled": _PORTAL_HUB_ENABLED, "items": items})
 
 
+@app.route("/api/portal/<token>/clinical-record/intakes", methods=["GET"])
+def api_portal_historical_intakes(token):
+    """Return reviewed historical intake snapshots for the token owner only."""
+    from dashboard import client_portal as _cp
+    from dashboard import health_profile as _hp
+    from dashboard import historical_intakes as _hi
+    from dashboard import intake as _intake
+    with db.connect(LOG_DB) as cx:
+        cx.row_factory = sqlite3.Row
+        _cp.init_client_portal_table(cx)
+        portal = _portal_record_for(cx, token)
+        if not portal:
+            return jsonify({"error": "not found"}), 404
+        email = (portal.get("email") or "").strip().lower()
+        snapshots = _hi.list_visible_for_email(cx, email)
+        _intake.init_intake_table(cx)
+        current = (_intake.get_response(cx, email) or {}).get("answers") or {}
+    definitions = {
+        field["id"]: field
+        for section in _hp.curated_fields() for field in section["fields"]
+    }
+    items = []
+    for snapshot in snapshots:
+        fields = []
+        for field_id, value in snapshot["answers"].items():
+            definition = definitions.get(field_id)
+            if not definition:
+                continue
+            display_value = value
+            if definition.get("options"):
+                selected = next((opt for opt in definition["options"]
+                                 if str(opt.get("value")) == str(value)), None)
+                if selected:
+                    display_value = selected.get("label")
+            fields.append({
+                "id": field_id,
+                "label": definition.get("label") or field_id,
+                "value": display_value,
+                "copyable": field_id in _hp.EDITABLE_FIELD_IDS,
+                "differs_from_current": field_id in current and current.get(field_id) != value,
+            })
+        items.append({
+            "id": snapshot["id"], "form_date": snapshot["form_date"],
+            "form_name": snapshot["form_name"], "source_label": "Practice Better"
+            if snapshot["source_system"] == "practice-better" else "Imported record",
+            "fields": fields,
+        })
+    return jsonify({"enabled": _PORTAL_HUB_ENABLED, "items": items})
+
+
+@app.route("/api/portal/<token>/clinical-record/intakes/<int:snapshot_id>/copy-to-current",
+           methods=["POST"])
+def api_portal_historical_intake_copy(token, snapshot_id):
+    """Copy selected historical values into the token owner's current profile."""
+    from dashboard import client_portal as _cp
+    from dashboard import health_profile as _hp
+    from dashboard import historical_intakes as _hi
+    from dashboard import intake as _intake
+    body = request.get_json(silent=True) or {}
+    selected = body.get("fields") or []
+    if not isinstance(selected, list) or not selected:
+        return jsonify({"error": "fields required"}), 400
+    selected = {str(field).strip() for field in selected}
+    if not selected <= _hp.EDITABLE_FIELD_IDS:
+        return jsonify({"error": "non-editable field"}), 400
+    with _db_lock, db.connect(LOG_DB) as cx:
+        cx.row_factory = sqlite3.Row
+        _cp.init_client_portal_table(cx)
+        portal = _portal_record_for(cx, token)
+        if not portal:
+            return jsonify({"error": "not found"}), 404
+        email = (portal.get("email") or "").strip().lower()
+        snapshot = _hi.get_for_email(cx, snapshot_id, email, visible_only=True)
+        if not snapshot:
+            return jsonify({"error": "not found"}), 404
+        copied = {field: snapshot["answers"][field] for field in selected
+                  if field in snapshot["answers"]}
+        if not copied:
+            return jsonify({"error": "selected fields unavailable"}), 400
+        _intake.init_intake_table(cx)
+        _intake.save_self_edit(cx, email, copied, _hst_now().isoformat())
+    return jsonify({"ok": True, "copied_fields": sorted(copied)})
+
+
+@app.route("/api/console/client-historical-intakes", methods=["GET"])
+def api_console_historical_intakes():
+    guard = _console_guard()
+    if guard:
+        return jsonify(guard[0]), guard[1]
+    from dashboard import historical_intakes as _hi
+    email = (request.args.get("email") or "").strip().lower()
+    if not email:
+        return jsonify({"error": "email required"}), 400
+    with db.connect(LOG_DB) as cx:
+        items = _hi.list_for_email(cx, email)
+    return jsonify({"ok": True, "items": items})
+
+
+@app.route("/api/console/historical-intake/<int:snapshot_id>/review", methods=["POST"])
+def api_console_historical_intake_review(snapshot_id):
+    guard = _console_guard()
+    if guard:
+        return jsonify(guard[0]), guard[1]
+    from dashboard import historical_intakes as _hi
+    body = request.get_json(silent=True) or {}
+    approved = bool(body.get("approved"))
+    visible = bool(body.get("visible"))
+    with _db_lock, db.connect(LOG_DB) as cx:
+        changed = _hi.review(cx, snapshot_id, approved=approved, visible=visible,
+                             reviewed_by=body.get("reviewed_by") or "console")
+    if not changed:
+        return jsonify({"error": "not found"}), 404
+    return jsonify({"ok": True, "id": snapshot_id,
+                    "review_status": "approved" if approved else "rejected",
+                    "client_visible": bool(approved and visible)})
+
+
 # Content types safe to render `inline` in a browser at our own origin. Anything
 # not on this list (including any image/* the upload route happens to accept,
 # e.g. image/svg+xml or image/heic) is served as attachment/octet-stream instead —
@@ -30155,13 +30298,27 @@ def api_console_portal_links():
     return jsonify({"ok": True, "portals": portals})
 
 
-@app.route("/api/console/client-photo", methods=["POST"])
+@app.route("/api/console/client-photo", methods=["GET", "POST"])
 def api_console_client_photo():
     """Store a client's photo (base64), keyed by email. Pushed from the local intake
     app's upload or a console upload. Console-key gated. See client-photos Slice 1."""
     if not _portal_console_ok():
         return jsonify({"error": "unauthorized"}), 401
     import base64 as _b64
+    if request.method == "GET":
+        email = (request.args.get("email") or "").strip().lower()
+        if not email:
+            return jsonify({"ok": False, "error": "email required"}), 400
+        from dashboard import client_photos as _cph
+        with db.connect(LOG_DB) as cx:
+            rec = _cph.get(cx, email)
+        if not rec:
+            return jsonify({"ok": False, "error": "not found"}), 404
+        return jsonify({"ok": True, "email": email,
+                        "image": _b64.b64encode(rec["blob"]).decode(),
+                        "content_type": rec["content_type"], "source": rec["source"],
+                        "updated_at": rec["updated_at"], "focus_x": rec["focus_x"],
+                        "focus_y": rec["focus_y"], "zoom": rec["zoom"]})
     body = request.get_json(silent=True) or {}
     email = (body.get("email") or "").strip().lower()
     img_b64 = body.get("image") or ""
