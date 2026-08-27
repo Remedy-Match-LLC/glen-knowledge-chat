@@ -24772,6 +24772,89 @@ def api_portal_scene_pref(token):
     return jsonify({"ok": True, "element": saved})
 
 
+@app.route("/api/portal/<token>/five-element-voice", methods=["POST"])
+def api_portal_five_element_voice(token):
+    """Analyze a portal member's short voice reflection.
+
+    The portal token (or the authenticated ``/portal/me`` session) supplies the
+    identity. Audio is used only for transcription and is deleted immediately;
+    the member's five-element score vector is retained to drive their portal
+    experience. This is deliberately separate from the public Voice Journal,
+    whose historical records are not member scoped.
+    """
+    from dashboard import client_portal as _cp
+    from dashboard import member_element_state as _mes
+    from dashboard.tcm_analysis import _haiku_analyze
+    from journal_blueprint import _lexical_features, _whisper_transcribe
+    import tempfile as _tempfile
+
+    with db.connect(LOG_DB) as cx:
+        _cp.init_client_portal_table(cx)
+        portal = _portal_record_for(cx, token)
+    if not portal:
+        return jsonify({"error": "not found"}), 404
+
+    audio = request.files.get("audio")
+    if not audio:
+        return jsonify({"error": "missing audio file"}), 400
+    try:
+        duration = float(request.form.get("duration_seconds", 0) or 0)
+    except (TypeError, ValueError):
+        return jsonify({"error": "invalid recording duration"}), 400
+    if duration < 3 or duration > 95:
+        return jsonify({"error": "recording must be between 3 and 90 seconds"}), 400
+
+    # Keep this endpoint's practical ceiling far below the app-wide upload cap.
+    raw = audio.read(12 * 1024 * 1024 + 1)
+    if len(raw) > 12 * 1024 * 1024:
+        return jsonify({"error": "recording is too large"}), 413
+    suffix = Path(audio.filename or "voice.webm").suffix or ".webm"
+    tmp_name = None
+    try:
+        with _tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tf:
+            tf.write(raw)
+            tmp_name = tf.name
+        whisper = _whisper_transcribe(tmp_name)
+    except Exception as exc:
+        print(f"[portal-five-element] transcription failed: {exc!r}", flush=True)
+        return jsonify({"error": "We couldn't hear that recording. Please try again."}), 502
+    finally:
+        if tmp_name:
+            try:
+                os.unlink(tmp_name)
+            except OSError:
+                pass
+
+    transcript = (whisper.get("text") or "").strip()
+    words = whisper.get("words") or []
+    if not transcript:
+        return jsonify({"error": "No speech was detected. Please try again."}), 422
+    lexical = _lexical_features(words, duration)
+    try:
+        analysis = _haiku_analyze(transcript, lexical)
+    except Exception as exc:
+        print(f"[portal-five-element] analysis failed: {exc!r}", flush=True)
+        return jsonify({"error": "Your recording was heard, but the analysis could not finish. Please try again."}), 502
+
+    elements = analysis.get("elements") or {}
+    if not elements:
+        return jsonify({"error": "The analysis did not return an element pattern."}), 502
+    email = (portal.get("email") or "").strip().lower()
+    with _db_lock, db.connect(LOG_DB) as cx:
+        state = _mes.upsert(cx, email, elements, source="portal_voice")
+    return jsonify({
+        "ok": True,
+        "element_scores": elements,
+        "dominant_element": state.get("dominant_element") if state else None,
+        "element_to_nourish": state.get("deficient_element") if state else None,
+        "top_emotions": sorted(
+            (analysis.get("emotions") or {}).items(), key=lambda item: item[1], reverse=True
+        )[:3],
+        "top_themes": analysis.get("top_themes") or [],
+        "transcript": transcript,
+    })
+
+
 @app.route("/api/portal/<token>/open", methods=["POST"])
 def api_portal_open(token):
     """Record a real 'client opened this report' event (fired by the expand-click).
