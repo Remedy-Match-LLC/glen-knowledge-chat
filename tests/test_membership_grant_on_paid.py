@@ -59,11 +59,32 @@ def test_paid_300_biofield_line_grants_care_taster(cx):
                       ("bf@example.com",)).fetchone()[0] == "care_taster"
 
 
-def test_discounted_biofield_line_does_not_grant(cx):
+def test_a_discounted_biofield_line_STILL_grants(cx):
+    """INVERTED 2026-08-27, by Glen's decision -- not relaxed.
+
+    This previously asserted that a sub-$300 Biofield line grants nothing, which
+    was the `>= 30000` gate written with the original feature. Glen reversed the
+    rule: "special pricing doesn't diminish benefits like access to coaching."
+
+    The gate would have denied the included month to 18 of the 22 Biofield lines
+    on file -- two comped households (Perdomo, Symons), a client whose housemate
+    paid for him, and clients on negotiated $100/$149 rates. The month attaches
+    to RECEIVING an analysis, not to the amount paid.
+
+    A full member is still excluded, but by already holding access
+    (test_already_member_does_not_regrant covers that), never by price."""
     o = {"id": 78, "external_ref": "INH-BF200", "email": "bf2@example.com",
          "items": [{"slug": "biofield-analysis", "unit_cents": 20000,
                     "line_cents": 20000}]}
-    assert app_mod._grant_biofield_line_on_paid(cx, o) == "none"
+    assert app_mod._grant_biofield_line_on_paid(cx, o) == "granted"
+
+
+def test_a_comped_biofield_line_grants_too(cx):
+    """$0 is the most special pricing there is. Nine such lines exist, all
+    analyses written onto an in-house program invoice at zero."""
+    o = {"id": 79, "external_ref": "INH-BF0", "email": "comped@example.com",
+         "items": [{"slug": "biofield-analysis", "unit_cents": 0, "line_cents": 0}]}
+    assert app_mod._grant_biofield_line_on_paid(cx, o) == "granted"
 
 
 def test_already_member_does_not_regrant(cx, monkeypatch):

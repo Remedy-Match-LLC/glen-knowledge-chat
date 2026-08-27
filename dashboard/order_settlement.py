@@ -64,9 +64,9 @@ def settle_paid_order_effects(*, kind, order, md, pi_id, sid, deps):
     if order:
         from . import membership_products as _mp
         _items = order.get("items") or []
+        # Any amount: special pricing must not diminish benefits (Glen 2026-08-27).
         _has_paid_biofield = any(
             (it.get("slug") or "").strip() == "biofield-analysis"
-            and int(it.get("line_cents") or it.get("unit_cents") or 0) >= 30000
             for it in _items)
         if _mp.cart_has_membership_tier(_items) or _has_paid_biofield:
             _do("membership_line", lambda: deps.grant_membership_line(order))

@@ -90,15 +90,32 @@ def test_a_service_only_delivery_does_not_start_the_month(appmod, monkeypatch):
     assert _expiry(appmod, cx, email) is None
 
 
-def test_a_200_member_line_earns_no_month(appmod, monkeypatch):
-    """The $100 difference IS the month. A member already paid for it."""
+BIOFIELD_0 = [{"slug": "biofield-analysis", "qty": 1, "unit_cents": 0}]
+BIOFIELD_100 = [{"slug": "biofield-analysis", "qty": 1, "unit_cents": 10000}]
+
+
+@pytest.mark.parametrize("items,label", [
+    (BIOFIELD_0, "comped / on a program invoice"),
+    (BIOFIELD_100, "legacy per-client rate"),
+    (BIOFIELD_200, "member rate paid by a non-member"),
+])
+def test_special_pricing_does_not_diminish_the_benefit(appmod, monkeypatch, items, label):
+    """Glen 2026-08-27: "special pricing doesn't diminish benefits like access to
+    coaching". The month attaches to RECEIVING an analysis, not to the amount.
+
+    This was originally gated at >= $300, which would have denied the month to 18
+    of the 22 Biofield lines on file: two comped households (Perdomo, Symons),
+    a client whose housemate paid, and clients on negotiated $100/$149 rates.
+    A full member is still excluded -- but by already holding access, which is
+    the owns_group/_active_membership check, never by what they paid."""
     monkeypatch.setattr(appmod, "_active_membership_for_email", lambda e: None)
     cx = _cx(appmod)
-    email = "fullmember@example.com"
-    _order(appmod, cx, email=email, items=BIOFIELD_200, days_ago=20, ref="bf-3")
-    delivered = _order(appmod, cx, email=email, items=REMEDIES, days_ago=1, ref="rem-3")
-    assert appmod._extend_biofield_month_on_delivery(cx, email, delivered) == "none"
-    assert _expiry(appmod, cx, email) is None
+    email = f"special-{len(items)}-{label.split()[0]}@example.com"
+    _order(appmod, cx, email=email, items=items, days_ago=20, ref=f"bf-{label[:6]}")
+    delivered = _order(appmod, cx, email=email, items=REMEDIES, days_ago=1,
+                       ref=f"rem-{label[:6]}")
+    assert appmod._extend_biofield_month_on_delivery(cx, email, delivered) == "granted", label
+    assert _expiry(appmod, cx, email), f"{label} earned no month"
 
 
 def test_it_extends_existing_access_instead_of_being_swallowed(appmod, monkeypatch):
