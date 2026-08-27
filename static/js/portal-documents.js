@@ -1,5 +1,5 @@
 // static/js/portal-documents.js
-// My Records tile: the client's own uploaded medical records, plus the
+// My Clinical Record document section: the client's uploaded medical records, plus the
 // plain-language narrative once Glen has reviewed it, plus the upload
 // control that lets the client add a new one.
 // Consumes GET /api/portal/<token>/documents ->
@@ -40,7 +40,7 @@ function renderDocuments(items) {
       body +
     '</li>';
   }).join('');
-  return '<section class="portal-documents card"><h2>My Records</h2>' +
+  return '<section class="portal-documents card"><h2>Documents</h2>' +
          renderDocUploadHtml() +
          (rows ? '<ul class="doc-list">' + rows + '</ul>'
                : '<p class="doc-empty">No records yet.</p>') +
@@ -55,11 +55,11 @@ if (typeof module !== 'undefined' && module.exports) {
 // path segment of /portal/<token>. The whole tile stays hidden (mount
 // emptied) whenever the API's `enabled` is false -- unchanged from before.
 if (typeof window !== 'undefined' && typeof document !== 'undefined') {
-  document.addEventListener('DOMContentLoaded', function () {
+  window.loadPortalDocuments = function loadPortalDocuments() {
     var mount = document.getElementById('portal-documents-mount');
-    if (!mount) return;
+    if (!mount) return Promise.resolve();
     var m = location.pathname.match(/\/portal\/([^\/]+)/);
-    if (!m) return;
+    if (!m) return Promise.resolve();
     var tok = m[1];
 
     function wireUpload() {
@@ -107,6 +107,7 @@ if (typeof window !== 'undefined' && typeof document !== 'undefined') {
         .catch(function () {});
     }
 
-    load();
-  });
+    return load();
+  };
+  document.addEventListener('DOMContentLoaded', window.loadPortalDocuments);
 }

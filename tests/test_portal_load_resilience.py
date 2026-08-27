@@ -16,10 +16,10 @@ def test_portal_fetches_are_bounded_and_settled_independently():
 
 
 def test_intake_completion_explains_where_saved_details_live():
-    assert "opening My Health Profile from the Understand section" in HTML
-    assert 'button.textContent = healthPanel ? "Open My Health Profile"' in HTML
+    assert "My Clinical Record from the Understand section" in HTML
+    assert 'button.textContent = healthPanel ? "Open My Clinical Record"' in HTML
     assert "My Health Profile is where you can review" in HTML
-    assert "Review the details you provided in your Intake" in HTML
+    assert "Your health profile, documents and past intakes" in HTML
 
 
 def test_portal_distinguishes_invalid_link_from_transient_failure():
@@ -96,6 +96,18 @@ def test_native_intake_is_resumable_and_reports_save_state():
     assert "allowSubmittedEdit: true" in HTML
     assert 'editButton.textContent = "Edit my Intake"' in HTML
     assert 'stateData && stateData.submitted ? "Save changes"' in HTML
+
+
+def test_unified_clinical_record_contains_health_and_documents():
+    assert '"My Clinical Record"' in HTML
+    assert 'data-panel="records"' in HTML
+    assert 'id="portal-clinical-record"' in HTML
+    assert 'id="portal-health-profile"' in HTML
+    assert 'id="portal-documents-mount"' in HTML
+    assert 'id="portal-historical-intakes-mount"' in HTML
+    assert 'data-panel="health"' not in HTML
+    assert 'health:   {panel:"records", target:"portal-health-profile"}' in HTML
+    assert 'documents:{panel:"records", target:"portal-documents-mount"}' in HTML
 
 
 def test_life_stress_essence_links_are_readable_in_dark_mode():
