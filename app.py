@@ -30978,7 +30978,7 @@ def api_console_community_live_health():
 
 @app.route("/api/console/community-live/bootstrap", methods=["POST"])
 def api_console_community_live_bootstrap():
-    """Publish this Wednesday from two stable identity-bound recurring series."""
+    """Publish this and next Wednesday from stable recurring Zoom series."""
     if not _portal_console_ok():
         return jsonify({"error": "unauthorized"}), 401
     from dashboard import masterclass as _mc
@@ -30991,9 +30991,8 @@ def api_console_community_live_bootstrap():
         hour=14, minute=0, second=0, microsecond=0)
     if group_start <= now:
         group_start += timedelta(days=7)
-    master_start = group_start.replace(hour=15)
-    group_start_raw = group_start.replace(tzinfo=None).isoformat()
-    master_start_raw = master_start.replace(tzinfo=None).isoformat()
+    group_starts = [group_start, group_start + timedelta(days=7)]
+    master_starts = [start.replace(hour=15) for start in group_starts]
     _init_calendar_table()
     zoom_token = _zoom.get_token(
         os.environ["ZOOM_ACCOUNT_ID"], os.environ["ZOOM_CLIENT_ID"],
@@ -31006,14 +31005,6 @@ def api_console_community_live_bootstrap():
         _les.init_tables(cx)
         group_series = _les.get_series(cx, "group-coaching")
         master_series = _les.get_series(cx, "free-masterclass")
-        group = cx.execute(
-            "SELECT id,zoom_meeting_id,zoom_registration_required FROM calendar_events "
-            "WHERE status='visible' AND lower(summary) LIKE '%group coaching%' "
-            "AND start=? ORDER BY id DESC LIMIT 1", (group_start_raw,)).fetchone()
-        master = cx.execute(
-            "SELECT id,zoom_meeting_id,registration_required FROM masterclass_events "
-            "WHERE lower(topic) LIKE '%wellness whispering%' "
-            "AND start_ts=? ORDER BY id DESC LIMIT 1", (master_start_raw,)).fetchone()
     recurrence = {"type": 2, "repeat_interval": 1,
                   "weekly_days": "4", "end_times": 50}
 
@@ -31045,11 +31036,13 @@ def api_console_community_live_bootstrap():
             group_series, "group-coaching", "Group Coaching", group_start, True)
         master_meeting = ensure_series(
             master_series, "free-masterclass",
-            "Free Wellness Whispering MasterClass", master_start, False)
-        group_occurrence = _zoom.occurrence_id_for(group_meeting, group_start)
-        master_occurrence = _zoom.occurrence_id_for(master_meeting, master_start)
-        if not group_occurrence or not master_occurrence:
-            raise RuntimeError("Zoom did not return both Wednesday occurrence IDs")
+            "Free Wellness Whispering MasterClass", master_starts[0], False)
+        group_occurrences = [_zoom.occurrence_id_for(group_meeting, start)
+                             for start in group_starts]
+        master_occurrences = [_zoom.occurrence_id_for(master_meeting, start)
+                              for start in master_starts]
+        if not all(group_occurrences + master_occurrences):
+            raise RuntimeError("Zoom did not return all Wednesday occurrence IDs")
     except Exception as exc:
         app.logger.exception("community live recurring-series bootstrap failed")
         return jsonify({"ok": False, "error": "zoom_series_invalid",
@@ -31066,49 +31059,63 @@ def api_console_community_live_bootstrap():
                            "Free Wellness Whispering MasterClass",
                            master_meeting["meeting_id"],
                            master_meeting.get("registration_url") or "")
-        if group:
-            cx.execute(
-                "UPDATE calendar_events SET location='Zoom',zoom_meeting_id=?,"
-                "zoom_occurrence_id=?,zoom_registration_url=?,"
-                "zoom_registration_required=1 WHERE id=?",
-                (group_meeting["meeting_id"], group_occurrence,
-                 group_meeting.get("registration_url") or "", group[0]))
-        else:
-            cx.execute(
-                "INSERT INTO calendar_events (pushed_at,google_cal_id,google_event_id,"
-                'calendar_name,summary,start,"end",location,owner,status,cal_alert,'
-                "zoom_meeting_id,zoom_occurrence_id,zoom_registration_url,"
-                "zoom_registration_required) VALUES (?, 'community', ?, "
-                "'Group Coaching', 'Group Coaching', ?, ?, 'Zoom', 'glen', "
-                "'visible', 0, ?, ?, ?, 1)",
-                (datetime.now(timezone.utc).isoformat(),
-                 f"zoom-{group_meeting['meeting_id']}-{group_occurrence}", group_start_raw,
-                 (group_start + timedelta(hours=1)).replace(tzinfo=None).isoformat(),
-                 group_meeting["meeting_id"], group_occurrence,
-                 group_meeting.get("registration_url") or ""))
-            created.append("group_coaching")
-        if master:
-            event_id = master[0]
-        else:
-            event_id = _mc.create_event(
-                cx, topic="Free Wellness Whispering MasterClass",
-                description="Free live community MasterClass with Dr. Glen.",
-                start_ts=master_start_raw, duration_min=60,
-                price_cents=0, member_price_cents=0)
-            created.append("masterclass")
-        _mc.set_zoom(
-            cx, event_id, "", master_meeting["meeting_id"],
-            registration_url=master_meeting.get("registration_url") or "",
-            occurrence_id=master_occurrence)
+        for group_at, master_at, group_occurrence, master_occurrence in zip(
+                group_starts, master_starts, group_occurrences, master_occurrences):
+            group_start_raw = group_at.replace(tzinfo=None).isoformat()
+            master_start_raw = master_at.replace(tzinfo=None).isoformat()
+            group = cx.execute(
+                "SELECT id FROM calendar_events WHERE status='visible' "
+                "AND lower(summary) LIKE '%group coaching%' AND start=? "
+                "ORDER BY id DESC LIMIT 1", (group_start_raw,)).fetchone()
+            master = cx.execute(
+                "SELECT id FROM masterclass_events "
+                "WHERE lower(topic) LIKE '%wellness whispering%' AND start_ts=? "
+                "ORDER BY id DESC LIMIT 1", (master_start_raw,)).fetchone()
+            if group:
+                cx.execute(
+                    "UPDATE calendar_events SET location='Zoom',zoom_meeting_id=?,"
+                    "zoom_occurrence_id=?,zoom_registration_url=?,"
+                    "zoom_registration_required=1 WHERE id=?",
+                    (group_meeting["meeting_id"], group_occurrence,
+                     group_meeting.get("registration_url") or "", group[0]))
+            else:
+                cx.execute(
+                    "INSERT INTO calendar_events (pushed_at,google_cal_id,google_event_id,"
+                    'calendar_name,summary,start,"end",location,owner,status,cal_alert,'
+                    "zoom_meeting_id,zoom_occurrence_id,zoom_registration_url,"
+                    "zoom_registration_required) VALUES (?, 'community', ?, "
+                    "'Group Coaching', 'Group Coaching', ?, ?, 'Zoom', 'glen', "
+                    "'visible', 0, ?, ?, ?, 1)",
+                    (datetime.now(timezone.utc).isoformat(),
+                     f"zoom-{group_meeting['meeting_id']}-{group_occurrence}",
+                     group_start_raw,
+                     (group_at + timedelta(hours=1)).replace(tzinfo=None).isoformat(),
+                     group_meeting["meeting_id"], group_occurrence,
+                     group_meeting.get("registration_url") or ""))
+                created.append("group_coaching")
+            if master:
+                event_id = master[0]
+            else:
+                event_id = _mc.create_event(
+                    cx, topic="Free Wellness Whispering MasterClass",
+                    description="Free live community MasterClass with Dr. Glen.",
+                    start_ts=master_start_raw, duration_min=60,
+                    price_cents=0, member_price_cents=0)
+                created.append("masterclass")
+            _mc.set_zoom(
+                cx, event_id, "", master_meeting["meeting_id"],
+                registration_url=master_meeting.get("registration_url") or "",
+                occurrence_id=master_occurrence)
         cx.commit()
     return jsonify({"ok": True, "created": created,
                     "series_created": series_created,
                     "group_meeting_id": group_meeting["meeting_id"],
-                    "group_occurrence_id": group_occurrence,
+                    "group_occurrence_id": group_occurrences[0],
                     "masterclass_meeting_id": master_meeting["meeting_id"],
-                    "masterclass_occurrence_id": master_occurrence,
-                    "group_start_hst": group_start.isoformat(),
-                    "masterclass_start_hst": master_start.isoformat()})
+                    "masterclass_occurrence_id": master_occurrences[0],
+                    "group_start_hst": group_starts[0].isoformat(),
+                    "masterclass_start_hst": master_starts[0].isoformat(),
+                    "published_through_hst": master_starts[-1].isoformat()})
 
 
 # ── Free product review (dark: SUPPLEMENT_REVIEW_ENABLED) ─────────────────────
