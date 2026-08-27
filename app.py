@@ -8127,7 +8127,6 @@ def _grant_membership_line_dep(order):
     # re-checks this too; this only avoids the connection when there's nothing to do.)
     _items = order.get("items") or []
     _has_biofield = any((it.get("slug") or "").strip() == "biofield-analysis"
-                        and int(it.get("line_cents") or it.get("unit_cents") or 0) >= 30000
                         for it in _items)
     if not (_mp.cart_has_membership_tier(_items) or _has_biofield):
         return
@@ -14239,9 +14238,13 @@ def _grant_biofield_line_on_paid(cx, order):
     """Grant the included 30-day care window for a fully-paid $300 Biofield line."""
     if not order:
         return "none"
+    # Glen 2026-08-27: special pricing must not diminish benefits. A comped,
+        # household or legacy-rate Biofield Analysis earns the same included
+        # month as a $300 one -- the amount paid is not the entitlement. A FULL
+        # member still gets nothing extra, but that is the owns_group check
+        # below, not a price gate.
     qualifies = any(
         (it.get("slug") or "").strip() == "biofield-analysis"
-        and int(it.get("line_cents") or it.get("unit_cents") or 0) >= 30000
         for it in (order.get("items") or []))
     email = (order.get("email") or "").strip().lower()
     if not (qualifies and email):
@@ -15287,8 +15290,12 @@ def _qualifying_biofield_order(cx, email):
     """The client's earliest paid $300 Biofield order that has not yet had its
     included month started, or None.
 
-    $300 only: a full member pays $200 precisely BECAUSE they have already paid
-    for that month (Glen 2026-08-27), so a $200 line earns no time."""
+    ANY amount qualifies. Glen 2026-08-27: "special pricing doesn't diminish
+    benefits like access to coaching" -- comped household analyses, legacy
+    per-client rates ($100/$149) and analyses written at $0 onto a program
+    invoice all earn the same month as a $300 one. A FULL member is excluded, but
+    by holding membership already, not by what they paid: they pay $200 precisely
+    because that month is already theirs."""
     try:
         from dashboard import orders as _o
         _prev_rf = getattr(cx, "row_factory", None)
@@ -15313,8 +15320,7 @@ def _qualifying_biofield_order(cx, email):
         for it in (o.get("items") or []):
             if (it.get("slug") or "").strip() != "biofield-analysis":
                 continue
-            if int(it.get("line_cents") or it.get("unit_cents") or 0) < 30000:
-                continue
+
             ref = o.get("external_ref") or f"id:{o.get('id')}"
             already = cx.execute(
                 "SELECT 1 FROM biofield_month_grants WHERE biofield_ref=?", (ref,)).fetchone()
