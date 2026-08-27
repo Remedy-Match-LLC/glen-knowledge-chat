@@ -47454,6 +47454,35 @@ def console_client_invoice():
         "edit_url": edit_url, "lines": lines}, **biofield_paid})
 
 
+@app.route("/api/console/client-recommended-products", methods=["GET"])
+def console_client_recommended_products():
+    """Return the latest Biofield products as a read-only invoice-editor seed."""
+    actor = _bos_actor()
+    if actor is None:
+        return jsonify({"ok": False, "error": "unauthorized"}), 401
+    email = (request.args.get("email") or "").strip().lower()
+    if not email:
+        return jsonify({"ok": True, "products": [], "scan_date": ""})
+    from dashboard import portal_biofield_reports as _pbr
+    with _db_lock, db.connect(LOG_DB) as cx:
+        _pbr.init_table(cx)
+        report = _pbr.latest_report(cx, email)
+    content = (report or {}).get("content") or {}
+    products, seen = [], set()
+    for item in content.get("reorder_items") or []:
+        slug = (item.get("slug") or "").strip()
+        if not slug or slug in seen:
+            continue
+        seen.add(slug)
+        try:
+            qty = max(1, int(item.get("qty") or 1))
+        except (TypeError, ValueError):
+            qty = 1
+        products.append({"slug": slug, "qty": qty, "source": "biofield"})
+    return jsonify({"ok": True, "products": products,
+                    "scan_date": (report or {}).get("scan_date") or ""})
+
+
 @app.route("/api/console/client-360", methods=["GET"])
 def console_client_360():
     """The client-centered hub payload: person + clinical tags + tests +

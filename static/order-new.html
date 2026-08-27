@@ -108,7 +108,8 @@
     <h2>Line items</h2>
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
       <span id="units-to-ship" style="font-size:13px;color:var(--muted)">Total units to ship: 0</span>
-      <button class="mini" type="button" onclick="openSnippetManager()">Manage saved messages</button>
+      <span><button id="add-recommended-btn" class="mini" type="button" style="display:none" onclick="addRecommendedProducts()">Add Recommended Products</button>
+      <button class="mini" type="button" onclick="openSnippetManager()">Manage saved messages</button></span>
     </div>
     <div id="packaging-review" style="display:none;border:1px solid #c77b00;background:#fff4dc;color:#6b3d00;padding:10px;margin-bottom:8px;border-radius:6px"></div>
     <div id="snippet-mgr" style="display:none;border:1px solid var(--border);padding:10px;margin-bottom:8px;border-radius:6px">
@@ -279,6 +280,32 @@ function addLine(){
   LINES.push({slug, name:p.name, qty, unit_cents, edited, note:"", format:'bottle', source:'self'});
   $("prod-qty").value=1; $("prod-unit").value="";
   renderLines();
+}
+async function addRecommendedProducts(){
+  const email=($('c-email').value||'').trim();
+  if(!email){ toast('Add the client email first','error'); return; }
+  const btn=$('add-recommended-btn'); btn.disabled=true;
+  try{
+    const r=await fetch('/api/console/client-recommended-products?email='+encodeURIComponent(email),{headers:HEADERS});
+    const j=await r.json();
+    if(!r.ok||!j.ok) throw new Error(j.error||'Could not load recommendations');
+    let added=0, increased=0;
+    (j.products||[]).forEach(rec=>{
+      const p=CATALOG.find(x=>x.slug===rec.slug); if(!p) return;
+      const existing=LINES.find(x=>x.slug===rec.slug);
+      if(existing){
+        const want=Math.max(1,Number(rec.qty||1));
+        if(Number(existing.qty||1)<want){ existing.qty=want; increased++; }
+      }else{
+        LINES.push({slug:p.slug,name:p.name,qty:Math.max(1,Number(rec.qty||1)),unit_cents:p.price_cents||0,edited:false,note:'',format:'bottle',source:'biofield'});
+        added++;
+      }
+    });
+    renderLines();
+    const total=(j.products||[]).length;
+    toast(total ? (added+' product'+(added===1?'':'s')+' added'+(increased?', '+increased+' quantity updated':'')+'. Save invoice changes to apply.') : 'No recommended products found for this client', total?'ok':'error');
+  }catch(e){ toast(e.message||'Could not load recommendations','error'); }
+  finally{ btn.disabled=false; }
 }
 // ── shipping visibility ──
 // "Nothing to ship" is derived from the cart, never stored: a services-only order
@@ -666,6 +693,7 @@ async function loadOrderForEdit(oid){
     + " and (for QuickBooks-backed orders) pushes the same change to QuickBooks.";
   $("submit-btn").textContent = "Save invoice changes";
   $("save-inv-top-wrap").style.display = "block";
+  $("add-recommended-btn").style.display = "inline-block";
   // Edit mode: the order already exists, so it can be emailed straight from here
   // (turns green + "Invoice Sent" once it's already gone out).
   var _sib = $("send-inv-btn");
