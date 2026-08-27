@@ -875,6 +875,16 @@ async function removeClinicalItem(btn){
  if(!confirm('Remove "'+label+'" from this Biofield checklist?'))return;
  var j=await post('/author/__TID__/clinical-items',{action:'remove',label:label});
  if(j.ok)location.reload()}
+async function balanceClinicalItem(btn){
+ var row=btn.closest('.clinical-item'),label=row.dataset.label;
+ var layer=Number(row.querySelector('.clinical-layer').value||0);
+ var remedies=[].slice.call(row.querySelectorAll('.clinical-remedy-choice:checked'))
+  .map(function(x){return x.value});
+ var custom=(row.querySelector('.clinical-custom-remedy').value||'').trim();if(custom)remedies.push(custom);
+ if(!layer){alert('Choose a layer number first.');return}
+ btn.disabled=true;btn.textContent='Balancing…';
+ var j=await post('/author/__TID__/clinical-items/balance',{label:label,layer:layer,remedies:remedies});
+ if(j.ok)location.reload();else{btn.disabled=false;btn.textContent='Balance on layer';alert(j.error||'Could not balance item')}}
 function initClinicalDrag(){
  var grid=document.querySelector('.clinical-grid');if(!grid)return;var moving=null;
  grid.querySelectorAll('.clinical-item').forEach(function(row){
@@ -1325,13 +1335,22 @@ def render_clinical_checklist(items):
         done = bool(item.get("checked"))
         cls = "clinical-item done" if done else "clinical-item"
         mark = "&#10003;" if done else ""
-        remedy = (f"<span class=clinical-remedy>{_e(item.get('covered_by') or '')}</span>"
+        remedy = (f"<span class=clinical-remedy>Layer {_e(item.get('layer') or '?')} · {_e(item.get('covered_by') or '')}</span>"
                   if done else "<span class=clinical-open>Needs remedy coverage</span>")
         label = item.get("label") or ""
+        common = "".join(
+            f"<label><input class=clinical-remedy-choice type=checkbox value=\"{_e(name)}\""
+            f"{' checked' if name.lower() == (item.get('covered_by') or '').lower() else ''}> {_e(name)}</label>"
+            for name in item.get("common_remedies") or []
+        ) or "<span class=clinical-open>No common remedies recorded yet</span>"
         rows += (f"<div class='{cls}' data-label=\"{_e(label)}\" aria-grabbed=false>"
                  "<span class=clinical-grip title='Drag to reorder' aria-hidden=true>&#8942;&#8942;</span>"
                  f"<span class=clinical-check aria-hidden=true>{mark}</span>"
                  f"<span class=clinical-label>{_e(label)}</span>{remedy}"
+                 f"<div class=clinical-balance><div class=clinical-common>{common}</div>"
+                 f"<input class=clinical-custom-remedy placeholder='Add remedy…'>"
+                 f"<input class=clinical-layer type=number min=1 placeholder='Layer #' value=\"{_e(item.get('layer') or '')}\">"
+                 "<button class='btn ghost' onclick=balanceClinicalItem(this)>Balance on layer</button></div>"
                  "<button class=clinical-remove onclick=removeClinicalItem(this) "
                  "title='Remove from this checklist' aria-label='Remove item'>&times;</button></div>")
     return ("<style>.clinical-summary{margin:18px 0 14px;padding:14px 16px;border:1px solid var(--line);"
@@ -1342,7 +1361,7 @@ def render_clinical_checklist(items):
             ".clinical-item{position:relative;display:grid;grid-template-columns:12px 22px minmax(0,1fr);gap:0 8px;align-items:center;"
             "padding:9px 10px;border:1px solid var(--line);border-radius:8px;background:rgba(255,255,255,.025)}"
             ".clinical-item.done{border-color:rgba(88,190,135,.45);background:rgba(88,190,135,.08)}"
-            ".clinical-grip{grid-row:1/3;color:var(--muted);font-size:12px;letter-spacing:-3px;cursor:grab}"
+            ".clinical-grip{grid-row:1/4;color:var(--muted);font-size:12px;letter-spacing:-3px;cursor:grab}"
             ".clinical-item.dragging{opacity:.45;border-color:var(--accent)}"
             ".clinical-item[draggable=true]{cursor:grab}.clinical-item[draggable=true]:active{cursor:grabbing}"
             ".clinical-check{grid-row:1/3;width:18px;height:18px;border:2px solid var(--muted);border-radius:4px;"
@@ -1350,10 +1369,14 @@ def render_clinical_checklist(items):
             ".done .clinical-check{border-color:var(--ok);background:var(--ok);color:#07140d}"
             ".clinical-label{font-weight:650;line-height:1.25}.clinical-remedy,.clinical-open{font-size:11px;margin-top:2px}"
             ".clinical-remedy{color:var(--ok)}.clinical-open{color:var(--muted)}"
+            ".clinical-balance{grid-column:3;display:grid;grid-template-columns:minmax(130px,1fr) 72px auto;gap:6px;margin-top:7px}"
+            ".clinical-common{grid-column:1/-1;display:flex;flex-wrap:wrap;gap:5px 12px;font-size:11px;color:var(--muted)}"
+            ".clinical-common label{white-space:nowrap}.clinical-common input{width:auto;margin:0 3px 0 0}"
+            ".clinical-balance input{margin:0;min-width:0;padding:7px}.clinical-balance .btn{padding:6px 9px}"
             ".clinical-remove{position:absolute;right:7px;top:5px;border:0;background:transparent;color:var(--muted);"
             "font-size:18px;line-height:1;cursor:pointer}.clinical-remove:hover{color:#ef8d8d}"
             ".clinical-add{display:flex;gap:7px;margin-top:10px}.clinical-add input{margin:0;max-width:360px}"
-            "@media(max-width:760px){.clinical-grid{grid-template-columns:1fr}}</style>"
+            "@media(max-width:760px){.clinical-grid{grid-template-columns:1fr}.clinical-balance{grid-template-columns:1fr 70px}.clinical-balance .btn{grid-column:1/-1}}</style>"
             "<section class=clinical-summary><div class=clinical-head>"
             "<div><div class=clinical-title>Clinical summary</div>"
             "<div class=food>Significant symptoms and conditions from intake</div></div>"
