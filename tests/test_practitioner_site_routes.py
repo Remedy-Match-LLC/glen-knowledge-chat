@@ -80,3 +80,62 @@ def test_named_route_still_wins_over_the_catch_all(client):
     """A static rule must beat the catch-all even on the portal host."""
     endpoint = appmod.app.url_map.bind(PORTAL_HOST).match("/sample")[0]
     assert endpoint != "practitioner_site"
+
+
+def _claim(db_path, alias, canonical="mary-boyd"):
+    cx = sqlite3.connect(db_path)
+    ps.claim_alias(cx, canonical, alias, frozenset())
+    cx.close()
+
+
+def test_alias_301s_to_canonical(client, tmp_path):
+    _claim(appmod.LOG_DB, "boyd-coaching")
+    r = client.get("/boyd-coaching", base_url=f"http://{PORTAL_HOST}")
+    assert r.status_code == 301
+    assert r.headers["Location"].endswith("/mary-boyd")
+
+
+def test_alias_does_not_serve_content(client):
+    """Alternates redirect; they never render, so they cannot duplicate content."""
+    _claim(appmod.LOG_DB, "boyd-coaching")
+    r = client.get("/boyd-coaching", base_url=f"http://{PORTAL_HOST}")
+    assert b"<html" not in r.data.lower()
+
+
+def test_legacy_p_slug_301s_to_canonical_on_portal_host(client):
+    r = client.get("/p/mary-boyd", base_url=f"http://{PORTAL_HOST}")
+    assert r.status_code == 301
+    assert r.headers["Location"].endswith("/mary-boyd")
+
+
+def test_legacy_p_slug_still_serves_on_the_funnel_host(client):
+    """Old links must never break. /p/<slug> on illtowell.com is untouched."""
+    r = client.get("/p/mary-boyd", base_url=f"http://{FUNNEL_HOST}")
+    assert r.status_code == 200
+    assert r.headers.get("X-Robots-Tag") == "noindex"
+
+
+def test_alias_301_deliberately_carries_no_noindex(client):
+    """An alias 301 must NOT set X-Robots-Tag: noindex.
+
+    This is deliberate, not an oversight. noindex on a redirect is an SEO
+    anti-pattern: it can cause the redirect TARGET to be treated as noindex,
+    which would defeat the whole point of an alternate passing its authority
+    to the canonical URL. The canonical response carries noindex; the hop
+    to it must not.
+    """
+    _claim(appmod.LOG_DB, "boyd-coaching")
+    r = client.get("/boyd-coaching", base_url=f"http://{PORTAL_HOST}")
+    assert r.status_code == 301
+    assert r.headers.get("X-Robots-Tag") is None
+
+
+def test_alias_redirect_sets_cookie_to_canonical_not_alias(client):
+    """The cookie test elsewhere only covers requesting the canonical slug
+    directly, so it cannot tell 'cookie set to raw slug' apart from 'cookie
+    set to canonical'. Follow the alias redirect and check the final cookie."""
+    _claim(appmod.LOG_DB, "boyd-coaching")
+    r = client.get("/boyd-coaching", base_url=f"http://{PORTAL_HOST}",
+                    follow_redirects=True)
+    assert r.status_code == 200
+    assert "rm_ref=mary-boyd" in r.headers.get("Set-Cookie", "")

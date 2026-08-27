@@ -19093,6 +19093,11 @@ def practitioner_storefront(slug):
         return ("", 404)
     if not re.match(r"^[A-Za-z0-9_-]{1,64}$", slug or ""):
         return ("", 404)
+    # On the portal host the canonical URL is /<slug>; /p/<slug> is legacy and
+    # 301s there so a printed or texted old link keeps working and search
+    # engines consolidate on one URL. On the funnel host this route is unchanged.
+    if _on_portal_host():
+        return redirect(f"/{slug}", code=301)
     from dashboard import public_surface as _ps
     with db.connect(LOG_DB) as cx:
         cx.row_factory = sqlite3.Row
