@@ -29,8 +29,13 @@ def _ingredient_lines(product):
 
 def _is_infoceutical(product):
     # Infoceuticals are the third product class (alongside nutritional formulas and
-    # devices/books). They resolve by their catalog URL living under .../infoceuticals/.
-    return "infoceutical" in (product.get("url") or "").lower()
+    # devices/books). Older GrooveKart records identify them in the URL; migrated
+    # in-house records often have no URL, but retain the class in their product or
+    # Pinecone title. Check all authoritative identity fields so their pages never
+    # receive nutritional-supplement copy merely because the legacy URL is absent.
+    identity = " ".join(str(product.get(k) or "")
+                        for k in ("name", "pinecone_title", "url"))
+    return "infoceutical" in identity.lower()
 
 def build_section_prompt(section, product):
     name = product.get("name", "")

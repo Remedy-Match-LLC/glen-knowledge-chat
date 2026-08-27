@@ -506,8 +506,8 @@ CARD_CATALOG = {
     # fraction of the catalog, clients have been unable to check out there, and
     # it is currently serving a maintenance page. Every catalog slug has a live
     # page at /begin/product/<slug>, reached from the matcher.
-    "product":            {"title": "Formulations Matched to You",
-                           "sub": "Explore remedies suited to what your body needs",
+    "product":            {"title": "Shop Remedies With Guidance",
+                           "sub": "Tell Dr. Glen's guide what you need, then open the exact remedy page with current pricing",
                            "base_url": "/begin/match", "internal": True},
     "founding_offer":     {"title": "Neuro Magnesium - Founding Batch",
                            "sub": "Reserve your bottle from the first founding batch",
@@ -1053,14 +1053,16 @@ def _match_card_keys(state, query_texts):
         add("practitioner")
     remedy_intent = (any(c in text for c in _REMEDY_MATCH_CUES)
                      or any(o in text for o in _outcome_cues()))
-    specific_product = (any(k in text for k in _PRODUCT_KEYWORDS) or remedy_intent)
+    specific_product = any(k in text for k in _PRODUCT_KEYWORDS)
     if remedy_intent:
         add("remedy_match")   # Socratic matcher → /begin/match (before generic browse)
     if specific_product:
         add("product")
     generic_product = (not specific_product
                        and any(c in text for c in _GENERIC_PRODUCT_CUES))
-    if any(k in text for k in _VOICE_KEYWORDS) or generic_product:
+    if generic_product:
+        add("product")
+    if any(k in text for k in _VOICE_KEYWORDS):
         add("voice_distinctions")
     if any(k in text for k in _LEARN_KEYWORDS):
         add("ash_course")

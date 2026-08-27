@@ -82,10 +82,9 @@ def test_card_href_unchanged_after_refactor():
     bf = _bf()
     # internal CARD_CATALOG entry returns bare base_url
     assert bf.card_href("voice_distinctions", "slug") == "/begin/voice"
-    # external entry threads the original begin-card-<key> campaign
+    # the quiz now stays on the stable in-funnel doorway
     h = bf.card_href("quiz", "slug")
-    assert h.startswith("https://healing.scoreapp.com?utm_source=slug")
-    assert "utm_campaign=begin-card-quiz" in h
+    assert h == "/begin/doorway"
 
 
 import sqlite3

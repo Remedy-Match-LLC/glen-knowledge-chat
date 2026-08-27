@@ -172,11 +172,8 @@ def test_max_awareness_monotonic():
 def test_resolve_want_live_targets():
     import begin_funnel as bf
     url = bf.resolve_want("e4l", "Jane")
-    assert url.startswith("https://truly.vip/E4L")
-    assert "utm_source=Jane" in url
-    assert "utm_campaign=begin-deeplink-e4l" in url
-    assert bf.resolve_want("quiz", "").startswith("https://healing.scoreapp.com")
-    assert "utm_source=remedy-match" in bf.resolve_want("quiz", "")
+    assert url == "/begin/scan?c=begin-deeplink-e4l"
+    assert bf.resolve_want("quiz", "") == "/begin/doorway"
     assert bf.resolve_want("join", "x").startswith("https://truly.vip/Join")
     assert bf.resolve_want("results", "x").startswith("https://truly.vip/Results")
 
@@ -304,10 +301,8 @@ def test_card_catalog_has_core_keys():
 def test_card_href_external_threads_utm():
     import begin_funnel as bf
     h = bf.card_href("e4l_scan", "Jane")
-    assert h.startswith("https://truly.vip/E4L")
-    assert "utm_source=Jane" in h
-    assert "utm_campaign=begin-card-e4l_scan" in h
-    assert "utm_source=remedy-match" in bf.card_href("quiz", "")
+    assert h == "/begin/scan?c=begin-card-e4l_scan"
+    assert bf.card_href("quiz", "") == "/begin/doorway"
 
 
 def test_card_href_internal_as_is():
@@ -349,15 +344,19 @@ def test_surface_specific_product_outranks_voice():
 def test_surface_remedy_match_is_product():
     import begin_funnel as bf
     st = {"awareness_stage": "unknown", "current_rung": "inquire", "unlocked_gates": []}
-    assert "product" in _keys(bf.surface(st, ["what helps with my insomnia"], ""))
+    cards = bf.surface(st, ["what helps with my insomnia"], "")
+    assert _keys(cards)[0] == "remedy_match"
+    assert "product" not in _keys(cards)
+    assert cards[0]["href"] == "/begin/match"
 
 
-def test_surface_generic_product_routes_to_voice():
+def test_surface_generic_product_routes_to_guided_shopping():
     import begin_funnel as bf
     st = {"awareness_stage": "unknown", "current_rung": "inquire", "unlocked_gates": []}
     cards = bf.surface(st, ["what products do you have"], "")
-    assert "voice_distinctions" in _keys(cards)
-    assert "product" not in _keys(cards)
+    assert _keys(cards)[0] == "product"
+    assert "voice_distinctions" not in _keys(cards)
+    assert cards[0]["href"] == "/begin/match"
 
 
 def test_surface_practitioner_signal_top():
