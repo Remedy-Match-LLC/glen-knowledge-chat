@@ -5,12 +5,28 @@ only the onboarding config and the once-per-member lookup; the membership gate
 (_is_paid_member) lives in the route layer so this module stays free of
 app-layer imports (same shape as dashboard/consult.py)."""
 
+import random
+
 ONBOARDING = {
     "session_type": "onboarding",
     "practitioner": "rae",
     "medium": "phone",
     "duration_min": 15,
 }
+
+
+def daily_slot_sample(slots, limit=3):
+    """Return at most ``limit`` random available times for each calendar day."""
+    by_day = {}
+    for slot in slots:
+        by_day.setdefault(slot[:10], []).append(slot)
+
+    selected = []
+    for day_slots in by_day.values():
+        if len(day_slots) > limit:
+            day_slots = random.sample(day_slots, limit)
+        selected.extend(sorted(day_slots))
+    return selected
 
 
 def existing_onboarding(cx, email):

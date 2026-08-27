@@ -101,9 +101,52 @@ def _resolve_learner_email():
 
 _PAGE = """<!doctype html><html><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{{ title }} · MentorshipU</title></head>
-<body style="font-family:system-ui,sans-serif;max-width:760px;margin:2rem auto;padding:0 1rem;color:#1c2b26">
+<title>{{ title }} · MentorshipU</title>
+<style>
+  :root {
+    color-scheme: light;
+    --mu-bg: #fbf8f3;
+    --mu-surface: #ffffff;
+    --mu-surface-2: #f4ecde;
+    --mu-text: #1e2a2a;
+    --mu-muted: #5f6b6b;
+    --mu-border: #e2d9c9;
+    --mu-link: #246b5d;
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --mu-bg: #0a150d;
+    --mu-surface: #102018;
+    --mu-surface-2: #16291e;
+    --mu-text: #f5edda;
+    --mu-muted: #b8c3ba;
+    --mu-border: #2c4435;
+    --mu-link: #85c9ad;
+  }
+  body {
+    margin: 0;
+    background: var(--mu-bg);
+    color: var(--mu-text);
+    transition: background-color .2s ease, color .2s ease;
+  }
+  main { max-width: 760px; margin: 2rem auto; padding: 0 1rem 3rem; }
+  a { color: var(--mu-link); }
+  input, textarea, select, button {
+    color: var(--mu-text);
+    background: var(--mu-surface);
+    border: 1px solid var(--mu-border);
+    border-radius: 4px;
+  }
+  button { cursor: pointer; padding: .45rem .7rem; }
+  #register, .enroll, .mu-hw {
+    color: var(--mu-text);
+    background: var(--mu-surface) !important;
+    border-color: var(--mu-border) !important;
+  }
+</style></head>
+<body style="font-family:system-ui,sans-serif"><main>
 {{ body|safe }}
+</main>
 <script src="/ref-capture.js"></script>
 </body></html>"""
 

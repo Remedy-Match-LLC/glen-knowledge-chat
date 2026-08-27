@@ -7445,6 +7445,21 @@ load();
   const vid2 = document.getElementById('el-bg2');
   const sndBtn = document.getElementById('soundToggle');
   const elPicker = document.getElementById('elPicker');
+  // shell.js owns the portal header and its theme toggle. Move the scene selector
+  // into that same flex row once the deferred shell has mounted, placing it directly
+  // before the theme control. Keeping this in the portal controller also preserves
+  // a usable fallback if the shared shell is ever disabled.
+  function mountPickerInHeader(){
+    if (!elPicker) return;
+    const header = document.getElementById('journey-shell');
+    if (!header) return;
+    const theme = header.querySelector('.rm-theme-seg');
+    header.insertBefore(elPicker, theme || null);
+  }
+  mountPickerInHeader();
+  if (elPicker && elPicker.parentElement === document.body) {
+    window.addEventListener('DOMContentLoaded', mountPickerInHeader, { once: true });
+  }
   const SPK_ON = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H2v6h4l5 4V5z"/><path d="M15.5 8.5a5 5 0 0 1 0 7M19 5a9 9 0 0 1 0 14"/></svg>';
   const SPK_OFF = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H2v6h4l5 4V5z"/><path d="M22 9l-6 6M16 9l6 6"/></svg>';
   const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;

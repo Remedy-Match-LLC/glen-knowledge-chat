@@ -26,7 +26,7 @@ except Exception as _e:  # pragma: no cover
 def _spy(monkeypatch, tmp_path):
     """Isolate the webhook from network + DB; return capture dicts."""
     monkeypatch.setattr(app, "LOG_DB", str(tmp_path / "chat_log.db"))
-    cap = {"onboard": None, "puts": [], "posts": [], "orders": []}
+    cap = {"onboard": None, "puts": [], "posts": [], "orders": [], "kloud": []}
     monkeypatch.setattr(app, "ghl_onboard_contact",
                         lambda **k: (cap.__setitem__("onboard", k), {"contact_id": "C1"})[1])
     monkeypatch.setattr(app, "_ghl_put", lambda path, body: cap["puts"].append((path, body)))
@@ -34,6 +34,14 @@ def _spy(monkeypatch, tmp_path):
     monkeypatch.setattr(app, "_log_inbound_lead", lambda *a, **k: None)
     monkeypatch.setattr(app, "_attribute_conversion_by_email", lambda *a, **k: None)
     monkeypatch.setattr(app, "_ingest_order", lambda **k: cap["orders"].append(k))
+    class ImmediateThread:
+        def __init__(self, target, args=(), **_kwargs):
+            self.target, self.args = target, args
+        def start(self):
+            self.target(*self.args)
+    monkeypatch.setattr(app.threading, "Thread", ImmediateThread)
+    monkeypatch.setattr(app, "_send_kloud_order_instructions",
+                        lambda *a: cap["kloud"].append(a))
     return cap
 
 
@@ -77,3 +85,17 @@ def test_still_400_when_truly_no_email(monkeypatch, tmp_path):
     _spy(monkeypatch, tmp_path)
     r = app.app.test_client().post("/webhook/groovekart", json={"id": 1, "products": []})
     assert r.status_code == 400
+
+
+def test_kloud_order_queues_customer_instructions(monkeypatch, tmp_path):
+    cap = _spy(monkeypatch, tmp_path)
+    payload = {
+        "reference": "KLOUD-42", "customer_email": "buyer@x.com",
+        "customer_firstname": "Kai",
+        "products": [{"product_name": "Kloud Mini PEMF Mat"}],
+    }
+    r = app.app.test_client().post("/webhook/groovekart", json=payload)
+    assert r.status_code == 200
+    assert cap["kloud"] == [
+        ("buyer@x.com", "Kai", ["Kloud Mini PEMF Mat"], "KLOUD-42")
+    ]

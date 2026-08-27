@@ -12,12 +12,13 @@ class _FakeQB:
     def find_or_create_customer(self, email, name=""):
         return {"Id": "C1"}
     def create_sales_receipt(self, cust, lines, *, discount_cents=0, tax_cents=0,
-                             email_to=None, private_note=None):
+                             email_to=None, private_note=None, postal_code=None):
         self.receipts += 1
         self.last_lines = lines
         self.last_discount = discount_cents
         self.last_tax = tax_cents
         self.last_private_note = private_note
+        self.last_postal_code = postal_code
         return {"Id": "SR1"}
 
 
@@ -38,7 +39,7 @@ def _seed(cx, ref="tok1", **lines_kw):
     return oid
 
 
-def test_books_line_faithful_receipt_and_stamps(tmp_path, monkeypatch):
+def test_books_two_bucket_summary_receipt_and_stamps(tmp_path, monkeypatch):
     cx = _db(tmp_path)
     oid = _seed(cx)
     qb = _FakeQB()
@@ -49,9 +50,26 @@ def test_books_line_faithful_receipt_and_stamps(tmp_path, monkeypatch):
 
     assert sr == "SR1"
     assert qb.receipts == 1
-    assert qb.last_lines == [{"name": "X", "amount": 300.0, "qty": 1}]
-    assert qb.last_discount == 1500
+    assert qb.last_lines == [{
+        "name": "Order Total", "description": "RemedyMatch order total",
+        "amount": 300.0, "qty": 1,
+    }]
+    assert qb.last_discount == 0
     assert O.get_order(cx, oid)["qbo_sales_receipt_id"] == "SR1"
+
+
+def test_qbo_booking_does_not_pass_zip_or_county_classification(tmp_path, monkeypatch):
+    cx = _db(tmp_path)
+    oid = O.upsert_order(
+        cx, source="funnel", external_ref="zip1", email="a@b.com",
+        total_cents=30000, address={"state": "HI", "zip": "96720-1234"})
+    O.set_order_qbo_lines(cx, "zip1", {
+        "lines": [{"name": "X", "amount": 300.0, "qty": 1}]})
+    qb = _FakeQB()
+    monkeypatch.setattr(qbo_sale, "qbo_billing", qb)
+
+    assert qbo_sale.book_sale_on_payment(cx, O.get_order(cx, oid)) == "SR1"
+    assert qb.last_postal_code is None
 
 
 def test_double_book_prevented_on_refresh(tmp_path, monkeypatch):
