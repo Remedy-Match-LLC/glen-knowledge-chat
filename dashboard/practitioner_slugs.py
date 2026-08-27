@@ -45,3 +45,46 @@ def check_shape(slug):
     if not _SHAPE_RE.match(slug):
         raise SlugError(
             "slug must be lowercase letters, digits, and single internal hyphens")
+
+
+# Words we do not route today but may want to. A slug claimed here would have to
+# be broken later, and breaking a published URL is the one thing this design
+# promises never to do.
+EXTRA_RESERVED = frozenset({
+    "about", "account", "accounts", "app", "apps", "auth", "billing", "blog",
+    "book", "booking", "cart", "checkout", "contact", "docs", "faq", "help",
+    "home", "index", "info", "login", "logout", "mail", "media", "news", "pages",
+    "press", "pricing", "profile", "profiles", "register", "root", "search",
+    "settings", "shop", "signin", "signup", "site", "sites", "store", "support",
+    "team", "test", "user", "users", "www",
+})
+
+
+def route_segments(url_map):
+    """The set of STATIC first path segments in a Werkzeug Map.
+
+    Dynamic segments are skipped, so the practitioner catch-all `/<slug>` does
+    not reserve itself into oblivion. The root rule contributes nothing.
+    """
+    out = set()
+    for rule in url_map.iter_rules():
+        parts = (rule.rule or "").split("/")
+        if len(parts) < 2:
+            continue
+        first = parts[1]
+        if not first or "<" in first:
+            continue
+        out.add(first.lower())
+    return frozenset(out)
+
+
+def reserved_for(url_map):
+    """Every word a practitioner slug may not be: live route segments plus the
+    static buffer of words we may want to route later."""
+    return frozenset(route_segments(url_map) | EXTRA_RESERVED)
+
+
+def check_not_reserved(slug, reserved):
+    """Raise SlugError if `slug` is a reserved word."""
+    if slug in reserved:
+        raise SlugError(f"'{slug}' is reserved")
