@@ -49,3 +49,56 @@ def test_reject_without_a_note_is_a_400(client, monkeypatch):
     monkeypatch.setattr(appmod, "_console_key_ok", lambda: True)
     r = client.post(f"/api/console/practitioner-drafts/{PID}/reject", json={})
     assert r.status_code == 400
+
+
+def test_approve_succeeds_and_publishes(client, monkeypatch, tmp_path):
+    monkeypatch.setattr(appmod, "_console_key_ok", lambda: True)
+    monkeypatch.setattr(appmod, "LOG_DB", str(tmp_path / "chat_log.db"))
+    monkeypatch.setattr("dashboard.practitioner_drafts.approve",
+                        lambda cx, pid, note="": True)
+    monkeypatch.setattr("dashboard.practitioner_profile.publish_draft",
+                        lambda cx, pid: True)
+    r = client.post(f"/api/console/practitioner-drafts/{PID}/approve")
+    assert r.status_code == 200
+    assert r.get_json()["published"] is True
+
+
+def test_approve_succeeds_but_publish_fails_reports_failure(client, monkeypatch, tmp_path):
+    """The important one: a failed publish must never look like success."""
+    monkeypatch.setattr(appmod, "_console_key_ok", lambda: True)
+    monkeypatch.setattr(appmod, "LOG_DB", str(tmp_path / "chat_log.db"))
+    monkeypatch.setattr("dashboard.practitioner_drafts.approve",
+                        lambda cx, pid, note="": True)
+    monkeypatch.setattr("dashboard.practitioner_profile.publish_draft",
+                        lambda cx, pid: False)
+    r = client.post(f"/api/console/practitioner-drafts/{PID}/approve")
+    assert r.status_code != 200
+    assert r.status_code == 500
+    assert r.get_json()["error"] == "publish_failed"
+
+
+def test_approve_retries_publish_after_a_previous_failure(client, monkeypatch, tmp_path):
+    """approve() 409s (already approved from a prior attempt) but the route
+    must retry the publish rather than stranding the draft un-retryably."""
+    monkeypatch.setattr(appmod, "_console_key_ok", lambda: True)
+    monkeypatch.setattr(appmod, "LOG_DB", str(tmp_path / "chat_log.db"))
+    monkeypatch.setattr("dashboard.practitioner_drafts.approve",
+                        lambda cx, pid, note="": False)
+    monkeypatch.setattr("dashboard.practitioner_drafts.get_draft",
+                        lambda cx, pid: {"practitioner_id": pid, "status": "approved",
+                                         "fields": {"bio": "x"}})
+    monkeypatch.setattr("dashboard.practitioner_profile.publish_draft",
+                        lambda cx, pid: True)
+    r = client.post(f"/api/console/practitioner-drafts/{PID}/approve")
+    assert r.status_code == 200
+    assert r.get_json()["published"] is True
+
+
+def test_reject_with_no_submitted_draft_is_a_409(client, monkeypatch, tmp_path):
+    monkeypatch.setattr(appmod, "_console_key_ok", lambda: True)
+    monkeypatch.setattr(appmod, "LOG_DB", str(tmp_path / "chat_log.db"))
+    monkeypatch.setattr("dashboard.practitioner_drafts.reject",
+                        lambda cx, pid, note: False)
+    r = client.post(f"/api/console/practitioner-drafts/{PID}/reject",
+                    json={"note": "needs more detail"})
+    assert r.status_code == 409

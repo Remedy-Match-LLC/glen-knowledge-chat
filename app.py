@@ -11862,7 +11862,6 @@ def api_console_practitioner_drafts():
     if not _console_key_ok():
         return jsonify({"error": "unauthorized"}), 401
     from dashboard import practitioner_drafts as _pd
-    from dashboard import practitioner_profile as _pp
     status = request.args.get("status", "submitted")
     with db.connect(LOG_DB) as cx:
         cx.row_factory = sqlite3.Row
@@ -11884,7 +11883,12 @@ def api_console_practitioner_draft_approve(pid):
         cx.row_factory = sqlite3.Row
         _pd.init_tables(cx)
         if not _pd.approve(cx, pid, note):
-            return jsonify({"ok": False, "error": "no submitted draft"}), 409
+            d = _pd.get_draft(cx, pid)
+            if not d or d.get("status") != "approved":
+                return jsonify({"ok": False, "error": "no submitted draft"}), 409
+            # Already approved: a previous publish failed. Retry it rather than
+            # stranding the practitioner in an approved-but-unpublished state
+            # that the default queue view cannot even show.
         published = _pp.publish_draft(cx, pid)
     if not published:
         return jsonify({"ok": False, "error": "publish_failed"}), 500
@@ -11897,7 +11901,6 @@ def api_console_practitioner_draft_reject(pid):
     if not _console_key_ok():
         return jsonify({"error": "unauthorized"}), 401
     from dashboard import practitioner_drafts as _pd
-    from dashboard import practitioner_profile as _pp
     note = ((request.get_json(silent=True) or {}).get("note") or "").strip()
     if not note:
         return jsonify({"ok": False, "error": "a rejection needs a note"}), 400
