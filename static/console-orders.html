@@ -384,15 +384,16 @@
       : '<div class="ffline" id="ff-track-row-'+Number(o.id)+'" style="display:none"><label for="ff-track-'+Number(o.id)+'">Tracking number</label>'
         + '<input type="text" id="ff-track-'+Number(o.id)+'" placeholder="Enter tracking number"></div>';
     return '<details class="fulfill"><summary>Fulfill lines</summary>'+rows+tracking
-      + '<button class="ff-rec" onclick="fillAllLines('+Number(o.id)+')">Fill all</button> '
+      + '<button class="ff-rec" onclick="fulfillAllLines('+Number(o.id)+')">Mark all fulfilled</button> '
       + '<button class="ff-rec" onclick="fulfillLines('+Number(o.id)+')">Record shipment</button></details>';
   }
-  // Fill every backordered line's input with its remaining (= ordered, when nothing
-  // shipped yet) quantity; the user reviews, then clicks Record shipment.
-  function fillAllLines(id){
+  // Persist every remaining quantity in one click. The old "Fill all" control only
+  // populated these transient inputs, so a reload made the apparent change vanish.
+  function fulfillAllLines(id){
     document.querySelectorAll('[id^="ff-'+id+'-"]').forEach(function(inp){
       if (inp.max) inp.value = inp.max;
     });
+    fulfillLines(id);
   }
   function fulfillLines(id){
     var lines = [];
