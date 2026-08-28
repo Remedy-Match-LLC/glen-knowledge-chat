@@ -120,6 +120,29 @@ def test_consolidate_materializes_head_and_tail_as_balanced_stresses():
     ).fetchone()
 
 
+def test_consolidate_merges_complete_source_layer_into_target_card():
+    cx = sqlite3.connect(":memory:")
+    source_rid = add_chain_row(
+        cx, "9", 4, "Cellular Energy", "Super Cell Driver, CNS-Heart-Matrix",
+        "Holy Grail", "", "", "",
+    )
+    target_rid = add_chain_row(
+        cx, "9", 2, "Nervous System", "Sciatic Nerve", "Nous Energy", "", "", "",
+    )
+
+    assert st.consolidate_layer_balances(cx, "9", 4, 2) == 3
+    rows = cx.execute(
+        "SELECT id,layer,head,most_affected,remedy FROM biofield_auth_chain "
+        "WHERE test_id=9 ORDER BY id"
+    ).fetchall()
+    assert rows == [
+        (source_rid, 2, "Nervous System",
+         "Sciatic Nerve, Cellular Energy, Super Cell Driver, CNS-Heart-Matrix", "Holy Grail"),
+        (target_rid, 2, "Nervous System",
+         "Sciatic Nerve, Cellular Energy, Super Cell Driver, CNS-Heart-Matrix", "Nous Energy"),
+    ]
+
+
 def test_card_shows_covered_chips_and_unassigned_is_draggable():
     rep = {"test_id": "a1", "client": {"name": "J", "email": ""}, "date": "",
            "layers": [{"layer": 1, "head": "H", "most_affected": "", "remedy": "R",

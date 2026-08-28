@@ -498,6 +498,38 @@ def consolidate_layer_balances(cx, tid, source_layer, target_layer):
                 "(test_id,stress_id,chain_rid) VALUES(?,?,?)",
                 (t, stress_id, rid),
             )
+
+    # Consolidation merges the complete card, not only its stress links. Keep the
+    # destination Head as the surviving causal-chain head, preserve every source
+    # remedy row, and fold all other Head/Tail items into the merged Tail. Moving
+    # the source rows onto the target layer removes the source card on reload.
+    all_rows = list(target_rows) + list(source_rows)
+    target_head = next(((r[2] or "").strip() for r in target_rows
+                        if (r[2] or "").strip()), "")
+    if not target_head:
+        target_head = next(((r[2] or "").strip() for r in source_rows
+                            if (r[2] or "").strip()), "")
+    tail_items = []
+    for row in all_rows:
+        head = (row[2] or "").strip()
+        if head and _norm(head) != _norm(target_head):
+            tail_items.append(head)
+        tail_items.extend(x.strip() for x in re.split(r"[,;\n]+", row[3] or "") if x.strip())
+    merged_tail, seen = [], set()
+    for item in tail_items:
+        key = _norm(item)
+        if key and key not in seen:
+            seen.add(key)
+            merged_tail.append(item)
+    merged_tail_text = ", ".join(merged_tail)
+    all_rids = target_rids | source_rids
+    if all_rids:
+        row_marks = ",".join("?" for _ in all_rids)
+        cx.execute(
+            f"UPDATE biofield_auth_chain SET layer=?,head=?,most_affected=? "
+            f"WHERE test_id=? AND id IN ({row_marks})",
+            (target, target_head, merged_tail_text, t, *all_rids),
+        )
     cx.commit()
     return len(visible_stress_ids)
 
