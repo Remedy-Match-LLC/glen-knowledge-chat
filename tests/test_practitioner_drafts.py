@@ -116,28 +116,28 @@ def test_unknown_fields_default_to_review():
 
 
 def test_needs_review_reads_the_policy():
-    pd.REVIEW_POLICY["location"] = "auto"
+    pd.REVIEW_POLICY["city"] = "auto"
     try:
-        assert pd.needs_review("location") is False
+        assert pd.needs_review("city") is False
         assert pd.needs_review("bio") is True
     finally:
-        pd.REVIEW_POLICY["location"] = "review"
+        pd.REVIEW_POLICY["city"] = "review"
 
 
 def test_split_by_policy_separates_auto_from_review():
-    pd.REVIEW_POLICY["location"] = "auto"
+    pd.REVIEW_POLICY["city"] = "auto"
     try:
-        auto, review = pd.split_by_policy({"location": "Hilo, HI", "bio": "x"})
-        assert auto == {"location": "Hilo, HI"}
+        auto, review = pd.split_by_policy({"city": "Hilo", "bio": "x"})
+        assert auto == {"city": "Hilo"}
         assert review == {"bio": "x"}
     finally:
-        pd.REVIEW_POLICY["location"] = "review"
+        pd.REVIEW_POLICY["city"] = "review"
 
 
 def test_split_by_policy_sends_everything_to_review_under_beta_policy():
-    auto, review = pd.split_by_policy({"bio": "x", "location": "Hilo, HI"})
+    auto, review = pd.split_by_policy({"bio": "x", "city": "Hilo", "state": "HI"})
     assert auto == {}
-    assert review == {"bio": "x", "location": "Hilo, HI"}
+    assert review == {"bio": "x", "city": "Hilo", "state": "HI"}
 
 
 from dashboard import practitioner_profile as pp

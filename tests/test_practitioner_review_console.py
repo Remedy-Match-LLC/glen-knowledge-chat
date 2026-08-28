@@ -207,3 +207,86 @@ def test_submit_auto_publishes_when_nothing_needs_review(client, monkeypatch, tm
     assert body["ok"] is True
     assert body["published"] is True
     assert seen["published_pid"] == PID
+
+
+def test_submit_auto_path_is_reachable_through_the_real_save_draft_path(client, monkeypatch, tmp_path):
+    """The auto branch must be reachable via the REAL production write path
+    (practitioner_profile.save_draft), not a hand-built fields dict.
+    save_draft persists 'city' and 'state' separately -- there is no
+    'location' key in a real draft -- so this is the test that would have
+    caught REVIEW_POLICY being keyed on the wrong field names (it was, and
+    the auto path could never fire on real data). REVIEW_POLICY is restored
+    in finally."""
+    import sqlite3 as _sqlite3
+    from dashboard import practitioner_drafts as _pd
+    from dashboard import practitioner_profile as _pp
+
+    dbpath = str(tmp_path / "chat_log.db")
+    monkeypatch.setattr(appmod, "_practitioner_session_pid", lambda: PID)
+    monkeypatch.setattr(appmod, "LOG_DB", dbpath)
+
+    with appmod.db.connect(dbpath) as cx:
+        cx.row_factory = _sqlite3.Row
+        _pp.save_draft(cx, PID, {
+            "bio": "Hello, I'm a practitioner.",
+            "services": ["Coaching"],
+            "city": "Hilo",
+            "state": "HI",
+            "photo_url": "https://example.com/p.jpg",
+            "accepting_clients": True,
+        })
+
+    seen = {}
+    monkeypatch.setattr(
+        "dashboard.practitioner_profile.publish_draft",
+        lambda cx, pid: seen.setdefault("published_pid", pid) or True)
+
+    original_policy = dict(_pd.REVIEW_POLICY)
+    for field in _pd.REVIEW_POLICY:
+        _pd.REVIEW_POLICY[field] = "auto"
+    try:
+        r = client.post("/api/practitioner/profile/submit")
+    finally:
+        _pd.REVIEW_POLICY.clear()
+        _pd.REVIEW_POLICY.update(original_policy)
+
+    assert r.status_code == 200
+    body = r.get_json()
+    assert body["ok"] is True
+    assert body["status"] == "approved"
+    assert body["published"] is True
+    assert seen["published_pid"] == PID
+
+
+def test_submit_auto_path_reports_failure_when_publish_fails(client, monkeypatch, tmp_path):
+    """Mirrors the console approve route (app.py api_console_practitioner_draft_approve):
+    a failed publish on the auto path must never report success, and must
+    never claim 'approved' status is live when it is not."""
+    import sqlite3 as _sqlite3
+    from dashboard import practitioner_drafts as _pd
+
+    dbpath = str(tmp_path / "chat_log.db")
+    monkeypatch.setattr(appmod, "_practitioner_session_pid", lambda: PID)
+    monkeypatch.setattr(appmod, "LOG_DB", dbpath)
+
+    with appmod.db.connect(dbpath) as cx:
+        cx.row_factory = _sqlite3.Row
+        _pd.init_tables(cx)
+        _pd.upsert_draft(cx, PID, {"bio": "hello world"})
+
+    monkeypatch.setattr(
+        "dashboard.practitioner_profile.publish_draft",
+        lambda cx, pid: False)
+
+    original_policy = dict(_pd.REVIEW_POLICY)
+    _pd.REVIEW_POLICY["bio"] = "auto"
+    try:
+        r = client.post("/api/practitioner/profile/submit")
+    finally:
+        _pd.REVIEW_POLICY.clear()
+        _pd.REVIEW_POLICY.update(original_policy)
+
+    assert r.status_code == 500
+    body = r.get_json()
+    assert body["ok"] is False
+    assert body["error"] == "publish_failed"

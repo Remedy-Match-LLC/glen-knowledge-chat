@@ -135,12 +135,22 @@ DEFAULT_POLICY = "review"
 # Per-field review policy. BETA POLICY: everything is reviewed.
 # Relaxing a field to "auto" is a deliberate decision to let it reach the
 # public page unreviewed -- make it here, one line, never in the schema.
+#
+# Keyed on the fields practitioner_profile.save_draft ACTUALLY STORES, not on
+# the public presentation shape -- save_draft writes "city" and "state"
+# separately; there is no "location" key in a draft's fields, so a policy
+# entry named "location" can never match anything and silently never applies.
+# The spec's "location" is city+state together: keep BOTH keyed here, or a
+# future reader will reintroduce this mismatch. "logo_url" is kept even
+# though save_draft does not store it yet -- a later plan wires that up, and
+# an unmatched key is harmless (needs_review only consults known-stored keys).
 REVIEW_POLICY = {
     "bio": "review",
     "photo_url": "review",
     "logo_url": "review",
     "services": "review",
-    "location": "review",
+    "city": "review",
+    "state": "review",
     "accepting_clients": "review",
 }
 

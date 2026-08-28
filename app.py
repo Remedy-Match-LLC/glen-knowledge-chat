@@ -19164,10 +19164,15 @@ def api_practitioner_profile_submit():
             pass  # keep the safe default: needs_human stays True
         if not needs_human:
             from dashboard import practitioner_profile as _pp
-            _pd.approve(cx, pid)
-            published = _pp.publish_draft(cx, pid)
-            return jsonify({"ok": True, "status": "approved",
-                            "published": bool(published)})
+            # Mirrors api_console_practitioner_draft_approve: publishing is
+            # what makes it public, so a failed approve OR a failed publish
+            # must not report success, and must never claim "approved" if it
+            # is not actually live.
+            approved = _pd.approve(cx, pid)
+            published = approved and _pp.publish_draft(cx, pid)
+            if not published:
+                return jsonify({"ok": False, "error": "publish_failed"}), 500
+            return jsonify({"ok": True, "status": "approved", "published": True})
     return jsonify({"ok": True, "status": "submitted"})
 
 
