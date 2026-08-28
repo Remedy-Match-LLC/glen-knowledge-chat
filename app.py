@@ -19161,6 +19161,16 @@ def practitioner_site(slug):
         return redirect(f"/{canonical}", code=301)
     if kind != "canonical":
         return ("", 404)
+    # Record under the CANONICAL slug so views aggregate on one slug per
+    # practitioner however many alternates they publish. Without this the
+    # per-slug view counts this feature is measured by drop to zero on the
+    # portal host, since /p/<slug> now redirects before its own record_view.
+    try:
+        from dashboard import public_surface as _psurf
+        with _db_lock, db.connect(LOG_DB) as _cx:
+            _psurf.record_view(_cx, canonical, "storefront")
+    except Exception:
+        pass  # instrumentation must never break the page
     resp = send_from_directory(STATIC, "practitioner-storefront.html")
     resp.headers["X-Robots-Tag"] = "noindex"
     resp.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"

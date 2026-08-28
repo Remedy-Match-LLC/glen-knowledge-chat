@@ -201,3 +201,43 @@ def test_db_failure_404s_rather_than_500ing_the_whole_catch_all(client, monkeypa
     sqlite3.connect(empty).close()          # a real DB with no affiliate_signups
     monkeypatch.setattr(appmod, "LOG_DB", empty)
     assert client.get("/mary-boyd", base_url=f"http://{PORTAL_HOST}").status_code == 404
+
+
+def _views(db_path):
+    cx = sqlite3.connect(db_path)
+    try:
+        return cx.execute(
+            "SELECT slug, surface FROM public_surface_views ORDER BY id").fetchall()
+    finally:
+        cx.close()
+
+
+def test_serving_a_canonical_slug_records_a_view(client):
+    """public_surface.record_view's own docstring says per-slug view counts are
+    the instrumentation this feature is measured by. /p/<slug> now redirects
+    BEFORE its record_view call, so without this the metric drops to zero on
+    the portal host exactly as traffic moves there."""
+    client.get("/mary-boyd", base_url=f"http://{PORTAL_HOST}")
+    assert _views(appmod.LOG_DB) == [("mary-boyd", "storefront")]
+
+
+def test_an_alias_records_the_view_under_the_canonical_slug(client):
+    """Views must aggregate on one slug per practitioner, not split across
+    however many alternates they publish."""
+    _claim(appmod.LOG_DB, "boyd-coaching")
+    client.get("/boyd-coaching", base_url=f"http://{PORTAL_HOST}",
+               follow_redirects=True)
+    assert _views(appmod.LOG_DB) == [("mary-boyd", "storefront")]
+
+
+def test_view_recording_can_never_break_the_page(client, monkeypatch):
+    """Instrumentation is best-effort. Mirror the guard in the /p/<slug>
+    handler: if record_view raises, the practitioner's page still serves."""
+    from dashboard import public_surface as _psurf
+
+    def _boom(*a, **k):
+        raise RuntimeError("instrumentation is down")
+
+    monkeypatch.setattr(_psurf, "record_view", _boom)
+    r = client.get("/mary-boyd", base_url=f"http://{PORTAL_HOST}")
+    assert r.status_code == 200
