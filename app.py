@@ -19265,6 +19265,18 @@ def practitioner_storefront(slug):
         return ("", 404)
     if not re.match(r"^[A-Za-z0-9_-]{1,64}$", slug or ""):
         return ("", 404)
+    # On the portal host the canonical URL is /<slug>; /p/<slug> is legacy and
+    # redirects there so a printed or texted old link keeps working. On the
+    # funnel host this route is unchanged.
+    #
+    # 302, not 301, for the first deploy window. Nothing on this surface is
+    # indexable yet (X-Robots-Tag: noindex, and lifting it is spec section 5),
+    # so there is no link authority to preserve today -- while a 301 is cached
+    # by browsers indefinitely, meaning a wrong redirect could NOT be rolled
+    # back by reverting the deploy. Promote to 301 once the production roster
+    # audit has run and section 5 makes these pages indexable.
+    if _on_portal_host():
+        return redirect(f"/{slug}", code=302)
     from dashboard import public_surface as _ps
     with db.connect(LOG_DB) as cx:
         cx.row_factory = sqlite3.Row
@@ -19280,6 +19292,74 @@ def practitioner_storefront(slug):
     resp.headers["X-Robots-Tag"] = "noindex"
     resp.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
     resp.set_cookie("rm_ref", slug, max_age=90 * 24 * 3600,
+                    samesite="Lax", secure=request.is_secure)
+    return resp
+
+
+@app.route("/<slug>")
+def practitioner_site(slug):
+    """Practitioner site at myhealingoasis.com/<slug>.
+
+    Host-gated: this catch-all serves only on the portal host, so it can never
+    shadow a page on the funnel domain.
+
+    Named routes win over it, but NOT because of registration order -- this
+    route is registered mid-file, not last, and order is irrelevant. Werkzeug
+    3.1 matches with a StateMachineMatcher that tries a path segment's STATIC
+    transitions before any dynamic one, and Map.update() weight-sorts the
+    dynamic transitions among themselves. A static rule therefore always beats
+    `/<slug>`. tests/test_slug_route_collision.py is the guard that keeps a new
+    route from taking a live practitioner's URL as routes are added.
+
+    Serves the existing storefront page unchanged. Server-rendering and lifting
+    noindex are section 5 of the spec, not this route.
+    """
+    if not _on_portal_host():
+        return ("", 404)
+    if not _public_surface_enabled():
+        return ("", 404)
+    from dashboard import practitioner_slugs as _ps
+    s = _ps.normalize(slug)
+    try:
+        _ps.check_shape(s)
+    except _ps.SlugError:
+        return ("", 404)
+    # One URL per practitioner. /Mary-Boyd normalizes to the same row, but the
+    # storefront page re-derives its own /api/p/ key from location.pathname and
+    # affiliate_signups.slug is case-sensitive, so serving the capitalized form
+    # renders a blank page. `s` is post-check_shape, so it is [a-z0-9-] only and
+    # the redirect target cannot be an off-site URL.
+    if s != slug:
+        return redirect(f"/{s}", code=301)
+    # Fail closed. This catch-all answers every unmatched root path on the
+    # portal host, including every bot probe of /admin, /wordpress, /.env. A
+    # missing or broken affiliate_signups table must degrade to "no such slug",
+    # not turn one schema problem into a site-wide 500. Same convention as
+    # dashboard/public_surface.py build_share_header.
+    try:
+        with db.connect(LOG_DB) as cx:
+            kind, canonical = _ps.resolve(cx, s)
+    except db.Error as e:
+        print(f"[practitioner_site] resolve failed for {s!r}: {e!r}", flush=True)
+        return ("", 404)
+    if kind == "alias":
+        return redirect(f"/{canonical}", code=301)
+    if kind != "canonical":
+        return ("", 404)
+    # Record under the CANONICAL slug so views aggregate on one slug per
+    # practitioner however many alternates they publish. Without this the
+    # per-slug view counts this feature is measured by drop to zero on the
+    # portal host, since /p/<slug> now redirects before its own record_view.
+    try:
+        from dashboard import public_surface as _psurf
+        with _db_lock, db.connect(LOG_DB) as _cx:
+            _psurf.record_view(_cx, canonical, "storefront")
+    except Exception:
+        pass  # instrumentation must never break the page
+    resp = send_from_directory(STATIC, "practitioner-storefront.html")
+    resp.headers["X-Robots-Tag"] = "noindex"
+    resp.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+    resp.set_cookie("rm_ref", canonical, max_age=90 * 24 * 3600,
                     samesite="Lax", secure=request.is_secure)
     return resp
 

@@ -96,3 +96,81 @@ def test_backfill_from_people_and_portals_idempotent():
     n2 = ad.backfill_affiliates_from_people(cx)
     assert n2 == 0
     assert cx.execute("SELECT COUNT(*) FROM affiliate_signups").fetchone()[0] == 2
+
+
+# --- the minter must never emit a slug the practitioner-site reader refuses ---
+# dashboard/practitioner_slugs.check_shape + check_not_reserved gate what
+# myhealingoasis.com/<slug> will serve. A slug that fails either is a URL the
+# practitioner was given and the site 404s. Fix it at the WRITER.
+from dashboard import practitioner_slugs as ps  # noqa: E402
+
+
+def _mint(cx, name="", email="x@example.com"):
+    slug, _token = ad._mint_affiliate_slug(cx, name, email)
+    return slug
+
+
+def _assert_servable(slug):
+    ps.check_shape(slug)
+    ps.check_not_reserved(slug, ps.EXTRA_RESERVED)
+
+
+# s[29] is a hyphen, so a 30-char cut lands exactly on a word boundary.
+_BOUNDARY_NAME = "Abcde Fghij Klmno Pqrst Uvwxy Z"
+
+
+def test_mint_long_name_truncating_on_a_word_boundary_has_no_trailing_hyphen():
+    """.strip('-') used to run BEFORE [:30], so a cut landing on a boundary
+    left a trailing hyphen -- a shape check_shape rejects."""
+    slug = _mint(_db(), name=_BOUNDARY_NAME)
+    assert not slug.endswith("-")
+    _assert_servable(slug)
+
+
+def test_mint_long_boundary_name_on_collision_has_no_doubled_hyphen():
+    """The collision suffix used to be appended to that trailing hyphen."""
+    cx = _db()
+    first = _mint(cx, name=_BOUNDARY_NAME)
+    cx.execute("INSERT INTO affiliate_signups (created_at,name,email,slug,token)"
+               " VALUES ('t','x','x@x.com',?,'tok0')", (first,))
+    cx.commit()
+    second = _mint(cx, name=_BOUNDARY_NAME)
+    assert second != first
+    assert "--" not in second
+    _assert_servable(second)
+
+
+def test_mint_short_name_reaches_the_minimum_length():
+    """'Jo' -> 'jo' is 2 chars, under practitioner_slugs.MIN_LEN."""
+    slug = _mint(_db(), name="Jo")
+    assert len(slug) >= ps.MIN_LEN
+    _assert_servable(slug)
+
+
+def test_mint_email_localpart_landing_on_a_reserved_word_is_not_emitted_bare():
+    """support@clinic.com with no name used to mint the bare word 'support'."""
+    slug = _mint(_db(), name="", email="support@clinic.com")
+    assert slug != "support"
+    assert slug.startswith("support-")
+    _assert_servable(slug)
+
+
+def test_mint_no_material_at_all_still_emits_a_servable_slug():
+    slug = _mint(_db(), name="", email="")
+    _assert_servable(slug)
+
+
+def test_mint_stays_within_max_len_on_a_long_name_with_collisions():
+    """base is 30 chars; a suffix must not push it past MAX_LEN."""
+    cx = _db()
+    name = "Wilhelmina Bartholomew Fitzgerald Montgomery"
+    seen = set()
+    for i in range(4):
+        slug = _mint(cx, name=name)
+        _assert_servable(slug)
+        assert len(slug) <= ps.MAX_LEN
+        assert slug not in seen
+        seen.add(slug)
+        cx.execute("INSERT INTO affiliate_signups (created_at,name,email,slug,token)"
+                   " VALUES ('t','x',?,?,?)", (f"{i}@x.com", slug, f"tok{i}"))
+        cx.commit()
