@@ -50,3 +50,56 @@ def test_editing_an_approved_draft_returns_it_to_draft(cur):
                 " WHERE practitioner_id=?", (PID,))
     pd.upsert_draft(cur, PID, {"bio": "two"})
     assert pd.get_draft(cur, PID)["status"] == "draft"
+
+
+PID2 = "22222222-2222-2222-2222-222222222222"
+
+
+def test_submit_moves_draft_to_submitted(cur):
+    pd.upsert_draft(cur, PID, {"bio": "x"})
+    assert pd.submit(cur, PID) is True
+    d = pd.get_draft(cur, PID)
+    assert d["status"] == "submitted" and d["submitted_at"]
+
+
+def test_submit_is_false_when_there_is_no_draft(cur):
+    assert pd.submit(cur, PID) is False
+
+
+def test_approve_marks_approved_and_stamps_review_time(cur):
+    pd.upsert_draft(cur, PID, {"bio": "x"})
+    pd.submit(cur, PID)
+    assert pd.approve(cur, PID) is True
+    d = pd.get_draft(cur, PID)
+    assert d["status"] == "approved" and d["reviewed_at"]
+
+
+def test_approve_refuses_a_row_that_was_never_submitted(cur):
+    """Approving straight from 'draft' would skip the practitioner's own submit."""
+    pd.upsert_draft(cur, PID, {"bio": "x"})
+    assert pd.approve(cur, PID) is False
+    assert pd.get_draft(cur, PID)["status"] == "draft"
+
+
+def test_reject_returns_it_to_draft_with_the_note(cur):
+    pd.upsert_draft(cur, PID, {"bio": "x"})
+    pd.submit(cur, PID)
+    assert pd.reject(cur, PID, "please remove the health claim") is True
+    d = pd.get_draft(cur, PID)
+    assert d["status"] == "draft"
+    assert d["review_note"] == "please remove the health claim"
+
+
+def test_reject_requires_a_note(cur):
+    pd.upsert_draft(cur, PID, {"bio": "x"})
+    pd.submit(cur, PID)
+    with pytest.raises(ValueError):
+        pd.reject(cur, PID, "")
+
+
+def test_list_by_status_returns_only_that_status(cur):
+    pd.upsert_draft(cur, PID, {"bio": "a"})
+    pd.upsert_draft(cur, PID2, {"bio": "b"})
+    pd.submit(cur, PID)
+    subs = pd.list_by_status(cur, "submitted")
+    assert [d["practitioner_id"] for d in subs] == [PID]

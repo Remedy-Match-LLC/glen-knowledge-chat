@@ -74,3 +74,57 @@ def upsert_draft(cx, pid, fields):
                    " VALUES (?,?, 'draft', ?, ?)", (str(pid), payload, now, now))
     cx.commit()
     return get_draft(cx, pid)
+
+
+def submit(cx, pid):
+    """Practitioner sends their draft for review. True if a draft moved."""
+    now = _now()
+    cur = cx.execute("UPDATE practitioner_profile_drafts SET status='submitted',"
+                     " submitted_at=?, updated_at=?"
+                     " WHERE practitioner_id=? AND status='draft'",
+                     (now, now, str(pid)))
+    cx.commit()
+    return cur.rowcount == 1
+
+
+def approve(cx, pid, note=""):
+    """Glen approves a SUBMITTED draft. True if one moved.
+
+    Deliberately refuses a row still in 'draft': approving something the
+    practitioner has not submitted would publish an edit they were mid-way
+    through writing.
+    """
+    now = _now()
+    cur = cx.execute("UPDATE practitioner_profile_drafts SET status='approved',"
+                     " review_note=?, reviewed_at=?, updated_at=?"
+                     " WHERE practitioner_id=? AND status='submitted'",
+                     (note or None, now, now, str(pid)))
+    cx.commit()
+    return cur.rowcount == 1
+
+
+def reject(cx, pid, note):
+    """Send a submitted draft back with a reason. The note is required:
+    a rejection the practitioner cannot act on just produces a resubmit."""
+    if not (note or "").strip():
+        raise ValueError("a rejection needs a note")
+    now = _now()
+    cur = cx.execute("UPDATE practitioner_profile_drafts SET status='draft',"
+                     " review_note=?, reviewed_at=?, updated_at=?"
+                     " WHERE practitioner_id=? AND status='submitted'",
+                     (note.strip(), now, now, str(pid)))
+    cx.commit()
+    return cur.rowcount == 1
+
+
+def list_by_status(cx, status=None, limit=200):
+    """Rows for the review queue, newest first."""
+    if status:
+        rows = cx.execute("SELECT * FROM practitioner_profile_drafts WHERE status=?"
+                          " ORDER BY updated_at DESC LIMIT ?",
+                          (status, int(limit))).fetchall()
+    else:
+        rows = cx.execute("SELECT * FROM practitioner_profile_drafts"
+                          " ORDER BY updated_at DESC LIMIT ?",
+                          (int(limit),)).fetchall()
+    return [_row(r) for r in rows]
