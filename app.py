@@ -19146,8 +19146,17 @@ def practitioner_site(slug):
     # the redirect target cannot be an off-site URL.
     if s != slug:
         return redirect(f"/{s}", code=301)
-    with db.connect(LOG_DB) as cx:
-        kind, canonical = _ps.resolve(cx, s)
+    # Fail closed. This catch-all answers every unmatched root path on the
+    # portal host, including every bot probe of /admin, /wordpress, /.env. A
+    # missing or broken affiliate_signups table must degrade to "no such slug",
+    # not turn one schema problem into a site-wide 500. Same convention as
+    # dashboard/public_surface.py build_share_header.
+    try:
+        with db.connect(LOG_DB) as cx:
+            kind, canonical = _ps.resolve(cx, s)
+    except db.Error as e:
+        print(f"[practitioner_site] resolve failed for {s!r}: {e!r}", flush=True)
+        return ("", 404)
     if kind == "alias":
         return redirect(f"/{canonical}", code=301)
     if kind != "canonical":

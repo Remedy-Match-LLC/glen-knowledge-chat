@@ -226,3 +226,49 @@ def test_claim_alias_rejects_a_pending_practitioner_as_canonical(tmp_path):
     with pytest.raises(ps.SlugError):
         ps.claim_alias(cx, "pending-pat", "pats-clinic", frozenset())
     assert ps.alias_owner(cx, "pats-clinic") == ""
+
+
+class _CountingCx:
+    """A connection wrapper that records every SQL string it is asked to run."""
+
+    def __init__(self, cx):
+        self._cx = cx
+        self.sql = []
+
+    def execute(self, sql, params=()):
+        self.sql.append(sql)
+        return self._cx.execute(sql, params)
+
+    def commit(self):
+        return self._cx.commit()
+
+
+def test_init_tables_issues_its_ddl_once_per_database(tmp_path):
+    """alias_owner() calls init_tables on every canonical miss, and on the
+    portal host that miss is reached by every unmatched root path -- every bot
+    probe of /admin, /wordpress, /.env. CREATE TABLE + COMMIT per public
+    request is per-request DDL in a pooled Postgres connection, where
+    concurrent CREATE TABLE IF NOT EXISTS can raise DuplicateTable."""
+    cx = _CountingCx(sqlite3.connect(str(tmp_path / "once.db")))
+    for _ in range(3):
+        ps.init_tables(cx)
+    creates = [s for s in cx.sql if s.startswith("CREATE TABLE")]
+    assert len(creates) == 1, cx.sql
+
+
+def test_init_tables_is_keyed_on_the_database_not_a_process_flag(tmp_path):
+    """A bare boolean would leave the SECOND database without its table, which
+    is every test after the first that points LOG_DB at a fresh temp file."""
+    ps.init_tables(sqlite3.connect(str(tmp_path / "first.db")))
+    second = sqlite3.connect(str(tmp_path / "second.db"))
+    ps.init_tables(second)
+    assert second.execute("SELECT * FROM practitioner_slug_aliases").fetchall() == []
+
+
+def test_init_tables_never_caches_an_in_memory_database():
+    """Every :memory: connection is a DIFFERENT database that reports the same
+    empty path, so it must not be cached under that path."""
+    for _ in range(2):
+        cx = sqlite3.connect(":memory:")
+        ps.init_tables(cx)
+        assert cx.execute("SELECT * FROM practitioner_slug_aliases").fetchall() == []

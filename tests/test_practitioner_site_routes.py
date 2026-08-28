@@ -186,3 +186,18 @@ def test_settings_page_shows_the_current_storefront_url():
         appmod.STATIC, "practitioner-settings.html").read_text(encoding="utf-8")
     assert "illtowell.com/p/" not in html
     assert "myhealingoasis.com/" in html
+
+
+def test_db_failure_404s_rather_than_500ing_the_whole_catch_all(client, monkeypatch, tmp_path):
+    """Fail closed, the convention public_surface.build_share_header documents.
+
+    This is a ROOT-LEVEL catch-all on a public, unauthenticated surface: it is
+    reached by every bot probe of /admin, /wordpress, /.env. If a missing or
+    broken affiliate_signups table let the exception out, every one of those
+    would become a 500 instead of a 404 -- turning one schema problem into a
+    site-wide error signal.
+    """
+    empty = str(tmp_path / "no-tables.db")
+    sqlite3.connect(empty).close()          # a real DB with no affiliate_signups
+    monkeypatch.setattr(appmod, "LOG_DB", empty)
+    assert client.get("/mary-boyd", base_url=f"http://{PORTAL_HOST}").status_code == 404

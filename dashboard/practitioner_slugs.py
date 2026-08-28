@@ -15,6 +15,7 @@ Imports no Flask app, so it is unit-testable on its own.
 
 import datetime
 import re
+import threading
 
 from dashboard import db
 
@@ -97,13 +98,56 @@ def _now():
     return datetime.datetime.now(datetime.timezone.utc).isoformat()
 
 
+_INIT_DONE = set()                  # DB identities whose alias DDL has already run
+_INIT_LOCK = threading.Lock()
+
+
+def _db_identity(cx):
+    """A stable identity for the database behind `cx`, or None when it cannot be
+    determined cheaply -- in which case the DDL simply runs again, which is
+    harmless because it is idempotent.
+
+    Keyed on the DATABASE, never on a bare process-wide boolean: the test suite
+    points LOG_DB at a fresh temp file per test, and a boolean would leave every
+    database after the first without its table. An in-memory SQLite database
+    reports an empty path but is a distinct database per connection, so it
+    returns None and is never cached.
+    """
+    try:
+        if db.backend_of(cx) == "postgres":
+            row = cx.execute("SELECT current_schema()").fetchone()
+            return ("postgres", row[0]) if row and row[0] else None
+        row = cx.execute("PRAGMA database_list").fetchone()
+        path = (row[2] or "") if row else ""
+        return ("sqlite", path) if path else None
+    except db.Error:
+        return None
+
+
 def init_tables(cx):
     """Create the alias table. Idempotent; safe to call on every read path,
-    matching dashboard.referrals.init_tables."""
+    matching dashboard.referrals.init_tables -- but run ONCE per process per
+    database, not once per call.
+
+    alias_owner() calls this on every canonical miss, and on the portal host a
+    canonical miss is reached by every unmatched root path: every bot probe of
+    /admin, /wordpress, /.env. Per-request CREATE TABLE + COMMIT is a WAL write
+    on SQLite and per-request DDL in a pooled connection on Postgres, where
+    concurrent CREATE TABLE IF NOT EXISTS can raise DuplicateTable. The probe
+    that replaces it is a read-only PRAGMA with no commit.
+    """
+    key = _db_identity(cx)
+    if key is not None:
+        with _INIT_LOCK:
+            if key in _INIT_DONE:
+                return
     cx.execute("CREATE TABLE IF NOT EXISTS practitioner_slug_aliases ("
                "alias TEXT PRIMARY KEY, canonical_slug TEXT NOT NULL,"
                " created_at TEXT NOT NULL)")
     cx.commit()
+    if key is not None:
+        with _INIT_LOCK:
+            _INIT_DONE.add(key)
 
 
 def canonical_exists(cx, slug):
