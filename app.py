@@ -33740,6 +33740,37 @@ def _biofield_has_fresh_scan(email):
         return False
 
 
+E4L_SCANNED_TAG = "e4l:scanned"
+E4L_SCAN_TAG_MAX_PER_RUN = 200
+
+
+def _tag_scanned_in_ghl(email):
+    """Tell GHL that this contact has completed a voice scan.
+
+    Why this exists: nothing in this codebase told GHL about a scan. The result
+    landed in scan_freshness and stopped there, so a GHL workflow could enrol
+    somebody but had nothing to exit on -- which is why the voice-scan reminder
+    kept reaching clients who had scanned months earlier (one of them 17 times
+    over). The tag gives that workflow an exit condition, and gives Glen a
+    "has an account, never scanned" segment, which is the audience those
+    reminder emails were actually written for.
+
+    Best-effort by contract: a GHL outage must never break scan ingestion, which
+    is what the Biofield readiness gate reads."""
+    email = (email or "").strip().lower()
+    if not email:
+        return False
+    try:
+        _cid, _created, err = ghl_upsert_contact(email, extra_tags=[E4L_SCANNED_TAG])
+        if err:
+            print(f"[scan-tag] GHL tag failed for {email!r}: {err}", flush=True)
+            return False
+        return True
+    except Exception as e:
+        print(f"[scan-tag] GHL tag raised for {email!r}: {e!r}", flush=True)
+        return False
+
+
 @app.route("/api/e4l/scan-freshness", methods=["POST"])
 def api_e4l_scan_freshness():
     """Ingest the latest voice-scan dates from the local e4l pipeline so the
@@ -33755,11 +33786,24 @@ def api_e4l_scan_freshness():
     from dashboard import scan_freshness as _sf
     with db.connect(LOG_DB) as cx:
         _sf.init_table(cx)
+        # BEFORE the upsert -- afterwards every row looks unchanged.
+        fresh = _sf.new_scanners(cx, rows)
         _sf.upsert(cx, rows)
     for _r in rows:
         if (_r.get("last_scan_date") or _r.get("scan_date") or "").strip():
             _record_entry_unlock("scan", (_r.get("email") or ""))
-    return jsonify({"ok": True, "upserted": len(rows)})
+    # Push the scan signal OUT to GHL so a workflow can stop chasing someone who
+    # has already scanned. Capped, and the cap is logged rather than silent: the
+    # first run after a backfill could otherwise fire thousands of API calls.
+    tagged = 0
+    for _em in fresh[:E4L_SCAN_TAG_MAX_PER_RUN]:
+        tagged += int(bool(_tag_scanned_in_ghl(_em)))
+    if len(fresh) > E4L_SCAN_TAG_MAX_PER_RUN:
+        print("[scan-tag] %d new scanners this run, tagged the first %d; %d deferred "
+              "to the next run" % (len(fresh), E4L_SCAN_TAG_MAX_PER_RUN,
+                                   len(fresh) - E4L_SCAN_TAG_MAX_PER_RUN), flush=True)
+    return jsonify({"ok": True, "upserted": len(rows),
+                    "new_scanners": len(fresh), "ghl_tagged": tagged})
 
 
 @app.route("/api/e4l/reveal-draft", methods=["POST"])

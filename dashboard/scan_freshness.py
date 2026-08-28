@@ -25,6 +25,28 @@ def upsert(cx, rows):
                    (email, d, _now()))
     cx.commit()
 
+def new_scanners(cx, rows):
+    """Emails in `rows` whose scan is NEW — no stored row, or a date newer than
+    the stored one. MUST be called BEFORE upsert(), which is what makes "new"
+    meaningful.
+
+    Exists so a caller can react to a scan actually arriving. The ingest is a
+    cron that re-sends the same rows every run (up to 5000 at a time), so
+    reacting per row would fire on every unchanged record forever."""
+    out = []
+    seen = set()
+    for r in rows or []:
+        email = (r.get("email") or "").strip().lower()
+        d = (r.get("last_scan_date") or "").strip()
+        if not email or not d or email in seen:
+            continue
+        seen.add(email)
+        prior = latest_scan_date(cx, email)
+        if not prior or d > prior:     # ISO dates sort lexically, as upsert relies on
+            out.append(email)
+    return out
+
+
 def latest_scan_date(cx, email):
     row = cx.execute("SELECT last_scan_date FROM scan_freshness WHERE email=lower(?)",
                      (str(email or "").strip(),)).fetchone()
