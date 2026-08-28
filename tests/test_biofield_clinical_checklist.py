@@ -48,7 +48,10 @@ def test_existing_stress_coverage_checks_condition():
 
 def test_checklist_renders_directly_before_causal_chain():
     report = {"test_id": "a1", "client": {"name": "Pam", "email": "p@x.com"},
-              "layers": []}
+              "layers": [
+                  {"layer": 1, "head": "Liver support", "remedy": "Liver Support"},
+                  {"layer": 2, "head": "Neurological support", "remedy": "Neuroprotect"},
+              ]}
     html = render_author_html(
         report,
         clinical_checklist=[
@@ -65,8 +68,27 @@ def test_checklist_renders_directly_before_causal_chain():
     assert "initClinicalDrag" in html
     assert "clinical-items/order" in html
     assert "Drag to reorder" in html
-    assert "Balance on layer" in html
+    assert "Add to layer" in html
     assert "Add remedy" in html
+    assert "Choose layer" in html
+    assert "Layer 1: Liver support" in html
+    assert "Layer 2: Neurological support" in html
+    assert "New layer 3" in html
+
+
+def test_checklist_selects_current_layer_and_offers_first_new_layer():
+    html = render_author_html(
+        {"test_id": "a1", "client": {},
+         "layers": [{"layer": 1, "stored_layer": 4, "head": "Immune support",
+                     "remedy": "Terrain Restore"}]},
+        clinical_checklist=[
+            {"label": "Fatigue", "checked": True, "covered_by": "Terrain Restore",
+             "layer": 4, "common_remedies": []},
+        ],
+    )
+    assert "value='4' selected" in html
+    assert "Layer 1: Immune support" in html
+    assert "value='5'>New layer 2" in html
 
 
 def test_balance_item_adds_tail_head_and_multiple_remedies():

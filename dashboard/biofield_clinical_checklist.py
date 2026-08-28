@@ -52,7 +52,7 @@ def build(profile, layers, stress_data=None, remedy_lookup=None):
             if remedy and (_related(label, layer.get("head")) or
                            _related(label, layer.get("most_affected"))):
                 covered_by = remedy
-                balanced_layer = layer.get("layer")
+                balanced_layer = layer.get("stored_layer", layer.get("layer"))
                 break
         # Reuse the existing per-test remedy-to-stress coverage calculation.
         if not covered_by:
@@ -74,7 +74,7 @@ def build(profile, layers, stress_data=None, remedy_lookup=None):
                     covered_by = match
                     for layer in layers:
                         if (layer.get("remedy") or "").strip().lower() == match.lower():
-                            balanced_layer = layer.get("layer")
+                            balanced_layer = layer.get("stored_layer", layer.get("layer"))
                             break
         rows.append({"label": label, "checked": bool(covered_by),
                      "covered_by": covered_by, "layer": balanced_layer,
