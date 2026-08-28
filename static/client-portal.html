@@ -2091,11 +2091,32 @@ document.addEventListener("click", async function(ev){
   place.disabled = true; place.textContent = "Setting up your order…";
   if(msg) msg.hidden = true;
   try {
-    const r = await fetch(`/api/portal/${encodeURIComponent(token)}/checkout`, {
-      method:"POST", credentials:"same-origin", headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({catalog_order:true, items:ordersBasket.map(it=>({slug:it.slug, qty:it.qty}))})
+    // Keep one key through network retries and subsequent taps. The API stores
+    // the order under this key and Stripe uses it as its idempotency key, so a
+    // dropped response cannot create another order or payment session.
+    if(!place.dataset.checkoutRequestId){
+      place.dataset.checkoutRequestId = crypto.randomUUID ? crypto.randomUUID() :
+        (Date.now().toString(36) + Math.random().toString(36).slice(2));
+    }
+    const payload = JSON.stringify({
+      checkout_request_id:place.dataset.checkoutRequestId,
+      catalog_order:true,
+      items:ordersBasket.map(it=>({slug:it.slug, qty:it.qty}))
     });
-    const j = await r.json();
+    let j = null;
+    for(let attempt=0; attempt<2; attempt++){
+      try{
+        const r = await fetch(`/api/portal/${encodeURIComponent(token)}/checkout`, {
+          method:"POST", credentials:"same-origin",
+          headers:{"Content-Type":"application/json"}, body:payload
+        });
+        j = await r.json();
+        if(!r.ok) throw new Error(j.error || "Checkout is temporarily unavailable.");
+        break;
+      }catch(fetchErr){
+        if(attempt) throw fetchErr;
+      }
+    }
     if(j.stripe_url){ location.href = j.stripe_url; return; }
     throw new Error(j.error || "Checkout is temporarily unavailable.");
   } catch(e) {

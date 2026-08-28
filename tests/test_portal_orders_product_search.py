@@ -53,4 +53,6 @@ def test_orders_panel_contains_search_basket_and_catalog_checkout():
     assert 'id="orders-basket"' in html
     assert 'id="orders-place-order"' in html
     assert "catalog_order:true" in html
+    assert "checkout_request_id:place.dataset.checkoutRequestId" in html
+    assert "for(let attempt=0; attempt<2; attempt++)" in html
     assert "/product-search?q=" in html
