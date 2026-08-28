@@ -96,6 +96,17 @@
   #panel-receivables .acts button.void:hover { border-color:var(--red); color:var(--red); }
   #f-err { color:var(--red); margin-top:16px; font-size:13px; display:none; }
   #f-empty { color:var(--muted); font-size:13px; margin-top:16px; display:none; }
+  #panel-royalties h1 { font-size:22px; margin-bottom:2px; }
+  #panel-royalties .sub { color:var(--muted); font-size:13px; margin-bottom:20px; }
+  #panel-royalties .summary-strip { display:flex; gap:14px; flex-wrap:wrap; margin-bottom:22px; }
+  #panel-royalties .summary-tile { background:var(--surface); border:1px solid var(--border); border-radius:10px; padding:12px 18px; min-width:160px; }
+  #panel-royalties .label { font-size:11px; letter-spacing:.07em; text-transform:uppercase; color:var(--muted); margin-bottom:4px; }
+  #panel-royalties .value { font-size:20px; font-weight:700; }
+  #panel-royalties table { width:100%; border-collapse:collapse; background:var(--surface); border:1px solid var(--border); }
+  #panel-royalties th, #panel-royalties td { text-align:left; padding:10px 14px; border-bottom:1px solid var(--border); font-size:13px; }
+  #panel-royalties th { color:var(--muted); font-size:10px; letter-spacing:.07em; text-transform:uppercase; }
+  #panel-royalties .review { color:var(--gold); }
+  #royalty-err, #royalty-empty { color:var(--muted); margin-top:16px; font-size:13px; }
 @keyframes inv-flash {
   0%   { background: rgba(212,175,55,0.45); }
   100% { background: transparent; }
@@ -116,6 +127,7 @@
   <div class="money-tabs">
     <button class="mtab active" data-tab="payments" onclick="showMoneyTab('payments')">Payments</button>
     <button class="mtab" data-tab="receivables" onclick="showMoneyTab('receivables')">Receivables</button>
+    <button class="mtab" data-tab="royalties" onclick="showMoneyTab('royalties')">Royalties</button>
   </div>
 
   <div id="panel-payments" class="money-panel">
@@ -167,6 +179,18 @@
     <div id="f-err"></div>
     <div id="f-empty">No open invoices.</div>
   </div>
+
+  <div id="panel-royalties" class="money-panel" style="display:none">
+    <h1>Amazon royalties</h1>
+    <div class="sub">Posted QuickBooks deposits, checked daily. Generic Amazon matches remain marked for review.</div>
+    <div class="summary-strip" id="royalty-summary"></div>
+    <table id="royalty-table" style="display:none">
+      <thead><tr><th>Date</th><th>Source</th><th>Amount</th><th>Bank account</th><th>QBO description</th></tr></thead>
+      <tbody id="royalty-board"></tbody>
+    </table>
+    <div id="royalty-empty" style="display:none">No Amazon royalty deposits identified yet.</div>
+    <div id="royalty-err" style="display:none"></div>
+  </div>
 </div>
 
 <script>
@@ -178,14 +202,15 @@
 
   function unlock(){ localStorage.setItem('console_key', document.getElementById('key').value); document.getElementById('gate').style.display='none'; reveal(); }
 
-  var _moneyLoaded = { payments:false, receivables:false };
+  var _moneyLoaded = { payments:false, receivables:false, royalties:false };
   function showMoneyTab(t){
-    if (t!=='payments' && t!=='receivables') t='payments';
+    if (t!=='payments' && t!=='receivables' && t!=='royalties') t='payments';
     document.querySelectorAll('.mtab').forEach(function(b){ b.classList.toggle('active', b.dataset.tab===t); });
     document.getElementById('panel-payments').style.display    = (t==='payments') ? '' : 'none';
     document.getElementById('panel-receivables').style.display = (t==='receivables') ? '' : 'none';
+    document.getElementById('panel-royalties').style.display = (t==='royalties') ? '' : 'none';
     if (location.hash !== '#'+t) location.hash = t;
-    if (!_moneyLoaded[t]) { _moneyLoaded[t]=true; (t==='payments' ? MoneyPayments : MoneyReceivables).load(); }
+    if (!_moneyLoaded[t]) { _moneyLoaded[t]=true; (t==='payments' ? MoneyPayments : t==='receivables' ? MoneyReceivables : MoneyRoyalties).load(); }
   }
   function reveal(){ document.getElementById('money-wrap').style.display=''; var t=(location.hash||'').replace('#',''); showMoneyTab(t); }
 
@@ -437,6 +462,30 @@
 
     return { load: load, act: act, doRefund: doRefund, recordPayment: recordPayment,
              recordOrderPayment: recordOrderPayment, openInvoice: openInvoice };
+  })();
+
+  var MoneyRoyalties = (function(){
+    function fmt(cents){ return '$'+((Number(cents)||0)/100).toFixed(2); }
+    function label(src){ return src==='kindle_kdp' ? 'Kindle / KDP' : src==='audible_acx' ? 'Audible / ACX' : 'Amazon — review'; }
+    function tile(name, value){ return '<div class="summary-tile"><div class="label">'+esc(name)+'</div><div class="value">'+esc(value)+'</div></div>'; }
+    async function load(){
+      var err=document.getElementById('royalty-err'), empty=document.getElementById('royalty-empty'), table=document.getElementById('royalty-table');
+      err.style.display='none'; empty.style.display='none';
+      var r=await fetch('/api/money/royalties', {headers:hdr()});
+      if(r.status===401){ document.getElementById('gate').style.display='flex'; return; }
+      var res=await r.json();
+      if(!res.ok){ err.textContent='Error: '+esc(res.error||'unknown'); err.style.display='block'; return; }
+      var d=res.data||{}, totals=d.totals_cents||{};
+      document.getElementById('royalty-summary').innerHTML = tile('Kindle / KDP',fmt(totals.kindle_kdp)) + tile('Audible / ACX',fmt(totals.audible_acx)) + tile('Needs review',String(d.review_count||0));
+      var rows=d.payments||[];
+      if(!rows.length){ table.style.display='none'; empty.style.display='block'; return; }
+      document.getElementById('royalty-board').innerHTML=rows.map(function(x){
+        var cls=x.source==='amazon_review'?' class="review"':'';
+        return '<tr><td>'+esc(x.txn_date)+'</td><td'+cls+'>'+esc(label(x.source))+'</td><td>'+fmt(x.amount_cents)+'</td><td>'+esc(x.bank_account_name||x.bank_account_id||'—')+'</td><td>'+esc(x.descriptor||'—')+'</td></tr>';
+      }).join('');
+      table.style.display='table';
+    }
+    return {load:load};
   })();
 
   // ---- init: reveal if already unlocked, else show gate ----

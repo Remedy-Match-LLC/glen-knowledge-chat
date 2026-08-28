@@ -39554,6 +39554,32 @@ def api_money_wise():
     except Exception as e: return fail(e)
 
 
+@app.route("/api/money/royalties")
+@require_console_key
+def api_money_royalties():
+    """Posted Amazon royalty deposits identified by the daily QBO sync."""
+    try:
+        from dashboard import royalties as _royalties
+        return ok(_royalties.summary(LOG_DB))
+    except Exception as e:
+        return fail(e)
+
+
+@app.route("/api/cron/qbo-royalties", methods=["POST"])
+def api_cron_qbo_royalties():
+    """Daily, idempotent import of posted Amazon/KDP/Audible QBO deposits."""
+    key = request.headers.get("X-Cron-Secret", "")
+    expected = os.environ.get("CRON_SECRET") or os.environ.get("CONSOLE_SECRET", "")
+    if not expected or key != expected:
+        return jsonify({"error": "unauthorized"}), 401
+    try:
+        from dashboard import royalties as _royalties
+        days = max(1, min(int(request.args.get("days") or 120), 730))
+        return jsonify({"ok": True, "summary": _royalties.sync(LOG_DB, days_back=days)})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
 @app.route("/api/studio/sales")
 @require_console_key
 def api_studio_sales():

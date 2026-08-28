@@ -141,6 +141,11 @@ def run_daily_piggybacks():
     # this POST is just a trigger. Short window since it runs daily; a wider one-time
     # backfill can be done manually with ?days=N&max=N.
     _piggyback_post("sourcing-scan", "/api/cron/sourcing-scan?days=3", "X-Cron-Secret", CRON_SECRET)
+    # Posted QBO bank deposits: identify KDP/Kindle and Audible/ACX royalties.
+    # The importer is idempotent by QBO transaction ID; generic Amazon deposits
+    # remain in a review bucket rather than being guessed.
+    _piggyback_post("qbo-royalties", "/api/cron/qbo-royalties?days=120",
+                    "X-Cron-Secret", CRON_SECRET)
     for path in ("/admin/sync-pb-tags", "/admin/sync-practitioner-tags",
                  "/admin/sync-people-to-ghl", "/api/cron/charge-subscriptions"):
         _piggyback_post(f"pb-sync-chain {path}", path, "X-Cron-Secret", CRON_SECRET, timeout=600)
