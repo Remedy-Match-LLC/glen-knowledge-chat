@@ -387,12 +387,20 @@ def consolidate_layer_balances(cx, tid, source_layer, target_layer):
     if source == target:
         raise ValueError("source and target layers must differ")
 
-    def remedies(layer):
-        return {((r[0] or "").strip().lower()) for r in cx.execute(
-            "SELECT remedy FROM biofield_auth_chain WHERE test_id=? AND layer=? "
-            "AND TRIM(COALESCE(remedy,''))<>''", (t, layer)).fetchall()}
+    def layer_rows(layer):
+        return cx.execute(
+            "SELECT id,remedy FROM biofield_auth_chain WHERE test_id=? AND layer=?",
+            (t, layer),
+        ).fetchall()
 
-    source_remedies, target_remedies = remedies(source), remedies(target)
+    source_rows, target_rows = layer_rows(source), layer_rows(target)
+    source_rids = {int(r[0]) for r in source_rows}
+    target_rids = {int(r[0]) for r in target_rows}
+    source_remedies = {((r[1] or "").strip().lower()) for r in source_rows
+                       if (r[1] or "").strip()}
+    target_remedies = {((r[1] or "").strip().lower()) for r in target_rows
+                       if (r[1] or "").strip()}
+
     if not source_remedies:
         raise ValueError("source layer has no remedies")
     if not target_remedies:
@@ -413,8 +421,41 @@ def consolidate_layer_balances(cx, tid, source_layer, target_layer):
         cx.execute(f"DELETE FROM biofield_auth_remedy_coverage WHERE test_id=? "
                    f"AND remedy IN ({rem_marks}) AND code IN ({code_marks})",
                    (t, *removable, *codes))
+
+    # A drag/drop assignment is also persisted by chain-row id. Moving only the
+    # remedy coverage leaves this direct link behind, so the source card still
+    # displays the stress after reload. Repoint every direct source assignment to
+    # the target rows, then remove the stale source links.
+    direct_stress_ids = set()
+    direct_codes = set()
+    if source_rids:
+        source_marks = ",".join("?" for _ in source_rids)
+        direct_stress_ids = {int(r[0]) for r in cx.execute(
+            f"SELECT DISTINCT stress_id FROM biofield_auth_layer_stress "
+            f"WHERE test_id=? AND chain_rid IN ({source_marks})",
+            (t, *source_rids),
+        ).fetchall()}
+        if direct_stress_ids:
+            stress_marks = ",".join("?" for _ in direct_stress_ids)
+            direct_codes = {r[0] for r in cx.execute(
+                f"SELECT code FROM biofield_auth_stress WHERE test_id=? "
+                f"AND id IN ({stress_marks})",
+                (t, *direct_stress_ids),
+            ).fetchall() if (r[0] or "").strip()}
+        for stress_id in direct_stress_ids:
+            for rid in target_rids:
+                cx.execute(
+                    "INSERT OR IGNORE INTO biofield_auth_layer_stress "
+                    "(test_id,stress_id,chain_rid) VALUES(?,?,?)",
+                    (t, stress_id, rid),
+                )
+        cx.execute(
+            f"DELETE FROM biofield_auth_layer_stress WHERE test_id=? "
+            f"AND chain_rid IN ({source_marks})",
+            (t, *source_rids),
+        )
     cx.commit()
-    return len(codes)
+    return len(codes | direct_codes)
 
 
 def layer_rids(chain_layers, layer_num):
