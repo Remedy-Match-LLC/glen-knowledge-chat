@@ -12265,8 +12265,74 @@ def begin_checkout_return():
         return _redir(f"/biofield/ready?paid={paid}")
     if _kind == "biofield_trial":
         return _redir(f"/begin/biofield/{_bt_token}")
+    # A verified card payment must land on a durable receipt, not the generic
+    # funnel. Cart and portal-reorder sessions intentionally have no product
+    # slug, which previously sent successful buyers to `/begin?paid=1` with no
+    # order number, no amount, and no route back to the portal.
+    if paid == "1" and sid:
+        return _redir(f"/order-confirmation?session_id={sid}")
     dest = (f"/begin/buy/{slug}?paid={paid}" if slug else f"/begin?paid={paid}")
     return _redir(dest)
+
+
+@app.route("/order-confirmation")
+def order_confirmation():
+    """Customer receipt backed only by a server-verified Stripe session."""
+    sid = (request.args.get("session_id") or "").strip()
+    if not sid:
+        return redirect("/begin")
+    try:
+        from dashboard import stripe_pay as _sp
+        sess = _sp.get_session(sid)
+    except Exception as e:
+        print(f"[order-confirmation] session lookup failed: {e!r}", flush=True)
+        return render_template_string(_ORDER_CONFIRMATION_ERROR), 503
+
+    if sess.get("payment_status") != "paid":
+        return render_template_string(_ORDER_CONFIRMATION_ERROR), 400
+
+    md = sess.get("metadata") or {}
+    order = None
+    order_ref = (md.get("invoice_id") or "").strip()
+    if order_ref:
+        try:
+            with db.connect(LOG_DB) as cx:
+                cx.row_factory = sqlite3.Row
+                order = _bos_orders.find_order_by_external_ref(cx, order_ref)
+        except Exception as e:
+            print(f"[order-confirmation] order lookup failed ref={order_ref}: {e!r}",
+                  flush=True)
+
+    amount_cents = int(sess.get("amount_total") or (order or {}).get("total_cents") or 0)
+    email = ((sess.get("customer_details") or {}).get("email")
+             or sess.get("customer_email") or (order or {}).get("email") or "")
+    items = (order or {}).get("items") or []
+    return_to = (md.get("return_to") or "").strip()
+    if not (return_to.startswith("/portal/") or return_to == "/portal/me"
+            or return_to.startswith(portal_base().rstrip("/") + "/portal/")
+            or return_to in ("/reorder", f"{PUBLIC_BASE_URL.rstrip('/')}/reorder")):
+        return_to = "/portal/me" if md.get("kind") in ("portal-reorder", "client") else "/reorder"
+    return_label = ("Return to your client portal"
+                    if "/portal/" in return_to else "Review your remedies")
+
+    response = Response(render_template_string(
+        _ORDER_CONFIRMATION_HTML,
+        order_number=((order or {}).get("id") or order_ref[-8:].upper()),
+        amount=f"${amount_cents / 100:,.2f}", email=email, items=items,
+        return_to=return_to, return_label=return_label), mimetype="text/html")
+    response.headers["Cache-Control"] = "no-store, private"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    return response
+
+
+_ORDER_CONFIRMATION_ERROR = """<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>Order confirmation</title></head><body style="font-family:system-ui;max-width:620px;margin:60px auto;padding:24px;color:#24352d"><h1>We are confirming your order</h1><p>Please do not submit another payment. We could not load the receipt just now. Your payment status can still be checked by our team.</p><p><a href="/portal/me">Return to your client portal</a></p></body></html>"""
+
+
+_ORDER_CONFIRMATION_HTML = """<!doctype html>
+<html><head><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Order {{ order_number }} confirmed</title>
+<style>body{margin:0;background:#f4f7f3;color:#21362c;font:16px/1.5 system-ui,-apple-system,sans-serif}.card{max-width:640px;margin:48px auto;background:#fff;border-radius:18px;padding:34px;box-shadow:0 8px 32px #19322618}.check{width:52px;height:52px;border-radius:50%;display:grid;place-items:center;background:#267a56;color:#fff;font-size:30px}h1{margin:18px 0 4px;font-size:30px}.muted{color:#66756d}.summary{margin:26px 0;padding:18px;background:#f3f7f4;border-radius:12px}.row{display:flex;justify-content:space-between;gap:20px;padding:7px 0}.total{font-size:20px;font-weight:700;border-top:1px solid #dce5df;margin-top:8px;padding-top:14px}.button{display:block;text-align:center;background:#267a56;color:#fff;text-decoration:none;padding:14px 18px;border-radius:10px;font-weight:700}@media(max-width:700px){.card{margin:0;min-height:100vh;border-radius:0;padding:28px 20px}}</style></head>
+<body><main class="card"><div class="check">&#10003;</div><h1>Payment received</h1><p class="muted">Your order is confirmed. A receipt will also be sent to {{ email or 'the email used at checkout' }}.</p><section class="summary"><div class="row"><span>Order number</span><strong>#{{ order_number }}</strong></div>{% for item in items %}<div class="row"><span>{{ item.get('name') or item.get('slug') or 'Product' }}{% if (item.get('qty') or 1)|int > 1 %} &times; {{ item.get('qty') }}{% endif %}</span></div>{% endfor %}<div class="row total"><span>Total paid</span><span>{{ amount }}</span></div></section><p class="muted">Please keep this order number for your records.</p><a class="button" href="{{ return_to }}">{{ return_label }}</a></main></body></html>"""
 
 
 # ── Post-buy concierge (consultative upsell) ─────────────────────────────────
@@ -19981,8 +20047,10 @@ def _stripe_checkout_url_for_reorder(out, email):
         success = (f"{PUBLIC_BASE_URL}/begin/checkout-return"
                    f"?session_id={{CHECKOUT_SESSION_ID}}")
         metadata = {"invoice_id": out.get("invoice_id"),
-                    "customer_id": out.get("customer_id"), "kind": "reorder"}
+                    "customer_id": out.get("customer_id"),
+                    "kind": out.get("kind") or "reorder"}
         cancel_url = out.get("cancel_url") or f"{PUBLIC_BASE_URL}/reorder"
+        metadata["return_to"] = out.get("return_to") or cancel_url
         stripe_items = out.get("stripe_line_items") or []
         if stripe_items:
             sess = stripe_pay.create_itemized_checkout_session(
@@ -27718,7 +27786,9 @@ def api_client_portal_checkout(token):
                                       "unit_cents": shipping_cents})
         out = {"invoice_id": checkout_ref, "customer_id": "",
                "doc_number": "", "total": round(order_total_cents / 100.0, 2),
+               "kind": "portal-reorder",
                "cancel_url": f"{portal_base()}/portal/{_urlquote(token, safe='')}",
+               "return_to": f"{portal_base()}/portal/{_urlquote(token, safe='')}",
                "stripe_line_items": stripe_line_items}
         def persist_portal_order():
             oid = _ingest_order(
