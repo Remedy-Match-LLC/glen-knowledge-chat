@@ -7,6 +7,7 @@ import secrets
 
 from datetime import datetime, timezone
 from dashboard import customers as _customers
+from dashboard import practitioner_slugs as _slugs
 
 
 def _mask_lead_name(first, last):
@@ -141,17 +142,56 @@ def autoenroll_enabled():
         "1", "true", "yes", "on")
 
 
-def _mint_affiliate_slug(cx, name, email):
-    """A unique, url-safe slug from name (else email local-part), collision-safe."""
+def _mint_affiliate_slug(cx, name, email, reserved=None):
+    """A unique, url-safe slug from name (else email local-part), collision-safe.
+
+    The slug is also the practitioner's public URL at myhealingoasis.com/<slug>,
+    which dashboard.practitioner_slugs gates with check_shape + check_not_reserved.
+    So this writer guarantees the value it emits passes BOTH -- otherwise we hand
+    a practitioner a URL their own site 404s. Collision retries and validity
+    retries share one loop: a hex suffix fixes a taken slug, a too-short slug,
+    and a reserved word alike.
+
+    `reserved` defaults to the STATIC buffer, practitioner_slugs.EXTRA_RESERVED,
+    NOT reserved_for(app.url_map): this module must not import the Flask app.
+    Live route-segment reservation is enforced at claim time, where the url_map
+    is in hand.
+    """
     src = (name or (email.split("@")[0] if email and "@" in email else email) or "").lower()
-    base = re.sub(r"[^a-z0-9]+", "-", src).strip("-")[:30] or "friend"
+    # [:30] BEFORE .strip("-"): the other order let a truncation landing on a
+    # word boundary keep a trailing hyphen, which the collision suffix then
+    # doubled. check_shape rejects both shapes.
+    base = re.sub(r"[^a-z0-9]+", "-", src)[:30].strip("-") or "friend"
     token = secrets.token_urlsafe(24)
-    slug = base
-    if cx.execute("SELECT 1 FROM affiliate_signups WHERE slug=?", (slug,)).fetchone():
-        slug = f"{base}-{secrets.token_hex(3)}"
-    if cx.execute("SELECT 1 FROM affiliate_signups WHERE slug=?", (slug,)).fetchone():
-        slug = f"{base}-{secrets.token_hex(5)}"
-    return slug, token
+    reserved = _slugs.EXTRA_RESERVED if reserved is None else reserved
+
+    def _usable(cand):
+        try:
+            _slugs.check_shape(cand)
+            _slugs.check_not_reserved(cand, reserved)
+        except _slugs.SlugError:
+            return False
+        return cx.execute("SELECT 1 FROM affiliate_signups WHERE slug=?",
+                          (cand,)).fetchone() is None
+
+    def _suffixed(sfx):
+        head = base[:_slugs.MAX_LEN - len(sfx) - 1].strip("-")
+        return f"{head}-{sfx}" if head else f"p-{sfx}"
+
+    if _usable(base):
+        return base, token
+    for nbytes in (3, 5, 8):
+        cand = _suffixed(secrets.token_hex(nbytes))
+        if _usable(cand):
+            return cand, token
+    # Deterministic fallback when the name material itself is unusable. Valid by
+    # construction: "p-" + hex is lowercase alphanumerics with one internal
+    # hyphen, is 18-34 chars, and is not a reserved word.
+    for _ in range(8):
+        cand = f"p-{secrets.token_hex(8)}"
+        if _usable(cand):
+            return cand, token
+    return f"p-{secrets.token_hex(16)}", token
 
 
 def ensure_affiliate(cx, email, name="", referred_by=None):
