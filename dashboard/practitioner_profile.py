@@ -99,21 +99,54 @@ def profile_for_slug(cx, slug):
         return {}
 
 
-def save_profile(pid, profile):
-    """Write self-authored profile fields to practitioners (Postgres) and stamp
-    provenance. Returns the saved dict. Raises ValueError on a too-long bio."""
-    bio = sanitize_bio(profile.get("bio", ""))
-    services = clean_services(profile.get("services"))
-    city = _norm(profile.get("city"))[:MAX_LOC_LEN]
-    state = _norm(profile.get("state"))[:MAX_LOC_LEN]
-    photo_url = (profile.get("photo_url") or "").strip()
-    accepting = bool(profile.get("accepting_clients", True))
+def _write_live_profile(pid, fields):
+    """The ONLY place profile_self_authored_at is ever stamped. Everything
+    public flows through this one statement, which is what makes the review
+    gate auditable."""
     from db_supabase import supabase_cursor
     with supabase_cursor() as cur:
         cur.execute(
-            "UPDATE practitioners SET bio=%s, photo_url=%s, specialties=%s, "
-            "city=%s, state=%s, accepting_new_patients=%s, "
-            "profile_self_authored_at=now(), updated_at=now() WHERE id=%s",
-            (bio, photo_url, services, city, state, accepting, str(pid)))
-    return {"bio": bio, "photo_url": photo_url, "services": services,
-            "city": city, "state": state, "accepting_clients": accepting}
+            "UPDATE practitioners SET bio=%s, photo_url=%s, specialties=%s,"
+            " city=%s, state=%s, accepting_new_patients=%s,"
+            " profile_self_authored_at=now(), updated_at=now() WHERE id=%s",
+            (fields.get("bio", ""), fields.get("photo_url", ""),
+             fields.get("services", []), fields.get("city", ""),
+             fields.get("state", ""), bool(fields.get("accepting_clients", True)),
+             str(pid)))
+
+
+def save_draft(cx, pid, profile):
+    """Write the practitioner's proposed profile to their DRAFT.
+
+    Renamed from save_profile in section 2a: this no longer publishes
+    anything. Sanitization is unchanged and still runs here, so a too-long
+    bio is refused at the point the practitioner typed it rather than at
+    review time.
+    """
+    from dashboard import practitioner_drafts as _pd
+    fields = {
+        "bio": sanitize_bio(profile.get("bio", "")),
+        "services": clean_services(profile.get("services")),
+        "city": _norm(profile.get("city"))[:MAX_LOC_LEN],
+        "state": _norm(profile.get("state"))[:MAX_LOC_LEN],
+        "photo_url": (profile.get("photo_url") or "").strip(),
+        "accepting_clients": bool(profile.get("accepting_clients", True)),
+    }
+    _pd.init_tables(cx)
+    _pd.upsert_draft(cx, pid, fields)
+    return fields
+
+
+def publish_draft(cx, pid):
+    """Copy an APPROVED draft into the public practitioners row.
+
+    Returns False and writes nothing unless the draft is approved. This is
+    the gate: no other code path may stamp profile_self_authored_at.
+    """
+    from dashboard import practitioner_drafts as _pd
+    _pd.init_tables(cx)
+    d = _pd.get_draft(cx, pid)
+    if not d or d.get("status") != "approved":
+        return False
+    _write_live_profile(pid, d["fields"])
+    return True

@@ -68,11 +68,11 @@ def test_get_settings_profile_omitted_when_supabase_down(client, monkeypatch):
 def test_post_saves_profile_when_present(client, monkeypatch):
     saved = {}
     from dashboard import practitioner_profile as _pp
-    def _fake_save(pid, profile):
+    def _fake_save(cx, pid, profile):
         saved["pid"] = pid; saved["profile"] = profile
         return {"bio": "I heal", "photo_url": "", "services": [], "city": "Hilo",
                 "state": "HI", "accepting_clients": True}
-    monkeypatch.setattr(_pp, "save_profile", _fake_save)
+    monkeypatch.setattr(_pp, "save_draft", _fake_save)
     r = client.post("/api/practitioner/settings", json={
         "profile": {"bio": "I heal", "city": "Hilo", "state": "HI"}})
     assert r.status_code == 200
@@ -83,7 +83,7 @@ def test_post_saves_profile_when_present(client, monkeypatch):
 def test_post_without_profile_does_not_touch_it(client, monkeypatch):
     from dashboard import practitioner_profile as _pp
     called = {"n": 0}
-    monkeypatch.setattr(_pp, "save_profile", lambda *a, **k: called.__setitem__("n", called["n"] + 1))
+    monkeypatch.setattr(_pp, "save_draft", lambda *a, **k: called.__setitem__("n", called["n"] + 1))
     r = client.post("/api/practitioner/settings", json={"branding": {}})
     assert r.status_code == 200
     assert called["n"] == 0
@@ -92,8 +92,8 @@ def test_post_without_profile_does_not_touch_it(client, monkeypatch):
 
 def test_post_profile_bad_bio_returns_400(client, monkeypatch):
     from dashboard import practitioner_profile as _pp
-    def _boom(pid, profile): raise ValueError("bio exceeds 600 characters")
-    monkeypatch.setattr(_pp, "save_profile", _boom)
+    def _boom(cx, pid, profile): raise ValueError("bio exceeds 600 characters")
+    monkeypatch.setattr(_pp, "save_draft", _boom)
     r = client.post("/api/practitioner/settings", json={"profile": {"bio": "x" * 601}})
     assert r.status_code == 400
 
@@ -107,7 +107,7 @@ def test_post_bad_bio_does_not_partially_persist_branding(client, monkeypatch):
 
     branding_calls = {"n": 0}
     pricing_calls = {"n": 0}
-    save_profile_calls = {"n": 0}
+    save_draft_calls = {"n": 0}
 
     def _fake_set_branding(cx, pid, branding, *, chat_enabled=None):
         branding_calls["n"] += 1
@@ -115,16 +115,16 @@ def test_post_bad_bio_does_not_partially_persist_branding(client, monkeypatch):
     def _fake_set_pricing(cx, pid, pricing):
         pricing_calls["n"] += 1
 
-    def _fake_save_profile(pid, profile):
-        # Mirrors the real save_profile: validates (and can raise ValueError
+    def _fake_save_draft(cx, pid, profile):
+        # Mirrors the real save_draft: validates (and can raise ValueError
         # on a too-long bio) before "writing" — just like production.
-        save_profile_calls["n"] += 1
+        save_draft_calls["n"] += 1
         bio = _pp.sanitize_bio(profile.get("bio", ""))
         return {"bio": bio}
 
     monkeypatch.setattr(_ps, "set_branding", _fake_set_branding)
     monkeypatch.setattr(_ps, "set_pricing", _fake_set_pricing)
-    monkeypatch.setattr(_pp, "save_profile", _fake_save_profile)
+    monkeypatch.setattr(_pp, "save_draft", _fake_save_draft)
 
     r = client.post("/api/practitioner/settings", json={
         "branding": {"practice_name": "New Name"},
@@ -134,4 +134,4 @@ def test_post_bad_bio_does_not_partially_persist_branding(client, monkeypatch):
     assert r.status_code == 400
     assert branding_calls["n"] == 0
     assert pricing_calls["n"] == 0
-    assert save_profile_calls["n"] == 0
+    assert save_draft_calls["n"] == 0

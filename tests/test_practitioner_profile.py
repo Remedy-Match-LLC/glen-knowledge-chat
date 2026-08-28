@@ -236,7 +236,12 @@ def test_profile_for_slug_prefers_authored_row_when_email_duplicated(monkeypatch
     assert "profile_self_authored_at desc" in cur.last_sql.lower()
 
 
-# --- Task 5: save_profile — the write path ---
+# --- Task 4: save_draft / _write_live_profile — the write path split ---
+#
+# The write path is now two functions: save_draft (sqlite, sanitizes, never
+# publishes) and _write_live_profile (Postgres, stamps provenance, the sole
+# gate). These tests used to call the single save_profile that did both; they
+# are updated in place -- not deleted -- to pin the two halves separately.
 
 class _RecordingCur:
     """Records the UPDATE sql + params."""
@@ -254,9 +259,16 @@ def _patch_recording(monkeypatch):
     return cur
 
 
-def test_save_profile_stamps_provenance_and_sanitizes(monkeypatch):
-    cur = _patch_recording(monkeypatch)
-    out = pp.save_profile("pid-1", {
+def test_save_draft_sanitizes_and_does_not_touch_postgres(monkeypatch):
+    """save_draft still sanitizes (unchanged from the old save_profile), but
+    writes to the sqlite draft table only -- Postgres must never be touched."""
+    import db_supabase
+    def _boom():
+        raise AssertionError("save_draft must never open supabase_cursor")
+    monkeypatch.setattr(db_supabase, "supabase_cursor", _boom)
+    cx = sqlite3.connect(":memory:")
+    cx.row_factory = sqlite3.Row
+    out = pp.save_draft(cx, "pid-1", {
         "bio": "<b>I heal</b> reach dr@x.com",
         "photo_url": " https://x/p.jpg ",
         "services": ["<i>Acupuncture</i>", ""],
@@ -265,14 +277,26 @@ def test_save_profile_stamps_provenance_and_sanitizes(monkeypatch):
     assert out["services"] == ["Acupuncture"]
     assert out["photo_url"] == "https://x/p.jpg"
     assert out["accepting_clients"] is False
+
+
+def test_save_draft_rejects_long_bio():
+    cx = sqlite3.connect(":memory:")
+    cx.row_factory = sqlite3.Row
+    with pytest.raises(ValueError):
+        pp.save_draft(cx, "pid-1", {"bio": "x" * 601})
+
+
+def test_write_live_profile_stamps_provenance(monkeypatch):
+    """_write_live_profile is the sole function that stamps
+    profile_self_authored_at -- exercised directly here with an
+    already-sanitized fields dict, the shape publish_draft hands it."""
+    cur = _patch_recording(monkeypatch)
+    pp._write_live_profile("pid-1", {
+        "bio": "I heal reach dr@x.com", "photo_url": "https://x/p.jpg",
+        "services": ["Acupuncture"], "city": "Hilo", "state": "HI",
+        "accepting_clients": False})
     sql, params = cur.calls[-1]
     assert "UPDATE practitioners SET" in sql
     assert "profile_self_authored_at=now()" in sql.replace(" ", "").lower() \
         or "profile_self_authored_at = now()" in sql
     assert "pid-1" in params
-
-
-def test_save_profile_rejects_long_bio(monkeypatch):
-    _patch_recording(monkeypatch)
-    with pytest.raises(ValueError):
-        pp.save_profile("pid-1", {"bio": "x" * 601})

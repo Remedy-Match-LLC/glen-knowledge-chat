@@ -19051,7 +19051,9 @@ def api_practitioner_settings_post():
     if "profile" in body and isinstance(body.get("profile"), dict):
         from dashboard import practitioner_profile as _pp
         try:
-            profile_out = _pp.save_profile(pid, body["profile"])
+            with db.connect(LOG_DB) as _cx:
+                _cx.row_factory = sqlite3.Row
+                profile_out = _pp.save_draft(_cx, pid, body["profile"])
         except ValueError as e:
             return jsonify({"ok": False, "error": str(e)}), 400
 

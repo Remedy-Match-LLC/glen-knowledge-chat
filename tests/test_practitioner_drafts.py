@@ -138,3 +138,35 @@ def test_split_by_policy_sends_everything_to_review_under_beta_policy():
     auto, review = pd.split_by_policy({"bio": "x", "location": "Hilo, HI"})
     assert auto == {}
     assert review == {"bio": "x", "location": "Hilo, HI"}
+
+
+from dashboard import practitioner_profile as pp
+
+
+def test_publish_draft_refuses_an_unapproved_draft(cur, monkeypatch):
+    """The gate: only an APPROVED draft may reach the public table."""
+    pd.upsert_draft(cur, PID, {"bio": "x"})
+    written = {}
+    monkeypatch.setattr(pp, "_write_live_profile", lambda pid, f: written.update(f))
+    assert pp.publish_draft(cur, PID) is False
+    assert written == {}, "an unapproved draft must not reach the live table"
+
+
+def test_publish_draft_writes_live_only_when_approved(cur, monkeypatch):
+    pd.upsert_draft(cur, PID, {"bio": "hello"})
+    pd.submit(cur, PID)
+    pd.approve(cur, PID)
+    written = {}
+    monkeypatch.setattr(pp, "_write_live_profile", lambda pid, f: written.update(f))
+    assert pp.publish_draft(cur, PID) is True
+    assert written["bio"] == "hello"
+
+
+def test_save_draft_never_touches_the_live_table(cur, monkeypatch):
+    """The whole point of section 2a: saving is not publishing."""
+    called = {"n": 0}
+    monkeypatch.setattr(pp, "_write_live_profile",
+                        lambda pid, f: called.__setitem__("n", called["n"] + 1))
+    pp.save_draft(cur, PID, {"bio": "hello", "city": "Hilo", "state": "HI"})
+    assert called["n"] == 0
+    assert pd.get_draft(cur, PID)["fields"]["bio"] == "hello"
