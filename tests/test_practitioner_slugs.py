@@ -4,6 +4,7 @@ import sqlite3
 import pytest
 from werkzeug.routing import Map, Rule
 
+from dashboard import db
 from dashboard import practitioner_slugs as ps
 
 
@@ -175,6 +176,13 @@ def test_claim_alias_converts_a_real_integrity_violation_to_slug_error(tmp_path,
     therefore fooled exactly as it would be in the real race, and the
     exception that stops it comes from sqlite itself enforcing the alias
     PRIMARY KEY on the real table -- not from anything we constructed.
+
+    The canonical is 'mary-boyd', an APPROVED practitioner, deliberately: since
+    claim_alias also validates its canonical argument, a pending or unknown one
+    would be refused BEFORE the INSERT and this test would pass without ever
+    reaching the backstop it exists to cover. The __cause__ assertion is what
+    tells the two apart -- the pre-checks and the backstop raise the same
+    message, but only the backstop chains a db.IntegrityError.
     """
     cx = _cx(tmp_path)
     ps.init_tables(cx)
@@ -185,5 +193,36 @@ def test_claim_alias_converts_a_real_integrity_violation_to_slug_error(tmp_path,
 
     monkeypatch.setattr(ps, "alias_owner", lambda cx, alias: "")
 
+    with pytest.raises(ps.SlugError) as exc:
+        ps.claim_alias(cx, "mary-boyd", "shared-name", frozenset())
+    assert isinstance(exc.value.__cause__, db.IntegrityError)
+
+
+def test_claim_alias_rejects_a_malformed_canonical(tmp_path):
+    """The canonical is written into the table and later fed to redirect() as
+    f"/{canonical}". An unvalidated value like '//evil.com' would be an
+    open-redirect target sitting in the database. Reject it at the writer;
+    resolve()'s independent canonical_exists() re-check is a second line of
+    defence, not the only one."""
+    cx = _cx(tmp_path)
     with pytest.raises(ps.SlugError):
-        ps.claim_alias(cx, "pending-pat", "shared-name", frozenset())
+        ps.claim_alias(cx, "//evil.com", "my-alias", frozenset())
+    assert ps.alias_owner(cx, "my-alias") == ""
+
+
+def test_claim_alias_rejects_a_canonical_that_is_not_an_approved_practitioner(tmp_path):
+    """A well-shaped canonical that nobody owns would create an alias that
+    resolves to nothing -- a published URL that 404s from birth."""
+    cx = _cx(tmp_path)
+    with pytest.raises(ps.SlugError):
+        ps.claim_alias(cx, "nobody-here", "my-alias", frozenset())
+    assert ps.alias_owner(cx, "my-alias") == ""
+
+
+def test_claim_alias_rejects_a_pending_practitioner_as_canonical(tmp_path):
+    """canonical_exists is approved-only, and so is serving. Pointing an alias
+    at a pending practitioner would publish a redirect to a 404."""
+    cx = _cx(tmp_path)
+    with pytest.raises(ps.SlugError):
+        ps.claim_alias(cx, "pending-pat", "pats-clinic", frozenset())
+    assert ps.alias_owner(cx, "pats-clinic") == ""

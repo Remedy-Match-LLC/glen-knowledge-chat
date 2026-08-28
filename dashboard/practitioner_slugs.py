@@ -168,6 +168,14 @@ def claim_alias(cx, canonical, alias, reserved):
         raise SlugError(f"'{a}' is already a practitioner's canonical slug")
     if alias_owner(cx, a):
         raise SlugError(f"'{a}' is already claimed as an alias")
+    # Validate the TARGET too. It is written into the table and later handed to
+    # redirect(f"/{canonical}"), so an unchecked value such as "//evil.com"
+    # would be an open-redirect target stored in the database. resolve()'s
+    # independent canonical_exists() re-check is a second line of defence, not
+    # a substitute for refusing the write.
+    check_shape(c)
+    if not canonical_exists(cx, c):
+        raise SlugError(f"'{c}' is not an approved practitioner slug")
     try:
         cx.execute("INSERT INTO practitioner_slug_aliases"
                    " (alias, canonical_slug, created_at) VALUES (?,?,?)",
