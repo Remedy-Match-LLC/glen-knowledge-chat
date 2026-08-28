@@ -381,7 +381,7 @@
     }).join('');
     if (!rows) return '';
     var tracking = o.tracking_number ? ''
-      : '<div class="ffline" id="ff-track-row-'+Number(o.id)+'" style="display:none"><label for="ff-track-'+Number(o.id)+'">Tracking number</label>'
+      : '<div class="ffline" id="ff-track-row-'+Number(o.id)+'"><label for="ff-track-'+Number(o.id)+'">Tracking number (optional)</label>'
         + '<input type="text" id="ff-track-'+Number(o.id)+'" placeholder="Enter tracking number"></div>';
     return '<details class="fulfill"><summary>Fulfill lines</summary>'+rows+tracking
       + '<button class="ff-rec" onclick="fulfillAllLines('+Number(o.id)+')">Mark all fulfilled</button> '
@@ -403,12 +403,6 @@
     });
     if (!lines.length){ alert('Enter a quantity to ship on at least one line.'); return; }
     var tracking = document.getElementById('ff-track-'+id);
-    if (tracking && !tracking.value.trim()){
-      var row = document.getElementById('ff-track-row-'+id);
-      if (row) row.style.display = 'flex';
-      tracking.focus();
-      return;
-    }
     act(id, 'orders.fulfill_lines', {lines: lines, tracking_number: tracking ? tracking.value.trim() : ''});
   }
   function btn(id,key,label){ return '<button onclick="act('+Number(id)+',\''+key+'\',{})">'+label+'</button>'; }
