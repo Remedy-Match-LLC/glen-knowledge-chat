@@ -100,7 +100,24 @@ def test_each_layer_card_has_consolidation_picker_for_other_layers():
            "schedule": {"slots": [], "entries": []}}
     html = render_author_html(rep, [], "")
     assert html.count("Consolidate balances</button>") == 2
-    assert "consolidateBalances(1" in html and "consolidateBalances(2" in html
+    assert "consolidateBalances(1,1" in html and "consolidateBalances(2,2" in html
+
+
+def test_consolidation_confirmation_uses_visible_numbers_after_reorder():
+    rep = {"test_id": "a1", "client": {"name": "J", "email": ""}, "date": "",
+           "layers": [
+               {"layer": 1, "stored_layer": 3, "head": "H4", "most_affected": "",
+                "remedy": "R4", "rid": 5},
+               {"layer": 2, "stored_layer": 1, "head": "H2", "most_affected": "",
+                "remedy": "R2", "rid": 6}],
+           "schedule": {"slots": [], "entries": []}}
+    html = render_author_html(rep, [], "")
+    # The API still receives stored ids (3 -> 1), while the confirmation uses
+    # the visible card labels (1 -> 2).
+    assert "consolidateBalances(3,1" in html
+    assert "value='1'>Layer 2</option>" in html
+    assert "sel.options[sel.selectedIndex].text" in html
+    assert "Consolidation failed." in html
 
 
 def test_cover_route(tmp_path, monkeypatch):
