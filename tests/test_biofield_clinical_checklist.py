@@ -70,6 +70,9 @@ def test_checklist_renders_directly_before_causal_chain():
     assert "Drag to reorder" in html
     assert "Add to layer" in html
     assert "Add remedy" in html
+    assert "type=checkbox aria-label=\"Select Fatigue\"" in html
+    assert "onchange=toggleClinicalItem(this)" in html
+    assert "Assign to layer" in html
     assert "Choose layer" in html
     assert "Layer 1: Liver support" in html
     assert "Layer 2: Neurological support" in html
