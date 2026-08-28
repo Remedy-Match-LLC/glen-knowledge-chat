@@ -103,3 +103,38 @@ def test_list_by_status_returns_only_that_status(cur):
     pd.submit(cur, PID)
     subs = pd.list_by_status(cur, "submitted")
     assert [d["practitioner_id"] for d in subs] == [PID]
+
+
+def test_beta_policy_reviews_every_known_field():
+    """Conservative on purpose. Relaxing a field must be a one-line policy
+    change here, never a schema change."""
+    assert all(v == "review" for v in pd.REVIEW_POLICY.values())
+
+
+def test_unknown_fields_default_to_review():
+    assert pd.needs_review("a_field_invented_next_year") is True
+
+
+def test_needs_review_reads_the_policy():
+    pd.REVIEW_POLICY["location"] = "auto"
+    try:
+        assert pd.needs_review("location") is False
+        assert pd.needs_review("bio") is True
+    finally:
+        pd.REVIEW_POLICY["location"] = "review"
+
+
+def test_split_by_policy_separates_auto_from_review():
+    pd.REVIEW_POLICY["location"] = "auto"
+    try:
+        auto, review = pd.split_by_policy({"location": "Hilo, HI", "bio": "x"})
+        assert auto == {"location": "Hilo, HI"}
+        assert review == {"bio": "x"}
+    finally:
+        pd.REVIEW_POLICY["location"] = "review"
+
+
+def test_split_by_policy_sends_everything_to_review_under_beta_policy():
+    auto, review = pd.split_by_policy({"bio": "x", "location": "Hilo, HI"})
+    assert auto == {}
+    assert review == {"bio": "x", "location": "Hilo, HI"}

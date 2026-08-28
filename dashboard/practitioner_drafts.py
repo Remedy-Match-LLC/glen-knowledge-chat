@@ -128,3 +128,33 @@ def list_by_status(cx, status=None, limit=200):
                           " ORDER BY updated_at DESC LIMIT ?",
                           (int(limit),)).fetchall()
     return [_row(r) for r in rows]
+
+
+DEFAULT_POLICY = "review"
+
+# Per-field review policy. BETA POLICY: everything is reviewed.
+# Relaxing a field to "auto" is a deliberate decision to let it reach the
+# public page unreviewed -- make it here, one line, never in the schema.
+REVIEW_POLICY = {
+    "bio": "review",
+    "photo_url": "review",
+    "logo_url": "review",
+    "services": "review",
+    "location": "review",
+    "accepting_clients": "review",
+}
+
+
+def needs_review(field):
+    """True unless the field is explicitly policied 'auto'. Unknown fields
+    default to review, so a field added later is safe before anyone thinks
+    about it."""
+    return REVIEW_POLICY.get(field, DEFAULT_POLICY) != "auto"
+
+
+def split_by_policy(fields):
+    """Partition proposed values into (auto_publishable, needs_review)."""
+    auto, review = {}, {}
+    for k, v in (fields or {}).items():
+        (review if needs_review(k) else auto)[k] = v
+    return auto, review
