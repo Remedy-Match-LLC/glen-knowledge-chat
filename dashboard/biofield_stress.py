@@ -391,7 +391,8 @@ def consolidate_layer_balances(cx, tid, source_layer, target_layer):
 
     def layer_rows(layer):
         return cx.execute(
-            "SELECT id,remedy,head FROM biofield_auth_chain WHERE test_id=? AND layer=?",
+            "SELECT id,remedy,head,most_affected FROM biofield_auth_chain "
+            "WHERE test_id=? AND layer=?",
             (t, layer),
         ).fetchall()
 
@@ -464,6 +465,32 @@ def consolidate_layer_balances(cx, tid, source_layer, target_layer):
             "SELECT id,code,label FROM biofield_auth_stress WHERE test_id=?", (t,)).fetchall():
         if code in codes or _norm(label) in source_heads:
             visible_stress_ids.add(int(stress_id))
+
+    # Head and Tail fields are themselves balanced stresses. Materialize any
+    # field item that is not already in the stress list, then explicitly place it
+    # on the destination along with remedy-covered and manually placed stresses.
+    field_labels = []
+    for row in source_rows:
+        head = (row[2] or "").strip()
+        if head:
+            field_labels.append(head)
+        field_labels.extend(x.strip() for x in re.split(r"[,;\n]+", row[3] or "") if x.strip())
+    existing = cx.execute(
+        "SELECT id,label FROM biofield_auth_stress WHERE test_id=?", (t,)).fetchall()
+    by_label = {_norm(label): int(stress_id) for stress_id, label in existing}
+    now = _now()
+    for label in field_labels:
+        norm = _norm(label)
+        stress_id = by_label.get(norm)
+        if stress_id is None:
+            cur = cx.execute(
+                "INSERT INTO biofield_auth_stress(test_id,code,label,source,balance,"
+                "manual_balanced,created_at,updated_at) VALUES(?,?,?,'chain','required',0,?,?)",
+                (t, norm, label, now, now),
+            )
+            stress_id = int(cur.lastrowid)
+            by_label[norm] = stress_id
+        visible_stress_ids.add(stress_id)
     for stress_id in visible_stress_ids:
         for rid in target_rids:
             cx.execute(
