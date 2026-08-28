@@ -509,12 +509,13 @@ async function balanceStress(sid,val){await post('/author/__TID__/stress/'+sid+'
 async function balanceToLayer(sid,sel){var rids=(sel.value||'').split(',').filter(Boolean);
  if(!rids.length){astat('Select a layer first.');return}
  await post('/author/__TID__/stress/'+sid+'/cover',{rids:rids});location.reload()}
-async function consolidateBalances(source,sel){var target=Number(sel.value||0);
+async function consolidateBalances(source,sourceLabel,sel){var target=Number(sel.value||0);
  if(!target){astat('Choose the destination layer first.');return}
- if(!confirm('Move all balanced stresses from layer '+source+' to layer '+target+'?'))return;
+ var targetLabel=(sel.options[sel.selectedIndex].text||target).replace(/^Layer\\s+/,'');
+ if(!confirm('Move all balanced stresses from layer '+sourceLabel+' to layer '+targetLabel+'?'))return;
  astat('Consolidating balanced stresses…');
  var j=await post('/author/__TID__/layer/'+source+'/consolidate-balances',{target_layer:target});
- if(j&&j.ok)location.reload()}
+ if(j&&j.ok)location.reload();else astat((j&&j.error)||'Consolidation failed.')}
 async function deleteStress(sid,label){if(!confirm('Delete tag "'+label+'" from this intake?'))return;
  const j=await post('/author/__TID__/stress/'+sid+'/delete',{});
  astat(j&&j.ok?'Tag deleted.':((j&&j.error)||'Delete failed.'));if(j&&j.ok)loadStress()}
@@ -1205,7 +1206,7 @@ def _render_chain_cards(report, depth_values, covered_by_layer=None):
         consolidate = (
             f"<span class=consolidate><select id={gid}_consolidate>"
             f"<option value=''>Move balances to…</option>{targets}</select> "
-            f"<button class='btn ghost' onclick=\"consolidateBalances({source_layer},document.getElementById('{gid}_consolidate'))\">"
+            f"<button class='btn ghost' onclick=\"consolidateBalances({source_layer},{n},document.getElementById('{gid}_consolidate'))\">"
             "Consolidate balances</button></span>" if targets else "")
         cards += (
             f"<div class=lcard draggable=true data-gid={gid} data-rids=\"{rids}\" "
