@@ -53,6 +53,16 @@ def test_consolidate_layer_balances_moves_all_coverage():
     assert st.consolidate_layer_balances(cx, "9", 1, 2) == 2
     rows = cx.execute("SELECT remedy,code FROM biofield_auth_remedy_coverage ORDER BY code").fetchall()
     assert rows == [("calm current", "loose ends"), ("calm current", "second stress")]
+    assert cx.execute(
+        "SELECT stress_id,chain_rid FROM biofield_auth_layer_stress ORDER BY stress_id"
+    ).fetchall() == [(sid, target_rid), (sid2, target_rid)]
+    chain = [
+        {"layer": 1, "head": "Head", "remedy": "Nerve Pulse", "rid": rid},
+        {"layer": 2, "head": "Target", "remedy": "Calm Current", "rid": target_rid},
+    ]
+    grouped = st.list_stresses(cx, "9", chain)["by_layer"]
+    assert grouped[0]["stresses"] == []
+    assert {item["id"] for item in grouped[1]["stresses"]} == {sid, sid2}
 
 
 def test_consolidate_layer_balances_rejects_same_or_missing_target():
