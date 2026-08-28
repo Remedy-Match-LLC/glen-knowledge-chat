@@ -48,6 +48,34 @@ def test_canonical_slug_serves_on_portal_host(client):
     assert b"<html" in r.data.lower()
 
 
+def test_capitalized_slug_301s_to_the_lowercase_canonical(client):
+    """A capitalized URL must NOT serve content.
+
+    practitioner_site normalizes before the lookup, so /Mary-Boyd used to
+    resolve and serve a 200. But practitioner-storefront.html re-derives its
+    own fetch key from location.pathname, and affiliate_signups.slug has no
+    COLLATE NOCASE, so /api/p/Mary-Boyd 404s and the page renders blank.
+    Redirecting to the normalized form keeps the URL and the page's own key
+    identical, and gives one canonical URL per practitioner.
+    """
+    r = client.get("/Mary-Boyd", base_url=f"http://{PORTAL_HOST}")
+    assert r.status_code == 301
+    assert r.headers["Location"].endswith("/mary-boyd")
+
+
+def test_all_caps_slug_301s_to_the_lowercase_canonical(client):
+    r = client.get("/MARY-BOYD", base_url=f"http://{PORTAL_HOST}")
+    assert r.status_code == 301
+    assert r.headers["Location"].endswith("/mary-boyd")
+
+
+def test_lowercase_slug_serves_directly_with_no_redirect_hop(client):
+    """The normalization redirect must not add a hop to the common case."""
+    r = client.get("/mary-boyd", base_url=f"http://{PORTAL_HOST}")
+    assert r.status_code == 200
+    assert r.headers.get("Location") is None
+
+
 def test_canonical_slug_is_still_noindex(client):
     """Lifting noindex is section 5, not this work."""
     r = client.get("/mary-boyd", base_url=f"http://{PORTAL_HOST}")

@@ -19139,6 +19139,13 @@ def practitioner_site(slug):
         _ps.check_shape(s)
     except _ps.SlugError:
         return ("", 404)
+    # One URL per practitioner. /Mary-Boyd normalizes to the same row, but the
+    # storefront page re-derives its own /api/p/ key from location.pathname and
+    # affiliate_signups.slug is case-sensitive, so serving the capitalized form
+    # renders a blank page. `s` is post-check_shape, so it is [a-z0-9-] only and
+    # the redirect target cannot be an off-site URL.
+    if s != slug:
+        return redirect(f"/{s}", code=301)
     with db.connect(LOG_DB) as cx:
         kind, canonical = _ps.resolve(cx, s)
     if kind == "alias":
