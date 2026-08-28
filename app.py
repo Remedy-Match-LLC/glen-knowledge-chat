@@ -11856,6 +11856,59 @@ def api_console_module_certs_approve():
                     "full_certification_granted": bool(fully_certified)})
 
 
+@app.route("/api/console/practitioner-drafts", methods=["GET"])
+def api_console_practitioner_drafts():
+    """Profile drafts awaiting Glen's review."""
+    if not _console_key_ok():
+        return jsonify({"error": "unauthorized"}), 401
+    from dashboard import practitioner_drafts as _pd
+    from dashboard import practitioner_profile as _pp
+    status = request.args.get("status", "submitted")
+    with db.connect(LOG_DB) as cx:
+        cx.row_factory = sqlite3.Row
+        _pd.init_tables(cx)
+        drafts = _pd.list_by_status(cx, status)
+    return jsonify({"ok": True, "drafts": drafts})
+
+
+@app.route("/api/console/practitioner-drafts/<pid>/approve", methods=["POST"])
+def api_console_practitioner_draft_approve(pid):
+    """Approve a submitted draft AND publish it. Publishing is what makes it
+    public, so a failed publish must not report success."""
+    if not _console_key_ok():
+        return jsonify({"error": "unauthorized"}), 401
+    from dashboard import practitioner_drafts as _pd
+    from dashboard import practitioner_profile as _pp
+    note = ((request.get_json(silent=True) or {}).get("note") or "").strip()
+    with _db_lock, db.connect(LOG_DB) as cx:
+        cx.row_factory = sqlite3.Row
+        _pd.init_tables(cx)
+        if not _pd.approve(cx, pid, note):
+            return jsonify({"ok": False, "error": "no submitted draft"}), 409
+        published = _pp.publish_draft(cx, pid)
+    if not published:
+        return jsonify({"ok": False, "error": "publish_failed"}), 500
+    return jsonify({"ok": True, "published": True})
+
+
+@app.route("/api/console/practitioner-drafts/<pid>/reject", methods=["POST"])
+def api_console_practitioner_draft_reject(pid):
+    """Send a draft back with a required reason."""
+    if not _console_key_ok():
+        return jsonify({"error": "unauthorized"}), 401
+    from dashboard import practitioner_drafts as _pd
+    from dashboard import practitioner_profile as _pp
+    note = ((request.get_json(silent=True) or {}).get("note") or "").strip()
+    if not note:
+        return jsonify({"ok": False, "error": "a rejection needs a note"}), 400
+    with _db_lock, db.connect(LOG_DB) as cx:
+        cx.row_factory = sqlite3.Row
+        _pd.init_tables(cx)
+        if not _pd.reject(cx, pid, note):
+            return jsonify({"ok": False, "error": "no submitted draft"}), 409
+    return jsonify({"ok": True})
+
+
 def _course_membership_renew(invoice):
     """On invoice.paid, extend a course membership (the $99/mo drip) to the
     subscription's new period end, AND unlock exactly one module per DISTINCT paid
