@@ -19124,6 +19124,53 @@ def api_practitioner_settings_post():
     return jsonify(resp)
 
 
+@app.route("/api/practitioner/profile/submit", methods=["POST"])
+def api_practitioner_profile_submit():
+    """Practitioner sends their own draft for review.
+
+    The practitioner id comes from the SESSION, never from the request body,
+    so nobody can submit another practitioner's draft.
+
+    After a successful submit, split the draft's fields by REVIEW_POLICY
+    (split_by_policy). If nothing in the draft needs a human -- review_fields
+    comes back empty -- skip the queue entirely: approve and publish
+    immediately through publish_draft, the ONLY writer that stamps
+    profile_self_authored_at. Otherwise leave the row 'submitted' for the
+    console queue, exactly as a normal submit does.
+
+    Under the current beta REVIEW_POLICY every field is 'review', so
+    needs_human defaults True and the auto-publish branch is inert; it
+    exists for the day a field is deliberately relaxed to 'auto'. If the
+    draft's fields can't be read back for any reason, fail closed and leave
+    needs_human True -- same as everything needing review.
+    """
+    pid = _practitioner_session_pid()
+    if not pid:
+        return jsonify({"ok": False, "error": "not signed in"}), 401
+    from dashboard import practitioner_drafts as _pd
+    with _db_lock, db.connect(LOG_DB) as cx:
+        cx.row_factory = sqlite3.Row
+        _pd.init_tables(cx)
+        moved = _pd.submit(cx, pid)
+        if not moved:
+            return jsonify({"ok": False, "error": "nothing to submit"}), 409
+        needs_human = True
+        try:
+            draft = _pd.get_draft(cx, pid)
+            if draft is not None:
+                _auto_fields, review_fields = _pd.split_by_policy(draft.get("fields") or {})
+                needs_human = bool(review_fields)
+        except db.OperationalError:
+            pass  # keep the safe default: needs_human stays True
+        if not needs_human:
+            from dashboard import practitioner_profile as _pp
+            _pd.approve(cx, pid)
+            published = _pp.publish_draft(cx, pid)
+            return jsonify({"ok": True, "status": "approved",
+                            "published": bool(published)})
+    return jsonify({"ok": True, "status": "submitted"})
+
+
 def _coach_cert_ok(cx, email):
     """True only if the practitioner's APPROVED cert submissions satisfy the
     completion rules. Fail-closed: any error → False (an unverified student is

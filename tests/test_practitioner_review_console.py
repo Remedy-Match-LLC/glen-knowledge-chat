@@ -102,3 +102,108 @@ def test_reject_with_no_submitted_draft_is_a_409(client, monkeypatch, tmp_path):
     r = client.post(f"/api/console/practitioner-drafts/{PID}/reject",
                     json={"note": "needs more detail"})
     assert r.status_code == 409
+
+
+# --- practitioner-side submit action ---------------------------------------
+
+def test_submit_requires_a_signed_in_practitioner(client, monkeypatch):
+    monkeypatch.setattr(appmod, "_practitioner_session_pid", lambda: None)
+    r = client.post("/api/practitioner/profile/submit")
+    assert r.status_code == 401
+
+
+def test_submit_moves_the_practitioners_own_draft(client, monkeypatch, tmp_path):
+    monkeypatch.setattr(appmod, "_practitioner_session_pid", lambda: PID)
+    monkeypatch.setattr(appmod, "LOG_DB", str(tmp_path / "chat_log.db"))
+    seen = {}
+    monkeypatch.setattr("dashboard.practitioner_drafts.submit",
+                        lambda cx, pid: seen.setdefault("pid", pid) or True)
+    monkeypatch.setattr("dashboard.practitioner_drafts.init_tables",
+                        lambda cx: None)
+    r = client.post("/api/practitioner/profile/submit")
+    assert r.status_code == 200 and r.get_json()["ok"] is True
+    assert seen["pid"] == PID
+
+
+def test_submit_uses_the_session_pid_not_a_supplied_one(client, monkeypatch, tmp_path):
+    """A practitioner must never be able to submit someone else's draft."""
+    monkeypatch.setattr(appmod, "_practitioner_session_pid", lambda: PID)
+    monkeypatch.setattr(appmod, "LOG_DB", str(tmp_path / "chat_log.db"))
+    seen = {}
+    monkeypatch.setattr("dashboard.practitioner_drafts.submit",
+                        lambda cx, pid: seen.setdefault("pid", pid) or True)
+    monkeypatch.setattr("dashboard.practitioner_drafts.init_tables",
+                        lambda cx: None)
+    client.post("/api/practitioner/profile/submit",
+                json={"practitioner_id": "99999999-9999-9999-9999-999999999999"})
+    assert seen["pid"] == PID
+
+
+def test_submit_with_a_review_field_leaves_it_queued_and_unpublished(client, monkeypatch, tmp_path):
+    """Normal case under the beta policy: every field needs review, so the
+    draft stays 'submitted' and publish_draft is never called."""
+    import sqlite3 as _sqlite3
+    from dashboard import practitioner_drafts as _pd
+
+    dbpath = str(tmp_path / "chat_log.db")
+    monkeypatch.setattr(appmod, "_practitioner_session_pid", lambda: PID)
+    monkeypatch.setattr(appmod, "LOG_DB", dbpath)
+
+    with appmod.db.connect(dbpath) as cx:
+        cx.row_factory = _sqlite3.Row
+        _pd.init_tables(cx)
+        _pd.upsert_draft(cx, PID, {"bio": "hello world"})
+
+    published = {"called": False}
+    monkeypatch.setattr(
+        "dashboard.practitioner_profile.publish_draft",
+        lambda cx, pid: published.__setitem__("called", True) or True)
+
+    r = client.post("/api/practitioner/profile/submit")
+    assert r.status_code == 200
+    body = r.get_json()
+    assert body["ok"] is True
+    assert body["status"] == "submitted"
+    assert published["called"] is False
+
+    with appmod.db.connect(dbpath) as cx:
+        cx.row_factory = _sqlite3.Row
+        assert _pd.get_draft(cx, PID)["status"] == "submitted"
+
+
+def test_submit_auto_publishes_when_nothing_needs_review(client, monkeypatch, tmp_path):
+    """Policy branch: split_by_policy's consumer. If every field in the draft
+    is policied 'auto', submit skips the queue and publishes immediately
+    through publish_draft. REVIEW_POLICY is restored in finally so this
+    doesn't contaminate later tests -- under the real beta policy every field
+    is 'review' and this path is inert."""
+    import sqlite3 as _sqlite3
+    from dashboard import practitioner_drafts as _pd
+
+    dbpath = str(tmp_path / "chat_log.db")
+    monkeypatch.setattr(appmod, "_practitioner_session_pid", lambda: PID)
+    monkeypatch.setattr(appmod, "LOG_DB", dbpath)
+
+    with appmod.db.connect(dbpath) as cx:
+        cx.row_factory = _sqlite3.Row
+        _pd.init_tables(cx)
+        _pd.upsert_draft(cx, PID, {"bio": "hello world"})
+
+    seen = {}
+    monkeypatch.setattr(
+        "dashboard.practitioner_profile.publish_draft",
+        lambda cx, pid: seen.setdefault("published_pid", pid) or True)
+
+    original_policy = dict(_pd.REVIEW_POLICY)
+    _pd.REVIEW_POLICY["bio"] = "auto"
+    try:
+        r = client.post("/api/practitioner/profile/submit")
+    finally:
+        _pd.REVIEW_POLICY.clear()
+        _pd.REVIEW_POLICY.update(original_policy)
+
+    assert r.status_code == 200
+    body = r.get_json()
+    assert body["ok"] is True
+    assert body["published"] is True
+    assert seen["published_pid"] == PID
