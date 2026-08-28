@@ -38,7 +38,10 @@ def client(monkeypatch, tmp_path):
     monkeypatch.setattr(appmod, "LOG_DB", db)
     monkeypatch.setenv("PUBLIC_SURFACE_ENABLED", "1")
     monkeypatch.setenv("PORTAL_BASE_URL", f"https://{PORTAL_HOST}")
-    appmod.app.config["TESTING"] = True
+    # setitem, not a bare assignment: app is a module-level singleton shared by
+    # every test in the process, and an unrestored TESTING=True leaks into
+    # files that run after this one.
+    monkeypatch.setitem(appmod.app.config, "TESTING", True)
     return appmod.app.test_client()
 
 
@@ -258,3 +261,27 @@ def test_view_recording_can_never_break_the_page(client, monkeypatch):
     monkeypatch.setattr(_psurf, "record_view", _boom)
     r = client.get("/mary-boyd", base_url=f"http://{PORTAL_HOST}")
     assert r.status_code == 200
+
+
+@pytest.mark.parametrize("path", [
+    "/chat", "/full-report", "/rate", "/generate-audio", "/ingest-transcript",
+    "/transcribe",
+])
+def test_get_on_a_post_only_root_route_404s_not_405s(client, path):
+    """Behaviour PIN, not an endorsement. Before the /<slug> catch-all these
+    returned 405 with 'Allow: POST, OPTIONS'; they now return 404.
+
+    Werkzeug's StateMachineMatcher, when a static rule matches the path but not
+    the method, records the allowed methods and then CONTINUES on to the
+    dynamic transitions -- so /<slug> matches, practitioner_site runs, and its
+    own 404 is what the client sees. Note this happens on the FUNNEL host too:
+    the rule is registered globally and host-gated inside the view, so the
+    matcher reaches it regardless of host.
+
+    Benign today (these are internal POST endpoints, and 404 leaks less than
+    405 does). Pinned so that if a future change moves it back to 405, or moves
+    it somewhere else again, somebody notices deliberately.
+    """
+    r = client.get(path, base_url=f"http://{FUNNEL_HOST}")
+    assert r.status_code == 404
+    assert r.headers.get("Allow") is None

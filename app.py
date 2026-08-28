@@ -19128,10 +19128,16 @@ def practitioner_storefront(slug):
 def practitioner_site(slug):
     """Practitioner site at myhealingoasis.com/<slug>.
 
-    Host-gated: this catch-all exists only on the portal host, so it can never
-    shadow a route on the funnel domain. Werkzeug already prefers static rules,
-    so named routes win here too; tests/test_slug_route_collision.py is the
-    guard that keeps it that way as routes are added.
+    Host-gated: this catch-all serves only on the portal host, so it can never
+    shadow a page on the funnel domain.
+
+    Named routes win over it, but NOT because of registration order -- this
+    route is registered mid-file, not last, and order is irrelevant. Werkzeug
+    3.1 matches with a StateMachineMatcher that tries a path segment's STATIC
+    transitions before any dynamic one, and Map.update() weight-sorts the
+    dynamic transitions among themselves. A static rule therefore always beats
+    `/<slug>`. tests/test_slug_route_collision.py is the guard that keeps a new
+    route from taking a live practitioner's URL as routes are added.
 
     Serves the existing storefront page unchanged. Server-rendering and lifting
     noindex are section 5 of the spec, not this route.
