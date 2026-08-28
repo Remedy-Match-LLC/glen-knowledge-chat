@@ -141,10 +141,27 @@ def test_alias_does_not_serve_content(client):
     assert b"Redirecting" in r.data
 
 
-def test_legacy_p_slug_301s_to_canonical_on_portal_host(client):
+def test_legacy_p_slug_302s_to_canonical_on_portal_host(client):
+    """302, NOT 301 -- deliberate, do not "fix" this back without reading why.
+
+    A 301 is cached by browsers indefinitely, so a wrong redirect could not be
+    rolled back by reverting the deploy. Nothing on this surface is indexable
+    yet (X-Robots-Tag: noindex; lifting it is spec section 5), so there is no
+    link authority to preserve in the meantime. Promote to 301 once the
+    production roster audit has run and section 5 makes these pages indexable.
+    """
     r = client.get("/p/mary-boyd", base_url=f"http://{PORTAL_HOST}")
-    assert r.status_code == 301
+    assert r.status_code == 302
     assert r.headers["Location"].endswith("/mary-boyd")
+
+
+def test_alias_hop_inside_the_site_route_stays_a_permanent_301(client):
+    """The 302 above applies ONLY to the legacy /p/<slug> hop. An alternate ->
+    canonical redirect is a permanent statement about the namespace, and it is
+    what passes an alternate's authority to the canonical URL."""
+    _claim(appmod.LOG_DB, "boyd-coaching")
+    assert client.get("/boyd-coaching",
+                      base_url=f"http://{PORTAL_HOST}").status_code == 301
 
 
 def test_legacy_p_slug_still_serves_on_the_funnel_host(client):

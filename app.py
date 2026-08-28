@@ -19094,10 +19094,17 @@ def practitioner_storefront(slug):
     if not re.match(r"^[A-Za-z0-9_-]{1,64}$", slug or ""):
         return ("", 404)
     # On the portal host the canonical URL is /<slug>; /p/<slug> is legacy and
-    # 301s there so a printed or texted old link keeps working and search
-    # engines consolidate on one URL. On the funnel host this route is unchanged.
+    # redirects there so a printed or texted old link keeps working. On the
+    # funnel host this route is unchanged.
+    #
+    # 302, not 301, for the first deploy window. Nothing on this surface is
+    # indexable yet (X-Robots-Tag: noindex, and lifting it is spec section 5),
+    # so there is no link authority to preserve today -- while a 301 is cached
+    # by browsers indefinitely, meaning a wrong redirect could NOT be rolled
+    # back by reverting the deploy. Promote to 301 once the production roster
+    # audit has run and section 5 makes these pages indexable.
     if _on_portal_host():
-        return redirect(f"/{slug}", code=301)
+        return redirect(f"/{slug}", code=302)
     from dashboard import public_surface as _ps
     with db.connect(LOG_DB) as cx:
         cx.row_factory = sqlite3.Row
