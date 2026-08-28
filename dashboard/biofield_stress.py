@@ -312,6 +312,7 @@ def _group_by_layer(cx, tid, chain_rows, items):
                 f"WHERE test_id=? AND chain_rid IN ({ph})",
                 (_num(tid), *all_rids)).fetchall():
             direct.setdefault(chain_rid, set()).add(stress_id)
+    explicitly_placed = {stress_id for ids in direct.values() for stress_id in ids}
     for ln in order:
         L = layers[ln]
         head_norm = _norm(L["head"])
@@ -321,8 +322,9 @@ def _group_by_layer(cx, tid, chain_rows, items):
         stresses = []
         for it in items:
             directly_placed = any(it["id"] in direct.get(rid, set()) for rid in L["rids"])
-            if (directly_placed or it["code"] in rem_codes
-                    or (head_norm and _norm(it["label"]) == head_norm)):
+            inferred = (it["code"] in rem_codes
+                        or (head_norm and _norm(it["label"]) == head_norm))
+            if directly_placed or (it["id"] not in explicitly_placed and inferred):
                 stresses.append(it)
                 assigned.add(it["id"])
         by_layer.append({"layer": ln, "head": L["head"],
@@ -389,7 +391,7 @@ def consolidate_layer_balances(cx, tid, source_layer, target_layer):
 
     def layer_rows(layer):
         return cx.execute(
-            "SELECT id,remedy FROM biofield_auth_chain WHERE test_id=? AND layer=?",
+            "SELECT id,remedy,head FROM biofield_auth_chain WHERE test_id=? AND layer=?",
             (t, layer),
         ).fetchall()
 
@@ -401,15 +403,17 @@ def consolidate_layer_balances(cx, tid, source_layer, target_layer):
     target_remedies = {((r[1] or "").strip().lower()) for r in target_rows
                        if (r[1] or "").strip()}
 
-    if not source_remedies:
-        raise ValueError("source layer has no remedies")
-    if not target_remedies:
-        raise ValueError("target layer has no remedies")
+    if not source_rows:
+        raise ValueError("source layer does not exist")
+    if not target_rows:
+        raise ValueError("target layer does not exist")
 
-    marks = ",".join("?" for _ in source_remedies)
-    codes = {r[0] for r in cx.execute(
-        f"SELECT DISTINCT code FROM biofield_auth_remedy_coverage "
-        f"WHERE test_id=? AND remedy IN ({marks})", (t, *source_remedies)).fetchall()}
+    codes = set()
+    if source_remedies:
+        marks = ",".join("?" for _ in source_remedies)
+        codes = {r[0] for r in cx.execute(
+            f"SELECT DISTINCT code FROM biofield_auth_remedy_coverage "
+            f"WHERE test_id=? AND remedy IN ({marks})", (t, *source_remedies)).fetchall()}
     for remedy in target_remedies:
         for code in codes:
             cx.execute("INSERT OR IGNORE INTO biofield_auth_remedy_coverage"
@@ -454,8 +458,21 @@ def consolidate_layer_balances(cx, tid, source_layer, target_layer):
             f"AND chain_rid IN ({source_marks})",
             (t, *source_rids),
         )
+    source_heads = {_norm(r[2]) for r in source_rows if len(r) > 2 and _norm(r[2])}
+    visible_stress_ids = set(direct_stress_ids)
+    for stress_id, code, label in cx.execute(
+            "SELECT id,code,label FROM biofield_auth_stress WHERE test_id=?", (t,)).fetchall():
+        if code in codes or _norm(label) in source_heads:
+            visible_stress_ids.add(int(stress_id))
+    for stress_id in visible_stress_ids:
+        for rid in target_rids:
+            cx.execute(
+                "INSERT OR IGNORE INTO biofield_auth_layer_stress "
+                "(test_id,stress_id,chain_rid) VALUES(?,?,?)",
+                (t, stress_id, rid),
+            )
     cx.commit()
-    return len(codes | direct_codes)
+    return len(visible_stress_ids)
 
 
 def layer_rids(chain_layers, layer_num):

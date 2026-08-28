@@ -70,8 +70,27 @@ def test_consolidate_layer_balances_rejects_same_or_missing_target():
     _setup(cx)
     with pytest.raises(ValueError, match="must differ"):
         st.consolidate_layer_balances(cx, "9", 1, 1)
-    with pytest.raises(ValueError, match="target layer has no remedies"):
+    with pytest.raises(ValueError, match="target layer does not exist"):
         st.consolidate_layer_balances(cx, "9", 1, 2)
+
+
+def test_consolidate_moves_head_matched_visible_stress_exclusively():
+    cx = sqlite3.connect(":memory:")
+    source_rid = add_chain_row(cx, "9", 1, "Loose ends", "", "", "", "", "")
+    target_rid = add_chain_row(cx, "9", 2, "Target", "", "", "", "", "")
+    st.add_stress(cx, "9", "Loose ends", source="scan", balance="required")
+    sid = cx.execute("SELECT id FROM biofield_auth_stress").fetchone()[0]
+    chain = [
+        {"layer": 1, "head": "Loose ends", "remedy": "", "rid": source_rid},
+        {"layer": 2, "head": "Target", "remedy": "", "rid": target_rid},
+    ]
+    before = st.list_stresses(cx, "9", chain)["by_layer"]
+    assert [x["id"] for x in before[0]["stresses"]] == [sid]
+
+    assert st.consolidate_layer_balances(cx, "9", 1, 2) == 1
+    after = st.list_stresses(cx, "9", chain)["by_layer"]
+    assert after[0]["stresses"] == []
+    assert [x["id"] for x in after[1]["stresses"]] == [sid]
 
 
 def test_card_shows_covered_chips_and_unassigned_is_draggable():
