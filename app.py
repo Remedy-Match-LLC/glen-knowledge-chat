@@ -16717,14 +16717,24 @@ from dashboard import wallet as _wallet
 import dashboard.practitioner_chat as _chat
 
 
-def _send_practitioner_magic_link(to_email, name, magic_url):
-    """Practitioner-portal sign-in email (reuses the report-email transport)."""
+def _send_practitioner_magic_link(to_email, name, magic_url, expected=False):
+    """Practitioner-portal sign-in email (reuses the report-email transport).
+
+    ``expected`` drops the "if you didn't request this" line. That line is not
+    boilerplate: on the self-service path anyone can type someone else's
+    address into the login form, so the recipient may genuinely not have asked
+    for the link, and the notice is the only thing telling them to ignore it.
+    An invite we announced in a separate note is the one case where the
+    recipient was told to expect it, so there it is noise. Default keeps it.
+    """
     subject = "Your Remedy Match practitioner sign-in link"
+    unrequested = ("" if expected
+                   else "If you didn't request this, you can ignore this email.\n\n")
     body = (
         f"Hi {name or 'there'},\n\n"
         f"Click the link below to open your practitioner portal. It is single-use and "
         f"expires in {_format_ttl(_pp.MAGIC_TTL_MIN)}.\n\n{magic_url}\n\n"
-        f"If you didn't request this, you can ignore this email.\n\n— Remedy Match\n"
+        f"{unrequested}— Remedy Match\n"
     )
     return _send_full_report_email(to_email, name or "there", subject, body)
 
@@ -34880,7 +34890,8 @@ def _send_practitioner_invite(email, name, pid, return_to=None):
     query = _up.urlencode({"token": magic,
                            "return_to": _practitioner_return_to(return_to)})
     _send_practitioner_magic_link(
-        email, name or "", f"{PUBLIC_BASE_URL}/practitioner/login-verify?{query}")
+        email, name or "", f"{PUBLIC_BASE_URL}/practitioner/login-verify?{query}",
+        expected=True)
     return True
 
 

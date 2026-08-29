@@ -593,7 +593,7 @@ def test_invite_lands_where_the_email_asked(monkeypatch):
     monkeypatch.setattr(appmod._pp, "create_magic_link_token",
                         lambda pid, email, ttl_min=None: "TOK")
     monkeypatch.setattr(appmod, "_send_practitioner_magic_link",
-                        lambda email, name, url: sent.update(url=url))
+                        lambda email, name, url, **kw: sent.update(url=url))
 
     appmod._send_practitioner_invite("m@example.com", "Mary", "pid-1",
                                      return_to="/practitioner/profile")
@@ -607,7 +607,7 @@ def test_invite_default_is_still_the_portal(monkeypatch):
     monkeypatch.setattr(appmod._pp, "create_magic_link_token",
                         lambda pid, email, ttl_min=None: "TOK")
     monkeypatch.setattr(appmod, "_send_practitioner_magic_link",
-                        lambda email, name, url: sent.update(url=url))
+                        lambda email, name, url, **kw: sent.update(url=url))
 
     appmod._send_practitioner_invite("m@example.com", "Mary", "pid-1")
     assert "return_to=%2Fpractitioner%2Fportal" in sent["url"]
@@ -619,7 +619,7 @@ def test_invite_return_to_is_still_allowlisted(monkeypatch):
     monkeypatch.setattr(appmod._pp, "create_magic_link_token",
                         lambda pid, email, ttl_min=None: "TOK")
     monkeypatch.setattr(appmod, "_send_practitioner_magic_link",
-                        lambda email, name, url: sent.update(url=url))
+                        lambda email, name, url, **kw: sent.update(url=url))
 
     appmod._send_practitioner_invite("m@example.com", "Mary", "pid-1",
                                      return_to="https://evil.example/steal")
@@ -640,3 +640,30 @@ def test_confirm_page_wording_follows_the_destination(monkeypatch):
 
     order = c.get("/practitioner/login-verify?token=T").get_data(as_text=True)
     assert "my order" in order
+
+
+def test_announced_invite_drops_the_unrequested_line(monkeypatch):
+    """Glen's edit: the invite is announced in a separate note, so telling her
+    she might not have asked for it is noise."""
+    sent = {}
+    monkeypatch.setattr(appmod._pp, "create_magic_link_token",
+                        lambda pid, email, ttl_min=None: "TOK")
+    monkeypatch.setattr(appmod, "_send_full_report_email",
+                        lambda to, name, subject, body: sent.update(body=body))
+
+    appmod._send_practitioner_invite("m@example.com", "Mary", "pid-1",
+                                     return_to="/practitioner/profile")
+    assert "didn't request this" not in sent["body"]
+    assert "expires in a week" in sent["body"]
+    assert sent["body"].rstrip().endswith("— Remedy Match")
+
+
+def test_self_service_link_keeps_the_unrequested_line(monkeypatch):
+    """Anyone can type someone else's address into the login form, so on that
+    path the recipient really may not have asked. The notice stays."""
+    sent = {}
+    monkeypatch.setattr(appmod, "_send_full_report_email",
+                        lambda to, name, subject, body: sent.update(body=body))
+
+    appmod._send_practitioner_magic_link("m@example.com", "Mary", "https://x/y")
+    assert "didn't request this" in sent["body"]
