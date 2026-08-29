@@ -169,7 +169,17 @@ def _get_pg_pool(dsn, timeout):
         pool = _PG_POOLS.get(dsn)
         if pool is None:
             from psycopg_pool import ConnectionPool
+            # check= validates a pooled connection BEFORE handing it out and
+            # discards a dead one. Without it (the default is None) psycopg_pool
+            # never tests a connection on checkout, so one that Render's Postgres
+            # has closed while idle sits in the pool and is served to the next
+            # request, whose first I/O dies with
+            #   consuming input failed: SSL error: unexpected eof while reading
+            # 43 of those in 31 hours of production logs, each one a 500 to
+            # whoever made that request. max_lifetime (3600s) and max_idle (600s)
+            # already default sensibly and are deliberately left alone.
             pool = ConnectionPool(dsn, min_size=2, max_size=10, open=True,
+                                  check=ConnectionPool.check_connection,
                                   kwargs={"connect_timeout": max(1, int(round(timeout)))})
             _PG_POOLS[dsn] = pool
         return pool
