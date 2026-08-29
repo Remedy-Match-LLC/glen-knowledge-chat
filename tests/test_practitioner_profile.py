@@ -416,6 +416,9 @@ def test_image_url_empty_is_allowed():
     "http://cdn.example.com/p.jpg",     # plaintext http on an https page
     "//cdn.example.com/p.jpg",          # protocol-relative
     "ftp://x/p.jpg",
+    "/\\evil.com/x.png",                # backslash bypass: resolves to https://evil.com/x.png
+    "/a/\\evil.com/x.png",              # backslash not at position 1
+    "https://good.example.com/a\\b.png",  # backslash inside otherwise valid https URL
 ])
 def test_image_url_rejects_dangerous_or_insecure(bad):
     with pytest.raises(ValueError):

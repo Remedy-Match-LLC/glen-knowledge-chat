@@ -94,13 +94,16 @@ def clean_services(items):
 
 
 def sanitize_image_url(url):
-    """An image URL safe to put on a public page.
+    r"""An image URL safe to put on a public page.
 
     Allows exactly two shapes: an absolute https:// URL, or a site-relative
     path beginning with a single '/'. Everything else raises ValueError —
     `javascript:` and `data:` are script-execution vectors on a page we serve,
     plaintext `http://` is mixed content, and `//host/path` is
     protocol-relative and inherits whichever scheme the page happens to use.
+    Backslashes are rejected anywhere in the URL: browsers normalise `\` to `/`
+    for special schemes like https, so a backslash lets a site-relative-looking
+    path resolve to an arbitrary external host.
 
     Empty input returns "" — clearing an image is legitimate.
 
@@ -113,6 +116,8 @@ def sanitize_image_url(url):
         return ""
     if len(u) > MAX_URL:
         raise ValueError(f"image URL exceeds {MAX_URL} characters")
+    if "\\" in u:
+        raise ValueError("image URL must not contain a backslash")
     if u.startswith("//"):
         raise ValueError("image URL must not be protocol-relative")
     if u.startswith("/"):
