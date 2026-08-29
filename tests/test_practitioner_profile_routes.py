@@ -550,3 +550,18 @@ def test_settings_scraped_load_handler_documents_why_it_skips_the_new_fields():
     comment = "\n".join(re.findall(r"//.*", body))
     assert "scraped" in comment.lower() and "logo_url" in comment, \
         "the scraped-load handler needs a comment saying why it skips them"
+
+
+def test_magic_link_may_return_to_the_profile_page():
+    """An emailed sign-in link must be able to land a practitioner directly on
+    the page we asked them to fill in. Without this the allowlist silently
+    redirects them to the wholesale portal instead, and the link in the email
+    goes somewhere the email did not promise."""
+    assert appmod._practitioner_return_to("/practitioner/profile") == "/practitioner/profile"
+
+
+def test_return_to_allowlist_still_refuses_anything_else():
+    """The allowlist is a redirect guard: an attacker-supplied return_to must
+    not be honoured just because we widened it by one entry."""
+    for bad in ("https://evil.com", "//evil.com", "/admin", "/practitioner/../admin", ""):
+        assert appmod._practitioner_return_to(bad) == "/practitioner/portal"
