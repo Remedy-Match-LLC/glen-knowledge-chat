@@ -32,6 +32,14 @@
 - **`seo_title` / `seo_description` moved to section 5.** Their only consumer is the server-rendered page section 5 builds. Storing them now ships inert fields.
 - **Own-storage assets stay in 2c.** This plan validates `photo_url`; it does not host it.
 
+**Stored and served, but NOT displayed — say it out loud.** `tagline` and `how_i_work` are sanitized, drafted, reviewed, published into the Postgres row, whitelisted in `PRACTITIONER_PUBLIC_FIELDS` and returned in the `/api/p/<slug>` JSON payload. The chain is correct all the way to the payload **and then it stops**: `static/practitioner-storefront.html` renders only the practitioner name, the practice name, `bio`, the profit disclosure and the catalog link. No human being sees either new field when this branch ships. That is deliberate — a renderer cannot render a field that does not exist yet, so the field lands first and **section 5 owns the rendering**.
+
+`photo_url`, `logo_url`, `services` and `location` are already in exactly that state, inherited from section 2a: whitelisted, published, served in the payload, drawn by nothing. This branch adds two more to that set rather than creating the condition.
+
+Note the tension with the `seo_title` / `seo_description` deferral above, which is justified by "storing them now ships inert fields" — the same sentence is true of these two. The difference is not the shipping state, it is the ownership: `seo_*` has **no consumer at all** until section 5 builds the server-rendered page, whereas `tagline` and `how_i_work` are already live in the JSON payload, already flow through the review gate Glen operates, and are needed as stored columns before a renderer can be written against them. Both fields being invisible on merge is a known, accepted, temporary state, not an oversight — and it is pinned by `test_every_public_field_is_actually_rendered_somewhere` in `tests/test_public_surface_routes.py`, an `xfail(strict=False)` guard that turns XPASS the moment section 5 lands.
+
+**Renderer contract for whoever writes section 5.** `how_i_work` is stored WITH its newlines (see `sanitize_how_i_work`). It must be emitted under `white-space: pre-line`, or split on blank lines into one `<p>` per paragraph. Dropping it into ordinary flowed HTML silently re-collapses the practitioner's paragraphs and bullets. Separately, every sanitizer in `dashboard/practitioner_profile.py` STRIPS markup, it does not ESCAPE it — the renderer still owns HTML-escaping.
+
 ## File Structure
 
 - **Create `migrations/practitioner-profile-fields.sql`** — two additive columns. Applied by hand, like its siblings.
@@ -514,11 +522,48 @@ git commit -m "feat(settings): inputs for tagline, how I work, and logo"
 - The coupling guard still bites — proven, not assumed — now that the field set has grown to nine.
 - `v_practitioners_public` is unchanged, so the new prose reaches only the whitelisted storefront.
 
-## Deployment note
+## Deploy runbook
 
-`migrations/practitioner-profile-fields.sql` must be applied by hand before this ships:
-`psql "$SUPABASE_DB_URL" < migrations/practitioner-profile-fields.sql`
+Five steps, in this order. The order is not cosmetic — getting step 2 wrong fails **silently**, not loudly.
 
-Unlike 2a's drafts table there is no lazy-create fallback — these are columns on a Postgres table `_write_live_profile` writes unconditionally, so **publishing before the migration is applied will raise**. Apply it first.
+**1. Verify the section-2a columns already exist in prod.**
 
-This branch is stacked on section 2a (PR #1481). Merge that first, or merge this into it.
+`practitioners.logo_url` and `practitioners.profile_self_authored_at` come from `migrations/practitioners-storefront.sql`. That file is on `main`, but like every migration here it is **applied by hand** — being merged is not evidence it ran. Verify, do not assume:
+
+```sql
+SELECT column_name FROM information_schema.columns
+ WHERE table_name = 'practitioners'
+   AND column_name IN ('logo_url', 'profile_self_authored_at', 'tagline', 'how_i_work');
+```
+
+Expect `logo_url` and `profile_self_authored_at` before you start; `tagline` and `how_i_work` appear after step 2.
+
+**2. Apply `migrations/practitioner-profile-fields.sql` to prod Postgres — BEFORE the code merges.**
+
+```
+psql "$SUPABASE_DB_URL" < migrations/practitioner-profile-fields.sql
+```
+
+Additive and idempotent (`ADD COLUMN IF NOT EXISTS`), so running it early or twice is safe. **Running it late is not.** The failure mode if the code ships first is silent degradation, not an error page:
+
+- `profile_for_slug` now selects `tagline, how_i_work`. Against a table without those columns, Postgres raises `UndefinedColumn` — and that function's `except Exception: return {}` catches it and returns an empty profile, with **no log line at all**. Every self-authored practitioner page quietly drops to name + profit disclosure. The page still renders 200. Nothing alerts.
+- The settings GET selects the same two columns. Its `except Exception` does print, but from the practitioner's side the symptom is her editor loading **blank** — bio, photo, services, city, state, tagline, how_i_work all empty — which reads as "my profile was deleted", and her natural next move is to retype and save.
+- Publishing (`_write_live_profile`) writes both columns unconditionally, so an approve would raise there too.
+
+So: migration first, and confirm with the query in step 1 before merging anything.
+
+**3. Merge section 2a — `sess/a191e6ab-s2`, PR #1481.**
+
+2b is stacked on it and **2a is not an ancestor of `main`** (verified: `git merge-base --is-ancestor origin/sess/a191e6ab-s2 origin/main` fails; 13 commits are unique to 2a). The draft store, the review gate and the guard tests all come from 2a. **2b cannot merge alone** — merging it without 2a first gives a branch whose imports and tests reference code that is not there.
+
+**4. Merge 2b — `sess/a191e6ab-s2b`.**
+
+**5. Set `PRACTITIONER_REVIEW_GATE_ENABLED` in Doppler `prd`.**
+
+The flag defaults **OFF** (`app.py`, `_practitioner_review_gate_enabled`). With it off, a practitioner's save publishes to her live page **immediately, with no review** — that is 2a's deliberate pre-feature behaviour, kept so the merge itself changes nothing anyone can see. "The beta reviews every field before it goes public" is only true once the flag is on.
+
+**Merge plus flag flip is TWO deploys.** Merging step 4 does not turn the gate on, and setting the Doppler variable is a separate deploy of its own. Budget for both, and tell any practitioner who is mid-edit before flipping it: from that moment her next save queues for Glen instead of going live.
+
+### Not part of the deploy, but true on the day
+
+`tagline` and `how_i_work` will be stored, published, whitelisted and served in `/api/p/<slug>` — and **displayed nowhere**, because section 5 owns the storefront rendering. See the Scope boundary above. Do not treat a practitioner reporting "I saved my tagline and my page didn't change" as a deploy failure; it is the expected state until section 5 ships.
