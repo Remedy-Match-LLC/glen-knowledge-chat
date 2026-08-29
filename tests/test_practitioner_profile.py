@@ -498,3 +498,132 @@ def test_logo_url_is_actually_published():
     import inspect
     src = inspect.getsource(pp._write_live_profile)
     assert "logo_url" in src
+
+
+# --- Fix wave: how_i_work must keep the structure the practitioner typed ----
+
+
+def test_sanitize_how_i_work_preserves_paragraphs_and_bullets():
+    """The 2b defect: how_i_work used _norm, which is `" ".join(text.split())`,
+    and `str.split()` splits on newlines too — so every paragraph break and
+    every bullet was flattened into one wall of text AT STORE TIME, where no
+    later renderer could recover it. A 600-char bio is one paragraph so it
+    never showed; a 2000-char "explain your practice" field is nothing but
+    structure."""
+    typed = (
+        "I start with a full intake.\n"
+        "\n"
+        "Then we look at your terrain:\n"
+        "- sleep\n"
+        "- digestion\n"
+        "\n"
+        "Most people feel a shift in three weeks."
+    )
+    out = pp.sanitize_how_i_work(typed)
+    assert out == typed
+    # Stated as behaviour, not just equality, so a future edit that "tidies"
+    # the normaliser cannot pass by rewriting the fixture.
+    assert "\n\n" in out, "paragraph breaks must survive"
+    assert "- sleep\n- digestion" in out, "list items must stay on their own lines"
+    assert out.count("\n") == 6
+
+
+def test_sanitize_how_i_work_collapses_spaces_within_a_line():
+    assert pp.sanitize_how_i_work("We   go\tslowly  ") == "We go slowly"
+
+
+def test_sanitize_how_i_work_trims_each_line_and_the_whole():
+    assert pp.sanitize_how_i_work("\n\n  one  \n   two   \n\n") == "one\ntwo"
+
+
+def test_sanitize_how_i_work_collapses_three_or_more_newlines_to_two():
+    assert pp.sanitize_how_i_work("a\n\n\n\n\nb") == "a\n\nb"
+
+
+def test_sanitize_how_i_work_normalises_crlf():
+    assert pp.sanitize_how_i_work("a\r\n\r\nb\rc") == "a\n\nb\nc"
+
+
+def test_sanitize_how_i_work_cap_applies_to_the_structured_result():
+    """The cap still bites, and still as a ValueError -- preserving newlines
+    must not become a way to smuggle past MAX_HOW_I_WORK."""
+    with pytest.raises(ValueError):
+        pp.sanitize_how_i_work("x\n" * pp.MAX_HOW_I_WORK)
+
+
+def test_sanitize_tagline_still_flattens_newlines():
+    """A tagline is one line by definition. The multiline normaliser is for
+    how_i_work only -- this pins that the two did not get swapped."""
+    assert pp.sanitize_tagline("Root-cause\ncoaching") == "Root-cause coaching"
+
+
+def test_sanitize_bio_still_flattens_newlines():
+    """Out of scope for this wave, deliberately: pinned so a later change to
+    sanitize_bio is a decision rather than an accident."""
+    assert pp.sanitize_bio("one\n\ntwo") == "one two"
+
+
+def test_module_documents_the_pre_line_renderer_contract():
+    """how_i_work is stored with newlines, so a renderer that drops it into
+    flowed HTML re-creates the exact bug this wave fixed. The contract has to
+    be findable from the module a renderer author is already reading."""
+    import dashboard.practitioner_profile as _mod
+    doc = _mod.__doc__ or ""
+    assert "pre-line" in doc
+    assert "how_i_work" in doc
+
+
+# --- Fix wave: URL characters that are never legal raw in a URL -------------
+
+
+@pytest.mark.parametrize("bad", [
+    'https://cdn.example.com/a"b.png',      # closes an HTML attribute
+    "https://cdn.example.com/a'b.png",      # closes a single-quoted attribute
+    "https://cdn.example.com/a<b.png",      # opens a tag
+    "https://cdn.example.com/a>b.png",      # closes a tag
+    "https://cdn.example.com/a`b.png",      # unquoted-attribute delimiter in IE
+    "https://cdn.example.com/a b.png",      # raw space
+    "/practitioner-asset/a b.png",          # ... on the site-relative shape too
+    '/practitioner-asset/a"b.png',
+])
+def test_image_url_rejects_chars_never_legal_raw_in_a_url(bad):
+    """RFC 3986 requires these percent-encoded (%22 %27 %3C %3E %60 %20), and
+    each one breaks out of an attribute or a tag once section 5 server-renders
+    the value the docstring calls "safe to put on a public page"."""
+    with pytest.raises(ValueError):
+        pp.sanitize_image_url(bad)
+
+
+def test_image_url_still_accepts_percent_encoded_forms():
+    """Reject the RAW character, not the legal encoding of it."""
+    u = "https://cdn.example.com/my%20photo%3Cx%3E.png"
+    assert pp.sanitize_image_url(u) == u
+
+
+def test_image_url_surrounding_whitespace_is_still_stripped_not_rejected():
+    """The space rule applies INSIDE the URL. A pasted value with padding is
+    an ordinary paste, and stripping it predates this rule."""
+    assert pp.sanitize_image_url("  https://cdn.example.com/p.jpg  ") == \
+        "https://cdn.example.com/p.jpg"
+
+
+# --- Fix wave: a bad TYPE is a 400, like a bad value -----------------------
+
+
+@pytest.mark.parametrize("fn_name", ["sanitize_tagline", "sanitize_how_i_work",
+                                     "sanitize_image_url"])
+@pytest.mark.parametrize("value", [123, 1.5, True, ["x"], {"a": 1}, object()])
+def test_sanitizers_raise_valueerror_on_a_non_string(fn_name, value):
+    """A JSON body can carry any type. These used to raise TypeError (_norm)
+    or AttributeError (sanitize_image_url), neither caught by the settings
+    route's `except ValueError` -- so a bad type was a 500 while a bad value
+    was a 400. Every bad input is a ValueError."""
+    with pytest.raises(ValueError):
+        getattr(pp, fn_name)(value)
+
+
+def test_sanitizers_still_accept_none_as_empty():
+    """None means "not supplied" and must stay a legitimate empty, not a 400."""
+    assert pp.sanitize_tagline(None) == ""
+    assert pp.sanitize_how_i_work(None) == ""
+    assert pp.sanitize_image_url(None) == ""
