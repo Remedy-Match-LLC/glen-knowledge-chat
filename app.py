@@ -16729,7 +16729,8 @@ def _practitioner_session_pid():
 def _practitioner_return_to(value):
     """Allow magic links to return only to known practitioner surfaces."""
     path = (value or "").strip()
-    if path in {"/practitioner/portal", "/practitioner/dropship"}:
+    if path in {"/practitioner/portal", "/practitioner/dropship",
+                "/practitioner/profile"}:
         return path
     return "/practitioner/portal"
 
