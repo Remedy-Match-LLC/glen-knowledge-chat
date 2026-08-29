@@ -34026,8 +34026,15 @@ def api_e4l_reveal_draft():
                 if _suppressed:
                     print(f"[suppressed] skip reveal-ready email to {email}", flush=True)
                 else:
-                    with _db_lock:
-                        portal_url = _ensure_portal_link(_scx, email, "")
+                    # _scx was returned to the pool when its `with` block exited
+                    # above. sqlite3.__exit__ only commits, so reusing it there
+                    # was harmless; _PgConn.__exit__ RELEASES, so on Postgres
+                    # another greenlet may already own that connection -- two
+                    # writers on one SSL socket, which reads as
+                    #   SSL error: decryption failed or bad record mac
+                    # Take a fresh connection instead.
+                    with _db_lock, db.connect(LOG_DB) as _pcx:
+                        portal_url = _ensure_portal_link(_pcx, email, "")
                     url = f"{PUBLIC_BASE_URL}/begin/biofield/{token}"
                     body = _reveal_email_body(url, portal_url)
                     if _send_inquiry_email(email, "Your Biofield Analysis is ready", body):
