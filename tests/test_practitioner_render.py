@@ -45,3 +45,98 @@ def test_quotes_in_an_attribute_value_are_escaped():
         canonical_url="https://myhealingoasis.com/mary-boyd")
     assert '"hello"' not in html
     assert "&quot;hello&quot;" in html
+
+
+def test_title_pairs_name_with_practice_when_there_is_one():
+    v = _view(practice_name="Fairbanks Wellness")
+    assert pr.build_title(v) == "Mary Boyd — Fairbanks Wellness"
+
+
+def test_title_is_just_the_name_when_there_is_no_practice():
+    assert pr.build_title(_view()) == "Mary Boyd"
+
+
+def test_description_prefers_the_tagline():
+    v = _view(tagline="Helping nurses stop running on empty",
+              bio="A much longer biography that should not win.")
+    assert pr.build_description(v) == "Helping nurses stop running on empty"
+
+
+def test_description_falls_back_to_the_bio():
+    v = _view(bio="I work with nurses and shift workers.")
+    assert pr.build_description(v) == "I work with nurses and shift workers."
+
+
+def test_description_falls_back_to_a_neutral_line_when_empty():
+    """Name-only is the common case today. An empty description tag is worse
+    than a plain one: the preview card shows the raw URL instead."""
+    assert pr.build_description(_view()) == "Mary Boyd on Remedy Match."
+
+
+def test_description_is_truncated_on_a_word_boundary():
+    v = _view(bio="word " * 100)
+    d = pr.build_description(v)
+    assert len(d) <= pr.MAX_DESCRIPTION
+    assert d.endswith("…")
+    assert not d.endswith(" …")
+
+
+def test_bio_paragraphs_survive_as_separate_paragraphs():
+    """how_i_work and bio are stored with blank lines preserved on purpose --
+    flattening them was a data-destroying defect fixed in section 2b."""
+    v = _view(bio="First para.\n\nSecond para.")
+    html = pr.render_page_html(v, canonical_url="https://myhealingoasis.com/mary-boyd")
+    assert "<p>First para.</p>" in html
+    assert "<p>Second para.</p>" in html
+
+
+def test_absent_blocks_emit_nothing():
+    html = pr.render_page_html(_view(), canonical_url="https://myhealingoasis.com/mary-boyd")
+    assert "<h2>About</h2>" not in html
+    assert "<h2>How I work</h2>" not in html
+    assert "<img" not in html
+
+
+def test_present_blocks_are_labelled():
+    v = _view(bio="About me.", how_i_work="My approach.", location="Fairbanks, AK",
+              practice_name="Fairbanks Wellness", tagline="A tagline")
+    html = pr.render_page_html(v, canonical_url="https://myhealingoasis.com/mary-boyd")
+    assert "<h2>About</h2>" in html
+    assert "<h2>How I work</h2>" in html
+    assert "Fairbanks, AK" in html
+    assert "Fairbanks Wellness" in html
+    assert "A tagline" in html
+
+
+def test_the_profit_disclosure_is_always_rendered():
+    """It is a disclosure. It does not get to be conditional."""
+    html = pr.render_page_html(_view(), canonical_url="https://myhealingoasis.com/mary-boyd")
+    assert "Your practitioner earns a portion of what you spend here." in html
+
+
+def test_the_remaining_public_fields_render():
+    """logo_url, services, accepting_clients and featured_products had no
+    renderer in the JS shell. Covered here per-block; the whole-whitelist
+    sweep lives in tests/test_public_surface_routes.py (Task 6) so there is
+    exactly one place that knows the full field list."""
+    v = _view(logo_url="https://cdn.example/logo.jpg",
+              services=["sleep coaching"],
+              featured_products=[{"name": "SentinelProduct", "price": "$10"}])
+    html = pr.render_page_html(v, canonical_url="https://myhealingoasis.com/mary-boyd")
+    assert "logo.jpg" in html
+    assert "sleep coaching" in html
+    assert "SentinelProduct" in html
+
+
+def test_not_accepting_clients_says_so_rather_than_going_silent():
+    """A False value is information. Rendering nothing would read as 'unknown'
+    to a visitor deciding whether to reach out."""
+    html = pr.render_page_html(_view(accepting_clients=False),
+                               canonical_url="https://myhealingoasis.com/mary-boyd")
+    assert "Not currently accepting new clients" in html
+
+
+def test_services_render_as_a_list():
+    html = pr.render_page_html(_view(services=["sleep coaching", "nutrition"]),
+                               canonical_url="https://myhealingoasis.com/mary-boyd")
+    assert "sleep coaching" in html and "nutrition" in html

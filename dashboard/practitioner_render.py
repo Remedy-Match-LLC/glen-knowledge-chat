@@ -30,6 +30,9 @@ _STYLE = (
     "h2{font-size:18px;color:var(--ink);margin:0 0 8px}"
     "p{margin:0 0 12px}"
     ".disclosure{color:var(--muted);font-size:14px;margin-top:32px}"
+    ".logo{max-width:200px;max-height:80px;display:block;margin:0 0 20px}"
+    ".accepting{font-weight:600}"
+    ".price{color:var(--muted)}"
     "</style>"
 )
 
@@ -44,6 +47,134 @@ def _esc(s):
     return html.escape(str(s or ""), quote=True)
 
 
+MAX_DESCRIPTION = 200
+
+
+def build_title(view):
+    """Name, or "Name — Practice" when a practice name exists.
+
+    An em dash separator, not a pipe: this is a person's page, not a
+    directory listing.
+    """
+    name = view.get("practitioner_name") or view.get("slug") or "Practitioner"
+    practice = (view.get("practice_name") or "").strip()
+    return f"{name} — {practice}" if practice else str(name)
+
+
+def _truncate(text, limit=MAX_DESCRIPTION):
+    """Cut on a word boundary and mark the cut.
+
+    A preview card cut mid-word reads as broken; the ellipsis is what tells a
+    reader the sentence continues on the page.
+    """
+    text = " ".join(str(text or "").split())
+    if len(text) <= limit:
+        return text
+    cut = text[:limit - 1].rstrip()
+    if " " in cut:
+        cut = cut[:cut.rfind(" ")].rstrip()
+    return cut + "…"
+
+
+def build_description(view):
+    """Tagline, else bio, else a neutral line naming the practitioner.
+
+    Never empty: an absent description makes the preview card fall back to
+    showing the bare URL, which is the blank-card problem this plan exists to
+    fix, only quieter.
+    """
+    name = view.get("practitioner_name") or view.get("slug") or "This practitioner"
+    for key in ("tagline", "bio"):
+        val = (view.get(key) or "").strip()
+        if val:
+            return _truncate(val)
+    return f"{name} on Remedy Match."
+
+
+def _paragraphs(text):
+    """Blank-line-separated paragraphs, preserved.
+
+    save_draft deliberately keeps the blank lines in bio and how_i_work.
+    Flattening them here would undo that at the last possible moment.
+    """
+    out = []
+    for para in str(text or "").split("\n\n"):
+        para = para.strip()
+        if para:
+            out.append(f"<p>{_esc(para)}</p>")
+    return "".join(out)
+
+
+def _section(heading, text):
+    """A labelled block, or nothing at all when the field is empty."""
+    body = _paragraphs(text)
+    return f"<section><h2>{_esc(heading)}</h2>{body}</section>" if body else ""
+
+
+def _photo(view):
+    url = (view.get("photo_url") or "").strip()
+    if not url:
+        return ""
+    alt = _esc(view.get("practitioner_name") or "Practitioner")
+    return f'<img class="photo" src="{_esc(url)}" alt="{alt}">'
+
+
+def _line(css_class, text):
+    text = (text or "").strip()
+    return f'<p class="{css_class}">{_esc(text)}</p>' if text else ""
+
+
+def _logo(view):
+    url = (view.get("logo_url") or "").strip()
+    if not url:
+        return ""
+    practice = view.get("practice_name") or view.get("practitioner_name") or ""
+    return f'<img class="logo" src="{_esc(url)}" alt="{_esc(practice)}">'
+
+
+def _services(view):
+    items = [str(s).strip() for s in (view.get("services") or []) if str(s).strip()]
+    if not items:
+        return ""
+    lis = "".join(f"<li>{_esc(s)}</li>" for s in items)
+    return f"<section><h2>Services</h2><ul>{lis}</ul></section>"
+
+
+def _accepting(view):
+    """Render the answer either way.
+
+    False is information a visitor needs before they compose an email. Showing
+    nothing reads as "unknown", which is the one thing it is not.
+    """
+    return ('<p class="accepting">Accepting new clients</p>'
+            if view.get("accepting_clients")
+            else '<p class="accepting">Not currently accepting new clients</p>')
+
+
+def _featured(view):
+    """Retail prices only -- the payload whitelist guarantees that upstream.
+
+    Always empty today: build_practitioner_storefront hardcodes [] and no
+    profile supplies it. Rendered anyway so the field is not one more thing
+    that reaches the payload and stops there.
+    """
+    items = view.get("featured_products") or []
+    lis = []
+    for p in items:
+        if isinstance(p, dict):
+            name = str(p.get("name") or "").strip()
+            price = str(p.get("price") or "").strip()
+        else:
+            name, price = str(p).strip(), ""
+        if name:
+            lis.append(f"<li>{_esc(name)}"
+                       + (f" <span class=\"price\">{_esc(price)}</span>" if price else "")
+                       + "</li>")
+    if not lis:
+        return ""
+    return f"<section><h2>Featured</h2><ul>{''.join(lis)}</ul></section>"
+
+
 def render_page_html(view, *, canonical_url):
     """Render the complete document for one practitioner.
 
@@ -55,16 +186,35 @@ def render_page_html(view, *, canonical_url):
     bar that decides when it may be lifted.
     """
     name = view.get("practitioner_name") or view.get("slug") or "Practitioner"
-    tagline = view.get("tagline") or ""
+    title = build_title(view)
+    desc = build_description(view)
+    body = (
+        '<div class="wrap">'
+        + _photo(view)
+        + f"<h1>{_esc(name)}</h1>"
+        + _line("tagline", view.get("tagline"))
+        + _line("practice", view.get("practice_name"))
+        + _logo(view)
+        + _line("loc", view.get("location"))
+        + _accepting(view)
+        + _section("About", view.get("bio"))
+        + _section("How I work", view.get("how_i_work"))
+        + _services(view)
+        + _featured(view)
+        + f'<p><a href="{_esc(view.get("catalog_url") or "/begin/explore")}">'
+          "Browse the full catalog</a></p>"
+        + f'<p class="disclosure">{_esc(view.get("profit_disclosure"))}</p>'
+        + "</div>"
+    )
     return (
         "<!doctype html>"
         '<html lang="en"><head><meta charset="utf-8">'
         '<meta name="viewport" content="width=device-width, initial-scale=1">'
-        f"<title>{_esc(name)}</title>"
+        f"<title>{_esc(title)}</title>"
+        f'<meta name="description" content="{_esc(desc)}">'
         '<meta name="robots" content="noindex">'
-        f'<meta name="description" content="{_esc(tagline)}">'
         f"{_STYLE}"
         "</head><body>"
-        f'<div class="wrap"><h1>{_esc(name)}</h1></div>'
+        f"{body}"
         "</body></html>"
     )
