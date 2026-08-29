@@ -49799,6 +49799,29 @@ def api_orders_edit(oid):
                     "lines": priced["items_rec"]})
 
 
+@app.route("/api/orders/<int:oid>/supersede", methods=["POST"])
+def api_orders_supersede(oid):
+    """Owner: link an obsolete order number to the order that replaced it."""
+    actor = _bos_actor()
+    if actor is None or actor.role != _bos_rbac.OWNER:
+        return jsonify({"ok": False, "error": "unauthorized"}), 401
+    body = request.get_json(silent=True) or {}
+    try:
+        replacement_id = int(body.get("replacement_order_id"))
+    except (TypeError, ValueError):
+        return jsonify({"ok": False, "error": "invalid replacement_order_id"}), 400
+    cx = db.connect(LOG_DB)
+    try:
+        _bos_orders.init_orders_table(cx)
+        _bos_orders.supersede_order(cx, oid, replacement_id)
+    except ValueError as e:
+        return jsonify({"ok": False, "error": str(e)}), 400
+    finally:
+        cx.close()
+    return jsonify({"ok": True, "order_id": oid,
+                    "superseded_by_order_id": replacement_id})
+
+
 @app.route("/api/orders/<int:oid>/grant-member-access", methods=["POST"])
 def api_orders_grant_member_access(oid):
     """Owner, one click: grant this order's client a 30-day member-access window, then

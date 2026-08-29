@@ -130,6 +130,9 @@ def init_orders_table(cx):
         # NULL = not yet attempted. Set via mark_order_settled (conditional,
         # idempotent) so a webhook retry never clobbers the first timestamp.
         "ALTER TABLE orders ADD COLUMN settled_at TEXT",
+        # A corrected order may need a new number. Keep the original row for
+        # financial/audit history while omitting it from operational lists.
+        "ALTER TABLE orders ADD COLUMN superseded_by_order_id INTEGER",
     ):
         try:
             cx.execute(ddl)
@@ -313,16 +316,34 @@ def expire_abandoned_checkouts(cx, *, now=None, ttl_hours=ABANDONED_CHECKOUT_TTL
     return cur.rowcount
 
 
-def list_orders(cx, *, status=None, limit=200, include_cancelled=True):
+def list_orders(cx, *, status=None, limit=200, include_cancelled=True,
+                include_superseded=False):
+    visible = "1=1" if include_superseded else "superseded_by_order_id IS NULL"
     if status:
-        cur = cx.execute("SELECT * FROM orders WHERE status=? ORDER BY id DESC LIMIT ?",
+        cur = cx.execute(f"SELECT * FROM orders WHERE {visible} AND status=? ORDER BY id DESC LIMIT ?",
                          (status, limit))
     elif not include_cancelled:
-        cur = cx.execute("SELECT * FROM orders WHERE status!='cancelled' ORDER BY id DESC LIMIT ?",
+        cur = cx.execute(f"SELECT * FROM orders WHERE {visible} AND status!='cancelled' ORDER BY id DESC LIMIT ?",
                          (limit,))
     else:
-        cur = cx.execute("SELECT * FROM orders ORDER BY id DESC LIMIT ?", (limit,))
+        cur = cx.execute(f"SELECT * FROM orders WHERE {visible} ORDER BY id DESC LIMIT ?", (limit,))
     return [_row_to_dict(r) for r in cur.fetchall()]
+
+
+def supersede_order(cx, old_order_id, new_order_id):
+    """Link an obsolete order number to its replacement without deleting history."""
+    old_order_id, new_order_id = int(old_order_id), int(new_order_id)
+    if old_order_id == new_order_id:
+        raise ValueError("an order cannot supersede itself")
+    ids = {int(r[0]) for r in cx.execute(
+        "SELECT id FROM orders WHERE id IN (?, ?)",
+        (old_order_id, new_order_id)).fetchall()}
+    if old_order_id not in ids or new_order_id not in ids:
+        raise ValueError("old and replacement orders must both exist")
+    cx.execute(
+        "UPDATE orders SET superseded_by_order_id=?, updated_at=? WHERE id=?",
+        (new_order_id, _now(), old_order_id))
+    cx.commit()
 
 
 def list_orders_by_email(cx, email, limit=200):
