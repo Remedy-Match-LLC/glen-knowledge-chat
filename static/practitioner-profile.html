@@ -92,6 +92,9 @@
         Your profile is with Glen, waiting for his review.
       </div>
 
+      <label class="field-label" style="margin-top:0">Practice name (optional)</label>
+      <input type="text" id="pf-practice-name" maxlength="120" placeholder="Leave blank to use your own name">
+
       <label class="field-label">Tagline</label>
       <input type="text" id="pf-tagline" maxlength="120" placeholder="One line under your name">
       <div class="muted"><span id="pf-tagline-count">0</span>/120</div>
@@ -180,6 +183,7 @@
       document.getElementById('who').textContent = 'Write the page clients will see.';
 
       var pf = data.profile || {};
+      document.getElementById('pf-practice-name').value = pf.practice_name || '';
       document.getElementById('pf-tagline').value = pf.tagline || '';
       document.getElementById('pf-bio').value = pf.bio || '';
       document.getElementById('pf-how-i-work').value = pf.how_i_work || '';
@@ -215,6 +219,7 @@
 
     var payload = {
       profile: {
+        practice_name: document.getElementById('pf-practice-name').value.trim(),
         tagline: document.getElementById('pf-tagline').value.trim(),
         bio: document.getElementById('pf-bio').value,
         how_i_work: document.getElementById('pf-how-i-work').value,

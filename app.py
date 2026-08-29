@@ -19134,7 +19134,7 @@ def api_practitioner_settings_get():
         from db_supabase import supabase_cursor
         with supabase_cursor() as cur:
             cur.execute("SELECT bio, photo_url, logo_url, specialties, city, state, "
-                        "accepting_new_patients, tagline, how_i_work, "
+                        "accepting_new_patients, tagline, how_i_work, practice_name, "
                         "profile_self_authored_at "
                         "FROM practitioners WHERE id=%s", (pid,))
             p = cur.fetchone()
@@ -19149,6 +19149,7 @@ def api_practitioner_settings_get():
                 "accepting_clients": bool(p.get("accepting_new_patients")),
                 "tagline": p.get("tagline") or "",
                 "how_i_work": p.get("how_i_work") or "",
+                "practice_name": p.get("practice_name") or "",
                 "self_authored": bool(p.get("profile_self_authored_at")),
             }
     except Exception as e:
@@ -19183,6 +19184,7 @@ def api_practitioner_settings_get():
                 "accepting_clients": bool(f.get("accepting_clients", True)),
                 "tagline": f.get("tagline") or "",
                 "how_i_work": f.get("how_i_work") or "",
+                "practice_name": f.get("practice_name") or "",
                 "self_authored": True,
             }
     except Exception as e:
@@ -19216,7 +19218,8 @@ def api_practitioner_settings_post():
     #
     # Every failure mode the later save_draft can raise must be repeated here
     # or it reopens exactly that partial-write hole. Today: bio length,
-    # tagline length, how_i_work length, and both image URLs (shape and type).
+    # tagline length, how_i_work length, practice_name length, and both image
+    # URLs (shape and type).
     # sf-logo-url is type="url" in the markup but the page saves via fetch(),
     # so browser validation never runs and a pasted http:// URL reaches this.
     # If you add a field to save_draft, add it here in the same commit.
@@ -19229,6 +19232,7 @@ def api_practitioner_settings_post():
             _pp.sanitize_how_i_work(_profile_in.get("how_i_work", ""))
             _pp.sanitize_image_url(_profile_in.get("photo_url", ""))
             _pp.sanitize_image_url(_profile_in.get("logo_url", ""))
+            _pp.sanitize_practice_name(_profile_in.get("practice_name", ""))
         except ValueError as e:
             return jsonify({"ok": False, "error": str(e)}), 400
 

@@ -92,7 +92,33 @@ def test_format_location_variants():
 def test_profile_public_fields_frozen():
     assert pp.PROFILE_PUBLIC_FIELDS == frozenset(
         {"bio", "photo_url", "logo_url", "services", "location", "accepting_clients",
-         "tagline", "how_i_work"})
+         "tagline", "how_i_work", "practice_name"})
+
+
+# --- practice_name: the tenth field, optional, single-line like tagline ----
+
+def test_sanitize_practice_name_strips_html_and_collapses_whitespace():
+    assert pp.sanitize_practice_name("  <b>Sunrise</b>   Wellness ") == "Sunrise Wellness"
+
+
+def test_sanitize_practice_name_rejects_over_the_cap():
+    with pytest.raises(ValueError):
+        pp.sanitize_practice_name("x" * (pp.MAX_PRACTICE_NAME + 1))
+
+
+def test_sanitize_practice_name_accepts_exactly_the_cap():
+    assert len(pp.sanitize_practice_name("x" * pp.MAX_PRACTICE_NAME)) == pp.MAX_PRACTICE_NAME
+
+
+def test_sanitize_practice_name_empty_is_allowed():
+    """Optional field: many coaches practise under their own name."""
+    assert pp.sanitize_practice_name("") == ""
+    assert pp.sanitize_practice_name(None) == ""
+
+
+def test_sanitize_practice_name_rejects_non_string():
+    with pytest.raises(ValueError):
+        pp.sanitize_practice_name(123)
 
 
 # --- Task 3: profile_for_slug — provenance-gated read ---
@@ -271,6 +297,35 @@ def test_profile_for_slug_scraped_row_omits_tagline_and_how_i_work(monkeypatch):
     assert "how_i_work" not in v
 
 
+def test_profile_for_slug_publishes_practice_name(monkeypatch):
+    """The tenth field, driven through the real read path (not a membership
+    assertion on PROFILE_PUBLIC_FIELDS): a self-authored row's practice_name
+    must reach the storefront view."""
+    authored = {"bio": "I heal", "photo_url": "https://x/p.jpg", "logo_url": "",
+                "specialties": ["Acupuncture"], "city": "Hilo", "state": "HI",
+                "accepting_new_patients": True,
+                "practice_name": "Sunrise Wellness",
+                "profile_self_authored_at": "2026-07-20T00:00:00Z"}
+    _patch_supabase(monkeypatch, authored)
+    v = pp.profile_for_slug(_cx_with_slug(), "prof-jane-doe")
+    assert v["practice_name"] == "Sunrise Wellness"
+
+
+def test_profile_for_slug_scraped_row_omits_practice_name(monkeypatch):
+    """Same provenance gate, proven for practice_name specifically: a row
+    WITH a practice_name but a null profile_self_authored_at must not leak
+    it -- the gate returns {} entirely."""
+    scraped = {"bio": "scraped text", "photo_url": "p", "logo_url": "",
+               "specialties": ["x"], "city": "Hilo", "state": "HI",
+               "accepting_new_patients": True,
+               "practice_name": "Scraped Practice",
+               "profile_self_authored_at": None}
+    _patch_supabase(monkeypatch, scraped)
+    v = pp.profile_for_slug(_cx_with_slug(), "prof-jane-doe")
+    assert v == {}
+    assert "practice_name" not in v
+
+
 # --- Task 4: save_draft / _write_live_profile — the write path split ---
 #
 # The write path is now two functions: save_draft (sqlite, sanitizes, never
@@ -319,6 +374,24 @@ def test_save_draft_rejects_long_bio():
     cx.row_factory = sqlite3.Row
     with pytest.raises(ValueError):
         pp.save_draft(cx, "pid-1", {"bio": "x" * 601})
+
+
+def test_save_draft_stores_practice_name(monkeypatch):
+    import db_supabase
+    def _boom():
+        raise AssertionError("save_draft must never open supabase_cursor")
+    monkeypatch.setattr(db_supabase, "supabase_cursor", _boom)
+    cx = sqlite3.connect(":memory:")
+    cx.row_factory = sqlite3.Row
+    out = pp.save_draft(cx, "pid-1", {"practice_name": "<b>Sunrise</b> Wellness"})
+    assert out["practice_name"] == "Sunrise Wellness"
+
+
+def test_save_draft_practice_name_defaults_to_empty():
+    cx = sqlite3.connect(":memory:")
+    cx.row_factory = sqlite3.Row
+    out = pp.save_draft(cx, "pid-1", {"bio": "hi"})
+    assert out["practice_name"] == ""
 
 
 def test_write_live_profile_stamps_provenance(monkeypatch):

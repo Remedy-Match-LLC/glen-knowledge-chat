@@ -262,6 +262,50 @@ def test_get_settings_overlays_the_draft_new_fields(client, monkeypatch, tmp_pat
     assert body["profile"]["logo_url"] == "https://x/new-logo.png"
 
 
+def test_get_settings_includes_practice_name_from_the_live_row(client, monkeypatch):
+    """The tenth field, same round-trip requirement: a saved practice_name
+    must come back on GET or it vanishes from the editor on reload."""
+    row = {"bio": "I heal", "photo_url": "https://x/p.jpg", "logo_url": "",
+           "specialties": ["Acupuncture"], "city": "Hilo", "state": "HI",
+           "accepting_new_patients": True, "tagline": "", "how_i_work": "",
+           "practice_name": "Sunrise Wellness",
+           "profile_self_authored_at": "2026-07-20T00:00:00Z", "show_contact": False}
+    import db_supabase
+    monkeypatch.setattr(db_supabase, "supabase_cursor", lambda: _FakeCtx(_FakeCur(row)))
+    r = client.get("/api/practitioner/settings")
+    prof = r.get_json()["profile"]
+    assert prof["practice_name"] == "Sunrise Wellness"
+
+
+def test_get_settings_overlays_the_draft_practice_name(client, monkeypatch, tmp_path):
+    """Same C2 pending-draft-wins rule, for practice_name."""
+    import sqlite3
+    import db_supabase
+    from dashboard import practitioner_drafts as _pd
+
+    live = {"bio": "SCRAPED live bio", "photo_url": "", "logo_url": "", "specialties": ["Old"],
+            "city": "Kona", "state": "HI", "accepting_new_patients": True,
+            "tagline": "", "how_i_work": "", "practice_name": "Old Name",
+            "profile_self_authored_at": "2026-07-20T00:00:00Z", "show_contact": False}
+    monkeypatch.setattr(db_supabase, "supabase_cursor", lambda: _FakeCtx(_FakeCur(live)))
+
+    dbpath = str(tmp_path / "chat_log.db")
+    monkeypatch.setattr(appmod, "LOG_DB", dbpath)
+    with appmod.db.connect(dbpath) as cx:
+        cx.row_factory = sqlite3.Row
+        _pd.init_tables(cx)
+        _pd.upsert_draft(cx, "pid-123", {
+            "bio": "MY PENDING EDIT", "photo_url": "https://x/new.jpg",
+            "logo_url": "https://x/new-logo.png",
+            "services": ["New"], "city": "Hilo", "state": "HI",
+            "accepting_clients": False,
+            "tagline": "", "how_i_work": "",
+            "practice_name": "MY PENDING PRACTICE NAME"})
+
+    body = client.get("/api/practitioner/settings").get_json()
+    assert body["profile"]["practice_name"] == "MY PENDING PRACTICE NAME"
+
+
 def test_settings_page_offers_the_new_profile_inputs():
     """A field the practitioner cannot type is a field that does not exist.
     Section 2a shipped a submit route with no caller; this is the same check
@@ -289,6 +333,8 @@ def test_settings_page_sends_the_new_fields():
     ({"how_i_work": "x" * 2001}, "how_i_work over the cap"),
     ({"logo_url": 123}, "non-string logo (was a 500, must be a 400)"),
     ({"tagline": 123}, "non-string tagline (was a 500, must be a 400)"),
+    ({"practice_name": "x" * 121}, "practice_name over the cap"),
+    ({"practice_name": 123}, "non-string practice_name (was a 500, must be a 400)"),
 ])
 def test_post_bad_profile_field_does_not_partially_persist_branding(
         client, monkeypatch, profile, why):
@@ -429,18 +475,48 @@ def test_profile_page_route_returns_html():
 
 def test_profile_page_has_an_input_for_every_field():
     html = _profile_html()
-    for ident in ("pf-tagline", "pf-bio", "pf-how-i-work", "pf-photo",
-                  "pf-logo-url", "pf-city", "pf-state", "pf-accepting"):
+    for ident in ("pf-practice-name", "pf-tagline", "pf-bio", "pf-how-i-work",
+                  "pf-photo", "pf-logo-url", "pf-city", "pf-state", "pf-accepting"):
         assert ('id="%s"' % ident) in html, f"profile page has no input for {ident}"
 
 
-def test_profile_page_has_no_practice_name_field():
-    """Practice name lives on a different table and this save path cannot
-    write it -- a field that silently discards what she types would be worse
-    than no field."""
+def test_profile_page_has_a_practice_name_field(monkeypatch):
+    """practice_name is now a tenth field on the same review-gated path as
+    bio/tagline/etc (dashboard/practitioner_profile.py: sanitize_practice_name,
+    save_draft, _write_live_profile). This inverts the earlier
+    test_profile_page_has_no_practice_name_field, which pinned the field's
+    ABSENCE from back when the column existed but nothing wrote it through
+    the draft/publish path. That gap is now closed."""
     html = _profile_html()
-    assert "practice-name" not in html
-    assert "practice_name" not in html
+    assert 'id="pf-practice-name"' in html
+
+
+def test_profile_page_practice_name_sits_above_tagline():
+    """Glen: it's the most basic thing about a practice, so it goes first,
+    above Tagline."""
+    html = _profile_html()
+    assert html.index('id="pf-practice-name"') < html.index('id="pf-tagline"')
+
+
+def test_profile_page_practice_name_is_marked_optional():
+    """Many coaches practise under their own name -- the label or placeholder
+    must say the field is optional."""
+    html = _profile_html()
+    m = re.search(r'id="pf-practice-name"[^>]*>', html)
+    assert m, "no pf-practice-name input tag found"
+    start = html.index('id="pf-practice-name"')
+    surrounding = html[max(0, start - 400):start + 200].lower()
+    assert "optional" in surrounding
+
+
+def test_profile_page_loader_prefills_practice_name():
+    html = _profile_html()
+    assert "pf-practice-name').value = pf.practice_name" in html
+
+
+def test_profile_page_save_payload_sends_practice_name():
+    html = _profile_html()
+    assert "practice_name:" in html
 
 
 def test_profile_page_posts_to_settings_with_the_practitioner_token():

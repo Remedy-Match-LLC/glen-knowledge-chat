@@ -202,6 +202,7 @@ REVIEW_POLICY = {
     "accepting_clients": "review",
     "tagline": "review",
     "how_i_work": "review",
+    "practice_name": "review",
 }
 
 

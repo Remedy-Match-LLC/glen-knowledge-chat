@@ -42,6 +42,7 @@ import re
 MAX_BIO = 600
 MAX_TAGLINE = 120
 MAX_HOW_I_WORK = 2000
+MAX_PRACTICE_NAME = 120
 MAX_SERVICES = 12
 MAX_SERVICE_LEN = 60
 MAX_LOC_LEN = 80
@@ -55,7 +56,7 @@ _URL_FORBIDDEN_CHARS = '"\'<>` '
 
 PROFILE_PUBLIC_FIELDS = frozenset({
     "bio", "photo_url", "logo_url", "services", "location", "accepting_clients",
-    "tagline", "how_i_work",
+    "tagline", "how_i_work", "practice_name",
 })
 
 
@@ -128,6 +129,21 @@ def sanitize_tagline(text):
     clean = _norm(_as_text(text, "tagline"))
     if len(clean) > MAX_TAGLINE:
         raise ValueError(f"tagline exceeds {MAX_TAGLINE} characters")
+    return clean
+
+
+def sanitize_practice_name(text):
+    """The tenth field. Optional -- many coaches practise under their own
+    name, so an empty value is not an error, it's the common case. One line,
+    same shape as sanitize_tagline: strip HTML, collapse whitespace, refuse
+    anything over MAX_PRACTICE_NAME. Raises ValueError, like its siblings, so
+    the settings route's existing 400 handler catches it.
+
+    One line by definition, so `_norm`'s flattening is the wanted behaviour
+    here -- do NOT switch this to `_norm_multiline`."""
+    clean = _norm(_as_text(text, "practice name"))
+    if len(clean) > MAX_PRACTICE_NAME:
+        raise ValueError(f"practice name exceeds {MAX_PRACTICE_NAME} characters")
     return clean
 
 
@@ -260,7 +276,7 @@ def profile_for_slug(cx, slug):
         with supabase_cursor() as cur:
             cur.execute(
                 "SELECT bio, photo_url, logo_url, specialties, city, state, "
-                "accepting_new_patients, tagline, how_i_work, "
+                "accepting_new_patients, tagline, how_i_work, practice_name, "
                 "profile_self_authored_at "
                 "FROM practitioners WHERE lower(email)=lower(%s) "
                 "ORDER BY profile_self_authored_at DESC NULLS LAST LIMIT 1", (email,))
@@ -276,6 +292,7 @@ def profile_for_slug(cx, slug):
             "accepting_clients": bool(p.get("accepting_new_patients")),
             "tagline": p.get("tagline") or "",
             "how_i_work": p.get("how_i_work") or "",
+            "practice_name": p.get("practice_name") or "",
         }
         return {k: v for k, v in view.items() if k in PROFILE_PUBLIC_FIELDS}
     except Exception:
@@ -294,12 +311,12 @@ def _write_live_profile(pid, fields):
     with the default (empty string / empty list / True). A draft MUST
     therefore carry EVERY field published here.
 
-    This holds today only because `save_draft` writes all NINE on every save
+    This holds today only because `save_draft` writes all TEN on every save
     (bio, photo_url, logo_url, services, city, state, accepting_clients,
-    tagline, how_i_work). If you change that count, change it here too.
-    If you add a column to this statement, add it to `save_draft` in the same
-    commit — `test_save_draft_writes_every_field_publish_reads` in
-    tests/test_practitioner_profile.py derives the read set from this
+    tagline, how_i_work, practice_name). If you change that count, change it
+    here too. If you add a column to this statement, add it to `save_draft`
+    in the same commit — `test_save_draft_writes_every_field_publish_reads`
+    in tests/test_practitioner_profile.py derives the read set from this
     function's own source and will go red if you don't.
 
     The wholesale write is a deliberate trade, not an oversight: one fixed
@@ -311,13 +328,14 @@ def _write_live_profile(pid, fields):
         cur.execute(
             "UPDATE practitioners SET bio=%s, photo_url=%s, logo_url=%s,"
             " specialties=%s, city=%s, state=%s, accepting_new_patients=%s,"
-            " tagline=%s, how_i_work=%s,"
+            " tagline=%s, how_i_work=%s, practice_name=%s,"
             " profile_self_authored_at=now(), updated_at=now() WHERE id=%s",
             (fields.get("bio", ""), fields.get("photo_url", ""),
              fields.get("logo_url", ""), fields.get("services", []),
              fields.get("city", ""), fields.get("state", ""),
              bool(fields.get("accepting_clients", True)),
              fields.get("tagline", ""), fields.get("how_i_work", ""),
+             fields.get("practice_name", ""),
              str(pid)))
 
 
@@ -340,6 +358,7 @@ def save_draft(cx, pid, profile):
         "accepting_clients": bool(profile.get("accepting_clients", True)),
         "tagline": sanitize_tagline(profile.get("tagline", "")),
         "how_i_work": sanitize_how_i_work(profile.get("how_i_work", "")),
+        "practice_name": sanitize_practice_name(profile.get("practice_name", "")),
     }
     _pd.init_tables(cx)
     _pd.upsert_draft(cx, pid, fields)
