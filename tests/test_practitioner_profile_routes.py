@@ -411,6 +411,52 @@ def test_settings_field_order_reads_short_to_long_and_keeps_the_urls_together():
             sorted(zip(positions, order)))
 
 
+# --- practitioner-profile.html: the single-purpose profile page -----------
+
+
+def _profile_html():
+    return pathlib.Path(appmod.STATIC, "practitioner-profile.html").read_text(encoding="utf-8")
+
+
+def test_profile_page_route_returns_html():
+    appmod.app.config["TESTING"] = True
+    client = appmod.app.test_client()
+    r = client.get("/practitioner/profile")
+    assert r.status_code == 200
+    assert "text/html" in r.content_type
+    assert "<html" in r.get_data(as_text=True).lower()
+
+
+def test_profile_page_has_an_input_for_every_field():
+    html = _profile_html()
+    for ident in ("pf-tagline", "pf-bio", "pf-how-i-work", "pf-photo",
+                  "pf-logo-url", "pf-city", "pf-state", "pf-accepting"):
+        assert ('id="%s"' % ident) in html, f"profile page has no input for {ident}"
+
+
+def test_profile_page_has_no_practice_name_field():
+    """Practice name lives on a different table and this save path cannot
+    write it -- a field that silently discards what she types would be worse
+    than no field."""
+    html = _profile_html()
+    assert "practice-name" not in html
+    assert "practice_name" not in html
+
+
+def test_profile_page_posts_to_settings_with_the_practitioner_token():
+    html = _profile_html()
+    assert "/api/practitioner/settings" in html
+    assert "X-Practitioner-Token" in html
+
+
+def test_profile_page_has_no_em_dash_or_flagged_honesty_phrases():
+    html = _profile_html()
+    assert "—" not in html, "no em dashes allowed"
+    lowered = html.lower()
+    for phrase in ("to be honest", "one honest thing", "i'll be candid", "honestly"):
+        assert phrase not in lowered, f"flagged phrase present: {phrase!r}"
+
+
 def test_settings_scraped_load_handler_documents_why_it_skips_the_new_fields():
     """The handler assigns bio/photo/services/city/state and NOT tagline,
     how_i_work or logo_url. That is correct -- a scraped directory row has

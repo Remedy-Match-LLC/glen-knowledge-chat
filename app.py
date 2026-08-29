@@ -17506,6 +17506,11 @@ def practitioner_settings_page():
     return _practitioner_page("practitioner-settings.html")
 
 
+@app.route("/practitioner/profile")
+def practitioner_profile_page():
+    return _practitioner_page("practitioner-profile.html")
+
+
 @app.route("/console/biofield-portal")
 def console_biofield_portal_page():
     resp = send_from_directory(STATIC, "console-biofield-portal.html")
