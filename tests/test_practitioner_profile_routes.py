@@ -1,6 +1,7 @@
 # tests/test_practitioner_profile_routes.py
 import os
 import pathlib
+import re
 import pytest
 if not os.environ.get("PINECONE_API_KEY"):
     pytest.skip("needs doppler env for import app", allow_module_level=True)
@@ -369,3 +370,61 @@ def test_post_good_profile_still_saves(client, monkeypatch):
     assert r.status_code == 200, r.get_data(as_text=True)
     assert seen["logo_url"] == "https://cdn.example.com/l.png"
     assert "\n\n" in seen["how_i_work"]
+
+
+# --- Fix wave: the settings page itself ------------------------------------
+
+
+def _settings_html():
+    return pathlib.Path(appmod.STATIC, "practitioner-settings.html").read_text(encoding="utf-8")
+
+
+def test_settings_url_inputs_carry_a_maxlength_matching_the_server_cap():
+    """MAX_URL is 500. Without maxlength a long paste fails as a server 400
+    after the request, instead of at the keyboard."""
+    from dashboard import practitioner_profile as _pp
+    html = _settings_html()
+    for ident in ("sf-logo-url", "sf-photo"):
+        m = re.search(r'<input[^>]*id="%s"[^>]*>' % ident, html, re.S)
+        assert m, f"no input for {ident}"
+        assert 'maxlength="%d"' % _pp.MAX_URL in m.group(0), \
+            f"{ident} has no maxlength matching MAX_URL: {m.group(0)}"
+
+
+def test_settings_how_i_work_has_a_character_counter():
+    """maxlength=2000 stops typing dead with no explanation, on the one field
+    designed for long prose, right next to a Bio field that does show a count."""
+    html = _settings_html()
+    assert 'id="sf-how-i-work-count"' in html
+    assert "sf-how-i-work-count').textContent" in html, \
+        "the counter element exists but nothing ever updates it"
+
+
+def test_settings_field_order_reads_short_to_long_and_keeps_the_urls_together():
+    """Tagline, Bio, How I work, Photo URL, Logo URL. The 2000-char field must
+    not sit above the 600-char one, and the two image URLs belong together."""
+    html = _settings_html()
+    order = ["sf-tagline", "sf-bio", "sf-how-i-work", "sf-photo", "sf-logo-url"]
+    positions = [html.index('id="%s"' % i) for i in order]
+    assert positions == sorted(positions), \
+        "storefront fields are out of order: " + repr(
+            sorted(zip(positions, order)))
+
+
+def test_settings_scraped_load_handler_documents_why_it_skips_the_new_fields():
+    """The handler assigns bio/photo/services/city/state and NOT tagline,
+    how_i_work or logo_url. That is correct -- a scraped directory row has
+    neither of the first two and logo_url is never scraped -- but it reads as
+    an omission, so it has to say so."""
+    html = _settings_html()
+    start = html.index("sf-load-scraped').addEventListener('click'")
+    body = html[start:html.index("});", start)]
+    # Assignments only. The handler legitimately READS sf-how-i-work (to leave
+    # its character count alone), so a bare substring check would false-fire.
+    code = re.sub(r"//.*", "", body)
+    for ident in ("sf-tagline", "sf-how-i-work", "sf-logo-url"):
+        assert not re.search(r"getElementById\('%s'\)\s*\.\s*value\s*=" % ident, code), \
+            f"scraped data must never be loaded into {ident} (self-authored only)"
+    comment = "\n".join(re.findall(r"//.*", body))
+    assert "scraped" in comment.lower() and "logo_url" in comment, \
+        "the scraped-load handler needs a comment saying why it skips them"

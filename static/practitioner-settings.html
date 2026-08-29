@@ -165,24 +165,31 @@
              style="margin-top:8px;display:none">Use my directory info as a starting point</button></div>
       </div>
 
+      <!-- Field order is the order these read on the finished page: the one
+           line under your name, then the short intro, then the long prose,
+           then the two images together. Do not put the 2000-char field above
+           the 600-char one, and do not separate Logo URL from Photo URL. -->
       <label class="field-label">Tagline (max 120 characters)</label>
       <input type="text" id="sf-tagline" maxlength="120"
              placeholder="One line under your name">
-
-      <label class="field-label">How I work (max 2000 characters)</label>
-      <textarea id="sf-how-i-work" rows="6" maxlength="2000"
-                placeholder="What working with you is actually like"></textarea>
-
-      <label class="field-label">Logo URL (paste a public image URL)</label>
-      <input type="url" id="sf-logo-url" placeholder="https://yoursite.com/logo.png">
 
       <label class="field-label">Bio (max 600 characters)</label>
       <textarea id="sf-bio" maxlength="600" rows="5"
                 placeholder="Introduce yourself to prospective clients."></textarea>
       <div class="muted"><span id="sf-bio-count">0</span>/600</div>
 
+      <label class="field-label">How I work (max 2000 characters)</label>
+      <textarea id="sf-how-i-work" rows="6" maxlength="2000"
+                placeholder="What working with you is actually like"></textarea>
+      <div class="muted"><span id="sf-how-i-work-count">0</span>/2000</div>
+
       <label class="field-label">Photo URL (paste a public image URL)</label>
-      <input type="url" id="sf-photo" placeholder="https://yoursite.com/photo.jpg">
+      <input type="url" id="sf-photo" maxlength="500"
+             placeholder="https://yoursite.com/photo.jpg">
+
+      <label class="field-label">Logo URL (paste a public image URL)</label>
+      <input type="url" id="sf-logo-url" maxlength="500"
+             placeholder="https://yoursite.com/logo.png">
 
       <label class="field-label">Services (comma-separated, up to 12)</label>
       <input type="text" id="sf-services" placeholder="Acupuncture, Nutrition, Biofield Analysis">
@@ -405,10 +412,22 @@
     setShowContact(this.checked);
   });
 
-  // ── Storefront bio counter ──────────────────────────────────────────────────────
+  // ── Storefront character counters ───────────────────────────────────────────────
+  // maxlength stops typing dead with no explanation. That is tolerable on a
+  // one-line tagline, and not on the two fields meant to hold prose — so both
+  // of those get a counter. Set programmatically as well as on input, because
+  // assigning .value never fires an input event.
   document.getElementById('sf-bio').addEventListener('input', function () {
     document.getElementById('sf-bio-count').textContent = this.value.length;
   });
+  document.getElementById('sf-how-i-work').addEventListener('input', function () {
+    document.getElementById('sf-how-i-work-count').textContent = this.value.length;
+  });
+
+  function sfSetCounts(bio, howIWork) {
+    document.getElementById('sf-bio-count').textContent = (bio || '').length;
+    document.getElementById('sf-how-i-work-count').textContent = (howIWork || '').length;
+  }
 
   // ── Storefront dirty-flag wiring ─────────────────────────────────────────────
   // Any edit to the storefront card marks it dirty, so saveSettings() knows to
@@ -429,8 +448,13 @@
     // this click, so an unrelated save still can't publish it.
     document.getElementById('sf-load-scraped').addEventListener('click', function () {
       if (!sfScraped) return;
+      // Deliberately does NOT touch sf-tagline, sf-how-i-work or sf-logo-url.
+      // A scraped directory row has no tagline and no "how I work" — those two
+      // exist only because a practitioner wrote them — and logo_url is never
+      // scraped at all. Overwriting them here would blank whatever she had
+      // already typed with nothing. This is correct, not an oversight.
       document.getElementById('sf-bio').value = sfScraped.bio || '';
-      document.getElementById('sf-bio-count').textContent = (sfScraped.bio || '').length;
+      sfSetCounts(sfScraped.bio, document.getElementById('sf-how-i-work').value);
       document.getElementById('sf-photo').value = sfScraped.photo_url || '';
       document.getElementById('sf-services').value = (sfScraped.services || []).join(', ');
       document.getElementById('sf-city').value = sfScraped.city || '';
@@ -479,7 +503,7 @@
         document.getElementById('sf-how-i-work').value = pf.how_i_work || '';
         document.getElementById('sf-logo-url').value = pf.logo_url || '';
         document.getElementById('sf-bio').value = pf.bio || '';
-        document.getElementById('sf-bio-count').textContent = (pf.bio || '').length;
+        sfSetCounts(pf.bio, pf.how_i_work);
         document.getElementById('sf-photo').value = pf.photo_url || '';
         document.getElementById('sf-services').value = (pf.services || []).join(', ');
         document.getElementById('sf-city').value = pf.city || '';
@@ -491,7 +515,7 @@
         document.getElementById('sf-how-i-work').value = '';
         document.getElementById('sf-logo-url').value = '';
         document.getElementById('sf-bio').value = '';
-        document.getElementById('sf-bio-count').textContent = '0';
+        sfSetCounts('', '');
         document.getElementById('sf-photo').value = '';
         document.getElementById('sf-services').value = '';
         document.getElementById('sf-city').value = '';
