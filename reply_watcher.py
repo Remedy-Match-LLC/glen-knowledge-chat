@@ -187,10 +187,16 @@ def process_inbox_replies(
 
     processed_label_id = _ensure_label(svc, PROCESSED_LABEL)
     nonuser_label_id = _ensure_label(svc, NONUSER_LABEL)
+    # Bank notifications are machine-generated (not cohort replies), but this
+    # existing 15-minute Gmail cron is the reliable place to reconcile them.
+    from dashboard.zelle_email_import import process_notifications
+    zelle_counts = process_notifications(
+        svc, db_path, dry_run=dry_run, max_messages=max_messages)
     counts = _scan_and_process(
         svc, db_path, dry_run, max_messages,
         processed_label_id, nonuser_label_id,
     )
+    counts.update(zelle_counts)
 
     if loaded is not None:
         try:
