@@ -11867,6 +11867,14 @@ def api_console_practitioner_drafts():
         cx.row_factory = sqlite3.Row
         _pd.init_tables(cx)
         drafts = _pd.list_by_status(cx, status)
+    # A bare queue of UUIDs is unusable -- Glen needs to know whose page this
+    # is. Best-effort per row: _practitioner_display_name() itself never
+    # raises, but guard here too so one bad row can never break the queue.
+    for d in drafts:
+        try:
+            d["display_name"] = _practitioner_display_name(d.get("practitioner_id"))
+        except Exception:
+            d["display_name"] = None
     return jsonify({"ok": True, "drafts": drafts})
 
 
@@ -34853,6 +34861,13 @@ def _send_practitioner_invite(email, name, pid):
 @app.route("/console/practitioners")
 def console_practitioners_page():
     resp = send_from_directory(STATIC, "console-practitioners.html")
+    resp.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+    return resp
+
+
+@app.route("/console/practitioner-drafts")
+def console_practitioner_drafts_page():
+    resp = send_from_directory(STATIC, "console-practitioner-drafts.html")
     resp.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
     return resp
 
