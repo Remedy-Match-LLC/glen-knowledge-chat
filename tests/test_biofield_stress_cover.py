@@ -50,9 +50,21 @@ def test_consolidate_layer_balances_moves_all_coverage():
     st.cover_stress(cx, "9", sid, [rid])
     st.cover_stress(cx, "9", sid2, [rid])
 
-    assert st.consolidate_layer_balances(cx, "9", 1, 2) == 2
+    assert st.consolidate_layer_balances(cx, "9", 1, 2) == 3
     rows = cx.execute("SELECT remedy,code FROM biofield_auth_remedy_coverage ORDER BY code").fetchall()
     assert rows == [("calm current", "loose ends"), ("calm current", "second stress")]
+    placements = cx.execute(
+        "SELECT stress_id,chain_rid FROM biofield_auth_layer_stress ORDER BY stress_id"
+    ).fetchall()
+    assert len(placements) == 3 and {rid for _, rid in placements} == {target_rid}
+    chain = [
+        {"layer": 1, "head": "Head", "remedy": "Nerve Pulse", "rid": rid},
+        {"layer": 2, "head": "Target", "remedy": "Calm Current", "rid": target_rid},
+    ]
+    grouped = st.list_stresses(cx, "9", chain)["by_layer"]
+    assert grouped[0]["stresses"] == []
+    assert {item["label"] for item in grouped[1]["stresses"]} == {
+        "Loose ends", "Second stress", "Head"}
 
 
 def test_consolidate_layer_balances_rejects_same_or_missing_target():
@@ -60,8 +72,75 @@ def test_consolidate_layer_balances_rejects_same_or_missing_target():
     _setup(cx)
     with pytest.raises(ValueError, match="must differ"):
         st.consolidate_layer_balances(cx, "9", 1, 1)
-    with pytest.raises(ValueError, match="target layer has no remedies"):
+    with pytest.raises(ValueError, match="target layer does not exist"):
         st.consolidate_layer_balances(cx, "9", 1, 2)
+
+
+def test_consolidate_moves_head_matched_visible_stress_exclusively():
+    cx = sqlite3.connect(":memory:")
+    source_rid = add_chain_row(cx, "9", 1, "Loose ends", "", "", "", "", "")
+    target_rid = add_chain_row(cx, "9", 2, "Target", "", "", "", "", "")
+    st.add_stress(cx, "9", "Loose ends", source="scan", balance="required")
+    sid = cx.execute("SELECT id FROM biofield_auth_stress").fetchone()[0]
+    chain = [
+        {"layer": 1, "head": "Loose ends", "remedy": "", "rid": source_rid},
+        {"layer": 2, "head": "Target", "remedy": "", "rid": target_rid},
+    ]
+    before = st.list_stresses(cx, "9", chain)["by_layer"]
+    assert [x["id"] for x in before[0]["stresses"]] == [sid]
+
+    assert st.consolidate_layer_balances(cx, "9", 1, 2) == 1
+    after = st.list_stresses(cx, "9", chain)["by_layer"]
+    assert after[0]["stresses"] == []
+    assert [x["id"] for x in after[1]["stresses"]] == [sid]
+
+
+def test_consolidate_materializes_head_and_tail_as_balanced_stresses():
+    cx = sqlite3.connect(":memory:")
+    source_rid = add_chain_row(
+        cx, "9", 1, "Cellular Energy", "Super Cell Driver, CNS-Heart-Matrix",
+        "Holy Grail", "", "", "",
+    )
+    target_rid = add_chain_row(cx, "9", 2, "Target", "", "Nous Energy", "", "", "")
+
+    assert st.consolidate_layer_balances(cx, "9", 1, 2) == 3
+    stresses = cx.execute(
+        "SELECT id,label,source,balance FROM biofield_auth_stress ORDER BY id"
+    ).fetchall()
+    assert [(label, source, balance) for _, label, source, balance in stresses] == [
+        ("Cellular Energy", "chain", "required"),
+        ("Super Cell Driver", "chain", "required"),
+        ("CNS-Heart-Matrix", "chain", "required"),
+    ]
+    assert cx.execute(
+        "SELECT stress_id,chain_rid FROM biofield_auth_layer_stress ORDER BY stress_id"
+    ).fetchall() == [(stress_id, target_rid) for stress_id, *_ in stresses]
+    assert not cx.execute(
+        "SELECT 1 FROM biofield_auth_layer_stress WHERE chain_rid=?", (source_rid,)
+    ).fetchone()
+
+
+def test_consolidate_merges_complete_source_layer_into_target_card():
+    cx = sqlite3.connect(":memory:")
+    source_rid = add_chain_row(
+        cx, "9", 4, "Cellular Energy", "Super Cell Driver, CNS-Heart-Matrix",
+        "Holy Grail", "", "", "",
+    )
+    target_rid = add_chain_row(
+        cx, "9", 2, "Nervous System", "Sciatic Nerve", "Nous Energy", "", "", "",
+    )
+
+    assert st.consolidate_layer_balances(cx, "9", 4, 2) == 3
+    rows = cx.execute(
+        "SELECT id,layer,head,most_affected,remedy FROM biofield_auth_chain "
+        "WHERE test_id=9 ORDER BY id"
+    ).fetchall()
+    assert rows == [
+        (source_rid, 2, "Nervous System",
+         "Sciatic Nerve, Cellular Energy, Super Cell Driver, CNS-Heart-Matrix", "Holy Grail"),
+        (target_rid, 2, "Nervous System",
+         "Sciatic Nerve, Cellular Energy, Super Cell Driver, CNS-Heart-Matrix", "Nous Energy"),
+    ]
 
 
 def test_card_shows_covered_chips_and_unassigned_is_draggable():
@@ -90,7 +169,24 @@ def test_each_layer_card_has_consolidation_picker_for_other_layers():
            "schedule": {"slots": [], "entries": []}}
     html = render_author_html(rep, [], "")
     assert html.count("Consolidate balances</button>") == 2
-    assert "consolidateBalances(1" in html and "consolidateBalances(2" in html
+    assert "consolidateBalances(1,1" in html and "consolidateBalances(2,2" in html
+
+
+def test_consolidation_confirmation_uses_visible_numbers_after_reorder():
+    rep = {"test_id": "a1", "client": {"name": "J", "email": ""}, "date": "",
+           "layers": [
+               {"layer": 1, "stored_layer": 3, "head": "H4", "most_affected": "",
+                "remedy": "R4", "rid": 5},
+               {"layer": 2, "stored_layer": 1, "head": "H2", "most_affected": "",
+                "remedy": "R2", "rid": 6}],
+           "schedule": {"slots": [], "entries": []}}
+    html = render_author_html(rep, [], "")
+    # The API still receives stored ids (3 -> 1), while the confirmation uses
+    # the visible card labels (1 -> 2).
+    assert "consolidateBalances(3,1" in html
+    assert "value='1'>Layer 2</option>" in html
+    assert "sel.options[sel.selectedIndex].text" in html
+    assert "Consolidation failed." in html
 
 
 def test_cover_route(tmp_path, monkeypatch):
@@ -129,7 +225,7 @@ def test_consolidate_balances_route(tmp_path, monkeypatch):
         st.cover_stress(cx, tid, sid, [source_rid])
     res = client.post(f"/author/{tid}/layer/1/consolidate-balances",
                       json={"target_layer": 2})
-    assert res.status_code == 200 and res.get_json()["moved"] == 1
+    assert res.status_code == 200 and res.get_json()["moved"] == 2
     with sqlite3.connect(db) as cx:
         assert cx.execute("SELECT remedy FROM biofield_auth_remedy_coverage").fetchall() == [
             ("calm current",)]

@@ -509,12 +509,13 @@ async function balanceStress(sid,val){await post('/author/__TID__/stress/'+sid+'
 async function balanceToLayer(sid,sel){var rids=(sel.value||'').split(',').filter(Boolean);
  if(!rids.length){astat('Select a layer first.');return}
  await post('/author/__TID__/stress/'+sid+'/cover',{rids:rids});location.reload()}
-async function consolidateBalances(source,sel){var target=Number(sel.value||0);
+async function consolidateBalances(source,sourceLabel,sel){var target=Number(sel.value||0);
  if(!target){astat('Choose the destination layer first.');return}
- if(!confirm('Move all balanced stresses from layer '+source+' to layer '+target+'?'))return;
+ var targetLabel=(sel.options[sel.selectedIndex].text||target).replace(/^Layer\\s+/,'');
+ if(!confirm('Move all balanced stresses from layer '+sourceLabel+' to layer '+targetLabel+'?'))return;
  astat('Consolidating balanced stresses…');
  var j=await post('/author/__TID__/layer/'+source+'/consolidate-balances',{target_layer:target});
- if(j&&j.ok)location.reload()}
+ if(j&&j.ok)location.reload();else astat((j&&j.error)||'Consolidation failed.')}
 async function deleteStress(sid,label){if(!confirm('Delete tag "'+label+'" from this intake?'))return;
  const j=await post('/author/__TID__/stress/'+sid+'/delete',{});
  astat(j&&j.ok?'Tag deleted.':((j&&j.error)||'Delete failed.'));if(j&&j.ok)loadStress()}
@@ -875,6 +876,26 @@ async function removeClinicalItem(btn){
  if(!confirm('Remove "'+label+'" from this Biofield checklist?'))return;
  var j=await post('/author/__TID__/clinical-items',{action:'remove',label:label});
  if(j.ok)location.reload()}
+function toggleClinicalItem(box){
+ var row=box.closest('.clinical-item');if(!row)return;
+ if(row.classList.contains('done')&&!box.checked){
+  box.checked=true;
+  alert('This issue is already assigned to a layer. Edit it in the causal chain to remove that assignment.');
+  return;
+ }
+ row.classList.toggle('selected',box.checked);
+ if(box.checked){var select=row.querySelector('.clinical-layer');if(select)select.focus()}
+}
+async function balanceClinicalItem(btn){
+ var row=btn.closest('.clinical-item'),label=row.dataset.label;
+ var layer=Number(row.querySelector('.clinical-layer').value||0);
+ var remedies=[].slice.call(row.querySelectorAll('.clinical-remedy-choice:checked'))
+  .map(function(x){return x.value});
+ var custom=(row.querySelector('.clinical-custom-remedy').value||'').trim();if(custom)remedies.push(custom);
+ if(!layer){alert('Choose an existing layer or New layer first.');return}
+ btn.disabled=true;btn.textContent='Balancing…';
+ var j=await post('/author/__TID__/clinical-items/balance',{label:label,layer:layer,remedies:remedies});
+ if(j.ok)location.reload();else{btn.disabled=false;btn.textContent='Add to layer';alert(j.error||'Could not add item to layer')}}
 function initClinicalDrag(){
  var grid=document.querySelector('.clinical-grid');if(!grid)return;var moving=null;
  grid.querySelectorAll('.clinical-item').forEach(function(row){
@@ -1195,7 +1216,7 @@ def _render_chain_cards(report, depth_values, covered_by_layer=None):
         consolidate = (
             f"<span class=consolidate><select id={gid}_consolidate>"
             f"<option value=''>Move balances to…</option>{targets}</select> "
-            f"<button class='btn ghost' onclick=\"consolidateBalances({source_layer},document.getElementById('{gid}_consolidate'))\">"
+            f"<button class='btn ghost' onclick=\"consolidateBalances({source_layer},{n},document.getElementById('{gid}_consolidate'))\">"
             "Consolidate balances</button></span>" if targets else "")
         cards += (
             f"<div class=lcard draggable=true data-gid={gid} data-rids=\"{rids}\" "
@@ -1316,44 +1337,79 @@ def render_fee_panel(state):
     return head + cur + controls + js + "</div>"
 
 
-def render_clinical_checklist(items):
+def render_clinical_checklist(items, layers=None):
     """Scannable editable checklist; completion follows the current remedy program."""
     items = items or []
+    layer_groups = group_layers(layers or [])
+    layer_options = []
+    for group in layer_groups:
+        display_number = group.get("layer")
+        stored_number = group.get("stored_layer", display_number)
+        if not display_number or not stored_number:
+            continue
+        title = (group.get("head") or "").strip()
+        label = f"Layer {display_number}" + (f": {title}" if title else "")
+        layer_options.append((int(stored_number), label))
+    next_stored_layer = max([number for number, _ in layer_options] or [0]) + 1
+    next_display_layer = len(layer_options) + 1
     checked = sum(1 for item in items if item.get("checked"))
     rows = ""
     for item in items:
         done = bool(item.get("checked"))
         cls = "clinical-item done" if done else "clinical-item"
-        mark = "&#10003;" if done else ""
-        remedy = (f"<span class=clinical-remedy>{_e(item.get('covered_by') or '')}</span>"
+        remedy = (f"<span class=clinical-remedy>Layer {_e(str(item.get('layer') or '?'))} · {_e(item.get('covered_by') or '')}</span>"
                   if done else "<span class=clinical-open>Needs remedy coverage</span>")
         label = item.get("label") or ""
+        common = "".join(
+            f"<label><input class=clinical-remedy-choice type=checkbox value=\"{_e(name)}\""
+            f"{' checked' if name.lower() == (item.get('covered_by') or '').lower() else ''}> {_e(name)}</label>"
+            for name in item.get("common_remedies") or []
+        ) or "<span class=clinical-open>No common remedies recorded yet</span>"
+        selected_layer = item.get("layer")
+        options = "<option value=''>Choose layer…</option>" + "".join(
+            f"<option value='{number}'{' selected' if str(selected_layer or '') == str(number) else ''}>"
+            f"{_e(option_label)}</option>"
+            for number, option_label in layer_options
+        )
+        options += (f"<option value='{next_stored_layer}'"
+                    f"{' selected' if str(selected_layer or '') == str(next_stored_layer) else ''}>"
+                    f"New layer {next_display_layer}</option>")
         rows += (f"<div class='{cls}' data-label=\"{_e(label)}\" aria-grabbed=false>"
                  "<span class=clinical-grip title='Drag to reorder' aria-hidden=true>&#8942;&#8942;</span>"
-                 f"<span class=clinical-check aria-hidden=true>{mark}</span>"
+                 f"<input class=clinical-check type=checkbox aria-label=\"Select {_e(label)}\""
+                 f"{' checked' if done else ''} onchange=toggleClinicalItem(this)>"
                  f"<span class=clinical-label>{_e(label)}</span>{remedy}"
+                 f"<div class=clinical-balance><div class=clinical-common>{common}</div>"
+                 f"<input class=clinical-custom-remedy placeholder='Add remedy…'>"
+                 f"<label class=clinical-layer-label>Assign to layer"
+                 f"<select class=clinical-layer aria-label='Layer for {_e(label)}'>{options}</select></label>"
+                 "<button class='btn ghost' onclick=balanceClinicalItem(this)>Add to layer</button></div>"
                  "<button class=clinical-remove onclick=removeClinicalItem(this) "
                  "title='Remove from this checklist' aria-label='Remove item'>&times;</button></div>")
     return ("<style>.clinical-summary{margin:18px 0 14px;padding:14px 16px;border:1px solid var(--line);"
             "border-left:4px solid var(--accent);border-radius:10px;background:var(--card)}"
             ".clinical-head{display:flex;justify-content:space-between;gap:12px;align-items:baseline;margin-bottom:10px}"
             ".clinical-title{font-size:18px;font-weight:700}.clinical-count{font-size:12px;color:var(--muted)}"
-            ".clinical-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px}"
+            ".clinical-grid{display:grid;grid-template-columns:1fr;gap:9px}"
             ".clinical-item{position:relative;display:grid;grid-template-columns:12px 22px minmax(0,1fr);gap:0 8px;align-items:center;"
             "padding:9px 10px;border:1px solid var(--line);border-radius:8px;background:rgba(255,255,255,.025)}"
-            ".clinical-item.done{border-color:rgba(88,190,135,.45);background:rgba(88,190,135,.08)}"
-            ".clinical-grip{grid-row:1/3;color:var(--muted);font-size:12px;letter-spacing:-3px;cursor:grab}"
+            ".clinical-item.done,.clinical-item.selected{border-color:rgba(88,190,135,.45);background:rgba(88,190,135,.08)}"
+            ".clinical-grip{grid-row:1/4;color:var(--muted);font-size:12px;letter-spacing:-3px;cursor:grab}"
             ".clinical-item.dragging{opacity:.45;border-color:var(--accent)}"
             ".clinical-item[draggable=true]{cursor:grab}.clinical-item[draggable=true]:active{cursor:grabbing}"
-            ".clinical-check{grid-row:1/3;width:18px;height:18px;border:2px solid var(--muted);border-radius:4px;"
-            "display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800}"
-            ".done .clinical-check{border-color:var(--ok);background:var(--ok);color:#07140d}"
+            ".clinical-check{grid-row:1/3;width:18px;height:18px;margin:0;accent-color:var(--ok);cursor:pointer}"
             ".clinical-label{font-weight:650;line-height:1.25}.clinical-remedy,.clinical-open{font-size:11px;margin-top:2px}"
             ".clinical-remedy{color:var(--ok)}.clinical-open{color:var(--muted)}"
+            ".clinical-balance{grid-column:3;display:grid;grid-template-columns:minmax(160px,1fr) minmax(260px,1.25fr) auto;gap:8px;margin-top:9px;align-items:end}"
+            ".clinical-common{grid-column:1/-1;display:flex;flex-wrap:wrap;gap:5px 12px;font-size:11px;color:var(--muted)}"
+            ".clinical-common label{white-space:nowrap}.clinical-common input{width:auto;margin:0 3px 0 0}"
+            ".clinical-balance input,.clinical-balance select{margin:0;min-width:0;padding:9px}.clinical-layer-label{font-size:11px;font-weight:700;color:var(--muted)}"
+            ".clinical-layer-label select{display:block;width:100%;margin-top:3px;color:var(--text);background:var(--card);border:1px solid var(--accent)}"
+            ".clinical-balance .btn{padding:9px 12px}"
             ".clinical-remove{position:absolute;right:7px;top:5px;border:0;background:transparent;color:var(--muted);"
             "font-size:18px;line-height:1;cursor:pointer}.clinical-remove:hover{color:#ef8d8d}"
             ".clinical-add{display:flex;gap:7px;margin-top:10px}.clinical-add input{margin:0;max-width:360px}"
-            "@media(max-width:760px){.clinical-grid{grid-template-columns:1fr}}</style>"
+            "@media(max-width:760px){.clinical-grid{grid-template-columns:1fr}.clinical-balance{grid-template-columns:1fr}.clinical-balance .btn{grid-column:1/-1}}</style>"
             "<section class=clinical-summary><div class=clinical-head>"
             "<div><div class=clinical-title>Clinical summary</div>"
             "<div class=food>Significant symptoms and conditions from intake</div></div>"
@@ -1479,7 +1535,7 @@ def render_author_html(report, depth_values=None, transcript="", covered_by_laye
                  "<button class='btn ghost' onclick=suggestRemedies()>Suggest minimal remedies</button>"
                  "</div>"
                  "<div id=suggestpanel></div>" + render_clinical_proposals()
-                 + render_clinical_checklist(clinical_checklist)
+                 + render_clinical_checklist(clinical_checklist, report.get("layers") or [])
                  + chain + session + narrative_section
                  + _AUTHOR_JS.replace("__TID__", tid)
                  + "<script>loadClinicalProposals();initClinicalDrag()</script>")

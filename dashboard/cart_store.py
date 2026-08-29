@@ -209,6 +209,63 @@ def set_qty(cx, token, slug, fmt, qty):
     cx.commit()
 
 
+def set_format(cx, token, slug, from_fmt, to_fmt):
+    """Move a cart line to another package format without duplicating quantity."""
+    from_fmt = (from_fmt or "").strip().lower()
+    to_fmt = (to_fmt or "").strip().lower()
+    if from_fmt == to_fmt:
+        return
+    row = cx.execute(
+        "SELECT qty, source, added_at FROM cart_items WHERE token=? AND slug=? AND fmt=?",
+        (token, slug, from_fmt),
+    ).fetchone()
+    if not row:
+        raise ValueError("Cart item not found")
+    existing = cx.execute(
+        "SELECT qty FROM cart_items WHERE token=? AND slug=? AND fmt=?",
+        (token, slug, to_fmt),
+    ).fetchone()
+    if existing:
+        cx.execute(
+            "UPDATE cart_items SET qty=? WHERE token=? AND slug=? AND fmt=?",
+            (max(int(row[0]), int(existing[0])), token, slug, to_fmt),
+        )
+    else:
+        cx.execute(
+            "INSERT INTO cart_items(token,slug,fmt,qty,source,added_at) VALUES (?,?,?,?,?,?)",
+            (token, slug, to_fmt, int(row[0]), row[1], row[2]),
+        )
+    cx.execute(
+        "DELETE FROM cart_items WHERE token=? AND slug=? AND fmt=?",
+        (token, slug, from_fmt),
+    )
+    _touch(cx, token)
+    cx.commit()
+
+
+def set_format_quantities(cx, token, slug, bottle_qty, refill_qty):
+    """Replace all format lines for a product with the requested bottle/refill split."""
+    slug = (slug or "").strip().lower()
+    bottle_qty = max(0, min(int(bottle_qty or 0), MAX_QTY))
+    refill_qty = max(0, min(int(refill_qty or 0), MAX_QTY))
+    rows = cx.execute(
+        "SELECT source, added_at FROM cart_items WHERE token=? AND slug=? ORDER BY added_at",
+        (token, slug),
+    ).fetchall()
+    if not rows:
+        raise ValueError("Cart item not found")
+    source, added_at = rows[0][0], rows[0][1]
+    cx.execute("DELETE FROM cart_items WHERE token=? AND slug=?", (token, slug))
+    for fmt, qty in (("bottle", bottle_qty), ("refill", refill_qty)):
+        if qty:
+            cx.execute(
+                "INSERT INTO cart_items(token,slug,fmt,qty,source,added_at) VALUES (?,?,?,?,?,?)",
+                (token, slug, fmt, qty, source, added_at),
+            )
+    _touch(cx, token)
+    cx.commit()
+
+
 def items(cx, token):
     rows = cx.execute(
         "SELECT slug, qty, fmt, source FROM cart_items WHERE token=? ORDER BY added_at, slug",
