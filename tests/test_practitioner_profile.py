@@ -356,3 +356,35 @@ def test_only_one_function_stamps_profile_self_authored_at():
         "(dashboard/practitioner_profile.py::_write_live_profile); found:\n"
         + "\n".join(hits))
     assert hits[0].startswith("dashboard/practitioner_profile.py:"), hits[0]
+
+
+def test_sanitize_tagline_strips_html_and_collapses_whitespace():
+    assert pp.sanitize_tagline("  <b>Root-cause</b>   coaching ") == "Root-cause coaching"
+
+
+def test_sanitize_tagline_rejects_over_the_cap():
+    with pytest.raises(ValueError):
+        pp.sanitize_tagline("x" * (pp.MAX_TAGLINE + 1))
+
+
+def test_sanitize_tagline_accepts_exactly_the_cap():
+    assert len(pp.sanitize_tagline("x" * pp.MAX_TAGLINE)) == pp.MAX_TAGLINE
+
+
+def test_sanitize_how_i_work_strips_html():
+    """Note the expected value: stripping <script> closes the gap between the
+    words, so "start" and "x" join. That is _norm's real behaviour, verified,
+    not a typo — do not "fix" it to "We start x slowly"."""
+    assert pp.sanitize_how_i_work("<p>We start<script>x</script> slowly</p>") == "We startx slowly"
+
+
+def test_sanitize_how_i_work_rejects_over_the_cap():
+    with pytest.raises(ValueError):
+        pp.sanitize_how_i_work("x" * (pp.MAX_HOW_I_WORK + 1))
+
+
+def test_sanitizers_do_not_strip_the_practitioners_own_contact_detail():
+    """Same rule sanitize_bio follows: over-stripping prose is a known failure
+    mode, and a practitioner may legitimately name their own phone or site."""
+    out = pp.sanitize_how_i_work("Call me on 808-555-0100 or see maryboyd.com")
+    assert "808-555-0100" in out and "maryboyd.com" in out

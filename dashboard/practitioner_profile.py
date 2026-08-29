@@ -27,6 +27,8 @@ Dialect split, deliberate: everything draft-side is sqlite and uses `?`;
 import re
 
 MAX_BIO = 600
+MAX_TAGLINE = 120
+MAX_HOW_I_WORK = 2000
 MAX_SERVICES = 12
 MAX_SERVICE_LEN = 60
 MAX_LOC_LEN = 80
@@ -51,6 +53,30 @@ def sanitize_bio(text):
     clean = _norm(text)
     if len(clean) > MAX_BIO:
         raise ValueError(f"bio exceeds {MAX_BIO} characters")
+    return clean
+
+
+def sanitize_tagline(text):
+    """One line under the practitioner's name. Strip HTML, collapse whitespace,
+    refuse anything over MAX_TAGLINE. Raises ValueError, like sanitize_bio, so
+    the settings route's existing 400 handler catches it."""
+    clean = _norm(text)
+    if len(clean) > MAX_TAGLINE:
+        raise ValueError(f"tagline exceeds {MAX_TAGLINE} characters")
+    return clean
+
+
+def sanitize_how_i_work(text):
+    """The longer 'how I work' prose. Same rules as sanitize_bio, bigger cap:
+    the 600-char bio cannot carry a page that has to explain a practice.
+
+    Like sanitize_bio this does NOT strip URLs, emails or phone numbers — a
+    practitioner may legitimately include their own, and over-stripping prose
+    is a known failure mode.
+    """
+    clean = _norm(text)
+    if len(clean) > MAX_HOW_I_WORK:
+        raise ValueError(f"how_i_work exceeds {MAX_HOW_I_WORK} characters")
     return clean
 
 
