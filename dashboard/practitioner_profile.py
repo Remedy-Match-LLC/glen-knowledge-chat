@@ -105,6 +105,12 @@ def sanitize_image_url(url):
     for special schemes like https, so a backslash lets a site-relative-looking
     path resolve to an arbitrary external host.
 
+    The validator also normalises ASCII tab, CR, and LF the way a browser does
+    (per WHATWG URL Standard), stripping them BEFORE parsing scheme/authority/
+    path. This prevents "/\t/evil.com/x.png" from silently becoming "//evil.com/x.png"
+    in the browser. If normalisation would change the string, reject it — legitimate
+    image URLs never need raw tab or newline, only percent-encoded %09/%0D/%0A.
+
     Empty input returns "" — clearing an image is legitimate.
 
     This validates what a PRACTITIONER submits. It deliberately does not touch
@@ -116,6 +122,15 @@ def sanitize_image_url(url):
         return ""
     if len(u) > MAX_URL:
         raise ValueError(f"image URL exceeds {MAX_URL} characters")
+    # A browser strips ASCII tab/CR/LF from a URL BEFORE parsing scheme,
+    # authority or path (WHATWG URL Standard). So validating the raw string
+    # would judge a different value than the one the browser resolves:
+    # "/\t/evil.com/x.png" contains no "//" here, but the browser sees
+    # "//evil.com/x.png" and fetches off-site. Reject rather than silently
+    # normalise, so what we store is exactly what we validated.
+    normalised = "".join(c for c in u if c not in "\t\r\n")
+    if u != normalised:
+        raise ValueError("image URL must not contain tab or newline characters")
     if "\\" in u:
         raise ValueError("image URL must not contain a backslash")
     if u.startswith("//"):

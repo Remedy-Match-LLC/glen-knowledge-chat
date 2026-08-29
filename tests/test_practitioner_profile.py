@@ -419,6 +419,10 @@ def test_image_url_empty_is_allowed():
     "/\\evil.com/x.png",                # backslash bypass: resolves to https://evil.com/x.png
     "/a/\\evil.com/x.png",              # backslash not at position 1
     "https://good.example.com/a\\b.png",  # backslash inside otherwise valid https URL
+    "/\t/evil.com/x.png",               # tab-slash bypass: browser normalises to //evil.com/x.png
+    "/\n/evil.com/x.png",               # newline bypass: browser normalises to //evil.com/x.png
+    "/\r/evil.com/x.png",               # CR bypass: browser normalises to //evil.com/x.png
+    "https://good.example.com/a\tb.png",  # tab inside otherwise valid https URL
 ])
 def test_image_url_rejects_dangerous_or_insecure(bad):
     with pytest.raises(ValueError):
