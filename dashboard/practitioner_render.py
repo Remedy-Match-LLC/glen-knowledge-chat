@@ -175,6 +175,34 @@ def _featured(view):
     return f"<section><h2>Featured</h2><ul>{''.join(lis)}</ul></section>"
 
 
+SITE_NAME = "Remedy Match"
+
+
+def _share_tags(view, title, desc, canonical_url):
+    """Open Graph and Twitter Card tags.
+
+    og:type is "profile" rather than "website" because this page is a person.
+    The Twitter card type follows the photo: summary_large_image with no image
+    renders as an empty grey box, which looks more broken than the small card.
+    """
+    photo = (view.get("photo_url") or "").strip()
+    tags = [
+        '<meta property="og:type" content="profile">',
+        f'<meta property="og:title" content="{_esc(title)}">',
+        f'<meta property="og:description" content="{_esc(desc)}">',
+        f'<meta property="og:url" content="{_esc(canonical_url)}">',
+        f'<meta property="og:site_name" content="{_esc(SITE_NAME)}">',
+        f'<meta name="twitter:card" content='
+        f'"{"summary_large_image" if photo else "summary"}">',
+        f'<meta name="twitter:title" content="{_esc(title)}">',
+        f'<meta name="twitter:description" content="{_esc(desc)}">',
+    ]
+    if photo:
+        tags.append(f'<meta property="og:image" content="{_esc(photo)}">')
+        tags.append(f'<meta name="twitter:image" content="{_esc(photo)}">')
+    return "".join(tags)
+
+
 def render_page_html(view, *, canonical_url):
     """Render the complete document for one practitioner.
 
@@ -212,6 +240,8 @@ def render_page_html(view, *, canonical_url):
         '<meta name="viewport" content="width=device-width, initial-scale=1">'
         f"<title>{_esc(title)}</title>"
         f'<meta name="description" content="{_esc(desc)}">'
+        f"{_share_tags(view, title, desc, canonical_url)}"
+        f'<link rel="canonical" href="{_esc(canonical_url)}">'
         '<meta name="robots" content="noindex">'
         f"{_STYLE}"
         "</head><body>"

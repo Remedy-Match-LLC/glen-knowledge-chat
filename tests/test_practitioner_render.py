@@ -140,3 +140,54 @@ def test_services_render_as_a_list():
     html = pr.render_page_html(_view(services=["sleep coaching", "nutrition"]),
                                canonical_url="https://myhealingoasis.com/mary-boyd")
     assert "sleep coaching" in html and "nutrition" in html
+
+
+CANON = "https://myhealingoasis.com/mary-boyd"
+
+
+def test_open_graph_tags_are_present():
+    v = _view(tagline="Helping nurses stop running on empty",
+              practice_name="Fairbanks Wellness")
+    html = pr.render_page_html(v, canonical_url=CANON)
+    assert '<meta property="og:type" content="profile">' in html
+    assert '<meta property="og:title" content="Mary Boyd — Fairbanks Wellness">' in html
+    assert ('<meta property="og:description" content="Helping nurses stop '
+            'running on empty">') in html
+    assert f'<meta property="og:url" content="{CANON}">' in html
+    assert '<meta property="og:site_name" content="Remedy Match">' in html
+
+
+def test_og_image_is_present_only_when_there_is_a_photo():
+    assert 'property="og:image"' not in pr.render_page_html(_view(), canonical_url=CANON)
+    v = _view(photo_url="https://cdn.example/mary.jpg")
+    html = pr.render_page_html(v, canonical_url=CANON)
+    assert '<meta property="og:image" content="https://cdn.example/mary.jpg">' in html
+
+
+def test_twitter_card_type_follows_the_photo():
+    """summary_large_image with no image renders as an empty box."""
+    assert ('<meta name="twitter:card" content="summary">'
+            in pr.render_page_html(_view(), canonical_url=CANON))
+    v = _view(photo_url="https://cdn.example/mary.jpg")
+    assert ('<meta name="twitter:card" content="summary_large_image">'
+            in pr.render_page_html(v, canonical_url=CANON))
+
+
+def test_canonical_link_uses_the_url_it_was_given():
+    html = pr.render_page_html(_view(), canonical_url=CANON)
+    assert f'<link rel="canonical" href="{CANON}">' in html
+
+
+def test_og_and_meta_descriptions_agree():
+    """Three descriptions from one builder. They must not drift."""
+    v = _view(bio="I work with nurses and shift workers.")
+    html = pr.render_page_html(v, canonical_url=CANON)
+    d = pr.build_description(v)
+    assert f'<meta name="description" content="{d}">' in html
+    assert f'<meta property="og:description" content="{d}">' in html
+    assert f'<meta name="twitter:description" content="{d}">' in html
+
+
+def test_a_quote_in_the_canonical_url_cannot_break_the_attribute():
+    html = pr.render_page_html(_view(), canonical_url='https://x/"><script>')
+    assert '"><script>' not in html
