@@ -1249,6 +1249,17 @@
         chatHistory.push({role: 'assistant', content: data.reply});
         var replyEl = scopedChatAppendBot(data.reply, data.suggestions || []);
         if (replyEl && window.TTS) window.TTS.attachReply(replyEl, data.reply);
+        if(data.cart_added && data.cart_added.length){
+          data.cart_added.forEach(function(x){
+            cart[x.slug] = Math.min(99, (cart[x.slug] || 0) + (parseInt(x.qty, 10) || 1));
+          });
+          renderProducts();
+          renderCartSummary();
+          refreshPayState();
+          scopedChatAppendBot('Added to your basket: ' + data.cart_added.map(function(x){
+            return (x.qty || 1) + ' × ' + (x.name || x.slug);
+          }).join(', '));
+        }
       })
       .catch(function () {
         sendBtn.disabled = false;

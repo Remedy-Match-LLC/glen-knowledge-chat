@@ -237,10 +237,20 @@ def _sync_fully_paid_order(cx, order_id, method):
     Kept separate so an idempotent retry of an existing external_ref can repair
     a prior run interrupted after the ledger insert but before the order update.
     """
-    bal = balance(cx, order_id)
+    # Some ledger-only maintenance/tests intentionally operate without the orders
+    # projection table. Payment durability must not depend on that optional view.
+    try:
+        existing_order = orders.get_order(cx, order_id) or {}
+        # Once projected paid, later split/overpayments belong only in the ledger;
+        # never rewrite the captured paid_cents/timestamp used for reconciliation.
+        if existing_order.get("pay_status") == "paid":
+            return
+        bal = balance(cx, order_id)
+    except Exception:
+        return
     if bal["balance_cents"] > 0:
         return
-    order = orders.get_order(cx, order_id) or {}
+    order = existing_order
     paid_cents = int(bal["paid_cents"] - bal["refunded_cents"])
     if order.get("status") in ("proposed", "confirmed"):
         orders.set_order_payment(cx, order_id, method=method,
