@@ -165,6 +165,17 @@
              style="margin-top:8px;display:none">Use my directory info as a starting point</button></div>
       </div>
 
+      <label class="field-label">Tagline (max 120 characters)</label>
+      <input type="text" id="sf-tagline" maxlength="120"
+             placeholder="One line under your name">
+
+      <label class="field-label">How I work (max 2000 characters)</label>
+      <textarea id="sf-how-i-work" rows="6" maxlength="2000"
+                placeholder="What working with you is actually like"></textarea>
+
+      <label class="field-label">Logo URL (paste a public image URL)</label>
+      <input type="text" id="sf-logo-url" placeholder="https://...">
+
       <label class="field-label">Bio (max 600 characters)</label>
       <textarea id="sf-bio" maxlength="600" rows="5"
                 placeholder="Introduce yourself to prospective clients."></textarea>
@@ -405,7 +416,7 @@
   // unrelated save (pricing/branding/toggles) can never publish or re-stamp it.
   (function () {
     var markDirty = function () { sfDirty = true; };
-    ['sf-bio', 'sf-photo', 'sf-services', 'sf-city', 'sf-state'].forEach(function (id) {
+    ['sf-tagline', 'sf-how-i-work', 'sf-logo-url', 'sf-bio', 'sf-photo', 'sf-services', 'sf-city', 'sf-state'].forEach(function (id) {
       document.getElementById(id).addEventListener('input', markDirty);
       document.getElementById(id).addEventListener('change', markDirty);
     });
@@ -464,6 +475,9 @@
       var pf = data.profile || {};
       var scrapedNote = document.getElementById('sf-scraped-note');
       if (pf.self_authored) {
+        document.getElementById('sf-tagline').value = pf.tagline || '';
+        document.getElementById('sf-how-i-work').value = pf.how_i_work || '';
+        document.getElementById('sf-logo-url').value = pf.logo_url || '';
         document.getElementById('sf-bio').value = pf.bio || '';
         document.getElementById('sf-bio-count').textContent = (pf.bio || '').length;
         document.getElementById('sf-photo').value = pf.photo_url || '';
@@ -473,6 +487,9 @@
         document.getElementById('sf-accepting').checked = pf.accepting_clients !== false;
         if (scrapedNote) scrapedNote.style.display = 'none';
       } else {
+        document.getElementById('sf-tagline').value = '';
+        document.getElementById('sf-how-i-work').value = '';
+        document.getElementById('sf-logo-url').value = '';
         document.getElementById('sf-bio').value = '';
         document.getElementById('sf-bio-count').textContent = '0';
         document.getElementById('sf-photo').value = '';
@@ -547,6 +564,9 @@
     // toggles alone can never publish or re-stamp the storefront card.
     if (sfDirty) {
       payload.profile = {
+        tagline: document.getElementById('sf-tagline').value.trim(),
+        how_i_work: document.getElementById('sf-how-i-work').value,
+        logo_url: document.getElementById('sf-logo-url').value.trim(),
         bio: document.getElementById('sf-bio').value,
         photo_url: document.getElementById('sf-photo').value.trim(),
         services: document.getElementById('sf-services').value.split(',')

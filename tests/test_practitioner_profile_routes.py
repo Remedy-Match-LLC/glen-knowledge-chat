@@ -1,5 +1,6 @@
 # tests/test_practitioner_profile_routes.py
 import os
+import pathlib
 import pytest
 if not os.environ.get("PINECONE_API_KEY"):
     pytest.skip("needs doppler env for import app", allow_module_level=True)
@@ -209,3 +210,67 @@ def test_get_settings_falls_back_to_the_live_row_with_no_draft(client, monkeypat
     body = client.get("/api/practitioner/settings").get_json()
     assert body["profile"]["bio"] == "I heal"
     assert "profile_status" not in body
+
+
+def test_get_settings_includes_the_new_fields_from_the_live_row(client, monkeypatch):
+    """The editor's loader pre-fills the form from `data.profile` on load. If
+    the GET route never reads tagline/how_i_work/logo_url off the live row,
+    the client-side wiring is pointless: a saved value would still vanish on
+    reload because the server never sent it back."""
+    row = {"bio": "I heal", "photo_url": "https://x/p.jpg", "logo_url": "https://x/l.png",
+           "specialties": ["Acupuncture"], "city": "Hilo", "state": "HI",
+           "accepting_new_patients": True, "tagline": "Root-cause coaching",
+           "how_i_work": "We start slowly.",
+           "profile_self_authored_at": "2026-07-20T00:00:00Z", "show_contact": False}
+    import db_supabase
+    monkeypatch.setattr(db_supabase, "supabase_cursor", lambda: _FakeCtx(_FakeCur(row)))
+    r = client.get("/api/practitioner/settings")
+    prof = r.get_json()["profile"]
+    assert prof["tagline"] == "Root-cause coaching"
+    assert prof["how_i_work"] == "We start slowly."
+    assert prof["logo_url"] == "https://x/l.png"
+
+
+def test_get_settings_overlays_the_draft_new_fields(client, monkeypatch, tmp_path):
+    """Same C2 pending-draft-wins rule, now covering the three new fields."""
+    import sqlite3
+    import db_supabase
+    from dashboard import practitioner_drafts as _pd
+
+    live = {"bio": "SCRAPED live bio", "photo_url": "", "logo_url": "", "specialties": ["Old"],
+            "city": "Kona", "state": "HI", "accepting_new_patients": True,
+            "tagline": "", "how_i_work": "",
+            "profile_self_authored_at": "2026-07-20T00:00:00Z", "show_contact": False}
+    monkeypatch.setattr(db_supabase, "supabase_cursor", lambda: _FakeCtx(_FakeCur(live)))
+
+    dbpath = str(tmp_path / "chat_log.db")
+    monkeypatch.setattr(appmod, "LOG_DB", dbpath)
+    with appmod.db.connect(dbpath) as cx:
+        cx.row_factory = sqlite3.Row
+        _pd.init_tables(cx)
+        _pd.upsert_draft(cx, "pid-123", {
+            "bio": "MY PENDING EDIT", "photo_url": "https://x/new.jpg",
+            "logo_url": "https://x/new-logo.png",
+            "services": ["New"], "city": "Hilo", "state": "HI",
+            "accepting_clients": False,
+            "tagline": "MY PENDING TAGLINE", "how_i_work": "MY PENDING HOW"})
+
+    body = client.get("/api/practitioner/settings").get_json()
+    assert body["profile"]["tagline"] == "MY PENDING TAGLINE"
+    assert body["profile"]["how_i_work"] == "MY PENDING HOW"
+    assert body["profile"]["logo_url"] == "https://x/new-logo.png"
+
+
+def test_settings_page_offers_the_new_profile_inputs():
+    """A field the practitioner cannot type is a field that does not exist.
+    Section 2a shipped a submit route with no caller; this is the same check
+    one layer up."""
+    html = pathlib.Path(appmod.STATIC, "practitioner-settings.html").read_text(encoding="utf-8")
+    for ident in ("sf-tagline", "sf-how-i-work", "sf-logo-url"):
+        assert ident in html, f"settings page has no input for {ident}"
+
+
+def test_settings_page_sends_the_new_fields():
+    html = pathlib.Path(appmod.STATIC, "practitioner-settings.html").read_text(encoding="utf-8")
+    for key in ("tagline", "how_i_work", "logo_url"):
+        assert key in html, f"settings page never sends {key} in its payload"
