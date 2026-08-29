@@ -48,6 +48,25 @@ def test_stripe_payment_idempotent_on_external_ref(cx):
     assert len([r for r in rows if r["kind"] == "payment"]) == 1
 
 
+def test_idempotent_retry_repairs_fully_paid_order_projection(cx):
+    oid = _oid(cx)
+    op.add_payment(cx, oid, 41282, "Zelle", source="bank-email",
+                   external_ref="zelle:gmail:abc")
+    # Simulate a crash/race that left the order projection stale after the durable
+    # ledger row was inserted. Retrying the same Gmail notification must not add a
+    # second payment, but must repair paid status and fulfillment state.
+    cx.execute("UPDATE orders SET status='proposed', pay_status='unpaid', paid_cents=0 "
+               "WHERE id=?", (oid,))
+    cx.commit()
+    op.add_payment(cx, oid, 41282, "Zelle", source="bank-email",
+                   external_ref="zelle:gmail:abc")
+    order = orders.get_order(cx, oid)
+    assert order["pay_status"] == "paid"
+    assert order["status"] == "new"
+    assert order["paid_cents"] == 41282
+    assert len(op.list_payments(cx, oid)) == 1
+
+
 def test_add_payment_does_not_push_to_qbo(cx, monkeypatch):
     # Was test_add_payment_syncs_to_qbo, which asserted the opposite: that add_payment
     # CREATES a QBO payment. That behaviour is deliberately gone -- every payment already

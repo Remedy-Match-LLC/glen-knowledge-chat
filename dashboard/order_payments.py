@@ -231,6 +231,25 @@ def _push_payment(cx, pid):
     _mark_sync(cx, pid, state="synced")
 
 
+def _sync_fully_paid_order(cx, order_id, method):
+    """Project a settled ledger balance onto the order/fulfillment state.
+
+    Kept separate so an idempotent retry of an existing external_ref can repair
+    a prior run interrupted after the ledger insert but before the order update.
+    """
+    bal = balance(cx, order_id)
+    if bal["balance_cents"] > 0:
+        return
+    order = orders.get_order(cx, order_id) or {}
+    paid_cents = int(bal["paid_cents"] - bal["refunded_cents"])
+    if order.get("status") in ("proposed", "confirmed"):
+        orders.set_order_payment(cx, order_id, method=method,
+                                 amount_cents=paid_cents)
+    else:
+        orders.mark_order_paid_keep_status(cx, order_id, method=method,
+                                           amount_cents=paid_cents)
+
+
 def add_payment(cx, order_id, amount_cents, method, *, source="manual",
                 external_ref=None, paid_at=None, note=None, actor=None,
                 qbo_txn_id=None, skip_qbo_push=False, payer_email=None):
@@ -256,6 +275,8 @@ def add_payment(cx, order_id, amount_cents, method, *, source="manual",
             "AND external_ref=? AND status='active'",
             (order_id, external_ref)).fetchone()
         if dup:
+            row = _row(cx, dup[0])
+            _sync_fully_paid_order(cx, order_id, row.get("method") or method)
             return _row(cx, dup[0])
     row = _insert(cx, order_id, kind="payment", amount_cents=amount_cents,
                   method=method, source=source, external_ref=external_ref,
@@ -269,16 +290,7 @@ def add_payment(cx, order_id, amount_cents, method, *, source="manual",
     # ledger reaches the invoice total. This was previously left to a second,
     # manual "mark paid" action, so a fully reconciled Zelle payment could leave an
     # invoice looking unpaid indefinitely.
-    bal = balance(cx, order_id)
-    if bal["balance_cents"] <= 0:
-        order = orders.get_order(cx, order_id) or {}
-        paid_cents = int(bal["paid_cents"] - bal["refunded_cents"])
-        if order.get("status") in ("proposed", "confirmed"):
-            orders.set_order_payment(
-                cx, order_id, method=method, amount_cents=paid_cents)
-        else:
-            orders.mark_order_paid_keep_status(
-                cx, order_id, method=method, amount_cents=paid_cents)
+    _sync_fully_paid_order(cx, order_id, method)
     return _row(cx, row["id"])
 
 
