@@ -135,3 +135,77 @@ def test_post_bad_bio_does_not_partially_persist_branding(client, monkeypatch):
     assert branding_calls["n"] == 0
     assert pricing_calls["n"] == 0
     assert save_draft_calls["n"] == 0
+
+
+# --- C2: the editor must show the practitioner her own pending edit ---------
+
+def test_get_settings_overlays_the_draft_over_the_live_row(client, monkeypatch, tmp_path):
+    """C2: the GET used to read only the Postgres row, so after saving, a
+    reload pre-filled the form with the OLD live text and her pending edit was
+    gone from the textarea. It reads as "the save didn't work" and she retypes
+    it. The draft is what she last typed -- it wins."""
+    import sqlite3
+    import db_supabase
+    from dashboard import practitioner_drafts as _pd
+
+    live = {"bio": "SCRAPED live bio", "photo_url": "", "specialties": ["Old"],
+            "city": "Kona", "state": "HI", "accepting_new_patients": True,
+            "profile_self_authored_at": "2026-07-20T00:00:00Z", "show_contact": False}
+    monkeypatch.setattr(db_supabase, "supabase_cursor", lambda: _FakeCtx(_FakeCur(live)))
+
+    dbpath = str(tmp_path / "chat_log.db")
+    monkeypatch.setattr(appmod, "LOG_DB", dbpath)
+    with appmod.db.connect(dbpath) as cx:
+        cx.row_factory = sqlite3.Row
+        _pd.init_tables(cx)
+        _pd.upsert_draft(cx, "pid-123", {
+            "bio": "MY PENDING EDIT", "photo_url": "https://x/new.jpg",
+            "services": ["New"], "city": "Hilo", "state": "HI",
+            "accepting_clients": False})
+
+    body = client.get("/api/practitioner/settings").get_json()
+    assert body["profile"]["bio"] == "MY PENDING EDIT"
+    assert body["profile"]["services"] == ["New"]
+    assert body["profile"]["city"] == "Hilo"
+    assert body["profile"]["accepting_clients"] is False
+    # A draft is self-authored by definition, so the editor pre-fills it.
+    assert body["profile"]["self_authored"] is True
+    assert body["profile_status"] == "draft"
+
+
+def test_get_settings_returns_the_rejection_note(client, monkeypatch, tmp_path):
+    """C2: a rejection note that never reaches the practitioner just produces
+    an identical resubmit."""
+    import sqlite3
+    import db_supabase
+    from dashboard import practitioner_drafts as _pd
+
+    monkeypatch.setattr(db_supabase, "supabase_cursor",
+                        lambda: _FakeCtx(_FakeCur(None)))
+    dbpath = str(tmp_path / "chat_log.db")
+    monkeypatch.setattr(appmod, "LOG_DB", dbpath)
+    with appmod.db.connect(dbpath) as cx:
+        cx.row_factory = sqlite3.Row
+        _pd.init_tables(cx)
+        _pd.upsert_draft(cx, "pid-123", {"bio": "x"})
+        _pd.submit(cx, "pid-123")
+        _pd.reject(cx, "pid-123", "please remove the health claim")
+
+    body = client.get("/api/practitioner/settings").get_json()
+    assert body["profile_status"] == "draft"
+    assert body["review_note"] == "please remove the health claim"
+
+
+def test_get_settings_falls_back_to_the_live_row_with_no_draft(client, monkeypatch, tmp_path):
+    """No draft: unchanged behavior, the live self-authored row is returned."""
+    import db_supabase
+
+    live = {"bio": "I heal", "photo_url": "", "specialties": ["Acupuncture"],
+            "city": "Hilo", "state": "HI", "accepting_new_patients": True,
+            "profile_self_authored_at": "2026-07-20T00:00:00Z", "show_contact": False}
+    monkeypatch.setattr(db_supabase, "supabase_cursor", lambda: _FakeCtx(_FakeCur(live)))
+    monkeypatch.setattr(appmod, "LOG_DB", str(tmp_path / "chat_log.db"))
+
+    body = client.get("/api/practitioner/settings").get_json()
+    assert body["profile"]["bio"] == "I heal"
+    assert "profile_status" not in body

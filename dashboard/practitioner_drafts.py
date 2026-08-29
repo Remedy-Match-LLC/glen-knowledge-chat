@@ -120,6 +120,22 @@ def approve(cx, pid, note=""):
     return cur.rowcount == 1
 
 
+def set_review_note(cx, pid, note):
+    """Record Glen's note on an ALREADY-approved draft. True if one changed.
+
+    Exists for the console's approve RETRY path: approve() refuses a row that
+    is not 'submitted' and returns False WITHOUT running its UPDATE, so a note
+    supplied on a retry (after a previous publish failed) was silently
+    dropped. Status is deliberately untouched here -- this records a note, it
+    does not approve anything.
+    """
+    cur = cx.execute("UPDATE practitioner_profile_drafts SET review_note=?,"
+                     " updated_at=? WHERE practitioner_id=? AND status='approved'",
+                     (note or None, _now(), str(pid)))
+    cx.commit()
+    return cur.rowcount == 1
+
+
 def reject(cx, pid, note):
     """Send a submitted draft back with a reason. The note is required:
     a rejection the practitioner cannot act on just produces a resubmit."""

@@ -157,6 +157,7 @@
       <div class="muted" style="margin-top:6px">This appears on your public page at
         myhealingoasis.com/your-slug. Only what you save here is published — nothing is
         shown until you do.</div>
+      <div class="msg err" id="sf-review-note" style="display:none;margin-top:8px"></div>
       <div class="muted" id="sf-scraped-note" style="display:none;margin-top:6px">
         We may have directory info on file for you. Start from it or write fresh —
         nothing publishes until you save this section.
@@ -490,6 +491,15 @@
           hasScraped ? 'inline-block' : 'none';
       }
 
+      // Glen sent this draft back. The note is the only thing that tells her
+      // what to change, so show it — a rejection she cannot see just produces
+      // an identical resubmit.
+      var noteEl = document.getElementById('sf-review-note');
+      if (noteEl && data.profile_status === 'draft' && data.review_note) {
+        noteEl.textContent = 'Sent back for a change: ' + data.review_note;
+        noteEl.style.display = 'block';
+      }
+
       // Chat enabled toggle
       setChatToggle(!!data.chat_enabled);
 
@@ -561,8 +571,21 @@
           msgEl.textContent = data.error || 'Save failed.';
           return;
         }
+        // Be honest about what actually happened to the storefront card.
+        // When the review gate is on, a save does NOT reach her public page —
+        // saying "Settings saved." would have her expecting a change that is
+        // days away. profile_status is absent unless `profile` was sent.
         msgEl.className = 'msg ok';
-        msgEl.textContent = 'Settings saved.';
+        if (data.profile_status === 'submitted') {
+          msgEl.textContent = 'Sent for review. Glen will approve it before it '
+            + 'appears on your page. Your other settings are saved.';
+        } else if (data.profile_status === 'publish_failed') {
+          msgEl.className = 'msg err';
+          msgEl.textContent = 'Your settings are saved, but your public page '
+            + "couldn't be updated just now. Try saving again in a few minutes.";
+        } else {
+          msgEl.textContent = 'Settings saved.';
+        }
 
         // Refresh SKU overrides from server response (with MAP clamps applied)
         if (data.pricing && data.pricing.overrides) {
@@ -574,13 +597,18 @@
         setChatToggle(!!data.chat_enabled);
         if ('show_contact' in data) { setShowContact(!!data.show_contact); }
 
-        // The storefront card was just persisted (and provenance stamped) —
-        // clear the dirty flag and hide the scraped-data note so a later,
-        // unrelated save doesn't resend it.
+        // The storefront card was written to her DRAFT and submitted. It is
+        // NOT necessarily live: with the review gate on it is queued for Glen
+        // (profile_status 'submitted'), and provenance is stamped only when
+        // he approves. Clear the dirty flag and hide the scraped-data note so
+        // a later, unrelated save doesn't resend it; and clear any previous
+        // rejection note, which this edit has just answered.
         if (data.profile) {
           sfDirty = false;
           var note = document.getElementById('sf-scraped-note');
           if (note) note.style.display = 'none';
+          var reviewNote = document.getElementById('sf-review-note');
+          if (reviewNote) reviewNote.style.display = 'none';
         }
 
         // Show clamped notification
