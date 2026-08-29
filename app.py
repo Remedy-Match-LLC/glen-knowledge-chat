@@ -20006,6 +20006,22 @@ def api_practitioner_chat():
     catalog = _build_ff_catalog()
     result = _chat.scoped_reply(message, history, catalog, overlay=_ally_ov)
 
+    # Explicit order commands mutate the authenticated practitioner's persistent
+    # basket. Recommendations and questions remain read-only.
+    from dashboard.chat_cart import explicit_cart_items as _chat_cart_items
+    cart_added = []
+    requested = _chat_cart_items(message, catalog)
+    if requested:
+        current = {row["slug"]: int(row.get("qty") or 0)
+                   for row in _pp.cart_items(pid)}
+        for item in requested:
+            if not _pp.is_orderable(item["slug"]):
+                continue
+            new_qty = min(99, current.get(item["slug"], 0) + item["qty"])
+            _pp.cart_set(pid, item["slug"], new_qty)
+            cart_added.append({**item, "basket_qty": new_qty})
+            current[item["slug"]] = new_qty
+
     if _subject:
         try:
             import threading as _t
@@ -20026,7 +20042,8 @@ def api_practitioner_chat():
             "price_cents": _dropship.practitioner_price_for(pid, slug),
         })
 
-    return jsonify({"ok": True, "reply": result["reply"], "suggestions": suggestions})
+    return jsonify({"ok": True, "reply": result["reply"], "suggestions": suggestions,
+                    "cart_added": cart_added})
 
 
 def _continuity_cx(cx):
@@ -20122,6 +20139,8 @@ def api_client_chat(code):
     catalog = _build_ff_catalog()
     _ally_ov = ash_ally.ally_overlay(LOG_DB, email)
     result = _chat.scoped_reply(message, history, catalog, overlay=_ally_ov)
+    from dashboard.chat_cart import explicit_cart_items as _chat_cart_items
+    cart_added = _chat_cart_items(message, catalog)
     try:
         import threading as _t
         _t.Thread(target=ash_ally.record_turn,
@@ -20141,7 +20160,8 @@ def api_client_chat(code):
             "price_cents": _dropship.practitioner_price_for(pid, slug),
         })
 
-    return jsonify({"ok": True, "reply": result["reply"], "suggestions": suggestions})
+    return jsonify({"ok": True, "reply": result["reply"], "suggestions": suggestions,
+                    "cart_added": cart_added})
 
 
 def _stripe_checkout_url_for_retail(out, email, slug, group_bundle_months=0):
@@ -27389,6 +27409,35 @@ def api_portal_chat(token):
         return jsonify({"error": "not found"}), 404
     email = (portal.get("email") or "").strip().lower()
     content = portal.get("content") or {}
+    # The portal token authenticates this client's email. Only explicit order
+    # verbs plus exact, currently available catalog names can mutate the cart.
+    cart_added = []
+    if _PORTAL_CART_ENABLED:
+        try:
+            from dashboard.chat_cart import explicit_cart_items as _chat_cart_items
+            chat_catalog = []
+            for product_slug, product in (_PRODUCTS.get("products") or {}).items():
+                if product.get("info_only") or product.get("inactive"):
+                    continue
+                chat_catalog.append({
+                    "slug": product_slug,
+                    "name": product.get("name") or product.get("title") or product_slug,
+                })
+            requested = _chat_cart_items(query, chat_catalog)
+            if requested:
+                with db.connect(LOG_DB) as cart_cx:
+                    _cart_store.init_cart_tables(cart_cx)
+                    cart_token = (_cart_store.open_token_for_email(cart_cx, email)
+                                  or _uuid.uuid4().hex)
+                    cart_token = _cart_store.get_or_create(
+                        cart_cx, cart_token, email=email)
+                    for item in requested:
+                        new_qty = _cart_store.add_item(
+                            cart_cx, cart_token, item["slug"], qty=item["qty"],
+                            source="portal-chat")
+                        cart_added.append({**item, "basket_qty": new_qty})
+        except Exception as e:
+            print(f"[portal-chat-cart] add failed: {e!r}", flush=True)
     try:
         with db.connect(LOG_DB) as ocx:
             ocx.row_factory = sqlite3.Row
@@ -27444,6 +27493,8 @@ def api_portal_chat(token):
     messages.append({"role": "user", "content": user_block})
 
     def generate():
+        if cart_added:
+            yield sse({"cart_added": cart_added})
         if community_related:
             yield sse({"related": community_related})
         full = []
