@@ -54,6 +54,18 @@ def test_list_orders_filter_and_set_tracking():
     assert O.get_order(cx, a)["shipment_id"] == 5
 
 
+def test_superseded_order_is_hidden_but_retained():
+    O, cx = _db()
+    old_id = O.upsert_order(cx, source="test", external_ref="old")
+    new_id = O.upsert_order(cx, source="test", external_ref="replacement")
+
+    O.supersede_order(cx, old_id, new_id)
+
+    assert [o["id"] for o in O.list_orders(cx)] == [new_id]
+    assert {o["id"] for o in O.list_orders(cx, include_superseded=True)} == {old_id, new_id}
+    assert O.get_order(cx, old_id)["superseded_by_order_id"] == new_id
+
+
 def test_orders_signal_levels():
     from dashboard import orders as O, signals as S
     cx = sqlite3.connect(":memory:")
