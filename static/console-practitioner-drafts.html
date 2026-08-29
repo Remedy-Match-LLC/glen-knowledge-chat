@@ -1,0 +1,257 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Practitioner Drafts · Console</title>
+<link rel="icon" type="image/png" href="/static/favicon.png">
+<style>
+  :root{--bg:#0a150d;--panel:#111f16;--line:#21472d;--gold:#d4a843;--ink:#fdf4d8;--mut:#8fae97}
+  *{box-sizing:border-box}
+  body{background:var(--bg);color:var(--ink);font-family:system-ui,sans-serif;margin:0;padding:24px;max-width:78rem;margin:0 auto}
+  h1{color:var(--gold);font-size:1.4rem;margin:0 0 .2rem}
+  h2{color:var(--gold);font-size:1.05rem;margin:0}
+  .hint{color:var(--mut);font-size:.85rem}
+  .panel{border:1px solid var(--line);border-radius:10px;padding:16px;margin:14px 0;background:var(--panel)}
+  label{display:block;font-size:.8rem;color:var(--mut);margin:.5rem 0 .15rem}
+  input[type=text],select{
+    width:100%;padding:7px 9px;border:1px solid var(--line);border-radius:6px;
+    background:#0c1b11;color:var(--ink);font:inherit}
+  button{cursor:pointer;border:0;border-radius:6px;padding:7px 14px;font:inherit;background:var(--gold);color:#15240f;font-weight:600}
+  button.alt{background:#1b3322;color:var(--ink);border:1px solid var(--line);font-weight:400}
+  .name{font-weight:600;color:var(--ink);font-size:1.05rem}
+  .sub{color:var(--mut);font-size:.78rem;margin-top:2px}
+  .msg{padding:8px 12px;border-radius:6px;margin:8px 0;display:none}
+  .msg.ok{background:#16361f;color:#9fe3ad;display:block}
+  .msg.err{background:#2c1616;color:#e39f9f;display:block}
+  .msg.info{background:#1b3322;color:var(--ink);display:block}
+  .pill{display:inline-block;padding:.08rem .5rem;border-radius:1rem;font-size:.72rem;border:1px solid var(--line)}
+  .on{background:#16361f;color:#9fe3ad;border-color:#2c6b3e}
+  .off{background:#2c1616;color:#e39f9f;border-color:#6b2c2c}
+  .toprow{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+  .toprow label{margin:0}
+  .toprow select{width:auto;min-width:220px}
+  .fields{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px 20px;margin-top:12px;padding-top:6px;border-top:1px solid #18301f}
+  .field{padding-top:2px}
+  .field.full{grid-column:1/-1}
+  .flabel{color:var(--mut);font-size:.75rem}
+  .fval{margin-top:2px;word-break:break-word}
+  .prose{white-space:pre-wrap;line-height:1.5;max-width:70ch}
+  .actions{display:flex;gap:20px;flex-wrap:wrap;align-items:flex-end;margin-top:14px}
+  .actions>div{flex:1;min-width:240px}
+  .actions button{margin-top:8px}
+</style>
+</head>
+<body>
+<script src="/static/op-nav.js" data-active="people" data-sub="practitioners"></script>
+<h1>◼ Practitioner Drafts</h1>
+<p class="hint">Profile drafts practitioners have submitted. Approve to publish, or reject with a note so they know what to change.</p>
+<div id="msg" class="msg"></div>
+
+<div class="panel toprow">
+  <label>Status</label>
+  <select id="status-filter" onchange="load()">
+    <option value="submitted">Submitted (needs review)</option>
+    <option value="draft">Draft (not yet sent)</option>
+    <option value="approved">Approved</option>
+    <option value="">All statuses</option>
+  </select>
+  <button class="alt" onclick="load()">Refresh</button>
+</div>
+
+<div id="queue"></div>
+
+<script>
+const KEY = new URLSearchParams(location.search).get('key') || '';
+function q(p){return p+(p.includes('?')?'&':'?')+'key='+encodeURIComponent(KEY);}
+function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+function flash(t,ok){const m=document.getElementById('msg');m.textContent=t;m.className='msg '+(ok?'ok':'err');setTimeout(()=>{m.className='msg';},5000);}
+const yn = v => v?'<span class="pill on">yes</span>':'<span class="pill off">no</span>';
+const val = id => { const e=document.getElementById(id); return e ? e.value.trim() : ''; };
+
+function fmtDateTime(s){
+  if(!s) return '-';
+  const d = new Date(s);
+  if(isNaN(d.getTime())) return String(s);
+  return d.toLocaleString();
+}
+
+async function api(path, opts){
+  const r = await fetch(q(path), opts);
+  if(r.status===401){ flash('Add ?key=CONSOLE_SECRET to the URL.', false); throw new Error('401'); }
+  let body = {};
+  try { body = await r.json(); } catch(e) {}
+  return {status:r.status, body};
+}
+
+const STATUS_LABELS = {
+  submitted: 'submitted', draft: 'draft', approved: 'approved'
+};
+
+const FIELD_LABELS = {
+  practice_name: 'Practice name', tagline: 'Tagline', bio: 'Bio',
+  how_i_work: 'How I work', city: 'City', state: 'State',
+  photo_url: 'Photo', logo_url: 'Logo',
+  accepting_clients: 'Accepting clients', services: 'Services'
+};
+const FIELD_ORDER = ['practice_name','tagline','bio','how_i_work','city','state',
+  'photo_url','logo_url','accepting_clients','services'];
+
+function fieldValueHtml(key, value){
+  if(value===null || value===undefined || value===''){
+    return '<span class="hint">(empty)</span>';
+  }
+  if(key==='accepting_clients') return yn(!!value);
+  if(key==='photo_url' || key==='logo_url'){
+    const url = String(value);
+    return `<a href="${esc(url)}" target="_blank" rel="noopener">${esc(url)}</a>`+
+      `<div><img src="${esc(url)}" alt="" style="max-height:90px;max-width:170px;border-radius:6px;`+
+      `border:1px solid var(--line);margin-top:4px;display:block" onerror="this.style.display='none'"></div>`;
+  }
+  if(key==='bio' || key==='how_i_work'){
+    return `<div class="prose">${esc(String(value))}</div>`;
+  }
+  if(Array.isArray(value)){
+    return value.length ? esc(value.join(', ')) : '<span class="hint">(none)</span>';
+  }
+  return esc(String(value));
+}
+
+function fieldRow(key, value){
+  const label = FIELD_LABELS[key] || key;
+  const full = (key==='bio' || key==='how_i_work') ? ' full' : '';
+  return `<div class="field${full}"><div class="flabel">${esc(label)}</div>`+
+    `<div class="fval">${fieldValueHtml(key, value)}</div></div>`;
+}
+
+function fieldsHtml(fields){
+  fields = fields || {};
+  const known = FIELD_ORDER.filter(k => Object.prototype.hasOwnProperty.call(fields, k));
+  const rest = Object.keys(fields).filter(k => !FIELD_ORDER.includes(k)).sort();
+  const keys = known.concat(rest);
+  if(!keys.length) return '<p class="hint">No proposed values on this draft.</p>';
+  return `<div class="fields">${keys.map(k => fieldRow(k, fields[k])).join('')}</div>`;
+}
+
+function timelineHtml(d){
+  const parts = [];
+  if(d.submitted_at) parts.push('Submitted '+fmtDateTime(d.submitted_at));
+  if(d.reviewed_at) parts.push('Reviewed '+fmtDateTime(d.reviewed_at));
+  if(!parts.length && d.updated_at) parts.push('Updated '+fmtDateTime(d.updated_at));
+  return parts.join(' · ') || '-';
+}
+
+function draftCard(d){
+  const pid = d.practitioner_id;
+  const name = d.display_name || pid;
+  const idLine = d.display_name ? `<div class="sub">${esc(pid)}</div>` : '';
+  const noteLine = d.review_note ? `<div class="sub">Last note: ${esc(d.review_note)}</div>` : '';
+  return `<div class="panel" id="draft-${esc(pid)}">
+    <div class="name">${esc(name)}</div>
+    ${idLine}
+    <div class="sub">${esc(timelineHtml(d))} · status: ${esc(d.status||'-')}</div>
+    ${noteLine}
+    ${fieldsHtml(d.fields)}
+    <div id="outcome-${esc(pid)}" class="msg"></div>
+    <div class="actions">
+      <div>
+        <label>Approval note (optional)</label>
+        <input type="text" id="anote-${esc(pid)}" placeholder="Optional note for the practitioner">
+        <button onclick="approve('${esc(pid)}')">Approve &amp; publish</button>
+      </div>
+      <div>
+        <label>Rejection note (required)</label>
+        <input type="text" id="rnote-${esc(pid)}" placeholder="Tell them what to change">
+        <button class="alt" onclick="reject('${esc(pid)}')">Reject</button>
+      </div>
+    </div>
+  </div>`;
+}
+
+function setOutcome(pid, text, kind){
+  const el = document.getElementById('outcome-'+pid);
+  if(!el) return;
+  el.textContent = text;
+  el.className = 'msg '+kind;
+}
+
+function emptyStateHtml(status){
+  if(!status || status==='submitted'){
+    return `<div class="panel"><p class="hint" style="margin:0">Nothing waiting for review. That is the normal state. Check back later.</p></div>`;
+  }
+  const label = STATUS_LABELS[status] || status;
+  return `<div class="panel"><p class="hint" style="margin:0">No drafts with status "${esc(label)}" right now.</p></div>`;
+}
+
+function render(drafts, status){
+  const box = document.getElementById('queue');
+  let html = '';
+  if(status==='approved' && drafts.length){
+    html += `<div class="panel"><p class="hint" style="margin:0">These drafts are already approved. If one is not live yet, `+
+      `its publish failed after approval: press "Approve &amp; publish" again to retry.</p></div>`;
+  }
+  if(!drafts.length){
+    box.innerHTML = html + emptyStateHtml(status);
+    return;
+  }
+  box.innerHTML = html + drafts.map(draftCard).join('');
+}
+
+async function load(){
+  const status = document.getElementById('status-filter').value;
+  let res;
+  try { res = await api('/api/console/practitioner-drafts?status='+encodeURIComponent(status)); }
+  catch(e){ return; }
+  if(!res.body.ok){ flash(res.body.error || 'Could not load the queue.', false); return; }
+  render(res.body.drafts || [], status);
+}
+
+async function approve(pid){
+  const note = val('anote-'+pid);
+  setOutcome(pid, 'Publishing…', 'info');
+  let res;
+  try {
+    res = await api('/api/console/practitioner-drafts/'+encodeURIComponent(pid)+'/approve',
+      {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(note ? {note} : {})});
+  } catch(e){ return; }
+  if(res.status===200 && res.body.ok && res.body.published){
+    setOutcome(pid, 'Approved and published. The page is live.', 'ok');
+    setTimeout(load, 1200);
+  } else if(res.status===500 && res.body.error==='publish_failed'){
+    setOutcome(pid, 'Approved, but publishing failed. It is not live: the practitioner\'s page has not changed. Try Approve again.', 'err');
+  } else if(res.status===409){
+    setOutcome(pid, 'This draft is no longer submitted. It was probably already handled.', 'err');
+    setTimeout(load, 1200);
+  } else {
+    setOutcome(pid, res.body.error || ('Something went wrong (status '+res.status+').'), 'err');
+  }
+}
+
+async function reject(pid){
+  const el = document.getElementById('rnote-'+pid);
+  const note = el.value.trim();
+  if(!note){
+    setOutcome(pid, 'A rejection needs a note. Add one, then reject.', 'err');
+    el.focus();
+    return;
+  }
+  let res;
+  try {
+    res = await api('/api/console/practitioner-drafts/'+encodeURIComponent(pid)+'/reject',
+      {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({note})});
+  } catch(e){ return; }
+  if(res.status===200 && res.body.ok){
+    setOutcome(pid, 'Rejected. They will see this note the next time they open their page.', 'ok');
+    setTimeout(load, 1200);
+  } else if(res.status===409){
+    setOutcome(pid, 'This draft is no longer submitted. It was probably already handled.', 'err');
+    setTimeout(load, 1200);
+  } else {
+    setOutcome(pid, res.body.error || ('Something went wrong (status '+res.status+').'), 'err');
+  }
+}
+
+load();
+</script>
+</body>
+</html>
