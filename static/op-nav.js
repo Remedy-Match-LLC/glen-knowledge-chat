@@ -80,6 +80,9 @@
   var script = document.currentScript;
   var active = (script && script.dataset && script.dataset.active) || "";
   var sub = (script && script.dataset && script.dataset.sub) || "";
+  // Gives the shared compatibility palette a stable hook even on legacy pages
+  // that pre-date semantic colour variables.
+  document.documentElement.setAttribute('data-console-page', sub || active || 'console');
 
   // --- Light/Dark theme: shared mechanism (localStorage 'rm-theme' + <html data-theme>),
   //     same as static/theme-toggle.js. op-nav owns the toggle on every internal page so
@@ -233,7 +236,22 @@
     +   '--muted:#5F6B6B;--dim:#5F6B6B;--gray:#5F6B6B;--ink:#1E2A2A;--ink-2:#5F6B6B;--ink-3:#7A8585;'
     +   '--gold:#B08A3E;--gold-soft:#EFE4C8;--green:#2D7A6A;--panel:#FFFFFF;--panel-2:#F4ECDE;'
     +   '--text:#1E2A2A;--text-muted:#5F6B6B;--accent:#B08A3E;--accent2:#2D7A6A;'
+    // Older console families use these aliases instead of the standard tokens.
+    +   '--card:#FFFFFF;--card2:#F4ECDE;--line:#E2D9C9;--fg:#1E2A2A;--mut:#5F6B6B;--err:#B23A1E;'
     + '}'
+    // Compatibility layer for the small legacy console pages that still use
+    // literal light colours. This makes the shared control visibly functional
+    // everywhere while those pages are incrementally moved to semantic tokens.
+    + ':root[data-theme="dark"] body{background:var(--bg,#0a150d)!important;color:var(--cream,var(--fg,var(--ink,#fdf4d8)))!important}'
+    + ':root[data-theme="dark"] :is(details,.card,.stage,.qcard){background:var(--surface,var(--card,#111f16));border-color:var(--border,var(--line,#21472d));color:inherit}'
+    + ':root[data-theme="dark"] :is(input,select,textarea){background:#0d1117;color:#fdf4d8;border-color:#34513d}'
+    + ':root[data-theme="dark"] :is(th,.pill,.credit.zero){background:#162318;color:#d7e5da;border-color:#34513d}'
+    + ':root[data-theme="dark"] :is(td,th){border-color:#34513d}'
+    + ':root[data-theme="dark"] tr:nth-child(even){background:#0f1f14}'
+    + ':root[data-theme="dark"] :is(.sub,.hint,.muted,.empty,.meta,.email,.head-note,.rank){color:#9db29f}'
+    + ':root[data-theme="dark"] a{color:#79c7ad}'
+    + ':root[data-theme="dark"] #importResult{background:#162318;color:#d7e5da}'
+    + ':root[data-theme="light"] body{background:var(--bg,#FBF8F3);color:var(--cream,var(--fg,var(--ink,#1E2A2A)))}'
     + '</style>';
 
   var bar = '<nav class="op-nav-bar" role="navigation" aria-label="Glen ops">'

@@ -12327,8 +12327,74 @@ def begin_checkout_return():
         return _redir(f"/biofield/ready?paid={paid}")
     if _kind == "biofield_trial":
         return _redir(f"/begin/biofield/{_bt_token}")
+    # A verified card payment must land on a durable receipt, not the generic
+    # funnel. Cart and portal-reorder sessions intentionally have no product
+    # slug, which previously sent successful buyers to `/begin?paid=1` with no
+    # order number, no amount, and no route back to the portal.
+    if paid == "1" and sid:
+        return _redir(f"/order-confirmation?session_id={sid}")
     dest = (f"/begin/buy/{slug}?paid={paid}" if slug else f"/begin?paid={paid}")
     return _redir(dest)
+
+
+@app.route("/order-confirmation")
+def order_confirmation():
+    """Customer receipt backed only by a server-verified Stripe session."""
+    sid = (request.args.get("session_id") or "").strip()
+    if not sid:
+        return redirect("/begin")
+    try:
+        from dashboard import stripe_pay as _sp
+        sess = _sp.get_session(sid)
+    except Exception as e:
+        print(f"[order-confirmation] session lookup failed: {e!r}", flush=True)
+        return render_template_string(_ORDER_CONFIRMATION_ERROR), 503
+
+    if sess.get("payment_status") != "paid":
+        return render_template_string(_ORDER_CONFIRMATION_ERROR), 400
+
+    md = sess.get("metadata") or {}
+    order = None
+    order_ref = (md.get("invoice_id") or "").strip()
+    if order_ref:
+        try:
+            with db.connect(LOG_DB) as cx:
+                cx.row_factory = sqlite3.Row
+                order = _bos_orders.find_order_by_external_ref(cx, order_ref)
+        except Exception as e:
+            print(f"[order-confirmation] order lookup failed ref={order_ref}: {e!r}",
+                  flush=True)
+
+    amount_cents = int(sess.get("amount_total") or (order or {}).get("total_cents") or 0)
+    email = ((sess.get("customer_details") or {}).get("email")
+             or sess.get("customer_email") or (order or {}).get("email") or "")
+    items = (order or {}).get("items") or []
+    return_to = (md.get("return_to") or "").strip()
+    if not (return_to.startswith("/portal/") or return_to == "/portal/me"
+            or return_to.startswith(portal_base().rstrip("/") + "/portal/")
+            or return_to in ("/reorder", f"{PUBLIC_BASE_URL.rstrip('/')}/reorder")):
+        return_to = "/portal/me" if md.get("kind") in ("portal-reorder", "client") else "/reorder"
+    return_label = ("Return to your client portal"
+                    if "/portal/" in return_to else "Review your remedies")
+
+    response = Response(render_template_string(
+        _ORDER_CONFIRMATION_HTML,
+        order_number=((order or {}).get("id") or order_ref[-8:].upper()),
+        amount=f"${amount_cents / 100:,.2f}", email=email, items=items,
+        return_to=return_to, return_label=return_label), mimetype="text/html")
+    response.headers["Cache-Control"] = "no-store, private"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    return response
+
+
+_ORDER_CONFIRMATION_ERROR = """<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>Order confirmation</title></head><body style="font-family:system-ui;max-width:620px;margin:60px auto;padding:24px;color:#24352d"><h1>We are confirming your order</h1><p>Please do not submit another payment. We could not load the receipt just now. Your payment status can still be checked by our team.</p><p><a href="/portal/me">Return to your client portal</a></p></body></html>"""
+
+
+_ORDER_CONFIRMATION_HTML = """<!doctype html>
+<html><head><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Order {{ order_number }} confirmed</title>
+<style>body{margin:0;background:#f4f7f3;color:#21362c;font:16px/1.5 system-ui,-apple-system,sans-serif}.card{max-width:640px;margin:48px auto;background:#fff;border-radius:18px;padding:34px;box-shadow:0 8px 32px #19322618}.check{width:52px;height:52px;border-radius:50%;display:grid;place-items:center;background:#267a56;color:#fff;font-size:30px}h1{margin:18px 0 4px;font-size:30px}.muted{color:#66756d}.summary{margin:26px 0;padding:18px;background:#f3f7f4;border-radius:12px}.row{display:flex;justify-content:space-between;gap:20px;padding:7px 0}.total{font-size:20px;font-weight:700;border-top:1px solid #dce5df;margin-top:8px;padding-top:14px}.button{display:block;text-align:center;background:#267a56;color:#fff;text-decoration:none;padding:14px 18px;border-radius:10px;font-weight:700}@media(max-width:700px){.card{margin:0;min-height:100vh;border-radius:0;padding:28px 20px}}</style></head>
+<body><main class="card"><div class="check">&#10003;</div><h1>Payment received</h1><p class="muted">Your order is confirmed. A receipt will also be sent to {{ email or 'the email used at checkout' }}.</p><section class="summary"><div class="row"><span>Order number</span><strong>#{{ order_number }}</strong></div>{% for item in items %}<div class="row"><span>{{ item.get('name') or item.get('slug') or 'Product' }}{% if (item.get('qty') or 1)|int > 1 %} &times; {{ item.get('qty') }}{% endif %}</span></div>{% endfor %}<div class="row total"><span>Total paid</span><span>{{ amount }}</span></div></section><p class="muted">Please keep this order number for your records.</p><a class="button" href="{{ return_to }}">{{ return_label }}</a></main></body></html>"""
 
 
 # ── Post-buy concierge (consultative upsell) ─────────────────────────────────
@@ -20183,8 +20249,10 @@ def _stripe_checkout_url_for_reorder(out, email):
         success = (f"{PUBLIC_BASE_URL}/begin/checkout-return"
                    f"?session_id={{CHECKOUT_SESSION_ID}}")
         metadata = {"invoice_id": out.get("invoice_id"),
-                    "customer_id": out.get("customer_id"), "kind": "reorder"}
+                    "customer_id": out.get("customer_id"),
+                    "kind": out.get("kind") or "reorder"}
         cancel_url = out.get("cancel_url") or f"{PUBLIC_BASE_URL}/reorder"
+        metadata["return_to"] = out.get("return_to") or cancel_url
         stripe_items = out.get("stripe_line_items") or []
         if stripe_items:
             sess = stripe_pay.create_itemized_checkout_session(
@@ -20284,6 +20352,7 @@ def _cart_payload(cx, token):
             "name": (p or {}).get("name", it["slug"]),
             "qty": it["qty"],
             "format": it["format"],
+            "refill_eligible": bool(p and _qty_eligible(p)),
             # `info_only` belongs in this expression, not just `inactive`: checkout
             # refuses info_only lines with "no longer available" (see
             # api_cart_checkout's unavailable scan), so a badge that calls them
@@ -25399,6 +25468,60 @@ def api_portal_cart_set_qty(token):
         return jsonify(_portal_cart_payload(cx, cart_token, portal))
 
 
+@app.route("/api/portal/<token>/cart/set-format", methods=["POST"])
+def api_portal_cart_set_format(token):
+    data = request.get_json(silent=True) or {}
+    slug = (data.get("slug") or "").strip().lower()
+    from_fmt = (data.get("from_format") or "").strip().lower()
+    to_fmt = (data.get("format") or "").strip().lower()
+    if to_fmt not in {"bottle", "refill"}:
+        return jsonify({"error": "Choose bottle or cellophane refill pack."}), 400
+    product = _get_product(slug)
+    if not product or product.get("inactive") or product.get("info_only"):
+        return jsonify({"error": "Product is not available."}), 400
+    if to_fmt == "refill" and not _qty_eligible(product):
+        return jsonify({"error": "This product is available in a bottle only."}), 400
+    with db.connect(LOG_DB) as cx:
+        portal = _portal_record_for(cx, token)
+        if not portal:
+            return jsonify({"error": "not found"}), 404
+        cart_token = _portal_open_cart(cx, portal)
+        try:
+            _cart_store.set_format(cx, cart_token, slug, from_fmt, to_fmt)
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 404
+        return jsonify(_portal_cart_payload(cx, cart_token, portal))
+
+
+@app.route("/api/portal/<token>/cart/set-format-quantities", methods=["POST"])
+def api_portal_cart_set_format_quantities(token):
+    data = request.get_json(silent=True) or {}
+    slug = (data.get("slug") or "").strip().lower()
+    product = _get_product(slug)
+    if not product or product.get("inactive") or product.get("info_only"):
+        return jsonify({"error": "Product is not available."}), 400
+    if not _qty_eligible(product):
+        return jsonify({"error": "This product is available in a bottle only."}), 400
+    try:
+        bottle_qty = int(data.get("bottle_qty") or 0)
+        refill_qty = int(data.get("refill_qty") or 0)
+    except (TypeError, ValueError):
+        return jsonify({"error": "Packaging quantities must be whole numbers."}), 400
+    if bottle_qty < 0 or refill_qty < 0:
+        return jsonify({"error": "Packaging quantities cannot be negative."}), 400
+    with db.connect(LOG_DB) as cx:
+        portal = _portal_record_for(cx, token)
+        if not portal:
+            return jsonify({"error": "not found"}), 404
+        cart_token = _portal_open_cart(cx, portal)
+        try:
+            _cart_store.set_format_quantities(
+                cx, cart_token, slug, bottle_qty, refill_qty)
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 404
+        return jsonify(_portal_cart_payload(cx, cart_token, portal))
+
+
 @app.route("/api/portal/<token>/order-add", methods=["POST"])
 def api_portal_order_add(token):
     """Add one catalog remedy to the member's single persistent portal cart."""
@@ -27788,7 +27911,11 @@ def api_client_portal_product_search(token):
         haystack = " ".join((name, p.get("description") or "", ingredient_text)).lower()
         if terms and not all(term in haystack for term in terms):
             continue
-        results.append({"slug": slug, "name": name})
+        results.append({
+            "slug": slug,
+            "name": name,
+            "refill_eligible": bool(_qty_eligible(p)),
+        })
     results.sort(key=lambda row: row["name"].lower())
     return jsonify({"ok": True, "products": results[:30]})
 
@@ -27934,7 +28061,9 @@ def api_client_portal_checkout(token):
                                       "unit_cents": shipping_cents})
         out = {"invoice_id": checkout_ref, "customer_id": "",
                "doc_number": "", "total": round(order_total_cents / 100.0, 2),
+               "kind": "portal-reorder",
                "cancel_url": f"{portal_base()}/portal/{_urlquote(token, safe='')}",
+               "return_to": f"{portal_base()}/portal/{_urlquote(token, safe='')}",
                "stripe_line_items": stripe_line_items}
         def persist_portal_order():
             oid = _ingest_order(
@@ -33956,6 +34085,37 @@ def _biofield_has_fresh_scan(email):
         return False
 
 
+E4L_SCANNED_TAG = "e4l:scanned"
+E4L_SCAN_TAG_MAX_PER_RUN = 200
+
+
+def _tag_scanned_in_ghl(email):
+    """Tell GHL that this contact has completed a voice scan.
+
+    Why this exists: nothing in this codebase told GHL about a scan. The result
+    landed in scan_freshness and stopped there, so a GHL workflow could enrol
+    somebody but had nothing to exit on -- which is why the voice-scan reminder
+    kept reaching clients who had scanned months earlier (one of them 17 times
+    over). The tag gives that workflow an exit condition, and gives Glen a
+    "has an account, never scanned" segment, which is the audience those
+    reminder emails were actually written for.
+
+    Best-effort by contract: a GHL outage must never break scan ingestion, which
+    is what the Biofield readiness gate reads."""
+    email = (email or "").strip().lower()
+    if not email:
+        return False
+    try:
+        _cid, _created, err = ghl_upsert_contact(email, extra_tags=[E4L_SCANNED_TAG])
+        if err:
+            print(f"[scan-tag] GHL tag failed for {email!r}: {err}", flush=True)
+            return False
+        return True
+    except Exception as e:
+        print(f"[scan-tag] GHL tag raised for {email!r}: {e!r}", flush=True)
+        return False
+
+
 @app.route("/api/e4l/scan-freshness", methods=["POST"])
 def api_e4l_scan_freshness():
     """Ingest the latest voice-scan dates from the local e4l pipeline so the
@@ -33971,11 +34131,24 @@ def api_e4l_scan_freshness():
     from dashboard import scan_freshness as _sf
     with db.connect(LOG_DB) as cx:
         _sf.init_table(cx)
+        # BEFORE the upsert -- afterwards every row looks unchanged.
+        fresh = _sf.new_scanners(cx, rows)
         _sf.upsert(cx, rows)
     for _r in rows:
         if (_r.get("last_scan_date") or _r.get("scan_date") or "").strip():
             _record_entry_unlock("scan", (_r.get("email") or ""))
-    return jsonify({"ok": True, "upserted": len(rows)})
+    # Push the scan signal OUT to GHL so a workflow can stop chasing someone who
+    # has already scanned. Capped, and the cap is logged rather than silent: the
+    # first run after a backfill could otherwise fire thousands of API calls.
+    tagged = 0
+    for _em in fresh[:E4L_SCAN_TAG_MAX_PER_RUN]:
+        tagged += int(bool(_tag_scanned_in_ghl(_em)))
+    if len(fresh) > E4L_SCAN_TAG_MAX_PER_RUN:
+        print("[scan-tag] %d new scanners this run, tagged the first %d; %d deferred "
+              "to the next run" % (len(fresh), E4L_SCAN_TAG_MAX_PER_RUN,
+                                   len(fresh) - E4L_SCAN_TAG_MAX_PER_RUN), flush=True)
+    return jsonify({"ok": True, "upserted": len(rows),
+                    "new_scanners": len(fresh), "ghl_tagged": tagged})
 
 
 @app.route("/api/e4l/reveal-draft", methods=["POST"])
@@ -43151,6 +43324,32 @@ def api_money_wise():
     except Exception as e: return fail(e)
 
 
+@app.route("/api/money/royalties")
+@require_console_key
+def api_money_royalties():
+    """Posted Amazon royalty deposits identified by the daily QBO sync."""
+    try:
+        from dashboard import royalties as _royalties
+        return ok(_royalties.summary(LOG_DB))
+    except Exception as e:
+        return fail(e)
+
+
+@app.route("/api/cron/qbo-royalties", methods=["POST"])
+def api_cron_qbo_royalties():
+    """Daily, idempotent import of posted Amazon/KDP/Audible QBO deposits."""
+    key = request.headers.get("X-Cron-Secret", "")
+    expected = os.environ.get("CRON_SECRET") or os.environ.get("CONSOLE_SECRET", "")
+    if not expected or key != expected:
+        return jsonify({"error": "unauthorized"}), 401
+    try:
+        from dashboard import royalties as _royalties
+        days = max(1, min(int(request.args.get("days") or 120), 730))
+        return jsonify({"ok": True, "summary": _royalties.sync(LOG_DB, days_back=days)})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
 @app.route("/api/studio/sales")
 @require_console_key
 def api_studio_sales():
@@ -50293,6 +50492,65 @@ def api_console_client_prefs():
         _cpf.set_pickup_default(cx, email, bool(body.get("pickup_default")))
         return jsonify({"ok": True, "email": email,
                         "pickup_default": _cpf.get_pickup_default(cx, email)})
+    finally:
+        cx.close()
+
+
+@app.route("/api/console/fullscript-pins", methods=["GET", "POST", "DELETE"])
+def api_console_fullscript_pins():
+    """Owner: pin a Fullscript product for one client (the `operator` driver).
+
+    GET ?email= lists that client's pins, including any whose product has since
+    gone inactive (flagged product_active=0) -- those no longer surface to the
+    client, and an operator otherwise has no way to see why.
+    POST {email, products:[{fs_product_name, note}]} or {email, fs_product_name, note}.
+    DELETE {email, fs_product_name}.
+
+    Why this exists: the pins TABLE and its reader shipped 2026-07-23, but the
+    write path never did. Nothing in production ever wrote a pin, so
+    pins_for_client returned [] for every client while ORIGIN_PRIORITY ranked
+    `pinned` above every other driver. The highest-priority signal in Fullscript
+    recommendations could not exist.
+
+    A product name that is not an ACTIVE fullscript_products row is REPORTED in
+    `skipped`, never stored: the reader joins on active=1, so storing it would
+    look like success and show nothing (the same shape as the bug above)."""
+    actor = _bos_actor()
+    if actor is None or actor.role != _bos_rbac.OWNER:
+        return jsonify({"ok": False, "error": "unauthorized"}), 401
+    from dashboard import fullscript as _fs
+    cx = db.connect(LOG_DB)
+    try:
+        cx.row_factory = sqlite3.Row
+        _fs.init_tables(cx)
+        if request.method == "GET":
+            email = (request.args.get("email") or "").strip().lower()
+            if not email:
+                return jsonify({"ok": False, "error": "email required"}), 400
+            return jsonify({"ok": True, "email": email, "pins": _fs.pins_raw(cx, email)})
+        body = request.get_json(silent=True) or {}
+        email = (body.get("email") or "").strip().lower()
+        if not email:
+            return jsonify({"ok": False, "error": "email required"}), 400
+        if request.method == "DELETE":
+            name = (body.get("fs_product_name") or "").strip()
+            if not name:
+                return jsonify({"ok": False, "error": "fs_product_name required"}), 400
+            removed = _fs.unpin_product(cx, email, name)
+            return jsonify({"ok": True, "removed": removed,
+                            "pins": _fs.pins_raw(cx, email)})
+        items = body.get("products")
+        if not items:
+            items = [{"fs_product_name": body.get("fs_product_name"),
+                      "note": body.get("note", "")}]
+        pinned, skipped = [], []
+        who = getattr(actor, "user_name", "") or "owner"
+        for it in items:
+            nm = (it.get("fs_product_name") or "").strip()
+            ok, reason = _fs.pin_product(cx, email, nm, it.get("note", ""), who)
+            (pinned if ok else skipped).append({"fs_product_name": nm, "reason": reason})
+        return jsonify({"ok": True, "pinned": pinned, "skipped": skipped,
+                        "pins": _fs.pins_raw(cx, email)})
     finally:
         cx.close()
 

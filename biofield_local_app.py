@@ -2031,6 +2031,23 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
             count = save_order(cx, test_id, labels)
         return {"ok": True, "count": count}
 
+    @app.route("/author/<test_id>/clinical-items/balance", methods=["POST"])
+    def author_balance_clinical_item(test_id):
+        from dashboard.biofield_clinical_checklist import balance_item
+        body = request.get_json(silent=True) or {}
+        remedies = body.get("remedies") or []
+        if not isinstance(remedies, list):
+            return {"ok": False, "error": "Remedies must be a list"}, 400
+        try:
+            with sqlite3.connect(db_path) as cx:
+                result = balance_item(
+                    cx, test_id, body.get("label"), body.get("layer"), remedies,
+                    resolve_name=resolve_remedy_name, dosing=remedy_dosing,
+                )
+        except (TypeError, ValueError) as exc:
+            return {"ok": False, "error": str(exc)}, 400
+        return {"ok": True, **result}
+
     @app.route("/author/<test_id>/capture-stresses", methods=["POST"])
     def author_capture_stresses(test_id):
         from dashboard.biofield_interpret import interpret_stresses
