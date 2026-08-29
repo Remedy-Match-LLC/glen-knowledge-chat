@@ -274,3 +274,98 @@ def test_settings_page_sends_the_new_fields():
     html = pathlib.Path(appmod.STATIC, "practitioner-settings.html").read_text(encoding="utf-8")
     for key in ("tagline", "how_i_work", "logo_url"):
         assert key in html, f"settings page never sends {key} in its payload"
+
+
+# --- Fix wave: every profile failure mode is pre-validated ------------------
+
+
+@pytest.mark.parametrize("profile,why", [
+    ({"logo_url": "http://cdn.example.com/l.png"}, "plaintext http logo"),
+    ({"logo_url": "javascript:alert(1)"}, "script-scheme logo"),
+    ({"logo_url": "//cdn.example.com/l.png"}, "protocol-relative logo"),
+    ({"photo_url": "javascript:alert(1)"}, "script-scheme photo"),
+    ({"tagline": "x" * 121}, "tagline over the cap"),
+    ({"how_i_work": "x" * 2001}, "how_i_work over the cap"),
+    ({"logo_url": 123}, "non-string logo (was a 500, must be a 400)"),
+    ({"tagline": 123}, "non-string tagline (was a 500, must be a 400)"),
+])
+def test_post_bad_profile_field_does_not_partially_persist_branding(
+        client, monkeypatch, profile, why):
+    """Only the bio was pre-validated before any write, so the four newer
+    failure modes 400'd AFTER branding/pricing had already been persisted.
+
+    Reachable in the real UI: sf-logo-url is type="url", but the page saves via
+    fetch(), so the browser never validates it -- a pasted http:// URL 400s
+    with the practitioner's brand colour change already silently live.
+    """
+    from dashboard import practitioner_settings as _ps
+    from dashboard import practitioner_profile as _pp
+
+    calls = {"branding": 0, "pricing": 0, "save_draft": 0}
+    monkeypatch.setattr(_ps, "set_branding",
+                        lambda cx, pid, b, *, chat_enabled=None:
+                        calls.__setitem__("branding", calls["branding"] + 1))
+    monkeypatch.setattr(_ps, "set_pricing",
+                        lambda cx, pid, p:
+                        calls.__setitem__("pricing", calls["pricing"] + 1))
+    monkeypatch.setattr(_pp, "save_draft",
+                        lambda cx, pid, prof:
+                        calls.__setitem__("save_draft", calls["save_draft"] + 1))
+
+    full = {"bio": "fine", "tagline": "", "how_i_work": "",
+            "photo_url": "", "logo_url": ""}
+    full.update(profile)
+    r = client.post("/api/practitioner/settings", json={
+        "branding": {"practice_name": "New Name", "brand_color_1": "#ff0000"},
+        "profile": full,
+    })
+
+    assert r.status_code == 400, f"{why}: expected 400, got {r.status_code}"
+    assert calls["branding"] == 0, f"{why}: branding was written before the 400"
+    assert calls["pricing"] == 0, f"{why}: pricing was written before the 400"
+    assert calls["save_draft"] == 0
+
+
+def test_post_bad_logo_url_does_not_write_show_contact(client, monkeypatch):
+    """show_contact is the other write that lands before the profile block --
+    it goes to Postgres, so a partial write there is not even rolled back with
+    the sqlite ones."""
+    import db_supabase
+    supabase_calls = {"n": 0}
+
+    def _counting_cursor():
+        supabase_calls["n"] += 1
+        return _FakeCtx(_FakeCur(None))
+
+    monkeypatch.setattr(db_supabase, "supabase_cursor", _counting_cursor)
+    r = client.post("/api/practitioner/settings", json={
+        "show_contact": True,
+        "profile": {"bio": "fine", "logo_url": "http://cdn.example.com/l.png"},
+    })
+    assert r.status_code == 400
+    assert supabase_calls["n"] == 0
+
+
+def test_post_good_profile_still_saves(client, monkeypatch):
+    """The pre-check must not become a second, stricter gate that rejects
+    values save_draft itself accepts."""
+    from dashboard import practitioner_profile as _pp
+    seen = {}
+
+    def _fake_save_draft(cx, pid, profile):
+        seen.update(profile)
+        return dict(profile)
+
+    monkeypatch.setattr(_pp, "save_draft", _fake_save_draft)
+    monkeypatch.setattr(appmod, "_practitioner_profile_submit",
+                        lambda cx, pid: ({"status": "submitted"}, 200))
+    r = client.post("/api/practitioner/settings", json={"profile": {
+        "bio": "I heal",
+        "tagline": "Root-cause coaching",
+        "how_i_work": "I start with a full intake.\n\n- sleep\n- digestion",
+        "photo_url": "https://cdn.example.com/p.jpg",
+        "logo_url": "https://cdn.example.com/l.png",
+    }})
+    assert r.status_code == 200, r.get_data(as_text=True)
+    assert seen["logo_url"] == "https://cdn.example.com/l.png"
+    assert "\n\n" in seen["how_i_work"]

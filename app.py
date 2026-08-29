@@ -19137,12 +19137,27 @@ def api_practitioner_settings_post():
     from dashboard import practitioner_pricing as _ppr
     body = request.get_json(silent=True) or {}
 
-    # Validate the bio before any write, so a too-long bio can't 400 the
-    # request AFTER branding/pricing/show_contact have already been persisted.
+    # Validate EVERY profile field that can raise, before any write, so a
+    # rejected value can't 400 the request AFTER branding/pricing/show_contact
+    # have already been persisted. The editor sends one bundled payload, so a
+    # late 400 leaves the practitioner with a brand-colour change silently
+    # live and a "save failed" message.
+    #
+    # Every failure mode the later save_draft can raise must be repeated here
+    # or it reopens exactly that partial-write hole. Today: bio length,
+    # tagline length, how_i_work length, and both image URLs (shape and type).
+    # sf-logo-url is type="url" in the markup but the page saves via fetch(),
+    # so browser validation never runs and a pasted http:// URL reaches this.
+    # If you add a field to save_draft, add it here in the same commit.
     if isinstance(body.get("profile"), dict):
         from dashboard import practitioner_profile as _pp
+        _profile_in = body["profile"] or {}
         try:
-            _pp.sanitize_bio((body["profile"] or {}).get("bio", ""))
+            _pp.sanitize_bio(_profile_in.get("bio", ""))
+            _pp.sanitize_tagline(_profile_in.get("tagline", ""))
+            _pp.sanitize_how_i_work(_profile_in.get("how_i_work", ""))
+            _pp.sanitize_image_url(_profile_in.get("photo_url", ""))
+            _pp.sanitize_image_url(_profile_in.get("logo_url", ""))
         except ValueError as e:
             return jsonify({"ok": False, "error": str(e)}), 400
 
