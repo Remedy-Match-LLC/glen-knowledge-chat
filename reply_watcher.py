@@ -248,8 +248,15 @@ def process_inbox_replies(
     # Bank notifications are machine-generated (not cohort replies), but this
     # existing 15-minute Gmail cron is the reliable place to reconcile them.
     from dashboard.zelle_email_import import process_notifications
-    zelle_counts = process_notifications(
-        svc, db_path, dry_run=dry_run, max_messages=max_messages)
+    try:
+        zelle_counts = process_notifications(
+            svc, db_path, dry_run=dry_run, max_messages=max_messages)
+    except Exception as e:
+        # Bank-email import is additive and must never take down the established
+        # reply watcher if Gmail labels or a DB migration are temporarily unavailable.
+        print(f"[reply-watcher] Zelle scan failed: {e!r}", flush=True)
+        zelle_counts = {"zelle_applied": 0, "zelle_review": 0,
+                        "zelle_errored": 1, "zelle_details": []}
     counts = _scan_and_process(
         svc, db_path, dry_run, max_messages,
         processed_label_id, nonuser_label_id,

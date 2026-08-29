@@ -54,7 +54,7 @@ def _db(tmp_path):
     return cx
 
 
-def test_book_sale_on_payment_stamps_order_token_private_note(tmp_path, monkeypatch):
+def test_retired_book_sale_does_not_create_private_note_receipt(tmp_path):
     cx = _db(tmp_path)
     oid = O.upsert_order(cx, source="funnel", external_ref="tok-abc", email="a@b.com",
                          total_cents=30000)
@@ -62,13 +62,7 @@ def test_book_sale_on_payment_stamps_order_token_private_note(tmp_path, monkeypa
                "discount_cents": 0, "tax_cents": 0}
     O.set_order_qbo_lines(cx, "tok-abc", payload)
 
-    fake = _FakeQB()
-    monkeypatch.setattr(qbo_sale, "qbo_billing", fake)
-
     order = O.get_order(cx, oid)
     sr = qbo_sale.book_sale_on_payment(cx, order)
-
-    assert sr == "SR1"
-    assert fake.receipts == 1
-    assert fake.last_private_note == f"order:{order.get('external_ref')}"
-    assert fake.last_private_note == "order:tok-abc"
+    assert sr is None
+    assert O.get_order(cx, oid)["qbo_sales_receipt_id"] is None
