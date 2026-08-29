@@ -579,7 +579,9 @@
         if (data.profile_status === 'submitted') {
           msgEl.textContent = 'Sent for review. Glen will approve it before it '
             + 'appears on your page. Your other settings are saved.';
-        } else if (data.profile_status === 'publish_failed') {
+        } else if (data.profile_status && data.profile_status !== 'approved') {
+          // Any other status is a failure the practitioner needs to know about
+          // — her public page did NOT change. Never fall through to "saved".
           msgEl.className = 'msg err';
           msgEl.textContent = 'Your settings are saved, but your public page '
             + "couldn't be updated just now. Try saving again in a few minutes.";

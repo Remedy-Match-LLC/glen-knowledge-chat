@@ -19220,7 +19220,8 @@ def api_practitioner_settings_post():
                 # the review gate off this publishes immediately (pre-feature
                 # behavior), with it on the draft queues for Glen.
                 sub, sub_status = _practitioner_profile_submit(_cx, pid)
-                profile_status = sub.get("status") if sub_status == 200 else "publish_failed"
+                profile_status = (sub.get("status") if sub_status == 200
+                                  else (sub.get("error") or "error"))
                 if sub_status != 200:
                     print("[practitioner-settings] profile submit failed for "
                           f"{pid}: {sub!r}", flush=True)

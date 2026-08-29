@@ -506,3 +506,23 @@ def test_approve_retry_records_a_supplied_note(client, monkeypatch, tmp_path):
     with appmod.db.connect(dbpath) as cx:
         cx.row_factory = _sqlite3.Row
         assert _pd.get_draft(cx, PID)["review_note"] == "published on the retry"
+
+
+def test_settings_save_reports_a_failed_publish(client, monkeypatch, tmp_path, gate_off):
+    """With the gate off the save is supposed to go live. If the publish fails,
+    the response must say so rather than reporting a bare success -- the editor
+    renders an error off profile_status and never falls through to
+    'Settings saved.'"""
+    dbpath = str(tmp_path / "chat_log.db")
+    monkeypatch.setattr(appmod, "_practitioner_session_pid", lambda: PID)
+    monkeypatch.setattr(appmod, "LOG_DB", dbpath)
+    monkeypatch.setattr("dashboard.practitioner_profile.publish_draft",
+                        lambda cx, pid: False)
+
+    r = client.post("/api/practitioner/settings", json={
+        "profile": {"bio": "I help people see better.", "city": "Hilo",
+                    "state": "HI"}})
+    assert r.status_code == 200
+    body = r.get_json()
+    assert body["profile_status"] == "publish_failed"
+    assert body["profile_status"] not in ("approved", "submitted")
