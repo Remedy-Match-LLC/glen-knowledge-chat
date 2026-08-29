@@ -264,6 +264,21 @@ def add_payment(cx, order_id, amount_cents, method, *, source="manual",
     if qbo_txn_id or skip_qbo_push:
         _mark_sync(cx, row["id"], qbo_txn_id=qbo_txn_id, state="synced")
     _push_payment(cx, row["id"])
+    # The ledger is authoritative, but the fulfillment board and portal still use
+    # orders.pay_status/status. Keep those projections in sync when the active
+    # ledger reaches the invoice total. This was previously left to a second,
+    # manual "mark paid" action, so a fully reconciled Zelle payment could leave an
+    # invoice looking unpaid indefinitely.
+    bal = balance(cx, order_id)
+    if bal["balance_cents"] <= 0:
+        order = orders.get_order(cx, order_id) or {}
+        paid_cents = int(bal["paid_cents"] - bal["refunded_cents"])
+        if order.get("status") in ("proposed", "confirmed"):
+            orders.set_order_payment(
+                cx, order_id, method=method, amount_cents=paid_cents)
+        else:
+            orders.mark_order_paid_keep_status(
+                cx, order_id, method=method, amount_cents=paid_cents)
     return _row(cx, row["id"])
 
 
