@@ -16897,11 +16897,17 @@ def practitioner_login_verify():
     if request.method == "GET":
         if not token or not _pp.validate_magic_link(token):
             return _redir("/practitioner/register?error=link")
+        if return_to == "/practitioner/profile":
+            blurb, button = ("Continue to write your public practitioner page.",
+                             "Continue to my page")
+        else:
+            blurb, button = ("Continue to return to your practitioner order.",
+                             "Continue to my order")
         return _confirm_post_page(
             "/practitioner/login-verify", title="Sign in",
             heading="Welcome back",
-            blurb="Continue to return to your practitioner order.",
-            button="Continue to my order",
+            blurb=blurb,
+            button=button,
             hidden={"token": token, "return_to": return_to})
     pid = _pp.consume_magic_link(token) if token else None
     if not pid:
@@ -34851,11 +34857,19 @@ def console_courses_grant_membership():
     return jsonify({"ok": True, "email": email, "until_epoch": until})
 
 
-def _send_practitioner_invite(email, name, pid):
-    """Mint a 7-day practitioner magic link and email it. Returns True on send."""
+def _send_practitioner_invite(email, name, pid, return_to=None):
+    """Mint a 7-day practitioner magic link and email it. Returns True on send.
+
+    ``return_to`` lands the practitioner on the surface the inviting email
+    actually asked them to fill in. Without it every invite drops onto the
+    portal home, which is only correct when the portal home is the ask.
+    """
     magic = _pp.create_magic_link_token(pid, email, ttl_min=7 * 24 * 60)
+    import urllib.parse as _up
+    query = _up.urlencode({"token": magic,
+                           "return_to": _practitioner_return_to(return_to)})
     _send_practitioner_magic_link(
-        email, name or "", f"{PUBLIC_BASE_URL}/practitioner/login-verify?token={magic}")
+        email, name or "", f"{PUBLIC_BASE_URL}/practitioner/login-verify?{query}")
     return True
 
 
@@ -34994,7 +35008,8 @@ def api_console_practitioners_edit(pid):
         if not email:
             return jsonify({"error": "email required"}), 400
         try:
-            _send_practitioner_invite(email, (body.get("name") or "").strip(), pid)
+            _send_practitioner_invite(email, (body.get("name") or "").strip(), pid,
+                                      return_to=body.get("return_to"))
         except Exception as e:
             print(f"[console-practitioners] resend failed for {email}: {e!r}", flush=True)
             return jsonify({"ok": False, "error": "send failed"}), 500
