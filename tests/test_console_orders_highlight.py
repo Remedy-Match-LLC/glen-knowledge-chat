@@ -79,7 +79,14 @@ def test_record_shipment_requests_missing_tracking_and_done_card_can_reveal_or_a
     html = _html()
     assert "id=\"ff-track-" in html
     assert "id=\"ff-track-row-" in html
-    assert "tracking.focus()" in html
+    # INVERTED 2026-08-29, not deleted. #1478 ("Allow fulfillment without
+    # tracking number", bcc4d571) deliberately removed the forced
+    # `tracking.focus()` -- pulling the cursor into the tracking field is exactly
+    # what that change undoes. The assertion pinned the old behaviour and was not
+    # updated, so main went red and stayed red until the next PR ran CI.
+    # The field must still EXIST and still be READ when filled; only the forcing
+    # is gone.
+    assert "tracking.focus()" not in html, "fulfillment should not force the tracking field"
     assert "tracking_number: tracking ? tracking.value.trim() : ''" in html
     assert "else if (o.status==='done') acts = trackingBtn(o)" in html
     assert ">Tracking Number</button>" in html
