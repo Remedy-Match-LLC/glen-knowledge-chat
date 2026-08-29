@@ -34,6 +34,11 @@ def init_tables(cx):
                "ON fullscript_focus_area_items(item_code)")
     cx.execute("CREATE INDEX IF NOT EXISTS ix_fspins_email "
                "ON fullscript_client_pins(email)")
+    # One pin per (client, product). Safe to add on an existing DB: until
+    # 2026-08-28 nothing in production ever wrote this table, so there are no
+    # duplicate rows to violate it.
+    cx.execute("CREATE UNIQUE INDEX IF NOT EXISTS ux_fspins_email_product "
+               "ON fullscript_client_pins(email, fs_product_name)")
     cx.execute("CREATE INDEX IF NOT EXISTS ix_fsprod_slug "
                "ON fullscript_products(product_slug)")
     cx.commit()
@@ -107,6 +112,73 @@ def products_for_focus_area(cx, focus_area_id):
         JOIN fullscript_products p ON p.name = fap.fs_product_name
         WHERE fap.focus_area_id = ? AND p.active = 1
         ORDER BY fap.rank""", (focus_area_id,)).fetchall()
+    return [dict(r) for r in rows]
+
+
+def _active_product_names(cx):
+    return {r[0] for r in cx.execute(
+        "SELECT name FROM fullscript_products WHERE active = 1")}
+
+
+def pin_product(cx, email, fs_product_name, note="", pinned_by=""):
+    """Pin a Fullscript product for one client. Returns (ok, reason).
+
+    REFUSES a name that is not an ACTIVE fullscript_products row, because
+    pins_for_client JOINs `p.active = 1` -- a pin naming an unknown or retired
+    product would store perfectly happily and then never appear anywhere. That
+    is the failure this whole write path exists to end: until 2026-08-28 nothing
+    wrote this table at all, so `pins_for_client` returned [] for every client
+    forever while the code described a pin as outranking every other driver.
+
+    Idempotent per (email, product) via ux_fspins_email_product: re-pinning
+    updates the note and the timestamp rather than adding a second row."""
+    e = (email or "").strip().lower()
+    name = (fs_product_name or "").strip()
+    if not e:
+        return False, "email required"
+    if not name:
+        return False, "fs_product_name required"
+    if name not in _active_product_names(cx):
+        return False, "unknown or inactive fullscript product"
+    from datetime import datetime, timezone
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    cx.execute("""INSERT INTO fullscript_client_pins
+                  (email, fs_product_name, note, pinned_by, pinned_at)
+                  VALUES (?,?,?,?,?)
+                  ON CONFLICT(email, fs_product_name) DO UPDATE SET
+                    note=excluded.note, pinned_by=excluded.pinned_by,
+                    pinned_at=excluded.pinned_at""",
+               (e, name, (note or "").strip(), (pinned_by or "").strip(), now))
+    cx.commit()
+    return True, "pinned"
+
+
+def unpin_product(cx, email, fs_product_name):
+    """Remove one pin. Returns the number of rows removed (0 if there was none)."""
+    e = (email or "").strip().lower()
+    name = (fs_product_name or "").strip()
+    if not (e and name):
+        return 0
+    n = cx.execute("DELETE FROM fullscript_client_pins "
+                   "WHERE LOWER(email)=? AND fs_product_name=?", (e, name)).rowcount
+    cx.commit()
+    return n
+
+
+def pins_raw(cx, email):
+    """Every stored pin for a client, INCLUDING ones whose product is now
+    inactive. pins_for_client hides those (it filters active=1), so without this
+    an operator sees a pin vanish from the client's list with no way to tell
+    whether it was deleted or merely stopped matching."""
+    e = (email or "").strip().lower()
+    if not e:
+        return []
+    rows = cx.execute("""
+        SELECT pin.email, pin.fs_product_name, pin.note, pin.pinned_by, pin.pinned_at,
+               COALESCE(p.active, 0) AS product_active
+        FROM fullscript_client_pins pin
+        LEFT JOIN fullscript_products p ON p.name = pin.fs_product_name
+        WHERE LOWER(pin.email) = ? ORDER BY pin.pinned_at""", (e,)).fetchall()
     return [dict(r) for r in rows]
 
 
