@@ -11,6 +11,7 @@ blank preview card when a client texted their practitioner's link, which is
 the referral motion this whole feature exists to serve.
 """
 import html
+import json
 
 # The page is deliberately plain. It inherits nothing from the funnel's
 # stylesheet because it is a practitioner's page on their own domain.
@@ -203,6 +204,49 @@ def _share_tags(view, title, desc, canonical_url):
     return "".join(tags)
 
 
+def build_jsonld(view, canonical_url):
+    """Person plus ProfessionalService.
+
+    Deliberately NOT MedicalBusiness or Physician. Those schema types assert a
+    medical practice to Google in machine-readable form. Most practitioners
+    here are health coaches, for whom that is inaccurate, and it is not a
+    claim to emit from this domain on their behalf. Same reasoning as the
+    credential-verification decision in section 1 of the spec.
+
+    Fields are omitted when absent rather than emitted empty: an empty
+    schema.org value is a worse signal than a missing one.
+    """
+    name = view.get("practitioner_name") or view.get("slug") or "Practitioner"
+    person = {"@context": "https://schema.org", "@type": "Person",
+              "name": name, "url": canonical_url,
+              "description": build_description(view)}
+    if (view.get("photo_url") or "").strip():
+        person["image"] = view["photo_url"].strip()
+
+    service = {"@context": "https://schema.org", "@type": "ProfessionalService",
+               "name": (view.get("practice_name") or "").strip() or name,
+               "url": canonical_url}
+    if (view.get("location") or "").strip():
+        service["address"] = view["location"].strip()
+    services = [str(s).strip() for s in (view.get("services") or []) if str(s).strip()]
+    if services:
+        service["serviceType"] = services
+    return [person, service]
+
+
+def _jsonld_tag(view, canonical_url):
+    """Serialise the JSON-LD, neutralising any embedded closing tag.
+
+    Escaping `</` is the standard defence: inside a <script> block the HTML
+    parser looks for the literal characters `</script`, and it does so BEFORE
+    any JSON parsing happens, so a bio containing one would end the script
+    early. `<\\/` is valid JSON for the same string.
+    """
+    raw = json.dumps(build_jsonld(view, canonical_url), ensure_ascii=False)
+    return ('<script type="application/ld+json">'
+            + raw.replace("</", "<\\/") + "</script>")
+
+
 def render_page_html(view, *, canonical_url):
     """Render the complete document for one practitioner.
 
@@ -243,6 +287,7 @@ def render_page_html(view, *, canonical_url):
         f"{_share_tags(view, title, desc, canonical_url)}"
         f'<link rel="canonical" href="{_esc(canonical_url)}">'
         '<meta name="robots" content="noindex">'
+        f"{_jsonld_tag(view, canonical_url)}"
         f"{_STYLE}"
         "</head><body>"
         f"{body}"

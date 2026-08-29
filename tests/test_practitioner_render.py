@@ -189,5 +189,75 @@ def test_og_and_meta_descriptions_agree():
 
 
 def test_a_quote_in_the_canonical_url_cannot_break_the_attribute():
+    """Scoped to the head's attribute tags, not the whole document: the
+    JSON-LD block (added in Task 4) also carries this same URL, safely,
+    as a JSON string inside a <script> element -- browsers only scan for a
+    literal `</script` to end script content, so a raw quote or `>` inside
+    it is inert. Checking the full html string would fail on that harmless
+    occurrence instead of on an actual attribute break-out."""
     html = pr.render_page_html(_view(), canonical_url='https://x/"><script>')
-    assert '"><script>' not in html
+    head, _, _ = html.partition('<script type="application/ld+json">')
+    assert '"><script>' not in head
+
+
+import json
+import re
+
+
+def _jsonld(html_str):
+    m = re.search(r'<script type="application/ld\+json">(.*?)</script>',
+                  html_str, re.S)
+    assert m, "no JSON-LD block"
+    return json.loads(m.group(1))
+
+
+def test_jsonld_is_person_plus_professional_service():
+    data = _jsonld(pr.render_page_html(_view(), canonical_url=CANON))
+    assert [d["@type"] for d in data] == ["Person", "ProfessionalService"]
+
+
+def test_jsonld_never_asserts_a_medical_practice():
+    """Spec constraint: not MedicalBusiness, not Physician, no specialty."""
+    v = _view(bio="RN and health coach", practice_name="Fairbanks Wellness",
+              services=["health coaching", "nutrition"])
+    raw = pr.render_page_html(v, canonical_url=CANON)
+    for banned in ("MedicalBusiness", "Physician", "medicalSpecialty",
+                   "MedicalClinic", "Hospital"):
+        assert banned not in raw
+
+
+def test_jsonld_carries_name_url_and_description():
+    v = _view(tagline="Helping nurses stop running on empty")
+    person = _jsonld(pr.render_page_html(v, canonical_url=CANON))[0]
+    assert person["name"] == "Mary Boyd"
+    assert person["url"] == CANON
+    assert person["description"] == "Helping nurses stop running on empty"
+
+
+def test_jsonld_omits_absent_fields_rather_than_emitting_empty_ones():
+    person = _jsonld(pr.render_page_html(_view(), canonical_url=CANON))[0]
+    assert "image" not in person
+    assert "address" not in _jsonld(pr.render_page_html(_view(), canonical_url=CANON))[1]
+
+
+def test_jsonld_includes_photo_and_location_when_present():
+    v = _view(photo_url="https://cdn.example/mary.jpg", location="Fairbanks, AK",
+              practice_name="Fairbanks Wellness", services=["health coaching"])
+    data = _jsonld(pr.render_page_html(v, canonical_url=CANON))
+    assert data[0]["image"] == "https://cdn.example/mary.jpg"
+    assert data[1]["name"] == "Fairbanks Wellness"
+    assert data[1]["address"] == "Fairbanks, AK"
+    assert data[1]["serviceType"] == ["health coaching"]
+
+
+def test_professional_service_falls_back_to_the_person_name():
+    """A coach practising under their own name still gets a service entity."""
+    data = _jsonld(pr.render_page_html(_view(), canonical_url=CANON))
+    assert data[1]["name"] == "Mary Boyd"
+
+
+def test_a_closing_script_tag_in_the_data_cannot_break_out():
+    v = _view(bio="</script><script>alert(1)</script>")
+    raw = pr.render_page_html(v, canonical_url=CANON)
+    assert "</script><script>alert(1)" not in raw
+    _jsonld(raw)  # must still parse
