@@ -1,3 +1,6 @@
+import json
+import re
+
 import pytest
 from dashboard import practitioner_render as pr
 
@@ -200,10 +203,6 @@ def test_a_quote_in_the_canonical_url_cannot_break_the_attribute():
     assert '"><script>' not in head
 
 
-import json
-import re
-
-
 def _jsonld(html_str):
     m = re.search(r'<script type="application/ld\+json">(.*?)</script>',
                   html_str, re.S)
@@ -261,3 +260,36 @@ def test_a_closing_script_tag_in_the_data_cannot_break_out():
     raw = pr.render_page_html(v, canonical_url=CANON)
     assert "</script><script>alert(1)" not in raw
     _jsonld(raw)  # must still parse
+
+
+def _script_body(html_str):
+    m = re.search(r'<script type="application/ld\+json">(.*?)</script>',
+                  html_str, re.S)
+    assert m, "no JSON-LD block"
+    return m.group(1)
+
+
+def test_no_raw_angle_bracket_survives_in_the_jsonld_script_body():
+    """Closed-class guard, not a list of spellings.
+
+    A regex that extracts "parseable JSON" from the document cannot catch a
+    browser that has already been pushed into script data double escaped
+    state: `<!--<script>` contains no `</` at all, so a guard that only
+    escapes `</` never touches it, yet it still ends the <script> element
+    early in a real browser (the block's own trailing </script> stops
+    closing it once the tokenizer is in that state). Asserting that no raw
+    `<` reaches the script body at all defeats that payload and every other
+    spelling of the same class in one guard, rather than enumerating them.
+    """
+    v = _view(bio="</script><script>alert(1)</script>",
+              tagline="<!--<script>",
+              practice_name="<!--<script>",
+              location="<!--<script>",
+              services=["<!--<script>"])
+    raw = pr.render_page_html(v, canonical_url=CANON)
+    body = _script_body(raw)
+    assert "<" not in body
+    data = json.loads(body)
+    assert data[0]["description"] == "<!--<script>"
+    assert data[1]["address"] == "<!--<script>"
+    assert data[1]["serviceType"] == ["<!--<script>"]

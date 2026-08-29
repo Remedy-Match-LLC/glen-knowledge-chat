@@ -51,13 +51,20 @@ def _esc(s):
 MAX_DESCRIPTION = 200
 
 
+def _display_name(view):
+    """The practitioner's name, falling back to their slug, then a generic
+    label. One resolution order shared by the title, the document body, and
+    the JSON-LD -- so they cannot drift from each other."""
+    return view.get("practitioner_name") or view.get("slug") or "Practitioner"
+
+
 def build_title(view):
     """Name, or "Name — Practice" when a practice name exists.
 
     An em dash separator, not a pipe: this is a person's page, not a
     directory listing.
     """
-    name = view.get("practitioner_name") or view.get("slug") or "Practitioner"
+    name = _display_name(view)
     practice = (view.get("practice_name") or "").strip()
     return f"{name} — {practice}" if practice else str(name)
 
@@ -216,7 +223,7 @@ def build_jsonld(view, canonical_url):
     Fields are omitted when absent rather than emitted empty: an empty
     schema.org value is a worse signal than a missing one.
     """
-    name = view.get("practitioner_name") or view.get("slug") or "Practitioner"
+    name = _display_name(view)
     person = {"@context": "https://schema.org", "@type": "Person",
               "name": name, "url": canonical_url,
               "description": build_description(view)}
@@ -235,16 +242,35 @@ def build_jsonld(view, canonical_url):
 
 
 def _jsonld_tag(view, canonical_url):
-    """Serialise the JSON-LD, neutralising any embedded closing tag.
+    """Serialise the JSON-LD, escaping the whole class of characters that can
+    end a <script> element early -- not just one spelling of the attack.
 
-    Escaping `</` is the standard defence: inside a <script> block the HTML
-    parser looks for the literal characters `</script`, and it does so BEFORE
-    any JSON parsing happens, so a bio containing one would end the script
-    early. `<\\/` is valid JSON for the same string.
+    Escaping only a literal `</script` (an earlier version of this function)
+    misses `<!--<script>`, which contains no `</` at all. That sequence still
+    breaks a real browser: the HTML tokenizer parsing <script> content reads
+    `<!--` followed by `<script` as the start of "script data double escaped
+    state", after which the block's own trailing `</script>` no longer closes
+    the element -- everything that follows (the rest of <head>, all of
+    <body>) is consumed as inert script text, and the visitor sees a blank
+    page. There is no bounded list of trigger spellings for this, so the fix
+    is to remove the character the tokenizer keys off at all: every `<` and
+    `>` in the payload is escaped to a JSON unicode escape, which the
+    tokenizer cannot recognise as markup. `&` is escaped too (some HTML
+    entity contexts) along with the two line-terminator code points --
+    U+2028/U+2029 -- that are legal JSON but illegal inside a JavaScript
+    string literal, in case this block is ever read with a JS `eval`/regex
+    instead of `JSON.parse`. This is the same complete technique Django's
+    `json_script` filter uses. Every substitution stays inside a JSON string
+    escape, so the block still parses with `json.loads` and every value reads
+    back unchanged.
     """
     raw = json.dumps(build_jsonld(view, canonical_url), ensure_ascii=False)
-    return ('<script type="application/ld+json">'
-            + raw.replace("</", "<\\/") + "</script>")
+    raw = (raw.replace("&", "\\u0026")
+              .replace("<", "\\u003c")
+              .replace(">", "\\u003e")
+              .replace(" ", "\\u2028")
+              .replace(" ", "\\u2029"))
+    return '<script type="application/ld+json">' + raw + "</script>"
 
 
 def render_page_html(view, *, canonical_url):
@@ -257,7 +283,7 @@ def render_page_html(view, *, canonical_url):
     noindex is unconditional in section 5a. Section 5b introduces the content
     bar that decides when it may be lifted.
     """
-    name = view.get("practitioner_name") or view.get("slug") or "Practitioner"
+    name = _display_name(view)
     title = build_title(view)
     desc = build_description(view)
     body = (
