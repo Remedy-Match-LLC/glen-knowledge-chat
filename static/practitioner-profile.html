@@ -1,0 +1,274 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <link rel="icon" type="image/png" href="/static/favicon.png">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Your Public Profile · Remedy Match</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;600&family=Raleway:wght@600;700&display=swap" rel="stylesheet">
+  <style>
+    :root{ --bg:#0a150d; --surface:#111f16; --surface-2:#162318; --border:#21472d;
+      --cream:#fdf4d8; --muted:#a89870; --gold:#d4a843; --green:#3d8a52; --radius:14px;
+      --font:"Open Sans",system-ui,sans-serif; --heading:"Raleway",system-ui,sans-serif; }
+    :root[data-theme="light"]{ --bg:#FBF8F3; --surface:#FFFFFF; --surface-2:#F4ECDE;
+      --border:#E2D9C9; --cream:#1E2A2A; --muted:#5F6B6B; --gold:#B08A3E; --green:#2D7A6A; }
+    *{box-sizing:border-box}
+    body{ margin:0; background:var(--bg); color:var(--cream); font-family:var(--font); line-height:1.6; }
+    .wrap{ max-width:760px; margin:0 auto; padding:34px 20px 60px; }
+    h1,h2{ font-family:var(--heading); font-weight:700; margin:0; }
+    h1{ font-size:24px; } h2{ font-size:17px; }
+    .muted{ color:var(--muted); font-size:13px; }
+    .panel{ background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:20px; margin-top:16px; }
+    label.field-label{ display:block; font-size:12px; color:var(--muted); font-weight:600; letter-spacing:.05em; margin-bottom:4px; margin-top:12px; }
+    label.field-label:first-child{ margin-top:0; }
+    input[type=text], input[type=url]{
+      padding:9px 10px; border:1px solid var(--border); border-radius:8px; font-size:14px;
+      font-family:inherit; background:var(--surface-2); color:var(--cream); width:100%; }
+    textarea{
+      padding:9px 10px; border:1px solid var(--border); border-radius:8px; font-size:14px;
+      font-family:inherit; background:var(--surface-2); color:var(--cream); width:100%; resize:vertical; }
+    input::placeholder, textarea::placeholder{ color:#6f7d6f; }
+    button.primary{ background:var(--green); color:#fff; border:0; border-radius:8px;
+      padding:9px 20px; font-weight:600; cursor:pointer; font-family:inherit; font-size:14px; }
+    button:disabled{ opacity:.5; cursor:default; }
+    .msg{ margin-top:12px; font-size:13px; min-height:1.2em; }
+    .msg.ok{ color:#8fd6a3; }
+    .msg.err{ color:#e09080; }
+    .note-box{ background:rgba(212,168,67,.12); border:1px solid var(--border);
+      border-radius:8px; padding:12px 14px; font-size:13px; color:var(--gold); margin-top:8px; }
+    .status-box{ background:var(--surface-2); border:1px solid var(--border);
+      border-radius:8px; padding:12px 14px; font-size:13px; color:var(--muted); margin-top:8px; }
+    .auth-notice{ text-align:center; padding:60px 20px; }
+    .auth-notice a{ color:var(--gold); }
+    .row-nav{ display:flex; justify-content:space-between; align-items:center; gap:12px; }
+    .toggle-row{ display:flex; align-items:center; gap:10px; cursor:pointer; }
+    .coming-note{ color:var(--muted); font-size:12px; margin-top:6px; margin-bottom:2px; }
+    .two-col{ display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+    .workspace-nav{position:sticky;top:0;z-index:50;display:flex;gap:8px;overflow-x:auto;margin:14px 0 18px;padding:10px;background:var(--surface);border:1px solid var(--border);border-radius:12px;box-shadow:0 8px 24px rgba(0,0,0,.22);-webkit-overflow-scrolling:touch}
+    .workspace-nav a{min-height:44px;display:inline-flex;align-items:center;padding:8px 12px;color:var(--gold);font-size:13px;font-weight:700;text-decoration:none;white-space:nowrap;border-radius:8px}
+    .workspace-nav a.primary{background:var(--green);color:#fff}
+  </style>
+  <script>(function(){var t=localStorage.getItem('rm-theme');if(t)document.documentElement.setAttribute('data-theme',t);})();</script>
+  <script src="/static/theme-mode.js"></script>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="row-nav">
+    <div>
+      <h1>Your Public Profile</h1>
+      <div class="muted" id="who" style="margin-top:4px">Loading&hellip;</div>
+    </div>
+    <div style="display:flex;gap:8px;align-items:center">
+      <span class="theme-toggle" id="themeToggle" role="group" aria-label="Theme mode"></span>
+    </div>
+  </div>
+  <nav class="workspace-nav" aria-label="Practitioner workspace">
+    <a href="/practitioner/portal">Practitioner Home</a>
+    <a class="primary" href="/practitioner/profile">Public Profile</a>
+    <a href="/practitioner/client-account?section=messages">Messages &amp; Order Help</a>
+  </nav>
+
+  <!-- auth wall -->
+  <div id="auth-wall" class="auth-notice" style="display:none">
+    <div style="font-size:18px;font-weight:700;font-family:var(--heading);margin-bottom:10px">Sign in required</div>
+    <p>Please sign in to your practitioner portal first.</p>
+    <a href="/practitioner/dropship">Sign in to your practitioner account &rarr;</a>
+  </div>
+
+  <div id="main-content" style="display:none">
+
+    <div class="panel">
+      <h2>Write your public page</h2>
+      <div class="muted" style="margin-top:6px">
+        This is what clients see when they find you. Tagline and about you are stored now and
+        shown on your public page once that page's rendering is built; nothing here appears
+        anywhere until that's ready and, if a review is required, until Glen has looked at it.
+      </div>
+      <div class="note-box" id="pf-review-note" style="display:none"></div>
+      <div class="status-box" id="pf-submitted-note" style="display:none">
+        Your profile is with Glen, waiting for his review.
+      </div>
+
+      <label class="field-label" style="margin-top:0">Practice name (optional)</label>
+      <input type="text" id="pf-practice-name" maxlength="120" placeholder="Leave blank to use your own name">
+
+      <label class="field-label">Tagline</label>
+      <input type="text" id="pf-tagline" maxlength="120" placeholder="One line under your name">
+      <div class="muted"><span id="pf-tagline-count">0</span>/120</div>
+
+      <label class="field-label">About you</label>
+      <textarea id="pf-bio" maxlength="600" rows="5"
+                placeholder="Introduce yourself to prospective clients."></textarea>
+      <div class="muted"><span id="pf-bio-count">0</span>/600</div>
+
+      <label class="field-label">What working with you is like</label>
+      <textarea id="pf-how-i-work" maxlength="2000" rows="6"
+                placeholder="Describe what a client can expect working with you."></textarea>
+      <div class="muted"><span id="pf-how-i-work-count">0</span>/2000</div>
+
+      <div class="coming-note">Uploading a file instead is coming. For now, paste a public image URL.</div>
+      <label class="field-label">Photo URL</label>
+      <input type="url" id="pf-photo" maxlength="500" placeholder="https://yoursite.com/photo.jpg">
+
+      <label class="field-label">Logo URL</label>
+      <input type="url" id="pf-logo-url" maxlength="500" placeholder="https://yoursite.com/logo.png">
+
+      <div class="two-col" style="margin-top:12px">
+        <div>
+          <label class="field-label" style="margin-top:0">City</label>
+          <input type="text" id="pf-city" placeholder="Hilo">
+        </div>
+        <div>
+          <label class="field-label" style="margin-top:0">State</label>
+          <input type="text" id="pf-state" placeholder="HI">
+        </div>
+      </div>
+
+      <label class="toggle-row" style="margin-top:14px">
+        <input type="checkbox" id="pf-accepting" checked>
+        <span>Accepting new clients</span>
+      </label>
+    </div>
+
+    <div style="margin-top:20px;display:flex;align-items:center;gap:16px">
+      <button class="primary" id="save-btn" onclick="saveProfile()">Save</button>
+      <div class="msg" id="save-msg"></div>
+    </div>
+
+  </div><!-- /main-content -->
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  var TOKEN = new URLSearchParams(location.search).get('token') || '';
+
+  if (window.RMTheme) window.RMTheme.mountToggle(document.getElementById('themeToggle'));
+
+  function authHeaders() {
+    var h = { 'Content-Type': 'application/json' };
+    if (TOKEN) h['X-Practitioner-Token'] = TOKEN;
+    return h;
+  }
+
+  document.getElementById('pf-bio').addEventListener('input', function () {
+    document.getElementById('pf-bio-count').textContent = this.value.length;
+  });
+  document.getElementById('pf-how-i-work').addEventListener('input', function () {
+    document.getElementById('pf-how-i-work-count').textContent = this.value.length;
+  });
+  document.getElementById('pf-tagline').addEventListener('input', function () {
+    document.getElementById('pf-tagline-count').textContent = this.value.length;
+  });
+
+  function setCounts(tagline, bio, howIWork) {
+    document.getElementById('pf-tagline-count').textContent = (tagline || '').length;
+    document.getElementById('pf-bio-count').textContent = (bio || '').length;
+    document.getElementById('pf-how-i-work-count').textContent = (howIWork || '').length;
+  }
+
+  // ── Load profile ──────────────────────────────────────────────────────────
+  fetch('/api/practitioner/settings', { credentials: 'same-origin', headers: authHeaders() })
+    .then(function (r) { return r.json(); })
+    .then(function (data) {
+      if (!data.ok) {
+        document.getElementById('auth-wall').style.display = 'block';
+        return;
+      }
+      document.getElementById('main-content').style.display = 'block';
+      document.getElementById('who').textContent = 'Write the page clients will see.';
+
+      var pf = data.profile || {};
+      document.getElementById('pf-practice-name').value = pf.practice_name || '';
+      document.getElementById('pf-tagline').value = pf.tagline || '';
+      document.getElementById('pf-bio').value = pf.bio || '';
+      document.getElementById('pf-how-i-work').value = pf.how_i_work || '';
+      setCounts(pf.tagline, pf.bio, pf.how_i_work);
+      document.getElementById('pf-photo').value = pf.photo_url || '';
+      document.getElementById('pf-logo-url').value = pf.logo_url || '';
+      document.getElementById('pf-city').value = pf.city || '';
+      document.getElementById('pf-state').value = pf.state || '';
+      document.getElementById('pf-accepting').checked = pf.accepting_clients !== false;
+
+      // Glen sent this draft back. The note is the only thing that tells her
+      // what to change, so show it prominently.
+      var noteEl = document.getElementById('pf-review-note');
+      var submittedEl = document.getElementById('pf-submitted-note');
+      if (data.profile_status === 'draft' && data.review_note) {
+        noteEl.textContent = 'Sent back for a change: ' + data.review_note;
+        noteEl.style.display = 'block';
+      } else if (data.profile_status === 'submitted') {
+        submittedEl.style.display = 'block';
+      }
+    })
+    .catch(function () {
+      document.getElementById('auth-wall').style.display = 'block';
+    });
+
+  // ── Save profile ─────────────────────────────────────────────────────────
+  window.saveProfile = function () {
+    var btn = document.getElementById('save-btn');
+    var msgEl = document.getElementById('save-msg');
+    btn.disabled = true;
+    msgEl.className = 'msg';
+    msgEl.textContent = 'Saving…';
+
+    var payload = {
+      profile: {
+        practice_name: document.getElementById('pf-practice-name').value.trim(),
+        tagline: document.getElementById('pf-tagline').value.trim(),
+        bio: document.getElementById('pf-bio').value,
+        how_i_work: document.getElementById('pf-how-i-work').value,
+        photo_url: document.getElementById('pf-photo').value.trim(),
+        logo_url: document.getElementById('pf-logo-url').value.trim(),
+        city: document.getElementById('pf-city').value.trim(),
+        state: document.getElementById('pf-state').value.trim(),
+        accepting_clients: document.getElementById('pf-accepting').checked,
+      },
+    };
+
+    fetch('/api/practitioner/settings', {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: authHeaders(),
+      body: JSON.stringify(payload),
+    })
+      .then(function (r) { return r.json().then(function (data) { return { status: r.status, data: data }; }); })
+      .then(function (result) {
+        btn.disabled = false;
+        var data = result.data;
+        if (result.status !== 200 || !data.ok) {
+          msgEl.className = 'msg err';
+          msgEl.textContent = data.error || 'Save failed.';
+          return;
+        }
+        document.getElementById('pf-submitted-note').style.display = 'none';
+        document.getElementById('pf-review-note').style.display = 'none';
+        if (data.profile_status === 'submitted') {
+          msgEl.className = 'msg ok';
+          msgEl.textContent = "Sent for review. Glen will look before it appears on your page.";
+          document.getElementById('pf-submitted-note').style.display = 'block';
+        } else if (data.profile_status === 'approved') {
+          msgEl.className = 'msg ok';
+          msgEl.textContent = 'Live now.';
+        } else {
+          msgEl.className = 'msg err';
+          msgEl.textContent = data.error || data.profile_status
+            || 'Your profile was saved but something went wrong finishing the update. Try saving again in a few minutes.';
+        }
+      })
+      .catch(function () {
+        btn.disabled = false;
+        msgEl.className = 'msg err';
+        msgEl.textContent = 'Network error, please try again.';
+      });
+  };
+
+})();
+</script>
+</body>
+</html>
