@@ -32,6 +32,7 @@ MAX_HOW_I_WORK = 2000
 MAX_SERVICES = 12
 MAX_SERVICE_LEN = 60
 MAX_LOC_LEN = 80
+MAX_URL = 500
 
 _TAG_RE = re.compile(r"<\s*/?\s*[a-zA-Z][^>]*>")
 
@@ -90,6 +91,35 @@ def clean_services(items):
         if len(out) >= MAX_SERVICES:
             break
     return out
+
+
+def sanitize_image_url(url):
+    """An image URL safe to put on a public page.
+
+    Allows exactly two shapes: an absolute https:// URL, or a site-relative
+    path beginning with a single '/'. Everything else raises ValueError —
+    `javascript:` and `data:` are script-execution vectors on a page we serve,
+    plaintext `http://` is mixed content, and `//host/path` is
+    protocol-relative and inherits whichever scheme the page happens to use.
+
+    Empty input returns "" — clearing an image is legitimate.
+
+    This validates what a PRACTITIONER submits. It deliberately does not touch
+    values already in the column from scraping: those predate this rule and
+    rewriting them is not this plan's business.
+    """
+    u = (url or "").strip()
+    if not u:
+        return ""
+    if len(u) > MAX_URL:
+        raise ValueError(f"image URL exceeds {MAX_URL} characters")
+    if u.startswith("//"):
+        raise ValueError("image URL must not be protocol-relative")
+    if u.startswith("/"):
+        return u
+    if u.lower().startswith("https://"):
+        return u
+    raise ValueError("image URL must be https:// or a site-relative path")
 
 
 def format_location(city, state):

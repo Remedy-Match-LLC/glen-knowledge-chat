@@ -388,3 +388,40 @@ def test_sanitizers_do_not_strip_the_practitioners_own_contact_detail():
     mode, and a practitioner may legitimately name their own phone or site."""
     out = pp.sanitize_how_i_work("Call me on 808-555-0100 or see maryboyd.com")
     assert "808-555-0100" in out and "maryboyd.com" in out
+
+
+# --- Task 2: Validate photo_url and logo_url ---
+
+
+def test_image_url_accepts_https():
+    assert pp.sanitize_image_url(" https://cdn.example.com/p.jpg ") == "https://cdn.example.com/p.jpg"
+
+
+def test_image_url_accepts_a_site_relative_path():
+    """Section 2c will serve practitioner assets from our own storage under a
+    relative path; allow it now so that change needs no validator edit."""
+    assert pp.sanitize_image_url("/practitioner-asset/abc123") == "/practitioner-asset/abc123"
+
+
+def test_image_url_empty_is_allowed():
+    assert pp.sanitize_image_url("") == ""
+    assert pp.sanitize_image_url(None) == ""
+
+
+@pytest.mark.parametrize("bad", [
+    "javascript:alert(1)",
+    "JavaScript:alert(1)",
+    "data:image/svg+xml;base64,PHN2Zz4=",
+    "vbscript:x",
+    "http://cdn.example.com/p.jpg",     # plaintext http on an https page
+    "//cdn.example.com/p.jpg",          # protocol-relative
+    "ftp://x/p.jpg",
+])
+def test_image_url_rejects_dangerous_or_insecure(bad):
+    with pytest.raises(ValueError):
+        pp.sanitize_image_url(bad)
+
+
+def test_image_url_rejects_over_length():
+    with pytest.raises(ValueError):
+        pp.sanitize_image_url("https://x/" + "a" * pp.MAX_URL)
