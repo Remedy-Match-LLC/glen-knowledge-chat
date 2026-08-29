@@ -50280,6 +50280,65 @@ def api_console_client_prefs():
         cx.close()
 
 
+@app.route("/api/console/fullscript-pins", methods=["GET", "POST", "DELETE"])
+def api_console_fullscript_pins():
+    """Owner: pin a Fullscript product for one client (the `operator` driver).
+
+    GET ?email= lists that client's pins, including any whose product has since
+    gone inactive (flagged product_active=0) -- those no longer surface to the
+    client, and an operator otherwise has no way to see why.
+    POST {email, products:[{fs_product_name, note}]} or {email, fs_product_name, note}.
+    DELETE {email, fs_product_name}.
+
+    Why this exists: the pins TABLE and its reader shipped 2026-07-23, but the
+    write path never did. Nothing in production ever wrote a pin, so
+    pins_for_client returned [] for every client while ORIGIN_PRIORITY ranked
+    `pinned` above every other driver. The highest-priority signal in Fullscript
+    recommendations could not exist.
+
+    A product name that is not an ACTIVE fullscript_products row is REPORTED in
+    `skipped`, never stored: the reader joins on active=1, so storing it would
+    look like success and show nothing (the same shape as the bug above)."""
+    actor = _bos_actor()
+    if actor is None or actor.role != _bos_rbac.OWNER:
+        return jsonify({"ok": False, "error": "unauthorized"}), 401
+    from dashboard import fullscript as _fs
+    cx = db.connect(LOG_DB)
+    try:
+        cx.row_factory = sqlite3.Row
+        _fs.init_tables(cx)
+        if request.method == "GET":
+            email = (request.args.get("email") or "").strip().lower()
+            if not email:
+                return jsonify({"ok": False, "error": "email required"}), 400
+            return jsonify({"ok": True, "email": email, "pins": _fs.pins_raw(cx, email)})
+        body = request.get_json(silent=True) or {}
+        email = (body.get("email") or "").strip().lower()
+        if not email:
+            return jsonify({"ok": False, "error": "email required"}), 400
+        if request.method == "DELETE":
+            name = (body.get("fs_product_name") or "").strip()
+            if not name:
+                return jsonify({"ok": False, "error": "fs_product_name required"}), 400
+            removed = _fs.unpin_product(cx, email, name)
+            return jsonify({"ok": True, "removed": removed,
+                            "pins": _fs.pins_raw(cx, email)})
+        items = body.get("products")
+        if not items:
+            items = [{"fs_product_name": body.get("fs_product_name"),
+                      "note": body.get("note", "")}]
+        pinned, skipped = [], []
+        who = getattr(actor, "user_name", "") or "owner"
+        for it in items:
+            nm = (it.get("fs_product_name") or "").strip()
+            ok, reason = _fs.pin_product(cx, email, nm, it.get("note", ""), who)
+            (pinned if ok else skipped).append({"fs_product_name": nm, "reason": reason})
+        return jsonify({"ok": True, "pinned": pinned, "skipped": skipped,
+                        "pins": _fs.pins_raw(cx, email)})
+    finally:
+        cx.close()
+
+
 @app.route("/api/console/client-prices", methods=["GET", "POST", "DELETE"])
 def api_console_client_prices():
     """Owner: view/set/remove a client's persistent special prices (email+slug ->
