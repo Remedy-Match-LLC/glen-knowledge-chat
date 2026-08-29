@@ -300,3 +300,59 @@ def test_write_live_profile_stamps_provenance(monkeypatch):
     assert "profile_self_authored_at=now()" in sql.replace(" ", "").lower() \
         or "profile_self_authored_at = now()" in sql
     assert "pid-1" in params
+
+
+def test_save_draft_writes_every_field_publish_reads():
+    """I3: publish REPLACES the practitioners row wholesale -- every column in
+    _write_live_profile's SET list is written from fields.get(k, <default>),
+    so a draft missing a key silently BLANKS the live value.
+
+    The read set is derived from _write_live_profile's own source rather than
+    hardcoded, so this goes red the day someone adds a published field to one
+    side only. That is the whole point of the test.
+    """
+    import inspect
+    import sqlite3
+
+    src = inspect.getsource(pp._write_live_profile)
+    published = set(re.findall(r"fields\.get\(\s*[\"'](\w+)[\"']", src))
+    assert published, "could not parse the published field set from _write_live_profile"
+
+    cx = sqlite3.connect(":memory:")
+    cx.row_factory = sqlite3.Row
+    written = pp.save_draft(cx, "pid-1", {
+        "bio": "hello", "services": ["Coaching"], "city": "Hilo", "state": "HI",
+        "photo_url": "https://x/p.jpg", "accepting_clients": True})
+
+    missing = published - set(written)
+    assert not missing, (
+        f"save_draft does not store {sorted(missing)}, but _write_live_profile "
+        f"publishes {sorted(published)} -- publishing this draft would blank "
+        f"those live columns")
+
+
+def test_only_one_function_stamps_profile_self_authored_at():
+    """I4: the branch's whole thesis is 'one choke point, auditable by grep'.
+    Nothing enforced it, so a second writer could appear silently and the
+    review gate would leak with every test still green.
+
+    Greps the shipped tree for an ASSIGNMENT to profile_self_authored_at
+    (`SET ... profile_self_authored_at=...`). Reads that stamp it (SELECT,
+    ORDER BY, a bare column name) are fine and are not matched.
+    """
+    import pathlib
+
+    root = pathlib.Path(__file__).resolve().parent.parent
+    targets = [root / "app.py"] + sorted((root / "dashboard").glob("*.py"))
+
+    hits = []
+    for path in targets:
+        for n, line in enumerate(path.read_text().splitlines(), 1):
+            if re.search(r"profile_self_authored_at\s*=\s*(?!=)", line):
+                hits.append(f"{path.relative_to(root)}:{n}: {line.strip()}")
+
+    assert len(hits) == 1, (
+        "exactly one statement may stamp profile_self_authored_at "
+        "(dashboard/practitioner_profile.py::_write_live_profile); found:\n"
+        + "\n".join(hits))
+    assert hits[0].startswith("dashboard/practitioner_profile.py:"), hits[0]

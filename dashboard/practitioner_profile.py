@@ -11,6 +11,17 @@ disclosure only.
 This module owns the sqlite (affiliate_signups) -> Postgres (practitioners) hop
 and the provenance gate, so public_surface.py stays a thin caller. Any failure
 in the read path degrades to {} — a public page must never 500 on a profile read.
+
+It also owns the WRITE side of that hop (section 2a): `save_draft` records the
+practitioner's proposed values in the sqlite draft store and publishes nothing,
+and `publish_draft` copies an APPROVED draft into the Postgres row through
+`_write_live_profile` — the one and only statement that stamps
+`profile_self_authored_at`, and therefore the one and only thing in the codebase
+that can make a practitioner page public. Read `_write_live_profile`'s docstring
+before touching either side.
+
+Dialect split, deliberate: everything draft-side is sqlite and uses `?`;
+`_write_live_profile` is Postgres and uses `%s`. Never both in one function.
 """
 
 import re
@@ -102,7 +113,25 @@ def profile_for_slug(cx, slug):
 def _write_live_profile(pid, fields):
     """The ONLY place profile_self_authored_at is ever stamped. Everything
     public flows through this one statement, which is what makes the review
-    gate auditable."""
+    gate auditable.
+
+    INVARIANT — PUBLISH REPLACES THE ROW WHOLESALE. Every column in the SET
+    list is written unconditionally, from `fields.get(k, <default>)`. There is
+    no partial update and no merge with what is already live, so a draft that
+    is MISSING a key does not leave the live value alone: it overwrites it
+    with the default (empty string / empty list / True). A draft MUST
+    therefore carry EVERY field published here.
+
+    This holds today only because `save_draft` writes all six on every save.
+    If you add a column to this statement, add it to `save_draft` in the same
+    commit — `test_save_draft_writes_every_field_publish_reads` in
+    tests/test_practitioner_profile.py derives the read set from this
+    function's own source and will go red if you don't.
+
+    The wholesale write is a deliberate trade, not an oversight: one fixed
+    statement is greppable and auditable, a dynamic SET list is not. See the
+    REVIEW_POLICY note in dashboard/practitioner_drafts.py.
+    """
     from db_supabase import supabase_cursor
     with supabase_cursor() as cur:
         cur.execute(

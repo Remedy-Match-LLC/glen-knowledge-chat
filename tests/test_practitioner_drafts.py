@@ -52,6 +52,36 @@ def test_editing_an_approved_draft_returns_it_to_draft(cur):
     assert pd.get_draft(cur, PID)["status"] == "draft"
 
 
+def test_upsert_survives_a_stale_read_of_its_own_row(cur, monkeypatch):
+    """I5: check-then-act. The settings POST does not hold _db_lock, and
+    _db_lock is a threading.Lock() anyway -- process-local, worthless across
+    Render instances. A double-clicked Save is two writers whose reads both
+    said "no row yet"; the loser used to run a bare INSERT and raise
+    IntegrityError, 500ing the practitioner.
+
+    Simulated by making every read return None while the row already exists.
+    One ON CONFLICT statement absorbs that; a read-then-INSERT-or-UPDATE
+    raises. The row is then verified with raw SQL, not through get_draft.
+    """
+    pd.upsert_draft(cur, PID, {"bio": "first"})
+    monkeypatch.setattr(pd, "get_draft", lambda cx, pid: None)
+
+    pd.upsert_draft(cur, PID, {"bio": "second"})  # must not raise
+
+    rows = cur.execute("SELECT fields FROM practitioner_profile_drafts"
+                       " WHERE practitioner_id=?", (PID,)).fetchall()
+    assert len(rows) == 1
+    assert json.loads(rows[0]["fields"]) == {"bio": "second"}
+
+
+def test_upsert_preserves_created_at_across_an_edit(cur):
+    """created_at is deliberately absent from the DO UPDATE list."""
+    pd.upsert_draft(cur, PID, {"bio": "one"})
+    created = pd.get_draft(cur, PID)["created_at"]
+    pd.upsert_draft(cur, PID, {"bio": "two"})
+    assert pd.get_draft(cur, PID)["created_at"] == created
+
+
 PID2 = "22222222-2222-2222-2222-222222222222"
 
 

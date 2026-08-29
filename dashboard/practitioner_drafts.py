@@ -41,6 +41,15 @@ def init_tables(cx):
 
 
 def _row(r):
+    """Normalise one DB row to a dict with `fields` decoded from JSON.
+
+    `dict(r)` here SILENTLY REQUIRES `cx.row_factory = sqlite3.Row` on the
+    caller's connection: a plain sqlite3 connection yields tuples and
+    `dict(tuple)` raises. A psycopg2 RealDictCursor row is already a mapping,
+    so a forgotten row_factory still works on Postgres -- i.e. this failure
+    mode appears on ONE backend only. Every caller that opens LOG_DB must set
+    the row_factory; see the routes in app.py.
+    """
     if r is None:
         return None
     d = dict(r)
@@ -62,16 +71,24 @@ def upsert_draft(cx, pid, fields):
     Editing ALWAYS returns the row to 'draft', including from 'approved': a
     practitioner who changes their page after approval must be reviewed again,
     or the gate is one edit wide.
+
+    ONE statement, not check-then-act. A read-then-INSERT-or-UPDATE is a race:
+    the settings POST does not hold _db_lock, and _db_lock is a
+    threading.Lock() anyway -- process-local, and therefore worthless across
+    Render instances. A double-clicked Save would be two INSERTs, an uncaught
+    IntegrityError and a 500 for the practitioner. ON CONFLICT is portable
+    (sqlite >= 3.24 and Postgres) and collapses three round trips into one.
+    `created_at` is deliberately left out of the DO UPDATE list so the
+    original creation time survives an edit.
     """
     payload, now = json.dumps(fields or {}), _now()
-    if get_draft(cx, pid):
-        cx.execute("UPDATE practitioner_profile_drafts SET fields=?, status='draft',"
-                   " review_note=NULL, updated_at=? WHERE practitioner_id=?",
-                   (payload, now, str(pid)))
-    else:
-        cx.execute("INSERT INTO practitioner_profile_drafts"
-                   " (practitioner_id, fields, status, created_at, updated_at)"
-                   " VALUES (?,?, 'draft', ?, ?)", (str(pid), payload, now, now))
+    cx.execute("INSERT INTO practitioner_profile_drafts"
+               " (practitioner_id, fields, status, created_at, updated_at)"
+               " VALUES (?,?, 'draft', ?, ?)"
+               " ON CONFLICT(practitioner_id) DO UPDATE SET"
+               " fields=excluded.fields, status='draft', review_note=NULL,"
+               " updated_at=excluded.updated_at",
+               (str(pid), payload, now, now))
     cx.commit()
     return get_draft(cx, pid)
 
@@ -136,6 +153,23 @@ DEFAULT_POLICY = "review"
 # Relaxing a field to "auto" is a deliberate decision to let it reach the
 # public page unreviewed -- make it here, one line, never in the schema.
 #
+# EVALUATED PER SUBMISSION, NOT PER FIELD. Read this before relaxing anything.
+# The policy is per-field, but the DECISION it feeds is all-or-nothing: a
+# draft queues for a human if ANY of its fields is "review", and the auto path
+# fires only when EVERY field in the draft is "auto". split_by_policy's `auto`
+# half is deliberately discarded by the submit path -- publishing a subset of
+# columns would need a dynamic SET list in
+# practitioner_profile._write_live_profile, and that single fixed statement is
+# what makes the whole gate auditable by grep.
+#
+# CONSEQUENCE, stated plainly because it is counter-intuitive: relaxing a
+# SUBSET of these lines changes NOTHING while practitioner_profile.save_draft
+# writes all six fields on every save. The spec's "relax accepting_clients and
+# location at fifty practitioners" therefore has no effect on its own -- every
+# draft would still carry a "review" bio, and still queue. To actually get
+# partial auto-publish, someone must first build partial-column publishing,
+# which is a deliberate trade against the single-statement audit property.
+#
 # Keyed on the fields practitioner_profile.save_draft ACTUALLY STORES, not on
 # the public presentation shape -- save_draft writes "city" and "state"
 # separately; there is no "location" key in a draft's fields, so a policy
@@ -163,7 +197,12 @@ def needs_review(field):
 
 
 def split_by_policy(fields):
-    """Partition proposed values into (auto_publishable, needs_review)."""
+    """Partition proposed values into (auto_publishable, needs_review).
+
+    The caller decides PER SUBMISSION: it queues the draft if `needs_review`
+    is non-empty and ignores the `auto` half entirely. See the note above
+    REVIEW_POLICY -- there is no partial-column publish.
+    """
     auto, review = {}, {}
     for k, v in (fields or {}).items():
         (review if needs_review(k) else auto)[k] = v
