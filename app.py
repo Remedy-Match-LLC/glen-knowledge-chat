@@ -20150,6 +20150,7 @@ def _cart_payload(cx, token):
             "name": (p or {}).get("name", it["slug"]),
             "qty": it["qty"],
             "format": it["format"],
+            "refill_eligible": bool(p and _qty_eligible(p)),
             # `info_only` belongs in this expression, not just `inactive`: checkout
             # refuses info_only lines with "no longer available" (see
             # api_cart_checkout's unavailable scan), so a badge that calls them
@@ -25251,6 +25252,60 @@ def api_portal_cart_set_qty(token):
         return jsonify(_portal_cart_payload(cx, cart_token, portal))
 
 
+@app.route("/api/portal/<token>/cart/set-format", methods=["POST"])
+def api_portal_cart_set_format(token):
+    data = request.get_json(silent=True) or {}
+    slug = (data.get("slug") or "").strip().lower()
+    from_fmt = (data.get("from_format") or "").strip().lower()
+    to_fmt = (data.get("format") or "").strip().lower()
+    if to_fmt not in {"bottle", "refill"}:
+        return jsonify({"error": "Choose bottle or cellophane refill pack."}), 400
+    product = _get_product(slug)
+    if not product or product.get("inactive") or product.get("info_only"):
+        return jsonify({"error": "Product is not available."}), 400
+    if to_fmt == "refill" and not _qty_eligible(product):
+        return jsonify({"error": "This product is available in a bottle only."}), 400
+    with db.connect(LOG_DB) as cx:
+        portal = _portal_record_for(cx, token)
+        if not portal:
+            return jsonify({"error": "not found"}), 404
+        cart_token = _portal_open_cart(cx, portal)
+        try:
+            _cart_store.set_format(cx, cart_token, slug, from_fmt, to_fmt)
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 404
+        return jsonify(_portal_cart_payload(cx, cart_token, portal))
+
+
+@app.route("/api/portal/<token>/cart/set-format-quantities", methods=["POST"])
+def api_portal_cart_set_format_quantities(token):
+    data = request.get_json(silent=True) or {}
+    slug = (data.get("slug") or "").strip().lower()
+    product = _get_product(slug)
+    if not product or product.get("inactive") or product.get("info_only"):
+        return jsonify({"error": "Product is not available."}), 400
+    if not _qty_eligible(product):
+        return jsonify({"error": "This product is available in a bottle only."}), 400
+    try:
+        bottle_qty = int(data.get("bottle_qty") or 0)
+        refill_qty = int(data.get("refill_qty") or 0)
+    except (TypeError, ValueError):
+        return jsonify({"error": "Packaging quantities must be whole numbers."}), 400
+    if bottle_qty < 0 or refill_qty < 0:
+        return jsonify({"error": "Packaging quantities cannot be negative."}), 400
+    with db.connect(LOG_DB) as cx:
+        portal = _portal_record_for(cx, token)
+        if not portal:
+            return jsonify({"error": "not found"}), 404
+        cart_token = _portal_open_cart(cx, portal)
+        try:
+            _cart_store.set_format_quantities(
+                cx, cart_token, slug, bottle_qty, refill_qty)
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 404
+        return jsonify(_portal_cart_payload(cx, cart_token, portal))
+
+
 @app.route("/api/portal/<token>/order-add", methods=["POST"])
 def api_portal_order_add(token):
     """Add one catalog remedy to the member's single persistent portal cart."""
@@ -27640,7 +27695,11 @@ def api_client_portal_product_search(token):
         haystack = " ".join((name, p.get("description") or "", ingredient_text)).lower()
         if terms and not all(term in haystack for term in terms):
             continue
-        results.append({"slug": slug, "name": name})
+        results.append({
+            "slug": slug,
+            "name": name,
+            "refill_eligible": bool(_qty_eligible(p)),
+        })
     results.sort(key=lambda row: row["name"].lower())
     return jsonify({"ok": True, "products": results[:30]})
 

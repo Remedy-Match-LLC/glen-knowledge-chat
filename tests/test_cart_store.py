@@ -52,6 +52,41 @@ def test_set_qty_updates_and_zero_removes(cx):
     assert CS.items(cx, "tok1") == []
 
 
+def test_set_format_moves_line_and_preserves_quantity(cx):
+    CS.get_or_create(cx, "tok1")
+    CS.add_item(cx, "tok1", "brain-boost", qty=5)
+
+    CS.set_format(cx, "tok1", "brain-boost", "", "refill")
+
+    assert CS.items(cx, "tok1") == [
+        {"slug": "brain-boost", "qty": 5, "format": "refill", "source": ""}
+    ]
+
+
+def test_set_format_does_not_double_quantity_when_destination_exists(cx):
+    CS.get_or_create(cx, "tok1")
+    CS.add_item(cx, "tok1", "brain-boost", qty=5, fmt="bottle")
+    CS.add_item(cx, "tok1", "brain-boost", qty=2, fmt="refill")
+
+    CS.set_format(cx, "tok1", "brain-boost", "bottle", "refill")
+
+    assert CS.items(cx, "tok1") == [
+        {"slug": "brain-boost", "qty": 5, "format": "refill", "source": ""}
+    ]
+
+
+def test_set_format_quantities_splits_one_product_between_packages(cx):
+    CS.get_or_create(cx, "tok1")
+    CS.add_item(cx, "tok1", "brain-boost", qty=12)
+
+    CS.set_format_quantities(cx, "tok1", "brain-boost", 5, 7)
+
+    assert CS.items(cx, "tok1") == [
+        {"slug": "brain-boost", "qty": 5, "format": "bottle", "source": ""},
+        {"slug": "brain-boost", "qty": 7, "format": "refill", "source": ""},
+    ]
+
+
 def test_qty_is_clamped_to_1_99(cx):
     CS.get_or_create(cx, "tok1")
     CS.add_item(cx, "tok1", "brain-boost", qty=500)

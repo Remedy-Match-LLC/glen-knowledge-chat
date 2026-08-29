@@ -1718,15 +1718,28 @@ function buildOffersEmptyHtml(view){
 }
 function renderUnifiedPortalCart(d){
   const items = (d && d.items) || [];
-  const rows = items.map(it => {
+  const grouped = [];
+  items.forEach(it => {
+    let row = grouped.find(x => x.slug === it.slug);
+    if(!row){ row = Object.assign({}, it, {bottleQty:0, refillQty:0}); grouped.push(row); }
+    if(it.format === 'refill') row.refillQty += Number(it.qty) || 0;
+    else row.bottleQty += Number(it.qty) || 0;
+    row.qty = row.bottleQty + row.refillQty;
+  });
+  const rows = grouped.map(it => {
+    const packaging = it.refill_eligible
+      ? `<span class="small" style="display:flex;gap:.5rem;align-items:center">
+          <label>Bottles <input type="number" min="0" max="99" value="${esc(it.bottleQty)}" data-cart-split="${esc(it.slug)}" data-cart-split-kind="bottle" aria-label="Bottle quantity for ${esc(it.name || it.slug)}" style="width:56px"></label>
+          <label>Refill packs <input type="number" min="0" max="99" value="${esc(it.refillQty)}" data-cart-split="${esc(it.slug)}" data-cart-split-kind="refill" aria-label="Cellophane refill pack quantity for ${esc(it.name || it.slug)}" style="width:56px"></label>
+        </span>`
+      : `<span class="small">Packaging: Bottle</span>`;
     const price = (it.is_special && it.regular_price_cents)
       ? `<span class="pr"><span class="reg">${esc(money(it.regular_price_cents))}</span><span class="sp">${esc(money(it.price_cents))}</span></span>`
       : `<span class="pr">${esc(money(it.price_cents))}</span>`;
     return `<div class="reitem curated-order-item" data-slug="${esc(it.slug)}" data-qty="${esc(it.qty)}" data-format="${esc(it.format || '')}">
       <span class="nm">${esc(it.name || it.slug)}${it.available ? '' : ' <span class="small err">No longer available</span>'}</span>
-      ${price}<input type="number" min="0" max="99" value="${esc(it.qty)}" aria-label="Quantity for ${esc(it.name || it.slug)}"
-        data-cart-qty="${esc(it.slug)}" data-cart-fmt="${esc(it.format || '')}" style="width:56px">
-      <button type="button" class="wishRemBtn unified-cart-remove" data-cart-slug="${esc(it.slug)}" data-cart-fmt="${esc(it.format || '')}" aria-label="Remove ${esc(it.name || it.slug)}">×</button>
+      ${price}${packaging}${it.refill_eligible ? '' : `<input type="number" min="0" max="99" value="${esc(it.qty)}" aria-label="Quantity for ${esc(it.name || it.slug)}" data-cart-qty="${esc(it.slug)}" data-cart-fmt="${esc(it.format || '')}" style="width:56px">`}
+      <button type="button" class="wishRemBtn unified-cart-remove" data-cart-slug="${esc(it.slug)}" data-cart-all-formats="${it.refill_eligible ? '1' : '0'}" data-cart-fmt="${esc(it.format || '')}" aria-label="Remove ${esc(it.name || it.slug)}">×</button>
     </div>`;
   }).join('');
   const orderHost = document.getElementById('curatedOrderItems');
@@ -1754,6 +1767,33 @@ function loadCart(){
 // (same reasoning as the Oasis panel's one delegated click listener above).
 document.addEventListener("change", function(ev){
   const inp = ev.target;
+  if(inp && inp.matches && inp.matches('[data-cart-split]')){
+    const slug = inp.getAttribute('data-cart-split');
+    const scope = inp.closest('.curated-order-item');
+    const bottle = scope.querySelector('[data-cart-split-kind="bottle"]');
+    const refill = scope.querySelector('[data-cart-split-kind="refill"]');
+    bottle.disabled = refill.disabled = true;
+    fetch('/api/portal/' + encodeURIComponent(token) + '/cart/set-format-quantities', {
+      method:'POST', credentials:'same-origin', headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({slug, bottle_qty:parseInt(bottle.value,10)||0, refill_qty:parseInt(refill.value,10)||0})
+    }).then(async r => { const data=await r.json(); if(!r.ok) throw new Error(data.error); return data; })
+      .then(renderUnifiedPortalCart).catch(err => { bottle.disabled=refill.disabled=false; alert(err.message); });
+    return;
+  }
+  if (inp && inp.matches && inp.matches('[data-cart-format-slug]')) {
+    const prior = inp.getAttribute('data-cart-from-format') || '';
+    inp.disabled = true;
+    fetch('/api/portal/' + encodeURIComponent(token) + '/cart/set-format', {
+      method: 'POST', credentials: 'same-origin',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({slug: inp.getAttribute('data-cart-format-slug'), from_format: prior, format: inp.value})
+    }).then(async r => {
+      const data = await r.json();
+      if(!r.ok) throw new Error(data.error || 'Could not update packaging.');
+      return data;
+    }).then(renderUnifiedPortalCart).catch(err => { inp.disabled = false; inp.value = prior || 'bottle'; alert(err.message); });
+    return;
+  }
   if (!inp || !inp.matches || !inp.matches('[data-cart-qty]')) return;
   const slug = inp.getAttribute('data-cart-qty');
   const fmt = inp.getAttribute('data-cart-fmt') || '';
@@ -1770,6 +1810,13 @@ document.addEventListener("change", function(ev){
 document.addEventListener("click", function(ev){
   const remove = ev.target.closest(".unified-cart-remove");
   if(remove){
+    if(remove.dataset.cartAllFormats === '1'){
+      fetch('/api/portal/' + encodeURIComponent(token) + '/cart/set-format-quantities', {
+        method:'POST', credentials:'same-origin', headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({slug:remove.dataset.cartSlug, bottle_qty:0, refill_qty:0})
+      }).then(() => loadCart());
+      return;
+    }
     fetch('/api/portal/' + encodeURIComponent(token) + '/cart/set-qty', {
       method:'POST', credentials:'same-origin', headers:{'Content-Type':'application/json'},
       body:JSON.stringify({slug:remove.dataset.cartSlug, format:remove.dataset.cartFmt || '', qty:0})
@@ -2036,13 +2083,20 @@ function renderOrdersBasket(){
   const host = document.getElementById("orders-basket");
   if(!host) return;
   if(!ordersBasket.length){ host.innerHTML = `<p class="muted small">Your basket is empty.</p>`; return; }
-  const rows = ordersBasket.map(it => `<div class="reitem">
+  const rows = ordersBasket.map(it => {
+    const bottleQty = it.refillEligible ? Number(it.bottleQty ?? (it.format === 'refill' ? 0 : it.qty)) || 0 : Number(it.qty) || 1;
+    const refillQty = it.refillEligible ? Number(it.refillQty ?? (it.format === 'refill' ? it.qty : 0)) || 0 : 0;
+    return `<div class="reitem">
     <span class="nm">${esc(it.name)}</span>
     <span style="display:flex;align-items:center;gap:.45rem">
+      ${it.refillEligible ? `<label class="small">Bottles <input type="number" min="0" max="99" value="${esc(bottleQty)}" data-orders-split="${esc(it.slug)}" data-orders-split-kind="bottle" style="width:58px"></label>
+        <label class="small">Refill packs <input type="number" min="0" max="99" value="${esc(refillQty)}" data-orders-split="${esc(it.slug)}" data-orders-split-kind="refill" style="width:58px"></label>` : `<span class="small">Packaging: Bottle</span>
       <input type="number" min="1" max="99" value="${esc(it.qty)}" data-orders-qty="${esc(it.slug)}"
              aria-label="Quantity for ${esc(it.name)}" style="width:58px">
+      `}
       <button type="button" class="linkbtn" data-orders-remove="${esc(it.slug)}">Remove</button>
-    </span></div>`).join("");
+    </span></div>`;
+  }).join("");
   host.innerHTML = `<h3 style="margin:.3rem 0">Your basket</h3>${rows}
     <button type="button" class="btn full" id="orders-place-order">Place order</button>
     <p id="orders-order-message" class="small" hidden></p>`;
@@ -2063,7 +2117,7 @@ document.addEventListener("submit", async function(ev){
     const products = Array.isArray(j.products) ? j.products : [];
     host.innerHTML = products.length ? products.map(p => `<div class="reitem">
       <span class="nm">${esc(p.name)}</span>
-      <button type="button" class="btn" data-orders-add="${esc(p.slug)}" data-orders-name="${esc(p.name)}">Add to basket</button>
+      <button type="button" class="btn" data-orders-add="${esc(p.slug)}" data-orders-name="${esc(p.name)}" data-orders-refill-eligible="${p.refill_eligible ? '1' : '0'}">Add to basket</button>
     </div>`).join("") : `<p class="muted">No matching products found.</p>`;
   } catch(e) { host.textContent = e.message || "Search is unavailable."; }
 });
@@ -2075,8 +2129,12 @@ document.addEventListener("click", async function(ev){
   if(add){
     const slug = add.getAttribute("data-orders-add");
     const existing = ordersBasket.find(it => it.slug === slug);
-    if(existing) existing.qty += 1;
-    else ordersBasket.push({slug, name:add.getAttribute("data-orders-name") || slug, qty:1});
+    if(existing){
+      if(existing.refillEligible) existing.bottleQty = (Number(existing.bottleQty ?? existing.qty) || 0) + 1;
+      else existing.qty += 1;
+    }
+    else ordersBasket.push({slug, name:add.getAttribute("data-orders-name") || slug, qty:1,
+      refillEligible:add.getAttribute("data-orders-refill-eligible") === "1", bottleQty:1, refillQty:0});
     saveOrdersBasket(); renderOrdersBasket();
     add.textContent = "Added"; window.setTimeout(()=>{ add.textContent = "Add to basket"; }, 900);
     return;
@@ -2101,7 +2159,10 @@ document.addEventListener("click", async function(ev){
     const payload = JSON.stringify({
       checkout_request_id:place.dataset.checkoutRequestId,
       catalog_order:true,
-      items:ordersBasket.map(it=>({slug:it.slug, qty:it.qty}))
+      items:ordersBasket.flatMap(it => it.refillEligible ? [
+        {slug:it.slug, qty:Number(it.bottleQty ?? (it.format === 'refill' ? 0 : it.qty)) || 0, format:"bottle"},
+        {slug:it.slug, qty:Number(it.refillQty ?? (it.format === 'refill' ? it.qty : 0)) || 0, format:"refill"}
+      ].filter(line => line.qty > 0) : [{slug:it.slug, qty:it.qty, format:"bottle"}])
     });
     let j = null;
     for(let attempt=0; attempt<2; attempt++){
@@ -2126,6 +2187,16 @@ document.addEventListener("click", async function(ev){
 });
 
 document.addEventListener("change", function(ev){
+  if(ev.target.matches && ev.target.matches("[data-orders-split]")){
+    const item = ordersBasket.find(it => it.slug === ev.target.getAttribute("data-orders-split"));
+    if(item){
+      const qty = Math.max(0, Math.min(99, parseInt(ev.target.value,10) || 0));
+      if(ev.target.getAttribute("data-orders-split-kind") === "refill") item.refillQty = qty;
+      else item.bottleQty = qty;
+      ev.target.value = qty; saveOrdersBasket();
+    }
+    return;
+  }
   if(!ev.target.matches || !ev.target.matches("[data-orders-qty]")) return;
   const item = ordersBasket.find(it => it.slug === ev.target.getAttribute("data-orders-qty"));
   if(!item) return;
