@@ -46769,15 +46769,37 @@ def transcribe():
 # succeed or the dashboard card 500s. Warm it in the background so the user
 # never sees a cold-cache failure.
 # ─────────────────────────────────────────────────────────────────────────────
+# Attempt delays in seconds. The single 3s attempt this replaces failed 89 of 96
+# times in production (93%) -- so the cache it exists to warm was essentially
+# never warmed, and those failures were ~45% of all Postgres SSL errors in the
+# logs, drowning the user-facing ones. Every failure landed within seconds of a
+# worker boot ("server closed the connection unexpectedly", "SSL error: ssl/tls
+# alert bad record mac"), which is the signature of racing something still
+# starting up. The underlying race was NOT identified: no --preload (so the two
+# workers import independently and share no sockets), and the token read/write
+# both scope their connection correctly. Backing off is the fix that works
+# whether or not the race is ever pinned down.
+PREWARM_ATTEMPT_DELAYS = (3, 15, 45)
+
+
 def _prewarm_caches():
     def _warm():
         import time as _t
-        _t.sleep(3)  # let worker finish booting before hitting upstream APIs
-        try:
-            _money.qb_banks()
-            print("[prewarm] money.qb_banks ✓")
-        except Exception as e:
-            print(f"[prewarm] money.qb_banks failed: {e}")
+        last = None
+        for i, delay in enumerate(PREWARM_ATTEMPT_DELAYS, 1):
+            _t.sleep(delay)
+            try:
+                _money.qb_banks()
+                print(f"[prewarm] money.qb_banks ✓ (attempt {i})")
+                return
+            except Exception as e:
+                last = e
+                print(f"[prewarm] money.qb_banks attempt {i}/"
+                      f"{len(PREWARM_ATTEMPT_DELAYS)} failed: {e}")
+        # Only the FINAL give-up is logged as a failure, so the log line keeps
+        # meaning "the cache is cold" rather than "an attempt bounced".
+        print(f"[prewarm] money.qb_banks failed after "
+              f"{len(PREWARM_ATTEMPT_DELAYS)} attempts: {last}")
     threading.Thread(target=_warm, daemon=True, name="prewarm-money").start()
 
 # Never under pytest: a reloaded app must not leak the prewarm-money daemon thread into
