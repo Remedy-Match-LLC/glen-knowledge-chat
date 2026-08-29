@@ -19,7 +19,12 @@ from dashboard.timeutil import is_expired as _is_expired
 
 RESET_PURPOSE = "client_password_reset"
 PROVIDER_LINK_PURPOSE = "client_provider_link"
-RESET_TTL_MIN = 30
+# Both of these are emailed to a person and single-use (consumed on first use
+# below), so a longer life just widens the window a leaked copy stays usable
+# without changing how many times it can be used. Glen weighed that against a
+# link nobody can click in time on every send and chose at least a week.
+RESET_TTL_MIN = 7 * 24 * 60
+PROVIDER_LINK_TTL_MIN = 7 * 24 * 60
 MIN_PASSWORD_LENGTH = 12
 MAX_PASSWORD_LENGTH = 1024
 MAX_FAILED_ATTEMPTS = 10
@@ -141,7 +146,8 @@ def create_provider_link_confirmation(cx, person_id, provider, subject, email, n
     cx.execute(
         "INSERT INTO auth_tokens (token_hash,email,purpose,extra,created_at,expires_at) VALUES (?,?,?,?,?,?)",
         (_hash_token(token), (email or "").lower(), PROVIDER_LINK_PURPOSE,
-         json.dumps(extra), now.isoformat(), (now + timedelta(minutes=30)).isoformat()),
+         json.dumps(extra), now.isoformat(),
+         (now + timedelta(minutes=PROVIDER_LINK_TTL_MIN)).isoformat()),
     )
     cx.commit()
     return token
