@@ -7637,6 +7637,14 @@ async function sendChatMessage(){
             } else if(evt.related){
               var relEl = renderRelated(evt.related);
               if(relEl && msgs){ msgs.appendChild(relEl); msgs.scrollTop = msgs.scrollHeight; }
+            } else if(evt.cart_added){
+              var added = Array.isArray(evt.cart_added) ? evt.cart_added : [];
+              if(added.length){
+                appendChatBubble("assistant", "Added to your basket: " + added.map(function(x){
+                  return String(x.qty || 1) + " × " + String(x.name || x.slug || "product");
+                }).join(", "));
+                if(typeof loadCart === "function") loadCart();
+              }
             } else if(evt.error){
               showChatRetry("Dr. Glen’s assistant is briefly unavailable. Your message is ready to retry.");
             } else if(evt.done){
