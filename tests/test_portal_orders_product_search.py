@@ -14,7 +14,7 @@ class _Cx:
 def test_product_search_requires_valid_portal_and_returns_sellable_matches(monkeypatch):
     products = {
         "brain-boost": {"name": "Brain Boost", "description": "Focus support",
-                        "ingredients": ["Magnesium"]},
+                        "ingredients": ["Magnesium"], "qty_pricing": True},
         "calm": {"name": "Calm Formula", "description": "Relaxation",
                  "ingredients": ["Magnesium"], "inactive": True},
         "guide": {"name": "Wellness Guide", "description": "Information",
@@ -30,7 +30,9 @@ def test_product_search_requires_valid_portal_and_returns_sellable_matches(monke
         response = appmod.api_client_portal_product_search("good")
     payload = response.get_json()
 
-    assert payload["products"] == [{"slug": "brain-boost", "name": "Brain Boost"}]
+    assert payload["products"] == [{
+        "slug": "brain-boost", "name": "Brain Boost", "refill_eligible": True,
+    }]
 
 
 def test_product_search_rejects_invalid_portal(monkeypatch):
@@ -56,3 +58,8 @@ def test_orders_panel_contains_search_basket_and_catalog_checkout():
     assert "checkout_request_id:place.dataset.checkoutRequestId" in html
     assert "for(let attempt=0; attempt<2; attempt++)" in html
     assert "/product-search?q=" in html
+    assert "Cellophane refill pack" in html
+    assert 'data-orders-split=' in html
+    assert 'data-cart-split=' in html
+    assert 'set-format-quantities' in html
+    assert 'ordersBasket.flatMap' in html
