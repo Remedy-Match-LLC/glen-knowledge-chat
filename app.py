@@ -11856,6 +11856,68 @@ def api_console_module_certs_approve():
                     "full_certification_granted": bool(fully_certified)})
 
 
+@app.route("/api/console/practitioner-drafts", methods=["GET"])
+def api_console_practitioner_drafts():
+    """Profile drafts awaiting Glen's review."""
+    if not _console_key_ok():
+        return jsonify({"error": "unauthorized"}), 401
+    from dashboard import practitioner_drafts as _pd
+    status = request.args.get("status", "submitted")
+    with db.connect(LOG_DB) as cx:
+        cx.row_factory = sqlite3.Row
+        _pd.init_tables(cx)
+        drafts = _pd.list_by_status(cx, status)
+    return jsonify({"ok": True, "drafts": drafts})
+
+
+@app.route("/api/console/practitioner-drafts/<pid>/approve", methods=["POST"])
+def api_console_practitioner_draft_approve(pid):
+    """Approve a submitted draft AND publish it. Publishing is what makes it
+    public, so a failed publish must not report success."""
+    if not _console_key_ok():
+        return jsonify({"error": "unauthorized"}), 401
+    from dashboard import practitioner_drafts as _pd
+    from dashboard import practitioner_profile as _pp
+    note = ((request.get_json(silent=True) or {}).get("note") or "").strip()
+    with _db_lock, db.connect(LOG_DB) as cx:
+        cx.row_factory = sqlite3.Row
+        _pd.init_tables(cx)
+        if not _pd.approve(cx, pid, note):
+            d = _pd.get_draft(cx, pid)
+            if not d or d.get("status") != "approved":
+                return jsonify({"ok": False, "error": "no submitted draft"}), 409
+            # Already approved: a previous publish failed. Retry it rather than
+            # stranding the practitioner in an approved-but-unpublished state
+            # that the default queue view cannot even show.
+            #
+            # approve() returned False WITHOUT running its UPDATE, so a note
+            # supplied on this retry would be silently dropped. Apply it here
+            # -- status is already 'approved', so this only records the note.
+            if note:
+                _pd.set_review_note(cx, pid, note)
+        published = _pp.publish_draft(cx, pid)
+    if not published:
+        return jsonify({"ok": False, "error": "publish_failed"}), 500
+    return jsonify({"ok": True, "published": True})
+
+
+@app.route("/api/console/practitioner-drafts/<pid>/reject", methods=["POST"])
+def api_console_practitioner_draft_reject(pid):
+    """Send a draft back with a required reason."""
+    if not _console_key_ok():
+        return jsonify({"error": "unauthorized"}), 401
+    from dashboard import practitioner_drafts as _pd
+    note = ((request.get_json(silent=True) or {}).get("note") or "").strip()
+    if not note:
+        return jsonify({"ok": False, "error": "a rejection needs a note"}), 400
+    with _db_lock, db.connect(LOG_DB) as cx:
+        cx.row_factory = sqlite3.Row
+        _pd.init_tables(cx)
+        if not _pd.reject(cx, pid, note):
+            return jsonify({"ok": False, "error": "no submitted draft"}), 409
+    return jsonify({"ok": True})
+
+
 def _course_membership_renew(invoice):
     """On invoice.paid, extend a course membership (the $99/mo drip) to the
     subscription's new period end, AND unlock exactly one module per DISTINCT paid
@@ -18976,6 +19038,67 @@ def console_pricing_settings_page():
     return resp
 
 
+def _practitioner_profile_needs_human(cx, pid):
+    """Does this practitioner's just-submitted draft need Glen before it can go
+    public? Three inputs, every one of them failing CLOSED (True):
+
+    1. EMPTINESS. An empty field set always needs a human. split_by_policy({})
+       returns ({}, {}), which is indistinguishable from "nothing needs
+       review" -- and publishing {} writes every column to its default and
+       stamps provenance, blanking the live row with nobody involved.
+    2. THE FLAG. With PRACTITIONER_REVIEW_GATE_ENABLED off there is no review
+       queue and nobody is watching it, so a non-empty draft needs no human:
+       the save publishes immediately, exactly as it did before this feature.
+    3. THE POLICY. With the gate on, REVIEW_POLICY decides -- PER SUBMISSION,
+       not per field: the draft queues if ANY field is 'review'. See the note
+       above REVIEW_POLICY in dashboard/practitioner_drafts.py.
+
+    A read failure (missing table, locked db) returns True.
+    """
+    from dashboard import practitioner_drafts as _pd
+    try:
+        draft = _pd.get_draft(cx, pid)
+    except db.OperationalError:
+        return True
+    if draft is None:
+        return True
+    fields = draft.get("fields") or {}
+    if not fields:
+        return True                                   # (1)
+    if not _practitioner_review_gate_enabled():
+        return False                                  # (2)
+    _auto_fields, review_fields = _pd.split_by_policy(fields)
+    return bool(review_fields)                        # (3)
+
+
+def _practitioner_profile_submit(cx, pid):
+    """Move the practitioner's draft to 'submitted' and, when it needs no
+    human, approve and publish it immediately.
+
+    ONE path, deliberately. Both callers -- the settings save (which IS the
+    submit for this UI; there is no separate Submit button) and the explicit
+    /api/practitioner/profile/submit route -- come through here, so there is
+    exactly one place that decides whether an edit reaches the public page and
+    exactly one call to publish_draft, the only writer that stamps
+    profile_self_authored_at.
+
+    Returns (payload, http_status). Mirrors api_console_practitioner_draft_approve:
+    a failed approve OR a failed publish must not report success, and must
+    never claim 'approved' when the row is not actually live.
+    """
+    from dashboard import practitioner_drafts as _pd
+    from dashboard import practitioner_profile as _pp
+    if not _pd.submit(cx, pid):
+        return {"ok": False, "error": "nothing to submit"}, 409
+    if _practitioner_profile_needs_human(cx, pid):
+        return {"ok": True, "status": "submitted"}, 200
+    approved = _pd.approve(cx, pid)
+    published = approved and _pp.publish_draft(cx, pid)
+    if not published:
+        return {"ok": False, "error": "publish_failed"}, 500
+    return {"ok": True, "status": "approved", "published": True}, 200
+
+
 @app.route("/api/practitioner/settings", methods=["GET"])
 def api_practitioner_settings_get():
     pid = _practitioner_session_pid()
@@ -19022,11 +19145,45 @@ def api_practitioner_settings_get():
     except Exception as e:
         print(f"[practitioner-settings] profile read failed: {e!r}", flush=True)
 
+    # A DRAFT, if one exists, is what the practitioner last typed -- overlay it
+    # on the live row. Reading only the live row means that after a save her
+    # pending edit is missing from the textarea, which reads as "the save
+    # didn't work" and she retypes it; and Glen's rejection note would never
+    # reach her at all. The draft is self-authored by definition, so
+    # self_authored is True and the editor pre-fills it.
+    # Fails soft, like every other read on this page.
+    profile_status = None
+    review_note = ""
+    try:
+        from dashboard import practitioner_drafts as _pd
+        with db.connect(LOG_DB) as cx:
+            cx.row_factory = sqlite3.Row
+            _pd.init_tables(cx)
+            draft = _pd.get_draft(cx, pid)
+        if draft:
+            f = draft.get("fields") or {}
+            profile_status = draft.get("status")
+            review_note = draft.get("review_note") or ""
+            profile = {
+                "bio": f.get("bio") or "",
+                "photo_url": f.get("photo_url") or "",
+                "services": list(f.get("services") or []),
+                "city": f.get("city") or "",
+                "state": f.get("state") or "",
+                "accepting_clients": bool(f.get("accepting_clients", True)),
+                "self_authored": True,
+            }
+    except Exception as e:
+        print(f"[practitioner-settings] draft read failed: {e!r}", flush=True)
+
     resp = {"ok": True, "branding": settings["branding"], "pricing": settings["pricing"],
             "chat_enabled": settings.get("chat_enabled", False),
             "show_contact": show_contact}
     if profile is not None:
         resp["profile"] = profile
+    if profile_status is not None:
+        resp["profile_status"] = profile_status
+        resp["review_note"] = review_note
     return jsonify(resp)
 
 
@@ -19110,14 +19267,30 @@ def api_practitioner_settings_post():
         except Exception as e:
             print(f"[practitioner-settings] show_contact write failed: {e!r}", flush=True)
 
-    # profile lives on the Supabase practitioners row too; only touch it when
-    # the key is present, so saving branding/pricing alone never resets it.
-    # A bad bio (ValueError) is a 400, not a 500.
+    # The profile is written as a DRAFT, then submitted in the same breath.
+    # For this UI a save IS a submit: there is no separate Submit button, so
+    # without this the draft would sit at status='draft' forever, the console
+    # queue (which shows status='submitted') would be permanently empty, and
+    # nothing would ever publish -- while the practitioner is told "saved".
+    # Only touch it when the key is present, so saving branding/pricing alone
+    # never resets it. A bad bio (ValueError) is a 400, not a 500.
     profile_out = None
+    profile_status = None
     if "profile" in body and isinstance(body.get("profile"), dict):
         from dashboard import practitioner_profile as _pp
         try:
-            profile_out = _pp.save_profile(pid, body["profile"])
+            with db.connect(LOG_DB) as _cx:
+                _cx.row_factory = sqlite3.Row
+                profile_out = _pp.save_draft(_cx, pid, body["profile"])
+                # Same single path as /api/practitioner/profile/submit: with
+                # the review gate off this publishes immediately (pre-feature
+                # behavior), with it on the draft queues for Glen.
+                sub, sub_status = _practitioner_profile_submit(_cx, pid)
+                profile_status = (sub.get("status") if sub_status == 200
+                                  else (sub.get("error") or "error"))
+                if sub_status != 200:
+                    print("[practitioner-settings] profile submit failed for "
+                          f"{pid}: {sub!r}", flush=True)
         except ValueError as e:
             return jsonify({"ok": False, "error": str(e)}), 400
 
@@ -19129,7 +19302,36 @@ def api_practitioner_settings_post():
         resp["show_contact"] = show_contact_out
     if profile_out is not None:
         resp["profile"] = profile_out
+    if profile_status is not None:
+        # 'submitted' (queued for Glen), 'approved' (already live), or
+        # 'publish_failed'. The editor renders an honest message off this
+        # rather than always claiming "Settings saved."
+        resp["profile_status"] = profile_status
     return jsonify(resp)
+
+
+@app.route("/api/practitioner/profile/submit", methods=["POST"])
+def api_practitioner_profile_submit():
+    """Practitioner sends their own draft for review.
+
+    The practitioner id comes from the SESSION, never from the request body,
+    so nobody can submit another practitioner's draft.
+
+    All the actual policy lives in _practitioner_profile_submit, which the
+    settings save also calls -- for this UI a save IS a submit. Whether the
+    draft queues for Glen or publishes straight away is decided PER SUBMISSION
+    by _practitioner_profile_needs_human (flag + emptiness + REVIEW_POLICY);
+    read that docstring, not this route.
+    """
+    pid = _practitioner_session_pid()
+    if not pid:
+        return jsonify({"ok": False, "error": "not signed in"}), 401
+    from dashboard import practitioner_drafts as _pd
+    with _db_lock, db.connect(LOG_DB) as cx:
+        cx.row_factory = sqlite3.Row
+        _pd.init_tables(cx)
+        payload, status = _practitioner_profile_submit(cx, pid)
+    return jsonify(payload), status
 
 
 def _coach_cert_ok(cx, email):
@@ -20714,6 +20916,20 @@ def _public_surface_enabled():
 def _page_referral_sharing_enabled():
     """Personal links for approved public pages. Default OFF for dark launch."""
     return (os.environ.get("PAGE_REFERRAL_SHARING_ENABLED", "") or "").strip().lower() in (
+        "1", "true", "yes", "on")
+
+
+def _practitioner_review_gate_enabled():
+    """Human review of practitioner profile edits before they reach the public
+    page. Default OFF — when off, a practitioner's save publishes immediately,
+    which is byte-identical to pre-feature behavior; the draft row is still
+    written, it just never waits for anyone.
+
+    Spec Rollout section: everything ships behind flags, dark, with Mary as
+    the only enabled tenant. Read at CALL time, never at import, so flipping
+    it in Doppler is one deploy and not a code change. (A merge plus a flag
+    flip is still two deploys.)"""
+    return (os.environ.get("PRACTITIONER_REVIEW_GATE_ENABLED", "") or "").strip().lower() in (
         "1", "true", "yes", "on")
 
 

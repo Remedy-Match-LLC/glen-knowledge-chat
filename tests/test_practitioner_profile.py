@@ -236,7 +236,12 @@ def test_profile_for_slug_prefers_authored_row_when_email_duplicated(monkeypatch
     assert "profile_self_authored_at desc" in cur.last_sql.lower()
 
 
-# --- Task 5: save_profile — the write path ---
+# --- Task 4: save_draft / _write_live_profile — the write path split ---
+#
+# The write path is now two functions: save_draft (sqlite, sanitizes, never
+# publishes) and _write_live_profile (Postgres, stamps provenance, the sole
+# gate). These tests used to call the single save_profile that did both; they
+# are updated in place -- not deleted -- to pin the two halves separately.
 
 class _RecordingCur:
     """Records the UPDATE sql + params."""
@@ -254,9 +259,16 @@ def _patch_recording(monkeypatch):
     return cur
 
 
-def test_save_profile_stamps_provenance_and_sanitizes(monkeypatch):
-    cur = _patch_recording(monkeypatch)
-    out = pp.save_profile("pid-1", {
+def test_save_draft_sanitizes_and_does_not_touch_postgres(monkeypatch):
+    """save_draft still sanitizes (unchanged from the old save_profile), but
+    writes to the sqlite draft table only -- Postgres must never be touched."""
+    import db_supabase
+    def _boom():
+        raise AssertionError("save_draft must never open supabase_cursor")
+    monkeypatch.setattr(db_supabase, "supabase_cursor", _boom)
+    cx = sqlite3.connect(":memory:")
+    cx.row_factory = sqlite3.Row
+    out = pp.save_draft(cx, "pid-1", {
         "bio": "<b>I heal</b> reach dr@x.com",
         "photo_url": " https://x/p.jpg ",
         "services": ["<i>Acupuncture</i>", ""],
@@ -265,6 +277,24 @@ def test_save_profile_stamps_provenance_and_sanitizes(monkeypatch):
     assert out["services"] == ["Acupuncture"]
     assert out["photo_url"] == "https://x/p.jpg"
     assert out["accepting_clients"] is False
+
+
+def test_save_draft_rejects_long_bio():
+    cx = sqlite3.connect(":memory:")
+    cx.row_factory = sqlite3.Row
+    with pytest.raises(ValueError):
+        pp.save_draft(cx, "pid-1", {"bio": "x" * 601})
+
+
+def test_write_live_profile_stamps_provenance(monkeypatch):
+    """_write_live_profile is the sole function that stamps
+    profile_self_authored_at -- exercised directly here with an
+    already-sanitized fields dict, the shape publish_draft hands it."""
+    cur = _patch_recording(monkeypatch)
+    pp._write_live_profile("pid-1", {
+        "bio": "I heal reach dr@x.com", "photo_url": "https://x/p.jpg",
+        "services": ["Acupuncture"], "city": "Hilo", "state": "HI",
+        "accepting_clients": False})
     sql, params = cur.calls[-1]
     assert "UPDATE practitioners SET" in sql
     assert "profile_self_authored_at=now()" in sql.replace(" ", "").lower() \
@@ -272,7 +302,57 @@ def test_save_profile_stamps_provenance_and_sanitizes(monkeypatch):
     assert "pid-1" in params
 
 
-def test_save_profile_rejects_long_bio(monkeypatch):
-    _patch_recording(monkeypatch)
-    with pytest.raises(ValueError):
-        pp.save_profile("pid-1", {"bio": "x" * 601})
+def test_save_draft_writes_every_field_publish_reads():
+    """I3: publish REPLACES the practitioners row wholesale -- every column in
+    _write_live_profile's SET list is written from fields.get(k, <default>),
+    so a draft missing a key silently BLANKS the live value.
+
+    The read set is derived from _write_live_profile's own source rather than
+    hardcoded, so this goes red the day someone adds a published field to one
+    side only. That is the whole point of the test.
+    """
+    import inspect
+    import sqlite3
+
+    src = inspect.getsource(pp._write_live_profile)
+    published = set(re.findall(r"fields\.get\(\s*[\"'](\w+)[\"']", src))
+    assert published, "could not parse the published field set from _write_live_profile"
+
+    cx = sqlite3.connect(":memory:")
+    cx.row_factory = sqlite3.Row
+    written = pp.save_draft(cx, "pid-1", {
+        "bio": "hello", "services": ["Coaching"], "city": "Hilo", "state": "HI",
+        "photo_url": "https://x/p.jpg", "accepting_clients": True})
+
+    missing = published - set(written)
+    assert not missing, (
+        f"save_draft does not store {sorted(missing)}, but _write_live_profile "
+        f"publishes {sorted(published)} -- publishing this draft would blank "
+        f"those live columns")
+
+
+def test_only_one_function_stamps_profile_self_authored_at():
+    """I4: the branch's whole thesis is 'one choke point, auditable by grep'.
+    Nothing enforced it, so a second writer could appear silently and the
+    review gate would leak with every test still green.
+
+    Greps the shipped tree for an ASSIGNMENT to profile_self_authored_at
+    (`SET ... profile_self_authored_at=...`). Reads that stamp it (SELECT,
+    ORDER BY, a bare column name) are fine and are not matched.
+    """
+    import pathlib
+
+    root = pathlib.Path(__file__).resolve().parent.parent
+    targets = [root / "app.py"] + sorted((root / "dashboard").glob("*.py"))
+
+    hits = []
+    for path in targets:
+        for n, line in enumerate(path.read_text().splitlines(), 1):
+            if re.search(r"profile_self_authored_at\s*=\s*(?!=)", line):
+                hits.append(f"{path.relative_to(root)}:{n}: {line.strip()}")
+
+    assert len(hits) == 1, (
+        "exactly one statement may stamp profile_self_authored_at "
+        "(dashboard/practitioner_profile.py::_write_live_profile); found:\n"
+        + "\n".join(hits))
+    assert hits[0].startswith("dashboard/practitioner_profile.py:"), hits[0]
