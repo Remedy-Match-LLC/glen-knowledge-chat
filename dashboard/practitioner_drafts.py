@@ -191,9 +191,7 @@ DEFAULT_POLICY = "review"
 # separately; there is no "location" key in a draft's fields, so a policy
 # entry named "location" can never match anything and silently never applies.
 # The spec's "location" is city+state together: keep BOTH keyed here, or a
-# future reader will reintroduce this mismatch. "logo_url" is kept even
-# though save_draft does not store it yet -- a later plan wires that up, and
-# an unmatched key is harmless (needs_review only consults known-stored keys).
+# future reader will reintroduce this mismatch.
 REVIEW_POLICY = {
     "bio": "review",
     "photo_url": "review",
@@ -202,6 +200,8 @@ REVIEW_POLICY = {
     "city": "review",
     "state": "review",
     "accepting_clients": "review",
+    "tagline": "review",
+    "how_i_work": "review",
 }
 
 

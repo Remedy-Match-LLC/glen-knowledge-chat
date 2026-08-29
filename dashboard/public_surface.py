@@ -69,6 +69,8 @@ PRACTITIONER_PUBLIC_FIELDS = frozenset({
     "bio",
     "photo_url",
     "logo_url",
+    "tagline",
+    "how_i_work",
     "services",
     "location",          # city/state only, never a street address
     "accepting_clients",

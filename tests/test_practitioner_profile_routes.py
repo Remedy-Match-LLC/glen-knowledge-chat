@@ -1,5 +1,7 @@
 # tests/test_practitioner_profile_routes.py
 import os
+import pathlib
+import re
 import pytest
 if not os.environ.get("PINECONE_API_KEY"):
     pytest.skip("needs doppler env for import app", allow_module_level=True)
@@ -209,3 +211,220 @@ def test_get_settings_falls_back_to_the_live_row_with_no_draft(client, monkeypat
     body = client.get("/api/practitioner/settings").get_json()
     assert body["profile"]["bio"] == "I heal"
     assert "profile_status" not in body
+
+
+def test_get_settings_includes_the_new_fields_from_the_live_row(client, monkeypatch):
+    """The editor's loader pre-fills the form from `data.profile` on load. If
+    the GET route never reads tagline/how_i_work/logo_url off the live row,
+    the client-side wiring is pointless: a saved value would still vanish on
+    reload because the server never sent it back."""
+    row = {"bio": "I heal", "photo_url": "https://x/p.jpg", "logo_url": "https://x/l.png",
+           "specialties": ["Acupuncture"], "city": "Hilo", "state": "HI",
+           "accepting_new_patients": True, "tagline": "Root-cause coaching",
+           "how_i_work": "We start slowly.",
+           "profile_self_authored_at": "2026-07-20T00:00:00Z", "show_contact": False}
+    import db_supabase
+    monkeypatch.setattr(db_supabase, "supabase_cursor", lambda: _FakeCtx(_FakeCur(row)))
+    r = client.get("/api/practitioner/settings")
+    prof = r.get_json()["profile"]
+    assert prof["tagline"] == "Root-cause coaching"
+    assert prof["how_i_work"] == "We start slowly."
+    assert prof["logo_url"] == "https://x/l.png"
+
+
+def test_get_settings_overlays_the_draft_new_fields(client, monkeypatch, tmp_path):
+    """Same C2 pending-draft-wins rule, now covering the three new fields."""
+    import sqlite3
+    import db_supabase
+    from dashboard import practitioner_drafts as _pd
+
+    live = {"bio": "SCRAPED live bio", "photo_url": "", "logo_url": "", "specialties": ["Old"],
+            "city": "Kona", "state": "HI", "accepting_new_patients": True,
+            "tagline": "", "how_i_work": "",
+            "profile_self_authored_at": "2026-07-20T00:00:00Z", "show_contact": False}
+    monkeypatch.setattr(db_supabase, "supabase_cursor", lambda: _FakeCtx(_FakeCur(live)))
+
+    dbpath = str(tmp_path / "chat_log.db")
+    monkeypatch.setattr(appmod, "LOG_DB", dbpath)
+    with appmod.db.connect(dbpath) as cx:
+        cx.row_factory = sqlite3.Row
+        _pd.init_tables(cx)
+        _pd.upsert_draft(cx, "pid-123", {
+            "bio": "MY PENDING EDIT", "photo_url": "https://x/new.jpg",
+            "logo_url": "https://x/new-logo.png",
+            "services": ["New"], "city": "Hilo", "state": "HI",
+            "accepting_clients": False,
+            "tagline": "MY PENDING TAGLINE", "how_i_work": "MY PENDING HOW"})
+
+    body = client.get("/api/practitioner/settings").get_json()
+    assert body["profile"]["tagline"] == "MY PENDING TAGLINE"
+    assert body["profile"]["how_i_work"] == "MY PENDING HOW"
+    assert body["profile"]["logo_url"] == "https://x/new-logo.png"
+
+
+def test_settings_page_offers_the_new_profile_inputs():
+    """A field the practitioner cannot type is a field that does not exist.
+    Section 2a shipped a submit route with no caller; this is the same check
+    one layer up."""
+    html = pathlib.Path(appmod.STATIC, "practitioner-settings.html").read_text(encoding="utf-8")
+    for ident in ("sf-tagline", "sf-how-i-work", "sf-logo-url"):
+        assert ident in html, f"settings page has no input for {ident}"
+
+
+def test_settings_page_sends_the_new_fields():
+    html = pathlib.Path(appmod.STATIC, "practitioner-settings.html").read_text(encoding="utf-8")
+    for key in ("tagline", "how_i_work", "logo_url"):
+        assert key in html, f"settings page never sends {key} in its payload"
+
+
+# --- Fix wave: every profile failure mode is pre-validated ------------------
+
+
+@pytest.mark.parametrize("profile,why", [
+    ({"logo_url": "http://cdn.example.com/l.png"}, "plaintext http logo"),
+    ({"logo_url": "javascript:alert(1)"}, "script-scheme logo"),
+    ({"logo_url": "//cdn.example.com/l.png"}, "protocol-relative logo"),
+    ({"photo_url": "javascript:alert(1)"}, "script-scheme photo"),
+    ({"tagline": "x" * 121}, "tagline over the cap"),
+    ({"how_i_work": "x" * 2001}, "how_i_work over the cap"),
+    ({"logo_url": 123}, "non-string logo (was a 500, must be a 400)"),
+    ({"tagline": 123}, "non-string tagline (was a 500, must be a 400)"),
+])
+def test_post_bad_profile_field_does_not_partially_persist_branding(
+        client, monkeypatch, profile, why):
+    """Only the bio was pre-validated before any write, so the four newer
+    failure modes 400'd AFTER branding/pricing had already been persisted.
+
+    Reachable in the real UI: sf-logo-url is type="url", but the page saves via
+    fetch(), so the browser never validates it -- a pasted http:// URL 400s
+    with the practitioner's brand colour change already silently live.
+    """
+    from dashboard import practitioner_settings as _ps
+    from dashboard import practitioner_profile as _pp
+
+    calls = {"branding": 0, "pricing": 0, "save_draft": 0}
+    monkeypatch.setattr(_ps, "set_branding",
+                        lambda cx, pid, b, *, chat_enabled=None:
+                        calls.__setitem__("branding", calls["branding"] + 1))
+    monkeypatch.setattr(_ps, "set_pricing",
+                        lambda cx, pid, p:
+                        calls.__setitem__("pricing", calls["pricing"] + 1))
+    monkeypatch.setattr(_pp, "save_draft",
+                        lambda cx, pid, prof:
+                        calls.__setitem__("save_draft", calls["save_draft"] + 1))
+
+    full = {"bio": "fine", "tagline": "", "how_i_work": "",
+            "photo_url": "", "logo_url": ""}
+    full.update(profile)
+    r = client.post("/api/practitioner/settings", json={
+        "branding": {"practice_name": "New Name", "brand_color_1": "#ff0000"},
+        "profile": full,
+    })
+
+    assert r.status_code == 400, f"{why}: expected 400, got {r.status_code}"
+    assert calls["branding"] == 0, f"{why}: branding was written before the 400"
+    assert calls["pricing"] == 0, f"{why}: pricing was written before the 400"
+    assert calls["save_draft"] == 0
+
+
+def test_post_bad_logo_url_does_not_write_show_contact(client, monkeypatch):
+    """show_contact is the other write that lands before the profile block --
+    it goes to Postgres, so a partial write there is not even rolled back with
+    the sqlite ones."""
+    import db_supabase
+    supabase_calls = {"n": 0}
+
+    def _counting_cursor():
+        supabase_calls["n"] += 1
+        return _FakeCtx(_FakeCur(None))
+
+    monkeypatch.setattr(db_supabase, "supabase_cursor", _counting_cursor)
+    r = client.post("/api/practitioner/settings", json={
+        "show_contact": True,
+        "profile": {"bio": "fine", "logo_url": "http://cdn.example.com/l.png"},
+    })
+    assert r.status_code == 400
+    assert supabase_calls["n"] == 0
+
+
+def test_post_good_profile_still_saves(client, monkeypatch):
+    """The pre-check must not become a second, stricter gate that rejects
+    values save_draft itself accepts."""
+    from dashboard import practitioner_profile as _pp
+    seen = {}
+
+    def _fake_save_draft(cx, pid, profile):
+        seen.update(profile)
+        return dict(profile)
+
+    monkeypatch.setattr(_pp, "save_draft", _fake_save_draft)
+    monkeypatch.setattr(appmod, "_practitioner_profile_submit",
+                        lambda cx, pid: ({"status": "submitted"}, 200))
+    r = client.post("/api/practitioner/settings", json={"profile": {
+        "bio": "I heal",
+        "tagline": "Root-cause coaching",
+        "how_i_work": "I start with a full intake.\n\n- sleep\n- digestion",
+        "photo_url": "https://cdn.example.com/p.jpg",
+        "logo_url": "https://cdn.example.com/l.png",
+    }})
+    assert r.status_code == 200, r.get_data(as_text=True)
+    assert seen["logo_url"] == "https://cdn.example.com/l.png"
+    assert "\n\n" in seen["how_i_work"]
+
+
+# --- Fix wave: the settings page itself ------------------------------------
+
+
+def _settings_html():
+    return pathlib.Path(appmod.STATIC, "practitioner-settings.html").read_text(encoding="utf-8")
+
+
+def test_settings_url_inputs_carry_a_maxlength_matching_the_server_cap():
+    """MAX_URL is 500. Without maxlength a long paste fails as a server 400
+    after the request, instead of at the keyboard."""
+    from dashboard import practitioner_profile as _pp
+    html = _settings_html()
+    for ident in ("sf-logo-url", "sf-photo"):
+        m = re.search(r'<input[^>]*id="%s"[^>]*>' % ident, html, re.S)
+        assert m, f"no input for {ident}"
+        assert 'maxlength="%d"' % _pp.MAX_URL in m.group(0), \
+            f"{ident} has no maxlength matching MAX_URL: {m.group(0)}"
+
+
+def test_settings_how_i_work_has_a_character_counter():
+    """maxlength=2000 stops typing dead with no explanation, on the one field
+    designed for long prose, right next to a Bio field that does show a count."""
+    html = _settings_html()
+    assert 'id="sf-how-i-work-count"' in html
+    assert "sf-how-i-work-count').textContent" in html, \
+        "the counter element exists but nothing ever updates it"
+
+
+def test_settings_field_order_reads_short_to_long_and_keeps_the_urls_together():
+    """Tagline, Bio, How I work, Photo URL, Logo URL. The 2000-char field must
+    not sit above the 600-char one, and the two image URLs belong together."""
+    html = _settings_html()
+    order = ["sf-tagline", "sf-bio", "sf-how-i-work", "sf-photo", "sf-logo-url"]
+    positions = [html.index('id="%s"' % i) for i in order]
+    assert positions == sorted(positions), \
+        "storefront fields are out of order: " + repr(
+            sorted(zip(positions, order)))
+
+
+def test_settings_scraped_load_handler_documents_why_it_skips_the_new_fields():
+    """The handler assigns bio/photo/services/city/state and NOT tagline,
+    how_i_work or logo_url. That is correct -- a scraped directory row has
+    neither of the first two and logo_url is never scraped -- but it reads as
+    an omission, so it has to say so."""
+    html = _settings_html()
+    start = html.index("sf-load-scraped').addEventListener('click'")
+    body = html[start:html.index("});", start)]
+    # Assignments only. The handler legitimately READS sf-how-i-work (to leave
+    # its character count alone), so a bare substring check would false-fire.
+    code = re.sub(r"//.*", "", body)
+    for ident in ("sf-tagline", "sf-how-i-work", "sf-logo-url"):
+        assert not re.search(r"getElementById\('%s'\)\s*\.\s*value\s*=" % ident, code), \
+            f"scraped data must never be loaded into {ident} (self-authored only)"
+    comment = "\n".join(re.findall(r"//.*", body))
+    assert "scraped" in comment.lower() and "logo_url" in comment, \
+        "the scraped-load handler needs a comment saying why it skips them"

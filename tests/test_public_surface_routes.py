@@ -319,3 +319,49 @@ def test_public_routes_never_call_get_portal_view(client_with_affiliate, monkeyp
     for path in ("/sample", "/sample/prof-jane-doe", "/p/prof-jane-doe",
                  "/api/sample", "/api/sample/prof-jane-doe", "/api/p/prof-jane-doe"):
         assert client_with_affiliate.get(path).status_code == 200, path
+
+
+# --- Fix wave: stored, published, whitelisted... and invisible --------------
+
+
+@pytest.mark.xfail(strict=False, reason=(
+    "Expected to fail until section 5 server-renders the storefront. "
+    "static/practitioner-storefront.html renders only name, practice name, "
+    "bio, the disclosure and the catalog link; photo_url, logo_url, tagline, "
+    "how_i_work, services, location and accepting_clients reach the JSON "
+    "payload and stop there. Deliberate — the field has to exist before a "
+    "renderer can render it — but it must not stay silent."))
+def test_every_public_field_is_actually_rendered_somewhere():
+    """The failure four consecutive reviews caught by hand, handed to the suite.
+
+    A field can be sanitized, drafted, reviewed, published to Postgres, listed
+    in PRACTITIONER_PUBLIC_FIELDS and served in /api/p/<slug> -- and still be
+    invisible to every human being, because nothing renders it. Every layer
+    looks correct in isolation; only the whole chain shows the gap.
+
+    When section 5 lands, this should go XPASS. At that point delete the
+    xfail marker and let it be an ordinary guard: from then on, adding a key
+    to the whitelist without rendering it is a red test, not a review finding.
+    """
+    import pathlib
+    from dashboard import public_surface as ps
+    html = pathlib.Path(appmod.STATIC, "practitioner-storefront.html").read_text(encoding="utf-8")
+    missing = sorted(f for f in ps.PRACTITIONER_PUBLIC_FIELDS if f not in html)
+    assert not missing, (
+        "public fields never rendered by static/practitioner-storefront.html: "
+        + ", ".join(missing))
+
+
+def test_the_render_guard_is_measuring_the_right_file():
+    """Companion to the xfail above: an xfail that fails for a silly reason
+    (wrong path, empty file) would look identical to the real gap it is
+    reporting. This asserts the file is really there and really does render
+    the fields it does render, so the xfail means what it says."""
+    import pathlib
+    from dashboard import public_surface as ps
+    html = pathlib.Path(appmod.STATIC, "practitioner-storefront.html").read_text(encoding="utf-8")
+    assert len(html) > 200
+    for rendered in ("practitioner_name", "practice_name", "bio",
+                     "profit_disclosure", "catalog_url"):
+        assert rendered in html, f"{rendered} was supposed to already render"
+        assert rendered in ps.PRACTITIONER_PUBLIC_FIELDS

@@ -91,7 +91,8 @@ def test_format_location_variants():
 
 def test_profile_public_fields_frozen():
     assert pp.PROFILE_PUBLIC_FIELDS == frozenset(
-        {"bio", "photo_url", "logo_url", "services", "location", "accepting_clients"})
+        {"bio", "photo_url", "logo_url", "services", "location", "accepting_clients",
+         "tagline", "how_i_work"})
 
 
 # --- Task 3: profile_for_slug — provenance-gated read ---
@@ -236,6 +237,40 @@ def test_profile_for_slug_prefers_authored_row_when_email_duplicated(monkeypatch
     assert "profile_self_authored_at desc" in cur.last_sql.lower()
 
 
+def test_profile_for_slug_publishes_tagline_and_how_i_work(monkeypatch):
+    """Task 4 fix: tagline/how_i_work are stored and published, but were never
+    read back -- PROFILE_PUBLIC_FIELDS and the SELECT both omitted them, so a
+    practitioner's approved tagline reached Postgres and then nowhere. Drives
+    the real profile_for_slug read path, not a constant, so it would fail if
+    the SELECT still omitted either column."""
+    authored = {"bio": "I heal", "photo_url": "https://x/p.jpg", "logo_url": "",
+                "specialties": ["Acupuncture"], "city": "Hilo", "state": "HI",
+                "accepting_new_patients": True,
+                "tagline": "Root-cause coaching",
+                "how_i_work": "We start slowly.",
+                "profile_self_authored_at": "2026-07-20T00:00:00Z"}
+    _patch_supabase(monkeypatch, authored)
+    v = pp.profile_for_slug(_cx_with_slug(), "prof-jane-doe")
+    assert v["tagline"] == "Root-cause coaching"
+    assert v["how_i_work"] == "We start slowly."
+
+
+def test_profile_for_slug_scraped_row_omits_tagline_and_how_i_work(monkeypatch):
+    """Same provenance gate, proven for the two new fields specifically: a row
+    WITH a tagline/how_i_work but a null profile_self_authored_at must not
+    leak either -- the gate returns {} entirely, so neither key is present."""
+    scraped = {"bio": "scraped text", "photo_url": "p", "logo_url": "",
+               "specialties": ["x"], "city": "Hilo", "state": "HI",
+               "accepting_new_patients": True,
+               "tagline": "scraped tagline", "how_i_work": "scraped how",
+               "profile_self_authored_at": None}
+    _patch_supabase(monkeypatch, scraped)
+    v = pp.profile_for_slug(_cx_with_slug(), "prof-jane-doe")
+    assert v == {}
+    assert "tagline" not in v
+    assert "how_i_work" not in v
+
+
 # --- Task 4: save_draft / _write_live_profile — the write path split ---
 #
 # The write path is now two functions: save_draft (sqlite, sanitizes, never
@@ -356,3 +391,239 @@ def test_only_one_function_stamps_profile_self_authored_at():
         "(dashboard/practitioner_profile.py::_write_live_profile); found:\n"
         + "\n".join(hits))
     assert hits[0].startswith("dashboard/practitioner_profile.py:"), hits[0]
+
+
+def test_sanitize_tagline_strips_html_and_collapses_whitespace():
+    assert pp.sanitize_tagline("  <b>Root-cause</b>   coaching ") == "Root-cause coaching"
+
+
+def test_sanitize_tagline_rejects_over_the_cap():
+    with pytest.raises(ValueError):
+        pp.sanitize_tagline("x" * (pp.MAX_TAGLINE + 1))
+
+
+def test_sanitize_tagline_accepts_exactly_the_cap():
+    assert len(pp.sanitize_tagline("x" * pp.MAX_TAGLINE)) == pp.MAX_TAGLINE
+
+
+def test_sanitize_how_i_work_strips_html():
+    """Note the expected value: stripping <script> closes the gap between the
+    words, so "start" and "x" join. That is _norm's real behaviour, verified,
+    not a typo — do not "fix" it to "We start x slowly"."""
+    assert pp.sanitize_how_i_work("<p>We start<script>x</script> slowly</p>") == "We startx slowly"
+
+
+def test_sanitize_how_i_work_rejects_over_the_cap():
+    with pytest.raises(ValueError):
+        pp.sanitize_how_i_work("x" * (pp.MAX_HOW_I_WORK + 1))
+
+
+def test_sanitizers_do_not_strip_the_practitioners_own_contact_detail():
+    """Same rule sanitize_bio follows: over-stripping prose is a known failure
+    mode, and a practitioner may legitimately name their own phone or site."""
+    out = pp.sanitize_how_i_work("Call me on 808-555-0100 or see maryboyd.com")
+    assert "808-555-0100" in out and "maryboyd.com" in out
+
+
+# --- Task 2: Validate photo_url and logo_url ---
+
+
+def test_image_url_accepts_https():
+    assert pp.sanitize_image_url(" https://cdn.example.com/p.jpg ") == "https://cdn.example.com/p.jpg"
+
+
+def test_image_url_accepts_a_site_relative_path():
+    """Section 2c will serve practitioner assets from our own storage under a
+    relative path; allow it now so that change needs no validator edit."""
+    assert pp.sanitize_image_url("/practitioner-asset/abc123") == "/practitioner-asset/abc123"
+
+
+def test_image_url_empty_is_allowed():
+    assert pp.sanitize_image_url("") == ""
+    assert pp.sanitize_image_url(None) == ""
+
+
+@pytest.mark.parametrize("bad", [
+    "javascript:alert(1)",
+    "JavaScript:alert(1)",
+    "data:image/svg+xml;base64,PHN2Zz4=",
+    "vbscript:x",
+    "http://cdn.example.com/p.jpg",     # plaintext http on an https page
+    "//cdn.example.com/p.jpg",          # protocol-relative
+    "ftp://x/p.jpg",
+    "/\\evil.com/x.png",                # backslash bypass: resolves to https://evil.com/x.png
+    "/a/\\evil.com/x.png",              # backslash not at position 1
+    "https://good.example.com/a\\b.png",  # backslash inside otherwise valid https URL
+    "/\t/evil.com/x.png",               # tab-slash bypass: browser normalises to //evil.com/x.png
+    "/\n/evil.com/x.png",               # newline bypass: browser normalises to //evil.com/x.png
+    "/\r/evil.com/x.png",               # CR bypass: browser normalises to //evil.com/x.png
+    "https://good.example.com/a\tb.png",  # tab inside otherwise valid https URL
+])
+def test_image_url_rejects_dangerous_or_insecure(bad):
+    with pytest.raises(ValueError):
+        pp.sanitize_image_url(bad)
+
+
+def test_image_url_rejects_over_length():
+    with pytest.raises(ValueError):
+        pp.sanitize_image_url("https://x/" + "a" * pp.MAX_URL)
+
+
+def test_save_draft_stores_the_new_fields():
+    import sqlite3
+    cx = sqlite3.connect(":memory:")
+    cx.row_factory = sqlite3.Row
+    out = pp.save_draft(cx, "pid-1", {
+        "bio": "b", "services": [], "city": "Hilo", "state": "HI",
+        "photo_url": "https://x/p.jpg", "logo_url": "https://x/l.png",
+        "accepting_clients": True,
+        "tagline": "Root-cause coaching",
+        "how_i_work": "We start slowly."})
+    assert out["tagline"] == "Root-cause coaching"
+    assert out["how_i_work"] == "We start slowly."
+    assert out["logo_url"] == "https://x/l.png"
+
+
+def test_save_draft_rejects_a_bad_image_url_before_writing():
+    import sqlite3
+    cx = sqlite3.connect(":memory:")
+    cx.row_factory = sqlite3.Row
+    with pytest.raises(ValueError):
+        pp.save_draft(cx, "pid-1", {"bio": "b", "photo_url": "javascript:alert(1)"})
+
+
+def test_logo_url_is_actually_published():
+    """The 2a bug: logo_url is a real column, is in PRACTITIONER_PUBLIC_FIELDS,
+    and was written by nothing. Publishing must include it or it stays dead."""
+    import inspect
+    src = inspect.getsource(pp._write_live_profile)
+    assert "logo_url" in src
+
+
+# --- Fix wave: how_i_work must keep the structure the practitioner typed ----
+
+
+def test_sanitize_how_i_work_preserves_paragraphs_and_bullets():
+    """The 2b defect: how_i_work used _norm, which is `" ".join(text.split())`,
+    and `str.split()` splits on newlines too — so every paragraph break and
+    every bullet was flattened into one wall of text AT STORE TIME, where no
+    later renderer could recover it. A 600-char bio is one paragraph so it
+    never showed; a 2000-char "explain your practice" field is nothing but
+    structure."""
+    typed = (
+        "I start with a full intake.\n"
+        "\n"
+        "Then we look at your terrain:\n"
+        "- sleep\n"
+        "- digestion\n"
+        "\n"
+        "Most people feel a shift in three weeks."
+    )
+    out = pp.sanitize_how_i_work(typed)
+    assert out == typed
+    # Stated as behaviour, not just equality, so a future edit that "tidies"
+    # the normaliser cannot pass by rewriting the fixture.
+    assert "\n\n" in out, "paragraph breaks must survive"
+    assert "- sleep\n- digestion" in out, "list items must stay on their own lines"
+    assert out.count("\n") == 6
+
+
+def test_sanitize_how_i_work_collapses_spaces_within_a_line():
+    assert pp.sanitize_how_i_work("We   go\tslowly  ") == "We go slowly"
+
+
+def test_sanitize_how_i_work_trims_each_line_and_the_whole():
+    assert pp.sanitize_how_i_work("\n\n  one  \n   two   \n\n") == "one\ntwo"
+
+
+def test_sanitize_how_i_work_collapses_three_or_more_newlines_to_two():
+    assert pp.sanitize_how_i_work("a\n\n\n\n\nb") == "a\n\nb"
+
+
+def test_sanitize_how_i_work_normalises_crlf():
+    assert pp.sanitize_how_i_work("a\r\n\r\nb\rc") == "a\n\nb\nc"
+
+
+def test_sanitize_how_i_work_cap_applies_to_the_structured_result():
+    """The cap still bites, and still as a ValueError -- preserving newlines
+    must not become a way to smuggle past MAX_HOW_I_WORK."""
+    with pytest.raises(ValueError):
+        pp.sanitize_how_i_work("x\n" * pp.MAX_HOW_I_WORK)
+
+
+def test_sanitize_tagline_still_flattens_newlines():
+    """A tagline is one line by definition. The multiline normaliser is for
+    how_i_work only -- this pins that the two did not get swapped."""
+    assert pp.sanitize_tagline("Root-cause\ncoaching") == "Root-cause coaching"
+
+
+def test_sanitize_bio_still_flattens_newlines():
+    """Out of scope for this wave, deliberately: pinned so a later change to
+    sanitize_bio is a decision rather than an accident."""
+    assert pp.sanitize_bio("one\n\ntwo") == "one two"
+
+
+def test_module_documents_the_pre_line_renderer_contract():
+    """how_i_work is stored with newlines, so a renderer that drops it into
+    flowed HTML re-creates the exact bug this wave fixed. The contract has to
+    be findable from the module a renderer author is already reading."""
+    import dashboard.practitioner_profile as _mod
+    doc = _mod.__doc__ or ""
+    assert "pre-line" in doc
+    assert "how_i_work" in doc
+
+
+# --- Fix wave: URL characters that are never legal raw in a URL -------------
+
+
+@pytest.mark.parametrize("bad", [
+    'https://cdn.example.com/a"b.png',      # closes an HTML attribute
+    "https://cdn.example.com/a'b.png",      # closes a single-quoted attribute
+    "https://cdn.example.com/a<b.png",      # opens a tag
+    "https://cdn.example.com/a>b.png",      # closes a tag
+    "https://cdn.example.com/a`b.png",      # unquoted-attribute delimiter in IE
+    "https://cdn.example.com/a b.png",      # raw space
+    "/practitioner-asset/a b.png",          # ... on the site-relative shape too
+    '/practitioner-asset/a"b.png',
+])
+def test_image_url_rejects_chars_never_legal_raw_in_a_url(bad):
+    """RFC 3986 requires these percent-encoded (%22 %27 %3C %3E %60 %20), and
+    each one breaks out of an attribute or a tag once section 5 server-renders
+    the value the docstring calls "safe to put on a public page"."""
+    with pytest.raises(ValueError):
+        pp.sanitize_image_url(bad)
+
+
+def test_image_url_still_accepts_percent_encoded_forms():
+    """Reject the RAW character, not the legal encoding of it."""
+    u = "https://cdn.example.com/my%20photo%3Cx%3E.png"
+    assert pp.sanitize_image_url(u) == u
+
+
+def test_image_url_surrounding_whitespace_is_still_stripped_not_rejected():
+    """The space rule applies INSIDE the URL. A pasted value with padding is
+    an ordinary paste, and stripping it predates this rule."""
+    assert pp.sanitize_image_url("  https://cdn.example.com/p.jpg  ") == \
+        "https://cdn.example.com/p.jpg"
+
+
+# --- Fix wave: a bad TYPE is a 400, like a bad value -----------------------
+
+
+@pytest.mark.parametrize("fn_name", ["sanitize_tagline", "sanitize_how_i_work",
+                                     "sanitize_image_url"])
+@pytest.mark.parametrize("value", [123, 1.5, True, ["x"], {"a": 1}, object()])
+def test_sanitizers_raise_valueerror_on_a_non_string(fn_name, value):
+    """A JSON body can carry any type. These used to raise TypeError (_norm)
+    or AttributeError (sanitize_image_url), neither caught by the settings
+    route's `except ValueError` -- so a bad type was a 500 while a bad value
+    was a 400. Every bad input is a ValueError."""
+    with pytest.raises(ValueError):
+        getattr(pp, fn_name)(value)
+
+
+def test_sanitizers_still_accept_none_as_empty():
+    """None means "not supplied" and must stay a legitimate empty, not a 400."""
+    assert pp.sanitize_tagline(None) == ""
+    assert pp.sanitize_how_i_work(None) == ""
+    assert pp.sanitize_image_url(None) == ""
