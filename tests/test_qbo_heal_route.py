@@ -38,9 +38,9 @@ def test_wrong_secret_rejected():
     assert resp.status_code == 401
 
 
-def test_correct_secret_invokes_heal_sweep():
+def test_correct_secret_reports_retired_without_heal_sweep():
     with mock.patch("dashboard.qbo_heal.heal_pending_receipts", return_value=[]) as heal:
         resp = _client().post("/api/cron/qbo-heal-pending", headers=_headers())
     assert resp.status_code == 200
-    assert heal.called
-    assert resp.get_json() == {"ok": True, "healed": [], "count": 0}
+    assert heal.called is False
+    assert resp.get_json() == {"ok": True, "retired": True, "healed": [], "count": 0}

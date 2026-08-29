@@ -454,6 +454,29 @@ def void_refund(qbo_txn_id):
          {"Id": str(qbo_txn_id), "SyncToken": str(refund["SyncToken"])})
 
 
+def get_sales_receipt(qbo_txn_id):
+    """Fetch one QBO SalesReceipt with its current SyncToken."""
+    tok = money.qb_refresh()
+    return money.qb_get(tok, f"/salesreceipt/{qbo_txn_id}",
+                        {"minorversion": MINOR}).get("SalesReceipt")
+
+
+def get_account(qbo_account_id):
+    """Fetch one QBO account (used to verify a cleanup target's bank)."""
+    tok = money.qb_refresh()
+    return money.qb_get(tok, f"/account/{qbo_account_id}",
+                        {"minorversion": MINOR}).get("Account")
+
+
+def delete_sales_receipt(qbo_txn_id):
+    """Delete one QBO SalesReceipt using its current SyncToken."""
+    receipt = get_sales_receipt(qbo_txn_id)
+    if not receipt:
+        raise RuntimeError(f"sales receipt {qbo_txn_id} not found")
+    _post("/salesreceipt?operation=delete",
+          {"Id": str(qbo_txn_id), "SyncToken": str(receipt["SyncToken"])})
+
+
 def record_refund(customer_id, amount_cents, invoice_id, method=None):
     """Record money-out against the customer for a refund on an invoice, as a QBO
     RefundReceipt. Amount in cents. `method` is memoed for traceability."""

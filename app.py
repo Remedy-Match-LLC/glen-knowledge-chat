@@ -6402,6 +6402,45 @@ def qbo_void_payment(txn_id):
         return jsonify({"ok": False, "error": str(e)}), 500
 
 
+@app.route("/api/qbo/sales-receipts/cleanup", methods=["GET", "POST"])
+def qbo_sales_receipts_cleanup():
+    """Dry-run or explicitly delete verified obsolete QBO SalesReceipts."""
+    if not _qbo_auth_ok():
+        return jsonify({"error": "Unauthorized"}), 401
+    from dashboard import qbo_billing as qb
+    from dashboard import qbo_sales_receipt_cleanup as cleanup
+    if request.method == "GET":
+        try:
+            with _db_lock, db.connect(LOG_DB) as cx:
+                cx.row_factory = sqlite3.Row
+                rows = cleanup.audit(cx, qb)
+            return jsonify({"ok": True, "dry_run": True, "rows": rows,
+                            "ready_count": sum(1 for x in rows if x["deletable"]),
+                            "blocked_count": sum(1 for x in rows if x["status"] == "blocked")})
+        except Exception as e:
+            return jsonify({"ok": False, "error": str(e)}), 500
+    body = request.get_json(silent=True) or {}
+    receipt_ids = body.get("receipt_ids")
+    if body.get("confirmed") is not True:
+        return jsonify({"ok": False, "error": "confirmed:true required"}), 400
+    if not isinstance(receipt_ids, list) or not receipt_ids:
+        return jsonify({"ok": False, "error": "non-empty receipt_ids list required"}), 400
+    if len(receipt_ids) != len({str(x).strip() for x in receipt_ids}):
+        return jsonify({"ok": False, "error": "duplicate receipt_ids are not allowed"}), 400
+    try:
+        with _db_lock, db.connect(LOG_DB) as cx:
+            cx.row_factory = sqlite3.Row
+            deleted = cleanup.delete_confirmed(cx, qb, receipt_ids)
+        print(f"[qbo-sales-receipt-cleanup] deleted={deleted!r}; ledger untouched",
+              flush=True)
+        return jsonify({"ok": True, "action": "deleted", "deleted": deleted,
+                        "deleted_count": len(deleted), "ledger_touched": False})
+    except ValueError as e:
+        return jsonify({"ok": False, "error": str(e)}), 409
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
 @app.route("/api/qbo/diagnostics", methods=["GET"])
 def qbo_diagnostics():
     """Read-only: confirm QBO write-layer prerequisites (items + income accounts)."""
@@ -11407,22 +11446,8 @@ def _fulfill_continuous_care_monthly(session_id):
 
 
 def _book_membership_qbo(email, tier):
-    """Record a paid one-time membership purchase (month / year_prepay) as a QBO
-    SalesReceipt — paid-only, no A/R invoice. Best-effort — a QBO failure must never
-    break the membership grant, which is already committed by the time this runs.
-    Never raises."""
-    try:
-        from dashboard import qbo_billing as qb
-        cust = qb.find_or_create_customer(email, "")
-        qb.create_sales_receipt(
-            cust,
-            [{"name": "Order Total",
-              "description": tier["label"],
-              "amount": tier["price_cents"] / 100.0, "qty": 1}],
-            email_to=email)
-    except Exception as e:
-        print(f"[membership] QBO booking skipped for {email}/{tier.get('key')}: {e!r}",
-              flush=True)
+    """Retired: membership money reaches QBO through the processor bank feed."""
+    return None
 
 
 def _record_membership_reconcile_alert(cx, session_id, email, tier):
@@ -29543,32 +29568,12 @@ def household_holds_sweep_cron():
 
 @app.route("/api/cron/qbo-heal-pending", methods=["POST"])
 def api_cron_qbo_heal_pending():
-    """Sweep orders stuck at qbo_sales_receipt_id='PENDING' (crashed/interrupted
-    booking) and resolve each: stamp the existing QBO receipt if one already
-    exists, or re-claim + rebook if none does. See dashboard.qbo_heal for the
-    full resolution logic. Rides the existing daily briefings cron (folded in
-    by scripts/run_briefings_cron.py) -- no separate Render cron service.
-    Auth: X-Cron-Secret header matching CRON_SECRET (falls back to CONSOLE_SECRET)."""
+    """Retired: bank-feed deposits, not app SalesReceipts, are authoritative."""
     key = (request.headers.get("X-Cron-Secret", "") or request.args.get("key", "")).strip()
     expected = os.environ.get("CRON_SECRET") or os.environ.get("CONSOLE_SECRET", "")
     if not expected or key != expected:
         return jsonify({"error": "unauthorized"}), 401
-    from dashboard import qbo_heal as _heal, qbo_billing as _qb, qbo_sale as _qs, orders as _ord
-    # Serialized under _db_lock (mirrors /api/cron/household-holds/sweep above): two
-    # overlapping sweeps in this process cannot interleave, which is what closes the
-    # concurrent-rebook / double-book window on a single web instance. See qbo_heal's
-    # module docstring for why the CAS clear alone does not make that safe.
-    with _db_lock:
-        cx = db.connect(LOG_DB); cx.row_factory = _sqlite3.Row
-        try:
-            healed = _heal.heal_pending_receipts(
-                cx,
-                find_receipt=_qb.find_sales_receipt_by_ref,
-                book=lambda cx2, o: _qs.book_sale_on_payment(cx2, o),
-                stamp=_ord.set_order_sales_receipt_id)
-        finally:
-            cx.close()
-    return jsonify({"ok": True, "healed": healed, "count": len(healed)})
+    return jsonify({"ok": True, "retired": True, "healed": [], "count": 0})
 
 
 @app.route("/api/cron/family-plan/charge", methods=["POST"])

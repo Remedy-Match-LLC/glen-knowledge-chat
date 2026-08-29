@@ -112,8 +112,8 @@ def test_webhook_books_paid_only_order_when_redirect_missed(monkeypatch, tmp_pat
     row = O.find_order_by_external_ref(cx, token)
     assert row["pay_status"] == "paid"
     assert row["stripe_payment_intent"] == "pi_1"
-    assert row["qbo_sales_receipt_id"] == "SR1"
-    assert calls["n"] == 1
+    assert row["qbo_sales_receipt_id"] is None
+    assert calls["n"] == 0
 
 
 def test_webhook_noop_when_already_booked(monkeypatch, tmp_path, client):
@@ -373,9 +373,9 @@ def test_webhook_settlement_raising_still_200s_and_books_receipt(monkeypatch, tm
     cx = sqlite3.connect(db)
     cx.row_factory = sqlite3.Row
     row = O.find_order_by_external_ref(cx, token)
-    assert row["qbo_sales_receipt_id"] == "SR1"
+    assert row["qbo_sales_receipt_id"] is None
     assert row["pay_status"] == "paid"
-    assert calls["n"] == 1
+    assert calls["n"] == 0
 
 
 # ── I1 crash-strand backfill: settlement decoupled from the booking guard,
@@ -469,7 +469,7 @@ def test_webhook_settle_raise_leaves_settled_at_null_for_retry(monkeypatch, tmp_
     cx = sqlite3.connect(db)
     cx.row_factory = sqlite3.Row
     row = O.find_order_by_external_ref(cx, token)
-    assert row["qbo_sales_receipt_id"] == "SR1"
+    assert row["qbo_sales_receipt_id"] is None
     assert row["pay_status"] == "paid"
-    assert calls["n"] == 1
+    assert calls["n"] == 0
     assert row["settled_at"] is None
