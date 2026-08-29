@@ -875,8 +875,82 @@ git commit -m "feat(practitioner): submit a profile draft for review"
 - A rejection carries a note the practitioner can act on.
 - Every console route refuses without the console key, and that refusal has been observed.
 
+## Operating the review queue
+
+There is **no console page** for this queue yet — Glen has three endpoints and
+nothing to click. Building the page is a follow-up; until then the feature is
+operated with `curl`, and these three invocations are what make it usable on
+day one.
+
+All three take the console key in the `X-Console-Key` header (`?key=` also
+works, but a key in a URL ends up in logs and browser history — use the
+header). `$CONSOLE_KEY` is `CONSOLE_SECRET` from Doppler; `$BASE` is the
+practitioner-portal surface, `https://illtowell.com`.
+
+**1. List what is waiting.** The default `status` is `submitted`, which is the
+queue:
+
+```bash
+curl -s -H "X-Console-Key: $CONSOLE_KEY" \
+  "$BASE/api/console/practitioner-drafts" | python3 -m json.tool
+```
+
+Pass `?status=draft` to see rows a practitioner is still editing (including
+ones sent back), or `?status=approved` to see rows already published.
+
+**2. Approve and publish.** Approving IS publishing — the route approves the
+draft and then copies it into the live `practitioners` row in the same call, so
+a failed publish returns `500 publish_failed` and never reports success. The
+`note` is optional here:
+
+```bash
+curl -s -X POST -H "X-Console-Key: $CONSOLE_KEY" \
+  -H "Content-Type: application/json" -d '{"note": "looks good"}' \
+  "$BASE/api/console/practitioner-drafts/<practitioner-id>/approve"
+```
+
+If it returns `publish_failed`, re-run the identical command once the cause is
+fixed: the row stays `approved` and the route retries the publish rather than
+stranding it in an approved-but-unpublished state the default queue cannot
+even show.
+
+**3. Reject with a reason.** The note is **required** (a 400 without it) and is
+shown to the practitioner on her settings page, because a rejection she cannot
+act on just produces an identical resubmit. Rejecting returns the row to
+`draft`:
+
+```bash
+curl -s -X POST -H "X-Console-Key: $CONSOLE_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"note": "Please remove the sentence about curing glaucoma."}' \
+  "$BASE/api/console/practitioner-drafts/<practitioner-id>/reject"
+```
+
+The practitioner id is the `practitioner_id` field on the queue rows from
+step 1 — the Postgres `practitioners.id`, not the slug or the email.
+
+---
+
+## Rollout flag
+
+`PRACTITIONER_REVIEW_GATE_ENABLED`, read at call time in
+`app._practitioner_review_gate_enabled`, **defaults OFF**.
+
+- **OFF (default):** a practitioner's save still writes a draft and still
+  submits it, but nothing waits for a human — it is approved and published
+  immediately, through the same `approve` + `publish_draft` calls, so her page
+  updates exactly as it did before this feature. The queue stays empty because
+  nothing stays in it.
+- **ON:** the draft queues for Glen and reaches the public page only on
+  approval. This is the behavior the rest of this plan describes.
+
+Merging this branch is therefore behavior-neutral. Turning the gate on for the
+beta is a **separate** Doppler flag flip — a merge plus a flag flip is **two
+deploys**, not one. Announce the change to Mary before flipping, not before
+merging.
+
 ## Deployment note
 
 **No migration is needed.** Drafts live in the sqlite LOG_DB on Render's persistent disk, and `init_tables` creates the table on first use, exactly as `dashboard/referrals.py` and `dashboard/ff_match_drafts.py` do. Nothing to apply by hand, and nothing to forget.
 
-**Behavior change to announce:** after this ships, a practitioner's profile edit no longer appears on their public page until Glen approves it. Any practitioner mid-edit when this deploys will have their next save become a draft. Mary should be told before it lands.
+**Behavior change to announce — on the FLAG FLIP, not on the merge.** With `PRACTITIONER_REVIEW_GATE_ENABLED` off (the default), merging changes nothing a practitioner can see: her save still publishes immediately. Once the flag is on, her profile edit no longer appears on her public page until Glen approves it, and anyone mid-edit at that moment will have their next save queue for review. Mary should be told before the flag flips, and Glen needs the `curl` invocations in "Operating the review queue" above ready, because there is no console page yet.
