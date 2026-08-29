@@ -9,7 +9,7 @@ repo = Path(__file__).resolve().parent.parent
 if str(repo) not in sys.path:
     sys.path.insert(0, str(repo))
 
-from dashboard.timeutil import parse_utc, is_expired, now_utc
+from dashboard.timeutil import parse_utc, is_expired, now_utc, format_ttl
 
 # Exactly the shapes observed in the production table, produced by minting one
 # token per purpose through the real code.
@@ -71,3 +71,50 @@ def test_is_expired_accepts_an_explicit_now_in_either_shape():
     assert is_expired(exp, now=datetime(2026, 7, 9, 13, 0, 0)) is True           # naive
     assert is_expired(exp, now=datetime(2026, 7, 9, 11, 0, 0,
                                         tzinfo=timezone.utc)) is False           # aware
+
+
+# ── format_ttl ───────────────────────────────────────────────────────────────
+# Renders a minutes value as expiry copy. Picks the coarsest unit that divides
+# the value evenly rather than rounding, so the words never overstate or
+# understate the real lifetime a person was promised.
+
+def test_exactly_a_week():
+    assert format_ttl(7 * 24 * 60) == "a week"
+
+
+def test_more_than_a_week_in_exact_weeks():
+    assert format_ttl(14 * 24 * 60) == "2 weeks"
+
+
+def test_more_than_a_week_not_an_exact_week_falls_back_to_days():
+    assert format_ttl(8 * 24 * 60) == "8 days"
+
+
+def test_a_day():
+    assert format_ttl(24 * 60) == "a day"
+
+
+def test_multiple_days():
+    assert format_ttl(3 * 24 * 60) == "3 days"
+
+
+def test_an_hour():
+    assert format_ttl(60) == "an hour"
+
+
+def test_multiple_hours():
+    assert format_ttl(3 * 60) == "3 hours"
+
+
+def test_under_an_hour():
+    assert format_ttl(30) == "30 minutes"
+
+
+def test_a_single_minute():
+    assert format_ttl(1) == "1 minute"
+
+
+def test_value_that_does_not_divide_evenly():
+    """100 minutes is not a whole number of hours (100 % 60 != 0), so it must
+    stay in minutes rather than being rounded into a misleading '2 hours'."""
+    assert format_ttl(100) == "100 minutes"

@@ -19,7 +19,7 @@ def _expiry(db, token):
 def test_default_ttl_is_login_window(tmp_path):
     db = str(tmp_path / "t.db")
     tok = pp.create_magic_link_token("pid1", "a@x.com", db_path=db)
-    assert _expiry(db, tok) == pp.MAGIC_TTL_MIN  # 15
+    assert _expiry(db, tok) == pp.MAGIC_TTL_MIN  # 7 * 24 * 60 (a week)
 
 
 def test_custom_ttl_for_invite(tmp_path):

@@ -68,11 +68,35 @@ def test_magic_link_is_single_use(db):
     assert consume_magic_link(tok, now=t0, db_path=db) is None   # already used
 
 
-def test_magic_link_expires(db):
+def test_magic_link_survives_the_gap_between_reading_and_sitting_down(db):
+    """This test used to pin the 15-minute link: valid at t0, dead at t0+16min.
+
+    A sign-in link that dies in 15 minutes is a support ticket on every send —
+    people read mail on a phone and sit down at a keyboard later. The window is
+    a week now, so 16 minutes has to still work. Inverted rather than deleted:
+    the assertion that mattered was always "the link expires", and it still does.
+    """
     from dashboard.practitioner_portal import create_magic_link_token, consume_magic_link
     t0 = datetime(2026, 6, 1, 12, 0, 0)
     tok = create_magic_link_token(PID, "dr@x.com", now=t0, db_path=db)
-    assert consume_magic_link(tok, now=t0 + timedelta(minutes=16), db_path=db) is None
+    assert consume_magic_link(tok, now=t0 + timedelta(minutes=16), db_path=db) == PID
+
+
+def test_magic_link_still_expires(db):
+    """A longer window is not an unlimited one."""
+    from dashboard.practitioner_portal import create_magic_link_token, consume_magic_link
+    t0 = datetime(2026, 6, 1, 12, 0, 0)
+    tok = create_magic_link_token(PID, "dr@x.com", now=t0, db_path=db)
+    assert consume_magic_link(tok, now=t0 + timedelta(days=8), db_path=db) is None
+
+
+def test_magic_link_is_still_single_use(db):
+    """The longer window rests on this: one use, then it is spent."""
+    from dashboard.practitioner_portal import create_magic_link_token, consume_magic_link
+    t0 = datetime(2026, 6, 1, 12, 0, 0)
+    tok = create_magic_link_token(PID, "dr@x.com", now=t0, db_path=db)
+    assert consume_magic_link(tok, now=t0 + timedelta(days=3), db_path=db) == PID
+    assert consume_magic_link(tok, now=t0 + timedelta(days=3), db_path=db) is None
 
 
 def test_session_token_validates_until_expiry(db):
