@@ -432,3 +432,34 @@ def test_image_url_rejects_dangerous_or_insecure(bad):
 def test_image_url_rejects_over_length():
     with pytest.raises(ValueError):
         pp.sanitize_image_url("https://x/" + "a" * pp.MAX_URL)
+
+
+def test_save_draft_stores_the_new_fields():
+    import sqlite3
+    cx = sqlite3.connect(":memory:")
+    cx.row_factory = sqlite3.Row
+    out = pp.save_draft(cx, "pid-1", {
+        "bio": "b", "services": [], "city": "Hilo", "state": "HI",
+        "photo_url": "https://x/p.jpg", "logo_url": "https://x/l.png",
+        "accepting_clients": True,
+        "tagline": "Root-cause coaching",
+        "how_i_work": "We start slowly."})
+    assert out["tagline"] == "Root-cause coaching"
+    assert out["how_i_work"] == "We start slowly."
+    assert out["logo_url"] == "https://x/l.png"
+
+
+def test_save_draft_rejects_a_bad_image_url_before_writing():
+    import sqlite3
+    cx = sqlite3.connect(":memory:")
+    cx.row_factory = sqlite3.Row
+    with pytest.raises(ValueError):
+        pp.save_draft(cx, "pid-1", {"bio": "b", "photo_url": "javascript:alert(1)"})
+
+
+def test_logo_url_is_actually_published():
+    """The 2a bug: logo_url is a real column, is in PRACTITIONER_PUBLIC_FIELDS,
+    and was written by nothing. Publishing must include it or it stays dead."""
+    import inspect
+    src = inspect.getsource(pp._write_live_profile)
+    assert "logo_url" in src

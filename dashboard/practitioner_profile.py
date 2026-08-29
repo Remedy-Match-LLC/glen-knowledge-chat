@@ -211,12 +211,15 @@ def _write_live_profile(pid, fields):
     from db_supabase import supabase_cursor
     with supabase_cursor() as cur:
         cur.execute(
-            "UPDATE practitioners SET bio=%s, photo_url=%s, specialties=%s,"
-            " city=%s, state=%s, accepting_new_patients=%s,"
+            "UPDATE practitioners SET bio=%s, photo_url=%s, logo_url=%s,"
+            " specialties=%s, city=%s, state=%s, accepting_new_patients=%s,"
+            " tagline=%s, how_i_work=%s,"
             " profile_self_authored_at=now(), updated_at=now() WHERE id=%s",
             (fields.get("bio", ""), fields.get("photo_url", ""),
-             fields.get("services", []), fields.get("city", ""),
-             fields.get("state", ""), bool(fields.get("accepting_clients", True)),
+             fields.get("logo_url", ""), fields.get("services", []),
+             fields.get("city", ""), fields.get("state", ""),
+             bool(fields.get("accepting_clients", True)),
+             fields.get("tagline", ""), fields.get("how_i_work", ""),
              str(pid)))
 
 
@@ -234,8 +237,11 @@ def save_draft(cx, pid, profile):
         "services": clean_services(profile.get("services")),
         "city": _norm(profile.get("city"))[:MAX_LOC_LEN],
         "state": _norm(profile.get("state"))[:MAX_LOC_LEN],
-        "photo_url": (profile.get("photo_url") or "").strip(),
+        "photo_url": sanitize_image_url(profile.get("photo_url")),
+        "logo_url": sanitize_image_url(profile.get("logo_url")),
         "accepting_clients": bool(profile.get("accepting_clients", True)),
+        "tagline": sanitize_tagline(profile.get("tagline", "")),
+        "how_i_work": sanitize_how_i_work(profile.get("how_i_work", "")),
     }
     _pd.init_tables(cx)
     _pd.upsert_draft(cx, pid, fields)
