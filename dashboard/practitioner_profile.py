@@ -38,6 +38,7 @@ _TAG_RE = re.compile(r"<\s*/?\s*[a-zA-Z][^>]*>")
 
 PROFILE_PUBLIC_FIELDS = frozenset({
     "bio", "photo_url", "logo_url", "services", "location", "accepting_clients",
+    "tagline", "how_i_work",
 })
 
 
@@ -167,7 +168,8 @@ def profile_for_slug(cx, slug):
         with supabase_cursor() as cur:
             cur.execute(
                 "SELECT bio, photo_url, logo_url, specialties, city, state, "
-                "accepting_new_patients, profile_self_authored_at "
+                "accepting_new_patients, tagline, how_i_work, "
+                "profile_self_authored_at "
                 "FROM practitioners WHERE lower(email)=lower(%s) "
                 "ORDER BY profile_self_authored_at DESC NULLS LAST LIMIT 1", (email,))
             p = cur.fetchone()
@@ -180,6 +182,8 @@ def profile_for_slug(cx, slug):
             "services": list(p.get("specialties") or []),
             "location": format_location(p.get("city"), p.get("state")),
             "accepting_clients": bool(p.get("accepting_new_patients")),
+            "tagline": p.get("tagline") or "",
+            "how_i_work": p.get("how_i_work") or "",
         }
         return {k: v for k, v in view.items() if k in PROFILE_PUBLIC_FIELDS}
     except Exception:

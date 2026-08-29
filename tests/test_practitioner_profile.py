@@ -91,7 +91,8 @@ def test_format_location_variants():
 
 def test_profile_public_fields_frozen():
     assert pp.PROFILE_PUBLIC_FIELDS == frozenset(
-        {"bio", "photo_url", "logo_url", "services", "location", "accepting_clients"})
+        {"bio", "photo_url", "logo_url", "services", "location", "accepting_clients",
+         "tagline", "how_i_work"})
 
 
 # --- Task 3: profile_for_slug — provenance-gated read ---
@@ -234,6 +235,40 @@ def test_profile_for_slug_prefers_authored_row_when_email_duplicated(monkeypatch
     # happened to return the right row -- a future removal of the ORDER BY
     # clause must fail this test.
     assert "profile_self_authored_at desc" in cur.last_sql.lower()
+
+
+def test_profile_for_slug_publishes_tagline_and_how_i_work(monkeypatch):
+    """Task 4 fix: tagline/how_i_work are stored and published, but were never
+    read back -- PROFILE_PUBLIC_FIELDS and the SELECT both omitted them, so a
+    practitioner's approved tagline reached Postgres and then nowhere. Drives
+    the real profile_for_slug read path, not a constant, so it would fail if
+    the SELECT still omitted either column."""
+    authored = {"bio": "I heal", "photo_url": "https://x/p.jpg", "logo_url": "",
+                "specialties": ["Acupuncture"], "city": "Hilo", "state": "HI",
+                "accepting_new_patients": True,
+                "tagline": "Root-cause coaching",
+                "how_i_work": "We start slowly.",
+                "profile_self_authored_at": "2026-07-20T00:00:00Z"}
+    _patch_supabase(monkeypatch, authored)
+    v = pp.profile_for_slug(_cx_with_slug(), "prof-jane-doe")
+    assert v["tagline"] == "Root-cause coaching"
+    assert v["how_i_work"] == "We start slowly."
+
+
+def test_profile_for_slug_scraped_row_omits_tagline_and_how_i_work(monkeypatch):
+    """Same provenance gate, proven for the two new fields specifically: a row
+    WITH a tagline/how_i_work but a null profile_self_authored_at must not
+    leak either -- the gate returns {} entirely, so neither key is present."""
+    scraped = {"bio": "scraped text", "photo_url": "p", "logo_url": "",
+               "specialties": ["x"], "city": "Hilo", "state": "HI",
+               "accepting_new_patients": True,
+               "tagline": "scraped tagline", "how_i_work": "scraped how",
+               "profile_self_authored_at": None}
+    _patch_supabase(monkeypatch, scraped)
+    v = pp.profile_for_slug(_cx_with_slug(), "prof-jane-doe")
+    assert v == {}
+    assert "tagline" not in v
+    assert "how_i_work" not in v
 
 
 # --- Task 4: save_draft / _write_live_profile — the write path split ---
