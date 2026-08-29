@@ -315,43 +315,18 @@ def test_the_profit_disclosure_is_always_rendered():
     assert "Your practitioner earns a portion of what you spend here." in html
 
 
-def test_every_public_field_reaches_the_page():
-    """The guard tests/test_public_surface_routes.py has been xfail-ing for.
-
-    A field can be sanitized, drafted, reviewed, published to Postgres, listed
-    in PRACTITIONER_PUBLIC_FIELDS and served in /api/p/<slug> -- and still be
-    invisible to every human being, because nothing renders it. All fourteen
-    public fields must appear, so use a distinctive sentinel VALUE per field:
-    a server-rendered page contains values, not the field names the old JS
-    shell referenced.
-    """
-    from dashboard import public_surface as ps
-    v = _view(slug="sentinel-slug", practitioner_name="SentinelName",
-              practice_name="SentinelPractice", bio="SentinelBio",
-              photo_url="https://cdn.example/sentinel-photo.jpg",
-              logo_url="https://cdn.example/sentinel-logo.jpg",
-              tagline="SentinelTagline", how_i_work="SentinelHowIWork",
-              services=["SentinelService"], location="SentinelLocation",
-              accepting_clients=True,
-              featured_products=[{"name": "SentinelProduct", "price": "$10"}],
-              catalog_url="/sentinel-catalog",
-              profit_disclosure="SentinelDisclosure")
-    html = pr.render_page_html(v, canonical_url="https://myhealingoasis.com/sentinel-slug")
-    sentinels = {
-        "slug": "sentinel-slug", "practitioner_name": "SentinelName",
-        "practice_name": "SentinelPractice", "bio": "SentinelBio",
-        "photo_url": "sentinel-photo.jpg", "logo_url": "sentinel-logo.jpg",
-        "tagline": "SentinelTagline", "how_i_work": "SentinelHowIWork",
-        "services": "SentinelService", "location": "SentinelLocation",
-        "accepting_clients": "Accepting new clients",
-        "featured_products": "SentinelProduct",
-        "catalog_url": "/sentinel-catalog",
-        "profit_disclosure": "SentinelDisclosure",
-    }
-    assert set(sentinels) == set(ps.PRACTITIONER_PUBLIC_FIELDS), (
-        "the whitelist changed; add the new field to this map AND render it")
-    missing = sorted(f for f, s in sentinels.items() if s not in html)
-    assert not missing, f"public fields that reach the payload but not the page: {missing}"
+def test_the_remaining_public_fields_render():
+    """logo_url, services, accepting_clients and featured_products had no
+    renderer in the JS shell. Covered here per-block; the whole-whitelist
+    sweep lives in tests/test_public_surface_routes.py (Task 6) so there is
+    exactly one place that knows the full field list."""
+    v = _view(logo_url="https://cdn.example/logo.jpg",
+              services=["sleep coaching"],
+              featured_products=[{"name": "SentinelProduct", "price": "$10"}])
+    html = pr.render_page_html(v, canonical_url="https://myhealingoasis.com/mary-boyd")
+    assert "logo.jpg" in html
+    assert "sleep coaching" in html
+    assert "SentinelProduct" in html
 
 
 def test_not_accepting_clients_says_so_rather_than_going_silent():
@@ -873,6 +848,8 @@ git commit -m "feat(practitioner): Person and ProfessionalService JSON-LD"
 Converting only the first would leave the blank-preview bug alive on every `illtowell.com/p/<slug>` link ever texted or printed — and Task 6 deletes the file both routes reference, which would 500 the one you skipped. Convert both.
 
 **Do not touch** the host gates, `_public_surface_enabled()`, slug normalisation, the 301 redirects, or the `record_view` calls in either route. Only the response-building tails change.
+
+**Trap: `_ps` means two different modules in these two adjacent functions.** In `practitioner_storefront` it is `from dashboard import public_surface as _ps`. In `practitioner_site` it is `from dashboard import practitioner_slugs as _ps`. Both are function-local imports, so both are correct in place — but do not copy a line between the two routes assuming `_ps` is the same thing. The code below uses each route's own alias deliberately.
 
 **Both pages get the same canonical**, pointing at `PORTAL_BASE_URL/<slug>`. That is the spec's requirement verbatim: the canonical *"collapses the legacy `/p/<slug>` path, every alternate slug, and any host duplication to one URL"*. A funnel-host page declaring a portal-host canonical is exactly what collapses the duplicate.
 
