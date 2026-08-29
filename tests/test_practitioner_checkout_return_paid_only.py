@@ -100,8 +100,8 @@ def test_paid_only_wholesale_card_return_marks_paid_and_books_one_receipt(
     row = O.find_order_by_external_ref(cx, token)
     assert row["pay_status"] == "paid"
     assert row["stripe_payment_intent"] == "pi_123"
-    assert row["qbo_sales_receipt_id"] == "SR1"
-    assert calls["n"] == 1
+    assert row["qbo_sales_receipt_id"] is None
+    assert calls["n"] == 0
 
 
 def test_paid_only_wholesale_card_return_rehit_is_idempotent(monkeypatch, tmp_path, client):
@@ -129,9 +129,9 @@ def test_paid_only_wholesale_card_return_rehit_is_idempotent(monkeypatch, tmp_pa
     client.get(f"/practitioner/checkout-return?session_id=sess1&t={token}")
     client.get(f"/practitioner/checkout-return?session_id=sess1&t={token}")
 
-    assert calls["n"] == 1
+    assert calls["n"] == 0
 
     cx = sqlite3.connect(db)
     cx.row_factory = sqlite3.Row
     row = O.find_order_by_external_ref(cx, token)
-    assert row["qbo_sales_receipt_id"] == "SR2"
+    assert row["qbo_sales_receipt_id"] is None

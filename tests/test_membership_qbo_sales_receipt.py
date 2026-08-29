@@ -20,7 +20,7 @@ def appmod(monkeypatch, tmp_path):
     return app
 
 
-def test_membership_books_sales_receipt_not_invoice(appmod, monkeypatch):
+def test_membership_never_pushes_any_qbo_transaction(appmod, monkeypatch):
     from dashboard import qbo_billing
 
     calls = {"receipt": 0, "invoice": 0, "payment": 0}
@@ -38,7 +38,7 @@ def test_membership_books_sales_receipt_not_invoice(appmod, monkeypatch):
     appmod._book_membership_qbo("m@b.com", {"key": "month", "label": "1-Month",
                                          "price_cents": 9900})
 
-    assert calls["receipt"] == 1
+    assert calls["receipt"] == 0
     assert calls["invoice"] == 0
     assert calls["payment"] == 0
 

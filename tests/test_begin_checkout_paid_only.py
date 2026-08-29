@@ -263,7 +263,7 @@ def test_funnel_stripe_return_settles_pi_points_referral_and_books_once(monkeypa
 
     cx2 = sqlite3.connect(db); cx2.row_factory = sqlite3.Row
     row = O.find_order_by_external_ref(cx2, token)
-    assert row["qbo_sales_receipt_id"] == "SR1"
+    assert row["qbo_sales_receipt_id"] is None
 
     # The generic invoice-apply (record_payment) path must NEVER fire for a
     # paid-only funnel/retail order -- it has no real QBO customer/invoice to apply to.
@@ -276,4 +276,4 @@ def test_funnel_stripe_return_settles_pi_points_referral_and_books_once(monkeypa
     assert calls["booked"] == [token, token]
     cx3 = sqlite3.connect(db); cx3.row_factory = sqlite3.Row
     row3 = O.find_order_by_external_ref(cx3, token)
-    assert row3["qbo_sales_receipt_id"] == "SR1"
+    assert row3["qbo_sales_receipt_id"] is None

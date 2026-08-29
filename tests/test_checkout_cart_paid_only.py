@@ -272,7 +272,7 @@ def test_reorder_stripe_return_settles_pi_points_referral_and_books_once(monkeyp
 
     cx2 = sqlite3.connect(db); cx2.row_factory = sqlite3.Row
     row = O.find_order_by_external_ref(cx2, token)
-    assert row["qbo_sales_receipt_id"] == "SR1"
+    assert row["qbo_sales_receipt_id"] is None
 
     # The generic invoice-apply (record_payment) path must NEVER fire for a
     # paid-only reorder order -- it has no real QBO customer/invoice to apply to.
@@ -285,7 +285,7 @@ def test_reorder_stripe_return_settles_pi_points_referral_and_books_once(monkeyp
     assert calls["booked"] == [token, token]
     cx3 = sqlite3.connect(db); cx3.row_factory = sqlite3.Row
     row3 = O.find_order_by_external_ref(cx3, token)
-    assert row3["qbo_sales_receipt_id"] == "SR1"
+    assert row3["qbo_sales_receipt_id"] is None
 
 
 def test_invoice_based_reorder_return_still_records_qbo_payment(monkeypatch, tmp_path):
@@ -331,4 +331,4 @@ def test_invoice_based_reorder_return_still_records_qbo_payment(monkeypatch, tmp
     r = _client().get("/begin/checkout-return?session_id=sess1")
     assert r.status_code in (301, 302)
 
-    assert calls["record_payment"] == [(real_cid, 7000, token)]
+    assert calls["record_payment"] == []
