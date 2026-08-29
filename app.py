@@ -353,10 +353,19 @@ _init_shortlink_cache()
 
 # ── Phase 4 — login (magic-link) infrastructure ─────────────────────────────
 import hashlib, hmac, secrets
+from dashboard.timeutil import format_ttl as _format_ttl
 
-AUTH_TOKEN_TTL_MIN  = 1440         # magic-link token validity window (24 hours, so a delayed email check still works)
+# Emailed links below are single-use (consumed on first click), which bounds
+# how long a leaked copy stays exploitable. Given that, Glen weighed a longer
+# window against the alternative, a link nobody can click in time on every
+# single send, and chose at least a week for anything mailed to a person.
+AUTH_TOKEN_TTL_MIN  = 7 * 24 * 60  # magic-link token validity window (a week, so a delayed email check still works)
+# Deliberately excluded from the week rule: this is Glen's own console admin
+# login, granting access to money paths, and he clicks it seconds after
+# requesting it at a keyboard. A short-lived credential here is a smaller
+# risk than a long-lived one to the highest-value surface in the app.
 CONSOLE_OWNER_MAGIC_TTL_MIN = 15
-AUTH_TOKEN_TTL_LABEL = "24 hours"  # human-readable form of AUTH_TOKEN_TTL_MIN for email/UI copy
+AUTH_TOKEN_TTL_LABEL = _format_ttl(AUTH_TOKEN_TTL_MIN)  # human-readable form of AUTH_TOKEN_TTL_MIN for email/UI copy
 LEAD_MAGNET_GUIDE_TTL_DAYS = 30    # free-guide download link; the pending page quotes this
 MEMBERSHIP_MAGIC_TTL_MIN = AUTH_TOKEN_TTL_MIN   # sign-in link the member asked for, seconds ago
 MEMBERSHIP_GRANT_TTL_MIN = 60 * 24 * 30         # 30 days: grant emails are UNPROMPTED, so the
@@ -534,7 +543,7 @@ def console_owner_login_request():
     generic = ("<!doctype html><meta charset=utf-8><title>Check your email</title>"
                "<div style='font:16px/1.5 system-ui;max-width:520px;margin:12vh auto'>"
                "<h1>Check your email</h1><p>If that address is authorized, a secure console sign-in link is on its way.</p>"
-               "<p>The link expires in 15 minutes.</p></div>")
+               f"<p>The link expires in {_format_ttl(CONSOLE_OWNER_MAGIC_TTL_MIN)}.</p></div>")
     if email not in _console_owner_emails():
         return generic, 200
     token = secrets.token_urlsafe(32)
@@ -555,7 +564,8 @@ def console_owner_login_request():
     link = f"{PUBLIC_BASE_URL}/console/login/verify?token={token}"
     subject = "Your Remedy Match Console sign-in link"
     body = ("Use this one-time link to sign in to the Remedy Match Console:\n\n"
-            f"{link}\n\nThis link expires in 15 minutes. If you did not request it, ignore this email.")
+            f"{link}\n\nThis link expires in {_format_ttl(CONSOLE_OWNER_MAGIC_TTL_MIN)}. "
+            "If you did not request it, ignore this email.")
     try:
         # A user-requested authentication message must never be blocked by the
         # proactive-client-email suppression list.  A stale bounce flag would
@@ -16713,7 +16723,7 @@ def _send_practitioner_magic_link(to_email, name, magic_url):
     body = (
         f"Hi {name or 'there'},\n\n"
         f"Click the link below to open your practitioner portal. It is single-use and "
-        f"expires in {_pp.MAGIC_TTL_MIN} minutes.\n\n{magic_url}\n\n"
+        f"expires in {_format_ttl(_pp.MAGIC_TTL_MIN)}.\n\n{magic_url}\n\n"
         f"If you didn't request this, you can ignore this email.\n\n— Remedy Match\n"
     )
     return _send_full_report_email(to_email, name or "there", subject, body)
@@ -32904,7 +32914,8 @@ def _finish_external_provider(profile):
         email, row[0] if row else "", "Confirm your Healing Oasis sign-in",
         "Aloha,\n\nConfirm that you want to use " + provider.title() + " to sign in:\n"
         f"{portal_base()}/portal/auth/link-confirm?token={token}\n\n"
-        "This link expires in 30 minutes. If you did not request it, ignore this email.",
+        f"This link expires in {_format_ttl(_pa.PROVIDER_LINK_TTL_MIN)}. "
+        "If you did not request it, ignore this email.",
         respect_suppression=False)
     return ("<!doctype html><meta charset=utf-8><meta name=viewport content='width=device-width,initial-scale=1'>"
             "<title>Check your email</title><div style='font-family:system-ui;max-width:520px;margin:12vh auto;padding:20px'>"
@@ -33057,7 +33068,7 @@ def client_password_reset_request():
                         email, row[1] or "", "Set your Healing Oasis password",
                         "Aloha,\n\nSet or reset your password here:\n"
                         f"{portal_base()}/portal/password-reset?token={token}\n\n"
-                        f"This link expires in {_pa.RESET_TTL_MIN} minutes. If you did not request it, ignore this email.")
+                        f"This link expires in {_format_ttl(_pa.RESET_TTL_MIN)}. If you did not request it, ignore this email.")
                 except Exception as e:
                     print(f"[client-password-reset] email failed: {e!r}", flush=True)
     return jsonify({"ok": True,

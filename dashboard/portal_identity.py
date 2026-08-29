@@ -20,7 +20,7 @@ import secrets
 from dashboard import client_portal as _cp
 from dashboard import dbwrite
 from dashboard.practitioner_portal import _ensure_auth_tokens
-from dashboard.timeutil import is_expired as _is_expired
+from dashboard.timeutil import is_expired as _is_expired, format_ttl
 
 CLIENT_SESSION_TTL_DAYS = 30
 _SESSION_PURPOSE = "client_session"
@@ -129,8 +129,13 @@ def create_client_session(cx, person_id, email="", *, ttl_days=CLIENT_SESSION_TT
 
 
 _MAGIC_PURPOSE = "client_magic_link"
-CLIENT_MAGIC_TTL_MIN = 24 * 60
-CLIENT_MAGIC_TTL_LABEL = "24 hours"
+# Emailed to a person and single-use (consume_client_magic_link burns the
+# token on first use), so raising this only widens how long a leaked link
+# stays clickable, not how many times it can be used. Glen weighed that
+# against a link nobody can click in time on every send and chose at least a
+# week.
+CLIENT_MAGIC_TTL_MIN = 7 * 24 * 60
+CLIENT_MAGIC_TTL_LABEL = format_ttl(CLIENT_MAGIC_TTL_MIN)
 
 
 def create_client_magic_link(cx, person_id, email="", *, ttl_min=CLIENT_MAGIC_TTL_MIN) -> str:

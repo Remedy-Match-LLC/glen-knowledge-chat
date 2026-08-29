@@ -23,7 +23,13 @@ from dashboard.timeutil import is_expired as _is_expired
 
 _LOG_DB = Path(os.environ.get("DATA_DIR", str(Path(__file__).resolve().parent.parent))) / "chat_log.db"
 
-MAGIC_TTL_MIN = 15
+MAGIC_TTL_MIN = 7 * 24 * 60  # a week: a link emailed to a person must still work
+                              # days later, not just in the first 15 minutes.
+                              # Single-use (consume_magic_link burns the token
+                              # on first use), which bounds how long a leaked
+                              # copy stays exploitable -- Glen weighed a longer
+                              # window against the alternative, a link nobody
+                              # can click in time on every single send.
 SESSION_TTL_DAYS = 30
 INVOICE_TTL_DAYS = 365  # a customer who pays late must still reach a live pay-link
 
@@ -451,9 +457,9 @@ def _insert_token(tok, purpose, extra, ttl_seconds, now=None, db_path=None) -> N
 
 
 def create_magic_link_token(practitioner_id, email="", *, ttl_min=None, now=None, db_path=None) -> str:
-    """Mint a practitioner magic-link token. Defaults to the short interactive
-    login TTL (MAGIC_TTL_MIN); pass ttl_min for a longer-lived link (e.g. an
-    emailed invite that won't be clicked within 15 minutes)."""
+    """Mint a practitioner magic-link token. Defaults to the interactive login
+    TTL (MAGIC_TTL_MIN, a week); pass ttl_min to override for a specific
+    call site."""
     tok = secrets.token_urlsafe(32)
     _insert_token(tok, "practitioner_magic_link",
                   {"practitioner_id": str(practitioner_id), "email": email},

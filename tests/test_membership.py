@@ -1045,5 +1045,5 @@ def test_unprompted_grant_email_link_lives_for_weeks(app_module_with_db, monkeyp
 def test_signin_email_copy_states_the_real_window(app_module_with_db):
     """The body used to promise '15 minutes'. Copy and constant must not drift."""
     app_module, _ = app_module_with_db
-    assert app_module.AUTH_TOKEN_TTL_LABEL == "24 hours"
-    assert timedelta(minutes=app_module.AUTH_TOKEN_TTL_MIN) == timedelta(hours=24)
+    assert app_module.AUTH_TOKEN_TTL_LABEL == "a week"
+    assert timedelta(minutes=app_module.AUTH_TOKEN_TTL_MIN) == timedelta(days=7)

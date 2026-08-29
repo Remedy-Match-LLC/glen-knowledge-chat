@@ -57,3 +57,35 @@ def is_expired(expires_at, *, now=None) -> bool:
             else parse_utc(expires_at) < now_utc()
     except (ValueError, TypeError):
         return True
+
+
+_MINUTE = 1
+_HOUR = 60 * _MINUTE
+_DAY = 24 * _HOUR
+_WEEK = 7 * _DAY
+
+
+def format_ttl(minutes) -> str:
+    """Render a token lifetime (in minutes) as plain-language expiry copy.
+
+    Picks the coarsest unit -- weeks, then days, then hours -- that divides
+    the value evenly, and falls back to plain minutes when none does. This is
+    a deliberate choice not to round: rounding "100 minutes" up to "2 hours"
+    would tell a person their link lives longer than it actually does. Every
+    piece of emailed-link expiry copy in this codebase should call this
+    instead of hardcoding a number, which is what let the copy and the real
+    TTL drift apart in the first place.
+    """
+    minutes = int(minutes)
+    if minutes <= 0:
+        return "0 minutes"
+    if minutes % _WEEK == 0:
+        weeks = minutes // _WEEK
+        return "a week" if weeks == 1 else f"{weeks} weeks"
+    if minutes % _DAY == 0:
+        days = minutes // _DAY
+        return "a day" if days == 1 else f"{days} days"
+    if minutes % _HOUR == 0:
+        hours = minutes // _HOUR
+        return "an hour" if hours == 1 else f"{hours} hours"
+    return "1 minute" if minutes == 1 else f"{minutes} minutes"
