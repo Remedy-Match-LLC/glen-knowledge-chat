@@ -667,3 +667,27 @@ def test_self_service_link_keeps_the_unrequested_line(monkeypatch):
 
     appmod._send_practitioner_magic_link("m@example.com", "Mary", "https://x/y")
     assert "didn't request this" in sent["body"]
+
+
+# --- the review queue has to be reachable from the console ---------------
+#
+# /console/practitioner-drafts shipped with no nav entry, so the only way to
+# reach it was a bookmarked URL. A review queue nobody can find is a queue
+# that does not get reviewed, and practitioners wait on it.
+
+def test_the_drafts_queue_is_in_the_console_nav():
+    import pathlib
+    nav = (pathlib.Path(appmod.STATIC) / "op-nav.js").read_text()
+    assert '"/console/practitioner-drafts"' in nav, \
+        "the profile review queue has no console nav entry"
+    assert 'label:"Profile Drafts"' in nav
+
+
+def test_the_drafts_page_highlights_its_own_nav_entry():
+    """It used to declare data-sub="practitioners", which was right when it had
+    no entry of its own and wrong the moment it got one -- the nav would have
+    highlighted the roster page while you stood on the queue."""
+    import pathlib
+    html = (pathlib.Path(appmod.STATIC) / "console-practitioner-drafts.html").read_text()
+    assert 'data-sub="practitioner-drafts"' in html
+    assert 'data-sub="practitioners"' not in html
