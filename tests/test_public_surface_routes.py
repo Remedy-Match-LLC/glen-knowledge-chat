@@ -324,13 +324,33 @@ def test_public_routes_never_call_get_portal_view(client_with_affiliate, monkeyp
 # --- Fix wave: stored, published, whitelisted... and invisible --------------
 
 
-@pytest.mark.xfail(strict=False, reason=(
-    "Expected to fail until section 5 server-renders the storefront. "
-    "static/practitioner-storefront.html renders only name, practice name, "
-    "bio, the disclosure and the catalog link; photo_url, logo_url, tagline, "
-    "how_i_work, services, location and accepting_clients reach the JSON "
-    "payload and stop there. Deliberate — the field has to exist before a "
-    "renderer can render it — but it must not stay silent."))
+# render_page_html reads view["slug"] only through _display_name's fallback
+# (practitioner_name or slug or "Practitioner"). On the covered path that
+# fallback is defensive and unexercised: app.py's affiliate_signups DDL
+# declares `name TEXT NOT NULL`, and every signup writer rejects an empty
+# name outright -- the gifting path falls back to the email address rather
+# than ever writing an empty string -- so build_practitioner_storefront's
+# `practitioner_name` is never empty for a real row. The fallback still
+# earns its place in the code: it is belt-and-braces for a payload
+# assembled some other way, outside build_practitioner_storefront's own
+# NOT NULL guarantee -- exactly the shape the sentinels dict below
+# constructs by hand.
+#
+# "slug" cannot join the substring sweep below regardless: any truthy
+# canonical_url containing "sentinel-slug" would satisfy a bare substring
+# check, whether or not the renderer's _display_name fallback still reads
+# view["slug"] at all (confirmed by mutation below) -- slug reaches the
+# page through canonical_url regardless of what _display_name does with
+# it. So slug's presence is proven elsewhere: the value below is the test
+# that proves it, not just an excuse to skip it. Keys carve fields out of
+# the sweep; values name the test each carve-out owes evidence to, so a
+# future carve-out cannot be added without also naming what proves it.
+PROVEN_BY_THE_CALLER = {
+    "slug": "tests/test_practitioner_site_render.py::"
+            "test_canonical_binds_to_the_portal_host_not_the_funnel",
+}
+
+
 def test_every_public_field_is_actually_rendered_somewhere():
     """The failure four consecutive reviews caught by hand, handed to the suite.
 
@@ -339,29 +359,88 @@ def test_every_public_field_is_actually_rendered_somewhere():
     invisible to every human being, because nothing renders it. Every layer
     looks correct in isolation; only the whole chain shows the gap.
 
-    When section 5 lands, this should go XPASS. At that point delete the
-    xfail marker and let it be an ordinary guard: from then on, adding a key
-    to the whitelist without rendering it is a red test, not a review finding.
+    Was xfail while the page was a JS shell that rendered five of fourteen
+    fields. Section 5 server-rendered it, so this is now an ordinary guard:
+    adding a key to the whitelist without rendering it is a red test, not a
+    review finding.
+
+    The oracle changed with the page. The old version searched the shell's
+    source for field NAMES, because its JavaScript referenced v.field_name. A
+    server-rendered page carries values, so each field gets a sentinel value
+    and we assert the value arrives.
+
+    Note: "services" and "location" each land in the page twice -- once in
+    the visible body (the <ul> list / the ".loc" <p>) and once in the
+    Person/ProfessionalService JSON-LD (serviceType / address). Both
+    occurrences come from the same view key, so this is legitimate, not
+    double-counting -- but it does mean a regression that deleted only the
+    visible <ul> or <p class="loc"> and left the JSON-LD copy would still
+    read as green here. That gap is accepted, not missed.
+
+    "tagline" has the same shape, one layer over: build_description() reads
+    the tagline field first (falling back to bio, then a neutral line) and
+    writes whatever it returns into <meta name="description">, og:description,
+    twitter:description AND the Person JSON-LD's "description" -- regardless
+    of whether the visible <p class="tagline"> renderer still exists. A
+    regression that deleted `_line("tagline", view.get("tagline"))` from the
+    body would still leave "SentinelTagline" findable in four other places,
+    so this sweep would keep reading green. Same accepted gap as above.
     """
-    import pathlib
     from dashboard import public_surface as ps
-    html = pathlib.Path(appmod.STATIC, "practitioner-storefront.html").read_text(encoding="utf-8")
-    missing = sorted(f for f in ps.PRACTITIONER_PUBLIC_FIELDS if f not in html)
+    from dashboard import practitioner_render as pr
+    assert set(PROVEN_BY_THE_CALLER) <= set(ps.PRACTITIONER_PUBLIC_FIELDS), (
+        "PROVEN_BY_THE_CALLER contains a key that isn't even in the "
+        "whitelist -- a typo here would silently exclude nothing.")
+    sentinels = {
+        "slug": "sentinel-slug", "practitioner_name": "SentinelName",
+        "practice_name": "SentinelPractice", "bio": "SentinelBio",
+        "photo_url": "https://cdn.example/sentinel-photo.jpg",
+        "logo_url": "https://cdn.example/sentinel-logo.jpg",
+        "tagline": "SentinelTagline", "how_i_work": "SentinelHowIWork",
+        "services": ["SentinelService"], "location": "SentinelLocation",
+        "accepting_clients": True,
+        "featured_products": [{"name": "SentinelProduct", "price": "$10"}],
+        "catalog_url": "/sentinel-catalog",
+        "profit_disclosure": "SentinelDisclosure",
+    }
+    # Every whitelisted field must have a sentinel, "slug" included -- this
+    # is what breaks the build the moment someone adds a field to
+    # PRACTITIONER_PUBLIC_FIELDS and forgets this map. Do not narrow it to
+    # only the fields swept below.
+    assert set(sentinels) == set(ps.PRACTITIONER_PUBLIC_FIELDS), (
+        "PRACTITIONER_PUBLIC_FIELDS changed. Add the new field to this map AND "
+        "render it in dashboard/practitioner_render.py -- a field that reaches "
+        "the payload and stops there is the exact defect this test exists for.")
+    html = pr.render_page_html(dict(sentinels),
+                               canonical_url="https://myhealingoasis.com/sentinel-slug")
+    expected = {"slug": "sentinel-slug", "practitioner_name": "SentinelName",
+                "practice_name": "SentinelPractice", "bio": "SentinelBio",
+                "photo_url": "sentinel-photo.jpg", "logo_url": "sentinel-logo.jpg",
+                "tagline": "SentinelTagline", "how_i_work": "SentinelHowIWork",
+                "services": "SentinelService", "location": "SentinelLocation",
+                "accepting_clients": "Accepting new clients",
+                "featured_products": "SentinelProduct",
+                "catalog_url": "/sentinel-catalog",
+                "profit_disclosure": "SentinelDisclosure"}
+    # "slug" is proven by the caller (see PROVEN_BY_THE_CALLER above), not by
+    # this substring sweep against render_page_html -- swept separately so
+    # the sweep can only pass for fields it actually demonstrates.
+    swept = {f: s for f, s in expected.items() if f not in PROVEN_BY_THE_CALLER}
+    assert set(swept) | set(PROVEN_BY_THE_CALLER) == set(ps.PRACTITIONER_PUBLIC_FIELDS)
+    missing = sorted(f for f, s in swept.items() if s not in html)
     assert not missing, (
-        "public fields never rendered by static/practitioner-storefront.html: "
+        "public fields that reach the payload but never reach the page: "
         + ", ".join(missing))
 
 
-def test_the_render_guard_is_measuring_the_right_file():
-    """Companion to the xfail above: an xfail that fails for a silly reason
-    (wrong path, empty file) would look identical to the real gap it is
-    reporting. This asserts the file is really there and really does render
-    the fields it does render, so the xfail means what it says."""
-    import pathlib
-    from dashboard import public_surface as ps
-    html = pathlib.Path(appmod.STATIC, "practitioner-storefront.html").read_text(encoding="utf-8")
+def test_the_render_guard_is_measuring_the_right_thing():
+    """Companion to the guard above: a guard that passes for a silly reason
+    (empty render, renderer stubbed out) would look identical to a real pass.
+    This asserts the renderer really produced a document."""
+    from dashboard import practitioner_render as pr
+    html = pr.render_page_html(
+        {"slug": "x", "practitioner_name": "Mary Boyd"},
+        canonical_url="https://myhealingoasis.com/x")
     assert len(html) > 200
-    for rendered in ("practitioner_name", "practice_name", "bio",
-                     "profit_disclosure", "catalog_url"):
-        assert rendered in html, f"{rendered} was supposed to already render"
-        assert rendered in ps.PRACTITIONER_PUBLIC_FIELDS
+    assert html.startswith("<!doctype html>")
+    assert "<h1>Mary Boyd</h1>" in html

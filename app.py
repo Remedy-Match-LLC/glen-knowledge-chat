@@ -19621,6 +19621,53 @@ def api_practitioner_storefront(slug):
     return resp
 
 
+def _render_practitioner_page(view, canonical_slug):
+    """Build the server-rendered response both practitioner routes return.
+
+    One helper, two callers, because a difference between the canonical page
+    and its legacy /p/ alias is a bug in every case -- including the meta tags
+    a preview bot reads, which is the whole point of rendering server-side.
+
+    The canonical always points at PORTAL_BASE_URL, even when this response is
+    served from the funnel host. That is what collapses the legacy path and
+    the host duplication onto one URL, per the spec. PUBLIC_BASE_URL here
+    would be the bug: the two existing sitemaps hardcode the funnel host, and
+    copying that pattern would declare a canonical that does not serve this
+    page. The module-level portal_base() helper is also the wrong accessor
+    here -- it falls back to PUBLIC_BASE_URL and is documented as scoped to
+    CLIENT portal links, not this surface -- so this reads the env var
+    directly rather than calling it.
+
+    If PORTAL_BASE_URL is unset, there is no correct absolute URL to declare:
+    a relative canonical_url resolves in the BROWSER against the page's own
+    host, so on illtowell.com/p/<slug> a bare "/<slug>" would resolve to
+    https://illtowell.com/<slug> -- exactly the funnel-host canonical the spec
+    forbids, arriving through a missing config value instead of a code bug.
+    Between a wrong canonical and no canonical, no canonical is the safe
+    choice: Google picks its own, same as any page that never had one. So an
+    empty base logs loudly and passes canonical_url=None, which
+    render_page_html's contract treats as "omit rel=canonical and og:url
+    entirely" rather than rendering either tag with a broken value.
+    """
+    from dashboard import practitioner_render as _prender
+    _portal_base_env = (os.environ.get("PORTAL_BASE_URL") or "").rstrip("/")
+    if _portal_base_env:
+        canonical_url = f"{_portal_base_env}/{canonical_slug}"
+    else:
+        canonical_url = None
+        print(f"[_render_practitioner_page] PORTAL_BASE_URL is unset -- "
+              f"omitting canonical/og:url for slug {canonical_slug!r}",
+              flush=True)
+    resp = Response(
+        _prender.render_page_html(view, canonical_url=canonical_url),
+        mimetype="text/html")
+    resp.headers["X-Robots-Tag"] = "noindex"
+    resp.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+    resp.set_cookie("rm_ref", canonical_slug, max_age=90 * 24 * 3600,
+                    samesite="Lax", secure=request.is_secure)
+    return resp
+
+
 @app.route("/p/<slug>")
 def practitioner_storefront(slug):
     """Public practitioner storefront. Sets the referral attribution cookie.
@@ -19642,22 +19689,50 @@ def practitioner_storefront(slug):
     if _on_portal_host():
         return redirect(f"/{slug}", code=302)
     from dashboard import public_surface as _ps
+    # Keep the payload the existence check already fetched -- two reads of the
+    # same row on a public page is a wasted round trip, and a second read can
+    # disagree with the first.
+    #
+    # Deliberately NOT wrapped in try/except, unlike its neighbour
+    # practitioner_site below -- each route keeps its own pre-existing
+    # behaviour, for its own reason, not for the reason this comment used to
+    # give.
+    #
+    # This route 500s on a DB fault because tests/test_public_surface_
+    # attribution.py::test_storefront_deliberately_500s_on_corrupt_database
+    # pins that decision -- it exercises /p/<slug> AND /api/p/<slug>, not
+    # only the API as an earlier version of this comment claimed. /<slug>
+    # below fails closed to 404 instead, because it is a catch-all that
+    # answers every unmatched path on the portal host, including every bot
+    # probe of /admin, /.env and /wordpress -- a DB fault there must not
+    # become a site-wide 500.
+    #
+    # That is NOT insurance for indexing, and reasoning about it as such was
+    # backwards: per docs/superpowers/plans/2026-08-29-practitioner-indexing.md
+    # (the sitemap emits https://myhealingoasis.com/<slug> and explicitly
+    # excludes /p/<slug>), the route the sitemap will list is /<slug> -- the
+    # one that fails closed to 404 -- while /p/<slug>, which 500s instead,
+    # will never be indexed at all. So it is /<slug>'s 404-on-DB-fault, not
+    # this route's behaviour, that section 5b must revisit before lifting
+    # noindex: once noindex becomes conditional, a false 404 there on a
+    # transient DB fault WOULD silently deindex a real practitioner's page.
+    # Nothing here needs to change for that -- it is a note for whoever
+    # builds 5b, not a decision this task is asked to make.
     with db.connect(LOG_DB) as cx:
         cx.row_factory = sqlite3.Row
-        if not _ps.build_practitioner_storefront(cx, slug):
-            return ("", 404)
+        view = _ps.build_practitioner_storefront(cx, slug)
+    if not view:
+        return ("", 404)
     # Record the view for this approved affiliate
     try:
         with _db_lock, db.connect(LOG_DB) as _cx:
             _ps.record_view(_cx, slug, "storefront")
     except Exception:
         pass  # instrumentation must never break the page
-    resp = send_from_directory(STATIC, "practitioner-storefront.html")
-    resp.headers["X-Robots-Tag"] = "noindex"
-    resp.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
-    resp.set_cookie("rm_ref", slug, max_age=90 * 24 * 3600,
-                    samesite="Lax", secure=request.is_secure)
-    return resp
+    # Same renderer, same canonical target as /<slug>. This page is the legacy
+    # alias; its canonical points at the portal host, which is what collapses
+    # the duplicate rather than competing with it.
+    return _render_practitioner_page(view, slug)
 
 
 @app.route("/<slug>")
@@ -19675,8 +19750,10 @@ def practitioner_site(slug):
     `/<slug>`. tests/test_slug_route_collision.py is the guard that keeps a new
     route from taking a live practitioner's URL as routes are added.
 
-    Serves the existing storefront page unchanged. Server-rendering and lifting
-    noindex are section 5 of the spec, not this route.
+    Server-rendered via _render_practitioner_page, same as its legacy alias
+    /p/<slug> below -- one helper, two callers, so the meta tags a
+    link-preview bot reads cannot drift between them. Lifting noindex is
+    section 5b of the spec, not this route.
     """
     if not _on_portal_host():
         return ("", 404)
@@ -19688,11 +19765,13 @@ def practitioner_site(slug):
         _ps.check_shape(s)
     except _ps.SlugError:
         return ("", 404)
-    # One URL per practitioner. /Mary-Boyd normalizes to the same row, but the
-    # storefront page re-derives its own /api/p/ key from location.pathname and
-    # affiliate_signups.slug is case-sensitive, so serving the capitalized form
-    # renders a blank page. `s` is post-check_shape, so it is [a-z0-9-] only and
-    # the redirect target cannot be an off-site URL.
+    # One URL per practitioner. /Mary-Boyd normalizes to the same row as
+    # /mary-boyd, but serving both as 200s would let this feature's own
+    # canonical tag and JSON-LD `url` disagree with the address bar,
+    # splitting the same person's link authority across two URLs instead of
+    # collapsing it onto one -- the same duplication problem the /p/<slug>
+    # legacy alias's canonical exists to solve. `s` is post-check_shape, so
+    # it is [a-z0-9-] only and the redirect target cannot be an off-site URL.
     if s != slug:
         return redirect(f"/{s}", code=301)
     # Fail closed. This catch-all answers every unmatched root path on the
@@ -19704,8 +19783,19 @@ def practitioner_site(slug):
         with db.connect(LOG_DB) as cx:
             kind, canonical = _ps.resolve(cx, s)
     except db.Error as e:
+        # Glen's ruling 2026-08-29: never answer "this practitioner does not
+        # exist" when we could not look. A 404 here is indistinguishable, to a
+        # client following a referral link and to a crawler, from the person
+        # having been removed -- and it is a lie we tell about a real named
+        # practitioner during an outage they had nothing to do with.
+        #
+        # This route only reaches the DB for word-shaped paths: check_shape
+        # above rejects /.env, /wp-login.php, /xmlrpc.php and /.git/config
+        # without a query. So the cost of propagating is a 500 on a handful of
+        # probes like /admin during an outage where nothing works anyway --
+        # against the benefit of never disowning a real practitioner.
         print(f"[practitioner_site] resolve failed for {s!r}: {e!r}", flush=True)
-        return ("", 404)
+        raise
     if kind == "alias":
         return redirect(f"/{canonical}", code=301)
     if kind != "canonical":
@@ -19720,12 +19810,30 @@ def practitioner_site(slug):
             _psurf.record_view(_cx, canonical, "storefront")
     except Exception:
         pass  # instrumentation must never break the page
-    resp = send_from_directory(STATIC, "practitioner-storefront.html")
-    resp.headers["X-Robots-Tag"] = "noindex"
-    resp.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
-    resp.set_cookie("rm_ref", canonical, max_age=90 * 24 * 3600,
-                    samesite="Lax", secure=request.is_secure)
-    return resp
+    # Server-rendered, not the JS shell: link-preview bots for iMessage,
+    # WhatsApp, Facebook and Slack do not execute JavaScript, so the old
+    # storefront produced a blank preview card when a client texted this link.
+    # /api/p/<slug> is unchanged and still serves portal-side callers.
+    #
+    # Fail closed for the same reason the resolve above does: this catch-all
+    # answers every unmatched root path on the portal host, including every
+    # bot probe of /admin, /.env and /wordpress. A broken payload read must
+    # degrade to "no such slug", not turn one fault into a site-wide 500.
+    try:
+        from dashboard import public_surface as _psurf2
+        with db.connect(LOG_DB) as cx:
+            cx.row_factory = sqlite3.Row
+            view = _psurf2.build_practitioner_storefront(cx, canonical)
+    except Exception as e:  # noqa: BLE001
+        # Propagate, per the ruling above. By this point resolve has already
+        # confirmed `canonical` IS a real approved practitioner, so a 404 here
+        # would be the most confident lie the route can tell.
+        print(f"[practitioner_site] payload failed for {canonical!r}: {e!r}",
+              flush=True)
+        raise
+    if not view:
+        return ("", 404)
+    return _render_practitioner_page(view, canonical)
 
 
 @app.route("/api/client/<code>/catalog")
