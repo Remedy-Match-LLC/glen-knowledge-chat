@@ -19778,8 +19778,19 @@ def practitioner_site(slug):
         with db.connect(LOG_DB) as cx:
             kind, canonical = _ps.resolve(cx, s)
     except db.Error as e:
+        # Glen's ruling 2026-08-29: never answer "this practitioner does not
+        # exist" when we could not look. A 404 here is indistinguishable, to a
+        # client following a referral link and to a crawler, from the person
+        # having been removed -- and it is a lie we tell about a real named
+        # practitioner during an outage they had nothing to do with.
+        #
+        # This route only reaches the DB for word-shaped paths: check_shape
+        # above rejects /.env, /wp-login.php, /xmlrpc.php and /.git/config
+        # without a query. So the cost of propagating is a 500 on a handful of
+        # probes like /admin during an outage where nothing works anyway --
+        # against the benefit of never disowning a real practitioner.
         print(f"[practitioner_site] resolve failed for {s!r}: {e!r}", flush=True)
-        return ("", 404)
+        raise
     if kind == "alias":
         return redirect(f"/{canonical}", code=301)
     if kind != "canonical":
@@ -19809,9 +19820,12 @@ def practitioner_site(slug):
             cx.row_factory = sqlite3.Row
             view = _psurf2.build_practitioner_storefront(cx, canonical)
     except Exception as e:  # noqa: BLE001
+        # Propagate, per the ruling above. By this point resolve has already
+        # confirmed `canonical` IS a real approved practitioner, so a 404 here
+        # would be the most confident lie the route can tell.
         print(f"[practitioner_site] payload failed for {canonical!r}: {e!r}",
               flush=True)
-        return ("", 404)
+        raise
     if not view:
         return ("", 404)
     return _render_practitioner_page(view, canonical)

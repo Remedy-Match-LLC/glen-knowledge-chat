@@ -78,15 +78,59 @@ def test_off_the_portal_host_it_is_still_404(monkeypatch):
     assert appmod.app.test_client().get("/mary-boyd").status_code == 404
 
 
-def test_a_payload_failure_degrades_to_404_not_500(portal, monkeypatch):
-    """This catch-all answers every bot probe of /admin, /.env and /wordpress.
-    One broken read must not become a site-wide 500."""
+def test_a_payload_failure_does_not_claim_the_practitioner_is_gone(portal, monkeypatch):
+    """Inverted 2026-08-29 on Glen's ruling. This test used to pin a 404 on a
+    payload fault, on the theory that a catch-all must never turn one broken
+    read into a site-wide 500.
+
+    The ruling: "this practitioner does not exist" is not an acceptable thing
+    to say when we could not look. To a client following a referral link, and
+    to a crawler, a 404 is indistinguishable from the person having been
+    removed -- a lie told about a real named practitioner during an outage
+    they had nothing to do with.
+
+    The blast-radius worry is smaller than it looked: check_shape rejects
+    /.env, /wp-login.php, /xmlrpc.php and /.git/config before any query, so
+    propagating costs a 500 on word-shaped probes like /admin during an outage
+    where nothing else works either.
+
+    The distinction the route now draws is "I looked and it is not there"
+    (404, still tested below) versus "I could not look" (propagate).
+    """
     from dashboard import public_surface as _psurf
 
     def boom(cx, slug):
         raise RuntimeError("postgres is down")
     monkeypatch.setattr(_psurf, "build_practitioner_storefront", boom)
-    assert portal.get("/mary-boyd").status_code == 404
+    # Assert the status a crawler actually sees, not that the exception escapes
+    # the test client -- 500 is what production returns, and 500 is the answer
+    # that means "ask again later" rather than "she is gone".
+    assert portal.get("/mary-boyd").status_code == 500
+
+
+def test_a_resolve_failure_does_not_claim_the_practitioner_is_gone(portal, monkeypatch):
+    """Same ruling, applied to the earlier of the two fault paths. The sqlite
+    resolve is what a real outage takes down first, so this is the one that
+    would actually have disowned a practitioner."""
+    from dashboard import practitioner_slugs as _ps
+
+    # db.Error is a TUPLE -- (sqlite3.Error, psycopg.Error) -- usable in an
+    # `except` clause but NOT raisable. Raising it yields TypeError, which
+    # sails straight past the route's `except db.Error` and produces a 500 for
+    # the wrong reason: the test then passes whether the route propagates or
+    # returns 404. Caught by mutation-testing this guard. Raise a member.
+    def boom(cx, s):
+        raise sqlite3.Error("sqlite is down")
+    monkeypatch.setattr(_ps, "resolve", boom)
+    assert portal.get("/mary-boyd").status_code == 500
+
+
+def test_a_genuinely_unknown_slug_is_still_404(portal, monkeypatch):
+    """The other half of the distinction: when the lookup SUCCEEDS and the
+    slug is not a practitioner, 404 is the honest answer and must survive."""
+    from dashboard import practitioner_slugs as _ps
+    monkeypatch.setattr(_ps, "resolve", lambda cx, s: ("unknown", None))
+    assert portal.get("/nobody-here").status_code == 404
 
 
 def test_the_legacy_funnel_path_is_also_server_rendered(monkeypatch):
