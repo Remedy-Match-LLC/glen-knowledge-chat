@@ -208,19 +208,38 @@ def test_settings_page_shows_the_current_storefront_url():
     assert "myhealingoasis.com/" in html
 
 
-def test_db_failure_404s_rather_than_500ing_the_whole_catch_all(client, monkeypatch, tmp_path):
-    """Fail closed, the convention public_surface.build_share_header documents.
+def test_db_failure_does_not_claim_the_practitioner_is_gone(client, monkeypatch, tmp_path):
+    """INVERTED 2026-08-29 on Glen's ruling. This test used to assert 404.
 
-    This is a ROOT-LEVEL catch-all on a public, unauthenticated surface: it is
-    reached by every bot probe of /admin, /wordpress, /.env. If a missing or
-    broken affiliate_signups table let the exception out, every one of those
-    would become a 500 instead of a 404 -- turning one schema problem into a
-    site-wide error signal.
+    Its original reasoning: this is a ROOT-LEVEL catch-all on a public surface,
+    reached by every bot probe of /admin, /wordpress, /.env, so letting an
+    exception out would turn one schema problem into a site-wide 500.
+
+    The ruling overrides it. "This practitioner does not exist" is not an
+    acceptable answer when the app could not look. A client following a
+    referral link, and a crawler, cannot distinguish that 404 from the person
+    having been removed -- and /<slug> is the route the section 5b sitemap
+    will list, so a false 404 here eventually costs a real page its indexing.
+
+    The blast radius was also smaller than the original reasoning assumed:
+    check_shape rejects /.env, /wp-login.php, /xmlrpc.php and /.git/config
+    before any query runs, so what actually changes is a 500 on word-shaped
+    probes like /admin, during an outage in which nothing else works either.
+
+    The distinction the route draws now is "I looked and it is not there"
+    (still 404 -- see test_a_genuinely_unknown_slug_is_still_404 in
+    tests/test_practitioner_site_render.py) versus "I could not look" (500).
     """
     empty = str(tmp_path / "no-tables.db")
     sqlite3.connect(empty).close()          # a real DB with no affiliate_signups
     monkeypatch.setattr(appmod, "LOG_DB", empty)
-    assert client.get("/mary-boyd", base_url=f"http://{PORTAL_HOST}").status_code == 404
+    # This file's client propagates rather than converting to a 500 response,
+    # so observe the exception directly -- the same technique
+    # test_storefront_deliberately_500s_on_corrupt_database uses for /p/<slug>
+    # in tests/test_public_surface_attribution.py. In production, where the app
+    # is not in testing mode, this is the 500 the route returns.
+    with pytest.raises(sqlite3.OperationalError):
+        client.get("/mary-boyd", base_url=f"http://{PORTAL_HOST}")
 
 
 def _views(db_path):
