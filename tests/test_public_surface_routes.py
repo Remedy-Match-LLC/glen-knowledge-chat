@@ -324,16 +324,19 @@ def test_public_routes_never_call_get_portal_view(client_with_affiliate, monkeyp
 # --- Fix wave: stored, published, whitelisted... and invisible --------------
 
 
-# view.get("slug") in dashboard/practitioner_render.py's _display_name is a
-# LIVE branch, not dead code -- practitioner_name is a TEXT column with no
-# NOT NULL constraint, and build_practitioner_storefront does
-# `row["name"] or ""`, so an approved practitioner with an empty name falls
-# through to it and the page renders "<h1>a-url-slug</h1>" as their name.
-# It is simply not EXERCISED by this test, because every sentinel below
-# sets a practitioner_name -- that is a fact about this test's fixture, not
-# a fact about the code.
+# render_page_html reads view["slug"] only through _display_name's fallback
+# (practitioner_name or slug or "Practitioner"). On the covered path that
+# fallback is defensive and unexercised: app.py's affiliate_signups DDL
+# declares `name TEXT NOT NULL`, and every signup writer rejects an empty
+# name outright -- the gifting path falls back to the email address rather
+# than ever writing an empty string -- so build_practitioner_storefront's
+# `practitioner_name` is never empty for a real row. The fallback still
+# earns its place in the code: it is belt-and-braces for a payload
+# assembled some other way, outside build_practitioner_storefront's own
+# NOT NULL guarantee -- exactly the shape the sentinels dict below
+# constructs by hand.
 #
-# Even so, "slug" cannot join the substring sweep below: any truthy
+# "slug" cannot join the substring sweep below regardless: any truthy
 # canonical_url containing "sentinel-slug" would satisfy a bare substring
 # check, whether or not the renderer's _display_name fallback still reads
 # view["slug"] at all (confirmed by mutation below) -- slug reaches the

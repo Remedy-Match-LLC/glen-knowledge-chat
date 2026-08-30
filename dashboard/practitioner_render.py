@@ -15,12 +15,25 @@ below is everything render_page_html emits. But that is not the same as
 what a browser ends up showing: app.py's global after_request hook,
 _inject_journey_shell (app.py ~52755), rewrites any text/html 200 outside
 /console/, /admin/, /api/ and /static/ before it reaches the client, and
-/<slug> matches that. With JOURNEY_SHELL_ENABLED=1 (the production setting),
-it appends shell.css AFTER this module's inline <style>, so shell.css wins
-any property both declare -- body, h1, p and section among them. This is
-pre-existing, cross-cutting behaviour this module has no say over and does
-not attempt to opt out of; the styling below is not the last word on how
-the page actually renders in production.
+/<slug> matches that. The page is not the standalone document it looks like
+in isolation.
+
+What actually gets injected is NOT a stylesheet fighting this module's
+element rules -- static/shell.css scopes everything under #journey-shell /
+.js-* / .rm-theme-seg*, by its own header comment's design ("never clobber
+page CSS"), and its only page-wide declarations are `:root{--jshell-h:52px}`
+and `body.js-shell-on{padding-top:var(--jshell-h)}`. So the real
+cross-cutting effect, when JOURNEY_SHELL_ENABLED=1 (the production
+setting), is a 52px fixed ribbon plus that top-padding rule -- not this
+module's `body`/`h1`/`p`/`section` rules being overridden.
+
+Separately, and unconditionally -- independent of JOURNEY_SHELL_ENABLED --
+shell_nav.inject_theme_html injects sun-engine.js and theme-mode.js on this
+path, and theme-mode.js sets `data-theme` on <html>. That is a second, live
+theming mechanism worth naming next to the `prefers-color-scheme` dark-mode
+block below: the block here follows the OS/browser's preference, while
+theme-mode.js's `data-theme` attribute is a separate, explicit toggle this
+page does not drive or read.
 """
 import html
 import json
