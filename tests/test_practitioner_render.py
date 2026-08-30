@@ -255,6 +255,33 @@ def test_professional_service_falls_back_to_the_person_name():
     assert data[1]["name"] == "Mary Boyd"
 
 
+def test_jsonld_omits_url_when_canonical_url_is_falsy():
+    """PORTAL_BASE_URL unset means the caller has no correct absolute URL to
+    give. A wrong or relative `url` asserted to Google is worse than the
+    field being absent -- same rule as the other optional fields above."""
+    for missing in (None, ""):
+        person, service = pr.build_jsonld(_view(), missing)
+        assert "url" not in person
+        assert "url" not in service
+    person, service = pr.build_jsonld(_view(), CANON)
+    assert person["url"] == CANON
+    assert service["url"] == CANON
+
+
+def test_canonical_and_og_url_are_omitted_when_canonical_url_is_falsy():
+    """A relative canonical resolves in the BROWSER against the page's own
+    host -- on the funnel host that silently becomes the exact funnel-host
+    canonical the spec forbids. Omit both tags rather than emit either with
+    no value or a bare path."""
+    html = pr.render_page_html(_view(), canonical_url=None)
+    assert 'rel="canonical"' not in html
+    assert 'property="og:url"' not in html
+    # everything else still renders
+    assert "<h1>Mary Boyd</h1>" in html
+    assert 'property="og:title"' in html
+    assert '<meta name="robots" content="noindex">' in html
+
+
 def test_a_closing_script_tag_in_the_data_cannot_break_out():
     v = _view(bio="</script><script>alert(1)</script>")
     raw = pr.render_page_html(v, canonical_url=CANON)

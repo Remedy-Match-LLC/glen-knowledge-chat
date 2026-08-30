@@ -117,3 +117,35 @@ def test_the_legacy_path_declares_the_portal_canonical(monkeypatch):
 
     body = appmod.app.test_client().get("/p/mary-boyd").get_data(as_text=True)
     assert '<link rel="canonical" href="https://myhealingoasis.com/mary-boyd">' in body
+
+
+def test_an_unset_portal_base_url_omits_canonical_instead_of_lying(monkeypatch):
+    """A relative canonical_url resolves in the BROWSER against the current
+    page's host. Served from illtowell.com/p/<slug>, a bare "/mary-boyd"
+    would resolve to https://illtowell.com/mary-boyd -- exactly the
+    funnel-host canonical the spec forbids -- arriving through a missing
+    config value instead of a code bug. Every existing fixture in this file
+    SETS PORTAL_BASE_URL, which is why nothing caught that. This test
+    genuinely deletes it and asserts on the tag's absence, not on a
+    substring that happens not to appear."""
+    monkeypatch.setattr(appmod, "_on_portal_host", lambda: False)
+    monkeypatch.setattr(appmod, "_public_surface_enabled", lambda: True)
+    monkeypatch.delenv("PORTAL_BASE_URL", raising=False)
+    from dashboard import public_surface as _psurf
+    monkeypatch.setattr(_psurf, "build_practitioner_storefront",
+                        lambda cx, slug: dict(VIEW, slug=slug))
+    monkeypatch.setattr(_psurf, "record_view", lambda cx, slug, kind: None)
+
+    r = appmod.app.test_client().get("/p/mary-boyd")
+    assert r.status_code == 200
+    body = r.get_data(as_text=True)
+    # the page must still render fully
+    assert "<h1>Mary Boyd</h1>" in body
+    assert '<meta property="og:title" content="Mary Boyd — Fairbanks Wellness">' in body
+    assert '"@type": "Person"' in body
+    # but must declare no canonical at all -- not an empty one, not a
+    # relative one, and definitely not the funnel host
+    assert 'rel="canonical"' not in body
+    assert 'property="og:url"' not in body
+    assert "illtowell.com" not in body
+    assert 'href="/mary-boyd"' not in body

@@ -19628,13 +19628,33 @@ def _render_practitioner_page(view, canonical_slug):
     the host duplication onto one URL, per the spec. PUBLIC_BASE_URL here
     would be the bug: the two existing sitemaps hardcode the funnel host, and
     copying that pattern would declare a canonical that does not serve this
-    page.
+    page. The module-level portal_base() helper is also the wrong accessor
+    here -- it falls back to PUBLIC_BASE_URL and is documented as scoped to
+    CLIENT portal links, not this surface -- so this reads the env var
+    directly rather than calling it.
+
+    If PORTAL_BASE_URL is unset, there is no correct absolute URL to declare:
+    a relative canonical_url resolves in the BROWSER against the page's own
+    host, so on illtowell.com/p/<slug> a bare "/<slug>" would resolve to
+    https://illtowell.com/<slug> -- exactly the funnel-host canonical the spec
+    forbids, arriving through a missing config value instead of a code bug.
+    Between a wrong canonical and no canonical, no canonical is the safe
+    choice: Google picks its own, same as any page that never had one. So an
+    empty base logs loudly and passes canonical_url=None, which
+    render_page_html's contract treats as "omit rel=canonical and og:url
+    entirely" rather than rendering either tag with a broken value.
     """
     from dashboard import practitioner_render as _prender
-    portal_base = (os.environ.get("PORTAL_BASE_URL") or "").rstrip("/")
+    _portal_base_env = (os.environ.get("PORTAL_BASE_URL") or "").rstrip("/")
+    if _portal_base_env:
+        canonical_url = f"{_portal_base_env}/{canonical_slug}"
+    else:
+        canonical_url = None
+        print(f"[_render_practitioner_page] PORTAL_BASE_URL is unset -- "
+              f"omitting canonical/og:url for slug {canonical_slug!r}",
+              flush=True)
     resp = Response(
-        _prender.render_page_html(
-            view, canonical_url=f"{portal_base}/{canonical_slug}"),
+        _prender.render_page_html(view, canonical_url=canonical_url),
         mimetype="text/html")
     resp.headers["X-Robots-Tag"] = "noindex"
     resp.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
@@ -19670,11 +19690,18 @@ def practitioner_storefront(slug):
     #
     # Deliberately NOT wrapped in try/except, unlike its neighbour
     # practitioner_site below. This route is a specific prefixed path, not a
-    # catch-all, so it carries none of that route's bot-probe exposure. With
-    # the DB down the app cannot tell whether the slug is valid, and a 404
-    # here would falsely tell a crawler the practitioner does not exist --
-    # silently deindexing a real person's page. Let it propagate to a 500, as
-    # it did before this task. tests/test_public_surface_attribution.py::
+    # catch-all, so it carries none of that route's bot-probe exposure.
+    #
+    # noindex is unconditional through this whole plan (section 5a), so today
+    # no crawler is actually being told anything about this slug's existence
+    # either way -- a 404 here would not currently deindex a real page. This
+    # asymmetry is insurance for section 5b, when noindex becomes conditional
+    # and a false 404 on a DB fault WOULD silently deindex a real person's
+    # page. It is built now, ahead of that need, because the pinning test
+    # already existed before this task and 500-on-DB-fault was already this
+    # route's historical behaviour -- so keeping it is preserving established
+    # behaviour, not inventing new protection. tests/
+    # test_public_surface_attribution.py::
     # test_storefront_deliberately_500s_on_corrupt_database pins this and
     # exercises /api/p/<slug>, which shares the behaviour and is untouched by
     # this task. Do not "fix" this inconsistency with /<slug> -- it is

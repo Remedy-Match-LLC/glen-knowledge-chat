@@ -192,19 +192,25 @@ def _share_tags(view, title, desc, canonical_url):
     og:type is "profile" rather than "website" because this page is a person.
     The Twitter card type follows the photo: summary_large_image with no image
     renders as an empty grey box, which looks more broken than the small card.
+
+    og:url is omitted entirely when canonical_url is falsy, same contract and
+    same reason as the <link rel="canonical"> tag in render_page_html: a
+    relative or empty URL here is not a safe default, it is a wrong one, and
+    omitting the tag is the neutral choice.
     """
     photo = (view.get("photo_url") or "").strip()
     tags = [
         '<meta property="og:type" content="profile">',
         f'<meta property="og:title" content="{_esc(title)}">',
         f'<meta property="og:description" content="{_esc(desc)}">',
-        f'<meta property="og:url" content="{_esc(canonical_url)}">',
-        f'<meta property="og:site_name" content="{_esc(SITE_NAME)}">',
-        f'<meta name="twitter:card" content='
-        f'"{"summary_large_image" if photo else "summary"}">',
-        f'<meta name="twitter:title" content="{_esc(title)}">',
-        f'<meta name="twitter:description" content="{_esc(desc)}">',
     ]
+    if canonical_url:
+        tags.append(f'<meta property="og:url" content="{_esc(canonical_url)}">')
+    tags.append(f'<meta property="og:site_name" content="{_esc(SITE_NAME)}">')
+    tags.append(f'<meta name="twitter:card" content='
+                f'"{"summary_large_image" if photo else "summary"}">')
+    tags.append(f'<meta name="twitter:title" content="{_esc(title)}">')
+    tags.append(f'<meta name="twitter:description" content="{_esc(desc)}">')
     if photo:
         tags.append(f'<meta property="og:image" content="{_esc(photo)}">')
         tags.append(f'<meta name="twitter:image" content="{_esc(photo)}">')
@@ -221,18 +227,22 @@ def build_jsonld(view, canonical_url):
     credential-verification decision in section 1 of the spec.
 
     Fields are omitted when absent rather than emitted empty: an empty
-    schema.org value is a worse signal than a missing one.
+    schema.org value is a worse signal than a missing one. `url` follows the
+    same rule when canonical_url is falsy (PORTAL_BASE_URL unset) -- a wrong
+    or relative URL asserted to Google is worse than the field being absent.
     """
     name = _display_name(view)
     person = {"@context": "https://schema.org", "@type": "Person",
-              "name": name, "url": canonical_url,
-              "description": build_description(view)}
+              "name": name, "description": build_description(view)}
+    if canonical_url:
+        person["url"] = canonical_url
     if (view.get("photo_url") or "").strip():
         person["image"] = view["photo_url"].strip()
 
     service = {"@context": "https://schema.org", "@type": "ProfessionalService",
-               "name": (view.get("practice_name") or "").strip() or name,
-               "url": canonical_url}
+               "name": (view.get("practice_name") or "").strip() or name}
+    if canonical_url:
+        service["url"] = canonical_url
     if (view.get("location") or "").strip():
         service["address"] = view["location"].strip()
     services = [str(s).strip() for s in (view.get("services") or []) if str(s).strip()]
@@ -277,8 +287,22 @@ def render_page_html(view, *, canonical_url):
     """Render the complete document for one practitioner.
 
     `view` is the payload from public_surface.build_practitioner_storefront.
-    `canonical_url` is fully qualified and built by the caller from
-    PORTAL_BASE_URL -- never from PUBLIC_BASE_URL, which is the funnel.
+    `canonical_url`, when truthy, must be fully qualified and built by the
+    caller from PORTAL_BASE_URL -- never from PUBLIC_BASE_URL, which is the
+    funnel. A relative URL here is not a safe fallback: a browser resolves a
+    relative <link rel="canonical"> against the CURRENT page's own host, so a
+    bare "/<slug>" served from the funnel host would resolve to a funnel-host
+    canonical, exactly the duplicate this tag exists to collapse.
+
+    `canonical_url` may also be falsy (None or ""), for the one case where the
+    caller has no correct absolute URL to give -- PORTAL_BASE_URL unset. In
+    that case both <link rel="canonical"> and og:url are omitted entirely,
+    and build_jsonld omits `url` from both entities. A missing canonical is
+    neutral (Google picks its own, as on any page that never had one); a
+    wrong one actively asserts the funnel URL is authoritative for this
+    practitioner. Every other tag -- title, description, og:title/description
+    /image, twitter tags, JSON-LD name/description, noindex, the body --
+    still renders normally regardless of canonical_url.
 
     noindex is unconditional in section 5a. Section 5b introduces the content
     bar that decides when it may be lifted.
@@ -311,8 +335,9 @@ def render_page_html(view, *, canonical_url):
         f"<title>{_esc(title)}</title>"
         f'<meta name="description" content="{_esc(desc)}">'
         f"{_share_tags(view, title, desc, canonical_url)}"
-        f'<link rel="canonical" href="{_esc(canonical_url)}">'
-        '<meta name="robots" content="noindex">'
+        + (f'<link rel="canonical" href="{_esc(canonical_url)}">'
+           if canonical_url else "")
+        + '<meta name="robots" content="noindex">'
         f"{_jsonld_tag(view, canonical_url)}"
         f"{_STYLE}"
         "</head><body>"
