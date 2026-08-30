@@ -665,7 +665,7 @@
     if (!tn) memberList = '<div class="meta">Members:<br>' + ms.map(function(m){
         var pm = isPaidReady(m) ? '' : ' <span style="color:var(--gold)">unpaid</span>';
         var shp = ' &middot; ship $'+(((m.shipping_cents||0))/100).toFixed(2);
-        return '&bull; '+esc(m.name||m.email||('#'+m.id)) + pm + shp
+        return '&bull; Order #'+Number(m.id)+' &middot; '+esc(m.name||m.email||'Unnamed client') + pm + shp
           + ' <button onclick="actGroup('+Number(sid)+',\'shipments.remove\',{order_id:'+Number(m.id)+'})" style="padding:0 6px;border:1px solid var(--border);border-radius:5px;background:none;color:var(--muted);cursor:pointer">remove</button>';
       }).join('<br>') + '</div>';
     var stLabel = allPaid ? esc(st)
