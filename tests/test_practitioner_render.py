@@ -196,6 +196,39 @@ def test_twitter_card_type_follows_the_photo():
             in pr.render_page_html(v, canonical_url=CANON))
 
 
+def test_a_relative_photo_url_is_absolutized_for_the_share_tags():
+    """sanitize_image_url deliberately permits a site-relative "/path" -- a
+    legal input, not a bug. Facebook, iMessage and Slack all require an
+    ABSOLUTE og:image; a relative one silently produces an imageless card,
+    the same failure this whole feature exists to fix. The visible <img> in
+    the body keeps the relative URL -- it resolves correctly in a browser --
+    only the meta tags need the absolute form."""
+    v = _view(photo_url="/uploads/mary.jpg")
+    html = pr.render_page_html(v, canonical_url=CANON)
+    assert ('<meta property="og:image" '
+            'content="https://myhealingoasis.com/uploads/mary.jpg">') in html
+    assert ('<meta name="twitter:image" '
+            'content="https://myhealingoasis.com/uploads/mary.jpg">') in html
+    assert '<meta name="twitter:card" content="summary_large_image">' in html
+    # the body <img> keeps the relative form -- it resolves fine in a browser
+    assert '<img class="photo" src="/uploads/mary.jpg"' in html
+    assert 'https://myhealingoasis.com/uploads/mary.jpg" alt' not in html
+
+
+def test_a_relative_photo_url_with_no_canonical_base_omits_the_image_tags():
+    """PORTAL_BASE_URL unset -> canonical_url is None -> there is no base to
+    resolve a relative photo path against. Omit the image tags entirely
+    rather than emit a broken relative og:image, matching the existing
+    contract for canonical/og:url in this same situation."""
+    v = _view(photo_url="/uploads/mary.jpg")
+    html = pr.render_page_html(v, canonical_url=None)
+    assert 'property="og:image"' not in html
+    assert 'name="twitter:image"' not in html
+    assert '<meta name="twitter:card" content="summary">' in html
+    # the body <img> still renders -- only the meta tags are affected
+    assert '<img class="photo" src="/uploads/mary.jpg"' in html
+
+
 def test_canonical_link_uses_the_url_it_was_given():
     html = pr.render_page_html(_view(), canonical_url=CANON)
     assert f'<link rel="canonical" href="{CANON}">' in html

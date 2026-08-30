@@ -201,12 +201,46 @@ def _featured(view):
 SITE_NAME = "Remedy Match"
 
 
+def _absolute_photo_url(photo, canonical_url):
+    """Turn a site-relative photo path into an absolute URL for og:image and
+    twitter:image, which -- unlike the visible <img src> in the body -- must
+    be absolute for Facebook, iMessage and Slack to render a card image at
+    all. dashboard/practitioner_profile.py's sanitize_image_url deliberately
+    permits a site-relative "/path" as one of its two legal shapes (correct
+    for the body <img>, which resolves fine against the page's own host in a
+    browser); passing that same relative value straight into a meta tag
+    silently produces an imageless card, the exact failure this feature
+    exists to fix, arriving through a legal input instead of a bug.
+
+    canonical_url is already the fully-qualified PORTAL_BASE_URL + "/" + slug
+    URL built by app.py's _render_practitioner_page -- its scheme+host is the
+    only base this page has. When canonical_url is falsy (PORTAL_BASE_URL
+    unset), there is no base to resolve a relative path against, so this
+    returns "" and the caller omits the image tags entirely -- same contract
+    as the canonical/og:url tags in that situation.
+    """
+    if not photo:
+        return ""
+    if not photo.startswith("/"):
+        return photo  # already absolute -- sanitize_image_url's other legal shape
+    if not canonical_url:
+        return ""
+    from urllib.parse import urlsplit
+    parts = urlsplit(canonical_url)
+    if not parts.scheme or not parts.netloc:
+        return ""
+    return f"{parts.scheme}://{parts.netloc}{photo}"
+
+
 def _share_tags(view, title, desc, canonical_url):
     """Open Graph and Twitter Card tags.
 
     og:type is "profile" rather than "website" because this page is a person.
-    The Twitter card type follows the photo: summary_large_image with no image
-    renders as an empty grey box, which looks more broken than the small card.
+    The Twitter card type follows whether an ABSOLUTE image is available, not
+    merely whether photo_url is set -- summary_large_image with no image tag
+    renders as an empty grey box, which looks more broken than the small
+    card, and a relative photo_url with no canonical base to absolutize
+    against (see _absolute_photo_url) is exactly that case.
 
     og:url is omitted entirely when canonical_url is falsy, same contract and
     same reason as the <link rel="canonical"> tag in render_page_html: a
@@ -214,6 +248,7 @@ def _share_tags(view, title, desc, canonical_url):
     omitting the tag is the neutral choice.
     """
     photo = str(view.get("photo_url") or "").strip()
+    image = _absolute_photo_url(photo, canonical_url)
     tags = [
         '<meta property="og:type" content="profile">',
         f'<meta property="og:title" content="{_esc(title)}">',
@@ -223,12 +258,12 @@ def _share_tags(view, title, desc, canonical_url):
         tags.append(f'<meta property="og:url" content="{_esc(canonical_url)}">')
     tags.append(f'<meta property="og:site_name" content="{_esc(SITE_NAME)}">')
     tags.append(f'<meta name="twitter:card" content='
-                f'"{"summary_large_image" if photo else "summary"}">')
+                f'"{"summary_large_image" if image else "summary"}">')
     tags.append(f'<meta name="twitter:title" content="{_esc(title)}">')
     tags.append(f'<meta name="twitter:description" content="{_esc(desc)}">')
-    if photo:
-        tags.append(f'<meta property="og:image" content="{_esc(photo)}">')
-        tags.append(f'<meta name="twitter:image" content="{_esc(photo)}">')
+    if image:
+        tags.append(f'<meta property="og:image" content="{_esc(image)}">')
+        tags.append(f'<meta name="twitter:image" content="{_esc(image)}">')
     return "".join(tags)
 
 
