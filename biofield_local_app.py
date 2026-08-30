@@ -1074,6 +1074,40 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
             paid = invoice_paid_check(email) or {}
             include_fee = not paid.get("paid")
             built = biofield_invoice.build_invoice_lines(client, remedies, catalog, include_fee=include_fee)
+            # build_portal_seed has already resolved the authored remedies against
+            # this exact catalog. Use those canonical slugs as the invoice source of
+            # truth instead of resolving the display names a second time. The old
+            # double-resolution path could silently drop every remedy and still
+            # create a successful $300 service-only invoice.
+            qty_by_name = {
+                (r.get("name") or "").strip().lower(): max(1, int(r.get("qty") or 1))
+                for r in remedies if (r.get("name") or "").strip()
+            }
+            resolved_remedies = []
+            for item in content.get("reorder_items") or []:
+                slug = (item.get("slug") or "").strip()
+                if not slug:
+                    continue
+                name_key = (item.get("name") or "").strip().lower()
+                resolved_remedies.append({
+                    "slug": slug,
+                    "qty": qty_by_name.get(name_key, 1),
+                    "source": "biofield",
+                })
+            if resolved_remedies:
+                built["lines"] = ([{"slug": biofield_invoice.BIOFIELD_SLUG, "qty": 1}]
+                                  if include_fee else []) + resolved_remedies
+                built["skipped"] = []
+            elif remedies and include_fee:
+                invoice = {
+                    "ok": False,
+                    "error": ("The Biofield products could not be matched to the catalog; "
+                              "no service-only invoice was created."),
+                    "skipped": built.get("skipped") or [],
+                }
+                return {"ok": True, "layers": len(content["layers"]),
+                        "remedies": len(content["reorder_items"]), "email": email,
+                        "invoice": invoice}
             if not built["lines"]:
                 invoice = {"ok": False, "already_paid": True, "order_id": paid.get("order_id"),
                            "note": f"Biofield Analysis already paid (order #{paid.get('order_id')}); no new invoice raised."}
