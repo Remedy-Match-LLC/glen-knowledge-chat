@@ -340,3 +340,27 @@ def test_no_raw_angle_bracket_survives_in_the_jsonld_script_body():
     assert data[0]["description"] == "<!--<script>"
     assert data[1]["address"] == "<!--<script>"
     assert data[1]["serviceType"] == ["<!--<script>"]
+
+
+def test_a_non_string_field_value_renders_rather_than_raising():
+    """Six call sites did `(view.get(k) or "").strip()` instead of
+    `str(view.get(k) or "").strip()`: tagline, practice_name, photo_url,
+    logo_url, location, bio. A non-string value for any of them -- a
+    Postgres column drifting from its documented TEXT type, a stub payload
+    upstream -- raised AttributeError on `.strip()` and turned one bad
+    field into a 500 for the whole page. This exercises all six through the
+    full render, including the JSON-LD block, which reads photo_url and
+    location a second time after the string-coercion guard that protects
+    the guard condition itself."""
+    v = _view(tagline=42, practice_name=43, photo_url=44, logo_url=45,
+              location=46, bio=47)
+    html = pr.render_page_html(v, canonical_url=CANON)
+    assert "42" in html  # tagline
+    assert "43" in html  # practice_name
+    assert 'src="44"' in html  # photo_url in the <img>
+    assert 'src="45"' in html  # logo_url in the <img>
+    assert "46" in html  # location
+    assert "47" in html  # bio
+    data = _jsonld(html)
+    assert data[0]["image"] == "44"
+    assert data[1]["address"] == "46"

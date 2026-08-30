@@ -65,7 +65,7 @@ def build_title(view):
     directory listing.
     """
     name = _display_name(view)
-    practice = (view.get("practice_name") or "").strip()
+    practice = str(view.get("practice_name") or "").strip()
     return f"{name} — {practice}" if practice else str(name)
 
 
@@ -93,7 +93,7 @@ def build_description(view):
     """
     name = view.get("practitioner_name") or view.get("slug") or "This practitioner"
     for key in ("tagline", "bio"):
-        val = (view.get(key) or "").strip()
+        val = str(view.get(key) or "").strip()
         if val:
             return _truncate(val)
     return f"{name} on Remedy Match."
@@ -120,7 +120,7 @@ def _section(heading, text):
 
 
 def _photo(view):
-    url = (view.get("photo_url") or "").strip()
+    url = str(view.get("photo_url") or "").strip()
     if not url:
         return ""
     alt = _esc(view.get("practitioner_name") or "Practitioner")
@@ -128,12 +128,12 @@ def _photo(view):
 
 
 def _line(css_class, text):
-    text = (text or "").strip()
+    text = str(text or "").strip()
     return f'<p class="{css_class}">{_esc(text)}</p>' if text else ""
 
 
 def _logo(view):
-    url = (view.get("logo_url") or "").strip()
+    url = str(view.get("logo_url") or "").strip()
     if not url:
         return ""
     practice = view.get("practice_name") or view.get("practitioner_name") or ""
@@ -213,7 +213,7 @@ def _share_tags(view, title, desc, canonical_url):
     relative or empty URL here is not a safe default, it is a wrong one, and
     omitting the tag is the neutral choice.
     """
-    photo = (view.get("photo_url") or "").strip()
+    photo = str(view.get("photo_url") or "").strip()
     tags = [
         '<meta property="og:type" content="profile">',
         f'<meta property="og:title" content="{_esc(title)}">',
@@ -251,15 +251,15 @@ def build_jsonld(view, canonical_url):
               "name": name, "description": build_description(view)}
     if canonical_url:
         person["url"] = canonical_url
-    if (view.get("photo_url") or "").strip():
-        person["image"] = view["photo_url"].strip()
+    if str(view.get("photo_url") or "").strip():
+        person["image"] = str(view["photo_url"]).strip()
 
     service = {"@context": "https://schema.org", "@type": "ProfessionalService",
-               "name": (view.get("practice_name") or "").strip() or name}
+               "name": str(view.get("practice_name") or "").strip() or name}
     if canonical_url:
         service["url"] = canonical_url
-    if (view.get("location") or "").strip():
-        service["address"] = view["location"].strip()
+    if str(view.get("location") or "").strip():
+        service["address"] = str(view["location"]).strip()
     services = [str(s).strip() for s in (view.get("services") or []) if str(s).strip()]
     if services:
         service["serviceType"] = services
