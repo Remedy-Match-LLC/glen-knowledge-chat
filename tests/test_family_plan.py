@@ -157,3 +157,17 @@ def test_comped_plan_covers_without_a_stripe_customer(cx):
     fp.activate(cx, CAREGIVER, next_charge_at=None, source="comp")
     assert fp.is_active(cx, CAREGIVER) is True
     assert fp.covers(cx, PET) is True
+
+
+def test_shared_plan_holder_identifies_one_household(cx):
+    _link(cx, PET)
+    _link(cx, SPOUSE, relationship="partner")
+    fp.activate(cx, CAREGIVER, next_charge_at="2026-08-09")
+    assert fp.shared_active_plan_holder(cx, [PET, SPOUSE]) == CAREGIVER
+
+
+def test_shared_plan_holder_does_not_pool_unrelated_households(cx):
+    _link(cx, PET)
+    fp.activate(cx, CAREGIVER, next_charge_at="2026-08-09")
+    fp.activate(cx, STRANGER, next_charge_at="2026-08-09")
+    assert fp.shared_active_plan_holder(cx, [PET, STRANGER]) is None

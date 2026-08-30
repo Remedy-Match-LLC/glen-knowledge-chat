@@ -454,6 +454,15 @@ def set_order_shipping(cx, order_id, shipping_cents, total_cents):
     return cur.rowcount > 0
 
 
+def set_order_items_and_total(cx, order_id, items, total_cents):
+    """Replace priced lines and total together during an unpaid invoice reprice."""
+    cur = cx.execute(
+        "UPDATE orders SET items_json=?, total_cents=?, updated_at=? WHERE id=?",
+        (json.dumps(items or []), int(total_cents or 0), _now(), order_id))
+    cx.commit()
+    return cur.rowcount > 0
+
+
 def set_order_overpay_credit(cx, order_id, credit_cents):
     """Record (idempotent REPLACE) the shipping-overpayment credit owed to an
     already-paid order after a combined-shipment recalc lowered its fair one-parcel

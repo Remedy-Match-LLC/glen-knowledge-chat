@@ -7179,9 +7179,14 @@ def _is_paid_member(email):
     second lookup. Fail-closed (False on error) so a lookup hiccup never hands a
     non-member a discount."""
     try:
-        if not (email and _active_membership_for_email(email)):
-            return False
-        return membership_category(email) != "trial"
+        if email and _active_membership_for_email(email):
+            return membership_category(email) != "trial"
+        if email and _family_plan_enabled():
+            from dashboard import family_plan as _fp
+            with db.connect(LOG_DB) as cx:
+                _fp.init_family_plan_table(cx)
+                return _fp.covers(cx, email)
+        return False
     except Exception:
         return False
 
@@ -49181,6 +49186,59 @@ def _recompute_combined_shipping(cx, sid):
     members = _bos_orders.orders_in_group(cx, sid)
     if len(members) < 2:
         return {"ok": False, "error": "shipment has fewer than 2 members"}
+    # A shared Family Plan makes this one household quantity purchase for eligible
+    # Functional Formulations. Paid invoices remain frozen but contribute volume.
+    pooled_pricing = None
+    if _family_plan_enabled():
+        try:
+            from dashboard import family_plan as _fp
+            _fp.init_family_plan_table(cx)
+            holder = _fp.shared_active_plan_holder(cx, [m.get("email") for m in members])
+            if holder:
+                pooled_qty = 0
+                for m in members:
+                    for item in (m.get("items") or []):
+                        product = _get_product((item.get("slug") or "").strip())
+                        if product and _qty_eligible(product):
+                            pooled_qty += max(1, int(item.get("qty") or 1))
+                changed = []
+                settings = _pricing_settings()
+                if pooled_qty:
+                    for m in members:
+                        if (m.get("pay_status") or "unpaid") == "paid":
+                            continue
+                        old_items_total = sum(int(it.get("line_cents") or
+                                                  int(it.get("unit_cents") or 0) *
+                                                  max(1, int(it.get("qty") or 1)))
+                                              for it in (m.get("items") or []))
+                        new_items = []
+                        for item in (m.get("items") or []):
+                            rec = dict(item)
+                            product = _get_product((rec.get("slug") or "").strip())
+                            if product and _qty_eligible(product) and rec.get("override") is not True:
+                                qty = max(1, int(rec.get("qty") or 1))
+                                pooled_unit = _inhouse_line_unit_cents(
+                                    product, None, pooled_qty, settings,
+                                    program_member=True, line_qty=qty)
+                                current = int(rec.get("unit_cents") or product.get("price_cents") or 0)
+                                rec["unit_cents"] = min(current, pooled_unit)
+                                rec["line_cents"] = rec["unit_cents"] * qty
+                            new_items.append(rec)
+                        new_items_total = sum(int(it.get("line_cents") or
+                                                  int(it.get("unit_cents") or 0) *
+                                                  max(1, int(it.get("qty") or 1)))
+                                              for it in new_items)
+                        savings = max(0, old_items_total - new_items_total)
+                        if savings:
+                            new_total = max(0, int(m.get("total_cents") or 0) - savings)
+                            _bos_orders.set_order_items_and_total(cx, m["id"], new_items, new_total)
+                            m["items"], m["total_cents"] = new_items, new_total
+                            changed.append({"order_id": m["id"], "savings_cents": savings})
+                pooled_pricing = {"plan_holder": holder, "eligible_quantity": pooled_qty,
+                                  "orders_repriced": changed}
+        except Exception as e:
+            print(f"[combined-ship] family pricing skipped: {e!r}", flush=True)
+
     ship_addr = {"country": "US"}
     try:
         sh = _bos_combined_shipments.get_shipment(cx, sid) or {}
@@ -49237,15 +49295,15 @@ def _recompute_combined_shipping(cx, sid):
                         "old_shipping_cents": old_ship, "new_shipping_cents": int(share),
                         "new_total_cents": new_total})
     return {"ok": True, "shipment_id": sid,
-            "combined_shipping_cents": combined, "members": updates}
+            "combined_shipping_cents": combined, "members": updates,
+            "pooled_pricing": pooled_pricing}
 
 
 @app.route("/api/console/shipments/<int:sid>/recalc-shipping", methods=["POST"])
 def console_shipment_recalc_shipping(sid):
-    """Owner/ops: recompute + split one-parcel shipping across a combined shipment's
-    unpaid members (proportional to each member's own standalone shipping). A paid
-    member whose share drops below what they paid gets an overpayment credit
-    recorded on their order (not re-billed)."""
+    """Owner/ops: apply shared Family Plan volume pricing when eligible, then
+    recompute and split one-parcel shipping across unpaid shipment members. Paid
+    invoices remain frozen; a paid member's shipping overpayment becomes credit."""
     actor = _bos_actor()
     if actor is None:
         return jsonify({"ok": False, "error": "unauthorized"}), 401
