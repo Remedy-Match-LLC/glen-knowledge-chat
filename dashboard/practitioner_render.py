@@ -396,6 +396,13 @@ def render_page_html(view, *, canonical_url):
         + _section("How I work", view.get("how_i_work"))
         + _services(view)
         + _featured(view)
+        # Safe only because catalog_url is hardcoded today --
+        # build_practitioner_storefront always sets it to "/begin/explore"
+        # and no profile field can override it. _esc() does not scheme-check
+        # its input, so a "javascript:" value would render inert here but
+        # execute as a real link if this field is ever made
+        # practitioner-authorable; that would need a scheme allowlist at
+        # write time (the same shape as sanitize_image_url), not just escaping.
         + f'<p><a href="{_esc(view.get("catalog_url") or "/begin/explore")}">'
           "Browse the full catalog</a></p>"
         + f'<p class="disclosure">{_esc(view.get("profit_disclosure"))}</p>'

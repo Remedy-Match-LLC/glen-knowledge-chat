@@ -19689,23 +19689,30 @@ def practitioner_storefront(slug):
     # disagree with the first.
     #
     # Deliberately NOT wrapped in try/except, unlike its neighbour
-    # practitioner_site below. This route is a specific prefixed path, not a
-    # catch-all, so it carries none of that route's bot-probe exposure.
+    # practitioner_site below -- each route keeps its own pre-existing
+    # behaviour, for its own reason, not for the reason this comment used to
+    # give.
     #
-    # noindex is unconditional through this whole plan (section 5a), so today
-    # no crawler is actually being told anything about this slug's existence
-    # either way -- a 404 here would not currently deindex a real page. This
-    # asymmetry is insurance for section 5b, when noindex becomes conditional
-    # and a false 404 on a DB fault WOULD silently deindex a real person's
-    # page. It is built now, ahead of that need, because the pinning test
-    # already existed before this task and 500-on-DB-fault was already this
-    # route's historical behaviour -- so keeping it is preserving established
-    # behaviour, not inventing new protection. tests/
-    # test_public_surface_attribution.py::
-    # test_storefront_deliberately_500s_on_corrupt_database pins this and
-    # exercises /api/p/<slug>, which shares the behaviour and is untouched by
-    # this task. Do not "fix" this inconsistency with /<slug> -- it is
-    # intentional.
+    # This route 500s on a DB fault because tests/test_public_surface_
+    # attribution.py::test_storefront_deliberately_500s_on_corrupt_database
+    # pins that decision -- it exercises /p/<slug> AND /api/p/<slug>, not
+    # only the API as an earlier version of this comment claimed. /<slug>
+    # below fails closed to 404 instead, because it is a catch-all that
+    # answers every unmatched path on the portal host, including every bot
+    # probe of /admin, /.env and /wordpress -- a DB fault there must not
+    # become a site-wide 500.
+    #
+    # That is NOT insurance for indexing, and reasoning about it as such was
+    # backwards: per docs/superpowers/plans/2026-08-29-practitioner-indexing.md
+    # (the sitemap emits https://myhealingoasis.com/<slug> and explicitly
+    # excludes /p/<slug>), the route the sitemap will list is /<slug> -- the
+    # one that fails closed to 404 -- while /p/<slug>, which 500s instead,
+    # will never be indexed at all. So it is /<slug>'s 404-on-DB-fault, not
+    # this route's behaviour, that section 5b must revisit before lifting
+    # noindex: once noindex becomes conditional, a false 404 there on a
+    # transient DB fault WOULD silently deindex a real practitioner's page.
+    # Nothing here needs to change for that -- it is a note for whoever
+    # builds 5b, not a decision this task is asked to make.
     with db.connect(LOG_DB) as cx:
         cx.row_factory = sqlite3.Row
         view = _ps.build_practitioner_storefront(cx, slug)
@@ -19738,8 +19745,10 @@ def practitioner_site(slug):
     `/<slug>`. tests/test_slug_route_collision.py is the guard that keeps a new
     route from taking a live practitioner's URL as routes are added.
 
-    Serves the existing storefront page unchanged. Server-rendering and lifting
-    noindex are section 5 of the spec, not this route.
+    Server-rendered via _render_practitioner_page, same as its legacy alias
+    /p/<slug> below -- one helper, two callers, so the meta tags a
+    link-preview bot reads cannot drift between them. Lifting noindex is
+    section 5b of the spec, not this route.
     """
     if not _on_portal_host():
         return ("", 404)
@@ -19751,11 +19760,13 @@ def practitioner_site(slug):
         _ps.check_shape(s)
     except _ps.SlugError:
         return ("", 404)
-    # One URL per practitioner. /Mary-Boyd normalizes to the same row, but the
-    # storefront page re-derives its own /api/p/ key from location.pathname and
-    # affiliate_signups.slug is case-sensitive, so serving the capitalized form
-    # renders a blank page. `s` is post-check_shape, so it is [a-z0-9-] only and
-    # the redirect target cannot be an off-site URL.
+    # One URL per practitioner. /Mary-Boyd normalizes to the same row as
+    # /mary-boyd, but serving both as 200s would let this feature's own
+    # canonical tag and JSON-LD `url` disagree with the address bar,
+    # splitting the same person's link authority across two URLs instead of
+    # collapsing it onto one -- the same duplication problem the /p/<slug>
+    # legacy alias's canonical exists to solve. `s` is post-check_shape, so
+    # it is [a-z0-9-] only and the redirect target cannot be an off-site URL.
     if s != slug:
         return redirect(f"/{s}", code=301)
     # Fail closed. This catch-all answers every unmatched root path on the

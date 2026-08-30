@@ -324,23 +324,28 @@ def test_public_routes_never_call_get_portal_view(client_with_affiliate, monkeyp
 # --- Fix wave: stored, published, whitelisted... and invisible --------------
 
 
-# render_page_html never reads view["slug"] on any live path: the only
-# view.get("slug") read in dashboard/practitioner_render.py is the
-# _display_name fallback, and that branch is dead here (and on the real
-# route) because practitioner_name is always set for an approved
-# practitioner. slug reaches the page a different way -- through the
-# canonical_url that app.py's _render_practitioner_page builds from the
-# slug before calling render_page_html -- and THAT construction is proven
-# by tests/test_practitioner_site_render.py::
-# test_canonical_binds_to_the_portal_host_not_the_funnel and
-# ::test_the_legacy_path_declares_the_portal_canonical. Put "slug" in a
-# substring sweep against render_page_html anyway and the sweep would pass
-# for the wrong reason: any truthy canonical_url containing that string
-# satisfies it, whether or not the renderer still reads view["slug"] at
-# all (confirmed by mutation below). So slug is proven, just not HERE --
-# carve it out explicitly rather than let the sweep quietly take credit
-# for it.
-PROVEN_BY_THE_CALLER = {"slug"}
+# view.get("slug") in dashboard/practitioner_render.py's _display_name is a
+# LIVE branch, not dead code -- practitioner_name is a TEXT column with no
+# NOT NULL constraint, and build_practitioner_storefront does
+# `row["name"] or ""`, so an approved practitioner with an empty name falls
+# through to it and the page renders "<h1>a-url-slug</h1>" as their name.
+# It is simply not EXERCISED by this test, because every sentinel below
+# sets a practitioner_name -- that is a fact about this test's fixture, not
+# a fact about the code.
+#
+# Even so, "slug" cannot join the substring sweep below: any truthy
+# canonical_url containing "sentinel-slug" would satisfy a bare substring
+# check, whether or not the renderer's _display_name fallback still reads
+# view["slug"] at all (confirmed by mutation below) -- slug reaches the
+# page through canonical_url regardless of what _display_name does with
+# it. So slug's presence is proven elsewhere: the value below is the test
+# that proves it, not just an excuse to skip it. Keys carve fields out of
+# the sweep; values name the test each carve-out owes evidence to, so a
+# future carve-out cannot be added without also naming what proves it.
+PROVEN_BY_THE_CALLER = {
+    "slug": "tests/test_practitioner_site_render.py::"
+            "test_canonical_binds_to_the_portal_host_not_the_funnel",
+}
 
 
 def test_every_public_field_is_actually_rendered_somewhere():
@@ -368,10 +373,19 @@ def test_every_public_field_is_actually_rendered_somewhere():
     double-counting -- but it does mean a regression that deleted only the
     visible <ul> or <p class="loc"> and left the JSON-LD copy would still
     read as green here. That gap is accepted, not missed.
+
+    "tagline" has the same shape, one layer over: build_description() reads
+    the tagline field first (falling back to bio, then a neutral line) and
+    writes whatever it returns into <meta name="description">, og:description,
+    twitter:description AND the Person JSON-LD's "description" -- regardless
+    of whether the visible <p class="tagline"> renderer still exists. A
+    regression that deleted `_line("tagline", view.get("tagline"))` from the
+    body would still leave "SentinelTagline" findable in four other places,
+    so this sweep would keep reading green. Same accepted gap as above.
     """
     from dashboard import public_surface as ps
     from dashboard import practitioner_render as pr
-    assert PROVEN_BY_THE_CALLER <= set(ps.PRACTITIONER_PUBLIC_FIELDS), (
+    assert set(PROVEN_BY_THE_CALLER) <= set(ps.PRACTITIONER_PUBLIC_FIELDS), (
         "PROVEN_BY_THE_CALLER contains a key that isn't even in the "
         "whitelist -- a typo here would silently exclude nothing.")
     sentinels = {
@@ -409,7 +423,7 @@ def test_every_public_field_is_actually_rendered_somewhere():
     # this substring sweep against render_page_html -- swept separately so
     # the sweep can only pass for fields it actually demonstrates.
     swept = {f: s for f, s in expected.items() if f not in PROVEN_BY_THE_CALLER}
-    assert set(swept) | PROVEN_BY_THE_CALLER == set(ps.PRACTITIONER_PUBLIC_FIELDS)
+    assert set(swept) | set(PROVEN_BY_THE_CALLER) == set(ps.PRACTITIONER_PUBLIC_FIELDS)
     missing = sorted(f for f, s in swept.items() if s not in html)
     assert not missing, (
         "public fields that reach the payload but never reach the page: "
