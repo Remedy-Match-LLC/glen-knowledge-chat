@@ -49202,7 +49202,11 @@ def _recompute_combined_shipping(cx, sid):
                         if product and _qty_eligible(product):
                             pooled_qty += max(1, int(item.get("qty") or 1))
                 changed = []
-                settings = _pricing_settings()
+                # _pricing_settings() contains only persisted overrides. Merge the
+                # engine defaults so a sparse/absent file still has volume_anchors,
+                # floors, and discount-type configuration.
+                from dashboard import pricing as _pricing
+                settings = _pricing.load_settings(_pricing_settings())
                 if pooled_qty:
                     for m in members:
                         if (m.get("pay_status") or "unpaid") == "paid":
