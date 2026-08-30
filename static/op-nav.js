@@ -54,6 +54,7 @@
       fulfillment:   [ {id:"shipping",label:"Shipping",href:"/admin/shipping"+qs}, {id:"household",label:"Household",href:"/console/household"+qs} ],
       people:        [ {id:"client",label:"Client",href:"/console/client"+qs}, {id:"crm",label:"CRM",href:"/console/crm"+qs}, {id:"members",label:"Members",href:"/console/members"+qs},
                        {id:"membership",label:"Membership",href:"/admin/membership"+qs}, {id:"practitioners",label:"Practitioners",href:"/console/practitioners"+qs},
+                       {id:"practitioner-drafts",label:"Profile Drafts",href:"/console/practitioner-drafts"+qs},
                        {id:"coaching",label:"Coaching",href:"/console/coaching-cohort"+qs}, {id:"cert",label:"Cert",href:"/console/cert"+qs} ],
       communication: [ {id:"inbox",label:"Inbox",href:"/console/inbox"+qs}, {id:"handoffs",label:"Biofield Pipeline",href:"/console/handoffs"+qs},
                        {id:"portal-links",label:"Portal Links",href:"/console/portal-links"+qs} ],
