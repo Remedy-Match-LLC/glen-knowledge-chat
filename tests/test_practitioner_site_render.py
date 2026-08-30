@@ -1,0 +1,119 @@
+"""Route-level tests for the server-rendered practitioner page.
+
+Every assertion here is on RAW RESPONSE BYTES, never a parsed DOM. The bots
+this feature exists for -- iMessage, WhatsApp, Facebook, Slack -- do not
+execute JavaScript, so a DOM-based test would pass on the old JS path and
+hide the exact defect being fixed.
+"""
+import os
+import pytest
+if not os.environ.get("PINECONE_API_KEY"):
+    pytest.skip("needs doppler env for import app", allow_module_level=True)
+import app as appmod
+
+VIEW = {"slug": "mary-boyd", "practitioner_name": "Mary Boyd",
+        "practice_name": "Fairbanks Wellness", "bio": "I work with nurses.",
+        "photo_url": "", "logo_url": "", "services": [],
+        "location": "Fairbanks, AK", "accepting_clients": True,
+        "featured_products": [], "catalog_url": "/begin/explore",
+        "profit_disclosure": "Your practitioner earns a portion.",
+        "tagline": "Helping nurses stop running on empty", "how_i_work": ""}
+
+
+@pytest.fixture
+def portal(monkeypatch):
+    """Serve as the portal host with the public surface on."""
+    monkeypatch.setattr(appmod, "_on_portal_host", lambda: True)
+    monkeypatch.setattr(appmod, "_public_surface_enabled", lambda: True)
+    monkeypatch.setenv("PORTAL_BASE_URL", "https://myhealingoasis.com")
+    from dashboard import practitioner_slugs as _ps
+    monkeypatch.setattr(_ps, "resolve", lambda cx, s: ("canonical", s))
+    from dashboard import public_surface as _psurf
+    monkeypatch.setattr(_psurf, "build_practitioner_storefront",
+                        lambda cx, slug: dict(VIEW, slug=slug))
+    monkeypatch.setattr(_psurf, "record_view", lambda cx, slug, kind: None)
+    return appmod.app.test_client()
+
+
+def test_the_name_is_in_the_html_without_running_javascript(portal):
+    body = portal.get("/mary-boyd").get_data(as_text=True)
+    assert "<h1>Mary Boyd</h1>" in body
+    assert "Helping nurses stop running on empty" in body
+    assert "I work with nurses." in body
+
+
+def test_share_preview_tags_are_in_the_initial_response(portal):
+    body = portal.get("/mary-boyd").get_data(as_text=True)
+    assert '<meta property="og:title" content="Mary Boyd — Fairbanks Wellness">' in body
+    assert '<meta property="og:type" content="profile">' in body
+    assert 'name="twitter:card"' in body
+
+
+def test_canonical_binds_to_the_portal_host_not_the_funnel(portal):
+    body = portal.get("/mary-boyd").get_data(as_text=True)
+    assert '<link rel="canonical" href="https://myhealingoasis.com/mary-boyd">' in body
+    assert "illtowell.com" not in body
+
+
+def test_the_page_is_still_noindex(portal):
+    r = portal.get("/mary-boyd")
+    assert r.headers["X-Robots-Tag"] == "noindex"
+    assert '<meta name="robots" content="noindex">' in r.get_data(as_text=True)
+
+
+def test_the_referral_cookie_still_gets_set(portal):
+    r = portal.get("/mary-boyd")
+    assert "rm_ref=mary-boyd" in r.headers.get("Set-Cookie", "")
+
+
+def test_an_unknown_slug_is_404_not_an_empty_page(portal, monkeypatch):
+    from dashboard import public_surface as _psurf
+    monkeypatch.setattr(_psurf, "build_practitioner_storefront", lambda cx, slug: None)
+    assert portal.get("/nobody-here").status_code == 404
+
+
+def test_off_the_portal_host_it_is_still_404(monkeypatch):
+    monkeypatch.setattr(appmod, "_on_portal_host", lambda: False)
+    assert appmod.app.test_client().get("/mary-boyd").status_code == 404
+
+
+def test_a_payload_failure_degrades_to_404_not_500(portal, monkeypatch):
+    """This catch-all answers every bot probe of /admin, /.env and /wordpress.
+    One broken read must not become a site-wide 500."""
+    from dashboard import public_surface as _psurf
+
+    def boom(cx, slug):
+        raise RuntimeError("postgres is down")
+    monkeypatch.setattr(_psurf, "build_practitioner_storefront", boom)
+    assert portal.get("/mary-boyd").status_code == 404
+
+
+def test_the_legacy_funnel_path_is_also_server_rendered(monkeypatch):
+    """/p/<slug> on the funnel host is a live public URL — every one ever
+    texted or printed still resolves there. Leaving it on the JS shell would
+    keep the blank-preview bug alive on exactly those links."""
+    monkeypatch.setattr(appmod, "_on_portal_host", lambda: False)
+    monkeypatch.setattr(appmod, "_public_surface_enabled", lambda: True)
+    monkeypatch.setenv("PORTAL_BASE_URL", "https://myhealingoasis.com")
+    from dashboard import public_surface as _psurf
+    monkeypatch.setattr(_psurf, "build_practitioner_storefront",
+                        lambda cx, slug: dict(VIEW, slug=slug))
+    monkeypatch.setattr(_psurf, "record_view", lambda cx, slug, kind: None)
+
+    body = appmod.app.test_client().get("/p/mary-boyd").get_data(as_text=True)
+    assert "<h1>Mary Boyd</h1>" in body
+    assert '<meta property="og:title" content="Mary Boyd — Fairbanks Wellness">' in body
+
+
+def test_the_legacy_path_declares_the_portal_canonical(monkeypatch):
+    """Both pages point at ONE url. That is what collapses the duplicate."""
+    monkeypatch.setattr(appmod, "_on_portal_host", lambda: False)
+    monkeypatch.setattr(appmod, "_public_surface_enabled", lambda: True)
+    monkeypatch.setenv("PORTAL_BASE_URL", "https://myhealingoasis.com")
+    from dashboard import public_surface as _psurf
+    monkeypatch.setattr(_psurf, "build_practitioner_storefront",
+                        lambda cx, slug: dict(VIEW, slug=slug))
+    monkeypatch.setattr(_psurf, "record_view", lambda cx, slug, kind: None)
+
+    body = appmod.app.test_client().get("/p/mary-boyd").get_data(as_text=True)
+    assert '<link rel="canonical" href="https://myhealingoasis.com/mary-boyd">' in body

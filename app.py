@@ -19616,6 +19616,33 @@ def api_practitioner_storefront(slug):
     return resp
 
 
+def _render_practitioner_page(view, canonical_slug):
+    """Build the server-rendered response both practitioner routes return.
+
+    One helper, two callers, because a difference between the canonical page
+    and its legacy /p/ alias is a bug in every case -- including the meta tags
+    a preview bot reads, which is the whole point of rendering server-side.
+
+    The canonical always points at PORTAL_BASE_URL, even when this response is
+    served from the funnel host. That is what collapses the legacy path and
+    the host duplication onto one URL, per the spec. PUBLIC_BASE_URL here
+    would be the bug: the two existing sitemaps hardcode the funnel host, and
+    copying that pattern would declare a canonical that does not serve this
+    page.
+    """
+    from dashboard import practitioner_render as _prender
+    portal_base = (os.environ.get("PORTAL_BASE_URL") or "").rstrip("/")
+    resp = Response(
+        _prender.render_page_html(
+            view, canonical_url=f"{portal_base}/{canonical_slug}"),
+        mimetype="text/html")
+    resp.headers["X-Robots-Tag"] = "noindex"
+    resp.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+    resp.set_cookie("rm_ref", canonical_slug, max_age=90 * 24 * 3600,
+                    samesite="Lax", secure=request.is_secure)
+    return resp
+
+
 @app.route("/p/<slug>")
 def practitioner_storefront(slug):
     """Public practitioner storefront. Sets the referral attribution cookie.
@@ -19637,22 +19664,29 @@ def practitioner_storefront(slug):
     if _on_portal_host():
         return redirect(f"/{slug}", code=302)
     from dashboard import public_surface as _ps
-    with db.connect(LOG_DB) as cx:
-        cx.row_factory = sqlite3.Row
-        if not _ps.build_practitioner_storefront(cx, slug):
-            return ("", 404)
+    # Keep the payload the existence check already fetched -- two reads of the
+    # same row on a public page is a wasted round trip, and a second read can
+    # disagree with the first.
+    try:
+        with db.connect(LOG_DB) as cx:
+            cx.row_factory = sqlite3.Row
+            view = _ps.build_practitioner_storefront(cx, slug)
+    except Exception as e:  # noqa: BLE001
+        print(f"[practitioner_storefront] payload failed for {slug!r}: {e!r}",
+              flush=True)
+        return ("", 404)
+    if not view:
+        return ("", 404)
     # Record the view for this approved affiliate
     try:
         with _db_lock, db.connect(LOG_DB) as _cx:
             _ps.record_view(_cx, slug, "storefront")
     except Exception:
         pass  # instrumentation must never break the page
-    resp = send_from_directory(STATIC, "practitioner-storefront.html")
-    resp.headers["X-Robots-Tag"] = "noindex"
-    resp.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
-    resp.set_cookie("rm_ref", slug, max_age=90 * 24 * 3600,
-                    samesite="Lax", secure=request.is_secure)
-    return resp
+    # Same renderer, same canonical target as /<slug>. This page is the legacy
+    # alias; its canonical points at the portal host, which is what collapses
+    # the duplicate rather than competing with it.
+    return _render_practitioner_page(view, slug)
 
 
 @app.route("/<slug>")
@@ -19715,12 +19749,27 @@ def practitioner_site(slug):
             _psurf.record_view(_cx, canonical, "storefront")
     except Exception:
         pass  # instrumentation must never break the page
-    resp = send_from_directory(STATIC, "practitioner-storefront.html")
-    resp.headers["X-Robots-Tag"] = "noindex"
-    resp.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
-    resp.set_cookie("rm_ref", canonical, max_age=90 * 24 * 3600,
-                    samesite="Lax", secure=request.is_secure)
-    return resp
+    # Server-rendered, not the JS shell: link-preview bots for iMessage,
+    # WhatsApp, Facebook and Slack do not execute JavaScript, so the old
+    # storefront produced a blank preview card when a client texted this link.
+    # /api/p/<slug> is unchanged and still serves portal-side callers.
+    #
+    # Fail closed for the same reason the resolve above does: this catch-all
+    # answers every unmatched root path on the portal host, including every
+    # bot probe of /admin, /.env and /wordpress. A broken payload read must
+    # degrade to "no such slug", not turn one fault into a site-wide 500.
+    try:
+        from dashboard import public_surface as _psurf2
+        with db.connect(LOG_DB) as cx:
+            cx.row_factory = sqlite3.Row
+            view = _psurf2.build_practitioner_storefront(cx, canonical)
+    except Exception as e:  # noqa: BLE001
+        print(f"[practitioner_site] payload failed for {canonical!r}: {e!r}",
+              flush=True)
+        return ("", 404)
+    if not view:
+        return ("", 404)
+    return _render_practitioner_page(view, canonical)
 
 
 @app.route("/api/client/<code>/catalog")
