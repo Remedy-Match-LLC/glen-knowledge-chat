@@ -776,3 +776,31 @@ def test_delete_layer_keeps_coverage_when_remedy_exists_on_another_layer(tmp_pat
         data = st.list_stresses(cx, tid, [{"layer": 1, "head": "Head two",
                                           "remedy": "Liver Support", "rid": rid2}])
         assert {s["code"] for s in data["balanced"]} == {"loose ends"}
+
+
+def test_handoff_never_creates_service_only_invoice_when_products_do_not_resolve(
+        tmp_path, monkeypatch):
+    """A completed intake with remedies must fail visibly instead of minting a
+    successful invoice containing only the Biofield Analysis service line."""
+    from dashboard.biofield_authoring import init_auth_tables, create_test, add_chain_row
+    from dashboard import biofield_invoice
+    db = str(tmp_path / "chat_log.db")
+    cx = sqlite3.connect(db)
+    init_auth_tables(cx)
+    tid = create_test(cx, "Pt", "pt@x.com", "2026-07-08")
+    add_chain_row(cx, tid, 1, "Head", "Tail", "Unmapped Remedy", "1 cap", "daily", "")
+    cx.commit()
+    monkeypatch.setattr(biofield_invoice, "default_handoff_push", lambda *a, **k: {"ok": True})
+    created = []
+    client = create_app(
+        db,
+        invoice_fetch_catalog=lambda: [],
+        invoice_create=lambda *a, **k: created.append(a) or {"ok": True, "order_id": 77},
+    ).test_client()
+
+    result = client.post(f"/author/{tid}/handoff", json={}).get_json()
+
+    assert result["ok"] is True
+    assert result["invoice"]["ok"] is False
+    assert "service-only" in result["invoice"]["error"]
+    assert created == []
