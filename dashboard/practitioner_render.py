@@ -9,12 +9,25 @@ Why server-rendered at all: link-preview bots for iMessage, WhatsApp,
 Facebook and Slack do not execute JavaScript. The JS storefront rendered a
 blank preview card when a client texted their practitioner's link, which is
 the referral motion this whole feature exists to serve.
+
+This module's own output is plain and self-contained -- the inline <style>
+below is everything render_page_html emits. But that is not the same as
+what a browser ends up showing: app.py's global after_request hook,
+_inject_journey_shell (app.py ~52755), rewrites any text/html 200 outside
+/console/, /admin/, /api/ and /static/ before it reaches the client, and
+/<slug> matches that. With JOURNEY_SHELL_ENABLED=1 (the production setting),
+it appends shell.css AFTER this module's inline <style>, so shell.css wins
+any property both declare -- body, h1, p and section among them. This is
+pre-existing, cross-cutting behaviour this module has no say over and does
+not attempt to opt out of; the styling below is not the last word on how
+the page actually renders in production.
 """
 import html
 import json
 
-# The page is deliberately plain. It inherits nothing from the funnel's
-# stylesheet because it is a practitioner's page on their own domain.
+# Plain by design, and self-contained as far as THIS module's output goes --
+# see the module docstring above for why "self-contained" stops being true
+# once the response leaves this function.
 _STYLE = (
     "<style>"
     ":root{--ink:#1F5A4D;--line:#e6e6e6;--muted:#666}"
@@ -34,6 +47,16 @@ _STYLE = (
     ".logo{max-width:200px;max-height:80px;display:block;margin:0 0 20px}"
     ".accepting{font-weight:600}"
     ".price{color:var(--muted)}"
+    # Dark mode: the deleted JS shell (static/practitioner-storefront.html)
+    # carried this. Without it the practitioner page stayed white while the
+    # rest of the portal followed the system theme -- restored here, mapped
+    # onto this page's structure (.card -> section, the muted-text classes
+    # widened to match every element that already uses var(--muted) above).
+    "@media (prefers-color-scheme: dark){"
+    "body{background:#121212;color:#eee}"
+    "section{border-color:#333}"
+    ".tagline,.practice,.loc,.disclosure,.price{color:#aaa}"
+    "}"
     "</style>"
 )
 

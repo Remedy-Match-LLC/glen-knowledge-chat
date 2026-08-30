@@ -111,6 +111,15 @@ def test_present_blocks_are_labelled():
     assert "A tagline" in html
 
 
+def test_dark_mode_is_present():
+    """The deleted JS shell carried a prefers-color-scheme: dark block. Its
+    absence here would leave the practitioner page white while the rest of
+    the portal follows the system theme."""
+    html = pr.render_page_html(_view(), canonical_url="https://myhealingoasis.com/mary-boyd")
+    assert "@media (prefers-color-scheme: dark)" in html
+    assert "background:#121212" in html
+
+
 def test_the_profit_disclosure_is_always_rendered():
     """It is a disclosure. It does not get to be conditional."""
     html = pr.render_page_html(_view(), canonical_url="https://myhealingoasis.com/mary-boyd")
