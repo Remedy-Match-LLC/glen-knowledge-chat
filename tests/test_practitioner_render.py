@@ -93,11 +93,27 @@ def test_bio_paragraphs_survive_as_separate_paragraphs():
     assert "<p>Second para.</p>" in html
 
 
-def test_absent_blocks_emit_nothing():
-    html = pr.render_page_html(_view(), canonical_url="https://myhealingoasis.com/mary-boyd")
-    assert "<h2>About</h2>" not in html
-    assert "<h2>How I work</h2>" not in html
-    assert "<img" not in html
+def test_absent_blocks_emit_nothing_but_present_blocks_do():
+    """A bare 'not in html' check on the empty payload alone was green before
+    _section/_photo existed and stays green if either is deleted -- it never
+    proves the surface can render, only that it currently doesn't. Same
+    shape as test_no_raw_angle_bracket_survives_in_the_jsonld_script_body:
+    absence on the empty payload, then presence and a value round-trip on
+    the populated one."""
+    empty = pr.render_page_html(_view(), canonical_url="https://myhealingoasis.com/mary-boyd")
+    assert "<h2>About</h2>" not in empty
+    assert "<h2>How I work</h2>" not in empty
+    assert "<img" not in empty
+
+    v = _view(bio="First-hand account of my practice.",
+              how_i_work="Weekly check-ins by phone.",
+              photo_url="https://cdn.example/mary.jpg")
+    full = pr.render_page_html(v, canonical_url="https://myhealingoasis.com/mary-boyd")
+    assert "<h2>About</h2>" in full
+    assert "First-hand account of my practice." in full
+    assert "<h2>How I work</h2>" in full
+    assert "Weekly check-ins by phone." in full
+    assert '<img class="photo" src="https://cdn.example/mary.jpg"' in full
 
 
 def test_present_blocks_are_labelled():
@@ -278,10 +294,20 @@ def test_jsonld_is_person_plus_professional_service():
 
 
 def test_jsonld_never_asserts_a_medical_practice():
-    """Spec constraint: not MedicalBusiness, not Physician, no specialty."""
+    """Spec constraint: not MedicalBusiness, not Physician, no specialty.
+
+    A bare 'banned string absent' check also passes if the JSON-LD block is
+    removed from the page entirely, which would be a bigger regression than
+    the one this test is meant to catch. Prove the block exists and carries
+    the correct, allowed types first, then prove the banned ones are absent
+    from it."""
     v = _view(bio="RN and health coach", practice_name="Fairbanks Wellness",
               services=["health coaching", "nutrition"])
     raw = pr.render_page_html(v, canonical_url=CANON)
+    data = _jsonld(raw)
+    assert [d["@type"] for d in data] == ["Person", "ProfessionalService"]
+    assert data[1]["name"] == "Fairbanks Wellness"
+    assert data[1]["serviceType"] == ["health coaching", "nutrition"]
     for banned in ("MedicalBusiness", "Physician", "medicalSpecialty",
                    "MedicalClinic", "Hospital"):
         assert banned not in raw

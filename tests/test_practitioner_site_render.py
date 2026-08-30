@@ -6,6 +6,7 @@ execute JavaScript, so a DOM-based test would pass on the old JS path and
 hide the exact defect being fixed.
 """
 import os
+import sqlite3
 import pytest
 if not os.environ.get("PINECONE_API_KEY"):
     pytest.skip("needs doppler env for import app", allow_module_level=True)
@@ -151,9 +152,95 @@ def test_an_unset_portal_base_url_omits_canonical_instead_of_lying(monkeypatch):
     assert 'href="/mary-boyd"' not in body
 
 
+def test_the_two_routes_render_identical_bytes_for_the_same_view(monkeypatch):
+    """The branch's central claim, from _render_practitioner_page's own
+    docstring, is 'one helper, two callers, because a difference is a bug in
+    every case.' Nothing pinned that until now. Same view, same canonical
+    target (both resolve to https://myhealingoasis.com/mary-boyd): the
+    response BODIES must be byte-identical between /<slug> on the portal
+    host and /p/<slug> on the funnel host (where it renders instead of
+    302ing, since the redirect only fires on the portal host)."""
+    monkeypatch.setenv("PORTAL_BASE_URL", "https://myhealingoasis.com")
+    monkeypatch.setattr(appmod, "_public_surface_enabled", lambda: True)
+    from dashboard import practitioner_slugs as _ps
+    monkeypatch.setattr(_ps, "resolve", lambda cx, s: ("canonical", s))
+    from dashboard import public_surface as _psurf
+    monkeypatch.setattr(_psurf, "build_practitioner_storefront",
+                        lambda cx, slug: dict(VIEW, slug=slug))
+    monkeypatch.setattr(_psurf, "record_view", lambda cx, slug, kind: None)
+
+    monkeypatch.setattr(appmod, "_on_portal_host", lambda: True)
+    portal_resp = appmod.app.test_client().get("/mary-boyd")
+
+    monkeypatch.setattr(appmod, "_on_portal_host", lambda: False)
+    funnel_resp = appmod.app.test_client().get("/p/mary-boyd")
+
+    assert portal_resp.status_code == 200
+    assert funnel_resp.status_code == 200
+    assert portal_resp.data == funnel_resp.data
+
+
+def _seed_affiliate(db_path, slug="mary-boyd", name="Mary Boyd",
+                    organization="Fairbanks Wellness"):
+    cx = sqlite3.connect(db_path)
+    cx.executescript("""
+      CREATE TABLE IF NOT EXISTS affiliate_signups (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, created_at TEXT, name TEXT,
+        email TEXT, organization TEXT DEFAULT '', website TEXT DEFAULT '',
+        promo_method TEXT DEFAULT '', slug TEXT, token TEXT,
+        status TEXT DEFAULT 'approved', notes TEXT DEFAULT '',
+        referred_by TEXT DEFAULT '', short_url TEXT DEFAULT '');
+    """)
+    cx.execute(
+        "INSERT INTO affiliate_signups (created_at,name,email,organization,slug,token,status)"
+        " VALUES ('2026-01-01',?,'mary@example.com',?,?,'tok','approved')",
+        (name, organization, slug))
+    cx.commit()
+    cx.close()
+
+
+def test_a_route_exercises_the_real_payload_builder(monkeypatch, tmp_path):
+    """Every other fixture in this file stubs build_practitioner_storefront
+    and hand-writes accepting_clients: True -- which is exactly why Critical
+    1 (accepting_clients defaulting to True for every unauthored profile)
+    reached the live page unnoticed by any route-level test. This seeds a
+    real affiliate_signups row and lets build_practitioner_storefront run
+    for real, so a regression in ITS defaults (not just the renderer's
+    handling of them) would show up here."""
+    db_path = str(tmp_path / "chat_log.db")
+    _seed_affiliate(db_path)
+    monkeypatch.setattr(appmod, "LOG_DB", db_path)
+    monkeypatch.setattr(appmod, "_on_portal_host", lambda: True)
+    monkeypatch.setattr(appmod, "_public_surface_enabled", lambda: True)
+    monkeypatch.setenv("PORTAL_BASE_URL", "https://myhealingoasis.com")
+    from dashboard import practitioner_slugs as _ps
+    monkeypatch.setattr(_ps, "resolve", lambda cx, s: ("canonical", s))
+
+    r = appmod.app.test_client().get("/mary-boyd")
+    assert r.status_code == 200
+    body = r.get_data(as_text=True)
+    assert "<h1>Mary Boyd</h1>" in body
+    assert "Fairbanks Wellness" in body
+    # This practitioner has never authored a profile -- the real builder's
+    # default for accepting_clients must be None, and the page must
+    # therefore make no availability claim at all. This is Critical 1's
+    # regression guard at the route level, not just the unit level.
+    assert '<p class="accepting">' not in body
+    assert "Accepting new clients" not in body
+    assert "Not currently accepting new clients" not in body
+
+
 def test_the_js_shell_is_gone():
     """The blank-preview-card bug lived in this file, and both public routes
     used to serve it. If a future change re-introduces it, the regression
-    comes back silently — a browser would still look right."""
+    comes back silently — a browser would still look right.
+
+    What this proves: the specific file at this path is deleted from disk.
+    What it does NOT prove: that no route serves a JS-based storefront under
+    a different filename, that no other file still references
+    practitioner-storefront.html, or that the routes that used to serve it
+    are still server-rendered today -- that guarantee comes from the tests
+    above in this file (test_the_name_is_in_the_html_without_running_
+    javascript and friends), not from this one."""
     import pathlib
     assert not (pathlib.Path(appmod.STATIC) / "practitioner-storefront.html").exists()
