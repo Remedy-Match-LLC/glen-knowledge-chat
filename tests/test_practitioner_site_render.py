@@ -33,6 +33,14 @@ def portal(monkeypatch):
     monkeypatch.setattr(_psurf, "build_practitioner_storefront",
                         lambda cx, slug: dict(VIEW, slug=slug))
     monkeypatch.setattr(_psurf, "record_view", lambda cx, slug, kind: None)
+    # Pin the exception-propagation mode. Roughly two dozen test files set
+    # app.config["TESTING"] = True on this SHARED app object and never reset
+    # it, so whether the test client converts an unhandled exception into a
+    # 500 response or re-raises it depends on which files ran first. That is
+    # invisible in a single-file run and fails in CI, where everything runs.
+    # These tests assert the status a crawler sees, so force conversion.
+    monkeypatch.setitem(appmod.app.config, "TESTING", False)
+    monkeypatch.setattr(appmod.app, "testing", False, raising=False)
     return appmod.app.test_client()
 
 
