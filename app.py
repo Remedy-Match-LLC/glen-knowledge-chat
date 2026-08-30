@@ -19667,14 +19667,21 @@ def practitioner_storefront(slug):
     # Keep the payload the existence check already fetched -- two reads of the
     # same row on a public page is a wasted round trip, and a second read can
     # disagree with the first.
-    try:
-        with db.connect(LOG_DB) as cx:
-            cx.row_factory = sqlite3.Row
-            view = _ps.build_practitioner_storefront(cx, slug)
-    except Exception as e:  # noqa: BLE001
-        print(f"[practitioner_storefront] payload failed for {slug!r}: {e!r}",
-              flush=True)
-        return ("", 404)
+    #
+    # Deliberately NOT wrapped in try/except, unlike its neighbour
+    # practitioner_site below. This route is a specific prefixed path, not a
+    # catch-all, so it carries none of that route's bot-probe exposure. With
+    # the DB down the app cannot tell whether the slug is valid, and a 404
+    # here would falsely tell a crawler the practitioner does not exist --
+    # silently deindexing a real person's page. Let it propagate to a 500, as
+    # it did before this task. tests/test_public_surface_attribution.py::
+    # test_storefront_deliberately_500s_on_corrupt_database pins this and
+    # exercises /api/p/<slug>, which shares the behaviour and is untouched by
+    # this task. Do not "fix" this inconsistency with /<slug> -- it is
+    # intentional.
+    with db.connect(LOG_DB) as cx:
+        cx.row_factory = sqlite3.Row
+        view = _ps.build_practitioner_storefront(cx, slug)
     if not view:
         return ("", 404)
     # Record the view for this approved affiliate
