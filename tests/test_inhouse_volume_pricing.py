@@ -143,7 +143,6 @@ def test_combined_family_shipment_pools_ff_volume_and_preserves_other_lines(monk
 
     monkeypatch.setattr(appmod, "_family_plan_enabled", lambda: True)
     monkeypatch.setattr(appmod, "_get_product", _CAT.get)
-    monkeypatch.setattr(appmod, "_pricing_settings", lambda: _pricing.load_settings(None))
     monkeypatch.setattr(
         appmod, "_price_cart",
         lambda cart, **kwargs: {"shipping_cents": 2300 if len(cart) > 3 else 1000})
