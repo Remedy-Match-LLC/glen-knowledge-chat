@@ -324,6 +324,25 @@ def test_public_routes_never_call_get_portal_view(client_with_affiliate, monkeyp
 # --- Fix wave: stored, published, whitelisted... and invisible --------------
 
 
+# render_page_html never reads view["slug"] on any live path: the only
+# view.get("slug") read in dashboard/practitioner_render.py is the
+# _display_name fallback, and that branch is dead here (and on the real
+# route) because practitioner_name is always set for an approved
+# practitioner. slug reaches the page a different way -- through the
+# canonical_url that app.py's _render_practitioner_page builds from the
+# slug before calling render_page_html -- and THAT construction is proven
+# by tests/test_practitioner_site_render.py::
+# test_canonical_binds_to_the_portal_host_not_the_funnel and
+# ::test_the_legacy_path_declares_the_portal_canonical. Put "slug" in a
+# substring sweep against render_page_html anyway and the sweep would pass
+# for the wrong reason: any truthy canonical_url containing that string
+# satisfies it, whether or not the renderer still reads view["slug"] at
+# all (confirmed by mutation below). So slug is proven, just not HERE --
+# carve it out explicitly rather than let the sweep quietly take credit
+# for it.
+PROVEN_BY_THE_CALLER = {"slug"}
+
+
 def test_every_public_field_is_actually_rendered_somewhere():
     """The failure four consecutive reviews caught by hand, handed to the suite.
 
@@ -341,9 +360,20 @@ def test_every_public_field_is_actually_rendered_somewhere():
     source for field NAMES, because its JavaScript referenced v.field_name. A
     server-rendered page carries values, so each field gets a sentinel value
     and we assert the value arrives.
+
+    Note: "services" and "location" each land in the page twice -- once in
+    the visible body (the <ul> list / the ".loc" <p>) and once in the
+    Person/ProfessionalService JSON-LD (serviceType / address). Both
+    occurrences come from the same view key, so this is legitimate, not
+    double-counting -- but it does mean a regression that deleted only the
+    visible <ul> or <p class="loc"> and left the JSON-LD copy would still
+    read as green here. That gap is accepted, not missed.
     """
     from dashboard import public_surface as ps
     from dashboard import practitioner_render as pr
+    assert PROVEN_BY_THE_CALLER <= set(ps.PRACTITIONER_PUBLIC_FIELDS), (
+        "PROVEN_BY_THE_CALLER contains a key that isn't even in the "
+        "whitelist -- a typo here would silently exclude nothing.")
     sentinels = {
         "slug": "sentinel-slug", "practitioner_name": "SentinelName",
         "practice_name": "SentinelPractice", "bio": "SentinelBio",
@@ -356,6 +386,10 @@ def test_every_public_field_is_actually_rendered_somewhere():
         "catalog_url": "/sentinel-catalog",
         "profit_disclosure": "SentinelDisclosure",
     }
+    # Every whitelisted field must have a sentinel, "slug" included -- this
+    # is what breaks the build the moment someone adds a field to
+    # PRACTITIONER_PUBLIC_FIELDS and forgets this map. Do not narrow it to
+    # only the fields swept below.
     assert set(sentinels) == set(ps.PRACTITIONER_PUBLIC_FIELDS), (
         "PRACTITIONER_PUBLIC_FIELDS changed. Add the new field to this map AND "
         "render it in dashboard/practitioner_render.py -- a field that reaches "
@@ -371,7 +405,12 @@ def test_every_public_field_is_actually_rendered_somewhere():
                 "featured_products": "SentinelProduct",
                 "catalog_url": "/sentinel-catalog",
                 "profit_disclosure": "SentinelDisclosure"}
-    missing = sorted(f for f, s in expected.items() if s not in html)
+    # "slug" is proven by the caller (see PROVEN_BY_THE_CALLER above), not by
+    # this substring sweep against render_page_html -- swept separately so
+    # the sweep can only pass for fields it actually demonstrates.
+    swept = {f: s for f, s in expected.items() if f not in PROVEN_BY_THE_CALLER}
+    assert set(swept) | PROVEN_BY_THE_CALLER == set(ps.PRACTITIONER_PUBLIC_FIELDS)
+    missing = sorted(f for f, s in swept.items() if s not in html)
     assert not missing, (
         "public fields that reach the payload but never reach the page: "
         + ", ".join(missing))
