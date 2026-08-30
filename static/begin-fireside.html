@@ -220,11 +220,13 @@
   var replyAudio = new Audio();
   var murmurAudio = new Audio();                 // soft "thinking" hum that bridges the processing gap
   var replyStarted = false, murmurTimer = null, lastMurmur = null;
-  var activeReplyController = null, replyWatchdog = null;
+  var activeReplyController = null, activeTtsController = null, replyWatchdog = null;
+  var pageHidden = document.hidden;
   // Reaction director + ambience (initialized after manifest loads, via module script)
   var director = null, ambience = null;
   var lastInputMs = 0;
   var typeDebounceTimer = null;
+  var soundResumeHandler = null;
 
   function pick(arr, lastId) {
     if (!arr || !arr.length) return null;
@@ -257,6 +259,7 @@
   }
 
   function playClip(audio, file) {
+    if (pageHidden) return Promise.resolve();
     try { audio.pause(); audio.currentTime = 0; } catch (e) {}
     audio.src = file; audio.muted = false;
     return audio.play().catch(function () {});
@@ -300,6 +303,7 @@
   // while the reply is still composing. Skipped if the reply is already ready,
   // and faded out the instant it becomes ready — so it's only heard when needed.
   function playMurmur() {
+    if (pageHidden) return;
     var mur = pick(manifest.thinking_murmurs, lastMurmur);
     if (!mur) return;
     lastMurmur = mur.id;
@@ -421,6 +425,7 @@
     sub.textContent = text;
     // render the reply voice (parallel path); play when ready, then return to listening
     var ttsController = new AbortController();
+    activeTtsController = ttsController;
     var ttsTimer = setTimeout(function () { ttsController.abort(); }, 12000);
     fetch('/chat/tts', {
       method: 'POST', headers: {'Content-Type': 'application/json'},
@@ -431,6 +436,8 @@
       return r.blob();
     }).then(function (blob) {
       clearTimeout(ttsTimer);
+      if (activeTtsController === ttsController) activeTtsController = null;
+      if (pageHidden) { afterReply(text, hook); return; }
       var url = URL.createObjectURL(blob);
       replyAudio.src = url; replyAudio.muted = false;
       speakingLoop(); state = 'speaking';
@@ -440,6 +447,8 @@
       replyAudio.play().catch(function () { afterReply(text, hook); });
     }).catch(function () {
       clearTimeout(ttsTimer);
+      if (activeTtsController === ttsController) activeTtsController = null;
+      if (pageHidden) { afterReply(text, hook); return; }
       // voice failed -> speechSynthesis fallback via TTS helper, then continue
       if (window.TTS && window.TTS.attachAndSpeak) { try { window.TTS.attachAndSpeak(sub, text); } catch (e) {} }
       setTimeout(function () { afterReply(text, hook); }, 600);
@@ -555,6 +564,52 @@
       if (voiceMode && voiceAuto && state === 'listening' && !recActive) startRec();
     }, 500);
   }
+
+  // A background Fireside must be silent. Browsers keep fetches, media elements,
+  // and ambience timers alive after a tab/window is hidden, so explicitly tear
+  // down every source. Returning to the tab does not restart sound; a fresh user
+  // gesture is required before ambience may resume.
+  function silenceHiddenFireside() {
+    pageHidden = true;
+    if (idleTimer) { clearTimeout(idleTimer); idleTimer = null; }
+    if (typeDebounceTimer) { clearTimeout(typeDebounceTimer); typeDebounceTimer = null; }
+    if (autoListenTimer) { clearTimeout(autoListenTimer); autoListenTimer = null; }
+    clearSilence();
+    stopRec();
+    stopMurmur();
+    try { fillerAudio.pause(); fillerAudio.currentTime = 0; fillerAudio.onended = null; } catch (e) {}
+    try { replyAudio.pause(); replyAudio.currentTime = 0; replyAudio.onended = null; replyAudio.onerror = null; } catch (e) {}
+    if (activeReplyController) { try { activeReplyController.abort(); } catch (e) {} activeReplyController = null; }
+    if (activeTtsController) { try { activeTtsController.abort(); } catch (e) {} activeTtsController = null; }
+    if (replyWatchdog) { clearTimeout(replyWatchdog); replyWatchdog = null; }
+    try { if (window.speechSynthesis) window.speechSynthesis.cancel(); } catch (e) {}
+    try { if (ambience) ambience.stop(true); } catch (e) {}
+    try { if (window.__firesideStopInterjection) window.__firesideStopInterjection(); } catch (e) {}
+    document.querySelectorAll('#fireside video').forEach(function (video) {
+      try { video.muted = true; video.pause(); } catch (e) {}
+    });
+  }
+
+  function armSoundResume() {
+    pageHidden = false;
+    if (soundResumeHandler) {
+      document.removeEventListener('pointerdown', soundResumeHandler, true);
+      document.removeEventListener('keydown', soundResumeHandler, true);
+    }
+    soundResumeHandler = function () {
+      document.removeEventListener('pointerdown', soundResumeHandler, true);
+      document.removeEventListener('keydown', soundResumeHandler, true);
+      soundResumeHandler = null;
+      if (!pageHidden && ambience && state !== 'ended') ambience.start();
+    };
+    document.addEventListener('pointerdown', soundResumeHandler, {capture: true, once: true});
+    document.addEventListener('keydown', soundResumeHandler, {capture: true, once: true});
+  }
+
+  document.addEventListener('visibilitychange', function () {
+    if (document.hidden) silenceHiddenFireside(); else armSoundResume();
+  });
+  window.addEventListener('pagehide', silenceHiddenFireside);
   function toTypeMode() {
     voiceMode = false; voiceAuto = false;
     voiceFinal = ''; voiceInterim = ''; clearSilence();  // don't auto-submit a half-spoken thought
@@ -722,6 +777,10 @@
 
   // Dedicated audio element for Director-triggered interjection/reaction audio
   const _interAudio = new Audio();
+  window.__firesideStopInterjection = function () {
+    try { _interAudio.pause(); _interAudio.currentTime = 0; } catch (e) {}
+    _interAudio.onended = null;
+  };
 
   // Stable array ref for hearth spark origin — mutated in syncCanvas so it stays current after resize
   const sparkXY = [0, 0];

@@ -40,3 +40,26 @@ def test_fireside_queues_submit_during_welcome_and_has_media_fallback():
     assert "sendTurn(queued);" in welcome
     assert "state === 'intro' || state === 'intro-welcome'" in submit
     assert "pendingTypedMessage = m;" in submit
+
+
+def test_hidden_fireside_silences_all_audio_until_a_user_gesture():
+    assert "document.addEventListener('visibilitychange'" in FIRESIDE
+    assert "window.addEventListener('pagehide', silenceHiddenFireside)" in FIRESIDE
+    hidden = FIRESIDE.split("function silenceHiddenFireside()", 1)[1].split(
+        "function armSoundResume()", 1
+    )[0]
+    assert "fillerAudio.pause()" in hidden
+    assert "replyAudio.pause()" in hidden
+    assert "activeReplyController.abort()" in hidden
+    assert "activeTtsController.abort()" in hidden
+    assert "window.speechSynthesis.cancel()" in hidden
+    assert "ambience.stop(true)" in hidden
+    assert "window.__firesideStopInterjection()" in hidden
+    assert "video.pause()" in hidden
+
+    resume = FIRESIDE.split("function armSoundResume()", 1)[1].split(
+        "document.addEventListener('visibilitychange'", 1
+    )[0]
+    assert "document.addEventListener('pointerdown', soundResumeHandler" in resume
+    assert "document.addEventListener('keydown', soundResumeHandler" in resume
+    assert "ambience.start()" in resume

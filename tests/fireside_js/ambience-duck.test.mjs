@@ -44,6 +44,7 @@ test('duck opt is clamped to (0,1); junk disables ducking', () => {
 test('alternate one-shot cycles variants round-robin at each item volume (never overlaps)', () => {
   const plays = [];
   global.Audio = class { constructor(src) { this.src = src; this.volume = 1; }
+    addEventListener() {}
     play() { plays.push({ src: this.src, volume: this.volume }); return { catch() {} }; } };
   try {
     const a = new Ambience(CFG, {});

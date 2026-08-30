@@ -26,6 +26,7 @@ export class Ambience {
     this.bedEl = null;
     this.timers = [];
     this.loopEls = [];
+    this.oneShotEls = new Set();
     this.cancelSpark = null;
     this._bedRaf = null;
   }
@@ -188,6 +189,10 @@ export class Ambience {
     if (!src) return;
     const a = new Audio(src);
     a.volume = (typeof vol === 'number') ? vol : (o.volume || 0.1);
+    this.oneShotEls.add(a);
+    const forget = () => this.oneShotEls.delete(a);
+    a.addEventListener('ended', forget, { once: true });
+    a.addEventListener('error', forget, { once: true });
     a.play().catch(() => {});
     if (o.spark && this.sparkCtx) {
       if (this.cancelSpark) this.cancelSpark();
@@ -200,14 +205,21 @@ export class Ambience {
     this._applyLevels(150);           // fast ramp; composes mute with the duck state
   }
 
-  stop() {
+  stop(immediate = false) {
     if (this._monTimer) { clearInterval(this._monTimer); this._monTimer = null; }
     clearTimeout(this._gustT); this._gustLayer = null;
     this.timers.forEach(clearTimeout); this.timers = [];
     if (this._bedRaf) { cancelAnimationFrame(this._bedRaf); this._bedRaf = null; }
-    if (this.bedEl) { this._fadeOutAndPause(this.bedEl, 1200); this.bedEl = null; }
+    if (this.bedEl) {
+      if (immediate) { try { this.bedEl.pause(); this.bedEl.currentTime = 0; } catch (e) {} }
+      else this._fadeOutAndPause(this.bedEl, 1200);
+      this.bedEl = null;
+    }
     for (const L of this.loopEls) { try { if (L._swellRaf) cancelAnimationFrame(L._swellRaf); L.el.pause(); } catch (e) {} }
     this.loopEls = [];
+    for (const a of this.oneShotEls) { try { a.pause(); a.currentTime = 0; } catch (e) {} }
+    this.oneShotEls.clear();
     if (this.cancelSpark) { this.cancelSpark(); this.cancelSpark = null; }
+    this._started = false;
   }
 }
