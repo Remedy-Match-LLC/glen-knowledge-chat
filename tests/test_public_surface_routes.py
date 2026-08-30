@@ -324,13 +324,6 @@ def test_public_routes_never_call_get_portal_view(client_with_affiliate, monkeyp
 # --- Fix wave: stored, published, whitelisted... and invisible --------------
 
 
-@pytest.mark.xfail(strict=False, reason=(
-    "Expected to fail until section 5 server-renders the storefront. "
-    "static/practitioner-storefront.html renders only name, practice name, "
-    "bio, the disclosure and the catalog link; photo_url, logo_url, tagline, "
-    "how_i_work, services, location and accepting_clients reach the JSON "
-    "payload and stop there. Deliberate — the field has to exist before a "
-    "renderer can render it — but it must not stay silent."))
 def test_every_public_field_is_actually_rendered_somewhere():
     """The failure four consecutive reviews caught by hand, handed to the suite.
 
@@ -339,29 +332,59 @@ def test_every_public_field_is_actually_rendered_somewhere():
     invisible to every human being, because nothing renders it. Every layer
     looks correct in isolation; only the whole chain shows the gap.
 
-    When section 5 lands, this should go XPASS. At that point delete the
-    xfail marker and let it be an ordinary guard: from then on, adding a key
-    to the whitelist without rendering it is a red test, not a review finding.
+    Was xfail while the page was a JS shell that rendered five of fourteen
+    fields. Section 5 server-rendered it, so this is now an ordinary guard:
+    adding a key to the whitelist without rendering it is a red test, not a
+    review finding.
+
+    The oracle changed with the page. The old version searched the shell's
+    source for field NAMES, because its JavaScript referenced v.field_name. A
+    server-rendered page carries values, so each field gets a sentinel value
+    and we assert the value arrives.
     """
-    import pathlib
     from dashboard import public_surface as ps
-    html = pathlib.Path(appmod.STATIC, "practitioner-storefront.html").read_text(encoding="utf-8")
-    missing = sorted(f for f in ps.PRACTITIONER_PUBLIC_FIELDS if f not in html)
+    from dashboard import practitioner_render as pr
+    sentinels = {
+        "slug": "sentinel-slug", "practitioner_name": "SentinelName",
+        "practice_name": "SentinelPractice", "bio": "SentinelBio",
+        "photo_url": "https://cdn.example/sentinel-photo.jpg",
+        "logo_url": "https://cdn.example/sentinel-logo.jpg",
+        "tagline": "SentinelTagline", "how_i_work": "SentinelHowIWork",
+        "services": ["SentinelService"], "location": "SentinelLocation",
+        "accepting_clients": True,
+        "featured_products": [{"name": "SentinelProduct", "price": "$10"}],
+        "catalog_url": "/sentinel-catalog",
+        "profit_disclosure": "SentinelDisclosure",
+    }
+    assert set(sentinels) == set(ps.PRACTITIONER_PUBLIC_FIELDS), (
+        "PRACTITIONER_PUBLIC_FIELDS changed. Add the new field to this map AND "
+        "render it in dashboard/practitioner_render.py -- a field that reaches "
+        "the payload and stops there is the exact defect this test exists for.")
+    html = pr.render_page_html(dict(sentinels),
+                               canonical_url="https://myhealingoasis.com/sentinel-slug")
+    expected = {"slug": "sentinel-slug", "practitioner_name": "SentinelName",
+                "practice_name": "SentinelPractice", "bio": "SentinelBio",
+                "photo_url": "sentinel-photo.jpg", "logo_url": "sentinel-logo.jpg",
+                "tagline": "SentinelTagline", "how_i_work": "SentinelHowIWork",
+                "services": "SentinelService", "location": "SentinelLocation",
+                "accepting_clients": "Accepting new clients",
+                "featured_products": "SentinelProduct",
+                "catalog_url": "/sentinel-catalog",
+                "profit_disclosure": "SentinelDisclosure"}
+    missing = sorted(f for f, s in expected.items() if s not in html)
     assert not missing, (
-        "public fields never rendered by static/practitioner-storefront.html: "
+        "public fields that reach the payload but never reach the page: "
         + ", ".join(missing))
 
 
-def test_the_render_guard_is_measuring_the_right_file():
-    """Companion to the xfail above: an xfail that fails for a silly reason
-    (wrong path, empty file) would look identical to the real gap it is
-    reporting. This asserts the file is really there and really does render
-    the fields it does render, so the xfail means what it says."""
-    import pathlib
-    from dashboard import public_surface as ps
-    html = pathlib.Path(appmod.STATIC, "practitioner-storefront.html").read_text(encoding="utf-8")
+def test_the_render_guard_is_measuring_the_right_thing():
+    """Companion to the guard above: a guard that passes for a silly reason
+    (empty render, renderer stubbed out) would look identical to a real pass.
+    This asserts the renderer really produced a document."""
+    from dashboard import practitioner_render as pr
+    html = pr.render_page_html(
+        {"slug": "x", "practitioner_name": "Mary Boyd"},
+        canonical_url="https://myhealingoasis.com/x")
     assert len(html) > 200
-    for rendered in ("practitioner_name", "practice_name", "bio",
-                     "profit_disclosure", "catalog_url"):
-        assert rendered in html, f"{rendered} was supposed to already render"
-        assert rendered in ps.PRACTITIONER_PUBLIC_FIELDS
+    assert html.startswith("<!doctype html>")
+    assert "<h1>Mary Boyd</h1>" in html

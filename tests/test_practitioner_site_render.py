@@ -149,3 +149,11 @@ def test_an_unset_portal_base_url_omits_canonical_instead_of_lying(monkeypatch):
     assert 'property="og:url"' not in body
     assert "illtowell.com" not in body
     assert 'href="/mary-boyd"' not in body
+
+
+def test_the_js_shell_is_gone():
+    """The blank-preview-card bug lived in this file, and both public routes
+    used to serve it. If a future change re-introduces it, the regression
+    comes back silently — a browser would still look right."""
+    import pathlib
+    assert not (pathlib.Path(appmod.STATIC) / "practitioner-storefront.html").exists()
