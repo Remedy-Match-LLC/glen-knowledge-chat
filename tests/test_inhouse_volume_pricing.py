@@ -106,6 +106,62 @@ def test_multi_ff_lines_nonmember_use_own_qty_not_total():
     assert appmod._inhouse_ff_unit_cents(FF2, 6, s, program_member=False, line_qty=2) == 6813  # vp(2)
 
 
+def test_combined_family_shipment_pools_ff_volume_and_preserves_other_lines(monkeypatch):
+    from dashboard import combined_shipments as combined
+    from dashboard import family_plan, household, orders
+
+    appmod = _app()
+    cx = sqlite3.connect(":memory:")
+    cx.row_factory = sqlite3.Row
+    orders.init_orders_table(cx)
+    combined.init_combined_shipments_table(cx)
+    household.init_household_tables(cx)
+    family_plan.init_family_plan_table(cx)
+    caregiver = "parent@example.com"
+    household.add_member(cx, caregiver, "child@example.com", relationship="child")
+    family_plan.activate(cx, caregiver, next_charge_at=None, source="comp")
+
+    first_items = [
+        {"slug": "brain", "name": "Brain", "qty": 1,
+         "unit_cents": 6997, "line_cents": 6997},
+        {"slug": "bone", "name": "Courtesy Bone", "qty": 1,
+         "unit_cents": 4000, "line_cents": 4000, "override": True},
+        {"slug": "mix", "name": "Service", "qty": 1,
+         "unit_cents": 7000, "line_cents": 7000},
+    ]
+    second_items = [{"slug": "calm", "name": "Calm", "qty": 2,
+                     "unit_cents": 6997, "line_cents": 13994}]
+    first = orders.upsert_order(
+        cx, source="manual", external_ref="family-a", email=caregiver,
+        name="Parent", items=first_items, total_cents=18997, shipping_cents=1000,
+        address={"street": "1 Main", "city": "Tulsa", "state": "OK", "zip": "74101"})
+    second = orders.upsert_order(
+        cx, source="manual", external_ref="family-b", email="child@example.com",
+        name="Child", items=second_items, total_cents=15294, shipping_cents=1300,
+        address={"street": "1 Main", "city": "Tulsa", "state": "OK", "zip": "74101"})
+    shipment = combined.create_shipment(cx, [first, second])
+
+    monkeypatch.setattr(appmod, "_family_plan_enabled", lambda: True)
+    monkeypatch.setattr(appmod, "_get_product", _CAT.get)
+    monkeypatch.setattr(appmod, "_pricing_settings", lambda: _pricing.load_settings(None))
+    monkeypatch.setattr(
+        appmod, "_price_cart",
+        lambda cart, **kwargs: {"shipping_cents": 2300 if len(cart) > 3 else 1000})
+    result = appmod._recompute_combined_shipping(cx, shipment["id"])
+
+    assert result["pooled_pricing"]["plan_holder"] == caregiver
+    assert result["pooled_pricing"]["eligible_quantity"] == 4
+    first_after = orders.get_order(cx, first)
+    second_after = orders.get_order(cx, second)
+    by_slug = {item["slug"]: item for item in first_after["items"]}
+    assert by_slug["brain"]["unit_cents"] == 6444       # household qty 4
+    assert by_slug["bone"]["unit_cents"] == 4000        # explicit override frozen
+    assert by_slug["mix"]["unit_cents"] == 7000         # non-FF frozen
+    assert second_after["items"][0]["unit_cents"] == 6444
+    assert sum(member["new_shipping_cents"] for member in result["members"]) == 2300
+    cx.close()
+
+
 def test_line_unit_override_wins():
     appmod = _app()
     s = _pricing.load_settings(None)

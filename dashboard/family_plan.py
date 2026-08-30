@@ -148,6 +148,33 @@ def covers(cx, email):
     return False
 
 
+def active_plan_holders_for(cx, email):
+    """Return active caregiver emails whose plan covers ``email``."""
+    email = _lc(email)
+    if not email:
+        return set()
+    holders = {email} if is_active(cx, email) else set()
+    from dashboard import household as _hh
+    for cg in _hh.caregivers_for(cx, email):
+        caregiver = _lc(cg.get("primary_email"))
+        if is_active(cx, caregiver):
+            holders.add(caregiver)
+    return holders
+
+
+def shared_active_plan_holder(cx, emails):
+    """Return one active plan holder shared by every nonblank email, else None."""
+    normalized = [_lc(email) for email in emails if _lc(email)]
+    if not normalized:
+        return None
+    shared = active_plan_holders_for(cx, normalized[0])
+    for email in normalized[1:]:
+        shared &= active_plan_holders_for(cx, email)
+        if not shared:
+            return None
+    return sorted(shared)[0] if shared else None
+
+
 def due(cx, today):
     """Billable subs whose next_charge_at has arrived. Includes both 'active' and
     'past_due': a past_due sub (a prior failed charge) still entitles the household
