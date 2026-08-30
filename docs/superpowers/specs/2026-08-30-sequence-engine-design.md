@@ -151,8 +151,25 @@ token link. Every `source: "app"` message — anything sent through the
 conversations API, including our own `weekly_live_invitation.py` — carries none
 unless the sender wrote one into the body itself.
 
-**This is a live gap, not just a design constraint.** It predates this engine and
-is being audited separately; the engine must not add to it.
+**This is a live gap, not just a design constraint.** Audited 2026-08-30 across
+every outbound subject with 20+ sends: **5,440 sends across 13 subjects carry no
+unsubscribe link**, all `source: app`. Eight subjects do carry one (409 sends).
+
+The 13 split into roughly 4,660 promotional sends — the Wellness Whispering
+invitations (1,912), storm-update community calls (1,013), Wednesday sessions
+(958), "Your Energy 4 Life experience now goes deeper" (503), and four editorial
+pieces (274) — and roughly 780 transactional ones (scan-ready and portal-ready
+notices, and a link correction). Only the promotional group clearly needs a
+link; where exactly that line sits is Glen's call, not this document's.
+
+Mitigating, and worth stating precisely: `weekly_live_invitation.py` already
+checks `email_suppression.is_suppressed` **and** GHL's `dnd`/`dndSettings`
+before every send. Existing opt-outs are honored. The gap is that these emails
+give a recipient no way to create one.
+
+**Therefore unsubscribe is built first**, as a shared helper on the bulk send
+path rather than inside the engine, and the existing senders are retrofitted
+before any new sequence exists. The engine then inherits it.
 
 So the engine must append its own. Requirements:
 
@@ -189,17 +206,20 @@ is located.
 This is more than one plan's worth of work. Sliced so each lands green and
 useful on its own:
 
-1. **Schema + push script.** Tables, `sequence_push.py`, a sequence defined in
+1. **Unsubscribe, shared, and retrofit.** Signed token, unsubscribe route,
+   per-sequence and global opt-out, and a footer helper on the shared bulk send
+   path. Retrofit `weekly_live_invitation.py` and the `BULK_VIA_GHL` router so
+   promotional sends stop going out bare. **Ships independently of the engine
+   and fixes a live gap of 4,660 sends** — which is why it goes first.
+2. **Schema + push script.** Tables, `sequence_push.py`, a sequence defined in
    the vault and visible in Postgres. Sends nothing.
-2. **Runner + idempotency, dark.** Due-step calculation, claim-before-send,
+3. **Runner + idempotency, dark.** Due-step calculation, claim-before-send,
    `--dry-run`. Cron registered but the sequence inactive. Still sends nothing.
-3. **Unsubscribe.** Token, route, per-sequence and global opt-out, enforced at
-   send time.
 4. **First live sequence.** A new sequence, small audience, watched.
 5. **Nurture migration.** Blocked on locating and pausing the GHL original.
 
-Nothing in slices 1–3 can email a client, which is what makes them safe to ship
-incrementally.
+Slice 1 changes existing client-facing email, so it needs the same care as any
+money-path change. Slices 2 and 3 cannot email anyone at all.
 
 ## Testing
 
