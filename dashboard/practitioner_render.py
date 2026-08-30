@@ -149,13 +149,28 @@ def _services(view):
 
 
 def _accepting(view):
-    """Render the answer either way.
+    """Render the answer either way -- except when there is no answer.
 
-    False is information a visitor needs before they compose an email. Showing
-    nothing reads as "unknown", which is the one thing it is not.
+    `accepting_clients` is True or False only when a practitioner (or their
+    self-authored profile) actually said so. build_practitioner_storefront
+    defaults it to None for every practitioner who has never authored a
+    profile, which today is most of the roster. None is not a third value
+    someone chose; it is the absence of a claim, and rendering either string
+    for it would publish an availability statement on that person's behalf
+    that they never made -- exactly the defect this function used to cause.
+
+    So: None renders nothing. True and False still render their line each --
+    False is information a visitor needs before they compose an email, and
+    for a profile that genuinely says so, showing nothing there would read as
+    "unknown", which is the one thing it is not. That reasoning applies only
+    once the value is known; it does not license treating "unknown" (None)
+    as if it meant "yes".
     """
+    value = view.get("accepting_clients")
+    if value is None:
+        return ""
     return ('<p class="accepting">Accepting new clients</p>'
-            if view.get("accepting_clients")
+            if value
             else '<p class="accepting">Not currently accepting new clients</p>')
 
 

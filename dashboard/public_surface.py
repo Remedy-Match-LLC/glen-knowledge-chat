@@ -119,7 +119,13 @@ def build_practitioner_storefront(cx, slug):
         "logo_url": "",
         "services": [],
         "location": "",
-        "accepting_clients": True,
+        # None, not True: this is the "nobody has said anything yet" default
+        # for a practitioner who has never authored a profile
+        # (profile_for_slug returns {} for them). True here would publish an
+        # availability claim on their behalf that they never made -- see
+        # dashboard/practitioner_render.py::_accepting for the render side of
+        # this contract.
+        "accepting_clients": None,
         "featured_products": [],
         "catalog_url": "/begin/explore",
         "profit_disclosure": PROFIT_DISCLOSURE,

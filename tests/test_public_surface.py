@@ -248,3 +248,31 @@ def test_storefront_empty_profile_leaves_base(monkeypatch):
     view = ps.build_practitioner_storefront(cx, "prof-jane-doe")
     assert view["bio"] == ""
     assert view["services"] == []
+
+
+def test_accepting_clients_defaults_to_none_not_true(monkeypatch):
+    """CRITICAL: profile_for_slug returns {} for any practitioner who has
+    never authored a profile -- the overwhelming majority of the roster.
+    Defaulting accepting_clients to True there publishes an availability
+    claim none of them made. None is the only honest default: "nobody has
+    said" is not the same fact as "yes". dashboard/practitioner_render.py's
+    _accepting() is the render-side half of this contract -- it must turn
+    None into no line at all, not into either sentence."""
+    from dashboard import public_surface as ps
+    monkeypatch.setattr(ps, "_profile_for_slug", lambda cx, slug: {})
+    cx = _cx_with_affiliate()
+    view = ps.build_practitioner_storefront(cx, "prof-jane-doe")
+    assert view["accepting_clients"] is None
+
+
+def test_accepting_clients_true_from_a_self_authored_profile_survives(monkeypatch):
+    """The merge in build_practitioner_storefront drops falsy values (v in
+    (None, "", [])) -- True is never falsy, so this is here only to pin the
+    happy path alongside the None-default and False-survives cases already
+    covered by test_storefront_merges_self_authored_profile."""
+    from dashboard import public_surface as ps
+    monkeypatch.setattr(ps, "_profile_for_slug",
+                        lambda cx, slug: {"accepting_clients": True})
+    cx = _cx_with_affiliate()
+    view = ps.build_practitioner_storefront(cx, "prof-jane-doe")
+    assert view["accepting_clients"] is True

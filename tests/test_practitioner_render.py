@@ -139,6 +139,26 @@ def test_not_accepting_clients_says_so_rather_than_going_silent():
     assert "Not currently accepting new clients" in html
 
 
+def test_accepting_clients_true_still_renders_its_line():
+    html = pr.render_page_html(_view(accepting_clients=True),
+                               canonical_url="https://myhealingoasis.com/mary-boyd")
+    assert "Accepting new clients" in html
+    assert "Not currently accepting new clients" not in html
+
+
+def test_accepting_clients_none_renders_neither_claim():
+    """CRITICAL fix: None means the practitioner never said, which is the
+    default for every practitioner who has never authored a profile (see
+    dashboard/public_surface.py::build_practitioner_storefront). Rendering
+    either sentence for None would publish an availability claim nobody
+    made."""
+    html = pr.render_page_html(_view(accepting_clients=None),
+                               canonical_url="https://myhealingoasis.com/mary-boyd")
+    assert "Accepting new clients" not in html
+    assert "Not currently accepting new clients" not in html
+    assert '<p class="accepting">' not in html
+
+
 def test_services_render_as_a_list():
     html = pr.render_page_html(_view(services=["sleep coaching", "nutrition"]),
                                canonical_url="https://myhealingoasis.com/mary-boyd")
