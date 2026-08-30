@@ -436,7 +436,13 @@ async function loadCatalog(){
 // ── Layers ────────────────────────────────────────────────────────────────
 function addLayer(L){
   L = L || {};
-  const i = $('layers').children.length + 1;
+  // Layer numbers can be non-contiguous after deletions or imported data. Using
+  // the child count can give a new layer a lower number, which moves it toward
+  // the top when collectLayers() sorts before publishing. Always append after
+  // the highest existing layer number instead.
+  const nums = [...$('layers').querySelectorAll('.ln')]
+    .map(input=>parseInt(input.value, 10)).filter(Number.isFinite);
+  const i = (nums.length ? Math.max(...nums) : 0) + 1;
   const el = document.createElement('div'); el.className='layer';
   el.dataset.patterns = JSON.stringify((L && L.patterns) || []);
   el.innerHTML = `

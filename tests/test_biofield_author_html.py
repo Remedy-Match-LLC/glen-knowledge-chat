@@ -1,4 +1,6 @@
 """The authoring editor page: header inputs + editable chain rows + add-row."""
+from pathlib import Path
+
 from dashboard.biofield_report_html import render_author_html, render_list_html
 
 
@@ -50,6 +52,13 @@ def test_author_header_shows_selected_clients_headshot():
     assert "/client-photo-framing/" in html
     assert "/client-photo/jane%40x.com" in html
     assert "refreshHeaderPhoto();checkE4L()" in html
+
+
+def test_portal_editor_adds_new_layer_after_highest_existing_number():
+    html = (Path(__file__).resolve().parent.parent / "static" /
+            "console-biofield-portal.html").read_text()
+    assert "querySelectorAll('.ln')" in html
+    assert "Math.max(...nums)" in html
 
 
 def test_author_chain_is_cards_readable_and_reorderable():
