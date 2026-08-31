@@ -54,6 +54,42 @@ class BookingConfigError(ValueError):
     """A config that must not reach the slot grid."""
 
 
+# The four ways a practitioner can hear that someone booked her. "phone" is
+# not an outbound channel: it means her number is shown to the client so they
+# can reach her. The other three are things we send.
+NOTIFY_METHODS = ("phone", "text", "email", "calendar")
+DEFAULT_NOTIFY_METHODS = ["email"]
+
+
+def _validate_notify_methods(value):
+    """Clean the chosen notification methods, or raise.
+
+    Defaults to email only when absent. It must NOT default to all four:
+    publishing a practitioner's phone number because she left a checkbox alone
+    is the system making a claim on her behalf, which is the same defect class
+    as an availability flag nobody set.
+    """
+    if value is None:
+        return list(DEFAULT_NOTIFY_METHODS)
+    if not isinstance(value, list):
+        raise BookingConfigError(
+            "Choose how you would like to hear about a booking.")
+    seen, out = set(), []
+    for m in value:
+        m = str(m or "").strip().lower()
+        if m not in NOTIFY_METHODS:
+            raise BookingConfigError(
+                f"'{m}' is not one of: {', '.join(NOTIFY_METHODS)}.")
+        if m not in seen:
+            seen.add(m)
+            out.append(m)
+    if not out:
+        raise BookingConfigError(
+            "Pick at least one way to hear about a booking, or you will not "
+            "find out someone has taken a time.")
+    return out
+
+
 def init_tables(cx) -> None:
     cx.execute("""CREATE TABLE IF NOT EXISTS practitioner_booking_config (
         practitioner_id TEXT PRIMARY KEY,
@@ -64,6 +100,12 @@ def init_tables(cx) -> None:
         buffer_min INTEGER NOT NULL DEFAULT 0,
         enabled INTEGER NOT NULL DEFAULT 0,
         updated_at TEXT)""")
+    for _col, _decl in (("notify_methods", "TEXT"),):
+        try:
+            cx.execute(f"ALTER TABLE practitioner_booking_config "
+                       f"ADD COLUMN {_col} {_decl}")
+        except Exception:
+            pass
     cx.commit()
 
 
@@ -184,14 +226,15 @@ def validate_config(cfg) -> dict:
             "office_hours": _validate_hours(cfg.get("office_hours")),
             "session_types": _validate_session_types(cfg.get("session_types") or []),
             "notice_hours": notice, "buffer_min": buffer_min,
-            "enabled": bool(cfg.get("enabled"))}
+            "enabled": bool(cfg.get("enabled")),
+            "notify_methods": _validate_notify_methods(cfg.get("notify_methods"))}
 
 
 def get_config(cx, pid):
     try:
         row = cx.execute(
             "SELECT timezone, office_hours, session_types, notice_hours, "
-            "buffer_min, enabled FROM practitioner_booking_config "
+            "buffer_min, enabled, notify_methods FROM practitioner_booking_config "
             "WHERE practitioner_id=?", (str(pid),)).fetchone()
     except db.Error:
         return None
@@ -201,6 +244,11 @@ def get_config(cx, pid):
         types = json.loads(row["session_types"])
         timezone = _validate_timezone(row["timezone"])
         office_hours = _validate_hours(row["office_hours"])
+        # NULL is a row written before this column existed, not a failure --
+        # it must read as today's default, same as it always has.
+        raw_notify = row["notify_methods"]
+        notify_methods = _validate_notify_methods(
+            json.loads(raw_notify) if raw_notify is not None else None)
     except (ValueError, TypeError):
         # A row we cannot read -- or cannot re-validate -- offers NO slots.
         # It must not fall back to a default, because a default here is
@@ -211,22 +259,26 @@ def get_config(cx, pid):
         return None
     return {"timezone": timezone, "office_hours": office_hours,
             "session_types": types, "notice_hours": row["notice_hours"],
-            "buffer_min": row["buffer_min"], "enabled": bool(row["enabled"])}
+            "buffer_min": row["buffer_min"], "enabled": bool(row["enabled"]),
+            "notify_methods": notify_methods}
 
 
 def set_config(cx, pid, cfg) -> dict:
     clean = validate_config(cfg)
     cx.execute(
         "INSERT INTO practitioner_booking_config (practitioner_id, timezone, "
-        "office_hours, session_types, notice_hours, buffer_min, enabled, updated_at) "
-        "VALUES (?,?,?,?,?,?,?,?) "
+        "office_hours, session_types, notice_hours, buffer_min, enabled, "
+        "notify_methods, updated_at) "
+        "VALUES (?,?,?,?,?,?,?,?,?) "
         "ON CONFLICT(practitioner_id) DO UPDATE SET timezone=excluded.timezone, "
         "office_hours=excluded.office_hours, session_types=excluded.session_types, "
         "notice_hours=excluded.notice_hours, buffer_min=excluded.buffer_min, "
-        "enabled=excluded.enabled, updated_at=excluded.updated_at",
+        "enabled=excluded.enabled, notify_methods=excluded.notify_methods, "
+        "updated_at=excluded.updated_at",
         (str(pid), clean["timezone"], clean["office_hours"],
          json.dumps(clean["session_types"]), clean["notice_hours"],
          clean["buffer_min"], 1 if clean["enabled"] else 0,
+         json.dumps(clean["notify_methods"]),
          datetime.now(_tz.utc).isoformat()))
     cx.commit()
     return clean

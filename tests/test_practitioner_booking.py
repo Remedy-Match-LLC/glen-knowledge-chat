@@ -216,6 +216,61 @@ def test_a_second_save_replaces_rather_than_duplicates(cx):
     assert rows["c"] == 1
 
 
+def test_notify_methods_round_trip(cx):
+    pb.set_config(cx, PID, _cfg(notify_methods=["email", "text"]))
+    assert pb.get_config(cx, PID)["notify_methods"] == ["email", "text"]
+
+
+def test_notify_methods_defaults_to_email_only():
+    """A practitioner who never touches this keeps exactly today's behaviour.
+    It must NOT default to every method: publishing her phone number because
+    she left a box alone is the system choosing on her behalf."""
+    out = pb.validate_config(_cfg())
+    assert out["notify_methods"] == ["email"]
+
+
+def test_every_method_may_be_chosen():
+    out = pb.validate_config(_cfg(notify_methods=["phone", "text", "email", "calendar"]))
+    assert set(out["notify_methods"]) == {"phone", "text", "email", "calendar"}
+
+
+def test_an_unknown_method_is_rejected():
+    with pytest.raises(pb.BookingConfigError):
+        pb.validate_config(_cfg(notify_methods=["carrier-pigeon"]))
+
+
+def test_duplicates_are_collapsed_not_rejected():
+    """A checkbox UI can submit the same value twice. That is not the
+    practitioner's mistake and should not be an error she has to fix."""
+    out = pb.validate_config(_cfg(notify_methods=["email", "email", "text"]))
+    assert out["notify_methods"] == ["email", "text"]
+
+
+def test_an_empty_list_is_rejected():
+    """Choosing nothing means she never hears about a booking at all. That is
+    almost certainly a mis-click, and the cost of guessing wrong is she misses
+    an appointment."""
+    with pytest.raises(pb.BookingConfigError) as e:
+        pb.validate_config(_cfg(notify_methods=[]))
+    assert "at least one" in str(e.value).lower()
+
+
+def test_a_string_instead_of_a_list_is_rejected():
+    with pytest.raises(pb.BookingConfigError):
+        pb.validate_config(_cfg(notify_methods="email"))
+
+
+def test_a_stored_row_with_bad_notify_methods_fails_closed(cx):
+    """get_config re-validates on read. A row whose methods no longer parse
+    must return None like every other unreadable field, not a half-config."""
+    pb.set_config(cx, PID, _cfg())
+    cx.execute("UPDATE practitioner_booking_config SET notify_methods=? "
+               "WHERE practitioner_id=?", ("{not json", PID))
+    cx.commit()
+    assert pb.get_config(cx, PID) is None
+    assert pb.is_bookable(cx, PID) is False
+
+
 from datetime import date, datetime
 
 
