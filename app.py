@@ -17590,13 +17590,25 @@ def api_practitioner_booking_config_get():
     with db.connect(LOG_DB) as cx:
         cx.row_factory = sqlite3.Row
         _pb.init_tables(cx)
-        cfg = _pb.get_config(cx, pid)
+        status, cfg = _pb.get_config_status(cx, pid)
     # Her BOOKING number, read from the same config row it is saved on -- not
     # from practitioners.phone, which is the directory number the public
     # practitioner-finder publishes and a different fact entirely. Surfaced
     # as its own key as well as inside `config` so the form has one place to
     # read it from whether or not a config exists yet.
+    #
+    # "unreadable" distinguishes a row that exists but could not be parsed
+    # back from genuinely having no row yet -- get_config() itself collapses
+    # both to a bare None, which is correct for every OTHER caller (the
+    # public page, the public slots/booking routes) but is exactly the
+    # ambiguity that let a broken row look like first-time setup here: the
+    # form would populate blank defaults, and a save would upsert over the
+    # unreadable row wholesale, wiping her real hours, session types, notify
+    # methods and phone number under a "Saved." message. The static page
+    # locks the form out on this flag instead (see showLoadError() in
+    # static/practitioner-booking.html).
     return jsonify({"ok": True, "config": cfg,
+                    "unreadable": status == "unreadable",
                     "default_timezone": _pb.DEFAULT_TIMEZONE,
                     "media": list(_pb.MEDIA),
                     "practitioner_phone": (cfg or {}).get("phone") or ""})

@@ -289,7 +289,26 @@ def validate_config(cfg) -> dict:
             "notify_methods": _validate_notify_methods(cfg.get("notify_methods"))}
 
 
-def get_config(cx, pid):
+def get_config_status(cx, pid):
+    """Like get_config, but tells its two failure modes apart instead of
+    collapsing both to a bare None.
+
+    Returns a (status, cfg) pair:
+      - ("none", None)        genuinely no row for this practitioner yet.
+      - ("unreadable", None)  a row exists but could not be turned back into
+                               a config: a db.Error on the SELECT, or a
+                               ValueError/TypeError while re-validating the
+                               stored timezone, hours, session types, or
+                               notify_methods.
+      - ("ok", cfg)           a row that reads back cleanly.
+
+    get_config() below collapses "none" and "unreadable" to the same None on
+    purpose -- its callers (the public page render, the public slots and
+    booking routes) must never be able to tell an unreadable row from no row
+    at all; either way there is nothing safe to publish or book against.
+    Only the practitioner's own settings GET needs the distinction, so it can
+    lock the form instead of showing an unreadable row as first-time setup.
+    """
     try:
         row = cx.execute(
             "SELECT timezone, office_hours, session_types, notice_hours, "
@@ -297,9 +316,9 @@ def get_config(cx, pid):
             "FROM practitioner_booking_config "
             "WHERE practitioner_id=?", (str(pid),)).fetchone()
     except db.Error:
-        return None
+        return "unreadable", None
     if not row:
-        return None
+        return "none", None
     try:
         types = json.loads(row["session_types"])
         timezone = _validate_timezone(row["timezone"])
@@ -316,8 +335,8 @@ def get_config(cx, pid):
         # blob, a hand-edited timezone, and a hand-edited hours string: all
         # three could reach this row without ever going through
         # validate_config (a migration, a partial write, direct SQL).
-        return None
-    return {"timezone": timezone, "office_hours": office_hours,
+        return "unreadable", None
+    return "ok", {"timezone": timezone, "office_hours": office_hours,
             "session_types": types, "notice_hours": row["notice_hours"],
             "buffer_min": row["buffer_min"], "enabled": bool(row["enabled"]),
             "notify_methods": notify_methods,
@@ -325,6 +344,16 @@ def get_config(cx, pid):
             # as "" everywhere downstream -- never as a reason to go looking
             # for another number somewhere else.
             "phone": (row["phone"] or "").strip()}
+
+
+def get_config(cx, pid):
+    """Fail-closed to None on EITHER failure mode -- no row, or a row that
+    exists but could not be read back. See get_config_status for why the two
+    must not be told apart here: every caller of this function publishes or
+    books off its result, and a distinction only the practitioner's own
+    settings page is allowed to see must not leak into those paths."""
+    _status, cfg = get_config_status(cx, pid)
+    return cfg
 
 
 def stored_phone(cx, pid) -> str:

@@ -391,6 +391,18 @@
       })
       .then(function (v) {
         if (!v) return; // auth wall already shown
+        if (v.unreadable) {
+          // A row exists for her but the server could not read it back (see
+          // app.py's booking-config GET and practitioner_booking.get_config_status).
+          // This must NOT fall into the "no config yet" branch below: that
+          // branch populates blank defaults and marks the form loaded, so
+          // Save would upsert the blank form over her real, unreadable row --
+          // wiping her hours, session types, notify methods and phone number
+          // under a "Saved." message. Route it through the same lockout a
+          // network failure gets instead.
+          showLoadError();
+          return;
+        }
         if (v.media && v.media.length) MEDIA = v.media;
         // practitioner_phone is her BOOKING number, saved on the booking
         // config itself -- never the practitioners-directory number, which

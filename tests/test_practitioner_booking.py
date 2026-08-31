@@ -317,6 +317,41 @@ def test_a_stored_row_with_a_bare_string_notify_methods_fails_closed(cx):
     assert pb.is_bookable(cx, PID) is False
 
 
+def test_get_config_status_distinguishes_no_row_from_unreadable(cx):
+    """get_config() itself must keep collapsing both cases to a bare None
+    (every test above this one already pins that). get_config_status is the
+    only thing allowed to tell them apart, and this is the distinction the
+    practitioner's own settings GET relies on to lock the form out instead
+    of treating an unreadable row as first-time setup."""
+    assert pb.get_config_status(cx, PID) == ("none", None)
+    _insert_row(cx, session_types="{not json")
+    status, cfg = pb.get_config_status(cx, PID)
+    assert status == "unreadable"
+    assert cfg is None
+
+
+def test_get_config_status_ok_for_a_good_row(cx):
+    pb.set_config(cx, PID, _cfg())
+    status, cfg = pb.get_config_status(cx, PID)
+    assert status == "ok"
+    assert cfg["timezone"] == "America/Anchorage"
+
+
+def test_get_config_status_a_db_error_on_select_is_unreadable_not_none():
+    """A db.Error from the SELECT itself -- not just a re-validation failure
+    on an otherwise-readable row -- must also come back as "unreadable", not
+    silently collapse to "none" the way a genuinely-missing row does. If it
+    collapsed, app.py's booking-config GET would treat a broken read the
+    same as first-time setup and let the practitioner's settings page save
+    blank defaults over data it never actually lacked."""
+    class _RaisingCx:
+        def execute(self, *a, **k):
+            raise sqlite3.OperationalError("boom")
+    status, cfg = pb.get_config_status(_RaisingCx(), PID)
+    assert status == "unreadable"
+    assert cfg is None
+
+
 def test_a_null_notify_methods_column_defaults_to_email_and_stays_bookable(cx):
     """A row written before this column existed has NULL there, not a
     corrupt value. That must resolve to the default (['email']) and the
