@@ -10,6 +10,9 @@ plus `GHL_LOCATION_ID`. Optional `GHL_EMAIL_FROM` overrides the from-identity
 
 send_via_ghl() upserts the contact, then sends an Email message. Raises on any
 failure so the caller (inbox.send_bulk) falls back to Gmail — nothing is lost.
+
+send_sms_via_ghl() is the SMS sibling: same upsert, same endpoint, message
+type "SMS" instead of "Email". Never raises -- see its docstring.
 """
 from __future__ import annotations
 
@@ -36,12 +39,15 @@ def _headers() -> dict:
     }
 
 
-def _upsert_contact(email: str, name: str = "") -> str:
-    # LIVE CRM WRITE. Private on purpose: its only caller is send_via_ghl, which carries the
-    # pytest guard. Keep it that way -- a new caller must guard itself.
+def _upsert_contact(email: str, name: str = "", phone: str = "") -> str:
+    # LIVE CRM WRITE. Private on purpose: its callers are send_via_ghl and
+    # send_sms_via_ghl, both of which carry the pytest guard. Keep it that
+    # way -- a new caller must guard itself.
     body = {"locationId": os.environ["GHL_LOCATION_ID"], "email": email}
     if name:
         body["name"] = name
+    if phone:
+        body["phone"] = phone
     r = requests.post(f"{_V2}/contacts/upsert", headers=_headers(), json=body, timeout=20)
     r.raise_for_status()
     d = r.json() or {}
@@ -81,3 +87,43 @@ def send_via_ghl(to_email: str, subject: str, *, html: str | None = None,
     r.raise_for_status()
     d = r.json() or {}
     return {"id": d.get("messageId") or d.get("conversationId"), "via": "ghl"}
+
+
+def _sms_payload(contact_id: str, message: str) -> dict:
+    """The request body, split out with no I/O so its shape is testable.
+
+    send_sms_via_ghl short-circuits under pytest before it posts anything, so
+    this is the only place the SMS-vs-Email type can be asserted.
+    """
+    return {"type": "SMS", "contactId": contact_id, "message": message}
+
+
+def send_sms_via_ghl(to_email: str, message: str, *, phone: str = "") -> dict:
+    """Send an SMS through GHL, or say why it could not.
+
+    GHL addresses by contactId, not by phone number, so the recipient must
+    exist as a contact and that contact must carry a phone. We pass the number
+    through on the upsert so a contact created here is textable.
+
+    Returns {"id": ...} on success and {"skipped": reason} otherwise. It never
+    raises: every caller is inside a notification block guarding a booking
+    that has already committed, and a text that cannot be sent is not a reason
+    to tell someone their booking failed.
+    """
+    if not is_configured():
+        return {"skipped": "ghl not configured"}
+    if os.environ.get("PYTEST_CURRENT_TEST"):
+        return {"skipped": "pytest"}
+    try:
+        contact_id = _upsert_contact(to_email, phone=phone)
+    except Exception as e:  # noqa: BLE001
+        return {"skipped": f"contact lookup failed: {e!r}"}
+    body = _sms_payload(contact_id, message)
+    try:
+        r = requests.post(f"{_V2}/conversations/messages",
+                          headers=_headers(), json=body, timeout=20)
+        if r.status_code >= 300:
+            return {"skipped": f"ghl returned {r.status_code}: {r.text[:200]}"}
+        return {"id": (r.json() or {}).get("messageId"), "via": "ghl-sms"}
+    except Exception as e:  # noqa: BLE001
+        return {"skipped": f"send failed: {e!r}"}

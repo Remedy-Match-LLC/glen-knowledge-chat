@@ -1,0 +1,407 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <link rel="icon" type="image/png" href="/static/favicon.png">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex,nofollow">
+  <title>Book a time</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;600&family=Raleway:wght@600;700&display=swap" rel="stylesheet">
+  <style>
+    :root{ --bg:#0a150d; --surface:#111f16; --surface-2:#162318; --border:#21472d;
+      --cream:#fdf4d8; --muted:#a89870; --gold:#d4a843; --green:#3d8a52; --radius:14px;
+      --font:"Open Sans",system-ui,sans-serif; --heading:"Raleway",system-ui,sans-serif; }
+    :root[data-theme="light"]{ --bg:#FBF8F3; --surface:#FFFFFF; --surface-2:#F4ECDE;
+      --border:#E2D9C9; --cream:#1E2A2A; --muted:#5F6B6B; --gold:#B08A3E; --green:#2D7A6A; }
+    *{box-sizing:border-box}
+    body{ margin:0; background:var(--bg); color:var(--cream); font-family:var(--font); line-height:1.6; }
+    .wrap{ max-width:640px; margin:0 auto; padding:34px 20px 60px; }
+    h1,h2{ font-family:var(--heading); font-weight:700; margin:0; }
+    h1{ font-size:24px; } h2{ font-size:17px; margin:0 0 10px; }
+    .muted{ color:var(--muted); font-size:13px; }
+    .panel{ background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:20px; margin-top:16px; }
+    label.field-label{ display:block; font-size:12px; color:var(--muted); font-weight:600; letter-spacing:.05em; margin-bottom:4px; margin-top:12px; }
+    label.field-label:first-child{ margin-top:0; }
+    input[type=text], input[type=email], select{
+      padding:9px 10px; border:1px solid var(--border); border-radius:8px; font-size:14px;
+      font-family:inherit; background:var(--surface-2); color:var(--cream); width:100%; }
+    input::placeholder{ color:#6f7d6f; }
+    button.primary{ background:var(--green); color:#fff; border:0; border-radius:8px;
+      padding:9px 20px; font-weight:600; cursor:pointer; font-family:inherit; font-size:14px; }
+    button{ font-family:inherit; }
+    button:disabled{ opacity:.5; cursor:default; }
+    button.secondary{ background:var(--surface-2); color:var(--cream); border:1px solid var(--border);
+      border-radius:8px; padding:9px 16px; cursor:pointer; margin-left:8px; }
+    .msg{ margin-top:12px; font-size:13px; min-height:1.2em; }
+    .msg.ok{ color:#8fd6a3; }
+    .msg.err{ color:#e09080; }
+    .hint{ display:block; color:var(--muted); font-size:12px; margin:6px 0 14px; }
+    .row-nav{ display:flex; justify-content:space-between; align-items:center; gap:12px; }
+    .slots-grid{ display:flex; flex-wrap:wrap; gap:8px; margin-top:10px; }
+    .slot-btn{ background:var(--surface-2); color:var(--cream); border:1px solid var(--border);
+      border-radius:8px; padding:9px 12px; cursor:pointer; font-size:13px; }
+    .slot-btn:hover{ border-color:var(--gold); }
+    .empty-notice{ text-align:center; padding:40px 20px; }
+    .empty-notice a{ color:var(--gold); }
+    #chosen-slot{ font-weight:600; margin-top:0; }
+  </style>
+  <script>(function(){var t=localStorage.getItem('rm-theme');if(t)document.documentElement.setAttribute('data-theme',t);})();</script>
+  <script src="/static/theme-mode.js"></script>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="row-nav">
+    <div><h1 id="page-title">Book a time</h1></div>
+    <div style="display:flex;gap:8px;align-items:center">
+      <span class="theme-toggle" id="themeToggle" role="group" aria-label="Theme mode"></span>
+    </div>
+  </div>
+
+  <div id="load-err" class="msg err" style="display:none;margin-top:10px"></div>
+
+  <!-- Nothing to book right now: no config, disabled, or genuinely no open
+       times. Never a dead end -- there is always a way back to the
+       practitioner's own page. -->
+  <div id="empty-state" class="panel empty-notice" style="display:none">
+    <p id="empty-msg"></p>
+    <p><a id="back-link" href="/">&larr; Back to the profile</a></p>
+  </div>
+
+  <div id="main-content" style="display:none">
+
+    <div class="panel" id="session-chooser" style="display:none">
+      <label class="field-label">Session type</label>
+      <select id="session-select"></select>
+    </div>
+
+    <div class="panel" id="slots-panel">
+      <h2>Available times</h2>
+      <div class="hint" id="tz-note"></div>
+      <div class="slots-grid" id="slots-list"></div>
+    </div>
+
+    <div class="panel" id="book-form" style="display:none">
+      <h2>Your details</h2>
+      <p id="chosen-slot"></p>
+      <label class="field-label">Name
+        <input id="bk-name" type="text" autocomplete="name">
+      </label>
+      <label class="field-label">Email
+        <input id="bk-email" type="email" autocomplete="email">
+      </label>
+      <div id="bk-msg" class="msg"></div>
+      <button type="button" class="primary" id="submit-btn">Confirm booking</button>
+      <button type="button" class="secondary" id="cancel-choice-btn">Choose a different time</button>
+    </div>
+
+  </div><!-- /main-content -->
+
+  <div class="panel" id="confirm-panel" style="display:none">
+    <h2>You're booked</h2>
+    <div id="confirm-body"></div>
+  </div>
+
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  if (window.RMTheme) window.RMTheme.mountToggle(document.getElementById('themeToggle'));
+
+  function esc(s) {
+    return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) {
+      return {"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c];
+    });
+  }
+
+  // The slug comes from the PATH, not a query string -- /book/<slug> is the
+  // link a client was actually texted, and it is what the API is keyed on.
+  var pathParts = location.pathname.split("/book/");
+  var slug = decodeURIComponent((pathParts[1] || "").replace(/\/+$/, ""));
+  document.getElementById('back-link').setAttribute('href', '/' + slug);
+
+  // Best-effort only, wrapped: Intl.DateTimeFormat can throw on a browser
+  // with a broken or absent Intl implementation. If it does, the API falls
+  // back to the practitioner's own zone and says so in rendered_timezone --
+  // this page never guesses on its own, it only ever labels from that field.
+  var browserTz = "";
+  try { browserTz = Intl.DateTimeFormat().resolvedOptions().timeZone || ""; } catch (e) {}
+
+  var sessionTypes = [];
+  var currentSession = "";
+  var renderedTz = "";
+  // The chosen slot object, as returned by the API: {start, visitor}.
+  // `start` (practitioner-local, naive) is what gets POSTed back; `visitor`
+  // (offset-bearing, in rendered_timezone) is what the visitor reads.
+  // Getting these two backwards either 400s as slot_unavailable or silently
+  // books a different instant than the one shown on screen.
+  var slot = null;
+
+  function showError(msg) {
+    var el = document.getElementById('load-err');
+    el.textContent = msg;
+    el.style.display = 'block';
+  }
+
+  function showEmpty(msg) {
+    document.getElementById('main-content').style.display = 'none';
+    document.getElementById('confirm-panel').style.display = 'none';
+    document.getElementById('empty-msg').textContent = msg;
+    document.getElementById('empty-state').style.display = 'block';
+  }
+
+  function fetchSlots(sessionSlug) {
+    var url = "/api/book/" + encodeURIComponent(slug) + "/slots?tz=" + encodeURIComponent(browserTz);
+    if (sessionSlug) url += "&session=" + encodeURIComponent(sessionSlug);
+    return fetch(url, {credentials: "same-origin"}).then(function (r) {
+      if (!r.ok) { var e = new Error("http_" + r.status); e.status = r.status; throw e; }
+      return r.json();
+    });
+  }
+
+  function renderSessionChooser() {
+    var wrap = document.getElementById('session-chooser');
+    // Exactly one session type: select it, do not make the visitor choose.
+    if (sessionTypes.length <= 1) { wrap.style.display = 'none'; return; }
+    wrap.style.display = 'block';
+    var sel = document.getElementById('session-select');
+    sel.innerHTML = sessionTypes.map(function (t) {
+      return '<option value="' + esc(t.slug) + '"' +
+             (t.slug === currentSession ? ' selected' : '') + '>' +
+             esc(t.label) + ' (' + esc(String(t.duration_min)) + ' min)</option>';
+    }).join('');
+  }
+
+  function fmtTime(iso, tz) {
+    // The digits must come out in `tz` -- the resolved rendered_timezone,
+    // never the browser's own default -- or the label above the list and
+    // the times themselves can disagree. That happens on exactly the
+    // fallback path rendered_timezone exists for: the browser reports an
+    // unusable zone, the API falls back to the practitioner's own zone and
+    // says so in rendered_timezone, and toLocaleString(undefined, ...) would
+    // otherwise silently render in the visitor's own (wrong) zone instead.
+    // tz is still optional and guarded: if it's ever empty, fall back to the
+    // environment default rather than throwing.
+    try {
+      var d = new Date(iso);
+      if (isNaN(d.getTime())) return String(iso);
+      var opts = {weekday: 'short', month: 'short', day: 'numeric',
+                  hour: 'numeric', minute: '2-digit'};
+      if (tz) opts.timeZone = tz;
+      return d.toLocaleString(undefined, opts);
+    } catch (e) { return String(iso); }
+  }
+
+  function renderSlots(slots) {
+    var list = document.getElementById('slots-list');
+    list.innerHTML = '';
+    if (!slots.length) {
+      var p = document.createElement('p');
+      p.className = 'muted';
+      p.textContent = 'No available times right now for this session. ';
+      var a = document.createElement('a');
+      a.href = '/' + slug;
+      a.textContent = 'Back to the profile';
+      p.appendChild(a);
+      list.appendChild(p);
+      return;
+    }
+    slots.forEach(function (s) {
+      var btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'slot-btn';
+      // Display the visitor-facing rendering; the naive practitioner-local
+      // `s.start` is kept on the slot object and posted back untouched.
+      // renderedTz here is the zone this same slots response was labelled
+      // with, so the digits and the "Times below are shown in ..." note
+      // above the list always agree.
+      btn.textContent = fmtTime(s.visitor, renderedTz);
+      btn.addEventListener('click', function () { chooseSlot(s); });
+      list.appendChild(btn);
+    });
+  }
+
+  function chooseSlot(s) {
+    slot = s;
+    document.getElementById('chosen-slot').textContent =
+      fmtTime(slot.visitor, renderedTz) + ' (' + renderedTz + ')';
+    document.getElementById('bk-msg').textContent = '';
+    document.getElementById('bk-msg').className = 'msg';
+    document.getElementById('book-form').style.display = 'block';
+    document.getElementById('book-form').scrollIntoView({behavior: 'smooth', block: 'nearest'});
+  }
+
+  function applySlotsResponse(body) {
+    if (!body || !body.ok) throw new Error((body && body.error) || 'error');
+    // Label every time from rendered_timezone, which is the zone the API
+    // ACTUALLY used -- never from the tz we sent. If the browser reported
+    // something unusable, the API silently fell back to the practitioner's
+    // own zone and tells us so here; a visitor reading times labelled with
+    // what they sent, when that is not what was used, is the exact failure
+    // this field exists to prevent.
+    renderedTz = body.rendered_timezone || renderedTz || browserTz || '';
+    document.getElementById('tz-note').textContent =
+      renderedTz ? ('Times below are shown in ' + renderedTz + '.') : '';
+    document.getElementById('main-content').style.display = 'block';
+    document.getElementById('empty-state').style.display = 'none';
+    renderSlots(body.slots || []);
+  }
+
+  function refreshSlots() {
+    return fetchSlots(currentSession).then(function (body) {
+      if (!body || !body.ok) throw new Error((body && body.error) || 'error');
+      sessionTypes = body.session_types || [];
+      if (!sessionTypes.length) {
+        showEmpty("This practitioner isn't accepting online bookings right now.");
+        return;
+      }
+      if (!currentSession) {
+        // First load: this response had no session param, so its slots are
+        // empty. Pick the first (or only) session type and fetch again --
+        // that second response is the one with real slots in it.
+        currentSession = sessionTypes[0].slug;
+        renderSessionChooser();
+        return fetchSlots(currentSession).then(applySlotsResponse);
+      }
+      renderSessionChooser();
+      return applySlotsResponse(body);
+    });
+  }
+
+  document.getElementById('session-select').addEventListener('change', function () {
+    currentSession = this.value;
+    slot = null;
+    document.getElementById('book-form').style.display = 'none';
+    refreshSlots().catch(function () {
+      showError("Could not load times for that session. Please refresh the page.");
+    });
+  });
+
+  document.getElementById('cancel-choice-btn').addEventListener('click', function () {
+    slot = null;
+    document.getElementById('book-form').style.display = 'none';
+  });
+
+  function looksLikeEmail(v) {
+    // A loose client-side check so a visitor gets a message instead of a
+    // 400 -- the server (dashboard/practitioner_booking.py's pattern) is
+    // still the real gate.
+    return /^[^@\s]+@[^@\s.]+\.[^@\s]+$/.test(v);
+  }
+
+  function setMsg(text, ok) {
+    var msg = document.getElementById('bk-msg');
+    msg.className = ok ? 'msg ok' : 'msg err';
+    msg.textContent = text;
+  }
+
+  // Message-only branches of the POST /api/book error ladder, pulled into a
+  // pure (code -> copy) function so it can be extracted and executed under
+  // Node -- same technique fmtTime uses -- rather than only grepped from
+  // source, which would pass whether or not the branch is ever reached.
+  // slot_taken/slot_unavailable stay in the caller below: those carry side
+  // effects (clearing the chosen slot, refreshing the list) that don't
+  // belong in a pure mapping.
+  function bookErrorMessage(err) {
+    if (err === 'bad_email') return 'That email address does not look right.';
+    if (err === 'name_required') return 'Please enter your name.';
+    if (err === 'not_bookable') return "This practitioner isn't accepting bookings right now.";
+    if (err === 'unknown_practitioner') return "We couldn't find this practitioner.";
+    // Same velocity guard as the other public POST at /begin/fireside/agent
+    // (anonymous tier): the window can be up to a minute, or up to a day if
+    // the daily cap tripped. No specific duration is stated here -- the
+    // response carries no reliably human-scale figure, and a wrong number
+    // in this copy is worse than none.
+    if (err === 'rate_limited') return "You're booking too quickly. Please wait a bit before trying again.";
+    return 'Something went wrong. Please try again.';
+  }
+
+  document.getElementById('submit-btn').addEventListener('click', function () {
+    var name = document.getElementById('bk-name').value.trim();
+    var email = document.getElementById('bk-email').value.trim();
+    if (!slot) { setMsg('Please choose a time first.', false); return; }
+    if (!name) { setMsg('Please enter your name.', false); return; }
+    if (!looksLikeEmail(email)) { setMsg('Please enter a valid email address.', false); return; }
+
+    var btn = this;
+    btn.disabled = true;
+    setMsg('Booking...', true);
+    fetch('/api/book/' + encodeURIComponent(slug), {
+      method: 'POST', credentials: 'same-origin',
+      headers: {'Content-Type': 'application/json'},
+      // Post `slot.start` -- the practitioner's naive local time -- never
+      // `slot.visitor`, which is display-only and would either fail
+      // validation or book a different instant than the one shown.
+      body: JSON.stringify({session: currentSession, start: slot.start,
+                            name: name, email: email, tz: browserTz})
+    }).then(function (r) {
+      return r.json().then(function (j) { return {ok: r.ok, status: r.status, body: j}; });
+    }).then(function (res) {
+      btn.disabled = false;
+      if (res.ok && res.body && res.body.ok) {
+        showConfirmation();
+        return;
+      }
+      var err = (res.body && res.body.error) || '';
+      // slot_taken / slot_unavailable mean someone else booked this time
+      // while the visitor was filling in the form -- the normal case for a
+      // popular slot, not an edge case. The form must not be left dead:
+      // re-fetch the slot list so another time is immediately choosable.
+      if (err === 'slot_taken' || err === 'slot_unavailable') {
+        setMsg("Sorry -- that time was just taken. Please choose another below.", false);
+        slot = null;
+        document.getElementById('book-form').style.display = 'none';
+        refreshSlots().catch(function () {
+          showError("Could not refresh available times. Please reload the page.");
+        });
+        return;
+      }
+      setMsg(bookErrorMessage(err), false);
+    }).catch(function () {
+      btn.disabled = false;
+      setMsg('Could not reach the server. Please try again.', false);
+    });
+  });
+
+  function showConfirmation() {
+    document.getElementById('main-content').style.display = 'none';
+    var st = null;
+    for (var i = 0; i < sessionTypes.length; i++) {
+      if (sessionTypes[i].slug === currentSession) { st = sessionTypes[i]; break; }
+    }
+    var when = slot ? fmtTime(slot.visitor, renderedTz) : '';
+    var wrap = document.getElementById('confirm-body');
+    wrap.innerHTML = '';
+    var lines = [
+      'When: ' + when + (renderedTz ? ' (' + renderedTz + ')' : ''),
+      'How: ' + (st ? st.medium : ''),
+      "A confirmation email is on its way, with a link to cancel if you need to."
+    ];
+    lines.forEach(function (t) {
+      var p = document.createElement('p');
+      p.textContent = t; // textContent, not innerHTML -- nothing here needs escaping twice.
+      wrap.appendChild(p);
+    });
+    document.getElementById('confirm-panel').style.display = 'block';
+    document.getElementById('confirm-panel').scrollIntoView({behavior: 'smooth', block: 'start'});
+  }
+
+  if (!slug) {
+    showEmpty("This booking link looks incomplete.");
+  } else {
+    refreshSlots().catch(function (e) {
+      if (e && e.status === 404) {
+        showEmpty("We couldn't find this practitioner's booking page.");
+      } else {
+        showError("Could not load available times. Please refresh the page.");
+      }
+    });
+  }
+})();
+</script>
+</body>
+</html>

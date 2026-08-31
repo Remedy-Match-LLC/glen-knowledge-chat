@@ -402,6 +402,7 @@ def test_every_public_field_is_actually_rendered_somewhere():
         "featured_products": [{"name": "SentinelProduct", "price": "$10"}],
         "catalog_url": "/sentinel-catalog",
         "profit_disclosure": "SentinelDisclosure",
+        "practitioner_phone": "+15550199sentinel",
     }
     # Every whitelisted field must have a sentinel, "slug" included -- this
     # is what breaks the build the moment someone adds a field to
@@ -421,7 +422,8 @@ def test_every_public_field_is_actually_rendered_somewhere():
                 "accepting_clients": "Accepting new clients",
                 "featured_products": "SentinelProduct",
                 "catalog_url": "/sentinel-catalog",
-                "profit_disclosure": "SentinelDisclosure"}
+                "profit_disclosure": "SentinelDisclosure",
+                "practitioner_phone": "+15550199sentinel"}
     # "slug" is proven by the caller (see PROVEN_BY_THE_CALLER above), not by
     # this substring sweep against render_page_html -- swept separately so
     # the sweep can only pass for fields it actually demonstrates.

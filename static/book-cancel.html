@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <link rel="icon" type="image/png" href="/static/favicon.png">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex,nofollow">
+  <title>Cancel appointment</title>
+  <style>
+    :root{ --bg:#0a150d; --surface:#111f16; --surface-2:#162318; --border:#21472d;
+      --cream:#fdf4d8; --muted:#a89870; --gold:#d4a843; --green:#3d8a52; --red:#c05a4a; --radius:14px;
+      --font:-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif; }
+    :root[data-theme="light"]{ --bg:#FBF8F3; --surface:#FFFFFF; --surface-2:#F4ECDE;
+      --border:#E2D9C9; --cream:#1E2A2A; --muted:#5F6B6B; --gold:#B08A3E; --green:#2D7A6A; --red:#a8402f; }
+    @media (prefers-color-scheme: light) {
+      :root:not([data-theme="dark"]){ --bg:#FBF8F3; --surface:#FFFFFF; --surface-2:#F4ECDE;
+        --border:#E2D9C9; --cream:#1E2A2A; --muted:#5F6B6B; --gold:#B08A3E; --green:#2D7A6A; --red:#a8402f; }
+    }
+    *{box-sizing:border-box}
+    body{ margin:0; background:var(--bg); color:var(--cream); font-family:var(--font);
+      line-height:1.6; min-height:100vh; display:flex; align-items:center; justify-content:center; }
+    .card{ background:var(--surface); border:1px solid var(--border); border-radius:var(--radius);
+      max-width:480px; width:90%; padding:36px 32px; text-align:center; margin:24px; }
+    h1{ font-size:1.3rem; margin:0 0 12px; }
+    p{ color:var(--muted); margin:0 0 8px; font-size:0.98rem; }
+    .when{ color:var(--cream); font-weight:600; margin:14px 0 18px; }
+    button{ font-family:inherit; font-size:1rem; background:var(--red); color:#fff; border:0;
+      border-radius:8px; padding:12px 28px; cursor:pointer; margin-top:8px; }
+    button:disabled{ opacity:.5; cursor:default; }
+    .msg{ margin-top:16px; font-size:0.9rem; min-height:1.2em; }
+    .msg.ok{ color:#8fd6a3; }
+    .msg.err{ color:#e09080; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1 id="heading">Cancel this appointment?</h1>
+    <p id="blurb">If this isn't a time you meant to cancel, just close this page — nothing
+      happens until you press the button below.</p>
+    <div class="when" id="when"></div>
+    <button id="cancel-btn" type="button">Cancel my appointment</button>
+    <div class="msg" id="msg"></div>
+  </div>
+  <script>
+    // Deliberately does NOTHING on load beyond reading the query string and
+    // painting the page. Mail scanners, link-checkers and browser prefetch
+    // all issue a GET on every link in an email; if this page acted on load
+    // it would silently cancel a real appointment before a human ever saw
+    // it. The cancel POST only ever fires from the button's click handler,
+    // which requires a person actually pressing it -- the same reasoning as
+    // _confirm_post_page in app.py (confirm on GET, consume on POST).
+    var params = new URLSearchParams(window.location.search);
+    var slug = params.get('slug') || '';
+    // `start` is naive PRACTITIONER-local wall time -- it is what the cancel
+    // POST below sends back, unchanged, because that is what the server
+    // matches/verifies the token against (see api_public_book_cancel /
+    // cancel_token in app.py). It must never be reinterpreted for display:
+    // `new Date(start)` on a naive string is parsed in the BROWSER's own
+    // zone, which is a different zone than either the practitioner's or the
+    // visitor's on a public multi-timezone booking -- exactly the bug this
+    // fix exists to close.
+    var start = params.get('start') || '';
+    var token = params.get('token') || '';
+    // `when` is an offset-bearing ISO string -- a real, unambiguous instant,
+    // the same value/zone the confirmation email already showed this
+    // visitor -- and `tz` is the zone to render it in. Both are additive
+    // query params from api_public_book; an older emailed link minted before
+    // this fix has neither, so the fallback below still shows SOMETHING
+    // rather than nothing.
+    var when = params.get('when') || '';
+    var tz = params.get('tz') || '';
+
+    function fmtTime(iso, tz) {
+      // Same shape as book.html's fmtTime: parse a real instant, then pin
+      // the DISPLAY zone via toLocaleString's `timeZone` option rather than
+      // trusting whatever zone the browser defaults to. `tz` is optional and
+      // guarded, so an old link with no `tz` param still renders (in the
+      // browser's own zone, same as before this fix) instead of throwing.
+      if (!iso) return '';
+      try {
+        var d = new Date(iso);
+        if (isNaN(d.getTime())) return String(iso);
+        var opts = {weekday: 'long', month: 'long', day: 'numeric',
+                    hour: 'numeric', minute: '2-digit'};
+        if (tz) opts.timeZone = tz;
+        return d.toLocaleString(undefined, opts);
+      } catch (e) { return String(iso); }
+    }
+    document.getElementById('when').textContent =
+      fmtTime(when || start, tz) + (tz ? ' (' + tz + ')' : '');
+
+    if (!slug || !start || !token) {
+      document.getElementById('heading').textContent = 'This cancel link is incomplete';
+      document.getElementById('blurb').textContent =
+        'It looks like part of the link got cut off. Please reach out directly to cancel.';
+      document.getElementById('cancel-btn').style.display = 'none';
+    }
+
+    document.getElementById('cancel-btn').addEventListener('click', function () {
+      var btn = this, msg = document.getElementById('msg');
+      btn.disabled = true;
+      msg.className = 'msg';
+      msg.textContent = 'Cancelling…';
+      fetch('/api/book/' + encodeURIComponent(slug) + '/cancel', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ start: start, token: token })
+      }).then(function (r) {
+        return r.json().then(function (j) { return { ok: r.ok, body: j }; });
+      }).then(function (res) {
+        if (res.ok && res.body && res.body.ok) {
+          msg.className = 'msg ok';
+          msg.textContent = 'Your appointment has been cancelled.';
+          btn.style.display = 'none';
+        } else {
+          msg.className = 'msg err';
+          msg.textContent = 'Could not cancel this appointment — please reach out directly.';
+          btn.disabled = false;
+        }
+      }).catch(function () {
+        msg.className = 'msg err';
+        msg.textContent = 'Network error — please try again.';
+        btn.disabled = false;
+      });
+    });
+  </script>
+</body>
+</html>

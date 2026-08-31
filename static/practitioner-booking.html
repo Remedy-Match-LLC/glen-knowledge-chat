@@ -1,0 +1,464 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <link rel="icon" type="image/png" href="/static/favicon.png">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Booking · Remedy Match</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;600&family=Raleway:wght@600;700&display=swap" rel="stylesheet">
+  <style>
+    :root{ --bg:#0a150d; --surface:#111f16; --surface-2:#162318; --border:#21472d;
+      --cream:#fdf4d8; --muted:#a89870; --gold:#d4a843; --green:#3d8a52; --radius:14px;
+      --font:"Open Sans",system-ui,sans-serif; --heading:"Raleway",system-ui,sans-serif; }
+    :root[data-theme="light"]{ --bg:#FBF8F3; --surface:#FFFFFF; --surface-2:#F4ECDE;
+      --border:#E2D9C9; --cream:#1E2A2A; --muted:#5F6B6B; --gold:#B08A3E; --green:#2D7A6A; }
+    *{box-sizing:border-box}
+    body{ margin:0; background:var(--bg); color:var(--cream); font-family:var(--font); line-height:1.6; }
+    .wrap{ max-width:760px; margin:0 auto; padding:34px 20px 60px; }
+    h1,h2{ font-family:var(--heading); font-weight:700; margin:0; }
+    h1{ font-size:24px; } h2{ font-size:17px; margin-top:24px; }
+    .muted{ color:var(--muted); font-size:13px; }
+    .panel{ background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:20px; margin-top:16px; }
+    label.field-label{ display:block; font-size:12px; color:var(--muted); font-weight:600; letter-spacing:.05em; margin-bottom:4px; margin-top:12px; }
+    label.field-label:first-child{ margin-top:0; }
+    input[type=text], input[type=number], input[type=url], select{
+      padding:9px 10px; border:1px solid var(--border); border-radius:8px; font-size:14px;
+      font-family:inherit; background:var(--surface-2); color:var(--cream); width:100%; }
+    input::placeholder{ color:#6f7d6f; }
+    button.primary{ background:var(--green); color:#fff; border:0; border-radius:8px;
+      padding:9px 20px; font-weight:600; cursor:pointer; font-family:inherit; font-size:14px; }
+    button{ font-family:inherit; }
+    button:disabled{ opacity:.5; cursor:default; }
+    .msg{ margin-top:12px; font-size:13px; min-height:1.2em; }
+    .msg.ok{ color:#8fd6a3; }
+    .msg.err{ color:#e09080; }
+    .notice{ background:rgba(212,168,67,.12); border:1px solid var(--border);
+      border-radius:8px; padding:12px 14px; font-size:13px; color:var(--gold); margin-top:8px; }
+    .hint{ display:block; color:var(--muted); font-size:12px; margin-top:3px; }
+    .row-nav{ display:flex; justify-content:space-between; align-items:center; gap:12px; }
+    .workspace-nav{position:sticky;top:0;z-index:50;display:flex;gap:8px;overflow-x:auto;margin:14px 0 18px;padding:10px;background:var(--surface);border:1px solid var(--border);border-radius:12px;box-shadow:0 8px 24px rgba(0,0,0,.22);-webkit-overflow-scrolling:touch}
+    .workspace-nav a{min-height:44px;display:inline-flex;align-items:center;padding:8px 12px;color:var(--gold);font-size:13px;font-weight:700;text-decoration:none;white-space:nowrap;border-radius:8px}
+    .workspace-nav a.primary{background:var(--green);color:#fff}
+    .type-row{ display:flex; gap:8px; align-items:center; margin-top:8px; flex-wrap:wrap; }
+    .type-row input, .type-row select{ width:auto; flex:1 1 120px; }
+    .type-row button{ background:var(--surface-2); color:var(--cream); border:1px solid var(--border);
+      border-radius:8px; padding:8px 12px; cursor:pointer; }
+    label{ display:block; margin-top:14px; font-weight:600; font-size:13px; }
+    label input[type=checkbox]{ width:auto; margin-right:8px; }
+    .auth-notice{ text-align:center; padding:60px 20px; }
+    .auth-notice a{ color:var(--gold); }
+  </style>
+  <script>(function(){var t=localStorage.getItem('rm-theme');if(t)document.documentElement.setAttribute('data-theme',t);})();</script>
+  <script src="/static/theme-mode.js"></script>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="row-nav">
+    <div>
+      <h1>Booking</h1>
+    </div>
+    <div style="display:flex;gap:8px;align-items:center">
+      <span class="theme-toggle" id="themeToggle" role="group" aria-label="Theme mode"></span>
+    </div>
+  </div>
+  <nav class="workspace-nav" aria-label="Practitioner workspace">
+    <a href="/practitioner/portal">Practitioner Home</a>
+    <a href="/practitioner/dropship">Drop-Ship Order</a>
+    <a href="/practitioner/profile">Public Profile</a>
+    <a class="primary" href="/practitioner/booking">Booking</a>
+    <a href="/practitioner/settings">Practice Settings</a>
+    <a href="/practitioner/client-account?section=messages">Messages &amp; Order Help</a>
+  </nav>
+
+  <div id="load-err" class="msg err" style="display:none;text-align:center;margin-top:10px"></div>
+
+  <!-- auth wall -->
+  <div id="auth-wall" class="auth-notice" style="display:none">
+    <div style="font-size:18px;font-weight:700;font-family:var(--heading);margin-bottom:10px">Sign in required</div>
+    <p>Please sign in to your practitioner portal first.</p>
+    <a href="/practitioner/dropship">Sign in to your practitioner account &rarr;</a>
+  </div>
+
+  <div id="main-content" style="display:none">
+
+    <p class="muted">When this is switched on, a Book button appears on your public
+    page and visitors can choose a time from the hours you set here.</p>
+
+    <div class="notice" id="cal-notice">
+      <b>Your Google Calendar is not connected yet.</b> Times are offered from the
+      hours below, minus sessions already booked through this site. Anything that
+      lives only in your own calendar will still be offered, so keep the hours here
+      to times you can reliably take a call. Connecting your calendar is the next
+      piece of work.
+    </div>
+
+    <div class="panel">
+      <label><input type="checkbox" id="bk-enabled"> Accept bookings on my public page</label>
+
+      <label class="field-label">Timezone
+        <select id="bk-timezone"></select>
+      </label>
+      <span class="hint">Times you enter below are in this zone. Visitors see them
+      converted to their own.</span>
+
+      <label class="field-label">Days and hours</label>
+      <input id="bk-hours" type="text" placeholder="1-5:09:00-17:00">
+      <span class="hint">Weekday range then start and end time. 1 is Monday, 7 is
+      Sunday. So 1-5:09:00-17:00 means weekdays, nine to five.</span>
+
+      <label class="field-label">Shortest notice</label>
+      <input id="bk-notice" type="number" min="0" max="720" value="24">
+      <span class="hint">Hours. A visitor cannot book anything sooner than this.</span>
+
+      <label class="field-label">Gap between sessions</label>
+      <input id="bk-buffer" type="number" min="0" max="240" value="0">
+      <span class="hint">Minutes added after each session before the next can start.</span>
+
+      <h2>How you want to hear about a booking</h2>
+      <span class="hint">Pick as many as you like. Email is on by default; the rest
+      start off, and you choose to turn them on.</span>
+      <label><input type="checkbox" id="notify-email" checked> Email me</label>
+      <label><input type="checkbox" id="notify-calendar"> Attach a calendar invite to that email</label>
+      <label><input type="checkbox" id="notify-text"> Text me</label>
+      <label><input type="checkbox" id="notify-phone"> Give the client my phone number so they can call me
+        <span class="hint">This publishes the number below in two places: on your
+        public page, where anyone who visits it can see it, and in the booking
+        confirmation sent to each client. Only turn this on if you want to be
+        reachable by phone. Leave it off and the number is used for your own text
+        notifications only.</span>
+      </label>
+
+      <div id="notify-phone-wrap" style="display:none">
+        <label class="field-label">Your phone number</label>
+        <input id="notify-phone-number" type="text" placeholder="(907) 555-0100">
+        <span class="hint">Saved with everything else on this page when you press
+        Save. This is your booking number, kept separate from any number in the
+        practitioner directory, so the two can differ.</span>
+        <div id="notify-phone-info" class="msg err" style="display:none"></div>
+      </div>
+
+      <h2>Session types</h2>
+      <div id="bk-types"></div>
+      <button type="button" onclick="addType()" style="margin-top:10px">Add a session type</button>
+
+      <div id="bk-msg" class="msg"></div>
+      <button type="button" class="primary" onclick="save()">Save</button>
+    </div>
+
+  </div><!-- /main-content -->
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  if (window.RMTheme) window.RMTheme.mountToggle(document.getElementById('themeToggle'));
+
+  // Fallbacks only. The GET response carries the server's own `media` list
+  // and `default_timezone`; those are read and preferred once the fetch
+  // below resolves. These exist so the form still works before that fetch
+  // returns, and on a browser old enough to lack Intl.supportedValuesOf.
+  var MEDIA = ["phone", "zoom", "in-person"];
+  var ZONES = ["Pacific/Honolulu", "America/Anchorage", "America/Los_Angeles",
+               "America/Denver", "America/Chicago", "America/New_York",
+               "Europe/London", "Australia/Sydney", "Pacific/Auckland"];
+
+  // The four ways she can hear about a booking (dashboard/practitioner_booking.py
+  // NOTIFY_METHODS). "phone" is not something we send her -- it means her
+  // number goes to the CLIENT instead, which is why it gets its own
+  // disclosure line in the markup rather than being just another checkbox.
+  var NOTIFY_IDS = {email: "notify-email", calendar: "notify-calendar",
+                     text: "notify-text", phone: "notify-phone"};
+  var practitionerPhone = ""; // filled in by load() from the GET response
+  // False until load() has actually populated the form from a successful
+  // GET. Save refuses while it is false -- see window.save. Every path out
+  // of load() sets it exactly once: true only where the form now holds real
+  // saved values (or a confirmed "no config yet"), and never on the auth
+  // wall or the error path.
+  var loaded = false;
+
+  function notifyMethodsChecked() {
+    var out = [];
+    Object.keys(NOTIFY_IDS).forEach(function (m) {
+      if (document.getElementById(NOTIFY_IDS[m]).checked) out.push(m);
+    });
+    return out;
+  }
+
+  function setNotifyMethods(methods) {
+    var chosen = (methods && methods.length) ? methods : ["email"];
+    Object.keys(NOTIFY_IDS).forEach(function (m) {
+      document.getElementById(NOTIFY_IDS[m]).checked = chosen.indexOf(m) >= 0;
+    });
+    updateNotifyPhoneInfo();
+  }
+
+  // Shown whenever "text" or "phone" is ticked -- both need a real number on
+  // file to do anything (text sends an SMS to a GHL contact keyed by her
+  // number; phone hands that same number to the client). The field itself is
+  // only revealed in that case; the warning below it is a SEPARATE decision,
+  // keyed off whether the field is actually empty -- ticking the box must
+  // not be a silent no-op, so if she checks phone/text with nothing typed,
+  // she is told plainly, right where she made the choice, not after Save.
+  function updateNotifyPhoneInfo() {
+    var wrap = document.getElementById("notify-phone-wrap");
+    var info = document.getElementById("notify-phone-info");
+    var needsPhone = document.getElementById("notify-text").checked ||
+                      document.getElementById("notify-phone").checked;
+    wrap.style.display = needsPhone ? "block" : "none";
+    if (!needsPhone) { info.style.display = "none"; return; }
+    var current = document.getElementById("notify-phone-number").value.trim();
+    if (current) {
+      info.style.display = "none";
+    } else {
+      info.style.display = "block";
+      info.textContent = "Text and phone notifications need a number. Add " +
+        "yours above, or saving will be refused.";
+    }
+  }
+
+  function esc(s) {
+    return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) {
+      return {"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c];
+    });
+  }
+
+  function typeRow(t) {
+    t = t || {slug: "", label: "", duration_min: 30, medium: "phone"};
+    var opts = MEDIA.map(function (m) {
+      return '<option value="' + m + '"' + (m === t.medium ? " selected" : "") +
+             ">" + m + "</option>";
+    }).join("");
+    var d = document.createElement("div");
+    d.className = "type-row";
+    d.innerHTML =
+      '<input class="t-slug" placeholder="intro" value="' + esc(t.slug) + '">' +
+      '<input class="t-label" placeholder="Free 20 minute intro call" value="' + esc(t.label) + '">' +
+      '<input class="t-dur" type="number" min="5" max="600" value="' + (t.duration_min || 30) + '">' +
+      '<select class="t-medium">' + opts + "</select>" +
+      '<button type="button" onclick="this.parentNode.remove()">Remove</button>';
+    return d;
+  }
+
+  window.addType = function (t) { document.getElementById("bk-types").appendChild(typeRow(t)); };
+
+  function collect() {
+    var types = [].slice.call(document.querySelectorAll(".type-row")).map(function (r) {
+      return {slug: r.querySelector(".t-slug").value.trim().toLowerCase(),
+              label: r.querySelector(".t-label").value.trim(),
+              duration_min: parseInt(r.querySelector(".t-dur").value, 10),
+              medium: r.querySelector(".t-medium").value};
+    });
+    return {timezone: document.getElementById("bk-timezone").value,
+            office_hours: document.getElementById("bk-hours").value.trim(),
+            session_types: types,
+            notice_hours: parseInt(document.getElementById("bk-notice").value, 10),
+            buffer_min: parseInt(document.getElementById("bk-buffer").value, 10),
+            enabled: document.getElementById("bk-enabled").checked,
+            notify_methods: notifyMethodsChecked(),
+            // One atomic save. The phone number used to go out as a SECOND
+            // request after this one succeeded, which meant a form that had
+            // failed to load blank could wipe a saved number under a
+            // "Saved." message. It is part of the config now, so ticking
+            // "text" and typing the number is a single action the server can
+            // accept or reject as a whole.
+            phone: document.getElementById("notify-phone-number").value.trim()};
+  }
+
+  Object.keys(NOTIFY_IDS).forEach(function (m) {
+    document.getElementById(NOTIFY_IDS[m]).addEventListener("change", updateNotifyPhoneInfo);
+  });
+  // Typing a number must clear the warning live, without waiting for Save --
+  // the warning is about whether a number exists, not about whether it has
+  // been persisted yet.
+  document.getElementById("notify-phone-number").addEventListener("input", updateNotifyPhoneInfo);
+
+  window.save = function () {
+    var msg = document.getElementById("bk-msg");
+    // A form that never loaded must not be saveable. Every field starts
+    // empty, so saving an unpopulated form does not fail -- it succeeds, and
+    // overwrites her real settings (including her phone number) with
+    // whatever the blank form happened to contain, under a "Saved." message
+    // she has no reason to distrust. The phone field is display:none unless
+    // phone/text is ticked, so she would not even see it go.
+    if (!loaded) {
+      msg.className = "msg err";
+      msg.textContent = "Your settings never finished loading, so there is " +
+        "nothing safe to save. Please refresh the page and try again.";
+      return;
+    }
+    var payload = collect();
+    // Belt-and-braces: a blank timezone must never reach the server. It
+    // means the dropdown ended up on selectedIndex -1 -- most likely a
+    // saved zone that isn't in this browser's option list -- and a 400 from
+    // the server is the wrong way for her to discover that. load() below is
+    // supposed to prevent this by merging the saved zone in, but this check
+    // stands regardless of whether that merge ever has a gap.
+    if (!payload.timezone) {
+      msg.className = "msg err";
+      msg.textContent = "Please choose your timezone before saving: the one shown isn't a valid selection.";
+      return;
+    }
+    msg.className = "msg";
+    msg.textContent = "Saving...";
+    fetch("/api/practitioner/booking-config",
+          {method: "POST", credentials: "same-origin",
+           headers: {"Content-Type": "application/json"},
+           body: JSON.stringify(payload)})
+      .then(function (r) { return r.json().then(function (j) { return {ok: r.ok, j: j}; }); })
+      .then(function (res) {
+        if (!res.ok) {
+          msg.textContent = res.j.error || "Could not save that.";
+          msg.className = "msg err";
+          return null;
+        }
+        // The number came back through the same save, so echo the server's
+        // cleaned value rather than what was typed.
+        practitionerPhone = (res.j.config && res.j.config.phone) || "";
+        document.getElementById("notify-phone-number").value = practitionerPhone;
+        updateNotifyPhoneInfo();
+        msg.textContent = "Saved.";
+        msg.className = "msg ok";
+      })
+      .catch(function () {
+        msg.textContent = "Could not reach the server.";
+        msg.className = "msg err";
+      });
+  };
+
+  // Prefer the browser's full IANA list (Chrome 99+, Firefox 96+, Safari
+  // 15.4+, all shipping since early 2022) over our curated nine, which only
+  // covered the US, the UK and two Pacific cities. Older browsers without
+  // Intl.supportedValuesOf fall back to ZONES above.
+  function allZones() {
+    try {
+      if (typeof Intl.supportedValuesOf === "function") {
+        var z = Intl.supportedValuesOf("timeZone");
+        if (z && z.length) return z;
+      }
+    } catch (e) {}
+    return ZONES.slice();
+  }
+
+  (function load() {
+    var sel = document.getElementById("bk-timezone");
+    var guess = "";
+    try { guess = Intl.DateTimeFormat().resolvedOptions().timeZone || ""; } catch (e) {}
+
+    var zones = allZones();
+    function renderZones() {
+      sel.innerHTML = zones.map(function (z) {
+        return '<option value="' + esc(z) + '">' + esc(z) + "</option>";
+      }).join("");
+    }
+    if (guess && zones.indexOf(guess) < 0) zones.unshift(guess);
+    renderZones();
+
+    function showAuthWall() {
+      document.getElementById("auth-wall").style.display = "block";
+      document.getElementById("main-content").style.display = "none";
+    }
+    function showLoadError() {
+      var el = document.getElementById("load-err");
+      el.textContent = "Could not load your booking settings, so this form is " +
+        "not showing what you have saved. Nothing has been changed. Please " +
+        "refresh the page to try again.";
+      el.style.display = "block";
+      // main-content was made visible the moment the response headers looked
+      // OK, several steps before the body was parsed and the fields filled
+      // in. Anything that throws after that point (a truncated body, a
+      // transient Supabase hiccup upstream) used to land here with a fully
+      // interactive, entirely EMPTY form still on screen and Save still
+      // clickable. Hide it: a form that failed to load must be unusable, not
+      // merely accompanied by a warning.
+      document.getElementById("main-content").style.display = "none";
+      loaded = false;
+    }
+
+    fetch("/api/practitioner/booking-config", {credentials: "same-origin"})
+      .then(function (r) {
+        // Unlike practitioner-profile.html's /api/practitioner/settings,
+        // this endpoint's 401 body has no "config" key at all -- treating
+        // that the same as "signed in, first time, no config yet" would
+        // show a visitor what looks like a working form. Check the status
+        // itself rather than trusting the shape of the JSON body.
+        if (r.status === 401 || !r.ok) { showAuthWall(); return null; }
+        document.getElementById("main-content").style.display = "block";
+        return r.json();
+      })
+      .then(function (v) {
+        if (!v) return; // auth wall already shown
+        if (v.unreadable) {
+          // A row exists for her but the server could not read it back (see
+          // app.py's booking-config GET and practitioner_booking.get_config_status).
+          // This must NOT fall into the "no config yet" branch below: that
+          // branch populates blank defaults and marks the form loaded, so
+          // Save would upsert the blank form over her real, unreadable row --
+          // wiping her hours, session types, notify methods and phone number
+          // under a "Saved." message. Route it through the same lockout a
+          // network failure gets instead.
+          showLoadError();
+          return;
+        }
+        if (v.media && v.media.length) MEDIA = v.media;
+        // practitioner_phone is her BOOKING number, saved on the booking
+        // config itself -- never the practitioners-directory number, which
+        // is a separate fact and is deliberately not read in as a prefill.
+        // Filled in here, before either branch below calls setNotifyMethods
+        // (which reads this field to decide whether to show the "no number
+        // on file" warning), so a practitioner who already has a number
+        // never sees a false warning.
+        practitionerPhone = v.practitioner_phone || "";
+        document.getElementById("notify-phone-number").value = practitionerPhone;
+        var c = v.config;
+        if (!c) {
+          // No config saved yet. Pre-fill with the browser's guess; if the
+          // browser can't tell, fall back to the server's suggested
+          // default -- DEFAULT_TIMEZONE is a pre-fill suggestion only, the
+          // practitioner still has to confirm it by saving.
+          var pre = guess || v.default_timezone || "";
+          if (pre && zones.indexOf(pre) < 0) { zones.unshift(pre); renderZones(); }
+          if (pre) sel.value = pre;
+          // No saved config means notify_methods has never been chosen
+          // either -- default to email-only checked, same default the
+          // server applies (dashboard/practitioner_booking.py's
+          // DEFAULT_NOTIFY_METHODS), never phone/text pre-checked.
+          setNotifyMethods(["email"]);
+          addType();
+          loaded = true;
+          return;
+        }
+        // The saved timezone may not be in the option list: a curated
+        // fallback list is necessarily incomplete, and even
+        // Intl.supportedValuesOf() coverage varies by browser and OS. Set
+        // .value on a <select> with no matching <option> silently leaves
+        // selectedIndex at -1, which reads back as "" -- so without this
+        // merge, a practitioner who set her zone from one browser can open
+        // this page from another and find Save blocked with no way to pick
+        // her real zone again.
+        if (c.timezone && zones.indexOf(c.timezone) < 0) {
+          zones.unshift(c.timezone);
+          renderZones();
+        }
+        sel.value = c.timezone;
+        document.getElementById("bk-hours").value = c.office_hours;
+        document.getElementById("bk-notice").value = c.notice_hours;
+        document.getElementById("bk-buffer").value = c.buffer_min;
+        document.getElementById("bk-enabled").checked = !!c.enabled;
+        setNotifyMethods(c.notify_methods);
+        (c.session_types || []).forEach(addType);
+        if (!(c.session_types || []).length) addType();
+        // Last statement in the branch on purpose: anything that throws
+        // above lands in .catch -> showLoadError, and `loaded` stays false.
+        loaded = true;
+      })
+      .catch(function () { showLoadError(); });
+  })();
+
+})();
+</script>
+</body>
+</html>

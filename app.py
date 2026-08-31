@@ -17588,6 +17588,481 @@ def practitioner_profile_page():
     return _practitioner_page("practitioner-profile.html")
 
 
+@app.route("/practitioner/booking")
+def practitioner_booking_page():
+    return _practitioner_page("practitioner-booking.html")
+
+
+@app.route("/api/practitioner/booking-config", methods=["GET"])
+def api_practitioner_booking_config_get():
+    pid = _practitioner_session_pid()
+    if not pid:
+        return jsonify({"ok": False, "error": "not signed in"}), 401
+    from dashboard import practitioner_booking as _pb
+    with db.connect(LOG_DB) as cx:
+        cx.row_factory = sqlite3.Row
+        _pb.init_tables(cx)
+        status, cfg = _pb.get_config_status(cx, pid)
+    # Her BOOKING number, read from the same config row it is saved on -- not
+    # from practitioners.phone, which is the directory number the public
+    # practitioner-finder publishes and a different fact entirely. Surfaced
+    # as its own key as well as inside `config` so the form has one place to
+    # read it from whether or not a config exists yet.
+    #
+    # "unreadable" distinguishes a row that exists but could not be parsed
+    # back from genuinely having no row yet -- get_config() itself collapses
+    # both to a bare None, which is correct for every OTHER caller (the
+    # public page, the public slots/booking routes) but is exactly the
+    # ambiguity that let a broken row look like first-time setup here: the
+    # form would populate blank defaults, and a save would upsert over the
+    # unreadable row wholesale, wiping her real hours, session types, notify
+    # methods and phone number under a "Saved." message. The static page
+    # locks the form out on this flag instead (see showLoadError() in
+    # static/practitioner-booking.html).
+    return jsonify({"ok": True, "config": cfg,
+                    "unreadable": status == "unreadable",
+                    "default_timezone": _pb.DEFAULT_TIMEZONE,
+                    "media": list(_pb.MEDIA),
+                    "practitioner_phone": (cfg or {}).get("phone") or ""})
+
+
+@app.route("/api/practitioner/booking-config", methods=["POST"])
+def api_practitioner_booking_config_post():
+    pid = _practitioner_session_pid()
+    if not pid:
+        return jsonify({"ok": False, "error": "not signed in"}), 401
+    from dashboard import practitioner_booking as _pb
+    body = request.get_json(silent=True) or {}
+    # pid comes from the SESSION. A practitioner_id in the body is ignored on
+    # purpose: honouring it would let any signed-in practitioner rewrite
+    # another's hours.
+    try:
+        with db.connect(LOG_DB) as cx:
+            cx.row_factory = sqlite3.Row
+            _pb.init_tables(cx)
+            clean = _pb.set_config(cx, pid, body)
+    except _pb.BookingConfigError as e:
+        return jsonify({"ok": False, "error": str(e)}), 400
+    return jsonify({"ok": True, "config": clean})
+
+
+_BOOK_EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s.]+\.[^@\s]+$")
+
+
+def _book_days(n=21):
+    from datetime import date, timedelta
+    today = date.today()
+    return [today + timedelta(days=i) for i in range(n)]
+
+
+def _send_sms_via_ghl(to_email, message, phone=""):
+    """Indirection over ghl_email.send_sms_via_ghl, so the notification
+    fan-out has a single patchable seam and app.py does not import GHL at
+    module load."""
+    from dashboard import ghl_email as _g
+    return _g.send_sms_via_ghl(to_email, message, phone=phone)
+
+
+@app.route("/api/book/<slug>/slots", methods=["GET"])
+def api_public_book_slots(slug):
+    """Open times for a practitioner's public booking page.
+
+    PUBLIC and unauthenticated on purpose: a person who was just texted this
+    link has no account and no token. /api/consult/book stays gated and
+    untouched; this is a separate route with separate rules, per the spec.
+    """
+    if not _public_surface_enabled():
+        return ("", 404)
+    from dashboard import practitioner_booking as _pb
+    session_slug = (request.args.get("session") or "").strip()
+    visitor_tz = (request.args.get("tz") or "").strip()
+    with db.connect(LOG_DB) as cx:
+        cx.row_factory = sqlite3.Row
+        _pb.init_tables(cx)
+        pid = _pb.resolve_practitioner_pid(cx, slug)
+        if not pid:
+            return jsonify({"ok": False, "error": "unknown_practitioner"}), 404
+        cfg = _pb.get_config(cx, pid)
+        if not cfg:
+            return jsonify({"ok": True, "slots": [], "session_types": [],
+                            "rendered_timezone": _pb.effective_visitor_tz(
+                                visitor_tz, _pb.DEFAULT_TIMEZONE)})
+        from dashboard import evox as _ev
+        _ev.init_evox_tables(cx)
+        booked = _ev.booked_starts(cx, practitioner=pid)
+        starts = _pb.slots_for(cx, pid, days=_book_days(),
+                               session_slug=session_slug, booked=booked)
+    # Resolved ONCE here, not left to to_visitor_tz's silent per-call fallback
+    # (see practitioner_booking.effective_visitor_tz): the page must label
+    # times from what was actually used, never from what the browser sent.
+    rendered_tz = _pb.effective_visitor_tz(visitor_tz, cfg["timezone"])
+    return jsonify({
+        "ok": True,
+        "timezone": cfg["timezone"],
+        "rendered_timezone": rendered_tz,
+        "session_types": cfg["session_types"] if cfg["enabled"] else [],
+        "slots": [{"start": s,
+                   "visitor": _pb.to_visitor_tz(s, cfg["timezone"], rendered_tz)}
+                  for s in starts]})
+
+
+@app.route("/api/book/<slug>", methods=["POST"])
+def api_public_book(slug):
+    if not _public_surface_enabled():
+        return ("", 404)
+    body = request.get_json(silent=True) or {}
+    # Unauthenticated public POST that sends mail as Glen's SMTP identity on
+    # every success, with up to 120 attacker-chosen characters landing in
+    # "Hi {name}," -- nothing else caps it, so one attacker could fill a
+    # practitioner's whole 21-day grid (~500 slots) and fire ~500 outbound
+    # messages. Same guard, same tier, same IP-keyed shape as the other
+    # unauthenticated public POST at /begin/fireside/agent (see
+    # _velocity_guard above) -- matching its pattern/limits rather than
+    # inventing new ones.
+    session_id = (request.cookies.get("amg_session") or (body.get("session_id") or "").strip())
+    _blocked = _velocity_guard(request, "anonymous", session_id)
+    if _blocked is not None:
+        return _blocked
+    from dashboard import practitioner_booking as _pb
+    from dashboard import evox as _ev
+    session_slug = (body.get("session") or "").strip()
+    start_ts = (body.get("start") or "").strip()
+    name = (body.get("name") or "").strip()[:120]
+    email = (body.get("email") or "").strip().lower()[:200]
+    if not _BOOK_EMAIL_RE.match(email):
+        return jsonify({"ok": False, "error": "bad_email"}), 400
+    if not name:
+        return jsonify({"ok": False, "error": "name_required"}), 400
+    _init_calendar_table()  # create_booking inserts a calendar_events row
+    with db.connect(LOG_DB) as cx:
+        cx.row_factory = sqlite3.Row
+        _pb.init_tables(cx)
+        _ev.init_evox_tables(cx)
+        pid = _pb.resolve_practitioner_pid(cx, slug)
+        if not pid:
+            return jsonify({"ok": False, "error": "unknown_practitioner"}), 404
+        cfg = _pb.get_config(cx, pid)
+        st = next((t for t in (cfg or {}).get("session_types", [])
+                   if t["slug"] == session_slug), None)
+        if not cfg or not cfg["enabled"] or not st:
+            return jsonify({"ok": False, "error": "not_bookable"}), 409
+        # Never trust a start time from the request. Recompute the offered set
+        # and require membership in it -- the same discipline the gated route
+        # uses, which is the part of it worth copying.
+        booked = _ev.booked_starts(cx, practitioner=pid)
+        offered = _pb.slots_for(cx, pid, days=_book_days(),
+                                session_slug=session_slug, booked=booked)
+        if start_ts not in offered:
+            return jsonify({"ok": False, "error": "slot_unavailable"}), 400
+        try:
+            b = _ev.create_booking(cx, email, start_ts,
+                                   duration_min=st["duration_min"],
+                                   practitioner=pid, session_type=session_slug,
+                                   medium=st["medium"])
+        except _ev.SlotTaken:
+            # create_booking catches the UNIQUE violation itself and re-raises
+            # it as SlotTaken. The index on (practitioner, start_ts) is the real
+            # guard and it is enforced by the database, so it holds across
+            # workers; the availability check above only makes the common case
+            # a readable error rather than a race.
+            return jsonify({"ok": False, "error": "slot_taken"}), 409
+        # create_booking's signature is not ours to change (Glen's and Rae's
+        # live flows call it). It collects no name and evox_bookings has no
+        # name column for it to write. Store it with a targeted UPDATE on the
+        # one row we just created, in the same transaction, before commit --
+        # the same additive pattern already used for session_type/medium/etc.
+        #
+        # create_booking already committed by the time we get here, so these
+        # two UPDATEs run in a separate transaction against a booking that is
+        # already durable. If either raises, the booking is real regardless
+        # -- the visitor must still be told it succeeded, not shown a 500 for
+        # a slot that is in fact theirs. Best-effort, logged loudly, never
+        # propagated: the same shape as the confirmation-email sends
+        # elsewhere in this file (e.g. _consult_send_confirmations).
+        try:
+            cx.execute("UPDATE evox_bookings SET client_name=? WHERE id=?",
+                      (name, b["id"]))
+            # The calendar_events row create_booking wrote is keyed by an id
+            # we can reconstruct (create_booking builds it as
+            # f"{session_type}-{booking_id}") and is unique to this booking,
+            # so this UPDATE touches only the row we just made -- it does not
+            # change create_booking or any other caller's write. st["label"]
+            # is the practitioner's own configured session label (e.g. "Free
+            # 20 minute intro call"), so the calendar entry still says what
+            # kind of booking it is, not just who and when.
+            ev_id = f"{session_slug}-{b['id']}"
+            cx.execute("UPDATE calendar_events SET summary=? WHERE google_event_id=?",
+                      (f"{st['label']} — {name} — {email}", ev_id))
+            cx.commit()
+        except Exception as e:
+            app.logger.warning(
+                f"[book] client_name/summary update failed for booking "
+                f"{b['id']} ({pid}/{start_ts}): {e!r}")
+    # The token is bound to THIS booking's row id (b["id"]), not just to
+    # (practitioner, slot) -- see practitioner_booking.cancel_token. A token
+    # that only named the slot would stay valid forever, including after
+    # this slot is cancelled and rebooked by someone else; binding the row
+    # id means a cancel-then-rebook on the same slot mints a different
+    # token, so this client's saved confirmation email cannot later cancel a
+    # stranger's appointment that happens to land on the same time.
+    token = _pb.cancel_token(pid, start_ts, b["id"])
+    # The client has no account and no other record of this appointment, so
+    # this email IS the record. It carries the time in the zone the visitor
+    # actually saw on the booking page (the EFFECTIVE zone, resolved the same
+    # way api_public_book_slots resolves `rendered_timezone` -- not the raw
+    # request value, which can be an unusable/broken browser-reported zone),
+    # a cancel link that works without signing in, and a calendar (.ics)
+    # invite -- send_evox_email and build_ics are the same pair the three
+    # sibling EVOX confirmation flows in this file already use (see
+    # _evox_send_confirmations), so this stays consistent with them rather
+    # than adding a second attachment mechanism. A send failure here must
+    # never fail the booking: create_booking already committed, so the slot
+    # is durably the client's regardless of whether this email lands. Log
+    # loudly, return success -- the same rule the client_name/summary
+    # UPDATEs above follow, and for the same reason (a false 500 for a real
+    # booking is what makes someone book twice).
+    #
+    # `ics` is bound here, before the try, rather than only inside it: the
+    # practitioner notification block below also reads `ics` (for a
+    # `calendar`-method send), and if _ev.build_ics raises inside this
+    # try, the except below logs and returns without ever binding `ics` --
+    # leaving it undefined would raise NameError in the practitioner block,
+    # caught only by ITS outer except, and silently zero out every method
+    # she chose (including `text`, which has nothing to do with the ICS
+    # build failing). b"" here matches what a `calendar`-less notification
+    # already sends, so a failed ICS build degrades to "no invite attached"
+    # rather than "no notification sent at all".
+    ics = b""
+    try:
+        visitor_tz = (body.get("tz") or "").strip()
+        rendered_tz = _pb.effective_visitor_tz(visitor_tz, cfg["timezone"])
+        shown = _pb.to_visitor_tz(start_ts, cfg["timezone"], rendered_tz)
+        # `start` stays the naive practitioner-local value (the cancel API
+        # matches/verifies against it, see api_public_book_cancel and
+        # cancel_token). Display on the cancel PAGE is a separate concern:
+        # `when` is `shown` -- an offset-bearing ISO string, a real instant,
+        # the SAME value/zone the text body above already promised the
+        # visitor -- and `tz` is the zone to render it in. book-cancel.html's
+        # fmtTime pins toLocaleString's timeZone to `tz`, the same fix
+        # already applied to book.html's fmtTime, so the cancel page always
+        # agrees with the confirmation email rather than reinterpreting a
+        # naive string in the browser's own zone (which is what put an
+        # Auckland client on a page reading "Monday" for a booking they made
+        # for "Tuesday").
+        from urllib.parse import quote as _quote
+        cancel_url = (f"{portal_base()}/book/cancel?slug={slug}&start={start_ts}"
+                      f"&token={token}&when={_quote(shown)}&tz={_quote(rendered_tz)}")
+        lines = [f"Hi {name},", "",
+                 f"Your {st['label']} is booked.", "",
+                 f"When: {shown} ({rendered_tz})",
+                 f"How: {st['medium']}", "",
+                 "If you need to cancel, use this link:", cancel_url, "",
+                 "See you then."]
+        methods = cfg.get("notify_methods") or ["email"]
+        # Her booking number, off the config row she saved it on. Gated on
+        # "phone" being among her chosen methods, and there is no fallback to
+        # practitioners.phone -- that is the directory number the public
+        # practitioner-finder publishes, a different fact she did not offer
+        # to her booking clients.
+        her_phone = (cfg.get("phone") or "") if "phone" in methods else ""
+        # She asked to be reached by phone, so the client needs the number. Without
+        # this a phone-medium booking gives neither party a way to call the other.
+        if her_phone:
+            lines.append(f"Call: {her_phone}")
+        text_body = "\n".join(lines)
+        import html as _html
+        html_body = "".join(
+            f'<p><a href="{_html.escape(cancel_url)}">{_html.escape(cancel_url)}</a></p>'
+            if ln == cancel_url else (f"<p>{_html.escape(ln)}</p>" if ln else "")
+            for ln in lines)
+        # start_ts/b["end_ts"] are naive wall-clock timestamps in the
+        # PRACTITIONER's own zone (cfg["timezone"]) -- that is what
+        # slots_for/create_booking operate in, regardless of which zone the
+        # visitor is viewing the page from. Passing tz_name=cfg["timezone"]
+        # tells build_ics what zone those naive strings are IN, so it emits
+        # a real UTC instant (Z suffix) rather than a floating VEVENT. A
+        # floating VEVENT is interpreted by RFC 5545 in the VIEWER's own
+        # zone, not the practitioner's -- omitting tz_name here would mean
+        # a client in one zone adds the WRONG time to their calendar even
+        # though the text body above (via to_visitor_tz/rendered_tz) shows
+        # the right one.
+        ics = _ev.build_ics(uid=b["ics_uid"], start_ts=start_ts, end_ts=b["end_ts"],
+                            summary=st["label"],
+                            description=f"{st['label']} ({st['medium']}). "
+                                        f"To cancel: {cancel_url}",
+                            location=st["medium"], tz_name=cfg["timezone"])
+        send_evox_email(email, name, "Your appointment is booked",
+                        html_body, text_body, ics)
+    except Exception as e:  # noqa: BLE001
+        print(f"[public-book] confirmation failed for {email!r}: {e!r}", flush=True)
+
+    # Both sibling flows notify the practitioner (_evox_send_confirmations ->
+    # Rae, _consult_send_confirmations -> Glen). This route only emailed the
+    # client: Mary could enable booking, a stranger takes her Tuesday 9am,
+    # and she finds out when they call. Her address comes from the
+    # practitioner record the slug already resolved to (pid) -- not from
+    # anything the visitor submitted. The time is start_ts AS-IS: it is
+    # already naive wall-clock time in HER OWN zone (cfg["timezone"]), the
+    # same value slots_for/create_booking operate in, so no conversion is
+    # needed here -- converting it to the VISITOR's zone (rendered_tz above)
+    # would be wrong for the person actually reading this email. Its own
+    # try/except, same shape as the client send just above: create_booking
+    # already committed, so a failed notification must never fail the
+    # booking.
+    try:
+        from dashboard import practitioner_portal as _pp
+        import html as _html2
+        practitioner_email = _pp.practitioner_email_by_id(pid)
+        if practitioner_email:
+            her_nice = start_ts.replace("T", " ")
+            # name is only stripped/truncated ([:120] above), so interior
+            # newlines survive into here. A newline in an email header value
+            # makes Python's email package refuse it (HeaderParseError:
+            # "header value appears to contain an embedded header") rather
+            # than emit one -- this is not header injection, it is a silent
+            # send failure. send_evox_email's own try/except then swallows
+            # it, the booking still returns 200, and the practitioner is
+            # never told -- exactly what this notification exists to
+            # prevent. Collapse whitespace for the SUBJECT only; the body
+            # below keeps the name as submitted.
+            subj = f"New booking: {' '.join(name.split())}"
+            html_body2 = (
+                f"<p>New {_html2.escape(st['label'])} booking.</p>"
+                f"<p>Who: <b>{_html2.escape(name)}</b> ({_html2.escape(email)})</p>"
+                f"<p>When: <b>{_html2.escape(her_nice)} ({_html2.escape(cfg['timezone'])})</b></p>"
+                f"<p>How: {_html2.escape(st['medium'])}</p>")
+            text_body2 = (f"New {st['label']} booking.\n"
+                          f"Who: {name} ({email})\n"
+                          f"When: {her_nice} ({cfg['timezone']})\n"
+                          f"How: {st['medium']}")
+            methods = cfg.get("notify_methods") or ["email"]
+            # "phone" is deliberately absent from this loop. It is not an
+            # outbound channel: it means she wants the client to call her, so
+            # her number goes to the CLIENT (see the confirmation block above)
+            # and nothing is sent to her here. A practitioner who picks only
+            # "phone" correctly receives nothing.
+            if "email" in methods or "calendar" in methods:
+                ics_for_her = ics if "calendar" in methods else b""
+                try:
+                    send_evox_email(practitioner_email, "", subj,
+                                    html_body2, text_body2, ics_for_her)
+                except Exception as e:  # noqa: BLE001
+                    print(f"[public-book] practitioner email failed for {pid!r}: {e!r}",
+                          flush=True)
+            if "text" in methods:
+                try:
+                    sms = (f"New {st['label']} booking: {' '.join(name.split())} "
+                           f"on {her_nice} ({cfg['timezone']}). {email}")
+                    res = _send_sms_via_ghl(practitioner_email, sms,
+                                            cfg.get("phone") or "")
+                    # send_sms_via_ghl NEVER raises -- by design, since it is
+                    # called on a booking that has already committed. It
+                    # returns {"skipped": reason} instead, so the except
+                    # below cannot fire for the ordinary failure and the
+                    # reason was previously computed and thrown away: a text
+                    # that never went out looked identical to one that did.
+                    # Logged in the same shape as the sibling email failure
+                    # just above.
+                    if not (res or {}).get("id"):
+                        why = (res or {}).get("skipped") or repr(res)
+                        print(f"[public-book] practitioner sms not sent for "
+                              f"{pid!r}: {why}", flush=True)
+                except Exception as e:  # noqa: BLE001
+                    print(f"[public-book] practitioner sms failed for {pid!r}: {e!r}",
+                          flush=True)
+    except Exception as e:  # noqa: BLE001
+        print(f"[public-book] practitioner notification failed for {pid!r}: {e!r}", flush=True)
+
+    return jsonify({"ok": True, "start": start_ts, "cancel_token": token})
+
+
+@app.route("/api/book/<slug>/cancel", methods=["POST"])
+def api_public_book_cancel(slug):
+    """Cancel without an account, via the token minted at booking time.
+
+    POST only, deliberately -- see public_book_cancel_page below and
+    _confirm_post_page for why a state change may never ride on GET. Flask's
+    own 405 for a GET here (no `methods=["GET", ...]` registered) IS the
+    guard; there is no code path in this function a GET can reach.
+    """
+    if not _public_surface_enabled():
+        return ("", 404)
+    from dashboard import practitioner_booking as _pb
+    from dashboard import evox as _ev
+    body = request.get_json(silent=True) or {}
+    start_ts = (body.get("start") or "").strip()
+    token = (body.get("token") or "").strip()
+    with db.connect(LOG_DB) as cx:
+        cx.row_factory = sqlite3.Row
+        _pb.init_tables(cx)
+        _ev.init_evox_tables(cx)
+        pid = _pb.resolve_practitioner_pid(cx, slug)
+        if not pid:
+            return jsonify({"ok": False, "error": "unknown_practitioner"}), 404
+        # The token is bound to (practitioner, slot, booking id) -- see
+        # practitioner_booking.cancel_token -- so it must be checked against
+        # the id of whichever row is CURRENTLY booked at this slot, not just
+        # the slot itself. Looking that id up here, rather than trusting a
+        # ceiling from the request, is what makes a cancel-then-rebook safe:
+        # a token minted for a previous occupant of this slot names an id
+        # that no longer matches, so it is refused exactly like a forged one
+        # -- one booking's token cannot cancel a different slot on the same
+        # practitioner's calendar, and it cannot outlive its own booking
+        # either.
+        row = cx.execute(
+            "SELECT id FROM evox_bookings WHERE practitioner=? AND start_ts=? "
+            "AND status='booked'", (pid, start_ts)).fetchone()
+        if not row or not _pb.cancel_token_ok(pid, start_ts, row["id"], token):
+            return jsonify({"ok": False, "error": "bad_token"}), 403
+        cx.execute("UPDATE evox_bookings SET status='cancelled' WHERE id=?",
+                  (row["id"],))
+        cx.commit()
+    return jsonify({"ok": True})
+
+
+@app.route("/book/cancel")
+def public_book_cancel_page():
+    """The emailed cancel link's landing page.
+
+    GET only shows the page -- it never touches the database. The button on
+    the page (static/book-cancel.html) is what fires the POST to
+    /api/book/<slug>/cancel; a mail scanner or link-prefetcher that issues a
+    GET here (the only verb they ever issue) cannot cancel anything, because
+    there is nothing here to trigger it. Same reasoning as
+    _confirm_post_page: a state change waits for a human to press a button.
+    """
+    if not _public_surface_enabled():
+        return ("", 404)
+    resp = send_from_directory(STATIC, "book-cancel.html")
+    resp.headers["X-Robots-Tag"] = "noindex"
+    resp.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+    return resp
+
+
+@app.route("/book/<slug>")
+def public_book_page(slug):
+    """The visitor-facing booking page.
+
+    Public and unauthenticated: the person opening this was texted a link by a
+    friend and has no account. All the data comes from /api/book/<slug>/slots,
+    which applies its own gating -- this route only serves the shell.
+
+    /book/cancel above is a STATIC route and always wins over this dynamic one
+    regardless of registration order (see practitioner_site's docstring on
+    Werkzeug's StateMachineMatcher), so a slug literally named "cancel" can
+    never shadow the cancel-link landing page.
+
+    noindex because a booking form has nothing to offer a search engine, and a
+    practitioner's availability is not something to publish to one.
+    """
+    if not _public_surface_enabled():
+        return ("", 404)
+    resp = send_from_directory(STATIC, "book.html")
+    resp.headers["X-Robots-Tag"] = "noindex"
+    resp.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+    return resp
+
+
 @app.route("/console/biofield-portal")
 def console_biofield_portal_page():
     resp = send_from_directory(STATIC, "console-biofield-portal.html")
@@ -19670,8 +20145,50 @@ def _render_practitioner_page(view, canonical_slug):
         print(f"[_render_practitioner_page] PORTAL_BASE_URL is unset -- "
               f"omitting canonical/og:url for slug {canonical_slug!r}",
               flush=True)
+    # Resolve whether to show the Book link. is_bookable requires a config
+    # that exists, is enabled, and offers at least one session type -- most
+    # practitioners have configured none of that, and an empty booking page
+    # reached from a hopeful button is a worse first impression than no
+    # button at all. A booking-config problem must never take down a
+    # practitioner's page that is live today, so this fails closed to
+    # bookable=False on any exception, same shape as the PORTAL_BASE_URL
+    # fallback just above.
+    from dashboard import practitioner_booking as _pb
+    bookable = False
+    try:
+        with db.connect(LOG_DB) as _bcx:
+            _bcx.row_factory = sqlite3.Row
+            # Cheap local check BEFORE paying for resolve_practitioner_pid
+            # (which opens a fresh unpooled Supabase connection) or
+            # _pb.init_tables (a CREATE TABLE + commit -- a write transaction
+            # on every read of a public page). Deliberately does NOT call
+            # init_tables first: this is the same query init_tables' own
+            # CREATE TABLE IF NOT EXISTS would answer, so a missing table
+            # reads as "nobody has ever enabled booking" (any_enabled stays
+            # None below) rather than something to create here. Today this
+            # is False for all 23 live practitioner pages -- nobody has
+            # enabled booking yet -- so the fast path skips the Supabase
+            # round trip and the write transaction on every single view.
+            # Fails closed to bookable=False on any error, same as the
+            # broader except below (a booking-config problem must never take
+            # down a practitioner's page that is live today).
+            try:
+                any_enabled = _bcx.execute(
+                    "SELECT 1 FROM practitioner_booking_config "
+                    "WHERE enabled=1 LIMIT 1").fetchone()
+            except db.Error:
+                any_enabled = None
+            if any_enabled:
+                _pb.init_tables(_bcx)
+                _bpid = _pb.resolve_practitioner_pid(_bcx, canonical_slug)
+                bookable = bool(_bpid) and _pb.is_bookable(_bcx, _bpid)
+    except Exception as e:  # noqa: BLE001
+        print(f"[practitioner_site] bookable check failed for "
+              f"{canonical_slug!r}: {e!r}", flush=True)
+        bookable = False
     resp = Response(
-        _prender.render_page_html(view, canonical_url=canonical_url),
+        _prender.render_page_html(view, canonical_url=canonical_url,
+                                  bookable=bookable),
         mimetype="text/html")
     resp.headers["X-Robots-Tag"] = "noindex"
     resp.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
@@ -22614,9 +23131,23 @@ def evox_run_reminders():
             cx.execute("ALTER TABLE evox_bookings ADD COLUMN reminded_at TEXT")
         except Exception:
             pass
+        # practitioner filter is load-bearing, not decorative. This query used
+        # to run unfiltered, which meant a public multi-tenant booking (whose
+        # `practitioner` is some OTHER practitioner's slug, e.g. "pid-mary")
+        # fell through every branch below to the Rae/EVOX else-clause: a
+        # stranger who booked a different practitioner in a different
+        # timezone would be told "your EVOX session is tomorrow ... HST, call
+        # Rae at {EVOX_RAE_PHONE}" -- wrong session, wrong practitioner, wrong
+        # zone, and Rae's phone number handed to someone who has no
+        # relationship with her. Restricting to the two practitioners this
+        # branch logic actually knows how to word a reminder for closes that
+        # leak. A practitioner-aware reminder (using her own cfg["timezone"]
+        # and session label) is real work that does not exist yet -- until it
+        # does, a public-practitioner booking gets NO automated reminder
+        # rather than the wrong one.
         rows = cx.execute(
             "SELECT * FROM evox_bookings WHERE status='booked' AND reminded_at IS NULL "
-            "AND start_ts BETWEEN ? AND ?", (lo, hi)).fetchall()
+            "AND practitioner IN ('rae','glen') AND start_ts BETWEEN ? AND ?", (lo, hi)).fetchall()
         for r in rows:
             nice = r["start_ts"].replace("T", " ")
             keys = r.keys()

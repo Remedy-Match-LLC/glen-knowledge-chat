@@ -4,6 +4,7 @@ import sqlite3
 import secrets
 import json as _json
 from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from dashboard import db
 from dashboard import dbwrite
@@ -37,7 +38,8 @@ def init_evox_tables(cx) -> None:
         email TEXT PRIMARY KEY, credits INTEGER NOT NULL DEFAULT 0)""")
     for _col, _decl in (("session_type", "TEXT DEFAULT 'evox'"),
                         ("medium", "TEXT DEFAULT 'phone'"),
-                        ("zoom_join_url", "TEXT"), ("zoom_meeting_id", "TEXT")):
+                        ("zoom_join_url", "TEXT"), ("zoom_meeting_id", "TEXT"),
+                        ("client_name", "TEXT")):
         try:
             cx.execute(f"ALTER TABLE evox_bookings ADD COLUMN {_col} {_decl}")
         except Exception:
@@ -204,14 +206,56 @@ def create_booking(cx, email: str, start_ts: str, *, duration_min: int = 60,
 
 
 def build_ics(*, uid, start_ts, end_ts, summary, description, location,
-              organizer_email="rae@illtowell.com") -> bytes:
-    def _fmt(ts):  # naive local -> floating VEVENT time
+              organizer_email="rae@illtowell.com", tz_name=None) -> bytes:
+    """Build a VCALENDAR .ics invite.
+
+    tz_name is optional and purely additive. Omitted (the default), the
+    output is byte-identical to what this function has always produced --
+    the five OTHER callers (Glen's, Rae's, the masterclass and consult
+    flows) all pass naive local times through the floating-VEVENT path
+    below and none of them are this change's business to touch.
+
+    Passed, start_ts/end_ts are interpreted as wall-clock time IN that zone
+    and converted to a real UTC instant, emitted with the RFC 5545 UTC form
+    (a trailing Z) -- the only form that is unambiguous in every calendar
+    client. A floating VEVENT (no Z, no TZID) is defined by the RFC to be
+    interpreted in the VIEWER's own zone, not the practitioner's: without
+    this, a client in one zone booking a practitioner in another would read
+    the correct time in the confirmation email's text body (to_visitor_tz
+    already converts that) and add the WRONG time to their calendar from
+    the attached invite -- worse than no invite, because the client trusts
+    it and never rechecks the text.
+    """
+    def _fmt(ts):  # naive local -> floating VEVENT time (original behavior)
         return datetime.fromisoformat(ts[:19]).strftime("%Y%m%dT%H%M%S")
-    dtstamp = datetime.fromisoformat(start_ts[:19]).strftime("%Y%m%dT000000")
+
+    zone = None
+    if tz_name:
+        try:
+            zone = ZoneInfo(str(tz_name))
+        except (ZoneInfoNotFoundError, ValueError, KeyError):
+            zone = None  # unusable zone name -> fall back to the original path
+
+    if zone is not None:
+        def _fmt_utc(ts):
+            local = datetime.fromisoformat(ts[:19]).replace(tzinfo=zone)
+            return local.astimezone(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+        dtstart = _fmt_utc(start_ts)
+        dtend = _fmt_utc(end_ts)
+        # A real UTC stamp of send time -- meaningful once DTSTART/DTEND are
+        # real UTC instants too. Left alone on the no-argument path below
+        # (derived from start_ts, which is wrong but harmless there and not
+        # this change's business to fix for the other five callers).
+        dtstamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    else:
+        dtstart = _fmt(start_ts)
+        dtend = _fmt(end_ts)
+        dtstamp = datetime.fromisoformat(start_ts[:19]).strftime("%Y%m%dT000000")
+
     desc = (description or "").replace("\n", "\\n")
     lines = ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//illtowell//EVOX//EN",
              "METHOD:REQUEST", "BEGIN:VEVENT", f"UID:{uid}", f"DTSTAMP:{dtstamp}",
-             f"DTSTART:{_fmt(start_ts)}", f"DTEND:{_fmt(end_ts)}",
+             f"DTSTART:{dtstart}", f"DTEND:{dtend}",
              f"SUMMARY:{summary}", f"DESCRIPTION:{desc}", f"LOCATION:{location}",
              f"ORGANIZER:mailto:{organizer_email}", "STATUS:CONFIRMED",
              "END:VEVENT", "END:VCALENDAR"]

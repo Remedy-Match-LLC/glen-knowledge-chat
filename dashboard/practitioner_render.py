@@ -51,6 +51,14 @@ _STYLE = (
     ".tagline{font-size:19px;color:var(--muted);margin:0 0 20px}"
     ".practice{font-size:17px;margin:0 0 4px}"
     ".loc{color:var(--muted);margin:0 0 20px}"
+    # Styled alongside its siblings above, and rendered as a tel: link --
+    # the whole point of the "phone" option is that a client reading this
+    # on a phone can tap the number. The <a> inherits .phone's colour and
+    # is marked as a link by the underline rather than by a colour of its
+    # own, so the dark-mode block below restates the class and nothing
+    # else.
+    ".phone{margin:0 0 20px}"
+    ".phone a{color:inherit;font-weight:600;text-decoration:underline}"
     ".photo{width:160px;height:160px;border-radius:50%;object-fit:cover;"
     "display:block;margin:0 0 20px}"
     "section{border-top:1px solid var(--line);padding-top:20px;margin-top:24px}"
@@ -60,6 +68,8 @@ _STYLE = (
     ".logo{max-width:200px;max-height:80px;display:block;margin:0 0 20px}"
     ".accepting{font-weight:600}"
     ".price{color:var(--muted)}"
+    ".book-btn{display:inline-block;background:var(--ink);color:#fff;"
+    "padding:10px 20px;border-radius:6px;text-decoration:none;font-weight:600}"
     # Dark mode: the deleted JS shell (static/practitioner-storefront.html)
     # carried this. Without it the practitioner page stayed white while the
     # rest of the portal followed the system theme -- restored here, mapped
@@ -68,7 +78,7 @@ _STYLE = (
     "@media (prefers-color-scheme: dark){"
     "body{background:#121212;color:#eee}"
     "section{border-color:#333}"
-    ".tagline,.practice,.loc,.disclosure,.price{color:#aaa}"
+    ".tagline,.practice,.loc,.disclosure,.price,.phone{color:#aaa}"
     "}"
     "</style>"
 )
@@ -168,6 +178,27 @@ def _line(css_class, text):
     return f'<p class="{css_class}">{_esc(text)}</p>' if text else ""
 
 
+def _phone_line(view):
+    """Her booking number as a tappable tel: link, or nothing.
+
+    Pure, like every other renderer here: it publishes exactly what the
+    caller handed it. public_surface.build_practitioner_storefront only
+    populates practitioner_phone when her booking config exists AND lists
+    "phone" among her notify methods, so the opt-in decision lives there, not
+    here.
+
+    The href strips whitespace (RFC 3966 allows the visual separators
+    "+-.()" but not spaces) while the visible text keeps the number exactly
+    as she typed it. Both halves are escaped: the value reaches an attribute
+    as well as a text node.
+    """
+    text = str(view.get("practitioner_phone") or "").strip()
+    if not text:
+        return ""
+    href = "".join(text.split())
+    return f'<p class="phone"><a href="tel:{_esc(href)}">{_esc(text)}</a></p>'
+
+
 def _logo(view):
     url = str(view.get("logo_url") or "").strip()
     if not url:
@@ -208,6 +239,22 @@ def _accepting(view):
     return ('<p class="accepting">Accepting new clients</p>'
             if value
             else '<p class="accepting">Not currently accepting new clients</p>')
+
+
+def _book_block(view, bookable):
+    """The Book link -- only when the practitioner has actually turned
+    booking on. `bookable` is resolved by app.py from
+    practitioner_booking.is_bookable and arrives here as a plain argument;
+    this module still reads no database. Most practitioners have never
+    configured booking, and an empty booking page reached from a hopeful
+    button is a worse first impression than no button at all -- so this
+    renders nothing rather than a disabled or explanatory state."""
+    if not bookable:
+        return ""
+    slug = _esc(view.get("slug") or "")
+    return (f'<section class="book"><h2>Book a session</h2>'
+            f'<p><a class="book-btn" href="/book/{slug}">'
+            f"Book a time</a></p></section>")
 
 
 def _featured(view):
@@ -369,7 +416,7 @@ def _jsonld_tag(view, canonical_url):
     return '<script type="application/ld+json">' + raw + "</script>"
 
 
-def render_page_html(view, *, canonical_url):
+def render_page_html(view, *, canonical_url, bookable=False):
     """Render the complete document for one practitioner.
 
     `view` is the payload from public_surface.build_practitioner_storefront.
@@ -392,6 +439,10 @@ def render_page_html(view, *, canonical_url):
 
     noindex is unconditional in section 5a. Section 5b introduces the content
     bar that decides when it may be lifted.
+
+    `bookable` defaults to False so a caller that forgets it does not
+    advertise a booking page that is not configured. Like every other input
+    here, it arrives as an argument: this module reads no database.
     """
     name = _display_name(view)
     title = build_title(view)
@@ -402,8 +453,10 @@ def render_page_html(view, *, canonical_url):
         + f"<h1>{_esc(name)}</h1>"
         + _line("tagline", view.get("tagline"))
         + _line("practice", view.get("practice_name"))
+        + _book_block(view, bookable)
         + _logo(view)
         + _line("loc", view.get("location"))
+        + _phone_line(view)
         + _accepting(view)
         + _section("About", view.get("bio"))
         + _section("How I work", view.get("how_i_work"))

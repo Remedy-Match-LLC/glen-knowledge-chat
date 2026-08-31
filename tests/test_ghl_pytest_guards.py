@@ -64,10 +64,13 @@ def test_ghl_upsert_contact_is_a_noop_under_pytest(monkeypatch):
 
 def test_upsert_contact_stays_private_and_guarded():
     # _upsert_contact is a live CRM write with no guard of its own; it is safe only because
-    # send_via_ghl (which is guarded) is its sole caller. If someone adds another caller,
-    # this is the reminder to guard it there.
+    # every caller (send_via_ghl, send_sms_via_ghl) carries its own pytest guard. If someone
+    # adds another caller, this is the reminder to guard it there too --
+    # test_send_sms_never_touches_the_live_crm_under_pytest is the sibling check that the
+    # send_sms_via_ghl guard actually holds.
     from pathlib import Path
 
     src = Path(__file__).resolve().parent.parent / "dashboard" / "ghl_email.py"
     text = src.read_text()
-    assert text.count("_upsert_contact(") == 2  # the def, plus the one call in send_via_ghl
+    # the def, plus one call each in send_via_ghl and send_sms_via_ghl
+    assert text.count("_upsert_contact(") == 3
