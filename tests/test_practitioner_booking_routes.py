@@ -286,6 +286,74 @@ def test_the_clients_name_is_stored_not_just_validated(public, logdb):
     with _open(logdb) as c:
         row = c.execute("SELECT client_name FROM evox_bookings").fetchone()
         assert row["client_name"] == "Priya Chandrasekaran"
+        # The calendar summary must carry all three parts: which kind of
+        # session (the practitioner's own configured label, not a hardcoded
+        # one), who, and how to reach them. Dropping the label would leave
+        # Mary looking at a name with no idea whether it's a twenty-minute
+        # intro or a full session.
+        cal = c.execute("SELECT summary FROM calendar_events").fetchone()
+        assert "Free 20 minute intro call" in cal["summary"]
+        assert "Priya Chandrasekaran" in cal["summary"]
+        assert "client@example.com" in cal["summary"]
+
+
+class _BoomOnClientNameUpdate:
+    """Wraps a real sqlite3 connection and raises on the client_name UPDATE
+    only, forwarding everything else untouched. sqlite3.Connection is an
+    immutable extension type in this Python version -- monkeypatching
+    Connection.execute directly raises 'cannot set attribute of immutable
+    type' -- so the route's own connection has to be swapped out at
+    db.connect() instead of patched in place."""
+
+    def __init__(self, real):
+        self._real = real
+
+    def execute(self, sql, *a, **kw):
+        if sql.startswith("UPDATE evox_bookings SET client_name"):
+            raise sqlite3.OperationalError("database is locked")
+        return self._real.execute(sql, *a, **kw)
+
+    def __enter__(self):
+        self._real.__enter__()
+        return self
+
+    def __exit__(self, *exc):
+        return self._real.__exit__(*exc)
+
+    def __getattr__(self, attr):
+        return getattr(self._real, attr)
+
+    @property
+    def row_factory(self):
+        return self._real.row_factory
+
+    @row_factory.setter
+    def row_factory(self, value):
+        self._real.row_factory = value
+
+
+def test_a_failed_post_booking_update_does_not_fail_the_booking(public, logdb, monkeypatch):
+    """create_booking already committed by the time the client_name/summary
+    UPDATEs run. If either raises, the booking is still real -- the visitor
+    must get a 200 with a valid cancel_token, not a 500 for a slot that is
+    in fact theirs. A false failure here is the shape that makes a client
+    book twice or email the practitioner asking whether it worked."""
+    with _open(logdb) as c:
+        pb.set_config(c, PID, CFG)
+    slot = public.get("/api/book/mary-boyd/slots?session=intro").get_json()["slots"][0]
+
+    real_db_connect = pb.db.connect
+    monkeypatch.setattr(appmod.db, "connect",
+                        lambda path, **kw: _BoomOnClientNameUpdate(real_db_connect(path, **kw)))
+    r = public.post("/api/book/mary-boyd", json={
+        "session": "intro", "start": slot["start"],
+        "name": "A Client", "email": "client@example.com"})
+    assert r.status_code == 200, r.get_data(as_text=True)
+    assert r.get_json()["cancel_token"]
+    monkeypatch.undo()
+    with _open(logdb) as c:
+        row = c.execute("SELECT practitioner, start_ts, status FROM evox_bookings").fetchone()
+        assert row["practitioner"] == PID and row["status"] == "booked"
 
 
 def test_the_same_slot_cannot_be_booked_twice(public, logdb):

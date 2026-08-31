@@ -17721,18 +17721,33 @@ def api_public_book(slug):
         # name column for it to write. Store it with a targeted UPDATE on the
         # one row we just created, in the same transaction, before commit --
         # the same additive pattern already used for session_type/medium/etc.
-        cx.execute("UPDATE evox_bookings SET client_name=? WHERE id=?",
-                  (name, b["id"]))
-        # The calendar_events row create_booking wrote is keyed by an id we
-        # can reconstruct (create_booking builds it as
-        # f"{session_type}-{booking_id}") and is unique to this booking, so
-        # this UPDATE touches only the row we just made -- it does not change
-        # create_booking or any other caller's write. Folding the client's
-        # name into the summary the practitioner actually sees.
-        ev_id = f"{session_slug}-{b['id']}"
-        cx.execute("UPDATE calendar_events SET summary=? WHERE google_event_id=?",
-                  (f"{name} — {email}", ev_id))
-        cx.commit()
+        #
+        # create_booking already committed by the time we get here, so these
+        # two UPDATEs run in a separate transaction against a booking that is
+        # already durable. If either raises, the booking is real regardless
+        # -- the visitor must still be told it succeeded, not shown a 500 for
+        # a slot that is in fact theirs. Best-effort, logged loudly, never
+        # propagated: the same shape as the confirmation-email sends
+        # elsewhere in this file (e.g. _consult_send_confirmations).
+        try:
+            cx.execute("UPDATE evox_bookings SET client_name=? WHERE id=?",
+                      (name, b["id"]))
+            # The calendar_events row create_booking wrote is keyed by an id
+            # we can reconstruct (create_booking builds it as
+            # f"{session_type}-{booking_id}") and is unique to this booking,
+            # so this UPDATE touches only the row we just made -- it does not
+            # change create_booking or any other caller's write. st["label"]
+            # is the practitioner's own configured session label (e.g. "Free
+            # 20 minute intro call"), so the calendar entry still says what
+            # kind of booking it is, not just who and when.
+            ev_id = f"{session_slug}-{b['id']}"
+            cx.execute("UPDATE calendar_events SET summary=? WHERE google_event_id=?",
+                      (f"{st['label']} — {name} — {email}", ev_id))
+            cx.commit()
+        except Exception as e:
+            app.logger.warning(
+                f"[book] client_name/summary update failed for booking "
+                f"{b['id']} ({pid}/{start_ts}): {e!r}")
     token = _pb.cancel_token(pid, start_ts)
     return jsonify({"ok": True, "start": start_ts, "cancel_token": token})
 
