@@ -41,3 +41,12 @@ def test_url_carries_scope_and_signature():
     assert "/email/unsubscribe?" in url
     assert "scope=global" in url
     assert unsubscribe.sign("a@b.com", "global") in url
+
+
+def test_known_vector_matches_the_vault_content_sender():
+    """The vault sender at 03 Marketing/ghl-email-automation/unsub.py duplicates
+    this signing because it runs on a different machine and cannot import it.
+    The same value is pinned in that repo's tests/test_unsub.py. If this fails,
+    one of the two implementations changed and content-email unsubscribe links
+    will not verify. Fix the code, not the constant."""
+    assert unsubscribe.sign("a@b.com", "global") == "a8d3c7d23128bd058da40a82a62083c7599d34da"
