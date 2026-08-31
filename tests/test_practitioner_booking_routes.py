@@ -1499,7 +1499,9 @@ def test_sms_is_skipped_not_raised_when_ghl_is_unconfigured(monkeypatch):
     from dashboard import ghl_email as _g
     monkeypatch.setattr(_g, "is_configured", lambda: False)
     out = _g.send_sms_via_ghl("her@example.com", "New booking")
-    assert out.get("skipped")
+    # Specific reason, not just "truthy skip" -- that alone can't distinguish
+    # this branch from the pytest short-circuit branch below it.
+    assert out.get("skipped") == "ghl not configured"
     assert "id" not in out
 
 
@@ -1510,8 +1512,17 @@ def test_sms_is_skipped_when_the_contact_lookup_fails(monkeypatch):
     def boom(email, name="", phone=""):
         raise RuntimeError("no contact")
     monkeypatch.setattr(_g, "_upsert_contact", boom)
+    # send_sms_via_ghl short-circuits to {"skipped": "pytest"} before it ever
+    # reaches _upsert_contact, same as every other test in this file -- so
+    # without this delenv, `boom` above never fires and the try/except this
+    # test claims to cover has zero coverage. Deleting the env var is safe
+    # ONLY because _upsert_contact is mocked to `boom` right above: real
+    # execution now reaches the (fake) contact lookup but nothing past it.
+    # Removing that mock while this delenv is in place would make this test
+    # write to Glen's live CRM.
+    monkeypatch.delenv("PYTEST_CURRENT_TEST", raising=False)
     out = _g.send_sms_via_ghl("her@example.com", "New booking")
-    assert out.get("skipped")
+    assert "contact lookup failed" in out.get("skipped", "")
 
 
 def test_the_sms_payload_is_type_sms_not_email():
