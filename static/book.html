@@ -176,13 +176,23 @@
     }).join('');
   }
 
-  function fmtTime(iso) {
+  function fmtTime(iso, tz) {
+    // The digits must come out in `tz` -- the resolved rendered_timezone,
+    // never the browser's own default -- or the label above the list and
+    // the times themselves can disagree. That happens on exactly the
+    // fallback path rendered_timezone exists for: the browser reports an
+    // unusable zone, the API falls back to the practitioner's own zone and
+    // says so in rendered_timezone, and toLocaleString(undefined, ...) would
+    // otherwise silently render in the visitor's own (wrong) zone instead.
+    // tz is still optional and guarded: if it's ever empty, fall back to the
+    // environment default rather than throwing.
     try {
       var d = new Date(iso);
       if (isNaN(d.getTime())) return String(iso);
-      return d.toLocaleString(undefined, {
-        weekday: 'short', month: 'short', day: 'numeric',
-        hour: 'numeric', minute: '2-digit'});
+      var opts = {weekday: 'short', month: 'short', day: 'numeric',
+                  hour: 'numeric', minute: '2-digit'};
+      if (tz) opts.timeZone = tz;
+      return d.toLocaleString(undefined, opts);
     } catch (e) { return String(iso); }
   }
 
@@ -206,7 +216,10 @@
       btn.className = 'slot-btn';
       // Display the visitor-facing rendering; the naive practitioner-local
       // `s.start` is kept on the slot object and posted back untouched.
-      btn.textContent = fmtTime(s.visitor);
+      // renderedTz here is the zone this same slots response was labelled
+      // with, so the digits and the "Times below are shown in ..." note
+      // above the list always agree.
+      btn.textContent = fmtTime(s.visitor, renderedTz);
       btn.addEventListener('click', function () { chooseSlot(s); });
       list.appendChild(btn);
     });
@@ -215,7 +228,7 @@
   function chooseSlot(s) {
     slot = s;
     document.getElementById('chosen-slot').textContent =
-      fmtTime(slot.visitor) + ' (' + renderedTz + ')';
+      fmtTime(slot.visitor, renderedTz) + ' (' + renderedTz + ')';
     document.getElementById('bk-msg').textContent = '';
     document.getElementById('bk-msg').className = 'msg';
     document.getElementById('book-form').style.display = 'block';
@@ -349,7 +362,7 @@
     for (var i = 0; i < sessionTypes.length; i++) {
       if (sessionTypes[i].slug === currentSession) { st = sessionTypes[i]; break; }
     }
-    var when = slot ? fmtTime(slot.visitor) : '';
+    var when = slot ? fmtTime(slot.visitor, renderedTz) : '';
     var wrap = document.getElementById('confirm-body');
     wrap.innerHTML = '';
     var lines = [

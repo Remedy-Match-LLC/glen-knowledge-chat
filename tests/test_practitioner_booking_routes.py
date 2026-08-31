@@ -4,7 +4,9 @@ Assertions are on raw response bytes and JSON, never a parsed DOM.
 """
 import contextlib
 import os
+import shutil
 import sqlite3
+import subprocess
 from unittest import mock
 import pytest
 if not os.environ.get("PINECONE_API_KEY"):
@@ -955,3 +957,84 @@ def test_the_page_posts_the_practitioner_local_start_not_the_visitor_string():
     assert "s.start" in js or "slot.start" in js
     assert "rendered_timezone" in js, \
         "the page must label times from the zone the API actually used"
+
+
+@pytest.mark.skipif(not shutil.which("node"), reason="node not available")
+def test_fmt_time_renders_in_the_rendered_timezone_not_the_browsers_own():
+    """Round 1 fix: fmtTime() called toLocaleString(undefined, {...}) with no
+    `timeZone` option, so the DIGITS came out in whatever zone the host
+    environment defaulted to, while the "Times below are shown in ..." note
+    above the list was correctly built from rendered_timezone -- the two only
+    agreed when the server happened to pick the visitor's own zone. On the
+    fallback path rendered_timezone exists for (the browser reports an
+    unusable zone, the API falls back to the practitioner's own zone and
+    says so), the label and the times disagreed -- exactly the failure this
+    field exists to prevent.
+
+    A substring check for "rendered_timezone" appearing anywhere in the file
+    (the previous version of this guard) passes whether or not anything
+    actually uses it, so it caught nothing. This test instead extracts the
+    real fmtTime() function out of book.html by balanced-brace slicing and
+    executes it in Node with a fixed instant and two different IANA zones
+    18+ hours apart (the brief's own America/Anchorage / Pacific/Auckland
+    example for 2026-09-07 17:00 UTC). Each expected value is computed with
+    the *same* toLocaleString options fmtTime uses, so this does not depend
+    on any hardcoded locale-formatted string or the test host's own default
+    zone -- it only passes if fmtTime actually threads `tz` into
+    toLocaleString's `timeZone` option.
+    """
+    import pathlib
+    html = (pathlib.Path(appmod.STATIC) / "book.html").read_text()
+    js = r'''
+      const fs = require('fs');
+      const src = fs.readFileSync('static/book.html', 'utf8');
+      const marker = 'function fmtTime(';
+      const idx = src.indexOf(marker);
+      if (idx < 0) { console.error('fmtTime not found in book.html'); process.exit(2); }
+      const braceStart = src.indexOf('{', idx);
+      let depth = 0, end = -1;
+      for (let j = braceStart; j < src.length; j++) {
+        if (src[j] === '{') depth++;
+        else if (src[j] === '}') { depth--; if (depth === 0) { end = j; break; } }
+      }
+      if (end < 0) { console.error('unbalanced braces extracting fmtTime'); process.exit(2); }
+      const fnSrc = src.slice(idx, end + 1);
+      eval(fnSrc);
+      if (typeof fmtTime !== 'function') {
+        console.error('extraction did not produce a callable fmtTime'); process.exit(2);
+      }
+
+      // The same UTC instant the brief's own example uses: 09:00 in
+      // America/Anchorage (UTC-8 in September) == 05:00 the next day in
+      // Pacific/Auckland (UTC+12, pre-NZDT in early September).
+      const iso = '2026-09-07T17:00:00Z';
+      const opts = {weekday: 'short', month: 'short', day: 'numeric',
+                    hour: 'numeric', minute: '2-digit'};
+      const d = new Date(iso);
+      const expectA = d.toLocaleString(undefined, Object.assign({}, opts, {timeZone: 'America/Anchorage'}));
+      const expectB = d.toLocaleString(undefined, Object.assign({}, opts, {timeZone: 'Pacific/Auckland'}));
+      const gotA = fmtTime(iso, 'America/Anchorage');
+      const gotB = fmtTime(iso, 'Pacific/Auckland');
+
+      if (gotA !== expectA) {
+        console.error('Anchorage mismatch: got ' + JSON.stringify(gotA) +
+                       ' expected ' + JSON.stringify(expectA));
+        process.exit(1);
+      }
+      if (gotB !== expectB) {
+        console.error('Auckland mismatch: got ' + JSON.stringify(gotB) +
+                       ' expected ' + JSON.stringify(expectB));
+        process.exit(1);
+      }
+      if (gotA === gotB) {
+        console.error('same output for two zones 20 hours apart -- tz is being ignored: ' +
+                       JSON.stringify(gotA));
+        process.exit(1);
+      }
+      console.log('ok');
+    '''
+    out = subprocess.run(["node", "-e", js], cwd=str(pathlib.Path(appmod.STATIC).parent),
+                         capture_output=True, text=True)
+    assert out.returncode == 0, f"stdout={out.stdout!r} stderr={out.stderr!r}"
+    assert "timeZone" in html, \
+        "fmtTime's toLocaleString call must pass a timeZone option somewhere"
