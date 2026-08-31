@@ -200,16 +200,31 @@ def test_a_second_save_replaces_rather_than_duplicates(cx):
 from datetime import date, datetime
 
 
-def test_now_in_uses_the_named_zone_not_a_fixed_offset():
-    """Alaska is -09:00 in January and -08:00 in July. Anything that hardcodes
-    an offset is an hour wrong for half the year, and the symptom is a client
-    arriving at the wrong time rather than an exception."""
+def test_now_in_matches_the_zone_database_for_several_zones():
+    """A hardcoded offset (the _hst_now bug) passes a naivety check and fails
+    this one. Compares against an independently computed value rather than
+    against another call to the function under test."""
+    from datetime import datetime, timezone as _tzmod
     from zoneinfo import ZoneInfo
-    jan = datetime(2026, 1, 15, 12, tzinfo=ZoneInfo("America/Anchorage"))
-    jul = datetime(2026, 7, 15, 12, tzinfo=ZoneInfo("America/Anchorage"))
-    assert jan.utcoffset() != jul.utcoffset(), "fixture assumption"
-    n = pb.now_in("America/Anchorage")
-    assert n.tzinfo is None, "callers compare against a naive grid"
+    utc = datetime.now(_tzmod.utc)
+    for tz in ("America/Anchorage", "Pacific/Honolulu", "Europe/London",
+               "Australia/Sydney"):
+        expected = utc.astimezone(ZoneInfo(tz)).replace(tzinfo=None)
+        got = pb.now_in(tz)
+        assert abs((got - expected).total_seconds()) < 5, (
+            f"{tz}: got {got}, zone database says {expected}")
+
+
+def test_now_in_returns_different_wall_clocks_for_different_zones():
+    """The cheapest possible statement of the same rule: one hardcoded offset
+    cannot be right for two places at once."""
+    assert pb.now_in("America/Anchorage") != pb.now_in("Pacific/Honolulu")
+
+
+def test_now_in_returns_naive_datetimes():
+    """Kept separately from the offset tests: evox.available_slots compares
+    against a naive grid and mixing aware with naive raises."""
+    assert pb.now_in("America/Anchorage").tzinfo is None
 
 
 def test_slots_come_back_in_the_practitioner_timezone(cx):
