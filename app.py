@@ -1410,8 +1410,20 @@ def _has_e4l(cx, email, state):
         return False
 
 
+def _is_completed_purchase_order(order):
+    """Whether an order represents an actual purchase, not a quote or open cart.
+
+    Legacy/digital flows sometimes reached a fulfilled terminal status without
+    backfilling ``pay_status``; conversely, an in-house invoice can be paid before
+    fulfillment begins.  Either fact is sufficient.  Merely being non-cancelled
+    is not: ``proposed`` and ``confirmed`` rows are offers, not purchase history.
+    """
+    return ((order or {}).get("pay_status") == "paid" or
+            (order or {}).get("status") in ("paid", "shipped", "delivered", "done"))
+
+
 def _order_slug_counts(orders):
-    """slug -> how many non-cancelled orders contain it, retired slugs folded to
+    """slug -> how many completed purchases contain it, retired slugs folded to
     their live twin. ONE definition of "bought more than once", shared by the
     journey's `has_reordered` signal and the portal's per-row `is_reorder` flag,
     so the two surfaces cannot drift into disagreeing about the same client.
@@ -1420,7 +1432,7 @@ def _order_slug_counts(orders):
     rows in hand and must not pay for a second read."""
     counts = {}
     for o in (orders or []):
-        if (o.get("status") or "") == "cancelled":
+        if not _is_completed_purchase_order(o):
             continue
         for sl in {(it.get("slug") or "").strip().lower()
                    for it in (o.get("items") or []) if isinstance(it, dict)}:
@@ -21962,9 +21974,10 @@ def _portal_reorder_module(email):
     settings = _pricing.load_settings(_pricing_settings())
     now = datetime.now(timezone.utc)
 
-    portal_orders = [o for o in orders
+    purchased_orders = [o for o in orders if _is_completed_purchase_order(o)]
+    portal_orders = [o for o in purchased_orders
                      if (o.get("source") in _PORTAL_CHANNEL_SOURCES)
-                     and (o.get("status") != "cancelled")]
+                     ]
 
     # --- purchase_history: the consolidated cross-channel record. `ph_slugs` (all
     # slices incl. fmp, resolved) is the "has this client bought before" oracle for
@@ -21984,7 +21997,7 @@ def _portal_reorder_module(email):
     # reorder (it is a pre-existing record), while a single portal purchase is
     # not (that purchase is the row you are looking at). Counting occurrences
     # instead would have flipped both storefront-history cases to "Order".
-    repeat_slugs = {sl for sl, n in _order_slug_counts(orders).items() if n >= 2}
+    repeat_slugs = {sl for sl, n in _order_slug_counts(purchased_orders).items() if n >= 2}
     ph_slugs, ph_other = set(), {}
     for r in ph_rows:
         s = _superseded((r["slug"] or "").strip().lower()) or ""
@@ -22121,9 +22134,7 @@ def _portal_reorder_module(email):
         cur = other.get(slug)
         if cur is None or at > cur[0]:
             other[slug] = (at, qty, channel)
-    for o in orders:
-        if o.get("status") == "cancelled":
-            continue
+    for o in purchased_orders:
         channel = _portal_display_channel(o.get("source"))
         if channel == "portal":
             continue  # portal purchases already handled above
@@ -22207,6 +22218,22 @@ def _portal_reorder_module(email):
         invoice = current_invoice_by_slug.get(row.get("slug"))
         if invoice:
             row["current_invoice"] = invoice
+    displayed_slugs = {row.get("slug") for row in reorder}
+    for slug, invoice in current_invoice_by_slug.items():
+        if slug in displayed_slugs:
+            continue
+        p = _get_product(slug) or {}
+        regular_cents = int(p.get("price_cents") or invoice["unit_cents"] or 0)
+        reorder.append({
+            "slug": slug, "name": p.get("name") or slug,
+            "qty": invoice["qty"], "regular_cents": regular_cents,
+            "your_cents": invoice["unit_cents"],
+            "is_member_price": invoice["unit_cents"] < regular_cents,
+            "in_repertoire": slug in rep_slugs,
+            "refill_eligible": bool(p and _qty_eligible(p)),
+            "channel": "clinic", "source_label": "Current invoice",
+            "is_reorder": False, "current_invoice": invoice,
+        })
 
     return {
         "reorder": reorder,
