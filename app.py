@@ -17787,7 +17787,21 @@ def api_public_book(slug):
         visitor_tz = (body.get("tz") or "").strip()
         rendered_tz = _pb.effective_visitor_tz(visitor_tz, cfg["timezone"])
         shown = _pb.to_visitor_tz(start_ts, cfg["timezone"], rendered_tz)
-        cancel_url = f"{portal_base()}/book/cancel?slug={slug}&start={start_ts}&token={token}"
+        # `start` stays the naive practitioner-local value (the cancel API
+        # matches/verifies against it, see api_public_book_cancel and
+        # cancel_token). Display on the cancel PAGE is a separate concern:
+        # `when` is `shown` -- an offset-bearing ISO string, a real instant,
+        # the SAME value/zone the text body above already promised the
+        # visitor -- and `tz` is the zone to render it in. book-cancel.html's
+        # fmtTime pins toLocaleString's timeZone to `tz`, the same fix
+        # already applied to book.html's fmtTime, so the cancel page always
+        # agrees with the confirmation email rather than reinterpreting a
+        # naive string in the browser's own zone (which is what put an
+        # Auckland client on a page reading "Monday" for a booking they made
+        # for "Tuesday").
+        from urllib.parse import quote as _quote
+        cancel_url = (f"{portal_base()}/book/cancel?slug={slug}&start={start_ts}"
+                      f"&token={token}&when={_quote(shown)}&tz={_quote(rendered_tz)}")
         lines = [f"Hi {name},", "",
                  f"Your {st['label']} is booked.", "",
                  f"When: {shown} ({rendered_tz})",

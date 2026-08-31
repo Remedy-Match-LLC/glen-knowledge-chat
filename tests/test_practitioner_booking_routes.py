@@ -1258,3 +1258,111 @@ def test_fmt_time_renders_in_the_rendered_timezone_not_the_browsers_own():
     assert out.returncode == 0, f"stdout={out.stdout!r} stderr={out.stderr!r}"
     assert "timeZone" in html, \
         "fmtTime's toLocaleString call must pass a timeZone option somewhere"
+
+
+@pytest.mark.skipif(not shutil.which("node"), reason="node not available")
+def test_cancel_page_fmt_time_renders_in_the_passed_timezone_not_the_browsers_own():
+    """The bug this fix exists to close: book-cancel.html's `when` display
+    used to do `new Date(start)` on the naive PRACTITIONER-local string with
+    no timeZone pinned, so an Auckland client who booked "Tue 8 Sep, 5:00 AM"
+    (their own zone) could land on a page reading "Monday, September 7" --
+    the wrong DAY, not just a shifted hour -- and reasonably concludes it's
+    the wrong appointment, which is exactly the no-show the cancel link
+    exists to prevent.
+
+    Same extraction-and-execute-under-Node technique as
+    test_fmt_time_renders_in_the_rendered_timezone_not_the_browsers_own
+    (book.html), applied to book-cancel.html's own fmtTime -- not a grep of
+    the source, which would pass whether or not anything actually uses the
+    zone. Uses the SAME fixed UTC instant and the same two zones 18+ hours
+    apart as that test, so a correct implementation must clear it the same
+    way: two different renderings, each matching an independently-computed
+    toLocaleString call with the SAME options fmtTime uses.
+    """
+    import pathlib
+    html = (pathlib.Path(appmod.STATIC) / "book-cancel.html").read_text()
+    js = r'''
+      const fs = require('fs');
+      const src = fs.readFileSync('static/book-cancel.html', 'utf8');
+      const marker = 'function fmtTime(';
+      const idx = src.indexOf(marker);
+      if (idx < 0) { console.error('fmtTime not found in book-cancel.html'); process.exit(2); }
+      const braceStart = src.indexOf('{', idx);
+      let depth = 0, end = -1;
+      for (let j = braceStart; j < src.length; j++) {
+        if (src[j] === '{') depth++;
+        else if (src[j] === '}') { depth--; if (depth === 0) { end = j; break; } }
+      }
+      if (end < 0) { console.error('unbalanced braces extracting fmtTime'); process.exit(2); }
+      const fnSrc = src.slice(idx, end + 1);
+      eval(fnSrc);
+      if (typeof fmtTime !== 'function') {
+        console.error('extraction did not produce a callable fmtTime'); process.exit(2);
+      }
+
+      const iso = '2026-09-07T17:00:00Z';
+      const opts = {weekday: 'long', month: 'long', day: 'numeric',
+                    hour: 'numeric', minute: '2-digit'};
+      const d = new Date(iso);
+      const expectA = d.toLocaleString(undefined, Object.assign({}, opts, {timeZone: 'America/Anchorage'}));
+      const expectB = d.toLocaleString(undefined, Object.assign({}, opts, {timeZone: 'Pacific/Auckland'}));
+      const gotA = fmtTime(iso, 'America/Anchorage');
+      const gotB = fmtTime(iso, 'Pacific/Auckland');
+
+      if (gotA !== expectA) {
+        console.error('Anchorage mismatch: got ' + JSON.stringify(gotA) +
+                       ' expected ' + JSON.stringify(expectA));
+        process.exit(1);
+      }
+      if (gotB !== expectB) {
+        console.error('Auckland mismatch: got ' + JSON.stringify(gotB) +
+                       ' expected ' + JSON.stringify(expectB));
+        process.exit(1);
+      }
+      if (gotA === gotB) {
+        console.error('same output for two zones 20 hours apart -- tz is being ignored: ' +
+                       JSON.stringify(gotA));
+        process.exit(1);
+      }
+      console.log('ok');
+    '''
+    out = subprocess.run(["node", "-e", js], cwd=str(pathlib.Path(appmod.STATIC).parent),
+                         capture_output=True, text=True)
+    assert out.returncode == 0, f"stdout={out.stdout!r} stderr={out.stderr!r}"
+    assert "timeZone" in html, \
+        "fmtTime's toLocaleString call must pass a timeZone option somewhere"
+
+
+def test_the_cancel_url_carries_the_visitor_instant_and_zone(public, logdb, monkeypatch):
+    """The `when`/`tz` params book-cancel.html's fmtTime depends on must
+    actually reach the emailed cancel link. `when` must be a real,
+    offset-bearing instant (not the naive practitioner-local `start`, which
+    the browser would parse in its OWN zone) and must land on the same wall
+    clock reading the client already saw in the confirmation body/ics."""
+    sent = []
+    monkeypatch.setattr(appmod, "send_evox_email",
+                        lambda to, name, subject, html_body, text_body, ics_bytes:
+                        sent.append(text_body))
+    with _open(logdb) as c:
+        pb.set_config(c, PID, CFG)  # CFG["timezone"] == "America/Anchorage"
+    slot = public.get("/api/book/mary-boyd/slots?session=intro").get_json()["slots"][0]
+    public.post("/api/book/mary-boyd", json={
+        "session": "intro", "start": slot["start"], "tz": "Pacific/Auckland",
+        "name": "A Client", "email": "client@example.com"})
+    body = sent[0]
+    import re as _re
+    m = _re.search(r"/book/cancel\?[^\s\"]+", body)
+    assert m, "no cancel link in the confirmation body"
+    cancel_link = m.group(0)
+    from urllib.parse import urlparse, parse_qs
+    qs = parse_qs(urlparse(cancel_link.replace("/book/cancel?", "?")).query)
+    assert qs.get("when"), "cancel link carries no `when` instant for the cancel page to render"
+    assert qs.get("tz") == ["Pacific/Auckland"], \
+        "cancel link must carry the same rendered zone the client already saw"
+    # `when` must be the exact value to_visitor_tz computed for this booking
+    # -- the same instant/zone already shown in the confirmation text.
+    expected_when = pb.to_visitor_tz(slot["start"], CFG["timezone"], "Pacific/Auckland")
+    assert qs["when"][0] == expected_when
+    # `start` must remain the naive practitioner-local value -- the cancel
+    # API matches/verifies the token against it unchanged.
+    assert qs.get("start") == [slot["start"]]

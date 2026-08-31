@@ -51,21 +51,43 @@
     // _confirm_post_page in app.py (confirm on GET, consume on POST).
     var params = new URLSearchParams(window.location.search);
     var slug = params.get('slug') || '';
+    // `start` is naive PRACTITIONER-local wall time -- it is what the cancel
+    // POST below sends back, unchanged, because that is what the server
+    // matches/verifies the token against (see api_public_book_cancel /
+    // cancel_token in app.py). It must never be reinterpreted for display:
+    // `new Date(start)` on a naive string is parsed in the BROWSER's own
+    // zone, which is a different zone than either the practitioner's or the
+    // visitor's on a public multi-timezone booking -- exactly the bug this
+    // fix exists to close.
     var start = params.get('start') || '';
     var token = params.get('token') || '';
+    // `when` is an offset-bearing ISO string -- a real, unambiguous instant,
+    // the same value/zone the confirmation email already showed this
+    // visitor -- and `tz` is the zone to render it in. Both are additive
+    // query params from api_public_book; an older emailed link minted before
+    // this fix has neither, so the fallback below still shows SOMETHING
+    // rather than nothing.
+    var when = params.get('when') || '';
+    var tz = params.get('tz') || '';
 
-    function fmt(iso) {
+    function fmtTime(iso, tz) {
+      // Same shape as book.html's fmtTime: parse a real instant, then pin
+      // the DISPLAY zone via toLocaleString's `timeZone` option rather than
+      // trusting whatever zone the browser defaults to. `tz` is optional and
+      // guarded, so an old link with no `tz` param still renders (in the
+      // browser's own zone, same as before this fix) instead of throwing.
       if (!iso) return '';
       try {
         var d = new Date(iso);
-        if (isNaN(d.getTime())) return iso;
-        return d.toLocaleString(undefined, {
-          weekday: 'long', month: 'long', day: 'numeric',
-          hour: 'numeric', minute: '2-digit'
-        });
-      } catch (e) { return iso; }
+        if (isNaN(d.getTime())) return String(iso);
+        var opts = {weekday: 'long', month: 'long', day: 'numeric',
+                    hour: 'numeric', minute: '2-digit'};
+        if (tz) opts.timeZone = tz;
+        return d.toLocaleString(undefined, opts);
+      } catch (e) { return String(iso); }
     }
-    document.getElementById('when').textContent = fmt(start);
+    document.getElementById('when').textContent =
+      fmtTime(when || start, tz) + (tz ? ' (' + tz + ')' : '');
 
     if (!slug || !start || !token) {
       document.getElementById('heading').textContent = 'This cancel link is incomplete';
