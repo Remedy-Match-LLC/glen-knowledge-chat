@@ -37,7 +37,8 @@ def init_evox_tables(cx) -> None:
         email TEXT PRIMARY KEY, credits INTEGER NOT NULL DEFAULT 0)""")
     for _col, _decl in (("session_type", "TEXT DEFAULT 'evox'"),
                         ("medium", "TEXT DEFAULT 'phone'"),
-                        ("zoom_join_url", "TEXT"), ("zoom_meeting_id", "TEXT")):
+                        ("zoom_join_url", "TEXT"), ("zoom_meeting_id", "TEXT"),
+                        ("client_name", "TEXT")):
         try:
             cx.execute(f"ALTER TABLE evox_bookings ADD COLUMN {_col} {_decl}")
         except Exception:

@@ -268,6 +268,26 @@ def test_booking_writes_a_row_and_returns_a_cancel_token(public, logdb):
         assert row["practitioner"] == PID and row["status"] == "booked"
 
 
+def test_the_clients_name_is_stored_not_just_validated(public, logdb):
+    """name is required and validated at the door, then must actually reach
+    the row -- create_booking has no name parameter and evox_bookings had no
+    column for it, so a practitioner opening her calendar saw an email
+    address and nothing else. The public route stores it with a targeted
+    UPDATE after create_booking returns, inside the same connection, rather
+    than changing create_booking's signature (Glen's and Rae's live flows
+    call it)."""
+    with _open(logdb) as c:
+        pb.set_config(c, PID, CFG)
+    slot = public.get("/api/book/mary-boyd/slots?session=intro").get_json()["slots"][0]
+    r = public.post("/api/book/mary-boyd", json={
+        "session": "intro", "start": slot["start"],
+        "name": "Priya Chandrasekaran", "email": "client@example.com"})
+    assert r.status_code == 200, r.get_data(as_text=True)
+    with _open(logdb) as c:
+        row = c.execute("SELECT client_name FROM evox_bookings").fetchone()
+        assert row["client_name"] == "Priya Chandrasekaran"
+
+
 def test_the_same_slot_cannot_be_booked_twice(public, logdb):
     """The guard is the database UNIQUE index on (practitioner, start_ts), so
     it holds across processes. Exactly one booking survives.
@@ -364,6 +384,65 @@ def test_an_unknown_slug_is_404(public, monkeypatch):
     from dashboard import practitioner_booking as _pb
     monkeypatch.setattr(_pb, "resolve_practitioner_pid", lambda cx, slug: None)
     assert public.get("/api/book/nobody/slots?session=intro").status_code == 404
+
+
+# --- resolve_practitioner_pid itself, not the monkeypatched stand-in --------
+# Every test above replaces this function; none of them exercise it. It is
+# the thing that decides WHICH practitioner's calendar a public write lands
+# in, so it needs its own coverage against a real seeded row and the real
+# find_practitioner_id_by_email.
+
+def test_resolve_practitioner_pid_happy_path(logdb, monkeypatch):
+    _seed_slug(logdb, slug="mary-boyd", email="mary@example.com")
+    from dashboard import practitioner_portal as pp
+    monkeypatch.setattr(pp, "find_practitioner_id_by_email",
+                        lambda email: PID if email == "mary@example.com" else None)
+    with _open(logdb) as c:
+        assert pb.resolve_practitioner_pid(c, "mary-boyd") == PID
+
+
+def test_resolve_practitioner_pid_refuses_a_non_approved_slug(logdb, monkeypatch):
+    """The status='approved' filter is what stops an unapproved or revoked
+    practitioner from taking public bookings. Asserted nowhere else."""
+    with _open(logdb) as c:
+        c.execute("""CREATE TABLE IF NOT EXISTS affiliate_signups (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, email TEXT,
+            slug TEXT, status TEXT)""")
+        c.execute("INSERT INTO affiliate_signups (name,email,slug,status) "
+                  "VALUES (?,?,?,?)",
+                  ("Mary Boyd", "mary@example.com", "mary-boyd", "pending"))
+        c.commit()
+    from dashboard import practitioner_portal as pp
+    monkeypatch.setattr(pp, "find_practitioner_id_by_email", lambda email: PID)
+    with _open(logdb) as c:
+        assert pb.resolve_practitioner_pid(c, "mary-boyd") is None
+
+
+def test_resolve_practitioner_pid_unknown_slug_is_none(logdb, monkeypatch):
+    _seed_slug(logdb, slug="mary-boyd", email="mary@example.com")
+    from dashboard import practitioner_portal as pp
+    monkeypatch.setattr(pp, "find_practitioner_id_by_email", lambda email: PID)
+    with _open(logdb) as c:
+        assert pb.resolve_practitioner_pid(c, "nobody") is None
+
+
+def test_resolve_practitioner_pid_missing_table_fails_closed(logdb):
+    """No affiliate_signups table at all (the fresh `logdb` fixture never
+    creates one) must read as 'no such practitioner', not 500 a public page."""
+    with _open(logdb) as c:
+        assert pb.resolve_practitioner_pid(c, "mary-boyd") is None
+
+
+def test_resolve_practitioner_pid_supabase_down_fails_closed(logdb, monkeypatch):
+    """The real find_practitioner_id_by_email, not a stand-in. In this
+    environment SUPABASE_DB_URL is unset, so db_supabase.supabase_cursor()
+    raises RuntimeError('SUPABASE_DB_URL env var is not set') -- that IS the
+    'Supabase is down' case, unmonkeypatched. A public route must 404, not
+    500, when the practitioner directory it depends on is unreachable."""
+    monkeypatch.delenv("SUPABASE_DB_URL", raising=False)
+    _seed_slug(logdb, slug="mary-boyd", email="mary@example.com")
+    with _open(logdb) as c:
+        assert pb.resolve_practitioner_pid(c, "mary-boyd") is None
 
 
 def test_the_gated_consult_route_is_untouched():

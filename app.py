@@ -17705,10 +17705,10 @@ def api_public_book(slug):
         if start_ts not in offered:
             return jsonify({"ok": False, "error": "slot_unavailable"}), 400
         try:
-            _ev.create_booking(cx, email, start_ts,
-                               duration_min=st["duration_min"],
-                               practitioner=pid, session_type=session_slug,
-                               medium=st["medium"])
+            b = _ev.create_booking(cx, email, start_ts,
+                                   duration_min=st["duration_min"],
+                                   practitioner=pid, session_type=session_slug,
+                                   medium=st["medium"])
         except _ev.SlotTaken:
             # create_booking catches the UNIQUE violation itself and re-raises
             # it as SlotTaken. The index on (practitioner, start_ts) is the real
@@ -17716,6 +17716,23 @@ def api_public_book(slug):
             # workers; the availability check above only makes the common case
             # a readable error rather than a race.
             return jsonify({"ok": False, "error": "slot_taken"}), 409
+        # create_booking's signature is not ours to change (Glen's and Rae's
+        # live flows call it). It collects no name and evox_bookings has no
+        # name column for it to write. Store it with a targeted UPDATE on the
+        # one row we just created, in the same transaction, before commit --
+        # the same additive pattern already used for session_type/medium/etc.
+        cx.execute("UPDATE evox_bookings SET client_name=? WHERE id=?",
+                  (name, b["id"]))
+        # The calendar_events row create_booking wrote is keyed by an id we
+        # can reconstruct (create_booking builds it as
+        # f"{session_type}-{booking_id}") and is unique to this booking, so
+        # this UPDATE touches only the row we just made -- it does not change
+        # create_booking or any other caller's write. Folding the client's
+        # name into the summary the practitioner actually sees.
+        ev_id = f"{session_slug}-{b['id']}"
+        cx.execute("UPDATE calendar_events SET summary=? WHERE google_event_id=?",
+                  (f"{name} — {email}", ev_id))
+        cx.commit()
     token = _pb.cancel_token(pid, start_ts)
     return jsonify({"ok": True, "start": start_ts, "cancel_token": token})
 
