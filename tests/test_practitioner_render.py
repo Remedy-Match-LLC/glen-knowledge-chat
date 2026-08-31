@@ -168,6 +168,44 @@ def test_the_public_page_shows_her_number_only_when_given_one():
     assert "+15550100" not in pr.render_page_html(_view(), canonical_url=CANON)
 
 
+def test_the_number_is_a_tappable_tel_link():
+    """The entire point of the "phone" option is that a client reading this
+    on a phone can call her. Plain text is not tappable."""
+    html = pr.render_page_html(_view(practitioner_phone="(907) 555-0100"),
+                               canonical_url=CANON)
+    # The href drops whitespace (RFC 3966 has no place for spaces); the
+    # visible text keeps the number exactly as she typed it.
+    assert '<a href="tel:(907)555-0100">(907) 555-0100</a>' in html
+
+
+def test_the_number_is_escaped_in_both_the_href_and_the_text():
+    """It reaches an attribute as well as a text node, so quote=True escaping
+    is load-bearing on both halves."""
+    html = pr.render_page_html(_view(practitioner_phone='"><script>x</script>'),
+                               canonical_url=CANON)
+    # Scoped to the phone line: the document legitimately contains a
+    # <script type="application/ld+json"> of its own, so a whole-page
+    # substring check would be answered by that and prove nothing.
+    line = html[html.index('<p class="phone">'):]
+    line = line[:line.index("</p>") + 4]
+    assert "<script" not in line, "the value escaped its text node"
+    # quote=True: a bare double quote would terminate the href attribute and
+    # let the rest of the value be parsed as markup.
+    assert line.count('"') == 4, f"unescaped quote in the phone line: {line}"
+    assert "&quot;&gt;&lt;script&gt;" in line
+
+
+def test_the_phone_line_is_styled_in_both_light_and_dark():
+    """`.phone` shipped with no CSS rule at all while every sibling line class
+    had one, in both the base block and the dark-mode block."""
+    html = pr.render_page_html(_view(practitioner_phone="+15550100"),
+                               canonical_url=CANON)
+    style = html[html.index("<style>"):html.index("</style>")]
+    base, dark = style.split("@media (prefers-color-scheme: dark)", 1)
+    assert ".phone{" in base, "no base rule for the phone line"
+    assert ".phone" in dark, "the phone line is unstyled in dark mode"
+
+
 def test_not_accepting_clients_says_so_rather_than_going_silent():
     """A False value is information. Rendering nothing would read as 'unknown'
     to a visitor deciding whether to reach out."""

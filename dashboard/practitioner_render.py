@@ -51,6 +51,14 @@ _STYLE = (
     ".tagline{font-size:19px;color:var(--muted);margin:0 0 20px}"
     ".practice{font-size:17px;margin:0 0 4px}"
     ".loc{color:var(--muted);margin:0 0 20px}"
+    # Styled alongside its siblings above, and rendered as a tel: link --
+    # the whole point of the "phone" option is that a client reading this
+    # on a phone can tap the number. The <a> inherits .phone's colour and
+    # is marked as a link by the underline rather than by a colour of its
+    # own, so the dark-mode block below restates the class and nothing
+    # else.
+    ".phone{margin:0 0 20px}"
+    ".phone a{color:inherit;font-weight:600;text-decoration:underline}"
     ".photo{width:160px;height:160px;border-radius:50%;object-fit:cover;"
     "display:block;margin:0 0 20px}"
     "section{border-top:1px solid var(--line);padding-top:20px;margin-top:24px}"
@@ -70,7 +78,7 @@ _STYLE = (
     "@media (prefers-color-scheme: dark){"
     "body{background:#121212;color:#eee}"
     "section{border-color:#333}"
-    ".tagline,.practice,.loc,.disclosure,.price{color:#aaa}"
+    ".tagline,.practice,.loc,.disclosure,.price,.phone{color:#aaa}"
     "}"
     "</style>"
 )
@@ -168,6 +176,27 @@ def _photo(view):
 def _line(css_class, text):
     text = str(text or "").strip()
     return f'<p class="{css_class}">{_esc(text)}</p>' if text else ""
+
+
+def _phone_line(view):
+    """Her booking number as a tappable tel: link, or nothing.
+
+    Pure, like every other renderer here: it publishes exactly what the
+    caller handed it. public_surface.build_practitioner_storefront only
+    populates practitioner_phone when her booking config exists AND lists
+    "phone" among her notify methods, so the opt-in decision lives there, not
+    here.
+
+    The href strips whitespace (RFC 3966 allows the visual separators
+    "+-.()" but not spaces) while the visible text keeps the number exactly
+    as she typed it. Both halves are escaped: the value reaches an attribute
+    as well as a text node.
+    """
+    text = str(view.get("practitioner_phone") or "").strip()
+    if not text:
+        return ""
+    href = "".join(text.split())
+    return f'<p class="phone"><a href="tel:{_esc(href)}">{_esc(text)}</a></p>'
 
 
 def _logo(view):
@@ -427,7 +456,7 @@ def render_page_html(view, *, canonical_url, bookable=False):
         + _book_block(view, bookable)
         + _logo(view)
         + _line("loc", view.get("location"))
-        + _line("phone", view.get("practitioner_phone"))
+        + _phone_line(view)
         + _accepting(view)
         + _section("About", view.get("bio"))
         + _section("How I work", view.get("how_i_work"))
