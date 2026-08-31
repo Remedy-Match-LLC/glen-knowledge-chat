@@ -18,3 +18,13 @@ def test_inbox_accepts_prefilled_gmail_query_from_url():
     assert 'const _urlParams = new URLSearchParams(location.search)' in body
     assert '_urlParams.get("q")' in body
     assert 'document.getElementById("search").value = initialQuery' in body
+
+
+def test_unsaved_customer_details_survive_refresh_until_invoice_created():
+    body = (ROOT / "static" / "order-new.html").read_text()
+    assert 'CUSTOMER_DRAFT_KEY = "order-new-customer-draft-v1"' in body
+    assert "function saveCustomerDraft()" in body
+    assert "function restoreCustomerDraft()" in body
+    assert 'sessionStorage.setItem(CUSTOMER_DRAFT_KEY' in body
+    assert 'sessionStorage.removeItem(CUSTOMER_DRAFT_KEY)' in body
+    assert 'toast("Restored unsaved customer details")' in body
