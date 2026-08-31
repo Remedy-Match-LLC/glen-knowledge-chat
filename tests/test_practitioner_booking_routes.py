@@ -1584,6 +1584,13 @@ def _spy_sends(monkeypatch):
 
 
 def test_email_only_is_the_default_behaviour(public, logdb, monkeypatch):
+    """Regression guard on the default path only. This asserts what the OLD
+    single-email code already did (one email, no ICS) and would pass even if
+    `methods` branching were deleted entirely -- it is not proof the fan-out
+    reads notify_methods. test_text_sends_an_sms_with_her_own_timezone,
+    test_phone_only_sends_her_nothing, and
+    test_one_failing_method_does_not_stop_the_others are the ones that
+    actually require the branching to exist."""
     sends = _spy_sends(monkeypatch)
     with _open(logdb) as c:
         pb.set_config(c, PID, CFG)          # no notify_methods -> ["email"]
@@ -1595,6 +1602,13 @@ def test_email_only_is_the_default_behaviour(public, logdb, monkeypatch):
 
 
 def test_calendar_attaches_the_invite_to_her_notification(public, logdb, monkeypatch):
+    """Regression guard on the default-plus-calendar path only. This asserts
+    what the OLD single-email code's output would look like if it happened to
+    carry an ICS -- it does not by itself prove `methods` branching decides
+    whether the ICS is attached (a version that always attached the invite
+    would also pass this one). test_email_only_is_the_default_behaviour's
+    `ics == b""` case is what actually shows the attach decision is
+    conditional on `calendar` being chosen."""
     sends = _spy_sends(monkeypatch)
     with _open(logdb) as c:
         pb.set_config(c, PID, dict(CFG, notify_methods=["email", "calendar"]))
@@ -1641,7 +1655,18 @@ def test_a_failing_sms_does_not_fail_the_booking(public, logdb, monkeypatch):
 def test_one_failing_method_does_not_stop_the_others(public, logdb, monkeypatch):
     """She chose text and email. GHL is down. She must still get the email --
     a fan-out that aborts on the first failure is worse than no fan-out,
-    because it silently drops the channel that would have worked."""
+    because it silently drops the channel that would have worked.
+
+    NOTE: this direction cannot detect a missing per-method try/except. The
+    implementation runs the email/calendar branch before the text branch, so
+    by the time the unwrapped SMS call would raise, the email has already
+    been sent -- this assertion passes whether or not the SMS call is
+    individually wrapped. It is a real regression guard (the email must
+    still go out when GHL is down) but it does not prove per-method
+    isolation. test_a_failing_email_does_not_stop_the_text is the one that
+    actually exercises that: the direction where the FIRST branch fails and
+    the second must still run.
+    """
     sends = _spy_sends(monkeypatch)
 
     def boom(to, msg, phone=""):
@@ -1651,3 +1676,23 @@ def test_one_failing_method_does_not_stop_the_others(public, logdb, monkeypatch)
         pb.set_config(c, PID, dict(CFG, notify_methods=["text", "email"]))
     _book_one(public)
     assert [s for s in sends["email"] if s["to"] == PRACTITIONER_EMAIL]
+
+
+def test_a_failing_email_does_not_stop_the_text(public, logdb, monkeypatch):
+    """The direction that actually carries information about per-method
+    isolation. The email/calendar branch runs FIRST in the implementation,
+    so this is the only ordering where an unwrapped failure could reach the
+    outer catch-all before the second branch ever runs: if the email-side
+    try/except were removed, send_evox_email raising here would propagate to
+    the block-level except and the text branch would never execute, silently
+    dropping the channel that would have worked. She chose email and text;
+    her email provider is down; she must still get the text."""
+    sends = _spy_sends(monkeypatch)
+
+    def boom(to, name, subj, html, text, ics):
+        raise RuntimeError("smtp down")
+    monkeypatch.setattr(appmod, "send_evox_email", boom)
+    with _open(logdb) as c:
+        pb.set_config(c, PID, dict(CFG, notify_methods=["email", "text"]))
+    _book_one(public)
+    assert sends["sms"], "text should still have been attempted even though email failed"
