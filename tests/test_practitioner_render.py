@@ -188,10 +188,13 @@ def test_the_number_is_escaped_in_both_the_href_and_the_text():
     # substring check would be answered by that and prove nothing.
     line = html[html.index('<p class="phone">'):]
     line = line[:line.index("</p>") + 4]
-    assert "<script" not in line, "the value escaped its text node"
-    # quote=True: a bare double quote would terminate the href attribute and
-    # let the rest of the value be parsed as markup.
-    assert line.count('"') == 4, f"unescaped quote in the phone line: {line}"
+    # One shape, both halves. quote=True is load-bearing: a bare double quote
+    # would terminate the href attribute and let the rest of the value be
+    # parsed as markup, and a bare < would open a tag in the text node.
+    # Neither capture group may contain either character.
+    import re as _re
+    assert _re.fullmatch(r'<p class="phone"><a href="tel:([^"<]*)">([^"<]*)</a></p>',
+                         line), f"the value escaped its markup: {line}"
     assert "&quot;&gt;&lt;script&gt;" in line
 
 

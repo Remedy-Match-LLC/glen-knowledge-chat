@@ -1951,13 +1951,27 @@ def test_a_form_that_failed_to_load_cannot_be_saved():
     import pathlib
     import re
     html = (pathlib.Path(appmod.STATIC) / "practitioner-booking.html").read_text()
-    err = re.search(r"function showLoadError\(\) \{.*?\n    \}", html, re.S)
-    assert err, "no showLoadError to handle a failed load"
-    assert "main-content" in err.group(0) and "none" in err.group(0), \
+
+    def _code(pattern):
+        """The matched source with // comments stripped.
+
+        Load-bearing: every one of these guards is introduced by a comment
+        explaining it, so an assertion against the raw match is answered by
+        the PROSE and stays green after the code it describes is deleted --
+        confirmed by mutation. Strip the commentary and assert on what runs.
+        """
+        m = re.search(pattern, html, re.S)
+        assert m, f"no match for {pattern}"
+        return "\n".join(ln for ln in m.group(0).splitlines()
+                          if not ln.strip().startswith("//"))
+
+    err = _code(r"function showLoadError\(\) \{.*?\n    \}")
+    assert "main-content" in err and '"none"' in err, \
         "a failed load must hide the form, not just add a message beside it"
-    save = re.search(r"window\.save = function \(\) \{.*?var payload", html, re.S)
-    assert save, "no save() to gate"
-    assert "loaded" in save.group(0), \
+    assert "loaded = false" in err, \
+        "a failed load must leave the form marked unloaded"
+    save = _code(r"window\.save = function \(\) \{.*?var payload")
+    assert "if (!loaded)" in save, \
         "save() must refuse while the form has not been populated from a real GET"
 
 

@@ -238,12 +238,25 @@ def test_storefront_never_falls_back_to_the_directory_number(monkeypatch):
     authentication; the storefront must not reach for it, so making Supabase
     explode changes nothing about what this page publishes."""
     import db_supabase
+    reached = []
 
     def boom(*a, **kw):
-        raise AssertionError("the storefront reached for practitioners.phone")
+        # RECORDED, not raised. _practitioner_phone_if_opted_in fails closed
+        # through a bare `except Exception`, so a raise here would be
+        # swallowed and this test would report "" instead of naming what
+        # actually happened.
+        reached.append(True)
+        raise RuntimeError("supabase")
     monkeypatch.setattr(db_supabase, "supabase_cursor", boom)
+    # The OTHER Supabase consumer on this path -- the profile fetch -- is
+    # stubbed at build_practitioner_storefront's own documented indirection
+    # seam, so `reached` can only be recording the phone lookup. Without
+    # this the assertion below would be answered by an unrelated call and
+    # prove nothing about the phone.
+    monkeypatch.setattr(ps, "_profile_for_slug", lambda cx, slug: {})
     cx = _cx_with_booking_config(monkeypatch, notify_methods=["phone"])
     view = ps.build_practitioner_storefront(cx, "prof-jane-doe")
+    assert not reached, "the storefront reached for practitioners.phone"
     assert view["practitioner_phone"] == "+1 555-0100"
 
 
