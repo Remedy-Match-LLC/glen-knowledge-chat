@@ -102,12 +102,19 @@ def test_a_blank_timezone_is_rejected():
         pb.validate_config(_cfg(timezone=""))
 
 
-@pytest.mark.parametrize("bad", ["Etc/GMT+9", "Etc/GMT-9", "Etc/UTC"])
+@pytest.mark.parametrize("bad", [
+    "Etc/GMT+9", "Etc/GMT-9", "Etc/UTC",
+    "etc/GMT+9",   # lowercase prefix -- ZoneInfo resolves it same as Etc/
+    "ETC/GMT+9",   # uppercase prefix -- same
+])
 def test_an_etc_gmt_offset_is_rejected(bad):
     """Etc/GMT+9 contains a slash and resolves cleanly through ZoneInfo, so
     the plain 'no slash' check walks right past it. It is the same
     fixed-offset bug in a different spelling, and its sign is backwards:
-    Etc/GMT+9 means UTC minus 9, not plus 9."""
+    Etc/GMT+9 means UTC minus 9, not plus 9. The rejection must also be
+    case-insensitive: on at least some platforms ZoneInfo resolves
+    'etc/GMT+9' and 'ETC/GMT+9' exactly the same as 'Etc/GMT+9', so a
+    case-sensitive startswith('Etc/') is a one-character-case bypass."""
     with pytest.raises(pb.BookingConfigError):
         pb.validate_config(_cfg(timezone=bad))
 

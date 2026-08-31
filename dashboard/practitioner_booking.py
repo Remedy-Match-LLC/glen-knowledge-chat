@@ -94,7 +94,10 @@ def _validate_timezone(name):
     # "+9" would land nine hours the wrong way. Disqualified because it
     # names an offset, not a place -- not because it lacks DST (Hawaii has
     # none either, and it's the default).
-    if name.startswith("Etc/"):
+    # Compared case-insensitively: ZoneInfo itself resolves "etc/GMT+9" and
+    # "ETC/GMT+9" (at least on some platforms/filesystems), so a bare
+    # startswith("Etc/") is a one-character-case bypass around the same bug.
+    if name.lower().startswith("etc/"):
         raise BookingConfigError(
             "Timezone must be a named zone that describes a place (such as "
             "America/Anchorage), not an Etc/GMT offset. Etc/ zones never "
