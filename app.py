@@ -28823,11 +28823,12 @@ def api_client_portal_checkout(token):
                 return jsonify({"error": "Invalid items."}), 400
             slug = (it.get("slug") or "").strip().lower()
             product = _get_product(slug) if slug else None
+            item_name = ((product or {}).get("name") or slug or "That item").strip()
             if (not slug or not product or product.get("inactive")
                     or product.get("info_only")):
-                return jsonify({"error": "That item isn't available to reorder."}), 400
+                return jsonify({"error": f"{item_name} isn't available to order."}), 400
             if not catalog_order and slug not in entitled:
-                return jsonify({"error": "That item isn't available to reorder."}), 400
+                return jsonify({"error": f"{item_name} isn't available to order."}), 400
             try:
                 qty = max(1, min(int(it.get("qty", 1) or 1), 99))
             except Exception:
