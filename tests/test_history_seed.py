@@ -46,6 +46,27 @@ def _seed_purchase_history(db, *, email, slug, source="fmp", source_ref="ref1",
         cx.commit()
 
 
+def test_order_seed_excludes_unpaid_proposals(monkeypatch, tmp_path):
+    A = _load_app()
+    db = _fresh(A, monkeypatch, tmp_path)
+    from dashboard import orders as _orders
+    now = datetime.now(timezone.utc).isoformat()
+    with sqlite3.connect(db) as cx:
+        _orders.init_orders_table(cx)
+        cx.execute(
+            "INSERT INTO orders (created_at,source,external_ref,email,items_json,status,pay_status) "
+            "VALUES (?,?,?,?,?,'proposed','unpaid')",
+            (now, "in-house", "draft-1", "anne@example.com",
+             '[{"slug":"bone-builder","qty":1}]'))
+        cx.execute(
+            "INSERT INTO orders (created_at,source,external_ref,email,items_json,status,pay_status) "
+            "VALUES (?,?,?,?,?,'done','unpaid')",
+            (now, "legacy", "paid-1", "anne@example.com",
+             '[{"slug":"microbiome","qty":1}]'))
+        cx.commit()
+        assert A._order_slugs_since(cx, "anne@example.com", 365) == ["microbiome"]
+
+
 def _mock_paid_prepay_session(app_module, monkeypatch, email="a@b.com", tier_key="6mo"):
     from dashboard import stripe_pay
     monkeypatch.setattr(stripe_pay, "get_session",
