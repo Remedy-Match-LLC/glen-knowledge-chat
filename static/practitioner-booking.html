@@ -1,0 +1,215 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <link rel="icon" type="image/png" href="/static/favicon.png">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Booking · Remedy Match</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;600&family=Raleway:wght@600;700&display=swap" rel="stylesheet">
+  <style>
+    :root{ --bg:#0a150d; --surface:#111f16; --surface-2:#162318; --border:#21472d;
+      --cream:#fdf4d8; --muted:#a89870; --gold:#d4a843; --green:#3d8a52; --radius:14px;
+      --font:"Open Sans",system-ui,sans-serif; --heading:"Raleway",system-ui,sans-serif; }
+    :root[data-theme="light"]{ --bg:#FBF8F3; --surface:#FFFFFF; --surface-2:#F4ECDE;
+      --border:#E2D9C9; --cream:#1E2A2A; --muted:#5F6B6B; --gold:#B08A3E; --green:#2D7A6A; }
+    *{box-sizing:border-box}
+    body{ margin:0; background:var(--bg); color:var(--cream); font-family:var(--font); line-height:1.6; }
+    .wrap{ max-width:760px; margin:0 auto; padding:34px 20px 60px; }
+    h1,h2{ font-family:var(--heading); font-weight:700; margin:0; }
+    h1{ font-size:24px; } h2{ font-size:17px; margin-top:24px; }
+    .muted{ color:var(--muted); font-size:13px; }
+    .panel{ background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:20px; margin-top:16px; }
+    label.field-label{ display:block; font-size:12px; color:var(--muted); font-weight:600; letter-spacing:.05em; margin-bottom:4px; margin-top:12px; }
+    label.field-label:first-child{ margin-top:0; }
+    input[type=text], input[type=number], input[type=url], select{
+      padding:9px 10px; border:1px solid var(--border); border-radius:8px; font-size:14px;
+      font-family:inherit; background:var(--surface-2); color:var(--cream); width:100%; }
+    input::placeholder{ color:#6f7d6f; }
+    button.primary{ background:var(--green); color:#fff; border:0; border-radius:8px;
+      padding:9px 20px; font-weight:600; cursor:pointer; font-family:inherit; font-size:14px; }
+    button{ font-family:inherit; }
+    button:disabled{ opacity:.5; cursor:default; }
+    .msg{ margin-top:12px; font-size:13px; min-height:1.2em; }
+    .msg.ok{ color:#8fd6a3; }
+    .msg.err{ color:#e09080; }
+    .notice{ background:rgba(212,168,67,.12); border:1px solid var(--border);
+      border-radius:8px; padding:12px 14px; font-size:13px; color:var(--gold); margin-top:8px; }
+    .hint{ display:block; color:var(--muted); font-size:12px; margin-top:3px; }
+    .row-nav{ display:flex; justify-content:space-between; align-items:center; gap:12px; }
+    .workspace-nav{position:sticky;top:0;z-index:50;display:flex;gap:8px;overflow-x:auto;margin:14px 0 18px;padding:10px;background:var(--surface);border:1px solid var(--border);border-radius:12px;box-shadow:0 8px 24px rgba(0,0,0,.22);-webkit-overflow-scrolling:touch}
+    .workspace-nav a{min-height:44px;display:inline-flex;align-items:center;padding:8px 12px;color:var(--gold);font-size:13px;font-weight:700;text-decoration:none;white-space:nowrap;border-radius:8px}
+    .workspace-nav a.primary{background:var(--green);color:#fff}
+    .type-row{ display:flex; gap:8px; align-items:center; margin-top:8px; flex-wrap:wrap; }
+    .type-row input, .type-row select{ width:auto; flex:1 1 120px; }
+    .type-row button{ background:var(--surface-2); color:var(--cream); border:1px solid var(--border);
+      border-radius:8px; padding:8px 12px; cursor:pointer; }
+    label{ display:block; margin-top:14px; font-weight:600; font-size:13px; }
+    label input[type=checkbox]{ width:auto; margin-right:8px; }
+  </style>
+  <script>(function(){var t=localStorage.getItem('rm-theme');if(t)document.documentElement.setAttribute('data-theme',t);})();</script>
+  <script src="/static/theme-mode.js"></script>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="row-nav">
+    <div>
+      <h1>Booking</h1>
+    </div>
+    <div style="display:flex;gap:8px;align-items:center">
+      <span class="theme-toggle" id="themeToggle" role="group" aria-label="Theme mode"></span>
+    </div>
+  </div>
+  <nav class="workspace-nav" aria-label="Practitioner workspace">
+    <a href="/practitioner/portal">Practitioner Home</a>
+    <a href="/practitioner/dropship">Drop-Ship Order</a>
+    <a href="/practitioner/profile">Public Profile</a>
+    <a class="primary" href="/practitioner/booking">Booking</a>
+    <a href="/practitioner/settings">Practice Settings</a>
+    <a href="/practitioner/client-account?section=messages">Messages &amp; Order Help</a>
+  </nav>
+
+  <p class="muted">When this is switched on, a Book button appears on your public
+  page and visitors can choose a time from the hours you set here.</p>
+
+  <div class="notice" id="cal-notice">
+    <b>Your Google Calendar is not connected yet.</b> Times are offered from the
+    hours below, minus sessions already booked through this site. Anything that
+    lives only in your own calendar will still be offered, so keep the hours here
+    to times you can reliably take a call. Connecting your calendar is the next
+    piece of work.
+  </div>
+
+  <div class="panel">
+    <label><input type="checkbox" id="bk-enabled"> Accept bookings on my public page</label>
+
+    <label class="field-label">Timezone
+      <select id="bk-timezone"></select>
+    </label>
+    <span class="hint">Times you enter below are in this zone. Visitors see them
+    converted to their own.</span>
+
+    <label class="field-label">Days and hours</label>
+    <input id="bk-hours" type="text" placeholder="1-5:09:00-17:00">
+    <span class="hint">Weekday range then start and end time. 1 is Monday, 7 is
+    Sunday. So 1-5:09:00-17:00 means weekdays, nine to five.</span>
+
+    <label class="field-label">Shortest notice</label>
+    <input id="bk-notice" type="number" min="0" max="720" value="24">
+    <span class="hint">Hours. A visitor cannot book anything sooner than this.</span>
+
+    <label class="field-label">Gap between sessions</label>
+    <input id="bk-buffer" type="number" min="0" max="240" value="0">
+    <span class="hint">Minutes added after each session before the next can start.</span>
+
+    <h2>Session types</h2>
+    <div id="bk-types"></div>
+    <button type="button" onclick="addType()" style="margin-top:10px">Add a session type</button>
+
+    <div id="bk-msg" class="msg"></div>
+    <button type="button" class="primary" onclick="save()">Save</button>
+  </div>
+
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  if (window.RMTheme) window.RMTheme.mountToggle(document.getElementById('themeToggle'));
+
+  var MEDIA = ["phone", "zoom", "in-person"];
+  var ZONES = ["Pacific/Honolulu", "America/Anchorage", "America/Los_Angeles",
+               "America/Denver", "America/Chicago", "America/New_York",
+               "Europe/London", "Australia/Sydney", "Pacific/Auckland"];
+
+  function esc(s) {
+    return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) {
+      return {"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c];
+    });
+  }
+
+  function typeRow(t) {
+    t = t || {slug: "", label: "", duration_min: 30, medium: "phone"};
+    var opts = MEDIA.map(function (m) {
+      return '<option value="' + m + '"' + (m === t.medium ? " selected" : "") +
+             ">" + m + "</option>";
+    }).join("");
+    var d = document.createElement("div");
+    d.className = "type-row";
+    d.innerHTML =
+      '<input class="t-slug" placeholder="intro" value="' + esc(t.slug) + '">' +
+      '<input class="t-label" placeholder="Free 20 minute intro call" value="' + esc(t.label) + '">' +
+      '<input class="t-dur" type="number" min="5" max="600" value="' + (t.duration_min || 30) + '">' +
+      '<select class="t-medium">' + opts + "</select>" +
+      '<button type="button" onclick="this.parentNode.remove()">Remove</button>';
+    return d;
+  }
+
+  window.addType = function (t) { document.getElementById("bk-types").appendChild(typeRow(t)); };
+
+  function collect() {
+    var types = [].slice.call(document.querySelectorAll(".type-row")).map(function (r) {
+      return {slug: r.querySelector(".t-slug").value.trim().toLowerCase(),
+              label: r.querySelector(".t-label").value.trim(),
+              duration_min: parseInt(r.querySelector(".t-dur").value, 10),
+              medium: r.querySelector(".t-medium").value};
+    });
+    return {timezone: document.getElementById("bk-timezone").value,
+            office_hours: document.getElementById("bk-hours").value.trim(),
+            session_types: types,
+            notice_hours: parseInt(document.getElementById("bk-notice").value, 10),
+            buffer_min: parseInt(document.getElementById("bk-buffer").value, 10),
+            enabled: document.getElementById("bk-enabled").checked};
+  }
+
+  window.save = function () {
+    var msg = document.getElementById("bk-msg");
+    msg.className = "msg";
+    msg.textContent = "Saving...";
+    fetch("/api/practitioner/booking-config",
+          {method: "POST", credentials: "same-origin",
+           headers: {"Content-Type": "application/json"},
+           body: JSON.stringify(collect())})
+      .then(function (r) { return r.json().then(function (j) { return {ok: r.ok, j: j}; }); })
+      .then(function (res) {
+        msg.textContent = res.ok ? "Saved." : (res.j.error || "Could not save that.");
+        msg.className = res.ok ? "msg ok" : "msg err";
+      })
+      .catch(function () {
+        msg.textContent = "Could not reach the server.";
+        msg.className = "msg err";
+      });
+  };
+
+  (function load() {
+    var sel = document.getElementById("bk-timezone");
+    var guess = "";
+    try { guess = Intl.DateTimeFormat().resolvedOptions().timeZone || ""; } catch (e) {}
+    var zones = ZONES.slice();
+    if (guess && zones.indexOf(guess) < 0) zones.unshift(guess);
+    sel.innerHTML = zones.map(function (z) {
+      return '<option value="' + esc(z) + '">' + esc(z) + "</option>";
+    }).join("");
+
+    fetch("/api/practitioner/booking-config", {credentials: "same-origin"})
+      .then(function (r) { return r.json(); })
+      .then(function (v) {
+        var c = v.config;
+        if (!c) { if (guess) sel.value = guess; addType(); return; }
+        sel.value = c.timezone;
+        document.getElementById("bk-hours").value = c.office_hours;
+        document.getElementById("bk-notice").value = c.notice_hours;
+        document.getElementById("bk-buffer").value = c.buffer_min;
+        document.getElementById("bk-enabled").checked = !!c.enabled;
+        (c.session_types || []).forEach(addType);
+        if (!(c.session_types || []).length) addType();
+      });
+  })();
+
+})();
+</script>
+</body>
+</html>

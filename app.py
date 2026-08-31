@@ -17576,6 +17576,46 @@ def practitioner_profile_page():
     return _practitioner_page("practitioner-profile.html")
 
 
+@app.route("/practitioner/booking")
+def practitioner_booking_page():
+    return _practitioner_page("practitioner-booking.html")
+
+
+@app.route("/api/practitioner/booking-config", methods=["GET"])
+def api_practitioner_booking_config_get():
+    pid = _practitioner_session_pid()
+    if not pid:
+        return jsonify({"ok": False, "error": "not signed in"}), 401
+    from dashboard import practitioner_booking as _pb
+    with db.connect(LOG_DB) as cx:
+        cx.row_factory = sqlite3.Row
+        _pb.init_tables(cx)
+        cfg = _pb.get_config(cx, pid)
+    return jsonify({"ok": True, "config": cfg,
+                    "default_timezone": _pb.DEFAULT_TIMEZONE,
+                    "media": list(_pb.MEDIA)})
+
+
+@app.route("/api/practitioner/booking-config", methods=["POST"])
+def api_practitioner_booking_config_post():
+    pid = _practitioner_session_pid()
+    if not pid:
+        return jsonify({"ok": False, "error": "not signed in"}), 401
+    from dashboard import practitioner_booking as _pb
+    body = request.get_json(silent=True) or {}
+    # pid comes from the SESSION. A practitioner_id in the body is ignored on
+    # purpose: honouring it would let any signed-in practitioner rewrite
+    # another's hours.
+    try:
+        with db.connect(LOG_DB) as cx:
+            cx.row_factory = sqlite3.Row
+            _pb.init_tables(cx)
+            clean = _pb.set_config(cx, pid, body)
+    except _pb.BookingConfigError as e:
+        return jsonify({"ok": False, "error": str(e)}), 400
+    return jsonify({"ok": True, "config": clean})
+
+
 @app.route("/console/biofield-portal")
 def console_biofield_portal_page():
     resp = send_from_directory(STATIC, "console-biofield-portal.html")
