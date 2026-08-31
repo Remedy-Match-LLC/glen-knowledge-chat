@@ -119,11 +119,11 @@ def validate_phone(raw):
     if not s:
         return "", None
     if len(s) > MAX_PHONE_LEN:
-        return None, "That doesn't look like a phone number -- it's too long."
+        return None, "That doesn't look like a phone number: it's too long."
     if not _PHONE_CHARS_RE.match(s):
         return None, "That doesn't look like a phone number."
     if sum(1 for c in s if c.isdigit()) < 7:
-        return None, "That doesn't look like a phone number -- not enough digits."
+        return None, "That doesn't look like a phone number: not enough digits."
     return s, None
 
 
