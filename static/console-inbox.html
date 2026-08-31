@@ -393,7 +393,8 @@
 </div>
 
 <script>
-const _urlKey = new URLSearchParams(location.search).get("key");
+const _urlParams = new URLSearchParams(location.search);
+const _urlKey = _urlParams.get("key");
 if (_urlKey) localStorage.setItem("console_key", _urlKey);
 const KEY = _urlKey || localStorage.getItem("console_key") || "";
 const HEADERS = { "Content-Type": "application/json", "X-Console-Key": KEY };
@@ -888,6 +889,14 @@ document.addEventListener("click", e => {
 });
 
 // ── Init ────────────────────────────────────────────────────────────────────
+const initialQuery = (_urlParams.get("q") || "").trim();
+if (initialQuery) {
+  document.getElementById("search").value = initialQuery;
+  CURRENT_FILTER = "all";
+  for (const chip of document.querySelectorAll(".chip")) {
+    chip.classList.toggle("active", chip.dataset.filter === "all");
+  }
+}
 if (!KEY) {
   document.getElementById("auth-warn").style.display = "block";
 } else {
