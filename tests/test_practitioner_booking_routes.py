@@ -65,6 +65,31 @@ def practitioner(monkeypatch, logdb):
     return appmod.app.test_client()
 
 
+@pytest.fixture(autouse=True)
+def _stub_send_evox_email(monkeypatch):
+    """A booking POST in this file sends TWO real emails on success (the
+    client confirmation, and the practitioner notification) via
+    appmod.send_evox_email. The large majority of the tests below exercise
+    that route without patching it themselves -- inert only by the accident
+    that this dev Doppler environment has no SMTP_HOST set, so
+    send_evox_email raises inside a caller-side try/except and the exception
+    is swallowed. Setting SMTP_HOST would make every one of those tests
+    reach real smtplib.sendmail() and bounce real messages off Glen's
+    sending domain.
+
+    Autouse + function-scoped so it applies to every test in this module
+    (including ones added later) without each one asking for it, and stacks
+    correctly with the handful of tests below that monkeypatch
+    send_evox_email again themselves to inspect what was sent -- monkeypatch
+    applies patches in call order and undoes them in reverse at teardown, so
+    a test's own later setattr simply shadows this one for its duration.
+    Safe by construction, not by the accident of an unset env var.
+    """
+    monkeypatch.setattr(
+        appmod, "send_evox_email",
+        lambda to, name, subject, html_body, text_body, ics_bytes: None)
+
+
 def test_config_requires_a_signed_in_practitioner(monkeypatch, logdb):
     monkeypatch.setattr(appmod, "_practitioner_session_pid", lambda: None)
     c = appmod.app.test_client()
@@ -230,6 +255,16 @@ def public(monkeypatch, logdb):
     monkeypatch.setattr(appmod, "_public_surface_enabled", lambda: True)
     from dashboard import practitioner_booking as _pb
     monkeypatch.setattr(_pb, "resolve_practitioner_pid", lambda cx, slug: PID)
+    # /api/book/<slug> POST is now velocity-guarded (CRITICAL 3). appmod's
+    # _chat_velocity limiter is process-global/module-level state shared
+    # across every test in this file -- without a fresh one per test, the
+    # Flask test client's fixed remote_addr means every test's POSTs share
+    # ONE counter across the whole file, so later tests silently start
+    # getting 429s from an EARLIER test's usage rather than exercising the
+    # booking logic they actually claim to test. Same isolation approach as
+    # tests/test_chat_velocity.py's own velocity_app fixture.
+    from dashboard.chat_limits import VelocityLimiter
+    monkeypatch.setattr(appmod, "_chat_velocity", VelocityLimiter())
     return appmod.app.test_client()
 
 
