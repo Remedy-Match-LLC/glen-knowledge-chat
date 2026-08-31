@@ -775,7 +775,7 @@ def logdb(tmp_path, monkeypatch):
     c.row_factory = sqlite3.Row
     pb.init_tables(c)
     from dashboard import evox as _ev
-    _ev.init_tables(c)
+    _ev.init_evox_tables(c)
     c.close()
     monkeypatch.setattr(appmod, "LOG_DB", p)
     return p
@@ -917,7 +917,6 @@ def api_practitioner_booking_config_post():
 Create `static/practitioner-booking.html`. Copy the `<head>`, `<style>` and the theme toggle from `static/practitioner-profile.html` so the workspace looks consistent, then use this body:
 
 ```html
-<script src="/static/op-nav.js" data-active="none"></script>
 <nav class="workspace-nav" aria-label="Practitioner workspace">
   <a href="/practitioner/portal">Practitioner Home</a>
   <a href="/practitioner/dropship">Drop-Ship Order</a>
@@ -1317,7 +1316,7 @@ def api_public_book_slots(slug):
         if not cfg:
             return jsonify({"ok": True, "slots": [], "session_types": []})
         from dashboard import evox as _ev
-        _ev.init_tables(cx)
+        _ev.init_evox_tables(cx)
         booked = _ev.booked_starts(cx, practitioner=pid)
         starts = _pb.slots_for(cx, pid, days=_book_days(),
                                session_slug=session_slug, booked=booked)
@@ -1348,7 +1347,7 @@ def api_public_book(slug):
     with db.connect(LOG_DB) as cx:
         cx.row_factory = sqlite3.Row
         _pb.init_tables(cx)
-        _ev.init_tables(cx)
+        _ev.init_evox_tables(cx)
         pid = _pb.resolve_practitioner_pid(cx, slug)
         if not pid:
             return jsonify({"ok": False, "error": "unknown_practitioner"}), 404
