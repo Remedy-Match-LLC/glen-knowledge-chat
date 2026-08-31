@@ -215,10 +215,24 @@ def test_now_in_matches_the_zone_database_for_several_zones():
             f"{tz}: got {got}, zone database says {expected}")
 
 
-def test_now_in_returns_different_wall_clocks_for_different_zones():
-    """The cheapest possible statement of the same rule: one hardcoded offset
-    cannot be right for two places at once."""
-    assert pb.now_in("America/Anchorage") != pb.now_in("Pacific/Honolulu")
+def test_now_in_reflects_the_real_offset_between_two_zones():
+    """One hardcoded offset cannot be right for two places at once.
+
+    Compares the DIFFERENCE between two zones against the difference the zone
+    database gives for the same instant. An earlier version of this test just
+    asserted the two results were unequal, which passed on the microseconds
+    of real time between the two now() calls -- green whether or not the
+    function looked at its argument at all.
+    """
+    from datetime import datetime, timezone as _tzmod
+    from zoneinfo import ZoneInfo
+    utc = datetime.now(_tzmod.utc)
+    a, h = "America/Anchorage", "Pacific/Honolulu"
+    expected = (utc.astimezone(ZoneInfo(a)).replace(tzinfo=None)
+                - utc.astimezone(ZoneInfo(h)).replace(tzinfo=None))
+    got = pb.now_in(a) - pb.now_in(h)
+    assert abs((got - expected).total_seconds()) < 5, (
+        f"expected about {expected} between {a} and {h}, got {got}")
 
 
 def test_now_in_returns_naive_datetimes():
