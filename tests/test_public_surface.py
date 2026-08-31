@@ -159,6 +159,72 @@ def test_storefront_returns_none_for_non_approved_affiliate():
     assert ps.build_practitioner_storefront(cx, "prof-jane-doe") is None
 
 
+# --- practitioner_phone opt-in gate, exercised through the real payload
+# builder (not a hand-built `view` dict, not a stubbed
+# build_practitioner_storefront) --------------------------------------------
+#
+# _practitioner_phone_if_opted_in resolves the practitioner id and the phone
+# number itself via dashboard.practitioner_booking.resolve_practitioner_pid
+# and dashboard.practitioner_portal.practitioner_phone_by_id, both of which
+# open a Supabase/Postgres connection -- there is no sqlite fixture for
+# those tables. tests/test_practitioner_booking_routes.py's `public` fixture
+# monkeypatches exactly these two functions for the same reason; this reuses
+# that pattern. What is NOT stubbed, and what these tests actually exercise,
+# is the gate itself: dashboard.practitioner_booking.get_config, reading a
+# row written by set_config (the module's own writer) into a real sqlite
+# fixture DB built the same way tests/test_public_surface.py builds every
+# other fixture in this file.
+from dashboard import practitioner_booking as pb
+
+_PHONE_CFG = {"timezone": "America/Anchorage", "office_hours": "1-5:09:00-17:00",
+              "session_types": [{"slug": "intro", "label": "Intro call",
+                                 "duration_min": 20, "medium": "phone"}],
+              "notice_hours": 24, "buffer_min": 0, "enabled": True}
+
+_PID = "pid-jane"
+
+
+def _cx_with_booking_config(monkeypatch, notify_methods, on_file="+1 555-0100"):
+    """A fixture DB with a real affiliate row and a real booking config row
+    (written via pb.set_config, not a raw INSERT), plus the two Supabase-
+    backed lookups monkeypatched to point at that same fixture practitioner
+    -- the identical substitution tests/test_practitioner_booking_routes.py
+    already relies on for this exact pair of functions."""
+    cx = _cx_with_affiliate()
+    pb.init_tables(cx)
+    pb.set_config(cx, _PID, dict(_PHONE_CFG, notify_methods=notify_methods))
+    from dashboard import practitioner_portal as _pp
+    monkeypatch.setattr(pb, "resolve_practitioner_pid", lambda cx, slug: _PID)
+    monkeypatch.setattr(_pp, "practitioner_phone_by_id", lambda pid: on_file)
+    return cx
+
+
+def test_storefront_publishes_phone_when_opted_in(monkeypatch):
+    """Direction 1: a number on file AND "phone" among her chosen notify
+    methods -- her number must reach the public payload."""
+    cx = _cx_with_booking_config(monkeypatch, notify_methods=["phone", "email"])
+    view = ps.build_practitioner_storefront(cx, "prof-jane-doe")
+    assert view["practitioner_phone"] == "+1 555-0100"
+
+
+def test_storefront_withholds_phone_when_not_opted_in(monkeypatch):
+    """Direction 2: the same number on file, but "phone" is absent from her
+    chosen notify methods -- the number must not reach the public payload.
+    Same practitioner, same number, only the config differs, so this isolates
+    the gate rather than some other difference between fixtures."""
+    cx = _cx_with_booking_config(monkeypatch, notify_methods=["email", "text"])
+    view = ps.build_practitioner_storefront(cx, "prof-jane-doe")
+    assert view["practitioner_phone"] == ""
+
+
+def test_storefront_phone_opted_in_but_none_on_file(monkeypatch):
+    """Opted in, but there is no number to publish -- resolves to "", not an
+    error and not a placeholder."""
+    cx = _cx_with_booking_config(monkeypatch, notify_methods=["phone"], on_file="")
+    view = ps.build_practitioner_storefront(cx, "prof-jane-doe")
+    assert view["practitioner_phone"] == ""
+
+
 from dashboard import share_header as sh
 
 
