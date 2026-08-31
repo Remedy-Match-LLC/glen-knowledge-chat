@@ -276,6 +276,33 @@ def test_ingest_order_appends_slugs_for_paid_member(monkeypatch, tmp_path):
     assert slugs == {"neuro-magnesium", "terrain-restore"}
 
 
+def test_ingest_order_does_not_append_unpaid_checkout_for_member(monkeypatch, tmp_path):
+    A = _load_app()
+    db = str(tmp_path / "chat_log.db")
+    from dashboard.orders import init_orders_table
+    from dashboard.client_portal import init_client_portal_table
+    from dashboard.email_suppression import init_table as init_suppression
+    with sqlite3.connect(db) as cx:
+        init_orders_table(cx)
+        init_client_portal_table(cx)
+        init_suppression(cx)
+        A.init_membership_tables(cx)
+        A.repertoire.init_repertoire_table(cx)
+        cx.commit()
+    monkeypatch.setattr(A, "LOG_DB", db)
+    monkeypatch.setattr(A, "REPERTOIRE_ENABLED", True)
+    monkeypatch.setattr(A, "_send_full_report_email", lambda *a, **k: ("mock", None))
+    email = "member-unpaid@x.com"
+    _seed_active_membership(db, email)
+
+    A._ingest_order(source="portal-reorder", external_ref="open1", email=email,
+                    items=[{"slug": "neuro-magnesium", "qty": 1}],
+                    total_cents=6997, status="new")
+
+    with sqlite3.connect(db) as cx:
+        assert A.repertoire.repertoire_slugs(cx, email) == set()
+
+
 def test_ingest_order_does_not_append_for_non_member(monkeypatch, tmp_path):
     A = _load_app()
     db = str(tmp_path / "chat_log.db")
