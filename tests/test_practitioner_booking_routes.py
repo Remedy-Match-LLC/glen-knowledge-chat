@@ -1617,6 +1617,21 @@ def test_calendar_attaches_the_invite_to_her_notification(public, logdb, monkeyp
     assert to_her and to_her[0]["ics"].startswith(b"BEGIN:VCALENDAR")
 
 
+def test_calendar_alone_still_sends_the_notification_email(public, logdb, monkeypatch):
+    """`calendar` without `email` in notify_methods is a supported
+    combination (the brief's table lists it, and the code's own guard is
+    `"email" in methods or "calendar" in methods`), but nothing above
+    exercises it -- every other calendar-adjacent test also has `email` in
+    the list. She still gets exactly one email, with the invite attached."""
+    sends = _spy_sends(monkeypatch)
+    with _open(logdb) as c:
+        pb.set_config(c, PID, dict(CFG, notify_methods=["calendar"]))
+    _book_one(public)
+    to_her = [s for s in sends["email"] if s["to"] == PRACTITIONER_EMAIL]
+    assert len(to_her) == 1
+    assert to_her[0]["ics"].startswith(b"BEGIN:VCALENDAR")
+
+
 def test_text_sends_an_sms_with_her_own_timezone(public, logdb, monkeypatch):
     sends = _spy_sends(monkeypatch)
     with _open(logdb) as c:
@@ -1657,25 +1672,36 @@ def test_one_failing_method_does_not_stop_the_others(public, logdb, monkeypatch)
     a fan-out that aborts on the first failure is worse than no fan-out,
     because it silently drops the channel that would have worked.
 
-    NOTE: this direction cannot detect a missing per-method try/except. The
-    implementation runs the email/calendar branch before the text branch, so
+    NOTE on what this does and does not prove: the email-still-sent
+    assertion cannot detect a missing per-method try/except, because the
+    implementation runs the email/calendar branch before the text branch --
     by the time the unwrapped SMS call would raise, the email has already
-    been sent -- this assertion passes whether or not the SMS call is
-    individually wrapped. It is a real regression guard (the email must
-    still go out when GHL is down) but it does not prove per-method
-    isolation. test_a_failing_email_does_not_stop_the_text is the one that
-    actually exercises that: the direction where the FIRST branch fails and
-    the second must still run.
+    been sent. test_a_failing_email_does_not_stop_the_text is the one that
+    exercises that direction (the FIRST branch failing and the second still
+    needing to run).
+
+    The `sms_attempts` assertion below is what this test actually needs to
+    be worth anything at all: run it against the pre-task code (one
+    hardcoded email, notify_methods never read, no SMS integration) and the
+    email-only version passes trivially -- the email goes out
+    unconditionally and `boom` is never invoked at all, because nothing
+    ever calls `_send_sms_via_ghl`. Recording that `boom` was actually
+    reached (not just asserting on `sends["sms"]`, which `boom` never
+    appends to before raising) is what rules that out.
     """
     sends = _spy_sends(monkeypatch)
 
+    sms_attempts = []
+
     def boom(to, msg, phone=""):
+        sms_attempts.append((to, msg, phone))
         raise RuntimeError("ghl is down")
     monkeypatch.setattr(appmod, "_send_sms_via_ghl", boom)
     with _open(logdb) as c:
         pb.set_config(c, PID, dict(CFG, notify_methods=["text", "email"]))
     _book_one(public)
     assert [s for s in sends["email"] if s["to"] == PRACTITIONER_EMAIL]
+    assert sms_attempts, "the SMS path must actually be reached, not skipped"
 
 
 def test_a_failing_email_does_not_stop_the_text(public, logdb, monkeypatch):
@@ -1696,3 +1722,28 @@ def test_a_failing_email_does_not_stop_the_text(public, logdb, monkeypatch):
         pb.set_config(c, PID, dict(CFG, notify_methods=["email", "text"]))
     _book_one(public)
     assert sends["sms"], "text should still have been attempted even though email failed"
+
+
+def test_a_failing_ics_build_does_not_zero_out_every_notification(public, logdb, monkeypatch):
+    """`ics` is bound inside the CLIENT confirmation block's own try, several
+    hundred lines above the practitioner block that also reads it for a
+    `calendar`-method send. If `_ev.build_ics` raises there, that block's
+    own except logs and returns WITHOUT ever binding `ics` -- so unless `ics`
+    has a default bound before that try (which app.py now does), referencing
+    it here raises NameError, caught only by the outer practitioner-block
+    except, and she gets NEITHER her email nor her text: the `text` branch
+    never runs, even though it has nothing to do with the ICS build
+    failing. That defeats the entire point of wrapping each method
+    individually, in exactly the compound case (calendar selected alongside
+    another method) the wrapping exists for."""
+    sends = _spy_sends(monkeypatch)
+    from dashboard import evox as _ev
+
+    def boom(*a, **kw):
+        raise RuntimeError("ics build failed")
+    monkeypatch.setattr(_ev, "build_ics", boom)
+    with _open(logdb) as c:
+        pb.set_config(c, PID, dict(CFG, notify_methods=["calendar", "text"]))
+    _book_one(public)
+    assert sends["sms"], \
+        "a failed ICS build must not silently drop the text notification too"

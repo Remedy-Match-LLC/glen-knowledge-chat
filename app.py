@@ -17791,6 +17791,18 @@ def api_public_book(slug):
     # loudly, return success -- the same rule the client_name/summary
     # UPDATEs above follow, and for the same reason (a false 500 for a real
     # booking is what makes someone book twice).
+    #
+    # `ics` is bound here, before the try, rather than only inside it: the
+    # practitioner notification block below also reads `ics` (for a
+    # `calendar`-method send), and if _ev.build_ics raises inside this
+    # try, the except below logs and returns without ever binding `ics` --
+    # leaving it undefined would raise NameError in the practitioner block,
+    # caught only by ITS outer except, and silently zero out every method
+    # she chose (including `text`, which has nothing to do with the ICS
+    # build failing). b"" here matches what a `calendar`-less notification
+    # already sends, so a failed ICS build degrades to "no invite attached"
+    # rather than "no notification sent at all".
+    ics = b""
     try:
         visitor_tz = (body.get("tz") or "").strip()
         rendered_tz = _pb.effective_visitor_tz(visitor_tz, cfg["timezone"])
