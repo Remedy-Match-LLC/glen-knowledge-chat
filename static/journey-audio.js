@@ -15,6 +15,8 @@
   var approach = null;     // { setProx(p), stop() } for current approach soundscape
   var approachKey = null;  // key of the active approach (null = none)
   var curProx = 0;         // last proximity value passed to proximity()
+  var arrivalTimers = [];
+  var arrivalEls = [];
 
   var manifest = null;     // loaded manifest object (null = not yet loaded)
   var manifestLoading = false;
@@ -132,13 +134,21 @@
   }
 
   function say(text, pitch, rate, vol) {
-    if (_muted) { return; }
+    if (_muted || document.hidden) { return; }
     if (!window.speechSynthesis) { return; }
     var u = new SpeechSynthesisUtterance(text);
     u.pitch = pitch == null ? 1 : pitch;
     u.rate  = rate  == null ? 0.95 : rate;
     u.volume = vol  == null ? 1 : vol;
     speechSynthesis.speak(u);
+  }
+
+  function later(fn, delay) {
+    var timer = setTimeout(function () {
+      arrivalTimers = arrivalTimers.filter(function (t) { return t !== timer; });
+      if (!document.hidden) { fn(); }
+    }, delay);
+    arrivalTimers.push(timer);
   }
 
   // ── Approach soundscapes (ported from prototype) ─────────────────────────────
@@ -258,12 +268,12 @@
       var f = AC.createBiquadFilter(); f.type = "lowpass"; f.frequency.value = 900;
       o.connect(f); f.connect(g); g.connect(master);
       o.start(t); o.stop(t + 1.05);
-      setTimeout(function () { say("Welcome, friend! Come in, come in!", 0.6, 0.95); }, 750);
+      later(function () { say("Welcome, friend! Come in, come in!", 0.6, 0.95); }, 750);
     } else if (sound === "whisper") {
       // Counting 1 to 10 at the ear
       for (var n = 1; n <= 10; n++) {
         (function (num) {
-          setTimeout(function () { say(String(num), 1.05, 0.95, 0.85); }, (num - 1) * 360);
+          later(function () { say(String(num), 1.05, 0.95, 0.85); }, (num - 1) * 360);
         }(n));
       }
     } else if (sound === "chaching") {
@@ -273,7 +283,7 @@
     } else if (sound === "doppler") {
       // "And we're going with you" in Glendalf's voice
       tone(300, 0.7, 0.3, "sawtooth", 0, 1200, 0.9);
-      setTimeout(function () { say("And we're going with you.", 0.6, 0.92); }, 250);
+      later(function () { say("And we're going with you.", 0.6, 0.92); }, 250);
     } else if (sound === "oasis") {
       // Breeze + birds, plus fountains and wind chimes on arrival
       burst(1.4, 0.06, 600, "bandpass");
@@ -309,6 +319,10 @@
       try {
         var el = new Audio(url);
         el.volume = 0.9;
+        arrivalEls.push(el);
+        el.onended = el.onerror = function () {
+          arrivalEls = arrivalEls.filter(function (a) { return a !== el; });
+        };
         el.play().catch(function () {});
       } catch (e) {}
       return;
@@ -320,8 +334,16 @@
     stopApproach();
     approachKey = null;
     curProx = 0;
+    arrivalTimers.forEach(clearTimeout); arrivalTimers = [];
+    arrivalEls.forEach(function (el) { try { el.pause(); el.currentTime = 0; } catch (e) {} });
+    arrivalEls = [];
     try { if (window.speechSynthesis) { speechSynthesis.cancel(); } } catch (e) {}
   }
+
+  document.addEventListener("visibilitychange", function () {
+    if (document.hidden) { stopAll(); }
+  });
+  window.addEventListener("pagehide", stopAll);
 
   function toggleMute() {
     _muted = !_muted;

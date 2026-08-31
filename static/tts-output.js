@@ -34,8 +34,10 @@
 
   // ── single active player across the whole page ─────────────────────────────
   var active = null;  // { stop: fn, btn: el }
+  var playGeneration = 0;
 
   function stopActive() {
+    playGeneration++;
     if (active) { try { active.stop(); } catch (e) {} active = null; }
   }
 
@@ -48,6 +50,7 @@
 
   // ── browser fallback voice ─────────────────────────────────────────────────
   function browserSpeak(btn, text) {
+    if (document.hidden) { setLabel(btn, 'idle'); return; }
     if (!hasSpeech) { setLabel(btn, 'idle'); return; }
     try {
       window.speechSynthesis.cancel();
@@ -63,6 +66,8 @@
 
   // ── Glen's voice via /chat/tts, fall back on any error ─────────────────────
   function speak(btn, text) {
+    if (document.hidden) { setLabel(btn, 'idle'); return; }
+    var generation = ++playGeneration;
     setLabel(btn, 'loading');
     fetch('/chat/tts', {
       method: 'POST',
@@ -72,6 +77,10 @@
       if (!r.ok) throw new Error('status ' + r.status);
       return r.blob();
     }).then(function (blob) {
+      if (document.hidden || generation !== playGeneration) {
+        setLabel(btn, 'idle');
+        return;
+      }
       if (!hasAudio) throw new Error('no audio');
       var url   = URL.createObjectURL(blob);
       var audio = new window.Audio(url);
@@ -82,7 +91,8 @@
       setLabel(btn, 'playing');
       audio.play().catch(function () { cleanup(); active = null; browserSpeak(btn, text); });
     }).catch(function () {
-      browserSpeak(btn, text);
+      if (!document.hidden && generation === playGeneration) browserSpeak(btn, text);
+      else setLabel(btn, 'idle');
     });
   }
 
@@ -111,7 +121,7 @@
   // ── public: attach a Listen button AND speak once now (auto voice-out) ─────
   function attachAndSpeak(container, text) {
     var btn = attach(container, text);
-    if (btn) { stopActive(); speak(btn, (text || '').replace(/\s+/g, ' ').trim()); }
+    if (btn && !document.hidden) { stopActive(); speak(btn, (text || '').replace(/\s+/g, ' ').trim()); }
     return btn;
   }
 
@@ -122,6 +132,11 @@
     var activated = !!(navigator.userActivation && navigator.userActivation.hasBeenActive);
     return activated ? attachAndSpeak(container, text) : attach(container, text);
   }
+
+  document.addEventListener('visibilitychange', function () {
+    if (document.hidden) stopActive();
+  });
+  window.addEventListener('pagehide', stopActive);
 
   window.TTS = { attach: attach, attachAndSpeak: attachAndSpeak, attachReply: attachReply, stop: stopActive };
 })();
