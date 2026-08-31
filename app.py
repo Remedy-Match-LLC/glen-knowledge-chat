@@ -21026,11 +21026,21 @@ def _stripe_checkout_url_for_reorder(out, email):
         metadata["return_to"] = out.get("return_to") or cancel_url
         stripe_items = out.get("stripe_line_items") or []
         if stripe_items:
+            # Stripe rejects an idempotency key when it is reused with different
+            # parameters.  The portal deliberately reconnects a refreshed basket
+            # to its existing order_ref, but prices/packaging can legitimately
+            # change before payment.  Scope the key to the canonical Stripe lines:
+            # identical retries still dedupe, while a changed checkout can proceed.
+            import hashlib as _hashlib
+            _item_fingerprint = _hashlib.sha256(json.dumps(
+                stripe_items, sort_keys=True, separators=(",", ":"),
+            ).encode("utf-8")).hexdigest()[:20]
+            _stripe_idem = f"{out.get('invoice_id') or 'portal'}:{_item_fingerprint}"
             sess = stripe_pay.create_itemized_checkout_session(
                 stripe_items, customer_email=email, metadata=metadata,
                 success_url=success, cancel_url=cancel_url,
                 collect_shipping=True,
-                idempotency_key=(out.get("invoice_id") or ""))
+                idempotency_key=_stripe_idem)
         else:
             sess = stripe_pay.create_checkout_session(
                 total_cents, customer_email=email,
