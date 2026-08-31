@@ -227,7 +227,7 @@ def now_in(tz_name):
     """
     try:
         z = ZoneInfo(tz_name)
-    except (ZoneInfoNotFoundError, ValueError, KeyError):
+    except (ZoneInfoNotFoundError, ValueError, KeyError, TypeError):
         z = ZoneInfo(DEFAULT_TIMEZONE)
     return datetime.now(_tz.utc).astimezone(z).replace(tzinfo=None)
 
@@ -276,11 +276,11 @@ def to_visitor_tz(iso, practitioner_tz, visitor_tz):
     """
     try:
         pz = ZoneInfo(practitioner_tz)
-    except (ZoneInfoNotFoundError, ValueError, KeyError):
+    except (ZoneInfoNotFoundError, ValueError, KeyError, TypeError):
         pz = ZoneInfo(DEFAULT_TIMEZONE)
     try:
         vz = ZoneInfo(visitor_tz)
-    except (ZoneInfoNotFoundError, ValueError, KeyError):
+    except (ZoneInfoNotFoundError, ValueError, KeyError, TypeError):
         vz = pz
     aware = datetime.fromisoformat(str(iso)[:19]).replace(tzinfo=pz)
     return aware.astimezone(vz).isoformat()

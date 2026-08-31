@@ -308,3 +308,27 @@ def test_an_unknown_visitor_timezone_falls_back_to_the_practitioner(cx):
     """A visitor's browser can report anything. Never raise on a public page."""
     out = pb.to_visitor_tz("2026-09-07T09:00:00", "America/Anchorage", "Mars/Olympus")
     assert out.startswith("2026-09-07T09:00")
+
+
+def test_a_none_visitor_timezone_falls_back_to_the_practitioner():
+    """ZoneInfo(None) raises TypeError, not one of (ZoneInfoNotFoundError,
+    ValueError, KeyError). A visitor's browser that fails to report a
+    timezone at all is just as unusable as one reporting garbage, and the
+    promise is the same: fall back, never 500."""
+    out = pb.to_visitor_tz("2026-09-07T09:00:00", "America/Anchorage", None)
+    assert out.startswith("2026-09-07T09:00")
+
+
+def test_a_none_practitioner_timezone_falls_back_to_the_default():
+    """Same TypeError trap on the practitioner side. Not expected to be
+    reachable through get_config (it always returns a validated string), but
+    to_visitor_tz must not raise if it is ever called with one directly."""
+    out = pb.to_visitor_tz("2026-09-07T09:00:00", None, "UTC")
+    assert out.startswith("2026-09-07T19:00:00")
+
+
+def test_now_in_with_a_none_timezone_falls_back_to_the_default():
+    """now_in has the same ZoneInfo(None) trap; it is a produced interface a
+    future caller could reach with unvalidated input."""
+    n = pb.now_in(None)
+    assert n.tzinfo is None
