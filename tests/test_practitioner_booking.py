@@ -88,6 +88,30 @@ def test_a_fixed_offset_is_rejected_not_just_an_unknown_name():
         pb.validate_config(_cfg(timezone="UTC-9"))
 
 
+def test_a_missing_timezone_key_is_rejected():
+    """DEFAULT_TIMEZONE is a form pre-fill suggestion, not a validator
+    fallback. An omitted key must never silently become Hawaii."""
+    cfg = _cfg()
+    del cfg["timezone"]
+    with pytest.raises(pb.BookingConfigError):
+        pb.validate_config(cfg)
+
+
+def test_a_blank_timezone_is_rejected():
+    with pytest.raises(pb.BookingConfigError):
+        pb.validate_config(_cfg(timezone=""))
+
+
+@pytest.mark.parametrize("bad", ["Etc/GMT+9", "Etc/GMT-9", "Etc/UTC"])
+def test_an_etc_gmt_offset_is_rejected(bad):
+    """Etc/GMT+9 contains a slash and resolves cleanly through ZoneInfo, so
+    the plain 'no slash' check walks right past it. It is the same
+    fixed-offset bug in a different spelling, and its sign is backwards:
+    Etc/GMT+9 means UTC minus 9, not plus 9."""
+    with pytest.raises(pb.BookingConfigError):
+        pb.validate_config(_cfg(timezone=bad))
+
+
 @pytest.mark.parametrize("bad", [0, -30, 601, "20", None])
 def test_a_nonsense_duration_is_rejected(bad):
     with pytest.raises(pb.BookingConfigError):
@@ -117,18 +141,42 @@ def test_markup_in_a_label_is_stored_as_text():
     assert "<script>" not in out["session_types"][0]["label"]
 
 
+def _insert_row(cx, timezone="America/Anchorage", office_hours="1-5:09:00-17:00",
+                 session_types='[{"slug": "intro", "label": "Intro", '
+                                '"duration_min": 20, "medium": "phone"}]'):
+    """Write a row directly, bypassing set_config's validation -- the way a
+    hand edit, a future migration, or a partial write actually could."""
+    cx.execute("INSERT INTO practitioner_booking_config (practitioner_id, "
+               "timezone, office_hours, session_types, notice_hours, "
+               "buffer_min, enabled, updated_at) VALUES (?,?,?,?,?,?,?,?)",
+               (PID, timezone, office_hours, session_types,
+                24, 0, 1, "2026-01-01T00:00:00+00:00"))
+    cx.commit()
+
+
 def test_corrupt_stored_json_is_not_bookable(cx):
     """A row that fails to parse must offer NOTHING, not somebody else's
     default hours. None of the tests above write malformed JSON directly, so
     this exercises the fail-closed branch in get_config that they don't
     reach: the practitioner_booking_config table is written to directly,
     bypassing set_config's validation."""
-    cx.execute("INSERT INTO practitioner_booking_config (practitioner_id, "
-               "timezone, office_hours, session_types, notice_hours, "
-               "buffer_min, enabled, updated_at) VALUES (?,?,?,?,?,?,?,?)",
-               (PID, "America/Anchorage", "1-5:09:00-17:00", "{not json",
-                24, 0, 1, "2026-01-01T00:00:00+00:00"))
-    cx.commit()
+    _insert_row(cx, session_types="{not json")
+    assert pb.get_config(cx, PID) is None
+    assert pb.is_bookable(cx, PID) is False
+
+
+def test_corrupt_stored_office_hours_is_not_bookable(cx):
+    """get_config's own justification for guarding session_types JSON --
+    hand-edited data, a future migration, a partial write -- applies just as
+    much to office_hours. A row this module cannot correctly interpret must
+    not be treated as bookable."""
+    _insert_row(cx, office_hours="garbage")
+    assert pb.get_config(cx, PID) is None
+    assert pb.is_bookable(cx, PID) is False
+
+
+def test_corrupt_stored_timezone_is_not_bookable(cx):
+    _insert_row(cx, timezone="UTC-9")
     assert pb.get_config(cx, PID) is None
     assert pb.is_bookable(cx, PID) is False
 

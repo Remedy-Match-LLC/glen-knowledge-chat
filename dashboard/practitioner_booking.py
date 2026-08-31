@@ -13,6 +13,7 @@ will still be offered. Her config page says so in as many words.
 """
 import json
 import re
+from datetime import datetime, timezone as _tz
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from dashboard import db
@@ -68,15 +69,37 @@ def _validate_hours(spec):
 
 
 def _validate_timezone(name):
-    name = str(name or "").strip()
+    # Missing/blank/non-string is a hard reject, not a substitution.
+    # DEFAULT_TIMEZONE is a *pre-fill suggestion* for the form to offer --
+    # a different job from validation. A blank timezone that slipped through
+    # (unselected dropdown, a JS error, anything) must never silently become
+    # Pacific/Honolulu; that is somebody else's working day.
+    if not isinstance(name, str) or not name.strip():
+        raise BookingConfigError(
+            "Timezone is required. Pick the practitioner's own time zone; "
+            "there is no safe default to fall back to.")
+    name = name.strip()
     # A named zone, never a fixed offset. "UTC-9" is right for Alaska in
     # January and an hour wrong in July, and the failure looks like a client
     # arriving at the wrong time rather than like an error.
-    if not name or "/" not in name:
+    if "/" not in name:
         raise BookingConfigError(
             "Timezone must be a named zone such as America/Anchorage, not a "
             "fixed offset (offsets are wrong for half of every year wherever "
             "daylight saving applies).")
+    # Etc/GMT+9 contains a slash and resolves cleanly through ZoneInfo, so it
+    # passes the check above -- but it is exactly the fixed-offset bug in a
+    # different spelling: no DST awareness, AND the POSIX sign convention is
+    # inverted (Etc/GMT+9 means UTC MINUS 9). A practitioner reaching for
+    # "+9" would land nine hours the wrong way. Disqualified because it
+    # names an offset, not a place -- not because it lacks DST (Hawaii has
+    # none either, and it's the default).
+    if name.startswith("Etc/"):
+        raise BookingConfigError(
+            "Timezone must be a named zone that describes a place (such as "
+            "America/Anchorage), not an Etc/GMT offset. Etc/ zones never "
+            "observe daylight saving and their sign is backwards from what "
+            "the name suggests (Etc/GMT+9 means UTC minus 9).")
     try:
         ZoneInfo(name)
     except (ZoneInfoNotFoundError, ValueError, KeyError):
@@ -131,7 +154,7 @@ def validate_config(cfg) -> dict:
     for name, val, hi in (("notice_hours", notice, 720), ("buffer_min", buffer_min, 240)):
         if not isinstance(val, int) or isinstance(val, bool) or not (0 <= val <= hi):
             raise BookingConfigError(f"{name} must be a whole number between 0 and {hi}.")
-    return {"timezone": _validate_timezone(cfg.get("timezone") or DEFAULT_TIMEZONE),
+    return {"timezone": _validate_timezone(cfg.get("timezone")),
             "office_hours": _validate_hours(cfg.get("office_hours")),
             "session_types": _validate_session_types(cfg.get("session_types") or []),
             "notice_hours": notice, "buffer_min": buffer_min,
@@ -150,18 +173,23 @@ def get_config(cx, pid):
         return None
     try:
         types = json.loads(row["session_types"])
+        timezone = _validate_timezone(row["timezone"])
+        office_hours = _validate_hours(row["office_hours"])
     except (ValueError, TypeError):
-        # A row we cannot read offers NO slots. It must not fall back to a
-        # default, because a default here is somebody else's working day.
+        # A row we cannot read -- or cannot re-validate -- offers NO slots.
+        # It must not fall back to a default, because a default here is
+        # somebody else's working day. Applies equally to a corrupt JSON
+        # blob, a hand-edited timezone, and a hand-edited hours string: all
+        # three could reach this row without ever going through
+        # validate_config (a migration, a partial write, direct SQL).
         return None
-    return {"timezone": row["timezone"], "office_hours": row["office_hours"],
+    return {"timezone": timezone, "office_hours": office_hours,
             "session_types": types, "notice_hours": row["notice_hours"],
             "buffer_min": row["buffer_min"], "enabled": bool(row["enabled"])}
 
 
 def set_config(cx, pid, cfg) -> dict:
     clean = validate_config(cfg)
-    from datetime import datetime, timezone as _tz
     cx.execute(
         "INSERT INTO practitioner_booking_config (practitioner_id, timezone, "
         "office_hours, session_types, notice_hours, buffer_min, enabled, updated_at) "
