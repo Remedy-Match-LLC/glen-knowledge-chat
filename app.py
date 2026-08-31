@@ -38916,7 +38916,11 @@ def post_todos():
                       suggested_reply=excluded.suggested_reply,
                       action_note=excluded.action_note,
                       core_message=excluded.core_message,
-                      received_at=CASE WHEN excluded.received_at != '' THEN excluded.received_at ELSE received_at END
+                      -- todos.received_at, not a bare `received_at`: Postgres cannot tell
+                      -- whether an unqualified name in DO UPDATE means the target row or
+                      -- `excluded`, and raises AmbiguousColumn. SQLite accepts the bare
+                      -- form, so no SQLite-backed test can catch this.
+                      received_at=CASE WHEN excluded.received_at != '' THEN excluded.received_at ELSE todos.received_at END
                 """, (ts, owner, category, title, body, priority, source, dedup,
                       ai_summary, suggested_reply, action_note, core_message, received_at))
                 # rowcount, not the SQLite-only changes() function, which
