@@ -17854,7 +17854,17 @@ def api_public_book(slug):
         practitioner_email = _pp.practitioner_email_by_id(pid)
         if practitioner_email:
             her_nice = start_ts.replace("T", " ")
-            subj = f"New booking: {name}"
+            # name is only stripped/truncated ([:120] above), so interior
+            # newlines survive into here. A newline in an email header value
+            # makes Python's email package refuse it (HeaderParseError:
+            # "header value appears to contain an embedded header") rather
+            # than emit one -- this is not header injection, it is a silent
+            # send failure. send_evox_email's own try/except then swallows
+            # it, the booking still returns 200, and the practitioner is
+            # never told -- exactly what this notification exists to
+            # prevent. Collapse whitespace for the SUBJECT only; the body
+            # below keeps the name as submitted.
+            subj = f"New booking: {' '.join(name.split())}"
             html_body2 = (
                 f"<p>New {_html2.escape(st['label'])} booking.</p>"
                 f"<p>Who: <b>{_html2.escape(name)}</b> ({_html2.escape(email)})</p>"

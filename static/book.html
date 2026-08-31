@@ -299,6 +299,27 @@
     msg.textContent = text;
   }
 
+  // Message-only branches of the POST /api/book error ladder, pulled into a
+  // pure (code -> copy) function so it can be extracted and executed under
+  // Node -- same technique fmtTime uses -- rather than only grepped from
+  // source, which would pass whether or not the branch is ever reached.
+  // slot_taken/slot_unavailable stay in the caller below: those carry side
+  // effects (clearing the chosen slot, refreshing the list) that don't
+  // belong in a pure mapping.
+  function bookErrorMessage(err) {
+    if (err === 'bad_email') return 'That email address does not look right.';
+    if (err === 'name_required') return 'Please enter your name.';
+    if (err === 'not_bookable') return "This practitioner isn't accepting bookings right now.";
+    if (err === 'unknown_practitioner') return "We couldn't find this practitioner.";
+    // Same velocity guard as the other public POST at /begin/fireside/agent
+    // (anonymous tier): the window can be up to a minute, or up to a day if
+    // the daily cap tripped. No specific duration is stated here -- the
+    // response carries no reliably human-scale figure, and a wrong number
+    // in this copy is worse than none.
+    if (err === 'rate_limited') return "You're booking too quickly. Please wait a bit before trying again.";
+    return 'Something went wrong. Please try again.';
+  }
+
   document.getElementById('submit-btn').addEventListener('click', function () {
     var name = document.getElementById('bk-name').value.trim();
     var email = document.getElementById('bk-email').value.trim();
@@ -339,17 +360,7 @@
         });
         return;
       }
-      if (err === 'bad_email') { setMsg('That email address does not look right.', false); return; }
-      if (err === 'name_required') { setMsg('Please enter your name.', false); return; }
-      if (err === 'not_bookable') {
-        setMsg("This practitioner isn't accepting bookings right now.", false);
-        return;
-      }
-      if (err === 'unknown_practitioner') {
-        setMsg("We couldn't find this practitioner.", false);
-        return;
-      }
-      setMsg('Something went wrong. Please try again.', false);
+      setMsg(bookErrorMessage(err), false);
     }).catch(function () {
       btn.disabled = false;
       setMsg('Could not reach the server. Please try again.', false);

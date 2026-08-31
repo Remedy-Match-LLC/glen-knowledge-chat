@@ -685,6 +685,39 @@ def test_the_practitioner_is_notified_of_a_new_booking(public, logdb, monkeypatc
     assert slot["start"].replace("T", " ") in note["body"]
 
 
+def test_a_newline_in_the_visitors_name_does_not_suppress_the_notification(
+        public, logdb, monkeypatch):
+    """name is only .strip()[:120]'d before it reaches here, so an interior
+    newline survives into the subject line built for the practitioner's
+    notification. Python's email package then refuses (not injects) a
+    header value containing an embedded newline -- HeaderParseError inside
+    send_evox_email's own msg["Subject"] = subject line -- and that send is
+    wrapped in a try/except that swallows it, so the booking still returns
+    200, the client still gets confirmed, and the practitioner is never
+    told. Asserting the send merely happened would not catch this: the stub
+    below is a no-op recorder, so it "sends" either way regardless of what
+    subj contains. The regression is only visible by inspecting the actual
+    subject string the route handed to send_evox_email."""
+    from dashboard import practitioner_portal as _pp
+    monkeypatch.setattr(_pp, "practitioner_email_by_id",
+                        lambda pid: "mary@example.com" if pid == PID else "")
+    sent = []
+    monkeypatch.setattr(appmod, "send_evox_email",
+                        lambda to, name, subject, html_body, text_body, ics_bytes:
+                        sent.append({"to": to, "subject": subject}))
+    with _open(logdb) as c:
+        pb.set_config(c, PID, CFG)
+    slot = public.get("/api/book/mary-boyd/slots?session=intro").get_json()["slots"][0]
+    r = public.post("/api/book/mary-boyd", json={
+        "session": "intro", "start": slot["start"],
+        "name": "Evil\nX-Injected: header", "email": "client@example.com"})
+    assert r.status_code == 200, r.get_data(as_text=True)
+    note = next(m for m in sent if m["to"] == "mary@example.com")
+    assert "\n" not in note["subject"], \
+        "a newline here would make smtplib refuse the whole send"
+    assert "\r" not in note["subject"]
+
+
 def test_a_failed_practitioner_notification_does_not_fail_the_booking(
         public, logdb, monkeypatch):
     """create_booking already committed by the time this send runs. If it
@@ -1177,6 +1210,85 @@ def test_the_page_posts_the_practitioner_local_start_not_the_visitor_string():
     assert "s.start" in js or "slot.start" in js
     assert "rendered_timezone" in js, \
         "the page must label times from the zone the API actually used"
+
+
+def test_the_source_has_a_rate_limited_branch():
+    """A source check only -- it passes whether or not the branch is ever
+    reached, which is exactly why it is paired with the Node-extraction
+    test right below. Kept as a cheap sanity check that survives even on a
+    host with no `node` binary."""
+    import pathlib
+    js = (pathlib.Path(appmod.STATIC) / "book.html").read_text()
+    assert "rate_limited" in js
+
+
+@pytest.mark.skipif(not shutil.which("node"), reason="node not available")
+def test_a_rate_limited_booking_is_told_to_wait_not_to_retry():
+    """The velocity guard added in the previous wave returns
+    {"error": "rate_limited"} with a 429 (app.py's _velocity_guard). Before
+    this fix, book.html's error ladder had no branch for that code, so it
+    fell to the generic "Something went wrong. Please try again." -- inviting
+    an immediate retry that keeps failing for up to a minute, or up to a day
+    if the daily cap tripped.
+
+    A plain grep of the source (test_the_source_has_a_rate_limited_branch,
+    above) would pass whether or not any code path actually reaches the
+    branch. This test instead uses the same extraction-and-execute-under-Node
+    technique as test_fmt_time_renders_in_the_rendered_timezone_not_the_browsers_own:
+    it pulls the real, named, pure bookErrorMessage(err) function out of
+    book.html by balanced-brace slicing and calls it directly, rather than
+    driving the full click handler (which touches document.getElementById,
+    fetch, and DOM state that would need a jsdom-equivalent stub to exercise
+    meaningfully). bookErrorMessage is where the error-code -> copy mapping
+    actually lives; the two side-effecting codes (slot_taken/slot_unavailable)
+    stay in the caller and are not covered by this function on purpose.
+    """
+    import pathlib
+    js = r'''
+      const fs = require('fs');
+      const src = fs.readFileSync('static/book.html', 'utf8');
+      const marker = 'function bookErrorMessage(';
+      const idx = src.indexOf(marker);
+      if (idx < 0) { console.error('bookErrorMessage not found in book.html'); process.exit(2); }
+      const braceStart = src.indexOf('{', idx);
+      let depth = 0, end = -1;
+      for (let j = braceStart; j < src.length; j++) {
+        if (src[j] === '{') depth++;
+        else if (src[j] === '}') { depth--; if (depth === 0) { end = j; break; } }
+      }
+      if (end < 0) { console.error('unbalanced braces extracting bookErrorMessage'); process.exit(2); }
+      const fnSrc = src.slice(idx, end + 1);
+      eval(fnSrc);
+      if (typeof bookErrorMessage !== 'function') {
+        console.error('extraction did not produce a callable bookErrorMessage'); process.exit(2);
+      }
+
+      const got = bookErrorMessage('rate_limited');
+      if (typeof got !== 'string' || !got.length) {
+        console.error('rate_limited produced no message: ' + JSON.stringify(got));
+        process.exit(1);
+      }
+      const fallback = bookErrorMessage('some_unknown_future_code');
+      if (got === fallback) {
+        console.error('rate_limited is not branched -- it falls through to the generic message: ' +
+                       JSON.stringify(got));
+        process.exit(1);
+      }
+      const low = got.toLowerCase();
+      if (low.indexOf('try again') !== -1 || /\btry\b/.test(low)) {
+        console.error('copy invites an immediate retry, which is the bug this fix closes: ' +
+                       JSON.stringify(got));
+        process.exit(1);
+      }
+      if (!/wait/.test(low)) {
+        console.error('copy does not tell the visitor to wait: ' + JSON.stringify(got));
+        process.exit(1);
+      }
+      console.log('ok');
+    '''
+    out = subprocess.run(["node", "-e", js], cwd=str(pathlib.Path(appmod.STATIC).parent),
+                         capture_output=True, text=True)
+    assert out.returncode == 0, f"stdout={out.stdout!r} stderr={out.stderr!r}"
 
 
 @pytest.mark.skipif(not shutil.which("node"), reason="node not available")
