@@ -160,8 +160,10 @@ A config we cannot parse must offer NO slots rather than fall back to someone
 else's hours. Offering Glen's Hawaii hours to Mary's Alaska clients would put
 real people on a call at the wrong time, which is worse than an empty page.
 """
+import sqlite3
+
 import pytest
-import db
+
 from dashboard import practitioner_booking as pb
 
 PID = "pid-mary"
@@ -169,9 +171,14 @@ PID = "pid-mary"
 
 @pytest.fixture
 def cx(tmp_path):
-    with db.connect(str(tmp_path / "t.db")) as c:
-        pb.init_tables(c)
-        yield c
+    """A raw sqlite3 connection with a Row factory -- the pattern
+    tests/test_practitioner_drafts.py already uses for a store like this.
+    `import db` fails at collection in this suite; the module under test
+    imports it as `from dashboard import db`."""
+    c = sqlite3.connect(str(tmp_path / "t.db"))
+    c.row_factory = sqlite3.Row
+    pb.init_tables(c)
+    return c
 
 
 def _cfg(**over):
@@ -302,7 +309,7 @@ import json
 import re
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-import db
+from dashboard import db
 
 DEFAULT_TIMEZONE = "Pacific/Honolulu"
 MEDIA = ("phone", "zoom", "in-person")
@@ -726,16 +733,35 @@ git commit -m "feat(booking): timezone-correct availability"
 
 Assertions are on raw response bytes and JSON, never a parsed DOM.
 """
+import contextlib
 import os
 import sqlite3
 import pytest
 if not os.environ.get("PINECONE_API_KEY"):
     pytest.skip("needs doppler env for import app", allow_module_level=True)
 import app as appmod
-import db
 from dashboard import practitioner_booking as pb
 
 PID = "pid-mary"
+
+
+@contextlib.contextmanager
+def _open(path):
+    """A Row-factory sqlite3 connection, closed on exit.
+
+    The route code uses `db.connect(LOG_DB)` from dashboard.db; tests open the
+    same file directly, matching tests/test_practitioner_drafts.py. A bare
+    `import db` fails at COLLECTION in this suite -- verified -- so do not
+    reach for one.
+    """
+    c = sqlite3.connect(path)
+    c.row_factory = sqlite3.Row
+    try:
+        yield c
+    finally:
+        c.close()
+
+
 CFG = {"timezone": "America/Anchorage", "office_hours": "1-5:09:00-17:00",
        "session_types": [{"slug": "intro", "label": "Free 20 minute intro call",
                           "duration_min": 20, "medium": "phone"}],
@@ -745,10 +771,12 @@ CFG = {"timezone": "America/Anchorage", "office_hours": "1-5:09:00-17:00",
 @pytest.fixture
 def logdb(tmp_path, monkeypatch):
     p = str(tmp_path / "log.db")
-    with db.connect(p) as c:
-        pb.init_tables(c)
-        from dashboard import evox as _ev
-        _ev.init_tables(c)
+    c = sqlite3.connect(p)
+    c.row_factory = sqlite3.Row
+    pb.init_tables(c)
+    from dashboard import evox as _ev
+    _ev.init_tables(c)
+    c.close()
     monkeypatch.setattr(appmod, "LOG_DB", p)
     return p
 
@@ -792,7 +820,7 @@ def test_a_practitioner_cannot_write_another_practitioners_config(practitioner, 
     """The pid comes from the session. A pid in the body must be ignored."""
     practitioner.post("/api/practitioner/booking-config",
                       json=dict(CFG, practitioner_id="pid-someone-else"))
-    with db.connect(logdb) as c:
+    with _open(logdb) as c:
         assert pb.get_config(c, "pid-someone-else") is None
         assert pb.get_config(c, PID) is not None
 
@@ -1082,7 +1110,7 @@ from datetime import date, timedelta
 
 
 def _seed_slug(logdb, slug="mary-boyd", email="my_mary_boyd@example.com"):
-    with db.connect(logdb) as c:
+    with _open(logdb) as c:
         c.execute("""CREATE TABLE IF NOT EXISTS affiliate_signups (
             id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, email TEXT,
             slug TEXT, status TEXT)""")
@@ -1102,7 +1130,7 @@ def public(monkeypatch, logdb):
 
 
 def test_slots_are_public_and_need_no_token(public, logdb):
-    with db.connect(logdb) as c:
+    with _open(logdb) as c:
         pb.set_config(c, PID, CFG)
     r = public.get("/api/book/mary-boyd/slots?session=intro&tz=Pacific/Auckland")
     assert r.status_code == 200
@@ -1110,7 +1138,7 @@ def test_slots_are_public_and_need_no_token(public, logdb):
 
 
 def test_slots_are_rendered_in_the_visitor_timezone(public, logdb):
-    with db.connect(logdb) as c:
+    with _open(logdb) as c:
         pb.set_config(c, PID, CFG)
     r = public.get("/api/book/mary-boyd/slots?session=intro&tz=Pacific/Auckland")
     slots = r.get_json()["slots"]
@@ -1121,7 +1149,7 @@ def test_slots_are_rendered_in_the_visitor_timezone(public, logdb):
 
 
 def test_a_practitioner_who_has_not_enabled_booking_offers_nothing(public, logdb):
-    with db.connect(logdb) as c:
+    with _open(logdb) as c:
         pb.set_config(c, PID, dict(CFG, enabled=False))
     r = public.get("/api/book/mary-boyd/slots?session=intro")
     assert r.status_code == 200
@@ -1129,7 +1157,7 @@ def test_a_practitioner_who_has_not_enabled_booking_offers_nothing(public, logdb
 
 
 def test_booking_writes_a_row_and_returns_a_cancel_token(public, logdb):
-    with db.connect(logdb) as c:
+    with _open(logdb) as c:
         pb.set_config(c, PID, CFG)
     slot = public.get("/api/book/mary-boyd/slots?session=intro").get_json()["slots"][0]
     r = public.post("/api/book/mary-boyd", json={
@@ -1137,7 +1165,7 @@ def test_booking_writes_a_row_and_returns_a_cancel_token(public, logdb):
         "name": "A Client", "email": "client@example.com"})
     assert r.status_code == 200, r.get_data(as_text=True)
     assert r.get_json()["cancel_token"]
-    with db.connect(logdb) as c:
+    with _open(logdb) as c:
         row = c.execute("SELECT practitioner, start_ts, status FROM evox_bookings").fetchone()
         assert row["practitioner"] == PID and row["status"] == "booked"
 
@@ -1145,7 +1173,7 @@ def test_booking_writes_a_row_and_returns_a_cancel_token(public, logdb):
 def test_the_same_slot_cannot_be_booked_twice(public, logdb):
     """The guard is the database UNIQUE index on (practitioner, start_ts), so
     it holds across processes. Exactly one booking survives."""
-    with db.connect(logdb) as c:
+    with _open(logdb) as c:
         pb.set_config(c, PID, CFG)
     slot = public.get("/api/book/mary-boyd/slots?session=intro").get_json()["slots"][0]
     body = {"session": "intro", "start": slot["start"],
@@ -1154,14 +1182,14 @@ def test_the_same_slot_cannot_be_booked_twice(public, logdb):
     second = public.post("/api/book/mary-boyd", json=dict(body, email="other@example.com"))
     assert first.status_code == 200
     assert second.status_code == 409
-    with db.connect(logdb) as c:
+    with _open(logdb) as c:
         n = c.execute("SELECT COUNT(*) c FROM evox_bookings WHERE status='booked'").fetchone()
         assert n["c"] == 1
 
 
 def test_a_slot_outside_the_offered_set_is_refused(public, logdb):
     """Never trust a start time from the request. A client can post anything."""
-    with db.connect(logdb) as c:
+    with _open(logdb) as c:
         pb.set_config(c, PID, CFG)
     r = public.post("/api/book/mary-boyd", json={
         "session": "intro", "start": "2026-09-07T03:00:00",
@@ -1171,7 +1199,7 @@ def test_a_slot_outside_the_offered_set_is_refused(public, logdb):
 
 
 def test_a_bad_email_is_refused(public, logdb):
-    with db.connect(logdb) as c:
+    with _open(logdb) as c:
         pb.set_config(c, PID, CFG)
     slot = public.get("/api/book/mary-boyd/slots?session=intro").get_json()["slots"][0]
     r = public.post("/api/book/mary-boyd", json={
@@ -1409,7 +1437,7 @@ def test_booking_sends_a_confirmation_to_the_client(public, logdb, monkeypatch):
     monkeypatch.setattr(appmod, "_send_full_report_email",
                         lambda to, name, subject, body, **kw: sent.append(
                             {"to": to, "subject": subject, "body": body}))
-    with db.connect(logdb) as c:
+    with _open(logdb) as c:
         pb.set_config(c, PID, CFG)
     slot = public.get("/api/book/mary-boyd/slots?session=intro").get_json()["slots"][0]
     public.post("/api/book/mary-boyd", json={
@@ -1425,7 +1453,7 @@ def test_the_confirmation_states_the_time_in_the_visitor_timezone(public, logdb,
     sent = []
     monkeypatch.setattr(appmod, "_send_full_report_email",
                         lambda to, name, subject, body, **kw: sent.append(body))
-    with db.connect(logdb) as c:
+    with _open(logdb) as c:
         pb.set_config(c, PID, CFG)
     slot = public.get("/api/book/mary-boyd/slots?session=intro").get_json()["slots"][0]
     public.post("/api/book/mary-boyd", json={
@@ -1436,7 +1464,7 @@ def test_the_confirmation_states_the_time_in_the_visitor_timezone(public, logdb,
 
 
 def test_a_cancel_token_releases_the_slot(public, logdb):
-    with db.connect(logdb) as c:
+    with _open(logdb) as c:
         pb.set_config(c, PID, CFG)
     slot = public.get("/api/book/mary-boyd/slots?session=intro").get_json()["slots"][0]
     r = public.post("/api/book/mary-boyd", json={
@@ -1447,7 +1475,7 @@ def test_a_cancel_token_releases_the_slot(public, logdb):
     c2 = public.post("/api/book/mary-boyd/cancel",
                      json={"start": slot["start"], "token": token})
     assert c2.status_code == 200
-    with db.connect(logdb) as c:
+    with _open(logdb) as c:
         row = c.execute("SELECT status FROM evox_bookings").fetchone()
         assert row["status"] != "booked"
     again = public.get("/api/book/mary-boyd/slots?session=intro").get_json()["slots"]
@@ -1456,7 +1484,7 @@ def test_a_cancel_token_releases_the_slot(public, logdb):
 
 
 def test_a_forged_cancel_token_is_refused(public, logdb):
-    with db.connect(logdb) as c:
+    with _open(logdb) as c:
         pb.set_config(c, PID, CFG)
     slot = public.get("/api/book/mary-boyd/slots?session=intro").get_json()["slots"][0]
     public.post("/api/book/mary-boyd", json={
@@ -1465,14 +1493,14 @@ def test_a_forged_cancel_token_is_refused(public, logdb):
     r = public.post("/api/book/mary-boyd/cancel",
                     json={"start": slot["start"], "token": "0" * 32})
     assert r.status_code == 403
-    with db.connect(logdb) as c:
+    with _open(logdb) as c:
         assert c.execute("SELECT status FROM evox_bookings").fetchone()["status"] == "booked"
 
 
 def test_a_cancel_token_for_one_slot_does_not_cancel_another(public, logdb):
     """The token is scoped to (practitioner, slot). One booking's token must
     not be a skeleton key for the practitioner's whole day."""
-    with db.connect(logdb) as c:
+    with _open(logdb) as c:
         pb.set_config(c, PID, CFG)
     slots = public.get("/api/book/mary-boyd/slots?session=intro").get_json()["slots"]
     a, b = slots[0], slots[1]
@@ -1627,7 +1655,7 @@ def test_the_public_page_shows_the_button_only_when_configured(public, logdb, mo
     monkeypatch.setattr(_psurf, "record_view", lambda cx, slug, kind: None)
 
     assert "Book" not in public.get("/mary-boyd").get_data(as_text=True)
-    with db.connect(logdb) as c:
+    with _open(logdb) as c:
         pb.set_config(c, PID, CFG)
     assert "Book" in public.get("/mary-boyd").get_data(as_text=True)
 ```
