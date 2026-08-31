@@ -30,4 +30,4 @@ def test_non_wishlist_slug_still_rejected(monkeypatch, tmp_path):
     c = _client(monkeypatch, tmp_path)
     r = c.post("/api/portal/tok/checkout", json={"items": [{"slug": "not-on-list", "qty": 1}]})
     assert r.status_code == 400
-    assert "isn't available to reorder" in (r.get_json().get("error") or "")
+    assert r.get_json()["error"] == "not-on-list isn't available to order."
