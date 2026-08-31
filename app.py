@@ -33596,6 +33596,44 @@ def _portal_claim_url(email):
     return f"{portal_base()}/portal/claim?e={quote(email)}&s={_portal_claim_sign(email)}"
 
 
+@app.route("/email/unsubscribe", methods=["GET", "POST"])
+def email_unsubscribe():
+    """Unsubscribe from promotional email.
+
+    GHL appends its own footer only to workflow mail; anything we send through the
+    conversations API arrives without one, so our senders mint a signed link here.
+
+    GET confirms, POST records. A mutating GET would let mail scanners and link
+    prefetchers unsubscribe people who never clicked, which is a real failure mode
+    for security appliances that follow every URL in a message.
+    """
+    from dashboard import unsubscribe as _un, email_suppression as _es
+    src = request.form if request.method == "POST" else request.args
+    email = (src.get("e") or "").strip().lower()
+    scope = (src.get("scope") or _un.GLOBAL).strip()
+    sig = (src.get("s") or "").strip()
+    if not email or not _un.verify(email, scope, sig):
+        return render_template_string(
+            "<h2>That link is not valid</h2><p>Reply to any email from us and "
+            "we will take care of it.</p>"), 400
+    if request.method == "GET":
+        return render_template_string(
+            "<h2>Unsubscribe {{ e }}?</h2>"
+            "<form method='post' action='/email/unsubscribe'>"
+            "<input type='hidden' name='e' value='{{ e }}'>"
+            "<input type='hidden' name='scope' value='{{ sc }}'>"
+            "<input type='hidden' name='s' value='{{ s }}'>"
+            "<button type='submit'>Yes, unsubscribe me</button></form>",
+            e=email, sc=scope, s=sig)
+    with db.connect(LOG_DB) as cx:
+        _es.init_table(cx)
+        _es.add_optout(cx, email, "unsubscribe-link:" + scope)
+    return render_template_string(
+        "<h2>You are unsubscribed</h2><p>{{ e }} will not receive further "
+        "mailings. If this was a mistake, just reply to any earlier email and "
+        "we will put you back.</p>", e=email)
+
+
 @app.route("/portal/claim", methods=["GET"])
 def portal_claim():
     """Mint-on-click: verify the signed claim link, ensure the caller's portal
