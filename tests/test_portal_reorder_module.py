@@ -294,6 +294,19 @@ def test_published_unpaid_invoice_lines_are_annotated_not_treated_as_history(cli
     assert rows["nous-energy"]["current_invoice"]["qty"] == 2
 
 
+def test_unpublished_unpaid_proposal_is_not_purchase_history(client):
+    """A private draft recommendation is not something the client ordered."""
+    c, appmod = client
+    email = "proposal@example.com"
+    tok = _seed_portal(appmod, email)
+    _seed_order(appmod, source="in-house", email=email,
+                slugs_qty=[("nous-energy", 1)], status="proposed",
+                external_ref="INH-DRAFT")
+
+    payload = c.get(f"/api/portal/{tok}").get_json()
+    assert payload["reorder"] == []
+
+
 def test_paid_invoice_lines_remain_purchase_history_rows(client):
     c, appmod = client
     email = "paidinvoice@example.com"
