@@ -133,6 +133,25 @@ def test_session_type_slugs_must_be_unique():
             {"slug": "intro", "label": "B", "duration_min": 30, "medium": "zoom"}]))
 
 
+@pytest.mark.parametrize("reserved", ["biofield-consult", "onboarding", "triage"])
+def test_a_reserved_session_type_slug_is_rejected(reserved):
+    """These three literals are branched on, unfiltered by practitioner, by
+    existing production code: app.py's /api/consult/join hands back
+    GLEN_PMI_URL (Glen's personal Zoom meeting) to whoever matches
+    session_type='biofield-consult', and the reminder cron / portal calendar
+    both key wording/labels off 'onboarding' and 'triage'. A practitioner
+    naming her own session type one of these collides with a flow that is
+    not hers -- in the biofield-consult case, handing her client Glen's
+    personal meeting URL. Reject at the door with a message that tells her
+    to pick another name, not a regex complaint."""
+    with pytest.raises(pb.BookingConfigError) as exc:
+        pb.validate_config(_cfg(session_types=[
+            {"slug": reserved, "label": "Whatever", "duration_min": 20,
+             "medium": "phone"}]))
+    assert reserved in str(exc.value)
+    assert "pick" in str(exc.value).lower() or "different" in str(exc.value).lower()
+
+
 def test_an_unknown_medium_is_rejected():
     with pytest.raises(pb.BookingConfigError):
         pb.validate_config(_cfg(session_types=[

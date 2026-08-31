@@ -33,6 +33,22 @@ _HOURS_RE = re.compile(r"^([1-7])-([1-7]):([0-2]\d):([0-5]\d)-([0-2]\d):([0-5]\d
 _SLUG_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 _TAG_RE = re.compile(r"<[^>]*>")
 
+# evox_bookings.session_type is a shared, practitioner-agnostic column: three
+# existing production flows branch on these exact literals with NO
+# practitioner filter at all --
+#   - app.py:_get_consult_booked / /api/consult/join select
+#     "session_type='biofield-consult'" across EVERY practitioner's rows, and
+#     /api/consult/join hands back GLEN_PMI_URL (his personal Zoom meeting)
+#     to whoever it matches -- a practitioner naming her own session type
+#     "biofield-consult" would hand her clients Glen's personal meeting URL
+#     the moment their booking time enters the join window.
+#   - app.py's reminder cron and dashboard/portal_calendar.py both branch on
+#     "onboarding" (Rae's welcome call) and "triage" (the discovery-call
+#     flow) to choose wording/labels for a session that is not theirs.
+# A practitioner cannot pick one of these; reject at the door with a message
+# that tells her to choose a different name, not a regex complaint.
+RESERVED_SESSION_TYPES = frozenset({"biofield-consult", "onboarding", "triage"})
+
 
 class BookingConfigError(ValueError):
     """A config that must not reach the slot grid."""
@@ -126,6 +142,10 @@ def _validate_session_types(items):
         if not _SLUG_RE.match(slug):
             raise BookingConfigError(
                 "Session type ids must be lowercase letters, digits and hyphens.")
+        if slug in RESERVED_SESSION_TYPES:
+            raise BookingConfigError(
+                f"\"{slug}\" is reserved for an existing appointment type. "
+                "Please pick a different name for this session type.")
         if slug in seen:
             raise BookingConfigError(f"Duplicate session type id: {slug}")
         seen.add(slug)
