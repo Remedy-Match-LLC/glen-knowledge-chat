@@ -17672,9 +17672,21 @@ def api_public_book_slots(slug):
 def api_public_book(slug):
     if not _public_surface_enabled():
         return ("", 404)
+    body = request.get_json(silent=True) or {}
+    # Unauthenticated public POST that sends mail as Glen's SMTP identity on
+    # every success, with up to 120 attacker-chosen characters landing in
+    # "Hi {name}," -- nothing else caps it, so one attacker could fill a
+    # practitioner's whole 21-day grid (~500 slots) and fire ~500 outbound
+    # messages. Same guard, same tier, same IP-keyed shape as the other
+    # unauthenticated public POST at /begin/fireside/agent (see
+    # _velocity_guard above) -- matching its pattern/limits rather than
+    # inventing new ones.
+    session_id = (request.cookies.get("amg_session") or (body.get("session_id") or "").strip())
+    _blocked = _velocity_guard(request, "anonymous", session_id)
+    if _blocked is not None:
+        return _blocked
     from dashboard import practitioner_booking as _pb
     from dashboard import evox as _ev
-    body = request.get_json(silent=True) or {}
     session_slug = (body.get("session") or "").strip()
     start_ts = (body.get("start") or "").strip()
     name = (body.get("name") or "").strip()[:120]

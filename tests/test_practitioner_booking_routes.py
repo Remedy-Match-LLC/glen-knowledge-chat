@@ -309,6 +309,49 @@ def test_booking_writes_a_row_and_returns_a_cancel_token(public, logdb):
         assert row["practitioner"] == PID and row["status"] == "booked"
 
 
+def test_the_public_book_route_refuses_after_the_ip_cap(public, logdb, monkeypatch):
+    """CRITICAL: this route was unauthenticated, unrated, and sends mail as
+    Glen's SMTP identity on every success -- nothing capped it, so one
+    attacker could fill a whole practitioner's grid (~500 slots across the
+    21-day window) and fire ~500 outbound messages. The fix reuses the exact
+    guard/tier/pattern /begin/fireside/agent already uses for its own public
+    unauthenticated POST (_velocity_guard(request, "anonymous", ...)),
+    keyed on IP.
+
+    Mirrors tests/test_chat_velocity.py's own integration pattern: a fresh
+    limiter + tightened per_min so the test does not need to fire 10+ real
+    requests, budget exhausted via direct _velocity_guard calls (no DB I/O),
+    then ONE real POST from the same IP to prove the guard is actually wired
+    into this route -- and that a blocked request never reaches
+    create_booking (no row written).
+    """
+    from dashboard.chat_limits import VelocityLimiter
+    tight = dict(appmod.LIMITS)
+    tight["anonymous"] = dict(tight["anonymous"], per_min=2)
+    monkeypatch.setattr(appmod, "LIMITS", tight)
+    monkeypatch.setattr(appmod, "_chat_velocity", VelocityLimiter())
+
+    with _open(logdb) as c:
+        pb.set_config(c, PID, CFG)
+    slot = public.get("/api/book/mary-boyd/slots?session=intro").get_json()["slots"][0]
+
+    ip = "203.0.113.77"
+    with appmod.app.test_request_context("/api/book/mary-boyd",
+                                         headers={"X-Forwarded-For": ip}):
+        from flask import request as _rq
+        assert appmod._velocity_guard(_rq, "anonymous") is None  # hit 1
+        assert appmod._velocity_guard(_rq, "anonymous") is None  # hit 2
+
+    r = public.post("/api/book/mary-boyd", json={
+        "session": "intro", "start": slot["start"],
+        "name": "Attacker", "email": "attacker@example.com"},
+        headers={"X-Forwarded-For": ip})
+    assert r.status_code == 429
+    with _open(logdb) as c:
+        n = c.execute("SELECT COUNT(*) c FROM evox_bookings").fetchone()
+        assert n["c"] == 0, "a rate-limited request must never reach create_booking"
+
+
 def test_the_clients_name_is_stored_not_just_validated(public, logdb):
     """name is required and validated at the door, then must actually reach
     the row -- create_booking has no name parameter and evox_bookings had no
