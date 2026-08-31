@@ -1,5 +1,5 @@
-"""Email suppression list: addresses that permanently fail (hard bounces) so the
-app stops emailing them. Populated by the local bounce scanner via the
+"""Email suppression list: addresses we must stop emailing — permanent delivery
+failures (hard bounces) and recipient opt-outs, told apart by bounce_type. Populated by the local bounce scanner via the
 email_suppression.add console action. Spam-blocks are NOT stored here (the address
 is valid — our sender reputation is the problem). Reversible: delete a row if an
 address recovers."""
@@ -39,3 +39,17 @@ def list_recent(cx, limit=200):
     cx.row_factory = sqlite3.Row
     return [dict(r) for r in cx.execute(
         "SELECT * FROM email_suppression ORDER BY created_at DESC LIMIT ?", (limit,))]
+
+
+def add_optout(cx, email, source):
+    """Record a recipient-initiated opt-out. Distinct from a bounce: the address is
+    valid, the person asked us to stop. Stored here so every sender that already
+    calls is_suppressed honors it with no further change. Never downgrades an
+    existing hard bounce — a dead address stays dead."""
+    if not email:
+        return
+    cx.execute("""INSERT INTO email_suppression(email,bounce_type,reason,source)
+        VALUES(lower(?),'optout','recipient unsubscribed',?)
+        ON CONFLICT(email) DO UPDATE SET source=excluded.source""",
+        (email.strip().lower(), source))
+    cx.commit()
