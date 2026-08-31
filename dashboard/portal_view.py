@@ -225,7 +225,7 @@ def _upgrade_block(cx, email, roles, enabled_keys):
     return {"enabled": True, "offer": offers[0]}
 
 
-def _membership_block(cx, email):
+def _membership_block(cx, email, paid_member=False):
     """Current client-facing membership level, independent of upgrade eligibility."""
     from datetime import datetime, timezone
     from dashboard import membership_products as _membership_products
@@ -257,6 +257,21 @@ def _membership_block(cx, email):
             }
     except Exception:
         pass
+
+    # Legacy/prepay Continuous Care, founding, care-taster, studio-credit, and
+    # family-plan memberships may be authoritative paid memberships without a
+    # membership-product source or subscriptions row. The route supplies the
+    # canonical paid-member verdict so this presentation layer cannot drift.
+    if paid_member:
+        return {
+            "level": "Healing Oasis Membership",
+            "status": "Active",
+            "detail": "Your paid membership is active",
+            "next_step": {
+                "label": "Review your current recommendations",
+                "href": "#recs",
+            },
+        }
 
     try:
         rows = _subscriptions.active_memberships_by_email(cx, email)
@@ -413,11 +428,13 @@ def _onboarding_block(cx, email):
         return {"eligible": False, "booked_start": None}
 
 
-def _journey_block(cx, email):
+def _journey_block(cx, email, paid_member=False):
     """Authoritative milestone state used by hub-card progress treatments."""
     try:
         from dashboard import portal_onboarding as _journey
-        return _journey.build_status(cx, email)
+        status = _journey.build_status(cx, email)
+        status["member"] = bool(paid_member)
+        return status
     except Exception:
         return {"phases": []}
 
@@ -492,7 +509,7 @@ def get_portal_view(cx, person_id, *, offers_enabled_keys=None, scan_date=None,
                     oasis_enabled=False, terrain_phase=None,
                     cart_enabled=False,
                     brain_enabled=False, brain_url="",
-                    caregiver_pay_enabled=False):
+                    caregiver_pay_enabled=False, paid_member=False):
     import sqlite3
     cx.row_factory = sqlite3.Row
     prow = cx.execute("SELECT * FROM people WHERE id=?", (person_id,)).fetchone()
@@ -522,14 +539,14 @@ def get_portal_view(cx, person_id, *, offers_enabled_keys=None, scan_date=None,
         "orders": _orders_block(cx, email, roles),
         "biofield": _biofield_block(cx, email, scan_date=scan_date, unlocked=biofield_unlocked),
         "upgrade": _upgrade_block(cx, email, roles, offers_enabled_keys),
-        "membership": _membership_block(cx, email),
+        "membership": _membership_block(cx, email, paid_member=paid_member),
         "ambassador": _ambassador_block(cx, email, quiz_url, public_base_url),
         "practitioner_finder": _practitioner_finder_block(account["address"], finder_enabled),
         "hub_enabled": bool(hub_enabled),
         "health_profile": _hp.build_block(cx, email, health_profile_enabled),
         "consult": _consult_block(cx, email),
         "onboarding": _onboarding_block(cx, email),
-        "journey": _journey_block(cx, email),
+        "journey": _journey_block(cx, email, paid_member=paid_member),
         "supplement_review": _supplement_reviews_block(cx, email, supplement_review_enabled),
         "remedies": _rb.build_block(cx, email, remedies_enabled),
         "oasis": _ob.build_block(cx, email, oasis_enabled, terrain_phase),
