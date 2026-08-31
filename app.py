@@ -17874,6 +17874,30 @@ def public_book_cancel_page():
     return resp
 
 
+@app.route("/book/<slug>")
+def public_book_page(slug):
+    """The visitor-facing booking page.
+
+    Public and unauthenticated: the person opening this was texted a link by a
+    friend and has no account. All the data comes from /api/book/<slug>/slots,
+    which applies its own gating -- this route only serves the shell.
+
+    /book/cancel above is a STATIC route and always wins over this dynamic one
+    regardless of registration order (see practitioner_site's docstring on
+    Werkzeug's StateMachineMatcher), so a slug literally named "cancel" can
+    never shadow the cancel-link landing page.
+
+    noindex because a booking form has nothing to offer a search engine, and a
+    practitioner's availability is not something to publish to one.
+    """
+    if not _public_surface_enabled():
+        return ("", 404)
+    resp = send_from_directory(STATIC, "book.html")
+    resp.headers["X-Robots-Tag"] = "noindex"
+    resp.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+    return resp
+
+
 @app.route("/console/biofield-portal")
 def console_biofield_portal_page():
     resp = send_from_directory(STATIC, "console-biofield-portal.html")

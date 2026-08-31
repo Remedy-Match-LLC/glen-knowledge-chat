@@ -209,9 +209,13 @@ from datetime import date, timedelta  # noqa: E402
 
 def _seed_slug(logdb, slug="mary-boyd", email="my_mary_boyd@example.com"):
     with _open(logdb) as c:
+        # organization is here (nullable, unset by every other caller of this
+        # helper) only so dashboard.public_surface.build_practitioner_storefront
+        # -- which selects it -- can run unmocked against this row, as
+        # test_the_book_link_on_the_public_page_points_at_a_real_route does.
         c.execute("""CREATE TABLE IF NOT EXISTS affiliate_signups (
             id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, email TEXT,
-            slug TEXT, status TEXT)""")
+            slug TEXT, status TEXT, organization TEXT)""")
         c.execute("INSERT INTO affiliate_signups (name,email,slug,status) "
                   "VALUES (?,?,?,'approved')", ("Mary Boyd", email, slug))
         c.commit()
@@ -866,3 +870,88 @@ def test_the_public_page_shows_the_button_only_when_configured(public, logdb, mo
     with _open(logdb) as c:
         pb.set_config(c, PID, CFG)
     assert "Book" in public.get("/mary-boyd").get_data(as_text=True)
+
+
+# --- Task 7: the visitor-facing booking page -------------------------------
+# Tasks 1-6 built config storage, timezone-correct slot maths, a practitioner
+# config form, the public booking API, the confirmation email/cancel flow,
+# and the Book link on the public page -- but nothing a visitor can actually
+# open. This is the missing GET /book/<slug> page.
+
+
+class _AlwaysPublicClient:
+    """A plain wrapper around app.test_client() whose .get() enables the
+    public surface for the duration of that one call only, via a context
+    manager -- not a leaked `mock.patch(...).start()` with no matching
+    stop(), which would bleed into whichever test runs next in this module.
+
+    Used only by tests that take no monkeypatch fixture (per the brief) and
+    so cannot patch _public_surface_enabled the normal way."""
+
+    def __init__(self, client):
+        self._c = client
+
+    def get(self, *a, **kw):
+        with mock.patch.object(appmod, "_public_surface_enabled", lambda: True):
+            return self._c.get(*a, **kw)
+
+
+def _client():
+    return _AlwaysPublicClient(appmod.app.test_client())
+
+
+def test_the_booking_page_serves_for_a_configured_practitioner(public, logdb):
+    with _open(logdb) as c:
+        pb.set_config(c, PID, CFG)
+    r = public.get("/book/mary-boyd")
+    assert r.status_code == 200
+    assert "text/html" in r.headers["Content-Type"]
+
+
+def test_the_booking_page_is_noindex():
+    """A booking form has nothing to offer a search engine, and indexing one
+    practitioner's availability page is a privacy surprise."""
+    r = _client().get("/book/mary-boyd")
+    assert r.headers.get("X-Robots-Tag") == "noindex"
+
+
+def test_the_booking_page_404s_when_the_public_surface_is_off(monkeypatch, logdb):
+    monkeypatch.setattr(appmod, "_public_surface_enabled", lambda: False)
+    assert appmod.app.test_client().get("/book/mary-boyd").status_code == 404
+
+
+def test_the_book_link_on_the_public_page_points_at_a_real_route(public, logdb, monkeypatch):
+    """The defect this task exists to fix: Task 6 emitted href="/book/<slug>"
+    and nothing served it. Assert the link target actually resolves rather
+    than trusting that it does.
+
+    /<slug> is host-gated to the portal host (see app.py's practitioner_site
+    docstring) and PORTAL_BASE_URL is unset in this environment, so
+    _on_portal_host() and practitioner_slugs.resolve() are stood up the same
+    way test_the_public_page_shows_the_button_only_when_configured does it,
+    and affiliate_signups is seeded so the real build_practitioner_storefront
+    (unmocked, unlike that other test) has a row to find.
+    """
+    monkeypatch.setattr(appmod, "_on_portal_host", lambda: True)
+    from dashboard import practitioner_slugs as _ps
+    monkeypatch.setattr(_ps, "resolve", lambda cx, s: ("canonical", s))
+    _seed_slug(logdb)
+    with _open(logdb) as c:
+        pb.set_config(c, PID, CFG)
+    import re
+    page = public.get("/mary-boyd").get_data(as_text=True)
+    m = re.search(r'href="(/book/[^"]+)"', page)
+    assert m, "no Book link on a bookable practitioner's page"
+    assert public.get(m.group(1)).status_code == 200, \
+        f"the Book link points at {m.group(1)}, which does not serve"
+
+
+def test_the_page_posts_the_practitioner_local_start_not_the_visitor_string():
+    """The API's `start` field is the value to post back; `visitor` is for
+    display only. Posting the visitor string would be rejected as
+    slot_unavailable, or worse, silently book a different instant."""
+    import pathlib
+    js = (pathlib.Path(appmod.STATIC) / "book.html").read_text()
+    assert "s.start" in js or "slot.start" in js
+    assert "rendered_timezone" in js, \
+        "the page must label times from the zone the API actually used"
