@@ -17749,7 +17749,88 @@ def api_public_book(slug):
                 f"[book] client_name/summary update failed for booking "
                 f"{b['id']} ({pid}/{start_ts}): {e!r}")
     token = _pb.cancel_token(pid, start_ts)
+    # The client has no account and no other record of this appointment, so
+    # this email IS the record. It carries the time in the zone the visitor
+    # actually saw on the booking page (the EFFECTIVE zone, resolved the same
+    # way api_public_book_slots resolves `rendered_timezone` -- not the raw
+    # request value, which can be an unusable/broken browser-reported zone)
+    # and a cancel link that works without signing in. A send failure here
+    # must never fail the booking: create_booking already committed, so the
+    # slot is durably the client's regardless of whether this email lands.
+    # Log loudly, return success -- the same rule the client_name/summary
+    # UPDATEs above follow, and for the same reason (a false 500 for a real
+    # booking is what makes someone book twice).
+    try:
+        visitor_tz = (body.get("tz") or "").strip()
+        rendered_tz = _pb.effective_visitor_tz(visitor_tz, cfg["timezone"])
+        shown = _pb.to_visitor_tz(start_ts, cfg["timezone"], rendered_tz)
+        cancel_url = f"{portal_base()}/book/cancel?slug={slug}&start={start_ts}&token={token}"
+        lines = [f"Hi {name},", "",
+                 f"Your {st['label']} is booked.", "",
+                 f"When: {shown} ({rendered_tz})",
+                 f"How: {st['medium']}", "",
+                 "If you need to cancel, use this link:", cancel_url, "",
+                 "See you then."]
+        _send_full_report_email(email, name, "Your appointment is booked",
+                                "\n".join(lines))
+    except Exception as e:  # noqa: BLE001
+        print(f"[public-book] confirmation failed for {email!r}: {e!r}", flush=True)
     return jsonify({"ok": True, "start": start_ts, "cancel_token": token})
+
+
+@app.route("/api/book/<slug>/cancel", methods=["POST"])
+def api_public_book_cancel(slug):
+    """Cancel without an account, via the token minted at booking time.
+
+    POST only, deliberately -- see public_book_cancel_page below and
+    _confirm_post_page for why a state change may never ride on GET. Flask's
+    own 405 for a GET here (no `methods=["GET", ...]` registered) IS the
+    guard; there is no code path in this function a GET can reach.
+    """
+    if not _public_surface_enabled():
+        return ("", 404)
+    from dashboard import practitioner_booking as _pb
+    from dashboard import evox as _ev
+    body = request.get_json(silent=True) or {}
+    start_ts = (body.get("start") or "").strip()
+    token = (body.get("token") or "").strip()
+    with db.connect(LOG_DB) as cx:
+        cx.row_factory = sqlite3.Row
+        _pb.init_tables(cx)
+        _ev.init_evox_tables(cx)
+        pid = _pb.resolve_practitioner_pid(cx, slug)
+        if not pid:
+            return jsonify({"ok": False, "error": "unknown_practitioner"}), 404
+        # The token is scoped to (practitioner, slot) -- see
+        # practitioner_booking.cancel_token -- so one booking's token cannot
+        # cancel a different slot on the same practitioner's calendar, and a
+        # forged token cannot cancel anything at all.
+        if not _pb.cancel_token_ok(pid, start_ts, token):
+            return jsonify({"ok": False, "error": "bad_token"}), 403
+        cx.execute("UPDATE evox_bookings SET status='cancelled' "
+                  "WHERE practitioner=? AND start_ts=? AND status='booked'",
+                  (pid, start_ts))
+        cx.commit()
+    return jsonify({"ok": True})
+
+
+@app.route("/book/cancel")
+def public_book_cancel_page():
+    """The emailed cancel link's landing page.
+
+    GET only shows the page -- it never touches the database. The button on
+    the page (static/book-cancel.html) is what fires the POST to
+    /api/book/<slug>/cancel; a mail scanner or link-prefetcher that issues a
+    GET here (the only verb they ever issue) cannot cancel anything, because
+    there is nothing here to trigger it. Same reasoning as
+    _confirm_post_page: a state change waits for a human to press a button.
+    """
+    if not _public_surface_enabled():
+        return ("", 404)
+    resp = send_from_directory(STATIC, "book-cancel.html")
+    resp.headers["X-Robots-Tag"] = "noindex"
+    resp.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+    return resp
 
 
 @app.route("/console/biofield-portal")

@@ -538,3 +538,107 @@ def test_the_rendered_timezone_reflects_the_actual_fallback_not_the_request(publ
     body = r.get_json()
     assert body["rendered_timezone"] == CFG["timezone"]
     assert body["rendered_timezone"] != "Mars/Olympus"
+
+
+# --- Task 5: confirmation email and the cancel link ------------------------
+
+def test_booking_sends_a_confirmation_to_the_client(public, logdb, monkeypatch):
+    sent = []
+    monkeypatch.setattr(appmod, "_send_full_report_email",
+                        lambda to, name, subject, body, **kw: sent.append(
+                            {"to": to, "subject": subject, "body": body}))
+    with _open(logdb) as c:
+        pb.set_config(c, PID, CFG)
+    slot = public.get("/api/book/mary-boyd/slots?session=intro").get_json()["slots"][0]
+    public.post("/api/book/mary-boyd", json={
+        "session": "intro", "start": slot["start"],
+        "name": "A Client", "email": "client@example.com"})
+    assert sent, "the client got no confirmation"
+    body = sent[0]["body"]
+    assert "cancel" in body.lower()
+    assert "/book/cancel?" in body
+
+
+def test_the_confirmation_states_the_time_in_the_visitor_timezone(public, logdb, monkeypatch):
+    sent = []
+    monkeypatch.setattr(appmod, "_send_full_report_email",
+                        lambda to, name, subject, body, **kw: sent.append(body))
+    with _open(logdb) as c:
+        pb.set_config(c, PID, CFG)
+    slot = public.get("/api/book/mary-boyd/slots?session=intro").get_json()["slots"][0]
+    public.post("/api/book/mary-boyd", json={
+        "session": "intro", "start": slot["start"], "tz": "Pacific/Auckland",
+        "name": "A Client", "email": "client@example.com"})
+    assert "Pacific/Auckland" in sent[0] or "NZ" in sent[0], \
+        "a client cannot act on a time in a zone they do not live in"
+
+
+def test_a_cancel_token_releases_the_slot(public, logdb):
+    with _open(logdb) as c:
+        pb.set_config(c, PID, CFG)
+    slot = public.get("/api/book/mary-boyd/slots?session=intro").get_json()["slots"][0]
+    r = public.post("/api/book/mary-boyd", json={
+        "session": "intro", "start": slot["start"],
+        "name": "A Client", "email": "client@example.com"})
+    token = r.get_json()["cancel_token"]
+
+    c2 = public.post("/api/book/mary-boyd/cancel",
+                     json={"start": slot["start"], "token": token})
+    assert c2.status_code == 200
+    with _open(logdb) as c:
+        row = c.execute("SELECT status FROM evox_bookings").fetchone()
+        assert row["status"] != "booked"
+    again = public.get("/api/book/mary-boyd/slots?session=intro").get_json()["slots"]
+    assert any(s["start"] == slot["start"] for s in again), \
+        "a cancelled slot must become available again"
+
+
+def test_a_forged_cancel_token_is_refused(public, logdb):
+    with _open(logdb) as c:
+        pb.set_config(c, PID, CFG)
+    slot = public.get("/api/book/mary-boyd/slots?session=intro").get_json()["slots"][0]
+    public.post("/api/book/mary-boyd", json={
+        "session": "intro", "start": slot["start"],
+        "name": "A Client", "email": "client@example.com"})
+    r = public.post("/api/book/mary-boyd/cancel",
+                    json={"start": slot["start"], "token": "0" * 32})
+    assert r.status_code == 403
+    with _open(logdb) as c:
+        assert c.execute("SELECT status FROM evox_bookings").fetchone()["status"] == "booked"
+
+
+def test_a_cancel_token_for_one_slot_does_not_cancel_another(public, logdb):
+    """The token is scoped to (practitioner, slot). One booking's token must
+    not be a skeleton key for the practitioner's whole day."""
+    with _open(logdb) as c:
+        pb.set_config(c, PID, CFG)
+    slots = public.get("/api/book/mary-boyd/slots?session=intro").get_json()["slots"]
+    a, b = slots[0], slots[1]
+    for s in (a, b):
+        public.post("/api/book/mary-boyd", json={
+            "session": "intro", "start": s["start"],
+            "name": "A Client", "email": "client@example.com"})
+    token_a = pb.cancel_token(PID, a["start"])
+    r = public.post("/api/book/mary-boyd/cancel",
+                    json={"start": b["start"], "token": token_a})
+    assert r.status_code == 403
+
+
+def test_a_get_request_cannot_cancel_a_booking(public, logdb):
+    """Mail scanners and link-prefetchers issue GET on every URL in an
+    email. The cancel API must refuse GET outright (405, Flask's own
+    method-not-allowed) rather than treat it as a cancel -- the same
+    reasoning as _confirm_post_page: a state change must wait for a human
+    to submit a form/press a button, which only ever happens via POST."""
+    with _open(logdb) as c:
+        pb.set_config(c, PID, CFG)
+    slot = public.get("/api/book/mary-boyd/slots?session=intro").get_json()["slots"][0]
+    r = public.post("/api/book/mary-boyd", json={
+        "session": "intro", "start": slot["start"],
+        "name": "A Client", "email": "client@example.com"})
+    token = r.get_json()["cancel_token"]
+
+    g = public.get(f"/api/book/mary-boyd/cancel?start={slot['start']}&token={token}")
+    assert g.status_code == 405
+    with _open(logdb) as c:
+        assert c.execute("SELECT status FROM evox_bookings").fetchone()["status"] == "booked"
