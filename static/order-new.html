@@ -82,6 +82,9 @@
     <input id="cust-search" placeholder="Start typing…" autocomplete="off">
     <div id="cust-results" class="results" style="display:none"></div>
     <input type="hidden" id="person_id">
+    <div id="order-from-email-wrap" style="display:none;margin-top:10px">
+      <button class="ghost" type="button" onclick="openCustomerEmail()">Enter order from email</button>
+    </div>
     <div class="grid2" style="margin-top:10px">
       <div><label>Name</label><input id="c-name"></div>
       <div><label>Email</label><input id="c-email" type="email" onchange="loadClientPrices()" onblur="loadClientPrices()"></div>
@@ -260,6 +263,7 @@ function pickPerson(p){
   $("c-phone").value=p.phone||""; $("a-name").value=p.name||""; $("a-addr1").value=p.address1||""; $("a-addr2").value=p.address2||"";
   $("a-city").value=p.city||""; $("a-state").value=p.state||""; $("a-zip").value=p.zip||""; $("a-country").value=p.country||"US";
   $("cust-results").style.display="none"; $("cust-search").value=p.name||p.email||"";
+  $("order-from-email-wrap").style.display = (p.id && p.email) ? "block" : "none";
   refreshPreview();  // re-price: the picked customer's membership gates volume pricing
   // Auto-pull the customer's redeemable points balance and apply it (capped on recalc).
   POINTS_BAL = Number(p.points_balance_cents||0);
@@ -268,6 +272,18 @@ function pickPerson(p){
   if (POINTS_BAL>0){ const sub=LINES.reduce((s,l)=>s+l.qty*l.unit_cents,0); const disc=($("o-discount").value.trim()!=="")?Math.round(parseFloat($("o-discount").value)*100):0; $("o-points").value=(Math.min(POINTS_BAL,Math.max(0,sub-disc))/100).toFixed(2); }
   recalc();
   loadPickupDefault(p.email||"");
+}
+
+function openCustomerEmail(){
+  const email = $("c-email").value.trim();
+  if (!$("person_id").value || !email){
+    toast("Select an existing customer first", "error");
+    return;
+  }
+  const gmailQuery = `from:${email} OR to:${email}`;
+  const params = new URLSearchParams({q:gmailQuery});
+  if (KEY) params.set("key", KEY);
+  window.open("/console/inbox?"+params.toString(), "_blank", "noopener");
 }
 
 // ── line items ──
