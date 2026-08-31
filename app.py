@@ -10982,15 +10982,21 @@ def _window_days_for_term(term_months):
 
 
 def _order_slugs_since(cx, email, window_days):
-    """Distinct-ish list of item slugs from this email's non-cancelled orders in the
-    last window_days. Used to seed dashboard.repertoire on membership conversion."""
+    """Item slugs from this email's completed purchases in the lookback window.
+
+    Used to seed ``dashboard.repertoire`` on membership conversion.  Quotes,
+    proposals, and open carts must never earn the prior-purchase reorder price.
+    Legacy fulfilled rows may lack ``pay_status``, so the completion boundary
+    matches ``_is_completed_purchase_order``: paid OR fulfilled.
+    """
     import json as _json
     from datetime import datetime as _dt, timedelta as _td, timezone as _tz
     cutoff = (_dt.now(_tz.utc) - _td(days=int(window_days or 0))).isoformat()
     cx.row_factory = sqlite3.Row
     rows = cx.execute(
         "SELECT items_json FROM orders WHERE lower(email)=? "
-        "AND status!='cancelled' AND created_at>=?",
+        "AND (pay_status='paid' OR status IN ('paid','shipped','delivered','done')) "
+        "AND created_at>=?",
         ((email or "").strip().lower(), cutoff)).fetchall()
     out = []
     for r in rows:
