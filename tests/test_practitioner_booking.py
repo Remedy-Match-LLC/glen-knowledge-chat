@@ -260,7 +260,28 @@ def test_now_in_returns_naive_datetimes():
     assert pb.now_in("America/Anchorage").tzinfo is None
 
 
-def test_slots_come_back_in_the_practitioner_timezone(cx):
+@pytest.fixture
+def frozen_now(monkeypatch):
+    """Pin pb.now_in far enough before the pinned `date(2026, 9, 7)` calendar
+    dates below that the notice_hours cutoff (slots_for adds notice_hours to
+    now_in's result and drops anything earlier) never trims the office-hours
+    window under test, regardless of what today's real date is.
+
+    Without this, slots_for's cutoff is derived from the REAL clock
+    (dashboard.practitioner_booking.now_in -> datetime.now(timezone.utc)), so
+    a test pinning a calendar date goes red the moment real "now" gets within
+    notice_hours of that pinned date and stays red forever after -- a date
+    bomb. Freezing now_in instead of the calendar date is what the plan
+    calls for: the pinned date stays a fixed, arbitrary point in the future
+    relative to a fixed, arbitrary "now", so this is stable on every future
+    run date, not just until 2026-09-06.
+    """
+    fixed = datetime(2026, 8, 20, 0, 0, 0)
+    monkeypatch.setattr(pb, "now_in", lambda tz_name: fixed)
+    return fixed
+
+
+def test_slots_come_back_in_the_practitioner_timezone(cx, frozen_now):
     pb.set_config(cx, PID, _cfg(office_hours="1-5:09:00-17:00"))
     days = [date(2026, 9, 7)]              # a Monday
     got = pb.slots_for(cx, PID, days=days, session_slug="intro", booked=set())
@@ -269,7 +290,7 @@ def test_slots_come_back_in_the_practitioner_timezone(cx):
     assert got[0] == "2026-09-07T09:00:00"
 
 
-def test_slot_length_follows_the_session_type(cx):
+def test_slot_length_follows_the_session_type(cx, frozen_now):
     pb.set_config(cx, PID, _cfg(session_types=[
         {"slug": "intro", "label": "Intro", "duration_min": 20, "medium": "phone"},
         {"slug": "full", "label": "Full", "duration_min": 60, "medium": "zoom"}]))
@@ -281,18 +302,18 @@ def test_slot_length_follows_the_session_type(cx):
     assert long[1] == "2026-09-07T10:00:00"
 
 
-def test_an_unknown_session_type_offers_nothing(cx):
+def test_an_unknown_session_type_offers_nothing(cx, frozen_now):
     pb.set_config(cx, PID, _cfg())
     assert pb.slots_for(cx, PID, days=[date(2026, 9, 7)],
                         session_slug="nope", booked=set()) == []
 
 
-def test_a_practitioner_with_no_config_offers_nothing(cx):
+def test_a_practitioner_with_no_config_offers_nothing(cx, frozen_now):
     assert pb.slots_for(cx, "pid-nobody", days=[date(2026, 9, 7)],
                         session_slug="intro", booked=set()) == []
 
 
-def test_a_booked_slot_is_not_offered(cx):
+def test_a_booked_slot_is_not_offered(cx, frozen_now):
     pb.set_config(cx, PID, _cfg())
     days = [date(2026, 9, 7)]
     first = pb.slots_for(cx, PID, days=days, session_slug="intro", booked=set())[0]
