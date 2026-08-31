@@ -32,7 +32,7 @@ GHL_CONTACTS_VERSION = "2021-07-28"
 GHL_MESSAGES_VERSION = "2021-04-15"
 HST = ZoneInfo("Pacific/Honolulu")
 PORTAL_BASE = "https://myhealingoasis.com"
-FROM_ADDRESS = "Dr. Glen Swartwout <info@mail.remedymatch.com>"
+FROM_ADDRESS = "Dr. Glen Swartwout <drglen@mail.remedymatch.com>"
 SOURCE_TAGS = ("pb:member", "e4l account")
 
 
@@ -222,7 +222,7 @@ def _event_gate(target_date):
             "masterclass_occurrence_id": master["zoom_occurrence_id"] if master else ""}
 
 
-def _copy(first_name, portal_url, eligible, target_date):
+def _copy(first_name, portal_url, eligible, target_date, email=""):
     date_label = target_date.strftime("%A, %B %-d")
     greeting = f"Aloha {first_name}," if first_name else "Aloha,"
     if eligible:
@@ -241,6 +241,12 @@ def _copy(first_name, portal_url, eligible, target_date):
             "With aloha,\nDr. Glen Swartwout")
     escaped = html.escape(text).replace("\n\n", "</p><p>").replace("\n", "<br>")
     body_html = '<div style="font-family:Arial,sans-serif;font-size:16px;line-height:1.55"><p>' + escaped + "</p></div>"
+    if email:
+        # Appended AFTER html.escape so the anchor stays markup. GHL adds no
+        # unsubscribe footer to conversations-API mail; this sender adds its own.
+        from dashboard import unsubscribe as _un
+        text = text + _un.footer_text(email, "weekly-live")
+        body_html = body_html + _un.footer_html(email, "weekly-live")
     return text, body_html
 
 
@@ -367,7 +373,8 @@ def run(args):
                 counts["portal_created_or_recovered"] += 1
                 portal_url = f"{PORTAL_BASE}/portal/{token}"
                 first = (contact.get("firstName") or "").strip()
-                text, body_html = _copy(first, portal_url, email in eligible, target_date)
+                text, body_html = _copy(first, portal_url, email in eligible,
+                                        target_date, email)
                 if any(bad in (text + body_html).lower()
                        for bad in ("practicebetter", "practice better", "skool", "zoom.us/")):
                     raise RuntimeError("deprecated or private destination found in invitation copy")
