@@ -8202,6 +8202,23 @@ def _grant_membership_line_dep(order):
         _grant_biofield_line_on_paid(_mcx, order)
 
 
+def _append_paid_order_repertoire(order):
+    """Settlement dep: append product slugs only after Stripe confirms payment."""
+    if not (REPERTOIRE_ENABLED and order):
+        return
+    email = (order.get("email") or "").strip().lower()
+    if not (email and _is_paid_member(email)):
+        return
+    slugs = [((it or {}).get("slug") or "").strip().lower()
+             for it in (order.get("items") or [])]
+    slugs = [slug for slug in slugs if slug]
+    if not slugs:
+        return
+    with _db_lock, db.connect(LOG_DB) as cx:
+        repertoire.init_repertoire_table(cx)
+        repertoire.add_skus(cx, email, slugs)
+
+
 from types import SimpleNamespace as _SimpleNamespace  # noqa: E402
 _SETTLEMENT_DEPS = _SimpleNamespace(
     settle_points=_settle_points_dep,
@@ -8211,6 +8228,7 @@ _SETTLEMENT_DEPS = _SimpleNamespace(
     settle_client=_settle_client_effects,
     settle_biofield=_settle_biofield_effects,
     grant_membership_line=_grant_membership_line_dep,
+    append_repertoire=_append_paid_order_repertoire,
 )
 
 
@@ -49155,20 +49173,16 @@ def _ingest_order(*, source, external_ref, email="", name="", phone="",
                     _send_portal_welcome(email, name, _tok)
             except Exception as _pe:
                 print(f"[orders] portal-provision {source}/{external_ref}: {_pe!r}", flush=True)
-            # Repertoire append: a paid member's purchase adds these SKUs so their
-            # NEXT reorder prices at the flat member rate (dashboard/repertoire.py).
-            # Gated on CURRENT membership status (_is_paid_member), not this order's
-            # pay_status -- pay_status defaults to 'unpaid' at ingest time and isn't
-            # reliably flipped to 'paid' here for most sources (it's a separate
-            # BOS-invoicing concept), so it can't be used to require "actually paid"
-            # at this hook. Runs AFTER upsert_order (i.e. after _price_cart already
-            # priced this order), so it can never discount the order it's derived
-            # from -- only future ones. Best-effort: must never affect order
-            # recording. Worst case: a member's repertoire picks up a SKU from an
-            # order that later gets cancelled/abandoned -- next reorder of that SKU
-            # is $50 instead of full price, a minor overcorrection.
+            # Repertoire append: only a COMPLETED purchase earns the future flat
+            # reorder rate. Checkout sessions are ingested before payment so an
+            # open/proposed order must not append here; the paid Stripe settlement
+            # path appends after payment instead. Terminal imports (done/shipped/
+            # delivered/paid) and explicitly captured orders can append immediately.
             try:
-                if REPERTOIRE_ENABLED and email and _is_paid_member(email):
+                completed_here = (paid_cents is not None or
+                                  status in ("paid", "shipped", "delivered", "done"))
+                if (completed_here and REPERTOIRE_ENABLED and email
+                        and _is_paid_member(email)):
                     slugs = []
                     for it in (items or []):
                         s = ((it or {}).get("slug") or "").strip().lower()

@@ -37,6 +37,7 @@ def settle_paid_order_effects(*, kind, order, md, pi_id, sid, deps):
     if kind in _COMMON_POINTS_KINDS and order:
         _do("points", lambda: deps.settle_points(order, order_ref))
         _do("referral", lambda: deps.settle_referral(order, order_ref))
+        _do("repertoire", lambda: deps.append_repertoire(order))
 
     if kind == "subscribe":
         _do("subscription", lambda: deps.ensure_subscription(md, pi_id))
