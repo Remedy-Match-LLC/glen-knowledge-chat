@@ -5,6 +5,7 @@ Assertions are on raw response bytes and JSON, never a parsed DOM.
 import contextlib
 import os
 import sqlite3
+from unittest import mock
 import pytest
 if not os.environ.get("PINECONE_API_KEY"):
     pytest.skip("needs doppler env for import app", allow_module_level=True)
@@ -200,3 +201,193 @@ def test_an_unauthenticated_visitor_sees_the_auth_wall_not_the_form():
     assert gate, (
         "load() does not gate on the 401 status before revealing the form "
         "-- it would show the empty-config form to a signed-out visitor")
+
+
+# --- Task 4: the public booking route -------------------------------------
+from datetime import date, timedelta  # noqa: E402
+
+
+def _seed_slug(logdb, slug="mary-boyd", email="my_mary_boyd@example.com"):
+    with _open(logdb) as c:
+        c.execute("""CREATE TABLE IF NOT EXISTS affiliate_signups (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, email TEXT,
+            slug TEXT, status TEXT)""")
+        c.execute("INSERT INTO affiliate_signups (name,email,slug,status) "
+                  "VALUES (?,?,?,'approved')", ("Mary Boyd", email, slug))
+        c.commit()
+
+
+@pytest.fixture
+def public(monkeypatch, logdb):
+    monkeypatch.setitem(appmod.app.config, "TESTING", False)
+    monkeypatch.setattr(appmod.app, "testing", False, raising=False)
+    monkeypatch.setattr(appmod, "_public_surface_enabled", lambda: True)
+    from dashboard import practitioner_booking as _pb
+    monkeypatch.setattr(_pb, "resolve_practitioner_pid", lambda cx, slug: PID)
+    return appmod.app.test_client()
+
+
+def test_slots_are_public_and_need_no_token(public, logdb):
+    with _open(logdb) as c:
+        pb.set_config(c, PID, CFG)
+    r = public.get("/api/book/mary-boyd/slots?session=intro&tz=Pacific/Auckland")
+    assert r.status_code == 200
+    assert isinstance(r.get_json()["slots"], list)
+
+
+def test_slots_are_rendered_in_the_visitor_timezone(public, logdb):
+    with _open(logdb) as c:
+        pb.set_config(c, PID, CFG)
+    r = public.get("/api/book/mary-boyd/slots?session=intro&tz=Pacific/Auckland")
+    slots = r.get_json()["slots"]
+    assert slots, "expected some availability"
+    # An offset-bearing string, not a naive one, so the browser cannot guess wrong.
+    assert "+" in slots[0]["visitor"] or "-" in slots[0]["visitor"][10:]
+    assert slots[0]["start"] != slots[0]["visitor"]
+
+
+def test_a_practitioner_who_has_not_enabled_booking_offers_nothing(public, logdb):
+    with _open(logdb) as c:
+        pb.set_config(c, PID, dict(CFG, enabled=False))
+    r = public.get("/api/book/mary-boyd/slots?session=intro")
+    assert r.status_code == 200
+    assert r.get_json()["slots"] == []
+
+
+def test_booking_writes_a_row_and_returns_a_cancel_token(public, logdb):
+    with _open(logdb) as c:
+        pb.set_config(c, PID, CFG)
+    slot = public.get("/api/book/mary-boyd/slots?session=intro").get_json()["slots"][0]
+    r = public.post("/api/book/mary-boyd", json={
+        "session": "intro", "start": slot["start"],
+        "name": "A Client", "email": "client@example.com"})
+    assert r.status_code == 200, r.get_data(as_text=True)
+    assert r.get_json()["cancel_token"]
+    with _open(logdb) as c:
+        row = c.execute("SELECT practitioner, start_ts, status FROM evox_bookings").fetchone()
+        assert row["practitioner"] == PID and row["status"] == "booked"
+
+
+def test_the_same_slot_cannot_be_booked_twice(public, logdb):
+    """The guard is the database UNIQUE index on (practitioner, start_ts), so
+    it holds across processes. Exactly one booking survives.
+
+    CORRECTED from the brief (which asserted second.status_code == 409):
+    these two POSTs run sequentially through the same test client, not
+    concurrently. The first commits before the second's own availability
+    check runs, so the second's fresh `booked_starts` read already contains
+    it and the readable pre-check ("start_ts not in offered") is what stops
+    it -- 400 slot_unavailable, the same path a bogus timestamp takes. That
+    pre-check existing at all is correct and required by the spec ("check
+    first for a readable error"). The 409-from-SlotTaken path is for the
+    genuine race the check cannot see -- two requests whose pre-checks both
+    run before either has committed -- which a single-threaded sequential
+    test client cannot produce. That path is exercised by the mutation test
+    in the task report instead: drop the UNIQUE index and confirm two rows
+    would survive even with the pre-check still in place, which is what
+    proves the index carries weight the check does not.
+    """
+    with _open(logdb) as c:
+        pb.set_config(c, PID, CFG)
+    slot = public.get("/api/book/mary-boyd/slots?session=intro").get_json()["slots"][0]
+    body = {"session": "intro", "start": slot["start"],
+            "name": "A Client", "email": "client@example.com"}
+    first = public.post("/api/book/mary-boyd", json=body)
+    second = public.post("/api/book/mary-boyd", json=dict(body, email="other@example.com"))
+    assert first.status_code == 200
+    assert second.status_code == 400
+    assert second.get_json()["error"] == "slot_unavailable"
+    with _open(logdb) as c:
+        n = c.execute("SELECT COUNT(*) c FROM evox_bookings WHERE status='booked'").fetchone()
+        assert n["c"] == 1
+
+
+def test_a_genuine_race_is_caught_by_the_unique_index_not_the_check(public, logdb):
+    """The sequential test above can never reach the SlotTaken/409 branch,
+    because its own pre-check (fresh `booked_starts`) already sees the first
+    commit. To exercise the branch that a TRUE race would hit -- two
+    requests whose pre-checks both ran before either committed -- patch
+    `slots_for` to keep reporting the slot as offered even after it is
+    booked, standing in for that race window. The insert must still refuse
+    via the UNIQUE index, caught as SlotTaken, and returned as 409 -- proving
+    the check alone would have let this through.
+    """
+    with _open(logdb) as c:
+        pb.set_config(c, PID, CFG)
+    slot = public.get("/api/book/mary-boyd/slots?session=intro").get_json()["slots"][0]
+    body = {"session": "intro", "start": slot["start"],
+            "name": "A Client", "email": "client@example.com"}
+    first = public.post("/api/book/mary-boyd", json=body)
+    assert first.status_code == 200
+
+    from dashboard import practitioner_booking as _pb
+    real_slots_for = _pb.slots_for
+
+    def _stale_offered(cx, pid, *, days, session_slug, booked, busy=()):
+        # Simulate the race: report the slot as still offered, as a second
+        # request's pre-check would if it ran before the first committed.
+        return real_slots_for(cx, pid, days=days, session_slug=session_slug,
+                              booked=set(), busy=busy) or [slot["start"]]
+
+    with mock.patch.object(_pb, "slots_for", side_effect=_stale_offered):
+        second = public.post("/api/book/mary-boyd",
+                             json=dict(body, email="other@example.com"))
+    assert second.status_code == 409
+    assert second.get_json()["error"] == "slot_taken"
+    with _open(logdb) as c:
+        n = c.execute("SELECT COUNT(*) c FROM evox_bookings WHERE status='booked'").fetchone()
+        assert n["c"] == 1
+
+
+def test_a_slot_outside_the_offered_set_is_refused(public, logdb):
+    """Never trust a start time from the request. A client can post anything."""
+    with _open(logdb) as c:
+        pb.set_config(c, PID, CFG)
+    r = public.post("/api/book/mary-boyd", json={
+        "session": "intro", "start": "2026-09-07T03:00:00",
+        "name": "A Client", "email": "client@example.com"})
+    assert r.status_code == 400
+    assert r.get_json()["error"] == "slot_unavailable"
+
+
+def test_a_bad_email_is_refused(public, logdb):
+    with _open(logdb) as c:
+        pb.set_config(c, PID, CFG)
+    slot = public.get("/api/book/mary-boyd/slots?session=intro").get_json()["slots"][0]
+    r = public.post("/api/book/mary-boyd", json={
+        "session": "intro", "start": slot["start"],
+        "name": "A Client", "email": "not-an-email"})
+    assert r.status_code == 400
+
+
+def test_an_unknown_slug_is_404(public, monkeypatch):
+    from dashboard import practitioner_booking as _pb
+    monkeypatch.setattr(_pb, "resolve_practitioner_pid", lambda cx, slug: None)
+    assert public.get("/api/book/nobody/slots?session=intro").status_code == 404
+
+
+def test_the_gated_consult_route_is_untouched():
+    """The spec forbids a bypass on /api/consult/book. This asserts the source
+    still contains its checks, so a future 'small refactor' that shares a
+    helper with the public route cannot quietly remove them."""
+    import inspect
+    src = inspect.getsource(appmod)
+    i = src.index('"/api/consult/book"')
+    window = src[i:i + 4000]
+    assert "intake_required" in window
+    assert "not_ready" in window
+
+
+def test_the_rendered_timezone_reflects_the_actual_fallback_not_the_request(public, logdb):
+    """to_visitor_tz falls back silently to the practitioner's zone on an
+    unusable visitor zone and tells its caller nothing. A visitor whose
+    browser reports a broken zone must not read times labelled with what
+    THEY sent -- the route must resolve the effective zone once and report
+    THAT, not request.args['tz'], so the page can label honestly."""
+    with _open(logdb) as c:
+        pb.set_config(c, PID, CFG)
+    r = public.get("/api/book/mary-boyd/slots?session=intro&tz=Mars/Olympus")
+    assert r.status_code == 200
+    body = r.get_json()
+    assert body["rendered_timezone"] == CFG["timezone"]
+    assert body["rendered_timezone"] != "Mars/Olympus"

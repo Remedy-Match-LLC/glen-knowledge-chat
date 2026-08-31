@@ -11,7 +11,10 @@ calendar is plan 3b. Until it lands, availability is her declared hours minus
 bookings in OUR table, so a commitment that lives only in her Google Calendar
 will still be offered. Her config page says so in as many words.
 """
+import hashlib
+import hmac
 import json
+import os
 import re
 from datetime import datetime, timedelta, timezone as _tz
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -284,3 +287,65 @@ def to_visitor_tz(iso, practitioner_tz, visitor_tz):
         vz = pz
     aware = datetime.fromisoformat(str(iso)[:19]).replace(tzinfo=pz)
     return aware.astimezone(vz).isoformat()
+
+
+def effective_visitor_tz(visitor_tz, practitioner_tz):
+    """The zone name slots are actually rendered in, resolved once.
+
+    to_visitor_tz falls back silently to the practitioner's zone when the
+    visitor's zone is unusable, and tells its caller nothing about that
+    fallback. A visitor whose browser reports a broken zone would otherwise
+    read times labelled with what THEY sent (Mars/Olympus) while the values
+    are actually in the practitioner's zone -- wrong and undetectable from
+    the response. The public route resolves the effective zone here, once,
+    and returns it in the payload so the page can label honestly from what
+    was actually used, never from what the browser sent.
+    """
+    try:
+        ZoneInfo(str(visitor_tz))
+        return str(visitor_tz)
+    except (ZoneInfoNotFoundError, ValueError, KeyError, TypeError):
+        pass
+    try:
+        ZoneInfo(str(practitioner_tz))
+        return str(practitioner_tz)
+    except (ZoneInfoNotFoundError, ValueError, KeyError, TypeError):
+        return DEFAULT_TIMEZONE
+
+
+def resolve_practitioner_pid(cx, slug):
+    """Map a public slug to a practitioner id, or None.
+
+    Reads the same approved-affiliate row the public profile does, then the
+    practitioner row keyed by that email. Fails closed: a missing table or a
+    broken read means 'no such practitioner', never an exception on a public
+    page.
+    """
+    try:
+        row = cx.execute("SELECT email FROM affiliate_signups "
+                         "WHERE slug=? AND status='approved'", (str(slug),)).fetchone()
+    except db.Error:
+        return None
+    if not row or not (row["email"] or "").strip():
+        return None
+    from dashboard import practitioner_portal as _pp
+    try:
+        return _pp.find_practitioner_id_by_email(row["email"].strip().lower())
+    except Exception:
+        return None
+
+
+def cancel_token(pid, start_ts):
+    """A token the client can use to cancel without an account.
+
+    HMAC over (practitioner, slot) with the app secret, so it needs no storage
+    and cannot be guessed. It is not a session: it authorises exactly one
+    action on exactly one booking.
+    """
+    secret = (os.environ.get("SECRET_KEY") or os.environ.get("CONSOLE_SECRET") or "dev")
+    msg = f"{pid}|{start_ts}".encode()
+    return hmac.new(secret.encode(), msg, hashlib.sha256).hexdigest()[:32]
+
+
+def cancel_token_ok(pid, start_ts, token):
+    return hmac.compare_digest(cancel_token(pid, start_ts), str(token or ""))

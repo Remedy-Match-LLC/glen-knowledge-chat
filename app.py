@@ -17616,6 +17616,110 @@ def api_practitioner_booking_config_post():
     return jsonify({"ok": True, "config": clean})
 
 
+_BOOK_EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s.]+\.[^@\s]+$")
+
+
+def _book_days(n=21):
+    from datetime import date, timedelta
+    today = date.today()
+    return [today + timedelta(days=i) for i in range(n)]
+
+
+@app.route("/api/book/<slug>/slots", methods=["GET"])
+def api_public_book_slots(slug):
+    """Open times for a practitioner's public booking page.
+
+    PUBLIC and unauthenticated on purpose: a person who was just texted this
+    link has no account and no token. /api/consult/book stays gated and
+    untouched; this is a separate route with separate rules, per the spec.
+    """
+    if not _public_surface_enabled():
+        return ("", 404)
+    from dashboard import practitioner_booking as _pb
+    session_slug = (request.args.get("session") or "").strip()
+    visitor_tz = (request.args.get("tz") or "").strip()
+    with db.connect(LOG_DB) as cx:
+        cx.row_factory = sqlite3.Row
+        _pb.init_tables(cx)
+        pid = _pb.resolve_practitioner_pid(cx, slug)
+        if not pid:
+            return jsonify({"ok": False, "error": "unknown_practitioner"}), 404
+        cfg = _pb.get_config(cx, pid)
+        if not cfg:
+            return jsonify({"ok": True, "slots": [], "session_types": [],
+                            "rendered_timezone": _pb.effective_visitor_tz(
+                                visitor_tz, _pb.DEFAULT_TIMEZONE)})
+        from dashboard import evox as _ev
+        _ev.init_evox_tables(cx)
+        booked = _ev.booked_starts(cx, practitioner=pid)
+        starts = _pb.slots_for(cx, pid, days=_book_days(),
+                               session_slug=session_slug, booked=booked)
+    # Resolved ONCE here, not left to to_visitor_tz's silent per-call fallback
+    # (see practitioner_booking.effective_visitor_tz): the page must label
+    # times from what was actually used, never from what the browser sent.
+    rendered_tz = _pb.effective_visitor_tz(visitor_tz, cfg["timezone"])
+    return jsonify({
+        "ok": True,
+        "timezone": cfg["timezone"],
+        "rendered_timezone": rendered_tz,
+        "session_types": cfg["session_types"] if cfg["enabled"] else [],
+        "slots": [{"start": s,
+                   "visitor": _pb.to_visitor_tz(s, cfg["timezone"], rendered_tz)}
+                  for s in starts]})
+
+
+@app.route("/api/book/<slug>", methods=["POST"])
+def api_public_book(slug):
+    if not _public_surface_enabled():
+        return ("", 404)
+    from dashboard import practitioner_booking as _pb
+    from dashboard import evox as _ev
+    body = request.get_json(silent=True) or {}
+    session_slug = (body.get("session") or "").strip()
+    start_ts = (body.get("start") or "").strip()
+    name = (body.get("name") or "").strip()[:120]
+    email = (body.get("email") or "").strip().lower()[:200]
+    if not _BOOK_EMAIL_RE.match(email):
+        return jsonify({"ok": False, "error": "bad_email"}), 400
+    if not name:
+        return jsonify({"ok": False, "error": "name_required"}), 400
+    _init_calendar_table()  # create_booking inserts a calendar_events row
+    with db.connect(LOG_DB) as cx:
+        cx.row_factory = sqlite3.Row
+        _pb.init_tables(cx)
+        _ev.init_evox_tables(cx)
+        pid = _pb.resolve_practitioner_pid(cx, slug)
+        if not pid:
+            return jsonify({"ok": False, "error": "unknown_practitioner"}), 404
+        cfg = _pb.get_config(cx, pid)
+        st = next((t for t in (cfg or {}).get("session_types", [])
+                   if t["slug"] == session_slug), None)
+        if not cfg or not cfg["enabled"] or not st:
+            return jsonify({"ok": False, "error": "not_bookable"}), 409
+        # Never trust a start time from the request. Recompute the offered set
+        # and require membership in it -- the same discipline the gated route
+        # uses, which is the part of it worth copying.
+        booked = _ev.booked_starts(cx, practitioner=pid)
+        offered = _pb.slots_for(cx, pid, days=_book_days(),
+                                session_slug=session_slug, booked=booked)
+        if start_ts not in offered:
+            return jsonify({"ok": False, "error": "slot_unavailable"}), 400
+        try:
+            _ev.create_booking(cx, email, start_ts,
+                               duration_min=st["duration_min"],
+                               practitioner=pid, session_type=session_slug,
+                               medium=st["medium"])
+        except _ev.SlotTaken:
+            # create_booking catches the UNIQUE violation itself and re-raises
+            # it as SlotTaken. The index on (practitioner, start_ts) is the real
+            # guard and it is enforced by the database, so it holds across
+            # workers; the availability check above only makes the common case
+            # a readable error rather than a race.
+            return jsonify({"ok": False, "error": "slot_taken"}), 409
+    token = _pb.cancel_token(pid, start_ts)
+    return jsonify({"ok": True, "start": start_ts, "cancel_token": token})
+
+
 @app.route("/console/biofield-portal")
 def console_biofield_portal_page():
     resp = send_from_directory(STATIC, "console-biofield-portal.html")
