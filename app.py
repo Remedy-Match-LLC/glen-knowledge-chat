@@ -38906,7 +38906,7 @@ def post_todos():
             if not title:
                 continue
             try:
-                cx.execute("""
+                cur = cx.execute("""
                     INSERT INTO todos
                       (created_at, owner, category, title, body, priority, source, dedup_key,
                        ai_summary, suggested_reply, action_note, core_message, received_at)
@@ -38919,10 +38919,17 @@ def post_todos():
                       received_at=CASE WHEN excluded.received_at != '' THEN excluded.received_at ELSE received_at END
                 """, (ts, owner, category, title, body, priority, source, dedup,
                       ai_summary, suggested_reply, action_note, core_message, received_at))
-                if cx.execute("SELECT changes()").fetchone()[0]:
+                # rowcount, not the SQLite-only changes() function, which
+                # raises UndefinedFunction on Postgres, where the bare except below
+                # used to swallow it and the poisoned transaction dropped the INSERT.
+                # This endpoint returned {"ok":true,"inserted":0} with HTTP 201 for
+                # five weeks while every console_push_cron todo was discarded.
+                if cur.rowcount:
                     inserted += 1
             except Exception:
-                pass
+                # Never silent again: a swallowed write is indistinguishable from
+                # a working one from the caller's side.
+                app.logger.exception("todo insert failed (dedup_key=%s)", dedup)
         cx.commit()
     return jsonify({"ok": True, "inserted": inserted}), 201
 
@@ -42170,13 +42177,14 @@ def _do_capture_split(text: str, owner: str) -> dict:
                 continue
             dedup = f"capture:{ts_epoch}:{i}:{title[:40]}"
             try:
-                cx.execute("""
+                cur = cx.execute("""
                     INSERT INTO todos
                       (created_at, owner, category, title, body, priority, source, dedup_key)
                     VALUES (?,?,?,?,?,?,?,?)
                     ON CONFLICT(dedup_key) DO NOTHING
                 """, (ts, owner, "Idea", title, body, priority, "capture", dedup))
-                if cx.execute("SELECT changes()").fetchone()[0]:
+                # rowcount, not the SQLite-only changes() function (raises on Postgres).
+                if cur.rowcount:
                     inserted.append({"title": title, "priority": priority})
             except Exception:
                 app.logger.exception("capture_split insert failed for item %s", i)
