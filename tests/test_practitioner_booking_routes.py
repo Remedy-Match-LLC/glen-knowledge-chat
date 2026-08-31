@@ -1478,3 +1478,67 @@ def test_the_cancel_url_carries_the_visitor_instant_and_zone(public, logdb, monk
     # `start` must remain the naive practitioner-local value -- the cancel
     # API matches/verifies the token against it unchanged.
     assert qs.get("start") == [slot["start"]]
+
+
+# --- Task 2: practitioner phone lookup + GHL SMS sender ---------------------
+
+def test_practitioner_phone_is_empty_when_unavailable(monkeypatch):
+    """Same contract as practitioner_email_by_id: a Supabase failure returns
+    "", never an exception, because the caller is mid-notification on a
+    booking that is already committed."""
+    from dashboard import practitioner_portal as _pp
+    import db_supabase
+
+    def boom():
+        raise RuntimeError("supabase is down")
+    monkeypatch.setattr(db_supabase, "supabase_cursor", boom)
+    assert _pp.practitioner_phone_by_id("pid-x") == ""
+
+
+def test_sms_is_skipped_not_raised_when_ghl_is_unconfigured(monkeypatch):
+    from dashboard import ghl_email as _g
+    monkeypatch.setattr(_g, "is_configured", lambda: False)
+    out = _g.send_sms_via_ghl("her@example.com", "New booking")
+    assert out.get("skipped")
+    assert "id" not in out
+
+
+def test_sms_is_skipped_when_the_contact_lookup_fails(monkeypatch):
+    from dashboard import ghl_email as _g
+    monkeypatch.setattr(_g, "is_configured", lambda: True)
+
+    def boom(email, name="", phone=""):
+        raise RuntimeError("no contact")
+    monkeypatch.setattr(_g, "_upsert_contact", boom)
+    out = _g.send_sms_via_ghl("her@example.com", "New booking")
+    assert out.get("skipped")
+
+
+def test_the_sms_payload_is_type_sms_not_email():
+    """The same GHL endpoint sends both. Sending type Email here would deliver
+    a subject-less email instead of a text and look like success.
+
+    Tested through a PURE payload builder rather than through
+    send_sms_via_ghl, because that function short-circuits under pytest before
+    it ever posts -- see the next test. A payload builder with no I/O is the
+    only seam where this shape can actually be asserted."""
+    from dashboard import ghl_email as _g
+    body = _g._sms_payload("c-1", "New booking from A Client")
+    assert body["type"] == "SMS"
+    assert body["contactId"] == "c-1"
+    assert "New booking" in body["message"]
+    assert "subject" not in body
+
+
+def test_send_sms_never_touches_the_live_crm_under_pytest(monkeypatch):
+    """_upsert_contact is a LIVE CRM WRITE. Its own comment says a new caller
+    must carry the pytest guard itself, so assert ours does -- if this test
+    ever goes red, a test run is writing to the real CRM."""
+    from dashboard import ghl_email as _g
+    monkeypatch.setattr(_g, "is_configured", lambda: True)
+
+    def must_not_run(*a, **kw):
+        raise AssertionError("_upsert_contact reached under pytest")
+    monkeypatch.setattr(_g, "_upsert_contact", must_not_run)
+    out = _g.send_sms_via_ghl("her@example.com", "New booking")
+    assert out.get("skipped") == "pytest"

@@ -352,6 +352,22 @@ def practitioner_email_by_id(practitioner_id) -> str:
         return ""
 
 
+def practitioner_phone_by_id(pid) -> str:
+    """Her phone, or "" if we cannot get one.
+
+    Never raises: the caller is inside a post-booking notification block, and
+    a booking that is already committed must not fail because a lookup did.
+    """
+    try:
+        from db_supabase import supabase_cursor
+        with supabase_cursor() as cur:
+            cur.execute("SELECT phone FROM practitioners WHERE id=%s", (str(pid),))
+            row = cur.fetchone()
+        return (row.get("phone") or "").strip() if row else ""
+    except Exception:
+        return ""
+
+
 def get_or_create_dispensary_code(practitioner_id, *, _gen=None) -> str:
     """Return the practitioner's dispensary code, generating + persisting one on first use."""
     from db_supabase import supabase_cursor
