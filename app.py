@@ -52295,6 +52295,41 @@ def api_console_repertoire_reseed():
     })
 
 
+@app.route("/api/console/repertoire-reconcile", methods=["POST"])
+@require_console_key
+def api_console_repertoire_reconcile():
+    """Remove repertoire rows that are unsupported by completed purchase history.
+
+    Defaults to a read-only preview.  ``?apply=1`` is required to delete.  This is
+    intentionally email-scoped and console-gated; it repairs members whose repertoire
+    was seeded from a proposal before the completed-purchase boundary was fixed.
+    """
+    from dashboard import purchase_history as _ph
+    from dashboard import repertoire as _rep
+    email = (request.args.get("email") or "").strip().lower()
+    if not email:
+        return fail("email required", status=400)
+    apply = (request.args.get("apply") or "").strip().lower() in ("1", "true", "yes")
+    with _db_lock, db.connect(LOG_DB) as cx:
+        _bos_orders.init_orders_table(cx)
+        _ph.init_purchase_history_table(cx)
+        _rep.init_repertoire_table(cx)
+        before = sorted(_rep.repertoire_slugs(cx, email))
+        valid = set(_order_slugs_since(cx, email, 365) or [])
+        valid.update(_ph.slugs_since(cx, email, 365) or [])
+        remove = sorted(set(before) - valid)
+        if apply and remove:
+            ph = ",".join("?" for _ in remove)
+            cx.execute(
+                f"DELETE FROM repertoire WHERE lower(email)=? AND slug IN ({ph})",
+                [email, *remove])
+            cx.commit()
+        after = sorted(_rep.repertoire_slugs(cx, email))
+    return ok({"email": email, "applied": apply, "before": before,
+               "valid_purchase_slugs": sorted(valid), "removed": remove if apply else [],
+               "would_remove": remove, "after": after})
+
+
 @app.route("/api/console/test-portal-welcome", methods=["POST"])
 def api_console_test_portal_welcome():
     """Live-verify the portal welcome email. dry_run=1 (default) reports what
