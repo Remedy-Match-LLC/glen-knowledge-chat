@@ -543,10 +543,17 @@ def test_the_rendered_timezone_reflects_the_actual_fallback_not_the_request(publ
 # --- Task 5: confirmation email and the cancel link ------------------------
 
 def test_booking_sends_a_confirmation_to_the_client(public, logdb, monkeypatch):
+    """The client has no account, so the confirmation email -- sent via
+    send_evox_email (the same sibling send path the other EVOX confirmation
+    flows use, since it is the one that can carry a calendar attachment) --
+    is their only record of the appointment. text_body is what the
+    assertions below check, mirroring the plain-text side of the message a
+    client actually reads."""
     sent = []
-    monkeypatch.setattr(appmod, "_send_full_report_email",
-                        lambda to, name, subject, body, **kw: sent.append(
-                            {"to": to, "subject": subject, "body": body}))
+    monkeypatch.setattr(appmod, "send_evox_email",
+                        lambda to, name, subject, html_body, text_body, ics_bytes:
+                        sent.append({"to": to, "subject": subject,
+                                    "body": text_body, "ics": ics_bytes}))
     with _open(logdb) as c:
         pb.set_config(c, PID, CFG)
     slot = public.get("/api/book/mary-boyd/slots?session=intro").get_json()["slots"][0]
@@ -561,8 +568,9 @@ def test_booking_sends_a_confirmation_to_the_client(public, logdb, monkeypatch):
 
 def test_the_confirmation_states_the_time_in_the_visitor_timezone(public, logdb, monkeypatch):
     sent = []
-    monkeypatch.setattr(appmod, "_send_full_report_email",
-                        lambda to, name, subject, body, **kw: sent.append(body))
+    monkeypatch.setattr(appmod, "send_evox_email",
+                        lambda to, name, subject, html_body, text_body, ics_bytes:
+                        sent.append(text_body))
     with _open(logdb) as c:
         pb.set_config(c, PID, CFG)
     slot = public.get("/api/book/mary-boyd/slots?session=intro").get_json()["slots"][0]
@@ -571,6 +579,32 @@ def test_the_confirmation_states_the_time_in_the_visitor_timezone(public, logdb,
         "name": "A Client", "email": "client@example.com"})
     assert "Pacific/Auckland" in sent[0] or "NZ" in sent[0], \
         "a client cannot act on a time in a zone they do not live in"
+
+
+def test_the_confirmation_includes_a_calendar_invite_matching_the_booking(
+        public, logdb, monkeypatch):
+    """The task title promises a calendar invite, not just a plain-text
+    confirmation. build_ics's DTSTART is a floating (no-TZID) local
+    timestamp built straight from the practitioner-local start_ts
+    create_booking stored -- the same convention _evox_send_confirmations
+    already uses -- so it must reflect the booking's own start time, not an
+    empty/placeholder ICS."""
+    sent = []
+    monkeypatch.setattr(appmod, "send_evox_email",
+                        lambda to, name, subject, html_body, text_body, ics_bytes:
+                        sent.append(ics_bytes))
+    with _open(logdb) as c:
+        pb.set_config(c, PID, CFG)
+    slot = public.get("/api/book/mary-boyd/slots?session=intro").get_json()["slots"][0]
+    public.post("/api/book/mary-boyd", json={
+        "session": "intro", "start": slot["start"],
+        "name": "A Client", "email": "client@example.com"})
+    assert sent and sent[0], "no calendar invite was built"
+    ics_text = sent[0].decode("utf-8")
+    assert "BEGIN:VEVENT" in ics_text
+    from datetime import datetime as _dt
+    expected_dtstart = _dt.fromisoformat(slot["start"][:19]).strftime("%Y%m%dT%H%M%S")
+    assert f"DTSTART:{expected_dtstart}" in ics_text
 
 
 def test_a_cancel_token_releases_the_slot(public, logdb):
@@ -608,20 +642,84 @@ def test_a_forged_cancel_token_is_refused(public, logdb):
 
 
 def test_a_cancel_token_for_one_slot_does_not_cancel_another(public, logdb):
-    """The token is scoped to (practitioner, slot). One booking's token must
-    not be a skeleton key for the practitioner's whole day."""
+    """The token is scoped to (practitioner, slot, booking id). One
+    booking's token must not be a skeleton key for the practitioner's whole
+    day. token_a is read from booking A's own response (rather than
+    recomputed via pb.cancel_token) because cancel_token now takes the
+    booking's row id as a third argument, and the route -- not the test --
+    is the thing that should decide what that id is."""
     with _open(logdb) as c:
         pb.set_config(c, PID, CFG)
     slots = public.get("/api/book/mary-boyd/slots?session=intro").get_json()["slots"]
     a, b = slots[0], slots[1]
+    token_a = None
     for s in (a, b):
-        public.post("/api/book/mary-boyd", json={
+        r = public.post("/api/book/mary-boyd", json={
             "session": "intro", "start": s["start"],
             "name": "A Client", "email": "client@example.com"})
-    token_a = pb.cancel_token(PID, a["start"])
+        if s is a:
+            token_a = r.get_json()["cancel_token"]
     r = public.post("/api/book/mary-boyd/cancel",
                     json={"start": b["start"], "token": token_a})
     assert r.status_code == 403
+
+
+def test_a_stale_token_from_a_cancelled_and_rebooked_slot_is_refused(public, logdb):
+    """A token is a pure function of (practitioner, slot, booking id). If it
+    were only a function of (practitioner, slot) it would stay valid
+    forever -- including after the slot is cancelled and rebooked by a
+    different client, which would turn the FIRST client's saved
+    confirmation email into a permanent cancel credential for the second
+    client's appointment. Book A, cancel A, rebook the same slot as B: A's
+    original token must no longer work."""
+    with _open(logdb) as c:
+        pb.set_config(c, PID, CFG)
+    slot = public.get("/api/book/mary-boyd/slots?session=intro").get_json()["slots"][0]
+    r_a = public.post("/api/book/mary-boyd", json={
+        "session": "intro", "start": slot["start"],
+        "name": "Client A", "email": "a@example.com"})
+    token_a = r_a.get_json()["cancel_token"]
+    c1 = public.post("/api/book/mary-boyd/cancel",
+                     json={"start": slot["start"], "token": token_a})
+    assert c1.status_code == 200
+
+    public.post("/api/book/mary-boyd", json={
+        "session": "intro", "start": slot["start"],
+        "name": "Client B", "email": "b@example.com"})
+
+    stale = public.post("/api/book/mary-boyd/cancel",
+                        json={"start": slot["start"], "token": token_a})
+    assert stale.status_code == 403, \
+        "A's old confirmation email must not be able to cancel B's appointment"
+    with _open(logdb) as c:
+        row = c.execute("SELECT client_name, status FROM evox_bookings "
+                        "WHERE status='booked'").fetchone()
+        assert row["client_name"] == "Client B" and row["status"] == "booked"
+
+
+def test_the_rebooked_slots_own_token_still_works(public, logdb):
+    """Continuing the same cancel/rebook sequence: B's own cancel_token
+    (returned from B's own booking response) must still cancel B's own
+    booking -- the id-binding refuses a STALE token, not every token."""
+    with _open(logdb) as c:
+        pb.set_config(c, PID, CFG)
+    slot = public.get("/api/book/mary-boyd/slots?session=intro").get_json()["slots"][0]
+    r_a = public.post("/api/book/mary-boyd", json={
+        "session": "intro", "start": slot["start"],
+        "name": "Client A", "email": "a@example.com"})
+    public.post("/api/book/mary-boyd/cancel",
+               json={"start": slot["start"], "token": r_a.get_json()["cancel_token"]})
+    r_b = public.post("/api/book/mary-boyd", json={
+        "session": "intro", "start": slot["start"],
+        "name": "Client B", "email": "b@example.com"})
+    token_b = r_b.get_json()["cancel_token"]
+
+    c2 = public.post("/api/book/mary-boyd/cancel",
+                     json={"start": slot["start"], "token": token_b})
+    assert c2.status_code == 200
+    with _open(logdb) as c:
+        row = c.execute("SELECT status FROM evox_bookings WHERE client_name='Client B'").fetchone()
+        assert row["status"] != "booked"
 
 
 def test_a_get_request_cannot_cancel_a_booking(public, logdb):

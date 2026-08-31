@@ -335,17 +335,28 @@ def resolve_practitioner_pid(cx, slug):
         return None
 
 
-def cancel_token(pid, start_ts):
+def cancel_token(pid, start_ts, booking_id):
     """A token the client can use to cancel without an account.
 
-    HMAC over (practitioner, slot) with the app secret, so it needs no storage
-    and cannot be guessed. It is not a session: it authorises exactly one
-    action on exactly one booking.
+    HMAC over (practitioner, slot, booking id) with the app secret, so it
+    needs no storage and cannot be guessed. It is not a session: it
+    authorises exactly one action on exactly one booking.
+
+    booking_id is load-bearing, not decorative. A token built from only
+    (practitioner, slot) is a pure function of the SLOT, so it stays valid
+    forever -- including after that slot is cancelled and rebooked by a
+    different client. The confirmation email is the only record a client
+    without an account has of their appointment, and we tell them to keep it
+    for the cancel link; a token that outlives its own booking turns that
+    saved email into a permanent cancel credential for whoever books the
+    same time next. Binding the booking's row id means a cancel-then-rebook
+    on the same slot mints a genuinely different token, and the old email's
+    link stops working the moment the row it names is gone.
     """
     secret = (os.environ.get("SECRET_KEY") or os.environ.get("CONSOLE_SECRET") or "dev")
-    msg = f"{pid}|{start_ts}".encode()
+    msg = f"{pid}|{start_ts}|{booking_id}".encode()
     return hmac.new(secret.encode(), msg, hashlib.sha256).hexdigest()[:32]
 
 
-def cancel_token_ok(pid, start_ts, token):
-    return hmac.compare_digest(cancel_token(pid, start_ts), str(token or ""))
+def cancel_token_ok(pid, start_ts, booking_id, token):
+    return hmac.compare_digest(cancel_token(pid, start_ts, booking_id), str(token or ""))

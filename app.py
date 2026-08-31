@@ -17748,16 +17748,27 @@ def api_public_book(slug):
             app.logger.warning(
                 f"[book] client_name/summary update failed for booking "
                 f"{b['id']} ({pid}/{start_ts}): {e!r}")
-    token = _pb.cancel_token(pid, start_ts)
+    # The token is bound to THIS booking's row id (b["id"]), not just to
+    # (practitioner, slot) -- see practitioner_booking.cancel_token. A token
+    # that only named the slot would stay valid forever, including after
+    # this slot is cancelled and rebooked by someone else; binding the row
+    # id means a cancel-then-rebook on the same slot mints a different
+    # token, so this client's saved confirmation email cannot later cancel a
+    # stranger's appointment that happens to land on the same time.
+    token = _pb.cancel_token(pid, start_ts, b["id"])
     # The client has no account and no other record of this appointment, so
     # this email IS the record. It carries the time in the zone the visitor
     # actually saw on the booking page (the EFFECTIVE zone, resolved the same
     # way api_public_book_slots resolves `rendered_timezone` -- not the raw
-    # request value, which can be an unusable/broken browser-reported zone)
-    # and a cancel link that works without signing in. A send failure here
-    # must never fail the booking: create_booking already committed, so the
-    # slot is durably the client's regardless of whether this email lands.
-    # Log loudly, return success -- the same rule the client_name/summary
+    # request value, which can be an unusable/broken browser-reported zone),
+    # a cancel link that works without signing in, and a calendar (.ics)
+    # invite -- send_evox_email and build_ics are the same pair the three
+    # sibling EVOX confirmation flows in this file already use (see
+    # _evox_send_confirmations), so this stays consistent with them rather
+    # than adding a second attachment mechanism. A send failure here must
+    # never fail the booking: create_booking already committed, so the slot
+    # is durably the client's regardless of whether this email lands. Log
+    # loudly, return success -- the same rule the client_name/summary
     # UPDATEs above follow, and for the same reason (a false 500 for a real
     # booking is what makes someone book twice).
     try:
@@ -17771,8 +17782,23 @@ def api_public_book(slug):
                  f"How: {st['medium']}", "",
                  "If you need to cancel, use this link:", cancel_url, "",
                  "See you then."]
-        _send_full_report_email(email, name, "Your appointment is booked",
-                                "\n".join(lines))
+        text_body = "\n".join(lines)
+        import html as _html
+        html_body = "".join(
+            f'<p><a href="{_html.escape(cancel_url)}">{_html.escape(cancel_url)}</a></p>'
+            if ln == cancel_url else (f"<p>{_html.escape(ln)}</p>" if ln else "")
+            for ln in lines)
+        # build_ics's start/end are the same naive practitioner-local
+        # timestamps create_booking stored (b["end_ts"] is what it computed
+        # from start_ts + duration), matching the floating-time VEVENT
+        # _evox_send_confirmations already emits -- not a new convention.
+        ics = _ev.build_ics(uid=b["ics_uid"], start_ts=start_ts, end_ts=b["end_ts"],
+                            summary=st["label"],
+                            description=f"{st['label']} ({st['medium']}). "
+                                        f"To cancel: {cancel_url}",
+                            location=st["medium"])
+        send_evox_email(email, name, "Your appointment is booked",
+                        html_body, text_body, ics)
     except Exception as e:  # noqa: BLE001
         print(f"[public-book] confirmation failed for {email!r}: {e!r}", flush=True)
     return jsonify({"ok": True, "start": start_ts, "cancel_token": token})
@@ -17801,15 +17827,23 @@ def api_public_book_cancel(slug):
         pid = _pb.resolve_practitioner_pid(cx, slug)
         if not pid:
             return jsonify({"ok": False, "error": "unknown_practitioner"}), 404
-        # The token is scoped to (practitioner, slot) -- see
-        # practitioner_booking.cancel_token -- so one booking's token cannot
-        # cancel a different slot on the same practitioner's calendar, and a
-        # forged token cannot cancel anything at all.
-        if not _pb.cancel_token_ok(pid, start_ts, token):
+        # The token is bound to (practitioner, slot, booking id) -- see
+        # practitioner_booking.cancel_token -- so it must be checked against
+        # the id of whichever row is CURRENTLY booked at this slot, not just
+        # the slot itself. Looking that id up here, rather than trusting a
+        # ceiling from the request, is what makes a cancel-then-rebook safe:
+        # a token minted for a previous occupant of this slot names an id
+        # that no longer matches, so it is refused exactly like a forged one
+        # -- one booking's token cannot cancel a different slot on the same
+        # practitioner's calendar, and it cannot outlive its own booking
+        # either.
+        row = cx.execute(
+            "SELECT id FROM evox_bookings WHERE practitioner=? AND start_ts=? "
+            "AND status='booked'", (pid, start_ts)).fetchone()
+        if not row or not _pb.cancel_token_ok(pid, start_ts, row["id"], token):
             return jsonify({"ok": False, "error": "bad_token"}), 403
-        cx.execute("UPDATE evox_bookings SET status='cancelled' "
-                  "WHERE practitioner=? AND start_ts=? AND status='booked'",
-                  (pid, start_ts))
+        cx.execute("UPDATE evox_bookings SET status='cancelled' WHERE id=?",
+                  (row["id"],))
         cx.commit()
     return jsonify({"ok": True})
 
