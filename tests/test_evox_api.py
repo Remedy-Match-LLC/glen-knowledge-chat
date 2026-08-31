@@ -245,3 +245,50 @@ def test_reminders_send_once_deterministic(client, monkeypatch):
     r2 = client.post("/api/evox/run-reminders", headers=hdr).get_json()
     assert r2["sent"] == 0
     assert sent == ["r@x.com"]  # unchanged
+
+
+def test_a_public_practitioners_booking_gets_no_reminder_and_is_not_stamped(
+        client, monkeypatch):
+    """CRITICAL: before this filter, this query had no practitioner clause at
+    all. A public multi-tenant booking's practitioner is some OTHER
+    practitioner's own id (e.g. "pid-mary") -- none of the branches in
+    evox_run_reminders recognize that value, so it fell through to the
+    Rae/EVOX else-clause and would have emailed a stranger "your EVOX
+    session is tomorrow ... HST, call Rae at {phone}" -- wrong session,
+    wrong practitioner, wrong timezone, and Rae's own phone number handed to
+    someone with no relationship to her.
+
+    The reminded_at half matters independently of the send: even if send
+    were somehow skipped, stamping reminded_at on a row this code cannot
+    correctly remind for would permanently suppress a correct
+    practitioner-aware reminder built later -- it would look like "already
+    reminded" forever.
+    """
+    sent = []
+    monkeypatch.setattr(appmod, "send_evox_email",
+                        lambda *a, **k: sent.append(a[0]) or ("console-log", None))
+
+    now = appmod._hst_now()
+    in_window_ts = (now + timedelta(hours=30)).isoformat()
+
+    with sqlite3.connect(appmod.LOG_DB) as cx:
+        _evmod.init_evox_tables(cx)
+        cx.execute(
+            "INSERT INTO evox_bookings (email,practitioner,start_ts,end_ts,status,"
+            "prepaid,ics_uid,created_at) VALUES (?,?,?,?,'booked',0,?,?)",
+            ("stranger@x.com", "pid-mary", in_window_ts, in_window_ts,
+             "evox-mary-public@illtowell.com", now.isoformat()))
+        cx.commit()
+
+    hdr = {"X-Console-Key": "test-secret"}
+    r = client.post("/api/evox/run-reminders", headers=hdr).get_json()
+    assert r["sent"] == 0
+    assert sent == [], "a stranger's public booking must never get Rae's EVOX reminder"
+
+    with sqlite3.connect(appmod.LOG_DB) as cx:
+        cx.row_factory = sqlite3.Row
+        row = cx.execute("SELECT reminded_at FROM evox_bookings "
+                         "WHERE email='stranger@x.com'").fetchone()
+        assert row["reminded_at"] is None, (
+            "stamping reminded_at on a row this code cannot correctly remind "
+            "for would permanently suppress a correct reminder built later")

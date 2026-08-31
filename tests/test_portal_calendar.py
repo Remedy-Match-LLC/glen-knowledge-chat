@@ -135,6 +135,32 @@ def test_confirmed_private_appointment_appears_only_for_its_client():
     assert not any(e["id"] == "appointment-7" for e in other["events"])
 
 
+def test_a_public_practitioners_booking_is_excluded_not_mislabeled_rae():
+    """CRITICAL: before this filter, this query selected ANY 'booked' row for
+    the client's email with no practitioner clause. build_block's `who =
+    "Dr. Glen" if practitioner == "glen" else "Rae"` and _zoned_iso's
+    unconditional Pacific/Honolulu stamp are both wrong for a public
+    multi-tenant booking -- whose practitioner is some OTHER practitioner's
+    own id in her own timezone. A Healing Oasis client who separately booked
+    a different practitioner would have seen that appointment mislabeled
+    "Rae" at a Honolulu time in their authenticated portal, marked
+    Confirmed. A practitioner-aware view is real work that does not exist
+    yet; until it does, exclude the row entirely rather than show the wrong
+    person at the wrong time.
+    """
+    db = _cx()
+    db.execute("INSERT INTO evox_bookings VALUES "
+              "(8,'client@x.com','intro','pid-mary','zoom','2099-02-03T05:00:00',"
+              "'2099-02-03T05:20:00',0,'booked')")
+    block = portal_calendar.build_block(db, email="client@x.com",
+                                        now_iso="2099-01-01T00:00:00")
+    assert not any(e["id"] == "appointment-8" for e in block["events"]), (
+        "a public practitioner's booking must not appear as a Rae/Glen "
+        "appointment in the client portal")
+    assert "Rae" not in str(block), \
+        "mary's client must never see her appointment mislabeled Rae"
+
+
 def test_old_shared_links_do_not_manufacture_future_occurrences():
     db = _cx()
     db.execute("DELETE FROM masterclass_events")

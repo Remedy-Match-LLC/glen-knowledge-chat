@@ -22944,9 +22944,23 @@ def evox_run_reminders():
             cx.execute("ALTER TABLE evox_bookings ADD COLUMN reminded_at TEXT")
         except Exception:
             pass
+        # practitioner filter is load-bearing, not decorative. This query used
+        # to run unfiltered, which meant a public multi-tenant booking (whose
+        # `practitioner` is some OTHER practitioner's slug, e.g. "pid-mary")
+        # fell through every branch below to the Rae/EVOX else-clause: a
+        # stranger who booked a different practitioner in a different
+        # timezone would be told "your EVOX session is tomorrow ... HST, call
+        # Rae at {EVOX_RAE_PHONE}" -- wrong session, wrong practitioner, wrong
+        # zone, and Rae's phone number handed to someone who has no
+        # relationship with her. Restricting to the two practitioners this
+        # branch logic actually knows how to word a reminder for closes that
+        # leak. A practitioner-aware reminder (using her own cfg["timezone"]
+        # and session label) is real work that does not exist yet -- until it
+        # does, a public-practitioner booking gets NO automated reminder
+        # rather than the wrong one.
         rows = cx.execute(
             "SELECT * FROM evox_bookings WHERE status='booked' AND reminded_at IS NULL "
-            "AND start_ts BETWEEN ? AND ?", (lo, hi)).fetchall()
+            "AND practitioner IN ('rae','glen') AND start_ts BETWEEN ? AND ?", (lo, hi)).fetchall()
         for r in rows:
             nice = r["start_ts"].replace("T", " ")
             keys = r.keys()

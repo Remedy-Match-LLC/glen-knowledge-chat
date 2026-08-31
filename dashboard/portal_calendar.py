@@ -138,9 +138,22 @@ def build_block(cx, *, email="", group_coaching_entitled=False,
 
     if email:
         try:
+            # practitioner IN ('rae','glen') is load-bearing, not decorative.
+            # This view renders "Dr. Glen"/"Rae" unconditionally and stamps
+            # every row with Pacific/Honolulu via _zoned_iso -- both wrong for
+            # a public multi-tenant booking, whose practitioner is some OTHER
+            # practitioner's own id in her own timezone. Without this filter,
+            # a Healing Oasis client who separately booked a different
+            # practitioner would see that appointment mislabeled "Rae" at a
+            # Honolulu time in their authenticated portal, marked Confirmed.
+            # A practitioner-aware portal view (her own name, her own
+            # timezone) is real work that does not exist yet -- until it
+            # does, exclude those rows rather than show the wrong person at
+            # the wrong time.
             cur = cx.execute(
                 "SELECT id, session_type, practitioner, medium, start_ts, end_ts, prepaid "
                 "FROM evox_bookings WHERE lower(email)=? AND status='booked' AND start_ts>=? "
+                "AND practitioner IN ('rae','glen') "
                 "ORDER BY start_ts ASC LIMIT 50", ((email or "").strip().lower(), now_iso))
             labels = {"biofield-consult": "Biofield Analysis Consultation",
                       "evox": "EVOX Session", "onboarding": "Welcome Call",
