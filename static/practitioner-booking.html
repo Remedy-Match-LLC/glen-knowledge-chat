@@ -128,7 +128,14 @@
         confirmation. Only turn this on if you want people who book you to be able to
         call you directly.</span>
       </label>
-      <div id="notify-phone-info" class="notice" style="display:none"></div>
+
+      <div id="notify-phone-wrap" style="display:none">
+        <label class="field-label">Your phone number</label>
+        <input id="notify-phone-number" type="text" placeholder="(907) 555-0100">
+        <span class="hint">Used for text and phone notifications. Saved when you press
+        Save below, same as everything else on this page.</span>
+        <div id="notify-phone-info" class="msg err" style="display:none"></div>
+      </div>
 
       <h2>Session types</h2>
       <div id="bk-types"></div>
@@ -182,19 +189,26 @@
 
   // Shown whenever "text" or "phone" is ticked -- both need a real number on
   // file to do anything (text sends an SMS to a GHL contact keyed by her
-  // number; phone hands that same number to the client). Surfacing whether
-  // one is actually on file here, before she saves, beats her finding out
-  // later that a booking went out with nothing to call.
+  // number; phone hands that same number to the client). The field itself is
+  // only revealed in that case; the warning below it is a SEPARATE decision,
+  // keyed off whether the field is actually empty -- ticking the box must
+  // not be a silent no-op, so if she checks phone/text with nothing typed,
+  // she is told plainly, right where she made the choice, not after Save.
   function updateNotifyPhoneInfo() {
+    var wrap = document.getElementById("notify-phone-wrap");
     var info = document.getElementById("notify-phone-info");
     var needsPhone = document.getElementById("notify-text").checked ||
                       document.getElementById("notify-phone").checked;
+    wrap.style.display = needsPhone ? "block" : "none";
     if (!needsPhone) { info.style.display = "none"; return; }
-    info.style.display = "block";
-    info.textContent = practitionerPhone
-      ? ("Number on file: " + practitionerPhone)
-      : "No phone number is on file for your account yet, so text and phone " +
-        "notifications will not work until one is added.";
+    var current = document.getElementById("notify-phone-number").value.trim();
+    if (current) {
+      info.style.display = "none";
+    } else {
+      info.style.display = "block";
+      info.textContent = "Text and phone notifications need a number. Add yours " +
+        "above, or ticking this box will not do anything.";
+    }
   }
 
   function esc(s) {
@@ -241,6 +255,19 @@
   Object.keys(NOTIFY_IDS).forEach(function (m) {
     document.getElementById(NOTIFY_IDS[m]).addEventListener("change", updateNotifyPhoneInfo);
   });
+  // Typing a number must clear the warning live, without waiting for Save --
+  // the warning is about whether a number exists, not about whether it has
+  // been persisted yet.
+  document.getElementById("notify-phone-number").addEventListener("input", updateNotifyPhoneInfo);
+
+  function savePhone() {
+    var value = document.getElementById("notify-phone-number").value.trim();
+    return fetch("/api/practitioner/phone",
+          {method: "POST", credentials: "same-origin",
+           headers: {"Content-Type": "application/json"},
+           body: JSON.stringify({phone: value})})
+      .then(function (r) { return r.json().then(function (j) { return {ok: r.ok, j: j}; }); });
+  }
 
   window.save = function () {
     var msg = document.getElementById("bk-msg");
@@ -264,8 +291,29 @@
            body: JSON.stringify(payload)})
       .then(function (r) { return r.json().then(function (j) { return {ok: r.ok, j: j}; }); })
       .then(function (res) {
-        msg.textContent = res.ok ? "Saved." : (res.j.error || "Could not save that.");
-        msg.className = res.ok ? "msg ok" : "msg err";
+        if (!res.ok) {
+          msg.textContent = res.j.error || "Could not save that.";
+          msg.className = "msg err";
+          return null;
+        }
+        // The phone number is a SEPARATE endpoint/table (practitioners.phone
+        // in Supabase, not the SQLite booking config) -- see
+        // api_practitioner_phone_post. Saved in the same click so there is
+        // still just one Save button, not two save actions to remember.
+        return savePhone();
+      })
+      .then(function (res2) {
+        if (!res2) return; // booking-config already failed and reported above
+        if (res2.ok) {
+          practitionerPhone = res2.j.phone || "";
+          updateNotifyPhoneInfo();
+          msg.textContent = "Saved.";
+          msg.className = "msg ok";
+        } else {
+          msg.textContent = "Booking settings saved, but your phone number was not: " +
+            (res2.j.error || "please try again.");
+          msg.className = "msg err";
+        }
       })
       .catch(function () {
         msg.textContent = "Could not reach the server.";
@@ -325,7 +373,13 @@
       .then(function (v) {
         if (!v) return; // auth wall already shown
         if (v.media && v.media.length) MEDIA = v.media;
+        // practitioner_phone lives on the Supabase practitioners row, not
+        // the SQLite booking config -- pre-fill it here, before either
+        // branch below calls setNotifyMethods (which reads this field to
+        // decide whether to show the "no number on file" warning), so a
+        // practitioner who already has a number never sees a false warning.
         practitionerPhone = v.practitioner_phone || "";
+        document.getElementById("notify-phone-number").value = practitionerPhone;
         var c = v.config;
         if (!c) {
           // No config saved yet. Pre-fill with the browser's guess; if the

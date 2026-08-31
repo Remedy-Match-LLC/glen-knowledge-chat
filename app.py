@@ -17623,6 +17623,32 @@ def api_practitioner_booking_config_post():
     return jsonify({"ok": True, "config": clean})
 
 
+@app.route("/api/practitioner/phone", methods=["POST"])
+def api_practitioner_phone_post():
+    """Save the practitioner's own phone number.
+
+    The write side of practitioner_phone_by_id, and the piece that was
+    missing when the "phone"/"text" notify methods shipped: `phone` on the
+    practitioners row is otherwise written in exactly one place --
+    validate_registration, at signup -- so any practitioner who registered
+    before providing one, or who never had a reason to, had no way to add it
+    afterwards. Those two notify methods were inert for her.
+    """
+    pid = _practitioner_session_pid()
+    if not pid:
+        return jsonify({"ok": False, "error": "not signed in"}), 401
+    from dashboard import practitioner_portal as _pp
+    body = request.get_json(silent=True) or {}
+    # pid comes from the SESSION, same rule as booking-config POST just
+    # above -- a practitioner_id in the body is ignored on purpose, since
+    # honouring it would let any signed-in practitioner overwrite another's
+    # number.
+    clean, err = _pp.set_practitioner_phone(pid, body.get("phone"))
+    if err:
+        return jsonify({"ok": False, "error": err}), 400
+    return jsonify({"ok": True, "phone": clean})
+
+
 _BOOK_EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s.]+\.[^@\s]+$")
 
 

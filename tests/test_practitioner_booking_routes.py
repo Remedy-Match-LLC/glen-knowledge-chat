@@ -1774,3 +1774,89 @@ def test_her_number_is_absent_when_she_did_not_choose_phone(public, logdb, monke
     _book_one(public)
     to_client = [s for s in sends["email"] if s["to"] == "client@example.com"]
     assert to_client and "+15550100" not in str(to_client[0])
+
+
+# --- Task 4 fix round 1: the write path for her phone number ---------------
+#
+# "text" and "phone" were inert for 19 of 23 portal practitioners: phone is
+# written in exactly one place, validate_registration at signup, with no
+# authenticated route to set it afterwards. This closes that -- an endpoint
+# that mirrors /api/practitioner/booking-config's own shape (session-derived
+# pid, 401 when absent, a practitioner_id in the body ignored).
+
+def test_phone_save_requires_a_signed_in_practitioner(monkeypatch):
+    monkeypatch.setattr(appmod, "_practitioner_session_pid", lambda: None)
+    c = appmod.app.test_client()
+    assert c.post("/api/practitioner/phone", json={"phone": "+15550100"}).status_code == 401
+
+
+def test_saving_a_phone_number_then_reading_the_config_back_shows_it(practitioner, monkeypatch):
+    """The endpoint writes practitioners.phone (Supabase); the GET config
+    route already reads it back via practitioner_phone_by_id (Task 4). Both
+    ends are stubbed here so this test exercises the ROUTE wiring, not a real
+    Supabase connection."""
+    from dashboard import practitioner_portal as _pp
+    saved = {}
+
+    def fake_set(pid, phone):
+        saved["pid"] = pid
+        saved["phone"] = phone
+        return "+15550100", None
+    monkeypatch.setattr(_pp, "set_practitioner_phone", fake_set)
+    monkeypatch.setattr(_pp, "practitioner_phone_by_id",
+                        lambda pid: "+15550100" if pid == PID else "")
+
+    r = practitioner.post("/api/practitioner/phone", json={"phone": "+15550100"})
+    assert r.status_code == 200, r.get_data(as_text=True)
+    assert r.get_json()["phone"] == "+15550100"
+    assert saved["pid"] == PID
+
+    got = practitioner.get("/api/practitioner/booking-config").get_json()
+    assert got["practitioner_phone"] == "+15550100"
+
+
+def test_a_bad_phone_number_is_rejected_with_a_readable_message(practitioner):
+    r = practitioner.post("/api/practitioner/phone", json={"phone": "call me maybe"})
+    assert r.status_code == 400
+    assert r.get_json()["error"]
+
+
+def test_a_practitioner_cannot_write_another_practitioners_phone(practitioner, monkeypatch):
+    """The pid comes from the session. A practitioner_id in the body must be
+    ignored -- same ownership rule as
+    test_a_practitioner_cannot_write_another_practitioners_config, and for
+    the same reason: honouring a body-supplied id would let any signed-in
+    practitioner overwrite another's number."""
+    from dashboard import practitioner_portal as _pp
+    calls = []
+
+    def fake_set(pid, phone):
+        calls.append(pid)
+        return phone, None
+    monkeypatch.setattr(_pp, "set_practitioner_phone", fake_set)
+    practitioner.post("/api/practitioner/phone",
+                      json={"practitioner_id": "pid-someone-else", "phone": "+15550100"})
+    assert calls == [PID], "a practitioner_id in the body must not steer the write"
+
+
+def test_ticking_phone_or_text_with_no_number_warns_rather_than_being_silent():
+    """Ticking phone/text must not be a silent no-op for a practitioner with
+    no number on file -- she has to be told at the point of choosing, not
+    discover it later when a booking went out with nothing to call.
+
+    Assertions are on the raw JS source, per this file's convention (see the
+    module docstring and test_a_saved_timezone_outside_the_option_list_
+    survives_the_round_trip above): there is no DOM here to drive.
+    """
+    import pathlib
+    import re
+    html = (pathlib.Path(appmod.STATIC) / "practitioner-booking.html").read_text()
+    fn = re.search(r"function updateNotifyPhoneInfo\(\) \{.*?\n  \}", html, re.S)
+    assert fn, "no updateNotifyPhoneInfo function to gate the warning"
+    body = fn.group(0)
+    assert "notify-text" in body and "notify-phone" in body, \
+        "the warning must be keyed off BOTH methods that need a number"
+    assert "notify-phone-number" in body, \
+        "the warning must check whether a number is actually present, not just which box is ticked"
+    assert "info.textContent" in body and "need a number" in body.lower(), \
+        "no warning text is actually set when the number is missing"

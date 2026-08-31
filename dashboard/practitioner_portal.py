@@ -11,6 +11,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import secrets
 import sqlite3
 from dashboard import db
@@ -366,6 +367,60 @@ def practitioner_phone_by_id(pid) -> str:
         return (row.get("phone") or "").strip() if row else ""
     except Exception:
         return ""
+
+
+MAX_PHONE_LEN = 32
+# Deliberately permissive: digits, whitespace, and the punctuation that shows
+# up in a phone number written by hand almost anywhere (+, -, ., parens).
+# This number is DISPLAYED to a client, never dialled programmatically, so
+# there is no single correct international format to enforce -- a
+# practitioner in Anchorage and one in Auckland write numbers differently,
+# and a validator that rejects a legitimate number is worse than one that
+# accepts an odd one. This only catches input that plainly cannot be a
+# phone number at all.
+_PHONE_CHARS_RE = re.compile(r"^[+()\-.\s\d]+$")
+
+
+def validate_phone(raw) -> Tuple[Optional[str], Optional[str]]:
+    """Clean a practitioner-submitted phone number, or reject it.
+
+    Returns (clean, None) on success -- clean may be "" to CLEAR a
+    previously-saved number -- or (None, error_message) to reject.
+    """
+    s = str(raw or "").strip()
+    if not s:
+        return "", None
+    if len(s) > MAX_PHONE_LEN:
+        return None, "That doesn't look like a phone number -- it's too long."
+    if not _PHONE_CHARS_RE.match(s):
+        return None, "That doesn't look like a phone number."
+    if sum(1 for c in s if c.isdigit()) < 7:
+        return None, "That doesn't look like a phone number -- not enough digits."
+    return s, None
+
+
+def set_practitioner_phone(pid, phone) -> Tuple[Optional[str], Optional[str]]:
+    """Validate and persist `phone` on `pid`'s practitioners row.
+
+    The write side of practitioner_phone_by_id. Scoped to the phone column
+    and this single id -- `practitioners` is the same table the profile
+    publish path writes, and a broader UPDATE here could clobber a field
+    another surface owns.
+
+    Returns (clean_phone, None) on success, or (None, error_message) on a
+    validation failure. Unlike practitioner_phone_by_id's read-side
+    fail-closed contract, a Supabase write failure here is NOT swallowed --
+    a save that silently didn't happen must not look like success to the
+    caller, so this raises and lets the route surface it.
+    """
+    clean, err = validate_phone(phone)
+    if err:
+        return None, err
+    from db_supabase import supabase_cursor
+    with supabase_cursor() as cur:
+        cur.execute("UPDATE practitioners SET phone=%s, updated_at=now() WHERE id=%s",
+                    (clean or None, str(pid)))
+    return clean, None
 
 
 def get_or_create_dispensary_code(practitioner_id, *, _gen=None) -> str:
