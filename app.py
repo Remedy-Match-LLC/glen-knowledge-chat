@@ -20035,12 +20035,34 @@ def _render_practitioner_page(view, canonical_slug):
     # bookable=False on any exception, same shape as the PORTAL_BASE_URL
     # fallback just above.
     from dashboard import practitioner_booking as _pb
+    bookable = False
     try:
         with db.connect(LOG_DB) as _bcx:
             _bcx.row_factory = sqlite3.Row
-            _pb.init_tables(_bcx)
-            _bpid = _pb.resolve_practitioner_pid(_bcx, canonical_slug)
-            bookable = bool(_bpid) and _pb.is_bookable(_bcx, _bpid)
+            # Cheap local check BEFORE paying for resolve_practitioner_pid
+            # (which opens a fresh unpooled Supabase connection) or
+            # _pb.init_tables (a CREATE TABLE + commit -- a write transaction
+            # on every read of a public page). Deliberately does NOT call
+            # init_tables first: this is the same query init_tables' own
+            # CREATE TABLE IF NOT EXISTS would answer, so a missing table
+            # reads as "nobody has ever enabled booking" (any_enabled stays
+            # None below) rather than something to create here. Today this
+            # is False for all 23 live practitioner pages -- nobody has
+            # enabled booking yet -- so the fast path skips the Supabase
+            # round trip and the write transaction on every single view.
+            # Fails closed to bookable=False on any error, same as the
+            # broader except below (a booking-config problem must never take
+            # down a practitioner's page that is live today).
+            try:
+                any_enabled = _bcx.execute(
+                    "SELECT 1 FROM practitioner_booking_config "
+                    "WHERE enabled=1 LIMIT 1").fetchone()
+            except db.Error:
+                any_enabled = None
+            if any_enabled:
+                _pb.init_tables(_bcx)
+                _bpid = _pb.resolve_practitioner_pid(_bcx, canonical_slug)
+                bookable = bool(_bpid) and _pb.is_bookable(_bcx, _bpid)
     except Exception as e:  # noqa: BLE001
         print(f"[practitioner_site] bookable check failed for "
               f"{canonical_slug!r}: {e!r}", flush=True)

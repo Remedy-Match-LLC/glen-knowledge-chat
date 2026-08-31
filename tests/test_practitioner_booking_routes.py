@@ -1038,6 +1038,62 @@ def test_the_public_page_shows_the_button_only_when_configured(public, logdb, mo
     assert "Book" in public.get("/mary-boyd").get_data(as_text=True)
 
 
+def test_the_bookable_check_skips_resolution_when_nothing_is_configured(
+        public, logdb, monkeypatch):
+    """_render_practitioner_page used to call _pb.init_tables (a CREATE TABLE
+    + commit -- a write transaction on every read) and
+    _pb.resolve_practitioner_pid (a fresh unpooled Supabase connection) on
+    EVERY view of EVERY practitioner page, to answer a question that is
+    False for all 23 live pages today -- nobody has enabled booking yet. The
+    fix runs one cheap local `SELECT 1 FROM practitioner_booking_config
+    WHERE enabled=1 LIMIT 1` first and skips both entirely when it finds
+    nothing. Proven here by making both explode if called at all -- the page
+    must still render successfully, with no Book link, when there is
+    nothing configured."""
+    monkeypatch.setattr(appmod, "_on_portal_host", lambda: True)
+    from dashboard import practitioner_slugs as _ps
+    monkeypatch.setattr(_ps, "resolve", lambda cx, s: ("canonical", s))
+    from dashboard import public_surface as _psurf
+    monkeypatch.setattr(_psurf, "build_practitioner_storefront",
+                        lambda cx, slug: {"slug": slug, "practitioner_name": "Mary Boyd",
+                                          "practice_name": "", "bio": "", "photo_url": "",
+                                          "logo_url": "", "services": [], "location": "",
+                                          "accepting_clients": None, "featured_products": [],
+                                          "catalog_url": "/e", "profit_disclosure": "d",
+                                          "tagline": "", "how_i_work": ""})
+    monkeypatch.setattr(_psurf, "record_view", lambda cx, slug, kind: None)
+
+    # Count calls rather than raising: _render_practitioner_page wraps this
+    # whole block in a broad `except Exception`, so a raise here would be
+    # silently swallowed and this test would pass whether or not the early
+    # exit actually worked (verified: this WAS the first version of this
+    # test, and it stayed green even with the early-exit code deleted).
+    # Counting survives that catch-all.
+    calls = {"init_tables": 0, "resolve_practitioner_pid": 0}
+    real_init_tables = pb.init_tables
+    real_resolve = pb.resolve_practitioner_pid
+
+    def _counted_init_tables(*a, **k):
+        calls["init_tables"] += 1
+        return real_init_tables(*a, **k)
+
+    def _counted_resolve(*a, **k):
+        calls["resolve_practitioner_pid"] += 1
+        return real_resolve(*a, **k)
+    monkeypatch.setattr(pb, "init_tables", _counted_init_tables)
+    monkeypatch.setattr(pb, "resolve_practitioner_pid", _counted_resolve)
+
+    r = public.get("/mary-boyd")
+    assert r.status_code == 200
+    assert "Book" not in r.get_data(as_text=True)
+    assert calls["init_tables"] == 0, (
+        "init_tables (a CREATE TABLE + commit) ran even though the cheap "
+        "local check found nothing configured")
+    assert calls["resolve_practitioner_pid"] == 0, (
+        "resolve_practitioner_pid (a fresh Supabase connection) ran even "
+        "though the cheap local check found nothing configured")
+
+
 # --- Task 7: the visitor-facing booking page -------------------------------
 # Tasks 1-6 built config storage, timezone-correct slot maths, a practitioner
 # config form, the public booking API, the confirmation email/cancel flow,
