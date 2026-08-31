@@ -584,11 +584,19 @@ def test_the_confirmation_states_the_time_in_the_visitor_timezone(public, logdb,
 def test_the_confirmation_includes_a_calendar_invite_matching_the_booking(
         public, logdb, monkeypatch):
     """The task title promises a calendar invite, not just a plain-text
-    confirmation. build_ics's DTSTART is a floating (no-TZID) local
-    timestamp built straight from the practitioner-local start_ts
-    create_booking stored -- the same convention _evox_send_confirmations
-    already uses -- so it must reflect the booking's own start time, not an
-    empty/placeholder ICS."""
+    confirmation, so the .ics must actually be built and attached.
+
+    Same-zone case: no `tz` in the request, so effective_visitor_tz falls
+    back to the practitioner's own zone (CFG["timezone"] = America/Anchorage).
+    Asserts DTSTART is the correct UTC instant for the booking, computed
+    independently via ZoneInfo -- NOT a naive string-equality check against
+    slot["start"] (round 1's version of this test did exactly that, and it
+    would have passed with the timezone handling completely broken, because
+    a floating VEVENT built from the practitioner's own naive clock happens
+    to look identical to slot["start"] when no visitor tz was given). The
+    dedicated cross-zone test below is what actually exercises the case a
+    floating VEVENT gets wrong.
+    """
     sent = []
     monkeypatch.setattr(appmod, "send_evox_email",
                         lambda to, name, subject, html_body, text_body, ics_bytes:
@@ -602,9 +610,104 @@ def test_the_confirmation_includes_a_calendar_invite_matching_the_booking(
     assert sent and sent[0], "no calendar invite was built"
     ics_text = sent[0].decode("utf-8")
     assert "BEGIN:VEVENT" in ics_text
-    from datetime import datetime as _dt
-    expected_dtstart = _dt.fromisoformat(slot["start"][:19]).strftime("%Y%m%dT%H%M%S")
-    assert f"DTSTART:{expected_dtstart}" in ics_text
+    import re as _re
+    from datetime import datetime as _dt, timezone as _tz
+    from zoneinfo import ZoneInfo as _ZI
+    m = _re.search(r"DTSTART:(\d{8}T\d{6}Z)", ics_text)
+    assert m, f"DTSTART is not in RFC 5545 UTC (Z-suffixed) form: {ics_text}"
+    naive_local = _dt.fromisoformat(slot["start"][:19])
+    expected = naive_local.replace(tzinfo=_ZI(CFG["timezone"])) \
+        .astimezone(_tz.utc).strftime("%Y%m%dT%H%M%SZ")
+    assert m.group(1) == expected
+
+
+def test_the_confirmation_invite_uses_the_correct_utc_instant_across_zones(
+        public, logdb, monkeypatch):
+    """The bug this fix exists to close: the confirmation's text body already
+    converts to the visitor's own zone via to_visitor_tz, but a floating
+    (no-Z, no-TZID) VEVENT is defined by RFC 5545 to be interpreted in the
+    VIEWER's zone -- so a client in Auckland booking an Anchorage
+    practitioner would read the RIGHT time in the email text and add the
+    WRONG time to their calendar from the attached invite. DTSTART must be
+    the real UTC instant, and must specifically NOT equal the naive
+    practitioner-local wall-clock string with a bare Z appended (which is
+    what the old floating-time bug would produce if naively patched)."""
+    sent = []
+    monkeypatch.setattr(appmod, "send_evox_email",
+                        lambda to, name, subject, html_body, text_body, ics_bytes:
+                        sent.append(ics_bytes))
+    with _open(logdb) as c:
+        pb.set_config(c, PID, CFG)  # CFG["timezone"] == "America/Anchorage"
+    slot = public.get("/api/book/mary-boyd/slots?session=intro").get_json()["slots"][0]
+    public.post("/api/book/mary-boyd", json={
+        "session": "intro", "start": slot["start"], "tz": "Pacific/Auckland",
+        "name": "A Client", "email": "client@example.com"})
+    ics_text = sent[0].decode("utf-8")
+    import re as _re
+    from datetime import datetime as _dt, timezone as _tz
+    from zoneinfo import ZoneInfo as _ZI
+    m = _re.search(r"DTSTART:(\d{8}T\d{6}Z)", ics_text)
+    assert m, f"DTSTART is not in RFC 5545 UTC (Z-suffixed) form: {ics_text}"
+    naive_local = _dt.fromisoformat(slot["start"][:19])
+    expected_utc = naive_local.replace(tzinfo=_ZI(CFG["timezone"])) \
+        .astimezone(_tz.utc).strftime("%Y%m%dT%H%M%SZ")
+    assert m.group(1) == expected_utc
+    naive_with_bare_z = naive_local.strftime("%Y%m%dT%H%M%S") + "Z"
+    assert m.group(1) != naive_with_bare_z, \
+        "DTSTART must be a real UTC conversion, not the naive practitioner-local time with a bare Z appended"
+
+
+def test_build_ics_with_no_tz_name_is_byte_identical_to_today():
+    """tz_name is additive, not a behavior change to the default path. Five
+    OTHER callers of build_ics (Glen's, Rae's, the masterclass and consult
+    flows) depend on today's floating-VEVENT output and are not in scope
+    for this change, so omitting tz_name must reproduce that output byte
+    for byte. Pinned from the function's actual output, captured before any
+    DTSTART/DTEND change was made."""
+    from dashboard import evox as _ev
+    ics = _ev.build_ics(
+        uid="pin@illtowell.com", start_ts="2026-09-07T09:00:00",
+        end_ts="2026-09-07T09:20:00", summary="Free 20 minute intro call",
+        description="Free 20 minute intro call (phone). To cancel: "
+                    "https://illtowell.com/book/cancel?slug=mary-boyd&"
+                    "start=2026-09-07T09:00:00&token=abc",
+        location="phone")
+    assert ics == (
+        b"BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//illtowell//EVOX//EN\r\n"
+        b"METHOD:REQUEST\r\nBEGIN:VEVENT\r\nUID:pin@illtowell.com\r\n"
+        b"DTSTAMP:20260907T000000\r\nDTSTART:20260907T090000\r\n"
+        b"DTEND:20260907T092000\r\nSUMMARY:Free 20 minute intro call\r\n"
+        b"DESCRIPTION:Free 20 minute intro call (phone). To cancel: "
+        b"https://illtowell.com/book/cancel?slug=mary-boyd&"
+        b"start=2026-09-07T09:00:00&token=abc\r\nLOCATION:phone\r\n"
+        b"ORGANIZER:mailto:rae@illtowell.com\r\nSTATUS:CONFIRMED\r\n"
+        b"END:VEVENT\r\nEND:VCALENDAR\r\n")
+
+
+def test_build_ics_with_tz_name_emits_utc_with_a_z_suffix():
+    """Same wall-clock input as the pinned byte-identity test above, but
+    with tz_name given: DTSTART/DTEND must be the correct UTC conversion
+    (America/Anchorage is UTC-8 in September, daylight time), not the naive
+    local string with a bare Z appended, and DTSTART must end with Z."""
+    from dashboard import evox as _ev
+    from zoneinfo import ZoneInfo as _ZI
+    from datetime import datetime as _dt, timezone as _tz
+    import re as _re
+    ics = _ev.build_ics(
+        uid="pin@illtowell.com", start_ts="2026-09-07T09:00:00",
+        end_ts="2026-09-07T09:20:00", summary="x", description="x",
+        location="phone", tz_name="America/Anchorage")
+    t = ics.decode()
+    expected_start = _dt(2026, 9, 7, 9, 0, 0, tzinfo=_ZI("America/Anchorage")) \
+        .astimezone(_tz.utc).strftime("%Y%m%dT%H%M%SZ")
+    expected_end = _dt(2026, 9, 7, 9, 20, 0, tzinfo=_ZI("America/Anchorage")) \
+        .astimezone(_tz.utc).strftime("%Y%m%dT%H%M%SZ")
+    assert expected_start != "20260907T090000Z", \
+        "test is meaningless if Anchorage has a zero UTC offset on this date"
+    assert f"DTSTART:{expected_start}" in t
+    assert f"DTEND:{expected_end}" in t
+    dtstart_val = _re.search(r"DTSTART:(\S+)", t).group(1)
+    assert dtstart_val.endswith("Z")
 
 
 def test_a_cancel_token_releases_the_slot(public, logdb):

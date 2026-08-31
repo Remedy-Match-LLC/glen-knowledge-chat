@@ -17788,15 +17788,22 @@ def api_public_book(slug):
             f'<p><a href="{_html.escape(cancel_url)}">{_html.escape(cancel_url)}</a></p>'
             if ln == cancel_url else (f"<p>{_html.escape(ln)}</p>" if ln else "")
             for ln in lines)
-        # build_ics's start/end are the same naive practitioner-local
-        # timestamps create_booking stored (b["end_ts"] is what it computed
-        # from start_ts + duration), matching the floating-time VEVENT
-        # _evox_send_confirmations already emits -- not a new convention.
+        # start_ts/b["end_ts"] are naive wall-clock timestamps in the
+        # PRACTITIONER's own zone (cfg["timezone"]) -- that is what
+        # slots_for/create_booking operate in, regardless of which zone the
+        # visitor is viewing the page from. Passing tz_name=cfg["timezone"]
+        # tells build_ics what zone those naive strings are IN, so it emits
+        # a real UTC instant (Z suffix) rather than a floating VEVENT. A
+        # floating VEVENT is interpreted by RFC 5545 in the VIEWER's own
+        # zone, not the practitioner's -- omitting tz_name here would mean
+        # a client in one zone adds the WRONG time to their calendar even
+        # though the text body above (via to_visitor_tz/rendered_tz) shows
+        # the right one.
         ics = _ev.build_ics(uid=b["ics_uid"], start_ts=start_ts, end_ts=b["end_ts"],
                             summary=st["label"],
                             description=f"{st['label']} ({st['medium']}). "
                                         f"To cancel: {cancel_url}",
-                            location=st["medium"])
+                            location=st["medium"], tz_name=cfg["timezone"])
         send_evox_email(email, name, "Your appointment is booked",
                         html_body, text_body, ics)
     except Exception as e:  # noqa: BLE001
