@@ -34,6 +34,17 @@ def _open(path):
         c.close()
 
 
+PRACTITIONER_EMAIL = "her@example.com"
+
+
+def _book_one(client, slug="mary-boyd"):
+    """Book the first offered slot. Returns the POST response."""
+    slot = client.get(f"/api/book/{slug}/slots?session=intro").get_json()["slots"][0]
+    return client.post(f"/api/book/{slug}", json={
+        "session": "intro", "start": slot["start"],
+        "name": "A Client", "email": "client@example.com"})
+
+
 CFG = {"timezone": "America/Anchorage", "office_hours": "1-5:09:00-17:00",
        "session_types": [{"slug": "intro", "label": "Free 20 minute intro call",
                           "duration_min": 20, "medium": "phone"}],
@@ -265,6 +276,9 @@ def public(monkeypatch, logdb):
     # tests/test_chat_velocity.py's own velocity_app fixture.
     from dashboard.chat_limits import VelocityLimiter
     monkeypatch.setattr(appmod, "_chat_velocity", VelocityLimiter())
+    from dashboard import practitioner_portal as _pp
+    monkeypatch.setattr(_pp, "practitioner_email_by_id", lambda pid: PRACTITIONER_EMAIL)
+    monkeypatch.setattr(_pp, "practitioner_phone_by_id", lambda pid: "+15550100")
     return appmod.app.test_client()
 
 
@@ -1553,3 +1567,87 @@ def test_send_sms_never_touches_the_live_crm_under_pytest(monkeypatch):
     monkeypatch.setattr(_g, "_upsert_contact", must_not_run)
     out = _g.send_sms_via_ghl("her@example.com", "New booking")
     assert out.get("skipped") == "pytest"
+
+
+# --- Task 3: fan the notification out across her chosen methods -------------
+
+def _spy_sends(monkeypatch):
+    sends = {"email": [], "sms": []}
+    monkeypatch.setattr(appmod, "send_evox_email",
+                        lambda to, name, subj, html, text, ics: sends["email"].append(
+                            {"to": to, "subj": subj, "ics": ics}))
+    from dashboard import ghl_email as _g
+    monkeypatch.setattr(appmod, "_send_sms_via_ghl",
+                        lambda to, msg, phone="": sends["sms"].append(
+                            {"to": to, "msg": msg, "phone": phone}))
+    return sends
+
+
+def test_email_only_is_the_default_behaviour(public, logdb, monkeypatch):
+    sends = _spy_sends(monkeypatch)
+    with _open(logdb) as c:
+        pb.set_config(c, PID, CFG)          # no notify_methods -> ["email"]
+    _book_one(public)
+    to_her = [s for s in sends["email"] if s["to"] == PRACTITIONER_EMAIL]
+    assert len(to_her) == 1
+    assert to_her[0]["ics"] == b"", "no calendar method chosen, so no invite"
+    assert sends["sms"] == []
+
+
+def test_calendar_attaches_the_invite_to_her_notification(public, logdb, monkeypatch):
+    sends = _spy_sends(monkeypatch)
+    with _open(logdb) as c:
+        pb.set_config(c, PID, dict(CFG, notify_methods=["email", "calendar"]))
+    _book_one(public)
+    to_her = [s for s in sends["email"] if s["to"] == PRACTITIONER_EMAIL]
+    assert to_her and to_her[0]["ics"].startswith(b"BEGIN:VCALENDAR")
+
+
+def test_text_sends_an_sms_with_her_own_timezone(public, logdb, monkeypatch):
+    sends = _spy_sends(monkeypatch)
+    with _open(logdb) as c:
+        pb.set_config(c, PID, dict(CFG, notify_methods=["text"]))
+    _book_one(public)
+    assert len(sends["sms"]) == 1
+    assert "A Client" in sends["sms"][0]["msg"]
+    assert not [s for s in sends["email"] if s["to"] == PRACTITIONER_EMAIL], \
+        "she chose text only; she should not also get an email"
+
+
+def test_phone_only_sends_her_nothing(public, logdb, monkeypatch):
+    """Deliberate. 'Phone' means the client calls her, so there is nothing to
+    send. Her number reaching the client is Task 4's job."""
+    sends = _spy_sends(monkeypatch)
+    with _open(logdb) as c:
+        pb.set_config(c, PID, dict(CFG, notify_methods=["phone"]))
+    _book_one(public)
+    assert not [s for s in sends["email"] if s["to"] == PRACTITIONER_EMAIL]
+    assert sends["sms"] == []
+
+
+def test_a_failing_sms_does_not_fail_the_booking(public, logdb, monkeypatch):
+    def boom(to, msg, phone=""):
+        raise RuntimeError("ghl is down")
+    monkeypatch.setattr(appmod, "_send_sms_via_ghl", boom)
+    with _open(logdb) as c:
+        pb.set_config(c, PID, dict(CFG, notify_methods=["text"]))
+    r = _book_one(public)
+    assert r.status_code == 200
+    with _open(logdb) as c:
+        assert c.execute("SELECT COUNT(*) c FROM evox_bookings "
+                         "WHERE status='booked'").fetchone()["c"] == 1
+
+
+def test_one_failing_method_does_not_stop_the_others(public, logdb, monkeypatch):
+    """She chose text and email. GHL is down. She must still get the email --
+    a fan-out that aborts on the first failure is worse than no fan-out,
+    because it silently drops the channel that would have worked."""
+    sends = _spy_sends(monkeypatch)
+
+    def boom(to, msg, phone=""):
+        raise RuntimeError("ghl is down")
+    monkeypatch.setattr(appmod, "_send_sms_via_ghl", boom)
+    with _open(logdb) as c:
+        pb.set_config(c, PID, dict(CFG, notify_methods=["text", "email"]))
+    _book_one(public)
+    assert [s for s in sends["email"] if s["to"] == PRACTITIONER_EMAIL]

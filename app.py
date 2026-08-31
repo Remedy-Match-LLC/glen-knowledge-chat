@@ -17625,6 +17625,14 @@ def _book_days(n=21):
     return [today + timedelta(days=i) for i in range(n)]
 
 
+def _send_sms_via_ghl(to_email, message, phone=""):
+    """Indirection over ghl_email.send_sms_via_ghl, so the notification
+    fan-out has a single patchable seam and app.py does not import GHL at
+    module load."""
+    from dashboard import ghl_email as _g
+    return _g.send_sms_via_ghl(to_email, message, phone=phone)
+
+
 @app.route("/api/book/<slug>/slots", methods=["GET"])
 def api_public_book_slots(slug):
     """Open times for a practitioner's public booking page.
@@ -17874,7 +17882,29 @@ def api_public_book(slug):
                           f"Who: {name} ({email})\n"
                           f"When: {her_nice} ({cfg['timezone']})\n"
                           f"How: {st['medium']}")
-            send_evox_email(practitioner_email, "", subj, html_body2, text_body2, b"")
+            methods = cfg.get("notify_methods") or ["email"]
+            # "phone" is deliberately absent from this loop. It is not an
+            # outbound channel: it means she wants the client to call her, so
+            # her number goes to the CLIENT (see the confirmation block above)
+            # and nothing is sent to her here. A practitioner who picks only
+            # "phone" correctly receives nothing.
+            if "email" in methods or "calendar" in methods:
+                ics_for_her = ics if "calendar" in methods else b""
+                try:
+                    send_evox_email(practitioner_email, "", subj,
+                                    html_body2, text_body2, ics_for_her)
+                except Exception as e:  # noqa: BLE001
+                    print(f"[public-book] practitioner email failed for {pid!r}: {e!r}",
+                          flush=True)
+            if "text" in methods:
+                try:
+                    sms = (f"New {st['label']} booking: {' '.join(name.split())} "
+                           f"on {her_nice} ({cfg['timezone']}). {email}")
+                    _send_sms_via_ghl(practitioner_email, sms,
+                                      _pp.practitioner_phone_by_id(pid))
+                except Exception as e:  # noqa: BLE001
+                    print(f"[public-book] practitioner sms failed for {pid!r}: {e!r}",
+                          flush=True)
     except Exception as e:  # noqa: BLE001
         print(f"[public-book] practitioner notification failed for {pid!r}: {e!r}", flush=True)
 
