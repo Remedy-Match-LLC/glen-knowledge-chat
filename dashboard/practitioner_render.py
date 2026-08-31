@@ -60,6 +60,8 @@ _STYLE = (
     ".logo{max-width:200px;max-height:80px;display:block;margin:0 0 20px}"
     ".accepting{font-weight:600}"
     ".price{color:var(--muted)}"
+    ".book-btn{display:inline-block;background:var(--ink);color:#fff;"
+    "padding:10px 20px;border-radius:6px;text-decoration:none;font-weight:600}"
     # Dark mode: the deleted JS shell (static/practitioner-storefront.html)
     # carried this. Without it the practitioner page stayed white while the
     # rest of the portal followed the system theme -- restored here, mapped
@@ -208,6 +210,22 @@ def _accepting(view):
     return ('<p class="accepting">Accepting new clients</p>'
             if value
             else '<p class="accepting">Not currently accepting new clients</p>')
+
+
+def _book_block(view, bookable):
+    """The Book link -- only when the practitioner has actually turned
+    booking on. `bookable` is resolved by app.py from
+    practitioner_booking.is_bookable and arrives here as a plain argument;
+    this module still reads no database. Most practitioners have never
+    configured booking, and an empty booking page reached from a hopeful
+    button is a worse first impression than no button at all -- so this
+    renders nothing rather than a disabled or explanatory state."""
+    if not bookable:
+        return ""
+    slug = _esc(view.get("slug") or "")
+    return (f'<section class="book"><h2>Book a session</h2>'
+            f'<p><a class="book-btn" href="/book/{slug}">'
+            f"Book a time</a></p></section>")
 
 
 def _featured(view):
@@ -369,7 +387,7 @@ def _jsonld_tag(view, canonical_url):
     return '<script type="application/ld+json">' + raw + "</script>"
 
 
-def render_page_html(view, *, canonical_url):
+def render_page_html(view, *, canonical_url, bookable=False):
     """Render the complete document for one practitioner.
 
     `view` is the payload from public_surface.build_practitioner_storefront.
@@ -392,6 +410,10 @@ def render_page_html(view, *, canonical_url):
 
     noindex is unconditional in section 5a. Section 5b introduces the content
     bar that decides when it may be lifted.
+
+    `bookable` defaults to False so a caller that forgets it does not
+    advertise a booking page that is not configured. Like every other input
+    here, it arrives as an argument: this module reads no database.
     """
     name = _display_name(view)
     title = build_title(view)
@@ -402,6 +424,7 @@ def render_page_html(view, *, canonical_url):
         + f"<h1>{_esc(name)}</h1>"
         + _line("tagline", view.get("tagline"))
         + _line("practice", view.get("practice_name"))
+        + _book_block(view, bookable)
         + _logo(view)
         + _line("loc", view.get("location"))
         + _accepting(view)

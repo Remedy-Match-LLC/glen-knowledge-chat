@@ -19956,8 +19956,28 @@ def _render_practitioner_page(view, canonical_slug):
         print(f"[_render_practitioner_page] PORTAL_BASE_URL is unset -- "
               f"omitting canonical/og:url for slug {canonical_slug!r}",
               flush=True)
+    # Resolve whether to show the Book link. is_bookable requires a config
+    # that exists, is enabled, and offers at least one session type -- most
+    # practitioners have configured none of that, and an empty booking page
+    # reached from a hopeful button is a worse first impression than no
+    # button at all. A booking-config problem must never take down a
+    # practitioner's page that is live today, so this fails closed to
+    # bookable=False on any exception, same shape as the PORTAL_BASE_URL
+    # fallback just above.
+    from dashboard import practitioner_booking as _pb
+    try:
+        with db.connect(LOG_DB) as _bcx:
+            _bcx.row_factory = sqlite3.Row
+            _pb.init_tables(_bcx)
+            _bpid = _pb.resolve_practitioner_pid(_bcx, canonical_slug)
+            bookable = bool(_bpid) and _pb.is_bookable(_bcx, _bpid)
+    except Exception as e:  # noqa: BLE001
+        print(f"[practitioner_site] bookable check failed for "
+              f"{canonical_slug!r}: {e!r}", flush=True)
+        bookable = False
     resp = Response(
-        _prender.render_page_html(view, canonical_url=canonical_url),
+        _prender.render_page_html(view, canonical_url=canonical_url,
+                                  bookable=bookable),
         mimetype="text/html")
     resp.headers["X-Robots-Tag"] = "noindex"
     resp.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"

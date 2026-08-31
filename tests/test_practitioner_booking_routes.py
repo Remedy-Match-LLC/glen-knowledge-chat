@@ -843,3 +843,26 @@ def test_a_get_request_cannot_cancel_a_booking(public, logdb):
     assert g.status_code == 405
     with _open(logdb) as c:
         assert c.execute("SELECT status FROM evox_bookings").fetchone()["status"] == "booked"
+
+
+def test_the_public_page_shows_the_button_only_when_configured(public, logdb, monkeypatch):
+    """The Book link on the public practitioner page must reflect real config,
+    not just that the booking feature exists -- 22 of 23 practitioners have
+    never configured it, and an empty booking page is worse than no button."""
+    monkeypatch.setattr(appmod, "_on_portal_host", lambda: True)
+    from dashboard import practitioner_slugs as _ps
+    monkeypatch.setattr(_ps, "resolve", lambda cx, s: ("canonical", s))
+    from dashboard import public_surface as _psurf
+    monkeypatch.setattr(_psurf, "build_practitioner_storefront",
+                        lambda cx, slug: {"slug": slug, "practitioner_name": "Mary Boyd",
+                                          "practice_name": "", "bio": "", "photo_url": "",
+                                          "logo_url": "", "services": [], "location": "",
+                                          "accepting_clients": None, "featured_products": [],
+                                          "catalog_url": "/e", "profit_disclosure": "d",
+                                          "tagline": "", "how_i_work": ""})
+    monkeypatch.setattr(_psurf, "record_view", lambda cx, slug, kind: None)
+
+    assert "Book" not in public.get("/mary-boyd").get_data(as_text=True)
+    with _open(logdb) as c:
+        pb.set_config(c, PID, CFG)
+    assert "Book" in public.get("/mary-boyd").get_data(as_text=True)

@@ -410,6 +410,25 @@ def test_no_raw_angle_bracket_survives_in_the_jsonld_script_body():
     assert data[1]["serviceType"] == ["<!--<script>"]
 
 
+def test_a_bookable_practitioner_gets_a_book_link():
+    html = pr.render_page_html(_view(), canonical_url=CANON, bookable=True)
+    assert "/book/mary-boyd" in html or 'id="book"' in html
+    assert "Book" in html
+
+
+def test_a_practitioner_without_booking_gets_no_book_link():
+    """Most practitioners will never turn this on. An empty booking page is a
+    worse first impression than no button."""
+    html = pr.render_page_html(_view(), canonical_url=CANON, bookable=False)
+    assert "Book" not in html
+
+
+def test_bookable_defaults_to_false():
+    """A caller that forgets the argument must not advertise booking that does
+    not work."""
+    assert "Book" not in pr.render_page_html(_view(), canonical_url=CANON)
+
+
 def test_a_non_string_field_value_renders_rather_than_raising():
     """Six call sites did `(view.get(k) or "").strip()` instead of
     `str(view.get(k) or "").strip()`: tagline, practice_name, photo_url,
