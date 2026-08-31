@@ -15372,6 +15372,18 @@ def membership_category(email):
                         "AND source!='biofield_trial' LIMIT 1", (email, now_iso)).fetchone()
                     if not other_paid:
                         return "trial"
+                # A prepaid term, care taster, founding grant, studio credit, or
+                # other non-trial day-based membership has no subscriptions row.
+                # It is nevertheless a fully paid membership for every access
+                # surface. Returning ``none`` here made the portal label these
+                # members as free even while _is_paid_member correctly granted
+                # pricing and coaching.
+                paid_grant = cx.execute(
+                    "SELECT 1 FROM memberships WHERE email=? "
+                    "AND (expires_at IS NULL OR expires_at > ?) "
+                    "AND source!='biofield_trial' LIMIT 1", (email, now_iso)).fetchone()
+                if paid_grant:
+                    return "full"
             return cat
     except Exception:
         return "none"
@@ -31593,7 +31605,8 @@ def api_client_portal_view(token):
                                        cart_enabled=_PORTAL_CART_ENABLED,
                                        brain_enabled=_PORTAL_BRAIN_TILE_ENABLED,
                                        brain_url=_PORTAL_BRAIN_URL,
-                                       caregiver_pay_enabled=_caregiver_pay_enabled())
+                                       caregiver_pay_enabled=_caregiver_pay_enabled(),
+                                       paid_member=_is_paid_member(ident.email))
             if view is not None:
                 from dashboard import portal_card_state as _portal_cards
                 _portal_cards.init_table(cx)

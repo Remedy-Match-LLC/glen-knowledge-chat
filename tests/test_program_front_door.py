@@ -174,6 +174,15 @@ def test_care_taster_outranks_lingering_trial_grant(monkeypatch, tmp_path):
     assert app_module._is_paid_member("d@x.com") is True
 
 
+def test_non_trial_day_grant_is_full_membership_category(monkeypatch, tmp_path):
+    """Prepaid terms must render as members, not merely pass the pricing gate."""
+    app_module = _load_app(); db = _fresh(app_module, monkeypatch, tmp_path)
+    with sqlite3.connect(db) as cx:
+        _grant(cx, "prepaid@x.com", "prepay_12mo", days=365)
+    assert app_module.membership_category("prepaid@x.com") == "full"
+    assert app_module._is_paid_member("prepaid@x.com") is True
+
+
 # ── Task 3: credit the $1 deposit to points, auto-redeem at program checkout ──
 
 def _mock_paid_biofield_trial_session(app_module, monkeypatch, email="buyer@x.com",
