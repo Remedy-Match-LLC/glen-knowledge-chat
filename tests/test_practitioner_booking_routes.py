@@ -306,6 +306,20 @@ def test_slots_are_public_and_need_no_token(public, logdb):
     assert isinstance(r.get_json()["slots"], list)
 
 
+def test_the_public_slots_route_never_carries_her_number(public, logdb):
+    """get_config gained a sensitive field, so every reader of it owes an
+    audit. This route is public and unauthenticated. It builds its response
+    from an explicit list of keys rather than echoing the config, and that
+    has to stay true: her number reaches the public only through the opt-in
+    gate in public_surface, never as a side effect of asking for times."""
+    with _open(logdb) as c:
+        pb.set_config(c, PID, dict(CFG, notify_methods=["phone"], phone=PHONE))
+    body = public.get("/api/book/mary-boyd/slots?session=intro").get_data(as_text=True)
+    assert PHONE not in body
+    assert "phone" not in public.get(
+        "/api/book/mary-boyd/slots?session=intro").get_json()
+
+
 def test_slots_are_rendered_in_the_visitor_timezone(public, logdb):
     with _open(logdb) as c:
         pb.set_config(c, PID, CFG)
