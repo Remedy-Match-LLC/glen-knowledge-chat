@@ -17820,6 +17820,40 @@ def api_public_book(slug):
                         html_body, text_body, ics)
     except Exception as e:  # noqa: BLE001
         print(f"[public-book] confirmation failed for {email!r}: {e!r}", flush=True)
+
+    # Both sibling flows notify the practitioner (_evox_send_confirmations ->
+    # Rae, _consult_send_confirmations -> Glen). This route only emailed the
+    # client: Mary could enable booking, a stranger takes her Tuesday 9am,
+    # and she finds out when they call. Her address comes from the
+    # practitioner record the slug already resolved to (pid) -- not from
+    # anything the visitor submitted. The time is start_ts AS-IS: it is
+    # already naive wall-clock time in HER OWN zone (cfg["timezone"]), the
+    # same value slots_for/create_booking operate in, so no conversion is
+    # needed here -- converting it to the VISITOR's zone (rendered_tz above)
+    # would be wrong for the person actually reading this email. Its own
+    # try/except, same shape as the client send just above: create_booking
+    # already committed, so a failed notification must never fail the
+    # booking.
+    try:
+        from dashboard import practitioner_portal as _pp
+        import html as _html2
+        practitioner_email = _pp.practitioner_email_by_id(pid)
+        if practitioner_email:
+            her_nice = start_ts.replace("T", " ")
+            subj = f"New booking: {name}"
+            html_body2 = (
+                f"<p>New {_html2.escape(st['label'])} booking.</p>"
+                f"<p>Who: <b>{_html2.escape(name)}</b> ({_html2.escape(email)})</p>"
+                f"<p>When: <b>{_html2.escape(her_nice)} ({_html2.escape(cfg['timezone'])})</b></p>"
+                f"<p>How: {_html2.escape(st['medium'])}</p>")
+            text_body2 = (f"New {st['label']} booking.\n"
+                          f"Who: {name} ({email})\n"
+                          f"When: {her_nice} ({cfg['timezone']})\n"
+                          f"How: {st['medium']}")
+            send_evox_email(practitioner_email, "", subj, html_body2, text_body2, b"")
+    except Exception as e:  # noqa: BLE001
+        print(f"[public-book] practitioner notification failed for {pid!r}: {e!r}", flush=True)
+
     return jsonify({"ok": True, "start": start_ts, "cancel_token": token})
 
 

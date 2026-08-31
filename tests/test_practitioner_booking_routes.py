@@ -650,6 +650,92 @@ def test_booking_sends_a_confirmation_to_the_client(public, logdb, monkeypatch):
     assert "/book/cancel?" in body
 
 
+def test_the_practitioner_is_notified_of_a_new_booking(public, logdb, monkeypatch):
+    """CRITICAL: both sibling flows notify the practitioner
+    (_evox_send_confirmations -> Rae, _consult_send_confirmations -> Glen).
+    This route only emailed the client -- Mary could enable booking, a
+    stranger takes her Tuesday 9am, and she finds out when they call. Her
+    address comes from the practitioner record the slug already resolved to
+    (pid), never from anything the visitor submitted, and the time is shown
+    in HER OWN configured zone (CFG["timezone"]), not the visitor's."""
+    from dashboard import practitioner_portal as _pp
+    monkeypatch.setattr(_pp, "practitioner_email_by_id",
+                        lambda pid: "mary@example.com" if pid == PID else "")
+    sent = []
+    monkeypatch.setattr(appmod, "send_evox_email",
+                        lambda to, name, subject, html_body, text_body, ics_bytes:
+                        sent.append({"to": to, "subject": subject, "body": text_body}))
+    with _open(logdb) as c:
+        pb.set_config(c, PID, CFG)
+    slot = public.get("/api/book/mary-boyd/slots?session=intro").get_json()["slots"][0]
+    public.post("/api/book/mary-boyd", json={
+        "session": "intro", "start": slot["start"], "tz": "Pacific/Auckland",
+        "name": "A Client", "email": "client@example.com"})
+    assert len(sent) == 2, \
+        "expected both the client confirmation and the practitioner notification"
+    to_addrs = {m["to"] for m in sent}
+    assert "client@example.com" in to_addrs
+    assert "mary@example.com" in to_addrs
+    note = next(m for m in sent if m["to"] == "mary@example.com")
+    assert "A Client" in note["body"]
+    assert "client@example.com" in note["body"]
+    # Her own zone, not the visitor's Pacific/Auckland -- start_ts is already
+    # naive practitioner-local wall time, so it must appear UNCONVERTED.
+    assert CFG["timezone"] in note["body"]
+    assert slot["start"].replace("T", " ") in note["body"]
+
+
+def test_a_failed_practitioner_notification_does_not_fail_the_booking(
+        public, logdb, monkeypatch):
+    """create_booking already committed by the time this send runs. If it
+    raises, the booking is still real -- the client must still get a 200
+    with a valid cancel_token, and their own confirmation must still go
+    out."""
+    from dashboard import practitioner_portal as _pp
+    monkeypatch.setattr(_pp, "practitioner_email_by_id",
+                        lambda pid: "mary@example.com" if pid == PID else "")
+    sent = []
+
+    def _boom_for_practitioner(to, name, subject, html_body, text_body, ics_bytes):
+        if to == "mary@example.com":
+            raise RuntimeError("smtp down")
+        sent.append(to)
+    monkeypatch.setattr(appmod, "send_evox_email", _boom_for_practitioner)
+    with _open(logdb) as c:
+        pb.set_config(c, PID, CFG)
+    slot = public.get("/api/book/mary-boyd/slots?session=intro").get_json()["slots"][0]
+    r = public.post("/api/book/mary-boyd", json={
+        "session": "intro", "start": slot["start"],
+        "name": "A Client", "email": "client@example.com"})
+    assert r.status_code == 200, r.get_data(as_text=True)
+    assert r.get_json()["cancel_token"]
+    assert sent == ["client@example.com"], "the client confirmation must still be sent"
+    with _open(logdb) as c:
+        row = c.execute("SELECT status FROM evox_bookings").fetchone()
+        assert row["status"] == "booked"
+
+
+def test_no_practitioner_email_on_file_skips_notification_without_failing(
+        public, logdb, monkeypatch):
+    """practitioner_email_by_id fails closed to '' (Supabase down, or no
+    matching row) -- that must not be treated as an address to mail, and
+    must not break the booking or the client's own confirmation."""
+    from dashboard import practitioner_portal as _pp
+    monkeypatch.setattr(_pp, "practitioner_email_by_id", lambda pid: "")
+    sent = []
+    monkeypatch.setattr(appmod, "send_evox_email",
+                        lambda to, name, subject, html_body, text_body, ics_bytes:
+                        sent.append(to))
+    with _open(logdb) as c:
+        pb.set_config(c, PID, CFG)
+    slot = public.get("/api/book/mary-boyd/slots?session=intro").get_json()["slots"][0]
+    r = public.post("/api/book/mary-boyd", json={
+        "session": "intro", "start": slot["start"],
+        "name": "A Client", "email": "client@example.com"})
+    assert r.status_code == 200
+    assert sent == ["client@example.com"]
+
+
 def test_the_confirmation_states_the_time_in_the_visitor_timezone(public, logdb, monkeypatch):
     sent = []
     monkeypatch.setattr(appmod, "send_evox_email",
