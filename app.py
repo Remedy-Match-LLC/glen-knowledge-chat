@@ -17587,20 +17587,19 @@ def api_practitioner_booking_config_get():
     if not pid:
         return jsonify({"ok": False, "error": "not signed in"}), 401
     from dashboard import practitioner_booking as _pb
-    from dashboard import practitioner_portal as _pp
     with db.connect(LOG_DB) as cx:
         cx.row_factory = sqlite3.Row
         _pb.init_tables(cx)
         cfg = _pb.get_config(cx, pid)
-    # Read-only, informational: the booking form shows this next to the
-    # phone/text checkboxes so she can see, before she ticks either one,
-    # whether a number is even on file -- practitioner_phone_by_id never
-    # raises, so a Supabase hiccup here degrades to "" (looks unset), never
-    # a 500 on her config page.
+    # Her BOOKING number, read from the same config row it is saved on -- not
+    # from practitioners.phone, which is the directory number the public
+    # practitioner-finder publishes and a different fact entirely. Surfaced
+    # as its own key as well as inside `config` so the form has one place to
+    # read it from whether or not a config exists yet.
     return jsonify({"ok": True, "config": cfg,
                     "default_timezone": _pb.DEFAULT_TIMEZONE,
                     "media": list(_pb.MEDIA),
-                    "practitioner_phone": _pp.practitioner_phone_by_id(pid)})
+                    "practitioner_phone": (cfg or {}).get("phone") or ""})
 
 
 @app.route("/api/practitioner/booking-config", methods=["POST"])
@@ -17621,32 +17620,6 @@ def api_practitioner_booking_config_post():
     except _pb.BookingConfigError as e:
         return jsonify({"ok": False, "error": str(e)}), 400
     return jsonify({"ok": True, "config": clean})
-
-
-@app.route("/api/practitioner/phone", methods=["POST"])
-def api_practitioner_phone_post():
-    """Save the practitioner's own phone number.
-
-    The write side of practitioner_phone_by_id, and the piece that was
-    missing when the "phone"/"text" notify methods shipped: `phone` on the
-    practitioners row is otherwise written in exactly one place --
-    validate_registration, at signup -- so any practitioner who registered
-    before providing one, or who never had a reason to, had no way to add it
-    afterwards. Those two notify methods were inert for her.
-    """
-    pid = _practitioner_session_pid()
-    if not pid:
-        return jsonify({"ok": False, "error": "not signed in"}), 401
-    from dashboard import practitioner_portal as _pp
-    body = request.get_json(silent=True) or {}
-    # pid comes from the SESSION, same rule as booking-config POST just
-    # above -- a practitioner_id in the body is ignored on purpose, since
-    # honouring it would let any signed-in practitioner overwrite another's
-    # number.
-    clean, err = _pp.set_practitioner_phone(pid, body.get("phone"))
-    if err:
-        return jsonify({"ok": False, "error": err}), 400
-    return jsonify({"ok": True, "phone": clean})
 
 
 _BOOK_EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s.]+\.[^@\s]+$")
@@ -17862,16 +17835,12 @@ def api_public_book(slug):
                  "If you need to cancel, use this link:", cancel_url, "",
                  "See you then."]
         methods = cfg.get("notify_methods") or ["email"]
-        # Local import, not a reliance on the module-level `_pp` (imported at
-        # top of file): the practitioner-notification block below also does
-        # `from dashboard import practitioner_portal as _pp`, and Python
-        # treats a name assigned anywhere in a function as local to the whole
-        # function -- that later import turns `_pp` into an as-yet-unbound
-        # local one here, raising UnboundLocalError rather than falling back
-        # to the module global. Importing it here too keeps this block
-        # correct regardless of what the block below does with the name.
-        from dashboard import practitioner_portal as _pp
-        her_phone = _pp.practitioner_phone_by_id(pid) if "phone" in methods else ""
+        # Her booking number, off the config row she saved it on. Gated on
+        # "phone" being among her chosen methods, and there is no fallback to
+        # practitioners.phone -- that is the directory number the public
+        # practitioner-finder publishes, a different fact she did not offer
+        # to her booking clients.
+        her_phone = (cfg.get("phone") or "") if "phone" in methods else ""
         # She asked to be reached by phone, so the client needs the number. Without
         # this a phone-medium booking gives neither party a way to call the other.
         if her_phone:
@@ -17960,8 +17929,20 @@ def api_public_book(slug):
                 try:
                     sms = (f"New {st['label']} booking: {' '.join(name.split())} "
                            f"on {her_nice} ({cfg['timezone']}). {email}")
-                    _send_sms_via_ghl(practitioner_email, sms,
-                                      _pp.practitioner_phone_by_id(pid))
+                    res = _send_sms_via_ghl(practitioner_email, sms,
+                                            cfg.get("phone") or "")
+                    # send_sms_via_ghl NEVER raises -- by design, since it is
+                    # called on a booking that has already committed. It
+                    # returns {"skipped": reason} instead, so the except
+                    # below cannot fire for the ordinary failure and the
+                    # reason was previously computed and thrown away: a text
+                    # that never went out looked identical to one that did.
+                    # Logged in the same shape as the sibling email failure
+                    # just above.
+                    if not (res or {}).get("id"):
+                        why = (res or {}).get("skipped") or repr(res)
+                        print(f"[public-book] practitioner sms not sent for "
+                              f"{pid!r}: {why}", flush=True)
                 except Exception as e:  # noqa: BLE001
                     print(f"[public-book] practitioner sms failed for {pid!r}: {e!r}",
                           flush=True)

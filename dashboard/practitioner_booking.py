@@ -90,6 +90,51 @@ def _validate_notify_methods(value):
     return out
 
 
+MAX_PHONE_LEN = 32
+# Deliberately permissive: digits, whitespace, and the punctuation that shows
+# up in a phone number written by hand almost anywhere (+, -, ., parens).
+# This number is DISPLAYED to a client, never dialled programmatically, so
+# there is no single correct international format to enforce -- a
+# practitioner in Anchorage and one in Auckland write numbers differently,
+# and a validator that rejects a legitimate number is worse than one that
+# accepts an odd one. This only catches input that plainly cannot be a
+# phone number at all.
+_PHONE_CHARS_RE = re.compile(r"^[+()\-.\s\d]+$")
+
+
+def validate_phone(raw):
+    """Clean a practitioner-submitted booking phone number, or reject it.
+
+    Returns (clean, None) on success -- clean may be "" to CLEAR a
+    previously-saved number -- or (None, error_message) to reject.
+
+    Lives here, not in practitioner_portal, because this is the BOOKING
+    phone: the number she wants her booking clients to call. It is stored on
+    practitioner_booking_config, not on practitioners.phone, which is the
+    directory number the public practitioner-finder publishes. They may
+    legitimately differ, and conflating them published a booking number in
+    the finder for every practitioner who set one.
+    """
+    s = str(raw or "").strip()
+    if not s:
+        return "", None
+    if len(s) > MAX_PHONE_LEN:
+        return None, "That doesn't look like a phone number -- it's too long."
+    if not _PHONE_CHARS_RE.match(s):
+        return None, "That doesn't look like a phone number."
+    if sum(1 for c in s if c.isdigit()) < 7:
+        return None, "That doesn't look like a phone number -- not enough digits."
+    return s, None
+
+
+# Ticking either of these without a number on file is a booking nobody hears
+# about: "phone" puts no Call: line in the client's confirmation AND sends
+# her nothing (it is not an outbound channel), and "text" hands GHL an empty
+# number, which it declines. Both are silent. set_config refuses the
+# combination instead.
+METHODS_NEEDING_A_PHONE = ("phone", "text")
+
+
 def init_tables(cx) -> None:
     cx.execute("""CREATE TABLE IF NOT EXISTS practitioner_booking_config (
         practitioner_id TEXT PRIMARY KEY,
@@ -100,7 +145,7 @@ def init_tables(cx) -> None:
         buffer_min INTEGER NOT NULL DEFAULT 0,
         enabled INTEGER NOT NULL DEFAULT 0,
         updated_at TEXT)""")
-    for _col, _decl in (("notify_methods", "TEXT"),):
+    for _col, _decl in (("notify_methods", "TEXT"), ("phone", "TEXT")):
         try:
             cx.execute(f"ALTER TABLE practitioner_booking_config "
                        f"ADD COLUMN {_col} {_decl}")
@@ -222,11 +267,25 @@ def validate_config(cfg) -> dict:
     for name, val, hi in (("notice_hours", notice, 720), ("buffer_min", buffer_min, 240)):
         if not isinstance(val, int) or isinstance(val, bool) or not (0 <= val <= hi):
             raise BookingConfigError(f"{name} must be a whole number between 0 and {hi}.")
+    # Three distinct states, and they must stay distinct. A `phone` key that
+    # is absent (or None) means "not supplied by this caller" -- leave
+    # whatever is already stored alone. A key present but empty means CLEAR
+    # it, which is a deliberate action she is entitled to take. Collapsing
+    # the two would let any config save that simply doesn't carry the field
+    # wipe her number.
+    raw_phone = cfg.get("phone")
+    if raw_phone is None:
+        phone = None
+    else:
+        phone, phone_err = validate_phone(raw_phone)
+        if phone_err:
+            raise BookingConfigError(phone_err)
     return {"timezone": _validate_timezone(cfg.get("timezone")),
             "office_hours": _validate_hours(cfg.get("office_hours")),
             "session_types": _validate_session_types(cfg.get("session_types") or []),
             "notice_hours": notice, "buffer_min": buffer_min,
             "enabled": bool(cfg.get("enabled")),
+            "phone": phone,
             "notify_methods": _validate_notify_methods(cfg.get("notify_methods"))}
 
 
@@ -234,7 +293,8 @@ def get_config(cx, pid):
     try:
         row = cx.execute(
             "SELECT timezone, office_hours, session_types, notice_hours, "
-            "buffer_min, enabled, notify_methods FROM practitioner_booking_config "
+            "buffer_min, enabled, notify_methods, phone "
+            "FROM practitioner_booking_config "
             "WHERE practitioner_id=?", (str(pid),)).fetchone()
     except db.Error:
         return None
@@ -260,25 +320,57 @@ def get_config(cx, pid):
     return {"timezone": timezone, "office_hours": office_hours,
             "session_types": types, "notice_hours": row["notice_hours"],
             "buffer_min": row["buffer_min"], "enabled": bool(row["enabled"]),
-            "notify_methods": notify_methods}
+            "notify_methods": notify_methods,
+            # Always a string. NULL is "she has not given one", which reads
+            # as "" everywhere downstream -- never as a reason to go looking
+            # for another number somewhere else.
+            "phone": (row["phone"] or "").strip()}
+
+
+def stored_phone(cx, pid) -> str:
+    """The booking phone already saved for `pid`, or "".
+
+    Deliberately NOT a fallback to practitioners.phone. That column is the
+    public directory number the practitioner-finder publishes; reading it in
+    here would publish it on her booking page the moment she ticks "phone",
+    without her ever having typed it. She types the number or it does not
+    exist.
+    """
+    try:
+        row = cx.execute("SELECT phone FROM practitioner_booking_config "
+                         "WHERE practitioner_id=?", (str(pid),)).fetchone()
+    except db.Error:
+        return ""
+    return (row["phone"] or "").strip() if row else ""
 
 
 def set_config(cx, pid, cfg) -> dict:
     clean = validate_config(cfg)
+    # None means this save did not carry the field at all, so whatever is
+    # already stored stands. "" means she cleared it on purpose.
+    phone = stored_phone(cx, pid) if clean["phone"] is None else clean["phone"]
+    needs = [m for m in METHODS_NEEDING_A_PHONE if m in clean["notify_methods"]]
+    if needs and not phone:
+        raise BookingConfigError(
+            "Add your phone number before choosing " + " or ".join(needs)
+            + ". Without one, text has nothing to send to and phone gives "
+              "the client no number to call, so a booking would reach "
+              "neither of you.")
+    clean["phone"] = phone
     cx.execute(
         "INSERT INTO practitioner_booking_config (practitioner_id, timezone, "
         "office_hours, session_types, notice_hours, buffer_min, enabled, "
-        "notify_methods, updated_at) "
-        "VALUES (?,?,?,?,?,?,?,?,?) "
+        "notify_methods, phone, updated_at) "
+        "VALUES (?,?,?,?,?,?,?,?,?,?) "
         "ON CONFLICT(practitioner_id) DO UPDATE SET timezone=excluded.timezone, "
         "office_hours=excluded.office_hours, session_types=excluded.session_types, "
         "notice_hours=excluded.notice_hours, buffer_min=excluded.buffer_min, "
         "enabled=excluded.enabled, notify_methods=excluded.notify_methods, "
-        "updated_at=excluded.updated_at",
+        "phone=excluded.phone, updated_at=excluded.updated_at",
         (str(pid), clean["timezone"], clean["office_hours"],
          json.dumps(clean["session_types"]), clean["notice_hours"],
          clean["buffer_min"], 1 if clean["enabled"] else 0,
-         json.dumps(clean["notify_methods"]),
+         json.dumps(clean["notify_methods"]), phone or None,
          datetime.now(_tz.utc).isoformat()))
     cx.commit()
     return clean

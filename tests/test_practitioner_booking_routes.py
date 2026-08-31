@@ -50,6 +50,19 @@ CFG = {"timezone": "America/Anchorage", "office_hours": "1-5:09:00-17:00",
                           "duration_min": 20, "medium": "phone"}],
        "notice_hours": 24, "buffer_min": 0, "enabled": True}
 
+# Her BOOKING number, saved on the config row itself. set_config refuses a
+# config naming "phone" or "text" with no number, so every test below that
+# picks one of those methods has to supply it -- which is the point: ticking
+# a method that needs a number, without one, is a booking neither party
+# hears about.
+PHONE = "+15550100"
+
+
+def _cfg_phone(**over):
+    c = dict(CFG, phone=PHONE)
+    c.update(over)
+    return c
+
 
 @pytest.fixture
 def logdb(tmp_path, monkeypatch):
@@ -278,7 +291,10 @@ def public(monkeypatch, logdb):
     monkeypatch.setattr(appmod, "_chat_velocity", VelocityLimiter())
     from dashboard import practitioner_portal as _pp
     monkeypatch.setattr(_pp, "practitioner_email_by_id", lambda pid: PRACTITIONER_EMAIL)
-    monkeypatch.setattr(_pp, "practitioner_phone_by_id", lambda pid: "+15550100")
+    # No phone stub. Her booking number lives on the booking config row the
+    # tests below write themselves (PHONE / CFG_WITH_PHONE), not on
+    # practitioners.phone -- the directory column the unauthenticated
+    # practitioner-finder publishes.
     return appmod.app.test_client()
 
 
@@ -1494,20 +1510,11 @@ def test_the_cancel_url_carries_the_visitor_instant_and_zone(public, logdb, monk
     assert qs.get("start") == [slot["start"]]
 
 
-# --- Task 2: practitioner phone lookup + GHL SMS sender ---------------------
-
-def test_practitioner_phone_is_empty_when_unavailable(monkeypatch):
-    """Same contract as practitioner_email_by_id: a Supabase failure returns
-    "", never an exception, because the caller is mid-notification on a
-    booking that is already committed."""
-    from dashboard import practitioner_portal as _pp
-    import db_supabase
-
-    def boom():
-        raise RuntimeError("supabase is down")
-    monkeypatch.setattr(db_supabase, "supabase_cursor", boom)
-    assert _pp.practitioner_phone_by_id("pid-x") == ""
-
+# --- Task 2: GHL SMS sender ------------------------------------------------
+#
+# The phone LOOKUP that used to live here is gone. It read practitioners.phone
+# over Supabase; her booking number is now a column on the booking config row
+# and needs no lookup at all.
 
 def test_sms_is_skipped_not_raised_when_ghl_is_unconfigured(monkeypatch):
     from dashboard import ghl_email as _g
@@ -1640,7 +1647,7 @@ def test_calendar_alone_still_sends_the_notification_email(public, logdb, monkey
 def test_text_sends_an_sms_with_her_own_timezone(public, logdb, monkeypatch):
     sends = _spy_sends(monkeypatch)
     with _open(logdb) as c:
-        pb.set_config(c, PID, dict(CFG, notify_methods=["text"]))
+        pb.set_config(c, PID, dict(CFG, notify_methods=["text"], phone=PHONE))
     _book_one(public)
     assert len(sends["sms"]) == 1
     assert "A Client" in sends["sms"][0]["msg"]
@@ -1653,10 +1660,55 @@ def test_phone_only_sends_her_nothing(public, logdb, monkeypatch):
     send. Her number reaching the client is Task 4's job."""
     sends = _spy_sends(monkeypatch)
     with _open(logdb) as c:
-        pb.set_config(c, PID, dict(CFG, notify_methods=["phone"]))
+        pb.set_config(c, PID, dict(CFG, notify_methods=["phone"], phone=PHONE))
     _book_one(public)
     assert not [s for s in sends["email"] if s["to"] == PRACTITIONER_EMAIL]
     assert sends["sms"] == []
+
+
+def test_a_declined_sms_says_why_in_the_log(public, logdb, monkeypatch, capsys):
+    """send_sms_via_ghl NEVER raises -- by design, since the booking has
+    already committed -- so it returns {"skipped": reason} instead and the
+    surrounding except cannot fire. The call site used to discard that return
+    value entirely: a text that never went out was indistinguishable from one
+    that did, and the reason had already been computed. Logged now, in the
+    same shape as the sibling email failure."""
+    monkeypatch.setattr(appmod, "_send_sms_via_ghl",
+                        lambda to, msg, phone="": {"skipped": "ghl returned 401: nope"})
+    with _open(logdb) as c:
+        pb.set_config(c, PID, dict(CFG, notify_methods=["text"], phone=PHONE))
+    _book_one(public)
+    out = capsys.readouterr().out
+    assert "ghl returned 401" in out, \
+        "the reason the text was declined must reach the log, not be discarded"
+    assert "public-book" in out and PID in out, \
+        "same log shape as the sibling email failure: prefix and practitioner id"
+
+
+def test_a_sent_sms_is_not_logged_as_a_failure(public, logdb, monkeypatch):
+    """The other direction, so the guard above cannot be satisfied by logging
+    unconditionally."""
+    monkeypatch.setattr(appmod, "_send_sms_via_ghl",
+                        lambda to, msg, phone="": {"id": "m-1", "via": "ghl-sms"})
+    with _open(logdb) as c:
+        pb.set_config(c, PID, dict(CFG, notify_methods=["text"], phone=PHONE))
+    import io
+    import contextlib
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        _book_one(public)
+    assert "sms not sent" not in buf.getvalue()
+
+
+def test_the_sms_carries_her_booking_number_not_a_directory_lookup(public, logdb, monkeypatch):
+    """GHL addresses by contact and needs a number on the contact to be
+    textable. It must be the number she saved on this config, which is also
+    the only number this code path has any more."""
+    sends = _spy_sends(monkeypatch)
+    with _open(logdb) as c:
+        pb.set_config(c, PID, dict(CFG, notify_methods=["text"], phone=PHONE))
+    _book_one(public)
+    assert sends["sms"] and sends["sms"][0]["phone"] == PHONE
 
 
 def test_a_failing_sms_does_not_fail_the_booking(public, logdb, monkeypatch):
@@ -1664,7 +1716,7 @@ def test_a_failing_sms_does_not_fail_the_booking(public, logdb, monkeypatch):
         raise RuntimeError("ghl is down")
     monkeypatch.setattr(appmod, "_send_sms_via_ghl", boom)
     with _open(logdb) as c:
-        pb.set_config(c, PID, dict(CFG, notify_methods=["text"]))
+        pb.set_config(c, PID, dict(CFG, notify_methods=["text"], phone=PHONE))
     r = _book_one(public)
     assert r.status_code == 200
     with _open(logdb) as c:
@@ -1703,7 +1755,7 @@ def test_one_failing_method_does_not_stop_the_others(public, logdb, monkeypatch)
         raise RuntimeError("ghl is down")
     monkeypatch.setattr(appmod, "_send_sms_via_ghl", boom)
     with _open(logdb) as c:
-        pb.set_config(c, PID, dict(CFG, notify_methods=["text", "email"]))
+        pb.set_config(c, PID, dict(CFG, notify_methods=["text", "email"], phone=PHONE))
     _book_one(public)
     assert [s for s in sends["email"] if s["to"] == PRACTITIONER_EMAIL]
     assert sms_attempts, "the SMS path must actually be reached, not skipped"
@@ -1724,7 +1776,7 @@ def test_a_failing_email_does_not_stop_the_text(public, logdb, monkeypatch):
         raise RuntimeError("smtp down")
     monkeypatch.setattr(appmod, "send_evox_email", boom)
     with _open(logdb) as c:
-        pb.set_config(c, PID, dict(CFG, notify_methods=["email", "text"]))
+        pb.set_config(c, PID, dict(CFG, notify_methods=["email", "text"], phone=PHONE))
     _book_one(public)
     assert sends["sms"], "text should still have been attempted even though email failed"
 
@@ -1748,7 +1800,7 @@ def test_a_failing_ics_build_does_not_zero_out_every_notification(public, logdb,
         raise RuntimeError("ics build failed")
     monkeypatch.setattr(_ev, "build_ics", boom)
     with _open(logdb) as c:
-        pb.set_config(c, PID, dict(CFG, notify_methods=["calendar", "text"]))
+        pb.set_config(c, PID, dict(CFG, notify_methods=["calendar", "text"], phone=PHONE))
     _book_one(public)
     assert sends["sms"], \
         "a failed ICS build must not silently drop the text notification too"
@@ -1759,7 +1811,7 @@ def test_a_failing_ics_build_does_not_zero_out_every_notification(public, logdb,
 def test_her_number_is_in_the_confirmation_when_she_chose_phone(public, logdb, monkeypatch):
     sends = _spy_sends(monkeypatch)
     with _open(logdb) as c:
-        pb.set_config(c, PID, dict(CFG, notify_methods=["phone"]))
+        pb.set_config(c, PID, dict(CFG, notify_methods=["phone"], phone=PHONE))
     _book_one(public)
     to_client = [s for s in sends["email"] if s["to"] == "client@example.com"]
     assert to_client and "+15550100" in str(to_client[0])
@@ -1776,67 +1828,151 @@ def test_her_number_is_absent_when_she_did_not_choose_phone(public, logdb, monke
     assert to_client and "+15550100" not in str(to_client[0])
 
 
-# --- Task 4 fix round 1: the write path for her phone number ---------------
+# --- Fix round 2: the phone is part of the ONE config save -----------------
 #
-# "text" and "phone" were inert for 19 of 23 portal practitioners: phone is
-# written in exactly one place, validate_registration at signup, with no
-# authenticated route to set it afterwards. This closes that -- an endpoint
-# that mirrors /api/practitioner/booking-config's own shape (session-derived
-# pid, 401 when absent, a practitioner_id in the body ignored).
+# It used to be its own endpoint writing practitioners.phone -- the column
+# v_practitioners_public serves to the unauthenticated
+# /api/practitioner-finder/search, so a booking number typed here was
+# published in the practitioner directory. It also meant TWO requests per
+# Save: the second one posted whatever was in an input pre-filled from a
+# getter that returns "" on any error, so one transient read failure wiped
+# her number under a "Saved." message. One atomic save, one column, one
+# rejection path.
 
-def test_phone_save_requires_a_signed_in_practitioner(monkeypatch):
-    monkeypatch.setattr(appmod, "_practitioner_session_pid", lambda: None)
-    c = appmod.app.test_client()
-    assert c.post("/api/practitioner/phone", json={"phone": "+15550100"}).status_code == 401
+def test_the_phone_endpoint_is_gone():
+    """A second write request for the same fact is the defect, not a
+    convenience. If this route comes back, so does the wipe."""
+    routes = {str(r.rule) for r in appmod.app.url_map.iter_rules()}
+    assert "/api/practitioner/phone" not in routes
 
 
-def test_saving_a_phone_number_then_reading_the_config_back_shows_it(practitioner, monkeypatch):
-    """The endpoint writes practitioners.phone (Supabase); the GET config
-    route already reads it back via practitioner_phone_by_id (Task 4). Both
-    ends are stubbed here so this test exercises the ROUTE wiring, not a real
-    Supabase connection."""
-    from dashboard import practitioner_portal as _pp
-    saved = {}
-
-    def fake_set(pid, phone):
-        saved["pid"] = pid
-        saved["phone"] = phone
-        return "+15550100", None
-    monkeypatch.setattr(_pp, "set_practitioner_phone", fake_set)
-    monkeypatch.setattr(_pp, "practitioner_phone_by_id",
-                        lambda pid: "+15550100" if pid == PID else "")
-
-    r = practitioner.post("/api/practitioner/phone", json={"phone": "+15550100"})
+def test_the_number_saves_and_reads_back_through_the_config_route(practitioner, logdb):
+    """One POST carries hours, methods and number together; the GET hands the
+    same number back. No Supabase on either end -- if anything here reached
+    for practitioners.phone this would need a stub, and it does not."""
+    r = practitioner.post("/api/practitioner/booking-config",
+                          json=dict(CFG, notify_methods=["phone"], phone="+1 907-555-0100"))
     assert r.status_code == 200, r.get_data(as_text=True)
-    assert r.get_json()["phone"] == "+15550100"
-    assert saved["pid"] == PID
+    assert r.get_json()["config"]["phone"] == "+1 907-555-0100"
 
     got = practitioner.get("/api/practitioner/booking-config").get_json()
-    assert got["practitioner_phone"] == "+15550100"
+    assert got["practitioner_phone"] == "+1 907-555-0100"
+    assert got["config"]["phone"] == "+1 907-555-0100"
 
 
-def test_a_bad_phone_number_is_rejected_with_a_readable_message(practitioner):
-    r = practitioner.post("/api/practitioner/phone", json={"phone": "call me maybe"})
+def test_the_number_lands_on_the_booking_config_row_not_practitioners(practitioner, logdb):
+    """Where it is stored is the whole fix. Assert the row, not just the
+    round trip -- a round trip would still pass if it went back to Supabase."""
+    practitioner.post("/api/practitioner/booking-config",
+                      json=dict(CFG, notify_methods=["phone"], phone="+1 907-555-0100"))
+    with _open(logdb) as c:
+        row = c.execute("SELECT phone FROM practitioner_booking_config "
+                        "WHERE practitioner_id=?", (PID,)).fetchone()
+    assert row["phone"] == "+1 907-555-0100"
+
+
+def test_a_bad_phone_number_is_rejected_with_a_readable_message(practitioner, logdb):
+    r = practitioner.post("/api/practitioner/booking-config",
+                          json=dict(CFG, phone="call me maybe"))
     assert r.status_code == 400
     assert r.get_json()["error"]
 
 
-def test_a_practitioner_cannot_write_another_practitioners_phone(practitioner, monkeypatch):
-    """The pid comes from the session. A practitioner_id in the body must be
-    ignored -- same ownership rule as
-    test_a_practitioner_cannot_write_another_practitioners_config, and for
-    the same reason: honouring a body-supplied id would let any signed-in
-    practitioner overwrite another's number."""
-    from dashboard import practitioner_portal as _pp
-    calls = []
+def test_choosing_text_with_no_number_is_a_400_she_can_act_on(practitioner, logdb):
+    """The High, at the route. Nothing server-side used to require a number,
+    so this config saved happily and every booking against it went nowhere:
+    "text" handed GHL an empty number and "phone" is not an outbound channel
+    at all, so neither she nor the client was told anything."""
+    r = practitioner.post("/api/practitioner/booking-config",
+                          json=dict(CFG, notify_methods=["text"]))
+    assert r.status_code == 400
+    assert "phone number" in r.get_json()["error"].lower()
+    with _open(logdb) as c:
+        assert c.execute("SELECT COUNT(*) c FROM practitioner_booking_config"
+                         ).fetchone()["c"] == 0, "a refused save must write nothing"
 
-    def fake_set(pid, phone):
-        calls.append(pid)
-        return phone, None
-    monkeypatch.setattr(_pp, "set_practitioner_phone", fake_set)
-    practitioner.post("/api/practitioner/phone",
-                      json={"practitioner_id": "pid-someone-else", "phone": "+15550100"})
-    assert calls == [PID], "a practitioner_id in the body must not steer the write"
+
+def test_choosing_phone_with_no_number_is_a_400_she_can_act_on(practitioner, logdb):
+    r = practitioner.post("/api/practitioner/booking-config",
+                          json=dict(CFG, notify_methods=["phone"]))
+    assert r.status_code == 400
+    assert "phone number" in r.get_json()["error"].lower()
+
+
+def test_ticking_the_method_and_typing_the_number_is_one_action(practitioner, logdb):
+    """Why it had to be the same request. She cannot be asked to save a
+    number first and choose the method second -- there is one Save button."""
+    r = practitioner.post("/api/practitioner/booking-config",
+                          json=dict(CFG, notify_methods=["text"], phone="+1 907-555-0100"))
+    assert r.status_code == 200, r.get_data(as_text=True)
+
+
+def test_a_practitioner_cannot_write_another_practitioners_number(practitioner, logdb):
+    """The pid comes from the session. A practitioner_id in the body is
+    ignored -- same ownership rule the config POST already applied, now
+    covering the number too."""
+    practitioner.post("/api/practitioner/booking-config",
+                      json=dict(CFG, practitioner_id="pid-someone-else",
+                                notify_methods=["phone"], phone="+1 907-555-0100"))
+    with _open(logdb) as c:
+        rows = c.execute("SELECT practitioner_id FROM practitioner_booking_config"
+                         ).fetchall()
+    assert [r["practitioner_id"] for r in rows] == [PID]
+
+
+def test_the_form_posts_the_number_inside_the_config_payload():
+    """One request, not two. The old savePhone() fired on EVERY successful
+    config save, posting whatever sat in an input pre-filled from a getter
+    that returns "" on any error -- so one transient read failure wiped a
+    saved number under a "Saved." message, in a field that is display:none
+    unless phone/text is ticked.
+
+    Assertions are on the raw JS source, per this file's convention: there is
+    no DOM here to drive.
+    """
+    import pathlib
+    import re
+    html = (pathlib.Path(appmod.STATIC) / "practitioner-booking.html").read_text()
+    assert "/api/practitioner/phone" not in html, \
+        "the second write request is gone; the form must not still call it"
+    assert "savePhone" not in html
+    fn = re.search(r"function collect\(\) \{.*?\n  \}", html, re.S)
+    assert fn, "no collect() to build the save payload"
+    assert "notify-phone-number" in fn.group(0), \
+        "the number must ride in the same payload as the rest of the config"
+
+
+def test_a_form_that_failed_to_load_cannot_be_saved():
+    """main-content is made visible the moment the response headers look OK,
+    several steps before the body is parsed and the fields are filled in.
+    Anything that throws after that point left a fully interactive, entirely
+    EMPTY form on screen with Save still clickable -- and saving an empty
+    form does not fail, it succeeds, overwriting real settings."""
+    import pathlib
+    import re
+    html = (pathlib.Path(appmod.STATIC) / "practitioner-booking.html").read_text()
+    err = re.search(r"function showLoadError\(\) \{.*?\n    \}", html, re.S)
+    assert err, "no showLoadError to handle a failed load"
+    assert "main-content" in err.group(0) and "none" in err.group(0), \
+        "a failed load must hide the form, not just add a message beside it"
+    save = re.search(r"window\.save = function \(\) \{.*?var payload", html, re.S)
+    assert save, "no save() to gate"
+    assert "loaded" in save.group(0), \
+        "save() must refuse while the form has not been populated from a real GET"
+
+
+def test_the_consent_copy_names_both_surfaces_the_number_reaches():
+    """Ticking "phone" publishes the number on her PUBLIC PAGE as well as in
+    each client's confirmation. Copy that mentions only the confirmation
+    understates what she is agreeing to."""
+    import pathlib
+    html = (pathlib.Path(appmod.STATIC) / "practitioner-booking.html").read_text()
+    start = html.index('id="notify-phone"')
+    consent = html[start:html.index("</label>", start)].lower()
+    assert "public page" in consent, \
+        "the consent line must say the number appears on her public page"
+    assert "confirmation" in consent, \
+        "the consent line must still say it reaches each client"
 
 
 def test_ticking_phone_or_text_with_no_number_warns_rather_than_being_silent():

@@ -163,17 +163,18 @@ def test_storefront_returns_none_for_non_approved_affiliate():
 # builder (not a hand-built `view` dict, not a stubbed
 # build_practitioner_storefront) --------------------------------------------
 #
-# _practitioner_phone_if_opted_in resolves the practitioner id and the phone
-# number itself via dashboard.practitioner_booking.resolve_practitioner_pid
-# and dashboard.practitioner_portal.practitioner_phone_by_id, both of which
-# open a Supabase/Postgres connection -- there is no sqlite fixture for
-# those tables. tests/test_practitioner_booking_routes.py's `public` fixture
-# monkeypatches exactly these two functions for the same reason; this reuses
-# that pattern. What is NOT stubbed, and what these tests actually exercise,
-# is the gate itself: dashboard.practitioner_booking.get_config, reading a
-# row written by set_config (the module's own writer) into a real sqlite
-# fixture DB built the same way tests/test_public_surface.py builds every
-# other fixture in this file.
+# The number and the opt-in now come from the SAME row: the booking phone
+# lives on practitioner_booking_config alongside notify_methods, written by
+# the module's own set_config into a real sqlite fixture DB built the way
+# every other fixture in this file is built. Nothing about the phone is
+# stubbed any more -- only resolve_practitioner_pid, which maps a slug to a
+# practitioner id through a Supabase-backed lookup with no sqlite fixture.
+#
+# It deliberately does NOT read practitioners.phone. That column is the
+# directory number v_practitioners_public serves to the unauthenticated
+# /api/practitioner-finder/search; reading it in here would publish it on
+# her page the moment she ticked a checkbox she thought only concerned
+# bookings.
 from dashboard import practitioner_booking as pb
 
 _PHONE_CFG = {"timezone": "America/Anchorage", "office_hours": "1-5:09:00-17:00",
@@ -185,22 +186,21 @@ _PID = "pid-jane"
 
 
 def _cx_with_booking_config(monkeypatch, notify_methods, on_file="+1 555-0100"):
-    """A fixture DB with a real affiliate row and a real booking config row
-    (written via pb.set_config, not a raw INSERT), plus the two Supabase-
-    backed lookups monkeypatched to point at that same fixture practitioner
-    -- the identical substitution tests/test_practitioner_booking_routes.py
-    already relies on for this exact pair of functions."""
+    """A fixture DB with a real affiliate row and a real booking config row,
+    written via pb.set_config -- the module's own writer -- not a raw INSERT.
+    Only the slug -> practitioner id lookup is monkeypatched, the same
+    substitution tests/test_practitioner_booking_routes.py already relies on
+    for that function."""
     cx = _cx_with_affiliate()
     pb.init_tables(cx)
-    pb.set_config(cx, _PID, dict(_PHONE_CFG, notify_methods=notify_methods))
-    from dashboard import practitioner_portal as _pp
+    pb.set_config(cx, _PID, dict(_PHONE_CFG, notify_methods=notify_methods,
+                                 phone=on_file))
     monkeypatch.setattr(pb, "resolve_practitioner_pid", lambda cx, slug: _PID)
-    monkeypatch.setattr(_pp, "practitioner_phone_by_id", lambda pid: on_file)
     return cx
 
 
 def test_storefront_publishes_phone_when_opted_in(monkeypatch):
-    """Direction 1: a number on file AND "phone" among her chosen notify
+    """Direction 1: a number saved AND "phone" among her chosen notify
     methods -- her number must reach the public payload."""
     cx = _cx_with_booking_config(monkeypatch, notify_methods=["phone", "email"])
     view = ps.build_practitioner_storefront(cx, "prof-jane-doe")
@@ -208,7 +208,7 @@ def test_storefront_publishes_phone_when_opted_in(monkeypatch):
 
 
 def test_storefront_withholds_phone_when_not_opted_in(monkeypatch):
-    """Direction 2: the same number on file, but "phone" is absent from her
+    """Direction 2: the same number saved, but "phone" is absent from her
     chosen notify methods -- the number must not reach the public payload.
     Same practitioner, same number, only the config differs, so this isolates
     the gate rather than some other difference between fixtures."""
@@ -218,11 +218,33 @@ def test_storefront_withholds_phone_when_not_opted_in(monkeypatch):
 
 
 def test_storefront_phone_opted_in_but_none_on_file(monkeypatch):
-    """Opted in, but there is no number to publish -- resolves to "", not an
-    error and not a placeholder."""
-    cx = _cx_with_booking_config(monkeypatch, notify_methods=["phone"], on_file="")
+    """A config that names "phone" with no number saved cannot be written at
+    all any more -- set_config refuses it, because a booking made against it
+    reaches neither party. The payload side of that contract still has to
+    hold for a row that predates the guard (or was written by hand), so this
+    plants exactly that row and asserts the payload resolves to "", never to
+    a number fetched from somewhere else."""
+    cx = _cx_with_booking_config(monkeypatch, notify_methods=["phone"])
+    cx.execute("UPDATE practitioner_booking_config SET phone=NULL "
+               "WHERE practitioner_id=?", (_PID,))
+    cx.commit()
     view = ps.build_practitioner_storefront(cx, "prof-jane-doe")
     assert view["practitioner_phone"] == ""
+
+
+def test_storefront_never_falls_back_to_the_directory_number(monkeypatch):
+    """The Critical this move exists for, asserted from the public side.
+    practitioners.phone is served by /api/practitioner-finder/search without
+    authentication; the storefront must not reach for it, so making Supabase
+    explode changes nothing about what this page publishes."""
+    import db_supabase
+
+    def boom(*a, **kw):
+        raise AssertionError("the storefront reached for practitioners.phone")
+    monkeypatch.setattr(db_supabase, "supabase_cursor", boom)
+    cx = _cx_with_booking_config(monkeypatch, notify_methods=["phone"])
+    view = ps.build_practitioner_storefront(cx, "prof-jane-doe")
+    assert view["practitioner_phone"] == "+1 555-0100"
 
 
 from dashboard import share_header as sh

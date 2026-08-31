@@ -221,7 +221,8 @@ def test_a_second_save_replaces_notify_methods_too(cx):
     """The upsert is structurally the same for every column, but that has
     been wrong before in this task -- assert it explicitly for the new one
     rather than assume it rides along with office_hours's coverage."""
-    pb.set_config(cx, PID, _cfg(notify_methods=["phone", "text"]))
+    pb.set_config(cx, PID, _cfg(notify_methods=["phone", "text"],
+                                phone="+1 907-555-0100"))
     pb.set_config(cx, PID, _cfg(notify_methods=["calendar"]))
     assert pb.get_config(cx, PID)["notify_methods"] == ["calendar"]
     rows = cx.execute("SELECT COUNT(*) c FROM practitioner_booking_config "
@@ -230,7 +231,8 @@ def test_a_second_save_replaces_notify_methods_too(cx):
 
 
 def test_notify_methods_round_trip(cx):
-    pb.set_config(cx, PID, _cfg(notify_methods=["email", "text"]))
+    pb.set_config(cx, PID, _cfg(notify_methods=["email", "text"],
+                                phone="+1 907-555-0100"))
     assert pb.get_config(cx, PID)["notify_methods"] == ["email", "text"]
 
 
@@ -489,3 +491,183 @@ def test_now_in_with_a_none_timezone_falls_back_to_the_default():
     future caller could reach with unvalidated input."""
     n = pb.now_in(None)
     assert n.tzinfo is None
+
+
+# ── the booking phone ──────────────────────────────────────────────────────
+#
+# This number lives on practitioner_booking_config, NOT on practitioners.phone.
+# They are two different facts: "the number my booking clients call me on" and
+# "my public directory number", and they may legitimately differ. Conflating
+# them published a booking number through v_practitioners_public ->
+# /api/practitioner-finder/search, which is public and unauthenticated, for
+# every portal practitioner (tier 'org_member' is outside the redaction set
+# that route applies).
+#
+# validate_phone is deliberately permissive: the number is DISPLAYED for a
+# human to dial, never parsed, so a validator that rejects a legitimate
+# Alaskan or Auckland number is worse than one that accepts an odd-looking
+# one. These tests pin exactly that permissiveness so a later "tidy-up"
+# cannot quietly narrow it.
+
+def test_validate_phone_accepts_plain_digits_and_common_punctuation():
+    for raw in ["+1 555-0100", "(907) 555-0100", "907.555.0100", "15550100",
+                "+64 (0)9 555 0100"]:
+        clean, err = pb.validate_phone(raw)
+        assert err is None, f"{raw!r} should be accepted, got error: {err}"
+        assert clean == raw.strip()
+
+
+def test_validate_phone_empty_clears_it():
+    """An empty submission is not an error -- it is how she removes a number
+    she previously saved."""
+    assert pb.validate_phone("") == ("", None)
+    assert pb.validate_phone("   ") == ("", None)
+    assert pb.validate_phone(None) == ("", None)
+
+
+def test_validate_phone_rejects_too_few_digits():
+    clean, err = pb.validate_phone("+1-2-3")
+    assert clean is None
+    assert err
+
+
+def test_validate_phone_rejects_letters():
+    clean, err = pb.validate_phone("call me maybe")
+    assert clean is None
+    assert err
+
+
+def test_validate_phone_rejects_too_long():
+    clean, err = pb.validate_phone("1" * 40)
+    assert clean is None
+    assert err
+
+
+def test_the_phone_number_round_trips_on_the_config_row(cx):
+    """Stored beside notify_methods, read back off the same row. No Supabase
+    lookup, no practitioners.phone."""
+    pb.set_config(cx, PID, _cfg(notify_methods=["phone"], phone="+1 907-555-0100"))
+    assert pb.get_config(cx, PID)["phone"] == "+1 907-555-0100"
+    stored = cx.execute("SELECT phone FROM practitioner_booking_config "
+                        "WHERE practitioner_id=?", (PID,)).fetchone()
+    assert stored["phone"] == "+1 907-555-0100"
+
+
+def test_a_config_with_no_phone_reads_back_as_empty_string(cx):
+    """Never None, and never a number borrowed from somewhere else."""
+    pb.set_config(cx, PID, _cfg())
+    assert pb.get_config(cx, PID)["phone"] == ""
+
+
+def test_a_save_that_omits_phone_keeps_the_saved_number(cx):
+    """The Critical-2 trap in its data form. A config save that does not
+    carry the field at all must leave the stored number alone -- collapsing
+    "not supplied" into "clear it" is what let one blank form wipe a real
+    number under a "Saved." message."""
+    pb.set_config(cx, PID, _cfg(notify_methods=["text"], phone="+1 907-555-0100"))
+    pb.set_config(cx, PID, _cfg(notify_methods=["text"], office_hours="2-4:10:00-14:00"))
+    got = pb.get_config(cx, PID)
+    assert got["phone"] == "+1 907-555-0100"
+    assert got["office_hours"] == "2-4:10:00-14:00", "the rest of the save still applied"
+
+
+def test_clearing_the_number_is_still_possible_as_a_deliberate_action(cx):
+    """An explicitly empty phone with no method that needs one clears it.
+    The bug was a SILENT clear after a failed load, not clearing itself."""
+    pb.set_config(cx, PID, _cfg(notify_methods=["text"], phone="+1 907-555-0100"))
+    pb.set_config(cx, PID, _cfg(notify_methods=["email"], phone=""))
+    assert pb.get_config(cx, PID)["phone"] == ""
+
+
+def test_an_unusable_phone_number_is_rejected_by_set_config(cx):
+    with pytest.raises(pb.BookingConfigError):
+        pb.set_config(cx, PID, _cfg(phone="call me maybe"))
+    assert pb.get_config(cx, PID) is None, "a rejected save must write nothing"
+
+
+@pytest.mark.parametrize("methods", [["phone"], ["text"], ["email", "text"],
+                                     ["phone", "text"]])
+def test_choosing_phone_or_text_without_a_number_is_refused(cx, methods):
+    """The High. Nothing server-side used to require a number, so ["phone"]
+    with none saved told NEITHER party anything: no Call: line for the client,
+    and the practitioner block deliberately sends her nothing for "phone".
+    ["text"] handed GHL an empty number, which it declined, and the reason was
+    discarded at the call site. Refuse the combination at the writer."""
+    with pytest.raises(pb.BookingConfigError) as e:
+        pb.set_config(cx, PID, _cfg(notify_methods=methods))
+    msg = str(e.value)
+    assert "phone number" in msg.lower(), "the message must say what to do"
+    assert pb.get_config(cx, PID) is None, "a refused save must write nothing"
+
+
+def test_the_number_may_arrive_in_the_same_save_as_the_method(cx):
+    """Why the phone had to become part of this one atomic save: she ticks
+    "text" and types her number in a single action, so the guard above must
+    accept a number supplied in the SAME request rather than demanding one
+    already be on file."""
+    clean = pb.set_config(cx, PID, _cfg(notify_methods=["text"],
+                                        phone="+1 907-555-0100"))
+    assert clean["phone"] == "+1 907-555-0100"
+    assert pb.get_config(cx, PID)["notify_methods"] == ["text"]
+
+
+def test_an_already_saved_number_satisfies_a_later_method_change(cx):
+    """She saved a number last week; today she ticks "phone" and the form
+    posts the field unchanged or not at all. Either way the guard is
+    satisfied by what is already stored."""
+    pb.set_config(cx, PID, _cfg(notify_methods=["text"], phone="+1 907-555-0100"))
+    clean = pb.set_config(cx, PID, _cfg(notify_methods=["phone", "text"]))
+    assert clean["phone"] == "+1 907-555-0100"
+
+
+def test_clearing_the_number_while_phone_is_still_ticked_is_refused(cx):
+    """The other direction of the same guard: removing the number without
+    also un-ticking the method would leave her page advertising a way to
+    reach her that resolves to nothing."""
+    pb.set_config(cx, PID, _cfg(notify_methods=["phone"], phone="+1 907-555-0100"))
+    with pytest.raises(pb.BookingConfigError):
+        pb.set_config(cx, PID, _cfg(notify_methods=["phone"], phone=""))
+    assert pb.get_config(cx, PID)["phone"] == "+1 907-555-0100", \
+        "the refused save must not have partially applied"
+
+
+def test_email_and_calendar_never_require_a_number(cx):
+    """Only the two methods that actually consume one are gated. A guard that
+    refused every method would lock out the practitioners this feature was
+    already working for."""
+    clean = pb.set_config(cx, PID, _cfg(notify_methods=["email", "calendar"]))
+    assert clean["phone"] == ""
+
+
+def test_the_booking_config_never_reaches_for_the_directory_number(cx, monkeypatch):
+    """No fallback, anywhere. Reading practitioners.phone in as a prefill
+    would publish her directory number on her public page the moment she
+    ticked "phone", without her ever having typed it.
+
+    Proved by behaviour rather than by grepping the source: Supabase -- the
+    only place practitioners.phone lives -- is made to explode, and the whole
+    read/write cycle still works. A fallback would have to go through it.
+    """
+    import db_supabase
+
+    def boom(*a, **kw):
+        raise AssertionError("the booking config reached for Supabase")
+    monkeypatch.setattr(db_supabase, "supabase_cursor", boom)
+
+    pb.set_config(cx, PID, _cfg(notify_methods=["phone"], phone="+1 907-555-0100"))
+    assert pb.get_config(cx, PID)["phone"] == "+1 907-555-0100"
+    # And with nothing typed there is nothing to publish -- not a number
+    # borrowed from the directory.
+    pb.set_config(cx, PID, _cfg(notify_methods=["email"], phone=""))
+    assert pb.get_config(cx, PID)["phone"] == ""
+
+
+def test_the_old_directory_phone_getter_is_gone():
+    """practitioner_phone_by_id read practitioners.phone -- the column
+    v_practitioners_public publishes through the unauthenticated
+    /api/practitioner-finder/search. It had no caller left once the booking
+    phone moved, and leaving a live reader of that column in place invites a
+    future caller to re-conflate the two facts."""
+    from dashboard import practitioner_portal as pp
+    assert not hasattr(pp, "practitioner_phone_by_id")
+    assert not hasattr(pp, "set_practitioner_phone")

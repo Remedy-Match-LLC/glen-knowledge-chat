@@ -124,16 +124,19 @@
       <label><input type="checkbox" id="notify-calendar"> Attach a calendar invite to that email</label>
       <label><input type="checkbox" id="notify-text"> Text me</label>
       <label><input type="checkbox" id="notify-phone"> Give the client my phone number so they can call me
-        <span class="hint">Your phone number will be shown to the client in their booking
-        confirmation. Only turn this on if you want people who book you to be able to
-        call you directly.</span>
+        <span class="hint">This publishes the number below in two places: on your
+        public page, where anyone who visits it can see it, and in the booking
+        confirmation sent to each client. Only turn this on if you want to be
+        reachable by phone. Leave it off and the number is used for your own text
+        notifications only.</span>
       </label>
 
       <div id="notify-phone-wrap" style="display:none">
         <label class="field-label">Your phone number</label>
         <input id="notify-phone-number" type="text" placeholder="(907) 555-0100">
-        <span class="hint">Used for text and phone notifications. Saved when you press
-        Save below, same as everything else on this page.</span>
+        <span class="hint">Saved with everything else on this page when you press
+        Save. This is your booking number, kept separate from any number in the
+        practitioner directory, so the two can differ.</span>
         <div id="notify-phone-info" class="msg err" style="display:none"></div>
       </div>
 
@@ -170,6 +173,12 @@
   var NOTIFY_IDS = {email: "notify-email", calendar: "notify-calendar",
                      text: "notify-text", phone: "notify-phone"};
   var practitionerPhone = ""; // filled in by load() from the GET response
+  // False until load() has actually populated the form from a successful
+  // GET. Save refuses while it is false -- see window.save. Every path out
+  // of load() sets it exactly once: true only where the form now holds real
+  // saved values (or a confirmed "no config yet"), and never on the auth
+  // wall or the error path.
+  var loaded = false;
 
   function notifyMethodsChecked() {
     var out = [];
@@ -249,7 +258,14 @@
             notice_hours: parseInt(document.getElementById("bk-notice").value, 10),
             buffer_min: parseInt(document.getElementById("bk-buffer").value, 10),
             enabled: document.getElementById("bk-enabled").checked,
-            notify_methods: notifyMethodsChecked()};
+            notify_methods: notifyMethodsChecked(),
+            // One atomic save. The phone number used to go out as a SECOND
+            // request after this one succeeded, which meant a form that had
+            // failed to load blank could wipe a saved number under a
+            // "Saved." message. It is part of the config now, so ticking
+            // "text" and typing the number is a single action the server can
+            // accept or reject as a whole.
+            phone: document.getElementById("notify-phone-number").value.trim()};
   }
 
   Object.keys(NOTIFY_IDS).forEach(function (m) {
@@ -260,17 +276,20 @@
   // been persisted yet.
   document.getElementById("notify-phone-number").addEventListener("input", updateNotifyPhoneInfo);
 
-  function savePhone() {
-    var value = document.getElementById("notify-phone-number").value.trim();
-    return fetch("/api/practitioner/phone",
-          {method: "POST", credentials: "same-origin",
-           headers: {"Content-Type": "application/json"},
-           body: JSON.stringify({phone: value})})
-      .then(function (r) { return r.json().then(function (j) { return {ok: r.ok, j: j}; }); });
-  }
-
   window.save = function () {
     var msg = document.getElementById("bk-msg");
+    // A form that never loaded must not be saveable. Every field starts
+    // empty, so saving an unpopulated form does not fail -- it succeeds, and
+    // overwrites her real settings (including her phone number) with
+    // whatever the blank form happened to contain, under a "Saved." message
+    // she has no reason to distrust. The phone field is display:none unless
+    // phone/text is ticked, so she would not even see it go.
+    if (!loaded) {
+      msg.className = "msg err";
+      msg.textContent = "Your settings never finished loading, so there is " +
+        "nothing safe to save. Please refresh the page and try again.";
+      return;
+    }
     var payload = collect();
     // Belt-and-braces: a blank timezone must never reach the server. It
     // means the dropdown ended up on selectedIndex -1 -- most likely a
@@ -296,24 +315,13 @@
           msg.className = "msg err";
           return null;
         }
-        // The phone number is a SEPARATE endpoint/table (practitioners.phone
-        // in Supabase, not the SQLite booking config) -- see
-        // api_practitioner_phone_post. Saved in the same click so there is
-        // still just one Save button, not two save actions to remember.
-        return savePhone();
-      })
-      .then(function (res2) {
-        if (!res2) return; // booking-config already failed and reported above
-        if (res2.ok) {
-          practitionerPhone = res2.j.phone || "";
-          updateNotifyPhoneInfo();
-          msg.textContent = "Saved.";
-          msg.className = "msg ok";
-        } else {
-          msg.textContent = "Booking settings saved, but your phone number was not: " +
-            (res2.j.error || "please try again.");
-          msg.className = "msg err";
-        }
+        // The number came back through the same save, so echo the server's
+        // cleaned value rather than what was typed.
+        practitionerPhone = (res.j.config && res.j.config.phone) || "";
+        document.getElementById("notify-phone-number").value = practitionerPhone;
+        updateNotifyPhoneInfo();
+        msg.textContent = "Saved.";
+        msg.className = "msg ok";
       })
       .catch(function () {
         msg.textContent = "Could not reach the server.";
@@ -355,8 +363,19 @@
     }
     function showLoadError() {
       var el = document.getElementById("load-err");
-      el.textContent = "Could not load your booking settings. Please refresh the page.";
+      el.textContent = "Could not load your booking settings, so this form is " +
+        "not showing what you have saved. Nothing has been changed. Please " +
+        "refresh the page to try again.";
       el.style.display = "block";
+      // main-content was made visible the moment the response headers looked
+      // OK, several steps before the body was parsed and the fields filled
+      // in. Anything that throws after that point (a truncated body, a
+      // transient Supabase hiccup upstream) used to land here with a fully
+      // interactive, entirely EMPTY form still on screen and Save still
+      // clickable. Hide it: a form that failed to load must be unusable, not
+      // merely accompanied by a warning.
+      document.getElementById("main-content").style.display = "none";
+      loaded = false;
     }
 
     fetch("/api/practitioner/booking-config", {credentials: "same-origin"})
@@ -373,11 +392,13 @@
       .then(function (v) {
         if (!v) return; // auth wall already shown
         if (v.media && v.media.length) MEDIA = v.media;
-        // practitioner_phone lives on the Supabase practitioners row, not
-        // the SQLite booking config -- pre-fill it here, before either
-        // branch below calls setNotifyMethods (which reads this field to
-        // decide whether to show the "no number on file" warning), so a
-        // practitioner who already has a number never sees a false warning.
+        // practitioner_phone is her BOOKING number, saved on the booking
+        // config itself -- never the practitioners-directory number, which
+        // is a separate fact and is deliberately not read in as a prefill.
+        // Filled in here, before either branch below calls setNotifyMethods
+        // (which reads this field to decide whether to show the "no number
+        // on file" warning), so a practitioner who already has a number
+        // never sees a false warning.
         practitionerPhone = v.practitioner_phone || "";
         document.getElementById("notify-phone-number").value = practitionerPhone;
         var c = v.config;
@@ -395,6 +416,7 @@
           // DEFAULT_NOTIFY_METHODS), never phone/text pre-checked.
           setNotifyMethods(["email"]);
           addType();
+          loaded = true;
           return;
         }
         // The saved timezone may not be in the option list: a curated
@@ -417,6 +439,9 @@
         setNotifyMethods(c.notify_methods);
         (c.session_types || []).forEach(addType);
         if (!(c.session_types || []).length) addType();
+        // Last statement in the branch on purpose: anything that throws
+        // above lands in .catch -> showLoadError, and `loaded` stays false.
+        loaded = true;
       })
       .catch(function () { showLoadError(); });
   })();

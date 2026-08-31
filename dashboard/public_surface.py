@@ -146,13 +146,21 @@ def build_practitioner_storefront(cx, slug):
 
 
 def _practitioner_phone_if_opted_in(cx, slug):
-    """Her number, but only when her booking config exists and lists "phone"
-    among her chosen notify methods. Fails closed to "" on any missing
-    config, missing practitioner, or lookup error -- publishing a number
-    nobody asked to publish is the failure mode this guards against, not the
-    absence of one."""
+    """Her BOOKING number, but only when her booking config exists and lists
+    "phone" among her chosen notify methods. Fails closed to "" on any
+    missing config, missing practitioner, or lookup error -- publishing a
+    number nobody asked to publish is the failure mode this guards against,
+    not the absence of one.
+
+    Both the opt-in and the number come from the SAME row
+    (practitioner_booking_config), which is the point. practitioners.phone is
+    a different fact: the directory number v_practitioners_public serves to
+    the unauthenticated practitioner-finder. Reading it here would republish
+    it on her page the moment she ticked a booking checkbox, and there is no
+    fallback to it on purpose -- she types the booking number or it does not
+    exist.
+    """
     from dashboard import practitioner_booking as _pb
-    from dashboard import practitioner_portal as _pp
     try:
         pid = _pb.resolve_practitioner_pid(cx, slug)
         if not pid:
@@ -160,7 +168,7 @@ def _practitioner_phone_if_opted_in(cx, slug):
         cfg = _pb.get_config(cx, pid)
         if not cfg or "phone" not in (cfg.get("notify_methods") or []):
             return ""
-        return _pp.practitioner_phone_by_id(pid) or ""
+        return cfg.get("phone") or ""
     except Exception:
         return ""
 
