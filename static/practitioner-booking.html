@@ -117,6 +117,19 @@
       <input id="bk-buffer" type="number" min="0" max="240" value="0">
       <span class="hint">Minutes added after each session before the next can start.</span>
 
+      <h2>How you want to hear about a booking</h2>
+      <span class="hint">Pick as many as you like. Email is on by default; the rest
+      start off, and you choose to turn them on.</span>
+      <label><input type="checkbox" id="notify-email" checked> Email me</label>
+      <label><input type="checkbox" id="notify-calendar"> Attach a calendar invite to that email</label>
+      <label><input type="checkbox" id="notify-text"> Text me</label>
+      <label><input type="checkbox" id="notify-phone"> Give the client my phone number so they can call me
+        <span class="hint">Your phone number will be shown to the client in their booking
+        confirmation. Only turn this on if you want people who book you to be able to
+        call you directly.</span>
+      </label>
+      <div id="notify-phone-info" class="notice" style="display:none"></div>
+
       <h2>Session types</h2>
       <div id="bk-types"></div>
       <button type="button" onclick="addType()" style="margin-top:10px">Add a session type</button>
@@ -142,6 +155,47 @@
   var ZONES = ["Pacific/Honolulu", "America/Anchorage", "America/Los_Angeles",
                "America/Denver", "America/Chicago", "America/New_York",
                "Europe/London", "Australia/Sydney", "Pacific/Auckland"];
+
+  // The four ways she can hear about a booking (dashboard/practitioner_booking.py
+  // NOTIFY_METHODS). "phone" is not something we send her -- it means her
+  // number goes to the CLIENT instead, which is why it gets its own
+  // disclosure line in the markup rather than being just another checkbox.
+  var NOTIFY_IDS = {email: "notify-email", calendar: "notify-calendar",
+                     text: "notify-text", phone: "notify-phone"};
+  var practitionerPhone = ""; // filled in by load() from the GET response
+
+  function notifyMethodsChecked() {
+    var out = [];
+    Object.keys(NOTIFY_IDS).forEach(function (m) {
+      if (document.getElementById(NOTIFY_IDS[m]).checked) out.push(m);
+    });
+    return out;
+  }
+
+  function setNotifyMethods(methods) {
+    var chosen = (methods && methods.length) ? methods : ["email"];
+    Object.keys(NOTIFY_IDS).forEach(function (m) {
+      document.getElementById(NOTIFY_IDS[m]).checked = chosen.indexOf(m) >= 0;
+    });
+    updateNotifyPhoneInfo();
+  }
+
+  // Shown whenever "text" or "phone" is ticked -- both need a real number on
+  // file to do anything (text sends an SMS to a GHL contact keyed by her
+  // number; phone hands that same number to the client). Surfacing whether
+  // one is actually on file here, before she saves, beats her finding out
+  // later that a booking went out with nothing to call.
+  function updateNotifyPhoneInfo() {
+    var info = document.getElementById("notify-phone-info");
+    var needsPhone = document.getElementById("notify-text").checked ||
+                      document.getElementById("notify-phone").checked;
+    if (!needsPhone) { info.style.display = "none"; return; }
+    info.style.display = "block";
+    info.textContent = practitionerPhone
+      ? ("Number on file: " + practitionerPhone)
+      : "No phone number is on file for your account yet, so text and phone " +
+        "notifications will not work until one is added.";
+  }
 
   function esc(s) {
     return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) {
@@ -180,8 +234,13 @@
             session_types: types,
             notice_hours: parseInt(document.getElementById("bk-notice").value, 10),
             buffer_min: parseInt(document.getElementById("bk-buffer").value, 10),
-            enabled: document.getElementById("bk-enabled").checked};
+            enabled: document.getElementById("bk-enabled").checked,
+            notify_methods: notifyMethodsChecked()};
   }
+
+  Object.keys(NOTIFY_IDS).forEach(function (m) {
+    document.getElementById(NOTIFY_IDS[m]).addEventListener("change", updateNotifyPhoneInfo);
+  });
 
   window.save = function () {
     var msg = document.getElementById("bk-msg");
@@ -266,6 +325,7 @@
       .then(function (v) {
         if (!v) return; // auth wall already shown
         if (v.media && v.media.length) MEDIA = v.media;
+        practitionerPhone = v.practitioner_phone || "";
         var c = v.config;
         if (!c) {
           // No config saved yet. Pre-fill with the browser's guess; if the
@@ -275,6 +335,11 @@
           var pre = guess || v.default_timezone || "";
           if (pre && zones.indexOf(pre) < 0) { zones.unshift(pre); renderZones(); }
           if (pre) sel.value = pre;
+          // No saved config means notify_methods has never been chosen
+          // either -- default to email-only checked, same default the
+          // server applies (dashboard/practitioner_booking.py's
+          // DEFAULT_NOTIFY_METHODS), never phone/text pre-checked.
+          setNotifyMethods(["email"]);
           addType();
           return;
         }
@@ -295,6 +360,7 @@
         document.getElementById("bk-notice").value = c.notice_hours;
         document.getElementById("bk-buffer").value = c.buffer_min;
         document.getElementById("bk-enabled").checked = !!c.enabled;
+        setNotifyMethods(c.notify_methods);
         (c.session_types || []).forEach(addType);
         if (!(c.session_types || []).length) addType();
       })

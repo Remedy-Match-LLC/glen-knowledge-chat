@@ -427,6 +427,7 @@ def render_page_html(view, *, canonical_url, bookable=False):
         + _book_block(view, bookable)
         + _logo(view)
         + _line("loc", view.get("location"))
+        + _line("phone", view.get("practitioner_phone"))
         + _accepting(view)
         + _section("About", view.get("bio"))
         + _section("How I work", view.get("how_i_work"))

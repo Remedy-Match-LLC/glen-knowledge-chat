@@ -77,6 +77,7 @@ PRACTITIONER_PUBLIC_FIELDS = frozenset({
     "featured_products",  # retail prices only
     "catalog_url",
     "profit_disclosure",
+    "practitioner_phone",
 })
 
 PROFIT_DISCLOSURE = (
@@ -129,12 +130,39 @@ def build_practitioner_storefront(cx, slug):
         "featured_products": [],
         "catalog_url": "/begin/explore",
         "profit_disclosure": PROFIT_DISCLOSURE,
+        # Opt-in only: published only when her booking config exists AND
+        # names "phone" among her chosen notify methods. Any other case --
+        # no config, config with "phone" absent -- must resolve to "", never
+        # a number she did not ask to publish. See practitioner_render.py's
+        # _line() for the render-side half of this contract.
+        "practitioner_phone": "",
     }
+    view["practitioner_phone"] = _practitioner_phone_if_opted_in(cx, slug)
     profile = _profile_for_slug(cx, slug)
     for k, v in (profile or {}).items():
         if v not in (None, "", []):
             view[k] = v
     return _public_only(view, PRACTITIONER_PUBLIC_FIELDS)
+
+
+def _practitioner_phone_if_opted_in(cx, slug):
+    """Her number, but only when her booking config exists and lists "phone"
+    among her chosen notify methods. Fails closed to "" on any missing
+    config, missing practitioner, or lookup error -- publishing a number
+    nobody asked to publish is the failure mode this guards against, not the
+    absence of one."""
+    from dashboard import practitioner_booking as _pb
+    from dashboard import practitioner_portal as _pp
+    try:
+        pid = _pb.resolve_practitioner_pid(cx, slug)
+        if not pid:
+            return ""
+        cfg = _pb.get_config(cx, pid)
+        if not cfg or "phone" not in (cfg.get("notify_methods") or []):
+            return ""
+        return _pp.practitioner_phone_by_id(pid) or ""
+    except Exception:
+        return ""
 
 
 SHARE_HEADER_PUBLIC_FIELDS = frozenset({"display_name", "body"})

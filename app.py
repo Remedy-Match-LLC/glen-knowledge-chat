@@ -17587,13 +17587,20 @@ def api_practitioner_booking_config_get():
     if not pid:
         return jsonify({"ok": False, "error": "not signed in"}), 401
     from dashboard import practitioner_booking as _pb
+    from dashboard import practitioner_portal as _pp
     with db.connect(LOG_DB) as cx:
         cx.row_factory = sqlite3.Row
         _pb.init_tables(cx)
         cfg = _pb.get_config(cx, pid)
+    # Read-only, informational: the booking form shows this next to the
+    # phone/text checkboxes so she can see, before she ticks either one,
+    # whether a number is even on file -- practitioner_phone_by_id never
+    # raises, so a Supabase hiccup here degrades to "" (looks unset), never
+    # a 500 on her config page.
     return jsonify({"ok": True, "config": cfg,
                     "default_timezone": _pb.DEFAULT_TIMEZONE,
-                    "media": list(_pb.MEDIA)})
+                    "media": list(_pb.MEDIA),
+                    "practitioner_phone": _pp.practitioner_phone_by_id(pid)})
 
 
 @app.route("/api/practitioner/booking-config", methods=["POST"])
@@ -17828,6 +17835,21 @@ def api_public_book(slug):
                  f"How: {st['medium']}", "",
                  "If you need to cancel, use this link:", cancel_url, "",
                  "See you then."]
+        methods = cfg.get("notify_methods") or ["email"]
+        # Local import, not a reliance on the module-level `_pp` (imported at
+        # top of file): the practitioner-notification block below also does
+        # `from dashboard import practitioner_portal as _pp`, and Python
+        # treats a name assigned anywhere in a function as local to the whole
+        # function -- that later import turns `_pp` into an as-yet-unbound
+        # local one here, raising UnboundLocalError rather than falling back
+        # to the module global. Importing it here too keeps this block
+        # correct regardless of what the block below does with the name.
+        from dashboard import practitioner_portal as _pp
+        her_phone = _pp.practitioner_phone_by_id(pid) if "phone" in methods else ""
+        # She asked to be reached by phone, so the client needs the number. Without
+        # this a phone-medium booking gives neither party a way to call the other.
+        if her_phone:
+            lines.append(f"Call: {her_phone}")
         text_body = "\n".join(lines)
         import html as _html
         html_body = "".join(

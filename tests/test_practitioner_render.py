@@ -156,6 +156,18 @@ def test_the_remaining_public_fields_render():
     assert "SentinelProduct" in html
 
 
+def test_the_public_page_shows_her_number_only_when_given_one():
+    """Opt-in, never defaulted: the renderer is pure and takes whatever it is
+    given, so the absence contract lives entirely in what the caller passes
+    -- public_surface.py only ever populates practitioner_phone when her
+    booking config exists AND lists "phone". Here we just prove the renderer
+    honors both directions of that value."""
+    html = pr.render_page_html(_view(practitioner_phone="+15550100"),
+                               canonical_url=CANON)
+    assert "+15550100" in html
+    assert "+15550100" not in pr.render_page_html(_view(), canonical_url=CANON)
+
+
 def test_not_accepting_clients_says_so_rather_than_going_silent():
     """A False value is information. Rendering nothing would read as 'unknown'
     to a visitor deciding whether to reach out."""

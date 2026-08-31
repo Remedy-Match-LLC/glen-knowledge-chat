@@ -1573,9 +1573,14 @@ def test_send_sms_never_touches_the_live_crm_under_pytest(monkeypatch):
 
 def _spy_sends(monkeypatch):
     sends = {"email": [], "sms": []}
+    # "html" and "text" are captured (not just "to"/"subj"/"ics") because
+    # Task 4's her-number-in-the-confirmation tests need to see the body a
+    # send actually carried, not just its envelope -- the phone number lands
+    # in the text/html body, never in the subject.
     monkeypatch.setattr(appmod, "send_evox_email",
                         lambda to, name, subj, html, text, ics: sends["email"].append(
-                            {"to": to, "subj": subj, "ics": ics}))
+                            {"to": to, "subj": subj, "html": html, "text": text,
+                             "ics": ics}))
     from dashboard import ghl_email as _g
     monkeypatch.setattr(appmod, "_send_sms_via_ghl",
                         lambda to, msg, phone="": sends["sms"].append(
@@ -1747,3 +1752,25 @@ def test_a_failing_ics_build_does_not_zero_out_every_notification(public, logdb,
     _book_one(public)
     assert sends["sms"], \
         "a failed ICS build must not silently drop the text notification too"
+
+
+# --- Task 4: her number reaches the client, on opt-in only ------------------
+
+def test_her_number_is_in_the_confirmation_when_she_chose_phone(public, logdb, monkeypatch):
+    sends = _spy_sends(monkeypatch)
+    with _open(logdb) as c:
+        pb.set_config(c, PID, dict(CFG, notify_methods=["phone"]))
+    _book_one(public)
+    to_client = [s for s in sends["email"] if s["to"] == "client@example.com"]
+    assert to_client and "+15550100" in str(to_client[0])
+
+
+def test_her_number_is_absent_when_she_did_not_choose_phone(public, logdb, monkeypatch):
+    """Publishing a phone number nobody asked to publish is the system making
+    a claim on her behalf."""
+    sends = _spy_sends(monkeypatch)
+    with _open(logdb) as c:
+        pb.set_config(c, PID, dict(CFG, notify_methods=["email"]))
+    _book_one(public)
+    to_client = [s for s in sends["email"] if s["to"] == "client@example.com"]
+    assert to_client and "+15550100" not in str(to_client[0])
