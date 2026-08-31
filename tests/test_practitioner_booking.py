@@ -4,6 +4,7 @@ A config we cannot parse must offer NO slots rather than fall back to someone
 else's hours. Offering Glen's Hawaii hours to Mary's Alaska clients would put
 real people on a call at the wrong time, which is worse than an empty page.
 """
+import json
 import sqlite3
 
 import pytest
@@ -260,12 +261,43 @@ def test_a_string_instead_of_a_list_is_rejected():
         pb.validate_config(_cfg(notify_methods="email"))
 
 
-def test_a_stored_row_with_bad_notify_methods_fails_closed(cx):
-    """get_config re-validates on read. A row whose methods no longer parse
-    must return None like every other unreadable field, not a half-config."""
+def test_a_stored_row_with_unparseable_notify_methods_fails_closed(cx):
+    """get_config re-validates on read. A row whose methods are not even
+    valid JSON must return None like every other unreadable field, not a
+    half-config. This exercises the JSON-syntax guard (the same try/except
+    that already catches a corrupt session_types blob) -- it does NOT prove
+    the semantic guard (_validate_notify_methods) runs, because invalid JSON
+    never reaches that call either way."""
     pb.set_config(cx, PID, _cfg())
     cx.execute("UPDATE practitioner_booking_config SET notify_methods=? "
                "WHERE practitioner_id=?", ("{not json", PID))
+    cx.commit()
+    assert pb.get_config(cx, PID) is None
+    assert pb.is_bookable(cx, PID) is False
+
+
+def test_a_stored_row_with_unknown_notify_method_fails_closed(cx):
+    """Syntactically valid JSON, semantically invalid: a method that is not
+    one of NOTIFY_METHODS. This can only be caught by re-running the stored
+    value through _validate_notify_methods on read -- the JSON parser alone
+    would happily accept it. If this guard were removed, this row would
+    load with an unknown method still inside it."""
+    pb.set_config(cx, PID, _cfg())
+    cx.execute("UPDATE practitioner_booking_config SET notify_methods=? "
+               "WHERE practitioner_id=?", ('["carrier-pigeon"]', PID))
+    cx.commit()
+    assert pb.get_config(cx, PID) is None
+    assert pb.is_bookable(cx, PID) is False
+
+
+def test_a_stored_row_with_a_bare_string_notify_methods_fails_closed(cx):
+    """Syntactically valid JSON, wrong type: a bare string instead of a
+    list. A hand-edited row or a future migration could plausibly produce
+    this shape. Only the semantic guard rejects it -- JSON parsing alone
+    succeeds and hands back a Python str."""
+    pb.set_config(cx, PID, _cfg())
+    cx.execute("UPDATE practitioner_booking_config SET notify_methods=? "
+               "WHERE practitioner_id=?", (json.dumps("email"), PID))
     cx.commit()
     assert pb.get_config(cx, PID) is None
     assert pb.is_bookable(cx, PID) is False
