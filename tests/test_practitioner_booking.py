@@ -217,6 +217,18 @@ def test_a_second_save_replaces_rather_than_duplicates(cx):
     assert rows["c"] == 1
 
 
+def test_a_second_save_replaces_notify_methods_too(cx):
+    """The upsert is structurally the same for every column, but that has
+    been wrong before in this task -- assert it explicitly for the new one
+    rather than assume it rides along with office_hours's coverage."""
+    pb.set_config(cx, PID, _cfg(notify_methods=["phone", "text"]))
+    pb.set_config(cx, PID, _cfg(notify_methods=["calendar"]))
+    assert pb.get_config(cx, PID)["notify_methods"] == ["calendar"]
+    rows = cx.execute("SELECT COUNT(*) c FROM practitioner_booking_config "
+                      "WHERE practitioner_id=?", (PID,)).fetchone()
+    assert rows["c"] == 1
+
+
 def test_notify_methods_round_trip(cx):
     pb.set_config(cx, PID, _cfg(notify_methods=["email", "text"]))
     assert pb.get_config(cx, PID)["notify_methods"] == ["email", "text"]
@@ -301,6 +313,24 @@ def test_a_stored_row_with_a_bare_string_notify_methods_fails_closed(cx):
     cx.commit()
     assert pb.get_config(cx, PID) is None
     assert pb.is_bookable(cx, PID) is False
+
+
+def test_a_null_notify_methods_column_defaults_to_email_and_stays_bookable(cx):
+    """A row written before this column existed has NULL there, not a
+    corrupt value. That must resolve to the default (['email']) and the
+    row must otherwise stay perfectly usable -- unlike every other test in
+    this file that touches a NULL/corrupt notify_methods, this one starts
+    from a config that is valid in EVERY other respect, so the only thing
+    under test is the NULL -> default path itself. All practitioners with a
+    config saved before this feature shipped are in exactly this shape."""
+    pb.set_config(cx, PID, _cfg())
+    cx.execute("UPDATE practitioner_booking_config SET notify_methods=NULL "
+               "WHERE practitioner_id=?", (PID,))
+    cx.commit()
+    got = pb.get_config(cx, PID)
+    assert got is not None
+    assert got["notify_methods"] == ["email"]
+    assert pb.is_bookable(cx, PID) is True
 
 
 from datetime import date, datetime
