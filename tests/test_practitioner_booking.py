@@ -195,3 +195,87 @@ def test_a_second_save_replaces_rather_than_duplicates(cx):
     rows = cx.execute("SELECT COUNT(*) c FROM practitioner_booking_config "
                       "WHERE practitioner_id=?", (PID,)).fetchone()
     assert rows["c"] == 1
+
+
+from datetime import date, datetime
+
+
+def test_now_in_uses_the_named_zone_not_a_fixed_offset():
+    """Alaska is -09:00 in January and -08:00 in July. Anything that hardcodes
+    an offset is an hour wrong for half the year, and the symptom is a client
+    arriving at the wrong time rather than an exception."""
+    from zoneinfo import ZoneInfo
+    jan = datetime(2026, 1, 15, 12, tzinfo=ZoneInfo("America/Anchorage"))
+    jul = datetime(2026, 7, 15, 12, tzinfo=ZoneInfo("America/Anchorage"))
+    assert jan.utcoffset() != jul.utcoffset(), "fixture assumption"
+    n = pb.now_in("America/Anchorage")
+    assert n.tzinfo is None, "callers compare against a naive grid"
+
+
+def test_slots_come_back_in_the_practitioner_timezone(cx):
+    pb.set_config(cx, PID, _cfg(office_hours="1-5:09:00-17:00"))
+    days = [date(2026, 9, 7)]              # a Monday
+    got = pb.slots_for(cx, PID, days=days, session_slug="intro", booked=set())
+    assert got, "expected slots on a weekday inside office hours"
+    assert all(s.startswith("2026-09-07T") for s in got)
+    assert got[0] == "2026-09-07T09:00:00"
+
+
+def test_slot_length_follows_the_session_type(cx):
+    pb.set_config(cx, PID, _cfg(session_types=[
+        {"slug": "intro", "label": "Intro", "duration_min": 20, "medium": "phone"},
+        {"slug": "full", "label": "Full", "duration_min": 60, "medium": "zoom"}]))
+    days = [date(2026, 9, 7)]
+    short = pb.slots_for(cx, PID, days=days, session_slug="intro", booked=set())
+    long = pb.slots_for(cx, PID, days=days, session_slug="full", booked=set())
+    assert len(short) > len(long)
+    assert short[1] == "2026-09-07T09:20:00"
+    assert long[1] == "2026-09-07T10:00:00"
+
+
+def test_an_unknown_session_type_offers_nothing(cx):
+    pb.set_config(cx, PID, _cfg())
+    assert pb.slots_for(cx, PID, days=[date(2026, 9, 7)],
+                        session_slug="nope", booked=set()) == []
+
+
+def test_a_practitioner_with_no_config_offers_nothing(cx):
+    assert pb.slots_for(cx, "pid-nobody", days=[date(2026, 9, 7)],
+                        session_slug="intro", booked=set()) == []
+
+
+def test_a_booked_slot_is_not_offered(cx):
+    pb.set_config(cx, PID, _cfg())
+    days = [date(2026, 9, 7)]
+    first = pb.slots_for(cx, PID, days=days, session_slug="intro", booked=set())[0]
+    again = pb.slots_for(cx, PID, days=days, session_slug="intro", booked={first})
+    assert first not in again
+
+
+def test_a_day_outside_the_weekday_range_offers_nothing(cx):
+    pb.set_config(cx, PID, _cfg(office_hours="1-5:09:00-17:00"))
+    assert pb.slots_for(cx, PID, days=[date(2026, 9, 6)],   # Sunday
+                        session_slug="intro", booked=set()) == []
+
+
+def test_rendering_to_the_visitor_crosses_the_date_line_correctly():
+    """Practitioner in Alaska, visitor in New Zealand: 15:00 Monday in
+    Anchorage is already Tuesday in Auckland. A naive string handed straight
+    to a visitor is not just shifted, it is the wrong DAY."""
+    out = pb.to_visitor_tz("2026-09-07T15:00:00", "America/Anchorage", "Pacific/Auckland")
+    assert out.startswith("2026-09-08T"), out
+
+
+def test_rendering_uses_the_offset_in_force_on_that_date():
+    """Not the offset in force today. A slot booked in July must render with
+    July's offset even if it is January when the page loads."""
+    jul = pb.to_visitor_tz("2026-07-15T09:00:00", "America/Anchorage", "UTC")
+    jan = pb.to_visitor_tz("2026-01-15T09:00:00", "America/Anchorage", "UTC")
+    assert jul.startswith("2026-07-15T17:00")   # AKDT, -08:00
+    assert jan.startswith("2026-01-15T18:00")   # AKST, -09:00
+
+
+def test_an_unknown_visitor_timezone_falls_back_to_the_practitioner(cx):
+    """A visitor's browser can report anything. Never raise on a public page."""
+    out = pb.to_visitor_tz("2026-09-07T09:00:00", "America/Anchorage", "Mars/Olympus")
+    assert out.startswith("2026-09-07T09:00")

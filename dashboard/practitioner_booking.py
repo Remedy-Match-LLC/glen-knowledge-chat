@@ -13,7 +13,7 @@ will still be offered. Her config page says so in as many words.
 """
 import json
 import re
-from datetime import datetime, timezone as _tz
+from datetime import datetime, timedelta, timezone as _tz
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from dashboard import db
@@ -214,3 +214,73 @@ def is_bookable(cx, pid) -> bool:
     one session type. Fails closed on every other answer."""
     cfg = get_config(cx, pid)
     return bool(cfg and cfg["enabled"] and cfg["session_types"])
+
+
+def now_in(tz_name):
+    """Naive wall-clock 'now' in the named zone.
+
+    Naive on purpose: dashboard.evox.available_slots compares against a naive
+    grid, and mixing aware and naive datetimes raises. The zone is applied
+    here and then dropped, which is the same shape as app.py's _hst_now()
+    except that the offset comes from the zone database rather than a
+    hardcoded -10, so it is correct on both sides of a daylight-saving change.
+    """
+    try:
+        z = ZoneInfo(tz_name)
+    except (ZoneInfoNotFoundError, ValueError, KeyError):
+        z = ZoneInfo(DEFAULT_TIMEZONE)
+    return datetime.now(_tz.utc).astimezone(z).replace(tzinfo=None)
+
+
+def _session_type(cfg, slug):
+    for st in cfg["session_types"]:
+        if st["slug"] == slug:
+            return st
+    return None
+
+
+def slots_for(cx, pid, *, days, session_slug, booked, busy=()):
+    """Open slots for one practitioner and session type, as naive ISO strings
+    in HER timezone.
+
+    Returns [] rather than raising for every "cannot answer" case: no config,
+    disabled, unknown session type. A public page asks this question, and an
+    empty list is a page that says "no times available" while an exception is
+    a 500.
+
+    `busy` is external busy intervals. In 3a nothing supplies it and it stays
+    empty; plan 3b passes a practitioner's Google Calendar through here. The
+    parameter exists now so 3b changes a caller rather than this signature.
+    """
+    cfg = get_config(cx, pid)
+    if not cfg or not cfg["enabled"]:
+        return []
+    st = _session_type(cfg, session_slug)
+    if not st:
+        return []
+    from dashboard import evox as _ev
+    now = now_in(cfg["timezone"]) + timedelta(hours=cfg["notice_hours"])
+    duration = st["duration_min"] + cfg["buffer_min"]
+    return _ev.available_slots(days, cfg["office_hours"], list(busy), booked,
+                               now, duration_min=duration)
+
+
+def to_visitor_tz(iso, practitioner_tz, visitor_tz):
+    """Render a naive practitioner-local slot as an offset-bearing ISO string
+    in the visitor's zone.
+
+    The offset comes from the zone rules ON THAT DATE, not today's, so a July
+    slot rendered in January still says AKDT. Falls back to the practitioner's
+    own zone for an unusable visitor zone: a browser can report anything, and
+    a public booking page must not raise because of it.
+    """
+    try:
+        pz = ZoneInfo(practitioner_tz)
+    except (ZoneInfoNotFoundError, ValueError, KeyError):
+        pz = ZoneInfo(DEFAULT_TIMEZONE)
+    try:
+        vz = ZoneInfo(visitor_tz)
+    except (ZoneInfoNotFoundError, ValueError, KeyError):
+        vz = pz
+    aware = datetime.fromisoformat(str(iso)[:19]).replace(tzinfo=pz)
+    return aware.astimezone(vz).isoformat()
