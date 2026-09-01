@@ -17973,7 +17973,23 @@ def api_public_book_slots(slug):
         "ok": True,
         "timezone": cfg["timezone"],
         "rendered_timezone": rendered_tz,
-        "session_types": cfg["session_types"] if cfg["enabled"] else [],
+        # Projected field by field, NOT the stored dict. This route is public
+        # and unauthenticated (see the docstring above), and a session type is
+        # practitioner-authored: `location` holds her Zoom join URL, whose
+        # ?pwd= IS the access credential, or her street address. She writes it
+        # expecting it to reach someone who has actually booked, and it goes
+        # out in the confirmation email and the ICS.
+        #
+        # Returning cfg["session_types"] verbatim published it to anyone who
+        # knows her slug, with no booking and no rate limit. A whitelist here
+        # rather than deleting `location`, because the defect was the shape:
+        # every future field added to a session type would have been published
+        # the day it was added, silently.
+        "session_types": [
+            {"slug": st["slug"], "label": st["label"],
+             "duration_min": st["duration_min"], "medium": st["medium"]}
+            for st in cfg["session_types"]
+        ] if cfg["enabled"] else [],
         "slots": [{"start": s,
                    "visitor": _pb.to_visitor_tz(s, cfg["timezone"], rendered_tz)}
                   for s in starts]})
@@ -23818,10 +23834,29 @@ def evox_run_reminders():
                     "reminder for booking %s fell back to console-log while "
                     "SMTP_HOST is set; it is being stamped as reminded but no "
                     "email was sent", r["id"])
-            cx.execute("UPDATE evox_bookings SET reminded_at=? WHERE id=?",
-                       (now.isoformat(), r["id"]))
+            # Stamped and COMMITTED per row, inside its own try.
+            #
+            # The email has already left at this point, so the stamp is the only
+            # record that it did. Batching the commit to the end of the loop
+            # means anything that interrupts the run -- a SIGTERM mid-deploy, or
+            # on Postgres a single failed UPDATE aborting the transaction and
+            # taking every later one with it -- discards the stamps for messages
+            # that were genuinely sent, and tomorrow's run reminds that whole
+            # population a second time.
+            #
+            # A failed stamp is logged and the loop continues: one duplicate
+            # reminder tomorrow is a far smaller harm than aborting the run and
+            # duplicating every client after this one.
+            try:
+                cx.execute("UPDATE evox_bookings SET reminded_at=? WHERE id=?",
+                           (now.isoformat(), r["id"]))
+                cx.commit()
+            except Exception:
+                app.logger.exception(
+                    "reminder for booking %s was SENT but could not be stamped; "
+                    "it may be sent again tomorrow", r["id"])
+                continue
             sent += 1
-        cx.commit()
     return jsonify({"sent": sent})
 
 

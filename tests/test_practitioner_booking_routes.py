@@ -2863,3 +2863,31 @@ def test_the_ics_cancel_link_is_the_same_durable_one(logdb, monkeypatch):
     ics = sent[0].decode("utf-8", "replace").replace("\r\n ", "").replace("\n ", "")
     assert "slug=remedy-match" in ics, ics
     assert "slug=dr-glen" not in ics
+
+
+def test_the_public_slots_route_never_publishes_a_session_type_location(
+        public, logdb):
+    """/api/book/<slug>/slots is public and unauthenticated.
+
+    `location` is her meeting link, whose ?pwd= IS the access credential, or her
+    street address. She writes it expecting it to reach a client who booked, and
+    it travels in the confirmation email and the ICS. Returning the stored
+    session-type dict verbatim published it to anyone holding her slug, with no
+    booking and no rate limit.
+
+    Asserted as an exact key SET rather than "location is absent": the defect
+    was the SHAPE of the response, so the next field added to a session type
+    must fail this test rather than ship to the public the day it is added.
+    """
+    import json as _json
+    with _open(logdb) as c:
+        pb.set_config(c, PID, dict(
+            CFG, enabled=True,
+            session_types=[{"slug": "intro", "label": "Intro",
+                            "duration_min": 30, "medium": "zoom",
+                            "location": "https://zoom.us/j/1?pwd=SUPERSECRET"}]))
+    body = public.get("/api/book/mary-boyd/slots?session=intro").get_json()
+    assert body["session_types"], "fixture produced no session types to check"
+    for st in body["session_types"]:
+        assert set(st) == {"slug", "label", "duration_min", "medium"}, st
+    assert "SUPERSECRET" not in _json.dumps(body)
