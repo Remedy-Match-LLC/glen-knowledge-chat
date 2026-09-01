@@ -18159,11 +18159,21 @@ def api_public_book(slug):
         # the link the client keeps are built on the name that cannot rot.
         cancel_url = (f"{portal_base()}/book/cancel?slug={cancel_slug}&start={start_ts}"
                       f"&token={token}&when={_quote(shown)}&tz={_quote(rendered_tz)}")
+        # The "where" for this session type (a meeting link for zoom, a
+        # street address for in-person). Optional and deliberately absent
+        # for phone -- her number is covered by the "Call:" line below, not
+        # this field. Reused for the practitioner notification block below
+        # as well as the ICS location, so it is computed once here.
+        where = (st.get("location") or "").strip()
         lines = [f"Hi {name},", "",
                  f"Your {st['label']} is booked.", "",
                  f"When: {shown} ({rendered_tz})",
-                 f"How: {st['medium']}", "",
-                 "If you need to cancel, use this link:", cancel_url, "",
+                 f"How: {st['medium']}"]
+        # Added only when set: an unset location must produce no artifact at
+        # all, not an empty "Where:" label.
+        if where:
+            lines.append(f"Where: {where}")
+        lines += ["", "If you need to cancel, use this link:", cancel_url, "",
                  "See you then."]
         methods = cfg.get("notify_methods") or ["email"]
         # Her booking number, off the config row she saved it on. Gated on
@@ -18193,11 +18203,29 @@ def api_public_book(slug):
         # a client in one zone adds the WRONG time to their calendar even
         # though the text body above (via to_visitor_tz/rendered_tz) shows
         # the right one.
+        # location falls back to the medium ("zoom", "phone", "in-person")
+        # when she has not set one -- exactly what this call always passed
+        # before Task 2, so an unset location changes nothing here and the
+        # LOCATION: line build_ics emits is never bare (empty).
+        #
+        # build_ics escapes only "\n" in the string it is handed (see its
+        # `desc` line) -- RFC 5545 TEXT values also require a backslash
+        # before a literal backslash, semicolon, or comma, none of which
+        # build_ics applies to the location argument it already accepts.
+        # That was harmless while every caller passed a fixed medium word
+        # ("zoom", "phone", "in-person" -- none contain those characters);
+        # `where` is now free text a practitioner types, and a real street
+        # address ("123 Main St, Suite 5") is exactly the case that needs
+        # it, so the escaping happens here rather than inside build_ics,
+        # which is not this task's file to change.
+        ics_location = (where.replace("\\", "\\\\").replace(";", "\\;")
+                         .replace(",", "\\,").replace("\n", "\\n")
+                         if where else st["medium"])
         ics = _ev.build_ics(uid=b["ics_uid"], start_ts=start_ts, end_ts=b["end_ts"],
                             summary=st["label"],
                             description=f"{st['label']} ({st['medium']}). "
                                         f"To cancel: {cancel_url}",
-                            location=st["medium"], tz_name=cfg["timezone"])
+                            location=ics_location, tz_name=cfg["timezone"])
         send_evox_email(email, name, "Your appointment is booked",
                         html_body, text_body, ics)
     except Exception as e:  # noqa: BLE001
@@ -18233,6 +18261,12 @@ def api_public_book(slug):
             # prevent. Collapse whitespace for the SUBJECT only; the body
             # below keeps the name as submitted.
             subj = f"New booking: {' '.join(name.split())}"
+            # Computed independently of the client block's `where` above: that
+            # block's own try/except may not have run (or may have raised
+            # before defining it) by the time execution reaches here, and this
+            # block must not depend on it -- same reasoning as `ics = b""`
+            # being bound outside the client try rather than assumed set.
+            where2 = (st.get("location") or "").strip()
             html_body2 = (
                 f"<p>New {_html2.escape(st['label'])} booking.</p>"
                 f"<p>Who: <b>{_html2.escape(name)}</b> ({_html2.escape(email)})</p>"
@@ -18242,6 +18276,11 @@ def api_public_book(slug):
                           f"Who: {name} ({email})\n"
                           f"When: {her_nice} ({cfg['timezone']})\n"
                           f"How: {st['medium']}")
+            # Added only when set, same rule as the client copy above: an
+            # unset location must produce no artifact at all.
+            if where2:
+                html_body2 += f"<p>Where: {_html2.escape(where2)}</p>"
+                text_body2 += f"\nWhere: {where2}"
             methods = cfg.get("notify_methods") or ["email"]
             # "phone" is deliberately absent from this loop. It is not an
             # outbound channel: it means she wants the client to call her, so
