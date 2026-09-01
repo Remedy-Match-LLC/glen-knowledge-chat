@@ -23617,7 +23617,20 @@ _REMINDER_LEGACY_PRACTITIONERS = ("rae", "glen")
 # only be applied per row: start_ts is naive wall clock in the practitioner's
 # OWN zone, so "24 hours from now" is a different string on every one of them.
 _REMINDER_BAND_LO = timedelta(hours=24)
-_REMINDER_BAND_HI = timedelta(hours=48)
+# 49, not 48, so consecutive daily runs OVERLAP by an hour instead of abutting.
+#
+# 24-to-48 tiles perfectly only if the runs are exactly 86400s apart. They are
+# not: this is a Render cron ("0 17 * * *") whose start jitters, and render.yaml
+# records a three-day outage of it in August. With an exact ceiling, an
+# appointment landing in the sliver above run N's 48h and below run N+1's 24h is
+# seen by neither run, is never stamped, and is therefore never reminded -- and
+# nothing anywhere records that it wasn't.
+#
+# The overlap is free because `reminded_at` already suppresses a second send, so
+# the worst case of widening is a row considered twice and sent once. That is
+# the recoverable direction; the abutting version's failure is silent and
+# permanent. A reminder arriving at 49 hours instead of 48 costs nothing.
+_REMINDER_BAND_HI = timedelta(hours=49)
 
 # How far the coarse SQL prefilter is widened on each side of the Hawaii-naive
 # band, and why this number.

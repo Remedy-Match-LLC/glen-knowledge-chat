@@ -385,3 +385,36 @@ def test_a_public_booking_is_titled_with_her_own_session_label(monkeypatch):
     appointment = next(e for e in block["events"] if e["id"] == "appointment-11")
     assert appointment["title"] == "Biofield Analysis"
     assert "Private Appointment" not in str(block)
+
+
+def test_two_public_practitioners_in_one_block_keep_their_own_name_and_zone(
+        monkeypatch):
+    """The identity cache is keyed per practitioner and shared across a page
+    load. Nothing else asserts the POSITIVE cross-contamination case: one
+    resolvable practitioner's name or zone bleeding onto another's row would
+    satisfy every other test in this file, because they each render one.
+
+    A client can genuinely hold bookings with two practitioners.
+    """
+    db = _pg_shaped(_cx())
+    _booking_config(db, "pid-mary", "America/Anchorage",
+                    slug="intro", label="Intro Call")
+    _booking_config(db, "pid-aloha", "Pacific/Honolulu",
+                    slug="deep", label="Deep Dive")
+    _fake_supabase(monkeypatch, {"pid-mary": "Dr. Mary Chen",
+                                 "pid-aloha": "Dr. Aloha Kai"})
+    db.execute("INSERT INTO evox_bookings VALUES "
+               "(21,'client@x.com','intro','pid-mary','zoom',"
+               "'2099-02-03T05:00:00','2099-02-03T05:30:00',0,'booked')")
+    db.execute("INSERT INTO evox_bookings VALUES "
+               "(22,'client@x.com','deep','pid-aloha','zoom',"
+               "'2099-02-04T05:00:00','2099-02-04T06:00:00',0,'booked')")
+    block = portal_calendar.build_block(db, email="client@x.com",
+                                        now_iso="2099-01-01T00:00:00")
+    mary = next(e for e in block["events"] if e["id"] == "appointment-21")
+    aloha = next(e for e in block["events"] if e["id"] == "appointment-22")
+    assert "Dr. Mary Chen" in mary["description"]
+    assert "Dr. Aloha Kai" in aloha["description"]
+    assert mary["title"] == "Intro Call" and aloha["title"] == "Deep Dive"
+    assert mary["start"].endswith("-09:00"), mary["start"]
+    assert aloha["start"].endswith("-10:00"), aloha["start"]

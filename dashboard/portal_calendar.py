@@ -100,16 +100,23 @@ def _practitioner_identity(cx, who, cache):
         identity = (_LEGACY_PRACTITIONERS[who], _LEGACY_TZ, {})
     elif who:
         name = _practitioner_name(who)
-        # get_config is the one reader of her stored zone, and it already
-        # fails closed to None for both "no row" and "a row that cannot be
-        # read back". It swallows its own db errors, so on PostgreSQL a
-        # missing table would leave the transaction aborted without raising
-        # here; the appointment rows are already fetched by then, and the
-        # sections below each recover before their own query.
+        # get_config is the one reader of her stored zone, and it fails closed
+        # to None for both "no row" and "a row that cannot be read back".
+        #
+        # It SWALLOWS the db error rather than raising it, which is the trap:
+        # on PostgreSQL a failed read leaves the transaction aborted, and
+        # because nothing was raised, the `except` below never fires. The next
+        # section's query then dies with InFailedSqlTransaction and that whole
+        # block goes missing from the client's page. So a falsy result is
+        # treated as needing recovery too, not just an exception.
         own_labels = {}
         try:
             from dashboard import practitioner_booking as _pb
-            _cfg = _pb.get_config(cx, who) or {}
+            _cfg = _pb.get_config(cx, who)
+            if not _cfg:
+                # Swallowed-error case: recover before the caller's next query.
+                _recover_optional_query(cx)
+                _cfg = {}
             tz_name = (_cfg.get("timezone") or "").strip()
             # Her own session labels, taken from the config THIS call already
             # read. The module-level `labels` map only knows Rae's and Glen's

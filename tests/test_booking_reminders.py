@@ -438,7 +438,7 @@ def test_an_alaska_booking_squarely_inside_the_real_band_is_reminded(
 def test_rae_and_glen_are_bit_for_bit_unchanged_by_the_zone_aware_window(
         client, logdb, _capture, monkeypatch):
     """Rae's and Glen's own bookings ARE Hawaii wall time, so the zone-aware
-    band must reduce to exactly the window they have always had: 24-48h on the
+    band must reduce to exactly the window they have always had, on the
     Hawaii clock, both edges. Three rows, one run: only the middle one is
     reminded, and the other two are left unstamped."""
     t = _frozen(monkeypatch)
@@ -447,7 +447,7 @@ def test_rae_and_glen_are_bit_for_bit_unchanged_by_the_zone_aware_window(
     _insert(logdb, email="hi-mid@example.com", practitioner="rae",
             session_type="evox", start_ts=_hst_plus(t, 30))
     _insert(logdb, email="hi-late@example.com", practitioner="rae",
-            session_type="evox", start_ts=_hst_plus(t, 48.5))
+            session_type="evox", start_ts=_hst_plus(t, 50))
     assert _run(client)["sent"] == 1
     assert [c["to"] for c in _capture] == ["hi-mid@example.com"]
     # The same expectations the existing EVOX control test asserts.
@@ -456,6 +456,27 @@ def test_rae_and_glen_are_bit_for_bit_unchanged_by_the_zone_aware_window(
     assert _stamp(logdb, "hi-mid@example.com") is not None
     assert _stamp(logdb, "hi-early@example.com") is None
     assert _stamp(logdb, "hi-late@example.com") is None
+
+
+def test_the_band_ends_at_49_hours_so_daily_runs_overlap_rather_than_abut(
+        client, logdb, _capture, monkeypatch):
+    """24-to-48 tiles perfectly only if consecutive runs are exactly 86400s
+    apart. This is a Render cron whose start jitters, and render.yaml records a
+    three-day outage of it. With an exact ceiling, an appointment in the sliver
+    above one run's 48h and below the next run's 24h is seen by neither, is
+    never stamped, and is therefore never reminded, with nothing recording that
+    it wasn't.
+
+    The overlap is free: `reminded_at` already suppresses a second send, so the
+    worst case of widening is a row considered twice and sent once. Pinned
+    because 49 looks like an off-by-one to anyone who does not know why.
+    """
+    t = _frozen(monkeypatch)
+    _insert(logdb, email="edge@example.com", practitioner="rae",
+            session_type="evox", start_ts=_hst_plus(t, 48.5))
+    assert _run(client)["sent"] == 1
+    assert _capture[-1]["to"] == "edge@example.com"
+    assert _stamp(logdb, "edge@example.com") is not None
 
 
 def test_glens_own_bookings_keep_the_same_hawaii_band(client, logdb, _capture,
