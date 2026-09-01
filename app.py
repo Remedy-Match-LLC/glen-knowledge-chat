@@ -23747,23 +23747,26 @@ def evox_run_reminders():
             cx.execute("ALTER TABLE evox_bookings ADD COLUMN reminded_at TEXT")
         except Exception:
             pass
-        # practitioner filter is load-bearing, not decorative. This query used
-        # to run unfiltered, which meant a public multi-tenant booking (whose
-        # `practitioner` is some OTHER practitioner's slug, e.g. "pid-mary")
-        # fell through every branch below to the Rae/EVOX else-clause: a
-        # stranger who booked a different practitioner in a different
-        # timezone would be told "your EVOX session is tomorrow ... HST, call
-        # Rae at {EVOX_RAE_PHONE}" -- wrong session, wrong practitioner, wrong
-        # zone, and Rae's phone number handed to someone who has no
-        # relationship with her. Restricting to the two practitioners this
-        # branch logic actually knows how to word a reminder for closes that
-        # leak. A practitioner-aware reminder (using her own cfg["timezone"]
-        # and session label) is real work that does not exist yet -- until it
-        # does, a public-practitioner booking gets NO automated reminder
-        # rather than the wrong one.
+        # This query was scoped `practitioner IN ('rae','glen')` because the
+        # wording below could not word a reminder for anyone else: a public
+        # multi-tenant booking (whose `practitioner` is another
+        # practitioner's id, e.g. "pid-mary") fell through every branch to
+        # the Rae/EVOX else-clause, and a stranger in another timezone was
+        # told "your EVOX session is tomorrow ... HST, call Rae at
+        # {EVOX_RAE_PHONE}" -- wrong session, wrong practitioner, wrong zone,
+        # and Rae's phone number handed to someone with no relationship with
+        # her. The filter was the only thing holding that shut.
+        #
+        # It is safe to drop now, and ONLY now, because _reminder_message
+        # words a public booking from HER OWN config (her timezone, her
+        # session label, her location, her display name) and returns a skip
+        # for any booking it cannot word -- so no row reaches the EVOX
+        # else-clause by falling through. Widening the recipient set before
+        # that branch existed would have handed strangers Rae's number at
+        # scale, which is why the branch landed in the commit before this one.
         rows = cx.execute(
             "SELECT * FROM evox_bookings WHERE status='booked' AND reminded_at IS NULL "
-            "AND practitioner IN ('rae','glen') AND start_ts BETWEEN ? AND ?", (lo, hi)).fetchall()
+            "AND start_ts BETWEEN ? AND ?", (lo, hi)).fetchall()
         # Resolved once per practitioner per run, not once per booking: the
         # config is a database read and the display name reaches Supabase.
         cfg_cache, name_cache = {}, {}

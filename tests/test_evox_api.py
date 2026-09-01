@@ -249,14 +249,25 @@ def test_reminders_send_once_deterministic(client, monkeypatch):
 
 def test_a_public_practitioners_booking_gets_no_reminder_and_is_not_stamped(
         client, monkeypatch):
-    """CRITICAL: before this filter, this query had no practitioner clause at
-    all. A public multi-tenant booking's practitioner is some OTHER
-    practitioner's own id (e.g. "pid-mary") -- none of the branches in
-    evox_run_reminders recognize that value, so it fell through to the
-    Rae/EVOX else-clause and would have emailed a stranger "your EVOX
-    session is tomorrow ... HST, call Rae at {phone}" -- wrong session,
-    wrong practitioner, wrong timezone, and Rae's own phone number handed to
-    someone with no relationship to her.
+    """CRITICAL, and it now holds for a DIFFERENT reason than when it was
+    written. A public multi-tenant booking's practitioner is some OTHER
+    practitioner's own id (e.g. "pid-mary"), which none of the branches in
+    evox_run_reminders recognized: it fell through to the Rae/EVOX
+    else-clause and would have emailed a stranger "your EVOX session is
+    tomorrow ... HST, call Rae at {phone}" -- wrong session, wrong
+    practitioner, wrong timezone, and Rae's own phone number handed to
+    someone with no relationship to her. A `practitioner IN ('rae','glen')`
+    clause on the query was what held that shut.
+
+    That clause is gone: the cron now words a public booking from the
+    practitioner's OWN booking config (see tests/test_booking_reminders.py,
+    which covers the reminder she is supposed to receive). This row has no
+    such config -- nothing is inserted into practitioner_booking_config
+    here -- so there is no timezone, no session label and no location, and
+    therefore nothing correct to say. The refusal that keeps this test green
+    is the config check in _reminder_message, not a query filter. It must
+    stay a refusal: falling back to the EVOX branch for a practitioner whose
+    config cannot be read is the same leak in a new place.
 
     The reminded_at half matters independently of the send: even if send
     were somehow skipped, stamping reminded_at on a row this code cannot
