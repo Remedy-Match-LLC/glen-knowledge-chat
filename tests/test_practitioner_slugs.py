@@ -393,11 +393,32 @@ def test_a_reserved_word_is_refused(cx):
 
 
 def test_clearing_the_page_slug_restores_the_affiliate_slug(cx):
+    """Clearing writes the AFFILIATE SLUG back into page_slug, not NULL. The
+    stored column is asserted directly, not just the resolution: a NULL would
+    resolve identically while quietly dropping her row out of the unique index
+    that is the only real guard on "one URL, one practitioner"."""
     _seed(cx, slug="remedy-match")
     ps.set_page_slug(cx, "remedy-match", "dr-glen", reserved=frozenset())
-    ps.set_page_slug(cx, "remedy-match", "", reserved=frozenset())
+    assert ps.set_page_slug(cx, "remedy-match", "", reserved=frozenset()) == "remedy-match"
+    stored = cx.execute("SELECT page_slug FROM affiliate_signups"
+                        " WHERE slug='remedy-match'").fetchone()[0]
+    assert stored == "remedy-match"
     assert ps.resolve_page(cx, "remedy-match") == ("canonical", "remedy-match", "remedy-match")
     assert ps.resolve_page(cx, "dr-glen") == ("", "", "")
+
+
+def test_a_cleared_row_still_occupies_the_unique_index(cx):
+    """The point of writing the affiliate slug rather than NULL. After Mary
+    clears her vanity slug, a write that bypasses the validator entirely must
+    still be unable to hand her URL to Glen."""
+    _seed(cx, slug="remedy-match"); _seed(cx, slug="mary-boyd")
+    ps.set_page_slug(cx, "mary-boyd", "the-coach", reserved=frozenset())
+    ps.set_page_slug(cx, "mary-boyd", "", reserved=frozenset())
+    with pytest.raises(db.IntegrityError):
+        cx.execute("UPDATE affiliate_signups SET page_slug='mary-boyd'"
+                   " WHERE slug='remedy-match'")
+    cx.rollback()
+    assert ps.resolve_page(cx, "mary-boyd") == ("canonical", "mary-boyd", "mary-boyd")
 
 
 def test_init_page_slug_is_idempotent(cx):
@@ -457,9 +478,16 @@ def test_canonical_slug_for_an_unknown_practitioner_is_empty(cx):
 
 
 def test_two_cleared_page_slugs_do_not_collide(cx):
-    """Clearing must write NULL, not an empty string. Two empty strings under
-    the unique index are a duplicate; two NULLs are not, on both SQLite and
-    Postgres."""
+    """Clearing writes each practitioner's OWN affiliate slug, which is unique
+    by the affiliate_signups.slug constraint, so two clears can never be a
+    duplicate under the page_slug index.
+
+    Inverted from its original form, which asserted that clearing writes NULL
+    (two NULLs being distinct under a unique index on both backends). NULL was
+    what let a raw UPDATE hand one practitioner another's URL, so the reason
+    this test passes has changed even though the assertions have not. Writing
+    '' would still be the bug the original docstring named: two empty strings
+    ARE a duplicate."""
     _seed(cx, slug="remedy-match"); _seed(cx, slug="mary-boyd")
     ps.set_page_slug(cx, "remedy-match", "dr-glen", reserved=frozenset())
     ps.set_page_slug(cx, "mary-boyd", "the-coach", reserved=frozenset())
@@ -515,3 +543,126 @@ def test_init_page_slug_is_keyed_on_the_database_not_a_process_flag(tmp_path):
         conn.commit()
         ps.init_page_slug(conn)
         assert db.column_exists(conn, "affiliate_signups", "page_slug") is True
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# page_slug is ALWAYS POPULATED. Every row's page_slug IS its effective public
+# URL, defaulting to its own affiliate slug, so the single-column unique index
+# enforces "one URL, one practitioner" at the database instead of leaving it to
+# a validator's read-then-write.
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+def _legacy_cx(tmp_path, name="legacy.db"):
+    """A database as production looked BEFORE this feature: affiliate_signups
+    holding rows and having NO page_slug column.
+
+    These INSERTs are raw rather than going through the production writer, and
+    that is the point: they stand for practitioners minted by the writer as it
+    stood before page_slug existed, which is a writer no longer in the tree.
+    init_page_slug's backfill is the only thing that can give them a page_slug,
+    so this fixture is what isolates the backfill from the writers.
+    """
+    conn = sqlite3.connect(str(tmp_path / name))
+    conn.executescript(_PROD_DDL)
+    for slug in ("remedy-match", "mary-boyd"):
+        conn.execute(
+            "INSERT INTO affiliate_signups (created_at,name,email,slug,token,status)"
+            " VALUES ('2026-01-01T00:00:00+00:00',?,?,?,?,'approved')",
+            (slug.replace("-", " "), f"{slug}@example.com", slug, f"tok-{slug}"))
+    conn.commit()
+    assert db.column_exists(conn, "affiliate_signups", "page_slug") is False
+    return conn
+
+
+def test_a_raw_update_cannot_hand_a_legacy_row_another_practitioners_url(tmp_path):
+    """The reviewer's exact reproduction, inverted.
+
+    Two practitioners, neither having chosen a page slug. He then ran
+
+        UPDATE affiliate_signups SET page_slug='mary-boyd' WHERE slug='remedy-match'
+
+    and it SUCCEEDED, because with Mary's own page_slug NULL there was no
+    colliding VALUE. resolve_page(cx, 'mary-boyd') then returned Glen's row and
+    /mary-boyd served a different practitioner's page. The only thing standing
+    in the way was validate_page_slug's SELECT, which this UPDATE bypasses
+    entirely and which has a real race window on Postgres regardless.
+
+    Once the backfill populates both rows, Mary's own page_slug is 'mary-boyd'
+    and Glen's claim collides with HER row. Bypassing the validator is exactly
+    what this test does, so what refuses the write can only be the database.
+    """
+    cx = _legacy_cx(tmp_path)
+    ps.init_page_slug(cx)
+    with pytest.raises(db.IntegrityError):
+        cx.execute("UPDATE affiliate_signups SET page_slug='mary-boyd'"
+                   " WHERE slug='remedy-match'")
+    cx.rollback()
+    assert ps.resolve_page(cx, "mary-boyd") == ("canonical", "mary-boyd", "mary-boyd")
+    assert ps.resolve_page(cx, "remedy-match") == ("canonical", "remedy-match", "remedy-match")
+
+
+def test_a_raw_update_cannot_hand_a_freshly_written_row_anothers_url(tmp_path):
+    """The same reproduction for rows created by the PRODUCTION WRITER after
+    the column already exists, where the backfill has nothing to do. Backfill
+    and writer are two independent ways for a row to end up populated, and a
+    test that only covers one of them lets the other regress silently."""
+    conn = sqlite3.connect(str(tmp_path / "fresh.db"))
+    conn.executescript(_PROD_DDL)
+    conn.commit()
+    ps.init_page_slug(conn)          # column exists, table empty: no backfill
+    _seed(conn, slug="remedy-match"); _seed(conn, slug="mary-boyd")
+    with pytest.raises(db.IntegrityError):
+        conn.execute("UPDATE affiliate_signups SET page_slug='mary-boyd'"
+                     " WHERE slug='remedy-match'")
+    conn.rollback()
+    assert ps.resolve_page(conn, "mary-boyd") == ("canonical", "mary-boyd", "mary-boyd")
+
+
+def test_the_production_writer_populates_page_slug(cx):
+    """ensure_affiliate is the writer behind auto-enrolment. A new row it makes
+    must carry page_slug = its own slug, or that row is outside the unique
+    index and the test above is the only thing holding the invariant up."""
+    _seed(cx, slug="mary-boyd")
+    stored = cx.execute("SELECT page_slug FROM affiliate_signups"
+                        " WHERE slug='mary-boyd'").fetchone()[0]
+    assert stored == "mary-boyd"
+
+
+def test_the_backfill_is_idempotent(tmp_path, monkeypatch):
+    """init_page_slug runs on every process start. Running it twice over a
+    table that already holds rows must leave every page_slug equal to its slug
+    and raise nothing. The cache is cleared between calls so the DDL genuinely
+    runs a second time rather than short-circuiting."""
+    cx = _legacy_cx(tmp_path)
+    for _ in range(2):
+        monkeypatch.setattr(ps, "_PAGE_INIT_DONE", set())
+        ps.init_page_slug(cx)
+    rows = cx.execute("SELECT slug, page_slug FROM affiliate_signups"
+                      " ORDER BY slug").fetchall()
+    assert rows == [("mary-boyd", "mary-boyd"), ("remedy-match", "remedy-match")]
+
+
+def test_the_backfill_leaves_a_chosen_page_slug_alone(tmp_path, monkeypatch):
+    """`WHERE page_slug IS NULL` is what makes the backfill idempotent. Without
+    it a second run would overwrite every vanity URL a practitioner has chosen
+    with her affiliate slug -- silently unpublishing her page."""
+    cx = _legacy_cx(tmp_path)
+    ps.init_page_slug(cx)
+    ps.set_page_slug(cx, "remedy-match", "dr-glen", reserved=frozenset())
+    monkeypatch.setattr(ps, "_PAGE_INIT_DONE", set())
+    ps.init_page_slug(cx)
+    assert ps.canonical_slug_for(cx, "remedy-match") == "dr-glen"
+    assert ps.resolve_page(cx, "dr-glen") == ("canonical", "dr-glen", "remedy-match")
+
+
+def test_resolve_page_falls_back_for_a_row_left_null_by_some_writer(cx):
+    """Defence in depth. "Always populated" is only true while every writer
+    honours it; if one is ever missed, that practitioner must still serve at
+    her affiliate slug rather than 404. The NULL here is written directly,
+    standing in for a writer this change did not find."""
+    _seed(cx, slug="mary-boyd")
+    cx.execute("UPDATE affiliate_signups SET page_slug=NULL WHERE slug='mary-boyd'")
+    cx.commit()
+    assert ps.resolve_page(cx, "mary-boyd") == ("canonical", "mary-boyd", "mary-boyd")
+    assert ps.canonical_slug_for(cx, "mary-boyd") == "mary-boyd"
