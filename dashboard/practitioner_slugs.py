@@ -305,6 +305,43 @@ def _try(cx, sql):
         return False
 
 
+def _warn_if_page_slug_nulls_remain(cx):
+    """Print loudly if any affiliate_signups row still has a NULL page_slug
+    right after the backfill statement above.
+
+    The backfill runs inside the same swallowed try/except every statement in
+    this function uses -- deliberately, per _try's docstring, so a Postgres
+    DuplicateColumn on the ALTER before it cannot take the CREATE UNIQUE INDEX
+    after it down too. But that same swallowing means a genuinely FAILED
+    backfill (e.g. a NULL row whose own slug collides with another row's
+    already-chosen page_slug) is invisible: the UPDATE raises, is rolled back,
+    and the CREATE UNIQUE INDEX that follows does not care -- an index can be
+    created over a column that still holds NULLs, so the deploy looks green
+    while the invariant "every row occupies its own name in the index" is not
+    true for that row. Another practitioner could still claim it.
+
+    Never raises: a page render must not 500 over a boot-time diagnostic. Uses
+    the same `print(f"[tag] ...", flush=True)` convention every other
+    boot-time warning in this codebase uses (see app.py's
+    `[warn] could not load ...` and dashboard/reviews_actions.py's
+    `[reviews] cert grant failed ...`).
+    """
+    try:
+        row = cx.execute(
+            "SELECT COUNT(*) FROM affiliate_signups WHERE page_slug IS NULL"
+        ).fetchone()
+        null_count = (row[0] if row else 0) or 0
+    except db.Error:
+        return
+    if null_count:
+        print(f"[practitioner-slugs] WARNING: {null_count} affiliate_signups"
+              f" row(s) still have a NULL page_slug after backfill --"
+              f" ux_affiliate_page_slug does not cover them and another"
+              f" practitioner could claim that name. Investigate before"
+              f" trusting this deploy; scripts/audit_practitioner_slugs.py"
+              f" reports the same count read-only.", flush=True)
+
+
 def init_page_slug(cx):
     """Add affiliate_signups.page_slug and its unique index. Idempotent.
 
@@ -332,6 +369,7 @@ def init_page_slug(cx):
     # process start.
     _try(cx, "UPDATE affiliate_signups SET page_slug = slug"
              " WHERE page_slug IS NULL")
+    _warn_if_page_slug_nulls_remain(cx)
     # The backstop against a concurrent claim: validate_page_slug's
     # read-then-write has a race window that only the database can close. With
     # every row populated, this single-column index says "one effective public

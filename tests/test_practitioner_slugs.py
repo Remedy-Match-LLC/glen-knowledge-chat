@@ -1,4 +1,5 @@
 """Unit tests for the practitioner slug namespace. Imports no Flask app."""
+import os
 import sqlite3
 
 import pytest
@@ -725,3 +726,118 @@ def test_resolve_page_falls_back_for_a_row_left_null_by_some_writer(cx):
     cx.commit()
     assert ps.resolve_page(cx, "mary-boyd") == ("canonical", "mary-boyd", "mary-boyd")
     assert ps.canonical_slug_for(cx, "mary-boyd") == "mary-boyd"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Task 4: a failed backfill must be loud, and the index it feeds must be
+# understood for what it actually enforces.
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+def test_the_backfill_warns_loudly_when_nulls_survive(tmp_path, monkeypatch, capsys):
+    """Reproduces the exact hole this warning exists to close.
+
+    Steady state: the column and unique index already exist from a prior
+    successful init_page_slug run, and Glen has already renamed his public
+    URL to 'mary-boyd' (a name nobody else holds yet). A second practitioner
+    is then minted with the affiliate slug 'mary-boyd' -- inserted raw,
+    standing in for a writer this change did not find, the same idiom
+    _legacy_cx above uses -- and never gets a page_slug.
+
+    On the next process start, init_page_slug's backfill tries to set her
+    page_slug to her own slug, 'mary-boyd', which collides with Glen's
+    ALREADY-CHOSEN page_slug. The UPDATE raises, _try swallows it, and
+    CREATE UNIQUE INDEX IF NOT EXISTS -- already present -- has nothing to
+    say about the NULL that survives. Without the warning this is a silent
+    deploy with the invariant unenforced; Task 4 makes it loud instead.
+    """
+    conn = sqlite3.connect(str(tmp_path / "warn.db"))
+    conn.executescript(_PROD_DDL)
+    conn.commit()
+    ps.init_page_slug(conn)   # steady state: column + index already exist
+
+    _seed(conn, slug="remedy-match")
+    ps.set_page_slug(conn, "remedy-match", "mary-boyd", reserved=frozenset())
+
+    conn.execute(
+        "INSERT INTO affiliate_signups"
+        " (created_at,name,email,slug,token,status,page_slug)"
+        " VALUES ('2026-01-01T00:00:00+00:00','Mary Boyd','mary-boyd@example.com',"
+        " 'mary-boyd','tok-mary-boyd','approved',NULL)")
+    conn.commit()
+
+    monkeypatch.setattr(ps, "_PAGE_INIT_DONE", set())   # force the DDL to run again
+    capsys.readouterr()                                  # discard setup noise
+    ps.init_page_slug(conn)
+    out = capsys.readouterr().out
+    assert "WARNING" in out, out
+    assert "1 affiliate_signups" in out, out
+
+    remaining = conn.execute(
+        "SELECT page_slug FROM affiliate_signups WHERE slug='mary-boyd'"
+    ).fetchone()[0]
+    assert remaining is None   # the backfill genuinely failed for this row
+
+
+def test_the_backfill_is_silent_when_nulls_do_not_survive(tmp_path, capsys):
+    """The common case -- a clean, first-ever backfill over legacy rows with
+    no pre-existing page_slug collisions -- must print nothing. A warning
+    that fires on every boot would train everyone to ignore it."""
+    cx = _legacy_cx(tmp_path)
+    capsys.readouterr()
+    ps.init_page_slug(cx)
+    out = capsys.readouterr().out
+    assert "WARNING" not in out, out
+    remaining = cx.execute(
+        "SELECT COUNT(*) FROM affiliate_signups WHERE page_slug IS NULL"
+    ).fetchone()[0]
+    assert remaining == 0
+
+
+def test_the_unique_index_tolerates_multiple_null_page_slugs(tmp_path):
+    """NULLs are distinct on both backends' UNIQUE index semantics -- SQLite
+    here, and Postgres in the skipif variant below. This is WHY page_slug
+    must be ALWAYS POPULATED to mean anything: the index alone does not stop
+    two never-backfilled, never-chosen rows from both sitting outside its
+    reach at once. See the raw-UPDATE reproduction tests above for what an
+    unpopulated row lets happen the moment someone DOES claim its name."""
+    conn = sqlite3.connect(str(tmp_path / "nulls.db"))
+    conn.executescript(_PROD_DDL)
+    conn.execute("ALTER TABLE affiliate_signups ADD COLUMN page_slug TEXT")
+    conn.execute("CREATE UNIQUE INDEX ux_affiliate_page_slug"
+                 " ON affiliate_signups(page_slug)")
+    for slug in ("remedy-match", "mary-boyd"):
+        conn.execute(
+            "INSERT INTO affiliate_signups"
+            " (created_at,name,email,slug,token,status,page_slug)"
+            " VALUES ('2026-01-01T00:00:00+00:00',?,?,?,?,'approved',NULL)",
+            (slug.replace("-", " "), f"{slug}@example.com", slug, f"tok-{slug}"))
+    conn.commit()   # must not raise: two NULLs are not a duplicate
+    rows = conn.execute(
+        "SELECT page_slug FROM affiliate_signups ORDER BY slug").fetchall()
+    assert rows == [(None,), (None,)]
+
+
+@pytest.mark.skipif(not os.environ.get("PG_DSN"), reason="PG_DSN not set")
+def test_the_unique_index_tolerates_multiple_null_page_slugs_on_postgres(monkeypatch):
+    """Same pin as above, against the real production backend. Postgres also
+    treats every NULL as distinct under a UNIQUE index -- this is not a
+    SQLite-only quirk the design happens to rely on."""
+    monkeypatch.setenv("DB_BACKEND", "postgres")
+    cx = db.connect("page_slug_null_test")
+    cx.execute("DROP TABLE IF EXISTS affiliate_signups")
+    cx.executescript(_PROD_DDL)
+    cx.execute("ALTER TABLE affiliate_signups ADD COLUMN page_slug TEXT")
+    cx.execute("CREATE UNIQUE INDEX ux_affiliate_page_slug"
+               " ON affiliate_signups(page_slug)")
+    for slug in ("remedy-match", "mary-boyd"):
+        cx.execute(
+            "INSERT INTO affiliate_signups"
+            " (created_at,name,email,slug,token,status,page_slug)"
+            " VALUES ('2026-01-01T00:00:00+00:00',?,?,?,?,'approved',NULL)",
+            (slug.replace("-", " "), f"{slug}@example.com", slug, f"tok-{slug}"))
+    cx.commit()   # must not raise
+    rows = cx.execute(
+        "SELECT page_slug FROM affiliate_signups ORDER BY slug").fetchall()
+    assert [r[0] for r in rows] == [None, None]
+    cx.close()
