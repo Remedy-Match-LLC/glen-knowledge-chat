@@ -841,3 +841,59 @@ def test_the_unique_index_tolerates_multiple_null_page_slugs_on_postgres(monkeyp
         "SELECT page_slug FROM affiliate_signups ORDER BY slug").fetchall()
     assert [r[0] for r in rows] == [None, None]
     cx.close()
+
+
+# ── Minting asks the WHOLE namespace, not just affiliate_signups.slug ────────
+#
+# The minted value is written to slug AND page_slug, and the unique index
+# ux_affiliate_page_slug is on page_slug. So the moment any practitioner claims
+# a vanity name, that string is occupied in the index while absent from `slug`.
+# A minter that asked only `WHERE slug=?` handed back a name the INSERT then
+# died on -- and because the base is deterministic from the name, every retry
+# reproduced the identical collision. That signup could never complete.
+
+
+def test_minting_avoids_a_name_another_practitioner_holds_as_a_page_slug(cx):
+    """Glen renames his public URL to 'mary-boyd'. Mary Boyd then signs up.
+
+    Her minted base IS 'mary-boyd', which is free in `slug` and taken in
+    page_slug. Before the fix ensure_affiliate's INSERT raised UNIQUE and its
+    broad except returned None -- auto-enrolment silently never completed for
+    her, and /api/page-share-link answered 503 forever.
+    """
+    _seed(cx, slug="remedy-match")
+    ps.set_page_slug(cx, "remedy-match", "mary-boyd", reserved=frozenset())
+
+    row = affiliate_dashboard.ensure_affiliate(
+        cx, "mary.boyd@example.com", name="Mary Boyd")
+
+    assert row is not None, "the signup died on the INSERT instead of suffixing"
+    assert row["slug"] != "mary-boyd"
+    assert row["slug"].startswith("mary-boyd-")
+    ps.check_shape(row["slug"])
+    # Her own row is inside the index under its own name.
+    stored = cx.execute("SELECT page_slug FROM affiliate_signups WHERE slug=?",
+                        (row["slug"],)).fetchone()[0]
+    assert stored == row["slug"]
+    # And Glen's chosen URL is untouched -- nobody's attribution moved.
+    assert cx.execute("SELECT slug, page_slug FROM affiliate_signups"
+                      " WHERE email='remedy-match@example.com'").fetchone() == (
+        "remedy-match", "mary-boyd")
+
+
+def test_minting_avoids_a_name_published_as_an_alias(cx):
+    """page_slug_is_taken reads the alias table too, so the minter now does.
+
+    An alias is a published URL that already redirects to somebody. Minting a
+    canonical slug equal to one would make resolve() stop answering for the
+    practitioner the alias was published for.
+    """
+    _seed(cx, slug="remedy-match")
+    ps.claim_alias(cx, "remedy-match", "mary-boyd", frozenset())
+
+    row = affiliate_dashboard.ensure_affiliate(
+        cx, "mary.boyd@example.com", name="Mary Boyd")
+
+    assert row is not None
+    assert row["slug"] != "mary-boyd"
+    assert ps.alias_owner(cx, "mary-boyd") == "remedy-match"

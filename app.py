@@ -16331,9 +16331,16 @@ def affiliate_apply_form():
                             httponly=True, samesite="Lax", secure=request.is_secure)
         return resp
 
-    # Ensure unique slug
+    # Ensure unique slug. The WHOLE namespace, not just affiliate_signups.slug:
+    # this value is written to page_slug too, and ux_affiliate_page_slug is on
+    # page_slug -- so a vanity name any practitioner has already claimed is
+    # occupied in the index while absent from `slug`. Asking only `WHERE slug=?`
+    # let this check pass and the INSERT below die, which redirected a public
+    # visitor to an error page reading "UNIQUE constraint failed" -- after
+    # _rebrandly_create had already minted a truly.vip/<slug> pointing at a row
+    # that never came to exist, once per retry.
     with db.connect(LOG_DB) as cx:
-        if cx.execute("SELECT id FROM affiliate_signups WHERE slug=?", (slug,)).fetchone():
+        if _ps_signup.page_slug_is_taken(cx, slug):
             slug = f"{base}-{token[:6]}"
 
     try:
@@ -16435,9 +16442,14 @@ def affiliate_apply():
     if existing_row:
         token, slug = existing_row
     else:
-        # Ensure slug uniqueness
+        # Ensure slug uniqueness across the WHOLE namespace, for the reason the
+        # form handler above gives: the minted value is written to page_slug as
+        # well, and the unique index is on page_slug. A `WHERE slug=?` check
+        # cannot see a vanity name another practitioner has already claimed, so
+        # this route answered a deterministic 409 carrying a raw database error
+        # that no retry could clear.
         with db.connect(LOG_DB) as cx:
-            if cx.execute("SELECT id FROM affiliate_signups WHERE slug=?", (slug,)).fetchone():
+            if _ps_signup.page_slug_is_taken(cx, slug):
                 slug = f"{base}-{token[:6]}"
         try:
             with _db_lock, db.connect(LOG_DB) as cx:

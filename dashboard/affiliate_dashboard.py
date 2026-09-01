@@ -171,8 +171,26 @@ def _mint_affiliate_slug(cx, name, email, reserved=None):
             _slugs.check_not_reserved(cand, reserved)
         except _slugs.SlugError:
             return False
-        return cx.execute("SELECT 1 FROM affiliate_signups WHERE slug=?",
-                          (cand,)).fetchone() is None
+        # The WHOLE namespace, not just affiliate_signups.slug. The minted
+        # value is written to BOTH slug and page_slug, and the unique index
+        # ux_affiliate_page_slug is on page_slug -- so the moment any
+        # practitioner claims a vanity name, that string is occupied in the
+        # index while absent from `slug`. Asking only `WHERE slug=?` let this
+        # loop hand back a name the INSERT then died on, and because the base
+        # is deterministic from the name, every retry reproduced the identical
+        # collision: the signup could never complete. page_slug_is_taken is
+        # the guard this branch wrote for exactly this namespace (slug,
+        # page_slug and published aliases), and it runs its own DDL, so the
+        # column and the alias table are present before it reads them.
+        #
+        # No excluding_affiliate_slug: there is no claimant row yet. This is a
+        # mint for a practitioner who does not exist in the table, so every
+        # match is somebody else's.
+        #
+        # Not wrapped: a read error propagates exactly as the raw SELECT it
+        # replaces did. Swallowing it would answer "usable" about a namespace
+        # we could not read, which is the same bug in a quieter form.
+        return not _slugs.page_slug_is_taken(cx, cand)
 
     def _suffixed(sfx):
         head = base[:_slugs.MAX_LEN - len(sfx) - 1].strip("-")

@@ -247,3 +247,101 @@ def test_apply_json_creates_journey_row_choose_path(monkeypatch, tmp_path):
     assert st["path"] == "pay_forward"
     assert st["first_name"] == "Eve"
     assert st["last_name"] == "JSON"
+
+
+# ---------------------------------------------------------------------------
+# Slug minting asks the WHOLE namespace, not just affiliate_signups.slug
+#
+# Both signup routes write the minted value to page_slug as well as slug, and
+# the unique index ux_affiliate_page_slug is on page_slug. A pre-check that
+# asked only `WHERE slug=?` could not see a vanity name another practitioner
+# had already claimed: it passed, and the INSERT then died. The base is
+# deterministic from org-or-name, so every retry reproduced the identical
+# collision and that person could never sign up.
+# ---------------------------------------------------------------------------
+
+def _claim_page_slug(db_path, vanity):
+    """Seed a practitioner who has renamed her public URL to `vanity`.
+
+    Uses the production writer + the production setter, so the row is in
+    exactly the state a real rename leaves: `vanity` occupied in page_slug and
+    absent from slug -- the split the broken pre-check could not see.
+    """
+    from dashboard import affiliate_dashboard as _ad
+    from dashboard import practitioner_slugs as _ps
+    cx = sqlite3.connect(db_path)
+    row = _ad.ensure_affiliate(cx, "glen@test.com", name="Remedy Match")
+    assert row, "could not seed the practitioner who holds the vanity URL"
+    _ps.set_page_slug(cx, row["slug"], vanity, reserved=frozenset())
+    cx.close()
+    return row["slug"]
+
+
+def _stub_externals(app_module, monkeypatch, minted):
+    monkeypatch.setattr(app_module, "_rebrandly_create",
+                        lambda **k: (minted.append(k.get("slashtag")),
+                                     "https://truly.vip/stub")[1])
+    monkeypatch.setattr(app_module, "ghl_onboard_contact",
+                        lambda *a, **k: {"contact_id": "x"})
+    monkeypatch.setattr(app_module, "_capture_concierge_referral",
+                        lambda *a, **k: None)
+
+
+def test_apply_form_suffixes_a_slug_another_practitioner_holds_as_her_url(
+        monkeypatch, tmp_path):
+    """Glen's public URL is /mary-boyd. Mary Boyd then signs up.
+
+    Before the fix this redirected a public visitor to an error page reading
+    "UNIQUE constraint failed" -- and _rebrandly_create had already minted
+    truly.vip/mary-boyd pointing at a row that never came to exist, once per
+    retry.
+    """
+    app_module = _load_app()
+    dbp = str(tmp_path / "chat_log.db")
+    monkeypatch.setattr(app_module, "LOG_DB", dbp)
+    _bootstrap_db(app_module, dbp)
+    owner = _claim_page_slug(dbp, "mary-boyd")
+
+    minted = []
+    _stub_externals(app_module, monkeypatch, minted)
+
+    r = app_module.app.test_client().post("/affiliate/apply-form", data={
+        "name": "Mary Boyd", "email": "mary.boyd.form@test.com", "tos": "true"})
+
+    assert r.status_code == 302
+    assert "error=" not in r.headers.get("Location", ""), r.headers.get("Location")
+
+    with sqlite3.connect(dbp) as cx:
+        row = cx.execute("SELECT slug, page_slug FROM affiliate_signups"
+                         " WHERE email=?", ("mary.boyd.form@test.com",)).fetchone()
+        held = cx.execute("SELECT page_slug FROM affiliate_signups WHERE slug=?",
+                          (owner,)).fetchone()
+    assert row is not None, "the signup row was never written"
+    assert row[0] != "mary-boyd" and row[0].startswith("mary-boyd-"), row
+    assert row[1] == row[0], "her page_slug must be her own name, not NULL"
+    # No orphaned shortlink: the ONE slashtag minted is the slug that was
+    # actually stored.
+    assert minted == [row[0]], minted
+    # And Glen's published URL is untouched.
+    assert held[0] == "mary-boyd"
+
+
+def test_apply_json_suffixes_a_slug_another_practitioner_holds_as_her_url(
+        monkeypatch, tmp_path):
+    """Same collision on the JSON route, which answered a 409 carrying a raw
+    database error that no retry could clear."""
+    app_module = _load_app()
+    dbp = str(tmp_path / "chat_log.db")
+    monkeypatch.setattr(app_module, "LOG_DB", dbp)
+    _bootstrap_db(app_module, dbp)
+    _claim_page_slug(dbp, "mary-boyd")
+    _stub_externals(app_module, monkeypatch, [])
+
+    r = app_module.app.test_client().post("/affiliate/apply", json={
+        "name": "Mary Boyd", "email": "mary.boyd.json@test.com", "tos": True})
+
+    assert r.status_code == 200, r.get_data(as_text=True)
+    body = r.get_json()
+    assert body.get("ok") is True, body
+    assert body["slug"] != "mary-boyd"
+    assert body["slug"].startswith("mary-boyd-"), body["slug"]
