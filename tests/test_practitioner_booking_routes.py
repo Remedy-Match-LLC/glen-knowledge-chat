@@ -458,6 +458,57 @@ def test_the_clients_name_is_stored_not_just_validated(public, logdb):
         assert "client@example.com" in cal["summary"]
 
 
+def test_the_public_book_route_stores_the_clients_own_timezone(public, logdb):
+    """A day-before reminder (later task) needs the client's OWN zone, not
+    the practitioner's -- see create_booking's visitor_tz. The route must
+    pass the request's raw tz through to storage."""
+    with _open(logdb) as c:
+        pb.set_config(c, PID, CFG)
+    slot = public.get("/api/book/mary-boyd/slots?session=intro").get_json()["slots"][0]
+    r = public.post("/api/book/mary-boyd", json={
+        "session": "intro", "start": slot["start"], "tz": "Pacific/Auckland",
+        "name": "A Client", "email": "client@example.com"})
+    assert r.status_code == 200, r.get_data(as_text=True)
+    with _open(logdb) as c:
+        row = c.execute("SELECT visitor_tz FROM evox_bookings").fetchone()
+        assert row["visitor_tz"] == "Pacific/Auckland"
+
+
+def test_an_unusable_visitor_tz_stores_the_raw_value_not_the_practitioner_fallback(
+        public, logdb):
+    """effective_visitor_tz falls back to CFG["timezone"] (the PRACTITIONER's
+    own zone) for DISPLAY when the client's zone is unusable -- that fallback
+    is not a fact about the client, and storing it would make a later
+    reminder claim the client told us a zone she never gave us. The stored
+    value must be what the client's request actually carried, never
+    CFG["timezone"] (a later reminder is responsible for validating it before
+    use, same as effective_visitor_tz already does for display)."""
+    with _open(logdb) as c:
+        pb.set_config(c, PID, CFG)
+    slot = public.get("/api/book/mary-boyd/slots?session=intro").get_json()["slots"][0]
+    r = public.post("/api/book/mary-boyd", json={
+        "session": "intro", "start": slot["start"], "tz": "Mars/Olympus",
+        "name": "A Client", "email": "client@example.com"})
+    assert r.status_code == 200, r.get_data(as_text=True)
+    with _open(logdb) as c:
+        row = c.execute("SELECT visitor_tz FROM evox_bookings").fetchone()
+        assert row["visitor_tz"] == "Mars/Olympus"
+        assert row["visitor_tz"] != CFG["timezone"]
+
+
+def test_no_tz_in_the_booking_request_stores_empty(public, logdb):
+    with _open(logdb) as c:
+        pb.set_config(c, PID, CFG)
+    slot = public.get("/api/book/mary-boyd/slots?session=intro").get_json()["slots"][0]
+    r = public.post("/api/book/mary-boyd", json={
+        "session": "intro", "start": slot["start"],
+        "name": "A Client", "email": "client@example.com"})
+    assert r.status_code == 200, r.get_data(as_text=True)
+    with _open(logdb) as c:
+        row = c.execute("SELECT visitor_tz FROM evox_bookings").fetchone()
+        assert row["visitor_tz"] == ""
+
+
 class _BoomOnClientNameUpdate:
     """Wraps a real sqlite3 connection and raises on the client_name UPDATE
     only, forwarding everything else untouched. sqlite3.Connection is an

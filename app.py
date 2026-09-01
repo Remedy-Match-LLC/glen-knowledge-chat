@@ -18002,6 +18002,9 @@ def api_public_book(slug):
     start_ts = (body.get("start") or "").strip()
     name = (body.get("name") or "").strip()[:120]
     email = (body.get("email") or "").strip().lower()[:200]
+    # The RAW client-supplied zone, not the resolved/fallback one -- see the
+    # visitor_tz argument passed to create_booking below for why.
+    visitor_tz = (body.get("tz") or "").strip()[:64]
     if not _BOOK_EMAIL_RE.match(email):
         return jsonify({"ok": False, "error": "bad_email"}), 400
     if not name:
@@ -18059,10 +18062,25 @@ def api_public_book(slug):
         if start_ts not in offered:
             return jsonify({"ok": False, "error": "slot_unavailable"}), 400
         try:
+            # visitor_tz here is the RAW value the client's booking request
+            # carried (body.get("tz")), never `rendered_tz` below -- rendered_tz
+            # is effective_visitor_tz's resolved zone, which silently falls back
+            # to the PRACTITIONER's own timezone when the client's browser sent
+            # nothing usable (see practitioner_booking.effective_visitor_tz).
+            # That fallback is a display decision, not a fact about the client;
+            # storing it would make a later day-before reminder claim the
+            # client told us a zone she never gave us. A client who sent
+            # nothing stores "" -- the same "we never knew" value existing
+            # rows already carry (NULL) -- so a reminder can tell "told us
+            # something" (non-empty) apart from "never knew" (empty/NULL). A
+            # client who sent an unusable value (e.g. a broken browser zone)
+            # still stores that raw value verbatim: validating it is the
+            # reminder's job at send time, the same way effective_visitor_tz
+            # already validates before using it for display.
             b = _ev.create_booking(cx, email, start_ts,
                                    duration_min=st["duration_min"],
                                    practitioner=pid, session_type=session_slug,
-                                   medium=st["medium"])
+                                   medium=st["medium"], visitor_tz=visitor_tz)
         except _ev.SlotTaken:
             # create_booking catches the UNIQUE violation itself and re-raises
             # it as SlotTaken. The index on (practitioner, start_ts) is the real
@@ -18138,7 +18156,10 @@ def api_public_book(slug):
     # rather than "no notification sent at all".
     ics = b""
     try:
-        visitor_tz = (body.get("tz") or "").strip()
+        # visitor_tz was already extracted (and capped) above, before the
+        # create_booking call -- reused here rather than re-read from body,
+        # so the value stored and the value used to render this email always
+        # agree.
         rendered_tz = _pb.effective_visitor_tz(visitor_tz, cfg["timezone"])
         shown = _pb.to_visitor_tz(start_ts, cfg["timezone"], rendered_tz)
         # `start` stays the naive practitioner-local value (the cancel API
