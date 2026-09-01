@@ -17598,6 +17598,162 @@ def practitioner_booking_page():
     return _practitioner_page("practitioner-booking.html")
 
 
+def _practitioner_affiliate_slug(cx, pid):
+    """The affiliate slug belonging to a signed-in practitioner, or ''.
+
+    Two hops, because the two stores share no key but the email address:
+    pid -> practitioners.email (Supabase, via practitioner_email_by_id) ->
+    affiliate_signups.slug (LOG_DB). It is the same join
+    /api/portal/<token>/social-links already makes, and the same pair of hops
+    practitioner_booking.resolve_practitioner_pid makes in the opposite
+    direction. There is no practitioner_id column on affiliate_signups to read
+    instead.
+
+    Status is deliberately NOT filtered, unlike resolve_practitioner_pid's
+    approved-only read. That filter is a SERVING gate; this is an ownership
+    question, and a pending practitioner still owns her own row. The namespace
+    guard in page_slug_is_taken is status-blind for exactly this reason: a
+    pending row already occupies its own name, so letting her choose a
+    different one takes nothing from anybody.
+
+    Fails closed to '' on a read error, which every caller turns into a
+    refusal. '' from practitioner_email_by_id means "Supabase could not be
+    read" as often as it means "no such practitioner", so it is never treated
+    as licence to guess a row.
+    """
+    if not pid:
+        return ""
+    from dashboard.practitioner_portal import practitioner_email_by_id
+    email = (practitioner_email_by_id(pid) or "").strip().lower()
+    if not email:
+        return ""
+    try:
+        row = cx.execute(
+            "SELECT slug FROM affiliate_signups WHERE LOWER(email)=? "
+            "ORDER BY CASE WHEN status='approved' THEN 0 ELSE 1 END, id "
+            "LIMIT 1", (email,)).fetchone()
+    except db.Error:
+        return ""
+    return ((row[0] if row else "") or "").strip().lower()
+
+
+# Shown when a practitioner has no affiliate row at all. There is no row to
+# attach a page slug to, and no public page for one to name, so this is a
+# refusal rather than an error: nothing is broken, the account simply has no
+# public surface yet.
+NO_PUBLIC_PAGE_MSG = (
+    "Your practitioner account does not have a public page yet, so there is "
+    "no web address to change. Please contact us and we will set one up "
+    "for you.")
+
+
+def _practitioner_public_urls(canonical_slug):
+    """(page_url, booking_url) for a practitioner's CANONICAL page slug.
+
+    Absolute, because these exist to be copied into a text message, an email
+    signature or a social profile. A relative path would be useless there.
+
+    PORTAL_BASE_URL is read directly rather than through portal_base(), which
+    is documented as scoped to CLIENT portal links and falls back to
+    PUBLIC_BASE_URL. That fallback would print https://illtowell.com/<slug>,
+    and /<slug> is host-gated to the portal domain, so it would be a 404 handed
+    to a practitioner as her own address.
+
+    With PORTAL_BASE_URL unset the portal surface does not exist yet, and the
+    only page URL that serves is the legacy /p/<slug> on the funnel host, which
+    resolves page slugs through the same resolver. Booking is not host-gated,
+    so /book/<slug> is correct on either host.
+    """
+    s = (canonical_slug or "").strip()
+    if not s:
+        return ("", "")
+    portal = (os.environ.get("PORTAL_BASE_URL") or "").rstrip("/")
+    if portal:
+        return (f"{portal}/{s}", f"{portal}/book/{s}")
+    return (f"{PUBLIC_BASE_URL}/p/{s}", f"{PUBLIC_BASE_URL}/book/{s}")
+
+
+def _practitioner_web_address(pid):
+    """Her public page slug and both of her URLs, for the booking-config GET.
+
+    Best effort by design: every value comes back '' when it cannot be worked
+    out. This rides on the response the booking form loads from, and that form
+    locks itself out of saving unless the load succeeds, so a fault in the
+    address lookup must not become a practitioner who cannot save her hours.
+    The UI hides the section instead when the slug is empty.
+    """
+    out = {"page_slug": "", "canonical_slug": "", "affiliate_slug": "",
+           "page_url": "", "booking_url": ""}
+    try:
+        from dashboard import practitioner_slugs as _pslugs
+        with db.connect(LOG_DB) as cx:
+            cx.row_factory = sqlite3.Row
+            affiliate = _practitioner_affiliate_slug(cx, pid)
+            if not affiliate:
+                return out
+            canonical = _pslugs.canonical_slug_for(cx, affiliate) or affiliate
+    except Exception:  # noqa: BLE001
+        app.logger.exception("web address lookup failed for practitioner %s", pid)
+        return out
+    out["affiliate_slug"] = affiliate
+    # page_slug and canonical_slug are the same value today, because page_slug
+    # is always populated. Both are returned so a later reader cannot have to
+    # guess which one it is looking at, and so the form has a name for the
+    # thing it edits that does not change meaning if the fallback in
+    # canonical_slug_for is ever reached.
+    out["canonical_slug"] = canonical
+    out["page_slug"] = canonical
+    out["page_url"], out["booking_url"] = _practitioner_public_urls(canonical)
+    return out
+
+
+@app.route("/api/practitioner/page-slug", methods=["POST"])
+def api_practitioner_page_slug_post():
+    """Set the name in a practitioner's public URL.
+
+    Writes affiliate_signups.page_slug and NEVER affiliate_signups.slug: the
+    slug is the attribution key that stored lead rows, the printed Rebrandly
+    shortlink and every 90-day ?ref= cookie carry, and renaming it orphans all
+    of them. Her old URL keeps working forever through resolve_page's legacy
+    branch.
+
+    An empty page_slug clears the choice, which restores her affiliate slug as
+    her public URL. That is a real change to a published address, so it goes
+    through the same authenticated write as any other.
+    """
+    pid = _practitioner_session_pid()
+    if not pid:
+        return jsonify({"ok": False, "error": "not signed in"}), 401
+    from dashboard import practitioner_slugs as _pslugs
+    body = request.get_json(silent=True) or {}
+    # pid comes from the SESSION, matching the booking-config POST beside this
+    # one. A practitioner_id in the body is ignored on purpose: honouring it
+    # would let any signed-in practitioner rename another's public URL out from
+    # under every link and printed card that points at it.
+    candidate = body.get("page_slug")
+    try:
+        with _db_lock, db.connect(LOG_DB) as cx:
+            cx.row_factory = sqlite3.Row
+            affiliate = _practitioner_affiliate_slug(cx, pid)
+            if not affiliate:
+                return jsonify({"ok": False, "error": NO_PUBLIC_PAGE_MSG}), 400
+            # reserved_for(app.url_map) rather than any list written here: a
+            # slug that shadows a live route is a page she could publish and
+            # never reach, and the route table is the only thing that knows
+            # which words those are today.
+            stored = _pslugs.set_page_slug(
+                cx, affiliate, candidate,
+                reserved=_pslugs.reserved_for(app.url_map))
+    except _pslugs.SlugError as e:
+        # SlugError messages are written for a practitioner to read, so the
+        # message is the response body and the form shows it inline.
+        return jsonify({"ok": False, "error": str(e)}), 400
+    page_url, booking_url = _practitioner_public_urls(stored)
+    return jsonify({"ok": True, "page_slug": stored, "canonical_slug": stored,
+                    "affiliate_slug": affiliate,
+                    "page_url": page_url, "booking_url": booking_url})
+
+
 @app.route("/api/practitioner/booking-config", methods=["GET"])
 def api_practitioner_booking_config_get():
     pid = _practitioner_session_pid()
@@ -17624,11 +17780,17 @@ def api_practitioner_booking_config_get():
     # methods and phone number under a "Saved." message. The static page
     # locks the form out on this flag instead (see showLoadError() in
     # static/practitioner-booking.html).
+    # Her own web address, ADDED to this response rather than served from a
+    # route of its own. Nothing in the practitioner portal has ever told her
+    # where her public page or her booking page is; she configures booking,
+    # sees "Saved", and has no way to learn the URL she just switched on. The
+    # form already loads from here, so one request carries both.
     return jsonify({"ok": True, "config": cfg,
                     "unreadable": status == "unreadable",
                     "default_timezone": _pb.DEFAULT_TIMEZONE,
                     "media": list(_pb.MEDIA),
-                    "practitioner_phone": (cfg or {}).get("phone") or ""})
+                    "practitioner_phone": (cfg or {}).get("phone") or "",
+                    **_practitioner_web_address(pid)})
 
 
 @app.route("/api/practitioner/booking-config", methods=["POST"])
