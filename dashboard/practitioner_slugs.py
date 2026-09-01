@@ -153,7 +153,7 @@ def init_tables(cx):
 def canonical_exists(cx, slug):
     """True iff `slug` is an APPROVED practitioner's canonical slug."""
     row = cx.execute(
-        "SELECT 1 FROM affiliate_signups WHERE slug=? AND status='approved'",
+        "SELECT 1 FROM affiliate_signups WHERE lower(slug)=? AND status='approved'",
         (normalize(slug),)).fetchone()
     return row is not None
 
@@ -167,7 +167,7 @@ def slug_is_taken(cx, slug):
     resolve() -- which checks canonical first -- would silently start shadowing
     a published alias. A published URL must never break that way.
     """
-    row = cx.execute("SELECT 1 FROM affiliate_signups WHERE slug=?",
+    row = cx.execute("SELECT 1 FROM affiliate_signups WHERE lower(slug)=?",
                      (normalize(slug),)).fetchone()
     return row is not None
 
@@ -176,7 +176,7 @@ def alias_owner(cx, alias):
     """The canonical slug an alias points at, or '' when the alias is unknown."""
     init_tables(cx)
     row = cx.execute(
-        "SELECT canonical_slug FROM practitioner_slug_aliases WHERE alias=?",
+        "SELECT canonical_slug FROM practitioner_slug_aliases WHERE lower(alias)=?",
         (normalize(alias),)).fetchone()
     return (row[0] or "") if row else ""
 
@@ -210,7 +210,7 @@ def _page_slug_taken_bare(cx, candidate):
     is refused the same way, bare.
     """
     init_page_slug(cx)
-    row = cx.execute("SELECT 1 FROM affiliate_signups WHERE page_slug=?",
+    row = cx.execute("SELECT 1 FROM affiliate_signups WHERE lower(page_slug)=?",
                      (normalize(candidate),)).fetchone()
     return row is not None
 
@@ -279,6 +279,46 @@ def claim_alias(cx, canonical, alias, reserved):
 # other's storage: page_slug_is_taken also checks practitioner_slug_aliases,
 # and claim_alias also checks affiliate_signups.page_slug. Without that, one
 # mechanism could silently claim a name the other had already published.
+#
+# ── Case: compared insensitively, stored verbatim ────────────────────────────
+#
+# Every comparison in this module is `lower(column) = normalize(candidate)`.
+# The candidate has always been normalized; the STORED side had not been, and
+# that asymmetry was a hole. Every current writer lowercases, but the backfill
+# copies `slug` verbatim and affiliate_signups.slug carries a case-SENSITIVE
+# UNIQUE, so a legacy row holding 'Mary-Boyd' is possible. Against a raw
+# comparison a claim of 'mary-boyd' passed the validator (a different literal)
+# and passed the index (also a different literal) -- and then /mary-boyd served
+# the WRONG practitioner. A 404 is a disappointment; a wrong-person page is a
+# different and worse failure.
+#
+# The unique index deliberately stays on the RAW column, and the case rule is
+# enforced at the writer instead:
+#
+#   * A functional index on lower(page_slug) CANNOT BE CREATED at all on a
+#     database that already holds two rows differing only by case -- which is
+#     exactly the database it exists to protect. init_page_slug runs its DDL
+#     through _try, which swallows failures by design, so that deploy would
+#     look green while enforcing nothing. A guard that goes dark on the one
+#     input it was built for is worse than no guard, because it is believed.
+#   * Narrowing an index over live data has only one remedy for the rows it
+#     rejects: rewriting a stored value. Rewriting `slug` breaks attribution
+#     -- every stored lead row's utm_source, the printed truly.vip shortlink
+#     and every 90-day ?ref= cookie -- which is the one thing this feature
+#     must never do.
+#   * The raw index still does the job it was added for. It is the backstop
+#     for the read-then-write race in validate_page_slug, and two racing
+#     claims of the same name arrive as the same LITERAL, because every
+#     writer stores normalize()d values. The race it catches is an exact
+#     collision by construction.
+#   * The condition a case-insensitive index would refuse is already
+#     REPORTABLE: scripts/audit_practitioner_slugs.py normalizes both sides
+#     when it builds its claim map, so a mixed-case duplicate shows up as a
+#     [COLLISION] in the merge gate rather than as a silent index failure.
+#
+# Nothing here rewrites a stored value. A legacy 'Mary-Boyd' keeps serving at
+# /mary-boyd (the /<slug> route 301s to the normalized form), keeps its
+# attribution, and is simply no longer claimable by anyone else.
 
 _PAGE_INIT_DONE = set()             # DB identities whose page_slug DDL has run
 _PAGE_INIT_LOCK = threading.Lock()
@@ -400,7 +440,7 @@ def canonical_slug_for(cx, affiliate_slug):
     if not s:
         return ""
     row = cx.execute(
-        "SELECT slug, page_slug FROM affiliate_signups WHERE slug=?",
+        "SELECT slug, page_slug FROM affiliate_signups WHERE lower(slug)=?",
         (s,)).fetchone()
     if not row:
         return ""
@@ -434,24 +474,31 @@ def page_slug_is_taken(cx, candidate, *, excluding_affiliate_slug=None):
 
     Both columns and the alias table, because they are one namespace:
     whichever mechanism a request matches, it must match exactly one owner.
+
+    Compared case-INSENSITIVELY on both sides. The candidate was always
+    normalized; the stored side had not been, and a legacy row holding
+    'Mary-Boyd' therefore let a claim of 'mary-boyd' through both this guard
+    and the unique index. See the case note above the page_slug section for
+    why the fix lives here and not in the index.
     """
     init_page_slug(cx)
     init_tables(cx)
     c = normalize(candidate)
     if not c:
         return False
-    sql = "SELECT 1 FROM affiliate_signups WHERE (slug=? OR page_slug=?)"
+    sql = ("SELECT 1 FROM affiliate_signups"
+           " WHERE (lower(slug)=? OR lower(page_slug)=?)")
     params = [c, c]
     own = normalize(excluding_affiliate_slug)
     if own:
-        sql += " AND slug<>?"
+        sql += " AND lower(slug)<>?"
         params.append(own)
     if cx.execute(sql, tuple(params)).fetchone() is not None:
         return True
-    alias_sql = "SELECT 1 FROM practitioner_slug_aliases WHERE alias=?"
+    alias_sql = "SELECT 1 FROM practitioner_slug_aliases WHERE lower(alias)=?"
     alias_params = [c]
     if own:
-        alias_sql += " AND canonical_slug<>?"
+        alias_sql += " AND lower(canonical_slug)<>?"
         alias_params.append(own)
     return cx.execute(alias_sql, tuple(alias_params)).fetchone() is not None
 
@@ -489,11 +536,21 @@ def set_page_slug(cx, affiliate_slug, candidate, *, reserved):
     """
     init_page_slug(cx)
     owner = normalize(affiliate_slug)
-    if cx.execute("SELECT 1 FROM affiliate_signups WHERE slug=?",
-                  (owner,)).fetchone() is None:
+    # Find her row case-insensitively, but keep the STORED literal to write
+    # against. `WHERE lower(slug)=?` on the UPDATE could touch two rows on a
+    # database where two slugs differ only by case -- legal, because the
+    # UNIQUE on affiliate_signups.slug is case-SENSITIVE -- and hand both the
+    # same page_slug. Reading the exact stored value here and updating on it
+    # keeps the write pinned to one row while the lookup still finds a legacy
+    # row stored as e.g. 'Mary-Boyd'.
+    owner_row = cx.execute(
+        "SELECT slug FROM affiliate_signups WHERE lower(slug)=? ORDER BY id LIMIT 1",
+        (owner,)).fetchone()
+    if owner_row is None:
         # Silently updating zero rows would report success and then show her a
         # URL that does not exist.
         raise SlugError("that practitioner account was not found")
+    owner_stored = owner_row[0]
 
     if not normalize(candidate):
         s = owner            # clearing == "my public URL is my affiliate slug"
@@ -502,7 +559,7 @@ def set_page_slug(cx, affiliate_slug, candidate, *, reserved):
                                reserved=reserved)
     try:
         cx.execute("UPDATE affiliate_signups SET page_slug=? WHERE slug=?",
-                   (s, owner))
+                   (s, owner_stored))
         cx.commit()
     except db.IntegrityError as e:       # concurrent claim won the race
         try:
@@ -531,19 +588,25 @@ def resolve_page(cx, requested):
 
     affiliate_slug is returned alongside so callers can key analytics and
     attribution on it. Those must never move to the display slug, or changing
-    a vanity URL would split a practitioner's view history.
+    a vanity URL would split a practitioner's view history. It comes back AS
+    STORED, never normalized: resolve_practitioner_pid and every other caller
+    keys affiliate_signups on that exact literal.
+
+    Both lookups are case-INSENSITIVE, matching page_slug_is_taken. A guard
+    that refuses a name and a resolver that then serves a different-cased row
+    are the two halves of a wrong-person page.
     """
     init_page_slug(cx)
     r = normalize(requested)
     if not r:
         return ("", "", "")
     row = cx.execute(
-        "SELECT slug, page_slug FROM affiliate_signups WHERE page_slug=?",
+        "SELECT slug, page_slug FROM affiliate_signups WHERE lower(page_slug)=?",
         (r,)).fetchone()
     if row:
         return ("canonical", r, row[0] or "")
     row = cx.execute(
-        "SELECT slug, page_slug FROM affiliate_signups WHERE slug=?",
+        "SELECT slug, page_slug FROM affiliate_signups WHERE lower(slug)=?",
         (r,)).fetchone()
     if row:
         page = normalize(row[1])

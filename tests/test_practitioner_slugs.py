@@ -897,3 +897,102 @@ def test_minting_avoids_a_name_published_as_an_alias(cx):
     assert row is not None
     assert row["slug"] != "mary-boyd"
     assert ps.alias_owner(cx, "mary-boyd") == "remedy-match"
+
+
+# ── Case: compared insensitively, stored verbatim ────────────────────────────
+#
+# Every current writer lowercases, so the production writer cannot produce the
+# row below. But the backfill copies `slug` VERBATIM into page_slug and
+# affiliate_signups.slug carries a case-SENSITIVE UNIQUE, so a legacy row
+# holding 'Mary-Boyd' is possible -- and against a raw comparison a claim of
+# 'mary-boyd' passed the validator (a different literal) AND passed the unique
+# index (also a different literal). /mary-boyd then served the wrong
+# practitioner. A 404 is a disappointment; a wrong-person page is worse.
+#
+# These rows are the ONE case a hand-written INSERT is the right tool for:
+# there is no writer in the tree that can produce them, which is exactly why
+# they are the case nothing guarded.
+
+def _seed_legacy_mixed_case(cx, slug, page_slug=None, status="approved"):
+    """A row as the BACKFILL leaves a legacy one: slug verbatim, page_slug
+    copied verbatim from it."""
+    ps.init_page_slug(cx)
+    cx.execute(
+        "INSERT INTO affiliate_signups"
+        " (created_at,name,email,slug,token,status,page_slug)"
+        " VALUES (?,?,?,?,?,?,?)",
+        ("2020-01-01T00:00:00Z", slug, f"{slug.lower()}@example.com", slug,
+         f"tok-{slug}", status,
+         slug if page_slug is None else page_slug))
+    cx.commit()
+
+
+def test_a_legacy_mixed_case_slug_is_taken_in_lower_case_too(cx):
+    _seed_legacy_mixed_case(cx, "Mary-Boyd")
+    assert ps.page_slug_is_taken(cx, "mary-boyd") is True
+    assert ps.slug_is_taken(cx, "mary-boyd") is True
+    assert ps.canonical_exists(cx, "mary-boyd") is True
+
+
+def test_a_lower_case_claim_cannot_shadow_a_legacy_mixed_case_practitioner(cx):
+    """The damage the raw comparison did was not a 404. Glen's claim of
+    'mary-boyd' was accepted, the index accepted it too, and /mary-boyd then
+    served GLEN's page under MARY's published URL."""
+    _seed_legacy_mixed_case(cx, "Mary-Boyd")
+    _seed(cx, slug="remedy-match")
+    with pytest.raises(ps.SlugError):
+        ps.set_page_slug(cx, "remedy-match", "mary-boyd", reserved=frozenset())
+    # The URL still belongs to Mary, and her attribution key is untouched.
+    assert ps.resolve_page(cx, "mary-boyd") == ("canonical", "mary-boyd", "Mary-Boyd")
+    assert cx.execute("SELECT page_slug FROM affiliate_signups"
+                      " WHERE slug='remedy-match'").fetchone()[0] == "remedy-match"
+
+
+def test_a_legacy_mixed_case_row_resolves_at_its_lower_case_url(cx):
+    """/<slug> 301s every request to the normalized form, so the resolver only
+    ever sees lower case. A raw comparison made that row unreachable -- and
+    then claimable by somebody else."""
+    _seed_legacy_mixed_case(cx, "Mary-Boyd")
+    kind, canonical, affiliate = ps.resolve_page(cx, "mary-boyd")
+    assert (kind, canonical) == ("canonical", "mary-boyd")
+    assert affiliate == "Mary-Boyd", \
+        "the attribution key must come back AS STORED -- callers key on that literal"
+    assert ps.canonical_slug_for(cx, "mary-boyd") == "mary-boyd"
+
+
+def test_a_mixed_case_page_slug_is_seen_by_the_guard_and_the_resolver(cx):
+    """Same asymmetry on the other column."""
+    _seed_legacy_mixed_case(cx, "remedy-match", page_slug="Dr-Glen")
+    assert ps.page_slug_is_taken(cx, "dr-glen") is True
+    assert ps.resolve_page(cx, "dr-glen") == ("canonical", "dr-glen", "remedy-match")
+    assert ps.resolve_page(cx, "remedy-match") == ("legacy", "dr-glen", "remedy-match")
+
+
+def test_a_mixed_case_alias_is_seen_by_the_page_slug_guard(cx):
+    """page_slug and practitioner_slug_aliases are one namespace, so the alias
+    table needs the same case rule."""
+    _seed(cx, slug="remedy-match")
+    _seed(cx, slug="mary-boyd")
+    ps.init_tables(cx)
+    cx.execute("INSERT INTO practitioner_slug_aliases (alias, canonical_slug,"
+               " created_at) VALUES ('The-Coach','remedy-match','2020-01-01')")
+    cx.commit()
+    assert ps.page_slug_is_taken(cx, "the-coach") is True
+    with pytest.raises(ps.SlugError):
+        ps.set_page_slug(cx, "mary-boyd", "the-coach", reserved=frozenset())
+
+
+def test_set_page_slug_updates_only_the_mixed_case_owners_own_row(cx):
+    """The lookup is case-insensitive; the WRITE is pinned to the stored
+    literal. `UPDATE ... WHERE lower(slug)=?` could touch two rows that differ
+    only by case -- legal, because the UNIQUE on slug is case-sensitive."""
+    _seed_legacy_mixed_case(cx, "Mary-Boyd")
+    _seed(cx, slug="remedy-match")
+    assert ps.set_page_slug(cx, "mary-boyd", "healing-oasis",
+                            reserved=frozenset()) == "healing-oasis"
+    rows = dict(cx.execute("SELECT slug, page_slug FROM affiliate_signups"
+                           " ORDER BY id").fetchall())
+    assert rows == {"Mary-Boyd": "healing-oasis",
+                    "remedy-match": "remedy-match"}, rows
+    # Attribution is never rewritten, whatever case it is stored in.
+    assert "Mary-Boyd" in rows
