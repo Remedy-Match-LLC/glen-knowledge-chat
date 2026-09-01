@@ -1,3 +1,4 @@
+import contextlib
 import sqlite3
 from datetime import datetime
 
@@ -135,31 +136,201 @@ def test_confirmed_private_appointment_appears_only_for_its_client():
     assert not any(e["id"] == "appointment-7" for e in other["events"])
 
 
-def test_a_public_practitioners_booking_is_excluded_not_mislabeled_rae():
-    """CRITICAL: before this filter, this query selected ANY 'booked' row for
-    the client's email with no practitioner clause. build_block's `who =
-    "Dr. Glen" if practitioner == "glen" else "Rae"` and _zoned_iso's
-    unconditional Pacific/Honolulu stamp are both wrong for a public
-    multi-tenant booking -- whose practitioner is some OTHER practitioner's
-    own id in her own timezone. A Healing Oasis client who separately booked
-    a different practitioner would have seen that appointment mislabeled
-    "Rae" at a Honolulu time in their authenticated portal, marked
-    Confirmed. A practitioner-aware view is real work that does not exist
-    yet; until it does, exclude the row entirely rather than show the wrong
-    person at the wrong time.
+def _booking_config(cx, pid, tz, *, slug="intro", label="Free 20 minute intro call",
+                    medium="phone"):
+    """Give `pid` a real booking config, written through the module that owns it."""
+    from dashboard import practitioner_booking as pb
+    pb.init_tables(cx)
+    pb.set_config(cx, pid, {
+        "timezone": tz, "office_hours": "1-5:09:00-17:00",
+        "session_types": [{"slug": slug, "label": label,
+                           "duration_min": 20, "medium": medium}],
+        "notice_hours": 24, "buffer_min": 0, "enabled": True})
+
+
+def _fake_supabase(monkeypatch, names, calls=None):
+    """Stand in for the practitioners table, recording every id looked up."""
+    import db_supabase
+
+    class _Cur:
+        def __init__(self):
+            self.row = None
+
+        def execute(self, sql, params):
+            pid = str(params[0])
+            if calls is not None:
+                calls.append(pid)
+            self.row = {"name": names[pid]} if pid in names else None
+
+        def fetchone(self):
+            return self.row
+
+    @contextlib.contextmanager
+    def _fake():
+        yield _Cur()
+
+    monkeypatch.setattr(db_supabase, "supabase_cursor", _fake)
+
+
+def _pg_shaped(cx):
+    """Rows read by column name, the way the portal route reads them."""
+    cx.row_factory = sqlite3.Row
+    return cx
+
+
+def test_a_public_practitioners_booking_shows_her_own_name_and_her_own_zone(monkeypatch):
+    """Was: excluded, because this view could only say "Rae" at a Honolulu time.
+
+    The exclusion was right while the view hardcoded both. Now that the name
+    and the zone are resolved per row, mary's client sees the appointment in
+    their own portal, under mary's name, at mary's wall clock. 05:00 was
+    written on an Anchorage clock, so it must carry Anchorage's offset, and
+    the word "Rae" must appear nowhere near it.
     """
-    db = _cx()
+    db = _pg_shaped(_cx())
+    _booking_config(db, "pid-mary", "America/Anchorage")
+    _fake_supabase(monkeypatch, {"pid-mary": "Dr. Mary Chen"})
     db.execute("INSERT INTO evox_bookings VALUES "
-              "(8,'client@x.com','intro','pid-mary','zoom','2099-02-03T05:00:00',"
-              "'2099-02-03T05:20:00',0,'booked')")
+               "(8,'client@x.com','intro','pid-mary','zoom','2099-02-03T05:00:00',"
+               "'2099-02-03T05:20:00',0,'booked')")
     block = portal_calendar.build_block(db, email="client@x.com",
                                         now_iso="2099-01-01T00:00:00")
-    assert not any(e["id"] == "appointment-8" for e in block["events"]), (
-        "a public practitioner's booking must not appear as a Rae/Glen "
-        "appointment in the client portal")
+    appointment = next(e for e in block["events"] if e["id"] == "appointment-8")
+    assert "Dr. Mary Chen" in appointment["description"]
+    assert appointment["start"] == "2099-02-03T05:00:00-09:00"
+    assert appointment["end"] == "2099-02-03T05:20:00-09:00"
     assert "Rae" not in str(block), \
-        "mary's client must never see her appointment mislabeled Rae"
+        "mary's client must never see her appointment labelled Rae"
 
+
+def test_rae_and_glen_appointments_are_unchanged(monkeypatch):
+    """Their zone IS Hawaii and their names are this view's own. Proved by
+    behaviour: Supabase is made to explode and neither has a booking config,
+    and both rows still render exactly as they did before."""
+    import db_supabase
+
+    def boom(*a, **kw):
+        raise AssertionError("a legacy practitioner reached for Supabase")
+
+    monkeypatch.setattr(db_supabase, "supabase_cursor", boom)
+    db = _pg_shaped(_cx())
+    db.execute("INSERT INTO evox_bookings VALUES (7,'client@x.com','evox','rae',"
+               "'phone','2099-02-03T10:00:00','2099-02-03T11:00:00',1,'booked')")
+    db.execute("INSERT INTO evox_bookings VALUES (9,'client@x.com','biofield-consult',"
+               "'glen','zoom','2099-02-04T09:00:00','2099-02-04T10:00:00',1,'booked')")
+    block = portal_calendar.build_block(db, email="client@x.com",
+                                        now_iso="2099-01-01T00:00:00")
+    rae = next(e for e in block["events"] if e["id"] == "appointment-7")
+    glen = next(e for e in block["events"] if e["id"] == "appointment-9")
+    assert rae["description"] == "Private phone appointment with Rae."
+    assert rae["start"] == "2099-02-03T10:00:00-10:00"
+    assert rae["end"] == "2099-02-03T11:00:00-10:00"
+    assert rae["title"] == "EVOX Session"
+    assert rae["action_label"] == "Confirmed"
+    assert rae["prepaid"] is True
+    assert glen["description"] == "Private zoom appointment with Dr. Glen."
+    assert glen["start"] == "2099-02-04T09:00:00-10:00"
+    assert glen["title"] == "Biofield Analysis Consultation"
+
+
+def test_a_practitioner_with_no_resolvable_name_is_omitted(monkeypatch):
+    """A zone but no name. Omitted, not shown under a default: the whole
+    reason the old filter existed is that a wrong name is worse than a
+    missing row."""
+    db = _pg_shaped(_cx())
+    _booking_config(db, "pid-mary", "America/Anchorage")
+    _booking_config(db, "pid-nina", "America/Anchorage")
+    _fake_supabase(monkeypatch, {"pid-nina": "Dr. Nina Ross"})   # no row for mary
+    db.execute("INSERT INTO evox_bookings VALUES "
+               "(8,'client@x.com','intro','pid-mary','zoom','2099-02-03T05:00:00',"
+               "'2099-02-03T05:20:00',0,'booked')")
+    db.execute("INSERT INTO evox_bookings VALUES "
+               "(9,'client@x.com','intro','pid-nina','zoom','2099-02-04T05:00:00',"
+               "'2099-02-04T05:20:00',0,'booked')")
+    block = portal_calendar.build_block(db, email="client@x.com",
+                                        now_iso="2099-01-01T00:00:00")
+    assert not any(e["id"] == "appointment-8" for e in block["events"])
+    assert "Rae" not in str(block)
+    # The omission is specific to the practitioner who could not be resolved,
+    # not this whole section going dark.
+    assert any(e["id"] == "appointment-9" for e in block["events"])
+
+
+def test_a_practitioner_with_no_resolvable_timezone_is_omitted(monkeypatch):
+    """A name but no readable booking config. There is no safe default zone:
+    stamping Honolulu on an Anchorage appointment tells the client an hour
+    that is not theirs, in a view that also says Confirmed."""
+    db = _pg_shaped(_cx())
+    _booking_config(db, "pid-nina", "America/Anchorage")   # mary has no row
+    _fake_supabase(monkeypatch, {"pid-mary": "Dr. Mary Chen",
+                                 "pid-nina": "Dr. Nina Ross"})
+    db.execute("INSERT INTO evox_bookings VALUES "
+               "(8,'client@x.com','intro','pid-mary','zoom','2099-02-03T05:00:00',"
+               "'2099-02-03T05:20:00',0,'booked')")
+    db.execute("INSERT INTO evox_bookings VALUES "
+               "(9,'client@x.com','intro','pid-nina','zoom','2099-02-04T05:00:00',"
+               "'2099-02-04T05:20:00',0,'booked')")
+    block = portal_calendar.build_block(db, email="client@x.com",
+                                        now_iso="2099-01-01T00:00:00")
+    assert not any(e["id"] == "appointment-8" for e in block["events"])
+    assert "Dr. Mary Chen" not in str(block)
+    assert any(e["id"] == "appointment-9" for e in block["events"])
+
+
+def test_a_public_booking_is_visible_only_to_its_own_client(monkeypatch):
+    db = _pg_shaped(_cx())
+    _booking_config(db, "pid-mary", "America/Anchorage")
+    _fake_supabase(monkeypatch, {"pid-mary": "Dr. Mary Chen"})
+    db.execute("INSERT INTO evox_bookings VALUES "
+               "(8,'client@x.com','intro','pid-mary','zoom','2099-02-03T05:00:00',"
+               "'2099-02-03T05:20:00',0,'booked')")
+    own = portal_calendar.build_block(db, email="client@x.com",
+                                      now_iso="2099-01-01T00:00:00")
+    other = portal_calendar.build_block(db, email="other@x.com",
+                                        now_iso="2099-01-01T00:00:00")
+    assert any(e["id"] == "appointment-8" for e in own["events"])
+    assert not any(e["id"] == "appointment-8" for e in other["events"])
+    assert "Dr. Mary Chen" not in str(other)
+
+
+def test_each_practitioner_is_resolved_once_per_page_load(monkeypatch):
+    """This runs on a client's portal page load. A client with several
+    bookings must not cost one Supabase round trip per booking."""
+    calls = []
+    db = _pg_shaped(_cx())
+    _booking_config(db, "pid-mary", "America/Anchorage")
+    _fake_supabase(monkeypatch, {"pid-mary": "Dr. Mary Chen"}, calls=calls)
+    for bid, day in ((8, "03"), (10, "04"), (11, "05")):
+        db.execute("INSERT INTO evox_bookings VALUES "
+                   f"({bid},'client@x.com','intro','pid-mary','zoom',"
+                   f"'2099-02-{day}T05:00:00','2099-02-{day}T05:20:00',0,'booked')")
+    block = portal_calendar.build_block(db, email="client@x.com",
+                                        now_iso="2099-01-01T00:00:00")
+    assert len([e for e in block["events"] if e["type"] == "appointment"]) == 3
+    assert calls == ["pid-mary"], \
+        f"one lookup per practitioner per page load, got {calls}"
+
+
+def test_portal_authored_events_stay_hawaii_alongside_a_public_booking(monkeypatch):
+    """Only evox_bookings rows carry another practitioner's zone. MasterClass
+    and group coaching are authored in Hawai'i wall time and must not become
+    zone-aware by accident."""
+    db = _pg_shaped(_cx())
+    _booking_config(db, "pid-mary", "America/Anchorage")
+    _fake_supabase(monkeypatch, {"pid-mary": "Dr. Mary Chen"})
+    db.execute("INSERT INTO evox_bookings VALUES "
+               "(8,'client@x.com','intro','pid-mary','zoom','2099-02-03T05:00:00',"
+               "'2099-02-03T05:20:00',0,'booked')")
+    block = portal_calendar.build_block(db, email="client@x.com",
+                                        group_coaching_entitled=True,
+                                        now_iso="2099-01-01T00:00:00")
+    appointment = next(e for e in block["events"] if e["id"] == "appointment-8")
+    masterclass = next(e for e in block["events"] if e["type"] == "masterclass")
+    coaching = next(e for e in block["events"] if e["type"] == "group_coaching")
+    assert appointment["start"].endswith("-09:00")
+    assert masterclass["start"].endswith("-10:00")
+    assert coaching["start"].endswith("-10:00")
+    assert coaching["end"].endswith("-10:00")
 
 def test_old_shared_links_do_not_manufacture_future_occurrences():
     db = _cx()
