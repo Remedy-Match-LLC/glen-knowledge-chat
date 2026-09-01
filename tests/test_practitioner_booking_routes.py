@@ -258,7 +258,8 @@ def test_an_unauthenticated_visitor_sees_the_auth_wall_not_the_form():
 from datetime import date, timedelta  # noqa: E402
 
 
-def _seed_slug(logdb, slug="mary-boyd", email="my_mary_boyd@example.com"):
+def _seed_slug(logdb, slug="mary-boyd", email="my_mary_boyd@example.com",
+               status="approved"):
     with _open(logdb) as c:
         # organization is here (nullable, unset by every other caller of this
         # helper) only so dashboard.public_surface.build_practitioner_storefront
@@ -268,7 +269,7 @@ def _seed_slug(logdb, slug="mary-boyd", email="my_mary_boyd@example.com"):
             id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, email TEXT,
             slug TEXT, status TEXT, organization TEXT)""")
         c.execute("INSERT INTO affiliate_signups (name,email,slug,status) "
-                  "VALUES (?,?,?,'approved')", ("Mary Boyd", email, slug))
+                  "VALUES (?,?,?,?)", ("Mary Boyd", email, slug, status))
         c.commit()
 
 
@@ -2277,6 +2278,69 @@ def test_an_empty_page_slug_restores_the_affiliate_slug(slug_settings, logdb):
     assert r.get_json()["page_slug"] == "mary-boyd"
     assert _page_slug_of(logdb, "mary-boyd") == "mary-boyd", \
         "clearing must restore her affiliate slug, never NULL"
+
+
+# --- status gate: claiming a DIFFERENT name requires 'approved' ------------
+# _practitioner_affiliate_slug deliberately does not filter on status: a
+# pending row still owns its own name. That covers KEEPING her own name at
+# any status. It does not cover a rejected or suspended practitioner claiming
+# a NEW name and holding it against a legitimate one, which is what this
+# gate refuses.
+
+def test_page_slug_post_approved_can_claim_a_new_name(monkeypatch, logdb, practitioner):
+    _seed_slug(logdb, slug="mary-boyd", email=PRACTITIONER_EMAIL, status="approved")
+    from dashboard import practitioner_portal as _pp
+    monkeypatch.setattr(_pp, "practitioner_email_by_id", lambda pid: PRACTITIONER_EMAIL)
+    r = practitioner.post("/api/practitioner/page-slug", json={"page_slug": "dr-mary"})
+    assert r.status_code == 200, r.get_data(as_text=True)
+    assert _page_slug_of(logdb, "mary-boyd") == "dr-mary"
+
+
+def test_page_slug_post_non_approved_cannot_claim_a_new_name(monkeypatch, logdb, practitioner):
+    """Readable refusal, not a 500 -- for every status this table actually
+    uses besides 'approved': 'pending' (gifting-created rows), 'rejected',
+    and 'suspended' (both set only by the admin PATCH)."""
+    from dashboard import practitioner_portal as _pp
+    monkeypatch.setattr(_pp, "practitioner_email_by_id", lambda pid: PRACTITIONER_EMAIL)
+    for status in ("pending", "rejected", "suspended"):
+        _seed_slug(logdb, slug="mary-boyd", email=PRACTITIONER_EMAIL, status=status)
+        r = practitioner.post("/api/practitioner/page-slug",
+                              json={"page_slug": "dr-mary"})
+        assert r.status_code == 403, f"{status}: {r.get_data(as_text=True)}"
+        assert "approved" in (r.get_json()["error"] or "").lower(), status
+        assert _page_slug_of(logdb, "mary-boyd") in ("", "mary-boyd"), \
+            f"{status}: a refused claim must not write"
+        with _open(logdb) as c:
+            c.execute("DELETE FROM affiliate_signups")
+            c.commit()
+
+
+def test_page_slug_post_non_approved_can_still_reset_to_her_own_slug(
+        monkeypatch, logdb, practitioner):
+    """The status gate only blocks claiming a DIFFERENT name. Keeping or
+    resetting to her own affiliate slug must still work at any status."""
+    _seed_slug(logdb, slug="mary-boyd", email=PRACTITIONER_EMAIL, status="approved")
+    from dashboard import practitioner_portal as _pp
+    monkeypatch.setattr(_pp, "practitioner_email_by_id", lambda pid: PRACTITIONER_EMAIL)
+    # She claims a vanity name while approved...
+    r0 = practitioner.post("/api/practitioner/page-slug", json={"page_slug": "dr-mary"})
+    assert r0.status_code == 200, r0.get_data(as_text=True)
+    # ...then something happens to her status.
+    with _open(logdb) as c:
+        c.execute("UPDATE affiliate_signups SET status='suspended' WHERE slug='mary-boyd'")
+        c.commit()
+    # An empty candidate (clear) still works.
+    r1 = practitioner.post("/api/practitioner/page-slug", json={"page_slug": ""})
+    assert r1.status_code == 200, r1.get_data(as_text=True)
+    assert r1.get_json()["page_slug"] == "mary-boyd"
+    # Explicitly re-asserting her own affiliate slug still works too.
+    r2 = practitioner.post("/api/practitioner/page-slug", json={"page_slug": "mary-boyd"})
+    assert r2.status_code == 200, r2.get_data(as_text=True)
+    # But a genuinely different name is still refused while suspended.
+    r3 = practitioner.post("/api/practitioner/page-slug",
+                           json={"page_slug": "dr-mary-again"})
+    assert r3.status_code == 403, r3.get_data(as_text=True)
+    assert _page_slug_of(logdb, "mary-boyd") == "mary-boyd"
 
 
 def test_page_slug_post_refuses_a_practitioner_with_no_affiliate_row(

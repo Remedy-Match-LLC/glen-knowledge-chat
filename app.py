@@ -17797,6 +17797,19 @@ def api_practitioner_page_slug_post():
     An empty page_slug clears the choice, which restores her affiliate slug as
     her public URL. That is a real change to a published address, so it goes
     through the same authenticated write as any other.
+
+    Status gate: ANY status may reset to or keep her own affiliate slug --
+    _practitioner_affiliate_slug's docstring gives the reason (a pending row
+    already owns its own name, so nothing is taken from anybody by letting her
+    keep it). But that reasoning does not extend to claiming a name that is
+    NOT her own: a rejected or suspended practitioner claiming a fresh name
+    could hold it against a legitimate one, so only an 'approved' practitioner
+    may claim a DIFFERENT name. The real status values in this table today are
+    'approved' (the default, and every ordinary signup), 'pending' (rows
+    auto-created by the gifting flow before an application exists), and
+    'rejected'/'suspended' (set only by the admin PATCH at
+    /api/affiliates/<id>) -- so the gate below is a plain equality against
+    'approved', not a blocklist of the other three.
     """
     pid = _practitioner_session_pid()
     if not pid:
@@ -17814,6 +17827,22 @@ def api_practitioner_page_slug_post():
             affiliate = _practitioner_affiliate_slug(cx, pid)
             if not affiliate:
                 return jsonify({"ok": False, "error": NO_PUBLIC_PAGE_MSG}), 400
+            # An empty candidate (clearing) or a candidate equal to her own
+            # affiliate slug is "keep/reset my own name" -- allowed at any
+            # status. Anything else is a claim on a name that is not hers.
+            wants_own_slug = (not _pslugs.normalize(candidate)
+                              or _pslugs.normalize(candidate) == affiliate)
+            if not wants_own_slug:
+                status_row = cx.execute(
+                    "SELECT status FROM affiliate_signups WHERE lower(slug)=?",
+                    (affiliate,)).fetchone()
+                status = ((status_row[0] if status_row else "") or "").strip().lower()
+                if status != "approved":
+                    return jsonify({"ok": False, "error":
+                        "Your practitioner account is not currently approved, "
+                        "so you can't claim a new public web address. You can "
+                        "still reset your page to your own name. Please "
+                        "contact us if you believe this is a mistake."}), 403
             # reserved_for(app.url_map) rather than any list written here: a
             # slug that shadows a live route is a page she could publish and
             # never reach, and the route table is the only thing that knows
