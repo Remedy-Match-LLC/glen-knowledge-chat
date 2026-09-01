@@ -39,7 +39,13 @@ def init_evox_tables(cx) -> None:
     for _col, _decl in (("session_type", "TEXT DEFAULT 'evox'"),
                         ("medium", "TEXT DEFAULT 'phone'"),
                         ("zoom_join_url", "TEXT"), ("zoom_meeting_id", "TEXT"),
-                        ("client_name", "TEXT")):
+                        ("client_name", "TEXT"),
+                        # Nullable, no default: existing rows stay NULL ("we
+                        # never knew"), never backfilled to '' -- see
+                        # create_booking's visitor_tz for how a NEW row tells
+                        # "the client told us their zone" (non-empty) apart
+                        # from "we never knew" (NULL or '').
+                        ("visitor_tz", "TEXT")):
         try:
             cx.execute(f"ALTER TABLE evox_bookings ADD COLUMN {_col} {_decl}")
         except Exception:
@@ -166,8 +172,23 @@ def rae_busy_intervals(cx, lo_date: str, hi_date: str, practitioner: str = "rae"
 
 def create_booking(cx, email: str, start_ts: str, *, duration_min: int = 60,
                    prepaid: bool = False, practitioner: str = "rae",
-                   session_type: str = "evox", medium: str = "phone", tag_fn=None) -> dict:
+                   session_type: str = "evox", medium: str = "phone", tag_fn=None,
+                   visitor_tz: str = "") -> dict:
+    """visitor_tz is optional and purely additive, keyword-only with a
+    default of "" -- omitted (the default), every existing caller (Glen's
+    and Rae's flows, the consult flow, the masterclass flow) behaves exactly
+    as it always has. Same additive-parameter contract build_ics's tz_name
+    already follows.
+
+    Passed, it is the CLIENT's own timezone as she gave it (or the empty
+    string), never a practitioner-zone fallback -- see api_public_book in
+    app.py, which resolves a fallback for DISPLAY (rendered_tz) but must not
+    store that here, since a fallback is not a statement about the client
+    and storing it would make a later reminder claim she told us a zone she
+    never gave us.
+    """
     email = (email or "").strip().lower()
+    visitor_tz = (visitor_tz or "").strip()
     start_dt = datetime.fromisoformat(start_ts[:19])
     end_ts = (start_dt + timedelta(minutes=duration_min)).isoformat()
     now = datetime.now(timezone.utc).isoformat()
@@ -176,10 +197,10 @@ def create_booking(cx, email: str, start_ts: str, *, duration_min: int = 60,
         booking_id = dbwrite.insert_returning_id(
             cx,
             "INSERT INTO evox_bookings (email,practitioner,start_ts,end_ts,status,"
-            "prepaid,ics_uid,created_at,session_type,medium) "
-            "VALUES (?,?,?,?,'booked',?,?,?,?,?)",
+            "prepaid,ics_uid,created_at,session_type,medium,visitor_tz) "
+            "VALUES (?,?,?,?,'booked',?,?,?,?,?,?)",
             (email, practitioner, start_ts, end_ts, 1 if prepaid else 0, ics_uid, now,
-             session_type, medium))
+             session_type, medium, visitor_tz))
     except db.IntegrityError as e:
         cx.rollback()
         if "UNIQUE" in str(e).upper():
@@ -202,7 +223,7 @@ def create_booking(cx, email: str, start_ts: str, *, duration_min: int = 60,
         tag_fn(email, ["evox-client", "evox-ready"])
     return {"id": booking_id, "email": email, "start_ts": start_ts, "end_ts": end_ts,
             "ics_uid": ics_uid, "prepaid": prepaid, "session_type": session_type,
-            "medium": medium}
+            "medium": medium, "visitor_tz": visitor_tz}
 
 
 def build_ics(*, uid, start_ts, end_ts, summary, description, location,

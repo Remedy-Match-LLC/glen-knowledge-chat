@@ -107,6 +107,36 @@ def test_create_booking_writes_calendar_and_tags():
     assert seen["c@x.com"] == ["evox-client", "evox-ready"]
     assert "2026-07-06T11:00:00" in evox.booked_starts(cx)
 
+def test_create_booking_stores_visitor_tz():
+    cx = _cal_cx()
+    b = evox.create_booking(cx, "c@x.com", "2026-07-06T11:00:00",
+                            visitor_tz="America/Anchorage")
+    row = cx.execute("SELECT visitor_tz FROM evox_bookings WHERE id=?", (b["id"],)).fetchone()
+    assert row["visitor_tz"] == "America/Anchorage"
+    assert b["visitor_tz"] == "America/Anchorage"
+
+def test_create_booking_without_visitor_tz_stores_empty_and_does_not_raise():
+    cx = _cal_cx()
+    b = evox.create_booking(cx, "c@x.com", "2026-07-06T11:00:00")
+    row = cx.execute("SELECT visitor_tz FROM evox_bookings WHERE id=?", (b["id"],)).fetchone()
+    assert row["visitor_tz"] == ""
+    assert b["visitor_tz"] == ""
+
+def test_create_booking_existing_callers_unchanged_without_visitor_tz():
+    # Mirrors the five other call shapes in app.py (Glen's/Rae's flows, the
+    # consult flow, the masterclass flow) -- none pass visitor_tz, and the
+    # new keyword-only default must leave them byte-identical.
+    cx = _cal_cx(); seen = {}
+    def tag_fn(email, tags): seen[email] = tags
+    b1 = evox.create_booking(cx, "c1@x.com", "2026-07-06T11:00:00", tag_fn=tag_fn)
+    assert set(b1.keys()) == {"id", "email", "start_ts", "end_ts", "ics_uid",
+                              "prepaid", "session_type", "medium", "visitor_tz"}
+    b2 = evox.create_booking(cx, "c2@x.com", "2026-07-07T11:00:00", prepaid=True)
+    assert b2["prepaid"] is True
+    b3 = evox.create_booking(cx, "c3@x.com", "2026-07-08T09:00:00", duration_min=15,
+                             practitioner="rae", session_type="onboarding", medium="phone")
+    assert b3["end_ts"] == "2026-07-08T09:15:00"
+
 def test_double_book_raises():
     cx = _cal_cx()
     evox.create_booking(cx, "c@x.com", "2026-07-06T11:00:00")
