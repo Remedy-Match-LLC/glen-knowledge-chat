@@ -1098,7 +1098,8 @@ def test_the_public_page_shows_the_button_only_when_configured(public, logdb, mo
     never configured it, and an empty booking page is worse than no button."""
     monkeypatch.setattr(appmod, "_on_portal_host", lambda: True)
     from dashboard import practitioner_slugs as _ps
-    monkeypatch.setattr(_ps, "resolve", lambda cx, s: ("canonical", s))
+    monkeypatch.setattr(_ps, "resolve_page",
+                        lambda cx, s: ("canonical", s, s))
     from dashboard import public_surface as _psurf
     monkeypatch.setattr(_psurf, "build_practitioner_storefront",
                         lambda cx, slug: {"slug": slug, "practitioner_name": "Mary Boyd",
@@ -1129,7 +1130,8 @@ def test_the_bookable_check_skips_resolution_when_nothing_is_configured(
     nothing configured."""
     monkeypatch.setattr(appmod, "_on_portal_host", lambda: True)
     from dashboard import practitioner_slugs as _ps
-    monkeypatch.setattr(_ps, "resolve", lambda cx, s: ("canonical", s))
+    monkeypatch.setattr(_ps, "resolve_page",
+                        lambda cx, s: ("canonical", s, s))
     from dashboard import public_surface as _psurf
     monkeypatch.setattr(_psurf, "build_practitioner_storefront",
                         lambda cx, slug: {"slug": slug, "practitioner_name": "Mary Boyd",
@@ -1233,7 +1235,8 @@ def test_the_book_link_on_the_public_page_points_at_a_real_route(public, logdb, 
     """
     monkeypatch.setattr(appmod, "_on_portal_host", lambda: True)
     from dashboard import practitioner_slugs as _ps
-    monkeypatch.setattr(_ps, "resolve", lambda cx, s: ("canonical", s))
+    monkeypatch.setattr(_ps, "resolve_page",
+                        lambda cx, s: ("canonical", s, s))
     _seed_slug(logdb)
     with _open(logdb) as c:
         pb.set_config(c, PID, CFG)
@@ -2024,3 +2027,491 @@ def test_ticking_phone_or_text_with_no_number_warns_rather_than_being_silent():
         "the warning must check whether a number is actually present, not just which box is ticked"
     assert "info.textContent" in body and "need a number" in body.lower(), \
         "no warning text is actually set when the number is missing"
+
+
+# --- page_slug: booking must resolve the same names the page does -----------
+# /<slug> and /book/<slug> used to resolve through two unrelated code paths --
+# practitioner_slugs.resolve on one side, a raw
+# `affiliate_signups WHERE slug=? AND status='approved'` on the other -- which
+# is why an alias worked on the practitioner page and 404'd on booking. Both
+# now go through practitioner_slugs.resolve_page.
+
+def _seed_page_slug(logdb, slug="remedy-match", page="dr-glen",
+                    email="glen@example.com"):
+    """An approved practitioner whose public URL differs from her/his
+    attribution slug, written through the real set_page_slug writer."""
+    _seed_slug(logdb, slug=slug, email=email)
+    from dashboard import practitioner_slugs as _pslugs
+    with _open(logdb) as c:
+        _pslugs.set_page_slug(c, slug, page, reserved=frozenset())
+
+
+def _public_client(monkeypatch):
+    """A public client that does NOT stub resolve_practitioner_pid -- the
+    `public` fixture replaces it with a lambda returning PID for every slug,
+    which would make any slug-resolution assertion pass by construction."""
+    monkeypatch.setitem(appmod.app.config, "TESTING", False)
+    monkeypatch.setattr(appmod.app, "testing", False, raising=False)
+    monkeypatch.setattr(appmod, "_public_surface_enabled", lambda: True)
+    return appmod.app.test_client()
+
+
+def test_resolve_practitioner_pid_accepts_the_page_slug(logdb, monkeypatch):
+    """The lookup this task changes. `dr-glen` is nobody's affiliate slug, so
+    the raw `WHERE slug=?` read this replaced returned nothing for it."""
+    _seed_page_slug(logdb)
+    from dashboard import practitioner_portal as pp
+    monkeypatch.setattr(pp, "find_practitioner_id_by_email",
+                        lambda email: PID if email == "glen@example.com" else None)
+    with _open(logdb) as c:
+        assert pb.resolve_practitioner_pid(c, "dr-glen") == PID
+
+
+def test_resolve_practitioner_pid_still_accepts_the_legacy_affiliate_slug(
+        logdb, monkeypatch):
+    """The printed shortlink and every 90-day cookie carry the affiliate slug.
+    It must keep resolving forever."""
+    _seed_page_slug(logdb)
+    from dashboard import practitioner_portal as pp
+    monkeypatch.setattr(pp, "find_practitioner_id_by_email",
+                        lambda email: PID if email == "glen@example.com" else None)
+    with _open(logdb) as c:
+        assert pb.resolve_practitioner_pid(c, "remedy-match") == PID
+
+
+def test_resolve_practitioner_pid_refuses_a_non_approved_page_slug(
+        logdb, monkeypatch):
+    """resolve_page deliberately does not filter on status -- the approved-only
+    gate lives here, and must survive the change of lookup."""
+    _seed_page_slug(logdb)
+    with _open(logdb) as c:
+        c.execute("UPDATE affiliate_signups SET status='pending'")
+        c.commit()
+    from dashboard import practitioner_portal as pp
+    monkeypatch.setattr(pp, "find_practitioner_id_by_email", lambda email: PID)
+    with _open(logdb) as c:
+        assert pb.resolve_practitioner_pid(c, "dr-glen") is None
+
+
+def test_booking_resolves_the_canonical_page_slug(logdb, monkeypatch):
+    """/api/book/dr-glen/slots serves his real session types, not a 404."""
+    _seed_page_slug(logdb)
+    from dashboard import practitioner_portal as pp
+    monkeypatch.setattr(pp, "find_practitioner_id_by_email",
+                        lambda email: PID if email == "glen@example.com" else None)
+    with _open(logdb) as c:
+        pb.set_config(c, PID, CFG)
+    r = _public_client(monkeypatch).get("/api/book/dr-glen/slots?session=intro")
+    assert r.status_code == 200
+    payload = r.get_json()
+    assert [t["slug"] for t in payload["session_types"]] == ["intro"]
+    assert payload["slots"], "a configured practitioner must offer slots"
+
+
+def test_booking_still_resolves_the_legacy_affiliate_slug(logdb, monkeypatch):
+    _seed_page_slug(logdb)
+    from dashboard import practitioner_portal as pp
+    monkeypatch.setattr(pp, "find_practitioner_id_by_email",
+                        lambda email: PID if email == "glen@example.com" else None)
+    with _open(logdb) as c:
+        pb.set_config(c, PID, CFG)
+    r = _public_client(monkeypatch).get(
+        "/api/book/remedy-match/slots?session=intro")
+    assert r.status_code == 200
+    assert [t["slug"] for t in r.get_json()["session_types"]] == ["intro"]
+
+
+def test_booking_302s_the_legacy_affiliate_slug(logdb, monkeypatch):
+    """302 for the same reason the practitioner page uses one: page_slug is
+    changeable and a 301 is cached indefinitely."""
+    _seed_page_slug(logdb)
+    r = _public_client(monkeypatch).get("/book/remedy-match")
+    assert r.status_code == 302
+    assert r.headers["Location"].endswith("/book/dr-glen")
+
+
+def test_the_booking_page_serves_the_page_slug_with_no_redirect_hop(
+        logdb, monkeypatch):
+    _seed_page_slug(logdb)
+    r = _public_client(monkeypatch).get("/book/dr-glen")
+    assert r.status_code == 200
+    assert r.headers.get("Location") is None
+
+
+def test_the_booking_page_of_a_practitioner_who_chose_nothing_does_not_redirect(
+        logdb, monkeypatch):
+    """Her page_slug IS her affiliate slug, so there is nothing to redirect to.
+    A redirect here would be a loop."""
+    _seed_slug(logdb)
+    r = _public_client(monkeypatch).get("/book/mary-boyd")
+    assert r.status_code == 200
+
+
+def test_the_book_link_on_the_page_uses_the_page_slug(logdb, monkeypatch):
+    """The Book button must point at the URL the visitor is already on, not at
+    a legacy name that redirects. Same argument as the canonical tag."""
+    import re
+    _seed_page_slug(logdb)
+    from dashboard import practitioner_portal as pp
+    monkeypatch.setattr(pp, "find_practitioner_id_by_email",
+                        lambda email: PID if email == "glen@example.com" else None)
+    with _open(logdb) as c:
+        pb.set_config(c, PID, CFG)
+    monkeypatch.setattr(appmod, "_on_portal_host", lambda: True)
+    page = _public_client(monkeypatch).get("/dr-glen").get_data(as_text=True)
+    m = re.search(r'href="(/book/[^"]+)"', page)
+    assert m, "no Book link on a bookable practitioner's page"
+    assert m.group(1) == "/book/dr-glen"
+
+
+# --- Task 3: the page-slug endpoint and her own web address ----------------
+# Nothing in the practitioner UI has ever told her where her public page is.
+# She configures booking, sees "Saved", and has no way to learn the URL. The
+# booking-config GET now carries both of her URLs, and a new endpoint lets her
+# change the name in them without touching her affiliate slug.
+
+GLEN_PID = "pid-glen"
+GLEN_EMAIL = "glen@example.com"
+PORTAL_BASE = "https://portal.example.com"
+
+
+def _page_slug_of(logdb, slug):
+    """The stored page_slug for an affiliate row, '' when the column does not
+    exist yet, None when there is no such row.
+
+    Tolerant of the missing column on purpose: the tests that assert NOTHING
+    was written run against a database where init_page_slug may never have
+    been reached, and a bare `SELECT page_slug` there raises OperationalError
+    instead of proving the point.
+    """
+    with _open(logdb) as c:
+        row = c.execute("SELECT * FROM affiliate_signups WHERE slug=?",
+                        (slug,)).fetchone()
+    if row is None:
+        return None
+    return (row["page_slug"] if "page_slug" in row.keys() else "") or ""
+
+
+@pytest.fixture
+def slug_settings(monkeypatch, logdb, practitioner):
+    """Mary signed in, with her own approved affiliate row, and a SECOND
+    practitioner (Glen) sharing the namespace so ownership can be tested."""
+    _seed_slug(logdb, slug="mary-boyd", email=PRACTITIONER_EMAIL)
+    _seed_slug(logdb, slug="remedy-match", email=GLEN_EMAIL)
+    emails = {PID: PRACTITIONER_EMAIL, GLEN_PID: GLEN_EMAIL}
+    from dashboard import practitioner_portal as _pp
+    monkeypatch.setattr(_pp, "practitioner_email_by_id",
+                        lambda pid: emails.get(pid, ""))
+    monkeypatch.setenv("PORTAL_BASE_URL", PORTAL_BASE)
+    return practitioner
+
+
+def test_page_slug_post_requires_a_session(monkeypatch, logdb):
+    _seed_slug(logdb, slug="mary-boyd", email=PRACTITIONER_EMAIL)
+    monkeypatch.setattr(appmod, "_practitioner_session_pid", lambda: None)
+    monkeypatch.setitem(appmod.app.config, "TESTING", False)
+    monkeypatch.setattr(appmod.app, "testing", False, raising=False)
+    r = appmod.app.test_client().post("/api/practitioner/page-slug",
+                                      json={"page_slug": "dr-mary"})
+    assert r.status_code == 401
+    assert _page_slug_of(logdb, "mary-boyd") == "", "a signed-out POST wrote"
+
+
+def test_page_slug_post_ignores_a_practitioner_id_in_the_body(slug_settings, logdb):
+    """Identity comes from the SESSION. Honouring a practitioner_id in the body
+    would let any signed-in practitioner rename someone else's public URL out
+    from under every link that points at it."""
+    r = slug_settings.post("/api/practitioner/page-slug",
+                           json={"page_slug": "dr-mary",
+                                 "practitioner_id": GLEN_PID})
+    assert r.status_code == 200, r.get_data(as_text=True)
+    assert _page_slug_of(logdb, "mary-boyd") == "dr-mary", \
+        "the claim must land on the SESSION's practitioner"
+    assert _page_slug_of(logdb, "remedy-match") == "remedy-match", \
+        "the body's practitioner must be untouched"
+
+
+def test_page_slug_post_refuses_a_reserved_word(slug_settings, logdb):
+    """Both halves of reserved_for(app.url_map): a LIVE route segment
+    (/practitioner/...) and a word from the static buffer we may want to route
+    later. A hand-written list in the route would pass the second and fail the
+    first."""
+    for word in ("practitioner", "pricing"):
+        r = slug_settings.post("/api/practitioner/page-slug",
+                               json={"page_slug": word})
+        assert r.status_code == 400, f"{word!r} was accepted"
+        assert "reserved" in (r.get_json()["error"] or "").lower()
+    assert _page_slug_of(logdb, "mary-boyd") == "mary-boyd", "a refusal wrote"
+
+
+def test_page_slug_post_refuses_another_practitioners_slug(slug_settings, logdb):
+    r = slug_settings.post("/api/practitioner/page-slug",
+                           json={"page_slug": "remedy-match"})
+    assert r.status_code == 400
+    assert "already in use" in (r.get_json()["error"] or "").lower()
+    assert _page_slug_of(logdb, "mary-boyd") == "mary-boyd"
+    assert _page_slug_of(logdb, "remedy-match") == "remedy-match", \
+        "the other practitioner's own URL must survive the attempt"
+
+
+def test_page_slug_post_never_writes_the_affiliate_slug(slug_settings, logdb):
+    """slug is the attribution key: stored lead rows, the printed shortlink and
+    every 90-day cookie carry it."""
+    r = slug_settings.post("/api/practitioner/page-slug",
+                           json={"page_slug": "dr-mary"})
+    assert r.status_code == 200, r.get_data(as_text=True)
+    body = r.get_json()
+    assert body["page_slug"] == "dr-mary"
+    assert body["page_url"] == f"{PORTAL_BASE}/dr-mary"
+    assert body["booking_url"] == f"{PORTAL_BASE}/book/dr-mary"
+    with _open(logdb) as c:
+        row = c.execute("SELECT slug FROM affiliate_signups WHERE page_slug=?",
+                        ("dr-mary",)).fetchone()
+    assert row["slug"] == "mary-boyd"
+
+
+def test_an_empty_page_slug_restores_the_affiliate_slug(slug_settings, logdb):
+    slug_settings.post("/api/practitioner/page-slug", json={"page_slug": "dr-mary"})
+    r = slug_settings.post("/api/practitioner/page-slug", json={"page_slug": ""})
+    assert r.status_code == 200, r.get_data(as_text=True)
+    assert r.get_json()["page_slug"] == "mary-boyd"
+    assert _page_slug_of(logdb, "mary-boyd") == "mary-boyd", \
+        "clearing must restore her affiliate slug, never NULL"
+
+
+def test_page_slug_post_refuses_a_practitioner_with_no_affiliate_row(
+        monkeypatch, logdb, practitioner):
+    """There is nothing to attach a page slug to. It must say so, not 500."""
+    _seed_slug(logdb, slug="remedy-match", email=GLEN_EMAIL)
+    from dashboard import practitioner_portal as _pp
+    monkeypatch.setattr(_pp, "practitioner_email_by_id",
+                        lambda pid: "nobody@example.com")
+    r = practitioner.post("/api/practitioner/page-slug",
+                          json={"page_slug": "dr-mary"})
+    assert r.status_code == 400, r.get_data(as_text=True)
+    assert "public page" in (r.get_json()["error"] or "").lower()
+    assert _page_slug_of(logdb, "remedy-match") in ("", "remedy-match"), \
+        "an unattached claim must not land on somebody else's row"
+
+
+def test_page_slug_post_fails_closed_when_her_email_cannot_be_read(
+        monkeypatch, logdb, practitioner):
+    """practitioner_email_by_id returns '' when Supabase is down. That is not
+    'she has no account', so it must refuse rather than write anywhere."""
+    _seed_slug(logdb, slug="mary-boyd", email=PRACTITIONER_EMAIL)
+    from dashboard import practitioner_portal as _pp
+    monkeypatch.setattr(_pp, "practitioner_email_by_id", lambda pid: "")
+    r = practitioner.post("/api/practitioner/page-slug",
+                          json={"page_slug": "dr-mary"})
+    assert r.status_code == 400, r.get_data(as_text=True)
+    assert _page_slug_of(logdb, "mary-boyd") in ("", "mary-boyd")
+
+
+def test_the_booking_config_get_returns_both_urls(slug_settings, logdb):
+    """Built from the CANONICAL slug, never the affiliate one: showing her the
+    legacy name would have her paste a URL that immediately redirects."""
+    from dashboard import practitioner_slugs as _pslugs
+    with _open(logdb) as c:
+        _pslugs.set_page_slug(c, "mary-boyd", "dr-mary", reserved=frozenset())
+    v = slug_settings.get("/api/practitioner/booking-config").get_json()
+    assert v["page_slug"] == "dr-mary"
+    assert v["canonical_slug"] == "dr-mary"
+    assert v["page_url"] == f"{PORTAL_BASE}/dr-mary"
+    assert v["booking_url"] == f"{PORTAL_BASE}/book/dr-mary"
+    assert "mary-boyd" not in v["page_url"]
+    assert "mary-boyd" not in v["booking_url"]
+    assert v["affiliate_slug"] == "mary-boyd"
+
+
+def test_the_booking_config_get_still_returns_everything_it_did_before(
+        slug_settings, logdb):
+    """The web address is ADDED to this response, not swapped in for it. The
+    form reads all five of these and locks itself out without them."""
+    v = slug_settings.get("/api/practitioner/booking-config").get_json()
+    for key in ("config", "unreadable", "media", "default_timezone",
+                "practitioner_phone"):
+        assert key in v, f"{key} disappeared from the booking-config GET"
+
+
+def test_the_booking_config_get_survives_a_practitioner_with_no_page(
+        monkeypatch, logdb, practitioner):
+    """No affiliate row means no public page. That must leave the URLs empty
+    and the booking form loadable, not 500 the page she came here for."""
+    from dashboard import practitioner_portal as _pp
+    monkeypatch.setattr(_pp, "practitioner_email_by_id", lambda pid: "")
+    r = practitioner.get("/api/practitioner/booking-config")
+    assert r.status_code == 200, r.get_data(as_text=True)
+    v = r.get_json()
+    assert v["page_url"] == "" and v["booking_url"] == ""
+    assert v["canonical_slug"] == ""
+    assert "config" in v
+
+
+def test_the_urls_stay_reachable_when_the_portal_host_is_unset(
+        slug_settings, logdb, monkeypatch):
+    """/<slug> is host-gated on the portal domain, so with PORTAL_BASE_URL
+    unset it 404s everywhere and the only page URL that serves is the legacy
+    /p/<slug> on the funnel host. Showing her an address that 404s would be
+    worse than showing her none."""
+    monkeypatch.delenv("PORTAL_BASE_URL", raising=False)
+    v = slug_settings.get("/api/practitioner/booking-config").get_json()
+    assert v["page_url"] == f"{appmod.PUBLIC_BASE_URL}/p/mary-boyd"
+    assert v["booking_url"] == f"{appmod.PUBLIC_BASE_URL}/book/mary-boyd"
+
+
+def _booking_page_source():
+    import pathlib
+    return (pathlib.Path(appmod.STATIC) / "practitioner-booking.html").read_text()
+
+
+def _js_code(html, pattern):
+    """The matched source with // comments stripped.
+
+    Load-bearing, and the same helper test_a_form_that_failed_to_load_cannot_
+    be_saved carries for the same reason: every guard on this page is
+    introduced by a comment explaining it, so an assertion against the raw
+    match is answered by the PROSE and stays green after the code it describes
+    is deleted.
+    """
+    import re
+    m = re.search(pattern, html, re.S)
+    assert m, f"no match for {pattern}"
+    return "\n".join(ln for ln in m.group(0).splitlines()
+                     if not ln.strip().startswith("//"))
+
+
+def test_the_booking_page_shows_her_own_web_address():
+    """She has never been told where her public page is. Both URLs, from the
+    same GET that loads the rest of the form."""
+    html = _booking_page_source()
+    code = _js_code(html, r"function showWebAddress\(v\) \{.*?\n  \}")
+    assert "page_url" in code and "booking_url" in code, \
+        "the section must read both URLs the server built"
+    assert "canonical_slug" in code, \
+        "the editable name must come from the canonical slug, not the affiliate one"
+    assert 'id="page-url"' in html and 'id="booking-url"' in html
+
+
+def test_her_urls_are_selectable_so_she_can_copy_them():
+    """A URL she cannot select is a URL she has to retype from the screen."""
+    import re
+    html = _booking_page_source()
+    for fid in ("page-url", "booking-url"):
+        m = re.search(r'<input[^>]*id="%s"[^>]*>' % fid, html)
+        assert m, f"{fid} must be a field she can select from, not static text"
+        assert "readonly" in m.group(0), f"{fid} must not be editable"
+        assert "select()" in m.group(0), \
+            f"clicking {fid} must select the whole address"
+    assert "copyUrl" in html, "no copy affordance at all"
+
+
+def test_the_web_address_form_respects_the_same_load_lockout():
+    """Posting an empty slug RESETS her public URL to her affiliate slug, so a
+    form that failed to load is just as destructive here as on the booking
+    config beside it."""
+    html = _booking_page_source()
+    save = _js_code(html, r"window\.savePageSlug = function \(\) \{.*?var chosen")
+    assert "if (!loaded)" in save, \
+        "the web address form must refuse to save while the page has not loaded"
+
+
+def test_the_web_address_copy_follows_the_house_rules():
+    """No em dashes, no bare double hyphen, and 'client' rather than 'patient'
+    in anything a practitioner reads."""
+    import re
+    html = _booking_page_source()
+    start = html.index('id="slug-panel"')
+    end = html.index("<!-- /web-address -->", start)
+    section = html[start:end]
+    assert "—" not in section, "em dash in practitioner-facing copy"
+    assert "patient" not in section.lower()
+    # Tags stripped first: attribute values and the section's own end marker
+    # are not copy, and neither is the "--" inside an HTML comment.
+    body = re.sub(r"<[^>]+>", " ", section)
+    assert "--" not in body, "a bare double hyphen in practitioner-facing copy"
+
+
+def test_the_emailed_cancel_link_survives_a_page_slug_rename(logdb, monkeypatch):
+    """A cancel link is a DURABLE artifact: emailed once, opened days later,
+    and the only record a client without an account has of the appointment.
+
+    It used to be built on whatever path segment the visitor booked under.
+    Before this branch that could only be the affiliate slug, which never
+    changes. Now the canonical booking URL is the PAGE slug, so a rename
+    orphaned every outstanding link: resolve_page found the old name under
+    neither column, /api/book/<slug>/cancel 404'd, the client could not
+    cancel, and the practitioner held a slot nobody attended.
+    """
+    _seed_page_slug(logdb)                 # slug=remedy-match, page=dr-glen
+    from dashboard import practitioner_portal as pp
+    monkeypatch.setattr(pp, "find_practitioner_id_by_email",
+                        lambda email: PID if email == "glen@example.com" else None)
+    from dashboard.chat_limits import VelocityLimiter
+    monkeypatch.setattr(appmod, "_chat_velocity", VelocityLimiter())
+    sent = []
+    monkeypatch.setattr(appmod, "send_evox_email",
+                        lambda to, name, subject, html_body, text_body, ics_bytes:
+                        sent.append(text_body))
+    client = _public_client(monkeypatch)
+    with _open(logdb) as c:
+        pb.set_config(c, PID, CFG)
+
+    # The client books under the practitioner's CURRENT public URL, which is
+    # the page slug -- the name that is about to change.
+    slot = client.get("/api/book/dr-glen/slots?session=intro").get_json()["slots"][0]
+    r = client.post("/api/book/dr-glen", json={
+        "session": "intro", "start": slot["start"],
+        "name": "A Client", "email": "client@example.com"})
+    assert r.status_code == 200, r.get_data(as_text=True)
+
+    import re as _re
+    from urllib.parse import urlparse, parse_qs
+    m = _re.search(r"/book/cancel\?[^\s\"]+", sent[0])
+    assert m, "no cancel link in the confirmation body"
+    qs = parse_qs(urlparse(m.group(0).replace("/book/cancel?", "?")).query)
+    assert qs["slug"] == ["remedy-match"], \
+        "the cancel link must name the AFFILIATE slug, which cannot be renamed"
+
+    # He renames his public URL. The name the client booked under now belongs
+    # to nobody -- assert that, or this test proves nothing.
+    from dashboard import practitioner_slugs as _pslugs
+    with _open(logdb) as c:
+        _pslugs.set_page_slug(c, "remedy-match", "healing-oasis",
+                              reserved=frozenset())
+        assert _pslugs.resolve_page(c, "dr-glen") == ("", "", ""), \
+            "the old page slug should be orphaned by the rename"
+
+    # The link in the client's inbox still cancels the appointment.
+    rc = client.post(f"/api/book/{qs['slug'][0]}/cancel", json={
+        "start": slot["start"], "token": r.get_json()["cancel_token"]})
+    assert rc.status_code == 200, rc.get_data(as_text=True)
+    with _open(logdb) as c:
+        assert c.execute("SELECT status FROM evox_bookings WHERE start_ts=?",
+                         (slot["start"],)).fetchone()["status"] == "cancelled"
+
+
+def test_the_ics_cancel_link_is_the_same_durable_one(logdb, monkeypatch):
+    """The ICS description reuses cancel_url verbatim. Both copies of the link
+    the client keeps -- the mail body and the calendar entry -- must name the
+    affiliate slug, or the calendar copy rots on its own."""
+    _seed_page_slug(logdb)
+    from dashboard import practitioner_portal as pp
+    monkeypatch.setattr(pp, "find_practitioner_id_by_email",
+                        lambda email: PID if email == "glen@example.com" else None)
+    from dashboard.chat_limits import VelocityLimiter
+    monkeypatch.setattr(appmod, "_chat_velocity", VelocityLimiter())
+    sent = []
+    monkeypatch.setattr(appmod, "send_evox_email",
+                        lambda to, name, subject, html_body, text_body, ics_bytes:
+                        sent.append(ics_bytes or b""))
+    client = _public_client(monkeypatch)
+    with _open(logdb) as c:
+        pb.set_config(c, PID, CFG)
+    slot = client.get("/api/book/dr-glen/slots?session=intro").get_json()["slots"][0]
+    client.post("/api/book/dr-glen", json={
+        "session": "intro", "start": slot["start"],
+        "name": "A Client", "email": "client@example.com"})
+    # ICS folds long lines, so match on the query parameter, not the whole URL.
+    ics = sent[0].decode("utf-8", "replace").replace("\r\n ", "").replace("\n ", "")
+    assert "slug=remedy-match" in ics, ics
+    assert "slug=dr-glen" not in ics

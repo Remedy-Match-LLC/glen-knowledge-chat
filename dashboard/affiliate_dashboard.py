@@ -171,8 +171,26 @@ def _mint_affiliate_slug(cx, name, email, reserved=None):
             _slugs.check_not_reserved(cand, reserved)
         except _slugs.SlugError:
             return False
-        return cx.execute("SELECT 1 FROM affiliate_signups WHERE slug=?",
-                          (cand,)).fetchone() is None
+        # The WHOLE namespace, not just affiliate_signups.slug. The minted
+        # value is written to BOTH slug and page_slug, and the unique index
+        # ux_affiliate_page_slug is on page_slug -- so the moment any
+        # practitioner claims a vanity name, that string is occupied in the
+        # index while absent from `slug`. Asking only `WHERE slug=?` let this
+        # loop hand back a name the INSERT then died on, and because the base
+        # is deterministic from the name, every retry reproduced the identical
+        # collision: the signup could never complete. page_slug_is_taken is
+        # the guard this branch wrote for exactly this namespace (slug,
+        # page_slug and published aliases), and it runs its own DDL, so the
+        # column and the alias table are present before it reads them.
+        #
+        # No excluding_affiliate_slug: there is no claimant row yet. This is a
+        # mint for a practitioner who does not exist in the table, so every
+        # match is somebody else's.
+        #
+        # Not wrapped: a read error propagates exactly as the raw SELECT it
+        # replaces did. Swallowing it would answer "usable" about a namespace
+        # we could not read, which is the same bug in a quieter form.
+        return not _slugs.page_slug_is_taken(cx, cand)
 
     def _suffixed(sfx):
         head = base[:_slugs.MAX_LEN - len(sfx) - 1].strip("-")
@@ -210,12 +228,19 @@ def ensure_affiliate(cx, email, name="", referred_by=None):
                     "status": row[4], "short_url": row[5] or ""}
         slug, token = _mint_affiliate_slug(cx, name, em)
         ts = datetime.now(timezone.utc).isoformat()
+        # page_slug is her public URL and is never NULL: the unique index on it
+        # is what makes "one URL, one practitioner" a database fact, and a NULL
+        # row sits outside that index. Defaulting it to her own slug also means
+        # her URL is unchanged from before the column existed. Run the DDL
+        # FIRST so the column is present for this INSERT, and so its commit
+        # lands before we open the row's transaction rather than inside it.
+        _slugs.init_page_slug(cx)
         cx.execute(
             "INSERT INTO affiliate_signups "
             "(created_at, name, email, organization, website, promo_method, slug, token, "
-            " status, referred_by, short_url) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+            " status, referred_by, short_url, page_slug) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
             (ts, (name or "").strip(), em, "", "", "auto", slug, token,
-             "approved", (referred_by or ""), ""))
+             "approved", (referred_by or ""), "", slug))
         cx.execute(
             "INSERT OR IGNORE INTO referral_sources "
             "(created_at, name, slug, description, utm_source, utm_medium, utm_campaign) "

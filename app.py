@@ -211,6 +211,7 @@ FEEDBACK_VIEW_URL   = os.environ.get("FEEDBACK_VIEW_URL",   "https://Truly.VIP/F
 from dashboard.openai_failover import build_openai_client as _build_openai_client
 from dashboard.people import set_person_tags, distinct_tags, dedupe_tags_ci
 from dashboard import affiliate_dashboard
+from dashboard import practitioner_slugs as _ps_signup
 from dashboard import ash_ally
 from dashboard import client_360
 from dashboard import recommendation_events
@@ -5097,9 +5098,14 @@ def journey_activate_gifting():
             nm = ((state.get("first_name") or "") + " " + (state.get("last_name") or "")).strip() or email
             slug = f"gift-{uuid.uuid4().hex[:8]}"
             token = uuid.uuid4().hex
+            # page_slug defaults to the row's own slug and is never NULL: it is
+            # the effective public URL, and the unique index on it is what
+            # stops two rows from claiming one URL. A pending gifting row
+            # occupies the namespace exactly like any other.
+            _ps_signup.init_page_slug(cx)
             cx.execute(
-                "INSERT INTO affiliate_signups (created_at,name,email,slug,token,status,gifting_activated_at) "
-                "VALUES (?,?,?,?,?,?,?)", (now, nm, email, slug, token, "pending", now))
+                "INSERT INTO affiliate_signups (created_at,name,email,slug,token,status,gifting_activated_at,page_slug) "
+                "VALUES (?,?,?,?,?,?,?,?)", (now, nm, email, slug, token, "pending", now, slug))
         cx.commit()
         # mint gift twins for every remedy the visitor has already collected (self-coupons)
         from dashboard import coupons as _coupons
@@ -16373,9 +16379,16 @@ def affiliate_apply_form():
                             httponly=True, samesite="Lax", secure=request.is_secure)
         return resp
 
-    # Ensure unique slug
+    # Ensure unique slug. The WHOLE namespace, not just affiliate_signups.slug:
+    # this value is written to page_slug too, and ux_affiliate_page_slug is on
+    # page_slug -- so a vanity name any practitioner has already claimed is
+    # occupied in the index while absent from `slug`. Asking only `WHERE slug=?`
+    # let this check pass and the INSERT below die, which redirected a public
+    # visitor to an error page reading "UNIQUE constraint failed" -- after
+    # _rebrandly_create had already minted a truly.vip/<slug> pointing at a row
+    # that never came to exist, once per retry.
     with db.connect(LOG_DB) as cx:
-        if cx.execute("SELECT id FROM affiliate_signups WHERE slug=?", (slug,)).fetchone():
+        if _ps_signup.page_slug_is_taken(cx, slug):
             slug = f"{base}-{token[:6]}"
 
     try:
@@ -16387,11 +16400,17 @@ def affiliate_apply_form():
                 title=f"Affiliate: {org or name}"
             ) or ""
 
+            # page_slug is her public URL, defaulting to her own affiliate slug
+            # and never NULL -- the unique index on it is what makes "one URL,
+            # one practitioner" a database fact rather than a validator's
+            # opinion, and a NULL row sits outside that index. The DDL runs
+            # first so the column is present for this INSERT.
+            _ps_signup.init_page_slug(cx)
             cx.execute("""
                 INSERT INTO affiliate_signups
-                  (created_at, name, email, organization, website, promo_method, slug, token, status, referred_by, short_url)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?)
-            """, (ts, name, email, org, site, promo, slug, token, "approved", referred_by, short_url))
+                  (created_at, name, email, organization, website, promo_method, slug, token, status, referred_by, short_url, page_slug)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+            """, (ts, name, email, org, site, promo, slug, token, "approved", referred_by, short_url, slug))
             cx.execute("""
                 INSERT OR IGNORE INTO referral_sources
                   (created_at, name, slug, description, utm_source, utm_medium, utm_campaign)
@@ -16471,17 +16490,27 @@ def affiliate_apply():
     if existing_row:
         token, slug = existing_row
     else:
-        # Ensure slug uniqueness
+        # Ensure slug uniqueness across the WHOLE namespace, for the reason the
+        # form handler above gives: the minted value is written to page_slug as
+        # well, and the unique index is on page_slug. A `WHERE slug=?` check
+        # cannot see a vanity name another practitioner has already claimed, so
+        # this route answered a deterministic 409 carrying a raw database error
+        # that no retry could clear.
         with db.connect(LOG_DB) as cx:
-            if cx.execute("SELECT id FROM affiliate_signups WHERE slug=?", (slug,)).fetchone():
+            if _ps_signup.page_slug_is_taken(cx, slug):
                 slug = f"{base}-{token[:6]}"
         try:
             with _db_lock, db.connect(LOG_DB) as cx:
+                # page_slug: her public URL, defaulting to her own affiliate
+                # slug and never NULL, for the reason the form handler above
+                # gives -- a NULL row sits outside the unique index that is
+                # the only real guard on "one URL, one practitioner".
+                _ps_signup.init_page_slug(cx)
                 cx.execute("""
                     INSERT INTO affiliate_signups
-                      (created_at, name, email, organization, website, promo_method, slug, token, status)
-                    VALUES (?,?,?,?,?,?,?,?,?)
-                """, (ts, name, email, org, site, promo, slug, token, "approved"))
+                      (created_at, name, email, organization, website, promo_method, slug, token, status, page_slug)
+                    VALUES (?,?,?,?,?,?,?,?,?,?)
+                """, (ts, name, email, org, site, promo, slug, token, "approved", slug))
                 cx.execute("""
                     INSERT OR IGNORE INTO referral_sources
                       (created_at, name, slug, description, utm_source, utm_medium, utm_campaign)
@@ -17629,6 +17658,162 @@ def practitioner_booking_page():
     return _practitioner_page("practitioner-booking.html")
 
 
+def _practitioner_affiliate_slug(cx, pid):
+    """The affiliate slug belonging to a signed-in practitioner, or ''.
+
+    Two hops, because the two stores share no key but the email address:
+    pid -> practitioners.email (Supabase, via practitioner_email_by_id) ->
+    affiliate_signups.slug (LOG_DB). It is the same join
+    /api/portal/<token>/social-links already makes, and the same pair of hops
+    practitioner_booking.resolve_practitioner_pid makes in the opposite
+    direction. There is no practitioner_id column on affiliate_signups to read
+    instead.
+
+    Status is deliberately NOT filtered, unlike resolve_practitioner_pid's
+    approved-only read. That filter is a SERVING gate; this is an ownership
+    question, and a pending practitioner still owns her own row. The namespace
+    guard in page_slug_is_taken is status-blind for exactly this reason: a
+    pending row already occupies its own name, so letting her choose a
+    different one takes nothing from anybody.
+
+    Fails closed to '' on a read error, which every caller turns into a
+    refusal. '' from practitioner_email_by_id means "Supabase could not be
+    read" as often as it means "no such practitioner", so it is never treated
+    as licence to guess a row.
+    """
+    if not pid:
+        return ""
+    from dashboard.practitioner_portal import practitioner_email_by_id
+    email = (practitioner_email_by_id(pid) or "").strip().lower()
+    if not email:
+        return ""
+    try:
+        row = cx.execute(
+            "SELECT slug FROM affiliate_signups WHERE LOWER(email)=? "
+            "ORDER BY CASE WHEN status='approved' THEN 0 ELSE 1 END, id "
+            "LIMIT 1", (email,)).fetchone()
+    except db.Error:
+        return ""
+    return ((row[0] if row else "") or "").strip().lower()
+
+
+# Shown when a practitioner has no affiliate row at all. There is no row to
+# attach a page slug to, and no public page for one to name, so this is a
+# refusal rather than an error: nothing is broken, the account simply has no
+# public surface yet.
+NO_PUBLIC_PAGE_MSG = (
+    "Your practitioner account does not have a public page yet, so there is "
+    "no web address to change. Please contact us and we will set one up "
+    "for you.")
+
+
+def _practitioner_public_urls(canonical_slug):
+    """(page_url, booking_url) for a practitioner's CANONICAL page slug.
+
+    Absolute, because these exist to be copied into a text message, an email
+    signature or a social profile. A relative path would be useless there.
+
+    PORTAL_BASE_URL is read directly rather than through portal_base(), which
+    is documented as scoped to CLIENT portal links and falls back to
+    PUBLIC_BASE_URL. That fallback would print https://illtowell.com/<slug>,
+    and /<slug> is host-gated to the portal domain, so it would be a 404 handed
+    to a practitioner as her own address.
+
+    With PORTAL_BASE_URL unset the portal surface does not exist yet, and the
+    only page URL that serves is the legacy /p/<slug> on the funnel host, which
+    resolves page slugs through the same resolver. Booking is not host-gated,
+    so /book/<slug> is correct on either host.
+    """
+    s = (canonical_slug or "").strip()
+    if not s:
+        return ("", "")
+    portal = (os.environ.get("PORTAL_BASE_URL") or "").rstrip("/")
+    if portal:
+        return (f"{portal}/{s}", f"{portal}/book/{s}")
+    return (f"{PUBLIC_BASE_URL}/p/{s}", f"{PUBLIC_BASE_URL}/book/{s}")
+
+
+def _practitioner_web_address(pid):
+    """Her public page slug and both of her URLs, for the booking-config GET.
+
+    Best effort by design: every value comes back '' when it cannot be worked
+    out. This rides on the response the booking form loads from, and that form
+    locks itself out of saving unless the load succeeds, so a fault in the
+    address lookup must not become a practitioner who cannot save her hours.
+    The UI hides the section instead when the slug is empty.
+    """
+    out = {"page_slug": "", "canonical_slug": "", "affiliate_slug": "",
+           "page_url": "", "booking_url": ""}
+    try:
+        from dashboard import practitioner_slugs as _pslugs
+        with db.connect(LOG_DB) as cx:
+            cx.row_factory = sqlite3.Row
+            affiliate = _practitioner_affiliate_slug(cx, pid)
+            if not affiliate:
+                return out
+            canonical = _pslugs.canonical_slug_for(cx, affiliate) or affiliate
+    except Exception:  # noqa: BLE001
+        app.logger.exception("web address lookup failed for practitioner %s", pid)
+        return out
+    out["affiliate_slug"] = affiliate
+    # page_slug and canonical_slug are the same value today, because page_slug
+    # is always populated. Both are returned so a later reader cannot have to
+    # guess which one it is looking at, and so the form has a name for the
+    # thing it edits that does not change meaning if the fallback in
+    # canonical_slug_for is ever reached.
+    out["canonical_slug"] = canonical
+    out["page_slug"] = canonical
+    out["page_url"], out["booking_url"] = _practitioner_public_urls(canonical)
+    return out
+
+
+@app.route("/api/practitioner/page-slug", methods=["POST"])
+def api_practitioner_page_slug_post():
+    """Set the name in a practitioner's public URL.
+
+    Writes affiliate_signups.page_slug and NEVER affiliate_signups.slug: the
+    slug is the attribution key that stored lead rows, the printed Rebrandly
+    shortlink and every 90-day ?ref= cookie carry, and renaming it orphans all
+    of them. Her old URL keeps working forever through resolve_page's legacy
+    branch.
+
+    An empty page_slug clears the choice, which restores her affiliate slug as
+    her public URL. That is a real change to a published address, so it goes
+    through the same authenticated write as any other.
+    """
+    pid = _practitioner_session_pid()
+    if not pid:
+        return jsonify({"ok": False, "error": "not signed in"}), 401
+    from dashboard import practitioner_slugs as _pslugs
+    body = request.get_json(silent=True) or {}
+    # pid comes from the SESSION, matching the booking-config POST beside this
+    # one. A practitioner_id in the body is ignored on purpose: honouring it
+    # would let any signed-in practitioner rename another's public URL out from
+    # under every link and printed card that points at it.
+    candidate = body.get("page_slug")
+    try:
+        with _db_lock, db.connect(LOG_DB) as cx:
+            cx.row_factory = sqlite3.Row
+            affiliate = _practitioner_affiliate_slug(cx, pid)
+            if not affiliate:
+                return jsonify({"ok": False, "error": NO_PUBLIC_PAGE_MSG}), 400
+            # reserved_for(app.url_map) rather than any list written here: a
+            # slug that shadows a live route is a page she could publish and
+            # never reach, and the route table is the only thing that knows
+            # which words those are today.
+            stored = _pslugs.set_page_slug(
+                cx, affiliate, candidate,
+                reserved=_pslugs.reserved_for(app.url_map))
+    except _pslugs.SlugError as e:
+        # SlugError messages are written for a practitioner to read, so the
+        # message is the response body and the form shows it inline.
+        return jsonify({"ok": False, "error": str(e)}), 400
+    page_url, booking_url = _practitioner_public_urls(stored)
+    return jsonify({"ok": True, "page_slug": stored, "canonical_slug": stored,
+                    "affiliate_slug": affiliate,
+                    "page_url": page_url, "booking_url": booking_url})
+
+
 @app.route("/api/practitioner/booking-config", methods=["GET"])
 def api_practitioner_booking_config_get():
     pid = _practitioner_session_pid()
@@ -17655,11 +17840,17 @@ def api_practitioner_booking_config_get():
     # methods and phone number under a "Saved." message. The static page
     # locks the form out on this flag instead (see showLoadError() in
     # static/practitioner-booking.html).
+    # Her own web address, ADDED to this response rather than served from a
+    # route of its own. Nothing in the practitioner portal has ever told her
+    # where her public page or her booking page is; she configures booking,
+    # sees "Saved", and has no way to learn the URL she just switched on. The
+    # form already loads from here, so one request carries both.
     return jsonify({"ok": True, "config": cfg,
                     "unreadable": status == "unreadable",
                     "default_timezone": _pb.DEFAULT_TIMEZONE,
                     "media": list(_pb.MEDIA),
-                    "practitioner_phone": (cfg or {}).get("phone") or ""})
+                    "practitioner_phone": (cfg or {}).get("phone") or "",
+                    **_practitioner_web_address(pid)})
 
 
 @app.route("/api/practitioner/booking-config", methods=["POST"])
@@ -17777,6 +17968,37 @@ def api_public_book(slug):
         pid = _pb.resolve_practitioner_pid(cx, slug)
         if not pid:
             return jsonify({"ok": False, "error": "unknown_practitioner"}), 404
+        # The name to build the emailed cancel link on. NOT `slug`, the path
+        # segment this visitor happened to arrive under: that is normally her
+        # PAGE slug now, which she can rename at will, and the cancel link is a
+        # durable artifact -- emailed once, opened days later, and the only
+        # record a client without an account has of the appointment. After a
+        # rename resolve_page finds the old name under neither column, the
+        # cancel route 404s, and she holds a slot nobody attends.
+        #
+        # The AFFILIATE slug never changes and resolve_page accepts it forever
+        # through its legacy branch, so it is the only name safe to print into
+        # something that outlives the request. Same argument this branch
+        # already applies to the rm_ref cookie and the alias redirect. The
+        # HMAC token itself is unaffected either way -- it is keyed on
+        # (pid, start_ts, booking_id), never on a slug.
+        #
+        # Fails OPEN to the requested name. resolve_practitioner_pid above has
+        # already established this slug names a real, approved practitioner, so
+        # a fault here is a fault in a naming nicety, not in the booking -- and
+        # the visitor is mid-POST on a slot that is about to be durably theirs.
+        # A 500 for a booking that succeeds is what makes someone book twice.
+        # The requested name is the name they are on right now, so a link built
+        # on it works today and rots only if she later renames.
+        from dashboard import practitioner_slugs as _pslugs
+        try:
+            _pkind, _pcanon, _paff = _pslugs.resolve_page(
+                cx, _pslugs.normalize(slug))
+            cancel_slug = _paff or slug
+        except Exception as e:  # noqa: BLE001
+            print(f"[public-book] cancel-slug resolve failed for {slug!r}: {e!r}",
+                  flush=True)
+            cancel_slug = slug
         cfg = _pb.get_config(cx, pid)
         st = next((t for t in (cfg or {}).get("session_types", [])
                    if t["slug"] == session_slug), None)
@@ -17886,7 +18108,10 @@ def api_public_book(slug):
         # Auckland client on a page reading "Monday" for a booking they made
         # for "Tuesday").
         from urllib.parse import quote as _quote
-        cancel_url = (f"{portal_base()}/book/cancel?slug={slug}&start={start_ts}"
+        # cancel_slug, not slug -- see where it is resolved above. This string
+        # is reused verbatim in the ICS description below, so both copies of
+        # the link the client keeps are built on the name that cannot rot.
+        cancel_url = (f"{portal_base()}/book/cancel?slug={cancel_slug}&start={start_ts}"
                       f"&token={token}&when={_quote(shown)}&tz={_quote(rendered_tz)}")
         lines = [f"Hi {name},", "",
                  f"Your {st['label']} is booked.", "",
@@ -18093,6 +18318,32 @@ def public_book_page(slug):
     """
     if not _public_surface_enabled():
         return ("", 404)
+    # A practitioner who has chosen a public URL is bookable under BOTH names,
+    # because /api/book/<slug>/slots resolves either -- but the page settles on
+    # the canonical one, so the address bar, the Book link that got the visitor
+    # here and the practitioner page's own canonical tag all say the same
+    # thing.
+    #
+    # 302, not 301, for the same reason /<slug> uses one: page_slug is
+    # practitioner-changeable and a 301 is cached by browsers indefinitely.
+    #
+    # Fails open to serving the shell. This lookup is a nicety; the gating that
+    # matters is in the API the page calls, which does its own resolution. A
+    # database fault must not take down a booking page that would otherwise
+    # work.
+    try:
+        from dashboard import practitioner_slugs as _pslugs
+        with db.connect(LOG_DB) as _cx:
+            _kind, _canonical, _aff = _pslugs.resolve_page(
+                _cx, _pslugs.normalize(slug))
+        if _kind == "legacy" and _canonical:
+            # _canonical comes from page_slug, which validate_page_slug shape-
+            # checks before it is ever stored, so it cannot be an off-site
+            # redirect target.
+            return redirect(f"/book/{_canonical}", code=302)
+    except Exception as e:  # noqa: BLE001
+        print(f"[public_book_page] slug resolve failed for {slug!r}: {e!r}",
+              flush=True)
     resp = send_from_directory(STATIC, "book.html")
     resp.headers["X-Robots-Tag"] = "noindex"
     resp.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
@@ -20144,12 +20395,22 @@ def api_practitioner_storefront(slug):
     return resp
 
 
-def _render_practitioner_page(view, canonical_slug):
+def _render_practitioner_page(view, canonical_slug, *, affiliate_slug):
     """Build the server-rendered response both practitioner routes return.
 
     One helper, two callers, because a difference between the canonical page
     and its legacy /p/ alias is a bug in every case -- including the meta tags
     a preview bot reads, which is the whole point of rendering server-side.
+
+    TWO slugs, and they are not interchangeable. `canonical_slug` is the PAGE
+    slug: the name in the address bar, what the canonical tag, the JSON-LD
+    `url` and the Book link must all agree with. `affiliate_slug` is the
+    ATTRIBUTION key -- the value that goes in the rm_ref cookie, which ~15
+    conversion sites read and write onto stored lead rows as utm_source. A
+    practitioner may rename the first; the second can never change. Passing
+    the page slug as the cookie would orphan every commission earned from
+    this page, so `affiliate_slug` is keyword-only and required: a caller has
+    to have thought about which is which.
 
     The canonical always points at PORTAL_BASE_URL, even when this response is
     served from the funnel host. That is what collapses the legacy path and
@@ -20173,6 +20434,12 @@ def _render_practitioner_page(view, canonical_slug):
     entirely" rather than rendering either tag with a broken value.
     """
     from dashboard import practitioner_render as _prender
+    # The renderer builds the Book link from view["slug"], so that field has
+    # to be the PAGE slug or the button would point at a name that redirects.
+    # Copied rather than mutated: `view` is the payload
+    # public_surface.build_practitioner_storefront returns, where "slug" means
+    # the affiliate slug, and /api/p/<slug> serves that same payload.
+    view = dict(view or {}, slug=canonical_slug)
     _portal_base_env = (os.environ.get("PORTAL_BASE_URL") or "").rstrip("/")
     if _portal_base_env:
         canonical_url = f"{_portal_base_env}/{canonical_slug}"
@@ -20216,7 +20483,7 @@ def _render_practitioner_page(view, canonical_slug):
                 any_enabled = None
             if any_enabled:
                 _pb.init_tables(_bcx)
-                _bpid = _pb.resolve_practitioner_pid(_bcx, canonical_slug)
+                _bpid = _pb.resolve_practitioner_pid(_bcx, affiliate_slug)
                 bookable = bool(_bpid) and _pb.is_bookable(_bcx, _bpid)
     except Exception as e:  # noqa: BLE001
         print(f"[practitioner_site] bookable check failed for "
@@ -20228,7 +20495,10 @@ def _render_practitioner_page(view, canonical_slug):
         mimetype="text/html")
     resp.headers["X-Robots-Tag"] = "noindex"
     resp.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
-    resp.set_cookie("rm_ref", canonical_slug, max_age=90 * 24 * 3600,
+    # The ATTRIBUTION key, never the page slug -- see this function's
+    # docstring. A vanity rename must not change what a referral is credited
+    # to, and must not orphan the 90-day cookies already in the wild.
+    resp.set_cookie("rm_ref", affiliate_slug, max_age=90 * 24 * 3600,
                     samesite="Lax", secure=request.is_secure)
     return resp
 
@@ -20283,21 +20553,33 @@ def practitioner_storefront(slug):
     # transient DB fault WOULD silently deindex a real practitioner's page.
     # Nothing here needs to change for that -- it is a note for whoever
     # builds 5b, not a decision this task is asked to make.
+    from dashboard import practitioner_slugs as _pslugs
     with db.connect(LOG_DB) as cx:
         cx.row_factory = sqlite3.Row
-        view = _ps.build_practitioner_storefront(cx, slug)
+        # Resolve through the SAME resolver /<slug> and /book/<slug> use, so
+        # this route accepts a page slug as well as the affiliate slug every
+        # printed /p/ link carries. Not wrapped: this route's 500-on-DB-fault
+        # contract is pinned (see the comment above), and this read is part of
+        # the same fault domain as the payload read below.
+        _kind, _page, _affiliate = _pslugs.resolve_page(cx, _pslugs.normalize(slug))
+        affiliate = _affiliate or slug
+        canonical = _page or slug
+        view = _ps.build_practitioner_storefront(cx, affiliate)
     if not view:
         return ("", 404)
-    # Record the view for this approved affiliate
+    # Record the view for this approved affiliate. The AFFILIATE slug, always:
+    # per-slug view counts are the instrumentation this feature is measured
+    # by, and keying them on a changeable page slug would split a
+    # practitioner's history in half the day she renames her URL.
     try:
         with _db_lock, db.connect(LOG_DB) as _cx:
-            _ps.record_view(_cx, slug, "storefront")
+            _ps.record_view(_cx, affiliate, "storefront")
     except Exception:
         pass  # instrumentation must never break the page
     # Same renderer, same canonical target as /<slug>. This page is the legacy
-    # alias; its canonical points at the portal host, which is what collapses
-    # the duplicate rather than competing with it.
-    return _render_practitioner_page(view, slug)
+    # alias; its canonical points at the portal host AND at her page slug,
+    # which is what collapses the duplicate rather than competing with it.
+    return _render_practitioner_page(view, canonical, affiliate_slug=affiliate)
 
 
 @app.route("/<slug>")
@@ -20346,7 +20628,23 @@ def practitioner_site(slug):
     # dashboard/public_surface.py build_share_header.
     try:
         with db.connect(LOG_DB) as cx:
-            kind, canonical = _ps.resolve(cx, s)
+            # ONE resolver, shared with /book/<slug> and with
+            # practitioner_booking.resolve_practitioner_pid. `canonical` is her
+            # PAGE slug (the URL name), `affiliate` her attribution slug (the
+            # one that can never be renamed).
+            kind, canonical, affiliate = _ps.resolve_page(cx, s)
+            if not kind:
+                # Nothing in affiliate_signups owns this name under EITHER
+                # column, so the only remaining owner is the older alias
+                # feature: an extra name POINTING AT a canonical, rather than
+                # a chosen name that IS one. The two coexist and neither reads
+                # the other's storage, so the fallback is a second lookup, not
+                # a merged one. Ordered page_slug-first because a page_slug is
+                # a practitioner's own URL and an alias is only a signpost to
+                # one.
+                akind, acanonical = _ps.resolve(cx, s)
+                if akind == "alias":
+                    kind, canonical, affiliate = "alias", acanonical, acanonical
     except db.Error as e:
         # Glen's ruling 2026-08-29: never answer "this practitioner does not
         # exist" when we could not look. A 404 here is indistinguishable, to a
@@ -20362,17 +20660,38 @@ def practitioner_site(slug):
         print(f"[practitioner_site] resolve failed for {s!r}: {e!r}", flush=True)
         raise
     if kind == "alias":
+        # 301, and deliberately to the AFFILIATE slug rather than straight to
+        # the page slug. An alias is a permanent statement about the
+        # namespace, so the permanent redirect is right -- but a 301 is cached
+        # by browsers indefinitely, so its target must be a name that can
+        # never change. The affiliate slug is that name; the page slug is not.
+        # The 302 below carries the changeable half of the journey, so a
+        # rename still reaches everyone.
         return redirect(f"/{canonical}", code=301)
+    if kind == "legacy":
+        # Her affiliate slug, for a practitioner who has chosen a different
+        # public URL. It keeps working forever, with no expiry.
+        #
+        # 302, NOT 301: page_slug is practitioner-changeable, and a 301 is
+        # cached by browsers indefinitely, so a later rename would strand
+        # everyone who ever visited under the previous name. The case
+        # normalisation above stays a 301 because it is deterministic and can
+        # never change -- and it runs FIRST, so /Remedy-Match 301s to
+        # /remedy-match and only then 302s to /dr-glen. Resolving before
+        # normalising would put a mixed-case name into the redirect target and
+        # bounce between the two forever.
+        return redirect(f"/{canonical}", code=302)
     if kind != "canonical":
         return ("", 404)
-    # Record under the CANONICAL slug so views aggregate on one slug per
-    # practitioner however many alternates they publish. Without this the
-    # per-slug view counts this feature is measured by drop to zero on the
-    # portal host, since /p/<slug> now redirects before its own record_view.
+    # Record under the AFFILIATE slug, never the page slug. Views aggregate on
+    # one slug per practitioner however many alternates or vanity URLs they
+    # publish, so a rename does not split their history in half. Without this
+    # call the per-slug view counts this feature is measured by drop to zero on
+    # the portal host, since /p/<slug> now redirects before its own record_view.
     try:
         from dashboard import public_surface as _psurf
         with _db_lock, db.connect(LOG_DB) as _cx:
-            _psurf.record_view(_cx, canonical, "storefront")
+            _psurf.record_view(_cx, affiliate or canonical, "storefront")
     except Exception:
         pass  # instrumentation must never break the page
     # Server-rendered, not the JS shell: link-preview bots for iMessage,
@@ -20388,7 +20707,9 @@ def practitioner_site(slug):
         from dashboard import public_surface as _psurf2
         with db.connect(LOG_DB) as cx:
             cx.row_factory = sqlite3.Row
-            view = _psurf2.build_practitioner_storefront(cx, canonical)
+            # The AFFILIATE slug: build_practitioner_storefront reads
+            # affiliate_signups WHERE slug=?, which is that column.
+            view = _psurf2.build_practitioner_storefront(cx, affiliate or canonical)
     except Exception as e:  # noqa: BLE001
         # Propagate, per the ruling above. By this point resolve has already
         # confirmed `canonical` IS a real approved practitioner, so a 404 here
@@ -20398,7 +20719,8 @@ def practitioner_site(slug):
         raise
     if not view:
         return ("", 404)
-    return _render_practitioner_page(view, canonical)
+    return _render_practitioner_page(view, canonical,
+                                     affiliate_slug=affiliate or canonical)
 
 
 @app.route("/api/client/<code>/catalog")

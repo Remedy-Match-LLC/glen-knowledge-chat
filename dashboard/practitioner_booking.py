@@ -509,14 +509,37 @@ def effective_visitor_tz(visitor_tz, practitioner_tz):
 def resolve_practitioner_pid(cx, slug):
     """Map a public slug to a practitioner id, or None.
 
+    `slug` may be the practitioner's PAGE slug (the name in her public URL) or
+    her AFFILIATE slug (the attribution key that can never be renamed, and the
+    only name every printed link and 90-day cookie carries). Both resolve to
+    the same person, through practitioner_slugs.resolve_page -- the same
+    resolver app.py's /<slug> route uses.
+
+    One resolver, deliberately. This function used to read
+    `affiliate_signups WHERE slug=?` directly while the practitioner page went
+    through practitioner_slugs, and the two paths disagreeing is exactly why
+    /book/<alias> 404'd on a name whose page served fine.
+
+    The approved-only filter stays HERE. resolve_page does not filter on
+    status on purpose -- its namespace guard is what stops a pending row from
+    ever claiming an approved practitioner's URL -- so this read is the gate
+    that keeps an unapproved or revoked practitioner from taking bookings.
+
     Reads the same approved-affiliate row the public profile does, then the
     practitioner row keyed by that email. Fails closed: a missing table or a
     broken read means 'no such practitioner', never an exception on a public
     page.
     """
+    from dashboard import practitioner_slugs as _pslugs
     try:
+        # resolve_page hands back the AFFILIATE slug alongside the canonical
+        # one; that is the column affiliate_signups is keyed on. An empty
+        # result falls through to the requested name so a database that has
+        # not been through init_page_slug yet still answers.
+        _kind, _page, affiliate = _pslugs.resolve_page(cx, str(slug or ""))
         row = cx.execute("SELECT email FROM affiliate_signups "
-                         "WHERE slug=? AND status='approved'", (str(slug),)).fetchone()
+                         "WHERE slug=? AND status='approved'",
+                         (affiliate or str(slug),)).fetchone()
     except db.Error:
         return None
     if not row or not (row["email"] or "").strip():

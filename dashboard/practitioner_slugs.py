@@ -153,7 +153,7 @@ def init_tables(cx):
 def canonical_exists(cx, slug):
     """True iff `slug` is an APPROVED practitioner's canonical slug."""
     row = cx.execute(
-        "SELECT 1 FROM affiliate_signups WHERE slug=? AND status='approved'",
+        "SELECT 1 FROM affiliate_signups WHERE lower(slug)=? AND status='approved'",
         (normalize(slug),)).fetchone()
     return row is not None
 
@@ -167,7 +167,7 @@ def slug_is_taken(cx, slug):
     resolve() -- which checks canonical first -- would silently start shadowing
     a published alias. A published URL must never break that way.
     """
-    row = cx.execute("SELECT 1 FROM affiliate_signups WHERE slug=?",
+    row = cx.execute("SELECT 1 FROM affiliate_signups WHERE lower(slug)=?",
                      (normalize(slug),)).fetchone()
     return row is not None
 
@@ -176,7 +176,7 @@ def alias_owner(cx, alias):
     """The canonical slug an alias points at, or '' when the alias is unknown."""
     init_tables(cx)
     row = cx.execute(
-        "SELECT canonical_slug FROM practitioner_slug_aliases WHERE alias=?",
+        "SELECT canonical_slug FROM practitioner_slug_aliases WHERE lower(alias)=?",
         (normalize(alias),)).fetchone()
     return (row[0] or "") if row else ""
 
@@ -196,9 +196,29 @@ def resolve(cx, slug):
     return ("", "")
 
 
+def _page_slug_taken_bare(cx, candidate):
+    """True iff `candidate` equals any practitioner's affiliate_signups.page_slug,
+    with no self-exclusion.
+
+    Used only by claim_alias. There is no "claimant's own row" to exempt the
+    way page_slug_is_taken exempts one, because this check is symmetric with
+    the existing canonical check right above its call site:
+    slug_is_taken(cx, a) already refuses an alias equal to ANY practitioner's
+    affiliate slug -- including the claimant's own canonical slug -- with no
+    self-exemption; aliasing your own canonical to itself is refused today.
+    An alias equal to the claimant's own page_slug is just as redundant, so it
+    is refused the same way, bare.
+    """
+    init_page_slug(cx)
+    row = cx.execute("SELECT 1 FROM affiliate_signups WHERE lower(page_slug)=?",
+                     (normalize(candidate),)).fetchone()
+    return row is not None
+
+
 def claim_alias(cx, canonical, alias, reserved):
     """Reserve `alias` as a redirect to `canonical`. Raises SlugError if the
-    alias is malformed, reserved, already an alias, or anyone's canonical.
+    alias is malformed, reserved, already an alias, anyone's canonical slug,
+    or anyone's page slug.
 
     Fails closed: every check runs before the insert, and the alias PRIMARY KEY
     is the backstop against a concurrent duplicate.
@@ -210,6 +230,8 @@ def claim_alias(cx, canonical, alias, reserved):
     check_not_reserved(a, reserved)
     if slug_is_taken(cx, a):
         raise SlugError(f"'{a}' is already a practitioner's canonical slug")
+    if _page_slug_taken_bare(cx, a):
+        raise SlugError(f"'{a}' is already a practitioner's public URL")
     if alias_owner(cx, a):
         raise SlugError(f"'{a}' is already claimed as an alias")
     # Validate the TARGET too. It is written into the table and later handed to
@@ -227,3 +249,372 @@ def claim_alias(cx, canonical, alias, reserved):
         cx.commit()
     except db.IntegrityError as e:           # concurrent claim won the race
         raise SlugError(f"'{a}' is already claimed as an alias") from e
+
+
+# ── Page slug: the practitioner-chosen public URL ────────────────────────────
+#
+# A practitioner's affiliate_signups.slug is her ATTRIBUTION key: stored lead
+# rows carry utm_source=<slug>, the printed Rebrandly shortlink is
+# truly.vip/<slug>, and ?ref= cookies hold it for 90 days. Renaming it orphans
+# all of that, so it is never written by this feature.
+#
+# page_slug is a separate column holding the name that belongs in her URL bar.
+# It is ALWAYS POPULATED: a row that has made no choice carries its own
+# affiliate slug, so every row's page_slug IS its effective public URL. When
+# she picks a different one, IT becomes canonical and the affiliate slug
+# becomes a legacy URL that keeps working forever.
+#
+# Always-populated is not cosmetic; it is what makes the invariant a database
+# fact. With page_slug nullable, the unique index on it enforced nothing
+# useful, because NULLs are distinct on both backends: with Mary's page_slug
+# NULL, `UPDATE affiliate_signups SET page_slug='mary-boyd' WHERE
+# slug='remedy-match'` collided with no VALUE and succeeded, and /mary-boyd
+# then served Glen's page. Only the validator's read-then-write stood in the
+# way, and that has a real race window on Postgres. Populated, Glen's claim
+# collides with Mary's OWN row and the database refuses it.
+#
+# This is NOT the alias feature above. An alias points an extra name at an
+# existing canonical and redirects to it. A page_slug makes a chosen name BE
+# the canonical. The two share one namespace, and each guard reads the
+# other's storage: page_slug_is_taken also checks practitioner_slug_aliases,
+# and claim_alias also checks affiliate_signups.page_slug. Without that, one
+# mechanism could silently claim a name the other had already published.
+#
+# ── Case: compared insensitively, stored verbatim ────────────────────────────
+#
+# Every comparison in this module is `lower(column) = normalize(candidate)`.
+# The candidate has always been normalized; the STORED side had not been, and
+# that asymmetry was a hole. Every current writer lowercases, but the backfill
+# copies `slug` verbatim and affiliate_signups.slug carries a case-SENSITIVE
+# UNIQUE, so a legacy row holding 'Mary-Boyd' is possible. Against a raw
+# comparison a claim of 'mary-boyd' passed the validator (a different literal)
+# and passed the index (also a different literal) -- and then /mary-boyd served
+# the WRONG practitioner. A 404 is a disappointment; a wrong-person page is a
+# different and worse failure.
+#
+# The unique index deliberately stays on the RAW column, and the case rule is
+# enforced at the writer instead:
+#
+#   * A functional index on lower(page_slug) CANNOT BE CREATED at all on a
+#     database that already holds two rows differing only by case -- which is
+#     exactly the database it exists to protect. init_page_slug runs its DDL
+#     through _try, which swallows failures by design, so that deploy would
+#     look green while enforcing nothing. A guard that goes dark on the one
+#     input it was built for is worse than no guard, because it is believed.
+#   * Narrowing an index over live data has only one remedy for the rows it
+#     rejects: rewriting a stored value. Rewriting `slug` breaks attribution
+#     -- every stored lead row's utm_source, the printed truly.vip shortlink
+#     and every 90-day ?ref= cookie -- which is the one thing this feature
+#     must never do.
+#   * The raw index still does the job it was added for. It is the backstop
+#     for the read-then-write race in validate_page_slug, and two racing
+#     claims of the same name arrive as the same LITERAL, because every
+#     writer stores normalize()d values. The race it catches is an exact
+#     collision by construction.
+#   * The condition a case-insensitive index would refuse is already
+#     REPORTABLE: scripts/audit_practitioner_slugs.py normalizes both sides
+#     when it builds its claim map, so a mixed-case duplicate shows up as a
+#     [COLLISION] in the merge gate rather than as a silent index failure.
+#
+# Nothing here rewrites a stored value. A legacy 'Mary-Boyd' keeps serving at
+# /mary-boyd (the /<slug> route 301s to the normalized form), keeps its
+# attribution, and is simply no longer claimable by anyone else.
+
+_PAGE_INIT_DONE = set()             # DB identities whose page_slug DDL has run
+_PAGE_INIT_LOCK = threading.Lock()
+
+
+def _try(cx, sql):
+    """Run one DDL statement, tolerating "already exists".
+
+    Each statement gets its own commit/rollback. On Postgres a failed statement
+    poisons the whole transaction, so an ALTER that raises DuplicateColumn
+    would take the CREATE INDEX after it down with it and the index would
+    never be created. Same try/except Exception idiom as
+    dashboard.practitioner_booking.init_tables, one transaction per statement.
+    """
+    try:
+        cx.execute(sql)
+        cx.commit()
+        return True
+    except Exception:
+        try:
+            cx.rollback()
+        except Exception:
+            pass
+        return False
+
+
+def _warn_if_page_slug_nulls_remain(cx):
+    """Print loudly if any affiliate_signups row still has a NULL page_slug
+    right after the backfill statement above.
+
+    The backfill runs inside the same swallowed try/except every statement in
+    this function uses -- deliberately, per _try's docstring, so a Postgres
+    DuplicateColumn on the ALTER before it cannot take the CREATE UNIQUE INDEX
+    after it down too. But that same swallowing means a genuinely FAILED
+    backfill (e.g. a NULL row whose own slug collides with another row's
+    already-chosen page_slug) is invisible: the UPDATE raises, is rolled back,
+    and the CREATE UNIQUE INDEX that follows does not care -- an index can be
+    created over a column that still holds NULLs, so the deploy looks green
+    while the invariant "every row occupies its own name in the index" is not
+    true for that row. Another practitioner could still claim it.
+
+    Never raises: a page render must not 500 over a boot-time diagnostic. Uses
+    the same `print(f"[tag] ...", flush=True)` convention every other
+    boot-time warning in this codebase uses (see app.py's
+    `[warn] could not load ...` and dashboard/reviews_actions.py's
+    `[reviews] cert grant failed ...`).
+    """
+    try:
+        row = cx.execute(
+            "SELECT COUNT(*) FROM affiliate_signups WHERE page_slug IS NULL"
+        ).fetchone()
+        null_count = (row[0] if row else 0) or 0
+    except db.Error:
+        return
+    if null_count:
+        print(f"[practitioner-slugs] WARNING: {null_count} affiliate_signups"
+              f" row(s) still have a NULL page_slug after backfill --"
+              f" ux_affiliate_page_slug does not cover them and another"
+              f" practitioner could claim that name. Investigate before"
+              f" trusting this deploy; scripts/audit_practitioner_slugs.py"
+              f" reports the same count read-only.", flush=True)
+
+
+def init_page_slug(cx):
+    """Add affiliate_signups.page_slug and its unique index. Idempotent.
+
+    Run ONCE per process per database, for the reason init_tables gives: every
+    reader below calls this, and on the portal host a practitioner lookup is
+    reached by every unmatched root path, including every bot probe. Per-request
+    DDL in a pooled Postgres connection is what that guard prevents.
+
+    The cache is only populated once the column is actually present. A call
+    made before affiliate_signups exists must not mark the database done, or
+    the column would stay dark for the life of the process.
+    """
+    key = _db_identity(cx)
+    if key is not None:
+        with _PAGE_INIT_LOCK:
+            if key in _PAGE_INIT_DONE:
+                return
+    _try(cx, "ALTER TABLE affiliate_signups ADD COLUMN page_slug TEXT")
+    # Backfill BEFORE the index, never after. A NULL page_slug is a row with no
+    # effective URL under the index, which is exactly the hole the reviewer
+    # drove through; and creating a unique index over a table still holding
+    # NULLs cannot fail, so a later backfill would be the statement that
+    # discovers a duplicate -- after the index that was supposed to prevent it
+    # already exists. Idempotent by the WHERE clause, so it is safe on every
+    # process start.
+    _try(cx, "UPDATE affiliate_signups SET page_slug = slug"
+             " WHERE page_slug IS NULL")
+    _warn_if_page_slug_nulls_remain(cx)
+    # The backstop against a concurrent claim: validate_page_slug's
+    # read-then-write has a race window that only the database can close. With
+    # every row populated, this single-column index says "one effective public
+    # URL, one practitioner" -- and says it about rows that have chosen nothing
+    # as much as rows that have.
+    _try(cx, "CREATE UNIQUE INDEX IF NOT EXISTS ux_affiliate_page_slug"
+             " ON affiliate_signups(page_slug)")
+    if key is None:
+        return
+    try:
+        present = db.column_exists(cx, "affiliate_signups", "page_slug")
+    except db.Error:
+        present = False
+    if present:
+        with _PAGE_INIT_LOCK:
+            _PAGE_INIT_DONE.add(key)
+
+
+def canonical_slug_for(cx, affiliate_slug):
+    """The slug that belongs in this practitioner's public URL: her page_slug
+    when she has chosen one, otherwise her affiliate slug. '' if unknown.
+
+    Every site that PRINTS a practitioner URL goes through here, so a rename
+    reaches all of them at once.
+    """
+    init_page_slug(cx)
+    s = normalize(affiliate_slug)
+    if not s:
+        return ""
+    row = cx.execute(
+        "SELECT slug, page_slug FROM affiliate_signups WHERE lower(slug)=?",
+        (s,)).fetchone()
+    if not row:
+        return ""
+    # COALESCE in Python, not SQL, so it also covers ''. page_slug is meant to
+    # be populated for every row, but "meant to be" is only true while every
+    # writer honours it. If one is ever missed, this hands back her affiliate
+    # slug instead of an empty URL. Defence in depth behind the backfill and
+    # the writers, never the mechanism they replace.
+    return normalize(row[1]) or (row[0] or "")
+
+
+def page_slug_is_taken(cx, candidate, *, excluding_affiliate_slug=None):
+    """True iff `candidate` is ANY practitioner's affiliate slug, page slug, or
+    published ALIAS, at ANY status, ignoring the claimant's own row.
+
+    Deliberately broader than what serving looks at, for the reason
+    slug_is_taken already gives: claiming is about the whole namespace, serving
+    is about approved practitioners only. A page_slug allowed to take a PENDING
+    practitioner's slug would put two owners on one URL the moment she is
+    approved, and a published URL must never break that way. The same is true
+    of an alias: page_slug and practitioner_slug_aliases.alias are two
+    mechanisms writing into ONE namespace, so a page_slug candidate that
+    matches a published alias must be refused too, or that alias would stop
+    resolving to its owner.
+
+    Her own alias is exempted the same way her own row is. An alias she
+    already owns already resolves to her -- setting her page_slug to that same
+    string hands her no new name and collides with nobody. It is "reclaiming
+    your own", the same case excluding_affiliate_slug exists for on the
+    affiliate_signups side.
+
+    Both columns and the alias table, because they are one namespace:
+    whichever mechanism a request matches, it must match exactly one owner.
+
+    Compared case-INSENSITIVELY on both sides. The candidate was always
+    normalized; the stored side had not been, and a legacy row holding
+    'Mary-Boyd' therefore let a claim of 'mary-boyd' through both this guard
+    and the unique index. See the case note above the page_slug section for
+    why the fix lives here and not in the index.
+    """
+    init_page_slug(cx)
+    init_tables(cx)
+    c = normalize(candidate)
+    if not c:
+        return False
+    sql = ("SELECT 1 FROM affiliate_signups"
+           " WHERE (lower(slug)=? OR lower(page_slug)=?)")
+    params = [c, c]
+    own = normalize(excluding_affiliate_slug)
+    if own:
+        sql += " AND lower(slug)<>?"
+        params.append(own)
+    if cx.execute(sql, tuple(params)).fetchone() is not None:
+        return True
+    alias_sql = "SELECT 1 FROM practitioner_slug_aliases WHERE lower(alias)=?"
+    alias_params = [c]
+    if own:
+        alias_sql += " AND lower(canonical_slug)<>?"
+        alias_params.append(own)
+    return cx.execute(alias_sql, tuple(alias_params)).fetchone() is not None
+
+
+def validate_page_slug(cx, candidate, *, owner_affiliate_slug, reserved):
+    """Normalize and check `candidate`, returning the value to store.
+
+    Raises SlugError with a message a practitioner can act on. `reserved` comes
+    from reserved_for(app.url_map) at the call site, never a list written here:
+    a slug that shadows a live route is a page she could publish and never
+    reach.
+    """
+    s = normalize(candidate)
+    check_shape(s)
+    check_not_reserved(s, reserved)
+    if page_slug_is_taken(cx, s, excluding_affiliate_slug=owner_affiliate_slug):
+        raise SlugError(f"'{s}' is already in use. Please choose another.")
+    return s
+
+
+def set_page_slug(cx, affiliate_slug, candidate, *, reserved):
+    """Give `affiliate_slug`'s practitioner the public URL `candidate`.
+
+    An empty or None candidate CLEARS the choice, restoring her AFFILIATE SLUG
+    as her page_slug -- not NULL. A NULL would take her row back out of the
+    unique index's reach, and a row outside the index is a row another
+    practitioner can be pointed at by any write that skips the validator.
+    Writing her own slug is also unambiguously free: page_slug_is_taken refuses
+    to give anyone else a page slug equal to it.
+
+    Returns the stored page slug, which after a clear is the affiliate slug.
+    "No vanity choice" and "vanity choice equal to the affiliate slug" are the
+    same state now, so there is nothing for a '' return to distinguish. Never
+    touches affiliate_signups.slug.
+    """
+    init_page_slug(cx)
+    owner = normalize(affiliate_slug)
+    # Find her row case-insensitively, but keep the STORED literal to write
+    # against. `WHERE lower(slug)=?` on the UPDATE could touch two rows on a
+    # database where two slugs differ only by case -- legal, because the
+    # UNIQUE on affiliate_signups.slug is case-SENSITIVE -- and hand both the
+    # same page_slug. Reading the exact stored value here and updating on it
+    # keeps the write pinned to one row while the lookup still finds a legacy
+    # row stored as e.g. 'Mary-Boyd'.
+    owner_row = cx.execute(
+        "SELECT slug FROM affiliate_signups WHERE lower(slug)=? ORDER BY id LIMIT 1",
+        (owner,)).fetchone()
+    if owner_row is None:
+        # Silently updating zero rows would report success and then show her a
+        # URL that does not exist.
+        raise SlugError("that practitioner account was not found")
+    owner_stored = owner_row[0]
+
+    if not normalize(candidate):
+        s = owner            # clearing == "my public URL is my affiliate slug"
+    else:
+        s = validate_page_slug(cx, candidate, owner_affiliate_slug=owner,
+                               reserved=reserved)
+    try:
+        cx.execute("UPDATE affiliate_signups SET page_slug=? WHERE slug=?",
+                   (s, owner_stored))
+        cx.commit()
+    except db.IntegrityError as e:       # concurrent claim won the race
+        try:
+            cx.rollback()
+        except Exception:
+            pass
+        raise SlugError(f"'{s}' is already in use. Please choose another.") from e
+    return s
+
+
+def resolve_page(cx, requested):
+    """Resolve a requested URL slug to (kind, canonical, affiliate_slug).
+
+    kind is 'canonical' when the request is already the right URL, 'legacy'
+    when it is the affiliate slug of a practitioner who has chosen a different
+    page slug, and '' when nobody owns it.
+
+    page_slug is matched FIRST. It cannot be shadowed, because page_slug_is_taken
+    refuses a page slug that collides with anyone's slug, page_slug, or
+    published alias.
+
+    Status is deliberately not filtered here. Serving is gated downstream by
+    public_surface.build_practitioner_storefront, which is approved-only and
+    fails closed; the namespace guard above is what stops a pending row from
+    ever claiming an approved practitioner's URL in the first place.
+
+    affiliate_slug is returned alongside so callers can key analytics and
+    attribution on it. Those must never move to the display slug, or changing
+    a vanity URL would split a practitioner's view history. It comes back AS
+    STORED, never normalized: resolve_practitioner_pid and every other caller
+    keys affiliate_signups on that exact literal.
+
+    Both lookups are case-INSENSITIVE, matching page_slug_is_taken. A guard
+    that refuses a name and a resolver that then serves a different-cased row
+    are the two halves of a wrong-person page.
+    """
+    init_page_slug(cx)
+    r = normalize(requested)
+    if not r:
+        return ("", "", "")
+    row = cx.execute(
+        "SELECT slug, page_slug FROM affiliate_signups WHERE lower(page_slug)=?",
+        (r,)).fetchone()
+    if row:
+        return ("canonical", r, row[0] or "")
+    row = cx.execute(
+        "SELECT slug, page_slug FROM affiliate_signups WHERE lower(slug)=?",
+        (r,)).fetchone()
+    if row:
+        page = normalize(row[1])
+        if page and page != r:
+            return ("legacy", page, row[0] or "")
+        # `not page` is the COALESCE fallback: every row is SUPPOSED to carry a
+        # page_slug, but if a writer we never found inserts one without it,
+        # she must still serve at her affiliate slug rather than 404. Defence
+        # in depth behind the backfill and the writers, not a substitute.
+        return ("canonical", r, row[0] or "")
+    return ("", "", "")

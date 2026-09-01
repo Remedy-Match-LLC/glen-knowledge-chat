@@ -28,7 +28,12 @@ def portal(monkeypatch):
     monkeypatch.setattr(appmod, "_public_surface_enabled", lambda: True)
     monkeypatch.setenv("PORTAL_BASE_URL", "https://myhealingoasis.com")
     from dashboard import practitioner_slugs as _ps
-    monkeypatch.setattr(_ps, "resolve", lambda cx, s: ("canonical", s))
+    # resolve_page, not the older alias resolve(): /<slug> and /p/<slug> both
+    # go through it now, and it returns the AFFILIATE slug as a third value.
+    # Stubbing it keeps these tests off a real database, exactly as the
+    # resolve() stub it replaces did.
+    monkeypatch.setattr(_ps, "resolve_page",
+                        lambda cx, s: ("canonical", s, s))
     from dashboard import public_surface as _psurf
     monkeypatch.setattr(_psurf, "build_practitioner_storefront",
                         lambda cx, slug: dict(VIEW, slug=slug))
@@ -129,7 +134,7 @@ def test_a_resolve_failure_does_not_claim_the_practitioner_is_gone(portal, monke
     # returns 404. Caught by mutation-testing this guard. Raise a member.
     def boom(cx, s):
         raise sqlite3.Error("sqlite is down")
-    monkeypatch.setattr(_ps, "resolve", boom)
+    monkeypatch.setattr(_ps, "resolve_page", boom)
     assert portal.get("/mary-boyd").status_code == 500
 
 
@@ -137,7 +142,11 @@ def test_a_genuinely_unknown_slug_is_still_404(portal, monkeypatch):
     """The other half of the distinction: when the lookup SUCCEEDS and the
     slug is not a practitioner, 404 is the honest answer and must survive."""
     from dashboard import practitioner_slugs as _ps
-    monkeypatch.setattr(_ps, "resolve", lambda cx, s: ("unknown", None))
+    monkeypatch.setattr(_ps, "resolve_page", lambda cx, s: ("", "", ""))
+    # Both resolvers, because a page_slug miss falls back to the older alias
+    # table. Leaving the second one real would send this test at whatever
+    # database LOG_DB happens to point at.
+    monkeypatch.setattr(_ps, "resolve", lambda cx, s: ("", ""))
     assert portal.get("/nobody-here").status_code == 404
 
 
@@ -148,6 +157,9 @@ def test_the_legacy_funnel_path_is_also_server_rendered(monkeypatch):
     monkeypatch.setattr(appmod, "_on_portal_host", lambda: False)
     monkeypatch.setattr(appmod, "_public_surface_enabled", lambda: True)
     monkeypatch.setenv("PORTAL_BASE_URL", "https://myhealingoasis.com")
+    from dashboard import practitioner_slugs as _ps
+    monkeypatch.setattr(_ps, "resolve_page",
+                        lambda cx, s: ("canonical", s, s))
     from dashboard import public_surface as _psurf
     monkeypatch.setattr(_psurf, "build_practitioner_storefront",
                         lambda cx, slug: dict(VIEW, slug=slug))
@@ -163,6 +175,9 @@ def test_the_legacy_path_declares_the_portal_canonical(monkeypatch):
     monkeypatch.setattr(appmod, "_on_portal_host", lambda: False)
     monkeypatch.setattr(appmod, "_public_surface_enabled", lambda: True)
     monkeypatch.setenv("PORTAL_BASE_URL", "https://myhealingoasis.com")
+    from dashboard import practitioner_slugs as _ps
+    monkeypatch.setattr(_ps, "resolve_page",
+                        lambda cx, s: ("canonical", s, s))
     from dashboard import public_surface as _psurf
     monkeypatch.setattr(_psurf, "build_practitioner_storefront",
                         lambda cx, slug: dict(VIEW, slug=slug))
@@ -184,6 +199,9 @@ def test_an_unset_portal_base_url_omits_canonical_instead_of_lying(monkeypatch):
     monkeypatch.setattr(appmod, "_on_portal_host", lambda: False)
     monkeypatch.setattr(appmod, "_public_surface_enabled", lambda: True)
     monkeypatch.delenv("PORTAL_BASE_URL", raising=False)
+    from dashboard import practitioner_slugs as _ps
+    monkeypatch.setattr(_ps, "resolve_page",
+                        lambda cx, s: ("canonical", s, s))
     from dashboard import public_surface as _psurf
     monkeypatch.setattr(_psurf, "build_practitioner_storefront",
                         lambda cx, slug: dict(VIEW, slug=slug))
@@ -215,7 +233,8 @@ def test_the_two_routes_render_identical_bytes_for_the_same_view(monkeypatch):
     monkeypatch.setenv("PORTAL_BASE_URL", "https://myhealingoasis.com")
     monkeypatch.setattr(appmod, "_public_surface_enabled", lambda: True)
     from dashboard import practitioner_slugs as _ps
-    monkeypatch.setattr(_ps, "resolve", lambda cx, s: ("canonical", s))
+    monkeypatch.setattr(_ps, "resolve_page",
+                        lambda cx, s: ("canonical", s, s))
     from dashboard import public_surface as _psurf
     monkeypatch.setattr(_psurf, "build_practitioner_storefront",
                         lambda cx, slug: dict(VIEW, slug=slug))
@@ -266,7 +285,8 @@ def test_a_route_exercises_the_real_payload_builder(monkeypatch, tmp_path):
     monkeypatch.setattr(appmod, "_public_surface_enabled", lambda: True)
     monkeypatch.setenv("PORTAL_BASE_URL", "https://myhealingoasis.com")
     from dashboard import practitioner_slugs as _ps
-    monkeypatch.setattr(_ps, "resolve", lambda cx, s: ("canonical", s))
+    monkeypatch.setattr(_ps, "resolve_page",
+                        lambda cx, s: ("canonical", s, s))
 
     r = appmod.app.test_client().get("/mary-boyd")
     assert r.status_code == 200
