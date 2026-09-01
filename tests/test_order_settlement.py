@@ -11,6 +11,7 @@ class _Deps:
             raise RuntimeError(f"boom:{name}")
     def settle_points(self, order, order_ref): self._rec("points")
     def settle_referral(self, order, order_ref): self._rec("referral")
+    def append_repertoire(self, order): self._rec("repertoire")
     def ensure_subscription(self, md, pi_id): self._rec("subscription")
     def grant_group_bundle(self, md, pi_id): self._rec("group_bundle")
     def settle_client(self, md): self._rec("client")
@@ -27,20 +28,20 @@ def _run(kind, deps, order=_ORDER, md=None):
 
 def test_retail_settles_points_and_referral_only():
     d = _Deps(); out = _run("retail", d)
-    assert d.calls == ["points", "referral"]
-    assert set(out["settled"]) == {"points", "referral"}
+    assert d.calls == ["points", "referral", "repertoire"]
+    assert set(out["settled"]) == {"points", "referral", "repertoire"}
 
 def test_subscribe_without_grant_group_months_skips_group_bundle():
     # subscribe never carries grant_group_months today -- group_bundle must NOT
     # fire just because kind=='subscribe'; only ensure_subscription runs.
     d = _Deps(); _run("subscribe", d)
-    assert d.calls == ["points", "referral", "subscription"]
+    assert d.calls == ["points", "referral", "repertoire", "subscription"]
 
 def test_subscribe_with_grant_group_months_adds_group_bundle():
     d = _Deps()
     _run("subscribe", d, md={"invoice_id": "tok1", "kind": "subscribe",
                               "grant_group_months": "3"})
-    assert d.calls == ["points", "referral", "subscription", "group_bundle"]
+    assert d.calls == ["points", "referral", "repertoire", "subscription", "group_bundle"]
 
 def test_non_subscribe_kind_with_grant_group_months_calls_group_bundle():
     # Dispatch is kind-agnostic: any kind carrying grant_group_months (today
@@ -49,31 +50,31 @@ def test_non_subscribe_kind_with_grant_group_months_calls_group_bundle():
     d = _Deps()
     out = _run("retail", d, md={"invoice_id": "tok1", "kind": "retail",
                                  "grant_group_months": "1"})
-    assert d.calls == ["points", "referral", "group_bundle"]
-    assert set(out["settled"]) == {"points", "referral", "group_bundle"}
+    assert d.calls == ["points", "referral", "repertoire", "group_bundle"]
+    assert set(out["settled"]) == {"points", "referral", "repertoire", "group_bundle"}
 
 def test_client_settles_common_points_and_client():
     # Behavior-preserving: client goes through the shared gate today, so it gets
     # common points+referral AND its own client settlement (dispensary-scope).
     d = _Deps(); out = _run("client", d)
-    assert d.calls == ["points", "referral", "client"]
-    assert set(out["settled"]) == {"points", "referral", "client"}
+    assert d.calls == ["points", "referral", "repertoire", "client"]
+    assert set(out["settled"]) == {"points", "referral", "repertoire", "client"}
 
 def test_biofield_settles_common_plus_biofield():
     d = _Deps(); _run("biofield", d)
-    assert d.calls == ["points", "referral", "biofield"]
+    assert d.calls == ["points", "referral", "repertoire", "biofield"]
 
 def test_reorder_and_portal_reorder_like_retail():
     for k in ("reorder", "portal-reorder"):
         d = _Deps(); _run(k, d)
-        assert d.calls == ["points", "referral"]
+        assert d.calls == ["points", "referral", "repertoire"]
 
 def test_one_settler_raising_is_recorded_and_others_continue():
     d = _Deps(raise_on={"points"})
     out = _run("subscribe", d, md={"invoice_id": "tok1", "kind": "subscribe",
                                     "grant_group_months": "3"})
     # points raises but referral/subscription/group_bundle still run
-    assert d.calls == ["points", "referral", "subscription", "group_bundle"]
+    assert d.calls == ["points", "referral", "repertoire", "subscription", "group_bundle"]
     assert "points" in out["skipped"]
     assert "referral" in out["settled"]
 
@@ -97,7 +98,7 @@ def test_membership_line_dispatched_only_when_line_present():
     assert "membership_line" not in d.calls
     # Order carries a membership line -> the grant dep fires (kind-agnostic).
     d2 = _Deps(); out = _run("retail", d2, order=_MEMBERSHIP_ORDER)
-    assert d2.calls == ["points", "referral", "membership_line"]
+    assert d2.calls == ["points", "referral", "repertoire", "membership_line"]
     assert "membership_line" in out["settled"]
 
 def test_paid_300_biofield_line_dispatches_member_benefit():
@@ -105,7 +106,7 @@ def test_paid_300_biofield_line_dispatches_member_benefit():
              "items": [{"slug": "biofield-analysis", "unit_cents": 30000,
                         "line_cents": 30000}]}
     d = _Deps(); out = _run("retail", d, order=order)
-    assert d.calls == ["points", "referral", "membership_line"]
+    assert d.calls == ["points", "referral", "repertoire", "membership_line"]
     assert "membership_line" in out["settled"]
 
 def test_membership_grant_that_raises_lands_in_skipped():

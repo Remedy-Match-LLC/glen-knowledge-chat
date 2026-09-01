@@ -58,6 +58,7 @@
     restartTimer=window.setTimeout(startListening,delay);
   }
   function speak(text,listenAfter){
+    if(document.hidden)return;
     if(!speakerOn||!window.speechSynthesis||!text){if(listenAfter)startListening();else scheduleListening();return}
     try{
       speaking=true;if(listening)recognition.stop();speechSynthesis.cancel();
@@ -72,6 +73,14 @@
   function openMentor(activateVoice){panel.hidden=false;launcher.setAttribute("aria-expanded","true");setContext();syncHistory();
     let greeted=false;if(!chatHistory.length&&!msgs.children.length){const g=greeting();append("assistant",g);greeted=true;if(activateVoice)speak(g,true)}input.focus();if(activateVoice&&recognition&&!greeted)startListening()}
   function closeMentor(){panel.hidden=true;launcher.setAttribute("aria-expanded","false");disableContinuous();if(listening)try{recognition.stop()}catch(e){}}
+
+  function silenceHiddenMentor(){
+    window.clearTimeout(restartTimer);speaking=false;recognitionStarting=false;
+    try{if(window.speechSynthesis)speechSynthesis.cancel()}catch(e){}
+    if(listening)try{recognition.stop()}catch(e){}
+  }
+  document.addEventListener("visibilitychange",()=>{if(document.hidden)silenceHiddenMentor()});
+  window.addEventListener("pagehide",silenceHiddenMentor);
 
   const Recognition=window.SpeechRecognition||window.webkitSpeechRecognition;
   if(Recognition){recognition=new Recognition();recognition.lang="en-US";recognition.interimResults=false;recognition.continuous=false;
@@ -108,5 +117,6 @@
   send.addEventListener("click",submit);input.addEventListener("keydown",e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();submit()}});
   window.mentorPageChanged=function(name){window.setTimeout(()=>{setContext();if(!autoGuide.checked||name===lastGuidedPanel)return;lastGuidedPanel=name;
     const text="You’re now viewing "+(panelNames[name]||"this part of your portal")+". Open me if you’d like an explanation or a recommended next step.";
-    if(panel.hidden)openMentor(false);append("assistant",text);speak(text)},0)};
+    const wasOpen=!panel.hidden;if(panel.hidden)openMentor(false);append("assistant",text);
+    if(wasOpen&&!document.hidden)speak(text)},0)};
 })();

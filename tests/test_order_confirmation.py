@@ -87,3 +87,30 @@ def test_portal_checkout_carries_receipt_return_context(monkeypatch):
     assert captured["metadata"]["return_to"] == out["return_to"]
     assert captured["success_url"].endswith(
         "/begin/checkout-return?session_id={CHECKOUT_SESSION_ID}")
+
+
+def test_portal_checkout_idempotency_changes_with_checkout_lines(monkeypatch):
+    keys = []
+    import dashboard.stripe_pay as stripe_pay
+
+    def create_session(items, **kwargs):
+        keys.append(kwargs["idempotency_key"])
+        return {"url": "https://checkout.stripe.test/session"}
+
+    monkeypatch.setattr(stripe_pay, "create_itemized_checkout_session", create_session)
+    base = {"invoice_id": "portal-same-order", "customer_id": "",
+            "kind": "portal-reorder", "total": 50.00,
+            "cancel_url": "https://illtowell.com/portal/t",
+            "return_to": "https://illtowell.com/portal/t"}
+    first = dict(base, stripe_line_items=[{"name": "Bone Builder", "qty": 1,
+                                          "unit_cents": 5000}])
+    changed = dict(base, stripe_line_items=[{"name": "Bone Builder", "qty": 1,
+                                            "unit_cents": 6500}])
+
+    app._stripe_checkout_url_for_reorder(first, "anne@example.com")
+    app._stripe_checkout_url_for_reorder(first, "anne@example.com")
+    app._stripe_checkout_url_for_reorder(changed, "anne@example.com")
+
+    assert keys[0] == keys[1]
+    assert keys[0] != keys[2]
+    assert keys[0].startswith("portal-same-order:")

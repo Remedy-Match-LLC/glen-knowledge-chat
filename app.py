@@ -1411,8 +1411,20 @@ def _has_e4l(cx, email, state):
         return False
 
 
+def _is_completed_purchase_order(order):
+    """Whether an order represents an actual purchase, not a quote or open cart.
+
+    Legacy/digital flows sometimes reached a fulfilled terminal status without
+    backfilling ``pay_status``; conversely, an in-house invoice can be paid before
+    fulfillment begins.  Either fact is sufficient.  Merely being non-cancelled
+    is not: ``proposed`` and ``confirmed`` rows are offers, not purchase history.
+    """
+    return ((order or {}).get("pay_status") == "paid" or
+            (order or {}).get("status") in ("paid", "shipped", "delivered", "done"))
+
+
 def _order_slug_counts(orders):
-    """slug -> how many non-cancelled orders contain it, retired slugs folded to
+    """slug -> how many completed purchases contain it, retired slugs folded to
     their live twin. ONE definition of "bought more than once", shared by the
     journey's `has_reordered` signal and the portal's per-row `is_reorder` flag,
     so the two surfaces cannot drift into disagreeing about the same client.
@@ -1421,7 +1433,7 @@ def _order_slug_counts(orders):
     rows in hand and must not pay for a second read."""
     counts = {}
     for o in (orders or []):
-        if (o.get("status") or "") == "cancelled":
+        if not _is_completed_purchase_order(o):
             continue
         for sl in {(it.get("slug") or "").strip().lower()
                    for it in (o.get("items") or []) if isinstance(it, dict)}:
@@ -8196,6 +8208,23 @@ def _grant_membership_line_dep(order):
         _grant_biofield_line_on_paid(_mcx, order)
 
 
+def _append_paid_order_repertoire(order):
+    """Settlement dep: append product slugs only after Stripe confirms payment."""
+    if not (REPERTOIRE_ENABLED and order):
+        return
+    email = (order.get("email") or "").strip().lower()
+    if not (email and _is_paid_member(email)):
+        return
+    slugs = [((it or {}).get("slug") or "").strip().lower()
+             for it in (order.get("items") or [])]
+    slugs = [slug for slug in slugs if slug]
+    if not slugs:
+        return
+    with _db_lock, db.connect(LOG_DB) as cx:
+        repertoire.init_repertoire_table(cx)
+        repertoire.add_skus(cx, email, slugs)
+
+
 from types import SimpleNamespace as _SimpleNamespace  # noqa: E402
 _SETTLEMENT_DEPS = _SimpleNamespace(
     settle_points=_settle_points_dep,
@@ -8205,6 +8234,7 @@ _SETTLEMENT_DEPS = _SimpleNamespace(
     settle_client=_settle_client_effects,
     settle_biofield=_settle_biofield_effects,
     grant_membership_line=_grant_membership_line_dep,
+    append_repertoire=_append_paid_order_repertoire,
 )
 
 
@@ -10976,15 +11006,21 @@ def _window_days_for_term(term_months):
 
 
 def _order_slugs_since(cx, email, window_days):
-    """Distinct-ish list of item slugs from this email's non-cancelled orders in the
-    last window_days. Used to seed dashboard.repertoire on membership conversion."""
+    """Item slugs from this email's completed purchases in the lookback window.
+
+    Used to seed ``dashboard.repertoire`` on membership conversion.  Quotes,
+    proposals, and open carts must never earn the prior-purchase reorder price.
+    Legacy fulfilled rows may lack ``pay_status``, so the completion boundary
+    matches ``_is_completed_purchase_order``: paid OR fulfilled.
+    """
     import json as _json
     from datetime import datetime as _dt, timedelta as _td, timezone as _tz
     cutoff = (_dt.now(_tz.utc) - _td(days=int(window_days or 0))).isoformat()
     cx.row_factory = sqlite3.Row
     rows = cx.execute(
         "SELECT items_json FROM orders WHERE lower(email)=? "
-        "AND status!='cancelled' AND created_at>=?",
+        "AND (pay_status='paid' OR status IN ('paid','shipped','delivered','done')) "
+        "AND created_at>=?",
         ((email or "").strip().lower(), cutoff)).fetchall()
     out = []
     for r in rows:
@@ -15378,6 +15414,18 @@ def membership_category(email):
                         "AND source!='biofield_trial' LIMIT 1", (email, now_iso)).fetchone()
                     if not other_paid:
                         return "trial"
+                # A prepaid term, care taster, founding grant, studio credit, or
+                # other non-trial day-based membership has no subscriptions row.
+                # It is nevertheless a fully paid membership for every access
+                # surface. Returning ``none`` here made the portal label these
+                # members as free even while _is_paid_member correctly granted
+                # pricing and coaching.
+                paid_grant = cx.execute(
+                    "SELECT 1 FROM memberships WHERE email=? "
+                    "AND (expires_at IS NULL OR expires_at > ?) "
+                    "AND source!='biofield_trial' LIMIT 1", (email, now_iso)).fetchone()
+                if paid_grant:
+                    return "full"
             return cat
     except Exception:
         return "none"
@@ -21318,11 +21366,21 @@ def _stripe_checkout_url_for_reorder(out, email):
         metadata["return_to"] = out.get("return_to") or cancel_url
         stripe_items = out.get("stripe_line_items") or []
         if stripe_items:
+            # Stripe rejects an idempotency key when it is reused with different
+            # parameters.  The portal deliberately reconnects a refreshed basket
+            # to its existing order_ref, but prices/packaging can legitimately
+            # change before payment.  Scope the key to the canonical Stripe lines:
+            # identical retries still dedupe, while a changed checkout can proceed.
+            import hashlib as _hashlib
+            _item_fingerprint = _hashlib.sha256(json.dumps(
+                stripe_items, sort_keys=True, separators=(",", ":"),
+            ).encode("utf-8")).hexdigest()[:20]
+            _stripe_idem = f"{out.get('invoice_id') or 'portal'}:{_item_fingerprint}"
             sess = stripe_pay.create_itemized_checkout_session(
                 stripe_items, customer_email=email, metadata=metadata,
                 success_url=success, cancel_url=cancel_url,
                 collect_shipping=True,
-                idempotency_key=(out.get("invoice_id") or ""))
+                idempotency_key=_stripe_idem)
         else:
             sess = stripe_pay.create_checkout_session(
                 total_cents, customer_email=email,
@@ -22897,9 +22955,10 @@ def _portal_reorder_module(email):
     settings = _pricing.load_settings(_pricing_settings())
     now = datetime.now(timezone.utc)
 
-    portal_orders = [o for o in orders
+    purchased_orders = [o for o in orders if _is_completed_purchase_order(o)]
+    portal_orders = [o for o in purchased_orders
                      if (o.get("source") in _PORTAL_CHANNEL_SOURCES)
-                     and (o.get("status") != "cancelled")]
+                     ]
 
     # --- purchase_history: the consolidated cross-channel record. `ph_slugs` (all
     # slices incl. fmp, resolved) is the "has this client bought before" oracle for
@@ -22919,7 +22978,7 @@ def _portal_reorder_module(email):
     # reorder (it is a pre-existing record), while a single portal purchase is
     # not (that purchase is the row you are looking at). Counting occurrences
     # instead would have flipped both storefront-history cases to "Order".
-    repeat_slugs = {sl for sl, n in _order_slug_counts(orders).items() if n >= 2}
+    repeat_slugs = {sl for sl, n in _order_slug_counts(purchased_orders).items() if n >= 2}
     ph_slugs, ph_other = set(), {}
     for r in ph_rows:
         s = _superseded((r["slug"] or "").strip().lower()) or ""
@@ -23056,9 +23115,7 @@ def _portal_reorder_module(email):
         cur = other.get(slug)
         if cur is None or at > cur[0]:
             other[slug] = (at, qty, channel)
-    for o in orders:
-        if o.get("status") == "cancelled":
-            continue
+    for o in purchased_orders:
         channel = _portal_display_channel(o.get("source"))
         if channel == "portal":
             continue  # portal purchases already handled above
@@ -23142,6 +23199,22 @@ def _portal_reorder_module(email):
         invoice = current_invoice_by_slug.get(row.get("slug"))
         if invoice:
             row["current_invoice"] = invoice
+    displayed_slugs = {row.get("slug") for row in reorder}
+    for slug, invoice in current_invoice_by_slug.items():
+        if slug in displayed_slugs:
+            continue
+        p = _get_product(slug) or {}
+        regular_cents = int(p.get("price_cents") or invoice["unit_cents"] or 0)
+        reorder.append({
+            "slug": slug, "name": p.get("name") or slug,
+            "qty": invoice["qty"], "regular_cents": regular_cents,
+            "your_cents": invoice["unit_cents"],
+            "is_member_price": invoice["unit_cents"] < regular_cents,
+            "in_repertoire": slug in rep_slugs,
+            "refill_eligible": bool(p and _qty_eligible(p)),
+            "channel": "clinic", "source_label": "Current invoice",
+            "is_reorder": False, "current_invoice": invoice,
+        })
 
     return {
         "reorder": reorder,
@@ -29106,11 +29179,12 @@ def api_client_portal_checkout(token):
                 return jsonify({"error": "Invalid items."}), 400
             slug = (it.get("slug") or "").strip().lower()
             product = _get_product(slug) if slug else None
+            item_name = ((product or {}).get("name") or slug or "That item").strip()
             if (not slug or not product or product.get("inactive")
                     or product.get("info_only")):
-                return jsonify({"error": "That item isn't available to reorder."}), 400
+                return jsonify({"error": f"{item_name} isn't available to order."}), 400
             if not catalog_order and slug not in entitled:
-                return jsonify({"error": "That item isn't available to reorder."}), 400
+                return jsonify({"error": f"{item_name} isn't available to order."}), 400
             try:
                 qty = max(1, min(int(it.get("qty", 1) or 1), 99))
             except Exception:
@@ -32446,7 +32520,8 @@ def api_client_portal_view(token):
                                        cart_enabled=_PORTAL_CART_ENABLED,
                                        brain_enabled=_PORTAL_BRAIN_TILE_ENABLED,
                                        brain_url=_PORTAL_BRAIN_URL,
-                                       caregiver_pay_enabled=_caregiver_pay_enabled())
+                                       caregiver_pay_enabled=_caregiver_pay_enabled(),
+                                       paid_member=_is_paid_member(ident.email))
             if view is not None:
                 from dashboard import portal_card_state as _portal_cards
                 _portal_cards.init_table(cx)
@@ -34447,6 +34522,44 @@ def _portal_claim_url(email):
     from urllib.parse import quote
     email = (email or "").strip().lower()
     return f"{portal_base()}/portal/claim?e={quote(email)}&s={_portal_claim_sign(email)}"
+
+
+@app.route("/email/unsubscribe", methods=["GET", "POST"])
+def email_unsubscribe():
+    """Unsubscribe from promotional email.
+
+    GHL appends its own footer only to workflow mail; anything we send through the
+    conversations API arrives without one, so our senders mint a signed link here.
+
+    GET confirms, POST records. A mutating GET would let mail scanners and link
+    prefetchers unsubscribe people who never clicked, which is a real failure mode
+    for security appliances that follow every URL in a message.
+    """
+    from dashboard import unsubscribe as _un, email_suppression as _es
+    src = request.form if request.method == "POST" else request.args
+    email = (src.get("e") or "").strip().lower()
+    scope = (src.get("scope") or _un.GLOBAL).strip()
+    sig = (src.get("s") or "").strip()
+    if not email or not _un.verify(email, scope, sig):
+        return render_template_string(
+            "<h2>That link is not valid</h2><p>Reply to any email from us and "
+            "we will take care of it.</p>"), 400
+    if request.method == "GET":
+        return render_template_string(
+            "<h2>Unsubscribe {{ e }}?</h2>"
+            "<form method='post' action='/email/unsubscribe'>"
+            "<input type='hidden' name='e' value='{{ e }}'>"
+            "<input type='hidden' name='scope' value='{{ sc }}'>"
+            "<input type='hidden' name='s' value='{{ s }}'>"
+            "<button type='submit'>Yes, unsubscribe me</button></form>",
+            e=email, sc=scope, s=sig)
+    with db.connect(LOG_DB) as cx:
+        _es.init_table(cx)
+        _es.add_optout(cx, email, "unsubscribe-link:" + scope)
+    return render_template_string(
+        "<h2>You are unsubscribed</h2><p>{{ e }} will not receive further "
+        "mailings. If this was a mistake, just reply to any earlier email and "
+        "we will put you back.</p>", e=email)
 
 
 @app.route("/portal/claim", methods=["GET"])
@@ -39721,7 +39834,7 @@ def post_todos():
             if not title:
                 continue
             try:
-                cx.execute("""
+                cur = cx.execute("""
                     INSERT INTO todos
                       (created_at, owner, category, title, body, priority, source, dedup_key,
                        ai_summary, suggested_reply, action_note, core_message, received_at)
@@ -39731,13 +39844,24 @@ def post_todos():
                       suggested_reply=excluded.suggested_reply,
                       action_note=excluded.action_note,
                       core_message=excluded.core_message,
-                      received_at=CASE WHEN excluded.received_at != '' THEN excluded.received_at ELSE received_at END
+                      -- todos.received_at, not a bare `received_at`: Postgres cannot tell
+                      -- whether an unqualified name in DO UPDATE means the target row or
+                      -- `excluded`, and raises AmbiguousColumn. SQLite accepts the bare
+                      -- form, so no SQLite-backed test can catch this.
+                      received_at=CASE WHEN excluded.received_at != '' THEN excluded.received_at ELSE todos.received_at END
                 """, (ts, owner, category, title, body, priority, source, dedup,
                       ai_summary, suggested_reply, action_note, core_message, received_at))
-                if cx.execute("SELECT changes()").fetchone()[0]:
+                # rowcount, not the SQLite-only changes() function, which
+                # raises UndefinedFunction on Postgres, where the bare except below
+                # used to swallow it and the poisoned transaction dropped the INSERT.
+                # This endpoint returned {"ok":true,"inserted":0} with HTTP 201 for
+                # five weeks while every console_push_cron todo was discarded.
+                if cur.rowcount:
                     inserted += 1
             except Exception:
-                pass
+                # Never silent again: a swallowed write is indistinguishable from
+                # a working one from the caller's side.
+                app.logger.exception("todo insert failed (dedup_key=%s)", dedup)
         cx.commit()
     return jsonify({"ok": True, "inserted": inserted}), 201
 
@@ -42985,13 +43109,14 @@ def _do_capture_split(text: str, owner: str) -> dict:
                 continue
             dedup = f"capture:{ts_epoch}:{i}:{title[:40]}"
             try:
-                cx.execute("""
+                cur = cx.execute("""
                     INSERT INTO todos
                       (created_at, owner, category, title, body, priority, source, dedup_key)
                     VALUES (?,?,?,?,?,?,?,?)
                     ON CONFLICT(dedup_key) DO NOTHING
                 """, (ts, owner, "Idea", title, body, priority, "capture", dedup))
-                if cx.execute("SELECT changes()").fetchone()[0]:
+                # rowcount, not the SQLite-only changes() function (raises on Postgres).
+                if cur.rowcount:
                     inserted.append({"title": title, "priority": priority})
             except Exception:
                 app.logger.exception("capture_split insert failed for item %s", i)
@@ -49374,20 +49499,16 @@ def _ingest_order(*, source, external_ref, email="", name="", phone="",
                     _send_portal_welcome(email, name, _tok)
             except Exception as _pe:
                 print(f"[orders] portal-provision {source}/{external_ref}: {_pe!r}", flush=True)
-            # Repertoire append: a paid member's purchase adds these SKUs so their
-            # NEXT reorder prices at the flat member rate (dashboard/repertoire.py).
-            # Gated on CURRENT membership status (_is_paid_member), not this order's
-            # pay_status -- pay_status defaults to 'unpaid' at ingest time and isn't
-            # reliably flipped to 'paid' here for most sources (it's a separate
-            # BOS-invoicing concept), so it can't be used to require "actually paid"
-            # at this hook. Runs AFTER upsert_order (i.e. after _price_cart already
-            # priced this order), so it can never discount the order it's derived
-            # from -- only future ones. Best-effort: must never affect order
-            # recording. Worst case: a member's repertoire picks up a SKU from an
-            # order that later gets cancelled/abandoned -- next reorder of that SKU
-            # is $50 instead of full price, a minor overcorrection.
+            # Repertoire append: only a COMPLETED purchase earns the future flat
+            # reorder rate. Checkout sessions are ingested before payment so an
+            # open/proposed order must not append here; the paid Stripe settlement
+            # path appends after payment instead. Terminal imports (done/shipped/
+            # delivered/paid) and explicitly captured orders can append immediately.
             try:
-                if REPERTOIRE_ENABLED and email and _is_paid_member(email):
+                completed_here = (paid_cents is not None or
+                                  status in ("paid", "shipped", "delivered", "done"))
+                if (completed_here and REPERTOIRE_ENABLED and email
+                        and _is_paid_member(email)):
                     slugs = []
                     for it in (items or []):
                         s = ((it or {}).get("slug") or "").strip().lower()
@@ -53208,6 +53329,41 @@ def api_console_repertoire_reseed():
         "slugs_added": slugs_added,
         "failures": failures,
     })
+
+
+@app.route("/api/console/repertoire-reconcile", methods=["POST"])
+@require_console_key
+def api_console_repertoire_reconcile():
+    """Remove repertoire rows that are unsupported by completed purchase history.
+
+    Defaults to a read-only preview.  ``?apply=1`` is required to delete.  This is
+    intentionally email-scoped and console-gated; it repairs members whose repertoire
+    was seeded from a proposal before the completed-purchase boundary was fixed.
+    """
+    from dashboard import purchase_history as _ph
+    from dashboard import repertoire as _rep
+    email = (request.args.get("email") or "").strip().lower()
+    if not email:
+        return fail("email required", status=400)
+    apply = (request.args.get("apply") or "").strip().lower() in ("1", "true", "yes")
+    with _db_lock, db.connect(LOG_DB) as cx:
+        _bos_orders.init_orders_table(cx)
+        _ph.init_purchase_history_table(cx)
+        _rep.init_repertoire_table(cx)
+        before = sorted(_rep.repertoire_slugs(cx, email))
+        valid = set(_order_slugs_since(cx, email, 365) or [])
+        valid.update(_ph.slugs_since(cx, email, 365) or [])
+        remove = sorted(set(before) - valid)
+        if apply and remove:
+            ph = ",".join("?" for _ in remove)
+            cx.execute(
+                f"DELETE FROM repertoire WHERE lower(email)=? AND slug IN ({ph})",
+                [email, *remove])
+            cx.commit()
+        after = sorted(_rep.repertoire_slugs(cx, email))
+    return ok({"email": email, "applied": apply, "before": before,
+               "valid_purchase_slugs": sorted(valid), "removed": remove if apply else [],
+               "would_remove": remove, "after": after})
 
 
 @app.route("/api/console/test-portal-welcome", methods=["POST"])

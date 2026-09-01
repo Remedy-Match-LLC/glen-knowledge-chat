@@ -40,6 +40,14 @@ def test_shared_voice_uses_server_side_elevenlabs_and_safe_live_reply_activation
     assert "attachAndSpeak(container, text) : attach(container, text)" in source
 
 
+def test_shared_voice_cancels_background_and_stale_requests():
+    source = (STATIC / "tts-output.js").read_text()
+    assert "playGeneration" in source
+    assert "document.hidden || generation !== playGeneration" in source
+    assert "document.addEventListener('visibilitychange'" in source
+    assert "window.addEventListener('pagehide', stopActive)" in source
+
+
 def test_voice_credentials_remain_server_side():
     source = (ROOT / "app.py").read_text()
     assert 'os.environ.get("ELEVENLABS_API_KEY"' in source

@@ -663,12 +663,18 @@ def send_email(to_email: str, subject: str, body: str, from_name: Optional[str] 
 
 
 def send_bulk(to_email: str, subject: str, body: str, from_name: Optional[str] = None,
-              html: Optional[str] = None) -> dict:
+              html: Optional[str] = None,
+              unsubscribe_scope: Optional[str] = None) -> dict:
     """Bulk / onboarding email (portal welcome, campaigns). Routes via GHL v2
     (Mailgun-backed sending domain) when BULK_VIA_GHL is set and GHL is configured, to
     keep the consumer-Gmail daily quota for transactional mail (invoices, replies).
     Falls back to Gmail send_email on any GHL failure so nothing is lost. Honors the
-    suppression list + undeliverable guard on BOTH paths."""
+    suppression list + undeliverable guard on BOTH paths.
+
+    unsubscribe_scope: when set, appends an unsubscribe footer to the text and
+    HTML parts. Opt-in on purpose. GHL adds no footer to conversations-API mail,
+    but transactional sends (invoices, magic links, portal-ready notices) must
+    NOT carry one, so the caller decides."""
     if _is_undeliverable(to_email):
         print(f"[send_bulk] skip undeliverable {to_email!r}", flush=True)
         return {"skipped": "undeliverable"}
@@ -681,6 +687,11 @@ def send_bulk(to_email: str, subject: str, body: str, from_name: Optional[str] =
                 return {"skipped": "suppressed"}
     except Exception as _e:  # noqa: BLE001 — never block a send on a check failure
         print(f"[send_bulk] suppress-check skipped: {_e!r}", flush=True)
+    if unsubscribe_scope:
+        from dashboard import unsubscribe as _un
+        body = (body or "") + _un.footer_text(to_email, unsubscribe_scope)
+        if html:
+            html = html + _un.footer_html(to_email, unsubscribe_scope)
     if os.environ.get("BULK_VIA_GHL"):
         try:
             from dashboard import ghl_email as _ghl

@@ -41,6 +41,13 @@ def test_continuous_voice_is_never_remembered_and_resets_when_mentor_closes():
     assert "function closeMentor(){" in MENTOR
     assert "disableContinuous();if(listening)" in MENTOR
 
+def test_background_portal_never_speaks_or_listens_and_auto_guidance_is_visual_first():
+    assert "if(document.hidden)return;" in MENTOR
+    assert 'document.addEventListener("visibilitychange"' in MENTOR
+    assert 'window.addEventListener("pagehide",silenceHiddenMentor)' in MENTOR
+    assert "const wasOpen=!panel.hidden" in MENTOR
+    assert "if(wasOpen&&!document.hidden)speak(text)" in MENTOR
+
 def test_widget_reuses_persistent_chat_and_supplies_page_context():
     assert 'fetch("/api/portal/"+encodeURIComponent(token)+"/chat"' in MENTOR
     assert "page_context:pageContext()" in MENTOR

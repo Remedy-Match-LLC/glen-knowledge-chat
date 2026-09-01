@@ -7325,6 +7325,10 @@ async function reorder(){
     const payload = JSON.stringify({
       checkout_request_id:btn.dataset.checkoutRequestId,
       method:((document.querySelector('input[name="portalPayMethod"]:checked') || {}).value || "card"),
+      // This basket can contain products added through the active-catalog search
+      // above, not only historical/curated remedies. The server still validates
+      // that every slug is an active, sellable catalog product.
+      catalog_order:true,
       items:items.map(it => ({slug:it.slug, qty:it.qty, format:it.format}))
     });
     let cj = null;
