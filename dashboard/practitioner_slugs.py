@@ -236,10 +236,20 @@ def claim_alias(cx, canonical, alias, reserved):
 # truly.vip/<slug>, and ?ref= cookies hold it for 90 days. Renaming it orphans
 # all of that, so it is never written by this feature.
 #
-# page_slug is a separate, nullable column holding the name she wants in the
-# URL bar. NULL means "use slug", so every existing practitioner is unaffected
-# by the column's arrival. When it is set, IT becomes canonical and the
-# affiliate slug becomes a legacy URL that keeps working forever.
+# page_slug is a separate column holding the name that belongs in her URL bar.
+# It is ALWAYS POPULATED: a row that has made no choice carries its own
+# affiliate slug, so every row's page_slug IS its effective public URL. When
+# she picks a different one, IT becomes canonical and the affiliate slug
+# becomes a legacy URL that keeps working forever.
+#
+# Always-populated is not cosmetic; it is what makes the invariant a database
+# fact. With page_slug nullable, the unique index on it enforced nothing
+# useful, because NULLs are distinct on both backends: with Mary's page_slug
+# NULL, `UPDATE affiliate_signups SET page_slug='mary-boyd' WHERE
+# slug='remedy-match'` collided with no VALUE and succeeded, and /mary-boyd
+# then served Glen's page. Only the validator's read-then-write stood in the
+# way, and that has a real race window on Postgres. Populated, Glen's claim
+# collides with Mary's OWN row and the database refuses it.
 #
 # This is NOT the alias feature above. An alias points an extra name at an
 # existing canonical and redirects to it. A page_slug makes a chosen name BE
@@ -289,10 +299,20 @@ def init_page_slug(cx):
             if key in _PAGE_INIT_DONE:
                 return
     _try(cx, "ALTER TABLE affiliate_signups ADD COLUMN page_slug TEXT")
+    # Backfill BEFORE the index, never after. A NULL page_slug is a row with no
+    # effective URL under the index, which is exactly the hole the reviewer
+    # drove through; and creating a unique index over a table still holding
+    # NULLs cannot fail, so a later backfill would be the statement that
+    # discovers a duplicate -- after the index that was supposed to prevent it
+    # already exists. Idempotent by the WHERE clause, so it is safe on every
+    # process start.
+    _try(cx, "UPDATE affiliate_signups SET page_slug = slug"
+             " WHERE page_slug IS NULL")
     # The backstop against a concurrent claim: validate_page_slug's
-    # read-then-write has a race window that only the database can close.
-    # NULLs are distinct under a unique index on both backends, so every
-    # practitioner who has not chosen a page slug coexists.
+    # read-then-write has a race window that only the database can close. With
+    # every row populated, this single-column index says "one effective public
+    # URL, one practitioner" -- and says it about rows that have chosen nothing
+    # as much as rows that have.
     _try(cx, "CREATE UNIQUE INDEX IF NOT EXISTS ux_affiliate_page_slug"
              " ON affiliate_signups(page_slug)")
     if key is None:
@@ -322,6 +342,11 @@ def canonical_slug_for(cx, affiliate_slug):
         (s,)).fetchone()
     if not row:
         return ""
+    # COALESCE in Python, not SQL, so it also covers ''. page_slug is meant to
+    # be populated for every row, but "meant to be" is only true while every
+    # writer honours it. If one is ever missed, this hands back her affiliate
+    # slug instead of an empty URL. Defence in depth behind the backfill and
+    # the writers, never the mechanism they replace.
     return normalize(row[1]) or (row[0] or "")
 
 
@@ -370,12 +395,17 @@ def validate_page_slug(cx, candidate, *, owner_affiliate_slug, reserved):
 def set_page_slug(cx, affiliate_slug, candidate, *, reserved):
     """Give `affiliate_slug`'s practitioner the public URL `candidate`.
 
-    An empty or None candidate CLEARS the choice, writing NULL so her URL falls
-    back to the affiliate slug. NULL and not '': two practitioners who both
-    cleared would be a duplicate under the unique index if it were ''.
+    An empty or None candidate CLEARS the choice, restoring her AFFILIATE SLUG
+    as her page_slug -- not NULL. A NULL would take her row back out of the
+    unique index's reach, and a row outside the index is a row another
+    practitioner can be pointed at by any write that skips the validator.
+    Writing her own slug is also unambiguously free: page_slug_is_taken refuses
+    to give anyone else a page slug equal to it.
 
-    Returns the stored page slug, or '' when cleared. Never touches
-    affiliate_signups.slug.
+    Returns the stored page slug, which after a clear is the affiliate slug.
+    "No vanity choice" and "vanity choice equal to the affiliate slug" are the
+    same state now, so there is nothing for a '' return to distinguish. Never
+    touches affiliate_signups.slug.
     """
     init_page_slug(cx)
     owner = normalize(affiliate_slug)
@@ -386,13 +416,10 @@ def set_page_slug(cx, affiliate_slug, candidate, *, reserved):
         raise SlugError("that practitioner account was not found")
 
     if not normalize(candidate):
-        cx.execute("UPDATE affiliate_signups SET page_slug=NULL WHERE slug=?",
-                   (owner,))
-        cx.commit()
-        return ""
-
-    s = validate_page_slug(cx, candidate, owner_affiliate_slug=owner,
-                           reserved=reserved)
+        s = owner            # clearing == "my public URL is my affiliate slug"
+    else:
+        s = validate_page_slug(cx, candidate, owner_affiliate_slug=owner,
+                               reserved=reserved)
     try:
         cx.execute("UPDATE affiliate_signups SET page_slug=? WHERE slug=?",
                    (s, owner))
@@ -441,5 +468,9 @@ def resolve_page(cx, requested):
         page = normalize(row[1])
         if page and page != r:
             return ("legacy", page, row[0] or "")
+        # `not page` is the COALESCE fallback: every row is SUPPOSED to carry a
+        # page_slug, but if a writer we never found inserts one without it,
+        # she must still serve at her affiliate slug rather than 404. Defence
+        # in depth behind the backfill and the writers, not a substitute.
         return ("canonical", r, row[0] or "")
     return ("", "", "")
