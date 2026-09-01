@@ -2357,3 +2357,75 @@ def test_the_urls_stay_reachable_when_the_portal_host_is_unset(
     v = slug_settings.get("/api/practitioner/booking-config").get_json()
     assert v["page_url"] == f"{appmod.PUBLIC_BASE_URL}/p/mary-boyd"
     assert v["booking_url"] == f"{appmod.PUBLIC_BASE_URL}/book/mary-boyd"
+
+
+def _booking_page_source():
+    import pathlib
+    return (pathlib.Path(appmod.STATIC) / "practitioner-booking.html").read_text()
+
+
+def _js_code(html, pattern):
+    """The matched source with // comments stripped.
+
+    Load-bearing, and the same helper test_a_form_that_failed_to_load_cannot_
+    be_saved carries for the same reason: every guard on this page is
+    introduced by a comment explaining it, so an assertion against the raw
+    match is answered by the PROSE and stays green after the code it describes
+    is deleted.
+    """
+    import re
+    m = re.search(pattern, html, re.S)
+    assert m, f"no match for {pattern}"
+    return "\n".join(ln for ln in m.group(0).splitlines()
+                     if not ln.strip().startswith("//"))
+
+
+def test_the_booking_page_shows_her_own_web_address():
+    """She has never been told where her public page is. Both URLs, from the
+    same GET that loads the rest of the form."""
+    html = _booking_page_source()
+    code = _js_code(html, r"function showWebAddress\(v\) \{.*?\n  \}")
+    assert "page_url" in code and "booking_url" in code, \
+        "the section must read both URLs the server built"
+    assert "canonical_slug" in code, \
+        "the editable name must come from the canonical slug, not the affiliate one"
+    assert 'id="page-url"' in html and 'id="booking-url"' in html
+
+
+def test_her_urls_are_selectable_so_she_can_copy_them():
+    """A URL she cannot select is a URL she has to retype from the screen."""
+    import re
+    html = _booking_page_source()
+    for fid in ("page-url", "booking-url"):
+        m = re.search(r'<input[^>]*id="%s"[^>]*>' % fid, html)
+        assert m, f"{fid} must be a field she can select from, not static text"
+        assert "readonly" in m.group(0), f"{fid} must not be editable"
+        assert "select()" in m.group(0), \
+            f"clicking {fid} must select the whole address"
+    assert "copyUrl" in html, "no copy affordance at all"
+
+
+def test_the_web_address_form_respects_the_same_load_lockout():
+    """Posting an empty slug RESETS her public URL to her affiliate slug, so a
+    form that failed to load is just as destructive here as on the booking
+    config beside it."""
+    html = _booking_page_source()
+    save = _js_code(html, r"window\.savePageSlug = function \(\) \{.*?var chosen")
+    assert "if (!loaded)" in save, \
+        "the web address form must refuse to save while the page has not loaded"
+
+
+def test_the_web_address_copy_follows_the_house_rules():
+    """No em dashes, no bare double hyphen, and 'client' rather than 'patient'
+    in anything a practitioner reads."""
+    import re
+    html = _booking_page_source()
+    start = html.index('id="slug-panel"')
+    end = html.index("<!-- /web-address -->", start)
+    section = html[start:end]
+    assert "—" not in section, "em dash in practitioner-facing copy"
+    assert "patient" not in section.lower()
+    # Tags stripped first: attribute values and the section's own end marker
+    # are not copy, and neither is the "--" inside an HTML comment.
+    body = re.sub(r"<[^>]+>", " ", section)
+    assert "--" not in body, "a bare double hyphen in practitioner-facing copy"

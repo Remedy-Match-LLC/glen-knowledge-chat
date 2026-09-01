@@ -47,6 +47,10 @@
       border-radius:8px; padding:8px 12px; cursor:pointer; }
     label{ display:block; margin-top:14px; font-weight:600; font-size:13px; }
     label input[type=checkbox]{ width:auto; margin-right:8px; }
+    .url-row{ display:flex; gap:8px; align-items:center; margin-top:2px; }
+    .url-row input{ flex:1 1 auto; }
+    .url-row button{ background:var(--surface-2); color:var(--cream); border:1px solid var(--border);
+      border-radius:8px; padding:9px 14px; cursor:pointer; white-space:nowrap; }
     .auth-notice{ text-align:center; padding:60px 20px; }
     .auth-notice a{ color:var(--gold); }
   </style>
@@ -86,6 +90,42 @@
 
     <p class="muted">When this is switched on, a Book button appears on your public
     page and visitors can choose a time from the hours you set here.</p>
+
+    <div class="panel" id="slug-panel" style="display:none">
+      <h2 style="margin-top:0">Your web address</h2>
+      <span class="hint">This is where your public page and your booking page
+      live. Copy either one into an email, a text message, or your social
+      profile so a client can find you.</span>
+
+      <label class="field-label" for="page-url">Your public page</label>
+      <div class="url-row">
+        <input id="page-url" type="text" readonly onclick="this.select()">
+        <button type="button" onclick="copyUrl('page-url')">Copy</button>
+      </div>
+
+      <label class="field-label" for="booking-url">Your booking page</label>
+      <div class="url-row">
+        <input id="booking-url" type="text" readonly onclick="this.select()">
+        <button type="button" onclick="copyUrl('booking-url')">Copy</button>
+      </div>
+      <div id="url-copied" class="msg"></div>
+
+      <label class="field-label" for="page-slug">The name in both addresses</label>
+      <input id="page-slug" type="text" placeholder="dr-mary">
+      <span class="hint">Lowercase letters, numbers, and single hyphens, 3 to 40
+      characters. Changing it changes both addresses above. Your original
+      address keeps working for good, so anything already printed, texted, or
+      linked still reaches you, and you keep credit for every client who
+      arrives through it.</span>
+      <div id="slug-msg" class="msg"></div>
+      <button type="button" class="primary" onclick="savePageSlug()">Save web address</button>
+    </div>
+
+    <div class="notice" id="slug-none" style="display:none">
+      <b>Your account does not have a public page yet.</b> Once one is set up,
+      your web address and your booking address will appear here.
+    </div>
+    <!-- /web-address -->
 
     <div class="notice" id="cal-notice">
       <b>Your Google Calendar is not connected yet.</b> Times are offered from the
@@ -276,6 +316,98 @@
   // been persisted yet.
   document.getElementById("notify-phone-number").addEventListener("input", updateNotifyPhoneInfo);
 
+  // ── Her own web address ───────────────────────────────────────────────
+  // Both URLs arrive on the SAME booking-config GET the rest of this form
+  // loads from, built server-side from her canonical page slug. Never
+  // assembled here from a slug plus a guessed host: the public page is
+  // host-gated to the portal domain, so a client-side guess would show her an
+  // address that 404s.
+  function showWebAddress(v) {
+    var panel = document.getElementById("slug-panel");
+    var none = document.getElementById("slug-none");
+    var canonical = v.canonical_slug || "";
+    if (!canonical) {
+      // No affiliate row, or the lookup failed. Both come back empty on
+      // purpose, and an empty address is not something to render as a URL.
+      panel.style.display = "none";
+      none.style.display = "block";
+      return;
+    }
+    panel.style.display = "block";
+    none.style.display = "none";
+    document.getElementById("page-url").value = v.page_url || "";
+    document.getElementById("booking-url").value = v.booking_url || "";
+    // The editable field holds the CANONICAL slug, the name actually in both
+    // addresses above. Her affiliate slug is a different fact and is never
+    // shown here as the thing she is editing.
+    document.getElementById("page-slug").value = canonical;
+  }
+
+  window.copyUrl = function (id) {
+    var el = document.getElementById(id);
+    var note = document.getElementById("url-copied");
+    // Selected first, and left selected on failure, so the fallback advice
+    // below is actionable: the whole address is already highlighted.
+    el.focus();
+    el.select();
+    function done(ok) {
+      note.className = ok ? "msg ok" : "msg err";
+      note.textContent = ok ? "Copied."
+        : "That address is selected. Press Ctrl C, or Command C on a Mac, to copy it.";
+    }
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(el.value).then(
+          function () { done(true); }, function () { done(false); });
+        return;
+      }
+      done(!!document.execCommand("copy"));
+    } catch (e) { done(false); }
+  };
+
+  window.savePageSlug = function () {
+    var msg = document.getElementById("slug-msg");
+    // The same lockout window.save carries, and it matters just as much here:
+    // an EMPTY page slug is not a no-op, it resets her public URL back to her
+    // affiliate slug. A form that failed to load has an empty field, so a save
+    // from it would silently retire a vanity address she is already handing
+    // out, under a "Saved." message.
+    if (!loaded) {
+      msg.className = "msg err";
+      msg.textContent = "Your settings never finished loading, so there is " +
+        "nothing safe to save. Please refresh the page and try again.";
+      return;
+    }
+    var chosen = document.getElementById("page-slug").value.trim().toLowerCase();
+    msg.className = "msg";
+    msg.textContent = "Saving...";
+    fetch("/api/practitioner/page-slug",
+          {method: "POST", credentials: "same-origin",
+           headers: {"Content-Type": "application/json"},
+           body: JSON.stringify({page_slug: chosen})})
+      .then(function (r) { return r.json().then(function (j) { return {ok: r.ok, j: j}; }); })
+      .then(function (res) {
+        if (!res.ok) {
+          // The server's message is written for her to read (it names the
+          // word that was refused and why), so show it as it came.
+          msg.textContent = res.j.error || "Could not save that.";
+          msg.className = "msg err";
+          return;
+        }
+        // Echo the server's stored value and its rebuilt URLs rather than what
+        // was typed: clearing the field stores her affiliate slug, so the two
+        // differ exactly when it matters most.
+        showWebAddress(res.j);
+        document.getElementById("url-copied").textContent = "";
+        msg.textContent = "Saved. Both addresses above are up to date.";
+        msg.className = "msg ok";
+      })
+      .catch(function () {
+        msg.textContent = "Could not reach the server.";
+        msg.className = "msg err";
+      });
+  };
+
   window.save = function () {
     var msg = document.getElementById("bk-msg");
     // A form that never loaded must not be saveable. Every field starts
@@ -403,6 +535,12 @@
           showLoadError();
           return;
         }
+        // Wrapped, and deliberately not allowed to reach the .catch below. A
+        // fault while DISPLAYING her web address must not run showLoadError
+        // and lock her out of the booking form she came here to fill in. The
+        // section hides itself instead; nothing above it depends on it.
+        try { showWebAddress(v); }
+        catch (e) { document.getElementById("slug-panel").style.display = "none"; }
         if (v.media && v.media.length) MEDIA = v.media;
         // practitioner_phone is her BOOKING number, saved on the booking
         // config itself -- never the practitioners-directory number, which
