@@ -97,7 +97,7 @@ def _practitioner_identity(cx, who, cache):
         return cache[who]
     identity = None
     if who in _LEGACY_PRACTITIONERS:
-        identity = (_LEGACY_PRACTITIONERS[who], _LEGACY_TZ)
+        identity = (_LEGACY_PRACTITIONERS[who], _LEGACY_TZ, {})
     elif who:
         name = _practitioner_name(who)
         # get_config is the one reader of her stored zone, and it already
@@ -106,9 +106,21 @@ def _practitioner_identity(cx, who, cache):
         # missing table would leave the transaction aborted without raising
         # here; the appointment rows are already fetched by then, and the
         # sections below each recover before their own query.
+        own_labels = {}
         try:
             from dashboard import practitioner_booking as _pb
-            tz_name = ((_pb.get_config(cx, who) or {}).get("timezone") or "").strip()
+            _cfg = _pb.get_config(cx, who) or {}
+            tz_name = (_cfg.get("timezone") or "").strip()
+            # Her own session labels, taken from the config THIS call already
+            # read. The module-level `labels` map only knows Rae's and Glen's
+            # four types, so without this a client sees her Biofield Analysis
+            # rendered as the generic "Private Appointment" -- her own words
+            # are on the row and cost nothing extra to carry.
+            own_labels = {
+                str(st.get("slug") or ""): str(st.get("label") or "").strip()
+                for st in (_cfg.get("session_types") or [])
+                if st.get("slug") and str(st.get("label") or "").strip()
+            }
         except Exception:
             _recover_optional_query(cx)
             tz_name = ""
@@ -117,7 +129,7 @@ def _practitioner_identity(cx, who, cache):
         except Exception:
             tz_name = ""
         if name and tz_name:
-            identity = (name, tz_name)
+            identity = (name, tz_name, own_labels)
     cache[who] = identity
     return identity
 
@@ -263,10 +275,11 @@ def build_block(cx, *, email="", group_coaching_entitled=False,
                     # practitioner or the wrong hour is worse than a client
                     # seeing nothing, which is why this row is dropped.
                     continue
-                who, tz_name = identity
+                who, tz_name, own_labels = identity
                 kind = item.get("session_type") or "appointment"
                 events.append({"id": f"appointment-{item['id']}", "type": "appointment",
-                    "title": labels.get(kind, "Private Appointment"),
+                    "title": (own_labels.get(kind)
+                              or labels.get(kind, "Private Appointment")),
                     "description": f"Private {item.get('medium') or 'session'} appointment with {who}.",
                     "start": _zoned_iso(item.get("start_ts"), tz_name),
                     "end": _zoned_iso(item.get("end_ts"), tz_name),

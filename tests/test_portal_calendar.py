@@ -363,3 +363,25 @@ def test_only_concrete_future_occurrence_is_returned():
     starts = [e["start"] for e in block["events"]
               if e["title"] == "Free Wellness Whispering MasterClass"]
     assert starts.count("2026-08-19T15:00:00-10:00") == 1
+
+
+def test_a_public_booking_is_titled_with_her_own_session_label(monkeypatch):
+    """The module's `labels` map knows only Rae's and Glen's four session types,
+    so an unmapped slug falls back to the generic "Private Appointment".
+
+    Her own label is already on the config row this view reads to get her zone,
+    so a client who booked a "Biofield Analysis" should see those words rather
+    than a placeholder. Costs no extra query.
+    """
+    db = _pg_shaped(_cx())
+    _booking_config(db, "pid-mary", "America/Anchorage",
+                    slug="biofield", label="Biofield Analysis")
+    _fake_supabase(monkeypatch, {"pid-mary": "Dr. Mary Chen"})
+    db.execute("INSERT INTO evox_bookings VALUES "
+               "(11,'client@x.com','biofield','pid-mary','zoom',"
+               "'2099-02-03T05:00:00','2099-02-03T06:00:00',0,'booked')")
+    block = portal_calendar.build_block(db, email="client@x.com",
+                                        now_iso="2099-01-01T00:00:00")
+    appointment = next(e for e in block["events"] if e["id"] == "appointment-11")
+    assert appointment["title"] == "Biofield Analysis"
+    assert "Private Appointment" not in str(block)
