@@ -211,6 +211,7 @@ FEEDBACK_VIEW_URL   = os.environ.get("FEEDBACK_VIEW_URL",   "https://Truly.VIP/F
 from dashboard.openai_failover import build_openai_client as _build_openai_client
 from dashboard.people import set_person_tags, distinct_tags, dedupe_tags_ci
 from dashboard import affiliate_dashboard
+from dashboard import practitioner_slugs as _ps_signup
 from dashboard import ash_ally
 from dashboard import client_360
 from dashboard import recommendation_events
@@ -5085,9 +5086,14 @@ def journey_activate_gifting():
             nm = ((state.get("first_name") or "") + " " + (state.get("last_name") or "")).strip() or email
             slug = f"gift-{uuid.uuid4().hex[:8]}"
             token = uuid.uuid4().hex
+            # page_slug defaults to the row's own slug and is never NULL: it is
+            # the effective public URL, and the unique index on it is what
+            # stops two rows from claiming one URL. A pending gifting row
+            # occupies the namespace exactly like any other.
+            _ps_signup.init_page_slug(cx)
             cx.execute(
-                "INSERT INTO affiliate_signups (created_at,name,email,slug,token,status,gifting_activated_at) "
-                "VALUES (?,?,?,?,?,?,?)", (now, nm, email, slug, token, "pending", now))
+                "INSERT INTO affiliate_signups (created_at,name,email,slug,token,status,gifting_activated_at,page_slug) "
+                "VALUES (?,?,?,?,?,?,?,?)", (now, nm, email, slug, token, "pending", now, slug))
         cx.commit()
         # mint gift twins for every remedy the visitor has already collected (self-coupons)
         from dashboard import coupons as _coupons
@@ -16339,11 +16345,17 @@ def affiliate_apply_form():
                 title=f"Affiliate: {org or name}"
             ) or ""
 
+            # page_slug is her public URL, defaulting to her own affiliate slug
+            # and never NULL -- the unique index on it is what makes "one URL,
+            # one practitioner" a database fact rather than a validator's
+            # opinion, and a NULL row sits outside that index. The DDL runs
+            # first so the column is present for this INSERT.
+            _ps_signup.init_page_slug(cx)
             cx.execute("""
                 INSERT INTO affiliate_signups
-                  (created_at, name, email, organization, website, promo_method, slug, token, status, referred_by, short_url)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?)
-            """, (ts, name, email, org, site, promo, slug, token, "approved", referred_by, short_url))
+                  (created_at, name, email, organization, website, promo_method, slug, token, status, referred_by, short_url, page_slug)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+            """, (ts, name, email, org, site, promo, slug, token, "approved", referred_by, short_url, slug))
             cx.execute("""
                 INSERT OR IGNORE INTO referral_sources
                   (created_at, name, slug, description, utm_source, utm_medium, utm_campaign)
@@ -16429,11 +16441,16 @@ def affiliate_apply():
                 slug = f"{base}-{token[:6]}"
         try:
             with _db_lock, db.connect(LOG_DB) as cx:
+                # page_slug: her public URL, defaulting to her own affiliate
+                # slug and never NULL, for the reason the form handler above
+                # gives -- a NULL row sits outside the unique index that is
+                # the only real guard on "one URL, one practitioner".
+                _ps_signup.init_page_slug(cx)
                 cx.execute("""
                     INSERT INTO affiliate_signups
-                      (created_at, name, email, organization, website, promo_method, slug, token, status)
-                    VALUES (?,?,?,?,?,?,?,?,?)
-                """, (ts, name, email, org, site, promo, slug, token, "approved"))
+                      (created_at, name, email, organization, website, promo_method, slug, token, status, page_slug)
+                    VALUES (?,?,?,?,?,?,?,?,?,?)
+                """, (ts, name, email, org, site, promo, slug, token, "approved", slug))
                 cx.execute("""
                     INSERT OR IGNORE INTO referral_sources
                       (created_at, name, slug, description, utm_source, utm_medium, utm_campaign)

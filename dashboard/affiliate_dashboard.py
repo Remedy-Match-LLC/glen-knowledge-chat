@@ -210,12 +210,19 @@ def ensure_affiliate(cx, email, name="", referred_by=None):
                     "status": row[4], "short_url": row[5] or ""}
         slug, token = _mint_affiliate_slug(cx, name, em)
         ts = datetime.now(timezone.utc).isoformat()
+        # page_slug is her public URL and is never NULL: the unique index on it
+        # is what makes "one URL, one practitioner" a database fact, and a NULL
+        # row sits outside that index. Defaulting it to her own slug also means
+        # her URL is unchanged from before the column existed. Run the DDL
+        # FIRST so the column is present for this INSERT, and so its commit
+        # lands before we open the row's transaction rather than inside it.
+        _slugs.init_page_slug(cx)
         cx.execute(
             "INSERT INTO affiliate_signups "
             "(created_at, name, email, organization, website, promo_method, slug, token, "
-            " status, referred_by, short_url) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+            " status, referred_by, short_url, page_slug) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
             (ts, (name or "").strip(), em, "", "", "auto", slug, token,
-             "approved", (referred_by or ""), ""))
+             "approved", (referred_by or ""), "", slug))
         cx.execute(
             "INSERT OR IGNORE INTO referral_sources "
             "(created_at, name, slug, description, utm_source, utm_medium, utm_campaign) "
