@@ -4,7 +4,7 @@
 
 **Goal:** Separate a practitioner's public identity (the URL people see) from her affiliate attribution code, so Glen's page and booking live at `/dr-glen` and `/book/dr-glen` while `remedy-match` keeps working as his affiliate slug forever.
 
-**Architecture:** Add a nullable `page_slug` column to `affiliate_signups`. NULL means "use `slug`", so every existing practitioner is unaffected. One resolver maps a request slug to (kind, canonical_slug, affiliate_slug) and is used by BOTH the public page route and the booking routes, which today resolve slugs through two unrelated code paths. One helper computes a practitioner's canonical URL and is used by every site that prints one.
+**Architecture:** Add an always-populated `page_slug` column to `affiliate_signups`, defaulting to the row's own `slug`, so every row's `page_slug` IS its effective public URL and a single-column UNIQUE index enforces global uniqueness of the thing that must never collide. (Revised after Task 1's review: a nullable column could not enforce this, because a row whose `page_slug` was NULL did not occupy its own name and another practitioner could claim it.) Resolution keeps a COALESCE fallback to `slug` as defence in depth, not as the mechanism. One resolver maps a request slug to (kind, canonical_slug, affiliate_slug) and is used by BOTH the public page route and the booking routes, which today resolve slugs through two unrelated code paths. One helper computes a practitioner's canonical URL and is used by every site that prints one.
 
 **Tech Stack:** Flask, `dashboard/practitioner_slugs.py`, `dashboard/practitioner_booking.py`, `dashboard/public_surface.py`, `app.py`, `static/practitioner-booking.html`. Dual store: SQLite `LOG_DB` and Postgres, reached through `dashboard/db.py` (which translates `?` placeholders). **Production runs `DB_BACKEND=postgres`.**
 
@@ -33,7 +33,7 @@
 **Interfaces:**
 - Consumes: existing `normalize`, `check_shape`, `check_not_reserved`, `reserved_for`, `SlugError`, `canonical_exists`.
 - Produces:
-  - `init_page_slug(cx)` — additive `ALTER TABLE affiliate_signups ADD COLUMN page_slug TEXT`, wrapped in the same `try/except Exception: pass` idiom `practitioner_booking.init_tables` uses, plus a `CREATE UNIQUE INDEX IF NOT EXISTS ux_affiliate_page_slug ON affiliate_signups(page_slug)`.
+  - `init_page_slug(cx)` — additive ALTER, then a backfill (`SET page_slug = slug WHERE page_slug IS NULL`), then `CREATE UNIQUE INDEX IF NOT EXISTS ux_affiliate_page_slug`. Each statement isolated. **DONE — see the Task 1 fix round; the backfill order is load-bearing.**
   - `canonical_slug_for(cx, affiliate_slug) -> str` — the row's `page_slug` or its `slug`.
   - `page_slug_is_taken(cx, candidate, *, excluding_affiliate_slug=None) -> bool` — True if any row's `slug` or `page_slug` equals `candidate`, ignoring the claimant's own row.
   - `validate_page_slug(cx, candidate, *, owner_affiliate_slug, reserved) -> str` — normalizes, `check_shape`, `check_not_reserved`, then `page_slug_is_taken`; raises `SlugError` with a practitioner-readable message.
@@ -187,7 +187,9 @@ A new uniqueness rule owes an audit of the identifiers that already exist: if tw
 
 - [ ] **Step 1: Write the audit script.** Read-only. Report any existing `affiliate_signups.slug` that collides with another row's slug under `normalize`, and any slug that is a reserved word under `reserved_for(app.url_map)`. Print a count and the offenders; exit non-zero if any.
 - [ ] **Step 2: Add a test** that the unique index creation is safe when two rows have NULL `page_slug` — NULLs must not collide with each other (verify on BOTH backends' semantics; Postgres and SQLite both allow multiple NULLs in a UNIQUE index, and the test pins that).
-- [ ] **Step 3: Run the audit against a fixture DB.** Report the result.
+- [ ] **Step 3: Make a failed backfill loud.** `init_page_slug`'s per-statement `try/except` swallows a failed backfill, and the unique index then creates successfully over a table that still holds NULLs -- a green-looking deploy with the invariant unenforced and nothing saying so. After the backfill, count remaining NULLs and `print(...)` loudly if any survive, matching how this codebase reports other boot-time problems. Add a test that the warning fires.
+- [ ] **Step 4: Teach the audit script to report residual NULLs**, so `SELECT COUNT(*) FROM affiliate_signups WHERE page_slug IS NULL` against production is one command. That count is the only proof the migration reached real rows.
+- [ ] **Step 5: Run the audit against a fixture DB.** Report the result.
 - [ ] **Step 4: Commit.**
 
 ---
