@@ -45,6 +45,9 @@
     .type-row input, .type-row select{ width:auto; flex:1 1 120px; }
     .type-row button{ background:var(--surface-2); color:var(--cream); border:1px solid var(--border);
       border-radius:8px; padding:8px 12px; cursor:pointer; }
+    .t-location-wrap{ display:flex; align-items:center; gap:8px; flex:1 1 100%; }
+    .t-location-wrap .t-location-label{ flex:0 0 auto; white-space:nowrap; }
+    .t-location-wrap .t-location{ flex:1 1 200px; }
     label{ display:block; margin-top:14px; font-weight:600; font-size:13px; }
     label input[type=checkbox]{ width:auto; margin-right:8px; }
     .url-row{ display:flex; gap:8px; align-items:center; margin-top:2px; }
@@ -266,8 +269,45 @@
     });
   }
 
+  // The "where" for one session type: a meeting link for zoom, a street
+  // address for in-person. Phone has nowhere to point -- the client is given
+  // her booking NUMBER instead, which is the separate notify-phone field
+  // above, not something typed per session type -- so phone gets an
+  // informational line instead of an editable box, and only when she has
+  // actually chosen to hand that number out (notify-phone ticked). Ticked or
+  // not, collect() below always sends "" for a phone row's location: the box
+  // is hidden, not merely styled invisible, precisely so nothing typed while
+  // the row was zoom or in-person and left behind by a later medium switch
+  // can be read back out of a control she can no longer see.
+  function updateLocationField(row) {
+    var medium = row.querySelector(".t-medium").value;
+    var wrap = row.querySelector(".t-location-wrap");
+    var label = row.querySelector(".t-location-label");
+    var input = row.querySelector(".t-location");
+    if (medium === "zoom") {
+      wrap.style.display = "flex";
+      input.style.display = "block";
+      label.textContent = "Meeting link";
+      input.placeholder = "Paste your Zoom link here";
+    } else if (medium === "in-person") {
+      wrap.style.display = "flex";
+      input.style.display = "block";
+      label.textContent = "Address";
+      input.placeholder = "123 Main St, City, State";
+    } else {
+      input.style.display = "none";
+      if (document.getElementById("notify-phone").checked) {
+        wrap.style.display = "flex";
+        label.textContent = "The client will be given your phone number.";
+      } else {
+        wrap.style.display = "none";
+        label.textContent = "";
+      }
+    }
+  }
+
   function typeRow(t) {
-    t = t || {slug: "", label: "", duration_min: 30, medium: "phone"};
+    t = t || {slug: "", label: "", duration_min: 30, medium: "phone", location: ""};
     var opts = MEDIA.map(function (m) {
       return '<option value="' + m + '"' + (m === t.medium ? " selected" : "") +
              ">" + m + "</option>";
@@ -279,7 +319,13 @@
       '<input class="t-label" placeholder="Free 20 minute intro call" value="' + esc(t.label) + '">' +
       '<input class="t-dur" type="number" min="5" max="600" value="' + (t.duration_min || 30) + '">' +
       '<select class="t-medium">' + opts + "</select>" +
+      '<span class="t-location-wrap">' +
+        '<span class="muted t-location-label"></span>' +
+        '<input class="t-location" value="' + esc(t.location) + '">' +
+      '</span>' +
       '<button type="button" onclick="this.parentNode.remove()">Remove</button>';
+    d.querySelector(".t-medium").addEventListener("change", function () { updateLocationField(d); });
+    updateLocationField(d);
     return d;
   }
 
@@ -287,10 +333,15 @@
 
   function collect() {
     var types = [].slice.call(document.querySelectorAll(".type-row")).map(function (r) {
+      var medium = r.querySelector(".t-medium").value;
       return {slug: r.querySelector(".t-slug").value.trim().toLowerCase(),
               label: r.querySelector(".t-label").value.trim(),
               duration_min: parseInt(r.querySelector(".t-dur").value, 10),
-              medium: r.querySelector(".t-medium").value};
+              medium: medium,
+              // Phone's location box is hidden, not sent: see
+              // updateLocationField above for why it is forced to "" here
+              // rather than trusted from a control the client can't see.
+              location: medium === "phone" ? "" : r.querySelector(".t-location").value.trim()};
     });
     return {timezone: document.getElementById("bk-timezone").value,
             office_hours: document.getElementById("bk-hours").value.trim(),
@@ -315,6 +366,14 @@
   // the warning is about whether a number exists, not about whether it has
   // been persisted yet.
   document.getElementById("notify-phone-number").addEventListener("input", updateNotifyPhoneInfo);
+  // A phone-medium session type's informational line depends on whether she
+  // has ticked the phone notify method, checked live at render time in
+  // updateLocationField -- so ticking or unticking it after her session
+  // types are already on screen has to re-run that check on every row, not
+  // just the ones added afterward.
+  document.getElementById("notify-phone").addEventListener("change", function () {
+    [].slice.call(document.querySelectorAll(".type-row")).forEach(updateLocationField);
+  });
 
   // ── Her own web address ───────────────────────────────────────────────
   // Both URLs arrive on the SAME booking-config GET the rest of this form

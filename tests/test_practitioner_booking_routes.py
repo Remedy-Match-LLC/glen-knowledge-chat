@@ -152,6 +152,38 @@ def test_no_config_yet_reads_back_as_null_not_an_error(practitioner):
     assert r.get_json()["config"] is None
 
 
+def test_a_session_types_location_saves_and_reads_back_through_the_route(practitioner):
+    """A meeting link, saved through the real POST/GET route a practitioner's
+    settings page actually uses, must survive unchanged."""
+    link = "https://zoom.us/j/1234567890"
+    cfg = dict(CFG, session_types=[
+        {"slug": "intro", "label": "Free 20 minute intro call",
+         "duration_min": 20, "medium": "zoom", "location": link}])
+    r = practitioner.post("/api/practitioner/booking-config", json=cfg)
+    assert r.status_code == 200, r.get_data(as_text=True)
+    got = practitioner.get("/api/practitioner/booking-config").get_json()
+    assert got["config"]["session_types"][0]["location"] == link
+
+
+def test_a_config_predating_location_reads_back_through_the_route_as_empty_string(
+        practitioner, logdb):
+    """A row written before this field existed has no 'location' key at all
+    in its stored JSON. The GET route must still hand back '', never a
+    KeyError-driven 500 and never None."""
+    with _open(logdb) as c:
+        c.execute(
+            "INSERT INTO practitioner_booking_config (practitioner_id, "
+            "timezone, office_hours, session_types, notice_hours, "
+            "buffer_min, enabled, updated_at) VALUES (?,?,?,?,?,?,?,?)",
+            (PID, "America/Anchorage", "1-5:09:00-17:00",
+             '[{"slug": "intro", "label": "Intro", "duration_min": 20, '
+             '"medium": "phone"}]', 24, 0, 1, "2026-01-01T00:00:00+00:00"))
+        c.commit()
+    r = practitioner.get("/api/practitioner/booking-config")
+    assert r.status_code == 200
+    assert r.get_json()["config"]["session_types"][0]["location"] == ""
+
+
 def test_the_form_page_serves_and_carries_the_workspace_nav(practitioner):
     body = practitioner.get("/practitioner/booking").get_data(as_text=True)
     assert 'class="workspace-nav"' in body
@@ -1991,6 +2023,60 @@ def test_a_form_that_failed_to_load_cannot_be_saved():
     save = _code(r"window\.save = function \(\) \{.*?var payload")
     assert "if (!loaded)" in save, \
         "save() must refuse while the form has not been populated from a real GET"
+
+
+def _stripped(pattern, html):
+    """The matched source with // comments stripped.
+
+    Same convention as test_a_form_that_failed_to_load_cannot_be_saved above:
+    a raw-match assertion is answered by the PROSE comment introducing a
+    guard, not the guard itself, and stays green after the guard is deleted.
+    """
+    import re
+    m = re.search(pattern, html, re.S)
+    assert m, f"no match for {pattern}"
+    return "\n".join(ln for ln in m.group(0).splitlines()
+                      if not ln.strip().startswith("//"))
+
+
+def test_the_location_label_is_chosen_by_medium():
+    """'Meeting link' for zoom, 'Address' for in-person, and for phone --
+    which has nowhere to point, since the client gets her NUMBER, not a
+    typed location -- a note that only appears once she has actually chosen
+    to hand that number out via the phone notify method."""
+    import pathlib
+    html = (pathlib.Path(appmod.STATIC) / "practitioner-booking.html").read_text()
+    fn = _stripped(r"function updateLocationField\(row\) \{.*?\n  \}", html)
+    assert 'label.textContent = "Meeting link"' in fn
+    assert 'label.textContent = "Address"' in fn
+    assert 'notify-phone").checked' in fn, \
+        "the phone note must be gated on whether she chose the phone notify method"
+    assert "phone number" in fn.lower()
+
+
+def test_a_phone_session_types_location_is_never_submitted():
+    """The location box is hidden for a phone-medium row (there is nothing to
+    type -- her number is the separate notify-phone field). collect() must
+    not trust whatever is still sitting in that hidden control -- e.g. left
+    over from before she switched the row's medium to phone -- it must force
+    the location to "" for that row outright."""
+    import pathlib
+    html = (pathlib.Path(appmod.STATIC) / "practitioner-booking.html").read_text()
+    fn = _stripped(r"function collect\(\) \{.*?\n  \}", html)
+    assert 'medium === "phone" ? "" :' in fn, \
+        "a phone row's location must be forced to empty, not read from a hidden input"
+
+
+def test_the_medium_dropdown_change_refreshes_the_location_field():
+    """Switching a row's medium after it is already on screen (not just at
+    initial render) must update its location label/visibility -- otherwise a
+    row created as zoom and switched to in-person keeps saying 'Meeting
+    link'."""
+    import pathlib
+    html = (pathlib.Path(appmod.STATIC) / "practitioner-booking.html").read_text()
+    row = _stripped(r"function typeRow\(t\) \{.*?\n    return d;\n  \}", html)
+    assert '.t-medium").addEventListener("change"' in row
+    assert "updateLocationField" in row
 
 
 def test_the_consent_copy_names_both_surfaces_the_number_reaches():
