@@ -53225,6 +53225,74 @@ def api_console_gk_email_history_rebuild():
     return ok(result)
 
 
+MAX_MANUAL_ENROLL = 50
+
+
+@app.route("/api/console/sequence-enroll", methods=["POST"])
+@require_console_key
+def api_console_sequence_enroll():
+    """Put an explicit list of addresses on a sequence.
+
+    Deliberately dumb: it enrolls exactly the addresses given. Nothing here
+    selects an audience, because an endpoint that picks its own recipients is one
+    bad query away from mailing the whole list. Capped at MAX_MANUAL_ENROLL so a
+    slip cannot become a blast.
+
+    Enrolling is idempotent and never restarts someone already on the sequence.
+    """
+    from dashboard import email_suppression as _es, sequences as _seq
+    payload = request.get_json(force=True, silent=True) or {}
+    slug = (payload.get("slug") or "").strip()
+    emails = [str(e).strip().lower() for e in (payload.get("emails") or [])
+              if str(e).strip()]
+    if not slug or not emails:
+        return jsonify({"ok": False, "error": "slug and a non-empty emails list "
+                                              "are required"}), 400
+    if len(emails) > MAX_MANUAL_ENROLL:
+        return jsonify({"ok": False,
+                        "error": f"refusing {len(emails)} addresses; this endpoint "
+                                 f"is capped at {MAX_MANUAL_ENROLL}"}), 400
+    with db.connect(LOG_DB) as cx:
+        _seq.init_tables(cx)
+        _es.init_table(cx)
+        if _seq.get(cx, slug) is None:
+            return jsonify({"ok": False, "error": f"no sequence {slug!r}"}), 404
+        enrolled = suppressed = 0
+        for e in emails:
+            # Do not enrol someone we already may not email; it would only be
+            # skipped at send time, and the enrollment row misrepresents consent.
+            if _es.is_suppressed(cx, e):
+                suppressed += 1
+                continue
+            _seq.enroll(cx, slug, e)
+            enrolled += 1
+    return jsonify({"ok": True, "slug": slug, "enrolled": enrolled,
+                    "suppressed": suppressed})
+
+
+@app.route("/api/console/sequence-activate", methods=["POST"])
+@require_console_key
+def api_console_sequence_activate():
+    """Turn a sequence on or off. The ONLY path to live.
+
+    Separate from the copy push on purpose: no vault edit can start a drip
+    sending, and no re-push can stop a live one.
+    """
+    from dashboard import sequences as _seq
+    payload = request.get_json(force=True, silent=True) or {}
+    slug = (payload.get("slug") or "").strip()
+    active = bool(payload.get("active"))
+    if not slug:
+        return jsonify({"ok": False, "error": "slug is required"}), 400
+    with db.connect(LOG_DB) as cx:
+        _seq.init_tables(cx)
+        if _seq.get(cx, slug) is None:
+            return jsonify({"ok": False, "error": f"no sequence {slug!r}"}), 404
+        _seq.set_active(cx, slug, active)
+    app.logger.warning("sequence %s set active=%s", slug, active)
+    return jsonify({"ok": True, "slug": slug, "active": active})
+
+
 @app.route("/api/console/sequence-push", methods=["POST"])
 @require_console_key
 def api_console_sequence_push():
