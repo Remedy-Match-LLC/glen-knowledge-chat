@@ -36639,8 +36639,10 @@ def api_console_practitioners_edit(pid):
             level = int(body.get("level", 0))
         except (TypeError, ValueError):
             return jsonify({"error": "level must be a number"}), 400
-        _pa.set_level_and_access(pid, level, bool(body.get("wholesale_access")))
-        return jsonify({"ok": True})
+        tier = _pa.set_level_and_access(pid, level, bool(body.get("wholesale_access")))
+        # `certified` is the resulting cert tier, so the console can tell the operator
+        # whether that level change completed (or undid) their certification.
+        return jsonify({"ok": True, "certified": tier == "panel_certified"})
     if action == "credentials":
         _pa.set_credentials(pid, body.get("credentials"))
         return jsonify({"ok": True})

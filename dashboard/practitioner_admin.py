@@ -93,7 +93,7 @@ _ACTIVITY_DEFAULTS = {
 _LIST_COLS = (
     "id, name, email, portal_role, credentials, modules_completed, "
     "wallet_balance_cents, wholesale_unlocked_at, application_status, "
-    "show_contact, city, state, country"
+    "show_contact, city, state, country, tier"
 )
 _TIER_FOR_ROLE = {"coach": "panel_in_cert", "licensed": "org_member"}
 
@@ -125,19 +125,20 @@ def create_or_update_practitioner(clean: dict, *, now=None) -> str:
     unlocked = ts if clean["wholesale_access"] else None
     tier = _TIER_FOR_ROLE.get(clean["portal_role"], "org_member")
     with supabase_cursor() as cur:
-        cur.execute("SELECT id FROM practitioners WHERE lower(email)=lower(%s) LIMIT 1",
+        cur.execute("SELECT id, tier FROM practitioners WHERE lower(email)=lower(%s) LIMIT 1",
                     (clean["email"],))
         row = cur.fetchone()
         if row:
             pid = row["id"]
+            cert_tier = pp.cert_tier_for_level(dict(row).get("tier"), clean["level"])
             cur.execute(
                 "UPDATE practitioners SET portal_role=%s, credentials=COALESCE(%s, credentials), "
-                "modules_completed=%s, "
+                "modules_completed=%s, tier=COALESCE(%s, tier), "
                 "wholesale_unlocked_at=CASE WHEN %s THEN COALESCE(wholesale_unlocked_at, %s) "
                 "ELSE NULL END, "
                 "show_contact=%s, city=COALESCE(%s, city), state=COALESCE(%s, state), "
                 "name=COALESCE(NULLIF(name,''), %s), updated_at=now() WHERE id=%s",
-                (clean["portal_role"], clean["credentials"], clean["level"],
+                (clean["portal_role"], clean["credentials"], clean["level"], cert_tier,
                  clean["wholesale_access"], ts, clean["list_in_finder"],
                  clean["city"], clean["state"], clean["name"], pid))
         else:
@@ -152,18 +153,29 @@ def create_or_update_practitioner(clean: dict, *, now=None) -> str:
     return str(pid)
 
 
-def set_level_and_access(pid: str, level: int, wholesale_access: bool, *, now=None) -> None:
+def set_level_and_access(pid: str, level: int, wholesale_access: bool, *, now=None) -> Optional[str]:
     """Set cert level (0-12) and toggle wholesale access independently. Granting
-    access keeps any existing unlock timestamp; revoking clears it."""
+    access keeps any existing unlock timestamp; revoking clears it.
+
+    Finishing the programme also promotes the practitioner: a certification row is
+    moved to panel_certified at 12 modules and back to panel_in_cert below it. Any
+    other tier is a scraped directory practitioner's and is left untouched (see
+    practitioner_portal.cert_tier_for_level). Returns the resulting tier so the
+    console can report the certification state back to the operator."""
     from db_supabase import supabase_cursor
     ts = now or datetime.now(timezone.utc)
     lvl = max(0, min(N_MODULES, int(level)))
     with supabase_cursor() as cur:
+        cur.execute("SELECT tier FROM practitioners WHERE id=%s LIMIT 1", (str(pid),))
+        row = cur.fetchone()
+        stored = dict(row).get("tier") if row else None
+        tier = pp.cert_tier_for_level(stored, lvl)
         cur.execute(
-            "UPDATE practitioners SET modules_completed=%s, "
+            "UPDATE practitioners SET modules_completed=%s, tier=COALESCE(%s, tier), "
             "wholesale_unlocked_at=CASE WHEN %s THEN COALESCE(wholesale_unlocked_at, %s) "
             "ELSE NULL END, updated_at=now() WHERE id=%s",
-            (lvl, bool(wholesale_access), ts, str(pid)))
+            (lvl, tier, bool(wholesale_access), ts, str(pid)))
+    return tier or stored
 
 
 def set_credentials(pid: str, credentials) -> None:
@@ -227,6 +239,7 @@ def build_rows(practitioners: List[dict], activity: dict) -> List[dict]:
             "portal_role": role,
             "credentials": p.get("credentials"),
             "level": int(p.get("modules_completed") or 0),
+            "certified": p.get("tier") == "panel_certified",
             "wallet_balance_cents": int(p.get("wallet_balance_cents") or 0),
             "wholesale_access": p.get("wholesale_unlocked_at") is not None,
             "application_status": p.get("application_status"),

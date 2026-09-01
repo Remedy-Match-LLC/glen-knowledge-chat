@@ -679,6 +679,27 @@ def register_practitioner(clean: dict, *, now=None) -> Tuple[str, bool]:
     return str(pid), unlocked_at is not None
 
 
+CERT_TIERS = ("panel_in_cert", "panel_certified")
+CERT_MODULE_COUNT = 12
+
+
+def cert_tier_for_level(current_tier, level) -> Optional[str]:
+    """The tier a certification row should carry at `level`, or None to leave the
+    stored tier exactly as it is.
+
+    Only ever moves a row BETWEEN panel_in_cert and panel_certified. practitioners.tier
+    is shared with the scraped directory, whose rows carry org_member, healing_oasis,
+    farm and the rest; those are not ours to rewrite at any level, and overwriting one
+    would change how that practitioner appears in the public finder. Returning None for
+    them (and for a row with no tier at all) lets each caller's COALESCE keep the stored
+    value or apply the default it already applied.
+    """
+    if (current_tier or "") not in CERT_TIERS:
+        return None
+    return ("panel_certified" if int(level or 0) >= CERT_MODULE_COUNT
+            else "panel_in_cert")
+
+
 def upsert_cert_student(email, *, name="", modules_completed=0) -> Tuple[str, int]:
     """Create or update a certification-student practitioner record (portal_role 'coach'
     + modules_completed, 0-12). Used by the cert-student admin action so the cert-bonus
@@ -690,15 +711,18 @@ def upsert_cert_student(email, *, name="", modules_completed=0) -> Tuple[str, in
     mc = max(0, min(int(modules_completed or 0), 12))
     name = str(name or "").strip()
     with supabase_cursor() as cur:
-        cur.execute("SELECT id FROM practitioners WHERE lower(email)=lower(%s) LIMIT 1", (email,))
+        cur.execute("SELECT id, tier FROM practitioners WHERE lower(email)=lower(%s) LIMIT 1",
+                    (email,))
         row = cur.fetchone()
         if row:
             pid = row["id"]
+            # Certification rows follow the level; every other tier is left alone.
+            tier = cert_tier_for_level(dict(row).get("tier"), mc)
             cur.execute(
                 "UPDATE practitioners SET portal_role=COALESCE(portal_role, 'coach'), "
-                "tier=COALESCE(tier, 'panel_in_cert'), modules_completed=%s, "
+                "tier=COALESCE(%s, tier, 'panel_in_cert'), modules_completed=%s, "
                 "name=COALESCE(NULLIF(name,''), %s), updated_at=now() WHERE id=%s",
-                (mc, name, pid))
+                (tier, mc, name, pid))
         else:
             cur.execute(
                 "INSERT INTO practitioners (tier, name, email, portal_role, modules_completed) "
