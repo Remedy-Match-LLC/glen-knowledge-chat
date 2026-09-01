@@ -4,6 +4,8 @@ Supabase is unavailable in tests, so the DB-touching admin functions are
 monkeypatched; we assert the routes gate on the console key, validate input,
 and orchestrate create / geocode / invite / edit correctly.
 """
+import shutil
+
 import pytest
 
 
@@ -196,3 +198,65 @@ def test_edit_console_gated(client):
     r = c.post("/api/console/practitioners/p9/edit", json={"action": "finder", "show": True})
     if appmod.CONSOLE_SECRET:
         assert r.status_code == 401
+
+
+@pytest.mark.skipif(not shutil.which("node"), reason="node not available")
+def test_a_successful_signup_leaves_the_button_in_a_done_state():
+    """The register button used to be restored to "Create my account" and
+    re-enabled BEFORE `d.ok` was checked, so a successful signup looked
+    identical to one that had not happened: same label, clickable again. The
+    second click registers again and sends a second sign-in email.
+
+    Executed under Node against a DOM stub rather than grepped, because a
+    source match would pass on an unreachable branch. The stub captures the
+    real submit handler out of the page and drives it once per outcome.
+    """
+    import json as _json
+    import pathlib
+    import subprocess
+
+    import app as appmod
+    page = (pathlib.Path(appmod.STATIC) / "practitioner-register.html").read_text()
+    script = page.split("<script>")[-1].split("</script>")[0]
+
+    harness = """
+    const els = {};
+    function mk(id){ return els[id] || (els[id] = {
+      id, value:'', disabled:false, textContent:'', className:'',
+      classList:{ add(){}, remove(){}, toggle(){} },
+      getAttribute:()=> 'coach', addEventListener(ev,fn){ this['on_'+ev]=fn; },
+      insertAdjacentHTML(){} }); }
+    global.window = {};
+    global.document = {
+      getElementById: mk,
+      querySelectorAll: () => [ mk('role-coach') ],
+    };
+    let RESPONSE = null;
+    global.fetch = () => Promise.resolve({ json: () => Promise.resolve(RESPONSE) });
+    __SCRIPT__
+    // pick the coach role so the handler's `role` guard passes
+    mk('role-coach').on_click();
+    async function run(resp){
+      RESPONSE = resp;
+      await mk('form').on_submit({ preventDefault(){} });
+      await new Promise(r => setTimeout(r, 0));
+      const b = mk('submit');
+      return { label: b.textContent, disabled: b.disabled };
+    }
+    (async () => {
+      const ok  = await run({ ok:true,  message:'Check your email.' });
+      const bad = await run({ ok:false, error:'Email already registered.' });
+      console.log(JSON.stringify({ ok, bad }));
+    })();
+    """.replace("__SCRIPT__", script)
+
+    out = subprocess.run(["node", "-e", harness], capture_output=True, text=True, timeout=60)
+    assert out.returncode == 0, out.stderr
+    res = _json.loads(out.stdout.strip().splitlines()[-1])
+
+    # Success: the label must change and the button must NOT invite a second click.
+    assert res["ok"]["label"] != "Create my account", res["ok"]
+    assert res["ok"]["disabled"] is True, "a successful signup must not stay clickable"
+    # Failure: the button must come back so they can correct and retry.
+    assert res["bad"]["label"] == "Create my account", res["bad"]
+    assert res["bad"]["disabled"] is False, "a failed signup must be retryable"

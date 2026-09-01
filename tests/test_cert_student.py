@@ -18,7 +18,7 @@ class _FakeCur:
 
     def execute(self, sql, params=()):
         s = " ".join(sql.split())
-        if s.startswith("SELECT id FROM practitioners WHERE lower(email)"):
+        if s.startswith("SELECT id") and "FROM practitioners WHERE lower(email)" in s:
             self._r = self._select_row
             self.executed.append(("SELECT", list(params)))
         elif "INSERT INTO practitioners" in s and "RETURNING id" in s:

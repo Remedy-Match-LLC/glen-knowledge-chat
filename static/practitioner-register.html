@@ -108,8 +108,15 @@ $('form').addEventListener('submit', function(e){
   fetch('/api/practitioner/register', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)})
     .then(function(r){ return r.json(); })
     .then(function(d){
-      $('submit').disabled = false; $('submit').textContent = 'Create my account';
-      if(!d.ok){ show('err', d.error || 'Something went wrong.'); return; }
+      // Restore the button ONLY on failure. Resetting it before checking d.ok
+      // left a successful signup looking exactly like one that had not
+      // happened: same label, enabled again, inviting a second click that
+      // registers again and sends a second sign-in email.
+      if(!d.ok){
+        $('submit').disabled = false; $('submit').textContent = 'Create my account';
+        show('err', d.error || 'Something went wrong.'); return;
+      }
+      $('submit').textContent = 'Account created';   // stays disabled
       show('ok', d.message || 'Check your email for a sign-in link.');
       var mp = d.module_pay;
       if(mp && mp.total != null){

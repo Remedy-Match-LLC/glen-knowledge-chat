@@ -172,7 +172,7 @@ function rowHtml(r){
   return `<tr>
     <td><div class="name">${esc(r.name)}</div>
         <div class="sub">${esc(r.credentials||'—')} · ${esc(r.email)}</div></td>
-    <td>${r.level}</td>
+    <td>${r.level}${r.certified?' <span class="pill on">certified</span>':''}</td>
     <td>${yn(r.wholesale_access)}</td>
     <td>${yn(r.finder_listed)}</td>
     <td>${r.orders} · ${money(r.spent_cents)}<div class="sub">last ${ymd(r.last_order)}</div></td>
@@ -186,7 +186,7 @@ function rowHtml(r){
     </td></tr>
     <tr class="editrow" id="edit-${r.id}" style="display:none"><td colspan="9">
       <div class="grid">
-        <div><label>Cert level (0–12)</label><input type="number" id="lv-${r.id}" value="${r.level}" min="0" max="12"></div>
+        <div><label>Cert level (now ${r.level} of 12)</label><input type="number" id="lv-${r.id}" value="${r.level}" min="0" max="12"></div>
         <div class="chk"><input type="checkbox" id="ws-${r.id}" ${r.wholesale_access?'checked':''}><label style="margin:0;color:var(--ink)">Wholesale access</label></div>
         <div><label>Classification</label><select id="cred-${r.id}">${credOptionsHtml(r.credentials)}</select></div>
         <div><label>City</label><input type="text" id="city-${r.id}" value="${esc(r.city||'')}"></div>
@@ -194,7 +194,7 @@ function rowHtml(r){
         <div><label>Country</label><input type="text" id="cty-${r.id}" list="country-list" value="${esc(displayForCode(r.country))}" autocomplete="off"></div>
       </div>
       <div style="margin-top:10px">
-        <button class="sm" onclick="saveLevelAccess('${r.id}')">Save level & access</button>
+        <button class="sm" onclick="saveLevelAccess('${r.id}',${r.level})">Save level &amp; access</button>
         <button class="alt sm" onclick="saveCredentials('${r.id}')">Save classification</button>
         <button class="alt sm" onclick="saveLocation('${r.id}')">Save location</button>
       </div>
@@ -203,12 +203,21 @@ function rowHtml(r){
 
 function toggleEdit(id){const e=document.getElementById('edit-'+id);e.style.display=e.style.display==='none'?'':'none';}
 
-async function saveLevelAccess(id){
+// The cert level is money: it sets the referral rate and, at 12, marks them
+// certified. So a level CHANGE confirms first, showing what it is changing from.
+// Saving with the level untouched (a wholesale-only edit) does not ask.
+async function saveLevelAccess(id,was){
+  const lvl=parseInt(document.getElementById('lv-'+id).value||'0',10);
+  if(was!=null && lvl!==was){
+    const note=(lvl>=12)?'\n\nLevel 12 marks them certified and sets the top referral rate.':'';
+    if(!confirm('Change their cert level from '+was+' to '+lvl+'?'+note)) return;
+  }
   const j=await api('/api/console/practitioners/'+id+'/edit',{method:'POST',
     headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({action:'level_access',level:parseInt(document.getElementById('lv-'+id).value||'0',10),
+    body:JSON.stringify({action:'level_access',level:lvl,
       wholesale_access:document.getElementById('ws-'+id).checked})});
-  if(j.error){flash(j.error,false);return;} flash('Level & access saved.',true); load();
+  if(j.error){flash(j.error,false);return;}
+  flash('Level '+lvl+' and access saved.'+(j.certified?' Now certified.':''),true); load();
 }
 async function saveLocation(id){
   const j=await api('/api/console/practitioners/'+id+'/edit',{method:'POST',
