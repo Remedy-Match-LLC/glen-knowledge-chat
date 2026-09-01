@@ -27,10 +27,18 @@ MAX_LABEL = 80
 MAX_SESSION_TYPES = 8
 MIN_DURATION, MAX_DURATION = 5, 600
 # Practitioner-authored free text that reaches a client's inbox and calendar
-# invite: a zoom link (with a meeting id and often a passcode query string)
-# or a street address. Generous enough for either, capped so it cannot become
-# a place to paste something the ICS/email renderer was never sized for.
-MAX_LOCATION = 300
+# invite: a meeting link (with a meeting id and often a passcode query string)
+# or a street address. Capped so it cannot become a place to paste something
+# the ICS/email renderer was never sized for.
+#
+# 600, not 300. A Zoom link is ~80 characters and a street address ~100, so 300
+# looks generous until you meet Microsoft Teams: its join URLs carry a
+# percent-encoded JSON `context` parameter with two GUIDs, and a realistic one
+# measures 383 characters (see test_a_real_microsoft_teams_join_url_fits, which
+# holds one). A cap that rejects a practitioner's real meeting link is worse than
+# one that permits a long link, and the failure would arrive as "that is too
+# long" on the only link she has.
+MAX_LOCATION = 600
 
 # "<day>-<day>:<HH:MM>-<HH:MM>", the format dashboard.evox.parse_office_hours
 # already understands. Kept identical so the grid needs no new parser.
