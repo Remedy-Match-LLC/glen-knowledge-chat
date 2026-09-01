@@ -24,7 +24,7 @@ was sent.
 import contextlib
 import os
 import sqlite3
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -347,3 +347,164 @@ def test_a_half_configured_smtp_shouts_instead_of_stamping_in_silence(
         _run(client)
     assert any("console-log" in str(r.getMessage()) for r in caplog.records), \
         "a half-configured SMTP must be logged, not swallowed"
+
+
+# ── the window itself: a real 24-48h band, measured in HER zone ────────────
+#
+# `start_ts` is naive wall-clock time in the PRACTITIONER's own zone. The cron
+# used to build its window from `_hst_now()` and compare those naive strings
+# directly, which is only correct when the practitioner's clock IS Hawaii's.
+# For an Anchorage practitioner (1h ahead of Hawaii on AKST, 2h on AKDT) her
+# clients' real lead time was 22-46h rather than 24-48h, and a band of
+# appointments fell through the gap between consecutive daily runs entirely --
+# never reminded at all, because nothing stamps a row the window skipped.
+
+def _frozen(monkeypatch):
+    """Freeze the cron's notion of 'now' to a real instant captured right here.
+
+    Deliberately NOT a pinned calendar date. Three tests in this project once
+    pinned a date a week out: green that day, red forever afterwards. Every
+    expectation below is an OFFSET from this instant, so the test holds in
+    January and in July, on both sides of a daylight-saving change.
+    """
+    t = datetime.now(timezone.utc).replace(microsecond=0)
+    monkeypatch.setattr(appmod, "_reminder_now_utc", lambda: t)
+    return t
+
+
+def _hst_plus(instant, hours):
+    """A naive wall-clock string `hours` after HAWAII's wall clock at `instant`.
+
+    This is exactly the string the pre-fix cron treated as its window bound: it
+    never knew whose clock the string belonged to.
+    """
+    hst = instant.astimezone(timezone(timedelta(hours=-10))).replace(tzinfo=None)
+    return (hst + timedelta(hours=hours)).replace(microsecond=0).isoformat()
+
+
+def _true_lead_hours(start_ts, tz_name, instant):
+    """Real elapsed hours from `instant` to the appointment, reading `start_ts`
+    as wall-clock time in `tz_name` -- the only lead a client experiences."""
+    aware = datetime.fromisoformat(start_ts).replace(tzinfo=ZoneInfo(tz_name))
+    return (aware - instant).total_seconds() / 3600.0
+
+
+def test_an_alaska_booking_inside_the_hawaii_window_is_not_reminded_under_24_real_hours(
+        client, logdb, _capture, monkeypatch):
+    """LIVE defect. 24.5h on Hawaii's clock is 22.5h (AKDT) or 23.5h (AKST) of
+    real lead for an Anchorage client. The old naive comparison reminded her a
+    day and a half before a next-morning appointment, sometimes on the wrong
+    calendar day. Under the real band she is left for tomorrow's run, and left
+    UNSTAMPED so tomorrow's run can still reach her."""
+    t = _frozen(monkeypatch)
+    start = _hst_plus(t, 24.5)
+    assert _true_lead_hours(start, HER_TZ, t) < 24
+    _insert(logdb, email="early-ak@example.com", practitioner=PID,
+            session_type="intro", medium="zoom", start_ts=start)
+    assert _run(client)["sent"] == 0
+    assert _capture == []
+    assert _stamp(logdb, "early-ak@example.com") is None
+
+
+def test_an_alaska_booking_past_the_hawaii_window_but_inside_the_real_band_is_reminded(
+        client, logdb, _capture, monkeypatch):
+    """The other half of the same defect, and the one that loses a client
+    entirely. 48.5h on Hawaii's clock is 46.5-47.5h of real lead: inside the
+    real 24-48h band, but past the old naive upper bound, so the old cron
+    skipped it -- and skipping does not stamp, so tomorrow's run (by then under
+    its lower bound) skipped it too. Nobody was ever reminded."""
+    t = _frozen(monkeypatch)
+    start = _hst_plus(t, 48.5)
+    assert 24 <= _true_lead_hours(start, HER_TZ, t) <= 48
+    _insert(logdb, email="late-ak@example.com", practitioner=PID,
+            session_type="intro", medium="zoom", start_ts=start)
+    assert _run(client)["sent"] == 1
+    assert _capture[-1]["to"] == "late-ak@example.com"
+    assert _stamp(logdb, "late-ak@example.com") is not None
+
+
+def test_an_alaska_booking_squarely_inside_the_real_band_is_reminded(
+        client, logdb, _capture, monkeypatch):
+    """Control: the ordinary case both the old and the new window agree on."""
+    t = _frozen(monkeypatch)
+    start = _hst_plus(t, 30)
+    assert 24 <= _true_lead_hours(start, HER_TZ, t) <= 48
+    _insert(logdb, email="mid-ak@example.com", practitioner=PID,
+            session_type="intro", medium="zoom", start_ts=start)
+    assert _run(client)["sent"] == 1
+    assert _stamp(logdb, "mid-ak@example.com") is not None
+
+
+def test_rae_and_glen_are_bit_for_bit_unchanged_by_the_zone_aware_window(
+        client, logdb, _capture, monkeypatch):
+    """Rae's and Glen's own bookings ARE Hawaii wall time, so the zone-aware
+    band must reduce to exactly the window they have always had, on the
+    Hawaii clock, both edges. Three rows, one run: only the middle one is
+    reminded, and the other two are left unstamped."""
+    t = _frozen(monkeypatch)
+    _insert(logdb, email="hi-early@example.com", practitioner="rae",
+            session_type="evox", start_ts=_hst_plus(t, 23.5))
+    _insert(logdb, email="hi-mid@example.com", practitioner="rae",
+            session_type="evox", start_ts=_hst_plus(t, 30))
+    _insert(logdb, email="hi-late@example.com", practitioner="rae",
+            session_type="evox", start_ts=_hst_plus(t, 50))
+    assert _run(client)["sent"] == 1
+    assert [c["to"] for c in _capture] == ["hi-mid@example.com"]
+    # The same expectations the existing EVOX control test asserts.
+    assert "EVOX session" in _capture[-1]["html"]
+    assert "HST" in _capture[-1]["html"]
+    assert _stamp(logdb, "hi-mid@example.com") is not None
+    assert _stamp(logdb, "hi-early@example.com") is None
+    assert _stamp(logdb, "hi-late@example.com") is None
+
+
+def test_the_band_ends_at_49_hours_so_daily_runs_overlap_rather_than_abut(
+        client, logdb, _capture, monkeypatch):
+    """24-to-48 tiles perfectly only if consecutive runs are exactly 86400s
+    apart. This is a Render cron whose start jitters, and render.yaml records a
+    three-day outage of it. With an exact ceiling, an appointment in the sliver
+    above one run's 48h and below the next run's 24h is seen by neither, is
+    never stamped, and is therefore never reminded, with nothing recording that
+    it wasn't.
+
+    The overlap is free: `reminded_at` already suppresses a second send, so the
+    worst case of widening is a row considered twice and sent once. Pinned
+    because 49 looks like an off-by-one to anyone who does not know why.
+    """
+    t = _frozen(monkeypatch)
+    _insert(logdb, email="edge@example.com", practitioner="rae",
+            session_type="evox", start_ts=_hst_plus(t, 48.5))
+    assert _run(client)["sent"] == 1
+    assert _capture[-1]["to"] == "edge@example.com"
+    assert _stamp(logdb, "edge@example.com") is not None
+
+
+def test_glens_own_bookings_keep_the_same_hawaii_band(client, logdb, _capture,
+                                                      monkeypatch):
+    t = _frozen(monkeypatch)
+    _insert(logdb, email="glen-early@example.com", practitioner="glen",
+            session_type="triage", medium="video", start_ts=_hst_plus(t, 23.5))
+    _insert(logdb, email="glen-mid@example.com", practitioner="glen",
+            session_type="triage", medium="video", start_ts=_hst_plus(t, 30))
+    assert _run(client)["sent"] == 1
+    assert [c["to"] for c in _capture] == ["glen-mid@example.com"]
+    assert "Glen" in _capture[-1]["html"]
+    assert _stamp(logdb, "glen-early@example.com") is None
+
+
+def test_a_booking_whose_zone_cannot_be_resolved_is_skipped_not_stamped(
+        client, logdb, _capture, monkeypatch):
+    """A config that reads back but carries a zone this machine cannot resolve
+    gives no way to place the appointment in time. There is no safe default:
+    guessing Hawaii would remind an Auckland client on the wrong day. Skip, and
+    leave reminded_at NULL, because a reminder we cannot place today is one we
+    must still be able to send tomorrow."""
+    t = _frozen(monkeypatch)
+    broken = dict(CFG, timezone="Mars/Olympus")
+    monkeypatch.setattr(pb, "get_config",
+                        lambda cx, pid: broken if pid == PID else None)
+    _insert(logdb, email="nozone@example.com", practitioner=PID,
+            session_type="intro", medium="zoom", start_ts=_hst_plus(t, 30))
+    assert _run(client)["sent"] == 0
+    assert _capture == []
+    assert _stamp(logdb, "nozone@example.com") is None

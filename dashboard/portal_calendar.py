@@ -24,18 +24,121 @@ def _row_dict(cur, row):
     return dict(zip((c[0] for c in cur.description), row))
 
 
-def _zoned_iso(value):
-    """Attach Hawai'i time to naive authoring values for browser conversion."""
+# Rae's and Glen's own booking flows write start_ts as naive Hawai'i wall
+# clock, and the two names this view used to hardcode were theirs. Both stay
+# true for them, so their rows are answered from here without a lookup: a
+# Supabase outage must not blank the appointments that worked before any
+# practitioner existed.
+_LEGACY_TZ = "Pacific/Honolulu"
+_LEGACY_PRACTITIONERS = {"glen": "Dr. Glen", "rae": "Rae"}
+
+
+def _zoned_iso(value, tz_name=_LEGACY_TZ):
+    """Attach a zone to a naive authoring value for browser conversion.
+
+    Defaults to Hawai'i because that is what portal-authored events genuinely
+    ARE: MasterClass and group-coaching times are typed on Glen's own clock.
+    Only an evox_bookings row can carry another practitioner's zone, so only
+    that caller passes one. `tz_name` is always a zone that has already been
+    resolved through ZoneInfo by _practitioner_identity; a row whose zone
+    could not be resolved never reaches here, it is omitted.
+    """
     raw = (value or "").strip()
     if not raw:
         return ""
     try:
         parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
         if parsed.tzinfo is None:
-            parsed = parsed.replace(tzinfo=ZoneInfo("Pacific/Honolulu"))
+            parsed = parsed.replace(tzinfo=ZoneInfo(tz_name))
         return parsed.isoformat()
-    except (ValueError, TypeError):
+    except (ValueError, TypeError, KeyError):
         return raw
+
+
+def _practitioner_name(pid):
+    """The practitioner's own display name, or None on any failure.
+
+    The same read the reminder cron makes, so one person is called one name in
+    her client's inbox and in her client's portal. Its wrapper lives in app.py
+    and this module must not import app, so the underlying helper is called
+    directly rather than the read being reinvented.
+
+    None is a real answer here and it means OMIT the booking. It must never be
+    turned into a default: a default name in this view is another practitioner.
+    """
+    try:
+        from db_supabase import supabase_cursor
+        with supabase_cursor() as cur:
+            cur.execute("SELECT name FROM practitioners WHERE id=%s", (str(pid),))
+            row = cur.fetchone()
+        return (row["name"] or "").strip() or None if row else None
+    except Exception:
+        return None
+
+
+def _practitioner_identity(cx, who, cache):
+    """(display name, IANA zone) for a booking's practitioner, or None.
+
+    None means the row cannot be rendered truthfully and must be dropped. There
+    is no safe fallback on either half: a missing name would show one
+    practitioner's client another practitioner's name, and a missing zone would
+    show a real appointment at an hour that is not its own, in an authenticated
+    view that also says Confirmed. That is exactly the harm the old
+    `practitioner IN ('rae','glen')` filter existed to prevent, so the fail-
+    closed behaviour it gave us is kept after the filter itself is gone.
+
+    `cache` is per build_block call, i.e. per client page load. A client with
+    several bookings from one practitioner costs one Supabase round trip and
+    one config read, not one of each per booking. A negative result is cached
+    too, so an unresolvable practitioner is not retried per row either.
+    """
+    who = (who or "").strip()
+    if who in cache:
+        return cache[who]
+    identity = None
+    if who in _LEGACY_PRACTITIONERS:
+        identity = (_LEGACY_PRACTITIONERS[who], _LEGACY_TZ, {})
+    elif who:
+        name = _practitioner_name(who)
+        # get_config is the one reader of her stored zone, and it fails closed
+        # to None for both "no row" and "a row that cannot be read back".
+        #
+        # It SWALLOWS the db error rather than raising it, which is the trap:
+        # on PostgreSQL a failed read leaves the transaction aborted, and
+        # because nothing was raised, the `except` below never fires. The next
+        # section's query then dies with InFailedSqlTransaction and that whole
+        # block goes missing from the client's page. So a falsy result is
+        # treated as needing recovery too, not just an exception.
+        own_labels = {}
+        try:
+            from dashboard import practitioner_booking as _pb
+            _cfg = _pb.get_config(cx, who)
+            if not _cfg:
+                # Swallowed-error case: recover before the caller's next query.
+                _recover_optional_query(cx)
+                _cfg = {}
+            tz_name = (_cfg.get("timezone") or "").strip()
+            # Her own session labels, taken from the config THIS call already
+            # read. The module-level `labels` map only knows Rae's and Glen's
+            # four types, so without this a client sees her Biofield Analysis
+            # rendered as the generic "Private Appointment" -- her own words
+            # are on the row and cost nothing extra to carry.
+            own_labels = {
+                str(st.get("slug") or ""): str(st.get("label") or "").strip()
+                for st in (_cfg.get("session_types") or [])
+                if st.get("slug") and str(st.get("label") or "").strip()
+            }
+        except Exception:
+            _recover_optional_query(cx)
+            tz_name = ""
+        try:
+            ZoneInfo(tz_name)
+        except Exception:
+            tz_name = ""
+        if name and tz_name:
+            identity = (name, tz_name, own_labels)
+    cache[who] = identity
+    return identity
 
 
 def _recover_optional_query(cx):
@@ -138,35 +241,55 @@ def build_block(cx, *, email="", group_coaching_entitled=False,
 
     if email:
         try:
-            # practitioner IN ('rae','glen') is load-bearing, not decorative.
-            # This view renders "Dr. Glen"/"Rae" unconditionally and stamps
-            # every row with Pacific/Honolulu via _zoned_iso -- both wrong for
-            # a public multi-tenant booking, whose practitioner is some OTHER
-            # practitioner's own id in her own timezone. Without this filter,
-            # a Healing Oasis client who separately booked a different
-            # practitioner would see that appointment mislabeled "Rae" at a
-            # Honolulu time in their authenticated portal, marked Confirmed.
-            # A practitioner-aware portal view (her own name, her own
-            # timezone) is real work that does not exist yet -- until it
-            # does, exclude those rows rather than show the wrong person at
-            # the wrong time.
+            # This query was scoped `practitioner IN ('rae','glen')` because the
+            # view below could not render anyone else: it named every row
+            # "Dr. Glen" or "Rae" and stamped every row Pacific/Honolulu, so a
+            # Healing Oasis client who had separately booked a different
+            # practitioner would have seen that appointment under Rae's name at
+            # a Honolulu hour in their authenticated portal, marked Confirmed.
+            # The filter was the only thing holding that shut.
+            #
+            # It is safe to drop now, and ONLY now, because the loop below
+            # resolves the practitioner's OWN display name and her OWN zone per
+            # row and drops any row it cannot resolve, so no booking can fall
+            # through to somebody else's name or somebody else's clock.
+            #
+            # start_ts>=? stays a Hawaii-naive comparison and is deliberately
+            # left coarse. It is a "has this already happened" cut, and the
+            # widest a practitioner's clock can sit from Hawaii's is under a
+            # day, so at worst an appointment lingers or disappears within a
+            # few hours of its true end. A row shown a little late is a far
+            # smaller harm than one hidden early, and nothing here is stamped
+            # or one-way: the next page load re-decides.
             cur = cx.execute(
                 "SELECT id, session_type, practitioner, medium, start_ts, end_ts, prepaid "
                 "FROM evox_bookings WHERE lower(email)=? AND status='booked' AND start_ts>=? "
-                "AND practitioner IN ('rae','glen') "
                 "ORDER BY start_ts ASC LIMIT 50", ((email or "").strip().lower(), now_iso))
             labels = {"biofield-consult": "Biofield Analysis Consultation",
                       "evox": "EVOX Session", "onboarding": "Welcome Call",
                       "triage": "Discovery Call"}
+            # One entry per practitioner, not per booking. See
+            # _practitioner_identity: resolving a name reaches Supabase and
+            # this runs on a client's portal page load.
+            identities = {}
             for row in cur.fetchall():
                 item = _row_dict(cur, row)
+                identity = _practitioner_identity(
+                    cx, item.get("practitioner"), identities)
+                if identity is None:
+                    # Omitted on purpose, and never rendered under a default
+                    # name or a default zone. A client seeing the wrong
+                    # practitioner or the wrong hour is worse than a client
+                    # seeing nothing, which is why this row is dropped.
+                    continue
+                who, tz_name, own_labels = identity
                 kind = item.get("session_type") or "appointment"
-                who = "Dr. Glen" if item.get("practitioner") == "glen" else "Rae"
                 events.append({"id": f"appointment-{item['id']}", "type": "appointment",
-                    "title": labels.get(kind, "Private Appointment"),
+                    "title": (own_labels.get(kind)
+                              or labels.get(kind, "Private Appointment")),
                     "description": f"Private {item.get('medium') or 'session'} appointment with {who}.",
-                    "start": _zoned_iso(item.get("start_ts")),
-                    "end": _zoned_iso(item.get("end_ts")),
+                    "start": _zoned_iso(item.get("start_ts"), tz_name),
+                    "end": _zoned_iso(item.get("end_ts"), tz_name),
                     "members_only": False, "locked": False, "registered": True,
                     "action_url": "", "action_label": "Confirmed",
                     "prepaid": bool(item.get("prepaid"))})
