@@ -16393,24 +16393,23 @@ def affiliate_apply_form():
 
     try:
         with _db_lock, db.connect(LOG_DB) as cx:
-            # Generate Rebrandly short link → points to affiliate hub
-            _hub_dest = f"{request.host_url.rstrip('/')}/affiliate/hub/{slug}"
-            short_url = _rebrandly_create(
-                slashtag=slug, destination=_hub_dest,
-                title=f"Affiliate: {org or name}"
-            ) or ""
-
             # page_slug is her public URL, defaulting to her own affiliate slug
             # and never NULL -- the unique index on it is what makes "one URL,
             # one practitioner" a database fact rather than a validator's
             # opinion, and a NULL row sits outside that index. The DDL runs
             # first so the column is present for this INSERT.
             _ps_signup.init_page_slug(cx)
+            # short_url starts empty -- the Rebrandly shortlink is minted AFTER
+            # this insert commits (below), never before. Minting it here and
+            # then having the INSERT fail would leave a truly.vip/<slug>
+            # shortlink pointing at a row that never came to exist, and a retry
+            # would mint another one every time. The row must be real before
+            # anything external is created to point at it.
             cx.execute("""
                 INSERT INTO affiliate_signups
                   (created_at, name, email, organization, website, promo_method, slug, token, status, referred_by, short_url, page_slug)
                 VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
-            """, (ts, name, email, org, site, promo, slug, token, "approved", referred_by, short_url, slug))
+            """, (ts, name, email, org, site, promo, slug, token, "approved", referred_by, "", slug))
             cx.execute("""
                 INSERT OR IGNORE INTO referral_sources
                   (created_at, name, slug, description, utm_source, utm_medium, utm_campaign)
@@ -16426,6 +16425,24 @@ def affiliate_apply_form():
             cx.commit()
     except Exception as e:
         return _redirect("/affiliate?error=" + _urlparse.quote(f"Signup failed: {str(e)[:80]}"))
+
+    # The row exists now -- safe to mint the shortlink that will own it. A
+    # failure here must not fail the signup: the practitioner already has a
+    # portal account, and /api/affiliates/backfill-links can mint any
+    # shortlink that Rebrandly could not create on this request.
+    try:
+        with _db_lock, db.connect(LOG_DB) as cx:
+            _hub_dest = f"{request.host_url.rstrip('/')}/affiliate/hub/{slug}"
+            short_url = _rebrandly_create(
+                slashtag=slug, destination=_hub_dest,
+                title=f"Affiliate: {org or name}"
+            ) or ""
+            if short_url:
+                cx.execute("UPDATE affiliate_signups SET short_url=? WHERE slug=?",
+                          (short_url, slug))
+                cx.commit()
+    except Exception as e:
+        print(f"[affiliate-apply-form] shortlink creation failed: {e!r}", flush=True)
 
     resp = _redirect("/portal/login")
     _stamp_affiliate_journey(_session_id, email, _first, _last, _recruiter_slug)
