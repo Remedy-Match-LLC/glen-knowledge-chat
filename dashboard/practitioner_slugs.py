@@ -227,3 +227,219 @@ def claim_alias(cx, canonical, alias, reserved):
         cx.commit()
     except db.IntegrityError as e:           # concurrent claim won the race
         raise SlugError(f"'{a}' is already claimed as an alias") from e
+
+
+# ── Page slug: the practitioner-chosen public URL ────────────────────────────
+#
+# A practitioner's affiliate_signups.slug is her ATTRIBUTION key: stored lead
+# rows carry utm_source=<slug>, the printed Rebrandly shortlink is
+# truly.vip/<slug>, and ?ref= cookies hold it for 90 days. Renaming it orphans
+# all of that, so it is never written by this feature.
+#
+# page_slug is a separate, nullable column holding the name she wants in the
+# URL bar. NULL means "use slug", so every existing practitioner is unaffected
+# by the column's arrival. When it is set, IT becomes canonical and the
+# affiliate slug becomes a legacy URL that keeps working forever.
+#
+# This is NOT the alias feature above. An alias points an extra name at an
+# existing canonical and redirects to it. A page_slug makes a chosen name BE
+# the canonical. The two share one namespace but neither reads the other's
+# storage.
+
+_PAGE_INIT_DONE = set()             # DB identities whose page_slug DDL has run
+_PAGE_INIT_LOCK = threading.Lock()
+
+
+def _try(cx, sql):
+    """Run one DDL statement, tolerating "already exists".
+
+    Each statement gets its own commit/rollback. On Postgres a failed statement
+    poisons the whole transaction, so an ALTER that raises DuplicateColumn
+    would take the CREATE INDEX after it down with it and the index would
+    never be created. Same try/except Exception idiom as
+    dashboard.practitioner_booking.init_tables, one transaction per statement.
+    """
+    try:
+        cx.execute(sql)
+        cx.commit()
+        return True
+    except Exception:
+        try:
+            cx.rollback()
+        except Exception:
+            pass
+        return False
+
+
+def init_page_slug(cx):
+    """Add affiliate_signups.page_slug and its unique index. Idempotent.
+
+    Run ONCE per process per database, for the reason init_tables gives: every
+    reader below calls this, and on the portal host a practitioner lookup is
+    reached by every unmatched root path, including every bot probe. Per-request
+    DDL in a pooled Postgres connection is what that guard prevents.
+
+    The cache is only populated once the column is actually present. A call
+    made before affiliate_signups exists must not mark the database done, or
+    the column would stay dark for the life of the process.
+    """
+    key = _db_identity(cx)
+    if key is not None:
+        with _PAGE_INIT_LOCK:
+            if key in _PAGE_INIT_DONE:
+                return
+    _try(cx, "ALTER TABLE affiliate_signups ADD COLUMN page_slug TEXT")
+    # The backstop against a concurrent claim: validate_page_slug's
+    # read-then-write has a race window that only the database can close.
+    # NULLs are distinct under a unique index on both backends, so every
+    # practitioner who has not chosen a page slug coexists.
+    _try(cx, "CREATE UNIQUE INDEX IF NOT EXISTS ux_affiliate_page_slug"
+             " ON affiliate_signups(page_slug)")
+    if key is None:
+        return
+    try:
+        present = db.column_exists(cx, "affiliate_signups", "page_slug")
+    except db.Error:
+        present = False
+    if present:
+        with _PAGE_INIT_LOCK:
+            _PAGE_INIT_DONE.add(key)
+
+
+def canonical_slug_for(cx, affiliate_slug):
+    """The slug that belongs in this practitioner's public URL: her page_slug
+    when she has chosen one, otherwise her affiliate slug. '' if unknown.
+
+    Every site that PRINTS a practitioner URL goes through here, so a rename
+    reaches all of them at once.
+    """
+    init_page_slug(cx)
+    s = normalize(affiliate_slug)
+    if not s:
+        return ""
+    row = cx.execute(
+        "SELECT slug, page_slug FROM affiliate_signups WHERE slug=?",
+        (s,)).fetchone()
+    if not row:
+        return ""
+    return normalize(row[1]) or (row[0] or "")
+
+
+def page_slug_is_taken(cx, candidate, *, excluding_affiliate_slug=None):
+    """True iff `candidate` is ANY practitioner's affiliate slug OR page slug,
+    at ANY status, ignoring the claimant's own row.
+
+    Deliberately broader than what serving looks at, for the reason
+    slug_is_taken already gives: claiming is about the whole namespace, serving
+    is about approved practitioners only. A page_slug allowed to take a PENDING
+    practitioner's slug would put two owners on one URL the moment she is
+    approved, and a published URL must never break that way.
+
+    Both columns, because they are one namespace: whichever of the two a
+    request matches, it must match exactly one row.
+    """
+    init_page_slug(cx)
+    c = normalize(candidate)
+    if not c:
+        return False
+    sql = "SELECT 1 FROM affiliate_signups WHERE (slug=? OR page_slug=?)"
+    params = [c, c]
+    own = normalize(excluding_affiliate_slug)
+    if own:
+        sql += " AND slug<>?"
+        params.append(own)
+    return cx.execute(sql, tuple(params)).fetchone() is not None
+
+
+def validate_page_slug(cx, candidate, *, owner_affiliate_slug, reserved):
+    """Normalize and check `candidate`, returning the value to store.
+
+    Raises SlugError with a message a practitioner can act on. `reserved` comes
+    from reserved_for(app.url_map) at the call site, never a list written here:
+    a slug that shadows a live route is a page she could publish and never
+    reach.
+    """
+    s = normalize(candidate)
+    check_shape(s)
+    check_not_reserved(s, reserved)
+    if page_slug_is_taken(cx, s, excluding_affiliate_slug=owner_affiliate_slug):
+        raise SlugError(f"'{s}' is already in use. Please choose another.")
+    return s
+
+
+def set_page_slug(cx, affiliate_slug, candidate, *, reserved):
+    """Give `affiliate_slug`'s practitioner the public URL `candidate`.
+
+    An empty or None candidate CLEARS the choice, writing NULL so her URL falls
+    back to the affiliate slug. NULL and not '': two practitioners who both
+    cleared would be a duplicate under the unique index if it were ''.
+
+    Returns the stored page slug, or '' when cleared. Never touches
+    affiliate_signups.slug.
+    """
+    init_page_slug(cx)
+    owner = normalize(affiliate_slug)
+    if cx.execute("SELECT 1 FROM affiliate_signups WHERE slug=?",
+                  (owner,)).fetchone() is None:
+        # Silently updating zero rows would report success and then show her a
+        # URL that does not exist.
+        raise SlugError("that practitioner account was not found")
+
+    if not normalize(candidate):
+        cx.execute("UPDATE affiliate_signups SET page_slug=NULL WHERE slug=?",
+                   (owner,))
+        cx.commit()
+        return ""
+
+    s = validate_page_slug(cx, candidate, owner_affiliate_slug=owner,
+                           reserved=reserved)
+    try:
+        cx.execute("UPDATE affiliate_signups SET page_slug=? WHERE slug=?",
+                   (s, owner))
+        cx.commit()
+    except db.IntegrityError as e:       # concurrent claim won the race
+        try:
+            cx.rollback()
+        except Exception:
+            pass
+        raise SlugError(f"'{s}' is already in use. Please choose another.") from e
+    return s
+
+
+def resolve_page(cx, requested):
+    """Resolve a requested URL slug to (kind, canonical, affiliate_slug).
+
+    kind is 'canonical' when the request is already the right URL, 'legacy'
+    when it is the affiliate slug of a practitioner who has chosen a different
+    page slug, and '' when nobody owns it.
+
+    page_slug is matched FIRST. It cannot be shadowed, because page_slug_is_taken
+    refuses a page slug that collides with anyone's slug or page_slug.
+
+    Status is deliberately not filtered here. Serving is gated downstream by
+    public_surface.build_practitioner_storefront, which is approved-only and
+    fails closed; the namespace guard above is what stops a pending row from
+    ever claiming an approved practitioner's URL in the first place.
+
+    affiliate_slug is returned alongside so callers can key analytics and
+    attribution on it. Those must never move to the display slug, or changing
+    a vanity URL would split a practitioner's view history.
+    """
+    init_page_slug(cx)
+    r = normalize(requested)
+    if not r:
+        return ("", "", "")
+    row = cx.execute(
+        "SELECT slug, page_slug FROM affiliate_signups WHERE page_slug=?",
+        (r,)).fetchone()
+    if row:
+        return ("canonical", r, row[0] or "")
+    row = cx.execute(
+        "SELECT slug, page_slug FROM affiliate_signups WHERE slug=?",
+        (r,)).fetchone()
+    if row:
+        page = normalize(row[1])
+        if page and page != r:
+            return ("legacy", page, row[0] or "")
+        return ("canonical", r, row[0] or "")
+    return ("", "", "")
