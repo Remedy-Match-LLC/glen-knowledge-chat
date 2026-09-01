@@ -23613,6 +23613,85 @@ def evox_book():
 _REMINDER_LEGACY_TZ = "Pacific/Honolulu"
 _REMINDER_LEGACY_PRACTITIONERS = ("rae", "glen")
 
+# The reminder band, in REAL elapsed time from the moment the cron runs. It can
+# only be applied per row: start_ts is naive wall clock in the practitioner's
+# OWN zone, so "24 hours from now" is a different string on every one of them.
+_REMINDER_BAND_LO = timedelta(hours=24)
+_REMINDER_BAND_HI = timedelta(hours=48)
+
+# How far the coarse SQL prefilter is widened on each side of the Hawaii-naive
+# band, and why this number.
+#
+# IANA zones run from UTC-12 (Etc/GMT+12) through UTC+14 (Pacific/Kiritimati),
+# and Hawaii is a fixed UTC-10. For one instant, a naive string written on some
+# practitioner's clock therefore sits between -2h (-12 minus -10) and +24h (+14
+# minus -10) away from the Hawaii-naive string for that same instant. 24 is the
+# worst case; 26 adds an hour of daylight-saving slack and an hour of rounding
+# slack, and is applied to BOTH sides rather than the asymmetric -2/+24 so no
+# future zone-database change can quietly clip an edge.
+#
+# Generous on purpose. reminded_at is a one-way stamp, and a row the prefilter
+# excludes is never seen by the per-row check, so it is never stamped either --
+# by the time tomorrow's run comes round it is under the lower bound and that
+# client is never reminded at all. Widening costs a handful of extra rows
+# scanned per night; narrowing loses a client silently and permanently.
+_REMINDER_PREFILTER_PAD = timedelta(hours=26)
+
+
+def _reminder_zone(cx, who, cfg_cache):
+    """The IANA zone this practitioner's `start_ts` values are written in, or None.
+
+    None means "this appointment cannot be placed in time", and the caller must
+    SKIP the row without stamping it. There is no safe default here: guessing
+    Hawaii for an Auckland practitioner reminds her client on the wrong day, and
+    the stamp would make that the last word.
+
+    Shares cfg_cache with _reminder_message, so the zone costs no extra config
+    read per row: whichever of the two runs first pays for both.
+    """
+    if who in _REMINDER_LEGACY_PRACTITIONERS:
+        # Rae's and Glen's own booking flows write start_ts as Hawaii wall
+        # clock, which is what this cron's arithmetic always assumed.
+        return _REMINDER_LEGACY_TZ
+    if who not in cfg_cache:
+        from dashboard import practitioner_booking as _pb
+        cfg_cache[who] = _pb.get_config(cx, who)
+    tz_name = ((cfg_cache[who] or {}).get("timezone") or "").strip()
+    try:
+        ZoneInfo(tz_name)
+    except Exception:
+        return None
+    return tz_name
+
+
+def _reminder_lead(start_ts, tz_name, now_utc):
+    """Real elapsed time from `now_utc` until the appointment, or None if the
+    stored value cannot be read.
+
+    start_ts is naive wall clock in `tz_name`, so the zone is ATTACHED to it --
+    not converted, not relabelled. That is what makes the result a true instant,
+    and it stays right across a daylight-saving change, when the practitioner's
+    offset from Hawaii moves by an hour mid-year.
+    """
+    try:
+        aware = (datetime.fromisoformat(str(start_ts)[:19])
+                 .replace(tzinfo=ZoneInfo(tz_name)))
+    except Exception:
+        return None
+    return aware - now_utc
+
+
+def _reminder_now_utc():
+    """Aware UTC 'now' for the reminder cron, and the one seam its tests freeze.
+
+    Deliberately NOT _hst_now(). That helper returns NAIVE Hawaii wall time and
+    has ~30 other callers (slot grids, intake stamps, console counters) that all
+    depend on exactly that meaning, so it must keep it. The reminder band, by
+    contrast, is a span of REAL elapsed time measured across many practitioners'
+    zones at once, and only an instant can express that.
+    """
+    return datetime.now(timezone.utc)
+
 
 def _reminder_when(start_ts, practitioner_tz, visitor_tz):
     """(time text, zone label) for one reminder, in the zone actually used.
@@ -23743,18 +23822,38 @@ def _reminder_message(cx, row, who, stype, visitor_tz, cfg_cache, name_cache):
 
 @app.route("/api/evox/run-reminders", methods=["POST"])
 def evox_run_reminders():
-    """Cron/console-gated daily job: reminds clients with a 'booked' EVOX session
-    starting in the next 24-48h (HST) who haven't been reminded yet. Idempotent
-    via the lazily-added reminded_at stamp."""
+    """Cron/console-gated daily job: reminds clients with a 'booked' session
+    starting 24 to 48 real hours from now who haven't been reminded yet.
+    Idempotent via the lazily-added reminded_at stamp.
+
+    The window used to be 24-48h of HAWAII wall clock compared directly against
+    start_ts. That is only correct while every booking belongs to Rae or Glen,
+    whose clock IS Hawaii's. A public practitioner's start_ts is naive wall
+    clock in HER zone, so for an Anchorage practitioner the same arithmetic gave
+    her clients 22 to 46 hours of notice instead of 24 to 48, shifted again at
+    each daylight-saving change, and stopped consecutive daily runs tiling: an
+    hour-wide band of appointments fell into the gap and, because a skipped row
+    is never stamped, was never reminded at all.
+
+    So the SQL below is a coarse prefilter only, and the real decision is made
+    per row against the practitioner's own zone.
+    """
     supplied = (request.headers.get("X-Cron-Secret", "")
                 or request.headers.get("X-Console-Key", ""))
     expected = os.environ.get("CRON_SECRET") or CONSOLE_SECRET
     if not supplied or supplied not in {expected, CONSOLE_SECRET}:
         return jsonify({"error": "unauthorized"}), 401
     from dashboard import evox as _ev
-    now = _hst_now()
-    lo = (now + timedelta(hours=24)).isoformat()
-    hi = (now + timedelta(hours=48)).isoformat()
+    now_utc = _reminder_now_utc()
+    # The same naive Hawaii wall clock _hst_now() returns, derived from the one
+    # frozen instant above so the prefilter bounds and the reminded_at stamp
+    # cannot drift apart mid-run.
+    now = now_utc.astimezone(timezone(timedelta(hours=-10))).replace(tzinfo=None)
+    # Coarse prefilter bounds, deliberately wider than the band itself: see
+    # _REMINDER_PREFILTER_PAD for why 26 hours and why it must not be tighter.
+    # Every row this returns is re-tested per row, in the practitioner's zone.
+    lo = (now + _REMINDER_BAND_LO - _REMINDER_PREFILTER_PAD).isoformat()
+    hi = (now + _REMINDER_BAND_HI + _REMINDER_PREFILTER_PAD).isoformat()
     sent = 0
     with _db_lock, db.connect(LOG_DB) as cx:
         cx.row_factory = sqlite3.Row
@@ -23791,6 +23890,21 @@ def evox_run_reminders():
             stype = r["session_type"] if "session_type" in keys else "evox"
             who = (r["practitioner"] if "practitioner" in keys else "") or "rae"
             visitor_tz = (r["visitor_tz"] if "visitor_tz" in keys else "") or ""
+            # The query above only narrowed the field. The reminder band is a
+            # span of REAL time, and the only clock on which this client
+            # experiences 24 to 48 hours of notice is her practitioner's, so
+            # the decision is made here, where that zone is already in hand.
+            tz_name = _reminder_zone(cx, who, cfg_cache)
+            if not tz_name:
+                # Skipped, and pointedly NOT stamped: a reminder we cannot
+                # place in time today is one we must still be able to send.
+                app.logger.warning(
+                    "reminder skipped: practitioner %s has no resolvable "
+                    "timezone (booking %s)", who, r["id"])
+                continue
+            lead = _reminder_lead(r["start_ts"], tz_name, now_utc)
+            if lead is None or not (_REMINDER_BAND_LO <= lead <= _REMINDER_BAND_HI):
+                continue
             try:
                 subject, html, text = _reminder_message(
                     cx, r, who, stype, visitor_tz, cfg_cache, name_cache)
