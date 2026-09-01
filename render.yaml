@@ -100,6 +100,24 @@ services:
   # orchestrator inside the web container where the disk + chat_log.db
   # live. Cron stays minimal: stdlib-only, no Pinecone/Anthropic keys,
   # no DATA_DIR.
+  # Sequence engine tick. Every sequence ships INACTIVE, so this is a no-op
+  # until a deliberate set_active. Calls the web service rather than importing
+  # app, so it inherits the DB and secrets instead of duplicating them --
+  # the same pattern as the other crons here.
+  - type: cron
+    name: glen-sequence-tick
+    runtime: python
+    schedule: "*/15 * * * *"   # every 15 minutes
+    buildCommand: "true"       # stdlib-only, no deps to install
+    startCommand: python scripts/run_sequence_tick.py
+    envVars:
+      - key: WEB_URL
+        value: https://glen-knowledge-chat.onrender.com
+      - fromService:
+          type: web
+          name: glen-knowledge-chat
+          envVarKey: CRON_SECRET
+
   - type: cron
     name: glen-personal-email-daily
     runtime: python

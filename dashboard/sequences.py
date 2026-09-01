@@ -134,3 +134,160 @@ def set_active(cx, slug, active):
     cx.execute("UPDATE sequences SET active=? WHERE slug=?",
                (1 if active else 0, slug))
     cx.commit()
+
+
+# ── Enrollment and the send ledger (slice 3) ─────────────────────────────────
+#
+# Two properties do most of the safety work here:
+#
+#  1. ONE step per contact per tick, and a step that came due long ago is SKIPPED
+#     rather than sent. Slice 5 migrates ~40 people mid-flight by backdating
+#     enrolled_at, so on the first tick several of their steps are already due by
+#     date. Releasing those would deliver four emails at once to a real client.
+#
+#  2. Claim before send. A crash between claiming and sending leaves a stuck row,
+#     which a reaper releases; the alternative failure mode is a duplicate, and a
+#     duplicate cannot be recalled.
+
+import datetime as _dt
+
+
+def _utcnow():
+    # naive UTC: every stored timestamp is naive UTC, so keep the
+    # comparison in one representation rather than mixing aware/naive.
+    return _dt.datetime.now(_dt.timezone.utc).replace(tzinfo=None)
+
+
+def _now_iso(now=None):
+    return (now or _utcnow()).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _parse(ts):
+    return _dt.datetime.strptime(str(ts)[:19].replace(" ", "T"), "%Y-%m-%dT%H:%M:%S")
+
+
+def enroll(cx, slug, email, enrolled_at=None):
+    """Put someone on a sequence. Idempotent: re-enrolling neither duplicates nor
+    restarts them, so a trigger that fires twice cannot replay the whole drip."""
+    e = (email or "").strip().lower()
+    if not e:
+        return
+    cx.execute("""INSERT INTO sequence_enrollments (slug, email, enrolled_at, status)
+        VALUES (?,?,?,'active') ON CONFLICT(slug, email) DO NOTHING""",
+        (slug, e, enrolled_at or _now_iso()))
+    cx.commit()
+
+
+def set_enrollment_status(cx, slug, email, status):
+    cx.execute("UPDATE sequence_enrollments SET status=? WHERE slug=? AND email=?",
+               (status, slug, (email or "").strip().lower()))
+    cx.commit()
+
+
+def _candidates(cx):
+    """Every (enrollment, step) pair not yet claimed or sent, for ACTIVE sequences
+    and ACTIVE enrollments, ordered so the earliest step comes first."""
+    return cx.execute("""
+        SELECT e.slug, e.email, e.enrolled_at, t.step_no, t.subject, t.body_md,
+               t.delay_days
+          FROM sequence_enrollments e
+          JOIN sequences s   ON s.slug = e.slug
+          JOIN sequence_steps t ON t.slug = e.slug
+         WHERE s.active = 1
+           AND e.status = 'active'
+           AND NOT EXISTS (SELECT 1 FROM sequence_sends d
+                            WHERE d.slug = e.slug AND d.email = e.email
+                              AND d.step_no = t.step_no)
+         ORDER BY e.email, t.step_no""").fetchall()
+
+
+def _partition(cx, now, max_catchup_days):
+    now = now or _utcnow()
+    due, stale, seen = [], [], set()
+    for slug, email, enrolled_at, step_no, subject, body_md, delay in _candidates(cx):
+        try:
+            due_at = _parse(enrolled_at) + _dt.timedelta(days=int(delay))
+        except ValueError:
+            continue
+        if due_at > now:
+            continue                      # not yet
+        row = {"slug": slug, "email": email, "step_no": step_no,
+               "subject": subject, "body_md": body_md,
+               "due_at": due_at.strftime("%Y-%m-%dT%H:%M:%SZ")}
+        if max_catchup_days is not None and \
+                (now - due_at) > _dt.timedelta(days=max_catchup_days):
+            stale.append(row)             # too old to send; see mark_skipped
+            continue
+        if email in seen:
+            continue                      # one step per contact per tick
+        seen.add(email)
+        due.append(row)
+    return due, stale
+
+
+def due(cx, now=None, max_catchup_days=2):
+    return _partition(cx, now, max_catchup_days)[0]
+
+
+def stale_steps(cx, now=None, max_catchup_days=2):
+    return _partition(cx, now, max_catchup_days)[1]
+
+
+def claim(cx, slug, step_no, email, claimed_at=None):
+    """Claim a send. True if this process won it. Cross-process safe: the UNIQUE
+    index on (slug, step_no, email) is the arbiter, not a read-then-write."""
+    cur = cx.execute("""INSERT INTO sequence_sends
+        (slug, step_no, email, status, claimed_at) VALUES (?,?,?, 'claimed', ?)
+        ON CONFLICT(slug, step_no, email) DO NOTHING""",
+        (slug, int(step_no), (email or "").strip().lower(),
+         claimed_at or _now_iso()))
+    cx.commit()
+    return bool(cur.rowcount)
+
+
+def mark_sent(cx, slug, step_no, email, message_id, sent_at=None):
+    e = (email or "").strip().lower()
+    cx.execute("""INSERT INTO sequence_sends
+        (slug, step_no, email, status, message_id, sent_at) VALUES (?,?,?,'sent',?,?)
+        ON CONFLICT(slug, step_no, email) DO UPDATE SET
+          status='sent', message_id=excluded.message_id, sent_at=excluded.sent_at""",
+        (slug, int(step_no), e, message_id or "", sent_at or _now_iso()))
+    cx.commit()
+
+
+def mark_failed(cx, slug, step_no, email, error):
+    e = (email or "").strip().lower()
+    cx.execute("""INSERT INTO sequence_sends
+        (slug, step_no, email, status, error) VALUES (?,?,?,'failed',?)
+        ON CONFLICT(slug, step_no, email) DO UPDATE SET
+          status='failed', error=excluded.error""",
+        (slug, int(step_no), e, str(error)[:500]))
+    cx.commit()
+
+
+def mark_skipped(cx, slug, step_no, email, reason):
+    e = (email or "").strip().lower()
+    cx.execute("""INSERT INTO sequence_sends
+        (slug, step_no, email, status, error) VALUES (?,?,?,'skipped',?)
+        ON CONFLICT(slug, step_no, email) DO UPDATE SET
+          status='skipped', error=excluded.error""",
+        (slug, int(step_no), e, str(reason)[:500]))
+    cx.commit()
+
+
+def release_stale_claims(cx, now=None, older_than_minutes=60):
+    """Free rows claimed but never resolved, e.g. a crash mid-send. Only touches
+    'claimed'; a sent row is never reopened, because that would duplicate."""
+    now = now or _utcnow()
+    cutoff = (now - _dt.timedelta(minutes=older_than_minutes)) \
+        .strftime("%Y-%m-%dT%H:%M:%SZ")
+    rows = cx.execute("SELECT slug, step_no, email, claimed_at FROM sequence_sends "
+                      "WHERE status='claimed'").fetchall()
+    freed = 0
+    for slug, step_no, email, claimed_at in rows:
+        if str(claimed_at or "") <= cutoff:
+            cx.execute("DELETE FROM sequence_sends WHERE slug=? AND step_no=? "
+                       "AND email=? AND status='claimed'", (slug, step_no, email))
+            freed += 1
+    cx.commit()
+    return freed

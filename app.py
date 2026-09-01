@@ -28927,6 +28927,36 @@ def _run_answer_audit():
     return asked, flagged
 
 
+@app.route("/api/cron/sequence-tick", methods=["POST"])
+def api_cron_sequence_tick():
+    """One tick of the sequence engine: send whatever is due.
+
+    Every sequence ships INACTIVE, so this is a no-op until a deliberate
+    dashboard.sequences.set_active. Pass ?dry_run=1 to report what would send
+    without claiming or sending anything.
+
+    Cron-gated (X-Cron-Secret == CRON_SECRET, falls back to CONSOLE_SECRET).
+    Lives here rather than in the cron service so it inherits the web service's
+    database and secrets instead of duplicating them.
+    """
+    key = (request.headers.get("X-Cron-Secret", "") or request.args.get("key", "")).strip()
+    expected = os.environ.get("CRON_SECRET") or os.environ.get("CONSOLE_SECRET", "")
+    if not expected or key != expected:
+        return jsonify({"error": "unauthorized"}), 401
+    dry = request.args.get("dry_run") in ("1", "true", "yes")
+    try:
+        from scripts import sequence_runner as _sr
+        from dashboard import email_suppression as _es, sequences as _seq
+        with db.connect(LOG_DB) as cx:
+            _seq.init_tables(cx)
+            _es.init_table(cx)
+            counts = _sr.run_once(cx, dry_run=dry)
+        return jsonify({"ok": True, "dry_run": dry, **counts})
+    except Exception as e:  # noqa: BLE001
+        app.logger.exception("sequence tick failed")
+        return jsonify({"ok": False, "error": str(e)[:200]}), 500
+
+
 @app.route("/api/cron/answer-audit", methods=["POST"])
 def api_cron_answer_audit():
     """Weekly: ask the live bot buying questions, flag any price/link/routing
