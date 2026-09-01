@@ -36080,6 +36080,56 @@ def api_console_practitioners_list():
     return jsonify({"ok": True, "rows": rows})
 
 
+@app.route("/api/console/practitioner/reset-page-slug", methods=["POST"])
+def api_console_practitioner_reset_page_slug():
+    """Admin-only: reset a practitioner's public URL back to her affiliate slug.
+
+    /api/practitioner/page-slug is reachable only from the practitioner's own
+    session, so an unsuitable or squatted page_slug had no path back except
+    hand-writing SQL against production. This calls the SAME
+    practitioner_slugs.set_page_slug setter with an empty candidate -- never a
+    raw UPDATE -- so a reset gets every guarantee that setter gives any other
+    write: page_slug is never left NULL (it falls back to the affiliate
+    slug), the unique index still covers the row, and the old vanity name is
+    freed for someone else to claim through the ordinary namespace guards.
+
+    The target is the practitioner's AFFILIATE slug or her email -- never a
+    page slug. The page slug is the value being retracted, often because it
+    was squatted or offensive; identifying her by the value being discarded
+    would leave a bad page slug unrecoverable by the one tool meant to clear
+    it.
+    """
+    if not _console_key_ok():
+        return jsonify({"error": "Unauthorized"}), 401
+    from dashboard import practitioner_slugs as _pslugs
+    data = request.get_json(silent=True) or {}
+    affiliate_slug = (data.get("affiliate_slug") or "").strip().lower()
+    email = (data.get("email") or "").strip().lower()
+    if not affiliate_slug and not email:
+        return jsonify({"ok": False, "error": "affiliate_slug or email is required"}), 400
+    with _db_lock, db.connect(LOG_DB) as cx:
+        if not affiliate_slug:
+            # Any status, matching _practitioner_affiliate_slug: an admin
+            # resetting a squatted name must be able to reach a pending or
+            # suspended row too, not just an approved one. Approved preferred
+            # when an email somehow maps to more than one row.
+            row = cx.execute(
+                "SELECT slug FROM affiliate_signups WHERE lower(email)=? "
+                "ORDER BY CASE WHEN status='approved' THEN 0 ELSE 1 END, id "
+                "LIMIT 1", (email,)).fetchone()
+            if not row:
+                return jsonify({"ok": False,
+                                "error": f"no practitioner found for {email}"}), 404
+            affiliate_slug = (row[0] or "").strip().lower()
+        try:
+            stored = _pslugs.set_page_slug(
+                cx, affiliate_slug, "",
+                reserved=_pslugs.reserved_for(app.url_map))
+        except _pslugs.SlugError as e:
+            return jsonify({"ok": False, "error": str(e)}), 400
+    return jsonify({"ok": True, "affiliate_slug": affiliate_slug, "page_slug": stored})
+
+
 @app.route("/api/console/cert/notify-cohort", methods=["POST"])
 def api_cert_notify_cohort():
     """Console button: email the Level 1 assignment notice to cert students (portal_role=coach).
