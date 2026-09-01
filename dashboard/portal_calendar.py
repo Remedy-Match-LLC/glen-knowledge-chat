@@ -222,22 +222,29 @@ def build_block(cx, *, email="", group_coaching_entitled=False,
 
     if email:
         try:
-            # practitioner IN ('rae','glen') is load-bearing, not decorative.
-            # This view renders "Dr. Glen"/"Rae" unconditionally and stamps
-            # every row with Pacific/Honolulu via _zoned_iso -- both wrong for
-            # a public multi-tenant booking, whose practitioner is some OTHER
-            # practitioner's own id in her own timezone. Without this filter,
-            # a Healing Oasis client who separately booked a different
-            # practitioner would see that appointment mislabeled "Rae" at a
-            # Honolulu time in their authenticated portal, marked Confirmed.
-            # A practitioner-aware portal view (her own name, her own
-            # timezone) is real work that does not exist yet -- until it
-            # does, exclude those rows rather than show the wrong person at
-            # the wrong time.
+            # This query was scoped `practitioner IN ('rae','glen')` because the
+            # view below could not render anyone else: it named every row
+            # "Dr. Glen" or "Rae" and stamped every row Pacific/Honolulu, so a
+            # Healing Oasis client who had separately booked a different
+            # practitioner would have seen that appointment under Rae's name at
+            # a Honolulu hour in their authenticated portal, marked Confirmed.
+            # The filter was the only thing holding that shut.
+            #
+            # It is safe to drop now, and ONLY now, because the loop below
+            # resolves the practitioner's OWN display name and her OWN zone per
+            # row and drops any row it cannot resolve, so no booking can fall
+            # through to somebody else's name or somebody else's clock.
+            #
+            # start_ts>=? stays a Hawaii-naive comparison and is deliberately
+            # left coarse. It is a "has this already happened" cut, and the
+            # widest a practitioner's clock can sit from Hawaii's is under a
+            # day, so at worst an appointment lingers or disappears within a
+            # few hours of its true end. A row shown a little late is a far
+            # smaller harm than one hidden early, and nothing here is stamped
+            # or one-way: the next page load re-decides.
             cur = cx.execute(
                 "SELECT id, session_type, practitioner, medium, start_ts, end_ts, prepaid "
                 "FROM evox_bookings WHERE lower(email)=? AND status='booked' AND start_ts>=? "
-                "AND practitioner IN ('rae','glen') "
                 "ORDER BY start_ts ASC LIMIT 50", ((email or "").strip().lower(), now_iso))
             labels = {"biofield-consult": "Biofield Analysis Consultation",
                       "evox": "EVOX Session", "onboarding": "Welcome Call",
