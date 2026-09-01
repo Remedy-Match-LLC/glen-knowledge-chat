@@ -81,8 +81,22 @@ def test_the_on_conflict_branch_runs_on_postgres(cx):
                      active=True, steps=STEPS)
     got = sequences.get(cx, "nurture")
     assert got["name"] == "Nurture v2"
-    assert got["active"] is True
     assert len(got["steps"]) == 2, "a re-push must not duplicate steps"
+    # INVERTED 2026-09-01: this used to assert active became True. `active` is now
+    # set on INSERT only and never by ON CONFLICT, so a copy push cannot start a
+    # drip sending. Kept rather than deleted so the guard is pinned on Postgres too.
+    assert got["active"] is False, "a push must not activate a sequence"
+
+
+def test_set_active_is_the_only_way_to_go_live_on_postgres(cx):
+    sequences.upsert(cx, slug="nurture", name="Nurture", trigger_kind="manual",
+                     steps=STEPS)
+    sequences.set_active(cx, "nurture", True)
+    assert sequences.get(cx, "nurture")["active"] is True
+    # And a later copy push must not switch it back off.
+    sequences.upsert(cx, slug="nurture", name="Renamed", trigger_kind="manual",
+                     steps=STEPS)
+    assert sequences.get(cx, "nurture")["active"] is True
 
 
 def test_removing_a_step_removes_it_on_postgres(cx):
