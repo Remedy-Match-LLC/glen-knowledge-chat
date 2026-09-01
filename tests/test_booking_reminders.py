@@ -321,3 +321,29 @@ def test_a_practitioner_authored_location_is_escaped_in_the_email(
     html = _capture[-1]["html"]
     assert "<img" not in html
     assert "&lt;img" in html
+
+
+def test_a_half_configured_smtp_shouts_instead_of_stamping_in_silence(
+        client, logdb, monkeypatch, caplog):
+    """SMTP_HOST set but the send still falling back to console-log means every
+    client in the window is stamped as reminded with no email sent anywhere.
+    reminded_at is one-way, so the real reminder can never fire afterwards.
+
+    Deliberately a warning and not a refusal: in dev the console fallback IS
+    the expected path, and refusing would stop the stamp there and in the
+    existing test_evox_api reminder tests. The requirement is only that it
+    cannot happen quietly, because the alternative way to find out is a client
+    saying they were never reminded.
+    """
+    import logging
+    import app as appmod
+    _insert(logdb, email="silent@example.com", practitioner="rae",
+            session_type="evox")
+    monkeypatch.setattr(appmod, "SMTP_HOST", "smtp.example.com", raising=False)
+    monkeypatch.setattr(
+        appmod, "send_evox_email",
+        lambda *a, **k: ("console-log", "no email send mechanism configured"))
+    with caplog.at_level(logging.ERROR):
+        _run(client)
+    assert any("console-log" in str(r.getMessage()) for r in caplog.records), \
+        "a half-configured SMTP must be logged, not swallowed"

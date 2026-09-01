@@ -23791,10 +23791,33 @@ def evox_run_reminders():
             # send that raised would silently convert "we failed to remind
             # her" into "she was already reminded", permanently.
             try:
-                send_evox_email(r["email"], "", subject, html, text, b"")
+                _sent = send_evox_email(r["email"], "", subject, html, text, b"")
             except Exception:
                 app.logger.exception("reminder send failed for booking %s", r["id"])
                 continue
+            # send_evox_email falls back to a console log when SMTP is
+            # unconfigured, and returns rather than raising. That is right in
+            # dev, where this is the normal path. In production it would mean
+            # every client in the window gets stamped as reminded without an
+            # email going anywhere -- and reminded_at is one-way, so the real
+            # reminder can never fire afterwards. Silent and unrecoverable.
+            #
+            # Not turned into a refusal, because refusing would stop the stamp
+            # in dev and in the existing test_evox_api reminder tests, where the
+            # fallback IS the expected path. Made loud instead: a
+            # misconfiguration should be visible in the logs on the first run,
+            # not inferred later from clients who say they were never reminded.
+            # Tested against SMTP_HOST, the same module constant send_evox_email
+            # itself reads. It falls back when ANY of host/user/pass is missing,
+            # so "host is set but we still got the fallback" is exactly the
+            # half-configured case worth shouting about, and the one a
+            # credential rotation produces.
+            if isinstance(_sent, tuple) and _sent and _sent[0] == "console-log" \
+                    and SMTP_HOST:
+                app.logger.error(
+                    "reminder for booking %s fell back to console-log while "
+                    "SMTP_HOST is set; it is being stamped as reminded but no "
+                    "email was sent", r["id"])
             cx.execute("UPDATE evox_bookings SET reminded_at=? WHERE id=?",
                        (now.isoformat(), r["id"]))
             sent += 1
