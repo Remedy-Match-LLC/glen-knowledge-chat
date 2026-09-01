@@ -299,3 +299,25 @@ def test_a_booking_outside_the_window_is_left_alone(client, logdb, _capture):
     assert _run(client)["sent"] == 0
     assert _capture == []
     assert _stamp(logdb, "soon@example.com") is None
+
+
+def test_a_practitioner_authored_location_is_escaped_in_the_email(
+        client, logdb, _capture):
+    """location and label are practitioner-authored free text on their way to
+    a client's inbox. validate_config strips tags at write time, but
+    get_config deliberately does NOT re-validate stored session types (a row
+    saved before a field existed must still read back), so a row written by a
+    migration or by hand can carry markup. Escape at render."""
+    with _open(logdb) as c:
+        c.execute("UPDATE practitioner_booking_config SET session_types=? "
+                  "WHERE practitioner_id=?",
+                  ('[{"slug": "intro", "label": "Intro", "duration_min": 20, '
+                   '"medium": "zoom", "location": '
+                   '"<img src=x onerror=alert(1)>"}]', PID))
+        c.commit()
+    _insert(logdb, email="esc@example.com", practitioner=PID,
+            session_type="intro", medium="zoom")
+    assert _run(client)["sent"] == 1
+    html = _capture[-1]["html"]
+    assert "<img" not in html
+    assert "&lt;img" in html
