@@ -152,6 +152,38 @@ def test_no_config_yet_reads_back_as_null_not_an_error(practitioner):
     assert r.get_json()["config"] is None
 
 
+def test_a_session_types_location_saves_and_reads_back_through_the_route(practitioner):
+    """A meeting link, saved through the real POST/GET route a practitioner's
+    settings page actually uses, must survive unchanged."""
+    link = "https://zoom.us/j/1234567890"
+    cfg = dict(CFG, session_types=[
+        {"slug": "intro", "label": "Free 20 minute intro call",
+         "duration_min": 20, "medium": "zoom", "location": link}])
+    r = practitioner.post("/api/practitioner/booking-config", json=cfg)
+    assert r.status_code == 200, r.get_data(as_text=True)
+    got = practitioner.get("/api/practitioner/booking-config").get_json()
+    assert got["config"]["session_types"][0]["location"] == link
+
+
+def test_a_config_predating_location_reads_back_through_the_route_as_empty_string(
+        practitioner, logdb):
+    """A row written before this field existed has no 'location' key at all
+    in its stored JSON. The GET route must still hand back '', never a
+    KeyError-driven 500 and never None."""
+    with _open(logdb) as c:
+        c.execute(
+            "INSERT INTO practitioner_booking_config (practitioner_id, "
+            "timezone, office_hours, session_types, notice_hours, "
+            "buffer_min, enabled, updated_at) VALUES (?,?,?,?,?,?,?,?)",
+            (PID, "America/Anchorage", "1-5:09:00-17:00",
+             '[{"slug": "intro", "label": "Intro", "duration_min": 20, '
+             '"medium": "phone"}]', 24, 0, 1, "2026-01-01T00:00:00+00:00"))
+        c.commit()
+    r = practitioner.get("/api/practitioner/booking-config")
+    assert r.status_code == 200
+    assert r.get_json()["config"]["session_types"][0]["location"] == ""
+
+
 def test_the_form_page_serves_and_carries_the_workspace_nav(practitioner):
     body = practitioner.get("/practitioner/booking").get_data(as_text=True)
     assert 'class="workspace-nav"' in body
@@ -258,7 +290,8 @@ def test_an_unauthenticated_visitor_sees_the_auth_wall_not_the_form():
 from datetime import date, timedelta  # noqa: E402
 
 
-def _seed_slug(logdb, slug="mary-boyd", email="my_mary_boyd@example.com"):
+def _seed_slug(logdb, slug="mary-boyd", email="my_mary_boyd@example.com",
+               status="approved"):
     with _open(logdb) as c:
         # organization is here (nullable, unset by every other caller of this
         # helper) only so dashboard.public_surface.build_practitioner_storefront
@@ -268,7 +301,7 @@ def _seed_slug(logdb, slug="mary-boyd", email="my_mary_boyd@example.com"):
             id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, email TEXT,
             slug TEXT, status TEXT, organization TEXT)""")
         c.execute("INSERT INTO affiliate_signups (name,email,slug,status) "
-                  "VALUES (?,?,?,'approved')", ("Mary Boyd", email, slug))
+                  "VALUES (?,?,?,?)", ("Mary Boyd", email, slug, status))
         c.commit()
 
 
@@ -423,6 +456,57 @@ def test_the_clients_name_is_stored_not_just_validated(public, logdb):
         assert "Free 20 minute intro call" in cal["summary"]
         assert "Priya Chandrasekaran" in cal["summary"]
         assert "client@example.com" in cal["summary"]
+
+
+def test_the_public_book_route_stores_the_clients_own_timezone(public, logdb):
+    """A day-before reminder (later task) needs the client's OWN zone, not
+    the practitioner's -- see create_booking's visitor_tz. The route must
+    pass the request's raw tz through to storage."""
+    with _open(logdb) as c:
+        pb.set_config(c, PID, CFG)
+    slot = public.get("/api/book/mary-boyd/slots?session=intro").get_json()["slots"][0]
+    r = public.post("/api/book/mary-boyd", json={
+        "session": "intro", "start": slot["start"], "tz": "Pacific/Auckland",
+        "name": "A Client", "email": "client@example.com"})
+    assert r.status_code == 200, r.get_data(as_text=True)
+    with _open(logdb) as c:
+        row = c.execute("SELECT visitor_tz FROM evox_bookings").fetchone()
+        assert row["visitor_tz"] == "Pacific/Auckland"
+
+
+def test_an_unusable_visitor_tz_stores_the_raw_value_not_the_practitioner_fallback(
+        public, logdb):
+    """effective_visitor_tz falls back to CFG["timezone"] (the PRACTITIONER's
+    own zone) for DISPLAY when the client's zone is unusable -- that fallback
+    is not a fact about the client, and storing it would make a later
+    reminder claim the client told us a zone she never gave us. The stored
+    value must be what the client's request actually carried, never
+    CFG["timezone"] (a later reminder is responsible for validating it before
+    use, same as effective_visitor_tz already does for display)."""
+    with _open(logdb) as c:
+        pb.set_config(c, PID, CFG)
+    slot = public.get("/api/book/mary-boyd/slots?session=intro").get_json()["slots"][0]
+    r = public.post("/api/book/mary-boyd", json={
+        "session": "intro", "start": slot["start"], "tz": "Mars/Olympus",
+        "name": "A Client", "email": "client@example.com"})
+    assert r.status_code == 200, r.get_data(as_text=True)
+    with _open(logdb) as c:
+        row = c.execute("SELECT visitor_tz FROM evox_bookings").fetchone()
+        assert row["visitor_tz"] == "Mars/Olympus"
+        assert row["visitor_tz"] != CFG["timezone"]
+
+
+def test_no_tz_in_the_booking_request_stores_empty(public, logdb):
+    with _open(logdb) as c:
+        pb.set_config(c, PID, CFG)
+    slot = public.get("/api/book/mary-boyd/slots?session=intro").get_json()["slots"][0]
+    r = public.post("/api/book/mary-boyd", json={
+        "session": "intro", "start": slot["start"],
+        "name": "A Client", "email": "client@example.com"})
+    assert r.status_code == 200, r.get_data(as_text=True)
+    with _open(logdb) as c:
+        row = c.execute("SELECT visitor_tz FROM evox_bookings").fetchone()
+        assert row["visitor_tz"] == ""
 
 
 class _BoomOnClientNameUpdate:
@@ -902,6 +986,153 @@ def test_the_confirmation_invite_uses_the_correct_utc_instant_across_zones(
     naive_with_bare_z = naive_local.strftime("%Y%m%dT%H%M%S") + "Z"
     assert m.group(1) != naive_with_bare_z, \
         "DTSTART must be a real UTC conversion, not the naive practitioner-local time with a bare Z appended"
+
+
+# --- Task 2: the location reaches the client --------------------------------
+
+CFG_ZOOM_LOCATION = dict(CFG, session_types=[
+    {"slug": "intro", "label": "Free 20 minute intro call",
+     "duration_min": 20, "medium": "zoom",
+     "location": "https://zoom.us/j/1234567890"}])
+
+
+def test_a_set_location_reaches_the_clients_email_and_ics(public, logdb, monkeypatch):
+    """Task 1 added an optional location per session type (a meeting link for
+    zoom). It is dead data until the booking route actually carries it to
+    the client -- both in the email body and in the ICS LOCATION: field
+    evox.build_ics already emits."""
+    sent = []
+    monkeypatch.setattr(appmod, "send_evox_email",
+                        lambda to, name, subject, html_body, text_body, ics_bytes:
+                        sent.append({"to": to, "text": text_body, "html": html_body,
+                                    "ics": ics_bytes}))
+    with _open(logdb) as c:
+        pb.set_config(c, PID, CFG_ZOOM_LOCATION)
+    slot = public.get("/api/book/mary-boyd/slots?session=intro").get_json()["slots"][0]
+    public.post("/api/book/mary-boyd", json={
+        "session": "intro", "start": slot["start"],
+        "name": "A Client", "email": "client@example.com"})
+    client = next(m for m in sent if m["to"] == "client@example.com")
+    link = "https://zoom.us/j/1234567890"
+    assert link in client["text"], "the client's confirmation must say where"
+    assert link in client["html"]
+    ics_text = client["ics"].decode("utf-8")
+    assert f"LOCATION:{link}" in ics_text, \
+        "the calendar invite must carry the same meeting link"
+
+
+def test_a_location_with_a_comma_is_escaped_for_the_ics_but_not_the_email(
+        public, logdb, monkeypatch):
+    """RFC 5545 TEXT values need a backslash before a literal comma or
+    semicolon, which build_ics does not apply to LOCATION on its own (it
+    only escapes newlines, and only in `description`). A real street
+    address routinely contains commas, so this must be handled on the way
+    in. The plain-text/HTML email copies must show the address as typed,
+    unescaped -- the ICS escaping is a calendar-format rule, not something a
+    client reading the email should ever see."""
+    sent = []
+    monkeypatch.setattr(appmod, "send_evox_email",
+                        lambda to, name, subject, html_body, text_body, ics_bytes:
+                        sent.append({"to": to, "text": text_body, "ics": ics_bytes}))
+    addr = "123 Main St, Suite 5"
+    cfg = dict(CFG, session_types=[
+        {"slug": "intro", "label": "Free 20 minute intro call",
+         "duration_min": 20, "medium": "in-person", "location": addr}])
+    with _open(logdb) as c:
+        pb.set_config(c, PID, cfg)
+    slot = public.get("/api/book/mary-boyd/slots?session=intro").get_json()["slots"][0]
+    public.post("/api/book/mary-boyd", json={
+        "session": "intro", "start": slot["start"],
+        "name": "A Client", "email": "client@example.com"})
+    client = next(m for m in sent if m["to"] == "client@example.com")
+    assert f"Where: {addr}" in client["text"], \
+        "the email must show the address exactly as typed, not backslash-escaped"
+    ics_text = client["ics"].decode("utf-8")
+    assert "LOCATION:123 Main St\\, Suite 5" in ics_text, \
+        "the ICS LOCATION value must escape the comma per RFC 5545"
+
+
+def test_a_set_location_also_reaches_the_practitioners_own_copy(public, logdb, monkeypatch):
+    """Her own notification of a new booking should say where it is too, not
+    just the client's copy."""
+    sent = []
+    monkeypatch.setattr(appmod, "send_evox_email",
+                        lambda to, name, subject, html_body, text_body, ics_bytes:
+                        sent.append({"to": to, "text": text_body, "html": html_body}))
+    with _open(logdb) as c:
+        pb.set_config(c, PID, CFG_ZOOM_LOCATION)
+    slot = public.get("/api/book/mary-boyd/slots?session=intro").get_json()["slots"][0]
+    public.post("/api/book/mary-boyd", json={
+        "session": "intro", "start": slot["start"],
+        "name": "A Client", "email": "client@example.com"})
+    note = next(m for m in sent if m["to"] == PRACTITIONER_EMAIL)
+    link = "https://zoom.us/j/1234567890"
+    assert link in note["text"]
+    assert link in note["html"]
+
+
+def test_no_location_set_adds_no_where_label_and_no_bare_ics_location(
+        public, logdb, monkeypatch):
+    """CFG's 'intro' session type has medium=phone and no location -- the
+    common case for a while yet, per the plan. Nothing new must appear: no
+    'Where:' label in either the client or practitioner copy, and the ICS
+    LOCATION: field must not go bare (empty) -- it keeps carrying the medium
+    exactly as it always has, unaffected by this feature being unset."""
+    sent = []
+    monkeypatch.setattr(appmod, "send_evox_email",
+                        lambda to, name, subject, html_body, text_body, ics_bytes:
+                        sent.append({"to": to, "text": text_body, "html": html_body,
+                                    "ics": ics_bytes}))
+    with _open(logdb) as c:
+        pb.set_config(c, PID, CFG)  # CFG's "intro" type has no "location" key
+    slot = public.get("/api/book/mary-boyd/slots?session=intro").get_json()["slots"][0]
+    public.post("/api/book/mary-boyd", json={
+        "session": "intro", "start": slot["start"],
+        "name": "A Client", "email": "client@example.com"})
+    client = next(m for m in sent if m["to"] == "client@example.com")
+    assert "Where:" not in client["text"]
+    assert "Where:" not in client["html"]
+    ics_text = client["ics"].decode("utf-8")
+    assert "LOCATION:\r\n" not in ics_text, "a bare LOCATION: line must never appear"
+    assert "LOCATION:phone\r\n" in ics_text, \
+        "with no location set, the ICS should carry the medium exactly as before this feature existed"
+    note = next(m for m in sent if m["to"] == PRACTITIONER_EMAIL)
+    assert "Where:" not in note["text"]
+    assert "Where:" not in note["html"]
+
+
+def test_a_location_containing_html_is_escaped_in_the_client_email(
+        public, logdb, monkeypatch):
+    """location is practitioner-authored free text that reaches a client's
+    inbox. The same rule the surrounding email body already applies to the
+    session label and her name (html.escape) must apply here too.
+
+    A full `<tag>` is not a useful probe here: practitioner_booking._text
+    already strips matched-pair angle-bracket sequences at save time
+    (_TAG_RE), so a real `<script>...</script>` never reaches this far --
+    that stripping is Task 1's concern, not this test's. An UNMATCHED `<`
+    (no later `>` in the string) survives that filter unchanged and still
+    needs HTML-escaping when it reaches the email, same as the bare `&`.
+    """
+    sent = []
+    monkeypatch.setattr(appmod, "send_evox_email",
+                        lambda to, name, subject, html_body, text_body, ics_bytes:
+                        sent.append({"to": to, "html": html_body}))
+    dirty = "123 Main St & Suite 5 < Building B"
+    cfg = dict(CFG, session_types=[
+        {"slug": "intro", "label": "Free 20 minute intro call",
+         "duration_min": 20, "medium": "in-person", "location": dirty}])
+    with _open(logdb) as c:
+        pb.set_config(c, PID, cfg)
+    slot = public.get("/api/book/mary-boyd/slots?session=intro").get_json()["slots"][0]
+    public.post("/api/book/mary-boyd", json={
+        "session": "intro", "start": slot["start"],
+        "name": "A Client", "email": "client@example.com"})
+    client = next(m for m in sent if m["to"] == "client@example.com")
+    assert dirty not in client["html"], \
+        "raw HTML-significant characters from a practitioner must not reach the client unescaped"
+    assert "&amp;" in client["html"]
+    assert "&lt;" in client["html"]
 
 
 def test_build_ics_with_no_tz_name_is_byte_identical_to_today():
@@ -1992,6 +2223,60 @@ def test_a_form_that_failed_to_load_cannot_be_saved():
         "save() must refuse while the form has not been populated from a real GET"
 
 
+def _stripped(pattern, html):
+    """The matched source with // comments stripped.
+
+    Same convention as test_a_form_that_failed_to_load_cannot_be_saved above:
+    a raw-match assertion is answered by the PROSE comment introducing a
+    guard, not the guard itself, and stays green after the guard is deleted.
+    """
+    import re
+    m = re.search(pattern, html, re.S)
+    assert m, f"no match for {pattern}"
+    return "\n".join(ln for ln in m.group(0).splitlines()
+                      if not ln.strip().startswith("//"))
+
+
+def test_the_location_label_is_chosen_by_medium():
+    """'Meeting link' for zoom, 'Address' for in-person, and for phone --
+    which has nowhere to point, since the client gets her NUMBER, not a
+    typed location -- a note that only appears once she has actually chosen
+    to hand that number out via the phone notify method."""
+    import pathlib
+    html = (pathlib.Path(appmod.STATIC) / "practitioner-booking.html").read_text()
+    fn = _stripped(r"function updateLocationField\(row\) \{.*?\n  \}", html)
+    assert 'label.textContent = "Meeting link"' in fn
+    assert 'label.textContent = "Address"' in fn
+    assert 'notify-phone").checked' in fn, \
+        "the phone note must be gated on whether she chose the phone notify method"
+    assert "phone number" in fn.lower()
+
+
+def test_a_phone_session_types_location_is_never_submitted():
+    """The location box is hidden for a phone-medium row (there is nothing to
+    type -- her number is the separate notify-phone field). collect() must
+    not trust whatever is still sitting in that hidden control -- e.g. left
+    over from before she switched the row's medium to phone -- it must force
+    the location to "" for that row outright."""
+    import pathlib
+    html = (pathlib.Path(appmod.STATIC) / "practitioner-booking.html").read_text()
+    fn = _stripped(r"function collect\(\) \{.*?\n  \}", html)
+    assert 'medium === "phone" ? "" :' in fn, \
+        "a phone row's location must be forced to empty, not read from a hidden input"
+
+
+def test_the_medium_dropdown_change_refreshes_the_location_field():
+    """Switching a row's medium after it is already on screen (not just at
+    initial render) must update its location label/visibility -- otherwise a
+    row created as zoom and switched to in-person keeps saying 'Meeting
+    link'."""
+    import pathlib
+    html = (pathlib.Path(appmod.STATIC) / "practitioner-booking.html").read_text()
+    row = _stripped(r"function typeRow\(t\) \{.*?\n    return d;\n  \}", html)
+    assert '.t-medium").addEventListener("change"' in row
+    assert "updateLocationField" in row
+
+
 def test_the_consent_copy_names_both_surfaces_the_number_reaches():
     """Ticking "phone" publishes the number on her PUBLIC PAGE as well as in
     each client's confirmation. Copy that mentions only the confirmation
@@ -2279,6 +2564,69 @@ def test_an_empty_page_slug_restores_the_affiliate_slug(slug_settings, logdb):
         "clearing must restore her affiliate slug, never NULL"
 
 
+# --- status gate: claiming a DIFFERENT name requires 'approved' ------------
+# _practitioner_affiliate_slug deliberately does not filter on status: a
+# pending row still owns its own name. That covers KEEPING her own name at
+# any status. It does not cover a rejected or suspended practitioner claiming
+# a NEW name and holding it against a legitimate one, which is what this
+# gate refuses.
+
+def test_page_slug_post_approved_can_claim_a_new_name(monkeypatch, logdb, practitioner):
+    _seed_slug(logdb, slug="mary-boyd", email=PRACTITIONER_EMAIL, status="approved")
+    from dashboard import practitioner_portal as _pp
+    monkeypatch.setattr(_pp, "practitioner_email_by_id", lambda pid: PRACTITIONER_EMAIL)
+    r = practitioner.post("/api/practitioner/page-slug", json={"page_slug": "dr-mary"})
+    assert r.status_code == 200, r.get_data(as_text=True)
+    assert _page_slug_of(logdb, "mary-boyd") == "dr-mary"
+
+
+def test_page_slug_post_non_approved_cannot_claim_a_new_name(monkeypatch, logdb, practitioner):
+    """Readable refusal, not a 500 -- for every status this table actually
+    uses besides 'approved': 'pending' (gifting-created rows), 'rejected',
+    and 'suspended' (both set only by the admin PATCH)."""
+    from dashboard import practitioner_portal as _pp
+    monkeypatch.setattr(_pp, "practitioner_email_by_id", lambda pid: PRACTITIONER_EMAIL)
+    for status in ("pending", "rejected", "suspended"):
+        _seed_slug(logdb, slug="mary-boyd", email=PRACTITIONER_EMAIL, status=status)
+        r = practitioner.post("/api/practitioner/page-slug",
+                              json={"page_slug": "dr-mary"})
+        assert r.status_code == 403, f"{status}: {r.get_data(as_text=True)}"
+        assert "approved" in (r.get_json()["error"] or "").lower(), status
+        assert _page_slug_of(logdb, "mary-boyd") in ("", "mary-boyd"), \
+            f"{status}: a refused claim must not write"
+        with _open(logdb) as c:
+            c.execute("DELETE FROM affiliate_signups")
+            c.commit()
+
+
+def test_page_slug_post_non_approved_can_still_reset_to_her_own_slug(
+        monkeypatch, logdb, practitioner):
+    """The status gate only blocks claiming a DIFFERENT name. Keeping or
+    resetting to her own affiliate slug must still work at any status."""
+    _seed_slug(logdb, slug="mary-boyd", email=PRACTITIONER_EMAIL, status="approved")
+    from dashboard import practitioner_portal as _pp
+    monkeypatch.setattr(_pp, "practitioner_email_by_id", lambda pid: PRACTITIONER_EMAIL)
+    # She claims a vanity name while approved...
+    r0 = practitioner.post("/api/practitioner/page-slug", json={"page_slug": "dr-mary"})
+    assert r0.status_code == 200, r0.get_data(as_text=True)
+    # ...then something happens to her status.
+    with _open(logdb) as c:
+        c.execute("UPDATE affiliate_signups SET status='suspended' WHERE slug='mary-boyd'")
+        c.commit()
+    # An empty candidate (clear) still works.
+    r1 = practitioner.post("/api/practitioner/page-slug", json={"page_slug": ""})
+    assert r1.status_code == 200, r1.get_data(as_text=True)
+    assert r1.get_json()["page_slug"] == "mary-boyd"
+    # Explicitly re-asserting her own affiliate slug still works too.
+    r2 = practitioner.post("/api/practitioner/page-slug", json={"page_slug": "mary-boyd"})
+    assert r2.status_code == 200, r2.get_data(as_text=True)
+    # But a genuinely different name is still refused while suspended.
+    r3 = practitioner.post("/api/practitioner/page-slug",
+                           json={"page_slug": "dr-mary-again"})
+    assert r3.status_code == 403, r3.get_data(as_text=True)
+    assert _page_slug_of(logdb, "mary-boyd") == "mary-boyd"
+
+
 def test_page_slug_post_refuses_a_practitioner_with_no_affiliate_row(
         monkeypatch, logdb, practitioner):
     """There is nothing to attach a page slug to. It must say so, not 500."""
@@ -2515,3 +2863,31 @@ def test_the_ics_cancel_link_is_the_same_durable_one(logdb, monkeypatch):
     ics = sent[0].decode("utf-8", "replace").replace("\r\n ", "").replace("\n ", "")
     assert "slug=remedy-match" in ics, ics
     assert "slug=dr-glen" not in ics
+
+
+def test_the_public_slots_route_never_publishes_a_session_type_location(
+        public, logdb):
+    """/api/book/<slug>/slots is public and unauthenticated.
+
+    `location` is her meeting link, whose ?pwd= IS the access credential, or her
+    street address. She writes it expecting it to reach a client who booked, and
+    it travels in the confirmation email and the ICS. Returning the stored
+    session-type dict verbatim published it to anyone holding her slug, with no
+    booking and no rate limit.
+
+    Asserted as an exact key SET rather than "location is absent": the defect
+    was the SHAPE of the response, so the next field added to a session type
+    must fail this test rather than ship to the public the day it is added.
+    """
+    import json as _json
+    with _open(logdb) as c:
+        pb.set_config(c, PID, dict(
+            CFG, enabled=True,
+            session_types=[{"slug": "intro", "label": "Intro",
+                            "duration_min": 30, "medium": "zoom",
+                            "location": "https://zoom.us/j/1?pwd=SUPERSECRET"}]))
+    body = public.get("/api/book/mary-boyd/slots?session=intro").get_json()
+    assert body["session_types"], "fixture produced no session types to check"
+    for st in body["session_types"]:
+        assert set(st) == {"slug", "label", "duration_min", "medium"}, st
+    assert "SUPERSECRET" not in _json.dumps(body)

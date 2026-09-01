@@ -16393,24 +16393,23 @@ def affiliate_apply_form():
 
     try:
         with _db_lock, db.connect(LOG_DB) as cx:
-            # Generate Rebrandly short link → points to affiliate hub
-            _hub_dest = f"{request.host_url.rstrip('/')}/affiliate/hub/{slug}"
-            short_url = _rebrandly_create(
-                slashtag=slug, destination=_hub_dest,
-                title=f"Affiliate: {org or name}"
-            ) or ""
-
             # page_slug is her public URL, defaulting to her own affiliate slug
             # and never NULL -- the unique index on it is what makes "one URL,
             # one practitioner" a database fact rather than a validator's
             # opinion, and a NULL row sits outside that index. The DDL runs
             # first so the column is present for this INSERT.
             _ps_signup.init_page_slug(cx)
+            # short_url starts empty -- the Rebrandly shortlink is minted AFTER
+            # this insert commits (below), never before. Minting it here and
+            # then having the INSERT fail would leave a truly.vip/<slug>
+            # shortlink pointing at a row that never came to exist, and a retry
+            # would mint another one every time. The row must be real before
+            # anything external is created to point at it.
             cx.execute("""
                 INSERT INTO affiliate_signups
                   (created_at, name, email, organization, website, promo_method, slug, token, status, referred_by, short_url, page_slug)
                 VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
-            """, (ts, name, email, org, site, promo, slug, token, "approved", referred_by, short_url, slug))
+            """, (ts, name, email, org, site, promo, slug, token, "approved", referred_by, "", slug))
             cx.execute("""
                 INSERT OR IGNORE INTO referral_sources
                   (created_at, name, slug, description, utm_source, utm_medium, utm_campaign)
@@ -16426,6 +16425,24 @@ def affiliate_apply_form():
             cx.commit()
     except Exception as e:
         return _redirect("/affiliate?error=" + _urlparse.quote(f"Signup failed: {str(e)[:80]}"))
+
+    # The row exists now -- safe to mint the shortlink that will own it. A
+    # failure here must not fail the signup: the practitioner already has a
+    # portal account, and /api/affiliates/backfill-links can mint any
+    # shortlink that Rebrandly could not create on this request.
+    try:
+        with _db_lock, db.connect(LOG_DB) as cx:
+            _hub_dest = f"{request.host_url.rstrip('/')}/affiliate/hub/{slug}"
+            short_url = _rebrandly_create(
+                slashtag=slug, destination=_hub_dest,
+                title=f"Affiliate: {org or name}"
+            ) or ""
+            if short_url:
+                cx.execute("UPDATE affiliate_signups SET short_url=? WHERE slug=?",
+                          (short_url, slug))
+                cx.commit()
+    except Exception as e:
+        print(f"[affiliate-apply-form] shortlink creation failed: {e!r}", flush=True)
 
     resp = _redirect("/portal/login")
     _stamp_affiliate_journey(_session_id, email, _first, _last, _recruiter_slug)
@@ -17780,6 +17797,19 @@ def api_practitioner_page_slug_post():
     An empty page_slug clears the choice, which restores her affiliate slug as
     her public URL. That is a real change to a published address, so it goes
     through the same authenticated write as any other.
+
+    Status gate: ANY status may reset to or keep her own affiliate slug --
+    _practitioner_affiliate_slug's docstring gives the reason (a pending row
+    already owns its own name, so nothing is taken from anybody by letting her
+    keep it). But that reasoning does not extend to claiming a name that is
+    NOT her own: a rejected or suspended practitioner claiming a fresh name
+    could hold it against a legitimate one, so only an 'approved' practitioner
+    may claim a DIFFERENT name. The real status values in this table today are
+    'approved' (the default, and every ordinary signup), 'pending' (rows
+    auto-created by the gifting flow before an application exists), and
+    'rejected'/'suspended' (set only by the admin PATCH at
+    /api/affiliates/<id>) -- so the gate below is a plain equality against
+    'approved', not a blocklist of the other three.
     """
     pid = _practitioner_session_pid()
     if not pid:
@@ -17797,6 +17827,22 @@ def api_practitioner_page_slug_post():
             affiliate = _practitioner_affiliate_slug(cx, pid)
             if not affiliate:
                 return jsonify({"ok": False, "error": NO_PUBLIC_PAGE_MSG}), 400
+            # An empty candidate (clearing) or a candidate equal to her own
+            # affiliate slug is "keep/reset my own name" -- allowed at any
+            # status. Anything else is a claim on a name that is not hers.
+            wants_own_slug = (not _pslugs.normalize(candidate)
+                              or _pslugs.normalize(candidate) == affiliate)
+            if not wants_own_slug:
+                status_row = cx.execute(
+                    "SELECT status FROM affiliate_signups WHERE lower(slug)=?",
+                    (affiliate,)).fetchone()
+                status = ((status_row[0] if status_row else "") or "").strip().lower()
+                if status != "approved":
+                    return jsonify({"ok": False, "error":
+                        "Your practitioner account is not currently approved, "
+                        "so you can't claim a new public web address. You can "
+                        "still reset your page to your own name. Please "
+                        "contact us if you believe this is a mistake."}), 403
             # reserved_for(app.url_map) rather than any list written here: a
             # slug that shadows a live route is a page she could publish and
             # never reach, and the route table is the only thing that knows
@@ -17927,7 +17973,23 @@ def api_public_book_slots(slug):
         "ok": True,
         "timezone": cfg["timezone"],
         "rendered_timezone": rendered_tz,
-        "session_types": cfg["session_types"] if cfg["enabled"] else [],
+        # Projected field by field, NOT the stored dict. This route is public
+        # and unauthenticated (see the docstring above), and a session type is
+        # practitioner-authored: `location` holds her Zoom join URL, whose
+        # ?pwd= IS the access credential, or her street address. She writes it
+        # expecting it to reach someone who has actually booked, and it goes
+        # out in the confirmation email and the ICS.
+        #
+        # Returning cfg["session_types"] verbatim published it to anyone who
+        # knows her slug, with no booking and no rate limit. A whitelist here
+        # rather than deleting `location`, because the defect was the shape:
+        # every future field added to a session type would have been published
+        # the day it was added, silently.
+        "session_types": [
+            {"slug": st["slug"], "label": st["label"],
+             "duration_min": st["duration_min"], "medium": st["medium"]}
+            for st in cfg["session_types"]
+        ] if cfg["enabled"] else [],
         "slots": [{"start": s,
                    "visitor": _pb.to_visitor_tz(s, cfg["timezone"], rendered_tz)}
                   for s in starts]})
@@ -17956,6 +18018,9 @@ def api_public_book(slug):
     start_ts = (body.get("start") or "").strip()
     name = (body.get("name") or "").strip()[:120]
     email = (body.get("email") or "").strip().lower()[:200]
+    # The RAW client-supplied zone, not the resolved/fallback one -- see the
+    # visitor_tz argument passed to create_booking below for why.
+    visitor_tz = (body.get("tz") or "").strip()[:64]
     if not _BOOK_EMAIL_RE.match(email):
         return jsonify({"ok": False, "error": "bad_email"}), 400
     if not name:
@@ -18013,10 +18078,25 @@ def api_public_book(slug):
         if start_ts not in offered:
             return jsonify({"ok": False, "error": "slot_unavailable"}), 400
         try:
+            # visitor_tz here is the RAW value the client's booking request
+            # carried (body.get("tz")), never `rendered_tz` below -- rendered_tz
+            # is effective_visitor_tz's resolved zone, which silently falls back
+            # to the PRACTITIONER's own timezone when the client's browser sent
+            # nothing usable (see practitioner_booking.effective_visitor_tz).
+            # That fallback is a display decision, not a fact about the client;
+            # storing it would make a later day-before reminder claim the
+            # client told us a zone she never gave us. A client who sent
+            # nothing stores "" -- the same "we never knew" value existing
+            # rows already carry (NULL) -- so a reminder can tell "told us
+            # something" (non-empty) apart from "never knew" (empty/NULL). A
+            # client who sent an unusable value (e.g. a broken browser zone)
+            # still stores that raw value verbatim: validating it is the
+            # reminder's job at send time, the same way effective_visitor_tz
+            # already validates before using it for display.
             b = _ev.create_booking(cx, email, start_ts,
                                    duration_min=st["duration_min"],
                                    practitioner=pid, session_type=session_slug,
-                                   medium=st["medium"])
+                                   medium=st["medium"], visitor_tz=visitor_tz)
         except _ev.SlotTaken:
             # create_booking catches the UNIQUE violation itself and re-raises
             # it as SlotTaken. The index on (practitioner, start_ts) is the real
@@ -18092,7 +18172,10 @@ def api_public_book(slug):
     # rather than "no notification sent at all".
     ics = b""
     try:
-        visitor_tz = (body.get("tz") or "").strip()
+        # visitor_tz was already extracted (and capped) above, before the
+        # create_booking call -- reused here rather than re-read from body,
+        # so the value stored and the value used to render this email always
+        # agree.
         rendered_tz = _pb.effective_visitor_tz(visitor_tz, cfg["timezone"])
         shown = _pb.to_visitor_tz(start_ts, cfg["timezone"], rendered_tz)
         # `start` stays the naive practitioner-local value (the cancel API
@@ -18113,11 +18196,21 @@ def api_public_book(slug):
         # the link the client keeps are built on the name that cannot rot.
         cancel_url = (f"{portal_base()}/book/cancel?slug={cancel_slug}&start={start_ts}"
                       f"&token={token}&when={_quote(shown)}&tz={_quote(rendered_tz)}")
+        # The "where" for this session type (a meeting link for zoom, a
+        # street address for in-person). Optional and deliberately absent
+        # for phone -- her number is covered by the "Call:" line below, not
+        # this field. Reused for the practitioner notification block below
+        # as well as the ICS location, so it is computed once here.
+        where = (st.get("location") or "").strip()
         lines = [f"Hi {name},", "",
                  f"Your {st['label']} is booked.", "",
                  f"When: {shown} ({rendered_tz})",
-                 f"How: {st['medium']}", "",
-                 "If you need to cancel, use this link:", cancel_url, "",
+                 f"How: {st['medium']}"]
+        # Added only when set: an unset location must produce no artifact at
+        # all, not an empty "Where:" label.
+        if where:
+            lines.append(f"Where: {where}")
+        lines += ["", "If you need to cancel, use this link:", cancel_url, "",
                  "See you then."]
         methods = cfg.get("notify_methods") or ["email"]
         # Her booking number, off the config row she saved it on. Gated on
@@ -18147,11 +18240,20 @@ def api_public_book(slug):
         # a client in one zone adds the WRONG time to their calendar even
         # though the text body above (via to_visitor_tz/rendered_tz) shows
         # the right one.
+        # location falls back to the medium ("zoom", "phone", "in-person")
+        # when she has not set one -- exactly what this call always passed
+        # before, so an unset location changes nothing here and the
+        # LOCATION: line build_ics emits is never bare (empty).
+        #
+        # Handed over RAW. build_ics does the RFC 5545 TEXT escaping itself,
+        # because it is the function that writes the ICS and so the only one
+        # that should have to know the format's rules. Escaping here as well
+        # would double it, and a client would read a literal backslash.
         ics = _ev.build_ics(uid=b["ics_uid"], start_ts=start_ts, end_ts=b["end_ts"],
                             summary=st["label"],
                             description=f"{st['label']} ({st['medium']}). "
                                         f"To cancel: {cancel_url}",
-                            location=st["medium"], tz_name=cfg["timezone"])
+                            location=where or st["medium"], tz_name=cfg["timezone"])
         send_evox_email(email, name, "Your appointment is booked",
                         html_body, text_body, ics)
     except Exception as e:  # noqa: BLE001
@@ -18187,6 +18289,12 @@ def api_public_book(slug):
             # prevent. Collapse whitespace for the SUBJECT only; the body
             # below keeps the name as submitted.
             subj = f"New booking: {' '.join(name.split())}"
+            # Computed independently of the client block's `where` above: that
+            # block's own try/except may not have run (or may have raised
+            # before defining it) by the time execution reaches here, and this
+            # block must not depend on it -- same reasoning as `ics = b""`
+            # being bound outside the client try rather than assumed set.
+            where2 = (st.get("location") or "").strip()
             html_body2 = (
                 f"<p>New {_html2.escape(st['label'])} booking.</p>"
                 f"<p>Who: <b>{_html2.escape(name)}</b> ({_html2.escape(email)})</p>"
@@ -18196,6 +18304,11 @@ def api_public_book(slug):
                           f"Who: {name} ({email})\n"
                           f"When: {her_nice} ({cfg['timezone']})\n"
                           f"How: {st['medium']}")
+            # Added only when set, same rule as the client copy above: an
+            # unset location must produce no artifact at all.
+            if where2:
+                html_body2 += f"<p>Where: {_html2.escape(where2)}</p>"
+                text_body2 += f"\nWhere: {where2}"
             methods = cfg.get("notify_methods") or ["email"]
             # "phone" is deliberately absent from this loop. It is not an
             # outbound channel: it means she wants the client to call her, so
@@ -23492,6 +23605,142 @@ def evox_book():
     return jsonify({"ok": True, "start_ts": start_ts, "prepaid": prepaid})
 
 
+# Rae's and Glen's own booking flows write start_ts as naive wall-clock time
+# in Hawaii, which is exactly what this cron's hardcoded "HST" label always
+# meant. A public practitioner's rows are naive wall-clock in HER zone, so the
+# label has to be derived per booking instead of being written into the copy:
+# "HST" on a Fairbanks appointment is a client arriving two hours late.
+_REMINDER_LEGACY_TZ = "Pacific/Honolulu"
+_REMINDER_LEGACY_PRACTITIONERS = ("rae", "glen")
+
+
+def _reminder_when(start_ts, practitioner_tz, visitor_tz):
+    """(time text, zone label) for one reminder, in the zone actually used.
+
+    `visitor_tz` is the zone the client's own browser reported at booking
+    time. It is stored RAW and is NOT validated as a real IANA zone at write
+    time (a browser can report anything), so it is validated here, at the
+    point of use, through practitioner_booking.effective_visitor_tz -- the
+    same resolver the public booking page and the confirmation email use. An
+    unusable value falls back to the practitioner's own zone, and the label
+    then names HER zone: labelling a time with a zone that was not used is
+    the whole bug this function exists to prevent.
+
+    The time is CONVERTED, not relabelled. The label is the zone's own
+    abbreviation on that date (HST, AKDT, NZST), so it stays right across a
+    daylight-saving change. A zone whose abbreviation is a numeric offset
+    ("+07") gets its IANA name instead, because an offset printed next to a
+    time reads as part of the time.
+    """
+    from dashboard import practitioner_booking as _pb
+    rendered_tz = _pb.effective_visitor_tz(visitor_tz, practitioner_tz)
+    # practitioner_tz arrives from a validated config (or the legacy constant
+    # above), but a hand-edited row must not raise in a cron either.
+    home_tz = _pb.effective_visitor_tz(practitioner_tz, _pb.DEFAULT_TIMEZONE)
+    aware = (datetime.fromisoformat(str(start_ts)[:19])
+             .replace(tzinfo=ZoneInfo(home_tz))
+             .astimezone(ZoneInfo(rendered_tz)))
+    abbr = aware.strftime("%Z")
+    return (aware.strftime("%Y-%m-%d %H:%M"),
+            abbr if abbr.isalpha() else rendered_tz)
+
+
+def _reminder_message(cx, row, who, stype, visitor_tz, cfg_cache, name_cache):
+    """(subject, html, text) for one booking, or (None, None, None) to skip it.
+
+    Skipping is a real answer, not a failure: a booking this function cannot
+    word correctly must get NO email at all, and its caller must leave
+    reminded_at unstamped so a correct reminder can still be sent later.
+    """
+    start_ts = row["start_ts"]
+    if who in _REMINDER_LEGACY_PRACTITIONERS:
+        nice, zone = _reminder_when(start_ts, _REMINDER_LEGACY_TZ, visitor_tz)
+        if stype == "biofield-consult":
+            join_line = "Join from your Healing Oasis portal at your appointment time."
+            subject = "Reminder: your Biofield Consult tomorrow"
+            html = (f"<p>Reminder: your Biofield Consult with Dr. Glen is tomorrow at "
+                    f"<b>{nice} {zone}</b>. {join_line}</p>")
+        elif stype == "onboarding":
+            subject = "Reminder: your welcome call with Rae tomorrow"
+            html = (f"<p>Reminder: your welcome call with Rae is tomorrow at "
+                    f"<b>{nice} {zone}</b>. This is a phone call. Rae will call you at "
+                    f"the number on file.</p>")
+        elif stype == "triage":
+            # The discovery call. It had no branch of its own, so it fell to
+            # the EVOX else below and told the client "your EVOX session is
+            # tomorrow ... call Rae at {phone}": the wrong session name, and
+            # Rae's phone number handed to Glen's discovery-call clients, who
+            # have no relationship with her. The same session type is booked
+            # with EITHER practitioner (see /api/triage/book), so the wording
+            # follows the practitioner on the row. Rae's own triage clients do
+            # call her, which is why her number belongs in her half only.
+            if who == "rae":
+                phone = EVOX_RAE_PHONE or "the number in your confirmation"
+                subject = "Reminder: your call with Rae tomorrow"
+                html = (f"<p>Reminder: your 15 minute call with Rae is tomorrow at "
+                        f"<b>{nice} {zone}</b>. This is a phone call. Call Rae at "
+                        f"{phone} at your appointment time.</p>")
+            else:
+                subject = "Reminder: your call with Dr. Glen tomorrow"
+                html = (f"<p>Reminder: your 15 minute call with Dr. Glen is tomorrow "
+                        f"at <b>{nice} {zone}</b>. At your appointment time, open the "
+                        f"booking page from your confirmation email and click Join "
+                        f"your call.</p>")
+        else:
+            phone = EVOX_RAE_PHONE or "the number in your confirmation"
+            subject = "Reminder: your EVOX session tomorrow"
+            html = (f"<p>Reminder: your EVOX session is tomorrow at <b>{nice} {zone}</b>. "
+                    f"Call Rae at {phone} at your appointment time.</p>")
+        return subject, html, html
+
+    # A public practitioner's booking. Everything the copy needs comes from
+    # HER config: her zone, her session label, her location. Without that
+    # config there is nothing correct to say, so the booking is skipped --
+    # never worded from the EVOX branch above, which would hand a stranger
+    # Rae's phone number.
+    if who not in cfg_cache:
+        from dashboard import practitioner_booking as _pb
+        cfg_cache[who] = _pb.get_config(cx, who)
+    cfg = cfg_cache[who]
+    if not cfg:
+        app.logger.warning(
+            "reminder skipped: practitioner %s has no readable booking config "
+            "(booking %s)", who, row["id"])
+        return None, None, None
+    st = next((t for t in (cfg.get("session_types") or [])
+               if t.get("slug") == stype), None)
+    # A session type she has since deleted leaves the appointment real and its
+    # label gone. "appointment" is true of every booking, so the reminder is
+    # still honest; only the name of the session is missing.
+    label = ((st or {}).get("label") or "").strip() or "appointment"
+    nice, zone = _reminder_when(start_ts, cfg["timezone"], visitor_tz)
+    if who not in name_cache:
+        # Best effort, and it reaches Supabase, so it is resolved once per
+        # practitioner per run rather than once per booking. An unknown name
+        # drops the clause instead of blocking the reminder: the appointment
+        # facts are correct either way.
+        name_cache[who] = (_practitioner_display_name(who) or "").strip()
+    her = name_cache[who]
+    lines = [f"Reminder: your {label}" + (f" with {her}" if her else "")
+             + f" is tomorrow at {nice} {zone}."]
+    medium = ((st or {}).get("medium") or "").strip()
+    if medium:
+        lines.append(f"How: {medium}")
+    # Practitioner-authored free text on its way to a client's inbox: escaped
+    # below with everything else, and added only when set (an unset location
+    # must produce no artifact at all, not an empty "Where:" label).
+    where = ((st or {}).get("location") or "").strip()
+    if where:
+        lines.append(f"Where: {where}")
+    # Whitespace collapsed for the SUBJECT only. A label keeps interior
+    # newlines through validation, and a newline in a header value makes
+    # Python's email package refuse the message outright -- a silent send
+    # failure, not header injection. The body keeps the label as she wrote it.
+    subject = f"Reminder: your {' '.join(label.split())} tomorrow"
+    html = "".join(f"<p>{_ihtml.escape(ln)}</p>" for ln in lines)
+    return subject, html, "\n".join(lines)
+
+
 @app.route("/api/evox/run-reminders", methods=["POST"])
 def evox_run_reminders():
     """Cron/console-gated daily job: reminds clients with a 'booked' EVOX session
@@ -23514,51 +23763,100 @@ def evox_run_reminders():
             cx.execute("ALTER TABLE evox_bookings ADD COLUMN reminded_at TEXT")
         except Exception:
             pass
-        # practitioner filter is load-bearing, not decorative. This query used
-        # to run unfiltered, which meant a public multi-tenant booking (whose
-        # `practitioner` is some OTHER practitioner's slug, e.g. "pid-mary")
-        # fell through every branch below to the Rae/EVOX else-clause: a
-        # stranger who booked a different practitioner in a different
-        # timezone would be told "your EVOX session is tomorrow ... HST, call
-        # Rae at {EVOX_RAE_PHONE}" -- wrong session, wrong practitioner, wrong
-        # zone, and Rae's phone number handed to someone who has no
-        # relationship with her. Restricting to the two practitioners this
-        # branch logic actually knows how to word a reminder for closes that
-        # leak. A practitioner-aware reminder (using her own cfg["timezone"]
-        # and session label) is real work that does not exist yet -- until it
-        # does, a public-practitioner booking gets NO automated reminder
-        # rather than the wrong one.
+        # This query was scoped `practitioner IN ('rae','glen')` because the
+        # wording below could not word a reminder for anyone else: a public
+        # multi-tenant booking (whose `practitioner` is another
+        # practitioner's id, e.g. "pid-mary") fell through every branch to
+        # the Rae/EVOX else-clause, and a stranger in another timezone was
+        # told "your EVOX session is tomorrow ... HST, call Rae at
+        # {EVOX_RAE_PHONE}" -- wrong session, wrong practitioner, wrong zone,
+        # and Rae's phone number handed to someone with no relationship with
+        # her. The filter was the only thing holding that shut.
+        #
+        # It is safe to drop now, and ONLY now, because _reminder_message
+        # words a public booking from HER OWN config (her timezone, her
+        # session label, her location, her display name) and returns a skip
+        # for any booking it cannot word -- so no row reaches the EVOX
+        # else-clause by falling through. Widening the recipient set before
+        # that branch existed would have handed strangers Rae's number at
+        # scale, which is why the branch landed in the commit before this one.
         rows = cx.execute(
             "SELECT * FROM evox_bookings WHERE status='booked' AND reminded_at IS NULL "
-            "AND practitioner IN ('rae','glen') AND start_ts BETWEEN ? AND ?", (lo, hi)).fetchall()
+            "AND start_ts BETWEEN ? AND ?", (lo, hi)).fetchall()
+        # Resolved once per practitioner per run, not once per booking: the
+        # config is a database read and the display name reaches Supabase.
+        cfg_cache, name_cache = {}, {}
         for r in rows:
-            nice = r["start_ts"].replace("T", " ")
             keys = r.keys()
             stype = r["session_type"] if "session_type" in keys else "evox"
-            if stype == "biofield-consult":
-                join_line = "Join from your Healing Oasis portal at your appointment time."
-                subject = "Reminder: your Biofield Consult tomorrow"
-                html = (f"<p>Reminder: your Biofield Consult with Dr. Glen is tomorrow at "
-                        f"<b>{nice} HST</b>. {join_line}</p>")
-            elif stype == "onboarding":
-                phone = EVOX_RAE_PHONE or "the number on file"
-                subject = "Reminder: your welcome call with Rae tomorrow"
-                html = (f"<p>Reminder: your welcome call with Rae is tomorrow at "
-                        f"<b>{nice} HST</b>. This is a phone call. Rae will call you at "
-                        f"the number on file.</p>")
-            else:
-                phone = EVOX_RAE_PHONE or "the number in your confirmation"
-                subject = "Reminder: your EVOX session tomorrow"
-                html = (f"<p>Reminder: your EVOX session is tomorrow at <b>{nice} HST</b>. "
-                        f"Call Rae at {phone} at your appointment time.</p>")
+            who = (r["practitioner"] if "practitioner" in keys else "") or "rae"
+            visitor_tz = (r["visitor_tz"] if "visitor_tz" in keys else "") or ""
             try:
-                send_evox_email(r["email"], "", subject, html, html, b"")
-                cx.execute("UPDATE evox_bookings SET reminded_at=? WHERE id=?",
-                           (now.isoformat(), r["id"]))
-                sent += 1
+                subject, html, text = _reminder_message(
+                    cx, r, who, stype, visitor_tz, cfg_cache, name_cache)
+            except Exception:
+                # A booking whose reminder cannot even be BUILT gets nothing
+                # and keeps reminded_at NULL, so the next run can retry it.
+                app.logger.exception("reminder build failed for booking %s", r["id"])
+                continue
+            if not subject:
+                continue    # deliberately skipped; must NOT be stamped
+            # reminded_at is a ONE-WAY stamp: once set, no later reminder can
+            # ever fire for this booking. So it is written only after the send
+            # itself returned, never before and never around it -- stamping a
+            # send that raised would silently convert "we failed to remind
+            # her" into "she was already reminded", permanently.
+            try:
+                _sent = send_evox_email(r["email"], "", subject, html, text, b"")
             except Exception:
                 app.logger.exception("reminder send failed for booking %s", r["id"])
-        cx.commit()
+                continue
+            # send_evox_email falls back to a console log when SMTP is
+            # unconfigured, and returns rather than raising. That is right in
+            # dev, where this is the normal path. In production it would mean
+            # every client in the window gets stamped as reminded without an
+            # email going anywhere -- and reminded_at is one-way, so the real
+            # reminder can never fire afterwards. Silent and unrecoverable.
+            #
+            # Not turned into a refusal, because refusing would stop the stamp
+            # in dev and in the existing test_evox_api reminder tests, where the
+            # fallback IS the expected path. Made loud instead: a
+            # misconfiguration should be visible in the logs on the first run,
+            # not inferred later from clients who say they were never reminded.
+            # Tested against SMTP_HOST, the same module constant send_evox_email
+            # itself reads. It falls back when ANY of host/user/pass is missing,
+            # so "host is set but we still got the fallback" is exactly the
+            # half-configured case worth shouting about, and the one a
+            # credential rotation produces.
+            if isinstance(_sent, tuple) and _sent and _sent[0] == "console-log" \
+                    and SMTP_HOST:
+                app.logger.error(
+                    "reminder for booking %s fell back to console-log while "
+                    "SMTP_HOST is set; it is being stamped as reminded but no "
+                    "email was sent", r["id"])
+            # Stamped and COMMITTED per row, inside its own try.
+            #
+            # The email has already left at this point, so the stamp is the only
+            # record that it did. Batching the commit to the end of the loop
+            # means anything that interrupts the run -- a SIGTERM mid-deploy, or
+            # on Postgres a single failed UPDATE aborting the transaction and
+            # taking every later one with it -- discards the stamps for messages
+            # that were genuinely sent, and tomorrow's run reminds that whole
+            # population a second time.
+            #
+            # A failed stamp is logged and the loop continues: one duplicate
+            # reminder tomorrow is a far smaller harm than aborting the run and
+            # duplicating every client after this one.
+            try:
+                cx.execute("UPDATE evox_bookings SET reminded_at=? WHERE id=?",
+                           (now.isoformat(), r["id"]))
+                cx.commit()
+            except Exception:
+                app.logger.exception(
+                    "reminder for booking %s was SENT but could not be stamped; "
+                    "it may be sent again tomorrow", r["id"])
+                continue
+            sent += 1
     return jsonify({"sent": sent})
 
 
@@ -36091,6 +36389,56 @@ def api_console_practitioners_list():
     practitioners = _pa.list_practitioners(q=q)
     rows = _pa.build_rows(practitioners, _pa.aggregate_activity(LOG_DB))
     return jsonify({"ok": True, "rows": rows})
+
+
+@app.route("/api/console/practitioner/reset-page-slug", methods=["POST"])
+def api_console_practitioner_reset_page_slug():
+    """Admin-only: reset a practitioner's public URL back to her affiliate slug.
+
+    /api/practitioner/page-slug is reachable only from the practitioner's own
+    session, so an unsuitable or squatted page_slug had no path back except
+    hand-writing SQL against production. This calls the SAME
+    practitioner_slugs.set_page_slug setter with an empty candidate -- never a
+    raw UPDATE -- so a reset gets every guarantee that setter gives any other
+    write: page_slug is never left NULL (it falls back to the affiliate
+    slug), the unique index still covers the row, and the old vanity name is
+    freed for someone else to claim through the ordinary namespace guards.
+
+    The target is the practitioner's AFFILIATE slug or her email -- never a
+    page slug. The page slug is the value being retracted, often because it
+    was squatted or offensive; identifying her by the value being discarded
+    would leave a bad page slug unrecoverable by the one tool meant to clear
+    it.
+    """
+    if not _console_key_ok():
+        return jsonify({"error": "Unauthorized"}), 401
+    from dashboard import practitioner_slugs as _pslugs
+    data = request.get_json(silent=True) or {}
+    affiliate_slug = (data.get("affiliate_slug") or "").strip().lower()
+    email = (data.get("email") or "").strip().lower()
+    if not affiliate_slug and not email:
+        return jsonify({"ok": False, "error": "affiliate_slug or email is required"}), 400
+    with _db_lock, db.connect(LOG_DB) as cx:
+        if not affiliate_slug:
+            # Any status, matching _practitioner_affiliate_slug: an admin
+            # resetting a squatted name must be able to reach a pending or
+            # suspended row too, not just an approved one. Approved preferred
+            # when an email somehow maps to more than one row.
+            row = cx.execute(
+                "SELECT slug FROM affiliate_signups WHERE lower(email)=? "
+                "ORDER BY CASE WHEN status='approved' THEN 0 ELSE 1 END, id "
+                "LIMIT 1", (email,)).fetchone()
+            if not row:
+                return jsonify({"ok": False,
+                                "error": f"no practitioner found for {email}"}), 404
+            affiliate_slug = (row[0] or "").strip().lower()
+        try:
+            stored = _pslugs.set_page_slug(
+                cx, affiliate_slug, "",
+                reserved=_pslugs.reserved_for(app.url_map))
+        except _pslugs.SlugError as e:
+            return jsonify({"ok": False, "error": str(e)}), 400
+    return jsonify({"ok": True, "affiliate_slug": affiliate_slug, "page_slug": stored})
 
 
 @app.route("/api/console/cert/notify-cohort", methods=["POST"])

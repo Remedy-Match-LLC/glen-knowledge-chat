@@ -168,6 +168,69 @@ def test_markup_in_a_label_is_stored_as_text():
     assert "<script>" not in out["session_types"][0]["label"]
 
 
+def test_a_session_types_location_round_trips(cx):
+    """A meeting link (zoom) or a street address (in-person) is the 'where'
+    for a session type. It must survive validate_config and set_config/
+    get_config unchanged."""
+    link = "https://zoom.us/j/1234567890?pwd=abc"
+    pb.set_config(cx, PID, _cfg(session_types=[
+        {"slug": "intro", "label": "Intro", "duration_min": 20,
+         "medium": "zoom", "location": link}]))
+    got = pb.get_config(cx, PID)
+    assert got["session_types"][0]["location"] == link
+
+
+def test_a_session_type_with_no_location_still_validates_and_reads_as_empty():
+    """location is optional -- a session type that never mentions it (phone,
+    typically) must validate and come back as '', not raise and not None."""
+    out = pb.validate_config(_cfg(session_types=[
+        {"slug": "intro", "label": "Intro", "duration_min": 20, "medium": "phone"}]))
+    assert out["session_types"][0]["location"] == ""
+
+
+def test_a_real_microsoft_teams_join_url_fits():
+    """The cap has to clear the longest link a practitioner actually pastes.
+
+    A Zoom link is ~80 characters, so an eyeballed cap looks generous until a
+    Teams URL turns up: its percent-encoded `context` parameter carries two
+    GUIDs and pushes the whole thing past 400. This is a real one, structurally,
+    not a boundary value -- a cap tested only at MAX+1 passes happily while
+    rejecting the single link its owner has.
+    """
+    teams = (
+        "https://teams.microsoft.com/l/meetup-join/"
+        "19%3ameeting_MjM3ZDkyYjMtNzc4Ni00YzMxLWEwOTQtMzc5MTU5ZjJhMGYxZWQ4YzQ1"
+        "%40thread.v2/0?context=%7b%22Tid%22%3a%2272f988bf-86f1-41af-91ab-"
+        "2d7cd011db47%22%2c%22Oid%22%3a%22a1b2c3d4-1234-5678-9abc-def012345678"
+        "%22%2c%22MessageId%22%3a%221700000000000%22%2c%22IsBroadcastMeeting"
+        "%22%3atrue%7d&anon=true&deeplinkId=9f8e7d6c-5b4a-4938-a271-6c5d4e3f2a1b"
+    )
+    assert len(teams) > 300, "fixture stopped being a long URL; pick a longer one"
+    out = pb.validate_config(_cfg(session_types=[
+        {"slug": "intro", "label": "Intro", "duration_min": 20,
+         "medium": "zoom", "location": teams}]))
+    assert out["session_types"][0]["location"] == teams
+
+
+def test_a_location_over_the_cap_is_rejected():
+    """location is practitioner-authored free text that reaches a client's
+    inbox and calendar -- it must be capped like every other field here."""
+    too_long = "x" * (pb.MAX_LOCATION + 1)
+    with pytest.raises(pb.BookingConfigError):
+        pb.validate_config(_cfg(session_types=[
+            {"slug": "intro", "label": "Intro", "duration_min": 20,
+             "medium": "in-person", "location": too_long}]))
+
+
+def test_markup_in_a_location_is_stored_as_text():
+    """Same treatment as the label: escaped at render time, but tags should
+    not arrive at all."""
+    out = pb.validate_config(_cfg(session_types=[
+        {"slug": "intro", "label": "Intro", "duration_min": 20,
+         "medium": "in-person", "location": "<script>x</script>123 Main St"}]))
+    assert "<script>" not in out["session_types"][0]["location"]
+
+
 def _insert_row(cx, timezone="America/Anchorage", office_hours="1-5:09:00-17:00",
                  session_types='[{"slug": "intro", "label": "Intro", '
                                 '"duration_min": 20, "medium": "phone"}]'):
@@ -206,6 +269,15 @@ def test_corrupt_stored_timezone_is_not_bookable(cx):
     _insert_row(cx, timezone="UTC-9")
     assert pb.get_config(cx, PID) is None
     assert pb.is_bookable(cx, PID) is False
+
+
+def test_a_stored_session_type_predating_location_reads_back_as_empty_string(cx):
+    """_insert_row's default session_types JSON has no 'location' key at all
+    -- exactly what every row written before this field existed looks like.
+    It must read back as '', never None and never a KeyError."""
+    _insert_row(cx)
+    got = pb.get_config(cx, PID)
+    assert got["session_types"][0]["location"] == ""
 
 
 def test_a_second_save_replaces_rather_than_duplicates(cx):

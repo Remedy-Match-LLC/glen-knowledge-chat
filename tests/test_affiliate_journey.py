@@ -345,3 +345,50 @@ def test_apply_json_suffixes_a_slug_another_practitioner_holds_as_her_url(
     assert body.get("ok") is True, body
     assert body["slug"] != "mary-boyd"
     assert body["slug"].startswith("mary-boyd-"), body["slug"]
+
+
+# ---------------------------------------------------------------------------
+# A shortlink must never be minted before the row that would own it. If the
+# INSERT fails, _rebrandly_create must not have been called at all -- calling
+# it first would mint a truly.vip/<slug> pointing at a row that never came to
+# exist, and a retry would mint another one every time.
+# ---------------------------------------------------------------------------
+
+class _BoomConn(sqlite3.Connection):
+    """A sqlite3.Connection that raises on the INSERT this test targets and
+    behaves normally otherwise -- simulating any failure between "slug
+    decided" and "row committed" without disturbing the pre-insert namespace
+    check, which runs its own unrelated queries on its own connection."""
+
+    def execute(self, sql, *a, **k):
+        if "INSERT INTO affiliate_signups" in sql:
+            raise RuntimeError("simulated insert-path failure")
+        return super().execute(sql, *a, **k)
+
+
+def test_apply_form_failed_insert_mints_no_shortlink(monkeypatch, tmp_path):
+    app_module = _load_app()
+    dbp = str(tmp_path / "chat_log.db")
+    monkeypatch.setattr(app_module, "LOG_DB", dbp)
+    _bootstrap_db(app_module, dbp)
+
+    minted = []
+    _stub_externals(app_module, monkeypatch, minted)
+
+    def _boom_connect(path, timeout=5.0):
+        return sqlite3.connect(path, timeout=timeout, factory=_BoomConn)
+    monkeypatch.setattr(app_module.db, "connect", _boom_connect)
+
+    r = app_module.app.test_client().post("/affiliate/apply-form", data={
+        "name": "Frank Failure", "email": "frank.failure.unique@test.com",
+        "tos": "true"})
+
+    assert r.status_code == 302
+    assert "error=" in r.headers.get("Location", ""), r.headers.get("Location")
+    assert minted == [], f"shortlink minted despite failed insert: {minted}"
+
+    with sqlite3.connect(dbp) as cx:
+        row = cx.execute(
+            "SELECT 1 FROM affiliate_signups WHERE email=?",
+            ("frank.failure.unique@test.com",)).fetchone()
+    assert row is None, "no row should have been written"
