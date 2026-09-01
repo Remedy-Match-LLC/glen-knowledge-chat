@@ -23589,6 +23589,142 @@ def evox_book():
     return jsonify({"ok": True, "start_ts": start_ts, "prepaid": prepaid})
 
 
+# Rae's and Glen's own booking flows write start_ts as naive wall-clock time
+# in Hawaii, which is exactly what this cron's hardcoded "HST" label always
+# meant. A public practitioner's rows are naive wall-clock in HER zone, so the
+# label has to be derived per booking instead of being written into the copy:
+# "HST" on a Fairbanks appointment is a client arriving two hours late.
+_REMINDER_LEGACY_TZ = "Pacific/Honolulu"
+_REMINDER_LEGACY_PRACTITIONERS = ("rae", "glen")
+
+
+def _reminder_when(start_ts, practitioner_tz, visitor_tz):
+    """(time text, zone label) for one reminder, in the zone actually used.
+
+    `visitor_tz` is the zone the client's own browser reported at booking
+    time. It is stored RAW and is NOT validated as a real IANA zone at write
+    time (a browser can report anything), so it is validated here, at the
+    point of use, through practitioner_booking.effective_visitor_tz -- the
+    same resolver the public booking page and the confirmation email use. An
+    unusable value falls back to the practitioner's own zone, and the label
+    then names HER zone: labelling a time with a zone that was not used is
+    the whole bug this function exists to prevent.
+
+    The time is CONVERTED, not relabelled. The label is the zone's own
+    abbreviation on that date (HST, AKDT, NZST), so it stays right across a
+    daylight-saving change. A zone whose abbreviation is a numeric offset
+    ("+07") gets its IANA name instead, because an offset printed next to a
+    time reads as part of the time.
+    """
+    from dashboard import practitioner_booking as _pb
+    rendered_tz = _pb.effective_visitor_tz(visitor_tz, practitioner_tz)
+    # practitioner_tz arrives from a validated config (or the legacy constant
+    # above), but a hand-edited row must not raise in a cron either.
+    home_tz = _pb.effective_visitor_tz(practitioner_tz, _pb.DEFAULT_TIMEZONE)
+    aware = (datetime.fromisoformat(str(start_ts)[:19])
+             .replace(tzinfo=ZoneInfo(home_tz))
+             .astimezone(ZoneInfo(rendered_tz)))
+    abbr = aware.strftime("%Z")
+    return (aware.strftime("%Y-%m-%d %H:%M"),
+            abbr if abbr.isalpha() else rendered_tz)
+
+
+def _reminder_message(cx, row, who, stype, visitor_tz, cfg_cache, name_cache):
+    """(subject, html, text) for one booking, or (None, None, None) to skip it.
+
+    Skipping is a real answer, not a failure: a booking this function cannot
+    word correctly must get NO email at all, and its caller must leave
+    reminded_at unstamped so a correct reminder can still be sent later.
+    """
+    start_ts = row["start_ts"]
+    if who in _REMINDER_LEGACY_PRACTITIONERS:
+        nice, zone = _reminder_when(start_ts, _REMINDER_LEGACY_TZ, visitor_tz)
+        if stype == "biofield-consult":
+            join_line = "Join from your Healing Oasis portal at your appointment time."
+            subject = "Reminder: your Biofield Consult tomorrow"
+            html = (f"<p>Reminder: your Biofield Consult with Dr. Glen is tomorrow at "
+                    f"<b>{nice} {zone}</b>. {join_line}</p>")
+        elif stype == "onboarding":
+            subject = "Reminder: your welcome call with Rae tomorrow"
+            html = (f"<p>Reminder: your welcome call with Rae is tomorrow at "
+                    f"<b>{nice} {zone}</b>. This is a phone call. Rae will call you at "
+                    f"the number on file.</p>")
+        elif stype == "triage":
+            # The discovery call. It had no branch of its own, so it fell to
+            # the EVOX else below and told the client "your EVOX session is
+            # tomorrow ... call Rae at {phone}": the wrong session name, and
+            # Rae's phone number handed to Glen's discovery-call clients, who
+            # have no relationship with her. The same session type is booked
+            # with EITHER practitioner (see /api/triage/book), so the wording
+            # follows the practitioner on the row. Rae's own triage clients do
+            # call her, which is why her number belongs in her half only.
+            if who == "rae":
+                phone = EVOX_RAE_PHONE or "the number in your confirmation"
+                subject = "Reminder: your call with Rae tomorrow"
+                html = (f"<p>Reminder: your 15 minute call with Rae is tomorrow at "
+                        f"<b>{nice} {zone}</b>. This is a phone call. Call Rae at "
+                        f"{phone} at your appointment time.</p>")
+            else:
+                subject = "Reminder: your call with Dr. Glen tomorrow"
+                html = (f"<p>Reminder: your 15 minute call with Dr. Glen is tomorrow "
+                        f"at <b>{nice} {zone}</b>. At your appointment time, open the "
+                        f"booking page from your confirmation email and click Join "
+                        f"your call.</p>")
+        else:
+            phone = EVOX_RAE_PHONE or "the number in your confirmation"
+            subject = "Reminder: your EVOX session tomorrow"
+            html = (f"<p>Reminder: your EVOX session is tomorrow at <b>{nice} {zone}</b>. "
+                    f"Call Rae at {phone} at your appointment time.</p>")
+        return subject, html, html
+
+    # A public practitioner's booking. Everything the copy needs comes from
+    # HER config: her zone, her session label, her location. Without that
+    # config there is nothing correct to say, so the booking is skipped --
+    # never worded from the EVOX branch above, which would hand a stranger
+    # Rae's phone number.
+    if who not in cfg_cache:
+        from dashboard import practitioner_booking as _pb
+        cfg_cache[who] = _pb.get_config(cx, who)
+    cfg = cfg_cache[who]
+    if not cfg:
+        app.logger.warning(
+            "reminder skipped: practitioner %s has no readable booking config "
+            "(booking %s)", who, row["id"])
+        return None, None, None
+    st = next((t for t in (cfg.get("session_types") or [])
+               if t.get("slug") == stype), None)
+    # A session type she has since deleted leaves the appointment real and its
+    # label gone. "appointment" is true of every booking, so the reminder is
+    # still honest; only the name of the session is missing.
+    label = ((st or {}).get("label") or "").strip() or "appointment"
+    nice, zone = _reminder_when(start_ts, cfg["timezone"], visitor_tz)
+    if who not in name_cache:
+        # Best effort, and it reaches Supabase, so it is resolved once per
+        # practitioner per run rather than once per booking. An unknown name
+        # drops the clause instead of blocking the reminder: the appointment
+        # facts are correct either way.
+        name_cache[who] = (_practitioner_display_name(who) or "").strip()
+    her = name_cache[who]
+    lines = [f"Reminder: your {label}" + (f" with {her}" if her else "")
+             + f" is tomorrow at {nice} {zone}."]
+    medium = ((st or {}).get("medium") or "").strip()
+    if medium:
+        lines.append(f"How: {medium}")
+    # Practitioner-authored free text on its way to a client's inbox: escaped
+    # below with everything else, and added only when set (an unset location
+    # must produce no artifact at all, not an empty "Where:" label).
+    where = ((st or {}).get("location") or "").strip()
+    if where:
+        lines.append(f"Where: {where}")
+    # Whitespace collapsed for the SUBJECT only. A label keeps interior
+    # newlines through validation, and a newline in a header value makes
+    # Python's email package refuse the message outright -- a silent send
+    # failure, not header injection. The body keeps the label as she wrote it.
+    subject = f"Reminder: your {' '.join(label.split())} tomorrow"
+    html = "".join(f"<p>{_ihtml.escape(ln)}</p>" for ln in lines)
+    return subject, html, "\n".join(lines)
+
+
 @app.route("/api/evox/run-reminders", methods=["POST"])
 def evox_run_reminders():
     """Cron/console-gated daily job: reminds clients with a 'booked' EVOX session
@@ -23628,33 +23764,37 @@ def evox_run_reminders():
         rows = cx.execute(
             "SELECT * FROM evox_bookings WHERE status='booked' AND reminded_at IS NULL "
             "AND practitioner IN ('rae','glen') AND start_ts BETWEEN ? AND ?", (lo, hi)).fetchall()
+        # Resolved once per practitioner per run, not once per booking: the
+        # config is a database read and the display name reaches Supabase.
+        cfg_cache, name_cache = {}, {}
         for r in rows:
-            nice = r["start_ts"].replace("T", " ")
             keys = r.keys()
             stype = r["session_type"] if "session_type" in keys else "evox"
-            if stype == "biofield-consult":
-                join_line = "Join from your Healing Oasis portal at your appointment time."
-                subject = "Reminder: your Biofield Consult tomorrow"
-                html = (f"<p>Reminder: your Biofield Consult with Dr. Glen is tomorrow at "
-                        f"<b>{nice} HST</b>. {join_line}</p>")
-            elif stype == "onboarding":
-                phone = EVOX_RAE_PHONE or "the number on file"
-                subject = "Reminder: your welcome call with Rae tomorrow"
-                html = (f"<p>Reminder: your welcome call with Rae is tomorrow at "
-                        f"<b>{nice} HST</b>. This is a phone call. Rae will call you at "
-                        f"the number on file.</p>")
-            else:
-                phone = EVOX_RAE_PHONE or "the number in your confirmation"
-                subject = "Reminder: your EVOX session tomorrow"
-                html = (f"<p>Reminder: your EVOX session is tomorrow at <b>{nice} HST</b>. "
-                        f"Call Rae at {phone} at your appointment time.</p>")
+            who = (r["practitioner"] if "practitioner" in keys else "") or "rae"
+            visitor_tz = (r["visitor_tz"] if "visitor_tz" in keys else "") or ""
             try:
-                send_evox_email(r["email"], "", subject, html, html, b"")
-                cx.execute("UPDATE evox_bookings SET reminded_at=? WHERE id=?",
-                           (now.isoformat(), r["id"]))
-                sent += 1
+                subject, html, text = _reminder_message(
+                    cx, r, who, stype, visitor_tz, cfg_cache, name_cache)
+            except Exception:
+                # A booking whose reminder cannot even be BUILT gets nothing
+                # and keeps reminded_at NULL, so the next run can retry it.
+                app.logger.exception("reminder build failed for booking %s", r["id"])
+                continue
+            if not subject:
+                continue    # deliberately skipped; must NOT be stamped
+            # reminded_at is a ONE-WAY stamp: once set, no later reminder can
+            # ever fire for this booking. So it is written only after the send
+            # itself returned, never before and never around it -- stamping a
+            # send that raised would silently convert "we failed to remind
+            # her" into "she was already reminded", permanently.
+            try:
+                send_evox_email(r["email"], "", subject, html, text, b"")
             except Exception:
                 app.logger.exception("reminder send failed for booking %s", r["id"])
+                continue
+            cx.execute("UPDATE evox_bookings SET reminded_at=? WHERE id=?",
+                       (now.isoformat(), r["id"]))
+            sent += 1
         cx.commit()
     return jsonify({"sent": sent})
 
