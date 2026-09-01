@@ -53195,6 +53195,50 @@ def api_console_gk_email_history_rebuild():
     return ok(result)
 
 
+@app.route("/api/console/sequence-push", methods=["POST"])
+@require_console_key
+def api_console_sequence_push():
+    """Receive one sequence definition parsed from the vault.
+
+    The vault owns the copy; this is the serving copy. Editing a sequence is an
+    edit plus one push, with no deploy, because a flag flip already costs two
+    deploys here and copy should not be gated on that.
+
+    Refuses a malformed sequence WHOLE rather than storing part of it: a gap in
+    step numbers means a step file was deleted or misnamed, and storing it would
+    give a drip whose day-4 email silently does not exist.
+
+    Cannot activate a sequence. `active` is owned by a deliberate console action
+    (dashboard.sequences.set_active), so no copy edit can start or stop sending.
+    """
+    from dashboard import sequences as _seq
+    payload = request.get_json(force=True, silent=True) or {}
+    slug = (payload.get("slug") or "").strip()
+    name = (payload.get("name") or "").strip()
+    if not slug or not name:
+        return jsonify({"ok": False, "error": "slug and name are required"}), 400
+    steps = payload.get("steps") or []
+    try:
+        with db.connect(LOG_DB) as cx:
+            _seq.init_tables(cx)
+            _seq.upsert(cx, slug=slug, name=name,
+                        trigger_kind=(payload.get("trigger_kind") or "manual"),
+                        active=False, steps=steps)
+    except ValueError as e:
+        return jsonify({"ok": False, "error": str(e)}), 400
+    return jsonify({"ok": True, "slug": slug, "steps": len(steps)})
+
+
+@app.route("/api/console/sequences", methods=["GET"])
+@require_console_key
+def api_console_sequences():
+    """List stored sequences with their step counts and active flag."""
+    from dashboard import sequences as _seq
+    with db.connect(LOG_DB) as cx:
+        _seq.init_tables(cx)
+        return jsonify({"sequences": _seq.list_all(cx)})
+
+
 @app.route("/api/console/repertoire-reseed", methods=["POST"])
 @require_console_key
 def api_console_repertoire_reseed():

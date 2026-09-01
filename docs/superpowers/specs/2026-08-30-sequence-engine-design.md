@@ -1,7 +1,8 @@
 # Sequence Engine — in-house email automation
 
 **Date:** 2026-08-30
-**Status:** Approved for planning
+**Status:** Slice 1 shipped; slices 2-5 open. Revised 2026-09-01 to extend the
+existing vault content-email system rather than duplicate it.
 **Goal:** Own the authoring, scheduling and sending of automated email sequences,
 so copy lives in version-controlled text we can read, test and edit, instead of
 inside GoHighLevel workflows that no API can reach.
@@ -27,11 +28,22 @@ one-line fixes that a test would have caught. Instead they required reading
 delivered mail to find, and they remain unfixed because the workflow containing
 them cannot be located by name in the GHL UI.
 
-We are also already most of the way in-house. `dashboard/ghl_email.py` posts
-directly to the conversations API, and `scripts/weekly_live_invitation.py` sends
-the weekly community invitations with batching, suppression checks, and
-per-recipient idempotency. This spec generalizes that script rather than
-introducing a new mechanism.
+We are also already most of the way in-house, in **two** places.
+
+In deploy-chat: `dashboard/ghl_email.py` posts directly to the conversations API,
+and `scripts/weekly_live_invitation.py` sends the weekly community invitations
+with batching, suppression checks, and per-recipient idempotency.
+
+In the vault: `03 Marketing/ghl-email-automation/` is a complete content-email
+system — `ghl_send.py`, `run_campaign.py`, `router.py`, `profiler.py`,
+`variants.py`, `sent_log.py`, a launchd cadence, and campaigns stored as markdown
+with front matter. Its idempotency is already `UNIQUE(contact_id, campaign_id)`
+with `INSERT OR IGNORE`, and its copy already lives in the vault. See
+[[project_vault_content_email_system]].
+
+**This spec was first written without knowing that existed**, and proposed a near
+duplicate of it. Corrected 2026-09-01: the engine EXTENDS these, and the sections
+below say for each piece whether it is reused, moved, or new.
 
 ## Non-goals
 
@@ -43,8 +55,44 @@ introducing a new mechanism.
   system of record.
 - **Migrating every workflow at once.** Sequences move over one at a time, each
   only after the GHL original is located and paused.
+- **Replacing the vault's one-shot campaign sender.** `ghl_send.py send` blasts a
+  tag on a schedule and is the right tool for weekly content. The engine handles
+  the thing it cannot do: a multi-step drip whose clock starts per contact at
+  enrollment. The two coexist and share the copy format and the unsubscribe
+  footer.
 
 ---
+
+## What is reused, moved, and new
+
+| Piece | Where it is now | Decision |
+|---|---|---|
+| Copy as markdown + front matter | vault `campaigns/<slot>/*.md` | **Reuse the format**, add `delay_days` and `step` |
+| Front-matter parser | vault `variants.py` `_parse` | **Reuse the conventions**; the push script parses the same shape |
+| Per-recipient idempotency | vault `sent_log.py`, `UNIQUE(contact_id, campaign_id)` | **Reuse the pattern**, widened to `(slug, step_no, email)` |
+| Unsubscribe footer | `dashboard/unsubscribe.py` + vault `unsub.py` | **Already shared** (slice 1, shipped) — pinned signature vector |
+| Send transport | `dashboard/ghl_email.send_via_ghl` | **Reuse unchanged** |
+| Suppression + DND check | `email_suppression`, `_dnd_email` | **Reuse unchanged** |
+| One-shot campaign to a tag | vault `run_campaign.py` | **Leave alone** — still the right tool for weekly content |
+| Freshness gate | vault `freshness.py` | **Deliberately not used** by the engine (see below) |
+| Per-contact enrollment with day offsets | nowhere | **New** |
+| Reliable scheduling | vault launchd | **Moved to Render cron** (see below) |
+
+**Freshness does not apply to a drip.** The vault's `refreshed:` gate exists
+because weekly content goes stale: blasting a three-week-old "today at 3 PM"
+invitation is wrong. A drip step is evergreen by design — the client receives it
+on their day 4 whether it was written last week or last year. Applying a
+staleness gate would silently stop the sequence, which is exactly the failure the
+gate was built to reveal.
+
+**Scheduling moves to Render, and the reason is evidence, not preference.** The
+vault cadence runs under launchd on Glen's Mac. It sent nothing from 2026-07-24
+to 2026-08-31 and nobody noticed, because the Mac has to be awake, the log is
+local, and until 2026-09-01 a skip was silent. A drip owes each contact a send on
+a specific day; that needs a scheduler that runs whether or not a laptop is open.
+Render already runs the charge cron and others.
+
+So the split is: **vault owns the copy, Render owns the clock.**
 
 ## Copy lives in the vault, pushed to Postgres
 
@@ -57,6 +105,10 @@ are the **source** and Postgres is the **serving copy**.
   01-<step-slug>.md  # subject + delay_days in frontmatter, markdown body
   02-<step-slug>.md
 ```
+
+The front matter follows the vault's existing convention (`segment:`, `subject:`,
+`tag:`, `from:` parsed by `variants.py`) plus `delay_days:`. A person who can edit
+a campaign can edit a sequence step without learning a second format.
 
 Enrollment is by trigger, not by a stored audience query. A sequence never
 selects its own recipients; something calls `enroll()`. This keeps the blast
@@ -151,7 +203,7 @@ token link. Every `source: "app"` message — anything sent through the
 conversations API, including our own `weekly_live_invitation.py` — carries none
 unless the sender wrote one into the body itself.
 
-**This is a live gap, not just a design constraint.** Audited 2026-08-30 across
+**This WAS a live gap, closed by slice 1 on 2026-08-31.** Audited 2026-08-30 across
 every outbound subject with 20+ sends: **5,440 sends across 13 subjects carry no
 unsubscribe link**, all `source: app`. Eight subjects do carry one (409 sends).
 
@@ -167,9 +219,15 @@ checks `email_suppression.is_suppressed` **and** GHL's `dnd`/`dndSettings`
 before every send. Existing opt-outs are honored. The gap is that these emails
 give a recipient no way to create one.
 
-**Therefore unsubscribe is built first**, as a shared helper on the bulk send
-path rather than inside the engine, and the existing senders are retrofitted
-before any new sequence exists. The engine then inherits it.
+**Therefore unsubscribe was built first**, as a shared helper on the bulk send
+path rather than inside the engine, and the existing senders were retrofitted
+before any new sequence exists. The engine inherits it: a sequence step passes its
+slug as the `scope`, and the same signed link works, because the vault sender and
+the server verifier pin the same signature vector.
+
+Still outstanding from that audit: the ~780 transactional sends were deliberately
+left without a footer, and whether that line sits in the right place is Glen's
+call, not this document's.
 
 So the engine must append its own. Requirements:
 
@@ -206,20 +264,33 @@ is located.
 This is more than one plan's worth of work. Sliced so each lands green and
 useful on its own:
 
-1. **Unsubscribe, shared, and retrofit.** Signed token, unsubscribe route,
-   per-sequence and global opt-out, and a footer helper on the shared bulk send
-   path. Retrofit `weekly_live_invitation.py` and the `BULK_VIA_GHL` router so
-   promotional sends stop going out bare. **Ships independently of the engine
-   and fixes a live gap of 4,660 sends** — which is why it goes first.
-2. **Schema + push script.** Tables, `sequence_push.py`, a sequence defined in
-   the vault and visible in Postgres. Sends nothing.
-3. **Runner + idempotency, dark.** Due-step calculation, claim-before-send,
-   `--dry-run`. Cron registered but the sequence inactive. Still sends nothing.
-4. **First live sequence.** A new sequence, small audience, watched.
-5. **Nurture migration.** Blocked on locating and pausing the GHL original.
+1. ~~**Unsubscribe, shared, and retrofit.**~~ **SHIPPED 2026-08-31** (PR #1509 +
+   vault commit). Signed token, `/email/unsubscribe` route confirming on GET and
+   recording on POST, opt-out into `email_suppression` as `bounce_type='optout'`,
+   opt-in `send_bulk(..., unsubscribe_scope=)`, and retrofits to
+   `weekly_live_invitation.py` and the vault `ghl_send.py`. From identity
+   consolidated on `drglen@mail.remedymatch.com` with a writer-side guard.
+   Verified in production: signed link 200, forged 400.
 
-Slice 1 changes existing client-facing email, so it needs the same care as any
-money-path change. Slices 2 and 3 cannot email anyone at all.
+   Two things it cost that were not in the estimate, both worth remembering: the
+   vault sender had to be found first (this spec nearly duplicated it), and the
+   alert channel it depends on turned out to be dead — `POST /api/todos` had been
+   silently discarding every row on Postgres since July (PRs #1511, #1520).
+
+2. **Schema + push script.** Tables, `scripts/sequence_push.py`, a sequence
+   defined in the vault and visible in Postgres. Sends nothing.
+3. **Runner + idempotency, dark.** Due-step calculation, claim-before-send,
+   `--dry-run`. Render cron registered but the sequence inactive. Still sends
+   nothing.
+4. **First live sequence.** A new sequence, small audience, watched.
+5. **Nurture migration.** Blocked on locating and pausing the GHL original, which
+   is a Glen-only task: the automation UI is a cross-origin iframe that browser
+   automation cannot read, and every relevant API returns 403. Fingerprint to
+   match: ~40 enrolled, Contact Created trigger, five Send Email steps with waits
+   of 4/6/8/7 days, active 2026-07-08 to 2026-08-28.
+
+Slices 2 and 3 cannot email anyone at all, which is what makes them safe to ship
+without a client-facing review.
 
 ## Testing
 
