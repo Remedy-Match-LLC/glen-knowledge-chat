@@ -2429,3 +2429,89 @@ def test_the_web_address_copy_follows_the_house_rules():
     # are not copy, and neither is the "--" inside an HTML comment.
     body = re.sub(r"<[^>]+>", " ", section)
     assert "--" not in body, "a bare double hyphen in practitioner-facing copy"
+
+
+def test_the_emailed_cancel_link_survives_a_page_slug_rename(logdb, monkeypatch):
+    """A cancel link is a DURABLE artifact: emailed once, opened days later,
+    and the only record a client without an account has of the appointment.
+
+    It used to be built on whatever path segment the visitor booked under.
+    Before this branch that could only be the affiliate slug, which never
+    changes. Now the canonical booking URL is the PAGE slug, so a rename
+    orphaned every outstanding link: resolve_page found the old name under
+    neither column, /api/book/<slug>/cancel 404'd, the client could not
+    cancel, and the practitioner held a slot nobody attended.
+    """
+    _seed_page_slug(logdb)                 # slug=remedy-match, page=dr-glen
+    from dashboard import practitioner_portal as pp
+    monkeypatch.setattr(pp, "find_practitioner_id_by_email",
+                        lambda email: PID if email == "glen@example.com" else None)
+    from dashboard.chat_limits import VelocityLimiter
+    monkeypatch.setattr(appmod, "_chat_velocity", VelocityLimiter())
+    sent = []
+    monkeypatch.setattr(appmod, "send_evox_email",
+                        lambda to, name, subject, html_body, text_body, ics_bytes:
+                        sent.append(text_body))
+    client = _public_client(monkeypatch)
+    with _open(logdb) as c:
+        pb.set_config(c, PID, CFG)
+
+    # The client books under the practitioner's CURRENT public URL, which is
+    # the page slug -- the name that is about to change.
+    slot = client.get("/api/book/dr-glen/slots?session=intro").get_json()["slots"][0]
+    r = client.post("/api/book/dr-glen", json={
+        "session": "intro", "start": slot["start"],
+        "name": "A Client", "email": "client@example.com"})
+    assert r.status_code == 200, r.get_data(as_text=True)
+
+    import re as _re
+    from urllib.parse import urlparse, parse_qs
+    m = _re.search(r"/book/cancel\?[^\s\"]+", sent[0])
+    assert m, "no cancel link in the confirmation body"
+    qs = parse_qs(urlparse(m.group(0).replace("/book/cancel?", "?")).query)
+    assert qs["slug"] == ["remedy-match"], \
+        "the cancel link must name the AFFILIATE slug, which cannot be renamed"
+
+    # He renames his public URL. The name the client booked under now belongs
+    # to nobody -- assert that, or this test proves nothing.
+    from dashboard import practitioner_slugs as _pslugs
+    with _open(logdb) as c:
+        _pslugs.set_page_slug(c, "remedy-match", "healing-oasis",
+                              reserved=frozenset())
+        assert _pslugs.resolve_page(c, "dr-glen") == ("", "", ""), \
+            "the old page slug should be orphaned by the rename"
+
+    # The link in the client's inbox still cancels the appointment.
+    rc = client.post(f"/api/book/{qs['slug'][0]}/cancel", json={
+        "start": slot["start"], "token": r.get_json()["cancel_token"]})
+    assert rc.status_code == 200, rc.get_data(as_text=True)
+    with _open(logdb) as c:
+        assert c.execute("SELECT status FROM evox_bookings WHERE start_ts=?",
+                         (slot["start"],)).fetchone()["status"] == "cancelled"
+
+
+def test_the_ics_cancel_link_is_the_same_durable_one(logdb, monkeypatch):
+    """The ICS description reuses cancel_url verbatim. Both copies of the link
+    the client keeps -- the mail body and the calendar entry -- must name the
+    affiliate slug, or the calendar copy rots on its own."""
+    _seed_page_slug(logdb)
+    from dashboard import practitioner_portal as pp
+    monkeypatch.setattr(pp, "find_practitioner_id_by_email",
+                        lambda email: PID if email == "glen@example.com" else None)
+    from dashboard.chat_limits import VelocityLimiter
+    monkeypatch.setattr(appmod, "_chat_velocity", VelocityLimiter())
+    sent = []
+    monkeypatch.setattr(appmod, "send_evox_email",
+                        lambda to, name, subject, html_body, text_body, ics_bytes:
+                        sent.append(ics_bytes or b""))
+    client = _public_client(monkeypatch)
+    with _open(logdb) as c:
+        pb.set_config(c, PID, CFG)
+    slot = client.get("/api/book/dr-glen/slots?session=intro").get_json()["slots"][0]
+    client.post("/api/book/dr-glen", json={
+        "session": "intro", "start": slot["start"],
+        "name": "A Client", "email": "client@example.com"})
+    # ICS folds long lines, so match on the query parameter, not the whole URL.
+    ics = sent[0].decode("utf-8", "replace").replace("\r\n ", "").replace("\n ", "")
+    assert "slug=remedy-match" in ics, ics
+    assert "slug=dr-glen" not in ics

@@ -17920,6 +17920,37 @@ def api_public_book(slug):
         pid = _pb.resolve_practitioner_pid(cx, slug)
         if not pid:
             return jsonify({"ok": False, "error": "unknown_practitioner"}), 404
+        # The name to build the emailed cancel link on. NOT `slug`, the path
+        # segment this visitor happened to arrive under: that is normally her
+        # PAGE slug now, which she can rename at will, and the cancel link is a
+        # durable artifact -- emailed once, opened days later, and the only
+        # record a client without an account has of the appointment. After a
+        # rename resolve_page finds the old name under neither column, the
+        # cancel route 404s, and she holds a slot nobody attends.
+        #
+        # The AFFILIATE slug never changes and resolve_page accepts it forever
+        # through its legacy branch, so it is the only name safe to print into
+        # something that outlives the request. Same argument this branch
+        # already applies to the rm_ref cookie and the alias redirect. The
+        # HMAC token itself is unaffected either way -- it is keyed on
+        # (pid, start_ts, booking_id), never on a slug.
+        #
+        # Fails OPEN to the requested name. resolve_practitioner_pid above has
+        # already established this slug names a real, approved practitioner, so
+        # a fault here is a fault in a naming nicety, not in the booking -- and
+        # the visitor is mid-POST on a slot that is about to be durably theirs.
+        # A 500 for a booking that succeeds is what makes someone book twice.
+        # The requested name is the name they are on right now, so a link built
+        # on it works today and rots only if she later renames.
+        from dashboard import practitioner_slugs as _pslugs
+        try:
+            _pkind, _pcanon, _paff = _pslugs.resolve_page(
+                cx, _pslugs.normalize(slug))
+            cancel_slug = _paff or slug
+        except Exception as e:  # noqa: BLE001
+            print(f"[public-book] cancel-slug resolve failed for {slug!r}: {e!r}",
+                  flush=True)
+            cancel_slug = slug
         cfg = _pb.get_config(cx, pid)
         st = next((t for t in (cfg or {}).get("session_types", [])
                    if t["slug"] == session_slug), None)
@@ -18029,7 +18060,10 @@ def api_public_book(slug):
         # Auckland client on a page reading "Monday" for a booking they made
         # for "Tuesday").
         from urllib.parse import quote as _quote
-        cancel_url = (f"{portal_base()}/book/cancel?slug={slug}&start={start_ts}"
+        # cancel_slug, not slug -- see where it is resolved above. This string
+        # is reused verbatim in the ICS description below, so both copies of
+        # the link the client keeps are built on the name that cannot rot.
+        cancel_url = (f"{portal_base()}/book/cancel?slug={cancel_slug}&start={start_ts}"
                       f"&token={token}&when={_quote(shown)}&tz={_quote(rendered_tz)}")
         lines = [f"Hi {name},", "",
                  f"Your {st['label']} is booked.", "",
