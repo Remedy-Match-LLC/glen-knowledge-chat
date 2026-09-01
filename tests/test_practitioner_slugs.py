@@ -457,6 +457,65 @@ def test_page_slug_is_taken_sees_both_columns_at_any_status(cx):
         cx, "the-coach", excluding_affiliate_slug="pending-pat") is False
 
 
+def test_claiming_a_page_slug_equal_to_anothers_alias_is_refused(cx):
+    """The two namespaces guard each other: a vanity URL cannot silently
+    shadow a published alias that already resolves somewhere else."""
+    _seed(cx, slug="remedy-match")
+    _seed(cx, slug="mary-boyd")
+    ps.claim_alias(cx, "mary-boyd", "healing-oasis-hilo", frozenset())
+    with pytest.raises(ps.SlugError):
+        ps.set_page_slug(cx, "remedy-match", "healing-oasis-hilo",
+                         reserved=frozenset())
+    # Mary's alias still resolves to Mary -- the refusal above must not have
+    # written anything.
+    assert ps.alias_owner(cx, "healing-oasis-hilo") == "mary-boyd"
+
+
+def test_claiming_an_alias_equal_to_anothers_page_slug_is_refused(cx):
+    """The other direction: an alias cannot be claimed on top of a name
+    someone already published as their vanity URL."""
+    _seed(cx, slug="remedy-match")
+    _seed(cx, slug="mary-boyd")
+    ps.set_page_slug(cx, "mary-boyd", "the-coach", reserved=frozenset())
+    with pytest.raises(ps.SlugError):
+        ps.claim_alias(cx, "remedy-match", "the-coach", frozenset())
+    assert ps.alias_owner(cx, "the-coach") == ""
+
+
+def test_reclaiming_your_own_alias_as_a_page_slug_is_not_a_collision(cx):
+    """An alias she already owns already resolves to her, so setting her
+    page_slug to that same string hands her no new name and must not be
+    treated as a collision -- the alias-side twin of
+    test_reclaiming_your_own_page_slug_is_not_a_collision."""
+    _seed(cx, slug="mary-boyd")
+    ps.claim_alias(cx, "mary-boyd", "healing-oasis-hilo", frozenset())
+    assert ps.set_page_slug(cx, "mary-boyd", "healing-oasis-hilo",
+                            reserved=frozenset()) == "healing-oasis-hilo"
+
+
+def test_claiming_your_own_page_slug_as_an_alias_is_refused(cx):
+    """The claim-path guard has no self-exemption, matching the existing
+    (unwidened) behaviour of slug_is_taken: aliasing your own canonical slug
+    to itself was already refused before this change, and aliasing your own
+    page_slug to itself is refused the same way, bare."""
+    _seed(cx, slug="remedy-match")
+    ps.set_page_slug(cx, "remedy-match", "the-coach", reserved=frozenset())
+    with pytest.raises(ps.SlugError):
+        ps.claim_alias(cx, "remedy-match", "the-coach", frozenset())
+
+
+def test_the_two_existing_features_still_work_for_non_colliding_cases(cx):
+    """Sanity check that widening the guards did not fold the two mechanisms
+    together: an alias and a page_slug that do not collide with anything
+    still both work exactly as before."""
+    _seed(cx, slug="remedy-match")
+    _seed(cx, slug="mary-boyd")
+    ps.claim_alias(cx, "remedy-match", "healing-oasis-hilo", frozenset())
+    assert ps.resolve(cx, "healing-oasis-hilo") == ("alias", "remedy-match")
+    ps.set_page_slug(cx, "mary-boyd", "the-coach", reserved=frozenset())
+    assert ps.resolve_page(cx, "the-coach") == ("canonical", "the-coach", "mary-boyd")
+
+
 def test_a_malformed_page_slug_is_refused(cx):
     _seed(cx, slug="remedy-match")
     for bad in ("Bad--Shape", "ab", "dr glen", "dr_glen"):

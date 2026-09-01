@@ -196,9 +196,29 @@ def resolve(cx, slug):
     return ("", "")
 
 
+def _page_slug_taken_bare(cx, candidate):
+    """True iff `candidate` equals any practitioner's affiliate_signups.page_slug,
+    with no self-exclusion.
+
+    Used only by claim_alias. There is no "claimant's own row" to exempt the
+    way page_slug_is_taken exempts one, because this check is symmetric with
+    the existing canonical check right above its call site:
+    slug_is_taken(cx, a) already refuses an alias equal to ANY practitioner's
+    affiliate slug -- including the claimant's own canonical slug -- with no
+    self-exemption; aliasing your own canonical to itself is refused today.
+    An alias equal to the claimant's own page_slug is just as redundant, so it
+    is refused the same way, bare.
+    """
+    init_page_slug(cx)
+    row = cx.execute("SELECT 1 FROM affiliate_signups WHERE page_slug=?",
+                     (normalize(candidate),)).fetchone()
+    return row is not None
+
+
 def claim_alias(cx, canonical, alias, reserved):
     """Reserve `alias` as a redirect to `canonical`. Raises SlugError if the
-    alias is malformed, reserved, already an alias, or anyone's canonical.
+    alias is malformed, reserved, already an alias, anyone's canonical slug,
+    or anyone's page slug.
 
     Fails closed: every check runs before the insert, and the alias PRIMARY KEY
     is the backstop against a concurrent duplicate.
@@ -210,6 +230,8 @@ def claim_alias(cx, canonical, alias, reserved):
     check_not_reserved(a, reserved)
     if slug_is_taken(cx, a):
         raise SlugError(f"'{a}' is already a practitioner's canonical slug")
+    if _page_slug_taken_bare(cx, a):
+        raise SlugError(f"'{a}' is already a practitioner's public URL")
     if alias_owner(cx, a):
         raise SlugError(f"'{a}' is already claimed as an alias")
     # Validate the TARGET too. It is written into the table and later handed to
@@ -253,8 +275,10 @@ def claim_alias(cx, canonical, alias, reserved):
 #
 # This is NOT the alias feature above. An alias points an extra name at an
 # existing canonical and redirects to it. A page_slug makes a chosen name BE
-# the canonical. The two share one namespace but neither reads the other's
-# storage.
+# the canonical. The two share one namespace, and each guard reads the
+# other's storage: page_slug_is_taken also checks practitioner_slug_aliases,
+# and claim_alias also checks affiliate_signups.page_slug. Without that, one
+# mechanism could silently claim a name the other had already published.
 
 _PAGE_INIT_DONE = set()             # DB identities whose page_slug DDL has run
 _PAGE_INIT_LOCK = threading.Lock()
@@ -351,19 +375,30 @@ def canonical_slug_for(cx, affiliate_slug):
 
 
 def page_slug_is_taken(cx, candidate, *, excluding_affiliate_slug=None):
-    """True iff `candidate` is ANY practitioner's affiliate slug OR page slug,
-    at ANY status, ignoring the claimant's own row.
+    """True iff `candidate` is ANY practitioner's affiliate slug, page slug, or
+    published ALIAS, at ANY status, ignoring the claimant's own row.
 
     Deliberately broader than what serving looks at, for the reason
     slug_is_taken already gives: claiming is about the whole namespace, serving
     is about approved practitioners only. A page_slug allowed to take a PENDING
     practitioner's slug would put two owners on one URL the moment she is
-    approved, and a published URL must never break that way.
+    approved, and a published URL must never break that way. The same is true
+    of an alias: page_slug and practitioner_slug_aliases.alias are two
+    mechanisms writing into ONE namespace, so a page_slug candidate that
+    matches a published alias must be refused too, or that alias would stop
+    resolving to its owner.
 
-    Both columns, because they are one namespace: whichever of the two a
-    request matches, it must match exactly one row.
+    Her own alias is exempted the same way her own row is. An alias she
+    already owns already resolves to her -- setting her page_slug to that same
+    string hands her no new name and collides with nobody. It is "reclaiming
+    your own", the same case excluding_affiliate_slug exists for on the
+    affiliate_signups side.
+
+    Both columns and the alias table, because they are one namespace:
+    whichever mechanism a request matches, it must match exactly one owner.
     """
     init_page_slug(cx)
+    init_tables(cx)
     c = normalize(candidate)
     if not c:
         return False
@@ -373,7 +408,14 @@ def page_slug_is_taken(cx, candidate, *, excluding_affiliate_slug=None):
     if own:
         sql += " AND slug<>?"
         params.append(own)
-    return cx.execute(sql, tuple(params)).fetchone() is not None
+    if cx.execute(sql, tuple(params)).fetchone() is not None:
+        return True
+    alias_sql = "SELECT 1 FROM practitioner_slug_aliases WHERE alias=?"
+    alias_params = [c]
+    if own:
+        alias_sql += " AND canonical_slug<>?"
+        alias_params.append(own)
+    return cx.execute(alias_sql, tuple(alias_params)).fetchone() is not None
 
 
 def validate_page_slug(cx, candidate, *, owner_affiliate_slug, reserved):
@@ -441,7 +483,8 @@ def resolve_page(cx, requested):
     page slug, and '' when nobody owns it.
 
     page_slug is matched FIRST. It cannot be shadowed, because page_slug_is_taken
-    refuses a page slug that collides with anyone's slug or page_slug.
+    refuses a page slug that collides with anyone's slug, page_slug, or
+    published alias.
 
     Status is deliberately not filtered here. Serving is gated downstream by
     public_surface.build_practitioner_storefront, which is approved-only and
