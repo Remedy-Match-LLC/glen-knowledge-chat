@@ -253,10 +253,27 @@ def build_ics(*, uid, start_ts, end_ts, summary, description, location,
         dtstamp = datetime.fromisoformat(start_ts[:19]).strftime("%Y%m%dT000000")
 
     desc = (description or "").replace("\n", "\\n")
+    # RFC 5545 3.3.11: a TEXT value escapes backslash, semicolon, comma and
+    # newline. `location` became free text the moment a practitioner could type
+    # her own meeting link or street address into it, and "123 Main St, Suite 5"
+    # silently truncates at the comma in a calendar client that reads the rest
+    # as another property value.
+    #
+    # Escaped HERE rather than at the call site: this function is what writes
+    # the ICS, so it is the only place that must know the format's rules. The
+    # alternative leaves every future caller to rediscover them, which the
+    # booking route had already started doing.
+    #
+    # Byte-identical for the five pre-existing callers, which pass "Phone",
+    # "Zoom (...)" and a join URL: none contains a backslash, semicolon or
+    # comma, so escaping them is a no-op. Backslash is replaced FIRST or it
+    # would double-escape the backslashes the later replacements introduce.
+    loc = (str(location or "").replace("\\", "\\\\").replace(";", "\\;")
+           .replace(",", "\\,").replace("\n", "\\n"))
     lines = ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//illtowell//EVOX//EN",
              "METHOD:REQUEST", "BEGIN:VEVENT", f"UID:{uid}", f"DTSTAMP:{dtstamp}",
              f"DTSTART:{dtstart}", f"DTEND:{dtend}",
-             f"SUMMARY:{summary}", f"DESCRIPTION:{desc}", f"LOCATION:{location}",
+             f"SUMMARY:{summary}", f"DESCRIPTION:{desc}", f"LOCATION:{loc}",
              f"ORGANIZER:mailto:{organizer_email}", "STATUS:CONFIRMED",
              "END:VEVENT", "END:VCALENDAR"]
     return ("\r\n".join(lines) + "\r\n").encode("utf-8")

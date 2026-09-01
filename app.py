@@ -18205,27 +18205,18 @@ def api_public_book(slug):
         # the right one.
         # location falls back to the medium ("zoom", "phone", "in-person")
         # when she has not set one -- exactly what this call always passed
-        # before Task 2, so an unset location changes nothing here and the
+        # before, so an unset location changes nothing here and the
         # LOCATION: line build_ics emits is never bare (empty).
         #
-        # build_ics escapes only "\n" in the string it is handed (see its
-        # `desc` line) -- RFC 5545 TEXT values also require a backslash
-        # before a literal backslash, semicolon, or comma, none of which
-        # build_ics applies to the location argument it already accepts.
-        # That was harmless while every caller passed a fixed medium word
-        # ("zoom", "phone", "in-person" -- none contain those characters);
-        # `where` is now free text a practitioner types, and a real street
-        # address ("123 Main St, Suite 5") is exactly the case that needs
-        # it, so the escaping happens here rather than inside build_ics,
-        # which is not this task's file to change.
-        ics_location = (where.replace("\\", "\\\\").replace(";", "\\;")
-                         .replace(",", "\\,").replace("\n", "\\n")
-                         if where else st["medium"])
+        # Handed over RAW. build_ics does the RFC 5545 TEXT escaping itself,
+        # because it is the function that writes the ICS and so the only one
+        # that should have to know the format's rules. Escaping here as well
+        # would double it, and a client would read a literal backslash.
         ics = _ev.build_ics(uid=b["ics_uid"], start_ts=start_ts, end_ts=b["end_ts"],
                             summary=st["label"],
                             description=f"{st['label']} ({st['medium']}). "
                                         f"To cancel: {cancel_url}",
-                            location=ics_location, tz_name=cfg["timezone"])
+                            location=where or st["medium"], tz_name=cfg["timezone"])
         send_evox_email(email, name, "Your appointment is booked",
                         html_body, text_body, ics)
     except Exception as e:  # noqa: BLE001

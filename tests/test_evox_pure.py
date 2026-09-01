@@ -160,3 +160,32 @@ def test_has_cradle_purchase():
                ("buyer@x.com", json.dumps([{"slug": "hand-cradle", "qty": 1}]))); cx.commit()
     assert evox.has_cradle_purchase(cx, "BUYER@x.com") is True
     assert evox.has_cradle_purchase(cx, "nobody@x.com") is False
+
+
+def test_build_ics_escapes_a_location_that_needs_it():
+    """RFC 5545 3.3.11: a TEXT value escapes backslash, semicolon and comma.
+
+    "123 Main St, Suite 5" is the ordinary case, not an exotic one: unescaped,
+    a calendar client reads everything after the comma as a separate property
+    value and the address silently truncates to "123 Main St".
+    """
+    out = evox.build_ics(uid="u@x", start_ts="2026-09-02T09:00:00",
+                       end_ts="2026-09-02T10:00:00", summary="Intro",
+                       description="d", location="123 Main St, Suite 5; back door")
+    line = [l for l in out.decode().split("\r\n") if l.startswith("LOCATION:")][0]
+    assert line == "LOCATION:123 Main St\\, Suite 5\; back door"
+
+
+def test_build_ics_leaves_the_pre_existing_callers_byte_identical():
+    """The five callers that predate a practitioner-typed location all pass a
+    fixed word ("Phone", "Zoom (join from your portal)") or a join URL. None
+    contains a backslash, semicolon or comma, so the escaping added for free
+    text must be a no-op for them -- otherwise this change rewrites invites
+    that were already going out correctly.
+    """
+    for loc in ("Phone", "Zoom (join from your portal)",
+                "https://us02web.zoom.us/j/12345678901?pwd=abcDEF"):
+        out = evox.build_ics(uid="u@x", start_ts="2026-09-02T09:00:00",
+                           end_ts="2026-09-02T10:00:00", summary="s",
+                           description="d", location=loc).decode()
+        assert f"LOCATION:{loc}\r\n" in out, loc
