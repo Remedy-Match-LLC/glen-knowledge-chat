@@ -194,7 +194,7 @@ A new uniqueness rule owes an audit of the identifiers that already exist: if tw
 
 ---
 
-### Task 5: Verify on Postgres
+### Task 5: Verify on Postgres — DONE (verified directly, see ledger)
 
 **Files:** none (verification only)
 
