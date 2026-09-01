@@ -304,3 +304,139 @@ def test_get_on_a_post_only_root_route_404s_not_405s(client, path):
     r = client.get(path, base_url=f"http://{FUNNEL_HOST}")
     assert r.status_code == 404
     assert r.headers.get("Allow") is None
+
+
+# --- page_slug: the practitioner-chosen public URL --------------------------
+# Glen's affiliate slug is his COMPANY name, `remedy-match`, and it is the
+# attribution key carried on stored lead rows, on a printed shortlink and in
+# 90-day referral cookies -- so it can never be renamed. His page belongs at
+# /dr-glen. These pin that both names reach the same page, that only one of
+# them serves content, and that everything attribution-shaped stays on the
+# affiliate slug.
+
+def _seed_page_slug(db_path, slug="remedy-match", page="dr-glen",
+                    name="Glen Swartwout", email="g@example.com",
+                    organization="Remedy Match"):
+    """Add an approved practitioner whose page slug differs from her/his
+    affiliate slug. Written through ps.set_page_slug rather than a raw UPDATE,
+    so the test exercises the same writer the settings form will."""
+    cx = sqlite3.connect(db_path)
+    cx.execute("INSERT INTO affiliate_signups"
+               " (created_at,name,email,organization,slug,token,status)"
+               " VALUES ('2026-08-27',?,?,?,?,'tok2','approved')",
+               (name, email, organization, slug))
+    cx.commit()
+    ps.set_page_slug(cx, slug, page, reserved=frozenset())
+    cx.close()
+
+
+def test_the_public_page_serves_the_canonical_page_slug(client):
+    _seed_page_slug(appmod.LOG_DB)
+    r = client.get("/dr-glen", base_url=f"http://{PORTAL_HOST}")
+    assert r.status_code == 200
+    body = r.get_data(as_text=True)
+    assert "<h1>Glen Swartwout</h1>" in body
+    # The canonical tag and the JSON-LD `url` must agree with the address bar.
+    # A canonical that disagrees with the URL it is served at splits the same
+    # person's link authority across two URLs, which is the whole reason
+    # _render_practitioner_page takes a canonical_slug argument at all.
+    assert f'<link rel="canonical" href="https://{PORTAL_HOST}/dr-glen">' in body
+    # Strongest available assertion on the JSON-LD `url` and every other
+    # URL-shaped string in the document at once: the affiliate slug appears
+    # nowhere in the BODY. It still belongs in the rm_ref header, which this
+    # does not touch.
+    assert "remedy-match" not in body
+
+
+def test_the_public_page_302s_the_legacy_affiliate_slug(client):
+    """302, NOT 301. page_slug is practitioner-changeable, and a 301 is cached
+    by browsers indefinitely -- so a later rename would strand everyone who
+    ever visited under the previous name."""
+    _seed_page_slug(appmod.LOG_DB)
+    r = client.get("/remedy-match", base_url=f"http://{PORTAL_HOST}")
+    assert r.status_code == 302
+    assert r.headers["Location"].endswith("/dr-glen")
+
+
+def test_the_legacy_affiliate_slug_does_not_serve_content(client):
+    """Two URLs serving the same practitioner is the duplication this feature
+    exists to collapse. The legacy name redirects; it never renders."""
+    _seed_page_slug(appmod.LOG_DB)
+    r = client.get("/remedy-match", base_url=f"http://{PORTAL_HOST}")
+    assert b"<h1>Glen Swartwout</h1>" not in r.data
+    assert b"Redirecting" in r.data
+
+
+def test_case_normalisation_stays_a_301(client):
+    """Deterministic and unchangeable, unlike a page_slug, so it keeps the
+    permanent redirect it has always had."""
+    _seed_page_slug(appmod.LOG_DB)
+    r = client.get("/Dr-Glen", base_url=f"http://{PORTAL_HOST}")
+    assert r.status_code == 301
+    assert r.headers["Location"].endswith("/dr-glen")
+    # And the target it names actually serves. Without this the assertions
+    # above pass on today's code, where /Dr-Glen 301s to a /dr-glen that 404s
+    # -- a redirect to nowhere is not case normalisation working.
+    followed = client.get("/Dr-Glen", base_url=f"http://{PORTAL_HOST}",
+                          follow_redirects=True)
+    assert followed.status_code == 200
+    assert "<h1>Glen Swartwout</h1>" in followed.get_data(as_text=True)
+
+
+def test_a_mixed_case_legacy_slug_lands_on_the_canonical_without_a_loop(client):
+    """The interaction between the two redirects. Case normalisation must run
+    FIRST: /Remedy-Match 301s to /remedy-match, which 302s to /dr-glen, which
+    serves. Resolving before normalising would 302 /Remedy-Match straight to
+    /dr-glen and skip the 301 -- harmless -- but normalising the LEGACY name
+    to the CANONICAL one and then re-normalising the case would bounce
+    between the two forever."""
+    _seed_page_slug(appmod.LOG_DB)
+    first = client.get("/Remedy-Match", base_url=f"http://{PORTAL_HOST}")
+    assert first.status_code == 301
+    assert first.headers["Location"].endswith("/remedy-match")
+    second = client.get("/remedy-match", base_url=f"http://{PORTAL_HOST}")
+    assert second.status_code == 302
+    assert second.headers["Location"].endswith("/dr-glen")
+    final = client.get("/Remedy-Match", base_url=f"http://{PORTAL_HOST}",
+                       follow_redirects=True)
+    assert final.status_code == 200
+    assert "<h1>Glen Swartwout</h1>" in final.get_data(as_text=True)
+
+
+def test_a_view_is_recorded_under_the_affiliate_slug_not_the_page_slug(client):
+    """Analytics key on the attribution slug forever, so a vanity rename does
+    not split a practitioner's view history in half."""
+    _seed_page_slug(appmod.LOG_DB)
+    client.get("/dr-glen", base_url=f"http://{PORTAL_HOST}")
+    assert _views(appmod.LOG_DB) == [("remedy-match", "storefront")]
+
+
+def test_the_attribution_cookie_stays_the_affiliate_slug(client):
+    """rm_ref is read at ~15 conversion sites and written onto stored lead rows
+    as utm_source. Setting it to the page slug would orphan every commission
+    earned from this page."""
+    _seed_page_slug(appmod.LOG_DB)
+    r = client.get("/dr-glen", base_url=f"http://{PORTAL_HOST}")
+    assert "rm_ref=remedy-match" in r.headers.get("Set-Cookie", "")
+
+
+def test_an_alias_still_301s_when_the_owner_has_a_page_slug(client):
+    """The older alias feature and page_slug coexist: an alias points AT a
+    canonical, a page_slug IS one. The alias hop stays a permanent 301 to a
+    name that can never change (the affiliate slug); the changeable half of
+    the journey is the 302 after it."""
+    _seed_page_slug(appmod.LOG_DB)
+    _claim(appmod.LOG_DB, "swartwout-clinic", canonical="remedy-match")
+    r = client.get("/swartwout-clinic", base_url=f"http://{PORTAL_HOST}")
+    assert r.status_code == 301
+    assert r.headers["Location"].endswith("/remedy-match")
+    final = client.get("/swartwout-clinic", base_url=f"http://{PORTAL_HOST}",
+                       follow_redirects=True)
+    assert final.status_code == 200
+    body = final.get_data(as_text=True)
+    assert "<h1>Glen Swartwout</h1>" in body
+    # The chain must END at the page slug, not stop at the affiliate slug --
+    # which is what it does today, where an alias resolves to a canonical that
+    # knows nothing about page_slug.
+    assert f'<link rel="canonical" href="https://{PORTAL_HOST}/dr-glen">' in body
+
