@@ -937,6 +937,153 @@ def test_the_confirmation_invite_uses_the_correct_utc_instant_across_zones(
         "DTSTART must be a real UTC conversion, not the naive practitioner-local time with a bare Z appended"
 
 
+# --- Task 2: the location reaches the client --------------------------------
+
+CFG_ZOOM_LOCATION = dict(CFG, session_types=[
+    {"slug": "intro", "label": "Free 20 minute intro call",
+     "duration_min": 20, "medium": "zoom",
+     "location": "https://zoom.us/j/1234567890"}])
+
+
+def test_a_set_location_reaches_the_clients_email_and_ics(public, logdb, monkeypatch):
+    """Task 1 added an optional location per session type (a meeting link for
+    zoom). It is dead data until the booking route actually carries it to
+    the client -- both in the email body and in the ICS LOCATION: field
+    evox.build_ics already emits."""
+    sent = []
+    monkeypatch.setattr(appmod, "send_evox_email",
+                        lambda to, name, subject, html_body, text_body, ics_bytes:
+                        sent.append({"to": to, "text": text_body, "html": html_body,
+                                    "ics": ics_bytes}))
+    with _open(logdb) as c:
+        pb.set_config(c, PID, CFG_ZOOM_LOCATION)
+    slot = public.get("/api/book/mary-boyd/slots?session=intro").get_json()["slots"][0]
+    public.post("/api/book/mary-boyd", json={
+        "session": "intro", "start": slot["start"],
+        "name": "A Client", "email": "client@example.com"})
+    client = next(m for m in sent if m["to"] == "client@example.com")
+    link = "https://zoom.us/j/1234567890"
+    assert link in client["text"], "the client's confirmation must say where"
+    assert link in client["html"]
+    ics_text = client["ics"].decode("utf-8")
+    assert f"LOCATION:{link}" in ics_text, \
+        "the calendar invite must carry the same meeting link"
+
+
+def test_a_location_with_a_comma_is_escaped_for_the_ics_but_not_the_email(
+        public, logdb, monkeypatch):
+    """RFC 5545 TEXT values need a backslash before a literal comma or
+    semicolon, which build_ics does not apply to LOCATION on its own (it
+    only escapes newlines, and only in `description`). A real street
+    address routinely contains commas, so this must be handled on the way
+    in. The plain-text/HTML email copies must show the address as typed,
+    unescaped -- the ICS escaping is a calendar-format rule, not something a
+    client reading the email should ever see."""
+    sent = []
+    monkeypatch.setattr(appmod, "send_evox_email",
+                        lambda to, name, subject, html_body, text_body, ics_bytes:
+                        sent.append({"to": to, "text": text_body, "ics": ics_bytes}))
+    addr = "123 Main St, Suite 5"
+    cfg = dict(CFG, session_types=[
+        {"slug": "intro", "label": "Free 20 minute intro call",
+         "duration_min": 20, "medium": "in-person", "location": addr}])
+    with _open(logdb) as c:
+        pb.set_config(c, PID, cfg)
+    slot = public.get("/api/book/mary-boyd/slots?session=intro").get_json()["slots"][0]
+    public.post("/api/book/mary-boyd", json={
+        "session": "intro", "start": slot["start"],
+        "name": "A Client", "email": "client@example.com"})
+    client = next(m for m in sent if m["to"] == "client@example.com")
+    assert f"Where: {addr}" in client["text"], \
+        "the email must show the address exactly as typed, not backslash-escaped"
+    ics_text = client["ics"].decode("utf-8")
+    assert "LOCATION:123 Main St\\, Suite 5" in ics_text, \
+        "the ICS LOCATION value must escape the comma per RFC 5545"
+
+
+def test_a_set_location_also_reaches_the_practitioners_own_copy(public, logdb, monkeypatch):
+    """Her own notification of a new booking should say where it is too, not
+    just the client's copy."""
+    sent = []
+    monkeypatch.setattr(appmod, "send_evox_email",
+                        lambda to, name, subject, html_body, text_body, ics_bytes:
+                        sent.append({"to": to, "text": text_body, "html": html_body}))
+    with _open(logdb) as c:
+        pb.set_config(c, PID, CFG_ZOOM_LOCATION)
+    slot = public.get("/api/book/mary-boyd/slots?session=intro").get_json()["slots"][0]
+    public.post("/api/book/mary-boyd", json={
+        "session": "intro", "start": slot["start"],
+        "name": "A Client", "email": "client@example.com"})
+    note = next(m for m in sent if m["to"] == PRACTITIONER_EMAIL)
+    link = "https://zoom.us/j/1234567890"
+    assert link in note["text"]
+    assert link in note["html"]
+
+
+def test_no_location_set_adds_no_where_label_and_no_bare_ics_location(
+        public, logdb, monkeypatch):
+    """CFG's 'intro' session type has medium=phone and no location -- the
+    common case for a while yet, per the plan. Nothing new must appear: no
+    'Where:' label in either the client or practitioner copy, and the ICS
+    LOCATION: field must not go bare (empty) -- it keeps carrying the medium
+    exactly as it always has, unaffected by this feature being unset."""
+    sent = []
+    monkeypatch.setattr(appmod, "send_evox_email",
+                        lambda to, name, subject, html_body, text_body, ics_bytes:
+                        sent.append({"to": to, "text": text_body, "html": html_body,
+                                    "ics": ics_bytes}))
+    with _open(logdb) as c:
+        pb.set_config(c, PID, CFG)  # CFG's "intro" type has no "location" key
+    slot = public.get("/api/book/mary-boyd/slots?session=intro").get_json()["slots"][0]
+    public.post("/api/book/mary-boyd", json={
+        "session": "intro", "start": slot["start"],
+        "name": "A Client", "email": "client@example.com"})
+    client = next(m for m in sent if m["to"] == "client@example.com")
+    assert "Where:" not in client["text"]
+    assert "Where:" not in client["html"]
+    ics_text = client["ics"].decode("utf-8")
+    assert "LOCATION:\r\n" not in ics_text, "a bare LOCATION: line must never appear"
+    assert "LOCATION:phone\r\n" in ics_text, \
+        "with no location set, the ICS should carry the medium exactly as before this feature existed"
+    note = next(m for m in sent if m["to"] == PRACTITIONER_EMAIL)
+    assert "Where:" not in note["text"]
+    assert "Where:" not in note["html"]
+
+
+def test_a_location_containing_html_is_escaped_in_the_client_email(
+        public, logdb, monkeypatch):
+    """location is practitioner-authored free text that reaches a client's
+    inbox. The same rule the surrounding email body already applies to the
+    session label and her name (html.escape) must apply here too.
+
+    A full `<tag>` is not a useful probe here: practitioner_booking._text
+    already strips matched-pair angle-bracket sequences at save time
+    (_TAG_RE), so a real `<script>...</script>` never reaches this far --
+    that stripping is Task 1's concern, not this test's. An UNMATCHED `<`
+    (no later `>` in the string) survives that filter unchanged and still
+    needs HTML-escaping when it reaches the email, same as the bare `&`.
+    """
+    sent = []
+    monkeypatch.setattr(appmod, "send_evox_email",
+                        lambda to, name, subject, html_body, text_body, ics_bytes:
+                        sent.append({"to": to, "html": html_body}))
+    dirty = "123 Main St & Suite 5 < Building B"
+    cfg = dict(CFG, session_types=[
+        {"slug": "intro", "label": "Free 20 minute intro call",
+         "duration_min": 20, "medium": "in-person", "location": dirty}])
+    with _open(logdb) as c:
+        pb.set_config(c, PID, cfg)
+    slot = public.get("/api/book/mary-boyd/slots?session=intro").get_json()["slots"][0]
+    public.post("/api/book/mary-boyd", json={
+        "session": "intro", "start": slot["start"],
+        "name": "A Client", "email": "client@example.com"})
+    client = next(m for m in sent if m["to"] == "client@example.com")
+    assert dirty not in client["html"], \
+        "raw HTML-significant characters from a practitioner must not reach the client unescaped"
+    assert "&amp;" in client["html"]
+    assert "&lt;" in client["html"]
+
+
 def test_build_ics_with_no_tz_name_is_byte_identical_to_today():
     """tz_name is additive, not a behavior change to the default path. Five
     OTHER callers of build_ics (Glen's, Rae's, the masterclass and consult
