@@ -26,6 +26,11 @@ MEDIA = ("phone", "zoom", "in-person")
 MAX_LABEL = 80
 MAX_SESSION_TYPES = 8
 MIN_DURATION, MAX_DURATION = 5, 600
+# Practitioner-authored free text that reaches a client's inbox and calendar
+# invite: a zoom link (with a meeting id and often a passcode query string)
+# or a street address. Generous enough for either, capped so it cannot become
+# a place to paste something the ICS/email renderer was never sized for.
+MAX_LOCATION = 300
 
 # "<day>-<day>:<HH:MM>-<HH:MM>", the format dashboard.evox.parse_office_hours
 # already understands. Kept identical so the grid needs no new parser.
@@ -249,8 +254,21 @@ def _validate_session_types(items):
         if medium not in MEDIA:
             raise BookingConfigError(
                 f"Session type {slug} medium must be one of {', '.join(MEDIA)}.")
+        # Optional: a session type with no "where" (typically phone, which
+        # has nowhere to point -- her number is a separate, notify-methods
+        # fact) still validates. Checked against the RAW value on purpose,
+        # before _text can quietly truncate an over-length string down to
+        # something that would pass -- a practitioner who pastes something
+        # far too long gets told so, not a silently shortened save.
+        raw_location = it.get("location")
+        if raw_location is not None and len(str(raw_location)) > MAX_LOCATION:
+            raise BookingConfigError(
+                f"Session type {slug}'s location is too long (at most "
+                f"{MAX_LOCATION} characters).")
+        location = _text(raw_location, MAX_LOCATION)
         out.append({"slug": slug, "label": label,
-                    "duration_min": dur, "medium": medium})
+                    "duration_min": dur, "medium": medium,
+                    "location": location})
     return out
 
 
@@ -321,6 +339,18 @@ def get_config_status(cx, pid):
         return "none", None
     try:
         types = json.loads(row["session_types"])
+        # session_types is deliberately NOT re-run through
+        # _validate_session_types here (unlike timezone/office_hours/
+        # notify_methods below) -- that would reject a row saved before an
+        # earlier version of this module added a field it now requires,
+        # turning old-but-fine data into "unreadable". "location" is new as
+        # of this change; a row written before it existed simply lacks the
+        # key. Backfill it in place so every caller sees the same shape a
+        # freshly-validated config would have -- "", never absent, never
+        # None -- without re-validating fields this path has never checked.
+        for _st in types:
+            if isinstance(_st, dict) and "location" not in _st:
+                _st["location"] = ""
         timezone = _validate_timezone(row["timezone"])
         office_hours = _validate_hours(row["office_hours"])
         # NULL is a row written before this column existed, not a failure --

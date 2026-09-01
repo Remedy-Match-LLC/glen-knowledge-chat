@@ -168,6 +168,45 @@ def test_markup_in_a_label_is_stored_as_text():
     assert "<script>" not in out["session_types"][0]["label"]
 
 
+def test_a_session_types_location_round_trips(cx):
+    """A meeting link (zoom) or a street address (in-person) is the 'where'
+    for a session type. It must survive validate_config and set_config/
+    get_config unchanged."""
+    link = "https://zoom.us/j/1234567890?pwd=abc"
+    pb.set_config(cx, PID, _cfg(session_types=[
+        {"slug": "intro", "label": "Intro", "duration_min": 20,
+         "medium": "zoom", "location": link}]))
+    got = pb.get_config(cx, PID)
+    assert got["session_types"][0]["location"] == link
+
+
+def test_a_session_type_with_no_location_still_validates_and_reads_as_empty():
+    """location is optional -- a session type that never mentions it (phone,
+    typically) must validate and come back as '', not raise and not None."""
+    out = pb.validate_config(_cfg(session_types=[
+        {"slug": "intro", "label": "Intro", "duration_min": 20, "medium": "phone"}]))
+    assert out["session_types"][0]["location"] == ""
+
+
+def test_a_location_over_the_cap_is_rejected():
+    """location is practitioner-authored free text that reaches a client's
+    inbox and calendar -- it must be capped like every other field here."""
+    too_long = "x" * (pb.MAX_LOCATION + 1)
+    with pytest.raises(pb.BookingConfigError):
+        pb.validate_config(_cfg(session_types=[
+            {"slug": "intro", "label": "Intro", "duration_min": 20,
+             "medium": "in-person", "location": too_long}]))
+
+
+def test_markup_in_a_location_is_stored_as_text():
+    """Same treatment as the label: escaped at render time, but tags should
+    not arrive at all."""
+    out = pb.validate_config(_cfg(session_types=[
+        {"slug": "intro", "label": "Intro", "duration_min": 20,
+         "medium": "in-person", "location": "<script>x</script>123 Main St"}]))
+    assert "<script>" not in out["session_types"][0]["location"]
+
+
 def _insert_row(cx, timezone="America/Anchorage", office_hours="1-5:09:00-17:00",
                  session_types='[{"slug": "intro", "label": "Intro", '
                                 '"duration_min": 20, "medium": "phone"}]'):
@@ -206,6 +245,15 @@ def test_corrupt_stored_timezone_is_not_bookable(cx):
     _insert_row(cx, timezone="UTC-9")
     assert pb.get_config(cx, PID) is None
     assert pb.is_bookable(cx, PID) is False
+
+
+def test_a_stored_session_type_predating_location_reads_back_as_empty_string(cx):
+    """_insert_row's default session_types JSON has no 'location' key at all
+    -- exactly what every row written before this field existed looks like.
+    It must read back as '', never None and never a KeyError."""
+    _insert_row(cx)
+    got = pb.get_config(cx, PID)
+    assert got["session_types"][0]["location"] == ""
 
 
 def test_a_second_save_replaces_rather_than_duplicates(cx):
