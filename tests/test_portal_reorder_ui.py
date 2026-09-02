@@ -61,25 +61,64 @@ def test_reorder_row_labels_provenance_and_reserves_reorder_word():
     assert "Reorder" in block
 
 
-def test_locked_rows_only_references_real_fields_and_is_forward_framed():
+def _locked_rows_blocks():
+    """Every place the locked-rows list is actually built.
+
+    Anchoring on the two gate expressions is what silently unpinned this test:
+    the membership merge put `Array.isArray(d.locked_rows)` and
+    `d.membership_upsell &&` on adjacent lines, so the slice between them was
+    empty and `used <= LOCKED_FIELDS` passed on an empty set for a whole branch.
+    Anchor on the loop that reads the rows instead, and return every occurrence,
+    because the shell path and the shell-off path each build their own copy and
+    a guard that only covers one of them is half a guard.
+    """
     src = _render_fn_source()
-    block = src[src.index('Array.isArray(d.locked_rows)'):
-                src.index('d.membership_upsell &&')]
-    used = set(re.findall(r"\bit\.(\w+)", block))
-    assert used <= LOCKED_FIELDS, f"unknown locked_rows field(s) referenced: {used - LOCKED_FIELDS}"
-    assert "tier" in used
-    low = block.lower()
-    assert "overpa" not in low  # never "you overpaid" or similar backward framing
-    assert "unlock" in low
+    blocks = []
+    for m in re.finditer(r"d\.locked_rows\.forEach\(it=>\{", src):
+        end = src.index("});", m.end())
+        blocks.append(src[m.start():end])
+    return blocks
+
+
+def test_locked_rows_only_references_real_fields_and_is_forward_framed():
+    blocks = _locked_rows_blocks()
+    assert len(blocks) == 2, (
+        f"expected 2 locked-rows builders (merged under the shell, and the "
+        f"shell-off original), found {len(blocks)}")
+    for i, block in enumerate(blocks):
+        # The slice must actually contain the row markup. An empty or truncated
+        # slice makes every assertion below pass vacuously.
+        assert len(block) > 300, f"locked-rows block {i} is only {len(block)} chars"
+        assert "lockedrow" in block, f"locked-rows block {i} has no .lockedrow markup"
+        used = set(re.findall(r"\bit\.(\w+)", block))
+        assert used, f"locked-rows block {i} references no payload field at all"
+        assert used <= LOCKED_FIELDS, f"unknown locked_rows field(s) referenced: {used - LOCKED_FIELDS}"
+        assert "tier" in used
+        low = block.lower()
+        assert "overpa" not in low  # never "you overpaid" or similar backward framing
+        assert "unlock" in low
 
 
 def test_membership_upsell_only_references_real_fields_and_hides_for_members():
     src = _render_fn_source()
+    # Same re-anchoring as the locked-rows test above, and for the same reason:
+    # a fixed 1800-character window from a gate expression stops pinning anything
+    # the moment the code it was aimed at moves. Anchor on the `mu` binding, and
+    # take every builder, since the shell and shell-off paths each have one.
+    blocks = []
+    for m in re.finditer(r"const mu = d\.membership_upsell;", src):
+        end = src.index("</div>`", m.end())
+        blocks.append(src[m.start():end])
+    assert len(blocks) == 2, (
+        f"expected 2 membership-pitch builders (merged under the shell, and the "
+        f"shell-off original), found {len(blocks)}")
+    for i, block in enumerate(blocks):
+        assert len(block) > 800, f"membership-pitch block {i} is only {len(block)} chars"
+        used = set(re.findall(r"\bmu\.(\w+)", block))
+        assert used <= UPSELL_FIELDS, f"unknown membership_upsell field(s) referenced: {used - UPSELL_FIELDS}"
+        assert {"savings_cents", "reorders_30d", "net_after_fee_cents"} <= used
+    block = blocks[0]
     idx = src.index('d.membership_upsell &&')
-    block = src[idx: idx + 1800]
-    used = set(re.findall(r"\bmu\.(\w+)", block))
-    assert used <= UPSELL_FIELDS, f"unknown membership_upsell field(s) referenced: {used - UPSELL_FIELDS}"
-    assert {"savings_cents", "reorders_30d", "net_after_fee_cents"} <= used
     # gated: hidden entirely when already_member is true
     guard_line = src[idx: idx + 120]
     assert "already_member" in guard_line
