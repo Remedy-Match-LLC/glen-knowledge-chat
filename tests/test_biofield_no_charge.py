@@ -115,3 +115,15 @@ def test_no_charge_with_no_remedies_raises_no_invoice_at_all(tmp_path, monkeypat
     assert created == []
     assert body["no_charge"] is True
     assert "no charge" in (body.get("note") or "").lower()
+
+
+def test_the_toggle_survives_a_console_the_panel_cannot_reach():
+    """Courtesy pricing needs the prod console; no-charge is local state on this
+    test and needs nothing.  The panel degrades to "pricing unavailable" on a
+    network failure, and the toggle must not disappear with it."""
+    for got in ({"available": False}, {}):
+        html = render_fee_panel(build_fee_state("a@x.com", lambda e: got, no_charge=True))
+        assert "id=fee_no_charge checked" in html
+    # Nor when there is no client email yet -- no_charge belongs to the test.
+    html = render_fee_panel(build_fee_state("", lambda e: {}, no_charge=True))
+    assert "id=fee_no_charge checked" in html
