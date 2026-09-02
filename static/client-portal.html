@@ -593,6 +593,10 @@
     box-shadow:0 1px 0 rgba(255,255,255,.02) inset, 0 10px 26px -18px rgba(0,0,0,.55)}
   .portal-onboarding .ob-phase{margin:0 0 1.1rem}
   .portal-onboarding .ob-phase:last-child{margin-bottom:0}
+  .portal-onboarding .ob-progress{display:flex;align-items:center;gap:7px;margin:.3rem 0 .15rem 27px;max-width:230px}
+  .portal-onboarding .ob-progress-track{height:5px;flex:1;background:var(--line);border-radius:999px;overflow:hidden}
+  .portal-onboarding .ob-progress-fill{display:block;height:100%;background:var(--brand);border-radius:inherit}
+  .portal-onboarding .ob-progress-label{font-size:.72rem;color:var(--muted);white-space:nowrap}
   /* No separate tile-level heading exists in the markup -- each phase's own h3
      is the only heading emitted, so it does double duty. Keep it quieter than
      a normal .card h2 (1.14rem) per the "phase title, quieter than the tile
@@ -1122,6 +1126,8 @@ function continuePortalShopping(){
 // fragile DOM layout: first reveal its owning panel, then focus/scroll the card.
 const PORTAL_HASH_ROUTES = {
   biofield: {panel:"current", target:"biofield-section"},
+  "biofield-latest": {panel:"current", target:"biofield-section", latest:true},
+  "biofield-order": {panel:"current", target:"biofield-order-card"},
   recs:     {panel:"current", target:"recsCard"},
   recommendations: {panel:"current", target:"recsCard"},
   remedies: {panel:"remedies", target:"remedies-panel"},
@@ -1138,6 +1144,18 @@ function applyPortalHash(){
   const key = decodeURIComponent((location.hash || "").replace(/^#/, "")).toLowerCase();
   const route = PORTAL_HASH_ROUTES[key];
   if(!route) return false;
+  // The onboarding checklist's Biofield link always means the newest report.
+  // A scan selected from Scan History is carried in ?scan_date=; remove only
+  // that selector, preserving family-member and other portal context.
+  if(route.latest){
+    const latestUrl = new URL(location.href);
+    if(latestUrl.searchParams.has("scan_date")){
+      latestUrl.searchParams.delete("scan_date");
+      latestUrl.hash = "biofield-latest";
+      location.replace(latestUrl.toString());
+      return true;
+    }
+  }
   // The Terms gate intentionally suppresses every portal panel. When an
   // independently-rendered onboarding link points at Intake, lead the client
   // to the prerequisite instead of silently falling back to a missing panel.
@@ -3549,6 +3567,29 @@ function render(d, v){
       ${badges.length?`<div class="badges">${badges.map(b=>`<span class="badge">${esc(b)}</span>`).join("")}</div>`:""}
     </div>`;
 
+  // First Biofield test: the unchecked onboarding item lands here. Payment
+  // continues to the secure readiness page, which walks the client through a
+  // fresh scan, intake, and photo. Consultation scheduling remains downstream
+  // of report publication in the Biofield Consult card below.
+  const journeySteps = ((((v || {}).journey || {}).phases || []).reduce((all, phase) =>
+    all.concat(Array.isArray(phase.steps) ? phase.steps : []), []));
+  const biofieldJourney = journeySteps.find(step => step.key === "biofield");
+  if(biofieldJourney && biofieldJourney.done !== true){
+    html += `<div class="card" id="biofield-order-card">
+      <h2>Order your first Biofield Analysis</h2>
+      <p class="muted">We’ll guide you through each step. After payment, your secure preparation page will help you:</p>
+      <ol class="small" style="line-height:1.8;margin:.6rem 0 1rem;padding-left:1.35rem">
+        <li>Complete a fresh voice scan</li>
+        <li>Complete your intake form</li>
+        <li>Upload a recent photo</li>
+        <li>Confirm your payment and submit everything for your report</li>
+      </ol>
+      <p class="muted small">Once your report and program are generated, this portal will unlock consultation scheduling with Dr. Glen.</p>
+      <button class="btn full" id="biofieldOrderBtn" data-path="/biofield/checkout">Begin your Biofield Analysis</button>
+      <p class="small err" id="biofieldOrderErr" hidden></p>
+    </div>`;
+  }
+
   if (d.linked_practitioner_account) {
     html += `<div class="card quiet">
       <h2>Your practitioner account</h2>
@@ -5177,6 +5218,9 @@ function render(d, v){
   const obtn = document.getElementById("offerBtn");
   if(obtn) obtn.addEventListener("click", ()=>startOffer(obtn));
 
+  const biofieldOrderBtn = document.getElementById("biofieldOrderBtn");
+  if(biofieldOrderBtn) biofieldOrderBtn.addEventListener("click", ()=>startBiofieldOrder(biofieldOrderBtn));
+
   const ibtn = document.getElementById("bfInterestBtn");
   if(ibtn) ibtn.addEventListener("click", ()=>advanceBiofield(ibtn, "interest"));
 
@@ -5724,6 +5768,8 @@ async function renderIntakeForm(host, tokenVal, onDone, options){
   }
 
   const answers = (stateData && stateData.answers) || {};
+  const completedIntakeSections = new Set(Array.isArray(answers._completed_sections)
+    ? answers._completed_sections : []);
   const getters = {};   // field id -> () => current value
   const fieldEls = {};  // field id -> element to highlight on a 400
 
@@ -5738,6 +5784,7 @@ async function renderIntakeForm(host, tokenVal, onDone, options){
   const collectAnswers = ()=>{
     const out = {};
     Object.keys(getters).forEach(fid => { out[fid] = getters[fid](); });
+    out._completed_sections = Array.from(completedIntakeSections);
     return out;
   };
 
@@ -5836,6 +5883,8 @@ async function renderIntakeForm(host, tokenVal, onDone, options){
     });
     next.addEventListener("click", async ()=>{
       if(saveTimer) clearTimeout(saveTimer);
+      const currentSection = formDef.sections[sectionIndex];
+      if(currentSection && currentSection.id) completedIntakeSections.add(currentSection.id);
       await saveNow();
       showSection(sectionIndex + 1);
     });
@@ -7218,6 +7267,29 @@ async function startOffer(btn){
     throw new Error(j.error || "This isn't available right now. Please reach out and we'll help.");
   }catch(e){
     err.textContent = e.message; err.hidden = false; btn.disabled = false; btn.textContent = label;
+  }
+}
+
+async function startBiofieldOrder(btn){
+  const err = document.getElementById("biofieldOrderErr");
+  if(err) err.hidden = true;
+  btn.disabled = true;
+  const label = btn.textContent;
+  btn.textContent = "Opening secure checkout…";
+  try{
+    const portalView = window.__portalView || {};
+    const reportData = window.__reportData || {};
+    const account = portalView.account || {};
+    const r = await fetch(btn.getAttribute("data-path") || "/biofield/checkout", {
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({email:account.email || reportData.email || "", name:account.name || reportData.name || ""})
+    });
+    const j = await r.json();
+    if(r.ok && j.stripe_url){ location.href = j.stripe_url; return; }
+    throw new Error(j.error || "This isn't available right now. Please reach out and we'll help.");
+  }catch(e){
+    if(err){ err.textContent = e.message; err.hidden = false; }
+    btn.disabled = false; btn.textContent = label;
   }
 }
 

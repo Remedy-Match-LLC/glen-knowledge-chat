@@ -68,6 +68,7 @@ def test_all_open_when_nothing_on_file():
     assert be == {"voice": False, "intake": False, "photo": False, "biofield": False}
     assert steps["voice"]["href"] == "https://truly.vip/E4L"
     assert steps["intake"]["href"] == "#intake"
+    assert steps["biofield"]["href"] == "#biofield-order"
     light = next(st for st in s["phases"][2]["steps"] if st["key"] == "light")
     assert light["href"] == "https://clinicalpraxis.com/photobiomodulation/"
     pemf = next(st for st in s["phases"][2]["steps"] if st["key"] == "pemf")
@@ -128,15 +129,41 @@ def test_photo_and_intake_flip_done():
     assert be["voice"] is False
 
 
-def test_performed_courtesy_biofield_flips_done_before_report_publish():
+def test_draft_intake_reports_completed_page_progress():
+    cx = _cx()
+    intake.save_draft(cx, "progress@x.com", {
+        "first_name": "Page", "_completed_sections": ["personal", "goals"]
+    }, "2026-09-01T12:00:00Z")
+
+    s = ob.build_status(cx, "progress@x.com")
+    step = next(st for st in s["phases"][0]["steps"] if st["key"] == "intake")
+    assert step["done"] is False
+    assert step["in_progress"] is True
+    assert step["progress"] == {"completed": 2, "total": 5, "percent": 40}
+
+
+def test_performed_biofield_stays_open_until_report_is_published():
     cx = _cx()
     biofield_store.init_table(cx)
     biofield_store.seed_paid(cx, "courtesy@x.com", via="owner_console_courtesy",
                              order_ref="courtesy")
     biofield_store.set_completed(cx, "courtesy@x.com")
     s = ob.build_status(cx, "courtesy@x.com")
-    be = {st["key"]: st["done"] for st in s["phases"][0]["steps"]}
-    assert be["biofield"] is True
+    steps = {st["key"]: st for st in s["phases"][0]["steps"]}
+    assert steps["biofield"]["done"] is False
+    assert steps["biofield"]["href"] == "#biofield-order"
+
+
+def test_published_report_checks_biofield_and_links_to_latest():
+    cx = _cx()
+    portal_biofield_reports.upsert_report(
+        cx, "reported@x.com", "2026-08-30", "scan-1",
+        {"greeting": "Aloha", "layers": []}, "confirmed")
+
+    s = ob.build_status(cx, "reported@x.com")
+    steps = {st["key"]: st for st in s["phases"][0]["steps"]}
+    assert steps["biofield"]["done"] is True
+    assert steps["biofield"]["href"] == "#biofield-latest"
 
 
 def test_scan_match_flips_done_on_biofield_source():

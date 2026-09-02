@@ -14,7 +14,7 @@ from dashboard import (client_scans, intake, client_photos,
                         portal_biofield_reports, recommendation_events,
                         membership_products, portal_health_history,
                         portal_extended_history, condition_triage,
-                        e4l_account_notifications, biofield_store, client_facts)
+                        e4l_account_notifications, client_facts)
 
 
 ACCELERATOR_FACT_KEYS = {
@@ -127,17 +127,7 @@ def _safe(fn, cx, email):
 
 
 def _biofield_completed(cx, email):
-    """A performed analysis or a published report completes the portal step."""
-    try:
-        biofield_store.init_table(cx)
-        row = cx.execute(
-            "SELECT completed_at FROM biofield_readiness WHERE lower(email)=lower(?)",
-            (email,),
-        ).fetchone()
-        if row and row[0]:
-            return True
-    except Exception:
-        pass
+    """Only a published report checks Biofield in the client checklist."""
     return _safe(lambda c, e: portal_biofield_reports.latest_report(c, e) is not None,
                  cx, email)
 
@@ -172,20 +162,36 @@ def build_status(cx, email):
     voice_href = e4l_href(cx, email)
     intake_done = _safe(intake.is_submitted, cx, email)
     intake_in_progress = False
+    intake_progress = None
     try:
         intake_status = cx.execute(
-            "SELECT status FROM intake_responses WHERE email=?", (email,)
+            "SELECT status, answers_json FROM intake_responses WHERE email=?", (email,)
         ).fetchone()
         intake_in_progress = bool(intake_status and intake_status[0] == "draft")
+        if intake_in_progress:
+            answers = json.loads(intake_status[1] or "{}")
+            section_ids = {s["id"] for s in intake.INTAKE_FORM["sections"]}
+            completed = section_ids.intersection(
+                answers.get("_completed_sections") or [])
+            total = len(section_ids)
+            intake_progress = {
+                "completed": len(completed), "total": total,
+                "percent": round(100 * len(completed) / total) if total else 0,
+            }
     except Exception:
         pass
 
+    biofield_done = _biofield_completed(cx, email)
     be_read = [
         step("voice", "Voice analysis", has_scan, voice_href),
         step("intake", "Intake", intake_done, "#intake",
-             in_progress=intake_in_progress),
+             in_progress=intake_in_progress, progress=intake_progress),
         step("photo", "Photo", _safe(client_photos.has, cx, email), "#photo"),
-        step("biofield", "Biofield Analysis", _biofield_completed(cx, email), "#biofield"),
+        # Once checked, Biofield is a report link and must not retain an older
+        # ?scan_date= selection made from Scan History. Before completion it
+        # opens the first-test order and preparation workflow.
+        step("biofield", "Biofield Analysis", biofield_done,
+             "#biofield-latest" if biofield_done else "#biofield-order"),
     ]
     match = [
         step("history", "Match Remedies",

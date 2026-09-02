@@ -30,12 +30,20 @@ function renderOnboarding(status) {
       var text = st.href
         ? '<a href="' + st.href + '">' + label + '</a>'
         : label;
+      var progress = '';
+      if (st.in_progress && st.progress && st.progress.total > 0) {
+        var pct = Math.max(0, Math.min(100, Number(st.progress.percent) || 0));
+        progress = '<div class="ob-progress" aria-label="Intake ' + pct + '% complete">' +
+          '<span class="ob-progress-track"><span class="ob-progress-fill" style="width:' + pct + '%"></span></span>' +
+          '<span class="ob-progress-label">' + escapeHtml(st.progress.completed) + ' of ' +
+          escapeHtml(st.progress.total) + ' pages</span></div>';
+      }
       if (st.checkable) {
         return '<li class="ob-step"><input class="ob-accelerator-check" type="checkbox" ' +
           'data-accelerator="' + escapeHtml(st.key) + '" aria-label="Mark ' + label +
           ' as owned"' + (st.done === true ? ' checked' : '') + '> ' + text + '</li>';
       }
-      return '<li class="ob-step"><span class="ob-mark ' + markClass + '">' + mark + '</span> ' + text + '</li>';
+      return '<li class="ob-step"><span class="ob-mark ' + markClass + '">' + mark + '</span> ' + text + progress + '</li>';
     }).join('');
     var extra = '';
     if (ph.key === 'discover') {
