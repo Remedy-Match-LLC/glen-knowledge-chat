@@ -24,9 +24,13 @@ def client(tmp_path, monkeypatch):
                         lambda cx, tid, **k: {"unresolved": [], "content": {"x": 1},
                                               "email": "k@x.com", "name": "K"})
     calls = []
-    def fake_publish(payload, base_url=None, console_key=None, send=None):
+    def fake_publish(payload, base_url=None, console_key=None, send=None,
+                     send_if_new=False):
         calls.append(send)
-        return {"url": "https://h/portal/tok", "updated": True, "emailed": bool(send)}
+        # send_if_new is the once-only form: the upsert emails only when it minted a
+        # token, so a returning client (updated=True here) is never mailed as new.
+        return {"url": "https://h/portal/tok", "updated": True,
+                "emailed": bool(send)}
     monkeypatch.setattr(bpp, "publish_to_portal", fake_publish)
     db = str(tmp_path / "c.db")
     c = bla.create_app(db, tts=lambda script: b"MP3BYTES",

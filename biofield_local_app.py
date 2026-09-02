@@ -532,7 +532,7 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                e4l_db=None, fee_get=None, fee_set=None, fee_clear=None,
                invoice_fetch_catalog=None, invoice_create=None, invoice_link=None,
                invoice_paid_check=None, invoice_latest=None, ingredients_db=None,
-               portal_link_fetch=None):
+               portal_link_fetch=None, auto_publish=None):
     app = Flask(__name__)
     # The clinical-tags ledger lives in the SEPARATE local e4l.db (not the app's chat_log.db).
     e4l_db = e4l_db or _e4l_db_path()
@@ -873,6 +873,7 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
             data = open(out, "rb").read()
         except Exception as e:
             return Response(f"PDF generation failed: {e}", status=500)
+        _auto_publish(test_id)   # printing a report also puts it on the client portal
         return Response(data, mimetype="application/pdf", headers={
             "Content-Disposition": f'inline; filename="biofield-{test_id}.pdf"'})
 
@@ -1173,6 +1174,7 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
         link = invoice_link(oid) or {}
         if not link.get("ok") or not link.get("print_url"):
             return {"ok": False, "error": link.get("error") or "Invoice link unavailable."}, 502
+        _auto_publish(test_id)   # printing an invoice also puts the report on the portal
         return {"ok": True, "order_id": oid, "print_url": link["print_url"],
                 "edit_url": biofield_invoice.default_edit_order_link(oid)}
 
@@ -2335,7 +2337,7 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                            "WHERE test_id=?", (test_id,)).fetchone()
         return r[0] if r else None
 
-    def _do_publish(test_id, special, send):
+    def _do_publish(test_id, special, send, send_if_new=False):
         """Build + upload PDF/audio assets + upsert the portal for a test. Returns the
         upsert response dict (or {"unresolved": [...]}); raises on hard errors."""
         from dashboard import biofield_portal_publish as _bpp
@@ -2362,7 +2364,36 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
         with sqlite3.connect(db_path) as cx:
             payload = _bpp.build_portal_content(cx, test_id, special_price_cents=special,
                                                 audio_url=audio_url, report_pdf_url=pdf_url)
-        return _bpp.publish_to_portal(payload, base_url=base, console_key=key, send=send)
+        return _bpp.publish_to_portal(payload, base_url=base, console_key=key, send=send,
+                                      send_if_new=send_if_new)
+
+    def _auto_publish(test_id):
+        """Put this test's report on the client portal because it was just printed or
+        emailed. Best-effort: an output must never fail because the portal did.
+
+        send_if_new (not send) means at most ONE "your healing home is ready" email,
+        and only for a portal that did not exist before -- printing a report for a
+        longstanding client never mails them as though they were new.
+        """
+        # The remembered special price is a nicety; its table may not exist yet. A
+        # failure here must not silently skip the publish, which is the point.
+        special = None
+        try:
+            with sqlite3.connect(db_path) as cx:
+                special = cx.execute(
+                    "SELECT special_price_cents FROM biofield_portal_published WHERE test_id=?",
+                    (str(test_id),)).fetchone()
+        except Exception:
+            special = None
+        try:
+            res = (auto_publish or _do_publish)(
+                test_id, int((special or [0])[0] or 0), send=False, send_if_new=True)
+            if isinstance(res, dict) and res.get("unresolved"):
+                print(f"[auto-publish] {test_id}: unresolved {res['unresolved']}", flush=True)
+            return res
+        except Exception as e:
+            print(f"[auto-publish] {test_id} skipped: {e!r}", flush=True)
+            return None
 
     @app.route("/test/<test_id>/publish-portal", methods=["POST"])
     def publish_portal(test_id):
