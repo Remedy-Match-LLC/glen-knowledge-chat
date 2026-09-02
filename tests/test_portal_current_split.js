@@ -78,7 +78,9 @@ function endOfStatement(src, i) {
 // slice, which is why the window and not just the statement is captured.
 // ---------------------------------------------------------------------------
 const pushes = [];
-const re = /(?:(?<![A-Za-z0-9_$.])part\(\s*(null|"[a-z]+")\s*,)|(?:(?<![A-Za-z0-9_$.])html\s*\+=)/g;
+// The door pattern admits hyphens: "chrome-top" is a tag, and a pattern of [a-z]+ is
+// exactly the defect that let six hyphenated panels pass unnoticed in the shell suite.
+const re = /(?:(?<![A-Za-z0-9_$.])part\(\s*(null|"[a-z][a-z-]*")\s*,)|(?:(?<![A-Za-z0-9_$.])html\s*\+=)/g;
 let m, prevEnd = 0;
 while ((m = re.exec(region)) !== null) {
   // Scan from the start of the token, not past it: for a part(...) push the
@@ -171,10 +173,11 @@ const SIGS = [
   ['learn', 'id="peer-card"'],
 
   // --- page chrome, no door ---
-  // These belong to the page, not to any one door, so they render outside the door
-  // panels and appear on every door instead of only on one.
-  [null, 'class="card your-practitioner-band"'],               // practitioner co-brand band
-  [null, 'class="foot"']                                       // With aloha, Dr. Glen & Rae
+  // Neither belongs to a door, but they belong at opposite ends of the page, so they
+  // are tagged separately and rendered into two containers. A single chrome tag put
+  // the practitioner's co-brand band below every card on every door.
+  ['chrome-top', 'class="card your-practitioner-band"'],       // practitioner co-brand band
+  ['chrome-bottom', 'class="foot"']                            // With aloha, Dr. Glen & Rae
 ];
 
 const doorOfSig = {};
@@ -211,10 +214,11 @@ assert.strictEqual(stillLegacy.length, 0,
 // reordered legacy page.
 // ---------------------------------------------------------------------------
 const S = 'scans', B = 'billing', R = 'remedies', L = 'solutions', A = 'account', E = 'learn';
+const CT = 'chrome-top', CB = 'chrome-bottom';
 const EXPECTED = [
-  S, A, S, A, S, null, null, null, null, null, null, null, null, S, S, S,
+  S, A, S, A, S, CT, null, null, null, null, null, null, null, S, S, S,
   B, B, B, B, B, B, B, S, S, S, S, S, S, A, S, R, R, R, R, R, S, L, R, R, R, L,
-  A, A, B, null, null, null, null, null, A, null, A, S, S, S, E, E, E, A, null, A, A, null
+  A, A, B, null, null, null, null, null, A, null, A, S, S, S, E, E, E, A, null, A, A, CB
 ];
 assert.strictEqual(EXPECTED.length, 64, 'the expected sequence must cover every push');
 assert.deepStrictEqual(pushes.map(function (p) { return p.door; }), EXPECTED,
@@ -226,7 +230,8 @@ assert.deepStrictEqual(pushes.map(function (p) { return p.door; }), EXPECTED,
 const counts = {};
 pushes.forEach(function (p) { counts[String(p.door)] = (counts[String(p.door)] || 0) + 1; });
 assert.deepStrictEqual(counts,
-  { scans: 17, billing: 8, remedies: 8, solutions: 2, account: 10, learn: 3, 'null': 16 });
+  { scans: 17, billing: 8, remedies: 8, solutions: 2, account: 10, learn: 3,
+    'chrome-top': 1, 'chrome-bottom': 1, 'null': 14 });
 
 // ---------------------------------------------------------------------------
 // The doors are actually rendered, and each renders its own filter. A door whose
@@ -246,9 +251,62 @@ SECTIONS.forEach(function (row) {
     panel + ' must render partsFor("' + door + '"), got: ' + tag[0]);
 });
 
-// Page chrome renders outside the door panels, so it is on every door, not one.
-assert.ok(/<div class="portal-chrome">\$\{partsFor\(null\)\}<\/div>/.test(page),
-  'page chrome must render partsFor(null) outside the door sections');
+// ---------------------------------------------------------------------------
+// THE safety invariant: `current` and the door panels never hold the cards at the
+// same time. This is not a style preference. 72 of the 88 static ids in the moved
+// region are reached by a document-wide getElementById or querySelector elsewhere
+// in the page, so a second copy is not inert: a door copy's controls would bind to
+// the `current` copy, whichever the document reached first. And
+// syncPortalHeaderCartCount() counts `#curatedOrderItems .curated-order-item`
+// across the whole document, so with the basket in two panels the header cart
+// badge would silently double, on the flag combination production runs today.
+//
+// Pinned as exact literals, on the legacy panel and on every door section. An
+// earlier version of this file asserted only that each section mentioned its own
+// partsFor(...) call, and the gate could be deleted from any of them with every
+// suite still green.
+// ---------------------------------------------------------------------------
+const GATED_CURRENT =
+  '<section data-panel="current"${_hub ? " hidden" : ""} data-door="scans">' +
+  '${back}${html}${_doors ? "" : legacyCurrentHtml()}</section>';
+assert.ok(page.indexOf(GATED_CURRENT) !== -1,
+  'the legacy `current` section must render its fragments only when the doors do not: ' +
+  'without the _doors gate every card is in the DOM twice');
+
+SECTIONS.forEach(function (row) {
+  const panel = row[0], door = row[1];
+  const gated = '<section data-panel="' + panel + '" hidden data-door="' + door + '">' +
+    '${back}${_doors ? partsFor("' + door + '") : ""}</section>';
+  assert.ok(page.indexOf(gated) !== -1,
+    panel + ' must render its fragments only under the _doors gate; without it the same ' +
+    'cards are in both this section and `current`, duplicating their element ids');
+});
+
+// The gate itself must be the conjunction, not the shell flag alone. With the shell
+// on and the hub off there are no door panels, so suppressing the fragments from
+// `current` there would render a blank portal.
+assert.ok(page.indexOf('const _doors = _hub && _shell;') !== -1,
+  '_doors must be `_hub && _shell`: the door panels only exist under the hub');
+
+// Page chrome renders outside the door panels, so it is on every door, not one, and
+// in two containers rather than one: the practitioner co-brand band sits near the top
+// of the page today, and a single trailing container would have sunk it below every
+// card on every door.
+const TOP_CHROME =
+  '<div class="portal-chrome portal-chrome-top">${partsFor("chrome-top")}</div>';
+const BOTTOM_CHROME =
+  '<div class="portal-chrome portal-chrome-bottom">${partsFor("chrome-bottom")}</div>';
+assert.ok(page.indexOf(TOP_CHROME) !== -1,
+  'the top chrome container must render partsFor("chrome-top")');
+assert.ok(page.indexOf(BOTTOM_CHROME) !== -1,
+  'the bottom chrome container must render partsFor("chrome-bottom")');
+// ...and they really are above and below the sections, not merely present.
+const firstSection = page.indexOf('<section data-panel="current"');
+const lastSection = page.lastIndexOf('<section data-panel="learn-detail"');
+assert.ok(page.indexOf(TOP_CHROME) < firstSection,
+  'the top chrome container must come before the panel sections');
+assert.ok(page.indexOf(BOTTOM_CHROME) > lastSection,
+  'the bottom chrome container must come after the panel sections');
 
 // ---------------------------------------------------------------------------
 // The legacy panel still shows everything. Emptying it would blank the portal on

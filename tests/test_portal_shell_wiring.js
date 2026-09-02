@@ -23,7 +23,7 @@ assert.deepStrictEqual(declaredPanels, allPanels().slice().sort(),
   'the page must declare a section for exactly the panels the door map knows about');
 sections.forEach(function (tag) {
   const panel = /data-panel="([a-z][a-z-]*)"/.exec(tag)[1];
-  const door = /data-door="([a-z]+)"/.exec(tag);
+  const door = /data-door="([a-z][a-z-]*)"/.exec(tag);
   assert.ok(door, panel + ' section is missing data-door');
   assert.strictEqual(door[1], doorForPanel(panel),
     panel + ' declares door ' + door[1] + ' but the map says ' + doorForPanel(panel));

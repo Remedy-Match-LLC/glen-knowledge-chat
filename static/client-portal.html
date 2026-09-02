@@ -3730,11 +3730,17 @@ function render(d, v){
   // that owns it. `current` renders every fragment in order, so its output is
   // byte-identical to today by construction; each door renders its own filter of
   // the same array, so a card can never be in two places or vanish from one.
-  // A door of null is page chrome (the practitioner band, the footer): it belongs
-  // to no door and renders outside the door panels, so it appears on every door
-  // rather than only on one. The legacy-only branch of an already-routed card
-  // (the `else` arms below, which run only when the hub is off) also pushes with
-  // null, because with the hub off there are no door panels for it to land in.
+  // Three tags are not doors, and they mean three different things:
+  //   "chrome-top"    page chrome that belongs above every door, so it renders in
+  //                   its own container BEFORE the panel sections. The practitioner
+  //                   co-brand band, which sits near the top of the page today and
+  //                   must keep that position rather than sinking below the cards.
+  //   "chrome-bottom" page chrome that belongs below every door, rendered in its own
+  //                   container AFTER the panel sections. The footer.
+  //   null            the legacy-only arm of a card the hub already routes to its own
+  //                   panel (the `!_hub` and `else` arms below). It runs only when the
+  //                   hub is off, when there are no door panels for it to land in, so
+  //                   it is reachable through `current` alone and no door renders it.
   const parts = [];                                   // [{door, html}]
   const part = (door, html) => { parts.push({door: door, html: html}); };
   const partsFor = (door) => parts.filter(function (p) { return p.door === door; })
@@ -3825,7 +3831,7 @@ function render(d, v){
     let practImg = pb.photo_url ? `<img src="${esc(pb.photo_url)}" alt="${esc(pb.name||"")}" style="width:50px;height:50px;border-radius:50%;object-fit:cover;flex:0 0 auto;">` : "";
     // Practice logo mark at the right end — logos aren't square, so contain (no crop, no radius).
     let practLogo = pb.logo_url ? `<img src="${esc(pb.logo_url)}" alt="${esc(pb.practice_name||pb.name||"")}" style="max-height:32px;max-width:120px;object-fit:contain;flex:0 0 auto;">` : "";
-    part(null, `<div class="card your-practitioner-band"${accentStyle}>
+    part("chrome-top", `<div class="card your-practitioner-band"${accentStyle}>
       <div style="display:flex;align-items:center;gap:12px">
         ${practImg}
         <div style="flex:1">${practContent}</div>
@@ -4910,7 +4916,7 @@ function render(d, v){
         Automatically show my newest analysis</label></div>`);
   }
 
-  part(null, `<div class="foot">With aloha,<br><b>Dr. Glen &amp; Rae</b> · Remedy Match LLC</div>`);
+  part("chrome-bottom", `<div class="foot">With aloha,<br><b>Dr. Glen &amp; Rae</b> · Remedy Match LLC</div>`);
 
   // Task 7: wrap everything above into the Current Analysis panel and add the
   // Scan History / Orders & Invoices panels + tab bar. Flag off => html is used
@@ -4945,7 +4951,7 @@ function render(d, v){
     // panel carries a Back-to-hub control. Without the hub, behavior is unchanged.
     const hubPanel = _hub ? `<section data-panel="hub" data-door="home">${hubHtml}</section>` : "";
     const back = _hub ? backToHub() : "";
-    html = `${tabbar}${hubPanel}
+    html = `${tabbar}${_doors ? `<div class="portal-chrome portal-chrome-top">${partsFor("chrome-top")}</div>` : ""}${hubPanel}
       <section data-panel="current"${_hub ? " hidden" : ""} data-door="scans">${back}${html}${_doors ? "" : legacyCurrentHtml()}</section>
       <section data-panel="history" hidden data-door="scans">${back}${historyHtml}</section>
       <section data-panel="orders" hidden data-door="billing">${back}${ordersHtml}</section>
@@ -4972,7 +4978,7 @@ function render(d, v){
       <section data-panel="solutions-detail" hidden data-door="solutions">${back}${_doors ? partsFor("solutions") : ""}</section>
       <section data-panel="account-detail" hidden data-door="account">${back}${_doors ? partsFor("account") : ""}</section>
       <section data-panel="learn-detail" hidden data-door="learn">${back}${_doors ? partsFor("learn") : ""}</section>
-      ${_doors ? `<div class="portal-chrome">${partsFor(null)}</div>` : ""}` : ""}`;
+      ${_doors ? `<div class="portal-chrome portal-chrome-bottom">${partsFor("chrome-bottom")}</div>` : ""}` : ""}`;
   } else {
     // The onboarding checklist is available independently of the hub and scan
     // history flags, so its #intake link must always have a real panel target.
