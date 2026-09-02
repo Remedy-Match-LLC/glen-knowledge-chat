@@ -323,12 +323,22 @@ function buildInvoicePrintHtml(o){
     tot += `<div class="r grand"><span>Balance due</span><span>${money(o.balance_due_cents)}</span></div>`;
   const savings = totalSavings(lines);
   if(savings>0) tot += r('You save', savings, false, 'save');
-  const today = new Date().toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric'});
+  // A historical invoice must keep its original invoice date.  Using `new Date()`
+  // here made every saved PDF look like it was issued on the day it was printed
+  // (for example, Debra's Jul 11 invoice appeared to be her Sep 2 invoice).
+  // Read the YYYY-MM-DD portion directly so a UTC timestamp cannot shift back a
+  // calendar day when the console is opened in Hawai'i.
+  const createdYmd = String(o.created_at||'').slice(0,10);
+  const createdParts = createdYmd.split('-').map(Number);
+  const invoiceDate = createdParts.length===3 && createdParts.every(Number.isFinite)
+    ? new Date(createdParts[0], createdParts[1]-1, createdParts[2], 12).toLocaleDateString(
+        'en-US', {month:'short', day:'numeric', year:'numeric'})
+    : new Date().toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric'});
   return `<div class="pd invoice">
     ${PRINT_HEADER("Invoice", o.name)}
     <div class="pd-meta">
       ${o.external_ref?`<div><span class="pd-k">Invoice</span> ${esc(o.external_ref)}</div>`:""}
-      <div><span class="pd-k">Date</span> ${esc(today)}</div>
+      <div><span class="pd-k">Date</span> ${esc(invoiceDate)}</div>
     </div>
     <table class="pd-lines"><thead><tr><th>Item</th><th class="num">Value</th><th class="num">Regular</th><th class="num">Price</th><th class="num">Qty</th><th class="num">Amount</th></tr></thead>
       <tbody>${rows || '<tr><td colspan="6">No items.</td></tr>'}</tbody></table>
