@@ -110,6 +110,12 @@ def test_session_token_validates_until_expiry(db):
 
 # ── registration insert (fake Supabase cursor) ────────────────────────────────
 
+# Position of wholesale_unlocked_at in register_practitioner's INSERT parameters
+# (tier, name, email, practice_name, credentials, phone, website, portal_role,
+#  license_state, license_number, resale_license_number, wholesale_unlocked_at).
+_UNLOCKED_AT = 11
+
+
 class _FakeCur:
     def __init__(self):
         self.inserts = []
@@ -148,7 +154,9 @@ def test_register_licensed_unlocks_immediately(fake_supabase):
     pid, unlocked = register_practitioner(clean, now=datetime(2026, 6, 1))
     assert pid == "P-NEW"
     assert unlocked is True
-    assert fake_supabase.inserts[0][-1] is not None        # wholesale_unlocked_at set
+    # Index, not [-1]: the INSERT now ends with the email a second time, feeding the
+    # NOT EXISTS guard that stops a second portal account being created for it.
+    assert fake_supabase.inserts[0][_UNLOCKED_AT] is not None   # wholesale_unlocked_at set
 
 
 def test_order_history_records_newest_first_and_is_idempotent(db):
@@ -266,7 +274,7 @@ def test_register_coach_stays_locked(fake_supabase):
                                       "portal_role": "coach", "resale_license_number": "9"})
     pid, unlocked = register_practitioner(clean, now=datetime(2026, 6, 1))
     assert unlocked is False
-    assert fake_supabase.inserts[0][-1] is None            # locked until first module
+    assert fake_supabase.inserts[0][_UNLOCKED_AT] is None  # locked until first module
 
 
 def test_modules_completed_for_email(monkeypatch):
