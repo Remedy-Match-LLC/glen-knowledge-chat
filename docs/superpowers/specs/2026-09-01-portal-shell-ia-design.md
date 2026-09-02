@@ -10,7 +10,7 @@ The live client portal is one 7,891-line file. `PORTAL_HUB_ENABLED` is on in pro
 
 Three measured problems.
 
-**One panel holds a quarter of the portal.** 63 `html +=` statements feed the `current` panel, which a client reaches by tapping a tile called My Analysis. 27 distinct cards land there, spanning the biofield report, the invoice for it, remedies, wishlist, orders, membership upsells, the Ambassador programme, Free Product Review, sharing, and caregiver payments. A client who taps My Analysis to read their scan scrolls past a wishlist and an upsell to reach it. Several of those cards also have their own tiles one tap away, so the duplication is visible to the client.
+**One panel holds a quarter of the portal.** 50 `html +=` statements feed the `current` panel, which a client reaches by tapping a tile called My Analysis. 29 distinct cards land there, spanning the biofield report, the invoice for it, remedies, wishlist, orders, membership upsells, the Ambassador programme, Free Product Review, sharing, and caregiver payments. A client who taps My Analysis to read their scan scrolls past a wishlist and an upsell to reach it. Several of those cards also have their own tiles one tap away, so the duplication is visible to the client.
 
 **Two taxonomies disagree.** `portal_onboarding.build_status` already computes a real three-phase journey with per-step `done` and `in_progress`: Discover What Your Body Is Saying (voice, intake, photo, biofield), Match Remedies, Accelerate Healing. The hub discards that structure and re-sorts the same objects into Understand / Act / Learn & Ask / Track, using the journey only to paint a progress bar on four tiles.
 
@@ -79,13 +79,13 @@ All 21 `[data-panel]` sections keep working. The rail changes which door reveals
 
 ### Splitting the `current` panel
 
-This is the bulk of the work. Each of the 27 cards moves to the door that owns it. Nothing is deleted.
+This is the bulk of the work. Each of the 29 cards moves to the door that owns it. Nothing is deleted.
 
 - **Scans & Reports:** Preparing your Biofield Analysis, Your scan analysis, Your healing path, Your formulation matches, Your written report, Your audio walkthrough, Your personal message from Dr. Glen, Scan history, Curious what your body is asking for, Order your first Biofield Analysis, Biofield Consult
 - **Billing:** Your invoice, Your options & pricing, Your orders
 - **My Remedies:** Your Remedies, Order your remedies, Your wishlist, Your Life Stress Essences, Premier Research Labs options, Fullscript
 - **Find Solutions:** Your practitioner recommends
-- **Account:** Your practitioner account, Sharing, Free Product Review, See everything your membership unlocks, More savings ahead, Everything your membership unlocks
+- **Account:** Your practitioner account, Sharing, Family notifications, Your preferences, Free Product Review, See everything your membership unlocks, More savings ahead, Everything your membership unlocks
 
 The two membership upsell cards ("More savings ahead", "Everything your membership unlocks") say substantially the same thing in two places on one screen today. Merging them into one card under Account is in scope.
 
@@ -141,7 +141,7 @@ Existing coverage to keep green: `test_portal_hub_flag.py`, `test_portal_card_st
 New coverage:
 
 - Every rail door resolves to a `[data-panel]` that exists in the DOM. A door pointing at an absent panel silently bounces to Home today, so assert the door set and the panel set match exactly rather than asserting each door individually.
-- Each of the 27 relocated cards renders under its new door and no longer renders under `current`. Assert both halves; a card that renders in both places is the duplication this work exists to remove.
+- Each of the 29 relocated cards renders under its new door and no longer renders under `current`. Assert both halves; a card that renders in both places is the duplication this work exists to remove.
 - The chat composer renders at the top of Home regardless of flag state. This is the regression that a comment claimed and the code contradicted, so it gets a test rather than a comment.
 - Routing: a known intent returns its destination panel, and an unknown intent returns no destination rather than a wrong one.
 - Render verification against a real portal, not a payload. Use `PORTAL_TEST_LINK` from Doppler `prd`, and check the phone drawer at 375px through the CSSOM rather than by asserting on source strings.
