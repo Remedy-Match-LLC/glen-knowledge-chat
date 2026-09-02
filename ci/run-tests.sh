@@ -44,6 +44,21 @@ unset DOPPLER_TOKEN
 # the content tree lands in a later task, so a fresh checkout must not fail here.
 python3 scripts/lint_courses.py || exit 1
 
+# --- front-end unit tests --------------------------------------------------------------
+# tests/*.js are plain node scripts using the built-in assert module (see
+# tests/test_portal_documents_tile.js for the pattern). They were present but unrun for
+# months: this runner was pytest-only, so a broken renderer shipped green. ubuntu-latest
+# ships node, and the files have no dependencies, so there is nothing to install.
+if command -v node >/dev/null 2>&1; then
+  for f in tests/*.js; do
+    [ -e "$f" ] || continue
+    echo "node $f"
+    node "$f" || exit 1
+  done
+else
+  echo "node not found, skipping front-end unit tests" >&2
+fi
+
 # --- the gate ------------------------------------------------------------------------
 # scripts/ci_check.py runs the WHOLE suite and compares failures against the accepted
 # baseline in tests/known_failures.txt, failing only on a NEW failure. It replaced an
