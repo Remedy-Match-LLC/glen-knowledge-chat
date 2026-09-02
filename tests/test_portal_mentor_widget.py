@@ -43,6 +43,12 @@ def test_continuous_voice_is_never_remembered_and_resets_when_mentor_closes():
 
 def test_background_portal_never_speaks_or_listens_and_auto_guidance_is_visual_first():
     assert "if(document.hidden)return;" in MENTOR
+    # document.hidden is only about the browser tab. At page load, before the
+    # payload arrives, the mentor can be bound to a surface that is about to be
+    # replaced, and under the portal shell the card sits in a [data-panel] section
+    # that is hidden at every other door. A host the client cannot see must not
+    # speak either. This is an ADDITIONAL condition; the tab check above stays.
+    assert "if(hostHidden())return;" in MENTOR
     assert 'document.addEventListener("visibilitychange"' in MENTOR
     assert 'window.addEventListener("pagehide",silenceHiddenMentor)' in MENTOR
     # Task 7 (portal-shell-ia) generalised "is the mentor open?" to "is the host the

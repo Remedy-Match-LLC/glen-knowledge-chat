@@ -84,10 +84,41 @@ function runMentor(ids, opts) {
     addEventListener() {},
     sendChatMessage: opts.sendChatMessage || undefined
   };
+  // A faithful SpeechRecognition: start() really does fire onstart and stop()
+  // really does fire onend. Without that the module never sees micActivated go
+  // true, syncContinuousControl() disables continuous mode, and the fake quietly
+  // fails code that is correct.
   sandbox.SpeechRecognition = function () {
-    this.start = function () {}; this.stop = function () {};
+    const self = this;
+    this.stopped = 0; this.live = false;
+    this.start = function () { self.live = true; if (self.onstart) self.onstart(); };
+    this.stop = function () {
+      self.stopped++;
+      if (self.live) { self.live = false; if (self.onend) self.onend(); }
+    };
     sandbox.__recognition = this;          // so the test can fire a transcript
   };
+  if (opts.deferTimers) {
+    // real timers do not run inline. Deferring them is the only way to observe the
+    // state where a continuous restart is SCHEDULED but recognition is not running.
+    const pending = []; let nextId = 1;
+    sandbox.__pending = pending;
+    sandbox.setTimeout = function (fn) { const id = nextId++; pending.push({ id: id, fn: fn }); return id; };
+    sandbox.clearTimeout = function (id) {
+      for (let i = 0; i < pending.length; i++) { if (pending[i].id === id) { pending.splice(i, 1); return; } }
+    };
+  }
+  if (opts.speech) {
+    // a speech engine that actually records what was said, so "did it speak?" is
+    // an observation rather than an assumption
+    sandbox.speechSynthesis = {
+      spoken: [], cancelled: 0,
+      cancel() { this.cancelled++; },
+      speak(u) { this.spoken.push(u.text); if (u.onend) u.onend(); }
+    };
+    sandbox.SpeechSynthesisUtterance = function (t) { this.text = t; };
+    sandbox.__synth = sandbox.speechSynthesis;
+  }
   vm.createContext(sandbox);
   sandbox.window = sandbox;
   vm.runInContext(mentorSrc, sandbox, { filename: 'portal-mentor.js' });
@@ -200,7 +231,7 @@ assert.ok(/body\.has-shell/.test(launcherHides[0]),
 // behaviour with the flag off: no card cluster exists, so the mentor still owns
 // the floating panel exactly as it does in production today.
 {
-  const r = runMentor(FLOATING);
+  const r = runMentor(FLOATING, { speech: true });
   assert.ok(r.doc.reg.mentorLauncher.listeners.click,
     'with the flag off the launcher must still open the mentor');
   assert.ok(r.doc.reg.mentorSend.listeners.click,
@@ -220,6 +251,31 @@ assert.ok(/body\.has-shell/.test(launcherHides[0]),
   assert.ok(greeting, 'the floating panel must still greet the client on open');
   assert.strictEqual(greeting.className, 'mentor-bubble assistant',
     'the floating panel keeps its own bubble class, not the card one');
+
+  // The host-visibility guard added for the load-time window must be a no-op here.
+  // hostHidden() reports the floating panel's own hidden flag, which is exactly
+  // what every flag-off speak() call site already guarantees, so speech is
+  // unchanged: the panel is open, so it speaks.
+  const spokenBefore = r.win.__synth.spoken.length;
+  r.doc.reg.mentorContinuous.checked = true;
+  r.doc.reg.mentorContinuous.listeners.change[0]();
+  assert.ok(r.win.__synth.spoken.length > spokenBefore,
+    'with the flag off the open floating panel must still speak, exactly as today');
+
+  // ...and the teardown must be unreachable. With the flag off no card cluster is
+  // ever rendered, so resolveHost() can only return the floating host and
+  // h.card !== next.card can never become true. Re-attaching must change nothing.
+  const stopped = r.win.__recognition.stopped;
+  const cancelled = r.win.__synth.cancelled;
+  r.win.mentorAttachHost();
+  assert.strictEqual(panel.hidden, false, 'a flag-off re-attach must not close the panel');
+  assert.strictEqual(r.doc.reg.mentorContinuous.checked, true,
+    'a flag-off re-attach must not end a conversation');
+  assert.strictEqual(r.win.__recognition.stopped, stopped,
+    'a flag-off re-attach must not release the microphone');
+  assert.strictEqual(r.win.__synth.cancelled, cancelled,
+    'a flag-off re-attach must not cancel speech');
+
   r.doc.reg.mentorLauncher.listeners.click[0]();
   assert.strictEqual(panel.hidden, true, 'the launcher must still close the floating panel');
 }
@@ -340,6 +396,118 @@ assert.ok(page.indexOf('mentorPageChanged') !== -1, 'the routers no longer call 
   assert.ok(last.textContent.indexOf('Ask me here') !== -1,
     'the guide must not tell the client to open a launcher the shell has removed');
   assert.ok(last.textContent.indexOf('Open me') === -1);
+}
+
+// ---------------------------------------------------------------------------
+// 6. The load-time window: the floating host is bound and live before the card
+//    exists, even with the shell on, and switching away must tear it down.
+// ---------------------------------------------------------------------------
+// portal-mentor.js runs at script load. At that moment #app is still empty and
+// body.has-shell is not set, because render() only runs once load()'s fetches
+// resolve. So resolveHost() finds no card, binds the floating panel, and for the
+// length of that fetch the launcher is visible and fully working. The window
+// cannot be closed: the page is static and shell_enabled only arrives with the
+// payload. So the switch has to be safe instead.
+//
+// Every case above seeds the floating and card ids at the same instant, so none
+// of them can reach this. This one models the real sequence.
+{
+  const r = runMentor(FLOATING, { speech: true });
+  assert.strictEqual(r.win.PortalVoice.armed(), false,
+    'before the payload arrives the floating panel is the only host there is');
+
+  // the client opens it and starts a continuous voice session in that window
+  r.doc.reg.mentorLauncher.listeners.click[0]();
+  r.doc.reg.mentorContinuous.checked = true;
+  r.doc.reg.mentorContinuous.listeners.change[0]();
+  assert.strictEqual(r.doc.reg.mentorPanel.hidden, false, 'the panel is open in the load window');
+  assert.ok(r.win.__synth.spoken.length > 0, 'and it is genuinely speaking');
+  const cancelledBefore = r.win.__synth.cancelled;
+  const stoppedBefore = r.win.__recognition.stopped;
+
+  // the payload lands, render() builds the card, the page re-attaches
+  CARD.forEach(function (id) { r.doc.reg[id] = El(id); });
+  r.win.mentorAttachHost();
+
+  assert.strictEqual(r.win.PortalVoice.armed(), true, 'the card must take the host over');
+  assert.ok(r.win.__synth.cancelled > cancelledBefore,
+    'speech in flight must be cancelled when the host switches, not left talking');
+  assert.ok(r.win.__recognition.stopped > stoppedBefore,
+    'the microphone must be released when the host switches, not left listening');
+  assert.strictEqual(r.doc.reg.mentorContinuous.checked, false,
+    'continuous mode must not survive a host switch');
+  assert.strictEqual(r.doc.reg.mentorPanel.hidden, true,
+    'the floating panel must be closed when the card takes over');
+  assert.strictEqual(r.doc.reg.mentorLauncher.getAttribute('aria-expanded'), 'false');
+  assert.strictEqual(r.doc.reg.mentorMic.getAttribute('aria-pressed'), 'false',
+    'the abandoned microphone must not still read as live');
+}
+
+// ...but a re-render of the SAME host is not a switch. render() rebuilds the card
+// on every background poll, and tearing down there would cut off a client
+// mid-conversation.
+{
+  const r = runMentor(FLOATING.concat(CARD), { speech: true });
+  r.doc.reg.chatContinuous.checked = true;
+  r.doc.reg.chatContinuous.listeners.change[0]();
+  const stoppedBefore = r.win.__recognition.stopped;
+  CARD.forEach(function (id) { r.doc.reg[id] = El(id); });   // render() runs again
+  r.win.mentorAttachHost();
+  assert.strictEqual(r.doc.reg.chatContinuous.checked, true,
+    'a background re-render must not end a conversation in progress');
+  assert.strictEqual(r.win.__recognition.stopped, stoppedBefore,
+    'a background re-render must not release the microphone');
+}
+
+// The microphone can READ as active while a continuous restart is only scheduled,
+// with recognition not yet running. Nothing in the stop path fires an onend then,
+// so the teardown has to clear the indicator itself. Without this case the mic
+// assertion above passes for the wrong reason: recognition.stop()'s own onend
+// happens to repaint it.
+{
+  const r = runMentor(FLOATING, { speech: true, deferTimers: true });
+  r.doc.reg.mentorLauncher.listeners.click[0]();
+  r.doc.reg.mentorContinuous.checked = true;
+  r.doc.reg.mentorContinuous.listeners.change[0]();
+  assert.strictEqual(r.doc.reg.mentorMic.getAttribute('aria-pressed'), 'true',
+    'a scheduled restart paints the microphone active');
+  assert.strictEqual(r.win.__recognition.live, false,
+    'recognition is not running yet, so stopping it fires no onend to repaint');
+  assert.ok(r.win.__pending.length > 0, 'a restart really is queued');
+
+  CARD.forEach(function (id) { r.doc.reg[id] = El(id); });
+  r.win.mentorAttachHost();
+  assert.strictEqual(r.doc.reg.mentorMic.getAttribute('aria-pressed'), 'false',
+    'the abandoned microphone must not still read as live');
+  assert.strictEqual(r.win.__pending.length, 0,
+    'the queued restart must be cancelled, not left to fire at the dead host');
+}
+
+// ---------------------------------------------------------------------------
+// 7. A surface the client cannot see must not speak.
+// ---------------------------------------------------------------------------
+// document.hidden only answers "is the tab in the background". Under the shell the
+// card sits inside a [data-panel] section that is hidden whenever the client is at
+// another door, and during the load window the bound host can be a panel that is
+// about to disappear. hostHidden() is the question that actually matters.
+{
+  const r = runMentor(FLOATING.concat(CARD), { speech: true });
+  const section = El('askSection');
+  section._sel = '[data-panel]';
+  section.hidden = true;
+  r.doc.reg.chatMsgs.parent = section;      // the card is behind a closed door
+
+  const before = r.win.__synth.spoken.length;
+  r.doc.reg.chatContinuous.checked = true;
+  r.doc.reg.chatContinuous.listeners.change[0]();
+  assert.strictEqual(r.win.__synth.spoken.length, before,
+    'the mentor must not speak from a surface the client cannot see');
+
+  // and it does speak once that door is open, so this is a guard, not a mute
+  section.hidden = false;
+  r.doc.reg.chatContinuous.listeners.change[0]();
+  assert.ok(r.win.__synth.spoken.length > before,
+    'the guard must be about visibility, not a blanket silence');
 }
 
 console.log('test_portal_one_chat: ok');

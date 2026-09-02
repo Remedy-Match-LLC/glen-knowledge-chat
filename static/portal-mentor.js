@@ -111,6 +111,12 @@
   }
   function speak(text,listenAfter){
     if(document.hidden)return;
+    // document.hidden is about the browser tab. It says nothing about whether the
+    // surface the mentor is bound to is on screen, and at page load the floating
+    // panel can be bound and live while the shell is on. A host the client cannot
+    // see must not speak, and must not schedule a microphone either, which is why
+    // this returns rather than falling through to startListening/scheduleListening.
+    if(hostHidden())return;
     if(!speakerOn||!window.speechSynthesis||!text){if(listenAfter)startListening();else scheduleListening();return}
     try{
       speaking=true;if(listening)recognition.stop();speechSynthesis.cancel();
@@ -194,7 +200,29 @@
   function on(el,evt,fn){if(!el)return;if(el.__mentorBound&&el.__mentorBound[evt])return;
     el.__mentorBound=el.__mentorBound||{};el.__mentorBound[evt]=true;el.addEventListener(evt,fn)}
 
+  // Nothing must survive a host switch. render() only runs once the payload has
+  // arrived, so with the shell on there is a window at page load where the card
+  // does not exist yet, resolveHost() falls back to the floating panel, and that
+  // panel is bound, visible and fully usable. A spoken reply or an open microphone
+  // started in that window would otherwise keep running against a surface the
+  // client can no longer see. Stop everything that can produce or capture sound,
+  // and close the panel behind us.
+  function releaseHost(){
+    if(!h)return;
+    continuousOn=false;
+    if(h.continuous)h.continuous.checked=false;
+    window.clearTimeout(restartTimer);restartAttempts=0;recognitionStarting=false;speaking=false;
+    try{if(window.speechSynthesis)speechSynthesis.cancel()}catch(e){}
+    if(recognition)try{recognition.stop()}catch(e){}
+    paintMicActive(false);
+    if(!h.card&&h.panel){h.panel.hidden=true;if(h.launcher)h.launcher.setAttribute("aria-expanded","false")}
+  }
+
   function bindHost(next){
+    // Only a change of host KIND is a switch. render() hands us a rebuilt card on
+    // every background poll, and tearing down there would end a conversation the
+    // client is in the middle of. The first bind has no previous host at all.
+    if(h&&h.card!==next.card)releaseHost();
     h=next;
     if(!h)return;
     try{if(h.autoGuide)h.autoGuide.checked=localStorage.getItem("rm_mentor_auto_guide")==="on"}catch(e){}
