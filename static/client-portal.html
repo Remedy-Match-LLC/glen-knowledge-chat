@@ -226,8 +226,14 @@
   .state{max-width:32rem;margin:18vh auto;text-align:center;color:var(--muted);padding:0 18px}
   .err{color:var(--err)}
   #loading{opacity:.6}
-  .portal-load-alert{border-color:var(--btn-bg);background:var(--card2);color:var(--ink)}
-  .portal-load-alert p{color:var(--muted)}
+  /* Keep the recovery card readable even if an older shell stylesheet or a
+     delayed theme toggle wins the generic .card cascade. */
+  .card.portal-load-alert{border-color:var(--btn-bg);background:var(--card2)!important;color:var(--ink)!important}
+  .card.portal-load-alert h2{color:var(--ink)!important}
+  .card.portal-load-alert p{color:var(--muted)!important}
+  :root[data-theme="light"] .card.portal-load-alert{background:#f6f2e9!important;color:#1e2a2a!important}
+  :root[data-theme="dark"] .card.portal-load-alert,
+  :root:not([data-theme]) .card.portal-load-alert{background:#16291d!important;color:#f3efe2!important}
   .portal-load-alert .btn{margin-top:.35rem}
   /* role badges + account */
   .badges{display:flex;gap:6px;justify-content:center;flex-wrap:wrap;margin:.4rem 0 0}
@@ -2484,13 +2490,15 @@ async function fetchPortalJsonOnce(url){
 }
 
 async function fetchPortalJson(url){
-  let result = await fetchPortalJsonOnce(url);
-  // A portal visit should survive one cold-start or momentary network failure.
-  // Invalid/unauthorized links are not retried because their response is final.
-  if(result.kind === "network" || result.kind === "timeout" ||
-     (result.kind === "http" && result.status >= 500)){
-    await new Promise(resolve=>setTimeout(resolve, 250));
+  let result;
+  // Survive a cold start plus a second transient network/server hiccup. Invalid
+  // and unauthorized links are final and return immediately.
+  for(let attempt=0; attempt<3; attempt++){
     result = await fetchPortalJsonOnce(url);
+    const retryable = result.kind === "network" || result.kind === "timeout" ||
+      (result.kind === "http" && result.status >= 500);
+    if(!retryable || attempt === 2) return result;
+    await new Promise(resolve=>setTimeout(resolve, attempt === 0 ? 300 : 900));
   }
   return result;
 }
