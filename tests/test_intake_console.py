@@ -36,6 +36,21 @@ def test_console_clinical_profile_includes_submitted_intake(client):
     assert r.get_json()["profile"]["intake_submitted"] is True
 
 
+def test_console_clinical_profile_includes_historical_intake(client):
+    import app as appmod
+    from dashboard import historical_intakes
+    with sqlite3.connect(appmod.LOG_DB) as cx:
+        historical_intakes.put_import(
+            cx, person_id=None, email="seed@x.com", form_date="2024-11-19",
+            form_name="FileMaker Contacts: Application",
+            answers={"health_concerns": [{"concern": "High IOP"}]},
+            source_system="filemaker-contacts-application", source_record_id="7122")
+    r = client.get("/api/console/clinical-profile/seed@x.com?key=K")
+    profile = r.get_json()["profile"]
+    assert "High IOP" in profile["conditions"]
+    assert profile["historical_intake_count"] == 1
+
+
 def test_console_clinical_profile_includes_submitted_intake(client):
     r = client.get("/api/console/clinical-profile/seed@x.com?key=K")
     assert r.status_code == 200

@@ -30219,6 +30219,7 @@ def console_clinical_profile(email):
     if not _portal_console_ok():
         return jsonify({"error": "unauthorized"}), 401
     from dashboard import (clinical_profile as _clinical, intake as _intake,
+                           historical_intakes as _historical,
                            portal_health_history as _health,
                            portal_extended_history as _extended)
     email = (email or "").strip().lower()
@@ -30228,7 +30229,8 @@ def console_clinical_profile(email):
         person = _merge_canonical_into_person(cx, dict(row)) if row else {"email": email}
         _intake.init_intake_table(cx)
         profile = _clinical.consolidate(person, _intake.get_response(cx, email),
-                                        _health.get(cx, email), _extended.get(cx, email))
+                                        _health.get(cx, email), _extended.get(cx, email),
+                                        _historical.list_for_email(cx, email))
     return jsonify({"ok": True, "profile": profile})
 
 
