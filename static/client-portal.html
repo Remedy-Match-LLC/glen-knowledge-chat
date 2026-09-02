@@ -1280,7 +1280,10 @@ function openPortalCart(captureContext){
 window.openPortalCart = openPortalCart;
 function openPortalOrderBasket(captureContext){
   if(captureContext) rememberPortalShoppingContext();
-  showTab("current");
+  // Final review I5: #portal-order-basket left `current` for the My Remedies
+  // door, so naming "current" here reveals the Scans door and the basket stays
+  // hidden. Same shape as the hash routes below, and the same helper.
+  showTab(portalPanelFor({panel:"current", shellPanel:"remedy-detail"}));
   window.setTimeout(function(){
     const card = document.getElementById("portal-order-basket");
     if(card) card.scrollIntoView({behavior:"smooth", block:"start"});
@@ -1294,14 +1297,41 @@ function continuePortalShopping(){
   window.setTimeout(function(){ window.scrollTo({top:Number(context.scrollY)||0, behavior:"smooth"}); }, 0);
 }
 
+// True once the shell is mounted and the door panels are the live layout. Read
+// from the cached view, the same source showTab() reads, so it is false on every
+// page render while PORTAL_SHELL_ENABLED is unset.
+function portalShellLive(){
+  return !!(window.PortalShell && window.__portalView && window.__portalView.shell_enabled);
+}
+
+// A deep link names a card, and the panel that owns that card is not the same
+// panel under the shell as without it. Task 10 moved several cards out of
+// `current` into a door of their own, so a route that names "current" now opens
+// the Scans door and leaves its target hidden in another one. `shellPanel` names
+// where the card went; it is used only when the shell is live and only when that
+// panel is actually in the DOM, so a stale or half-rendered page still falls back
+// to the pre-shell destination rather than to nothing.
+function portalPanelFor(route){
+  const panel = (portalShellLive() && route.shellPanel) ? route.shellPanel : route.panel;
+  return document.querySelector('[data-panel="'+panel+'"]') ? panel : route.panel;
+}
+
 // Stable deep links used by email/SMS CTAs. A hash names a destination, not a
 // fragile DOM layout: first reveal its owning panel, then focus/scroll the card.
+// Where a route has no `shellPanel`, its `panel` is owned by the same door under
+// both layouts, so one name serves both. tests/test_portal_hash_routes.js proves
+// that for every route rather than leaving it to inspection.
 const PORTAL_HASH_ROUTES = {
   biofield: {panel:"current", target:"biofield-section"},
   "biofield-latest": {panel:"current", target:"biofield-section", latest:true},
   "biofield-order": {panel:"current", target:"biofield-order-card"},
-  recs:     {panel:"current", target:"recsCard"},
-  recommendations: {panel:"current", target:"recsCard"},
+  // #recs is the practice's primary next-step call to action: dashboard/portal_view.py,
+  // dashboard/portal_onboarding.py and dashboard/eye_vision_report.py all emit it, and
+  // renderHome re-emits those hrefs verbatim, so a broken #recs breaks the Home
+  // landing's own step list. recsCard is part("solutions"), which renders into
+  // the solutions-detail panel.
+  recs:     {panel:"current", shellPanel:"solutions-detail", target:"recsCard"},
+  recommendations: {panel:"current", shellPanel:"solutions-detail", target:"recsCard"},
   remedies: {panel:"remedies", target:"remedies-panel"},
   intake:   {panel:"intake", target:"portal-intake-card"},
   health:   {panel:"records", target:"portal-health-profile"},
@@ -1338,8 +1368,9 @@ function applyPortalHash(){
     tosCard.focus({preventScroll:true});
     return true;
   }
-  const panel = document.querySelector(`[data-panel="${route.panel}"]`);
-  showTab(panel ? route.panel : (document.querySelector('[data-panel="current"]') ? "current" : "hub"));
+  const wanted = portalPanelFor(route);
+  const panel = document.querySelector(`[data-panel="${wanted}"]`);
+  showTab(panel ? wanted : (document.querySelector('[data-panel="current"]') ? "current" : "hub"));
   window.setTimeout(()=>{
     const target = document.getElementById(route.target);
     if(target){
