@@ -174,14 +174,14 @@ function rowHtml(r){
         <div class="sub">${esc(r.credentials||'—')} · ${esc(r.email)}</div></td>
     <td>${r.level}${r.certified?' <span class="pill on">certified</span>':''}</td>
     <td>${yn(r.wholesale_access)}</td>
-    <td>${yn(r.finder_listed)}</td>
+    <td>${yn(r.contact_shown)}</td>
     <td>${r.orders} · ${money(r.spent_cents)}<div class="sub">last ${ymd(r.last_order)}</div></td>
     <td>${r.disp_count} · ${money(r.disp_credit_cents)}<div class="sub">${r.disp_bottles} btl</div></td>
     <td>${money(r.wallet_balance_cents)}</td>
     <td>${esc(loc)}</td>
     <td class="actions">
       <button class="alt sm" onclick="toggleEdit('${r.id}')">Edit</button>
-      <button class="alt sm" onclick="toggleFinder('${r.id}',${!r.finder_listed})">${r.finder_listed?'Unlist':'List'}</button>
+      <button class="alt sm" onclick="toggleFinder('${r.id}',${!r.contact_shown})">${r.contact_shown?'Hide contact':'Show contact'}</button>
       <button class="alt sm" onclick="resend('${r.id}','${esc(r.email)}','${esc(r.name)}')">Resend invite</button>
     </td></tr>
     <tr class="editrow" id="edit-${r.id}" style="display:none"><td colspan="9">

@@ -64,3 +64,54 @@ def test_two_publicly_visible_rows_are_flagged_as_a_finder_duplicate():
     out = group_duplicates(rows, {})
     assert out["groups"][0]["finder_listed_count"] == 2
     assert out["finder_duplicates"] == 1
+
+
+def test_a_row_hidden_as_a_duplicate_is_not_counted_as_listed():
+    """duplicate_of is the third term of the view's filter. A hidden duplicate
+    keeps its coordinates on purpose, so coordinates alone would go on counting
+    it as publicly visible after it stopped being so, and the audit would report
+    a finder duplicate that has already been dealt with."""
+    from dashboard.practitioner_admin import group_duplicates
+    rows = [
+        {"id": "keep", "name": "A B", "email": "e@x.com", "lat": 21.3,
+         "removal_requested": False, "duplicate_of": None},
+        {"id": "hidden", "name": "A B", "email": "e@x.com", "lat": 21.3,
+         "removal_requested": False, "duplicate_of": "keep"},
+    ]
+    out = group_duplicates(rows, {})
+    g = out["groups"][0]
+    by = {r["id"]: r for r in g["rows"]}
+    assert by["keep"]["finder_listed"] is True
+    assert by["hidden"]["finder_listed"] is False
+    assert by["hidden"]["has_coords"] is True        # nothing was taken away
+    assert by["hidden"]["removal_requested"] is False  # and nobody asked to leave
+    assert g["finder_listed_count"] == 1
+    assert out["finder_duplicates"] == 0
+
+
+def test_the_audit_reports_which_row_each_duplicate_was_folded_into():
+    """Without this the audit says a group is clean and cannot show why."""
+    from dashboard.practitioner_admin import group_duplicates
+    rows = [
+        {"id": "keep", "name": "A B", "email": "e@x.com", "lat": 21.3,
+         "removal_requested": False},
+        {"id": "hidden", "name": "A B", "email": "e@x.com", "lat": 21.3,
+         "removal_requested": False, "duplicate_of": "keep"},
+    ]
+    by = {r["id"]: r for r in group_duplicates(rows, {})["groups"][0]["rows"]}
+    assert by["hidden"]["duplicate_of"] == "keep"
+    assert by["keep"]["duplicate_of"] is None
+
+
+def test_marking_one_of_a_visible_pair_drops_the_finder_duplicate_count():
+    """The number the whole exercise is measured by: 386 practitioners listed
+    more than once. Marking one row of a pair must move it."""
+    from dashboard.practitioner_admin import group_duplicates
+    rows = [{"id": i, "name": "A B", "email": "e@x.com", "lat": 21.3,
+             "removal_requested": False} for i in ("one", "two")]
+    assert group_duplicates(rows, {})["finder_duplicates"] == 1
+    rows[1]["duplicate_of"] = "one"
+    after = group_duplicates(rows, {})
+    assert after["finder_duplicates"] == 0
+    assert after["groups"][0]["finder_listed_count"] == 1
+    assert after["groups"][0]["count"] == 2          # both rows still reported

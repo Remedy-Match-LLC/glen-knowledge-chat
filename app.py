@@ -36735,7 +36735,7 @@ def api_console_practitioners_create():
 def api_console_practitioners_edit(pid):
     """Console-gated row actions:
     level_access | credentials | dropship_price | finder | location | resend_invite
-    | retire | unretire."""
+    | retire | unretire | mark_duplicate | unmark_duplicate."""
     if not _console_key_ok():
         return jsonify({"error": "Unauthorized"}), 401
     from dashboard import practitioner_admin as _pa
@@ -36794,6 +36794,30 @@ def api_console_practitioners_edit(pid):
             return jsonify({"ok": False, "error": f"no practitioner with id {pid}"}), 404
         except _pp.DuplicatePortalEmail as e:
             return jsonify({"ok": False, "error": str(e)}), 409
+        return jsonify({"ok": True, **out})
+    if action == "mark_duplicate":
+        # Hides this row from the public finder as a duplicate of another listing
+        # for the same person. Separate from removal_requested, which stays the
+        # practitioner's own opt-out. "unmark_duplicate" is the exact undo.
+        target = (body.get("duplicate_of") or "").strip()
+        if not target:
+            return jsonify({"ok": False,
+                            "error": "duplicate_of (the id of the row to keep) is "
+                                     "required"}), 400
+        try:
+            out = _pa.mark_duplicate_of(pid, target)
+        except _pa.PractitionerNotFound:
+            return jsonify({"ok": False, "error": f"no practitioner with id {pid}"}), 404
+        except _pa.DuplicateMarkBlocked as e:
+            # 409 with the reason: the operator is told what is wrong, never a
+            # silent no-op that reads as a completed de-duplication.
+            return jsonify({"ok": False, "error": str(e), "reason": e.reason}), 409
+        return jsonify({"ok": True, **out})
+    if action == "unmark_duplicate":
+        try:
+            out = _pa.unmark_duplicate(pid)
+        except _pa.PractitionerNotFound:
+            return jsonify({"ok": False, "error": f"no practitioner with id {pid}"}), 404
         return jsonify({"ok": True, **out})
     if action == "resend_invite":
         email = (body.get("email") or "").strip()

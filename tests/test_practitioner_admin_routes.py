@@ -186,6 +186,86 @@ def test_edit_dropship_price_persists_practitioner_override(client, monkeypatch)
     assert calls == {"pid": "p9", "cents": 4000}
 
 
+def test_edit_mark_duplicate_dispatch(client, monkeypatch):
+    c, appmod = client
+    from dashboard import practitioner_admin as pa
+    calls = {}
+
+    def _mark(pid, target):
+        calls.update({"pid": pid, "target": target})
+        return {"id": pid, "name": "A B", "email": "e@x.com", "duplicate_of": target}
+
+    monkeypatch.setattr(pa, "mark_duplicate_of", _mark)
+    r = c.post("/api/console/practitioners/p9/edit?key=" + _key(appmod),
+               json={"action": "mark_duplicate", "duplicate_of": "p1"})
+    assert r.status_code == 200
+    assert calls == {"pid": "p9", "target": "p1"}
+    assert r.get_json()["duplicate_of"] == "p1"
+
+
+def test_edit_mark_duplicate_without_a_target_is_400(client, monkeypatch):
+    c, appmod = client
+    from dashboard import practitioner_admin as pa
+
+    def _boom(*a, **k):
+        raise AssertionError("must not reach the writer without a target")
+
+    monkeypatch.setattr(pa, "mark_duplicate_of", _boom)
+    r = c.post("/api/console/practitioners/p9/edit?key=" + _key(appmod),
+               json={"action": "mark_duplicate", "duplicate_of": "  "})
+    assert r.status_code == 400
+    assert "required" in r.get_json()["error"]
+
+
+def test_edit_mark_duplicate_refusal_is_409_with_the_reason(client, monkeypatch):
+    """The operator must see why, or a refused de-duplication reads as a done one."""
+    c, appmod = client
+    from dashboard import practitioner_admin as pa
+
+    def _blocked(pid, target):
+        raise pa.DuplicateMarkBlocked("Cannot hide A B as a duplicate: this row is "
+                                      "a portal account (coach).")
+
+    monkeypatch.setattr(pa, "mark_duplicate_of", _blocked)
+    r = c.post("/api/console/practitioners/p9/edit?key=" + _key(appmod),
+               json={"action": "mark_duplicate", "duplicate_of": "p1"})
+    assert r.status_code == 409
+    body = r.get_json()
+    assert body["ok"] is False
+    assert "portal account" in body["error"]
+    assert body["reason"] == body["error"]
+
+
+def test_edit_mark_duplicate_unknown_row_is_404(client, monkeypatch):
+    c, appmod = client
+    from dashboard import practitioner_admin as pa
+
+    def _missing(pid, target):
+        raise pa.PractitionerNotFound(pid)
+
+    monkeypatch.setattr(pa, "mark_duplicate_of", _missing)
+    r = c.post("/api/console/practitioners/p9/edit?key=" + _key(appmod),
+               json={"action": "mark_duplicate", "duplicate_of": "p1"})
+    assert r.status_code == 404
+
+
+def test_edit_unmark_duplicate_dispatch(client, monkeypatch):
+    c, appmod = client
+    from dashboard import practitioner_admin as pa
+    calls = {}
+
+    def _unmark(pid):
+        calls["pid"] = pid
+        return {"id": pid, "name": "A B", "email": "e@x.com", "was_duplicate_of": "p1"}
+
+    monkeypatch.setattr(pa, "unmark_duplicate", _unmark)
+    r = c.post("/api/console/practitioners/p9/edit?key=" + _key(appmod),
+               json={"action": "unmark_duplicate"})
+    assert r.status_code == 200
+    assert calls == {"pid": "p9"}
+    assert r.get_json()["was_duplicate_of"] == "p1"
+
+
 def test_edit_unknown_action_400(client, monkeypatch):
     c, appmod = client
     r = c.post("/api/console/practitioners/p9/edit?key=" + _key(appmod),
