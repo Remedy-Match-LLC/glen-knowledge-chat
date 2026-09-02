@@ -163,4 +163,42 @@ assert.strictEqual(routeIntent('can you update my address'), 'account');
 assert.strictEqual(routeIntent('set up a call with Dr Glen'), null);
 assert.strictEqual(routeIntent('my setup at home is noisy'), null);
 
+// Fix round 2: a reviewer probed with sentences neither prior pass had
+// imagined and found the same class of bug in three more bare words, plus a
+// redundant alternative. Each pair below was watched to fail against the
+// pre-fix pattern before the pattern was tightened.
+
+// solutions: bare "recommend"/"suggest" also fire when a client recommends a
+// friend, a book, or a practitioner to someone else, not a request for a
+// remedy. "suggest" was dropped outright, it has no unambiguous form worth
+// keeping.
+assert.strictEqual(routeIntent('I would like to recommend a friend to this practice'), null);
+assert.strictEqual(routeIntent('can you recommend a good book on energy medicine'), null);
+assert.strictEqual(routeIntent('my sister asked me to recommend a practitioner'), null);
+assert.strictEqual(routeIntent('I suggest we talk on the phone instead'), null);
+assert.strictEqual(routeIntent('what do you recommend for my dry eyes'), 'solutions');
+assert.strictEqual(routeIntent('what do you recommend'), 'solutions');
+assert.strictEqual(routeIntent('can you recommend something for floaters'), 'solutions');
+
+// remedies: bare "protocol" also fires on a scheduling or process question,
+// nothing to do with a remedy.
+assert.strictEqual(routeIntent('what is the protocol for canceling a session'), null);
+assert.strictEqual(routeIntent('what is the protocol if I need to reach Dr Glen after hours'), null);
+assert.strictEqual(routeIntent('what is my protocol'), 'remedies');
+assert.strictEqual(routeIntent('the protocol for taking the drops'), 'remedies');
+assert.strictEqual(routeIntent('what is the dosing protocol'), 'remedies');
+
+// account: bare "profile" also fires on a description of someone's public
+// standing, nothing to do with the client's own account.
+assert.strictEqual(routeIntent('she has a great profile as a healer'), null);
+assert.strictEqual(routeIntent('he has a low profile but great results'), null);
+assert.strictEqual(routeIntent('update my profile photo'), 'account');
+assert.strictEqual(routeIntent('change my profile'), 'account');
+
+// billing: "my card" was redundant with the charge pattern and also fired on
+// losing a card at the clinic, nothing to do with billing.
+assert.strictEqual(routeIntent('I lost my card at the clinic'), null);
+assert.strictEqual(routeIntent('my card was charged twice'), 'billing');
+assert.strictEqual(routeIntent('I was charged for something I did not order'), 'billing');
+
 console.log('test_portal_shell: ok');

@@ -110,8 +110,16 @@ function renderComposer() {
 // energy "charge" ("my energy charge feels low") with no billing intent at all.
 // Every ambiguous bare word below was replaced with a phrase that requires money,
 // scheduling, or possession context, per Glen's ruling on the billing pattern.
+// Fix round 2: a reviewer probed with sentences neither prior pass had imagined
+// and found the same class of bug in three more bare words, plus a redundant
+// alternative. "recommend"/"suggest" fired on a client recommending a friend or
+// a book, "protocol" fired on a scheduling question ("the protocol for
+// canceling"), and "profile" fired on a description of Dr. Glen's public
+// standing ("a great profile as a healer"), none of which are the door they
+// were meant to catch. "my card" under billing was redundant with the charge
+// pattern and also caught "I lost my card at the clinic".
 var INTENTS = [
-  ['billing',   /\b(invoice|invoices|billing|receipt|receipts|owe|owed|unpaid|payment|payments|paid|refund)\b|\bpay(?:ing)?\s+(?:my|the|for|it|this|now|online)\b|\bcharged?\s+(?:me|my|twice|again|for)\b|\bbill(?:ed)?\s+(?:me|my)\b|\bmy card\b/i],
+  ['billing',   /\b(invoice|invoices|billing|receipt|receipts|owe|owed|unpaid|payment|payments|paid|refund)\b|\bpay(?:ing)?\s+(?:my|the|for|it|this|now|online)\b|\bcharged?\s+(?:me|my|twice|again|for)\b|\bbill(?:ed)?\s+(?:me|my)\b/i],
   // "report" and "findings" alone also mean "report a problem with my order" or
   // "report an issue", nothing to do with a scan. Require the client's own
   // possessive ("my report") so a complaint about the order does not land here.
@@ -119,12 +127,17 @@ var INTENTS = [
   // "dose" alone also appears in idiom ("a dose of reality") and in a symptom
   // description ("a sharp dose of pain"). Require a determiner that marks it as
   // a question about the client's own medication, not a figure of speech.
-  ['remedies',  /\b(reorder|re-order|refill|my remedies|what do i take|protocol|dosage|cart|wishlist)\b|\b(what|which|my|the) dose\b/i],
+  // "protocol" alone also appears in a scheduling or process question ("what is
+  // the protocol for canceling a session"), nothing to do with a remedy.
+  ['remedies',  /\b(reorder|re-order|refill|my remedies|what do i take|dosage|cart|wishlist)\b|\b(what|which|my|the) dose\b|\bmy protocol\b|\bprotocol\s+for\s+(?:taking|my)\b|\bdosing protocol\b/i],
   // "good for" alone also closes a scheduling exchange ("3pm is good for me"),
   // and bare "condition" is used for a car, a garden, an order, anything, not
   // just health. Exclude the pronoun form of "good for" and require condition to
   // carry a determiner that actually points at the client's own health.
-  ['solutions', /\b(help(s)? with|what should i take|recommend|suggest|support for|symptom)\b|\bgood for\b(?!\s+(?:me|him|her|us|you|it)\b)|\b(?:my|a|this|that|health|medical|skin) condition\b/i],
+  // "recommend"/"suggest" alone also fire when a client recommends a friend, a
+  // book, or a practitioner to someone else, not a request for a remedy.
+  // "suggest" has no unambiguous form worth keeping, so it was dropped outright.
+  ['solutions', /\b(help(s)? with|what should i take|support for|symptom)\b|\bgood for\b(?!\s+(?:me|him|her|us|you|it)\b)|\b(?:my|a|this|that|health|medical|skin) condition\b|\bwhat do you recommend\b|\brecommend\s+(?:something|anything|a remedy|a supplement|for)\b/i],
   // Bare "course" and "class" over-match "of course" and "main course" (food),
   // and an unrelated "cooking class". Require a determiner that marks a specific
   // class or course being discussed, so a plain affirmation never routes here.
@@ -132,7 +145,9 @@ var INTENTS = [
   // Bare "address" and "photo" over-match "address my concern" (a verb, nothing
   // to do with a mailing address) and "photo of my dog". Require the noun form
   // to carry the client's own possessive, or an explicit update/change verb.
-  ['account',   /\b(my account|password|profile|referral|ambassador|membership|preferences)\b|\b(?:my|shipping|billing|home|mailing|new) address\b|\b(?:update|change|upload) (?:my )?(?:address|photo)\b|\b(?:my|profile) photo\b/i],
+  // Bare "profile" also over-matches a description of someone's public
+  // standing ("a great profile as a healer"), nothing to do with the account.
+  ['account',   /\b(my account|password|referral|ambassador|membership|preferences)\b|\b(?:my|shipping|billing|home|mailing|new) address\b|\b(?:update|change|upload) (?:my )?(?:address|photo)\b|\b(?:my|profile) photo\b|\bmy profile\b/i],
   // Bare "set up"/"setup" over-matches "set up a call" (scheduling, not
   // onboarding) and "my setup at home" (their equipment). The progressive
   // "setting up" reads as onboarding language on its own; "where am i" only
