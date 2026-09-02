@@ -24444,6 +24444,7 @@ def api_client_portal(token):
             payload["past_invoices"] = _past          # History tab: paid/done receipts
     except Exception as _e:
         print(f"[portal-invoices] {_e!r}", flush=True)
+    _request_timing_checkpoint("invoices")
     # Options & Pricing card (flag-gated, best-effort): the client-facing trio with
     # data-sourced prices + this client's courtesy.
     if _portal_options_enabled():
@@ -24461,6 +24462,7 @@ def api_client_portal(token):
             payload["scan_recommendations"] = _sr_block
     except Exception as _e:
         print(f"[scan-recs/payload] {_e!r}", flush=True)
+    _request_timing_checkpoint("scan_recs")
     # FF-matches flag (always present, like its sibling scan_request_enabled): lets the
     # frontend gate the button/card without a separate flag call. Off means the client
     # renders neither — clicking a phantom button would otherwise hit a 404'd endpoint.
@@ -24562,6 +24564,7 @@ def api_client_portal(token):
             payload["animal_name"] = _sp["animal_name"]
     except Exception as _e:
         print(f"[client-species/payload] {_e!r}", flush=True)
+    _request_timing_checkpoint("optional_cards")
     # Program-page entry card (flag-gated, best-effort): the portal shell reads this
     # to decide whether to render the "Explore your program" card and where it links.
     try:
@@ -24601,6 +24604,7 @@ def api_client_portal(token):
             payload["wishlist"] = _wcards
         except Exception as _e:
             print(f"[wishlist] portal payload skipped: {_e}", flush=True)
+    _request_timing_checkpoint("wishlist")
     # Data-sharing consent + rewards card (flag-gated). Exposed even at tier 0 (all
     # toggles off) — that IS how a not-yet-opted-in member sees the opt-in card.
     # email_for_reports is already re-pointed by ?member=. Tables are defensively
@@ -24624,6 +24628,7 @@ def api_client_portal(token):
                 }
         except Exception as _e:
             print(f"[data-sharing/payload] {_e!r}", flush=True)
+    _request_timing_checkpoint("data_sharing")
     # Reciprocal account bridge. Presence only: the actual transition is a
     # server-authorized redirect above, so no practitioner session is exposed here.
     try:
@@ -24632,6 +24637,7 @@ def api_client_portal(token):
             _pp.find_practitioner_id_by_email(primary_email))
     except Exception:
         payload["linked_practitioner_account"] = False
+    _request_timing_checkpoint("linked_account")
     # Focused Eye & Vision E4L report. A saved client preference wins; otherwise
     # it starts open only when the displayed member has eye/vision history.
     if email_for_reports:
