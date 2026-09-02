@@ -349,8 +349,8 @@ def remove_condition(cx, email, condition):
     client who no longer has dry eye would keep being shown dry-eye remedies with
     no control left that could remove them. clear_events is scoped to
     (source_key="condition", origin_ref=condition), so every OTHER condition's
-    seeds -- and every non-condition source, such as a remedy the client added
-    themselves -- are untouched.
+    seeds, and every non-condition source such as a remedy the client added
+    themselves, are untouched.
 
     Returns the number of seeded recommendation rows removed.
     """

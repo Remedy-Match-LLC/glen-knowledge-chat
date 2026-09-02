@@ -2882,7 +2882,7 @@ async function load(options){
     fetchPortalJson(`/api/portal/${encodeURIComponent(seg)}/recommendations${dq}`),
     // Onboarding status carries history_prefill.conditions: the conditions this
     // client currently has on file. The permanent Find Solutions checklist
-    // prefills from it. Optional like recommendations above -- an absent payload
+    // prefills from it. Optional like recommendations above, an absent payload
     // renders the checklist unchecked, never blocks the page.
     fetchPortalJson(`/api/portal/${encodeURIComponent(seg)}/onboarding`),
   ]);
