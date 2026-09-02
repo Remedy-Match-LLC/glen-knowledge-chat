@@ -19,6 +19,7 @@ Then open http://127.0.0.1:8011
 import argparse
 import datetime
 import os
+import re
 import sqlite3
 import requests
 
@@ -929,9 +930,20 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                 if isinstance(current, str):
                     current = [x.strip() for x in current.replace(";", ",").split(",") if x.strip()]
                 profile["conditions"] = list(current) + accepted
+            from dashboard.biofield_clinical_checklist import custom_remedies, forgotten_remedies
+            def clinical_remedies(label):
+                historical = stress_suggestions(cx, label)
+                hidden = forgotten_remedies(cx, label)
+                historical = [row for row in historical
+                              if " ".join(re.sub(r'[^a-z0-9]+', ' ',
+                                 (row.get("remedy") or "").lower()).split()) not in hidden]
+                seen = {(row.get("remedy") or "").strip().lower() for row in historical}
+                historical += [{"remedy": name, "count": 0} for name in custom_remedies(cx, label)
+                               if name.lower() not in seen]
+                return historical
             clinical_checklist = build_clinical_checklist(
                 profile, rep.get("layers") or [], sdata,
-                remedy_lookup=lambda label: stress_suggestions(cx, label),
+                remedy_lookup=clinical_remedies,
             )
             hidden = {item_key(label) for label in dismissed_labels(cx, test_id)}
             clinical_checklist = [item for item in clinical_checklist
@@ -2020,6 +2032,27 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                         "Manually added to clinical checklist" if action == "add"
                         else "Hidden from this Biofield test")
         return {"ok": ok}
+
+    @app.route("/author/<test_id>/clinical-catalog")
+    def author_clinical_catalog(test_id):
+        from dashboard.biofield_clinical_checklist import catalog_items
+        with sqlite3.connect(db_path) as cx:
+            items = catalog_items(cx, request.args.get("q", ""), 200)
+        return {"ok": True, "items": items}
+
+    @app.route("/author/<test_id>/clinical-items/remedies", methods=["POST"])
+    def author_clinical_item_remedies(test_id):
+        from dashboard.biofield_clinical_checklist import forget_remedy, remember_remedies
+        body = request.get_json(silent=True) or {}
+        label = str(body.get("label") or "").strip()
+        remedy = str(body.get("remedy") or "").strip()
+        action = body.get("action")
+        if not label or not remedy or action not in ("add", "delete"):
+            return {"ok": False, "error": "Item, remedy, and valid action are required"}, 400
+        with sqlite3.connect(db_path) as cx:
+            changed = (remember_remedies(cx, label, [remedy]) if action == "add"
+                       else forget_remedy(cx, label, remedy))
+        return {"ok": True, "changed": bool(changed)}
 
     @app.route("/author/<test_id>/clinical-items/order", methods=["POST"])
     def author_order_clinical_items(test_id):
