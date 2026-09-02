@@ -1101,10 +1101,14 @@ function panelShown(name){
 // order, and highlight it in the rail. Unknown keys fall back to home, matching
 // showTab's existing fallback behavior for an unknown panel. Only ever reached
 // when the shell is mounted (see the shell_enabled gate in showTab and render()),
-// so this never runs against the legacy hub markup.
-function showDoor(key){
+// so this never runs against the legacy hub markup. `options.persist` mirrors
+// showTab's own contract (default true, pass {persist:false} to skip writing
+// sessionStorage) so the two routers persist the same way instead of fighting.
+function showDoor(key, options){
+  options = options || {};
   var shell = window.PortalShell;
-  if(!shell || !shell.panelsForDoor(key).length){ key = 'home'; }
+  if(!shell) return;
+  if(!shell.panelsForDoor(key).length){ key = 'home'; }
   var members = shell.panelsForDoor(key);
   document.querySelectorAll('[data-panel]').forEach(function(p){
     var inDoor = members.indexOf(p.dataset.panel) !== -1;
@@ -1114,7 +1118,21 @@ function showDoor(key){
   document.querySelectorAll('.rail-item[data-door]').forEach(function(b){
     b.classList.toggle('is-active', b.dataset.door === key);
   });
-  try{ sessionStorage.setItem('rm_portal_door', key); }catch(e){}
+  if(options.persist !== false){
+    try{
+      sessionStorage.setItem('rm_portal_door', key);
+      // The render() restore below only reads rm_portal_tab, so a door opened
+      // directly (a rail click, which calls showDoor without going through
+      // showTab) must still leave that key pointing at a panel this door owns.
+      // Otherwise a stale rm_portal_tab from before the click survives and the
+      // next re-render's restore resolves back to a different door than the
+      // one the client just opened. showTab's own door branch writes the exact
+      // clicked panel name right after this and simply overwrites it, so this
+      // default is only ever the value actually used when showDoor is called
+      // directly.
+      sessionStorage.setItem('rm_portal_tab', members[0]);
+    }catch(e){}
+  }
   if(typeof window.mentorPageChanged === "function") window.mentorPageChanged(key);
 }
 window.showDoor = showDoor;
@@ -1127,11 +1145,14 @@ function showTab(name, options){
   // window.__portalView by render()), route through the door that owns this
   // panel instead of the legacy single-panel toggle below, so a door's several
   // panels all reveal together. Checked against the cached view rather than the
-  // DOM so this stays inert -- same behavior as before this task -- whenever the
+  // DOM, so this stays inert, same behavior as before this task, whenever the
   // flag is off, even though every section now carries a data-door attribute.
   if (window.PortalShell && window.__portalView && window.__portalView.shell_enabled) {
     var door = window.PortalShell.doorForPanel(name);
-    if (door) { showDoor(door); }
+    if (door) { showDoor(door, options); }
+    if(options.persist !== false){
+      try{ sessionStorage.setItem('rm_portal_tab', name); }catch(e){}
+    }
     var target = document.querySelector('[data-panel="'+name+'"]');
     if (target && target.scrollIntoView) target.scrollIntoView({block:'start'});
     return;
@@ -4870,7 +4891,13 @@ function render(d, v){
   // #portalShellMount lives outside #app and would otherwise go stale; harmless,
   // matching the _hub reset-to-home above. The click listener is delegated on
   // document once, guarded so a later render() doesn't stack duplicate handlers.
-  if (v && v.shell_enabled) {
+  // Gated on window.PortalShell too: if portal-shell.js failed to load, mounting
+  // must not throw here and take the rest of render() (panel restore, scan-tab
+  // wiring, intake card, all below) down with it. Panel restoration itself is
+  // NOT done here. The pre-existing restore below (sessionStorage rm_portal_tab
+  // -> showTab) already does that job, and now routes through showDoor with the
+  // same persistence contract, so a second restore here would only refight it.
+  if (v && v.shell_enabled && window.PortalShell) {
     var shellMount = document.getElementById('portalShellMount');
     if (shellMount) {
       shellMount.innerHTML =
@@ -4887,15 +4914,6 @@ function render(d, v){
         }
       });
     }
-    // A background poll re-render must land the client back on the door they
-    // had open, not silently boot them to Home; showDoor() itself persists the
-    // door to sessionStorage on every call, so read it back here. Falls back to
-    // home when nothing is stored or the stored key is no longer a real door
-    // (showDoor already guards this too; the explicit check makes the intent
-    // clear at the call site).
-    var savedDoor = '';
-    try { savedDoor = sessionStorage.getItem('rm_portal_door') || ''; } catch (e) {}
-    showDoor(window.PortalShell.panelsForDoor(savedDoor).length ? savedDoor : 'home');
   }
   try{
     if(localStorage.getItem("rm_calendar_collapsed")==="1"){

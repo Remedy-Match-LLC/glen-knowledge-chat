@@ -7,14 +7,20 @@
 const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
-const { DOORS, doorForPanel } = require('../static/js/portal-shell.js');
+const { DOORS, doorForPanel, allPanels } = require('../static/js/portal-shell.js');
 
 const page = fs.readFileSync(
   path.join(__dirname, '..', 'static', 'client-portal.html'), 'utf8');
 
-// every section declares the door the map assigns it
+// every section declares the door the map assigns it, and the set of panels the
+// page declares is exactly the set the door map knows about (not just "at least
+// 21", which would still pass if two sections were quietly deleted).
 const sections = page.match(/<section[^>]*data-panel="[a-z]+"[^>]*>/g) || [];
-assert.ok(sections.length >= 21, 'expected at least 21 panel sections, found ' + sections.length);
+const declaredPanels = Array.from(new Set(sections.map(function (tag) {
+  return /data-panel="([a-z]+)"/.exec(tag)[1];
+}))).sort();
+assert.deepStrictEqual(declaredPanels, allPanels().slice().sort(),
+  'the page must declare a section for exactly the panels the door map knows about');
 sections.forEach(function (tag) {
   const panel = /data-panel="([a-z]+)"/.exec(tag)[1];
   const door = /data-door="([a-z]+)"/.exec(tag);
@@ -32,7 +38,7 @@ assert.ok(shellTag < page.indexOf('function showDoor'), 'portal-shell.js loads t
 // Extracted and executed rather than regex-matched. A source regex would pass on a
 // commented-out implementation. The fake is selector-aware because showDoor queries
 // two different things: the panels it reveals, and the rail buttons it highlights.
-const src = /function showDoor\(key\)\{[\s\S]*?\n\}/.exec(page);
+const src = /function showDoor\(key, options\)\{[\s\S]*?\n\}/.exec(page);
 assert.ok(src, 'showDoor not found in the page');
 
 const panels = DOORS.reduce(function (all, d) {
