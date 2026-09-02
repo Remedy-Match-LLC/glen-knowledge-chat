@@ -13,11 +13,13 @@ def test_portal_fetches_are_bounded_and_settled_independently():
     assert "async function fetchPortalJsonOnce(url)" in HTML
     assert "result.status >= 500" in HTML
     assert "result = await fetchPortalJsonOnce(url)" in HTML
+    assert "for(let attempt=0; attempt<3; attempt++)" in HTML
 
 
 def test_portal_load_alert_uses_active_theme_colors():
-    assert ".portal-load-alert{border-color:var(--btn-bg);background:var(--card2);color:var(--ink)}" in HTML
-    assert ".portal-load-alert p{color:var(--muted)}" in HTML
+    assert ".card.portal-load-alert{border-color:var(--btn-bg);background:var(--card2)!important;color:var(--ink)!important}" in HTML
+    assert ':root[data-theme="dark"] .card.portal-load-alert' in HTML
+    assert ':root:not([data-theme]) .card.portal-load-alert' in HTML
     assert "background:#fffaf0" not in HTML
 
 

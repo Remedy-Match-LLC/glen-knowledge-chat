@@ -24001,6 +24001,10 @@ def evox_run_reminders():
 @app.route("/portal/<token>")
 def client_portal_page(token):
     resp = send_from_directory(STATIC, "client-portal.html")
+    # The portal shell contains its own recovery behavior and theme-safe error
+    # styling. Never let a browser retain an older failure screen after a fix.
+    resp.headers["Cache-Control"] = "private, no-store, max-age=0"
+    resp.headers["Pragma"] = "no-cache"
     if not _client_login_enabled() or token == "me":
         return resp
 

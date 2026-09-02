@@ -75,6 +75,8 @@ def test_portal_page_served(client):
     tok = _seed_portal(appmod)
     r = c.get(f"/portal/{tok}")
     assert r.status_code == 200
+    assert "no-store" in r.headers["Cache-Control"]
+    assert r.headers["Pragma"] == "no-cache"
 
 
 def test_api_portal_returns_enriched_content(client):
