@@ -27,6 +27,24 @@ assert.strictEqual(doorForPanel('voice'), 'scans');
 assert.strictEqual(doorForPanel('cart'), 'remedies');
 assert.strictEqual(doorForPanel('nope'), null);
 
+// Final review I10: the Account door had grown to nine panels stacked in one
+// scroll, mixing identity, clinical data entry, commercial programmes and
+// practitioner discovery. That is the oversized `current` panel rebuilt under
+// another name, which is the thing this plan exists to remove. `finder` went to
+// Find Solutions, `intake` and `records` to Scans & Reports, which is where the
+// inputs a scan is read against belong. Pinned as exact membership, and as a cap,
+// so the next door to grow past the split is caught rather than argued about.
+assert.deepStrictEqual(panelsForDoor('account'),
+  ['account', 'photo', 'refer', 'referrals', 'offers', 'account-detail']);
+assert.deepStrictEqual(panelsForDoor('solutions'), ['shop', 'finder', 'solutions-detail']);
+assert.deepStrictEqual(panelsForDoor('scans'),
+  ['current', 'voice', 'history', 'intake', 'records', 'scan-report']);
+DOORS.forEach(d => {
+  assert.ok(d.panels.length <= 6,
+    d.key + ' holds ' + d.panels.length + ' panels; showDoor reveals them all at ' +
+    'once, so past six the door is a scroll of unrelated cards again');
+});
+
 // every panel belongs to exactly one door
 const seen = {};
 allPanels().forEach(p => {

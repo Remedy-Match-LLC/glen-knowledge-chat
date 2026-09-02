@@ -14,10 +14,15 @@ var DOORS = [
     panels: ['hub'] },
   { key: 'scans', label: 'Scans & Reports',
     icon: 'M2 12h3l2.5-7 3 14 3-10.5L16 15l2-3h4',
-    panels: ['current', 'voice', 'history', 'scan-report'] },
+    // Final review I10: `intake` and `records` moved here from Account. The
+    // clinical record and the intake form are the inputs a scan is read against,
+    // so they belong beside the report rather than behind identity settings.
+    panels: ['current', 'voice', 'history', 'intake', 'records', 'scan-report'] },
   { key: 'solutions', label: 'Find Solutions',
     icon: 'M15.5 15.5 21 21M17 10.5a6.5 6.5 0 1 1-13 0 6.5 6.5 0 0 1 13 0',
-    panels: ['shop', 'solutions-detail'] },
+    // Final review I10: `finder` moved here from Account. Find Solutions was the
+    // thinnest door and finding a practitioner is finding a solution.
+    panels: ['shop', 'finder', 'solutions-detail'] },
   { key: 'remedies', label: 'My Remedies',
     icon: 'M10 2h4v4l3.5 5.5A4 4 0 0 1 14 18h-4a4 4 0 0 1-3.5-6.5L10 6zM6.8 13h10.4',
     panels: ['remedies', 'oasis', 'cart', 'remedy-detail'] },
@@ -29,7 +34,13 @@ var DOORS = [
     panels: ['ask', 'bodymap', 'classes', 'calendar', 'learn-detail'] },
   { key: 'account', label: 'Account',
     icon: 'M15.6 8a3.6 3.6 0 1 1-7.2 0 3.6 3.6 0 0 1 7.2 0M4.5 20.5a7.5 7.5 0 0 1 15 0',
-    panels: ['account', 'photo', 'intake', 'records', 'refer', 'referrals', 'offers', 'finder', 'account-detail'] }
+    // Final review I10: nine panels stacked in one scroll, mixing identity,
+    // clinical data entry, commercial programmes and practitioner discovery, is the
+    // oversized `current` panel rebuilt under another name, which is the thing this
+    // plan exists to remove. `finder` went to Find Solutions, `intake` and `records`
+    // to Scans & Reports. No card moved: this is the door map and the matching
+    // data-door attributes only.
+    panels: ['account', 'photo', 'refer', 'referrals', 'offers', 'account-detail'] }
 ];
 
 function panelsForDoor(key) {

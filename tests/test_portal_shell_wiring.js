@@ -96,16 +96,22 @@ assert.deepStrictEqual(rail.filter(function (b) { return b.active; })
     'the door must stay open across a repeat call');
 }
 {
-  // The Account door owns the intake panel, so this is the exact live path: open
-  // Account, start typing, and have anything at all call showDoor('account') again.
-  eval('showDoor("account");');
+  // The exact live path: open whichever door owns the intake panel, start typing,
+  // and have anything at all call showDoor for that same door again. The door is
+  // read from the map rather than named, so moving the intake panel between doors
+  // (as the Account reshuffle did) cannot silently retarget this at a door that
+  // does not hold it.
+  const intakeDoor = doorForPanel('intake');
+  assert.ok(intakeDoor, 'the intake panel belongs to no door');
+  eval('showDoor("' + intakeDoor + '");');
   const firstOpen = shown.filter(function (n) { return n === 'intake'; }).length;
-  assert.strictEqual(firstOpen, 1, 'opening Account must announce the intake panel once');
-  eval('showDoor("account");');
+  assert.strictEqual(firstOpen, 1,
+    'opening the ' + intakeDoor + ' door must announce the intake panel once');
+  eval('showDoor("' + intakeDoor + '");');
   const secondOpen = shown.filter(function (n) { return n === 'intake'; }).length;
   assert.strictEqual(secondOpen, 1,
-    'a second showDoor("account") re-announced the intake panel, which re-renders ' +
-    'the form and discards the client\'s un-autosaved input');
+    'a second showDoor("' + intakeDoor + '") re-announced the intake panel, which ' +
+    're-renders the form and discards the client\'s un-autosaved input');
 }
 
 // panelShown's intake branch is the one that makes the above a data-loss bug

@@ -5147,17 +5147,17 @@ function render(d, v){
       <section data-panel="current"${_hub ? " hidden" : ""} data-door="scans">${_back("current")}${html}${_doors ? "" : legacyCurrentHtml()}</section>
       <section data-panel="history" hidden data-door="scans">${_back("history")}${historyHtml}</section>
       <section data-panel="orders" hidden data-door="billing">${_back("orders")}${ordersHtml}</section>
-      <section data-panel="intake" hidden data-door="account">${_back("intake")}<div class="card" id="portal-intake-card"><div id="portal-intake-host"></div></div></section>${_hub ? `
+      <section data-panel="intake" hidden data-door="scans">${_back("intake")}<div class="card" id="portal-intake-card"><div id="portal-intake-host"></div></div></section>${_hub ? `
       <section data-panel="ask" hidden data-door="learn">${_back("ask")}${_askHtml}</section>
       <section data-panel="voice" hidden data-door="scans">${_back("voice")}${_voiceHtml}</section>
-      <section data-panel="records" hidden data-door="account">${_back("records")}${buildClinicalRecordHtml(v)}</section>
+      <section data-panel="records" hidden data-door="scans">${_back("records")}${buildClinicalRecordHtml(v)}</section>
       ${_hub && v.oasis && v.oasis.enabled ? (_oasisView = v, `<section data-panel="oasis" hidden data-door="remedies">${_back("oasis")}${buildOasisHtml(v)}</section>`) : ""}
       ${_hub ? `<section data-panel="cart" hidden data-door="remedies">${_back("cart")}${buildCartHtml()}</section>` : ""}
       <section data-panel="shop" hidden data-door="solutions">${_back("shop")}${buildShopHtml()}</section>
       <section data-panel="calendar" hidden data-door="learn">${_back("calendar")}${_calendarHtml}</section>
       <section data-panel="offers" hidden data-door="account">${_back("offers")}${_offersHtml || buildOffersEmptyHtml(v)}</section>
       <section data-panel="photo" hidden data-door="account">${_back("photo")}${buildPhotoHtml()}</section>
-      <section data-panel="finder" hidden data-door="account">${_back("finder")}${_finderHtml || '<div class="card quiet"><p class="muted">The practitioner finder is not enabled for your portal yet.</p></div>'}</section>
+      <section data-panel="finder" hidden data-door="solutions">${_back("finder")}${_finderHtml || '<div class="card quiet"><p class="muted">The practitioner finder is not enabled for your portal yet.</p></div>'}</section>
       <section data-panel="bodymap" hidden data-door="learn">${_back("bodymap")}${_bodymapHtml}</section>
       <section data-panel="classes" hidden data-door="learn">${_back("classes")}${_classesHtml}</section>
       <section data-panel="account" hidden data-door="account">${_back("account")}${_accountHtml}</section>
@@ -5175,7 +5175,7 @@ function render(d, v){
     // The onboarding checklist is available independently of the hub and scan
     // history flags, so its #intake link must always have a real panel target.
     html = `<section data-panel="current" data-door="scans">${html}${legacyCurrentHtml()}</section>
-      <section data-panel="intake" hidden data-door="account"><div class="card" id="portal-intake-card"><div id="portal-intake-host"></div></div></section>`;
+      <section data-panel="intake" hidden data-door="scans"><div class="card" id="portal-intake-card"><div id="portal-intake-host"></div></div></section>`;
   }
 
   app.innerHTML = html;
