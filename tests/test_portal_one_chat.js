@@ -19,6 +19,13 @@ const ROOT = path.join(__dirname, '..');
 const page = fs.readFileSync(path.join(ROOT, 'static', 'client-portal.html'), 'utf8');
 const mentorSrc = fs.readFileSync(path.join(ROOT, 'static', 'portal-mentor.js'), 'utf8');
 const css = (page.match(/<style>[\s\S]*?<\/style>/g) || []).join('\n');
+// static/client-portal.html with whole-line comments removed. Assertions about
+// what the page DOES must run against this, never against `page`: a comment
+// naming a call satisfies a substring check for that call, and two assertions in
+// this file were doing exactly that (final review I8). `page` stays available for
+// the few assertions that are genuinely about the source text, such as the order
+// two markers appear in.
+const code = page.split('\n').filter(function (l) { return l.trim().slice(0, 2) !== '//'; }).join('\n');
 
 // ---------------------------------------------------------------------------
 // A very small DOM, big enough to run the real code against.
@@ -189,7 +196,7 @@ const hideRule = /body\.has-shell\s+\.mentor-launcher\s*,\s*body\.has-shell\s+\.
 assert.ok(hideRule, 'no body.has-shell rule hides the floating launcher and panel');
 assert.ok(/display\s*:\s*none/.test(hideRule[1]),
   'the shell rule must actually hide the launcher and panel');
-assert.ok(page.indexOf("classList.add('has-shell')") !== -1,
+assert.ok(code.indexOf("classList.add('has-shell')") !== -1,
   'nothing adds the has-shell class the hide rule is keyed off');
 
 // (b) the behaviour: with the card cluster present the mentor binds the card, and
@@ -330,7 +337,7 @@ assert.ok(!/patient/i.test(cardOn), 'client-facing copy says client, never patie
 // card's sender has to route a finished reply through the mentor's voice controls.
 // Comment lines are stripped first: a comment naming the call would otherwise
 // satisfy an assertion about the call.
-const code = page.split('\n').filter(function (l) { return l.trim().slice(0, 2) !== '//'; }).join('\n');
+// `code` is defined near the top of this file, with `page`.
 assert.ok(/v && v\.shell_enabled && typeof window\.mentorAttachHost === "function"/.test(code),
   'render() must re-bind the mentor to the rebuilt card, and only under the shell');
 assert.ok(/window\.PortalVoice && window\.PortalVoice\.armed\(\)/.test(code),
@@ -379,7 +386,18 @@ assert.ok(/window\.PortalVoice && window\.PortalVoice\.armed\(\)/.test(code),
 // ---------------------------------------------------------------------------
 // 5. window.mentorPageChanged still exists, and works on the card host.
 // ---------------------------------------------------------------------------
-assert.ok(page.indexOf('mentorPageChanged') !== -1, 'the routers no longer call mentorPageChanged');
+// Both routers, checked one at a time inside their own function body. A count over
+// the whole file passes while either call is commented out, since the other line
+// carries the name twice.
+['showTab(name, options)', 'showDoor(key, options)'].forEach(function (sig) {
+  const at = code.indexOf('function ' + sig + '{');
+  assert.ok(at !== -1, 'function ' + sig + ' not found in live code');
+  const body = code.slice(at, code.indexOf('\n}', at));
+  assert.ok(/window\.mentorPageChanged\(\w+\);/.test(body),
+    sig + ' must still call window.mentorPageChanged: the mentor tracks the door ' +
+    'the client is on, and a router that stops telling it leaves it describing the ' +
+    'wrong page');
+});
 {
   const r = runMentor(FLOATING);
   assert.strictEqual(typeof r.win.mentorPageChanged, 'function',
