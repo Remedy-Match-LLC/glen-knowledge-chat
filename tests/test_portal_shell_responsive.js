@@ -39,4 +39,16 @@ assert.ok(/\.portal-rail\.is-open[^{]*\{[^}]*width\s*:\s*176px/.test(css),
 // reduced motion is honoured
 assert.ok(/prefers-reduced-motion/.test(css));
 
+// The scrim dims the page behind the phone drawer. On desktop the rail widens in
+// place, so an activation rule at the top level dimmed and click-blocked the whole
+// content column at every width. Pin it inside the phone block so that cannot return.
+const ACT = '.portal-rail.is-open ~ .shell-scrim';
+assert.strictEqual(css.split(ACT).length - 1, 1,
+  'the scrim activation rule must appear exactly once');
+const mq760 = css.indexOf('@media (max-width:760px)');
+const mq760End = css.indexOf('@media (prefers-reduced-motion', mq760);
+const actAt = css.indexOf(ACT);
+assert.ok(mq760 !== -1 && actAt > mq760 && actAt < mq760End,
+  'the scrim activation must live inside the max-width:760px block, not at top level');
+
 console.log('test_portal_shell_responsive: ok');
