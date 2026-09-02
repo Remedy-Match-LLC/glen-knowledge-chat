@@ -529,6 +529,54 @@
   .hub-grid-group { margin-top:1rem; }
   .hub-grid-group .glabel { font-size:.78rem; letter-spacing:.01em; text-transform:none; color:var(--muted); font-weight:700; margin:.1rem 0 .5rem; }
   .hub-tiles { display:grid; grid-template-columns:repeat(3,1fr); gap:.7rem; }
+  /* Seven-door shell. Desktop first: the rail holds layout width and widens in place.
+     Under 760px it leaves the flow entirely, because a permanent 44px rail leaves
+     331px of content and remedy names already truncate at that width. */
+  .shell-bar{display:none}
+  .portal-rail{
+    position:fixed; top:0; bottom:0; left:0; width:52px; z-index:40;
+    display:flex; flex-direction:column; gap:2px; padding:8px 0; overflow:hidden;
+    background:var(--card2); border-right:1px solid var(--line);
+    transition:width .22s ease;
+  }
+  .portal-rail.is-open{width:176px}
+  .rail-item{
+    display:flex; align-items:center; gap:10px; padding:9px 17px; width:100%;
+    background:none; border:0; border-left:2px solid transparent; color:var(--muted);
+    font:inherit; text-align:left; white-space:nowrap; cursor:pointer;
+  }
+  .rail-item svg{flex:0 0 18px;width:18px;height:18px;stroke:currentColor;fill:none;
+    stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
+  .rail-item span{opacity:0;transition:opacity .16s ease;font-size:.82rem}
+  .portal-rail.is-open .rail-item span{opacity:1}
+  .rail-item.is-active{color:var(--brand);border-left-color:var(--brand);background:var(--brand-soft)}
+  .rail-item:focus-visible{outline:2px solid var(--brand);outline-offset:-2px}
+  .rail-toggle{margin-top:auto}
+  body.has-shell .wrap{margin-left:52px}
+  .shell-scrim{position:fixed;inset:0;z-index:39;background:rgba(0,0,0,.42);
+    opacity:0;pointer-events:none;transition:opacity .2s ease}
+  .portal-rail.is-open ~ .shell-scrim{opacity:1;pointer-events:auto}
+
+  @media (max-width:760px){
+    .shell-bar{
+      display:flex; align-items:center; gap:9px; padding:8px 11px;
+      position:sticky; top:0; z-index:38;
+      background:var(--card2); border-bottom:1px solid var(--line);
+    }
+    .shell-burger{background:none;border:0;padding:0;color:var(--ink);display:flex;cursor:pointer}
+    .shell-burger svg{width:19px;height:19px;stroke:currentColor;fill:none;stroke-width:1.7;stroke-linecap:round}
+    .shell-title{font-size:.82rem;color:var(--muted)}
+    .portal-rail{
+      position:fixed; width:176px; transform:translateX(-100%);
+      transition:transform .22s ease;
+    }
+    .portal-rail.is-open{transform:translateX(0);width:176px}
+    .portal-rail .rail-item span{opacity:1}
+    body.has-shell .wrap{margin-left:0}
+  }
+  @media (prefers-reduced-motion: reduce){
+    .portal-rail,.rail-item span,.shell-scrim{transition:none}
+  }
   @media (max-width:760px){ .hub-tiles { grid-template-columns:repeat(2,1fr); } }
   @media (max-width:480px){ .hub-tiles { grid-template-columns:1fr; } }
   .hub-tile { text-align:left; cursor:pointer; background:var(--card); border:1px solid var(--line); border-radius:12px;
@@ -4898,10 +4946,12 @@ function render(d, v){
   // -> showTab) already does that job, and now routes through showDoor with the
   // same persistence contract, so a second restore here would only refight it.
   if (v && v.shell_enabled && window.PortalShell) {
+    document.body.classList.add('has-shell');
     var shellMount = document.getElementById('portalShellMount');
     if (shellMount) {
       shellMount.innerHTML =
-        window.PortalShell.renderPhoneHeader() + window.PortalShell.renderRail('home', {open:false});
+        window.PortalShell.renderPhoneHeader() + window.PortalShell.renderRail('home', {open:false}) +
+        '<div class="shell-scrim"></div>';
     }
     if (!window.__portalShellClickWired) {
       window.__portalShellClickWired = true;
