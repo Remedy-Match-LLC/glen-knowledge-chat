@@ -94,4 +94,31 @@ assert.ok(!/—|--/.test(composer), 'composer copy must not contain an em dash')
 assert.ok(!/[A-Z]{4,}/.test(composer), 'composer copy must not be in ALL CAPS');
 assert.ok(!/patient/i.test(composer), 'composer copy says client, never patient');
 
+// Task 9 (portal-shell-ia): the chat routes to a door instead of describing it.
+const { routeIntent } = require('../static/js/portal-shell.js');
+
+// the four jobs the portal exists to serve
+assert.strictEqual(routeIntent('where is my invoice'), 'billing');
+assert.strictEqual(routeIntent("What do I owe?"), 'billing');
+assert.strictEqual(routeIntent('I want to see my biofield report'), 'scans');
+assert.strictEqual(routeIntent('can I see my scan'), 'scans');
+assert.strictEqual(routeIntent('reorder my remedies'), 'remedies');
+assert.strictEqual(routeIntent('what helps with dry eyes'), 'solutions');
+assert.strictEqual(routeIntent('how do I finish setting up'), 'home');
+
+// every destination it can return is a real door
+['where is my invoice', 'show my scan', 'reorder', 'what helps with floaters']
+  .forEach(function (q) {
+    const d = routeIntent(q);
+    assert.ok(DOORS.some(function (x) { return x.key === d; }),
+      q + ' routed to ' + d + ', which is not a door');
+  });
+
+// An unknown intent must return null, never a guess. A wrong destination is worse
+// than no destination: the client lands somewhere irrelevant and stops trusting it.
+assert.strictEqual(routeIntent('is Dr. Glen in Hawaii'), null);
+assert.strictEqual(routeIntent(''), null);
+assert.strictEqual(routeIntent(null), null);
+assert.strictEqual(routeIntent('thank you'), null);
+
 console.log('test_portal_shell: ok');

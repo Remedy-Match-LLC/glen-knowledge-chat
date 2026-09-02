@@ -7872,6 +7872,24 @@ async function sendChatMessage(){
   if(!input || !sendBtn) return;
   var query = (input.value || "").trim();
   if(!query) return;
+  // Task 9 (portal-shell-ia): route before answering. Asked where an invoice is,
+  // the chat opens Billing instead of writing a paragraph about invoices. Gated
+  // on shell_enabled, the same check showDoor's other callers use, so this stays
+  // inert with the flag off. An unmatched question returns null from routeIntent
+  // and falls through unchanged to the concierge below: a wrong destination is
+  // worse than no destination, so this never guesses.
+  if (window.PortalShell && window.__portalView && window.__portalView.shell_enabled) {
+    var routedDoor = window.PortalShell.routeIntent(query);
+    if (routedDoor && typeof window.showDoor === "function") {
+      input.value = "";
+      appendChatBubble("user", query);
+      var routedDoorMeta = window.PortalShell.DOORS.filter(function(d){ return d.key === routedDoor; })[0];
+      appendChatBubble("assistant", "Taking you to " + (routedDoorMeta ? routedDoorMeta.label : routedDoor) + ".");
+      window.showDoor(routedDoor);
+      input.focus();
+      return;
+    }
+  }
   input.value = "";
   input.disabled = true;
   sendBtn.disabled = true;

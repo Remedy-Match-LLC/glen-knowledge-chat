@@ -98,12 +98,34 @@ function renderComposer() {
     '</div></div>';
 }
 
+// Task 9 (portal-shell-ia): question text to a door. Deliberately conservative: an
+// unmatched question returns null and the concierge answers in prose. A wrong
+// destination costs more than no destination, because the client lands somewhere
+// irrelevant and stops asking.
+var INTENTS = [
+  ['billing',   /\b(invoice|bill|billing|receipt|owe|owed|pay|payment|paid|charge|refund)\b/i],
+  ['scans',     /\b(scan|scans|report|biofield|voice analysis|5-element|five element|healing path|findings)\b/i],
+  ['remedies',  /\b(reorder|re-order|refill|my remedies|what do i take|protocol|dose|dosage|cart|wishlist)\b/i],
+  ['solutions', /\b(help(s)? with|what should i take|recommend|suggest|good for|support for|symptom|condition)\b/i],
+  ['learn',     /\b(course|courses|class|classes|masterclass|body map|calendar|event|webinar)\b/i],
+  ['account',   /\b(my account|address|password|profile|photo|referral|ambassador|membership|preferences)\b/i],
+  ['home',      /\b(next step|what.s next|set ?up|setting up|get started|onboarding|where am i)\b/i]
+];
+
+function routeIntent(text) {
+  if (!text || typeof text !== 'string') return null;
+  for (var i = 0; i < INTENTS.length; i++) {
+    if (INTENTS[i][1].test(text)) return INTENTS[i][0];
+  }
+  return null;
+}
+
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
     DOORS: DOORS, panelsForDoor: panelsForDoor,
     doorForPanel: doorForPanel, allPanels: allPanels,
     renderRail: renderRail, renderPhoneHeader: renderPhoneHeader, renderComposer: renderComposer,
-    escapeHtml: escapeHtml
+    escapeHtml: escapeHtml, routeIntent: routeIntent
   };
 }
 if (typeof window !== 'undefined') {
@@ -111,6 +133,6 @@ if (typeof window !== 'undefined') {
     DOORS: DOORS, panelsForDoor: panelsForDoor,
     doorForPanel: doorForPanel, allPanels: allPanels,
     renderRail: renderRail, renderPhoneHeader: renderPhoneHeader, renderComposer: renderComposer,
-    escapeHtml: escapeHtml
+    escapeHtml: escapeHtml, routeIntent: routeIntent
   };
 }
