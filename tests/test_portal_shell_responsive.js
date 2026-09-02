@@ -87,14 +87,24 @@ assert.ok(/min-width\s*:\s*0/.test(railText),
   '.rail-text needs min-width:0 so the description cannot force the rail wider than 176px');
 
 // The icon-corner badge must not add layout width to the 52px collapsed rail
-// (it overlays the icon via position:absolute), and it reuses the .pill color
-// scheme rather than inventing a new visual language.
+// (it overlays the icon via position:absolute).
+//
+// It must also be a SOLID fill, not the translucent .pill background. The pill
+// treatment works beside a label, where there is room and a card behind it, but
+// as a 15px corner badge on a dark rail it renders as a superscript digit rather
+// than a count and is easy to miss entirely, which defeats the point of having
+// it. Verified by rendering, not by reading. The .pill itself still carries the
+// count beside the label once the rail opens, which is where that treatment
+// belongs.
 const railBadge = ruleFor('.rail-badge');
 assert.ok(/position\s*:\s*absolute/.test(railBadge),
   'the collapsed-rail badge must overlay the icon, not add layout width at 52px');
-assert.ok(/background\s*:\s*var\(--brand-soft\)/.test(railBadge) &&
-  /color\s*:\s*var\(--ok\)/.test(railBadge),
-  'the badge should reuse the .pill color scheme instead of inventing a new one');
+assert.ok(/background\s*:\s*var\(--brand\)/.test(railBadge),
+  'the badge needs a solid fill to read as a count in the collapsed rail');
+assert.ok(!/background\s*:\s*var\(--brand-soft\)/.test(railBadge),
+  'the translucent pill background disappears at badge size, do not reuse it here');
+assert.ok(/box-shadow\s*:[^;]*var\(--card2\)/.test(railBadge),
+  'the badge needs a ring in the rail colour to separate it from the icon beneath');
 // it hides once the rail opens, handing off to the .pill count beside the label
 assert.ok(/\.portal-rail\.is-open \.rail-item \.rail-badge\s*\{[^}]*display\s*:\s*none/.test(css),
   'the collapsed-rail badge must hide once the rail opens');
