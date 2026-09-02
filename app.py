@@ -124,6 +124,16 @@ def _request_timing_step(name):
         g._timing_steps.append((str(name), elapsed_ms))
 
 
+def _request_timing_checkpoint(name):
+    """Record elapsed time since the previous checkpoint in a timed request."""
+    if not has_request_context() or not getattr(g, "_timed_request", False):
+        return
+    now = time.monotonic()
+    previous = getattr(g, "_timing_checkpoint", g._timing_started)
+    g._timing_steps.append((str(name), (now - previous) * 1000))
+    g._timing_checkpoint = now
+
+
 @app.before_request
 def _start_request_timing():
     if not _timed_surface():
@@ -132,6 +142,7 @@ def _start_request_timing():
     request_id = incoming if re.match(r"^[A-Za-z0-9._-]{1,64}$", incoming) else uuid.uuid4().hex[:16]
     g._timed_request = True
     g._timing_started = time.monotonic()
+    g._timing_checkpoint = g._timing_started
     g._timing_steps = []
     g._request_id = request_id
     return None
@@ -24061,6 +24072,7 @@ def api_client_portal(token):
             _ns.mark_engaged(_cxe, (portal.get("email") or ""))
     except Exception as e:
         print(f"[engaged] {e!r}", flush=True)
+    _request_timing_checkpoint("engaged")
     content = dict(portal.get("content") or {})
     from dashboard import portal_biofield_reports as _pbr
     import datetime as _dt
@@ -24120,6 +24132,7 @@ def api_client_portal(token):
             household = []
             household_cc = {}
             household_caregivers = []
+    _request_timing_checkpoint("household")
     cx_r = db.connect(LOG_DB)
     _pbr.init_table(cx_r)
     dates = _pbr.list_report_dates(cx_r, email_for_reports) if email_for_reports else []
@@ -24178,6 +24191,7 @@ def api_client_portal(token):
             bf_status = content.get("biofield_status") or "confirmed"
             bf_scan_date, bf_scan_dates, bf_actionable = None, [], False
     cx_r.close()
+    _request_timing_checkpoint("reports")
     bf_confirmed = bf_status == "confirmed"
     # Remedies/audio/PDF un-blur only when the report is confirmed AND the client
     # has PAID (paid Biofield Analysis or active membership). A free E4L reveal
@@ -24247,6 +24261,7 @@ def api_client_portal(token):
     client_findings = [{"code": f.get("code", ""), "name": f.get("name", ""),
                         "description": f.get("description", ""), "rank": f.get("rank")}
                        for f in (bf_content.get("findings") or [])]
+    _request_timing_checkpoint("report_core")
     from dashboard import notify_state as _ns
     with db.connect(LOG_DB) as _cxn:
         notify_on = (_ns.get_state(_cxn, email_for_reports)["opt_status"] != "out") if email_for_reports else True
@@ -24298,6 +24313,7 @@ def api_client_portal(token):
         "element_state": element_state,
         "element_backdrop_enabled": ELEMENT_BACKDROP_ENABLED,
     }
+    _request_timing_checkpoint("account_core")
     try:
         from dashboard import client_prefs as _cpf
         with db.connect(LOG_DB) as _cx_pref:
@@ -24358,6 +24374,7 @@ def api_client_portal(token):
     # identity (attribution-only, NOT gated on practitioner_share_consent). Best-effort
     # — the helper never raises, so this can never break the portal load.
     payload["practitioner_brand"] = _patient_practitioner_brand(email_for_reports)
+    _request_timing_checkpoint("portal_modules")
     if _household_view_enabled():
         # Issue #810: inline each member's own scan dates (+ persisted current
         # pointer) so the Scan History tab can list them as rows instead of a
@@ -24657,6 +24674,7 @@ def api_client_portal(token):
                     payload["eye_vision_report"] = _eye_block
         except Exception as _e:
             print(f"[eye-vision-report/payload] {_e!r}", flush=True)
+    _request_timing_checkpoint("optional_tail")
     return jsonify(payload)
 
 
