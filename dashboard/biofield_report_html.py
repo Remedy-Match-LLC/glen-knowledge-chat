@@ -902,6 +902,18 @@ function toggleClinicalItem(box){
  row.classList.toggle('selected',box.checked);
  if(box.checked){var select=row.querySelector('.clinical-layer');if(select)select.focus()}
 }
+async function selectClinicalRemedy(box){
+ var row=box.closest('.clinical-item');if(!row)return;
+ var remedies=[].slice.call(row.querySelectorAll('.clinical-remedy-choice:checked'))
+  .map(function(x){return x.value});
+ var check=row.querySelector('.clinical-check');
+ if(check&&!row.classList.contains('done')){check.checked=remedies.length>0}
+ row.classList.toggle('selected',!row.classList.contains('done')&&remedies.length>0);
+ var stat=document.getElementById('clinicalOrderStat');
+ if(stat)stat.textContent='Saving remedies\u2026';
+ var j=await post('/author/__TID__/clinical-items/selection',
+  {label:row.dataset.label,remedies:remedies});
+ if(stat)stat.textContent=(j&&j.ok)?'Remedies saved':'Could not save remedy selection'}
 async function balanceClinicalItem(btn){
  var row=btn.closest('.clinical-item'),label=row.dataset.label;
  var layer=Number(row.querySelector('.clinical-layer').value||0);
@@ -1372,13 +1384,22 @@ def render_clinical_checklist(items, layers=None):
     rows = ""
     for item in items:
         done = bool(item.get("checked"))
-        cls = "clinical-item done" if done else "clinical-item"
+        # A saved tick set wins over the derived coverage, so the practitioner's own
+        # ticks survive the location.reload() every other action on this page fires.
+        if item.get("selection_saved"):
+            chosen = {str(name).strip().lower()
+                      for name in item.get("selected_remedies") or [] if str(name).strip()}
+        else:
+            chosen = {(item.get("covered_by") or "").strip().lower()} - {""}
+        cls = "clinical-item done" if done else (
+            "clinical-item selected" if chosen else "clinical-item")
         remedy = (f"<span class=clinical-remedy>Layer {_e(str(item.get('layer') or '?'))} · {_e(item.get('covered_by') or '')}</span>"
                   if done else "<span class=clinical-open>Needs remedy coverage</span>")
         label = item.get("label") or ""
         common = "".join(
             f"<label><input class=clinical-remedy-choice type=checkbox value=\"{_e(name)}\""
-            f"{' checked' if name.lower() == (item.get('covered_by') or '').lower() else ''}> {_e(name)} "
+            f"{' checked' if name.strip().lower() in chosen else ''}"
+            f" onchange=selectClinicalRemedy(this)> {_e(name)} "
             f"<button type=button class=clinical-remedy-delete data-remedy=\"{_e(name)}\" "
             f"onclick=deleteClinicalRemedy(this) title='Delete remembered remedy'>&times;</button></label>"
             for name in item.get("common_remedies") or []
@@ -1395,7 +1416,7 @@ def render_clinical_checklist(items, layers=None):
         rows += (f"<div class='{cls}' data-label=\"{_e(label)}\" aria-grabbed=false>"
                  "<span class=clinical-grip title='Drag to reorder' aria-hidden=true>&#8942;&#8942;</span>"
                  f"<input class=clinical-check type=checkbox aria-label=\"Select {_e(label)}\""
-                 f"{' checked' if done else ''} onchange=toggleClinicalItem(this)>"
+                 f"{' checked' if done or chosen else ''} onchange=toggleClinicalItem(this)>"
                  f"<span class=clinical-label>{_e(label)}</span>{remedy}"
                  f"<div class=clinical-balance><div class=clinical-common>{common}</div>"
                  f"<div class=clinical-remedy-add><input class=clinical-custom-remedy list=catalog placeholder='Add remedy…'>"

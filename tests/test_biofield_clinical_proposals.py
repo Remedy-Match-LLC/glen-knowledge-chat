@@ -4,8 +4,10 @@ import sqlite3
 from biofield_local_app import create_app
 from dashboard.biofield_authoring import create_test, init_auth_tables
 from dashboard.biofield_clinical_proposals import (
-    accepted_labels, apply_order, decide, decisions, dismissed_labels, proposals, save_order,
+    accepted_labels, apply_order, apply_selection, decide, decisions, dismissed_labels,
+    proposals, save_order, save_selection,
 )
+from dashboard.biofield_clinical_checklist import remember_remedies
 
 
 def test_proposals_exclude_existing_and_previously_decided_items():
@@ -113,3 +115,63 @@ def test_checklist_order_route_restores_sequence(tmp_path, monkeypatch):
     page = client.get(f"/author/{tid}").data.decode()
     assert page.index('data-label="Dry eyes"') < page.index('data-label="Migraine"')
     assert page.index('data-label="Migraine"') < page.index('data-label="Fatigue"')
+
+
+def test_remedy_ticks_persist_per_test_and_survive_a_rerender(tmp_path):
+    with sqlite3.connect(tmp_path / "x.db") as cx:
+        assert save_selection(cx, "a1", "Fatigue", ["Adrenal Restore", "Mitochondrial"]) == 2
+        items = [{"label": "Fatigue", "covered_by": "", "common_remedies": ["Adrenal Restore"]},
+                 {"label": "Migraine", "covered_by": "Neuroprotect",
+                  "common_remedies": ["Neuroprotect"]}]
+        rows = apply_selection(cx, "a1", items)
+        assert rows[0]["selection_saved"] is True
+        assert rows[0]["selected_remedies"] == ["Adrenal Restore", "Mitochondrial"]
+        # A tick must never be orphaned by the common-remedy cap or a forgotten remedy.
+        assert rows[0]["common_remedies"] == ["Adrenal Restore", "Mitochondrial"]
+        # An item the practitioner never touched keeps deriving from the chain.
+        assert "selection_saved" not in rows[1]
+
+
+def test_clearing_every_tick_is_remembered_as_empty(tmp_path):
+    with sqlite3.connect(tmp_path / "x.db") as cx:
+        save_selection(cx, "a1", "Migraine", ["Neuroprotect"])
+        assert save_selection(cx, "a1", "Migraine", []) == 0
+        rows = apply_selection(cx, "a1", [{"label": "Migraine", "covered_by": "Neuroprotect",
+                                           "common_remedies": ["Neuroprotect"]}])
+        assert rows[0]["selection_saved"] is True
+        assert rows[0]["selected_remedies"] == []
+
+
+def test_selection_route_survives_the_page_reload_other_actions_trigger(tmp_path, monkeypatch):
+    monkeypatch.delenv("CONSOLE_SECRET", raising=False)
+    import dashboard
+    monkeypatch.setattr(dashboard, "CONSOLE_SECRET", "", raising=False)
+    db = str(tmp_path / "chat_log.db")
+    with sqlite3.connect(db) as cx:
+        init_auth_tables(cx)
+        tid = create_test(cx, "Pam", "pam@example.com", "2026-08-26")
+        remember_remedies(cx, "Fatigue", ["Adrenal Restore", "Mitochondrial"])
+    profile = {"conditions": ["Fatigue"]}
+    client = create_app(db, fetch_profile=lambda email: profile).test_client()
+
+    response = client.post(f"/author/{tid}/clinical-items/selection", json={
+        "label": "Fatigue", "remedies": ["Mitochondrial"],
+    })
+    assert response.get_json() == {"ok": True, "count": 1}
+    # Import Reveal and friends all end in location.reload(); the tick must come back.
+    page = client.get(f"/author/{tid}").data.decode()
+    assert ('value="Mitochondrial" checked onchange=selectClinicalRemedy(this)>') in page
+    assert ('value="Adrenal Restore" onchange=selectClinicalRemedy(this)>') in page
+
+
+def test_selection_route_rejects_a_missing_remedies_list(tmp_path, monkeypatch):
+    monkeypatch.delenv("CONSOLE_SECRET", raising=False)
+    import dashboard
+    monkeypatch.setattr(dashboard, "CONSOLE_SECRET", "", raising=False)
+    db = str(tmp_path / "chat_log.db")
+    with sqlite3.connect(db) as cx:
+        init_auth_tables(cx)
+        tid = create_test(cx, "Pam", "pam@example.com", "2026-08-26")
+    client = create_app(db, fetch_profile=lambda email: {}).test_client()
+    assert client.post(f"/author/{tid}/clinical-items/selection",
+                       json={"label": "Fatigue"}).status_code == 400

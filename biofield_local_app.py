@@ -888,7 +888,7 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
         from dashboard.biofield_stress import list_stresses
         from dashboard.biofield_clinical_checklist import build as build_clinical_checklist
         from dashboard.biofield_clinical_proposals import (
-            accepted_labels, apply_order, dismissed_labels, item_key,
+            accepted_labels, apply_order, apply_selection, dismissed_labels, item_key,
         )
         from dashboard.biofield_authoring import stress_suggestions
         with sqlite3.connect(db_path) as cx:
@@ -940,6 +940,7 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
             clinical_checklist = [item for item in clinical_checklist
                                   if item_key(item.get("label")) not in hidden]
             clinical_checklist = apply_order(cx, test_id, clinical_checklist)
+            clinical_checklist = apply_selection(cx, test_id, clinical_checklist)
         fstate = biofield_fee.build_fee_state(c_email, fee_get)
         return Response(render_author_html(rep, dv, transcript, covered_by_layer=covered,
                                            narrative=narrative, fee_state=fstate,
@@ -2087,6 +2088,18 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
             return {"ok": False, "error": "Ordered labels are required"}, 400
         with sqlite3.connect(db_path) as cx:
             count = save_order(cx, test_id, labels)
+        return {"ok": True, "count": count}
+
+    @app.route("/author/<test_id>/clinical-items/selection", methods=["POST"])
+    def author_select_clinical_remedies(test_id):
+        from dashboard.biofield_clinical_proposals import save_selection
+        body = request.get_json(silent=True) or {}
+        label = str(body.get("label") or "").strip()
+        remedies = body.get("remedies")
+        if not label or not isinstance(remedies, list):
+            return {"ok": False, "error": "Item label and a remedies list are required"}, 400
+        with sqlite3.connect(db_path) as cx:
+            count = save_selection(cx, test_id, label, remedies)
         return {"ok": True, "count": count}
 
     @app.route("/author/<test_id>/clinical-items/balance", methods=["POST"])
