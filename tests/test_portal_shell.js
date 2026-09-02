@@ -121,4 +121,46 @@ assert.strictEqual(routeIntent(''), null);
 assert.strictEqual(routeIntent(null), null);
 assert.strictEqual(routeIntent('thank you'), null);
 
+// Fix round 1: bare dictionary words over-matched ordinary client sentences that
+// happen to share vocabulary with a door. Each pair below was watched to fail
+// against the pre-fix pattern before the pattern was tightened.
+
+// billing: "pay", "bill" and "charge" are ordinary words. This practice works in
+// energetic medicine, where a client describing a low energy charge, or a diet
+// habit, or someone named Bill, must never be silently sent to an invoice screen.
+assert.strictEqual(routeIntent('my energy charge feels low'), null);
+assert.strictEqual(routeIntent('I pay attention to my diet'), null);
+assert.strictEqual(routeIntent('Bill said the drops helped him'), null);
+assert.strictEqual(routeIntent('I was charged again for the same order'), 'billing');
+
+// scans: bare "report" also means reporting a problem, nothing to do with a scan.
+assert.strictEqual(routeIntent('I want to report a problem with my order'), null);
+assert.strictEqual(routeIntent('here is my report from last visit'), 'scans');
+
+// remedies: bare "dose" also appears in idiom and in a symptom description. A
+// client describing a new symptom should land on Find Solutions, not My
+// Remedies, because they are asking what might help, not naming a medication.
+assert.strictEqual(routeIntent('I have a new symptom, a sharp dose of pain in my knee'), 'solutions');
+
+// solutions: "help me with" (a password) must never fire the "help with" trigger,
+// and bare "condition" must not fire on a garden, a car, or an order.
+assert.strictEqual(routeIntent('can you help me with my password'), 'account');
+assert.strictEqual(routeIntent("what's the condition of my garden"), null);
+
+// learn: bare "course" and "class" over-match the affirmation "of course" and an
+// unrelated "cooking class".
+assert.strictEqual(routeIntent('yes, of course!'), null);
+assert.strictEqual(routeIntent('when is the next class'), 'learn');
+
+// account: bare "address" and "photo" over-match "address my concern" (a verb)
+// and "photo of my dog".
+assert.strictEqual(routeIntent('please address my concern about the delay'), null);
+assert.strictEqual(routeIntent('I love that photo of my dog'), null);
+assert.strictEqual(routeIntent('can you update my address'), 'account');
+
+// home: bare "set up" over-matches scheduling a call and a client's home
+// equipment, neither of which is onboarding.
+assert.strictEqual(routeIntent('set up a call with Dr Glen'), null);
+assert.strictEqual(routeIntent('my setup at home is noisy'), null);
+
 console.log('test_portal_shell: ok');

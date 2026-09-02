@@ -102,14 +102,42 @@ function renderComposer() {
 // unmatched question returns null and the concierge answers in prose. A wrong
 // destination costs more than no destination, because the client lands somewhere
 // irrelevant and stops asking.
+//
+// Fix round 1: several of these were bare dictionary words that also occur in
+// ordinary English unrelated to the door they were meant to catch, so they
+// over-matched. Notably: "pay", "bill" and "charge" are ordinary words, and this
+// practice works in energetic medicine, where clients routinely talk about an
+// energy "charge" ("my energy charge feels low") with no billing intent at all.
+// Every ambiguous bare word below was replaced with a phrase that requires money,
+// scheduling, or possession context, per Glen's ruling on the billing pattern.
 var INTENTS = [
-  ['billing',   /\b(invoice|bill|billing|receipt|owe|owed|pay|payment|paid|charge|refund)\b/i],
-  ['scans',     /\b(scan|scans|report|biofield|voice analysis|5-element|five element|healing path|findings)\b/i],
-  ['remedies',  /\b(reorder|re-order|refill|my remedies|what do i take|protocol|dose|dosage|cart|wishlist)\b/i],
-  ['solutions', /\b(help(s)? with|what should i take|recommend|suggest|good for|support for|symptom|condition)\b/i],
-  ['learn',     /\b(course|courses|class|classes|masterclass|body map|calendar|event|webinar)\b/i],
-  ['account',   /\b(my account|address|password|profile|photo|referral|ambassador|membership|preferences)\b/i],
-  ['home',      /\b(next step|what.s next|set ?up|setting up|get started|onboarding|where am i)\b/i]
+  ['billing',   /\b(invoice|invoices|billing|receipt|receipts|owe|owed|unpaid|payment|payments|paid|refund)\b|\bpay(?:ing)?\s+(?:my|the|for|it|this|now|online)\b|\bcharged?\s+(?:me|my|twice|again|for)\b|\bbill(?:ed)?\s+(?:me|my)\b|\bmy card\b/i],
+  // "report" and "findings" alone also mean "report a problem with my order" or
+  // "report an issue", nothing to do with a scan. Require the client's own
+  // possessive ("my report") so a complaint about the order does not land here.
+  ['scans',     /\b(scan|scans|biofield|voice analysis|5-element|five element|healing path)\b|\bmy (report|findings)\b|\b(report|findings) card\b/i],
+  // "dose" alone also appears in idiom ("a dose of reality") and in a symptom
+  // description ("a sharp dose of pain"). Require a determiner that marks it as
+  // a question about the client's own medication, not a figure of speech.
+  ['remedies',  /\b(reorder|re-order|refill|my remedies|what do i take|protocol|dosage|cart|wishlist)\b|\b(what|which|my|the) dose\b/i],
+  // "good for" alone also closes a scheduling exchange ("3pm is good for me"),
+  // and bare "condition" is used for a car, a garden, an order, anything, not
+  // just health. Exclude the pronoun form of "good for" and require condition to
+  // carry a determiner that actually points at the client's own health.
+  ['solutions', /\b(help(s)? with|what should i take|recommend|suggest|support for|symptom)\b|\bgood for\b(?!\s+(?:me|him|her|us|you|it)\b)|\b(?:my|a|this|that|health|medical|skin) condition\b/i],
+  // Bare "course" and "class" over-match "of course" and "main course" (food),
+  // and an unrelated "cooking class". Require a determiner that marks a specific
+  // class or course being discussed, so a plain affirmation never routes here.
+  ['learn',     /\b(masterclass|body map|calendar|event|webinar|classes|courses)\b|\b(?:a|my|the|next|which|this|any) (?:class|course)\b|\b(?:enroll|register|sign up)\b/i],
+  // Bare "address" and "photo" over-match "address my concern" (a verb, nothing
+  // to do with a mailing address) and "photo of my dog". Require the noun form
+  // to carry the client's own possessive, or an explicit update/change verb.
+  ['account',   /\b(my account|password|profile|referral|ambassador|membership|preferences)\b|\b(?:my|shipping|billing|home|mailing|new) address\b|\b(?:update|change|upload) (?:my )?(?:address|photo)\b|\b(?:my|profile) photo\b/i],
+  // Bare "set up"/"setup" over-matches "set up a call" (scheduling, not
+  // onboarding) and "my setup at home" (their equipment). The progressive
+  // "setting up" reads as onboarding language on its own; "where am i" only
+  // means the hub when it is the whole question, not buried in another ask.
+  ['home',      /\b(next step|what.s next|setting up|get started|onboarding)\b|\bwhere am i\??\s*$/i]
 ];
 
 function routeIntent(text) {
