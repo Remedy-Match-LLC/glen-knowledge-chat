@@ -6795,6 +6795,10 @@ _PORTAL_FINDER_ENABLED = os.environ.get("PORTAL_FINDER_ENABLED", "").strip().low
 # Ships dark; flip to route the portal through the hub instead of the single
 # Current-Analysis scroll. Same truthy set as the finder flag.
 _PORTAL_HUB_ENABLED = os.environ.get("PORTAL_HUB_ENABLED", "").strip().lower() in ("1", "true", "yes", "on")
+# The seven-door shell. Ships dark: PORTAL_HUB_ENABLED stays on and unchanged until the
+# shell has been walked on a real portal. Both flags on at once is the expected rollout
+# state, not a conflict, and the page prefers the shell when both are set.
+_PORTAL_SHELL_ENABLED = os.environ.get("PORTAL_SHELL_ENABLED", "").strip().lower() in ("1", "true", "yes", "on")
 _PORTAL_ONBOARDING_ENABLED = os.environ.get("PORTAL_ONBOARDING_ENABLED", "").strip().lower() in ("1", "true", "yes", "on")
 # "My Remedies" client-portal tile (ranked recommendations + external supplement
 # stack, dashboard/remedies_block.py). Ships dark; same truthy set as the other
@@ -33019,6 +33023,7 @@ def api_client_portal_view(token):
                                        quiz_url=QUIZ_URL, public_base_url=PUBLIC_BASE_URL,
                                        finder_enabled=_PORTAL_FINDER_ENABLED,
                                        hub_enabled=_PORTAL_HUB_ENABLED,
+                                       shell_enabled=_PORTAL_SHELL_ENABLED,
                                        health_profile_enabled=_PORTAL_HEALTH_PROFILE_ENABLED,
                                        biofield_unlocked=_portal_biofield_unlocked(ident.email),
                                        supplement_review_enabled=_sr.enabled(),
