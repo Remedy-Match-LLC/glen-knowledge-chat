@@ -28,7 +28,7 @@ def _rank(source):
 def init_table(cx):
     cx.execute(
         "CREATE TABLE IF NOT EXISTS client_photos("
-        "email TEXT PRIMARY KEY, image_blob BLOB, content_type TEXT, "
+        "email TEXT PRIMARY KEY, image_blob BYTEA, content_type TEXT, "
         "source TEXT, updated_at TEXT, focus_x REAL NOT NULL DEFAULT 50, "
         "focus_y REAL NOT NULL DEFAULT 42, zoom REAL NOT NULL DEFAULT 1)")
     # Existing installations predate nondestructive avatar framing.
@@ -40,7 +40,7 @@ def init_table(cx):
             cx.execute(f"ALTER TABLE client_photos ADD COLUMN {column} {declaration}")
     cx.execute(
         "CREATE TABLE IF NOT EXISTS client_identity_photos("
-        "client_id TEXT PRIMARY KEY, email TEXT, image_blob BLOB, content_type TEXT, "
+        "client_id TEXT PRIMARY KEY, email TEXT, image_blob BYTEA, content_type TEXT, "
         "source TEXT, updated_at TEXT, focus_x REAL NOT NULL DEFAULT 50, "
         "focus_y REAL NOT NULL DEFAULT 42, zoom REAL NOT NULL DEFAULT 1)")
 
