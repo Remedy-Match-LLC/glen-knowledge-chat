@@ -2,7 +2,10 @@ import json
 import sqlite3
 
 from biofield_local_app import create_app
-from dashboard.biofield_authoring import create_test, init_auth_tables
+from dashboard.biofield_authoring import (
+    add_chain_row, create_test, init_auth_tables, ordered_chain,
+)
+from dashboard.biofield_report_html import group_layers
 from dashboard.biofield_clinical_proposals import (
     accepted_labels, apply_order, apply_selection, decide, decisions, dismissed_labels,
     proposals, save_order, save_pattern, save_selection,
@@ -244,3 +247,38 @@ def test_the_replace_offer_survives_the_reload_that_hid_it(tmp_path, monkeypatch
                 json={"label": "Fatigue", "pattern": "Mitochondrial depletion", "replace": True})
     page = client.get(f"/author/{tid}").data.decode()
     assert "class='btn ghost clinical-stress-save' hidden" in page
+
+
+def test_a_new_layer_after_imported_reveal_layers_keeps_the_number_it_promised(
+        tmp_path, monkeypatch):
+    """Import Reveal writes needs-review scan rows.  Adding a clinical item as
+    'New layer 7' used to store layer 7 correctly but display it as layer 1, because
+    the scan rows were forced to the end of the chain."""
+    monkeypatch.delenv("CONSOLE_SECRET", raising=False)
+    import dashboard
+    monkeypatch.setattr(dashboard, "CONSOLE_SECRET", "", raising=False)
+    db = str(tmp_path / "chat_log.db")
+    with sqlite3.connect(db) as cx:
+        init_auth_tables(cx)
+        tid = create_test(cx, "Rebecca", "r@example.com", "2026-09-02")
+        for n, title in enumerate(
+                ["Structural", "Cellular", "Lung", "Liver", "Cerebral", "Circulatory"], 1):
+            add_chain_row(cx, tid, n, title, title, f"R{n}", confirmed=0, origin="scan")
+    client = create_app(db, fetch_profile=lambda email: {"conditions": ["Dry Eye"]}).test_client()
+
+    page = client.get(f"/author/{tid}").data.decode()
+    assert "<option value='7'>New layer 7</option>" in page
+
+    assert client.post(f"/author/{tid}/clinical-items/balance", json={
+        "label": "Dry Eye", "layer": 7, "remedies": ["Moisturize"],
+        "pattern": "Tear film instability",
+    }).get_json()["ok"]
+
+    with sqlite3.connect(db) as cx:
+        cards = group_layers(ordered_chain(cx, tid))
+    assert [c["layer"] for c in cards] == [1, 2, 3, 4, 5, 6, 7]
+    assert cards[-1]["head"] == "Tear film instability"
+    # The remedy stays inside its own layer instead of splitting into an eighth card.
+    assert [(r.get("remedy") or "") for r in cards[-1]["rows"]] == ["", "Moisturize"]
+    # The Reveal rows are still needs-review; they just are not forced to the end.
+    assert [c["zone"] for c in cards] == ["bottom"] * 6 + ["top"]

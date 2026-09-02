@@ -283,15 +283,15 @@ def balance_item(cx, test_id, label, layer, remedies, resolve_name=lambda cx, na
         "SELECT id,head,most_affected,remedy FROM biofield_auth_chain "
         "WHERE test_id=? AND layer=? ORDER BY id", (_num(test_id), layer),
     ).fetchall()
-    head_exists = any((row[1] or "").strip() for row in rows)
     if rows:
         anchor = rows[0]
+        head_text = (anchor[1] or "").strip() or term
         cx.execute(
             "UPDATE biofield_auth_chain SET head=?,most_affected=?,updated_at=CURRENT_TIMESTAMP WHERE id=?",
-            ((anchor[1] or "").strip() or term,
-             _with_item(anchor[2] or "", term), anchor[0]),
+            (head_text, _with_item(anchor[2] or "", term), anchor[0]),
         )
     else:
+        head_text = term
         add_chain_row(cx, test_id, layer, term, term, "", confirmed=1, origin="live")
         rows = cx.execute(
             "SELECT id,head,most_affected,remedy FROM biofield_auth_chain "
@@ -304,7 +304,9 @@ def balance_item(cx, test_id, label, layer, remedies, resolve_name=lambda cx, na
         if not name or name.lower() in existing:
             continue
         details = dosing(cx, name) or {}
-        add_chain_row(cx, test_id, layer, "" if head_exists or rows else term, "", name,
+        # Layer cards group by head text, so a remedy row with a blank head would
+        # split off into a card of its own instead of joining the layer it was added to.
+        add_chain_row(cx, test_id, layer, head_text, "", name,
                       details.get("dosage", ""), details.get("frequency", ""),
                       details.get("timing", ""), confirmed=1, origin="live")
         existing.add(name.lower())

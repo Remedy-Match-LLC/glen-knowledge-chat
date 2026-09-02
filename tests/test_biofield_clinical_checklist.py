@@ -214,5 +214,6 @@ def test_adding_to_an_existing_layer_only_appends_the_pattern_to_the_tail():
         assert rows[0][0] == "Gut dysbiosis"
         assert rows[0][1] == "Gut lining, Cerebral vascular spasm"
         assert [r[2] for r in rows if r[2]] == ["Terrain Restore", "Neuroprotect"]
-        # The added remedy row carries no head of its own.
-        assert rows[1][0] == ""
+        # The remedy row repeats its layer's head, so the card keeps it instead of
+        # splitting it off into a layer of its own.
+        assert rows[1][0] == "Gut dysbiosis"
