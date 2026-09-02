@@ -273,4 +273,32 @@ assert.strictEqual(renderHome({ journey: {} }).indexOf('undefined'), -1,
 assert.strictEqual(renderHome({}).indexOf('hub-tile'), -1);
 assert.strictEqual(renderHome({}).indexOf('$'), -1);
 
+// Fix round 1: the pre-existing #portal-onboarding-mount widget
+// (PORTAL_ONBOARDING_ENABLED is ON in prd) is a sibling of #app that
+// static/client-portal.html's render() reparents into #portal-onboarding-slot.
+// Only buildHubHtml emitted that slot before this fix; renderHome must emit
+// it too, in the same position -- directly under the where-you-are banner and
+// above the step list and time-sensitive items -- or the reparent silently
+// no-ops (it is null-guarded) and the onboarding tile is stranded outside the
+// content column instead of at the top of Home. Presence alone would not
+// catch it landing in the wrong place, so position is asserted explicitly.
+assert.ok(midSetup.indexOf('id="portal-onboarding-slot"') !== -1,
+  'renderHome must emit the onboarding reparent slot');
+const slotPos = midSetup.indexOf('id="portal-onboarding-slot"');
+const bannerPos = midSetup.indexOf('Discover What Your Body Is Saying');
+const stepsListPos = midSetup.indexOf('class="home-steps"');
+const invoicePos = midSetup.indexOf('$200.00');
+assert.ok(bannerPos !== -1 && bannerPos < slotPos,
+  'the onboarding slot must come after the where-you-are banner, not before it');
+assert.ok(stepsListPos !== -1 && slotPos < stepsListPos,
+  'the onboarding slot must come before the step list');
+assert.ok(invoicePos !== -1 && slotPos < invoicePos,
+  'the onboarding slot must come before time-sensitive items');
+// A settled Home (no step list) and a wholly empty payload (no banner) must
+// still carry the slot, so the reparent never no-ops in any Home state.
+assert.ok(settled.indexOf('id="portal-onboarding-slot"') !== -1,
+  'a settled Home must still emit the onboarding slot');
+assert.ok(renderHome({}).indexOf('id="portal-onboarding-slot"') !== -1,
+  'even an empty payload must emit the onboarding slot');
+
 console.log('test_portal_shell: ok');

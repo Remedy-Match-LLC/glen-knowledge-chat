@@ -195,14 +195,28 @@ function _homeCurrentPhase(phases) {
   return phases.length ? { phase: phases[phases.length - 1], unfinished: false } : null;
 }
 
+// Task 12a fix round 1: static/client-portal.html's render() reparents the
+// pre-existing #portal-onboarding-mount widget (sibling of #app, its own
+// PORTAL_ONBOARDING_ENABLED flag, ON in prd) into whatever element carries
+// this id, wherever that id happens to sit in the panel just rendered. Only
+// buildHubHtml emitted this slot before; renderHome must emit it too, in the
+// same position buildHubHtml gave it (directly under the where-you-are
+// banner, above the step list and time-sensitive items), or the reparent
+// silently no-ops (it is null-guarded) and the tile is left stranded outside
+// the content column instead of at the top of Home. Emitted unconditionally,
+// including the no-journey-data fallback below, so the reparent never no-ops
+// in any Home state.
+var _ONBOARDING_SLOT = '<div id="portal-onboarding-slot"></div>';
+
 function renderHome(view) {
   view = view || {};
   var journey = view.journey || {};
   var phases = Array.isArray(journey.phases) ? journey.phases : [];
   var current = _homeCurrentPhase(phases);
   // No journey data at all (a failed/empty build_status) -- render nothing
-  // rather than guess at a phase that was never computed.
-  if (!current) return '<div class="portal-hub home-landing"></div>';
+  // but the reparent slot, rather than guess at a phase that was never
+  // computed.
+  if (!current) return '<div class="portal-hub home-landing">' + _ONBOARDING_SLOT + '</div>';
 
   var phase = current.phase;
   var steps = Array.isArray(phase.steps) ? phase.steps : [];
@@ -256,7 +270,7 @@ function renderHome(view) {
     itemsHtml += '<div class="home-item">' + apptText + '</div>';
   }
 
-  return '<div class="portal-hub home-landing">' + banner + stepsHtml + itemsHtml + '</div>';
+  return '<div class="portal-hub home-landing">' + banner + _ONBOARDING_SLOT + stepsHtml + itemsHtml + '</div>';
 }
 
 if (typeof module !== 'undefined' && module.exports) {
