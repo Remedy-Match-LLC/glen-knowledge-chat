@@ -226,7 +226,8 @@
   .state{max-width:32rem;margin:18vh auto;text-align:center;color:var(--muted);padding:0 18px}
   .err{color:var(--err)}
   #loading{opacity:.6}
-  .portal-load-alert{border-color:#d6aa61;background:#fffaf0}
+  .portal-load-alert{border-color:var(--btn-bg);background:var(--card2);color:var(--ink)}
+  .portal-load-alert p{color:var(--muted)}
   .portal-load-alert .btn{margin-top:.35rem}
   /* role badges + account */
   .badges{display:flex;gap:6px;justify-content:center;flex-wrap:wrap;margin:.4rem 0 0}
@@ -2453,7 +2454,10 @@ function notFound(){
   document.getElementById("notfound").hidden = false;
 }
 
-const PORTAL_FETCH_TIMEOUT_MS = 10000;
+// Production can need more than ten seconds for the first request after a cold
+// start. Keep the request bounded, but do not show a false failure while the
+// member's healing home is still loading normally.
+const PORTAL_FETCH_TIMEOUT_MS = 20000;
 
 async function fetchPortalJsonOnce(url){
   const controller = new AbortController();
