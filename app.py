@@ -52841,6 +52841,10 @@ def _invoice_line_view(l):
     _lsrc = (l.get("source") or "").strip()
     if _lsrc:
         out["source"] = _lsrc
+    # Packaging is customer-editable on an unpaid invoice.  Keep the stored value in
+    # the public view so a capsule refill does not silently render/re-save as a bottle.
+    _fmt = (l.get("format") or "bottle").strip().lower()
+    out["format"] = "refill" if _fmt == "refill" else "bottle"
     # A membership line isn't a catalog product — carry its marker through so the page
     # renders a labelled membership row instead of hunting for a product that isn't there.
     if l.get("kind") == "membership":
@@ -53016,6 +53020,26 @@ def api_invoice_get(token):
     resp.headers["Pragma"] = "no-cache"
     resp.headers["Expires"] = "0"
     return resp
+
+
+@app.route("/api/invoice/<token>/products", methods=["GET"])
+def api_invoice_products(token):
+    """Token-scoped, customer-safe product picker for an editable invoice.
+
+    The console catalog endpoint is owner-only.  The invoice page previously called
+    it without owner credentials, received a 401, and therefore could not add any
+    product.  Expose only the fields the picker needs and only after validating that
+    the token belongs to a real invoice.
+    """
+    order = _invoice_order_for_token(token)
+    if not order:
+        return jsonify({"ok": False, "error": "invalid or expired invoice"}), 404
+    products = _bos_products.catalog(with_ingredients_only=False)
+    return jsonify({"ok": True, "products": [
+        {"slug": p.get("slug"), "name": p.get("name"),
+         "price_cents": int(p.get("price_cents") or 0)}
+        for p in products if p.get("slug") and p.get("name")
+    ]})
 
 
 def _invoice_membership_offer(order):
@@ -53215,54 +53239,47 @@ def api_invoice_update(token):
     if order.get("status") not in ("proposed", "confirmed"):
         return jsonify({"ok": False, "error": "this invoice can no longer be changed"}), 409
     body = request.get_json(silent=True) or {}
-    cart, items_rec, subtotal_list = [], [], 0
+    # Rebuild a server-trusted pricing payload.  Quantity/packaging come from the
+    # customer, while owner overrides, notes and recommendation provenance can only
+    # come from the stored invoice.  New products deliberately have no unit override
+    # so the shared pricer applies this client's special/member/volume price.
+    existing = {(it.get("slug") or "").strip(): it
+                for it in (order.get("items") or []) if (it.get("slug") or "").strip()}
+    lines_in = []
     for ln in (body.get("lines") or []):
         slug = (ln.get("slug") or "").strip()
-        p = _get_product(slug)
-        if not p:
+        if not _get_product(slug):
             continue
         qty = max(0, min(int(ln.get("qty") or 0), 99))
         if qty <= 0:
             continue
-        unit_cents = int(p.get("price_cents") or 0)  # SERVER price only — ignore client
-        line_cents = unit_cents * qty
-        subtotal_list += line_cents
-        _fmt = (ln.get("format") or "").strip().lower()
-        cart.append({"slug": slug, "qty": qty, "format": _fmt})
-        items_rec.append({"slug": slug, "name": p["name"], "qty": qty,
-                          "unit_cents": unit_cents, "line_cents": line_cents})
-    if not cart:
+        old = existing.get(slug) or {}
+        requested_fmt = (ln.get("format") or old.get("format") or "bottle").strip().lower()
+        rec = {"slug": slug, "qty": qty,
+               "format": "refill" if requested_fmt == "refill" else "bottle"}
+        if old.get("override"):
+            rec["unit_cents"] = old.get("unit_cents")
+        for key in ("note", "source"):
+            if old.get(key):
+                rec[key] = old[key]
+        lines_in.append(rec)
+    if not lines_in:
         return jsonify({"ok": False, "error": "no valid items"}), 400
-    ship = order.get("address") or {}
-    try:
-        # Gate Type-2 order-total pricing on membership so a member editing their own
-        # invoice is priced the same as at checkout (not overcharged).
-        pc = _price_cart(cart, ship=ship, channel="retail",
-                         program_member=_is_paid_member(order.get("email") or ""),
-                         email=(order.get("email") or ""))
-        discount_cents = int(pc.get("discount_cents") or 0)
-        shipping_cents = _bos_orders.effective_shipping_cents(
-            (order.get("channel") or "") == "pickup", pc.get("shipping_cents"))
-        get_cents = int((pc.get("priced") or {}).get("get_cents") or 0)
-    except Exception as e:
-        print(f"[invoice.update] pricing fell back: {e!r}", flush=True)
-        discount_cents, shipping_cents, get_cents = 0, 0, 0
-    total_cents = max(0, subtotal_list - discount_cents) + shipping_cents
-    # Carry points forward, re-capped to the new total AND the live balance.
-    points = min(int(order.get("points_redeemed_cents") or 0), total_cents,
-                 _invoice_points_balance(order))
-    total_cents -= points
     cx = db.connect(LOG_DB); cx.row_factory = _sqlite3.Row
     try:
-        _bos_orders.upsert_order(
-            cx, source=order["source"], external_ref=order["external_ref"],
-            email=order.get("email") or "", name=order.get("name") or "",
-            phone=order.get("phone") or "", person_id=order.get("person_id"),
-            items=items_rec, total_cents=total_cents, address=ship,
-            channel=(order.get("channel") or "retail"),
-            get_cents=get_cents, discount_cents=discount_cents,
-            points_redeemed_cents=points, shipping_cents=shipping_cents)
+        priced, _was_paid = _reprice_and_persist_invoice(
+            cx, order, lines_in,
+            pickup=(order.get("channel") == "pickup"),
+            discount_cents_in=order.get("discount_cents"),
+            adjustment_cents_in=order.get("adjustment_cents"),
+            # The amount was quoted by the owner. Preserve it while a customer edits
+            # products instead of replacing it (or dropping it on a rate error).
+            shipping_override_cents_in=order.get("shipping_cents"))
+        if priced is None:
+            return jsonify({"ok": False, "error": "no valid items"}), 400
         updated = _bos_orders.get_order(cx, order["id"])
+    except CheckoutError as e:
+        return jsonify({"ok": False, "error": str(e)}), 400
     finally:
         cx.close()
     try:
@@ -53270,7 +53287,7 @@ def api_invoice_update(token):
         _inbox.send_email("drglenswartwout@gmail.com",
                           f"Invoice {order.get('external_ref')} changed by customer",
                           f"Customer updated invoice {order.get('external_ref')} — "
-                          f"new total ${total_cents/100:,.2f}.")
+                          f"new total ${priced['total_cents']/100:,.2f}.")
     except Exception as _e:
         print(f"[invoice] owner notify skipped: {_e!r}", flush=True)
     return jsonify({"ok": True, "order": _invoice_summary(updated)})
