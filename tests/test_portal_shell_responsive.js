@@ -51,4 +51,20 @@ const actAt = css.indexOf(ACT);
 assert.ok(mq760 !== -1 && actAt > mq760 && actAt < mq760End,
   'the scrim activation must live inside the max-width:760px block, not at top level');
 
+// Rail gutter: the rail is position:fixed and out of flow, so the gutter it needs
+// must be reserved on body (padding-left), not by overriding .wrap's own centring
+// with a margin-left. A margin-left on .wrap breaks max-width:648px;margin:0 auto,
+// leaving .wrap pinned to the left edge of the remaining space instead of centred
+// in it, while .shell-composer (outside .wrap, centred independently) drifts off
+// to a different, wider centre. See the live measurement in the commit message.
+assert.strictEqual(/body\.has-shell\s+\.wrap\s*\{[^}]*margin-left/.test(css), false,
+  'body.has-shell .wrap must not override .wrap centring with margin-left');
+assert.ok(/body\.has-shell\s*\{[^}]*padding-left\s*:\s*52px/.test(css),
+  'body.has-shell must reserve the rail gutter via padding-left:52px instead');
+const phonePad = ruleFor('body.has-shell', 'max-width:760px');
+assert.ok(/padding-left\s*:\s*0/.test(phonePad),
+  'the max-width:760px block must zero body.has-shell padding-left, not .wrap margin-left');
+assert.strictEqual(/max-width:760px[\s\S]*?body\.has-shell\s+\.wrap\s*\{[^}]*margin-left/.test(css), false,
+  'the phone block must not carry a body.has-shell .wrap margin-left override either');
+
 console.log('test_portal_shell_responsive: ok');
