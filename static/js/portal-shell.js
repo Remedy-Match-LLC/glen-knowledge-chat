@@ -65,7 +65,7 @@ function renderRail(activeDoor, opts) {
     return '<button type="button" class="rail-item' + active + '" data-door="' +
       escapeHtml(d.key) + '">' +
       '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="' + escapeHtml(d.icon) + '"/></svg>' +
-      '<span>' + d.label + '</span></button>';
+      '<span>' + escapeHtml(d.label) + '</span></button>';
   }).join('');
   return '<nav class="portal-rail' + (opts.open ? ' is-open' : '') +
     '" id="portalRail" aria-label="Portal sections">' + items +

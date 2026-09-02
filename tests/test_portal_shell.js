@@ -53,7 +53,8 @@ const rail = renderRail('billing', { open: false });
 // one control per door, each addressable by its key
 DOORS.forEach(d => {
   assert.ok(rail.indexOf('data-door="' + d.key + '"') !== -1, 'rail is missing ' + d.key);
-  assert.ok(rail.indexOf('>' + d.label + '<') !== -1, 'rail is missing the label for ' + d.key);
+  assert.ok(rail.indexOf('>' + escapeHtml(d.label) + '<') !== -1,
+    'rail is missing the label for ' + d.key);
 });
 // exactly one active door, and it is the one asked for
 assert.strictEqual((rail.match(/is-active/g) || []).length, 1);
