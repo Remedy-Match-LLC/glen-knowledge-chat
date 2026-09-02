@@ -47,6 +47,18 @@ def test_lookup_by_email_case_insensitive():
     assert len(res) == 1 and res[0]["client"]["id"] == "c1"
 
 
+def test_portal_history_lookup_indexes_are_created():
+    cx = _cx()
+    names = {r[0] for r in cx.execute(
+        "SELECT name FROM sqlite_master WHERE type='index'").fetchall()}
+    assert {
+        "idx_fmp_clients_email_lower",
+        "idx_fmp_invoices_client",
+        "idx_fmp_invoice_items_invoice",
+        "idx_fmp_addresses_client",
+    } <= names
+
+
 def test_lookup_by_name_like_matches_company_and_person():
     cx = _cx(); _seed(cx)
     assert {r["client"]["id"] for r in fo.client_order_history(cx, name="cuddigan")} == {"c1"}
