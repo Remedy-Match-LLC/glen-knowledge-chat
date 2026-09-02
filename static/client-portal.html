@@ -3975,12 +3975,12 @@ function render(d, v){
   // Invoices tab (buildOrdersHtml) instead of rendering here.
   if(!d.scan_history_enabled && Array.isArray(d.invoices) && d.invoices.length){
     d.invoices.forEach(function(inv){
-      html += `
+      part("billing", `
         <div class="card invoice-card">
           <h2>Your invoice</h2>
           <p>Amount due: <strong>$${esc(inv.amount_dollars)}</strong></p>
           <a class="btn" href="${esc(inv.link)}" target="_blank" rel="noopener">View &amp; pay invoice</a>
-        </div>`;
+        </div>`);
     });
   }
   if(d.options){
@@ -3988,25 +3988,25 @@ function render(d, v){
     var analysis = "$" + Math.round((o.analysis_cents||0)/100);
     var value = o.analysis_value_cents ? " (a $" + Math.round(o.analysis_value_cents/100) + " value)" : "";
     var ff = "$" + ((o.ff_from_cents||0)/100).toFixed(2);
-    html += `
+    part("billing", `
       <div class="card options-card">
         <h2>Your options &amp; pricing</h2>
         <p><strong>Your Biofield Analysis &amp; remedies</strong> — your voice-scan reading and your personally matched remedies, right here in your private space. Order remedies whenever you like (from ${ff} each, a 30-day supply).</p>
-        <p><strong>Personal Causal Biofield Analysis with Dr. Glen</strong> — the hands-on, deeper analysis, plus a Functional Formulations program designed for you and a consultation. <strong>${analysis}</strong>${value}${o.is_courtesy?" — your courtesy price":""}. Just reply to arrange it.</p>`;
+        <p><strong>Personal Causal Biofield Analysis with Dr. Glen</strong> — the hands-on, deeper analysis, plus a Functional Formulations program designed for you and a consultation. <strong>${analysis}</strong>${value}${o.is_courtesy?" — your courtesy price":""}. Just reply to arrange it.</p>`);
     // Family Plan: only when the flag put it in the payload. Prices come from the
     // payload (dashboard/family_plan.PLAN), never hardcoded here.
     const fpl = o.family_plan;
     if(fpl && fpl.active){
-      html += `<p><strong>${esc(fpl.label)}</strong> — you're on it. Everyone in your household with sharing on has their full analysis unlocked. <button type="button" class="linklike" data-fp-cancel="1">Cancel plan</button></p>`;
+      part("billing", `<p><strong>${esc(fpl.label)}</strong> — you're on it. Everyone in your household with sharing on has their full analysis unlocked. <button type="button" class="linklike" data-fp-cancel="1">Cancel plan</button></p>`);
     } else if(fpl){
       const fpPrice = "$" + Math.round(fpl.price_cents/100);
       const fpValue = "$" + Math.round(fpl.value_cents/100);
-      html += `<p><strong>${esc(fpl.label)}</strong> — full analysis for everyone in your household. <strong>${fpPrice}/month</strong> (a ${fpValue}/month value). <button type="button" class="btn" data-fp-subscribe="1">Start the Family Plan</button></p>`;
+      part("billing", `<p><strong>${esc(fpl.label)}</strong> — full analysis for everyone in your household. <strong>${fpPrice}/month</strong> (a ${fpValue}/month value). <button type="button" class="btn" data-fp-subscribe="1">Start the Family Plan</button></p>`);
     } else {
-      html += `<p class="muted">No monthly subscription, and nothing you need to sign up for.</p>`;
+      part("billing", `<p class="muted">No monthly subscription, and nothing you need to sign up for.</p>`);
     }
-    html += `
-      </div>`;
+    part("billing", `
+      </div>`);
   }
 
   // History & receipts: earlier analyses (other scan dates) + paid/completed invoices,
@@ -4037,7 +4037,7 @@ function render(d, v){
           }).join("");
     }
     hist += `</div>`;
-    html += hist;
+    part("billing", hist);
   }
 
   // Cold portal: a freshly-created link arrives with biofield_status === "pending"
@@ -4653,7 +4653,7 @@ function render(d, v){
     const revOffer = (v.supplement_review && v.supplement_review.status !== "off")
       ? `<p class="muted small" style="margin:.6rem 0 0">Taking something you're not sure about? <a href="https://illtowell.com/product-review">Get it reviewed free &rarr;</a></p>`
       : "";
-    html += `<div class="card"><h2>Your orders</h2><div>${rows}</div>${revOffer}</div>`;
+    part("billing", `<div class="card"><h2>Your orders</h2><div>${rows}</div>${revOffer}</div>`);
   }
 
   // Orders you're paying for (caregiver pay): orders a household member has

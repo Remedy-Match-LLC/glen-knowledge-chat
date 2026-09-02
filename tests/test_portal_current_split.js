@@ -124,7 +124,16 @@ const SIGS = [
   ['scans', '<h2 style="font-size:1rem">Scan history</h2>'],
   ['scans', 'Join your consult'],                              // Biofield Consult, booked
   ['scans', 'Schedule your 30 minute consult'],                // Biofield Consult, ready
-  ['scans', 'unlocks once your Causal report']                 // Biofield Consult, not yet
+  ['scans', 'unlocks once your Causal report'],                // Biofield Consult, not yet
+
+  // --- Billing ---
+  ['billing', '<h2>Your invoice</h2>'],
+  ['billing', '<h2>Your options &amp; pricing</h2>'],
+  ['billing', 'data-fp-cancel="1"'],                           // Family Plan, active
+  ['billing', 'data-fp-subscribe="1"'],                        // Family Plan, offered
+  ['billing', 'No monthly subscription'],                      // Family Plan, absent
+  ['billing', 'class="card history-card"'],                    // History & receipts
+  ['billing', '<h2>Your orders</h2>']
 ];
 
 const doorOfSig = {};
