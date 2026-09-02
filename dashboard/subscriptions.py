@@ -516,6 +516,57 @@ def list_active_memberships(cx) -> list:
     return out
 
 
+def list_membership_holders(cx, now=None) -> list:
+    """Active membership GRANTS (the `memberships` table) that have no subscription
+    row, one per email, newest-expiry first.
+
+    The board used to read `subscriptions` alone, so it showed only people who are
+    billed on a schedule. Entitlement actually lives in `memberships` -- that is what
+    _active_membership_for_email, the portal's Member checkmark and the pricing gate
+    read -- and several ways of becoming a member never create a subscription at all:
+    one-time month and annual-prepay purchases, manual console enrols, and the
+    biofield care-taster grant. Those members were invisible.
+
+    A holder who ALSO has a subscription is left out here: the sub row carries billing
+    state (paused, next charge) that a grant knows nothing about, so it wins.
+    """
+    now = now or _now_iso()
+    try:
+        rows = cx.execute(
+            "SELECT email, source, granted_at, expires_at FROM memberships "
+            "WHERE (expires_at IS NULL OR expires_at > ?)", (now,)).fetchall()
+    except Exception:
+        return []            # pre-migration DB: the board degrades, never 500s
+    subbed = {(s.get("email") or "").strip().lower() for s in list_active_memberships(cx)}
+    best = {}
+    for r in rows:
+        d = _row_to_dict(r)
+        em = (d.get("email") or "").strip().lower()
+        if not em or em in subbed:
+            continue
+        exp = d.get("expires_at")
+        cur = best.get(em)
+        # Grants are additive and the reader takes the furthest expiry, so show that.
+        if cur is None or exp is None or (cur.get("expires_at") or "") < (exp or ""):
+            best[em] = d
+    out = []
+    for em, d in best.items():
+        out.append({
+            "email": em,
+            "name": "",
+            "category": "full",          # they hold access; there is no trial grant
+            "plan_cents": 0,             # a grant carries no recurring price
+            "started": d.get("granted_at") or "",
+            "next_charge_date": "",
+            "tier": tier_for(0),
+            "order_count": 0,
+            "source": d.get("source") or "",
+            "expires_at": d.get("expires_at") or "",
+        })
+    out.sort(key=lambda r: (r.get("expires_at") or "9999"), reverse=True)
+    return out
+
+
 def member_board_row(sub, *, name="", credit_cents=0) -> dict:
     """Build one /console/members row from a membership sub. Trial rows carry the
     accrued upgrade `credit_cents` (the call-list signal); paused rows carry a
