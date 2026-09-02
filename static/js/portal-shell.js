@@ -52,15 +52,47 @@ function allPanels() {
   return out;
 }
 
+function escapeHtml(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+function renderRail(activeDoor, opts) {
+  opts = opts || {};
+  var items = DOORS.map(function (d) {
+    var active = (d.key === activeDoor) ? ' is-active' : '';
+    return '<button type="button" class="rail-item' + active + '" data-door="' +
+      escapeHtml(d.key) + '">' +
+      '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="' + escapeHtml(d.icon) + '"/></svg>' +
+      '<span>' + d.label + '</span></button>';
+  }).join('');
+  return '<nav class="portal-rail' + (opts.open ? ' is-open' : '') +
+    '" id="portalRail" aria-label="Portal sections">' + items +
+    '<button type="button" class="rail-item rail-toggle" data-shell-toggle="1" ' +
+    'aria-label="Open and close the menu">' +
+    '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>' +
+    '<span>Close</span></button></nav>';
+}
+
+function renderPhoneHeader() {
+  return '<header class="shell-bar" id="shellBar">' +
+    '<button type="button" class="shell-burger" data-shell-open="1" aria-label="Open the menu">' +
+    '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg>' +
+    '</button><span class="shell-title">Your healing home</span></header>';
+}
+
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
     DOORS: DOORS, panelsForDoor: panelsForDoor,
-    doorForPanel: doorForPanel, allPanels: allPanels
+    doorForPanel: doorForPanel, allPanels: allPanels,
+    renderRail: renderRail, renderPhoneHeader: renderPhoneHeader, escapeHtml: escapeHtml
   };
 }
 if (typeof window !== 'undefined') {
   window.PortalShell = {
     DOORS: DOORS, panelsForDoor: panelsForDoor,
-    doorForPanel: doorForPanel, allPanels: allPanels
+    doorForPanel: doorForPanel, allPanels: allPanels,
+    renderRail: renderRail, renderPhoneHeader: renderPhoneHeader, escapeHtml: escapeHtml
   };
 }

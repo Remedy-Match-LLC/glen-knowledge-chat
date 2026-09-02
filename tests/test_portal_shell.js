@@ -47,4 +47,31 @@ assert.deepStrictEqual(inMap, inPage,
   'door map and [data-panel] sections disagree.\n  map: ' + inMap.join(',') +
   '\n  page: ' + inPage.join(','));
 
+const { renderRail, renderPhoneHeader, escapeHtml } = require('../static/js/portal-shell.js');
+
+const rail = renderRail('billing', { open: false });
+// one control per door, each addressable by its key
+DOORS.forEach(d => {
+  assert.ok(rail.indexOf('data-door="' + d.key + '"') !== -1, 'rail is missing ' + d.key);
+  assert.ok(rail.indexOf('>' + d.label + '<') !== -1, 'rail is missing the label for ' + d.key);
+});
+// exactly one active door, and it is the one asked for
+assert.strictEqual((rail.match(/is-active/g) || []).length, 1);
+assert.ok(/data-door="billing"[^>]*class="[^"]*is-active/.test(rail) ||
+          /class="[^"]*is-active[^"]*"[^>]*data-door="billing"/.test(rail));
+// collapsed by default, open when asked
+assert.ok(rail.indexOf('is-open') === -1);
+assert.ok(renderRail('home', { open: true }).indexOf('is-open') !== -1);
+// labels are always in the DOM, hidden by CSS, so screen readers keep them
+assert.ok(rail.indexOf('aria-label="Portal sections"') !== -1);
+
+const header = renderPhoneHeader();
+assert.ok(header.indexOf('data-shell-open="1"') !== -1);
+assert.ok(header.indexOf('aria-label="Open the menu"') !== -1);
+
+// escaping is real, not decorative
+assert.strictEqual(escapeHtml('<img src=x onerror=alert(1)>'),
+  '&lt;img src=x onerror=alert(1)&gt;');
+assert.strictEqual(escapeHtml(null), '');
+
 console.log('test_portal_shell: ok');
