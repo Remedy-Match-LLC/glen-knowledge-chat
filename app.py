@@ -19790,6 +19790,13 @@ def api_console_members():
             row = _subs.member_board_row(s, name=_member_name_for(cx, email),
                                          credit_cents=credit)
             buckets[cat].append(row)  # cat is always trial/full/paused (pre-seeded)
+        # Subscriptions are only ONE way to hold membership. One-time month and
+        # annual-prepay purchases, manual console enrols and the biofield care-taster
+        # grant all write a `memberships` row and no subscription, so they were
+        # invisible here while the portal and the pricer treated them as members.
+        for g in _subs.list_membership_holders(cx):
+            g["name"] = _member_name_for(cx, g.get("email") or "")
+            buckets["full"].append(g)
     # credit_cents is always 0 now (accrual retired); sort is a harmless no-op
     # kept for row-shape stability.
     buckets["trial"].sort(key=lambda r: r.get("credit_cents", 0), reverse=True)
