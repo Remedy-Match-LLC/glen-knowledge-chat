@@ -133,7 +133,17 @@ const SIGS = [
   ['billing', 'data-fp-subscribe="1"'],                        // Family Plan, offered
   ['billing', 'No monthly subscription'],                      // Family Plan, absent
   ['billing', 'class="card history-card"'],                    // History & receipts
-  ['billing', '<h2>Your orders</h2>']
+  ['billing', '<h2>Your orders</h2>'],
+
+  // --- My Remedies ---
+  ['remedies', 'supportProgramCardHtml(d.support_program)'],   // support program
+  ['remedies', '<h2>Your Life Stress Essences</h2>'],
+  ['remedies', '<h2>Premier Research Labs options</h2>'],
+  ['remedies', '<h2>Fullscript</h2>'],
+  ['remedies', 'class="card practitioner-program-card"'],
+  ['remedies', 'id="portal-order-basket"'],                    // Order your remedies
+  ['remedies', '<h2>Your Remedies</h2>'],
+  ['remedies', 'id="wishlistCard"']
 ];
 
 const doorOfSig = {};

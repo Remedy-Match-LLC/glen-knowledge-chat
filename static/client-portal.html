@@ -4336,25 +4336,25 @@ function render(d, v){
   // gated on coverage/review — the server endpoint is open to any tagged client,
   // so the button always shows alongside the card.
   if (d.support_programs_enabled && d.support_program) {
-    html += supportProgramCardHtml(d.support_program);
+    part("remedies", supportProgramCardHtml(d.support_program));
   }
 
   // Life Stress essence card (Task 6, flag-gated server-side): essences matched to
   // the emotional/stress patterns in this client's scan, present only when
   // LIFE_STRESS_ENABLED is on and d.life_stress has at least one item.
   if (d.life_stress_enabled && d.life_stress) {
-    html += '<div class="card life-stress-card"><h2>Your Life Stress Essences</h2>'
-          + lifeStressBodyHtml(d.life_stress) + '</div>';
+    part("remedies", '<div class="card life-stress-card"><h2>Your Life Stress Essences</h2>'
+          + lifeStressBodyHtml(d.life_stress) + '</div>');
   }
 
   // Premier Research Labs card (Task 6, flag-gated server-side): a budget-friendly
   // direct-order option grouped by focus area, present only when PRL_SUPPLEMENT_ENABLED
   // is on and this client's scan resolved to at least one covered focus area.
   if (d.prl_supplement_enabled && d.prl_supplement) {
-    html += `<div class="card prl-supplement-card">
+    part("remedies", `<div class="card prl-supplement-card">
       <h2>Premier Research Labs options</h2>
       ${prlSupplementBodyHtml(d.prl_supplement)}
-    </div>`;
+    </div>`);
   }
 
   // Fullscript card (Task 7, flag-gated server-side): a third-party dispensary
@@ -4362,10 +4362,10 @@ function render(d, v){
   // resolved to at least one candidate. Sibling of the PRL card above — same
   // grouped-list idiom, distinct product source.
   if (d.fullscript_enabled && d.fullscript) {
-    html += `<div class="card fullscript-card">
+    part("remedies", `<div class="card fullscript-card">
       <h2>Fullscript</h2>
       ${fullscriptBodyHtml(d.fullscript)}
-    </div>`;
+    </div>`);
   }
 
   // Practitioner-composed program card (Task 5, flag-gated server-side): a standing
@@ -4376,11 +4376,11 @@ function render(d, v){
   // standing program, so there's no action button here, just the list + note.
   if (d.practitioner_program) {
     const pp = d.practitioner_program;
-    html += `<div class="card practitioner-program-card">
+    part("remedies", `<div class="card practitioner-program-card">
       <span class="pp-badge">From your practitioner</span>
       <h2>${esc(pp.label || "Your Practitioner's Program")}</h2>
       ${practitionerProgramBodyHtml(pp)}
-    </div>`;
+    </div>`);
   }
 
   // Scan history — every E4L scan date (A: read-only; B: request-analysis button + states).
@@ -4436,7 +4436,7 @@ function render(d, v){
       </div>`;
     });
     const note = d.pricing_note ? `<p class="note small">${esc(d.pricing_note)}</p>` : "";
-    html += `<div class="card" id="portal-order-basket"><h2>Order your remedies</h2>
+    part("remedies", `<div class="card" id="portal-order-basket"><h2>Order your remedies</h2>
       <p class="small muted" id="portalBasketOrderNo">${d.order_id ? `Order #${esc(d.order_id)}` : "Order number assigned at checkout"}</p>
       ${note}
       <label style="display:flex;gap:.55rem;align-items:flex-start;margin:.6rem 0 .8rem">
@@ -4473,7 +4473,7 @@ function render(d, v){
       <button type="button" class="btn ghost full portal-continue-shopping" style="margin-bottom:.5rem">Continue Shopping</button>
       <button class="btn full" id="reorderBtn">Review my order</button>
       <div id="reorderReview" hidden></div>
-      <p class="small err" id="reorderErr" hidden></p></div>`;
+      <p class="small err" id="reorderErr" hidden></p></div>`);
   }
 
   // Task 6: portal reorder module (Task 5's payload extension). Every access
@@ -4557,10 +4557,10 @@ function render(d, v){
       <h3 style="margin:1.25rem 0 .65rem">Previously ordered</h3>
       ${renderHistoryRows(historyRows)}
     </div>` : "";
-    html += `<div class="card"><h2>Your Remedies</h2>
+    part("remedies", `<div class="card"><h2>Your Remedies</h2>
       <div>${invoiceGroups}${historyHtml}</div>
       ${historyRows.length ? `<p class="muted small" style="margin:.7rem 0 0">Shipping calculated at checkout.</p>` : ""}
-      <p class="small err" id="remErr" hidden></p></div>`;
+      <p class="small err" id="remErr" hidden></p></div>`);
   }
 
   // Task 7: "Your wishlist" card — placed right beside the reorder module so
@@ -4588,11 +4588,11 @@ function render(d, v){
         <button type="button" class="wishRemBtn" data-slug="${slug}" aria-label="Remove from wishlist">×</button>
       </div>`;
     });
-    html += `<div class="card" id="wishlistCard"><h2>Your wishlist</h2>
+    part("remedies", `<div class="card" id="wishlistCard"><h2>Your wishlist</h2>
       <div>${wrows}</div>
       <button class="btn full" id="wishOrderBtn" disabled>Add selected to basket</button>
       <p class="muted small" style="margin:.7rem 0 0">Select items and add them to the same basket. Review everything together before checkout.</p>
-      <p class="small err" id="wishErr" hidden></p></div>`;
+      <p class="small err" id="wishErr" hidden></p></div>`);
   }
 
   // Phase 2b-ii: "My Recommendations" — one collapsible sub-section per
