@@ -308,7 +308,17 @@ assert.ok(cardOn.indexOf('id="chatVoice"') > cardOn.indexOf('id="chatCard"'));
 // the card itself is unchanged with the flag off
 ['chatCard', 'chatMsgs', 'chatInput', 'chatSend'].forEach(function (id) {
   assert.ok(cardOff.indexOf('id="' + id + '"') !== -1, id + ' disappeared from the card');
-  assert.ok(cardOn.indexOf('id="' + id + '"') !== -1, id + ' disappeared from the card');
+});
+// Task 8 (portal-shell-ia): under the shell the composer (chatInput/chatSend) moves
+// to the top of the page, so the card must NOT also render it, only the thread and
+// the voice cluster stay here. Two elements sharing id="chatInput" would silently
+// wire Send to the wrong node.
+['chatCard', 'chatMsgs'].forEach(function (id) {
+  assert.ok(cardOn.indexOf('id="' + id + '"') !== -1, id + ' disappeared from the card under the shell');
+});
+['chatInput', 'chatSend'].forEach(function (id) {
+  assert.strictEqual(cardOn.indexOf('id="' + id + '"'), -1,
+    id + ' must not appear on the card under the shell, it moved to the top composer');
 });
 assert.strictEqual(cardOff, buildCard({}, SHELL_UP), 'a payload without the flag must render the legacy card');
 assert.strictEqual(cardOff.indexOf('chat-voice'), -1, 'no voice markup may leak with the flag off');
@@ -509,5 +519,51 @@ assert.ok(page.indexOf('mentorPageChanged') !== -1, 'the routers no longer call 
   assert.ok(r.win.__synth.spoken.length > before,
     'the guard must be about visibility, not a blanket silence');
 }
+
+// ---------------------------------------------------------------------------
+// 8. Task 8 (portal-shell-ia): the composer moves to the top under the shell.
+// ---------------------------------------------------------------------------
+// (a) exactly one id="chatInput" TEMPLATE in the page source. The legacy card row
+// (static/client-portal.html) and the top composer (static/js/portal-shell.js) are
+// two different files, and only one of the two markup strings is ever chosen for a
+// given build, so the page source itself must carry exactly one.
+assert.strictEqual((page.match(/id="chatInput"/g) || []).length, 1,
+  'exactly one id="chatInput" template must exist in the page source');
+
+// (b) exactly one id="chatInput" in the RENDERED markup under the shell, built by
+// actually EXECUTING both real renderers (buildCard above, and the real
+// portal-shell.js), not by grepping source. A source-only count (a) would miss a
+// duplicate that only appears once the shell mounts; this would catch it.
+const PortalShell = require('../static/js/portal-shell.js');
+const renderedUnderShell = cardOn + PortalShell.renderComposer();
+assert.strictEqual((renderedUnderShell.match(/id="chatInput"/g) || []).length, 1,
+  'exactly one chatInput must exist once the card and the top composer are both rendered');
+// with the flag off the shell mount never runs, so the legacy card alone must
+// carry the only one.
+assert.strictEqual((cardOff.match(/id="chatInput"/g) || []).length, 1,
+  'exactly one chatInput must exist with the flag off, on the legacy card alone');
+
+// (c) position: the composer must sit OUTSIDE every [data-panel] section, which is
+// what makes it present on every door, rather than trusting a class name. It is
+// rendered into #portalShellMount, so that mount must sit ahead of #app in the
+// static body, since every [data-panel] section lives inside #app.
+const mountIdx = page.indexOf('id="portalShellMount"');
+const appIdx = page.indexOf('id="app"');
+assert.ok(mountIdx !== -1 && appIdx !== -1 && mountIdx < appIdx,
+  '#portalShellMount must sit ahead of #app, outside every [data-panel] section');
+// ...and the mount block that fills #portalShellMount really does call
+// renderComposer(), extracted from the exact assignment rather than "the string
+// appears somewhere in the file" (comment lines already stripped out of `code`).
+const mountAssign = /shellMount\.innerHTML =[\s\S]*?;/.exec(code);
+assert.ok(mountAssign, 'the shell-mount innerHTML assignment was not found');
+assert.ok(/window\.PortalShell\.renderComposer\(\)/.test(mountAssign[0]),
+  'the shell mount must render the composer into #portalShellMount');
+
+// (d) flag off: the _hub routing line for the ask card is unchanged.
+assert.ok(page.indexOf('if (_hub) { _askHtml += _askCard; } else { html += _askCard; }') !== -1,
+  'the _hub routing line for the ask card must be unchanged');
+
+// (e) no em dash anywhere in the composer copy
+assert.ok(!/—|--/.test(PortalShell.renderComposer()), 'composer copy must not contain an em dash');
 
 console.log('test_portal_one_chat: ok');

@@ -75,4 +75,23 @@ assert.strictEqual(escapeHtml('<img src=x onerror=alert(1)>'),
   '&lt;img src=x onerror=alert(1)&gt;');
 assert.strictEqual(escapeHtml(null), '');
 
+// Task 8 (portal-shell-ia): the top-of-page chat composer. A single-line entry
+// point, not a second transcript, so it must carry the input the page's
+// sendChatMessage() reads by id, and must not carry a message-bubble container.
+const { renderComposer } = require('../static/js/portal-shell.js');
+const composer = renderComposer();
+assert.ok(composer.indexOf('id="chatInput"') !== -1,
+  'renderComposer must render the chat input sendChatMessage() reads by id');
+assert.strictEqual((composer.match(/id="chatInput"/g) || []).length, 1,
+  'renderComposer must render exactly one chat input');
+assert.ok(composer.indexOf('Ask me anything, or tell me what you need') !== -1,
+  'renderComposer must carry the placeholder copy the brief specifies');
+assert.strictEqual(composer.indexOf('chatMsgs'), -1,
+  'renderComposer must not render a message-bubble container, it is an entry point only');
+assert.strictEqual(composer.indexOf('chat-msgs'), -1,
+  'renderComposer must not render a message-bubble container, it is an entry point only');
+assert.ok(!/—|--/.test(composer), 'composer copy must not contain an em dash');
+assert.ok(!/[A-Z]{4,}/.test(composer), 'composer copy must not be in ALL CAPS');
+assert.ok(!/patient/i.test(composer), 'composer copy says client, never patient');
+
 console.log('test_portal_shell: ok');

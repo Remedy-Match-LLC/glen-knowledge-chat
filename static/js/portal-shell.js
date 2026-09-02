@@ -82,17 +82,35 @@ function renderPhoneHeader() {
     '</button><span class="shell-title">Your healing home</span></header>';
 }
 
+// Task 8 (portal-shell-ia): the top-of-page chat composer. Present on every door
+// (rendered into #portalShellMount, which sits outside every [data-panel] section
+// in static/client-portal.html), so a client can ask a question without leaving
+// whatever door they are on. One line, not a second transcript: it carries only
+// the input static/client-portal.html's sendChatMessage() already reads by id, and
+// a Send button, no message-bubble container. static/client-portal.html renders
+// this only under the shell, and drops the composer row from the legacy "Ask Dr.
+// Glen" card in that case, so id="chatInput" still appears exactly once.
+function renderComposer() {
+  return '<div class="shell-composer" id="shellComposer">' +
+    '<div class="chat-input-row">' +
+    '<input id="chatInput" type="text" placeholder="Ask me anything, or tell me what you need" autocomplete="off">' +
+    '<button type="button" class="btn" id="chatSend">Send</button>' +
+    '</div></div>';
+}
+
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
     DOORS: DOORS, panelsForDoor: panelsForDoor,
     doorForPanel: doorForPanel, allPanels: allPanels,
-    renderRail: renderRail, renderPhoneHeader: renderPhoneHeader, escapeHtml: escapeHtml
+    renderRail: renderRail, renderPhoneHeader: renderPhoneHeader, renderComposer: renderComposer,
+    escapeHtml: escapeHtml
   };
 }
 if (typeof window !== 'undefined') {
   window.PortalShell = {
     DOORS: DOORS, panelsForDoor: panelsForDoor,
     doorForPanel: doorForPanel, allPanels: allPanels,
-    renderRail: renderRail, renderPhoneHeader: renderPhoneHeader, escapeHtml: escapeHtml
+    renderRail: renderRail, renderPhoneHeader: renderPhoneHeader, renderComposer: renderComposer,
+    escapeHtml: escapeHtml
   };
 }

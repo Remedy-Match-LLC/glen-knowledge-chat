@@ -570,6 +570,15 @@
   body.has-shell .wrap{margin-left:52px}
   .shell-scrim{position:fixed;inset:0;z-index:39;background:rgba(0,0,0,.42);
     opacity:0;pointer-events:none;transition:opacity .2s ease}
+  /* Task 8 (portal-shell-ia): the chat composer, rendered into #portalShellMount
+     alongside the rail above. That mount is a sibling of #app, OUTSIDE .wrap, so it
+     gets none of .wrap's max-width/centering/gutter for free. Reproduce that here
+     (box-sizing + width:100% capped at .wrap's 648px) the same way #portal-onboarding
+     does below, so the composer lines up with every card under it. */
+  .shell-composer{box-sizing:border-box;width:100%;max-width:648px;margin:16px auto 0;
+    padding:14px 16px;background:var(--card);border:1px solid var(--line);border-radius:16px;
+    box-shadow:0 1px 0 rgba(255,255,255,.02) inset, 0 10px 26px -18px rgba(0,0,0,.55)}
+  .shell-composer .chat-input-row{margin-top:0}
 
   /* Keep this the first max-width:760px block in the file. The responsive test
      finds these rules by scanning for the first such media query, so an earlier
@@ -3836,14 +3845,22 @@ function render(d, v){
     </div>
     <label class="chat-voice-opt"><input type="checkbox" id="chatAutoGuide"> Guide me automatically on each page</label>
     <label class="chat-voice-opt" id="chatContinuousWrap" hidden><input type="checkbox" id="chatContinuous"> Continuous two-way conversation</label>` : "";
+  // Task 8 (portal-shell-ia): under the shell the composer moves to the top of the
+  // page (see the shell mount below, which renders window.PortalShell.renderComposer()
+  // into #portalShellMount), so this card must not also carry the chat input.
+  // sendChatMessage() and the Task 7 voice wiring both resolve it by DOM id, and two
+  // elements sharing that id would silently wire Send to the wrong one. Off the
+  // shell there is no composer at the top, so this card keeps its own, unchanged.
+  // Same predicate as _chatVoice above and the shell mount below, deliberately.
+  const _composerRow = (v && v.shell_enabled && window.PortalShell) ? "" : `<div class="chat-input-row">
+      <input id="chatInput" type="text" placeholder="Ask about your scan or remedies..." autocomplete="off">
+      <button class="btn" id="chatSend">Send</button>
+    </div>`;
   const _askCard = `<div class="card" id="chatCard">
     <h2>Messages &amp; Order Help</h2>
     <p class="muted small" style="margin:.3rem 0 .7rem">Write here for help with products, orders, your healing path, or anything you need from Dr. Glen and the team.</p>
     <div id="chatMsgs" class="chat-msgs"></div>
-    <div class="chat-input-row">
-      <input id="chatInput" type="text" placeholder="Ask about your scan or remedies..." autocomplete="off">
-      <button class="btn" id="chatSend">Send</button>
-    </div>${_chatVoice}
+    ${_composerRow}${_chatVoice}
   </div>`;
   if (_hub) { _askHtml += _askCard; } else { html += _askCard; }
 
@@ -4968,6 +4985,8 @@ function render(d, v){
   // value after the new panel DOM is ready.
   if (_hub) { showTab('hub', {persist:false}); }
   // Task 5 (portal-shell-ia): mount the seven-door rail once the shell flag is on.
+  // Task 8 adds the chat composer to this same mount, present on every door because
+  // #portalShellMount sits outside every [data-panel] section.
   // Re-populated on every render() (including background poll refreshes) since
   // #portalShellMount lives outside #app and would otherwise go stale; harmless,
   // matching the _hub reset-to-home above. The click listener is delegated on
@@ -4984,7 +5003,7 @@ function render(d, v){
     if (shellMount) {
       shellMount.innerHTML =
         window.PortalShell.renderPhoneHeader() + window.PortalShell.renderRail('home', {open:false}) +
-        '<div class="shell-scrim"></div>';
+        '<div class="shell-scrim"></div>' + window.PortalShell.renderComposer();
     }
     if (!window.__portalShellClickWired) {
       window.__portalShellClickWired = true;
