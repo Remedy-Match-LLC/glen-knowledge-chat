@@ -11,6 +11,7 @@ tokens, and the geocoder where possible.
 """
 from __future__ import annotations
 
+import os
 import sqlite3
 from dashboard import db
 from datetime import datetime, timezone
@@ -652,6 +653,103 @@ def ensure_portal_email_unique_index() -> dict:
               f"NOT present. Do not treat this deploy as enforced.", flush=True)
     return {"index": PORTAL_EMAIL_INDEX, "created": True, "present": present,
             "blocked_by": 0}
+
+
+# ── the duplicate-listing migration ──────────────────────────────────────────
+
+DUPLICATE_LISTING_MIGRATION = "practitioners-duplicate-listing"
+
+_REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+# v_practitioners_public's SELECT list, verbatim, from
+# migrations/practitioners-duplicate-listing.sql. That file documents this list as
+# frozen at creation (no SELECT *, so it never auto-includes a column added since);
+# the migration's only change is the extra `AND duplicate_of IS NULL` in the WHERE.
+# duplicate_of itself is deliberately not in this list — every row the view returns
+# has it NULL by construction. This is the "known good" shape apply_* verifies
+# against: a CREATE OR REPLACE VIEW that silently dropped or reordered a column
+# would return with no error, and that would take the public finder down.
+_PUBLIC_VIEW_COLUMNS = (
+    "id", "tier", "source_org", "source_url", "fellowship_level", "specialties",
+    "name", "practice_name", "credentials", "phone", "email", "website",
+    "address1", "city", "state", "postal", "country", "lat", "lng",
+    "geocode_quality", "photo_url", "bio", "accepting_new_patients", "telehealth",
+    "ghl_contact_id", "removal_requested", "last_scraped_at", "created_at",
+    "updated_at", "accepts_inquiries", "claim_token_hash", "claim_verified_at",
+    "modules_completed", "show_contact", "products", "order_options",
+)
+
+
+def _view_columns(cur, view: str) -> List[str]:
+    """A view's (or table's) columns, in catalogue order. Postgres exposes views
+    through information_schema.columns the same as tables."""
+    cur.execute(
+        "SELECT column_name FROM information_schema.columns "
+        "WHERE table_name=%s ORDER BY ordinal_position", (view,))
+    return [dict(r)["column_name"] for r in (cur.fetchall() or [])]
+
+
+def duplicate_of_column_present() -> bool:
+    """True if practitioners.duplicate_of actually exists in the database, read
+    live from the catalogue.
+
+    migrations/practitioners-duplicate-listing.sql is applied to production BY
+    HAND, so a green deploy is not evidence it landed. GET
+    /api/console/practitioners/duplicates reports this as `duplicate_of_present`,
+    the same way index_present answers the equivalent question for the email
+    index. duplicate_of appears in the duplicate-audit payload either way
+    (dropped from the SELECT and defaulted when the column is absent, see
+    duplicate_email_rows), so this flag is the only honest signal that the
+    migration has actually landed.
+    """
+    from db_supabase import supabase_cursor
+    with supabase_cursor() as cur:
+        return _column_exists(cur, "practitioners", "duplicate_of")
+
+
+def apply_duplicate_listing_migration() -> dict:
+    """Apply migrations/practitioners-duplicate-listing.sql: the duplicate_of
+    column, its FK and check constraint, its partial index, and the
+    v_practitioners_public recreation, together.
+
+    The file is executed as ONE statement — the whole file text handed to a
+    single cur.execute() — rather than split on semicolons. The file contains
+    `DO $$ ... END$$;` blocks; splitting on `;` cuts through the dollar-quoted
+    body and sends Postgres a syntactically broken fragment, which is a classic
+    way to half-apply a migration. Every clause in the file is
+    IF NOT EXISTS / CREATE OR REPLACE, so running the whole file again is a
+    no-op: safe to call twice.
+
+    Verified against the catalogue afterward, in the SAME transaction as the
+    DDL, not inferred from "no exception was raised" — a CREATE OR REPLACE VIEW
+    that silently dropped or reordered a column returns with no error, and the
+    public finder reads that view directly. If the verification fails, this
+    raises, which rolls the whole transaction back (see db_supabase.
+    supabase_cursor): a failed apply leaves the database exactly as it was,
+    never a half-applied migration sitting live.
+    """
+    path = os.path.join(_REPO_ROOT, "migrations", f"{DUPLICATE_LISTING_MIGRATION}.sql")
+    with open(path) as fh:
+        sql = fh.read()
+    from db_supabase import supabase_cursor
+    with supabase_cursor() as cur:
+        cur.execute(sql)
+        column_present = _column_exists(cur, "practitioners", "duplicate_of")
+        if not column_present:
+            raise RuntimeError(
+                f"{DUPLICATE_LISTING_MIGRATION}.sql ran without error, but "
+                f"practitioners.duplicate_of is still missing afterward. Do not "
+                f"treat this as applied.")
+        view_columns = _view_columns(cur, "v_practitioners_public")
+        expected = list(_PUBLIC_VIEW_COLUMNS)
+        if view_columns != expected:
+            raise RuntimeError(
+                f"{DUPLICATE_LISTING_MIGRATION}.sql ran without error, but "
+                f"v_practitioners_public does not have its expected columns "
+                f"afterward. Expected {expected}, got {view_columns}. The public "
+                f"finder may be broken; do not treat this as applied.")
+    return {"migration": DUPLICATE_LISTING_MIGRATION, "applied": True,
+            "duplicate_of_present": True, "view_columns": view_columns}
 
 
 def build_rows(practitioners: List[dict], activity: dict) -> List[dict]:

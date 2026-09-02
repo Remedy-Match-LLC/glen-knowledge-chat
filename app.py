@@ -36587,6 +36587,13 @@ def api_console_practitioners_duplicates():
     `index_present` says whether the partial unique index actually exists in the
     database. It is the only honest answer to "is one portal account per email being
     enforced right now"; a green deploy is not evidence of it.
+
+    `duplicate_of_present` answers the same kind of question for
+    migrations/practitioners-duplicate-listing.sql: whether practitioners.duplicate_of
+    actually exists. That migration is applied to production by hand, and the audit
+    below degrades gracefully (and only logs) when the column is missing, so this flag
+    is the only honest signal that it has landed — duplicate_of shows up in the payload
+    either way, defaulted when absent.
     """
     if not _console_key_ok():
         return jsonify({"error": "Unauthorized"}), 401
@@ -36600,7 +36607,14 @@ def api_console_practitioners_duplicates():
     except Exception as e:  # noqa: BLE001
         print(f"[console-practitioners] index check failed: {e!r}", flush=True)
         present = None
-    return jsonify({"ok": True, "index_present": present, **report})
+    try:
+        dup_col_present = _pa.duplicate_of_column_present()
+    except Exception as e:  # noqa: BLE001
+        print(f"[console-practitioners] duplicate_of column check failed: {e!r}",
+              flush=True)
+        dup_col_present = None
+    return jsonify({"ok": True, "index_present": present,
+                    "duplicate_of_present": dup_col_present, **report})
 
 
 @app.route("/api/console/practitioners/email-index", methods=["POST"])
@@ -36620,6 +36634,28 @@ def api_console_practitioners_email_index():
         return jsonify({"ok": False, "error":
                         f"{out['blocked_by']} email(s) still carry more than one portal "
                         f"row. Retire the spare rows, then run this again.", **out}), 409
+    return jsonify({"ok": True, **out})
+
+
+@app.route("/api/console/practitioners/duplicate-listing-migration", methods=["POST"])
+def api_console_practitioners_duplicate_listing_migration():
+    """Console-gated: apply migrations/practitioners-duplicate-listing.sql — the
+    duplicate_of column, its FK/check constraints and index, and the
+    v_practitioners_public recreation that filters it out — as a single statement,
+    so the DO $$ blocks inside the file are never split by a naive semicolon split.
+
+    Idempotent: every clause in the file is IF NOT EXISTS / CREATE OR REPLACE, so
+    calling this twice is safe and leaves the same state. Verifies against the
+    catalogue afterward rather than trusting that no exception means it landed
+    whole; a verification failure raises, which rolls the whole apply back, so a
+    failed call never leaves a half-applied migration live."""
+    if not _console_key_ok():
+        return jsonify({"error": "Unauthorized"}), 401
+    from dashboard import practitioner_admin as _pa
+    try:
+        out = _pa.apply_duplicate_listing_migration()
+    except Exception as e:  # noqa: BLE001
+        return jsonify({"ok": False, "error": f"migration apply failed: {e}"}), 502
     return jsonify({"ok": True, **out})
 
 
