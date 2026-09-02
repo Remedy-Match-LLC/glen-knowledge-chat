@@ -24890,26 +24890,41 @@ def api_portal_triage(token):
             cond = (request.args.get("condition") or "glaucoma").strip().lower()
             return jsonify({"ok": True, "triage": _ct.get_triage(cx, email, cond)})
         data = request.get_json(silent=True) or request.form or {}
-        cond = (data.get("condition") or "glaucoma").strip().lower()
-        answers = {k: data.get(k) for k in
-                   ("iop_od", "iop_os", "on_meds", "med_count", "meds_names",
-                    "field_loss", "category",
-                    # dry-eye triage facts (drive the aqueous_deficiency/
-                    # severe modifiers -- see condition_triage.resolve_client_facts)
-                    "sjogrens", "not_enough_tears", "severe",
-                    # cataract sub-type triage
-                    "cataract_type", "age", "steroids", "diabetes", "inflammation",
-                    "radiation", "atopy", "yellow_vision",
-                    # macular sub-type triage
-                    "amd_type", "injections", "distortion",
-                    # free-text history item when no authored protocol fits
-                    "other_condition")}
         # Ensure the condition-programs store exists and every program (incl.
         # any added after prod's once-ever seed already fired, e.g.
         # vision-improvement) is present -- this route resolves programs by
         # key and previously relied on other console/eye-programs routes
         # having run first to guarantee that, which isn't true for triage.
         _init_support_programs_tables(cx)
+        # Whole-set reconcile: the permanent "What you are working on" card in
+        # the Find Solutions door posts the client's ENTIRE checked list, so a
+        # condition they unchecked has to be forgotten AND have its seeded
+        # remedies cleared. A body without `conditions` is the original
+        # one-condition-at-a-time submit (onboarding, and the console), which
+        # only ever adds, and is unchanged below.
+        if isinstance(data, dict) and isinstance(data.get("conditions"), list):
+            submitted = data["conditions"]
+            if len(submitted) > len(_ct.CHECKLIST_CONDITIONS):
+                return jsonify({"error": "Invalid condition list."}), 400
+            clean = []
+            for item in submitted:
+                if not isinstance(item, dict):
+                    return jsonify({"error": "Invalid condition entry."}), 400
+                key = str(item.get("condition") or "").strip().lower()
+                if key not in _ct.CHECKLIST_CONDITIONS:
+                    return jsonify({"error": "Invalid condition entry."}), 400
+                if key == "other" and not str(item.get("other_condition") or "").strip():
+                    return jsonify({"error": "Please tell us what the other issue is."}), 400
+                entry = {k: item.get(k) for k in _ct.ANSWER_KEYS}
+                entry["condition"] = key
+                clean.append(entry)
+            rec = _ct.reconcile_conditions(cx, email, clean)
+            return jsonify({"ok": True, "added": rec["added"], "kept": rec["kept"],
+                            "removed": rec["removed"], "seeded": len(rec["seeded"]),
+                            "cleared": rec["cleared"],
+                            "consult_recommended": bool(rec["consult_recommended"])})
+        cond = (data.get("condition") or "glaucoma").strip().lower()
+        answers = {k: data.get(k) for k in _ct.ANSWER_KEYS}
         res = _ct.seed_from_triage(cx, email, cond, answers)
     return jsonify({"ok": True, "programs": res["programs"], "seeded": len(res["seeded"]),
                     "consult_recommended": bool(res.get("consult_recommended"))})
@@ -24966,15 +24981,7 @@ def api_portal_starter_remedies(token):
     if not isinstance(conditions, list) or len(conditions) > 18:
         return jsonify({"error": "Invalid condition list."}), 400
 
-    allowed = {
-        "glaucoma", "cataract", "macular", "dry-eye",
-        "retinitis-pigmentosa", "diabetic-retinopathy",
-        "vision-improvement", "other",
-        "symptom-fatigue", "symptom-brain-fog", "symptom-stress",
-        "symptom-sleep", "symptom-headache", "symptom-digestion",
-        "symptom-constipation", "symptom-immune", "symptom-skin",
-        "symptom-blood-sugar",
-    }
+    allowed = _ct.CHECKLIST_CONDITIONS
     clean_conditions = []
     for item in conditions:
         if not isinstance(item, dict):

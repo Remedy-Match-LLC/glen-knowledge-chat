@@ -99,7 +99,12 @@ function render(src, opts) {
     'SEG', 'TOK', null, '[[hubHtml]]',
     'Mary', [], [], '',
     { origin: 'https://example.test', href: 'https://example.test/portal/SEG' },
-    opts.window || {}
+    // The page reads window.PortalConditions while it builds (the permanent
+    // "What you are working on" card). Supplying the real module is what lets
+    // the flag-off snapshot see that card if its `_doors` gate is ever removed;
+    // with an empty window stub the card would be absent either way and this
+    // file would pass on a change it exists to catch.
+    opts.window || {PortalConditions: require('../../static/js/portal-conditions.js')}
   );
 }
 
