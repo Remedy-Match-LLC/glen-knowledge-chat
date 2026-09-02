@@ -563,6 +563,18 @@
   .home-landing .home-item { margin-top:.6rem; padding:.6rem .75rem; background:var(--card2);
     border:1px solid var(--line); border-radius:10px; font-size:.9rem; }
   .home-landing .home-item a { color:var(--ink); font-weight:650; }
+  /* Task 13 (portal-shell-ia): the compact index at the bottom of Home. Deliberately
+     plain rows, not the old hub-tile grid: no progress bar (the banner above already
+     shows it) and no badge (badges live on the rail), so a settled client's eye is not
+     pulled back down to something that looks like more to do. */
+  .home-index { margin-top:1.4rem; padding-top:.9rem; border-top:1px solid var(--line);
+    display:flex; flex-direction:column; gap:.15rem; }
+  .home-index-item { display:flex; flex-direction:column; gap:.05rem; text-align:left;
+    background:none; border:0; border-radius:8px; padding:.45rem .5rem; cursor:pointer;
+    font:inherit; color:var(--ink); }
+  .home-index-item:hover, .home-index-item:focus-visible { background:var(--card2); outline:none; }
+  .home-index-item .hi-name { font-size:.88rem; font-weight:650; }
+  .home-index-item .hi-desc { font-size:.78rem; color:var(--muted); }
   /* Seven-door shell. Desktop first: the rail holds layout width and widens in
      place. Under 760px it leaves the flow entirely, because a rail that never
      leaves would cost a 375px phone roughly 44 of those pixels and the portal's
@@ -582,8 +594,27 @@
   }
   .rail-item svg{flex:0 0 18px;width:18px;height:18px;stroke:currentColor;fill:none;
     stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
-  .rail-item span{opacity:0;transition:opacity .16s ease;font-size:.82rem}
-  .portal-rail.is-open .rail-item span{opacity:1}
+  /* Task 13 (portal-shell-ia): badges and descriptions. .rail-icon wraps the svg
+     so a count bubble can sit on its corner without disturbing the icon's own
+     sizing; .rail-text wraps the label and description so one opacity rule fades
+     both in together, the same fade the label alone used before this task. */
+  .rail-icon{position:relative; display:inline-flex; flex:0 0 18px}
+  .rail-text{display:flex; flex-direction:column; min-width:0; opacity:0; transition:opacity .16s ease}
+  .portal-rail.is-open .rail-text{opacity:1}
+  .rail-label{display:flex; align-items:center; gap:6px; font-size:.82rem}
+  .rail-desc{display:none; font-size:.7rem; color:var(--muted); white-space:normal;
+    line-height:1.25; margin-top:1px}
+  .portal-rail.is-open .rail-desc{display:block}
+  /* The corner bubble reads at the collapsed 52px width where the label itself
+     is clipped; the .pill beside the label reuses the badge style the old hub
+     tiles used (see buildHubHtml's `tile` helper), now that there is room for
+     it. Never both at once: the bubble hides once the rail opens. */
+  .rail-badge{position:absolute; top:-5px; right:-7px; min-width:15px; height:15px;
+    padding:0 3px; border-radius:999px; background:var(--brand); color:var(--bg);
+    font-size:.62rem; font-weight:700; line-height:15px; text-align:center;
+    box-shadow:0 0 0 2px var(--card2)}
+  .portal-rail.is-open .rail-item .rail-badge{display:none}
+  .rail-count{margin-left:2px}
   .rail-item.is-active{color:var(--brand);border-left-color:var(--brand);background:var(--brand-soft)}
   .rail-item:focus-visible{outline:2px solid var(--brand);outline-offset:-2px}
   .rail-toggle{margin-top:auto}
@@ -617,12 +648,12 @@
       transition:transform .22s ease;
     }
     .portal-rail.is-open{transform:translateX(0);width:176px}
-    .portal-rail .rail-item span{opacity:1}
+    .portal-rail .rail-item .rail-text{opacity:1}
     .portal-rail.is-open ~ .shell-scrim{opacity:1;pointer-events:auto}
     body.has-shell{padding-left:0}
   }
   @media (prefers-reduced-motion: reduce){
-    .portal-rail,.rail-item span,.shell-scrim{transition:none}
+    .portal-rail,.rail-text,.shell-scrim{transition:none}
   }
   @media (max-width:760px){ .hub-tiles { grid-template-columns:repeat(2,1fr); } }
   @media (max-width:480px){ .hub-tiles { grid-template-columns:1fr; } }
@@ -5243,8 +5274,21 @@ function render(d, v){
     document.body.classList.add('has-shell');
     var shellMount = document.getElementById('portalShellMount');
     if (shellMount) {
+      // Task 13 (portal-shell-ia): the two badges the old tile grid carried
+      // (buildHubHtml's cart count and pending-suggestion count), wired onto
+      // the doors that own those panels now (cart -> remedies, records ->
+      // scans). Read straight off the same payload fields buildHubHtml always
+      // read; no new payload field. Passed raw, undefined included -- renderRail
+      // itself is what decides a count is real (see _validCount in
+      // portal-shell.js), so a disabled block or a zero count renders no badge
+      // here without this call site needing to know that rule too.
+      var railBadges = {
+        remedies: v && v.cart ? v.cart.count : undefined,
+        scans: v && v.health_profile ? v.health_profile.suggestion_count : undefined
+      };
       shellMount.innerHTML =
-        window.PortalShell.renderPhoneHeader() + window.PortalShell.renderRail('home', {open:false}) +
+        window.PortalShell.renderPhoneHeader() +
+        window.PortalShell.renderRail('home', {open:false, badges:railBadges}) +
         '<div class="shell-scrim"></div>' + window.PortalShell.renderComposer();
     }
     if (!window.__portalShellClickWired) {

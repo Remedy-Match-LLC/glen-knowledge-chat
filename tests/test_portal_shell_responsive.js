@@ -67,4 +67,46 @@ assert.ok(/padding-left\s*:\s*0/.test(phonePad),
 assert.strictEqual(/max-width:760px[\s\S]*?body\.has-shell\s+\.wrap\s*\{[^}]*margin-left/.test(css), false,
   'the phone block must not carry a body.has-shell .wrap margin-left override either');
 
+// Task 13 (portal-shell-ia): rail badges and descriptions must not blow out the
+// 176px phone drawer or the 52px collapsed desktop rail.
+//
+// The description wraps rather than overflows, and is hidden until the rail is
+// open (collapsed by default, the same on/off shape .rail-text already used).
+const railDesc = ruleFor('.rail-desc');
+assert.ok(/white-space\s*:\s*normal/.test(railDesc),
+  'the description must wrap at the 176px drawer width, not overflow in one line');
+assert.ok(/display\s*:\s*none/.test(railDesc),
+  'the description must be hidden by default, shown only once the rail opens');
+assert.ok(/\.portal-rail\.is-open \.rail-desc\s*\{[^}]*display\s*:\s*block/.test(css),
+  'the description must be shown once the rail opens');
+
+// .rail-text is a flex child beside the icon; without min-width:0 a long
+// description cannot shrink/wrap and can push the rail wider than 176px.
+const railText = ruleFor('.rail-text');
+assert.ok(/min-width\s*:\s*0/.test(railText),
+  '.rail-text needs min-width:0 so the description cannot force the rail wider than 176px');
+
+// The icon-corner badge must not add layout width to the 52px collapsed rail
+// (it overlays the icon via position:absolute).
+//
+// It must also be a SOLID fill, not the translucent .pill background. The pill
+// treatment works beside a label, where there is room and a card behind it, but
+// as a 15px corner badge on a dark rail it renders as a superscript digit rather
+// than a count and is easy to miss entirely, which defeats the point of having
+// it. Verified by rendering, not by reading. The .pill itself still carries the
+// count beside the label once the rail opens, which is where that treatment
+// belongs.
+const railBadge = ruleFor('.rail-badge');
+assert.ok(/position\s*:\s*absolute/.test(railBadge),
+  'the collapsed-rail badge must overlay the icon, not add layout width at 52px');
+assert.ok(/background\s*:\s*var\(--brand\)/.test(railBadge),
+  'the badge needs a solid fill to read as a count in the collapsed rail');
+assert.ok(!/background\s*:\s*var\(--brand-soft\)/.test(railBadge),
+  'the translucent pill background disappears at badge size, do not reuse it here');
+assert.ok(/box-shadow\s*:[^;]*var\(--card2\)/.test(railBadge),
+  'the badge needs a ring in the rail colour to separate it from the icon beneath');
+// it hides once the rail opens, handing off to the .pill count beside the label
+assert.ok(/\.portal-rail\.is-open \.rail-item \.rail-badge\s*\{[^}]*display\s*:\s*none/.test(css),
+  'the collapsed-rail badge must hide once the rail opens');
+
 console.log('test_portal_shell_responsive: ok');

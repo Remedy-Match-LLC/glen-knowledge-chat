@@ -20,6 +20,14 @@ DOORS.forEach(d => {
   assert.ok(!/—|--/.test(d.label), d.key + ' label must not contain an em dash');
 });
 
+// Task 13 (portal-shell-ia): every door carries the practice-owner-approved
+// description, the same source the rail and the Home index both read.
+DOORS.forEach(d => {
+  assert.ok(d.desc && typeof d.desc === 'string' && d.desc.length > 0,
+    d.key + ' needs a desc');
+  assert.ok(!/—|--/.test(d.desc), d.key + ' desc must not contain an em dash');
+});
+
 // membership resolves both ways
 assert.deepStrictEqual(panelsForDoor('billing'), ['orders', 'billing-detail']);
 assert.deepStrictEqual(panelsForDoor('nope'), []);
@@ -83,6 +91,36 @@ assert.ok(rail.indexOf('is-open') === -1);
 assert.ok(renderRail('home', { open: true }).indexOf('is-open') !== -1);
 // labels are always in the DOM, hidden by CSS, so screen readers keep them
 assert.ok(rail.indexOf('aria-label="Portal sections"') !== -1);
+
+// Task 13 (portal-shell-ia): the descriptions render in the rail, in the DOM
+// on every door regardless of open/collapsed (CSS hides them collapsed, the
+// same pattern the label itself already used before this task).
+DOORS.forEach(d => {
+  assert.ok(rail.indexOf('>' + escapeHtml(d.desc) + '<') !== -1,
+    'rail is missing the description for ' + d.key);
+});
+
+// Task 13: badges. No opts.badges at all (a missing block, one call site
+// away) must render no badge markup anywhere in the rail.
+assert.strictEqual(rail.indexOf('rail-badge'), -1,
+  'renderRail with no badges opts must render no badge markup');
+
+// A count of 0 and a count of undefined (an absent payload block, e.g.
+// health_profile disabled) must both render no badge.
+const railZero = renderRail('home', { open: false, badges: { remedies: 0, scans: undefined } });
+assert.strictEqual(railZero.indexOf('rail-badge'), -1,
+  'a zero or undefined count must render no badge');
+
+// A count greater than zero renders exactly one badge, on the right door,
+// showing the count, and reuses the existing .pill class for the open-rail
+// form rather than inventing a new one.
+const railBadged = renderRail('home', { open: false, badges: { remedies: 3 } });
+assert.strictEqual((railBadged.match(/rail-badge/g) || []).length, 1,
+  'exactly one door has a nonzero count, so exactly one badge must render');
+assert.ok(/data-door="remedies"[\s\S]*?class="rail-badge"[^>]*>3</.test(railBadged),
+  'the badge must carry the count and sit on the door it was given for');
+assert.ok(railBadged.indexOf('class="pill rail-count">3<') !== -1,
+  'the open-rail count must reuse the existing .pill class, not a new one');
 
 const header = renderPhoneHeader();
 assert.ok(header.indexOf('data-shell-open="1"') !== -1);
@@ -318,5 +356,34 @@ assert.ok(settled.indexOf('id="portal-onboarding-slot"') !== -1,
   'a settled Home must still emit the onboarding slot');
 assert.ok(renderHome({}).indexOf('id="portal-onboarding-slot"') !== -1,
   'even an empty payload must emit the onboarding slot');
+
+// Task 13 (portal-shell-ia): the compact index at the bottom of Home. All
+// seven doors, name and description, no progress bar and no badge (both live
+// elsewhere on the page already), and it is the last thing Home renders.
+[midSetup, settled, renderHome({})].forEach(function (html, i) {
+  assert.ok(html.indexOf('class="home-index"') !== -1,
+    'renderHome case ' + i + ' must render the index');
+});
+const indexPos = midSetup.indexOf('class="home-index"');
+assert.ok(indexPos !== -1);
+DOORS.forEach(d => {
+  assert.ok(midSetup.indexOf('>' + escapeHtml(d.label) + '<') !== -1,
+    'home index is missing ' + d.key);
+  assert.ok(midSetup.indexOf('>' + escapeHtml(d.desc) + '<') !== -1,
+    'home index is missing the description for ' + d.key);
+});
+// the index is the very last thing rendered, before only the closing wrapper div
+const afterIndex = midSetup.slice(midSetup.lastIndexOf('</nav>') + '</nav>'.length);
+assert.strictEqual(afterIndex.trim(), '</div>',
+  'the index must be the last thing renderHome emits: found ' + JSON.stringify(afterIndex));
+// no progress bar and no badge inside the index itself (the banner above is
+// allowed its own progress bar; this only scopes the index section)
+const indexHtml = midSetup.slice(indexPos);
+assert.strictEqual(indexHtml.indexOf('home-progress'), -1,
+  'the Home index must carry no progress bar markup');
+assert.strictEqual(indexHtml.indexOf('pill'), -1,
+  'the Home index must carry no badge markup');
+assert.strictEqual(indexHtml.indexOf('rail-badge'), -1,
+  'the Home index must carry no badge markup');
 
 console.log('test_portal_shell: ok');
