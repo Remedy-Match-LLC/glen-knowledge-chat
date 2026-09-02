@@ -141,6 +141,31 @@ var INTENTS = [
   // "protocol" alone also appears in a scheduling or process question ("what is
   // the protocol for canceling a session"), nothing to do with a remedy.
   ['remedies',  /\b(reorder|re-order|refill|my remedies|what do i take|dosage|cart|wishlist)\b|\b(what|which|my|the) dose\b|\bmy protocol\b|\bprotocol\s+for\s+(?:taking|my)\b|\bdosing protocol\b/i],
+  // Practice-owner ruling: emotional and stress language must never fall through
+  // to Find Solutions and come back with a shop link. "I need emotional support
+  // for what I am going through, not another product" did exactly that before this
+  // entry existed, the single worst misroute found on this project, because
+  // "support for" is bare vocabulary in the `solutions` pattern below. This entry
+  // sits ABOVE `solutions` so it wins that sentence, and below `billing`/`scans`/
+  // `remedies` so it cannot steal a bill, a scan, or a medication question from
+  // them (none of its phrases share their vocabulary). It routes to `learn`,
+  // where the Private Appointments card now lives (the calendar panel, see
+  // static/client-portal.html), and carries its own link label naming the EVOX
+  // service rather than the generic door name. A distressed client needs to
+  // know what waits behind the link. "overwhelming" and bare "stress" were left
+  // out on purpose: "overwhelming" alone also describes something positive
+  // ("the results have been overwhelming, thank you"), and bare "stress" alone
+  // also names a class topic ("a stress management class"), which already routes
+  // here via `learn`'s own "class" pattern below and does not need the EVOX label.
+  // Fix round 1 (this entry): bare "anxious" and bare "grief" over-match two
+  // common idioms that carry no distress at all. "anxious to" means eager, not
+  // worried ("I'm anxious to start my new protocol"), and "good grief" is a
+  // stock exclamation of mild surprise, not personal grief ("good grief, the
+  // price went up"). Both watched to fail against the first draft, so "anxious"
+  // requires it not be immediately followed by "to", and "grief" requires it not
+  // be immediately preceded by "good ".
+  ['learn',     /\b(emotional support|anxiety|grieving|grieved|overwhelmed|distress(?:ed)?|stressful)\b|\banxious\b(?!\s+to\b)|\b(?<!good )grief\b|\bfeeling (?:so |really |very )?(?:low|down|stressed|anxious|overwhelmed)\b|\b(?:so|really|very) stressed\b|\bstressed out\b|\bunder (?:a lot of |so much )?stress\b|\bnot coping\b|\bcan.t cope\b|\bstruggling emotionally\b|\b(?:mentally|emotionally) exhausted\b|\bneed(?:s|ed)? (?:some )?emotional support\b|\bneed (?:someone|somebody) to talk to\b|\bgoing through a lot\b|\bhaving a hard time emotionally\b/i,
+    'Propose an EVOX session with Rae'],
   // "good for" alone also closes a scheduling exchange ("3pm is good for me"),
   // and bare "condition" is used for a car, a garden, an order, anything, not
   // just health. Exclude the pronoun form of "good for" and require condition to
@@ -170,6 +195,22 @@ function routeIntent(text) {
   if (!text || typeof text !== 'string') return null;
   for (var i = 0; i < INTENTS.length; i++) {
     if (INTENTS[i][1].test(text)) return INTENTS[i][0];
+  }
+  return null;
+}
+
+// Most matched intents are well served by the generic "Open <Door label>" link
+// static/client-portal.html's appendChatDoorLink() builds from DOORS. A few need
+// their own words instead, because the door name alone does not tell the client
+// what waits behind it (the emotional-support entry above is the first case: it
+// should say EVOX and Rae, not "Open Learn & Ask"). An INTENTS entry may carry an
+// optional third element, the link label to use in that case. This re-walks the
+// same ordered list routeIntent() uses, so the label always comes from whichever
+// pattern actually matched, not just whichever door it maps to.
+function intentLinkLabel(text) {
+  if (!text || typeof text !== 'string') return null;
+  for (var i = 0; i < INTENTS.length; i++) {
+    if (INTENTS[i][1].test(text)) return INTENTS[i][2] || null;
   }
   return null;
 }
@@ -289,7 +330,8 @@ if (typeof module !== 'undefined' && module.exports) {
     DOORS: DOORS, panelsForDoor: panelsForDoor,
     doorForPanel: doorForPanel, allPanels: allPanels,
     renderRail: renderRail, renderPhoneHeader: renderPhoneHeader, renderComposer: renderComposer,
-    escapeHtml: escapeHtml, routeIntent: routeIntent, renderHome: renderHome
+    escapeHtml: escapeHtml, routeIntent: routeIntent, intentLinkLabel: intentLinkLabel,
+    renderHome: renderHome
   };
 }
 if (typeof window !== 'undefined') {
@@ -297,6 +339,7 @@ if (typeof window !== 'undefined') {
     DOORS: DOORS, panelsForDoor: panelsForDoor,
     doorForPanel: doorForPanel, allPanels: allPanels,
     renderRail: renderRail, renderPhoneHeader: renderPhoneHeader, renderComposer: renderComposer,
-    escapeHtml: escapeHtml, routeIntent: routeIntent, renderHome: renderHome
+    escapeHtml: escapeHtml, routeIntent: routeIntent, intentLinkLabel: intentLinkLabel,
+    renderHome: renderHome
   };
 }

@@ -3975,7 +3975,18 @@ function render(d, v){
   let _askHtml="", _voiceHtml="", _finderHtml="", _bodymapHtml="", _classesHtml="", _calendarHtml="", _accountHtml="", _payerOrdersHtml="", _referHtml="", _referralsHtml="", _offersHtml="";
 
   const _calendarCard = buildCalendarHtml(v,true);
-  _calendarHtml = buildCalendarHtml(v,false);
+  // Regression fix (portal-shell-ia): under the shell, renderHome() replaces
+  // buildHubHtml() for the hub panel, and renderHome() does not emit the Private
+  // Appointments card the way buildHubHtml() does at its call above (see the
+  // hub_enabled block), so with hub+shell both on the card rendered nowhere and
+  // clients lost the only way to book. Booking belongs with the calendar, so the
+  // card is added to the calendar panel here, strictly gated on _doors: with hub
+  // on but the shell off, buildHubHtml() above still embeds the card on the hub
+  // landing page itself, so adding it here too would duplicate
+  // id="appointment-proposals-card" (loadAppointmentProposals() resolves that id,
+  // and its proposal list, by getElementById, so a second copy would silently
+  // break it). With the shell off entirely, _doors is false and this is unchanged.
+  _calendarHtml = buildCalendarHtml(v,false) + (_doors ? buildAppointmentProposalHtml() : "");
   if (!_hub) part(null, _calendarCard + buildAppointmentProposalHtml());
 
   // "Ask Dr. Glen" concierge chat — promoted to the TOP of the portal (first card
@@ -8101,17 +8112,24 @@ function appendChatBubble(role, text){
 // it. Rendered as a button rather than a link because a door is a client-side
 // reveal, not a URL, and textContent is used throughout: nothing here is ever
 // written as innerHTML.
-function appendChatDoorLink(doorKey){
+// EVOX fix (portal-shell-ia): the generic "Open <Door label>" text doesn't tell a
+// client what waits behind the link. A few intents (the emotional-support one in
+// particular) carry their own label in portal-shell.js's INTENTS, resolved by the
+// matched query text via intentLinkLabel(); everything else falls back to the
+// generic door label exactly as before.
+function appendChatDoorLink(doorKey, queryText){
   var msgs = document.getElementById("chatMsgs");
   if(!msgs || !window.PortalShell || typeof window.showDoor !== "function") return null;
   var meta = window.PortalShell.DOORS.filter(function(d){ return d.key === doorKey; })[0];
   if(!meta) return null;
+  var customLabel = window.PortalShell.intentLinkLabel
+    ? window.PortalShell.intentLinkLabel(queryText) : null;
   var row = document.createElement("div");
   row.className = "chat-related";
   var btn = document.createElement("button");
   btn.type = "button";
   btn.className = "chat-related-link chat-door-link";
-  btn.textContent = "Open " + meta.label;
+  btn.textContent = customLabel || ("Open " + meta.label);
   btn.addEventListener("click", function(){ window.showDoor(doorKey); });
   row.appendChild(btn);
   msgs.appendChild(row);
@@ -8234,7 +8252,7 @@ async function sendChatMessage(){
                 }
               }
               // The door suggestion lands after the answer, not instead of it.
-              if(routedDoor) appendChatDoorLink(routedDoor);
+              if(routedDoor) appendChatDoorLink(routedDoor, query);
             }
           } catch(parseErr){ /* skip malformed SSE lines */ }
         }
