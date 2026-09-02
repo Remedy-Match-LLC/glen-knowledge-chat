@@ -4414,13 +4414,13 @@ function render(d, v){
       ritems += `<div class="reitem"><span class="nm">${esc(it.name||it.slug)}${it.qty>1?` ×${esc(it.qty)}`:""}</span></div>`;
     });
     const rnote = rec.note ? `<p class="note small">${esc(rec.note)}</p>` : "";
-    html += `<div class="card reco-card"><h2>Your practitioner recommends</h2>
+    part("solutions", `<div class="card reco-card"><h2>Your practitioner recommends</h2>
       ${rnote}
       <div>${ritems}</div>
       <p class="muted small" style="margin:.7rem 0 1rem">Add these to your reorder list — your member price and shipping are calculated at checkout.</p>
       <button class="btn full" id="recoAcceptBtn">Add to my order</button>
       <button class="btn ghost full" id="recoDismissBtn" style="margin-top:.5rem">No thanks</button>
-      <p class="small err" id="recoErr" hidden></p></div>`;
+      <p class="small err" id="recoErr" hidden></p></div>`);
   }
 
   if(Array.isArray(d.reorder_items)){
@@ -4601,7 +4601,7 @@ function render(d, v){
   // rest of the page. Click/save/hide/expand wiring is bound by
   // wireRecommendationsCard(), called once per render().
   if (recSections.length) {
-    html += renderRecommendations(recSections);
+    part("solutions", renderRecommendations(recSections));
   }
 
   if(Array.isArray(d.locked_rows) && d.locked_rows.length){

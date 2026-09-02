@@ -143,7 +143,11 @@ const SIGS = [
   ['remedies', 'class="card practitioner-program-card"'],
   ['remedies', 'id="portal-order-basket"'],                    // Order your remedies
   ['remedies', '<h2>Your Remedies</h2>'],
-  ['remedies', 'id="wishlistCard"']
+  ['remedies', 'id="wishlistCard"'],
+
+  // --- Find Solutions ---
+  ['solutions', '<h2>Your practitioner recommends</h2>'],
+  ['solutions', 'renderRecommendations(recSections)']          // My Recommendations
 ];
 
 const doorOfSig = {};
