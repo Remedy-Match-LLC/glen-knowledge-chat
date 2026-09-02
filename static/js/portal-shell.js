@@ -8,31 +8,35 @@
 // door can hold several sections stacked. That is what lets the oversized `current`
 // panel be split into sections later without touching the router.
 
+// Task 13 (portal-shell-ia): `desc` is the one-line description the practice
+// owner approved for the rail (open state) and the Home index. One source for
+// both, so they can never drift apart the way a door label and a Home tile
+// caption used to.
 var DOORS = [
-  { key: 'home', label: 'Home',
+  { key: 'home', label: 'Home', desc: 'Where you are and what is next',
     icon: 'M3 10.5 12 3l9 7.5M5.5 9.5V21h13V9.5',
     panels: ['hub'] },
-  { key: 'scans', label: 'Scans & Reports',
+  { key: 'scans', label: 'Scans & Reports', desc: 'Your scans, reports and healing path',
     icon: 'M2 12h3l2.5-7 3 14 3-10.5L16 15l2-3h4',
     // Final review I10: `intake` and `records` moved here from Account. The
     // clinical record and the intake form are the inputs a scan is read against,
     // so they belong beside the report rather than behind identity settings.
     panels: ['current', 'voice', 'history', 'intake', 'records', 'scan-report'] },
-  { key: 'solutions', label: 'Find Solutions',
+  { key: 'solutions', label: 'Find Solutions', desc: 'Remedies and tools for what you are working on',
     icon: 'M15.5 15.5 21 21M17 10.5a6.5 6.5 0 1 1-13 0 6.5 6.5 0 0 1 13 0',
     // Final review I10: `finder` moved here from Account. Find Solutions was the
     // thinnest door and finding a practitioner is finding a solution.
     panels: ['shop', 'finder', 'solutions-detail'] },
-  { key: 'remedies', label: 'My Remedies',
+  { key: 'remedies', label: 'My Remedies', desc: 'What you take, reorder and your cart',
     icon: 'M10 2h4v4l3.5 5.5A4 4 0 0 1 14 18h-4a4 4 0 0 1-3.5-6.5L10 6zM6.8 13h10.4',
     panels: ['remedies', 'oasis', 'cart', 'remedy-detail'] },
-  { key: 'billing', label: 'Billing',
+  { key: 'billing', label: 'Billing', desc: 'Invoices, orders and receipts',
     icon: 'M6 2.5h12v19l-3-2-3 2-3-2-3 2zM9.5 8h5M9.5 12h5',
     panels: ['orders', 'billing-detail'] },
-  { key: 'learn', label: 'Learn & Ask',
+  { key: 'learn', label: 'Learn & Ask', desc: 'Courses, your body map and a private appointment',
     icon: 'M3 4.5h6a3 3 0 0 1 3 3v12a2.5 2.5 0 0 0-2.5-2.5H3zM21 4.5h-6a3 3 0 0 0-3 3v12a2.5 2.5 0 0 1 2.5-2.5H21z',
     panels: ['ask', 'bodymap', 'classes', 'calendar', 'learn-detail'] },
-  { key: 'account', label: 'Account',
+  { key: 'account', label: 'Account', desc: 'Your profile, sharing and member offers',
     icon: 'M15.6 8a3.6 3.6 0 1 1-7.2 0 3.6 3.6 0 0 1 7.2 0M4.5 20.5a7.5 7.5 0 0 1 15 0',
     // Final review I10: nine panels stacked in one scroll, mixing identity,
     // clinical data entry, commercial programmes and practitioner discovery, is the
@@ -69,21 +73,51 @@ function escapeHtml(s) {
     .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 
+// Task 13 (portal-shell-ia): a count is only ever drawn from a live payload
+// field (v.cart.count, v.health_profile.suggestion_count), and either can be
+// absent (the block is off), 0 (nothing pending) or a non-number if a caller
+// passes the wrong thing through. All three must render no badge at all,
+// never a "0" or the literal word "undefined" -- so this is the one place
+// that decides "count is real," and both badge markups below call it instead
+// of re-deriving the same check twice and risking them drifting apart.
+function _validCount(n) {
+  return typeof n === 'number' && isFinite(n) && n > 0;
+}
+
+// opts.badges = { doorKey: count, ... }, built by the caller from the portal
+// payload (see static/client-portal.html's shell mount block). Two markups
+// per badge, not one, because the collapsed 52px rail and the open 176px
+// rail need different shapes: a small corner bubble on the icon reads at
+// collapsed width where the label is clipped, and a `.pill` beside the label
+// (the same class the old hub tiles used for their badge) reads once the
+// label has room. CSS toggles which one is visible on `.portal-rail.is-open`
+// (see static/client-portal.html); both are always in the markup so no
+// re-render is needed when the rail opens or closes.
 function renderRail(activeDoor, opts) {
   opts = opts || {};
+  var badges = opts.badges || {};
   var items = DOORS.map(function (d) {
     var active = (d.key === activeDoor) ? ' is-active' : '';
+    var count = badges[d.key];
+    var badgeHtml = '';
+    var countHtml = '';
+    if (_validCount(count)) {
+      badgeHtml = '<span class="rail-badge" aria-hidden="true">' + escapeHtml(count) + '</span>';
+      countHtml = '<span class="pill rail-count">' + escapeHtml(count) + '</span>';
+    }
     return '<button type="button" class="rail-item' + active + '" data-door="' +
       escapeHtml(d.key) + '">' +
-      '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="' + escapeHtml(d.icon) + '"/></svg>' +
-      '<span>' + escapeHtml(d.label) + '</span></button>';
+      '<span class="rail-icon"><svg viewBox="0 0 24 24" aria-hidden="true">' +
+      '<path d="' + escapeHtml(d.icon) + '"/></svg>' + badgeHtml + '</span>' +
+      '<span class="rail-text"><span class="rail-label">' + escapeHtml(d.label) + countHtml +
+      '</span><span class="rail-desc">' + escapeHtml(d.desc) + '</span></span></button>';
   }).join('');
   return '<nav class="portal-rail' + (opts.open ? ' is-open' : '') +
     '" id="portalRail" aria-label="Portal sections">' + items +
     '<button type="button" class="rail-item rail-toggle" data-shell-toggle="1" ' +
     'aria-label="Open and close the menu">' +
-    '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>' +
-    '<span>Close</span></button></nav>';
+    '<span class="rail-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg></span>' +
+    '<span class="rail-text"><span class="rail-label">Close</span></span></button></nav>';
 }
 
 function renderPhoneHeader() {
@@ -260,15 +294,35 @@ function _homeCurrentPhase(phases) {
 // in any Home state.
 var _ONBOARDING_SLOT = '<div id="portal-onboarding-slot"></div>';
 
+// Task 13 (portal-shell-ia): the compact index at the bottom of Home. All
+// seven doors, name and description only -- explicitly no progress bar (the
+// where-you-are banner above already carries progress) and no badge (badges
+// live on the rail; repeating a pending count here would be the same fact
+// twice on one page). Built once from DOORS, the same source the rail reads,
+// so a door added or renamed there needs no second edit here. Static and
+// view-independent, so it is appended in every renderHome() branch below,
+// including the no-journey-data fallback -- an index of where things are
+// does not depend on having journey data to show.
+function _homeIndexHtml() {
+  var items = DOORS.map(function (d) {
+    return '<button type="button" class="home-index-item" data-door="' + escapeHtml(d.key) +
+      '" onclick="showDoor(\'' + escapeHtml(d.key) + '\')">' +
+      '<span class="hi-name">' + escapeHtml(d.label) + '</span>' +
+      '<span class="hi-desc">' + escapeHtml(d.desc) + '</span></button>';
+  }).join('');
+  return '<nav class="home-index" aria-label="All portal sections">' + items + '</nav>';
+}
+
 function renderHome(view) {
   view = view || {};
   var journey = view.journey || {};
   var phases = Array.isArray(journey.phases) ? journey.phases : [];
   var current = _homeCurrentPhase(phases);
   // No journey data at all (a failed/empty build_status) -- render nothing
-  // but the reparent slot, rather than guess at a phase that was never
-  // computed.
-  if (!current) return '<div class="portal-hub home-landing">' + _ONBOARDING_SLOT + '</div>';
+  // but the reparent slot and the index, rather than guess at a phase that
+  // was never computed.
+  if (!current) return '<div class="portal-hub home-landing">' + _ONBOARDING_SLOT +
+    _homeIndexHtml() + '</div>';
 
   var phase = current.phase;
   var steps = Array.isArray(phase.steps) ? phase.steps : [];
@@ -322,7 +376,8 @@ function renderHome(view) {
     itemsHtml += '<div class="home-item">' + apptText + '</div>';
   }
 
-  return '<div class="portal-hub home-landing">' + banner + _ONBOARDING_SLOT + stepsHtml + itemsHtml + '</div>';
+  return '<div class="portal-hub home-landing">' + banner + _ONBOARDING_SLOT + stepsHtml + itemsHtml +
+    _homeIndexHtml() + '</div>';
 }
 
 if (typeof module !== 'undefined' && module.exports) {
