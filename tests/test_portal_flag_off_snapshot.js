@@ -14,15 +14,11 @@
 // snapshot taken from aaa78c42.
 //
 // HOW IT WORKS
-//   render() cannot be called: it needs a document, a token, and two dozen sibling
-//   builders. So the body is sliced out of the page source, from `let html = ` to
-//   `app.innerHTML = html;`, and executed as a function of (d, v, _hub, _shell,
-//   _doors, ...). Every helper it calls that is defined OUTSIDE that slice is
-//   replaced by a stub that returns a marker string naming itself. `esc`, `money`
-//   and `ICON_LOCK` are taken from the real source, because they shape output.
-//   The identical stub table and the identical fixtures are used to generate the
-//   snapshot, so a stubbed helper's own contents can never be the difference: only
-//   the sliced code can be, which is the code this branch rewrote.
+//   tests/lib/portal-render-harness.js slices render()'s body out of the page and
+//   executes it with the sibling builders stubbed. The identical stub table and the
+//   identical fixtures are used to generate the snapshot, so a stubbed helper's own
+//   contents can never be the difference: only the sliced code can be, which is the
+//   code this branch rewrote.
 //
 // WHAT THE SNAPSHOT COVERS
 //   Every card in the page body, its content, and its position in the page, across
@@ -49,57 +45,10 @@ const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
 
-const PAGE = path.join(__dirname, '..', 'static', 'client-portal.html');
+const harness = require('./lib/portal-render-harness.js');
+
+const PAGE = harness.PAGE;
 const SNAPSHOT = path.join(__dirname, 'fixtures', 'portal-flag-off.snapshot.txt');
-
-// ---------------------------------------------------------------------------
-// Helpers the sliced body calls but does not define. Stubbed identically on both
-// sides of the comparison. A name added here weakens the test, so each one is a
-// builder whose own output is pinned by its own test.
-// ---------------------------------------------------------------------------
-const STUBS = [
-  'escGreeting', 'stripSalutation', 'renderEyeVisionReport', 'buildCalendarHtml',
-  'buildAppointmentProposalHtml', 'buildMembershipSummaryHtml', 'buildScanHistoryHtml',
-  'buildOrdersHtml', 'backToHub', 'buildClinicalRecordHtml', 'buildCartHtml',
-  'buildShopHtml', 'buildPhotoHtml'
-];
-
-function slice(src) {
-  const renderAt = src.indexOf('function render(d, v){');
-  assert.ok(renderAt !== -1, 'render(d, v) not found');
-  const a = src.indexOf('let html = `', renderAt);
-  const b = src.indexOf('app.innerHTML = html;', renderAt);
-  assert.ok(a !== -1 && b > a, 'render() body bounds not found');
-  const body = src.slice(a, b);
-  // A slice that silently shrank is the failure mode that unpinned a sibling test
-  // on this very branch. render()'s body is tens of thousands of characters.
-  assert.ok(body.length > 40000, 'render() body slice is implausibly short: ' + body.length);
-  assert.ok(body.indexOf('data-panel="current"') !== -1, 'slice does not reach the panel wrap');
-  return body;
-}
-
-function line(src, marker) {
-  const i = src.indexOf(marker);
-  assert.ok(i !== -1, 'source line not found: ' + marker);
-  return src.slice(i, src.indexOf('\n', i));
-}
-
-function buildRenderer(src) {
-  const stubs = STUBS.map(function (n) {
-    return '  var ' + n + ' = function(){ return "[[' + n + ']]"; };';
-  }).join('\n');
-  const code = [
-    line(src, 'const esc = '),
-    line(src, 'const money = '),
-    line(src, 'const ICON_LOCK = '),
-    '(function(d, v, _hub, _shell, _doors, seg, token, onboardingMount, hubHtml, first, badges, recSections, _ppTimer, location){',
-    stubs,
-    slice(src),
-    '  return html;',
-    '})'
-  ].join('\n');
-  return (0, eval)(code); // eslint-disable-line no-eval
-}
 
 // ---------------------------------------------------------------------------
 // Fixtures. Two payloads x three layout shapes. The payload fields are the ones
@@ -161,13 +110,17 @@ const CASES = [
 // ---------------------------------------------------------------------------
 const DETAIL_PANELS = ['scan-report', 'billing-detail', 'remedy-detail',
                        'solutions-detail', 'account-detail', 'learn-detail'];
+// What backToHub() renders. The shell-off page puts one on every revealed panel,
+// which is the behaviour aaa78c42 had and this branch must not change.
+const BACK_TO_HUB =
+  '<button type="button" class="hub-back" onclick="showTab(\'hub\')">\u2039 Back to hub</button>';
 
 function normalise(html, label) {
   DETAIL_PANELS.forEach(function (panel) {
     const re = new RegExp('\\s*<section data-panel="' + panel + '"[^>]*>([\\s\\S]*?)</section>');
     const m = re.exec(html);
     if (!m) return;                       // absent in the plain/tabs wrap
-    assert.strictEqual(m[1], '[[backToHub]]',
+    assert.strictEqual(m[1], BACK_TO_HUB,
       label + ': with the shell off, <section data-panel="' + panel + '"> must hold nothing but ' +
       'the back control, otherwise a card has escaped the `current` panel. Got: ' +
       JSON.stringify(m[1].slice(0, 200)));
@@ -177,16 +130,9 @@ function normalise(html, label) {
 }
 
 function renderAll(src) {
-  const render = buildRenderer(src);
   return CASES.map(function (c) {
     const label = c[0];
-    const out = render(
-      c[1], c[2], c[3],
-      /* _shell */ false, /* _doors */ false,
-      'SEG', 'TOK', null, '[[hubHtml]]',
-      /* first */ 'Mary', /* badges */ [], /* recSections */ [],
-      /* _ppTimer */ '', /* location */ { origin: 'https://example.test', href: 'https://example.test/portal/SEG' }
-    );
+    const out = harness.render(src, { d: c[1], v: c[2], hub: c[3], shell: false, doors: false });
     return '===== case: ' + label + ' =====\n' + normalise(out, label);
   }).join('\n');
 }

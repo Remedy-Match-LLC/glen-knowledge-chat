@@ -30,7 +30,12 @@ def test_header_cart_opens_dedicated_portal_cart_not_embedded_checkout():
 
 def test_review_order_still_opens_embedded_checkout():
     assert 'openPortalOrderBasket(false)' in PORTAL
-    assert 'showTab("current")' in PORTAL
+    # Final review I5: #portal-order-basket left `current` for the My Remedies
+    # door, so "current" alone opened Scans and left the basket hidden. Both
+    # panels are named through portalPanelFor(), which picks the shell one only
+    # while the shell is live. tests/test_portal_hash_routes.js proves each of
+    # them resolves to a door that actually reveals the basket.
+    assert 'showTab(portalPanelFor({panel:"current", shellPanel:"remedy-detail"}))' in PORTAL
     assert 'id="portal-order-basket"' in PORTAL
     assert 'document.getElementById("portal-order-basket")' in PORTAL
 

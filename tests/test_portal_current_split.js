@@ -287,7 +287,7 @@ SECTIONS.forEach(function (row) {
 // ---------------------------------------------------------------------------
 const GATED_CURRENT =
   '<section data-panel="current"${_hub ? " hidden" : ""} data-door="scans">' +
-  '${back}${html}${_doors ? "" : legacyCurrentHtml()}</section>';
+  '${_back("current")}${html}${_doors ? "" : legacyCurrentHtml()}</section>';
 assert.ok(page.indexOf(GATED_CURRENT) !== -1,
   'the legacy `current` section must render its fragments only when the doors do not: ' +
   'without the _doors gate every card is in the DOM twice');
@@ -295,7 +295,7 @@ assert.ok(page.indexOf(GATED_CURRENT) !== -1,
 SECTIONS.forEach(function (row) {
   const panel = row[0], door = row[1];
   const gated = '<section data-panel="' + panel + '" hidden data-door="' + door + '">' +
-    '${back}${_doors ? partsFor("' + door + '") : ""}</section>';
+    '${_back("' + panel + '")}${_doors ? partsFor("' + door + '") : ""}</section>';
   assert.ok(page.indexOf(gated) !== -1,
     panel + ' must render its fragments only under the _doors gate; without it the same ' +
     'cards are in both this section and `current`, duplicating their element ids');

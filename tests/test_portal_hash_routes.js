@@ -85,7 +85,7 @@ assert.ok(PUSHES.length > 40, 'implausibly few part() pushes parsed: ' + PUSHES.
 // Each door's detail panel, i.e. the panel that renders partsFor(door).
 const DETAIL_OF = {};
 {
-  const re = /<section data-panel="([a-z-]+)"[^>]*>\$\{back\}\$\{_doors \? partsFor\("([a-z-]+)"\)/g;
+  const re = /<section data-panel="([a-z-]+)"[^>]*>[^<]*?partsFor\("([a-z-]+)"\)/g;
   let m;
   while ((m = re.exec(page))) DETAIL_OF[m[2]] = m[1];
   assert.strictEqual(Object.keys(DETAIL_OF).length, 6,

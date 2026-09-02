@@ -1404,6 +1404,12 @@ function oasisShowMode(mode){
 function backToHub(){
   return `<button type="button" class="hub-back" onclick="showTab('hub')">‹ Back to hub</button>`;
 }
+// Final review I6: under the shell the hub grid is gone, Home replaced it, so the
+// control has to say where it actually goes. showTab('hub') still resolves: the
+// hub panel is the Home door's only panel, so it opens Home.
+function backToHome(){
+  return `<button type="button" class="hub-back" onclick="showTab('hub')">‹ Back to Home</button>`;
+}
 // Task 12a (portal-shell-ia): reshapes the existing portal payload into the
 // small view window.PortalShell.renderHome() needs. Adds nothing to the
 // payload -- every field read here already exists on d/v for a different card
@@ -2093,7 +2099,14 @@ function renderOasisPanel(freshBlock){
   if (!panel) return null;
   _oasisView = _oasisView || {};
   _oasisView.oasis = freshBlock;
-  panel.innerHTML = (typeof backToHub === "function" ? backToHub() : "") + buildOasisHtml(_oasisView);
+  // Final review I6: the control belongs to the door under the shell, and this
+  // panel may not be the one that carries it. Re-use whatever this panel was
+  // rendered with rather than minting a fresh one, so a Build-Out action cannot
+  // grow a second control (or a stale "Back to hub") on re-render.
+  const existingBack = panel.querySelector(".hub-back");
+  const backHtml = existingBack ? existingBack.outerHTML
+    : (portalShellLive() ? "" : (typeof backToHub === "function" ? backToHub() : ""));
+  panel.innerHTML = backHtml + buildOasisHtml(_oasisView);
   return panel;
 }
 document.addEventListener("click", async function(ev){
@@ -5105,34 +5118,49 @@ function render(d, v){
     // Under the hub, the grid becomes its own default panel and every other
     // panel carries a Back-to-hub control. Without the hub, behavior is unchanged.
     const hubPanel = _hub ? `<section data-panel="hub" data-door="home">${hubHtml}</section>` : "";
-    const back = _hub ? backToHub() : "";
+    // Final review I6: showDoor() reveals EVERY panel of a door at once, so a
+    // control rendered per panel repeats down the page. Account stacked nine
+    // identical "Back to hub" buttons. Under the shell the control belongs to the
+    // door, so exactly one panel carries it: the first of that door's panels in
+    // DOM order, which is the order these interpolations are evaluated in. Home is
+    // where the control goes, so Home carries none. Without the shell every panel
+    // is revealed alone and keeps its own control, unchanged.
+    const _doorHasBack = {};
+    const _back = (panel) => {
+      if (!_hub) return "";
+      if (!_doors) return backToHub();
+      const door = window.PortalShell.doorForPanel(panel);
+      if (!door || door === "home" || _doorHasBack[door]) return "";
+      _doorHasBack[door] = true;
+      return backToHome();
+    };
     html = `${tabbar}${_doors ? `<div class="portal-chrome portal-chrome-top">${partsFor("chrome-top")}</div>` : ""}${hubPanel}
-      <section data-panel="current"${_hub ? " hidden" : ""} data-door="scans">${back}${html}${_doors ? "" : legacyCurrentHtml()}</section>
-      <section data-panel="history" hidden data-door="scans">${back}${historyHtml}</section>
-      <section data-panel="orders" hidden data-door="billing">${back}${ordersHtml}</section>
-      <section data-panel="intake" hidden data-door="account">${back}<div class="card" id="portal-intake-card"><div id="portal-intake-host"></div></div></section>${_hub ? `
-      <section data-panel="ask" hidden data-door="learn">${back}${_askHtml}</section>
-      <section data-panel="voice" hidden data-door="scans">${back}${_voiceHtml}</section>
-      <section data-panel="records" hidden data-door="account">${back}${buildClinicalRecordHtml(v)}</section>
-      ${_hub && v.oasis && v.oasis.enabled ? (_oasisView = v, `<section data-panel="oasis" hidden data-door="remedies">${back}${buildOasisHtml(v)}</section>`) : ""}
-      ${_hub ? `<section data-panel="cart" hidden data-door="remedies">${back}${buildCartHtml()}</section>` : ""}
-      <section data-panel="shop" hidden data-door="solutions">${back}${buildShopHtml()}</section>
-      <section data-panel="calendar" hidden data-door="learn">${back}${_calendarHtml}</section>
-      <section data-panel="offers" hidden data-door="account">${back}${_offersHtml || buildOffersEmptyHtml(v)}</section>
-      <section data-panel="photo" hidden data-door="account">${back}${buildPhotoHtml()}</section>
-      <section data-panel="finder" hidden data-door="account">${back}${_finderHtml || '<div class="card quiet"><p class="muted">The practitioner finder is not enabled for your portal yet.</p></div>'}</section>
-      <section data-panel="bodymap" hidden data-door="learn">${back}${_bodymapHtml}</section>
-      <section data-panel="classes" hidden data-door="learn">${back}${_classesHtml}</section>
-      <section data-panel="account" hidden data-door="account">${back}${_accountHtml}</section>
-      <section data-panel="refer" hidden data-door="account">${back}${_referHtml || '<div class="card quiet"><p class="muted">Ambassador program details will appear here.</p></div>'}</section>
-      <section data-panel="referrals" hidden data-door="account">${back}${_referralsHtml}</section>
-      ${_hub && v.remedies && v.remedies.enabled ? `<section id="remedies-panel" data-panel="remedies" hidden data-door="remedies">${back}${buildRemediesHtml(v)}</section>` : ""}
-      <section data-panel="scan-report" hidden data-door="scans">${back}${_doors ? partsFor("scans") : ""}</section>
-      <section data-panel="billing-detail" hidden data-door="billing">${back}${_doors ? partsFor("billing") : ""}</section>
-      <section data-panel="remedy-detail" hidden data-door="remedies">${back}${_doors ? partsFor("remedies") : ""}</section>
-      <section data-panel="solutions-detail" hidden data-door="solutions">${back}${_doors ? partsFor("solutions") : ""}</section>
-      <section data-panel="account-detail" hidden data-door="account">${back}${_doors ? partsFor("account") : ""}</section>
-      <section data-panel="learn-detail" hidden data-door="learn">${back}${_doors ? partsFor("learn") : ""}</section>
+      <section data-panel="current"${_hub ? " hidden" : ""} data-door="scans">${_back("current")}${html}${_doors ? "" : legacyCurrentHtml()}</section>
+      <section data-panel="history" hidden data-door="scans">${_back("history")}${historyHtml}</section>
+      <section data-panel="orders" hidden data-door="billing">${_back("orders")}${ordersHtml}</section>
+      <section data-panel="intake" hidden data-door="account">${_back("intake")}<div class="card" id="portal-intake-card"><div id="portal-intake-host"></div></div></section>${_hub ? `
+      <section data-panel="ask" hidden data-door="learn">${_back("ask")}${_askHtml}</section>
+      <section data-panel="voice" hidden data-door="scans">${_back("voice")}${_voiceHtml}</section>
+      <section data-panel="records" hidden data-door="account">${_back("records")}${buildClinicalRecordHtml(v)}</section>
+      ${_hub && v.oasis && v.oasis.enabled ? (_oasisView = v, `<section data-panel="oasis" hidden data-door="remedies">${_back("oasis")}${buildOasisHtml(v)}</section>`) : ""}
+      ${_hub ? `<section data-panel="cart" hidden data-door="remedies">${_back("cart")}${buildCartHtml()}</section>` : ""}
+      <section data-panel="shop" hidden data-door="solutions">${_back("shop")}${buildShopHtml()}</section>
+      <section data-panel="calendar" hidden data-door="learn">${_back("calendar")}${_calendarHtml}</section>
+      <section data-panel="offers" hidden data-door="account">${_back("offers")}${_offersHtml || buildOffersEmptyHtml(v)}</section>
+      <section data-panel="photo" hidden data-door="account">${_back("photo")}${buildPhotoHtml()}</section>
+      <section data-panel="finder" hidden data-door="account">${_back("finder")}${_finderHtml || '<div class="card quiet"><p class="muted">The practitioner finder is not enabled for your portal yet.</p></div>'}</section>
+      <section data-panel="bodymap" hidden data-door="learn">${_back("bodymap")}${_bodymapHtml}</section>
+      <section data-panel="classes" hidden data-door="learn">${_back("classes")}${_classesHtml}</section>
+      <section data-panel="account" hidden data-door="account">${_back("account")}${_accountHtml}</section>
+      <section data-panel="refer" hidden data-door="account">${_back("refer")}${_referHtml || '<div class="card quiet"><p class="muted">Ambassador program details will appear here.</p></div>'}</section>
+      <section data-panel="referrals" hidden data-door="account">${_back("referrals")}${_referralsHtml}</section>
+      ${_hub && v.remedies && v.remedies.enabled ? `<section id="remedies-panel" data-panel="remedies" hidden data-door="remedies">${_back("remedies")}${buildRemediesHtml(v)}</section>` : ""}
+      <section data-panel="scan-report" hidden data-door="scans">${_back("scan-report")}${_doors ? partsFor("scans") : ""}</section>
+      <section data-panel="billing-detail" hidden data-door="billing">${_back("billing-detail")}${_doors ? partsFor("billing") : ""}</section>
+      <section data-panel="remedy-detail" hidden data-door="remedies">${_back("remedy-detail")}${_doors ? partsFor("remedies") : ""}</section>
+      <section data-panel="solutions-detail" hidden data-door="solutions">${_back("solutions-detail")}${_doors ? partsFor("solutions") : ""}</section>
+      <section data-panel="account-detail" hidden data-door="account">${_back("account-detail")}${_doors ? partsFor("account") : ""}</section>
+      <section data-panel="learn-detail" hidden data-door="learn">${_back("learn-detail")}${_doors ? partsFor("learn") : ""}</section>
       ${_doors ? `<div class="portal-chrome portal-chrome-bottom">${partsFor("chrome-bottom")}</div>` : ""}` : ""}`;
   } else {
     // The onboarding checklist is available independently of the hub and scan
