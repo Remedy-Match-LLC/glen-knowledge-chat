@@ -673,7 +673,14 @@ def build_rows(practitioners: List[dict], activity: dict) -> List[dict]:
             "wallet_balance_cents": int(p.get("wallet_balance_cents") or 0),
             "wholesale_access": p.get("wholesale_unlocked_at") is not None,
             "application_status": p.get("application_status"),
-            "finder_listed": bool(p.get("show_contact")),
+            # `show_contact` governs whether the email and phone are exposed,
+            # NOT whether the row appears in the directory at all. It was called
+            # finder_listed, which now collides with the duplicate audit's field
+            # of that name meaning real listing visibility
+            # (removal_requested/lat/duplicate_of). Two fields, one name, two
+            # meanings, on the same subject: reading the wrong one while
+            # deciding which duplicate to hide would retire a live listing.
+            "contact_shown": bool(p.get("show_contact")),
             "city": p.get("city"),
             "state": p.get("state"),
             "country": p.get("country") or "US",
