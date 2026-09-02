@@ -871,6 +871,22 @@ async function addClinicalItem(){
  if(!label)return;
  var j=await post('/author/__TID__/clinical-items',{action:'add',label:label});
  if(j.ok)location.reload()}
+async function addClinicalRemedy(btn){
+ var row=btn.closest('.clinical-item'),input=row.querySelector('.clinical-custom-remedy');
+ var remedy=(input.value||'').trim();if(!remedy)return;
+ var j=await post('/author/__TID__/clinical-items/remedies',{action:'add',label:row.dataset.label,remedy:remedy});
+ if(j.ok)location.reload();else alert(j.error||'Could not add remedy')}
+async function deleteClinicalRemedy(btn){
+ var row=btn.closest('.clinical-item'),remedy=btn.dataset.remedy;
+ if(!confirm('Delete "'+remedy+'" from the remembered remedies for '+row.dataset.label+'?'))return;
+ var j=await post('/author/__TID__/clinical-items/remedies',{action:'delete',label:row.dataset.label,remedy:remedy});
+ if(j.ok)location.reload();else alert(j.error||'Could not delete remedy')}
+async function loadClinicalCatalog(){
+ var list=document.getElementById('clinicalCatalog');if(!list)return;
+ try{var j=await (await fetch('/author/__TID__/clinical-catalog')).json();
+  list.innerHTML=(j.items||[]).map(function(x){return '<option value="'+_esc(x.label)+'">'+x.remedy_count+' remedies</option>'}).join('')
+ }catch(e){}
+}
 async function removeClinicalItem(btn){
  var row=btn.closest('.clinical-item'),label=row&&row.dataset.label;if(!label)return;
  if(!confirm('Remove "'+label+'" from this Biofield checklist?'))return;
@@ -1362,7 +1378,9 @@ def render_clinical_checklist(items, layers=None):
         label = item.get("label") or ""
         common = "".join(
             f"<label><input class=clinical-remedy-choice type=checkbox value=\"{_e(name)}\""
-            f"{' checked' if name.lower() == (item.get('covered_by') or '').lower() else ''}> {_e(name)}</label>"
+            f"{' checked' if name.lower() == (item.get('covered_by') or '').lower() else ''}> {_e(name)} "
+            f"<button type=button class=clinical-remedy-delete data-remedy=\"{_e(name)}\" "
+            f"onclick=deleteClinicalRemedy(this) title='Delete remembered remedy'>&times;</button></label>"
             for name in item.get("common_remedies") or []
         ) or "<span class=clinical-open>No common remedies recorded yet</span>"
         selected_layer = item.get("layer")
@@ -1380,7 +1398,8 @@ def render_clinical_checklist(items, layers=None):
                  f"{' checked' if done else ''} onchange=toggleClinicalItem(this)>"
                  f"<span class=clinical-label>{_e(label)}</span>{remedy}"
                  f"<div class=clinical-balance><div class=clinical-common>{common}</div>"
-                 f"<input class=clinical-custom-remedy placeholder='Add remedy…'>"
+                 f"<div class=clinical-remedy-add><input class=clinical-custom-remedy list=catalog placeholder='Add remedy…'>"
+                 f"<button type=button class='btn ghost' onclick=addClinicalRemedy(this)>+ Remedy</button></div>"
                  f"<label class=clinical-layer-label>Assign to layer"
                  f"<select class=clinical-layer aria-label='Layer for {_e(label)}'>{options}</select></label>"
                  "<button class='btn ghost' onclick=balanceClinicalItem(this)>Add to layer</button></div>"
@@ -1403,6 +1422,8 @@ def render_clinical_checklist(items, layers=None):
             ".clinical-balance{grid-column:3;display:grid;grid-template-columns:minmax(160px,1fr) minmax(260px,1.25fr) auto;gap:8px;margin-top:9px;align-items:end}"
             ".clinical-common{grid-column:1/-1;display:flex;flex-wrap:wrap;gap:5px 12px;font-size:11px;color:var(--muted)}"
             ".clinical-common label{white-space:nowrap}.clinical-common input{width:auto;margin:0 3px 0 0}"
+            ".clinical-remedy-delete{border:0;background:transparent;color:var(--muted);font-size:16px;cursor:pointer;padding:0 2px}"
+            ".clinical-remedy-delete:hover{color:#ef8d8d}.clinical-remedy-add{display:flex;gap:5px}.clinical-remedy-add .btn{white-space:nowrap}"
             ".clinical-balance input,.clinical-balance select{margin:0;min-width:0;padding:9px}.clinical-layer-label{font-size:11px;font-weight:700;color:var(--muted)}"
             ".clinical-layer-label select{display:block;width:100%;margin-top:3px;color:var(--text);background:var(--card);border:1px solid var(--accent)}"
             ".clinical-balance .btn{padding:9px 12px}"
@@ -1416,8 +1437,9 @@ def render_clinical_checklist(items, layers=None):
             f"<div class=clinical-count>{checked} of {len(items)} covered"
             "<span id=clinicalOrderStat style='margin-left:8px'></span></div></div>"
             f"<div class=clinical-grid>{rows}</div>"
-            "<div class=clinical-add><input id=clinicalNew placeholder='Add symptom or condition…' "
+            "<div class=clinical-add><input id=clinicalNew list=clinicalCatalog autocomplete=off placeholder='Search or add symptom or condition…' "
             "onkeydown=\"if(event.key==='Enter'){event.preventDefault();addClinicalItem()}\">"
+            "<datalist id=clinicalCatalog></datalist>"
             "<button class='btn ghost' onclick=addClinicalItem()>+ Add item</button></div></section>")
 
 
@@ -1538,7 +1560,7 @@ def render_author_html(report, depth_values=None, transcript="", covered_by_laye
                  + render_clinical_checklist(clinical_checklist, report.get("layers") or [])
                  + chain + session + narrative_section
                  + _AUTHOR_JS.replace("__TID__", tid)
-                 + "<script>loadClinicalProposals();initClinicalDrag()</script>")
+                 + "<script>loadClinicalProposals();loadClinicalCatalog();initClinicalDrag()</script>")
 
 
 def render_list_html(tests, q="", authored=None):

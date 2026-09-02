@@ -1,7 +1,10 @@
 import sqlite3
 
 from dashboard.biofield_authoring import add_chain_row, create_test
-from dashboard.biofield_clinical_checklist import balance_item, build, profile_labels
+from dashboard.biofield_clinical_checklist import (
+    balance_item, build, catalog_items, custom_remedies, forget_remedy,
+    profile_labels, remember_remedies,
+)
 from dashboard.biofield_report_html import render_author_html
 
 
@@ -77,6 +80,21 @@ def test_checklist_renders_directly_before_causal_chain():
     assert "Layer 1: Liver support" in html
     assert "Layer 2: Neurological support" in html
     assert "New layer 3" in html
+    assert "list=clinicalCatalog" in html
+    assert "loadClinicalCatalog()" in html
+    assert "+ Remedy" in html
+    assert "deleteClinicalRemedy" in html
+
+
+def test_custom_condition_remedies_are_remembered_searchable_and_deletable():
+    cx = sqlite3.connect(":memory:")
+    assert remember_remedies(cx, "Histamine intolerance", ["Aller Ease", "Liver Support"]) == 2
+    assert custom_remedies(cx, "histamine intolerance") == ["Aller Ease", "Liver Support"]
+    assert catalog_items(cx, "histamine") == [
+        {"label": "Histamine intolerance", "remedy_count": 2}
+    ]
+    assert forget_remedy(cx, "Histamine intolerance", "Aller Ease") is True
+    assert custom_remedies(cx, "Histamine intolerance") == ["Liver Support"]
 
 
 def test_checklist_selects_current_layer_and_offers_first_new_layer():
@@ -106,6 +124,7 @@ def test_balance_item_adds_tail_head_and_multiple_remedies():
     assert result["added_remedies"] == ["Neuroprotect", "Magnesium"]
     assert rows[0] == ("Chronic migraine", "Brain, Chronic migraine", "Existing")
     assert [row[2] for row in rows] == ["Existing", "Neuroprotect", "Magnesium"]
+    assert custom_remedies(cx, "Chronic migraine") == ["Magnesium", "Neuroprotect"]
 
 
 def test_balance_item_preserves_existing_head_and_deduplicates_tail_and_remedy():
