@@ -543,6 +543,25 @@
   .hub-grid-group { margin-top:1rem; }
   .hub-grid-group .glabel { font-size:.78rem; letter-spacing:.01em; text-transform:none; color:var(--muted); font-weight:700; margin:.1rem 0 .5rem; }
   .hub-tiles { display:grid; grid-template-columns:repeat(3,1fr); gap:.7rem; }
+  /* Task 12a (portal-shell-ia): the Home door's thin landing page. Reuses
+     .hub-banner/.where/.eyebrow for the "where you are" block (same visual
+     identity as the retired grid's banner); everything below is new. */
+  .home-landing .home-progress { height:6px; border-radius:999px; background:var(--card2);
+    overflow:hidden; margin:.5rem 0 .3rem; max-width:20rem; }
+  .home-landing .home-progress span { display:block; height:100%; background:var(--brand); }
+  .home-landing .home-next { margin:.2rem 0 0; font-size:.9rem; color:var(--ink); }
+  .home-landing .home-settled { margin:.9rem 0 0; color:var(--muted); font-size:.92rem; }
+  .home-landing .home-steps { list-style:none; margin:.9rem 0 0; padding:0;
+    display:flex; flex-direction:column; gap:.4rem; }
+  .home-landing .home-step { display:flex; align-items:baseline; gap:.5rem; font-size:.92rem; }
+  .home-landing .home-step-mark { font-size:.72rem; font-weight:700; letter-spacing:.01em;
+    color:var(--muted); min-width:6.2rem; }
+  .home-landing .home-step.is-done .home-step-mark { color:var(--brand); }
+  .home-landing .home-step a { color:var(--ink); text-decoration:none; border-bottom:1px solid transparent; }
+  .home-landing .home-step a:hover,.home-landing .home-step a:focus-visible { color:var(--brand); border-bottom-color:var(--brand); }
+  .home-landing .home-item { margin-top:.6rem; padding:.6rem .75rem; background:var(--card2);
+    border:1px solid var(--line); border-radius:10px; font-size:.9rem; }
+  .home-landing .home-item a { color:var(--ink); font-weight:650; }
   /* Seven-door shell. Desktop first: the rail holds layout width and widens in
      place. Under 760px it leaves the flow entirely, because a rail that never
      leaves would cost a 375px phone roughly 44 of those pixels and the portal's
@@ -1353,6 +1372,39 @@ function oasisShowMode(mode){
 // return to the hub landing. Uses the hardened showTab (falls back safely).
 function backToHub(){
   return `<button type="button" class="hub-back" onclick="showTab('hub')">‹ Back to hub</button>`;
+}
+// Task 12a (portal-shell-ia): reshapes the existing portal payload into the
+// small view window.PortalShell.renderHome() needs. Adds nothing to the
+// payload -- every field read here already exists on d/v for a different card
+// (Orders & Invoices reads d.invoices; the Live Calendar card reads
+// v.calendar.events) -- this only re-shapes it for the thin Home-door landing.
+//
+// A report published since the client's last visit was left out: the portal
+// payload carries a report's scan_date (when the scan was taken) but no
+// publish timestamp, and no last-visited timestamp scoped to the report
+// itself, so there is nothing here to compare against without adding new
+// fields to the payload, which Task 12a's brief rules out.
+function buildHomeView(d, v){
+  const invoices = Array.isArray(d && d.invoices) ? d.invoices : [];
+  const unpaid_invoice = invoices.length
+    ? { amount_dollars: invoices[0].amount_dollars, link: invoices[0].link }
+    : null;
+  const events = ((v && v.calendar && v.calendar.events) || [])
+    .filter(e => e && e.type === "appointment" && e.start);
+  const now = Date.now(), sevenDaysMs = 7 * 24 * 60 * 60 * 1000;
+  let appointment = null, soonest = Infinity;
+  events.forEach(e => {
+    const t = new Date(e.start).getTime();
+    if (Number.isNaN(t) || t < now || t - now > sevenDaysMs) return;
+    if (t < soonest) { soonest = t; appointment = { title: e.title || "Appointment", when: homeDateFmt(e.start) }; }
+  });
+  return { journey: (v && v.journey) || {}, unpaid_invoice, appointment };
+}
+function homeDateFmt(value){
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return String(value || "");
+  return new Intl.DateTimeFormat(undefined, {weekday:"short", month:"short", day:"numeric",
+    hour:"numeric", minute:"2-digit", timeZoneName:"short"}).format(d);
 }
 // Journey-grouped hub landing. Each tile routes via the existing showTab() to a
 // [data-panel] section. Groups encode the healing journey. Later phases add tiles.
@@ -3643,7 +3695,16 @@ function render(d, v){
     }
   }
   // Hub landing (flagged). Prepended above existing cards; panels below unchanged.
-  let hubHtml = (v && v.hub_enabled) ? buildHubHtml(d, v) : "";
+  // Task 12a (portal-shell-ia): once the shell is also on, the Home door swaps
+  // the tile grid for a thin landing page (window.PortalShell.renderHome).
+  // _PORTAL_HUB_ENABLED, the hub panel itself and buildHubHtml are untouched --
+  // the grid keeps rendering exactly as before whenever the shell is off.
+  let hubHtml = "";
+  if (v && v.hub_enabled) {
+    hubHtml = (v.shell_enabled && window.PortalShell && typeof window.PortalShell.renderHome === "function")
+      ? window.PortalShell.renderHome(buildHomeView(d, v))
+      : buildHubHtml(d, v);
+  }
   const recSections = (_recoPayload && Array.isArray(_recoPayload.sections)) ? _recoPayload.sections : [];
   // Premium element backdrop: key the Glendalf scene off the member's deficient
   // element (null when not a paid member / not yet computed -> plain portal).

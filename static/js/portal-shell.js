@@ -163,12 +163,108 @@ function routeIntent(text) {
   return null;
 }
 
+// Task 12a (portal-shell-ia): the Home door's thin landing page. Pure and
+// DOM-free like the rest of this module, so it renders identically whether
+// called from the browser (static/client-portal.html, once the shell is on)
+// or from node under test. It replaces the old tile grid (buildHubHtml, still
+// in static/client-portal.html and still rendered when the shell is off) with
+// a where-you-are banner, the step list only while the current phase is
+// unfinished, and time-sensitive items only, in that order and nothing else.
+//
+// `view` shape (every field optional, a missing one renders nothing):
+//   view.journey = the dashboard/portal_onboarding.build_status() payload
+//     (v.journey on the page): { phases: [{ key, title, steps: [{key,
+//     label, done, in_progress, href}] }] }
+//   view.unpaid_invoice = { amount_dollars, link } -- the client's own single
+//     unpaid, portal-published invoice, if there is one
+//   view.appointment = { title, when } -- a booked appointment already known
+//     to fall within the next seven days, pre-formatted by the caller (this
+//     module does no date math, matching the rest of portal-shell.js)
+//
+// The current phase is the first phase carrying any step with done !== true.
+// If every phase is fully done, the last phase is shown as "where you are" so
+// a settled client still sees which phase they finished, just as one line
+// instead of an all-ticked checklist.
+function _homeCurrentPhase(phases) {
+  for (var i = 0; i < phases.length; i++) {
+    var steps = Array.isArray(phases[i].steps) ? phases[i].steps : [];
+    for (var j = 0; j < steps.length; j++) {
+      if (!steps[j].done) return { phase: phases[i], unfinished: true };
+    }
+  }
+  return phases.length ? { phase: phases[phases.length - 1], unfinished: false } : null;
+}
+
+function renderHome(view) {
+  view = view || {};
+  var journey = view.journey || {};
+  var phases = Array.isArray(journey.phases) ? journey.phases : [];
+  var current = _homeCurrentPhase(phases);
+  // No journey data at all (a failed/empty build_status) -- render nothing
+  // rather than guess at a phase that was never computed.
+  if (!current) return '<div class="portal-hub home-landing"></div>';
+
+  var phase = current.phase;
+  var steps = Array.isArray(phase.steps) ? phase.steps : [];
+  var total = steps.length;
+  var doneCount = steps.filter(function (s) { return !!s.done; }).length;
+  var percent = total ? Math.round(100 * doneCount / total) : 0;
+  var nextStep = null;
+  for (var i = 0; i < steps.length; i++) {
+    if (!steps[i].done) { nextStep = steps[i]; break; }
+  }
+
+  var progressHtml = total
+    ? '<div class="home-progress" role="progressbar" aria-label="' + escapeHtml(phase.title) +
+      ' progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="' + escapeHtml(percent) +
+      '"><span style="width:' + escapeHtml(percent) + '%"></span></div>'
+    : '';
+  var nextHtml = nextStep
+    ? '<p class="home-next">Next, ' + escapeHtml(nextStep.label) + '.</p>'
+    : '';
+
+  var banner = '<div class="hub-banner"><div class="where">' +
+    '<div class="eyebrow">Where you are</div>' +
+    '<h2>' + escapeHtml(phase.title) + '</h2>' +
+    progressHtml + nextHtml +
+    '</div></div>';
+
+  var stepsHtml = '';
+  if (current.unfinished && total) {
+    stepsHtml = '<ul class="home-steps">' + steps.map(function (s) {
+      var state = s.done ? 'is-done' : (s.in_progress ? 'is-progress' : 'is-open');
+      var mark = s.done ? 'Done' : (s.in_progress ? 'In progress' : 'Not started yet');
+      var label = escapeHtml(s.label);
+      var text = s.href ? '<a href="' + escapeHtml(s.href) + '">' + label + '</a>' : label;
+      return '<li class="home-step ' + state + '"><span class="home-step-mark">' +
+        escapeHtml(mark) + '</span> ' + text + '</li>';
+    }).join('') + '</ul>';
+  } else if (total) {
+    stepsHtml = '<p class="home-settled">You have completed this phase.</p>';
+  }
+
+  var itemsHtml = '';
+  if (view.unpaid_invoice && view.unpaid_invoice.amount_dollars != null) {
+    var invoiceText = 'Unpaid invoice, $' + escapeHtml(view.unpaid_invoice.amount_dollars) + '.';
+    itemsHtml += '<div class="home-item">' + (view.unpaid_invoice.link
+      ? '<a href="' + escapeHtml(view.unpaid_invoice.link) + '">' + invoiceText + '</a>'
+      : invoiceText) + '</div>';
+  }
+  if (view.appointment && view.appointment.title) {
+    var apptText = escapeHtml(view.appointment.title) +
+      (view.appointment.when ? ', ' + escapeHtml(view.appointment.when) + '.' : '.');
+    itemsHtml += '<div class="home-item">' + apptText + '</div>';
+  }
+
+  return '<div class="portal-hub home-landing">' + banner + stepsHtml + itemsHtml + '</div>';
+}
+
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
     DOORS: DOORS, panelsForDoor: panelsForDoor,
     doorForPanel: doorForPanel, allPanels: allPanels,
     renderRail: renderRail, renderPhoneHeader: renderPhoneHeader, renderComposer: renderComposer,
-    escapeHtml: escapeHtml, routeIntent: routeIntent
+    escapeHtml: escapeHtml, routeIntent: routeIntent, renderHome: renderHome
   };
 }
 if (typeof window !== 'undefined') {
@@ -176,6 +272,6 @@ if (typeof window !== 'undefined') {
     DOORS: DOORS, panelsForDoor: panelsForDoor,
     doorForPanel: doorForPanel, allPanels: allPanels,
     renderRail: renderRail, renderPhoneHeader: renderPhoneHeader, renderComposer: renderComposer,
-    escapeHtml: escapeHtml, routeIntent: routeIntent
+    escapeHtml: escapeHtml, routeIntent: routeIntent, renderHome: renderHome
   };
 }

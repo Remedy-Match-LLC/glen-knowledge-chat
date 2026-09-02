@@ -201,4 +201,76 @@ assert.strictEqual(routeIntent('I lost my card at the clinic'), null);
 assert.strictEqual(routeIntent('my card was charged twice'), 'billing');
 assert.strictEqual(routeIntent('I was charged for something I did not order'), 'billing');
 
+// Task 12a (portal-shell-ia): the Home door's thin landing page. renderHome()
+// replaces the tile grid on Home once the shell is on; buildHubHtml keeps
+// rendering the grid when the shell is off, untouched by this task.
+const { renderHome } = require('../static/js/portal-shell.js');
+
+const midSetup = renderHome({
+  journey: { phases: [
+    { key: 'be_read', title: 'Discover What Your Body Is Saying', steps: [
+      { key: 'voice', label: 'Voice analysis', done: true },
+      { key: 'intake', label: 'Intake', done: false, in_progress: true },
+      { key: 'photo', label: 'Photo', done: false },
+      { key: 'biofield', label: 'Biofield Analysis', done: false }
+    ]}
+  ]},
+  unpaid_invoice: { amount_dollars: '200.00', link: 'https://example.com/invoice/BA-1' }
+});
+assert.ok(midSetup.indexOf('Discover What Your Body Is Saying') !== -1,
+  'mid-setup home must show the current phase title');
+assert.ok(midSetup.indexOf('$200.00') !== -1,
+  'an unpaid invoice must surface on home');
+assert.ok(midSetup.indexOf('Intake') !== -1,
+  'mid-setup home must show the step list');
+assert.ok(midSetup.indexOf('Voice analysis') !== -1 && midSetup.indexOf('Photo') !== -1,
+  'mid-setup home must show every step in the current phase, not just the next one');
+
+// a settled client: everything done, nothing outstanding
+const settled = renderHome({
+  journey: { phases: [
+    { key: 'be_read', title: 'Discover What Your Body Is Saying', steps: [
+      { key: 'voice', label: 'Voice analysis', done: true },
+      { key: 'intake', label: 'Intake', done: true },
+      { key: 'photo', label: 'Photo', done: true },
+      { key: 'biofield', label: 'Biofield Analysis', done: true }
+    ]}
+  ]}
+});
+assert.ok(settled.indexOf('Discover What Your Body Is Saying') !== -1,
+  'a settled client still sees which phase they finished');
+assert.ok(settled.indexOf('$') === -1, 'no invoice line when nothing is owed');
+assert.ok(settled.indexOf('<ul') === -1 && settled.indexOf('Voice analysis') === -1,
+  'a settled client sees one line, not the all-ticked checklist');
+assert.ok(settled.length < midSetup.length, 'a settled client sees a shorter page');
+
+// an appointment inside the next seven days surfaces too (pre-resolved by the
+// caller into {title, when}; renderHome does no date math of its own)
+const withAppt = renderHome({
+  journey: { phases: [{ key: 'match', title: 'Match remedies', steps: [
+    { key: 'history', label: 'Match Remedies', done: false }
+  ]}]},
+  appointment: { title: 'Biofield Analysis Consultation', when: 'Thu, Sep 3, 10:00 AM HST' }
+});
+assert.ok(withAppt.indexOf('Biofield Analysis Consultation') !== -1,
+  'an appointment in the next seven days must surface on home');
+assert.ok(withAppt.indexOf('Thu, Sep 3') !== -1);
+
+// home never becomes a menu again
+assert.ok(settled.indexOf('hub-tile') === -1, 'home must not render tiles');
+assert.ok(midSetup.indexOf('hub-tile') === -1, 'home must not render tiles');
+
+// no em dashes, ever, in client-facing copy
+[midSetup, settled, withAppt].forEach(html => {
+  assert.ok(!/—|--/.test(html), 'no em dashes in home copy');
+});
+
+// an empty or partial payload renders nothing, never the word "undefined"
+assert.strictEqual(renderHome({}).indexOf('undefined'), -1,
+  'an empty payload must not leak undefined into the page');
+assert.strictEqual(renderHome({ journey: {} }).indexOf('undefined'), -1,
+  'a partial payload must not leak undefined into the page');
+assert.strictEqual(renderHome({}).indexOf('hub-tile'), -1);
+assert.strictEqual(renderHome({}).indexOf('$'), -1);
+
 console.log('test_portal_shell: ok');
