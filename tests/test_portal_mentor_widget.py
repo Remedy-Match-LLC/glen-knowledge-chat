@@ -45,7 +45,15 @@ def test_background_portal_never_speaks_or_listens_and_auto_guidance_is_visual_f
     assert "if(document.hidden)return;" in MENTOR
     assert 'document.addEventListener("visibilitychange"' in MENTOR
     assert 'window.addEventListener("pagehide",silenceHiddenMentor)' in MENTOR
-    assert "const wasOpen=!panel.hidden" in MENTOR
+    # Task 7 (portal-shell-ia) generalised "is the mentor open?" to "is the host the
+    # mentor is bound to visible?", because under the portal shell the host is the
+    # chat card, not the floating panel. The guarantee is unchanged and now covers
+    # both hosts, so the pin is widened rather than dropped: hostHidden() must still
+    # answer with panel.hidden for the floating panel, and the panel must still be
+    # opened (visually, before anything is spoken) when guidance arrives closed.
+    assert "const wasOpen=!hostHidden()" in MENTOR
+    assert "if(!h.card)return !!h.panel.hidden;" in MENTOR
+    assert "if(!h.card&&h.panel.hidden)openMentor(false)" in MENTOR
     assert "if(wasOpen&&!document.hidden)speak(text)" in MENTOR
 
 def test_widget_reuses_persistent_chat_and_supplies_page_context():

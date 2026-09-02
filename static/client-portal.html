@@ -423,6 +423,20 @@
   .mentor-send{border:0;border-radius:18px;padding:8px 13px;background:var(--btn-bg);color:var(--btn-fg);font-weight:700;cursor:pointer}
   .mentor-listening{animation:mentorPulse 1s ease-in-out infinite}@keyframes mentorPulse{50%{transform:scale(1.09);box-shadow:0 0 0 5px rgba(255,255,255,.2)}}
   @media(max-width:480px){.mentor-launcher{right:12px;bottom:12px;width:56px;height:56px}.mentor-panel{right:7px;bottom:76px;width:calc(100vw - 14px);max-height:calc(100vh - 90px)}}
+  /* Task 7 (portal-shell-ia): one chat surface under the shell. The floating
+     launcher and panel stay in the markup unconditionally, so a flag-off portal
+     is byte-for-byte the page it is today. They stop being an entry point only
+     once the shell mounts and adds body.has-shell, at which point the mentor's
+     voice controls are rendered into the card instead (see .chat-voice below). */
+  body.has-shell .mentor-launcher,body.has-shell .mentor-panel{display:none!important}
+  .chat-voice{display:flex;align-items:center;gap:8px;margin-top:.6rem}
+  .chat-voice-btn{width:34px;height:34px;border:1px solid var(--line);border-radius:50%;background:var(--card2);
+    color:var(--ink);cursor:pointer;display:grid;place-items:center;font-size:1rem;flex:0 0 auto;padding:0}
+  .chat-voice-btn.is-on{background:var(--brand);color:var(--btn-fg);border-color:var(--brand)}
+  .chat-voice-btn[hidden]{display:none}
+  .chat-voice-context{font-size:.72rem;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .chat-voice-opt{display:flex;align-items:center;gap:7px;margin-top:.45rem;font-size:.76rem;color:var(--muted)}
+  .chat-voice-opt[hidden]{display:none}
 
   /* ── Print / Save-as-PDF: a self-contained doc in #print-root. On screen it is
      hidden; when printing we hide everything ELSE so the PDF is ONLY this doc
@@ -3807,6 +3821,21 @@ function render(d, v){
 
   // "Ask Dr. Glen" concierge chat — promoted to the TOP of the portal (first card
   // below the hero) so it's the first thing the client sees. Always shown.
+  // Task 7 (portal-shell-ia): with the shell on, this card is the only chat
+  // surface, so the voice controls the floating panel used to own are rendered
+  // here. portal-mentor.js binds them to whichever host it finds. With the shell
+  // off this is the empty string and the card is exactly what it has always been.
+  // The predicate is deliberately the same one the shell mount below uses. If
+  // portal-shell.js failed to load, the mount never adds body.has-shell, the
+  // floating launcher is never hidden, and rendering these controls here would
+  // leave the client looking at a launcher with nothing wired to it.
+  const _chatVoice = (v && v.shell_enabled && window.PortalShell) ? `<div class="chat-voice" id="chatVoice">
+      <button type="button" class="chat-voice-btn" id="chatMic" aria-label="Use microphone" aria-pressed="false" title="Microphone">🎙</button>
+      <button type="button" class="chat-voice-btn" id="chatSpeaker" aria-label="Toggle spoken replies" aria-pressed="true" title="Spoken replies">🔊</button>
+      <span class="chat-voice-context" id="chatContext">Your portal mentor</span>
+    </div>
+    <label class="chat-voice-opt"><input type="checkbox" id="chatAutoGuide"> Guide me automatically on each page</label>
+    <label class="chat-voice-opt" id="chatContinuousWrap" hidden><input type="checkbox" id="chatContinuous"> Continuous two-way conversation</label>` : "";
   const _askCard = `<div class="card" id="chatCard">
     <h2>Messages &amp; Order Help</h2>
     <p class="muted small" style="margin:.3rem 0 .7rem">Write here for help with products, orders, your healing path, or anything you need from Dr. Glen and the team.</p>
@@ -3814,7 +3843,7 @@ function render(d, v){
     <div class="chat-input-row">
       <input id="chatInput" type="text" placeholder="Ask about your scan or remedies..." autocomplete="off">
       <button class="btn" id="chatSend">Send</button>
-    </div>
+    </div>${_chatVoice}
   </div>`;
   if (_hub) { _askHtml += _askCard; } else { html += _askCard; }
 
@@ -5132,6 +5161,11 @@ function render(d, v){
   }
   repopulateChatHistory();
   if(typeof window.syncMentorHistory === "function") window.syncMentorHistory();
+  // Task 7 (portal-shell-ia): render() rebuilds the card and its voice controls,
+  // so the mentor has to re-find them. Only the shell renders that cluster, so
+  // with the flag off this call is never made and the mentor stays on the
+  // floating panel it has always used.
+  if(v && v.shell_enabled && typeof window.mentorAttachHost === "function") window.mentorAttachHost();
 
   const btn = document.getElementById("reorderBtn");
   if(btn) btn.addEventListener("click", reorder);
@@ -7898,8 +7932,18 @@ async function sendChatMessage(){
               completed = true;
               chatHistory.push({role: "user", content: query});
               chatHistory.push({role: "assistant", content: assistantText});
-              if(assistantBubble && assistantText && window.TTS){
-                window.TTS.attachReply(assistantBubble, assistantText);
+              // Task 7 (portal-shell-ia): under the shell the card is the only
+              // chat surface, so the mentor's speaker toggle and its continuous
+              // conversation decide how a reply is spoken and when the mic comes
+              // back. PortalVoice.armed() is true only once the card host is
+              // bound, which only the shell does, so with the flag off this is
+              // the same TTS call it has always been.
+              if(assistantBubble && assistantText){
+                if(window.PortalVoice && window.PortalVoice.armed()){
+                  window.PortalVoice.onReply(assistantBubble, assistantText);
+                } else if(window.TTS){
+                  window.TTS.attachReply(assistantBubble, assistantText);
+                }
               }
             }
           } catch(parseErr){ /* skip malformed SSE lines */ }

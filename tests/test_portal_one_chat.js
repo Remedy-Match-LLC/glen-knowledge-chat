@@ -1,0 +1,345 @@
+// tests/test_portal_one_chat.js
+// Run: node tests/test_portal_one_chat.js
+//
+// Task 7 (portal-shell-ia): with the shell on, the portal has exactly one chat
+// surface, the "Messages & Order Help" card. The floating launcher stops being an
+// entry point and the mentor's voice controls move onto the card, so nothing that
+// spoke before goes silent.
+//
+// The two renderers and the mentor module are EXECUTED here, not grepped. A source
+// regex passes on a commented-out implementation, and this plan has already had one
+// green test that asserted nothing. Only the CSS rule and the "is the markup still
+// unconditional" checks read source, because neither can be executed without a DOM.
+const assert = require('assert');
+const fs = require('fs');
+const path = require('path');
+const vm = require('vm');
+
+const ROOT = path.join(__dirname, '..');
+const page = fs.readFileSync(path.join(ROOT, 'static', 'client-portal.html'), 'utf8');
+const mentorSrc = fs.readFileSync(path.join(ROOT, 'static', 'portal-mentor.js'), 'utf8');
+const css = (page.match(/<style>[\s\S]*?<\/style>/g) || []).join('\n');
+
+// ---------------------------------------------------------------------------
+// A very small DOM, big enough to run the real code against.
+// ---------------------------------------------------------------------------
+function El(id, tag) {
+  const el = {
+    id: id || '', tagName: (tag || 'div').toUpperCase(),
+    hidden: false, checked: false, value: '', textContent: '', innerHTML: '',
+    className: '', children: [], listeners: {}, attrs: {}, parent: null,
+    dataset: {}, scrollTop: 0, scrollHeight: 0, offsetParent: {}, disabled: false,
+    classList: {
+      _s: new Set(),
+      add(c) { this._s.add(c); },
+      remove(c) { this._s.delete(c); },
+      contains(c) { return this._s.has(c); },
+      toggle(c, on) { if (on === undefined) on = !this._s.has(c); if (on) this._s.add(c); else this._s.delete(c); }
+    },
+    setAttribute(k, v) { this.attrs[k] = v; },
+    getAttribute(k) { return this.attrs[k]; },
+    addEventListener(ev, fn) { (this.listeners[ev] = this.listeners[ev] || []).push(fn); },
+    appendChild(c) { this.children.push(c); c.parent = this; return c; },
+    querySelectorAll() { return []; },
+    focus() {},
+    closest(sel) { let n = this; while (n) { if (n._sel === sel) return n; n = n.parent; } return null; }
+  };
+  return el;
+}
+
+function makeDoc(ids) {
+  const reg = {};
+  ids.forEach(function (id) { reg[id] = El(id); });
+  return {
+    reg: reg,
+    hidden: false,
+    getElementById(id) { return reg[id] || null; },
+    createElement(tag) { return El('', tag); },
+    querySelector() { return null; },
+    querySelectorAll() { return []; },
+    addEventListener() {}
+  };
+}
+
+const FLOATING = ['mentorLauncher', 'mentorPanel', 'mentorClose', 'mentorInput', 'mentorSend',
+  'mentorMsgs', 'mentorMic', 'mentorSpeaker', 'mentorAutoGuide', 'mentorContext',
+  'mentorContinuous', 'mentorContinuousWrap'];
+const CARD = ['chatMsgs', 'chatInput', 'chatSend', 'chatMic', 'chatSpeaker',
+  'chatAutoGuide', 'chatContext', 'chatContinuous', 'chatContinuousWrap'];
+
+// Runs the real portal-mentor.js against a document holding the given element ids.
+function runMentor(ids, opts) {
+  opts = opts || {};
+  const doc = makeDoc(ids);
+  doc.reg.mentorPanel && (doc.reg.mentorPanel.hidden = true);
+  const sandbox = {
+    console: console,
+    document: doc,
+    location: { hash: '' },
+    localStorage: { _v: {}, getItem(k) { return this._v[k] || null; }, setItem(k, v) { this._v[k] = v; } },
+    chatHistory: opts.chatHistory || [],
+    // run timers inline so behaviour is observable in one tick
+    setTimeout(fn) { fn(); return 0; },
+    clearTimeout() {},
+    addEventListener() {},
+    sendChatMessage: opts.sendChatMessage || undefined
+  };
+  sandbox.SpeechRecognition = function () {
+    this.start = function () {}; this.stop = function () {};
+    sandbox.__recognition = this;          // so the test can fire a transcript
+  };
+  vm.createContext(sandbox);
+  sandbox.window = sandbox;
+  vm.runInContext(mentorSrc, sandbox, { filename: 'portal-mentor.js' });
+  return { doc: doc, win: sandbox };
+}
+
+// ---------------------------------------------------------------------------
+// 1. Practitioner replies stay distinguishable in the surviving surface.
+// ---------------------------------------------------------------------------
+const repopSrc = /function repopulateChatHistory\(\)\{[\s\S]*?\n\}/.exec(page);
+assert.ok(repopSrc, 'repopulateChatHistory not found in the page');
+
+function renderThread(history) {
+  const msgs = El('chatMsgs');
+  const sandbox = {
+    chatHistory: history,
+    document: {
+      getElementById(id) { return id === 'chatMsgs' ? msgs : null; },
+      createElement(tag) { return El('', tag); }
+    }
+  };
+  vm.createContext(sandbox);
+  vm.runInContext(repopSrc[0] + '\nrepopulateChatHistory();', sandbox);
+  return msgs;
+}
+
+const thread = renderThread([
+  { role: 'client', author: '', content: 'Is the tincture safe with my magnesium?' },
+  { role: 'assistant', author: '', content: 'Here is what the research says.' },
+  { role: 'practitioner', author: 'Dr. Glen', content: 'Take it with food, and skip the evening dose.' }
+]);
+assert.strictEqual(thread.children.length, 3);
+assert.strictEqual(thread.children[0].className, 'chat-bubble user');
+assert.strictEqual(thread.children[1].className, 'chat-bubble assistant');
+assert.strictEqual(thread.children[2].className, 'chat-bubble practitioner',
+  'a practitioner reply must get its own class, not be collapsed into assistant');
+const byline = thread.children[2].children[0];
+assert.ok(byline, 'a practitioner reply must carry an author byline');
+assert.strictEqual(byline.className, 'chat-author');
+assert.strictEqual(byline.textContent, 'Dr. Glen',
+  'the byline must name the person who wrote the reply');
+// the AI reply has no byline to steal, and the client bubble never gets one
+assert.strictEqual(thread.children[1].children.length, 1);
+assert.strictEqual(thread.children[0].children.length, 1);
+
+// ...and the mentor must not paint over it. Its own renderer collapses every
+// non-user role into "assistant", which is the defect. On the card it must not run.
+{
+  const r = runMentor(FLOATING.concat(CARD), {
+    chatHistory: [{ role: 'practitioner', author: 'Dr. Glen', content: 'Take it with food.' }]
+  });
+  const cardMsgs = r.doc.reg.chatMsgs;
+  cardMsgs.innerHTML = 'SENTINEL';
+  cardMsgs.appendChild(El('kept'));
+  assert.strictEqual(typeof r.win.syncMentorHistory, 'function');
+  r.win.syncMentorHistory();
+  assert.strictEqual(cardMsgs.innerHTML, 'SENTINEL',
+    'syncMentorHistory must not wipe the card thread, which owns the practitioner byline');
+  assert.strictEqual(cardMsgs.children.length, 1,
+    'syncMentorHistory must not re-render the card thread without bylines');
+}
+
+// ---------------------------------------------------------------------------
+// 2. One entry point under the shell.
+// ---------------------------------------------------------------------------
+// (a) the mechanism: a CSS rule keyed off the body.has-shell class the mount block adds
+const hideRule = /body\.has-shell\s+\.mentor-launcher\s*,\s*body\.has-shell\s+\.mentor-panel\s*\{([^}]*)\}/.exec(css);
+assert.ok(hideRule, 'no body.has-shell rule hides the floating launcher and panel');
+assert.ok(/display\s*:\s*none/.test(hideRule[1]),
+  'the shell rule must actually hide the launcher and panel');
+assert.ok(page.indexOf("classList.add('has-shell')") !== -1,
+  'nothing adds the has-shell class the hide rule is keyed off');
+
+// (b) the behaviour: with the card cluster present the mentor binds the card, and
+// the floating launcher gets no click handler at all, so it is not an entry point
+// even for a client who somehow reaches it.
+{
+  const r = runMentor(FLOATING.concat(CARD));
+  assert.ok(!r.doc.reg.mentorLauncher.listeners.click,
+    'the floating launcher must not be wired as an entry point under the shell');
+  assert.ok(!r.doc.reg.mentorInput.listeners.keydown,
+    'the floating composer must not be wired under the shell');
+  assert.ok(r.doc.reg.chatMic.listeners.click && r.doc.reg.chatMic.listeners.click.length === 1,
+    'the card microphone must be wired under the shell');
+  assert.ok(!r.doc.reg.chatSend.listeners.click,
+    'the mentor must not bind the card Send button, the page already owns it');
+  assert.strictEqual(r.win.PortalVoice.armed(), true,
+    'PortalVoice must be armed once the card host is bound');
+}
+
+// ---------------------------------------------------------------------------
+// 3. Flag off changes nothing.
+// ---------------------------------------------------------------------------
+assert.strictEqual(page.split('id="mentorLauncher"').length - 1, 1,
+  'the floating launcher markup must still be in the page, exactly once');
+assert.strictEqual(page.split('id="mentorPanel"').length - 1, 1,
+  'the floating panel markup must still be in the page, exactly once');
+// unconditional: it sits in the static body, ahead of every line of render() code
+assert.ok(page.indexOf('id="mentorLauncher"') < page.indexOf('function render(d, v)'),
+  'the launcher must be static body markup, not rendered conditionally');
+// and nothing hides it except the shell rule
+const launcherHides = css.split('}').filter(function (b) {
+  return /\.mentor-launcher/.test(b) && /display\s*:\s*none/.test(b);
+});
+assert.strictEqual(launcherHides.length, 1,
+  'exactly one rule may hide the floating launcher');
+assert.ok(/body\.has-shell/.test(launcherHides[0]),
+  'the launcher may only be hidden under the shell, never unconditionally');
+
+// behaviour with the flag off: no card cluster exists, so the mentor still owns
+// the floating panel exactly as it does in production today.
+{
+  const r = runMentor(FLOATING);
+  assert.ok(r.doc.reg.mentorLauncher.listeners.click,
+    'with the flag off the launcher must still open the mentor');
+  assert.ok(r.doc.reg.mentorSend.listeners.click,
+    'with the flag off the floating composer must still send');
+  assert.ok(r.doc.reg.mentorInput.listeners.keydown);
+  assert.strictEqual(r.win.PortalVoice.armed(), false,
+    'PortalVoice must stay disarmed with the flag off, so replies keep using TTS as before');
+
+  // and the floating mentor still opens, greets and closes the way it does in
+  // production today. This host was refactored, so drive it, do not assume it.
+  const panel = r.doc.reg.mentorPanel;
+  assert.strictEqual(panel.hidden, true, 'the panel starts closed');
+  r.doc.reg.mentorLauncher.listeners.click[0]();
+  assert.strictEqual(panel.hidden, false, 'the launcher must still open the floating panel');
+  assert.strictEqual(r.doc.reg.mentorLauncher.getAttribute('aria-expanded'), 'true');
+  const greeting = r.doc.reg.mentorMsgs.children[0];
+  assert.ok(greeting, 'the floating panel must still greet the client on open');
+  assert.strictEqual(greeting.className, 'mentor-bubble assistant',
+    'the floating panel keeps its own bubble class, not the card one');
+  r.doc.reg.mentorLauncher.listeners.click[0]();
+  assert.strictEqual(panel.hidden, true, 'the launcher must still close the floating panel');
+}
+
+// ---------------------------------------------------------------------------
+// 4. The voice controls have a home under the shell.
+// ---------------------------------------------------------------------------
+const tpl = /const _chatVoice = [\s\S]*?const _askCard = `[\s\S]*?`;/.exec(page);
+assert.ok(tpl, 'the ask card template was not found');
+const buildCard = new Function('v', 'window', tpl[0] + '\nreturn _askCard;');
+const SHELL_UP = { PortalShell: {} };
+
+const cardOn = buildCard({ shell_enabled: true }, SHELL_UP);
+const cardOff = buildCard({ shell_enabled: false }, SHELL_UP);
+// the flag alone is not enough: the shell mount, which is what hides the floating
+// launcher, is skipped when portal-shell.js failed to load. Rendering the card
+// controls then would leave the client with a launcher that no longer does anything.
+assert.strictEqual(buildCard({ shell_enabled: true }, {}), cardOff,
+  'the card controls must ride the same predicate as the shell mount');
+
+['chatMic', 'chatSpeaker', 'chatAutoGuide', 'chatContinuous', 'chatContinuousWrap'].forEach(function (id) {
+  assert.ok(cardOn.indexOf('id="' + id + '"') !== -1,
+    'the card is missing the ' + id + ' control under the shell');
+  assert.strictEqual(cardOff.indexOf('id="' + id + '"'), -1,
+    id + ' must not appear with the flag off');
+});
+// the cluster is inside the card, not floating next to it
+assert.ok(cardOn.indexOf('id="chatCard"') !== -1 && cardOn.trim().slice(-6) === '</div>');
+assert.ok(cardOn.indexOf('id="chatVoice"') > cardOn.indexOf('id="chatCard"'));
+// the card itself is unchanged with the flag off
+['chatCard', 'chatMsgs', 'chatInput', 'chatSend'].forEach(function (id) {
+  assert.ok(cardOff.indexOf('id="' + id + '"') !== -1, id + ' disappeared from the card');
+  assert.ok(cardOn.indexOf('id="' + id + '"') !== -1, id + ' disappeared from the card');
+});
+assert.strictEqual(cardOff, buildCard({}, SHELL_UP), 'a payload without the flag must render the legacy card');
+assert.strictEqual(cardOff.indexOf('chat-voice'), -1, 'no voice markup may leak with the flag off');
+// client-facing copy rules
+assert.ok(!/—|--/.test(cardOn), 'the voice cluster copy must not contain an em dash');
+assert.ok(!/patient/i.test(cardOn), 'client-facing copy says client, never patient');
+
+// the page has to hand the rebuilt card to the mentor after every render(), and the
+// card's sender has to route a finished reply through the mentor's voice controls.
+// Comment lines are stripped first: a comment naming the call would otherwise
+// satisfy an assertion about the call.
+const code = page.split('\n').filter(function (l) { return l.trim().slice(0, 2) !== '//'; }).join('\n');
+assert.ok(/v && v\.shell_enabled && typeof window\.mentorAttachHost === "function"/.test(code),
+  'render() must re-bind the mentor to the rebuilt card, and only under the shell');
+assert.ok(/window\.PortalVoice && window\.PortalVoice\.armed\(\)/.test(code),
+  'the card sender must route a finished reply through the mentor voice controls');
+
+// and the controls actually drive speech once bound.
+{
+  const r = runMentor(FLOATING.concat(CARD));
+  assert.strictEqual(r.doc.reg.chatMic.hidden, false,
+    'the card microphone must stay visible when the browser supports speech');
+  assert.ok(r.doc.reg.chatSpeaker.listeners.click, 'spoken replies need an off switch on the card');
+  assert.ok(r.doc.reg.chatContinuous.listeners.change, 'continuous conversation needs a control on the card');
+  assert.ok(r.doc.reg.chatAutoGuide.listeners.change, 'the automatic guide needs a control on the card');
+
+  // dictation lands in the card composer, the input the card's own sender reads
+  r.win.__recognition.onresult({ results: [[{ transcript: 'is the tincture safe with magnesium' }]] });
+  assert.strictEqual(r.doc.reg.chatInput.value, 'is the tincture safe with magnesium',
+    'the microphone must dictate into the card composer');
+  assert.strictEqual(r.doc.reg.mentorInput.value, '',
+    'dictation must not land in the hidden floating composer');
+
+  // spoken replies are on by default and the card speaker button turns them off
+  const spoken = [];
+  r.win.TTS = { attach: function (b, t) { spoken.push(['silent', t]); },
+                attachAndSpeak: function (b, t) { spoken.push(['spoken', t]); } };
+  r.win.PortalVoice.onReply(El('bubble'), 'Take it with food.');
+  assert.deepStrictEqual(spoken, [['spoken', 'Take it with food.']],
+    'a reply must still be spoken aloud under the shell');
+  r.doc.reg.chatSpeaker.listeners.click[0]();
+  r.win.PortalVoice.onReply(El('bubble'), 'Skip the evening dose.');
+  assert.deepStrictEqual(spoken[1], ['silent', 'Skip the evening dose.'],
+    'the card speaker button must be a real off switch for spoken replies');
+
+  // turning continuous conversation on says so in the card thread, not in the
+  // floating panel nobody can see any more
+  r.doc.reg.chatContinuous.checked = true;
+  r.doc.reg.chatContinuous.listeners.change[0]();
+  const notice = r.doc.reg.chatMsgs.children[r.doc.reg.chatMsgs.children.length - 1];
+  assert.ok(notice && notice.textContent.indexOf('Continuous conversation is on') === 0,
+    'the continuous conversation notice must land in the card thread');
+  assert.strictEqual(notice.className, 'chat-bubble assistant');
+  assert.strictEqual(r.doc.reg.mentorMsgs.children.length, 0,
+    'nothing may be written into the floating panel once the card is the host');
+}
+
+// ---------------------------------------------------------------------------
+// 5. window.mentorPageChanged still exists, and works on the card host.
+// ---------------------------------------------------------------------------
+assert.ok(page.indexOf('mentorPageChanged') !== -1, 'the routers no longer call mentorPageChanged');
+{
+  const r = runMentor(FLOATING);
+  assert.strictEqual(typeof r.win.mentorPageChanged, 'function',
+    'window.mentorPageChanged must survive: both showTab and showDoor call it');
+}
+{
+  const r = runMentor(FLOATING.concat(CARD));
+  assert.strictEqual(typeof r.win.mentorPageChanged, 'function');
+  // it re-reads the page context onto whichever host is bound
+  r.win.mentorPageChanged('cart');
+  assert.ok(/^Aware you’re viewing /.test(r.doc.reg.chatContext.textContent),
+    'the page context must be written onto the card, not the hidden panel');
+  assert.strictEqual(r.doc.reg.mentorContext.textContent, '',
+    'the hidden panel must not be the one being updated');
+
+  // with the automatic guide on, the guidance lands in the card thread and points
+  // the client at the card, not at a launcher that is no longer there.
+  r.doc.reg.chatAutoGuide.checked = true;
+  r.win.mentorPageChanged('orders');
+  const last = r.doc.reg.chatMsgs.children[r.doc.reg.chatMsgs.children.length - 1];
+  assert.ok(last, 'the automatic guide must have somewhere to speak on the card');
+  assert.strictEqual(last.className, 'chat-bubble assistant');
+  assert.ok(last.textContent.indexOf('your orders and invoices') !== -1);
+  assert.ok(last.textContent.indexOf('Ask me here') !== -1,
+    'the guide must not tell the client to open a launcher the shell has removed');
+  assert.ok(last.textContent.indexOf('Open me') === -1);
+}
+
+console.log('test_portal_one_chat: ok');
