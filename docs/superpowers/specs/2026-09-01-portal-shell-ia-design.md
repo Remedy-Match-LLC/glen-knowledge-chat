@@ -22,7 +22,11 @@ These are defects, not design opinions, and they are fixed as part of this work.
 
 **The concierge was demoted by a flag.** `static/client-portal.html` carries a comment stating the Ask Dr. Glen card was promoted to the top of the portal so it would be the first thing a client sees, always shown. The next line reads `if (_hub) { _askHtml += _askCard; } else { html += _askCard; }`. With the hub on, the card is behind a tile. The intent survived in the comment; the behaviour did not.
 
-**Two chats, one name.** The portal ships two Ask Dr. Glen surfaces. The floating launcher at bottom right is ungated, in the DOM for every client, and guides them through the current page. The panel chat persists to `portal_chat_messages`, is grounded by `portal_concierge.build_context` in the client's biofield findings, healing-path layers and owned remedies, and carries a `PRACTITIONER` role so Glen or Rae can answer into the same thread from the console. A client can ask the same question in both and only one answer reaches the practice.
+**Two surfaces onto one conversation.** The portal ships two Ask Dr. Glen surfaces: the floating launcher at bottom right, ungated and in the DOM for every client, and the panel chat card.
+
+An earlier draft of this spec claimed these were two separate chats and that only one reached the practice. **That was wrong, and it is retracted.** They already share everything that matters: `chatHistory` is declared once at `client-portal.html:7705` and `portal-mentor.js` mutates that same global, both POST to `/api/portal/<token>/chat`, the array is seeded from the persisted thread, and `window.syncMentorHistory` exists specifically to keep the floating panel showing the same messages. Everything a client types in either surface is persisted and reaches the practice.
+
+What is actually wrong is narrower: two entry points render one conversation into two containers with different affordances. The floating panel owns all the voice machinery (speech recognition, spoken replies, auto-guide, continuous conversation). The card owns practitioner-reply rendering, styling a `practitioner` role that the floating panel's renderer collapses into `assistant`, so Glen's own replies look like the AI's there. Adding a third entry point at the top of the page without consolidating would make that worse.
 
 ## Decisions
 
