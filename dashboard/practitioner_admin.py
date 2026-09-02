@@ -334,9 +334,18 @@ def unretire_practitioner(pid: str, role: str) -> dict:
 # invisible until it started winning email lookups. The scraped directory lives in
 # the same table and is where half of every duplicate pair comes from.
 
+# lat/lng and removal_requested are what decide PUBLIC visibility: the
+# v_practitioners_public view the finder reads filters on
+# `removal_requested = false AND lat IS NOT NULL`. Without them, choosing which
+# of two duplicate rows to retire is a guess that can silently drop a
+# practitioner out of the directory. The rest are completeness signals, so the
+# richer row can be kept rather than whichever sorts first.
 _DUP_COLS = ("id, name, email, portal_role, tier, modules_completed, "
              "wallet_balance_cents, wholesale_unlocked_at, application_status, "
-             "city, state, created_at")
+             "city, state, created_at, "
+             "lat, lng, removal_requested, source_org, source_url, "
+             "last_scraped_at, phone, website, credentials, address1, postal, "
+             "country, bio, photo_url, specialties, accepting_new_patients")
 
 
 def duplicate_email_rows() -> List[dict]:
@@ -350,6 +359,14 @@ def duplicate_email_rows() -> List[dict]:
             "  GROUP BY lower(trim(email)) HAVING COUNT(*) > 1)"
             " ORDER BY lower(trim(email)), created_at NULLS LAST, id")
         return [dict(r) for r in (cur.fetchall() or [])]
+
+
+def _iso(value):
+    """A timestamp as a string, or None. psycopg hands back datetime objects and
+    jsonify cannot serialise them; SQLite hands back strings already."""
+    if value in (None, ""):
+        return None
+    return value.isoformat() if hasattr(value, "isoformat") else str(value)
 
 
 def group_duplicates(rows: List[dict], activity: dict) -> dict:
@@ -378,16 +395,42 @@ def group_duplicates(rows: List[dict], activity: dict) -> dict:
             "state": r.get("state"),
             "orders": int(act.get("orders") or 0) + int(act.get("disp_count") or 0),
             "spent_cents": int(act.get("spent_cents") or 0),
+            # PUBLIC visibility, computed the same way v_practitioners_public
+            # filters. A row that is finder_listed is one a person can actually
+            # find; retiring it removes them from the directory.
+            "finder_listed": (not bool(r.get("removal_requested"))
+                              and r.get("lat") is not None),
+            "has_coords": r.get("lat") is not None,
+            "removal_requested": bool(r.get("removal_requested")),
+            "source_org": r.get("source_org"),
+            "source_url": r.get("source_url"),
+            "last_scraped_at": _iso(r.get("last_scraped_at")),
+            "created_at": _iso(r.get("created_at")),
+            # How much this row actually carries. Counted rather than returned in
+            # full so the payload stays readable at ~900 rows; the point is only
+            # to tell a fuller record from a thinner one.
+            "completeness": sum(
+                1 for _f in ("lat", "phone", "website", "credentials", "address1",
+                             "postal", "country", "city", "state", "bio",
+                             "photo_url", "specialties", "source_url")
+                if (r.get(_f) not in (None, "", []))),
         })
     out = []
     for email, members in sorted(groups.items()):
         portal = [m for m in members if m["portal_role"]]
+        listed = [m for m in members if m["finder_listed"]]
         out.append({"email": email, "count": len(members),
-                    "portal_count": len(portal), "rows": members})
+                    "portal_count": len(portal),
+                    # How many of these are actually visible in the directory.
+                    # 0 means retiring any of them changes nothing public; 2 or
+                    # more means the public sees this practitioner twice.
+                    "finder_listed_count": len(listed),
+                    "rows": members})
     return {
         "emails": len(out),
         "rows": sum(g["count"] for g in out),
         "portal_conflicts": sum(1 for g in out if g["portal_count"] > 1),
+        "finder_duplicates": sum(1 for g in out if g["finder_listed_count"] > 1),
         "groups": out,
     }
 
