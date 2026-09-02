@@ -3770,6 +3770,20 @@ function render(d, v){
   if (!first || /[@.]/.test(first)) first = "friend";
   const badges = (v && v.account && v.account.role_badges) || [];
   const _hub = !!(v && v.hub_enabled);
+  // Task 10 (portal-shell-ia): `current` and the six door panels are mutually
+  // exclusive at run time. Rendering both would put every card in the DOM twice,
+  // and the second copy is not inert: element ids would be duplicated, so a door
+  // copy's controls would bind to the `current` copy, and syncPortalHeaderCartCount
+  // counts `#curatedOrderItems .curated-order-item` across the whole document, so
+  // the header cart badge would show double. The door panels only exist under the
+  // hub, so cards only leave `current` when they have somewhere else to land; with
+  // the shell off, or the hub off, `current` keeps every fragment exactly as today.
+  // Declared HERE, above the first card, not next to the panel wrap: card builders
+  // that must differ under the shell (the membership merge) need to read `_doors`
+  // while they build, and computing it after them is how the merge shipped
+  // unconditionally (final review C1).
+  const _shell = !!(v && v.shell_enabled && window.PortalShell);
+  const _doors = _hub && _shell;
   let html = `
     <div class="hero">
       ${_hub ? "" : `<div class="client-photo-box" id="photo-section" style="display:flex;gap:14px;align-items:center;margin:0 0 14px">
@@ -4676,9 +4690,19 @@ function render(d, v){
   // client sees a single membership pitch instead of two stacked ones. Neither
   // gate implies the other, so each half keeps its own gate below; only the
   // wrapping card and heading are shared. Verbatim copy from both halves.
+  //
+  // Final review C1: the merge is SHELL-ONLY. `PORTAL_SHELL_ENABLED` is unset in
+  // production, and the governing invariant for this branch is that a flag-off page
+  // is byte-identical to what shipped before it. Merging unconditionally broke that:
+  // a client with both gates lost the "More savings ahead" heading, and a
+  // locked-rows-only client gained the `upsell-card` gradient, both today, on a flag
+  // that is supposed to be dark. So `_doors` (hub AND shell) selects the merged card,
+  // and every other case emits the two original cards verbatim. The two legacy arms
+  // below are copied character for character from the pre-branch source, indentation
+  // inside the template literals included, because that whitespace is page output.
   const hasLockedRows = Array.isArray(d.locked_rows) && d.locked_rows.length;
   const hasMembershipPitch = d.membership_upsell && !d.membership_upsell.already_member && (d.membership_upsell.savings_cents||0) > 0;
-  if(hasLockedRows || hasMembershipPitch){
+  if(_doors && (hasLockedRows || hasMembershipPitch)){
     let pitchHtml = "";
     if(hasMembershipPitch){
       const mu = d.membership_upsell;
@@ -4717,6 +4741,41 @@ function render(d, v){
       ${pitchHtml}
       ${lockedHtml}
       ${becomeBtn}</div>`);
+  }
+
+  if(!_doors && hasLockedRows){
+    let lrows = "";
+    d.locked_rows.forEach(it=>{
+      const months = it.tier === "12mo" ? "12" : "6";
+      lrows += `<div class="lockedrow">
+        <div class="lockedrow-top"><span class="nm">${esc(it.name||it.slug||"")}</span><span class="pr muted">${esc(money(it.regular_cents))}</span></div>
+        <p class="lockedcopy muted small">${ICON_LOCK}<span>Unlock member pricing on this when you commit to ${months} months.</span></p>
+      </div>`;
+    });
+    part("account", `<div class="card"><h2>More savings ahead</h2>
+      <div>${lrows}</div></div>`);
+  }
+
+  if(!_doors && hasMembershipPitch){
+    const mu = d.membership_upsell;
+    const times = mu.reorders_30d === 1 ? "once" : `${esc(mu.reorders_30d)} times`;
+    // Lead with the benefits, then reinforce with savings. NEVER claim the member
+    // is "ahead" off a single order: when the month's savings are below the fee,
+    // net_after_fee_cents is the part of the fee still UNCOVERED (a shortfall), not
+    // a gain. Only claim "covers your membership" when savings actually reach the
+    // fee (net_after_fee_cents <= 0). Savings recur every month they reorder.
+    const coversFee = (mu.net_after_fee_cents||0) <= 0;
+    const saveLine = coversFee
+      ? `<p class="muted small">You ordered ${times} in the last 30 days, and as a member those same remedies would have saved you <b>${esc(money(mu.savings_cents))}</b>, enough to cover your membership on remedies alone.</p>`
+      : `<p class="muted small">You ordered ${times} in the last 30 days, and as a member those same remedies would have saved you <b>${esc(money(mu.savings_cents))}</b>, every month you reorder.</p>`;
+    part("account", `<div class="card upsell-card"><h2>Everything your membership unlocks</h2>
+      <ul class="upsell-benefits small muted">
+        <li>Live Zoom Q&amp;A + group coaching</li>
+        <li>Expanded education</li>
+        <li>Member pricing on your repertoire</li>
+      </ul>
+      ${saveLine}
+      <a class="btn full" href="/prepay">Become a member</a></div>`);
   }
 
   // Order history — role-gated (clients) by the view assembler.
@@ -5003,16 +5062,7 @@ function render(d, v){
   }
   const _wrapPanels = d.scan_history_enabled || _hub;
   const _showOldTabs = d.scan_history_enabled && !_hub;
-  // Task 10 (portal-shell-ia): `current` and the six door panels are mutually
-  // exclusive at run time. Rendering both would put every card in the DOM twice,
-  // and the second copy is not inert: element ids would be duplicated, so a door
-  // copy's controls would bind to the `current` copy, and syncPortalHeaderCartCount
-  // counts `#curatedOrderItems .curated-order-item` across the whole document, so
-  // the header cart badge would show double. The door panels only exist under the
-  // hub, so cards only leave `current` when they have somewhere else to land; with
-  // the shell off, or the hub off, `current` keeps every fragment exactly as today.
-  const _shell = !!(v && v.shell_enabled && window.PortalShell);
-  const _doors = _hub && _shell;
+  // `_shell` / `_doors` are computed above, before the first card builder.
   if (_wrapPanels) {
     const historyHtml = buildScanHistoryHtml(d);
     const ordersHtml = _payerOrdersHtml + buildOrdersHtml(d);

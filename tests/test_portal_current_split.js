@@ -100,9 +100,11 @@ while ((m = re.exec(region)) !== null) {
 
 // The parse itself must be trustworthy before anything is concluded from it.
 // Task 11 (re-scoped) merged the "More savings ahead" and "Everything your
-// membership unlocks" pushes into one, so the count drops from 64 to 63.
-assert.strictEqual(pushes.length, 63,
-  'expected 63 pushes into the page body, parsed ' + pushes.length);
+// membership unlocks" pushes into one, but only under the shell (final review C1),
+// so all three pushes exist in source: the merged card plus the two originals,
+// which is 65, one more than the 64 this region held before the branch.
+assert.strictEqual(pushes.length, 65,
+  'expected 65 pushes into the page body, parsed ' + pushes.length);
 
 // ---------------------------------------------------------------------------
 // Card -> door. Each signature is markup or a call unique to one card. Several
@@ -163,6 +165,11 @@ const SIGS = [
   // signature only has to be unique to that one push, not to each other.
   ['account', 'class="card upsell-card"><h2>${heading}</h2>'],
   ['account', 'hasMembershipPitch ? "Everything your membership unlocks" : "More savings ahead"'],
+  // ...and the two originals, which is what a shell-off page still renders. They
+  // are separate pushes, so a future merge that forgets the `_doors` gate again
+  // removes these two signatures and this file goes red.
+  ['account', 'class="card"><h2>More savings ahead</h2>'],
+  ['account', 'class="card upsell-card"><h2>Everything your membership unlocks</h2>'],
   ['account', '<h2>Free Product Review</h2>'],
   ['account', 'class="card notifpref quiet"'],                 // notification preference
   ['account', '<h2 style="font-size:1rem">Sharing</h2>'],
@@ -221,25 +228,28 @@ assert.strictEqual(stillLegacy.length, 0,
 // ---------------------------------------------------------------------------
 const S = 'scans', B = 'billing', R = 'remedies', L = 'solutions', A = 'account', E = 'learn';
 const CT = 'chrome-top', CB = 'chrome-bottom';
-// Task 11 (re-scoped) merged the "More savings ahead" and "Everything your
-// membership unlocks" pushes into one `part("account", ...)` call, so this
-// sequence has one fewer account entry (and one fewer push overall) than before.
+// Task 11 (re-scoped) merges the "More savings ahead" and "Everything your
+// membership unlocks" pushes into one `part("account", ...)` call under the shell,
+// and keeps both originals for the shell-off page, so this sequence carries three
+// consecutive account entries where the pre-branch source carried two.
 const EXPECTED = [
   S, A, S, A, S, CT, null, null, null, null, null, null, null, S, S, S,
   B, B, B, B, B, B, B, S, S, S, S, S, S, A, S, R, R, R, R, R, S, L, R, R, R, L,
-  A, B, null, null, null, null, null, A, null, A, S, S, S, E, E, E, A, null, A, A, CB
+  A, A, A, B, null, null, null, null, null, A, null, A, S, S, S, E, E, E, A, null, A, A, CB
 ];
-assert.strictEqual(EXPECTED.length, 63, 'the expected sequence must cover every push');
+assert.strictEqual(EXPECTED.length, 65, 'the expected sequence must cover every push');
 assert.deepStrictEqual(pushes.map(function (p) { return p.door; }), EXPECTED,
   'every push must name the door that owns its card, in source order');
 
 // A card lands in exactly one door, and none vanished. 42 cards and a footer, from
-// 63 pushes: 49 that fed `current` on every path, plus the 14 legacy-only arms of
-// cards the hub already routes elsewhere, which have no door to land in.
+// 65 pushes: 51 that fed `current` on every path, plus the 14 legacy-only arms of
+// cards the hub already routes elsewhere, which have no door to land in. Two of the
+// 51 are the shell-off arms of the membership card, mutually exclusive at run time
+// with the merged one, so no client ever sees three.
 const counts = {};
 pushes.forEach(function (p) { counts[String(p.door)] = (counts[String(p.door)] || 0) + 1; });
 assert.deepStrictEqual(counts,
-  { scans: 17, billing: 8, remedies: 8, solutions: 2, account: 9, learn: 3,
+  { scans: 17, billing: 8, remedies: 8, solutions: 2, account: 11, learn: 3,
     'chrome-top': 1, 'chrome-bottom': 1, 'null': 14 });
 
 // ---------------------------------------------------------------------------

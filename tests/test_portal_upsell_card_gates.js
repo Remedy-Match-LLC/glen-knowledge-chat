@@ -2,9 +2,13 @@
 // Run: node tests/test_portal_upsell_card_gates.js
 //
 // Task 11 (re-scoped): "More savings ahead" (d.locked_rows) and "Everything your
-// membership unlocks" (d.membership_upsell) were merged into one
+// membership unlocks" (d.membership_upsell) are merged into one
 // `<div class="card upsell-card">`, emitted by a single `part("account", ...)`
-// call. The two payloads keep independent gates:
+// call, UNDER THE SHELL ONLY (`_doors`). With the shell flag off, which is what
+// production runs, the two original cards must still be emitted separately: that
+// is the flag-off invariant for this whole branch, and merging unconditionally
+// broke it (final review C1). Both modes are asserted below.
+// The two payloads keep independent gates:
 //   pitch:  d.membership_upsell && !d.membership_upsell.already_member &&
 //           (d.membership_upsell.savings_cents||0) > 0
 //   locked: Array.isArray(d.locked_rows) && d.locked_rows.length
@@ -40,16 +44,22 @@ const blockEnd = page.indexOf('// Order history', blockStart);
 assert.ok(blockEnd !== -1 && blockEnd > blockStart, 'end marker not found after Task 11 block');
 const block = page.slice(blockStart, blockEnd);
 
-// Sanity: make sure we captured the actual merged `if`, not an empty slice.
+// Sanity: make sure we captured the actual code, not an empty slice. An empty or
+// truncated slice is how a sibling test in this plan went silently unpinned.
+assert.ok(block.length > 1500, 'extracted block is implausibly short (' + block.length + ' chars): anchors moved');
 assert.ok(block.indexOf('part("account"') !== -1, 'extracted block has no part("account", ...) call');
+assert.ok(block.split('part("account"').length - 1 === 3,
+  'expected exactly 3 part("account", ...) calls: one merged (shell) and two legacy');
 assert.ok(block.indexOf('hasLockedRows') !== -1 && block.indexOf('hasMembershipPitch') !== -1,
   'extracted block is missing the expected gate variables');
+assert.ok(block.indexOf('_doors') !== -1,
+  'the merge must be gated on _doors; without that gate it changes the flag-off page');
 
 const fnSrc = `
 ${escLine}
 ${moneyLine}
 ${iconLockLine}
-function build(d){
+function build(d, _doors){
   const parts = [];
   const part = (door, html) => { parts.push({door: door, html: html}); };
   ${block}
@@ -77,8 +87,13 @@ function membershipUpsell(overrides) {
   }, overrides || {});
 }
 
-function run(d) {
-  const parts = build(d);
+function run(d) {                       // shell on: doors exist, cards merge
+  const parts = build(d, true);
+  const accountParts = parts.filter(p => p.door === "account");
+  return { parts, accountParts };
+}
+function runLegacy(d) {                 // shell off: production today
+  const parts = build(d, false);
   const accountParts = parts.filter(p => p.door === "account");
   return { parts, accountParts };
 }
@@ -193,4 +208,45 @@ function run(d) {
     'fee-covering wording must NOT appear when the fee is not covered');
 }
 
-console.log('test_portal_upsell_card_gates: ok (4 gate combinations + copy + order asserted)');
+// ---------------------------------------------------------------------------
+// 6. Shell OFF (production today): the merge must not happen. Both cards render
+//    separately, in their original order, with their original headings and their
+//    original classes. Asserted per gate combination, because each combination
+//    fails differently: both-gates loses the "More savings ahead" heading, and
+//    locked-only gains the upsell-card gradient.
+// ---------------------------------------------------------------------------
+{
+  const { accountParts } = runLegacy({ locked_rows: LOCKED_ROWS, membership_upsell: membershipUpsell() });
+  assert.strictEqual(accountParts.length, 2,
+    'shell off + both gates: TWO cards, not one merged card');
+  assert.ok(accountParts[0].html.indexOf('<div class="card"><h2>More savings ahead</h2>') === 0,
+    'shell off: the locked-rows card comes first, plain `card` class, original heading');
+  assert.ok(accountParts[0].html.indexOf('upsell-card') === -1,
+    'shell off: the locked-rows card must NOT carry the upsell-card gradient');
+  assert.ok(accountParts[1].html.indexOf('<div class="card upsell-card"><h2>Everything your membership unlocks</h2>') === 0,
+    'shell off: the membership pitch is its own card, second');
+  assert.ok(accountParts[1].html.indexOf('lockedrow') === -1,
+    'shell off: the pitch card must not absorb the locked rows');
+}
+{
+  const { accountParts } = runLegacy({
+    locked_rows: LOCKED_ROWS,
+    membership_upsell: membershipUpsell({ already_member: true })
+  });
+  assert.strictEqual(accountParts.length, 1, 'shell off + locked only: one card');
+  assert.ok(accountParts[0].html.indexOf('<div class="card"><h2>More savings ahead</h2>') === 0,
+    'shell off + locked only: plain card, not the upsell gradient');
+  assert.ok(accountParts[0].html.indexOf('upsell-card') === -1,
+    'shell off + locked only: no upsell-card class (that is the gradient regression)');
+}
+{
+  const { accountParts } = runLegacy({ membership_upsell: membershipUpsell() });
+  assert.strictEqual(accountParts.length, 1, 'shell off + pitch only: one card');
+  assert.ok(accountParts[0].html.indexOf('<div class="card upsell-card"><h2>Everything your membership unlocks</h2>') === 0);
+  assert.ok(accountParts[0].html.indexOf('Become a member') !== -1);
+}
+{
+  assert.strictEqual(runLegacy({}).parts.length, 0, 'shell off + neither gate: no card');
+}
+
+console.log('test_portal_upsell_card_gates: ok (4 gate combinations x shell on/off + copy + order asserted)');
