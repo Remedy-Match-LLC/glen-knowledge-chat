@@ -74,7 +74,7 @@ function endOfStatement(src, i) {
 // ---------------------------------------------------------------------------
 // Every push into the page body, in source order, with the door it names and the
 // slice of source it owns (from the end of the previous push). A card built by a
-// helper above its push -- `let s = ...; part("scans", s);` -- is found in that
+// helper above its push, as in `let s = ...; part("scans", s);`, is found in that
 // slice, which is why the window and not just the statement is captured.
 // ---------------------------------------------------------------------------
 const pushes = [];
