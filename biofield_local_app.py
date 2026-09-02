@@ -140,15 +140,6 @@ def _default_fetch_profile(email):
     try:
         key = os.environ["CONSOLE_SECRET"]
         base = os.environ.get("PUBLIC_BASE_URL", "https://illtowell.com").rstrip("/")
-        url = (f"{base}/api/people/recent-comms?key=" + urllib.parse.quote(key)
-               + "&q=" + urllib.parse.quote(email))
-        req = urllib.request.Request(url, headers={"X-Console-Key": key})
-        return _json.load(urllib.request.urlopen(req, timeout=20)) or {}
-    except Exception:
-        return {}
-    try:
-        key = os.environ["CONSOLE_SECRET"]
-        base = os.environ.get("PUBLIC_BASE_URL", "https://illtowell.com").rstrip("/")
         url = (f"{base}/api/console/clinical-profile/" + urllib.parse.quote(email, safe="")
                + "?key=" + urllib.parse.quote(key))
         req = urllib.request.Request(url, headers={"X-Console-Key": key})
