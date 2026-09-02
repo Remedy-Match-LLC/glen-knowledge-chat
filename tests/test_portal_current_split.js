@@ -159,7 +159,22 @@ const SIGS = [
   ['account', 'class="card notifpref quiet"'],                 // notification preference
   ['account', '<h2 style="font-size:1rem">Sharing</h2>'],
   ['account', '<h2 style="font-size:1rem">Family notifications</h2>'],
-  ['account', 'id="scanPrefsCard"']                            // Your preferences
+  ['account', 'id="scanPrefsCard"'],                           // Your preferences
+
+  // --- Learn & Ask ---
+  // Three hidden placeholders that initOnboardingCard/initCoachesCard/initPeerCard
+  // fill after the markup is attached. Learn & Ask owns onboarding, coaches and
+  // peer matching, so they get their own section there rather than being buried in
+  // a door that does not own them.
+  ['learn', 'id="onboarding-card"'],
+  ['learn', 'id="coaches-card"'],
+  ['learn', 'id="peer-card"'],
+
+  // --- page chrome, no door ---
+  // These belong to the page, not to any one door, so they render outside the door
+  // panels and appear on every door instead of only on one.
+  [null, 'class="card your-practitioner-band"'],               // practitioner co-brand band
+  [null, 'class="foot"']                                       // With aloha, Dr. Glen & Rae
 ];
 
 const doorOfSig = {};
@@ -177,5 +192,78 @@ SIGS.forEach(function (row) {
     ', expected ' + JSON.stringify(door));
   doorOfSig[sig] = owner.door;
 });
+
+
+// ---------------------------------------------------------------------------
+// Nothing may still feed the legacy builder. This is the assertion the plan named:
+// once it holds, `current` is rendered from the fragment list rather than from an
+// accumulator, so it cannot drift out of step with the doors.
+// ---------------------------------------------------------------------------
+const stillLegacy = pushes.filter(function (p) { return p.legacy; });
+assert.strictEqual(stillLegacy.length, 0,
+  stillLegacy.length + ' push(es) still append to `html`, first: ' +
+  (stillLegacy[0] ? stillLegacy[0].text.split('\n')[0] : ''));
+
+// ---------------------------------------------------------------------------
+// The whole ordered sequence, not just the cards that carry a signature. This is
+// what pins the five pushes of the options card together, and the order itself:
+// `current` renders the fragments in push order, so a reordered push is a
+// reordered legacy page.
+// ---------------------------------------------------------------------------
+const S = 'scans', B = 'billing', R = 'remedies', L = 'solutions', A = 'account', E = 'learn';
+const EXPECTED = [
+  S, A, S, A, S, null, null, null, null, null, null, null, null, S, S, S,
+  B, B, B, B, B, B, B, S, S, S, S, S, S, A, S, R, R, R, R, R, S, L, R, R, R, L,
+  A, A, B, null, null, null, null, null, A, null, A, S, S, S, E, E, E, A, null, A, A, null
+];
+assert.strictEqual(EXPECTED.length, 64, 'the expected sequence must cover every push');
+assert.deepStrictEqual(pushes.map(function (p) { return p.door; }), EXPECTED,
+  'every push must name the door that owns its card, in source order');
+
+// A card lands in exactly one door, and none vanished. 42 cards and a footer, from
+// 64 pushes: 50 that fed `current` on every path, plus the 14 legacy-only arms of
+// cards the hub already routes elsewhere, which have no door to land in.
+const counts = {};
+pushes.forEach(function (p) { counts[String(p.door)] = (counts[String(p.door)] || 0) + 1; });
+assert.deepStrictEqual(counts,
+  { scans: 17, billing: 8, remedies: 8, solutions: 2, account: 10, learn: 3, 'null': 16 });
+
+// ---------------------------------------------------------------------------
+// The doors are actually rendered, and each renders its own filter. A door whose
+// section rendered another door's fragments would satisfy every assertion above.
+// ---------------------------------------------------------------------------
+const SECTIONS = [
+  ['scan-report', 'scans'], ['billing-detail', 'billing'], ['remedy-detail', 'remedies'],
+  ['solutions-detail', 'solutions'], ['account-detail', 'account'], ['learn-detail', 'learn']
+];
+SECTIONS.forEach(function (row) {
+  const panel = row[0], door = row[1];
+  const tag = new RegExp('<section data-panel="' + panel + '"[^>]*>[^<]*').exec(page);
+  assert.ok(tag, 'no section renders panel ' + panel);
+  assert.ok(tag[0].indexOf('data-door="' + door + '"') !== -1,
+    panel + ' must declare data-door="' + door + '"');
+  assert.ok(tag[0].indexOf('partsFor("' + door + '")') !== -1,
+    panel + ' must render partsFor("' + door + '"), got: ' + tag[0]);
+});
+
+// Page chrome renders outside the door panels, so it is on every door, not one.
+assert.ok(/<div class="portal-chrome">\$\{partsFor\(null\)\}<\/div>/.test(page),
+  'page chrome must render partsFor(null) outside the door sections');
+
+// ---------------------------------------------------------------------------
+// The legacy panel still shows everything. Emptying it would blank the portal on
+// the unwrapped path, where it is the page's only content.
+// ---------------------------------------------------------------------------
+const currents = page.match(/<section data-panel="current"[^>]*>[^<]*/g) || [];
+assert.strictEqual(currents.length, 2, 'expected both `current` renderings');
+currents.forEach(function (c) {
+  assert.ok(c.indexOf('legacyCurrentHtml()') !== -1,
+    '`current` must render every fragment, got: ' + c);
+});
+// and on the unwrapped path it does so unconditionally: there are no door panels
+// there to render the cards instead.
+assert.ok(page.indexOf(
+  '<section data-panel="current" data-door="scans">${html}${legacyCurrentHtml()}</section>') !== -1,
+  'the unwrapped `current` must render the fragments with no flag in the way');
 
 console.log('test_portal_current_split: ok (' + SIGS.length + ' signatures placed)');

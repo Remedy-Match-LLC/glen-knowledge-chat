@@ -559,8 +559,11 @@ assert.ok(mountAssign, 'the shell-mount innerHTML assignment was not found');
 assert.ok(/window\.PortalShell\.renderComposer\(\)/.test(mountAssign[0]),
   'the shell mount must render the composer into #portalShellMount');
 
-// (d) flag off: the _hub routing line for the ask card is unchanged.
-assert.ok(page.indexOf('if (_hub) { _askHtml += _askCard; } else { html += _askCard; }') !== -1,
+// (d) flag off: the _hub routing for the ask card is unchanged. Under the hub the
+// card goes to _askHtml and its own panel; without it the card goes into the page
+// body. Task 10 changed how the page body is accumulated (an ordered fragment list
+// rather than `html +=`), so the literal moved with it, but the routing did not.
+assert.ok(page.indexOf('if (_hub) { _askHtml += _askCard; } else { part(null, _askCard); }') !== -1,
   'the _hub routing line for the ask card must be unchanged');
 
 // (e) no em dash anywhere in the composer copy
