@@ -328,22 +328,131 @@ def unretire_practitioner(pid: str, role: str) -> dict:
             "portal_role": role}
 
 
+# ── hide a duplicate listing from the finder ─────────────────────────────────────
+# Repeated scrapes gave the same person at the same place several rows, so the
+# public finder shows 386 practitioners more than once. `duplicate_of` names the
+# row this one duplicates, and v_practitioners_public filters it out.
+#
+# It is deliberately NOT removal_requested. That flag is the practitioner's own
+# opt-out (migrations/practitioners-farms.sql), and setting it for a listing
+# nobody asked to remove would make "who asked to be removed?" unanswerable on a
+# consent-adjacent field. Two facts, two columns.
+#
+# Nothing is deleted and nothing else on the row changes: the coordinates, the
+# email and the history all stay, which is what makes unmark_duplicate the exact
+# undo.
+
+_DUP_MARK_COLS = "id, name, email, portal_role, duplicate_of"
+
+
+class DuplicateMarkBlocked(Exception):
+    """Marking this row as a duplicate would hide something that is not one, or
+    would build a chain of hidden rows. Carries the reason in plain words so the
+    console shows the operator what is wrong instead of a silent no-op."""
+
+    def __init__(self, reason):
+        self.reason = str(reason)
+        super().__init__(self.reason)
+
+
+def _norm_email(value) -> str:
+    return (value or "").strip().lower()
+
+
+def duplicate_mark_blockers(row: dict, target: Optional[dict],
+                            survivor_dependents: int = 0) -> List[str]:
+    """Every reason this row must not be marked as a duplicate of `target`, in
+    plain words. Empty list means the mark is safe. Pure.
+
+    `target` is None when no row holds that id. `survivor_dependents` is how many
+    other rows already name THIS row as their survivor.
+    """
+    reasons: List[str] = []
+    if target is None:
+        reasons.append("there is no practitioner with that id to keep")
+        return reasons
+    if str(row.get("id")) == str(target.get("id")):
+        reasons.append("a row cannot be a duplicate of itself")
+        return reasons
+    a, b = _norm_email(row.get("email")), _norm_email(target.get("email"))
+    if not a or not b or a != b:
+        reasons.append("the two rows do not share an email address, so they are "
+                       "not known to be the same person")
+    if row.get("portal_role"):
+        reasons.append(f"this row is a portal account ({row.get('portal_role')}), "
+                       f"and a portal account is never hidden this way")
+    if target.get("duplicate_of"):
+        reasons.append("the row you are keeping is itself marked as a duplicate, "
+                       "which would leave this one pointing at a hidden listing")
+    if survivor_dependents:
+        reasons.append(f"{survivor_dependents} other row(s) are already kept as "
+                       f"duplicates of this one, so hiding it would hide them too")
+    return reasons
+
+
+def mark_duplicate_of(pid: str, target_id: str) -> dict:
+    """Hide `pid` from the public finder as a duplicate of `target_id`.
+
+    Refuses (DuplicateMarkBlocked) when the target does not exist, when the two
+    rows do not share an email, when the row being hidden is a portal account, or
+    when either end of the mark would build a chain of hidden rows. Returns the
+    surviving id so the console can offer the exact undo.
+    """
+    from db_supabase import supabase_cursor
+    with supabase_cursor() as cur:
+        row = _fetch_practitioner(cur, pid, _DUP_MARK_COLS)
+        try:
+            target = _fetch_practitioner(cur, target_id, _DUP_MARK_COLS)
+        except PractitionerNotFound:
+            target = None
+        dependents = 0
+        if target is not None:
+            cur.execute("SELECT count(*) AS n FROM practitioners WHERE duplicate_of=%s",
+                        (str(pid),))
+            got = cur.fetchone()
+            dependents = int((dict(got).get("n") if got else 0) or 0)
+        reasons = duplicate_mark_blockers(row, target, dependents)
+        if reasons:
+            raise DuplicateMarkBlocked(
+                f"Cannot hide {row.get('name') or row.get('email') or pid} as a "
+                f"duplicate: {'; '.join(reasons)}.")
+        cur.execute("UPDATE practitioners SET duplicate_of=%s, updated_at=now() "
+                    "WHERE id=%s", (str(target_id), str(pid)))
+    return {"id": str(pid), "name": row.get("name"), "email": row.get("email"),
+            "duplicate_of": str(target_id)}
+
+
+def unmark_duplicate(pid: str) -> dict:
+    """Put a hidden duplicate back in the finder. The exact undo for
+    mark_duplicate_of. Returns the id it used to point at so the operator can see
+    what was undone."""
+    from db_supabase import supabase_cursor
+    with supabase_cursor() as cur:
+        row = _fetch_practitioner(cur, pid, _DUP_MARK_COLS)
+        cur.execute("UPDATE practitioners SET duplicate_of=NULL, updated_at=now() "
+                    "WHERE id=%s", (str(pid),))
+    prev = row.get("duplicate_of")
+    return {"id": str(pid), "name": row.get("name"), "email": row.get("email"),
+            "was_duplicate_of": str(prev) if prev else None}
+
+
 # ── duplicate-email audit (read-only) ────────────────────────────────────────────
 # Deliberately NOT filtered to portal_role: list_practitioners (the console roster)
 # only ever shows portal rows, which is precisely why the "Remedy Match" stub was
 # invisible until it started winning email lookups. The scraped directory lives in
 # the same table and is where half of every duplicate pair comes from.
 
-# lat/lng and removal_requested are what decide PUBLIC visibility: the
-# v_practitioners_public view the finder reads filters on
-# `removal_requested = false AND lat IS NOT NULL`. Without them, choosing which
-# of two duplicate rows to retire is a guess that can silently drop a
-# practitioner out of the directory. The rest are completeness signals, so the
-# richer row can be kept rather than whichever sorts first.
+# lat/lng, removal_requested and duplicate_of are what decide PUBLIC visibility:
+# the v_practitioners_public view the finder reads filters on
+# `removal_requested = false AND lat IS NOT NULL AND duplicate_of IS NULL`.
+# Without them, choosing which of two duplicate rows to retire is a guess that
+# can silently drop a practitioner out of the directory. The rest are
+# completeness signals, so the richer row can be kept rather than whichever sorts
+# first.
 _DUP_COLS = ("id, name, email, portal_role, tier, modules_completed, "
              "wallet_balance_cents, wholesale_unlocked_at, application_status, "
              "city, state, created_at, "
-             "lat, lng, removal_requested, source_org, source_url, "
+             "lat, lng, removal_requested, duplicate_of, source_org, source_url, "
              "last_scraped_at, phone, website, credentials, address1, postal, "
              "country, bio, photo_url, specialties, accepting_new_patients")
 
@@ -397,11 +506,18 @@ def group_duplicates(rows: List[dict], activity: dict) -> dict:
             "spent_cents": int(act.get("spent_cents") or 0),
             # PUBLIC visibility, computed the same way v_practitioners_public
             # filters. A row that is finder_listed is one a person can actually
-            # find; retiring it removes them from the directory.
+            # find; retiring it removes them from the directory. duplicate_of is
+            # the third term of that filter: a row hidden as a duplicate keeps its
+            # coordinates, so coordinates alone would keep counting it as visible.
             "finder_listed": (not bool(r.get("removal_requested"))
-                              and r.get("lat") is not None),
+                              and r.get("lat") is not None
+                              and not r.get("duplicate_of")),
             "has_coords": r.get("lat") is not None,
             "removal_requested": bool(r.get("removal_requested")),
+            # Which row this one was folded into, so the audit shows the
+            # de-duplication that has already been done rather than a silent gap.
+            "duplicate_of": (str(r.get("duplicate_of"))
+                             if r.get("duplicate_of") else None),
             "source_org": r.get("source_org"),
             "source_url": r.get("source_url"),
             "last_scraped_at": _iso(r.get("last_scraped_at")),
