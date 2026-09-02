@@ -685,11 +685,14 @@ def stress_suggestions(cx, stress, limit=8):
 
 
 def ordered_chain(cx, tid):
-    """Chain rows in display order with two-zone numbering.
+    """Chain rows in display order, numbered by their stored layer.
 
     Rows with a Head or Tail but no remedy are retained as empty layer anchors.
-    Top zone = live + confirmed rows (manual order); bottom zone = unbalanced
-    scan rows (origin='scan' AND confirmed=0), trailing. Display `layer` = 1..k."""
+    Unbalanced scan rows (origin='scan' AND confirmed=0) still carry zone='bottom'
+    so the editor can style them as needs-review, but they are numbered in place
+    like any other layer.  They used to be forced to the end, which meant a layer
+    the practitioner deliberately added after them (stored layer 7, say) was
+    hoisted above them and renumbered to 1.  Display `layer` = 1..k."""
     cx.row_factory = sqlite3.Row
     rows = cx.execute(
         "SELECT id, layer, head, most_affected, remedy, dosage, frequency, timing, "
@@ -703,10 +706,8 @@ def ordered_chain(cx, tid):
         return (r["origin"] == "scan") and (r["confirmed"] == 0)
 
     key = lambda r: (r["layer"] is None, r["layer"] if r["layer"] is not None else 0, r["id"])
-    top = sorted([r for r in rows if not unbalanced_scan(r)], key=key)
-    bottom = sorted([r for r in rows if unbalanced_scan(r)], key=key)
     out = []
-    for i, r in enumerate(top + bottom, 1):
+    for i, r in enumerate(sorted(rows, key=key), 1):
         out.append({"id": r["id"], "layer": i, "stored_layer": r["layer"],
                     "head": r["head"] or "",
                     "most_affected": r["most_affected"] or "", "remedy": r["remedy"] or "",
@@ -720,10 +721,10 @@ def ordered_chain(cx, tid):
 
 
 def reorder_chain(cx, tid, rid, new_layer):
-    """Move top-zone row `rid` to position `new_layer` and renumber the top zone
-    contiguously. Unbalanced scan rows (bottom zone) are left untouched."""
-    top = [l for l in ordered_chain(cx, tid) if l["zone"] == "top"]
-    ids = [l["id"] for l in top]
+    """Move row `rid` to position `new_layer` and renumber the chain contiguously.
+    Needs-review scan rows keep that status; they are renumbered in place along with
+    everything else rather than being held at the end."""
+    ids = [l["id"] for l in ordered_chain(cx, tid)]
     if rid not in ids:
         return
     ids.remove(rid)

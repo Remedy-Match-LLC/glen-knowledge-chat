@@ -1,0 +1,102 @@
+{
+  "_comment": "Suggested functional stress patterns for the Clinical Summary: the function to restore, not the pathology. Drafts only -- a term the practitioner has recorded for a condition always wins, and using a suggestion once promotes it to their own. Edit freely.",
+  "patterns": {
+    "Diabetic Retinopathy": "Retinal Microvascular Integrity",
+    "Blurred or fluctuating vision": "Visual Acuity Stability",
+    "Floaters or dark spots": "Vitreous Clarity",
+    "Progressive vision loss": "Visual Field Preservation",
+
+    "Dry AMD": "Macular Resilience",
+    "Blurred central vision": "Central Acuity",
+    "Difficulty seeing in low light": "Dark Adaptation",
+    "Colors may look less bright": "Color Perception",
+
+    "Wet AMD": "Macular Vascular Containment",
+    "New or worsening central blur": "Central Acuity",
+    "Straight lines look wavy or crooked": "Retinal Surface Flatness",
+    "Dark or blank spots in central vision": "Central Field Integrity",
+
+    "Dry Eye": "Tear Quality",
+    "Burning, stinging, or scratchy eyes": "Ocular Surface Comfort",
+    "Redness or watering": "Tear Film Balance",
+    "Fluctuating blurry vision": "Tear Film Stability",
+    "Light sensitivity": "Light Tolerance",
+
+    "Glaucoma — Elevated IOP": "Eye Pressure Regulation",
+    "Glaucoma — Normal / Low IOP": "Optic Nerve Perfusion",
+    "Gradual peripheral vision loss": "Peripheral Field Preservation",
+    "Blind spots or tunnel vision later": "Visual Field Integrity",
+
+    "Macular Pucker (Epiretinal Membrane)": "Vitreoretinal Interface Integrity",
+    "Blurry or wavy central vision": "Central Image Fidelity",
+    "Straight lines look bent": "Retinal Surface Flatness",
+    "Trouble reading or seeing fine detail": "Fine Detail Resolution",
+
+    "PSC Cataract (Posterior Subcapsular)": "Posterior Lens Clarity",
+    "Glare or halos, especially in bright light": "Glare Tolerance",
+    "Blurred near vision": "Near Focus Clarity",
+    "Vision may worsen quickly": "Lens Change Stability",
+
+    "Senile (Age-Related) Cataract": "Lens Clarity",
+    "Cloudy, blurry, or hazy vision": "Media Clarity",
+    "Faded colors": "Color Saturation",
+    "Glare or halos around lights": "Glare Tolerance",
+    "Difficulty seeing at night": "Night Vision",
+
+    "Retinitis Pigmentosa": "Photoreceptor Vitality",
+    "Night blindness": "Night Vision",
+    "Loss of peripheral vision": "Peripheral Field Preservation",
+    "Tunnel vision": "Wide Field Vision",
+    "Light sensitivity or reduced color vision": "Light and Color Tolerance",
+
+    "Blood Sugar Swings / Cravings": "Glycemic Regulation",
+    "Energy crashes between meals": "Blood Sugar Stability",
+    "Sugar or carbohydrate cravings": "Appetite Regulation",
+    "Shakiness or irritability when hungry": "Glycemic Steadiness",
+
+    "Brain Fog / Poor Focus": "Cognitive Clarity",
+    "Trouble concentrating": "Sustained Attention",
+    "Forgetfulness": "Memory Consolidation",
+    "Slowed or cloudy thinking": "Mental Processing Speed",
+
+    "Constipation / Irregularity": "Bowel Transit",
+    "Infrequent bowel movements": "Bowel Transit",
+    "Hard or difficult stools": "Stool Hydration",
+    "Feeling incompletely emptied": "Complete Evacuation",
+
+    "Digestive Discomfort / Bloating": "Digestive Integration",
+    "Bloating or gas": "Gut Fermentation Balance",
+    "Indigestion after meals": "Digestive Secretion",
+    "Abdominal discomfort": "Visceral Comfort",
+
+    "Fatigue / Low Energy": "Cellular Energy Production",
+    "Persistent tiredness": "Cellular Energy Production",
+    "Low stamina": "Endurance Capacity",
+    "Slow recovery after activity": "Recovery Capacity",
+
+    "Headache / Migraine": "Cranial Vascular Regulation",
+    "Recurring head pain or pressure": "Cranial Pressure Regulation",
+    "Light or sound sensitivity": "Sensory Threshold Regulation",
+    "Nausea or visual disturbance with headaches": "Neurovascular Stability",
+
+    "Frequent Illness / Immune Support": "Immune Resilience",
+    "Frequent colds or infections": "Immune Resilience",
+    "Slow recovery from illness": "Immune Recovery",
+    "Recurrent immune challenges": "Immune Surveillance",
+
+    "Common Skin Concerns": "Skin Barrier Repair",
+    "Dry or irritated skin": "Skin Barrier Repair",
+    "Recurring blemishes or rashes": "Skin Terrain Balance",
+    "Slow skin repair": "Tissue Regeneration",
+
+    "Sleep Difficulty": "Sleep Regulation",
+    "Trouble falling asleep": "Sleep Onset",
+    "Waking during the night": "Sleep Continuity",
+    "Unrefreshing sleep": "Restorative Sleep Depth",
+
+    "Stress / Anxious Tension": "Autonomic Regulation",
+    "Feeling overwhelmed or tense": "Autonomic Regulation",
+    "Irritability": "Emotional Regulation",
+    "Difficulty relaxing": "Parasympathetic Tone"
+  }
+}

@@ -30,10 +30,70 @@ def ensure_catalog_schema(cx):
         updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
         PRIMARY KEY (item_key, remedy_key)
     )""")
+    cols = {row[1] for row in
+            cx.execute("PRAGMA table_info(biofield_clinical_catalog)").fetchall()}
+    # Local databases built before the rename carry `item_label`.  Every reader and
+    # writer below speaks `label`, so without this the table silently becomes
+    # unwritable -- "Add remedy" and "Add to layer" both raise on it.
+    if "item_label" in cols and "label" not in cols:
+        cx.execute("ALTER TABLE biofield_clinical_catalog RENAME COLUMN item_label TO label")
     try:
         cx.execute("ALTER TABLE biofield_clinical_catalog ADD COLUMN hidden INTEGER NOT NULL DEFAULT 0")
     except Exception:
         pass
+
+
+def ensure_stress_schema(cx):
+    """The stress pattern a condition becomes when it enters a causal chain."""
+    cx.execute("""CREATE TABLE IF NOT EXISTS biofield_clinical_stress (
+        item_key TEXT PRIMARY KEY, label TEXT NOT NULL, pattern TEXT NOT NULL,
+        updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+    )""")
+
+
+def remember_stress_pattern(cx, label, pattern, replace=False):
+    """Record the term for future tests.  A term already remembered is only ever
+    overwritten on an explicit request, so entering a one-off pattern for a single
+    client never rewrites the practitioner's standing vocabulary."""
+    ensure_stress_schema(cx)
+    label = str(label or "").strip()[:160]
+    pattern = str(pattern or "").strip()[:160]
+    item_key = _norm(label)
+    if not item_key or not pattern:
+        return False
+    if not replace and stress_pattern(cx, label):
+        return False
+    cx.execute("""INSERT INTO biofield_clinical_stress
+        (item_key,label,pattern,updated_at) VALUES (?,?,?,CURRENT_TIMESTAMP)
+        ON CONFLICT(item_key) DO UPDATE SET
+          label=excluded.label,pattern=excluded.pattern,updated_at=CURRENT_TIMESTAMP""",
+               (item_key, label, pattern))
+    cx.commit()
+    return True
+
+
+def _suggested_patterns():
+    path = os.path.join(os.path.dirname(os.path.dirname(__file__)),
+                        "data", "clinical_stress_patterns_seed.json")
+    try:
+        raw = json.load(open(path, encoding="utf-8")).get("patterns", {})
+    except (OSError, ValueError):
+        return {}
+    return {_norm(label): term for label, term in raw.items() if _norm(label) and term}
+
+
+def suggested_pattern(label):
+    """A drafted functional term for a catalogued condition -- the function to
+    restore, not the pathology.  Only ever a suggestion: what the practitioner has
+    recorded for a condition wins, and a free-text condition matches nothing here."""
+    return _suggested_patterns().get(_norm(label), "")
+
+
+def stress_pattern(cx, label):
+    ensure_stress_schema(cx)
+    row = cx.execute("SELECT pattern FROM biofield_clinical_stress WHERE item_key=?",
+                     (_norm(label),)).fetchone()
+    return (row[0] if row else "") or ""
 
 
 def remember_remedies(cx, label, remedies):
@@ -168,7 +228,7 @@ def profile_labels(profile):
     return out
 
 
-def build(profile, layers, stress_data=None, remedy_lookup=None):
+def build(profile, layers, stress_data=None, remedy_lookup=None, stress_lookup=None):
     """Return checklist rows, deriving completion from current program remedies."""
     layers = layers or []
     current = {(row.get("remedy") or "").strip().lower():
@@ -209,9 +269,14 @@ def build(profile, layers, stress_data=None, remedy_lookup=None):
                         if (layer.get("remedy") or "").strip().lower() == match.lower():
                             balanced_layer = layer.get("stored_layer", layer.get("layer"))
                             break
+        remembered = (stress_lookup(label) or "").strip() if stress_lookup else ""
+        suggested = "" if remembered else suggested_pattern(label)
         rows.append({"label": label, "checked": bool(covered_by),
                      "covered_by": covered_by, "layer": balanced_layer,
-                     "common_remedies": common_remedies[:8]})
+                     "common_remedies": common_remedies[:8],
+                     "stress_pattern": remembered or suggested,
+                     "remembered_pattern": remembered,
+                     "pattern_is_suggested": bool(suggested)})
     return rows
 
 
@@ -227,29 +292,34 @@ def _with_item(value, label):
 
 
 def balance_item(cx, test_id, label, layer, remedies, resolve_name=lambda cx, name: name,
-                 dosing=lambda cx, name: {}):
-    """Place a clinical item on a layer and add all checked remedies to that layer."""
+                 dosing=lambda cx, name: {}, pattern=""):
+    """Place a clinical item on a layer and add all checked remedies to that layer.
+
+    The chain speaks in stress patterns, not in the client's own words for a
+    condition, so `pattern` (when given) is what lands in Head and Tail.
+    """
     from dashboard.biofield_authoring import _num, add_chain_row, init_auth_tables
 
     label = str(label or "").strip()[:160]
     layer = int(layer)
     if not label or layer < 1:
         raise ValueError("Item and a positive layer number are required")
+    term = str(pattern or "").strip()[:160] or label
     init_auth_tables(cx)
     rows = cx.execute(
         "SELECT id,head,most_affected,remedy FROM biofield_auth_chain "
         "WHERE test_id=? AND layer=? ORDER BY id", (_num(test_id), layer),
     ).fetchall()
-    head_exists = any((row[1] or "").strip() for row in rows)
     if rows:
         anchor = rows[0]
+        head_text = (anchor[1] or "").strip() or term
         cx.execute(
             "UPDATE biofield_auth_chain SET head=?,most_affected=?,updated_at=CURRENT_TIMESTAMP WHERE id=?",
-            ((anchor[1] or "").strip() or label,
-             _with_item(anchor[2] or "", label), anchor[0]),
+            (head_text, _with_item(anchor[2] or "", term), anchor[0]),
         )
     else:
-        add_chain_row(cx, test_id, layer, label, label, "", confirmed=1, origin="live")
+        head_text = term
+        add_chain_row(cx, test_id, layer, term, term, "", confirmed=1, origin="live")
         rows = cx.execute(
             "SELECT id,head,most_affected,remedy FROM biofield_auth_chain "
             "WHERE test_id=? AND layer=? ORDER BY id", (_num(test_id), layer),
@@ -261,11 +331,15 @@ def balance_item(cx, test_id, label, layer, remedies, resolve_name=lambda cx, na
         if not name or name.lower() in existing:
             continue
         details = dosing(cx, name) or {}
-        add_chain_row(cx, test_id, layer, "" if head_exists or rows else label, "", name,
+        # Layer cards group by head text, so a remedy row with a blank head would
+        # split off into a card of its own instead of joining the layer it was added to.
+        add_chain_row(cx, test_id, layer, head_text, "", name,
                       details.get("dosage", ""), details.get("frequency", ""),
                       details.get("timing", ""), confirmed=1, origin="live")
         existing.add(name.lower())
         added.append(name)
     remember_remedies(cx, label, remedies)
+    # A term entered for a condition that has none yet becomes the default next time.
+    remember_stress_pattern(cx, label, pattern)
     cx.commit()
     return {"layer": layer, "added_remedies": added}

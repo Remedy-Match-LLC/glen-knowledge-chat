@@ -13,13 +13,17 @@ def _seed(cx):
     return tid, live
 
 
-def test_live_on_top_unbalanced_scan_trails_renumbered(tmp_path):
+def test_scan_rows_are_numbered_in_place_not_forced_to_the_end(tmp_path):
+    """Unbalanced scan rows used to be hoisted to the end, which renumbered a layer
+    the practitioner had deliberately added after them all the way back to 1."""
     cx = sqlite3.connect(str(tmp_path / "c.db"))
     tid, _ = _seed(cx)
     rows = ordered_chain(cx, tid)
-    assert [r["head"] for r in rows] == ["Live", "ScanA", "ScanB"]
+    # Stored layers are ScanA=1, Live=1 (added later), ScanB=2 -> that is the order.
+    assert [r["head"] for r in rows] == ["ScanA", "Live", "ScanB"]
     assert [r["layer"] for r in rows] == [1, 2, 3]          # contiguous display
-    assert [r["zone"] for r in rows] == ["top", "bottom", "bottom"]
+    # Needs-review styling still travels with the row; it just no longer moves it.
+    assert [r["zone"] for r in rows] == ["bottom", "top", "bottom"]
 
 
 def test_confirming_scan_layer_promotes_it(tmp_path):
@@ -38,7 +42,7 @@ def test_authored_report_uses_display_numbering(tmp_path):
     tid, _ = _seed(cx)
     rep = authored_report(cx, tid)
     assert [l["layer"] for l in rep["layers"]] == [1, 2, 3]
-    assert rep["layers"][0]["head"] == "Live"
+    assert rep["layers"][0]["head"] == "ScanA"
 
 
 def test_ordered_chain_retains_stored_layer_for_grouped_remedy_adds(tmp_path):

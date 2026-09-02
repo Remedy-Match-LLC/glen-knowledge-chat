@@ -902,6 +902,38 @@ function toggleClinicalItem(box){
  row.classList.toggle('selected',box.checked);
  if(box.checked){var select=row.querySelector('.clinical-layer');if(select)select.focus()}
 }
+async function selectClinicalRemedy(box){
+ var row=box.closest('.clinical-item');if(!row)return;
+ var remedies=[].slice.call(row.querySelectorAll('.clinical-remedy-choice:checked'))
+  .map(function(x){return x.value});
+ var check=row.querySelector('.clinical-check');
+ if(check&&!row.classList.contains('done')){check.checked=remedies.length>0}
+ row.classList.toggle('selected',!row.classList.contains('done')&&remedies.length>0);
+ var stat=document.getElementById('clinicalOrderStat');
+ if(stat)stat.textContent='Saving remedies\u2026';
+ var j=await post('/author/__TID__/clinical-items/selection',
+  {label:row.dataset.label,remedies:remedies});
+ if(stat)stat.textContent=(j&&j.ok)?'Remedies saved':'Could not save remedy selection'}
+function clinicalStressTyped(input){
+ var btn=input.closest('.clinical-item').querySelector('.clinical-stress-save');if(!btn)return;
+ var now=(input.value||'').trim().toLowerCase(),was=(input.dataset.remembered||'').trim().toLowerCase();
+ btn.hidden=!(now&&was&&now!==was)}
+async function saveClinicalStress(input){
+ var row=input.closest('.clinical-item');if(!row)return;
+ var stat=document.getElementById('clinicalOrderStat');
+ var j=await post('/author/__TID__/clinical-items/stress',
+  {label:row.dataset.label,pattern:(input.value||'').trim()});
+ if(j&&j.ok&&j.remembered){input.dataset.remembered=(input.value||'').trim();clinicalStressTyped(input)}
+ if(stat)stat.textContent=(j&&j.ok)?'Stress pattern saved':'Could not save the stress pattern'}
+async function rememberClinicalStress(btn){
+ var row=btn.closest('.clinical-item'),input=row.querySelector('.clinical-stress');
+ var pattern=(input.value||'').trim();if(!pattern)return;
+ btn.disabled=true;
+ var j=await post('/author/__TID__/clinical-items/stress',
+  {label:row.dataset.label,pattern:pattern,replace:true});
+ btn.disabled=false;
+ if(j&&j.ok){input.dataset.remembered=pattern;clinicalStressTyped(input)}
+ else alert((j&&j.error)||'Could not remember the stress pattern')}
 async function balanceClinicalItem(btn){
  var row=btn.closest('.clinical-item'),label=row.dataset.label;
  var layer=Number(row.querySelector('.clinical-layer').value||0);
@@ -910,7 +942,9 @@ async function balanceClinicalItem(btn){
  var custom=(row.querySelector('.clinical-custom-remedy').value||'').trim();if(custom)remedies.push(custom);
  if(!layer){alert('Choose an existing layer or New layer first.');return}
  btn.disabled=true;btn.textContent='Balancing…';
- var j=await post('/author/__TID__/clinical-items/balance',{label:label,layer:layer,remedies:remedies});
+ var stress=row.querySelector('.clinical-stress');
+ var j=await post('/author/__TID__/clinical-items/balance',{label:label,layer:layer,
+  remedies:remedies,pattern:stress?(stress.value||'').trim():''});
  if(j.ok)location.reload();else{btn.disabled=false;btn.textContent='Add to layer';alert(j.error||'Could not add item to layer')}}
 function initClinicalDrag(){
  var grid=document.querySelector('.clinical-grid');if(!grid)return;var moving=null;
@@ -1372,13 +1406,28 @@ def render_clinical_checklist(items, layers=None):
     rows = ""
     for item in items:
         done = bool(item.get("checked"))
-        cls = "clinical-item done" if done else "clinical-item"
+        # A saved tick set wins over the derived coverage, so the practitioner's own
+        # ticks survive the location.reload() every other action on this page fires.
+        if item.get("selection_saved"):
+            chosen = {str(name).strip().lower()
+                      for name in item.get("selected_remedies") or [] if str(name).strip()}
+        else:
+            chosen = {(item.get("covered_by") or "").strip().lower()} - {""}
+        cls = "clinical-item done" if done else (
+            "clinical-item selected" if chosen else "clinical-item")
+        # The offer to replace the standing term has to survive the reload too, so it is
+        # decided here rather than only by the oninput handler.
+        typed_pattern = (item.get("stress_pattern") or "").strip()
+        remembered_pattern = (item.get("remembered_pattern") or "").strip()
+        stress_hidden = "" if (typed_pattern and remembered_pattern and
+                               typed_pattern.lower() != remembered_pattern.lower()) else " hidden"
         remedy = (f"<span class=clinical-remedy>Layer {_e(str(item.get('layer') or '?'))} · {_e(item.get('covered_by') or '')}</span>"
                   if done else "<span class=clinical-open>Needs remedy coverage</span>")
         label = item.get("label") or ""
         common = "".join(
             f"<label><input class=clinical-remedy-choice type=checkbox value=\"{_e(name)}\""
-            f"{' checked' if name.lower() == (item.get('covered_by') or '').lower() else ''}> {_e(name)} "
+            f"{' checked' if name.strip().lower() in chosen else ''}"
+            f" onchange=selectClinicalRemedy(this)> {_e(name)} "
             f"<button type=button class=clinical-remedy-delete data-remedy=\"{_e(name)}\" "
             f"onclick=deleteClinicalRemedy(this) title='Delete remembered remedy'>&times;</button></label>"
             for name in item.get("common_remedies") or []
@@ -1395,9 +1444,17 @@ def render_clinical_checklist(items, layers=None):
         rows += (f"<div class='{cls}' data-label=\"{_e(label)}\" aria-grabbed=false>"
                  "<span class=clinical-grip title='Drag to reorder' aria-hidden=true>&#8942;&#8942;</span>"
                  f"<input class=clinical-check type=checkbox aria-label=\"Select {_e(label)}\""
-                 f"{' checked' if done else ''} onchange=toggleClinicalItem(this)>"
+                 f"{' checked' if done or chosen else ''} onchange=toggleClinicalItem(this)>"
                  f"<span class=clinical-label>{_e(label)}</span>{remedy}"
                  f"<div class=clinical-balance><div class=clinical-common>{common}</div>"
+                 f"<div class=clinical-stress-row><label class=clinical-stress-label>Stress pattern (head &amp; tail)"
+                 f"{'<span class=clinical-stress-hint>suggested</span>' if item.get('pattern_is_suggested') else ''}"
+                 f"<input class=clinical-stress list=vocab value=\"{_e(item.get('stress_pattern') or '')}\" "
+                 f"data-remembered=\"{_e(item.get('remembered_pattern') or '')}\" "
+                 f"placeholder=\"Defaults to '{_e(label)}'\" oninput=clinicalStressTyped(this) "
+                 "onchange=saveClinicalStress(this)></label>"
+                 f"<button type=button class='btn ghost clinical-stress-save'{stress_hidden} "
+                 "onclick=rememberClinicalStress(this)>Replace remembered term</button></div>"
                  f"<div class=clinical-remedy-add><input class=clinical-custom-remedy list=catalog placeholder='Add remedy…'>"
                  f"<button type=button class='btn ghost' onclick=addClinicalRemedy(this)>+ Remedy</button></div>"
                  f"<label class=clinical-layer-label>Assign to layer"
@@ -1422,6 +1479,14 @@ def render_clinical_checklist(items, layers=None):
             ".clinical-balance{grid-column:3;display:grid;grid-template-columns:minmax(160px,1fr) minmax(260px,1.25fr) auto;gap:8px;margin-top:9px;align-items:end}"
             ".clinical-common{grid-column:1/-1;display:flex;flex-wrap:wrap;gap:5px 12px;font-size:11px;color:var(--muted)}"
             ".clinical-common label{white-space:nowrap}.clinical-common input{width:auto;margin:0 3px 0 0}"
+            ".clinical-stress-row{grid-column:1/-1;display:flex;gap:7px;align-items:end}"
+            ".clinical-stress-row .btn{white-space:nowrap}"
+            ".clinical-stress-hint{margin-left:6px;padding:1px 6px;border:1px solid #a56a25;"
+            "border-radius:8px;font-weight:600;text-transform:none;color:#d9a05b;"
+            "background:rgba(196,125,39,.12)}"
+            ".clinical-stress-label{flex:1;min-width:0;font-size:11px;font-weight:700;color:var(--muted)}"
+            ".clinical-stress-label input{display:block;width:100%;margin-top:3px;padding:9px;"
+            "color:var(--text);background:var(--card);border:1px solid var(--line)}"
             ".clinical-remedy-delete{border:0;background:transparent;color:var(--muted);font-size:16px;cursor:pointer;padding:0 2px}"
             ".clinical-remedy-delete:hover{color:#ef8d8d}.clinical-remedy-add{display:flex;gap:5px}.clinical-remedy-add .btn{white-space:nowrap}"
             ".clinical-balance input,.clinical-balance select{margin:0;min-width:0;padding:9px}.clinical-layer-label{font-size:11px;font-weight:700;color:var(--muted)}"
