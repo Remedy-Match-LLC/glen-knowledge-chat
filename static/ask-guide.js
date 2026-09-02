@@ -37,6 +37,18 @@
     ".ag-ask-send{margin-top:9px;background:#d4a843;color:#0a150d;border:0;border-radius:7px;padding:8px 14px;font:600 13px/1 inherit;cursor:pointer}" +
     ".ag-answer{margin-top:10px;font-size:13px;white-space:pre-wrap;line-height:1.45}" +
     ".ag-sources{margin-top:8px;font-size:11px;color:#9db29f}";
+  // The Justus widget pins its own launcher to the same corner (#jw-open-btn,
+  // bottom:20px right:20px, z-index 8999). This pill is z-index 99998, so it sat
+  // squarely on top of it -- measured on Sell > New Order, a 118x29px overlap that
+  // hid the purple button completely. Stack above it instead.
+  //
+  // Keyed off the SCRIPT TAG, not the button: justus-widget.js is deferred, so the
+  // button may not exist yet when this runs, but its tag is in the DOM either way.
+  if (document.querySelector('script[src*="justus-widget"]')) {
+    css.textContent +=
+      ".ag-pill{bottom:64px}" +      // clears the 20px offset + ~35px button + gap
+      ".ag-drawer{bottom:108px}";    // and the drawer clears the raised pill
+  }
   document.head.appendChild(css);
 
   var ctx = sub ? (active + " › " + sub) : active;
