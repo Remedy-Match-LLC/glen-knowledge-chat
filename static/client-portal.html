@@ -5353,8 +5353,12 @@ function render(d, v){
   // card click briefly open its panel, then bounce back home when an in-flight
   // refresh completed.
   if (_wrapPanels) {
-    let wantTab = "current";
-    try{ wantTab = sessionStorage.getItem("rm_portal_tab") || "current"; }catch(e){}
+    // The shell lands on Home; the legacy hub keeps its long-standing "current"
+    // default so a flag-off portal behaves exactly as it did before this task.
+    // showTab("hub") resolves through doorForPanel("hub") to the home door.
+    const _defaultTab = (v && v.shell_enabled) ? "hub" : "current";
+    let wantTab = _defaultTab;
+    try{ wantTab = sessionStorage.getItem("rm_portal_tab") || _defaultTab; }catch(e){}
     showTab(wantTab);
   }
 
