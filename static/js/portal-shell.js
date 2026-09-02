@@ -105,8 +105,11 @@ function renderRail(activeDoor, opts) {
       badgeHtml = '<span class="rail-badge" aria-hidden="true">' + escapeHtml(count) + '</span>';
       countHtml = '<span class="pill rail-count">' + escapeHtml(count) + '</span>';
     }
+    // title = the topic name, so hovering a collapsed icon says what it is. The
+    // label itself lives in .rail-text, which is opacity:0 until the rail opens,
+    // so without this a narrow rail is seven unexplained glyphs.
     return '<button type="button" class="rail-item' + active + '" data-door="' +
-      escapeHtml(d.key) + '">' +
+      escapeHtml(d.key) + '" title="' + escapeHtml(d.label) + '">' +
       '<span class="rail-icon"><svg viewBox="0 0 24 24" aria-hidden="true">' +
       '<path d="' + escapeHtml(d.icon) + '"/></svg>' + badgeHtml + '</span>' +
       '<span class="rail-text"><span class="rail-label">' + escapeHtml(d.label) + countHtml +
