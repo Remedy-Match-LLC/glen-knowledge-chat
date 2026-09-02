@@ -52,6 +52,42 @@ def test_render_onboarding_emits_phases_done_and_link():
 
 
 @pytest.mark.skipif(not shutil.which("node"), reason="node not available")
+def test_render_onboarding_shows_intake_page_progress():
+    js = textwrap.dedent('''
+      const fs = require('fs');
+      const src = fs.readFileSync('static/js/portal-onboarding.js','utf8');
+      const mod = {exports:{}};
+      new Function('module','exports','window', src)(mod, mod.exports, {});
+      const html = mod.exports.renderOnboarding({member:false, phases:[
+        {key:'be_read', title:'Read', steps:[{key:'intake', label:'Intake', done:false,
+          in_progress:true, href:'#intake', progress:{completed:2,total:5,percent:40}}]}
+      ]});
+      if (!/ob-progress-fill[^>]*width:40%/.test(html)) process.exit(1);
+      if (!/2 of 5 pages/.test(html)) process.exit(2);
+      if (!/Intake 40% complete/.test(html)) process.exit(3);
+    ''')
+    out = subprocess.run(["node", "-e", js], cwd=".", capture_output=True, text=True)
+    assert out.returncode == 0, out.stderr
+
+
+def test_completed_biofield_checklist_opens_latest_report():
+    """Only a checked Biofield item is promoted to the latest-report link."""
+    from dashboard import portal_onboarding
+
+    source = open("static/client-portal.html", encoding="utf-8").read()
+    onboarding_source = open(portal_onboarding.__file__, encoding="utf-8").read()
+
+    assert '"#biofield-latest" if biofield_done else "#biofield-order"' in onboarding_source
+    assert '"biofield-latest": {panel:"current", target:"biofield-section", latest:true}' in source
+    assert '"biofield-order": {panel:"current", target:"biofield-order-card"}' in source
+    assert 'id="biofield-order-card"' in source
+    assert 'id="biofieldOrderBtn"' in source
+    assert 'function startBiofieldOrder(btn)' in source
+    assert 'latestUrl.searchParams.delete("scan_date")' in source
+    assert 'location.replace(latestUrl.toString())' in source
+
+
+@pytest.mark.skipif(not shutil.which("node"), reason="node not available")
 def test_render_onboarding_triage_form_gated_on_history_done():
     js = textwrap.dedent('''
       const fs = require('fs');
