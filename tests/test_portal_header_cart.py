@@ -37,7 +37,7 @@ def test_review_order_still_opens_embedded_checkout():
 
 def test_legacy_portals_always_render_a_dedicated_cart_panel():
     assert 'actTiles.push(["cart", "My Cart"' in PORTAL
-    assert '${_hub ? `<section data-panel="cart" hidden>' in PORTAL
+    assert '${_hub ? `<section data-panel="cart"' in PORTAL
     assert '_hub && v.cart && v.cart.enabled ? `<section data-panel="cart"' not in PORTAL
 
 

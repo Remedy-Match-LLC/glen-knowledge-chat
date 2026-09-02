@@ -4887,7 +4887,15 @@ function render(d, v){
         }
       });
     }
-    showDoor('home');
+    // A background poll re-render must land the client back on the door they
+    // had open, not silently boot them to Home; showDoor() itself persists the
+    // door to sessionStorage on every call, so read it back here. Falls back to
+    // home when nothing is stored or the stored key is no longer a real door
+    // (showDoor already guards this too; the explicit check makes the intent
+    // clear at the call site).
+    var savedDoor = '';
+    try { savedDoor = sessionStorage.getItem('rm_portal_door') || ''; } catch (e) {}
+    showDoor(window.PortalShell.panelsForDoor(savedDoor).length ? savedDoor : 'home');
   }
   try{
     if(localStorage.getItem("rm_calendar_collapsed")==="1"){
