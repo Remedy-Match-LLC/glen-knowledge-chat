@@ -6088,6 +6088,14 @@
    "description": "A 15-plate water ionizer producing alkaline, ionized water. Ships in its own box.",
    "source": "manual-add-2026-07-10"
   },
+  "water-ionizer-installment": {
+   "name": "Water Ionizer Installment",
+   "price_cents": 20000,
+   "info_only": true,
+   "service": true,
+   "description": "A non-shipping payment installment toward an existing water ionizer balance.",
+   "source": "manual-add-2026-09-02"
+  },
   "dowsing-rods": {
    "name": "Dowsing Rods",
    "price_cents": 5000,

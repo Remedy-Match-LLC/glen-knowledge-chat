@@ -198,7 +198,7 @@ async function load() {
   if (ORDER.name){ $('billto-nm').textContent = ORDER.name; $('billto').style.display = ''; }
   $('ref').textContent = 'Invoice ' + (ORDER.external_ref||'');
   LINES = ORDER.lines.map(l => ({slug:l.slug, name:l.name, qty:l.qty, unit_cents:l.unit_cents,
-    kind:l.kind, tier:l.tier, note:l.note,
+    kind:l.kind, tier:l.tier, note:l.note, format:l.format||'bottle',
     service:l.service, srp_cents:l.srp_cents, regular_cents:l.regular_cents}));
   // "Paid" banner only when the invoice is actually settled. A legacy order can be
   // pay_status='paid' yet still carry a balance due (partial payment recorded on the
@@ -270,7 +270,7 @@ async function load() {
     }
   }
 
-  try { const cr = await fetch('/api/products?all=1'); CATALOG = (await cr.json()).products||[]; fillAdd();
+  try { const cr = await fetch(API+'/products'); CATALOG = (await cr.json()).products||[]; fillAdd();
     if($('add-search')) $('add-search').addEventListener('input', fillAdd);
   } catch(e){}
 }
@@ -323,12 +323,22 @@ function buildInvoicePrintHtml(o){
     tot += `<div class="r grand"><span>Balance due</span><span>${money(o.balance_due_cents)}</span></div>`;
   const savings = totalSavings(lines);
   if(savings>0) tot += r('You save', savings, false, 'save');
-  const today = new Date().toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric'});
+  // A historical invoice must keep its original invoice date.  Using `new Date()`
+  // here made every saved PDF look like it was issued on the day it was printed
+  // (for example, Debra's Jul 11 invoice appeared to be her Sep 2 invoice).
+  // Read the YYYY-MM-DD portion directly so a UTC timestamp cannot shift back a
+  // calendar day when the console is opened in Hawai'i.
+  const createdYmd = String(o.created_at||'').slice(0,10);
+  const createdParts = createdYmd.split('-').map(Number);
+  const invoiceDate = createdParts.length===3 && createdParts.every(Number.isFinite)
+    ? new Date(createdParts[0], createdParts[1]-1, createdParts[2], 12).toLocaleDateString(
+        'en-US', {month:'short', day:'numeric', year:'numeric'})
+    : new Date().toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric'});
   return `<div class="pd invoice">
     ${PRINT_HEADER("Invoice", o.name)}
     <div class="pd-meta">
       ${o.external_ref?`<div><span class="pd-k">Invoice</span> ${esc(o.external_ref)}</div>`:""}
-      <div><span class="pd-k">Date</span> ${esc(today)}</div>
+      <div><span class="pd-k">Date</span> ${esc(invoiceDate)}</div>
     </div>
     <table class="pd-lines"><thead><tr><th>Item</th><th class="num">Value</th><th class="num">Regular</th><th class="num">Price</th><th class="num">Qty</th><th class="num">Amount</th></tr></thead>
       <tbody>${rows || '<tr><td colspan="6">No items.</td></tr>'}</tbody></table>
@@ -360,11 +370,16 @@ function renderLines() {
       : (ORDER.editable ? '<span class="qty"><button onclick="bump('+i+',-1)">−</button>'
           + '<input type="number" min="0" value="'+l.qty+'" onchange="setQty('+i+',this.value)">'
           + '<button onclick="bump('+i+',1)">+</button></span>' : '<span class="muted">×'+l.qty+'</span>');
+    const packaging = (!l.service && l.kind!=='membership' && ORDER.editable)
+      ? '<select aria-label="Packaging for '+esc(l.name)+'" onchange="setFormat('+i+',this.value)">'
+          +'<option value="bottle"'+((l.format||'bottle')==='bottle'?' selected':'')+'>Bottle</option>'
+          +'<option value="refill"'+(l.format==='refill'?' selected':'')+'>Capsules only (refill)</option></select>'
+      : (l.format==='refill' ? '<span class="muted">Capsules only</span>' : '');
     const noteHtml = (l.note||'').trim()
       ? '<div class="line-note" style="font-size:12px;color:#5b5670;padding:1px 0 6px;white-space:pre-wrap">'+esc(l.note)+'</div>'
       : '';
     return '<div class="line'+(l.service?' svc':'')+'"><span class="nm">'+esc(l.name)+svcAnchor(l,true)+'</span>'
-      + qty + '<span class="pr">'+money(l.unit_cents*l.qty)+'</span></div>' + noteHtml;
+      + packaging + qty + '<span class="pr">'+money(l.unit_cents*l.qty)+'</span></div>' + noteHtml;
   }).join('') || '<div class="muted">No items.</div>';
   $('add-row').style.display = ORDER.editable ? 'flex' : 'none';
 }
@@ -446,7 +461,7 @@ async function applyPlan(forever, btn){
     const j=await r.json();
     if(!j.ok){ $('savings-msg').textContent=j.error||'Could not apply — please reach out.'; if(btn) btn.disabled=false; return; }
     ORDER=j.order;
-    LINES=ORDER.lines.map(l=>({slug:l.slug,name:l.name,qty:l.qty,unit_cents:l.unit_cents,note:l.note,
+    LINES=ORDER.lines.map(l=>({slug:l.slug,name:l.name,qty:l.qty,unit_cents:l.unit_cents,note:l.note,format:l.format||'bottle',
       service:l.service,srp_cents:l.srp_cents,regular_cents:l.regular_cents}));
     renderLines(); renderTotals(); renderSavings();   // offer now absent -> banner hides
   }catch(e){ $('savings-msg').textContent='Network error — please try again.'; if(btn) btn.disabled=false; }
@@ -495,7 +510,7 @@ async function toggleInvoiceMembership(action){
     const j=await r.json();
     if(!j.ok){ const m=$('mem-msg'); if(m) m.textContent=j.error||'Could not update, please reach out.'; if(btn) btn.disabled=false; return; }
     ORDER=j.order;
-    LINES=ORDER.lines.map(l=>({slug:l.slug,name:l.name,qty:l.qty,unit_cents:l.unit_cents,kind:l.kind,tier:l.tier,note:l.note,
+    LINES=ORDER.lines.map(l=>({slug:l.slug,name:l.name,qty:l.qty,unit_cents:l.unit_cents,kind:l.kind,tier:l.tier,note:l.note,format:l.format||'bottle',
       service:l.service,srp_cents:l.srp_cents,regular_cents:l.regular_cents}));
     renderLines(); renderTotals(); renderPayments(); setupPay(); renderMembershipOffer();
   }catch(e){ const m=$('mem-msg'); if(m) m.textContent='Network error, please try again.'; if(btn) btn.disabled=false; }
@@ -508,13 +523,14 @@ function fillAdd(){
     list.map(function(p){return '<option value="'+p.slug+'">'+esc(p.name)+' — '+money(p.price_cents||0)+'</option>';}).join(''); }
 function bump(i,d){ LINES[i].qty=Math.max(0,LINES[i].qty+d); pushUpdate(); }
 function setQty(i,v){ LINES[i].qty=Math.max(0,parseInt(v)||0); pushUpdate(); }
+function setFormat(i,v){ LINES[i].format=(v==='refill'?'refill':'bottle'); pushUpdate(); }
 function addProduct(){ const s=$('add-sel').value; if(!s)return; const p=CATALOG.find(x=>x.slug===s);
   const ex=LINES.find(l=>l.slug===s); if(ex){ex.qty++;} else LINES.push({slug:s,name:p.name,qty:1,unit_cents:p.price_cents||0}); pushUpdate(); }
 async function pushUpdate(){
-  const lines = LINES.filter(l=>l.qty>0).map(l=>({slug:l.slug, qty:l.qty}));
+  const lines = LINES.filter(l=>l.qty>0).map(l=>({slug:l.slug, qty:l.qty, format:l.format||'bottle'}));
   const r = await fetch(API+'/update', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({lines})});
   const j = await r.json(); if(!j.ok){ alert(j.error||'update failed'); return; }
-  ORDER=j.order; LINES=ORDER.lines.map(l=>({slug:l.slug,name:l.name,qty:l.qty,unit_cents:l.unit_cents,note:l.note,
+  ORDER=j.order; LINES=ORDER.lines.map(l=>({slug:l.slug,name:l.name,qty:l.qty,unit_cents:l.unit_cents,note:l.note,format:l.format||'bottle',
     service:l.service, srp_cents:l.srp_cents, regular_cents:l.regular_cents}));
   renderLines(); renderTotals();
 }
