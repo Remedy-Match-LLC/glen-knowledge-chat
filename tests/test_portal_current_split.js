@@ -147,7 +147,19 @@ const SIGS = [
 
   // --- Find Solutions ---
   ['solutions', '<h2>Your practitioner recommends</h2>'],
-  ['solutions', 'renderRecommendations(recSections)']          // My Recommendations
+  ['solutions', 'renderRecommendations(recSections)'],         // My Recommendations
+
+  // --- Account ---
+  ['account', '<h2>Your practitioner account</h2>'],
+  ['account', '<h2>See everything your membership unlocks</h2>'],
+  ['account', 'class="card sharing-card"'],                    // Share & Unlock
+  ['account', '<h2>More savings ahead</h2>'],
+  ['account', '<h2>Everything your membership unlocks</h2>'],  // membership upsell
+  ['account', '<h2>Free Product Review</h2>'],
+  ['account', 'class="card notifpref quiet"'],                 // notification preference
+  ['account', '<h2 style="font-size:1rem">Sharing</h2>'],
+  ['account', '<h2 style="font-size:1rem">Family notifications</h2>'],
+  ['account', 'id="scanPrefsCard"']                            // Your preferences
 ];
 
 const doorOfSig = {};

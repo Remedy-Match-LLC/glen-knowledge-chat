@@ -3765,11 +3765,11 @@ function render(d, v){
   }
 
   if (d.linked_practitioner_account) {
-    html += `<div class="card quiet">
+    part("account", `<div class="card quiet">
       <h2>Your practitioner account</h2>
       <p class="muted small">Manage certification, qualifications, clients, and practitioner ordering.</p>
       <a class="btn full" href="/portal/${encodeURIComponent(seg)}/practitioner-account">Open Practitioner Portal</a>
-    </div>`;
+    </div>`);
   }
 
   part("scans", renderEyeVisionReport(d.eye_vision_report));
@@ -3778,11 +3778,11 @@ function render(d, v){
   // Flag-gated server-side (payload.program_page is only truthy-enabled when
   // PORTAL_PROGRAM_PAGE_ENABLED is on), so no extra client-side flag check needed.
   if (d.program_page && d.program_page.enabled) {
-    html += `<div class="card program-entry">
+    part("account", `<div class="card program-entry">
       <h2>See everything your membership unlocks</h2>
       <p class="muted small">Your program, family options, and ways to share and grow.</p>
       <a class="btn full" href="${esc(d.program_page.url)}">Explore your program</a>
-    </div>`;
+    </div>`);
   }
 
   // Household member switcher — the caregiver picks whose scans to view.
@@ -4301,7 +4301,7 @@ function render(d, v){
       s += `<p class="muted" style="margin:.7rem 0 0"><strong>Unlocked:</strong> ${unlocked.map(esc).join(", ")}</p>`;
     }
     s += `</div>`;
-    html += s;
+    part("account", s);
   }
 
   // FF-matches card (Slice 3b, flag-gated): with FF_MATCHES_ENABLED off, d.ff_matches_enabled
@@ -4613,8 +4613,8 @@ function render(d, v){
         <p class="lockedcopy muted small">${ICON_LOCK}<span>Unlock member pricing on this when you commit to ${months} months.</span></p>
       </div>`;
     });
-    html += `<div class="card"><h2>More savings ahead</h2>
-      <div>${lrows}</div></div>`;
+    part("account", `<div class="card"><h2>More savings ahead</h2>
+      <div>${lrows}</div></div>`);
   }
 
   if(d.membership_upsell && !d.membership_upsell.already_member && (d.membership_upsell.savings_cents||0) > 0){
@@ -4629,14 +4629,14 @@ function render(d, v){
     const saveLine = coversFee
       ? `<p class="muted small">You ordered ${times} in the last 30 days, and as a member those same remedies would have saved you <b>${esc(money(mu.savings_cents))}</b>, enough to cover your membership on remedies alone.</p>`
       : `<p class="muted small">You ordered ${times} in the last 30 days, and as a member those same remedies would have saved you <b>${esc(money(mu.savings_cents))}</b>, every month you reorder.</p>`;
-    html += `<div class="card upsell-card"><h2>Everything your membership unlocks</h2>
+    part("account", `<div class="card upsell-card"><h2>Everything your membership unlocks</h2>
       <ul class="upsell-benefits small muted">
         <li>Live Zoom Q&amp;A + group coaching</li>
         <li>Expanded education</li>
         <li>Member pricing on your repertoire</li>
       </ul>
       ${saveLine}
-      <a class="btn full" href="/prepay">Become a member</a></div>`;
+      <a class="btn full" href="/prepay">Become a member</a></div>`);
   }
 
   // Order history — role-gated (clients) by the view assembler.
@@ -4775,7 +4775,7 @@ function render(d, v){
           return `<div class="kv"><span class="k">${label}</span><span class="v">${esc(BADGE[r.status]||r.status)}</span></div>${body}`;
         }).join("")
       : `<p class="muted small">No product reviews yet.</p>`;
-    html += `<div class="card quiet"><h2>Free Product Review</h2>
+    part("account", `<div class="card quiet"><h2>Free Product Review</h2>
       <p class="muted">Taking a supplement you're not sure about? Submit it and Dr. Glen will review it for you, free.</p>
       <div style="margin:.5rem 0">
         <input id="pr-name" placeholder="Product name" style="width:100%;background:var(--card2);color:var(--ink);border:1px solid var(--line);border-radius:8px;padding:8px 10px;font-size:.9rem;margin-bottom:.4rem">
@@ -4785,7 +4785,7 @@ function render(d, v){
       </div>
       <h3 style="margin:.8rem 0 .3rem;font-size:.9rem">Your reviews</h3>
       ${listHtml}
-    </div>`;
+    </div>`);
   }
 
   // Task 9: client-authored share header, shown above the public sample portal
@@ -4812,9 +4812,9 @@ function render(d, v){
   // so anyone who unsubscribed via the email link can re-subscribe here.
   if(typeof d.notify_on !== "undefined"){
     const on = !!d.notify_on;
-    html += `<div class="card notifpref quiet">
+    part("account", `<div class="card notifpref quiet">
       <p class="muted small" id="notifLine" style="margin:.2rem 0 .8rem">Remedy Match notifications: <b>${on?"On":"Off"}</b></p>
-      <button class="btn${on?"":" full"}" id="notifBtn" data-on="${on?"1":"0"}">${on?"Turn off":"Turn on"}</button></div>`;
+      <button class="btn${on?"":" full"}" id="notifBtn" data-on="${on?"1":"0"}">${on?"Turn off":"Turn on"}</button></div>`);
   }
 
   // Biofield Consult: booked (confirmed with Zoom link on the way) / ready
@@ -4866,7 +4866,7 @@ function render(d, v){
         <input type="checkbox" class="hh-share" data-care="${esc(c.primary_email)}" ${ck}>
         Share my scans &amp; messages with ${esc(c.primary_email)}</label>`;
     }
-    html += `<div class="card quiet"><h2 style="font-size:1rem">Sharing</h2>${rows}</div>`;
+    part("account", `<div class="card quiet"><h2 style="font-size:1rem">Sharing</h2>${rows}</div>`);
   }
 
   // Caregiver payments (member authorizes a caregiver to pay their orders).
@@ -4897,17 +4897,17 @@ function render(d, v){
         <input type="checkbox" class="hh-cc" data-member="${esc(m.email)}" ${ck}>
         Email me about ${esc(m.label || m.email)}</label>`;
     }
-    html += `<div class="card"><h2 style="font-size:1rem">Family notifications</h2>${rows}</div>`;
+    part("account", `<div class="card"><h2 style="font-size:1rem">Family notifications</h2>${rows}</div>`);
   }
 
   // Task 7: client-set scan preferences, in the Current panel's footer. Only
   // meaningful once scan history exists at all, so this rides the same flag.
   if (d.scan_history_enabled) {
     const autoOn = d.auto_advance !== false;      // server default is on
-    html += `<div class="card quiet" id="scanPrefsCard"><h2 style="font-size:1rem">Your preferences</h2>
+    part("account", `<div class="card quiet" id="scanPrefsCard"><h2 style="font-size:1rem">Your preferences</h2>
       <label style="display:flex;align-items:center;gap:8px;margin:.3rem 0">
         <input type="checkbox" id="autoAdvanceToggle" ${autoOn?"checked":""}>
-        Automatically show my newest analysis</label></div>`;
+        Automatically show my newest analysis</label></div>`);
   }
 
   html += `<div class="foot">With aloha,<br><b>Dr. Glen &amp; Rae</b> · Remedy Match LLC</div>`;
