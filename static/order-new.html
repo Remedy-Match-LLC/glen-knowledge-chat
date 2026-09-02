@@ -427,7 +427,7 @@ function renderLines(){
   const tb=$("lines");
   tb.innerHTML = LINES.map((l,i)=>`<tr data-line-index="${i}">
     <td><div class="product-cell"><span class="drag-handle" draggable="true" title="Drag to reorder" aria-label="Drag ${esc(l.name)} to reorder">☰</span><span>${esc(l.name)}</span></div></td>
-    <td><input type="number" min="1" value="${l.qty}" onchange="editLine(${i},'qty',this.value)" style="width:70px"></td>
+    <td><input type="number" min="0" value="${l.qty}" onchange="editLine(${i},'qty',this.value)" style="width:70px"></td>
     <td><select onchange="editLine(${i},'format',this.value)">
       <option value="bottle"${(l.format||'bottle')==='bottle'?' selected':''}>Bottle</option>
       <option value="refill"${l.format==='refill'?' selected':''}>Cello refill</option>
@@ -473,7 +473,20 @@ function wireLineDragging(tb){
     row.addEventListener('dragend',()=>{ DRAG_LINE_INDEX=null; row.classList.remove('dragging'); Array.from(tb.children).forEach(r=>r.classList.remove('drag-over')); });
   });
 }
-function editLine(i,f,v){ if(f==='qty') LINES[i].qty=Math.max(1,parseInt(v,10)||1); else if(f==='format') LINES[i].format=v; else { LINES[i].unit_cents=Math.round(parseFloat(v)*100)||0; LINES[i].edited=true; } renderLines(); }
+// qty 0 is a REAL quantity: the line stays on the invoice, bills nothing and ships
+// nothing, as the client's reference for what to reorder next month. A BLANK box is
+// not a zero -- tabbing out of an emptied field must not silently zero a line.
+function editLine(i,f,v){
+  if(f==='qty'){
+    const raw=String(v==null?'':v).trim();
+    if(raw===''){ renderLines(); return; }
+    const n=parseInt(raw,10);
+    LINES[i].qty = Number.isFinite(n) ? Math.max(0,Math.min(n,99)) : 0;
+  }
+  else if(f==='format') LINES[i].format=v;
+  else { LINES[i].unit_cents=Math.round(parseFloat(v)*100)||0; LINES[i].edited=true; }
+  renderLines();
+}
 function rmLine(i){
   if (!LINES[i]) return;
   if (EDIT_OID && !confirm("Delete "+(LINES[i].name||"this remedy")+" from this invoice?")) return;

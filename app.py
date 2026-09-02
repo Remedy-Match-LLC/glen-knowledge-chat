@@ -7088,13 +7088,28 @@ def _inhouse_ff_unit_cents(p, total_ff_qty, settings, *, program_member=False, l
     return _pricing.apply_discount(base, pct, floor)
 
 
+def _line_qty(ln):
+    """A line's quantity, 0..99. `int(x or 1)` is the trap this replaces: 0 is falsy,
+    so a deliberate zero-qty reference line silently became one. A MISSING qty still
+    defaults to 1; only an explicit 0 means zero."""
+    q = (ln or {}).get("qty")
+    if q is None or q == "":
+        return 1
+    try:
+        return max(0, min(int(q), 99))
+    except (TypeError, ValueError):
+        return 1
+
+
 def _inhouse_total_ff_qty(lines_in):
     """Sum of qty across $69.97 functional-formulation lines in the cart."""
     tot = 0
     for ln in lines_in:
         p = _get_product((ln.get("slug") or "").strip())
         if p and _qty_eligible(p):
-            tot += max(1, min(int(ln.get("qty") or 1), 99))
+            # A zero-qty reference line must not count toward the order-wide volume
+            # tier -- it would quietly cheapen every other bottle on the invoice.
+            tot += _line_qty(ln)
     return tot
 
 
@@ -51474,7 +51489,7 @@ def _price_inhouse_invoice(lines_in, *, email, pickup, ship,
         if not p:
             continue
         p = _member_priced_product(p, email)
-        qty = max(1, min(int(ln.get("qty") or 1), 99))
+        qty = _line_qty(ln)
         # Precedence: explicit per-line edit > per-SKU client price > client's flat
         # FF rate (FF products only) > LOWEST of {standard volume/list, held cohort
         # policies, earned reorder-loyalty}. Per-client rates are the floor.
@@ -52142,7 +52157,7 @@ def api_orders_price_preview():
         if not p:
             continue
         p = _member_priced_product(p, _pemail)
-        qty = max(1, min(int(ln.get("qty") or 1), 99))
+        qty = _line_qty(ln)
         ov = ln.get("unit_cents")
         is_ff = _qty_eligible(p)
         list_cents = int(p.get("price_cents") or 0)
