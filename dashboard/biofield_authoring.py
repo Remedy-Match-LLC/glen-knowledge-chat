@@ -52,7 +52,11 @@ def init_auth_tables(cx):
         date_test TEXT, created_at TEXT, updated_at TEXT)""")
     # Terrain reading from the spoken BSI ('phase P' + 'location of the N is X').
     # Nullable: FMP-snapshot and older authored tests carry no BSI phase.
-    for col in ("phase INTEGER", "location TEXT"):
+    # no_charge: run the analysis without charging for it, which -- by keeping the
+    # biofield-analysis line off the invoice -- also withholds the care window, the
+    # 30-day month and member pricing, all of which key off that line.
+    for col in ("phase INTEGER", "location TEXT",
+                "no_charge INTEGER NOT NULL DEFAULT 0"):
         try:
             cx.execute(f"ALTER TABLE biofield_auth_tests ADD COLUMN {col}")
         except Exception:
@@ -153,6 +157,22 @@ def add_chain_row(cx, tid, layer, head, most_affected, remedy,
          1 if confirmed else 0, (origin or "live"), codes_json))
     cx.commit()
     return new_id
+
+
+def get_no_charge(cx, tid):
+    init_auth_tables(cx)
+    row = cx.execute("SELECT no_charge FROM biofield_auth_tests WHERE id=?",
+                     (_num(tid),)).fetchone()
+    return bool(row and row[0])
+
+
+def set_no_charge(cx, tid, on):
+    """Per test, never per client: comping one analysis must not comp the next."""
+    init_auth_tables(cx)
+    cx.execute("UPDATE biofield_auth_tests SET no_charge=?,updated_at=? WHERE id=?",
+               (1 if on else 0, _now(), _num(tid)))
+    cx.commit()
+    return bool(on)
 
 
 def confirm_row(cx, rid):

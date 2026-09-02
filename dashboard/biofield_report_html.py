@@ -1292,48 +1292,10 @@ def _render_chain_cards(report, depth_values, covered_by_layer=None):
     return cards
 
 
-def render_fee_panel(state):
-    """The Fee card on the authoring page: value + standard + this client's fee,
-    with set/clear controls. Renders from a build_fee_state() dict."""
-    from dashboard.biofield_fee import cents_to_dollars
-    val = cents_to_dollars(state["value_cents"])
-    std = cents_to_dollars(state["standard_cents"])
-    head = (f"<div class=card id=feepanel><h2>Fee</h2>"
-            f"<p class=sub>Value ${val} &middot; standard charge ${std}. "
-            "Set a courtesy below; it applies automatically when you create the invoice in console. "
-            "This panel does not invoice.</p>")
-    if not state["has_email"]:
-        return head + "<div class=food>Add a client email in the header to set a fee.</div></div>"
-    if not state["available"]:
-        return head + "<div class=food>Pricing unavailable (couldn't reach console).</div></div>"
-    cc = state["courtesy_cents"]
-    if cc is None:
-        cur = f"<div class=food>This client: <b>Standard: ${std}</b></div>"
-        clear = ""
-    else:
-        note = f" &middot; {_e(state['note'])}" if state["note"] else ""
-        cur = f"<div class=food>This client: <b>Courtesy: ${cents_to_dollars(cc)}</b>{note}</div>"
-        clear = ("<button class='btn ghost' onclick=clearFee()>Clear &rarr; back to standard</button>")
-    # Prefill the amount + note fields with the currently-set courtesy so the panel
-    # visibly confirms the saved value after "Set courtesy" (empty fields read as unsaved).
-    amt_val = cents_to_dollars(cc) if cc is not None else ""
-    note_val = _e(state["note"]) if cc is not None and state["note"] else ""
-    controls = (
-        "<div class=btnrow style='margin-top:8px'>"
-        f"<label>Courtesy $</label><input id=fee_amt value=\"{amt_val}\" style='width:100px' inputmode=decimal>"
-        f"<label>Note</label><input id=fee_note value=\"{note_val}\" style='width:200px'>"
-        "<button class=btn onclick=setFee()>Set courtesy</button>" + clear + "</div>"
-        "<div class=btnrow style='margin-top:4px'>"
-        "<button class='btn ghost' onclick='preFee(697)'>$697 courtesy</button>"
-        "<button class='btn ghost' onclick='preFee(100)'>$100 special</button>"
-        "<button class='btn ghost' onclick='preFee(0)'>$0 comp</button>"
-        "<span id=feestat class=food></span></div>"
-        "<div class=btnrow style='margin-top:10px'>"
-        "<button class=btn id=invoicebtn onclick=invoiceAction()>Create invoice &rarr;</button>"
-        "<button class='btn ghost' id=viewinvbtn onclick=viewInvoice()>View invoice &rarr;</button>"
-        "<span id=invstat class=food></span></div>"
-        "<div id=invresult class=food style='margin-top:6px'></div>")
-    js = (
+def _fee_js():
+    """The Fee panel's script. Shared by every exit from render_fee_panel so
+    toggleNoCharge is defined even when courtesy pricing is unavailable."""
+    return (
         "<script>"
         "function preFee(v){document.getElementById('fee_amt').value=v;}"
         # author base: works on /author/<id> AND the /author/<id>/invoice-view page
@@ -1343,6 +1305,14 @@ def render_fee_panel(state):
         "fetch(u,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})"
         ".then(r=>r.json()).then(j=>{if(j.html){document.getElementById('feepanel').outerHTML=j.html;}"
         "else{document.getElementById('feestat').textContent=j.error||'error';}});}"
+        "function toggleNoCharge(box){var on=box.checked;"
+        "fetch(_abase()+'/fee/no-charge',{method:'POST',"
+        "headers:{'Content-Type':'application/json'},body:JSON.stringify({on:on})})"
+        ".then(r=>r.json()).then(j=>{document.getElementById('feestat').textContent="
+        "j.ok?(j.no_charge?'No charge for this analysis':'Analysis will be charged')"
+        ":(j.error||'error');if(!j.ok){box.checked=!on;}})"
+        ".catch(function(){box.checked=!on;"
+        "document.getElementById('feestat').textContent='Could not save';});}"
         "function setFee(){feeSwap(_abase()+'/fee');}"
         "function clearFee(){feeSwap(_abase()+'/fee/clear');}"
         "function viewInvoice(){var btn=document.getElementById('viewinvbtn');"
@@ -1384,7 +1354,63 @@ def render_fee_panel(state):
         ".catch(function(){btn.disabled=false;s.textContent='';out.textContent='Could not reach the app to create the invoice.';});}"
         "detectInvoice();"
         "</script>")
-    return head + cur + controls + js + "</div>"
+
+
+
+def render_fee_panel(state):
+    """The Fee card on the authoring page: value + standard + this client's fee,
+    with set/clear controls. Renders from a build_fee_state() dict."""
+    from dashboard.biofield_fee import cents_to_dollars
+    val = cents_to_dollars(state["value_cents"])
+    std = cents_to_dollars(state["standard_cents"])
+    head = (f"<div class=card id=feepanel><h2>Fee</h2>"
+            f"<p class=sub>Value ${val} &middot; standard charge ${std}. "
+            "Set a courtesy below; it applies automatically when you create the invoice in console. "
+            "This panel does not invoice.</p>")
+    # Distinct from a $0 courtesy: a $0 line still earns the included month, because
+    # the benefits follow the LINE, not the amount. This omits the line. Courtesy
+    # pricing needs the console; this does not, so it renders on every exit below.
+    no_charge_html = (
+        "<div class=btnrow style='margin-top:8px'><label style='font-weight:600'>"
+        f"<input type=checkbox id=fee_no_charge{' checked' if state.get('no_charge') else ''} "
+        "onchange=toggleNoCharge(this)> No charge for this analysis</label>"
+        "<span class=food>Leaves it off the invoice entirely, so it earns no membership "
+        "or member pricing.</span></div>")
+    if not state["has_email"]:
+        return (head + "<div class=food>Add a client email in the header to set a fee.</div>"
+                + no_charge_html + _fee_js() + "</div>")
+    if not state["available"]:
+        return (head + "<div class=food>Pricing unavailable (couldn't reach console).</div>"
+                + no_charge_html + _fee_js() + "</div>")
+    cc = state["courtesy_cents"]
+    if cc is None:
+        cur = f"<div class=food>This client: <b>Standard: ${std}</b></div>"
+        clear = ""
+    else:
+        note = f" &middot; {_e(state['note'])}" if state["note"] else ""
+        cur = f"<div class=food>This client: <b>Courtesy: ${cents_to_dollars(cc)}</b>{note}</div>"
+        clear = ("<button class='btn ghost' onclick=clearFee()>Clear &rarr; back to standard</button>")
+    # Prefill the amount + note fields with the currently-set courtesy so the panel
+    # visibly confirms the saved value after "Set courtesy" (empty fields read as unsaved).
+    amt_val = cents_to_dollars(cc) if cc is not None else ""
+    note_val = _e(state["note"]) if cc is not None and state["note"] else ""
+    controls = (
+        "<div class=btnrow style='margin-top:8px'>"
+        f"<label>Courtesy $</label><input id=fee_amt value=\"{amt_val}\" style='width:100px' inputmode=decimal>"
+        f"<label>Note</label><input id=fee_note value=\"{note_val}\" style='width:200px'>"
+        "<button class=btn onclick=setFee()>Set courtesy</button>" + clear + "</div>"
+        "<div class=btnrow style='margin-top:4px'>"
+        "<button class='btn ghost' onclick='preFee(697)'>$697 courtesy</button>"
+        "<button class='btn ghost' onclick='preFee(100)'>$100 special</button>"
+        "<button class='btn ghost' onclick='preFee(0)'>$0 comp</button>"
+        "<span id=feestat class=food></span></div>"
+        + no_charge_html +
+        "<div class=btnrow style='margin-top:10px'>"
+        "<button class=btn id=invoicebtn onclick=invoiceAction()>Create invoice &rarr;</button>"
+        "<button class='btn ghost' id=viewinvbtn onclick=viewInvoice()>View invoice &rarr;</button>"
+        "<span id=invstat class=food></span></div>"
+        "<div id=invresult class=food style='margin-top:6px'></div>")
+    return head + cur + controls + _fee_js() + "</div>"
 
 
 def render_clinical_checklist(items, layers=None):

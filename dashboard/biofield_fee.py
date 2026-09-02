@@ -43,11 +43,11 @@ def parse_courtesy(resp):
     return {"courtesy_cents": None, "note": ""}
 
 
-def build_fee_state(email, fee_get):
+def build_fee_state(email, fee_get, no_charge=False):
     """The state the panel renders from. Only calls fee_get when an email exists."""
     email = (email or "").strip()
     state = {"email": email, "has_email": bool(email), "available": False,
-             "courtesy_cents": None, "note": "",
+             "courtesy_cents": None, "note": "", "no_charge": bool(no_charge),
              "standard_cents": STANDARD_CENTS, "value_cents": VALUE_CENTS}
     if not email:
         return state

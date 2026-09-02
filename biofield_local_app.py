@@ -40,7 +40,8 @@ from dashboard.biofield_narrative import (
     save_video_script)
 from dashboard.biofield_authoring import (
     add_chain_row, authored_report, confirm_all, confirm_row, create_test,
-    delete_chain_row, delete_test, list_authored, merge_dosing, remedy_catalog,
+    delete_chain_row, delete_test, get_no_charge, list_authored, merge_dosing,
+    remedy_catalog, set_no_charge,
     remove_remedy_preserving_layer,
     remedy_dosing, resolve_remedy_name, resolve_stress_name, stress_suggestions,
     stress_vocab, update_chain_row, update_header, update_terrain)
@@ -943,7 +944,8 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                                   if item_key(item.get("label")) not in hidden]
             clinical_checklist = apply_order(cx, test_id, clinical_checklist)
             clinical_checklist = apply_selection(cx, test_id, clinical_checklist)
-        fstate = biofield_fee.build_fee_state(c_email, fee_get)
+        with sqlite3.connect(db_path) as cx:
+            fstate = biofield_fee.build_fee_state(c_email, fee_get, get_no_charge(cx, test_id))
         return Response(render_author_html(rep, dv, transcript, covered_by_layer=covered,
                                            narrative=narrative, fee_state=fstate,
                                            clinical_checklist=clinical_checklist),
@@ -954,7 +956,8 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
         with sqlite3.connect(db_path) as cx:
             rep = authored_report(cx, test_id)
             c_email = ((rep.get("client") or {}).get("email") or "").strip()
-        fstate = biofield_fee.build_fee_state(c_email, fee_get)
+        with sqlite3.connect(db_path) as cx:
+            fstate = biofield_fee.build_fee_state(c_email, fee_get, get_no_charge(cx, test_id))
         return Response(render_invoice_page(rep, fstate), mimetype="text/html")
 
     @app.route("/author/<test_id>/view-portal")
@@ -1024,8 +1027,16 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
         except (ValueError, TypeError):
             return {"ok": False, "error": "Enter a valid non-negative amount."}, 400
         fee_set(email, cents, (d.get("note") or "").strip())
-        state = biofield_fee.build_fee_state(email, fee_get)
+        with sqlite3.connect(db_path) as cx:
+            state = biofield_fee.build_fee_state(email, fee_get, get_no_charge(cx, test_id))
         return {"ok": True, "html": render_fee_panel(state)}
+
+    @app.route("/author/<test_id>/fee/no-charge", methods=["POST"])
+    def author_fee_no_charge(test_id):
+        on = bool((request.get_json(silent=True) or {}).get("on"))
+        with sqlite3.connect(db_path) as cx:
+            set_no_charge(cx, test_id, on)
+        return {"ok": True, "no_charge": on}
 
     @app.route("/author/<test_id>/fee/clear", methods=["POST"])
     def author_fee_clear(test_id):
@@ -1035,7 +1046,8 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
         if not email:
             return {"ok": False, "error": "Add a client email in the header first."}, 400
         fee_clear(email)
-        state = biofield_fee.build_fee_state(email, fee_get)
+        with sqlite3.connect(db_path) as cx:
+            state = biofield_fee.build_fee_state(email, fee_get, get_no_charge(cx, test_id))
         return {"ok": True, "html": render_fee_panel(state)}
 
     @app.route("/author/<test_id>/invoice", methods=["POST"])
@@ -1071,13 +1083,20 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
         # line when a paid analysis order exists, invoicing remedies only. If that leaves
         # nothing (no remedies, like a pre-paid analysis-only intake), skip the raise.
         paid = invoice_paid_check(email) or {}
-        include_fee = not paid.get("paid")
+        with sqlite3.connect(db_path) as cx:
+            no_charge = get_no_charge(cx, test_id)
+        # No line means no biofield-analysis order, which is what withholds the care
+        # window, the 30-day month and member pricing -- all three follow the line.
+        include_fee = not paid.get("paid") and not no_charge
         built = biofield_invoice.build_invoice_lines(client, remedies, catalog, include_fee=include_fee)
         if not built["lines"]:
-            return {"ok": True, "already_paid": True, "order_id": paid.get("order_id"),
-                    "added": 0, "skipped": built["skipped"], "warning": "",
-                    "note": (f"Biofield Analysis already paid (order #{paid.get('order_id')}) — "
-                             "no remedies to invoice, so no new invoice was raised."),
+            note = ("No charge for this analysis and no remedies to invoice, so no "
+                    "invoice was raised." if no_charge else
+                    f"Biofield Analysis already paid (order #{paid.get('order_id')}) — "
+                    "no remedies to invoice, so no new invoice was raised.")
+            return {"ok": True, "already_paid": not no_charge, "no_charge": no_charge,
+                    "order_id": None if no_charge else paid.get("order_id"),
+                    "added": 0, "skipped": built["skipped"], "warning": "", "note": note,
                     "print_url": "", "orders_url": "", "external_ref": "", "total_dollars": ""}
         # A repeated raise refreshes Biofield-sourced remedies from the schedule,
         # while keeping lines added manually in Edit Invoice on the current draft.
@@ -1105,14 +1124,17 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
         accepted = created.get("accepted_slugs") or []
         added_count = len(accepted) if accepted else len(built["lines"])
         warning = ""
-        if not include_fee:
+        if no_charge:
+            warning = ("No charge for this analysis — this invoice is for remedies only, "
+                       "and it earns no membership or member pricing.")
+        elif not include_fee:
             warning = (f"Biofield Analysis already paid (order #{paid.get('order_id')}) — "
                        "this invoice is for remedies only.")
         elif accepted and biofield_invoice.BIOFIELD_SLUG not in accepted:
             warning = "The Biofield Analysis line was not accepted by the console; open the order in Orders to check."
         elif accepted and len(accepted) < len(built["lines"]):
             warning = f"{len(built['lines']) - len(accepted)} line(s) were not accepted by the console."
-        return {"ok": True, "already_paid": not include_fee,
+        return {"ok": True, "already_paid": bool(paid.get("paid")), "no_charge": no_charge,
                 "print_url": link.get("print_url") if link.get("ok") else "",
                 "order_id": created.get("order_id"),
                 "orders_url": biofield_invoice.default_orders_link(created.get("order_id")),
@@ -1198,7 +1220,9 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
             # paid (invoice remedies only), and skip the raise entirely if that empties
             # the invoice (pre-paid analysis with no remedies, e.g. Steve Fox).
             paid = invoice_paid_check(email) or {}
-            include_fee = not paid.get("paid")
+            with sqlite3.connect(db_path) as cx:
+                no_charge = get_no_charge(cx, test_id)
+            include_fee = not paid.get("paid") and not no_charge
             built = biofield_invoice.build_invoice_lines(client, remedies, catalog, include_fee=include_fee)
             # build_portal_seed has already resolved the authored remedies against
             # this exact catalog. Use those canonical slugs as the invoice source of
@@ -1235,8 +1259,12 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                         "remedies": len(content["reorder_items"]), "email": email,
                         "invoice": invoice}
             if not built["lines"]:
-                invoice = {"ok": False, "already_paid": True, "order_id": paid.get("order_id"),
-                           "note": f"Biofield Analysis already paid (order #{paid.get('order_id')}); no new invoice raised."}
+                invoice = {"ok": False, "already_paid": not no_charge, "no_charge": no_charge,
+                           "order_id": None if no_charge else paid.get("order_id"),
+                           "note": ("No charge for this analysis; no invoice raised."
+                                    if no_charge else
+                                    f"Biofield Analysis already paid (order #{paid.get('order_id')}); "
+                                    "no new invoice raised.")}
             else:
                 # replace_open: a re-hand-off cancels prior open drafts, so no pileup.
                 note = biofield_invoice.build_invoice_note(rep.get("phase"), rep.get("location"))
@@ -1246,7 +1274,8 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                     total = created.get("total_cents")
                     invoice = {"ok": True, "order_id": created.get("order_id"),
                                "external_ref": created.get("external_ref"),
-                               "already_paid": not include_fee,
+                               "already_paid": bool(paid.get("paid")),
+                               "no_charge": no_charge,
                                "lines": len(built["lines"]),
                                "skipped": built.get("skipped") or [],
                                "replaced": len(created.get("cancelled") or []),
