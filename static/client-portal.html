@@ -3725,6 +3725,22 @@ function render(d, v){
       ${badges.length?`<div class="badges">${badges.map(b=>`<span class="badge">${esc(b)}</span>`).join("")}</div>`:""}
     </div>`;
 
+  // Task 10 (portal-shell-ia): one ordered fragment list, not five accumulators.
+  // Every card below is pushed exactly once, in source order, tagged with the door
+  // that owns it. `current` renders every fragment in order, so its output is
+  // byte-identical to today by construction; each door renders its own filter of
+  // the same array, so a card can never be in two places or vanish from one.
+  // A door of null is page chrome (the practitioner band, the footer): it belongs
+  // to no door and renders outside the door panels, so it appears on every door
+  // rather than only on one. The legacy-only branch of an already-routed card
+  // (the `else` arms below, which run only when the hub is off) also pushes with
+  // null, because with the hub off there are no door panels for it to land in.
+  const parts = [];                                   // [{door, html}]
+  const part = (door, html) => { parts.push({door: door, html: html}); };
+  const partsFor = (door) => parts.filter(function (p) { return p.door === door; })
+                                  .map(function (p) { return p.html; }).join("");
+  const legacyCurrentHtml = () => parts.map(function (p) { return p.html; }).join("");
+
   // First Biofield test: the unchecked onboarding item lands here. Payment
   // continues to the secure readiness page, which walks the client through a
   // fresh scan, intake, and photo. Consultation scheduling remains downstream
@@ -4907,6 +4923,16 @@ function render(d, v){
   }
   const _wrapPanels = d.scan_history_enabled || _hub;
   const _showOldTabs = d.scan_history_enabled && !_hub;
+  // Task 10 (portal-shell-ia): `current` and the six door panels are mutually
+  // exclusive at run time. Rendering both would put every card in the DOM twice,
+  // and the second copy is not inert: element ids would be duplicated, so a door
+  // copy's controls would bind to the `current` copy, and syncPortalHeaderCartCount
+  // counts `#curatedOrderItems .curated-order-item` across the whole document, so
+  // the header cart badge would show double. The door panels only exist under the
+  // hub, so cards only leave `current` when they have somewhere else to land; with
+  // the shell off, or the hub off, `current` keeps every fragment exactly as today.
+  const _shell = !!(v && v.shell_enabled && window.PortalShell);
+  const _doors = _hub && _shell;
   if (_wrapPanels) {
     const historyHtml = buildScanHistoryHtml(d);
     const ordersHtml = _payerOrdersHtml + buildOrdersHtml(d);
@@ -4920,7 +4946,7 @@ function render(d, v){
     const hubPanel = _hub ? `<section data-panel="hub" data-door="home">${hubHtml}</section>` : "";
     const back = _hub ? backToHub() : "";
     html = `${tabbar}${hubPanel}
-      <section data-panel="current"${_hub ? " hidden" : ""} data-door="scans">${back}${html}</section>
+      <section data-panel="current"${_hub ? " hidden" : ""} data-door="scans">${back}${html}${_doors ? "" : legacyCurrentHtml()}</section>
       <section data-panel="history" hidden data-door="scans">${back}${historyHtml}</section>
       <section data-panel="orders" hidden data-door="billing">${back}${ordersHtml}</section>
       <section data-panel="intake" hidden data-door="account">${back}<div class="card" id="portal-intake-card"><div id="portal-intake-host"></div></div></section>${_hub ? `
@@ -4939,11 +4965,18 @@ function render(d, v){
       <section data-panel="account" hidden data-door="account">${back}${_accountHtml}</section>
       <section data-panel="refer" hidden data-door="account">${back}${_referHtml || '<div class="card quiet"><p class="muted">Ambassador program details will appear here.</p></div>'}</section>
       <section data-panel="referrals" hidden data-door="account">${back}${_referralsHtml}</section>
-      ${_hub && v.remedies && v.remedies.enabled ? `<section id="remedies-panel" data-panel="remedies" hidden data-door="remedies">${back}${buildRemediesHtml(v)}</section>` : ""}` : ""}`;
+      ${_hub && v.remedies && v.remedies.enabled ? `<section id="remedies-panel" data-panel="remedies" hidden data-door="remedies">${back}${buildRemediesHtml(v)}</section>` : ""}
+      <section data-panel="scan-report" hidden data-door="scans">${back}${_doors ? partsFor("scans") : ""}</section>
+      <section data-panel="billing-detail" hidden data-door="billing">${back}${_doors ? partsFor("billing") : ""}</section>
+      <section data-panel="remedy-detail" hidden data-door="remedies">${back}${_doors ? partsFor("remedies") : ""}</section>
+      <section data-panel="solutions-detail" hidden data-door="solutions">${back}${_doors ? partsFor("solutions") : ""}</section>
+      <section data-panel="account-detail" hidden data-door="account">${back}${_doors ? partsFor("account") : ""}</section>
+      <section data-panel="learn-detail" hidden data-door="learn">${back}${_doors ? partsFor("learn") : ""}</section>
+      ${_doors ? `<div class="portal-chrome">${partsFor(null)}</div>` : ""}` : ""}`;
   } else {
     // The onboarding checklist is available independently of the hub and scan
     // history flags, so its #intake link must always have a real panel target.
-    html = `<section data-panel="current" data-door="scans">${html}</section>
+    html = `<section data-panel="current" data-door="scans">${html}${legacyCurrentHtml()}</section>
       <section data-panel="intake" hidden data-door="account"><div class="card" id="portal-intake-card"><div id="portal-intake-host"></div></div></section>`;
   }
 

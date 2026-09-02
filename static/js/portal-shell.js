@@ -14,22 +14,22 @@ var DOORS = [
     panels: ['hub'] },
   { key: 'scans', label: 'Scans & Reports',
     icon: 'M2 12h3l2.5-7 3 14 3-10.5L16 15l2-3h4',
-    panels: ['current', 'voice', 'history'] },
+    panels: ['current', 'voice', 'history', 'scan-report'] },
   { key: 'solutions', label: 'Find Solutions',
     icon: 'M15.5 15.5 21 21M17 10.5a6.5 6.5 0 1 1-13 0 6.5 6.5 0 0 1 13 0',
-    panels: ['shop'] },
+    panels: ['shop', 'solutions-detail'] },
   { key: 'remedies', label: 'My Remedies',
     icon: 'M10 2h4v4l3.5 5.5A4 4 0 0 1 14 18h-4a4 4 0 0 1-3.5-6.5L10 6zM6.8 13h10.4',
-    panels: ['remedies', 'oasis', 'cart'] },
+    panels: ['remedies', 'oasis', 'cart', 'remedy-detail'] },
   { key: 'billing', label: 'Billing',
     icon: 'M6 2.5h12v19l-3-2-3 2-3-2-3 2zM9.5 8h5M9.5 12h5',
-    panels: ['orders'] },
+    panels: ['orders', 'billing-detail'] },
   { key: 'learn', label: 'Learn & Ask',
     icon: 'M3 4.5h6a3 3 0 0 1 3 3v12a2.5 2.5 0 0 0-2.5-2.5H3zM21 4.5h-6a3 3 0 0 0-3 3v12a2.5 2.5 0 0 1 2.5-2.5H21z',
-    panels: ['ask', 'bodymap', 'classes', 'calendar'] },
+    panels: ['ask', 'bodymap', 'classes', 'calendar', 'learn-detail'] },
   { key: 'account', label: 'Account',
     icon: 'M15.6 8a3.6 3.6 0 1 1-7.2 0 3.6 3.6 0 0 1 7.2 0M4.5 20.5a7.5 7.5 0 0 1 15 0',
-    panels: ['account', 'photo', 'intake', 'records', 'refer', 'referrals', 'offers', 'finder'] }
+    panels: ['account', 'photo', 'intake', 'records', 'refer', 'referrals', 'offers', 'finder', 'account-detail'] }
 ];
 
 function panelsForDoor(key) {

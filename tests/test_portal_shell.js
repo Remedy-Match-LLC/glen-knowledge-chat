@@ -21,7 +21,7 @@ DOORS.forEach(d => {
 });
 
 // membership resolves both ways
-assert.deepStrictEqual(panelsForDoor('billing'), ['orders']);
+assert.deepStrictEqual(panelsForDoor('billing'), ['orders', 'billing-detail']);
 assert.deepStrictEqual(panelsForDoor('nope'), []);
 assert.strictEqual(doorForPanel('voice'), 'scans');
 assert.strictEqual(doorForPanel('cart'), 'remedies');
@@ -40,7 +40,7 @@ allPanels().forEach(p => {
 // the sets so both directions fail loudly.
 const page = fs.readFileSync(path.join(__dirname, '..', 'static', 'client-portal.html'), 'utf8');
 const inPage = Array.from(new Set(
-  (page.match(/data-panel="[a-z]+"/g) || []).map(s => s.slice(12, -1))
+  (page.match(/data-panel="[a-z][a-z-]*"/g) || []).map(s => s.slice(12, -1))
 )).sort();
 const inMap = allPanels().slice().sort();
 assert.deepStrictEqual(inMap, inPage,

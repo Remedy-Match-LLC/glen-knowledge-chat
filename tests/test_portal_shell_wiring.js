@@ -15,14 +15,14 @@ const page = fs.readFileSync(
 // every section declares the door the map assigns it, and the set of panels the
 // page declares is exactly the set the door map knows about (not just "at least
 // 21", which would still pass if two sections were quietly deleted).
-const sections = page.match(/<section[^>]*data-panel="[a-z]+"[^>]*>/g) || [];
+const sections = page.match(/<section[^>]*data-panel="[a-z][a-z-]*"[^>]*>/g) || [];
 const declaredPanels = Array.from(new Set(sections.map(function (tag) {
-  return /data-panel="([a-z]+)"/.exec(tag)[1];
+  return /data-panel="([a-z][a-z-]*)"/.exec(tag)[1];
 }))).sort();
 assert.deepStrictEqual(declaredPanels, allPanels().slice().sort(),
   'the page must declare a section for exactly the panels the door map knows about');
 sections.forEach(function (tag) {
-  const panel = /data-panel="([a-z]+)"/.exec(tag)[1];
+  const panel = /data-panel="([a-z][a-z-]*)"/.exec(tag)[1];
   const door = /data-door="([a-z]+)"/.exec(tag);
   assert.ok(door, panel + ' section is missing data-door');
   assert.strictEqual(door[1], doorForPanel(panel),
@@ -63,9 +63,9 @@ eval(src[0] + '\nshowDoor("remedies");');
 
 const visible = panels.filter(function (p) { return !p.hidden; })
   .map(function (p) { return p.dataset.panel; });
-assert.deepStrictEqual(visible.sort(), ['cart', 'oasis', 'remedies'],
+assert.deepStrictEqual(visible.sort(), ['cart', 'oasis', 'remedies', 'remedy-detail'],
   'a door must reveal all of its panels and nothing else');
-assert.deepStrictEqual(shown.sort(), ['cart', 'oasis', 'remedies'],
+assert.deepStrictEqual(shown.sort(), ['cart', 'oasis', 'remedies', 'remedy-detail'],
   'every newly visible panel must get its panelShown side effect');
 assert.deepStrictEqual(rail.filter(function (b) { return b.active; })
   .map(function (b) { return b.dataset.door; }), ['remedies'],
