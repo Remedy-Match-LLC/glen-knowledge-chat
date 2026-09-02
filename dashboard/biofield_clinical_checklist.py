@@ -30,6 +30,13 @@ def ensure_catalog_schema(cx):
         updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
         PRIMARY KEY (item_key, remedy_key)
     )""")
+    cols = {row[1] for row in
+            cx.execute("PRAGMA table_info(biofield_clinical_catalog)").fetchall()}
+    # Local databases built before the rename carry `item_label`.  Every reader and
+    # writer below speaks `label`, so without this the table silently becomes
+    # unwritable -- "Add remedy" and "Add to layer" both raise on it.
+    if "item_label" in cols and "label" not in cols:
+        cx.execute("ALTER TABLE biofield_clinical_catalog RENAME COLUMN item_label TO label")
     try:
         cx.execute("ALTER TABLE biofield_clinical_catalog ADD COLUMN hidden INTEGER NOT NULL DEFAULT 0")
     except Exception:

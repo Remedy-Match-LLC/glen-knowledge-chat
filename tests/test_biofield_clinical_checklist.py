@@ -2,7 +2,8 @@ import sqlite3
 
 from dashboard.biofield_authoring import add_chain_row, create_test
 from dashboard.biofield_clinical_checklist import (
-    balance_item, build, catalog_items, custom_remedies, forget_remedy,
+    balance_item, build, catalog_items, custom_remedies, ensure_catalog_schema,
+    forget_remedy,
     profile_labels, program_remedies, remember_remedies, remember_stress_pattern,
     stress_pattern,
 )
@@ -217,3 +218,23 @@ def test_adding_to_an_existing_layer_only_appends_the_pattern_to_the_tail():
         # The remedy row repeats its layer's head, so the card keeps it instead of
         # splitting it off into a layer of its own.
         assert rows[1][0] == "Gut dysbiosis"
+
+
+def test_older_local_databases_named_the_column_item_label():
+    """Local DBs built before the rename carry `item_label`; every reader and writer
+    here speaks `label`, so the table was unwritable until it is migrated."""
+    with sqlite3.connect(":memory:") as cx:
+        cx.execute("""CREATE TABLE biofield_clinical_catalog(
+            item_key TEXT NOT NULL, item_label TEXT NOT NULL,
+            remedy_key TEXT NOT NULL, remedy TEXT NOT NULL,
+            hidden INTEGER NOT NULL DEFAULT 0,
+            updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY(item_key,remedy_key))""")
+        cx.execute("INSERT INTO biofield_clinical_catalog VALUES"
+                   "('herpes','Herpes','virex','VirEx',0,CURRENT_TIMESTAMP)")
+        ensure_catalog_schema(cx)
+        # The rows already recorded survive the rename.
+        assert custom_remedies(cx, "Herpes") == ["VirEx"]
+        # And the table takes writes again.
+        assert remember_remedies(cx, "Dry Eye", ["Moisturize"]) == 1
+        assert custom_remedies(cx, "Dry Eye") == ["Moisturize"]
