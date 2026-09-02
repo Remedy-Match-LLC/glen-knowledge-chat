@@ -488,6 +488,7 @@
   .chat-related-item{margin:.3rem 0}
   .chat-related-link{color:var(--brand);text-decoration:none;font-weight:600;font-size:.9rem}
   .chat-related-link:hover{text-decoration:underline}
+  .chat-door-link{background:none;border:0;padding:0;font:inherit;cursor:pointer;text-align:left}
   .chat-related-nudge{color:var(--muted);font-size:.78rem;margin-top:.1rem}
   /* Task 5: Portal intake card — gates the Biofield Consult slot-picker on the
      client's own clinical intake (brought home from Practice Better). Layout
@@ -8096,30 +8097,50 @@ function appendChatBubble(role, text){
   return div;
 }
 
+// Final review I4: a door suggestion offered NEXT TO the answer, never instead of
+// it. Rendered as a button rather than a link because a door is a client-side
+// reveal, not a URL, and textContent is used throughout: nothing here is ever
+// written as innerHTML.
+function appendChatDoorLink(doorKey){
+  var msgs = document.getElementById("chatMsgs");
+  if(!msgs || !window.PortalShell || typeof window.showDoor !== "function") return null;
+  var meta = window.PortalShell.DOORS.filter(function(d){ return d.key === doorKey; })[0];
+  if(!meta) return null;
+  var row = document.createElement("div");
+  row.className = "chat-related";
+  var btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = "chat-related-link chat-door-link";
+  btn.textContent = "Open " + meta.label;
+  btn.addEventListener("click", function(){ window.showDoor(doorKey); });
+  row.appendChild(btn);
+  msgs.appendChild(row);
+  msgs.scrollTop = msgs.scrollHeight;
+  return row;
+}
+
 async function sendChatMessage(){
   var input = document.getElementById("chatInput");
   var sendBtn = document.getElementById("chatSend");
   if(!input || !sendBtn) return;
   var query = (input.value || "").trim();
   if(!query) return;
-  // Task 9 (portal-shell-ia): route before answering. Asked where an invoice is,
-  // the chat opens Billing instead of writing a paragraph about invoices. Gated
-  // on shell_enabled, the same check showDoor's other callers use, so this stays
-  // inert with the flag off. An unmatched question returns null from routeIntent
-  // and falls through unchanged to the concierge below: a wrong destination is
-  // worse than no destination, so this never guesses.
-  if (window.PortalShell && window.__portalView && window.__portalView.shell_enabled) {
-    var routedDoor = window.PortalShell.routeIntent(query);
-    if (routedDoor && typeof window.showDoor === "function") {
-      input.value = "";
-      appendChatBubble("user", query);
-      var routedDoorMeta = window.PortalShell.DOORS.filter(function(d){ return d.key === routedDoor; })[0];
-      appendChatBubble("assistant", "Taking you to " + (routedDoorMeta ? routedDoorMeta.label : routedDoor) + ".");
-      window.showDoor(routedDoor);
-      input.focus();
-      return;
-    }
-  }
+  // Task 9 (portal-shell-ia), redesigned at final review I4. This used to open the
+  // matched door, write "Taking you to X." and RETURN, so the client's message was
+  // never sent and never answered. Adversarial probing found 119 of 147 sentences
+  // that should have been answered in prose were navigated instead. The worst was
+  // "I need emotional support for what I am going through, not another product",
+  // which opened the shop and threw the sentence away; "I woke up with a symptom I
+  // have never had before and I am scared" went to solutions, and "I owe my
+  // recovery to the biofield work, honestly" went to billing.
+  //
+  // So the message is never discarded. The concierge always answers, and a match
+  // only adds a link to that door alongside the answer, offered once the reply is
+  // complete. A wrong link is ignorable; a wrong navigation that eats the question
+  // is not. routeIntent and its tests are unchanged; only what is done with the
+  // result changed. Still gated on shell_enabled, so it is inert with the flag off.
+  var routedDoor = (window.PortalShell && window.__portalView && window.__portalView.shell_enabled)
+    ? window.PortalShell.routeIntent(query) : null;
   input.value = "";
   input.disabled = true;
   sendBtn.disabled = true;
@@ -8212,6 +8233,8 @@ async function sendChatMessage(){
                   window.TTS.attachReply(assistantBubble, assistantText);
                 }
               }
+              // The door suggestion lands after the answer, not instead of it.
+              if(routedDoor) appendChatDoorLink(routedDoor);
             }
           } catch(parseErr){ /* skip malformed SSE lines */ }
         }
