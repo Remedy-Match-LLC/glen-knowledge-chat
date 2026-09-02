@@ -9,6 +9,7 @@ import requests
 
 from dashboard.practitioner_portal import name_to_slug
 from dashboard import wholesale_pricing as _pricing
+from dashboard.biofield_invoice import bottles_needed
 from dashboard.biofield_authoring import authored_report, remedy_dosing, merge_dosing
 from dashboard.biofield_narrative import get_narrative
 
@@ -38,7 +39,22 @@ def resolve_remedy_slug(name, catalog):
     alias = ALIAS_SLUGS.get(_norm_key(name))
     if alias:
         return alias
+    wanted = (name or "").strip().lower()
+    for slug, product in (catalog or {}).items():
+        if (product.get("name") or "").strip().lower() == wanted:
+            return slug
     return name_to_slug(name, catalog)
+
+
+def _bottle_quantity(cx, remedy, frequency):
+    try:
+        row = cx.execute(
+            "SELECT doses_per_bottle FROM fmp_snap_products "
+            "WHERE lower(product_name)=lower(?) LIMIT 1", (remedy,)).fetchone()
+        doses_per_bottle = row[0] if row else None
+    except Exception:
+        doses_per_bottle = None
+    return bottles_needed(frequency, doses_per_bottle)
 
 
 def _dosing(layer):
@@ -142,7 +158,9 @@ def build_portal_content(cx, test_id, *, special_price_cents, catalog=None,
         if slug in seen:
             continue
         seen.add(slug)
-        reorder.append({"slug": slug, "qty": 1, "price_cents": int(special_price_cents)})
+        reorder.append({"slug": slug,
+                        "qty": _bottle_quantity(cx, remedy, dose.get("frequency")),
+                        "price_cents": int(special_price_cents)})
 
     # Bake the ASSIGNED stresses under each layer (from list_stresses' by_layer grouping)
     # so the portal can show, per layer, which stress patterns that layer addresses.
@@ -194,6 +212,7 @@ def build_portal_content(cx, test_id, *, special_price_cents, catalog=None,
         "pricing_note": "",
         "findings": findings,
         "biofield_status": "confirmed",
+        "client_id": str(client.get("client_id") or "").strip(),
         # Time-of-day remedy schedule (Breakfast/Lunch/Dinner/etc.), same source the
         # printed report uses (authored_report -> build_schedule). Forward-only:
         # existing portals must be re-published to gain it.

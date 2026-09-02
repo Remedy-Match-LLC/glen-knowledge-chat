@@ -713,6 +713,37 @@ def test_handoff_route_raises_invoice(tmp_path, monkeypatch):
             "source": "biofield"} in captured["lines"]
 
 
+def test_handoff_publishes_both_and_emails_once_per_content(tmp_path, monkeypatch):
+    from dashboard.biofield_authoring import init_auth_tables, create_test, add_chain_row
+    from dashboard import biofield_invoice
+    db = str(tmp_path / "chat_log.db")
+    with sqlite3.connect(db) as cx:
+        init_auth_tables(cx)
+        cx.execute("CREATE TABLE fmp_snap_products (product_name TEXT, doses_per_bottle INTEGER)")
+        tid = create_test(cx, "Debra Herndon", "debra@x.com", "2026-09-01")
+        add_chain_row(cx, tid, 1, "Eye", "Glaucoma", "OcuFlow Bedtime", "1", "daily", "")
+    monkeypatch.setattr(biofield_invoice, "default_handoff_push", lambda *a, **k: {"ok": True})
+    reports, invoices, emails = [], [], []
+    app = create_app(
+        db,
+        invoice_fetch_catalog=lambda: [{"name": "OcuFlow Bedtime", "slug": "ocuflow-bedtime"}],
+        invoice_create=lambda *a, **k: {"ok": True, "order_id": 164, "total_cents": 1000},
+        portal_publish=lambda test_id, special, send: reports.append((test_id, send)) or {"ok": True},
+        invoice_publish=lambda order_id: invoices.append(order_id) or {"ok": True},
+        portal_link_fetch=lambda email, name: "https://illtowell.com/portal/safe-token",
+        delivery_email=lambda email, name, url, order_id: emails.append((email, url, order_id)) or {"ok": True},
+    ).test_client()
+
+    first = app.post(f"/author/{tid}/handoff", json={}).get_json()
+    second = app.post(f"/author/{tid}/handoff", json={}).get_json()
+
+    assert first["delivery"]["ok"] is True and first["delivery"]["emailed"] is True
+    assert second["delivery"]["ok"] is True and second["delivery"]["duplicate"] is True
+    assert reports == [(tid, False), (tid, False)]
+    assert invoices == [164, 164]
+    assert emails == [("debra@x.com", "https://illtowell.com/portal/safe-token", 164)]
+
+
 def test_delete_only_remedy_can_remove_entire_layer(tmp_path):
     from dashboard.biofield_authoring import init_auth_tables, create_test, add_chain_row
     db = str(tmp_path / "chat_log.db")

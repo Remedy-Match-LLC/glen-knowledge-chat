@@ -50,7 +50,8 @@ def test_author_header_shows_selected_clients_headshot():
     assert "min-height:300px" in html
     assert "object-position:50% 42%" in html
     assert "/client-photo-framing/" in html
-    assert "/client-photo/jane%40x.com" in html
+    assert "/test/a1/client-photo" in html
+    assert "/client-photo/jane%40x.com" not in html
     assert "refreshHeaderPhoto();checkE4L()" in html
 
 
@@ -90,6 +91,30 @@ def test_add_remedy_uses_stable_stored_layer_and_preserves_viewport():
     assert "function reloadKeepingView" in html
     assert "sessionStorage.setItem(_viewKey" in html
     assert "restoreView();" in html
+
+
+def test_empty_head_remedies_with_same_stored_layer_render_in_one_card():
+    rep = {"test_id": "a33", "client": {}, "date": "", "layers": [
+        {"layer": 1, "stored_layer": 1, "head": "Glaucoma", "remedy": ""},
+        {"layer": 2, "stored_layer": 1, "head": "", "remedy": "OcuFlow Bedtime"},
+        {"layer": 3, "stored_layer": 1, "head": "", "remedy": "IOP Syntropy"},
+    ], "schedule": {"slots": [], "entries": []}}
+    html = render_author_html(rep)
+    assert html.count("class=lcard draggable=true data-gid=g0") == 1
+    assert "class=lcard draggable=true data-gid=g1" not in html
+    assert "OcuFlow Bedtime" in html and "IOP Syntropy" in html
+
+
+def test_blank_layer_anchor_is_not_rendered_as_a_remedy_line():
+    rep = {"test_id": "a33", "client": {}, "date": "", "layers": [
+        {"rid": 217, "layer": 1, "stored_layer": 1, "head": "Glaucoma", "remedy": ""},
+        {"rid": 218, "layer": 2, "stored_layer": 1, "head": "", "remedy": "OcuFlow Bedtime"},
+        {"rid": 219, "layer": 3, "stored_layer": 1, "head": "", "remedy": "IOP Syntropy"},
+    ], "schedule": {"slots": [], "entries": []}}
+    html = render_author_html(rep)
+    assert 'data-rid="217"' not in html
+    assert 'data-rid="218"' in html and 'data-rid="219"' in html
+    assert html.count("Remove remedy") == 2
 
 
 def test_author_has_left_layer_rail_reorderable():

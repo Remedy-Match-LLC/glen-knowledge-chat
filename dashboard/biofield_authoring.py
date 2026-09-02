@@ -57,6 +57,10 @@ def init_auth_tables(cx):
             cx.execute(f"ALTER TABLE biofield_auth_tests ADD COLUMN {col}")
         except Exception:
             pass
+    try:
+        cx.execute("ALTER TABLE biofield_auth_tests ADD COLUMN client_id TEXT")
+    except Exception:
+        pass
     cx.execute("""CREATE TABLE IF NOT EXISTS biofield_auth_chain(
         id INTEGER PRIMARY KEY AUTOINCREMENT, test_id INTEGER, layer INTEGER,
         head TEXT, most_affected TEXT, remedy TEXT, dosage TEXT, frequency TEXT,
@@ -102,7 +106,7 @@ def create_test(cx, name, email, date):
     return "a" + str(new_id)
 
 
-def update_header(cx, tid, name=None, email=None, date=None):
+def update_header(cx, tid, name=None, email=None, date=None, client_id=None):
     init_auth_tables(cx)
     sets, vals = [], []
     if name is not None:
@@ -111,6 +115,8 @@ def update_header(cx, tid, name=None, email=None, date=None):
         sets.append("email=?"); vals.append((email or "").strip().lower())
     if date is not None:
         sets.append("date_test=?"); vals.append((date or "").strip())
+    if client_id is not None:
+        sets.append("client_id=?"); vals.append(str(client_id or "").strip())
     if not sets:
         return
     sets.append("updated_at=?"); vals.append(_now())
@@ -773,7 +779,8 @@ def authored_report(cx, tid):
     tk = t.keys() if t else []
     return {"test_id": str(tid),
             "client": {"name": (t["name"] if t else "") or "",
-                       "email": (t["email"] if t else "") or ""},
+                       "email": (t["email"] if t else "") or "",
+                       "client_id": ((t["client_id"] if "client_id" in tk else "") or "")},
             "date": (t["date_test"] if t else "") or "",
             "phase": (t["phase"] if "phase" in tk else None),
             "location": ((t["location"] if "location" in tk else "") or ""),

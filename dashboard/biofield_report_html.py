@@ -281,15 +281,28 @@ def render_invoice_page(report, fee_state):
     c = report.get("client") or {}
     name = _e(c.get("name") or "(unknown)")
     tid = _e(str(report.get("test_id") or ""))
+    remedies = []
+    for row in report.get("layers") or []:
+        remedy = (row.get("remedy") or "").strip()
+        if remedy and remedy.lower() not in {x.lower() for x in remedies}:
+            remedies.append(remedy)
+    product_count = len(remedies)
+    product_preview = (
+        "<div class=invoice-products><h3>Products ready to sync</h3><ul>" +
+        "".join(f"<li>{_e(remedy)}</li>" for remedy in remedies) + "</ul></div>"
+        if remedies else
+        "<p class=food>No authored remedies are ready for this invoice yet.</p>"
+    )
+    sync_label = (f"Sync {product_count} product{'s' if product_count != 1 else ''} to invoice"
+                  if product_count else "Sync products to invoice")
     handoff = (
         "<div class=card style='margin-top:14px'>"
-        "<h2 style='font-size:15px'>Add Recommended Products</h2>"
-        "<p class=food>One click saves the authored analysis to "
-        "the client's portal as a draft (correctly formatted, never stale reveal content), "
-        "and the invoice is raised from these remedies plus the Biofield Analysis fee as a "
-        "proposed order. Either practitioner can review and publish both from the console &mdash; nothing is "
-        "charged or emailed yet.</p>"
-        "<button class=btn id=handoffbtn onclick=handoffToRae()>Add Recommended Products &rarr;</button>"
+        "<h2 style='font-size:15px'>Recommended Products</h2>"
+        "<p class=food>Opening this tab does not change the draft invoice. Review the "
+        "products below, then sync them. One click publishes the authored report and "
+        "invoice to the client's portal, then emails one direct portal link. Repeating "
+        "the same sync will not send a duplicate email.</p>" + product_preview +
+        f"<button class=btn id=handoffbtn onclick=handoffToRae()>{_e(sync_label)} &rarr;</button>"
         " <span id=handoffstat class=food></span></div>"
         "<script>function handoffToRae(){var b=document.getElementById('handoffbtn');"
         "var s=document.getElementById('handoffstat');b.disabled=true;s.textContent=' staging...';"
@@ -303,7 +316,10 @@ def render_invoice_page(report, fee_state):
         "if((iv.skipped||[]).length){m+=' \\u2014 '+iv.skipped.length+' remedy(ies) not on catalog, add manually';}}"
         "else if(iv.already_paid){m+=' \\u2014 no invoice raised (Biofield Analysis already paid, order #'+iv.order_id+')';}"
         "else{m+=' \\u2014 analysis only ('+(iv.error||'no invoice')+')';}"
-        "m+='. The invoice and portal draft are ready to review.';s.textContent=m;}"
+        "var d=j.delivery||{};if(d.ok){m+=' \u2014 report and invoice published';"
+        "m+=(d.emailed?' \u2014 client emailed':(d.duplicate?' \u2014 already emailed':'');}"
+        "else{m+=' \u2014 '+(d.error||'automatic delivery needs attention');}"
+        "m+='.';s.textContent=m;}"
         "else{s.textContent=' '+(j.error||'Handoff failed.');}})"
         ".catch(function(){b.disabled=false;s.textContent=' Could not reach the app.';});}</script>")
     body = (_client_tabs("invoice", report.get("test_id") or "", c.get("email") or "")
@@ -317,7 +333,7 @@ def render_invoice_page(report, fee_state):
 
 
 _PHOTO_JS = """<script>
-async function uploadPhoto(tid, eq){
+async function uploadPhoto(tid){
   var f=document.getElementById('photofile');
   if(!f||!f.files||!f.files[0])return;
   var stat=document.getElementById('photostat'); stat.textContent='Uploading\\u2026';
@@ -327,7 +343,7 @@ async function uploadPhoto(tid, eq){
     var j=await r.json();
     if(j.ok){
       var img=document.getElementById('clientphoto');
-      img.src='/client-photo/'+eq+'?t='+Date.now(); img.style.display='block';
+      img.src='/test/'+tid+'/client-photo?t='+Date.now(); img.style.display='block';
       stat.textContent = j.prod_pushed ? 'Saved.' : 'Saved locally (prod push pending).';
     } else { stat.textContent='Error: '+(j.error||'failed'); }
   }catch(e){ stat.textContent='Error: '+e; }
@@ -349,17 +365,16 @@ def render_report_html(report, notes="", narrative="", video_script="", stresses
     import urllib.parse as _up
     _email_raw = (c.get("email") or "").strip()
     if _email_raw:
-        _eq = _up.quote(_email_raw, safe="")
         _tidp = _e(report.get("test_id") or "")
         head += (
             "<div class=photobox style='display:flex;gap:14px;align-items:flex-start;margin:4px 0 16px'>"
             "<img id=clientphoto alt='' "
             "style='width:180px;height:180px;object-fit:cover;border-radius:10px;"
             "border:1px solid var(--line);background:#0c0e12;display:block' "
-            f"src='/client-photo/{_eq}' onerror=\"this.style.display='none'\">"
+            f"src='/test/{_tidp}/client-photo' onerror=\"this.style.display='none'\">"
             "<div><label class=btn style='cursor:pointer;display:inline-block'>Upload photo"
             f"<input id=photofile type=file accept='image/*' style='display:none' "
-            f"onchange=\"uploadPhoto('{_tidp}','{_eq}')\"></label>"
+            f"onchange=\"uploadPhoto('{_tidp}')\"></label>"
             "<div id=photostat class=food style='margin-top:6px'></div></div></div>"
             + _PHOTO_JS)
     tid_link = _e(report.get("test_id") or "")
@@ -530,7 +545,17 @@ async function addLayerStress(input,layer){var label=(input.value||'').trim();if
 async function assignStress(sid){astat('Assigning…');const j=await post('/author/__TID__/stress/'+sid+'/assign',{});astat(j&&j.ok?('Assigned to its layer.'):((j&&j.error)||'Assign failed.'));setStress(j)}
 async function assignAllStresses(){astat('Assigning all…');const j=await post('/author/__TID__/stresses/assign-all',{});astat(j&&j.ok?('Assigned '+(j.assigned||0)+' stress(es).'):((j&&j.error)||'Assign failed.'));setStress(j)}
 async function saveHeader(){const j=await post('/author/__TID__/header',
- {name:val('h_name'),email:val('h_email'),date:val('h_date')});astat('Header saved.');setE4L(j)}
+ {name:val('h_name'),email:val('h_email'),date:val('h_date'),client_id:val('h_client_id')});astat('Header saved.');setE4L(j)}
+async function uploadAuthorPhoto(){
+ var f=document.getElementById('authorphotofile'),s=document.getElementById('authorphotostat');
+ if(!f||!f.files||!f.files[0])return;s.textContent='Uploading\u2026';
+ var fd=new FormData();fd.append('photo',f.files[0]);
+ try{var r=await fetch('/test/__TID__/photo',{method:'POST',body:fd});var j=await r.json();
+  if(!j.ok){s.textContent='Error: '+(j.error||'failed');return}
+  var img=document.getElementById('authorclientphoto');
+  img.src='/test/__TID__/client-photo?t='+Date.now();img.style.display='block';s.textContent='Saved.';
+ }catch(e){s.textContent='Error: '+e}
+}
 async function refreshHeaderPhoto(){
  var img=document.getElementById('authorclientphoto'),email=val('h_email').trim();
  if(!img)return;
@@ -539,7 +564,7 @@ async function refreshHeaderPhoto(){
   var j=await (await fetch('/client-photo-framing/'+encodeURIComponent(email))).json();
   if(j.ok)img.style.objectPosition=j.focus_x+'% '+j.focus_y+'%';
  }catch(e){img.style.objectPosition='50% 42%'}
- img.style.display='none';img.src='/client-photo/'+encodeURIComponent(email)+'?t='+Date.now();
+ img.style.display='none';img.src='/test/__TID__/client-photo?t='+Date.now();
 }
 // --- E4L client picker: name autocomplete -> email (dropdown if duplicates) -> date
 var E4L_CLIENT_ID=null;
@@ -588,6 +613,14 @@ async function checkE4L(){
   setE4L(j);var s2=document.getElementById('e4lchk');
   if(s2)s2.textContent=j.ok?(j.newer?'\\u2191 Newer scan pulled.':'\\u2713 Up to date.'):('E4L check failed: '+((j.error||'error')+'').slice(0,120));
  }catch(e){var s3=document.getElementById('e4lchk');if(s3)s3.textContent='E4L check failed.'}
+}
+async function requestFreshScan(){
+ var s=document.getElementById('e4lchk');if(s)s.textContent='Sending fresh-scan request…';
+ var j=await post('/author/__TID__/e4l/request-fresh',{});
+ if(s)s.textContent=j.ok?('✓ Fresh-scan request sent to '+j.email):('Email failed: '+(j.error||'error'));
+}
+function useStaleScan(days){
+ if(confirm('Use the most recent scan even though it is '+days+' days old?'))importReveal(true);
 }
 async function addRow(){var b=rowVals('new');if(!b.head&&!b.remedy){astat('Enter a stress and a remedy.');return}
  await post('/author/__TID__/row',b);reloadKeepingView()}
@@ -811,12 +844,14 @@ async function delTest(){if(!confirm('Delete this entire test? This cannot be un
  await post('/author/__TID__/delete',{});location.href='/'}
 async function confirmAll(){await post('/author/__TID__/confirm-all',{});location.reload()}
 async function confirmRow(rid){await post('/author/__TID__/row/'+rid+'/confirm',{});location.reload()}
-async function importReveal(){
+async function importReveal(allowStale){
 try{
-  var j=await post('/author/__TID__/e4l/import-reveal',{});
+ var j=await post('/author/__TID__/e4l/import-reveal',{allow_stale:!!allowStale});
   if(j && j.needs_confirm){
-    if(!confirm('This session already has '+j.existing+' rows — add the reveal layers anyway?')) return;
-    j=await post('/author/__TID__/e4l/import-reveal',{force:true});
+    var lc=j.existing_layers||j.existing||0,rc=j.existing_rows||j.existing||0;
+    if(!confirm('This session already has '+lc+' layer'+(lc===1?'':'s')+' ('+rc+
+      ' row'+(rc===1?'':'s')+') — add the reveal layers below '+(lc===1?'it':'them')+'?')) return;
+   j=await post('/author/__TID__/e4l/import-reveal',{force:true,allow_stale:!!allowStale});
   }
   if(j && j.ok){ location.reload(); }
   else { astat((j&&j.reason)||'Import failed.'); }
@@ -891,11 +926,31 @@ async function balanceClinicalItem(btn){
  var layer=Number(row.querySelector('.clinical-layer').value||0);
  var remedies=[].slice.call(row.querySelectorAll('.clinical-remedy-choice:checked'))
   .map(function(x){return x.value});
- var custom=(row.querySelector('.clinical-custom-remedy').value||'').trim();if(custom)remedies.push(custom);
  if(!layer){alert('Choose an existing layer or New layer first.');return}
+ if(!remedies.length){alert('Select at least one related remedy first.');return}
  btn.disabled=true;btn.textContent='Balancing…';
  var j=await post('/author/__TID__/clinical-items/balance',{label:label,layer:layer,remedies:remedies});
  if(j.ok)location.reload();else{btn.disabled=false;btn.textContent='Add to layer';alert(j.error||'Could not add item to layer')}}
+async function addClinicalRemedy(btn){
+ var row=btn.closest('.clinical-item'),input=row.querySelector('.clinical-custom-remedy');
+ var remedy=(input.value||'').trim();if(!remedy)return;
+ btn.disabled=true;btn.textContent='Adding…';
+ var j=await post('/author/__TID__/clinical-items/remedies',{label:row.dataset.label,remedy:remedy});
+ if(j.ok)location.reload();else{btn.disabled=false;btn.textContent='Add to remedy list';alert(j.error||'Could not add remedy')}
+}
+async function deleteClinicalRemedy(btn){
+ var row=btn.closest('.clinical-item'),remedy=btn.dataset.remedy;
+ if(!confirm('Delete "'+remedy+'" from the remembered remedies for '+row.dataset.label+'?'))return;
+ var j=await post('/author/__TID__/clinical-items/remedies',{
+  action:'delete',label:row.dataset.label,remedy:remedy});
+ if(j.ok)location.reload();else alert(j.error||'Could not delete remedy')
+}
+async function loadClinicalCatalog(){
+ var list=document.getElementById('clinicalCatalog');if(!list)return;
+ try{var j=await (await fetch('/author/__TID__/clinical-catalog')).json();
+  list.innerHTML=(j.items||[]).map(function(x){return '<option value="'+_esc(x.label)+'">'+x.remedy_count+' remedies</option>'}).join('')
+ }catch(e){}
+}
 function initClinicalDrag(){
  var grid=document.querySelector('.clinical-grid');if(!grid)return;var moving=null;
  grid.querySelectorAll('.clinical-item').forEach(function(row){
@@ -1040,8 +1095,10 @@ def render_e4l_panel(ctx):
     if ctx.get("found") and days is not None and days < 7:
         imp = "<button class='btn' onclick=importReveal()>Import Reveal &rarr; Causal Chain</button>"
     elif ctx.get("found"):
-        imp = (f"<button class='btn' disabled title='Refresh to a scan under 7 days old'>"
-               f"Import Reveal &rarr; Causal Chain</button>"
+        imp = (f"<button class='btn' onclick=\"useStaleScan({_e(str(days))})\">"
+               f"Use most recent scan anyway</button>"
+               f"<button class='btn ghost' onclick=requestFreshScan()>"
+               f"Email client to request fresh scan</button>"
                f"<span class=food>scan is {_e(str(days))} days old</span>")
     else:
         imp = ""
@@ -1064,21 +1121,25 @@ def _depth_select(rid, side, current, depth_values):
 
 
 def group_layers(layers):
-    """Group ordered chain rows into layer cards. Rows sharing a non-empty head are
-    one layer (a layer can carry several remedies); empty-head rows stand alone.
-    Groups keep first-appearance order and get a 1-based display number."""
-    groups, by_head = [], {}
+    """Group chain rows by their stable stored layer (fallback: non-empty head).
+
+    Additional remedies deliberately have an empty head, so grouping empty-head rows
+    as standalone cards incorrectly displayed Layer 1's remedies as Layers 2 and 3.
+    """
+    groups, by_key = [], {}
     for l in layers or []:
         head = (l.get("head") or "").strip()
-        key = head.lower() if head else None
-        g = by_head.get(key) if key is not None else None
+        stored = l.get("stored_layer")
+        key = ("stored", str(stored)) if stored not in (None, "") else (
+            ("head", head.lower()) if head else None)
+        g = by_key.get(key) if key is not None else None
         if g is None:
             g = {"head": head, "most_affected": (l.get("most_affected") or "").strip(),
                  "stored_layer": l.get("stored_layer", l.get("layer")),
                  "zone": l.get("zone") or "top", "rows": []}
             groups.append(g)
             if key is not None:
-                by_head[key] = g
+                by_key[key] = g
         elif not g["most_affected"] and (l.get("most_affected") or "").strip():
             g["most_affected"] = (l.get("most_affected") or "").strip()
         g["rows"].append(l)
@@ -1093,8 +1154,10 @@ def render_chain_table(layers, with_depth_badge=False):
     internal viewer and the clean report/PDF."""
     rows = ""
     for g in group_layers(layers):
-        n = len(g["rows"]) or 1
-        for i, l in enumerate(g["rows"]):
+        remedy_rows = [r for r in g["rows"] if (r.get("remedy") or "").strip()]
+        display_rows = remedy_rows or g["rows"]
+        n = len(display_rows) or 1
+        for i, l in enumerate(display_rows):
             badge = ""
             if with_depth_badge and l.get("depth_status") == "shallow":
                 badge = (f"<br><span class=warn>&#9888; may not reach "
@@ -1205,7 +1268,7 @@ def _render_chain_cards(report, depth_values, covered_by_layer=None):
         remedy_rows = [r for r in g["rows"] if (r.get("remedy") or "").strip()]
         only_remedy = len(remedy_rows) <= 1
         lines = "".join(_remedy_line(r, depth_values, only_remedy=only_remedy)
-                        for r in g["rows"])
+                        for r in remedy_rows)
         head_in = _xwrap(f'<input id={gid}_head list=vocab value="{he}" title="{he}" oninput="dirtyLayer(this)">')
         tail_in = _xwrap(f'<input id={gid}_most list=vocab value="{me}" title="{me}" oninput="dirtyLayer(this)">')
         source_layer = int(g.get("stored_layer") or n)
@@ -1360,11 +1423,16 @@ def render_clinical_checklist(items, layers=None):
         remedy = (f"<span class=clinical-remedy>Layer {_e(str(item.get('layer') or '?'))} · {_e(item.get('covered_by') or '')}</span>"
                   if done else "<span class=clinical-open>Needs remedy coverage</span>")
         label = item.get("label") or ""
+        covered_names = {str(x).lower() for x in (item.get("covered_remedies") or [])}
+        if not covered_names and item.get("covered_by"):
+            covered_names = {str(item.get("covered_by")).lower()}
         common = "".join(
             f"<label><input class=clinical-remedy-choice type=checkbox value=\"{_e(name)}\""
-            f"{' checked' if name.lower() == (item.get('covered_by') or '').lower() else ''}> {_e(name)}</label>"
+            f"{' checked' if name.lower() in covered_names else ''}> {_e(name)} "
+            f"<button type=button class=clinical-remedy-delete data-remedy=\"{_e(name)}\" "
+            f"onclick=deleteClinicalRemedy(this) title='Delete remembered remedy'>&times;</button></label>"
             for name in item.get("common_remedies") or []
-        ) or "<span class=clinical-open>No common remedies recorded yet</span>"
+        ) or "<span class=clinical-open>No related remedies yet — add one below.</span>"
         selected_layer = item.get("layer")
         options = "<option value=''>Choose layer…</option>" + "".join(
             f"<option value='{number}'{' selected' if str(selected_layer or '') == str(number) else ''}>"
@@ -1379,8 +1447,11 @@ def render_clinical_checklist(items, layers=None):
                  f"<input class=clinical-check type=checkbox aria-label=\"Select {_e(label)}\""
                  f"{' checked' if done else ''} onchange=toggleClinicalItem(this)>"
                  f"<span class=clinical-label>{_e(label)}</span>{remedy}"
-                 f"<div class=clinical-balance><div class=clinical-common>{common}</div>"
-                 f"<input class=clinical-custom-remedy placeholder='Add remedy…'>"
+                 f"<div class=clinical-balance><div class=clinical-common>"
+                 f"<b>Related remedies</b>{common}</div>"
+                 "<div class=clinical-remedy-add>"
+                 f"<input class=clinical-custom-remedy list=catalog placeholder='Add remedy to {_e(label)}…'>"
+                 "<button class='btn ghost' onclick=addClinicalRemedy(this)>Add to remedy list</button></div>"
                  f"<label class=clinical-layer-label>Assign to layer"
                  f"<select class=clinical-layer aria-label='Layer for {_e(label)}'>{options}</select></label>"
                  "<button class='btn ghost' onclick=balanceClinicalItem(this)>Add to layer</button></div>"
@@ -1403,6 +1474,10 @@ def render_clinical_checklist(items, layers=None):
             ".clinical-balance{grid-column:3;display:grid;grid-template-columns:minmax(160px,1fr) minmax(260px,1.25fr) auto;gap:8px;margin-top:9px;align-items:end}"
             ".clinical-common{grid-column:1/-1;display:flex;flex-wrap:wrap;gap:5px 12px;font-size:11px;color:var(--muted)}"
             ".clinical-common label{white-space:nowrap}.clinical-common input{width:auto;margin:0 3px 0 0}"
+            ".clinical-common b{width:100%;color:var(--text)}.clinical-remedy-add{display:flex;gap:6px;align-items:end}"
+            ".clinical-remedy-delete{border:0;background:transparent;color:var(--muted);font-size:16px;cursor:pointer;padding:0 2px}"
+            ".clinical-remedy-delete:hover{color:#ef8d8d}"
+            ".clinical-remedy-add input{flex:1}.clinical-remedy-add .btn{white-space:nowrap}"
             ".clinical-balance input,.clinical-balance select{margin:0;min-width:0;padding:9px}.clinical-layer-label{font-size:11px;font-weight:700;color:var(--muted)}"
             ".clinical-layer-label select{display:block;width:100%;margin-top:3px;color:var(--text);background:var(--card);border:1px solid var(--accent)}"
             ".clinical-balance .btn{padding:9px 12px}"
@@ -1416,8 +1491,9 @@ def render_clinical_checklist(items, layers=None):
             f"<div class=clinical-count>{checked} of {len(items)} covered"
             "<span id=clinicalOrderStat style='margin-left:8px'></span></div></div>"
             f"<div class=clinical-grid>{rows}</div>"
-            "<div class=clinical-add><input id=clinicalNew placeholder='Add symptom or condition…' "
+            "<div class=clinical-add><input id=clinicalNew list=clinicalCatalog autocomplete=off placeholder='Search or add symptom or condition…' "
             "onkeydown=\"if(event.key==='Enter'){event.preventDefault();addClinicalItem()}\">"
+            "<datalist id=clinicalCatalog></datalist>"
             "<button class='btn ghost' onclick=addClinicalItem()>+ Add item</button></div></section>")
 
 
@@ -1440,7 +1516,7 @@ def render_author_html(report, depth_values=None, transcript="", covered_by_laye
     c = report.get("client") or {}
     import urllib.parse as _up
     photo_email = (c.get("email") or "").strip()
-    photo_src = (f"/client-photo/{_up.quote(photo_email, safe='')}" if photo_email else "")
+    photo_src = (f"/test/{tid}/client-photo" if photo_email else "")
     head = (_workflow_nav("intake", c.get("email") or "")
             + _client_tabs("edit", tid, c.get("email") or "")
             + f"<p><a href='/'>&larr; All tests</a> &nbsp;&middot;&nbsp; "
@@ -1459,7 +1535,7 @@ def render_author_html(report, depth_values=None, transcript="", covered_by_laye
         "@media(max-width:720px){.authorheadgrid{grid-template-columns:1fr}.authorheadphoto{width:100%;height:240px;min-height:0}}"
         "</style>"
         "<div class=card>"
-        "<input type=hidden id=h_client_id value=''>"
+        f"<input type=hidden id=h_client_id value=\"{_e(c.get('client_id') or '')}\">"
         "<label>Client name</label>"
         "<span style='position:relative;display:inline-block'>"
         f"<input id=h_name autocomplete=off oninput=nameSearch() value=\"{_e(c.get('name') or '')}\" style='width:280px'>"
@@ -1473,11 +1549,14 @@ def render_author_html(report, depth_values=None, transcript="", covered_by_laye
         "<h1 style='margin:0'>Edit Biofield Test</h1>"
         "<div class=btnrow><button class=btn onclick=confirmAll()>&#10003; Confirm all rows</button>"
         "<button class='btn ghost' onclick=delTest()>Delete test</button></div>"
-        + hdr + "</div>"
+        + hdr + "</div><div>"
         "<img id=authorclientphoto class=authorheadphoto alt='Selected client headshot' "
         f"style='display:{'block' if photo_src else 'none'}' src='{_e(photo_src)}' "
         "onload=\"this.style.display='block'\" onerror=\"this.style.display='none'\">"
-        "</div>")
+        "<label class=btn style='cursor:pointer;display:inline-block;margin-top:8px'>Upload photo"
+        "<input id=authorphotofile type=file accept='image/*' style='display:none' "
+        "onchange='uploadAuthorPhoto()'></label>"
+        "<div id=authorphotostat class=food style='margin-top:5px'></div></div></div>")
     groups = group_layers(report.get("layers") or [])
     chain = ("<h2>Causal chain "
              "<button class='btn ghost' id=depthbtn onclick=toggleDepth() "
@@ -1538,7 +1617,7 @@ def render_author_html(report, depth_values=None, transcript="", covered_by_laye
                  + render_clinical_checklist(clinical_checklist, report.get("layers") or [])
                  + chain + session + narrative_section
                  + _AUTHOR_JS.replace("__TID__", tid)
-                 + "<script>loadClinicalProposals();initClinicalDrag()</script>")
+                 + "<script>loadClinicalProposals();loadClinicalCatalog();initClinicalDrag()</script>")
 
 
 def render_list_html(tests, q="", authored=None):

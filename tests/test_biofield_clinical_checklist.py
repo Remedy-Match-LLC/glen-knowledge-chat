@@ -1,7 +1,11 @@
 import sqlite3
 
 from dashboard.biofield_authoring import add_chain_row, create_test
-from dashboard.biofield_clinical_checklist import balance_item, build, profile_labels
+from dashboard.biofield_clinical_checklist import (
+    add_related_remedy, balance_item, build, catalog_items, forget_remedy,
+    profile_labels, program_remedies, remembered_remedies, related_remedies,
+    remember_remedy,
+)
 from dashboard.biofield_report_html import render_author_html
 
 
@@ -21,8 +25,8 @@ def test_layer_remedy_checks_related_condition():
     )
     assert rows == [
         {"label": "Chronic migraine", "checked": True, "covered_by": "Neuroprotect",
-         "layer": None, "common_remedies": []},
-        {"label": "Fatigue", "checked": False, "covered_by": "", "layer": None,
+         "covered_remedies": ["Neuroprotect"], "layer": None, "common_remedies": []},
+        {"label": "Fatigue", "checked": False, "covered_by": "", "covered_remedies": [], "layer": None,
          "common_remedies": []},
     ]
 
@@ -38,12 +42,70 @@ def test_historical_related_remedy_checks_when_added_to_program():
     assert rows[0]["common_remedies"] == ["Skin Restore"]
 
 
+def test_glaucoma_uses_approved_condition_program_remedies():
+    names = program_remedies("Glaucoma")
+    assert "Neuroprotect" in names
+    assert "OcuFlow Bedtime" in names
+    assert "OcuFlow Daytime" in names
+
+
+def test_manual_condition_remedy_relationship_persists_per_test():
+    cx = sqlite3.connect(":memory:")
+    assert add_related_remedy(cx, "a33", "Glaucoma", "Custom Eye Support")
+    assert related_remedies(cx, "a33", "Glaucoma") == ["Custom Eye Support"]
+    assert related_remedies(cx, "a34", "Glaucoma") == []
+
+
+def test_practitioner_condition_remedy_memory_is_global_and_deletable():
+    cx = sqlite3.connect(":memory:")
+    assert remember_remedy(cx, "Histamine intolerance", "Aller Ease") == "Aller Ease"
+    assert remembered_remedies(cx, "histamine intolerance") == ["Aller Ease"]
+    assert catalog_items(cx, "histamine") == [
+        {"label": "Histamine intolerance", "remedy_count": 1}
+    ]
+    assert forget_remedy(cx, "Histamine intolerance", "Aller Ease") == "Aller Ease"
+    assert remembered_remedies(cx, "Histamine intolerance") == []
+
+
+def test_condition_catalog_includes_amd_aliases_and_excludes_historical_noise():
+    cx = sqlite3.connect(":memory:")
+    cx.executescript("""
+        CREATE TABLE fmp_snap_client_active_main_stress(id_pk INTEGER,main_stress TEXT);
+        CREATE TABLE fmp_snap_client_causal_chain(id_pk INTEGER,id_fk_active_stress INTEGER);
+        CREATE TABLE fmp_snap_client_remedy(id_fk_causal_chain INTEGER,remedy TEXT);
+        INSERT INTO fmp_snap_client_active_main_stress VALUES(1,'Left Retina'),(2,'Neuroprotect');
+        INSERT INTO fmp_snap_client_causal_chain VALUES(10,1),(20,2);
+        INSERT INTO fmp_snap_client_remedy VALUES(10,'Macular Wellness Lutein'),(20,'Neuroprotect');
+    """)
+    labels = [row["label"] for row in catalog_items(cx, "amd")]
+    assert "Dry AMD" in labels
+    assert "Wet AMD" in labels
+    assert "AMD (Age-Related Macular Degeneration)" in labels
+    assert "Left Retina" not in labels
+    assert "Neuroprotect" not in labels
+    assert program_remedies("Dry Macular Degeneration")
+    assert program_remedies("AMD (Age-Related Macular Degeneration)")
+
+
 def test_existing_stress_coverage_checks_condition():
     rows = build(
         {"conditions": ["Sleep disturbance"]}, [],
         {"balanced": [{"label": "Sleep", "balanced_by": "Sleep Ease"}]},
     )
     assert rows[0]["checked"] is True
+
+
+def test_multiple_related_remedies_on_one_layer_all_persist_as_covered():
+    rows = build(
+        {"conditions": ["Glaucoma"]},
+        [
+            {"stored_layer": 1, "head": "Glaucoma", "remedy": "OcuFlow Bedtime"},
+            {"stored_layer": 1, "head": "", "most_affected": "", "remedy": "IOP Syntropy"},
+        ],
+        remedy_lookup=lambda label: ["OcuFlow Bedtime", "IOP Syntropy"],
+    )
+    assert rows[0]["covered_remedies"] == ["OcuFlow Bedtime", "IOP Syntropy"]
+    assert rows[0]["covered_by"] == "OcuFlow Bedtime, IOP Syntropy"
 
 
 def test_checklist_renders_directly_before_causal_chain():
@@ -70,6 +132,8 @@ def test_checklist_renders_directly_before_causal_chain():
     assert "Drag to reorder" in html
     assert "Add to layer" in html
     assert "Add remedy" in html
+    assert "Add to remedy list" in html
+    assert "clinical-items/remedies" in html
     assert "type=checkbox aria-label=\"Select Fatigue\"" in html
     assert "onchange=toggleClinicalItem(this)" in html
     assert "Assign to layer" in html
@@ -77,6 +141,9 @@ def test_checklist_renders_directly_before_causal_chain():
     assert "Layer 1: Liver support" in html
     assert "Layer 2: Neurological support" in html
     assert "New layer 3" in html
+    assert "list=clinicalCatalog" in html
+    assert "loadClinicalCatalog()" in html
+    assert "deleteClinicalRemedy" in html
 
 
 def test_checklist_selects_current_layer_and_offers_first_new_layer():

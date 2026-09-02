@@ -38,6 +38,11 @@ def init_table(cx):
             ("zoom", "REAL NOT NULL DEFAULT 1")):
         if not db.column_exists(cx, "client_photos", column):
             cx.execute(f"ALTER TABLE client_photos ADD COLUMN {column} {declaration}")
+    cx.execute(
+        "CREATE TABLE IF NOT EXISTS client_identity_photos("
+        "client_id TEXT PRIMARY KEY, email TEXT, image_blob BLOB, content_type TEXT, "
+        "source TEXT, updated_at TEXT, focus_x REAL NOT NULL DEFAULT 50, "
+        "focus_y REAL NOT NULL DEFAULT 42, zoom REAL NOT NULL DEFAULT 1)")
 
 
 def would_skip_precedence(cx, email, source):
@@ -108,3 +113,36 @@ def set_framing(cx, email, focus_x, focus_y, zoom):
 
 def has(cx, email):
     return get(cx, email) is not None
+
+
+def put_for_client(cx, client_id, email, blob, content_type, source="upload"):
+    """Store a portrait for one person, independent of a household-shared email."""
+    cid = str(client_id or "").strip()
+    if not cid or not blob:
+        return None
+    init_table(cx)
+    cx.execute(
+        "INSERT INTO client_identity_photos("
+        "client_id,email,image_blob,content_type,source,updated_at) VALUES(?,?,?,?,?,?) "
+        "ON CONFLICT(client_id) DO UPDATE SET email=excluded.email, "
+        "image_blob=excluded.image_blob,content_type=excluded.content_type, "
+        "source=excluded.source,updated_at=excluded.updated_at",
+        (cid, _norm(email), blob, content_type or "image/jpeg", source, _now()))
+    cx.commit()
+    return cid
+
+
+def get_for_client(cx, client_id):
+    cid = str(client_id or "").strip()
+    if not cid:
+        return None
+    init_table(cx)
+    row = cx.execute(
+        "SELECT image_blob,content_type,focus_x,focus_y,zoom "
+        "FROM client_identity_photos WHERE client_id=?", (cid,)).fetchone()
+    if not row or row[0] is None:
+        return None
+    return {"blob": row[0], "content_type": row[1] or "image/jpeg",
+            "focus_x": float(row[2] if row[2] is not None else 50),
+            "focus_y": float(row[3] if row[3] is not None else 42),
+            "zoom": float(row[4] if row[4] is not None else 1)}

@@ -18,7 +18,10 @@ Then open http://127.0.0.1:8011
 """
 import argparse
 import datetime
+import hashlib
+import json
 import os
+import re
 import sqlite3
 import requests
 
@@ -536,10 +539,12 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                interpret_complete=None, scan_lookup=None, client_search=None,
                fetch_runner=None, fetch_profile=None, fetch_recent_comms=None,
                fetch_client_photo=None,
+               scan_request_email=None,
                e4l_db=None, fee_get=None, fee_set=None, fee_clear=None,
                invoice_fetch_catalog=None, invoice_create=None, invoice_link=None,
-               invoice_paid_check=None, invoice_latest=None, ingredients_db=None,
-               portal_link_fetch=None):
+               invoice_paid_check=None, invoice_latest=None, invoice_publish=None,
+               ingredients_db=None, portal_link_fetch=None, portal_publish=None,
+               delivery_email=None):
     app = Flask(__name__)
     # The clinical-tags ledger lives in the SEPARATE local e4l.db (not the app's chat_log.db).
     e4l_db = e4l_db or _e4l_db_path()
@@ -552,6 +557,17 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
     # injectable for tests. Never raises -> intake is never blocked.
     scan_lookup = scan_lookup or (
         lambda email: _scan_context(email, datetime.date.today().isoformat()))
+    if scan_request_email is None:
+        from dashboard import inbox as _inbox
+        def scan_request_email(email, name):
+            first = ((name or "").strip().split() or [""])[0]
+            greeting = f"Aloha {first}," if first else "Aloha,"
+            body = (f"{greeting}\n\nBefore we complete your Biofield Analysis, please do a "
+                    "fresh voice scan. It only takes about 10 seconds.\n\n"
+                    "Start your fresh scan here: https://Truly.VIP/E4L\n\n"
+                    "Mahalo,\nDr. Glen Swartwout")
+            return _inbox.send_email(email, "Please complete a fresh voice scan", body,
+                                     from_name="Dr. Glen Swartwout")
     # Name picker + on-demand live fetch (the local mirror lags, so selecting a client
     # can pull their newest scan straight from the live E4L portal). Both injectable.
     client_search = client_search or (lambda q: _search_clients(q))
@@ -596,6 +612,7 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
     invoice_link = invoice_link or biofield_invoice.default_invoice_link
     invoice_paid_check = invoice_paid_check or biofield_invoice.default_biofield_paid
     invoice_latest = invoice_latest or biofield_invoice.default_latest_invoice
+    invoice_publish = invoice_publish or biofield_invoice.default_publish_invoice
     def _default_portal_link_fetch(email, name):
         base = os.environ.get("PUBLIC_BASE_URL", "https://illtowell.com").rstrip("/")
         key = os.environ.get("CONSOLE_SECRET", "")
@@ -606,6 +623,33 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
             raise RuntimeError(f"portal lookup failed ({r.status_code})")
         return r.json().get("url") or ""
     portal_link_fetch = portal_link_fetch or _default_portal_link_fetch
+
+    if delivery_email is None:
+        def delivery_email(email, name, url, order_id):
+            result = biofield_invoice.default_publish_invoice(order_id, notify=True)
+            if not result.get("ok") or not result.get("emailed"):
+                raise RuntimeError(result.get("error") or "portal email was not accepted")
+            return result
+
+    def _delivery_seen(test_id, fingerprint):
+        with sqlite3.connect(db_path) as cx:
+            cx.execute("CREATE TABLE IF NOT EXISTS biofield_delivery_notifications("
+                       "test_id TEXT NOT NULL, fingerprint TEXT NOT NULL, order_id INTEGER, "
+                       "notified_at TEXT NOT NULL, PRIMARY KEY(test_id,fingerprint))")
+            return cx.execute(
+                "SELECT 1 FROM biofield_delivery_notifications WHERE test_id=? AND fingerprint=?",
+                (str(test_id), fingerprint)).fetchone() is not None
+
+    def _mark_delivery(test_id, fingerprint, order_id):
+        with sqlite3.connect(db_path) as cx:
+            cx.execute("CREATE TABLE IF NOT EXISTS biofield_delivery_notifications("
+                       "test_id TEXT NOT NULL, fingerprint TEXT NOT NULL, order_id INTEGER, "
+                       "notified_at TEXT NOT NULL, PRIMARY KEY(test_id,fingerprint))")
+            cx.execute("INSERT OR IGNORE INTO biofield_delivery_notifications "
+                       "(test_id,fingerprint,order_id,notified_at) VALUES(?,?,?,?)",
+                       (str(test_id), fingerprint, order_id,
+                        datetime.datetime.utcnow().isoformat()))
+            cx.commit()
 
     def _report_for(cx, test_id):
         return (authored_report(cx, test_id) if str(test_id).startswith("a")
@@ -714,6 +758,28 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
     with sqlite3.connect(db_path) as _cx:
         seed_dimensions(_cx)
 
+    def _photo_identity(cx, rep):
+        """Resolve one person behind a test; email is not an identity in households."""
+        client = rep.get("client") or {}
+        cid = str(client.get("client_id") or "").strip()
+        email = (client.get("email") or "").strip().lower()
+        name = (client.get("name") or "").strip()
+        try:
+            household = cx.execute(
+                "SELECT COUNT(DISTINCT id_pk) FROM fmp_clients "
+                "WHERE lower(trim(email))=?", (email,)).fetchone()[0]
+            if cid:
+                return cid, email, household > 1
+            rows = cx.execute(
+                "SELECT id_pk FROM fmp_clients WHERE lower(trim(email))=? "
+                "AND lower(trim(name_first||' '||name_last))=?",
+                (email, name.lower())).fetchall()
+            if len(rows) == 1:
+                return str(rows[0][0]), email, household > 1
+            return "", email, household > 1
+        except Exception:
+            return "", email, False
+
     # Same console key as the rest of Glen's console (when CONSOLE_SECRET is set, e.g.
     # under `doppler run`). The launcher passes ?key=; we cookie it so same-origin
     # fetches stay authed. No CONSOLE_SECRET -> open (e.g. bare local dev / tests).
@@ -805,6 +871,23 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
         resp.headers["Cache-Control"] = "no-store"
         return resp
 
+    @app.route("/test/<test_id>/client-photo")
+    def test_client_photo(test_id):
+        """Serve the test's person-specific portrait, never a household member's."""
+        from dashboard import client_photos as _cph
+        with sqlite3.connect(db_path) as cx:
+            rep = _report_for(cx, test_id)
+            client_id, email, shared_email = _photo_identity(cx, rep)
+            rec = _cph.get_for_client(cx, client_id) if client_id else None
+            if not rec and not shared_email:
+                _refresh_client_photo(email)
+                rec = _cph.get(cx, email)
+        if not rec:
+            return Response("", status=404)
+        resp = Response(rec["blob"], mimetype=rec["content_type"])
+        resp.headers["Cache-Control"] = "no-store"
+        return resp
+
     @app.route("/client-photo-framing/<path:email>")
     def client_photo_framing(email):
         """Return the same nondestructive face focal point used by portal avatars."""
@@ -820,9 +903,7 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
 
     @app.route("/test/<test_id>/photo", methods=["POST"])
     def upload_client_photo(test_id):
-        """Operator upload on the Biofield Intake page: save the photo to the local
-        store keyed by the test's client email, then best-effort push it to prod so
-        console/reveal thumbnails can show it too."""
+        """Save against the selected person's client ID, not a shared household email."""
         from dashboard import client_photos as _cph
         f = request.files.get("photo")
         blob = f.read() if f else b""
@@ -835,14 +916,23 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
             email = ((rep.get("client") or {}).get("email") or "").strip().lower()
             if not email:
                 return jsonify({"ok": False, "error": "this test has no client email"}), 400
-            _cph.put(cx, email, blob, ctype, source="fmp-intake-upload")
+            client_id, email, shared_email = _photo_identity(cx, rep)
+            if not client_id and shared_email:
+                return jsonify({"ok": False, "error":
+                    "select the individual client record before uploading a photo"}), 409
+            if client_id:
+                _cph.put_for_client(cx, client_id, email, blob, ctype,
+                                    source="fmp-intake-upload")
+            else:
+                _cph.put(cx, email, blob, ctype, source="fmp-intake-upload")
         prod_pushed = False
         base = os.environ.get("PORTAL_PUBLISH_BASE_URL", "")
         key = os.environ.get("CONSOLE_SECRET", "")
         if base:
             try:
                 import base64 as _b64, json as _json, urllib.request as _u
-                body = _json.dumps({"email": email, "content_type": ctype,
+                body = _json.dumps({"email": email, "client_id": client_id,
+                                    "content_type": ctype,
                                     "source": "fmp-intake-upload",
                                     "image": _b64.b64encode(blob).decode()}).encode()
                 r = _u.Request(base.rstrip("/") + "/api/console/client-photo", data=body,
@@ -851,7 +941,8 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                 prod_pushed = bool(_json.load(_u.urlopen(r, timeout=30)).get("ok"))
             except Exception as e:
                 print(f"[client-photo] prod push failed: {e}", flush=True)
-        return jsonify({"ok": True, "email": email, "prod_pushed": prod_pushed})
+        return jsonify({"ok": True, "email": email, "client_id": client_id,
+                        "prod_pushed": prod_pushed})
 
     @app.route("/test/<test_id>/report")
     def report_present(test_id):
@@ -894,7 +985,10 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
     def author_edit(test_id):
         from dashboard.biofield_report_html import group_layers
         from dashboard.biofield_stress import list_stresses
-        from dashboard.biofield_clinical_checklist import build as build_clinical_checklist
+        from dashboard.biofield_clinical_checklist import (
+            build as build_clinical_checklist, forgotten_remedies, program_remedies,
+            related_remedies, remembered_remedies,
+        )
         from dashboard.biofield_clinical_proposals import (
             accepted_labels, apply_order, dismissed_labels, item_key,
         )
@@ -929,9 +1023,21 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                 if isinstance(current, str):
                     current = [x.strip() for x in current.replace(";", ",").split(",") if x.strip()]
                 profile["conditions"] = list(current) + accepted
+            def _clinical_remedies(label):
+                names, seen = [], set()
+                forgotten = forgotten_remedies(cx, label)
+                candidates = ([x.get("remedy") for x in stress_suggestions(cx, label)]
+                              + program_remedies(label)
+                              + related_remedies(cx, test_id, label)
+                              + remembered_remedies(cx, label))
+                for name in candidates:
+                    name = (name or "").strip()
+                    if name and " ".join(re.sub(r"[^a-z0-9]+", " ", name.lower()).split()) not in forgotten and name.lower() not in seen:
+                        seen.add(name.lower()); names.append({"remedy": name})
+                return names
             clinical_checklist = build_clinical_checklist(
                 profile, rep.get("layers") or [], sdata,
-                remedy_lookup=lambda label: stress_suggestions(cx, label),
+                remedy_lookup=_clinical_remedies,
             )
             hidden = {item_key(label) for label in dismissed_labels(cx, test_id)}
             clinical_checklist = [item for item in clinical_checklist
@@ -980,7 +1086,7 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
         d = request.get_json(silent=True) or {}
         with sqlite3.connect(db_path) as cx:
             update_header(cx, test_id, name=d.get("name"), email=d.get("email"),
-                          date=d.get("date"))
+                          date=d.get("date"), client_id=d.get("client_id"))
             ctx, _ = _e4l(cx, test_id)  # client now known -> pull recent E4L scan
             _seed_stresses(cx, test_id)  # synthesize + seed stress coverage if scan found
         invoice = {"ok": False, "reason": "no_email"}
@@ -1157,8 +1263,7 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
 
     @app.route("/author/<test_id>/handoff", methods=["POST"])
     def author_handoff(test_id):
-        """Hand off to Rae: build a portal-seed from THIS authored chain (correct
-        flat format) and push it to prod as an ai_draft for Rae to publish."""
+        """Sync the authored report and invoice, publish both, then notify once."""
         with sqlite3.connect(db_path) as cx:
             rep = authored_report(cx, test_id)
             client = rep.get("client") or {}
@@ -1215,8 +1320,61 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                     invoice = {"ok": False, "error": created.get("error") or "invoice not created"}
         except Exception as e:
             invoice = {"ok": False, "error": "invoice raise failed"}
+
+        # Finalize the client-facing delivery. Report and invoice are published before
+        # the one combined email is sent. The content fingerprint makes retries safe:
+        # an unchanged second click can repair publication without sending twice.
+        delivery = {"report_published": False, "invoice_published": False,
+                    "emailed": False, "duplicate": False}
+        order_id = invoice.get("order_id")
+        try:
+            report_result = (portal_publish(test_id, 0, False) if portal_publish
+                             else _do_publish(test_id, 0, send=False))
+            if report_result.get("unresolved"):
+                delivery["error"] = "Some remedies could not be published to the portal."
+            else:
+                delivery["report_published"] = True
+                _mark_published(test_id, 0)
+        except Exception as e:
+            delivery["error"] = f"Report publish failed: {str(e)[:160]}"
+        if order_id:
+            published_invoice = invoice_publish(order_id) or {}
+            delivery["invoice_published"] = bool(published_invoice.get("ok"))
+            if not delivery["invoice_published"] and not delivery.get("error"):
+                delivery["error"] = published_invoice.get("error") or "Invoice publish failed."
+        elif invoice.get("already_paid"):
+            # A prior paid invoice needs no new pay card; the report can still deliver.
+            delivery["invoice_published"] = True
+        elif not delivery.get("error"):
+            delivery["error"] = invoice.get("error") or "Invoice was not created."
+
+        fingerprint_payload = {
+            "scan_date": scan_date,
+            "layers": content.get("layers") or [],
+            "reorder_items": content.get("reorder_items") or [],
+        }
+        fingerprint = hashlib.sha256(json.dumps(
+            fingerprint_payload, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+        if delivery["report_published"] and delivery["invoice_published"]:
+            if _delivery_seen(test_id, fingerprint):
+                delivery["duplicate"] = True
+            else:
+                try:
+                    portal_url = portal_link_fetch(email, client.get("name") or "")
+                    if not portal_url:
+                        raise RuntimeError("portal link unavailable")
+                    delivery_email(email, client.get("name") or "", portal_url, order_id)
+                    _mark_delivery(test_id, fingerprint, order_id)
+                    delivery["emailed"] = True
+                    delivery["portal_url"] = portal_url
+                except Exception as e:
+                    delivery["error"] = f"Published, but email failed: {str(e)[:160]}"
+        delivery["ok"] = bool(delivery["report_published"] and
+                              delivery["invoice_published"] and
+                              (delivery["emailed"] or delivery["duplicate"]))
         return {"ok": True, "layers": len(content["layers"]),
-                "remedies": len(content["reorder_items"]), "email": email, "invoice": invoice}
+                "remedies": len(content["reorder_items"]), "email": email,
+                "invoice": invoice, "delivery": delivery}
 
     @app.route("/author/<test_id>/e4l")
     def author_e4l(test_id):
@@ -1252,6 +1410,23 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
         return {"ok": bool(res.get("ok")), "error": res.get("error"),
                 "newer": newer, "e4l": after, "html": render_e4l_panel(after)}
 
+    @app.route("/author/<test_id>/e4l/request-fresh", methods=["POST"])
+    def author_request_fresh_scan(test_id):
+        """Email the selected client a direct link to complete a fresh voice scan."""
+        with sqlite3.connect(db_path) as cx:
+            rep = _report_for(cx, test_id)
+        client = rep.get("client") or {}
+        email = (client.get("email") or "").strip()
+        if not email:
+            return {"ok": False, "error": "No client email selected yet"}
+        try:
+            sent = scan_request_email(email, client.get("name") or "")
+        except Exception as e:
+            return {"ok": False, "error": f"Email failed: {e}"[:200]}
+        if not sent:
+            return {"ok": False, "error": "Email could not be sent"}
+        return {"ok": True, "email": email}
+
     @app.route("/author/<test_id>/e4l/import-reveal", methods=["POST"])
     def author_import_reveal(test_id):
         """Import the client's recent (<7d) E4L reveal layers + remedies as
@@ -1259,7 +1434,9 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
         session already has rows. Synthesis runs in-process (PHI stays local)."""
         import datetime as _dt
         from dashboard import biofield_reveal_import as _ri
-        force = bool((request.get_json(silent=True) or {}).get("force"))
+        body = request.get_json(silent=True) or {}
+        force = bool(body.get("force"))
+        allow_stale = bool(body.get("allow_stale"))
         with sqlite3.connect(db_path) as cx:
             rep = _report_for(cx, test_id)
             email = ((rep.get("client") or {}).get("email") or "").strip()
@@ -1271,13 +1448,20 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                 return {"ok": False, "reason": f"Reveal synthesis failed: {e}"}
             if not res.get("found"):
                 return {"ok": False, "reason": "No E4L scan on file"}
-            if not res.get("fresh"):
+            if not res.get("fresh") and not allow_stale:
                 return {"ok": False,
                         "reason": f"Latest scan is {res.get('days_ago')} days old "
                                   "— refresh to import"}
-            existing = len(rep.get("layers") or [])
-            if existing and not force:
-                return {"ok": False, "needs_confirm": True, "existing": existing}
+            existing_rows = len(rep.get("layers") or [])
+            existing_layers = len({
+                str(row.get("stored_layer", row.get("layer")))
+                for row in (rep.get("layers") or [])
+            })
+            if existing_rows and not force:
+                return {"ok": False, "needs_confirm": True,
+                        "existing": existing_rows,
+                        "existing_rows": existing_rows,
+                        "existing_layers": existing_layers}
             imported = _ri.import_layers_to_test(cx, test_id, res.get("layers") or [])
             # Pass already-synthesized layers so the pipeline runs only once per import
             _seed_stresses(cx, test_id, force=True, layers=res.get("layers") or [])
@@ -2030,6 +2214,27 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
         with sqlite3.connect(db_path) as cx:
             count = save_order(cx, test_id, labels)
         return {"ok": True, "count": count}
+
+    @app.route("/author/<test_id>/clinical-items/remedies", methods=["POST"])
+    def author_add_clinical_remedy(test_id):
+        """Persist a condition-to-remedy relationship without adding a chain row."""
+        from dashboard.biofield_clinical_checklist import forget_remedy, remember_remedy
+        body = request.get_json(silent=True) or {}
+        try:
+            with sqlite3.connect(db_path) as cx:
+                remedy = (forget_remedy(cx, body.get("label"), body.get("remedy"))
+                          if body.get("action") == "delete"
+                          else remember_remedy(cx, body.get("label"), body.get("remedy")))
+        except ValueError as exc:
+            return {"ok": False, "error": str(exc)}, 400
+        return {"ok": True, "remedy": remedy}
+
+    @app.route("/author/<test_id>/clinical-catalog")
+    def author_clinical_catalog(test_id):
+        from dashboard.biofield_clinical_checklist import catalog_items
+        with sqlite3.connect(db_path) as cx:
+            items = catalog_items(cx, request.args.get("q", ""))
+        return {"ok": True, "items": items}
 
     @app.route("/author/<test_id>/clinical-items/balance", methods=["POST"])
     def author_balance_clinical_item(test_id):

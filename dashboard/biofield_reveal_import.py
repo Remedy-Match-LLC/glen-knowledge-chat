@@ -102,12 +102,20 @@ def import_layers_to_test(cx, tid, layers):
     """Create one needs-review (confirmed=0) chain row per reveal layer. Dosing is
     auto-filled from the product catalog when the remedy name resolves. Returns the
     number of rows created."""
-    from dashboard.biofield_authoring import add_chain_row, remedy_dosing
+    from dashboard.biofield_authoring import _num, add_chain_row, remedy_dosing
+    row = cx.execute("SELECT MAX(layer) FROM biofield_auth_chain WHERE test_id=?",
+                     (_num(tid),)).fetchone()
+    base_layer = int((row[0] if row else 0) or 0)
+    layer_map = {}
     n = 0
-    for L in layers or []:
+    for index, L in enumerate(layers or [], 1):
+        source_layer = L.get("n")
+        source_key = str(source_layer) if source_layer not in (None, "") else f"row:{index}"
+        if source_key not in layer_map:
+            layer_map[source_key] = base_layer + len(layer_map) + 1
         name = (L.get("remedy_name") or "").strip()
         d = remedy_dosing(cx, name) if name else {"dosage": "", "frequency": "", "timing": ""}
-        add_chain_row(cx, tid, L.get("n"), L.get("title") or "",
+        add_chain_row(cx, tid, layer_map[source_key], L.get("title") or "",
                       L.get("most_affected") or "", name,
                       dosage=d.get("dosage", ""), frequency=d.get("frequency", ""),
                       timing=d.get("timing", ""), confirmed=0, origin="scan",

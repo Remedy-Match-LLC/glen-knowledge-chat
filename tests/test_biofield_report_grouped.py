@@ -48,3 +48,14 @@ def test_depth_badge_only_on_viewer():
                "depth_status": "shallow", "depth_need": "the nucleus"}]
     assert "may not reach" in render_chain_table(layers, with_depth_badge=True)
     assert "may not reach" not in render_chain_table(layers)          # client report stays clean
+
+
+def test_blank_anchor_is_hidden_when_layer_has_remedies():
+    layers = [
+        {"layer": 1, "stored_layer": 1, "head": "Glaucoma", "remedy": ""},
+        {"layer": 2, "stored_layer": 1, "head": "", "remedy": "OcuFlow Bedtime"},
+        {"layer": 3, "stored_layer": 1, "head": "", "remedy": "IOP Syntropy"},
+    ]
+    html = render_chain_table(layers)
+    assert "rowspan=2" in html
+    assert html.count("<tr>") == 3  # header + two remedy rows; no blank anchor row

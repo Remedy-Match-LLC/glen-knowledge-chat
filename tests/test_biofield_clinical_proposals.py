@@ -86,6 +86,25 @@ def test_manual_checklist_add_and_remove_routes(tmp_path, monkeypatch):
     assert b"Dry eyes" in page
 
 
+def test_manual_related_remedy_route_does_not_add_chain_row(tmp_path, monkeypatch):
+    monkeypatch.delenv("CONSOLE_SECRET", raising=False)
+    import dashboard
+    monkeypatch.setattr(dashboard, "CONSOLE_SECRET", "", raising=False)
+    db = str(tmp_path / "chat_log.db")
+    with sqlite3.connect(db) as cx:
+        init_auth_tables(cx)
+        tid = create_test(cx, "Pam", "pam@example.com", "2026-08-26")
+    client = create_app(db, fetch_profile=lambda email: {"conditions": ["Glaucoma"]}).test_client()
+    response = client.post(f"/author/{tid}/clinical-items/remedies", json={
+        "label": "Glaucoma", "remedy": "Custom Eye Support",
+    })
+    assert response.get_json()["ok"] is True
+    with sqlite3.connect(db) as cx:
+        assert cx.execute("SELECT COUNT(*) FROM biofield_auth_chain").fetchone()[0] == 0
+    page = client.get(f"/author/{tid}").data
+    assert b"Custom Eye Support" in page
+
+
 def test_checklist_order_persists_and_new_items_append(tmp_path):
     with sqlite3.connect(tmp_path / "x.db") as cx:
         assert save_order(cx, "a1", ["Fatigue", "Migraine"]) == 2

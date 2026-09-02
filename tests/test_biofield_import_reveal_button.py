@@ -18,11 +18,13 @@ def test_button_active_when_scan_under_7_days():
     assert "disabled" not in html.split("Import Reveal")[0][-40:]  # button not disabled
 
 
-def test_button_disabled_when_scan_stale():
+def test_stale_scan_offers_request_email_and_explicit_use_anyway():
     html = render_e4l_panel(_ctx(True, 12))
-    assert "Import Reveal" in html
     assert "12 days old" in html
-    assert "disabled" in html
+    assert "Use most recent scan anyway" in html
+    assert "useStaleScan(12)" in html
+    assert "Email client to request fresh scan" in html
+    assert "requestFreshScan()" in html
 
 
 def test_no_button_when_no_scan():
@@ -34,6 +36,8 @@ def test_author_page_defines_import_reveal_handler():
     rep = {"test_id": "a7", "client": {"name": "Jane", "email": "jane@x.com"},
            "date": "2026-06-25", "layers": [], "schedule": []}
     html = render_author_html(rep, [], "")
-    assert "function importReveal()" in html
+    assert "function importReveal(allowStale)" in html
     assert "/author/a7/e4l/import-reveal" in html
     assert "needs_confirm" in html
+    assert "allow_stale" in html
+    assert "/author/a7/e4l/request-fresh" in html

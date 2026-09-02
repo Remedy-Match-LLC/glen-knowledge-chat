@@ -256,7 +256,7 @@ def default_latest_invoice(email):
         return {"ok": False, "error": "Couldn't reach the console to find the invoice."}
 
 
-def default_publish_invoice(order_id):
+def default_publish_invoice(order_id, notify=False):
     """POST the prod publish-to-portal endpoint for an order, so it shows as a pay
     card on the client's portal. Returns {ok, link} or {ok:False, error}."""
     base, key = _console()
@@ -265,7 +265,8 @@ def default_publish_invoice(order_id):
     try:
         url = (f"{base}/api/console/order/{int(order_id)}/publish-to-portal?key="
                + urllib.parse.quote(key))
-        req = urllib.request.Request(url, data=b"{}", method="POST",
+        data = _json.dumps({"email": True}).encode("utf-8") if notify else b"{}"
+        req = urllib.request.Request(url, data=data, method="POST",
                                      headers={"Content-Type": "application/json", "X-Console-Key": key})
         with urllib.request.urlopen(req, timeout=10) as r:
             resp = _json.loads(r.read().decode() or "{}")
