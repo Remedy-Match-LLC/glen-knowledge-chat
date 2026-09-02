@@ -529,9 +529,10 @@
   .hub-grid-group { margin-top:1rem; }
   .hub-grid-group .glabel { font-size:.78rem; letter-spacing:.01em; text-transform:none; color:var(--muted); font-weight:700; margin:.1rem 0 .5rem; }
   .hub-tiles { display:grid; grid-template-columns:repeat(3,1fr); gap:.7rem; }
-  /* Seven-door shell. Desktop first: the rail holds layout width and widens in place.
-     Under 760px it leaves the flow entirely, because a permanent 44px rail leaves
-     331px of content and remedy names already truncate at that width. */
+  /* Seven-door shell. Desktop first: the rail holds layout width and widens in
+     place. Under 760px it leaves the flow entirely, because a rail that never
+     leaves would cost a 375px phone roughly 44 of those pixels and the portal's
+     remedy names already truncate at the width that leaves. */
   .shell-bar{display:none}
   .portal-rail{
     position:fixed; top:0; bottom:0; left:0; width:52px; z-index:40;
@@ -555,8 +556,10 @@
   body.has-shell .wrap{margin-left:52px}
   .shell-scrim{position:fixed;inset:0;z-index:39;background:rgba(0,0,0,.42);
     opacity:0;pointer-events:none;transition:opacity .2s ease}
-  .portal-rail.is-open ~ .shell-scrim{opacity:1;pointer-events:auto}
 
+  /* Keep this the first max-width:760px block in the file. The responsive test
+     finds these rules by scanning for the first such media query, so an earlier
+     one inserted above would make it check the wrong block. */
   @media (max-width:760px){
     .shell-bar{
       display:flex; align-items:center; gap:9px; padding:8px 11px;
@@ -572,6 +575,7 @@
     }
     .portal-rail.is-open{transform:translateX(0);width:176px}
     .portal-rail .rail-item span{opacity:1}
+    .portal-rail.is-open ~ .shell-scrim{opacity:1;pointer-events:auto}
     body.has-shell .wrap{margin-left:0}
   }
   @media (prefers-reduced-motion: reduce){
