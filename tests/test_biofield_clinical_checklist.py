@@ -5,7 +5,7 @@ from dashboard.biofield_clinical_checklist import (
     balance_item, build, catalog_items, custom_remedies, ensure_catalog_schema,
     forget_remedy,
     profile_labels, program_remedies, remember_remedies, remember_stress_pattern,
-    stress_pattern,
+    stress_pattern, suggested_pattern,
 )
 from dashboard.biofield_report_html import render_author_html
 
@@ -26,10 +26,11 @@ def test_layer_remedy_checks_related_condition():
     )
     assert rows == [
         {"label": "Chronic migraine", "checked": True, "covered_by": "Neuroprotect",
-         "layer": None, "common_remedies": [],
-         "stress_pattern": "", "remembered_pattern": ""},
+         "layer": None, "common_remedies": [], "stress_pattern": "",
+         "remembered_pattern": "", "pattern_is_suggested": False},
         {"label": "Fatigue", "checked": False, "covered_by": "", "layer": None,
-         "common_remedies": [], "stress_pattern": "", "remembered_pattern": ""},
+         "common_remedies": [], "stress_pattern": "", "remembered_pattern": "",
+         "pattern_is_suggested": False},
     ]
 
 
@@ -238,3 +239,57 @@ def test_older_local_databases_named_the_column_item_label():
         # And the table takes writes again.
         assert remember_remedies(cx, "Dry Eye", ["Moisturize"]) == 1
         assert custom_remedies(cx, "Dry Eye") == ["Moisturize"]
+
+
+def test_every_catalogue_condition_has_a_suggested_functional_term():
+    """The picker offers these labels as clinical items, so each needs a term --
+    except 'Often no symptoms early', which names no function to restore."""
+    import json, os
+    seed = json.load(open(os.path.join(os.path.dirname(os.path.dirname(__file__)),
+                                       "data", "condition_programs_seed.json")))
+    wanted = set()
+    for program in seed["condition_programs"].values():
+        if program.get("label"):
+            wanted.add(program["label"])
+        wanted.update(program.get("symptoms") or [])
+    wanted.discard("Often no symptoms early")
+    missing = sorted(label for label in wanted if not suggested_pattern(label))
+    assert missing == []
+    assert suggested_pattern("Often no symptoms early") == ""
+
+
+def test_suggested_patterns_match_the_practitioners_own_wording():
+    assert suggested_pattern("Dry Eye") == "Tear Quality"
+    assert suggested_pattern("Glaucoma — Elevated IOP") == "Eye Pressure Regulation"
+    # The two glaucomas are clinically distinct and must not share a term.
+    assert suggested_pattern("Glaucoma — Normal / Low IOP") == "Optic Nerve Perfusion"
+
+
+def test_a_free_text_condition_gets_no_suggestion():
+    assert suggested_pattern("Glaucoma & upper back pain from work") == ""
+    assert suggested_pattern("") == ""
+
+
+def test_build_marks_a_suggestion_and_lets_a_remembered_term_win():
+    rows = build({"conditions": ["Sleep Difficulty"]}, [])
+    assert rows[0]["stress_pattern"] == "Sleep Regulation"
+    assert rows[0]["pattern_is_suggested"] is True
+    assert rows[0]["remembered_pattern"] == ""      # nothing to replace yet
+
+    rows = build({"conditions": ["Sleep Difficulty"]}, [],
+                 stress_lookup=lambda label: "Circadian Entrainment")
+    assert rows[0]["stress_pattern"] == "Circadian Entrainment"
+    assert rows[0]["pattern_is_suggested"] is False
+    assert rows[0]["remembered_pattern"] == "Circadian Entrainment"
+
+
+def test_using_a_suggestion_promotes_it_to_the_practitioners_own_term():
+    with sqlite3.connect(":memory:") as cx:
+        tid = create_test(cx, "Pam", "pam@example.com", "2026-09-02")
+        assert stress_pattern(cx, "Sleep Difficulty") == ""
+        balance_item(cx, tid, "Sleep Difficulty", 1, ["Sleep Ease"],
+                     pattern=suggested_pattern("Sleep Difficulty"))
+        assert stress_pattern(cx, "Sleep Difficulty") == "Sleep Regulation"
+        head, tail = cx.execute(
+            "SELECT head,most_affected FROM biofield_auth_chain WHERE layer=1").fetchone()
+        assert head == "Sleep Regulation" and tail == "Sleep Regulation"

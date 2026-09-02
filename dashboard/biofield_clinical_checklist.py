@@ -72,6 +72,23 @@ def remember_stress_pattern(cx, label, pattern, replace=False):
     return True
 
 
+def _suggested_patterns():
+    path = os.path.join(os.path.dirname(os.path.dirname(__file__)),
+                        "data", "clinical_stress_patterns_seed.json")
+    try:
+        raw = json.load(open(path, encoding="utf-8")).get("patterns", {})
+    except (OSError, ValueError):
+        return {}
+    return {_norm(label): term for label, term in raw.items() if _norm(label) and term}
+
+
+def suggested_pattern(label):
+    """A drafted functional term for a catalogued condition -- the function to
+    restore, not the pathology.  Only ever a suggestion: what the practitioner has
+    recorded for a condition wins, and a free-text condition matches nothing here."""
+    return _suggested_patterns().get(_norm(label), "")
+
+
 def stress_pattern(cx, label):
     ensure_stress_schema(cx)
     row = cx.execute("SELECT pattern FROM biofield_clinical_stress WHERE item_key=?",
@@ -253,10 +270,13 @@ def build(profile, layers, stress_data=None, remedy_lookup=None, stress_lookup=N
                             balanced_layer = layer.get("stored_layer", layer.get("layer"))
                             break
         remembered = (stress_lookup(label) or "").strip() if stress_lookup else ""
+        suggested = "" if remembered else suggested_pattern(label)
         rows.append({"label": label, "checked": bool(covered_by),
                      "covered_by": covered_by, "layer": balanced_layer,
                      "common_remedies": common_remedies[:8],
-                     "stress_pattern": remembered, "remembered_pattern": remembered})
+                     "stress_pattern": remembered or suggested,
+                     "remembered_pattern": remembered,
+                     "pattern_is_suggested": bool(suggested)})
     return rows
 
 
