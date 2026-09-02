@@ -89,3 +89,85 @@ def test_import_handles_synthesis_failure(tmp_path, monkeypatch):
     assert r.status_code == 200
     j = r.get_json()
     assert j["ok"] is False and "fail" in j["reason"].lower()
+
+
+_STALE_WITH_LAYERS = {"found": True, "scan_id": 900, "scan_date": "2026-06-01",
+                      "days_ago": 24, "fresh": False, "layers": [
+                          {"n": 1, "title": "Oxidative load", "summary": "",
+                           "most_affected": "Cell membrane",
+                           "remedy_name": "Neuro Magnesium"}]}
+
+
+def test_a_stale_scan_offers_an_override_instead_of_a_dead_end(tmp_path, monkeypatch):
+    """Refusing outright left no way forward from the page: the practitioner could
+    not import, and could not tell the app to go ahead anyway."""
+    monkeypatch.setattr(RI, "synthesize_reveal_layers", lambda *a, **k: _STALE_WITH_LAYERS)
+    db = str(tmp_path / "chat_log.db")
+    client = create_app(db, scan_lookup=lambda e: _NONE).test_client()
+    tid = _new_test_with_email(client, "jane@x.com")
+
+    j = client.post(f"/author/{tid}/e4l/import-reveal", json={}).get_json()
+    assert j["ok"] is False
+    assert j["stale"] is True          # the page can now offer to go ahead
+    assert j["days_ago"] == 24
+    assert "24" in j["reason"]
+    assert sqlite3.connect(db).execute(
+        "SELECT COUNT(*) FROM biofield_auth_chain").fetchone()[0] == 0
+
+    j = client.post(f"/author/{tid}/e4l/import-reveal",
+                    json={"allow_stale": True}).get_json()
+    assert j["ok"] is True and j["imported"] == 1
+    assert j["stale_override"] is True   # recorded, so it is never silent
+
+
+def test_allowing_a_stale_scan_does_not_also_bypass_the_existing_rows_confirm(
+        tmp_path, monkeypatch):
+    """Two independent gates. Overriding staleness must not silently append to a
+    session that already has layers -- that needs its own explicit force."""
+    monkeypatch.setattr(RI, "synthesize_reveal_layers", lambda *a, **k: _STALE_WITH_LAYERS)
+    db = str(tmp_path / "chat_log.db")
+    client = create_app(db, scan_lookup=lambda e: _NONE).test_client()
+    tid = _new_test_with_email(client, "jane@x.com")
+    client.post(f"/author/{tid}/e4l/import-reveal", json={"allow_stale": True})
+
+    j = client.post(f"/author/{tid}/e4l/import-reveal",
+                    json={"allow_stale": True}).get_json()
+    assert j["ok"] is False and j["needs_confirm"] is True and j["existing"] == 1
+
+    j = client.post(f"/author/{tid}/e4l/import-reveal",
+                    json={"allow_stale": True, "force": True}).get_json()
+    assert j["ok"] is True
+
+
+def test_force_alone_never_imports_a_stale_scan(tmp_path, monkeypatch):
+    """The inverse: confirming an append is not consent to use an old scan."""
+    monkeypatch.setattr(RI, "synthesize_reveal_layers", lambda *a, **k: _STALE_WITH_LAYERS)
+    db = str(tmp_path / "chat_log.db")
+    client = create_app(db, scan_lookup=lambda e: _NONE).test_client()
+    tid = _new_test_with_email(client, "jane@x.com")
+    j = client.post(f"/author/{tid}/e4l/import-reveal", json={"force": True}).get_json()
+    assert j["ok"] is False and j.get("stale") is True
+
+
+def test_a_fresh_scan_is_unaffected_by_the_override(tmp_path, monkeypatch):
+    monkeypatch.setattr(RI, "synthesize_reveal_layers", lambda *a, **k: _FRESH)
+    db = str(tmp_path / "chat_log.db")
+    client = create_app(db, scan_lookup=lambda e: _NONE).test_client()
+    tid = _new_test_with_email(client, "jane@x.com")
+    j = client.post(f"/author/{tid}/e4l/import-reveal", json={}).get_json()
+    assert j["ok"] is True and j.get("stale_override") is False
+
+
+def test_the_page_offers_the_override_and_keeps_both_consents(tmp_path, monkeypatch):
+    """The stale consent must survive into the force retry, or confirming the append
+    would silently drop it and the import would be refused again."""
+    from dashboard.biofield_report_html import render_author_html
+    html = render_author_html({"test_id": "a1", "client": {"name": "J", "email": "j@x.com"}})
+    assert "j.stale" in html
+    assert "Import it anyway?" in html
+    assert "body.allow_stale=true" in html
+    assert "body.force=true" in html
+    # both consents ride in ONE body, so neither retry drops the other
+    assert "post('/author/a1/e4l/import-reveal',body)" in html
+    # the scan procedure, quoted from the E4L page -- not invented
+    assert "count out loud, one to ten" in html.lower()

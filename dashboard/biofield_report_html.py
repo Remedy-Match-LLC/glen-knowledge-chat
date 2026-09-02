@@ -813,12 +813,24 @@ async function confirmAll(){await post('/author/__TID__/confirm-all',{});locatio
 async function confirmRow(rid){await post('/author/__TID__/row/'+rid+'/confirm',{});location.reload()}
 async function importReveal(){
 try{
-  var j=await post('/author/__TID__/e4l/import-reveal',{});
+  var body={};
+  var j=await post('/author/__TID__/e4l/import-reveal',body);
+  // An old scan is a judgement call, not a dead end: offer to import it anyway.
+  if(j && j.stale){
+    if(!confirm('The latest E4L scan is '+j.days_ago+' days old. Import it anyway?\n\n'
+                +'A fresh scan takes about ten seconds — count out loud, one to ten.')) return;
+    body.allow_stale=true;
+    j=await post('/author/__TID__/e4l/import-reveal',body);
+  }
   if(j && j.needs_confirm){
     if(!confirm('This session already has '+j.existing+' rows — add the reveal layers anyway?')) return;
-    j=await post('/author/__TID__/e4l/import-reveal',{force:true});
+    body.force=true;
+    j=await post('/author/__TID__/e4l/import-reveal',body);
   }
-  if(j && j.ok){ location.reload(); }
+  if(j && j.ok){
+    if(j.stale_override){ astat('Imported a '+j.days_ago+'-day-old scan.'); }
+    location.reload();
+  }
   else { astat((j&&j.reason)||'Import failed.'); }
 }catch(e){ astat('Import failed.'); }
 }
