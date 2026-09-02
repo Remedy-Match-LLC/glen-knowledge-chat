@@ -232,6 +232,24 @@ def _approved_ambassador_slug(cx, email):
         return ""
 
 
+def _series_join_url(cx, email):
+    """This member's own stable Group Coaching join URL, or "".
+
+    Keyed strictly on their email: a join URL is personal, and reading anyone
+    else's row would hand one member another member's private Zoom link.
+    Best-effort, so a missing table never breaks the calendar.
+    """
+    email = (email or "").strip().lower()
+    if not email:
+        return ""
+    try:
+        from dashboard import live_event_series as _les
+        row = _les.get_registration(cx, "group-coaching", email) or {}
+        return (row.get("zoom_join_url") or "").strip()
+    except Exception:
+        return ""
+
+
 def build_block(cx, *, email="", group_coaching_entitled=False,
                 now_iso=None, upgrade_url="/membership"):
     now_iso = (now_iso or _now_iso()).strip()
@@ -336,6 +354,17 @@ def build_block(cx, *, email="", group_coaching_entitled=False,
             key = f"group-{item['id']}"
             registration = registrations.get(key) or {}
             join_url = registration.get("join_url") or ""
+            registered = key in registrations
+            # Group Coaching registers ONCE PER RECURRING SERIES (Zoom
+            # registration_type=1), so a member who has already joined the series
+            # has no per-occurrence row here and was shown "Reserve my spot" for
+            # every future date, with no link and no sign they were already in.
+            # Fall back to their stable series registration. The occurrence row
+            # still wins when present, being the more precise link.
+            if not join_url and entitled:
+                series_join = _series_join_url(cx, email)
+                if series_join:
+                    join_url, registered = series_join, True
             events.append({"id": key, "type": "group_coaching",
                 "title": item.get("summary") or "Group Coaching",
                 "description": "Live group coaching with Dr. Glen.",
@@ -344,7 +373,7 @@ def build_block(cx, *, email="", group_coaching_entitled=False,
                 "action_url": (join_url if entitled else upgrade_url),
                 "action_label": (("Join session" if join_url else "Access details coming soon")
                                  if entitled else "Upgrade to access"),
-                "registered": key in registrations})
+                "registered": registered})
     except Exception:
         _recover_optional_query(cx)
 
