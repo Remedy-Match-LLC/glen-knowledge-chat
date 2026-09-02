@@ -1,4 +1,6 @@
 """Brief, structured symptom/condition checklist for Biofield Intake."""
+import json
+import os
 import re
 
 from dashboard.biofield_profile import clean_health_tag, is_health_tag, _items
@@ -84,25 +86,61 @@ def forgotten_remedies(cx, label):
         (_norm(label),)).fetchall()}
 
 
-def catalog_items(cx, q="", limit=100):
-    """Search only conditions that have at least one known related remedy."""
-    ensure_catalog_schema(cx)
-    like = f"%{str(q or '').strip()}%"
-    found = {}
+_PROGRAM_ALIASES = {
+    "amd": ("dry-amd", "wet-amd"),
+    "age related macular degeneration": ("dry-amd", "wet-amd"),
+    "dry macular degeneration": ("dry-amd",),
+    "dry age related macular degeneration": ("dry-amd",),
+    "wet macular degeneration": ("wet-amd",),
+    "wet age related macular degeneration": ("wet-amd",),
+}
+
+
+def _condition_programs():
+    path = os.path.join(os.path.dirname(os.path.dirname(__file__)),
+                        "data", "condition_programs_seed.json")
     try:
-        rows = cx.execute(
-            "SELECT ams.main_stress, COUNT(DISTINCT r.remedy) "
-            "FROM fmp_snap_client_active_main_stress ams "
-            "JOIN fmp_snap_client_causal_chain cc ON cc.id_fk_active_stress=ams.id_pk "
-            "JOIN fmp_snap_client_remedy r ON r.id_fk_causal_chain=cc.id_pk "
-            "WHERE TRIM(COALESCE(ams.main_stress,''))<>'' "
-            "AND TRIM(COALESCE(r.remedy,''))<>'' AND ams.main_stress LIKE ? "
-            "GROUP BY LOWER(TRIM(ams.main_stress)) ORDER BY ams.main_stress LIMIT ?",
-            (like, int(limit))).fetchall()
-        for label, count in rows:
-            found[_norm(label)] = {"label": label, "remedy_count": int(count or 0)}
-    except Exception:
-        pass
+        return json.load(open(path, encoding="utf-8")).get("condition_programs", {})
+    except (OSError, ValueError):
+        return {}
+
+
+def program_remedies(label):
+    key = _norm(label)
+    names, seen = [], set()
+    alias_keys = set(_PROGRAM_ALIASES.get(key, ()))
+    for program_key, program in _condition_programs().items():
+        program_label = _norm(program.get("label") or program_key)
+        if program_key not in alias_keys and key not in program_label and program_label not in key:
+            continue
+        for item in program.get("items") or []:
+            name = (item.get("name") or "").strip()
+            if name and name.lower() not in seen:
+                seen.add(name.lower()); names.append(name)
+    return names
+
+
+def catalog_items(cx, q="", limit=100):
+    """Curated symptoms/conditions with remedies; never products/body locations."""
+    ensure_catalog_schema(cx)
+    query, found = _norm(q), {}
+    for program_key, program in _condition_programs().items():
+        remedies = {(item.get("name") or "").strip() for item in program.get("items") or []}
+        remedies.discard("")
+        if not remedies:
+            continue
+        for label in [program.get("label") or program_key] + list(program.get("symptoms") or []):
+            if label and (not query or query in _norm(label)):
+                found.setdefault(_norm(label), {"label": label, "remedy_count": len(remedies)})
+    displays = {"amd": "AMD (Age-Related Macular Degeneration)",
+                "dry macular degeneration": "Dry Macular Degeneration",
+                "wet macular degeneration": "Wet Macular Degeneration"}
+    for alias, display in displays.items():
+        if not query or query in _norm(display):
+            remedies = program_remedies(alias)
+            if remedies:
+                found[_norm(display)] = {"label": display, "remedy_count": len(remedies)}
+    like = f"%{str(q or '').strip()}%"
     for label, count in cx.execute(
         "SELECT label,COUNT(*) FROM biofield_clinical_catalog WHERE hidden=0 AND label LIKE ? "
         "GROUP BY item_key ORDER BY label LIMIT ?", (like, int(limit))).fetchall():
