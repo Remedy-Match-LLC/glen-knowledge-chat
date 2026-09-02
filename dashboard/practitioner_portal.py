@@ -590,12 +590,81 @@ def validate_registration(payload: dict) -> Tuple[Optional[dict], Optional[str]]
     }, None
 
 
+class DuplicatePortalEmail(Exception):
+    """A second portal account was about to be created for an email that already
+    has one. Raised by the guard inside every practitioners INSERT below."""
+
+    def __init__(self, email):
+        self.email = str(email or "")
+        super().__init__(
+            f"{self.email} already has a portal practitioner account. "
+            f"Link to that record instead of creating a second one.")
+
+
+# One email can carry several `practitioners` rows on purpose: the scraped
+# directory shares clinic addresses, and a portal account often sits alongside its
+# own scraped listing. Every writer below resolves an email to ONE row, and until
+# now did it with a bare `lower(email)=lower(%s) LIMIT 1` -- no ORDER BY, so
+# Postgres returned whichever row it liked and the same email could resolve
+# differently on two consecutive calls. That is how a certification promotion for
+# drglenswartwout@gmail.com became a coin toss between the real level-12 account
+# and an empty "Remedy Match" stub.
+#
+# The order below always lands on the row that is actually in use: a portal row
+# before a directory row, then wholesale access, then certification level, then
+# wallet balance, then the oldest row, then id as the final tie-break so the
+# answer is stable even for two rows that are identical in every other respect.
+EMAIL_PICK_ORDER = (
+    "ORDER BY (portal_role IS NOT NULL) DESC, "
+    "(wholesale_unlocked_at IS NOT NULL) DESC, "
+    "COALESCE(modules_completed, 0) DESC, "
+    "COALESCE(wallet_balance_cents, 0) DESC, "
+    "created_at ASC, id ASC LIMIT 1"
+)
+
+# The guard every INSERT carries. Kept in the statement rather than as a separate
+# SELECT so the check and the write are one round trip: a lookup that saw nothing
+# (a stale snapshot, or a registration that landed a millisecond earlier) inserts
+# zero rows and RETURNING id comes back empty, which the callers turn into
+# DuplicatePortalEmail. The database's partial unique index
+# (ux_practitioners_portal_email, see dashboard.practitioner_admin) closes the
+# remaining snapshot-level race; this closes the ordinary one and gives the caller
+# a readable error instead of an IntegrityError.
+NO_PORTAL_ROW_GUARD = ("WHERE NOT EXISTS (SELECT 1 FROM practitioners "
+                       "WHERE lower(email)=lower(%s) AND portal_role IS NOT NULL)")
+
+
+def find_row_for_email(cur, email, cols="id", *, portal_only=False):
+    """The ONE practitioners row this email resolves to, or None.
+
+    Every writer resolves through here so they all pick the same row for the same
+    address. `portal_only` restricts to portal accounts (portal_role set); without
+    it a scraped directory row is a valid answer, which is what lets a registrant
+    link to their own existing listing.
+    """
+    sql = (f"SELECT {cols} FROM practitioners WHERE lower(email)=lower(%s) "
+           + ("AND portal_role IS NOT NULL " if portal_only else "")
+           + EMAIL_PICK_ORDER)
+    cur.execute(sql, (str(email or "").strip(),))
+    return cur.fetchone()
+
+
+def _inserted_id_or_refuse(cur, email):
+    """The id from a guarded `INSERT ... RETURNING id`, or DuplicatePortalEmail.
+
+    No row means the NOT EXISTS guard matched: a portal account for this email
+    already exists and a second one must not be minted.
+    """
+    row = cur.fetchone()
+    if not row:
+        raise DuplicatePortalEmail(email)
+    return row["id"]
+
+
 def find_practitioner_id_by_email(email) -> Optional[str]:
     from db_supabase import supabase_cursor
     with supabase_cursor() as cur:
-        cur.execute("SELECT id FROM practitioners WHERE lower(email)=lower(%s) "
-                    "AND portal_role IS NOT NULL LIMIT 1", (str(email).strip(),))
-        row = cur.fetchone()
+        row = find_row_for_email(cur, email, portal_only=True)
     return str(row["id"]) if row else None
 
 
@@ -606,10 +675,7 @@ def modules_completed_for_email(email) -> Optional[int]:
         return None
     from db_supabase import supabase_cursor
     with supabase_cursor() as cur:
-        cur.execute("SELECT modules_completed FROM practitioners "
-                    "WHERE lower(email)=lower(%s) AND portal_role IS NOT NULL LIMIT 1",
-                    (str(email).strip(),))
-        row = cur.fetchone()
+        row = find_row_for_email(cur, email, "modules_completed", portal_only=True)
     return int(row["modules_completed"] or 0) if row else None
 
 
@@ -618,9 +684,7 @@ def id_for_email(email) -> Optional[str]:
     try:
         from db_supabase import supabase_cursor
         with supabase_cursor() as cur:
-            cur.execute("SELECT id FROM practitioners WHERE lower(email)=lower(%s) "
-                        "LIMIT 1", (str(email or "").strip(),))
-            row = cur.fetchone()
+            row = find_row_for_email(cur, email)
             return str(row["id"]) if row else None
     except Exception:
         return None
@@ -631,9 +695,7 @@ def name_for_email(email) -> str:
     try:
         from db_supabase import supabase_cursor
         with supabase_cursor() as cur:
-            cur.execute("SELECT name FROM practitioners WHERE lower(email)=lower(%s) "
-                        "LIMIT 1", (str(email or "").strip(),))
-            row = cur.fetchone()
+            row = find_row_for_email(cur, email, "name")
             return str((row or {}).get("name") or "").strip()
     except Exception:
         return ""
@@ -647,9 +709,7 @@ def register_practitioner(clean: dict, *, now=None) -> Tuple[str, bool]:
     unlocked_at = _utcnow(now) if clean["portal_role"] == "licensed" else None
     tier = "panel_in_cert" if clean["portal_role"] == "coach" else "org_member"
     with supabase_cursor() as cur:
-        cur.execute("SELECT id FROM practitioners WHERE lower(email)=lower(%s) LIMIT 1",
-                    (clean["email"],))
-        row = cur.fetchone()
+        row = find_row_for_email(cur, clean["email"])
         if row:
             pid = row["id"]
             cur.execute(
@@ -669,13 +729,14 @@ def register_practitioner(clean: dict, *, now=None) -> Tuple[str, bool]:
                 "INSERT INTO practitioners (tier, name, email, practice_name, credentials, "
                 "phone, website, portal_role, license_state, license_number, "
                 "resale_license_number, wholesale_unlocked_at) "
-                "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id",
+                "SELECT %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s "
+                + NO_PORTAL_ROW_GUARD + " RETURNING id",
                 (tier, clean["name"], clean["email"], clean["practice_name"],
                  clean["credentials"], clean["phone"], clean["website"],
                  clean["portal_role"], clean["license_state"], clean["license_number"],
-                 clean["resale_license_number"], unlocked_at),
+                 clean["resale_license_number"], unlocked_at, clean["email"]),
             )
-            pid = cur.fetchone()["id"]
+            pid = _inserted_id_or_refuse(cur, clean["email"])
     return str(pid), unlocked_at is not None
 
 
@@ -711,9 +772,7 @@ def upsert_cert_student(email, *, name="", modules_completed=0) -> Tuple[str, in
     mc = max(0, min(int(modules_completed or 0), 12))
     name = str(name or "").strip()
     with supabase_cursor() as cur:
-        cur.execute("SELECT id, tier FROM practitioners WHERE lower(email)=lower(%s) LIMIT 1",
-                    (email,))
-        row = cur.fetchone()
+        row = find_row_for_email(cur, email, "id, tier")
         if row:
             pid = row["id"]
             # Certification rows follow the level; every other tier is left alone.
@@ -726,9 +785,10 @@ def upsert_cert_student(email, *, name="", modules_completed=0) -> Tuple[str, in
         else:
             cur.execute(
                 "INSERT INTO practitioners (tier, name, email, portal_role, modules_completed) "
-                "VALUES ('panel_in_cert', %s, %s, 'coach', %s) RETURNING id",
-                (name, email, mc))
-            pid = cur.fetchone()["id"]
+                "SELECT 'panel_in_cert', %s, %s, 'coach', %s "
+                + NO_PORTAL_ROW_GUARD + " RETURNING id",
+                (name, email, mc, email))
+            pid = _inserted_id_or_refuse(cur, email)
     return str(pid), mc
 
 
@@ -808,9 +868,7 @@ def submit_wholesale_application(clean: dict, *, now=None) -> Tuple[str, bool]:
     from db_supabase import supabase_cursor
     submitted_at = _utcnow(now)
     with supabase_cursor() as cur:
-        cur.execute("SELECT id, wholesale_unlocked_at FROM practitioners "
-                    "WHERE lower(email)=lower(%s) LIMIT 1", (clean["email"],))
-        row = cur.fetchone()
+        row = find_row_for_email(cur, clean["email"], "id, wholesale_unlocked_at")
         if row:
             pid = row["id"]
             if row["wholesale_unlocked_at"] is not None:
@@ -832,12 +890,14 @@ def submit_wholesale_application(clean: dict, *, now=None) -> Tuple[str, bool]:
                 "INSERT INTO practitioners (tier, name, email, practice_name, credentials, "
                 "phone, website, portal_role, license_state, resale_license_number, "
                 "application_status, application_submitted_at) "
-                "VALUES (%s,%s,%s,%s,%s,%s,%s,'reseller',%s,%s,'pending',%s) RETURNING id",
+                "SELECT %s,%s,%s,%s,%s,%s,%s,'reseller',%s,%s,'pending',%s "
+                + NO_PORTAL_ROW_GUARD + " RETURNING id",
                 ("org_member", clean["name"], clean["email"], clean["practice_name"],
                  clean["credentials"], clean["phone"], clean["website"],
-                 clean["license_state"], clean["resale_license_number"], submitted_at),
+                 clean["license_state"], clean["resale_license_number"], submitted_at,
+                 clean["email"]),
             )
-            pid = cur.fetchone()["id"]
+            pid = _inserted_id_or_refuse(cur, clean["email"])
     return str(pid), False
 
 

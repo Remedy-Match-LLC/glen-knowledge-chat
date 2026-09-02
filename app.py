@@ -36518,6 +36518,53 @@ def api_console_practitioners_list():
     return jsonify({"ok": True, "rows": rows})
 
 
+@app.route("/api/console/practitioners/duplicates", methods=["GET"])
+def api_console_practitioners_duplicates():
+    """Console-gated, read-only: every email carrying more than one practitioners row.
+
+    Covers the WHOLE table, not the roster. /api/console/practitioners lists only rows
+    with portal_role set, which is why an empty stub sharing a real practitioner's
+    email stayed invisible while it competed in every email lookup.
+
+    `index_present` says whether the partial unique index actually exists in the
+    database. It is the only honest answer to "is one portal account per email being
+    enforced right now"; a green deploy is not evidence of it.
+    """
+    if not _console_key_ok():
+        return jsonify({"error": "Unauthorized"}), 401
+    from dashboard import practitioner_admin as _pa
+    try:
+        report = _pa.audit_duplicate_emails(db_path=LOG_DB)
+    except Exception as e:  # noqa: BLE001
+        return jsonify({"ok": False, "error": f"practitioners unavailable: {e}"}), 502
+    try:
+        present = _pa.portal_email_index_present()
+    except Exception as e:  # noqa: BLE001
+        print(f"[console-practitioners] index check failed: {e!r}", flush=True)
+        present = None
+    return jsonify({"ok": True, "index_present": present, **report})
+
+
+@app.route("/api/console/practitioners/email-index", methods=["POST"])
+def api_console_practitioners_email_index():
+    """Console-gated: create the partial unique index that enforces one portal
+    account per email. Refuses (409) while a duplicate still exists, because Postgres
+    cannot build the index over a violation and a swallowed failure would leave the
+    console reporting success while nothing is enforced."""
+    if not _console_key_ok():
+        return jsonify({"error": "Unauthorized"}), 401
+    from dashboard import practitioner_admin as _pa
+    try:
+        out = _pa.ensure_portal_email_unique_index()
+    except Exception as e:  # noqa: BLE001
+        return jsonify({"ok": False, "error": f"index creation failed: {e}"}), 502
+    if not out.get("created"):
+        return jsonify({"ok": False, "error":
+                        f"{out['blocked_by']} email(s) still carry more than one portal "
+                        f"row. Retire the spare rows, then run this again.", **out}), 409
+    return jsonify({"ok": True, **out})
+
+
 @app.route("/api/console/practitioner/reset-page-slug", methods=["POST"])
 def api_console_practitioner_reset_page_slug():
     """Admin-only: reset a practitioner's public URL back to her affiliate slug.
@@ -36628,7 +36675,9 @@ def api_console_practitioners_create():
 
 @app.route("/api/console/practitioners/<pid>/edit", methods=["POST"])
 def api_console_practitioners_edit(pid):
-    """Console-gated row actions: level_access | finder | location | resend_invite."""
+    """Console-gated row actions:
+    level_access | credentials | dropship_price | finder | location | resend_invite
+    | retire | unretire."""
     if not _console_key_ok():
         return jsonify({"error": "Unauthorized"}), 401
     from dashboard import practitioner_admin as _pa
@@ -36667,6 +36716,27 @@ def api_console_practitioners_edit(pid):
         _pa.geocode_and_set_location(pid, body.get("city"), body.get("state"),
                                      body.get("country"))
         return jsonify({"ok": True})
+    if action == "retire":
+        # Clears portal_role so the row stops counting as a practitioner. Not a
+        # delete: the record and its history stay, and "unretire" is the exact undo.
+        try:
+            out = _pa.retire_practitioner(pid, db_path=LOG_DB)
+        except _pa.PractitionerNotFound:
+            return jsonify({"ok": False, "error": f"no practitioner with id {pid}"}), 404
+        except _pa.RetireBlocked as e:
+            # 409, not a silent no-op: the operator gets the list of what is attached.
+            return jsonify({"ok": False, "error": str(e), "attached": e.reasons}), 409
+        return jsonify({"ok": True, **out})
+    if action == "unretire":
+        try:
+            out = _pa.unretire_practitioner(pid, body.get("role"))
+        except ValueError as e:
+            return jsonify({"ok": False, "error": str(e)}), 400
+        except _pa.PractitionerNotFound:
+            return jsonify({"ok": False, "error": f"no practitioner with id {pid}"}), 404
+        except _pp.DuplicatePortalEmail as e:
+            return jsonify({"ok": False, "error": str(e)}), 409
+        return jsonify({"ok": True, **out})
     if action == "resend_invite":
         email = (body.get("email") or "").strip()
         if not email:
