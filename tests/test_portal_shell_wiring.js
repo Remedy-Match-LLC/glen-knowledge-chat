@@ -41,9 +41,12 @@ assert.ok(shellTag < page.indexOf('function showDoor'), 'portal-shell.js loads t
 const src = /function showDoor\(key, options\)\{[\s\S]*?\n\}/.exec(page);
 assert.ok(src, 'showDoor not found in the page');
 
+// Panels start as render() leaves them: Home revealed, everything else hidden.
+// Starting them all visible would make the transition assertions below untestable,
+// since nothing would ever be a transition.
 const panels = DOORS.reduce(function (all, d) {
   return all.concat(d.panels.map(function (p) {
-    return { dataset: { panel: p, door: d.key }, hidden: false };
+    return { dataset: { panel: p, door: d.key }, hidden: p !== 'hub' };
   }));
 }, []);
 const rail = DOORS.map(function (d) {
@@ -70,6 +73,53 @@ assert.deepStrictEqual(shown.sort(), ['cart', 'oasis', 'remedies', 'remedy-detai
 assert.deepStrictEqual(rail.filter(function (b) { return b.active; })
   .map(function (b) { return b.dataset.door; }), ['remedies'],
   'exactly the opened door must be highlighted in the rail');
+
+// ---------------------------------------------------------------------------
+// Final review I7: panelShown() fires on the TRANSITION into visible, not on the
+// state. It is not an idempotent hook: its intake branch calls
+// initPortalIntakeCard(true), which re-renders the form, so firing it for a panel
+// that was already open discards whatever the client has typed but the 1.2 second
+// autosave has not yet written. showDoor runs for every panel on every call, so a
+// click on the door you are already on, or any background re-render, used to do
+// exactly that.
+// ---------------------------------------------------------------------------
+{
+  const before = shown.length;
+  eval('showDoor("remedies");');
+  assert.strictEqual(shown.length, before,
+    'reopening the door you are already on must not re-fire panelShown for panels ' +
+    'that were already visible; it re-fired for ' +
+    JSON.stringify(shown.slice(before)));
+  assert.deepStrictEqual(panels.filter(function (p) { return !p.hidden; })
+    .map(function (p) { return p.dataset.panel; }).sort(),
+    ['cart', 'oasis', 'remedies', 'remedy-detail'],
+    'the door must stay open across a repeat call');
+}
+{
+  // The Account door owns the intake panel, so this is the exact live path: open
+  // Account, start typing, and have anything at all call showDoor('account') again.
+  eval('showDoor("account");');
+  const firstOpen = shown.filter(function (n) { return n === 'intake'; }).length;
+  assert.strictEqual(firstOpen, 1, 'opening Account must announce the intake panel once');
+  eval('showDoor("account");');
+  const secondOpen = shown.filter(function (n) { return n === 'intake'; }).length;
+  assert.strictEqual(secondOpen, 1,
+    'a second showDoor("account") re-announced the intake panel, which re-renders ' +
+    'the form and discards the client\'s un-autosaved input');
+}
+
+// panelShown's intake branch is the one that makes the above a data-loss bug
+// rather than a redundant call. Pinned on comment-stripped source so a comment
+// naming the call cannot satisfy it.
+{
+  const fn = /function panelShown\(name\)\{[\s\S]*?\n\}/.exec(page);
+  assert.ok(fn, 'panelShown() not found');
+  const stripped = fn[0].split('\n')
+    .filter(function (l) { return l.trim().slice(0, 2) !== '//'; }).join('\n');
+  assert.ok(/if \(name === 'intake'\) initPortalIntakeCard\(true\);/.test(stripped),
+    'panelShown() must still be the hook that re-renders the intake form, which is ' +
+    'why it may only fire on a transition');
+}
 
 // an unknown door falls back to home rather than hiding everything
 eval('showDoor("nosuchdoor");');

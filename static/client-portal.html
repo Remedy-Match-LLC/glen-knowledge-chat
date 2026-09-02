@@ -1206,8 +1206,16 @@ function showDoor(key, options){
   var members = shell.panelsForDoor(key);
   document.querySelectorAll('[data-panel]').forEach(function(p){
     var inDoor = members.indexOf(p.dataset.panel) !== -1;
+    // Final review I7: panelShown() means "this panel has just become visible",
+    // and one of its branches, initPortalIntakeCard(true), re-renders the intake
+    // form. Firing it for a panel that was already visible rebuilds that form
+    // under the client's hands and discards whatever is still sitting inside the
+    // 1.2 second autosave debounce. showDoor runs for every panel on every call,
+    // including a click on the door you are already on and every background
+    // re-render, so it has to fire on the transition, not on the state.
+    var wasHidden = p.hidden;
     p.hidden = !inDoor;
-    if(inDoor) panelShown(p.dataset.panel);
+    if(inDoor && wasHidden) panelShown(p.dataset.panel);
   });
   document.querySelectorAll('.rail-item[data-door]').forEach(function(b){
     b.classList.toggle('is-active', b.dataset.door === key);
