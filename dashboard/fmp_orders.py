@@ -55,6 +55,23 @@ def ensure_tables(cx):
     for t, cols in _TABLES.items():
         cx.execute(f"CREATE TABLE IF NOT EXISTS {t} ("
                    + ", ".join(f"{c} TEXT" for c in cols) + ")")
+    ensure_indexes(cx)
+
+
+def ensure_indexes(cx):
+    """Indexes for the client-portal invoice-history read path.
+
+    The projection is large and otherwise performs a full client scan followed
+    by one full invoice-item scan per historical invoice.
+    """
+    cx.execute("CREATE INDEX IF NOT EXISTS idx_fmp_clients_email_lower "
+               "ON fmp_clients(lower(email))")
+    cx.execute("CREATE INDEX IF NOT EXISTS idx_fmp_invoices_client "
+               "ON fmp_invoices(id_fk_client)")
+    cx.execute("CREATE INDEX IF NOT EXISTS idx_fmp_invoice_items_invoice "
+               "ON fmp_invoice_items(id_fk_invoice)")
+    cx.execute("CREATE INDEX IF NOT EXISTS idx_fmp_addresses_client "
+               "ON fmp_client_addresses(id_fk_client)")
 
 
 def _replace(cx, table, cols, rows):
@@ -181,6 +198,7 @@ def ingest_payload(cx, payload):
     counts["invoices"]  = _replace(cx, "fmp_invoices", _INV_COLS, [tuple(r) for r in payload.get("invoices", [])])
     counts["items"]     = _replace(cx, "fmp_invoice_items", _ITEM_COLS, [tuple(r) for r in payload.get("items", [])])
     counts["addresses"] = _replace(cx, "fmp_client_addresses", _ADDR_COLS, [tuple(r) for r in payload.get("addresses", [])])
+    ensure_indexes(cx)
     cx.commit()
     return counts
 
