@@ -293,9 +293,11 @@ def test_duplicate_query_covers_the_whole_table_not_just_portal_rows(monkeypatch
     from dashboard import practitioner_admin as pa
     cur = _patch_cursor(monkeypatch, _FakeCur(fetchall_result=[]))
     pa.duplicate_email_rows()
-    sql = cur.sql()[0]
-    assert "portal_role IS NOT NULL" not in sql, sql
-    assert "HAVING COUNT(*) > 1" in sql, sql
+    # Picked by content, not by position: a catalogue probe runs first now.
+    sql = [s for s in cur.sql() if "FROM practitioners WHERE lower(trim(email))" in s]
+    assert len(sql) == 1, cur.sql()
+    assert "portal_role IS NOT NULL" not in sql[0], sql[0]
+    assert "HAVING COUNT(*) > 1" in sql[0], sql[0]
 
 
 # ── the database backstop ─────────────────────────────────────────────────────

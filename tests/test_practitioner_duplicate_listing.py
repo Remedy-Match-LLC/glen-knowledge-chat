@@ -221,3 +221,39 @@ def test_the_audit_still_selects_duplicate_of():
     for it, and a fake cursor would not notice the column missing."""
     from dashboard.practitioner_admin import _DUP_COLS
     assert "duplicate_of" in [c.strip() for c in _DUP_COLS.split(",")]
+
+
+def _dup_query(cur):
+    return [s for s in cur.sql() if "FROM practitioners WHERE lower(trim(email))" in s][0]
+
+
+def test_the_audit_asks_for_duplicate_of_once_the_column_is_there(monkeypatch):
+    from dashboard import practitioner_admin as pa
+    cur = _patch_cursor(monkeypatch, _FakeCur(fetchone_queue=[{"present": 1}]))
+    pa.duplicate_email_rows()
+    assert "duplicate_of" in _dup_query(cur)
+
+
+def test_the_audit_survives_the_window_before_the_migration_is_applied(monkeypatch, capsys):
+    """The migration is applied to production BY HAND, after this code deploys.
+    In that window duplicate_of does not exist and the audit, which worked before
+    the column did, must not start 500ing. Nothing can be marked yet either, so
+    the report is still correct; it just has to say so out loud."""
+    from dashboard import practitioner_admin as pa
+    cur = _patch_cursor(monkeypatch, _FakeCur(fetchone_queue=[None]))
+    pa.duplicate_email_rows()
+    sql = _dup_query(cur)
+    assert "duplicate_of" not in sql
+    assert "removal_requested" in sql and "lat" in sql     # the rest is intact
+    assert "duplicate_of is missing" in capsys.readouterr().out
+
+
+def test_the_probe_never_runs_the_query_that_would_abort_the_transaction(monkeypatch):
+    """supabase_cursor runs with autocommit off, so probing by catching an error on
+    the real SELECT would poison the transaction and make any retry inert."""
+    from dashboard import practitioner_admin as pa
+    cur = _patch_cursor(monkeypatch, _FakeCur(fetchone_queue=[None]))
+    pa.duplicate_email_rows()
+    assert cur.sql()[0].startswith("SELECT 1 AS present FROM information_schema.columns")
+    assert len([s for s in cur.sql()
+                if "FROM practitioners WHERE lower(trim(email))" in s]) == 1

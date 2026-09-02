@@ -457,12 +457,37 @@ _DUP_COLS = ("id, name, email, portal_role, tier, modules_completed, "
              "country, bio, photo_url, specialties, accepting_new_patients")
 
 
+def _column_exists(cur, table: str, column: str) -> bool:
+    """Catalogue probe, NOT a try/except around the real query. supabase_cursor
+    runs with autocommit off, so a failed statement aborts the whole transaction
+    and any retry inside it is inert."""
+    cur.execute("SELECT 1 AS present FROM information_schema.columns "
+                "WHERE table_name=%s AND column_name=%s LIMIT 1", (table, column))
+    return cur.fetchone() is not None
+
+
 def duplicate_email_rows() -> List[dict]:
-    """Every row whose email is shared with at least one other row, whole table."""
+    """Every row whose email is shared with at least one other row, whole table.
+
+    migrations/practitioners-duplicate-listing.sql is applied to production BY
+    HAND, after this code deploys, so there is a window where duplicate_of does
+    not exist yet. This read is the console's duplicate audit and worked before
+    that column did; it must not start 500ing in the gap. In that window no row
+    can be marked, so dropping the column from the SELECT reports exactly the
+    same visibility it always did. It says so out loud rather than quietly, so
+    nobody reads a clean audit as a migrated database.
+    """
     from db_supabase import supabase_cursor
     with supabase_cursor() as cur:
+        cols = _DUP_COLS
+        if not _column_exists(cur, "practitioners", "duplicate_of"):
+            print("[practitioner-admin] practitioners.duplicate_of is missing, so "
+                  "the duplicate audit cannot report hidden listings. Apply "
+                  "migrations/practitioners-duplicate-listing.sql.", flush=True)
+            cols = ", ".join(c.strip() for c in _DUP_COLS.split(",")
+                             if c.strip() != "duplicate_of")
         cur.execute(
-            f"SELECT {_DUP_COLS} FROM practitioners WHERE lower(trim(email)) IN ("
+            f"SELECT {cols} FROM practitioners WHERE lower(trim(email)) IN ("
             "  SELECT lower(trim(email)) FROM practitioners"
             "  WHERE email IS NOT NULL AND trim(email) <> ''"
             "  GROUP BY lower(trim(email)) HAVING COUNT(*) > 1)"
