@@ -14664,6 +14664,32 @@ def _active_membership_for_email(email):
     return d
 
 
+def _portal_link_should_email(body, token_minted):
+    """Whether a portal upsert should mail the client their link.
+
+    `send` is the legacy flag and notifies on EVERY publish -- the new-scan
+    re-notify path depends on that, so it is untouched. `send_if_new` notifies
+    only when a token was actually minted, i.e. a portal that did not exist
+    before. Printing or emailing a report must never mail a longstanding client
+    "your healing home is ready" as though they were new.
+    """
+    body = body or {}
+    if body.get("send"):
+        return True
+    return bool(body.get("send_if_new")) and bool(token_minted)
+
+
+def _latest_report_content(email):
+    """The content dict of this client's latest published portal report ({} if none)."""
+    try:
+        from dashboard import portal_biofield_reports as _pbr
+        with db.connect(LOG_DB) as cx:
+            _pbr.init_table(cx)
+            return (_pbr.latest_report(cx, email) or {}).get("content") or {}
+    except Exception:
+        return {}
+
+
 def _portal_paid_gate_enabled():
     """Flag: gate portal biofield content behind payment (blur unpaid reveals).
     Default OFF so merging is safe — flip PORTAL_PAID_GATE_ENABLED=1 only after
@@ -14701,6 +14727,11 @@ def _portal_biofield_unlocked(email):
         if _has_paid_biofield(email):
             return True
         if _active_membership_for_email(email):
+            return True
+        # A deliberately comped intake carries no payment by design. Without this
+        # the gate would lock exactly the clients the practitioner chose to comp
+        # out of their own report.
+        if (_latest_report_content(email) or {}).get("comped_intake") is True:
             return True
         if _family_plan_enabled():
             from dashboard import family_plan as _fp
@@ -34998,7 +35029,7 @@ def admin_client_portal_upsert():
             token = _cp.ensure_token(_tcx, email, name)
     url = portal_link(token)
     emailed = False
-    if body.get("send"):
+    if _portal_link_should_email(body, token_minted=not updated):
         try:
             audio_url = ((content.get("audio") or {}).get("url") or "").strip()
             audio_line = (f"\n\n🎧 Listen to your personal audio walkthrough:\n{audio_url}"

@@ -212,6 +212,9 @@ def build_portal_content(cx, test_id, *, special_price_cents, catalog=None,
         "pricing_note": "",
         "findings": findings,
         "biofield_status": "confirmed",
+        # A comped intake has no payment by design, so the portal's paid gate needs
+        # to be told, or it would blur exactly the reports Glen chose to give away.
+        "comped_intake": comped_intake(cx, test_id),
         "client_id": str(client.get("client_id") or "").strip(),
         # Time-of-day remedy schedule (Breakfast/Lunch/Dinner/etc.), same source the
         # printed report uses (authored_report -> build_schedule). Forward-only:
@@ -232,20 +235,39 @@ def build_portal_content(cx, test_id, *, special_price_cents, catalog=None,
     }
 
 
-def publish_to_portal(payload, *, base_url, console_key, send=False, http_post=None):
+def publish_to_portal(payload, *, base_url, console_key, send=False,
+                      send_if_new=False, http_post=None):
     """POST the portal payload to the prod /admin/portal/upsert.
 
-    send=True asks the prod upsert to auto-email the portal link, but the upsert
-    only emails when a NEW token is minted (first publish); re-publishing an
-    existing portal returns token=None and never re-sends.
+    send=True auto-emails the portal link on EVERY publish. This used to claim it
+    "only emails when a NEW token is minted"; it never did -- the upsert resolves an
+    existing client's stable link precisely so send=true can re-notify them when a
+    new scan lands. Acting on that claim mails a client "your healing home is ready"
+    every time the practitioner prints.
+
+    send_if_new=True is the once-only form: the upsert emails only when it actually
+    minted a token, so a longstanding client is never mailed as though they were new.
+
     Returns the parsed JSON (contains url/token). Raises RuntimeError on non-2xx."""
     post = http_post or requests.post
     url = f"{base_url.rstrip('/')}/admin/portal/upsert"
     body = {**payload, "send": bool(send)}
+    if send_if_new:
+        body["send_if_new"] = True
     r = post(url, json=body, headers={"X-Console-Key": console_key}, timeout=30)
     if not (200 <= r.status_code < 300):
         raise RuntimeError(f"portal upsert failed {r.status_code}: {r.text[:300]}")
     return r.json()
+
+
+def comped_intake(cx, test_id):
+    """True when this test was run without charging for the analysis, so the portal
+    gate can un-blur it: a comped intake has no payment by design."""
+    from dashboard.biofield_authoring import get_no_charge
+    try:
+        return bool(get_no_charge(cx, test_id))
+    except Exception:
+        return False
 
 
 def _asset_name(ext):
