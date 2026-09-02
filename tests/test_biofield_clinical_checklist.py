@@ -3,7 +3,7 @@ import sqlite3
 from dashboard.biofield_authoring import add_chain_row, create_test
 from dashboard.biofield_clinical_checklist import (
     balance_item, build, catalog_items, custom_remedies, forget_remedy,
-    profile_labels, remember_remedies,
+    profile_labels, program_remedies, remember_remedies,
 )
 from dashboard.biofield_report_html import render_author_html
 
@@ -95,6 +95,23 @@ def test_custom_condition_remedies_are_remembered_searchable_and_deletable():
     ]
     assert forget_remedy(cx, "Histamine intolerance", "Aller Ease") is True
     assert custom_remedies(cx, "Histamine intolerance") == ["Liver Support"]
+
+
+def test_catalog_has_amd_aliases_without_historical_remedies_or_locations():
+    cx = sqlite3.connect(":memory:")
+    cx.executescript("""
+        CREATE TABLE fmp_snap_client_active_main_stress(id_pk INTEGER,main_stress TEXT);
+        CREATE TABLE fmp_snap_client_causal_chain(id_pk INTEGER,id_fk_active_stress INTEGER);
+        CREATE TABLE fmp_snap_client_remedy(id_fk_causal_chain INTEGER,remedy TEXT);
+        INSERT INTO fmp_snap_client_active_main_stress VALUES(1,'Left Retina'),(2,'Neuroprotect');
+        INSERT INTO fmp_snap_client_causal_chain VALUES(10,1),(20,2);
+        INSERT INTO fmp_snap_client_remedy VALUES(10,'Macular Wellness Lutein'),(20,'Neuroprotect');
+    """)
+    labels = [row["label"] for row in catalog_items(cx, "amd")]
+    assert "Dry AMD" in labels and "Wet AMD" in labels
+    assert "AMD (Age-Related Macular Degeneration)" in labels
+    assert "Left Retina" not in labels and "Neuroprotect" not in labels
+    assert program_remedies("Dry Macular Degeneration")
 
 
 def test_checklist_selects_current_layer_and_offers_first_new_layer():
