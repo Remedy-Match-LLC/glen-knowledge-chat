@@ -19,6 +19,101 @@ def _related(left, right):
     return min(len(a), len(b)) >= 5 and (a in b or b in a)
 
 
+def ensure_catalog_schema(cx):
+    """Practitioner-owned additions to the historical condition/remedy catalog."""
+    cx.execute("""CREATE TABLE IF NOT EXISTS biofield_clinical_catalog (
+        item_key TEXT NOT NULL, label TEXT NOT NULL,
+        remedy_key TEXT NOT NULL, remedy TEXT NOT NULL,
+        hidden INTEGER NOT NULL DEFAULT 0,
+        updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (item_key, remedy_key)
+    )""")
+    try:
+        cx.execute("ALTER TABLE biofield_clinical_catalog ADD COLUMN hidden INTEGER NOT NULL DEFAULT 0")
+    except Exception:
+        pass
+
+
+def remember_remedies(cx, label, remedies):
+    label = str(label or "").strip()[:160]
+    item_key = _norm(label)
+    if not item_key:
+        return 0
+    ensure_catalog_schema(cx)
+    count = 0
+    for raw in remedies or []:
+        remedy = str(raw or "").strip()[:160]
+        remedy_key = _norm(remedy)
+        if not remedy_key:
+            continue
+        cx.execute("""INSERT INTO biofield_clinical_catalog
+            (item_key,label,remedy_key,remedy,hidden,updated_at)
+            VALUES (?,?,?,?,0,CURRENT_TIMESTAMP)
+            ON CONFLICT(item_key,remedy_key) DO UPDATE SET
+              label=excluded.label,remedy=excluded.remedy,hidden=0,updated_at=CURRENT_TIMESTAMP""",
+                   (item_key, label, remedy_key, remedy))
+        count += 1
+    cx.commit()
+    return count
+
+
+def forget_remedy(cx, label, remedy):
+    ensure_catalog_schema(cx)
+    label = str(label or "").strip()[:160]
+    remedy = str(remedy or "").strip()[:160]
+    cur = cx.execute("""INSERT INTO biofield_clinical_catalog
+        (item_key,label,remedy_key,remedy,hidden,updated_at)
+        VALUES (?,?,?,?,1,CURRENT_TIMESTAMP)
+        ON CONFLICT(item_key,remedy_key) DO UPDATE SET hidden=1,updated_at=CURRENT_TIMESTAMP""",
+                     (_norm(label), label, _norm(remedy), remedy))
+    cx.commit()
+    return bool(cur.rowcount)
+
+
+def custom_remedies(cx, label):
+    ensure_catalog_schema(cx)
+    return [row[0] for row in cx.execute(
+        "SELECT remedy FROM biofield_clinical_catalog WHERE item_key=? AND hidden=0 ORDER BY remedy",
+        (_norm(label),)).fetchall()]
+
+
+def forgotten_remedies(cx, label):
+    ensure_catalog_schema(cx)
+    return {row[0] for row in cx.execute(
+        "SELECT remedy_key FROM biofield_clinical_catalog WHERE item_key=? AND hidden=1",
+        (_norm(label),)).fetchall()}
+
+
+def catalog_items(cx, q="", limit=100):
+    """Search only conditions that have at least one known related remedy."""
+    ensure_catalog_schema(cx)
+    like = f"%{str(q or '').strip()}%"
+    found = {}
+    try:
+        rows = cx.execute(
+            "SELECT ams.main_stress, COUNT(DISTINCT r.remedy) "
+            "FROM fmp_snap_client_active_main_stress ams "
+            "JOIN fmp_snap_client_causal_chain cc ON cc.id_fk_active_stress=ams.id_pk "
+            "JOIN fmp_snap_client_remedy r ON r.id_fk_causal_chain=cc.id_pk "
+            "WHERE TRIM(COALESCE(ams.main_stress,''))<>'' "
+            "AND TRIM(COALESCE(r.remedy,''))<>'' AND ams.main_stress LIKE ? "
+            "GROUP BY LOWER(TRIM(ams.main_stress)) ORDER BY ams.main_stress LIMIT ?",
+            (like, int(limit))).fetchall()
+        for label, count in rows:
+            found[_norm(label)] = {"label": label, "remedy_count": int(count or 0)}
+    except Exception:
+        pass
+    for label, count in cx.execute(
+        "SELECT label,COUNT(*) FROM biofield_clinical_catalog WHERE hidden=0 AND label LIKE ? "
+        "GROUP BY item_key ORDER BY label LIMIT ?", (like, int(limit))).fetchall():
+        key = _norm(label)
+        if key in found:
+            found[key]["remedy_count"] += int(count or 0)
+        else:
+            found[key] = {"label": label, "remedy_count": int(count or 0)}
+    return sorted(found.values(), key=lambda row: row["label"].lower())[:int(limit)]
+
+
 def profile_labels(profile):
     """Symptoms/conditions only; deliberately excludes communications and family history."""
     profile = profile or {}
@@ -133,5 +228,6 @@ def balance_item(cx, test_id, label, layer, remedies, resolve_name=lambda cx, na
                       details.get("timing", ""), confirmed=1, origin="live")
         existing.add(name.lower())
         added.append(name)
+    remember_remedies(cx, label, remedies)
     cx.commit()
     return {"layer": layer, "added_remedies": added}
