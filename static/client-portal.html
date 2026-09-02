@@ -747,6 +747,11 @@
       <strong class="portal-client-identity-name" id="portal-client-name"></strong>
     </span>
   </header>
+  <!-- Task 5 (portal-shell-ia): seven-door navigation rail. Sibling of #app (not
+       nested inside it) so it survives render()'s poll re-renders, which fully
+       replace app.innerHTML; filled/emptied by render() itself, gated on
+       v.shell_enabled. Empty and inert while the flag is off. -->
+  <div id="portalShellMount"></div>
   <!-- Task 4: Onboarding tile. Sibling of #app (not nested inside it), positioned
        ABOVE the hub so it survives render()'s poll re-renders, which fully replace
        app.innerHTML; filled/emptied by static/js/portal-onboarding.js's own fetch + mount. -->
@@ -764,6 +769,7 @@
        filled/emptied by static/js/portal-library.js's own fetch + mount. -->
   <div id="portal-library-mount"></div>
 <script src="/static/entity-ref.js"></script>
+<script src="/static/js/portal-shell.js"></script>
 <script src="/static/js/portal-library.js"></script>
 <script src="/static/js/portal-documents.js"></script>
 <script src="/static/js/portal-historical-intakes.js"></script>
@@ -1072,17 +1078,11 @@ function terrainBanner(d, kind){
 // Global (not inside render()) since the tab buttons' onclick="showTab(...)"
 // runs in global scope. Remembers the last-viewed tab in sessionStorage so a
 // household member switch (a full page nav) can land back on the same tab.
-function showTab(name, options){
-  options = options || {};
-  if(!document.querySelector('[data-panel="'+name+'"]')){ name = document.querySelector('[data-panel="hub"]') ? 'hub' : 'current'; }
-  document.querySelectorAll('#portalTabs .tab').forEach(b =>
-    b.classList.toggle('is-active', b.dataset.tab === name));
-  document.querySelectorAll('[data-panel]').forEach(p =>
-    p.hidden = (p.dataset.panel !== name));
-  if(options.persist !== false){
-    try{ sessionStorage.setItem('rm_portal_tab', name); }catch(e){}
-  }
-  if(typeof window.mentorPageChanged === "function") window.mentorPageChanged(name);
+
+// Task 5 (portal-shell-ia): the per-panel side effects that showTab used to run
+// inline. Extracted so showDoor can trigger the same effects for every panel a
+// door reveals at once, and so the two routers cannot drift apart.
+function panelShown(name){
   // Task 7: fetch the suggestions queue every time the health panel becomes
   // active (fresh each visit -- a clinician or chat turn may have added one
   // since it was last open). loadHealthSuggestions() itself no-ops if
@@ -1095,6 +1095,56 @@ function showTab(name, options){
   if (name === 'cart') loadCart();
   if (name === 'orders') renderOrdersBasket();
   if (name === 'intake') initPortalIntakeCard(true);
+}
+
+// Task 5 (portal-shell-ia): reveal every section belonging to door `key`, in DOM
+// order, and highlight it in the rail. Unknown keys fall back to home, matching
+// showTab's existing fallback behavior for an unknown panel. Only ever reached
+// when the shell is mounted (see the shell_enabled gate in showTab and render()),
+// so this never runs against the legacy hub markup.
+function showDoor(key){
+  var shell = window.PortalShell;
+  if(!shell || !shell.panelsForDoor(key).length){ key = 'home'; }
+  var members = shell.panelsForDoor(key);
+  document.querySelectorAll('[data-panel]').forEach(function(p){
+    var inDoor = members.indexOf(p.dataset.panel) !== -1;
+    p.hidden = !inDoor;
+    if(inDoor) panelShown(p.dataset.panel);
+  });
+  document.querySelectorAll('.rail-item[data-door]').forEach(function(b){
+    b.classList.toggle('is-active', b.dataset.door === key);
+  });
+  try{ sessionStorage.setItem('rm_portal_door', key); }catch(e){}
+  if(typeof window.mentorPageChanged === "function") window.mentorPageChanged(key);
+}
+window.showDoor = showDoor;
+window.panelShown = panelShown;
+
+function showTab(name, options){
+  options = options || {};
+  if(!document.querySelector('[data-panel="'+name+'"]')){ name = document.querySelector('[data-panel="hub"]') ? 'hub' : 'current'; }
+  // Task 5 (portal-shell-ia): once the shell is live (v.shell_enabled, cached on
+  // window.__portalView by render()), route through the door that owns this
+  // panel instead of the legacy single-panel toggle below, so a door's several
+  // panels all reveal together. Checked against the cached view rather than the
+  // DOM so this stays inert -- same behavior as before this task -- whenever the
+  // flag is off, even though every section now carries a data-door attribute.
+  if (window.PortalShell && window.__portalView && window.__portalView.shell_enabled) {
+    var door = window.PortalShell.doorForPanel(name);
+    if (door) { showDoor(door); }
+    var target = document.querySelector('[data-panel="'+name+'"]');
+    if (target && target.scrollIntoView) target.scrollIntoView({block:'start'});
+    return;
+  }
+  document.querySelectorAll('#portalTabs .tab').forEach(b =>
+    b.classList.toggle('is-active', b.dataset.tab === name));
+  document.querySelectorAll('[data-panel]').forEach(p =>
+    p.hidden = (p.dataset.panel !== name));
+  if(options.persist !== false){
+    try{ sessionStorage.setItem('rm_portal_tab', name); }catch(e){}
+  }
+  if(typeof window.mentorPageChanged === "function") window.mentorPageChanged(name);
+  panelShown(name);
 }
 
 function syncPortalHeaderCartCount(){
@@ -4748,34 +4798,34 @@ function render(d, v){
       </div>` : "";
     // Under the hub, the grid becomes its own default panel and every other
     // panel carries a Back-to-hub control. Without the hub, behavior is unchanged.
-    const hubPanel = _hub ? `<section data-panel="hub">${hubHtml}</section>` : "";
+    const hubPanel = _hub ? `<section data-panel="hub" data-door="home">${hubHtml}</section>` : "";
     const back = _hub ? backToHub() : "";
     html = `${tabbar}${hubPanel}
-      <section data-panel="current"${_hub ? " hidden" : ""}>${back}${html}</section>
-      <section data-panel="history" hidden>${back}${historyHtml}</section>
-      <section data-panel="orders" hidden>${back}${ordersHtml}</section>
-      <section data-panel="intake" hidden>${back}<div class="card" id="portal-intake-card"><div id="portal-intake-host"></div></div></section>${_hub ? `
-      <section data-panel="ask" hidden>${back}${_askHtml}</section>
-      <section data-panel="voice" hidden>${back}${_voiceHtml}</section>
-      <section data-panel="records" hidden>${back}${buildClinicalRecordHtml(v)}</section>
-      ${_hub && v.oasis && v.oasis.enabled ? (_oasisView = v, `<section data-panel="oasis" hidden>${back}${buildOasisHtml(v)}</section>`) : ""}
-      ${_hub ? `<section data-panel="cart" hidden>${back}${buildCartHtml()}</section>` : ""}
-      <section data-panel="shop" hidden>${back}${buildShopHtml()}</section>
-      <section data-panel="calendar" hidden>${back}${_calendarHtml}</section>
-      <section data-panel="offers" hidden>${back}${_offersHtml || buildOffersEmptyHtml(v)}</section>
-      <section data-panel="photo" hidden>${back}${buildPhotoHtml()}</section>
-      <section data-panel="finder" hidden>${back}${_finderHtml || '<div class="card quiet"><p class="muted">The practitioner finder is not enabled for your portal yet.</p></div>'}</section>
-      <section data-panel="bodymap" hidden>${back}${_bodymapHtml}</section>
-      <section data-panel="classes" hidden>${back}${_classesHtml}</section>
-      <section data-panel="account" hidden>${back}${_accountHtml}</section>
-      <section data-panel="refer" hidden>${back}${_referHtml || '<div class="card quiet"><p class="muted">Ambassador program details will appear here.</p></div>'}</section>
-      <section data-panel="referrals" hidden>${back}${_referralsHtml}</section>
-      ${_hub && v.remedies && v.remedies.enabled ? `<section id="remedies-panel" data-panel="remedies" hidden>${back}${buildRemediesHtml(v)}</section>` : ""}` : ""}`;
+      <section data-panel="current"${_hub ? " hidden" : ""} data-door="scans">${back}${html}</section>
+      <section data-panel="history" hidden data-door="scans">${back}${historyHtml}</section>
+      <section data-panel="orders" hidden data-door="billing">${back}${ordersHtml}</section>
+      <section data-panel="intake" hidden data-door="account">${back}<div class="card" id="portal-intake-card"><div id="portal-intake-host"></div></div></section>${_hub ? `
+      <section data-panel="ask" hidden data-door="learn">${back}${_askHtml}</section>
+      <section data-panel="voice" hidden data-door="scans">${back}${_voiceHtml}</section>
+      <section data-panel="records" hidden data-door="account">${back}${buildClinicalRecordHtml(v)}</section>
+      ${_hub && v.oasis && v.oasis.enabled ? (_oasisView = v, `<section data-panel="oasis" hidden data-door="remedies">${back}${buildOasisHtml(v)}</section>`) : ""}
+      ${_hub ? `<section data-panel="cart" hidden data-door="remedies">${back}${buildCartHtml()}</section>` : ""}
+      <section data-panel="shop" hidden data-door="solutions">${back}${buildShopHtml()}</section>
+      <section data-panel="calendar" hidden data-door="learn">${back}${_calendarHtml}</section>
+      <section data-panel="offers" hidden data-door="account">${back}${_offersHtml || buildOffersEmptyHtml(v)}</section>
+      <section data-panel="photo" hidden data-door="account">${back}${buildPhotoHtml()}</section>
+      <section data-panel="finder" hidden data-door="account">${back}${_finderHtml || '<div class="card quiet"><p class="muted">The practitioner finder is not enabled for your portal yet.</p></div>'}</section>
+      <section data-panel="bodymap" hidden data-door="learn">${back}${_bodymapHtml}</section>
+      <section data-panel="classes" hidden data-door="learn">${back}${_classesHtml}</section>
+      <section data-panel="account" hidden data-door="account">${back}${_accountHtml}</section>
+      <section data-panel="refer" hidden data-door="account">${back}${_referHtml || '<div class="card quiet"><p class="muted">Ambassador program details will appear here.</p></div>'}</section>
+      <section data-panel="referrals" hidden data-door="account">${back}${_referralsHtml}</section>
+      ${_hub && v.remedies && v.remedies.enabled ? `<section id="remedies-panel" data-panel="remedies" hidden data-door="remedies">${back}${buildRemediesHtml(v)}</section>` : ""}` : ""}`;
   } else {
     // The onboarding checklist is available independently of the hub and scan
     // history flags, so its #intake link must always have a real panel target.
-    html = `<section data-panel="current">${html}</section>
-      <section data-panel="intake" hidden><div class="card" id="portal-intake-card"><div id="portal-intake-host"></div></div></section>`;
+    html = `<section data-panel="current" data-door="scans">${html}</section>
+      <section data-panel="intake" hidden data-door="account"><div class="card" id="portal-intake-card"><div id="portal-intake-host"></div></div></section>`;
   }
 
   app.innerHTML = html;
@@ -4815,6 +4865,30 @@ function render(d, v){
   // the card the client selected. The restoration block below reads that saved
   // value after the new panel DOM is ready.
   if (_hub) { showTab('hub', {persist:false}); }
+  // Task 5 (portal-shell-ia): mount the seven-door rail once the shell flag is on.
+  // Re-populated on every render() (including background poll refreshes) since
+  // #portalShellMount lives outside #app and would otherwise go stale; harmless,
+  // matching the _hub reset-to-home above. The click listener is delegated on
+  // document once, guarded so a later render() doesn't stack duplicate handlers.
+  if (v && v.shell_enabled) {
+    var shellMount = document.getElementById('portalShellMount');
+    if (shellMount) {
+      shellMount.innerHTML =
+        window.PortalShell.renderPhoneHeader() + window.PortalShell.renderRail('home', {open:false});
+    }
+    if (!window.__portalShellClickWired) {
+      window.__portalShellClickWired = true;
+      document.addEventListener('click', function(e){
+        var d = e.target.closest('.rail-item[data-door]');
+        if (d) { showDoor(d.dataset.door); return; }
+        if (e.target.closest('[data-shell-toggle],[data-shell-open],.shell-scrim')) {
+          var rail = document.getElementById('portalRail');
+          if (rail) rail.classList.toggle('is-open');
+        }
+      });
+    }
+    showDoor('home');
+  }
   try{
     if(localStorage.getItem("rm_calendar_collapsed")==="1"){
       const cb=document.getElementById("calendar-summary-body"), fb=document.getElementById("calendar-fold");
