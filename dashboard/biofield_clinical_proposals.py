@@ -41,7 +41,8 @@ def ensure_schema(cx):
             test_id TEXT NOT NULL,
             item_key TEXT NOT NULL,
             label TEXT NOT NULL,
-            remedies TEXT NOT NULL DEFAULT '[]',
+            remedies TEXT,
+            pattern TEXT NOT NULL DEFAULT '',
             updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
             PRIMARY KEY (test_id, item_key)
         )
@@ -136,7 +137,8 @@ def selections(cx, test_id):
     ensure_schema(cx)
     out = {}
     for key, raw in cx.execute(
-        "SELECT item_key,remedies FROM biofield_clinical_selection WHERE test_id=?",
+        "SELECT item_key,remedies FROM biofield_clinical_selection "
+        "WHERE test_id=? AND remedies IS NOT NULL",
         (str(test_id),),
     ).fetchall():
         try:
@@ -147,6 +149,32 @@ def selections(cx, test_id):
     return out
 
 
+def save_pattern(cx, test_id, label, pattern):
+    """The stress pattern typed for one item on this test (not yet the standing term)."""
+    ensure_schema(cx)
+    label = str(label or "").strip()[:160]
+    key = _key(label)
+    if not key:
+        return False
+    cx.execute(
+        """INSERT INTO biofield_clinical_selection
+           (test_id,item_key,label,pattern,updated_at)
+           VALUES (?,?,?,?,CURRENT_TIMESTAMP)
+           ON CONFLICT(test_id,item_key) DO UPDATE SET
+             label=excluded.label,pattern=excluded.pattern,updated_at=CURRENT_TIMESTAMP""",
+        (str(test_id), key, label, str(pattern or "").strip()[:160]),
+    )
+    return True
+
+
+def patterns(cx, test_id):
+    ensure_schema(cx)
+    return {row[0]: row[1] for row in cx.execute(
+        "SELECT item_key,pattern FROM biofield_clinical_selection WHERE test_id=? AND pattern<>''",
+        (str(test_id),),
+    ).fetchall()}
+
+
 def apply_selection(cx, test_id, items):
     """Overlay the practitioner's own ticks; untouched items keep deriving from the chain.
 
@@ -154,9 +182,13 @@ def apply_selection(cx, test_id, items):
     otherwise unticking the derived remedy would silently re-tick on the next reload.
     """
     saved = selections(cx, test_id)
+    typed = patterns(cx, test_id)
     out = []
     for item in items or []:
         key = _key(item.get("label"))
+        if key in typed:
+            item = dict(item)
+            item["stress_pattern"] = typed[key]
         if key not in saved:
             out.append(item)
             continue

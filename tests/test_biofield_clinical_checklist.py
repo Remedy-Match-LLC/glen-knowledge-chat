@@ -3,7 +3,8 @@ import sqlite3
 from dashboard.biofield_authoring import add_chain_row, create_test
 from dashboard.biofield_clinical_checklist import (
     balance_item, build, catalog_items, custom_remedies, forget_remedy,
-    profile_labels, program_remedies, remember_remedies,
+    profile_labels, program_remedies, remember_remedies, remember_stress_pattern,
+    stress_pattern,
 )
 from dashboard.biofield_report_html import render_author_html
 
@@ -24,9 +25,10 @@ def test_layer_remedy_checks_related_condition():
     )
     assert rows == [
         {"label": "Chronic migraine", "checked": True, "covered_by": "Neuroprotect",
-         "layer": None, "common_remedies": []},
+         "layer": None, "common_remedies": [],
+         "stress_pattern": "", "remembered_pattern": ""},
         {"label": "Fatigue", "checked": False, "covered_by": "", "layer": None,
-         "common_remedies": []},
+         "common_remedies": [], "stress_pattern": "", "remembered_pattern": ""},
     ]
 
 
@@ -152,3 +154,65 @@ def test_balance_item_preserves_existing_head_and_deduplicates_tail_and_remedy()
     assert cx.execute(
         "SELECT head,most_affected,remedy FROM biofield_auth_chain WHERE layer=3"
     ).fetchall() == [("Inflammation", "Fatigue", "Sustain")]
+
+
+def test_stress_pattern_is_remembered_per_condition_and_replaced_only_on_request():
+    with sqlite3.connect(":memory:") as cx:
+        assert remember_stress_pattern(cx, "Chronic migraine", "Cerebral vascular spasm")
+        assert stress_pattern(cx, "chronic  MIGRAINE") == "Cerebral vascular spasm"
+        # A second term never quietly overwrites the remembered one.
+        assert remember_stress_pattern(cx, "Chronic migraine", "Cranial nerve irritation") is False
+        assert stress_pattern(cx, "Chronic migraine") == "Cerebral vascular spasm"
+        assert remember_stress_pattern(cx, "Chronic migraine", "Cranial nerve irritation",
+                                       replace=True)
+        assert stress_pattern(cx, "Chronic migraine") == "Cranial nerve irritation"
+
+
+def test_build_carries_the_remembered_stress_pattern():
+    rows = build({"conditions": ["Fatigue"]}, [],
+                 stress_lookup=lambda label: "Adrenal exhaustion")
+    assert rows[0]["stress_pattern"] == "Adrenal exhaustion"
+    assert rows[0]["remembered_pattern"] == "Adrenal exhaustion"
+
+
+def test_balance_writes_the_stress_pattern_as_head_and_tail():
+    with sqlite3.connect(":memory:") as cx:
+        tid = create_test(cx, "Pam", "pam@example.com", "2026-09-02")
+        balance_item(cx, tid, "Chronic migraine", 1, ["Neuroprotect"],
+                     pattern="Cerebral vascular spasm")
+        rows = cx.execute(
+            "SELECT head,most_affected,remedy FROM biofield_auth_chain WHERE layer=1 ORDER BY id"
+        ).fetchall()
+        assert rows[0][0] == "Cerebral vascular spasm"
+        assert rows[0][1] == "Cerebral vascular spasm"
+        assert [r[2] for r in rows if r[2]] == ["Neuroprotect"]
+        # Entering a pattern for a condition with none remembered records it for next time.
+        assert stress_pattern(cx, "Chronic migraine") == "Cerebral vascular spasm"
+
+
+def test_balance_without_a_pattern_still_uses_the_item_label():
+    with sqlite3.connect(":memory:") as cx:
+        tid = create_test(cx, "Pam", "pam@example.com", "2026-09-02")
+        balance_item(cx, tid, "Fatigue", 1, [])
+        head, tail = cx.execute(
+            "SELECT head,most_affected FROM biofield_auth_chain WHERE layer=1").fetchone()
+        assert head == "Fatigue" and tail == "Fatigue"
+        assert stress_pattern(cx, "Fatigue") == ""
+
+
+def test_adding_to_an_existing_layer_only_appends_the_pattern_to_the_tail():
+    with sqlite3.connect(":memory:") as cx:
+        tid = create_test(cx, "Pam", "pam@example.com", "2026-09-02")
+        add_chain_row(cx, tid, 1, "Gut dysbiosis", "Gut lining", "Terrain Restore",
+                      confirmed=1, origin="live")
+        balance_item(cx, tid, "Chronic migraine", 1, ["Neuroprotect"],
+                     pattern="Cerebral vascular spasm")
+        rows = cx.execute(
+            "SELECT head,most_affected,remedy FROM biofield_auth_chain WHERE layer=1 ORDER BY id"
+        ).fetchall()
+        # The layer keeps its own head; the pattern joins the tail listing.
+        assert rows[0][0] == "Gut dysbiosis"
+        assert rows[0][1] == "Gut lining, Cerebral vascular spasm"
+        assert [r[2] for r in rows if r[2]] == ["Terrain Restore", "Neuroprotect"]
+        # The added remedy row carries no head of its own.
+        assert rows[1][0] == ""

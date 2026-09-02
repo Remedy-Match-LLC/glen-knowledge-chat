@@ -5,9 +5,11 @@ from biofield_local_app import create_app
 from dashboard.biofield_authoring import create_test, init_auth_tables
 from dashboard.biofield_clinical_proposals import (
     accepted_labels, apply_order, apply_selection, decide, decisions, dismissed_labels,
-    proposals, save_order, save_selection,
+    proposals, save_order, save_pattern, save_selection,
 )
-from dashboard.biofield_clinical_checklist import remember_remedies
+from dashboard.biofield_clinical_checklist import (
+    remember_remedies, remember_stress_pattern, stress_pattern,
+)
 
 
 def test_proposals_exclude_existing_and_previously_decided_items():
@@ -175,3 +177,70 @@ def test_selection_route_rejects_a_missing_remedies_list(tmp_path, monkeypatch):
     client = create_app(db, fetch_profile=lambda email: {}).test_client()
     assert client.post(f"/author/{tid}/clinical-items/selection",
                        json={"label": "Fatigue"}).status_code == 400
+
+
+def test_a_typed_stress_pattern_survives_the_reload_and_can_replace_the_remembered_one(
+        tmp_path, monkeypatch):
+    monkeypatch.delenv("CONSOLE_SECRET", raising=False)
+    import dashboard
+    monkeypatch.setattr(dashboard, "CONSOLE_SECRET", "", raising=False)
+    db = str(tmp_path / "chat_log.db")
+    with sqlite3.connect(db) as cx:
+        init_auth_tables(cx)
+        tid = create_test(cx, "Pam", "pam@example.com", "2026-09-02")
+        remember_stress_pattern(cx, "Fatigue", "Adrenal exhaustion")
+    client = create_app(db, fetch_profile=lambda email: {"conditions": ["Fatigue"]}).test_client()
+
+    page = client.get(f"/author/{tid}").data.decode()
+    assert 'class=clinical-stress list=vocab value="Adrenal exhaustion"' in page
+    assert 'data-remembered="Adrenal exhaustion"' in page
+
+    # Typing a different term holds for this test only until it is explicitly remembered.
+    assert client.post(f"/author/{tid}/clinical-items/stress", json={
+        "label": "Fatigue", "pattern": "Mitochondrial depletion",
+    }).get_json() == {"ok": True, "remembered": False}
+    page = client.get(f"/author/{tid}").data.decode()
+    assert 'value="Mitochondrial depletion"' in page
+    assert 'data-remembered="Adrenal exhaustion"' in page
+    with sqlite3.connect(db) as cx:
+        assert stress_pattern(cx, "Fatigue") == "Adrenal exhaustion"
+
+    assert client.post(f"/author/{tid}/clinical-items/stress", json={
+        "label": "Fatigue", "pattern": "Mitochondrial depletion", "replace": True,
+    }).get_json() == {"ok": True, "remembered": True}
+    with sqlite3.connect(db) as cx:
+        assert stress_pattern(cx, "Fatigue") == "Mitochondrial depletion"
+
+
+def test_a_pattern_only_row_does_not_clear_the_derived_remedy_ticks(tmp_path):
+    with sqlite3.connect(tmp_path / "x.db") as cx:
+        save_pattern(cx, "a1", "Migraine", "Cerebral vascular spasm")
+        rows = apply_selection(cx, "a1", [{"label": "Migraine", "covered_by": "Neuroprotect",
+                                           "common_remedies": ["Neuroprotect"]}])
+        assert rows[0]["stress_pattern"] == "Cerebral vascular spasm"
+        assert "selection_saved" not in rows[0]
+
+
+def test_the_replace_offer_survives_the_reload_that_hid_it(tmp_path, monkeypatch):
+    monkeypatch.delenv("CONSOLE_SECRET", raising=False)
+    import dashboard
+    monkeypatch.setattr(dashboard, "CONSOLE_SECRET", "", raising=False)
+    db = str(tmp_path / "chat_log.db")
+    with sqlite3.connect(db) as cx:
+        init_auth_tables(cx)
+        tid = create_test(cx, "Pam", "pam@example.com", "2026-09-02")
+        remember_stress_pattern(cx, "Fatigue", "Adrenal exhaustion")
+    client = create_app(db, fetch_profile=lambda email: {"conditions": ["Fatigue"]}).test_client()
+
+    page = client.get(f"/author/{tid}").data.decode()
+    assert "class='btn ghost clinical-stress-save' hidden" in page
+
+    client.post(f"/author/{tid}/clinical-items/stress",
+                json={"label": "Fatigue", "pattern": "Mitochondrial depletion"})
+    page = client.get(f"/author/{tid}").data.decode()
+    assert "class='btn ghost clinical-stress-save' onclick=rememberClinicalStress" in page
+
+    client.post(f"/author/{tid}/clinical-items/stress",
+                json={"label": "Fatigue", "pattern": "Mitochondrial depletion", "replace": True})
+    page = client.get(f"/author/{tid}").data.decode()
+    assert "class='btn ghost clinical-stress-save' hidden" in page

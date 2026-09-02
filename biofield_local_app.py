@@ -922,6 +922,7 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                     current = [x.strip() for x in current.replace(";", ",").split(",") if x.strip()]
                 profile["conditions"] = list(current) + accepted
             from dashboard.biofield_clinical_checklist import custom_remedies, forgotten_remedies
+            from dashboard.biofield_clinical_checklist import stress_pattern
             def clinical_remedies(label):
                 historical = stress_suggestions(cx, label)
                 hidden = forgotten_remedies(cx, label)
@@ -935,6 +936,7 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
             clinical_checklist = build_clinical_checklist(
                 profile, rep.get("layers") or [], sdata,
                 remedy_lookup=clinical_remedies,
+                stress_lookup=lambda label: stress_pattern(cx, label),
             )
             hidden = {item_key(label) for label in dismissed_labels(cx, test_id)}
             clinical_checklist = [item for item in clinical_checklist
@@ -2102,6 +2104,22 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
             count = save_selection(cx, test_id, label, remedies)
         return {"ok": True, "count": count}
 
+    @app.route("/author/<test_id>/clinical-items/stress", methods=["POST"])
+    def author_clinical_item_stress(test_id):
+        from dashboard.biofield_clinical_checklist import remember_stress_pattern
+        from dashboard.biofield_clinical_proposals import save_pattern
+        body = request.get_json(silent=True) or {}
+        label = str(body.get("label") or "").strip()
+        pattern = str(body.get("pattern") or "").strip()
+        if not label:
+            return {"ok": False, "error": "An item label is required"}, 400
+        with sqlite3.connect(db_path) as cx:
+            save_pattern(cx, test_id, label, pattern)
+            # Silently for a condition with no standing term; on request to replace one.
+            remembered = remember_stress_pattern(cx, label, pattern,
+                                                 replace=bool(body.get("replace")))
+        return {"ok": True, "remembered": bool(remembered)}
+
     @app.route("/author/<test_id>/clinical-items/balance", methods=["POST"])
     def author_balance_clinical_item(test_id):
         from dashboard.biofield_clinical_checklist import balance_item
@@ -2114,6 +2132,7 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                 result = balance_item(
                     cx, test_id, body.get("label"), body.get("layer"), remedies,
                     resolve_name=resolve_remedy_name, dosing=remedy_dosing,
+                    pattern=body.get("pattern") or "",
                 )
         except (TypeError, ValueError) as exc:
             return {"ok": False, "error": str(exc)}, 400
