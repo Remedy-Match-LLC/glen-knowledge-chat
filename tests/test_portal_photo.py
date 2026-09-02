@@ -7,6 +7,12 @@ PNG = base64.b64decode(
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==")
 
 
+def test_photo_schema_uses_postgres_compatible_binary_type():
+    source = (Path(__file__).resolve().parents[1] / "dashboard" / "client_photos.py").read_text()
+    assert "image_blob BYTEA" in source
+    assert "image_blob BLOB" not in source
+
+
 def _app(tmp_path, monkeypatch):
     monkeypatch.setenv("DATA_DIR", str(tmp_path))
     monkeypatch.delenv("CONSOLE_SECRET", raising=False)
