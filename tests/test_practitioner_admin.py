@@ -145,7 +145,7 @@ def test_build_rows_merges_activity_and_defaults_zeros():
     by_id = {r["id"]: r for r in rows}
     # p1 gets its activity + derived booleans + section
     assert by_id["p1"]["wholesale_access"] is True
-    assert by_id["p1"]["finder_listed"] is True
+    assert by_id["p1"]["contact_shown"] is True   # show_contact, not directory listing
     assert by_id["p1"]["section"] == "coach"
     assert by_id["p1"]["country"] == "MX"
     assert by_id["p2"]["country"] == "US"   # missing country defaults to US
@@ -153,7 +153,7 @@ def test_build_rows_merges_activity_and_defaults_zeros():
     assert by_id["p1"]["spent_cents"] == 10500
     # p2 has no activity → zeros, locked, hidden, practitioner section
     assert by_id["p2"]["wholesale_access"] is False
-    assert by_id["p2"]["finder_listed"] is False
+    assert by_id["p2"]["contact_shown"] is False
     assert by_id["p2"]["section"] == "practitioner"
     assert by_id["p2"]["orders"] == 0
     assert by_id["p2"]["spent_cents"] == 0

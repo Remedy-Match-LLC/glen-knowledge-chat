@@ -293,9 +293,11 @@ def test_duplicate_query_covers_the_whole_table_not_just_portal_rows(monkeypatch
     from dashboard import practitioner_admin as pa
     cur = _patch_cursor(monkeypatch, _FakeCur(fetchall_result=[]))
     pa.duplicate_email_rows()
-    sql = cur.sql()[0]
-    assert "portal_role IS NOT NULL" not in sql, sql
-    assert "HAVING COUNT(*) > 1" in sql, sql
+    # Picked by content, not by position: a catalogue probe runs first now.
+    sql = [s for s in cur.sql() if "FROM practitioners WHERE lower(trim(email))" in s]
+    assert len(sql) == 1, cur.sql()
+    assert "portal_role IS NOT NULL" not in sql[0], sql[0]
+    assert "HAVING COUNT(*) > 1" in sql[0], sql[0]
 
 
 # ── the database backstop ─────────────────────────────────────────────────────
@@ -333,6 +335,23 @@ def test_index_creation_runs_when_the_table_is_clean(monkeypatch):
     assert ddl, cur.sql()
     assert "lower(email)" in ddl[0] and "WHERE portal_role IS NOT NULL" in ddl[0]
     assert out["created"] is True and out["present"] is True
+
+
+# ── duplicate_of column presence (fake cursor) ─────────────────────────────────
+
+def test_duplicate_of_column_present_reads_the_catalogue_true(monkeypatch):
+    from dashboard import practitioner_admin as pa
+    cur = _patch_cursor(monkeypatch, _FakeCur(fetchone_queue=[{"present": 1}]))
+    assert pa.duplicate_of_column_present() is True
+    sql = [s for s in cur.sql() if "information_schema.columns" in s]
+    assert len(sql) == 1
+    assert cur.executed[0][1] == ["practitioners", "duplicate_of"]
+
+
+def test_duplicate_of_column_present_reads_the_catalogue_false(monkeypatch):
+    from dashboard import practitioner_admin as pa
+    _patch_cursor(monkeypatch, _FakeCur(fetchone_queue=[None]))
+    assert pa.duplicate_of_column_present() is False
 
 
 # ── routes ────────────────────────────────────────────────────────────────────
@@ -415,13 +434,30 @@ def test_duplicates_endpoint_returns_groups(client, monkeypatch):
         "emails": 1, "rows": 2, "portal_conflicts": 0,
         "groups": [{"email": "g@x.com", "count": 2, "portal_count": 1, "rows": []}]})
     monkeypatch.setattr(pa, "portal_email_index_present", lambda: False)
+    monkeypatch.setattr(pa, "duplicate_of_column_present", lambda: True)
     r = c.get("/api/console/practitioners/duplicates?key=" + _key(appmod))
     assert r.status_code == 200, r.get_data(as_text=True)
     body = r.get_json()
     assert body["ok"] is True
     assert body["emails"] == 1 and body["rows"] == 2
     assert body["index_present"] is False
+    assert body["duplicate_of_present"] is True
     assert body["groups"][0]["email"] == "g@x.com"
+
+
+def test_duplicates_endpoint_reports_the_column_missing(client, monkeypatch):
+    """Before the migration lands, `duplicate_of_present` says so — it is not
+    inferred from the audit succeeding, since the audit degrades gracefully in
+    that window and would otherwise look identical either way."""
+    c, appmod = client
+    from dashboard import practitioner_admin as pa
+    monkeypatch.setattr(pa, "audit_duplicate_emails", lambda db_path=None: {
+        "emails": 0, "rows": 0, "portal_conflicts": 0, "groups": []})
+    monkeypatch.setattr(pa, "portal_email_index_present", lambda: True)
+    monkeypatch.setattr(pa, "duplicate_of_column_present", lambda: False)
+    r = c.get("/api/console/practitioners/duplicates?key=" + _key(appmod))
+    assert r.status_code == 200
+    assert r.get_json()["duplicate_of_present"] is False
 
 
 def test_duplicates_endpoint_is_console_gated(client):
@@ -458,3 +494,47 @@ def test_email_index_endpoint_reports_success(client, monkeypatch):
     r = c.post("/api/console/practitioners/email-index?key=" + _key(appmod), json={})
     assert r.status_code == 200
     assert r.get_json()["present"] is True
+
+
+# ── the duplicate-listing migration apply endpoint ─────────────────────────────
+
+def test_duplicate_listing_migration_endpoint_is_console_gated(client):
+    c, appmod = client
+    r = c.post("/api/console/practitioners/duplicate-listing-migration", json={})
+    if appmod.CONSOLE_SECRET:
+        assert r.status_code == 401
+
+
+def test_duplicate_listing_migration_endpoint_reports_success(client, monkeypatch):
+    c, appmod = client
+    from dashboard import practitioner_admin as pa
+    monkeypatch.setattr(pa, "apply_duplicate_listing_migration", lambda: {
+        "migration": "practitioners-duplicate-listing", "applied": True,
+        "duplicate_of_present": True, "view_columns": ["id", "tier"]})
+    r = c.post("/api/console/practitioners/duplicate-listing-migration?key="
+              + _key(appmod), json={})
+    assert r.status_code == 200, r.get_data(as_text=True)
+    body = r.get_json()
+    assert body["ok"] is True
+    assert body["applied"] is True
+    assert body["duplicate_of_present"] is True
+
+
+def test_duplicate_listing_migration_endpoint_fails_loudly_on_a_partial_apply(
+        client, monkeypatch):
+    """A verification failure must not read as 200. The reason travels with it,
+    not just a bare failure."""
+    c, appmod = client
+    from dashboard import practitioner_admin as pa
+
+    def _boom():
+        raise RuntimeError(
+            "v_practitioners_public does not have its expected columns afterward")
+
+    monkeypatch.setattr(pa, "apply_duplicate_listing_migration", _boom)
+    r = c.post("/api/console/practitioners/duplicate-listing-migration?key="
+              + _key(appmod), json={})
+    assert r.status_code == 502
+    body = r.get_json()
+    assert body["ok"] is False
+    assert "expected columns" in body["error"]
