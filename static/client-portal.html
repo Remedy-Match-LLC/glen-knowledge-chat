@@ -5344,6 +5344,7 @@ function render(d, v){
       <section data-panel="records" hidden data-door="scans">${_back("records")}${buildClinicalRecordHtml(v)}</section>
       ${_hub && v.oasis && v.oasis.enabled ? (_oasisView = v, `<section data-panel="oasis" hidden data-door="remedies">${_back("oasis")}${buildOasisHtml(v)}</section>`) : ""}
       ${_hub ? `<section data-panel="cart" hidden data-door="remedies">${_back("cart")}${buildCartHtml()}</section>` : ""}
+      <section data-panel="solutions-detail" hidden data-door="solutions">${_back("solutions-detail")}${_doors ? partsFor("solutions") : ""}</section>
       <section data-panel="shop" hidden data-door="solutions">${_back("shop")}${buildShopHtml()}</section>
       <section data-panel="calendar" hidden data-door="learn">${_back("calendar")}${_calendarHtml}</section>
       <section data-panel="offers" hidden data-door="account">${_back("offers")}${_offersHtml || buildOffersEmptyHtml(v)}</section>
@@ -5358,7 +5359,6 @@ function render(d, v){
       <section data-panel="scan-report" hidden data-door="scans">${_back("scan-report")}${_doors ? partsFor("scans") : ""}</section>
       <section data-panel="billing-detail" hidden data-door="billing">${_back("billing-detail")}${_doors ? partsFor("billing") : ""}</section>
       <section data-panel="remedy-detail" hidden data-door="remedies">${_back("remedy-detail")}${_doors ? partsFor("remedies") : ""}</section>
-      <section data-panel="solutions-detail" hidden data-door="solutions">${_back("solutions-detail")}${_doors ? partsFor("solutions") : ""}</section>
       <section data-panel="account-detail" hidden data-door="account">${_back("account-detail")}${_doors ? partsFor("account") : ""}</section>
       <section data-panel="learn-detail" hidden data-door="learn">${_back("learn-detail")}${_doors ? partsFor("learn") : ""}</section>
       ${_doors ? `<div class="portal-chrome portal-chrome-bottom">${partsFor("chrome-bottom")}</div>` : ""}` : ""}`;
