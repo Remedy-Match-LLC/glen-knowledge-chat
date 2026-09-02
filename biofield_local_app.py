@@ -1325,12 +1325,18 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
 
     @app.route("/author/<test_id>/e4l/import-reveal", methods=["POST"])
     def author_import_reveal(test_id):
-        """Import the client's recent (<7d) E4L reveal layers + remedies as
-        needs-review causal-chain rows. Appends only after an explicit force when the
-        session already has rows. Synthesis runs in-process (PHI stays local)."""
+        """Import the client's E4L reveal layers + remedies as needs-review
+        causal-chain rows. A scan older than the freshness window is refused unless
+        allow_stale is passed -- refusing outright left the practitioner with no way
+        forward from the page. Appends only after an explicit force when the session
+        already has rows. Synthesis runs in-process (PHI stays local)."""
         import datetime as _dt
         from dashboard import biofield_reveal_import as _ri
-        force = bool((request.get_json(silent=True) or {}).get("force"))
+        _body = request.get_json(silent=True) or {}
+        force = bool(_body.get("force"))
+        # Two INDEPENDENT gates: allow_stale consents to an old scan, force consents to
+        # appending onto a session that already has layers. Neither implies the other.
+        allow_stale = bool(_body.get("allow_stale"))
         with sqlite3.connect(db_path) as cx:
             rep = _report_for(cx, test_id)
             email = ((rep.get("client") or {}).get("email") or "").strip()
@@ -1342,17 +1348,22 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                 return {"ok": False, "reason": f"Reveal synthesis failed: {e}"}
             if not res.get("found"):
                 return {"ok": False, "reason": "No E4L scan on file"}
-            if not res.get("fresh"):
-                return {"ok": False,
+            stale = not res.get("fresh")
+            if stale and not allow_stale:
+                # Not a dead end any more: `stale` lets the page offer to go ahead,
+                # rather than refusing with no way forward.
+                return {"ok": False, "stale": True, "days_ago": res.get("days_ago"),
                         "reason": f"Latest scan is {res.get('days_ago')} days old "
-                                  "— refresh to import"}
+                                  "— refresh to import, or import it anyway"}
             existing = len(rep.get("layers") or [])
             if existing and not force:
                 return {"ok": False, "needs_confirm": True, "existing": existing}
             imported = _ri.import_layers_to_test(cx, test_id, res.get("layers") or [])
             # Pass already-synthesized layers so the pipeline runs only once per import
             _seed_stresses(cx, test_id, force=True, layers=res.get("layers") or [])
-        return {"ok": True, "imported": imported}
+        # Reported back so an old scan behind a chain is never a silent fact.
+        return {"ok": True, "imported": imported, "stale_override": bool(stale),
+                "days_ago": res.get("days_ago") if stale else None}
 
     @app.route("/author/<test_id>/stresses")
     def author_stresses(test_id):
