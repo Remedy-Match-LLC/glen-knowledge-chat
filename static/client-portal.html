@@ -808,6 +808,16 @@
   .ob-triage-msg{font-size:.85rem;margin:.3rem 0 0;min-height:1.1em}
   .ob-triage-msg.ob-triage-ok{color:var(--ok)}
   .ob-triage-msg.ob-triage-err{color:var(--err)}
+  /* Permanent "What you are working on" checklist in the Find Solutions door.
+     Same markup as the onboarding tile's triage form (static/js/portal-conditions.js
+     renders both), so it reuses every .ob-* rule above, including the mobile
+     one-column collapse. Only the wrapper differs. */
+  .wo-form{margin:.9rem 0 0}
+  .wo-submit{margin:.4rem 0 0}
+  .wo-msg{margin:.5rem 0 0;min-height:1.1em;color:var(--muted)}
+  .wo-msg.wo-ok{color:var(--ok)}
+  .wo-msg.wo-err{color:var(--err)}
+  .wo-matches:not(:empty){margin-top:1rem;padding-top:.9rem;border-top:1px dashed var(--line)}
   @media (max-width:480px){
     .portal-onboarding{padding:16px 16px}
     .ob-triage-row{flex-direction:column;gap:.6rem}
@@ -895,6 +905,7 @@
        filled/emptied by static/js/portal-library.js's own fetch + mount. -->
   <div id="portal-library-mount"></div>
 <script src="/static/entity-ref.js"></script>
+<script src="/static/js/portal-conditions.js"></script>
 <script src="/static/js/portal-shell.js"></script>
 <script src="/static/js/portal-library.js"></script>
 <script src="/static/js/portal-documents.js"></script>
@@ -908,6 +919,7 @@ const seg = location.pathname.split("/").filter(Boolean).pop();
 const isMe = (seg === "me");
 const token = seg; // reused by reorder()/checkout; "me" resolves via the session
 let _recoPayload = null; // My Recommendations (2b-ii) payload, set in load() before render(); keeps render(d,v) signature
+let _onboardingPayload = null; // /onboarding payload, set in load() before render(); prefills the Find Solutions checklist
 // Task 7: the current health_profile block (dashboard/health_profile.py shape),
 // cached so the suggestions-queue fetch/resolve handlers -- which run outside
 // render(d,v)'s scope, triggered by showTab() or a click -- can still look up a
@@ -2868,6 +2880,11 @@ async function load(options){
     // My Recommendations (Phase 2b-ii): independent of data/view — a null/absent
     // payload (flag off, no sections) simply renders no card, never blocks the page.
     fetchPortalJson(`/api/portal/${encodeURIComponent(seg)}/recommendations${dq}`),
+    // Onboarding status carries history_prefill.conditions: the conditions this
+    // client currently has on file. The permanent Find Solutions checklist
+    // prefills from it. Optional like recommendations above -- an absent payload
+    // renders the checklist unchecked, never blocks the page.
+    fetchPortalJson(`/api/portal/${encodeURIComponent(seg)}/onboarding`),
   ]);
   const resultAt = index => settled[index].status === "fulfilled"
     ? settled[index].value
@@ -2875,6 +2892,7 @@ async function load(options){
   const dataResult = resultAt(0);
   const viewResult = resultAt(1);
   const recoResult = resultAt(2);
+  const onboardingResult = resultAt(3);
   const required = isMe ? viewResult : dataResult;
   if(required.kind !== "ok"){
     if(required.kind === "http" && required.status === 404) notFound();
@@ -2884,6 +2902,7 @@ async function load(options){
   if(options.preserveActiveIntake && portalIntakeIsActive()) return false;
   if(options.preserveActivePanel && portalDetailPanelIsActive()) return false;
   _recoPayload = recoResult.kind === "ok" ? recoResult.data : null;
+  _onboardingPayload = onboardingResult.kind === "ok" ? onboardingResult.data : null;
   render(dataResult.data, viewResult.data);
   window.__portalLastLoadedAt = Date.now();
   // Content and account/view can degrade independently. Recommendations are
@@ -3355,7 +3374,12 @@ function recommendationPriorityHtml(sections){
   </div>`;
 }
 
-function renderRecommendations(sections){
+// The section bodies alone, without the #recsCard wrapper. The permanent
+// "What you are working on" card renders its matched remedies through this,
+// so there is exactly one row/chip/reveal renderer in the portal. It must not
+// carry the recsCard id: wireRecommendationsCard() resolves that id by
+// getElementById, and a second element sharing it would wire the wrong card.
+function renderRecommendationSections(sections){
   let secHtml = "";
   sections.forEach(sec=>{
     const src = esc(sec.source || "");
@@ -3416,6 +3440,11 @@ function renderRecommendations(sections){
       </div>
     </div>`;
   });
+  return secHtml;
+}
+
+function renderRecommendations(sections){
+  const secHtml = renderRecommendationSections(sections);
   const priorityHtml = recommendationPriorityHtml(sections);
   return `<div class="card" id="recsCard"><h2>My Recommendations</h2>${priorityHtml}${secHtml || '<p class="muted">No recommendations yet.</p>'}</div>`;
 }
@@ -3426,8 +3455,12 @@ function renderRecommendations(sections){
 // load(), so every .rec-* element here is fresh and re-querying + re-binding
 // each time cannot double-fire (the previous elements, and their listeners,
 // were discarded with the old subtree).
-function wireRecommendationsCard(){
-  const card = document.getElementById("recsCard");
+// `root` defaults to the My Recommendations card. The Find Solutions
+// "What you are working on" card passes its own matches container, so the rows
+// it renders through renderRecommendationSections() get the same hide / note /
+// collapse / reveal behaviour instead of dead buttons.
+function wireRecommendationsCard(root){
+  const card = root || document.getElementById("recsCard");
   if(!card) return;
 
   // Hide: one-shot latch (disable before await, like acceptRecommendation()).
@@ -3531,6 +3564,99 @@ function wireRecommendationsCard(){
       mb.setAttribute("data-visible", String(target));
       mb.textContent = `See all (${total})`;
     });
+  });
+}
+
+// The permanent "What you are working on" checklist in the Find Solutions door.
+// Called once per render() like wireRecommendationsCard() above: #app is rebuilt
+// on every load(), so every element here is fresh and re-binding cannot
+// double-fire.
+//
+// Deliberately separate from the onboarding tile's copy of this checklist. That
+// one lives under #portal-onboarding-mount, a sibling of #app, and binds its
+// listeners on that mount; this one lives inside the Find Solutions panel and
+// binds on its own card. Neither listener can see the other's form, so during
+// setup both can be on screen without one submit firing the other or a
+// condition being seeded twice. The prefill below comes from the server on
+// every render, so a condition saved through the onboarding form is already
+// checked here by the time this card is next drawn.
+function wireWorkingOnCard(){
+  const card = document.getElementById("workingOnCard");
+  const conditions = window.PortalConditions;
+  if(!card || !conditions) return;
+  const form = card.querySelector(".wo-form");
+  const msg = card.querySelector(".wo-msg");
+  const matches = card.querySelector(".wo-matches");
+  if(!form || !msg || !matches) return;
+
+  const setMsg = (text, state) => {
+    msg.textContent = text;
+    msg.className = "wo-msg small" + (state ? " wo-" + state : "");
+  };
+
+  // Prefill from what the server currently holds, never from a local draft: the
+  // whole point of the card is that submitting reconciles against stored truth,
+  // so what is checked must be what is stored.
+  const prefill = ((_onboardingPayload || {}).status || {}).history_prefill || {};
+  conditions.applyConditionPrefill(form, prefill.conditions || []);
+
+  // Show the remedies the current selections already matched, so the card is
+  // not blank before the first submit. Same renderer and same wiring as the My
+  // Recommendations card, scoped to the condition source.
+  const showMatches = (sections) => {
+    const conditionSections = (sections || []).filter(sec => sec && sec.source === "condition");
+    if(!conditionSections.length){ matches.innerHTML = ""; return; }
+    // No heading of our own: the shared renderer already titles the section
+    // from the source registry ("Matched from your history & symptoms"), and a
+    // second heading above it said the same thing twice.
+    matches.innerHTML = renderRecommendationSections(conditionSections);
+    wireRecommendationsCard(matches);
+  };
+  showMatches((_recoPayload && Array.isArray(_recoPayload.sections)) ? _recoPayload.sections : []);
+
+  form.addEventListener("change", (e) => {
+    const box = e.target;
+    if(box && box.name === "conditions") conditions.syncConditionDetail(form, box.value, box.checked);
+  });
+
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const submit = form.querySelector(".wo-submit");
+    const selected = Array.prototype.map.call(
+      form.querySelectorAll('input[name="conditions"]:checked'), el => el.value);
+    const otherText = form.querySelector('[data-condition-detail="other"] textarea[name="other_condition"]');
+    if(selected.indexOf("other") !== -1 && (!otherText || !otherText.value.trim())){
+      setMsg("Please tell us what the other issue is.", "err");
+      return;
+    }
+    if(submit) submit.disabled = true;
+    setMsg("Saving…");
+    try{
+      const r = await fetch(`/api/portal/${encodeURIComponent(token)}/triage`, {
+        method: "POST", headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({
+          conditions: selected.map(c => conditions.conditionPayload(form, c)),
+        }),
+      });
+      const body = await r.json().catch(()=>({}));
+      if(!r.ok || !body.ok) throw new Error(body.error || "");
+      // Re-read the recommendations so the card shows the reconciled result,
+      // including remedies that a just-unchecked condition no longer seeds.
+      const fresh = await fetch(`/api/portal/${encodeURIComponent(token)}/recommendations`, {credentials: "same-origin"})
+        .then(res => res.ok ? res.json() : null).catch(()=>null);
+      showMatches((fresh && Array.isArray(fresh.sections)) ? fresh.sections : []);
+      let line = selected.length
+        ? "Your list is updated. Here is what it matched."
+        : "Your list is cleared. Nothing is being matched for you right now.";
+      if(body.consult_recommended){
+        line += " Given what you shared, a Biofield Analysis with Dr. Glen would help us take a closer look.";
+      }
+      setMsg(line, "ok");
+    }catch(err){
+      setMsg((err && err.message) || "We could not save that. Please try again.", "err");
+    }finally{
+      if(submit) submit.disabled = false;
+    }
   });
 }
 
@@ -3905,6 +4031,29 @@ function render(d, v){
   const partsFor = (door) => parts.filter(function (p) { return p.door === door; })
                                   .map(function (p) { return p.html; }).join("");
   const legacyCurrentHtml = () => parts.map(function (p) { return p.html; }).join("");
+
+  // Permanent "What you are working on" checklist (Find Solutions door). The
+  // onboarding tile's copy of this checklist is gated on
+  // history_conditions_done, so it disappears after setup and a client who
+  // develops a new symptom in month three has no way to tell the portal. This
+  // one never goes away and is re-runnable: it prefills with the conditions the
+  // server currently holds, and submitting reconciles the whole set, so
+  // UNCHECKING something removes it and clears the remedies it seeded.
+  //
+  // Rendered from static/js/portal-conditions.js, the same module the
+  // onboarding tile renders from, so the two lists cannot drift. Prefill and
+  // submit wiring live in wireWorkingOnCard(), called once per render() beside
+  // wireRecommendationsCard().
+  //
+  // Gated on `_doors`, like the membership merge above it and for the same
+  // reason: without the doors every part lands in the single `current` scroll,
+  // so an ungated push would add a card to the flag-off page production runs
+  // today. This is a Find Solutions feature, and Find Solutions only exists
+  // under the shell. Also gated on the module itself: if that script failed to
+  // load, no half-built form is shown.
+  if (_doors && window.PortalConditions) {
+    part("solutions", window.PortalConditions.renderWorkingOnCard());
+  }
 
   // First Biofield test: the unchecked onboarding item lands here. Payment
   // continues to the secure readiness page, which walks the client through a
@@ -5571,6 +5720,7 @@ function render(d, v){
   if(rdBtn) rdBtn.addEventListener("click", dismissRecommendation);
 
   wireRecommendationsCard();
+  wireWorkingOnCard();
   wireEyeVisionReport();
 
   // My Remedies panel: every action (ranked "Add to my Oasis / order" hand-off,

@@ -9,6 +9,23 @@ from dashboard import db
 
 _N, _E = "glaucoma-normal-iop", "glaucoma-elevated-iop"
 
+# The answer keys a triage submit may carry. Anything else in the request body
+# is ignored, so a client cannot write a column the checklist does not own.
+ANSWER_KEYS = (
+    "iop_od", "iop_os", "on_meds", "med_count", "meds_names",
+    "field_loss", "category",
+    # dry-eye triage facts (drive the aqueous_deficiency/severe modifiers,
+    # see resolve_client_facts)
+    "sjogrens", "not_enough_tears", "severe",
+    # cataract sub-type triage
+    "cataract_type", "age", "steroids", "diabetes", "inflammation",
+    "radiation", "atopy", "yellow_vision",
+    # macular sub-type triage
+    "amd_type", "injections", "distortion",
+    # free-text history item when no authored protocol fits
+    "other_condition",
+)
+
 # Conditions that map to exactly ONE program: no triage questions needed,
 # resolve straight to that program.
 _SINGLE_PROGRAM = {
@@ -27,6 +44,16 @@ _SINGLE_PROGRAM = {
     "symptom-skin": "symptom-skin",
     "symptom-blood-sugar": "symptom-blood-sugar",
 }
+
+# Every value the client checklist can submit, in one place: the eye and vision
+# issues, plus every single-program whole-body symptom above. The browser renders
+# the same list from static/js/portal-conditions.js (pinned equal by
+# tests/test_condition_reconcile.py) and both portal write routes validate
+# against this set, so a client-supplied condition outside it is refused.
+# `other` is the free-text escape hatch: it stores, but resolves to no program.
+CHECKLIST_CONDITIONS = frozenset(set(_SINGLE_PROGRAM) | {
+    "glaucoma", "cataract", "macular", "other",
+})
 
 # Cataract "not sure" risk flags (Dr. Glen): none of these change routing
 # under rule 1 (told-PSC) or rule 2 (told-senile) -- they are captured as
@@ -303,3 +330,83 @@ def seed_from_triage(cx, email, condition, answers):
                               occurred_at=_now(), origin_ref=condition)
             seeded.append(slug)
     return {"programs": keys, "seeded": seeded, "consult_recommended": consult_recommended}
+
+
+def stored_conditions(cx, email):
+    """The conditions this client currently has on file, oldest first."""
+    init_table(cx)
+    rows = cx.execute(
+        "SELECT condition FROM condition_triage WHERE lower(email)=lower(?) "
+        "ORDER BY updated_at", ((email or "").strip().lower(),)).fetchall()
+    return [r[0] for r in rows]
+
+
+def remove_condition(cx, email, condition):
+    """The inverse of seed_from_triage: forget one stored condition AND drop the
+    remedies it seeded. Both halves, always.
+
+    Dropping only the row would leave the seeded recommendations behind, so a
+    client who no longer has dry eye would keep being shown dry-eye remedies with
+    no control left that could remove them. clear_events is scoped to
+    (source_key="condition", origin_ref=condition), so every OTHER condition's
+    seeds -- and every non-condition source, such as a remedy the client added
+    themselves -- are untouched.
+
+    Returns the number of seeded recommendation rows removed.
+    """
+    from dashboard import recommendation_events as _re
+    init_table(cx)
+    email = (email or "").strip().lower()
+    condition = (condition or "").strip().lower()
+    cx.execute("DELETE FROM condition_triage WHERE lower(email)=lower(?) AND condition=?",
+               (email, condition))
+    cx.commit()
+    return _re.clear_events(cx, email, "condition", condition)
+
+
+def reconcile_conditions(cx, email, submitted):
+    """Reconcile a client's whole "what you are working on" set in one pass.
+
+    `submitted` is the list the client just checked: each entry a dict with a
+    `condition` key plus that condition's follow-up answers. Compared against
+    what is already stored:
+
+      newly checked -> seed_from_triage: store the answers and seed the
+                       resolved programs' remedies, exactly as onboarding does
+      still checked -> left alone. Not re-seeded and not re-written, so stored
+                       follow-up answers survive a submit that carried none and
+                       no duplicate recommendation rows appear
+      unchecked     -> remove_condition: forget it AND drop its seeded remedies
+
+    Answers are edited through the onboarding form and the per-condition triage
+    POST; this route decides membership only.
+    """
+    init_table(cx)
+    email = (email or "").strip().lower()
+    stored = set(stored_conditions(cx, email))
+    order, by_key = [], {}
+    for item in submitted or []:
+        key = str((item or {}).get("condition") or "").strip().lower()
+        if not key or key in by_key:
+            continue
+        order.append(key)
+        by_key[key] = item
+    wanted = set(order)
+
+    removed = sorted(stored - wanted)
+    cleared = 0
+    for cond in removed:
+        cleared += remove_condition(cx, email, cond)
+
+    added, seeded, consult_recommended = [], [], False
+    for cond in order:
+        if cond in stored:
+            continue
+        res = seed_from_triage(cx, email, cond, by_key[cond])
+        added.append(cond)
+        seeded.extend(res.get("seeded") or [])
+        consult_recommended = consult_recommended or bool(res.get("consult_recommended"))
+
+    return {"added": added, "kept": sorted(stored & wanted), "removed": removed,
+            "seeded": seeded, "cleared": cleared,
+            "consult_recommended": consult_recommended}

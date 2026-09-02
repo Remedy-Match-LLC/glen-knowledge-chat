@@ -66,6 +66,21 @@ function _stepByKey(steps, key) {
   return null;
 }
 
+// The condition list, its follow-up blocks, and the prefill/payload helpers
+// live in static/js/portal-conditions.js so this tile and the permanent
+// "What you are working on" card in the Find Solutions door render from ONE
+// copy and cannot drift apart. Resolved lazily (not at load time) so the order
+// of the two <script src> tags cannot matter.
+function _conditions() {
+  // window first: in the browser portal-conditions.js loads from its own
+  // <script src> ahead of this file, and a test harness that evaluates this
+  // source outside node's module system (see tests/test_onboarding_render.py)
+  // supplies the module the same way. require() is the plain-node path.
+  if (typeof window !== 'undefined' && window.PortalConditions) return window.PortalConditions;
+  if (typeof require === 'function') return require('./portal-conditions.js');
+  throw new Error('portal-conditions.js must be loaded before portal-onboarding.js');
+}
+
 // Condition-history checklist with condition-specific follow-ups. Pure markup --
 // submit is wired via a delegated listener in the browser-init block below so
 // this function (and renderOnboarding) stays side-effect-free / DOM-free and
@@ -77,37 +92,7 @@ function renderTriageForm(status) {
   if (!status.history_conditions_done) {
     conditionSection =
       '<div class="ob-history-section" data-history-section="conditions">' +
-        '<p class="ob-triage-intro">Do you have any of these eye or vision issues? Check all that apply.</p>' +
-        '<div class="ob-condition-list">' +
-          _conditionChoice('glaucoma', 'Glaucoma') +
-          _conditionChoice('cataract', 'Cataracts') +
-          _conditionChoice('macular', 'Macular degeneration') +
-          _conditionChoice('dry-eye', 'Dry eye') +
-          _conditionChoice('retinitis-pigmentosa', 'Retinitis pigmentosa') +
-          _conditionChoice('diabetic-retinopathy', 'Diabetic retinopathy') +
-          _conditionChoice('vision-improvement', 'Reduced vision or vision you want to improve') +
-          _conditionChoice('other', 'Other') +
-        '</div>' +
-        _glaucomaFollowup() + _cataractFollowup() +
-        _macularFollowup() + _dryEyeFollowup() +
-        '<div class="ob-condition-detail" data-condition-detail="other" hidden>' +
-          '<p class="ob-followup-title">Tell us what else is going on</p>' +
-          '<label class="ob-triage-field">Other eye or vision issue' +
-            '<textarea name="other_condition" rows="3"></textarea></label>' +
-        '</div>' +
-        '<p class="ob-triage-intro" style="margin-top:1rem">Do you commonly experience any of these whole-body symptoms? Check all that apply.</p>' +
-        '<div class="ob-condition-list ob-systemic-symptom-list">' +
-          _conditionChoice('symptom-fatigue', 'Fatigue or low energy') +
-          _conditionChoice('symptom-brain-fog', 'Brain fog or poor focus') +
-          _conditionChoice('symptom-stress', 'Stress or anxious tension') +
-          _conditionChoice('symptom-sleep', 'Trouble sleeping') +
-          _conditionChoice('symptom-headache', 'Headache or migraine') +
-          _conditionChoice('symptom-digestion', 'Digestive discomfort or bloating') +
-          _conditionChoice('symptom-constipation', 'Constipation or irregularity') +
-          _conditionChoice('symptom-immune', 'Frequent illness or slow recovery') +
-          _conditionChoice('symptom-skin', 'Common skin concerns') +
-          _conditionChoice('symptom-blood-sugar', 'Blood sugar swings or cravings') +
-        '</div>' +
+        _conditions().renderConditionChecklist() +
       '</div>';
   }
   return '' +
@@ -138,65 +123,11 @@ function _productHistoryChoice(kind, label) {
   '</div>';
 }
 
-function _conditionChoice(value, label) {
-  return '<label class="ob-condition-choice"><input type="checkbox" name="conditions" value="' +
-    value + '"> ' + label + '</label>';
-}
 
-function _detailCheck(name, label) {
-  return '<label class="ob-triage-check"><input type="checkbox" name="' +
-    name + '"> ' + label + '</label>';
-}
 
-function _glaucomaFollowup() {
-  return '<div class="ob-condition-detail" data-condition-detail="glaucoma" hidden>' +
-    '<p class="ob-followup-title">A few details about your glaucoma</p>' +
-    '<label class="ob-triage-field">What type or pressure pattern were you told you have?' +
-      '<select name="category"><option value="">Not sure</option><option value="elevated">Elevated-pressure glaucoma</option><option value="normal">Normal-tension glaucoma</option></select></label>' +
-    '<div class="ob-triage-row">' +
-      '<label class="ob-triage-field">Right eye pressure (OD)<input type="number" step="0.1" min="0" max="60" name="iop_od" placeholder="e.g. 18"></label>' +
-      '<label class="ob-triage-field">Left eye pressure (OS)<input type="number" step="0.1" min="0" max="60" name="iop_os" placeholder="e.g. 18"></label>' +
-    '</div>' +
-    _detailCheck('on_meds', 'I use eye-pressure-lowering medication') +
-    '<label class="ob-triage-field ob-inline-field">If yes, how many medications?<input type="number" min="0" max="20" name="med_count"></label>' +
-    _detailCheck('field_loss', 'I have peripheral vision loss') +
-  '</div>';
-}
 
-function _cataractFollowup() {
-  return '<div class="ob-condition-detail" data-condition-detail="cataract" hidden>' +
-    '<p class="ob-followup-title">A few details about your cataracts</p>' +
-    '<label class="ob-triage-field">What type were you told you have?' +
-      '<select name="cataract_type"><option value="">Not sure</option><option value="senile">Age-related / nuclear</option><option value="psc">Posterior subcapsular (PSC)</option></select></label>' +
-    '<label class="ob-triage-field ob-inline-field">Your age<input type="number" min="0" max="120" name="age"></label>' +
-    _detailCheck('steroids', 'Current or past steroid use') +
-    _detailCheck('diabetes', 'Diabetes') +
-    _detailCheck('inflammation', 'Chronic inflammation') +
-    _detailCheck('radiation', 'Radiation exposure or treatment') +
-    _detailCheck('atopy', 'Allergies, asthma, or eczema') +
-    _detailCheck('yellow_vision', 'Vision seems more yellow or less blue') +
-  '</div>';
-}
 
-function _macularFollowup() {
-  return '<div class="ob-condition-detail" data-condition-detail="macular" hidden>' +
-    '<p class="ob-followup-title">A few details about your macular degeneration</p>' +
-    '<label class="ob-triage-field">What type were you told you have?' +
-      '<select name="amd_type"><option value="">Not sure</option><option value="dry">Dry</option><option value="wet">Wet</option></select></label>' +
-    _detailCheck('injections', 'I receive eye injections for it') +
-    _detailCheck('distortion', 'Straight lines look bent, wavy, or distorted') +
-  '</div>';
-}
 
-function _dryEyeFollowup() {
-  return '<div class="ob-condition-detail" data-condition-detail="dry-eye" hidden>' +
-    '<p class="ob-followup-title">A few details about your dry eye</p>' +
-    '<label class="ob-triage-field">Do your eyes make enough tears?' +
-      '<select name="not_enough_tears"><option value="">Not sure</option><option value="false">Yes</option><option value="true">No</option></select></label>' +
-    _detailCheck('sjogrens', 'I also have dry mouth or vaginal dryness') +
-    _detailCheck('severe', 'My dry eye is severe') +
-  '</div>';
-}
 
 // Task 6 / P1.T3 fast-follow: status.member was computed but never rendered.
 // A quiet inline thread, not a checklist entry.
@@ -357,30 +288,9 @@ if (typeof window !== 'undefined' && typeof document !== 'undefined') {
       });
     });
 
-    function _num(v) {
-      if (v === '' || v == null) return undefined;
-      var n = parseFloat(v);
-      return isNaN(n) ? undefined : n;
-    }
-
+    // Shared with the Find Solutions card, see _conditions() above.
     function conditionPayload(form, condition) {
-      var detail = form.querySelector('[data-condition-detail="' + condition + '"]');
-      var payload = {condition: condition};
-      if (!detail) return payload;
-      Array.prototype.forEach.call(detail.querySelectorAll('input,select,textarea'), function (field) {
-        var value;
-        if (field.type === 'checkbox') {
-          value = field.checked;
-        } else if (field.type === 'number') {
-          value = _num(field.value);
-        } else if (field.name === 'not_enough_tears') {
-          value = field.value === '' ? undefined : field.value === 'true';
-        } else {
-          value = field.value || undefined;
-        }
-        if (value !== undefined) payload[field.name] = value;
-      });
-      return payload;
+      return _conditions().conditionPayload(form, condition);
     }
 
     function productsPayload(form) {

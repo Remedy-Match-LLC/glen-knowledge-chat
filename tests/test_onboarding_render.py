@@ -7,7 +7,13 @@ def test_render_onboarding_emits_phases_done_and_link():
       const fs = require('fs');
       const src = fs.readFileSync('static/js/portal-onboarding.js','utf8');
       const mod = {exports:{}};
-      new Function('module','exports','window', src)(mod, mod.exports, {});
+      // The checklist itself lives in static/js/portal-conditions.js, which the
+      // page loads from its own <script src> ahead of this one. Evaluating this
+      // source outside node's module system means supplying it the same way.
+      const win = {};
+      new Function('module','exports','window',
+        fs.readFileSync('static/js/portal-conditions.js','utf8'))({exports:{}}, {}, win);
+      new Function('module','exports','window', src)(mod, mod.exports, win);
       const status = {
         phases: [
           {key:'be_read', title:'Discover What Your Body Is Saying', steps:[
@@ -57,7 +63,13 @@ def test_render_onboarding_shows_intake_page_progress():
       const fs = require('fs');
       const src = fs.readFileSync('static/js/portal-onboarding.js','utf8');
       const mod = {exports:{}};
-      new Function('module','exports','window', src)(mod, mod.exports, {});
+      // The checklist itself lives in static/js/portal-conditions.js, which the
+      // page loads from its own <script src> ahead of this one. Evaluating this
+      // source outside node's module system means supplying it the same way.
+      const win = {};
+      new Function('module','exports','window',
+        fs.readFileSync('static/js/portal-conditions.js','utf8'))({exports:{}}, {}, win);
+      new Function('module','exports','window', src)(mod, mod.exports, win);
       const html = mod.exports.renderOnboarding({member:false, phases:[
         {key:'be_read', title:'Read', steps:[{key:'intake', label:'Intake', done:false,
           in_progress:true, href:'#intake', progress:{completed:2,total:5,percent:40}}]}
@@ -93,7 +105,13 @@ def test_render_onboarding_triage_form_gated_on_history_done():
       const fs = require('fs');
       const src = fs.readFileSync('static/js/portal-onboarding.js','utf8');
       const mod = {exports:{}};
-      new Function('module','exports','window', src)(mod, mod.exports, {});
+      // The checklist itself lives in static/js/portal-conditions.js, which the
+      // page loads from its own <script src> ahead of this one. Evaluating this
+      // source outside node's module system means supplying it the same way.
+      const win = {};
+      new Function('module','exports','window',
+        fs.readFileSync('static/js/portal-conditions.js','utf8'))({exports:{}}, {}, win);
+      new Function('module','exports','window', src)(mod, mod.exports, win);
       const render = mod.exports.renderOnboarding || global.renderOnboarding;
 
       function baseStatus(historyDone, member) {
@@ -156,7 +174,13 @@ def test_render_onboarding_member_thread():
       const fs = require('fs');
       const src = fs.readFileSync('static/js/portal-onboarding.js','utf8');
       const mod = {exports:{}};
-      new Function('module','exports','window', src)(mod, mod.exports, {});
+      // The checklist itself lives in static/js/portal-conditions.js, which the
+      // page loads from its own <script src> ahead of this one. Evaluating this
+      // source outside node's module system means supplying it the same way.
+      const win = {};
+      new Function('module','exports','window',
+        fs.readFileSync('static/js/portal-conditions.js','utf8'))({exports:{}}, {}, win);
+      new Function('module','exports','window', src)(mod, mod.exports, win);
       const render = mod.exports.renderOnboarding || global.renderOnboarding;
 
       function baseStatus(member) {
@@ -199,7 +223,13 @@ def test_triage_success_message_adds_biofield_nudge_when_consult_recommended():
       const fs = require('fs');
       const src = fs.readFileSync('static/js/portal-onboarding.js','utf8');
       const mod = {exports:{}};
-      new Function('module','exports','window', src)(mod, mod.exports, {});
+      // The checklist itself lives in static/js/portal-conditions.js, which the
+      // page loads from its own <script src> ahead of this one. Evaluating this
+      // source outside node's module system means supplying it the same way.
+      const win = {};
+      new Function('module','exports','window',
+        fs.readFileSync('static/js/portal-conditions.js','utf8'))({exports:{}}, {}, win);
+      new Function('module','exports','window', src)(mod, mod.exports, win);
       const buildMsg = mod.exports._triageSuccessMessage;
 
       const plain = buildMsg(false);
