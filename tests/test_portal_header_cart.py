@@ -1,3 +1,4 @@
+import re
 from pathlib import Path
 
 
@@ -30,14 +31,30 @@ def test_header_cart_opens_dedicated_portal_cart_not_embedded_checkout():
 
 def test_review_order_still_opens_embedded_checkout():
     assert 'openPortalOrderBasket(false)' in PORTAL
-    assert 'showTab("current")' in PORTAL
+    # Final review I5: #portal-order-basket left `current` for the My Remedies
+    # door, so "current" alone opened Scans and left the basket hidden. Both
+    # panels are named through portalPanelFor(), which picks the shell one only
+    # while the shell is live. tests/test_portal_hash_routes.js proves each of
+    # them resolves to a door that actually reveals the basket.
+    assert 'showTab(portalPanelFor({panel:"current", shellPanel:"remedy-detail"}))' in PORTAL
     assert 'id="portal-order-basket"' in PORTAL
     assert 'document.getElementById("portal-order-basket")' in PORTAL
 
 
 def test_legacy_portals_always_render_a_dedicated_cart_panel():
     assert 'actTiles.push(["cart", "My Cart"' in PORTAL
-    assert '${_hub ? `<section data-panel="cart" hidden>' in PORTAL
+    # Final review I9: this pin used to read '<section data-panel="cart" hidden>'.
+    # It was loosened to '<section data-panel="cart"' so the new data-door
+    # attribute would fit, and that threw away the `hidden` half: removing
+    # `hidden` passed, and the cart panel would have rendered open on every
+    # legacy page, under every other panel. Both attributes are pinned again,
+    # inside the SAME tag, so further attributes are fine and a missing `hidden`
+    # is not.
+    tag = re.search(r'\$\{_hub \? `<section (?=[^>]*data-panel="cart")([^>]*)>', PORTAL)
+    assert tag, "no `${_hub ? ...}` branch renders a cart panel section"
+    attrs = tag.group(1)
+    assert re.search(r"(^|\s)hidden(\s|$)", attrs), (
+        f"the cart panel must render hidden, got: <section {attrs}>")
     assert '_hub && v.cart && v.cart.enabled ? `<section data-panel="cart"' not in PORTAL
 
 
