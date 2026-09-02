@@ -25540,6 +25540,10 @@ _PHOTO_TYPES = ("image/jpeg", "image/png", "image/webp")
 _PHOTO_MAX = 5 * 1024 * 1024
 
 
+def _portal_photo_identity(portal):
+    return str((((portal or {}).get("content") or {}).get("client_id")) or "").strip()
+
+
 @app.route("/api/portal/<token>/photo", methods=["POST"])
 def api_portal_photo_upload(token):
     """Client self-uploads their portal photo. Token-scoped: writes only the token
@@ -25562,7 +25566,11 @@ def api_portal_photo_upload(token):
             email = (portal.get("email") or "").strip().lower() if portal else ""
             if not email:
                 return jsonify({"ok": False, "error": "not found"}), 404
-            _cph.put(cx, email, blob, ctype, source="portal-self")
+            client_id = _portal_photo_identity(portal)
+            if client_id:
+                _cph.put_for_client(cx, client_id, email, blob, ctype, source="portal-self")
+            else:
+                _cph.put(cx, email, blob, ctype, source="portal-self")
     return jsonify({"ok": True})
 
 
@@ -25575,17 +25583,23 @@ def api_portal_photo_framing(token):
         _cp.init_client_portal_table(cx)
         portal = _portal_record_for(cx, token)
         email = (portal.get("email") or "").strip().lower() if portal else ""
-        rec = _cph.get(cx, email) if email else None
+        client_id = _portal_photo_identity(portal)
+        rec = (_cph.get_for_client(cx, client_id) if client_id else
+               (_cph.get(cx, email) if email else None))
         if not rec:
             return jsonify({"ok": False, "error": "not found"}), 404
         if request.method == "POST":
             data = request.get_json(silent=True) or {}
             try:
-                _cph.set_framing(cx, email, data.get("focus_x", 50),
-                                 data.get("focus_y", 42), data.get("zoom", 1))
+                if client_id:
+                    _cph.set_framing_for_client(cx, client_id, data.get("focus_x", 50),
+                                                data.get("focus_y", 42), data.get("zoom", 1))
+                else:
+                    _cph.set_framing(cx, email, data.get("focus_x", 50),
+                                     data.get("focus_y", 42), data.get("zoom", 1))
             except (TypeError, ValueError):
                 return jsonify({"ok": False, "error": "invalid framing"}), 400
-            rec = _cph.get(cx, email)
+            rec = (_cph.get_for_client(cx, client_id) if client_id else _cph.get(cx, email))
     return jsonify({"ok": True, "focus_x": rec["focus_x"],
                     "focus_y": rec["focus_y"], "zoom": rec["zoom"]})
 
@@ -25601,7 +25615,9 @@ def api_portal_photo_serve(token):
             _cp.init_client_portal_table(cx)
             portal = _portal_record_for(cx, token)
             email = (portal.get("email") or "").strip().lower() if portal else ""
-            rec = _cph.get(cx, email) if email else None
+            client_id = _portal_photo_identity(portal)
+            rec = (_cph.get_for_client(cx, client_id) if client_id else
+                   (_cph.get(cx, email) if email else None))
     if not rec:
         return Response("", status=404)
     resp = Response(rec["blob"], mimetype=rec["content_type"])
@@ -32522,20 +32538,22 @@ def api_console_client_photo():
     import base64 as _b64
     if request.method == "GET":
         email = (request.args.get("email") or "").strip().lower()
+        client_id = (request.args.get("client_id") or "").strip()
         if not email:
             return jsonify({"ok": False, "error": "email required"}), 400
         from dashboard import client_photos as _cph
         with db.connect(LOG_DB) as cx:
-            rec = _cph.get(cx, email)
+            rec = _cph.get_for_client(cx, client_id) if client_id else _cph.get(cx, email)
         if not rec:
             return jsonify({"ok": False, "error": "not found"}), 404
-        return jsonify({"ok": True, "email": email,
+        return jsonify({"ok": True, "email": email, "client_id": client_id,
                         "image": _b64.b64encode(rec["blob"]).decode(),
                         "content_type": rec["content_type"], "source": rec["source"],
                         "updated_at": rec["updated_at"], "focus_x": rec["focus_x"],
                         "focus_y": rec["focus_y"], "zoom": rec["zoom"]})
     body = request.get_json(silent=True) or {}
     email = (body.get("email") or "").strip().lower()
+    client_id = str(body.get("client_id") or "").strip()
     img_b64 = body.get("image") or ""
     if not email or "@" not in email or not img_b64:
         return jsonify({"ok": False, "error": "email and image required"}), 400
@@ -32547,10 +32565,15 @@ def api_console_client_photo():
         return jsonify({"ok": False, "error": "empty image"}), 400
     from dashboard import client_photos as _cph
     with _db_lock, db.connect(LOG_DB) as cx:
-        _cph.put(cx, email, blob, (body.get("content_type") or "image/jpeg"),
-                 source=(body.get("source") or "console"),
-                 force=bool(body.get("force", True)))
-    return jsonify({"ok": True, "email": email})
+        if client_id:
+            _cph.put_for_client(cx, client_id, email, blob,
+                                (body.get("content_type") or "image/jpeg"),
+                                source=(body.get("source") or "console"))
+        else:
+            _cph.put(cx, email, blob, (body.get("content_type") or "image/jpeg"),
+                     source=(body.get("source") or "console"),
+                     force=bool(body.get("force", True)))
+    return jsonify({"ok": True, "email": email, "client_id": client_id})
 
 
 @app.route("/client-photo/<path:email>")

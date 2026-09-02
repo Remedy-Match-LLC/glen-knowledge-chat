@@ -103,6 +103,38 @@ def test_build_maps_layers_dedups_and_prices(tmp_path):
                              "terrain-restore", "vitality"]
     assert all(it["price_cents"] == 5000 and it["qty"] == 1 for it in c["reorder_items"])
 
+
+def test_build_uses_exact_individualized_sku_and_calculates_bottles():
+    cx = sqlite3.connect(":memory:")
+    tid = create_test(cx, "Debra Herndon", "household@example.com", "2026-09-02")
+    aid = f"a{tid}"
+    add_chain_row(cx, aid, layer=1, head="Eye", most_affected="Glaucoma",
+                  remedy="IOP Syntropy", dosage="1 capsule",
+                  frequency="3 times daily", timing="with food")
+    add_chain_row(cx, aid, layer=2, head="Soul", most_affected="Purpose",
+                  remedy="Living With Soul Flower Essence in Terrain Restore",
+                  dosage="10 drops", frequency="3 times a day", timing="before meals")
+    cx.execute("CREATE TABLE fmp_snap_products (product_name TEXT, dosage TEXT, "
+               "dosage_freq TEXT, dosage_timing TEXT, doses_per_bottle TEXT)")
+    cx.executemany("INSERT INTO fmp_snap_products VALUES (?,?,?,?,?)", [
+        ("IOP Syntropy", "1 capsule", "3 times daily", "with food", "30"),
+        ("Living With Soul Flower Essence in Terrain Restore", "10 drops",
+         "3 times a day", "before meals", "100"),
+    ])
+    catalog = {
+        "terrain-restore": {"name": "Terrain Restore"},
+        "living-with-soul-flower-essence-in-terrain-restore": {
+            "name": "Living With Soul Flower Essence in Terrain Restore"},
+        "iop-syntropy": {"name": "IOP Syntropy"},
+    }
+    items = bpp.build_portal_content(
+        cx, aid, special_price_cents=0, catalog=catalog)["content"]["reorder_items"]
+    assert items == [
+        {"slug": "iop-syntropy", "qty": 3, "price_cents": 0},
+        {"slug": "living-with-soul-flower-essence-in-terrain-restore",
+         "qty": 1, "price_cents": 0},
+    ]
+
 def test_build_meaning_from_narrative_segments(tmp_path):
     cx = sqlite3.connect(":memory:")
     aid = _seed_karin(cx)

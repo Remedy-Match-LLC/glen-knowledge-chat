@@ -33,6 +33,15 @@ def _seed_portal(appmod, email):
     return token
 
 
+def _seed_identity_portal(appmod, email, client_id):
+    from dashboard import client_portal as cp
+    with sqlite3.connect(appmod.LOG_DB) as cx:
+        cp.init_client_portal_table(cx)
+        token, _ = cp.upsert_portal(cx, email, "Debra Herndon", {"client_id": client_id})
+        cx.commit()
+    return token
+
+
 def _upload(client, token, blob=PNG, ctype="image/png", name="m.png"):
     return client.post(
         f"/api/portal/{token}/photo",
@@ -60,6 +69,18 @@ def test_serve_is_token_scoped(tmp_path, monkeypatch):
     _upload(c, t1)
     # t2's owner has no photo; the route serves only the token's own email -> 404
     assert c.get(f"/api/portal/{t2}/photo").status_code == 404
+
+
+def test_shared_email_portal_serves_person_specific_photo(tmp_path, monkeypatch):
+    appmod = _app(tmp_path, monkeypatch)
+    token = _seed_identity_portal(appmod, "household@x.com", "6250")
+    from dashboard import client_photos as cp
+    with sqlite3.connect(appmod.LOG_DB) as cx:
+        cp.put(cx, "household@x.com", b"wrong-household-photo", "image/png")
+        cp.put_for_client(cx, "6250", "household@x.com", b"debra-photo", "image/jpeg")
+    response = appmod.app.test_client().get(f"/api/portal/{token}/photo")
+    assert response.status_code == 200
+    assert response.data == b"debra-photo"
 
 
 def test_rejects_non_image_and_oversize(tmp_path, monkeypatch):

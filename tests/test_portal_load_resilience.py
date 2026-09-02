@@ -6,13 +6,19 @@ HTML = (Path(__file__).resolve().parents[1] / "static" /
 
 
 def test_portal_fetches_are_bounded_and_settled_independently():
-    assert "const PORTAL_FETCH_TIMEOUT_MS = 10000;" in HTML
+    assert "const PORTAL_FETCH_TIMEOUT_MS = 20000;" in HTML
     assert "new AbortController()" in HTML
     assert "Promise.allSettled([" in HTML
     assert 'cache: "no-store"' in HTML
     assert "async function fetchPortalJsonOnce(url)" in HTML
     assert "result.status >= 500" in HTML
     assert "result = await fetchPortalJsonOnce(url)" in HTML
+
+
+def test_portal_load_alert_uses_active_theme_colors():
+    assert ".portal-load-alert{border-color:var(--btn-bg);background:var(--card2);color:var(--ink)}" in HTML
+    assert ".portal-load-alert p{color:var(--muted)}" in HTML
+    assert "background:#fffaf0" not in HTML
 
 
 def test_intake_completion_explains_where_saved_details_live():
