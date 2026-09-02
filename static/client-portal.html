@@ -3749,7 +3749,7 @@ function render(d, v){
     all.concat(Array.isArray(phase.steps) ? phase.steps : []), []));
   const biofieldJourney = journeySteps.find(step => step.key === "biofield");
   if(biofieldJourney && biofieldJourney.done !== true){
-    html += `<div class="card" id="biofield-order-card">
+    part("scans", `<div class="card" id="biofield-order-card">
       <h2>Order your first Biofield Analysis</h2>
       <p class="muted">We’ll guide you through each step. After payment, your secure preparation page will help you:</p>
       <ol class="small" style="line-height:1.8;margin:.6rem 0 1rem;padding-left:1.35rem">
@@ -3761,7 +3761,7 @@ function render(d, v){
       <p class="muted small">Once your report and program are generated, this portal will unlock consultation scheduling with Dr. Glen.</p>
       <button class="btn full" id="biofieldOrderBtn" data-path="/biofield/checkout">Begin your Biofield Analysis</button>
       <p class="small err" id="biofieldOrderErr" hidden></p>
-    </div>`;
+    </div>`);
   }
 
   if (d.linked_practitioner_account) {
@@ -3772,7 +3772,7 @@ function render(d, v){
     </div>`;
   }
 
-  html += renderEyeVisionReport(d.eye_vision_report);
+  part("scans", renderEyeVisionReport(d.eye_vision_report));
 
   // Program-page entry card: links to the personalized membership program page.
   // Flag-gated server-side (payload.program_page is only truthy-enabled when
@@ -3806,12 +3806,12 @@ function render(d, v){
       const sel = (cur && cur === (m.email || "").toLowerCase()) ? " selected" : "";
       opts += `<option value="${esc(m.email)}"${sel}>${label}</option>`;
     }
-    html += `<div class="card" style="display:flex;align-items:center;gap:10px">
+    part("scans", `<div class="card" style="display:flex;align-items:center;gap:10px">
       <span style="color:var(--muted);font-size:.9rem">Viewing scans for</span>
       <select onchange="window.__hhGo(this.value)"
         style="padding:6px 10px;border-radius:8px;background:var(--card);color:inherit;border:1px solid var(--border)">
         ${opts}
-      </select></div>`;
+      </select></div>`);
   }
 
   // "Your practitioner" co-brand band — when the patient has an attributed doctor with branding.
@@ -3949,27 +3949,27 @@ function render(d, v){
     } else {
       inner = `<a class="btn" href="${esc(d.video.url)}" target="_blank" rel="noopener">${esc(d.video.label||"Watch your video")}</a>`;
     }
-    html += `
+    part("scans", `
       <div class="card video-card">
         <h2>Your personal message from Dr. Glen</h2>
         ${inner}
-      </div>`;
+      </div>`);
   }
 
   if(d.audio && d.audio.url){
-    html += `
+    part("scans", `
       <div class="card audio-card">
         <h2>Your audio walkthrough</h2>
         <audio controls preload="none" src="${esc(d.audio.url)}" style="width:100%"></audio>
         ${d.audio.label?`<p class="muted">${esc(d.audio.label)}</p>`:""}
-      </div>`;
+      </div>`);
   }
   if(d.report_pdf && d.report_pdf.url){
-    html += `
+    part("scans", `
       <div class="card report-card">
         <h2>Your written report</h2>
         <a class="btn" href="${esc(d.report_pdf.url)}" target="_blank" rel="noopener" download>Download your report (PDF)</a>
-      </div>`;
+      </div>`);
   }
   // Task 7: when scan_history_enabled, unpaid invoices move to the Orders &
   // Invoices tab (buildOrdersHtml) instead of rendering here.
@@ -4051,9 +4051,9 @@ function render(d, v){
     const line = capped
       ? "Still working on your Biofield Analysis, we'll text you the moment it's ready."
       : "This usually takes about a minute. It will appear right here.";
-    html += `<div class="card prep" id="biofield-section"><h2>Preparing your Biofield Analysis…</h2>
+    part("scans", `<div class="card prep" id="biofield-section"><h2>Preparing your Biofield Analysis…</h2>
       ${capped ? "" : '<div class="spinner" aria-hidden="true"></div>'}
-      <p class="prepline">${esc(line)}</p></div>`;
+      <p class="prepline">${esc(line)}</p></div>`);
     // Kick the producer once per page load, then poll.
     if(!_ppPosted){
       _ppPosted = true;
@@ -4066,9 +4066,9 @@ function render(d, v){
     // The analysis has landed (or we navigated away from pending) — stop polling.
     clearInterval(_ppTimer); _ppTimer = null;
   } else if (d.biofield_status === "none") {
-    html += '<div class="card"><h2>Curious what your body is asking for?</h2>'
+    part("scans", '<div class="card"><h2>Curious what your body is asking for?</h2>'
       + '<p>A quick biofield voice scan reads your stress and terrain patterns and tailors your next steps. It takes about 30 seconds.</p>'
-      + '<a class="btn" href="https://Truly.VIP/E4L" target="_blank" rel="noopener">Do your free voice scan</a></div>';
+      + '<a class="btn" href="https://Truly.VIP/E4L" target="_blank" rel="noopener">Do your free voice scan</a></div>');
   }
 
   // Biofield "healing path" — server-gated by status. Remedies/dosing never reach
@@ -4161,13 +4161,13 @@ function render(d, v){
       const cta = actionable
         ? `<button class="btn full" id="bfInterestBtn" data-scan="${esc(curDate||"")}">View your scan analysis</button>`
         : `<p class="scan-old">This analysis is from an earlier scan.</p>`;
-      html += `<div class="card primary" id="biofield-section"><h2>Your scan analysis</h2>
+      part("scans", `<div class="card primary" id="biofield-section"><h2>Your scan analysis</h2>
         ${tabs}
         ${patternsBlock}
         ${bf.greeting?`<div class="muted${rvlCls}" style="margin:.1rem 0 .6rem${firstTime?";animation-delay:"+(findingsCount*120+300)+"ms":""}">${escGreeting(bf.greeting)}</div>`:""}
         <p class="${rvlCls.trim()}" style="margin:.1rem 0 1rem${firstTime?";animation-delay:"+(findingsCount*120+300)+"ms":""}">Your Biofield Analysis is ready: your healing path, mapped from the surface layer down to the deepest root.</p>
         ${cta}
-        ${disclose}</div>`;
+        ${disclose}</div>`);
     } else {
       // interested / requested / confirmed all render the patterns.
       let path = "";
@@ -4237,18 +4237,18 @@ function render(d, v){
           const badge = document.getElementById("rr-new");
           if (badge) badge.remove();
         };
-        html += `<div class="card" id="biofield-section">
+        part("scans", `<div class="card" id="biofield-section">
           <div class="rr-header" data-scan="${esc(sd)}" style="display:flex;align-items:center;gap:10px;cursor:pointer">
             <strong>Biofield report — ${esc(sd || "")}</strong>
             ${isNew ? `<span id="rr-new" style="background:#d4a843;color:#000;font-size:.72rem;font-weight:700;padding:1px 7px;border-radius:10px">New</span>` : ""}
             <span style="flex:1"></span><span style="color:var(--muted)">▾</span>
           </div>
           <div id="rr-body" style="display:${isNew ? "none" : ""};margin-top:12px">${reportBody}</div>
-        </div>`;
+        </div>`);
       } else {
         // flag off: existing report body markup, unchanged
-        html += `<div class="card" id="biofield-section"><h2>Your healing path</h2>
-          ${reportBody}</div>`;
+        part("scans", `<div class="card" id="biofield-section"><h2>Your healing path</h2>
+          ${reportBody}</div>`);
       }
     }
   }
@@ -4276,7 +4276,7 @@ function render(d, v){
       s += sr.mihealth.map(m => `<p class="muted" style="margin:.2rem 0;font-size:.9em">${esc(m.code)} ${esc(m.label)}</p>`).join("");
     }
     s += `</div>`;
-    html += s;
+    part("scans", s);
   }
 
   // Share & Unlock card (data-sharing opt-in, Task 6): renders only when the
@@ -4318,14 +4318,14 @@ function render(d, v){
   if (d.ff_matches_enabled) {
     const ffBody = d.ff_matches ? ffMatchesBodyHtml(d.ff_matches) : "";
     const showAddToInvoice = !!(d.ff_matches && d.ff_matches.covered && d.ff_matches.reviewed);
-    html += `<div class="card ffmatch-card">
+    part("scans", `<div class="card ffmatch-card">
       <h2>Your formulation matches</h2>
       <div id="ffMatchesBody">${ffBody}</div>
       <button type="button" class="btn" id="ffMatchesBtn" style="margin-top:.7rem">See my formulation matches</button>
       <p class="small err" id="ffMatchesErr" hidden>Something went wrong — please try again.</p>
       <button type="button" class="btn" id="ffAddToInvoiceBtn" style="margin-top:.7rem" ${showAddToInvoice ? "" : "hidden"}>Add to my invoice</button>
       <p class="small" id="ffAddToInvoiceMsg" style="margin-top:.4rem" hidden></p>
-    </div>`;
+    </div>`);
   }
 
   // Support-program card (Slice 4a display + Slice 4b add-to-invoice, flag-gated):
@@ -4398,9 +4398,9 @@ function render(d, v){
       rows += `<div style="display:flex;align-items:center;gap:10px;padding:6px 0;border-bottom:1px solid var(--border)">
         <strong style="font-size:.95rem">${esc(s.scan_date)}</strong><span style="flex:1"></span>${tag}</div>`;
     }
-    html += `<div class="card quiet"><h2 style="font-size:1rem">Scan history</h2>
+    part("scans", `<div class="card quiet"><h2 style="font-size:1rem">Scan history</h2>
       <p style="color:var(--muted);font-size:.85rem;margin:.2rem 0 .6rem">Every scan on file. Analyzed scans have a full report; others are available to analyze.</p>
-      ${rows}</div>`;
+      ${rows}</div>`);
   }
 
   // Task 3: the patient's active practitioner recommendation ("Your practitioner
@@ -4823,20 +4823,20 @@ function render(d, v){
     const c = v.consult;
     if(c.booked){
       const when = (c.booked_start||"").replace("T"," ");
-      html += `<div class="card" id="biofield-consult-card"><h2>Biofield Consult</h2>
+      part("scans", `<div class="card" id="biofield-consult-card"><h2>Biofield Consult</h2>
         <p class="muted">Your consult with Dr. Glen is booked for <b>${esc(when)} HST</b>.</p>
         <button class="btn full" onclick="consultJoin()">Join your consult</button>
-        <div id="consult-join-msg" class="muted" style="margin-top:.5rem"></div></div>`;
+        <div id="consult-join-msg" class="muted" style="margin-top:.5rem"></div></div>`);
     } else if(c.ready){
-      html += `<div class="card" id="biofield-consult-card"><h2>Biofield Consult</h2>
+      part("scans", `<div class="card" id="biofield-consult-card"><h2>Biofield Consult</h2>
         <p class="muted">Your report is ready. Schedule your 30 minute consult with Dr. Glen to review your program.</p>
         <div id="consult-intake-host"></div>
         <button class="btn full" id="consult-sched" onclick="consultSchedule()" hidden>Schedule your consult</button>
-        <div id="consult-slots" style="margin-top:.6rem" hidden></div></div>`;
+        <div id="consult-slots" style="margin-top:.6rem" hidden></div></div>`);
     } else {
-      html += `<div class="card" id="biofield-consult-card"><h2>Biofield Consult</h2>
+      part("scans", `<div class="card" id="biofield-consult-card"><h2>Biofield Consult</h2>
         <p class="muted">Your Biofield Consult with Dr. Glen unlocks once your Causal report and program are posted.
-        We will let you know when it is ready to schedule.</p></div>`;
+        We will let you know when it is ready to schedule.</p></div>`);
     }
   }
 
