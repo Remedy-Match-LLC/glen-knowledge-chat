@@ -294,6 +294,24 @@ def test_cap_never_invents_a_price_from_junk():
     assert guard.cap_to_saved("", 5000) == ""
 
 
+def test_the_preview_and_the_save_share_one_cap():
+    """The editor must quote the number the save will write.
+
+    Each had its own copy of the override precedence, so the deployed cap held the
+    invoice down while the preview still showed Debra's line at $300. A rule kept
+    in two places is a rule that will disagree with itself.
+    """
+    import ast
+    import pathlib
+    src = pathlib.Path(__file__).resolve().parent.parent / "app.py"
+    tree = ast.parse(src.read_text())
+    users = {f.name for f in ast.walk(tree) if isinstance(f, ast.FunctionDef)
+             for c in ast.walk(f)
+             if isinstance(c, ast.Call) and isinstance(c.func, ast.Name)
+             and c.func.id == "_capped_override_unit"}
+    assert users == {"_price_inhouse_invoice", "api_orders_price_preview"}, users
+
+
 def test_the_pricer_caps_explicit_overrides_to_the_saved_rate():
     """The ceiling must live in the shared pricer, not in one caller.
 
@@ -305,10 +323,26 @@ def test_the_pricer_caps_explicit_overrides_to_the_saved_rate():
     src = pathlib.Path(__file__).resolve().parent.parent / "app.py"
     fn = next(f for f in ast.walk(ast.parse(src.read_text()))
               if isinstance(f, ast.FunctionDef) and f.name == "_price_inhouse_invoice")
-    called = {c.func.attr for c in ast.walk(fn)
+    helper = next(f for f in ast.walk(ast.parse(src.read_text()))
+                  if isinstance(f, ast.FunctionDef) and f.name == "_capped_override_unit")
+    called = {c.func.attr for c in ast.walk(helper)
               if isinstance(c, ast.Call) and isinstance(c.func, ast.Attribute)}
-    assert "cap_to_saved" in called, "the pricer no longer holds a line to the saved rate"
-    assert "saved_rate_for" in called, "the pricer no longer resolves the saved rate"
+    assert "capped_override" in called, "the adapter no longer reaches the shared cap"
+    # Without ff_eligible the FF flat rate would cap ordinary retail too: Debra's
+    # $70 flower essence, which is not a Functional Formulation, would be pulled
+    # down to her $50 capsule rate.
+    kw = {k.arg: k.value for c in ast.walk(helper) if isinstance(c, ast.Call)
+          for k in c.keywords if k.arg}
+    assert "ff_eligible" in kw, "the adapter stopped restricting the flat rate"
+    assert not (isinstance(kw["ff_eligible"], ast.Constant)
+                and kw["ff_eligible"].value is None), \
+        "ff_eligible=None lets the flat rate cap non-formulations"
+    assert any(isinstance(n, ast.Name) and n.id == "_qty_eligible"
+               for n in ast.walk(kw["ff_eligible"])), \
+        "the adapter no longer asks whether the product is a formulation"
+    assert any(isinstance(c, ast.Call) and isinstance(c.func, ast.Name)
+               and c.func.id == "_capped_override_unit" for c in ast.walk(fn)), \
+        "the pricer no longer caps an explicit override"
     # Applying the cap without recording it would correct the price SILENTLY, which
     # is how the first one went unnoticed for a day. The record must be kept and
     # must leave the function.
@@ -335,3 +369,41 @@ def test_the_cap_is_reported_wherever_an_invoice_is_written():
              and c.func.id == "_price_cap_notice"}
     assert users == {"api_orders_edit", "api_orders_manual",
                      "api_orders_grant_member_access"}, users
+
+
+def test_capped_override_holds_a_line_down_and_says_it_did():
+    got, was = guard.capped_override(30000, SAVED, "biofield-analysis",
+                                     price_at=lambda c: c)
+    assert (got, was) == (0, 30000)
+
+
+def test_capped_override_is_silent_when_nothing_moved():
+    assert guard.capped_override(0, SAVED, "biofield-analysis",
+                                 price_at=lambda c: c) == (0, None)
+    assert guard.capped_override(2500, SAVED, "iop-syntropy",
+                                 price_at=lambda c: c) == (2500, None)
+
+
+def test_capped_override_prices_the_candidate_through_the_callers_own_pricer():
+    """The saved rate is a per-unit input, not a finished price.
+
+    Comparing a raw saved rate against a priced line would ignore the volume curve
+    and member rates the caller applies, so the candidate goes through price_at.
+    """
+    seen = []
+
+    def price_at(cents):
+        seen.append(cents)
+        return cents - 500          # the caller's pricer discounts
+
+    got, was = guard.capped_override(6000, SAVED, "iop-syntropy", price_at=price_at)
+    assert seen == [5000], "the saved rate never reached the caller's pricer"
+    assert (got, was) == (4500, 6000)
+
+
+def test_capped_override_leaves_a_client_without_saved_pricing_alone():
+    empty = {"ff_flat_cents": None, "sku": {}}
+    called = []
+    assert guard.capped_override(6997, empty, "brain-boost",
+                                 price_at=lambda c: called.append(c)) == (6997, None)
+    assert called == [], "priced a candidate for a client who has no saved rate"

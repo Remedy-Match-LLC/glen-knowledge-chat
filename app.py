@@ -51495,6 +51495,14 @@ def _earned_reorder_slugs(cx, email):
         return set()
 
 
+def _capped_override_unit(unit_cents, *, product, slug, cprices, ff_flat, price_at):
+    """Adapter: this app's pricing context -> the shared, tested cap."""
+    from dashboard import special_price_guard as _spg
+    return _spg.capped_override(
+        unit_cents, {"ff_flat_cents": ff_flat, "sku": cprices or {}}, slug,
+        ff_eligible=lambda _s: _qty_eligible(product), price_at=price_at)
+
+
 def _price_inhouse_invoice(lines_in, *, email, pickup, ship,
                            discount_cents_in=None, points_redeem_cents_in=None,
                            adjustment_cents_in=None, shipping_override_cents_in=None,
@@ -51509,7 +51517,6 @@ def _price_inhouse_invoice(lines_in, *, email, pickup, ship,
     to a real product. Raises CheckoutError for a ship-to the engine rejects."""
     from dashboard import pricing as _pricing
     from dashboard import membership_products as _mp
-    from dashboard import special_price_guard as _spg
     settings = _pricing.load_settings(_pricing_settings())
     total_ff_qty = _inhouse_total_ff_qty(lines_in)
     # Paid membership gates the order-wide mix/match volume rate (Glen 2026-07):
@@ -51590,16 +51597,13 @@ def _price_inhouse_invoice(lines_in, *, email, pickup, ship,
             # An override may still discount BELOW her rate; it may not quietly
             # rise above it. Only ever lowers a line, so it can never make a cart
             # unpurchasable the way an operator stop in shared pricing once did.
-            _cap_src = _spg.saved_rate_for(slug, {"ff_flat_cents": _ff_flat, "sku": _cprices},
-                                           ff_eligible=lambda _s: _qty_eligible(p))
-            if _cap_src is not None:
-                _at_saved = _inhouse_line_unit_cents(p, _cap_src, total_ff_qty, settings,
-                                                    program_member=program_member, line_qty=qty)
-                _capped = _spg.cap_to_saved(unit_cents, _at_saved)
-                if _capped != unit_cents:
-                    price_caps.append({"slug": slug, "from_cents": unit_cents,
-                                       "to_cents": _capped})
-                    unit_cents = _capped
+            unit_cents, _was = _capped_override_unit(
+                unit_cents, product=p, slug=slug, cprices=_cprices, ff_flat=_ff_flat,
+                price_at=lambda c: _inhouse_line_unit_cents(
+                    p, c, total_ff_qty, settings,
+                    program_member=program_member, line_qty=qty))
+            if _was is not None:
+                price_caps.append({"slug": slug, "from_cents": _was, "to_cents": unit_cents})
         elif _cprices.get(slug) is not None:
             unit_cents = _inhouse_line_unit_cents(p, _cprices.get(slug), total_ff_qty, settings,
                                                   program_member=program_member, line_qty=qty)
@@ -52351,6 +52355,11 @@ def api_orders_price_preview():
                 if _cand is not None:
                     unit = min(unit, _cand)
         overridden = ov not in (None, "")
+        if overridden:
+            unit, _ = _capped_override_unit(
+                unit, product=p, slug=slug, cprices=_cprices, ff_flat=_ff_flat,
+                price_at=lambda c: _inhouse_line_unit_cents(
+                    p, c, total_ff_qty, settings, program_member=_ppm, line_qty=qty))
         line_cents = unit * qty
         subtotal += line_cents
         # Non-member vol_pct is the same-SKU rate off THIS line's own qty (there's

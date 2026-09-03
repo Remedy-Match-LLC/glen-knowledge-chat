@@ -177,3 +177,22 @@ def recent_events(cx, limit=100):
         return []
     cols = ("ts", "order_id", "route", "actor", "slug", "billed_cents", "saved_cents")
     return [dict(zip(cols, r)) for r in rows]
+
+
+def capped_override(unit_cents, saved, slug, *, ff_eligible=None, price_at):
+    """Hold an explicit per-line price down to this client's own saved rate.
+
+    Shared by the invoice pricer and the editor's price preview. Each had its own
+    copy of the override precedence, and a rule kept in two places is a rule that
+    will disagree with itself: the deployed cap held the invoice down while the
+    preview still quoted Debra's line at $300.
+
+    `price_at(cents)` runs a candidate through the caller's own line pricer, so
+    both sides compare like with like (volume curves, member rates, packaging).
+    Returns (unit_cents, capped_from); capped_from is None when nothing moved.
+    """
+    want = saved_rate_for(slug, saved, ff_eligible=ff_eligible)
+    if want is None:
+        return unit_cents, None
+    capped = cap_to_saved(unit_cents, price_at(want))
+    return (capped, unit_cents) if capped != unit_cents else (unit_cents, None)
