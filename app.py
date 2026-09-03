@@ -33472,7 +33472,10 @@ def api_portal_calendar_register(token):
                 return jsonify({"error": "not_found"}), 404
             row = cx.execute(
                 'SELECT zoom_meeting_id,zoom_occurrence_id,zoom_registration_required '
-                'FROM calendar_events WHERE id=? AND status="visible"',
+                # Single quotes: Postgres reads "visible" as an IDENTIFIER, so this
+                # raised UndefinedColumn on every reserve click in prod. SQLite's
+                # lenient double-quote-as-string fallback hid it in dev and tests.
+                "FROM calendar_events WHERE id=? AND status='visible'",
                 (event_id,)).fetchone()
             if not row:
                 return jsonify({"error": "not_found"}), 404
