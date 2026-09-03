@@ -3,6 +3,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from scrapers.practitioner_finder.db import (
+    _normalize_for_write,
     build_search_sql,
     profession_specialties,
     upsert_sql_and_params,
@@ -174,6 +175,23 @@ def test_profession_specialties_classifies_ot_and_pt_credentials():
 def test_profession_specialties_avoids_substring_false_positives():
     assert profession_specialties("OPT, BC-HIS") == []
     assert profession_specialties("Doctor of Optometry") == []
+
+
+def test_normalize_for_write_strips_glued_digit_suffix_from_name():
+    row = _normalize_for_write({"name": "Stacie Han2"})
+    assert row["name"] == "Stacie Han"
+
+
+def test_normalize_for_write_leaves_names_without_a_glued_suffix_alone():
+    row = _normalize_for_write({"name": "Farm 2"})
+    assert row["name"] == "Farm 2"
+    row = _normalize_for_write({"name": "Zevan III"})
+    assert row["name"] == "Zevan III"
+
+
+def test_normalize_for_write_no_name_key_is_a_noop():
+    row = _normalize_for_write({"city": "Honolulu"})
+    assert "name" not in row
 
 
 def test_upsert_sql_params_match_dict():
