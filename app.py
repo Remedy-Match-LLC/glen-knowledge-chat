@@ -53537,24 +53537,9 @@ def api_invoice_update(token):
     # so the shared pricer applies this client's special/member/volume price.
     existing = {(it.get("slug") or "").strip(): it
                 for it in (order.get("items") or []) if (it.get("slug") or "").strip()}
-    lines_in = []
-    for ln in (body.get("lines") or []):
-        slug = (ln.get("slug") or "").strip()
-        if not _get_product(slug):
-            continue
-        qty = max(0, min(int(ln.get("qty") or 0), 99))
-        if qty <= 0:
-            continue
-        old = existing.get(slug) or {}
-        requested_fmt = (ln.get("format") or old.get("format") or "bottle").strip().lower()
-        rec = {"slug": slug, "qty": qty,
-               "format": "refill" if requested_fmt == "refill" else "bottle"}
-        if old.get("override"):
-            rec["unit_cents"] = old.get("unit_cents")
-        for key in ("note", "source"):
-            if old.get(key):
-                rec[key] = old[key]
-        lines_in.append(rec)
+    from dashboard import client_invoice_lines as _cil
+    lines_in = _cil.rebuild(body.get("lines"), existing,
+                            known=lambda _s: _get_product(_s) is not None)
     if not lines_in:
         return jsonify({"ok": False, "error": "no valid items"}), 400
     cx = db.connect(LOG_DB); cx.row_factory = _sqlite3.Row
