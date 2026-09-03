@@ -51143,6 +51143,48 @@ def _recompute_combined_shipping(cx, sid):
             "pooled_pricing": pooled_pricing}
 
 
+@app.route("/api/console/ship-credit", methods=["POST"])
+def api_console_ship_credit_grant():
+    """Owner: record a shipping credit for a customer by hand.
+
+    ship_credit.grant() was reachable only from the combined-shipment recalc, which
+    splits a saving pro-rata. When a household combines AFTER paying and the
+    operator settles it differently -- one member carrying the whole parcel, the
+    other left holding an overpayment -- there was no way to record the credit at
+    all, so it survived only in somebody's memory.
+
+    Idempotent on source_ref (the ledger keys the grant to it), so clicking twice
+    credits once. Body: {email, cents, source_ref, note?}.
+    """
+    actor = _bos_actor()
+    if actor is None or actor.role != _bos_rbac.OWNER:
+        return jsonify({"ok": False, "error": "unauthorized"}), 401
+    body = request.get_json(silent=True) or {}
+    email = (body.get("email") or "").strip().lower()
+    source_ref = (body.get("source_ref") or "").strip()
+    try:
+        cents = int(body.get("cents"))
+    except (TypeError, ValueError):
+        return jsonify({"ok": False, "error": "cents must be a whole number"}), 400
+    if not email:
+        return jsonify({"ok": False, "error": "email required"}), 400
+    if cents <= 0:
+        return jsonify({"ok": False, "error": "cents must be positive"}), 400
+    if not source_ref:
+        # Without it the grant is not idempotent and a double click double-credits.
+        return jsonify({"ok": False, "error": "source_ref required"}), 400
+    from dashboard import ship_credit as _ship_credit
+    with _db_lock, db.connect(LOG_DB) as cx:
+        before = _ship_credit.balance(cx, email)
+        _ship_credit.grant(cx, email, cents, source_ref=source_ref)
+        cx.commit()
+        after = _ship_credit.balance(cx, email)
+    return jsonify({"ok": True, "email": email, "granted_cents": cents,
+                    "balance_before_cents": before, "balance_cents": after,
+                    "source_ref": source_ref,
+                    "auto_applies": _ship_credit_enabled()})
+
+
 @app.route("/api/console/shipments/<int:sid>/recalc-shipping", methods=["POST"])
 def console_shipment_recalc_shipping(sid):
     """Owner/ops: apply shared Family Plan volume pricing when eligible, then
