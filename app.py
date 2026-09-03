@@ -19568,6 +19568,21 @@ def _zoom_name_parts(name, email):
     return parts[0], " ".join(parts[1:])
 
 
+def _reserve_failure_message(exc):
+    """What to tell a member whose reserve failed.
+
+    Zoom caps add-registrant at three calls per day PER EMAIL, so a member who
+    fumbles three times is locked out until GMT midnight. Telling them to retry
+    is the one piece of advice that cannot work, and burns nothing but goodwill.
+    """
+    from dashboard import zoom as _zoom
+    if isinstance(exc, _zoom.RegistrantRateLimited):
+        return ("Zoom has temporarily blocked new sign-ups for your email after "
+                "several attempts today. It clears at midnight GMT, so please try "
+                "again tomorrow, or reply here and we will register you by hand.")
+    return "Your spot was not reserved. Please retry."
+
+
 def _zoom_register_person(meeting_id, email, name, *, occurrence_id=""):
     """Create a Zoom registrant outside the database lock."""
     from dashboard import zoom as _zoom
@@ -33532,11 +33547,15 @@ def api_portal_calendar_register(token):
                 group_registration["meeting_id"], email, name)
             if not zoom_registration.get("join_url"):
                 raise RuntimeError("Zoom returned no registrant join URL")
-        except Exception:
-            app.logger.exception("group coaching Zoom registration failed for %s",
-                                 group_registration["event_key"])
-            return jsonify({"error": "zoom_registration_failed",
-                            "detail": "Your spot was not reserved. Please retry."}), 502
+        except Exception as _exc:
+            # %s carries Zoom's own message now; a bare HTTPError told us nothing.
+            app.logger.exception("group coaching Zoom registration failed for %s: %s",
+                                 group_registration["event_key"], _exc)
+            from dashboard import zoom as _zoom_mod
+            rate_limited = isinstance(_exc, _zoom_mod.RegistrantRateLimited)
+            return jsonify({"error": ("zoom_rate_limited" if rate_limited
+                                      else "zoom_registration_failed"),
+                            "detail": _reserve_failure_message(_exc)}), 502
         with _db_lock, db.connect(LOG_DB) as cx:
             _pc.register_group(
                 cx, group_registration["event_key"], email,
