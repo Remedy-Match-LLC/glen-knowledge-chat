@@ -17506,12 +17506,15 @@ def api_practitioner_dropship_checkout():
         if method in ("zelle", "wise"):
             _pp.cart_clear(pid)
         out["practitioner_id"] = pid
+        # The PRICED lines, not the cart. The cart carries only {slug, qty}, so
+        # passing it here recorded every line at $0.00 against a correct total --
+        # Ashley King's invoice showed $303.00 over six $0.00 lines.
         _ingest_order(source="dropship",
                       external_ref=str(out.get("invoice_id") or ""),
                       email=(prac.get("email") or ""),
                       name=(prac.get("name") or ""),
                       total_cents=int(round((out.get("total") or 0) * 100)),
-                      items=items, address=ship, channel="wholesale",
+                      items=(out.get("lines") or items), address=ship, channel="wholesale",
                       get_cents=out.get("get_cents", 0), pay_method=method,
                       practitioner_id=pid,
                       shipping_cents=out.get("shipping_cents", 0))
@@ -37018,7 +37021,7 @@ def api_console_dropship_reissue():
         _ingest_order(
             source="dropship", external_ref=new_ref,
             email=practitioner["email"], name=practitioner["name"],
-            items=old.get("items") or [], total_cents=new_total,
+            items=(out.get("lines") or old.get("items") or []), total_cents=new_total,
             address=old.get("address") or {}, channel="wholesale",
             get_cents=out.get("get_cents", 0), pay_method="card",
             practitioner_id=pid,
@@ -37093,7 +37096,8 @@ def api_console_dropship_create():
     _ingest_order(
         source="dropship", external_ref=ref,
         email=practitioner["email"], name=practitioner["name"],
-        items=items, total_cents=int(round((out.get("total") or 0) * 100)),
+        items=(out.get("lines") or items),
+        total_cents=int(round((out.get("total") or 0) * 100)),
         address=ship, channel="wholesale", get_cents=out.get("get_cents", 0),
         pay_method="card", practitioner_id=pid,
         shipping_cents=out.get("shipping_cents", 0))

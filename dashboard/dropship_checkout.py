@@ -163,6 +163,12 @@ def build_dropship_order(cart: List[dict], practitioner: dict, *,
 
     return {
         "ok": True,
+        # The priced lines, so the ORDER RECORD can say what each bottle cost.
+        # The cart carries only {slug, qty}, so a caller passing the cart through
+        # to _ingest_order stored every line at $0.00 against a correct total:
+        # Ashley King's invoices showed $303.00 over six $0.00 lines.
+        "lines": [{"slug": l["slug"], "qty": int(l["qty"]),
+                   "unit_cents": int(l["unit_cents"])} for l in quote["lines"]],
         "invoice_id": checkout_ref,
         "customer_id": "",
         "doc_number": "",
