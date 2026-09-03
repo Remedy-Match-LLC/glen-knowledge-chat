@@ -24,6 +24,45 @@ def _cents(value):
         return None
 
 
+def saved_rate_for(slug, saved, *, ff_eligible=None):
+    """This client's saved rate for one slug, or None.
+
+    A per-SKU price wins over the flat rate, being the more specific of the two.
+    The flat rate is consulted only for slugs `ff_eligible` accepts, because it
+    covers Functional Formulations; judging an ionizer by a $50 capsule rate would
+    flag ordinary retail.
+    """
+    saved = saved or {}
+    want = _cents((saved.get("sku") or {}).get(slug))
+    if want is not None:
+        return want
+    flat = _cents(saved.get("ff_flat_cents"))
+    if flat is not None and (ff_eligible is None or ff_eligible(slug)):
+        return flat
+    return None
+
+
+def cap_to_saved(unit_cents, saved_cents):
+    """Hold a line at the client's saved rate when something tries to raise it.
+
+    Order #165 was created at $809.13 because a script passed catalog list prices
+    as explicit per-line overrides: $300 for a Biofield Analysis Glen had granted
+    her at $0 in July. An explicit price outranked her saved rate, and that is the
+    wrong direction for an override to win in.
+
+    So the saved rate is a ceiling, not a suggestion. A line may still be
+    discounted BELOW it (a deeper courtesy is real intent); it may not quietly
+    rise above it. Returns the value unchanged when there is no saved rate, or
+    when either side is not a number -- this decides money and must never invent
+    a price out of junk.
+    """
+    have = _cents(unit_cents)
+    want = _cents(saved_cents)
+    if have is None or want is None:
+        return unit_cents
+    return want if have > want else unit_cents
+
+
 def overpriced_lines(items, saved, *, ff_eligible=None):
     """Lines charged above this client's saved price.
 
@@ -32,9 +71,6 @@ def overpriced_lines(items, saved, *, ff_eligible=None):
     consulted only for slugs `ff_eligible` accepts, because it covers Functional
     Formulations and judging an ionizer by it would flag ordinary retail.
     """
-    saved = saved or {}
-    per_sku = saved.get("sku") or {}
-    flat = _cents(saved.get("ff_flat_cents"))
     out = []
     for item in (items or []):
         if not isinstance(item, dict):
@@ -43,10 +79,7 @@ def overpriced_lines(items, saved, *, ff_eligible=None):
         unit = _cents(item.get("unit_cents"))
         if not slug or unit is None:
             continue
-        want = _cents(per_sku.get(slug))
-        if want is None and flat is not None:
-            if ff_eligible is None or ff_eligible(slug):
-                want = flat
+        want = saved_rate_for(slug, saved, ff_eligible=ff_eligible)
         if want is None or unit <= want:
             continue
         out.append({"slug": slug, "unit_cents": unit, "saved_cents": want})

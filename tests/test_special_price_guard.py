@@ -247,3 +247,91 @@ def test_the_guard_is_reported_not_enforced():
     returns = [n for n in ast.walk(fn) if isinstance(n, ast.Return)]
     assert returns and all(
         not (isinstance(r.value, ast.Tuple)) for r in returns), "the guard must not return a status code"
+
+
+# --- the fix: a saved rate is a ceiling, not a suggestion ---------------------
+#
+# Order #165 was CREATED at $809.13 by a script that passed catalog list prices as
+# explicit unit_cents for every line. Confirmed against production: with no
+# unit_cents her two lines price at $50.00, with explicit retail they price at
+# $369.97. An explicit price silently outranked the $0 courtesy Glen had granted
+# her in July. A line may still be discounted BELOW her rate; it may not quietly
+# rise above it.
+
+def test_saved_rate_for_prefers_the_per_sku_price():
+    assert guard.saved_rate_for("biofield-analysis", SAVED) == 0
+    assert guard.saved_rate_for("iop-syntropy", SAVED) == 5000
+
+
+def test_saved_rate_for_falls_back_to_the_flat_rate_for_formulations():
+    assert guard.saved_rate_for("brain-boost", SAVED, ff_eligible=lambda s: True) == 5000
+    assert guard.saved_rate_for("brain-boost", SAVED, ff_eligible=lambda s: False) is None
+
+
+def test_saved_rate_for_is_none_without_saved_pricing():
+    assert guard.saved_rate_for("brain-boost", {"ff_flat_cents": None, "sku": {}}) is None
+    assert guard.saved_rate_for("brain-boost", None) is None
+
+
+def test_cap_lowers_an_override_that_rises_above_the_saved_rate():
+    # The exact defect: a script passed $300 for a line she is owed at $0.
+    assert guard.cap_to_saved(30000, 0) == 0
+    assert guard.cap_to_saved(6997, 5000) == 5000
+
+
+def test_cap_leaves_a_deeper_courtesy_alone():
+    # Glen discounting BELOW her rate is intent, not a defect. Never raise a line.
+    assert guard.cap_to_saved(2500, 5000) == 2500
+    assert guard.cap_to_saved(0, 5000) == 0
+
+
+def test_cap_is_inert_without_a_saved_rate():
+    assert guard.cap_to_saved(6997, None) == 6997
+
+
+def test_cap_never_invents_a_price_from_junk():
+    assert guard.cap_to_saved(None, 5000) is None
+    assert guard.cap_to_saved("", 5000) == ""
+
+
+def test_the_pricer_caps_explicit_overrides_to_the_saved_rate():
+    """The ceiling must live in the shared pricer, not in one caller.
+
+    #165 was created by a script, not by the editor, so a fix applied only to the
+    console would have left the path that actually caused this untouched.
+    """
+    import ast
+    import pathlib
+    src = pathlib.Path(__file__).resolve().parent.parent / "app.py"
+    fn = next(f for f in ast.walk(ast.parse(src.read_text()))
+              if isinstance(f, ast.FunctionDef) and f.name == "_price_inhouse_invoice")
+    called = {c.func.attr for c in ast.walk(fn)
+              if isinstance(c, ast.Call) and isinstance(c.func, ast.Attribute)}
+    assert "cap_to_saved" in called, "the pricer no longer holds a line to the saved rate"
+    assert "saved_rate_for" in called, "the pricer no longer resolves the saved rate"
+    # Applying the cap without recording it would correct the price SILENTLY, which
+    # is how the first one went unnoticed for a day. The record must be kept and
+    # must leave the function.
+    assert any(isinstance(c, ast.Call) and isinstance(c.func, ast.Attribute)
+               and c.func.attr == "append" and isinstance(c.func.value, ast.Name)
+               and c.func.value.id == "price_caps"
+               for c in ast.walk(fn)), "caps are applied but never recorded"
+    returns = [r for r in ast.walk(fn) if isinstance(r, ast.Return)
+               and isinstance(r.value, ast.Dict)]
+    assert any(any(isinstance(k, ast.Constant) and k.value == "price_caps" for k in r.value.keys)
+               for r in returns), "price_caps never leaves the pricer"
+
+
+def test_the_cap_is_reported_wherever_an_invoice_is_written():
+    # Silent correction is how the first one went unnoticed. Every write path that
+    # can cap a line must also say that it did.
+    import ast
+    import pathlib
+    src = pathlib.Path(__file__).resolve().parent.parent / "app.py"
+    tree = ast.parse(src.read_text())
+    users = {f.name for f in ast.walk(tree) if isinstance(f, ast.FunctionDef)
+             for c in ast.walk(f)
+             if isinstance(c, ast.Call) and isinstance(c.func, ast.Name)
+             and c.func.id == "_price_cap_notice"}
+    assert users == {"api_orders_edit", "api_orders_manual",
+                     "api_orders_grant_member_access"}, users
