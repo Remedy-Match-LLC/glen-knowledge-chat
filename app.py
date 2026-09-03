@@ -51807,6 +51807,48 @@ def _reprice_and_persist_invoice(cx, order, lines_in, *, pickup, discount_cents_
     return priced, (order.get("pay_status") == "paid")
 
 
+def _join_warnings(*parts):
+    return " ".join(p for p in parts if p)
+
+
+def _special_price_warning(email, items_rec, *, order_id=None, route=""):
+    """Warn when a saved invoice bills this client above their OWN saved rate.
+
+    Debra Herndon's rebuilt invoice charged $300 against a $0 Biofield courtesy
+    and $69.97 against a $50 flat rate, and a pay link went out for it. This
+    surfaces that at save time, whatever produced the prices, and logs the route
+    that produced it so a repeat names its own cause instead of being guessed at.
+
+    A warning, never a block: charging above a saved rate is sometimes correct,
+    and this sits on the shared invoice path. Best-effort -- it must never be the
+    reason an invoice fails to save.
+    """
+    try:
+        from dashboard import special_price_guard as _guard
+
+        def _is_ff(slug):
+            product = _get_product(slug)
+            return bool(product and _qty_eligible(product))
+
+        cx = db.connect(LOG_DB)
+        try:
+            saved = _guard.saved_prices(cx, email)
+            if saved is None:
+                return ""
+            found = _guard.overpriced_lines(items_rec, saved, ff_eligible=_is_ff)
+            if not found:
+                return ""
+            actor = getattr(_bos_actor(), "email", None)
+            _guard.record_events(cx, found, order_id=order_id, route=route, actor=actor)
+            cx.commit()
+            return _guard.warning_for(found)
+        finally:
+            cx.close()
+    except Exception as exc:
+        print(f"[special-price-guard] skipped: {exc!r}", flush=True)
+        return ""
+
+
 def _paid_order_edit_warning(was_paid):
     return ("This order was already marked PAID — the recorded payment amount was not "
             "changed. Collect or refund the difference and reconcile QuickBooks manually."
@@ -51856,6 +51898,10 @@ def api_orders_edit(oid):
     # the owner to collect/refund the difference and reconcile QBO by hand (per design,
     # paid orders are editable but payment + QBO aren't auto-adjusted).
     warning = _paid_order_edit_warning(was_paid)
+    _sp = _special_price_warning(order.get("email"), priced["items_rec"],
+                                 order_id=oid, route="orders/edit")
+    if _sp:
+        warning = (warning + " " + _sp) if warning else _sp
     return jsonify({"ok": True, "order_id": oid, "qbo": qbo, "warning": warning,
                     "totals": {"subtotal_cents": priced["subtotal_cents"],
                                "discount_cents": priced["discount_cents"],
@@ -51959,7 +52005,10 @@ def api_orders_grant_member_access(oid):
                     "granted": granted, "already_member": already_member,
                     "membership_expires": expires_at,
                     "old_total_cents": old_total, "new_total_cents": priced["total_cents"],
-                    "warning": _paid_order_edit_warning(was_paid),
+                    "warning": _join_warnings(
+                        _paid_order_edit_warning(was_paid),
+                        _special_price_warning(email, priced["items_rec"],
+                                               order_id=oid, route="orders/grant-member-access")),
                     "qbo": qbo,
                     "totals": {"subtotal_cents": priced["subtotal_cents"],
                                "discount_cents": priced["discount_cents"],
@@ -52171,6 +52220,8 @@ def api_orders_manual():
                                "points_redeemed_cents": points_redeemed_cents,
                                "total_cents": total_cents},
                     "cancelled": cancelled_ids,
+                    "warning": _special_price_warning(customer.get("email"), items_rec, order_id=oid,
+                                                      route="orders/manual"),
                     "lines": items_rec})
 
 
