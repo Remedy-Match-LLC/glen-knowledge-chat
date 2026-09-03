@@ -1,5 +1,5 @@
 """Zoom Server-to-Server OAuth + meeting registration helpers. Stdlib-only."""
-import json, base64, re, urllib.request, urllib.parse
+import json, base64, re, urllib.error, urllib.request, urllib.parse
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
@@ -89,6 +89,22 @@ def occurrence_id_for(meeting, target_start, *, timezone="Pacific/Honolulu"):
     return ""
 
 
+class RegistrantError(RuntimeError):
+    """A Zoom add-registrant failure, carrying Zoom's OWN explanation.
+
+    urllib raises a bare HTTPError whose body is never read, so the reason Zoom
+    refused was thrown away and the logs showed only "HTTP Error 400: Bad
+    Request". Keeping the message is what turns an opaque failure into one an
+    operator can act on.
+    """
+
+
+class RegistrantRateLimited(RegistrantError):
+    """Zoom's per-registrant daily cap: THREE add-registrant calls per email per
+    day, resetting at GMT midnight. Distinct because the remedy is the opposite
+    of the usual one -- retrying is exactly what must not be advised."""
+
+
 def add_meeting_registrant(token, *, meeting_id, email, first_name,
                            last_name="", occurrence_id="", opener=None):
     """Register one attendee and return Zoom's private registrant join link."""
@@ -106,8 +122,20 @@ def add_meeting_registrant(token, *, meeting_id, email, first_name,
         f"https://api.zoom.us/v2/meetings/{encoded_id}/registrants",
         data=json.dumps(body).encode(), method="POST",
         headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"})
-    with opener(req, timeout=30) as r:
-        d = json.load(r)
+    try:
+        with opener(req, timeout=30) as r:
+            d = json.load(r)
+    except urllib.error.HTTPError as exc:
+        detail = ""
+        try:
+            detail = (json.loads(exc.read().decode() or "{}") or {}).get("message") or ""
+        except Exception:
+            detail = ""
+        text = "Zoom refused the registration (HTTP %s)%s" % (
+            exc.code, (": " + detail) if detail else "")
+        if exc.code == 429 or "rate limit" in detail.lower():
+            raise RegistrantRateLimited(text) from exc
+        raise RegistrantError(text) from exc
     return {"registrant_id": str(d.get("registrant_id") or ""),
             "join_url": d.get("join_url") or "",
             "start_time": d.get("start_time") or "",
