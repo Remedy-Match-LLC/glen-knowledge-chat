@@ -18,7 +18,7 @@ from pathlib import Path
 import pytest
 
 EYE_DROPS = ("neuro-eye-drops-aces-gl-lite-eye-drops",
-             "clear-lens-eye-drops-aces-cat-eye-drops",
+             "clear-lens-eye-drops",
              "pterygium-eye-drops",
              "myopia-eye-drops")
 

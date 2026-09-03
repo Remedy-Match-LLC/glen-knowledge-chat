@@ -28,9 +28,12 @@ from dashboard.biofield_authoring import (
 ROOT = Path(__file__).resolve().parent.parent
 
 LIVE_NEURO = "neuro-eye-drops-aces-gl-lite-eye-drops"
-LIVE_CLEAR = "clear-lens-eye-drops-aces-cat-eye-drops"
+LIVE_CLEAR = "clear-lens-eye-drops"
 DEAD_NEURO = "neuro-eye-drops"
 DEAD_CLEAR = "clear-lens-eye-drops-aces-cat-eye-drops-2"
+# Retired 2026-09-03 and repointed at the survivor, so the -2 chain does not
+# dead-end one hop later.
+DEAD_CLEAR_ACES = "clear-lens-eye-drops-aces-cat-eye-drops"
 
 FMP_NEURO_LIVE = "Neuro Eye Drops\nACES+GL Lite Eye Drops"
 FMP_NEURO_DEAD = "Neuro+ Eye Drops"
@@ -58,9 +61,12 @@ def test_deprecated_names_include_retired_pinecone_titles():
     dep = _deprecated_catalog_names()
     assert _norm_name(FMP_NEURO_DEAD) in dep
     assert _norm_name("Clear Lens+ Eye Drops ACES+CAT Eye Drops") in dep
+    # Retired 2026-09-03. The bot must stop offering the ACES+CAT title by name; it
+    # is the FMP twin of the store-recovery record that actually carries ingredients.
+    assert _norm_name("Clear Lens Eye Drops ACES+CAT Eye Drops") in dep
     # the survivors must NOT be filtered out
     assert _norm_name(FMP_NEURO_LIVE) not in dep
-    assert _norm_name("Clear Lens Eye Drops ACES+CAT Eye Drops") not in dep
+    assert _norm_name("Clear Lens Eyedrops") not in dep
 
 
 def test_sellable_names_drops_only_the_retired():
@@ -98,7 +104,8 @@ def test_retired_records_point_at_their_live_twin():
     prods = _products()
     assert prods[DEAD_NEURO]["superseded_by"] == LIVE_NEURO
     assert prods[DEAD_CLEAR]["superseded_by"] == LIVE_CLEAR
-    for dead in (DEAD_NEURO, DEAD_CLEAR):
+    assert prods[DEAD_CLEAR_ACES]["superseded_by"] == LIVE_CLEAR
+    for dead in (DEAD_NEURO, DEAD_CLEAR, DEAD_CLEAR_ACES):
         assert prods[dead]["inactive"] is True
     for live in (LIVE_NEURO, LIVE_CLEAR):
         assert not prods[live].get("inactive")

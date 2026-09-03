@@ -13259,7 +13259,9 @@
    "ingredients_source": "fmp_snap",
    "no_groovekart": true,
    "description": "1 drop in each eye 2 times a day or as needed",
-   "bottle_type": "Dropper 5 mL"
+   "bottle_type": "Dropper 5 mL",
+   "inactive": true,
+   "superseded_by": "clear-lens-eye-drops"
   },
   "neuro-eye-drops-aces-gl-lite-eye-drops": {
    "name": "Neuro Eye Drops",
@@ -13385,7 +13387,7 @@
    "regular_cents": 8000,
    "description": "1 drop in each eye 2 times a day or as needed",
    "inactive": true,
-   "superseded_by": "clear-lens-eye-drops-aces-cat-eye-drops",
+   "superseded_by": "clear-lens-eye-drops",
    "bottle_type": "Dropper 5 mL"
   },
   "moisture-eyes-night-drops": {
