@@ -550,7 +550,10 @@ function linesFromOrder(){
 }
 function renderFromOrder(){ LINES=linesFromOrder(); renderLines(); renderTotals(); }
 function setupPay(){
-  if (ORDER.pay_status==='paid' || !ORDER.editable){ $('pay-card').style.display='none'; return; }
+  // Gated on `payable`, not `editable`: a shipped order must not be re-priced by
+  // the customer, but it is the LAST one that should be unpayable. Gating on
+  // editable hid this button on every unpaid order outside proposed/confirmed.
+  if (!ORDER.payable){ $('pay-card').style.display='none'; return; }
   // Amount due, up top, so the call to action is unmistakable.
   $('pay-due').innerHTML = 'Amount due: <b>'+money(ORDER.total_cents)+'</b>';
   $('pay-due').style.display = '';

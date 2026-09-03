@@ -53228,6 +53228,9 @@ def _invoice_display_name(order):
     return _titlecase_name(_resolve())
 
 
+from dashboard import invoice_payability as _invoice_payability
+
+
 def _invoice_summary(order):
     """Customer-safe view — no person_id, notes, phone, or full address."""
     lines = order.get("items") or []
@@ -53253,7 +53256,12 @@ def _invoice_summary(order):
         "total_cents": int(order.get("total_cents") or 0),
         "status": order.get("status"),
         "pay_status": order.get("pay_status") or "unpaid",
+        # editable = may the client still CHANGE this invoice. payable = does the
+        # client still owe money on it. Two different questions; gating the pay
+        # button on `editable` hid it on every shipped-but-unpaid order.
         "editable": order.get("status") in ("proposed", "confirmed"),
+        "payable": _invoice_payability.is_payable(order.get("status"),
+                                                  order.get("pay_status")),
         "pay_enabled": bool(INVOICE_PAYLINK_ENABLED and _STRIPE_ACTIVE),
         "paylink_enabled": bool(INVOICE_PAYLINK_ENABLED),
     }

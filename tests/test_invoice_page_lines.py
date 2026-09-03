@@ -125,3 +125,60 @@ def test_delete_and_stepper_are_offered_on_exactly_the_same_lines():
     src = PAGE.read_text()
     guard = "(!l.service && l.kind!=='membership' && ORDER.editable)"
     assert src.count(guard) == 2, "packaging, delete: both must share the products-only guard"
+
+
+# --- the pay button: shown when money is owed, not when the order is editable ---
+
+def _setup_pay(order):
+    """Run setupPay() against a stubbed DOM and report what the customer sees."""
+    js = _fn("setupPay")
+    return _run("""
+      const els = {};
+      const el = id => els[id] || (els[id] = {style:{}, textContent:'', innerHTML:'', disabled:false});
+      const $ = el;
+      const money = c => '$' + (c/100).toFixed(2);
+      const document = { querySelectorAll: () => [] };
+      const ORDER = %s;
+      %s
+      setupPay();
+      console.log(JSON.stringify({
+        cardHidden: els['pay-card'] ? els['pay-card'].style.display === 'none' : false,
+        btn: els['pay-btn'] ? els['pay-btn'].textContent : null,
+        disabled: els['pay-btn'] ? els['pay-btn'].disabled : null,
+      }));
+    """ % (json.dumps(order), js))
+
+
+def test_a_shipped_but_unpaid_order_still_shows_its_pay_button():
+    """Ashley King's #115/#116: shipped, unpaid a month, and the pay button was
+    hidden because `editable` is false for anything past `confirmed`."""
+    out = _setup_pay({"pay_status": "unpaid", "editable": False, "payable": True,
+                      "total_cents": 30300, "paylink_enabled": True})
+    assert out["cardHidden"] is False
+    assert "303.00" in out["btn"]
+
+
+def test_a_paid_order_hides_the_pay_button():
+    out = _setup_pay({"pay_status": "paid", "editable": False, "payable": False,
+                      "total_cents": 30300, "paylink_enabled": True})
+    assert out["cardHidden"] is True
+
+
+def test_a_cancelled_order_hides_the_pay_button():
+    out = _setup_pay({"pay_status": "unpaid", "editable": False, "payable": False,
+                      "total_cents": 9300, "paylink_enabled": True})
+    assert out["cardHidden"] is True
+
+
+def test_the_pay_button_does_not_consult_editable_any_more():
+    # An editable invoice that is already settled must still not offer payment;
+    # this fails if the gate slips back to `editable`.
+    out = _setup_pay({"pay_status": "paid", "editable": True, "payable": False,
+                      "total_cents": 9300, "paylink_enabled": True})
+    assert out["cardHidden"] is True
+
+
+def test_payment_not_enabled_yet_leaves_the_card_up_but_the_button_off():
+    out = _setup_pay({"pay_status": "unpaid", "editable": False, "payable": True,
+                      "total_cents": 9300, "paylink_enabled": False})
+    assert out["cardHidden"] is False and out["disabled"] is True
