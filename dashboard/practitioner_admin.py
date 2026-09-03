@@ -188,6 +188,37 @@ def set_credentials(pid: str, credentials) -> None:
                     (cred, str(pid)))
 
 
+# Shown publicly in the finder, so it is capped to keep the console from
+# writing something absurd into a public-facing card.
+MAX_NAME_LENGTH = 200
+
+
+def validate_name_edit(name) -> Tuple[Optional[str], Optional[str]]:
+    """Pure validation for the console rename action. Returns (clean, None) or
+    (None, error_message). Refuses an empty/whitespace-only name and caps
+    length; the name is rendered on the public finder (escaped there, not
+    here — see static/practitioner-finder.html's escapeHtml/esc)."""
+    clean = (name or "").strip()
+    if not clean:
+        return None, "name is required"
+    if len(clean) > MAX_NAME_LENGTH:
+        return None, f"name must be {MAX_NAME_LENGTH} characters or fewer"
+    return clean, None
+
+
+def set_name(pid: str, name: str) -> str:
+    """Rename a practitioner row. Caller validates first (validate_name_edit) —
+    this is the writer only. Corrects scraper artifacts a source directory
+    glued onto the name (e.g. AANP's "Stacie Han2" for a second office); the
+    scrape-time boundary in scrapers/practitioner_finder/db.py strips that
+    same pattern going forward, so a later re-scrape cannot undo this."""
+    from db_supabase import supabase_cursor
+    with supabase_cursor() as cur:
+        cur.execute("UPDATE practitioners SET name=%s, updated_at=now() WHERE id=%s",
+                    (name, str(pid)))
+    return name
+
+
 def set_finder_visibility(pid: str, show: bool) -> None:
     from db_supabase import supabase_cursor
     with supabase_cursor() as cur:

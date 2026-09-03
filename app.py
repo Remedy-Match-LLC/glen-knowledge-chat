@@ -36834,12 +36834,24 @@ def api_console_practitioners_create():
 def api_console_practitioners_edit(pid):
     """Console-gated row actions:
     level_access | credentials | dropship_price | finder | location | resend_invite
-    | retire | unretire | mark_duplicate | unmark_duplicate."""
+    | retire | unretire | mark_duplicate | unmark_duplicate | rename."""
     if not _console_key_ok():
         return jsonify({"error": "Unauthorized"}), 401
     from dashboard import practitioner_admin as _pa
     body = request.get_json(silent=True) or {}
     action = (body.get("action") or "").strip()
+    if action == "rename":
+        # A scraped listing can carry a source directory's disambiguation
+        # artifact glued onto the name (e.g. AANP's "Stacie Han2" for a
+        # second office). This lets an operator correct it; the scrape-time
+        # write boundary strips that same pattern so a re-scrape can't
+        # bring it back. Name is escaped wherever it renders publicly
+        # (static/practitioner-finder.html, static/console-practitioners.html).
+        clean, err = _pa.validate_name_edit(body.get("name"))
+        if err:
+            return jsonify({"error": err}), 400
+        _pa.set_name(pid, clean)
+        return jsonify({"ok": True, "name": clean})
     if action == "level_access":
         try:
             level = int(body.get("level", 0))

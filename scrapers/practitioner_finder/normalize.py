@@ -1,4 +1,6 @@
 """Pure helpers: geocode-quality detection and specialty inference."""
+import re
+
 from scrapers.practitioner_finder.models import NormalizedPractitionerRow
 
 
@@ -68,6 +70,35 @@ def normalize_country(raw: str | None) -> str | None:
     if len(c) == 2 and c.isalpha():
         return c
     return c
+
+
+# A trailing digit run glued directly to a letter, with no separator between
+# them. This is the AANP disambiguation artifact: AANP's own "Find an ND"
+# directory appends a bare digit to the <p class="name"> text to tell apart
+# several offices for the same person ("Stacie Han2", "Dr. Paul Giordano3"),
+# and aanp.py copies that text faithfully. It is not a duplicate marker and
+# not part of the person's name.
+#
+# The lookbehind requires a LETTER immediately before the digit run, so:
+#   - "Farm 2" / "Suite 3"   -> untouched (a space separates the digit)
+#   - "Zevan III"            -> untouched (a Roman numeral, not digits)
+#   - "3M Dental"            -> untouched (the digits are not at the end)
+#   - a bare "2"             -> untouched (no letter precedes it)
+_GLUED_SUFFIX_DIGITS_RE = re.compile(r"(?<=[A-Za-z])\d+$")
+
+
+def strip_glued_name_suffix(name: str | None) -> str | None:
+    """Strip a trailing digit run glued directly to a letter in `name`.
+
+    Pure function. None/empty pass through unchanged. If stripping would
+    leave nothing (defensive — the letter-lookbehind means this cannot
+    actually happen), the original value is kept rather than emptied."""
+    if not name:
+        return name
+    cleaned = _GLUED_SUFFIX_DIGITS_RE.sub("", name)
+    if not cleaned.strip():
+        return name
+    return cleaned
 
 
 def detect_geocode_quality(row: NormalizedPractitionerRow) -> str | None:

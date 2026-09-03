@@ -62,6 +62,35 @@ def test_upsert_many_empty_is_a_noop(monkeypatch):
     assert not opens                    # no connection opened at all
 
 
+def test_run_upsert_strips_glued_digit_suffix_from_name(monkeypatch):
+    # AANP glues a disambiguating digit straight onto <p class="name"> for a
+    # person with several offices ("Stacie Han2"). The write boundary must
+    # clean it so a re-scrape can never reintroduce the scraper artifact.
+    cur, _ = _patch(monkeypatch)
+    db.run_upsert({"source_url": "u/1", "name": "Stacie Han2"})
+    _sql, params = cur.executed[0]
+    assert "Stacie Han" in params
+    assert "Stacie Han2" not in params
+
+
+def test_upsert_many_strips_glued_digit_suffix_per_row(monkeypatch):
+    cur, _ = _patch(monkeypatch)
+    db.run_upsert_many([
+        {"source_url": "u/1", "name": "Dr. Paul Giordano2"},
+        {"source_url": "u/2", "name": "Nicole Egenberger2"},
+    ])
+    names = [p for _sql, params in cur.executed for p in params
+             if isinstance(p, str) and p.startswith(("Dr. Paul", "Nicole"))]
+    assert names == ["Dr. Paul Giordano", "Nicole Egenberger"]
+
+
+def test_run_upsert_leaves_a_real_suite_number_alone(monkeypatch):
+    cur, _ = _patch(monkeypatch)
+    db.run_upsert({"source_url": "u/1", "name": "Farm 2"})
+    _sql, params = cur.executed[0]
+    assert "Farm 2" in params
+
+
 def test_upsert_many_matches_run_upsert_sql(monkeypatch):
     # The batch path must emit the SAME SQL as the single-row path.
     cur_many, _ = _patch(monkeypatch)

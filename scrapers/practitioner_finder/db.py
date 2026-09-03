@@ -8,7 +8,7 @@ import re
 from typing import Optional, Tuple
 
 from db_supabase import supabase_cursor
-from scrapers.practitioner_finder.normalize import normalize_country
+from scrapers.practitioner_finder.normalize import normalize_country, strip_glued_name_suffix
 
 
 MILES_TO_METERS = 1609.344
@@ -172,6 +172,16 @@ def _normalize_for_write(row_dict: dict) -> dict:
     # every scraped row stores a clean value (adapters stay unchanged).
     if "country" in row_dict:
         row_dict["country"] = normalize_country(row_dict.get("country"))
+    # Strip a disambiguating digit some source directories glue directly onto
+    # the name (e.g. AANP's "Stacie Han2" for a second office). Same boundary,
+    # same reasoning: clean it here once so a re-scrape can never bring the
+    # scraper artifact back after an operator renames the row.
+    if "name" in row_dict:
+        cleaned = strip_glued_name_suffix(row_dict.get("name"))
+        if cleaned != row_dict.get("name"):
+            print(f"[practitioner-finder] name normalized: {row_dict.get('name')!r} "
+                  f"-> {cleaned!r}", flush=True)
+        row_dict["name"] = cleaned
     existing = list(row_dict.get("specialties") or [])
     for tag in profession_specialties(row_dict.get("credentials")):
         if tag not in existing:

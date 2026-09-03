@@ -8,6 +8,7 @@ from scrapers.practitioner_finder.normalize import (
     geocode_input_string,
     infer_eyehealing_specialties,
     normalize_country,
+    strip_glued_name_suffix,
     DEFAULT_EYEHEALING_SPECIALTIES,
 )
 
@@ -93,6 +94,38 @@ def test_geocode_input_city_only():
 def test_geocode_input_state_only():
     row = _row(state="HI")
     assert geocode_input_string(row) == "HI, US"
+
+
+def test_strip_glued_name_suffix_removes_digits_glued_to_a_letter():
+    assert strip_glued_name_suffix("Stacie Han2") == "Stacie Han"
+    assert strip_glued_name_suffix("Dr. Paul Giordano2") == "Dr. Paul Giordano"
+    assert strip_glued_name_suffix("Dr. Paul Giordano3") == "Dr. Paul Giordano"
+    assert strip_glued_name_suffix("Nicole Egenberger2") == "Nicole Egenberger"
+    assert strip_glued_name_suffix("Lisa Arnold2") == "Lisa Arnold"
+
+
+def test_strip_glued_name_suffix_leaves_digit_after_space_alone():
+    # "Farm 2" / "Suite 3" — the digit is its own token, not glued to a letter.
+    assert strip_glued_name_suffix("Farm 2") == "Farm 2"
+    assert strip_glued_name_suffix("Suite 3") == "Suite 3"
+
+
+def test_strip_glued_name_suffix_leaves_generational_suffix_alone():
+    assert strip_glued_name_suffix("Zevan III") == "Zevan III"
+
+
+def test_strip_glued_name_suffix_leaves_non_trailing_digits_alone():
+    assert strip_glued_name_suffix("3M Dental") == "3M Dental"
+
+
+def test_strip_glued_name_suffix_leaves_bare_digit_alone():
+    assert strip_glued_name_suffix("2") == "2"
+
+
+def test_strip_glued_name_suffix_none_and_empty_passthrough():
+    assert strip_glued_name_suffix(None) is None
+    assert strip_glued_name_suffix("") == ""
+    assert strip_glued_name_suffix("   ") == "   "
 
 
 def test_eyehealing_specialties_default():
