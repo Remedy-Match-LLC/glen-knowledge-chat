@@ -168,6 +168,55 @@ def test_edit_credentials_dispatch(client, monkeypatch):
     assert calls == {"pid": "p9", "cred": "ND"}
 
 
+def test_edit_rename_dispatch(client, monkeypatch):
+    c, appmod = client
+    from dashboard import practitioner_admin as pa
+    calls = {}
+    monkeypatch.setattr(pa, "set_name",
+                        lambda pid, name: calls.update({"pid": pid, "name": name}))
+    r = c.post("/api/console/practitioners/p9/edit?key=" + _key(appmod),
+               json={"action": "rename", "name": "  Stacie Han  "})
+    assert r.status_code == 200
+    # The route strips before handing off to the writer.
+    assert calls == {"pid": "p9", "name": "Stacie Han"}
+    assert r.get_json()["name"] == "Stacie Han"
+
+
+def test_edit_rename_empty_is_400(client, monkeypatch):
+    c, appmod = client
+    from dashboard import practitioner_admin as pa
+
+    def _boom(*a, **k):
+        raise AssertionError("must not reach the writer with an empty name")
+
+    monkeypatch.setattr(pa, "set_name", _boom)
+    r = c.post("/api/console/practitioners/p9/edit?key=" + _key(appmod),
+               json={"action": "rename", "name": "   "})
+    assert r.status_code == 400
+    assert "name" in r.get_json()["error"].lower()
+
+
+def test_edit_rename_over_length_is_400(client, monkeypatch):
+    c, appmod = client
+    from dashboard import practitioner_admin as pa
+
+    def _boom(*a, **k):
+        raise AssertionError("must not reach the writer with an over-length name")
+
+    monkeypatch.setattr(pa, "set_name", _boom)
+    r = c.post("/api/console/practitioners/p9/edit?key=" + _key(appmod),
+               json={"action": "rename", "name": "A" * (pa.MAX_NAME_LENGTH + 1)})
+    assert r.status_code == 400
+
+
+def test_edit_rename_console_gated(client):
+    c, appmod = client
+    r = c.post("/api/console/practitioners/p9/edit",
+               json={"action": "rename", "name": "Stacie Han"})
+    if appmod.CONSOLE_SECRET:
+        assert r.status_code == 401
+
+
 def test_edit_dropship_price_persists_practitioner_override(client, monkeypatch):
     c, appmod = client
     from dashboard import practitioner_settings as ps

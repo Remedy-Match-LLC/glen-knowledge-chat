@@ -12,6 +12,45 @@ from dashboard import practitioner_admin as pa
 from dashboard import practitioner_portal as pp
 
 
+# ── validate_name_edit (console rename action) ──────────────────────────────────
+
+def test_validate_name_edit_rejects_empty():
+    clean, err = pa.validate_name_edit("")
+    assert clean is None
+    assert "name" in err.lower()
+
+
+def test_validate_name_edit_rejects_whitespace_only():
+    clean, err = pa.validate_name_edit("   ")
+    assert clean is None
+    assert "name" in err.lower()
+
+
+def test_validate_name_edit_rejects_none():
+    clean, err = pa.validate_name_edit(None)
+    assert clean is None
+    assert "name" in err.lower()
+
+
+def test_validate_name_edit_rejects_over_length():
+    clean, err = pa.validate_name_edit("A" * (pa.MAX_NAME_LENGTH + 1))
+    assert clean is None
+    assert "characters" in err.lower()
+
+
+def test_validate_name_edit_accepts_and_strips():
+    clean, err = pa.validate_name_edit("  Stacie Han  ")
+    assert err is None
+    assert clean == "Stacie Han"
+
+
+def test_validate_name_edit_accepts_at_the_length_cap():
+    name = "A" * pa.MAX_NAME_LENGTH
+    clean, err = pa.validate_name_edit(name)
+    assert err is None
+    assert clean == name
+
+
 # ── validate_new_practitioner ──────────────────────────────────────────────────
 
 def test_validate_requires_valid_email():
