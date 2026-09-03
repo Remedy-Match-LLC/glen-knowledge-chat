@@ -51509,6 +51509,7 @@ def _price_inhouse_invoice(lines_in, *, email, pickup, ship,
     to a real product. Raises CheckoutError for a ship-to the engine rejects."""
     from dashboard import pricing as _pricing
     from dashboard import membership_products as _mp
+    from dashboard import special_price_guard as _spg
     settings = _pricing.load_settings(_pricing_settings())
     total_ff_qty = _inhouse_total_ff_qty(lines_in)
     # Paid membership gates the order-wide mix/match volume rate (Glen 2026-07):
@@ -51554,6 +51555,7 @@ def _price_inhouse_invoice(lines_in, *, email, pickup, ship,
     except Exception as _cpe:
         print(f"[inhouse-price] client-price lookup skipped: {_cpe!r}", flush=True)
     cart, items_rec, subtotal_list = [], [], 0
+    price_caps = []   # lines held down to this client's saved rate; reported, not silent
     for ln in lines_in:
         slug = (ln.get("slug") or "").strip()
         _mtier = _mp.tier_of_line(ln)
@@ -51581,6 +51583,23 @@ def _price_inhouse_invoice(lines_in, *, email, pickup, ship,
         if _is_override:
             unit_cents = _inhouse_line_unit_cents(p, _explicit, total_ff_qty, settings,
                                                   program_member=program_member, line_qty=qty)
+            # A saved special price is a CEILING, not a suggestion. Order #165 was
+            # created at $809.13 because a script passed catalog list prices as
+            # explicit per-line overrides, including $300 for a Biofield Analysis
+            # granted at $0 in July, and the explicit price outranked her rate.
+            # An override may still discount BELOW her rate; it may not quietly
+            # rise above it. Only ever lowers a line, so it can never make a cart
+            # unpurchasable the way an operator stop in shared pricing once did.
+            _cap_src = _spg.saved_rate_for(slug, {"ff_flat_cents": _ff_flat, "sku": _cprices},
+                                           ff_eligible=lambda _s: _qty_eligible(p))
+            if _cap_src is not None:
+                _at_saved = _inhouse_line_unit_cents(p, _cap_src, total_ff_qty, settings,
+                                                    program_member=program_member, line_qty=qty)
+                _capped = _spg.cap_to_saved(unit_cents, _at_saved)
+                if _capped != unit_cents:
+                    price_caps.append({"slug": slug, "from_cents": unit_cents,
+                                       "to_cents": _capped})
+                    unit_cents = _capped
         elif _cprices.get(slug) is not None:
             unit_cents = _inhouse_line_unit_cents(p, _cprices.get(slug), total_ff_qty, settings,
                                                   program_member=program_member, line_qty=qty)
@@ -51678,6 +51697,7 @@ def _price_inhouse_invoice(lines_in, *, email, pickup, ship,
             "shipping_cents": shipping_cents, "get_cents": get_cents,
             "discount_cents": discount_cents, "adjustment_cents": adjustment_cents,
             "points_redeemed_cents": points_redeemed_cents,
+            "price_caps": price_caps,
             "total_cents": total_cents}
 
 
@@ -51807,6 +51827,63 @@ def _reprice_and_persist_invoice(cx, order, lines_in, *, pickup, discount_cents_
     return priced, (order.get("pay_status") == "paid")
 
 
+def _price_cap_notice(priced):
+    """Say which lines were held down to the client's saved rate.
+
+    Silent correction is how the original defect went unnoticed for a day: the
+    invoice simply looked like a bigger invoice. Correcting loudly means the next
+    one is spotted at the moment it is saved.
+    """
+    caps = (priced or {}).get("price_caps") or []
+    if not caps:
+        return ""
+    bits = ["%s held at $%.2f (was going out at $%.2f)"
+            % (c["slug"], c["to_cents"] / 100, c["from_cents"] / 100) for c in caps]
+    return ("This client's saved pricing was applied: " + "; ".join(bits) + ".")
+
+
+def _join_warnings(*parts):
+    return " ".join(p for p in parts if p)
+
+
+def _special_price_warning(email, items_rec, *, order_id=None, route=""):
+    """Warn when a saved invoice bills this client above their OWN saved rate.
+
+    Debra Herndon's rebuilt invoice charged $300 against a $0 Biofield courtesy
+    and $69.97 against a $50 flat rate, and a pay link went out for it. This
+    surfaces that at save time, whatever produced the prices, and logs the route
+    that produced it so a repeat names its own cause instead of being guessed at.
+
+    A warning, never a block: charging above a saved rate is sometimes correct,
+    and this sits on the shared invoice path. Best-effort -- it must never be the
+    reason an invoice fails to save.
+    """
+    try:
+        from dashboard import special_price_guard as _guard
+
+        def _is_ff(slug):
+            product = _get_product(slug)
+            return bool(product and _qty_eligible(product))
+
+        cx = db.connect(LOG_DB)
+        try:
+            saved = _guard.saved_prices(cx, email)
+            if saved is None:
+                return ""
+            found = _guard.overpriced_lines(items_rec, saved, ff_eligible=_is_ff)
+            if not found:
+                return ""
+            actor = getattr(_bos_actor(), "email", None)
+            _guard.record_events(cx, found, order_id=order_id, route=route, actor=actor)
+            cx.commit()
+            return _guard.warning_for(found)
+        finally:
+            cx.close()
+    except Exception as exc:
+        print(f"[special-price-guard] skipped: {exc!r}", flush=True)
+        return ""
+
+
 def _paid_order_edit_warning(was_paid):
     return ("This order was already marked PAID — the recorded payment amount was not "
             "changed. Collect or refund the difference and reconcile QuickBooks manually."
@@ -51856,6 +51933,12 @@ def api_orders_edit(oid):
     # the owner to collect/refund the difference and reconcile QBO by hand (per design,
     # paid orders are editable but payment + QBO aren't auto-adjusted).
     warning = _paid_order_edit_warning(was_paid)
+    _sp = _join_warnings(
+        _price_cap_notice(priced),
+        _special_price_warning(order.get("email"), priced["items_rec"],
+                               order_id=oid, route="orders/edit"))
+    if _sp:
+        warning = (warning + " " + _sp) if warning else _sp
     return jsonify({"ok": True, "order_id": oid, "qbo": qbo, "warning": warning,
                     "totals": {"subtotal_cents": priced["subtotal_cents"],
                                "discount_cents": priced["discount_cents"],
@@ -51959,7 +52042,11 @@ def api_orders_grant_member_access(oid):
                     "granted": granted, "already_member": already_member,
                     "membership_expires": expires_at,
                     "old_total_cents": old_total, "new_total_cents": priced["total_cents"],
-                    "warning": _paid_order_edit_warning(was_paid),
+                    "warning": _join_warnings(
+                        _paid_order_edit_warning(was_paid),
+                        _price_cap_notice(priced),
+                        _special_price_warning(email, priced["items_rec"],
+                                               order_id=oid, route="orders/grant-member-access")),
                     "qbo": qbo,
                     "totals": {"subtotal_cents": priced["subtotal_cents"],
                                "discount_cents": priced["discount_cents"],
@@ -52171,6 +52258,10 @@ def api_orders_manual():
                                "points_redeemed_cents": points_redeemed_cents,
                                "total_cents": total_cents},
                     "cancelled": cancelled_ids,
+                    "warning": _join_warnings(
+                        _price_cap_notice(priced),
+                        _special_price_warning(customer.get("email"), items_rec,
+                                               order_id=oid, route="orders/manual")),
                     "lines": items_rec})
 
 
@@ -53446,24 +53537,9 @@ def api_invoice_update(token):
     # so the shared pricer applies this client's special/member/volume price.
     existing = {(it.get("slug") or "").strip(): it
                 for it in (order.get("items") or []) if (it.get("slug") or "").strip()}
-    lines_in = []
-    for ln in (body.get("lines") or []):
-        slug = (ln.get("slug") or "").strip()
-        if not _get_product(slug):
-            continue
-        qty = max(0, min(int(ln.get("qty") or 0), 99))
-        if qty <= 0:
-            continue
-        old = existing.get(slug) or {}
-        requested_fmt = (ln.get("format") or old.get("format") or "bottle").strip().lower()
-        rec = {"slug": slug, "qty": qty,
-               "format": "refill" if requested_fmt == "refill" else "bottle"}
-        if old.get("override"):
-            rec["unit_cents"] = old.get("unit_cents")
-        for key in ("note", "source"):
-            if old.get(key):
-                rec[key] = old[key]
-        lines_in.append(rec)
+    from dashboard import client_invoice_lines as _cil
+    lines_in = _cil.rebuild(body.get("lines"), existing,
+                            known=lambda _s: _get_product(_s) is not None)
     if not lines_in:
         return jsonify({"ok": False, "error": "no valid items"}), 400
     cx = db.connect(LOG_DB); cx.row_factory = _sqlite3.Row

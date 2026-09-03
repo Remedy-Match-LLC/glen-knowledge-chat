@@ -27,6 +27,9 @@
   .qty { display:flex; align-items:center; gap:6px; }
   .qty button { width:26px; height:26px; border:1px solid var(--border); background:#fff; border-radius:6px; cursor:pointer; font-size:15px; }
   .qty input { width:40px; text-align:center; padding:4px; border:1px solid var(--border); border-radius:6px; }
+  .line .rm { margin-left:8px; width:26px; height:26px; flex:0 0 auto; border:1px solid var(--border);
+    background:#fff; color:var(--muted); border-radius:6px; cursor:pointer; font-size:13px; line-height:1; }
+  .line .rm:hover { color:#a02c2c; border-color:#a02c2c; }
   .totals { font-size:14px; }
   .totals .row { display:flex; justify-content:space-between; padding:4px 0; }
   .totals .grand { font-weight:700; font-size:17px; border-top:1px solid var(--border); margin-top:6px; padding-top:8px; }
@@ -197,9 +200,7 @@ async function load() {
   const j = await r.json(); ORDER = j.order;
   if (ORDER.name){ $('billto-nm').textContent = ORDER.name; $('billto').style.display = ''; }
   $('ref').textContent = 'Invoice ' + (ORDER.external_ref||'');
-  LINES = ORDER.lines.map(l => ({slug:l.slug, name:l.name, qty:l.qty, unit_cents:l.unit_cents,
-    kind:l.kind, tier:l.tier, note:l.note, format:l.format||'bottle',
-    service:l.service, srp_cents:l.srp_cents, regular_cents:l.regular_cents}));
+  LINES = linesFromOrder();
   // "Paid" banner only when the invoice is actually settled. A legacy order can be
   // pay_status='paid' yet still carry a balance due (partial payment recorded on the
   // order before the invoice was edited up) — then show the Balance due row instead.
@@ -375,11 +376,15 @@ function renderLines() {
           +'<option value="bottle"'+((l.format||'bottle')==='bottle'?' selected':'')+'>Bottle</option>'
           +'<option value="refill"'+(l.format==='refill'?' selected':'')+'>Capsules only (refill)</option></select>'
       : (l.format==='refill' ? '<span class="muted">Capsules only</span>' : '');
+    const del = (!l.service && l.kind!=='membership' && ORDER.editable)
+      ? '<button class="rm" title="Remove '+esc(l.name)+' from this order"'
+        + ' aria-label="Remove '+esc(l.name)+' from this order" onclick="removeLine('+i+')">✕</button>'
+      : '';
     const noteHtml = (l.note||'').trim()
       ? '<div class="line-note" style="font-size:12px;color:#5b5670;padding:1px 0 6px;white-space:pre-wrap">'+esc(l.note)+'</div>'
       : '';
     return '<div class="line'+(l.service?' svc':'')+'"><span class="nm">'+esc(l.name)+svcAnchor(l,true)+'</span>'
-      + packaging + qty + '<span class="pr">'+money(l.unit_cents*l.qty)+'</span></div>' + noteHtml;
+      + packaging + qty + '<span class="pr">'+money(l.unit_cents*l.qty)+'</span>' + del + '</div>' + noteHtml;
   }).join('') || '<div class="muted">No items.</div>';
   $('add-row').style.display = ORDER.editable ? 'flex' : 'none';
 }
@@ -461,8 +466,7 @@ async function applyPlan(forever, btn){
     const j=await r.json();
     if(!j.ok){ $('savings-msg').textContent=j.error||'Could not apply — please reach out.'; if(btn) btn.disabled=false; return; }
     ORDER=j.order;
-    LINES=ORDER.lines.map(l=>({slug:l.slug,name:l.name,qty:l.qty,unit_cents:l.unit_cents,note:l.note,format:l.format||'bottle',
-      service:l.service,srp_cents:l.srp_cents,regular_cents:l.regular_cents}));
+    LINES=linesFromOrder();
     renderLines(); renderTotals(); renderSavings();   // offer now absent -> banner hides
   }catch(e){ $('savings-msg').textContent='Network error — please try again.'; if(btn) btn.disabled=false; }
 }
@@ -510,8 +514,7 @@ async function toggleInvoiceMembership(action){
     const j=await r.json();
     if(!j.ok){ const m=$('mem-msg'); if(m) m.textContent=j.error||'Could not update, please reach out.'; if(btn) btn.disabled=false; return; }
     ORDER=j.order;
-    LINES=ORDER.lines.map(l=>({slug:l.slug,name:l.name,qty:l.qty,unit_cents:l.unit_cents,kind:l.kind,tier:l.tier,note:l.note,format:l.format||'bottle',
-      service:l.service,srp_cents:l.srp_cents,regular_cents:l.regular_cents}));
+    LINES=linesFromOrder();
     renderLines(); renderTotals(); renderPayments(); setupPay(); renderMembershipOffer();
   }catch(e){ const m=$('mem-msg'); if(m) m.textContent='Network error, please try again.'; if(btn) btn.disabled=false; }
 }
@@ -524,16 +527,28 @@ function fillAdd(){
 function bump(i,d){ LINES[i].qty=Math.max(0,LINES[i].qty+d); pushUpdate(); }
 function setQty(i,v){ LINES[i].qty=Math.max(0,parseInt(v)||0); pushUpdate(); }
 function setFormat(i,v){ LINES[i].format=(v==='refill'?'refill':'bottle'); pushUpdate(); }
+// Zeroing a line keeps it as a reorder reference, so removing one is its own
+// action. Confirm first: it is the only control here that destroys anything.
+function removeLine(i){ const l=LINES[i]; if(!l) return;
+  if(!confirm('Remove '+(l.name||l.slug)+' from this order?')) return;
+  LINES.splice(i,1); pushUpdate(); }
 function addProduct(){ const s=$('add-sel').value; if(!s)return; const p=CATALOG.find(x=>x.slug===s);
   const ex=LINES.find(l=>l.slug===s); if(ex){ex.qty++;} else LINES.push({slug:s,name:p.name,qty:1,unit_cents:p.price_cents||0}); pushUpdate(); }
 async function pushUpdate(){
-  const lines = LINES.filter(l=>l.qty>0).map(l=>({slug:l.slug, qty:l.qty, format:l.format||'bottle'}));
+  // Zero-qty lines are SENT: they stay on the invoice as a reorder reference
+  // (the console keeps them too). Removing a line is removeLine(), not a zero.
+  const lines = LINES.map(l=>({slug:l.slug, qty:l.qty, format:l.format||'bottle'}));
   const r = await fetch(API+'/update', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({lines})});
-  const j = await r.json(); if(!j.ok){ alert(j.error||'update failed'); return; }
-  ORDER=j.order; LINES=ORDER.lines.map(l=>({slug:l.slug,name:l.name,qty:l.qty,unit_cents:l.unit_cents,note:l.note,format:l.format||'bottle',
-    service:l.service, srp_cents:l.srp_cents, regular_cents:l.regular_cents}));
-  renderLines(); renderTotals();
+  const j = await r.json();
+  if(!j.ok){ alert(j.error||'update failed'); renderFromOrder(); return; }
+  ORDER=j.order; renderFromOrder();
 }
+function linesFromOrder(){
+  return ORDER.lines.map(l=>({slug:l.slug, name:l.name, qty:l.qty, unit_cents:l.unit_cents,
+    kind:l.kind, tier:l.tier, note:l.note, format:l.format||'bottle',
+    service:l.service, srp_cents:l.srp_cents, regular_cents:l.regular_cents}));
+}
+function renderFromOrder(){ LINES=linesFromOrder(); renderLines(); renderTotals(); }
 function setupPay(){
   if (ORDER.pay_status==='paid' || !ORDER.editable){ $('pay-card').style.display='none'; return; }
   // Amount due, up top, so the call to action is unmistakable.

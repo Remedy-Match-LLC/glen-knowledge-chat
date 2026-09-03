@@ -920,7 +920,9 @@ async function createInvoice(){
     const j = await r.json();
     if (!j.ok){ toast(j.error||"failed","error"); return; }
     sessionStorage.removeItem(CUSTOMER_DRAFT_KEY);
-    LAST_ORDER=j; showInvoice(j); toast("Proposed invoice created");
+    LAST_ORDER=j; showInvoice(j);
+    toast(j.warning || "Proposed invoice created", j.warning ? "error" : "ok");
+    if (j.warning) alert(j.warning);   // special pricing missed: catch it before it's sent
   }catch(e){ toast(e.message,"error"); }
 }
 function showInvoice(j){
