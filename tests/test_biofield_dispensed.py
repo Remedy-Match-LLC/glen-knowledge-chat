@@ -137,11 +137,35 @@ def test_the_panel_is_collapsed_until_asked_for():
     assert "Hide previously dispensed" in render_dispensed_panel(ROWS, open_=True)
 
 
-def test_every_row_can_be_attached_to_a_condition():
+def test_the_remedy_itself_is_clickable_to_choose_a_condition():
     html = render_dispensed_panel(ROWS)
-    assert html.count("attachDispensed(this)") == len(ROWS)
-    assert 'data-remedy="IOP Syntropy"' in html
-    assert "dispconds" in html, "no condition list is offered"
+    assert html.count("pickCondition(this)") == len(ROWS)
+    assert "IOP Syntropy</button>" in html
+
+
+def test_each_related_condition_is_its_own_clickable_chip():
+    rows = [dict(ROWS[0], conditions=["Dry Eye", "Glaucoma"])]
+    html = render_dispensed_panel(rows)
+    assert html.count("attachPair(this)") == 2
+    assert 'data-cond="Dry Eye"' in html and 'data-cond="Glaucoma"' in html
+
+
+def test_a_remedy_with_no_known_conditions_still_renders():
+    html = render_dispensed_panel([dict(ROWS[0], conditions=[])])
+    assert "attachPair(this)" not in html
+    assert "pickCondition(this)" in html, "the remedy must still be clickable"
+
+
+def test_a_condition_name_with_an_apostrophe_is_escaped_not_inlined():
+    """Meniere's would break a handler built by string-concatenating the name."""
+    rows = [dict(ROWS[0], conditions=["Meniere's Disease"])]
+    html = render_dispensed_panel(rows)
+    assert "attachPair(this)" in html
+    assert "Meniere&#x27;s Disease" in html
+    assert "attachPair(this,'Meniere's" not in html
+    # the ATTRIBUTE itself, not just the visible chip text: an unescaped
+    # data-cond would end the attribute at the apostrophe.
+    assert 'data-cond="Meniere&#x27;s Disease"' in html
 
 
 def test_a_client_with_no_history_is_told_so_plainly():
@@ -296,3 +320,20 @@ def test_the_author_route_merges_filemaker_history_matched_by_name():
     assert "client_orders" in orders_arg, orders_arg
     assert "_older" in orders_arg, (
         "the ranking no longer includes FileMaker history: " + orders_arg)
+
+
+def test_the_author_route_looks_up_each_remedys_conditions():
+    """Parsed, not grepped: without this the column silently renders empty and
+    the whole clickable half of the panel disappears."""
+    import ast
+    import pathlib
+    src = (pathlib.Path(__file__).resolve().parent.parent
+           / "biofield_local_app.py").read_text()
+    assigns = [n for n in ast.walk(ast.parse(src)) if isinstance(n, ast.Assign)
+               and any(isinstance(t, ast.Subscript) and isinstance(t.slice, ast.Constant)
+                       and t.slice.value == "conditions" for t in n.targets)]
+    assert assigns, "the panel never gets any conditions"
+    # The file assigns ["conditions"] elsewhere too, so require that at least one
+    # of them is the reverse lookup rather than assuming the first is ours.
+    exprs = [ast.unparse(a.value) for a in assigns]
+    assert any("conditions_for_remedy" in e for e in exprs), exprs
