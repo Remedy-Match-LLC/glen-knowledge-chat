@@ -965,6 +965,12 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                 print(f"[dispensed] fmp history skipped: {_fe!r}", flush=True)
             _older = _disp.fmp_orders_for(_hist, (rep.get("client") or {}).get("name"), c_email)
             dispensed = _disp.frequency(list(client_orders(c_email)) + _older, c_email)
+            # The conditions each remedy is already used for, so the row can offer
+            # them as one-click pairings.
+            from dashboard.biofield_clinical_checklist import conditions_for_remedy
+            with sqlite3.connect(db_path) as _ccx:
+                for _row in dispensed:
+                    _row["conditions"] = conditions_for_remedy(_ccx, _row["name"])
         except Exception as _de:
             print(f"[dispensed] skipped: {_de!r}", flush=True)
             dispensed = []
@@ -2145,6 +2151,32 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
             changed = (remember_remedies(cx, label, [remedy]) if action == "add"
                        else forget_remedy(cx, label, remedy))
         return {"ok": True, "changed": bool(changed)}
+
+    @app.route("/author/<test_id>/clinical-items/attach", methods=["POST"])
+    def author_attach_clinical_remedy(test_id):
+        """Tick a remedy under a condition for this client, adding the condition
+        to their list first when it is not already there. One call: the browser
+        doing this in three would drop a tick when two land close together."""
+        from dashboard.biofield_clinical_checklist import attach_remedy
+        body = request.get_json(silent=True) or {}
+        try:
+            with sqlite3.connect(db_path) as cx:
+                out = attach_remedy(cx, test_id, body.get("label"), body.get("remedy"))
+        except ValueError as e:
+            return {"ok": False, "error": str(e)}, 400
+        return {"ok": True, **out}
+
+    @app.route("/author/<test_id>/clinical-items/active")
+    def author_active_clinical_items(test_id):
+        """The conditions already on this client's list, for the remedy picker."""
+        from dashboard.biofield_clinical_proposals import ensure_schema
+        with sqlite3.connect(db_path) as cx:
+            ensure_schema(cx)
+            rows = cx.execute(
+                "SELECT label FROM biofield_clinical_proposals "
+                "WHERE test_id=? AND status='accepted' ORDER BY label",
+                (str(test_id),)).fetchall()
+        return {"ok": True, "labels": [r[0] for r in rows if (r[0] or "").strip()]}
 
     @app.route("/author/<test_id>/clinical-items/order", methods=["POST"])
     def author_order_clinical_items(test_id):

@@ -119,6 +119,88 @@ def remember_remedies(cx, label, remedies):
     return count
 
 
+def attach_remedy(cx, test_id, label, remedy):
+    """Put `remedy` on `label`'s ticked list for this test, adding the condition
+    to the client's list if it is not already there.
+
+    One operation because it touches three stores: the per-test checklist, the
+    shared catalog, and the per-test selection. save_selection REPLACES the
+    ticked list, so "add one" is a read-modify-write; doing that from the browser
+    in three calls drops a tick whenever two land close together.
+
+    Returns what changed, so the caller can say so rather than guess.
+    """
+    from dashboard import biofield_clinical_proposals as _cp
+
+    label = str(label or "").strip()[:160]
+    remedy = str(remedy or "").strip()[:160]
+    if not label or not remedy:
+        raise ValueError("A condition and a remedy are both required")
+
+    _cp.ensure_schema(cx)
+    ensure_catalog_schema(cx)
+
+    # Is this condition already on the client's list for this test?
+    # Table is biofield_clinical_proposalS. Reading the singular silently
+    # matched nothing, so every attach re-added a condition that was already
+    # there -- caught by test_a_condition_already_on_the_list_is_not_re_added.
+    try:
+        row = cx.execute(
+            "SELECT status FROM biofield_clinical_proposals "
+            "WHERE test_id=? AND item_key=?",
+            (str(test_id), _cp._key(label))).fetchone()
+    except Exception:
+        row = None
+    already = bool(row) and str(row[0] or "") == "accepted"
+    if not already:
+        # An explicit click outranks an earlier dismissal, or it would silently
+        # do nothing on a condition the practitioner once hid.
+        _cp.decide(cx, test_id, label, "accepted",
+                   "Added from the previously-dispensed panel")
+
+    remember_remedies(cx, label, [remedy])
+
+    ticked = list(_cp.selections(cx, test_id).get(_cp._key(label)) or [])
+    already_ticked = any(t.strip().lower() == remedy.lower() for t in ticked)
+    if not already_ticked:
+        ticked.append(remedy)
+        _cp.save_selection(cx, test_id, label, ticked)
+    cx.commit()
+    return {"label": label, "remedy": remedy, "added_condition": not already,
+            "already_ticked": already_ticked, "ticked": ticked}
+
+
+def conditions_for_remedy(cx, remedy, limit=8):
+    """The conditions this remedy is used for: the catalog read backwards.
+
+    Honours `hidden`, so a pairing the practitioner rejected through
+    forget_remedy cannot reappear as a suggestion through the reverse door.
+
+    Ordered and deduplicated because these render as clickable chips, and a
+    repeat would add the same condition to the client's list twice. Capped so a
+    remedy used everywhere cannot flood a single row. Never raises: it feeds a
+    reference panel, and a fresh database must not break the page.
+    """
+    key = _norm(remedy)
+    if not key:
+        return []
+    ensure_catalog_schema(cx)
+    try:
+        rows = cx.execute(
+            "SELECT DISTINCT label FROM biofield_clinical_catalog "
+            "WHERE remedy_key=? AND COALESCE(hidden,0)=0 ORDER BY label LIMIT ?",
+            (key, int(limit))).fetchall()
+    except Exception:
+        return []
+    seen, out = set(), []
+    for row in rows:
+        label = str(row[0] or "").strip()
+        if label and label.lower() not in seen:
+            seen.add(label.lower())
+            out.append(label)
+    return out
+
+
 def forget_remedy(cx, label, remedy):
     ensure_catalog_schema(cx)
     label = str(label or "").strip()[:160]

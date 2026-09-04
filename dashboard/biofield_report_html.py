@@ -519,16 +519,45 @@ async function toggleDispensed(){
     dl.innerHTML=cs.map(function(c){return '<option value="'+_esc(c.label)+'">'}).join('')}
   }catch(e){}}
 }
-async function attachDispensed(el){
- var label=(el.value||'').trim(), remedy=el.dataset.remedy||'';
- var msg=el.parentNode.querySelector('[data-msg]');
- if(!label||!remedy)return;
- if(msg)msg.textContent='saving\u2026';
- try{var j=await post('/author/__TID__/clinical-items/remedies',
-   {label:label, remedy:remedy, action:'add'});
-  if(msg)msg.textContent=j&&j.ok?('\u2713 '+label):'failed';
-  if(j&&j.ok)el.value='';
- }catch(e){if(msg)msg.textContent='failed'}
+function _dispRow(el){return el.closest('.disprow')}
+function _dispRemedy(el){var r=_dispRow(el);var b=r&&r.querySelector('.linkish');
+ return b?(b.textContent||'').trim():''}
+function _dispSay(el,text){var m=_dispRow(el);m=m&&m.querySelector('[data-msg]');
+ if(m)m.textContent=text}
+// Attach a remedy to a condition on THIS client's list. One call: the server
+// reads, appends and saves the ticked list, because doing that from here in
+// three calls drops a tick whenever two land close together.
+async function attachRemedyTo(el, cond){
+ var remedy=_dispRemedy(el);
+ if(!cond||!remedy)return;
+ _dispSay(el,'saving\\u2026');
+ try{var j=await post('/author/__TID__/clinical-items/attach',{label:cond,remedy:remedy});
+  if(!j||!j.ok){_dispSay(el,(j&&j.error)||'failed');return}
+  _dispSay(el, j.already_ticked ? ('already on '+cond)
+            : (j.added_condition ? ('\u2713 added '+cond) : ('\u2713 '+cond)));
+  if(typeof loadChecklist==='function')loadChecklist();
+ }catch(e){_dispSay(el,'failed')}
+}
+// A condition chip: add the remedy under it, adding the condition to the
+// client's list first when it is not already there.
+function attachPair(el){attachRemedyTo(el, el.dataset.cond||'')}
+// The remedy name: choose from the conditions already on this client's list,
+// or type another.
+async function pickCondition(el){
+ var labels=[];
+ try{labels=((await (await fetch('/author/__TID__/clinical-items/active')).json()).labels)||[]}
+ catch(e){}
+ var msg=labels.length
+   ? ('Add "'+_dispRemedy(el)+'" to which condition?\\n\\n'+labels.map(function(l,i){return (i+1)+'. '+l}).join('\\n')
+      +'\\n\\nType a number, or any other condition name:')
+   : ('Add "'+_dispRemedy(el)+'" to which condition?\\n\\n(Nothing on this client\\u2019s list yet, so type a name.)');
+ var answer=prompt(msg,'');
+ if(answer===null)return;
+ answer=answer.trim();
+ if(!answer)return;
+ var n=parseInt(answer,10);
+ if(String(n)===answer&&n>=1&&n<=labels.length)answer=labels[n-1];
+ attachRemedyTo(el, answer);
 }
 function setStress(j){if(j&&j.html!==undefined)document.getElementById('stresspanel').innerHTML=j.html}
 async function loadStress(){try{setStress(await (await fetch('/author/__TID__/stresses')).json())}catch(e){}}
@@ -1788,17 +1817,26 @@ def render_dispensed_panel(rows, open_=False):
         items = ""
         for r in rows:
             nm = _e(r["name"])
+            chips = "".join(
+                # The condition rides in a data attribute, not inlined into a JS
+                # string: a name with an apostrophe (Meniere's) would break the
+                # handler, and escaping for HTML and for JS are different jobs.
+                f"<button class=chip data-cond=\"{_e(cond)}\" onclick=attachPair(this)>"
+                f"{_e(cond)}</button>"
+                for cond in (r.get("conditions") or []))
+            if not chips:
+                chips = "<span class=food>&mdash;</span>"
             items += (
-                "<div class=disprow style='display:flex;align-items:center;gap:8px;padding:3px 0'>"
+                "<div class=disprow style='display:flex;align-items:center;gap:8px;padding:4px 0'>"
                 f"<span class=pill style='min-width:52px;text-align:right'>{r['pct']}%</span>"
                 f"<span class=food style='min-width:64px'>{r['count']} of {r['orders_considered']}</span>"
-                f"<span style='flex:1'>{nm}</span>"
-                f"<input list=dispconds placeholder='add to condition\u2026' style='width:190px;font-size:12px' "
-                f"data-remedy=\"{nm}\" onchange=attachDispensed(this)>"
+                f"<button class='linkish' style='flex:1;text-align:left' "
+                f"onclick=\"pickCondition(this)\" title='Add this remedy to a condition'>{nm}</button>"
+                f"<span style='flex:1.2;display:flex;flex-wrap:wrap;gap:4px'>{chips}</span>"
                 "<span class=food data-msg></span></div>")
         body = (f"<div class=food style='margin:6px 0'>Across this client's last {n} "
                 f"order{'' if n == 1 else 's'}.</div>"
-                "<datalist id=dispconds></datalist>" + items)
+                + items)
     style = "" if open_ else "display:none"
     return ("<div class=card>"
             "<div class=food style='text-transform:uppercase;font-size:11px;letter-spacing:.08em'>"
