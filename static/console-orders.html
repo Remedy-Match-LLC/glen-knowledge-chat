@@ -179,9 +179,22 @@
   // claimed; otherwise it's an unpaid cart awaiting payment. Portal/reorder flows
   // land directly in 'new' as unpaid, so we split the old "New" lane in two.
   function isPaidReady(o){ var ps=(o.pay_status||'unpaid'); return ps==='paid' || ps==='claimed'; }
+  // Sources whose orders come from the storefront, not from a cart someone left.
+  // Kept in step with app.py's _STOREFRONT_CHANNEL_SOURCES by
+  // tests/test_console_orders_store_lane.js.
+  var STORE_SOURCES = ["groovekart"];
+  function isStoreOrder(o){ return STORE_SOURCES.indexOf((o && o.source) || '') !== -1; }
   // Lane: [statusKey, label, optionalPredicate]. Predicate overrides status match.
+  //
+  // A storefront order arrives as status=new / unpaid, the same shape as an
+  // abandoned checkout, so it used to land in "Cart". Seven real GrooveKart
+  // orders -- shipped, paid, up to $1,647 -- sat there for six weeks because the
+  // label said they were carts. They are not carts: the customer completed and
+  // paid for them, and all that is missing is our confirmation of the payment.
   var LANES = [["proposed","Proposed"],["confirmed","Confirmed"],
-               ["cart","Cart", function(o){ return o.status==='new' && !isPaidReady(o); }],
+               ["store-confirm","Store · confirm payment",
+                function(o){ return isStoreOrder(o) && o.status==='new' && !isPaidReady(o); }],
+               ["cart","Cart", function(o){ return !isStoreOrder(o) && o.status==='new' && !isPaidReady(o); }],
                ["paid","Paid", function(o){ return o.status==='new' && isPaidReady(o); }],
                ["packed","Packed"],["shipped","Shipped"],["delivered","Delivered"],["done","Done"]];
   function key(){ return localStorage.getItem('console_key') || ''; }
