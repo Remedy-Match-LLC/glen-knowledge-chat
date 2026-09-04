@@ -103,9 +103,11 @@ while ((m = re.exec(region)) !== null) {
 // membership unlocks" pushes into one, but only under the shell (final review C1),
 // so all three pushes exist in source: the merged card plus the two originals,
 // which is 65, one more than the 64 this region held before the branch. The
-// permanent "What you are working on" checklist in Find Solutions makes 66.
-assert.strictEqual(pushes.length, 66,
-  'expected 66 pushes into the page body, parsed ' + pushes.length);
+// permanent "What you are working on" checklist in Find Solutions makes 66, and
+// the practitioner sharing control (the client's own switch over what their
+// practitioner can see, pushed beside the household one) makes 67.
+assert.strictEqual(pushes.length, 67,
+  'expected 67 pushes into the page body, parsed ' + pushes.length);
 
 // ---------------------------------------------------------------------------
 // Card -> door. Each signature is markup or a call unique to one card. Several
@@ -238,23 +240,23 @@ const CT = 'chrome-top', CB = 'chrome-bottom';
 // every other card, so the Find Solutions door opens with the input that drives
 // it rather than with the output.
 const EXPECTED = [
-  L, S, A, S, A, S, CT, null, null, null, null, null, null, null, S, S, S,
-  B, B, B, B, B, B, B, S, S, S, S, S, S, A, S, R, R, R, R, R, S, L, R, R, R, L,
-  A, A, A, B, null, null, null, null, null, A, null, A, S, S, S, E, E, E, A, null, A, A, CB
+  L, S, A, S, A, S, CT, null, null, null, null, null, null, null, S, S, S, B, B, B, B,
+  B, B, B, S, S, S, S, S, S, A, S, R, R, R, R, R, S, L, R, R, R, L, A, A, A, B, null,
+  null, null, null, null, A, null, A, S, S, S, E, E, E, A, A, null, A, A, CB
 ];
-assert.strictEqual(EXPECTED.length, 66, 'the expected sequence must cover every push');
+assert.strictEqual(EXPECTED.length, 67, 'the expected sequence must cover every push');
 assert.deepStrictEqual(pushes.map(function (p) { return p.door; }), EXPECTED,
   'every push must name the door that owns its card, in source order');
 
 // A card lands in exactly one door, and none vanished. 42 cards and a footer, from
-// 66 pushes: 52 that fed `current` on every path, plus the 14 legacy-only arms of
+// 67 pushes: 53 that fed `current` on every path, plus the 14 legacy-only arms of
 // cards the hub already routes elsewhere, which have no door to land in. Two of the
 // 51 are the shell-off arms of the membership card, mutually exclusive at run time
 // with the merged one, so no client ever sees three.
 const counts = {};
 pushes.forEach(function (p) { counts[String(p.door)] = (counts[String(p.door)] || 0) + 1; });
 assert.deepStrictEqual(counts,
-  { scans: 17, billing: 8, remedies: 8, solutions: 3, account: 11, learn: 3,
+  { scans: 17, billing: 8, remedies: 8, solutions: 3, account: 12, learn: 3,
     'chrome-top': 1, 'chrome-bottom': 1, 'null': 14 });
 
 // ---------------------------------------------------------------------------
