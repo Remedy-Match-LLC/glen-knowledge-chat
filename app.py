@@ -11171,12 +11171,19 @@ def _patient_practitioner_brand(email, *, db_path=None):
         return None
 
 
+from dashboard import practitioner_consent as _pconsent
+
+
 def _ensure_prepay_grant_columns(cx):
     """Idempotently add the attribution columns to prepay_term_grants."""
     if not db.column_exists(cx, "prepay_term_grants", "attributed_practitioner_id"):
         cx.execute("ALTER TABLE prepay_term_grants ADD COLUMN attributed_practitioner_id TEXT")
     if not db.column_exists(cx, "prepay_term_grants", "practitioner_share_consent"):
         cx.execute("ALTER TABLE prepay_term_grants ADD COLUMN practitioner_share_consent INTEGER NOT NULL DEFAULT 0")
+    if not db.column_exists(cx, "prepay_term_grants", "practitioner_consent_version"):
+        # WHICH wording they agreed to. Existing rows stay NULL and read as the
+        # narrowest scope; never backfilled (see dashboard.practitioner_consent).
+        cx.execute("ALTER TABLE prepay_term_grants ADD COLUMN practitioner_consent_version TEXT")
     if not db.column_exists(cx, "prepay_term_grants", "term_end"):
         cx.execute("ALTER TABLE prepay_term_grants ADD COLUMN term_end TEXT")
 
@@ -11258,8 +11265,11 @@ def _fulfill_prepay_term(session_id):
                 if disp_pid:
                     cx.execute(
                         "UPDATE prepay_term_grants SET attributed_practitioner_id=?, "
-                        "practitioner_share_consent=?, term_end=? WHERE session_id=?",
-                        (str(disp_pid), share_consent, _term_end, session_id))
+                        "practitioner_share_consent=?, practitioner_consent_version=?, "
+                        "term_end=? WHERE session_id=?",
+                        (str(disp_pid), share_consent,
+                         (_pconsent.CURRENT_VERSION if share_consent else None),
+                         _term_end, session_id))
                     cx.commit()
                     try:
                         from dashboard import care_share as _cshare, wallet as _wallet
@@ -11456,7 +11466,9 @@ def _fulfill_continuous_care_monthly(session_id):
                     next_charge_date=next_charge, cadence_months=1,
                     term_charges_total=term_months, initial_order_count=1,
                     attributed_practitioner_id=disp_pid,
-                    practitioner_share_consent=share_consent)
+                    practitioner_share_consent=share_consent,
+                    practitioner_consent_version=(
+                        _pconsent.CURRENT_VERSION if share_consent else None))
                 # Immediate access grant until the first cron charge extends it
                 # (~35 days) — mirrors _grant_prepay_term's day-based access pattern.
                 _grant_membership(cx, email, _pp.term_days(today, 1) + 4, "continuous_care")
@@ -24479,6 +24491,21 @@ def api_client_portal(token):
         if _household_sharing_enabled():
             payload["household_cc"] = household_cc          # {member_email: 0|1} for the caregiver UI
             payload["household_caregivers"] = household_caregivers  # this email's inbound caregivers
+        # What this client has consented to share with their practitioner, and the
+        # wording THEY agreed to -- so the toggle can show their own text rather
+        # than whatever the copy says today. Best-effort: a portal must not 500
+        # over its own sharing card.
+        try:
+            from dashboard import continuity_view as _cv
+            with db.connect(LOG_DB) as _ccx:
+                _consents = _cv.consent_state(_ccx, email)
+            for _c in _consents:
+                _c["text"] = _pconsent.text_for(_c.get("version"))
+                _c["current_text"] = _pconsent.CURRENT_TEXT
+            payload["practitioner_consents"] = _consents
+        except Exception as _ce:
+            print(f"[portal] practitioner consent state skipped: {_ce!r}", flush=True)
+            payload["practitioner_consents"] = []
     if _read_receipts_enabled():
         try:
             from dashboard import opens as _op
@@ -26734,6 +26761,35 @@ def api_portal_bodymap(token):
             return jsonify({"error": "not found"}), 404
         data = _portal_bodymap_data(cx, portal.get("email"), portal.get("content"), system)
     return jsonify(data)
+
+
+@app.route("/api/portal/<token>/practitioner-consent", methods=["POST"])
+def api_portal_practitioner_consent(token):
+    """The CLIENT grants or withdraws their practitioner's access to their data.
+
+    Token-scoped: it only ever affects the email the token belongs to, so a
+    client can revoke their own consent and no one else's.
+
+    Granting stamps the CURRENT wording server-side. The version is ours, never
+    the request's: a client must not be able to name the scope it agreed to, and
+    agreeing here is agreeing to what this page says today.
+    """
+    from dashboard import client_portal as _cp
+    from dashboard import continuity_view as _cv
+    data = request.get_json(silent=True) or {}
+    pid = (data.get("practitioner_id") or "").strip()
+    consent = 1 if data.get("consent") else 0
+    if not pid:
+        return jsonify({"ok": False, "error": "practitioner_id required"}), 400
+    with _db_lock, db.connect(LOG_DB) as cx:
+        _cp.init_client_portal_table(cx)
+        portal = _portal_record_for(cx, token)
+        if not portal:
+            return jsonify({"ok": False, "error": "not found"}), 404
+        email = (portal.get("email") or "").strip().lower()
+        changed = _cv.set_consent(cx, email, pid, consent, _pconsent.CURRENT_VERSION)
+    return jsonify({"ok": True, "recorded": bool(changed), "consent": consent,
+                    "version": _pconsent.CURRENT_VERSION if consent else ""})
 
 
 @app.route("/api/portal/<token>/share-consent", methods=["POST"])

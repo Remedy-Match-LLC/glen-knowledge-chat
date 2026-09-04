@@ -398,6 +398,21 @@ def migrate_add_attribution_column(cx):
         cx.commit()
 
 
+def migrate_add_consent_version_column(cx):
+    """Idempotent: add practitioner_consent_version (TEXT) — WHICH wording the
+    member agreed to.
+
+    The consent was a bare 0/1, so when Glen widened the wording on 2026-09-03 to
+    cover activity and purchases there was no way to tell the two cohorts apart.
+    Existing rows stay NULL and read as the narrowest scope: they agreed to
+    wellness results, not to their purchase history. Never backfilled."""
+    if not db.column_exists(cx, "subscriptions", "practitioner_consent_version"):
+        cx.execute(
+            "ALTER TABLE subscriptions ADD COLUMN practitioner_consent_version TEXT"
+        )
+        cx.commit()
+
+
 def migrate_add_consent_column(cx):
     """Idempotent: add practitioner_share_consent (INTEGER, default 0) — whether
     the member has consented to their attributed practitioner viewing their
@@ -408,13 +423,18 @@ def migrate_add_consent_column(cx):
             " INTEGER NOT NULL DEFAULT 0"
         )
         cx.commit()
+    # The version travels WITH the consent, deliberately. Ten call sites build this
+    # table and create_membership writes both columns, so a site that added one and
+    # not the other would be a 500 on signup. Two columns, one concept, one call.
+    migrate_add_consent_version_column(cx)
 
 
 def create_membership(cx, *, email, stripe_customer_id, stripe_payment_method_id,
                       amount_cents, next_charge_date, cadence_months=1,
                       term_charges_total=None, initial_order_count=0,
                       attributed_practitioner_id=None,
-                      practitioner_share_consent=0) -> int:
+                      practitioner_share_consent=0,
+                      practitioner_consent_version=None) -> int:
     """Insert an active flat-amount membership subscription (no product items).
     The first charge lands on next_charge_date. term_charges_total caps total charges
     (NULL = uncapped, legacy behavior); initial_order_count records charges already taken
@@ -422,7 +442,10 @@ def create_membership(cx, *, email, stripe_customer_id, stripe_payment_method_id
     attributed_practitioner_id is the Supabase practitioner id (string) that owns this
     membership for fee-share credit purposes (NULL = unattributed).
     practitioner_share_consent (0/1) records whether the member has consented to
-    the attributed practitioner viewing their continuity data (default 0 = no)."""
+    the attributed practitioner viewing their continuity data (default 0 = no).
+    practitioner_consent_version records WHICH wording they agreed to, and is
+    stored only when consent was actually given -- a version on a row that
+    declined would be a false record of assent."""
     now = _now_iso()
     new_id = dbwrite.insert_returning_id(
         cx,
@@ -430,13 +453,15 @@ def create_membership(cx, *, email, stripe_customer_id, stripe_payment_method_id
                (email, stripe_customer_id, stripe_payment_method_id, items_json,
                 cadence_months, status, order_count, next_charge_date, ship_address_json,
                 skip_next, created_at, updated_at, kind, amount_cents, term_charges_total,
-                attributed_practitioner_id, practitioner_share_consent)
-           VALUES (?,?,?,?,?,'active',?,?,?,0,?,?, 'membership', ?, ?, ?, ?)""",
+                attributed_practitioner_id, practitioner_share_consent,
+                practitioner_consent_version)
+           VALUES (?,?,?,?,?,'active',?,?,?,0,?,?, 'membership', ?, ?, ?, ?, ?)""",
         (email, stripe_customer_id, stripe_payment_method_id, "[]",
          int(cadence_months), int(initial_order_count), next_charge_date, "{}", now, now,
          int(amount_cents), (int(term_charges_total) if term_charges_total is not None else None),
          (str(attributed_practitioner_id) if attributed_practitioner_id else None),
-         int(bool(practitioner_share_consent))),
+         int(bool(practitioner_share_consent)),
+         (practitioner_consent_version if practitioner_share_consent else None)),
     )
     cx.commit()
     try:
