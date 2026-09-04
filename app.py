@@ -39475,6 +39475,25 @@ def _send_kloud_order_instructions(email, first_name, product_names, order_ref):
         print(f"[gk-webhook] Kloud instructions send failed: {e!r}", flush=True)
 
 
+def _notify_store_order(payload):
+    """Email Glen and Rae that a store order arrived. Never raises.
+
+    Per-recipient, because _is_undeliverable() treats any To containing a space
+    as undeliverable, so a comma-joined list silently sends nothing.
+    """
+    try:
+        from dashboard import groovekart_notify as _gkn
+        from dashboard import inbox as _inbox
+        subject, body = _gkn.order_email(payload)
+        for to in _gkn.RECIPIENTS:
+            try:
+                _inbox.send_email(to, subject, body)
+            except Exception as one:
+                print(f"[gk-notify] {to} failed: {one!r}", flush=True)
+    except Exception as e:
+        print(f"[gk-notify] skipped: {e!r}", flush=True)
+
+
 @app.route("/webhook/groovekart", methods=["POST"])
 def groovekart_webhook():
     """GrooveKart order → GHL E4L pipeline with purchase tag."""
@@ -39571,6 +39590,11 @@ def groovekart_webhook():
               data.get("id") or data.get("order_id") or data.get("reference")),
         daemon=True,
     ).start()
+    # Stand in for GrooveKart's own order notification: their mail service has
+    # refused delivery to support@remedymatch.com since 2026-08-28, so Rae no
+    # longer learns an order arrived. Threaded and best-effort -- a mail fault
+    # must never turn this webhook into a 500, or GrooveKart retry-storms it.
+    threading.Thread(target=_notify_store_order, args=(data,), daemon=True).start()
     return jsonify({"ok": True, "ghl": ghl_result, "affiliate_credited": credited}), 200
 
 
