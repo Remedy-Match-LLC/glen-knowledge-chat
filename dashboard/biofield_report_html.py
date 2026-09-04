@@ -1614,7 +1614,7 @@ def render_author_html(report, depth_values=None, transcript="", covered_by_laye
         "@media(max-width:720px){.authorheadgrid{grid-template-columns:1fr}.authorheadphoto{width:100%;height:240px;min-height:0}}"
         "</style>"
         "<div class=card>"
-        "<input type=hidden id=h_client_id value=''>"
+        f"<input type=hidden id=h_client_id value=\"{_e(c.get('e4l_client_id') or '')}\">"
         "<label>Client name</label>"
         "<span style='position:relative;display:inline-block'>"
         f"<input id=h_name autocomplete=off oninput=nameSearch() value=\"{_e(c.get('name') or '')}\" style='width:280px'>"

@@ -55,7 +55,12 @@ def init_auth_tables(cx):
     # no_charge: run the analysis without charging for it, which -- by keeping the
     # biofield-analysis line off the invoice -- also withholds the care window, the
     # 30-day month and member pricing, all of which key off that line.
+    # e4l_client_id: the E4L client the intake is for. Held so "Check E4L now"
+    # can key on the id after a reload instead of falling back to matching by
+    # name -- Judith Tom is "Judith Ann Tom" on her own PDF, so the name is the
+    # weaker key for exactly the clients who need it.
     for col in ("phase INTEGER", "location TEXT",
+                "e4l_client_id TEXT",
                 "no_charge INTEGER NOT NULL DEFAULT 0"):
         try:
             cx.execute(f"ALTER TABLE biofield_auth_tests ADD COLUMN {col}")
@@ -106,7 +111,7 @@ def create_test(cx, name, email, date):
     return "a" + str(new_id)
 
 
-def update_header(cx, tid, name=None, email=None, date=None):
+def update_header(cx, tid, name=None, email=None, date=None, client_id=None):
     init_auth_tables(cx)
     sets, vals = [], []
     if name is not None:
@@ -115,6 +120,10 @@ def update_header(cx, tid, name=None, email=None, date=None):
         sets.append("email=?"); vals.append((email or "").strip().lower())
     if date is not None:
         sets.append("date_test=?"); vals.append((date or "").strip())
+    if client_id is not None:
+        # An empty string clears it: choosing a different client must be able to
+        # REMOVE a stale id, or the check keeps querying the previous person.
+        sets.append("e4l_client_id=?"); vals.append(str(client_id).strip())
     if not sets:
         return
     sets.append("updated_at=?"); vals.append(_now())
@@ -794,7 +803,9 @@ def authored_report(cx, tid):
     tk = t.keys() if t else []
     return {"test_id": str(tid),
             "client": {"name": (t["name"] if t else "") or "",
-                       "email": (t["email"] if t else "") or ""},
+                       "email": (t["email"] if t else "") or "",
+                       "e4l_client_id": ((t["e4l_client_id"] if t and "e4l_client_id" in tk
+                                          else "") or "")},
             "date": (t["date_test"] if t else "") or "",
             "phase": (t["phase"] if "phase" in tk else None),
             "location": ((t["location"] if "location" in tk else "") or ""),

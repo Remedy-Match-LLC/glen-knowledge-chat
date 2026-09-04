@@ -990,7 +990,7 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
         d = request.get_json(silent=True) or {}
         with sqlite3.connect(db_path) as cx:
             update_header(cx, test_id, name=d.get("name"), email=d.get("email"),
-                          date=d.get("date"))
+                          date=d.get("date"), client_id=d.get("client_id"))
             ctx, _ = _e4l(cx, test_id)  # client now known -> pull recent E4L scan
             _seed_stresses(cx, test_id)  # synthesize + seed stress coverage if scan found
         invoice = {"ok": False, "reason": "no_email"}

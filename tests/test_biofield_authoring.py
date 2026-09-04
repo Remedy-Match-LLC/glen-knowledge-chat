@@ -46,7 +46,11 @@ def test_create_author_and_render(tmp_path):
     add_chain_row(cx, tid, 2, "Acid", "Liver", "Sterol Max", "3 caps", "daily", "with food")
     add_chain_row(cx, tid, 1, "Night", "Night", "TMG", "1 scoop", "daily", "at night")
     rep = authored_report(cx, tid)
-    assert rep["client"] == {"name": "Jane Doe", "email": "jane@x.com"}
+    # The exact SET, deliberately: this dict feeds the report and invoice pages,
+    # so a field added here ships wherever it is rendered. e4l_client_id joined it
+    # on 2026-09-04 to survive a reload; it is empty until a client is picked.
+    assert rep["client"] == {"name": "Jane Doe", "email": "jane@x.com",
+                             "e4l_client_id": ""}
     assert rep["date"] == "2026-06-23"
     assert [(l["layer"], l["head"], l["remedy"]) for l in rep["layers"]] == [
         (1, "Night", "TMG"), (2, "Acid", "Sterol Max")]
