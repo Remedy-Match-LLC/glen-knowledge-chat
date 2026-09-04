@@ -221,3 +221,68 @@ def send_recommendation(cx, practitioner_id, patient_email, items, note) -> Opti
         print(f"[continuity_view] recommend notify failed for {patient_email!r}: {e!r}",
               flush=True)
     return rec_id
+
+
+def consent_state(cx, patient_email):
+    """What this patient has consented to, and to whom — for their OWN portal.
+
+    Returns [] when nothing is attributed: consent is stored per attributed
+    practitioner, so a client without one has nothing to show and nothing to set.
+    Never raises; a portal must not 500 over a missing table.
+    """
+    email = (patient_email or "").strip()
+    if not email:
+        return []
+    out, seen = [], set()
+    for sql, args in (
+        ("SELECT attributed_practitioner_id, practitioner_share_consent, "
+         "practitioner_consent_version FROM subscriptions "
+         "WHERE lower(email)=lower(?) AND attributed_practitioner_id IS NOT NULL "
+         "AND kind='membership' AND status != 'cancelled'", (email,)),
+        ("SELECT attributed_practitioner_id, practitioner_share_consent, "
+         "practitioner_consent_version FROM prepay_term_grants "
+         "WHERE lower(email)=lower(?) AND attributed_practitioner_id IS NOT NULL", (email,)),
+    ):
+        try:
+            rows = cx.execute(sql, args).fetchall()
+        except db.OperationalError:
+            continue
+        for r in rows:
+            pid = str(r[0])
+            if pid in seen:
+                continue
+            seen.add(pid)
+            out.append({"practitioner_id": pid,
+                        "consent": bool(r[1]),
+                        "version": r[2] or ""})
+    return out
+
+
+def set_consent(cx, patient_email, practitioner_id, consent, version):
+    """The patient grants or withdraws consent for one practitioner.
+
+    Granting stamps the CURRENT wording, because agreeing here is agreeing to
+    what this page says today. Withdrawing clears the version: a version on a
+    row that says no would be a false record of assent.
+
+    Writes both stores, since either can carry the attribution. Returns the
+    number of rows changed.
+    """
+    email = (patient_email or "").strip()
+    if not email or not practitioner_id:
+        return 0
+    flag = 1 if consent else 0
+    ver = version if flag else None
+    changed = 0
+    for table in ("subscriptions", "prepay_term_grants"):
+        try:
+            cur = cx.execute(
+                f"UPDATE {table} SET practitioner_share_consent=?, "
+                "practitioner_consent_version=? "
+                "WHERE lower(email)=lower(?) AND attributed_practitioner_id=?",
+                (flag, ver, email, str(practitioner_id)))
+            changed += cur.rowcount if cur.rowcount and cur.rowcount > 0 else 0
+        except db.OperationalError:
+            continue
+    cx.commit()
+    return changed
