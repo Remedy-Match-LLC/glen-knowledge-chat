@@ -531,7 +531,8 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                fetch_client_photo=None,
                e4l_db=None, fee_get=None, fee_set=None, fee_clear=None,
                invoice_fetch_catalog=None, invoice_create=None, invoice_link=None,
-               invoice_paid_check=None, invoice_latest=None, ingredients_db=None,
+               invoice_paid_check=None, invoice_latest=None, client_orders=None,
+               ingredients_db=None,
                portal_link_fetch=None, auto_publish=None):
     app = Flask(__name__)
     # The clinical-tags ledger lives in the SEPARATE local e4l.db (not the app's chat_log.db).
@@ -589,6 +590,7 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
     invoice_link = invoice_link or biofield_invoice.default_invoice_link
     invoice_paid_check = invoice_paid_check or biofield_invoice.default_biofield_paid
     invoice_latest = invoice_latest or biofield_invoice.default_latest_invoice
+    client_orders = client_orders or biofield_invoice.default_client_orders
     def _default_portal_link_fetch(email, name):
         base = os.environ.get("PUBLIC_BASE_URL", "https://illtowell.com").rstrip("/")
         key = os.environ.get("CONSOLE_SECRET", "")
@@ -947,9 +949,29 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
             clinical_checklist = apply_selection(cx, test_id, clinical_checklist)
         with sqlite3.connect(db_path) as cx:
             fstate = biofield_fee.build_fee_state(c_email, fee_get, get_no_charge(cx, test_id))
+        # What this client has been dispensed before, ranked. Best-effort: a
+        # reference panel must never be the reason the authoring page fails.
+        try:
+            from dashboard import biofield_dispensed as _disp
+            from dashboard import fmp_orders as _fmpo
+            # Most of a long-standing client's history predates this system:
+            # Debra Herndon had 2 orders here and 8 in FileMaker. Matched on NAME
+            # as well as email, because one household email can be five people.
+            _hist = []
+            try:
+                with sqlite3.connect(db_path) as _fcx:
+                    _hist = _fmpo.client_order_history(_fcx, email=c_email) or []
+            except Exception as _fe:
+                print(f"[dispensed] fmp history skipped: {_fe!r}", flush=True)
+            _older = _disp.fmp_orders_for(_hist, (rep.get("client") or {}).get("name"), c_email)
+            dispensed = _disp.frequency(list(client_orders(c_email)) + _older, c_email)
+        except Exception as _de:
+            print(f"[dispensed] skipped: {_de!r}", flush=True)
+            dispensed = []
         return Response(render_author_html(rep, dv, transcript, covered_by_layer=covered,
                                            narrative=narrative, fee_state=fstate,
-                                           clinical_checklist=clinical_checklist),
+                                           clinical_checklist=clinical_checklist,
+                                           dispensed=dispensed),
                         mimetype="text/html")
 
     @app.route("/author/<test_id>/invoice-view")

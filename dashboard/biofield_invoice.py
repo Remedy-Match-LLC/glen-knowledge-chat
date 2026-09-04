@@ -229,6 +229,26 @@ def default_edit_order_link(order_id):
             f"{urllib.parse.quote(key)}")
 
 
+def default_client_orders(email, limit=300):
+    """This client's orders from the console board, for the dispensed-before panel.
+
+    Same read the invoice lookup already uses. Returns [] on any failure: the
+    panel is a reference, and a reference that breaks the page it sits on is
+    worse than one that is empty.
+    """
+    base, key = _console()
+    if not base or not (email or "").strip():
+        return []
+    try:
+        url = f"{base}/api/orders?limit={int(limit)}&key=" + urllib.parse.quote(key)
+        req = urllib.request.Request(url, headers={"X-Console-Key": key})
+        with urllib.request.urlopen(req, timeout=10) as r:
+            return _json.loads(r.read().decode() or "{}").get("data") or []
+    except Exception as e:
+        print(f"[dispensed] order lookup skipped: {e!r}", flush=True)
+        return []
+
+
 def default_latest_invoice(email):
     """Latest Biofield-authored invoice for this client, including remedy-only
     invoices raised after the analysis fee was already paid."""

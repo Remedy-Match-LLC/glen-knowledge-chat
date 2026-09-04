@@ -503,6 +503,33 @@ function rowVals(p){return {layer:val(p+'_layer'),head:val(p+'_head'),most_affec
  remedy:val(p+'_remedy'),dosage:val(p+'_dosage'),frequency:val(p+'_frequency'),timing:val(p+'_timing')}}
 function setE4L(j){if(j&&j.html!==undefined)document.getElementById('e4lpanel').innerHTML=j.html}
 async function loadE4L(){try{setE4L(await (await fetch('/author/__TID__/e4l')).json())}catch(e){}}
+// Previously dispensed: a reference list, so it loads lazily and stays closed
+// until asked for. Conditions come from the same curated catalogue the clinical
+// checklist uses, and attaching writes through the same endpoint.
+var DISP_LOADED=false;
+async function toggleDispensed(){
+ var b=document.getElementById('dispbody'),t=document.getElementById('dispbtn');
+ if(!b)return;
+ var open=b.style.display==='none';
+ b.style.display=open?'':'none';
+ if(t)t.textContent=(open?'Hide':'Show')+' previously dispensed';
+ if(open&&!DISP_LOADED){DISP_LOADED=true;
+  try{var dl=document.getElementById('dispconds');
+   if(dl){var cs=((await (await fetch('/author/__TID__/clinical-catalog')).json()).items)||[];
+    dl.innerHTML=cs.map(function(c){return '<option value="'+_esc(c.label)+'">'}).join('')}
+  }catch(e){}}
+}
+async function attachDispensed(el){
+ var label=(el.value||'').trim(), remedy=el.dataset.remedy||'';
+ var msg=el.parentNode.querySelector('[data-msg]');
+ if(!label||!remedy)return;
+ if(msg)msg.textContent='saving\u2026';
+ try{var j=await post('/author/__TID__/clinical-items/remedies',
+   {label:label, remedy:remedy, action:'add'});
+  if(msg)msg.textContent=j&&j.ok?('\u2713 '+label):'failed';
+  if(j&&j.ok)el.value='';
+ }catch(e){if(msg)msg.textContent='failed'}
+}
 function setStress(j){if(j&&j.html!==undefined)document.getElementById('stresspanel').innerHTML=j.html}
 async function loadStress(){try{setStress(await (await fetch('/author/__TID__/stresses')).json())}catch(e){}}
 async function balanceStress(sid,val){await post('/author/__TID__/stress/'+sid+'/balance',{value:val});loadStress()}
@@ -1590,7 +1617,7 @@ def render_clinical_proposals():
 
 def render_author_html(report, depth_values=None, transcript="", covered_by_layer=None,
                        narrative="", fee_state=None, transcript_updated="",
-                       clinical_checklist=None):
+                       clinical_checklist=None, dispensed=None):
     tid = _e(report.get("test_id") or "")
     c = report.get("client") or {}
     import urllib.parse as _up
@@ -1683,9 +1710,13 @@ def render_author_html(report, depth_values=None, transcript="", covered_by_laye
         f"placeholder='Click Generate narrative to draft one from the transcript + chain…'>"
         f"{_e(narrative)}</textarea>")
     fee_html = render_fee_panel(fee_state) if fee_state else ""
+    # Reference panel, collapsed. None means the caller did not look it up;
+    # an empty list means this client genuinely has no order history.
+    dispensed_html = "" if dispensed is None else render_dispensed_panel(dispensed)
     return _page("Edit Biofield Test",
                  head + editor_header + fee_html + "<div id=e4lpanel></div>"
-                 "<div class=btnrow style='margin:6px 0'>"
+                 + dispensed_html
+                 + "<div class=btnrow style='margin:6px 0'>"
                  "<button class='btn ghost' onclick=mineProfile()>Mine profile &rarr; stresses</button>"
                  "<button class='btn ghost' onclick=mineComms()>Mine recent comms &rarr; stresses</button>"
                  "</div>"
@@ -1734,6 +1765,45 @@ def render_list_html(tests, q="", authored=None):
         "<table><tr><th>Client</th><th>Email</th><th>Date</th><th>Remedies</th></tr>"
         f"{rows}</table>")
     return _page("Biofield Analysis", body)
+
+
+def render_dispensed_panel(rows, open_=False):
+    """What this client has been dispensed before, most often first.
+
+    Collapsed by default: it is a reference, not the work. The raw count sits
+    beside every percentage because "100%" off two orders and off forty are very
+    different claims, and a bare percentage hides which one you are looking at.
+
+    Each row carries a condition box so a familiar remedy can be attached to a
+    symptom without leaving the page; it writes through the same store the
+    clinical checklist reads.
+    """
+    rows = rows or []
+    n = rows[0]["orders_considered"] if rows else 0
+    head = ("<button class='btn ghost' onclick=toggleDispensed() id=dispbtn>"
+            + ("Hide" if open_ else "Show") + " previously dispensed</button>")
+    if not rows:
+        body = ("<div class=food style='margin-top:8px'>No order history for this client yet.</div>")
+    else:
+        items = ""
+        for r in rows:
+            nm = _e(r["name"])
+            items += (
+                "<div class=disprow style='display:flex;align-items:center;gap:8px;padding:3px 0'>"
+                f"<span class=pill style='min-width:52px;text-align:right'>{r['pct']}%</span>"
+                f"<span class=food style='min-width:64px'>{r['count']} of {r['orders_considered']}</span>"
+                f"<span style='flex:1'>{nm}</span>"
+                f"<input list=dispconds placeholder='add to condition\u2026' style='width:190px;font-size:12px' "
+                f"data-remedy=\"{nm}\" onchange=attachDispensed(this)>"
+                "<span class=food data-msg></span></div>")
+        body = (f"<div class=food style='margin:6px 0'>Across this client's last {n} "
+                f"order{'' if n == 1 else 's'}.</div>"
+                "<datalist id=dispconds></datalist>" + items)
+    style = "" if open_ else "display:none"
+    return ("<div class=card>"
+            "<div class=food style='text-transform:uppercase;font-size:11px;letter-spacing:.08em'>"
+            "Previously dispensed</div>"
+            f"{head}<div id=dispbody style='{style}'>{body}</div></div>")
 
 
 def render_suggest_panel(data):
