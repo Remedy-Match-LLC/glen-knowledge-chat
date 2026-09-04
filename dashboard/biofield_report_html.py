@@ -571,6 +571,32 @@ function pickName(c){
   E4L_CLIENT_ID=em.client_id!=null?em.client_id:null;hideDD();afterClientSelected()}
  else{showEmailPicker(c.emails)}
 }
+function hideEDD(){var d=document.getElementById('h_edd');if(d){d.style.display='none';d.innerHTML='';d._rows=null}}
+// The Email box is the one you reach for when E4L is where you found the client
+// (their E4L address is often not the one on their people record). It used to
+// carry no handler at all: typing an address stored text and filled nothing.
+async function emailSearch(){
+ var q=val('h_email').trim(),d=document.getElementById('h_edd');
+ if(!d)return;
+ if(q.length<3){hideEDD();return}
+ try{var cs=((await (await fetch('/api/e4l/clients?q='+encodeURIComponent(q))).json()).clients)||[];
+  // The endpoint groups by NAME, so a name hit drags in that client's OTHER
+  // addresses. Keep only addresses that actually match, or an email search would
+  // offer back the very address the practitioner was trying to avoid.
+  var ql=q.toLowerCase(),rows=[];
+  cs.forEach(function(c){(c.emails||[]).forEach(function(e){
+   if((e.email||'').toLowerCase().indexOf(ql)>=0){
+    rows.push({name:c.name,email:e.email,client_id:e.client_id,last_scan_date:e.last_scan_date})}})});
+  if(!rows.length){hideEDD();return}
+  d.innerHTML=rows.map(function(r,i){
+   return '<div class=ddi data-ri="'+i+'">'+_esc(r.email)+' <span class=food>'+_esc(r.name)+
+    (r.last_scan_date?(' &middot; last scan '+_esc(r.last_scan_date)):'')+'</span></div>'}).join('');
+  d._rows=rows;d.style.display='block'}catch(e){hideEDD()}
+}
+function pickEmailRow(r){
+ set('h_email',r.email);set('h_name',r.name);
+ if(!val('h_date'))set('h_date',_today());
+ E4L_CLIENT_ID=r.client_id!=null?r.client_id:null;hideEDD();afterClientSelected()}
 function pickEmail(e){set('h_email',e.email);E4L_CLIENT_ID=e.client_id!=null?e.client_id:null;hideDD();afterClientSelected()}
 async function afterClientSelected(){set('h_client_id',E4L_CLIENT_ID==null?'':E4L_CLIENT_ID);await saveHeader();refreshHeaderPhoto();checkE4L()}
 document.addEventListener('click',function(ev){
@@ -580,6 +606,10 @@ document.addEventListener('click',function(ev){
   if(it.dataset.ei!==undefined&&d._emails){pickEmail(d._emails[+it.dataset.ei])}
   else if(it.dataset.i!==undefined&&d._clients){pickName(d._clients[+it.dataset.i])}
  }else if(!(ev.target.id==='h_name')){hideDD()}
+ var ed=document.getElementById('h_edd');
+ if(ed){var eit=ev.target.closest?ev.target.closest('.ddi'):null;
+  if(eit&&ed.contains(eit)&&eit.dataset.ri!==undefined&&ed._rows){pickEmailRow(ed._rows[+eit.dataset.ri])}
+  else if(!(ev.target.id==='h_email')&&!(eit&&ed.contains(eit))){hideEDD()}}
 });
 async function checkE4L(){
  var s=document.getElementById('e4lchk');if(s)s.textContent='Checking E4L for a newer scan\\u2026';
@@ -817,7 +847,7 @@ try{
   var j=await post('/author/__TID__/e4l/import-reveal',body);
   // An old scan is a judgement call, not a dead end: offer to import it anyway.
   if(j && j.stale){
-    if(!confirm('The latest E4L scan is '+j.days_ago+' days old. Import it anyway?\n\n'
+    if(!confirm('The latest E4L scan is '+j.days_ago+' days old. Import it anyway?\\n\\n'
                 +'A fresh scan takes about ten seconds — count out loud, one to ten.')) return;
     body.allow_stale=true;
     j=await post('/author/__TID__/e4l/import-reveal',body);
@@ -1589,7 +1619,11 @@ def render_author_html(report, depth_values=None, transcript="", covered_by_laye
         "<span style='position:relative;display:inline-block'>"
         f"<input id=h_name autocomplete=off oninput=nameSearch() value=\"{_e(c.get('name') or '')}\" style='width:280px'>"
         "<div id=h_dd class=dd></div></span>"
-        f"<label>Email</label><input id=h_email value=\"{_e(c.get('email') or '')}\" style='width:280px'>"
+        "<label>Email</label>"
+        "<span style='position:relative;display:inline-block'>"
+        f"<input id=h_email autocomplete=off oninput=emailSearch() "
+        f"value=\"{_e(c.get('email') or '')}\" style='width:280px'>"
+        "<div id=h_edd class=dd></div></span>"
         f"<label>Date</label><input id=h_date value=\"{_e(report.get('date') or '')}\" style='width:160px'>"
         "<div class=btnrow><button class=btn onclick=saveHeader()>Save header</button>"
         "<span id=astat class=food></span></div></div>")
