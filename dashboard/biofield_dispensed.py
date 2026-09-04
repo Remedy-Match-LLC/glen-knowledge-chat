@@ -87,3 +87,64 @@ def frequency(orders, email, limit=DEFAULT_LIMIT):
             for n, c in counts.items()]
     rows.sort(key=lambda r: (-r["count"], r["name"].lower()))
     return rows
+
+
+# --- FileMaker history ---------------------------------------------------------
+#
+# Most of a long-standing client's orders predate this system. Debra Herndon had
+# 2 orders here and 8 in FileMaker, so ranking on ours alone was not thin, it was
+# wrong (Glen, 2026-09-04).
+
+import re as _re
+
+# Not products: a discount line and the analysis fee, which FileMaker also
+# carries numbered ("Biofield Analysis #1").
+_FMP_NOT_A_PRODUCT = _re.compile(
+    r"^(courtesy|biofield analysis(\s*#\s*\d+)?|shipping|postage|tax|discount)$", _re.I)
+
+# "Chelation in cello" and "Chelation in bottle" are one remedy in two
+# packagings. Left alone each ranks at half the frequency it earned.
+_FMP_PACKAGING = _re.compile(r"\s+in\s+(cello|bottle|jar|dropper|tube|caps?|capsules?)$", _re.I)
+
+
+def _fmp_product(description):
+    """A product name from an FMP line, or None when the line is not a product."""
+    text = _FMP_PACKAGING.sub("", str(description or "").strip()).strip()
+    if not text or _FMP_NOT_A_PRODUCT.match(text):
+        return None
+    return text
+
+
+def _same_person(a, b):
+    return " ".join(str(a or "").lower().split()) == " ".join(str(b or "").lower().split())
+
+
+def fmp_orders_for(history, name, email):
+    """FileMaker orders for ONE person, shaped like board orders.
+
+    Matched on NAME, not just email. chakamom1@gmail.com is five different
+    Herndons in FileMaker, so an email match would file a daughter's order as her
+    mother's. An unmatched name returns nothing: showing one client another's
+    history is worse than showing none of it.
+    """
+    out = []
+    for record in (history or []):
+        if not isinstance(record, dict):
+            continue
+        client = record.get("client")
+        if not isinstance(client, dict) or not _same_person(client.get("name"), name):
+            continue
+        orders = record.get("orders")
+        for o in (orders if isinstance(orders, list) else []):
+            if not isinstance(o, dict):
+                continue
+            items = []
+            for item in (o.get("items") if isinstance(o.get("items"), list) else []):
+                if not isinstance(item, dict):
+                    continue
+                product = _fmp_product(item.get("description"))
+                if product:
+                    items.append({"name": product, "slug": ""})
+            out.append({"email": email, "created_at": str(o.get("date") or ""),
+                        "status": str(o.get("status") or "done"), "items": items})
+    return out

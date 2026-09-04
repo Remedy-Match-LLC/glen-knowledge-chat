@@ -953,7 +953,18 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
         # reference panel must never be the reason the authoring page fails.
         try:
             from dashboard import biofield_dispensed as _disp
-            dispensed = _disp.frequency(client_orders(c_email), c_email)
+            from dashboard import fmp_orders as _fmpo
+            # Most of a long-standing client's history predates this system:
+            # Debra Herndon had 2 orders here and 8 in FileMaker. Matched on NAME
+            # as well as email, because one household email can be five people.
+            _hist = []
+            try:
+                with sqlite3.connect(db_path) as _fcx:
+                    _hist = _fmpo.client_order_history(_fcx, email=c_email) or []
+            except Exception as _fe:
+                print(f"[dispensed] fmp history skipped: {_fe!r}", flush=True)
+            _older = _disp.fmp_orders_for(_hist, (rep.get("client") or {}).get("name"), c_email)
+            dispensed = _disp.frequency(list(client_orders(c_email)) + _older, c_email)
         except Exception as _de:
             print(f"[dispensed] skipped: {_de!r}", flush=True)
             dispensed = []

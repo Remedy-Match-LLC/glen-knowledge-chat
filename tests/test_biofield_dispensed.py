@@ -185,3 +185,114 @@ def test_the_author_route_asks_for_this_clients_orders():
     assert "client_orders" in orders_arg, orders_arg
     # The email must be THIS client's, not a blank that would rank everyone.
     assert email_arg.strip() == "c_email", email_arg
+
+
+# --- FMP history: the orders that predate this system --------------------------
+#
+# Glen, 2026-09-04: "You are missing many orders for Debra... I see 9 in FMP."
+# Our orders table held 2 of hers; FileMaker holds 8 more. Ranking on 2 of 10
+# orders is not thin, it is wrong.
+
+HISTORY = [
+    {"client": {"name": "Anastasia Herndon", "email": "chakamom1@gmail.com"}, "orders": []},
+    {"client": {"name": "Debra Herndon", "email": "chakamom1@gmail.com"}, "orders": [
+        {"date": "2026-06-01", "items": [{"description": "Biofield Analysis"},
+                                         {"description": "Courtesy"},
+                                         {"description": "Chelation in cello"}]},
+        {"date": "2026-04-29", "items": [{"description": "Chelation in bottle"},
+                                         {"description": "Reverse AGE"}]}]},
+    {"client": {"name": "Eliana Herndon", "email": "chakamom1@gmail.com"}, "orders": [
+        {"date": "2025-11-15", "items": [{"description": "Nous Energy"}]}]},
+]
+
+
+def test_a_shared_family_email_does_not_merge_their_histories():
+    """chakamom1@gmail.com is five different Herndons in FileMaker. Matching on
+    email alone would file Eliana's order as Debra's."""
+    orders = bd.fmp_orders_for(HISTORY, "Debra Herndon", "chakamom1@gmail.com")
+    names = {i["name"] for o in orders for i in o["items"]}
+    assert "Nous Energy" not in names, "another family member's order leaked in"
+    assert "Chelation" in names
+
+
+def test_an_unmatched_name_returns_nothing_rather_than_everyone():
+    """Fail closed: showing one client another's history is worse than showing
+    none of it."""
+    assert bd.fmp_orders_for(HISTORY, "Someone Else", "chakamom1@gmail.com") == []
+    assert bd.fmp_orders_for(HISTORY, "", "chakamom1@gmail.com") == []
+
+
+def test_the_name_match_tolerates_case_and_spacing():
+    assert bd.fmp_orders_for(HISTORY, "  debra   herndon ", "x@y.com")
+
+
+def test_the_packaging_suffix_is_stripped_so_one_product_is_one_row():
+    """'Chelation in cello' and 'Chelation in bottle' are the same remedy in two
+    packagings. Left alone they rank as two different products, each at half the
+    frequency they deserve."""
+    orders = bd.fmp_orders_for(HISTORY, "Debra Herndon", "chakamom1@gmail.com")
+    rows = bd.frequency(orders, orders[0]["email"])
+    top = [r for r in rows if r["name"] == "Chelation"]
+    assert top and top[0]["count"] == 2, [r["name"] for r in rows]
+
+
+def test_service_and_discount_lines_are_not_products():
+    orders = bd.fmp_orders_for(HISTORY, "Debra Herndon", "chakamom1@gmail.com")
+    names = {i["name"] for o in orders for i in o["items"]}
+    assert "Courtesy" not in names and "Biofield Analysis" not in names
+
+
+def test_numbered_biofield_lines_are_excluded_too():
+    """FileMaker carries 'Biofield Analysis #1' as well as the plain one."""
+    h = [{"client": {"name": "P Q", "email": "p@e.com"},
+          "orders": [{"date": "2026-01-01", "items": [{"description": "Biofield Analysis #1"},
+                                                      {"description": "Vitality"}]}]}]
+    names = {i["name"] for o in bd.fmp_orders_for(h, "P Q", "p@e.com") for i in o["items"]}
+    assert names == {"Vitality"}
+
+
+def test_blank_descriptions_are_dropped():
+    h = [{"client": {"name": "P Q", "email": "p@e.com"},
+          "orders": [{"date": "2026-01-01", "items": [{"description": ""},
+                                                      {"description": None},
+                                                      {"description": "Vitality"}]}]}]
+    assert len(bd.fmp_orders_for(h, "P Q", "p@e.com")[0]["items"]) == 1
+
+
+def test_fmp_and_current_orders_rank_together():
+    """The whole point: one ranking across both sources."""
+    current = [_o("chakamom1@gmail.com", "2026-09-01", "Chelation")]
+    fmp = bd.fmp_orders_for(HISTORY, "Debra Herndon", "chakamom1@gmail.com")
+    rows = bd.frequency(current + fmp, "chakamom1@gmail.com")
+    chel = [r for r in rows if r["name"] == "Chelation"][0]
+    assert chel["count"] == 3 and chel["orders_considered"] == 3 and chel["pct"] == 100
+
+
+def test_fmp_junk_never_raises():
+    for bad in (None, [], [None], [{"client": None}], [{"client": {}, "orders": "no"}]):
+        assert bd.fmp_orders_for(bad, "A B", "p@e.com") == []
+
+
+def test_the_author_route_merges_filemaker_history_matched_by_name():
+    """Two mutants walked past the earlier tests: dropping the FileMaker orders
+    from the ranking, and matching them without the client's name. The first
+    silently returns to ranking 2 of Debra's 10 orders; the second files a
+    daughter's order as her mother's."""
+    import ast
+    import pathlib
+    src = (pathlib.Path(__file__).resolve().parent.parent
+           / "biofield_local_app.py").read_text()
+    tree = ast.parse(src)
+    fmp = [c for c in ast.walk(tree) if isinstance(c, ast.Call)
+           and isinstance(c.func, ast.Attribute) and c.func.attr == "fmp_orders_for"]
+    assert fmp, "FileMaker history is no longer consulted"
+    name_arg = ast.unparse(fmp[0].args[1])
+    assert "name" in name_arg and '""' not in name_arg and "''" not in name_arg, name_arg
+
+    freq = [c for c in ast.walk(tree) if isinstance(c, ast.Call)
+            and isinstance(c.func, ast.Attribute) and c.func.attr == "frequency"]
+    assert freq, "nothing is ranked"
+    orders_arg = ast.unparse(freq[0].args[0])
+    assert "client_orders" in orders_arg, orders_arg
+    assert "_older" in orders_arg, (
+        "the ranking no longer includes FileMaker history: " + orders_arg)
