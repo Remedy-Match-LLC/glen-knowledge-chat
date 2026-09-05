@@ -55,18 +55,23 @@ def _slug_for_email(cx, email):
 
 
 def _table_exists(cx, name):
-    try:
+    """Does `name` exist, on either backend?
+
+    Ask the backend WHICH catalogue to read, rather than trying one and catching the
+    failure. On Postgres a failed statement aborts the whole transaction, so the classic
+    try-sqlite-then-fall-back-to-postgres shape does not merely fail its first query: it
+    poisons the connection, and every later command raises InFailedSqlTransaction. That
+    is exactly how the first version of this returned a 500 in production, from a line
+    several calls further on than the one that actually broke.
+    """
+    if db.backend_of(cx) == "postgres":
         return cx.execute(
-            "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
+            "SELECT 1 FROM information_schema.tables "
+            "WHERE table_schema = current_schema() AND table_name = ?",
             (name,)).fetchone() is not None
-    except Exception:
-        # Postgres: information_schema instead of sqlite_master
-        try:
-            return cx.execute(
-                "SELECT 1 FROM information_schema.tables WHERE table_name=?",
-                (name,)).fetchone() is not None
-        except Exception:
-            return False
+    return cx.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
+        (name,)).fetchone() is not None
 
 
 def candidates(cx):
