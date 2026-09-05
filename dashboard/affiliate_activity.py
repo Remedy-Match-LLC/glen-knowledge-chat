@@ -45,13 +45,24 @@ def summary(cx):
     out["approved_signups"] = _count(
         cx, "SELECT COUNT(*) FROM affiliate_signups WHERE status='approved'")
 
-    active_ids, active_slugs = set(), set()
+    # ONE set, holding affiliate SLUGS. An earlier version kept practitioner_ids and
+    # slugs separately and added the two lengths, so a person with a profile AND a chat
+    # record counted twice and the production total came back inflated. Everything now
+    # resolves to the slug, which is the affiliate's identity.
+    active_slugs = set()
+
+    # NOTE ON TWO IDENTITY SPACES. practitioner_profile_drafts and practitioner_pricing
+    # are keyed by practitioner_id, which resolves through SUPABASE
+    # (practitioner_portal.practitioner_email_by_id -> practitioners.email), a different
+    # database. They cannot be joined to affiliate_signups here, so they are reported as
+    # raw counts and deliberately NOT folded into any_sign_of_setup. Folding them in
+    # would mean adding two different kinds of identity together, which is how the first
+    # version of this returned an inflated number.
 
     if _exists(cx, "practitioner_profile_drafts"):
         rows = cx.execute(
             "SELECT DISTINCT practitioner_id FROM practitioner_profile_drafts").fetchall()
-        active_ids |= {str(r[0]) for r in rows if r and r[0] is not None}
-        out["started_a_profile"] = len(rows)
+        out["started_a_profile"] = len(rows)   # practitioner-keyed, not folded in
         out["profile_has_photo"] = _count(
             cx, "SELECT COUNT(*) FROM practitioner_profile_drafts "
                 "WHERE fields LIKE '%photo_url%'")
@@ -61,8 +72,7 @@ def summary(cx):
     if _exists(cx, "practitioner_pricing"):
         rows = cx.execute(
             "SELECT DISTINCT practitioner_id FROM practitioner_pricing").fetchall()
-        active_ids |= {str(r[0]) for r in rows if r and r[0] is not None}
-        out["set_their_pricing"] = len(rows)
+        out["set_their_pricing"] = len(rows)   # practitioner-keyed, not folded in
     else:
         out["set_their_pricing"] = "table absent"
 
@@ -102,7 +112,41 @@ def summary(cx):
     else:
         out["has_ever_earned"] = "table absent"
 
-    out["distinct_practitioner_ids_active"] = len(active_ids)
-    out["distinct_slugs_active"] = len(active_slugs)
-    out["any_sign_of_setup"] = len(active_ids) + len(active_slugs)
+    # Has this affiliate ever used the chat? query_log gained an email column later, so
+    # it joins on email like everything else here.
+    if _exists(cx, "query_log"):
+        out["has_used_the_chat"] = _count(
+            cx, "SELECT COUNT(DISTINCT LOWER(q.email)) FROM query_log q "
+                "JOIN affiliate_signups a ON LOWER(a.email)=LOWER(q.email) "
+                "WHERE a.status='approved' AND COALESCE(q.email,'')<>''")
+        rows = cx.execute(
+            "SELECT DISTINCT LOWER(a.slug) FROM query_log q "
+            "JOIN affiliate_signups a ON LOWER(a.email)=LOWER(q.email) "
+            "WHERE a.status='approved' AND COALESCE(q.email,'')<>''").fetchall()
+        active_slugs |= {str(r[0]) for r in rows if r and r[0]}
+    else:
+        out["has_used_the_chat"] = "table absent"
+
+    # Do they have an E4L account? The strongest signal of all: it means they went
+    # through the scan funnel themselves, not merely filled in a form.
+    if _exists(cx, "e4l_accounts"):
+        out["has_an_e4l_account"] = _count(
+            cx, "SELECT COUNT(DISTINCT LOWER(e.email)) FROM e4l_accounts e "
+                "JOIN affiliate_signups a ON LOWER(a.email)=LOWER(e.email) "
+                "WHERE a.status='approved'")
+        rows = cx.execute(
+            "SELECT DISTINCT LOWER(a.slug) FROM e4l_accounts e "
+            "JOIN affiliate_signups a ON LOWER(a.email)=LOWER(e.email) "
+            "WHERE a.status='approved'").fetchall()
+        active_slugs |= {str(r[0]) for r in rows if r and r[0]}
+    else:
+        out["has_an_e4l_account"] = "table absent"
+
+    out["any_sign_of_setup"] = len(active_slugs)
+    out["_note"] = (
+        "any_sign_of_setup counts PEOPLE, deduplicated by affiliate slug, across the "
+        "email-keyed signals: intake, chat, E4L account, social links. The per-signal "
+        "numbers overlap and must not be summed. started_a_profile and "
+        "set_their_pricing are keyed by practitioner_id, which resolves through a "
+        "different database, so they are reported but NOT included here.")
     return out
