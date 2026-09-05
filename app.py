@@ -24560,8 +24560,10 @@ def api_client_portal(token):
         "deliverables_locked": bool(bf_show and not bf_deliver),
         "layers": bf_layers,
         "findings": client_findings,
-        # Time-of-day remedy schedule — gated with the dosing (only when unblurred).
-        "schedule": (bf_content.get("schedule") or {}) if bf_show else {},
+        # Time-of-day remedy schedule. Glen moved this to the PAID side on 2026-09-04:
+        # knowing which remedies to take is now free, knowing when to take them is part
+        # of the deliverable he is paid for.
+        "schedule": (bf_content.get("schedule") or {}) if bf_deliver else {},
         "pricing_note": bf_content.get("pricing_note", "") if bf_show else "",
         "reorder_items": display,
         "notify_on": notify_on,

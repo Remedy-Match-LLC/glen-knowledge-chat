@@ -61,6 +61,12 @@ def test_audio_and_pdf_are_on_the_deliverables_gate_not_the_product_gate():
     assert '"report_pdf": (bf_content.get("report_pdf") or {}) if bf_deliver else {}' in SRC
 
 
+def test_the_dosing_schedule_is_on_the_paid_side():
+    """Glen moved this 2026-09-04: which remedies to take is free, WHEN to take them is
+    part of the paid deliverable."""
+    assert '"schedule": (bf_content.get("schedule") or {}) if bf_deliver else {}' in SRC
+
+
 def test_the_product_list_stays_on_its_own_gate():
     """The point of the split. If the blur starts keying on the deliverables gate, a free
     scan client stops seeing the recommendations, which is the opposite of the ruling."""
