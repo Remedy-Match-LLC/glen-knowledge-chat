@@ -217,3 +217,26 @@ def test_it_asks_the_backend_rather_than_trying_and_failing(monkeypatch, cx):
     assert any("information_schema" in s for s in seen), (
         "the postgres branch was never taken"
     )
+
+
+def test_a_zero_result_explains_itself(cx):
+    """A preview reporting "0 recoverable" is ambiguous: empty tables and a code fault
+    that cannot see them look identical, and they need opposite responses. The
+    diagnostics make the difference visible, so a zero is an answer rather than a
+    question."""
+    d = ab.plan(cx)["diagnostics"]
+    assert d["approved_affiliates"] == 2
+    for key in ("inquiries", "referral_redemptions", "affiliate_conversions",
+                "referral_events"):
+        assert key in d, f"{key} missing from the diagnostics"
+        assert d[key] != "table absent", f"{key} exists but was reported absent"
+
+
+def test_a_missing_table_is_reported_not_swallowed(cx):
+    cx.execute("DROP TABLE inquiries")
+    cx.commit()
+    d = ab.plan(cx)["diagnostics"]
+    assert d["inquiries"] == "table absent", (
+        "a missing source must say so; silently counting it as zero is how a broken "
+        "preview looks identical to an empty one"
+    )
