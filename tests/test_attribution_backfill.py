@@ -91,6 +91,10 @@ def test_a_dry_run_writes_nothing(monkeypatch, cx):
         @contextlib.contextmanager
         def connect(_p):
             yield cx
+
+        @staticmethod
+        def backend_of(_cx):
+            return "sqlite"
     monkeypatch.setattr(ab, "db", _DB)
     res = ab.run(":memory:", dry_run=True)
     assert res["counts"]["written"] == 0
@@ -109,6 +113,10 @@ def test_a_real_run_writes_exactly_what_the_preview_promised(monkeypatch, cx):
         @contextlib.contextmanager
         def connect(_p):
             yield cx
+
+        @staticmethod
+        def backend_of(_cx):
+            return "sqlite"
     monkeypatch.setattr(ab, "db", _DB)
     preview = ab.run(":memory:", dry_run=True)["counts"]["would_write"]
     res = ab.run(":memory:", dry_run=False)
@@ -152,3 +160,60 @@ def test_the_backfill_writes_no_reward_anywhere():
     src = (_APP.parent / "dashboard" / "attribution_backfill.py").read_text()
     for forbidden in ("credit(", "mark_rewarded", "rewarded_at", "points"):
         assert forbidden not in src, f"{forbidden} must not appear in the backfill"
+
+
+
+def test_it_asks_the_backend_rather_than_trying_and_failing(monkeypatch, cx):
+    """The bug that took this down in production, 2026-09-05.
+
+    The first version tried sqlite_master and fell back to information_schema on the
+    exception. On Postgres a failed statement ABORTS THE TRANSACTION, so that shape does
+    not just fail its first query, it poisons the connection: every later command raises
+    InFailedSqlTransaction. The 500 surfaced several calls further on than the line that
+    actually broke, which is what made it confusing.
+
+    These tests only ever ran against SQLite, so they could not have caught it. This one
+    asserts the Postgres branch is chosen by ASKING, and that no sqlite catalogue is
+    touched when the backend says postgres.
+    """
+    seen = []
+
+    class _PgCx:
+        def execute(self, sql, params=()):
+            seen.append(sql)
+            # Deliberately does NOT raise. The shape being guarded against catches
+            # Exception, so raising here would be swallowed and the test would pass
+            # against the very code it exists to reject. Record it and assert after.
+            class _R:
+                @staticmethod
+                def fetchone():
+                    return None
+
+                @staticmethod
+                def fetchall():
+                    return []
+            return _R()
+
+    import contextlib
+
+    class _DB:
+        @staticmethod
+        @contextlib.contextmanager
+        def connect(_p):
+            yield _PgCx()
+
+        @staticmethod
+        def backend_of(_cx):
+            return "postgres"
+
+    monkeypatch.setattr(ab, "db", _DB)
+    ab.run(":memory:", dry_run=True)
+    assert seen, "nothing was queried at all"
+    assert not any("sqlite_master" in s for s in seen), (
+        "queried sqlite_master on a postgres connection. On PG that aborts the "
+        "transaction and poisons every later statement, which is how this returned a "
+        "500 in production."
+    )
+    assert any("information_schema" in s for s in seen), (
+        "the postgres branch was never taken"
+    )
