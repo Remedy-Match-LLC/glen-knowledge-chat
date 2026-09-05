@@ -3205,6 +3205,36 @@ def begin_tone():
     return resp
 
 
+_REF_SLUG_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
+_REF_COOKIE_MAX_AGE = 90 * 24 * 3600   # the attribution window, in seconds
+
+
+def _persist_ref_attribution(resp, request, candidate):
+    """Record `candidate` as the visitor's referring affiliate, unless one is already
+    active.
+
+    Glen's ruling 2026-09-05: an existing active attribution wins. The cookie's own
+    90-day life IS the window, so "is there an active attribution?" is simply "is there
+    already a cookie?".
+
+    Before this, all seven places that set rm_ref overwrote unconditionally, which made
+    the behaviour self-contradictory: the same request would READ the existing cookie in
+    preference to the new ?ref= and then OVERWRITE it for next time. So the affiliate who
+    got used and the affiliate who got stored could differ on one page view.
+
+    Returns True if it wrote, False if an existing attribution was protected.
+    """
+    cand = (candidate or "").strip()
+    if not cand or not _REF_SLUG_RE.match(cand):
+        return False
+    existing = (request.cookies.get("rm_ref") or "").strip()
+    if existing:
+        return False          # an active attribution already stands; first touch wins
+    resp.set_cookie("rm_ref", cand, max_age=_REF_COOKIE_MAX_AGE,
+                    samesite="Lax", secure=request.is_secure)
+    return True
+
+
 @app.route("/begin/explore")
 def begin_explore():
     """Non-linear table of contents — every explorable funnel room in one place.
@@ -3227,12 +3257,7 @@ def begin_explore():
     resp.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
     resp.headers["Pragma"] = "no-cache"
     # Persist a valid ?ref= as rm_ref (same slug rules + 90d TTL as index.html).
-    if arg_ref and re.match(r"^[A-Za-z0-9_-]{1,64}$", arg_ref):
-        resp.set_cookie(
-            "rm_ref", arg_ref,
-            max_age=90 * 24 * 3600,
-            samesite="Lax", secure=request.is_secure,
-        )
+    _persist_ref_attribution(resp, request, arg_ref)
     return resp
 
 
@@ -3294,8 +3319,7 @@ def begin_scan():
     resp = Response(html, mimetype="text/html")
     resp.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
     if arg_ref and _SCAN_CAMPAIGN_RE.match(arg_ref):
-        resp.set_cookie("rm_ref", arg_ref, max_age=90 * 24 * 3600,
-                        samesite="Lax", secure=request.is_secure)
+        _persist_ref_attribution(resp, request, arg_ref)
     if not request.cookies.get("amg_session"):
         resp.set_cookie("amg_session", session_id or uuid.uuid4().hex,
                         max_age=60 * 60 * 24 * 365, httponly=True,
@@ -3318,12 +3342,7 @@ def begin_tools():
     resp = Response(html, mimetype="text/html")
     resp.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
     resp.headers["Pragma"] = "no-cache"
-    if arg_ref and re.match(r"^[A-Za-z0-9_-]{1,64}$", arg_ref):
-        resp.set_cookie(
-            "rm_ref", arg_ref,
-            max_age=90 * 24 * 3600,
-            samesite="Lax", secure=request.is_secure,
-        )
+    _persist_ref_attribution(resp, request, arg_ref)
     return resp
 
 
@@ -4678,8 +4697,7 @@ def sample_portal_for_slug(slug):
                 if _cx.execute(
                     "SELECT 1 FROM affiliate_signups WHERE slug=? AND status='approved'",
                     (slug,)).fetchone():
-                    resp.set_cookie("rm_ref", slug, max_age=90 * 24 * 3600,
-                                    samesite="Lax", secure=request.is_secure)
+                    _persist_ref_attribution(resp, request, slug)
                     _ps.record_view(_cx, slug, "sample")
         except Exception:
             pass  # instrumentation must never break the page
@@ -10754,8 +10772,7 @@ def studio_welcome():
     resp.headers["Pragma"] = "no-cache"
     # last-touch attribution: only stamp source=studio when no real referral is set
     if not (request.cookies.get("rm_ref") or "").strip():
-        resp.set_cookie("rm_ref", "studio", max_age=90 * 24 * 3600,
-                        samesite="Lax", secure=request.is_secure)
+        _persist_ref_attribution(resp, request, "studio")
     if not request.cookies.get("amg_session"):
         resp.set_cookie("amg_session", uuid.uuid4().hex, max_age=365 * 24 * 3600,
                         httponly=True, samesite="Lax", secure=request.is_secure)
@@ -19745,8 +19762,7 @@ def masterclass_page(event_id):
     resp = send_from_directory(STATIC, "masterclass.html")
     inviter = _masterclass_inviter(event_id, request.args.get("ref") or "")
     if inviter:
-        resp.set_cookie("rm_ref", inviter["slug"], max_age=90 * 24 * 3600,
-                        samesite="Lax", secure=request.is_secure)
+        _persist_ref_attribution(resp, request, inviter["slug"])
     return resp
 
 
@@ -20901,8 +20917,7 @@ def _render_practitioner_page(view, canonical_slug, *, affiliate_slug):
     # The ATTRIBUTION key, never the page slug -- see this function's
     # docstring. A vanity rename must not change what a referral is credited
     # to, and must not orphan the 90-day cookies already in the wild.
-    resp.set_cookie("rm_ref", affiliate_slug, max_age=90 * 24 * 3600,
-                    samesite="Lax", secure=request.is_secure)
+    _persist_ref_attribution(resp, request, affiliate_slug)
     return resp
 
 
