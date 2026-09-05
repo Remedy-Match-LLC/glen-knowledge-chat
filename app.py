@@ -208,7 +208,30 @@ except Exception as _ce:
 
 # ── Config ────────────────────────────────────────────────────────────────────
 PINECONE_INDEX    = "remedy-match-llc"
-NAMESPACES        = ["clinical-qa", "mentors", "ingredients", "e4l-protocols", "consultations", "training", "business", "glen-authored-works", ""]
+# Namespaces the RAG chat searches. Glen's ruling 2026-09-04: connect his own published
+# material plus the third-party clinical reference library. Before this, 34,849 vectors
+# (43% of the index) were unreachable by any code path in the app.
+#
+# DELIBERATELY EXCLUDED, do not add without a fresh decision:
+#   healing-oasis-records  8,130  named clients with dates and clinical findings
+#   e4l-scans              3,463  client names, ids and scan dates
+#   zyto-sessions             12  carries a client field
+#   personal-notes             3  internal business notes naming staff
+# Those four carry client records. See _kb_namespaces_for for the separate VA boundary,
+# which is unchanged by this and still excludes PHI-bearing namespaces from a scoped VA.
+NAMESPACES        = [
+    "clinical-qa", "mentors", "ingredients", "e4l-protocols", "consultations",
+    "training", "business", "glen-authored-works", "",
+    # added 2026-09-04
+    "websites",              # 5,419  Glen's own site pages, already public
+    "youtube-transcripts",   # 1,843  Glen's videos
+    "training-transcripts",  # 1,533  Glen's teaching, incl. Accelerated Self Healing
+    "rumble-transcripts",    #   115  Glen's videos
+    "clinical-references",   # 13,727 THIRD-PARTY books (IBIS/Stargrove, Trivieri et al).
+                             #        Not Glen's words. build_context tags these with an
+                             #        authorship note so the model cannot present them as
+                             #        his clinical position.
+]
 TOP_K_PER_NS      = 8
 MAX_CONTEXT_CHARS = 18000
 FEEDBACK_SUBMIT_URL = os.environ.get("FEEDBACK_SUBMIT_URL", "https://Truly.VIP/Results")
@@ -2974,6 +2997,16 @@ def build_context(matches):
         is_authoritative = meta.get("type") == "clinical-qa" or meta.get("priority") == "authoritative"
         tag = "[AUTHORITATIVE — Glen's verified clinical position] " if is_authoritative else ""
         authorship = meta.get("authorship_note") or ""
+        # clinical-references holds OTHER AUTHORS' published books. They carry `author`
+        # and sometimes `book`, but no authorship_note, so without this the model can
+        # quote Stargrove or Trivieri as though it were Glen's own clinical position.
+        # Added with the namespace on 2026-09-04.
+        if not authorship and meta.get("namespace_purpose") == "clinical-references":
+            _who = meta.get("author") or "a third-party clinical reference"
+            _bk = meta.get("book")
+            _src = f"{_who}, {_bk}" if _bk and _bk != "None" else _who
+            authorship = (f"Third-party reference work ({_src}). This is NOT Dr. Swartwout's "
+                          f"own position. Attribute it, and do not present it as his.")
         if authorship:
             authorship = f"\n[AUTHORSHIP NOTE: {authorship}]"
         deprecated_flag = ""
