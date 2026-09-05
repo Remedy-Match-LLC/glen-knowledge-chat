@@ -3410,6 +3410,9 @@ def begin_quiz_optin():
     session_id = (request.cookies.get("amg_session")
                   or (data.get("session_id") or "").strip() or uuid.uuid4().hex)
     ref_slug = (request.cookies.get("rm_ref") or (data.get("ref") or "")).strip()
+    # Turn the ?ref= visit into an attribution the payout can actually see. Before this
+    # the cookie was read here and then dropped, so an affiliate link earned nothing.
+    _capture_ref_attribution(email, ref_slug, medium="ref-link", campaign="quiz-optin")
 
     # capture email + ToS (free_tier) and mark the assessment gate
     with _db_lock, db.connect(LOG_DB) as cx:
@@ -21671,6 +21674,20 @@ def _resolve_checkout_coupon_pct(referral_code, referee_email):
             res = _rf.resolve(cx, code, referee_email, pct=_referral_pct())
         if not res:
             return daily, None
+        # Glen's ruling 2026-09-05: a referral code should attribute to its owner, the
+        # same as a referral link. Resolve the owner to their affiliate slug; if they
+        # are not an approved affiliate there is simply nothing to record.
+        try:
+            with db.connect(LOG_DB) as _cx2:
+                _own = _cx2.execute(
+                    "SELECT slug FROM affiliate_signups "
+                    "WHERE LOWER(email)=? AND status='approved'",
+                    ((res.get("owner_email") or "").strip().lower(),)).fetchone()
+            if _own:
+                _capture_ref_attribution(referee_email, _own[0],
+                                         medium="ref-code", campaign=code)
+        except Exception as _ae:   # noqa: BLE001 - never blocks checkout
+            print(f"[referrals] code attribution skipped: {_ae!r}", flush=True)
         eff = max(res["coupon_pct"], daily or 0)
         return eff, {"code": code, "owner_email": res["owner_email"]}
     except Exception as e:  # noqa: BLE001 - referral never blocks checkout
@@ -38349,6 +38366,67 @@ def _log_referral_event(lead_id, email, first_name, last_name, utm_source, utm_m
         """, (ts, lead_id, email, first_name, last_name,
               utm_source, utm_medium, utm_campaign, utm_content, utm_term, quiz_score, raw))
         cx.commit()
+
+
+def _capture_ref_attribution(email, ref_slug, *, medium, campaign="",
+                             first_name="", last_name=""):
+    """Record an affiliate attribution for `email`, honouring first touch.
+
+    THE GAP THIS CLOSES (found 2026-09-05). Affiliate payout asks one question at
+    settlement: is there a referral_events row for this buyer naming an approved
+    affiliate? Only three things ever wrote one — the ScoreApp webhook, masterclass
+    signups and concierge signups. ScoreApp is deprecated and its last delivery was
+    2026-07-18, so in practice attribution had narrowed to two funnels.
+
+    An ordinary ?ref= visit wrote NOTHING: it set the rm_ref cookie, which threads
+    tracking onto links, and never became a record the payout could see. A redeemed
+    referral code wrote nothing either. So most people who were genuinely referred
+    earned their referrer no credit at all.
+
+    FIRST TOUCH (Glen's ruling 2026-09-05): an existing active attribution wins. Active
+    means within 90 days, the same window as the cookie. Without this the write would
+    quietly invert the ruling, because the payout reads the MOST RECENT row.
+
+    Idempotent, best-effort, and never raises into a caller: attribution must not be
+    able to break a signup or a checkout.
+    """
+    email = (email or "").strip().lower()
+    ref_slug = (ref_slug or "").strip()
+    if not email or not ref_slug or not _REF_SLUG_RE.match(ref_slug):
+        return False
+    try:
+        ts = datetime.now(timezone.utc).isoformat()
+        cutoff = (datetime.now(timezone.utc)
+                  - timedelta(seconds=_REF_COOKIE_MAX_AGE)).isoformat()
+        with _db_lock, db.connect(LOG_DB) as cx:
+            if not cx.execute(
+                "SELECT 1 FROM affiliate_signups WHERE slug=? AND status='approved'",
+                (ref_slug,)
+            ).fetchone():
+                return False          # not a real approved affiliate
+            row = cx.execute(
+                "SELECT utm_source FROM referral_events "
+                "WHERE LOWER(email)=? AND COALESCE(utm_source,'')<>'' "
+                "AND received_at >= ? ORDER BY received_at DESC LIMIT 1",
+                (email, cutoff)).fetchone()
+            if row:
+                # An attribution is already active. First touch wins, even when the
+                # incoming slug differs: re-writing would hand the referral to whoever
+                # linked most recently.
+                return False
+            cx.execute("""
+                INSERT INTO referral_events
+                  (received_at, lead_id, email, first_name, last_name,
+                   utm_source, utm_medium, utm_campaign, utm_content, utm_term,
+                   quiz_score, raw_json)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+            """, (ts, None, email, first_name, last_name,
+                  ref_slug, medium, campaign, "", "", "", ""))
+            cx.commit()
+            return True
+    except Exception as _e:   # noqa: BLE001 - attribution never blocks the caller
+        print(f"[referrals] attribution capture failed: {_e!r}", flush=True)
+        return False
 
 
 def _capture_concierge_referral(email, first_name, last_name, ref_slug):
