@@ -20,6 +20,8 @@ CREATE TABLE affiliate_social_links (slug TEXT, url TEXT);
 CREATE TABLE affiliate_earnings (email TEXT, amount_cents INTEGER);
 CREATE TABLE intake_responses (email TEXT PRIMARY KEY, form_version TEXT, status TEXT,
   answers_json TEXT, created_at TEXT, submitted_at TEXT);
+CREATE TABLE query_log (id INTEGER PRIMARY KEY, ts TEXT, query TEXT, email TEXT);
+CREATE TABLE e4l_accounts (email TEXT PRIMARY KEY, created_at TEXT);
 """
 
 
@@ -46,7 +48,9 @@ def test_a_profile_counts(cx):
     cx.commit()
     s = aa.summary(cx)
     assert s["started_a_profile"] == 1
-    assert s["any_sign_of_setup"] == 1
+    # deliberately NOT in any_sign_of_setup: practitioner_id resolves through a
+    # different database and cannot be joined to an affiliate here
+    assert s["any_sign_of_setup"] == 0
 
 
 def test_a_photo_is_counted_separately(cx):
@@ -65,7 +69,7 @@ def test_pricing_and_social_links_count(cx):
     s = aa.summary(cx)
     assert s["set_their_pricing"] == 1
     assert s["added_a_social_link"] == 1
-    assert s["any_sign_of_setup"] == 2
+    assert s["any_sign_of_setup"] == 1   # only the slug-keyed social link counts
 
 
 def test_a_missing_table_is_reported_not_counted_as_zero(cx):
@@ -113,3 +117,57 @@ def test_a_non_affiliates_intake_is_not_counted(cx):
                "('stranger@x.com','v1','submitted','{\"a\":1}','x','y')")
     cx.commit()
     assert aa.summary(cx)["started_their_intake"] == 0
+
+
+def test_chat_use_counts(cx):
+    cx.execute("INSERT INTO query_log VALUES (1,'t','hello?','a1@x.com')")
+    cx.execute("INSERT INTO query_log VALUES (2,'t','again','a1@x.com')")
+    cx.commit()
+    s = aa.summary(cx)
+    assert s["has_used_the_chat"] == 1, "two messages from one person is one person"
+    assert s["any_sign_of_setup"] == 1
+
+
+def test_an_e4l_account_counts(cx):
+    cx.execute("INSERT INTO e4l_accounts VALUES ('a3@x.com','2026-01-01')")
+    cx.commit()
+    assert aa.summary(cx)["has_an_e4l_account"] == 1
+
+
+def test_chat_and_e4l_from_a_stranger_are_not_counted(cx):
+    cx.execute("INSERT INTO query_log VALUES (1,'t','hi','stranger@x.com')")
+    cx.execute("INSERT INTO e4l_accounts VALUES ('stranger@x.com','x')")
+    cx.commit()
+    s = aa.summary(cx)
+    assert s["has_used_the_chat"] == 0
+    assert s["has_an_e4l_account"] == 0
+
+
+def test_one_person_with_several_signals_is_still_one(cx):
+    """any_sign_of_setup counts PEOPLE, not signals. Someone who chatted, has an E4L
+    account and started an intake must not appear three times."""
+    cx.execute("INSERT INTO query_log VALUES (1,'t','hi','a1@x.com')")
+    cx.execute("INSERT INTO e4l_accounts VALUES ('a1@x.com','x')")
+    cx.execute("INSERT INTO intake_responses VALUES ('a1@x.com','v1','draft','{\"g\":1}','x',NULL)")
+    cx.commit()
+    assert aa.summary(cx)["any_sign_of_setup"] == 1
+
+
+def test_a_person_with_two_kinds_of_signal_is_counted_once(cx):
+    """The bug this file exists to prevent recurring. An earlier version kept
+    practitioner-keyed and slug-keyed signals in separate sets and added the lengths, so
+    one person with a profile AND a chat record counted twice, and the production total
+    came back inflated. Everything now resolves to the affiliate slug."""
+    cx.execute("INSERT INTO practitioner_profile_drafts VALUES ('1','{\"photo_url\":\"x\"}','review')")
+    cx.execute("INSERT INTO query_log VALUES (1,'t','hi','a1@x.com')")
+    cx.execute("INSERT INTO e4l_accounts VALUES ('a1@x.com','x')")
+    cx.commit()
+    assert aa.summary(cx)["any_sign_of_setup"] == 1, "one person counted more than once"
+
+
+def test_two_different_people_are_counted_twice(cx):
+    """The other direction: deduplicating must not collapse distinct people."""
+    cx.execute("INSERT INTO query_log VALUES (1,'t','hi','a1@x.com')")
+    cx.execute("INSERT INTO e4l_accounts VALUES ('a2@x.com','x')")
+    cx.commit()
+    assert aa.summary(cx)["any_sign_of_setup"] == 2
