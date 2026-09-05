@@ -62,3 +62,49 @@ def test_third_party_references_are_connected_and_attributed():
 def test_no_duplicate_namespaces():
     ns = _namespaces()
     assert len(ns) == len(set(ns)), f"duplicate namespace in NAMESPACES: {ns}"
+
+
+# ── Glen's documented connections to the reference works ──────────────────────
+# Glen's ruling 2026-09-04: when the chat quotes one of the third-party books, it should
+# say what his connection to it is. The risk being guarded here is the opposite of the
+# usual one: not that a connection is missed, but that one is INVENTED. A book with no
+# documented tie must get plain attribution and nothing more.
+
+def _connect():
+    import importlib.util, sys, types
+    # _glen_connection_to is a pure function on metadata; extract it rather than importing
+    # app.py, which needs credentials at import time.
+    src = APP.read_text()
+    start = src.index("_GLEN_BOOK_CONNECTIONS = [")
+    end = src.index("def build_context(matches):")
+    ns = {}
+    exec(compile(src[start:end], "app_excerpt", "exec"), ns)
+    return ns["_glen_connection_to"]
+
+
+def test_contributed_book_states_he_wrote_a_chapter():
+    note = _connect()({"author": "Larry Trivieri Jr. + Burton Goldberg (eds.)",
+                       "book": "Alternative Medicine: The Definitive Guide"})
+    assert "contributing author" in note
+    assert "Chapter 77" in note
+
+
+def test_ibis_states_the_research_team_connection():
+    note = _connect()({"author": "Mitchell Bebel Stargrove + Health Resources Unlimited",
+                       "book": None})
+    assert "IBIS research team" in note
+
+
+def test_a_book_that_cites_glen_says_so():
+    note = _connect()({"author": "Alex Stark", "book": None,
+                       "publisher": "Alex Stark — Creating Outstanding Environments"})
+    assert "cites" in note.lower()
+
+
+def test_an_unconnected_book_gets_NO_invented_connection():
+    """The important one. Silence is the correct answer for an author Glen has no
+    documented tie to. Inventing a relationship would be worse than giving none."""
+    for meta in ({"author": "Some Other Author", "book": "A Book He Has No Link To"},
+                 {"author": "", "book": ""},
+                 {}):
+        assert _connect()(meta) == "", f"invented a connection for {meta}"

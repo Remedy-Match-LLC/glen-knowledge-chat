@@ -2968,6 +2968,47 @@ def surface_approved_clips(q_vec, max_cards=1, threshold=0.80):
     return cards
 
 
+# Glen's documented connections to the third-party reference works in the
+# `clinical-references` and `citations` namespaces. Glen's ruling 2026-09-04: when the
+# chat draws on one of these books, say what his connection to it is.
+#
+# EVERY ENTRY HERE IS SOURCED FROM GLEN'S OWN RECORDS, and each cites where.
+# Do NOT add a connection that is not documented. A book with no entry gets plain
+# attribution and nothing more, which is the correct outcome, not a gap to fill.
+_GLEN_BOOK_CONNECTIONS = [
+    # (match against author+book, lowercased) -> what to tell the model
+    (("trivieri", "goldberg", "definitive guide"),
+     "Dr. Swartwout is a contributing author of this book: he was selected, from among "
+     "60,000+ eye doctors in the United States, to write Chapter 77, Vision Disorders. "
+     "Mention that connection when citing it."),
+    # source: 00 System/brand-dna credential library; 00 System/QUICK-REFERENCE.md
+    (("stargrove",),
+     "Dr. Swartwout worked directly with Mitchell Bebel Stargrove: he was on the IBIS "
+     "research team in the 1980s. Mention that connection when citing this work."),
+    # source: 00 Mentor Network mentor table, entry 14, "DIRECT"
+    (("alex stark",),
+     "This author cites Dr. Swartwout's own published work, Electromagnetic Pollution "
+     "Solutions (Aerai, 1991). Mention that his work is cited here."),
+    # source: `citations` namespace metadata, cites_glen=True, cites_work=...
+]
+
+
+def _glen_connection_to(meta):
+    """Return Glen's documented connection to a reference work, or "" if there is none.
+
+    Deliberately conservative: matches on author and title text only, and returns nothing
+    when no entry applies. Inventing a relationship to an author would be worse than
+    giving none, so the default is silence.
+    """
+    hay = f"{meta.get('author') or ''} {meta.get('book') or ''} {meta.get('publisher') or ''}".lower()
+    if not hay.strip():
+        return ""
+    for needles, note in _GLEN_BOOK_CONNECTIONS:
+        if all(n in hay for n in needles):
+            return note
+    return ""
+
+
 def build_context(matches):
     seen, sources, parts, total = set(), {}, [], 0
     # Authoritative clinical-qa chunks go in FIRST so the context-char cap can
@@ -3005,8 +3046,11 @@ def build_context(matches):
             _who = meta.get("author") or "a third-party clinical reference"
             _bk = meta.get("book")
             _src = f"{_who}, {_bk}" if _bk and _bk != "None" else _who
+            _tie = _glen_connection_to(meta)
             authorship = (f"Third-party reference work ({_src}). This is NOT Dr. Swartwout's "
                           f"own position. Attribute it, and do not present it as his.")
+            if _tie:
+                authorship += f" {_tie}"
         if authorship:
             authorship = f"\n[AUTHORSHIP NOTE: {authorship}]"
         deprecated_flag = ""
