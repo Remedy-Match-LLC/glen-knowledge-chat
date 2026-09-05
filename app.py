@@ -10513,6 +10513,16 @@ def api_console_dispensary_pay_mix():
                     "alt_pay_order_share": round(alt["orders"] / total, 3) if total else 0.0})
 
 
+@app.route("/api/console/portal-usage", methods=["GET"])
+def api_console_portal_usage():
+    """How many client portals exist, and how many have actually been used. Read only."""
+    if not _console_key_ok():
+        return jsonify({"error": "Unauthorized"}), 401
+    from dashboard import portal_usage as _pu
+    with db.connect(LOG_DB) as cx:
+        return jsonify({"ok": True, **_pu.summary(cx)})
+
+
 @app.route("/api/console/affiliate-activity", methods=["GET"])
 def api_console_affiliate_activity():
     """How many of the affiliate signups show any sign of real setup.
