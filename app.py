@@ -227,6 +227,7 @@ NAMESPACES        = [
     "youtube-transcripts",   # 1,843  Glen's videos
     "training-transcripts",  # 1,533  Glen's teaching, incl. Accelerated Self Healing
     "rumble-transcripts",    #   115  Glen's videos
+    "citations",             #     6  books that CITE Glen's own published work
     "clinical-references",   # 13,727 THIRD-PARTY books (IBIS/Stargrove, Trivieri et al).
                              #        Not Glen's words. build_context tags these with an
                              #        authorship note so the model cannot present them as
@@ -2982,15 +2983,28 @@ _GLEN_BOOK_CONNECTIONS = [
      "60,000+ eye doctors in the United States, to write Chapter 77, Vision Disorders. "
      "Mention that connection when citing it."),
     # source: 00 System/brand-dna credential library; 00 System/QUICK-REFERENCE.md
+    (("stargrove", "ibis"),
+     "Dr. Swartwout worked directly on this: he was on the IBIS research team in the "
+     "1980s. Mention that connection when citing it."),
+    # Stargrove's OTHER works. Glen's ruling 2026-09-04: note the IBIS collaboration on
+    # those too, but phrased so it does not imply he worked on the book being quoted.
     (("stargrove",),
-     "Dr. Swartwout worked directly with Mitchell Bebel Stargrove: he was on the IBIS "
-     "research team in the 1980s. Mention that connection when citing this work."),
+     "Dr. Swartwout knows this author and worked with Mitchell Bebel Stargrove directly, "
+     "on the IBIS research team in the 1980s. Mention that working relationship when "
+     "citing this work, without implying he contributed to this particular book."),
     # source: 00 Mentor Network mentor table, entry 14, "DIRECT"
-    (("alex stark",),
-     "This author cites Dr. Swartwout's own published work, Electromagnetic Pollution "
-     "Solutions (Aerai, 1991). Mention that his work is cited here."),
-    # source: `citations` namespace metadata, cites_glen=True, cites_work=...
 ]
+
+# Books that cite Glen's own published work. Read from the vector's own metadata rather
+# than a hardcoded list, so a newly ingested book that cites him is covered on arrival.
+def _cites_glen_note(meta):
+    flag = str(meta.get("cites_glen") or "").strip().lower()
+    if flag not in ("true", "1", "yes"):
+        return ""
+    work = (meta.get("cites_work") or "").strip()
+    tail = f", {work}" if work else ""
+    return (f"This work CITES Dr. Swartwout's own published research{tail}. Say so: his "
+            f"work is a source for it.")
 
 
 def _glen_connection_to(meta):
@@ -3000,6 +3014,9 @@ def _glen_connection_to(meta):
     when no entry applies. Inventing a relationship to an author would be worse than
     giving none, so the default is silence.
     """
+    cited = _cites_glen_note(meta)
+    if cited:
+        return cited
     hay = f"{meta.get('author') or ''} {meta.get('book') or ''} {meta.get('publisher') or ''}".lower()
     if not hay.strip():
         return ""
@@ -3042,7 +3059,8 @@ def build_context(matches):
         # and sometimes `book`, but no authorship_note, so without this the model can
         # quote Stargrove or Trivieri as though it were Glen's own clinical position.
         # Added with the namespace on 2026-09-04.
-        if not authorship and meta.get("namespace_purpose") == "clinical-references":
+        _ref_ns = meta.get("_source_ns") or meta.get("namespace_purpose")
+        if not authorship and _ref_ns in ("clinical-references", "citations"):
             _who = meta.get("author") or "a third-party clinical reference"
             _bk = meta.get("book")
             _src = f"{_who}, {_bk}" if _bk and _bk != "None" else _who

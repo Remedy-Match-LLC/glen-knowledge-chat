@@ -51,10 +51,15 @@ def test_third_party_references_are_connected_and_attributed():
     guard would let the model quote Stargrove or Trivieri as Glen's own position."""
     assert "clinical-references" in set(_namespaces())
     src = APP.read_text()
-    guard = re.search(
-        r'namespace_purpose"\)\s*==\s*"clinical-references"(.{0,600})', src, re.S)
-    assert guard, "the clinical-references authorship guard is gone from build_context"
-    assert "NOT Dr. Swartwout" in guard.group(1), (
+    # Match the guard by what it does, not by one spelling of the condition. An earlier
+    # version of this test pinned the exact expression and went red on a refactor that
+    # only broadened the guard to cover `citations` as well.
+    guard = re.search(r'_ref_ns in \((.{0,120}?)\)(.{0,900})', src, re.S)
+    assert guard, "the third-party authorship guard is gone from build_context"
+    covered, body = guard.group(1), guard.group(2)
+    for ns in ("clinical-references", "citations"):
+        assert ns in covered, f"{ns} is no longer covered by the authorship guard"
+    assert "NOT Dr. Swartwout" in body, (
         "the authorship note no longer says the material is not Glen's own position"
     )
 
@@ -96,9 +101,29 @@ def test_ibis_states_the_research_team_connection():
 
 
 def test_a_book_that_cites_glen_says_so():
-    note = _connect()({"author": "Alex Stark", "book": None,
-                       "publisher": "Alex Stark — Creating Outstanding Environments"})
-    assert "cites" in note.lower()
+    """Read from the vector's own cites_glen metadata, not a hardcoded author list, so a
+    newly ingested book that cites him is covered the moment it lands."""
+    note = _connect()({"author": "Alex Stark", "cites_glen": "True",
+                       "cites_work": "Electromagnetic Pollution Solutions (Aerai, 1991)"})
+    assert "CITES" in note
+    assert "Electromagnetic Pollution Solutions" in note
+
+
+def test_stargroves_other_works_note_the_ibis_collaboration_without_overclaiming():
+    """Glen's ruling: note the IBIS working relationship on Stargrove's other books too,
+    but do not imply he contributed to a book he did not write."""
+    ibis = _connect()({"author": "Mitchell Bebel Stargrove + Health Resources Unlimited",
+                       "book": "IBIS"})
+    assert "was on the IBIS research team" in ibis
+
+    other = _connect()({"author": "Mitchell Bebel Stargrove + Lori Beth Stargrove",
+                        "book": "Herb, Nutrient and Drug Interactions"})
+    assert "IBIS research team" in other
+    assert "without implying he contributed to this particular book" in other
+
+
+def test_citations_namespace_is_connected():
+    assert "citations" in set(_namespaces())
 
 
 def test_an_unconnected_book_gets_NO_invented_connection():
