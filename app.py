@@ -14814,9 +14814,28 @@ def _latest_report_content(email):
 
 def _portal_paid_gate_enabled():
     """Flag: gate portal biofield content behind payment (blur unpaid reveals).
-    Default OFF so merging is safe — flip PORTAL_PAID_GATE_ENABLED=1 only after
-    confirming every legitimately-paid Biofield client is recorded (has a
-    biofield_readiness paid_at or an active membership), else they'd be blurred."""
+
+    OFF ON PURPOSE. This is not an unflipped switch waiting for someone to get to it.
+
+    Glen's ruling, 2026-09-04: the recommended product list may be shown to a client who
+    had a free E4L scan. Matching remedies to a scan is now automated and trained, so a
+    recommendation no longer costs an hour of Glen's individual case review. What used to
+    be a paid deliverable is now a marginal-cost one, and showing it is worth more as a
+    way in than as a thing withheld.
+
+    When it was written (2026-07-02) it closed a real leak: a free reveal un-blurred
+    everything because the portal keyed on biofield_status=='confirmed', which defaults
+    to 'confirmed'. That reasoning has been overtaken by the automation, not forgotten.
+
+    The old caution still applies IF it is ever flipped on: confirm first that every
+    legitimately-paid Biofield client is recorded as paid (a biofield_readiness paid_at,
+    or an active membership). Otherwise it locks paying clients out of their own reports,
+    which is a worse failure than the leak it closes.
+
+    NOTE, and this is the part worth a second look: this one flag covers the remedy
+    cards, the report audio AND the PDF. Glen's ruling was about the product list. Audio
+    and PDF ride along with it because they share the switch. Splitting them would need
+    a code change; nobody has asked for one yet."""
     return os.environ.get("PORTAL_PAID_GATE_ENABLED", "").strip().lower() in ("1", "true", "yes", "on")
 
 
