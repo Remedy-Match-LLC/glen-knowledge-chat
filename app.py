@@ -7763,6 +7763,28 @@ def _price_cart(cart, *, ship, coupon_pct=None, subscriber_tier_pct=None,
     }
 
 
+# Wholesale channels. A drop-ship or dispensary sale is compensated by the practitioner's
+# own margin, so it earns NO points of any kind: not buyer earn, not an affiliate referral
+# credit. Glen's ruling 2026-09-04, after a trace found the affiliate WAS being credited on
+# these. Most drop-ships go to a client of the affiliate practitioner, so in the normal case
+# the same person was collecting the wholesale margin AND the referral credit for one sale.
+#
+# `source` is already the channel marker the settlement layer trusts: dropship_checkout
+# stamps "dropship" (patient-paid) or "dispensary" (practitioner-paid), and the existing
+# dispensary L2 settler already gates on it.
+#
+# NOTE: the "full price only" rule elsewhere does NOT cover this. It tests that nothing was
+# taken OFF the order (points redeemed, shipping credit); wholesale pricing is baked into the
+# price and never appears as a discount. A wholesale sale at or above the MAP floor reads as
+# full price. That is exactly how this went unnoticed.
+_WHOLESALE_SOURCES = {"dropship", "dispensary"}
+
+
+def _is_wholesale_order(order) -> bool:
+    """True for a practitioner drop-ship / dispensary sale, which earns no points."""
+    return (str((order or {}).get("source") or "").strip().lower() in _WHOLESALE_SOURCES)
+
+
 def _rewards_enabled() -> bool:
     """True when the rewards/referral system is switched on."""
     return bool(os.environ.get("REWARDS_TIERS_ENABLED", ""))
@@ -7866,6 +7888,10 @@ def _settle_referral(order, *, order_ref: str) -> None:
                          - int(order.get("get_cents") or 0))
         # Only credit on full-price sales
         if int(order.get("discount_cents") or 0) != 0:
+            return
+        # ...and never on a wholesale sale. The practitioner's margin is their pay, and
+        # they are usually the affiliate too, so crediting here paid one person twice.
+        if _is_wholesale_order(order):
             return
         with db.connect(LOG_DB) as cx:
             cx.row_factory = sqlite3.Row
@@ -8034,6 +8060,7 @@ def _settle_order_points(order, *, order_ref):
         # Earn only on a full-price order (no discount AND no points used) -- the "full-price only" rule.
         # Additional suppression: skip buyer earn on an affiliate-acquired FIRST order.
         if discount == 0 and redeemed == 0 and product_cents > 0 \
+                and not _is_wholesale_order(order) \
                 and not _points.has_entry(cx, order_ref=order_ref, reason="earn"):
             # Suppression gate: if rewards are enabled AND this is buyer's first order
             # AND there is an attributed referrer, don't give the buyer earn points.
