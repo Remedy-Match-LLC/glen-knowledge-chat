@@ -10513,6 +10513,33 @@ def api_console_dispensary_pay_mix():
                     "alt_pay_order_share": round(alt["orders"] / total, 3) if total else 0.0})
 
 
+@app.route("/api/console/backfill-attribution", methods=["POST"])
+def api_console_backfill_attribution():
+    """Reconstruct affiliate attribution that was never recorded.
+
+    Mirrors the dispensary backfill next to it: runs in-process because the prod
+    chat_log.db is mounted only on the web container, and dry_run defaults ON so the
+    default action is a preview, not a write.
+
+    Attribution only. Writes no reward and stamps nothing as rewarded, because paying
+    out on reconstructed history is far harder to undo than to skip.
+
+    The response carries counts plus, on a dry run, a capped sample of what it would
+    write, so the preview can be judged before anything is committed.
+    """
+    if not _console_key_ok():
+        return jsonify({"error": "Unauthorized"}), 401
+    dry = (request.args.get("dry_run") or "1").strip().lower() in ("1", "true", "yes")
+    from dashboard import attribution_backfill as _ab
+    res = _ab.run(LOG_DB, dry_run=dry)
+    out = {"ok": True, "dry_run": dry, "counts": res["counts"]}
+    if dry:
+        out["sample_would_write"] = res["would_write"][:25]
+        out["sample_skipped_already_attributed"] = res["skipped_already_attributed"][:10]
+        out["sample_lost_to_first_touch"] = res["skipped_later_evidence"][:10]
+    return jsonify(out)
+
+
 @app.route("/api/console/backfill-dispensary-referrals", methods=["POST"])
 def api_console_backfill_dispensary_referrals():
     """Run the dispensary->referral-graph backfill in-process (the prod chat_log.db is
