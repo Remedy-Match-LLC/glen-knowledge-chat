@@ -14814,10 +14814,39 @@ def _latest_report_content(email):
 
 def _portal_paid_gate_enabled():
     """Flag: gate portal biofield content behind payment (blur unpaid reveals).
-    Default OFF so merging is safe — flip PORTAL_PAID_GATE_ENABLED=1 only after
-    confirming every legitimately-paid Biofield client is recorded (has a
-    biofield_readiness paid_at or an active membership), else they'd be blurred."""
+
+    OFF ON PURPOSE. This is not an unflipped switch waiting for someone to get to it.
+
+    Glen's ruling, 2026-09-04: the recommended product list may be shown to a client who
+    had a free E4L scan. Matching remedies to a scan is now automated and trained, so a
+    recommendation no longer costs an hour of Glen's individual case review. What used to
+    be a paid deliverable is now a marginal-cost one, and showing it is worth more as a
+    way in than as a thing withheld.
+
+    When it was written (2026-07-02) it closed a real leak: a free reveal un-blurred
+    everything because the portal keyed on biofield_status=='confirmed', which defaults
+    to 'confirmed'. That reasoning has been overtaken by the automation, not forgotten.
+
+    The old caution still applies IF it is ever flipped on: confirm first that every
+    legitimately-paid Biofield client is recorded as paid (a biofield_readiness paid_at,
+    or an active membership). Otherwise it locks paying clients out of their own reports,
+    which is a worse failure than the leak it closes.
+
+    SCOPE: this flag is the recommended PRODUCT LIST only. It used to cover the audio
+    and the written report too; Glen split those off the same day, and they are now
+    governed by PORTAL_DELIVERABLES_GATE_ENABLED. See _portal_deliverables_unlocked."""
     return os.environ.get("PORTAL_PAID_GATE_ENABLED", "").strip().lower() in ("1", "true", "yes", "on")
+
+
+def _portal_deliverables_gate_enabled():
+    """Flag: gate the report AUDIO and the written PDF behind payment.
+
+    The other half of Glen's 2026-09-04 split. The recommended product list is free
+    (see _portal_paid_gate_enabled); the audio and the written report are the paid
+    deliverable. Default OFF so this deploy changes nothing, and so flipping it is a
+    deliberate act taken after counting who it would blur."""
+    return os.environ.get("PORTAL_DELIVERABLES_GATE_ENABLED", "").strip().lower() in (
+        "1", "true", "yes", "on")
 
 
 def _family_plan_enabled():
@@ -14853,6 +14882,47 @@ def _portal_biofield_unlocked(email):
         # A deliberately comped intake carries no payment by design. Without this
         # the gate would lock exactly the clients the practitioner chose to comp
         # out of their own report.
+        if (_latest_report_content(email) or {}).get("comped_intake") is True:
+            return True
+        if _family_plan_enabled():
+            from dashboard import family_plan as _fp
+            with db.connect(LOG_DB) as cx:
+                cx.row_factory = sqlite3.Row
+                _fp.init_family_plan_table(cx)
+                return bool(_fp.covers(cx, email))
+        return False
+    except Exception:
+        return False
+
+
+def _portal_deliverables_unlocked(email):
+    """True when the report AUDIO and the written PDF may be released to a client.
+
+    Glen's ruling 2026-09-04, splitting what used to be one switch. The recommended
+    PRODUCT LIST is free to a client who had a free E4L scan, because matching remedies
+    to a scan is automated and no longer costs Glen individual case review. The audio
+    and the written report are NOT: they remain the paid deliverable.
+
+    The payment tests are deliberately IDENTICAL to the old combined gate, so a client
+    who could see everything before because they genuinely paid still can. What changes
+    is only which content the test governs.
+
+    Ships OFF, so deploying it alters nothing. Before flipping it on, count who it would
+    blur and confirm they are genuinely unpaid: a client who paid but whose payment was
+    never recorded (no biofield_readiness paid_at, no active membership, no comped
+    intake, no family plan) gets locked out of a report they bought. That is a worse
+    failure than giving one away, and it is why the original combined gate was never
+    switched on either."""
+    if not _portal_deliverables_gate_enabled():
+        return True
+    email = (email or "").strip().lower()
+    if not email:
+        return False
+    try:
+        if _has_paid_biofield(email):
+            return True
+        if _active_membership_for_email(email):
+            return True
         if (_latest_report_content(email) or {}).get("comped_intake") is True:
             return True
         if _family_plan_enabled():
@@ -24383,6 +24453,11 @@ def api_client_portal(token):
     # has PAID (paid Biofield Analysis or active membership). A free E4L reveal
     # published to the portal stays blurred until they pay — same as the funnel.
     bf_show = bf_confirmed and _portal_biofield_unlocked(email_for_reports)
+    # Glen's split, 2026-09-04. bf_show governs the recommended PRODUCT LIST, which is
+    # free to a client with a free scan. bf_deliver governs the paid deliverable: the
+    # report AUDIO and the written PDF. Identical while
+    # PORTAL_DELIVERABLES_GATE_ENABLED is off, which is how it ships.
+    bf_deliver = bf_show and _portal_deliverables_unlocked(email_for_reports)
     bf_layers = []
     for L in (bf_content.get("layers") or []):
         item = {"n": L.get("n"), "title": L.get("title", ""), "meaning": L.get("meaning", "")}
@@ -24478,12 +24553,17 @@ def api_client_portal(token):
         "phase": bf_content.get("phase"),
         "location": bf_content.get("location", ""),
         "video": bf_content.get("video") or {},
-        "audio": (bf_content.get("audio") or {}) if bf_show else {},
-        "report_pdf": (bf_content.get("report_pdf") or {}) if bf_show else {},
+        # The paid deliverable. Gated separately from the product list, see bf_deliver.
+        "audio": (bf_content.get("audio") or {}) if bf_deliver else {},
+        "report_pdf": (bf_content.get("report_pdf") or {}) if bf_deliver else {},
+        # Lets the page say "this is the paid part" rather than silently showing nothing.
+        "deliverables_locked": bool(bf_show and not bf_deliver),
         "layers": bf_layers,
         "findings": client_findings,
-        # Time-of-day remedy schedule — gated with the dosing (only when unblurred).
-        "schedule": (bf_content.get("schedule") or {}) if bf_show else {},
+        # Time-of-day remedy schedule. Glen moved this to the PAID side on 2026-09-04:
+        # knowing which remedies to take is now free, knowing when to take them is part
+        # of the deliverable he is paid for.
+        "schedule": (bf_content.get("schedule") or {}) if bf_deliver else {},
         "pricing_note": bf_content.get("pricing_note", "") if bf_show else "",
         "reorder_items": display,
         "notify_on": notify_on,
