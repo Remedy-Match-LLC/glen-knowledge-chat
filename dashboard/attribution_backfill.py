@@ -74,6 +74,34 @@ def _table_exists(cx, name):
         (name,)).fetchone() is not None
 
 
+def source_diagnostics(cx):
+    """Row counts for every source, so a zero result says WHY it is zero.
+
+    A preview that reports "0 recoverable" is ambiguous: it could mean the tables are
+    empty, or that the code failed to see them. Those need opposite responses, and a bare
+    zero cannot tell them apart. This makes the difference visible.
+    """
+    out = {"approved_affiliates": len(_approved_slugs(cx))}
+    for name, sql in (
+        ("inquiries", "SELECT COUNT(*) FROM inquiries"),
+        ("inquiries_with_ref", "SELECT COUNT(*) FROM inquiries WHERE COALESCE(ref_slug,'')<>''"),
+        ("referral_redemptions", "SELECT COUNT(*) FROM referral_redemptions"),
+        ("affiliate_conversions", "SELECT COUNT(*) FROM affiliate_conversions"),
+        ("affiliate_conversions_with_slug",
+         "SELECT COUNT(*) FROM affiliate_conversions WHERE COALESCE(affiliate_slug,'')<>''"),
+        ("referral_events", "SELECT COUNT(*) FROM referral_events"),
+    ):
+        tbl = name.split("_with_")[0]
+        if not _table_exists(cx, tbl):
+            out[name] = "table absent"
+            continue
+        try:
+            out[name] = cx.execute(sql).fetchone()[0]
+        except Exception as e:
+            out[name] = f"error: {str(e).splitlines()[0][:60]}"
+    return out
+
+
 def candidates(cx):
     """Every recoverable (email, slug, when, source) an approved affiliate could claim.
 
@@ -144,6 +172,7 @@ def plan(cx):
     for _e, _s, _w, src in write:
         by_source[src] = by_source.get(src, 0) + 1
     return {
+        "diagnostics": source_diagnostics(cx),
         "would_write": write,
         "skipped_already_attributed": skip_existing,
         "skipped_later_evidence": skip_dupe,

@@ -10532,7 +10532,8 @@ def api_console_backfill_attribution():
     dry = (request.args.get("dry_run") or "1").strip().lower() in ("1", "true", "yes")
     from dashboard import attribution_backfill as _ab
     res = _ab.run(LOG_DB, dry_run=dry)
-    out = {"ok": True, "dry_run": dry, "counts": res["counts"]}
+    out = {"ok": True, "dry_run": dry, "counts": res["counts"],
+           "diagnostics": res.get("diagnostics")}
     if dry:
         out["sample_would_write"] = res["would_write"][:25]
         out["sample_skipped_already_attributed"] = res["skipped_already_attributed"][:10]
