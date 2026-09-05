@@ -73,6 +73,29 @@ def summary(cx):
     else:
         out["added_a_social_link"] = "table absent"
 
+    # Their own intake form. Keyed by email, so it joins straight to the signup. A
+    # 'draft' counts: Glen's ruling is ANY data entered, and starting the form is
+    # already more than a bot does. Counted separately from submitted, because a
+    # half-filled form and a finished one mean different things about the person.
+    if _exists(cx, "intake_responses"):
+        out["started_their_intake"] = _count(
+            cx, "SELECT COUNT(*) FROM intake_responses r "
+                "JOIN affiliate_signups a ON LOWER(a.email)=LOWER(r.email) "
+                "WHERE a.status='approved' AND COALESCE(r.answers_json,'') NOT IN ('','{}')")
+        out["submitted_their_intake"] = _count(
+            cx, "SELECT COUNT(*) FROM intake_responses r "
+                "JOIN affiliate_signups a ON LOWER(a.email)=LOWER(r.email) "
+                "WHERE a.status='approved' AND r.status='submitted'")
+        rows = cx.execute(
+            "SELECT DISTINCT LOWER(a.slug) FROM intake_responses r "
+            "JOIN affiliate_signups a ON LOWER(a.email)=LOWER(r.email) "
+            "WHERE a.status='approved' AND COALESCE(r.answers_json,'') NOT IN ('','{}')"
+        ).fetchall()
+        active_slugs |= {str(r[0]) for r in rows if r and r[0]}
+    else:
+        out["started_their_intake"] = "table absent"
+        out["submitted_their_intake"] = "table absent"
+
     if _exists(cx, "affiliate_earnings"):
         out["has_ever_earned"] = _count(
             cx, "SELECT COUNT(DISTINCT email) FROM affiliate_earnings")

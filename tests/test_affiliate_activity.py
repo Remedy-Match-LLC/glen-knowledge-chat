@@ -18,6 +18,8 @@ CREATE TABLE practitioner_profile_drafts (practitioner_id TEXT, fields TEXT, sta
 CREATE TABLE practitioner_pricing (practitioner_id TEXT, slug TEXT, price_cents INTEGER);
 CREATE TABLE affiliate_social_links (slug TEXT, url TEXT);
 CREATE TABLE affiliate_earnings (email TEXT, amount_cents INTEGER);
+CREATE TABLE intake_responses (email TEXT PRIMARY KEY, form_version TEXT, status TEXT,
+  answers_json TEXT, created_at TEXT, submitted_at TEXT);
 """
 
 
@@ -82,3 +84,32 @@ def test_it_only_reads(cx):
     src = (__import__("pathlib").Path(aa.__file__)).read_text()
     for w in ("INSERT", "UPDATE", "DELETE", "DROP"):
         assert w not in src.upper().replace("INSERTED", ""), f"{w} in a read-only counter"
+
+
+def test_any_data_in_their_intake_counts(cx):
+    """Glen's ruling: ANY data entered counts, not only a submitted form. Starting it is
+    already more than a bot does."""
+    cx.execute("INSERT INTO intake_responses VALUES "
+               "('a1@x.com','v1','draft','{\"goal\":\"sleep\"}','2026-01-01',NULL)")
+    cx.commit()
+    s = aa.summary(cx)
+    assert s["started_their_intake"] == 1
+    assert s["submitted_their_intake"] == 0
+    assert s["any_sign_of_setup"] == 1
+
+
+def test_an_empty_intake_row_does_not_count(cx):
+    """A row created by opening the page is not data entered."""
+    for blank in ("", "{}"):
+        cx.execute("DELETE FROM intake_responses")
+        cx.execute("INSERT INTO intake_responses VALUES ('a1@x.com','v1','draft',?,'x',NULL)",
+                   (blank,))
+        cx.commit()
+        assert aa.summary(cx)["started_their_intake"] == 0, f"{blank!r} counted as data"
+
+
+def test_a_non_affiliates_intake_is_not_counted(cx):
+    cx.execute("INSERT INTO intake_responses VALUES "
+               "('stranger@x.com','v1','submitted','{\"a\":1}','x','y')")
+    cx.commit()
+    assert aa.summary(cx)["started_their_intake"] == 0
