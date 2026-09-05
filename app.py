@@ -10513,6 +10513,21 @@ def api_console_dispensary_pay_mix():
                     "alt_pay_order_share": round(alt["orders"] / total, 3) if total else 0.0})
 
 
+@app.route("/api/console/affiliate-activity", methods=["GET"])
+def api_console_affiliate_activity():
+    """How many of the affiliate signups show any sign of real setup.
+
+    Read only. 307 rows sit in affiliate_signups, all 'approved' because that is the
+    column default and nobody vets them, and there are 11 attribution records between
+    them. This says how many are actual people who did something.
+    """
+    if not _console_key_ok():
+        return jsonify({"error": "Unauthorized"}), 401
+    from dashboard import affiliate_activity as _aa
+    with db.connect(LOG_DB) as cx:
+        return jsonify({"ok": True, **_aa.summary(cx)})
+
+
 @app.route("/api/console/backfill-attribution", methods=["POST"])
 def api_console_backfill_attribution():
     """Reconstruct affiliate attribution that was never recorded.
