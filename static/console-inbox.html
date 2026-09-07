@@ -520,26 +520,15 @@ for (const chip of document.querySelectorAll(".chip")) {
 }
 
 // ── Open thread + run AI ────────────────────────────────────────────────────
+/* === openThread (test-extracted) === */
 async function openThread(threadId) {
   CURRENT_THREAD_ID = threadId;
 
-  // Optimistic UI: mark this row active + read + add ✓ marker locally,
-  // without waiting for the server. The list does NOT re-fetch — read
-  // rows stay visible (faded ✓) until Glen hits Refresh to sweep them.
+  // Highlight the open row. Its unread styling STAYS: opening a thread is
+  // not handling it, and the list has to keep showing who is still waiting.
   for (const row of document.querySelectorAll(".thread-row")) {
-    if (row.dataset.tid === threadId) {
-      row.classList.add("active");
-      row.classList.add("read-just-now");
-      row.classList.remove("unread");
-      const newBadge = row.querySelector(".badge-tag.unread");
-      if (newBadge) newBadge.remove();
-    } else {
-      row.classList.remove("active");
-    }
+    row.classList.toggle("active", row.dataset.tid === threadId);
   }
-  // Update local model so renderList() respects the read state if it fires
-  const localThread = ALL_THREADS.find(t => t.id === threadId);
-  if (localThread) localThread.unread = false;
 
   if (window.innerWidth <= 900) {
     document.getElementById("pane-list").classList.add("hidden-mobile");
@@ -560,13 +549,14 @@ async function openThread(threadId) {
     CURRENT_THREAD = thread;
     renderThreadHeader(thread);
     renderMessage(thread);
-    // Background mark-read (no list refresh — UI already updated optimistically)
-    api(`/api/inbox/threads/${threadId}/read`, { method: "POST", body: JSON.stringify({ read: true }) }).catch(() => {});
+    // No mark-read here, on purpose. Unread is the reply queue, and this fired
+    // before anyone had read a word. The server refuses `read: true` as well.
     runAI(threadId);
   } catch (e) {
     if (e.message !== "unauthorized") toast(e.message, "error");
   }
 }
+/* === end openThread === */
 
 function renderThreadHeader(thread) {
   const msgs = thread.messages || [];
@@ -783,7 +773,7 @@ async function regenerateReply() {
 
 async function skipThread() {
   if (!CURRENT_THREAD_ID) return;
-  // Mark read (already done on open) + go back to list
+  // Skip leaves the thread unread. It means "not now", not "handled".
   backToList();
 }
 
