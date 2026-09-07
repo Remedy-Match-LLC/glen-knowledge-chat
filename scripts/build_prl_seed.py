@@ -3,7 +3,7 @@ Run locally (Glen's machine) whenever the vault maps change; commit the output.
 """
 import json, os
 
-VAULT = os.path.expanduser("~/AI-Training/02 Products/PRL-catalog")
+VAULT = os.path.expanduser("~/AI-Training/formulations/02 Products/PRL-catalog")
 CATALOG = os.path.join(VAULT, "prl_catalog_enriched.json")
 CROSSWALK = os.path.join(VAULT, "prl_ff_map_full.json")
 FA_MAP = os.path.join(VAULT, "e4l-map", "e4l_prl_focus_area_map.json")

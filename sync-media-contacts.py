@@ -4,7 +4,7 @@ Run from LOCAL Mac (not Render) to feed PR/media contacts from the vault CSV
 into the People hub. The vault CSV is not on Render, so this runs locally and
 POSTs to /api/people?merge_tags=1 (additive, idempotent) tagged type:pr-media.
 
-Source: ~/AI-Training/04 Copy/pr-pitches/media-contacts.csv  (override with
+Source: ~/AI-Training/marketing/04 Copy/pr-pitches/media-contacts.csv  (override with
         MEDIA_CONTACTS_CSV env var). Rows without an email are skipped (the
         vault CSV stays the full record; email is the hub's dedup/automation key).
 
@@ -19,7 +19,7 @@ import sys
 
 RENDER_URL = os.environ.get("RENDER_URL", "https://glen-knowledge-chat.onrender.com")
 CONSOLE_SECRET = os.environ.get("CONSOLE_SECRET", os.environ.get("WEBHOOK_SECRET", ""))
-DEFAULT_CSV = os.path.expanduser("~/AI-Training/04 Copy/pr-pitches/media-contacts.csv")
+DEFAULT_CSV = os.path.expanduser("~/AI-Training/marketing/04 Copy/pr-pitches/media-contacts.csv")
 CSV_PATH = os.environ.get("MEDIA_CONTACTS_CSV", DEFAULT_CSV)
 DRY_RUN = "--dry-run" in sys.argv
 
