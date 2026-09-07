@@ -46785,6 +46785,28 @@ def api_inbox_archive(thread_id):
     except Exception as e: return fail(e)
 
 
+@app.route("/api/inbox/threads/<thread_id>/unarchive", methods=["POST"])
+@require_console_key
+def api_inbox_unarchive(thread_id):
+    """Undo an archive by putting the INBOX label back."""
+    try:
+        _inbox.unarchive_thread(thread_id)
+        return ok({"unarchived": thread_id})
+    except Exception as e: return fail(e)
+
+
+@app.route("/api/inbox/filters", methods=["GET"])
+@require_console_key
+def api_inbox_filters():
+    """Read-only listing of the account's Gmail filters.
+
+    A filter that archives on arrival is a standing redirect nobody can see.
+    `scripts/inbox_triage.py` can create them and never could read them back."""
+    try:
+        return ok({"filters": _inbox.list_filters()})
+    except Exception as e: return fail(e)
+
+
 @app.route("/api/inbox/threads/<thread_id>/star", methods=["POST"])
 @require_console_key
 def api_inbox_star(thread_id):

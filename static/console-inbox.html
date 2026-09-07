@@ -92,6 +92,9 @@
     content: "✓"; color: var(--green); font-size: 11px;
     margin-left: 6px; font-weight: 700;
   }
+  .toast-action { margin-left: 12px; padding: 2px 10px; border-radius: 4px;
+    border: 1px solid currentColor; background: transparent; color: inherit;
+    font-size: 12px; cursor: pointer; }
   .thread-row.archived-just-now { opacity: .35; }
   .thread-row.archived-just-now .subject::after {
     content: " · archived"; color: var(--green); font-size: 10px; text-transform: uppercase; letter-spacing: .04em;
@@ -406,11 +409,20 @@ let SHOW_RAW = false;
 let CURRENT_MSG = { clean: "", raw: "" };
 let MSG_RAW = false;
 
-function toast(msg, kind="ok") {
+function toast(msg, kind="ok", action=null) {
   const t = document.getElementById("toast");
   t.textContent = msg;
+  // An action toast stays up long enough to be clicked. 2.5s is not enough
+  // time to notice an accidental archive, let alone reverse it.
+  if (action) {
+    const b = document.createElement("button");
+    b.className = "toast-action";
+    b.textContent = action.label;
+    b.addEventListener("click", () => { t.className = kind; action.fn(); });
+    t.appendChild(b);
+  }
   t.className = "show " + kind;
-  setTimeout(() => t.className = kind, 2500);
+  setTimeout(() => t.className = kind, action ? 9000 : 2500);
 }
 
 async function api(path, opts={}) {
@@ -777,12 +789,16 @@ async function skipThread() {
   backToList();
 }
 
+/* === archive (test-extracted) === */
 async function archiveCurrent() {
   if (!CURRENT_THREAD_ID) return;
   const tid = CURRENT_THREAD_ID;
+  // Archive sits directly after Send Reply in the action bar, and it is the
+  // only thing that takes mail out of the queue. Ask before, undo after.
+  if (!confirm("Archive this thread?\n\nIt leaves the inbox and the reply queue. Undo is offered for a few seconds.")) return;
   try {
     await api(`/api/inbox/threads/${tid}/archive`, { method: "POST" });
-    toast("Archived", "ok");
+    toast("Archived", "ok", { label: "Undo", fn: () => undoArchive(tid) });
     // Optimistic UI: mark the row faded + "archived" tag, leave it in DOM
     // until Glen hits Refresh — no list re-fetch
     const row = document.querySelector(`.thread-row[data-tid="${tid}"]`);
@@ -796,6 +812,18 @@ async function archiveCurrent() {
     }
   }
 }
+
+async function undoArchive(tid) {
+  try {
+    await api(`/api/inbox/threads/${tid}/unarchive`, { method: "POST" });
+    toast("Back in the inbox", "ok");
+    const row = document.querySelector(`.thread-row[data-tid="${tid}"]`);
+    if (row) row.classList.remove("archived-just-now");
+  } catch (e) {
+    toast("Undo failed: " + e.message, "error");
+  }
+}
+/* === end archive === */
 
 async function hideSender() {
   if (!CURRENT_THREAD || !CURRENT_THREAD.messages) return;
