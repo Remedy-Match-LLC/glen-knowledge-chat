@@ -27,3 +27,13 @@ def test_current_destinations_are_named_on_begin_path():
     begin = (ROOT / "static" / "begin-path.html").read_text(encoding="utf-8")
     assert "MentorshipU classroom" in begin
     assert "live community activities" in begin
+
+
+def test_health_grid_does_not_monitor_practice_better():
+    """Practice Better was deprecated on 2026-09-07. Its API credentials are
+    revoked, so a `configured` row here reported a system that can only ever
+    fail. Five weekly reconciliations carried it as a red blocker."""
+    health = (ROOT / "dashboard" / "health.py").read_text(encoding="utf-8")
+    grid = health[health.index("def status_grid"):]
+    assert '"practice_better"' not in grid
+    assert "PRACTICE_BETTER_CLIENT_ID" not in grid
