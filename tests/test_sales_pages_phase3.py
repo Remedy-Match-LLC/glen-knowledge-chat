@@ -274,3 +274,23 @@ def test_a_single_ingredient_product_uses_its_own_name():
         assert _Client.seen is None
     finally:
         sip.configure(client=None)
+
+
+def test_the_brief_asks_to_keep_her_face_in_frame():
+    # Two of the first three botanical images cropped her head out. Glen, 2026-09-08:
+    # "face in scene is good".
+    class _Client:
+        seen = None
+        class messages:
+            @staticmethod
+            def create(**kw):
+                _Client.seen = kw
+                raise RuntimeError("only the brief matters here")
+    sip.configure(client=_Client)
+    try:
+        sip.derive_scenes({"name": "X", "ingredients": [{"name": "Turmeric"}]})
+        brief = str(_Client.seen).lower()
+        assert "face visible" in brief
+        assert "crop her head" in brief
+    finally:
+        sip.configure(client=None)
