@@ -10,8 +10,6 @@ from .cache import cached, last_success
 from dashboard import db
 
 # ── Credentials (from Render env vars) ────────────────────────────────────────
-PB_CLIENT_ID     = os.environ.get("PRACTICE_BETTER_CLIENT_ID", "")
-PB_CLIENT_SECRET = os.environ.get("PRACTICE_BETTER_CLIENT_SECRET", "")
 AN_LOGIN         = os.environ.get("AUTHNET_API_LOGIN_ID", "")
 AN_KEY           = os.environ.get("AUTHNET_TRANSACTION_KEY", "")
 WISE_TOKEN       = os.environ.get("WISE_API_TOKEN", "")
@@ -87,56 +85,18 @@ def _qb_rt_seed_from_legacy_file():
         return None
 
 
-# ── PB ────────────────────────────────────────────────────────────────────────
-def pb_token():
-    r = requests.post("https://api.practicebetter.io/oauth2/token",
-                      data={"grant_type": "client_credentials",
-                            "client_id": PB_CLIENT_ID,
-                            "client_secret": PB_CLIENT_SECRET},
-                      timeout=15)
-    r.raise_for_status()
-    return r.json()["access_token"]
-
-
-def pb_get(token, path, params=None):
-    r = requests.get(f"https://api.practicebetter.io{path}",
-                     headers={"Authorization": f"Bearer {token}"},
-                     params=params or {}, timeout=15)
-    r.raise_for_status()
-    return r.json()
-
-
-@cached("money.pb")
-def pb_data(days=30):
-    token = pb_token()
-    invoices = pb_get(token, "/consultant/payments/invoices").get("items", [])
-    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
-    collected = outstanding = 0.0
-    recent = []
-    for inv in invoices:
-        date_str = inv.get("invoiceDate", "")
-        try:
-            inv_date = datetime.fromisoformat(date_str.replace("Z", "+00:00"))
-        except Exception:
-            inv_date = datetime.min.replace(tzinfo=timezone.utc)
-        total = inv.get("total", {}).get("amount", 0) / 100
-        paid  = inv.get("amountPaid", {}).get("amount", 0) / 100
-        due   = inv.get("amountDue", {}).get("amount", 0) / 100
-        if due > 0:
-            outstanding += due
-        if inv_date >= cutoff:
-            collected += paid
-            client = inv.get("clientRecord", {}).get("profile", {})
-            recent.append({
-                "date": date_str[:10],
-                "name": f"{client.get('firstName','')} {client.get('lastName','')}".strip(),
-                "email": client.get("email", ""),
-                "amount": total, "paid": paid, "due": due,
-                "invoice": inv.get("invoiceNumber", "—"),
-            })
-    return {"collected": collected, "outstanding": outstanding,
-            "invoices": recent, "last_success": last_success("money.pb")}
-
+# ── Practice Better: RETIRED 2026-09-08 ───────────────────────────────────────
+# Glen deprecated Practice Better on 2026-09-07. Its OAuth credential is revoked
+# and the token endpoint answers 400 invalid_api_credentials.
+#
+# pb_token/pb_get/pb_data lived here. #1597 stopped the dead credential taking
+# both money summaries down with it, which was the urgent half. This is the rest:
+# a retired system should not be called at all. Every dashboard load was still
+# making a request that cannot succeed, and rendering a null Practice Better row
+# for a product nobody uses.
+#
+# Do not add it back. The two credentials in Doppler can be deleted now that
+# nothing reads them. See money/05 Finance/Payment-Rails-Status-2026-09-07.md.
 
 # ── Authorize.net ─────────────────────────────────────────────────────────────
 def an_post(payload):
@@ -345,12 +305,9 @@ def today_summary():
     reports None and an entry in `errors`, never a figure."""
     today = datetime.now(timezone.utc).date().isoformat()
     errors = {}
-    pb = _rail(lambda: pb_data(days=1), "practice_better", errors)
     an = _rail(lambda: an_data(days=1), "authorize_net", errors)
     wise = _rail(wise_data, "wise", errors)
     return {
-        "pb_today": (sum(i["paid"] for i in pb["invoices"] if i["date"] == today)
-                     if pb is not None else None),
         "an_today": (sum(b["amount"] for b in an["batches"] if b["date"] == today)
                      if an is not None else None),
         "wise_balances": wise["balances"] if wise is not None else None,
@@ -363,11 +320,8 @@ def week_summary():
     """This week across the rails. Same contract: None plus an error, never a
     figure, for anything that could not be read."""
     errors = {}
-    pb = _rail(lambda: pb_data(days=7), "practice_better", errors)
     an = _rail(lambda: an_data(days=7), "authorize_net", errors)
     return {
-        "pb_collected": pb["collected"] if pb is not None else None,
-        "pb_outstanding": pb["outstanding"] if pb is not None else None,
         "an_net": an["net"] if an is not None else None,
         "an_count": an["count"] if an is not None else None,
         "errors": errors,

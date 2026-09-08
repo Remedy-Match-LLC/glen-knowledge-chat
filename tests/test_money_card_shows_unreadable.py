@@ -37,12 +37,12 @@ def _run(body):
 def test_an_unreadable_rail_does_not_render_as_a_zero():
     _run("""
       function assert(c, m){ if(!c){ console.error("FAIL: " + m); process.exit(1); } }
-      const out = R.moneyWeek({
-        pb_collected: null, pb_outstanding: null, an_net: 1234, an_count: 7,
-        errors: {practice_better: "RuntimeError: 400 Client Error"}
+      const out = R.moneyToday({
+        an_today: null, wise_balances: [{currency: "USD", amount: 1234}],
+        errors: {authorize_net: "RuntimeError: E00007"}
       });
       assert(!/\\$0\\b/.test(out), "an unreadable rail rendered as $0: " + out);
-      assert(/1,234/.test(out), "the healthy rail lost its figure: " + out);
+      assert(/1234/.test(out), "the healthy rail lost its figure: " + out);
       console.log("OK");
     """)
 
@@ -51,9 +51,7 @@ def test_an_unreadable_rail_does_not_render_as_a_zero():
 def test_a_genuine_zero_still_renders_as_a_zero():
     _run("""
       function assert(c, m){ if(!c){ console.error("FAIL: " + m); process.exit(1); } }
-      const out = R.moneyWeek({
-        pb_collected: 0, pb_outstanding: 0, an_net: 0, an_count: 0, errors: {}
-      });
+      const out = R.moneyWeek({ an_net: 0, an_count: 0, errors: {} });
       assert(/\\$0/.test(out), "a genuine zero week stopped rendering as $0: " + out);
       console.log("OK");
     """)
@@ -64,7 +62,7 @@ def test_today_card_marks_the_broken_rail_too():
     _run("""
       function assert(c, m){ if(!c){ console.error("FAIL: " + m); process.exit(1); } }
       const out = R.moneyToday({
-        pb_today: 50, an_today: null, wise_balances: [],
+        an_today: null, wise_balances: [],
         errors: {authorize_net: "RuntimeError: E00007"}
       });
       assert(!/Authnet<\\/span><span class="figure sm">\\$0/.test(out),

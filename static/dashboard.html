@@ -671,15 +671,12 @@ const R = {};
 R.moneyToday = (d) => {
   const wise = (d.wise_balances || []).map(b => `<li><span class="lead">${b.currency}</span><span class="body-text">balance</span><span class="amount">${(+b.amount).toFixed(2)}</span></li>`).join("");
   return `
-    <div class="figure-row"><span class="label">PB</span>${fmtRail(d.pb_today, (d.errors||{}).practice_better)}</div>
     <div class="figure-row"><span class="label">Authnet</span>${fmtRail(d.an_today, (d.errors||{}).authorize_net)}</div>
     ${wise ? `<ul class="feed" style="margin-top:6px">${wise}</ul>` : ""}
   `;
 };
 
 R.moneyWeek = (d) => `
-  <div class="figure-row"><span class="label">PB Coll.</span>${fmtRail(d.pb_collected, (d.errors||{}).practice_better)}</div>
-  <div class="figure-row"><span class="label">PB Out.</span>${fmtRail(d.pb_outstanding, (d.errors||{}).practice_better)}</div>
   <div class="figure-row"><span class="label">Authnet</span>${fmtRail(d.an_net, (d.errors||{}).authorize_net)}</div>
   <div class="figure-row"><span class="label">Txns</span><span class="figure sm">${d.an_count === null || d.an_count === undefined ? "—" : d.an_count.toLocaleString()}</span></div>
 `;
