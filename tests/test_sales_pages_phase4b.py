@@ -61,9 +61,9 @@ def test_build_one_prompt_varies_and_keeps_constraints():
     assert isinstance(p3, str) and len(p3) > 40
 
 
-def test_build_image_prompts_unchanged():
+def test_build_image_prompts_is_one_per_kind():
     out = sip.build_image_prompts({"name": "X"})
-    assert len(out["botanical"]) == 2 and len(out["mechanism"]) == 2
+    assert len(out["botanical"]) == 1 and len(out["mechanism"]) == 1
     assert "no text" in out["botanical"][0].lower()
 
 
