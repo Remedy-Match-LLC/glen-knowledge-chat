@@ -10,8 +10,6 @@ from .cache import cached, last_success
 from dashboard import db
 
 # ── Credentials (from Render env vars) ────────────────────────────────────────
-PB_CLIENT_ID     = os.environ.get("PRACTICE_BETTER_CLIENT_ID", "")
-PB_CLIENT_SECRET = os.environ.get("PRACTICE_BETTER_CLIENT_SECRET", "")
 AN_LOGIN         = os.environ.get("AUTHNET_API_LOGIN_ID", "")
 AN_KEY           = os.environ.get("AUTHNET_TRANSACTION_KEY", "")
 WISE_TOKEN       = os.environ.get("WISE_API_TOKEN", "")
@@ -87,56 +85,18 @@ def _qb_rt_seed_from_legacy_file():
         return None
 
 
-# ── PB ────────────────────────────────────────────────────────────────────────
-def pb_token():
-    r = requests.post("https://api.practicebetter.io/oauth2/token",
-                      data={"grant_type": "client_credentials",
-                            "client_id": PB_CLIENT_ID,
-                            "client_secret": PB_CLIENT_SECRET},
-                      timeout=15)
-    r.raise_for_status()
-    return r.json()["access_token"]
-
-
-def pb_get(token, path, params=None):
-    r = requests.get(f"https://api.practicebetter.io{path}",
-                     headers={"Authorization": f"Bearer {token}"},
-                     params=params or {}, timeout=15)
-    r.raise_for_status()
-    return r.json()
-
-
-@cached("money.pb")
-def pb_data(days=30):
-    token = pb_token()
-    invoices = pb_get(token, "/consultant/payments/invoices").get("items", [])
-    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
-    collected = outstanding = 0.0
-    recent = []
-    for inv in invoices:
-        date_str = inv.get("invoiceDate", "")
-        try:
-            inv_date = datetime.fromisoformat(date_str.replace("Z", "+00:00"))
-        except Exception:
-            inv_date = datetime.min.replace(tzinfo=timezone.utc)
-        total = inv.get("total", {}).get("amount", 0) / 100
-        paid  = inv.get("amountPaid", {}).get("amount", 0) / 100
-        due   = inv.get("amountDue", {}).get("amount", 0) / 100
-        if due > 0:
-            outstanding += due
-        if inv_date >= cutoff:
-            collected += paid
-            client = inv.get("clientRecord", {}).get("profile", {})
-            recent.append({
-                "date": date_str[:10],
-                "name": f"{client.get('firstName','')} {client.get('lastName','')}".strip(),
-                "email": client.get("email", ""),
-                "amount": total, "paid": paid, "due": due,
-                "invoice": inv.get("invoiceNumber", "—"),
-            })
-    return {"collected": collected, "outstanding": outstanding,
-            "invoices": recent, "last_success": last_success("money.pb")}
-
+# ── Practice Better: RETIRED 2026-09-08 ───────────────────────────────────────
+# Glen deprecated Practice Better. Its OAuth credentials are revoked and the token
+# endpoint answers 400 invalid_api_credentials.
+#
+# pb_token/pb_get/pb_data lived here and were called by today_summary and
+# week_summary. @cached re-raises when it has no stale value to serve, so on any
+# fresh instance the dead credential took BOTH /api/money/today and
+# /api/money/week down with a 500. The money dashboard was unreachable for weeks
+# while the health grid reported green around it.
+#
+# Do not add it back. The credentials in Doppler should be deleted once nothing
+# reads them. See money/05 Finance/Payment-Rails-Status-2026-09-07.md.
 
 # ── Authorize.net ─────────────────────────────────────────────────────────────
 def an_post(payload):
@@ -317,27 +277,46 @@ def qb_banks():
 
 
 # ── Aggregate endpoints ───────────────────────────────────────────────────────
+def _read(label, fn):
+    """Read one payment source for a summary.
+
+    Two rules, learned the hard way and in tension with each other.
+
+    A source that cannot be read must never be reported as a zero: an_post now
+    raises on a rejected Authorize.net key precisely so a dead credential stops
+    reading as a quiet week.
+
+    And one dead source must not take the whole summary down: a retired Practice
+    Better credential 500'd both money endpoints for weeks, because @cached
+    re-raises when it holds no stale value.
+
+    So a failure yields None, never 0.0, and is named in `unavailable`. The caller
+    renders "unavailable" rather than a number the reader would trust."""
+    try:
+        return fn(), None
+    except Exception as e:
+        return None, "%s: %s" % (label, str(e)[:200])
+
+
 def today_summary():
-    """Today's incoming across all sources."""
+    """Today's incoming across every source that can be read."""
     today = datetime.now(timezone.utc).date().isoformat()
-    pb = pb_data(days=1)
-    an = an_data(days=1)
-    wise = wise_data()
+    an, an_err = _read("authorize_net", lambda: an_data(days=1))
+    wise, wise_err = _read("wise", wise_data)
     return {
-        "pb_today": sum(i["paid"] for i in pb["invoices"] if i["date"] == today),
-        "an_today": sum(b["amount"] for b in an["batches"] if b["date"] == today),
-        "wise_balances": wise["balances"],
+        "an_today": (sum(b["amount"] for b in an["batches"] if b["date"] == today)
+                     if an else None),
+        "wise_balances": (wise["balances"] if wise else None),
+        "unavailable": [e for e in (an_err, wise_err) if e],
         "as_of": datetime.now(timezone.utc).isoformat(),
     }
 
 
 def week_summary():
-    pb = pb_data(days=7)
-    an = an_data(days=7)
+    an, an_err = _read("authorize_net", lambda: an_data(days=7))
     return {
-        "pb_collected": pb["collected"],
-        "pb_outstanding": pb["outstanding"],
-        "an_net": an["net"],
-        "an_count": an["count"],
+        "an_net": (an["net"] if an else None),
+        "an_count": (an["count"] if an else None),
+        "unavailable": [e for e in (an_err,) if e],
         "as_of": datetime.now(timezone.utc).isoformat(),
     }

@@ -660,20 +660,28 @@ function setDot(card, cls){
 // ── renderers ─────────────────────────────────────────────────────────────
 const R = {};
 
+// A source that could not be read shows "unavailable", never a number. The
+// server sends null for it and names it in d.unavailable. A zero here once read
+// as a quiet week for six weeks while the credential behind it was dead.
+const fmtOrOut = (v) => (v === null || v === undefined) ? '<span class="figure sm">unavailable</span>'
+                                                       : `<span class="figure sm">${fmtMoney(v)}</span>`;
+const outNote = (d) => (d.unavailable || []).length
+  ? `<div class="body-text" style="margin-top:6px;opacity:.75">could not read: ${(d.unavailable || []).map(e => escapeHtml(String(e).split(":")[0])).join(", ")}</div>`
+  : "";
+
 R.moneyToday = (d) => {
   const wise = (d.wise_balances || []).map(b => `<li><span class="lead">${b.currency}</span><span class="body-text">balance</span><span class="amount">${(+b.amount).toFixed(2)}</span></li>`).join("");
   return `
-    <div class="figure-row"><span class="label">PB</span><span class="figure sm gold">${fmtMoney(d.pb_today)}</span></div>
-    <div class="figure-row"><span class="label">Authnet</span><span class="figure sm">${fmtMoney(d.an_today)}</span></div>
+    <div class="figure-row"><span class="label">Authnet</span>${fmtOrOut(d.an_today)}</div>
     ${wise ? `<ul class="feed" style="margin-top:6px">${wise}</ul>` : ""}
+    ${outNote(d)}
   `;
 };
 
 R.moneyWeek = (d) => `
-  <div class="figure-row"><span class="label">PB Coll.</span><span class="figure sm gold">${fmtMoney(d.pb_collected)}</span></div>
-  <div class="figure-row"><span class="label">PB Out.</span><span class="figure sm">${fmtMoney(d.pb_outstanding)}</span></div>
-  <div class="figure-row"><span class="label">Authnet</span><span class="figure sm">${fmtMoney(d.an_net)}</span></div>
-  <div class="figure-row"><span class="label">Txns</span><span class="figure sm">${(d.an_count||0).toLocaleString()}</span></div>
+  <div class="figure-row"><span class="label">Authnet</span>${fmtOrOut(d.an_net)}</div>
+  <div class="figure-row"><span class="label">Txns</span><span class="figure sm">${d.an_count === null || d.an_count === undefined ? "unavailable" : d.an_count.toLocaleString()}</span></div>
+  ${outNote(d)}
 `;
 
 R.moneyBanks = (d) => {
