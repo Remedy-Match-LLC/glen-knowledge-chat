@@ -25,8 +25,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from dashboard import inbox as _inbox  # noqa: E402
 
 # Standard sweep: Promotions/Updates/Social, older than 30 days, never starred.
-ARCHIVE_QUERY = ("in:inbox -is:starred older_than:30d "
-                 "(category:promotions OR category:updates OR category:social)")
+# Defined in dashboard.inbox so the production route and this CLI cannot drift.
+ARCHIVE_QUERY = _inbox.TRIAGE_ARCHIVE_QUERY
 
 # Future auto-archive filters.
 FILTER_CATEGORIES = ["promotions", "updates", "social"]

@@ -742,6 +742,60 @@ def mark_unread(thread_id: str) -> dict:
     return _modify_thread(thread_id, add=["UNREAD"])
 
 
+# Monthly triage sweep. The ONE definition of this query: scripts/inbox_triage.py
+# imports it from here. Two copies would drift and the drift would be silent.
+#
+# Both guards matter and neither survives as a Gmail filter, because a filter runs
+# at delivery when every message is zero days old. That asymmetry is why the three
+# `category:` filters were removed on 2026-09-07 and replaced by this sweep.
+TRIAGE_ARCHIVE_QUERY = ("in:inbox -is:starred older_than:30d "
+                        "(category:promotions OR category:updates OR category:social)")
+
+# Refuse rather than archive when a run matches more than this. A query that
+# suddenly matches everything is a bug, and the wrong response is to empty the
+# inbox faithfully.
+TRIAGE_MAX_ARCHIVE = 2000
+
+
+def triage_sweep(dry_run: bool = True, max_archive: int = TRIAGE_MAX_ARCHIVE) -> dict:
+    """Archive the Promotions/Updates/Social backlog older than 30 days.
+
+    Dry run by DEFAULT. Archiving is opt-in, so a mis-call reports instead of
+    acting. Nothing is deleted: this removes INBOX, and the mail stays in All
+    Mail, which is what makes the whole operation reversible.
+
+    Returns a report rather than printing, so the scheduled caller can log it
+    and job-health can see what it did."""
+    svc = _get_gmail_service()
+    ids, tok = [], None
+    while True:
+        r = svc.users().messages().list(
+            userId="me", q=TRIAGE_ARCHIVE_QUERY, maxResults=500, pageToken=tok).execute()
+        ids += [m["id"] for m in r.get("messages", [])]
+        tok = r.get("nextPageToken")
+        if not tok:
+            break
+
+    report = {"query": TRIAGE_ARCHIVE_QUERY, "matched": len(ids),
+              "dry_run": bool(dry_run), "archived": 0, "refused": None}
+
+    if dry_run:
+        return report
+    if len(ids) > max_archive:
+        report["refused"] = (
+            f"{len(ids)} messages matched, over the cap of {max_archive}. "
+            f"Nothing was archived. Raise the cap deliberately, or find out why "
+            f"the query matched so much.")
+        return report
+
+    for i in range(0, len(ids), 1000):
+        chunk = ids[i:i + 1000]
+        svc.users().messages().batchModify(
+            userId="me", body={"ids": chunk, "removeLabelIds": ["INBOX"]}).execute()
+        report["archived"] += len(chunk)
+    return report
+
+
 def list_filters() -> list:
     """Every Gmail filter on the account, read-only.
 

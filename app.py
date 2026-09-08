@@ -46795,6 +46795,24 @@ def api_inbox_unarchive(thread_id):
     except Exception as e: return fail(e)
 
 
+@app.route("/api/inbox/triage-sweep", methods=["POST"])
+@require_console_key
+def api_inbox_triage_sweep():
+    """Archive the Promotions/Updates/Social backlog older than 30 days.
+
+    Runs here rather than on Glen's Mac because the Gmail token with
+    gmail.modify lives in production. Dry run unless the caller says otherwise,
+    so a mis-call reports instead of archiving."""
+    try:
+        body = request.get_json(silent=True) or {}
+        dry_run = body.get("dry_run", True)
+        kw = {"dry_run": bool(dry_run)}
+        if body.get("max_archive") is not None:
+            kw["max_archive"] = int(body["max_archive"])
+        return ok(_inbox.triage_sweep(**kw))
+    except Exception as e: return fail(e)
+
+
 @app.route("/api/inbox/filters", methods=["GET"])
 @require_console_key
 def api_inbox_filters():
