@@ -8924,7 +8924,7 @@ def begin_product_page_data(slug):
         {"id": "comparison",  "title": "How it compares", "default_open": False, "body": _SALES_ARCHETYPES},
         {"id": "research",    "title": "The research",    "default_open": False,
          "body": {"how_it_works": how, "learn_url": f"/begin/learn/{slug}"}},
-        {"id": "images",      "title": "Help shape this", "default_open": False, "body": {"images": p.get("page_images", [])}},
+        {"id": "images",      "title": "Photos",          "default_open": False, "body": {"images": p.get("page_images", [])}},
         {"id": "cta",         "title": "Order",           "default_open": False, "body": {}},
     ]
     from dashboard.product_page_sections import filter_sections as _filter_sections
