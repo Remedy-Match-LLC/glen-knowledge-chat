@@ -51913,6 +51913,11 @@ _spa.register()
 _spa.configure(client=_cl, get_product=_get_product,
                product_card=_product_card, strip_dash=_strip_dash, base_url=PUBLIC_BASE_URL)
 
+# Sales-page image scenes are derived per product from its own ingredients.
+# Without this the module still works, but every product gets the same generic scene.
+from dashboard import sales_image_prompts as _sip_cfg
+_sip_cfg.configure(client=_cl)
+
 # ── Ingredient-page console actions (edit / approve + email-when-ready / regenerate) ──
 from dashboard import ingredient_page_actions as _ipa
 _ipa.register()

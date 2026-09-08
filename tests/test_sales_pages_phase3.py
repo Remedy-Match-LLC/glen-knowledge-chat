@@ -44,27 +44,62 @@ def test_record_and_display_first_ready_per_kind():
     assert disp == {"botanical": "botanical-1.png", "mechanism": "mechanism-1.png"}
     assert len(si.get_images(cx, "longevity")) == 3
 
-def test_prompts_two_modes_two_variants_each():
+def test_prompts_two_modes_one_image_each():
+    # Glen retired the image vote on 2026-09-08, so the second of each pair was being
+    # generated and never shown. One prompt per kind, two images per product.
     p = sip.build_image_prompts({"name": "Longevity", "ingredients": [{"name": "Resveratrol"}]})
     assert set(p.keys()) == {"botanical", "mechanism"}
-    assert len(p["botanical"]) == 2 and len(p["mechanism"]) == 2
-    # variants within a kind are distinct
-    assert p["botanical"][0] != p["botanical"][1]
+    assert len(p["botanical"]) == 1 and len(p["mechanism"]) == 1
 
-def test_prompts_have_no_text_and_no_product_and_omit_names():
-    # No ingredient/product names in the prompt (they make Flux render garbled text);
-    # every prompt must forbid text + product packaging.
+def test_prompts_always_forbid_text_and_packaging():
+    # The exclusion is what keeps text out of the image, NOT the absence of ingredient
+    # names. Measured 2026-09-08: naming an ingredient renders the ingredient. What made
+    # Flux render garbled text was asking for labels, and PR #174 removed that.
     p = sip.build_image_prompts({"name": "Longevity", "ingredients": [{"name": "Resveratrol"}, "Quercetin"]})
-    all_prompts = p["botanical"] + p["mechanism"]
-    joined = " ".join(all_prompts)
-    assert "Longevity" not in joined and "Resveratrol" not in joined and "Quercetin" not in joined
-    for prompt in all_prompts:
+    for prompt in p["botanical"] + p["mechanism"]:
         low = prompt.lower()
         assert "no text" in low and "no labels" in low
         assert "bottles" in low  # the no-packaging exclusion names bottles explicitly
-    # scene still on-theme: botanical = lifestyle scene; mechanism = protective-field concept
+
+
+def test_falls_back_to_generic_when_no_model_configured():
+    # derive_scenes needs an injected client. Without one every product still gets a
+    # usable scene rather than no image at all.
+    sip.configure(client=None)
+    assert sip.derive_scenes({"name": "X", "ingredients": [{"name": "Resveratrol"}]}) is None
+    p = sip.build_image_prompts({"name": "X", "ingredients": [{"name": "Resveratrol"}]})
     assert "kitchen" in p["botanical"][0].lower()
     assert "cell" in p["mechanism"][0].lower() or "field" in p["mechanism"][0].lower()
+
+
+def test_scene_is_derived_from_the_products_own_ingredients():
+    class _Blk:
+        text = '{"botanical": "crimson saffron threads and deep purple-black rice grains beside halved '\
+               'lemons on a wooden counter, a mature woman arranging them, herb garden behind",' \
+               ' "mechanism": "a luminous human eye, its retina a lattice of flexible lipid membrane, '\
+               'golden droplets flowing into the retinal layers"}'
+    class _Msg:
+        content = [_Blk()]
+    class _Client:
+        class messages:
+            @staticmethod
+            def create(**kw):
+                _Client.seen = kw
+                return _Msg()
+    sip.configure(client=_Client)
+    try:
+        p = sip.build_image_prompts({"name": "WholOmega",
+                                     "ingredients": [{"name": "DHA from Whole Algae Oil"},
+                                                     {"name": "Safranal (Crocus sativa)"}]})
+        # the formula's own ingredients reached the model
+        assert "Safranal" in str(_Client.seen)
+        # and its own botanicals reached the image prompt
+        assert "saffron" in p["botanical"][0].lower()
+        assert "retina" in p["mechanism"][0].lower()
+        # the exclusion survives scene substitution
+        assert "no text" in p["botanical"][0].lower()
+    finally:
+        sip.configure(client=None)
 
 def test_generate_image_returns_bytes(monkeypatch):
     calls = {"post": 0, "get": 0}
@@ -101,9 +136,12 @@ def test_worker_generates_and_records(monkeypatch, tmp_path):
     appmod._drain_sales_image_queue()
     with sqlite3.connect(appmod.LOG_DB) as cx:
         assert si.queue_state(cx, slug) == "done"
-        assert len(si.get_images(cx, slug)) == 4
+        # Two, one per kind. It was four while the page asked buyers to vote between
+        # pairs; Glen retired that vote on 2026-09-08.
+        assert len(si.get_images(cx, slug)) == 2
     files = list((appmod._SALES_IMG_DIR / slug).glob("*.png"))
-    assert len(files) == 4
+    assert len(files) == 2
+    assert sorted(f.name for f in files) == ["botanical-1.png", "mechanism-1.png"]
 
 
 def test_worker_flag_off_noop(monkeypatch, tmp_path):
@@ -214,3 +252,25 @@ def test_enqueue_route_skips_reenqueue_when_images_exist(monkeypatch, tmp_path):
     # The queue row must NOT be pending (either None or some other state)
     with sqlite3.connect(appmod.LOG_DB) as cx:
         assert si.queue_state(cx, slug) != "pending"
+
+
+def test_a_single_ingredient_product_uses_its_own_name():
+    # 12 of 30 sampled products carry no ingredient list. Where the product IS the
+    # ingredient (serrapeptase, asiaticosides), its name is enough to build a scene.
+    class _Client:
+        seen = None
+        class messages:
+            @staticmethod
+            def create(**kw):
+                _Client.seen = kw
+                raise RuntimeError("stop here, we only care what was asked")
+    sip.configure(client=_Client)
+    try:
+        sip.derive_scenes({"name": "Serrapeptase", "ingredients": []})
+        assert "Serrapeptase" in str(_Client.seen)
+        # a product with neither name nor ingredients still cannot be described
+        _Client.seen = None
+        assert sip.derive_scenes({"name": "", "ingredients": []}) is None
+        assert _Client.seen is None
+    finally:
+        sip.configure(client=None)
