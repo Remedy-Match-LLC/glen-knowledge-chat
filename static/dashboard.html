@@ -634,6 +634,14 @@ function updateClock(){
 updateClock(); setInterval(updateClock, 30000);
 
 // ── helpers ───────────────────────────────────────────────────────────────
+/* === money cards (test-extracted) === */
+// A rail the API could not read reports null, never a figure. Rendering that
+// through fmtMoney gave "$0", because Number(null) is 0, which put the lie back
+// on the screen after money.py had stopped telling it. A zero must keep meaning
+// zero, so an unreadable rail shows a dash and the reason.
+const fmtRail = (n, err) => (n === null || n === undefined)
+  ? `<span class="figure sm" title="${err ? String(err).replace(/"/g, "&quot;") : "unavailable"}">—</span>`
+  : `<span class="figure sm">${fmtMoney(n)}</span>`;
 const fmtMoney = n => "$" + (Number(n)||0).toLocaleString("en-US", {minimumFractionDigits:0, maximumFractionDigits:0});
 const fmtMoneyP = n => "$" + (Number(n)||0).toLocaleString("en-US", {minimumFractionDigits:2, maximumFractionDigits:2});
 function fmtAge(iso){
@@ -663,18 +671,19 @@ const R = {};
 R.moneyToday = (d) => {
   const wise = (d.wise_balances || []).map(b => `<li><span class="lead">${b.currency}</span><span class="body-text">balance</span><span class="amount">${(+b.amount).toFixed(2)}</span></li>`).join("");
   return `
-    <div class="figure-row"><span class="label">PB</span><span class="figure sm gold">${fmtMoney(d.pb_today)}</span></div>
-    <div class="figure-row"><span class="label">Authnet</span><span class="figure sm">${fmtMoney(d.an_today)}</span></div>
+    <div class="figure-row"><span class="label">PB</span>${fmtRail(d.pb_today, (d.errors||{}).practice_better)}</div>
+    <div class="figure-row"><span class="label">Authnet</span>${fmtRail(d.an_today, (d.errors||{}).authorize_net)}</div>
     ${wise ? `<ul class="feed" style="margin-top:6px">${wise}</ul>` : ""}
   `;
 };
 
 R.moneyWeek = (d) => `
-  <div class="figure-row"><span class="label">PB Coll.</span><span class="figure sm gold">${fmtMoney(d.pb_collected)}</span></div>
-  <div class="figure-row"><span class="label">PB Out.</span><span class="figure sm">${fmtMoney(d.pb_outstanding)}</span></div>
-  <div class="figure-row"><span class="label">Authnet</span><span class="figure sm">${fmtMoney(d.an_net)}</span></div>
-  <div class="figure-row"><span class="label">Txns</span><span class="figure sm">${(d.an_count||0).toLocaleString()}</span></div>
+  <div class="figure-row"><span class="label">PB Coll.</span>${fmtRail(d.pb_collected, (d.errors||{}).practice_better)}</div>
+  <div class="figure-row"><span class="label">PB Out.</span>${fmtRail(d.pb_outstanding, (d.errors||{}).practice_better)}</div>
+  <div class="figure-row"><span class="label">Authnet</span>${fmtRail(d.an_net, (d.errors||{}).authorize_net)}</div>
+  <div class="figure-row"><span class="label">Txns</span><span class="figure sm">${d.an_count === null || d.an_count === undefined ? "—" : d.an_count.toLocaleString()}</span></div>
 `;
+/* === end money cards === */
 
 R.moneyBanks = (d) => {
   const accts = d.accounts || [];
