@@ -51462,6 +51462,72 @@ def console_membership_revoke():
     return jsonify({"ok": True, "email": email, "grants_revoked": n})
 
 
+# Grants that /enroll can no longer express, because the offer that issued them
+# has been retired. /enroll takes a live tier and refuses any source that does
+# not start with "membership_", so revoking one of these is one-way and only a
+# database write could put it back.
+#
+# The case that produced this: on 2026-09-08 a biofield_trial grant was revoked
+# in the belief it was a lapsed one-month trial. It was not. The $1 checkout sold
+# "your full analysis and all your matches, unlocked for life. No subscription."
+# (static/begin-biofield.html), and BIOFIELD_UNLOCK_DAYS is 36500 days to
+# implement that "for life". BIOFIELD_TRIAL_ENABLED is off, so the buyer can
+# never repurchase what was taken away.
+_RESTORABLE_SOURCES = {
+    "biofield_trial": BIOFIELD_UNLOCK_DAYS,   # the retired $1 lifetime un-blur
+    "care_taster": PROGRAM_CARE_TASTER_DAYS,  # the 30-day Continuous Care taster
+}
+
+
+@app.route("/api/console/membership/restore", methods=["POST"])
+def console_membership_restore():
+    """Owner-only: re-create a historical grant that /enroll cannot express.
+
+    Deliberately narrow. The source must be one this app itself once issued, and
+    the term defaults to that source's own constant rather than to anything the
+    caller sends, so a restore reproduces the original offer instead of inventing
+    a new one. `days` may only shorten it, never exceed the source's own term, so
+    this cannot mint a longer entitlement than was ever sold.
+
+    Additive, like every grant: it writes a new memberships row and modifies none,
+    so the audit trail still shows the revoke that made the restore necessary."""
+    actor = _bos_actor()
+    if actor is None or actor.role != _bos_rbac.OWNER:
+        return jsonify({"ok": False, "error": "unauthorized"}), 401
+    data = request.get_json(silent=True) or {}
+    email = (data.get("email") or "").strip().lower()
+    source = (data.get("source") or "").strip()
+    if not email:
+        return jsonify({"ok": False, "error": "email required"}), 400
+    if source not in _RESTORABLE_SOURCES:
+        return jsonify({"ok": False, "error": "source not restorable",
+                        "restorable": sorted(_RESTORABLE_SOURCES)}), 400
+    cap = _RESTORABLE_SOURCES[source]
+    days = data.get("days")
+    if days is None:
+        days = cap
+    else:
+        try:
+            days = int(days)
+        except (TypeError, ValueError):
+            return jsonify({"ok": False, "error": "days must be a whole number"}), 400
+        if days < 1:
+            return jsonify({"ok": False, "error": "days must be at least 1"}), 400
+        if days > cap:
+            return jsonify({"ok": False, "error": "days exceeds this source's term",
+                            "max_days": cap}), 400
+    import datetime as _dt
+    cx = db.connect(LOG_DB)
+    try:
+        init_membership_tables(cx)
+        _grant_membership(cx, email, days, source)
+        cx.commit()
+    finally:
+        cx.close()
+    return jsonify({"ok": True, "email": email, "source": source, "days": days,
+                    "expires_at": (_now_utc().date() + _dt.timedelta(days=days)).isoformat()})
+
+
 @app.route("/api/console/membership/reconcile-alerts", methods=["GET"])
 def console_membership_reconcile_alerts():
     """Owner-only: open membership_reconcile_alerts rows -- the duplicate-member
