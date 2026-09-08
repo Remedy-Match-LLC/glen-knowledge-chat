@@ -717,6 +717,15 @@ def archive_thread(thread_id: str) -> dict:
     return _modify_thread(thread_id, remove=["INBOX"])
 
 
+def unarchive_thread(thread_id: str) -> dict:
+    """Put an archived thread back in the inbox.
+
+    Archive only removes the INBOX label, so this is a complete undo. Nothing
+    was trashed and nothing was lost. Without this there was no way back from
+    a mis-clicked Archive except opening Gmail by hand."""
+    return _modify_thread(thread_id, add=["INBOX"])
+
+
 def star_thread(thread_id: str) -> dict:
     return _modify_thread(thread_id, add=["STARRED"])
 
@@ -731,3 +740,16 @@ def mark_read(thread_id: str) -> dict:
 
 def mark_unread(thread_id: str) -> dict:
     return _modify_thread(thread_id, add=["UNREAD"])
+
+
+def list_filters() -> list:
+    """Every Gmail filter on the account, read-only.
+
+    `scripts/inbox_triage.py` can create filters that archive mail on arrival.
+    Those carry none of the sweep's guards: no `older_than`, no `-is:starred`.
+    A filter is therefore a standing, silent redirect, and until now nothing
+    could read one back. Needs the gmail.settings.basic scope; without it
+    Google answers 403 and the caller sees the error rather than an empty list."""
+    svc = _get_gmail_service()
+    return (svc.users().settings().filters()
+            .list(userId="me").execute() or {}).get("filter", [])

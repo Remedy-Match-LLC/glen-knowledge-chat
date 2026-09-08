@@ -46785,6 +46785,28 @@ def api_inbox_archive(thread_id):
     except Exception as e: return fail(e)
 
 
+@app.route("/api/inbox/threads/<thread_id>/unarchive", methods=["POST"])
+@require_console_key
+def api_inbox_unarchive(thread_id):
+    """Undo an archive by putting the INBOX label back."""
+    try:
+        _inbox.unarchive_thread(thread_id)
+        return ok({"unarchived": thread_id})
+    except Exception as e: return fail(e)
+
+
+@app.route("/api/inbox/filters", methods=["GET"])
+@require_console_key
+def api_inbox_filters():
+    """Read-only listing of the account's Gmail filters.
+
+    A filter that archives on arrival is a standing redirect nobody can see.
+    `scripts/inbox_triage.py` can create them and never could read them back."""
+    try:
+        return ok({"filters": _inbox.list_filters()})
+    except Exception as e: return fail(e)
+
+
 @app.route("/api/inbox/threads/<thread_id>/star", methods=["POST"])
 @require_console_key
 def api_inbox_star(thread_id):
@@ -46801,13 +46823,25 @@ def api_inbox_star(thread_id):
 @app.route("/api/inbox/threads/<thread_id>/read", methods=["POST"])
 @require_console_key
 def api_inbox_read(thread_id):
+    """Mark a thread UNREAD. Marking one READ is refused, deliberately.
+
+    Unread is the reply queue. `backlog_summary()` counts unread Primary mail
+    as `awaiting_reply` and calls it the retention-risk queue, so anything that
+    clears UNREAD deletes the evidence that someone is still waiting. The
+    console used to fire a mark-read on open, before anyone had read a word.
+    Measured 2026-09-07: 24 people waiting, 15 of them over five days, most
+    already marked read.
+
+    The refusal lives here rather than in the page because a caller added later
+    cannot route around it. Mail leaves the queue by being archived or replied
+    to, never by being looked at."""
     try:
         body = request.get_json(silent=True) or {}
         if body.get("read"):
-            _inbox.mark_read(thread_id)
-        else:
-            _inbox.mark_unread(thread_id)
-        return ok({"thread_id": thread_id, "read": bool(body.get("read"))})
+            return fail("marking a thread read is disabled: unread is the reply "
+                        "queue. Archive it instead.", status=400)
+        _inbox.mark_unread(thread_id)
+        return ok({"thread_id": thread_id, "read": False})
     except Exception as e: return fail(e)
 
 
