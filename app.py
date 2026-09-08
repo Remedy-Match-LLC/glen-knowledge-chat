@@ -4346,6 +4346,10 @@ def begin_biofield_reveal(token):
             "top_unlocked": True,
             "paid": True,
             "trial_enabled": BIOFIELD_TRIAL_ENABLED,
+            # The $1 unlock is retired. Without a live route out of this page the
+            # CTA fell back to a disabled button reading "(unlocking soon)", which
+            # promised something that was never coming. Membership is the live door.
+            "membership_enabled": MEMBERSHIP_PRODUCTS_ENABLED,
             "cart_enabled": BIOFIELD_CART_ENABLED,
             "ship_prefill": _ship_prefill,
             "remedies": [_biofield_remedy_payload(r) for r in all_remedies],
@@ -4366,6 +4370,10 @@ def begin_biofield_reveal(token):
             "requested": bool(row.get("requested_at")),
             "paid": False,
             "trial_enabled": BIOFIELD_TRIAL_ENABLED,
+            # The $1 unlock is retired. Without a live route out of this page the
+            # CTA fell back to a disabled button reading "(unlocking soon)", which
+            # promised something that was never coming. Membership is the live door.
+            "membership_enabled": MEMBERSHIP_PRODUCTS_ENABLED,
             "cart_enabled": BIOFIELD_CART_ENABLED,
             "ship_prefill": _ship_prefill,
             "layers": _layers_payload,

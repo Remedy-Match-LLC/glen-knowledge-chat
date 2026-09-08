@@ -263,22 +263,8 @@
       text-align: center;
     }
 
-    /* --- CTA stub --- */
+    /* --- CTA --- */
     .cta-section { margin-top: 28px; text-align: center; }
-    .cta-btn-disabled {
-      display: inline-block;
-      background: var(--surface-2);
-      color: var(--muted);
-      font-family: "Raleway", system-ui, sans-serif;
-      font-weight: 700;
-      font-size: 15px;
-      letter-spacing: 0.04em;
-      padding: 13px 28px;
-      border-radius: 8px;
-      border: 1px solid var(--border);
-      cursor: not-allowed;
-      opacity: 0.7;
-    }
     .cta-note {
       color: var(--muted);
       font-size: 13px;
@@ -872,17 +858,28 @@
             });
           });
 
-        } else {
-          // Disabled stub (unlocking soon)
-          var ctaBtn = document.createElement("button");
-          ctaBtn.className = "cta-btn-disabled";
-          ctaBtn.disabled = true;
-          ctaBtn.textContent = "Unlock your full Biofield Analysis";
-          ctaSection.appendChild(ctaBtn);
+        } else if (data.membership_enabled) {
+          // The $1 unlock is retired. Membership is the live door, so send people
+          // there instead of showing a disabled button that promises nothing real.
+          var memberLink = document.createElement("a");
+          memberLink.className = "buy-btn";
+          memberLink.id = "unlock-membership";
+          memberLink.href = "/membership";
+          memberLink.textContent = "See all your matches";
+          ctaSection.appendChild(memberLink);
 
+          var memberNote = document.createElement("p");
+          memberNote.className = "cta-note";
+          memberNote.textContent = "Membership opens your full analysis and every match, and gives you member pricing.";
+          ctaSection.appendChild(memberNote);
+
+        } else {
+          // Nothing is on sale. Say what is true. The retired copy here told
+          // every visitor to wait for something that was not coming, and it sat
+          // live for months after the $1 offer was switched off.
           var ctaNote = document.createElement("p");
           ctaNote.className = "cta-note";
-          ctaNote.textContent = "(unlocking soon)";
+          ctaNote.textContent = "Your remaining matches are held for now. Reply to your email and Dr. Glen will take a look.";
           ctaSection.appendChild(ctaNote);
         }
 
