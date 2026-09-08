@@ -136,9 +136,12 @@ def test_worker_generates_and_records(monkeypatch, tmp_path):
     appmod._drain_sales_image_queue()
     with sqlite3.connect(appmod.LOG_DB) as cx:
         assert si.queue_state(cx, slug) == "done"
-        assert len(si.get_images(cx, slug)) == 4
+        # Two, one per kind. It was four while the page asked buyers to vote between
+        # pairs; Glen retired that vote on 2026-09-08.
+        assert len(si.get_images(cx, slug)) == 2
     files = list((appmod._SALES_IMG_DIR / slug).glob("*.png"))
-    assert len(files) == 4
+    assert len(files) == 2
+    assert sorted(f.name for f in files) == ["botanical-1.png", "mechanism-1.png"]
 
 
 def test_worker_flag_off_noop(monkeypatch, tmp_path):
