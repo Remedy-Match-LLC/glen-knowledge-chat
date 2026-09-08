@@ -46807,6 +46807,19 @@ def api_inbox_filters():
     except Exception as e: return fail(e)
 
 
+@app.route("/api/inbox/filters/<filter_id>", methods=["DELETE"])
+@require_console_key
+def api_inbox_delete_filter(filter_id):
+    """Delete one Gmail filter, and hand back what was removed.
+
+    `scripts/inbox_triage.py` can create a filter and cannot remove one. This
+    closes that. The response carries the deleted filter's criteria and action,
+    because Gmail keeps no history and there is no other way back."""
+    try:
+        return ok({"deleted": _inbox.delete_filter(filter_id)})
+    except Exception as e: return fail(e)
+
+
 @app.route("/api/inbox/threads/<thread_id>/star", methods=["POST"])
 @require_console_key
 def api_inbox_star(thread_id):

@@ -753,3 +753,26 @@ def list_filters() -> list:
     svc = _get_gmail_service()
     return (svc.users().settings().filters()
             .list(userId="me").execute() or {}).get("filter", [])
+
+
+def delete_filter(filter_id: str) -> dict:
+    """Delete one Gmail filter and return the definition that was removed.
+
+    Deleting is irreversible. Gmail keeps no history and its delete call
+    returns an empty body, so the filter is READ FIRST and its definition
+    returned. That record carries the criteria and action, which is everything
+    needed to recreate it, and it is the only undo there is.
+
+    Raises if the id is not present. A delete that quietly succeeds on an
+    unknown id is indistinguishable from one that already worked, and that is
+    how you convince yourself a filter is gone while it is still archiving mail."""
+    svc = _get_gmail_service()
+    filters = (svc.users().settings().filters()
+               .list(userId="me").execute() or {}).get("filter", [])
+    match = next((f for f in filters if f.get("id") == filter_id), None)
+    if match is None:
+        raise ValueError(
+            f"no Gmail filter with id {filter_id!r}. "
+            f"{len(filters)} filters exist. Nothing was deleted.")
+    svc.users().settings().filters().delete(userId="me", id=filter_id).execute()
+    return match
