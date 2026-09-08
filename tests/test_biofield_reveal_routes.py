@@ -454,8 +454,11 @@ def test_page_scaffold_contains_key_strings(monkeypatch, tmp_path):
     r = client.get("/begin/biofield/any-token")
     assert r.status_code == 200
     html = r.data.decode()
-    # Key scaffold strings must be present in the JS
-    assert "Unlock your full Biofield Analysis" in html
+    # Key scaffold strings must be present in the JS. The CTA used to be a
+    # disabled "Unlock your full Biofield Analysis" button reading
+    # "(unlocking soon)"; the $1 offer behind it is retired, so the live door is
+    # membership. See tests/test_biofield_reveal_cta.py.
+    assert "See all your matches" in html
     assert "Reveal my top match" in html
     assert "Agree and view" in html
 
