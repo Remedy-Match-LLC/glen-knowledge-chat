@@ -25,10 +25,11 @@ def test_regenerate_all_persists_links():
     assert "write_links" in src
 
 
-def test_pb_data_surfaces_client_email():
-    # source-assert: pb_data's recent entry includes an email field
+def test_practice_better_is_gone_from_the_money_module():
+    """Retired 2026-09-08. #1597 guarded the dead rail; this removed the call."""
     src = (_repo() / "dashboard" / "money.py").read_text()
-    assert 'client.get("email"' in src
+    assert "def pb_data" not in src
+    assert "api.practicebetter.io" not in src
 
 
 def test_money_snapshot_includes_qbo_ar():
@@ -42,7 +43,10 @@ def test_money_prompt_uses_qbo_ar_for_receivables():
     from dashboard import briefing_runner as br
     p = br.SLUG_PROMPTS["money-cash"]
     assert "qbo_ar" in p                      # AR comes from the QBO block
-    assert "practice_better" in p             # PB still named, as separate activity
+    assert "authorize_net" in p               # processor settlement, named separately
+    # Naming a retired system in the prompt invited the model to report figures
+    # that can no longer be fetched.
+    assert "practice_better" not in p
 
 
 def test_record_links_instruction_covers_invoices():

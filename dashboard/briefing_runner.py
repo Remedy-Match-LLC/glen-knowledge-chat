@@ -54,10 +54,9 @@ SLUG_PROMPTS = {
         "days. ACCOUNTS RECEIVABLE / OVERDUE comes from `money.qbo_ar` "
         "(QuickBooks open invoices; each row has customer, balance, days_overdue, "
         "doc); name the most overdue by customer and amount, oldest first. "
-        "`money.practice_better` is SEPARATE clinical-billing activity "
-        "(collected / outstanding) and `money.authorize_net` is processor "
-        "settlement; mention processor issues if any, but do NOT report Practice "
-        "Better or Authorize.net figures as accounts receivable and do NOT repeat "
+        "`money.authorize_net` is processor "
+        "settlement; mention processor issues if any, but do NOT report "
+        "Authorize.net figures as accounts receivable and do NOT repeat "
         "the same dollars twice. Name the single revenue constraint (the "
         "Schwerpunkt) limiting cash this week. Do NOT cover pipeline, leads, or "
         "system health; other cards own those. State each figure once. Then one "
@@ -115,9 +114,9 @@ def gather_snapshot():
     captured as `_error` markers so Claude can note 'data unavailable'
     rather than the whole run dying.
 
-    KEY NAMING: use the full, unambiguous product name (e.g. `practice_better`,
-    not `pb`) so the LLM doesn't have to expand acronyms — it has historically
-    guessed wrong (e.g. "PayBlade" instead of "Practice Better")."""
+    KEY NAMING: use the full, unambiguous product name (e.g. `authorize_net`,
+    not `an`) so the LLM doesn't have to expand acronyms — it has historically
+    guessed wrong (it once read `pb` as "PayBlade")."""
     return {
         "as_of": datetime.now(timezone.utc).isoformat(),
         "money": {
@@ -125,7 +124,6 @@ def gather_snapshot():
             "today":           _safe(_money.today_summary, label="today_summary"),
             "week":            _safe(_money.week_summary,  label="week_summary"),
             "wise":            _safe(_money.wise_data,     label="wise"),
-            "practice_better": _safe(lambda: _money.pb_data(days=30), label="pb_data"),
             "authorize_net":   _safe(lambda: _money.an_data(days=30), label="an_data"),
             "qbo_ar":          _safe(_finance.open_invoices, label="qbo_ar"),
         },
@@ -145,7 +143,6 @@ def _build_user_prompt(snapshot, slug):
     return (
         f"Today is {today.strftime('%A, %B %d, %Y')} ({today.isoformat()} UTC).\n\n"
         "Glossary (use these exact names, do NOT invent alternatives):\n"
-        "  • practice_better → Practice Better (clinical-practice billing/EHR; PB)\n"
         "  • authorize_net   → Authorize.net (storefront card processor; AuthNet)\n"
         "  • qbo_ar          → QuickBooks open invoices (accounts receivable / overdue)\n"
         "  • gohighlevel     → GoHighLevel (CRM + pipelines; GHL)\n"
