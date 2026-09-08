@@ -55378,6 +55378,35 @@ def admin_sales_images_backfill():
     return jsonify({"ok": True, "enqueued": enq, "count": len(enq)})
 
 
+@app.route("/admin/sales-images/clear", methods=["POST"])
+def admin_sales_images_clear():
+    """Forget a product's images so the next open regenerates them.
+
+    Generation short-circuits when images exist, so a product whose images were made by an
+    older prompt can never improve on its own. `slug` is required: there is deliberately no
+    "all", because clearing the catalogue would re-bill every product that gets opened.
+    """
+    if not _portal_console_ok():
+        return jsonify({"error": "unauthorized"}), 401
+    slug = (request.values.get("slug") or "").strip()
+    if not slug or slug not in (_PRODUCTS.get("products") or {}):
+        return jsonify({"ok": False, "error": "unknown slug"}), 400
+    from dashboard import sales_images as _si
+    with db.connect(LOG_DB) as cx:
+        names = _si.clear(cx, slug)
+    removed = 0
+    dest = _SALES_IMG_DIR / slug
+    for n in names:
+        f = dest / n
+        try:
+            if f.parent == dest and f.exists():   # never follow a name out of its own folder
+                f.unlink()
+                removed += 1
+        except Exception as e:
+            print(f"[sales-img] clear {slug} could not remove {n}: {e!r}", flush=True)
+    return jsonify({"ok": True, "slug": slug, "forgotten": len(names), "removed": removed})
+
+
 @app.route("/api/console/coupons", methods=["GET"])
 def api_console_coupons():
     if CONSOLE_SECRET:

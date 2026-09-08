@@ -49,6 +49,22 @@ def record_image(cx, slug, kind, variant, filename, prompt_variant_id=None, mode
                (slug, kind, int(variant), filename, _now(), prompt_variant_id, model_id))
     cx.commit()
 
+def clear(cx, slug):
+    """Forget a product's images so the next enqueue regenerates them.
+
+    Generation short-circuits when images exist, so a product whose images were made by
+    an older prompt can never improve without this. Returns the filenames it dropped, so
+    the caller can delete them from disk.
+    """
+    init_tables(cx)
+    names = [r[0] for r in cx.execute(
+        "SELECT filename FROM sales_page_images WHERE product_slug=?", (slug,)).fetchall()]
+    cx.execute("DELETE FROM sales_page_images WHERE product_slug=?", (slug,))
+    cx.execute("DELETE FROM sales_image_queue WHERE product_slug=?", (slug,))
+    cx.commit()
+    return names
+
+
 def get_images(cx, slug):
     init_tables(cx)
     rows = cx.execute("SELECT kind, variant, filename, prompt_variant_id, model_id "

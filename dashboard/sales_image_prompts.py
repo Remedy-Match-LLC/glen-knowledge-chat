@@ -66,7 +66,7 @@ botanical: a photo-quality scene on a natural wooden kitchen counter showing the
 natural forms of THIS formula's own ingredients. Describe each by colour, shape and
 texture so it is recognisable. Include an attractive mature woman arranging them, her
 face visible in the frame and warmly lit, and a lush green herb garden behind her. Do not
-crop her head out of the shot. If an ingredient is a vitamin, mineral or isolate with
+crop her head out of the shot. Her hands are bare and natural, with short unpainted nails. If an ingredient is a vitamin, mineral or isolate with
 no natural form, leave it out. If the formula's actives come from an animal, algal or
 marine source, show that source. 35 to 55 words.
 

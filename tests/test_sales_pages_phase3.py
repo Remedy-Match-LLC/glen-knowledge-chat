@@ -294,3 +294,42 @@ def test_the_brief_asks_to_keep_her_face_in_frame():
         assert "crop her head" in brief
     finally:
         sip.configure(client=None)
+
+
+def test_clear_forgets_images_and_returns_their_filenames():
+    # Generation short-circuits when images exist, so without this a product whose images
+    # came from an older prompt can never improve. Glen asked to redo three on 2026-09-08.
+    from dashboard import sales_images as si
+    cx = sqlite3.connect(":memory:")
+    si.init_tables(cx)
+    si.enqueue(cx, "keep")
+    si.enqueue(cx, "drop")
+    si.record_image(cx, "drop", "botanical", 1, "botanical-1.png")
+    si.record_image(cx, "drop", "mechanism", 1, "mechanism-1.png")
+    si.record_image(cx, "keep", "botanical", 1, "botanical-1.png")
+
+    names = si.clear(cx, "drop")
+
+    assert sorted(names) == ["botanical-1.png", "mechanism-1.png"]
+    assert si.get_images(cx, "drop") == []
+    assert si.queue_state(cx, "drop") is None      # re-enqueueable
+    # the neighbour is untouched
+    assert len(si.get_images(cx, "keep")) == 1
+    assert si.queue_state(cx, "keep") == "pending"
+
+
+def test_the_brief_asks_for_unpainted_nails():
+    # The first generated hands wore green nail polish. Glen, 2026-09-08.
+    class _Client:
+        seen = None
+        class messages:
+            @staticmethod
+            def create(**kw):
+                _Client.seen = kw
+                raise RuntimeError("only the brief matters here")
+    sip.configure(client=_Client)
+    try:
+        sip.derive_scenes({"name": "X", "ingredients": [{"name": "Turmeric"}]})
+        assert "unpainted nails" in str(_Client.seen).lower()
+    finally:
+        sip.configure(client=None)
