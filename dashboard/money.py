@@ -145,7 +145,30 @@ def an_post(payload):
     r.raise_for_status()
     text = r.text.lstrip("﻿")  # AN returns BOM
     import json as _json
-    return _json.loads(text)
+    data = _json.loads(text)
+    _an_raise_on_error(data)
+    return data
+
+
+def _an_raise_on_error(data):
+    """Authorize.net answers HTTP 200 for a rejected credential. The failure is
+    in `messages.resultCode`, and the response then carries no `batchList`.
+
+    Without this check a dead API key reads as a quiet week: the caller sees an
+    empty list, reports $0.00, and `last_success` gets stamped as if the fetch
+    worked. That hid an E00007 break from 2026-05-31 to 2026-09-07, and a
+    three-week outage before that in May 2026.
+
+    Raising instead lets @cached serve the stale value and record stale_error,
+    which is what "we could not read this system" is supposed to look like."""
+    msgs = (data or {}).get("messages") or {}
+    if msgs.get("resultCode") != "Error":
+        return
+    first = (msgs.get("message") or [{}])[0]
+    code = first.get("code", "unknown")
+    raise RuntimeError(
+        f"Authorize.net rejected the request: {code} {first.get('text', '')}".strip()
+    )
 
 
 @cached("money.an")

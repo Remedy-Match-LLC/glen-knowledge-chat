@@ -29,9 +29,9 @@ def status_grid():
         "as_of": datetime.now(timezone.utc).isoformat(),
         "systems": {
             "sqlite_chat_log": _check_db(),
-            "practice_better": {"configured": _env_present("PRACTICE_BETTER_CLIENT_ID",
-                                                            "PRACTICE_BETTER_CLIENT_SECRET"),
-                                "last_success": last_success("money.pb")},
+            # Practice Better was deprecated on 2026-09-07. Its credentials are
+            # revoked and its 400 is expected, so reporting it here only
+            # manufactured a red row every week. Do not add it back.
             "authorize_net":   {"configured": _env_present("AUTHNET_API_LOGIN_ID",
                                                             "AUTHNET_TRANSACTION_KEY"),
                                 "last_success": last_success("money.an")},
