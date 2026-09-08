@@ -317,27 +317,59 @@ def qb_banks():
 
 
 # ── Aggregate endpoints ───────────────────────────────────────────────────────
+
+def _rail(fn, label, errors):
+    """Read one payment rail. On failure record the reason and return None.
+
+    A dead rail used to take down the whole summary. Practice Better was
+    deprecated on 2026-09-07 and `pb_data()` was called first and unguarded, so
+    its dead OAuth credential raised and both summaries returned nothing at all.
+    Measured 2026-09-08: /api/money/today and /api/money/week both answered
+    "400 Client Error ... practicebetter.io/oauth2/token" and no figures.
+
+    That also hid the Authorize.net fix from #1589, because a different rail
+    crashed before Authorize.net was reached.
+
+    Returning None rather than a zero is the point. #1589 stopped a rejected
+    credential reading as a $0.00 week inside the Authorize.net client; this is
+    the same rule one level up. A zero has to keep meaning zero."""
+    try:
+        return fn()
+    except Exception as e:  # noqa: BLE001 — one rail must not sink the others
+        errors[label] = f"{type(e).__name__}: {e}"
+        return None
+
+
 def today_summary():
-    """Today's incoming across all sources."""
+    """Today's incoming across all sources. A rail that could not be read
+    reports None and an entry in `errors`, never a figure."""
     today = datetime.now(timezone.utc).date().isoformat()
-    pb = pb_data(days=1)
-    an = an_data(days=1)
-    wise = wise_data()
+    errors = {}
+    pb = _rail(lambda: pb_data(days=1), "practice_better", errors)
+    an = _rail(lambda: an_data(days=1), "authorize_net", errors)
+    wise = _rail(wise_data, "wise", errors)
     return {
-        "pb_today": sum(i["paid"] for i in pb["invoices"] if i["date"] == today),
-        "an_today": sum(b["amount"] for b in an["batches"] if b["date"] == today),
-        "wise_balances": wise["balances"],
+        "pb_today": (sum(i["paid"] for i in pb["invoices"] if i["date"] == today)
+                     if pb is not None else None),
+        "an_today": (sum(b["amount"] for b in an["batches"] if b["date"] == today)
+                     if an is not None else None),
+        "wise_balances": wise["balances"] if wise is not None else None,
+        "errors": errors,
         "as_of": datetime.now(timezone.utc).isoformat(),
     }
 
 
 def week_summary():
-    pb = pb_data(days=7)
-    an = an_data(days=7)
+    """This week across the rails. Same contract: None plus an error, never a
+    figure, for anything that could not be read."""
+    errors = {}
+    pb = _rail(lambda: pb_data(days=7), "practice_better", errors)
+    an = _rail(lambda: an_data(days=7), "authorize_net", errors)
     return {
-        "pb_collected": pb["collected"],
-        "pb_outstanding": pb["outstanding"],
-        "an_net": an["net"],
-        "an_count": an["count"],
+        "pb_collected": pb["collected"] if pb is not None else None,
+        "pb_outstanding": pb["outstanding"] if pb is not None else None,
+        "an_net": an["net"] if an is not None else None,
+        "an_count": an["count"] if an is not None else None,
+        "errors": errors,
         "as_of": datetime.now(timezone.utc).isoformat(),
     }
