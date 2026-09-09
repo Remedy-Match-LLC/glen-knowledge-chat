@@ -1068,13 +1068,9 @@
       // ── Leave a review form ───────────────────────────────────────────────
       var formDiv = document.createElement('div');
       formDiv.className = 'sp-review-form';
-      // With no reviews yet the section is titled "Leave a Review", so repeating it
-      // here reads as a stutter. Only label the form when reviews sit above it.
-      if (reviews.length){
-        var h3 = document.createElement('h3');
-        h3.textContent = 'Leave a review';
-        formDiv.appendChild(h3);
-      }
+      // The section is always titled "Leave a Review" (Glen, 2026-09-09), so an inner
+      // heading of the same words is always a stutter. It used to appear once reviews
+      // existed, back when the section retitled itself to "What people are saying".
 
       // Email field
       var emailRow = document.createElement('div'); emailRow.className = 'sp-rf-row';

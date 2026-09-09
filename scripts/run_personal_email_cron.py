@@ -163,6 +163,13 @@ def run_daily_piggybacks():
     # lone order. Idempotent (a released group is no longer 'open').
     _piggyback_post("household-holds-sweep", "/api/cron/household-holds/sweep",
                     "X-Console-Key", CONSOLE_SECRET)
+    # Post-purchase review invites: email each buyer a tokened review link
+    # REVIEW_INVITE_DELAY_DAYS after their order shipped. Idempotent per
+    # (email, slug), and windowed by REVIEW_INVITE_MAX_AGE_DAYS so the first run
+    # after REVIEWS_ENABLED is switched on cannot blast the historical backlog.
+    # Returns {"invited": 0, "disabled": true} while reviews are dark.
+    _piggyback_post("review-invites", "/api/cron/review-invites",
+                    "X-Console-Key", CONSOLE_SECRET)
     # Refresh GrooveKart retail history from order emails, then re-seed active
     # members' repertoires from purchase_history (FMP + GK). Both idempotent;
     # GK rebuild runs first so the reseed picks up the newest orders. Harmless

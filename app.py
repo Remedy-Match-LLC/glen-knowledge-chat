@@ -6912,6 +6912,14 @@ _TOURNEY_K = int(os.environ.get("IMAGE_TOURNAMENT_CONVERGE_K", "3"))
 _TOURNEY_CADENCE_DAYS = int(os.environ.get("IMAGE_TOURNAMENT_CADENCE_DAYS", "3"))
 _REVIEWS_ENABLED = os.environ.get("REVIEWS_ENABLED", "").strip().lower() in ("1", "true", "yes")
 _REVIEWS_VIDEO = os.environ.get("REVIEWS_VIDEO", "").strip().lower() in ("1", "true", "yes")
+# Post-purchase review invite timing. The delay counts from the order SHIPPING,
+# never from payment, because a buyer cannot review what has not arrived.
+# MAX_AGE is the backlog guard: without it the first run after REVIEWS_ENABLED is
+# switched on would email every historical buyer at once. Same guard, same reason,
+# as PIF_GIFT_NOTE_MAX_AGE_DAYS.
+REVIEW_INVITE_DELAY_DAYS = int(os.environ.get("REVIEW_INVITE_DELAY_DAYS", "14"))
+REVIEW_INVITE_MAX_AGE_DAYS = int(os.environ.get("REVIEW_INVITE_MAX_AGE_DAYS", "60"))
+REVIEW_INVITE_MAX_PER_RUN = int(os.environ.get("REVIEW_INVITE_MAX_PER_RUN", "50"))
 # Embed the existing /practitioner-finder as a card in the client portal (dark
 # until flipped). Prefill is built from the client's stored address in portal_view.
 _PORTAL_FINDER_ENABLED = os.environ.get("PORTAL_FINDER_ENABLED", "").strip().lower() in ("1", "true", "yes", "on")
@@ -8987,10 +8995,13 @@ def begin_product_page_data(slug):
                       "rating": (None if (r.get("kind") == "gift") else r.get("rating")),
                       "body": r.get("body") or ""}
                      for r in _approved if (r.get("body") or "").strip() and (r.get("kind") != "gift" or r.get("consent_public"))]
-            # With no reviews yet the section holds only the form, so name it for the
-            # one thing it offers. Glen, 2026-09-08.
+            # Always "Leave a Review", whether or not reviews exist. Glen, 2026-09-09,
+            # superseding the 2026-09-08 rule that titled it "What people are saying"
+            # once the first review landed. The section's job is the ask, and a title
+            # that changes under the reader hides it exactly when there is social
+            # proof to sit beside it.
             _rsec = {"id": "reviews",
-                     "title": ("What people are saying" if _revs else "Leave a Review"),
+                     "title": "Leave a Review",
                      "default_open": False,
                      "body": {"aggregate": _agg, "reviews": _revs,
                               "disclaimer": "Individual results vary."}}
@@ -10065,8 +10076,12 @@ def review_form_page(token):
     return redirect(f"/begin/product/{slug}?review=1&rt={token}")
 
 
-def _send_review_invite(email: str, name: str, slug: str):
-    """Send a post-purchase review invite email (best-effort; never raises)."""
+def _send_review_invite(email: str, name: str, slug: str) -> bool:
+    """Send a post-purchase review invite email (best-effort; never raises).
+
+    Returns True only when send_email was reached without raising. The cron marks
+    the invite as sent on True alone, so a failed send is retried on the next run
+    rather than silently swallowed. The max-age window ends the retries."""
     try:
         from dashboard import inbox as _inbox
         p = _get_product(slug) or {}
@@ -10083,8 +10098,10 @@ def _send_review_invite(email: str, name: str, slug: str):
         _inbox.send_email(
             email, subject, _strip_dash(body), from_name="Dr. Glen Swartwout"
         )
+        return True
     except Exception as _e:
         print(f"[reviews] _send_review_invite failed for {email}/{slug}: {_e!r}", flush=True)
+        return False
 
 
 # ── Testimonials (Phase 1: in-house Boast.io replacement) ─────────────────────
@@ -50140,6 +50157,41 @@ def cron_pif_gift_note_invites():
                 _gn.mark_invited(cx, row["referee_email"], row["order_ref"])
             invited += 1
     return jsonify({"invited": invited, "dry_run": dry_run}), 200
+
+
+@app.route("/api/cron/review-invites", methods=["POST"])
+@require_console_key
+def cron_review_invites():
+    """Daily: email each buyer a tokened review link, REVIEW_INVITE_DELAY_DAYS after
+    their order shipped. Idempotent per (email, slug). No-op when reviews are dark.
+
+    This is the caller `_send_review_invite` never had. Until 2026-09-09 the only
+    thing that called it was the test suite, so product pages asked for reviews
+    nobody had been invited to write.
+
+    Payment is deliberately NOT the trigger. `settle_paid_order_effects` fires the
+    moment a card clears, and a buyer cannot review what has not arrived.
+    """
+    dry_run = str(request.args.get("dry_run") or "").strip().lower() in ("1", "true", "yes", "on")
+    if not _REVIEWS_ENABLED:
+        return jsonify({"invited": 0, "dry_run": dry_run, "disabled": True}), 200
+    from dashboard import review_invites as _ri
+    with db.connect(LOG_DB) as cx:
+        rows = _ri.pending(cx, days=REVIEW_INVITE_DELAY_DAYS,
+                           max_age_days=REVIEW_INVITE_MAX_AGE_DAYS,
+                           limit=REVIEW_INVITE_MAX_PER_RUN)
+    invited, failed = 0, 0
+    for row in rows:
+        if dry_run:
+            continue
+        if not _send_review_invite(row["email"], row["name"], row["slug"]):
+            failed += 1
+            continue   # leave it unmarked so the next run retries it
+        with _db_lock, db.connect(LOG_DB) as cx:
+            _ri.mark_invited(cx, row["email"], row["slug"], row["order_id"])
+        invited += 1
+    return jsonify({"invited": invited, "failed": failed,
+                    "candidates": len(rows), "dry_run": dry_run}), 200
 
 
 @app.route("/coaching/login-request", methods=["POST"])
