@@ -98,5 +98,51 @@
       "url": "/begin/product/glutathione-syntropy"
     },
     "directions": "Take 1 to 2 capsules daily with food."
+  },
+  "estro-clear": {
+    "ingredients": [
+      {
+        "name": "Calcium-D-glucarate",
+        "dose": "250 mg"
+      },
+      {
+        "name": "DIM 98% (diindolylmethane)",
+        "dose": "100 mg"
+      },
+      {
+        "name": "Broccoli extract (Brassica oleracea), 17% glucoraphanin",
+        "dose": "85 mg"
+      },
+      {
+        "name": "Vitamin C (L-ascorbic acid)",
+        "dose": "50 mg"
+      },
+      {
+        "name": "Black pepper extract (95% piperine)",
+        "dose": "5 mg"
+      },
+      {
+        "name": "Vitamin D3 (cholecalciferol)",
+        "dose": "2,000 IU"
+      },
+      {
+        "name": "Black mustard seed (Brassica nigra)",
+        "dose": "2.5 mg"
+      },
+      {
+        "name": "Iodine (from potassium iodide)",
+        "dose": "150 mcg"
+      },
+      {
+        "name": "Selenium (as methylselenocysteine)",
+        "dose": "100 mcg"
+      }
+    ],
+    "ingredients_source": "fmp-bom-2026-08-31",
+    "description": "Estrogen metabolism and clearance support, nine actives at about 497 mg per capsule. Third SKU of the Fibrolysis line, alongside Fibrosolve and Fibrolysis Factors.",
+    "directions": "Take 1 capsule 1 to 2 times daily with oils or a fatty meal. Keep the bottle tightly closed and dry.",
+    "warning": "Contains piperine, which can raise blood levels of some medications. Check with your prescriber if you take prescription medication.",
+    "bottle_type": "30 Caps",
+    "note": "SKU 3 of the Fibrolysis line, specced as 'Estrolytic' in the 2026-06-06 product-line spec and PRODUCED as Estro-Clear (Glen, 2026-09-09). BOM from FMP product 1190, extract 2026-08-31: the nine dosed lines sum to 496.939 mg, matching FMP zc_total_mg 496.939. Three zero-quantity lines carry no mass and are not panel rows: raw 4326 Glucoraphanin and 5608 Myrosinase are markers, and 5606 is a sourcing note about potassium iodate, not an ingredient. D3 is 4 mg at 500,000 IU/g = 2,000 IU; selenium 0.244 mg MSC at 41% = 100 mcg Se; iodine 0.195 mg KI at 77% = 150 mcg I. Dosing and timing from the same extract. TWO DEVIATIONS FROM THE SPEC, both raised with Glen 2026-09-09 and neither invented here: the BOM uses 17% glucoraphanin where the spec calls for 50%, and 2.5 mg of BLACK MUSTARD SEED where the spec calls for 2.5 mg of red cabbage myrosinase at 1,500 IU/g. The panel states what is in the bottle, not what the spec asks for."
   }
 }

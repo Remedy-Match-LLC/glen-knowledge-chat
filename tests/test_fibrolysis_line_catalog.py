@@ -76,6 +76,44 @@ def test_panel_sums_to_the_capsule_total(products, slug):
     assert total == pytest.approx(EXPECTED[slug]["total_mg"])
 
 
+# Estro-Clear is SKU 3, specced as "Estrolytic" and produced under this name. Its panel
+# mixes mg with IU and mcg, so it pins row-for-row rather than by mass sum.
+ESTRO_CLEAR = [
+    ("Calcium-D-glucarate", "250 mg"),
+    ("DIM 98% (diindolylmethane)", "100 mg"),
+    ("Broccoli extract (Brassica oleracea), 17% glucoraphanin", "85 mg"),
+    ("Vitamin C (L-ascorbic acid)", "50 mg"),
+    ("Black pepper extract (95% piperine)", "5 mg"),
+    ("Vitamin D3 (cholecalciferol)", "2,000 IU"),
+    ("Black mustard seed (Brassica nigra)", "2.5 mg"),
+    ("Iodine (from potassium iodide)", "150 mcg"),
+    ("Selenium (as methylselenocysteine)", "100 mcg"),
+]
+
+
+def test_estro_clear_panel_matches_the_fmp_bom(products):
+    p = products["estro-clear"]
+    assert [(i["name"], i["dose"]) for i in p["ingredients"]] == ESTRO_CLEAR
+    assert p["directions"].startswith("Take 1 capsule 1 to 2 times daily")
+    assert "piperine" in p["warning"].lower()
+
+
+def test_estro_clear_states_the_grade_actually_in_the_bottle(products):
+    """The spec asks for 50% glucoraphanin and red cabbage myrosinase; FMP product
+    1190 carries 17% and black mustard seed. The panel states the bottle, so these
+    two strings must not quietly drift back to the spec's better materials."""
+    names = [i["name"] for i in products["estro-clear"]["ingredients"]]
+    assert any("17% glucoraphanin" in n for n in names)
+    assert any("Brassica nigra" in n for n in names)
+    assert not any("50% glucoraphanin" in n or "myrosinase" in n.lower() for n in names)
+
+
+def test_no_estrolytic_sku_was_minted(products):
+    """Specced as Estrolytic, produced as Estro-Clear. One SKU, not two."""
+    assert "estrolytic" not in products
+    assert not any((v.get("name") or "") == "Estrolytic" for v in products.values())
+
+
 @pytest.mark.parametrize("slug", sorted(EXPECTED))
 def test_no_zero_quantity_marker_rows(products, slug):
     """The three FMP marker lines and the unresolved-name placeholder are gone."""
@@ -104,6 +142,12 @@ def test_fibrosolve_description_keeps_the_bleeding_warning(products):
     desc = products["fibrosolve"]["description"]
     for term in ("anticoagulant", "bleeding", "pregnancy", "surgery", "empty stomach"):
         assert term in desc.lower()
+
+
+def test_estro_clear_correction_is_recorded(corrections):
+    c = corrections["estro-clear"]
+    assert [(i["name"], i["dose"]) for i in c["ingredients"]] == ESTRO_CLEAR
+    assert c["ingredients_source"] == "fmp-bom-2026-08-31"
 
 
 @pytest.mark.parametrize("slug", sorted(EXPECTED))
