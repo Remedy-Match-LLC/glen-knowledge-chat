@@ -6,6 +6,15 @@ import re
 from dashboard.biofield_profile import clean_health_tag, is_health_tag, _items
 
 
+# The most remedies one condition row shows. Budget: stress_suggestions caps the
+# FileMaker history at 8, the widest inherited program list is 17 ("Often no
+# symptoms early", listed under many programs), leaving room for 15 added by hand.
+# Truncating instead is the defect this replaced: the picker promises a count the
+# row then does not show. test_the_shown_list_is_not_truncated_for_any_offered_condition
+# fails if the seed ever outgrows this.
+MAX_COMMON_REMEDIES = 40
+
+
 def _norm(value):
     value = re.sub(r"[^a-z0-9]+", " ", (value or "").lower()).strip()
     return " ".join(value.split())
@@ -400,7 +409,7 @@ def build(profile, layers, stress_data=None, remedy_lookup=None, stress_lookup=N
         suggested = "" if remembered else suggested_pattern(label)
         rows.append({"label": label, "checked": bool(covered_by),
                      "covered_by": covered_by, "layer": balanced_layer,
-                     "common_remedies": common_remedies[:8],
+                     "common_remedies": common_remedies[:MAX_COMMON_REMEDIES],
                      "stress_pattern": remembered or suggested,
                      "remembered_pattern": remembered,
                      "pattern_is_suggested": bool(suggested)})

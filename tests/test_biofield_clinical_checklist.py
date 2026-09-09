@@ -353,3 +353,29 @@ def test_a_hand_added_remedy_survives_a_full_program_list():
     rows = build({"conditions": ["Blurred central vision"]}, [],
                  remedy_lookup=lambda label: remedies_for(cx, label, historical=[]))
     assert "Bilberry Complex" in rows[0]["common_remedies"]
+
+
+def test_the_shown_list_is_not_truncated_for_any_offered_condition():
+    """Silent truncation is the same defect class as the empty state it replaced:
+    the picker promises remedies the row does not show. 12 of 83 labels were cut
+    at the old cap of 8. This test fails loudly if the seed ever outgrows the cap
+    rather than letting the row quietly hide remedies again."""
+    cx = sqlite3.connect(":memory:")
+    ensure_catalog_schema(cx)
+    lookup = lambda label: remedies_for(cx, label, historical=[])
+    over = []
+    for row in catalog_items(cx, "", limit=500):
+        shown = build({"conditions": [row["label"]]}, [], remedy_lookup=lookup)[0]
+        full = remedies_for(cx, row["label"], historical=[])
+        if len(shown["common_remedies"]) < len(full):
+            over.append((row["label"], len(full)))
+    assert over == []
+
+
+def test_the_widest_inherited_list_shows_in_full():
+    """'Often no symptoms early' is listed under many programs and inherits 17."""
+    cx = sqlite3.connect(":memory:")
+    ensure_catalog_schema(cx)
+    rows = build({"conditions": ["Often no symptoms early"]}, [],
+                 remedy_lookup=lambda label: remedies_for(cx, label, historical=[]))
+    assert len(rows[0]["common_remedies"]) == 17
