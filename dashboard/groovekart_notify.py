@@ -16,8 +16,23 @@ Every function here is total: a notification that raises would take the webhook
 down with it, and GrooveKart would retry-storm a 500.
 """
 
+import re as _re
+
 # Interim recipients. Rae watches the payments and packs; Glen wants sight of it.
 RECIPIENTS = ("suerae1111@gmail.com", "drglenswartwout@gmail.com")
+
+# The buyer was getting nothing at all. GrooveKart's checkout ends on a bare
+# "Your shopping cart is empty" page: no order number, no receipt, nothing to
+# screenshot. Confirmed by walking the store on 2026-09-08. Glen paid and could
+# not tell whether it had worked.
+#
+# We already build a notification from this payload and send it inward. This
+# sends the same facts outward, in the buyer's language.
+#
+# What it must never say is that payment succeeded. The GrooveKart webhook
+# signals order CREATION and carries no settlement field, so at the moment this
+# fires we do not know whether the card cleared. Saying "payment received" here
+# would be a guess dressed as a receipt.
 
 
 def _money(value):
@@ -112,3 +127,54 @@ def order_email(payload):
              "",
              "The order is on the board at https://illtowell.com/console/orders"]
     return subject, "\n".join(body)
+
+
+def buyer_email(payload):
+    """(subject, body) confirming the order to the person who placed it.
+
+    Never raises, like everything else here: this runs inside the webhook, and
+    an exception would return 500 and start a GrooveKart retry storm.
+
+    Deliberately says nothing about payment. See the note beside RECIPIENTS."""
+    p = payload if isinstance(payload, dict) else {}
+    ref = _text(p.get("reference")) or _text(p.get("id")) or "?"
+    first = _text(p.get("customer_firstname"))
+
+    subject = "We have your Remedy Match order %s" % ref
+
+    body = ["%s," % (first or "Hello"), "",
+            "Your order reached us. Here is what it says.", "",
+            "Order %s" % ref]
+    if _text(p.get("date_add")):
+        body.append("Placed %s" % _text(p.get("date_add")))
+    body += ["", "You ordered:"]
+    # _lines() carries the SKU, which is there so Rae can pack the right jar.
+    # A customer has no use for "[CLED-5ML]" and it makes the email read like a
+    # warehouse slip, so strip it for them.
+    body += [_re.sub(r"\s*\[[^\]]+\]\s*$", "", ln) for ln in _lines(p)]
+
+    d = p.get("delivery") if isinstance(p.get("delivery"), dict) else {}
+    if d:
+        body += ["", "Going to:"]
+        body += _address(p)
+
+    body += ["", "Total %s" % _money(_num(p.get("total_paid")))]
+    body += ["",
+             "If your card was charged you will see it from Remedy Match. If you "
+             "are not sure whether it went through, reply to this email before "
+             "ordering again and we will check rather than risk charging you twice.",
+             "",
+             "Questions about the order go to Support@RemedyMatch.com or "
+             "808-217-9647 after 1 PM EST.",
+             "",
+             "Remedy Match"]
+    return subject, "\n".join(body)
+
+
+def buyer_address(payload):
+    """The buyer's email, or "" when the payload has none worth sending to.
+
+    Returned separately so the caller decides whether to send. An empty string
+    is normal: some orders arrive without one, and that is not an error."""
+    p = payload if isinstance(payload, dict) else {}
+    return _text(p.get("customer_email"))
