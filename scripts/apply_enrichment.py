@@ -81,6 +81,14 @@ def main():
             if c.get("ingredients"):
                 p["ingredients"] = c["ingredients"]
             p["ingredients_source"] = c.get("ingredients_source", "manual")
+            # description/bottle_type are corrected here too, or the GK-scraped
+            # description above wins on the next run and silently reverts the fix.
+            # fibrolysis-factors reverted to the "Fibrolysis Factors . Price: $69.97."
+            # placeholder exactly this way.
+            if c.get("description"):
+                p["description"] = c["description"]
+            if c.get("bottle_type"):
+                p["bottle_type"] = c["bottle_type"]
             if c.get("note"):
                 p["enrichment_note"] = c["note"]
             # a Glen-verified formula is authoritative here -> not a stale-GK item
