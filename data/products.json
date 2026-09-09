@@ -5302,42 +5302,36 @@
    "qty_pricing": true,
    "ingredients": [
     {
-     "name": "Frankincense",
+     "name": "Frankincense (Boswellia serrata)",
      "dose": "50 mg"
     },
     {
-     "name": "Green Tea; Organic; 98% Polyphenols/50% EGCG Standardized Extract",
+     "name": "Green Tea Extract, Organic (98% Polyphenols / 50% EGCG)",
      "dose": "200 mg"
     },
     {
-     "name": "Camellia sinensis",
-     "dose": ""
-    },
-    {
-     "name": "Salvianolic Acid B 20%",
+     "name": "Salvianolic Acid B 20% (Salvia miltiorrhiza)",
      "dose": "125 mg"
-    },
-    {
-     "name": "Salvianolic Acid B",
-     "dose": ""
-    },
-    {
-     "name": "(unnamed FMP ingredient 5583)",
-     "dose": ""
     },
     {
      "name": "Trans-Resveratrol",
      "dose": "75 mg"
     },
     {
-     "name": "Gotu kola",
+     "name": "Gotu kola (Centella asiatica)",
      "dose": "37.5 mg"
     }
    ],
-   "ingredients_source": "db-formulations-2026-06-25",
-   "description": "Fibrolysis Factors . Price: $69.97.",
+   "ingredients_source": "fmp-bom-2026-08-31",
+   "description": "Anti-fibrotic botanical formula, five standardized actives at 487.5 mg per capsule. Take 1 to 2 capsules daily with food.",
    "bottle_type": "30 Caps",
-   "fmp_id": "356"
+   "fmp_id": "356",
+   "enrichment_note": "Reformulated 2026-06-06 (SKU 2 of the Fibrolysis 3-SKU line); the old enzyme-led formula moved to Fibrosolve. BOM from FMP product 356, extract 2026-08-31: 50+200+125+75+37.5 = 487.5 mg, matching FMP zc_total_mg 487.5. The three zero-quantity marker lines (raw 5604 Green Tea EGCG, 4609 Salvia miltiorrhiza, 5583 High AKBA Boswellic Acid 90%) carry no mass; they had been rendering as three extra panel rows, one of them as '(unnamed FMP ingredient 5583)'. Their botanical identity is folded into the dosed line, their conflicting standardization percentages are not. Dosing from FMP dosage/dosage_timing/dosage_freq on the same extract. DOSING: Glen ruled 1 to 2 capsules daily on 2026-09-08. FMP product 356 still reads dosage '1 capsule' / dosage_freq 'daily' on the 2026-08-31 extract, and the FileMaker record needs that edit by hand. The vault wins the disagreement per the 2026-08-10 ruling: the 2026-06-06 spec says 1-2 caps/day, and its dose rationale rests on 2 caps reaching each active's minimum therapeutic dose, with EGCG at the 400 mg trial floor. At 1 capsule every active sits at half its minimum. Do not re-derive this field from the FMP extract. PANEL NOTE: Glen asked for the spec's 'synergistic with Glutathione Syntropy' label line on the page, at the bottom, 2026-09-08. Rendered under the ingredient list, which is where a label carries it. The thiol axis is deliberately carried by that companion product rather than by NAC in this formula.",
+   "panel_note": "Synergistic with Glutathione Syntropy.",
+   "panel_note_link": {
+    "label": "Glutathione Syntropy",
+    "url": "/begin/product/glutathione-syntropy"
+   }
   },
   "ocuflow-daytime": {
    "name": "OcuFlow Daytime",
@@ -20416,10 +20410,30 @@
    "pinecone_title": "Fibrosolve",
    "qty_pricing": true,
    "fmp_id": "1191",
-   "ingredients_source": "fmp_snap",
+   "ingredients_source": "fmp-bom-2026-08-31",
    "no_groovekart": true,
    "regular_cents": 8000,
-   "description": "Anti-fibrotic systemic proteolytic enzyme complex taken on an empty stomach 1-2 times per day. Contraindicated with anticoagulant/antiplatelet medication, bleeding disorders, pregnancy, and within ~2 weeks of surgery. 1 capsule 1 to 2 times daily on empty stomach"
+   "description": "Anti-fibrotic systemic proteolytic enzyme complex taken on an empty stomach 1-2 times per day. Contraindicated with anticoagulant/antiplatelet medication, bleeding disorders, pregnancy, and within ~2 weeks of surgery. 1 capsule 1 to 2 times daily on empty stomach",
+   "ingredients": [
+    {
+     "name": "Lumbrokinase",
+     "dose": "15 mg"
+    },
+    {
+     "name": "Nattokinase (Bacillus subtilis)",
+     "dose": "100 mg"
+    },
+    {
+     "name": "Serrapeptase",
+     "dose": "25 mg"
+    },
+    {
+     "name": "Bromelain",
+     "dose": "350 mg"
+    }
+   ],
+   "bottle_type": "30 Caps",
+   "enrichment_note": "SKU 1 of the Fibrolysis 3-SKU line. BOM from FMP product 1191, extract 2026-08-31: 15+100+25+350 = 490 mg, matching FMP zc_total_mg 490. The four zero-quantity companion lines in FMP (incl. raw 4259 Nattokinase, the marker for raw 4504 Bacillus subtilis) carry no mass and are not panel rows. Page previously had no ingredients panel at all."
   },
   "sedativa-homeopathic-in-terrain-restore": {
    "name": "Sedativa Homeopathic in Terrain Restore",

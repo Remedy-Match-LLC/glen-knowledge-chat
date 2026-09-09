@@ -69,6 +69,9 @@
     .sp-ingredients li{ font-size:13.5px; color:var(--cream); opacity:0.9; padding:7px 0;
       border-bottom:1px solid rgba(33,71,45,0.4); line-height:1.5; }
     .sp-ingredients li:last-child{ border-bottom:none; }
+    .sp-ing-note{ font-size:13px; color:var(--cream); opacity:0.75; margin:12px 0 0;
+                  font-style:italic; }
+    .sp-ing-note-link{ color:inherit; text-decoration:underline; }
     .sp-ing-name{ font-weight:600; }
     .sp-ing-dose{ color:var(--muted); font-size:12.5px; margin-left:6px; }
     .sp-how{ font-size:14px; color:var(--cream); opacity:0.93; line-height:1.68; white-space:pre-wrap; margin-bottom:14px; }
@@ -411,6 +414,7 @@
         p.textContent = 'Ingredient details coming soon.';
         return p;
       }
+      var wrapEl = document.createElement('div');
       var ul = document.createElement('ul');
       ul.className = 'sp-ingredients';
       ings.forEach(function(ing){
@@ -441,7 +445,29 @@
         }
         ul.appendChild(li);
       });
-      return ul;
+      wrapEl.appendChild(ul);
+      // Label line under the formula (e.g. "Synergistic with Glutathione Syntropy"),
+      // with the named product linked to its own page when the catalog supplies one.
+      var note = body && body.note;
+      if (note){
+        var np = document.createElement('p');
+        np.className = 'sp-ing-note';
+        var lk = body.note_link;
+        var at = (lk && lk.label) ? note.indexOf(lk.label) : -1;
+        if (at >= 0 && lk.url){
+          np.appendChild(document.createTextNode(note.slice(0, at)));
+          var na = document.createElement('a');
+          na.className = 'sp-ing-note-link';
+          na.href = lk.url;
+          na.textContent = lk.label;
+          np.appendChild(na);
+          np.appendChild(document.createTextNode(note.slice(at + lk.label.length)));
+        } else {
+          np.textContent = note;
+        }
+        wrapEl.appendChild(np);
+      }
+      return wrapEl;
     }
 
     function renderRelatedBody(body){
