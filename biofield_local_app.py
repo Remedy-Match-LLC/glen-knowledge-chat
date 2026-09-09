@@ -18,9 +18,12 @@ Then open http://127.0.0.1:8011
 """
 import argparse
 import datetime
+import logging
 import os
 import re
 import sqlite3
+import time
+from urllib.parse import urlencode
 import requests
 
 from flask import Flask, Response, jsonify, redirect, request, send_from_directory
@@ -525,6 +528,67 @@ document.getElementById("parse-btn").addEventListener("click", iiParse);
 """
 
 
+def _redact_key_in_path(line: str) -> str:
+    """Blank out `key=...` in a request line before it reaches a log.
+
+    The redirect below takes the key out of the URL after the first request, but
+    that FIRST request still carries it, and a log is forever. Redacting here
+    means the secret never reaches the file at all."""
+    return re.sub(r"(?i)([?&]key=)[^&\s]*", r"\1REDACTED", line)
+
+
+def _url_without_key() -> str:
+    """The current URL with `key` removed and every other parameter kept."""
+    args = {k: v for k, v in request.args.items(True) if k != "key"}
+    qs = urlencode(args)
+    return request.path + (("?" + qs) if qs else "")
+
+
+HEARTBEAT = os.path.expanduser("~/AI-Training/00 System/biofield-local-server-heartbeat.json")
+
+
+def _write_heartbeat(path: str = HEARTBEAT, port: int = 0) -> None:
+    """Record that this server is alive. Best-effort, never raises.
+
+    launchd keeps this job with KeepAlive, so it only exits when something kills
+    it, and its last exit status stays non-zero forever. job-health then reported
+    it red for days while it was serving perfectly. An exit code is the wrong
+    question for a daemon; "is it still writing" is the right one."""
+    try:
+        import json as _json
+        with open(path, "w") as f:
+            _json.dump({"at": datetime.datetime.now().isoformat(),
+                        "pid": os.getpid(), "port": port}, f)
+    except Exception as e:  # noqa: BLE001 — monitoring must not kill the server
+        print(f"[heartbeat] write failed: {e!r}", flush=True)
+
+
+def _start_heartbeat(port: int, every_s: int = 300) -> None:
+    """Touch the heartbeat now and every few minutes, on a daemon thread."""
+    import threading
+
+    def _loop():
+        while True:
+            _write_heartbeat(HEARTBEAT, port)
+            time.sleep(every_s)
+    _write_heartbeat(HEARTBEAT, port)
+    threading.Thread(target=_loop, daemon=True).start()
+
+
+def _install_log_redaction() -> None:
+    """Stop werkzeug's access log writing the console key to disk."""
+    class _Redact(logging.Filter):
+        def filter(self, record):
+            if isinstance(record.msg, str):
+                record.msg = _redact_key_in_path(record.msg)
+            if record.args:
+                record.args = tuple(
+                    _redact_key_in_path(a) if isinstance(a, str) else a
+                    for a in record.args)
+            return True
+    logging.getLogger("werkzeug").addFilter(_Redact())
+
+
 def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                interpret_complete=None, scan_lookup=None, client_search=None,
                fetch_runner=None, fetch_profile=None, fetch_recent_comms=None,
@@ -718,18 +782,28 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
     def _console_gate():
         if not _secret:
             return None
-        key = (request.args.get("key", "") or request.cookies.get("rm_biofield_key", "")
+        url_key = request.args.get("key", "")
+        if url_key == _secret:
+            # Cookie it, then send the browser to the same page WITHOUT the key.
+            #
+            # The cookie already existed; nothing ever took the key back out of
+            # the URL. So Flask's dev server logged Glen's live CONSOLE_SECRET on
+            # every navigation, and it was found in plaintext in
+            # ~/Library/Logs/glen/com.glen.biofield-local-server.err on
+            # 2026-09-08. It also sat in browser history and in any Referer.
+            #
+            # This fires once per session. Afterwards the cookie carries the auth
+            # and the URL is clean, so there is no loop: the redirect target has
+            # no `key` to match here.
+            resp = redirect(_url_without_key())
+            resp.set_cookie("rm_biofield_key", _secret, httponly=True, samesite="Lax")
+            return resp
+        key = (request.cookies.get("rm_biofield_key", "")
                or request.headers.get("X-Console-Key", ""))
         if key != _secret:
             return Response("Unauthorized — open this from the console 'Biofield Intake' link.",
                             status=401, mimetype="text/plain")
         return None
-
-    @app.after_request
-    def _console_cookie(resp):
-        if _secret and request.args.get("key", "") == _secret:
-            resp.set_cookie("rm_biofield_key", _secret, httponly=True, samesite="Lax")
-        return resp
 
     @app.route("/")
     def index():
@@ -2531,4 +2605,6 @@ if __name__ == "__main__":
         counts = snapshot_csv_dir(args.export_dir, DEFAULT_DB)
         print("loaded snapshot:", {k: counts[k] for k in sorted(counts)})
     print(f"Biofield Analysis viewer -> http://127.0.0.1:{args.port}  (local only; Ctrl-C to stop)")
+    _install_log_redaction()
+    _start_heartbeat(args.port)
     create_app().run(host="127.0.0.1", port=args.port, debug=False)
