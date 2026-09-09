@@ -379,3 +379,18 @@ def test_the_widest_inherited_list_shows_in_full():
     rows = build({"conditions": ["Often no symptoms early"]}, [],
                  remedy_lookup=lambda label: remedies_for(cx, label, historical=[]))
     assert len(rows[0]["common_remedies"]) == 17
+
+
+def test_picker_does_not_offer_a_symptom_that_names_no_function():
+    """'Often no symptoms early' is true of glaucoma and belongs in the program's
+    symptom list, which app.py serves. It is useless as a selectable condition:
+    it names no function to restore, and being listed under many programs it
+    inherited 17 remedies spanning glaucoma, AMD and cataract."""
+    cx = sqlite3.connect(":memory:")
+    ensure_catalog_schema(cx)
+    offered = {row["label"] for row in catalog_items(cx, "", limit=500)}
+    assert "Often no symptoms early" not in offered
+    # Still real program content, and still resolvable for a profile already carrying it.
+    assert len(program_remedies("Often no symptoms early")) == 17
+    # The programs it came from are untouched.
+    assert "Blind spots or tunnel vision later" in offered

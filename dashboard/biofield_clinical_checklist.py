@@ -7,11 +7,18 @@ from dashboard.biofield_profile import clean_health_tag, is_health_tag, _items
 
 
 # The most remedies one condition row shows. Budget: stress_suggestions caps the
-# FileMaker history at 8, the widest inherited program list is 17 ("Often no
-# symptoms early", listed under many programs), leaving room for 15 added by hand.
+# FileMaker history at 8, the widest list the picker offers inherits 13, and the
+# widest reachable is 17 ("Often no symptoms early", no longer offered but still
+# valid on a profile that already carries it), leaving room for 15 added by hand.
 # Truncating instead is the defect this replaced: the picker promises a count the
 # row then does not show. test_the_shown_list_is_not_truncated_for_any_offered_condition
 # fails if the seed ever outgrows this.
+# Symptoms that are real program content but useless as a selectable condition:
+# they name no function to restore, and being listed under many programs they
+# inherit a remedy list spanning all of them. app.py still serves them in the
+# program's own symptom list, which is where they belong. Glen, 2026-09-09.
+PICKER_EXCLUDED_SYMPTOMS = {"often no symptoms early"}
+
 MAX_COMMON_REMEDIES = 40
 
 
@@ -326,6 +333,8 @@ def catalog_items(cx, q="", limit=100):
         if not remedies:
             continue
         for label in [program.get("label") or program_key] + list(program.get("symptoms") or []):
+            if _norm(label) in PICKER_EXCLUDED_SYMPTOMS:
+                continue
             if label and (not query or query in _norm(label)):
                 found.setdefault(_norm(label), {"label": label, "remedy_count": len(remedies)})
     displays = {"amd": "AMD (Age-Related Macular Degeneration)",
