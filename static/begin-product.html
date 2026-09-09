@@ -1015,9 +1015,13 @@
       // ── Leave a review form ───────────────────────────────────────────────
       var formDiv = document.createElement('div');
       formDiv.className = 'sp-review-form';
-      var h3 = document.createElement('h3');
-      h3.textContent = 'Leave a review';
-      formDiv.appendChild(h3);
+      // With no reviews yet the section is titled "Leave a Review", so repeating it
+      // here reads as a stutter. Only label the form when reviews sit above it.
+      if (reviews.length){
+        var h3 = document.createElement('h3');
+        h3.textContent = 'Leave a review';
+        formDiv.appendChild(h3);
+      }
 
       // Email field
       var emailRow = document.createElement('div'); emailRow.className = 'sp-rf-row';
@@ -1307,7 +1311,9 @@
           case 'ingredients': teaser.textContent = 'Full ingredient list'; break;
           case 'comparison':  teaser.textContent = 'See how it stacks up'; break;
           case 'research':    teaser.textContent = 'Studies behind the key ingredients'; break;
-          case 'reviews':     teaser.textContent = 'Verified buyer experiences'; break;
+          case 'reviews':     teaser.textContent = ((sec.body && (sec.body.reviews || []).length)
+                                          ? 'Verified buyer experiences'
+                                          : 'Tell others how it worked for you'); break;
           case 'images':      teaser.textContent = 'A closer look'; break;
           case 'related':     teaser.textContent = 'Explore what pairs well'; break;
           default:            teaser.textContent = ''; break;
