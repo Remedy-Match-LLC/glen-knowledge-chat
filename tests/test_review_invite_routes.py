@@ -134,9 +134,21 @@ def test_the_backlog_is_not_blasted_on_first_enable(monkeypatch, tmp_path):
     assert sent == []
 
 
+def _invite_db(monkeypatch, tmp_path):
+    """Repoint LOG_DB and create the table _review_token_mint writes to.
+
+    `_init_review_link_tokens()` runs once at import against the real LOG_DB, so a
+    test that repoints LOG_DB gets a database without review_link_tokens. The mint
+    then raises, _send_review_invite catches it and returns False, and a test
+    asserting False passes without the send path ever being reached.
+    """
+    monkeypatch.setattr(appmod, "LOG_DB", str(tmp_path / "t.db"))
+    appmod._init_review_link_tokens()
+
+
 def test_send_review_invite_returns_true_on_success(monkeypatch, tmp_path):
     """The cron keys idempotency off this bool, so its contract is load-bearing."""
-    monkeypatch.setattr(appmod, "LOG_DB", str(tmp_path / "t.db"))
+    _invite_db(monkeypatch, tmp_path)
     calls = []
     import dashboard.inbox as _inbox
     monkeypatch.setattr(_inbox, "send_email",
@@ -147,12 +159,17 @@ def test_send_review_invite_returns_true_on_success(monkeypatch, tmp_path):
 
 
 def test_send_review_invite_returns_false_when_send_raises(monkeypatch, tmp_path):
-    monkeypatch.setattr(appmod, "LOG_DB", str(tmp_path / "t.db"))
+    _invite_db(monkeypatch, tmp_path)
     import dashboard.inbox as _inbox
+    reached = []
 
     def _boom(*a, **k):
+        reached.append(a)
         raise RuntimeError("smtp down")
 
     monkeypatch.setattr(_inbox, "send_email", _boom)
     slug = next(iter(appmod._PRODUCTS["products"].keys()))
     assert appmod._send_review_invite("b@x.com", "Buyer", slug) is False
+    # Without this the test would also pass if the mint had raised first, which is
+    # exactly how it passed for the wrong reason before.
+    assert len(reached) == 1
