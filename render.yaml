@@ -181,6 +181,13 @@ services:
   # The watcher needs the token (/data/google-token.json) + chat_log.db, which live on
   # the WEB service, so the work happens there. NOTE: the WEB service must have
   # GMAIL_TOKEN_PATH=/data/google-token.json set for reply_watcher to find the token.
+  # PIGGYBACK: this cron also fires /api/cron/cns-tracking (USPS Click-N-Ship
+  # tracking emails) from run_cns_tracking() in the same entry script. That job was a
+  # launchd job on Glen's Mac until 2026-09-09, where it crash-looped 5,505 times and
+  # recorded nothing for ~60 days: the Doppler prd config is Render-shaped, so
+  # GMAIL_TOKEN_PATH pointed at /data and PG_DSN named a Render INTERNAL host, neither
+  # of which resolves on a Mac. It wants the same 15-minute cadence as the reply
+  # watcher and Render caps cron services, so it rides here instead of claiming one.
   - type: cron
     name: glen-reply-watcher
     runtime: python
