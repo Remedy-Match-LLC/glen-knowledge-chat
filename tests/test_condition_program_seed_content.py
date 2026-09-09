@@ -89,3 +89,40 @@ def test_systemic_symptoms_are_standalone_programs_with_remedy_items():
     for key, program in systemic.items():
         assert len(program["items"]) >= 2, key
         assert all(item.get("slug") and item.get("name") for item in program["items"]), key
+
+
+EARLY_PROGRAMS = ("glaucoma-early", "dry-amd-early", "diabetic-retinopathy-early")
+
+
+def test_early_states_exist_for_the_four_silent_conditions():
+    """The four programs that say "Often no symptoms early" now have a preventive
+    state of their own. The two glaucomas share one: "glaucoma suspect" is a single
+    clinical category, so splitting it by pressure would make two labels that differ
+    only by a number the client does not have yet."""
+    progs = _seed()["condition_programs"]
+    for key in EARLY_PROGRAMS:
+        assert key in progs, key
+        assert progs[key]["label"].startswith("Early, Suspect or Pre-"), key
+        assert progs[key]["label"].endswith(": Often no symptoms"), key
+
+
+def test_early_states_carry_their_own_remedies_not_an_empty_list():
+    """An early state with no items would render "No common remedies recorded yet",
+    which is the defect this whole change removed."""
+    progs = _seed()["condition_programs"]
+    for key in EARLY_PROGRAMS:
+        assert len(progs[key]["items"]) >= 3, key
+        assert all(i.get("slug") and i.get("name") for i in progs[key]["items"]), key
+
+
+def test_early_state_symptoms_are_unique_to_one_program():
+    """A symptom listed under two programs takes its count from the first and its
+    remedies from both, so the dropdown and the row disagree again. Early-state
+    symptoms are screening findings, and each belongs to one condition."""
+    progs = _seed()["condition_programs"]
+    early = {s for key in EARLY_PROGRAMS for s in progs[key]["symptoms"]}
+    others = [s for key, p in progs.items() if key not in EARLY_PROGRAMS
+              for s in p.get("symptoms") or []]
+    assert early & set(others) == set()
+    counted = [s for key in EARLY_PROGRAMS for s in progs[key]["symptoms"]]
+    assert len(counted) == len(set(counted))
