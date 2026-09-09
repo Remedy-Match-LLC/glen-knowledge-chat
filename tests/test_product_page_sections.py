@@ -1,7 +1,9 @@
 from dashboard.product_page_sections import filter_sections
 
+# Mirrors the real order built in app.py. The bottle section ("comparison") sits last
+# before Order as of 2026-09-08.
 _ALL = [{"id": i} for i in
-        ("intro", "description", "video", "ingredients", "comparison", "research", "images", "cta")]
+        ("intro", "description", "video", "ingredients", "research", "images", "comparison", "cta")]
 
 
 def _ids(secs):
