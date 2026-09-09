@@ -8976,7 +8976,11 @@ def begin_product_page_data(slug):
                       "rating": (None if (r.get("kind") == "gift") else r.get("rating")),
                       "body": r.get("body") or ""}
                      for r in _approved if (r.get("body") or "").strip() and (r.get("kind") != "gift" or r.get("consent_public"))]
-            _rsec = {"id": "reviews", "title": "What people are saying", "default_open": False,
+            # With no reviews yet the section holds only the form, so name it for the
+            # one thing it offers. Glen, 2026-09-08.
+            _rsec = {"id": "reviews",
+                     "title": ("What people are saying" if _revs else "Leave a Review"),
+                     "default_open": False,
                      "body": {"aggregate": _agg, "reviews": _revs,
                               "disclaimer": "Individual results vary."}}
             _ri = next((i for i, s in enumerate(sections) if s["id"] == "research"), len(sections) - 1)

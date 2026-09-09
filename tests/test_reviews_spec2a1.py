@@ -442,3 +442,20 @@ def test_send_review_invite_no_raise(monkeypatch, tmp_path):
     body = args[2]
     assert "Aloha" in body and "In wellness" in body
     assert "—" not in body  # no em dash
+
+
+def test_section_is_titled_for_the_form_until_someone_reviews(monkeypatch, tmp_path):
+    """With nothing to read, the section holds only the form, so it is named for it.
+
+    Glen, 2026-09-08: "When there are no reviews yet, make that section
+    'Leave a Review'."
+    """
+    appmod = _reload_reviews_app(monkeypatch, tmp_path, enabled="true")
+    slug = next(iter(appmod._PRODUCTS["products"].keys()))
+    c = appmod.app.test_client()
+
+    data = c.get(f"/begin/product-page-data/{slug}").get_json()
+    sec = next((s for s in data["sections"] if s["id"] == "reviews"), None)
+    assert sec is not None, "the reviews section should exist even with no reviews"
+    assert sec["title"] == "Leave a Review"
+    assert sec["body"]["reviews"] == []
