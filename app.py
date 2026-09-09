@@ -39243,6 +39243,18 @@ def _upsert_person_additive(cx, person, ts=None):
     def _apply_dnd(tagset):
         return ((set(tagset) - {"consent:opted-in"}) | {"consent:unsubscribed"}) if dnd else set(tagset)
 
+    # A person's own opt-in outranks a feeder's cold default. sync-media-contacts.py
+    # stamps consent:cold-no-consent on every row it posts, so a real client who also
+    # sits in the media CSV came back carrying both consent tags at once (Randy
+    # Schulman, 2026-09-08). A union can only add, so neither the feeder nor the
+    # classifier can drop the loser. This is the one place that sees both sides.
+    # It runs after _apply_dnd, so an unsubscribe still wins over both.
+    def _collapse_consent(tagset):
+        s = set(tagset)
+        if "consent:opted-in" in s:
+            s.discard("consent:cold-no-consent")
+        return s
+
     if existing:
         cols = set(existing.keys())
         upd = {}
@@ -39258,7 +39270,7 @@ def _upsert_person_additive(cx, person, ts=None):
                 ex = set()
             merged = sorted(ex | set(arrays[jf]))
             if jf == "tags":
-                merged = dedupe_tags_ci(merged)  # collapse GHL-echoed case twins
+                merged = dedupe_tags_ci(sorted(_collapse_consent(merged)))  # case twins + consent
             if merged != sorted(ex):
                 upd[jf] = json.dumps(merged)
         if dnd:  # force the consent flip on the tags column (a removal, so the union check above misses it)
@@ -39266,7 +39278,7 @@ def _upsert_person_additive(cx, person, ts=None):
                 ex_tags = set(json.loads(existing["tags"] or "[]"))
             except Exception:
                 ex_tags = set()
-            upd["tags"] = json.dumps(dedupe_tags_ci(sorted(_apply_dnd(ex_tags | set(arrays.get("tags", []))))))
+            upd["tags"] = json.dumps(dedupe_tags_ci(sorted(_collapse_consent(_apply_dnd(ex_tags | set(arrays.get("tags", [])))))))
         if order_count > int(existing["order_count"] or 0):
             upd["order_count"] = order_count
         if session_count > int(existing["session_count"] or 0):
@@ -39282,7 +39294,7 @@ def _upsert_person_additive(cx, person, ts=None):
     ins = dict(scalars)
     for jf in _PERSON_UPSERT_JSON:
         ins[jf] = json.dumps(sorted(set(arrays[jf])))
-    ins["tags"] = json.dumps(dedupe_tags_ci(sorted(_apply_dnd(set(arrays.get("tags", []))))))
+    ins["tags"] = json.dumps(dedupe_tags_ci(sorted(_collapse_consent(_apply_dnd(set(arrays.get("tags", [])))))))
     ins["email"] = email
     ins["order_count"] = order_count
     ins["session_count"] = session_count
