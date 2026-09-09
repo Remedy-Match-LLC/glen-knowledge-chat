@@ -37643,6 +37643,84 @@ def cron_reply_watch():
                     "e4l_accounts": e4l_counts})
 
 
+@app.route("/api/cron/cns-tracking", methods=["POST"])
+def cron_cns_tracking():
+    """Run the USPS Click-N-Ship tracking watcher inside the web container.
+
+    Was a launchd job on Glen's Mac. It crash-looped 5,505 times and recorded nothing
+    between 2026-07-11 and 2026-09-09, because the Doppler prd config is Render-shaped:
+    GMAIL_TOKEN_PATH points at /data (no such path on the Mac) and PG_DSN names a Render
+    INTERNAL host that does not resolve off Render. Both are correct in here, so the work
+    moved here and the cron just calls this. Auth: X-Cron-Secret (== CRON_SECRET, falls
+    back to CONSOLE_SECRET).
+
+    Idempotent: the shipments table excludes tracking numbers already recorded, so a
+    re-run never double-sends. Params: ?days=N (default 1 — the cron's 15-minute cadence
+    only ever needs today, and a wide window would mail people about parcels that landed
+    weeks ago), ?max=N emails scanned (default 25), ?dry_run=1 to classify without
+    sending, ?auto_send=0 to leave everything as a Gmail draft for review.
+    """
+    key = (request.headers.get("X-Cron-Secret", "")
+           or request.headers.get("X-Console-Key", "")
+           or request.args.get("key", ""))
+    expected = os.environ.get("CRON_SECRET") or os.environ.get("CONSOLE_SECRET", "")
+    if not expected or key != expected:
+        return jsonify({"error": "unauthorized"}), 401
+
+    def _flag(name, default):
+        v = request.args.get(name)
+        if v is None:
+            return default
+        return v.strip().lower() in ("1", "true", "yes")
+
+    dry_run = _flag("dry_run", False)
+    auto_send = _flag("auto_send", True)
+    def _int_arg(name, default, low, high):
+        try:
+            return max(low, min(high, int(request.args.get(name, default))))
+        except (TypeError, ValueError):
+            return default
+    days = _int_arg("days", 1, 1, 90)
+    max_messages = _int_arg("max", 25, 1, 200)
+
+    import cns_tracking_watcher as _cns
+    from dashboard import gmail_token as _gt
+    from google.auth.exceptions import RefreshError
+    loaded = None
+    try:
+        loaded = _gt.load_gmail_credentials(str(LOG_DB), name="inbox_gmail",
+                                            scopes=_cns.SCOPES)
+        from googleapiclient.discovery import build as _build
+        svc = _build("gmail", "v1", credentials=loaded.creds)
+        summary = _cns.run_watch(live=not dry_run, auto_send=auto_send, days=days,
+                                 max_messages=max_messages, db_file=str(LOG_DB),
+                                 service=svc)
+    except (_gt.GmailTokenMissing, RefreshError) as e:
+        now_iso = datetime.now(timezone.utc).isoformat()
+        if _gt.should_send_alert(str(LOG_DB), "inbox_gmail", now_iso):
+            _send_token_alert(
+                "Gmail token needs re-auth (USPS tracking watcher down)",
+                "The Click-N-Ship tracking watcher could not load its Gmail token "
+                "from the DB or disk. Customers are not being sent tracking numbers. "
+                "Re-run '~/AI-Training/02 Skills/google-auth.py' and PUT it to "
+                f"/api/tokens/inbox_gmail.\n\nDetail: {e}",
+            )
+            _gt.record_alert(str(LOG_DB), "inbox_gmail", now_iso)
+        return jsonify({"ok": False, "error": str(e), "token_missing": True}), 500
+    except Exception as e:  # noqa: BLE001
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+    if loaded is not None and not dry_run:
+        try:
+            _gt.persist_refreshed_credentials(str(LOG_DB), loaded)
+            _gt.record_ok(str(LOG_DB), "inbox_gmail")
+        except Exception as e:  # noqa: BLE001 - never fail the run on write-back
+            print(f"[cns-tracking] token write-back failed: {e!r}", flush=True)
+
+    return jsonify({"ok": True, **summary})
+
+
+
 @app.route("/api/reorder/items", methods=["GET"])
 def api_reorder_items():
     email = _reorder_email_from_cookie()

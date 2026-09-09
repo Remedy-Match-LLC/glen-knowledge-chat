@@ -1,6 +1,11 @@
 #!/usr/bin/env python3
 """Reply-watcher cron entry. Runs on Render every 15 minutes.
 
+Also carries the USPS Click-N-Ship tracking watcher as a piggyback leg (see
+run_cns_tracking below). Same 15-minute cadence, and Render limits how many cron
+services exist, so it rides here rather than claiming its own — the same reason
+run_personal_email_cron.py carries run_daily_piggybacks.
+
 Stdlib-only (no deps): runs in the cron container and just curls the web service's
 /api/cron/reply-watch endpoint. The watcher needs the Gmail token on the persistent
 disk (/data/google-token.json) + chat_log.db, which live on the web service — NOT in
@@ -26,7 +31,41 @@ if not CRON_SECRET:
     sys.exit(1)
 
 
+def run_cns_tracking():
+    """USPS Click-N-Ship tracking watcher, folded onto this 15-minute cron.
+
+    Best-effort: a failure here is printed and never changes the reply-watcher's exit
+    code, because the two jobs are unrelated and a tracking blip must not mask inbox
+    health. days=1 on purpose — the endpoint is idempotent per tracking number, so the
+    cadence only ever needs today, and a wide window would mail people about parcels
+    that landed weeks ago.
+    """
+    url = f"{WEB_URL}/api/cron/cns-tracking?days=1"
+    headers = {"X-Cron-Secret": CRON_SECRET, "Content-Type": "application/json"}
+    try:
+        body = json.loads(post_with_retry(url, headers, timeout=300,
+                                          label="cns-tracking-cron"))
+    except urllib.error.HTTPError as e:
+        if e.code == 404:
+            print("[cns-tracking-cron] endpoint 404 (not deployed yet) — skip", flush=True)
+            return
+        print(f"[cns-tracking-cron] HTTP {e.code}: {e.read()[:300]!r}", flush=True)
+        return
+    except Exception as e:  # noqa: BLE001
+        print(f"[cns-tracking-cron] failed: {e!r}", flush=True)
+        return
+
+    if not body.get("ok"):
+        print(f"[cns-tracking-cron] failed: {body.get('error')}", flush=True)
+        return
+    print(f"[cns-tracking-cron] mailbox={body.get('mailbox')} "
+          f"emails={body.get('emails')} shipments={body.get('shipments')} "
+          f"actions={body.get('actions')}", flush=True)
+
+
 def main():
+    run_cns_tracking()
+
     url = f"{WEB_URL}/api/cron/reply-watch"
     headers = {"X-Cron-Secret": CRON_SECRET, "Content-Type": "application/json"}
     # Transient 5xx / connection blips are retried inside post_with_retry; a sustained

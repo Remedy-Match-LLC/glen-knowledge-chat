@@ -312,6 +312,78 @@ def handle_confirmation(html, msg_id, cx, find_contact, draft_fn,
     return results
 
 
+# ── Runner (shared by the CLI and the Render cron endpoint) ──────────────────
+
+def run_watch(*, live=False, auto_send=False, days=14, max_messages=25,
+              db_file=None, service=None, log=None):
+    """Scan Click-N-Ship confirmations and notify recipients. Returns a summary dict.
+
+    The CLI passes nothing for `service` and builds one from the token file. The
+    web endpoint passes a service built from the durable oauth_tokens store, so the
+    cron never needs a token file of its own. `log` receives one line per shipment;
+    the CLI passes `print`, the endpoint passes None to stay quiet.
+    """
+    dry_run = not live
+    if log is None:
+        def log(_msg):
+            return None
+
+    try:
+        from dashboard.ghl import find_contact_by_name
+    except Exception:
+        find_contact_by_name = lambda name: None  # noqa: E731
+
+    svc = service or gmail_service()
+    draft_fn = make_draft_fn(svc) if not dry_run else (lambda **k: None)
+    send_fn = make_ghl_send_fn() if (not dry_run and auto_send) else None
+    harvest_fn = make_harvest_fn(make_gmail_search_fn(svc))
+    persist_contact = None if dry_run else make_persist_contact()
+
+    # Which mailbox this actually read. Without it a wrong-account token looks
+    # identical to a genuinely empty inbox: both report zero confirmations.
+    try:
+        mailbox = svc.users().getProfile(userId="me").execute().get("emailAddress")
+    except Exception:  # noqa: BLE001 - identification only, never fail the run
+        mailbox = None
+
+    q = f"{GMAIL_QUERY} newer_than:{days}d"
+    listing = svc.users().messages().list(
+        userId="me", q=q, maxResults=max_messages).execute()
+    msg_ids = [m["id"] for m in listing.get("messages", [])]
+
+    from dashboard import db
+    db_file = db_file or _db_path()
+    mode = "DRY-RUN" if dry_run else ("LIVE+AUTO-SEND" if auto_send else "LIVE")
+    log(f"{mode} | {len(msg_ids)} confirmation "
+        f"email(s) in last {days}d | db={db_file}\n")
+
+    totals = {}
+    shipments = 0
+    with db.connect(db_file) as cx:
+        init_tracking_schema(cx)
+        for mid in msg_ids:
+            msg = svc.users().messages().get(
+                userId="me", id=mid, format="full").execute()
+            html = _extract_html(msg.get("payload", {}))
+            for r in handle_confirmation(html, mid, cx, find_contact_by_name,
+                                         draft_fn, harvest_fn=harvest_fn,
+                                         persist_contact=persist_contact,
+                                         send_fn=send_fn, auto_send=auto_send,
+                                         dry_run=dry_run, link_orders=True):
+                shipments += 1
+                totals[r["action"]] = totals.get(r["action"], 0) + 1
+                log(f"  [{r.get('confidence','-'):>6}] {r['recipient']:<22} "
+                    f"{r['tracking']}  -> {r.get('to','')}  ({r['action']})")
+                link = r.get("order_link")
+                if link:
+                    log(f"           order-link: {link['status']} "
+                        f"{link.get('order_ids') or ''} — {link.get('reason','')}")
+
+    return {"mode": mode, "dry_run": dry_run, "auto_send": bool(auto_send),
+            "days": days, "mailbox": mailbox, "emails": len(msg_ids),
+            "shipments": shipments, "actions": totals, "db": db_file}
+
+
 # ── Entry point ──────────────────────────────────────────────────────────────
 
 def main():
@@ -326,53 +398,13 @@ def main():
     ap.add_argument("--max", type=int, default=25, help="max emails to scan")
     ap.add_argument("--db", default=None, help="override chat_log.db path")
     args = ap.parse_args()
-    dry_run = not args.live
 
-    try:
-        from dashboard.ghl import find_contact_by_name
-    except Exception:
-        find_contact_by_name = lambda name: None  # noqa: E731
+    summary = run_watch(live=args.live, auto_send=args.auto_send, days=args.days,
+                        max_messages=args.max, db_file=args.db, log=print)
 
-    svc = gmail_service()
-    draft_fn = make_draft_fn(svc) if not dry_run else (lambda **k: None)
-    send_fn = make_ghl_send_fn() if (not dry_run and args.auto_send) else None
-    harvest_fn = make_harvest_fn(make_gmail_search_fn(svc))
-    persist_contact = None if dry_run else make_persist_contact()
-
-    q = f"{GMAIL_QUERY} newer_than:{args.days}d"
-    listing = svc.users().messages().list(
-        userId="me", q=q, maxResults=args.max).execute()
-    msg_ids = [m["id"] for m in listing.get("messages", [])]
-
-    from dashboard import db
-    db_file = args.db or _db_path()
-    mode = "DRY-RUN" if dry_run else ("LIVE+AUTO-SEND" if args.auto_send else "LIVE")
-    print(f"{mode} | {len(msg_ids)} confirmation "
-          f"email(s) in last {args.days}d | db={db_file}\n")
-
-    totals = {}
-    with db.connect(db_file) as cx:
-        init_tracking_schema(cx)
-        for mid in msg_ids:
-            msg = svc.users().messages().get(
-                userId="me", id=mid, format="full").execute()
-            html = _extract_html(msg.get("payload", {}))
-            for r in handle_confirmation(html, mid, cx, find_contact_by_name,
-                                         draft_fn, harvest_fn=harvest_fn,
-                                         persist_contact=persist_contact,
-                                         send_fn=send_fn, auto_send=args.auto_send,
-                                         dry_run=dry_run, link_orders=True):
-                totals[r["action"]] = totals.get(r["action"], 0) + 1
-                line = (f"  [{r.get('confidence','-'):>6}] {r['recipient']:<22} "
-                        f"{r['tracking']}  -> {r.get('to','')}  ({r['action']})")
-                print(line)
-                link = r.get("order_link")
-                if link:
-                    print(f"           order-link: {link['status']} "
-                          f"{link.get('order_ids') or ''} — {link.get('reason','')}")
-
+    totals = summary["actions"]
     print("\nSummary:", ", ".join(f"{k}: {v}" for k, v in totals.items() if v))
-    if dry_run:
+    if summary["dry_run"]:
         print("Dry-run only — no drafts created, nothing recorded. "
               "Re-run with --live when the matches look right.")
 
