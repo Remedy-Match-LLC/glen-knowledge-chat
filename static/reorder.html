@@ -94,7 +94,7 @@
       </div>
       <div class="ref-entry hide" id="refEntry" style="margin-bottom:.6rem">
         <label for="refCode" class="muted">Referral code (optional)</label>
-        <input type="text" id="refCode" placeholder="A friend's code = 10% off" autocomplete="off"
+        <input type="text" id="refCode" placeholder="A friend's code" autocomplete="off"
                style="width:100%;padding:.5rem;margin-top:.25rem">
       </div>
       <button class="primary" id="checkoutBtn" disabled onclick="checkout()">Reorder selected</button>
@@ -307,6 +307,10 @@ async function loadReferral(){
     const ed = await er.json();
     if (!ed || !ed.enabled) return;                 // flag off -> stay hidden
     const re = document.getElementById('refEntry'); if (re) re.classList.remove('hide');
+    // The percentage comes from the endpoint. Stating it in the markup would lie the
+    // moment REFERRAL_PCT changed.
+    const rc = document.getElementById('refCode');
+    if (rc && ed.pct > 0) rc.placeholder = "A friend's code = " + ed.pct + "% off";
     const r = await fetch('/api/referral/my-code', {credentials:'same-origin'});
     if (!r.ok) {
       const d403 = await r.json().catch(() => ({}));

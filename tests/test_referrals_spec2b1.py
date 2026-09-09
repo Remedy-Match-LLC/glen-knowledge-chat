@@ -123,9 +123,17 @@ def test_record_referral_flag_off(monkeypatch, tmp_path):
 
 
 def test_referral_enabled_endpoint(monkeypatch, tmp_path):
+    """The flag, and the percentage alongside it.
+
+    `pct` travels with the flag so no page states the discount as literal text.
+    begin-buy.html said "a friend's code = 10% off" in its markup, which would have lied
+    to the buyer the moment REFERRAL_PCT changed.
+    """
     import importlib
     monkeypatch.setenv("DATA_DIR", str(tmp_path)); monkeypatch.setenv("REFERRALS", "true")
+    monkeypatch.setenv("REFERRAL_PCT", "15")
     import app as appmod; importlib.reload(appmod)
-    assert appmod.app.test_client().get("/api/referral/enabled").get_json() == {"enabled": True}
+    assert appmod.app.test_client().get("/api/referral/enabled").get_json() == {
+        "enabled": True, "pct": 15}
     monkeypatch.setenv("REFERRALS", "false"); importlib.reload(appmod)
-    assert appmod.app.test_client().get("/api/referral/enabled").get_json() == {"enabled": False}
+    assert appmod.app.test_client().get("/api/referral/enabled").get_json()["enabled"] is False

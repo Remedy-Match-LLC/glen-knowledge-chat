@@ -21849,7 +21849,9 @@ def api_referral_my_code():
 
 @app.route("/api/referral/enabled", methods=["GET"])
 def api_referral_enabled():
-    return jsonify({"enabled": bool(_REFERRALS)})
+    # `pct` travels with the flag so no page hardcodes it. begin-buy.html used to say
+    # "10% off" as literal text, which would have lied the moment REFERRAL_PCT changed.
+    return jsonify({"enabled": bool(_REFERRALS), "pct": _referral_pct()})
 
 
 def _stripe_checkout_url_for_reorder(out, email):
