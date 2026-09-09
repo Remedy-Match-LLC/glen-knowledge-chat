@@ -61,7 +61,7 @@
     ],
     "ingredients_source": "fmp-bom-2026-08-31",
     "bottle_type": "30 Caps",
-    "note": "SKU 1 of the Fibrolysis 3-SKU line. BOM from FMP product 1191, extract 2026-08-31: 15+100+25+350 = 490 mg, matching FMP zc_total_mg 490. The four zero-quantity companion lines in FMP (incl. raw 4259 Nattokinase, the marker for raw 4504 Bacillus subtilis) carry no mass and are not panel rows. Page previously had no ingredients panel at all. DOSING AND WARNING ARE DETERMINISTIC FIELDS, 2026-09-09. The cached AI draft replaces the description section wholesale, and on 2026-09-09 the live fibrolysis-factors page carried no dosing at all because of it. A dose and a contraindication are label facts and must not be at the mercy of a rewrite, so they are served from directions/warning and rendered under the panel.",
+    "note": "SKU 1 of the Fibrolysis 3-SKU line. BOM from FMP product 1191, extract 2026-08-31: 15+100+25+350 = 490 mg, matching FMP zc_total_mg 490. The zero-quantity lines, including raw 4259 Nattokinase at 35,000 FU/g, are PROPOSED FUTURE ENHANCEMENTS and are not panel rows. The dosed line 4504 is nattokinase at 20,000 FU/g, which is the 2,000 FU per capsule the spec asks for. Page previously had no ingredients panel at all. DOSING AND WARNING ARE DETERMINISTIC FIELDS, 2026-09-09. The cached AI draft replaces the description section wholesale, and on 2026-09-09 the live fibrolysis-factors page carried no dosing at all because of it. A dose and a contraindication are label facts and must not be at the mercy of a rewrite, so they are served from directions/warning and rendered under the panel. Glen's ruling, 2026-09-09: a BOM line with zero quantity is a PROPOSED FUTURE ENHANCEMENT and must not be listed publicly until it is implemented. It is not a marker, an alternate grade or a duplicate. Never surface one on a page, and never borrow its standardization percentage for the dosed line above it.",
     "directions": "Take 1 capsule 1 to 2 times daily on an empty stomach, away from food.",
     "warning": "Not for use with anticoagulant or antiplatelet medication, with a bleeding disorder, during pregnancy, or within about two weeks of surgery."
   },
@@ -91,12 +91,58 @@
     "ingredients_source": "fmp-bom-2026-08-31",
     "description": "Anti-fibrotic botanical formula, five standardized actives at 487.5 mg per capsule. Take 1 to 2 capsules daily with food.",
     "bottle_type": "30 Caps",
-    "note": "Reformulated 2026-06-06 (SKU 2 of the Fibrolysis 3-SKU line); the old enzyme-led formula moved to Fibrosolve. BOM from FMP product 356, extract 2026-08-31: 50+200+125+75+37.5 = 487.5 mg, matching FMP zc_total_mg 487.5. The three zero-quantity marker lines (raw 5604 Green Tea EGCG, 4609 Salvia miltiorrhiza, 5583 High AKBA Boswellic Acid 90%) carry no mass; they had been rendering as three extra panel rows, one of them as '(unnamed FMP ingredient 5583)'. Their botanical identity is folded into the dosed line, their conflicting standardization percentages are not. Dosing from FMP dosage/dosage_timing/dosage_freq on the same extract. DOSING: Glen ruled 1 to 2 capsules daily on 2026-09-08. FMP product 356 still reads dosage '1 capsule' / dosage_freq 'daily' on the 2026-08-31 extract, and the FileMaker record needs that edit by hand. The vault wins the disagreement per the 2026-08-10 ruling: the 2026-06-06 spec says 1-2 caps/day, and its dose rationale rests on 2 caps reaching each active's minimum therapeutic dose, with EGCG at the 400 mg trial floor. At 1 capsule every active sits at half its minimum. Do not re-derive this field from the FMP extract. PANEL NOTE: Glen asked for the spec's 'synergistic with Glutathione Syntropy' label line on the page, at the bottom, 2026-09-08. Rendered under the ingredient list, which is where a label carries it. The thiol axis is deliberately carried by that companion product rather than by NAC in this formula. DOSING AND WARNING ARE DETERMINISTIC FIELDS, 2026-09-09. The cached AI draft replaces the description section wholesale, and on 2026-09-09 the live fibrolysis-factors page carried no dosing at all because of it. A dose and a contraindication are label facts and must not be at the mercy of a rewrite, so they are served from directions/warning and rendered under the panel.",
+    "note": "Reformulated 2026-06-06 (SKU 2 of the Fibrolysis 3-SKU line); the old enzyme-led formula moved to Fibrosolve. BOM from FMP product 356, extract 2026-08-31: 50+200+125+75+37.5 = 487.5 mg, matching FMP zc_total_mg 487.5. The three zero-quantity lines (raw 5604 Green Tea EGCG 98%, 4609 Salvia miltiorrhiza 70%, 5583 High AKBA Boswellic Acid 90%) are PROPOSED FUTURE ENHANCEMENTS and are not panel rows. They had been rendering as three extra rows, one as '(unnamed FMP ingredient 5583)'. Only species names that are true of the dosed material are kept; none of their standardization percentages is stated. Dosing from FMP dosage/dosage_timing/dosage_freq on the same extract. DOSING: Glen ruled 1 to 2 capsules daily on 2026-09-08. FMP product 356 still reads dosage '1 capsule' / dosage_freq 'daily' on the 2026-08-31 extract, and the FileMaker record needs that edit by hand. The vault wins the disagreement per the 2026-08-10 ruling: the 2026-06-06 spec says 1-2 caps/day, and its dose rationale rests on 2 caps reaching each active's minimum therapeutic dose, with EGCG at the 400 mg trial floor. At 1 capsule every active sits at half its minimum. Do not re-derive this field from the FMP extract. PANEL NOTE: Glen asked for the spec's 'synergistic with Glutathione Syntropy' label line on the page, at the bottom, 2026-09-08. Rendered under the ingredient list, which is where a label carries it. The thiol axis is deliberately carried by that companion product rather than by NAC in this formula. DOSING AND WARNING ARE DETERMINISTIC FIELDS, 2026-09-09. The cached AI draft replaces the description section wholesale, and on 2026-09-09 the live fibrolysis-factors page carried no dosing at all because of it. A dose and a contraindication are label facts and must not be at the mercy of a rewrite, so they are served from directions/warning and rendered under the panel. Glen's ruling, 2026-09-09: a BOM line with zero quantity is a PROPOSED FUTURE ENHANCEMENT and must not be listed publicly until it is implemented. It is not a marker, an alternate grade or a duplicate. Never surface one on a page, and never borrow its standardization percentage for the dosed line above it.",
     "panel_note": "Synergistic with Glutathione Syntropy.",
     "panel_note_link": {
       "label": "Glutathione Syntropy",
       "url": "/begin/product/glutathione-syntropy"
     },
     "directions": "Take 1 to 2 capsules daily with food."
+  },
+  "estro-clear": {
+    "ingredients": [
+      {
+        "name": "Calcium-D-glucarate",
+        "dose": "250 mg"
+      },
+      {
+        "name": "DIM 98% (diindolylmethane)",
+        "dose": "100 mg"
+      },
+      {
+        "name": "Broccoli extract (Brassica oleracea), 17% glucoraphanin",
+        "dose": "85 mg"
+      },
+      {
+        "name": "Vitamin C (L-ascorbic acid)",
+        "dose": "50 mg"
+      },
+      {
+        "name": "Black pepper extract (95% piperine)",
+        "dose": "5 mg"
+      },
+      {
+        "name": "Vitamin D3 (cholecalciferol)",
+        "dose": "2,000 IU"
+      },
+      {
+        "name": "Black mustard seed (Brassica nigra)",
+        "dose": "2.5 mg"
+      },
+      {
+        "name": "Iodine (from potassium iodide)",
+        "dose": "150 mcg"
+      },
+      {
+        "name": "Selenium (as methylselenocysteine)",
+        "dose": "100 mcg"
+      }
+    ],
+    "ingredients_source": "fmp-bom-2026-08-31",
+    "description": "Estrogen metabolism and clearance support, nine actives at about 497 mg per capsule. Third SKU of the Fibrolysis line, alongside Fibrosolve and Fibrolysis Factors.",
+    "directions": "Take 1 capsule 1 to 2 times daily with oils or a fatty meal. Keep the bottle tightly closed and dry.",
+    "warning": "Contains piperine, which can raise blood levels of some medications. Check with your prescriber if you take prescription medication.",
+    "bottle_type": "30 Caps",
+    "note": "SKU 3 of the Fibrolysis line, specced as 'Estrolytic' in the 2026-06-06 product-line spec and PRODUCED as Estro-Clear (Glen, 2026-09-09). BOM from FMP product 1190, extract 2026-08-31: the nine dosed lines sum to 496.939 mg, matching FMP zc_total_mg 496.939. Three zero-quantity lines are PROPOSED FUTURE ENHANCEMENTS and are not panel rows: raw 4326 Glucoraphanin, 5608 Myrosinase, and 5606 potassium iodate. D3 is 4 mg at 500,000 IU/g = 2,000 IU; selenium 0.244 mg MSC at 41% = 100 mcg Se; iodine 0.195 mg KI at 77% = 150 mcg I. Dosing and timing from the same extract. The spec's 50% glucoraphanin and red cabbage myrosinase are the PROPOSED upgrades recorded as the zero-quantity lines, not a defect in what ships. What is in the bottle is 17% glucoraphanin and 2.5 mg of black mustard seed, and that is what the panel states. Glen's ruling, 2026-09-09: a BOM line with zero quantity is a PROPOSED FUTURE ENHANCEMENT and must not be listed publicly until it is implemented. It is not a marker, an alternate grade or a duplicate. Never surface one on a page, and never borrow its standardization percentage for the dosed line above it."
   }
 }

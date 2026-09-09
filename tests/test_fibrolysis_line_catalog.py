@@ -4,9 +4,13 @@ The 2026-06-06 reformulation split the old enzyme-led "Fibrolysis Factors" into
 Fibrosolve (the enzymes) and a new botanical Fibrolysis Factors. The illtowell
 product pages read data/products.json, and both entries were wrong there on
 2026-09-08: Fibrosolve carried no ingredients at all, and Fibrolysis Factors
-carried three zero-quantity FMP marker lines as if they were panel rows (one of
-them as "(unnamed FMP ingredient 5583)") plus a placeholder description with no
-dosing.
+carried three zero-quantity FMP lines as if they were panel rows (one of them as
+"(unnamed FMP ingredient 5583)") plus a placeholder description with no dosing.
+
+Glen's ruling, 2026-09-09: a BOM line with zero quantity is a PROPOSED FUTURE
+ENHANCEMENT and must not be listed publicly until it is implemented. That is why
+they are excluded, and why none of their standardization percentages appears on
+a dosed line.
 
 Both fixes also live in data/products-manual-corrections.json, which is what
 scripts/apply_enrichment.py replays. Pinning products.json alone would let the
@@ -76,9 +80,69 @@ def test_panel_sums_to_the_capsule_total(products, slug):
     assert total == pytest.approx(EXPECTED[slug]["total_mg"])
 
 
+# The zero-quantity lines behind these three products: proposed future enhancements
+# recorded in FMP, none of which may appear on a page until it is implemented
+# (Glen, 2026-09-09). Listed by the content that would give them away.
+PROPOSED_NOT_SHIPPED = [
+    "35,000",                 # fibrosolve raw 4259, nattokinase at a higher activity
+    "70%",                    # fibrolysis-factors raw 4609, Salvia miltiorrhiza 70%
+    "High AKBA",              # fibrolysis-factors raw 5583, boswellic acid 90%
+    "90%",
+    "50% glucoraphanin",      # estro-clear raw 4326
+    "myrosinase",             # estro-clear raw 5608, red cabbage myrosinase
+    "iodate",                 # estro-clear raw 5606, potassium iodate
+    "unnamed FMP ingredient",
+]
+
+
+@pytest.mark.parametrize("slug", ["fibrosolve", "fibrolysis-factors", "estro-clear"])
+def test_proposed_enhancements_never_reach_a_panel(products, slug):
+    panel = " | ".join(f"{i['name']} {i['dose']}" for i in products[slug]["ingredients"])
+    for token in PROPOSED_NOT_SHIPPED:
+        assert token.lower() not in panel.lower(), f"{slug} publishes {token!r}"
+
+
+# Estro-Clear is SKU 3, specced as "Estrolytic" and produced under this name. Its panel
+# mixes mg with IU and mcg, so it pins row-for-row rather than by mass sum.
+ESTRO_CLEAR = [
+    ("Calcium-D-glucarate", "250 mg"),
+    ("DIM 98% (diindolylmethane)", "100 mg"),
+    ("Broccoli extract (Brassica oleracea), 17% glucoraphanin", "85 mg"),
+    ("Vitamin C (L-ascorbic acid)", "50 mg"),
+    ("Black pepper extract (95% piperine)", "5 mg"),
+    ("Vitamin D3 (cholecalciferol)", "2,000 IU"),
+    ("Black mustard seed (Brassica nigra)", "2.5 mg"),
+    ("Iodine (from potassium iodide)", "150 mcg"),
+    ("Selenium (as methylselenocysteine)", "100 mcg"),
+]
+
+
+def test_estro_clear_panel_matches_the_fmp_bom(products):
+    p = products["estro-clear"]
+    assert [(i["name"], i["dose"]) for i in p["ingredients"]] == ESTRO_CLEAR
+    assert p["directions"].startswith("Take 1 capsule 1 to 2 times daily")
+    assert "piperine" in p["warning"].lower()
+
+
+def test_estro_clear_states_the_grade_actually_in_the_bottle(products):
+    """The spec asks for 50% glucoraphanin and red cabbage myrosinase; FMP product
+    1190 carries 17% and black mustard seed. The panel states the bottle, so these
+    two strings must not quietly drift back to the spec's better materials."""
+    names = [i["name"] for i in products["estro-clear"]["ingredients"]]
+    assert any("17% glucoraphanin" in n for n in names)
+    assert any("Brassica nigra" in n for n in names)
+    assert not any("50% glucoraphanin" in n or "myrosinase" in n.lower() for n in names)
+
+
+def test_no_estrolytic_sku_was_minted(products):
+    """Specced as Estrolytic, produced as Estro-Clear. One SKU, not two."""
+    assert "estrolytic" not in products
+    assert not any((v.get("name") or "") == "Estrolytic" for v in products.values())
+
+
 @pytest.mark.parametrize("slug", sorted(EXPECTED))
-def test_no_zero_quantity_marker_rows(products, slug):
-    """The three FMP marker lines and the unresolved-name placeholder are gone."""
+def test_no_zero_quantity_rows(products, slug):
+    """Zero-quantity BOM lines are proposed enhancements and never ship publicly."""
     for ing in products[slug]["ingredients"]:
         assert ing["dose"].strip(), f"{slug}: dose-less row {ing['name']!r}"
         assert "unnamed FMP ingredient" not in ing["name"]
@@ -104,6 +168,12 @@ def test_fibrosolve_description_keeps_the_bleeding_warning(products):
     desc = products["fibrosolve"]["description"]
     for term in ("anticoagulant", "bleeding", "pregnancy", "surgery", "empty stomach"):
         assert term in desc.lower()
+
+
+def test_estro_clear_correction_is_recorded(corrections):
+    c = corrections["estro-clear"]
+    assert [(i["name"], i["dose"]) for i in c["ingredients"]] == ESTRO_CLEAR
+    assert c["ingredients_source"] == "fmp-bom-2026-08-31"
 
 
 @pytest.mark.parametrize("slug", sorted(EXPECTED))
