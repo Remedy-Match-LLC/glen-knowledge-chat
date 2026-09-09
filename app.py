@@ -39321,6 +39321,32 @@ def _upsert_person_additive(cx, person, ts=None):
     def _apply_dnd(tagset):
         return ((set(tagset) - {"consent:opted-in"}) | {"consent:unsubscribed"}) if dnd else set(tagset)
 
+    # Consent precedence, applied to the UNION. A union can only add, so neither a
+    # feeder nor _classify_person can drop the loser of a contradictory pair, and
+    # this is the one place that sees the stored tags and the incoming ones at once.
+    # Measured in production on 2026-09-09: 14 people carried opted-in and cold
+    # together, 4 carried unsubscribed and opted-in together.
+    #
+    #   unsubscribed beats opted-in. Nothing in this codebase ever removes
+    #   consent:unsubscribed, so an opt-out is permanent by design and a feeder
+    #   must not be able to re-subscribe someone. This is the same stance
+    #   _apply_dnd and revoke_consent already take, read off the stored state
+    #   rather than the incoming payload.
+    #
+    #   opted-in beats cold. sync-media-contacts.py stamps consent:cold-no-consent
+    #   on every row it posts, and the practitioner feeder stamps it on anyone not
+    #   yet engaged, so a person who later opts in kept the cold tag forever.
+    #
+    # unsubscribed with cold is left alone. Both suppress, so the pair is
+    # consistent. Runs after _apply_dnd, which handles the incoming DND signal.
+    def _collapse_consent(tagset):
+        s = set(tagset)
+        if "consent:unsubscribed" in s:
+            s.discard("consent:opted-in")
+        if "consent:opted-in" in s:
+            s.discard("consent:cold-no-consent")
+        return s
+
     if existing:
         cols = set(existing.keys())
         upd = {}
@@ -39336,7 +39362,7 @@ def _upsert_person_additive(cx, person, ts=None):
                 ex = set()
             merged = sorted(ex | set(arrays[jf]))
             if jf == "tags":
-                merged = dedupe_tags_ci(merged)  # collapse GHL-echoed case twins
+                merged = dedupe_tags_ci(sorted(_collapse_consent(merged)))  # case twins + consent
             if merged != sorted(ex):
                 upd[jf] = json.dumps(merged)
         if dnd:  # force the consent flip on the tags column (a removal, so the union check above misses it)
@@ -39344,7 +39370,7 @@ def _upsert_person_additive(cx, person, ts=None):
                 ex_tags = set(json.loads(existing["tags"] or "[]"))
             except Exception:
                 ex_tags = set()
-            upd["tags"] = json.dumps(dedupe_tags_ci(sorted(_apply_dnd(ex_tags | set(arrays.get("tags", []))))))
+            upd["tags"] = json.dumps(dedupe_tags_ci(sorted(_collapse_consent(_apply_dnd(ex_tags | set(arrays.get("tags", [])))))))
         if order_count > int(existing["order_count"] or 0):
             upd["order_count"] = order_count
         if session_count > int(existing["session_count"] or 0):
@@ -39360,7 +39386,7 @@ def _upsert_person_additive(cx, person, ts=None):
     ins = dict(scalars)
     for jf in _PERSON_UPSERT_JSON:
         ins[jf] = json.dumps(sorted(set(arrays[jf])))
-    ins["tags"] = json.dumps(dedupe_tags_ci(sorted(_apply_dnd(set(arrays.get("tags", []))))))
+    ins["tags"] = json.dumps(dedupe_tags_ci(sorted(_collapse_consent(_apply_dnd(set(arrays.get("tags", [])))))))
     ins["email"] = email
     ins["order_count"] = order_count
     ins["session_count"] = session_count

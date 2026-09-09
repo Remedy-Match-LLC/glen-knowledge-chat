@@ -135,6 +135,139 @@ def test_merge_skips_blank_email(app_db):
         assert cx.execute("SELECT COUNT(*) FROM people").fetchone()[0] == 0
 
 
+# ── consent precedence: an opt-in outranks a feeder's cold default ────────────
+# sync-media-contacts.py stamps consent:cold-no-consent on every row it posts, so a
+# real client who also sits in the media CSV came back carrying both consent tags at
+# once (Randy Schulman, 2026-09-08). A union can only add, so the pair has to be
+# collapsed where both sides are visible.
+
+def test_optin_survives_a_cold_feeder(app_db):
+    app, db = app_db
+    client = app.app.test_client()
+    hdr = {"X-Console-Key": "testkey"}
+    client.post("/api/people", json=[{
+        "email": "randy@x.com", "tags": ["type:client", "consent:opted-in"],
+    }], headers=hdr)
+    r = client.post("/api/people?merge_tags=1", json=[{
+        "email": "randy@x.com",
+        "tags": ["type:pr-media", "consent:cold-no-consent", "source:media-outreach"],
+    }], headers=hdr)
+    assert r.status_code == 200
+    tags = _tags(db, "randy@x.com")
+    assert "consent:opted-in" in tags
+    assert "consent:cold-no-consent" not in tags
+    assert "type:pr-media" in tags  # the non-consent tags still merge
+
+
+def test_cold_contact_can_still_upgrade_to_optin(app_db):
+    app, db = app_db
+    client = app.app.test_client()
+    hdr = {"X-Console-Key": "testkey"}
+    client.post("/api/people", json=[{
+        "email": "lead@x.com", "tags": ["type:pr-media", "consent:cold-no-consent"],
+    }], headers=hdr)
+    r = client.post("/api/people?merge_tags=1", json=[{
+        "email": "lead@x.com", "tags": ["type:client", "consent:opted-in"],
+    }], headers=hdr)
+    assert r.status_code == 200
+    tags = _tags(db, "lead@x.com")
+    assert "consent:opted-in" in tags
+    assert "consent:cold-no-consent" not in tags
+
+
+def test_a_cold_contact_with_no_optin_stays_cold(app_db):
+    """The collapse must not simply delete the cold tag."""
+    app, db = app_db
+    client = app.app.test_client()
+    hdr = {"X-Console-Key": "testkey"}
+    r = client.post("/api/people?merge_tags=1", json=[{
+        "email": "cold@x.com", "tags": ["type:pr-media", "consent:cold-no-consent"],
+    }], headers=hdr)
+    assert r.status_code == 200
+    assert _tags(db, "cold@x.com") == {"type:pr-media", "consent:cold-no-consent"}
+
+
+def test_an_unsubscribe_beats_a_feeder_re_opt_in(app_db):
+    """Nothing in the codebase removes consent:unsubscribed, so a feeder must not
+    be able to re-subscribe someone by adding consent:opted-in back."""
+    app, db = app_db
+    client = app.app.test_client()
+    hdr = {"X-Console-Key": "testkey"}
+    client.post("/api/people", json=[{
+        "email": "gone@x.com", "tags": ["type:client", "consent:unsubscribed"],
+    }], headers=hdr)
+    r = client.post("/api/people?merge_tags=1", json=[{
+        "email": "gone@x.com", "tags": ["type:practitioner", "consent:opted-in"],
+    }], headers=hdr)
+    assert r.status_code == 200
+    tags = _tags(db, "gone@x.com")
+    assert "consent:unsubscribed" in tags
+    assert "consent:opted-in" not in tags
+    assert "type:practitioner" in tags  # non-consent tags still merge
+
+
+def test_a_stored_unsubscribe_and_optin_pair_is_cleaned(app_db):
+    """The 4 people already carrying both are repaired on their next touch."""
+    app, db = app_db
+    client = app.app.test_client()
+    hdr = {"X-Console-Key": "testkey"}
+    client.post("/api/people", json=[{
+        "email": "both2@x.com",
+        "tags": ["type:client", "consent:unsubscribed", "consent:opted-in"],
+    }], headers=hdr)
+    r = client.post("/api/people?merge_tags=1", json=[{
+        "email": "both2@x.com", "tags": ["source:practitioner-finder"],
+    }], headers=hdr)
+    assert r.status_code == 200
+    tags = _tags(db, "both2@x.com")
+    assert "consent:unsubscribed" in tags
+    assert "consent:opted-in" not in tags
+
+
+def test_an_unsubscribed_person_may_keep_the_cold_tag(app_db):
+    """Both suppress, so the pair is consistent and must not be disturbed."""
+    app, db = app_db
+    client = app.app.test_client()
+    r = client.post("/api/people?merge_tags=1", json=[{
+        "email": "coldgone@x.com",
+        "tags": ["consent:unsubscribed", "consent:cold-no-consent"],
+    }], headers={"X-Console-Key": "testkey"})
+    assert r.status_code == 200
+    assert _tags(db, "coldgone@x.com") == {
+        "consent:unsubscribed", "consent:cold-no-consent"}
+
+
+def test_a_new_person_posted_with_both_tags_is_collapsed(app_db):
+    """The insert path collapses too, not only the update path."""
+    app, db = app_db
+    client = app.app.test_client()
+    r = client.post("/api/people?merge_tags=1", json=[{
+        "email": "fresh@x.com",
+        "tags": ["type:client", "consent:opted-in", "consent:cold-no-consent"],
+    }], headers={"X-Console-Key": "testkey"})
+    assert r.status_code == 200 and r.get_json()["inserted"] == 1
+    tags = _tags(db, "fresh@x.com")
+    assert "consent:opted-in" in tags
+    assert "consent:cold-no-consent" not in tags
+
+
+def test_a_stored_contradiction_is_cleaned_on_the_next_touch(app_db):
+    """Rows that already carry both tags are repaired without a backfill."""
+    app, db = app_db
+    client = app.app.test_client()
+    hdr = {"X-Console-Key": "testkey"}
+    client.post("/api/people", json=[{
+        "email": "both@x.com",
+        "tags": ["type:client", "consent:opted-in", "consent:cold-no-consent"],
+    }], headers=hdr)
+    r = client.post("/api/people?merge_tags=1", json=[{
+        "email": "both@x.com", "tags": ["source:media-outreach"],
+    }], headers=hdr)
+    assert r.status_code == 200
+    tags = _tags(db, "both@x.com")
+    assert "consent:opted-in" in tags
+    assert "consent:cold-no-consent" not in tags
+
 # ── contact-type filter on GET /api/people ────────────────────────────────────
 
 def test_type_tag_filter(app_db):
