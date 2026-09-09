@@ -111,8 +111,13 @@ def test_every_pathway_route_is_console_gated(tmp_path, monkeypatch):
                                                           "direction": "up"})):
         assert c.post(path, json=body).status_code == 401, path
     # and the key opens it, then cookies so same-origin fetches stay authed
+    # ?key= now cookies AND redirects, so the key does not stay in the URL where
+    # the dev server's access log would record it.
     r = c.get("/pathway-review?key=s3cret")
-    assert r.status_code == 200 and "rm_biofield_key" in r.headers.get("Set-Cookie", "")
+    assert r.status_code == 302, r.status_code
+    assert "key=" not in r.headers.get("Location", "")
+    assert "rm_biofield_key" in r.headers.get("Set-Cookie", "")
+    c.set_cookie("rm_biofield_key", "s3cret")
     assert c.get("/pathway-review").status_code == 200
 
 

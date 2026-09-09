@@ -180,6 +180,11 @@ def test_every_condition_review_route_is_console_gated(tmp_path, monkeypatch):
         ("/api/condition-review/needs-canonical", {"edge_id": 1, "label": "X"}),
     ):
         assert c.post(path, json=body).status_code == 401, path
+    # ?key= now cookies AND redirects, so the key does not stay in the URL where
+    # the dev server's access log would record it.
     r = c.get("/condition-pathway-review?key=s3cret")
-    assert r.status_code == 200 and "rm_biofield_key" in r.headers.get("Set-Cookie", "")
+    assert r.status_code == 302, r.status_code
+    assert "key=" not in r.headers.get("Location", "")
+    assert "rm_biofield_key" in r.headers.get("Set-Cookie", "")
+    c.set_cookie("rm_biofield_key", "s3cret")
     assert c.get("/condition-pathway-review").status_code == 200

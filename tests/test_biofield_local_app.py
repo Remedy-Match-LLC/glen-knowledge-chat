@@ -41,7 +41,15 @@ def test_console_key_gate(tmp_path, monkeypatch):
     _seed(db)
     client = create_app(db).test_client()
     assert client.get("/").status_code == 401            # blocked without the key
-    assert client.get("/?key=k").status_code == 200      # the launcher's ?key= unlocks
+    # The launcher's ?key= unlocks, then REDIRECTS to strip the key from the URL.
+    # Flask's dev server logs full request lines, so leaving the key in the URL
+    # wrote Glen's live console secret to disk on every navigation.
+    r = client.get("/?key=k")
+    assert r.status_code == 302, r.status_code
+    assert "key=" not in r.headers.get("Location", "")
+    assert "rm_biofield_key" in r.headers.get("Set-Cookie", "")
+    client.set_cookie("rm_biofield_key", "k")
+    assert client.get("/").status_code == 200            # the cookie carries it
 
 
 def test_index_works_without_snapshot(tmp_path):
