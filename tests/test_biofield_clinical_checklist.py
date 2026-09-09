@@ -4,7 +4,8 @@ from dashboard.biofield_authoring import add_chain_row, create_test
 from dashboard.biofield_clinical_checklist import (
     balance_item, build, catalog_items, custom_remedies, ensure_catalog_schema,
     forget_remedy,
-    profile_labels, program_remedies, remember_remedies, remember_stress_pattern,
+    profile_labels, program_remedies, remedies_for, remember_remedies,
+    remember_stress_pattern,
     stress_pattern, suggested_pattern,
 )
 from dashboard.biofield_report_html import render_author_html
@@ -293,3 +294,62 @@ def test_using_a_suggestion_promotes_it_to_the_practitioners_own_term():
         head, tail = cx.execute(
             "SELECT head,most_affected FROM biofield_auth_chain WHERE layer=1").fetchone()
         assert head == "Sleep Regulation" and tail == "Sleep Regulation"
+
+
+def test_symptom_inherits_the_remedies_of_every_program_listing_it():
+    """The picker offers a program's symptoms as selectable conditions and shows the
+    program's remedy count against each. Matching only the program label made every
+    one of those counts a promise nothing could fulfil."""
+    assert "Macular Wellness Lutein" in program_remedies("Blurred central vision")
+    # A symptom shared by two programs collects both, de-duplicated and in order.
+    shared = program_remedies("Gradual peripheral vision loss")
+    assert shared.count("Neuroprotect") == 1
+    assert {"IOP Syntropy", "OcuFlow Daytime"} <= set(shared)
+
+
+def test_amd_display_label_resolves_to_its_programs():
+    """`catalog_items` offers this exact display string, so the lookup must accept it."""
+    assert len(program_remedies("AMD (Age-Related Macular Degeneration)")) == 9
+
+
+def test_every_label_the_picker_offers_returns_remedies():
+    """The count beside a condition in the dropdown and the list shown after adding it
+    must come from the same place. 61 of 83 offered labels used to return nothing."""
+    cx = sqlite3.connect(":memory:")
+    ensure_catalog_schema(cx)
+    empty = [row["label"] for row in catalog_items(cx, "", limit=500)
+             if not program_remedies(row["label"])]
+    assert empty == []
+
+
+def test_remedies_for_combines_history_programs_and_customs_minus_forgotten():
+    """One lookup feeds the checklist. A program remedy must be deletable the same way
+    a historical one is, or the minus button silently does nothing to it."""
+    cx = sqlite3.connect(":memory:")
+    ensure_catalog_schema(cx)
+    remember_remedies(cx, "Blurred central vision", ["Bilberry Complex"])
+    names = [row["remedy"] for row in remedies_for(
+        cx, "Blurred central vision",
+        historical=[{"remedy": "Neuroprotect", "count": 7}])]
+    assert names[0] == "Neuroprotect"
+    assert "Macular Wellness Lutein" in names
+    assert "Bilberry Complex" in names
+
+    forget_remedy(cx, "Blurred central vision", "Macular Wellness Lutein")
+    after = [row["remedy"] for row in remedies_for(
+        cx, "Blurred central vision",
+        historical=[{"remedy": "Neuroprotect", "count": 7}])]
+    assert "Macular Wellness Lutein" not in after
+    assert "Neuroprotect" in after and "Bilberry Complex" in after
+
+
+def test_a_hand_added_remedy_survives_a_full_program_list():
+    """build() shows at most 8. Dry AMD alone supplies 9, so ordering the program
+    list ahead of the practitioner's own addition silently drops the addition --
+    the + Remedy button would look like it did nothing."""
+    cx = sqlite3.connect(":memory:")
+    ensure_catalog_schema(cx)
+    remember_remedies(cx, "Blurred central vision", ["Bilberry Complex"])
+    rows = build({"conditions": ["Blurred central vision"]}, [],
+                 remedy_lookup=lambda label: remedies_for(cx, label, historical=[]))
+    assert "Bilberry Complex" in rows[0]["common_remedies"]
