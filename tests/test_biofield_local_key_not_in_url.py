@@ -106,3 +106,19 @@ def test_the_heartbeat_records_a_time_and_the_port(tmp_path):
 def test_the_heartbeat_never_raises_into_the_server(tmp_path):
     """A monitoring write must not be able to take down the thing it monitors."""
     bl._write_heartbeat(str(tmp_path / "no" / "such" / "dir" / "hb.json"), 8011)
+
+
+# ── The redirect must not break programmatic callers ────────────────────────
+
+def test_an_api_get_with_the_key_is_not_redirected(client):
+    """Scripts GET /api/... ?key= and do not follow redirects or send cookies.
+    Redirecting them would break real callers to fix a logging problem they do
+    not have."""
+    r = client.get(f"/api/pathway-review/queue?key={SECRET}")
+    assert r.status_code != 302, "an API GET was redirected"
+
+
+def test_a_post_with_the_key_is_not_redirected(client):
+    """A 302 on a POST drops the body."""
+    r = client.post(f"/api/pathway-review/undo?key={SECRET}", json={"atom_key": "x"})
+    assert r.status_code != 302, "a POST was redirected, which loses its body"

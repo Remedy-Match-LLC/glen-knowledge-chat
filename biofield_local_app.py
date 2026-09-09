@@ -783,7 +783,13 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
         if not _secret:
             return None
         url_key = request.args.get("key", "")
-        if url_key == _secret:
+        # Only redirect a browser NAVIGATION. A 302 on a POST drops the body,
+        # and scripts that GET /api/... ?key= do not follow redirects or carry
+        # cookies, so redirecting those would break real callers to fix a
+        # logging problem they do not have. CI caught this: three existing
+        # tests pinned the old behaviour and I had not grepped for them.
+        if (url_key == _secret and request.method == "GET"
+                and not request.path.startswith("/api/")):
             # Cookie it, then send the browser to the same page WITHOUT the key.
             #
             # The cookie already existed; nothing ever took the key back out of
@@ -798,7 +804,7 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
             resp = redirect(_url_without_key())
             resp.set_cookie("rm_biofield_key", _secret, httponly=True, samesite="Lax")
             return resp
-        key = (request.cookies.get("rm_biofield_key", "")
+        key = (url_key or request.cookies.get("rm_biofield_key", "")
                or request.headers.get("X-Console-Key", ""))
         if key != _secret:
             return Response("Unauthorized — open this from the console 'Biofield Intake' link.",
