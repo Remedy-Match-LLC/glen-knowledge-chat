@@ -89,6 +89,9 @@ def main():
                 p["description"] = c["description"]
             if c.get("bottle_type"):
                 p["bottle_type"] = c["bottle_type"]
+            for _label_field in ("directions", "warning"):
+                if c.get(_label_field):
+                    p[_label_field] = c[_label_field]
             if c.get("panel_note"):
                 p["panel_note"] = c["panel_note"]
                 if c.get("panel_note_link"):

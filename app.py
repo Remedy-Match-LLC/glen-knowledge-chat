@@ -8928,11 +8928,17 @@ def begin_product_page_data(slug):
         {"id": "description", "title": "Overview",        "default_open": False,
          "body": p.get("description") or card.get("description", "")},
         {"id": "video",       "title": "Watch",           "default_open": False, "body": {"videos": _vids}},
-        # panel_note is the label line that belongs under the formula, not in the prose
-        # sections: Fibrolysis Factors carries "Synergistic with Glutathione Syntropy"
-        # because its thiol axis is deliberately in that companion product, not in NAC here.
+        # Label lines, served with the formula rather than inside the prose sections.
+        # `directions` and `warning` are deterministic on purpose: the cached AI draft
+        # replaces the description section wholesale, and that is how the live
+        # fibrolysis-factors page ended up carrying no dosing at all (2026-09-09). A dose
+        # and a contraindication must not be at the mercy of a rewrite. `note` is the
+        # pairing line, e.g. "Synergistic with Glutathione Syntropy".
         {"id": "ingredients", "title": "What's inside",   "default_open": False,
-         "body": {"ingredients": ingredients, "note": p.get("panel_note", ""),
+         "body": {"ingredients": ingredients,
+                  "directions": p.get("directions", ""),
+                  "warning": p.get("warning", ""),
+                  "note": p.get("panel_note", ""),
                   "note_link": p.get("panel_note_link") or None}},
         {"id": "research",    "title": "The research",    "default_open": False,
          "body": {"how_it_works": how, "learn_url": f"/begin/learn/{slug}"}},
