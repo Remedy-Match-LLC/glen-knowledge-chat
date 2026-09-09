@@ -147,6 +147,8 @@
     font-weight:700; font-size:14.5px; border-radius:999px; padding:12px 26px; transition:opacity .15s; }
   .pay-link:hover{ opacity:0.9; }
   .cc-email-note{ font-size:12.5px; color:var(--muted); margin-top:16px; line-height:1.6; }
+  .cc-referral{ font-size:13px; color:var(--cream); margin-top:14px; padding-top:14px;
+                border-top:1px solid rgba(212,168,67,0.28); line-height:1.6; }
 
   /* ── Concierge (post-buy) ── */
   .concierge{ margin-top:22px; }
@@ -308,7 +310,7 @@
           <div class="field" style="flex:1;"><input type="text" id="ship-zip" placeholder="ZIP" autocomplete="shipping postal-code" inputmode="numeric" /></div>
         </div>
         <div class="field hidden" id="referral-field">
-          <label for="referral-code">Referral code <span class="hint">(optional, a friend's code = 10% off)</span></label>
+          <label for="referral-code">Referral code <span class="hint" id="referral-hint">(optional)</span></label>
           <input type="text" id="referral-code" placeholder="Enter a referral code" autocomplete="off" />
         </div>
 
@@ -390,6 +392,7 @@
         </div>
         <a class="pay-link hidden" id="pay-link" href="#" target="_blank" rel="noopener">Pay securely &#8599;</a>
         <div class="cc-email-note" id="cc-email-note"></div>
+        <div class="cc-referral hidden" id="cc-referral"></div>
       </div>
 
       <!-- Post-buy concierge -->
@@ -677,8 +680,32 @@
       refreshBuyState();
       fetch(BASE + '/api/referral/enabled', { credentials:'same-origin' })
         .then(function(r){ return r.json(); })
-        .then(function(d){ if (d && d.enabled){ var f=document.getElementById('referral-field'); if(f) f.classList.remove('hidden'); } })
+        .then(function(d){
+          if (!(d && d.enabled)) return;
+          var f=document.getElementById('referral-field'); if(f) f.classList.remove('hidden');
+          var h=document.getElementById('referral-hint');
+          if (h && d.pct > 0) h.textContent = "(optional, a friend's code = " + d.pct + "% off)";
+        })
         .catch(function(){});
+    }
+
+    // A buyer's own referral code, shown on the confirmation. Until now it appeared only
+    // on the reorder page, so anyone who bought once and never reordered never learned they
+    // had one. Silent on any failure: nothing here may disturb a completed order.
+    function showMyReferralCode(){
+      try {
+        fetch(BASE + '/api/referral/my-code', { credentials:'same-origin' })
+          .then(function(r){ return r.ok ? r.json() : null; })
+          .then(function(d){
+            if (!d || !d.ok || !d.code) return;
+            var el = document.getElementById('cc-referral');
+            if (!el) return;
+            el.textContent = d.share_text
+              || ('Your referral code: ' + d.code);
+            el.classList.remove('hidden');
+          })
+          .catch(function(){});
+      } catch(e){}
     }
 
     function emailValid(){
@@ -909,6 +936,7 @@
       }
 
       show('confirm');
+      showMyReferralCode();
       document.getElementById('confirm').scrollIntoView({ behavior: 'smooth', block: 'center' });
 
       // Hand off to the concierge (only for Zelle/Wise pay-now flows where the
