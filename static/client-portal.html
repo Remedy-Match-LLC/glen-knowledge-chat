@@ -1397,6 +1397,13 @@ const PORTAL_HASH_ROUTES = {
   photo:    {panel:"photo", target:"photo-section"},
   cart:     {panel:"cart", target:"cart-body"},
   shop:     {panel:"shop", target:"shop-panel"},
+  // #finder is what Glen's client letters name ("I've built a practitioner finder
+  // into your client portal"). The panel existed as data-panel="finder" from the
+  // start, but had no key here, so the link fell through applyPortalHash and
+  // opened Home instead. Nothing failed loudly: an unknown hash just returns false.
+  // A portal without the finder enabled still lands on the panel, which explains
+  // itself rather than dead-ending.
+  finder:   {panel:"finder", target:"finder-card"},
 };
 
 function applyPortalHash(){
@@ -4232,7 +4239,7 @@ function render(d, v){
     const q = pf.location
       ? ("?location=" + encodeURIComponent(pf.location) + "&country=" + encodeURIComponent(pf.country || "US"))
       : "";
-    const _finderCard = `<div class="card quiet"><h2>Find a Practitioner Near You</h2>
+    const _finderCard = `<div class="card quiet" id="finder-card"><h2>Find a Practitioner Near You</h2>
       <p class="muted small" style="margin:.3rem 0 .7rem">Search certified practitioners by your city or zip — all specialties, worldwide.</p>
       <iframe src="/practitioner-finder${q}" title="Practitioner Finder" loading="lazy"
         style="width:100%;min-height:640px;height:80vh;border:0;border-radius:12px"></iframe>
