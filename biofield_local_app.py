@@ -1005,18 +1005,14 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                 if isinstance(current, str):
                     current = [x.strip() for x in current.replace(";", ",").split(",") if x.strip()]
                 profile["conditions"] = list(current) + accepted
-            from dashboard.biofield_clinical_checklist import custom_remedies, forgotten_remedies
+            from dashboard.biofield_clinical_checklist import remedies_for
             from dashboard.biofield_clinical_checklist import stress_pattern
             def clinical_remedies(label):
-                historical = stress_suggestions(cx, label)
-                hidden = forgotten_remedies(cx, label)
-                historical = [row for row in historical
-                              if " ".join(re.sub(r'[^a-z0-9]+', ' ',
-                                 (row.get("remedy") or "").lower()).split()) not in hidden]
-                seen = {(row.get("remedy") or "").strip().lower() for row in historical}
-                historical += [{"remedy": name, "count": 0} for name in custom_remedies(cx, label)
-                               if name.lower() not in seen]
-                return historical
+                # History, the condition program's own list, and hand-added remedies,
+                # minus anything forgotten. The picker counts the program list, so
+                # leaving it out here is what showed "No common remedies recorded yet"
+                # under a condition the dropdown had just offered as having several.
+                return remedies_for(cx, label, historical=stress_suggestions(cx, label))
             clinical_checklist = build_clinical_checklist(
                 profile, rep.get("layers") or [], sdata,
                 remedy_lookup=clinical_remedies,

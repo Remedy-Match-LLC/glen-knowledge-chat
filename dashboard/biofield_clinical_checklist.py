@@ -6,6 +6,22 @@ import re
 from dashboard.biofield_profile import clean_health_tag, is_health_tag, _items
 
 
+# The most remedies one condition row shows. Budget: stress_suggestions caps the
+# FileMaker history at 8, the widest list the picker offers inherits 13, and the
+# widest reachable is 17 ("Often no symptoms early", no longer offered but still
+# valid on a profile that already carries it), leaving room for 15 added by hand.
+# Truncating instead is the defect this replaced: the picker promises a count the
+# row then does not show. test_the_shown_list_is_not_truncated_for_any_offered_condition
+# fails if the seed ever outgrows this.
+# Symptoms that are real program content but useless as a selectable condition:
+# they name no function to restore, and being listed under many programs they
+# inherit a remedy list spanning all of them. app.py still serves them in the
+# program's own symptom list, which is where they belong. Glen, 2026-09-09.
+PICKER_EXCLUDED_SYMPTOMS = {"often no symptoms early"}
+
+MAX_COMMON_REMEDIES = 40
+
+
 def _norm(value):
     value = re.sub(r"[^a-z0-9]+", " ", (value or "").lower()).strip()
     return " ".join(value.split())
@@ -231,6 +247,9 @@ def forgotten_remedies(cx, label):
 _PROGRAM_ALIASES = {
     "amd": ("dry-amd", "wet-amd"),
     "age related macular degeneration": ("dry-amd", "wet-amd"),
+    # The exact display string catalog_items offers, normalised. Without it the
+    # label the picker shows is the one label the lookup cannot resolve.
+    "amd age related macular degeneration": ("dry-amd", "wet-amd"),
     "dry macular degeneration": ("dry-amd",),
     "dry age related macular degeneration": ("dry-amd",),
     "wet macular degeneration": ("wet-amd",),
@@ -253,13 +272,55 @@ def program_remedies(label):
     alias_keys = set(_PROGRAM_ALIASES.get(key, ()))
     for program_key, program in _condition_programs().items():
         program_label = _norm(program.get("label") or program_key)
-        if program_key not in alias_keys and key not in program_label and program_label not in key:
+        # catalog_items offers every symptom as a selectable condition carrying its
+        # program's remedy count, so a symptom has to resolve back to that program.
+        # Matched whole, not by substring: "light sensitivity" must not drag in
+        # "light sensitivity or reduced color vision".
+        symptoms = {_norm(name) for name in program.get("symptoms") or []}
+        if (program_key not in alias_keys and key not in symptoms
+                and key not in program_label and program_label not in key):
             continue
         for item in program.get("items") or []:
             name = (item.get("name") or "").strip()
             if name and name.lower() not in seen:
                 seen.add(name.lower()); names.append(name)
     return names
+
+
+def remedies_for(cx, label, historical=()):
+    """Every remedy offered against a condition, in one list.
+
+    FileMaker history first (most-used leads), then anything added by hand, then
+    the condition program's own list. `forget_remedy` has to remove a remedy
+    whichever source produced it, so the hidden set is applied to all three
+    rather than to the historical rows alone.
+
+    The program list comes last because build() shows only the first 8 and Dry AMD
+    alone supplies 9. An inherited default may fall off that end; a remedy the
+    practitioner typed in must not, or `+ Remedy` looks like it did nothing.
+    """
+    ensure_catalog_schema(cx)
+    hidden = forgotten_remedies(cx, label)
+    out, seen = [], set()
+
+    def add(name, count=0):
+        name = str(name or "").strip()
+        key = _norm(name)
+        if not key or key in hidden or key in seen:
+            return
+        seen.add(key)
+        out.append({"remedy": name, "count": int(count or 0)})
+
+    for row in historical or []:
+        if isinstance(row, dict):
+            add(row.get("remedy"), row.get("count"))
+        else:
+            add(row)
+    for name in custom_remedies(cx, label):
+        add(name)
+    for name in program_remedies(label):
+        add(name)
+    return out
 
 
 def catalog_items(cx, q="", limit=100):
@@ -272,6 +333,8 @@ def catalog_items(cx, q="", limit=100):
         if not remedies:
             continue
         for label in [program.get("label") or program_key] + list(program.get("symptoms") or []):
+            if _norm(label) in PICKER_EXCLUDED_SYMPTOMS:
+                continue
             if label and (not query or query in _norm(label)):
                 found.setdefault(_norm(label), {"label": label, "remedy_count": len(remedies)})
     displays = {"amd": "AMD (Age-Related Macular Degeneration)",
@@ -355,7 +418,7 @@ def build(profile, layers, stress_data=None, remedy_lookup=None, stress_lookup=N
         suggested = "" if remembered else suggested_pattern(label)
         rows.append({"label": label, "checked": bool(covered_by),
                      "covered_by": covered_by, "layer": balanced_layer,
-                     "common_remedies": common_remedies[:8],
+                     "common_remedies": common_remedies[:MAX_COMMON_REMEDIES],
                      "stress_pattern": remembered or suggested,
                      "remembered_pattern": remembered,
                      "pattern_is_suggested": bool(suggested)})
