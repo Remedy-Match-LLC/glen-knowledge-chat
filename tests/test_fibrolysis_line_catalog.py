@@ -120,6 +120,7 @@ def test_apply_enrichment_replays_every_corrected_field():
     block = src.split("Glen's manual corrections override")[1]
     for field in ("description", "bottle_type", "panel_note", "panel_note_link"):
         assert f'c.get("{field}")' in block, field
+    assert '("directions", "warning")' in block
 
 
 def test_glutathione_syntropy_pairing_is_on_the_page(products):
@@ -160,3 +161,25 @@ def test_page_data_serves_the_panel(monkeypatch, tmp_path):
     fs = c.get("/begin/product-page-data/fibrosolve").get_json()
     fsb = next(s for s in fs["sections"] if s["id"] == "ingredients")["body"]
     assert not fsb["note"], "note must not leak onto products that have none"
+    # Dosing and the contraindication must survive the AI draft, which replaces the
+    # description section wholesale. Serving them here is what makes that true.
+    assert body["directions"] == "Take 1 to 2 capsules daily with food."
+    assert not body["warning"]
+    assert fsb["directions"].startswith("Take 1 capsule 1 to 2 times daily")
+    for term in ("anticoagulant", "bleeding", "pregnancy", "surgery"):
+        assert term in fsb["warning"].lower(), term
+
+
+def test_label_lines_are_not_left_to_the_generated_copy(products):
+    """The live page carried no dosing on 2026-09-09 because the cached AI draft
+    replaces the description section wholesale. products.json description is the
+    generator's input, not what the reader sees, so a dose and a contraindication
+    have to be their own fields."""
+    ff = products["fibrolysis-factors"]
+    assert ff["directions"] == "Take 1 to 2 capsules daily with food."
+    fs = products["fibrosolve"]
+    assert "empty stomach" in fs["directions"]
+    assert "anticoagulant" in fs["warning"].lower()
+    src = open(os.path.join(ROOT, "static", "begin-product.html")).read()
+    for token in ("body.directions", "body.warning", "Suggested use: ", "Caution: "):
+        assert token in src, token

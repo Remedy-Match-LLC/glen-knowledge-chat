@@ -72,6 +72,11 @@
     .sp-ing-note{ font-size:13px; color:var(--cream); opacity:0.75; margin:12px 0 0;
                   font-style:italic; }
     .sp-ing-note-link{ color:inherit; text-decoration:underline; }
+    .sp-ing-directions{ font-size:13.5px; color:var(--cream); margin:14px 0 0; }
+    .sp-ing-warning{ font-size:13.5px; color:var(--cream); margin:10px 0 0;
+                     padding:9px 11px; border-radius:6px;
+                     border:1px solid rgba(214,171,90,0.45); }
+    .sp-ing-label{ font-weight:600; }
     .sp-ing-name{ font-weight:600; }
     .sp-ing-dose{ color:var(--muted); font-size:12.5px; margin-left:6px; }
     .sp-how{ font-size:14px; color:var(--cream); opacity:0.93; line-height:1.68; white-space:pre-wrap; margin-bottom:14px; }
@@ -446,6 +451,18 @@
         ul.appendChild(li);
       });
       wrapEl.appendChild(ul);
+      // Suggested use, served straight from the catalog so no generated copy can
+      // paraphrase a dose away.
+      if (body && body.directions){
+        var dp = document.createElement('p');
+        dp.className = 'sp-ing-directions';
+        var dh = document.createElement('span');
+        dh.className = 'sp-ing-label';
+        dh.textContent = 'Suggested use: ';
+        dp.appendChild(dh);
+        dp.appendChild(document.createTextNode(body.directions));
+        wrapEl.appendChild(dp);
+      }
       // Label line under the formula (e.g. "Synergistic with Glutathione Syntropy"),
       // with the named product linked to its own page when the catalog supplies one.
       var note = body && body.note;
@@ -466,6 +483,16 @@
           np.textContent = note;
         }
         wrapEl.appendChild(np);
+      }
+      if (body && body.warning){
+        var wp = document.createElement('p');
+        wp.className = 'sp-ing-warning';
+        var wh = document.createElement('span');
+        wh.className = 'sp-ing-label';
+        wh.textContent = 'Caution: ';
+        wp.appendChild(wh);
+        wp.appendChild(document.createTextNode(body.warning));
+        wrapEl.appendChild(wp);
       }
       return wrapEl;
     }
