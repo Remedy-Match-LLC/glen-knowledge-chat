@@ -44,8 +44,13 @@ def test_product_page_data_shape(client):
     c = appmod.app.test_client()
     data = c.get(f"/begin/product-page-data/{slug}").get_json()
     ids = [s["id"] for s in data["sections"]]
+    # The bottle section ("comparison": Miron glass, packaging, microplastics) sits last
+    # before Order. Glen moved it there on 2026-09-08, after everything about what is in
+    # the formula.
     assert ids == ["intro", "description", "video", "ingredients",
-                   "comparison", "research", "images", "cta"]
+                   "research", "images", "comparison", "cta"]
+    assert ids.index("comparison") == ids.index("cta") - 1
+    assert ids.index("images") > ids.index("ingredients")
     assert next(s for s in data["sections"] if s["id"] == "intro")["default_open"] is True
     assert all(s["default_open"] is False for s in data["sections"] if s["id"] != "intro")
     assert data["cta_url"] == f"/begin/buy/{slug}"

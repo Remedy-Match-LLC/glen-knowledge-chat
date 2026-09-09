@@ -8929,10 +8929,13 @@ def begin_product_page_data(slug):
          "body": p.get("description") or card.get("description", "")},
         {"id": "video",       "title": "Watch",           "default_open": False, "body": {"videos": _vids}},
         {"id": "ingredients", "title": "What's inside",   "default_open": False, "body": {"ingredients": ingredients}},
-        {"id": "comparison",  "title": "How it compares", "default_open": False, "body": _SALES_ARCHETYPES},
         {"id": "research",    "title": "The research",    "default_open": False,
          "body": {"how_it_works": how, "learn_url": f"/begin/learn/{slug}"}},
-        {"id": "images",      "title": "Photos",          "default_open": False, "body": {"images": p.get("page_images", [])}},
+        {"id": "images",      "title": "Images",          "default_open": False, "body": {"images": p.get("page_images", [])}},
+        # The bottle: Miron violet glass, packaging and microplastics. Glen moved it here on
+        # 2026-09-08, after everything about what is in the formula and immediately before
+        # Order, where it reads as the last quality note rather than an interruption.
+        {"id": "comparison",  "title": "How it compares", "default_open": False, "body": _SALES_ARCHETYPES},
         {"id": "cta",         "title": "Order",           "default_open": False, "body": {}},
     ]
     from dashboard.product_page_sections import filter_sections as _filter_sections
