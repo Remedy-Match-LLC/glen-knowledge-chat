@@ -110,15 +110,35 @@ def test_the_heartbeat_never_raises_into_the_server(tmp_path):
 
 # ── The redirect must not break programmatic callers ────────────────────────
 
-def test_an_api_get_with_the_key_is_not_redirected(client):
-    """Scripts GET /api/... ?key= and do not follow redirects or send cookies.
+# These probe a path that deliberately does NOT exist, so routing always gives a
+# deterministic 404 and the ONLY thing that can produce a 302 is the gate. The
+# first version hit real routes and measured their behaviour as well as the
+# gate's, which passed locally and failed in CI for reasons that were never
+# about the gate.
+_PROBE = "/api/__gate_probe_does_not_exist__"
+
+
+def test_an_api_get_with_the_key_is_not_redirected_by_the_gate(client):
+    """Scripts GET /api/... ?key= and neither follow redirects nor send cookies.
     Redirecting them would break real callers to fix a logging problem they do
     not have."""
-    r = client.get(f"/api/pathway-review/queue?key={SECRET}")
-    assert r.status_code != 302, "an API GET was redirected"
+    r = client.get(f"{_PROBE}?key={SECRET}")
+    assert r.status_code != 302, (
+        f"the gate redirected an API GET to {r.headers.get('Location')!r}")
+    assert r.status_code == 404, (
+        f"expected the probe path to 404 past the gate, got {r.status_code}")
 
 
-def test_a_post_with_the_key_is_not_redirected(client):
+def test_a_post_with_the_key_is_not_redirected_by_the_gate(client):
     """A 302 on a POST drops the body."""
-    r = client.post(f"/api/pathway-review/undo?key={SECRET}", json={"atom_key": "x"})
-    assert r.status_code != 302, "a POST was redirected, which loses its body"
+    r = client.post(f"{_PROBE}?key={SECRET}", json={"a": 1})
+    assert r.status_code != 302, (
+        f"the gate redirected a POST to {r.headers.get('Location')!r}, losing its body")
+    assert r.status_code in (404, 405), (
+        f"expected the probe path to 404/405 past the gate, got {r.status_code}")
+
+
+def test_a_non_api_get_still_gets_the_strip_redirect(client):
+    """The counterpart: browser navigation IS the case the redirect exists for."""
+    r = client.get(f"/?key={SECRET}")
+    assert r.status_code == 302, r.status_code
