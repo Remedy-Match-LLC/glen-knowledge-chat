@@ -39243,14 +39243,28 @@ def _upsert_person_additive(cx, person, ts=None):
     def _apply_dnd(tagset):
         return ((set(tagset) - {"consent:opted-in"}) | {"consent:unsubscribed"}) if dnd else set(tagset)
 
-    # A person's own opt-in outranks a feeder's cold default. sync-media-contacts.py
-    # stamps consent:cold-no-consent on every row it posts, so a real client who also
-    # sits in the media CSV came back carrying both consent tags at once (Randy
-    # Schulman, 2026-09-08). A union can only add, so neither the feeder nor the
-    # classifier can drop the loser. This is the one place that sees both sides.
-    # It runs after _apply_dnd, so an unsubscribe still wins over both.
+    # Consent precedence, applied to the UNION. A union can only add, so neither a
+    # feeder nor _classify_person can drop the loser of a contradictory pair, and
+    # this is the one place that sees the stored tags and the incoming ones at once.
+    # Measured in production on 2026-09-09: 14 people carried opted-in and cold
+    # together, 4 carried unsubscribed and opted-in together.
+    #
+    #   unsubscribed beats opted-in. Nothing in this codebase ever removes
+    #   consent:unsubscribed, so an opt-out is permanent by design and a feeder
+    #   must not be able to re-subscribe someone. This is the same stance
+    #   _apply_dnd and revoke_consent already take, read off the stored state
+    #   rather than the incoming payload.
+    #
+    #   opted-in beats cold. sync-media-contacts.py stamps consent:cold-no-consent
+    #   on every row it posts, and the practitioner feeder stamps it on anyone not
+    #   yet engaged, so a person who later opts in kept the cold tag forever.
+    #
+    # unsubscribed with cold is left alone. Both suppress, so the pair is
+    # consistent. Runs after _apply_dnd, which handles the incoming DND signal.
     def _collapse_consent(tagset):
         s = set(tagset)
+        if "consent:unsubscribed" in s:
+            s.discard("consent:opted-in")
         if "consent:opted-in" in s:
             s.discard("consent:cold-no-consent")
         return s

@@ -187,6 +187,56 @@ def test_a_cold_contact_with_no_optin_stays_cold(app_db):
     assert _tags(db, "cold@x.com") == {"type:pr-media", "consent:cold-no-consent"}
 
 
+def test_an_unsubscribe_beats_a_feeder_re_opt_in(app_db):
+    """Nothing in the codebase removes consent:unsubscribed, so a feeder must not
+    be able to re-subscribe someone by adding consent:opted-in back."""
+    app, db = app_db
+    client = app.app.test_client()
+    hdr = {"X-Console-Key": "testkey"}
+    client.post("/api/people", json=[{
+        "email": "gone@x.com", "tags": ["type:client", "consent:unsubscribed"],
+    }], headers=hdr)
+    r = client.post("/api/people?merge_tags=1", json=[{
+        "email": "gone@x.com", "tags": ["type:practitioner", "consent:opted-in"],
+    }], headers=hdr)
+    assert r.status_code == 200
+    tags = _tags(db, "gone@x.com")
+    assert "consent:unsubscribed" in tags
+    assert "consent:opted-in" not in tags
+    assert "type:practitioner" in tags  # non-consent tags still merge
+
+
+def test_a_stored_unsubscribe_and_optin_pair_is_cleaned(app_db):
+    """The 4 people already carrying both are repaired on their next touch."""
+    app, db = app_db
+    client = app.app.test_client()
+    hdr = {"X-Console-Key": "testkey"}
+    client.post("/api/people", json=[{
+        "email": "both2@x.com",
+        "tags": ["type:client", "consent:unsubscribed", "consent:opted-in"],
+    }], headers=hdr)
+    r = client.post("/api/people?merge_tags=1", json=[{
+        "email": "both2@x.com", "tags": ["source:practitioner-finder"],
+    }], headers=hdr)
+    assert r.status_code == 200
+    tags = _tags(db, "both2@x.com")
+    assert "consent:unsubscribed" in tags
+    assert "consent:opted-in" not in tags
+
+
+def test_an_unsubscribed_person_may_keep_the_cold_tag(app_db):
+    """Both suppress, so the pair is consistent and must not be disturbed."""
+    app, db = app_db
+    client = app.app.test_client()
+    r = client.post("/api/people?merge_tags=1", json=[{
+        "email": "coldgone@x.com",
+        "tags": ["consent:unsubscribed", "consent:cold-no-consent"],
+    }], headers={"X-Console-Key": "testkey"})
+    assert r.status_code == 200
+    assert _tags(db, "coldgone@x.com") == {
+        "consent:unsubscribed", "consent:cold-no-consent"}
+
+
 def test_a_new_person_posted_with_both_tags_is_collapsed(app_db):
     """The insert path collapses too, not only the update path."""
     app, db = app_db
