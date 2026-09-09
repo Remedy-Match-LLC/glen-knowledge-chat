@@ -39846,6 +39846,19 @@ def _notify_store_order(payload):
                 _inbox.send_email(to, subject, body)
             except Exception as one:
                 print(f"[gk-notify] {to} failed: {one!r}", flush=True)
+        # The buyer, who until now got nothing. GrooveKart's checkout ends on a
+        # bare "Your shopping cart is empty" page, so without this they cannot
+        # tell whether the order went through. Sent last and guarded separately:
+        # a failure here must not cost Rae her packing notification.
+        try:
+            buyer = _gkn.buyer_address(payload)
+            if buyer:
+                b_subject, b_body = _gkn.buyer_email(payload)
+                _inbox.send_email(buyer, b_subject, b_body)
+            else:
+                print("[gk-notify] no buyer email on this order, none sent", flush=True)
+        except Exception as be:
+            print(f"[gk-notify] buyer confirmation failed: {be!r}", flush=True)
     except Exception as e:
         print(f"[gk-notify] skipped: {e!r}", flush=True)
 
