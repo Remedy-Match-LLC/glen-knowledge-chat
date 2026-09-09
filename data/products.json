@@ -5323,10 +5323,15 @@
     }
    ],
    "ingredients_source": "fmp-bom-2026-08-31",
-   "description": "Anti-fibrotic botanical formula, five standardized actives at 487.5 mg per capsule. Take 1 capsule daily with food.",
+   "description": "Anti-fibrotic botanical formula, five standardized actives at 487.5 mg per capsule. Take 1 to 2 capsules daily with food.",
    "bottle_type": "30 Caps",
    "fmp_id": "356",
-   "enrichment_note": "Reformulated 2026-06-06 (SKU 2 of the Fibrolysis 3-SKU line); the old enzyme-led formula moved to Fibrosolve. BOM from FMP product 356, extract 2026-08-31: 50+200+125+75+37.5 = 487.5 mg, matching FMP zc_total_mg 487.5. The three zero-quantity marker lines (raw 5604 Green Tea EGCG, 4609 Salvia miltiorrhiza, 5583 High AKBA Boswellic Acid 90%) carry no mass; they had been rendering as three extra panel rows, one of them as '(unnamed FMP ingredient 5583)'. Their botanical identity is folded into the dosed line, their conflicting standardization percentages are not. Dosing from FMP dosage/dosage_timing/dosage_freq on the same extract."
+   "enrichment_note": "Reformulated 2026-06-06 (SKU 2 of the Fibrolysis 3-SKU line); the old enzyme-led formula moved to Fibrosolve. BOM from FMP product 356, extract 2026-08-31: 50+200+125+75+37.5 = 487.5 mg, matching FMP zc_total_mg 487.5. The three zero-quantity marker lines (raw 5604 Green Tea EGCG, 4609 Salvia miltiorrhiza, 5583 High AKBA Boswellic Acid 90%) carry no mass; they had been rendering as three extra panel rows, one of them as '(unnamed FMP ingredient 5583)'. Their botanical identity is folded into the dosed line, their conflicting standardization percentages are not. Dosing from FMP dosage/dosage_timing/dosage_freq on the same extract. DOSING: Glen ruled 1 to 2 capsules daily on 2026-09-08. FMP product 356 still reads dosage '1 capsule' / dosage_freq 'daily' on the 2026-08-31 extract, and the FileMaker record needs that edit by hand. The vault wins the disagreement per the 2026-08-10 ruling: the 2026-06-06 spec says 1-2 caps/day, and its dose rationale rests on 2 caps reaching each active's minimum therapeutic dose, with EGCG at the 400 mg trial floor. At 1 capsule every active sits at half its minimum. Do not re-derive this field from the FMP extract. PANEL NOTE: Glen asked for the spec's 'synergistic with Glutathione Syntropy' label line on the page, at the bottom, 2026-09-08. Rendered under the ingredient list, which is where a label carries it. The thiol axis is deliberately carried by that companion product rather than by NAC in this formula.",
+   "panel_note": "Synergistic with Glutathione Syntropy.",
+   "panel_note_link": {
+    "label": "Glutathione Syntropy",
+    "url": "/begin/product/glutathione-syntropy"
+   }
   },
   "ocuflow-daytime": {
    "name": "OcuFlow Daytime",

@@ -89,6 +89,10 @@ def main():
                 p["description"] = c["description"]
             if c.get("bottle_type"):
                 p["bottle_type"] = c["bottle_type"]
+            if c.get("panel_note"):
+                p["panel_note"] = c["panel_note"]
+                if c.get("panel_note_link"):
+                    p["panel_note_link"] = c["panel_note_link"]
             if c.get("note"):
                 p["enrichment_note"] = c["note"]
             # a Glen-verified formula is authoritative here -> not a stale-GK item

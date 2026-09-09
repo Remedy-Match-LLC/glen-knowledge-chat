@@ -85,10 +85,19 @@ def test_no_zero_quantity_marker_rows(products, slug):
 
 
 def test_fibrolysis_factors_description_carries_dosing(products):
+    """1 to 2 capsules, not FMP's 1: Glen's ruling 2026-09-08.
+
+    The 2026-06-06 spec sets each per-capsule dose so that 2 capsules reach the
+    active's minimum therapeutic dose (EGCG at the 400 mg trial floor). At 1
+    capsule every active sits at half its minimum, so re-deriving this field
+    from FMP product 356, which still reads "1 capsule" / "daily", under-doses
+    the formula by its own design.
+    """
     desc = products["fibrolysis-factors"]["description"]
     assert "Price: $69.97" not in desc, "placeholder description is back"
     assert "with food" in desc
-    assert "1 capsule daily" in desc
+    assert "1 to 2 capsules daily" in desc
+    assert "1 capsule daily" not in desc, "reverted to the FMP extract's dosage field"
 
 
 def test_fibrosolve_description_keeps_the_bleeding_warning(products):
@@ -105,12 +114,27 @@ def test_correction_is_recorded_so_enrichment_cannot_revert_it(corrections, slug
     assert c["ingredients_source"] == "fmp-bom-2026-08-31"
 
 
-def test_apply_enrichment_replays_description_and_bottle_type():
+def test_apply_enrichment_replays_every_corrected_field():
     """A correction that apply_enrichment ignores is a fix waiting to revert."""
     src = open(os.path.join(ROOT, "scripts", "apply_enrichment.py")).read()
     block = src.split("Glen's manual corrections override")[1]
-    assert 'c.get("description")' in block
-    assert 'c.get("bottle_type")' in block
+    for field in ("description", "bottle_type", "panel_note", "panel_note_link"):
+        assert f'c.get("{field}")' in block, field
+
+
+def test_glutathione_syntropy_pairing_is_on_the_page(products):
+    """Glen, 2026-09-08: the spec's label line goes on the page, at the bottom.
+
+    It sits under the ingredient list, which is where a label carries it. The
+    thiol axis is deliberately in the companion product rather than in NAC here.
+    """
+    p = products["fibrolysis-factors"]
+    assert p["panel_note"] == "Synergistic with Glutathione Syntropy."
+    link = p["panel_note_link"]
+    assert link["label"] in p["panel_note"]
+    # the linked slug must be a real catalog product, not a fuzzy name match
+    assert link["url"] == "/begin/product/glutathione-syntropy"
+    assert products["glutathione-syntropy"]["name"] == link["label"]
 
 
 def test_page_data_serves_the_panel(monkeypatch, tmp_path):
@@ -128,3 +152,11 @@ def test_page_data_serves_the_panel(monkeypatch, tmp_path):
         sec = next(s for s in data["sections"] if s["id"] == "ingredients")
         got = [(i["name"], i["dose"]) for i in sec["body"]["ingredients"]]
         assert got == EXPECTED[slug]["ingredients"], slug
+    # the pairing note is served with the panel, not buried in the prose sections
+    ff = c.get("/begin/product-page-data/fibrolysis-factors").get_json()
+    body = next(s for s in ff["sections"] if s["id"] == "ingredients")["body"]
+    assert body["note"] == "Synergistic with Glutathione Syntropy."
+    assert body["note_link"]["url"] == "/begin/product/glutathione-syntropy"
+    fs = c.get("/begin/product-page-data/fibrosolve").get_json()
+    fsb = next(s for s in fs["sections"] if s["id"] == "ingredients")["body"]
+    assert not fsb["note"], "note must not leak onto products that have none"

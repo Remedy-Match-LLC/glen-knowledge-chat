@@ -8928,7 +8928,12 @@ def begin_product_page_data(slug):
         {"id": "description", "title": "Overview",        "default_open": False,
          "body": p.get("description") or card.get("description", "")},
         {"id": "video",       "title": "Watch",           "default_open": False, "body": {"videos": _vids}},
-        {"id": "ingredients", "title": "What's inside",   "default_open": False, "body": {"ingredients": ingredients}},
+        # panel_note is the label line that belongs under the formula, not in the prose
+        # sections: Fibrolysis Factors carries "Synergistic with Glutathione Syntropy"
+        # because its thiol axis is deliberately in that companion product, not in NAC here.
+        {"id": "ingredients", "title": "What's inside",   "default_open": False,
+         "body": {"ingredients": ingredients, "note": p.get("panel_note", ""),
+                  "note_link": p.get("panel_note_link") or None}},
         {"id": "research",    "title": "The research",    "default_open": False,
          "body": {"how_it_works": how, "learn_url": f"/begin/learn/{slug}"}},
         {"id": "images",      "title": "Images",          "default_open": False, "body": {"images": p.get("page_images", [])}},
