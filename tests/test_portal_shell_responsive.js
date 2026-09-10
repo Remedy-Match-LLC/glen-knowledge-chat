@@ -33,8 +33,10 @@ assert.ok(/display\s*:\s*none/.test(ruleFor('.shell-bar')),
   'the header must be hidden at desktop width by default');
 const deskRail = ruleFor('.portal-rail');
 assert.ok(/width\s*:\s*52px/.test(deskRail), 'the desktop rail is 52px collapsed');
-assert.ok(/\.portal-rail\.is-open[^{]*\{[^}]*width\s*:\s*176px/.test(css),
-  'the open rail is 176px');
+// 176 -> 200px on 2026-09-09, when the rail label and description font sizes went
+// up at Glen's request. At 176px the longest description wrapped to four lines.
+assert.ok(/\.portal-rail\.is-open[^{]*\{[^}]*width\s*:\s*200px/.test(css),
+  'the open rail is 200px');
 
 // reduced motion is honoured
 assert.ok(/prefers-reduced-motion/.test(css));

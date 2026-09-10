@@ -9,7 +9,8 @@ formulation-analyzer produces a review that lands in their portal. One row per
 - confirmed: Glen approved in console; review is visible on the portal.
 
 Transitions never downgrade (a confirmed review can't be walked back or overwritten),
-so a re-run or a late analyzer draft can't un-publish an approved review. LOG_DB (SQLite).
+so a re-run or a late analyzer draft can't un-publish an approved review. LOG_DB, which
+is SQLite locally and Postgres in production: use db.column_exists, never PRAGMA.
 Distinct from dashboard/product_reviews.py, which is customer testimonials of products."""
 import datetime
 import os
@@ -69,10 +70,12 @@ def init_table(cx):
             UNIQUE(email, product_key)
         )
     """)
-    _cols = {r[1] for r in cx.execute("PRAGMA table_info(supplement_reviews)")}
-    if "reason" not in _cols:
+    # PRAGMA is SQLite-only and raises a syntax error on Postgres, which took the
+    # whole feature down in production: every portal intake POST 500'd at this line.
+    # db.column_exists answers on both backends, as every other module here does.
+    if not db.column_exists(cx, "supplement_reviews", "reason"):
         cx.execute("ALTER TABLE supplement_reviews ADD COLUMN reason TEXT")
-    if "importance" not in _cols:
+    if not db.column_exists(cx, "supplement_reviews", "importance"):
         cx.execute("ALTER TABLE supplement_reviews ADD COLUMN importance INTEGER")
     cx.execute("CREATE INDEX IF NOT EXISTS ix_suprev_status ON supplement_reviews(status)")
     cx.execute("CREATE INDEX IF NOT EXISTS ix_suprev_email ON supplement_reviews(email)")

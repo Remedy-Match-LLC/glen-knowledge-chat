@@ -26,7 +26,12 @@ def test_confirm_executor_promotes():
     r = sr.create_request(cx, "a@x.com", "P", "B")
     sr.set_draft(cx, r["id"], "review body")
     out = sra._exec_confirm({"id": r["id"]}, {"cx": cx, "actor": {"name": "Glen"}})
-    assert out == {"id": r["id"], "status": "confirmed"}
+    assert out["id"] == r["id"]
+    assert out["status"] == "confirmed"
+    # Confirm also tells the client (Glen, 2026-09-09). The outcome of that is
+    # reported here but is not what this test is about; see
+    # tests/test_supplement_review_confirm_email.py.
+    assert "notified" in out
     assert sr.get(cx, r["id"])["status"] == "confirmed"
 
 

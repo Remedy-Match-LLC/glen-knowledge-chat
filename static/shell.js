@@ -161,6 +161,18 @@
       if (_stray) _stray.remove();
     }
 
+  // Text magnification (Glen, 2026-09-09). text-size.js places its own control
+  // beside .rm-theme-seg once that exists, so there is nothing to mount here.
+  // Only the script needs to be present, for pages that get their theme toggle
+  // from this file rather than from a tag of their own.
+  (function () {
+    if (window.RMTextSize) return;
+    if (document.querySelector('script[src="/static/text-size.js"]')) return;
+    var s = document.createElement('script');
+    s.src = '/static/text-size.js';
+    (document.body || document.documentElement).appendChild(s);
+  })();
+
     // Some portal surfaces add a scene selector. It belongs in this header's flex
     // layout immediately before theme mode—not in a fixed layer over the header.
     var scenePicker = document.getElementById("elPicker");
