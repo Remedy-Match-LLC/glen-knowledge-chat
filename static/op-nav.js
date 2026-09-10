@@ -374,6 +374,19 @@
     }
   })();
 
+
+  // Text magnification (Glen, 2026-09-09). text-size.js places its own control
+  // beside .rm-theme-seg once that exists, so there is nothing to mount here.
+  // Only the script needs to be present, for pages that get their theme toggle
+  // from this file rather than from a tag of their own.
+  (function () {
+    if (window.RMTextSize) return;
+    if (document.querySelector('script[src="/static/text-size.js"]')) return;
+    var s = document.createElement('script');
+    s.src = '/static/text-size.js';
+    (document.body || document.documentElement).appendChild(s);
+  })();
+
   // ---------------------------------------------------------------------------
   // Site-wide search — one box, two modes.
   //   Pages   : navigate the console's own surface (static destination index).
