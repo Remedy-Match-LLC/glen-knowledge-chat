@@ -37754,14 +37754,24 @@ def cron_usps_status():
     tracking-notification box on every label, so the mailbox is a complete status
     feed needing no carrier API and no billing plan.
 
-    Idempotent: _advance_orders_by_tracking_status only moves an order out of
-    new/packed, and mark_shipment_delivered only sets delivered_at when it is NULL.
-    A parcel already advanced is a no-op on the next run.
+    WHAT EACH SIGNAL DOES. in_transit/out_for_delivery moves an order out of
+    new/packed to 'shipped' and nothing else. delivered goes through
+    _activate_coaching_for_shipment, which does four things: sets
+    shipments.delivered_at, sets every member order to 'delivered', opens a coaching
+    window, and extends the Biofield month grant. All database writes; it sends no
+    mail. But the coaching window is dated NOW, not dated the delivery, so a wide
+    catch-up hands a client a fresh window for a parcel that arrived weeks ago. That
+    is why the default is 3 days, and why the vault's usps-status-run.sh says to ask
+    Glen before widening it.
+
+    Idempotent: the in-transit path only moves an order out of new/packed, and
+    _activate_coaching_for_shipment returns early once delivered_at is set. A parcel
+    already advanced is a no-op on the next run.
 
     Auth: X-Cron-Secret (== CRON_SECRET, falls back to CONSOLE_SECRET). Params:
-    ?days=N (default 3 — a scan email can arrive a day or two after the event, and
-    unlike the CNS watcher a wide window mails nobody), ?max=N emails scanned
-    (default 200), ?dry_run=1 to classify and report without touching an order.
+    ?days=N (default 3 — a scan email can arrive a day or two after the event),
+    ?max=N emails scanned (default 200), ?dry_run=1 to classify and report without
+    touching an order.
     """
     key = (request.headers.get("X-Cron-Secret", "")
            or request.headers.get("X-Console-Key", ""))
