@@ -16095,9 +16095,15 @@ def _advance_orders_by_tracking_status(cx, tracking_code, carrier_status):
     if not shipment:
         return 0
     if status == "delivered":
-        _activate_coaching_for_shipment(
+        # Return the number of order cards actually moved, not a flat 1. This
+        # branch used to report 1 unconditionally, including when the shipment
+        # resolved to no member order at all — which is the common case for a
+        # parcel whose order was never linked. Callers count this: the USPS status
+        # sweep prints it as cards_reported, and the easypost sync as `activated`,
+        # so a flat 1 told Glen a card had moved when the board had not changed.
+        res = _activate_coaching_for_shipment(
             cx, shipment, delivered_at=datetime.utcnow().isoformat() + "Z")
-        return 1
+        return len((res or {}).get("members") or [])
     if status not in ("in_transit", "out_for_delivery"):
         return 0
     members = _coaching.shipment_member_orders(
