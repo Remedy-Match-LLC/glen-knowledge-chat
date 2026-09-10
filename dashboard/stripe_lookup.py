@@ -10,9 +10,18 @@ def _search_value(value: str) -> str:
     return value.replace("\\", "\\\\").replace("'", "\\'")
 
 
-def _get(path: str, params=None) -> dict:
+# Stripe's Search API requires API version 2020-08-27 or newer. This account's
+# default is 2016-07-06, so an unversioned /customers/search returns HTTP 400 and
+# the Console reports "Stripe lookup is temporarily unavailable" for every query.
+# It was never intermittent: search has never worked from here. Pinned per request
+# rather than on the account, so every other Stripe call keeps the response shape
+# it has been parsed against since 2016.
+SEARCH_API_VERSION = "2020-08-27"
+
+
+def _get(path: str, params=None, *, version: str = "") -> dict:
     suffix = urlencode(params or {})
-    return stripe_pay._get(path + (("?" + suffix) if suffix else ""))
+    return stripe_pay._get(path + (("?" + suffix) if suffix else ""), version=version)
 
 
 def _customers(term: str, limit: int = 10) -> list[dict]:
@@ -29,7 +38,7 @@ def _customers(term: str, limit: int = 10) -> list[dict]:
         result = _get("/customers/search", {
             "query": f"{field}~'{escaped}'",
             "limit": max(1, min(limit, 20)),
-        })
+        }, version=SEARCH_API_VERSION)
         for customer in result.get("data") or []:
             if customer.get("id"):
                 found[customer["id"]] = customer

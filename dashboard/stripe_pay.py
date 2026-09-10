@@ -26,10 +26,19 @@ def _post(path: str, params: dict, *, idempotency_key="") -> dict:
     return r.json()
 
 
-def _get(path: str) -> dict:
-    """GET from the Stripe API. Returns the parsed JSON dict."""
+def _get(path: str, *, version: str = "") -> dict:
+    """GET from the Stripe API. Returns the parsed JSON dict.
+
+    `version` pins the Stripe-Version header for this one request. Endpoints that
+    postdate the account's default API version need it; everything else omits it
+    and keeps the response shape the callers already parse.
+    """
     url = path if path.startswith("http") else f"{STRIPE_API}{path}"
-    r = requests.get(url, auth=(_key(), ""), timeout=20)
+    # Only pass headers when a version is pinned. Adding headers=None to the
+    # unversioned call changes the requests.get signature that existing callers
+    # and their test fakes are written against.
+    kw = {"headers": {"Stripe-Version": version}} if version else {}
+    r = requests.get(url, auth=(_key(), ""), timeout=20, **kw)
     r.raise_for_status()
     return r.json()
 
