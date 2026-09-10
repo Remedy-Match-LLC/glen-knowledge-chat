@@ -75,7 +75,8 @@ def _capture_sweep(monkeypatch):
         seen["service"] = service
         return {"mode": "DRY-RUN" if kwargs.get("dry_run") else "LIVE",
                 "mailbox": "drglenswartwout@gmail.com", "days": kwargs["days"],
-                "emails": 0, "parcels": 0, "advanced": 0, "would_advance": 0,
+                "emails": 0, "parcels": 0, "acted": 0, "cards_reported": 0,
+                "would_act": 0,
                 "pre_transit_held": 0, "unknown_parcels": 0,
                 "unparsed_emails": 0, "errors": 0}
     monkeypatch.setattr(US, "run_status_sweep", fake)

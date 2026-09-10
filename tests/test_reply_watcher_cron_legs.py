@@ -41,7 +41,8 @@ def _ok(url):
                            "shipments": 2, "actions": {}})
     if "usps-status" in url:
         return json.dumps({"ok": True, "mailbox": "x@y.z", "emails": 4,
-                           "parcels": 2, "advanced": 1, "pre_transit_held": 1,
+                           "parcels": 2, "acted": 1, "cards_reported": 1,
+                           "pre_transit_held": 1,
                            "unknown_parcels": 0, "errors": 0})
     return json.dumps({"ok": True, "processed": 3, "errored": 0,
                        "skipped_nonuser": 0})
@@ -143,5 +144,6 @@ def test_the_usps_leg_summary_names_what_moved(runner, monkeypatch, capsys):
     runner.main()
 
     out = capsys.readouterr().out
-    assert "advanced=1" in out
+    assert "acted=1" in out
+    assert "cards=1" in out
     assert "held=1" in out
