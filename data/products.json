@@ -2181,7 +2181,7 @@
      "dose": "50 mg"
     },
     {
-     "name": "Aged Garlic",
+     "name": "Allicin 25% (Allium sativum)",
      "dose": "30 mg"
     },
     {
@@ -2514,7 +2514,7 @@
      "dose": "125 mg"
     },
     {
-     "name": "Aged Garlic",
+     "name": "Allicin 25% (Allium sativum)",
      "dose": "1 mg"
     },
     {
@@ -5362,7 +5362,7 @@
      "dose": "25 mg"
     },
     {
-     "name": "Aged Garlic",
+     "name": "Allicin 25% (Allium sativum)",
      "dose": "3.6 mg"
     },
     {
@@ -5988,7 +5988,7 @@
      "dose": "7 mg"
     },
     {
-     "name": "Aged Garlic",
+     "name": "Allicin 25% (Allium sativum)",
      "dose": "16 mg"
     },
     {
@@ -7546,7 +7546,7 @@
      "dose": "32 mg"
     },
     {
-     "name": "Aged Garlic",
+     "name": "Allicin 25% (Allium sativum)",
      "dose": "5 mg"
     },
     {
@@ -7900,7 +7900,7 @@
      "dose": "3.3 mg"
     },
     {
-     "name": "Allicin",
+     "name": "Allicin 25% (Allium sativum)",
      "dose": "2.6 mg"
     },
     {
@@ -8034,7 +8034,7 @@
      "dose": "20 mg"
     },
     {
-     "name": "Aged Garlic",
+     "name": "Allicin 25% (Allium sativum)",
      "dose": "16 mg"
     }
    ],
@@ -10635,7 +10635,7 @@
      "dose": "5 mg"
     },
     {
-     "name": "Aged Garlic",
+     "name": "Allicin 25% (Allium sativum)",
      "dose": "120 mg"
     },
     {
@@ -13649,7 +13649,7 @@
      "compound_mg": 3.3
     },
     {
-     "name": "Allicin 25% (Allium sativa)",
+     "name": "Allicin 25% (Allium sativum)",
      "dose": "2.6 mg",
      "purity_pct": 25.0,
      "compound_mg": 2.6
