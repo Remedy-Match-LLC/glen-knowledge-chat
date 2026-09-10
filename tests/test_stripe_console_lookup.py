@@ -4,7 +4,7 @@ from pathlib import Path
 def test_lookup_sanitizes_stripe_records(monkeypatch):
     from dashboard import stripe_lookup
 
-    def fake_get(path):
+    def fake_get(path, **kwargs):
         if path.startswith("/customers/search"):
             return {"data": [{"id": "cus_1", "name": "Anne S Metzen",
                               "email": "anne@example.com", "delinquent": False,
@@ -65,3 +65,70 @@ def test_lookup_route_uses_protected_helper(monkeypatch):
                           headers={"X-Console-Key": "test-secret"})
     assert response.status_code == 200
     assert response.get_json()["data"] == {"query": "Metzen", "matches": []}
+
+
+def test_customer_search_pins_an_api_version_that_supports_search(monkeypatch):
+    """Stripe Search needs API version 2020-08-27+. This account defaults to
+    2016-07-06, so an unversioned search 400s and the Console shows
+    "Stripe lookup is temporarily unavailable" for every query. Drop the pin and
+    this test fails, instead of the failure surfacing as a 502 in front of Rae."""
+    from dashboard import stripe_lookup, stripe_pay
+
+    seen = []
+
+    class _Resp:
+        status_code = 200
+
+        @staticmethod
+        def raise_for_status():
+            return None
+
+        @staticmethod
+        def json():
+            return {"data": []}
+
+    def fake_requests_get(url, **kwargs):
+        seen.append((url, kwargs.get("headers") or {}))
+        return _Resp()
+
+    monkeypatch.setattr(stripe_pay, "_key", lambda: "sk_test_stub")
+    monkeypatch.setattr(stripe_pay.requests, "get", fake_requests_get)
+
+    stripe_lookup.lookup("Metzen")
+
+    searches = [(url, headers) for url, headers in seen if "/customers/search" in url]
+    assert searches, "lookup never called /customers/search"
+    for url, headers in searches:
+        version = headers.get("Stripe-Version")
+        assert version, f"search sent no Stripe-Version header: {url}"
+        assert version >= "2020-08-27", f"Stripe-Version {version} is too old for search"
+
+
+def test_non_search_stripe_calls_send_no_version_header(monkeypatch):
+    """The version pin is deliberately per-request. Sending it on every call would
+    change the response shape of reads that have been parsed against 2016-07-06."""
+    from dashboard import stripe_pay
+
+    seen = {}
+
+    class _Resp:
+        @staticmethod
+        def raise_for_status():
+            return None
+
+        @staticmethod
+        def json():
+            return {}
+
+    def fake_requests_get(url, **kwargs):
+        # .get() would hide the difference between "absent" and "None"; the whole
+        # point of this test is that the kwarg is not passed at all.
+        seen["headers"] = kwargs["headers"] if "headers" in kwargs else None
+        seen["passed_headers_kwarg"] = "headers" in kwargs
+        return _Resp()
+
+    monkeypatch.setattr(stripe_pay, "_key", lambda: "sk_test_stub")
+    monkeypatch.setattr(stripe_pay.requests, "get", fake_requests_get)
+
+    stripe_pay._get("/charges?limit=1")
+    assert seen["passed_headers_kwarg"] is False, "unversioned calls must not pass a headers kwarg"
