@@ -225,7 +225,7 @@ def test_a_label_created_email_never_advances_an_order(cx):
     out = US.run_status_sweep(cx, svc, days=7, advance=advance)
     assert calls == []
     assert out["pre_transit_held"] == 1
-    assert out["advanced"] == 0
+    assert out["acted"] == 0
 
 
 def test_movement_advances_the_order(cx):
@@ -233,7 +233,7 @@ def test_movement_advances_the_order(cx):
     advance, calls = _recorder()
     out = US.run_status_sweep(cx, svc, days=7, advance=advance)
     assert calls == [(TN, US.IN_TRANSIT)]
-    assert out["advanced"] == 1
+    assert out["acted"] == 1
 
 
 def test_delivered_wins_over_earlier_scans_in_the_same_window(cx):
@@ -248,13 +248,39 @@ def test_delivered_wins_over_earlier_scans_in_the_same_window(cx):
     assert out["emails"] == 3 and out["parcels"] == 1
 
 
+def test_acted_and_cards_reported_are_counted_separately(cx):
+    """A delivered signal returns 1 even when the shipment resolves to no member
+    order, which is the common case for a parcel whose order was never linked.
+    Observed on prod 2026-09-10: parcel ...869056 was delivered and its shipment
+    row exists, but no order carries that tracking number. Collapsing the two
+    counts would report an order moving when the board did not change."""
+    svc = _Service([("m1", SHARED_SUBJECT, DELIVERED_MAILBOX)])
+
+    def advance_touching_nothing(cx, tracking_code, carrier_status):
+        return 0
+
+    out = US.run_status_sweep(cx, svc, days=7, advance=advance_touching_nothing)
+    assert out["acted"] == 1
+    assert out["cards_reported"] == 0
+
+
+def test_a_non_numeric_advance_return_does_not_break_the_summary(cx):
+    """_advance_orders_by_tracking_status returns an int today. A future change
+    must degrade the count, never 500 the cron."""
+    svc = _Service([("m1", SHARED_SUBJECT, DELIVERED_MAILBOX)])
+    out = US.run_status_sweep(cx, svc, days=7,
+                              advance=lambda *a, **k: {"ok": True})
+    assert out["acted"] == 1
+    assert out["cards_reported"] == 0
+
+
 def test_dry_run_mutates_nothing(cx):
     svc = _Service([("m1", SHARED_SUBJECT, DELIVERED_MAILBOX)])
     advance, calls = _recorder()
     out = US.run_status_sweep(cx, svc, days=7, advance=advance, dry_run=True)
     assert calls == []
     assert out["mode"] == "DRY-RUN"
-    assert out["would_advance"] == 1
+    assert out["would_act"] == 1
 
 
 def test_a_tracking_number_we_never_shipped_is_counted_not_raised(cx):
@@ -303,4 +329,39 @@ def test_an_advance_failure_does_not_abort_the_rest(cx):
 
     out = US.run_status_sweep(cx, svc, days=7, advance=advance)
     assert len(seen) == 2
-    assert out["errors"] == 1 and out["advanced"] == 1
+    assert out["errors"] == 1 and out["acted"] == 1
+    # A count with no reason is not diagnosable. The first live cron run reported
+    # errors=1 and nothing recorded why.
+    assert out["first_error"] is not None
+    assert TN in out["first_error"]
+    assert "order table locked" in out["first_error"]
+
+
+def test_the_sweep_logs_a_reason_for_every_parcel_it_skips(cx):
+    """The endpoint passes a logger so these reach the Render logs. Silence on a
+    held or unknown parcel is what makes a quiet sweep unreadable."""
+    unknown = DELIVERED_MAILBOX.replace(TN, "9400000000000000000000")
+    svc = _Service([("m1", SHARED_SUBJECT, LABEL_CREATED),
+                    ("m2", "USPS®", unknown)])
+    lines = []
+    US.run_status_sweep(cx, svc, days=7, advance=lambda *a, **k: 1,
+                        log=lines.append)
+    blob = "\n".join(lines)
+    assert "held" in blob
+    assert "no shipment row" in blob
+
+
+def test_only_the_first_error_is_kept(cx):
+    """first_error is a pointer for a human, not an error log. Two failures must
+    not grow the summary."""
+    record_shipment(cx, tracking_number="9405530109355413439098",
+                    recipient_name="Pam Schreur", status="sent")
+    svc = _Service([("m1", SHARED_SUBJECT, DELIVERED_MAILBOX),
+                    ("m2", SHARED_SUBJECT, DELIVERED_LOCKER)])
+
+    def always_fails(cx, tracking_code, carrier_status):
+        raise RuntimeError("boom " + tracking_code[-4:])
+
+    out = US.run_status_sweep(cx, svc, days=7, advance=always_fails)
+    assert out["errors"] == 2
+    assert out["first_error"].count("boom") == 1

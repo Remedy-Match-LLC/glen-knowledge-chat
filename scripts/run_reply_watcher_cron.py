@@ -91,8 +91,11 @@ def run_usps_status():
         return
     print(f"[usps-status-cron] mailbox={body.get('mailbox')} "
           f"emails={body.get('emails')} parcels={body.get('parcels')} "
-          f"advanced={body.get('advanced')} held={body.get('pre_transit_held')} "
-          f"unknown={body.get('unknown_parcels')} errors={body.get('errors')}",
+          f"acted={body.get('acted')} cards={body.get('cards_reported')} "
+          f"held={body.get('pre_transit_held')} "
+          f"unknown={body.get('unknown_parcels')} errors={body.get('errors')}"
+          + (f" first_error={body.get('first_error')}"
+             if body.get("first_error") else ""),
           flush=True)
 
 

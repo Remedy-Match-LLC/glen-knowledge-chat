@@ -75,9 +75,10 @@ def _capture_sweep(monkeypatch):
         seen["service"] = service
         return {"mode": "DRY-RUN" if kwargs.get("dry_run") else "LIVE",
                 "mailbox": "drglenswartwout@gmail.com", "days": kwargs["days"],
-                "emails": 0, "parcels": 0, "advanced": 0, "would_advance": 0,
+                "emails": 0, "parcels": 0, "acted": 0, "cards_reported": 0,
+                "would_act": 0,
                 "pre_transit_held": 0, "unknown_parcels": 0,
-                "unparsed_emails": 0, "errors": 0}
+                "unparsed_emails": 0, "errors": 0, "first_error": None}
     monkeypatch.setattr(US, "run_status_sweep", fake)
     return seen
 
@@ -120,6 +121,9 @@ def test_endpoint_passes_the_apps_own_advance_function(db_file, monkeypatch):
 
     assert r.status_code == 200
     assert seen["advance"] is app_module._advance_orders_by_tracking_status
+    # Without a logger the sweep's per-parcel reasons never reach Render's logs,
+    # which is how the first live run reported errors=1 with no cause.
+    assert callable(seen.get("log"))
 
 
 def test_endpoint_defaults_to_a_three_day_window_and_is_live(db_file, monkeypatch):

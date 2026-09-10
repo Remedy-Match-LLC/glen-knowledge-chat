@@ -16003,6 +16003,38 @@ def _extend_biofield_month_on_delivery(cx, email, delivered_order):
         return "error"
 
 
+def _shipment_field(shipment, key, default=None):
+    """Read one field from a shipment row on either database backend.
+
+    WHY THIS EXISTS. Callers used
+    `row["k"] if isinstance(row, sqlite3.Row) else row.get("k")`, which assumes
+    anything that is not a sqlite3.Row is a dict. On Postgres it is neither: it is
+    a pgcompat.HybridRow, which indexes by column name but has no .get() and
+    __slots__ so one cannot be attached. Production is Postgres, so
+    _activate_coaching_for_shipment raised AttributeError on its very first line
+    every time it ran.
+
+    That went unseen because nothing reached it. The EasyPost tracker and webhook
+    paths are both no-ops while the production key is held, so the only live
+    callers were the two manual "mark delivered" routes. The USPS status sweep
+    (2026-09-10) is the first thing to call it on a schedule, and it surfaced as
+    one unexplained errors=1 per run.
+
+    Not fixed by adding .get() to HybridRow: scripts/weekly_live_invitation.py
+    branches on `hasattr(row, "get")` over a `SELECT lower(email)`, whose column
+    is named "lower". Giving HybridRow a .get() would flip that branch and
+    silently empty a weekly email audience.
+    """
+    # One path covers all three. sqlite3.Row, HybridRow and dict all index by
+    # column name, and all three raise KeyError for a name they do not carry. A
+    # separate dict branch was written first and removed: mutation-testing showed
+    # deleting it changed no result, so it was an untested duplicate.
+    try:
+        return shipment[key]
+    except (KeyError, IndexError, TypeError):
+        return default
+
+
 def _activate_coaching_for_shipment(cx, shipment, *, delivered_at):
     """Idempotent: on first delivery signal for a shipment, mark delivered_at and
     open a coaching window (source='delivery') for EVERY qualifying+eligible member
@@ -16010,11 +16042,11 @@ def _activate_coaching_for_shipment(cx, shipment, *, delivered_at):
     member orders, so each client gets their own window (single shipments = 1
     member = unchanged behavior). open_window is no-stacking/one-per-order, so this
     never double-opens. Returns {ok, opened, members:[per-order result]}."""
-    already = shipment["delivered_at"] if isinstance(shipment, sqlite3.Row) else shipment.get("delivered_at")
+    already = _shipment_field(shipment, "delivered_at")
     if already:
         return {"skipped": "already_processed"}
-    sid = shipment["id"] if isinstance(shipment, sqlite3.Row) else shipment.get("id")
-    uuid = shipment["order_uuid"] if isinstance(shipment, sqlite3.Row) else shipment.get("order_uuid")
+    sid = _shipment_field(shipment, "id")
+    uuid = _shipment_field(shipment, "order_uuid")
     _tracking.mark_shipment_delivered(cx, sid, delivered_at)
     members = _coaching.shipment_member_orders(cx, sid, uuid)
     if not members:
@@ -16026,8 +16058,7 @@ def _activate_coaching_for_shipment(cx, shipment, *, delivered_at):
     # resolved_email is the shipment's single parsed recipient — only a safe
     # fallback when there's exactly one member (never cross-assign it in a
     # multi-client household).
-    resolved_email = (shipment["resolved_email"] if isinstance(shipment, sqlite3.Row)
-                      else shipment.get("resolved_email"))
+    resolved_email = _shipment_field(shipment, "resolved_email")
     single = len(members) == 1
     opened, results = 0, []
     for m in members:
@@ -37804,7 +37835,10 @@ def cron_usps_status():
             _tracking.migrate_add_delivery_columns(cx)
             summary = _us.run_status_sweep(
                 cx, svc, days=days, max_messages=max_messages, dry_run=dry_run,
-                advance=_advance_orders_by_tracking_status)
+                advance=_advance_orders_by_tracking_status,
+                # Without a logger the sweep's per-parcel reasons vanish. The
+                # first live cron run reported errors=1 with no way to learn why.
+                log=lambda m: print(f"[usps-status]{m}", flush=True))
     except (_gt.GmailTokenMissing, RefreshError) as e:
         now_iso = datetime.now(timezone.utc).isoformat()
         if _gt.should_send_alert(str(LOG_DB), "inbox_gmail", now_iso):

@@ -182,11 +182,20 @@ def run_status_sweep(cx, service, *, days=3, max_messages=200, dry_run=False,
             continue
         per_parcel.setdefault(parsed["tracking"], []).append(parsed["status"])
 
+    # 'acted' counts parcels we handed to the advance function. 'cards_reported' is
+    # what that function said it touched, and the two differ: a delivered signal
+    # returns 1 even when the shipment resolves to no member order at all, which is
+    # the common case for a parcel whose order was never linked. Reporting only
+    # 'acted' would read as an order moving when nothing on the board changed.
     summary = {
         "mode": mode, "mailbox": mailbox, "days": int(days),
         "emails": len(msg_ids), "parcels": len(per_parcel),
-        "advanced": 0, "would_advance": 0, "pre_transit_held": 0,
+        "acted": 0, "cards_reported": 0, "would_act": 0, "pre_transit_held": 0,
         "unknown_parcels": 0, "unparsed_emails": unparsed, "errors": 0,
+        # A count with no reason is not diagnosable. The first live cron run
+        # reported errors=1 and there was no way to learn why, because the
+        # endpoint passed no logger and the exception text died in the sweep.
+        "first_error": None,
     }
 
     for tracking, seen in per_parcel.items():
@@ -203,16 +212,22 @@ def run_status_sweep(cx, service, *, days=3, max_messages=200, dry_run=False,
             log(f"  {tracking}: {state} but no shipment row — skipped")
             continue
         if dry_run:
-            summary["would_advance"] += 1
-            log(f"  {tracking}: would advance on {state}")
+            summary["would_act"] += 1
+            log(f"  {tracking}: would act on {state}")
             continue
         try:
-            moved = advance(cx, tracking, state)
+            reported = advance(cx, tracking, state)
         except Exception as exc:  # noqa: BLE001 - one bad parcel must not stop the rest
             summary["errors"] += 1
+            if summary["first_error"] is None:
+                summary["first_error"] = f"{tracking}: {exc!r}"[:300]
             log(f"  {tracking}: advance failed: {exc!r}")
             continue
-        summary["advanced"] += 1
-        log(f"  {tracking}: {state} — advanced ({moved} order card(s))")
+        summary["acted"] += 1
+        try:
+            summary["cards_reported"] += int(reported or 0)
+        except (TypeError, ValueError):
+            pass
+        log(f"  {tracking}: {state} — acted, function reported {reported}")
 
     return summary
