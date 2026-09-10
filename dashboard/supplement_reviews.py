@@ -17,6 +17,7 @@ import os
 import re
 
 from dashboard import db
+from dashboard import dbwrite
 
 _RANK = {"listed": -1, "requested": 0, "ai_draft": 1, "confirmed": 2}
 
@@ -136,13 +137,14 @@ def create_request(cx, email, product_name, product_brand="", source="portal"):
         return {"created": False, "id": row[0], "status": row[1]}
     now = _now()
     try:
-        cur = cx.execute(
+        new_id = dbwrite.insert_returning_id(
+            cx,
             "INSERT INTO supplement_reviews "
             "(email, product_name, product_brand, product_key, source, status, requested_at, updated_at) "
             "VALUES (?,?,?,?,?, 'requested', ?, ?)",
             (e, name, (product_brand or "").strip(), key, (source or "").strip(), now, now))
         cx.commit()
-        return {"created": True, "id": cur.lastrowid, "status": "requested"}
+        return {"created": True, "id": new_id, "status": "requested"}
     except db.IntegrityError:
         # lost a UNIQUE race → return the existing row rather than 500ing.
         row = cx.execute("SELECT id, status FROM supplement_reviews WHERE email=? AND product_key=?",
@@ -176,14 +178,15 @@ def add_listed(cx, email, product_name, product_brand="", reason="", importance=
         return {"created": False, "id": row[0], "status": row[1]}
     now = _now()
     try:
-        cur = cx.execute(
+        new_id = dbwrite.insert_returning_id(
+            cx,
             "INSERT INTO supplement_reviews "
             "(email, product_name, product_brand, product_key, source, status, reason, importance, updated_at) "
             "VALUES (?,?,?,?,?, 'listed', ?, ?, ?)",
             (e, name, (product_brand or "").strip(), key, (source or "").strip(),
              (reason or "").strip() or None, _clamp_importance(importance), now))
         cx.commit()
-        return {"created": True, "id": cur.lastrowid, "status": "listed"}
+        return {"created": True, "id": new_id, "status": "listed"}
     except db.IntegrityError:
         # lost a UNIQUE race → return the existing row rather than 500ing.
         row = cx.execute("SELECT id, status FROM supplement_reviews WHERE email=? AND product_key=?",
