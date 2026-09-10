@@ -330,3 +330,38 @@ def test_an_advance_failure_does_not_abort_the_rest(cx):
     out = US.run_status_sweep(cx, svc, days=7, advance=advance)
     assert len(seen) == 2
     assert out["errors"] == 1 and out["acted"] == 1
+    # A count with no reason is not diagnosable. The first live cron run reported
+    # errors=1 and nothing recorded why.
+    assert out["first_error"] is not None
+    assert TN in out["first_error"]
+    assert "order table locked" in out["first_error"]
+
+
+def test_the_sweep_logs_a_reason_for_every_parcel_it_skips(cx):
+    """The endpoint passes a logger so these reach the Render logs. Silence on a
+    held or unknown parcel is what makes a quiet sweep unreadable."""
+    unknown = DELIVERED_MAILBOX.replace(TN, "9400000000000000000000")
+    svc = _Service([("m1", SHARED_SUBJECT, LABEL_CREATED),
+                    ("m2", "USPS®", unknown)])
+    lines = []
+    US.run_status_sweep(cx, svc, days=7, advance=lambda *a, **k: 1,
+                        log=lines.append)
+    blob = "\n".join(lines)
+    assert "held" in blob
+    assert "no shipment row" in blob
+
+
+def test_only_the_first_error_is_kept(cx):
+    """first_error is a pointer for a human, not an error log. Two failures must
+    not grow the summary."""
+    record_shipment(cx, tracking_number="9405530109355413439098",
+                    recipient_name="Pam Schreur", status="sent")
+    svc = _Service([("m1", SHARED_SUBJECT, DELIVERED_MAILBOX),
+                    ("m2", SHARED_SUBJECT, DELIVERED_LOCKER)])
+
+    def always_fails(cx, tracking_code, carrier_status):
+        raise RuntimeError("boom " + tracking_code[-4:])
+
+    out = US.run_status_sweep(cx, svc, days=7, advance=always_fails)
+    assert out["errors"] == 2
+    assert out["first_error"].count("boom") == 1

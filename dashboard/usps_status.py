@@ -192,6 +192,10 @@ def run_status_sweep(cx, service, *, days=3, max_messages=200, dry_run=False,
         "emails": len(msg_ids), "parcels": len(per_parcel),
         "acted": 0, "cards_reported": 0, "would_act": 0, "pre_transit_held": 0,
         "unknown_parcels": 0, "unparsed_emails": unparsed, "errors": 0,
+        # A count with no reason is not diagnosable. The first live cron run
+        # reported errors=1 and there was no way to learn why, because the
+        # endpoint passed no logger and the exception text died in the sweep.
+        "first_error": None,
     }
 
     for tracking, seen in per_parcel.items():
@@ -215,6 +219,8 @@ def run_status_sweep(cx, service, *, days=3, max_messages=200, dry_run=False,
             reported = advance(cx, tracking, state)
         except Exception as exc:  # noqa: BLE001 - one bad parcel must not stop the rest
             summary["errors"] += 1
+            if summary["first_error"] is None:
+                summary["first_error"] = f"{tracking}: {exc!r}"[:300]
             log(f"  {tracking}: advance failed: {exc!r}")
             continue
         summary["acted"] += 1

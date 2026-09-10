@@ -93,7 +93,9 @@ def run_usps_status():
           f"emails={body.get('emails')} parcels={body.get('parcels')} "
           f"acted={body.get('acted')} cards={body.get('cards_reported')} "
           f"held={body.get('pre_transit_held')} "
-          f"unknown={body.get('unknown_parcels')} errors={body.get('errors')}",
+          f"unknown={body.get('unknown_parcels')} errors={body.get('errors')}"
+          + (f" first_error={body.get('first_error')}"
+             if body.get("first_error") else ""),
           flush=True)
 
 

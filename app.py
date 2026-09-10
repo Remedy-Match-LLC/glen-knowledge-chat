@@ -37804,7 +37804,10 @@ def cron_usps_status():
             _tracking.migrate_add_delivery_columns(cx)
             summary = _us.run_status_sweep(
                 cx, svc, days=days, max_messages=max_messages, dry_run=dry_run,
-                advance=_advance_orders_by_tracking_status)
+                advance=_advance_orders_by_tracking_status,
+                # Without a logger the sweep's per-parcel reasons vanish. The
+                # first live cron run reported errors=1 with no way to learn why.
+                log=lambda m: print(f"[usps-status]{m}", flush=True))
     except (_gt.GmailTokenMissing, RefreshError) as e:
         now_iso = datetime.now(timezone.utc).isoformat()
         if _gt.should_send_alert(str(LOG_DB), "inbox_gmail", now_iso):

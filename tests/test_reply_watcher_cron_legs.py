@@ -123,6 +123,37 @@ def test_a_404_on_the_usps_leg_is_reported_as_not_yet_deployed(
     assert "[usps-status-cron]" in out and "404" in out
 
 
+def test_the_usps_leg_prints_the_error_reason_when_there_is_one(
+        runner, monkeypatch, capsys):
+    """errors=1 with no reason is not diagnosable. That happened on the first
+    live run, 2026-09-10."""
+    def fake_post(url, headers, timeout=None, label=None):
+        if "usps-status" in url:
+            return json.dumps({"ok": True, "mailbox": "x@y.z", "emails": 1,
+                               "parcels": 1, "acted": 0, "cards_reported": 0,
+                               "pre_transit_held": 0, "unknown_parcels": 0,
+                               "errors": 1,
+                               "first_error": "94055...: RuntimeError('locked')"})
+        return _ok(url)
+    monkeypatch.setattr(runner, "post_with_retry", fake_post)
+
+    runner.main()
+
+    out = capsys.readouterr().out
+    assert "errors=1" in out
+    assert "first_error=" in out and "locked" in out
+
+
+def test_a_clean_usps_leg_prints_no_error_field(runner, monkeypatch, capsys):
+    monkeypatch.setattr(runner, "post_with_retry",
+                        lambda url, headers, **k: _ok(url))
+
+    runner.main()
+
+    out = capsys.readouterr().out
+    assert "first_error=" not in out
+
+
 def test_a_failing_reply_watch_still_fails_the_run(runner, monkeypatch):
     """The legs must not mask the job's own health."""
     def fake_post(url, headers, timeout=None, label=None):
