@@ -19,6 +19,13 @@ from dashboard.biofield_narrative import get_narrative
 ALIAS_SLUGS = {
     "focusneuromagnesium": "neuro-magnesium",
     "communityspiritformulainterrainrestore": "terrain-restore",
+    # Cistus Syntropy Powder was replaced by Cistus Shield capsules (Glen, 2026-09-10).
+    # `superseded_by` carries "Cistus" and "Cistus Synergy" forward on its own; these
+    # three match nothing in the catalog, so only an alias reaches them. "cystusshield"
+    # is Glen's own misspelling, used on 2026-09-10, so it will recur.
+    "cistussyntropy": "cistus-shield",
+    "cistussyntropypowder": "cistus-shield",
+    "cystusshield": "cistus-shield",
 }
 
 
@@ -33,9 +40,28 @@ def load_catalog():
 
 def resolve_remedy_slug(name, catalog):
     """Resolve a protocol remedy name to a catalog slug: alias override first,
-    then the in-repo fuzzy resolver. None when genuinely unresolvable."""
+    then the in-repo fuzzy resolver. None when genuinely unresolvable.
+
+    Every hit is routed through `superseded_slug`, because this result is STORED in
+    `reorder_items` — persisted portal content, not a per-request lookup. The matchers
+    below compare against `product["name"]` and never check `inactive`, so a retired
+    record keeps matching its own name forever. Without the redirect, retiring a
+    product silently starts writing dead slugs into every report published after it.
+    Same rule, same reason as `test_superseded_write_boundary.py`."""
     if not (name or "").strip():
         return None
+    return _live(_match(name, catalog), catalog)
+
+
+def _live(slug, catalog):
+    """A stored slug must name the survivor, never the record it replaced."""
+    if not slug:
+        return None
+    from dashboard.products import superseded_slug
+    return superseded_slug(slug, catalog or {})
+
+
+def _match(name, catalog):
     alias = ALIAS_SLUGS.get(_norm_key(name))
     if alias:
         return alias
