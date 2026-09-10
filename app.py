@@ -42402,6 +42402,65 @@ def get_person(person_id):
     return jsonify(person)
 
 
+@app.route("/api/console/scrub-chip-names", methods=["POST"])
+def api_console_scrub_chip_names():
+    """Blank stored first names that are really our own funnel chip labels.
+
+    begin_funnel.scrub_first_name stops NEW damage, but record_unlock falls back
+    to the stored value when the scrub returns empty:
+
+        new_first = scrub_first_name(first_name) or existing.get("first_name")
+
+    so rows written before that guard shipped keep being used, and clients keep
+    receiving "Aloha Sharper vision,". This clears the stored rows.
+
+    Cleans BOTH journey_state and people. Blanking one alone gets undone: the
+    funnel re-reads its own row, and the hub is re-synced from it.
+
+    Blanking is the fix, not guessing a replacement. We hold no order or session
+    for these contacts, and inferring a name from an email local-part is the same
+    class of mistake that caused this. Empty renders as the "Aloha friend,"
+    fallback.
+
+    ?dry_run=1 lists exactly who would change and writes nothing.
+    """
+    if CONSOLE_SECRET:
+        key = request.headers.get("X-Console-Key", "") or request.args.get("key", "")
+        if key != CONSOLE_SECRET and not _owner_token_ok(key):
+            return jsonify({"error": "Unauthorized"}), 401
+    import begin_funnel as _bf
+    dry = request.args.get("dry_run") in ("1", "true", "yes")
+    would = []
+    counts = {"people": 0, "journey_state": 0}
+    with _db_lock, db.connect(LOG_DB) as cx:
+        for table in ("people", "journey_state"):
+            try:
+                rows = cx.execute(
+                    f"SELECT email, first_name FROM {table} "
+                    "WHERE first_name IS NOT NULL AND trim(first_name)<>''").fetchall()
+            except Exception:  # noqa: BLE001 — table may not exist in a given env
+                continue
+            for email, first in rows:
+                # The funnel's OWN predicate, so cleanup and guard cannot drift.
+                if not _bf._chip_label_fragment(first or ""):
+                    continue
+                counts[table] += 1
+                would.append({"table": table, "email": email, "was": first})
+                if not dry:
+                    if table == "people":
+                        cx.execute("UPDATE people SET first_name='', name='' "
+                                   "WHERE email=? AND first_name=?", (email, first))
+                    else:
+                        cx.execute("UPDATE journey_state SET first_name='' "
+                                   "WHERE email=? AND first_name=?", (email, first))
+        if not dry:
+            cx.commit()
+    if not dry and would:
+        app.logger.warning("scrub-chip-names cleared %d stored names", len(would))
+    return jsonify({"ok": True, "dry_run": dry, **counts,
+                    "would_clear" if dry else "cleared": would})
+
+
 @app.route("/api/people", methods=["POST"])
 def upsert_people():
     if CONSOLE_SECRET:
