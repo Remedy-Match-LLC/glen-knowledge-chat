@@ -23,6 +23,10 @@
     --brand:#5bbf9e; --brand-soft:rgba(91,191,158,.14);
     --btn-bg:#d4a843; --btn-fg:#0a150d; --ok:#5bbf9e; --err:#e88a8a;
     --shadow:0 1px 2px rgba(0,0,0,.30);
+    /* Left-rail nav, Glen 2026-09-09: gold icons, warm tan descriptions.
+       The icon gold is the palette's existing --btn-bg gold, so the rail matches
+       the funnel rather than introducing a second gold. */
+    --rail-icon:#d4a843; --rail-desc:#e0c98f;
   }
   :root[data-theme="light"]{
     --bg:#FBF8F3; --card:#ffffff; --card2:#f6f2e9; --line:#e7e1d4;
@@ -30,6 +34,9 @@
     --brand:#2f6f5e; --brand-soft:rgba(47,111,94,.10);
     --btn-bg:#2f6f5e; --btn-fg:#ffffff; --ok:#2f7d6b; --err:#9a3b3b;
     --shadow:0 1px 2px rgba(40,40,30,.06);
+    /* Same two roles, darkened. The rail is cream (#f6f2e9) in light, where the
+       dark theme's bright gold and tan drop under readable contrast. */
+    --rail-icon:#a97c1b; --rail-desc:#7d6122;
   }
   *{box-sizing:border-box}
   body{margin:0;background-color:var(--bg);color:var(--ink);
@@ -591,13 +598,15 @@
     background:var(--card2); border-right:1px solid var(--line);
     transition:width .22s ease;
   }
-  .portal-rail.is-open{width:176px}
+  .portal-rail.is-open{width:200px}
   .rail-item{
     display:flex; align-items:center; gap:10px; padding:9px 17px; width:100%;
     background:none; border:0; border-left:2px solid transparent; color:var(--muted);
     font:inherit; text-align:left; white-space:nowrap; cursor:pointer;
   }
-  .rail-item svg{flex:0 0 18px;width:18px;height:18px;stroke:currentColor;fill:none;
+  /* stroke is the gold token, not currentColor: the label keeps its own colour
+     and the active state below no longer repaints the icon. */
+  .rail-item svg{flex:0 0 18px;width:18px;height:18px;stroke:var(--rail-icon);fill:none;
     stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
   /* Task 13 (portal-shell-ia): badges and descriptions. .rail-icon wraps the svg
      so a count bubble can sit on its corner without disturbing the icon's own
@@ -606,9 +615,9 @@
   .rail-icon{position:relative; display:inline-flex; flex:0 0 18px}
   .rail-text{display:flex; flex-direction:column; min-width:0; opacity:0; transition:opacity .16s ease}
   .portal-rail.is-open .rail-text{opacity:1}
-  .rail-label{display:flex; align-items:center; gap:6px; font-size:.82rem}
-  .rail-desc{display:none; font-size:.7rem; color:var(--muted); white-space:normal;
-    line-height:1.25; margin-top:1px}
+  .rail-label{display:flex; align-items:center; gap:6px; font-size:.9rem}
+  .rail-desc{display:none; font-size:.78rem; color:var(--rail-desc); white-space:normal;
+    line-height:1.3; margin-top:2px}
   .portal-rail.is-open .rail-desc{display:block}
   /* The corner bubble reads at the collapsed 52px width where the label itself
      is clipped; the .pill beside the label reuses the badge style the old hub
@@ -649,10 +658,10 @@
     .shell-burger svg{width:19px;height:19px;stroke:currentColor;fill:none;stroke-width:1.7;stroke-linecap:round}
     .shell-title{font-size:.82rem;color:var(--muted)}
     .portal-rail{
-      position:fixed; width:176px; transform:translateX(-100%);
+      position:fixed; width:200px; transform:translateX(-100%);
       transition:transform .22s ease;
     }
-    .portal-rail.is-open{transform:translateX(0);width:176px}
+    .portal-rail.is-open{transform:translateX(0);width:200px}
     .portal-rail .rail-item .rail-text{opacity:1}
     .portal-rail.is-open ~ .shell-scrim{opacity:1;pointer-events:auto}
     body.has-shell{padding-left:0}
