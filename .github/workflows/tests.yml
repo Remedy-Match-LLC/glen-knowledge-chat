@@ -23,7 +23,13 @@ jobs:
   suite:
     name: test suite (secretless)
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # 45, not 30. The suite executes in about 14 minutes (13.8 of that is the
+    # suite step itself), so 30 left roughly one doubling of headroom. A slow
+    # runner occasionally crossed it, and a timed-out job reports as a FAILURE
+    # with zero failed steps, which reads exactly like a real red. That cost a
+    # wasted debugging cycle on 2026-09-02. 45 still fails a genuinely hung job,
+    # just not a merely slow one.
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
 
