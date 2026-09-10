@@ -37737,6 +37737,98 @@ def cron_cns_tracking():
     return jsonify({"ok": True, **summary})
 
 
+@app.route("/api/cron/usps-status", methods=["POST"])
+def cron_usps_status():
+    """Advance order cards from USPS tracking-status emails.
+
+    Click-N-Ship only ever tells us a label was BOUGHT, and link_shipment_to_orders
+    deliberately leaves the lifecycle alone because that is not carrier acceptance.
+    Its docstring promised a tracking-status sync would advance the order once USPS
+    reported motion. The only implementation of that promise is
+    /api/cron/easypost-sync, and EasyPost is unconfigured (production key held), so
+    it returns 'easypost_unconfigured' and nothing moves. Measured 2026-09-10: 6
+    orders carried a real tracking number while still reading new/packed, and one
+    of them had been delivered 12 days earlier.
+
+    USPS emails every scan from auto-reply@tracking.usps.com, and Rae now ticks the
+    tracking-notification box on every label, so the mailbox is a complete status
+    feed needing no carrier API and no billing plan.
+
+    WHAT EACH SIGNAL DOES. in_transit/out_for_delivery moves an order out of
+    new/packed to 'shipped' and nothing else. delivered goes through
+    _activate_coaching_for_shipment, which does four things: sets
+    shipments.delivered_at, sets every member order to 'delivered', opens a coaching
+    window, and extends the Biofield month grant. All database writes; it sends no
+    mail. But the coaching window is dated NOW, not dated the delivery, so a wide
+    catch-up hands a client a fresh window for a parcel that arrived weeks ago. That
+    is why the default is 3 days, and why the vault's usps-status-run.sh says to ask
+    Glen before widening it.
+
+    Idempotent: the in-transit path only moves an order out of new/packed, and
+    _activate_coaching_for_shipment returns early once delivered_at is set. A parcel
+    already advanced is a no-op on the next run.
+
+    Auth: X-Cron-Secret (== CRON_SECRET, falls back to CONSOLE_SECRET). Params:
+    ?days=N (default 3 — a scan email can arrive a day or two after the event),
+    ?max=N emails scanned (default 200), ?dry_run=1 to classify and report without
+    touching an order.
+    """
+    key = (request.headers.get("X-Cron-Secret", "")
+           or request.headers.get("X-Console-Key", ""))
+    expected = os.environ.get("CRON_SECRET") or os.environ.get("CONSOLE_SECRET", "")
+    if not expected or key != expected:
+        return jsonify({"error": "unauthorized"}), 401
+
+    def _int_arg(name, default, low, high):
+        try:
+            return max(low, min(high, int(request.args.get(name, default))))
+        except (TypeError, ValueError):
+            return default
+
+    days = _int_arg("days", 3, 1, 90)
+    max_messages = _int_arg("max", 200, 1, 500)
+    dry_run = (request.args.get("dry_run") or "").strip().lower() in ("1", "true", "yes")
+
+    import cns_tracking_watcher as _cns
+    from dashboard import gmail_token as _gt, usps_status as _us
+    from google.auth.exceptions import RefreshError
+    loaded = None
+    try:
+        loaded = _gt.load_gmail_credentials(str(LOG_DB), name="inbox_gmail",
+                                            scopes=_cns.SCOPES)
+        from googleapiclient.discovery import build as _build
+        svc = _build("gmail", "v1", credentials=loaded.creds)
+        with _db_lock, db.connect(LOG_DB) as cx:
+            cx.row_factory = sqlite3.Row
+            _tracking.init_tracking_schema(cx)
+            _tracking.migrate_add_delivery_columns(cx)
+            summary = _us.run_status_sweep(
+                cx, svc, days=days, max_messages=max_messages, dry_run=dry_run,
+                advance=_advance_orders_by_tracking_status)
+    except (_gt.GmailTokenMissing, RefreshError) as e:
+        now_iso = datetime.now(timezone.utc).isoformat()
+        if _gt.should_send_alert(str(LOG_DB), "inbox_gmail", now_iso):
+            _send_token_alert(
+                "Gmail token needs re-auth (USPS status sync down)",
+                "The USPS tracking-status sync could not load its Gmail token. "
+                "Order cards are no longer advancing when parcels move. "
+                "Re-run '~/AI-Training/02 Skills/google-auth.py' and PUT it to "
+                f"/api/tokens/inbox_gmail.\n\nDetail: {e}",
+            )
+            _gt.record_alert(str(LOG_DB), "inbox_gmail", now_iso)
+        return jsonify({"ok": False, "error": str(e), "token_missing": True}), 500
+    except Exception as e:  # noqa: BLE001
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+    if loaded is not None and not dry_run:
+        try:
+            _gt.persist_refreshed_credentials(str(LOG_DB), loaded)
+            _gt.record_ok(str(LOG_DB), "inbox_gmail")
+        except Exception as e:  # noqa: BLE001 - never fail the run on write-back
+            print(f"[usps-status] token write-back failed: {e!r}", flush=True)
+
+    return jsonify({"ok": True, **summary})
+
 
 @app.route("/api/reorder/items", methods=["GET"])
 def api_reorder_items():
