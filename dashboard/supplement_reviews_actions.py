@@ -17,8 +17,16 @@ def _exec_confirm(params, ctx):
         raise ValueError("id required")
     cx = ctx["cx"]
     _sr.init_table(cx)
+    before = (_sr.get(cx, rid) or {}).get("status")
     res = _sr.set_status(cx, rid, "confirmed", by=_name(ctx.get("actor")))
-    return {"id": rid, "status": res["status"]}
+    # Glen, 2026-09-09: confirming should email the client. Only on the actual
+    # transition, so pressing Confirm twice does not mail the same person twice.
+    # notify_confirmed never raises, so a mail problem cannot undo the confirm.
+    notified = {"sent": False, "reason": "no-transition"}
+    if res["status"] == "confirmed" and before != "confirmed":
+        from dashboard import supplement_review_notify as _srn
+        notified = _srn.notify_confirmed(cx, rid)
+    return {"id": rid, "status": res["status"], "notified": notified}
 
 
 def _exec_reject(params, ctx):
