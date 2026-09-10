@@ -24,7 +24,7 @@ from dashboard import course_tokens
 from dashboard import module_certifications
 from dashboard import stripe_pay
 from dashboard import bodymap_homework
-from dashboard.courses_sanitize import sanitize_html
+from dashboard.courses_sanitize import sanitize_html, strip_duplicate_lead_heading
 
 courses_bp = Blueprint("courses", __name__)
 _write_lock = threading.Lock()
@@ -398,7 +398,8 @@ def lesson_page(course_slug, module_slug, lesson_slug):
             prior = cp.homework(cx, email, course.slug, module_slug)
     finally:
         cx.close()
-    safe_body = sanitize_html(lesson.body_md)
+    # The <h1> below already prints the title; drop an opener that only repeats it.
+    safe_body = strip_duplicate_lead_heading(sanitize_html(lesson.body_md), lesson.title)
     dls = "".join(
         f'<li><a href="{escape(d.get("url",""))}">{escape(d.get("label","Download"))}</a></li>'
         for d in lesson.downloads
