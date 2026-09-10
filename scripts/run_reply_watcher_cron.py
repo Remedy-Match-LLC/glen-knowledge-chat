@@ -63,8 +63,42 @@ def run_cns_tracking():
           f"actions={body.get('actions')}", flush=True)
 
 
+def run_usps_status():
+    """Advance order cards from USPS tracking-status emails, on the same cadence.
+
+    Best-effort, exactly like run_cns_tracking: a failure here is printed and never
+    changes the reply-watcher's exit code. days=3 rather than 1 because a scan email
+    can land a day or two after the event, and unlike the CNS watcher a wide window
+    mails nobody — it only moves order cards, and the endpoint is idempotent.
+    """
+    url = f"{WEB_URL}/api/cron/usps-status?days=3"
+    headers = {"X-Cron-Secret": CRON_SECRET, "Content-Type": "application/json"}
+    try:
+        body = json.loads(post_with_retry(url, headers, timeout=300,
+                                          label="usps-status-cron"))
+    except urllib.error.HTTPError as e:
+        if e.code == 404:
+            print("[usps-status-cron] endpoint 404 (not deployed yet) — skip", flush=True)
+            return
+        print(f"[usps-status-cron] HTTP {e.code}: {e.read()[:300]!r}", flush=True)
+        return
+    except Exception as e:  # noqa: BLE001
+        print(f"[usps-status-cron] failed: {e!r}", flush=True)
+        return
+
+    if not body.get("ok"):
+        print(f"[usps-status-cron] failed: {body.get('error')}", flush=True)
+        return
+    print(f"[usps-status-cron] mailbox={body.get('mailbox')} "
+          f"emails={body.get('emails')} parcels={body.get('parcels')} "
+          f"advanced={body.get('advanced')} held={body.get('pre_transit_held')} "
+          f"unknown={body.get('unknown_parcels')} errors={body.get('errors')}",
+          flush=True)
+
+
 def main():
     run_cns_tracking()
+    run_usps_status()
 
     url = f"{WEB_URL}/api/cron/reply-watch"
     headers = {"X-Cron-Secret": CRON_SECRET, "Content-Type": "application/json"}
