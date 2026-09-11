@@ -25,7 +25,11 @@ def test_public_lesson_open_to_anon(client):
     r = c.get("/learn/ash-intro/01-intro/01-out-takes", base_url=_MHOST)
     assert r.status_code == 200
     assert b"rumble.com/embed/v1abcd" in r.data
-    assert b"<h2>Out-takes</h2>" in r.data
+    assert b"Bloopers transcript here." in r.data
+    # The fixture body opens with <h2>Out-takes</h2>, an exact repeat of the lesson
+    # title. The page prints the title in its own <h1>, so the repeat is stripped.
+    assert b"<h2>Out-takes</h2>" not in r.data
+    assert b"<h1>Out-takes</h1>" in r.data
 
 
 def test_course_page_body_uses_shared_theme(client):
@@ -52,7 +56,9 @@ def test_member_lesson_open_with_token(client):
     r = c.get(f"/learn/ash-intro/01-intro/02-welcome?token={token}", base_url=_MHOST)
     assert r.status_code == 200
     assert b"youtube.com/embed/v2efgh" in r.data
-    assert b"<h2>Welcome</h2>" in r.data
+    assert b"Welcome transcript here." in r.data
+    assert b"<h2>Welcome</h2>" not in r.data      # exact title repeat, stripped
+    assert b"<h1>Welcome</h1>" in r.data
 
 
 def test_member_lesson_body_has_script_stripped(client, tmp_path):
@@ -76,6 +82,27 @@ def test_member_lesson_body_has_script_stripped(client, tmp_path):
     assert b"alert(document.cookie)" not in r.data
     assert b"<script>alert" not in r.data
     assert b"Welcome transcript" in r.data
+
+
+def test_lesson_keeps_a_heading_that_is_not_the_title(client, tmp_path):
+    # Only an EXACT repeat of the title is stripped. Fifteen live lessons open
+    # with a different heading, such as "Week 1: Body" under a lesson titled
+    # "Minding Body 1", and that heading is content, not a duplicate.
+    c, appmod = client
+    from dashboard import course_tokens
+    with sqlite3.connect(appmod.LOG_DB) as cx:
+        course_tokens.init_course_tokens_table(cx)
+        token = course_tokens.mint_course_token(cx, "k@example.com", "K")
+    lesson_path = tmp_path / "courses" / "ash-intro" / "01-intro" / "02-welcome.md"
+    lesson_path.write_text(
+        "---\ntitle: Welcome\naccess: member\ndownloads: []\n---\n"
+        "<h2>Week 1: Getting Started</h2>"
+        "<p>Welcome transcript here.</p>\n"
+    )
+    r = c.get(f"/learn/ash-intro/01-intro/02-welcome?token={token}", base_url=_MHOST)
+    assert r.status_code == 200
+    assert b"<h2>Week 1: Getting Started</h2>" in r.data
+    assert b"<h1>Welcome</h1>" in r.data
 
 
 def test_lesson_title_is_escaped_in_page(client, tmp_path):

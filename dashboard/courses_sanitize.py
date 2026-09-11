@@ -9,6 +9,9 @@ anything not explicitly permitted is stripped.
 
 from __future__ import annotations
 
+import re
+import unicodedata
+from html import unescape
 from urllib.parse import urlparse
 
 from bs4 import BeautifulSoup, NavigableString
@@ -150,3 +153,48 @@ def sanitize_html(html: str) -> str:
     _collapse_empty_runs(soup)
 
     return str(soup)
+
+
+# --- leading duplicate title -------------------------------------------------
+# The lesson page renders its own <h1> from the lesson title. Some Practice
+# Better bodies open by repeating that title, so the reader sees it twice.
+# Strip that opener, but ONLY when it is an exact match: most lessons that open
+# with a heading open with a DIFFERENT one ("Week 1: Body" under a lesson titled
+# "Minding Body 1"), and that heading is content.
+
+_LEAD_ELEMENT = re.compile(r"^\s*<(h1|h2|h3|p)\b[^>]*>(.*?)</\1>", re.I | re.S)
+# An opener carrying any of these is never just a repeated title.
+_CARRIES_CONTENT = re.compile(
+    r"<\s*(iframe|img|video|audio|a|table|ul|ol|hr|blockquote)\b", re.I)
+
+
+def _heading_key(value: str) -> str:
+    """Normalize heading text for comparison: tags out, entities and unicode
+    folded, trademark dropped, everything but letters and digits removed. Two
+    strings share a key only when they say the same words."""
+    text = re.sub(r"<[^>]+>", " ", value or "")
+    text = unescape(text)
+    text = unicodedata.normalize("NFKC", text)
+    text = text.replace("™", "").replace("®", "").replace(" ", " ")
+    return re.sub(r"[^a-z0-9]+", "", text.lower())
+
+
+def strip_duplicate_lead_heading(html: str, title: str) -> str:
+    """Drop a leading <h1>/<h2>/<h3>/<p> that only repeats `title`.
+
+    Returns `html` unchanged unless the FIRST element is a text-only heading or
+    paragraph whose normalized text exactly equals the normalized title. Near
+    matches, later matches, and openers carrying a video, image, link or list
+    are all left alone."""
+    key = _heading_key(title)
+    if not html or not key:
+        return html
+    m = _LEAD_ELEMENT.match(html)
+    if not m:
+        return html
+    inner = m.group(2)
+    if _CARRIES_CONTENT.search(inner):
+        return html
+    if _heading_key(inner) != key:
+        return html
+    return html[m.end():].lstrip()
