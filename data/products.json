@@ -10204,7 +10204,9 @@
    "gk_stale": true,
    "gk_stale_reason": "GK page missing: Baicalein (Scutellaria baicalensis), Steviocides (Stevia rebaudiana)",
    "bottle_type": "30 g",
-   "fmp_id": "434"
+   "fmp_id": "434",
+   "inactive": true,
+   "superseded_by": "cistus-shield"
   },
   "silymarin": {
    "name": "Silymarin",
@@ -20500,7 +20502,42 @@
    "fmp_id": "1193",
    "ingredients_source": "fmp_snap",
    "no_groovekart": true,
-   "description": "Build up to 3 capsules 2 times a day with food"
+   "description": "Build up to 2 capsules 3 times a day according to tolerance, with food.",
+   "ingredients": [
+    {
+     "name": "PEA (Palmitoylethanolamide) ultramicronized",
+     "dose": "100 mg"
+    },
+    {
+     "name": "Polyphenols 65% (Cistus incanus)",
+     "dose": "100 mg"
+    },
+    {
+     "name": "Cryptolepis 20:1 (Cryptolepis sanguinolenta)",
+     "dose": "83 mg"
+    },
+    {
+     "name": "Oxindole Alkaloids 5% (Uncaria tomentosa)",
+     "dose": "58 mg"
+    },
+    {
+     "name": "Trans-Resveratrol 98% (Polygonum cuspidatum)",
+     "dose": "33 mg"
+    },
+    {
+     "name": "Glycyrrhizic Acids 26% (Glycyrrhiza glabra)",
+     "dose": "32 mg"
+    },
+    {
+     "name": "Baikal Skullcap Baicalein 98% (Scutellaria baicalensis)",
+     "dose": "17 mg"
+    },
+    {
+     "name": "Andrographolide 98% (Andrographis paniculata)",
+     "dose": "10 mg"
+    }
+   ],
+   "bottle_type": "30 Caps"
   },
   "jambul-syzygium-jambolana": {
    "name": "Jambul (Syzygium jambolana)",
