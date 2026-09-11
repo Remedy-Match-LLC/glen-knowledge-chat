@@ -32,9 +32,21 @@ def test_the_capsules_carry_dosing_in_the_field_the_page_renders(catalog):
     assert catalog[SHIELD].get("directions") == DOSING
 
 
-def test_the_description_still_carries_it_too(catalog):
-    """Pins the #1620 value. This test passed before this change and must keep passing."""
-    assert catalog[SHIELD].get("description") == DOSING
+def test_the_description_now_carries_the_dose_BASIS_not_the_dosing(catalog):
+    """SUPERSEDED DELIBERATELY, 2026-09-11. This used to assert `description` still held
+    Glen's dosing line, which is what #1629 shipped.
+
+    It was then established that the amounts needed a stated basis: the page prints each
+    dose bare, and the neighbouring powder record states ITS amounts per serving, so two
+    adjacent records used different bases with nothing saying which. The catalogue's own
+    convention for a capsule product puts the basis in `description` and the dosing in
+    `directions` (see fibrolysis-factors and estro-clear), so `description` moved.
+
+    Glen's wording is not lost, and that is the point: it lives in `directions`, which is
+    the field the page actually renders, asserted in the test above."""
+    desc = catalog[SHIELD].get("description") or ""
+    assert "per capsule" in desc.lower()
+    assert desc != DOSING
 
 
 def test_every_product_with_dosing_uses_the_same_field(catalog):
