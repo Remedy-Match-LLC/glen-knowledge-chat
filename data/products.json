@@ -20537,7 +20537,8 @@
      "dose": "10 mg"
     }
    ],
-   "bottle_type": "30 Caps"
+   "bottle_type": "30 Caps",
+   "directions": "Build up to 2 capsules 3 times a day according to tolerance, with food."
   },
   "jambul-syzygium-jambolana": {
    "name": "Jambul (Syzygium jambolana)",
