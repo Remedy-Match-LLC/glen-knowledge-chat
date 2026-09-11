@@ -5,6 +5,8 @@ LOG_DB-only so it is unit-testable without app.py, modeled on wishlist.py /
 supplement_reviews.py. One row per (email, tool_key)."""
 import re
 
+from dashboard import dbwrite
+
 
 def _norm(e):
     return (e or "").strip().lower()
@@ -41,14 +43,18 @@ def add(cx, email, name, brand="", slug=None, source="external"):
     if not e or not n:
         return {"created": False, "id": None}
     key = _key(n, brand)
-    cur = cx.execute(
+    # insert_returning_id, not cur.lastrowid: the Postgres adapter refuses
+    # lastrowid outright, and on a deduped INSERT OR IGNORE it returns None on
+    # both backends rather than the previous insert's id.
+    new_id = dbwrite.insert_returning_id(
+        cx,
         "INSERT OR IGNORE INTO owned_tools "
         "(email, name, brand, slug, source, tool_key, added_at) "
         "VALUES (?,?,?,?,?,?, datetime('now'))",
         (e, n, (brand or "").strip(), slug, source, key))
     cx.commit()
-    if cur.rowcount:
-        return {"created": True, "id": cur.lastrowid}
+    if new_id is not None:
+        return {"created": True, "id": new_id}
     row = cx.execute("SELECT id FROM owned_tools WHERE email=? AND tool_key=?", (e, key)).fetchone()
     return {"created": False, "id": row[0] if row else None}
 
