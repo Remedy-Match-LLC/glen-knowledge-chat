@@ -365,3 +365,41 @@ def test_activate_for_shipment_forwards_the_delivery_time_to_the_window(monkeypa
     conn.close()
 
     assert seen["started_at"] == "2026-08-31T14:39:00Z"
+
+
+def test_the_log_line_names_the_delivery_date_it_will_use():
+    """This whole change is about a date. If the line does not print it, a
+    mis-dated window is undetectable from outside: the summary counts read the
+    same whether the window starts at delivery or at now."""
+    from dashboard.tracking import init_tracking_schema, record_shipment
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    init_tracking_schema(conn)
+    record_shipment(conn, tracking_number=TN, recipient_name="X", status="sent")
+    lines = []
+
+    US.run_status_sweep(conn, _Svc([("m1", SUBJ, DELIVERED_BODY)]), days=7,
+                        advance=lambda *a, **k: 1, log=lines.append)
+    conn.close()
+    blob = "\n".join(lines)
+    assert "2026-09-09T10:58:00Z" in blob
+
+
+def test_a_parcel_with_no_readable_date_logs_no_date_rather_than_a_wrong_one():
+    from dashboard.tracking import init_tracking_schema, record_shipment
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    init_tracking_schema(conn)
+    record_shipment(conn, tracking_number=TN, recipient_name="X", status="sent")
+    body = "Your item was delivered. Tracking Number: " + TN
+    lines = []
+
+    US.run_status_sweep(conn, _Svc([("m1", SUBJ, body)]), days=7,
+                        advance=lambda *a, **k: 1, log=lines.append)
+    conn.close()
+    blob = "\n".join(lines)
+    # "delivered None" is as misleading as a wrong date, and a weaker assertion
+    # here let a mutation printing exactly that slip through.
+    assert "delivered" not in blob.split(": delivered", 1)[0].split("—")[0][len(TN):]
+    assert "None" not in blob
+    assert "acted" in blob
