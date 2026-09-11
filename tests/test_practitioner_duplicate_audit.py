@@ -115,3 +115,104 @@ def test_marking_one_of_a_visible_pair_drops_the_finder_duplicate_count():
     assert after["finder_duplicates"] == 0
     assert after["groups"][0]["finder_listed_count"] == 1
     assert after["groups"][0]["count"] == 2          # both rows still reported
+
+
+# ── one clinic email, several different practitioners ────────────────────────
+# The headline said 398 emails carried a duplicate. 205 of those groups were
+# different people sharing one clinic address, which is the normal shape of a
+# scraped directory and not a duplicate at all. plan-practitioner-dedupe.py
+# already clustered by email THEN by name for exactly this reason; the audit did
+# not, so its number answered the portal-account question and was quoted for the
+# directory one.
+
+def test_two_different_people_at_one_clinic_email_are_not_a_finder_duplicate():
+    from dashboard.practitioner_admin import group_duplicates
+    rows = [
+        {"id": "a", "name": "Ann Bauder", "email": "clinic@x.com", "lat": 21.3,
+         "removal_requested": False},
+        {"id": "b", "name": "Rae Luscombe", "email": "clinic@x.com", "lat": 21.3,
+         "removal_requested": False},
+    ]
+    out = group_duplicates(rows, {})
+    g = out["groups"][0]
+    assert out["finder_duplicates"] == 0
+    assert g["shared_clinic"] is True
+    assert g["listed_people"] == 2
+    # Both rows are still publicly listed, and the audit must still say so.
+    assert g["finder_listed_count"] == 2
+    assert out["emails_with_multiple_listings"] == 1
+    assert out["shared_clinic_emails"] == 1
+
+
+def test_the_same_person_twice_at_a_clinic_email_is_still_a_finder_duplicate():
+    """A shared mailbox must not hide a real duplicate sitting inside it."""
+    from dashboard.practitioner_admin import group_duplicates
+    rows = [
+        {"id": "a", "name": "Ann Bauder", "email": "clinic@x.com", "lat": 21.3,
+         "removal_requested": False},
+        {"id": "b", "name": "Ann Bauder", "email": "clinic@x.com", "lat": 21.3,
+         "removal_requested": False},
+        {"id": "c", "name": "Rae Luscombe", "email": "clinic@x.com", "lat": 21.3,
+         "removal_requested": False},
+    ]
+    out = group_duplicates(rows, {})
+    assert out["finder_duplicates"] == 1
+    assert out["groups"][0]["listed_people"] == 2
+
+
+def test_a_middle_initial_or_a_credential_is_the_same_person():
+    """The 19 pairs Glen answered on 2026-09-10 were all of this shape."""
+    from dashboard.practitioner_admin import group_duplicates
+    for other in ("Lisa M. Butler", "Lisa Butler DDS", "Dr. Lisa Butler"):
+        rows = [
+            {"id": "a", "name": "Lisa Butler", "email": "e@x.com", "lat": 21.3,
+             "removal_requested": False},
+            {"id": "b", "name": other, "email": "e@x.com", "lat": 21.3,
+             "removal_requested": False},
+        ]
+        out = group_duplicates(rows, {})
+        assert out["finder_duplicates"] == 1, other
+        assert out["groups"][0]["shared_clinic"] is False, other
+
+
+def test_a_hidden_duplicate_stops_counting_as_a_second_person():
+    """Hiding one of a pair must clear the group, not leave it reading as two."""
+    from dashboard.practitioner_admin import group_duplicates
+    rows = [
+        {"id": "keep", "name": "Lisa Butler", "email": "e@x.com", "lat": 21.3,
+         "removal_requested": False},
+        {"id": "hidden", "name": "Lisa M. Butler", "email": "e@x.com", "lat": 21.3,
+         "removal_requested": False, "duplicate_of": "keep"},
+    ]
+    out = group_duplicates(rows, {})
+    assert out["finder_duplicates"] == 0
+    assert out["groups"][0]["listed_people"] == 1
+    assert out["groups"][0]["shared_clinic"] is False
+
+
+def test_a_one_word_name_is_not_folded_into_every_other_one_word_name():
+    from dashboard.practitioner_admin import group_duplicates
+    rows = [
+        {"id": "a", "name": "Kaiser", "email": "e@x.com", "lat": 21.3,
+         "removal_requested": False},
+        {"id": "b", "name": "Queens", "email": "e@x.com", "lat": 21.3,
+         "removal_requested": False},
+    ]
+    out = group_duplicates(rows, {})
+    assert out["finder_duplicates"] == 0
+    assert out["groups"][0]["listed_people"] == 2
+
+
+def test_the_old_headline_is_kept_under_a_name_that_says_what_it_counts():
+    """finder_duplicates changed meaning on 2026-09-11, so the old number keeps a
+    key of its own rather than disappearing."""
+    from dashboard.practitioner_admin import group_duplicates
+    rows = [
+        {"id": "a", "name": "Ann Bauder", "email": "clinic@x.com", "lat": 21.3,
+         "removal_requested": False},
+        {"id": "b", "name": "Rae Luscombe", "email": "clinic@x.com", "lat": 21.3,
+         "removal_requested": False},
+    ]
+    out = group_duplicates(rows, {})
+    assert out["emails_with_multiple_listings"] == 1
+    assert out["finder_duplicates"] == 0

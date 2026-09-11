@@ -11,7 +11,9 @@ tokens, and the geocoder where possible.
 """
 from __future__ import annotations
 
+import collections
 import os
+import re
 import sqlite3
 from dashboard import db
 from datetime import datetime, timezone
@@ -535,6 +537,33 @@ def _iso(value):
     return value.isoformat() if hasattr(value, "isoformat") else str(value)
 
 
+# One clinic email legitimately carries several different practitioners, which is the
+# normal shape of a scraped directory. Counting every such email as a duplicate made
+# the headline answer the portal-account question and be quoted for the directory one:
+# 205 of 398 groups on 2026-09-10 were different people at one address. Name matching
+# is the same rule plan-practitioner-dedupe.py already used to build a dedupe plan.
+_NAME_SUFFIX = re.compile(
+    r"\b(dr|dds|dmd|md|nd|do|phd|rn|lac|dc|jr|sr|ii|iii)\b\.?")
+
+
+def name_key(name: str) -> tuple:
+    """A person key for one practitioner name. Pure.
+
+    Drops honorifics and credentials, then keys on the first and last token, so a
+    middle initial, a nickname or a trailing DDS does not read as a second person.
+    A one-token name keys on itself rather than collapsing with every other
+    one-token name. An empty name gets a key of its own, because two blanks are
+    not evidence of the same person.
+    """
+    cleaned = _NAME_SUFFIX.sub(" ", (name or "").lower())
+    tokens = re.sub(r"[^a-z ]", " ", cleaned).split()
+    if not tokens:
+        return ("", str(name or ""))
+    if len(tokens) == 1:
+        return (tokens[0],)
+    return (tokens[0], tokens[-1])
+
+
 def group_duplicates(rows: List[dict], activity: dict) -> dict:
     """Group duplicate rows by email with enough per-row detail to decide what to do.
 
@@ -550,6 +579,9 @@ def group_duplicates(rows: List[dict], activity: dict) -> dict:
         groups.setdefault(key, []).append({
             "id": pid,
             "name": r.get("name"),
+            # Which person this row is, within the email. Two rows sharing it are
+            # the same practitioner twice; two rows differing are two colleagues.
+            "name_key": list(name_key(r.get("name"))),
             "email": r.get("email"),
             "portal_role": r.get("portal_role"),
             "tier": r.get("tier"),
@@ -592,18 +624,33 @@ def group_duplicates(rows: List[dict], activity: dict) -> dict:
     for email, members in sorted(groups.items()):
         portal = [m for m in members if m["portal_role"]]
         listed = [m for m in members if m["finder_listed"]]
+        people = collections.Counter(tuple(m["name_key"]) for m in listed)
         out.append({"email": email, "count": len(members),
                     "portal_count": len(portal),
                     # How many of these are actually visible in the directory.
                     # 0 means retiring any of them changes nothing public; 2 or
-                    # more means the public sees this practitioner twice.
+                    # more means the public sees more than one row here.
                     "finder_listed_count": len(listed),
+                    # How many DIFFERENT practitioners those listed rows are.
+                    "listed_people": len(people),
+                    # More than one person publicly listed at this address. Normal
+                    # for a clinic mailbox, and nothing to fix.
+                    "shared_clinic": len(people) > 1,
+                    # The actionable case: one practitioner listed twice.
+                    "same_person_listed": any(n > 1 for n in people.values()),
                     "rows": members})
     return {
         "emails": len(out),
         "rows": sum(g["count"] for g in out),
         "portal_conflicts": sum(1 for g in out if g["portal_count"] > 1),
-        "finder_duplicates": sum(1 for g in out if g["finder_listed_count"] > 1),
+        # Redefined 2026-09-11: one practitioner listed twice, not one email
+        # listed twice. Glen: "stop counting shared clinic emails."
+        "finder_duplicates": sum(1 for g in out if g["same_person_listed"]),
+        # Kept so the old headline is still available under a name that says
+        # what it counts, rather than silently changing meaning.
+        "emails_with_multiple_listings": sum(
+            1 for g in out if g["finder_listed_count"] > 1),
+        "shared_clinic_emails": sum(1 for g in out if g["shared_clinic"]),
         "groups": out,
     }
 
