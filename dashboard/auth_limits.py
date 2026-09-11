@@ -91,10 +91,17 @@ class EmailProbeLimiter:
     """Per-client sliding window over DISTINCT addresses asked about.
 
     In-memory and per-process, matching `chat_limits.VelocityLimiter`. That is a real
-    limitation and it is stated rather than hidden: with N gunicorn workers a client gets
-    up to N times the allowance, and a restart forgets everything. It still turns an
-    unlimited sweep into a slow one, and a shared store can replace the internals without
-    changing the call sites.
+    limitation and it is stated rather than hidden.
+
+    THE DEPLOYED CEILING IS TWICE THE CONSTANT. `render.yaml` and the live service both
+    run `gunicorn app:app --workers 2`, on 1 instance, so a client is limited by whichever
+    of 2 processes happens to serve each request. **The effective allowance is about 20
+    distinct addresses an hour, not 10.** A restart forgets everything as well.
+
+    Neither changes the verdict: a sweep needs hundreds or thousands of addresses and dies
+    at either number. It is written here so nobody reads the constant as the guarantee.
+    Raising the worker count raises the ceiling proportionally, and a shared store would
+    replace these internals without touching the call sites.
     """
 
     def __init__(self, clock=time.time):
