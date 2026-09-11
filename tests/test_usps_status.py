@@ -32,6 +32,12 @@ DEPARTED_FACILITY = (
     "Your item departed our USPS facility in SPOKANE WA DISTRIBUTION CENTER on "
     "September 8, 2026 at 1:17 pm. The item is currently in transit to the "
     "destination. Tracking Number: 9405530109355412869056")
+# Acceptance at the counter. USPS says "USPS picked up your item", which the phrase
+# table missed until 2026-09-10: "picked up by" covers a shipping partner, not this.
+# Real message, parcel accepted in Hilo the afternoon the sync went live.
+ACCEPTED_AT_COUNTER = (
+    "USPS picked up your item at 1:14 pm on September 10, 2026 in HILO, HI 96720. "
+    "Tracking Number: 9405530109355460080243 Package Shipped from: USPS CLICK-N-SHIP")
 ARRIVED_POST_OFFICE = (
     "Your item arrived at the Post Office at 12:14 am on September 9, 2026 in "
     "COEUR D ALENE, ID 83815. Tracking Number: 9405530109355412869056")
@@ -62,6 +68,7 @@ SHARED_SUBJECT = ("USPS® Expected Delivery on Wednesday, September 9, 2026 "
     (LABEL_CREATED, US.PRE_TRANSIT),
     (ARRIVED_ORIGIN, US.IN_TRANSIT),
     (DEPARTED_FACILITY, US.IN_TRANSIT),
+    (ACCEPTED_AT_COUNTER, US.IN_TRANSIT),
     (ARRIVED_POST_OFFICE, US.IN_TRANSIT),
     (MOVING_WITHIN_NETWORK, US.IN_TRANSIT),
     (OUT_FOR_DELIVERY, US.OUT_FOR_DELIVERY),
@@ -70,6 +77,25 @@ SHARED_SUBJECT = ("USPS® Expected Delivery on Wednesday, September 9, 2026 "
 ])
 def test_real_bodies_map_to_the_right_status(body, expected):
     assert US.parse_status_email(SHARED_SUBJECT, body)["status"] == expected
+
+
+def test_acceptance_is_in_transit_not_a_bought_label():
+    """This is the signal the PRE_TRANSIT hold exists to wait for: the moment the
+    parcel stops being a bought label and starts existing to the network. Until
+    2026-09-10 it read as unrecognised, so an order stayed held until some later
+    scan happened to arrive. A delay rather than a permanent miss, but the whole
+    point of holding a label is to act the instant acceptance lands."""
+    got = US.parse_status_email(SHARED_SUBJECT, ACCEPTED_AT_COUNTER)
+    assert got["status"] == US.IN_TRANSIT
+    assert got["tracking"] == "9405530109355460080243"
+
+
+def test_a_pickup_phrase_does_not_swallow_the_delivered_state():
+    """'picked up' must not outrank an actual delivery. Order matters in the
+    classifier and this pins it."""
+    body = ("Your item was delivered at 2:39 pm after USPS picked up your item "
+            "earlier. Tracking Number: 9405530109355412869056")
+    assert US.parse_status_email("USPS®", body)["status"] == US.DELIVERED
 
 
 def test_out_for_delivery_is_not_read_as_label_created():
