@@ -35177,7 +35177,16 @@ def client_password_login():
                                   user_agent=request.headers.get("User-Agent", ""))
         if not pid:
             return jsonify({"ok": False,
-                            "message": "Email or password was not recognized."}), 401
+                            # One message for EVERY failure, deliberately: wrong password,
+                            # no password ever set, and no such person must read the same,
+                            # or this route enumerates portal accounts. See the docstring
+                            # on verify_password. What changed on 2026-09-11 is only that
+                            # it now names the two ways out already on the page. 68 of 84
+                            # login failures in production came from people who have no
+                            # password at all, and the old sentence told them nothing.
+                            "message": "Email or password was not recognized. Set or "
+                                       "reset your password below, or send yourself a "
+                                       "sign-in link."}), 401
         sess = _pi.create_client_session(cx, pid, email)
     if request.is_json:
         resp = _mkresp(jsonify({"ok": True, "redirect": "/portal/me"}))
