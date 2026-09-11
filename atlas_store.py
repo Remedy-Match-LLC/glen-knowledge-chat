@@ -46,6 +46,14 @@ def validate_concept(c):
     for key in _REQUIRED:
         if key not in c:
             return False, f"missing required field: {key}"
+        # Present-but-empty is not satisfied. Checking only for the KEY let a patch of
+        # {"summary": None} through `upsert_concept`, writing a concept whose summary
+        # and cluster were null while every required key was technically there.
+        # Measured before tightening: 0 of the 732 live concepts carry an empty
+        # required field, so nothing already published stops validating because of this.
+        v = c[key]
+        if v is None or (isinstance(v, str) and not v.strip()):
+            return False, f"required field is empty: {key}"
     coords = c.get("coords") or {}
     for axis in ("x", "y"):
         v = coords.get(axis)
@@ -87,6 +95,58 @@ def build_graph():
     for c in concepts:
         hierarchy.setdefault(c.get("parent") or "ungrouped", []).append(c["id"])
     return {"concepts": concepts, "hierarchy": hierarchy}
+
+
+def upsert_concept(concept=None, *, concept_id=None, patch=None):
+    """Write one concept to the live graph. Returns (id, "created"|"updated").
+
+    Two shapes. `concept=` replaces a whole record. `concept_id=` with `patch=` merges
+    the given fields into the existing one, which is what a single correction usually
+    needs: fetch nothing, send `{"summary": "..."}`.
+
+    WHY THIS EXISTS. Until 2026-09-11 the only way to change one published fact was
+    `/admin/atlas/reseed`, which republishes the entire committed build over the disk.
+    A wrong price on one concept therefore had no safe fix at all: the repo build was
+    76 concepts behind live, so a reseed would have deleted Accelerated Self Healing,
+    Biofield Analysis, Biological Dentistry and 73 more.
+
+    WHAT IT DOES NOT DO, and this matters. It writes to the PERSISTENT DISK only.
+    Nothing carries the change back to git, exactly like `approve_concept`. Every call
+    widens the gap between the disk and the committed build, and a wide enough gap is
+    what made reseed dangerous in the first place. The mitigation is the scheduled
+    drift check (`00 System/scripts/atlas-rebuild-from-live.py --check`) in the vault.
+    If that job is not running, this function is quietly building the same trap again.
+
+    A rejected concept is never written: validation runs on the MERGED result, so a
+    patch cannot strip a required field or push coords out of range.
+    """
+    if (concept is None) == (concept_id is None):
+        raise ValueError("pass either concept= or concept_id= with patch=")
+
+    live = load_concepts()
+    existing = {c.get("id"): c for c in live.get("concepts", [])}
+
+    if concept is not None:
+        cid = concept.get("id")
+        if not cid:
+            raise ValueError("concept needs an id")
+        merged = dict(concept)
+    else:
+        cid = concept_id
+        if cid not in existing:
+            raise KeyError(cid)
+        merged = {**existing[cid], **(patch or {})}
+        merged["id"] = cid          # a patch must never rename the record it edits
+
+    ok, err = validate_concept(merged)
+    if not ok:
+        raise ValueError(err)
+
+    action = "updated" if cid in existing else "created"
+    live["concepts"] = [c for c in live.get("concepts", []) if c.get("id") != cid]
+    live["concepts"].append(merged)
+    _write(CONCEPTS_PATH, live)
+    return cid, action
 
 
 def approve_concept(concept_id):

@@ -50603,11 +50603,41 @@ def admin_atlas_reject():
     return ok({"rejected": cid})
 
 
+@app.route("/admin/atlas/concept", methods=["POST"])
+@require_console_key
+def admin_atlas_upsert_concept():
+    """Correct ONE concept without republishing the whole build.
+
+    Body is either {"concept": {...}} to replace a record, or {"id": "...",
+    "patch": {...}} to merge fields into an existing one.
+
+    Before this existed the only tool was /admin/atlas/reseed, which overwrites the
+    whole live graph with the committed build. When the two had drifted, using it to
+    fix a single price would have deleted 76 concepts.
+    """
+    body = request.get_json(silent=True) or {}
+    concept, cid, patch = body.get("concept"), body.get("id"), body.get("patch")
+    if concept is None and not (cid and isinstance(patch, dict)):
+        return fail('send {"concept": {...}} or {"id": "...", "patch": {...}}', 400)
+    try:
+        written, action = atlas_store.upsert_concept(
+            concept=concept,
+            concept_id=None if concept is not None else cid,
+            patch=patch)
+    except KeyError:
+        return fail("unknown concept id", 404)
+    except ValueError as e:
+        return fail(str(e), 400)
+    return ok({"id": written, "action": action})
+
+
 @app.route("/admin/atlas/reseed", methods=["POST"])
 @require_console_key
 def admin_atlas_reseed():
     # Republish the git-committed build onto the persistent disk (overwrites live curation).
     # Use after an intentional rebuild. force defaults true here (explicit admin action).
+    # To change ONE concept use /admin/atlas/concept instead; this endpoint replaces
+    # everything and is only safe when the committed build is not behind the disk.
     force = (request.get_json(silent=True) or {}).get("force", True)
     seeded = atlas_store.reseed_from_repo(force=force)
     return ok({"reseeded": seeded, "force": force})
