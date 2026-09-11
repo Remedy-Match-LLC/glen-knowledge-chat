@@ -280,7 +280,7 @@ def run_status_sweep(cx, service, *, days=3, max_messages=200, dry_run=False,
         # and without printing it a mis-dated coaching window is undetectable from
         # outside: the summary counts would look identical either way.
         stamp = delivered_at.get(tracking)
-        dated = f" delivered {stamp}" if stamp else ""
+        dated = f" at {stamp}" if stamp else ""
         if dry_run:
             summary["would_act"] += 1
             log(f"  {tracking}: would act on {state}{dated}")

@@ -382,7 +382,8 @@ def test_the_log_line_names_the_delivery_date_it_will_use():
                         advance=lambda *a, **k: 1, log=lines.append)
     conn.close()
     blob = "\n".join(lines)
-    assert "2026-09-09T10:58:00Z" in blob
+    assert "delivered at 2026-09-09T10:58:00Z" in blob
+    assert "delivered delivered" not in blob   # the state already says it once
 
 
 def test_a_parcel_with_no_readable_date_logs_no_date_rather_than_a_wrong_one():
@@ -400,6 +401,6 @@ def test_a_parcel_with_no_readable_date_logs_no_date_rather_than_a_wrong_one():
     blob = "\n".join(lines)
     # "delivered None" is as misleading as a wrong date, and a weaker assertion
     # here let a mutation printing exactly that slip through.
-    assert "delivered" not in blob.split(": delivered", 1)[0].split("—")[0][len(TN):]
-    assert "None" not in blob
+    assert " at 20" not in blob        # no date printed
+    assert "None" not in blob          # and not a literal None either
     assert "acted" in blob
