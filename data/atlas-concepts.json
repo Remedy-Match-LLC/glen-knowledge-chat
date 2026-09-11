@@ -8276,49 +8276,49 @@
    "summary": "A NES Health infoceutical supporting the skin as a sensory and emotional organ and its energetic field."
   },
   {
+   "id": "ed11-liver-driver-pancreas",
+   "label": "ED11 Liver Driver",
    "aliases": [
     "liver driver",
     "ed11"
    ],
+   "summary": "ED11 Liver Driver supports liver-related energetic patterns. ED15, not ED11, is the Pancreas Driver.",
    "cluster": "detox-drainage",
+   "parent": "detox-drainage",
+   "namespaces": [
+    "specific-formulations"
+   ],
    "coords": {
     "x": 0.6789,
     "y": 0.6284
    },
-   "id": "ed11-liver-driver-pancreas",
-   "label": "ED11 Liver Driver Pancreas)",
-   "links": [
-    {
-     "source": "remedymatch",
-     "title": "ED11 Liver Driver Pancreas)",
-     "type": "product",
-     "url": "https://remedymatch.com/remedies/modalities/biocommunication/infoceuticals/156-ed11-liver-driver"
-    },
-    {
-     "source": "youtube",
-     "title": "Biofield Analysis | Pancreas Regeneration | 2022 08 13",
-     "type": "video",
-     "url": "https://youtu.be/ICgQgV7-KVY"
-    },
-    {
-     "source": "youtube",
-     "title": "Biofield Consultation Scene 1",
-     "type": "video",
-     "url": "https://youtu.be/D9jJ31-lbeU"
-    }
-   ],
-   "namespaces": [
-    "specific-formulations"
-   ],
    "neighbors": [
     "ed15-pancreas-driver",
     "ed12-kidney-driver",
     "ei15",
     "ed1-source-driver"
    ],
-   "parent": "detox-drainage",
-   "status": "live",
-   "summary": "An infoceutical biocommunication remedy targeting liver and pancreas energetic support."
+   "links": [
+    {
+     "type": "product",
+     "source": "remedymatch",
+     "url": "https://remedymatch.com/remedies/modalities/biocommunication/infoceuticals/156-ed11-liver-driver",
+     "title": "ED11 Liver Driver"
+    },
+    {
+     "type": "video",
+     "source": "youtube",
+     "url": "https://youtu.be/ICgQgV7-KVY",
+     "title": "Biofield Analysis | Pancreas Regeneration | 2022 08 13"
+    },
+    {
+     "type": "video",
+     "source": "youtube",
+     "url": "https://youtu.be/D9jJ31-lbeU",
+     "title": "Biofield Consultation Scene 1"
+    }
+   ],
+   "status": "live"
   },
   {
    "aliases": [
