@@ -39693,19 +39693,35 @@ def _classify_person(row, tos_agreed=False):
                     or bool((row.get("pb_id") or "").strip())
                     or any(_is_client_tag(t) for t in tagset))
     has_type = any(t.startswith("type:") for t in tagset)
-    has_consent = any(t.startswith("consent:") for t in tagset)
+    consent_tags = {t for t in low if t.startswith("consent:")}
+    has_consent = bool(consent_tags)
+    # A row whose ONLY consent tag is the cold default can still be upgraded.
+    # That tag is this function's else branch, not a decision anyone made, and the
+    # old guard (any consent tag at all) froze it forever: someone stamped cold
+    # while their record was thin stayed cold after opening an account, being
+    # scanned and buying. Measured on the live hub 2026-09-11: 7,992 rows carry it
+    # and 363 of them hold an account, a membership, a client tag or a scan.
+    #
+    # Only upward, and only to opted-in. `consent:unsubscribed` on the row means
+    # consent_tags is not just the cold tag, so this branch never opens for an
+    # opt-out. _collapse_consent in the upsert is the second line of defence, and
+    # it also drops the cold tag once opted-in lands, so nothing removes it here.
+    only_cold = consent_tags == {"consent:cold-no-consent"}
 
     if has_commerce:
         add.add("type:client")
     elif not has_type:
         add.add("type:prospect")
 
-    if not has_consent:
+    if not has_consent or only_cold:
         suppressed = any(any(p in t for p in _SUPPRESS_TAG_PATTERNS) for t in low)
         opted = (not suppressed) and (
             has_commerce or tos_agreed
             or any(any(p in t for p in _OPTIN_TAG_PATTERNS) for t in low))
-        add.add("consent:opted-in" if opted else "consent:cold-no-consent")
+        if opted:
+            add.add("consent:opted-in")
+        elif not has_consent:
+            add.add("consent:cold-no-consent")
     return add
 
 
