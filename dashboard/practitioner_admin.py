@@ -488,7 +488,8 @@ _DUP_COLS = ("id, name, email, portal_role, tier, modules_completed, "
              "city, state, created_at, "
              "lat, lng, removal_requested, duplicate_of, source_org, source_url, "
              "last_scraped_at, phone, website, credentials, address1, postal, "
-             "country, bio, photo_url, specialties, accepting_new_patients")
+             "country, bio, photo_url, specialties, accepting_new_patients, "
+             "second_office")
 
 
 def _column_exists(cur, table: str, column: str) -> bool:
@@ -514,12 +515,18 @@ def duplicate_email_rows() -> List[dict]:
     from db_supabase import supabase_cursor
     with supabase_cursor() as cur:
         cols = _DUP_COLS
-        if not _column_exists(cur, "practitioners", "duplicate_of"):
-            print("[practitioner-admin] practitioners.duplicate_of is missing, so "
-                  "the duplicate audit cannot report hidden listings. Apply "
-                  "migrations/practitioners-duplicate-listing.sql.", flush=True)
+        missing = [c for c in ("duplicate_of", "second_office")
+                   if not _column_exists(cur, "practitioners", c)]
+        if missing:
+            print(f"[practitioner-admin] practitioners.{', '.join(missing)} "
+                  f"missing, so the duplicate audit cannot report "
+                  f"{'hidden listings' if 'duplicate_of' in missing else ''}"
+                  f"{' and ' if len(missing) > 1 else ''}"
+                  f"{'reviewed second offices' if 'second_office' in missing else ''}"
+                  f". Apply migrations/practitioners-duplicate-listing.sql and "
+                  f"migrations/practitioners-second-office.sql.", flush=True)
             cols = ", ".join(c.strip() for c in _DUP_COLS.split(",")
-                             if c.strip() != "duplicate_of")
+                             if c.strip() not in missing)
         cur.execute(
             f"SELECT {cols} FROM practitioners WHERE lower(trim(email)) IN ("
             "  SELECT lower(trim(email)) FROM practitioners"
@@ -607,6 +614,10 @@ def group_duplicates(rows: List[dict], activity: dict) -> dict:
             # de-duplication that has already been done rather than a silent gap.
             "duplicate_of": (str(r.get("duplicate_of"))
                              if r.get("duplicate_of") else None),
+            # A pair someone looked at and chose to keep, both listed. Unlike
+            # duplicate_of this hides nothing; it records that the question has
+            # been answered, so the audit stops re-asking it every run.
+            "second_office": bool(r.get("second_office")),
             "source_org": r.get("source_org"),
             "source_url": r.get("source_url"),
             "last_scraped_at": _iso(r.get("last_scraped_at")),
@@ -624,7 +635,11 @@ def group_duplicates(rows: List[dict], activity: dict) -> dict:
     for email, members in sorted(groups.items()):
         portal = [m for m in members if m["portal_role"]]
         listed = [m for m in members if m["finder_listed"]]
-        people = collections.Counter(tuple(m["name_key"]) for m in listed)
+        seconds = [m for m in listed if m["second_office"]]
+        # A decided second office does not count toward "this person is listed
+        # twice". A third listing nobody reviewed still does.
+        people = collections.Counter(tuple(m["name_key"])
+                                     for m in listed if not m["second_office"])
         out.append({"email": email, "count": len(members),
                     "portal_count": len(portal),
                     # How many of these are actually visible in the directory.
@@ -636,8 +651,10 @@ def group_duplicates(rows: List[dict], activity: dict) -> dict:
                     # More than one person publicly listed at this address. Normal
                     # for a clinic mailbox, and nothing to fix.
                     "shared_clinic": len(people) > 1,
-                    # The actionable case: one practitioner listed twice.
+                    # The actionable case: one practitioner listed twice, with
+                    # any reviewed second office set aside.
                     "same_person_listed": any(n > 1 for n in people.values()),
+                    "second_offices": len(seconds),
                     "rows": members})
     return {
         "emails": len(out),
@@ -651,6 +668,7 @@ def group_duplicates(rows: List[dict], activity: dict) -> dict:
         "emails_with_multiple_listings": sum(
             1 for g in out if g["finder_listed_count"] > 1),
         "shared_clinic_emails": sum(1 for g in out if g["shared_clinic"]),
+        "second_offices": sum(g["second_offices"] for g in out),
         "groups": out,
     }
 
@@ -731,6 +749,71 @@ def ensure_portal_email_unique_index() -> dict:
               f"NOT present. Do not treat this deploy as enforced.", flush=True)
     return {"index": PORTAL_EMAIL_INDEX, "created": True, "present": present,
             "blocked_by": 0}
+
+
+# ── the second-office marker ─────────────────────────────────────────────────
+
+SECOND_OFFICE_MIGRATION = "practitioners-second-office"
+
+
+def second_office_column_present() -> bool:
+    """True if practitioners.second_office actually exists.
+
+    Reported by the duplicates audit as `second_office_present`. The migration is
+    applied to production by hand after this code deploys, so a green deploy is
+    not evidence that the column is there.
+    """
+    from db_supabase import supabase_cursor
+    with supabase_cursor() as cur:
+        return _column_exists(cur, "practitioners", "second_office")
+
+
+def apply_second_office_migration() -> dict:
+    """Apply migrations/practitioners-second-office.sql.
+
+    Verified against the catalogue in the SAME transaction as the DDL rather than
+    inferred from "no exception was raised". A verification failure raises, which
+    rolls the transaction back, so a failed call never leaves a half-applied
+    migration live. Every clause is IF NOT EXISTS, so calling twice is a no-op.
+    """
+    path = os.path.join(_REPO_ROOT, "migrations", f"{SECOND_OFFICE_MIGRATION}.sql")
+    with open(path) as fh:
+        sql = fh.read()
+    from db_supabase import supabase_cursor
+    with supabase_cursor() as cur:
+        cur.execute(sql)
+        if not _column_exists(cur, "practitioners", "second_office"):
+            raise RuntimeError(
+                f"{SECOND_OFFICE_MIGRATION}.sql ran without error, but "
+                f"practitioners.second_office is still missing afterward. Do not "
+                f"treat this as applied.")
+        # The public view must NOT have gained a second_office term. If it had,
+        # every marked office would silently vanish from the finder, which is the
+        # exact opposite of what this column is for.
+        view_columns = _view_columns(cur, "v_practitioners_public")
+        if view_columns != list(_PUBLIC_VIEW_COLUMNS):
+            raise RuntimeError(
+                f"{SECOND_OFFICE_MIGRATION}.sql ran without error, but "
+                f"v_practitioners_public no longer has its expected columns. "
+                f"Do not treat this as applied.")
+    return {"migration": SECOND_OFFICE_MIGRATION, "applied": True,
+            "second_office_present": True}
+
+
+def set_second_office(pid: str, value: bool) -> dict:
+    """Record that this listing has been reviewed and kept, or undo that.
+
+    Never hides anything. The row stays in the finder either way; only the
+    duplicate audit's count changes. `set_second_office(pid, False)` is the exact
+    undo.
+    """
+    from db_supabase import supabase_cursor
+    with supabase_cursor() as cur:
+        row = _fetch_practitioner(cur, pid, _DUP_MARK_COLS)
+        cur.execute("UPDATE practitioners SET second_office=%s, updated_at=now() "
+                    "WHERE id=%s", (bool(value), str(pid)))
+    return {"id": str(pid), "name": row.get("name"), "email": row.get("email"),
+            "second_office": bool(value)}
 
 
 # ── the duplicate-listing migration ──────────────────────────────────────────
