@@ -137,12 +137,25 @@ def _iso_date(s):
 def _csv_rows(path, cols, colmap):
     """Read `path`, returning row tuples in `cols` order. Each projection col is
     read from its CSV source name (colmap maps the differing names; same-named
-    cols are read directly)."""
+    cols are read directly).
+
+    NUL bytes are stripped. FileMaker's AppleScript export writes the occasional
+    field as UTF-16LE inside an otherwise UTF-8 file, which lands as real text with
+    a NUL between every character. SQLite stores those happily; Postgres refuses the
+    whole INSERT with "text fields cannot contain NUL (0x00) bytes", so one address
+    failed an entire 17,420-row ingest on 2026-09-11.
+
+    Stripping is the right repair rather than a workaround: dropping the NULs out of
+    a UTF-16LE run turns it back into exactly the intended characters, verified on
+    that row ("2001 Miraloma Ave, Placentia, CA 92870"). A NUL is never content in
+    this data.
+    """
     src = {v: k for k, v in colmap.items()}  # projcol -> csvcol
     out = []
     with open(path, encoding="utf-8", newline="") as f:
         for r in csv.DictReader(f):
-            out.append(tuple((r.get(src.get(c, c), "") or "") for c in cols))
+            out.append(tuple((r.get(src.get(c, c), "") or "").replace("\x00", "")
+                             for c in cols))
     return out
 
 
