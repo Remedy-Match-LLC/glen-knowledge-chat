@@ -15860,10 +15860,17 @@ def _find_qualifying_order_for_coaching(cx, email):
     return None
 
 
-def _open_coaching_for_order(cx, email, order_id, source, window_source="self_serve"):
+def _open_coaching_for_order(cx, email, order_id, source, window_source="self_serve",
+                             started_at=None):
     """Validate + open a coaching window for one remedy-program order.
     window_source labels HOW it was activated (self_serve / delivery / admin).
-    Returns {ok, ...}: success -> created+ends_at; failure -> reason (+offer_99 if ineligible)."""
+    Returns {ok, ...}: success -> created+ends_at; failure -> reason (+offer_99 if ineligible).
+
+    `started_at` back-dates the window to the carrier's delivery time. Glen,
+    2026-09-11: the window runs 30 days from delivery, and back-dating is fine when
+    needed. So an old delivery can open a window that is already partly or wholly
+    elapsed, which is the honest outcome: the client had the remedies all along.
+    Absent, the window starts now, which is right for a human activating it today."""
     if (source or "") not in _coaching.QUALIFYING_SOURCES:
         return {"ok": False, "reason": "not_qualifying"}
     row = cx.execute("SELECT created_at FROM orders WHERE id=? AND email=?",
@@ -15873,8 +15880,16 @@ def _open_coaching_for_order(cx, email, order_id, source, window_source="self_se
     created_at = row[0] if not isinstance(row, sqlite3.Row) else row["created_at"]
     if not _membership_active_at(cx, email, created_at):
         return {"ok": False, "reason": "ineligible", "offer_99": True}
+    began = None
+    if started_at:
+        try:
+            began = datetime.fromisoformat(str(started_at).replace("Z", "+00:00"))
+            began = began.replace(tzinfo=None)          # open_window works naive
+        except (TypeError, ValueError):
+            began = None                                # unreadable -> start now
     res = _coaching.open_window(cx, email=email, order_id=order_id,
-                                days=_coaching.WINDOW_DAYS, source=window_source)
+                                days=_coaching.WINDOW_DAYS, source=window_source,
+                                now=began)
     return {"ok": True, "created": res["created"], "ends_at": res["window"]["ends_at"]}
 
 
@@ -16066,7 +16081,9 @@ def _activate_coaching_for_shipment(cx, shipment, *, delivered_at):
         if not email:
             results.append({"order_id": m["id"], "ok": False, "reason": "no_email"})
             continue
-        res = _open_coaching_for_order(cx, email, m["id"], m["source"], window_source="delivery")
+        res = _open_coaching_for_order(cx, email, m["id"], m["source"],
+                                       window_source="delivery",
+                                       started_at=delivered_at)
         results.append({"order_id": m["id"], **res})
         # The Biofield month runs from receipt of remedies. Placed here so every
         # delivery path gets it -- carrier status, and both manual "mark
@@ -16088,8 +16105,16 @@ def _activate_coaching_for_shipment(cx, shipment, *, delivered_at):
     return top
 
 
-def _advance_orders_by_tracking_status(cx, tracking_code, carrier_status):
-    """Move linked order cards when the carrier supplies reliable evidence."""
+def _advance_orders_by_tracking_status(cx, tracking_code, carrier_status,
+                                       delivered_at=None):
+    """Move linked order cards when the carrier supplies reliable evidence.
+
+    `delivered_at` is the carrier's own delivery time when the caller could read one.
+    It matters because the coaching window runs 30 days FROM DELIVERY (Glen,
+    2026-09-11), and passing utcnow() instead meant a parcel that arrived ten days
+    ago started its month today, silently costing the client ten days. Absent, it
+    falls back to now, which is right for the manual "mark delivered" paths.
+    """
     status = (carrier_status or "").strip().lower()
     shipment = _tracking.shipment_by_tracking(cx, tracking_code)
     if not shipment:
@@ -16102,7 +16127,8 @@ def _advance_orders_by_tracking_status(cx, tracking_code, carrier_status):
         # sweep prints it as cards_reported, and the easypost sync as `activated`,
         # so a flat 1 told Glen a card had moved when the board had not changed.
         res = _activate_coaching_for_shipment(
-            cx, shipment, delivered_at=datetime.utcnow().isoformat() + "Z")
+            cx, shipment,
+            delivered_at=delivered_at or (datetime.utcnow().isoformat() + "Z"))
         return len((res or {}).get("members") or [])
     if status not in ("in_transit", "out_for_delivery"):
         return 0

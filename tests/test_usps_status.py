@@ -237,7 +237,7 @@ def cx(tmp_path):
 def _recorder():
     calls = []
 
-    def advance(cx, tracking_code, carrier_status):
+    def advance(cx, tracking_code, carrier_status, delivered_at=None):
         calls.append((tracking_code, carrier_status))
         return 1
     return advance, calls
@@ -282,7 +282,7 @@ def test_acted_and_cards_reported_are_counted_separately(cx):
     counts would report an order moving when the board did not change."""
     svc = _Service([("m1", SHARED_SUBJECT, DELIVERED_MAILBOX)])
 
-    def advance_touching_nothing(cx, tracking_code, carrier_status):
+    def advance_touching_nothing(cx, tracking_code, carrier_status, delivered_at=None):
         return 0
 
     out = US.run_status_sweep(cx, svc, days=7, advance=advance_touching_nothing)
@@ -347,7 +347,7 @@ def test_an_advance_failure_does_not_abort_the_rest(cx):
                     ("m2", SHARED_SUBJECT, body2)])
     seen = []
 
-    def advance(cx, tracking_code, carrier_status):
+    def advance(cx, tracking_code, carrier_status, delivered_at=None):
         seen.append(tracking_code)
         if tracking_code == TN:
             raise RuntimeError("order table locked")
@@ -385,7 +385,7 @@ def test_only_the_first_error_is_kept(cx):
     svc = _Service([("m1", SHARED_SUBJECT, DELIVERED_MAILBOX),
                     ("m2", SHARED_SUBJECT, DELIVERED_LOCKER)])
 
-    def always_fails(cx, tracking_code, carrier_status):
+    def always_fails(cx, tracking_code, carrier_status, delivered_at=None):
         raise RuntimeError("boom " + tracking_code[-4:])
 
     out = US.run_status_sweep(cx, svc, days=7, advance=always_fails)

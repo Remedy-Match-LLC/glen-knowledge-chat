@@ -25,6 +25,7 @@ PRE_TRANSIT is counted and held, never acted on.
 
 import base64
 import re
+from datetime import datetime, timedelta, timezone
 
 from dashboard.tracking import shipment_by_tracking
 
@@ -71,6 +72,17 @@ _PRE_TRANSIT_PHRASES = (
     "shipping label created", "pre-shipment info sent",
 )
 
+# The carrier's own delivery time, e.g. "at 10:58 am on September 9, 2026".
+# Needed because the coaching window must run 30 days from DELIVERY, and until
+# 2026-09-11 the delivery path passed utcnow() instead, so a parcel that arrived
+# ten days ago started its month today and the client silently lost ten days.
+_DELIVERED_AT = re.compile(
+    r"\bat\s+(\d{1,2}):(\d{2})\s*([ap])\.?m\.?\s+on\s+"
+    r"([A-Z][a-z]+)\s+(\d{1,2}),?\s+(\d{4})", re.I)
+_MONTHS = {m: i for i, m in enumerate(
+    ["january", "february", "march", "april", "may", "june", "july", "august",
+     "september", "october", "november", "december"], start=1)}
+
 _TRACKING_LABELLED = re.compile(r"tracking\s*number\s*:?\s*([0-9]{20,26})", re.I)
 _TRACKING_BARE = re.compile(r"\b(9[24]0[0-9]{19})\b")
 
@@ -96,6 +108,36 @@ def _text_of(payload):
     text = re.sub(r"<[^>]+>", " ", text)
     text = text.replace("&nbsp;", " ").replace("&#160;", " ")
     return re.sub(r"\s+", " ", text).strip()
+
+
+def parse_delivered_at(body_text):
+    """The carrier's delivery time as ISO, or None when the body does not carry one.
+
+    USPS writes a local time with no zone ("at 10:58 am on September 9, 2026"), so
+    this is accurate to the day and approximate to a few hours. That is the right
+    precision for a 30-day window and the wrong precision to present as exact.
+
+    Returns None rather than guessing on anything it cannot read, because the caller
+    falls back to now, and a wrong date here silently mis-dates a client's month.
+    """
+    m = _DELIVERED_AT.search(str(body_text or ""))
+    if not m:
+        return None
+    hour12, minute, half, month_name, day, year = m.groups()
+    month = _MONTHS.get(month_name.lower())
+    if not month:
+        return None
+    try:
+        hour = int(hour12) % 12 + (12 if half.lower() == "p" else 0)
+        stamp = datetime(int(year), month, int(day), hour, int(minute),
+                         tzinfo=timezone.utc)
+    except ValueError:
+        return None
+    # A delivery cannot be in the future. A parse that says so is wrong, and a
+    # window starting in the future would deny access the client has earned.
+    if stamp > datetime.now(timezone.utc) + timedelta(days=1):
+        return None
+    return stamp.isoformat().replace("+00:00", "Z")
 
 
 def parse_status_email(subject, body_text):
@@ -174,6 +216,7 @@ def run_status_sweep(cx, service, *, days=3, max_messages=200, dry_run=False,
 
     # Collapse the window to one decision per parcel before touching any order.
     per_parcel = {}
+    delivered_at = {}
     unparsed = 0
     for mid in msg_ids:
         msg = service.users().messages().get(
@@ -181,11 +224,20 @@ def run_status_sweep(cx, service, *, days=3, max_messages=200, dry_run=False,
         headers = (msg.get("payload") or {}).get("headers") or []
         subject = next((h["value"] for h in headers
                         if h.get("name", "").lower() == "subject"), "")
-        parsed = parse_status_email(subject, _text_of(msg.get("payload")))
+        text = _text_of(msg.get("payload"))
+        parsed = parse_status_email(subject, text)
         if not parsed["tracking"] or not parsed["status"]:
             unparsed += 1
             continue
         per_parcel.setdefault(parsed["tracking"], []).append(parsed["status"])
+        if parsed["status"] == DELIVERED:
+            stamp = parse_delivered_at(text)
+            if stamp:
+                # Earliest wins: USPS re-sends the same delivery scan, and the first
+                # one carries the real moment.
+                prior = delivered_at.get(parsed["tracking"])
+                if prior is None or stamp < prior:
+                    delivered_at[parsed["tracking"]] = stamp
 
     # 'acted' counts parcels we handed to the advance function. 'cards_reported' is
     # what that function said it touched, and the two differ whenever a parcel has no
@@ -229,7 +281,8 @@ def run_status_sweep(cx, service, *, days=3, max_messages=200, dry_run=False,
             log(f"  {tracking}: would act on {state}")
             continue
         try:
-            reported = advance(cx, tracking, state)
+            reported = advance(cx, tracking, state,
+                               delivered_at=delivered_at.get(tracking))
         except Exception as exc:  # noqa: BLE001 - one bad parcel must not stop the rest
             summary["errors"] += 1
             if summary["first_error"] is None:
