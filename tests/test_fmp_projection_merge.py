@@ -158,3 +158,69 @@ def test_a_row_with_a_blank_key_is_still_inserted(cx):
     assert cx.execute(
         "SELECT COUNT(*) FROM fmp_invoices WHERE id_pk=''").fetchone()[0] == 1
     assert "legacy-1" in _ids(cx)
+
+
+# ── NUL bytes from the FileMaker export (2026-09-11) ─────────────────────────
+#
+# FileMaker's AppleScript export writes the occasional field as UTF-16LE inside an
+# otherwise UTF-8 file, so real text arrives with a NUL between every character.
+# SQLite stores that happily. Postgres refuses the whole INSERT with "text fields
+# cannot contain NUL (0x00) bytes", and one address failed an entire 17,420-row
+# ingest against production.
+
+def test_nul_bytes_are_stripped_and_the_text_is_recovered(tmp_path):
+    """Stripping is a repair, not a workaround: removing the NULs from a UTF-16LE
+    run yields exactly the intended characters. Verified against the real row."""
+    d = tmp_path / "export"
+    d.mkdir()
+    addr = "2001 Miraloma Ave"
+    utf16ish = "".join(ch + "\x00" for ch in addr)      # what the export contained
+    (d / "clients_address.csv").write_text(
+        "id_pk,id_fk_client,type,address_street,address_city,address_province,"
+        "address_postal_code,address_country\n"
+        f"a1,c1,home,{utf16ish},Placentia,CA,92870,US\n", encoding="utf-8")
+    for name, header in (("clients.csv", ",".join(FO._CLIENT_COLS)),
+                         ("invoices.csv", "id_pk,id_fk_client,invoice_date,closed,"
+                                          "zc_invoice_subtotal,zc_invoice_total,"
+                                          "shipping_fee,zc_overdue_balance"),
+                         ("invoice_items.csv", "id_pk,id_fk_invoice,id_fk_product,"
+                                               "description,qty,price,zc_ext_price")):
+        (d / name).write_text(header + "\n", encoding="utf-8")
+
+    conn = sqlite3.connect(":memory:")
+    FO.ensure_tables(conn)
+    FO.build_projection_from_csv(conn, str(d))
+    got = conn.execute("SELECT street FROM fmp_client_addresses WHERE id_pk='a1'"
+                       ).fetchone()[0]
+    conn.close()
+
+    assert "\x00" not in got, "a NUL would fail the whole INSERT on Postgres"
+    assert got == addr
+
+
+def test_no_field_anywhere_keeps_a_nul(tmp_path):
+    """Every column goes through the same reader, so pin the whole row rather than
+    the one field that happened to break."""
+    d = tmp_path / "export"
+    d.mkdir()
+    poisoned = "x\x00y"
+    (d / "clients.csv").write_text(
+        ",".join(FO._CLIENT_COLS) + "\n"
+        + ",".join([poisoned] * len(FO._CLIENT_COLS)) + "\n", encoding="utf-8")
+    (d / "clients_address.csv").write_text(
+        "id_pk,id_fk_client,type,address_street,address_city,address_province,"
+        "address_postal_code,address_country\n", encoding="utf-8")
+    (d / "invoices.csv").write_text(
+        "id_pk,id_fk_client,invoice_date,closed,zc_invoice_subtotal,"
+        "zc_invoice_total,shipping_fee,zc_overdue_balance\n", encoding="utf-8")
+    (d / "invoice_items.csv").write_text(
+        "id_pk,id_fk_invoice,id_fk_product,description,qty,price,zc_ext_price\n",
+        encoding="utf-8")
+
+    conn = sqlite3.connect(":memory:")
+    FO.ensure_tables(conn)
+    FO.build_projection_from_csv(conn, str(d))
+    row = conn.execute("SELECT * FROM fmp_clients").fetchone()
+    conn.close()
+    assert all("\x00" not in (v or "") for v in row)
+    assert row[0] == "xy"
