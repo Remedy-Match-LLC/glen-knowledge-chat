@@ -438,9 +438,23 @@ def link_shipment_to_orders(cx: sqlite3.Connection, shipment_id: int,
         return {"status": "linked", "order_ids": ids,
                 "reason": prior.get("order_link_reason") or "previously linked"}
 
+    # 'shipped' belongs here alongside new/packed. An order reaches 'shipped' when
+    # someone records the shipment by hand, which routinely happens BEFORE the
+    # Click-N-Ship confirmation is parsed. Excluding it left orders 170 and 146
+    # holding no tracking number and no shipment_id on 2026-09-10, so they could
+    # never record one and could never advance to 'delivered' on a carrier scan,
+    # even after USPS reported one of them delivered.
+    #
+    # Widening is safe by construction rather than by judgement: the NULL-tracking
+    # guard below means an existing tracking number is never overwritten, and every
+    # branch of the matching below refuses a non-unique result instead of guessing.
+    # So more candidates can only produce a unique match or a refusal.
+    #
+    # 'delivered' and 'done' are deliberately still excluded: attaching a parcel to
+    # a closed order gains nothing and would touch a settled record.
     orders_cur = cx.execute(
         "SELECT id, email, name, address_json FROM orders "
-        "WHERE status IN ('new','packed') "
+        "WHERE status IN ('new','packed','shipped') "
         "AND (tracking_number IS NULL OR trim(tracking_number)='') "
         "ORDER BY id DESC"
     )
@@ -478,7 +492,7 @@ def link_shipment_to_orders(cx: sqlite3.Connection, shipment_id: int,
         else:
             ids = [int(o["id"]) for o in exact_address]
             return _audit_order_link(cx, shipment_id, "ambiguous",
-                                     "multiple open orders at exact address", ids)
+                                     "multiple unlinked orders at exact address", ids)
     else:
         email_name = [o for o in orders if email_matches(o) and recipient
                       and order_name(o) == recipient]
@@ -487,7 +501,7 @@ def link_shipment_to_orders(cx: sqlite3.Connection, shipment_id: int,
         elif len(email_name) > 1:
             ids = [int(o["id"]) for o in email_name]
             return _audit_order_link(cx, shipment_id, "ambiguous",
-                                     "multiple open orders for client", ids)
+                                     "multiple unlinked orders for client", ids)
         else:
             ship_zip = ship_key[3]
             name_zip = [o for o in orders if recipient and ship_zip
@@ -498,10 +512,10 @@ def link_shipment_to_orders(cx: sqlite3.Connection, shipment_id: int,
             elif len(name_zip) > 1:
                 ids = [int(o["id"]) for o in name_zip]
                 return _audit_order_link(cx, shipment_id, "ambiguous",
-                                         "multiple open orders for recipient + ZIP", ids)
+                                         "multiple unlinked orders for recipient + ZIP", ids)
             else:
                 return _audit_order_link(cx, shipment_id, "unmatched",
-                                         "no safe open-order match", [])
+                                         "no safe unlinked-order match", [])
 
     order_id = int(chosen[0]["id"])
     cx.execute(
