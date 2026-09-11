@@ -37165,8 +37165,15 @@ def api_console_practitioners_duplicates():
         print(f"[console-practitioners] duplicate_of column check failed: {e!r}",
               flush=True)
         dup_col_present = None
+    try:
+        second_office_present = _pa.second_office_column_present()
+    except Exception as e:  # noqa: BLE001
+        print(f"[console-practitioners] second_office column check failed: {e!r}",
+              flush=True)
+        second_office_present = None
     return jsonify({"ok": True, "index_present": present,
-                    "duplicate_of_present": dup_col_present, **report})
+                    "duplicate_of_present": dup_col_present,
+                    "second_office_present": second_office_present, **report})
 
 
 @app.route("/api/console/practitioners/email-index", methods=["POST"])
@@ -37206,6 +37213,26 @@ def api_console_practitioners_duplicate_listing_migration():
     from dashboard import practitioner_admin as _pa
     try:
         out = _pa.apply_duplicate_listing_migration()
+    except Exception as e:  # noqa: BLE001
+        return jsonify({"ok": False, "error": f"migration apply failed: {e}"}), 502
+    return jsonify({"ok": True, **out})
+
+
+@app.route("/api/console/practitioners/second-office-migration", methods=["POST"])
+def api_console_practitioners_second_office_migration():
+    """Console-gated: apply migrations/practitioners-second-office.sql — the
+    second_office column and its partial index.
+
+    Idempotent, and verified against the catalogue inside the same transaction
+    rather than inferred from a lack of exceptions. The verification also asserts
+    that v_practitioners_public did NOT change: this column must never reach the
+    public view, or every reviewed second office would silently leave the
+    directory."""
+    if not _console_key_ok():
+        return jsonify({"error": "Unauthorized"}), 401
+    from dashboard import practitioner_admin as _pa
+    try:
+        out = _pa.apply_second_office_migration()
     except Exception as e:  # noqa: BLE001
         return jsonify({"ok": False, "error": f"migration apply failed: {e}"}), 502
     return jsonify({"ok": True, **out})
@@ -37412,6 +37439,17 @@ def api_console_practitioners_edit(pid):
             # 409 with the reason: the operator is told what is wrong, never a
             # silent no-op that reads as a completed de-duplication.
             return jsonify({"ok": False, "error": str(e), "reason": e.reason}), 409
+        return jsonify({"ok": True, **out})
+    if action in ("mark_second_office", "unmark_second_office"):
+        # Records that this listing was looked at and kept. Unlike
+        # mark_duplicate it hides NOTHING: both offices stay in the finder,
+        # because both are real and a patient needs the nearer one. It changes
+        # only what the duplicate audit counts. "unmark_second_office" is the
+        # exact undo.
+        try:
+            out = _pa.set_second_office(pid, action == "mark_second_office")
+        except _pa.PractitionerNotFound:
+            return jsonify({"ok": False, "error": f"no practitioner with id {pid}"}), 404
         return jsonify({"ok": True, **out})
     if action == "unmark_duplicate":
         try:
