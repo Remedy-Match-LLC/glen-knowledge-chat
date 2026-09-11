@@ -57,6 +57,11 @@ _IN_TRANSIT_PHRASES = (
     "arrived at our", "arrived at the post office", "departed our",
     "moving within the usps network", "in transit to the next facility",
     "is currently in transit", "arrived at a", "accepted at",
+    # Acceptance. "picked up by" catches a shipping partner; USPS phrases its own
+    # counter pickup as "USPS picked up your item", which matched nothing and left
+    # a real acceptance reading as unrecognised. Found 2026-09-10 by the sweep's own
+    # unparsed_emails counter, on a parcel accepted in Hilo the same afternoon.
+    "picked up your item", "picked up item",
     "picked up by", "usps in possession of item",
 )
 # Sent the moment a label is bought, before the parcel exists to the network.
