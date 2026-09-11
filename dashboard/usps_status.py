@@ -188,10 +188,18 @@ def run_status_sweep(cx, service, *, days=3, max_messages=200, dry_run=False,
         per_parcel.setdefault(parsed["tracking"], []).append(parsed["status"])
 
     # 'acted' counts parcels we handed to the advance function. 'cards_reported' is
-    # what that function said it touched, and the two differ: a delivered signal
-    # returns 1 even when the shipment resolves to no member order at all, which is
-    # the common case for a parcel whose order was never linked. Reporting only
-    # 'acted' would read as an order moving when nothing on the board changed.
+    # what that function said it touched, and the two differ whenever a parcel has no
+    # order behind it on this board.
+    #
+    # THAT IS EXPECTED, NOT A DEFECT. Glen, 2026-09-10: Rae still ships some orders
+    # out of FileMaker while the in-house order system is being built and debugged
+    # (see project_inhouse_order_entry). Those parcels generate a real Click-N-Ship
+    # confirmation and real USPS scan emails, and there is correctly no console order
+    # to advance. Measured that day: of 7 parcels in 21 days, 3 were FMP orders.
+    #
+    # So `acted` high with `cards_reported` 0 is a normal reading during the
+    # transition. Do not go looking for a linking bug on that evidence alone: check
+    # first whether an order exists at all, the way STATE.md records it.
     summary = {
         "mode": mode, "mailbox": mailbox, "days": int(days),
         "emails": len(msg_ids), "parcels": len(per_parcel),
