@@ -515,16 +515,21 @@ def duplicate_email_rows() -> List[dict]:
     from db_supabase import supabase_cursor
     with supabase_cursor() as cur:
         cols = _DUP_COLS
-        missing = [c for c in ("duplicate_of", "second_office")
+        # Each column is applied to production BY HAND after this code deploys, and
+        # they landed days apart, so the in-between state is real: one present, one
+        # not. Name only what is actually missing, or the warning sends an operator
+        # to re-run a migration that is already live.
+        WANTED = {"duplicate_of": ("hidden listings",
+                                   "migrations/practitioners-duplicate-listing.sql"),
+                  "second_office": ("reviewed second offices",
+                                    "migrations/practitioners-second-office.sql")}
+        missing = [c for c in WANTED
                    if not _column_exists(cur, "practitioners", c)]
         if missing:
-            print(f"[practitioner-admin] practitioners.{', '.join(missing)} "
-                  f"missing, so the duplicate audit cannot report "
-                  f"{'hidden listings' if 'duplicate_of' in missing else ''}"
-                  f"{' and ' if len(missing) > 1 else ''}"
-                  f"{'reviewed second offices' if 'second_office' in missing else ''}"
-                  f". Apply migrations/practitioners-duplicate-listing.sql and "
-                  f"migrations/practitioners-second-office.sql.", flush=True)
+            print(f"[practitioner-admin] practitioners."
+                  f"{', '.join(missing)} missing, so the duplicate audit cannot "
+                  f"report {' and '.join(WANTED[c][0] for c in missing)}. Apply "
+                  f"{' and '.join(WANTED[c][1] for c in missing)}.", flush=True)
             cols = ", ".join(c.strip() for c in _DUP_COLS.split(",")
                              if c.strip() not in missing)
         cur.execute(
