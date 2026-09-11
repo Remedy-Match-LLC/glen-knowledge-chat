@@ -139,6 +139,11 @@ def test_the_publish_resolver_never_returns_a_retired_slug(catalog):
 def test_the_capsules_carry_glens_dosage_line(catalog):
     """Glen, 2026-09-10: "Build up to 2 capsules 3 times a day according to tolerance."
     He confirmed separately that "with food" stays. Same six a day as the line it
-    replaces, different schedule."""
-    assert catalog[SHIELD]["description"] == (
+    replaces, different schedule.
+
+    MOVED 2026-09-11 from `description` to `directions`. `description` never rendered on
+    the product page, so this line was invisible to customers until #1629; `directions` is
+    what the page shows under "Suggested use". `description` now carries the dose basis
+    instead. The wording is Glen's and unchanged."""
+    assert catalog[SHIELD]["directions"] == (
         "Build up to 2 capsules 3 times a day according to tolerance, with food.")
