@@ -5,6 +5,7 @@ monkeypatch pattern, like test_people_feeders.py.
 """
 import importlib
 import json
+import os
 import sqlite3
 import sys
 from pathlib import Path
@@ -16,6 +17,12 @@ def _app():
     repo_root = Path(__file__).resolve().parent.parent
     if str(repo_root) not in sys.path:
         sys.path.insert(0, str(repo_root))
+    # Importing app builds OpenAI + Pinecone clients, so without these the whole
+    # file SKIPPED in the secretless CI. Twenty green skips look identical to
+    # twenty passes and guard nothing. The clients construct fine with dummy keys
+    # and no test here ever calls them.
+    os.environ.setdefault("OPENAI_API_KEY", "sk-dummy")
+    os.environ.setdefault("PINECONE_API_KEY", "pc-dummy")
     try:
         return importlib.import_module("app")
     except Exception as e:
@@ -137,3 +144,70 @@ def test_opted_in_without_type_is_skipped(app_db):
     s = app.sync_people_to_ghl()
     assert s["enqueued"] == 0 and s["skipped_no_type"] == 1
     assert _queue(db) == []
+
+
+# ── a cold row must be upgradable when evidence turns up later ────────────────
+#
+# `consent:cold-no-consent` is the ELSE branch of this classifier. It fires once,
+# because the guard was "has any consent tag at all", and then nothing ever looked
+# again. Measured on the live hub 2026-09-11: 7,992 rows carry it, and 363 of them
+# hold an E4L account, a Practice Better membership, a client tag or a scan. 125 of
+# those are in the weekly invitation audience.
+#
+# One of the classifier's three opt-in tests also cannot pass. `has_commerce` reads
+# order_count, which is 0 for every row including 200 already marked opted-in, and
+# _is_client_tag carries a comment saying so.
+#
+# So a cold row is now revisitable. Only upward, and only to opted-in.
+
+def test_a_cold_row_is_upgraded_when_a_client_tag_appears():
+    add = _app()._classify_person(
+        {"tags": ["consent:cold-no-consent", "nes client"], "order_count": 0, "pb_id": ""})
+    assert "consent:opted-in" in add
+
+
+def test_a_cold_row_is_upgraded_when_a_practice_better_id_appears():
+    add = _app()._classify_person(
+        {"tags": ["consent:cold-no-consent"], "order_count": 0, "pb_id": "pb123"})
+    assert "consent:opted-in" in add
+
+
+def test_a_cold_row_is_upgraded_when_they_agree_to_terms():
+    add = _app()._classify_person(
+        {"tags": ["consent:cold-no-consent"], "order_count": 0, "pb_id": ""}, tos_agreed=True)
+    assert "consent:opted-in" in add
+
+
+def test_a_cold_row_with_still_no_evidence_is_left_exactly_as_it_was():
+    """6,905 scraped practitioner rows are correctly cold. Adding the tag again
+    would be churn, and re-adding it is not the same as leaving it alone."""
+    add = _app()._classify_person(
+        {"tags": ["consent:cold-no-consent"], "order_count": 0, "pb_id": ""})
+    assert "consent:opted-in" not in add
+    assert "consent:cold-no-consent" not in add, "re-stamped a tag that is already there"
+
+
+def test_a_bounced_cold_row_is_never_upgraded():
+    """An email-negative signal outranks the evidence. This is the one that would
+    put mail back in front of someone who should not get it."""
+    add = _app()._classify_person(
+        {"tags": ["consent:cold-no-consent", "nes client", "email bounced"],
+         "order_count": 0, "pb_id": ""})
+    assert "consent:opted-in" not in add
+
+
+def test_an_unsubscribed_row_is_never_upgraded():
+    """consent:unsubscribed means the row is no longer ONLY cold, so the upgrade
+    branch must not open. _collapse_consent is the second line of defence, not the
+    first."""
+    add = _app()._classify_person(
+        {"tags": ["consent:cold-no-consent", "consent:unsubscribed", "nes client"],
+         "order_count": 0, "pb_id": ""})
+    assert "consent:opted-in" not in add
+
+
+def test_an_already_opted_in_row_is_still_left_alone():
+    """The control. The widened guard must not start rewriting settled rows."""
+    add = _app()._classify_person(
+        {"tags": ["consent:opted-in", "nes client"], "order_count": 3, "pb_id": ""})
+    assert not any(t.startswith("consent:") for t in add)
