@@ -276,13 +276,17 @@ def run_status_sweep(cx, service, *, days=3, max_messages=200, dry_run=False,
             summary["unknown_parcels"] += 1
             log(f"  {tracking}: {state} but no shipment row — skipped")
             continue
+        # Name the delivery time in the line. This change is entirely ABOUT a date,
+        # and without printing it a mis-dated coaching window is undetectable from
+        # outside: the summary counts would look identical either way.
+        stamp = delivered_at.get(tracking)
+        dated = f" delivered {stamp}" if stamp else ""
         if dry_run:
             summary["would_act"] += 1
-            log(f"  {tracking}: would act on {state}")
+            log(f"  {tracking}: would act on {state}{dated}")
             continue
         try:
-            reported = advance(cx, tracking, state,
-                               delivered_at=delivered_at.get(tracking))
+            reported = advance(cx, tracking, state, delivered_at=stamp)
         except Exception as exc:  # noqa: BLE001 - one bad parcel must not stop the rest
             summary["errors"] += 1
             if summary["first_error"] is None:
@@ -294,6 +298,6 @@ def run_status_sweep(cx, service, *, days=3, max_messages=200, dry_run=False,
             summary["cards_reported"] += int(reported or 0)
         except (TypeError, ValueError):
             pass
-        log(f"  {tracking}: {state} — acted, function reported {reported}")
+        log(f"  {tracking}: {state}{dated} — acted, function reported {reported}")
 
     return summary
