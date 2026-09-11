@@ -75,10 +75,46 @@ def ensure_indexes(cx):
 
 
 def _replace(cx, table, cols, rows):
+    """DESTRUCTIVE full rebuild. Drops the table and everything in it.
+
+    Only correct when the payload is the ONLY source for this table, which it is
+    not: see _merge. Kept for a deliberate rebuild, never the default.
+    """
     cx.execute(f"DROP TABLE IF EXISTS {table}")
     cx.execute(f"CREATE TABLE {table} (" + ", ".join(f"{c} TEXT" for c in cols) + ")")
     ph = ",".join("?" * len(cols))
     cx.executemany(f"INSERT INTO {table} VALUES ({ph})", rows)
+    return len(rows)
+
+
+def _merge(cx, table, cols, rows):
+    """Upsert by `id_pk`, leaving every row the payload does not mention alone.
+
+    WHY THIS IS THE DEFAULT. These four tables are a UNION of two sources:
+    this projection (Remedy Match.fmp12, replaced wholesale) and
+    `legacy_fmp_invoices` (Healing Oasis Invoices.fmp12, which only ever appends).
+    So a drop-and-rebuild from one source silently deletes the other's rows.
+
+    Measured 2026-09-11 before this existed: a fresh export carried 483 invoices
+    while production held about 16,300, the rest being 15,822 legacy invoices going
+    back to 1999-05-21. An ingest would have destroyed all of them, and they could
+    NOT have been rebuilt: `legacy_fmp_invoices.build_payload` needs an invoice
+    summary carrying Contact ID, and the only retained legacy files are line items
+    with no Contact ID. That history lives solely inside a FileMaker file.
+
+    Delete-then-insert per incoming key rather than ON CONFLICT, because these
+    tables carry no unique constraint and the legacy source is known to contain
+    duplicate invoice ids. A UNIQUE index would fail to create on live data.
+    """
+    ph = ",".join("?" * len(cols))
+    rows = [tuple(r) for r in rows]
+    keys = [r[0] for r in rows if r and r[0] not in (None, "")]
+    # Chunked so a large payload cannot exceed SQLite's variable limit.
+    for i in range(0, len(keys), 500):
+        chunk = keys[i:i + 500]
+        cx.execute(f"DELETE FROM {table} WHERE {cols[0]} IN "
+                   f"({','.join('?' * len(chunk))})", chunk)
+    cx.executemany(f"INSERT INTO {table} ({','.join(cols)}) VALUES ({ph})", rows)
     return len(rows)
 
 
@@ -110,21 +146,29 @@ def _csv_rows(path, cols, colmap):
     return out
 
 
-def build_projection_from_csv(cx, export_dir):
-    """(Re)build the four projection tables from the FMP CSV export dir.
-    Idempotent; returns row counts."""
+def build_projection_from_csv(cx, export_dir, *, replace=False):
+    """Load the four projection tables from an FMP CSV export dir.
+
+    MERGES by default: rows the export does not mention are left alone, because
+    these tables are shared with `legacy_fmp_invoices`. Pass replace=True only for
+    a deliberate full rebuild, knowing it deletes the legacy history. Idempotent
+    either way; returns row counts.
+    """
     export_dir = str(export_dir)
+    write = _replace if replace else _merge
+    if not replace:
+        ensure_tables(cx)      # merging needs somewhere to merge INTO
     counts = {}
-    counts["clients"]   = _replace(cx, "fmp_clients", _CLIENT_COLS,
-                                   _csv_rows(os.path.join(export_dir, "clients.csv"), _CLIENT_COLS, {}))
+    counts["clients"]   = write(cx, "fmp_clients", _CLIENT_COLS,
+                                _csv_rows(os.path.join(export_dir, "clients.csv"), _CLIENT_COLS, {}))
     inv_rows = _csv_rows(os.path.join(export_dir, "invoices.csv"), _INV_COLS, _INV_MAP)
     _di = _INV_COLS.index("invoice_date")
     inv_rows = [tuple(_iso_date(v) if i == _di else v for i, v in enumerate(r)) for r in inv_rows]
-    counts["invoices"]  = _replace(cx, "fmp_invoices", _INV_COLS, inv_rows)
-    counts["items"]     = _replace(cx, "fmp_invoice_items", _ITEM_COLS,
-                                   _csv_rows(os.path.join(export_dir, "invoice_items.csv"), _ITEM_COLS, _ITEM_MAP))
-    counts["addresses"] = _replace(cx, "fmp_client_addresses", _ADDR_COLS,
-                                   _csv_rows(os.path.join(export_dir, "clients_address.csv"), _ADDR_COLS, _ADDR_MAP))
+    counts["invoices"]  = write(cx, "fmp_invoices", _INV_COLS, inv_rows)
+    counts["items"]     = write(cx, "fmp_invoice_items", _ITEM_COLS,
+                                _csv_rows(os.path.join(export_dir, "invoice_items.csv"), _ITEM_COLS, _ITEM_MAP))
+    counts["addresses"] = write(cx, "fmp_client_addresses", _ADDR_COLS,
+                                _csv_rows(os.path.join(export_dir, "clients_address.csv"), _ADDR_COLS, _ADDR_MAP))
     cx.commit()
     return counts
 
@@ -191,13 +235,24 @@ def to_payload(cx):
             for key, (tbl, cols) in spec.items()}
 
 
-def ingest_payload(cx, payload):
-    """Replace the four projection tables from a to_payload() dict. Idempotent."""
+def ingest_payload(cx, payload, *, replace=False):
+    """Load the four projection tables from a to_payload() dict.
+
+    MERGES by default, upserting on id_pk and leaving unmentioned rows in place.
+    These tables hold the union of this projection and the Healing Oasis legacy
+    history, so a rebuild from one source deletes the other's rows and, in the
+    legacy case, deletes them irrecoverably. See _merge.
+
+    replace=True restores the old destructive behaviour for a deliberate rebuild.
+    Idempotent either way.
+    """
+    write = _replace if replace else _merge
+    ensure_tables(cx)          # merging needs the tables to exist first
     counts = {}
-    counts["clients"]   = _replace(cx, "fmp_clients", _CLIENT_COLS, [tuple(r) for r in payload.get("clients", [])])
-    counts["invoices"]  = _replace(cx, "fmp_invoices", _INV_COLS, [tuple(r) for r in payload.get("invoices", [])])
-    counts["items"]     = _replace(cx, "fmp_invoice_items", _ITEM_COLS, [tuple(r) for r in payload.get("items", [])])
-    counts["addresses"] = _replace(cx, "fmp_client_addresses", _ADDR_COLS, [tuple(r) for r in payload.get("addresses", [])])
+    counts["clients"]   = write(cx, "fmp_clients", _CLIENT_COLS, [tuple(r) for r in payload.get("clients", [])])
+    counts["invoices"]  = write(cx, "fmp_invoices", _INV_COLS, [tuple(r) for r in payload.get("invoices", [])])
+    counts["items"]     = write(cx, "fmp_invoice_items", _ITEM_COLS, [tuple(r) for r in payload.get("items", [])])
+    counts["addresses"] = write(cx, "fmp_client_addresses", _ADDR_COLS, [tuple(r) for r in payload.get("addresses", [])])
     ensure_indexes(cx)
     cx.commit()
     return counts
