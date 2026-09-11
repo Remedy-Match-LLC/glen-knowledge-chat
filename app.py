@@ -37099,6 +37099,13 @@ def api_console_practitioners_list():
 def api_console_practitioners_duplicates():
     """Console-gated, read-only: every email carrying more than one practitioners row.
 
+    `finder_duplicates` counts one PRACTITIONER listed twice, not one email listed
+    twice. One clinic email legitimately carries several colleagues, which is the
+    normal shape of a scraped directory; on 2026-09-10 that was 223 of 398 groups,
+    and counting them made the headline read 230 when the actionable number was 7.
+    The old count is still reported as `emails_with_multiple_listings`, and
+    `shared_clinic_emails` says how many groups are colleagues rather than copies.
+
     Covers the WHOLE table, not the roster. /api/console/practitioners lists only rows
     with portal_role set, which is why an empty stub sharing a real practitioner's
     email stayed invisible while it competed in every email lookup.
