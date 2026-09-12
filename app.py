@@ -31137,6 +31137,27 @@ def community_publish():
     return jsonify({"ok": True, "content_id": cid, "outtakes": n})
 
 
+def _coach_connect_entitled(cx, email):
+    """May this person reach an individual volunteer coach?
+
+    Glen, 2026-09-12: 1:1 coach connect is "only for paid members".
+
+    Two conditions, and the second was missing. A coaching window is EARNED by a
+    remedy delivery and only opened for someone whose membership was active at the
+    order date (_open_coaching_for_order checks _membership_active_at). But the
+    window then runs 30 days from delivery, and the endpoints re-checked nothing —
+    so a membership lapsing mid-window left 1:1 coach access open to a former member.
+
+    Note this is NOT the group-coaching gate. Group coaching is _group_coaching_entitled,
+    which is paid member OR certification student, and never consults the window.
+    The window governs the individual coach directory, requests and waitlist only.
+    """
+    from dashboard import coaching as _co
+    if not (email and _co.active_window(cx, email)):
+        return False
+    return _is_paid_member(email)
+
+
 @app.route("/api/community/coaches")
 def community_coaches():
     from dashboard import coach_directory as _cd, coaching as _co, coach_connect as _cc
@@ -31146,7 +31167,7 @@ def community_coaches():
         ident = _evox_ident(cx, request.args.get("token", ""))
         if ident is None:
             return jsonify({"error": "not_found"}), 404
-        if not _co.active_window(cx, ident.email):
+        if not _coach_connect_entitled(cx, ident.email):
             return jsonify({"eligible": False, "coaches": []})
         candidates = _cd.list_active_full(cx)
         coaches = []
@@ -31177,7 +31198,7 @@ def community_coach_request():
         ident = _evox_ident(cx, request.args.get("token", ""))
         if ident is None:
             return jsonify({"error": "not_found"}), 404
-        if not _co.active_window(cx, ident.email):
+        if not _coach_connect_entitled(cx, ident.email):
             return jsonify({"error": "not_eligible"}), 403
         coach_email = _cc.email_for_ref(cx, ref)
         if not coach_email:
@@ -31229,7 +31250,7 @@ def community_coach_waitlist():
         ident = _evox_ident(cx, request.args.get("token", ""))
         if ident is None:
             return jsonify({"error": "not_found"}), 404
-        if not _co.active_window(cx, ident.email):
+        if not _coach_connect_entitled(cx, ident.email):
             return jsonify({"error": "not_eligible"}), 403
         _cc.join_waitlist(cx, ident.email)
         return jsonify({"ok": True})
