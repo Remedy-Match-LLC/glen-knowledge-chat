@@ -250,7 +250,6 @@ from dashboard import practitioner_slugs as _ps_signup
 from dashboard import ash_ally
 from dashboard import client_360
 from dashboard import recommendation_events
-from dashboard import auth_limits as _auth_limits
 from dashboard import db
 from dashboard import dbwrite
 from dashboard.chat_limits import (client_ip, VelocityLimiter, LIMITS,
@@ -35166,9 +35165,6 @@ def client_login_request():
         return jsonify({"error": "not found"}), 404
     from dashboard import portal_identity as _pi
     email = ((request.get_json(silent=True) or {}).get("email") or "").strip().lower()
-    limited = _auth_rate_limited(email)   # BEFORE the lookup, for every address
-    if limited is not None:
-        return limited
     if "@" in email:
         with _db_lock, db.connect(LOG_DB) as cx:
             row = cx.execute("SELECT id, name FROM people WHERE email=?", (email,)).fetchone()
@@ -35192,71 +35188,6 @@ def client_login_request():
                     "message": "If that email has a portal, a sign-in link is on its way."})
 
 
-# Rate limiting for the public auth routes, added 2026-09-11.
-#
-# These routes answered as many times as anyone asked: 12 rapid POSTs to
-# /portal/login-request all returned 200 on 2026-09-11, no throttle, no backoff. The
-# per-account lockout in portal_auth only fires for an address that HAS credentials, so
-# it never fires during an enumeration sweep.
-#
-# Counts DISTINCT ADDRESSES per client, never request volume. A real customer sent 9
-# requests in one minute on 2026-09-10 and got in three minutes later; every one was for
-# her own address. A flat request count would have locked her out. See
-# dashboard/auth_limits for the full reasoning.
-_AUTH_LIMITER = _auth_limits.EmailProbeLimiter()
-
-
-def _auth_rate_limited(email):
-    """A 429 response when this client has probed too many distinct addresses, else None.
-
-    Call this BEFORE looking the address up, for EVERY address, or the limiter becomes
-    the oracle the routes refuse to be. It never reads the database, so it cannot
-    distinguish a real account from an invented one and neither can its timing.
-    """
-    key = _auth_limits.trusted_client_ip(
-        request.headers.get("X-Forwarded-For", ""), request.remote_addr or "")
-    allowed, retry_after, reason = _AUTH_LIMITER.note(key, email)
-    if allowed:
-        return None
-
-    # A REFUSAL MUST LEAVE A TRACE. Shipped without this on 2026-09-11 and the gap was
-    # the wrong way round: the limiter exists to avoid turning a real customer away, and
-    # a 429 returned before every print and every event write, so there was no way to
-    # discover that it had. The guard was unfalsifiable in the only direction that matters.
-    #
-    # Addresses are hashed, matching portal_auth._record_event, so a refusal is greppable
-    # and joinable without putting an address in a log anyone can read.
-    _h = hashlib.sha256
-    print(f"[auth-limit] refused reason={reason} path={request.path} "
-          f"key={_h(key.encode()).hexdigest()[:16]} "
-          f"email={_h((email or '').strip().lower().encode()).hexdigest()[:16]}", flush=True)
-
-    # One durable row per client per window. The log answers "did this happen", the row
-    # answers "to whom", by joining email_hash against people. A sweep produces thousands
-    # of refusals and must not be able to fill the events table through the guard itself.
-    if _AUTH_LIMITER.should_record(key):
-        # Its own line, so "was a row written for this client" is answerable from the log
-        # alone. Also what makes the once-per-window rule testable without a database:
-        # the event write below needs portal_auth, which needs argon2.
-        print("[auth-limit] recording this refusal", flush=True)
-        try:
-            from dashboard import portal_auth as _pa_ev
-            with _db_lock, db.connect(LOG_DB) as cx:
-                _pa_ev._record_event(cx, "rate_limited", email=email, ip=key,
-                                     user_agent=request.headers.get("User-Agent", ""),
-                                     metadata={"reason": reason, "path": request.path})
-        except Exception as e:
-            # Never let bookkeeping turn a refusal into a 500.
-            print(f"[auth-limit] event write failed: {e!r}", flush=True)
-
-    resp = jsonify({"ok": False,
-                    "message": "Too many sign-in attempts from this connection. "
-                               "Please wait a few minutes and try again."})
-    resp.status_code = 429
-    resp.headers["Retry-After"] = str(retry_after)
-    return resp
-
-
 @app.route("/portal/password-login", methods=["POST"])
 def client_password_login():
     if not _portal_password_login_enabled():
@@ -35266,9 +35197,6 @@ def client_password_login():
     body = request.get_json(silent=True) or request.form
     email = (body.get("email") or "").strip().lower()
     password = body.get("password") or ""
-    limited = _auth_rate_limited(email)   # BEFORE the lookup, for every address
-    if limited is not None:
-        return limited
     ip = (request.headers.get("X-Forwarded-For", "") or request.remote_addr or "").split(",")[0].strip()
     with _db_lock, db.connect(LOG_DB) as cx:
         pid = _pa.verify_password(cx, email, password, ip=ip,
@@ -35301,9 +35229,6 @@ def client_password_reset_request():
         return jsonify({"error": "not found"}), 404
     from dashboard import portal_auth as _pa
     email = ((request.get_json(silent=True) or {}).get("email") or "").strip().lower()
-    limited = _auth_rate_limited(email)   # BEFORE the lookup, for every address
-    if limited is not None:
-        return limited
     if "@" in email:
         with _db_lock, db.connect(LOG_DB) as cx:
             row = cx.execute("SELECT id,name FROM people WHERE lower(email)=?", (email,)).fetchone()
