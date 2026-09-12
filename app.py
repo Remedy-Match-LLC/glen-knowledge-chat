@@ -250,6 +250,7 @@ from dashboard import practitioner_slugs as _ps_signup
 from dashboard import ash_ally
 from dashboard import client_360
 from dashboard import recommendation_events
+from dashboard import auth_limits as _auth_limits
 from dashboard import client_address as _client_address
 from dashboard import response_timing as _response_timing
 from dashboard import db
@@ -35195,6 +35196,66 @@ def client_provider_link_confirm():
     return resp
 
 
+# Rate limiting for the public auth routes. SECOND ATTEMPT.
+#
+# The first shipped and was reverted the same morning because it did not bind: 35 distinct
+# addresses produced 2 refusals and 61 produced 0. It carried its own address helper that
+# read X-Forwarded-For from the RIGHT, which is the Cloudflare edge and varies by serving
+# location, so a sweep scattered across keys.
+#
+# The key now comes from _client_address, on a chain read from the raw header and verified
+# in production. Everything else is the design that survived review: count DISTINCT
+# ADDRESSES, never request volume, because a struggling customer hammers ONE address and a
+# sweep hits many. A real customer sent 9 requests in a minute for her own address and got
+# in three minutes later; any flat count under 10 would have locked her out.
+_AUTH_LIMITER = _auth_limits.EmailProbeLimiter()
+
+
+def _auth_rate_limited(email):
+    """A 429 when this caller has probed too many distinct addresses, else None.
+
+    Call BEFORE looking the address up, for EVERY address, or the limiter becomes the
+    oracle the routes refuse to be. It never reads the database, so neither its answer nor
+    its timing can distinguish a real account from an invented one.
+    """
+    key, _src, _cf = _client_address.client_address(
+        request.headers.get("X-Forwarded-For", ""), request.remote_addr or "",
+        request.headers.get("CF-Connecting-IP", ""))
+    allowed, retry_after, reason = _AUTH_LIMITER.note(key, email)
+    if allowed:
+        return None
+
+    # A refusal MUST leave a trace. The first attempt shipped without this, which made the
+    # guard unfalsifiable in the only direction that matters: it exists to avoid turning a
+    # real customer away, and nothing recorded when it did.
+    #
+    # The key hash is here for a second reason. If refusals carry DIFFERENT key hashes from
+    # one connection, the key is unstable and the guard is not binding. That is precisely
+    # what went unnoticed last time.
+    _h = hashlib.sha256
+    print(f"[auth-limit] refused reason={reason} path={request.path} "
+          f"key={_h(key.encode()).hexdigest()[:16]} "
+          f"email={_h((email or '').strip().lower().encode()).hexdigest()[:16]}", flush=True)
+
+    if _AUTH_LIMITER.should_record(key):
+        print("[auth-limit] recording this refusal", flush=True)
+        try:
+            from dashboard import portal_auth as _pa_ev
+            with _db_lock, db.connect(LOG_DB) as cx:
+                _pa_ev._record_event(cx, "rate_limited", email=email, ip=key,
+                                     user_agent=request.headers.get("User-Agent", ""),
+                                     metadata={"reason": reason, "path": request.path})
+        except Exception as e:
+            print(f"[auth-limit] event write failed: {e!r}", flush=True)   # never a 500
+
+    resp = jsonify({"ok": False,
+                    "message": "Too many sign-in attempts from this connection. "
+                               "Please wait a few minutes and try again."})
+    resp.status_code = 429
+    resp.headers["Retry-After"] = str(retry_after)
+    return resp
+
+
 def _equalise_response_time(started, path=""):
     """Wait so this response takes the same total time whatever the answer.
 
@@ -35222,6 +35283,9 @@ def client_login_request():
     from dashboard import portal_identity as _pi
     _t0 = time.monotonic()   # see _equalise_response_time below
     email = ((request.get_json(silent=True) or {}).get("email") or "").strip().lower()
+    limited = _auth_rate_limited(email)   # BEFORE the lookup, for every address
+    if limited is not None:
+        return limited
     if "@" in email:
         with _db_lock, db.connect(LOG_DB) as cx:
             row = cx.execute("SELECT id, name FROM people WHERE email=?", (email,)).fetchone()
@@ -35257,6 +35321,9 @@ def client_password_login():
     body = request.get_json(silent=True) or request.form
     email = (body.get("email") or "").strip().lower()
     password = body.get("password") or ""
+    limited = _auth_rate_limited(email)   # BEFORE the lookup, for every address
+    if limited is not None:
+        return limited
     # The FIRST element of X-Forwarded-For is whatever the CALLER wrote. Measured on
     # production 2026-09-11: a request claiming 203.0.113.77 was recorded as that. The
     # real chain is [client-written...], <client>, <Cloudflare edge>, so the client sits
@@ -35302,6 +35369,9 @@ def client_password_reset_request():
     from dashboard import portal_auth as _pa
     _t0 = time.monotonic()   # see _equalise_response_time below
     email = ((request.get_json(silent=True) or {}).get("email") or "").strip().lower()
+    limited = _auth_rate_limited(email)   # BEFORE the lookup, for every address
+    if limited is not None:
+        return limited
     if "@" in email:
         with _db_lock, db.connect(LOG_DB) as cx:
             row = cx.execute("SELECT id,name FROM people WHERE lower(email)=?", (email,)).fetchone()
