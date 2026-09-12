@@ -250,6 +250,7 @@ from dashboard import practitioner_slugs as _ps_signup
 from dashboard import ash_ally
 from dashboard import client_360
 from dashboard import recommendation_events
+from dashboard import client_address as _client_address
 from dashboard import db
 from dashboard import dbwrite
 from dashboard.chat_limits import (client_ip, VelocityLimiter, LIMITS,
@@ -35210,7 +35211,19 @@ def client_password_login():
     body = request.get_json(silent=True) or request.form
     email = (body.get("email") or "").strip().lower()
     password = body.get("password") or ""
-    ip = (request.headers.get("X-Forwarded-For", "") or request.remote_addr or "").split(",")[0].strip()
+    # The FIRST element of X-Forwarded-For is whatever the CALLER wrote. Measured on
+    # production 2026-09-11: a request claiming 203.0.113.77 was recorded as that. The
+    # real chain is [client-written...], <client>, <Cloudflare edge>, so the client sits
+    # second from the right. See dashboard/client_address.
+    ip, _ip_src, _cf_ok = _client_address.client_address(
+        request.headers.get("X-Forwarded-For", ""), request.remote_addr or "",
+        request.headers.get("CF-Connecting-IP", ""))
+    if _ip_src != "xff" or _cf_ok is False:
+        # Either the chain was not the expected shape, or Cloudflare's own header
+        # disagrees with the hop count. Both mean the assumption needs re-checking, and
+        # both are silent otherwise.
+        print(f"[client-ip] source={_ip_src} cf_agrees={_cf_ok} path={request.path}",
+              flush=True)
     with _db_lock, db.connect(LOG_DB) as cx:
         pid = _pa.verify_password(cx, email, password, ip=ip,
                                   user_agent=request.headers.get("User-Agent", ""))
@@ -35277,7 +35290,19 @@ def client_password_reset():
     ok, message = _pa.validate_password(password)
     if not ok:
         return jsonify({"ok": False, "message": message}), 400
-    ip = (request.headers.get("X-Forwarded-For", "") or request.remote_addr or "").split(",")[0].strip()
+    # The FIRST element of X-Forwarded-For is whatever the CALLER wrote. Measured on
+    # production 2026-09-11: a request claiming 203.0.113.77 was recorded as that. The
+    # real chain is [client-written...], <client>, <Cloudflare edge>, so the client sits
+    # second from the right. See dashboard/client_address.
+    ip, _ip_src, _cf_ok = _client_address.client_address(
+        request.headers.get("X-Forwarded-For", ""), request.remote_addr or "",
+        request.headers.get("CF-Connecting-IP", ""))
+    if _ip_src != "xff" or _cf_ok is False:
+        # Either the chain was not the expected shape, or Cloudflare's own header
+        # disagrees with the hop count. Both mean the assumption needs re-checking, and
+        # both are silent otherwise.
+        print(f"[client-ip] source={_ip_src} cf_agrees={_cf_ok} path={request.path}",
+              flush=True)
     with _db_lock, db.connect(LOG_DB) as cx:
         pid = _pa.consume_password_reset(cx, token, password, ip=ip,
                                          user_agent=request.headers.get("User-Agent", ""))
@@ -35705,7 +35730,19 @@ def healing_oasis_request():
     name = (body.get("name") or "").strip()[:120]
     if "@" not in email or "." not in email.split("@")[-1]:
         return jsonify({"ok": False, "error": "Please enter a valid email address."}), 400
-    ip = (request.headers.get("X-Forwarded-For", "") or request.remote_addr or "").split(",")[0].strip()
+    # The FIRST element of X-Forwarded-For is whatever the CALLER wrote. Measured on
+    # production 2026-09-11: a request claiming 203.0.113.77 was recorded as that. The
+    # real chain is [client-written...], <client>, <Cloudflare edge>, so the client sits
+    # second from the right. See dashboard/client_address.
+    ip, _ip_src, _cf_ok = _client_address.client_address(
+        request.headers.get("X-Forwarded-For", ""), request.remote_addr or "",
+        request.headers.get("CF-Connecting-IP", ""))
+    if _ip_src != "xff" or _cf_ok is False:
+        # Either the chain was not the expected shape, or Cloudflare's own header
+        # disagrees with the hop count. Both mean the assumption needs re-checking, and
+        # both are silent otherwise.
+        print(f"[client-ip] source={_ip_src} cf_agrees={_cf_ok} path={request.path}",
+              flush=True)
     generic = {"ok": True,
                "message": "Check your email for your link."}
 
