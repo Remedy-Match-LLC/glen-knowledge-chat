@@ -3982,10 +3982,14 @@ def begin_ascend_tier(slug):
 
 @app.route("/begin/ascend-tier")
 def begin_ascend_tier_data():
-    tier = begin_funnel.TIER_CATALOG.get((request.args.get("slug") or "").strip())
+    slug = (request.args.get("slug") or "").strip()
+    tier = begin_funnel.TIER_CATALOG.get(slug)
     if not tier:
         return jsonify({"error": "unknown tier"}), 404
-    return jsonify(tier)
+    # The page body, added 2026-09-12. Merged rather than nested so the template
+    # reads one flat object, and served as {} when a rung has no copy yet, so a
+    # new catalog entry renders the old short card instead of breaking.
+    return jsonify({**tier, "page": begin_funnel.TIER_PAGES.get(slug, {})})
 
 
 @app.route("/program-guides")
