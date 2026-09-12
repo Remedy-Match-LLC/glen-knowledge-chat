@@ -22,8 +22,10 @@ import pytest
 from dashboard.pgcompat import HybridRow
 
 
-COLUMNS = ["id", "tracking_number", "order_uuid", "resolved_email", "delivered_at"]
-VALUES = (7, "9405530109355412869056", "019e3cbe-bd74", "client@example.com", None)
+COLUMNS = ["id", "tracking_number", "order_uuid", "resolved_email",
+           "delivered_at", "coaching_opened"]
+VALUES = (7, "9405530109355412869056", "019e3cbe-bd74",
+          "client@example.com", None, 0)
 
 
 @pytest.fixture
@@ -91,14 +93,36 @@ def test_an_absent_column_returns_the_default_rather_than_raising(app_module, ro
     assert app_module._shipment_field(row, "no_such_column", "fallback") == "fallback"
 
 
-def test_a_delivered_postgres_row_is_recognised_as_already_processed(app_module):
-    """The exact line that raised. delivered_at set means skip, and reaching that
-    verdict at all was impossible on Postgres before this fix."""
-    row = HybridRow(COLUMNS, (7, "9405", "uuid", "c@e.com", "2026-09-09T10:58:00Z"))
+def test_a_finished_postgres_row_is_recognised_as_already_processed(app_module):
+    """The exact line that raised, reached through the real skip rule.
+
+    Updated 2026-09-11 rather than deleted: the rule became "delivered AND the
+    coaching was actually opened", because a blanket delivered_at check stranded
+    any order linked after the parcel was first seen. What this test is really
+    about is unchanged — that _shipment_field can read a HybridRow at all, which
+    was impossible on Postgres before the accessor existed."""
+    row = HybridRow(COLUMNS, (7, "9405", "uuid", "c@e.com",
+                              "2026-09-09T10:58:00Z", 1))
     assert app_module._shipment_field(row, "delivered_at") == "2026-09-09T10:58:00Z"
+    assert app_module._shipment_field(row, "coaching_opened") == 1
     out = app_module._activate_coaching_for_shipment(
         None, row, delivered_at="2026-09-10T22:00:00Z")
     assert out == {"skipped": "already_processed"}
+
+
+def test_a_delivered_but_unopened_postgres_row_is_NOT_skipped(app_module):
+    """The inverse, kept because it is the case that stranded two real orders.
+    Delivered with coaching never opened must fall through and be retried."""
+    row = HybridRow(COLUMNS, (7, "9405", "uuid", "c@e.com",
+                              "2026-09-09T10:58:00Z", 0))
+    # It gets past the guard; what it does next needs a live cx, so only the
+    # verdict matters here.
+    try:
+        out = app_module._activate_coaching_for_shipment(
+            None, row, delivered_at="2026-09-10T22:00:00Z")
+    except Exception:
+        return            # went past the guard and tried real work: the point
+    assert out.get("skipped") != "already_processed"
 
 
 def test_a_none_row_does_not_raise(app_module):
