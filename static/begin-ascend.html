@@ -44,6 +44,7 @@
   .price{ display:inline-block; margin-top:10px; font-family:"Raleway",sans-serif; font-weight:600; font-size:12.5px;
     letter-spacing:0.04em; color:var(--gold); border:1px solid rgba(212,168,67,0.4); border-radius:999px; padding:3px 12px; }
   .price.free{ color:var(--green); border-color:rgba(61,138,82,0.5); }
+  .hero-price s{ color:#7f8f84; font-weight:500; }
   footer{ margin-top:52px; padding:28px 24px 44px; text-align:center; border-top:1px solid rgba(33,71,45,0.5); }
   .foot-note{ font-size:12.5px; color:var(--muted); opacity:0.7; max-width:540px; margin:0 auto; line-height:1.7; }
   .back{ display:inline-block; margin-top:18px; color:var(--muted); font-size:13px; }
@@ -224,7 +225,13 @@
     hero.textContent = "";
     if (!rec) { hero.hidden = true; return; }
     var title = document.createElement("div"); title.className = "hero-title"; title.textContent = rec.title || "";
-    var price = document.createElement("div"); price.className = "hero-price"; price.textContent = (rec.price || "") + (rec.value ? " - " + rec.value : "");
+    var price = document.createElement("div"); price.className = "hero-price";
+    if (rec.was) {
+      var w = document.createElement("s"); w.textContent = rec.was; price.appendChild(w);
+      var n = document.createElement("b"); n.textContent = " " + (rec.price || ""); price.appendChild(n);
+    } else {
+      price.textContent = (rec.price || "") + (rec.value ? " - " + rec.value : "");
+    }
     var incl = document.createElement("p"); incl.className = "hero-incl"; incl.textContent = rec.included || "";
     var btn = document.createElement("button"); btn.type = "button"; btn.textContent = rec.cta_label || "Book your consultation";
     btn.addEventListener("click", function () { inquire(rec.slug, goal, btn); });

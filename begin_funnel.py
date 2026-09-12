@@ -1151,7 +1151,12 @@ TIER_CATALOG = {
         "cta_href": "/membership"},
     "biofield-analysis": {"slug": "biofield-analysis", "n": 4,
         "title": "Causal Biofield Analysis + Program Design + Consultation",
-        "price": "$300", "value": "$1,000 value",
+        # `was` is the struck comparison price, added 2026-09-12 on Glen's pick.
+        # It is deliberately NOT the `value` field: every other rung uses that for
+        # a descriptor ("cancel anytime", "6 months", "1 week") and striking those
+        # through would be nonsense. `price_sub` is the line beneath the price.
+        "price": "$300", "was": "$1,000", "value": "",
+        "price_sub": "$200 for active members \u00b7 includes your first month",
         "included": "Your ASH Causal Biofield Analysis, a Functional Formulations™ program designed for you, and a consultation.",
         "cta_label": "Book your consultation"},
     "certification": {"slug": "certification", "n": 5,
@@ -1202,3 +1207,94 @@ def recommend_ascend(goal, reached=()):
         if slug not in reached:
             return slug
     return track[-1]
+
+
+# ---------------------------------------------------------------------------
+# Piece 4b -- the focused page body for each rung, added 2026-09-12.
+#
+# The per-rung pages already existed at /begin/ascend/<slug> but rendered only
+# the catalog row: a title, a price and one sentence, about 600 characters. Glen
+# asked for each item to have a real page so links can point straight at it.
+#
+# Copy adapted from the tier video scripts in the vault at
+# "marketing/04 Copy/funnel-videos/". Those are spoken scripts and carry outcome
+# claims about other people's conditions; this is written copy for a public page,
+# so it keeps Dr. Glen's own documented history, which is biography, and leaves
+# third-party outcome claims out. Nothing here diagnoses or promises a result.
+# ---------------------------------------------------------------------------
+TIER_PAGES = {
+    "membership": {
+        "lede": 'Free membership gives you a real start: your scan, one remedy revealed, the education library and your journey map. This is the moment you decide you are doing this properly and you want the whole picture, with a guide in the room.',
+        "steps": [
+            ('Your full Remedy Match report', 'Your voice scan read through Dr. Glen\u2019s clinical knowledge base, mapping your stress-pattern layers, the remedies matched to them, and how they change over time. This is the automated report, not a consultation.'),
+            ('Ingredient and remedy research', 'The research summary, the traditional use, the related forms, and how each one connects to your formulations. Conviction is what makes anyone consistent.'),
+            ('Live weekly group coaching', 'Every Wednesday at 2:00 PM Hawaii time, with Dr. Glen. You are not guessing alone, which is the difference between starting and sustaining.'),
+            ('Member pricing, and $200 on a Causal Biofield Analysis', 'Member pricing on every formulation, and the personal analysis at $200 instead of $300.'),
+            ('Your personal health dashboard', 'Your context, your path and Dr. Glen\u2019s replies, held in one place between sessions.'),
+        ],
+        "close": 'Ninety-nine dollars for a month, or $990 for a full year, which is the best value of the three. A household plan covers everyone connected to your household, each with their own private profile. Cancel from your portal. Stripe shows the exact price and renewal terms before you pay.',
+    },
+    "biofield-analysis": {
+        "lede": 'You have read enough to know the body has its own intelligence, and that treating a symptom often leaves the cause quietly running underneath. What you do not have yet is a clear way to hear what your body is asking for right now.',
+        "steps": [
+            ('The Causal Biofield Analysis', 'Dr. Glen personally reviews your patterns at a deeper causal level. This is the paid analysis with him. It is not the free ten second voice scan, and it is not the automated Remedy Match report that comes with membership.'),
+            ('A program designed for you', 'A Functional Formulations program built from what your own analysis showed, rather than a stack assembled for somebody else.'),
+            ('A consultation with Dr. Glen', 'He walks you through what the analysis found, answers your questions, and makes sure you leave knowing what to do first.'),
+        ],
+        "close": 'Valued at $1,000. Three hundred if you are not yet a member, which includes your first month of individual membership, and two hundred if you already are. It is the first step where Dr. Glen looks at your own case himself, and it starts from your body\u2019s own signals rather than from general information.',
+        # Glen's own words, 2026-09-12, on why the rate is where it is and why it
+        # will move. Kept as a separate block so it reads as a note from him rather
+        # than as part of the offer, and so it can be lifted out in one edit when
+        # the platform is finished and the rate goes back.
+        "note": 'A thousand dollars has been the full investment for this, and it is well below a functional medicine lab workup. You get your program started in days, not weeks. I expect it to be a thousand again. Once the new platform is finished we are scaling deliberately, so we can reach more people, and my time shifts back to educating the public while we run serial production launches of the formulations and train practitioners in the system. That is the point where the rate has to go back. For a short while, and while I am still building, we can keep the investment down.',
+    },
+    "certification": {
+        "lede": 'If you are a practitioner, a coach or a serious student, you already know the body has innate intelligence. The question is how to read its signals well enough to help. That is what this training is built around.',
+        "steps": [
+            ('Acknowledge', 'Some cases need more leverage than a single body system can give. You learn a framework that holds the body, the brain and whole-system factors together.'),
+            ('Assess', 'Establish real baselines and find the actual causal stresses, rather than managing symptoms as they surface.'),
+            ('Activate', 'Apply the foundational protocols, and teach the people you serve to take part in their own healing.'),
+            ('Accelerate', 'Targeted modules for specific challenges, so you can meet each person where they actually are.'),
+            ('Adapt', 'Fold the method into the work you already do, track what happens, and build a practice on documented outcomes.')
+        ],
+        "close": 'Dr. Glen was told in training that he would be blind by fifty. He spent eight years finding the root cause instead. This is the method that came out of that, taught in full.',
+    },
+    "one-to-one": {
+        "lede": 'You have tried the programs and followed the protocols, and the deepest layer still feels untouched. This is six months of working with Dr. Glen directly, not through a portal of recorded modules.',
+        "steps": [
+            ('You work together, live', 'Six months of one to one sessions. Each one reads what your terrain is doing now, and adjusts from there.'),
+            ('Your sequence, not a template', 'No two people arrive at the same next step. The path reveals itself as you walk it, and your plan moves with you.'),
+            ('Certification included', 'You leave with the professional training as well as the personal experience, so you can carry the method to your own clients.')
+        ],
+        "close": 'Book a consultation first. It is a conversation about where you are, not a pitch, and the two of you decide together whether this is your next step.',
+    },
+    "healing-oasis-tools": {
+        "lede": 'The body heals faster when its environment gives it the right resources, material and energetic. Botanicals and nutrition are half of it. The other half is having the tools on hand.',
+        "steps": [
+            ('The tools, installed', 'Healing water, selected frequencies of light, and other supportive waveforms, set up to work together rather than as separate gadgets.'),
+            ('Full training on them', 'You learn what each one is for, when to reach for it, and how they combine.'),
+            ('Certification alongside', 'The Accelerated Self Healing method itself, so the tools sit inside a framework rather than standing alone.')
+        ],
+        "close": "This is for a practitioner building a premium practice, or someone building a dedicated space at home. Dr. Glen's work on the body's energy field was cited by James Oschman in Energy Medicine: The Scientific Basis.",
+    },
+    "hawaii-immersion": {
+        "lede": "One week on Hawai'i Island, where the trade winds come through the rainforest and the air is about as clean as it gets. Phones off. For the first time in a long time, your nervous system remembers what quiet feels like.",
+        "steps": [
+            ('A real technology detox', 'Electromagnetic noise, artificial urgency and digital overstimulation removed, deliberately, for a week. Not a weekend that does not quite stick.'),
+            ('The Healing Oasis package', 'The tools, in the environment they were designed for.'),
+            ('Training and certification', 'The method taught on site, while your body has the conditions to use it.')
+        ],
+        "close": 'Most of us have spent years adding more. More testing, more information, more treatments. A body held in chronic stress is not waiting for more input. This is where Dr. Glen went to restore his own health after he was disabled.',
+    },
+    "consultant-package": {
+        "lede": 'The bottleneck for most practitioners is not knowledge or commitment. It is the absence of a complete system that handles every layer of the work, so the practice gets assembled from a tool here and a methodology there.',
+        "steps": [
+            ('The full methodology', 'Accelerated Self Healing, taught and installed, not handed over as a course.'),
+            ('The clinical tools and the analysis technology', 'Biofield Analysis and the Healing Oasis tools, in place and working.'),
+            ('Functional Formulations', 'The formulation line your clients will actually take.'),
+            ('Certification for you and your team', 'So the method is carried by the practice, not by one person.'),
+            ('The software', 'The system that runs it, installed into your business.')
+        ],
+        "close": 'Conventional training maps how lost health sorts into diagnostic categories. What it leaves out is one coherent picture connecting the terrain, the biofield, the epigenetic layer and how a given person actually responds. That is what this is built to deliver.',
+    },
+}
