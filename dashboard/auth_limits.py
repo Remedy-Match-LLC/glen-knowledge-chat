@@ -107,6 +107,7 @@ class EmailProbeLimiter:
     def __init__(self, clock=time.time):
         self._clock = clock
         self._seen = {}          # key -> list[(timestamp, email_hash)]
+        self._recorded = {}      # key -> timestamp of the refusal we wrote a row for
         self._lock = threading.Lock()
 
     @staticmethod
@@ -142,6 +143,25 @@ class EmailProbeLimiter:
             self._seen[key] = hits
             return (True, 0, "")
 
+    def should_record(self, key) -> bool:
+        """True the FIRST time this key is refused in a window, False after.
+
+        A refusal has to leave a trace or the limiter is unfalsifiable: it was built
+        entirely around not turning a real customer away, and without a record there is no
+        way to find out that it did. The whole point of shipping it was Judy getting in.
+
+        But a sweep generates thousands of refusals, and writing a row for each would let
+        an attacker fill the events table through the very guard meant to stop them. One
+        row per client per window answers "was anyone refused" without that.
+        """
+        now = self._clock()
+        with self._lock:
+            last = self._recorded.get(key)
+            if last is not None and now - last < WINDOW_SECONDS:
+                return False
+            self._recorded[key] = now
+            return True
+
     def prune(self):
         """Drop expired keys so a long-lived process does not grow without bound."""
         now = self._clock()
@@ -152,3 +172,6 @@ class EmailProbeLimiter:
                     self._seen[key] = hits
                 else:
                     del self._seen[key]
+            for key, t in list(self._recorded.items()):
+                if now - t >= WINDOW_SECONDS:
+                    del self._recorded[key]

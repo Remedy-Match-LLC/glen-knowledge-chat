@@ -136,3 +136,97 @@ def test_a_429_says_nothing_about_whether_the_account_exists(client):
         assert r.status_code == 429
         seen.add(r.get_json()["message"])
     assert len(seen) == 1, f"the 429 message differs by account existence: {seen}"
+
+
+# ── a refusal must be discoverable afterwards ─────────────────────────────────
+def test_a_refusal_is_logged_without_the_address_in_the_clear(client, capsys, monkeypatch):
+    """Added 2026-09-11 after shipping without it. A 429 returned before every print and
+    every event write, so a customer refused by this guard left no trace anywhere and the
+    guard could not be shown to be safe."""
+    import hashlib
+    monkeypatch.setattr(appmod, "_AUTH_LIMITER", auth_limits.EmailProbeLimiter())
+    for i in range(auth_limits.MAX_DISTINCT_EMAILS):
+        _post(client, "/portal/login-request", f"filler{i}@example.invalid", ip="3.3.3.3")
+    capsys.readouterr()
+    victim = "a-real-looking-person@example.invalid"
+    r = _post(client, "/portal/login-request", victim, ip="3.3.3.3")
+    assert r.status_code == 429
+    out = capsys.readouterr().out
+    assert "[auth-limit] refused" in out, "a refusal left no trace at all"
+    assert hashlib.sha256(victim.encode()).hexdigest()[:16] in out, "not joinable to a person"
+    assert victim not in out, "the address reached the log in the clear"
+    assert "3.3.3.3" not in out, "the client address reached the log in the clear"
+
+
+def test_a_failed_event_write_does_not_turn_a_refusal_into_a_500(client, monkeypatch):
+    """Bookkeeping must never break the guard it is bookkeeping for."""
+    monkeypatch.setattr(appmod, "_AUTH_LIMITER", auth_limits.EmailProbeLimiter())
+
+    def boom(*a, **k):
+        raise RuntimeError("database is down")
+
+    # Fill the window FIRST, with a working database: those requests do a real lookup and
+    # patching db.connect for them would break the setup rather than the path under test.
+    for i in range(auth_limits.MAX_DISTINCT_EMAILS):
+        _post(client, "/portal/login-request", f"filler{i}@example.invalid", ip="6.6.6.6")
+    monkeypatch.setattr(appmod.db, "connect", boom)
+    r = _post(client, "/portal/login-request", "next@example.invalid", ip="6.6.6.6")
+    assert r.status_code == 429
+    assert r.headers.get("Retry-After")
+
+
+def test_the_logged_client_key_is_the_trusted_hop_not_the_forged_one(client, capsys, monkeypatch):
+    """If the log recorded the forged element, the record would be as useless as the
+    limiter would have been, and would additionally poison the audit trail."""
+    import hashlib
+    monkeypatch.setattr(appmod, "_AUTH_LIMITER", auth_limits.EmailProbeLimiter())
+    xff = "203.0.113.99, 8.8.4.4"
+    for i in range(auth_limits.MAX_DISTINCT_EMAILS):
+        _post(client, "/portal/login-request", f"filler{i}@example.invalid", ip=xff)
+    capsys.readouterr()
+    _post(client, "/portal/login-request", "next@example.invalid", ip=xff)
+    out = capsys.readouterr().out
+    assert hashlib.sha256(b"8.8.4.4").hexdigest()[:16] in out
+    assert hashlib.sha256(b"203.0.113.99").hexdigest()[:16] not in out
+
+
+def _recorded_count(capsys):
+    """How many refusals the route decided to write a row for, read from its own log.
+
+    Counting the log line rather than the database write is deliberate: the write needs
+    portal_auth, which needs argon2, which a system Python does not have. The DECISION is
+    what these tests are about, and it is observable either way."""
+    return capsys.readouterr().out.count("[auth-limit] recording this refusal")
+
+
+def test_a_sweep_writes_ONE_event_row_not_thousands(client, monkeypatch, capsys):
+    """Found by mutation testing, twice over. `should_record` was unit-tested directly and
+    no route test checked that the ROUTE actually calls it, so replacing the call with
+    `if True:` passed everything. Unit-testing a helper does not test its caller.
+
+    It matters: a sweep produces thousands of refusals, and a row for each would let an
+    attacker fill portal_auth_events through the guard built to stop them.
+    """
+    monkeypatch.setattr(appmod, "_AUTH_LIMITER", auth_limits.EmailProbeLimiter())
+    for i in range(auth_limits.MAX_DISTINCT_EMAILS):
+        _post(client, "/portal/login-request", f"filler{i}@example.invalid", ip="4.5.6.7")
+    capsys.readouterr()                           # discard the setup noise
+    for i in range(30):
+        r = _post(client, "/portal/login-request", f"refused{i}@example.invalid", ip="4.5.6.7")
+        assert r.status_code == 429
+    n = _recorded_count(capsys)
+    assert n == 1, f"30 refusals recorded {n} rows, expected 1"
+
+
+def test_two_different_clients_are_each_recorded_once(client, monkeypatch, capsys):
+    """One sweeping client must not mute the record of a second one."""
+    monkeypatch.setattr(appmod, "_AUTH_LIMITER", auth_limits.EmailProbeLimiter())
+    for ip in ("1.1.1.1", "2.2.2.2"):
+        for i in range(auth_limits.MAX_DISTINCT_EMAILS):
+            _post(client, "/portal/login-request", f"x{i}@example.invalid", ip=ip)
+    capsys.readouterr()
+    for ip in ("1.1.1.1", "2.2.2.2"):
+        for i in range(5):
+            _post(client, "/portal/login-request", f"y{i}@example.invalid", ip=ip)
+    n = _recorded_count(capsys)
+    assert n == 2, f"expected one row per client, got {n}"
