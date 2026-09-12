@@ -251,6 +251,7 @@ from dashboard import ash_ally
 from dashboard import client_360
 from dashboard import recommendation_events
 from dashboard import client_address as _client_address
+from dashboard import response_timing as _response_timing
 from dashboard import db
 from dashboard import dbwrite
 from dashboard.chat_limits import (client_ip, VelocityLimiter, LIMITS,
@@ -35194,11 +35195,32 @@ def client_provider_link_confirm():
     return resp
 
 
+def _equalise_response_time(started, path=""):
+    """Wait so this response takes the same total time whatever the answer.
+
+    The routes that call this answer identically for a known and an unknown address, and
+    used to differ by about 0.75s because only one of them writes a token and sends mail.
+
+    An overrun is REPORTED rather than silently truncated. One is noise. A steady stream
+    means the target has fallen below the real found branch and the padding has stopped
+    equalising anything, which is invisible otherwise.
+    """
+    elapsed = time.monotonic() - started
+    if _response_timing.overran(elapsed):
+        print(f"[resp-timing] overran target path={path} elapsed={elapsed:.3f}s "
+              f"target={_response_timing.TARGET_SECONDS}s", flush=True)
+        return
+    delay = _response_timing.remaining(elapsed)
+    if delay > 0:
+        time.sleep(delay)   # gevent worker: yields rather than holding the worker
+
+
 @app.route("/portal/login-request", methods=["POST"])
 def client_login_request():
     if not _client_login_enabled():
         return jsonify({"error": "not found"}), 404
     from dashboard import portal_identity as _pi
+    _t0 = time.monotonic()   # see _equalise_response_time below
     email = ((request.get_json(silent=True) or {}).get("email") or "").strip().lower()
     if "@" in email:
         with _db_lock, db.connect(LOG_DB) as cx:
@@ -35218,7 +35240,10 @@ def client_login_request():
                     print(f"[client-login] email failed: {e!r}", flush=True)
             else:
                 print("[client-login] requested account=missing", flush=True)
-    # No account enumeration: same response whether or not the email exists.
+    # No account enumeration: same response whether or not the email exists, and the same
+    # TIME. Without the pad, a found address takes ~0.9s (token write plus mail send) and
+    # an unknown one ~0.16s, which sorts customers from strangers with a stopwatch.
+    _equalise_response_time(_t0, request.path)
     return jsonify({"ok": True,
                     "message": "If that email has a portal, a sign-in link is on its way."})
 
@@ -35275,6 +35300,7 @@ def client_password_reset_request():
     if not _portal_password_login_enabled():
         return jsonify({"error": "not found"}), 404
     from dashboard import portal_auth as _pa
+    _t0 = time.monotonic()   # see _equalise_response_time below
     email = ((request.get_json(silent=True) or {}).get("email") or "").strip().lower()
     if "@" in email:
         with _db_lock, db.connect(LOG_DB) as cx:
@@ -35289,6 +35315,9 @@ def client_password_reset_request():
                         f"This link expires in {_format_ttl(_pa.RESET_TTL_MIN)}. If you did not request it, ignore this email.")
                 except Exception as e:
                     print(f"[client-password-reset] email failed: {e!r}", flush=True)
+    # Same shape as the sign-in route above: a found address mints a token and sends mail,
+    # an unknown one returns after a single lookup. Pad so the clock says nothing.
+    _equalise_response_time(_t0, request.path)
     return jsonify({"ok": True,
                     "message": "If that email has a portal, password instructions are on the way."})
 
