@@ -42744,16 +42744,11 @@ def add_person_note(person_id):
         if key != CONSOLE_SECRET and not _owner_token_ok(key):
             return jsonify({"error":"Unauthorized"}), 401
     note = (request.get_json(force=True) or {}).get("note","").strip()
-    ts = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M")
+    from dashboard.person_notes import append_note
     with _db_lock, db.connect(LOG_DB) as cx:
-        cx.execute("""
-            UPDATE people SET notes = CASE
-              WHEN notes='' THEN ?
-              ELSE notes || char(10) || ?
-            END WHERE id=?
-        """, (f"[{ts}] {note}", f"[{ts}] {note}", person_id))
+        line = append_note(cx, person_id, note)
         cx.commit()
-    return jsonify({"ok": True})
+    return jsonify({"ok": True, "note": line})
 
 
 @app.route("/api/people/tags", methods=["GET"])
