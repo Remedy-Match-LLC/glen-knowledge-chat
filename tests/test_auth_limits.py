@@ -231,3 +231,34 @@ def test_the_customer_gets_through_even_from_a_saturated_shared_address():
     for i in range(9):
         allowed, _, _ = lim.note("1.2.3.4", JUDY)
         assert allowed, f"refused her on retry {i + 1} from a saturated shared address"
+
+
+# ── a refusal must leave a trace, once ────────────────────────────────────────
+def test_a_refusal_is_recordable_once_per_window():
+    """The limiter was shipped unfalsifiable in the one direction that matters: it exists
+    to avoid turning a real customer away, and nothing recorded when it did."""
+    clock = Clock()
+    lim = EmailProbeLimiter(clock)
+    assert lim.should_record("1.2.3.4") is True
+    for _ in range(50):
+        assert lim.should_record("1.2.3.4") is False, "a sweep must not write 50 rows"
+    clock.advance(WINDOW_SECONDS + 1)
+    assert lim.should_record("1.2.3.4") is True, "a new window must record again"
+
+
+def test_each_client_is_recorded_separately():
+    lim = EmailProbeLimiter(Clock())
+    assert lim.should_record("1.2.3.4") is True
+    assert lim.should_record("5.6.7.8") is True, "one client must not mute another"
+
+
+def test_pruning_forgets_recorded_refusals_too():
+    """Otherwise the anti-amplification map is itself an unbounded leak."""
+    clock = Clock()
+    lim = EmailProbeLimiter(clock)
+    lim.note("1.2.3.4", "a@example.com")
+    lim.should_record("1.2.3.4")
+    clock.advance(WINDOW_SECONDS + 1)
+    lim.prune()
+    assert lim._recorded == {}
+    assert lim._seen == {}

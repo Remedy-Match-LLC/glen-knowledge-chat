@@ -35215,9 +35215,40 @@ def _auth_rate_limited(email):
     """
     key = _auth_limits.trusted_client_ip(
         request.headers.get("X-Forwarded-For", ""), request.remote_addr or "")
-    allowed, retry_after, _reason = _AUTH_LIMITER.note(key, email)
+    allowed, retry_after, reason = _AUTH_LIMITER.note(key, email)
     if allowed:
         return None
+
+    # A REFUSAL MUST LEAVE A TRACE. Shipped without this on 2026-09-11 and the gap was
+    # the wrong way round: the limiter exists to avoid turning a real customer away, and
+    # a 429 returned before every print and every event write, so there was no way to
+    # discover that it had. The guard was unfalsifiable in the only direction that matters.
+    #
+    # Addresses are hashed, matching portal_auth._record_event, so a refusal is greppable
+    # and joinable without putting an address in a log anyone can read.
+    _h = hashlib.sha256
+    print(f"[auth-limit] refused reason={reason} path={request.path} "
+          f"key={_h(key.encode()).hexdigest()[:16]} "
+          f"email={_h((email or '').strip().lower().encode()).hexdigest()[:16]}", flush=True)
+
+    # One durable row per client per window. The log answers "did this happen", the row
+    # answers "to whom", by joining email_hash against people. A sweep produces thousands
+    # of refusals and must not be able to fill the events table through the guard itself.
+    if _AUTH_LIMITER.should_record(key):
+        # Its own line, so "was a row written for this client" is answerable from the log
+        # alone. Also what makes the once-per-window rule testable without a database:
+        # the event write below needs portal_auth, which needs argon2.
+        print("[auth-limit] recording this refusal", flush=True)
+        try:
+            from dashboard import portal_auth as _pa_ev
+            with _db_lock, db.connect(LOG_DB) as cx:
+                _pa_ev._record_event(cx, "rate_limited", email=email, ip=key,
+                                     user_agent=request.headers.get("User-Agent", ""),
+                                     metadata={"reason": reason, "path": request.path})
+        except Exception as e:
+            # Never let bookkeeping turn a refusal into a 500.
+            print(f"[auth-limit] event write failed: {e!r}", flush=True)
+
     resp = jsonify({"ok": False,
                     "message": "Too many sign-in attempts from this connection. "
                                "Please wait a few minutes and try again."})
