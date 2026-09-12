@@ -16058,8 +16058,21 @@ def _activate_coaching_for_shipment(cx, shipment, *, delivered_at):
     member orders, so each client gets their own window (single shipments = 1
     member = unchanged behavior). open_window is no-stacking/one-per-order, so this
     never double-opens. Returns {ok, opened, members:[per-order result]}."""
+    # Skip only when the member work was actually DONE, not merely when the parcel
+    # was seen. A blanket delivered_at check strands any order linked AFTER the
+    # first delivery signal: on 2026-09-11 orders 146 and 170 were marked delivered
+    # while unlinked, so the shipment carried delivered_at with no members resolved,
+    # and every later sweep returned already_processed. Both sat at 'shipped'
+    # forever with no coaching month, even though USPS had reported them delivered.
+    #
+    # Falling through is safe because every write below is independently idempotent:
+    # mark_shipment_delivered only sets a NULL, set_order_status writes the same
+    # value, open_window is one-per-order and no-stacking, and the Biofield grant
+    # claims a row per biofield order. The early return was belt-and-braces on top
+    # of those, and the braces were cutting off the work.
     already = _shipment_field(shipment, "delivered_at")
-    if already:
+    opened_before = _shipment_field(shipment, "coaching_opened")
+    if already and opened_before:
         return {"skipped": "already_processed"}
     sid = _shipment_field(shipment, "id")
     uuid = _shipment_field(shipment, "order_uuid")
