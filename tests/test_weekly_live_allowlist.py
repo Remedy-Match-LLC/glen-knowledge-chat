@@ -191,6 +191,54 @@ def test_dry_run_reports_list_counts_and_sends_nothing(monkeypatch, tmp_path, ca
     assert sent == []
 
 
+def test_family_plan_members_without_a_membership_row_reach_the_paid_set(monkeypatch, tmp_path):
+    # 2026-09-13: 2 of 3 family-plan members had no memberships row, so the sender
+    # never checked them and would have told paying members Group Coaching was an
+    # upgrade. Seeded through the modules' own writers, not a hand-typed schema.
+    import sys
+    import types
+    from contextlib import contextmanager
+    from dashboard import db, family_plan, household
+
+    weekly = _weekly()
+    path = str(tmp_path / "chat_log.db")
+    with db.connect(path) as cx:
+        cx.execute("CREATE TABLE memberships (email TEXT)")
+        cx.execute("INSERT INTO memberships VALUES ('Row.Member@example.com')")
+        family_plan.init_family_plan_table(cx)
+        household.init_household_tables(cx)
+        family_plan.activate(cx, "holder@example.com", next_charge_at=None, source="comp")
+        household.add_member(cx, "holder@example.com", "covered@example.com")
+        family_plan.activate(cx, "lapsed@example.com", next_charge_at=None, source="comp")
+        family_plan.set_status(cx, "lapsed@example.com", "canceled")
+        cx.commit()
+    monkeypatch.setattr(weekly.appmod, "LOG_DB", path)
+    checked = []
+    monkeypatch.setattr(weekly.appmod, "_is_paid_member",
+                        lambda email: checked.append(email) or True)
+
+    class _Cursor:
+        def execute(self, *args):
+            pass
+
+        def fetchall(self):
+            return []
+
+    @contextmanager
+    def fake_cursor():
+        yield _Cursor()
+
+    monkeypatch.setitem(sys.modules, "db_supabase",
+                        types.SimpleNamespace(supabase_cursor=fake_cursor))
+
+    paid, certification = weekly._authoritative_access_sets()
+
+    assert {"row.member@example.com", "holder@example.com",
+            "covered@example.com"} <= paid
+    assert "lapsed@example.com" not in checked
+    assert certification == set()
+
+
 def test_cli_prints_the_argument_and_no_address(monkeypatch, tmp_path, capsys):
     monkeypatch.setenv("CONSOLE_SECRET", KEY)
     listing = tmp_path / "mailable.txt"

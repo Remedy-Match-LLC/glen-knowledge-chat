@@ -134,9 +134,26 @@ def _dnd_email(contact):
 
 def _authoritative_access_sets():
     with appmod.db.connect(appmod.LOG_DB) as cx:
-        candidates = [row[0] for row in cx.execute(
+        candidates = {row[0] for row in cx.execute(
             "SELECT DISTINCT lower(email) FROM memberships "
-            "WHERE email IS NOT NULL AND trim(email)<>''").fetchall()]
+            "WHERE email IS NOT NULL AND trim(email)<>''").fetchall()}
+        # A family plan grants membership with no memberships row, so its holder
+        # and covered members never reached _is_paid_member and were told Group
+        # Coaching was an upgrade. Measured 2026-09-13: 2 of 3 family-plan
+        # members were missing. Read them the way the members board does.
+        try:
+            from dashboard import family_plan as _fp
+            from dashboard import household as _hh
+            _fp.init_family_plan_table(cx)
+            _hh.init_household_tables(cx)
+            for plan in _fp.list_active(cx):
+                holder = plan.get("caregiver_email") or ""
+                candidates.add(holder)
+                candidates.update(m.get("email") or "" for m in _hh.members_for(cx, holder))
+        except Exception as exc:
+            raise RuntimeError(f"family plan roster unavailable: {exc}") from exc
+    candidates = {_email(email) for email in candidates}
+    candidates.discard("")
     paid = {email for email in candidates if appmod._is_paid_member(email)}
     paid.add("drglenswartwout@gmail.com")
     certification = set()
