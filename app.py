@@ -20150,6 +20150,94 @@ def console_biofield_reveals_page():
     return resp
 
 
+@app.route("/api/console/membership-lookup", methods=["GET"])
+def api_console_membership_lookup():
+    """OWNER, read-only: why does the pricing gate think this email is a member?
+
+    The members board and the pricing gate read the same entitlement and have
+    disagreed in production. On 2026-09-12 two emails priced as full members while
+    appearing in no bucket on /api/console/members and nowhere on /admin/membership
+    (which is a form, not a list, so checking it proved nothing). There was no way
+    to tell a genuine grant from a leak, and the two need opposite fixes: one would
+    strip entitlement from a paying customer, the other gives away $9.22 a bottle.
+
+    Returns every input `_is_paid_member` consults, its verdict, and whether the
+    board would show them. `board_shows` disagreeing with `is_paid_member` IS the
+    bug, and this endpoint exists so that disagreement is visible instead of
+    inferred.
+
+    Memberships rows are returned INCLUDING expired ones, because an expiry that
+    looks past to one comparison and future to another is one of the ways the two
+    views can diverge (the two call sites format `now` differently: `_now_iso()`
+    gives seconds precision, `_active_membership_for_email` gives microseconds).
+    """
+    if CONSOLE_SECRET:
+        _key = _present_console_key()
+        if _key != CONSOLE_SECRET and not _owner_token_ok(_key):
+            return jsonify({"error": "unauthorized"}), 401
+    from dashboard import member_access_policy as _map
+    from dashboard import subscriptions as _subs
+    email = _map.normalized(request.args.get("email") or "")
+    if not email:
+        return jsonify({"ok": False, "error": "email required"}), 400
+
+    out = {"email": email, "override": _map.override_for(email)}
+    try:
+        cx = db.connect(LOG_DB)
+        cx.row_factory = sqlite3.Row
+        try:
+            out["memberships"] = [dict(r) for r in cx.execute(
+                "SELECT * FROM memberships WHERE lower(TRIM(email))=? "
+                "ORDER BY COALESCE(expires_at,'9999') DESC", (email,)).fetchall()]
+            out["subscriptions"] = [dict(r) for r in cx.execute(
+                "SELECT * FROM subscriptions WHERE lower(TRIM(email))=? ORDER BY id",
+                (email,)).fetchall()]
+            # Exactly what the board would do with this email, so a disagreement
+            # is reported rather than reasoned about.
+            board = {(s.get("email") or "").strip().lower()
+                     for s in _subs.list_active_memberships(cx)}
+            holders = {(g.get("email") or "").strip().lower()
+                       for g in _subs.list_membership_holders(cx)}
+            out["board_shows"] = bool(email in board or email in holders)
+            out["board_via"] = ("subscription" if email in board
+                                else "grant" if email in holders else None)
+        finally:
+            cx.close()
+    except Exception as e:
+        out["db_error"] = repr(e)
+
+    try:
+        row = _active_membership_for_email(email)
+        out["active_membership_row"] = row
+    except Exception as e:
+        out["active_membership_row"] = None
+        out["active_membership_error"] = repr(e)
+    for key, fn in (("membership_category", lambda: membership_category(email)),
+                    ("is_paid_member", lambda: _is_paid_member(email))):
+        try:
+            out[key] = fn()
+        except Exception as e:
+            out[key] = None
+            out[key + "_error"] = repr(e)
+
+    out["family_plan_enabled"] = bool(_family_plan_enabled())
+    try:
+        if out["family_plan_enabled"]:
+            from dashboard import family_plan as _fp
+            with db.connect(LOG_DB) as _cx:
+                _fp.init_family_plan_table(_cx)
+                out["family_plan_covers"] = bool(_fp.covers(_cx, email))
+        else:
+            out["family_plan_covers"] = False
+    except Exception as e:
+        out["family_plan_covers"] = None
+        out["family_plan_error"] = repr(e)
+
+    out["disagreement"] = bool(out.get("is_paid_member")) != bool(out.get("board_shows"))
+    out["ok"] = True
+    return jsonify(out)
+
+
 @app.route("/api/console/remedy-meanings", methods=["GET"])
 def api_console_remedy_meanings():
     """Return one row per catalog product joined with stored canonical meanings."""
