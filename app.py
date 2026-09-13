@@ -53277,6 +53277,38 @@ def api_orders_supersede(oid):
                     "superseded_by_order_id": replacement_id})
 
 
+@app.route("/api/orders/<int:oid>/review-hold", methods=["GET", "POST"])
+@app.route("/api/orders/<int:oid>/review-hold/release", methods=["POST"],
+           endpoint="api_orders_review_hold_release")
+def api_orders_review_hold(oid):
+    """Owner: stop, resume or list review-invite emails for one order.
+
+    Body {slug?, reason?}. slug '' (the default) covers the whole order. Set when a
+    buyer reports a missing or broken item, so the cron does not ask them to review it.
+    """
+    actor = _bos_actor()
+    if actor is None or actor.role != _bos_rbac.OWNER:
+        return jsonify({"ok": False, "error": "unauthorized"}), 401
+    from dashboard import review_invites as _ri
+    body = request.get_json(silent=True) or {}
+    slug = str(body.get("slug") or "").strip()
+    cx = db.connect(LOG_DB)
+    try:
+        _bos_orders.init_orders_table(cx)
+        exists = cx.execute("SELECT 1 FROM orders WHERE id = ?", (oid,)).fetchone()
+        if not exists:
+            return jsonify({"ok": False, "error": "order not found"}), 404
+        if request.method == "POST":
+            if request.path.endswith("/release"):
+                _ri.release(cx, oid, slug=slug)
+            else:
+                _ri.hold(cx, oid, slug=slug, reason=str(body.get("reason") or ""))
+        holds = _ri.holds_for(cx, oid)
+    finally:
+        cx.close()
+    return jsonify({"ok": True, "order_id": oid, "holds": holds})
+
+
 @app.route("/api/orders/<int:oid>/grant-member-access", methods=["POST"])
 def api_orders_grant_member_access(oid):
     """Owner, one click: grant this order's client a 30-day member-access window, then

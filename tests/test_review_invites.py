@@ -154,3 +154,56 @@ def test_editing_an_old_shipped_order_cannot_produce_a_second_invite():
     cx.execute("UPDATE orders SET updated_at=? WHERE id=?", (_ago(20), oid))
     cx.commit()
     assert ri.pending(cx, days=14) == []
+
+
+# ── Holds: an order or one product on it that must not be asked about ─────────
+# A buyer who reported a missing item was asked to review that item on 2026-09-13.
+# Nothing on an order records a complaint, so a hold is set by hand.
+
+def test_a_held_order_gets_no_invite():
+    cx = _cx()
+    oid = _order(cx, slugs=("wholomega", "lipid-zyme"))
+    ri.hold(cx, oid, reason="missing item")
+    assert ri.pending(cx, days=14) == []
+
+
+def test_a_held_product_skips_only_that_product():
+    cx = _cx()
+    oid = _order(cx, slugs=("wholomega", "lipid-zyme"))
+    ri.hold(cx, oid, slug="wholomega", reason="bottle never arrived")
+    assert [r["slug"] for r in ri.pending(cx, days=14)] == ["lipid-zyme"]
+
+
+def test_a_hold_is_scoped_to_its_order():
+    cx = _cx()
+    held = _order(cx, external_ref="o1", email="a@x.com")
+    _order(cx, external_ref="o2", email="c@x.com")
+    ri.hold(cx, held, reason="missing item")
+    assert [r["email"] for r in ri.pending(cx, days=14)] == ["c@x.com"]
+
+
+def test_releasing_a_hold_restores_the_invite():
+    """A hold must not stamp the pair as invited, or releasing it could never send."""
+    cx = _cx()
+    oid = _order(cx)
+    ri.hold(cx, oid, slug="wholomega")
+    assert ri.pending(cx, days=14) == []
+    ri.release(cx, oid, slug="wholomega")
+    assert [r["slug"] for r in ri.pending(cx, days=14)] == ["wholomega"]
+
+
+def test_holding_twice_keeps_one_row_and_the_latest_reason():
+    cx = _cx()
+    oid = _order(cx)
+    ri.hold(cx, oid, reason="first")
+    ri.hold(cx, oid, reason="second")
+    got = ri.holds_for(cx, oid)
+    assert len(got) == 1
+    assert got[0]["slug"] == "" and got[0]["reason"] == "second"
+
+
+def test_releasing_a_hold_that_does_not_exist_does_not_raise():
+    cx = _cx()
+    oid = _order(cx)
+    ri.release(cx, oid, slug="wholomega")
+    assert ri.holds_for(cx, oid) == []
