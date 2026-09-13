@@ -165,6 +165,7 @@
       <button id="send-inv-btn" class="ghost" style="display:none;margin-left:8px" onclick="sendInvoiceEdit()">Send invoice to customer</button>
       <button id="print-inv-btn" class="ghost" style="display:none;margin-left:8px" onclick="printInvoiceEdit()">Print / Download PDF</button>
       <button id="grant-member-btn" class="ghost" style="display:none;margin-left:8px" onclick="grantMemberAccess()" title="Grant this client a 30-day member-access window and reprice this invoice at member pricing">Grant 30-day member access + reprice</button>
+      <button id="review-hold-btn" class="ghost" style="display:none;margin-left:8px" onclick="toggleReviewHold()" title="Stop the automatic review request email for this order, for example when an item was missing or broken">Stop review emails for this order</button>
       <button id="save-cprices-btn" class="ghost" style="margin-left:8px" onclick="saveClientPrices()">Save line prices as this client's standard</button></div>
     <div style="margin-top:8px;font-size:13px">
       Special price for <b>ALL</b> this client's FFs $<input id="ff-flat-in" type="number" step="0.01" placeholder="e.g. 45.00" style="width:90px">
@@ -763,6 +764,7 @@ async function loadOrderForEdit(oid){
   _sib.style.display = "inline-block";
   $("print-inv-btn").style.display = "inline-block";
   $("grant-member-btn").style.display = "inline-block";
+  loadReviewHold();
   if (o.invoice_sent_at){ _sib.textContent = "Invoice Sent "+invSentStr(o.invoice_sent_at)+" (re-send)"; _sib.classList.add("inv-sent"); }
   // Prefill customer (read-only context — pricing/membership keyed off email).
   $("person_id").value = o.person_id||""; $("c-name").value = o.name||""; $("c-email").value = o.email||""; $("c-phone").value = o.phone||"";
@@ -867,6 +869,39 @@ async function editInvoice(){
     const msg = j.warning ? j.warning : (q.warning ? ("Saved — "+q.warning) : (q.pushed ? "Saved + synced to QuickBooks" : "Invoice saved"));
     toast(msg, (j.warning||q.warning)?"error":"ok");
     if (j.warning) alert(j.warning);  // paid-order edit: make the reconcile notice impossible to miss
+  }catch(e){ toast(e.message,"error"); }
+}
+
+// Review-request emails for this order. A hold stops the daily cron from asking the
+// buyer to review anything on it, for example when a bottle was missing or broken.
+let REVIEW_HELD = false;
+function paintReviewHold(holds){
+  REVIEW_HELD = (holds||[]).some(h => !h.slug);
+  const btn = $("review-hold-btn");
+  btn.textContent = REVIEW_HELD ? "Review emails stopped (resume)" : "Stop review emails for this order";
+  btn.style.display = "inline-block";
+}
+async function loadReviewHold(){
+  try{
+    const r = await fetch(`/api/orders/${EDIT_OID}/review-hold`, {headers:HEADERS});
+    const j = await r.json();
+    if (j.ok) paintReviewHold(j.holds);
+  }catch(e){ /* the button stays hidden; nothing else depends on it */ }
+}
+async function toggleReviewHold(){
+  let body = {};
+  if (!REVIEW_HELD){
+    const reason = prompt("Why stop review emails for this order? (for example: bottle never arrived)", "");
+    if (reason === null) return;
+    body = {reason};
+  }
+  const url = `/api/orders/${EDIT_OID}/review-hold` + (REVIEW_HELD ? "/release" : "");
+  try{
+    const r = await fetch(url, {method:"POST", headers:HEADERS, body:JSON.stringify(body)});
+    const j = await r.json();
+    if (!j.ok){ toast(j.error||"failed","error"); return; }
+    paintReviewHold(j.holds);
+    toast(REVIEW_HELD ? "Review emails stopped for this order" : "Review emails resumed", "ok");
   }catch(e){ toast(e.message,"error"); }
 }
 
