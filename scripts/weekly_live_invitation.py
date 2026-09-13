@@ -233,8 +233,8 @@ def _copy(first_name, portal_url, eligible, target_date, email=""):
                   "Group Coaching is a certification/full-membership upgrade benefit; "
                   "your current access does not include the private session.")
     text = (f"{greeting}\n\nThis {date_label}, our MentorshipU community activities are:\n\n"
-            "2:00 PM HST — Group Coaching\n"
-            "3:00 PM HST — Free Wellness Whispering MasterClass\n\n"
+            "2:00 PM HST: Group Coaching\n"
+            "3:00 PM HST: Free Wellness Whispering MasterClass\n\n"
             f"{access}\n\nOpen your private MyHealingOasis Upcoming Live Events page to RSVP, "
             "add the sessions to your calendar, and receive your own private Zoom join link:\n\n"
             f"{portal_url}\n\nPlease do not share your private portal or join link.\n\n"
@@ -248,6 +248,30 @@ def _copy(first_name, portal_url, eligible, target_date, email=""):
         text = text + _un.footer_text(email, "weekly-live")
         body_html = body_html + _un.footer_html(email, "weekly-live")
     return text, body_html
+
+
+EM_DASH_FORMS = ("—", "&mdash;", "&#8212;")
+
+
+def _subject(target_date):
+    return f"Wednesday live community sessions: {target_date.strftime('%B %-d')}"
+
+
+def _refuse_em_dash(subject, target_date):
+    """Glen, 2026-09-13: no em dashes in this invitation, subject or body.
+
+    Checked once, before the event gate and before any contact is read, so a dry
+    run fails too and no campaign can stop halfway. The sample uses a placeholder
+    name and link because only the fixed wording is ours to control.
+    """
+    parts = [subject]
+    for eligible in (True, False):
+        parts.extend(_copy("Friend", f"{PORTAL_BASE}/portal/check", eligible,
+                           target_date, "check@example.com"))
+    for part in parts:
+        if any(form in part for form in EM_DASH_FORMS):
+            raise RuntimeError("em dash found in the invitation subject or copy; "
+                               "use a colon, comma or full stop")
 
 
 def _init_run_tables(cx):
@@ -305,7 +329,8 @@ def run(args):
     target_date = datetime.fromisoformat(args.date).date()
     campaign_id = f"weekly-live-community-{target_date.isoformat()}"
     campaign_name = f"Weekly Live Community | {target_date.isoformat()}"
-    subject = f"Wednesday live community sessions — {target_date.strftime('%B %-d')}"
+    subject = _subject(target_date)
+    _refuse_em_dash(subject, target_date)
     gate = _event_gate(target_date)
     if not gate["ok"]:
         raise RuntimeError("event safety gate failed: " + "; ".join(gate["issues"]))

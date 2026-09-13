@@ -2,6 +2,9 @@ import importlib.util
 import os
 from datetime import date
 from pathlib import Path
+from types import SimpleNamespace
+
+import pytest
 
 
 os.environ.setdefault("OPENAI_API_KEY", "test-key")
@@ -83,3 +86,75 @@ def test_send_preserves_string_error_response_without_crashing(monkeypatch):
     assert status == 422
     assert message_id == ""
     assert response["message"] == "email address is invalid"
+
+
+# Glen, 2026-09-13: no em dashes in the invitation, subject or body.
+_EMDASH = "—"
+_ARGS = SimpleNamespace(date="2026-09-16", dry_run=True, send=False)
+
+
+class _GateReached(Exception):
+    pass
+
+
+def _patch_footer_secret(monkeypatch):
+    from dashboard import unsubscribe
+    monkeypatch.setattr(unsubscribe, "_SECRET", "test-secret-abc", raising=False)
+
+
+def _gate_that_records(monkeypatch):
+    calls = []
+
+    def gate(target_date):
+        calls.append(target_date)
+        raise _GateReached()
+
+    monkeypatch.setattr(weekly, "_event_gate", gate)
+    return calls
+
+
+def test_subject_and_both_bodies_carry_no_em_dash():
+    assert _EMDASH not in weekly._subject(date(2026, 9, 16))
+    for eligible in (True, False):
+        text, body = weekly._copy(
+            "Friend", "https://myhealingoasis.com/portal/private-token", eligible,
+            date(2026, 9, 16))
+        assert _EMDASH not in text
+        assert _EMDASH not in body
+
+
+def test_subject_still_reads_as_the_invitation_to_the_duplicate_gate():
+    # The vault's check_week_sent.py matches "live community session" in the subject.
+    assert "live community session" in weekly._subject(date(2026, 9, 16)).lower()
+
+
+def test_clean_copy_passes_the_guard_and_reaches_the_event_gate(monkeypatch):
+    _patch_footer_secret(monkeypatch)
+    calls = _gate_that_records(monkeypatch)
+    with pytest.raises(_GateReached):
+        weekly.run(_ARGS)
+    assert calls == [date(2026, 9, 16)]
+
+
+def test_em_dash_in_subject_stops_the_run_before_the_event_gate(monkeypatch):
+    _patch_footer_secret(monkeypatch)
+    calls = _gate_that_records(monkeypatch)
+    monkeypatch.setattr(weekly, "_subject", lambda d: f"Sessions {_EMDASH} September 16")
+    with pytest.raises(RuntimeError, match="em dash found"):
+        weekly.run(_ARGS)
+    assert calls == []
+
+
+def test_em_dash_in_body_stops_the_run_before_the_event_gate(monkeypatch):
+    _patch_footer_secret(monkeypatch)
+    calls = _gate_that_records(monkeypatch)
+    real_copy = weekly._copy
+
+    def copy_with_dash(*args, **kwargs):
+        text, body = real_copy(*args, **kwargs)
+        return text + f" {_EMDASH} ", body
+
+    monkeypatch.setattr(weekly, "_copy", copy_with_dash)
+    with pytest.raises(RuntimeError, match="em dash found"):
+        weekly.run(_ARGS)
+    assert calls == []
