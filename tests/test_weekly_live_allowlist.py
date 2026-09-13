@@ -218,11 +218,16 @@ def test_family_plan_members_without_a_membership_row_reach_the_paid_set(monkeyp
                         lambda email: checked.append(email) or True)
 
     class _Cursor:
-        def execute(self, *args):
-            pass
+        """Names columns the way psycopg2's RealDictCursor does: an unaliased
+        lower(email) comes back keyed "lower", which is what dropped every coach."""
+        sql = ""
+
+        def execute(self, sql, *args):
+            self.sql = sql
 
         def fetchall(self):
-            return []
+            key = "email" if " as email" in self.sql.lower() else "lower"
+            return [{key: "Coach@Example.com"}]
 
     @contextmanager
     def fake_cursor():
@@ -236,7 +241,7 @@ def test_family_plan_members_without_a_membership_row_reach_the_paid_set(monkeyp
     assert {"row.member@example.com", "holder@example.com",
             "covered@example.com"} <= paid
     assert "lapsed@example.com" not in checked
-    assert certification == set()
+    assert certification == {"coach@example.com"}
 
 
 def test_cli_prints_the_argument_and_no_address(monkeypatch, tmp_path, capsys):
