@@ -10,7 +10,6 @@ import argparse
 import html
 import json
 import os
-import re
 import sys
 import time
 import urllib.error
@@ -25,6 +24,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import app as appmod
 from dashboard import client_portal, email_suppression
+from scripts import live_invitation_allowlist as allowlist
 
 
 GHL_BASE = "https://services.leadconnectorhq.com"
@@ -41,8 +41,9 @@ def _now():
 
 
 def _email(value):
-    value = (value or "").strip().lower()
-    return value if re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", value) else ""
+    # One rule for the audience and for the fingerprinted list, or a changed
+    # rule would silently match nobody.
+    return allowlist.normalize_email(value)
 
 
 def _api(method, path, version, body=None, *, write=False):
@@ -154,7 +155,9 @@ def _authoritative_access_sets():
     return paid, certification
 
 
-def _build_audience(*, create_missing_contacts=False):
+def _build_audience(*, create_missing_contacts=False, allowed=None):
+    """``allowed``, when given, is a predicate over an email. Members outside it
+    are never looked up or created in GHL, and cannot block the run."""
     by_email, tag_sets = {}, {}
     for tag in SOURCE_TAGS:
         tag_sets[tag] = set()
@@ -168,6 +171,8 @@ def _build_audience(*, create_missing_contacts=False):
     missing_ghl = []
     for email in sorted(paid | certification):
         if email in by_email:
+            continue
+        if allowed is not None and not allowed(email):
             continue
         contact = _find_contact(email)
         if not contact and create_missing_contacts:
@@ -331,20 +336,41 @@ def run(args):
     campaign_name = f"Weekly Live Community | {target_date.isoformat()}"
     subject = _subject(target_date)
     _refuse_em_dash(subject, target_date)
+    # The hard rule: mail only what filter_audience.py returned, because it reads
+    # both consent stores and this script reads neither fully. A send without the
+    # list refuses before any contact is read.
+    only_list = getattr(args, "only_list", None)
+    if args.send and not only_list:
+        raise RuntimeError("--send requires --only-list from live_invitation_allowlist.py")
+    fingerprints = allowlist.decode(only_list) if only_list else None
+    allowed = ((lambda email: allowlist.allows(fingerprints, email))
+               if fingerprints is not None else None)
     gate = _event_gate(target_date)
     if not gate["ok"]:
         raise RuntimeError("event safety gate failed: " + "; ".join(gate["issues"]))
     audience, tag_sets, paid, certification, missing_ghl = _build_audience(
-        create_missing_contacts=args.send)
+        create_missing_contacts=args.send, allowed=allowed)
+    built_total = len(audience)
+    if allowed is not None:
+        audience = {email: contact for email, contact in audience.items()
+                    if allowed(email)}
     eligible = paid | certification
     counts = {"pb_member": len(tag_sets["pb:member"]),
               "e4l_account": len(tag_sets["e4l account"]),
               "certification": len(certification), "paid_full": len(paid),
-              "deduplicated_total": len(audience),
+              "deduplicated_total": built_total,
               "group_eligible": len(set(audience) & eligible),
               "missing_ghl_contact": len(missing_ghl),
               "suppressed": 0, "dnd": 0, "queued": 0,
               "failed": 0, "already_queued": 0, "portal_created_or_recovered": 0}
+    if fingerprints is not None:
+        counts.update({"allowlist_size": len(fingerprints),
+                       "allowlist_matched": len(audience),
+                       "allowlist_not_in_audience": len(fingerprints) - len(audience),
+                       "outside_allowlist_skipped": built_total - len(audience)})
+        if args.send and not audience:
+            raise RuntimeError("no audience member matches the list; "
+                               "check the list was built with the production key")
     if args.dry_run:
         with appmod.db.connect(appmod.LOG_DB) as cx:
             client_portal.init_client_portal_table(cx)
@@ -443,6 +469,8 @@ def main():
     mode.add_argument("--dry-run", action="store_true")
     mode.add_argument("--send", action="store_true")
     parser.add_argument("--date", required=True, help="Wednesday HST date, YYYY-MM-DD")
+    parser.add_argument("--only-list", dest="only_list", default=None,
+                        help="fingerprints from live_invitation_allowlist.py; required with --send")
     args = parser.parse_args()
     try:
         raise SystemExit(run(args))
