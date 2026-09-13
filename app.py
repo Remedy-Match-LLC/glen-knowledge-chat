@@ -7367,7 +7367,14 @@ def _is_paid_member(email):
     non-member a discount."""
     try:
         if email and _active_membership_for_email(email):
-            return membership_category(email) != "trial"
+            if membership_category(email) != "trial":
+                return True
+            # Fall through rather than return False. A trial row used to end the
+            # check here, so it cancelled genuine family-plan coverage: J.C. Davis
+            # held a `biofield_trial` grant that expires in 2126 (lifetime by
+            # design, from the $1 unlock), was covered by an active family plan,
+            # and was charged full price permanently. Glen 2026-09-12: nobody with
+            # a plan should be eligible for a trial, so a plan always outranks one.
         if email and _family_plan_enabled():
             from dashboard import family_plan as _fp
             with db.connect(LOG_DB) as cx:
@@ -20328,7 +20335,7 @@ def api_console_members():
         if _key != CONSOLE_SECRET and not _owner_token_ok(_key):
             return jsonify({"error": "unauthorized"}), 401
     from dashboard import subscriptions as _subs
-    buckets = {"trial": [], "full": [], "paused": []}
+    buckets = {"trial": [], "full": [], "paused": [], "family": []}
     with db.connect(LOG_DB) as cx:
         cx.row_factory = sqlite3.Row
         _subs.migrate_add_failed_count(cx)
@@ -20351,6 +20358,49 @@ def api_console_members():
         for g in _subs.list_membership_holders(cx):
             g["name"] = _member_name_for(cx, g.get("email") or "")
             buckets["full"].append(g)
+        # Family plans are a THIRD way to hold membership and the board could not
+        # see them at all: it read `subscriptions` and `memberships` and never
+        # `family_subscriptions` or `household_members`. On 2026-09-12 four of the
+        # eight family-plan people were absent here, including a plan holder, while
+        # every one of them priced as a member. Glen: "Family plan is a category of
+        # membership. Add it to the board."
+        #
+        # Holder and covered member are both listed, because entitlement reaches
+        # both and the board's job is to answer "who gets member pricing".
+        try:
+            from dashboard import family_plan as _fp
+            from dashboard import household as _hh
+            _fp.init_family_plan_table(cx)
+            _hh.init_household_tables(cx)
+            _seen = {r.get("email") for v in buckets.values() for r in v}
+            for plan in _fp.list_active(cx):
+                holder = plan.get("caregiver_email") or ""
+                rows = [(holder, "holder", "")]
+                for m in _hh.members_for(cx, holder):
+                    rows.append(((m.get("email") or "").strip().lower(),
+                                 "covered", m.get("relationship") or ""))
+                for em, role, rel in rows:
+                    if not em or em in _seen:
+                        continue
+                    _seen.add(em)
+                    buckets["family"].append({
+                        "email": em,
+                        "name": _member_name_for(cx, em),
+                        "category": "family",
+                        "role": role,
+                        "relationship": rel,
+                        "plan_holder": holder,
+                        "plan_status": plan.get("status") or "",
+                        "plan_source": plan.get("source") or "",
+                        "plan_cents": int(plan.get("amount_cents") or 0),
+                        "cadence_months": int(plan.get("cadence_months") or 1),
+                        "started": plan.get("started_at") or "",
+                        "next_charge_date": plan.get("next_charge_at") or "",
+                        "fail_count": int(plan.get("fail_count") or 0),
+                        "tier": 0, "order_count": 0,
+                    })
+        except Exception as e:      # the board degrades, it never 500s
+            print(f"[members-board] family plan read failed: {e!r}", flush=True)
     # credit_cents is always 0 now (accrual retired); sort is a harmless no-op
     # kept for row-shape stability.
     buckets["trial"].sort(key=lambda r: r.get("credit_cents", 0), reverse=True)

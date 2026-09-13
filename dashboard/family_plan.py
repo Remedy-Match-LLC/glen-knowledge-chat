@@ -148,6 +148,30 @@ def covers(cx, email):
     return False
 
 
+def list_active(cx) -> list:
+    """Every entitling family plan, newest first. The members board had no way to
+    read these at all: it queried `subscriptions` and `memberships` and never
+    `family_subscriptions`, so a family plan granted member pricing while the
+    board showed nobody. Four of eight family-plan people were invisible on
+    2026-09-12, including a plan HOLDER.
+
+    ACTIVE_STATUSES includes `past_due` on purpose, because entitlement survives a
+    failed charge. The board shows the real status so a past_due plan is visible
+    rather than silently equal to a paid one.
+    """
+    rows = cx.execute(
+        "SELECT caregiver_email, status, source, amount_cents, cadence_months, "
+        "started_at, next_charge_at, fail_count FROM family_subscriptions "
+        "WHERE status IN (?,?) ORDER BY started_at DESC", ACTIVE_STATUSES).fetchall()
+    out = []
+    for r in rows:
+        d = dict(zip(("caregiver_email", "status", "source", "amount_cents",
+                      "cadence_months", "started_at", "next_charge_at", "fail_count"), r))
+        d["caregiver_email"] = _lc(d.get("caregiver_email"))
+        out.append(d)
+    return out
+
+
 def active_plan_holders_for(cx, email):
     """Return active caregiver emails whose plan covers ``email``."""
     email = _lc(email)
