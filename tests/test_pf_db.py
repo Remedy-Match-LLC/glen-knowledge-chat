@@ -205,6 +205,14 @@ def test_normalize_for_write_strips_a_glued_suffix_before_capitalising():
     assert _normalize_for_write({"name": "STACIE HAN2"})["name"] == "Stacie Han"
 
 
+def test_normalize_for_write_leaves_a_farm_name_as_typed():
+    """Glen, 2026-09-13: farm rows are business names, so capitals are kept."""
+    row = _normalize_for_write({"name": "KBH FARMS, LLC", "tier": "farm"})
+    assert row["name"] == "KBH FARMS, LLC"
+    assert _normalize_for_write({"name": "ANNA KREIMES", "tier": "org_member"})["name"] == \
+        "Anna Kreimes"
+
+
 def test_normalize_for_write_no_name_key_is_a_noop():
     row = _normalize_for_write({"city": "Honolulu"})
     assert "name" not in row

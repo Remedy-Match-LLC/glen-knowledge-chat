@@ -184,7 +184,8 @@ def _normalize_for_write(row_dict: dict) -> dict:
                   f"-> {cleaned!r}", flush=True)
         # Glen, 2026-09-13: capitalise a name scraped all lowercase or all
         # capitals. After the suffix strip, so "STACIE HAN2" becomes "Stacie Han".
-        row_dict["name"] = normalize_name(cleaned)
+        # Farm rows are business names and keep their capitals (Glen, 2026-09-13).
+        row_dict["name"] = cleaned if row_dict.get("tier") == "farm" else normalize_name(cleaned)
     existing = list(row_dict.get("specialties") or [])
     for tag in profession_specialties(row_dict.get("credentials")):
         if tag not in existing:

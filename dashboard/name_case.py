@@ -10,12 +10,16 @@ the person typed it into a form. Rules he approved:
   3. Credentials from a fixed list go to capitals, PhD as PhD. After the first
      comma anything not on the list stays as typed.
   4. A value holding an email address is left alone.
+  5. In an all-capitals value, a 2 or 3 letter word with no vowel stays in
+     capitals: JC, KBH, RDN. Titles such as DR are not initials. A lowercase
+     "jc" carries no sign of initials and becomes "Jc".
 
 Pure. Every writer of people.name, first_name and last_name calls it, because a
 one-off cleanup is undone by the next feeder run: the additive upsert replaces
 any stored scalar with a non-blank incoming one.
 """
 import re
+import unicodedata
 
 PARTICLES = {"de", "da", "del", "della", "di", "van", "von", "der", "den",
              "du", "dos", "das"}
@@ -29,12 +33,23 @@ CREDENTIALS = {"od", "md", "nd", "dc", "do", "dds", "dmd", "lac", "lmt", "np",
 BARE_CREDENTIALS = CREDENTIALS - {"do", "ms", "ma", "pa", "ii", "iii", "iv"}
 SPECIAL = {"phd": "PhD"}
 
+TITLES = {"dr", "mr", "ms", "mrs", "jr", "sr", "st", "mt", "ft", "ltd"}
+
 _WORD_START = re.compile(r"(^|[-'’.(\"])([a-z])")
 
 
 def _core(token):
     """The token with punctuation and inner dots removed, for list lookups."""
     return re.sub(r"[^a-z]", "", token.lower())
+
+
+def _is_initials(token):
+    """A 2 or 3 letter word with no vowel, accented vowels included, not a title."""
+    base = unicodedata.normalize("NFD", token)
+    letters = "".join(c for c in base if c.isalpha())
+    if not 2 <= len(letters) <= 3 or letters.lower() in TITLES:
+        return False
+    return not re.search(r"[aeiouy]", letters.lower())
 
 
 def _credential(token):
@@ -65,6 +80,7 @@ def normalize_name(value, leading_particle=False):
     if value not in (value.lower(), value.upper()):
         return value
 
+    all_capitals = value == value.upper()
     parts = re.split(r"(\s+)", value)
     out, word_index, after_comma = [], 0, False
     for part in parts:
@@ -75,6 +91,8 @@ def normalize_name(value, leading_particle=False):
         if after_comma and (core in CREDENTIALS or core in SPECIAL):
             out.append(_credential(part))
         elif after_comma:
+            out.append(part)
+        elif all_capitals and _is_initials(part):
             out.append(part)
         elif word_index > 0 and (core in BARE_CREDENTIALS or core in SPECIAL):
             out.append(_credential(part))

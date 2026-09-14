@@ -75,3 +75,25 @@ def test_person_dict_normalises_only_name_keys():
                                 "last_name": "van horn", "city": "hilo"})
     assert p == {"name": "Hannah van Horn", "first_name": "Hannah",
                  "last_name": "van Horn", "city": "hilo"}
+
+
+# ── initials typed in capitals stay in capitals (Glen, 2026-09-13) ────────────
+
+@pytest.mark.parametrize("typed,expected", [
+    ("JC DAVIS", "JC Davis"),
+    ("KBH FARMS, LLC", "KBH Farms, LLC"),
+    ("REBECCA ROMOHR RDN LD", "Rebecca Romohr RDN LD"),
+    ("BJ", "BJ"),
+    ("LOBO DR HUANG", "Lobo Dr Huang"),       # a title is not initials
+])
+def test_a_short_all_capitals_word_with_no_vowel_stays_in_capitals(typed, expected):
+    assert normalize_name(typed) == expected
+
+
+@pytest.mark.parametrize("typed,expected", [
+    ("jc davis", "Jc Davis"),                  # lowercase carries no sign of initials
+    ("ANN KAY", "Ann Kay"),                    # a vowel means a word, not initials
+    ("GRÁ O", "Grá O"),                        # an accented vowel counts as a vowel
+])
+def test_only_vowel_less_capitals_count_as_initials(typed, expected):
+    assert normalize_name(typed) == expected
