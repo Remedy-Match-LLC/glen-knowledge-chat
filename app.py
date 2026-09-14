@@ -51449,6 +51449,21 @@ def _settle_referrals_on_altpay(order):
 
 
 _bos_orders.set_referral_settle_hook(lambda _cx, _o: _settle_referrals_on_altpay(_o))
+
+
+def _settle_points_on_altpay(order):
+    """Buyer points for an order the payment ledger has just marked paid (payments panel,
+    Zelle import). Runs the card path's own settler, _settle_order_points, keyed on the
+    same order_ref, so the card rules apply unchanged: full-price only, no points on a
+    wholesale sale (Glen, 2026-09-04), the affiliate first-order rule. The settler uses
+    its own connection and is idempotent per order_ref, so a second run credits nothing."""
+    order_ref = ((order or {}).get("external_ref") or "").strip()
+    if not order_ref:
+        return
+    _settle_order_points(order, order_ref=order_ref)
+
+
+_bos_orders.set_points_settle_hook(lambda _cx, _o: _settle_points_on_altpay(_o))
 import dashboard.combined_shipments as _bos_combined_shipments  # noqa: F401 (household combined-shipment model + actions)
 import dashboard.coaching as _coaching_actions  # noqa: F401 (registers coaching.grant action)
 import dashboard.finance as _bos_finance  # noqa: F401 (registers money signal + finance actions)
@@ -53985,6 +54000,45 @@ def api_order_payments_add(oid):
         return jsonify({"ok": False, "error": str(e)}), 400
     finally:
         cx.close()
+
+
+@app.route("/api/console/orders/<int:oid>/settle-points", methods=["POST"])
+def api_console_order_settle_points(oid):
+    """Owner: award the buyer points a paid order is owed but never received.
+
+    Built 2026-09-14 for the orders the payment ledger marked paid without settling
+    points; Glen approved the backfill. Runs the card path's own settler,
+    _settle_order_points, keyed on the order's external_ref, so the same rules apply
+    (full-price only, none on a wholesale sale) and a second run credits nothing.
+    Preview by default; ?apply=1 writes. Console key in the X-Console-Key header."""
+    if not _console_key_ok():
+        return jsonify({"error": "Unauthorized"}), 401
+    apply = request.args.get("apply") == "1"
+    from dashboard import points as _points
+    with db.connect(LOG_DB) as cx:
+        cx.row_factory = sqlite3.Row
+        _points.init_points_table(cx)
+        order = _bos_orders.get_order(cx, oid)
+        if not order:
+            return jsonify({"ok": False, "error": f"order #{oid} not found"}), 404
+        ref = (order.get("external_ref") or "").strip()
+        email = (order.get("email") or "").strip().lower()
+        if order.get("pay_status") != "paid" or order.get("status") == "cancelled" or not ref:
+            return jsonify({"ok": False,
+                            "error": f"order #{oid} is not a paid, uncancelled order with a reference"}), 409
+        already = _points.has_entry(cx, order_ref=ref, reason="earn")
+        before = _points.balance(cx, email)
+    out = {"ok": True, "order_id": oid, "email": email, "order_ref": ref,
+           "already_earned": already, "balance_before_cents": before}
+    if not apply:
+        return jsonify({**out, "applied": False})
+    _settle_order_points(order, order_ref=ref)
+    with db.connect(LOG_DB) as cx:
+        cx.row_factory = sqlite3.Row
+        after = _points.balance(cx, email)
+        earned = _points.has_entry(cx, order_ref=ref, reason="earn")
+    return jsonify({**out, "applied": True, "earned": earned,
+                    "credited_cents": after - before, "balance_after_cents": after})
 
 
 @app.route("/api/orders/<int:oid>/refunds", methods=["POST"])

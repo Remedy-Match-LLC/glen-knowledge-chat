@@ -258,12 +258,14 @@ def _sync_fully_paid_order(cx, order_id, method):
     else:
         projected = orders.mark_order_paid_keep_status(cx, order_id, method=method,
                                                        amount_cents=paid_cents)
-    # The order has just become paid, so its referrer is owed. The card path credits
-    # that in its settlement hub; a ledger payment (Zelle, cheque, cash, the Zelle
-    # email import) had nothing. Fires on this transition only, because the early
-    # return above skips an order already projected paid.
+    # The order has just become paid, so the buyer's points and the referrer are owed.
+    # The card path settles both in its hub; a ledger payment (Zelle, cheque, cash, the
+    # Zelle email import) settled neither. Fires on this transition only, because the
+    # early return above skips an order already projected paid.
     if projected:
-        orders.settle_referrals_on_payment(cx, orders.get_order(cx, order_id))
+        paid_order = orders.get_order(cx, order_id)
+        orders.settle_points_on_payment(cx, paid_order)
+        orders.settle_referrals_on_payment(cx, paid_order)
 
 
 def add_payment(cx, order_id, amount_cents, method, *, source="manual",

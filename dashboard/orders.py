@@ -1145,6 +1145,32 @@ def settle_referrals_on_payment(cx, order):
               flush=True)
 
 
+# App-layer buyer points settlement for the payment-ledger path, injected like the hooks
+# above. The card path settles points in its hub (app._settle_order_points: buyer earn,
+# no points on a wholesale sale, the affiliate first-order rule). A payment recorded in
+# the ledger (payments panel, Zelle import) settled no points at all. Signature:
+# hook(cx, order). Idempotent per order_ref inside the hook.
+_points_settle_hook = None
+
+
+def set_points_settle_hook(fn):
+    """Register the app-side buyer points settlement (fn(cx, order))."""
+    global _points_settle_hook
+    _points_settle_hook = fn
+
+
+def settle_points_on_payment(cx, order):
+    """Run the registered points settlement for an order that has just become paid.
+    Best-effort: a points hiccup never fails the payment record."""
+    if not _points_settle_hook or not order:
+        return
+    try:
+        _points_settle_hook(cx, order)
+    except Exception as e:
+        print(f"[orders] points settle on payment skipped for #{order.get('id')}: {e!r}",
+              flush=True)
+
+
 def _record_payment_exec(params, ctx):
     cx = (ctx or {}).get("cx") or (params or {}).get("cx")
     if cx is None:
