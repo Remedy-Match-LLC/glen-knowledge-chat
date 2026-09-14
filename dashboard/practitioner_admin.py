@@ -20,6 +20,7 @@ from datetime import datetime, timezone
 from typing import List, Optional, Tuple
 
 from dashboard import practitioner_portal as pp
+from dashboard.name_case import normalize_name
 
 VALID_ROLES = ("coach", "licensed")
 N_MODULES = 12
@@ -125,6 +126,7 @@ def create_or_update_practitioner(clean: dict, *, now=None) -> str:
     and wholesale access are set independently. Returns the practitioner_id."""
     from db_supabase import supabase_cursor
     ts = now or datetime.now(timezone.utc)
+    clean = dict(clean, name=normalize_name(clean.get("name")))  # Glen, 2026-09-13
     unlocked = ts if clean["wholesale_access"] else None
     tier = _TIER_FOR_ROLE.get(clean["portal_role"], "org_member")
     with supabase_cursor() as cur:
@@ -200,7 +202,7 @@ def validate_name_edit(name) -> Tuple[Optional[str], Optional[str]]:
     (None, error_message). Refuses an empty/whitespace-only name and caps
     length; the name is rendered on the public finder (escaped there, not
     here — see static/practitioner-finder.html's escapeHtml/esc)."""
-    clean = (name or "").strip()
+    clean = normalize_name((name or "").strip())
     if not clean:
         return None, "name is required"
     if len(clean) > MAX_NAME_LENGTH:
@@ -215,6 +217,7 @@ def set_name(pid: str, name: str) -> str:
     scrape-time boundary in scrapers/practitioner_finder/db.py strips that
     same pattern going forward, so a later re-scrape cannot undo this."""
     from db_supabase import supabase_cursor
+    name = normalize_name(name)
     with supabase_cursor() as cur:
         cur.execute("UPDATE practitioners SET name=%s, updated_at=now() WHERE id=%s",
                     (name, str(pid)))

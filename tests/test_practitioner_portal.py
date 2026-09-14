@@ -296,3 +296,32 @@ def test_modules_completed_for_email(monkeypatch):
     assert pp.modules_completed_for_email("nobody@x.com") is None
 
     assert pp.modules_completed_for_email("") is None
+
+
+# ── names are capitalised at every directory writer (Glen, 2026-09-13) ─────────
+
+def test_register_capitalises_an_all_lowercase_name(fake_supabase):
+    from dashboard.practitioner_portal import register_practitioner, validate_registration
+    clean, err = validate_registration({"email": "kg@x.com", "name": "krupa george",
+                                        "portal_role": "licensed", "license_number": "1"})
+    assert err is None
+    register_practitioner(clean, now=datetime(2026, 9, 13))
+    assert fake_supabase.inserts, "the insert path was not reached"
+    assert fake_supabase.inserts[0][1] == "Krupa George"
+
+
+def test_wholesale_application_capitalises_an_all_caps_name(fake_supabase):
+    from dashboard.practitioner_portal import submit_wholesale_application
+    clean = {"email": "mg@x.com", "name": "MARIA GORBEA", "practice_name": None,
+             "credentials": None, "phone": None, "website": None,
+             "license_state": "HI", "resale_license_number": "R1"}
+    submit_wholesale_application(clean, now=datetime(2026, 9, 13))
+    assert fake_supabase.inserts, "the insert path was not reached"
+    assert fake_supabase.inserts[0][1] == "Maria Gorbea"
+
+
+def test_cert_student_capitalises_the_name(fake_supabase):
+    from dashboard.practitioner_portal import upsert_cert_student
+    upsert_cert_student("vg@x.com", name="vikas goel", modules_completed=1)
+    assert fake_supabase.inserts, "the insert path was not reached"
+    assert fake_supabase.inserts[0][0] == "Vikas Goel"
