@@ -244,6 +244,116 @@ def test_family_plan_members_without_a_membership_row_reach_the_paid_set(monkeyp
     assert certification == {"coach@example.com"}
 
 
+def test_write_timeout_records_unknown_stops_and_rerun_skips_it(monkeypatch, tmp_path, capsys):
+    # 2026-09-14: GHL accepted a message, the response timed out, and the run died
+    # with that recipient unrecorded. Sorted send order here is listed.two, listed,
+    # unlisted; the second write gets no response.
+    import json as _json
+    from dashboard import db
+    weekly = _weekly()
+    real_send = weekly._send
+    _wire(monkeypatch, tmp_path, weekly)
+    # Drive the real _send and _api; only the network call is faked.
+    monkeypatch.setattr(weekly, "_send", real_send)
+    monkeypatch.setenv("GHL_PIT", "write-token")
+    argument, _ = allowlist.encode(list(AUDIENCE), KEY)
+    calls = []
+
+    class _Response:
+        status = 201
+
+        def __init__(self, n):
+            self.n = n
+
+        def read(self):
+            return _json.dumps({"messageId": f"msg-{self.n}"}).encode()
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+    def accept_then_time_out(request, timeout=None):
+        # GHL accepts the POST (it is recorded here), then the response never comes.
+        calls.append(_json.loads(request.data)["emailTo"])
+        if len(calls) == 2:
+            raise TimeoutError("The read operation timed out")
+        return _Response(len(calls))
+
+    monkeypatch.setattr(weekly.urllib.request, "urlopen", accept_then_time_out)
+
+    assert weekly.run(_args(only_list=argument)) == 3
+
+    # One POST for the timed-out recipient, no retry, and nobody after it.
+    assert calls == ["listed.two@example.com", "listed@example.com"]
+    out = capsys.readouterr().out
+    assert '"status": "stopped_unknown"' in out
+    assert '"unknown_contact_id": "c1"' in out
+    path = str(tmp_path / "chat_log.db")
+    with db.connect(path) as cx:
+        rows = dict(cx.execute("SELECT email, status FROM weekly_live_invitation_recipients").fetchall())
+        run_status = cx.execute("SELECT status FROM weekly_live_invitation_runs").fetchone()[0]
+    assert rows == {"listed.two@example.com": "queued", "listed@example.com": "unknown"}
+    assert run_status == "stopped_unknown"
+
+    rerun = []
+    monkeypatch.setattr(weekly, "_send", lambda contact_id, subject, text, body_html, *,
+                        email_to="", scheduled_timestamp=None: rerun.append(email_to) or (201, "msg-r", {}))
+
+    assert weekly.run(_args(only_list=argument)) == 0
+
+    assert rerun == ["unlisted@example.com"]
+    assert '"skipped_unknown": 1' in capsys.readouterr().out
+
+
+def test_contact_create_timeout_refuses_the_send_before_mailing(monkeypatch, tmp_path):
+    # Status 0 from _api is truthy data, not a contact. If _create_contact returned
+    # it, the member would count as present and the run would send.
+    from dashboard import db
+    weekly = _weekly()
+    real_create = weekly._create_contact
+    sent, _ = _wire(monkeypatch, tmp_path, weekly)
+    monkeypatch.setattr(weekly, "_create_contact", real_create)
+    monkeypatch.setenv("GHL_LOCATION_ID", "location-1")
+    with db.connect(str(tmp_path / "chat_log.db")) as cx:
+        cx.execute("CREATE TABLE people (email TEXT, name TEXT)")
+        cx.commit()
+    writes = []
+    monkeypatch.setattr(weekly, "_api", lambda method, path, version, body=None, *, write=False:
+                        writes.append(path) or (0, {"transport_error": "TimeoutError"}))
+    argument, _ = allowlist.encode(["listed@example.com", PAID_OUTSIDE_LIST], KEY)
+
+    with pytest.raises(RuntimeError, match="authoritative members have no GHL contact"):
+        weekly.run(_args(only_list=argument))
+
+    assert writes == ["/contacts/"]
+    assert sent == []
+
+
+def test_create_contact_returns_none_when_the_write_gets_no_response(monkeypatch):
+    weekly = _weekly()
+    monkeypatch.setenv("GHL_LOCATION_ID", "location-1")
+    monkeypatch.setattr(weekly, "_api", lambda *a, **k: (0, {"transport_error": "TimeoutError"}))
+    assert weekly._create_contact("member@example.com", "A Member") is None
+
+
+def test_api_write_timeout_is_status_zero_but_read_timeout_raises(monkeypatch):
+    weekly = _weekly()
+    monkeypatch.setenv("GHL_PIT", "write-token")
+    monkeypatch.setenv("GHL_CONTENT_PIT", "read-token")
+
+    def timeout(*args, **kwargs):
+        raise TimeoutError("The read operation timed out")
+
+    monkeypatch.setattr(weekly.urllib.request, "urlopen", timeout)
+
+    status, payload = weekly._api("POST", "/conversations/messages", "v", {"a": 1}, write=True)
+    assert status == 0 and payload["transport_error"] == "TimeoutError"
+    with pytest.raises(TimeoutError):
+        weekly._api("POST", "/contacts/search", "v", {"a": 1})
+
+
 def test_cli_prints_the_argument_and_no_address(monkeypatch, tmp_path, capsys):
     monkeypatch.setenv("CONSOLE_SECRET", KEY)
     listing = tmp_path / "mailable.txt"
