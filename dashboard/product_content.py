@@ -303,6 +303,17 @@ def _deny_hits(text: str) -> list:
     return sorted({m.group(0).lower() for m in _DENY_RE.finditer(text or "")})
 
 
+def _without_own_name(text: str, product: dict) -> str:
+    """The text the gate checks, with the product's own name taken out. A product can be
+    named after what it is for ("Pterygium Eye Drops"), and naming itself must not blank
+    its page. The words around the name are still checked, so a claim is still caught."""
+    out = text or ""
+    for nm in {(product or {}).get("name") or "", (product or {}).get("pinecone_title") or ""}:
+        if nm.strip():
+            out = re.sub(re.escape(nm.strip()), " ", out, flags=re.I)
+    return out
+
+
 def _gen_compliant(cl, system, user, max_tokens, check):
     """Generate text; if check(raw) contains denied terms, retry once with
     feedback. Returns (raw_text, ok); ok is False if it still violates."""
@@ -332,7 +343,7 @@ def _generate_card(product, page):
         return {"description": "", "ingredients": [], "benefits": []}
     user = f"PRODUCT: {name}\n\nPAGE COPY:\n{page_text[:14000]}"
     try:
-        raw, ok = _gen_compliant(cl, _CARD_SYSTEM, user, 1200, lambda r: r)
+        raw, ok = _gen_compliant(cl, _CARD_SYSTEM, user, 1200, lambda r: _without_own_name(r, product))
         raw = raw.removeprefix("```json").removeprefix("```").removesuffix("```").strip()
         data = json.loads(raw)
         # If still non-compliant after retry, drop the generated prose (keep the
@@ -376,7 +387,7 @@ def _generate_learn_more(product, page, sources):
     user = (f"PRODUCT: {name}\n\nPAGE COPY:\n{page_text[:9000]}\n\n"
             f"RESEARCH SOURCES (cite only these urls):\n{src_block[:8000]}")
     try:
-        raw, ok = _gen_compliant(cl, _LEARN_SYSTEM, user, 2400, lambda r: r)
+        raw, ok = _gen_compliant(cl, _LEARN_SYSTEM, user, 2400, lambda r: _without_own_name(r, product))
         if not ok:
             print(f"[product_content] learn_more still non-compliant after retry, degraded to empty: {name}", flush=True)
             return {"markdown": ""}
@@ -405,7 +416,7 @@ def _generate_how_it_works(product, page):
         return {"text": ""}
     user = f"PRODUCT: {name}\n\nPAGE COPY:\n{page_text[:12000]}"
     try:
-        raw, ok = _gen_compliant(cl, _HOW_SYSTEM, user, 600, lambda r: r)
+        raw, ok = _gen_compliant(cl, _HOW_SYSTEM, user, 600, lambda r: _without_own_name(r, product))
         if not ok:
             print(f"[product_content] how_it_works still non-compliant after retry, degraded to empty: {name}", flush=True)
             return {"text": ""}

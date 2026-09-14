@@ -67,11 +67,77 @@ def test_nous_energy_shows_the_approved_label(catalog):
     assert not any(o in n.lower() for n in _names(p) for o in old)
 
 
-@pytest.mark.parametrize("slug", [VI, NE])
-def test_descriptions_are_label_only(catalog, slug):
-    desc = catalog[slug]["description"]
-    assert "i take" not in desc.lower() and "i've known" not in desc.lower()
+ROBIN_QUOTE = (
+    "“I’ve known Glen Swartwout since the year 2005. We were both involved with the original "
+    "inventor of the Nouss-Ade product. Glen has found a way to duplicate many ingredients. I "
+    "purchase Glen’s Nous Energy formula because of its extraordinary results. I take four capsules "
+    "daily and with great consistency. It has provided me with better sleep, more energy. I have no "
+    "muscle stiffness now. I have great range of motion. My skin has improved elasticity and my "
+    "vision has improved. Thank you Dr. Glen.” - Robin Roemer Brown L.Ac. (received 9/10/24)"
+)
+
+
+def test_vascular_integrity_description_is_label_only(catalog):
+    desc = catalog[VI]["description"]
+    assert desc.startswith(VI_NAME)
     assert pc._deny_hits(desc) == []
+
+
+def test_nous_energy_keeps_the_testimonial_unchanged(catalog):
+    """Glen, 2026-09-14: "4 caps: keep as is". The quote stays word for word after the
+    label intro; only the old formula text around it goes."""
+    desc = catalog[NE]["description"]
+    assert desc.startswith("Nous Energy, Spirit Mineral Source.")
+    assert ROBIN_QUOTE in desc
+    assert "our new nous" not in desc.lower()
+    assert pc._deny_hits(desc) == []
+
+
+class _Msg:
+    def __init__(self, text):
+        self.content = [type("C", (), {"text": text})()]
+
+
+class _Messages:
+    def __init__(self, seq):
+        self.seq = list(seq)
+        self.calls = []
+
+    def create(self, **kw):
+        self.calls.append(kw)
+        return _Msg(self.seq.pop(0))
+
+
+class _Client:
+    def __init__(self, seq):
+        self.messages = _Messages(seq)
+
+
+EYE_DROPS = {"name": "Pterygium Eye Drops", "pinecone_title": "Pterygium Eye Drops"}
+
+
+def _card(monkeypatch, product, replies):
+    client = _Client(replies)
+    monkeypatch.setattr(pc, "_clients", lambda: (None, client, None))
+    return pc._generate_card(product, {"text": "page copy"}), client
+
+
+def test_a_product_named_after_a_condition_keeps_its_card(monkeypatch):
+    """A real product is called "Pterygium Eye Drops". Naming itself must not blank its page."""
+    reply = json.dumps({"description": "Pterygium Eye Drops is a gentle drop for the eye surface.",
+                        "ingredients": [], "benefits": ["Pterygium Eye Drops comfort the eye surface"]})
+    card, client = _card(monkeypatch, EYE_DROPS, [reply])
+    assert card["description"].startswith("Pterygium Eye Drops")
+    assert card["benefits"]
+    assert len(client.messages.calls) == 1
+
+
+def test_the_claim_is_still_caught_on_that_product(monkeypatch):
+    claim = json.dumps({"description": "Pterygium Eye Drops.", "ingredients": [],
+                        "benefits": ["Support for pterygium-related concerns"]})
+    card, client = _card(monkeypatch, EYE_DROPS, [claim, claim])
+    assert card["description"] == "" and card["benefits"] == []
+    assert len(client.messages.calls) == 2
 
 
 def test_vagus_drops_show_no_per_bottle_amounts_as_doses(catalog):
