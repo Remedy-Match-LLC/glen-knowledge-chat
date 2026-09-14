@@ -45,7 +45,8 @@ def test_validate_name_edit_accepts_and_strips():
 
 
 def test_validate_name_edit_accepts_at_the_length_cap():
-    name = "A" * pa.MAX_NAME_LENGTH
+    # Mixed case, so the name rule leaves it alone and this tests only the cap.
+    name = "Ab" * (pa.MAX_NAME_LENGTH // 2)
     clean, err = pa.validate_name_edit(name)
     assert err is None
     assert clean == name

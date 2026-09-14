@@ -1,3 +1,4 @@
+import pytest
 import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -187,6 +188,21 @@ def test_normalize_for_write_leaves_names_without_a_glued_suffix_alone():
     assert row["name"] == "Farm 2"
     row = _normalize_for_write({"name": "Zevan III"})
     assert row["name"] == "Zevan III"
+
+
+@pytest.mark.parametrize("scraped,expected", [
+    ("ANNA KREIMES", "Anna Kreimes"),
+    ("lon mcrae", "Lon McRae"),
+    ("DeAnna Smith", "DeAnna Smith"),          # mixed case is a choice, left alone
+])
+def test_normalize_for_write_capitalises_an_all_lower_or_all_caps_name(scraped, expected):
+    """Glen, 2026-09-13. 165 directory names were all lowercase or all capitals.
+    The upsert SETs name from EXCLUDED, so only this boundary makes a fix hold."""
+    assert _normalize_for_write({"name": scraped})["name"] == expected
+
+
+def test_normalize_for_write_strips_a_glued_suffix_before_capitalising():
+    assert _normalize_for_write({"name": "STACIE HAN2"})["name"] == "Stacie Han"
 
 
 def test_normalize_for_write_no_name_key_is_a_noop():
