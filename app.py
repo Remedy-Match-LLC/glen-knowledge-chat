@@ -17927,7 +17927,9 @@ def api_practitioner_dropship_checkout():
                       items=(out.get("lines") or items), address=ship, channel="wholesale",
                       get_cents=out.get("get_cents", 0), pay_method=method,
                       practitioner_id=pid,
-                      shipping_cents=out.get("shipping_cents", 0))
+                      shipping_cents=out.get("shipping_cents", 0),
+                      recipient_email=_dropship_client_email(
+                          _body.get("patient_email"), prac.get("email")))
         # Persist the line-faithful QBO payload (paid-only: no invoice yet) so the
         # return-handler can book a real Sales Receipt once payment is confirmed.
         if out.get("qbo_payload"):
@@ -20692,6 +20694,7 @@ def api_practitioner_settings_get():
         cx.row_factory = sqlite3.Row
         _ps.init_settings_table(cx)
         settings = _ps.get_settings(cx, pid)
+        client_review_emails = _ps.client_review_emails_enabled(cx, pid)
 
     # show_contact lives on the Supabase practitioners row, not the SQLite
     # settings table. Read it directly; never let a failure 500 the page.
@@ -20770,6 +20773,7 @@ def api_practitioner_settings_get():
 
     resp = {"ok": True, "branding": settings["branding"], "pricing": settings["pricing"],
             "chat_enabled": settings.get("chat_enabled", False),
+            "client_review_emails": client_review_emails,
             "show_contact": show_contact}
     if profile is not None:
         resp["profile"] = profile
@@ -20860,7 +20864,11 @@ def api_practitioner_settings_post():
         _ps.init_settings_table(cx)
         _ps.set_branding(cx, pid, branding_clean, chat_enabled=chat_enabled)
         _ps.set_pricing(cx, pid, pricing_clean)
+        # Only touched when the key is present, so another save never resets it.
+        if "client_review_emails" in body:
+            _ps.set_client_review_emails(cx, pid, bool(body.get("client_review_emails")))
         settings = _ps.get_settings(cx, pid)
+        client_review_emails = _ps.client_review_emails_enabled(cx, pid)
 
     # show_contact lives on the Supabase practitioners row. Only touch it when
     # the key is present, so saving branding/pricing alone never resets it.
@@ -20906,6 +20914,7 @@ def api_practitioner_settings_post():
     resp = {"ok": True, "branding": settings["branding"],
             "pricing": settings["pricing"],
             "chat_enabled": settings.get("chat_enabled", False),
+            "client_review_emails": client_review_emails,
             "clamped": clamped}
     if show_contact_out is not None:
         resp["show_contact"] = show_contact_out
@@ -37917,7 +37926,9 @@ def api_console_dropship_create():
         total_cents=int(round((out.get("total") or 0) * 100)),
         address=ship, channel="wholesale", get_cents=out.get("get_cents", 0),
         pay_method="card", practitioner_id=pid,
-        shipping_cents=out.get("shipping_cents", 0))
+        shipping_cents=out.get("shipping_cents", 0),
+        recipient_email=_dropship_client_email(body.get("patient_email"),
+                                               practitioner["email"]))
     if out.get("qbo_payload"):
         with db.connect(LOG_DB) as cx:
             _bos_orders.set_order_qbo_lines(cx, ref, out["qbo_payload"])
@@ -51481,11 +51492,24 @@ def _normalize_ship_address(addr, fallback_name=""):
     }
 
 
+def _dropship_client_email(raw, practitioner_email):
+    """The client email a practitioner typed at drop-ship checkout, or None.
+
+    Dropped when it is blank, malformed, or the practitioner's own address: the
+    review invite reads it, and it must never reach the practitioner."""
+    email = str(raw or "").strip().lower()
+    if not email or " " in email or not re.match(r"^[^@]+@[^@]+\.[^@]+$", email):
+        return None
+    if email == str(practitioner_email or "").strip().lower():
+        return None
+    return email
+
+
 def _ingest_order(*, source, external_ref, email="", name="", phone="",
                   items=None, total_cents=0, address=None, channel="retail",
                   get_cents=0, discount_cents=0, points_redeemed_cents=0, shipping_cents=0,
                   status="new", paid_cents=None, pay_method=None, practitioner_id=None,
-                  margin_cents=None, ship_credit_applied_cents=None):
+                  margin_cents=None, ship_credit_applied_cents=None, recipient_email=None):
     """Best-effort: record an order into the BOS orders table. Never raises into
     a checkout path. get_cents = absorbed Hawai'i GET owed (recorded, not charged).
     status defaults to 'new' (enters fulfillment); pass 'done' for digital charges
@@ -51504,7 +51528,8 @@ def _ingest_order(*, source, external_ref, email="", name="", phone="",
                 shipping_cents=int(shipping_cents or 0), status=status,
                 pay_method=pay_method, practitioner_id=practitioner_id,
                 margin_cents=margin_cents,
-                ship_credit_applied_cents=ship_credit_applied_cents)
+                ship_credit_applied_cents=ship_credit_applied_cents,
+                recipient_email=recipient_email)
             if paid_cents is not None and _oid:
                 _bos_orders.mark_order_paid_keep_status(
                     cx, _oid, method="card", amount_cents=int(paid_cents))

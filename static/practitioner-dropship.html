@@ -157,6 +157,11 @@
           <input id="pat-name" placeholder="Patient full name" style="width:100%">
         </div>
         <div class="full">
+          <label for="pat-email" style="display:block;font-size:13px;color:var(--muted);margin-bottom:4px">Patient email (optional)</label>
+          <input id="pat-email" type="email" autocomplete="off" placeholder="patient@example.com" style="width:100%">
+          <div class="muted" style="font-size:12px;margin-top:4px">Used only for a review request, and only if you turn those on in Settings.</div>
+        </div>
+        <div class="full">
           <label style="display:block;font-size:13px;color:var(--muted);margin-bottom:4px">Address line 1</label>
           <input id="addr1" placeholder="Street address" style="width:100%">
         </div>
@@ -206,6 +211,7 @@ var money = function(c){ return '$' + (Number(c||0)/100).toFixed(2); };
 var cartData = [];  // [{slug, qty, unit_cents, line_cents}]
 var quoteLoaded = false;
 var practitionerName = '';
+var practitionerEmail = '';
 var DRAFT_KEY = 'rm-practitioner-dropship-draft';
 var productSearchTimer = null;
 
@@ -403,6 +409,7 @@ function loadPortalData(){
       if(!d.ok){ showAuthWall(); return; }
       var practiceName = (d.branding && d.branding.practice_name) || d.practice_name || '';
       practitionerName = d.name || '';
+      practitionerEmail = d.email || '';
       $('who').textContent = (d.name || '') + (practiceName ? ' \xb7 ' + practiceName : '');
       applyBranding(d.branding);
       // show/hide card option
@@ -499,6 +506,7 @@ $('checkout-btn').addEventListener('click', function(){
       token: TOKEN,
       method: method,
       patient_address: patient_address,
+      patient_email: ($('pat-email').value || '').trim(),
       recipient_name_confirmed: recipientNameConfirmed
     })
   })
@@ -633,6 +641,9 @@ loadPortalData();
     $('addr-city').value = ship.city || '';
     $('addr-state').value = (ship.state || '').toUpperCase();
     $('addr-zip').value = ship.zip || ship.postal_code || '';
+    // A past drop-ship result carries the practitioner's own email, never prefill that.
+    var pickedEmail = (client.email || '').trim();
+    $('pat-email').value = (pickedEmail && pickedEmail.toLowerCase() !== practitionerEmail.toLowerCase()) ? pickedEmail : '';
     var box = document.getElementById('client-search-results');
     box.style.display='none'; box.innerHTML='';
     document.getElementById('client-search').value = '';
@@ -642,6 +653,7 @@ loadPortalData();
   }
   window.clientFocusClear = function(){
     currentClientEmail = '';
+    $('pat-email').value = '';
     document.getElementById('client-focus-badge').style.display='none';
     document.getElementById('client-focus-clear').style.display='none';
     document.getElementById('client-focus-note').textContent = '';

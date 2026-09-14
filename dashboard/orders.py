@@ -133,6 +133,11 @@ def init_orders_table(cx):
         # A corrected order may need a new number. Keep the original row for
         # financial/audit history while omitting it from operational lists.
         "ALTER TABLE orders ADD COLUMN superseded_by_order_id INTEGER",
+        # A practitioner-paid drop-ship records the PRACTITIONER as `email`. The
+        # client's own email, when the practitioner enters it at checkout, lives
+        # here so a client-facing email (the review invite) never goes to the
+        # practitioner. NULL = not given.
+        "ALTER TABLE orders ADD COLUMN recipient_email TEXT",
     ):
         try:
             cx.execute(ddl)
@@ -166,7 +171,7 @@ def upsert_order(cx, *, source, external_ref, email="", name="", phone="",
                  discount_cents=0, points_redeemed_cents=0, shipping_cents=0,
                  invoice_note=None, adjustment_cents=0,
                  pay_method=None, practitioner_id=None, margin_cents=None,
-                 ship_credit_applied_cents=None):
+                 ship_credit_applied_cents=None, recipient_email=None):
     """Idempotent on (source, external_ref). Inserts a new order, or updates the
     soft fields of an existing one WITHOUT regressing its lifecycle status.
     items and address are only overwritten when explicitly provided (not None).
@@ -210,6 +215,9 @@ def upsert_order(cx, *, source, external_ref, email="", name="", phone="",
         if ship_credit_applied_cents is not None:
             sets.append("ship_credit_applied_cents=?")
             vals.append(max(0, int(ship_credit_applied_cents)))
+        if recipient_email is not None:
+            sets.append("recipient_email=?")
+            vals.append(str(recipient_email))
         vals.append(row[0])
         cx.execute(f"UPDATE orders SET {', '.join(sets)} WHERE id=?", vals)
         cx.commit()
@@ -221,8 +229,8 @@ def upsert_order(cx, *, source, external_ref, email="", name="", phone="",
         "INSERT INTO orders (created_at, source, external_ref, channel, email, name, "
         "phone, items_json, total_cents, address_json, status, get_cents, person_id, "
         "discount_cents, points_redeemed_cents, shipping_cents, invoice_note, adjustment_cents, "
-        "pay_method, practitioner_id, margin_cents, ship_credit_applied_cents) "
-        "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        "pay_method, practitioner_id, margin_cents, ship_credit_applied_cents, recipient_email) "
+        "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
         (_now(), source, ref, channel, email, name, phone,
          json.dumps(items or []), int(total_cents or 0), json.dumps(address or {}),
          status, int(get_cents or 0),
@@ -232,7 +240,8 @@ def upsert_order(cx, *, source, external_ref, email="", name="", phone="",
          (str(pay_method) if pay_method is not None else None),
          (str(practitioner_id) if practitioner_id is not None else None),
          (int(margin_cents) if margin_cents is not None else None),
-         max(0, int(ship_credit_applied_cents or 0))))
+         max(0, int(ship_credit_applied_cents or 0)),
+         (str(recipient_email) if recipient_email else None)))
     cx.commit()
     if items is not None:
         _emit_source_events(cx, oid, email, items)
