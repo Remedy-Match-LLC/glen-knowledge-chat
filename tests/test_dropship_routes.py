@@ -242,3 +242,47 @@ def test_dropship_checkout_allows_confirmed_practitioner_recipient(monkeypatch):
                                   "street": "1 Main St", "city": "Los Angeles",
                                   "zip": "90001"}})
     assert r.status_code == 200
+
+
+def _checkout_capturing(monkeypatch, body_extra):
+    monkeypatch.setattr(appmod, "_practitioner_session_pid", lambda: "p1")
+    monkeypatch.setattr(appmod._pp, "portal_data", lambda pid: {
+        "wholesale_unlocked": True, "cart": [{"slug": "esr", "qty": 1}],
+        "email": "prac@x.com", "name": "Prac Titioner", "modules_completed": 1})
+    monkeypatch.setattr(appmod, "_price_cart", lambda *a, **k: {"shipping_cents": 1300})
+    monkeypatch.setattr(appmod._dropship, "build_dropship_order", lambda *a, **k: {
+        "ok": True, "invoice_id": "INV", "total": 69.0, "source": "dropship",
+        "qbo_payload": {}, "get_cents": 0, "shipping_cents": 1300})
+    cap = {}
+    monkeypatch.setattr(appmod, "_ingest_order", lambda **kw: cap.update(kw))
+    monkeypatch.setattr(appmod, "_STRIPE_ACTIVE", False)
+    monkeypatch.setattr(appmod._pp, "cart_clear", lambda pid: None)
+    body = {"method": "zelle",
+            "patient_address": {"name": "Tony", "street": "1 Main", "city": "Hilo",
+                                "state": "HI", "zip": "96720", "country": "US"}}
+    body.update(body_extra)
+    r = appmod.app.test_client().post("/api/practitioner/dropship/checkout", json=body)
+    assert r.status_code == 200, r.get_data(as_text=True)
+    return cap
+
+
+def test_dropship_checkout_records_the_client_email(monkeypatch):
+    cap = _checkout_capturing(monkeypatch, {"patient_email": " Tony@X.com "})
+    assert cap["recipient_email"] == "tony@x.com"
+    assert cap["email"] == "prac@x.com"   # the buyer of record is unchanged
+
+
+def test_dropship_checkout_drops_the_practitioners_own_email(monkeypatch):
+    cap = _checkout_capturing(monkeypatch, {"patient_email": "PRAC@x.com"})
+    assert not cap.get("recipient_email")
+
+
+def test_dropship_checkout_drops_a_malformed_client_email(monkeypatch):
+    cap = _checkout_capturing(monkeypatch, {"patient_email": "not an email"})
+    assert not cap.get("recipient_email")
+
+
+def test_dropship_page_asks_for_the_client_email():
+    page = (Path(__file__).parents[1] / "static" / "practitioner-dropship.html").read_text()
+    assert 'id="pat-email"' in page
+    assert "patient_email:" in page
