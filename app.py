@@ -10511,6 +10511,25 @@ def api_console_points_ledger():
                     "rows": [dict(r) for r in rows]})
 
 
+@app.route("/api/console/referral-redemptions", methods=["GET"])
+def api_console_referral_redemptions():
+    """Read-only list of referral_redemptions: who used whose code, on which order, and
+    whether the referrer reward settled. The points ledger alone cannot show a referral
+    order that credited nothing, so the daily referral check reads this."""
+    if not _console_key_ok():
+        return jsonify({"error": "Unauthorized"}), 401
+    from dashboard import referrals as _rf
+    with db.connect(LOG_DB) as cx:
+        _rf.init_tables(cx)
+        rows = cx.execute(
+            "SELECT referee_email, owner_email, code, kind, order_ref, created_at, "
+            "rewarded_at, reward_cents FROM referral_redemptions "
+            "ORDER BY created_at DESC LIMIT 500").fetchall()
+    keys = ("referee_email", "owner_email", "code", "kind", "order_ref", "created_at",
+            "rewarded_at", "reward_cents")
+    return jsonify({"ok": True, "rows": [dict(zip(keys, tuple(r))) for r in rows]})
+
+
 @app.route("/api/console/points-dedup", methods=["POST"])
 def api_console_points_dedup():
     """Owner-gated one-off: remove duplicate (order_ref, reason, scope) points_ledger
