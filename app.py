@@ -20944,16 +20944,21 @@ def api_practitioner_profile_submit():
 
 
 def _coach_cert_ok(cx, email):
-    """True only if the practitioner's APPROVED cert submissions satisfy the
-    completion rules. Fail-closed: any error → False (an unverified student is
-    never listed)."""
+    """May this practitioner be listed as a 1:1 volunteer coach?
+
+    Glen, 2026-09-13: certification students are included. So a practitioner
+    qualifies EITHER by approved cert submissions that satisfy the completion
+    rules, OR by being a certification student (_is_certification_student)
+    before finishing. Fail-closed: an error in either check never lists anyone
+    on its own."""
     try:
         from dashboard import cert_submissions as _cs, cert_rules as _cr
         subs = [s for s in _cs.list_for_email(cx, email) if s.get("status") == "approved"]
-        return bool(_cr.evaluate(subs).get("complete"))
+        if _cr.evaluate(subs).get("complete"):
+            return True
     except Exception:
         app.logger.exception("coach cert check failed for %s", email)
-        return False
+    return bool(_is_certification_student(email))
 
 
 @app.route("/api/practitioner/coach-profile", methods=["POST"])
