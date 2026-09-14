@@ -307,6 +307,37 @@ def test_write_timeout_records_unknown_stops_and_rerun_skips_it(monkeypatch, tmp
     assert '"skipped_unknown": 1' in capsys.readouterr().out
 
 
+def test_contact_create_timeout_refuses_the_send_before_mailing(monkeypatch, tmp_path):
+    # Status 0 from _api is truthy data, not a contact. If _create_contact returned
+    # it, the member would count as present and the run would send.
+    from dashboard import db
+    weekly = _weekly()
+    real_create = weekly._create_contact
+    sent, _ = _wire(monkeypatch, tmp_path, weekly)
+    monkeypatch.setattr(weekly, "_create_contact", real_create)
+    monkeypatch.setenv("GHL_LOCATION_ID", "location-1")
+    with db.connect(str(tmp_path / "chat_log.db")) as cx:
+        cx.execute("CREATE TABLE people (email TEXT, name TEXT)")
+        cx.commit()
+    writes = []
+    monkeypatch.setattr(weekly, "_api", lambda method, path, version, body=None, *, write=False:
+                        writes.append(path) or (0, {"transport_error": "TimeoutError"}))
+    argument, _ = allowlist.encode(["listed@example.com", PAID_OUTSIDE_LIST], KEY)
+
+    with pytest.raises(RuntimeError, match="authoritative members have no GHL contact"):
+        weekly.run(_args(only_list=argument))
+
+    assert writes == ["/contacts/"]
+    assert sent == []
+
+
+def test_create_contact_returns_none_when_the_write_gets_no_response(monkeypatch):
+    weekly = _weekly()
+    monkeypatch.setenv("GHL_LOCATION_ID", "location-1")
+    monkeypatch.setattr(weekly, "_api", lambda *a, **k: (0, {"transport_error": "TimeoutError"}))
+    assert weekly._create_contact("member@example.com", "A Member") is None
+
+
 def test_api_write_timeout_is_status_zero_but_read_timeout_raises(monkeypatch):
     weekly = _weekly()
     monkeypatch.setenv("GHL_PIT", "write-token")

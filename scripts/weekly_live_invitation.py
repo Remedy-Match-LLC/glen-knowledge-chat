@@ -125,6 +125,11 @@ def _create_contact(email, name=""):
         "lastName": " ".join(parts[1:]) if len(parts) > 1 else None,
         "source": "MyHealingOasis weekly live community",
     }, write=True)
+    if status == 0:
+        # No response. The contact may or may not exist now, so there is no id to
+        # send to. Returning the error dict would count as a contact and let the
+        # send proceed; None makes the member missing, and --send refuses.
+        return None
     if status >= 400:
         # HighLevel can report the authoritative membership email as an
         # additional address on an existing contact.  Reuse that contact instead
