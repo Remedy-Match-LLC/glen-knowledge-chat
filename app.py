@@ -51419,6 +51419,36 @@ import dashboard.orders as _bos_orders  # noqa: F401 (registers order actions + 
 # block commits the claim+grant together on success and ROLLS BACK the claim on any
 # failure -- atomic, and never leaves a pending claim on the request cx.
 _bos_orders.set_membership_grant_hook(lambda _cx, _o: _grant_membership_line_dep(_o))
+
+
+def _settle_referrals_on_altpay(order):
+    """Referral rewards for an order paid outside Stripe (Zelle, Wise, cheque, cash,
+    an owner-recorded payment). Runs the same two settlers the card path runs, keyed
+    on the same order_ref (the order's external_ref, which is the checkout invoice_id):
+
+      * _settle_referral: the affiliate attribution reward (REWARDS_TIERS_ENABLED).
+      * _settle_referrer_reward: the referral-code reward and its tier 2 (REFERRALS).
+
+    Both are idempotent per order_ref, so an order the card path already settled is
+    not paid twice. Like the membership grant above, this IGNORES the request cx and
+    works on its own connection, so a failed credit never leaves a pending write on
+    the payment's connection. Best-effort: never raises."""
+    if not order:
+        return
+    order_ref = (order.get("external_ref") or "").strip()
+    if not order_ref:
+        return
+    _settle_referral(order, order_ref=order_ref)
+    try:
+        with db.connect(LOG_DB) as cx:
+            cx.row_factory = sqlite3.Row
+            _settle_referrer_reward(cx, order, order_ref)
+    except Exception as _e:
+        print(f"[rewards] alt-pay referral-code settle failed ref={order_ref}: {_e!r}",
+              flush=True)
+
+
+_bos_orders.set_referral_settle_hook(lambda _cx, _o: _settle_referrals_on_altpay(_o))
 import dashboard.combined_shipments as _bos_combined_shipments  # noqa: F401 (household combined-shipment model + actions)
 import dashboard.coaching as _coaching_actions  # noqa: F401 (registers coaching.grant action)
 import dashboard.finance as _bos_finance  # noqa: F401 (registers money signal + finance actions)

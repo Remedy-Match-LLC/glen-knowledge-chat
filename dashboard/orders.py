@@ -1117,6 +1117,34 @@ def set_membership_grant_hook(fn):
     _membership_grant_hook = fn
 
 
+# App-layer referral settlement, injected the same way as the membership grant above.
+# The card path credits referrers through the settlement hub: the attribution reward
+# (_SETTLEMENT_DEPS.settle_referral) and the referral-code reward inside settle_points.
+# An order paid by Zelle, Wise, cheque, cash or an owner-recorded payment never reached
+# either, so its referrer was never paid. Signature: hook(cx, order). Idempotent per
+# order_ref inside the hook, so an order already settled by card cannot pay twice.
+_referral_settle_hook = None
+
+
+def set_referral_settle_hook(fn):
+    """Register the app-side referral settlement (fn(cx, order)); keeps this
+    module free of an app import."""
+    global _referral_settle_hook
+    _referral_settle_hook = fn
+
+
+def settle_referrals_on_payment(cx, order):
+    """Run the registered referral settlement for an order that has just become
+    paid. Best-effort: a referral hiccup never fails the payment record."""
+    if not _referral_settle_hook or not order:
+        return
+    try:
+        _referral_settle_hook(cx, order)
+    except Exception as e:
+        print(f"[orders] referral settle on payment skipped for #{order.get('id')}: {e!r}",
+              flush=True)
+
+
 def _record_payment_exec(params, ctx):
     cx = (ctx or {}).get("cx") or (params or {}).get("cx")
     if cx is None:
@@ -1172,6 +1200,8 @@ def _record_payment_exec(params, ctx):
             _membership_grant_hook(cx, _o)
         except Exception as _me:
             print(f"[orders] membership grant on payment skipped for #{oid}: {_me!r}", flush=True)
+    # Alt-pay parity: credit the referrer, as the card path's settlement hub does.
+    settle_referrals_on_payment(cx, _o)
     return {"order_id": oid, "status": "new", "pay_status": "paid",
             "pay_method": method, "paid_cents": amount_cents,
             "message": f"Payment recorded for order #{oid}"

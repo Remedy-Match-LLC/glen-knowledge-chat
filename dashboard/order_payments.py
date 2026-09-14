@@ -253,11 +253,17 @@ def _sync_fully_paid_order(cx, order_id, method):
     order = existing_order
     paid_cents = int(bal["paid_cents"] - bal["refunded_cents"])
     if order.get("status") in ("proposed", "confirmed"):
-        orders.set_order_payment(cx, order_id, method=method,
-                                 amount_cents=paid_cents)
+        projected = orders.set_order_payment(cx, order_id, method=method,
+                                             amount_cents=paid_cents)
     else:
-        orders.mark_order_paid_keep_status(cx, order_id, method=method,
-                                           amount_cents=paid_cents)
+        projected = orders.mark_order_paid_keep_status(cx, order_id, method=method,
+                                                       amount_cents=paid_cents)
+    # The order has just become paid, so its referrer is owed. The card path credits
+    # that in its settlement hub; a ledger payment (Zelle, cheque, cash, the Zelle
+    # email import) had nothing. Fires on this transition only, because the early
+    # return above skips an order already projected paid.
+    if projected:
+        orders.settle_referrals_on_payment(cx, orders.get_order(cx, order_id))
 
 
 def add_payment(cx, order_id, amount_cents, method, *, source="manual",
