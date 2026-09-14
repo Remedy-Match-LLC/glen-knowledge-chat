@@ -9,6 +9,7 @@ from typing import Optional, Tuple
 
 from db_supabase import supabase_cursor
 from scrapers.practitioner_finder.normalize import normalize_country, strip_glued_name_suffix
+from dashboard.name_case import normalize_name
 
 
 MILES_TO_METERS = 1609.344
@@ -181,7 +182,9 @@ def _normalize_for_write(row_dict: dict) -> dict:
         if cleaned != row_dict.get("name"):
             print(f"[practitioner-finder] name normalized: {row_dict.get('name')!r} "
                   f"-> {cleaned!r}", flush=True)
-        row_dict["name"] = cleaned
+        # Glen, 2026-09-13: capitalise a name scraped all lowercase or all
+        # capitals. After the suffix strip, so "STACIE HAN2" becomes "Stacie Han".
+        row_dict["name"] = normalize_name(cleaned)
     existing = list(row_dict.get("specialties") or [])
     for tag in profession_specialties(row_dict.get("credentials")):
         if tag not in existing:
