@@ -43,6 +43,18 @@ def _seed_member(email, *, window=True, capacity=1):
             cx.execute("INSERT INTO coaching_windows (email,order_id,started_at,ends_at,"
                        "source,created_at) VALUES (?,?,?,?,?,?)",
                        (email, 1, now.isoformat(), ends, "test", now.isoformat()))
+        # Paid membership, not just a window. Glen, 2026-09-12: 1:1 coach connect
+        # is "only for paid members", so _coach_connect_entitled requires BOTH an
+        # active coaching window and current paid membership. A window alone used to
+        # be enough, which is what this fixture was built against.
+        cx.execute("CREATE TABLE IF NOT EXISTS memberships (id TEXT, email TEXT, "
+                   "granted_at TEXT, expires_at TEXT, granted_by TEXT, source TEXT, "
+                   "truly_vip_ref TEXT, notes TEXT)")
+        _n = datetime.now(timezone.utc)
+        cx.execute("INSERT OR REPLACE INTO memberships (id,email,granted_at,expires_at,"
+                   "granted_by,source,truly_vip_ref,notes) VALUES (?,?,?,?,?,?,?,?)",
+                   (f"m-{email}", email, _n.isoformat(),
+                    (_n + timedelta(days=60)).isoformat(), "test", "test", "", ""))
         token = _ev.ensure_portal_token(cx, email, "Mel")
         cx.commit()
     return token

@@ -31,8 +31,15 @@ MESSAGE = ("Email or password was not recognized. Set or reset your password bel
 
 
 def _password_login_route():
+    """Slice to the NEXT route decorator, not a fixed character count.
+
+    This used to take APP[i:i+2200]. Adding ten lines to the route pushed the message past
+    the window and both tests below started failing for a reason that had nothing to do
+    with the message. A fixed-width read of a file that grows is the same mistake as a
+    line-offset read that crosses into the next function."""
     i = APP.index('@app.route("/portal/password-login"')
-    return APP[i:i + 2200]
+    nxt = APP.find("\n@app.route", i + 1)
+    return APP[i:nxt if nxt != -1 else len(APP)]
 
 
 def _failure_messages(route):

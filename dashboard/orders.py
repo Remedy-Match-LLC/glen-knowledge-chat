@@ -133,6 +133,11 @@ def init_orders_table(cx):
         # A corrected order may need a new number. Keep the original row for
         # financial/audit history while omitting it from operational lists.
         "ALTER TABLE orders ADD COLUMN superseded_by_order_id INTEGER",
+        # A practitioner-paid drop-ship records the PRACTITIONER as `email`. The
+        # client's own email, when the practitioner enters it at checkout, lives
+        # here so a client-facing email (the review invite) never goes to the
+        # practitioner. NULL = not given.
+        "ALTER TABLE orders ADD COLUMN recipient_email TEXT",
     ):
         try:
             cx.execute(ddl)
@@ -166,7 +171,7 @@ def upsert_order(cx, *, source, external_ref, email="", name="", phone="",
                  discount_cents=0, points_redeemed_cents=0, shipping_cents=0,
                  invoice_note=None, adjustment_cents=0,
                  pay_method=None, practitioner_id=None, margin_cents=None,
-                 ship_credit_applied_cents=None):
+                 ship_credit_applied_cents=None, recipient_email=None):
     """Idempotent on (source, external_ref). Inserts a new order, or updates the
     soft fields of an existing one WITHOUT regressing its lifecycle status.
     items and address are only overwritten when explicitly provided (not None).
@@ -210,6 +215,9 @@ def upsert_order(cx, *, source, external_ref, email="", name="", phone="",
         if ship_credit_applied_cents is not None:
             sets.append("ship_credit_applied_cents=?")
             vals.append(max(0, int(ship_credit_applied_cents)))
+        if recipient_email is not None:
+            sets.append("recipient_email=?")
+            vals.append(str(recipient_email))
         vals.append(row[0])
         cx.execute(f"UPDATE orders SET {', '.join(sets)} WHERE id=?", vals)
         cx.commit()
@@ -221,8 +229,8 @@ def upsert_order(cx, *, source, external_ref, email="", name="", phone="",
         "INSERT INTO orders (created_at, source, external_ref, channel, email, name, "
         "phone, items_json, total_cents, address_json, status, get_cents, person_id, "
         "discount_cents, points_redeemed_cents, shipping_cents, invoice_note, adjustment_cents, "
-        "pay_method, practitioner_id, margin_cents, ship_credit_applied_cents) "
-        "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        "pay_method, practitioner_id, margin_cents, ship_credit_applied_cents, recipient_email) "
+        "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
         (_now(), source, ref, channel, email, name, phone,
          json.dumps(items or []), int(total_cents or 0), json.dumps(address or {}),
          status, int(get_cents or 0),
@@ -232,7 +240,8 @@ def upsert_order(cx, *, source, external_ref, email="", name="", phone="",
          (str(pay_method) if pay_method is not None else None),
          (str(practitioner_id) if practitioner_id is not None else None),
          (int(margin_cents) if margin_cents is not None else None),
-         max(0, int(ship_credit_applied_cents or 0))))
+         max(0, int(ship_credit_applied_cents or 0)),
+         (str(recipient_email) if recipient_email else None)))
     cx.commit()
     if items is not None:
         _emit_source_events(cx, oid, email, items)
@@ -1108,6 +1117,60 @@ def set_membership_grant_hook(fn):
     _membership_grant_hook = fn
 
 
+# App-layer referral settlement, injected the same way as the membership grant above.
+# The card path credits referrers through the settlement hub: the attribution reward
+# (_SETTLEMENT_DEPS.settle_referral) and the referral-code reward inside settle_points.
+# An order paid by Zelle, Wise, cheque, cash or an owner-recorded payment never reached
+# either, so its referrer was never paid. Signature: hook(cx, order). Idempotent per
+# order_ref inside the hook, so an order already settled by card cannot pay twice.
+_referral_settle_hook = None
+
+
+def set_referral_settle_hook(fn):
+    """Register the app-side referral settlement (fn(cx, order)); keeps this
+    module free of an app import."""
+    global _referral_settle_hook
+    _referral_settle_hook = fn
+
+
+def settle_referrals_on_payment(cx, order):
+    """Run the registered referral settlement for an order that has just become
+    paid. Best-effort: a referral hiccup never fails the payment record."""
+    if not _referral_settle_hook or not order:
+        return
+    try:
+        _referral_settle_hook(cx, order)
+    except Exception as e:
+        print(f"[orders] referral settle on payment skipped for #{order.get('id')}: {e!r}",
+              flush=True)
+
+
+# App-layer buyer points settlement for the payment-ledger path, injected like the hooks
+# above. The card path settles points in its hub (app._settle_order_points: buyer earn,
+# no points on a wholesale sale, the affiliate first-order rule). A payment recorded in
+# the ledger (payments panel, Zelle import) settled no points at all. Signature:
+# hook(cx, order). Idempotent per order_ref inside the hook.
+_points_settle_hook = None
+
+
+def set_points_settle_hook(fn):
+    """Register the app-side buyer points settlement (fn(cx, order))."""
+    global _points_settle_hook
+    _points_settle_hook = fn
+
+
+def settle_points_on_payment(cx, order):
+    """Run the registered points settlement for an order that has just become paid.
+    Best-effort: a points hiccup never fails the payment record."""
+    if not _points_settle_hook or not order:
+        return
+    try:
+        _points_settle_hook(cx, order)
+    except Exception as e:
+        print(f"[orders] points settle on payment skipped for #{order.get('id')}: {e!r}",
+              flush=True)
+
+
 def _record_payment_exec(params, ctx):
     cx = (ctx or {}).get("cx") or (params or {}).get("cx")
     if cx is None:
@@ -1163,6 +1226,8 @@ def _record_payment_exec(params, ctx):
             _membership_grant_hook(cx, _o)
         except Exception as _me:
             print(f"[orders] membership grant on payment skipped for #{oid}: {_me!r}", flush=True)
+    # Alt-pay parity: credit the referrer, as the card path's settlement hub does.
+    settle_referrals_on_payment(cx, _o)
     return {"order_id": oid, "status": "new", "pay_status": "paid",
             "pay_method": method, "paid_cents": amount_cents,
             "message": f"Payment recorded for order #{oid}"

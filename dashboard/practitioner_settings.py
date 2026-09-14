@@ -43,11 +43,61 @@ def init_settings_table(cx) -> None:
         cx.execute("ALTER TABLE practitioner_settings ADD COLUMN dropship_unit_cents INTEGER")
     except Exception:
         pass
+    # Checked first rather than try/except: a failed ALTER aborts a Postgres
+    # transaction, and everything after it on the connection then fails too.
+    from dashboard import db as _db
+    if not _db.column_exists(cx, "practitioner_settings", "client_review_emails"):
+        cx.execute("ALTER TABLE practitioner_settings "
+                   "ADD COLUMN client_review_emails INTEGER NOT NULL DEFAULT 0")
     cx.commit()
 
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+# ── Review-request emails to the practitioner's clients ──────────────────────
+# Glen 2026-09-13: the practitioner decides, off by default, and the CLIENT gets
+# the email. Read by dashboard.review_invites.pending().
+
+def _has_client_review_column(cx) -> bool:
+    # A missing table or column reads as "off". Checked, never caught: a failed
+    # SELECT aborts a Postgres transaction for everything after it.
+    from dashboard import db as _db
+    return _db.column_exists(cx, "practitioner_settings", "client_review_emails")
+
+
+def client_review_emails_enabled(cx, pid: str) -> bool:
+    if not _has_client_review_column(cx):
+        return False
+    row = cx.execute(
+        "SELECT client_review_emails FROM practitioner_settings WHERE practitioner_id = ?",
+        (str(pid),),
+    ).fetchone()
+    return bool(row and row[0])
+
+
+def set_client_review_emails(cx, pid: str, enabled: bool) -> None:
+    cx.execute(
+        """
+        INSERT INTO practitioner_settings (practitioner_id, client_review_emails, updated_at)
+        VALUES (?, ?, ?)
+        ON CONFLICT(practitioner_id) DO UPDATE SET
+            client_review_emails = excluded.client_review_emails,
+            updated_at           = excluded.updated_at
+        """,
+        (str(pid), 1 if enabled else 0, _now()),
+    )
+    cx.commit()
+
+
+def pids_with_client_review_emails(cx) -> set:
+    if not _has_client_review_column(cx):
+        return set()
+    rows = cx.execute(
+        "SELECT practitioner_id FROM practitioner_settings WHERE client_review_emails = 1"
+    ).fetchall()
+    return {str(r[0]) for r in rows}
 
 
 def get_settings(cx, pid: str) -> dict:

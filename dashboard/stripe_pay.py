@@ -89,6 +89,9 @@ def create_checkout_session(amount_cents, *, customer_email, description, metada
     if save_card:
         params["customer_creation"] = "always"
         params["payment_intent_data[setup_future_usage]"] = "off_session"
+        # Reuse this buyer's existing Customer. Without it every vaulted card made
+        # a new record and the card landed somewhere with no history on it.
+        _attach_customer(params, customer_email)
     j = _post("/checkout/sessions", params)
     return {"id": j.get("id"), "url": j.get("url")}
 
@@ -165,6 +168,8 @@ def create_price_checkout_session(price_id, *, mode, customer_email, metadata,
         price_id, mode=mode, customer_email=customer_email, metadata=metadata,
         success_url=success_url, cancel_url=cancel_url,
         subscription_metadata=subscription_metadata)
+    # Subscription mode always needs a Customer, so it always created one.
+    _attach_customer(params, customer_email)
     j = _post("/checkout/sessions", params)
     return {"id": j.get("id"), "url": j.get("url")}
 
@@ -212,6 +217,36 @@ def _find_or_create_customer(email: str) -> str:
             pass
     j = _post("/customers", {"email": email} if email else {})
     return j.get("id") or ""
+
+
+def _attach_customer(params: dict, customer_email: str) -> dict:
+    """Bind a Checkout Session to ONE Stripe Customer instead of minting a fresh one.
+
+    Stripe Checkout creates a new Customer whenever the session needs one, and
+    `customer_email` alone never looks for an existing match. So every session that
+    needs a customer made another record for the same person: `customer_creation=
+    "always"` (the save_card paths) and every subscription-mode session.
+
+    Measured 2026-09-12: eight emails held 21 records more than they should.
+    Ashley King had six, one per checkout session including the ones that failed.
+    No customer was double-charged, but a repeat buyer could not be looked up in one
+    place and a vaulted card never landed on the record holding their history,
+    which is the point of vaulting it.
+
+    Stripe rejects `customer` and `customer_email` together, so this sets exactly
+    one. When no id can be resolved the call falls back to the old behaviour, which
+    means a lookup failure can still mint a duplicate but never blocks a payment.
+    """
+    cid = _find_or_create_customer(customer_email) if customer_email else ""
+    if cid:
+        params.pop("customer_email", None)
+        # customer_creation is meaningless once a customer is named, and Stripe
+        # rejects the pair.
+        params.pop("customer_creation", None)
+        params["customer"] = cid
+    elif customer_email:
+        params["customer_email"] = customer_email
+    return params
 
 
 def create_setup_session(*, customer_email, metadata, success_url, cancel_url) -> dict:

@@ -20,6 +20,7 @@ from typing import List, Optional, Tuple
 
 from dashboard import wholesale_pricing as pricing
 from dashboard.timeutil import is_expired as _is_expired
+from dashboard.name_case import normalize_name
 
 _LOG_DB = Path(os.environ.get("DATA_DIR", str(Path(__file__).resolve().parent.parent))) / "chat_log.db"
 
@@ -706,6 +707,7 @@ def register_practitioner(clean: dict, *, now=None) -> Tuple[str, bool]:
     immediately; coaches stay locked until the first module is committed. Returns
     (practitioner_id, wholesale_unlocked)."""
     from db_supabase import supabase_cursor
+    clean = dict(clean, name=normalize_name(clean.get("name")))  # Glen, 2026-09-13
     unlocked_at = _utcnow(now) if clean["portal_role"] == "licensed" else None
     tier = "panel_in_cert" if clean["portal_role"] == "coach" else "org_member"
     with supabase_cursor() as cur:
@@ -770,7 +772,7 @@ def upsert_cert_student(email, *, name="", modules_completed=0) -> Tuple[str, in
     from db_supabase import supabase_cursor
     email = str(email or "").strip()
     mc = max(0, min(int(modules_completed or 0), 12))
-    name = str(name or "").strip()
+    name = normalize_name(str(name or "").strip())
     with supabase_cursor() as cur:
         row = find_row_for_email(cur, email, "id, tier")
         if row:
@@ -866,6 +868,7 @@ def submit_wholesale_application(clean: dict, *, now=None) -> Tuple[str, bool]:
     licensed/coach role, and never clears an already-granted unlock). Returns
     (practitioner_id, already_unlocked)."""
     from db_supabase import supabase_cursor
+    clean = dict(clean, name=normalize_name(clean.get("name")))  # Glen, 2026-09-13
     submitted_at = _utcnow(now)
     with supabase_cursor() as cur:
         row = find_row_for_email(cur, clean["email"], "id, wholesale_unlocked_at")

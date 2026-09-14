@@ -245,11 +245,15 @@ FEEDBACK_VIEW_URL   = os.environ.get("FEEDBACK_VIEW_URL",   "https://Truly.VIP/F
 # dashboard/openai_failover.py.
 from dashboard.openai_failover import build_openai_client as _build_openai_client
 from dashboard.people import set_person_tags, distinct_tags, dedupe_tags_ci
+from dashboard.name_case import normalize_person_names as _normalize_person_names
 from dashboard import affiliate_dashboard
 from dashboard import practitioner_slugs as _ps_signup
 from dashboard import ash_ally
 from dashboard import client_360
 from dashboard import recommendation_events
+from dashboard import auth_limits as _auth_limits
+from dashboard import client_address as _client_address
+from dashboard import response_timing as _response_timing
 from dashboard import db
 from dashboard import dbwrite
 from dashboard.chat_limits import (client_ip, VelocityLimiter, LIMITS,
@@ -3979,10 +3983,14 @@ def begin_ascend_tier(slug):
 
 @app.route("/begin/ascend-tier")
 def begin_ascend_tier_data():
-    tier = begin_funnel.TIER_CATALOG.get((request.args.get("slug") or "").strip())
+    slug = (request.args.get("slug") or "").strip()
+    tier = begin_funnel.TIER_CATALOG.get(slug)
     if not tier:
         return jsonify({"error": "unknown tier"}), 404
-    return jsonify(tier)
+    # The page body, added 2026-09-12. Merged rather than nested so the template
+    # reads one flat object, and served as {} when a rung has no copy yet, so a
+    # new catalog entry renders the old short card instead of breaking.
+    return jsonify({**tier, "page": begin_funnel.TIER_PAGES.get(slug, {})})
 
 
 @app.route("/program-guides")
@@ -7360,7 +7368,14 @@ def _is_paid_member(email):
     non-member a discount."""
     try:
         if email and _active_membership_for_email(email):
-            return membership_category(email) != "trial"
+            if membership_category(email) != "trial":
+                return True
+            # Fall through rather than return False. A trial row used to end the
+            # check here, so it cancelled genuine family-plan coverage: J.C. Davis
+            # held a `biofield_trial` grant that expires in 2126 (lifetime by
+            # design, from the $1 unlock), was covered by an active family plan,
+            # and was charged full price permanently. Glen 2026-09-12: nobody with
+            # a plan should be eligible for a trial, so a plan always outranks one.
         if email and _family_plan_enabled():
             from dashboard import family_plan as _fp
             with db.connect(LOG_DB) as cx:
@@ -10494,6 +10509,25 @@ def api_console_points_ledger():
                     "summary": [{"reason": r["reason"], "scope": r["scope"],
                                  "entries": r["n"], "total_cents": r["cents"]} for r in summ],
                     "rows": [dict(r) for r in rows]})
+
+
+@app.route("/api/console/referral-redemptions", methods=["GET"])
+def api_console_referral_redemptions():
+    """Read-only list of referral_redemptions: who used whose code, on which order, and
+    whether the referrer reward settled. The points ledger alone cannot show a referral
+    order that credited nothing, so the daily referral check reads this."""
+    if not _console_key_ok():
+        return jsonify({"error": "Unauthorized"}), 401
+    from dashboard import referrals as _rf
+    with db.connect(LOG_DB) as cx:
+        _rf.init_tables(cx)
+        rows = cx.execute(
+            "SELECT referee_email, owner_email, code, kind, order_ref, created_at, "
+            "rewarded_at, reward_cents FROM referral_redemptions "
+            "ORDER BY created_at DESC LIMIT 500").fetchall()
+    keys = ("referee_email", "owner_email", "code", "kind", "order_ref", "created_at",
+            "rewarded_at", "reward_cents")
+    return jsonify({"ok": True, "rows": [dict(zip(keys, tuple(r))) for r in rows]})
 
 
 @app.route("/api/console/points-dedup", methods=["POST"])
@@ -16057,8 +16091,21 @@ def _activate_coaching_for_shipment(cx, shipment, *, delivered_at):
     member orders, so each client gets their own window (single shipments = 1
     member = unchanged behavior). open_window is no-stacking/one-per-order, so this
     never double-opens. Returns {ok, opened, members:[per-order result]}."""
+    # Skip only when the member work was actually DONE, not merely when the parcel
+    # was seen. A blanket delivered_at check strands any order linked AFTER the
+    # first delivery signal: on 2026-09-11 orders 146 and 170 were marked delivered
+    # while unlinked, so the shipment carried delivered_at with no members resolved,
+    # and every later sweep returned already_processed. Both sat at 'shipped'
+    # forever with no coaching month, even though USPS had reported them delivered.
+    #
+    # Falling through is safe because every write below is independently idempotent:
+    # mark_shipment_delivered only sets a NULL, set_order_status writes the same
+    # value, open_window is one-per-order and no-stacking, and the Biofield grant
+    # claims a row per biofield order. The early return was belt-and-braces on top
+    # of those, and the braces were cutting off the work.
     already = _shipment_field(shipment, "delivered_at")
-    if already:
+    opened_before = _shipment_field(shipment, "coaching_opened")
+    if already and opened_before:
         return {"skipped": "already_processed"}
     sid = _shipment_field(shipment, "id")
     uuid = _shipment_field(shipment, "order_uuid")
@@ -17900,7 +17947,9 @@ def api_practitioner_dropship_checkout():
                       items=(out.get("lines") or items), address=ship, channel="wholesale",
                       get_cents=out.get("get_cents", 0), pay_method=method,
                       practitioner_id=pid,
-                      shipping_cents=out.get("shipping_cents", 0))
+                      shipping_cents=out.get("shipping_cents", 0),
+                      recipient_email=_dropship_client_email(
+                          _body.get("patient_email"), prac.get("email")))
         # Persist the line-faithful QBO payload (paid-only: no invoice yet) so the
         # return-handler can book a real Sales Receipt once payment is confirmed.
         if out.get("qbo_payload"):
@@ -20130,6 +20179,94 @@ def console_biofield_reveals_page():
     return resp
 
 
+@app.route("/api/console/membership-lookup", methods=["GET"])
+def api_console_membership_lookup():
+    """OWNER, read-only: why does the pricing gate think this email is a member?
+
+    The members board and the pricing gate read the same entitlement and have
+    disagreed in production. On 2026-09-12 two emails priced as full members while
+    appearing in no bucket on /api/console/members and nowhere on /admin/membership
+    (which is a form, not a list, so checking it proved nothing). There was no way
+    to tell a genuine grant from a leak, and the two need opposite fixes: one would
+    strip entitlement from a paying customer, the other gives away $9.22 a bottle.
+
+    Returns every input `_is_paid_member` consults, its verdict, and whether the
+    board would show them. `board_shows` disagreeing with `is_paid_member` IS the
+    bug, and this endpoint exists so that disagreement is visible instead of
+    inferred.
+
+    Memberships rows are returned INCLUDING expired ones, because an expiry that
+    looks past to one comparison and future to another is one of the ways the two
+    views can diverge (the two call sites format `now` differently: `_now_iso()`
+    gives seconds precision, `_active_membership_for_email` gives microseconds).
+    """
+    if CONSOLE_SECRET:
+        _key = _present_console_key()
+        if _key != CONSOLE_SECRET and not _owner_token_ok(_key):
+            return jsonify({"error": "unauthorized"}), 401
+    from dashboard import member_access_policy as _map
+    from dashboard import subscriptions as _subs
+    email = _map.normalized(request.args.get("email") or "")
+    if not email:
+        return jsonify({"ok": False, "error": "email required"}), 400
+
+    out = {"email": email, "override": _map.override_for(email)}
+    try:
+        cx = db.connect(LOG_DB)
+        cx.row_factory = sqlite3.Row
+        try:
+            out["memberships"] = [dict(r) for r in cx.execute(
+                "SELECT * FROM memberships WHERE lower(TRIM(email))=? "
+                "ORDER BY COALESCE(expires_at,'9999') DESC", (email,)).fetchall()]
+            out["subscriptions"] = [dict(r) for r in cx.execute(
+                "SELECT * FROM subscriptions WHERE lower(TRIM(email))=? ORDER BY id",
+                (email,)).fetchall()]
+            # Exactly what the board would do with this email, so a disagreement
+            # is reported rather than reasoned about.
+            board = {(s.get("email") or "").strip().lower()
+                     for s in _subs.list_active_memberships(cx)}
+            holders = {(g.get("email") or "").strip().lower()
+                       for g in _subs.list_membership_holders(cx)}
+            out["board_shows"] = bool(email in board or email in holders)
+            out["board_via"] = ("subscription" if email in board
+                                else "grant" if email in holders else None)
+        finally:
+            cx.close()
+    except Exception as e:
+        out["db_error"] = repr(e)
+
+    try:
+        row = _active_membership_for_email(email)
+        out["active_membership_row"] = row
+    except Exception as e:
+        out["active_membership_row"] = None
+        out["active_membership_error"] = repr(e)
+    for key, fn in (("membership_category", lambda: membership_category(email)),
+                    ("is_paid_member", lambda: _is_paid_member(email))):
+        try:
+            out[key] = fn()
+        except Exception as e:
+            out[key] = None
+            out[key + "_error"] = repr(e)
+
+    out["family_plan_enabled"] = bool(_family_plan_enabled())
+    try:
+        if out["family_plan_enabled"]:
+            from dashboard import family_plan as _fp
+            with db.connect(LOG_DB) as _cx:
+                _fp.init_family_plan_table(_cx)
+                out["family_plan_covers"] = bool(_fp.covers(_cx, email))
+        else:
+            out["family_plan_covers"] = False
+    except Exception as e:
+        out["family_plan_covers"] = None
+        out["family_plan_error"] = repr(e)
+
+    out["disagreement"] = bool(out.get("is_paid_member")) != bool(out.get("board_shows"))
+    out["ok"] = True
+    return jsonify(out)
+
+
 @app.route("/api/console/remedy-meanings", methods=["GET"])
 def api_console_remedy_meanings():
     """Return one row per catalog product joined with stored canonical meanings."""
@@ -20220,7 +20357,7 @@ def api_console_members():
         if _key != CONSOLE_SECRET and not _owner_token_ok(_key):
             return jsonify({"error": "unauthorized"}), 401
     from dashboard import subscriptions as _subs
-    buckets = {"trial": [], "full": [], "paused": []}
+    buckets = {"trial": [], "full": [], "paused": [], "family": []}
     with db.connect(LOG_DB) as cx:
         cx.row_factory = sqlite3.Row
         _subs.migrate_add_failed_count(cx)
@@ -20243,6 +20380,49 @@ def api_console_members():
         for g in _subs.list_membership_holders(cx):
             g["name"] = _member_name_for(cx, g.get("email") or "")
             buckets["full"].append(g)
+        # Family plans are a THIRD way to hold membership and the board could not
+        # see them at all: it read `subscriptions` and `memberships` and never
+        # `family_subscriptions` or `household_members`. On 2026-09-12 four of the
+        # eight family-plan people were absent here, including a plan holder, while
+        # every one of them priced as a member. Glen: "Family plan is a category of
+        # membership. Add it to the board."
+        #
+        # Holder and covered member are both listed, because entitlement reaches
+        # both and the board's job is to answer "who gets member pricing".
+        try:
+            from dashboard import family_plan as _fp
+            from dashboard import household as _hh
+            _fp.init_family_plan_table(cx)
+            _hh.init_household_tables(cx)
+            _seen = {r.get("email") for v in buckets.values() for r in v}
+            for plan in _fp.list_active(cx):
+                holder = plan.get("caregiver_email") or ""
+                rows = [(holder, "holder", "")]
+                for m in _hh.members_for(cx, holder):
+                    rows.append(((m.get("email") or "").strip().lower(),
+                                 "covered", m.get("relationship") or ""))
+                for em, role, rel in rows:
+                    if not em or em in _seen:
+                        continue
+                    _seen.add(em)
+                    buckets["family"].append({
+                        "email": em,
+                        "name": _member_name_for(cx, em),
+                        "category": "family",
+                        "role": role,
+                        "relationship": rel,
+                        "plan_holder": holder,
+                        "plan_status": plan.get("status") or "",
+                        "plan_source": plan.get("source") or "",
+                        "plan_cents": int(plan.get("amount_cents") or 0),
+                        "cadence_months": int(plan.get("cadence_months") or 1),
+                        "started": plan.get("started_at") or "",
+                        "next_charge_date": plan.get("next_charge_at") or "",
+                        "fail_count": int(plan.get("fail_count") or 0),
+                        "tier": 0, "order_count": 0,
+                    })
+        except Exception as e:      # the board degrades, it never 500s
+            print(f"[members-board] family plan read failed: {e!r}", flush=True)
     # credit_cents is always 0 now (accrual retired); sort is a harmless no-op
     # kept for row-shape stability.
     buckets["trial"].sort(key=lambda r: r.get("credit_cents", 0), reverse=True)
@@ -20534,6 +20714,7 @@ def api_practitioner_settings_get():
         cx.row_factory = sqlite3.Row
         _ps.init_settings_table(cx)
         settings = _ps.get_settings(cx, pid)
+        client_review_emails = _ps.client_review_emails_enabled(cx, pid)
 
     # show_contact lives on the Supabase practitioners row, not the SQLite
     # settings table. Read it directly; never let a failure 500 the page.
@@ -20612,6 +20793,7 @@ def api_practitioner_settings_get():
 
     resp = {"ok": True, "branding": settings["branding"], "pricing": settings["pricing"],
             "chat_enabled": settings.get("chat_enabled", False),
+            "client_review_emails": client_review_emails,
             "show_contact": show_contact}
     if profile is not None:
         resp["profile"] = profile
@@ -20702,7 +20884,11 @@ def api_practitioner_settings_post():
         _ps.init_settings_table(cx)
         _ps.set_branding(cx, pid, branding_clean, chat_enabled=chat_enabled)
         _ps.set_pricing(cx, pid, pricing_clean)
+        # Only touched when the key is present, so another save never resets it.
+        if "client_review_emails" in body:
+            _ps.set_client_review_emails(cx, pid, bool(body.get("client_review_emails")))
         settings = _ps.get_settings(cx, pid)
+        client_review_emails = _ps.client_review_emails_enabled(cx, pid)
 
     # show_contact lives on the Supabase practitioners row. Only touch it when
     # the key is present, so saving branding/pricing alone never resets it.
@@ -20748,6 +20934,7 @@ def api_practitioner_settings_post():
     resp = {"ok": True, "branding": settings["branding"],
             "pricing": settings["pricing"],
             "chat_enabled": settings.get("chat_enabled", False),
+            "client_review_emails": client_review_emails,
             "clamped": clamped}
     if show_contact_out is not None:
         resp["show_contact"] = show_contact_out
@@ -20786,16 +20973,21 @@ def api_practitioner_profile_submit():
 
 
 def _coach_cert_ok(cx, email):
-    """True only if the practitioner's APPROVED cert submissions satisfy the
-    completion rules. Fail-closed: any error → False (an unverified student is
-    never listed)."""
+    """May this practitioner be listed as a 1:1 volunteer coach?
+
+    Glen, 2026-09-13: certification students are included. So a practitioner
+    qualifies EITHER by approved cert submissions that satisfy the completion
+    rules, OR by being a certification student (_is_certification_student)
+    before finishing. Fail-closed: an error in either check never lists anyone
+    on its own."""
     try:
         from dashboard import cert_submissions as _cs, cert_rules as _cr
         subs = [s for s in _cs.list_for_email(cx, email) if s.get("status") == "approved"]
-        return bool(_cr.evaluate(subs).get("complete"))
+        if _cr.evaluate(subs).get("complete"):
+            return True
     except Exception:
         app.logger.exception("coach cert check failed for %s", email)
-        return False
+    return bool(_is_certification_student(email))
 
 
 @app.route("/api/practitioner/coach-profile", methods=["POST"])
@@ -31123,6 +31315,27 @@ def community_publish():
     return jsonify({"ok": True, "content_id": cid, "outtakes": n})
 
 
+def _coach_connect_entitled(cx, email):
+    """May this person reach an individual volunteer coach?
+
+    Glen, 2026-09-12: 1:1 coach connect is "only for paid members".
+
+    Two conditions, and the second was missing. A coaching window is EARNED by a
+    remedy delivery and only opened for someone whose membership was active at the
+    order date (_open_coaching_for_order checks _membership_active_at). But the
+    window then runs 30 days from delivery, and the endpoints re-checked nothing —
+    so a membership lapsing mid-window left 1:1 coach access open to a former member.
+
+    Note this is NOT the group-coaching gate. Group coaching is _group_coaching_entitled,
+    which is paid member OR certification student, and never consults the window.
+    The window governs the individual coach directory, requests and waitlist only.
+    """
+    from dashboard import coaching as _co
+    if not (email and _co.active_window(cx, email)):
+        return False
+    return _is_paid_member(email)
+
+
 @app.route("/api/community/coaches")
 def community_coaches():
     from dashboard import coach_directory as _cd, coaching as _co, coach_connect as _cc
@@ -31132,7 +31345,7 @@ def community_coaches():
         ident = _evox_ident(cx, request.args.get("token", ""))
         if ident is None:
             return jsonify({"error": "not_found"}), 404
-        if not _co.active_window(cx, ident.email):
+        if not _coach_connect_entitled(cx, ident.email):
             return jsonify({"eligible": False, "coaches": []})
         candidates = _cd.list_active_full(cx)
         coaches = []
@@ -31163,7 +31376,7 @@ def community_coach_request():
         ident = _evox_ident(cx, request.args.get("token", ""))
         if ident is None:
             return jsonify({"error": "not_found"}), 404
-        if not _co.active_window(cx, ident.email):
+        if not _coach_connect_entitled(cx, ident.email):
             return jsonify({"error": "not_eligible"}), 403
         coach_email = _cc.email_for_ref(cx, ref)
         if not coach_email:
@@ -31215,7 +31428,7 @@ def community_coach_waitlist():
         ident = _evox_ident(cx, request.args.get("token", ""))
         if ident is None:
             return jsonify({"error": "not_found"}), 404
-        if not _co.active_window(cx, ident.email):
+        if not _coach_connect_entitled(cx, ident.email):
             return jsonify({"error": "not_eligible"}), 403
         _cc.join_waitlist(cx, ident.email)
         return jsonify({"ok": True})
@@ -35159,12 +35372,96 @@ def client_provider_link_confirm():
     return resp
 
 
+# Rate limiting for the public auth routes. SECOND ATTEMPT.
+#
+# The first shipped and was reverted the same morning because it did not bind: 35 distinct
+# addresses produced 2 refusals and 61 produced 0. It carried its own address helper that
+# read X-Forwarded-For from the RIGHT, which is the Cloudflare edge and varies by serving
+# location, so a sweep scattered across keys.
+#
+# The key now comes from _client_address, on a chain read from the raw header and verified
+# in production. Everything else is the design that survived review: count DISTINCT
+# ADDRESSES, never request volume, because a struggling customer hammers ONE address and a
+# sweep hits many. A real customer sent 9 requests in a minute for her own address and got
+# in three minutes later; any flat count under 10 would have locked her out.
+_AUTH_LIMITER = _auth_limits.EmailProbeLimiter()
+
+
+def _auth_rate_limited(email):
+    """A 429 when this caller has probed too many distinct addresses, else None.
+
+    Call BEFORE looking the address up, for EVERY address, or the limiter becomes the
+    oracle the routes refuse to be. It never reads the database, so neither its answer nor
+    its timing can distinguish a real account from an invented one.
+    """
+    key, _src, _cf = _client_address.client_address(
+        request.headers.get("X-Forwarded-For", ""), request.remote_addr or "",
+        request.headers.get("CF-Connecting-IP", ""))
+    allowed, retry_after, reason = _AUTH_LIMITER.note(key, email)
+    if allowed:
+        return None
+
+    # A refusal MUST leave a trace. The first attempt shipped without this, which made the
+    # guard unfalsifiable in the only direction that matters: it exists to avoid turning a
+    # real customer away, and nothing recorded when it did.
+    #
+    # The key hash is here for a second reason. If refusals carry DIFFERENT key hashes from
+    # one connection, the key is unstable and the guard is not binding. That is precisely
+    # what went unnoticed last time.
+    _h = hashlib.sha256
+    print(f"[auth-limit] refused reason={reason} path={request.path} "
+          f"key={_h(key.encode()).hexdigest()[:16]} "
+          f"email={_h((email or '').strip().lower().encode()).hexdigest()[:16]}", flush=True)
+
+    if _AUTH_LIMITER.should_record(key):
+        print("[auth-limit] recording this refusal", flush=True)
+        try:
+            from dashboard import portal_auth as _pa_ev
+            with _db_lock, db.connect(LOG_DB) as cx:
+                _pa_ev._record_event(cx, "rate_limited", email=email, ip=key,
+                                     user_agent=request.headers.get("User-Agent", ""),
+                                     metadata={"reason": reason, "path": request.path})
+        except Exception as e:
+            print(f"[auth-limit] event write failed: {e!r}", flush=True)   # never a 500
+
+    resp = jsonify({"ok": False,
+                    "message": "Too many sign-in attempts from this connection. "
+                               "Please wait a few minutes and try again."})
+    resp.status_code = 429
+    resp.headers["Retry-After"] = str(retry_after)
+    return resp
+
+
+def _equalise_response_time(started, path=""):
+    """Wait so this response takes the same total time whatever the answer.
+
+    The routes that call this answer identically for a known and an unknown address, and
+    used to differ by about 0.75s because only one of them writes a token and sends mail.
+
+    An overrun is REPORTED rather than silently truncated. One is noise. A steady stream
+    means the target has fallen below the real found branch and the padding has stopped
+    equalising anything, which is invisible otherwise.
+    """
+    elapsed = time.monotonic() - started
+    if _response_timing.overran(elapsed):
+        print(f"[resp-timing] overran target path={path} elapsed={elapsed:.3f}s "
+              f"target={_response_timing.TARGET_SECONDS}s", flush=True)
+        return
+    delay = _response_timing.remaining(elapsed)
+    if delay > 0:
+        time.sleep(delay)   # gevent worker: yields rather than holding the worker
+
+
 @app.route("/portal/login-request", methods=["POST"])
 def client_login_request():
     if not _client_login_enabled():
         return jsonify({"error": "not found"}), 404
     from dashboard import portal_identity as _pi
+    _t0 = time.monotonic()   # see _equalise_response_time below
     email = ((request.get_json(silent=True) or {}).get("email") or "").strip().lower()
+    limited = _auth_rate_limited(email)   # BEFORE the lookup, for every address
+    if limited is not None:
+        return limited
     if "@" in email:
         with _db_lock, db.connect(LOG_DB) as cx:
             row = cx.execute("SELECT id, name FROM people WHERE email=?", (email,)).fetchone()
@@ -35183,7 +35480,10 @@ def client_login_request():
                     print(f"[client-login] email failed: {e!r}", flush=True)
             else:
                 print("[client-login] requested account=missing", flush=True)
-    # No account enumeration: same response whether or not the email exists.
+    # No account enumeration: same response whether or not the email exists, and the same
+    # TIME. Without the pad, a found address takes ~0.9s (token write plus mail send) and
+    # an unknown one ~0.16s, which sorts customers from strangers with a stopwatch.
+    _equalise_response_time(_t0, request.path)
     return jsonify({"ok": True,
                     "message": "If that email has a portal, a sign-in link is on its way."})
 
@@ -35197,7 +35497,22 @@ def client_password_login():
     body = request.get_json(silent=True) or request.form
     email = (body.get("email") or "").strip().lower()
     password = body.get("password") or ""
-    ip = (request.headers.get("X-Forwarded-For", "") or request.remote_addr or "").split(",")[0].strip()
+    limited = _auth_rate_limited(email)   # BEFORE the lookup, for every address
+    if limited is not None:
+        return limited
+    # The FIRST element of X-Forwarded-For is whatever the CALLER wrote. Measured on
+    # production 2026-09-11: a request claiming 203.0.113.77 was recorded as that. The
+    # real chain is [client-written...], <client>, <Cloudflare edge>, so the client sits
+    # second from the right. See dashboard/client_address.
+    ip, _ip_src, _cf_ok = _client_address.client_address(
+        request.headers.get("X-Forwarded-For", ""), request.remote_addr or "",
+        request.headers.get("CF-Connecting-IP", ""))
+    if _ip_src != "xff" or _cf_ok is False:
+        # Either the chain was not the expected shape, or Cloudflare's own header
+        # disagrees with the hop count. Both mean the assumption needs re-checking, and
+        # both are silent otherwise.
+        print(f"[client-ip] source={_ip_src} cf_agrees={_cf_ok} path={request.path}",
+              flush=True)
     with _db_lock, db.connect(LOG_DB) as cx:
         pid = _pa.verify_password(cx, email, password, ip=ip,
                                   user_agent=request.headers.get("User-Agent", ""))
@@ -35228,7 +35543,11 @@ def client_password_reset_request():
     if not _portal_password_login_enabled():
         return jsonify({"error": "not found"}), 404
     from dashboard import portal_auth as _pa
+    _t0 = time.monotonic()   # see _equalise_response_time below
     email = ((request.get_json(silent=True) or {}).get("email") or "").strip().lower()
+    limited = _auth_rate_limited(email)   # BEFORE the lookup, for every address
+    if limited is not None:
+        return limited
     if "@" in email:
         with _db_lock, db.connect(LOG_DB) as cx:
             row = cx.execute("SELECT id,name FROM people WHERE lower(email)=?", (email,)).fetchone()
@@ -35242,6 +35561,9 @@ def client_password_reset_request():
                         f"This link expires in {_format_ttl(_pa.RESET_TTL_MIN)}. If you did not request it, ignore this email.")
                 except Exception as e:
                     print(f"[client-password-reset] email failed: {e!r}", flush=True)
+    # Same shape as the sign-in route above: a found address mints a token and sends mail,
+    # an unknown one returns after a single lookup. Pad so the clock says nothing.
+    _equalise_response_time(_t0, request.path)
     return jsonify({"ok": True,
                     "message": "If that email has a portal, password instructions are on the way."})
 
@@ -35264,7 +35586,19 @@ def client_password_reset():
     ok, message = _pa.validate_password(password)
     if not ok:
         return jsonify({"ok": False, "message": message}), 400
-    ip = (request.headers.get("X-Forwarded-For", "") or request.remote_addr or "").split(",")[0].strip()
+    # The FIRST element of X-Forwarded-For is whatever the CALLER wrote. Measured on
+    # production 2026-09-11: a request claiming 203.0.113.77 was recorded as that. The
+    # real chain is [client-written...], <client>, <Cloudflare edge>, so the client sits
+    # second from the right. See dashboard/client_address.
+    ip, _ip_src, _cf_ok = _client_address.client_address(
+        request.headers.get("X-Forwarded-For", ""), request.remote_addr or "",
+        request.headers.get("CF-Connecting-IP", ""))
+    if _ip_src != "xff" or _cf_ok is False:
+        # Either the chain was not the expected shape, or Cloudflare's own header
+        # disagrees with the hop count. Both mean the assumption needs re-checking, and
+        # both are silent otherwise.
+        print(f"[client-ip] source={_ip_src} cf_agrees={_cf_ok} path={request.path}",
+              flush=True)
     with _db_lock, db.connect(LOG_DB) as cx:
         pid = _pa.consume_password_reset(cx, token, password, ip=ip,
                                          user_agent=request.headers.get("User-Agent", ""))
@@ -35692,7 +36026,19 @@ def healing_oasis_request():
     name = (body.get("name") or "").strip()[:120]
     if "@" not in email or "." not in email.split("@")[-1]:
         return jsonify({"ok": False, "error": "Please enter a valid email address."}), 400
-    ip = (request.headers.get("X-Forwarded-For", "") or request.remote_addr or "").split(",")[0].strip()
+    # The FIRST element of X-Forwarded-For is whatever the CALLER wrote. Measured on
+    # production 2026-09-11: a request claiming 203.0.113.77 was recorded as that. The
+    # real chain is [client-written...], <client>, <Cloudflare edge>, so the client sits
+    # second from the right. See dashboard/client_address.
+    ip, _ip_src, _cf_ok = _client_address.client_address(
+        request.headers.get("X-Forwarded-For", ""), request.remote_addr or "",
+        request.headers.get("CF-Connecting-IP", ""))
+    if _ip_src != "xff" or _cf_ok is False:
+        # Either the chain was not the expected shape, or Cloudflare's own header
+        # disagrees with the hop count. Both mean the assumption needs re-checking, and
+        # both are silent otherwise.
+        print(f"[client-ip] source={_ip_src} cf_agrees={_cf_ok} path={request.path}",
+              flush=True)
     generic = {"ok": True,
                "message": "Check your email for your link."}
 
@@ -37165,8 +37511,15 @@ def api_console_practitioners_duplicates():
         print(f"[console-practitioners] duplicate_of column check failed: {e!r}",
               flush=True)
         dup_col_present = None
+    try:
+        second_office_present = _pa.second_office_column_present()
+    except Exception as e:  # noqa: BLE001
+        print(f"[console-practitioners] second_office column check failed: {e!r}",
+              flush=True)
+        second_office_present = None
     return jsonify({"ok": True, "index_present": present,
-                    "duplicate_of_present": dup_col_present, **report})
+                    "duplicate_of_present": dup_col_present,
+                    "second_office_present": second_office_present, **report})
 
 
 @app.route("/api/console/practitioners/email-index", methods=["POST"])
@@ -37206,6 +37559,26 @@ def api_console_practitioners_duplicate_listing_migration():
     from dashboard import practitioner_admin as _pa
     try:
         out = _pa.apply_duplicate_listing_migration()
+    except Exception as e:  # noqa: BLE001
+        return jsonify({"ok": False, "error": f"migration apply failed: {e}"}), 502
+    return jsonify({"ok": True, **out})
+
+
+@app.route("/api/console/practitioners/second-office-migration", methods=["POST"])
+def api_console_practitioners_second_office_migration():
+    """Console-gated: apply migrations/practitioners-second-office.sql — the
+    second_office column and its partial index.
+
+    Idempotent, and verified against the catalogue inside the same transaction
+    rather than inferred from a lack of exceptions. The verification also asserts
+    that v_practitioners_public did NOT change: this column must never reach the
+    public view, or every reviewed second office would silently leave the
+    directory."""
+    if not _console_key_ok():
+        return jsonify({"error": "Unauthorized"}), 401
+    from dashboard import practitioner_admin as _pa
+    try:
+        out = _pa.apply_second_office_migration()
     except Exception as e:  # noqa: BLE001
         return jsonify({"ok": False, "error": f"migration apply failed: {e}"}), 502
     return jsonify({"ok": True, **out})
@@ -37413,6 +37786,17 @@ def api_console_practitioners_edit(pid):
             # silent no-op that reads as a completed de-duplication.
             return jsonify({"ok": False, "error": str(e), "reason": e.reason}), 409
         return jsonify({"ok": True, **out})
+    if action in ("mark_second_office", "unmark_second_office"):
+        # Records that this listing was looked at and kept. Unlike
+        # mark_duplicate it hides NOTHING: both offices stay in the finder,
+        # because both are real and a patient needs the nearer one. It changes
+        # only what the duplicate audit counts. "unmark_second_office" is the
+        # exact undo.
+        try:
+            out = _pa.set_second_office(pid, action == "mark_second_office")
+        except _pa.PractitionerNotFound:
+            return jsonify({"ok": False, "error": f"no practitioner with id {pid}"}), 404
+        return jsonify({"ok": True, **out})
     if action == "unmark_duplicate":
         try:
             out = _pa.unmark_duplicate(pid)
@@ -37567,7 +37951,9 @@ def api_console_dropship_create():
         total_cents=int(round((out.get("total") or 0) * 100)),
         address=ship, channel="wholesale", get_cents=out.get("get_cents", 0),
         pay_method="card", practitioner_id=pid,
-        shipping_cents=out.get("shipping_cents", 0))
+        shipping_cents=out.get("shipping_cents", 0),
+        recipient_email=_dropship_client_email(body.get("patient_email"),
+                                               practitioner["email"]))
     if out.get("qbo_payload"):
         with db.connect(LOG_DB) as cx:
             _bos_orders.set_order_qbo_lines(cx, ref, out["qbo_payload"])
@@ -39488,6 +39874,9 @@ def _upsert_person_additive(cx, person, ts=None):
     existing = cx.execute("SELECT * FROM people WHERE email=?", (email,)).fetchone()
 
     scalars = {k: person.get(k, "") for k in _PERSON_UPSERT_SCALARS}
+    # Capitalise here, not in a one-off: a stored name is replaced by any non-blank
+    # incoming one below, so the next feeder run would undo a cleanup.
+    _normalize_person_names(scalars)
     arrays = {}
     for jf in _PERSON_UPSERT_JSON:
         v = person.get(jf, [])
@@ -42627,6 +43016,7 @@ def upsert_people():
                 "resources","issue_duration","form_completed_by",
                 "last_order_date","last_session_date","last_contact_date","notes",
             ]}
+            _normalize_person_names(fields)
             # JSON array fields
             for jf in ["organizations","tags","roles","terrain_concerns","body_systems",
                         "conditions","healing_response","interests","request"]:
@@ -42662,16 +43052,11 @@ def add_person_note(person_id):
         if key != CONSOLE_SECRET and not _owner_token_ok(key):
             return jsonify({"error":"Unauthorized"}), 401
     note = (request.get_json(force=True) or {}).get("note","").strip()
-    ts = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M")
+    from dashboard.person_notes import append_note
     with _db_lock, db.connect(LOG_DB) as cx:
-        cx.execute("""
-            UPDATE people SET notes = CASE
-              WHEN notes='' THEN ?
-              ELSE notes || char(10) || ?
-            END WHERE id=?
-        """, (f"[{ts}] {note}", f"[{ts}] {note}", person_id))
+        line = append_note(cx, person_id, note)
         cx.commit()
-    return jsonify({"ok": True})
+    return jsonify({"ok": True, "note": line})
 
 
 @app.route("/api/people/tags", methods=["GET"])
@@ -46028,7 +46413,19 @@ def _start_scheduler():
 # spawn a BackgroundScheduler that is never shut down, leaking interval jobs that connect
 # to later tests' DBs and make the suite timing-nondeterministic. Prod has no pytest in
 # sys.modules, so this is a no-op there.
-if os.environ.get("DATA_DIR") and "pytest" not in sys.modules:
+#
+# A Render one-off job inherits DATA_DIR, so a script that imports this module used to
+# start a second scheduler whose console push fires at once. That happened in five jobs
+# on 2026-09-13, one of which pushed todos and synced 4,115 people. Such scripts set
+# NO_BACKGROUND_SCHEDULER=1 before importing app.
+def _scheduler_wanted(environ=None, modules=None):
+    environ = os.environ if environ is None else environ
+    modules = sys.modules if modules is None else modules
+    return (bool(environ.get("DATA_DIR")) and "pytest" not in modules
+            and not environ.get("NO_BACKGROUND_SCHEDULER"))
+
+
+if _scheduler_wanted():
     _start_scheduler()
 
 
@@ -51052,6 +51449,51 @@ import dashboard.orders as _bos_orders  # noqa: F401 (registers order actions + 
 # block commits the claim+grant together on success and ROLLS BACK the claim on any
 # failure -- atomic, and never leaves a pending claim on the request cx.
 _bos_orders.set_membership_grant_hook(lambda _cx, _o: _grant_membership_line_dep(_o))
+
+
+def _settle_referrals_on_altpay(order):
+    """Referral rewards for an order paid outside Stripe (Zelle, Wise, cheque, cash,
+    an owner-recorded payment). Runs the same two settlers the card path runs, keyed
+    on the same order_ref (the order's external_ref, which is the checkout invoice_id):
+
+      * _settle_referral: the affiliate attribution reward (REWARDS_TIERS_ENABLED).
+      * _settle_referrer_reward: the referral-code reward and its tier 2 (REFERRALS).
+
+    Both are idempotent per order_ref, so an order the card path already settled is
+    not paid twice. Like the membership grant above, this IGNORES the request cx and
+    works on its own connection, so a failed credit never leaves a pending write on
+    the payment's connection. Best-effort: never raises."""
+    if not order:
+        return
+    order_ref = (order.get("external_ref") or "").strip()
+    if not order_ref:
+        return
+    _settle_referral(order, order_ref=order_ref)
+    try:
+        with db.connect(LOG_DB) as cx:
+            cx.row_factory = sqlite3.Row
+            _settle_referrer_reward(cx, order, order_ref)
+    except Exception as _e:
+        print(f"[rewards] alt-pay referral-code settle failed ref={order_ref}: {_e!r}",
+              flush=True)
+
+
+_bos_orders.set_referral_settle_hook(lambda _cx, _o: _settle_referrals_on_altpay(_o))
+
+
+def _settle_points_on_altpay(order):
+    """Buyer points for an order the payment ledger has just marked paid (payments panel,
+    Zelle import). Runs the card path's own settler, _settle_order_points, keyed on the
+    same order_ref, so the card rules apply unchanged: full-price only, no points on a
+    wholesale sale (Glen, 2026-09-04), the affiliate first-order rule. The settler uses
+    its own connection and is idempotent per order_ref, so a second run credits nothing."""
+    order_ref = ((order or {}).get("external_ref") or "").strip()
+    if not order_ref:
+        return
+    _settle_order_points(order, order_ref=order_ref)
+
+
+_bos_orders.set_points_settle_hook(lambda _cx, _o: _settle_points_on_altpay(_o))
 import dashboard.combined_shipments as _bos_combined_shipments  # noqa: F401 (household combined-shipment model + actions)
 import dashboard.coaching as _coaching_actions  # noqa: F401 (registers coaching.grant action)
 import dashboard.finance as _bos_finance  # noqa: F401 (registers money signal + finance actions)
@@ -51154,11 +51596,24 @@ def _normalize_ship_address(addr, fallback_name=""):
     }
 
 
+def _dropship_client_email(raw, practitioner_email):
+    """The client email a practitioner typed at drop-ship checkout, or None.
+
+    Dropped when it is blank, malformed, or the practitioner's own address: the
+    review invite reads it, and it must never reach the practitioner."""
+    email = str(raw or "").strip().lower()
+    if not email or " " in email or not re.match(r"^[^@]+@[^@]+\.[^@]+$", email):
+        return None
+    if email == str(practitioner_email or "").strip().lower():
+        return None
+    return email
+
+
 def _ingest_order(*, source, external_ref, email="", name="", phone="",
                   items=None, total_cents=0, address=None, channel="retail",
                   get_cents=0, discount_cents=0, points_redeemed_cents=0, shipping_cents=0,
                   status="new", paid_cents=None, pay_method=None, practitioner_id=None,
-                  margin_cents=None, ship_credit_applied_cents=None):
+                  margin_cents=None, ship_credit_applied_cents=None, recipient_email=None):
     """Best-effort: record an order into the BOS orders table. Never raises into
     a checkout path. get_cents = absorbed Hawai'i GET owed (recorded, not charged).
     status defaults to 'new' (enters fulfillment); pass 'done' for digital charges
@@ -51177,7 +51632,8 @@ def _ingest_order(*, source, external_ref, email="", name="", phone="",
                 shipping_cents=int(shipping_cents or 0), status=status,
                 pay_method=pay_method, practitioner_id=practitioner_id,
                 margin_cents=margin_cents,
-                ship_credit_applied_cents=ship_credit_applied_cents)
+                ship_credit_applied_cents=ship_credit_applied_cents,
+                recipient_email=recipient_email)
             if paid_cents is not None and _oid:
                 _bos_orders.mark_order_paid_keep_status(
                     cx, _oid, method="card", amount_cents=int(paid_cents))
@@ -52962,6 +53418,38 @@ def api_orders_supersede(oid):
                     "superseded_by_order_id": replacement_id})
 
 
+@app.route("/api/orders/<int:oid>/review-hold", methods=["GET", "POST"])
+@app.route("/api/orders/<int:oid>/review-hold/release", methods=["POST"],
+           endpoint="api_orders_review_hold_release")
+def api_orders_review_hold(oid):
+    """Owner: stop, resume or list review-invite emails for one order.
+
+    Body {slug?, reason?}. slug '' (the default) covers the whole order. Set when a
+    buyer reports a missing or broken item, so the cron does not ask them to review it.
+    """
+    actor = _bos_actor()
+    if actor is None or actor.role != _bos_rbac.OWNER:
+        return jsonify({"ok": False, "error": "unauthorized"}), 401
+    from dashboard import review_invites as _ri
+    body = request.get_json(silent=True) or {}
+    slug = str(body.get("slug") or "").strip()
+    cx = db.connect(LOG_DB)
+    try:
+        _bos_orders.init_orders_table(cx)
+        exists = cx.execute("SELECT 1 FROM orders WHERE id = ?", (oid,)).fetchone()
+        if not exists:
+            return jsonify({"ok": False, "error": "order not found"}), 404
+        if request.method == "POST":
+            if request.path.endswith("/release"):
+                _ri.release(cx, oid, slug=slug)
+            else:
+                _ri.hold(cx, oid, slug=slug, reason=str(body.get("reason") or ""))
+        holds = _ri.holds_for(cx, oid)
+    finally:
+        cx.close()
+    return jsonify({"ok": True, "order_id": oid, "holds": holds})
+
+
 @app.route("/api/orders/<int:oid>/grant-member-access", methods=["POST"])
 def api_orders_grant_member_access(oid):
     """Owner, one click: grant this order's client a 30-day member-access window, then
@@ -53542,6 +54030,45 @@ def api_order_payments_add(oid):
         return jsonify({"ok": False, "error": str(e)}), 400
     finally:
         cx.close()
+
+
+@app.route("/api/console/orders/<int:oid>/settle-points", methods=["POST"])
+def api_console_order_settle_points(oid):
+    """Owner: award the buyer points a paid order is owed but never received.
+
+    Built 2026-09-14 for the orders the payment ledger marked paid without settling
+    points; Glen approved the backfill. Runs the card path's own settler,
+    _settle_order_points, keyed on the order's external_ref, so the same rules apply
+    (full-price only, none on a wholesale sale) and a second run credits nothing.
+    Preview by default; ?apply=1 writes. Console key in the X-Console-Key header."""
+    if not _console_key_ok():
+        return jsonify({"error": "Unauthorized"}), 401
+    apply = request.args.get("apply") == "1"
+    from dashboard import points as _points
+    with db.connect(LOG_DB) as cx:
+        cx.row_factory = sqlite3.Row
+        _points.init_points_table(cx)
+        order = _bos_orders.get_order(cx, oid)
+        if not order:
+            return jsonify({"ok": False, "error": f"order #{oid} not found"}), 404
+        ref = (order.get("external_ref") or "").strip()
+        email = (order.get("email") or "").strip().lower()
+        if order.get("pay_status") != "paid" or order.get("status") == "cancelled" or not ref:
+            return jsonify({"ok": False,
+                            "error": f"order #{oid} is not a paid, uncancelled order with a reference"}), 409
+        already = _points.has_entry(cx, order_ref=ref, reason="earn")
+        before = _points.balance(cx, email)
+    out = {"ok": True, "order_id": oid, "email": email, "order_ref": ref,
+           "already_earned": already, "balance_before_cents": before}
+    if not apply:
+        return jsonify({**out, "applied": False})
+    _settle_order_points(order, order_ref=ref)
+    with db.connect(LOG_DB) as cx:
+        cx.row_factory = sqlite3.Row
+        after = _points.balance(cx, email)
+        earned = _points.has_entry(cx, order_ref=ref, reason="earn")
+    return jsonify({**out, "applied": True, "earned": earned,
+                    "credited_cents": after - before, "balance_after_cents": after})
 
 
 @app.route("/api/orders/<int:oid>/refunds", methods=["POST"])

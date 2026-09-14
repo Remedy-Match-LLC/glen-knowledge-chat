@@ -34,6 +34,24 @@
   .tier-price{ display:inline-block; margin-top:12px; font-family:"Raleway",sans-serif; font-weight:600; font-size:13px;
     letter-spacing:0.04em; color:var(--gold); border:1px solid rgba(212,168,67,0.4); border-radius:999px; padding:4px 14px; }
   .tier-included{ color:var(--muted); font-size:15px; margin-top:16px; line-height:1.6; }
+  .tier-price s{ color:#7f8f84; font-weight:500; margin-right:6px; }
+  .tier-price b{ font-size:17px; }
+  .tier-price-sub{ color:var(--muted); font-size:13px; margin-top:9px; }
+  .tier-lede{ color:var(--cream); font-size:16px; margin-top:22px; line-height:1.7; }
+  .tier-steps{ list-style:none; margin:24px 0 0; padding:0; text-align:left; }
+  .tier-steps li{ margin:0 0 18px; padding-left:34px; position:relative; line-height:1.6; }
+  .tier-steps li::before{ content:counter(mu-step); counter-increment:mu-step;
+    position:absolute; left:0; top:1px; width:22px; height:22px; border-radius:50%;
+    background:rgba(212,168,67,.16); color:#d4a843; font-size:12px; font-weight:700;
+    display:flex; align-items:center; justify-content:center; }
+  .tier-steps{ counter-reset:mu-step; }
+  .tier-steps b{ display:block; color:var(--cream); font-size:15px; margin-bottom:3px; }
+  .tier-steps span{ color:var(--muted); font-size:15px; }
+  .tier-close{ color:var(--muted); font-size:15px; margin-top:26px; line-height:1.7;
+    border-top:1px solid rgba(212,168,67,.18); padding-top:20px; }
+  .tier-note{ color:var(--muted); font-size:14px; margin-top:18px; line-height:1.75;
+    text-align:left; background:rgba(212,168,67,.06); border-left:2px solid rgba(212,168,67,.4);
+    border-radius:0 8px 8px 0; padding:14px 16px; font-style:italic; }
   .cta-wrap{ margin-top:28px; }
   .cta-btn{ display:inline-block; background:var(--gold); color:#0a150d; font-family:"Raleway",sans-serif;
     font-weight:700; font-size:15px; letter-spacing:0.03em; padding:14px 32px; border-radius:999px;
@@ -69,7 +87,12 @@
       <p class="eyebrow">Your next step</p>
       <h1 class="tier-title" id="js-title">Loading...</h1>
       <span class="tier-price" id="js-price"></span>
+      <div class="tier-price-sub" id="js-price-sub" hidden></div>
       <p class="tier-included" id="js-included"></p>
+      <p class="tier-lede" id="js-lede" hidden></p>
+      <ol class="tier-steps" id="js-steps" hidden></ol>
+      <p class="tier-close" id="js-close" hidden></p>
+      <p class="tier-note" id="js-note" hidden></p>
       <div class="cta-wrap">
         <a class="cta-btn" id="js-cta" href="#" target="_blank" rel="noopener">Book your consultation</a>
       </div>
@@ -110,13 +133,49 @@
         titleEl.textContent = tier.title;
         document.title = tier.title + ' | Dr. Glen Swartwout';
 
-        if(tier.value){
+        // Built as nodes, never innerHTML of data, the same rule every other
+        // field here follows. A rung with no `was` renders exactly as before.
+        priceEl.textContent = '';
+        if (tier.was) {
+          var wasEl = document.createElement('s');
+          wasEl.textContent = tier.was;
+          priceEl.appendChild(wasEl);
+          var nowEl = document.createElement('b');
+          nowEl.textContent = tier.price;
+          priceEl.appendChild(nowEl);
+        } else if (tier.value) {
           priceEl.textContent = tier.price + ' · ' + tier.value;
         } else {
           priceEl.textContent = tier.price;
         }
+        var subEl = document.getElementById('js-price-sub');
+        if (tier.price_sub) { subEl.textContent = tier.price_sub; subEl.hidden = false; }
         includedEl.textContent = tier.included;
         ctaEl.textContent = tier.cta_label;
+
+        // The focused page body. textContent only, never innerHTML of data, the
+        // same rule the fields above follow. A rung with no copy simply stays
+        // hidden and the short card renders as it always did.
+        var page = tier.page || {};
+        var ledeEl = document.getElementById('js-lede');
+        var stepsEl = document.getElementById('js-steps');
+        var closeEl = document.getElementById('js-close');
+        if (page.lede) { ledeEl.textContent = page.lede; ledeEl.hidden = false; }
+        if (page.steps && page.steps.length) {
+          page.steps.forEach(function(pair){
+            var li = document.createElement('li');
+            var b = document.createElement('b');
+            b.textContent = pair[0];
+            var sp = document.createElement('span');
+            sp.textContent = pair[1];
+            li.appendChild(b); li.appendChild(sp);
+            stepsEl.appendChild(li);
+          });
+          stepsEl.hidden = false;
+        }
+        if (page.close) { closeEl.textContent = page.close; closeEl.hidden = false; }
+        var noteEl = document.getElementById('js-note');
+        if (page.note) { noteEl.textContent = page.note; noteEl.hidden = false; }
 
         // build CTA href with ref/utm threading.
         // A tier may declare its own cta_href. Every tier used to land on the

@@ -228,6 +228,27 @@
       </div>
     </div>
 
+    <!-- ── Review requests to your clients ─────────────────────────── -->
+    <div class="panel">
+      <h2>Review requests to your clients</h2>
+      <div class="muted" style="margin-top:6px">
+        When this is on, each client gets one email asking them to review a product,
+        about two weeks after it ships. For an order you place for a client, the email
+        goes to the patient email you enter at checkout. It is off until you turn it on,
+        and these emails never go to you.
+      </div>
+      <div style="margin-top:16px;display:flex;align-items:center;gap:14px">
+        <label class="toggle-label" style="display:flex;align-items:center;gap:10px;cursor:pointer">
+          <span style="position:relative;display:inline-block;width:44px;height:24px">
+            <input type="checkbox" id="client-reviews" style="opacity:0;width:0;height:0;position:absolute">
+            <span id="client-reviews-track" style="position:absolute;inset:0;border-radius:12px;background:var(--border);transition:background .2s;cursor:pointer" onclick="document.getElementById('client-reviews').click()"></span>
+            <span id="client-reviews-thumb" style="position:absolute;top:3px;left:3px;width:18px;height:18px;border-radius:50%;background:#fff;transition:left .2s;pointer-events:none"></span>
+          </span>
+          <span id="client-reviews-label" style="font-size:14px">Off</span>
+        </label>
+      </div>
+    </div>
+
     <!-- ── Public finder listing ───────────────────────────────────── -->
     <div class="panel">
       <h2>Public finder listing</h2>
@@ -401,6 +422,18 @@
     setChatToggle(this.checked);
   });
 
+  // ── Client review-request toggle wiring ────────────────────────────────────────
+  function setClientReviews(enabled) {
+    document.getElementById('client-reviews').checked = !!enabled;
+    document.getElementById('client-reviews-track').style.background = enabled ? 'var(--green)' : 'var(--border)';
+    document.getElementById('client-reviews-thumb').style.left = enabled ? '23px' : '3px';
+    document.getElementById('client-reviews-label').textContent = enabled ? 'On' : 'Off';
+  }
+
+  document.getElementById('client-reviews').addEventListener('change', function () {
+    setClientReviews(this.checked);
+  });
+
   // ── Show-contact toggle wiring ─────────────────────────────────────────────────
   function setShowContact(enabled) {
     var chk = document.getElementById('show-contact');
@@ -547,6 +580,9 @@
       // Chat enabled toggle
       setChatToggle(!!data.chat_enabled);
 
+      // Review requests to clients (off by default)
+      setClientReviews(!!data.client_review_emails);
+
       // Public finder contact-visibility toggle
       setShowContact(!!data.show_contact);
     })
@@ -583,6 +619,7 @@
       },
       chat_enabled: document.getElementById('chat-enabled').checked,
       show_contact: document.getElementById('show-contact').checked,
+      client_review_emails: document.getElementById('client-reviews').checked,
     };
 
     // Only send `profile` when the storefront card was actually edited this
@@ -645,6 +682,7 @@
         // Refresh toggle from server response
         setChatToggle(!!data.chat_enabled);
         if ('show_contact' in data) { setShowContact(!!data.show_contact); }
+        if ('client_review_emails' in data) { setClientReviews(!!data.client_review_emails); }
 
         // The storefront card was written to her DRAFT and submitted. It is
         // NOT necessarily live: with the review gate on it is queued for Glen

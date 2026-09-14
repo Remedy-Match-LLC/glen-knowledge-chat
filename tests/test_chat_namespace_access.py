@@ -6,6 +6,10 @@ Glen's ruling; four were deliberately left out because they hold named client re
 
 The exclusions are the point of this file. A future change that quietly adds one of them
 should fail here rather than reach a client.
+
+An excluded namespace does not have to exist yet. Two capture namespaces were added on
+2026-09-11 while both were absent from the index, because the gap that mattered was that
+connecting them would have been a one-line change nothing would have caught.
 """
 import re
 from pathlib import Path
@@ -27,6 +31,16 @@ PHI_NAMESPACES = {
     "e4l-scans",               # client names, ids, scan dates
     "zyto-sessions",           # carries a client field
     "personal-notes",          # internal notes naming staff
+    # Added 2026-09-11 on Glen's ruling. Written by com.glen.sessions-daily-extract, which
+    # reads screen text, audio and Claude sessions from Glen's whole desktop. The material
+    # is undifferentiated: a 7-day sample of 20,319 capture blocks carried 8,846 email
+    # addresses, 880 phone numbers and 779 hex strings of 32+ characters, and nothing in
+    # that pipeline inspects any of it. Neither namespace exists right now, because the
+    # job is retired and captures-raw was deleted on 2026-09-09. They are listed BEFORE
+    # they exist deliberately: adding either to NAMESPACES would have been a one-line
+    # change that no test caught.
+    "captures-raw",            # raw desktop capture text, unfiltered
+    "business-operations",     # promoted extracts from the same capture stream
 }
 
 

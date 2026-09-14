@@ -146,3 +146,22 @@ def test_post_branding_only_sets_default_pricing(monkeypatch, client):
     # pricing written with defaults (markup 0, no overrides)
     assert data["pricing"]["default_markup_pct"] == 0.0
     assert data["pricing"]["overrides"] == {}
+
+
+# ── Review emails to the practitioner's clients (off by default) ─────────────
+
+def test_client_review_emails_default_off_and_roundtrip(monkeypatch, client):
+    monkeypatch.setattr(appmod, "_practitioner_session_pid", lambda: "p1")
+    assert client.get("/api/practitioner/settings").get_json()["client_review_emails"] is False
+
+    r = client.post("/api/practitioner/settings", json={"client_review_emails": True})
+    assert r.status_code == 200
+    assert r.get_json()["client_review_emails"] is True
+    assert client.get("/api/practitioner/settings").get_json()["client_review_emails"] is True
+
+    # A save that omits the key must not reset it.
+    client.post("/api/practitioner/settings", json={"pricing": {"default_markup_pct": 5}})
+    assert client.get("/api/practitioner/settings").get_json()["client_review_emails"] is True
+
+    client.post("/api/practitioner/settings", json={"client_review_emails": False})
+    assert client.get("/api/practitioner/settings").get_json()["client_review_emails"] is False

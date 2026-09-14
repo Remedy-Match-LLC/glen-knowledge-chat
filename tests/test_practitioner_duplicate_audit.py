@@ -216,3 +216,100 @@ def test_the_old_headline_is_kept_under_a_name_that_says_what_it_counts():
     out = group_duplicates(rows, {})
     assert out["emails_with_multiple_listings"] == 1
     assert out["finder_duplicates"] == 0
+
+
+# ── a pair that has been looked at and kept ──────────────────────────────────
+# All seven groups the 2026-09-11 headline flagged were pairs Glen had already
+# decided to keep: six second offices restored on 2026-09-10, plus Lisa Anne
+# Arnold's two Cape Cod offices. The audit had no way to record that decision, so
+# it re-asked the same question every run. second_office is that record. It does
+# NOT hide the row — both offices stay in the finder, which is the whole point.
+
+def test_a_second_office_is_not_counted_as_the_same_person_twice():
+    from dashboard.practitioner_admin import group_duplicates
+    rows = [
+        {"id": "main", "name": "Minh Luu", "email": "e@x.com", "lat": 21.3,
+         "city": "Cypress", "removal_requested": False},
+        {"id": "second", "name": "Minh Luu", "email": "e@x.com", "lat": 21.4,
+         "city": "Katy", "removal_requested": False, "second_office": True},
+    ]
+    out = group_duplicates(rows, {})
+    g = out["groups"][0]
+    assert out["finder_duplicates"] == 0
+    assert g["second_offices"] == 1
+    # Both are still public. Marking a second office must never hide it.
+    assert g["finder_listed_count"] == 2
+    assert {r["id"] for r in g["rows"] if r["finder_listed"]} == {"main", "second"}
+
+
+def test_a_third_unreviewed_listing_is_still_a_duplicate():
+    """Deciding one pair must not vouch for a row nobody looked at."""
+    from dashboard.practitioner_admin import group_duplicates
+    rows = [
+        {"id": "main", "name": "Minh Luu", "email": "e@x.com", "lat": 21.3,
+         "removal_requested": False},
+        {"id": "second", "name": "Minh Luu", "email": "e@x.com", "lat": 21.4,
+         "removal_requested": False, "second_office": True},
+        {"id": "stray", "name": "Minh Luu", "email": "e@x.com", "lat": 21.5,
+         "removal_requested": False},
+    ]
+    out = group_duplicates(rows, {})
+    assert out["finder_duplicates"] == 1
+    assert out["groups"][0]["second_offices"] == 1
+
+
+def test_the_flag_is_reported_per_row_so_the_decision_is_visible():
+    from dashboard.practitioner_admin import group_duplicates
+    rows = [
+        {"id": "main", "name": "A B", "email": "e@x.com", "lat": 21.3,
+         "removal_requested": False},
+        {"id": "second", "name": "A B", "email": "e@x.com", "lat": 21.4,
+         "removal_requested": False, "second_office": True},
+    ]
+    by = {r["id"]: r for r in group_duplicates(rows, {})["groups"][0]["rows"]}
+    assert by["second"]["second_office"] is True
+    assert by["main"]["second_office"] is False
+
+
+def test_a_missing_column_reads_as_not_a_second_office():
+    """The migration is applied to production by hand, after this deploys. In
+    that window the key is absent and the audit must behave exactly as before."""
+    from dashboard.practitioner_admin import group_duplicates
+    rows = [{"id": i, "name": "A B", "email": "e@x.com", "lat": 21.3,
+             "removal_requested": False} for i in ("one", "two")]
+    out = group_duplicates(rows, {})
+    assert out["finder_duplicates"] == 1
+    assert out["groups"][0]["second_offices"] == 0
+
+
+def test_a_second_office_that_is_not_listed_is_not_counted():
+    """A row already hidden as a duplicate is not a second office to report."""
+    from dashboard.practitioner_admin import group_duplicates
+    rows = [
+        {"id": "main", "name": "A B", "email": "e@x.com", "lat": 21.3,
+         "removal_requested": False},
+        {"id": "second", "name": "A B", "email": "e@x.com", "lat": 21.4,
+         "removal_requested": False, "second_office": True, "duplicate_of": "main"},
+    ]
+    out = group_duplicates(rows, {})
+    assert out["groups"][0]["second_offices"] == 0
+    assert out["finder_duplicates"] == 0
+
+
+def test_the_migration_never_touches_the_public_view():
+    """second_office must not reach v_practitioners_public.
+
+    duplicate_of is the third term of that view's WHERE, and it HIDES a row. If
+    second_office were added the same way, every office marked as reviewed would
+    silently leave the directory, which is the exact opposite of the decision it
+    records. This asserts on the migration text because the mistake is a
+    one-line edit away and nothing else would catch it.
+    """
+    import pathlib
+    sql = (pathlib.Path(__file__).resolve().parents[1]
+           / "migrations" / "practitioners-second-office.sql").read_text().lower()
+    assert "second_office" in sql
+    statements = [line for line in sql.splitlines() if not line.strip().startswith("--")]
+    body = "\n".join(statements)
+    assert "create or replace view" not in body
+    assert "v_practitioners_public" not in body

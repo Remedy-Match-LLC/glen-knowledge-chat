@@ -236,16 +236,45 @@ def test_the_audit_asks_for_duplicate_of_once_the_column_is_there(monkeypatch):
 
 def test_the_audit_survives_the_window_before_the_migration_is_applied(monkeypatch, capsys):
     """The migration is applied to production BY HAND, after this code deploys.
-    In that window duplicate_of does not exist and the audit, which worked before
+    In that window the column does not exist and the audit, which worked before
     the column did, must not start 500ing. Nothing can be marked yet either, so
-    the report is still correct; it just has to say so out loud."""
+    the report is still correct; it just has to say so out loud.
+
+    Asserts on what the warning must CONTAIN, not on its sentence. The wording
+    changed on 2026-09-11 when second_office joined the same probe, and a pinned
+    substring turned main red over a message that had got better.
+    """
     from dashboard import practitioner_admin as pa
-    cur = _patch_cursor(monkeypatch, _FakeCur(fetchone_queue=[None]))
+    # Both probes answer "missing": duplicate_of, then second_office.
+    cur = _patch_cursor(monkeypatch, _FakeCur(fetchone_queue=[None, None]))
     pa.duplicate_email_rows()
     sql = _dup_query(cur)
     assert "duplicate_of" not in sql
+    assert "second_office" not in sql
     assert "removal_requested" in sql and "lat" in sql     # the rest is intact
-    assert "duplicate_of is missing" in capsys.readouterr().out
+    warning = capsys.readouterr().out
+    assert "duplicate_of" in warning                       # names the column
+    assert "second_office" in warning
+    assert "practitioners-duplicate-listing.sql" in warning  # and how to fix it
+    assert "practitioners-second-office.sql" in warning
+
+
+def test_the_audit_survives_the_window_between_the_two_migrations(monkeypatch, capsys):
+    """The real production window on 2026-09-11: duplicate_of had been applied for
+    days and second_office had not. The audit must keep reporting hidden listings
+    and name only the column that is actually missing."""
+    from dashboard import practitioner_admin as pa
+    cur = _patch_cursor(monkeypatch,
+                        _FakeCur(fetchone_queue=[{"present": 1}, None]))
+    pa.duplicate_email_rows()
+    sql = _dup_query(cur)
+    assert "duplicate_of" in sql          # still reported, the column is there
+    assert "second_office" not in sql
+    warning = capsys.readouterr().out
+    assert "second_office" in warning
+    assert "practitioners-second-office.sql" in warning
+    # And must NOT send the operator back to a migration that is already live.
+    assert "practitioners-duplicate-listing.sql" not in warning
 
 
 def test_the_probe_never_runs_the_query_that_would_abort_the_transaction(monkeypatch):

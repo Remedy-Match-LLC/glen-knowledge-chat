@@ -530,158 +530,46 @@ def process_delete_queue():
         )
         print(f'  Cleared {len(cleared)} from queue')
 
-# ── Remedy Match IMAP triage ─────────────────────────────────────────────────
-REMEDY_EMAIL    = _get_secret('REMEDY_EMAIL') or 'support@remedymatch.com'
-REMEDY_PASSWORD = _get_secret('REMEDY_EMAIL_PASSWORD')
-REMEDY_HOST     = 'mail.groovekartmail.com'
+# ── Remedy Match mail, via Gmail ─────────────────────────────────────────────
+# remedymatch.com mail moved to Google Workspace on 2026-09-14. Mail to support@, drglen@ and
+# rae@ is forwarded to Glen's Gmail, and each keeps its own Delivered-To. This replaced two
+# GrooveKart IMAP pulls. Those logged in to a server whose certificate had expired without
+# checking it, and fetching marked the mail read. A Gmail search marks nothing read.
+REMEDY_ADDRESSES = ('support@remedymatch.com', 'drglen@remedymatch.com', 'rae@remedymatch.com')
+REMEDY_QUERY = '(' + ' OR '.join(f'deliveredto:{a}' for a in REMEDY_ADDRESSES) + ') is:unread'
+PERSONAL_DOMAINS = ('@gmail', '@yahoo', '@hotmail', '@outlook', '@icloud', '@me.com', '@aol')
 
-def triage_remedy_imap(days=3, max_results=30):
-    """Pull recent unread messages from support@remedymatch.com via IMAP."""
-    print('\n[REMEDY MATCH] Fetching IMAP...')
-    if not REMEDY_PASSWORD:
-        print('  No REMEDY_EMAIL_PASSWORD — skipping')
-        return []
-    import imaplib, email as _email
-    from email.header import decode_header as _dh
-    try:
-        mail = imaplib.IMAP4_SSL(REMEDY_HOST, 993)
-        mail.login(REMEDY_EMAIL, REMEDY_PASSWORD)
-    except Exception as e:
-        print(f'  Login failed: {e}')
-        return []
 
+def triage_remedy_gmail(service, days=3, max_results=30):
+    """Unread mail to the remedymatch.com addresses, as console todos."""
+    print('\n[REMEDY MATCH] Searching Gmail...')
+    msgs = _search(service, REMEDY_QUERY, days=days, max_results=max_results)
+    print(f'  {len(msgs)} unread in last {days}d')
     todos = []
-    try:
-        mail.select('INBOX')
-        _, data = mail.search(None, 'UNSEEN')
-        ids = data[0].split()[-max_results:]
-        print(f'  {len(ids)} unread in last {days}d')
-        for num in ids:
-            try:
-                _, msg_data = mail.fetch(num, '(RFC822)')
-                msg = _email.message_from_bytes(msg_data[0][1])
-                # Decode subject
-                subj_parts = _dh(msg.get('Subject', ''))
-                subject = ''.join(
-                    p.decode(enc or 'utf-8') if isinstance(p, bytes) else p
-                    for p, enc in subj_parts
-                ).strip() or '(no subject)'
-                from_addr = msg.get('From', '')
-                # Extract plain text body
-                body = ''
-                if msg.is_multipart():
-                    for part in msg.walk():
-                        if part.get_content_type() == 'text/plain':
-                            body = part.get_payload(decode=True).decode('utf-8', errors='replace')
-                            break
-                else:
-                    body = msg.get_payload(decode=True).decode('utf-8', errors='replace')
-                body = body.strip()[:800]
-                bullets, action, core_message = _bullet_summary(subject, from_addr, body)
-                # Determine owner: orders → Rae, personal-domain senders → Rae, else → Glen
-                from_lower = from_addr.lower()
-                is_order = 'new order' in subject.lower() or 'order confirmed' in subject.lower()
-                personal_domain = any(x in from_lower for x in [
-                    '@gmail', '@yahoo', '@hotmail', '@outlook', '@icloud', '@me.com', '@aol'
-                ])
-                owner = 'rae' if (is_order or personal_domain) else 'glen'
-                todos.append({
-                    'owner':    owner,
-                    'category': 'Remedy Match Support',
-                    'title':    subject[:120],
-                    'body':     f'From: {from_addr}\n\n{body}',
-                    'priority': 'high',
-                    'source':   'remedy-imap',
-                    'ai_summary':    bullets,
-                    'action_note':   action,
-                    'core_message':  core_message,
-                    'suggested_reply': '',
-                    'dedup_key': f'remedy:{num.decode()}',
-                })
-            except Exception as e:
-                print(f'  Message parse error: {e}')
-    except Exception as e:
-        print(f'  IMAP error: {e}')
-    finally:
-        try:
-            mail.logout()
-        except Exception:
-            pass
-    return todos
-
-
-# ── Remedy Match: sweep ALL recent orders (seen or unseen) → Rae ──────────────
-def triage_remedy_orders(days=14):
-    """Sweep ALL 'New order' emails in the past N days and route to Rae."""
-    print('\n[REMEDY ORDERS] Sweeping recent orders...')
-    if not REMEDY_PASSWORD:
-        print('  No REMEDY_EMAIL_PASSWORD — skipping')
-        return []
-    import imaplib, email as _email
-    from email.header import decode_header as _dh
-    from email.utils import parsedate_to_datetime
-    import re
-    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
-    try:
-        mail = imaplib.IMAP4_SSL(REMEDY_HOST, 993)
-        mail.login(REMEDY_EMAIL, REMEDY_PASSWORD)
-    except Exception as e:
-        print(f'  Login failed: {e}')
-        return []
-
-    todos = []
-    try:
-        mail.select('INBOX')
-        since_str = cutoff.strftime('%d-%b-%Y')
-        _, data = mail.search(None, f'SUBJECT "New order" SINCE {since_str}')
-        ids = data[0].split()
-        print(f'  {len(ids)} order email(s) since {since_str}')
-        for num in ids:
-            try:
-                _, msg_data = mail.fetch(num, '(RFC822)')
-                msg = _email.message_from_bytes(msg_data[0][1])
-                subj_parts = _dh(msg.get('Subject', ''))
-                subject = ''.join(
-                    p.decode(enc or 'utf-8') if isinstance(p, bytes) else p
-                    for p, enc in subj_parts
-                ).strip() or '(no subject)'
-                from_addr = msg.get('From', '')
-                body = ''
-                if msg.is_multipart():
-                    for part in msg.walk():
-                        if part.get_content_type() == 'text/plain':
-                            body = part.get_payload(decode=True).decode('utf-8', errors='replace')
-                            break
-                else:
-                    body = msg.get_payload(decode=True).decode('utf-8', errors='replace')
-                body = body.strip()[:1200]
-                # Extract order reference (alphanumeric after #)
-                ref_match = re.search(r'#([A-Z0-9]{6,})', subject)
-                order_ref = ref_match.group(1) if ref_match else num.decode()
-                bullets, action, core_message = _bullet_summary(subject, from_addr, body)
-                todos.append({
-                    'owner':    'rae',
-                    'category': 'New Order',
-                    'title':    subject[:120],
-                    'body':     f'From: {from_addr}\n\n{body}',
-                    'priority': 'high',
-                    'source':   'remedy-orders',
-                    'ai_summary':    bullets,
-                    'action_note':   action or 'Check order details and prepare for fulfillment',
-                    'core_message':  core_message,
-                    'suggested_reply': '',
-                    'dedup_key': f'remedy:order:{order_ref}',
-                })
-            except Exception as e:
-                print(f'  Order parse error: {e}')
-    except Exception as e:
-        print(f'  IMAP error: {e}')
-    finally:
-        try:
-            mail.logout()
-        except Exception:
-            pass
-    print(f'  {len(todos)} order todo(s)')
+    for m in msgs:
+        meta = _msg_meta(service, m['id'])
+        if not meta:
+            continue
+        subject = (meta.get('subject') or '').strip() or '(no subject)'
+        from_addr = meta.get('from', '')
+        body = _full_body(service, m['id']).strip()[:800]
+        bullets, action, core_message = _bullet_summary(subject, from_addr, body)
+        # Owner: orders -> Rae, personal-domain senders -> Rae, else -> Glen. Unchanged rule.
+        is_order = 'new order' in subject.lower() or 'order confirmed' in subject.lower()
+        personal_domain = any(x in from_addr.lower() for x in PERSONAL_DOMAINS)
+        todos.append({
+            'owner':    'rae' if (is_order or personal_domain) else 'glen',
+            'category': 'Remedy Match Support',
+            'title':    subject[:120],
+            'body':     f'From: {from_addr}\n\n{body}',
+            'priority': 'high',
+            'source':   'remedy-gmail',
+            'ai_summary':    bullets,
+            'action_note':   action,
+            'core_message':  core_message,
+            'suggested_reply': '',
+            'dedup_key': f"remedy:gmail:{m['id']}",
+        })
     return todos
 
 
@@ -843,9 +731,10 @@ def main():
     else:
         print(f'\n[RAE] No token at {RAE_TOKEN} — run setup to add Rae\'s Gmail')
 
-    # Remedy Match IMAP (unread general) + order sweep (all recent, seen or not)
-    all_todos += triage_remedy_imap()
-    all_todos += triage_remedy_orders(days=14)
+    # Mail to support@, drglen@ and rae@, from Glen's Gmail. The GrooveKart IMAP pulls were
+    # retired on 2026-09-14 when remedymatch.com mail moved to Google Workspace.
+    if glen_service:
+        all_todos += triage_remedy_gmail(glen_service)
 
     # GHL tasks
     all_todos += fetch_ghl_tasks()

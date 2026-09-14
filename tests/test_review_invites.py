@@ -154,3 +154,145 @@ def test_editing_an_old_shipped_order_cannot_produce_a_second_invite():
     cx.execute("UPDATE orders SET updated_at=? WHERE id=?", (_ago(20), oid))
     cx.commit()
     assert ri.pending(cx, days=14) == []
+
+
+# ── Holds: an order or one product on it that must not be asked about ─────────
+# A buyer who reported a missing item was asked to review that item on 2026-09-13.
+# Nothing on an order records a complaint, so a hold is set by hand.
+
+def test_a_held_order_gets_no_invite():
+    cx = _cx()
+    oid = _order(cx, slugs=("wholomega", "lipid-zyme"))
+    ri.hold(cx, oid, reason="missing item")
+    assert ri.pending(cx, days=14) == []
+
+
+def test_a_held_product_skips_only_that_product():
+    cx = _cx()
+    oid = _order(cx, slugs=("wholomega", "lipid-zyme"))
+    ri.hold(cx, oid, slug="wholomega", reason="bottle never arrived")
+    assert [r["slug"] for r in ri.pending(cx, days=14)] == ["lipid-zyme"]
+
+
+def test_a_hold_is_scoped_to_its_order():
+    cx = _cx()
+    held = _order(cx, external_ref="o1", email="a@x.com")
+    _order(cx, external_ref="o2", email="c@x.com")
+    ri.hold(cx, held, reason="missing item")
+    assert [r["email"] for r in ri.pending(cx, days=14)] == ["c@x.com"]
+
+
+def test_releasing_a_hold_restores_the_invite():
+    """A hold must not stamp the pair as invited, or releasing it could never send."""
+    cx = _cx()
+    oid = _order(cx)
+    ri.hold(cx, oid, slug="wholomega")
+    assert ri.pending(cx, days=14) == []
+    ri.release(cx, oid, slug="wholomega")
+    assert [r["slug"] for r in ri.pending(cx, days=14)] == ["wholomega"]
+
+
+def test_holding_twice_keeps_one_row_and_the_latest_reason():
+    cx = _cx()
+    oid = _order(cx)
+    ri.hold(cx, oid, reason="first")
+    ri.hold(cx, oid, reason="second")
+    got = ri.holds_for(cx, oid)
+    assert len(got) == 1
+    assert got[0]["slug"] == "" and got[0]["reason"] == "second"
+
+
+def test_releasing_a_hold_that_does_not_exist_does_not_raise():
+    cx = _cx()
+    oid = _order(cx)
+    ri.release(cx, oid, slug="wholomega")
+    assert ri.holds_for(cx, oid) == []
+
+
+# ── Practitioners' clients ────────────────────────────────────────────────────
+# Glen 2026-09-13: a practitioner switch, off by default, and the CLIENT gets the
+# email. A drop-ship order carries the practitioner's email, so it goes to the
+# client email captured at checkout, or not at all.
+
+from dashboard import practitioner_settings as ps  # noqa: E402
+
+
+def _client_order(cx, *, source, pid="p1", email="prac@x.com", recipient_email=None,
+                  ship_name="Tony Client", slugs=("esr",), external_ref="c1"):
+    items = [{"slug": s, "name": s, "qty": 1} for s in slugs]
+    cur = cx.execute(
+        "INSERT INTO orders (created_at, source, external_ref, email, name, items_json, "
+        "status, updated_at, practitioner_id, recipient_email, address_json) "
+        "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+        (_ago(22), source, external_ref, email, "Practitioner Name", json.dumps(items),
+         "delivered", _ago(20), pid, recipient_email, json.dumps({"name": ship_name})))
+    cx.commit()
+    return cur.lastrowid
+
+
+def _switch(cx, pid, on):
+    ps.init_settings_table(cx)
+    ps.set_client_review_emails(cx, pid, on)
+
+
+def test_the_practitioner_switch_is_off_by_default():
+    cx = _cx()
+    ps.init_settings_table(cx)
+    assert ps.client_review_emails_enabled(cx, "p1") is False
+
+
+def test_a_store_order_waits_for_the_practitioner_switch():
+    cx = _cx()
+    _client_order(cx, source="dispensary", email="client@x.com")
+    assert ri.pending(cx, days=14) == []
+    _switch(cx, "p1", True)
+    assert [r["email"] for r in ri.pending(cx, days=14)] == ["client@x.com"]
+
+
+def test_a_practitioner_order_goes_to_the_client_when_switched_on():
+    cx = _cx()
+    _client_order(cx, source="dropship", recipient_email="tony@x.com")
+    assert ri.pending(cx, days=14) == []
+    _switch(cx, "p1", True)
+    rows = ri.pending(cx, days=14)
+    assert [(r["email"], r["name"], r["slug"]) for r in rows] == [
+        ("tony@x.com", "Tony Client", "esr")]
+
+
+def test_a_practitioner_order_without_a_client_email_sends_nothing():
+    cx = _cx()
+    _client_order(cx, source="dropship", recipient_email=None)
+    _switch(cx, "p1", True)
+    assert ri.pending(cx, days=14) == []
+
+
+def test_a_practitioner_order_never_emails_the_practitioner():
+    cx = _cx()
+    _client_order(cx, source="dropship", recipient_email="PRAC@x.com ")
+    _switch(cx, "p1", True)
+    assert ri.pending(cx, days=14) == []
+
+
+def test_the_switch_belongs_to_one_practitioner():
+    cx = _cx()
+    _client_order(cx, source="dispensary", pid="p1", email="a@x.com", external_ref="c1")
+    _client_order(cx, source="dispensary", pid="p2", email="b@x.com", external_ref="c2")
+    _switch(cx, "p2", True)
+    assert [r["email"] for r in ri.pending(cx, days=14)] == ["b@x.com"]
+
+
+def test_turning_the_switch_off_stops_the_invites():
+    cx = _cx()
+    _client_order(cx, source="dispensary", email="client@x.com")
+    _switch(cx, "p1", True)
+    _switch(cx, "p1", False)
+    assert ri.pending(cx, days=14) == []
+
+
+def test_upsert_order_records_the_client_email():
+    cx = _cx()
+    oid = _orders.upsert_order(cx, source="dropship", external_ref="INV9",
+                               email="prac@x.com", name="Prac",
+                               recipient_email="tony@x.com")
+    got = cx.execute("SELECT recipient_email FROM orders WHERE id=?", (oid,)).fetchone()
+    assert got[0] == "tony@x.com"

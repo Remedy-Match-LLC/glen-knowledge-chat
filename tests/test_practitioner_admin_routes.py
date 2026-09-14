@@ -389,3 +389,17 @@ def test_a_successful_signup_leaves_the_button_in_a_done_state():
     # Failure: the button must come back so they can correct and retry.
     assert res["bad"]["label"] == "Create my account", res["bad"]
     assert res["bad"]["disabled"] is False, "a failed signup must be retryable"
+
+
+def test_edit_rename_capitalises_an_all_caps_name(client, monkeypatch):
+    """Glen, 2026-09-13. The console gets back the name the finder will show."""
+    c, appmod = client
+    from dashboard import practitioner_admin as pa
+    calls = {}
+    monkeypatch.setattr(pa, "set_name",
+                        lambda pid, name: calls.update({"pid": pid, "name": name}))
+    r = c.post("/api/console/practitioners/p9/edit?key=" + _key(appmod),
+               json={"action": "rename", "name": "ANNA KREIMES"})
+    assert r.status_code == 200
+    assert calls == {"pid": "p9", "name": "Anna Kreimes"}
+    assert r.get_json()["name"] == "Anna Kreimes"

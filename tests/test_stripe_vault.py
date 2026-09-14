@@ -9,18 +9,44 @@ class _Resp:
 
 
 def test_checkout_session_save_card_params(monkeypatch):
+    """save_card vaults the card onto the buyer's EXISTING Customer.
+
+    This used to assert customer_creation == "always", which is what minted a new
+    Customer per session: eight emails held 21 records more than they should on
+    2026-09-12, Ashley King six of them. A vaulted card landing on a record with no
+    history is the opposite of the point of vaulting it. The mode and the
+    setup_future_usage half of this test are unchanged.
+    """
     captured = {}
     def fake_post(path, params):           # match the real helper's (path, params) shape
         captured["path"] = path; captured["params"] = params
         return {"id": "cs_1", "url": "https://stripe/x"}
     monkeypatch.setattr(stripe_pay, "_post", fake_post)
+    monkeypatch.setattr(stripe_pay, "_find_or_create_customer", lambda e: "cus_known")
     stripe_pay.create_checkout_session(
         7000, customer_email="a@x.com", description="d", metadata={"k": "v"},
         success_url="s", cancel_url="c", save_card=True)
     p = captured["params"]
     assert p["mode"] == "payment"
-    assert p["customer_creation"] == "always"
+    assert p["customer"] == "cus_known"
+    assert "customer_email" not in p       # Stripe rejects the pair
+    assert "customer_creation" not in p    # this was the duplicate-maker
     assert p["payment_intent_data[setup_future_usage]"] == "off_session"
+
+
+def test_checkout_session_save_card_falls_back_when_no_customer_resolves(monkeypatch):
+    """A Stripe hiccup must never stop someone paying, so an unresolved lookup keeps
+    the old behaviour and accepts a possible duplicate."""
+    captured = {}
+    monkeypatch.setattr(stripe_pay, "_post",
+                        lambda path, params: captured.update(params) or {"id": "cs_2", "url": "u"})
+    monkeypatch.setattr(stripe_pay, "_find_or_create_customer", lambda e: "")
+    stripe_pay.create_checkout_session(
+        7000, customer_email="a@x.com", description="d", metadata={},
+        success_url="s", cancel_url="c", save_card=True)
+    assert captured["customer_creation"] == "always"
+    assert captured["customer_email"] == "a@x.com"
+    assert "customer" not in captured
 
 
 def test_charge_off_session_params(monkeypatch):

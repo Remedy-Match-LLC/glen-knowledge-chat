@@ -8,9 +8,9 @@ campaign ID and schedules batches of at most 100 at 15-minute intervals.
 
 import argparse
 import html
+import http.client
 import json
 import os
-import re
 import sys
 import time
 import urllib.error
@@ -23,8 +23,13 @@ from zoneinfo import ZoneInfo
 # Keep the repository root importable in both modes.
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+# Must precede `import app`: a one-off job inherits DATA_DIR, and without this the
+# import starts the web scheduler, whose console push runs immediately.
+os.environ["NO_BACKGROUND_SCHEDULER"] = "1"
+
 import app as appmod
 from dashboard import client_portal, email_suppression
+from scripts import live_invitation_allowlist as allowlist
 
 
 GHL_BASE = "https://services.leadconnectorhq.com"
@@ -41,8 +46,9 @@ def _now():
 
 
 def _email(value):
-    value = (value or "").strip().lower()
-    return value if re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", value) else ""
+    # One rule for the audience and for the fingerprinted list, or a changed
+    # rule would silently match nobody.
+    return allowlist.normalize_email(value)
 
 
 def _api(method, path, version, body=None, *, write=False):
@@ -71,6 +77,14 @@ def _api(method, path, version, body=None, *, write=False):
         except Exception:
             payload = {"raw": raw[:500]}
         return exc.code, payload
+    except (TimeoutError, OSError, http.client.HTTPException) as exc:
+        # 2026-09-14: a message POST timed out after GHL had accepted it, and the
+        # exception aborted the run with that recipient unrecorded. A write with no
+        # response is status 0, meaning "may have happened". A read has no side
+        # effect, so it still raises.
+        if not write:
+            raise
+        return 0, {"transport_error": type(exc).__name__, "detail": str(exc)[:200]}
 
 
 def _contacts_by_tag(tag):
@@ -111,6 +125,11 @@ def _create_contact(email, name=""):
         "lastName": " ".join(parts[1:]) if len(parts) > 1 else None,
         "source": "MyHealingOasis weekly live community",
     }, write=True)
+    if status == 0:
+        # No response. The contact may or may not exist now, so there is no id to
+        # send to. Returning the error dict would count as a contact and let the
+        # send proceed; None makes the member missing, and --send refuses.
+        return None
     if status >= 400:
         # HighLevel can report the authoritative membership email as an
         # additional address on an existing contact.  Reuse that contact instead
@@ -133,16 +152,35 @@ def _dnd_email(contact):
 
 def _authoritative_access_sets():
     with appmod.db.connect(appmod.LOG_DB) as cx:
-        candidates = [row[0] for row in cx.execute(
+        candidates = {row[0] for row in cx.execute(
             "SELECT DISTINCT lower(email) FROM memberships "
-            "WHERE email IS NOT NULL AND trim(email)<>''").fetchall()]
+            "WHERE email IS NOT NULL AND trim(email)<>''").fetchall()}
+        # A family plan grants membership with no memberships row, so its holder
+        # and covered members never reached _is_paid_member and were told Group
+        # Coaching was an upgrade. Measured 2026-09-13: 2 of 3 family-plan
+        # members were missing. Read them the way the members board does.
+        try:
+            from dashboard import family_plan as _fp
+            from dashboard import household as _hh
+            _fp.init_family_plan_table(cx)
+            _hh.init_household_tables(cx)
+            for plan in _fp.list_active(cx):
+                holder = plan.get("caregiver_email") or ""
+                candidates.add(holder)
+                candidates.update(m.get("email") or "" for m in _hh.members_for(cx, holder))
+        except Exception as exc:
+            raise RuntimeError(f"family plan roster unavailable: {exc}") from exc
+    candidates = {_email(email) for email in candidates}
+    candidates.discard("")
     paid = {email for email in candidates if appmod._is_paid_member(email)}
     paid.add("drglenswartwout@gmail.com")
     certification = set()
     try:
         from db_supabase import supabase_cursor
         with supabase_cursor() as cur:
-            cur.execute("SELECT lower(email) FROM practitioners "
+            # The alias is load-bearing: RealDictCursor names an unaliased lower(email)
+            # "lower", so row.get("email") read nothing and all 15 coaches were dropped.
+            cur.execute("SELECT lower(email) AS email FROM practitioners "
                         "WHERE portal_role='coach' AND email IS NOT NULL")
             certification = {
                 _email(row.get("email") if hasattr(row, "get") else row[0])
@@ -154,7 +192,9 @@ def _authoritative_access_sets():
     return paid, certification
 
 
-def _build_audience(*, create_missing_contacts=False):
+def _build_audience(*, create_missing_contacts=False, allowed=None):
+    """``allowed``, when given, is a predicate over an email. Members outside it
+    are never looked up or created in GHL, and cannot block the run."""
     by_email, tag_sets = {}, {}
     for tag in SOURCE_TAGS:
         tag_sets[tag] = set()
@@ -168,6 +208,8 @@ def _build_audience(*, create_missing_contacts=False):
     missing_ghl = []
     for email in sorted(paid | certification):
         if email in by_email:
+            continue
+        if allowed is not None and not allowed(email):
             continue
         contact = _find_contact(email)
         if not contact and create_missing_contacts:
@@ -233,8 +275,8 @@ def _copy(first_name, portal_url, eligible, target_date, email=""):
                   "Group Coaching is a certification/full-membership upgrade benefit; "
                   "your current access does not include the private session.")
     text = (f"{greeting}\n\nThis {date_label}, our MentorshipU community activities are:\n\n"
-            "2:00 PM HST — Group Coaching\n"
-            "3:00 PM HST — Free Wellness Whispering MasterClass\n\n"
+            "2:00 PM HST: Group Coaching\n"
+            "3:00 PM HST: Free Wellness Whispering MasterClass\n\n"
             f"{access}\n\nOpen your private MyHealingOasis Upcoming Live Events page to RSVP, "
             "add the sessions to your calendar, and receive your own private Zoom join link:\n\n"
             f"{portal_url}\n\nPlease do not share your private portal or join link.\n\n"
@@ -248,6 +290,30 @@ def _copy(first_name, portal_url, eligible, target_date, email=""):
         text = text + _un.footer_text(email, "weekly-live")
         body_html = body_html + _un.footer_html(email, "weekly-live")
     return text, body_html
+
+
+EM_DASH_FORMS = ("—", "&mdash;", "&#8212;")
+
+
+def _subject(target_date):
+    return f"Wednesday live community sessions: {target_date.strftime('%B %-d')}"
+
+
+def _refuse_em_dash(subject, target_date):
+    """Glen, 2026-09-13: no em dashes in this invitation, subject or body.
+
+    Checked once, before the event gate and before any contact is read, so a dry
+    run fails too and no campaign can stop halfway. The sample uses a placeholder
+    name and link because only the fixed wording is ours to control.
+    """
+    parts = [subject]
+    for eligible in (True, False):
+        parts.extend(_copy("Friend", f"{PORTAL_BASE}/portal/check", eligible,
+                           target_date, "check@example.com"))
+    for part in parts:
+        if any(form in part for form in EM_DASH_FORMS):
+            raise RuntimeError("em dash found in the invitation subject or copy; "
+                               "use a colon, comma or full stop")
 
 
 def _init_run_tables(cx):
@@ -305,21 +371,44 @@ def run(args):
     target_date = datetime.fromisoformat(args.date).date()
     campaign_id = f"weekly-live-community-{target_date.isoformat()}"
     campaign_name = f"Weekly Live Community | {target_date.isoformat()}"
-    subject = f"Wednesday live community sessions — {target_date.strftime('%B %-d')}"
+    subject = _subject(target_date)
+    _refuse_em_dash(subject, target_date)
+    # The hard rule: mail only what filter_audience.py returned, because it reads
+    # both consent stores and this script reads neither fully. A send without the
+    # list refuses before any contact is read.
+    only_list = getattr(args, "only_list", None)
+    if args.send and not only_list:
+        raise RuntimeError("--send requires --only-list from live_invitation_allowlist.py")
+    fingerprints = allowlist.decode(only_list) if only_list else None
+    allowed = ((lambda email: allowlist.allows(fingerprints, email))
+               if fingerprints is not None else None)
     gate = _event_gate(target_date)
     if not gate["ok"]:
         raise RuntimeError("event safety gate failed: " + "; ".join(gate["issues"]))
     audience, tag_sets, paid, certification, missing_ghl = _build_audience(
-        create_missing_contacts=args.send)
+        create_missing_contacts=args.send, allowed=allowed)
+    built_total = len(audience)
+    if allowed is not None:
+        audience = {email: contact for email, contact in audience.items()
+                    if allowed(email)}
     eligible = paid | certification
     counts = {"pb_member": len(tag_sets["pb:member"]),
               "e4l_account": len(tag_sets["e4l account"]),
               "certification": len(certification), "paid_full": len(paid),
-              "deduplicated_total": len(audience),
+              "deduplicated_total": built_total,
               "group_eligible": len(set(audience) & eligible),
               "missing_ghl_contact": len(missing_ghl),
               "suppressed": 0, "dnd": 0, "queued": 0,
-              "failed": 0, "already_queued": 0, "portal_created_or_recovered": 0}
+              "failed": 0, "already_queued": 0, "portal_created_or_recovered": 0,
+              "unknown": 0, "skipped_unknown": 0}
+    if fingerprints is not None:
+        counts.update({"allowlist_size": len(fingerprints),
+                       "allowlist_matched": len(audience),
+                       "allowlist_not_in_audience": len(fingerprints) - len(audience),
+                       "outside_allowlist_skipped": built_total - len(audience)})
+        if args.send and not audience:
+            raise RuntimeError("no audience member matches the list; "
+                               "check the list was built with the production key")
     if args.dry_run:
         with appmod.db.connect(appmod.LOG_DB) as cx:
             client_portal.init_client_portal_table(cx)
@@ -346,6 +435,11 @@ def run(args):
         sendable = []
         for email, contact in sorted(audience.items()):
             prior = _existing_status(cx, campaign_id, email)
+            if prior == "unknown":
+                # GHL may already have this message. A person checks GHL and changes
+                # the row; a re-run never guesses.
+                counts["skipped_unknown"] += 1
+                continue
             if prior in {"queued", "sent", "delivered", "opened", "clicked"}:
                 counts["already_queued"] += 1
                 continue
@@ -361,6 +455,7 @@ def run(args):
             sendable.append((email, contact))
 
         schedule_anchor = int(time.time())
+        unknown_contact_id = None
         for batch_no, offset in enumerate(range(0, len(sendable), 100), start=1):
             batch = sendable[offset:offset + 100]
             scheduled_timestamp = (None if batch_no == 1 else
@@ -381,6 +476,14 @@ def run(args):
                 status, message_id, response = _send(
                     contact.get("id") or "", subject, text, body_html,
                     email_to=email, scheduled_timestamp=scheduled_timestamp)
+                if status == 0:
+                    # No response: the message may be in GHL. Record it as unknown and
+                    # stop, so nothing after it is sent on a connection that is failing.
+                    counts["unknown"] += 1
+                    unknown_contact_id = contact.get("id") or ""
+                    _record_recipient(cx, campaign_id, email, unknown_contact_id, "",
+                                      "unknown", f"no response: {json.dumps(response)[:300]}")
+                    break
                 if status < 400 and message_id:
                     counts["queued"] += 1
                     _record_recipient(cx, campaign_id, email, contact.get("id") or "",
@@ -398,8 +501,13 @@ def run(args):
                               (datetime.fromtimestamp(scheduled_timestamp, HST).isoformat()
                                if scheduled_timestamp else "immediate")},
                              sort_keys=True), flush=True)
+            if unknown_contact_id is not None:
+                break
 
-        final = "verified_queued" if counts["failed"] == 0 else "needs_attention"
+        if unknown_contact_id is not None:
+            final = "stopped_unknown"
+        else:
+            final = "verified_queued" if counts["failed"] == 0 else "needs_attention"
         cx.execute("UPDATE weekly_live_invitation_runs SET status=?,counts_json=?,updated_at=? "
                    "WHERE campaign_id=?",
                    (final, json.dumps(counts, sort_keys=True), _now(), campaign_id))
@@ -408,7 +516,10 @@ def run(args):
                       "campaign_name": campaign_name, "subject": subject,
                       "counts": counts, "event_gate": gate,
                       "sender": FROM_ADDRESS, "batch_size": 100,
-                      "batch_interval_minutes": 15}, sort_keys=True))
+                      "batch_interval_minutes": 15,
+                      "unknown_contact_id": unknown_contact_id}, sort_keys=True))
+    if final == "stopped_unknown":
+        return 3
     return 0 if final == "verified_queued" else 2
 
 
@@ -418,6 +529,8 @@ def main():
     mode.add_argument("--dry-run", action="store_true")
     mode.add_argument("--send", action="store_true")
     parser.add_argument("--date", required=True, help="Wednesday HST date, YYYY-MM-DD")
+    parser.add_argument("--only-list", dest="only_list", default=None,
+                        help="fingerprints from live_invitation_allowlist.py; required with --send")
     args = parser.parse_args()
     try:
         raise SystemExit(run(args))
