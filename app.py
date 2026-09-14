@@ -245,6 +245,7 @@ FEEDBACK_VIEW_URL   = os.environ.get("FEEDBACK_VIEW_URL",   "https://Truly.VIP/F
 # dashboard/openai_failover.py.
 from dashboard.openai_failover import build_openai_client as _build_openai_client
 from dashboard.people import set_person_tags, distinct_tags, dedupe_tags_ci
+from dashboard.name_case import normalize_person_names as _normalize_person_names
 from dashboard import affiliate_dashboard
 from dashboard import practitioner_slugs as _ps_signup
 from dashboard import ash_ally
@@ -39838,6 +39839,9 @@ def _upsert_person_additive(cx, person, ts=None):
     existing = cx.execute("SELECT * FROM people WHERE email=?", (email,)).fetchone()
 
     scalars = {k: person.get(k, "") for k in _PERSON_UPSERT_SCALARS}
+    # Capitalise here, not in a one-off: a stored name is replaced by any non-blank
+    # incoming one below, so the next feeder run would undo a cleanup.
+    _normalize_person_names(scalars)
     arrays = {}
     for jf in _PERSON_UPSERT_JSON:
         v = person.get(jf, [])
@@ -42977,6 +42981,7 @@ def upsert_people():
                 "resources","issue_duration","form_completed_by",
                 "last_order_date","last_session_date","last_contact_date","notes",
             ]}
+            _normalize_person_names(fields)
             # JSON array fields
             for jf in ["organizations","tags","roles","terrain_concerns","body_systems",
                         "conditions","healing_response","interests","request"]:

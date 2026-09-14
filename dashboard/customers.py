@@ -8,6 +8,7 @@ import json
 from datetime import datetime, timezone
 
 from dashboard import dbwrite
+from dashboard.name_case import normalize_name
 
 # Address columns added to `people` (city/state/country/phone already exist).
 _ADDR_COLS = ("address1", "address2", "zip")
@@ -124,7 +125,7 @@ def find_or_create_by_email(cx, *, email, name="", phone="", source="order-entry
         cx,
         "INSERT INTO people (email, name, phone, source, created_at, updated_at) "
         "VALUES (?,?,?,?,?,?)",
-        (em, (name or "").strip(), (phone or "").strip(),
+        (em, normalize_name((name or "").strip()), (phone or "").strip(),
          (source or "order-entry").strip(), _now(), _now()))
     cx.commit()
     return new_id
@@ -136,7 +137,7 @@ def rename_by_email(cx, email, *, name, first_name=None, last_name=None):
     person-only rename wouldn't reach it. Only non-blank values are written; all
     other fields are left untouched. Returns {people_updated, orders_updated}."""
     em = (email or "").strip().lower()
-    nm = (name or "").strip()
+    nm = normalize_name((name or "").strip())
     if not em or not nm:
         raise ValueError("email and non-blank name required")
     ts = _now()
@@ -144,10 +145,10 @@ def rename_by_email(cx, email, *, name, first_name=None, last_name=None):
         "UPDATE people SET name=?, updated_at=? WHERE lower(email)=?", (nm, ts, em)).rowcount
     if (first_name or "").strip():
         cx.execute("UPDATE people SET first_name=? WHERE lower(email)=?",
-                   ((first_name or "").strip(), em))
+                   (normalize_name((first_name or "").strip()), em))
     if (last_name or "").strip():
         cx.execute("UPDATE people SET last_name=? WHERE lower(email)=?",
-                   ((last_name or "").strip(), em))
+                   (normalize_name((last_name or "").strip(), leading_particle=True), em))
     orders_updated = cx.execute(
         "UPDATE orders SET name=?, updated_at=? WHERE lower(email)=?", (nm, ts, em)).rowcount
     cx.commit()
