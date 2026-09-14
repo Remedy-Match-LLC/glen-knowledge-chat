@@ -292,8 +292,10 @@ _CARD_SYSTEM = (
 # scan generated text for disease/condition names + treatment-claim verbs, retry
 # once with explicit feedback, and if it still violates, the caller degrades that
 # section (empty rather than a non-compliant claim on a live page).
+# pterygium added 2026-09-14: Nous Energy's live card carried "Support for eye health,
+# including pterygium-related concerns", grounded on old page copy, and the gate let it pass.
 _DENY_RE = re.compile(
-    r"\b(floaters?|detachment|macular degeneration|glaucoma|cataracts?|"
+    r"\b(floaters?|detachment|macular degeneration|glaucoma|cataracts?|pterygium|pterygia|"
     r"treatments?|treats?|prevents?|cures?|reverses?|addresses)\b", re.I)
 
 
