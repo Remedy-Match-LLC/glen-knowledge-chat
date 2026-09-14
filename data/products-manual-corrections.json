@@ -40,6 +40,20 @@
     "single_ingredient_pure_powder": true,
     "note": "Single-ingredient Pure Powder (Glen). FMP 'Magnesium Glycinate' match was wrong."
   },
+  "nacetyl-cysteine": {
+    "ingredients": [
+      {
+        "name": "N-Acetyl Cysteine (NAC)",
+        "dose": "500 mg per scoop"
+      }
+    ],
+    "ingredients_source": "manual",
+    "single_ingredient_pure_powder": true,
+    "bottle_type": "120 caps",
+    "directions": "Take 1 scoop (500 mg) 1 to 2 times daily on an empty stomach, up to 2 scoops twice daily short term, or as guided.",
+    "panel_note": "180 g Pure Powder, about 360 scoops.",
+    "note": "Single-ingredient Pure Powder, 180 g, in the bottle used for 120 capsules (WholOmega 120). Label and wording approved by Glen 2026-09-13; source is production/05 Formulations/n-acetyl-cysteine-powder/2026-09-13 in the vault. Price unchanged on his instruction."
+  },
   "fibrosolve": {
     "ingredients": [
       {
