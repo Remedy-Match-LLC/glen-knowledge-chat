@@ -441,7 +441,7 @@
   <!-- BEGIN coach-volunteer script -->
   <div class="panel" id="coach-panel">
     <h2>Coaching volunteer</h2>
-    <div class="muted" style="font-size:13px;margin:4px 0 12px">Volunteer to coach members who want extra support. You will be listed once your certification is complete.</div>
+    <div class="muted" style="font-size:13px;margin:4px 0 12px">Volunteer to coach members who want extra support. Certification students and certified coaches can be listed.</div>
     <div class="row" style="margin-bottom:8px">
       <input class="slug" id="coach-name" placeholder="Display name">
     </div>
@@ -1207,7 +1207,7 @@ $('coach-save').addEventListener('click', function(){
       if(res.status === 200 && d.ok){
         msg.style.color = '#8fd6a3';
         if(!d.cert_ok){
-          msg.textContent = 'Your profile is saved. You will be listed once your certification is complete.';
+          msg.textContent = 'Your profile is saved. Listing is open to certification students and certified coaches.';
         } else if(d.capacity === 0){
           msg.textContent = 'Saved. You are set to not taking new members right now.';
         } else if(d.listed){

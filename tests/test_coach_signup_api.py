@@ -76,7 +76,71 @@ def test_signup_uncertified_not_listed():
 def test_coach_cert_ok_fail_closed():
     with sqlite3.connect(appmod.LOG_DB) as cx:
         cx.row_factory = sqlite3.Row
-        assert appmod._coach_cert_ok(cx, "nobody@nowhere.com") is False
+        with mock.patch.object(appmod, "_is_certification_student", return_value=False):
+            assert appmod._coach_cert_ok(cx, "nobody@nowhere.com") is False
+
+
+# Glen, 2026-09-13: certification students may be listed as 1:1 coaches before
+# they finish. The completion rules still qualify a finished coach on their own.
+
+def test_certification_student_qualifies_before_finishing():
+    asked = []
+    with sqlite3.connect(appmod.LOG_DB) as cx:
+        cx.row_factory = sqlite3.Row
+        with mock.patch("dashboard.cert_submissions.list_for_email", return_value=[]), \
+             mock.patch.object(appmod, "_is_certification_student",
+                               side_effect=lambda e: asked.append(e) or True):
+            assert appmod._coach_cert_ok(cx, "student@x.com") is True
+    assert asked == ["student@x.com"], "the student check was never reached"
+
+
+def test_finished_coach_qualifies_without_the_student_role():
+    with sqlite3.connect(appmod.LOG_DB) as cx:
+        cx.row_factory = sqlite3.Row
+        with mock.patch("dashboard.cert_submissions.list_for_email", return_value=[]), \
+             mock.patch("dashboard.cert_rules.evaluate", return_value={"complete": True}), \
+             mock.patch.object(appmod, "_is_certification_student", return_value=False):
+            assert appmod._coach_cert_ok(cx, "done@x.com") is True
+
+
+def test_neither_finished_nor_a_student_is_not_listed():
+    asked = []
+    with sqlite3.connect(appmod.LOG_DB) as cx:
+        cx.row_factory = sqlite3.Row
+        with mock.patch("dashboard.cert_submissions.list_for_email", return_value=[]), \
+             mock.patch.object(appmod, "_is_certification_student",
+                               side_effect=lambda e: asked.append(e) or False):
+            assert appmod._coach_cert_ok(cx, "neither@x.com") is False
+    assert asked == ["neither@x.com"], "refused before the student check ran"
+
+
+def test_a_broken_completion_check_still_consults_the_student_role():
+    """An error reading cert submissions must not hide a real student, and must
+    not list a non-student either."""
+    with sqlite3.connect(appmod.LOG_DB) as cx:
+        cx.row_factory = sqlite3.Row
+        with mock.patch("dashboard.cert_submissions.list_for_email",
+                        side_effect=RuntimeError("db down")):
+            with mock.patch.object(appmod, "_is_certification_student", return_value=True):
+                assert appmod._coach_cert_ok(cx, "s@x.com") is True
+            with mock.patch.object(appmod, "_is_certification_student", return_value=False):
+                assert appmod._coach_cert_ok(cx, "n@x.com") is False
+
+
+def test_signup_by_a_student_lists_them():
+    """End to end through the route, with only the two lookups faked."""
+    c = _client()
+    with mock.patch.object(appmod, "_practitioner_session_pid", return_value="pid5"), \
+         mock.patch("dashboard.practitioner_portal.practitioner_email_by_id", return_value="stu@x.com"), \
+         mock.patch("dashboard.cert_submissions.list_for_email", return_value=[]), \
+         mock.patch.object(appmod, "_is_certification_student", return_value=True):
+        d = c.post("/api/practitioner/coach-profile?token=t", data=_form(name="Stu"),
+                   content_type="multipart/form-data").get_json()
+    assert d["cert_ok"] is True and d["listed"] is True
+    with sqlite3.connect(appmod.LOG_DB) as cx:
+        cx.row_factory = sqlite3.Row
+        _cd.init_coach_tables(cx)
+        assert any(v["name"] == "Stu" for v in _cd.list_active(cx))
 
 
 def test_edit_without_video_preserves_url():
