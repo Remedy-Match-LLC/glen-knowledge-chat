@@ -11354,7 +11354,18 @@
    "name": "N-Acetyl Cysteine",
    "price_cents": 3997,
    "pinecone_title": "N-Acetyl Cysteine",
-   "url": "https://remedymatch.com/remedies/487-nacetyl-cysteine"
+   "url": "https://remedymatch.com/remedies/487-nacetyl-cysteine",
+   "ingredients": [
+    {
+     "name": "N-Acetyl Cysteine (NAC)",
+     "dose": "500 mg per scoop"
+    }
+   ],
+   "ingredients_source": "manual",
+   "bottle_type": "120 caps",
+   "directions": "Take 1 scoop (500 mg) 1 to 2 times daily on an empty stomach, up to 2 scoops twice daily short term, or as guided.",
+   "panel_note": "180 g Pure Powder, about 360 scoops.",
+   "enrichment_note": "Single-ingredient Pure Powder, 180 g, in the bottle used for 120 capsules (WholOmega 120). Label and wording approved by Glen 2026-09-13; source is production/05 Formulations/n-acetyl-cysteine-powder/2026-09-13 in the vault. Price unchanged on his instruction."
   },
   "oxygen-cleanse": {
    "name": "Oxygen Cleanse",
