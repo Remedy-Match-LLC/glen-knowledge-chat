@@ -22,6 +22,10 @@ from zoneinfo import ZoneInfo
 # Keep the repository root importable in both modes.
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+# Must precede `import app`: a one-off job inherits DATA_DIR, and without this the
+# import starts the web scheduler, whose console push runs immediately.
+os.environ["NO_BACKGROUND_SCHEDULER"] = "1"
+
 import app as appmod
 from dashboard import client_portal, email_suppression
 from scripts import live_invitation_allowlist as allowlist
@@ -160,7 +164,9 @@ def _authoritative_access_sets():
     try:
         from db_supabase import supabase_cursor
         with supabase_cursor() as cur:
-            cur.execute("SELECT lower(email) FROM practitioners "
+            # The alias is load-bearing: RealDictCursor names an unaliased lower(email)
+            # "lower", so row.get("email") read nothing and all 15 coaches were dropped.
+            cur.execute("SELECT lower(email) AS email FROM practitioners "
                         "WHERE portal_role='coach' AND email IS NOT NULL")
             certification = {
                 _email(row.get("email") if hasattr(row, "get") else row[0])

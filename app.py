@@ -46373,7 +46373,19 @@ def _start_scheduler():
 # spawn a BackgroundScheduler that is never shut down, leaking interval jobs that connect
 # to later tests' DBs and make the suite timing-nondeterministic. Prod has no pytest in
 # sys.modules, so this is a no-op there.
-if os.environ.get("DATA_DIR") and "pytest" not in sys.modules:
+#
+# A Render one-off job inherits DATA_DIR, so a script that imports this module used to
+# start a second scheduler whose console push fires at once. That happened in five jobs
+# on 2026-09-13, one of which pushed todos and synced 4,115 people. Such scripts set
+# NO_BACKGROUND_SCHEDULER=1 before importing app.
+def _scheduler_wanted(environ=None, modules=None):
+    environ = os.environ if environ is None else environ
+    modules = sys.modules if modules is None else modules
+    return (bool(environ.get("DATA_DIR")) and "pytest" not in modules
+            and not environ.get("NO_BACKGROUND_SCHEDULER"))
+
+
+if _scheduler_wanted():
     _start_scheduler()
 
 
