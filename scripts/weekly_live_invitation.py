@@ -8,6 +8,7 @@ campaign ID and schedules batches of at most 100 at 15-minute intervals.
 
 import argparse
 import html
+import http.client
 import json
 import os
 import sys
@@ -76,6 +77,14 @@ def _api(method, path, version, body=None, *, write=False):
         except Exception:
             payload = {"raw": raw[:500]}
         return exc.code, payload
+    except (TimeoutError, OSError, http.client.HTTPException) as exc:
+        # 2026-09-14: a message POST timed out after GHL had accepted it, and the
+        # exception aborted the run with that recipient unrecorded. A write with no
+        # response is status 0, meaning "may have happened". A read has no side
+        # effect, so it still raises.
+        if not write:
+            raise
+        return 0, {"transport_error": type(exc).__name__, "detail": str(exc)[:200]}
 
 
 def _contacts_by_tag(tag):
@@ -385,7 +394,8 @@ def run(args):
               "group_eligible": len(set(audience) & eligible),
               "missing_ghl_contact": len(missing_ghl),
               "suppressed": 0, "dnd": 0, "queued": 0,
-              "failed": 0, "already_queued": 0, "portal_created_or_recovered": 0}
+              "failed": 0, "already_queued": 0, "portal_created_or_recovered": 0,
+              "unknown": 0, "skipped_unknown": 0}
     if fingerprints is not None:
         counts.update({"allowlist_size": len(fingerprints),
                        "allowlist_matched": len(audience),
@@ -420,6 +430,11 @@ def run(args):
         sendable = []
         for email, contact in sorted(audience.items()):
             prior = _existing_status(cx, campaign_id, email)
+            if prior == "unknown":
+                # GHL may already have this message. A person checks GHL and changes
+                # the row; a re-run never guesses.
+                counts["skipped_unknown"] += 1
+                continue
             if prior in {"queued", "sent", "delivered", "opened", "clicked"}:
                 counts["already_queued"] += 1
                 continue
@@ -435,6 +450,7 @@ def run(args):
             sendable.append((email, contact))
 
         schedule_anchor = int(time.time())
+        unknown_contact_id = None
         for batch_no, offset in enumerate(range(0, len(sendable), 100), start=1):
             batch = sendable[offset:offset + 100]
             scheduled_timestamp = (None if batch_no == 1 else
@@ -455,6 +471,14 @@ def run(args):
                 status, message_id, response = _send(
                     contact.get("id") or "", subject, text, body_html,
                     email_to=email, scheduled_timestamp=scheduled_timestamp)
+                if status == 0:
+                    # No response: the message may be in GHL. Record it as unknown and
+                    # stop, so nothing after it is sent on a connection that is failing.
+                    counts["unknown"] += 1
+                    unknown_contact_id = contact.get("id") or ""
+                    _record_recipient(cx, campaign_id, email, unknown_contact_id, "",
+                                      "unknown", f"no response: {json.dumps(response)[:300]}")
+                    break
                 if status < 400 and message_id:
                     counts["queued"] += 1
                     _record_recipient(cx, campaign_id, email, contact.get("id") or "",
@@ -472,8 +496,13 @@ def run(args):
                               (datetime.fromtimestamp(scheduled_timestamp, HST).isoformat()
                                if scheduled_timestamp else "immediate")},
                              sort_keys=True), flush=True)
+            if unknown_contact_id is not None:
+                break
 
-        final = "verified_queued" if counts["failed"] == 0 else "needs_attention"
+        if unknown_contact_id is not None:
+            final = "stopped_unknown"
+        else:
+            final = "verified_queued" if counts["failed"] == 0 else "needs_attention"
         cx.execute("UPDATE weekly_live_invitation_runs SET status=?,counts_json=?,updated_at=? "
                    "WHERE campaign_id=?",
                    (final, json.dumps(counts, sort_keys=True), _now(), campaign_id))
@@ -482,7 +511,10 @@ def run(args):
                       "campaign_name": campaign_name, "subject": subject,
                       "counts": counts, "event_gate": gate,
                       "sender": FROM_ADDRESS, "batch_size": 100,
-                      "batch_interval_minutes": 15}, sort_keys=True))
+                      "batch_interval_minutes": 15,
+                      "unknown_contact_id": unknown_contact_id}, sort_keys=True))
+    if final == "stopped_unknown":
+        return 3
     return 0 if final == "verified_queued" else 2
 
 
