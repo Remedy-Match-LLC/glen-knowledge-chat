@@ -289,6 +289,23 @@ def get_session(session_id) -> dict:
             "shipping_details": j.get("shipping_details")}
 
 
+def sessions_for_invoice(invoice_id: str, *, limit: int = 100) -> list:
+    """Recent Checkout Sessions carrying metadata.invoice_id, as {id, status, payment_status}.
+    Newest first, from the latest `limit` sessions; an older session is not seen."""
+    target = str(invoice_id or "").strip()
+    if not target:
+        return []
+    result = _get(f"/checkout/sessions?limit={max(1, min(int(limit), 100))}")
+    return [{"id": s.get("id"), "status": s.get("status"),
+             "payment_status": s.get("payment_status")}
+            for s in (result.get("data") or [])
+            if (s.get("metadata") or {}).get("invoice_id") == target]
+
+
+def expire_session(session_id: str) -> dict:
+    return _post(f"/checkout/sessions/{session_id}/expire", {})
+
+
 def expire_open_sessions_for_invoice(invoice_id: str, *, limit: int = 100) -> int:
     """Expire recent open Checkout Sessions carrying metadata.invoice_id."""
     target = str(invoice_id or "").strip()

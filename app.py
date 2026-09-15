@@ -22643,7 +22643,8 @@ def api_cart_checkout():
             res = _checkout_cart(email, [{"slug": c["slug"], "qty": c["qty"],
                                           "format": c["format"]} for c in cart],
                                  ship=ship, points_to_redeem_cents=redeem,
-                                 referral_code=(data.get("referral_code") or "").strip())
+                                 referral_code=(data.get("referral_code") or "").strip(),
+                                 cancel_to_cart=True)
         except CheckoutError as e:
             with db.connect(LOG_DB) as cx:
                 _cart_store.release_claim(cx, token)
@@ -22670,6 +22671,59 @@ def api_cart_checkout():
                 pass
         app.logger.exception("cart checkout failed")
         return jsonify({"ok": False, "error": f"{type(e).__name__}: {e}"}), 500
+
+
+_CHECKOUT_REF_RE = re.compile(r"[0-9a-f]{32}")
+
+
+@app.route("/begin/cart/cancelled")
+def begin_cart_cancelled():
+    """Stripe's cancel return for a storefront cart checkout (2026-09-15).
+
+    api_cart_checkout marks the cart 'ordered' as soon as the Stripe session exists, so a
+    buyer who backs out at Stripe used to find an empty cart and a sign-in page. This route
+    gives the cart back, but only when nothing was paid:
+    - the cart for this checkout_ref is 'ordered', and its order is an unpaid 'new' reorder;
+    - Stripe shows no paid or completed session for that ref, and every open one is expired
+      first, so the abandoned page cannot be paid after the cart reopens;
+    - then the cart reopens (or folds into the buyer's newer open cart), and the unpaid
+      order is cancelled.
+    Any doubt (unknown ref, paid, no session found, a Stripe error) changes nothing. It always
+    redirects to /begin/cart?checkout=cancelled, and the page words itself from the cart."""
+    target = "/begin/cart?checkout=cancelled"
+    ref = (request.args.get("ref") or "").strip().lower()
+    if not _CHECKOUT_REF_RE.fullmatch(ref) or not _STRIPE_ACTIVE:
+        return redirect(target, code=302)
+    try:
+        with db.connect(LOG_DB) as cx:
+            _cart_store.init_cart_tables(cx)
+            row = cx.execute("SELECT token, email, status FROM carts WHERE checkout_ref=? "
+                             "ORDER BY updated_at DESC LIMIT 1", (ref,)).fetchone()
+        if not row or row[2] != "ordered":
+            return redirect(target, code=302)
+        token, email = row[0], row[1]
+        with db.connect(LOG_DB) as ocx:
+            ocx.row_factory = sqlite3.Row
+            order = _bos_orders.find_order_by_external_ref(ocx, ref)
+        if not order or order.get("source") != "reorder" or order.get("status") != "new" \
+                or (order.get("pay_status") or "unpaid") != "unpaid":
+            return redirect(target, code=302)
+        from dashboard import stripe_pay as _sp
+        sessions = _sp.sessions_for_invoice(ref)
+        if not sessions or any(s.get("payment_status") in ("paid", "no_payment_required")
+                               or s.get("status") == "complete" for s in sessions):
+            return redirect(target, code=302)
+        for s in sessions:
+            if s.get("status") == "open":
+                _sp.expire_session(s["id"])
+        with db.connect(LOG_DB) as cx:
+            outcome = _cart_store.reopen_cancelled_checkout(cx, token, email, ref)
+        with db.connect(LOG_DB) as ocx:
+            _bos_orders.cancel_unpaid_checkout(ocx, order["id"])
+        print(f"[cart-cancel] ref {ref[:8]}: cart {outcome}, order {order['id']} cancelled", flush=True)
+    except Exception as e:
+        app.logger.exception("cart cancel return failed: %r", e)
+    return redirect(target, code=302)
 
 
 @app.route("/reorder")
@@ -38588,7 +38642,8 @@ def _resolve_ship_address(email, body_address):
     return ship or {}
 
 
-def _checkout_cart(email, cart, *, ship, points_to_redeem_cents=0, referral_code=None):
+def _checkout_cart(email, cart, *, ship, points_to_redeem_cents=0, referral_code=None,
+                   cancel_to_cart=False):
     """Price a cart through the engine, ingest the order (paid-only: no QBO invoice/customer
     at checkout time), and mint the Stripe URL (metadata kind=reorder -> recorded by
     /begin/checkout-return, which books the line-faithful QBO Sales Receipt on payment).
@@ -38625,6 +38680,10 @@ def _checkout_cart(email, cart, *, ship, points_to_redeem_cents=0, referral_code
                             + int(pc["shipping_cents"])) - _sc_apply)
     out = {"invoice_id": checkout_ref, "doc_number": "",
            "customer_id": "", "total": round(_charge_cents / 100.0, 2)}
+    if cancel_to_cart:
+        # The storefront cart's own cancel return, so a buyer who backs out at Stripe
+        # gets their cart back instead of a sign-in page (see begin_cart_cancelled).
+        out["cancel_url"] = f"{PUBLIC_BASE_URL}/begin/cart/cancelled?ref={checkout_ref}"
     stripe_url = _stripe_checkout_url_for_reorder(out, email) if _STRIPE_ACTIVE else ""
     no_payment_required = (_charge_cents == 0)
     if not stripe_url and not no_payment_required:
