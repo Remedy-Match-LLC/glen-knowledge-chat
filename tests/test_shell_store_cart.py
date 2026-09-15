@@ -29,3 +29,18 @@ def test_store_cart_badge_hides_at_zero_while_the_button_stays_visible():
     # on the badge only, so the Cart link itself still shows once /api/cart
     # is ok.
     assert "badge.hidden = n === 0" in SHELL
+
+
+def test_store_cart_exposes_a_refresh_hook():
+    # Fix wave item 3 (MINOR): the badge was read once, at shell-mount time,
+    # and never again -- Add to cart on the product page could not update it.
+    # A named, guarded (typeof) hook lets begin-product.html re-pull the
+    # count after a successful add.
+    assert "window.refreshStoreCartCount" in SHELL
+
+
+def test_store_cart_button_requires_the_dark_launch_flag_too():
+    # Fix wave item 6: /begin/cart is dark-launched separately from the rest
+    # of the cart routes (cart_page in the /api/cart JSON). The button links
+    # to that page, so it must not show just because /api/cart answered ok.
+    assert "d.ok || !d.cart_page" in SHELL

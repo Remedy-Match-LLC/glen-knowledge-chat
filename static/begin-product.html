@@ -327,6 +327,7 @@
     var BASE = window.location.origin;
     var slug = location.pathname.split('/').filter(Boolean).pop() || '';
     var CART_ENABLED = __CART_ENABLED__;
+    var CART_PAGE_ENABLED = __CART_PAGE_ENABLED__;
 
     // ── Helpers ──────────────────────────────────────────────────────────────
     function show(id){ var e = document.getElementById(id); if (e) e.classList.remove('hidden'); }
@@ -1481,7 +1482,13 @@
           btn.disabled = false;
           if (!d || !d.ok) { btn.textContent = label; return; }
           btn.textContent = 'Added';
-          if (!host.querySelector('.view-cart')) {
+          // Ribbon badge (shell.js): re-fetch and update now, not just on the
+          // next full page load, and guarded since shell.js may not be the
+          // version that defines it.
+          if (typeof window.refreshStoreCartCount === 'function') window.refreshStoreCartCount();
+          // /begin/cart is dark-launched independently of Add to cart itself
+          // (CART_PAGE_ENABLED): while it is off, this link would 404.
+          if (CART_PAGE_ENABLED && !host.querySelector('.view-cart')) {
             var vc = document.createElement('a');
             vc.className = 'view-cart'; vc.href = CART_PAGE; vc.textContent = 'View cart';
             host.appendChild(vc);

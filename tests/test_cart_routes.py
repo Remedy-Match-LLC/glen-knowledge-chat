@@ -62,7 +62,9 @@ def test_info_only_line_is_reported_unavailable(client, db, monkeypatch):
 def test_empty_cart_for_a_new_visitor(client, db):
     r = client.get("/api/cart")
     assert r.status_code == 200
-    assert r.get_json() == {"ok": True, "items": [], "count": 0}
+    # cart_page: False -- the dark-launch flag for /begin/cart itself, not set
+    # by this fixture, so it reads its default (unset env) value.
+    assert r.get_json() == {"ok": True, "items": [], "count": 0, "cart_page": False}
 
 
 def test_add_sets_the_cookie_and_persists(client, db):
@@ -233,7 +235,7 @@ def test_anonymous_visitor_cannot_read_the_members_cart_from_the_cookie(
     client, alice_token, set_visitor = alices_browser
     set_visitor("")                      # Bob, anonymous, same browser
     body = client.get("/api/cart").get_json()
-    assert body == {"ok": True, "items": [], "count": 0}
+    assert body == {"ok": True, "items": [], "count": 0, "cart_page": False}
 
 
 def test_anonymous_visitor_cannot_set_qty_on_the_members_cart(alices_browser, db):

@@ -48,6 +48,7 @@
       flex-wrap:wrap; gap:16px; margin-top:28px; }
     .text-link{ color:var(--gold); font-family:var(--heading); font-weight:600; font-size:14px; }
     .text-link:hover{ text-decoration:underline; }
+    button.text-link{ background:transparent; border:none; padding:0; cursor:pointer; }
     .cta-btn{ display:inline-block; background:var(--gold); color:#0a150d; font-family:var(--heading);
       font-weight:700; font-size:15px; letter-spacing:0.03em; padding:14px 34px; border:none;
       border-radius:999px; cursor:pointer;
@@ -55,13 +56,29 @@
     .cta-btn:hover:not(:disabled){ opacity:0.9; transform:translateY(-1px); }
     .cta-btn:disabled{ opacity:0.5; cursor:default; transform:none; }
 
-    button:focus-visible, a:focus-visible{ outline:2px solid var(--gold); outline-offset:3px; }
+    /* ── Shipping address (opens behind "Ship to a different address") ── */
+    .ship-block{ margin-top:24px; }
+    .ship-form{ margin-top:14px; padding:16px; background:var(--surface); border:1px solid var(--border);
+      border-radius:var(--radius); }
+    .ship-note{ font-size:13px; color:var(--muted); margin-bottom:14px; }
+    .field{ display:flex; flex-direction:column; gap:5px; margin-bottom:12px; }
+    .field label{ font-family:var(--heading); font-weight:600; font-size:12px; letter-spacing:0.03em;
+      color:var(--muted); }
+    .field input{ background:var(--surface-2); border:1px solid var(--border); border-radius:8px;
+      padding:10px 12px; font-size:15px; font-family:var(--font); color:var(--cream); width:100%; }
+    .field-row{ display:flex; gap:10px; }
+    .field-row .field{ flex:1 1 auto; min-width:0; }
+    .field-state{ flex:0 0 78px; }
+    .field-zip{ flex:0 0 110px; }
+
+    button:focus-visible, a:focus-visible, input:focus-visible{ outline:2px solid var(--gold); outline-offset:3px; }
 
     :root[data-theme="light"] .text-link{ color:#7A5C1F; }
     :root[data-theme="light"] .qty button{ color:#7A5C1F; border-color:#B08A3E; }
     :root[data-theme="light"] .qty button:hover{ border-color:#7A5C1F; background:rgba(176,138,62,0.08); }
     :root[data-theme="light"] button:focus-visible,
-    :root[data-theme="light"] a:focus-visible{ outline-color:#7A5C1F; }
+    :root[data-theme="light"] a:focus-visible,
+    :root[data-theme="light"] input:focus-visible{ outline-color:#7A5C1F; }
 
     @media(max-width:560px){
       body{ font-size:16px; }
@@ -70,6 +87,8 @@
       .line a{ min-width:0; }
       .cart-actions{ flex-direction:column; align-items:stretch; }
       .cart-actions .cta-btn{ width:100%; text-align:center; }
+      .field-row{ flex-direction:column; }
+      .field-state, .field-zip{ flex:1 1 auto; }
     }
   </style>
   <script src="/static/theme-toggle.js"></script>
@@ -83,6 +102,38 @@
     <h1>Your cart</h1>
     <p class="muted">Your price, shipping and any member savings are confirmed at checkout.</p>
     <div id="cart-items" aria-live="polite">Loading&hellip;</div>
+    <div class="ship-block">
+      <button type="button" id="ship-toggle" class="text-link" aria-expanded="false" aria-controls="ship-form">Ship to a different address</button>
+      <div id="ship-form" class="ship-form" hidden>
+        <p class="ship-note">US addresses only.</p>
+        <div class="field">
+          <label for="ship-name">Full name</label>
+          <input type="text" id="ship-name" autocomplete="name">
+        </div>
+        <div class="field">
+          <label for="ship-street">Street address</label>
+          <input type="text" id="ship-street" autocomplete="address-line1">
+        </div>
+        <div class="field">
+          <label for="ship-street2">Apartment, suite or unit (optional)</label>
+          <input type="text" id="ship-street2" autocomplete="address-line2">
+        </div>
+        <div class="field-row">
+          <div class="field">
+            <label for="ship-city">City</label>
+            <input type="text" id="ship-city" autocomplete="address-level2">
+          </div>
+          <div class="field field-state">
+            <label for="ship-state">State</label>
+            <input type="text" id="ship-state" autocomplete="address-level1" maxlength="2">
+          </div>
+          <div class="field field-zip">
+            <label for="ship-zip">ZIP code</label>
+            <input type="text" id="ship-zip" autocomplete="postal-code" inputmode="numeric">
+          </div>
+        </div>
+      </div>
+    </div>
     <p id="cart-msg" class="muted" role="status"></p>
     <div class="cart-actions">
       <a class="text-link" id="keep-shopping" href="#">Keep shopping</a>
@@ -97,6 +148,61 @@
     var box = document.getElementById("cart-items"), msg = document.getElementById("cart-msg");
     var btn = document.getElementById("cart-checkout");
     document.getElementById("keep-shopping").href = BROWSE_PAGE;
+
+    // ── Shipping address (fix wave: first-time buyers had no way to supply one) ──
+    var shipToggle = document.getElementById("ship-toggle");
+    var shipForm = document.getElementById("ship-form");
+    var shipFields = {
+      name: document.getElementById("ship-name"),
+      street: document.getElementById("ship-street"),
+      street2: document.getElementById("ship-street2"),
+      city: document.getElementById("ship-city"),
+      state: document.getElementById("ship-state"),
+      zip: document.getElementById("ship-zip")
+    };
+    function openShipForm(){
+      shipForm.hidden = false;
+      shipToggle.setAttribute("aria-expanded", "true");
+      shipToggle.textContent = "Hide the address form";
+    }
+    function closeShipForm(){
+      shipForm.hidden = true;
+      shipToggle.setAttribute("aria-expanded", "false");
+      shipToggle.textContent = "Ship to a different address";
+    }
+    shipToggle.onclick = function(){ if (shipForm.hidden) openShipForm(); else closeShipForm(); };
+    function collectShipAddress(){
+      return {
+        name: shipFields.name.value.trim(), street: shipFields.street.value.trim(),
+        street2: shipFields.street2.value.trim(), city: shipFields.city.value.trim(),
+        state: shipFields.state.value.trim(), zip: shipFields.zip.value.trim()
+      };
+    }
+    function firstMissingShipField(a){
+      if (!a.name) return shipFields.name;
+      if (!a.street) return shipFields.street;
+      if (!a.city) return shipFields.city;
+      if (!a.state) return shipFields.state;
+      if (!a.zip) return shipFields.zip;
+      return null;
+    }
+    function isAddressError(d){ return !!(d && d.error && /shipping address/i.test(d.error)); }
+
+    // ── Checkout was cancelled at Stripe (platform's cancel route, when it lands) ──
+    var qparams = new URLSearchParams(location.search);
+    var showCancelled = qparams.get("checkout") === "cancelled";
+    function announceCancelledIfNeeded(d){
+      if (!showCancelled) return;
+      showCancelled = false;
+      var items = (d && d.items) || [];
+      msg.textContent = items.length
+        ? "Checkout was cancelled. Your cart is still here."
+        : "Checkout was cancelled.";
+      var url = new URL(location.href);
+      url.searchParams.delete("checkout");
+      history.replaceState(null, "", url.pathname + (url.search || "") + url.hash);
+    }
+
     function esc(s){ return String(s||"").replace(/[&<>"]/g, function(ch){
       return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[ch]; }); }
     function render(d){
@@ -119,27 +225,56 @@
         b.onclick = function(){
           var line = b.closest(".line"), cur = parseInt(line.querySelector(".qty span").textContent, 10);
           var qty = b.classList.contains("remove") ? 0 : Math.max(0, cur + parseInt(b.dataset.d, 10));
-          post("/api/cart/set-qty", {slug: line.dataset.slug, format: line.dataset.format, qty: qty}).then(render);
+          post("/api/cart/set-qty", {slug: line.dataset.slug, format: line.dataset.format, qty: qty})
+            .then(function(res){ render(res.body); })
+            .catch(function(){ msg.textContent = "That change did not save. Please try again."; load(); });
         };
       });
     }
+    // Resolves {status, body}: checkout needs the HTTP status (to tell a 5xx
+    // apart from a 4xx) as well as the parsed JSON, so this can't just return
+    // the body the way the old version did.
     function post(url, body){
       return fetch(url, {method: "POST", credentials: "same-origin",
         headers: {"Content-Type": "application/json"}, body: JSON.stringify(body || {})})
-        .then(function(r){ return r.json(); });
+        .then(function(r){ return r.json().then(function(d){ return {status: r.status, body: d}; }); });
     }
     function load(){
       fetch("/api/cart", {credentials: "same-origin"}).then(function(r){ return r.json(); })
-        .then(render).catch(function(){ box.textContent = "Your cart could not load. Please try again."; });
+        .then(function(d){ render(d); announceCancelledIfNeeded(d); })
+        .catch(function(){ box.textContent = "Your cart could not load. Please try again."; });
     }
     function checkout(){
+      var body = {};
+      if (!shipForm.hidden){
+        var addr = collectShipAddress();
+        var missing = firstMissingShipField(addr);
+        if (missing){
+          msg.textContent = "Please fill in the required shipping fields.";
+          missing.focus();
+          return;
+        }
+        body.address = addr;
+      }
       btn.disabled = true; msg.textContent = "Starting checkout…";
-      post("/api/cart/checkout").then(function(d){
+      post("/api/cart/checkout", body).then(function(res){
+        var status = res.status, d = res.body;
         if (d && d.need_optin && window.OptinGate){ btn.disabled = false; msg.textContent = "";
           OptinGate.show({base: "", onAgree: function(){ checkout(); }}); return; }
         if (d && d.ok && d.stripe_url){ location.href = d.stripe_url; return; }
         if (d && d.ok){ msg.textContent = "Your order is placed. A confirmation is on its way."; load(); return; }
         if (d && d.unavailable){ msg.textContent = "Some items are no longer available. Remove them to continue."; load(); return; }
+        // Anything 500 or above carries raw server error text meant for logs,
+        // not for a customer. Only a 4xx error string is safe to show as is.
+        if (status >= 500){
+          msg.textContent = "Checkout did not start. Please try again."; btn.disabled = false; return;
+        }
+        if (isAddressError(d)){
+          openShipForm();
+          shipFields.name.focus();
+          msg.textContent = (d && d.error) || "Please add a shipping address to check out.";
+          btn.disabled = false; return;
+        }
         msg.textContent = (d && d.error) || "Checkout did not start. Please try again."; btn.disabled = false;
       }).catch(function(){ msg.textContent = "Checkout did not start. Please try again."; btn.disabled = false; });
     }

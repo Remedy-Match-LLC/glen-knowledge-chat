@@ -116,6 +116,27 @@ def test_missing_address_with_no_saved_order_is_refused(client, db, monkeypatch)
     assert calls == []
 
 
+def test_posted_address_lets_a_first_time_buyer_past_the_refusal(client, db, monkeypatch):
+    """Fix wave item 1 (CRITICAL): static/begin-cart.html now posts an address
+    form under `address`. A first-time buyer has no saved order and no
+    household ship-to, so with no address in the body this would 400 (see
+    test_missing_address_with_no_saved_order_is_refused above). Posting one
+    must get them past _resolve_ship_address's refusal and reach
+    _checkout_cart with that street intact."""
+    seen = []
+    _stub_checkout(monkeypatch, seen)
+    monkeypatch.setattr(app, "is_member", lambda sid, email: True)
+    monkeypatch.setattr(app, "_cart_email", lambda: "firsttime@x.com")
+    client.post("/api/cart/add", json={"slug": "brain-boost"})
+
+    r = client.post("/api/cart/checkout", json={"address": ADDRESS})
+    assert r.status_code == 200
+    body = r.get_json()
+    assert body["ok"] is True
+    assert body["stripe_url"] == "https://stripe.test/session"
+    assert seen[0]["ship"]["street"] == ADDRESS["street"]
+
+
 def test_member_checkout_merges_anon_cart_and_marks_ordered(client, db, monkeypatch):
     seen = []
     _stub_checkout(monkeypatch, seen)
