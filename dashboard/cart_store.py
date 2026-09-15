@@ -493,6 +493,33 @@ def release_claim(cx, token):
     cx.commit()
 
 
+def reopen_cancelled_checkout(cx, token, email, checkout_ref):
+    """Give a buyer their cart back after they cancelled at Stripe and nothing was paid.
+
+    Only an 'ordered' cart carrying this exact checkout_ref qualifies, so a replayed link or a
+    different checkout changes nothing. The same one-open-cart rule as stale-claim recovery
+    applies: if the buyer already has another open cart, this cart's items fold into it.
+    Returns 'reopened', 'folded' or 'none'."""
+    row = cx.execute("SELECT status, checkout_ref FROM carts WHERE token=?", (token,)).fetchone()
+    if not row or row[0] != "ordered" or (row[1] or "") != (checkout_ref or ""):
+        return "none"
+    email = _norm_email(email)
+    other = ""
+    if email:
+        r = cx.execute("SELECT token FROM carts WHERE email=? AND status='open' AND token<>? LIMIT 1",
+                       (email, token)).fetchone()
+        other = r[0] if r else ""
+    if other:
+        _fold_cart_items(cx, token, other)
+        return "folded"
+    cur = cx.execute(
+        "UPDATE carts SET status='open', checkout_ref='', claimed_at=NULL, updated_at=? "
+        "WHERE token=? AND status='ordered' AND checkout_ref=?",
+        (_now_iso(), token, checkout_ref))
+    cx.commit()
+    return "reopened" if cur.rowcount == 1 else "none"
+
+
 def mark_ordered(cx, token, checkout_ref):
     cx.execute(
         "UPDATE carts SET status='ordered', checkout_ref=?, claimed_at=NULL, updated_at=? "

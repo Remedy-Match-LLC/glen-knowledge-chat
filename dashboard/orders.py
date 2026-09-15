@@ -596,6 +596,17 @@ def claim_sales_receipt_slot(cx, order_id):
     return cur.rowcount > 0
 
 
+def cancel_unpaid_checkout(cx, order_id):
+    """Cancel one abandoned customer checkout now, rather than waiting for the 24-hour sweep.
+    Only an unpaid 'new' row changes; the row is kept as cancelled history."""
+    cur = cx.execute(
+        "UPDATE orders SET status='cancelled', updated_at=? "
+        "WHERE id=? AND status='new' AND COALESCE(pay_status,'unpaid')='unpaid'",
+        (_now(), int(order_id)))
+    cx.commit()
+    return cur.rowcount
+
+
 def find_order_by_external_ref(cx, external_ref):
     cur = cx.execute("SELECT * FROM orders WHERE external_ref=? ORDER BY id DESC LIMIT 1",
                      (str(external_ref),))
