@@ -74,3 +74,11 @@ def test_shop_page_mounts_the_theme_toggle_like_the_product_page(client, monkeyp
     assert 'id="theme-toggle-wrap"' in html
     assert 'id="themeToggle"' in html
     assert "RMTheme.mountToggle(document.getElementById('themeToggle'))" in html
+
+
+def test_shop_page_gives_the_inline_link_a_focus_visible_style(client, monkeypatch):
+    # Every card, chip and link needs a visible focus ring. The "Get matched to
+    # a remedy" anchor is keyboard focusable, so it needs one too.
+    monkeypatch.setattr(app, "_SHOP_ENABLED", True)
+    html = client.get("/shop").get_data(as_text=True)
+    assert ".text-link:focus-visible" in html
