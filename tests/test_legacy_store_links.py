@@ -33,6 +33,16 @@ PRODUCTS = {
 }
 
 
+def _repo_catalog():
+    """The repository's own data/products.json, read by path. dashboard.products.load_products
+    honours DATA_DIR, which another test module leaves pointing at a two-product fixture
+    for the rest of a full run, so these real-catalog checks must not go through it."""
+    import json
+    from pathlib import Path
+    path = Path(__file__).resolve().parent.parent / "data" / "products.json"
+    return json.loads(path.read_text(encoding="utf-8"))["products"]
+
+
 def rw(text, products=PRODUCTS):
     return lsl.rewrite_text(text, BASE, products=products)
 
@@ -59,8 +69,7 @@ def test_mapping_marks_a_retired_record_with_no_successor_as_unmapped():
 
 
 def test_the_real_catalog_named_cases():
-    from dashboard import products as _p
-    m = lsl.build_map(_p.load_products())
+    m = lsl.build_map(_repo_catalog())
     assert m["85"] == "/begin/product/nous-energy"
     assert m["378"] is None          # molecular-hydrogen-tablets, retired
     assert m["542"] is None          # electrolyte-mineral-manna, do not recommend
@@ -226,8 +235,7 @@ def test_a_known_retired_id_does_not_fall_back_to_its_slug():
 
 
 def test_the_real_catalog_slug_fallback_and_near_misses():
-    from dashboard import products as _p
-    cat = _p.load_products()
+    cat = _repo_catalog()
     out = lsl.rewrite_text("https://remedymatch.com/remedies/syntropy/73-microbiome "
                            "http://remedymatch.com/remedies/syntropy/250-free-easy "
                            "https://remedymatch.com/remedies/80-neuromagnesium", BASE, products=cat)
