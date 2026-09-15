@@ -31,7 +31,8 @@ body.js-shell-on { padding-top: var(--jshell-h); }
 .js-trail-link { color: var(--muted, #6b6f63); }            /* drawn path between lands */
 .js-trail-link.done { color: var(--green, #6aa37a); }
 .js-hide { display: none !important; }
-#journey-shell .js-portal-cart-btn { position: relative; display: inline-flex; align-items: center;
+#journey-shell .js-portal-cart-btn, #journey-shell .js-store-cart-btn {
+  position: relative; display: inline-flex; align-items: center;
   gap: 5px; min-height: 30px; padding-right: 11px; overflow: visible; }
 #journey-shell .js-cart-badge { position: absolute; top: -8px; right: -7px; min-width: 18px;
   height: 18px; box-sizing: border-box; padding: 0 5px; border: 2px solid var(--surface, #14201a);
@@ -74,8 +75,9 @@ body.js-shell-on { padding-top: var(--jshell-h); }
   #journey-shell .js-mnav { display: none; }
   #journey-shell .js-path .js-land:not(.next) { display: none; }
   #journey-shell .js-path .js-trail-link { display: none; }
-  #journey-shell .js-portal-cart-btn .js-cart-label { display: none; }
-  #journey-shell .js-portal-cart-btn { padding: 5px 8px; }
+  #journey-shell .js-portal-cart-btn .js-cart-label,
+  #journey-shell .js-store-cart-btn .js-cart-label { display: none; }
+  #journey-shell .js-portal-cart-btn, #journey-shell .js-store-cart-btn { padding: 5px 8px; }
   #journey-shell .js-label-desktop { display: none; }
   #journey-shell .js-label-mobile { display: inline; }
   #journey-shell .js-trail-link { display: none; }

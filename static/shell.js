@@ -127,6 +127,25 @@
       bar.appendChild(cartBtn);
     }
 
+    // Store pages use the storefront cart, which has its own page. Never on a
+    // portal page, and never on the cart page itself, which this would link to.
+    if (/^\/(begin\/|shop(\/|$))/.test(location.pathname) &&
+        !/^\/begin\/cart\/?$/.test(location.pathname)) {
+      var storeCart = el("a", "js-mypath-btn js-store-cart-btn",
+        '<span class="js-cart-label">Cart</span><span class="js-cart-badge" aria-hidden="true"></span>');
+      storeCart.href = "/begin/cart";
+      storeCart.hidden = true;
+      bar.appendChild(storeCart);
+      fetch("/api/cart", {credentials: "same-origin"}).then(function (r) { return r.json(); })
+        .then(function (d) {
+          if (!d || !d.ok) return;
+          var n = Math.max(0, parseInt(d.count, 10) || 0);
+          storeCart.querySelector(".js-cart-badge").textContent = n ? String(n) : "";
+          storeCart.setAttribute("aria-label", n ? "Cart with " + n + " item" + (n === 1 ? "" : "s") : "Cart");
+          storeCart.hidden = false;
+        }).catch(function () {});
+    }
+
     bar.appendChild(mypathBtn);
 
     // A portal opened by an authenticated console owner keeps a visible route
