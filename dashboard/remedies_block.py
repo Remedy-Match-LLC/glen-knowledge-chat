@@ -37,12 +37,7 @@ def _recommendation_sections(cx, email, top_n=5):
     ps = _re.product_sources(cx, email)
     notes = _rp.get_notes(cx, email)
     state = _rp.get_section_state(cx, email)
-    catalog = _products.load_products()
-
-    def resolve(slug):
-        p = catalog.get(slug) or {}
-        return {"name": p.get("name"), "url": p.get("url")}
-
+    resolve = _pr.catalog_resolver(_products.load_products())
     return _pr.build_sections(ps, notes, state, resolve, top_n=top_n)
 
 
