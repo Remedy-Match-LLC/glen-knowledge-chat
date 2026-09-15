@@ -98,9 +98,13 @@ def main():
                     p["panel_note_link"] = c["panel_note_link"]
             if c.get("note"):
                 p["enrichment_note"] = c["note"]
-            # a Glen-verified formula is authoritative here -> not a stale-GK item
-            p.pop("gk_stale", None)
-            p.pop("gk_stale_reason", None)
+            # a Glen-verified formula is authoritative here -> not a stale-GK item.
+            # Only a MANUAL correction clears the flag: a record that pins one label name but
+            # keeps its original source (the nine garlic products, 2026-09-14) must not
+            # silently mark its GrooveKart page as current.
+            if p["ingredients_source"] == "manual":
+                p.pop("gk_stale", None)
+                p.pop("gk_stale_reason", None)
             corrected.append(slug)
 
     doc["_enriched"] = "ingredients (FMP/Formulations/GK) + descriptions applied 2026-06-05; see products-stale-gk-clean.md"

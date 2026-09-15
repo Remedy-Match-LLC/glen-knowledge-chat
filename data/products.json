@@ -2126,7 +2126,8 @@
    "ingredients_source": "db-formulations-2026-06-25",
    "description": "Sulfur Synergy . Price: $69.97.",
    "bottle_type": "30 Caps",
-   "fmp_id": "385"
+   "fmp_id": "385",
+   "enrichment_note": "Garlic raw named as the label says (#1628, 2026-09-10); pinned here so a rerun of apply_enrichment cannot revert it."
   },
   "neuroceramides": {
    "name": "Neuroceramides",
@@ -2458,7 +2459,8 @@
    "gk_stale_reason": "GK page missing: N-Acetyl Cysteine (NAC), Allicin, Selenium (Methylselenocysteine)",
    "gk_extra_accepted": true,
    "bottle_type": "30 Caps",
-   "fmp_id": "348"
+   "fmp_id": "348",
+   "enrichment_note": "Garlic raw named as the label says (#1628, 2026-09-10); pinned here so a rerun of apply_enrichment cannot revert it."
   },
   "juglans-nigra": {
    "name": "Juglans nigra",
@@ -5323,7 +5325,8 @@
    "ingredients_source": "db-formulations-2026-06-25",
    "description": "OcuFlow Daytime . OcuFlow Daytime OcuFlow Daytime OcuFlow Daytime supports healthy Intraocular Pressure (IOP) regulation, and can be taken multiple times during the daylight hours. The production of aqueous humor by the ciliary body in the eye provides nourishment to the front of the eye, also known as the anterior chamber. The balance of inflow and outflow of this nourishing and cleansing fluid is what determines the eye pressure (IOP). OcuFlow formulations are also designed to be neuroprotective, and to support maintenance of healthy retinal and optic nerve function as well as sustained...",
    "bottle_type": "30 Caps",
-   "fmp_id": "465"
+   "fmp_id": "465",
+   "enrichment_note": "Garlic raw named as the label says (#1628, 2026-09-10); pinned here so a rerun of apply_enrichment cannot revert it."
   },
   "melatonin-max": {
    "name": "Melatonin Max",
@@ -5809,7 +5812,8 @@
    "gk_stale_reason": "GK page missing: Pyridoxal-5-Phosphate (P5P), Baicalein, Riboflavin-5-Phosphate (Coenzyme B2), 5-MTHF (Methylfolate), Mixed Tocopherols, Tocotrienols, Copper Glycinate",
    "gk_extra_accepted": true,
    "bottle_type": "30 Caps",
-   "fmp_id": "1104"
+   "fmp_id": "1104",
+   "enrichment_note": "Garlic raw named as the label says (#1628, 2026-09-10); pinned here so a rerun of apply_enrichment cannot revert it."
   },
   "hydrolyzed-collagen": {
    "name": "Hydrolyzed Collagen",
@@ -6827,96 +6831,42 @@
    "fmp_id": "308"
   },
   "vitamin-p-polyphenols": {
-   "name": "Vitamin P Polyphenols",
+   "name": "Vascular Integrity: Vitamin P Plus TECA",
    "price_cents": 6997,
-   "pinecone_title": "Vitamin P Polyphenols",
+   "pinecone_title": "Vascular Integrity: Vitamin P Plus TECA",
    "url": "https://remedymatch.com/remedies/syntropy/125-vitamin-p-polyphenols",
    "qty_pricing": true,
    "ingredients": [
     {
-     "name": "Ascorbyl Palmitate",
-     "dose": "70 mg"
+     "name": "Bilberry 25% Anthocyanidins (Vaccinium myrtillus)",
+     "dose": "135 mg"
     },
     {
-     "name": "Magnesium",
-     "dose": "193 mg"
+     "name": "Ginkgo 24/6 (Ginkgo biloba) (folium)",
+     "dose": "80 mg"
     },
     {
-     "name": "Vitamin C",
-     "dose": ""
+     "name": "Pine Bark OPCs 95% (Pinus pinaster) (cortex)",
+     "dose": "75 mg"
     },
     {
-     "name": "D-Alpha Tocopherol Succinate",
-     "dose": "8.3 mg"
+     "name": "Grape Seed OPCs 95% (Vitis vinifera) (semen)",
+     "dose": "75 mg"
     },
     {
-     "name": "Mixed Tocopherols",
-     "dose": "0 mg"
+     "name": "Hesperidin Methyl Chalcone (Citrus aurantium)",
+     "dose": "75 mg"
     },
     {
-     "name": "R-Lipoic Acid",
-     "dose": "20 mg"
-    },
-    {
-     "name": "S-Acetyl Glutathione",
-     "dose": "10 mg"
-    },
-    {
-     "name": "Glutathione",
-     "dose": "10 mg"
-    },
-    {
-     "name": "SOD (Superoxide Dismutase)",
-     "dose": "10 mg"
-    },
-    {
-     "name": "Catalase",
-     "dose": "10 mg"
-    },
-    {
-     "name": "Coenzyme Q10",
-     "dose": "5 mg"
-    },
-    {
-     "name": "Retinyl Palmitate",
-     "dose": "6.7 mg"
-    },
-    {
-     "name": "Calcium Pantothenate",
-     "dose": "3.3 mg"
-    },
-    {
-     "name": "Pyridoxal-5-Phosphate (P5P)",
-     "dose": "0.7 mg"
-    },
-    {
-     "name": "Pyridoxamine",
-     "dose": "0 mg"
-    },
-    {
-     "name": "Magnesium",
-     "dose": "10 mg"
-    },
-    {
-     "name": "Quercetin Dihydrate",
-     "dose": "10 mg"
-    },
-    {
-     "name": "Hesperidin Methyl Chalcone",
-     "dose": "10 mg"
-    },
-    {
-     "name": "Luteolin",
-     "dose": "10 mg"
-    },
-    {
-     "name": "Fisetin",
-     "dose": "20 mg"
+     "name": "Gotu Kola TECA 80% (Centella asiatica) (herba)",
+     "dose": "60 mg"
     }
    ],
-   "ingredients_source": "fmp_new",
-   "description": "Vitamin P . Vitamin P Vitamin P Polyphenols Polyphenols Each excipient-free capsule supplies:Anthocyanidins (Aristotelia chilensis) Apigenin ( Apium graveolens ) Baicalein ( Scutellaria baicalensis ) C3G 40% Cyanidin-3-glucosides ( Oryza sativa ) Catechins 80% ( Camelia sinensis ) Ellagic Acid 90% ( Rubus spp .) Fisetin 50% ( Cotinus coggyrgria ) Flavone Glycosides 24%, Lactones 6%, Ginkgolic Acid <0.0005% (EGb761) ( Ginkgo biloba ) Flavonoids 85% ( Crataegus oxyacantha ) Flavonoids 70% (Propolis) Hesperidin Methyl Chalcone ( Citrus aurantium ) Luteolin ( Arachis hypogaea ) Naringen ( Citrus...",
-   "bottle_type": "30 Caps"
+   "ingredients_source": "manual",
+   "description": "Vascular Integrity: Vitamin P Plus TECA. Each vegicap supplies bilberry anthocyanidins, ginkgo, pine bark OPCs, grape seed OPCs, hesperidin methyl chalcone and gotu kola TECA. Vegan, with zero fillers or excipients. 30 vegicaps.",
+   "bottle_type": "30 Caps",
+   "directions": "Take 1 to 2 capsules daily with food, or as guided.",
+   "enrichment_note": "Label day 2026-09-14 (Glen): renamed from Vitamin P Polyphenols; formula and directions from the approved label."
   },
   "bath-salt": {
    "name": "Bath Salt",
@@ -7358,7 +7308,8 @@
    "description": "Vein Support . Vein Support Vein Support Vein Support formulation notes: Minerals: Magnesium (from Magnesium Ascorbate) 2 mg 0.5% Bamboo Silica (Bambusa spp.) 1 mg Vitamins: Vitamin C (Magnesium Ascorbate) 30 mg 33% (from 32 mg) Vitamin K2 (MK-7) (Menadione) 40 mcg 33% (from 3.1 mg) Botanicals: Cayenne ( Capsicum annuum ) 50 mg Cilantro juice powder ( Coriandrum sativum ) 80 mg Ketones: Red Rasperry Ketones 98% ( Rubus idaeus ) 35 mg Organosulfur: Garlic Allicin 25% ( Allium sativa ) 5 mg Polyphenols: Bilberry Anthocyanidins 25% ( Vaccinium myrtillus ) 20 mg Turmeric Curcumin &...",
    "bottle_type": "30 Caps",
    "fmp_id": "923",
-   "qty_pricing": true
+   "qty_pricing": true,
+   "enrichment_note": "Garlic raw named as the label says (#1628, 2026-09-10); pinned here so a rerun of apply_enrichment cannot revert it."
   },
   "macular-wellness-lycopene": {
    "name": "Macular Wellness Lycopene",
@@ -7664,7 +7615,8 @@
    "description": "Shields Up . Shields Up - Cold/Flu Formula Shields Up Boost immunity for colds and flu season… Now with Shikimic Acid. Take 1 capsule daily for health maintenance, or up to 3 capsules daily for symptom relief. A recent study of military personnel published in the peer reviewed journal Vaccine, showed that those who received the flu shot were 35% more susceptible to Corona virus infection. Support your immune system naturally with our new enhanced Shields Up formula. Shields Up . Each capsule supplies: Coenzymes: Vitamin B1 (as Sulbutiamine) 1.5 mg 100% Vitamin B6 (as P5P) 5 mg 250% Vitamin C...",
    "gk_stale": true,
    "gk_stale_reason": "GK page missing: Thymoquinone, Andrographolide, Enzymatically Modified Isoquercetrin, Zinc Glycinate (GK uses Zinc Carnosine instead)",
-   "gk_extra_accepted": true
+   "gk_extra_accepted": true,
+   "enrichment_note": "Garlic raw named as the label says (#1628, 2026-09-10); pinned here so a rerun of apply_enrichment cannot revert it."
   },
   "macular-wellness-crocin": {
    "name": "Macular Wellness Crocin",
@@ -7776,7 +7728,8 @@
    "gk_stale_reason": "GK page missing: Lactoferrin, Baicalein, Andrographolide, Allicin",
    "gk_extra_accepted": true,
    "bottle_type": "30 Caps",
-   "fmp_id": "427"
+   "fmp_id": "427",
+   "enrichment_note": "Garlic raw named as the label says (#1628, 2026-09-10); pinned here so a rerun of apply_enrichment cannot revert it."
   },
   "glucose-tolerance": {
    "name": "Glucose Tolerance",
@@ -8110,42 +8063,36 @@
    "qty_pricing": true,
    "ingredients": [
     {
-     "name": "AHCC",
-     "dose": "80 mg"
+     "name": "AHCC 50% (Lentinula edodes) (mycelium)",
+     "dose": "150 mg"
     },
     {
-     "name": "Green Tea; Organic; 98% Polyphenols/50% EGCG Standardized Extract",
-     "dose": "80 mg"
+     "name": "Graminex G63 Rye Pollen (Secale cereale)",
+     "dose": "150 mg"
     },
     {
-     "name": "Swedish Flower Pollen extract, Cernitin, Cernilton",
-     "dose": "80 mg"
+     "name": "Noni 200:1 (Morinda citrifolia) (fructus)",
+     "dose": "90 mg"
     },
     {
-     "name": "Black Goji",
-     "dose": "80 mg"
+     "name": "Green Tea EGCG 50% (Camellia sinensis) (folium)",
+     "dose": "57 mg"
     },
     {
-     "name": "Vancouver Ocean ORMUS",
-     "dose": "26 mg"
+     "name": "Black Goji Anthocyanins 25% (Lycium barbarum)",
+     "dose": "48 mg"
     },
     {
-     "name": "ORMUS, Spirit Minerals, Monatomic, White Powder Gold, Four Realms Monatomic Rose Gold",
-     "dose": "26 mg"
-    },
-    {
-     "name": "(unnamed FMP ingredient 5461)",
-     "dose": "34.5 mg"
-    },
-    {
-     "name": "Morinda citrifolia",
-     "dose": "80 mg"
+     "name": "Monatomic Rose Gold ORMUS",
+     "dose": "5 mg"
     }
    ],
-   "ingredients_source": "db-formulations-2026-06-25",
-   "description": "Nous Energy . Nous Energy Nous Energy “I’ve known Glen Swartwout since the year 2005. We were both involved with the original inventor of the Nouss-Ade product. Glen has found a way to duplicate many ingredients. I purchase Glen’s Nous Energy formula because of its extraordinary results. I take four capsules daily and with great consistency. It has provided me with better sleep, more energy. I have no muscle stiffness now. I have great range of motion. My skin has improved elasticity and my vision has improved. Thank you Dr. Glen.” - Robin Roemer Brown L.Ac. (received 9/10/24) Our new Nous...",
+   "ingredients_source": "manual",
+   "description": "Nous Energy, Spirit Mineral Source. Each vegicap supplies AHCC, Graminex G63 rye pollen, noni, green tea EGCG, black goji anthocyanins and monatomic rose gold ORMUS. Vegan, with zero fillers or excipients. 30 vegicaps. “I’ve known Glen Swartwout since the year 2005. We were both involved with the original inventor of the Nouss-Ade product. Glen has found a way to duplicate many ingredients. I purchase Glen’s Nous Energy formula because of its extraordinary results. I take four capsules daily and with great consistency. It has provided me with better sleep, more energy. I have no muscle stiffness now. I have great range of motion. My skin has improved elasticity and my vision has improved. Thank you Dr. Glen.” - Robin Roemer Brown L.Ac. (received 9/10/24)",
    "bottle_type": "30 Caps",
-   "fmp_id": "335"
+   "fmp_id": "335",
+   "directions": "Take 1 capsule up to 3 times a day with food, or as guided.",
+   "enrichment_note": "Label day 2026-09-14 (Glen): new formula and directions from the approved label; Bioavailability Blend and Pacific Ocean ORMUS removed. Glen: \"4 caps: keep as is\", so Robin Roemer Brown's quote stays unchanged."
   },
   "spike-shield": {
    "name": "Spike Shield",
@@ -10415,7 +10362,8 @@
    "gk_stale_reason": "GK page missing: TMG (Trimethylglycine)",
    "gk_extra_accepted": true,
    "bottle_type": "30 Caps",
-   "fmp_id": "429"
+   "fmp_id": "429",
+   "enrichment_note": "Garlic raw named as the label says (#1628, 2026-09-10); pinned here so a rerun of apply_enrichment cannot revert it."
   },
   "reverse-age": {
    "name": "Reverse AGE",
@@ -11046,103 +10994,105 @@
    "ingredients": [
     {
      "name": "Coenzyme A (Adenosine Monophosphate)",
-     "dose": "5 mg"
+     "dose": ""
     },
     {
      "name": "Centrophenoxine",
-     "dose": "10 mg"
+     "dose": ""
     },
     {
      "name": "DMAE (Dimethylethanolamine)",
-     "dose": "20 mg"
+     "dose": ""
     },
     {
      "name": "Acetyl L-Carnitine (ALCAR)",
-     "dose": "20 mg"
+     "dose": ""
     },
     {
      "name": "Vitamin D3 (Cholecalciferol)",
-     "dose": "60 IU"
+     "dose": ""
     },
     {
      "name": "Zinc (from Zinc Carnosine)",
-     "dose": "1.5 mg"
+     "dose": ""
     },
     {
      "name": "MSM (Methylsulfonylmethane)",
-     "dose": "60 mg"
+     "dose": ""
     },
     {
      "name": "L-Citrulline DL-Malate (2:1)",
-     "dose": "200 mg"
+     "dose": ""
     },
     {
      "name": "5-HTP (5-Hydroxytryptophan)",
-     "dose": "10 mg"
+     "dose": ""
     },
     {
      "name": "GABA (Gamma-aminobutyric acid)",
-     "dose": "20 mg"
+     "dose": ""
     },
     {
      "name": "Beet Root Juice (Beta vulgaris)",
-     "dose": "100 mg"
+     "dose": ""
     },
     {
      "name": "Phosphatidylcholine 50% (from Sunflower, Helianthus annuus)",
-     "dose": "13 mg"
+     "dose": ""
     },
     {
      "name": "EGb 761 (Ginkgo biloba) (24% Flavone Glycosides, 6% Lactones, <0.0005% Ginkgolic Acid)",
-     "dose": "8 mg"
+     "dose": ""
     },
     {
      "name": "Vitamin B3 (Niacin)",
-     "dose": "5 mg"
+     "dose": ""
     },
     {
      "name": "Moringa 100:1 (Moringa oleifera)",
-     "dose": "3 mg"
+     "dose": ""
     },
     {
      "name": "Licorice (Glycyrrhiza glabra)",
-     "dose": "2 mg"
+     "dose": ""
     },
     {
      "name": "Vinpocetine (Vinca minor)",
-     "dose": "1 mg"
+     "dose": ""
     },
     {
      "name": "Gingerol 10% (Zingiber officinale)",
-     "dose": "0.5 mg"
+     "dose": ""
     },
     {
      "name": "Piperine (Piper nigrum)",
-     "dose": "0.5 mg"
+     "dose": ""
     },
     {
      "name": "Humic Acid",
-     "dose": "0.5 mg"
+     "dose": ""
     },
     {
      "name": "Fulvic Acid",
-     "dose": "0.5 mg"
+     "dose": ""
     },
     {
      "name": "Aqueous Humic Substance",
-     "dose": "1000 mg"
+     "dose": ""
     },
     {
      "name": "Quinton (seawater minerals)",
-     "dose": "30 mL"
+     "dose": ""
     },
     {
      "name": "Phinheas Manna (ORMUS)",
-     "dose": "30 mL"
+     "dose": ""
     }
    ],
    "ingredients_source": "t33",
-   "description": "Vagus Nerve Support . Price: $69.97."
+   "description": "Vagus Nerve Support Drops, 50 mL.",
+   "enrichment_note": "Glen 2026-09-14: this slug is Vagus Nerve Support Drops (FMP 460). The T33 amounts are per-bottle batch figures, so they are not shown as doses. Directions wait for Glen.",
+   "bottle_type": "Dropper 50 mL"
   },
   "pl-polarity": {
    "name": "PL Polarity",
@@ -13337,7 +13287,8 @@
      "dose": "",
      "purity_pct": 20.0
     }
-   ]
+   ],
+   "enrichment_note": "Garlic raw named as the label says (#1628, 2026-09-10); pinned here so a rerun of apply_enrichment cannot revert it."
   },
   "ocular-terrain-restore": {
    "name": "Ocular Terrain Restore",
