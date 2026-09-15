@@ -47,3 +47,30 @@ def test_products_api_filters_to_one_group_and_ignores_an_unknown_group(client, 
     assert [p["slug"] for p in d["products"]] == ["fiber-cleanse"]
     d = client.get("/api/shop/products?group=nope").get_json()
     assert d["products"] == []
+
+
+def test_shop_page_is_dark_when_the_flag_is_off(client, monkeypatch):
+    monkeypatch.setattr(app, "_SHOP_ENABLED", False)
+    assert client.get("/shop").status_code == 404
+
+
+def test_shop_page_serves_search_groups_grid_and_cart_link(client, monkeypatch):
+    monkeypatch.setattr(app, "_SHOP_ENABLED", True)
+    r = client.get("/shop")
+    assert r.status_code == 200
+    html = r.get_data(as_text=True)
+    for marker in ('id="shop-search"', 'id="shop-groups"', 'id="shop-grid"',
+                   'href="/begin/cart"', "/api/shop/products"):
+        assert marker in html
+    assert "remedymatch.com" not in html
+    assert "—" not in html  # no em dashes in customer copy
+
+
+def test_shop_page_mounts_the_theme_toggle_like_the_product_page(client, monkeypatch):
+    # Controller ruling: the cart page shipped without this once already, caught
+    # in review. Match static/begin-product.html's markup and call exactly.
+    monkeypatch.setattr(app, "_SHOP_ENABLED", True)
+    html = client.get("/shop").get_data(as_text=True)
+    assert 'id="theme-toggle-wrap"' in html
+    assert 'id="themeToggle"' in html
+    assert "RMTheme.mountToggle(document.getElementById('themeToggle'))" in html

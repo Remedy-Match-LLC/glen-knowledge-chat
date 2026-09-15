@@ -8685,6 +8685,17 @@ def begin_buy_page(slug):
     return resp
 
 
+@app.route("/shop")  # [D1]
+def shop_page():
+    """The public store: search, concern groups and product cards. Gated by
+    _SHOP_ENABLED, the same dark-launch flag as GET /api/shop/products."""
+    if not _SHOP_ENABLED:
+        return ("", 404)
+    resp = Response((STATIC / "shop.html").read_text(encoding="utf-8"), mimetype="text/html")
+    resp.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+    return resp
+
+
 @app.route("/begin/product/<slug>")
 def begin_product_page(slug):
     product = _get_product(slug)

@@ -18,11 +18,22 @@ def listable(product):
     return bool(product) and not any(product.get(f) for f in EXCLUDED_FLAGS)
 
 
+def _first_gallery_image(product):
+    """Marketing's gallery photos, one product today (data/products.json 'images').
+    Entries are dicts shaped like the product page's gallery: {"src": ..., "alt": ...}."""
+    images = product.get("images") or []
+    if not images:
+        return ""
+    first = images[0]
+    return (first.get("src") or "") if isinstance(first, dict) else str(first or "")
+
+
 def card(product):
     slug = product["slug"]
     return {"slug": slug, "name": (product.get("name") or slug).strip(),
             "price_cents": int(product.get("price_cents") or 0),
-            "image": product.get("image") or "", "url": destination_for(slug)}
+            "image": product.get("image") or _first_gallery_image(product),
+            "url": destination_for(slug)}
 
 
 def _ingredient_text(product):

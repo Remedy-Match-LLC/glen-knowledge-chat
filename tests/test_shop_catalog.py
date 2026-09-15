@@ -33,6 +33,14 @@ def test_card_links_the_new_product_page_and_keeps_the_image():
                  "image": "/static/product-photos/m.webp", "url": "/begin/product/microbiome"}
 
 
+def test_card_falls_back_to_the_first_gallery_image_when_image_is_empty():
+    product = {"slug": "nous-energy", "name": "Nous Energy", "price_cents": 5997,
+               "images": [{"src": "/static/product-photos/nous-energy-1.webp", "alt": "Noni fruit"},
+                          {"src": "/static/product-photos/nous-energy-2.webp", "alt": "Noni on lava rock"}]}
+    c = sc.card(product)
+    assert c["image"] == "/static/product-photos/nous-energy-1.webp"
+
+
 def test_search_matches_name_description_and_ingredients():
     assert [c["slug"] for c in sc.search(CATALOG, get_product, "humic")] == ["terrain-restore"]
     assert [c["slug"] for c in sc.search(CATALOG, get_product, "FLORA")] == ["microbiome"]
