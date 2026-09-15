@@ -24899,6 +24899,15 @@ def api_client_portal(token):
             bf_content = content
             bf_status = content.get("biofield_status") or "confirmed"
             bf_scan_date, bf_scan_dates, bf_actionable = None, [], False
+    # An owner hold (the console "Set to draft" button) wins over any stored status. It is
+    # the only way to un-publish a reveal date, which has no status of its own.
+    try:
+        from dashboard import report_holds as _rh
+        _rh.init_table(cx_r)
+        if bf_scan_date and _rh.is_held(cx_r, email_for_reports, bf_scan_date):
+            bf_status, bf_actionable = "ai_draft", False
+    except Exception as _he:
+        print(f"[portal] report-hold check skipped: {_he!r}", flush=True)
     cx_r.close()
     _request_timing_checkpoint("reports")
     bf_confirmed = bf_status == "confirmed"
@@ -30632,6 +30641,45 @@ def _biofield_content_clean(content):
     return content, has
 
 
+@app.route("/api/console/client/report-draft", methods=["POST"])
+def api_console_client_report_draft():
+    """Owner "Set to draft" for one of a client's report dates (Glen, 2026-09-15).
+
+    Holds the date so the portal shows it as a draft with remedies blurred, and sets the
+    per-scan report row, if there is one, to ai_draft. A reveal-only date has no row to
+    change, so the hold is what un-publishes it. Only a later Publish of that date
+    releases the hold. Never emails the client."""
+    if not _portal_console_ok():
+        return jsonify({"error": "unauthorized"}), 401
+    body = request.get_json(silent=True) or {}
+    email = (body.get("email") or "").strip().lower()
+    scan_date = (body.get("scan_date") or "").strip()
+    if not email or not scan_date:
+        return jsonify({"error": "email and scan_date required"}), 400
+    from dashboard import portal_biofield_reports as _pbr
+    from dashboard import report_holds as _rh
+    with _db_lock, db.connect(LOG_DB) as cx:
+        _pbr.init_table(cx)
+        _rh.init_table(cx)
+        report = _pbr.get_report(cx, email, scan_date)
+        reveal = False
+        try:
+            from dashboard import biofield_reveals as _brv
+            _brv.init_table(cx)
+            reveal = any(r.get("scan_date") == scan_date for r in _brv.list_for_email(cx, email))
+        except Exception as e:
+            print(f"[report-draft] reveal lookup skipped: {e!r}", flush=True)
+        if not report and not reveal:
+            return jsonify({"error": "no report or reveal for that date"}), 404
+        _rh.hold(cx, email, scan_date, held_by="console")
+        previous = (report or {}).get("status")
+        if report:
+            _pbr.set_report_status(cx, email, scan_date, "ai_draft")
+    return jsonify({"ok": True, "email": email, "scan_date": scan_date, "held": True,
+                    "report_status_before": previous, "had_report": bool(report),
+                    "had_reveal": reveal})
+
+
 @app.route("/api/console/biofield-portal", methods=["POST"])
 def api_console_biofield_publish():
     if not _portal_console_ok():
@@ -30700,6 +30748,9 @@ def api_console_biofield_publish():
             _pbr.init_table(cx)
             _pbr.upsert_report(cx, email, scan_date,
                                (body.get("scan_id") or ""), content, "confirmed")
+            from dashboard import report_holds as _rh
+            _rh.init_table(cx)
+            _rh.release(cx, email, scan_date)   # the owner published this date again
         _log_biofield_correction(cx, email, scan_date, content)
     url = portal_link(link_token) if link_token else None
     emailed = False

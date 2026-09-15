@@ -163,9 +163,28 @@ function renderReports(reports){
       reports.map(function(r){
         var links="<a href='"+escAttr(r.composer_url||"#")+"'>open</a>";
         if(r.pdf_url) links+=" &middot; <a href='"+escAttr(r.pdf_url)+"' target='_blank' rel='noopener'>PDF</a>";
-        return "<tr><td>"+esc(r.date)+"</td><td>"+esc(r.status)+"</td><td>"+esc(r.source)+"</td><td>"+links+"</td></tr>";
+        // Set to draft: the client's portal shows this date blurred until it is published again.
+        if(r.status==="confirmed") links+=" &middot; <a href='#' class='report-draft' data-date='"+escAttr(r.date)+"'>set to draft</a>";
+        var status=esc(r.status)+(r.held?" (held)":"");
+        return "<tr><td>"+esc(r.date)+"</td><td>"+status+"</td><td>"+esc(r.source)+"</td><td>"+links+"</td></tr>";
       }).join("")+"</table>"
     : "<p class=empty>No biofield reports.</p>";
+  Array.prototype.forEach.call(document.querySelectorAll("#b-reports .report-draft"), function(a){
+    a.onclick=function(){
+      var date=a.getAttribute("data-date");
+      if(!confirm("Set the "+date+" report back to draft? The client sees it blurred until you publish it again."))return false;
+      fetch("/api/console/client/report-draft",{method:"POST",
+        headers:Object.assign({"Content-Type":"application/json"},hdr()),
+        body:JSON.stringify({email:qsEmail(),scan_date:date})})
+        .then(function(r){return r.json().then(function(d){return {r:r,d:d};});})
+        .then(function(x){
+          if(!x.r.ok || !x.d.ok){ a.textContent="failed: "+((x.d&&x.d.error)||x.r.status); return; }
+          load(qsEmail());
+        })
+        .catch(function(){ a.textContent="failed"; });
+      return false;
+    };
+  });
 }
 function renderInvoices(inv){
   document.getElementById("h-invoices").textContent =

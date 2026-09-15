@@ -1001,3 +1001,39 @@ def test_admin_delete_clears_notify_and_process_rows(client):
     cx = sqlite3.connect(appmod.LOG_DB)
     assert N.get_state(cx, "wipe@y.com")["opt_status"] == "default"   # row gone -> default
     assert all(p["email"] != "wipe@y.com" for p in Q.list_pending(cx))
+
+
+def test_a_held_report_date_shows_as_a_draft(client):
+    """Console "set to draft" (2026-09-15): a hold wins over a confirmed report's status."""
+    c, appmod = client
+    from dashboard import portal_biofield_reports as R
+    from dashboard import report_holds as H
+    import sqlite3, datetime
+    tok = _seed_portal(appmod, "held@y.com", "Held", {"layers": []})
+    today = datetime.date.today().isoformat()
+    cx = sqlite3.connect(appmod.LOG_DB); R.init_table(cx)
+    R.upsert_report(cx, "held@y.com", today, "s1",
+                    {"layers": [{"n": 1, "title": "T", "remedy": "Vitality", "dosing": "1"}]}, "confirmed")
+    cx.close()
+    assert c.get(f"/api/portal/{tok}").get_json()["biofield_status"] == "confirmed"
+    cx = sqlite3.connect(appmod.LOG_DB); H.init_table(cx); H.hold(cx, "held@y.com", today, "console"); cx.close()
+    j = c.get(f"/api/portal/{tok}").get_json()
+    assert j["biofield_status"] == "ai_draft" and j["blurred"] is True
+    assert "remedy" not in j["layers"][0]
+
+
+def test_a_held_reveal_only_date_shows_as_a_draft(client):
+    """A reveal has no status of its own and reads as confirmed; the hold is what un-publishes it."""
+    c, appmod = client
+    from dashboard import biofield_reveals as B
+    from dashboard import report_holds as H
+    import sqlite3, datetime
+    tok = _seed_portal(appmod, "rev-held@y.com", "RevHeld", {"layers": []})
+    today = datetime.date.today().isoformat()
+    cx = sqlite3.connect(appmod.LOG_DB); B.init_table(cx)
+    B.upsert(cx, "rev-held@y.com", today, {"summary": "s"}, [], "test",
+             layers=[{"n": 1, "title": "T", "remedy": {"name": "Vitality"}}])
+    cx.close()
+    assert c.get(f"/api/portal/{tok}").get_json()["biofield_status"] == "confirmed"
+    cx = sqlite3.connect(appmod.LOG_DB); H.init_table(cx); H.hold(cx, "rev-held@y.com", today, "console"); cx.close()
+    assert c.get(f"/api/portal/{tok}").get_json()["biofield_status"] == "ai_draft"
