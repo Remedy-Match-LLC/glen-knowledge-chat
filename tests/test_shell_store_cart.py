@@ -44,3 +44,21 @@ def test_store_cart_button_requires_the_dark_launch_flag_too():
     # of the cart routes (cart_page in the /api/cart JSON). The button links
     # to that page, so it must not show just because /api/cart answered ok.
     assert "d.ok || !d.cart_page" in SHELL
+
+
+def test_store_and_portal_cart_buttons_carry_a_recognisable_icon():
+    # Phone-width defect, seen live 2026-09-15: shell.css hides .js-cart-label
+    # under 640px, so the button became a blank pill with a floating badge.
+    # An inline cart icon, hidden from assistive tech, keeps the button
+    # recognisable when the text label is hidden on phones.
+    assert 'class="js-cart-icon"' in SHELL
+    assert 'aria-hidden="true"' in SHELL
+    # The icon markup is a shared constant, referenced once per button, so it
+    # is used 3 times in total: once defined, twice inserted.
+    assert SHELL.count("CART_ICON_SVG") >= 3
+    store_start = SHELL.index("js-store-cart-btn")
+    portal_start = SHELL.index("js-portal-cart-btn")
+    store_markup = SHELL[store_start:store_start + 400]
+    portal_markup = SHELL[portal_start:portal_start + 400]
+    assert "CART_ICON_SVG" in store_markup
+    assert "CART_ICON_SVG" in portal_markup
