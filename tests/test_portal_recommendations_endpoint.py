@@ -1,4 +1,7 @@
+import json
 import sqlite3
+from pathlib import Path
+
 import app as app_module
 from dashboard import recommendation_events as re, client_portal as cp
 from dashboard import scan_recommendations as sr
@@ -72,7 +75,13 @@ def test_scan_section_contains_only_requested_scan(monkeypatch, tmp_path):
 def test_recommendation_links_go_to_the_new_product_page_never_groovekart(monkeypatch, tmp_path):
     """A live product links to its own page, a retired one to its successor's page, and a
     retired product with no successor gets no link, rather than a dead page or GrooveKart."""
-    catalog = app_module._PRODUCTS.get("products") or {}
+    # Read the real catalog by path and hand it to the loader explicitly. Earlier suite
+    # tests (test_bos_products) leave DATA_DIR on a two-product catalog, and
+    # load_products() would then not know these slugs at all.
+    catalog = json.loads((Path(__file__).parents[1] / "data" / "products.json")
+                         .read_text(encoding="utf-8"))["products"]
+    from dashboard import products as _products_mod
+    monkeypatch.setattr(_products_mod, "load_products", lambda: catalog)
     assert "remedymatch.com" in (catalog["rescue"].get("url") or "")        # fixture guard
     assert catalog["relax"].get("inactive") and catalog["relax"].get("superseded_by") == "stress-release"
     assert catalog["molecular-hydrogen-tablets"].get("inactive")
