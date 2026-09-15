@@ -45,3 +45,9 @@ def test_cart_page_shows_no_price(client, monkeypatch):
     monkeypatch.setattr(app, "_PORTAL_CART_ENABLED", True)
     html = client.get("/begin/cart").get_data(as_text=True)
     assert "confirmed at checkout" in html
+
+
+def test_cart_page_mounts_the_theme_toggle(client, monkeypatch):
+    monkeypatch.setattr(app, "_PORTAL_CART_ENABLED", True)
+    html = client.get("/begin/cart").get_data(as_text=True)
+    assert "RMTheme.mountToggle(document.getElementById('themeToggle'))" in html
