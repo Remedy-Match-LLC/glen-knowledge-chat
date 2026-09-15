@@ -33,6 +33,11 @@
       padding:28px 28px 26px; margin-top:34px; }
     .p-hero{ display:block; width:100%; max-width:440px; aspect-ratio:1/1; object-fit:cover;
       border-radius:20px; border:1px solid var(--border); background:#f4f6f9; margin:2px 0 16px; }
+    /* Real photos at their own 1344x768 shape, so nothing is cropped. The first one leads. */
+    .p-gallery{ display:grid; grid-template-columns:1fr 1fr; gap:10px; max-width:640px; margin:2px 0 16px; }
+    .p-gallery img{ display:block; width:100%; height:auto; aspect-ratio:1344/768; border-radius:14px;
+      border:1px solid var(--border); background:#f4f6f9; }
+    .p-gallery img:first-child{ grid-column:1 / -1; border-radius:20px; }
     .p-name{ font-family:var(--heading); font-weight:700; font-size:clamp(22px,4.6vw,29px); color:var(--cream); line-height:1.25; }
     .p-regular{ margin-left:10px; font-family:var(--heading); font-weight:500; font-size:14px;
       color:var(--muted); text-decoration:line-through; opacity:0.7; }
@@ -270,6 +275,7 @@
     <div id="sp-product" class="product hidden">
       <p class="eyebrow">Your remedy</p>
       <img id="sp-hero" class="p-hero hidden" alt="">
+      <div id="sp-gallery" class="p-gallery hidden"></div>
       <h1 class="p-name" id="sp-name"></h1>
       <span class="p-price" id="sp-price"></span>
       <span class="p-regular hidden" id="sp-regular"></span>
@@ -1543,6 +1549,17 @@
         var hero = document.getElementById('sp-hero');
         hero.src = data.image; hero.alt = data.name || '';
         hero.classList.remove('hidden');
+      }
+      if (data.images && data.images.length){
+        var gallery = document.getElementById('sp-gallery');
+        data.images.forEach(function(ph, n){
+          var im = document.createElement('img');
+          im.src = ph.src; im.alt = ph.alt || data.name || '';
+          im.width = 1344; im.height = 768;
+          if (n > 0){ im.loading = 'lazy'; }
+          gallery.appendChild(im);
+        });
+        gallery.classList.remove('hidden');
       }
       if (data.price){
         document.getElementById('sp-price').textContent = data.price;

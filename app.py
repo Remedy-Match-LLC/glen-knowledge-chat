@@ -8792,6 +8792,9 @@ def begin_product_data(slug):
         "price_cents": p["price_cents"], "price": f"${p['price_cents']/100:.2f}",
         # Real product photo (physical goods). Optional: only apparel/devices carry it.
         "image": p.get("image", ""),
+        # Real photo gallery, shown uncropped under the hero. Only src and alt leave the server.
+        "images": [{"src": i["src"], "alt": i.get("alt", "")}
+                   for i in (p.get("images") or []) if isinstance(i, dict) and i.get("src")],
         # Compare-at (SRP) strikethrough — only when a genuine higher list price is set.
         "regular": (f"${p['regular_cents']/100:.2f}"
                     if p.get("regular_cents") and p["regular_cents"] > p["price_cents"] else ""),
@@ -9152,6 +9155,9 @@ def begin_product_page_data(slug):
         "price": f"${p['price_cents']/100:.2f}", "cta_url": f"/begin/buy/{slug}",
         # Real product photo (physical goods only), compare-at SRP, and named-competitor anchor.
         "image": p.get("image", ""),
+        # Real photo gallery, shown uncropped under the hero. Only src and alt leave the server.
+        "images": [{"src": i["src"], "alt": i.get("alt", "")}
+                   for i in (p.get("images") or []) if isinstance(i, dict) and i.get("src")],
         "regular": (f"${p['regular_cents']/100:.2f}"
                     if p.get("regular_cents") and p["regular_cents"] > p["price_cents"] else ""),
         "competitor": ({"brand": _pc.get("brand", ""), "name": _pc.get("name", ""),

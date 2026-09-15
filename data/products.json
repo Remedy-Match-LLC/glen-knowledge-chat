@@ -8092,7 +8092,21 @@
    "bottle_type": "30 Caps",
    "fmp_id": "335",
    "directions": "Take 1 capsule up to 3 times a day with food, or as guided.",
-   "enrichment_note": "Label day 2026-09-14 (Glen): new formula and directions from the approved label; Bioavailability Blend and Pacific Ocean ORMUS removed. Glen: \"4 caps: keep as is\", so Robin Roemer Brown's quote stays unchanged."
+   "enrichment_note": "Label day 2026-09-14 (Glen): new formula and directions from the approved label; Bioavailability Blend and Pacific Ocean ORMUS removed. Glen: \"4 caps: keep as is\", so Robin Roemer Brown's quote stays unchanged.",
+   "images": [
+    {
+     "src": "/static/product-photos/nous-energy-1.webp",
+     "alt": "Noni fruit, mushrooms, grain stalks and a wooden bowl of dark berries on a table"
+    },
+    {
+     "src": "/static/product-photos/nous-energy-2.webp",
+     "alt": "Two noni fruits on a green leaf over black lava rock at sunset"
+    },
+    {
+     "src": "/static/product-photos/nous-energy-3.webp",
+     "alt": "A glass bowl of pale mineral powder with dark berries on a wooden table"
+    }
+   ]
   },
   "spike-shield": {
    "name": "Spike Shield",
