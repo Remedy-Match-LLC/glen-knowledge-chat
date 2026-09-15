@@ -49,9 +49,13 @@ def test_products_api_filters_to_one_group_and_ignores_an_unknown_group(client, 
     assert d["products"] == []
 
 
-def test_shop_page_is_dark_when_the_flag_is_off(client, monkeypatch):
+def test_shop_page_redirects_to_match_when_the_flag_is_off(client, monkeypatch):
+    # A public link (email footer, affiliate URL) outlives any deploy window, so
+    # the page must send a visitor somewhere useful rather than 404.
     monkeypatch.setattr(app, "_SHOP_ENABLED", False)
-    assert client.get("/shop").status_code == 404
+    r = client.get("/shop")
+    assert r.status_code == 302
+    assert r.headers["Location"] == "/begin/match"
 
 
 def test_shop_page_serves_search_groups_grid_and_cart_link(client, monkeypatch):

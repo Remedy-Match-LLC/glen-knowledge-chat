@@ -60,7 +60,7 @@ SIGNATURE_HTML = (
     'Author Page: <a href="http://amazon.com/default/e/B00AXTFZ26">amazon.com/default/e/B00AXTFZ26</a><br>'
     'LinkedIn: <a href="http://linkedin.com/in/drglen">linkedin.com/in/drglen</a><br>'
     'Fan Page: <a href="http://facebook.com/DrSwartwout">facebook.com/DrSwartwout</a><br>'
-    'Remedies: <a href="https://remedymatch.com/">https://remedymatch.com/</a><br>'
+    'Remedies: <a href="https://myhealingoasis.com/shop">https://myhealingoasis.com/shop</a><br>'
     '&nbsp;&nbsp;&nbsp;&nbsp; Consultation: apply at bottom of page'
     '</div>'
 )
@@ -72,7 +72,7 @@ SIGNATURE_TEXT = (
     "Video Channel: youtube.com/user/DoctorGlen\n"
     "Author Page: amazon.com/default/e/B00AXTFZ26\n"
     "LinkedIn: linkedin.com/in/drglen\nFan Page: facebook.com/DrSwartwout\n"
-    "Remedies: https://remedymatch.com/\n     Consultation: apply at bottom of page\n"
+    "Remedies: https://myhealingoasis.com/shop\n     Consultation: apply at bottom of page\n"
 )
 
 EMAIL_SUBJECT = "tracking number"

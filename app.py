@@ -2614,7 +2614,7 @@ RULES:
 - CO-AUTHORSHIP: Snippets with [AUTHORSHIP NOTE: ...] reflect a co-author's view. Cite the co-author, then state Glen's current position from clinical-qa entries. Never present a co-authored section as Glen's view without the flag.
 - E4L SCAN OFFER: When the user mentions a specific condition or asks for personalized guidance, the action link should be the free BWS voice scan: https://Truly.VIP/E4L — "30 seconds, count 1 to 10, matches you to formulations your bioenergetic patterns are asking for."
 - SUPPLEMENT REVIEW PAGE: When someone asks where or how to have a supplement, vitamin, product, or label analyzed/reviewed, send them directly to https://illtowell.com/product-review. Describe it as the free supplement-review page. Do not send them to a product sales page, storefront search, portal, contact form, or Practice Better. If they ask for the page or link, give this exact clickable URL in the same reply.
-- SHOPPING ROUTES: Guide people according to what they are trying to do. For general browsing, uncertainty, or "help me choose," send them to https://illtowell.com/begin/match, the guided RemedyMatch conversation that narrows their need to one appropriate remedy. For a named remedy, use its exact in-funnel page from the PRODUCT LINK INJECTION TABLE. For reordering something already purchased, use https://illtowell.com/reorder. For a free analysis of a supplement they already take, use https://illtowell.com/product-review. For Dr. Glen's vetted off-catalog devices and partner tools, use https://illtowell.com/begin/tools. Functional Formulations are nutritional or botanical formulas; Infoceuticals are energetic-frequency, bioinformational remedies and are not nutritional supplements; devices, books, services, and partner tools must be described as their actual product class. Never blur these categories. The guided match helps choose; a product page explains and sells one named item; reorder repeats a prior purchase; supplement review evaluates an outside label; tools lists vetted adjuncts.
+- SHOPPING ROUTES: Guide people according to what they are trying to do. For general browsing, send them to https://illtowell.com/shop. For uncertainty or help me choose, send them to https://illtowell.com/begin/match, the guided RemedyMatch conversation that narrows their need to one appropriate remedy. For a named remedy, use its exact in-funnel page from the PRODUCT LINK INJECTION TABLE. For reordering something already purchased, use https://illtowell.com/reorder. For a free analysis of a supplement they already take, use https://illtowell.com/product-review. For Dr. Glen's vetted off-catalog devices and partner tools, use https://illtowell.com/begin/tools. Functional Formulations are nutritional or botanical formulas; Infoceuticals are energetic-frequency, bioinformational remedies and are not nutritional supplements; devices, books, services, and partner tools must be described as their actual product class. Never blur these categories. The guided match helps choose; a product page explains and sells one named item; reorder repeats a prior purchase; supplement review evaluates an outside label; tools lists vetted adjuncts.
 - PRODUCT REFERENCES: Each request includes a PRODUCT LINK INJECTION TABLE listing every Glen Swartwout formulation by its clinical name and the canonical URL to use. When you mention a product, append the URL as a markdown link immediately after the name, e.g. [Terrain Restore](URL). Do NOT invent URLs. If a product is absent from the table, do not invent a search URL or send the person to a storefront; use the guided RemedyMatch page at https://illtowell.com/begin/match.
 - A TABLE URL BELONGS TO ITS OWN PRODUCT ONLY: each injection-table row pairs ONE product name with ONE URL. Never attach a row's URL (or its price) to a DIFFERENT product, even a related one. If you name a product that has no row of its own, describe it WITHOUT a link rather than borrowing a neighbour's — a link that opens the wrong product page is worse than no link, because the client buys the wrong thing.
 - NEVER INVENT A PRICE: the PRODUCT LINK INJECTION TABLE carries each product's LIST price. Quote ONLY that figure, and only for products in the table. Do NOT take a price from a retrieved snippet, do NOT infer one, and do NOT carry a price or shipping figure over from another product — snippets are often years out of date and shipping differs per product. If a product has no price in the table, do not state one: say the product page shows current pricing and give the link. When you do quote the list price, note that the page shows their actual price, since membership, volume and any active discount can change it. Never state a shipping cost unless the table gives one — shipping depends on destination and is calculated at checkout.\n- SEND BUYERS TO THE PRODUCT'S OWN PAGE, NOT A STOREFRONT SEARCH: every purchase link comes from the PRODUCT LINK INJECTION TABLE, which points at the in-funnel product page. Do NOT send people to a storefront homepage or a "search by name" page to find a product themselves, and do not substitute a remedymatch.com URL for a table entry. The in-funnel page is where the client's courtesy pricing, membership pricing, and full catalog live; the old storefront carries only a fraction of the catalog and clients have been unable to complete checkout there.
@@ -8690,7 +8690,7 @@ def shop_page():
     """The public store: search, concern groups and product cards. Gated by
     _SHOP_ENABLED, the same dark-launch flag as GET /api/shop/products."""
     if not _SHOP_ENABLED:
-        return ("", 404)
+        return redirect("/begin/match")
     resp = Response((STATIC / "shop.html").read_text(encoding="utf-8"), mimetype="text/html")
     resp.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
     return resp
@@ -14303,16 +14303,25 @@ def _init_referral_tables():
              "course in MentorshipU — work through the modules at your own pace.",
              "Free in MentorshipU — students create a free account to access. "
              "Affiliates can share the link as-is."))
-        # Seed Shop for Remedies (the GrooveKart store)
+        # Seed Shop for Remedies (the public store)
         if not cx.execute("SELECT id FROM affiliate_offers WHERE name='Shop for Remedies'").fetchone():
             cx.execute("""
                 INSERT INTO affiliate_offers (sort_order, name, description, url_template, instructions, active)
                 VALUES (5, 'Shop for Remedies',
-                    'Dr. Glen''s full line of remedies and formulations at RemedyMatch.com. Share with anyone ready to start their protocol.',
-                    'https://remedymatch.com?utm_source={slug}&utm_medium=affiliate&utm_campaign=store',
+                    'Dr. Glen''s full line of remedies and formulations at myhealingoasis.com. Share with anyone ready to start their protocol.',
+                    'https://myhealingoasis.com/shop?utm_source={slug}&utm_medium=affiliate&utm_campaign=store',
                     'Direct link to the store. Purchases are credited to you automatically when the buyer first came through one of your free-offer links (same email). Cold store visitors aren''t tracked yet — coupon codes for that are a future add-on.',
                     1)
             """)
+        # Migrate a row seeded before the store moved to myhealingoasis.com. Idempotent:
+        # the url_template LIKE guard only matches the old remedymatch.com row, so a
+        # second run finds nothing to update. REPLACE works on both sqlite and postgres.
+        _shop_affiliate_url = ("https://myhealingoasis.com/shop?utm_source={slug}"
+                               "&utm_medium=affiliate&utm_campaign=store")
+        cx.execute("UPDATE affiliate_offers SET url_template=?, "
+                   "description=REPLACE(description, 'at RemedyMatch.com', 'at myhealingoasis.com') "
+                   "WHERE name='Shop for Remedies' AND url_template LIKE 'https://remedymatch.com%'",
+                   (_shop_affiliate_url,))
         # ── Funnel offers (funnel-first hybrid) ──────────────────────────────
         # The funnel front door is now the primary share link: it captures the
         # ref into journey_state once and carries it through every step + any
