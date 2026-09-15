@@ -65,6 +65,55 @@ def test_a_grandchild_holding_the_pipe_cannot_stretch_the_budget():
     assert "spawned" in res["stdout"]
 
 
+def _timeout_bin():
+    import shutil
+    return shutil.which("timeout") or shutil.which("gtimeout")
+
+
+def test_the_budget_is_enforced_outside_python_even_when_the_in_process_wait_never_fires(monkeypatch):
+    # On Render the in-process timer only fired at deploy shutdown. Model that: push the
+    # in-process backstop far past the test's limit. Only coreutils timeout can end it in time.
+    tb = _timeout_bin()
+    if not tb:
+        pytest.skip("no coreutils timeout on this machine")
+    monkeypatch.setattr(cron_runner.shutil, "which", lambda name: tb if name == "timeout" else None)
+    monkeypatch.setattr(cron_runner, "BACKSTOP_SECS", 120)
+    started = time.monotonic()
+    res = cron_runner.run_script([PY, "-c", "import time; print('working', flush=True); time.sleep(90)"], 2,
+                                 label="hard")
+    assert time.monotonic() - started < 10
+    assert res["timed_out"] and res["error"] == "timeout after 2s" and res["returncode"] in (124, 137)
+    assert "working" in res["stdout"]
+
+
+def test_a_child_that_ignores_sigterm_is_killed_after_the_grace(monkeypatch):
+    tb = _timeout_bin()
+    if not tb:
+        pytest.skip("no coreutils timeout on this machine")
+    monkeypatch.setattr(cron_runner.shutil, "which", lambda name: tb if name == "timeout" else None)
+    monkeypatch.setattr(cron_runner, "KILL_AFTER_SECS", 2)
+    monkeypatch.setattr(cron_runner, "BACKSTOP_SECS", 120)
+    code = "import signal,time; signal.signal(signal.SIGTERM, signal.SIG_IGN); time.sleep(90)"
+    started = time.monotonic()
+    res = cron_runner.run_script([PY, "-c", code], 2, label="stubborn")
+    assert time.monotonic() - started < 12
+    assert res["timed_out"] and res["returncode"] == 137
+
+
+def test_without_the_timeout_binary_the_runner_still_runs_with_its_in_process_budget(monkeypatch):
+    monkeypatch.setattr(cron_runner.shutil, "which", lambda name: None)
+    argv, hard = cron_runner.hard_budget_argv(["python3", "x.py"], 300)
+    assert argv == ["python3", "x.py"] and hard is False
+    res = cron_runner.run_script([PY, "-c", "print('plain')"], 20, label="plain")
+    assert res["ok"] and "plain" in res["stdout"]
+
+
+def test_the_wrapper_argv_signals_then_kills():
+    argv, hard = cron_runner.hard_budget_argv(["python3", "x.py", "--skip-people"], 300, timeout_bin="/usr/bin/timeout")
+    assert hard and argv == ["/usr/bin/timeout", "-k", str(cron_runner.KILL_AFTER_SECS), "300",
+                             "python3", "x.py", "--skip-people"]
+
+
 def test_a_child_that_cannot_start_is_a_failure_not_a_raise():
     res = cron_runner.run_script(["/nonexistent/interpreter-xyz"], 5)
     assert not res["ok"] and res["error"].startswith("exception: ")
