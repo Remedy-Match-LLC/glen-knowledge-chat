@@ -127,6 +127,37 @@
       bar.appendChild(cartBtn);
     }
 
+    // Store pages use the storefront cart, which has its own page. Never on a
+    // portal page, and never on the cart page itself, which this would link to.
+    if (/^\/(begin\/|shop(\/|$))/.test(location.pathname) &&
+        !/^\/begin\/cart\/?$/.test(location.pathname)) {
+      var storeCart = el("a", "js-mypath-btn js-store-cart-btn",
+        '<span class="js-cart-label">Cart</span><span class="js-cart-badge" aria-hidden="true"></span>');
+      storeCart.href = "/begin/cart";
+      storeCart.hidden = true;
+      bar.appendChild(storeCart);
+      // Shared by the initial load and by a later refresh call (e.g. after
+      // Add to cart on the product page), so both paths agree on when the
+      // button is shown. /begin/cart is dark-launched separately from the
+      // rest of the cart routes (cart_page), so the button (which links to
+      // it) must not show while that flag is off even though /api/cart
+      // itself already answers ok.
+      var refreshStoreCartBadge = function () {
+        return fetch("/api/cart", {credentials: "same-origin"}).then(function (r) { return r.json(); })
+          .then(function (d) {
+            if (!d || !d.ok || !d.cart_page) return;
+            var n = Math.max(0, parseInt(d.count, 10) || 0);
+            var badge = storeCart.querySelector(".js-cart-badge");
+            badge.textContent = n ? String(n) : "";
+            badge.hidden = n === 0;
+            storeCart.setAttribute("aria-label", n ? "Cart with " + n + " item" + (n === 1 ? "" : "s") : "Cart");
+            storeCart.hidden = false;
+          }).catch(function () {});
+      };
+      window.refreshStoreCartCount = refreshStoreCartBadge;
+      refreshStoreCartBadge();
+    }
+
     bar.appendChild(mypathBtn);
 
     // A portal opened by an authenticated console owner keeps a visible route

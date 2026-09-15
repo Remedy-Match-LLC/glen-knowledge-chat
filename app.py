@@ -6979,6 +6979,12 @@ _PORTAL_OASIS_ENABLED = os.environ.get("PORTAL_OASIS_ENABLED", "").strip().lower
 # routes 404, the product page shows no Add to cart control, and the portal
 # payload is byte-identical to pre-cart.
 _PORTAL_CART_ENABLED = os.environ.get("PORTAL_CART_ENABLED", "").strip().lower() in ("1", "true", "yes", "on")
+# Dark launch for /begin/cart specifically. A Stripe cancel currently strands
+# the cart marked ordered and sends the buyer to /reorder (platform fix
+# pending -- see task-4-report.md item 5). Until that lands, /begin/cart stays
+# unreachable from any public link even though Add to cart (_PORTAL_CART_ENABLED)
+# is already live. begin_cart_page requires BOTH flags true.
+_CART_PAGE_ENABLED = os.environ.get("CART_PAGE_ENABLED", "").strip().lower() in ("1", "true", "yes", "on")
 # "Clinical Theory of Everything" hub tile: a link out to Glen's published TheBrain
 # view (bra.in/6j852k). Ships dark; same truthy set as the other portal flags. With
 # this off the portal payload carries brain.enabled false and no tile renders.
@@ -8679,9 +8685,13 @@ def begin_buy_page(slug):
 
 @app.route("/begin/product/<slug>")
 def begin_product_page(slug):
-    if not _get_product(slug):
+    product = _get_product(slug)
+    if not product:
         return ("", 404)
     html = (STATIC / "begin-product.html").read_text(encoding="utf-8")
+    name = _ihtml.escape(product.get("name") or "Product")
+    html = html.replace("<title>Product · Dr. Glen Swartwout</title>",
+                        f"<title>{name} · Dr. Glen Swartwout</title>", 1)
     if _PORTAL_CART_ENABLED:
         html = (html.replace("/*__CART_CONTROL_FN_START__*/", "")
                     .replace("/*__CART_CONTROL_FN_END__*/", "")
@@ -8695,7 +8705,27 @@ def begin_product_page(slug):
             r"[ \t]*/\*__CART_CONTROL_CALL_START__\*/.*?/\*__CART_CONTROL_CALL_END__\*/[ \t]*\n?",
             "", html, flags=re.S)
     html = html.replace("__CART_ENABLED__", "true" if _PORTAL_CART_ENABLED else "false")
+    html = html.replace("__CART_PAGE_ENABLED__", "true" if _CART_PAGE_ENABLED else "false")
     resp = Response(html, mimetype="text/html")
+    resp.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+    if not request.cookies.get("amg_session"):
+        resp.set_cookie("amg_session", uuid.uuid4().hex, max_age=60 * 60 * 24 * 365,
+                        httponly=True, samesite="Lax", secure=request.is_secure)
+    return resp
+
+
+@app.route("/begin/cart")
+def begin_cart_page():
+    """The storefront cart page. Gated by _PORTAL_CART_ENABLED, not the shop flag
+    (Task 1-3's _SHOP_ENABLED, not yet defined at this task), because Add to cart
+    is already live on the product page. ALSO gated by _CART_PAGE_ENABLED, a
+    second, independent dark-launch flag: a Stripe cancel currently strands the
+    cart and misroutes the buyer (see _CART_PAGE_ENABLED's comment above), so
+    this page stays unreachable until that is fixed, even once cart routes
+    generally are live."""
+    if not (_PORTAL_CART_ENABLED and _CART_PAGE_ENABLED):
+        return ("", 404)
+    resp = Response((STATIC / "begin-cart.html").read_text(encoding="utf-8"), mimetype="text/html")
     resp.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
     if not request.cookies.get("amg_session"):
         resp.set_cookie("amg_session", uuid.uuid4().hex, max_age=60 * 60 * 24 * 365,
@@ -22359,7 +22389,13 @@ def api_cart():
                     except Exception:
                         pass
                     app.logger.exception("cart GET: read-time merge failed for %s", email)
-        return jsonify(_cart_payload(cx, token))
+        payload = _cart_payload(cx, token)
+        # Only this route's response carries `cart_page`: _cart_payload is also
+        # used by the unrelated portal basket (_portal_cart_payload), which has
+        # nothing to do with /begin/cart's dark-launch gate. Adding the key
+        # inside _cart_payload would leak it into that payload too.
+        payload["cart_page"] = bool(_CART_PAGE_ENABLED)
+        return jsonify(payload)
 
 
 @app.route("/api/cart/add", methods=["POST"])

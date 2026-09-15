@@ -327,6 +327,7 @@
     var BASE = window.location.origin;
     var slug = location.pathname.split('/').filter(Boolean).pop() || '';
     var CART_ENABLED = __CART_ENABLED__;
+    var CART_PAGE_ENABLED = __CART_PAGE_ENABLED__;
 
     // ── Helpers ──────────────────────────────────────────────────────────────
     function show(id){ var e = document.getElementById(id); if (e) e.classList.remove('hidden'); }
@@ -1446,9 +1447,25 @@
     /*__CART_CONTROL_FN_START__*/
     // ── Add to cart (Task 5) ──────────────────────────────────────────────────
     function renderCartControl(slug){
+      var CART_PAGE = "/begin/cart";
       if (!CART_ENABLED) return;
       var host = document.getElementById('buy-actions');
       if (!host) return;
+      // The View cart link reuses #buy-actions .btn-secondary's own gold/focus
+      // convention (see the CSS above), scoped under its own id so this one
+      // injection is a no-op on a second Add to cart click (Task 6).
+      if (!document.getElementById('view-cart-style')) {
+        var vcStyle = document.createElement('style');
+        vcStyle.id = 'view-cart-style';
+        vcStyle.textContent =
+          '.view-cart{ display:inline-block; margin-left:10px; color:var(--gold);' +
+          ' font-family:var(--heading); font-weight:600; font-size:15px; }' +
+          '.view-cart:hover{ text-decoration:underline; }' +
+          '.view-cart:focus-visible{ outline:2px solid var(--gold); outline-offset:3px; }' +
+          ':root[data-theme="light"] .view-cart{ color:#7A5C1F; }' +
+          ':root[data-theme="light"] .view-cart:focus-visible{ outline-color:#7A5C1F; }';
+        document.head.appendChild(vcStyle);
+      }
       var btn = document.createElement('button');
       btn.className = 'btn btn-secondary';
       btn.setAttribute('data-cart-add', slug);
@@ -1465,6 +1482,17 @@
           btn.disabled = false;
           if (!d || !d.ok) { btn.textContent = label; return; }
           btn.textContent = 'Added';
+          // Ribbon badge (shell.js): re-fetch and update now, not just on the
+          // next full page load, and guarded since shell.js may not be the
+          // version that defines it.
+          if (typeof window.refreshStoreCartCount === 'function') window.refreshStoreCartCount();
+          // /begin/cart is dark-launched independently of Add to cart itself
+          // (CART_PAGE_ENABLED): while it is off, this link would 404.
+          if (CART_PAGE_ENABLED && !host.querySelector('.view-cart')) {
+            var vc = document.createElement('a');
+            vc.className = 'view-cart'; vc.href = CART_PAGE; vc.textContent = 'View cart';
+            host.appendChild(vc);
+          }
           setTimeout(function(){ btn.textContent = label; }, 2000);
         }).catch(function(){ btn.disabled = false; btn.textContent = label; });
       });
