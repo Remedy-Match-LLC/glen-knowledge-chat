@@ -59,8 +59,13 @@ def resolve_related(base_slug, *, manual, harvested, semantic, products, cap=12)
 
     if not featured_manual and not auto:
         return {"featured": [], "more": [], "reasons": {}}
-    featured = featured_manual + auto[:1]
-    more = auto[1:]
+    # Glen, 2026-09-15: "feature my picks only". When a page has manual picks, only they
+    # are featured and every automatic suggestion goes to "more". A page with no picks
+    # still features its top automatic suggestion.
+    if featured_manual:
+        featured, more = featured_manual, auto
+    else:
+        featured, more = auto[:1], auto[1:]
     return {"featured": featured, "more": more, "reasons": reasons}
 
 

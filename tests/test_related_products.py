@@ -11,14 +11,26 @@ _PRODUCTS = {
     "water-ionizer-9plate": {"name": "9-Plate Water Ionizer (Living Water)"},
 }
 
-def test_manual_first_then_one_auto_in_featured():
+def test_manual_picks_only_are_featured_and_auto_goes_to_more():
+    # Glen, 2026-09-15: "feature my picks only".
     out = rp.resolve_related(
         "iop-syntropy",
         manual=["immune-modulation"],
         harvested=["wholomega", "neuroprotect"],
         semantic=["book-healing-glaucoma"],
         products=_PRODUCTS)
-    assert out["featured"] == ["immune-modulation", "wholomega"]
+    assert out["featured"] == ["immune-modulation"]
+    assert out["more"] == ["wholomega", "neuroprotect", "book-healing-glaucoma"]
+
+
+def test_a_page_with_no_picks_features_its_top_auto_suggestion():
+    out = rp.resolve_related(
+        "iop-syntropy",
+        manual=[],
+        harvested=["wholomega", "neuroprotect"],
+        semantic=["book-healing-glaucoma"],
+        products=_PRODUCTS)
+    assert out["featured"] == ["wholomega"]
     assert out["more"] == ["neuroprotect", "book-healing-glaucoma"]
 
 def test_manual_object_entries_carry_reasons():
@@ -31,7 +43,8 @@ def test_manual_object_entries_carry_reasons():
         harvested=["wholomega"],
         semantic=[],
         products=_PRODUCTS)
-    assert out["featured"] == ["immune-modulation", "denas-scenar", "wholomega"]
+    assert out["featured"] == ["immune-modulation", "denas-scenar"]
+    assert out["more"] == ["wholomega"]
     assert out["reasons"] == {"immune-modulation": "Pairs with eye pressure support"}
 
 
@@ -68,8 +81,8 @@ def test_manual_bypasses_guardrail_but_dedups_from_auto():
         semantic=[],
         products=_PRODUCTS)
     # manual keeps the do-not-recommend pick; wholomega not repeated in auto
-    assert out["featured"] == ["water-ionizer-9plate", "wholomega", "neuroprotect"]
-    assert out["more"] == []
+    assert out["featured"] == ["water-ionizer-9plate", "wholomega"]
+    assert out["more"] == ["neuroprotect"]
 
 def test_auto_capped(monkeypatch):
     prods = {f"p{i}": {"name": str(i)} for i in range(20)}
