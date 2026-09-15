@@ -30654,24 +30654,32 @@ def _animal_report_content(email, scan_date):
     the e4l report, not our functional formulations", and "animal Biofield report reuses
     that same infoceutical list" (the portal's animal card). One layer per infoceutical, in
     the scan's rank order, titled with the card's label and naming the catalog product the
-    card's own resolver picks. miHealth cycles are not products and never appear. An
-    infoceutical with no sellable product is left out. None when there is nothing to show."""
+    card's own resolver picks. miHealth cycles are not products and never appear.
+
+    Returns (content, missing). Every infoceutical the scan recommends stays in the report
+    (Glen: "all infoceuticals should be in our catalog"). One with no sellable product keeps
+    its label as the remedy and is listed in `missing`, so the draft is held rather than
+    silently shortened. None when the scan has no infoceuticals at all, or the scan date
+    does not match."""
     recs = _scan_recommendations_for(email, scan_date) or {}
     if scan_date and recs.get("scan_date") != scan_date:
         return None
-    layers, reorder = [], []
+    layers, reorder, missing = [], [], []
     for item in (recs.get("infoceuticals") or []):
+        label = item.get("label") or item.get("code") or ""
         product = _get_product(item.get("slug") or "") if item.get("slug") else None
-        if not product:
-            continue
-        layers.append({"n": len(layers) + 1, "title": item.get("label") or item.get("code") or "",
-                       "meaning": "", "remedy": product.get("name") or "",
+        n = len(layers) + 1
+        layers.append({"n": n, "title": label, "meaning": "",
+                       "remedy": (product or {}).get("name") or label,
                        "dosing": ANIMAL_INFOCEUTICAL_DOSING, "patterns": [item.get("code") or ""]})
-        reorder.append({"slug": item["slug"], "qty": 1})
+        if product:
+            reorder.append({"slug": item["slug"], "qty": 1})
+        else:
+            missing.append(f"layer {n}: infoceutical {label!r} has no active catalog product")
     if not layers:
         return None
-    return {"biofield_status": "ai_draft", "layers": layers, "reorder_items": reorder,
-            "report_kind": "animal_infoceuticals"}
+    return ({"biofield_status": "ai_draft", "layers": layers, "reorder_items": reorder,
+             "report_kind": "animal_infoceuticals"}, missing)
 
 
 @app.route("/api/console/animal-report", methods=["POST"])
@@ -30699,9 +30707,10 @@ def api_console_animal_report():
         rec = _cs.get(_scx, email)
     if not (rec and rec["is_animal"]):
         return jsonify({"error": "not an animal client"}), 409
-    content = _animal_report_content(email, scan_date)
-    if not content:
-        return jsonify({"error": "no orderable infoceuticals for that scan"}), 409
+    built = _animal_report_content(email, scan_date)
+    if not built:
+        return jsonify({"error": "no infoceuticals for that scan"}), 409
+    content, missing = built
     with _db_lock, db.connect(LOG_DB) as cx:
         _cp.init_client_portal_table(cx)
         _pbr.init_table(cx)
@@ -30712,11 +30721,19 @@ def api_console_animal_report():
         _pbr.upsert_report(cx, email, scan_date, (body.get("scan_id") or ""), content,
                            content["biofield_status"])
         outcome = "kept_confirmed"
-        if content["biofield_status"] == "ai_draft":
+        if content["biofield_status"] == "ai_draft" and missing:
+            # Held for the catalog to be fixed, not autoconfirmed with a shortened list.
+            from dashboard import analysis_autoconfirm as _ac
+            _ac.init_autoconfirm_log(cx)
+            _ac._log(cx, email, scan_date, "held_missing_infoceutical", missing, False,
+                     datetime.now(timezone.utc).isoformat())
+            outcome = "held_missing_infoceutical"
+        elif content["biofield_status"] == "ai_draft":
             outcome = _run_autoconfirm(cx, email, scan_date, content)
         status = (_pbr.get_report(cx, email, scan_date) or {}).get("status")
     return jsonify({"ok": True, "email": email, "scan_date": scan_date, "status": status,
-                    "autoconfirm": outcome, "layers": len(content["layers"])})
+                    "autoconfirm": outcome, "layers": len(content["layers"]),
+                    "missing": missing})
 
 
 @app.route("/api/console/client/report-draft", methods=["POST"])

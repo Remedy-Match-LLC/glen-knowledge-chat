@@ -33,9 +33,10 @@ RECS = {"scan_date": DATE, "scan_dates": [DATE],
             {"code": "BFA", "label": "Big Field Aligner (BFA)", "rank": 1,
              "slug": "bfa-big-field-aligner-infoceutical"},
             {"code": "ED9", "label": "ED9 - Muscle", "rank": 2,
-             "slug": "ed9-muscle-energetic-driver-infoceutical"},
-            {"code": "EX0", "label": "No product", "rank": 3, "slug": ""}],
+             "slug": "ed9-muscle-energetic-driver-infoceutical"}],
         "mihealth": [{"code": "ER2", "label": "ER2 - Large Intestine", "rank": 4}]}
+MISSING_RECS = dict(RECS, infoceuticals=RECS["infoceuticals"] + [
+    {"code": "EX0", "label": "EX0 - No product", "rank": 3, "slug": ""}])
 
 
 def _setup(mp, tmp, species="Dog", recs=RECS):
@@ -102,7 +103,22 @@ def test_a_client_with_no_species_record_is_refused(monkeypatch, tmp_path):
     assert _report(db) is None
 
 
-def test_no_orderable_infoceuticals_is_refused(monkeypatch, tmp_path):
+def test_an_infoceutical_with_no_product_holds_the_report_instead_of_dropping_it(monkeypatch, tmp_path):
+    """Glen: recommend what the E4L report recommends. A missing product must not shorten it."""
+    db = _setup(monkeypatch, tmp_path, recs=MISSING_RECS)
+    r = _post({"email": DOG, "scan_date": DATE})
+    assert r.status_code == 200
+    assert r.get_json()["autoconfirm"] == "held_missing_infoceutical"
+    rep = _report(db)
+    assert rep["status"] == "ai_draft"
+    assert [L["remedy"] for L in rep["content"]["layers"]][-1] == "EX0 - No product"
+    row = sqlite3.connect(db).execute(
+        "SELECT decision, reasons FROM analysis_autoconfirm_log WHERE email=? AND scan_date=?",
+        (DOG, DATE)).fetchone()
+    assert row[0] == "held_missing_infoceutical" and "EX0 - No product" in row[1]
+
+
+def test_no_infoceuticals_is_refused(monkeypatch, tmp_path):
     db = _setup(monkeypatch, tmp_path, recs={"scan_date": DATE, "infoceuticals": [], "mihealth": []})
     assert _post({"email": DOG, "scan_date": DATE}).status_code == 409
     assert _report(db) is None
