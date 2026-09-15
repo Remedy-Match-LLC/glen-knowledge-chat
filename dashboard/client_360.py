@@ -238,8 +238,19 @@ def _reports(cx, email):
                                  "source": "reveal", "pdf_url": ""}
     except Exception:
         _recover_optional_read(cx)
+    held = set()
+    try:
+        from dashboard import report_holds
+        report_holds.init_table(cx)
+        held = report_holds.held_dates(cx, email)
+    except Exception:
+        _recover_optional_read(cx)
     qemail = urllib.parse.quote(email, safe="")
     for row in by_date.values():
+        # A held date shows on the portal as a draft whatever its stored status.
+        row["held"] = row["date"] in held
+        if row["held"]:
+            row["status"] = "ai_draft"
         row["composer_url"] = (f"/console/biofield-portal?email={qemail}&scan_date="
                                f"{urllib.parse.quote(row['date'], safe='')}")
     return sorted(by_date.values(), key=lambda r: r["date"], reverse=True)

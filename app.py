@@ -24899,6 +24899,15 @@ def api_client_portal(token):
             bf_content = content
             bf_status = content.get("biofield_status") or "confirmed"
             bf_scan_date, bf_scan_dates, bf_actionable = None, [], False
+    # An owner hold (the console "Set to draft" button) wins over any stored status. It is
+    # the only way to un-publish a reveal date, which has no status of its own.
+    try:
+        from dashboard import report_holds as _rh
+        _rh.init_table(cx_r)
+        if bf_scan_date and _rh.is_held(cx_r, email_for_reports, bf_scan_date):
+            bf_status, bf_actionable = "ai_draft", False
+    except Exception as _he:
+        print(f"[portal] report-hold check skipped: {_he!r}", flush=True)
     cx_r.close()
     _request_timing_checkpoint("reports")
     bf_confirmed = bf_status == "confirmed"
@@ -30632,6 +30641,140 @@ def _biofield_content_clean(content):
     return content, has
 
 
+# Glen, 2026-09-15: "use our standard wording to build up from 1 drop by one additional drop
+# per day according to tolerance, up to a maximum of 15 drops per day (same as human dosing)".
+ANIMAL_INFOCEUTICAL_DOSING = ("Build up from 1 drop by one additional drop per day according to "
+                              "tolerance, up to a maximum of 15 drops per day.")
+
+
+def _animal_report_content(email, scan_date):
+    """An animal's Biofield report, built from its own scan's infoceuticals.
+
+    Glen, 2026-09-15: "publish animal reports recommending the infoceuticals recommended in
+    the e4l report, not our functional formulations", and "animal Biofield report reuses
+    that same infoceutical list" (the portal's animal card). One layer per infoceutical, in
+    the scan's rank order, titled with the card's label and naming the catalog product the
+    card's own resolver picks. miHealth cycles are not products and never appear.
+
+    Returns (content, missing). Every infoceutical the scan recommends stays in the report
+    (Glen: "all infoceuticals should be in our catalog"). One with no sellable product keeps
+    its label as the remedy and is listed in `missing`, so the draft is held rather than
+    silently shortened. None when the scan has no infoceuticals at all, or the scan date
+    does not match."""
+    recs = _scan_recommendations_for(email, scan_date) or {}
+    if scan_date and recs.get("scan_date") != scan_date:
+        return None
+    layers, reorder, missing = [], [], []
+    for item in (recs.get("infoceuticals") or []):
+        label = item.get("label") or item.get("code") or ""
+        product = _get_product(item.get("slug") or "") if item.get("slug") else None
+        n = len(layers) + 1
+        layers.append({"n": n, "title": label, "meaning": "",
+                       "remedy": (product or {}).get("name") or label,
+                       "dosing": ANIMAL_INFOCEUTICAL_DOSING, "patterns": [item.get("code") or ""]})
+        if product:
+            reorder.append({"slug": item["slug"], "qty": 1})
+        else:
+            missing.append(f"layer {n}: infoceutical {label!r} has no active catalog product")
+    if not layers:
+        return None
+    return ({"biofield_status": "ai_draft", "layers": layers, "reorder_items": reorder,
+             "report_kind": "animal_infoceuticals"}, missing)
+
+
+@app.route("/api/console/animal-report", methods=["POST"])
+def api_console_animal_report():
+    """Build and hand off an animal's Biofield report from its scan's infoceuticals.
+
+    Called by 02 Skills/e4l-portal-import.py for a client whose species is not human. Refuses
+    anyone client_species does not mark as an animal, so it can never replace a person's
+    formulation report. Writes an ai_draft through the same gate as any new scan: a re-sync
+    of a same-date confirmed report stays confirmed, and everything else goes through
+    autoconfirm. Never emails the client."""
+    if not _portal_console_ok():
+        return jsonify({"error": "unauthorized"}), 401
+    body = request.get_json(silent=True) or {}
+    email = (body.get("email") or "").strip().lower()
+    name = (body.get("name") or "").strip()
+    scan_date = (body.get("scan_date") or "").strip()
+    if not email or not scan_date:
+        return jsonify({"error": "email and scan_date required"}), 400
+    from dashboard import client_portal as _cp
+    from dashboard import client_species as _cs
+    from dashboard import portal_biofield_reports as _pbr
+    with db.connect(LOG_DB) as _scx:
+        _cs.init_table(_scx)
+        rec = _cs.get(_scx, email)
+    if not (rec and rec["is_animal"]):
+        return jsonify({"error": "not an animal client"}), 409
+    built = _animal_report_content(email, scan_date)
+    if not built:
+        return jsonify({"error": "no infoceuticals for that scan"}), 409
+    content, missing = built
+    with _db_lock, db.connect(LOG_DB) as cx:
+        _cp.init_client_portal_table(cx)
+        _pbr.init_table(cx)
+        existing = _pbr.get_report(cx, email, scan_date) or {}
+        if existing.get("status") == "confirmed":
+            content = dict(content, biofield_status="confirmed")
+        _cp.upsert_portal(cx, email, name, content)
+        _pbr.upsert_report(cx, email, scan_date, (body.get("scan_id") or ""), content,
+                           content["biofield_status"])
+        outcome = "kept_confirmed"
+        if content["biofield_status"] == "ai_draft" and missing:
+            # Held for the catalog to be fixed, not autoconfirmed with a shortened list.
+            from dashboard import analysis_autoconfirm as _ac
+            _ac.init_autoconfirm_log(cx)
+            _ac._log(cx, email, scan_date, "held_missing_infoceutical", missing, False,
+                     datetime.now(timezone.utc).isoformat())
+            outcome = "held_missing_infoceutical"
+        elif content["biofield_status"] == "ai_draft":
+            outcome = _run_autoconfirm(cx, email, scan_date, content)
+        status = (_pbr.get_report(cx, email, scan_date) or {}).get("status")
+    return jsonify({"ok": True, "email": email, "scan_date": scan_date, "status": status,
+                    "autoconfirm": outcome, "layers": len(content["layers"]),
+                    "missing": missing})
+
+
+@app.route("/api/console/client/report-draft", methods=["POST"])
+def api_console_client_report_draft():
+    """Owner "Set to draft" for one of a client's report dates (Glen, 2026-09-15).
+
+    Holds the date so the portal shows it as a draft with remedies blurred, and sets the
+    per-scan report row, if there is one, to ai_draft. A reveal-only date has no row to
+    change, so the hold is what un-publishes it. Only a later Publish of that date
+    releases the hold. Never emails the client."""
+    if not _portal_console_ok():
+        return jsonify({"error": "unauthorized"}), 401
+    body = request.get_json(silent=True) or {}
+    email = (body.get("email") or "").strip().lower()
+    scan_date = (body.get("scan_date") or "").strip()
+    if not email or not scan_date:
+        return jsonify({"error": "email and scan_date required"}), 400
+    from dashboard import portal_biofield_reports as _pbr
+    from dashboard import report_holds as _rh
+    with _db_lock, db.connect(LOG_DB) as cx:
+        _pbr.init_table(cx)
+        _rh.init_table(cx)
+        report = _pbr.get_report(cx, email, scan_date)
+        reveal = False
+        try:
+            from dashboard import biofield_reveals as _brv
+            _brv.init_table(cx)
+            reveal = any(r.get("scan_date") == scan_date for r in _brv.list_for_email(cx, email))
+        except Exception as e:
+            print(f"[report-draft] reveal lookup skipped: {e!r}", flush=True)
+        if not report and not reveal:
+            return jsonify({"error": "no report or reveal for that date"}), 404
+        _rh.hold(cx, email, scan_date, held_by="console")
+        previous = (report or {}).get("status")
+        if report:
+            _pbr.set_report_status(cx, email, scan_date, "ai_draft")
+    return jsonify({"ok": True, "email": email, "scan_date": scan_date, "held": True,
+                    "report_status_before": previous, "had_report": bool(report),
+                    "had_reveal": reveal})
+
+
 @app.route("/api/console/biofield-portal", methods=["POST"])
 def api_console_biofield_publish():
     if not _portal_console_ok():
@@ -30700,6 +30843,9 @@ def api_console_biofield_publish():
             _pbr.init_table(cx)
             _pbr.upsert_report(cx, email, scan_date,
                                (body.get("scan_id") or ""), content, "confirmed")
+            from dashboard import report_holds as _rh
+            _rh.init_table(cx)
+            _rh.release(cx, email, scan_date)   # the owner published this date again
         _log_biofield_correction(cx, email, scan_date, content)
     url = portal_link(link_token) if link_token else None
     emailed = False
@@ -30742,11 +30888,26 @@ def _run_autoconfirm(cx, email, scan_date, content):
         from dashboard.biofield_portal_publish import load_catalog, resolve_remedy_slug
         _ac.init_autoconfirm_log(cx)
         catalog = load_catalog()
+        resolve = lambda n: resolve_remedy_slug(n, catalog)
+        if ANALYSIS_AUTOCONFIRM_ENABLED:
+            # Read species directly, not through _client_species_for: that helper is gated
+            # on the greeting flag, and this rule must hold whatever the greeting does.
+            from dashboard import client_species as _cs
+            _cs.init_table(cx)
+            rec = _cs.get(cx, email)
+            if rec and rec["is_animal"]:
+                why = _ac.animal_formulation_reasons(
+                    content, resolve_slug=resolve,
+                    is_formulation=lambda s: _qty_eligible(catalog.get(s) or {}))
+                if why:
+                    _ac._log(cx, email, scan_date, "held_animal_formulation", why, False,
+                             datetime.now(timezone.utc).isoformat())
+                    return "held_animal_formulation"
         return _ac.maybe_auto_confirm(
             cx, email, scan_date, content,
             enabled=ANALYSIS_AUTOCONFIRM_ENABLED,
             sample_pct=ANALYSIS_AUTOCONFIRM_SAMPLE_PCT,
-            resolve_slug=lambda n: resolve_remedy_slug(n, catalog),
+            resolve_slug=resolve,
             red_flag_terms=_AUTOCONFIRM_RED_FLAGS,
             confirm_fn=_autoconfirm_confirm_fn,
             now=datetime.now(timezone.utc).isoformat())
@@ -35877,21 +36038,18 @@ def admin_client_portal_upsert():
     with _db_lock, db.connect(LOG_DB) as cx:
         _cp.init_client_portal_table(cx)
         _pbr.init_table(cx)
-        # Never un-publish: a re-hand-off pushes biofield_status='ai_draft', but if this
-        # client's analysis (or the report at this scan_date) is ALREADY confirmed, keep
-        # it confirmed so a re-sync can't re-blur a published analysis. Only an EXPLICIT
-        # stored 'confirmed' preserves — a brand-new client still starts as ai_draft.
+        # Never un-publish: a re-hand-off of the SAME scan pushes biofield_status='ai_draft',
+        # and if the report at this scan_date is already confirmed it stays confirmed, so a
+        # re-sync can't re-blur a published analysis. A NEW scan is never carried over from
+        # the client's earlier confirmed portal: every new analysis goes through the gate
+        # below (Glen, 2026-09-15). The old portal-level carry-over published 45 unchecked
+        # drafts from 2026-07-08 on, 23 of which failed the gate.
         if (content.get("biofield_status") or "").strip() == "ai_draft":
             keep = False
             try:
                 if scan_date:
                     rep0 = _pbr.get_report(cx, email, scan_date) or {}
                     keep = rep0.get("status") == "confirmed"
-                if not keep:
-                    row0 = cx.execute("SELECT content_json FROM client_portals WHERE email=?",
-                                      (email,)).fetchone()
-                    if row0:
-                        keep = (json.loads(row0[0] or "{}") or {}).get("biofield_status") == "confirmed"
             except Exception:
                 keep = False
             if keep:
