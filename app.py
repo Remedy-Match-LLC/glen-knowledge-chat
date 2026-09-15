@@ -10535,6 +10535,22 @@ def console_testimonial_invites_page():
     return resp
 
 
+@app.route("/api/console/cron-status", methods=["GET"])
+def api_console_cron_status():
+    """Last start, last success, failure count and duration for each in-app scheduled job.
+    `stale` means no success in 3 hours. `alert` means stale or 3 failures in a row. No
+    output text, secrets or addresses. Console-key gated."""
+    if not _console_key_ok():
+        return jsonify({"error": "Unauthorized"}), 401
+    from dashboard import cron_status as _cs
+    with db.connect(LOG_DB) as cx:
+        _cs.init_table(cx)
+        jobs = _cs.all_status(cx)
+    return jsonify({"ok": True, "jobs": jobs,
+                    "stale_after_hours": _cs.STALE_AFTER.total_seconds() / 3600,
+                    "failure_alert": _cs.FAILURE_ALERT})
+
+
 @app.route("/api/console/testimonial-invites", methods=["GET"])
 def api_testimonial_invites_list():
     if not _TESTIMONIAL_INVITES_ENABLED:
@@ -46739,6 +46755,50 @@ def _run_prompt_topup():
         print(f"[sales-img] prompt topup failed: {e}", flush=True)
 
 
+_CONSOLE_PUSH_SCRIPT = "/opt/render/project/src/console_push_cron.py"
+_CONSOLE_PUSH_TIMEOUT_S = 300
+_PEOPLE_SYNC_TIMEOUT_S = 240
+_CRON_TOKEN_DIR = "/tmp"  # Render's container; the Gmail tokens live in oauth_tokens
+
+
+def _cron_env():
+    env = os.environ.copy()
+    env["RENDER_BASE"] = f"https://{os.environ.get('RENDER_EXTERNAL_HOSTNAME','glen-knowledge-chat.onrender.com')}"
+    return env
+
+
+def _run_recorded_job(job, args, timeout, env):
+    """Run one scheduled script through cron_runner and record its start and result in
+    cron_job_status. A timeout, a non-zero exit and an exception all count as failures.
+    A status write that fails is printed and never stops the job."""
+    from dashboard import cron_runner as _cr, cron_status as _cs
+    try:
+        with _db_lock, db.connect(LOG_DB) as cx:
+            _cs.init_table(cx)
+            _cs.record_start(cx, job)
+    except Exception as e:
+        print(f"[{job}] status start not recorded: {type(e).__name__}", flush=True)
+    try:
+        res = _cr.run_script(args, timeout, env=env, label=job)
+    except Exception as e:
+        res = {"ok": False, "error": f"exception: {type(e).__name__}", "duration_s": None}
+        print(f"[{job}] runner failed: {type(e).__name__}", flush=True)
+    try:
+        with _db_lock, db.connect(LOG_DB) as cx:
+            _cs.init_table(cx)
+            _cs.record_result(cx, job, res.get("ok"), res.get("error", ""), res.get("duration_s"))
+    except Exception as e:
+        print(f"[{job}] status result not recorded: {type(e).__name__}", flush=True)
+    return res
+
+
+def _run_people_sync():
+    """GHL contacts, tags and email DND into the hub people table, as its own hourly job."""
+    print(f"[people_sync] starting at {datetime.now().strftime('%Y-%m-%d %H:%M')}", flush=True)
+    _run_recorded_job("people_sync", ["python3", _CONSOLE_PUSH_SCRIPT, "--people-only"],
+                      _PEOPLE_SYNC_TIMEOUT_S, _cron_env())
+
+
 def _run_cron():
     """Run the console push logic in-process on Render (no Mac needed)."""
     import importlib.util, sys as _sys, tempfile, base64 as _b64
@@ -46748,9 +46808,9 @@ def _run_cron():
 
     # Load tokens from DB → temp files
     token_map = {
-        "glen_gmail":  "/tmp/token_glen.json",
-        "rae_gmail":   "/tmp/token_rae.json",
-        "calendar":    "/tmp/token_calendar.json",
+        "glen_gmail":  os.path.join(_CRON_TOKEN_DIR, "token_glen.json"),
+        "rae_gmail":   os.path.join(_CRON_TOKEN_DIR, "token_rae.json"),
+        "calendar":    os.path.join(_CRON_TOKEN_DIR, "token_calendar.json"),
     }
     with db.connect(LOG_DB) as cx:
         for name, path in token_map.items():
@@ -46758,29 +46818,17 @@ def _run_cron():
             if row:
                 _Path(path).write_text(row[0])
 
-    # Import and run console-push logic with Render token paths
+    # Run the push script as a subprocess so it uses the right paths. The GHL people sync
+    # is its own job (_run_people_sync), so a slow Gmail step cannot starve it.
     try:
-        import requests as _req
-
-        base_url  = f"http://localhost:{os.environ.get('PORT','10000')}"
-        headers   = {"X-Console-Key": CONSOLE_SECRET, "Content-Type": "application/json"}
-
-        # Run the push script as a subprocess so it uses the right paths
-        import subprocess as _sp
-        env = os.environ.copy()
+        env = _cron_env()
         env["GLEN_TOKEN_PATH"]     = token_map["glen_gmail"]
         env["RAE_TOKEN_PATH"]      = token_map["rae_gmail"]
         env["CALENDAR_TOKEN_PATH"] = token_map["calendar"]
-        env["RENDER_BASE"]         = f"https://{os.environ.get('RENDER_EXTERNAL_HOSTNAME','glen-knowledge-chat.onrender.com')}"
-        result = _sp.run(
-            ["python3", "/opt/render/project/src/console_push_cron.py"],
-            capture_output=True, text=True, timeout=300, env=env
-        )
-        print(result.stdout[-3000:] if result.stdout else "(no output)")
-        if result.returncode != 0:
-            print(f"[CRON] Error: {result.stderr[-1000:]}")
+        _run_recorded_job("console_push", ["python3", _CONSOLE_PUSH_SCRIPT, "--skip-people"],
+                          _CONSOLE_PUSH_TIMEOUT_S, env)
 
-        # Save any refreshed tokens back to DB
+        # Save any refreshed tokens back to DB, whatever the run's result
         for name, path in token_map.items():
             p = _Path(path)
             if p.exists():
@@ -46800,6 +46848,10 @@ def _start_scheduler():
         scheduler = BackgroundScheduler()
         scheduler.add_job(_run_cron, "interval", hours=1, id="console_push",
                           next_run_time=datetime.now(timezone.utc))
+        # Its own job and time budget, first run two minutes after boot so it does not
+        # start alongside the push. Status: GET /api/console/cron-status.
+        scheduler.add_job(_run_people_sync, "interval", hours=1, id="people_sync",
+                          next_run_time=datetime.now(timezone.utc) + timedelta(minutes=2))
         # Certification bonus Biofields: daily sweep at 15:00 UTC (5am HST). Flag-gated
         # (CERT_BONUS_ENABLED) inside _run_biofield_bonuses, so this is a safe no-op until on.
         scheduler.add_job(_run_biofield_bonuses, "cron", hour=15, minute=0,
