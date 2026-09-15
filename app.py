@@ -8703,6 +8703,18 @@ def begin_product_page(slug):
     return resp
 
 
+@app.route("/begin/cart")
+def begin_cart_page():
+    """The storefront cart page. Gated by _PORTAL_CART_ENABLED, not the shop flag
+    (Task 1-3's _SHOP_ENABLED, not yet defined at this task), because Add to cart
+    is already live on the product page."""
+    if not _PORTAL_CART_ENABLED:
+        return ("", 404)
+    resp = Response((STATIC / "begin-cart.html").read_text(encoding="utf-8"), mimetype="text/html")
+    resp.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+    return resp
+
+
 def _rec_valid_slug(slug):
     """Return the catalog-resolved, sellable slug for `slug`, or None. Routes through
     _get_product so it follows supersession and rejects retired (inactive) products —

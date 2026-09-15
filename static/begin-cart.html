@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <link rel="icon" type="image/png" href="/static/favicon.png">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Your cart · Dr. Glen Swartwout</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;600&family=Raleway:wght@600;700&display=swap" rel="stylesheet" />
+  <style>
+    :root{ --bg:#0a150d; --surface:#111f16; --surface-2:#162318; --border:#21472d;
+      --cream:#fdf4d8; --muted:#a89870; --gold:#d4a843; --green:#3d8a52;
+      --maxw:760px; --radius:14px; --ease:cubic-bezier(0.22,1,0.36,1);
+      --font:"Open Sans",system-ui,sans-serif; --heading:"Raleway",system-ui,sans-serif; }
+    *{box-sizing:border-box;margin:0;padding:0;}
+    body{ background:var(--bg); color:var(--cream); font-family:var(--font);
+      font-size:17px; line-height:1.7; -webkit-font-smoothing:antialiased;
+      background-image:radial-gradient(120% 80% at 50% -10%, rgba(212,168,67,0.07), transparent 60%);
+      background-attachment:fixed; }
+    h1,h2,h3{ font-family:var(--heading); font-weight:600; line-height:1.25; letter-spacing:-0.01em; }
+    a{ color:inherit; text-decoration:none; }
+    .shell{ max-width:var(--maxw); margin:0 auto; padding:0 24px 48px; }
+    .brandbar{ max-width:var(--maxw); margin:0 auto; padding:30px 24px 8px; display:flex; align-items:center; justify-content:center; gap:14px; }
+    .brand-mark{ width:7px; height:7px; border-radius:50%; background:var(--gold); box-shadow:0 0 0 4px rgba(212,168,67,0.12); }
+    .brand-name{ font-family:var(--heading); font-weight:600; font-size:13px; letter-spacing:0.32em; color:var(--muted); }
+
+    h1{ font-size:clamp(24px,5vw,30px); color:var(--cream); margin-top:34px; }
+    .muted{ color:var(--muted); font-size:14.5px; margin-top:10px; line-height:1.6; }
+
+    #cart-items{ margin-top:28px; }
+    .line{ display:flex; align-items:center; flex-wrap:wrap; gap:12px 14px;
+      padding:16px 0; border-bottom:1px solid var(--border); }
+    .line a{ font-weight:600; font-size:15px; color:var(--cream); flex:1 1 auto; min-width:160px; }
+    .badge{ font-size:12px; color:var(--muted); border:1px solid var(--border);
+      border-radius:999px; padding:3px 10px; }
+    .qty{ display:inline-flex; align-items:center; gap:8px; font-family:var(--heading); }
+    .qty span{ min-width:18px; text-align:center; font-weight:600; }
+    .qty button{ width:30px; height:30px; border-radius:50%; border:1px solid rgba(212,168,67,0.4);
+      background:transparent; color:var(--gold); font-size:16px; line-height:1; cursor:pointer;
+      transition:border-color .2s var(--ease), background .2s var(--ease); }
+    .qty button:hover{ border-color:var(--gold); background:rgba(212,168,67,0.08); }
+    .remove{ background:transparent; border:none; color:var(--muted); font-size:13px;
+      cursor:pointer; text-decoration:underline; }
+    .remove:hover{ color:var(--cream); }
+
+    .cart-actions{ display:flex; align-items:center; justify-content:space-between;
+      flex-wrap:wrap; gap:16px; margin-top:28px; }
+    .text-link{ color:var(--gold); font-family:var(--heading); font-weight:600; font-size:14px; }
+    .text-link:hover{ text-decoration:underline; }
+    .cta-btn{ display:inline-block; background:var(--gold); color:#0a150d; font-family:var(--heading);
+      font-weight:700; font-size:15px; letter-spacing:0.03em; padding:14px 34px; border:none;
+      border-radius:999px; cursor:pointer;
+      transition:opacity .25s var(--ease), transform .25s var(--ease); }
+    .cta-btn:hover:not(:disabled){ opacity:0.9; transform:translateY(-1px); }
+    .cta-btn:disabled{ opacity:0.5; cursor:default; transform:none; }
+
+    button:focus-visible, a:focus-visible{ outline:2px solid var(--gold); outline-offset:3px; }
+
+    :root[data-theme="light"] .text-link{ color:#7A5C1F; }
+    :root[data-theme="light"] .qty button{ color:#7A5C1F; border-color:#B08A3E; }
+    :root[data-theme="light"] .qty button:hover{ border-color:#7A5C1F; background:rgba(176,138,62,0.08); }
+    :root[data-theme="light"] button:focus-visible,
+    :root[data-theme="light"] a:focus-visible{ outline-color:#7A5C1F; }
+
+    @media(max-width:560px){
+      body{ font-size:16px; }
+      .shell{ padding:0 18px 40px; }
+      .line{ flex-direction:column; align-items:flex-start; }
+      .line a{ min-width:0; }
+      .cart-actions{ flex-direction:column; align-items:stretch; }
+      .cart-actions .cta-btn{ width:100%; text-align:center; }
+    }
+  </style>
+  <script src="/static/theme-toggle.js"></script>
+  <script src="/static/theme-mode.js"></script>
+</head>
+<body>
+  <div id="theme-toggle-wrap" style="position:fixed;top:14px;right:16px;z-index:50"><span class="theme-toggle" id="themeToggle" role="group" aria-label="Theme mode"></span></div>
+  <div class="brandbar"><span class="brand-mark" aria-hidden="true"></span>
+    <span class="brand-name">Remedy&nbsp;Match &nbsp;&middot;&nbsp; Healing&nbsp;Oasis</span></div>
+  <main class="shell">
+    <h1>Your cart</h1>
+    <p class="muted">Your price, shipping and any member savings are confirmed at checkout.</p>
+    <div id="cart-items" aria-live="polite">Loading&hellip;</div>
+    <p id="cart-msg" class="muted" role="status"></p>
+    <div class="cart-actions">
+      <a class="text-link" id="keep-shopping" href="#">Keep shopping</a>
+      <button id="cart-checkout" class="cta-btn" type="button" disabled>Checkout</button>
+    </div>
+  </main>
+  <script src="/static/optin-gate.js"></script>
+  <script>
+  (function(){
+    // A later task changes this to /shop, once /shop exists. One constant, both links.
+    var BROWSE_PAGE = "/begin/match";
+    var box = document.getElementById("cart-items"), msg = document.getElementById("cart-msg");
+    var btn = document.getElementById("cart-checkout");
+    document.getElementById("keep-shopping").href = BROWSE_PAGE;
+    function esc(s){ return String(s||"").replace(/[&<>"]/g, function(ch){
+      return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[ch]; }); }
+    function render(d){
+      var items = (d && d.items) || [];
+      btn.disabled = !items.some(function(i){ return i.available; });
+      if (!items.length){
+        box.innerHTML = '<p>Your cart is empty. <a class="text-link" id="browse-remedies" href="#">Browse remedies</a>.</p>';
+        document.getElementById("browse-remedies").href = BROWSE_PAGE;
+        return;
+      }
+      box.innerHTML = items.map(function(i){
+        return '<div class="line" data-slug="' + esc(i.slug) + '" data-format="' + esc(i.format) + '">' +
+          '<a href="/begin/product/' + esc(i.slug) + '">' + esc(i.name) + '</a>' +
+          (i.available ? '' : ' <span class="badge">No longer available</span>') +
+          '<span class="qty"><button type="button" data-d="-1" aria-label="One fewer ' + esc(i.name) + '">&minus;</button>' +
+          '<span>' + i.qty + '</span><button type="button" data-d="1" aria-label="One more ' + esc(i.name) + '">+</button></span>' +
+          '<button type="button" class="remove" aria-label="Remove ' + esc(i.name) + ' from cart">Remove</button></div>';
+      }).join("");
+      box.querySelectorAll(".line button").forEach(function(b){
+        b.onclick = function(){
+          var line = b.closest(".line"), cur = parseInt(line.querySelector(".qty span").textContent, 10);
+          var qty = b.classList.contains("remove") ? 0 : Math.max(0, cur + parseInt(b.dataset.d, 10));
+          post("/api/cart/set-qty", {slug: line.dataset.slug, format: line.dataset.format, qty: qty}).then(render);
+        };
+      });
+    }
+    function post(url, body){
+      return fetch(url, {method: "POST", credentials: "same-origin",
+        headers: {"Content-Type": "application/json"}, body: JSON.stringify(body || {})})
+        .then(function(r){ return r.json(); });
+    }
+    function load(){
+      fetch("/api/cart", {credentials: "same-origin"}).then(function(r){ return r.json(); })
+        .then(render).catch(function(){ box.textContent = "Your cart could not load. Please try again."; });
+    }
+    function checkout(){
+      btn.disabled = true; msg.textContent = "Starting checkout…";
+      post("/api/cart/checkout").then(function(d){
+        if (d && d.need_optin && window.OptinGate){ btn.disabled = false; msg.textContent = "";
+          OptinGate.show({base: "", onAgree: function(){ checkout(); }}); return; }
+        if (d && d.ok && d.stripe_url){ location.href = d.stripe_url; return; }
+        if (d && d.ok){ msg.textContent = "Your order is placed. A confirmation is on its way."; load(); return; }
+        if (d && d.unavailable){ msg.textContent = "Some items are no longer available. Remove them to continue."; load(); return; }
+        msg.textContent = (d && d.error) || "Checkout did not start. Please try again."; btn.disabled = false;
+      }).catch(function(){ msg.textContent = "Checkout did not start. Please try again."; btn.disabled = false; });
+    }
+    btn.onclick = checkout;
+    load();
+  })();
+  </script>
+</body>
+</html>
