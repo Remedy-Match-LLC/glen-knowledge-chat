@@ -30641,6 +30641,84 @@ def _biofield_content_clean(content):
     return content, has
 
 
+# Glen, 2026-09-15: "use our standard wording to build up from 1 drop by one additional drop
+# per day according to tolerance, up to a maximum of 15 drops per day (same as human dosing)".
+ANIMAL_INFOCEUTICAL_DOSING = ("Build up from 1 drop by one additional drop per day according to "
+                              "tolerance, up to a maximum of 15 drops per day.")
+
+
+def _animal_report_content(email, scan_date):
+    """An animal's Biofield report, built from its own scan's infoceuticals.
+
+    Glen, 2026-09-15: "publish animal reports recommending the infoceuticals recommended in
+    the e4l report, not our functional formulations", and "animal Biofield report reuses
+    that same infoceutical list" (the portal's animal card). One layer per infoceutical, in
+    the scan's rank order, titled with the card's label and naming the catalog product the
+    card's own resolver picks. miHealth cycles are not products and never appear. An
+    infoceutical with no sellable product is left out. None when there is nothing to show."""
+    recs = _scan_recommendations_for(email, scan_date) or {}
+    if scan_date and recs.get("scan_date") != scan_date:
+        return None
+    layers, reorder = [], []
+    for item in (recs.get("infoceuticals") or []):
+        product = _get_product(item.get("slug") or "") if item.get("slug") else None
+        if not product:
+            continue
+        layers.append({"n": len(layers) + 1, "title": item.get("label") or item.get("code") or "",
+                       "meaning": "", "remedy": product.get("name") or "",
+                       "dosing": ANIMAL_INFOCEUTICAL_DOSING, "patterns": [item.get("code") or ""]})
+        reorder.append({"slug": item["slug"], "qty": 1})
+    if not layers:
+        return None
+    return {"biofield_status": "ai_draft", "layers": layers, "reorder_items": reorder,
+            "report_kind": "animal_infoceuticals"}
+
+
+@app.route("/api/console/animal-report", methods=["POST"])
+def api_console_animal_report():
+    """Build and hand off an animal's Biofield report from its scan's infoceuticals.
+
+    Called by 02 Skills/e4l-portal-import.py for a client whose species is not human. Refuses
+    anyone client_species does not mark as an animal, so it can never replace a person's
+    formulation report. Writes an ai_draft through the same gate as any new scan: a re-sync
+    of a same-date confirmed report stays confirmed, and everything else goes through
+    autoconfirm. Never emails the client."""
+    if not _portal_console_ok():
+        return jsonify({"error": "unauthorized"}), 401
+    body = request.get_json(silent=True) or {}
+    email = (body.get("email") or "").strip().lower()
+    name = (body.get("name") or "").strip()
+    scan_date = (body.get("scan_date") or "").strip()
+    if not email or not scan_date:
+        return jsonify({"error": "email and scan_date required"}), 400
+    from dashboard import client_portal as _cp
+    from dashboard import client_species as _cs
+    from dashboard import portal_biofield_reports as _pbr
+    with db.connect(LOG_DB) as _scx:
+        _cs.init_table(_scx)
+        rec = _cs.get(_scx, email)
+    if not (rec and rec["is_animal"]):
+        return jsonify({"error": "not an animal client"}), 409
+    content = _animal_report_content(email, scan_date)
+    if not content:
+        return jsonify({"error": "no orderable infoceuticals for that scan"}), 409
+    with _db_lock, db.connect(LOG_DB) as cx:
+        _cp.init_client_portal_table(cx)
+        _pbr.init_table(cx)
+        existing = _pbr.get_report(cx, email, scan_date) or {}
+        if existing.get("status") == "confirmed":
+            content = dict(content, biofield_status="confirmed")
+        _cp.upsert_portal(cx, email, name, content)
+        _pbr.upsert_report(cx, email, scan_date, (body.get("scan_id") or ""), content,
+                           content["biofield_status"])
+        outcome = "kept_confirmed"
+        if content["biofield_status"] == "ai_draft":
+            outcome = _run_autoconfirm(cx, email, scan_date, content)
+        status = (_pbr.get_report(cx, email, scan_date) or {}).get("status")
+    return jsonify({"ok": True, "email": email, "scan_date": scan_date, "status": status,
+                    "autoconfirm": outcome, "layers": len(content["layers"])})
+
+
 @app.route("/api/console/client/report-draft", methods=["POST"])
 def api_console_client_report_draft():
     """Owner "Set to draft" for one of a client's report dates (Glen, 2026-09-15).
