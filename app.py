@@ -3594,13 +3594,15 @@ def begin_fireside_agent():
                     yield tok
         from dashboard.chat_cta import stream_visible
         try:
-            for delta in stream_visible(_toks(), sentinel=fireside_agent.HOOK_SENTINEL):
+            for delta in _store_links_stream(
+                    stream_visible(_toks(), sentinel=fireside_agent.HOOK_SENTINEL)):
                 yield sse({"token": delta})
         except Exception as e:
             yield sse({"error": True, "detail": str(e)})
             return
 
         clean, hooked = fireside_agent.parse_hook("".join(full))
+        clean = _store_links_text(clean)
         hooked = bool(hooked and fireside_agent.should_hook(this_turn, coverage, message))
         with _db_lock, db.connect(LOG_DB) as cx:
             fireside_store.append_turn(cx, fireside_id, "glendalf", clean)
@@ -5843,7 +5845,7 @@ def chat():
                         full_answer.append(token)
                         yield token
 
-            for delta in stream_visible(_toks()):
+            for delta in _store_links_stream(stream_visible(_toks())):
                 yield sse({"token": delta})
         except Exception as e:
             yield sse({"error": f"Claude error: {e}"})
@@ -5858,6 +5860,7 @@ def chat():
             _clean, _cta = parse_cta("".join(full_answer))
         except Exception:
             _clean, _cta = "".join(full_answer), None
+        _clean = _store_links_text(_clean)  # log and downstream use what the client saw
         _rung = _CTA_RUNG.get((_cta or {}).get("type"))
         answer = _clean  # directive-stripped; downstream Socratic/surface code uses this
 
@@ -6083,8 +6086,25 @@ def _is_legacy_storefront_url(url):
     """True for a remedymatch.com link. The legacy storefront carries only a
     fraction of the catalog, clients have been unable to complete checkout on
     it, and it is being retired — so it must never be a client-facing CTA. The
-    chat prompt already says this; this enforces it in the code that renders."""
-    return "remedymatch.com" in (url or "").lower()
+    chat prompt already says this; this enforces it in the code that renders.
+    One implementation: dashboard.legacy_store_links, which also rewrites such
+    links inside chat answers (_store_links_stream / _store_links_text)."""
+    from dashboard import legacy_store_links as _lsl
+    return _lsl.is_legacy_store_url(url)
+
+
+def _store_links_stream(deltas):
+    """Streamed answer deltas with old store links rewritten to the new product
+    pages, or removed when no live product matches. Drains `deltas` fully."""
+    from dashboard import legacy_store_links as _lsl
+    return _lsl.rewrite_stream(deltas, PUBLIC_BASE_URL)
+
+
+def _store_links_text(text):
+    """The same rewrite for a whole answer: what gets logged or cached is what the
+    client was shown."""
+    from dashboard import legacy_store_links as _lsl
+    return _lsl.rewrite_text(text, PUBLIC_BASE_URL)
 _REMEDY_MATCH_SYSTEM = (
     "You are RemedyMatch, Dr. Glen Swartwout's warm, Socratic remedy-matching guide "
     "(naturopathic physician, Hilo Hawai'i). Goal: through brief back-and-forth, help the "
@@ -6379,7 +6399,8 @@ def begin_match_chat():
                 def _toks():
                     for tok in stream.text_stream:
                         t = _strip_dash(tok); full.append(t); yield t
-                for delta in stream_visible(_toks(), sentinel=CHIPS_SENTINEL):
+                for delta in _store_links_stream(
+                        stream_visible(_toks(), sentinel=CHIPS_SENTINEL)):
                     yield sse({"token": delta})
         except Exception as e:
             yield sse({"error": f"Claude error: {e}"}); return
@@ -6387,6 +6408,7 @@ def begin_match_chat():
             _clean, _chips = parse_chips("".join(full))
         except Exception:
             _clean, _chips = "".join(full), []
+        _clean = _store_links_text(_clean)
         answer = _clean
 
         try:
@@ -9225,11 +9247,14 @@ def begin_product_page_gen(slug, section):
                 system=system,
                 messages=[{"role": "user", "content": user}],
             ) as stream:
-                for tok in stream.text_stream:
-                    tok = _strip_dash(tok)
-                    acc.append(tok)
-                    yield sse({"token": tok})
-            text = "".join(acc).strip()
+                def _toks():
+                    for tok in stream.text_stream:
+                        tok = _strip_dash(tok)
+                        acc.append(tok)
+                        yield tok
+                for delta in _store_links_stream(_toks()):
+                    yield sse({"token": delta})
+            text = _store_links_text("".join(acc).strip())  # cache what the page showed
             if text:
                 try:
                     with db.connect(LOG_DB) as cx:
@@ -9871,11 +9896,14 @@ def begin_ingredient_page_gen(slug, section):
                 system=system,
                 messages=[{"role": "user", "content": user}],
             ) as stream:
-                for tok in stream.text_stream:
-                    tok = _strip_dash(tok)
-                    acc.append(tok)
-                    yield sse({"token": tok})
-            text = "".join(acc).strip()
+                def _toks():
+                    for tok in stream.text_stream:
+                        tok = _strip_dash(tok)
+                        acc.append(tok)
+                        yield tok
+                for delta in _store_links_stream(_toks()):
+                    yield sse({"token": delta})
+            text = _store_links_text("".join(acc).strip())  # cache what the page showed
             if text:
                 try:
                     with _db_lock, db.connect(LOG_DB) as cx:
@@ -12966,11 +12994,14 @@ def begin_concierge_chat():
         try:
             with _cl.messages.stream(model="claude-haiku-4-5-20251001", max_tokens=700,
                                      system=_sys_concierge, messages=messages) as stream:
-                for tok in stream.text_stream:
-                    tok = _strip_dash(tok); full.append(tok); yield sse({"token": tok})
+                def _toks():
+                    for tok in stream.text_stream:
+                        tok = _strip_dash(tok); full.append(tok); yield tok
+                for delta in _store_links_stream(_toks()):
+                    yield sse({"token": delta})
         except Exception as e:
             yield sse({"error": f"Claude error: {e}"}); return
-        answer = "".join(full)
+        answer = _store_links_text("".join(full))
         try:
             import threading as _t
             _t.Thread(target=ash_ally.record_turn,
@@ -13363,8 +13394,8 @@ def _full_report_stream(log_id, query, level, session_id,
                 system=get_system_prompt(level),
                 messages=[{"role": "user", "content": user_msg}],
             ) as stream:
-                for tok in stream.text_stream:
-                    yield sse({"token": tok})
+                for delta in _store_links_stream(stream.text_stream):
+                    yield sse({"token": delta})
         except Exception as e:
             yield sse({"error": f"Claude error: {e}"})
             return
@@ -18146,7 +18177,8 @@ def api_practitioner_assist():
             yield sse({"done": True, "sources": sources_list,
                        "chunks_retrieved": len(matches)})
             return
-        grounded_answer = _assist_ground_answer(answer, extracted_items, products)
+        grounded_answer = _store_links_text(
+            _assist_ground_answer(answer, extracted_items, products))
         yield sse({"token": grounded_answer})
         if products:
             yield sse({"products": products})
@@ -29760,15 +29792,18 @@ def api_portal_chat(token):
         try:
             with _cl.messages.stream(model="claude-haiku-4-5-20251001", max_tokens=700,
                                      system=_sys, messages=messages) as stream:
-                for tok in stream.text_stream:
-                    tok = _strip_dash(tok); full.append(tok); yield sse({"token": tok})
+                def _toks():
+                    for tok in stream.text_stream:
+                        tok = _strip_dash(tok); full.append(tok); yield tok
+                for delta in _store_links_stream(_toks()):
+                    yield sse({"token": delta})
         except Exception as e:
             # Never expose provider/network internals in a member's portal.
             # The browser keeps the original message in the composer so it can
             # be retried after a transient deployment or provider interruption.
             print(f"[portal-concierge] response failed: {e!r}", flush=True)
             yield sse({"error": "assistant temporarily unavailable"}); return
-        answer = "".join(full)
+        answer = _store_links_text("".join(full))  # the stored thread matches what was shown
         try:
             import threading as _t
             _t.Thread(target=ash_ally.record_turn,
