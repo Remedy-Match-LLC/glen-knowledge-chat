@@ -34,6 +34,10 @@ body.js-shell-on { padding-top: var(--jshell-h); }
 #journey-shell .js-portal-cart-btn, #journey-shell .js-store-cart-btn {
   position: relative; display: inline-flex; align-items: center;
   gap: 5px; min-height: 30px; padding-right: 11px; overflow: visible; }
+/* Desktop keeps the text-only "Cart" button from commit cb367117. The icon
+   exists in the markup at every width, but only shows under 640px, where
+   it replaces the label the rule below hides. */
+#journey-shell .js-cart-icon { display: none; flex-shrink: 0; }
 #journey-shell .js-cart-badge { position: absolute; top: -8px; right: -7px; min-width: 18px;
   height: 18px; box-sizing: border-box; padding: 0 5px; border: 2px solid var(--surface, #14201a);
   border-radius: 999px; background: var(--gold, #d4a843); color: #14201a;
@@ -77,6 +81,8 @@ body.js-shell-on { padding-top: var(--jshell-h); }
   #journey-shell .js-path .js-trail-link { display: none; }
   #journey-shell .js-portal-cart-btn .js-cart-label,
   #journey-shell .js-store-cart-btn .js-cart-label { display: none; }
+  #journey-shell .js-portal-cart-btn .js-cart-icon,
+  #journey-shell .js-store-cart-btn .js-cart-icon { display: inline-flex; }
   #journey-shell .js-portal-cart-btn, #journey-shell .js-store-cart-btn { padding: 5px 8px; }
   #journey-shell .js-label-desktop { display: none; }
   #journey-shell .js-label-mobile { display: inline; }
