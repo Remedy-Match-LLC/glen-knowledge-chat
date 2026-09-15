@@ -97,4 +97,3 @@ tests/test_tax.py::test_checkout_records_get_on_order_not_invoice
 tests/test_topic_offer_wiring.py::test_console_suggestions_html_exists
 tests/test_topic_pages_wiring.py::test_topic_console_html_exists
 tests/test_tos_consistency.py::test_reorder_items_member_not_gated
-tests/test_related_products.py::test_auto_drops_self_inactive_and_do_not_recommend
