@@ -21,3 +21,11 @@ def test_store_cart_button_is_excluded_from_the_cart_page_itself():
     # /begin/cart/), not just rely on the button being harmless there.
     assert "/begin/cart" in SHELL
     assert "!/^\\/begin\\/cart\\/?$/.test(location.pathname)" in SHELL
+
+
+def test_store_cart_badge_hides_at_zero_while_the_button_stays_visible():
+    # Review finding, fix round 1: an empty cart must not show a blank gold
+    # pill. Match the portal button's pattern (cartBadge.hidden = count === 0)
+    # on the badge only, so the Cart link itself still shows once /api/cart
+    # is ok.
+    assert "badge.hidden = n === 0" in SHELL

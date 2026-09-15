@@ -140,7 +140,9 @@
         .then(function (d) {
           if (!d || !d.ok) return;
           var n = Math.max(0, parseInt(d.count, 10) || 0);
-          storeCart.querySelector(".js-cart-badge").textContent = n ? String(n) : "";
+          var badge = storeCart.querySelector(".js-cart-badge");
+          badge.textContent = n ? String(n) : "";
+          badge.hidden = n === 0;
           storeCart.setAttribute("aria-label", n ? "Cart with " + n + " item" + (n === 1 ? "" : "s") : "Cart");
           storeCart.hidden = false;
         }).catch(function () {});
