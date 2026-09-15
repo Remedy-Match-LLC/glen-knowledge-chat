@@ -14,11 +14,15 @@
      "slug": "adrenal",
      "name": "Adrenal",
      "alt_name": "",
-     "description": "Our top Adrenal remedy is Adrenal Repair: Sublingual 7-Keto. 7-Keto DHEA is a natural metabolite of the adrenal gland's over-the-counter (in the States) Dehydroepiandrosterone (DHEA). While it delivers the same anti-inflammatory benefits, reducing the need for prescription steroids, and easing tapering off the Rx forms, it support restoration of the adrenals' anti-inflammatory function without affecting other hormone levels such as Estrogen and Testosterone for which DHEA is a precursor.",
+     "description": "Supports the adrenals' natural anti-inflammatory function and our resilience under stress. Supportive remedies: Adrenal Syntropy or Endocrine Restore Powder. Associated emotional conflict: Self-Worth. Supportive essences: Self-Esteem Flower Essence, Worthiness Flower Essence.",
      "remedies": [
       {
-       "name": "Adrenal Repair: Sublingual 7-Keto",
-       "url": "https://remedymatch.com/body-systems/system-4-communicate/endocrine/adrenals/109-sublingual-7-keto"
+       "name": "Adrenal Syntropy",
+       "url": "/begin/product/adrenal-syntropy"
+      },
+      {
+       "name": "Endocrine Restore Powder",
+       "url": "/begin/product/endocrine-restore-powder"
       }
      ]
     },
@@ -830,9 +834,8 @@
      "slug": "triple-warmer-meridian",
      "name": "Triple Warmer Meridian",
      "alt_name": "Meridian Komplex 9",
-     "description": "The Triple Warmer Meridian is also called the Triple Cavity, Three Heater, or Triple Burner Meridian, and we also refer to it as the Endocrine Meridian.The Triple Warmer Meridian is a Yang Vessel in the Fire Element complementary to the Yin Circulation Meridian.This pattern is also related to Chakra 6 in the Kern-Pharma system.Consider formulas including Endocrine Repair, Adrenal Repair: Sublingual 7-Keto, Stress Release, and Sleep Synergy for Endocrine Meridian support.[*\"The statements herein have not been evaluated by the Food and Drug Administration. This is not intended to diagnose, treat, cure, or prevent any disease.\"] T.D.C.",
-     "remedies": [],
-     "description_snapshot_2026_07_14": "(Meridian Komplex 9)The Triple Warmer Meridian is also called the Triple Cavity, Three Heater, or Triple Burner Meridian, and we also refer to it as the Endocrine Meridian.The Triple Warmer Meridian is a Yang Vessel in the Fire Element complementary to the Yin Circulation Meridian.This pattern is also related to Chakra 6 in the Kern-Pharma system.Consider formulas including Endocrine Repair, Adrenal Repair: Sublingual 7-Keto, Stress Release, and Sleep Synergy for Endocrine Meridian support. Learn More © Copyclaim 2023Remedy Match LLC, DBA Healing Oasis[email protected]PO Box 126 Hilo, Hawai'i-"
+     "description": "The Triple Warmer Meridian is also called the Triple Cavity, Three Heater, or Triple Burner Meridian, and we also refer to it as the Endocrine Meridian.The Triple Warmer Meridian is a Yang Vessel in the Fire Element complementary to the Yin Circulation Meridian.This pattern is also related to Chakra 6 in the Kern-Pharma system.Consider formulas including Endocrine Restore Powder, Adrenal Syntropy, Stress Release, and Sleep Syntropy for Endocrine Meridian support.[*\"The statements herein have not been evaluated by the Food and Drug Administration. This is not intended to diagnose, treat, cure, or prevent any disease.\"] T.D.C.",
+     "remedies": []
     }
    ],
    "intro": [
@@ -2179,28 +2182,35 @@
      "slug": "7-keto-dehydroepiandrosterone",
      "name": "7-Keto Dehydroepiandrosterone",
      "alt_name": "7-Keto DHEA; 7-Keto DHEA",
-     "description": "7-Keto is a metabolite of DHEA that retains its benefits for supporting adrenal recovery from chronic stress and Rx steroid treatments, without converting into the sex hormones, so it preserves the hormonal status quo otherwise.We supply a gentle, sustainable dose of 7-Keto in Adrenal Repair: Sublingual 7-Keto.",
+     "description": "7-Keto is a metabolite of DHEA that supports adrenal resilience under stress without converting into the sex hormones, so it preserves the hormonal status quo otherwise. We supply a gentle, sustainable dose of 7-Keto in Adrenal Syntropy and Endocrine Restore Powder.",
      "remedies": [
       {
-       "name": "Adrenal Repair: Sublingual 7-Keto",
-       "url": "https://remedymatch.com/body-systems/system-4-communicate/endocrine/adrenals/109-sublingual-7-keto"
+       "name": "Adrenal Syntropy",
+       "url": "/begin/product/adrenal-syntropy"
+      },
+      {
+       "name": "Endocrine Restore Powder",
+       "url": "/begin/product/endocrine-restore-powder"
       }
-     ],
-     "description_snapshot_2026_07_14": "7-Keto is a metabolite of DHEA that retains its benefits for supporting adrenal recovery from chronic stress and Rx steroid treatments, without converting into the sex hormones, so it preserves the hormonal status quo otherwise.We supply a gentle, sustainable dose of 7-Keto in Adrenal Repair: Sublingual 7-Keto"
+     ]
     },
     {
      "slug": "cortisol",
      "name": "Cortisol",
      "alt_name": "",
-     "description": "Cortisol is a stress hormone.Considerations for balancing high Cortisol include Stress Release, and Adrenal Repair: Sublingual 7-Keto",
+     "description": "Cortisol is a stress hormone. Considerations for balancing high Cortisol include Stress Release, Adrenal Syntropy and Endocrine Restore Powder.",
      "remedies": [
       {
        "name": "Stress Release",
        "url": "https://remedymatch.com/terrain-phases/phase-5-balance/stress-terrain/249-stress-release--cbd-synergy"
       },
       {
-       "name": "Adrenal Repair: Sublingual 7-Keto",
-       "url": "https://remedymatch.com/body-systems/system-4-communicate/endocrine/adrenals/109-sublingual-7-keto"
+       "name": "Adrenal Syntropy",
+       "url": "/begin/product/adrenal-syntropy"
+      },
+      {
+       "name": "Endocrine Restore Powder",
+       "url": "/begin/product/endocrine-restore-powder"
       }
      ]
     },
@@ -2208,18 +2218,17 @@
      "slug": "dehydroepiandrosterone",
      "name": "Dehydroepiandrosterone",
      "alt_name": "DHEA; DHEA",
-     "description": "DHEA is a natural adrenal steroid hormone that reduces inflammation.In controlled studies, doctors prescribed lower doses of Rx steroid medications when subjects received supplemental DHEA.We support the function of DHEA with either Endocrine Restore or Adrenal Repair: Sublingual 7-Keto.",
+     "description": "DHEA is a natural adrenal steroid hormone that supports the body's natural anti-inflammatory function. We support the function of DHEA with Adrenal Syntropy or Endocrine Restore Powder.",
      "remedies": [
       {
-       "name": "Endocrine Restore",
-       "url": "https://remedymatch.com/body-systems/system-4-communicate/34-endocrine-restore"
+       "name": "Adrenal Syntropy",
+       "url": "/begin/product/adrenal-syntropy"
       },
       {
-       "name": "Adrenal Repair: Sublingual 7-Keto",
-       "url": "https://remedymatch.com/body-systems/system-4-communicate/endocrine/adrenals/109-sublingual-7-keto"
+       "name": "Endocrine Restore Powder",
+       "url": "/begin/product/endocrine-restore-powder"
       }
-     ],
-     "description_snapshot_2026_07_14": "DHEA is a natural adrenal steroid hormone that reduces inflammation.In controlled studies, doctors prescribed lower doses of Rx steroid medications when subjects received supplemental DHEA.We support the function of DHEA with either Endocrine Restore or Adrenal Repair: Sublingual 7-Keto"
+     ]
     },
     {
      "slug": "dihydrotestosterone",
@@ -2269,10 +2278,10 @@
      "slug": "melatonin",
      "name": "Melatonin",
      "alt_name": "",
-     "description": "Melatonin is produced in the daytime in the Mitochondria and serves as a primary antioxidant to protect these intracellular symbionts.This Mitochondrial Melatonin is produced in response to the Infrared radiation that is the majority of energy in sunlight.Most modern indoor lighting is completely devoid of Infrared energy output.At night Melatonin is produced by the Pineal gland and released into the blood.Melatonin is the only hormone that communicates to every cell in the body, coordinating our diurnal rhythms so all of our organs, meridians, and systems can coordinate their functions properly.It is also the only hormone that carries its own signal directly into the nucleus of the cell, rather than relying on an intracellular messenger molecule produced only in certain target tissues.Melatonin regulates sleep and detoxification of the brain via its glymphatic system, as well as maturation, and has a strong association with longevity.We support sleep, Melatonin production, and natural blood levels of Melatonin through the night with:Sleep Synergy, which can be taken at bedtime or during the night since it has a minimum content of Melatonin.Brain Cleanse, which is taken at bedtime, since it has enough slow-release Melatonin to last through the night.Melatonin Max, which has a strong dose of Melatonin so that one or two capsules can be taken at bedtime based on research in weight loss and cancer.Because Melatonin is also the primary regulator of Intraocular Pressure (IOP) while we sleep, we also include it in our OcuFlow Bedtime.",
+     "description": "Melatonin is produced in the daytime in the Mitochondria and serves as a primary antioxidant to protect these intracellular symbionts.This Mitochondrial Melatonin is produced in response to the Infrared radiation that is the majority of energy in sunlight.Most modern indoor lighting is completely devoid of Infrared energy output.At night Melatonin is produced by the Pineal gland and released into the blood.Melatonin is the only hormone that communicates to every cell in the body, coordinating our diurnal rhythms so all of our organs, meridians, and systems can coordinate their functions properly.It is also the only hormone that carries its own signal directly into the nucleus of the cell, rather than relying on an intracellular messenger molecule produced only in certain target tissues.Melatonin regulates sleep and detoxification of the brain via its glymphatic system, as well as maturation, and has a strong association with longevity.We support sleep, Melatonin production, and natural blood levels of Melatonin through the night with:Sleep Syntropy, which can be taken at bedtime or during the night since it has a minimum content of Melatonin.Brain Cleanse, which is taken at bedtime, since it has enough slow-release Melatonin to last through the night.Melatonin Max, which has a strong dose of Melatonin so that one or two capsules can be taken at bedtime based on research in weight loss and cancer.Because Melatonin is also the primary regulator of Intraocular Pressure (IOP) while we sleep, we also include it in our OcuFlow Bedtime.",
      "remedies": [
       {
-       "name": "Sleep Synergy",
+       "name": "Sleep Syntropy",
        "url": "https://remedymatch.com/body-systems/system-4-communicate/endocrine/pineal/107-sleep-synergy"
       },
       {
