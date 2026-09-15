@@ -675,14 +675,18 @@ def fetch_email_dnd_v2():
 
 
 def sync_people_from_ghl(batch_size=100):
-    """Sync GHL contacts → Render people table."""
+    """Sync GHL contacts → Render people table.
+
+    Returns the number of errors: a missing key, a failed GHL page, or a people upsert
+    that did not return 200 with a JSON body. --people-only exits non-zero on any, so a
+    run whose every upsert got a 502 is recorded as a failure, never as a success."""
     if not GHL_API_KEY:
         print('  GHL_API_KEY not set — skipping people sync')
-        return
+        return 1
     print('\n[PEOPLE] Syncing from GHL...')
     # Read once per run, before paging v1. None means "carry nothing new".
     email_dnd = fetch_email_dnd_v2()
-    page, total_synced = 1, 0
+    page, total_synced, errors = 1, 0, 0
     while True:
         try:
             r = requests.get(
@@ -693,12 +697,14 @@ def sync_people_from_ghl(batch_size=100):
             )
             if r.status_code != 200:
                 print(f'  GHL contacts error: {r.status_code}')
+                errors += 1
                 break
             contacts = r.json().get('contacts', [])
             if not contacts:
                 break
         except Exception as e:
             print(f'  GHL fetch error: {e}')
+            errors += 1
             break
 
         people = []
@@ -777,16 +783,20 @@ def sync_people_from_ghl(batch_size=100):
                 headers=HEADERS, json=people, timeout=20
             )
             try:
+                if r2.status_code != 200:
+                    raise ValueError(r2.status_code)
                 d = r2.json()
                 total_synced += d.get('inserted', 0) + d.get('updated', 0)
             except Exception:
                 print(f'  People upsert error: {r2.status_code}')
+                errors += 1
 
         if len(contacts) < batch_size:
             break
         page += 1
 
-    print(f'  {total_synced} people synced')
+    print(f'  {total_synced} people synced, {errors} error(s)')
+    return errors
 
 
 # ── Main ──────────────────────────────────────────────────────────────────────
@@ -815,8 +825,12 @@ def main(argv=None):
     print(f'{"="*55}')
 
     if mode == 'people':
-        sync_people_from_ghl()
+        errors = sync_people_from_ghl()
         print(f'\nDone.\n')
+        if errors:
+            # Only this mode exits non-zero. The full run keeps exit 0, which the Mac
+            # backstop wrapper and its digest reading rely on today.
+            raise SystemExit(1)
         return
 
     all_todos = []

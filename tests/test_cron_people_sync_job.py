@@ -171,6 +171,54 @@ def test_no_flag_is_the_full_run_the_mac_backstop_depends_on(cron):
     assert calls.index("_post_todos") < calls.index("sync_people_from_ghl") < calls.index("push_task_board")
 
 
+def test_people_only_exits_non_zero_when_the_sync_had_errors(cron, monkeypatch):
+    c, _ = cron
+    monkeypatch.setattr(c, "sync_people_from_ghl", lambda *a, **k: 2)
+    with pytest.raises(SystemExit) as e:
+        c.main(["--people-only"])
+    assert e.value.code == 1
+
+
+def test_the_full_run_keeps_exit_zero_when_the_sync_had_errors(cron, monkeypatch):
+    c, calls = cron
+    monkeypatch.setattr(c, "sync_people_from_ghl", lambda *a, **k: calls.append("sync") or 2)
+    c.main([])  # the Mac backstop's mode: no SystemExit
+    assert "sync" in calls
+
+
+class _Resp:
+    def __init__(self, status, body):
+        self.status_code, self._body = status, body
+
+    def json(self):
+        if isinstance(self._body, Exception):
+            raise self._body
+        return self._body
+
+
+@pytest.mark.parametrize("upsert", [_Resp(502, ValueError("html")), _Resp(401, {"error": "Unauthorized"})])
+def test_a_failed_people_upsert_counts_as_an_error(upsert, monkeypatch):
+    import console_push_cron as c
+    posted = []
+    monkeypatch.setattr(c, "GHL_API_KEY", "fake-ghl")
+    monkeypatch.setattr(c, "fetch_email_dnd_v2", lambda: None)
+    monkeypatch.setattr(c.requests, "get", lambda *a, **k: _Resp(200, {"contacts": [
+        {"id": "c1", "email": "a@example.invalid", "tags": []}]}))
+    monkeypatch.setattr(c.requests, "post", lambda *a, **k: posted.append(1) or upsert)
+    assert c.sync_people_from_ghl() == 1
+    assert posted == [1]  # the upsert was actually reached
+
+
+def test_a_good_people_upsert_counts_no_error(monkeypatch):
+    import console_push_cron as c
+    monkeypatch.setattr(c, "GHL_API_KEY", "fake-ghl")
+    monkeypatch.setattr(c, "fetch_email_dnd_v2", lambda: None)
+    monkeypatch.setattr(c.requests, "get", lambda *a, **k: _Resp(200, {"contacts": [
+        {"id": "c1", "email": "a@example.invalid", "tags": []}]}))
+    monkeypatch.setattr(c.requests, "post", lambda *a, **k: _Resp(200, {"inserted": 1, "updated": 0}))
+    assert c.sync_people_from_ghl() == 0
+
+
 def test_the_two_flags_cannot_be_combined(cron):
     c, _ = cron
     with pytest.raises(SystemExit):
