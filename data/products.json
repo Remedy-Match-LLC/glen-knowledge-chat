@@ -3686,7 +3686,8 @@
    "bottle_type": "30ml"
   },
   "sleep-syntropy": {
-   "name": "Sleep Synergy",
+   "name": "Sleep Syntropy",
+   "qbo_item_id": "48",
    "price_cents": 6997,
    "pinecone_title": "Sleep Synergy",
    "url": "https://remedymatch.com/remedies/syntropy/107-sleep-syntropy",
@@ -21419,7 +21420,7 @@
    "autoship_eligible": false,
    "bundle_components": [
     "Brain Cleanse",
-    "Sleep Synergy",
+    "Sleep Syntropy",
     "Therapeutic Nightlight",
     "Biocompatible Nightlight"
    ],
