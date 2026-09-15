@@ -40055,6 +40055,55 @@ _PERSON_UPSERT_JSON = [
 ]
 
 
+_SUPPRESSION_CHECK_MAX = 1000
+
+
+@app.route("/api/console/email-suppression/check", methods=["POST"])
+def api_console_email_suppression_check():
+    """Read-only: which of these addresses must not be emailed, and why.
+
+    For senders outside this app. Body {"emails": [...]}. Each address is trimmed and
+    lowercased, then run through email_suppression.suppression_reason, the same
+    function is_suppressed calls. Response {"ok", "checked", "blocked"}: checked is
+    the count of distinct normalised addresses, blocked maps each address exactly as
+    sent to its reason. More than 1000 addresses is 413 and checks nothing. Any
+    exception is 500 with no blocked map. Never logs an address."""
+    if not _portal_console_ok():
+        return jsonify({"ok": False, "error": "unauthorized"}), 401
+    try:
+        body = request.get_json(silent=True)
+        emails = body.get("emails") if isinstance(body, dict) else None
+        if not isinstance(emails, list):
+            return jsonify({"ok": False, "error": "body must be {\"emails\": [...]}"}), 400
+        if len(emails) > _SUPPRESSION_CHECK_MAX:
+            return jsonify({"ok": False,
+                            "error": f"at most {_SUPPRESSION_CHECK_MAX} addresses"}), 413
+        from dashboard import email_suppression as _es
+        reasons, blocked = {}, {}
+        with db.connect(LOG_DB) as cx:
+            for raw in emails:
+                norm = _es.normalize(raw)
+                if not norm:
+                    continue
+                if norm not in reasons:
+                    reasons[norm] = _es.suppression_reason(cx, norm)
+                if reasons[norm] is not None:
+                    blocked[raw] = reasons[norm]
+        return jsonify({"ok": True, "checked": len(reasons), "blocked": blocked})
+    except Exception as e:
+        app.logger.error("email-suppression check failed: %s", type(e).__name__)
+        return jsonify({"ok": False, "error": "check failed"}), 500
+
+
+# GHL email signals read by _upsert_person_additive. Substrings, matched lowercased
+# against each incoming tag. "email bounced" is deliberately NOT a refusal.
+_EMAIL_REFUSAL_TAG_SUBSTRINGS = ("email unsubscrib", "do not email", "spam complain")
+_EMAIL_BOUNCE_TAG_SUBSTRING = "email bounced"
+# dndSettings.Email.status values that mean the channel is blocked. GHL documents
+# active, inactive and permanent.
+_EMAIL_DND_ACTIVE = frozenset({"active", "permanent", "true"})
+
+
 def _upsert_person_additive(cx, person, ts=None):
     """Idempotent, additive upsert of one person into the people table, matching
     by email. JSON-array fields (tags, roles, …) are UNIONED with existing;
@@ -40086,14 +40135,45 @@ def _upsert_person_additive(cx, person, ts=None):
     order_count = int(person.get("order_count", 0) or 0)
     session_count = int(person.get("session_count", 0) or 0)
 
-    # Closed-loop consent: a GoHighLevel email unsubscribe / bounce / DND (pulled
-    # in by console_push) revokes opt-in here, so the hub stays the single consent
-    # truth and the Phase-2 mirror stops re-pushing opted-out people. Email-channel
-    # signals only — SMS-only unsubscribes do not gate email.
-    dnd = bool(person.get("dnd")) or any(
-        any(s in t.lower() for s in ("email bounced", "email unsubscrib",
-                                     "do not email", "spam complain"))
-        for t in arrays.get("tags", []))
+    # Closed-loop consent, per people-48's field spec (2026-09-15).
+    #
+    # `consent:unsubscribed` has ONE meaning: the person asked to stop email. It is
+    # permanent. Its GHL writers are a refusal tag ("email unsubscrib", "do not
+    # email", "spam complain"), an email DND whose message says it was enabled "by
+    # customer", and the v1 `dnd` flag this sync has always carried.
+    #
+    # A bounce is NOT a refusal. An "email bounced" tag blocks the ADDRESS, in
+    # email_suppression, and leaves the person's consent alone. The raw tag stays on
+    # the person as history (the tag union below keeps it).
+    #
+    # An active GHL v2 email DND on its own is address-level too. GHL writes one
+    # message, "Received Permanent Bounce/Spam/Unsubscribe from Email Service", for
+    # all three causes, so it cannot tell a refusal from a bounce.
+    #
+    # Nothing here removes an existing consent:unsubscribed. About 883 of 892 were
+    # stamped from bounce tags before this change; reclassifying them is Glen's call.
+    # Email-channel signals only: SMS-only unsubscribes do not gate email.
+    _tags_low = [str(t).lower() for t in arrays.get("tags", [])]
+    _refusal_tag = any(any(s in t for s in _EMAIL_REFUSAL_TAG_SUBSTRINGS) for t in _tags_low)
+    _bounce_tag = any(_EMAIL_BOUNCE_TAG_SUBSTRING in t for t in _tags_low)
+    _email_dnd_active = str(person.get("email_dnd") or "").strip().lower() in _EMAIL_DND_ACTIVE
+    _email_dnd_message = str(person.get("email_dnd_message") or "").strip()
+    _customer_dnd = _email_dnd_active and "by customer" in _email_dnd_message.lower()
+    dnd = bool(person.get("dnd")) or _refusal_tag or _customer_dnd
+
+    if _bounce_tag or _email_dnd_active:
+        from dashboard import email_suppression as _es
+        _es.init_table(cx, commit=False)  # the caller holds the transaction
+        # overwrite=False: an hourly sync never rewrites an existing row, so a
+        # bounce scanner's row or an in-house opt-out keeps its own bounce_type.
+        if _bounce_tag:
+            _es.add(cx, email, "hard", "GHL tag: email bounced", "ghl",
+                    overwrite=False, commit=False)
+        if _email_dnd_active:
+            _es.add(cx, email, "ghl-dnd",
+                    ("GHL email DND: " + _email_dnd_message)[:200] if _email_dnd_message
+                    else "GHL email DND active", "ghl",
+                    overwrite=False, commit=False)
 
     def _apply_dnd(tagset):
         return ((set(tagset) - {"consent:opted-in"}) | {"consent:unsubscribed"}) if dnd else set(tagset)
