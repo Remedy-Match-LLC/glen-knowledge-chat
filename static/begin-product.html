@@ -121,6 +121,22 @@
       font-weight:700; font-size:15px; letter-spacing:0.03em; padding:14px 34px; border-radius:999px;
       transition:opacity .25s var(--ease), transform .25s var(--ease); }
     .cta-btn:hover{ opacity:0.9; transform:translateY(-1px); }
+    /* Add to cart: the cart control builds button.btn.btn-secondary inside #buy-actions.
+       Without these rules it rendered as a bare grey system button under Order. */
+    #buy-actions .btn-secondary{ display:inline-block; margin-left:10px; background:transparent;
+      color:var(--gold); font-family:var(--heading); font-weight:600; font-size:15px;
+      letter-spacing:0.03em; padding:13px 30px; border:1px solid rgba(212,168,67,0.55);
+      border-radius:999px; cursor:pointer;
+      transition:border-color .2s var(--ease), background .2s var(--ease); }
+    #buy-actions .btn-secondary:hover:not(:disabled){ border-color:var(--gold); background:rgba(212,168,67,0.08); }
+    #buy-actions .btn-secondary:disabled{ opacity:0.6; cursor:default; }
+    #buy-actions .btn-secondary:focus-visible,
+    #buy-actions .cta-btn:focus-visible{ outline:2px solid var(--gold); outline-offset:3px; }
+    /* Light palette --gold (#B08A3E) is 3.2:1 on white, too faint for 15px text and its
+       dark-gold hairline border is 1.5:1. Darker text (6.2:1) and a solid border (3.2:1). */
+    :root[data-theme="light"] #buy-actions .btn-secondary{ color:#7A5C1F; border-color:#B08A3E; }
+    :root[data-theme="light"] #buy-actions .btn-secondary:hover:not(:disabled){ border-color:#7A5C1F; background:rgba(176,138,62,0.08); }
+    :root[data-theme="light"] #buy-actions .btn-secondary:focus-visible{ outline-color:#7A5C1F; }
 
     /* ── Comparison table (Task 5) ── */
     .sp-cmp-wrap{ overflow-x:auto; -webkit-overflow-scrolling:touch; }
@@ -248,6 +264,7 @@
       .shell{ padding:0 18px; }
       .product{ padding:22px 18px 20px; }
       .cta-btn{ width:100%; text-align:center; display:block; }
+      #buy-actions .btn-secondary{ width:100%; display:block; margin:10px 0 0; text-align:center; }
     }
   </style>
   <script src="/static/theme-toggle.js"></script>

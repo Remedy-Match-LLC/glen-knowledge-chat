@@ -1,4 +1,7 @@
+import json
 import sqlite3
+from pathlib import Path
+
 import app as app_module
 from dashboard import recommendation_events as re, client_portal as cp
 from dashboard import scan_recommendations as sr
@@ -67,3 +70,38 @@ def test_scan_section_contains_only_requested_scan(monkeypatch, tmp_path):
     scan = next(s for s in data["sections"] if s["source"] == "scan")
     assert data["scan_date"] == "2026-08-02"
     assert [p["product_key"] for p in scan["products"]] == ["vitality"]
+
+
+def test_recommendation_links_go_to_the_new_product_page_never_groovekart(monkeypatch, tmp_path):
+    """A live product links to its own page, a retired one to its successor's page, and a
+    retired product with no successor gets no link, rather than a dead page or GrooveKart."""
+    # Read the real catalog by path and hand it to the loader explicitly. Earlier suite
+    # tests (test_bos_products) leave DATA_DIR on a two-product catalog, and
+    # load_products() would then not know these slugs at all.
+    catalog = json.loads((Path(__file__).parents[1] / "data" / "products.json")
+                         .read_text(encoding="utf-8"))["products"]
+    from dashboard import products as _products_mod
+    monkeypatch.setattr(_products_mod, "load_products", lambda: catalog)
+    assert "remedymatch.com" in (catalog["rescue"].get("url") or "")        # fixture guard
+    assert catalog["relax"].get("inactive") and catalog["relax"].get("superseded_by") == "stress-release"
+    assert catalog["molecular-hydrogen-tablets"].get("inactive")
+    assert not catalog["molecular-hydrogen-tablets"].get("superseded_by")
+
+    db = str(tmp_path / "links.db")
+    cx = sqlite3.connect(db)
+    cp.init_client_portal_table(cx)
+    re.init_recommendation_events(cx)
+    token, _pid = cp.upsert_portal(cx, "links@b.com", "Lin", {})
+    for i, slug in enumerate(("rescue", "relax", "molecular-hydrogen-tablets")):
+        re.record_event(cx, "links@b.com", slug, "purchased",
+                        occurred_at=f"2026-07-1{i}", origin_ref=str(i))
+    cx.commit()
+    cx.close()
+    monkeypatch.setattr(app_module, "LOG_DB", db, raising=False)
+    app_module.app.config["TESTING"] = True
+    data = app_module.app.test_client().get(f"/api/portal/{token}/recommendations").get_json()
+    urls = {p["product_key"]: p["url"] for s in data["sections"] for p in s["products"]}
+    assert urls["rescue"] == "/begin/product/rescue"
+    assert urls["relax"] == "/begin/product/stress-release"
+    assert urls["molecular-hydrogen-tablets"] == ""
+    assert not any("remedymatch.com" in (u or "") for u in urls.values())

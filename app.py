@@ -25883,12 +25883,7 @@ def api_portal_recommendations(token):
         ps = _re.product_sources(cx, email, scan_origin_prefix=scan_prefix)
         notes = _rp.get_notes(cx, email)
         state = _rp.get_section_state(cx, email)
-    catalog = _products.load_products()
-
-    def resolve(slug):
-        p = catalog.get(slug) or {}
-        return {"name": p.get("name"), "url": p.get("url")}
-
+    resolve = _pr.catalog_resolver(_products.load_products())
     return jsonify({"ok": True, "scan_date": picked,
                     "sections": _pr.build_sections(ps, notes, state, resolve)})
 

@@ -9,6 +9,24 @@ from dashboard.order_destination import destination_for
 PRIMARY_SECTION_ORDER = ("self", "condition", "scan")
 
 
+def catalog_resolver(catalog):
+    """resolve_product for build_sections over a products.json dict.
+
+    The link is the new product page for the product's LIVE slug: a retired record follows
+    `superseded_by` to its successor, and a retired record with no successor gets no link
+    (its page would 404). Never products.json `url`, which is the old GrooveKart storefront.
+    The name stays the one the client knows, falling back to the successor's."""
+    from dashboard import products as _products
+
+    def resolve(slug):
+        live = _products.superseded_slug(slug, catalog)
+        p = catalog.get(live) or {}
+        sellable = bool(p) and not p.get("inactive")
+        return {"name": (catalog.get(slug) or {}).get("name") or p.get("name"),
+                "url": destination_for(live) if sellable else ""}
+    return resolve
+
+
 def build_sections(product_sources, notes, section_state, resolve_product, *, top_n=3):
     by_source = {}
     for p in product_sources:
@@ -23,7 +41,8 @@ def build_sections(product_sources, notes, section_state, resolve_product, *, to
         for s in p["sources"]:
             by_source.setdefault(s["source"], []).append({
                 "product_key": pk, "name": prod.get("name") or pk,
-                "url": destination_for(pk),
+                # The resolver decides, so a retired product can carry no link at all.
+                "url": prod["url"] if "url" in prod else destination_for(pk),
                 "icons": icons,
                 "operator_note": n.get("operator_note", ""), "client_note": n.get("client_note", ""),
                 "_count": s["count"], "_recent": s.get("last_touch", "") or ""})
