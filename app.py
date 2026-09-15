@@ -6985,6 +6985,8 @@ _PORTAL_CART_ENABLED = os.environ.get("PORTAL_CART_ENABLED", "").strip().lower()
 # unreachable from any public link even though Add to cart (_PORTAL_CART_ENABLED)
 # is already live. begin_cart_page requires BOTH flags true.
 _CART_PAGE_ENABLED = os.environ.get("CART_PAGE_ENABLED", "").strip().lower() in ("1", "true", "yes", "on")
+# Public store at /shop. Dark until Glen says it goes live (a flag flip is its own deploy).
+_SHOP_ENABLED = os.environ.get("SHOP_ENABLED", "").strip().lower() in ("1", "true", "yes", "on")
 # "Clinical Theory of Everything" hub tile: a link out to Glen's published TheBrain
 # view (bra.in/6j852k). Ships dark; same truthy set as the other portal flags. With
 # this off the portal payload carries brain.enabled false and no tile renders.
@@ -30477,6 +30479,39 @@ def api_client_portal_product_search(token):
         })
     results.sort(key=lambda row: row["name"].lower())
     return jsonify({"ok": True, "products": results[:30]})
+
+
+def _shop_programs():
+    """Glen's condition programs as the console editor last saved them (D2)."""
+    from dashboard import condition_programs as _cp
+    with db.connect(LOG_DB) as cx:
+        cx.row_factory = sqlite3.Row
+        _init_support_programs_tables(cx)
+        return _cp.all(cx)
+
+
+@app.route("/api/shop/products", methods=["GET"])
+def api_shop_products():
+    """The public store listing. List prices only: the product page and checkout apply
+    member, volume and courtesy pricing."""
+    if not _SHOP_ENABLED:
+        return jsonify({"ok": False, "error": "not found"}), 404
+    from dashboard import shop_catalog as _sc
+    try:
+        groups = _sc.concern_groups(_shop_programs(), _get_product)
+    except Exception as e:  # groups are a convenience; search must still work
+        print(f"[shop] concern groups unavailable: {e!r}", flush=True)
+        groups = []
+    group_key = (request.args.get("group") or "").strip()
+    if group_key:
+        chosen = next((g for g in groups if g["key"] == group_key), None)
+        slugs = chosen["slugs"] if chosen else []
+    else:
+        slugs = list((_PRODUCTS.get("products") or {}).keys())
+    products = _sc.search(slugs, _get_product, request.args.get("q") or "")
+    return jsonify({"ok": True, "products": products,
+                    "groups": [{"key": g["key"], "label": g["label"], "count": len(g["slugs"])}
+                               for g in groups]})
 
 
 @app.route("/api/portal/<token>/checkout", methods=["POST"])
