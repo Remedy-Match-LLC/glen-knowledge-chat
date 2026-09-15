@@ -40103,6 +40103,37 @@ _EMAIL_BOUNCE_TAG_SUBSTRING = "email bounced"
 # active, inactive and permanent.
 _EMAIL_DND_ACTIVE = frozenset({"active", "permanent", "true"})
 
+# Known GHL writers of dndSettings.Email that are NOT a refusal. Ruled by people-48,
+# owner of the hub's consent fields, on 2026-09-15. Matched on the exact, stable text.
+# An ACTIVE email DND whose message is not listed here (any other workflow id, free
+# text such as "I no longer want to receive these emails", or a blank) counts as a
+# refusal: fail closed.
+#   "address": block the address (email_suppression ghl-dnd), leave consent alone.
+#   "none":    write nothing for email.
+_EMAIL_DND_NON_REFUSAL_WRITERS = {
+    # GHL's email service. One message for bounce, spam and unsubscribe alike.
+    "Received Permanent Bounce/Spam/Unsubscribe from Email Service": "address",
+    "Updated by contact merge": "address",
+    # Z-015-4 Email Bounced.
+    "Updated from workflow_2d7fa93f-e008-461d-b2c4-711c4acf3f2d": "address",
+    # Z-016-01 and Z-016-02 re-subscribe. They set the channel inactive and never block.
+    "Updated from workflow_49556753-45ee-45d2-a6b1-c576f6c26b88": "none",
+    "Updated from workflow_6d0f6dc3-fbe5-48c8-aa0b-b6db3ce92878": "none",
+}
+# Any message containing this is an SMS carrier error with no email effect.
+_EMAIL_DND_SMS_ERROR_MARKER = "TWILIO_ERROR_CODE"
+
+
+def _email_dnd_effect(status, message):
+    """What an incoming dndSettings.Email means: "refusal", "address" or "none".
+    An inactive status never blocks. Otherwise fail closed on unknown writers."""
+    if str(status or "").strip().lower() not in _EMAIL_DND_ACTIVE:
+        return "none"
+    msg = str(message or "").strip()
+    if _EMAIL_DND_SMS_ERROR_MARKER in msg:
+        return "none"
+    return _EMAIL_DND_NON_REFUSAL_WRITERS.get(msg, "refusal")
+
 
 def _upsert_person_additive(cx, person, ts=None):
     """Idempotent, additive upsert of one person into the people table, matching
@@ -40139,16 +40170,16 @@ def _upsert_person_additive(cx, person, ts=None):
     #
     # `consent:unsubscribed` has ONE meaning: the person asked to stop email. It is
     # permanent. Its GHL writers are a refusal tag ("email unsubscrib", "do not
-    # email", "spam complain"), an email DND whose message says it was enabled "by
-    # customer", and the v1 `dnd` flag this sync has always carried.
+    # email", "spam complain"), an active email DND from any writer not in
+    # _EMAIL_DND_NON_REFUSAL_WRITERS, and the v1 `dnd` flag this sync has always carried.
     #
     # A bounce is NOT a refusal. An "email bounced" tag blocks the ADDRESS, in
     # email_suppression, and leaves the person's consent alone. The raw tag stays on
     # the person as history (the tag union below keeps it).
     #
-    # An active GHL v2 email DND on its own is address-level too. GHL writes one
-    # message, "Received Permanent Bounce/Spam/Unsubscribe from Email Service", for
-    # all three causes, so it cannot tell a refusal from a bounce.
+    # An active GHL v2 email DND is read through _email_dnd_effect (people-48's
+    # ruling, 2026-09-15). Known non-refusal writers block the address only, or write
+    # nothing. Any other writer, including a blank message, is a refusal: fail closed.
     #
     # Nothing here removes an existing consent:unsubscribed. About 883 of 892 were
     # stamped from bounce tags before this change; reclassifying them is Glen's call.
@@ -40156,12 +40187,13 @@ def _upsert_person_additive(cx, person, ts=None):
     _tags_low = [str(t).lower() for t in arrays.get("tags", [])]
     _refusal_tag = any(any(s in t for s in _EMAIL_REFUSAL_TAG_SUBSTRINGS) for t in _tags_low)
     _bounce_tag = any(_EMAIL_BOUNCE_TAG_SUBSTRING in t for t in _tags_low)
-    _email_dnd_active = str(person.get("email_dnd") or "").strip().lower() in _EMAIL_DND_ACTIVE
     _email_dnd_message = str(person.get("email_dnd_message") or "").strip()
-    _customer_dnd = _email_dnd_active and "by customer" in _email_dnd_message.lower()
-    dnd = bool(person.get("dnd")) or _refusal_tag or _customer_dnd
+    _dnd_effect = _email_dnd_effect(person.get("email_dnd"), _email_dnd_message)
+    _dnd_refusal = _dnd_effect == "refusal"
+    _dnd_blocks_address = _dnd_effect in ("address", "refusal")
+    dnd = bool(person.get("dnd")) or _refusal_tag or _dnd_refusal
 
-    if _bounce_tag or _email_dnd_active:
+    if _bounce_tag or _dnd_blocks_address:
         from dashboard import email_suppression as _es
         _es.init_table(cx, commit=False)  # the caller holds the transaction
         # overwrite=False: an hourly sync never rewrites an existing row, so a
@@ -40169,7 +40201,7 @@ def _upsert_person_additive(cx, person, ts=None):
         if _bounce_tag:
             _es.add(cx, email, "hard", "GHL tag: email bounced", "ghl",
                     overwrite=False, commit=False)
-        if _email_dnd_active:
+        if _dnd_blocks_address:
             _es.add(cx, email, "ghl-dnd",
                     ("GHL email DND: " + _email_dnd_message)[:200] if _email_dnd_message
                     else "GHL email DND active", "ghl",

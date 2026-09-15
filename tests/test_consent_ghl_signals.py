@@ -3,9 +3,11 @@
   - `consent:unsubscribed` means only "the person asked to stop email", and is permanent.
   - A GHL "email bounced" tag blocks the ADDRESS (email_suppression, hard, source ghl)
     and changes nothing about the person's consent. The raw tag stays as history.
-  - An active v2 email DND alone is address-level (bounce_type ghl-dnd). It becomes a
-    refusal only alongside a refusal signal: an unsubscribe or spam tag, or a DND
-    enabled "by customer".
+  - An active v2 email DND is a refusal unless its message is a known non-refusal
+    writer (people-48's ruling, 2026-09-15): the email service or a contact merge or
+    the Z-015-4 bounce workflow block the address only; a Twilio carrier error and
+    the Z-016 re-subscribe workflows write nothing. Unknown or blank means refusal.
+  - The v1 all-channel `dnd` flag is a refusal.
   - Nothing removes an existing consent:unsubscribed.
 """
 import json
@@ -124,7 +126,13 @@ def test_the_tag_the_upsert_writes_is_the_tag_the_check_reads(app_db):
 
 # ── v2 email DND ─────────────────────────────────────────────────────────────
 
-@pytest.mark.parametrize("message", [EMAIL_SERVICE, "Updated by contact merge"])
+Z015_4 = "Updated from workflow_2d7fa93f-e008-461d-b2c4-711c4acf3f2d"
+Z016_01 = "Updated from workflow_49556753-45ee-45d2-a6b1-c576f6c26b88"
+Z016_02 = "Updated from workflow_6d0f6dc3-fbe5-48c8-aa0b-b6db3ce92878"
+
+
+@pytest.mark.parametrize("message", [EMAIL_SERVICE, "Updated by contact merge", Z015_4],
+                         ids=["a-email-service", "b-contact-merge", "d-z015-4-bounced"])
 def test_an_email_dnd_alone_is_address_level(app_db, message):
     app, path = app_db
     _seed(path, "d@x.com", ["type:client", "consent:opted-in"])
@@ -162,6 +170,83 @@ def test_an_inactive_email_dnd_changes_nothing(app_db):
     assert _row(path, "i@x.com") is None
     t = _tags(path, "i@x.com")
     assert "consent:unsubscribed" not in t and "consent:opted-in" in t
+
+
+def _assert_refusal(app, path, email, message):
+    _seed(path, email, ["type:client", "consent:opted-in"])
+    _upsert(app, path, {"email": email, "email_dnd": "active", "email_dnd_message": message})
+    t = _tags(path, email)
+    assert "consent:unsubscribed" in t and "consent:opted-in" not in t
+    assert _suppressed(path, email) is True
+
+
+def test_free_text_email_dnd_is_a_refusal(app_db):
+    app, path = app_db
+    _assert_refusal(app, path, "ft@x.com", "I no longer want to receive these emails")
+
+
+def test_an_unknown_workflow_email_dnd_is_a_refusal(app_db):
+    """Includes the Z-015 unsubscribe and spam workflows, which are not on the list."""
+    app, path = app_db
+    _assert_refusal(app, path, "wf@x.com",
+                    "Updated from workflow_00000000-1111-2222-3333-444444444444")
+
+
+def test_a_blank_email_dnd_message_is_a_refusal(app_db):
+    app, path = app_db
+    _assert_refusal(app, path, "blank@x.com", "")
+
+
+def test_a_twilio_carrier_error_writes_nothing_for_email(app_db):
+    app, path = app_db
+    _seed(path, "tw@x.com", ["type:client", "consent:opted-in"])
+    _upsert(app, path, {"email": "tw@x.com", "email_dnd": "active",
+                        "email_dnd_message": "TWILIO_ERROR_CODE: 30006"})
+    assert _row(path, "tw@x.com") is None
+    t = _tags(path, "tw@x.com")
+    assert "consent:unsubscribed" not in t and "consent:opted-in" in t
+    assert _suppressed(path, "tw@x.com") is False
+
+
+@pytest.mark.parametrize("message", [Z016_01, Z016_02], ids=["z016-01", "z016-02"])
+@pytest.mark.parametrize("status", ["active", "inactive"])
+def test_a_resubscribe_workflow_never_blocks(app_db, message, status):
+    app, path = app_db
+    _seed(path, "rs@x.com", ["type:client", "consent:opted-in"])
+    _upsert(app, path, {"email": "rs@x.com", "email_dnd": status, "email_dnd_message": message})
+    assert _row(path, "rs@x.com") is None
+    t = _tags(path, "rs@x.com")
+    assert "consent:unsubscribed" not in t and "consent:opted-in" in t
+
+
+def test_an_inactive_dnd_from_an_unknown_writer_never_blocks(app_db):
+    app, path = app_db
+    _seed(path, "in@x.com", ["type:client", "consent:opted-in"])
+    _upsert(app, path, {"email": "in@x.com", "email_dnd": "inactive",
+                        "email_dnd_message": "I no longer want to receive these emails"})
+    assert _row(path, "in@x.com") is None
+    assert "consent:unsubscribed" not in _tags(path, "in@x.com")
+
+
+def test_the_v1_all_channel_dnd_flag_is_a_refusal(app_db):
+    """people-48, 2026-09-15: v1 dnd keeps mapping to consent:unsubscribed."""
+    app, path = app_db
+    _seed(path, "v1@x.com", ["type:client", "consent:opted-in"])
+    _upsert(app, path, {"email": "v1@x.com", "dnd": True})
+    t = _tags(path, "v1@x.com")
+    assert "consent:unsubscribed" in t and "consent:opted-in" not in t
+
+
+def test_a_resubscribe_writer_never_downgrades_an_opt_out(app_db):
+    app, path = app_db
+    _seed(path, "stay@x.com", ["consent:unsubscribed"])
+    with sqlite3.connect(path) as cx:
+        es.init_table(cx)
+        es.add(cx, "stay@x.com", "hard", "NXDOMAIN", "bounce-scan")
+    _upsert(app, path, {"email": "stay@x.com", "email_dnd": "inactive",
+                        "email_dnd_message": Z016_01, "tags": ["consent:opted-in"]})
+    assert "consent:unsubscribed" in _tags(path, "stay@x.com")
+    assert _row(path, "stay@x.com") == ("hard", "bounce-scan")
 
 
 def test_the_merge_endpoint_carries_email_dnd_through(app_db):
