@@ -6105,6 +6105,8 @@ def _store_links_text(text):
     client was shown."""
     from dashboard import legacy_store_links as _lsl
     return _lsl.rewrite_text(text, PUBLIC_BASE_URL)
+
+
 _REMEDY_MATCH_SYSTEM = (
     "You are RemedyMatch, Dr. Glen Swartwout's warm, Socratic remedy-matching guide "
     "(naturopathic physician, Hilo Hawai'i). Goal: through brief back-and-forth, help the "

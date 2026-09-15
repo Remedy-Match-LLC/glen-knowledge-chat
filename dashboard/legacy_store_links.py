@@ -7,20 +7,28 @@ new product pages." GrooveKart is the backup store; the primary store is /begin/
 Rules:
   * a remedymatch.com product link whose id maps to a live product becomes that product's
     new page, bare or inside a markdown link;
-  * any other remedymatch.com page link (retired or unknown product, home, category, info)
-    is removed; a markdown link keeps its text;
+  * any other remedymatch.com page link (retired, unknown or do-not-recommend product, home,
+    category, info): a markdown link keeps its text only, and a bare link becomes the browse
+    entry page, so the sentence still reads and still works;
   * the brand name with no path, email addresses such as support@remedymatch.com, and
     go.remedymatch.com (GoHighLevel, not the store) are left alone.
 
 The join is the numeric id at the start of the old URL's last path segment, e.g.
 /remedies/syntropy/85-nous-energy -> 85. It is unique across the catalog. A retired record
-follows `superseded_by` through dashboard.products.superseded_slug, the app's one walk.
+follows `superseded_by` through dashboard.products.superseded_slug, the app's one walk. Only
+for an id the catalog does not carry, the segment minus its "<id>-" may name a live slug
+exactly. Products on dashboard.related_products.DO_NOT_RECOMMEND are never linked, whatever
+their inactive flag says.
 
 Answers stream, so `rewrite_stream` holds back only a tail that could still become a store
 link (a trailing token that is or could grow into one, or an open markdown link) and
 rewrites each released segment whole.
 """
 import re
+
+# Where a bare store link with no product page goes: the chat prompt's SHOPPING ROUTES
+# browse destination, the guided RemedyMatch conversation. /shop can replace it here later.
+BROWSE_ENTRY_PATH = "/begin/match"
 
 _HOST = r"(?:www\.)?remedymatch\.com"
 _TAIL = r"(?:[/?#][^\s<>\"'\]\)]*)?"
@@ -52,11 +60,23 @@ def _product_id(url):
     return m.group(1) if m else None
 
 
-def build_map(products):
-    """{old store id: new page path, or None when there is no live product}."""
+def _page_for(slug, products):
+    """The new page path for a catalog slug, or None when it must not be linked."""
     from dashboard.order_destination import destination_for
     from dashboard.products import superseded_slug
+    from dashboard.related_products import DO_NOT_RECOMMEND
 
+    live = superseded_slug(slug, products)
+    rec = products.get(live) or {}
+    if not rec or rec.get("inactive"):
+        return None
+    if slug in DO_NOT_RECOMMEND or live in DO_NOT_RECOMMEND:
+        return None
+    return destination_for(live)
+
+
+def build_map(products):
+    """{old store id: new page path, or None when there is no linkable product}."""
     out = {}
     for slug, p in (products or {}).items():
         url = (p or {}).get("url") or ""
@@ -65,11 +85,9 @@ def build_map(products):
         pid = _product_id(url)
         if not pid:
             continue
-        live = superseded_slug(slug, products)
-        rec = products.get(live) or {}
-        new = destination_for(live) if rec and not rec.get("inactive") else None
+        new = _page_for(slug, products)
         if out.get(pid):
-            continue  # a live record already claimed this id
+            continue  # a linkable record already claimed this id
         out[pid] = new
     return out
 
@@ -91,16 +109,11 @@ def _slug_fallback(url, products):
     """Second step, only for an id the catalog does not carry: the last path segment minus
     its leading "<id>-", when that is EXACTLY a catalog slug. 11 of knowledge's 18 id misses
     name a live product this way (73-microbiome). Never fuzzier than an exact slug."""
-    from dashboard.order_destination import destination_for
-    from dashboard.products import superseded_slug
-
     path = re.split(r"[?#]", url or "", maxsplit=1)[0].rstrip("/")
     slug = re.sub(r"^\d+-", "", path.rsplit("/", 1)[-1]).lower()
     if not slug or slug not in products:
         return None
-    live = superseded_slug(slug, products)
-    rec = products.get(live) or {}
-    return destination_for(live) if rec and not rec.get("inactive") else None
+    return _page_for(slug, products)
 
 
 def _new_url(url, base_url, mp, products):
@@ -115,6 +128,7 @@ def rewrite_text(text, base_url, products=None):
     if not text:
         return ""
     mp, products = _map_for(products)
+    entry = (base_url or "").rstrip("/") + BROWSE_ENTRY_PATH
 
     def _markdown(m):
         label, target = m.group(1), m.group(2)
@@ -127,7 +141,7 @@ def rewrite_text(text, base_url, products=None):
         url, trail = m.group(0), ""
         while url and url[-1] in _TRAILING:
             url, trail = url[:-1], url[-1] + trail
-        return (_new_url(url, base_url, mp, products) or "") + trail
+        return (_new_url(url, base_url, mp, products) or entry) + trail
 
     return _URL.sub(_bare, _MD.sub(_markdown, text))
 

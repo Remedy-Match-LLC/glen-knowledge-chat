@@ -2,13 +2,15 @@
 
 Knowledge-base text still carries remedymatch.com product links, and only a prompt rule
 kept the chat from repeating them. Glen, 2026-09-14: "Update chatbot to the new product
-pages." These pin the rewrite: a mapped product link goes to its new page, any other store
-link is removed, and the brand name, the support address and go.remedymatch.com are left
-alone. Answers stream, so a link split across deltas must still be caught.
+pages." These pin the rewrite: a mapped product link goes to its new page; any other store
+link keeps its markdown text, or as a bare link becomes the browse entry page; and the brand
+name, the support address and go.remedymatch.com are left alone. Answers stream, so a link
+split across deltas must still be caught.
 """
 from dashboard import legacy_store_links as lsl
 
-BASE = "https://myhealingoasis.com"
+BASE = "https://illtowell.com"
+ENTRY = BASE + lsl.BROWSE_ENTRY_PATH
 
 # A small catalog in the real shape: the old address lives in `url`, the id is the number
 # at the start of the last path segment, and a retired record may name a successor.
@@ -24,14 +26,15 @@ PRODUCTS = {
     # Its stored url carries a different id than the knowledge base's link does.
     "microbiome": {"name": "Microbiome",
                    "url": "https://remedymatch.com/remedies/syntropy/610-microbiome"},
-    "electrolyte-mineral-manna": {
-        "name": "Electrolyte Mineral Manna", "inactive": True,
-        "url": "https://remedymatch.com/remedies/syntropy/542-electrolyte-mineral-manna"},
+    # Retired, no successor, and NOT on the do-not-recommend list.
+    "molecular-hydrogen-tablets": {
+        "name": "Molecular Hydrogen Tablets", "inactive": True,
+        "url": "https://remedymatch.com/remedies/378-molecular-hydrogen-tablets"},
 }
 
 
-def rw(text):
-    return lsl.rewrite_text(text, BASE, products=PRODUCTS)
+def rw(text, products=PRODUCTS):
+    return lsl.rewrite_text(text, BASE, products=products)
 
 
 def stream(deltas):
@@ -52,16 +55,43 @@ def test_mapping_follows_a_retired_record_to_its_successor():
 
 def test_mapping_marks_a_retired_record_with_no_successor_as_unmapped():
     m = lsl.build_map(PRODUCTS)
-    assert "542" in m and m["542"] is None
+    assert "378" in m and m["378"] is None
 
 
-def test_the_real_catalog_maps_302_and_retires_2():
+def test_the_real_catalog_named_cases():
     from dashboard import products as _p
     m = lsl.build_map(_p.load_products())
-    assert len(m) == 304
-    assert sum(1 for v in m.values() if v) == 302
-    assert sorted(k for k, v in m.items() if not v) == ["378", "542"]
     assert m["85"] == "/begin/product/nous-energy"
+    assert m["378"] is None          # molecular-hydrogen-tablets, retired
+    assert m["542"] is None          # electrolyte-mineral-manna, do not recommend
+    assert sum(1 for v in m.values() if v) >= 290
+
+
+# ── do-not-recommend: never linked, whatever the inactive flag says ──────────
+# Glen on Electrolyte Mineral Manna: "not discontinued but not being promoted by chat."
+
+DNR_ACTIVE = dict(PRODUCTS, **{
+    "electrolyte-mineral-manna": {
+        "name": "Electrolyte Mineral Manna",
+        "url": "https://remedymatch.com/remedies/syntropy/542-electrolyte-mineral-manna"},
+})
+
+
+def test_an_active_do_not_recommend_product_is_not_mapped():
+    assert lsl.build_map(DNR_ACTIVE)["542"] is None
+
+
+def test_an_active_do_not_recommend_product_is_not_linked():
+    url = "https://remedymatch.com/remedies/syntropy/542-electrolyte-mineral-manna"
+    assert rw(f"Try [EMM]({url}).", DNR_ACTIVE) == "Try EMM."
+    assert rw(f"Try {url} today", DNR_ACTIVE) == f"Try {ENTRY} today"
+
+
+def test_do_not_recommend_is_also_blocked_through_the_slug_fallback():
+    url = "https://remedymatch.com/remedies/syntropy/9999-electrolyte-mineral-manna"
+    products = {k: v for k, v in DNR_ACTIVE.items()}
+    products["electrolyte-mineral-manna"] = {"name": "Electrolyte Mineral Manna"}
+    assert rw(f"[EMM]({url})", products) == "EMM"
 
 
 # ── rewriting text ────────────────────────────────────────────────────────────
@@ -93,18 +123,25 @@ def test_www_and_uppercase_host():
 
 
 def test_retired_markdown_link_keeps_its_text_and_drops_the_link():
-    assert rw("Avoid [EMM](https://remedymatch.com/remedies/syntropy/542-electrolyte-mineral-manna).") \
-        == "Avoid EMM."
+    assert rw("Avoid [MHT](https://remedymatch.com/remedies/378-molecular-hydrogen-tablets).") \
+        == "Avoid MHT."
 
 
-def test_unknown_id_is_removed():
+def test_unknown_id_markdown_keeps_text_and_bare_goes_to_the_entry_page():
     assert rw("Buy [Mystery](https://remedymatch.com/remedies/999-mystery) now") == "Buy Mystery now"
-    assert rw("Link: https://remedymatch.com/remedies/999-mystery") == "Link: "
+    assert rw("Link: https://remedymatch.com/remedies/999-mystery") == f"Link: {ENTRY}"
 
 
-def test_other_store_pages_are_removed():
+def test_platforms_sentences_never_leave_broken_prose():
+    assert rw("Shop at https://remedymatch.com or remedymatch.com.") == \
+        f"Shop at {ENTRY} or remedymatch.com."
+    assert rw("Browse https://remedymatch.com/remedies/syntropy today.") == \
+        f"Browse {ENTRY} today."
+
+
+def test_other_store_pages():
     assert rw("Browse [the store](https://remedymatch.com/) or https://remedymatch.com/info/terms") \
-        == "Browse the store or "
+        == f"Browse the store or {ENTRY}"
 
 
 def test_brand_email_and_ghl_are_left_alone():
@@ -114,7 +151,7 @@ def test_brand_email_and_ghl_are_left_alone():
 
 
 def test_other_links_are_left_alone():
-    text = "[Terrain Restore](https://myhealingoasis.com/begin/product/terrain-restore) and https://amzn.to/abc"
+    text = "[Terrain Restore](https://illtowell.com/begin/product/terrain-restore) and https://amzn.to/abc"
     assert rw(text) == text
 
 
@@ -146,8 +183,8 @@ def test_stream_ending_mid_link_is_flushed_rewritten():
 
 
 def test_unmapped_markdown_split_keeps_text_only():
-    out = stream(["Skip [E", "MM](https://remedymatch.com/remedies/syntropy/542-e", "lectrolyte-mineral-manna)."])
-    assert out == "Skip EMM."
+    out = stream(["Skip [M", "HT](https://remedymatch.com/remedies/378-mol", "ecular-hydrogen-tablets)."])
+    assert out == "Skip MHT."
 
 
 def test_plain_text_is_not_held_back():
@@ -176,16 +213,16 @@ def test_unknown_id_whose_name_is_exactly_a_live_slug_maps_by_slug():
         f"[Microbiome]({BASE}/begin/product/microbiome)"
 
 
-def test_unknown_id_with_no_exact_slug_is_removed():
+def test_unknown_id_with_no_exact_slug_keeps_text_only():
     assert rw("Try [Neuro Magnesium](https://remedymatch.com/remedies/80-neuromagnesium).") == \
         "Try Neuro Magnesium."
 
 
 def test_a_known_retired_id_does_not_fall_back_to_its_slug():
-    products = dict(PRODUCTS, **{"electrolyte-mineral-manna-2": {"name": "EMM 2"}})
-    out = lsl.rewrite_text("https://remedymatch.com/remedies/syntropy/542-electrolyte-mineral-manna",
+    products = dict(PRODUCTS, **{"molecular-hydrogen-tablets-2": {"name": "MHT 2"}})
+    out = lsl.rewrite_text("[MHT](https://remedymatch.com/remedies/378-molecular-hydrogen-tablets)",
                            BASE, products=products)
-    assert out == ""
+    assert out == "MHT"
 
 
 def test_the_real_catalog_slug_fallback_and_near_misses():
@@ -194,7 +231,7 @@ def test_the_real_catalog_slug_fallback_and_near_misses():
     out = lsl.rewrite_text("https://remedymatch.com/remedies/syntropy/73-microbiome "
                            "http://remedymatch.com/remedies/syntropy/250-free-easy "
                            "https://remedymatch.com/remedies/80-neuromagnesium", BASE, products=cat)
-    assert out.split(" ") == [f"{BASE}/begin/product/microbiome", "", ""]
+    assert out.split(" ") == [f"{BASE}/begin/product/microbiome", ENTRY, ENTRY]
 
 
 # ── the URL classifier the match card uses ───────────────────────────────────
