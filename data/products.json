@@ -530,7 +530,7 @@
     }
    ],
    "ingredients_source": "db-formulations-2026-06-25",
-   "description": "Brain Cleanse . Brain Cleanse Brain Cleanse One cap at bedtime cleans your brain while you sleep... Brain Cleanse supports detoxification of the central nervous system via the glymph system while you sleep. Take Brain Cleanse before you go to bed. Relax. Rest your mind. Sleep better... And have sweet dreams while your brain gets clean So you can wake to a fresh start the next day. Get this: Clarity. Focus. Energy. And health. Relaxation and restful sleep is supported by the same high-quality ingredients as in our Sleep Synergy formula, though in lower dosages to make room for 20 mg of...",
+   "description": "Brain Cleanse . Brain Cleanse Brain Cleanse One cap at bedtime cleans your brain while you sleep... Brain Cleanse supports detoxification of the central nervous system via the glymph system while you sleep. Take Brain Cleanse before you go to bed. Relax. Rest your mind. Sleep better... And have sweet dreams while your brain gets clean So you can wake to a fresh start the next day. Get this: Clarity. Focus. Energy. And health. Relaxation and restful sleep is supported by the same high-quality ingredients as in our Sleep Syntropy formula, though in lower dosages to make room for 20 mg of...",
    "gk_stale": true,
    "gk_stale_reason": "GK page missing: Xanthohumol, Xanthan Gum, Glucomannan",
    "gk_extra_accepted": true,
@@ -3686,9 +3686,11 @@
    "bottle_type": "30ml"
   },
   "sleep-syntropy": {
-   "name": "Sleep Synergy",
+   "name": "Sleep Syntropy",
+   "aliases": ["Sleep Synergy"],
+   "qbo_item_id": "48",
    "price_cents": 6997,
-   "pinecone_title": "Sleep Synergy",
+   "pinecone_title": "Sleep Syntropy",
    "url": "https://remedymatch.com/remedies/syntropy/107-sleep-syntropy",
    "qty_pricing": true,
    "ingredients": [
@@ -3774,7 +3776,7 @@
     }
    ],
    "ingredients_source": "db-formulations-2026-06-25",
-   "description": "Sleep Synergy . Sleep Synergy Sleep Syntropy Most natural sleep aids include the herb Valerian. That's a bad idea... because 40% of people have an opposite reaction to the desired soporific effect... We include a wide range of other botanical, nutritional and endocrine factors to support relaxing and falling asleep at the end of your day. We also include a number of factors that help boost bioavailability, absorption and delivery of all the other ingredients. What we don't include is any excipients, artificial colorings (our green Vegicaps are made with Chlorophyll), flow agents or other...",
+   "description": "Sleep Syntropy . Sleep Syntropy Sleep Syntropy Most natural sleep aids include the herb Valerian. That's a bad idea... because 40% of people have an opposite reaction to the desired soporific effect... We include a wide range of other botanical, nutritional and endocrine factors to support relaxing and falling asleep at the end of your day. We also include a number of factors that help boost bioavailability, absorption and delivery of all the other ingredients. What we don't include is any excipients, artificial colorings (our green Vegicaps are made with Chlorophyll), flow agents or other...",
    "bottle_type": "30 Caps",
    "fmp_id": "328"
   },
@@ -21419,7 +21421,7 @@
    "autoship_eligible": false,
    "bundle_components": [
     "Brain Cleanse",
-    "Sleep Synergy",
+    "Sleep Syntropy",
     "Therapeutic Nightlight",
     "Biocompatible Nightlight"
    ],
@@ -21441,7 +21443,7 @@
      "qty": 1
     }
    ],
-   "bundle_description": "Support for restful, regenerative, cleansing sleep: Brain Cleanse, Sleep Synergy, and biocompatible lighting.",
+   "bundle_description": "Support for restful, regenerative, cleansing sleep: Brain Cleanse, Sleep Syntropy, and biocompatible lighting.",
    "price_cents": 35095
   },
   "molecular-hydrogen-bottle": {

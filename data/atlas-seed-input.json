@@ -291,11 +291,11 @@
     },
     {
       "id": "sleep-synergy",
-      "label": "Sleep Synergy",
+      "label": "Sleep Syntropy",
       "aliases": [
-        "sleep syntropy"
+        "sleep synergy"
       ],
-      "summary": "Sleep Synergy is a botanical and nutritional Syntropy formulation for relaxation and sleep onset, intentionally excluding Valerian.",
+      "summary": "Sleep Syntropy is a botanical and nutritional Syntropy formulation for relaxation and sleep onset, intentionally excluding Valerian.",
       "cluster": "brain-nervous",
       "parent": "brain-nervous",
       "namespaces": [
@@ -307,7 +307,7 @@
           "type": "product",
           "source": "remedymatch",
           "url": "https://remedymatch.com/remedies/syntropy/107-sleep-syntropy",
-          "title": "Sleep Synergy"
+          "title": "Sleep Syntropy"
         }
       ]
     },
