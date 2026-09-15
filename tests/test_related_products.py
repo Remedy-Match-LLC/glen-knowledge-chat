@@ -9,6 +9,7 @@ _PRODUCTS = {
     "denas-scenar": {"name": "DENAS PCM Pro"},
     "old-thing": {"name": "Old", "inactive": True},
     "water-ionizer-9plate": {"name": "9-Plate Water Ionizer (Living Water)"},
+    "fungifuge": {"name": "Fungifuge"},
 }
 
 def test_manual_picks_only_are_featured_and_auto_goes_to_more():
@@ -64,14 +65,16 @@ def test_reasons_present_even_when_empty():
 
 
 def test_auto_drops_self_inactive_and_do_not_recommend():
+    # The plate water ionizers are a primary recommendation (Glen, #1170), so the 9-plate
+    # ionizer stays. Fungifuge is on the do-not-recommend list and is dropped.
     out = rp.resolve_related(
         "iop-syntropy",
         manual=[],
-        harvested=["iop-syntropy", "old-thing", "water-ionizer-9plate", "wholomega"],
+        harvested=["iop-syntropy", "old-thing", "fungifuge", "water-ionizer-9plate", "wholomega"],
         semantic=[],
         products=_PRODUCTS)
-    assert out["featured"] == ["wholomega"]
-    assert out["more"] == []
+    assert out["featured"] == ["water-ionizer-9plate"]
+    assert out["more"] == ["wholomega"]
 
 def test_manual_bypasses_guardrail_but_dedups_from_auto():
     out = rp.resolve_related(
