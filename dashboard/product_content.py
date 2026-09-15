@@ -294,9 +294,13 @@ _CARD_SYSTEM = (
 # section (empty rather than a non-compliant claim on a live page).
 # pterygium added 2026-09-14: Nous Energy's live card carried "Support for eye health,
 # including pterygium-related concerns", grounded on old page copy, and the gate let it pass.
+# prescription steroids, tapering off and reducing the need for added 2026-09-15: the Adrenals
+# glossary entry claimed a remedy reduced "the need for prescription steroids" and eased
+# "tapering off the Rx forms". A medication claim, withdrawn on Glen's approval.
 _DENY_RE = re.compile(
     r"\b(floaters?|detachment|macular degeneration|glaucoma|cataracts?|pterygium|pterygia|"
-    r"treatments?|treats?|prevents?|cures?|reverses?|addresses)\b", re.I)
+    r"treatments?|treats?|prevents?|cures?|reverses?|addresses|"
+    r"prescription steroids?|tapering off|reducing the need for)\b", re.I)
 
 
 def _deny_hits(text: str) -> list:

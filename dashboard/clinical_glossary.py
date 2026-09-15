@@ -70,12 +70,19 @@ def dimensions(catalog=None):
     return out
 
 
+def _public_entry(entry):
+    """An entry without its dated description snapshots. Those hold superseded text,
+    and the resync moves each replaced description into one, so a public route must
+    never return them (Glen, 2026-09-15). They stay in the file as history."""
+    return {k: v for k, v in entry.items() if not k.startswith("description_snapshot")}
+
+
 def get_dimension(key, catalog=None):
-    """Full dimension record (with entries) or None."""
+    """Full dimension record (with public entries) or None."""
     cat = catalog if catalog is not None else load()
     for d in cat.get("dimensions", []):
         if d.get("key") == key:
-            return d
+            return {**d, "entries": [_public_entry(e) for e in d.get("entries", [])]}
     return None
 
 
