@@ -30,8 +30,11 @@ TAIL_CHARS = 3000
 KILL_AFTER_SECS = 10
 BACKSTOP_SECS = 30
 DRAIN_SECS = 5
-# coreutils timeout exits 124 when the budget ran out, and 128+9 when it had to SIGKILL.
-_TIMEOUT_CODES = (124, 137)
+# coreutils timeout exits 124 when the budget ran out. When the child ignores SIGTERM and the
+# -k grace ends, timeout SIGKILLs the whole process group, itself included, so the parent sees
+# -9. Measured on Render's Linux, 2026-09-15: ignores-TERM gave -9 after 4.0s with -k 2 at 2s,
+# and a plain timeout gave 124. 137 is kept for shells that report the kill as 128+9.
+_TIMEOUT_CODES = (124, 137, -9)
 
 
 def _kill_group(proc):
@@ -69,6 +72,14 @@ def run_script(args, timeout, env=None, label="job"):
     started = time.monotonic()
     out = {"ok": False, "returncode": None, "timed_out": False, "duration_s": 0.0,
            "stdout": "", "stderr": "", "error": ""}
+    # Under the wrapper, Popen starts `timeout` itself, which then fails to exec a missing
+    # program and exits 127. Check the program first, so "could not start" stays a start
+    # failure and is never reported as "exit 127".
+    prog = (list(args) or [""])[0]
+    if not (shutil.which(prog) or (os.path.isfile(prog) and os.access(prog, os.X_OK))):
+        out["error"] = "exception: FileNotFoundError"
+        print(f"[{label}] could not start: FileNotFoundError", flush=True)
+        return out
     argv, hard = hard_budget_argv(args, timeout)
     child_env = dict(os.environ if env is None else env)
     child_env.setdefault("PYTHONUNBUFFERED", "1")  # a killed child still leaves its output
@@ -99,12 +110,17 @@ def run_script(args, timeout, env=None, label="job"):
         rc = proc.returncode
         if hard and rc in _TIMEOUT_CODES:
             out["timed_out"] = True
+        elif hard and rc in (126, 127) and not out["timed_out"]:
+            # coreutils timeout: 126 means the program could not be run, 127 not found.
+            out["error"] = "exception: could not start"
         _kill_group(proc)  # anything the child left behind in its group
         out["returncode"] = rc
         out["stdout"], out["stderr"] = _read(fo), _read(fe)
     out["duration_s"] = round(time.monotonic() - started, 1)
     if out["timed_out"]:
         out["error"] = f"timeout after {timeout}s"
+    elif out["error"]:
+        pass  # already classified, e.g. the wrapper could not run the program
     elif rc != 0:
         out["error"] = f"exit {rc}"
     else:
