@@ -58,14 +58,21 @@ def test_dnd_flag_revokes_optin(app_db):
     assert "type:client" in t  # other tags preserved
 
 
-def test_email_bounced_tag_revokes(app_db):
+def test_email_bounced_tag_blocks_the_address_not_consent(app_db):
+    """Changed 2026-09-15 (people-48's field spec). A bounce is not a refusal: it
+    blocks the address in email_suppression and leaves consent alone. It used to
+    stamp consent:unsubscribed, which is how ~883 of 892 came to be bounces."""
     app, db = app_db
     _seed(db, "b@x.com", ["type:client", "consent:opted-in"])
     with sqlite3.connect(db) as cx:
         app._upsert_person_additive(cx, {"email": "b@x.com", "tags": ["email bounced"]})
         cx.commit()
     t = _tags(db, "b@x.com")
-    assert "consent:opted-in" not in t and "consent:unsubscribed" in t
+    assert "consent:unsubscribed" not in t and "email bounced" in t
+    with sqlite3.connect(db) as cx:
+        row = cx.execute("SELECT bounce_type, source FROM email_suppression WHERE email=?",
+                         ("b@x.com",)).fetchone()
+    assert row == ("hard", "ghl")
 
 
 def test_sms_unsubscribe_does_not_revoke_email(app_db):

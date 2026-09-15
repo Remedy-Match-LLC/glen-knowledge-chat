@@ -9,7 +9,7 @@ Cron (add via `crontab -e`):
 Requires CONSOLE_SECRET env var (or doppler: CONSOLE_SECRET or WEBHOOK_SECRET).
 """
 
-import os, sys, json, base64, re, subprocess, requests
+import os, sys, json, base64, re, subprocess, requests, time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import anthropic as _ant
@@ -602,12 +602,86 @@ GHL_FIELD_MAP = {
     "Hu7x2xN60nOG3fMT0uZY": "island",
 }
 
+# ── GHL v2 per-channel email DND ─────────────────────────────────────────────
+# v1 /contacts/ carries only the all-channel `dnd` flag. It read false on all 13 of
+# 25 sampled contacts whose EMAIL DND was active (2026-09-15), so email DND never
+# reached the hub. v2 POST /contacts/search returns dndSettings per channel, 100
+# contacts a request: about 44 requests for the location's ~4,300 contacts, against
+# ~4,300 for a per-contact GET. Measured 2026-09-15: 12 pages read in 9.3 s.
+GHL_V2_BASE = 'https://services.leadconnectorhq.com'
+GHL_V2_VERSION = '2021-07-28'
+# GHL v2 sits behind Cloudflare, which refuses Python's default user agent with
+# error 1010. This is the identity dashboard/ghl_email.py sends.
+GHL_V2_UA = 'RemedyMatch/1.0 (+https://illtowell.com)'
+GHL_V2_PAGE = 100
+GHL_V2_MAX_PAGES = 200      # 20,000 contacts, a runaway stop well above the ~4,300
+GHL_V2_PAUSE_SECS = 0.2     # ~5 req/s, far under GHL's 100 per 10 s burst limit
+
+
+def _email_dnd_of(contact):
+    """(status, message) of a v2 contact's dndSettings.Email, lowercased status."""
+    settings = contact.get('dndSettings') or {}
+    em = settings.get('Email') or settings.get('email') or {}
+    if not isinstance(em, dict):
+        return '', ''
+    return (str(em.get('status') or '').strip().lower(),
+            str(em.get('message') or '').strip())
+
+
+def fetch_email_dnd_v2():
+    """{contact_id: (status, message)} for every contact in the location, or None.
+
+    None on ANY failure: no token, a non-200, a transport error, a bad body, or the
+    page cap. A partial read is discarded too, so a failed run sends exactly the
+    payload the sync sent before this existed. It never unblocks anyone: the hub
+    only ever adds blocks from these fields."""
+    token = _get_secret('GHL_PIT')
+    if not token:
+        print('  GHL_PIT not set — email DND not carried this run')
+        return None
+    location = _get_secret('GHL_LOCATION_ID') or LOCATION_ID
+    headers = {
+        'Authorization': f'Bearer {token}',
+        'Version': GHL_V2_VERSION,
+        'Accept': 'application/json',
+        'Content-Type': 'application/json',
+        'User-Agent': GHL_V2_UA,
+    }
+    out, after = {}, None
+    try:
+        for _ in range(GHL_V2_MAX_PAGES):
+            body = {'locationId': location, 'pageLimit': GHL_V2_PAGE}
+            if after:
+                body['searchAfter'] = after
+            r = requests.post(f'{GHL_V2_BASE}/contacts/search', headers=headers,
+                              json=body, timeout=30)
+            if r.status_code != 200:
+                print(f'  GHL v2 contact search error: {r.status_code} — '
+                      'email DND not carried this run')
+                return None
+            page = (r.json() or {}).get('contacts') or []
+            for c in page:
+                if c.get('id'):
+                    out[c['id']] = _email_dnd_of(c)
+            after = page[-1].get('searchAfter') if page else None
+            if len(page) < GHL_V2_PAGE or not after:
+                return out
+            time.sleep(GHL_V2_PAUSE_SECS)
+    except Exception as e:
+        print(f'  GHL v2 contact search failed: {e!r} — email DND not carried this run')
+        return None
+    print('  GHL v2 contact search hit the page cap — email DND not carried this run')
+    return None
+
+
 def sync_people_from_ghl(batch_size=100):
     """Sync GHL contacts → Render people table."""
     if not GHL_API_KEY:
         print('  GHL_API_KEY not set — skipping people sync')
         return
     print('\n[PEOPLE] Syncing from GHL...')
+    # Read once per run, before paging v1. None means "carry nothing new".
+    email_dnd = fetch_email_dnd_v2()
     page, total_synced = 1, 0
     while True:
         try:
@@ -678,6 +752,13 @@ def sync_people_from_ghl(batch_size=100):
                 'organizations': orgs,
                 'last_contact_date': (c.get('dateUpdated') or '')[:10],
             }
+            # Per-channel email DND from v2. The hub decides what it means: an
+            # address-level block, or a refusal only alongside a refusal signal.
+            if email_dnd is not None:
+                status, message = email_dnd.get(c.get('id') or '', ('', ''))
+                if status:
+                    person['email_dnd'] = status
+                    person['email_dnd_message'] = message
             # merge custom fields
             for k, v in cf.items():
                 if k != 'organizations' and k != 'island':
