@@ -27,6 +27,16 @@ def test_add_to_cart_has_a_base_style_in_the_page_css():
     assert "border-radius" in body and "var(--gold)" in body
 
 
+def test_add_to_cart_has_a_light_theme_override_that_meets_contrast():
+    """The light palette sets --gold to #B08A3E, which is 3.2:1 on white: too faint for
+    15px button text (AA needs 4.5:1). Light theme darkens the text and the border."""
+    css = _css()
+    rule = re.search(r':root\[data-theme="light"\] #buy-actions \.btn-secondary\{([^}]*)\}', css)
+    assert rule, "no light-theme rule for the Add to cart button"
+    assert "color:#7A5C1F" in rule.group(1).replace(" ", "")
+    assert "border-color:#B08A3E" in rule.group(1).replace(" ", "")
+
+
 def test_add_to_cart_has_hover_focus_and_phone_rules():
     css = _css()
     assert "#buy-actions .btn-secondary:hover" in css
