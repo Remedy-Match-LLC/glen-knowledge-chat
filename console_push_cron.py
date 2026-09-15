@@ -790,10 +790,34 @@ def sync_people_from_ghl(batch_size=100):
 
 
 # ── Main ──────────────────────────────────────────────────────────────────────
-def main():
+PEOPLE_ONLY = '--people-only'
+SKIP_PEOPLE = '--skip-people'
+
+
+def run_mode(argv):
+    """'full' with no flag, which is what the Mac backstop runs. 'people' for --people-only.
+    'skip-people' for --skip-people. Render runs the people sync as its own job with its own
+    time budget, so a slow Gmail step can no longer starve it."""
+    args = set(argv or [])
+    if PEOPLE_ONLY in args and SKIP_PEOPLE in args:
+        raise SystemExit(f'{PEOPLE_ONLY} and {SKIP_PEOPLE} cannot be combined')
+    if PEOPLE_ONLY in args:
+        return 'people'
+    if SKIP_PEOPLE in args:
+        return 'skip-people'
+    return 'full'
+
+
+def main(argv=None):
+    mode = run_mode(sys.argv[1:] if argv is None else argv)
     print(f'\n{"="*55}')
-    print(f'Console Push  |  {datetime.now().strftime("%Y-%m-%d %H:%M")}')
+    print(f'Console Push  |  {datetime.now().strftime("%Y-%m-%d %H:%M")}  |  {mode}')
     print(f'{"="*55}')
+
+    if mode == 'people':
+        sync_people_from_ghl()
+        print(f'\nDone.\n')
+        return
 
     all_todos = []
 
@@ -824,7 +848,8 @@ def main():
     _post_todos(all_todos)
 
     # People sync (GHL → Render)
-    sync_people_from_ghl()
+    if mode != 'skip-people':
+        sync_people_from_ghl()
 
     # Calendar
     push_calendar_events(days=14)
