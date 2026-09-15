@@ -267,6 +267,25 @@ def test_the_people_sync_job_records_a_timeout_and_the_endpoint_reports_it(app_m
     assert "partial" not in r.get_data(as_text=True)  # output text never leaves the server
 
 
+def test_a_broken_status_store_never_stops_the_people_sync(app_mod, monkeypatch, capsys):
+    ran = []
+
+    def fake_run(args, timeout, env=None, label="job"):
+        ran.append(label)
+        return {"ok": True, "returncode": 0, "timed_out": False, "duration_s": 1.0,
+                "stdout": "", "stderr": "", "error": ""}
+
+    def broken(*a, **k):
+        raise RuntimeError("status table unavailable")
+
+    monkeypatch.setattr(cron_runner, "run_script", fake_run)
+    monkeypatch.setattr(cron_status, "init_table", broken)
+    app_mod._run_people_sync()  # must not raise
+    assert ran == ["people_sync"]  # the sync itself still ran
+    out = capsys.readouterr().out
+    assert "status start not recorded" in out and "status result not recorded" in out
+
+
 def test_the_console_push_job_skips_people_and_still_saves_tokens(app_mod, monkeypatch, tmp_path):
     seen = {}
 
