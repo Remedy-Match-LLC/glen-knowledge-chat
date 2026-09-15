@@ -1,10 +1,13 @@
-"""Sleep Synergy is renamed Sleep Syntropy, 2026-09-15 (Glen: "rename sleep syntropy").
+"""Sleep Synergy is renamed Sleep Syntropy, 2026-09-15.
 
-The Iron Syntropy pattern: the display name changes and pinecone_title keeps the old name, so
-the stored vectors and every old-name lookup still match. The product is pinned to QuickBooks
-item 48 ("Sleep Synergy"), so a revived booking path cannot create a third item by name.
+Glen: "rename sleep syntropy", then "descriptions, teaching data and the search title should say
+Sleep Syntropy". So name, pinecone_title, descriptions and the Atlas data all carry the new name.
+The old name stays reachable as an alias and a glossary override, so past orders, scans and
+older text still resolve. The product is pinned to QuickBooks item 48 ("Sleep Synergy"), so a
+revived booking path cannot create a third item by name.
 """
 import json
+import pathlib
 
 from dashboard import biofield_invoice as bi
 from dashboard import clinical_glossary as cg
@@ -13,13 +16,30 @@ from dashboard import shipping
 PRODUCTS = json.load(open("data/products.json", encoding="utf-8"))["products"]
 CATALOG = [dict(p, slug=s) for s, p in PRODUCTS.items()]
 
+# Where the old name may still appear on purpose: lookups that keep it resolving.
+OLD_NAME_ALLOWED = {
+    "data/products.json": 1,                   # aliases: ["Sleep Synergy"]
+    "data/clinical_remedy_overrides.json": 1,  # "Sleep Synergy": "sleep-syntropy"
+}
 
-def test_the_record_carries_the_new_name_and_keeps_its_vector_title():
+
+def test_the_record_carries_the_new_name_everywhere_a_reader_sees_it():
     p = PRODUCTS["sleep-syntropy"]
     assert p["name"] == "Sleep Syntropy"
-    assert p["pinecone_title"] == "Sleep Synergy"
+    assert p["pinecone_title"] == "Sleep Syntropy"
+    assert p["aliases"] == ["Sleep Synergy"]
     assert p["qbo_item_id"] == "48"
     assert not p.get("inactive")
+    assert "Sleep Synergy" not in p["description"]
+
+
+def test_no_data_file_names_sleep_synergy_outside_the_old_name_lookups():
+    counts = {}
+    for f in sorted(pathlib.Path("data").rglob("*.json")):
+        n = f.read_text(encoding="utf-8").count("Sleep Synergy")
+        if n:
+            counts[f.as_posix()] = n
+    assert counts == OLD_NAME_ALLOWED
 
 
 def test_both_names_resolve_to_the_product():
