@@ -144,10 +144,11 @@ def test_retired_alias_gets_no_purchase_link_at_all():
       * Dental Regen Powder now has `superseded_by: dental-powder`, so it follows
         its successor exactly like WholOmega does in
         test_alias_follows_superseded_sku_to_its_successor.
-    Electrolyte Mineral Manna stays: still retired, no successor, and on the
-    do-not-recommend list."""
+    Electrolyte Mineral Manna left on 2026-09-14: Glen ruled it "buyable", so it
+    now carries a link (tests/test_emm_buyable_not_recommended.py). Molecular
+    Hydrogen Tablets is retired with no successor and takes its place here."""
     directive = app.build_product_directive(query_text="what do you recommend")
-    for name in ("Electrolyte Mineral Manna",):
+    for name in ("Molecular Hydrogen Tablets",):
         row = [l for l in directive.splitlines() if l.strip().startswith(f"• {name} ")]
         assert row, f"{name} missing from table"
         assert "DESCRIBE-ONLY" in row[0], row[0]
