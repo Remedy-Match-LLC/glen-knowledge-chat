@@ -40116,9 +40116,11 @@ _EMAIL_DND_NON_REFUSAL_WRITERS = {
     "Updated by contact merge": "address",
     # Z-015-4 Email Bounced.
     "Updated from workflow_2d7fa93f-e008-461d-b2c4-711c4acf3f2d": "address",
-    # Z-016-01 and Z-016-02 re-subscribe. They set the channel inactive and never block.
-    "Updated from workflow_49556753-45ee-45d2-a6b1-c576f6c26b88": "none",
-    "Updated from workflow_6d0f6dc3-fbe5-48c8-aa0b-b6db3ce92878": "none",
+    # Z-016-01 and Z-016-02 re-subscribe. Normally they set the channel inactive, and
+    # inactive never blocks. An ACTIVE status with one of these messages fails closed
+    # to address-level (people-48, 2026-09-15): not a refusal, and not nothing.
+    "Updated from workflow_49556753-45ee-45d2-a6b1-c576f6c26b88": "address",
+    "Updated from workflow_6d0f6dc3-fbe5-48c8-aa0b-b6db3ce92878": "address",
 }
 # Any message containing this is an SMS carrier error with no email effect.
 _EMAIL_DND_SMS_ERROR_MARKER = "TWILIO_ERROR_CODE"

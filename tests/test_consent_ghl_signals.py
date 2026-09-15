@@ -4,9 +4,10 @@
   - A GHL "email bounced" tag blocks the ADDRESS (email_suppression, hard, source ghl)
     and changes nothing about the person's consent. The raw tag stays as history.
   - An active v2 email DND is a refusal unless its message is a known non-refusal
-    writer (people-48's ruling, 2026-09-15): the email service or a contact merge or
-    the Z-015-4 bounce workflow block the address only; a Twilio carrier error and
-    the Z-016 re-subscribe workflows write nothing. Unknown or blank means refusal.
+    writer (people-48's ruling, 2026-09-15): the email service, a contact merge, the
+    Z-015-4 bounce workflow and an active Z-016 re-subscribe workflow block the
+    address only; a Twilio carrier error writes nothing. Unknown or blank means
+    refusal. An inactive status never blocks.
   - The v1 all-channel `dnd` flag is a refusal.
   - Nothing removes an existing consent:unsubscribed.
 """
@@ -209,14 +210,27 @@ def test_a_twilio_carrier_error_writes_nothing_for_email(app_db):
 
 
 @pytest.mark.parametrize("message", [Z016_01, Z016_02], ids=["z016-01", "z016-02"])
-@pytest.mark.parametrize("status", ["active", "inactive"])
-def test_a_resubscribe_workflow_never_blocks(app_db, message, status):
+def test_an_active_resubscribe_workflow_is_address_level(app_db, message):
+    """people-48, 2026-09-15: an active status with a re-subscribe message fails
+    closed to an address-level block. It is not a refusal."""
     app, path = app_db
     _seed(path, "rs@x.com", ["type:client", "consent:opted-in"])
-    _upsert(app, path, {"email": "rs@x.com", "email_dnd": status, "email_dnd_message": message})
-    assert _row(path, "rs@x.com") is None
+    _upsert(app, path, {"email": "rs@x.com", "email_dnd": "active", "email_dnd_message": message})
+    assert _row(path, "rs@x.com") == ("ghl-dnd", "ghl")
     t = _tags(path, "rs@x.com")
     assert "consent:unsubscribed" not in t and "consent:opted-in" in t
+    assert _suppressed(path, "rs@x.com") is True
+
+
+@pytest.mark.parametrize("message", [Z016_01, Z016_02], ids=["z016-01", "z016-02"])
+def test_an_inactive_resubscribe_workflow_writes_nothing(app_db, message):
+    app, path = app_db
+    _seed(path, "ri@x.com", ["type:client", "consent:opted-in"])
+    _upsert(app, path, {"email": "ri@x.com", "email_dnd": "inactive", "email_dnd_message": message})
+    assert _row(path, "ri@x.com") is None
+    t = _tags(path, "ri@x.com")
+    assert "consent:unsubscribed" not in t and "consent:opted-in" in t
+    assert _suppressed(path, "ri@x.com") is False
 
 
 def test_an_inactive_dnd_from_an_unknown_writer_never_blocks(app_db):
