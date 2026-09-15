@@ -30742,11 +30742,26 @@ def _run_autoconfirm(cx, email, scan_date, content):
         from dashboard.biofield_portal_publish import load_catalog, resolve_remedy_slug
         _ac.init_autoconfirm_log(cx)
         catalog = load_catalog()
+        resolve = lambda n: resolve_remedy_slug(n, catalog)
+        if ANALYSIS_AUTOCONFIRM_ENABLED:
+            # Read species directly, not through _client_species_for: that helper is gated
+            # on the greeting flag, and this rule must hold whatever the greeting does.
+            from dashboard import client_species as _cs
+            _cs.init_table(cx)
+            rec = _cs.get(cx, email)
+            if rec and rec["is_animal"]:
+                why = _ac.animal_formulation_reasons(
+                    content, resolve_slug=resolve,
+                    is_formulation=lambda s: _qty_eligible(catalog.get(s) or {}))
+                if why:
+                    _ac._log(cx, email, scan_date, "held_animal_formulation", why, False,
+                             datetime.now(timezone.utc).isoformat())
+                    return "held_animal_formulation"
         return _ac.maybe_auto_confirm(
             cx, email, scan_date, content,
             enabled=ANALYSIS_AUTOCONFIRM_ENABLED,
             sample_pct=ANALYSIS_AUTOCONFIRM_SAMPLE_PCT,
-            resolve_slug=lambda n: resolve_remedy_slug(n, catalog),
+            resolve_slug=resolve,
             red_flag_terms=_AUTOCONFIRM_RED_FLAGS,
             confirm_fn=_autoconfirm_confirm_fn,
             now=datetime.now(timezone.utc).isoformat())
@@ -35877,21 +35892,18 @@ def admin_client_portal_upsert():
     with _db_lock, db.connect(LOG_DB) as cx:
         _cp.init_client_portal_table(cx)
         _pbr.init_table(cx)
-        # Never un-publish: a re-hand-off pushes biofield_status='ai_draft', but if this
-        # client's analysis (or the report at this scan_date) is ALREADY confirmed, keep
-        # it confirmed so a re-sync can't re-blur a published analysis. Only an EXPLICIT
-        # stored 'confirmed' preserves — a brand-new client still starts as ai_draft.
+        # Never un-publish: a re-hand-off of the SAME scan pushes biofield_status='ai_draft',
+        # and if the report at this scan_date is already confirmed it stays confirmed, so a
+        # re-sync can't re-blur a published analysis. A NEW scan is never carried over from
+        # the client's earlier confirmed portal: every new analysis goes through the gate
+        # below (Glen, 2026-09-15). The old portal-level carry-over published 45 unchecked
+        # drafts from 2026-07-08 on, 23 of which failed the gate.
         if (content.get("biofield_status") or "").strip() == "ai_draft":
             keep = False
             try:
                 if scan_date:
                     rep0 = _pbr.get_report(cx, email, scan_date) or {}
                     keep = rep0.get("status") == "confirmed"
-                if not keep:
-                    row0 = cx.execute("SELECT content_json FROM client_portals WHERE email=?",
-                                      (email,)).fetchone()
-                    if row0:
-                        keep = (json.loads(row0[0] or "{}") or {}).get("biofield_status") == "confirmed"
             except Exception:
                 keep = False
             if keep:
