@@ -8679,9 +8679,13 @@ def begin_buy_page(slug):
 
 @app.route("/begin/product/<slug>")
 def begin_product_page(slug):
-    if not _get_product(slug):
+    product = _get_product(slug)
+    if not product:
         return ("", 404)
     html = (STATIC / "begin-product.html").read_text(encoding="utf-8")
+    name = _ihtml.escape(product.get("name") or "Product")
+    html = html.replace("<title>Product · Dr. Glen Swartwout</title>",
+                        f"<title>{name} · Dr. Glen Swartwout</title>", 1)
     if _PORTAL_CART_ENABLED:
         html = (html.replace("/*__CART_CONTROL_FN_START__*/", "")
                     .replace("/*__CART_CONTROL_FN_END__*/", "")
