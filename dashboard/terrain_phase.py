@@ -15,6 +15,12 @@ Glen's rules, 2026-09-16, given in his own words:
   Fungal (3)."
 - "Autonomic Nervous System: link to Phase 5." ED6 and EI11 are the two findings whose
   own descriptions name the sympathetic/parasympathetic nerves.
+- "Heavy metals is also important in phase 1 (detox at the intracellular level)."
+
+**A finding can serve more than one phase.** ES15 Heavy Metals Detox is the case that
+proves it: Phase 4 as elimination, and Phase 1 as intracellular detox in the anergy
+terrain. So this returns a TUPLE, not a number. An earlier version returned a single
+phase and would have forced a choice that loses half the answer.
 
 Deliberately NOT guessed: the other 240 findings. ER, ENV, NUT, ES, MR, MB and most of
 ED and EI carry no phase here, and `phase_for` returns None for them rather than a
@@ -36,34 +42,40 @@ PHASE_NAMES = {
     REGULATE: "Regulate",
 }
 
-# The ET exceptions, by name rather than by number, because the number is positional
-# and the name is what Glen ruled on.
-_ET_EXCEPTIONS = {"ET13": REGENERATE,      # Fungal Terrain
-                  "ET14": REJUVENATE}      # Bacterial Terrain
+# Ruled per finding. A tuple, because a finding can serve several phases.
+_RULED = {
+    "ET13": (REGENERATE,),        # Fungal Terrain
+    "ET14": (REJUVENATE,),        # Bacterial Terrain
+    "ED6": (REGULATE,),           # Heart Driver — sympathetic/parasympathetic
+    "EI11": (REGULATE,),          # Bone Marrow - Stomach Integrator — same
+    # Elimination AND intracellular detox in the anergy terrain. Glen, 2026-09-16.
+    "ES15": (RECLAIM, RECHARGE),  # Heavy Metals Detox
+}
 
-# Findings whose own text names the autonomic nervous system.
-_AUTONOMIC = {"ED6": REGULATE,             # Heart Driver
-              "EI11": REGULATE}            # Bone Marrow – Stomach Integrator
 
+def phases_for(code):
+    """Every phase a finding serves, as a tuple. Empty when Glen has not ruled on it.
 
-def phase_for(code):
-    """The phase for one finding code, or None when Glen has not ruled on it.
-
-    None is a real answer here and callers must handle it. Grouping falls back to
-    another axis rather than inventing a healing direction.
+    Empty is a real answer and callers must handle it: grouping falls back to another
+    axis rather than inventing a healing direction.
     """
     code = str(code or "").strip().upper()
     if not code:
-        return None
-    if code in _AUTONOMIC:
-        return _AUTONOMIC[code]
-    if code in _ET_EXCEPTIONS:
-        return _ET_EXCEPTIONS[code]
+        return ()
+    if code in _RULED:
+        return _RULED[code]
     if code.startswith("ET"):
         # "Most of the ET terrains ... are linked to particular viral susceptibility
         # patterns which would be Phase 1."
-        return RECHARGE
-    return None
+        return (RECHARGE,)
+    return ()
+
+
+def phase_for(code):
+    """The FIRST phase, for a caller that can only hold one. Prefer phases_for:
+    ES15 serves two, and this hides the second."""
+    got = phases_for(code)
+    return got[0] if got else None
 
 
 def phase_name(phase):
@@ -71,12 +83,16 @@ def phase_name(phase):
 
 
 def group_by_phase(codes):
-    """{phase: [codes]} plus an "unplaced" bucket, order preserved within each."""
+    """{phase: [codes]} plus an "unplaced" bucket, order preserved within each.
+
+    A finding serving two phases appears under BOTH, which is the point: ES15 is how
+    a detox layer and a low-energy layer come to share an anchor.
+    """
     out, unplaced = {}, []
     for code in codes or []:
-        p = phase_for(code)
-        if p is None:
+        ps = phases_for(code)
+        if not ps:
             unplaced.append(code)
-        else:
+        for p in ps:
             out.setdefault(p, []).append(code)
     return {"by_phase": out, "unplaced": unplaced}
