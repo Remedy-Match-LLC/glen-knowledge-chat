@@ -255,6 +255,15 @@ def test_every_shipped_name_exists_in_the_filemaker_export():
     col = next(c for c in rows[0] if c.strip().lower() in ("product_name", "product name", "name"))
     fmp = {(r.get(col) or "").strip().lower() for r in rows}
     products = json.loads(PRODUCTS.read_text())["products"]
+    # WHICH SIDE IS WRONG, for each of these, so nobody "fixes" the correct one:
+    #   Neem  -- Glen ruled 2026-09-16 "roll-on is correct". The CATALOG is right and
+    #            FileMaker's "Neem Oil Roll On" is the record to rename. Do not drop the
+    #            hyphen from the catalog to make the lookup pass.
+    #   The three Sublinguals -- FileMaker is to be renamed to Glen's new names, and the
+    #            catalog half is held here until it is.
+    # In every case the fix is on the FileMaker side. Until it lands these four under-
+    # invoice a month's supply as one bottle.
+    #
     # BROKEN BEFORE THIS BATCH, and not made worse by it. Measured against origin/main:
     # each of these survivors already carried a name FileMaker does not have, so a layer
     # carrying the catalog name already bills one bottle today. FileMaker calls them
