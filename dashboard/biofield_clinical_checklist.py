@@ -647,11 +647,18 @@ def build(profile, layers, stress_data=None, remedy_lookup=None, stress_lookup=N
                      "common_remedies": common_remedies[:MAX_COMMON_REMEDIES],
                      "stress_pattern": remembered or suggested,
                      "remembered_pattern": remembered,
-                     "pattern_is_suggested": bool(suggested),
-                     # Display only. `label` stays canonical, because remembered
-                     # remedies, the stress pattern, the layer assignment and the
-                     # catalog are all stored against it.
-                     "display_label": shown.get(_norm(label)) or ""})
+                     "pattern_is_suggested": bool(suggested)})
+        # Display only, and ONLY when a combination has been named. `label` stays
+        # canonical, because remembered remedies, the stress pattern, the layer
+        # assignment and the catalog are all stored against it.
+        #
+        # Added as a key rather than always present so an unnamed row is byte-identical
+        # to what every existing caller already receives. CI caught the first version:
+        # test_layer_remedy_checks_related_condition compares the whole row dict, and an
+        # always-present "display_label": "" failed it.
+        named = shown.get(_norm(label))
+        if named:
+            rows[-1]["display_label"] = named
     return rows
 
 
