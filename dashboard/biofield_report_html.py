@@ -1002,6 +1002,17 @@ async function pullIntakePriorities(){
   if(!j.ok){if(btn){btn.disabled=false;btn.textContent='Pull '+names.length+' from intake'}
    alert(j.error||('Could not add "'+names[i]+'"'));return}}
  location.reload()}
+async function combineClinicalItems(btn){
+ var row=btn.closest('.clinical-item'),pick=row.querySelector('.clinical-combine-pick');
+ var survivor=row.dataset.label, absorbed=(pick&&pick.value||'').trim();
+ if(!absorbed){alert('Pick the row to fold into this one.');return}
+ if(!confirm('Combine "'+absorbed+'" into "'+survivor+'"? They become one condition '
+   +'on every client, and "'+absorbed+'" stops appearing on its own. Its remembered '
+   +'remedies move across. This can be undone.'))return;
+ btn.disabled=true;
+ var j=await post('/author/__TID__/clinical-items/combine',
+                  {absorbed:absorbed,survivor:survivor});
+ if(j.ok)location.reload();else{btn.disabled=false;alert(j.error||'Could not combine.')}}
 async function addClinicalItem(){
  var input=document.getElementById('clinicalNew'),label=(input&&input.value||'').trim();
  if(!label)return;
@@ -1609,6 +1620,17 @@ def render_clinical_checklist(items, layers=None, intake_priorities=None,
         remembered_pattern = (item.get("remembered_pattern") or "").strip()
         stress_hidden = "" if (typed_pattern and remembered_pattern and
                                typed_pattern.lower() != remembered_pattern.lower()) else " hidden"
+        # Glen, 2026-09-16: fold two rows that are really one condition. The row you
+        # are on survives; the one picked here is absorbed into it.
+        others = "".join(
+            f"<option value=\"{_e(o.get('label') or '')}\">{_e(o.get('label') or '')}</option>"
+            for o in items if (o.get("label") or "") != (item.get("label") or ""))
+        combine_html = (
+            "<span class=clinical-combine><select class=clinical-combine-pick "
+            "aria-label='Condition to fold into this one'>"
+            f"<option value=''>Combine another row&hellip;</option>{others}</select>"
+            "<button type=button class='btn ghost' onclick=combineClinicalItems(this)>"
+            "Combine into this</button></span>") if others else ""
         remedy = (f"<span class=clinical-remedy>Layer {_e(str(item.get('layer') or '?'))} · {_e(item.get('covered_by') or '')}</span>"
                   if done else "<span class=clinical-open>Needs remedy coverage</span>")
         label = item.get("label") or ""
@@ -1642,7 +1664,8 @@ def render_clinical_checklist(items, layers=None, intake_priorities=None,
                  f"placeholder=\"Defaults to '{_e(label)}'\" oninput=clinicalStressTyped(this) "
                  "onchange=saveClinicalStress(this)></label>"
                  f"<button type=button class='btn ghost clinical-stress-save'{stress_hidden} "
-                 "onclick=rememberClinicalStress(this)>Replace remembered term</button></div>"
+                 "onclick=rememberClinicalStress(this)>Replace remembered term</button>"
+                 f"{combine_html}</div>"
                  f"<div class=clinical-remedy-add><input class=clinical-custom-remedy list=catalog placeholder='Add remedy…'>"
                  f"<button type=button class='btn ghost' onclick=addClinicalRemedy(this)>+ Remedy</button></div>"
                  f"<label class=clinical-layer-label>Assign to layer"

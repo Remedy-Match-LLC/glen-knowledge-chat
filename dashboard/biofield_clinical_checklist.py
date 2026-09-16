@@ -318,6 +318,12 @@ def remedies_for(cx, label, historical=()):
             add(row)
     for name in custom_remedies(cx, label):
         add(name)
+    # A condition folded into this one brings its remembered remedies with it. They
+    # were recorded against a name the practitioner has since declared to be the same
+    # condition, so dropping them would lose real clinical work.
+    for absorbed in absorbed_by(cx, label):
+        for name in custom_remedies(cx, absorbed):
+            add(name)
     for name in program_remedies(label):
         add(name)
     return out
@@ -357,15 +363,108 @@ def catalog_items(cx, q="", limit=100):
     return sorted(found.values(), key=lambda row: row["label"].lower())[:int(limit)]
 
 
-def profile_labels(profile):
-    """Symptoms/conditions only; deliberately excludes communications and family history."""
+def ensure_alias_schema(cx):
+    """Conditions the practitioner has declared to be one thing.
+
+    Glen, 2026-09-16, wanted two Clinical summary rows folded into a single
+    condition. Stored as an alias rather than by rewriting labels: the conditions
+    arrive from the portal intake, historical intakes, people.conditions and CRM
+    tags, so rewriting one store would leave the others disagreeing, and it could
+    not be undone. An alias folds at read time and is removed by deleting a row.
+    """
+    cx.execute("""CREATE TABLE IF NOT EXISTS biofield_clinical_alias (
+        from_key TEXT PRIMARY KEY, from_label TEXT NOT NULL,
+        to_key TEXT NOT NULL, to_label TEXT NOT NULL,
+        updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+    )""")
+
+
+def alias_condition(cx, absorbed, survivor):
+    """Fold `absorbed` into `survivor`. False when they are the same condition."""
+    ensure_alias_schema(cx)
+    a_label, s_label = str(absorbed or "").strip(), str(survivor or "").strip()
+    a, s = _norm(a_label), _norm(s_label)
+    if not a or not s or a == s:
+        return False
+    cx.execute("""INSERT INTO biofield_clinical_alias
+        (from_key,from_label,to_key,to_label,updated_at)
+        VALUES (?,?,?,?,CURRENT_TIMESTAMP)
+        ON CONFLICT(from_key) DO UPDATE SET
+          from_label=excluded.from_label, to_key=excluded.to_key,
+          to_label=excluded.to_label, updated_at=CURRENT_TIMESTAMP""",
+               (a, a_label, s, s_label))
+    cx.commit()
+    return True
+
+
+def unalias_condition(cx, absorbed):
+    ensure_alias_schema(cx)
+    cx.execute("DELETE FROM biofield_clinical_alias WHERE from_key=?",
+               (_norm(absorbed),))
+    cx.commit()
+    return True
+
+
+def aliases(cx):
+    """{absorbed key: survivor label}."""
+    if cx is None:
+        return {}
+    try:
+        ensure_alias_schema(cx)
+        return {r[0]: r[1] for r in cx.execute(
+            "SELECT from_key,to_label FROM biofield_clinical_alias")}
+    except Exception:
+        return {}
+
+
+def absorbed_by(cx, survivor):
+    """Labels folded into this condition, so its remembered remedies follow it."""
+    if cx is None:
+        return []
+    try:
+        ensure_alias_schema(cx)
+        key = _norm(survivor)
+        return [r[0] for r in cx.execute(
+            "SELECT from_label FROM biofield_clinical_alias WHERE to_key=?", (key,))]
+    except Exception:
+        return []
+
+
+def resolve_alias(label, alias_map, _depth=0):
+    """The condition `label` folds into, following a chain of aliases.
+
+    Depth-capped rather than cycle-detected: two conditions folded into each other
+    is operator error, and hanging the authoring page is a worse answer than
+    returning one of them."""
+    if not alias_map:
+        return label
+    seen = set()
+    cur = label
+    for _ in range(10):
+        key = _norm(cur)
+        if key in seen:
+            break
+        seen.add(key)
+        nxt = alias_map.get(key)
+        if not nxt or _norm(nxt) == key:
+            break
+        cur = nxt
+    return cur
+
+
+def profile_labels(profile, cx=None):
+    """Symptoms/conditions only; deliberately excludes communications and family history.
+
+    With a connection, conditions the practitioner has combined fold into their
+    survivor, so a pair he declared to be one thing renders as one row."""
     profile = profile or {}
+    alias_map = aliases(cx)
     labels = list(_items(profile.get("conditions")))
     labels += [clean_health_tag(tag) for tag in _items(profile.get("tags"))
                if is_health_tag(tag)]
     out, seen = [], set()
     for label in labels:
-        label = (label or "").strip()
+        label = resolve_alias((label or "").strip(), alias_map)
         key = _norm(label)
         if label and key and key not in seen:
             seen.add(key)
@@ -373,7 +472,8 @@ def profile_labels(profile):
     return out
 
 
-def build(profile, layers, stress_data=None, remedy_lookup=None, stress_lookup=None):
+def build(profile, layers, stress_data=None, remedy_lookup=None, stress_lookup=None,
+          cx=None):
     """Return checklist rows, deriving completion from current program remedies."""
     layers = layers or []
     current = {(row.get("remedy") or "").strip().lower():
@@ -381,7 +481,7 @@ def build(profile, layers, stress_data=None, remedy_lookup=None, stress_lookup=N
                if (row.get("remedy") or "").strip()}
     balanced = [s for s in (stress_data or {}).get("balanced", []) if s.get("balanced_by")]
     rows = []
-    for label in profile_labels(profile):
+    for label in profile_labels(profile, cx=cx):
         covered_by = ""
         balanced_layer = None
         # A remedy on a layer explicitly headed/tailed by this condition is related.

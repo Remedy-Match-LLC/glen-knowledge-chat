@@ -1024,6 +1024,7 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                 profile, rep.get("layers") or [], sdata,
                 remedy_lookup=clinical_remedies,
                 stress_lookup=lambda label: stress_pattern(cx, label),
+                cx=cx,
             )
             hidden = {item_key(label) for label in dismissed_labels(cx, test_id)}
             clinical_checklist = [item for item in clinical_checklist
@@ -2216,6 +2217,24 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                         "Manually added to clinical checklist" if action == "add"
                         else "Hidden from this Biofield test")
         return {"ok": ok}
+
+    @app.route("/author/<test_id>/clinical-items/combine", methods=["POST"])
+    def author_clinical_items_combine(test_id):
+        """Declare two conditions to be one. Glen, 2026-09-16.
+
+        Stored as an alias, so nothing recorded against either name is rewritten and
+        the fold can be undone by deleting one row."""
+        from dashboard.biofield_clinical_checklist import alias_condition
+        body = request.get_json(silent=True) or {}
+        absorbed = str(body.get("absorbed") or "").strip()
+        survivor = str(body.get("survivor") or "").strip()
+        if not absorbed or not survivor:
+            return {"ok": False, "error": "Pick the row to fold into this one."}, 400
+        with sqlite3.connect(db_path) as cx:
+            if not alias_condition(cx, absorbed, survivor):
+                return {"ok": False,
+                        "error": "A condition cannot be combined with itself."}, 400
+        return {"ok": True, "absorbed": absorbed, "survivor": survivor}
 
     @app.route("/author/<test_id>/clinical-catalog")
     def author_clinical_catalog(test_id):
