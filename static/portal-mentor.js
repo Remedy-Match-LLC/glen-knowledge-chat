@@ -34,7 +34,13 @@
   // rendered only when shell_enabled is true, so with the flag off resolveHost
   // can only ever return the floating panel.
   function resolveHost(){
-    var mic=byId("chatMic"),msgs=byId("chatMsgs"),input=byId("chatInput");
+    // The visible thread, not necessarily #chatMsgs: that one lives in the Ask panel,
+    // which renders hidden on every other door. Resolving it here without revealing it
+    // keeps hostHidden() honest, so the mic starts on the hub instead of silently
+    // refusing. Falls back to #chatMsgs when the page has not defined the resolver.
+    var msgs=(typeof window.chatThreadHost==="function"?window.chatThreadHost(false):null)
+             ||byId("chatMsgs");
+    var mic=byId("chatMic"),input=byId("chatInput");
     if(mic&&msgs&&input&&byId("chatSpeaker")&&byId("chatAutoGuide")&&byId("chatContinuous")){
       return {card:true,launcher:null,panel:null,close:null,
         input:input,send:byId("chatSend"),msgs:msgs,mic:mic,speaker:byId("chatSpeaker"),
@@ -56,7 +62,11 @@
   function hostHidden(){
     if(!h)return true;
     if(!h.card)return !!h.panel.hidden;
-    var sec=(h.msgs&&h.msgs.closest)?h.msgs.closest("[data-panel]"):null;
+    // h.msgs is the visible thread (see resolveHost), so walking up from it answers
+    // "can the client see this conversation right now", which is the real question.
+    var el=h.msgs;
+    for(var n=el;n;n=n.parentElement){ if(n.hidden) return true; }
+    var sec=(el&&el.closest)?el.closest("[data-panel]"):null;
     return sec?!!sec.hidden:false;
   }
 
@@ -124,10 +134,61 @@
       u.onend=u.onerror=()=>{speaking=false;if(listenAfter)startListening();else scheduleListening()};speechSynthesis.speak(u)
     }catch(e){speaking=false;if(listenAfter)startListening();else scheduleListening()}
   }
+  // Glen, 2026-09-16: "let's limit it to five minutes at a time so it doesn't run wild",
+  // and "when 5 minutes is about to end in about 30 seconds, give a button to continue."
+  //
+  // A hands-free loop holds the microphone open and speaks every reply, so the failure it
+  // guards against is a forgotten tab listening to a room. The warning is what keeps the
+  // cap from being merely annoying: it arrives while the client is still in the
+  // conversation, and one tap buys another five minutes.
+  const CONT_MAX_MS=5*60*1000, CONT_WARN_MS=CONT_MAX_MS-30*1000;
+  var contEndTimer=null, contWarnTimer=null, contWarnEl=null;
+
+  function clearContinuousClock(){
+    window.clearTimeout(contEndTimer);window.clearTimeout(contWarnTimer);
+    contEndTimer=contWarnTimer=null;
+    if(contWarnEl&&contWarnEl.remove)try{contWarnEl.remove()}catch(e){}
+    contWarnEl=null;
+  }
+
+  function appendContinueOffer(){
+    if(!h||!h.msgs||!document.createElement)return null;
+    const wrap=document.createElement("div");
+    wrap.className="chat-bubble assistant mentor-continue";
+    wrap.textContent="Continuous conversation ends in about 30 seconds. ";
+    const b=document.createElement("button");
+    b.type="button";b.className="btn ghost";b.textContent="Keep going";
+    // Resetting the clock also clears this offer, because startContinuousClock calls
+    // clearContinuousClock first. The button removes the bubble it sits in.
+    b.addEventListener("click",()=>{if(continuousOn)startContinuousClock();else clearContinuousClock()});
+    wrap.appendChild(b);
+    h.msgs.appendChild(wrap);h.msgs.scrollTop=h.msgs.scrollHeight;
+    return wrap;
+  }
+
+  function startContinuousClock(){
+    clearContinuousClock();
+    contWarnTimer=window.setTimeout(()=>{
+      if(!continuousOn)return;
+      contWarnEl=appendContinueOffer();
+      speak("Continuous conversation ends in about thirty seconds. Tap Keep going to carry on.");
+    },CONT_WARN_MS);
+    contEndTimer=window.setTimeout(()=>{
+      if(!continuousOn)return;
+      disableContinuous();
+      if(listening)try{recognition.stop()}catch(e){}
+      const t="Continuous conversation paused after five minutes. Turn it back on whenever you like.";
+      append("assistant",t);speak(t);
+    },CONT_MAX_MS);
+  }
+
   function disableContinuous(){
     continuousOn=false;if(h&&h.continuous)h.continuous.checked=false;window.clearTimeout(restartTimer);
     restartAttempts=0;recognitionStarting=false;paintMicActive(listening);
+    clearContinuousClock();
   }
+  window.PortalVoiceClock={start:startContinuousClock,clear:clearContinuousClock,
+    maxMs:CONT_MAX_MS,warnMs:CONT_WARN_MS};
   function openMentor(activateVoice){
     if(!h)return;
     if(h.card){setContext();if(h.input)h.input.focus();return}
@@ -211,6 +272,10 @@
     if(!h)return;
     continuousOn=false;
     if(h.continuous)h.continuous.checked=false;
+    // The cap's timers are queued against the host being released. Left armed they fire
+    // at a surface the client can no longer see, and the five minute clock would also
+    // carry over into the next host as if the conversation had never stopped.
+    clearContinuousClock();
     window.clearTimeout(restartTimer);restartAttempts=0;recognitionStarting=false;speaking=false;
     try{if(window.speechSynthesis)speechSynthesis.cancel()}catch(e){}
     if(recognition)try{recognition.stop()}catch(e){}
@@ -234,7 +299,8 @@
     on(h.mic,"click",()=>{if(!recognition)return;if(listening){disableContinuous();try{recognition.stop()}catch(e){}}else startListening()});
     on(h.speaker,"click",()=>{speakerOn=!speakerOn;try{localStorage.setItem("rm_mentor_speaker",speakerOn?"on":"off")}catch(e){}syncAudioButtons();if(!speakerOn&&window.speechSynthesis){speaking=false;speechSynthesis.cancel()}});
     on(h.continuous,"change",()=>{continuousOn=h.continuous.checked;recognitionFatal=false;restartAttempts=0;
-      if(continuousOn){const t="Continuous conversation is on. Speak naturally, and I’ll listen again after each reply.";append("assistant",t);speak(t)}
+      if(continuousOn){startContinuousClock();
+        const t="Continuous conversation is on, for five minutes at a time. Speak naturally, and I’ll listen again after each reply.";append("assistant",t);speak(t)}
       else{disableContinuous();if(listening)try{recognition.stop()}catch(e){}}});
     on(h.autoGuide,"change",()=>{try{localStorage.setItem("rm_mentor_auto_guide",h.autoGuide.checked?"on":"off")}catch(e){}
       if(h.autoGuide.checked){const t="Automatic guidance is on. I’ll quietly orient you when you move to a new part of your portal.";append("assistant",t);speak(t)}});

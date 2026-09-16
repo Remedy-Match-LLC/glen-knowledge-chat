@@ -67,10 +67,17 @@ const document = {
 __FNS__
 
 // --- on the hub, the Ask panel is hidden ------------------------------------
-const host = chatThreadHost();
-assert.strictEqual(host, shellThread,
+// chatThreadHost(reveal) gained an argument on 2026-09-16: portal-mentor.js has to ask
+// which thread is visible on every attach, and revealing there would open an empty
+// thread at page load. Only the bubble writer passes true.
+assert.strictEqual(chatThreadHost(false), shellThread,
   'with the Ask panel hidden the thread must be the composer\'s own, not the hidden #chatMsgs');
-assert.strictEqual(shellThread.hidden, false, 'the composer thread must be revealed');
+assert.strictEqual(shellThread.hidden, true,
+  'resolving alone must NOT reveal the thread');
+
+const host = chatThreadHost(true);
+assert.strictEqual(host, shellThread);
+assert.strictEqual(shellThread.hidden, false, 'revealing must open the composer thread');
 
 const bubble = appendChatBubble('user', 'my knees ache in the morning');
 assert.ok(bubble, 'appendChatBubble returned null, the message vanished');

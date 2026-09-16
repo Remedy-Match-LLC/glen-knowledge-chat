@@ -85,8 +85,16 @@ function runMentor(ids, opts) {
     location: { hash: '' },
     localStorage: { _v: {}, getItem(k) { return this._v[k] || null; }, setItem(k, v) { this._v[k] = v; } },
     chatHistory: opts.chatHistory || [],
-    // run timers inline so behaviour is observable in one tick
-    setTimeout(fn) { fn(); return 0; },
+    // Run SHORT timers inline so behaviour is observable in one tick. That is what the
+    // mic's restart backoff needs (250ms, capped at 4000ms).
+    //
+    // Long ones must not fire, or they land in the wrong tick entirely. Continuous
+    // conversation gained a five minute cap on 2026-09-16, and with a blanket
+    // fire-immediately the cap ran the instant it was armed, switching the checkbox
+    // off and failing "a flag-off re-attach must not end a conversation" for a reason
+    // that has nothing to do with re-attaching. The cap's own behaviour is tested with
+    // a controllable clock in tests/test_portal_chat_voice_controls.py.
+    setTimeout(fn, ms) { if (!ms || ms <= 5000) fn(); return 0; },
     clearTimeout() {},
     addEventListener() {},
     sendChatMessage: opts.sendChatMessage || undefined
@@ -303,15 +311,27 @@ const cardOff = buildCard({ shell_enabled: false }, SHELL_UP);
 assert.strictEqual(buildCard({ shell_enabled: true }, {}), cardOff,
   'the card controls must ride the same predicate as the shell mount');
 
+// Task 7 put the voice cluster ON THE CARD. REVERSED 2026-09-16, on Glen's ask for
+// audio input from the composer. The card is the Ask panel, which renders hidden on
+// every other door, so from the hub the microphone and the continuous checkbox could
+// not be reached at all. They moved into PortalShell.renderComposer(), which sits at
+// the top of every door.
+//
+// These assertions are inverted rather than deleted, so the reversal is visible. What
+// has not changed is that there is exactly ONE of each control: portal-mentor.js
+// resolves every one by id, and two would bind it to whichever the DOM returned first.
+// That count is pinned in tests/test_portal_chat_voice_controls.py.
 ['chatMic', 'chatSpeaker', 'chatAutoGuide', 'chatContinuous', 'chatContinuousWrap'].forEach(function (id) {
-  assert.ok(cardOn.indexOf('id="' + id + '"') !== -1,
-    'the card is missing the ' + id + ' control under the shell');
+  assert.strictEqual(cardOn.indexOf('id="' + id + '"'), -1,
+    id + ' must no longer render on the card; it belongs to the composer now');
   assert.strictEqual(cardOff.indexOf('id="' + id + '"'), -1,
     id + ' must not appear with the flag off');
 });
-// the cluster is inside the card, not floating next to it
+const composerSrc = fs.readFileSync(path.join(ROOT, 'static', 'js', 'portal-shell.js'), 'utf8');
+assert.ok(/id="chatVoice"/.test(composerSrc),
+  'the voice cluster must now render in the composer');
+// the card is still a card, and still ends cleanly
 assert.ok(cardOn.indexOf('id="chatCard"') !== -1 && cardOn.trim().slice(-6) === '</div>');
-assert.ok(cardOn.indexOf('id="chatVoice"') > cardOn.indexOf('id="chatCard"'));
 // the card itself is unchanged with the flag off
 ['chatCard', 'chatMsgs', 'chatInput', 'chatSend'].forEach(function (id) {
   assert.ok(cardOff.indexOf('id="' + id + '"') !== -1, id + ' disappeared from the card');

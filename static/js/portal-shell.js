@@ -152,6 +152,18 @@ function renderComposer() {
     '<button type="button" class="btn" id="chatSend">Send</button>' +
     '</div>' +
     '<div class="shell-chat-thread chat-msgs" id="shellChatThread" hidden></div>' +
+    // Voice lived in the Ask card until 2026-09-16, which is the hidden panel, so the
+    // mic, the speaker toggle and continuous conversation were all unreachable from the
+    // hub. portal-mentor.js resolves every one of these by id, so they moved here whole
+    // rather than being duplicated: two elements sharing #chatMic would wire the mentor
+    // to whichever the DOM returned first.
+    '<div class="chat-voice" id="chatVoice">' +
+    '<button type="button" class="chat-voice-btn" id="chatMic" aria-label="Use microphone" aria-pressed="false" title="Microphone">\u{1F399}</button>' +
+    '<button type="button" class="chat-voice-btn" id="chatSpeaker" aria-label="Toggle spoken replies" aria-pressed="true" title="Spoken replies">\u{1F50A}</button>' +
+    '<span class="chat-voice-context" id="chatContext">Your portal mentor</span>' +
+    '</div>' +
+    '<label class="chat-voice-opt"><input type="checkbox" id="chatAutoGuide"> Guide me automatically on each page</label>' +
+    '<label class="chat-voice-opt" id="chatContinuousWrap" hidden><input type="checkbox" id="chatContinuous"> Continuous two-way conversation</label>' +
     '</div>';
 }
 

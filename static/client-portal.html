@@ -651,6 +651,14 @@
      the composer keeps its resting size. */
   .shell-chat-thread{margin-top:12px;max-height:340px}
   .shell-chat-thread[hidden]{display:none}
+  /* Voice moved onto the composer on 2026-09-16. It used to sit in the Ask card,
+     which is the hidden panel, so the mic was unreachable from the hub. */
+  .shell-composer .chat-voice{margin-top:10px}
+  .shell-composer .chat-voice-opt{display:flex;align-items:center;gap:7px;margin-top:7px;
+    font-size:.86rem;color:var(--muted)}
+  .shell-composer .chat-voice-opt[hidden]{display:none}
+  .chat-bubble.mentor-continue{display:flex;align-items:center;gap:9px;flex-wrap:wrap}
+  .chat-bubble.mentor-continue .btn{padding:4px 11px;font-size:.85rem}
   .chat-bubble.pending{align-self:flex-start;background:var(--card2);border:1px solid var(--line);
     color:var(--muted);font-style:italic}
 
@@ -4209,13 +4217,11 @@ function render(d, v){
   // portal-shell.js failed to load, the mount never adds body.has-shell, the
   // floating launcher is never hidden, and rendering these controls here would
   // leave the client looking at a launcher with nothing wired to it.
-  const _chatVoice = (v && v.shell_enabled && window.PortalShell) ? `<div class="chat-voice" id="chatVoice">
-      <button type="button" class="chat-voice-btn" id="chatMic" aria-label="Use microphone" aria-pressed="false" title="Microphone">🎙</button>
-      <button type="button" class="chat-voice-btn" id="chatSpeaker" aria-label="Toggle spoken replies" aria-pressed="true" title="Spoken replies">🔊</button>
-      <span class="chat-voice-context" id="chatContext">Your portal mentor</span>
-    </div>
-    <label class="chat-voice-opt"><input type="checkbox" id="chatAutoGuide"> Guide me automatically on each page</label>
-    <label class="chat-voice-opt" id="chatContinuousWrap" hidden><input type="checkbox" id="chatContinuous"> Continuous two-way conversation</label>` : "";
+  // Voice moved into PortalShell.renderComposer() on 2026-09-16. It used to render
+  // here, inside the Ask card, which is the hidden panel, so the mic and continuous
+  // conversation were unreachable from the hub. Kept empty rather than deleted so the
+  // card template below reads the same, and so this comment sits where it happened.
+  const _chatVoice = "";
   // Task 8 (portal-shell-ia): under the shell the composer moves to the top of the
   // page (see the shell mount below, which renders window.PortalShell.renderComposer()
   // into #portalShellMount), so this card must not also carry the chat input.
@@ -8350,13 +8356,14 @@ function renderRelated(items){
 // When the Ask door is open, #chatMsgs is the thread and nothing changes. Otherwise the
 // composer's own #shellChatThread is revealed and used. Both carry .chat-msgs, so the
 // bubbles look the same either way.
-function chatThreadHost(){
+function chatThreadHost(reveal){
   var msgs = document.getElementById("chatMsgs");
   if(msgs && !_isChatHostHidden(msgs)) return msgs;
   var inline = document.getElementById("shellChatThread");
-  if(inline){ inline.hidden = false; return inline; }
+  if(inline){ if(reveal) inline.hidden = false; return inline; }
   return msgs;
 }
+window.chatThreadHost = chatThreadHost;
 
 // hidden is set on the SECTION, not on #chatMsgs, so check the ancestors. offsetParent is
 // not usable here: it is null for a display:none ancestor but also for position:fixed, and
@@ -8370,7 +8377,7 @@ function _isChatHostHidden(el){
 }
 
 function appendChatBubble(role, text){
-  var msgs = chatThreadHost();
+  var msgs = chatThreadHost(true);
   if(!msgs) return null;
   var div = document.createElement("div");
   div.className = "chat-bubble " + role;
