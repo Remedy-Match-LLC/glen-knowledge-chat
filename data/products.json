@@ -9499,7 +9499,9 @@
    "ingredients_source": "manual",
    "description": "TMG Powder (Trimethylglycine) . TMG Powder (Trimethylglycine) TMG Syntropy Powder (Trimethylglycine) Trimethylglycine is nature's most potent methyl donor... TMG Syntropy includes synergists. Glycine gets its name from its slightly sweet taste. Most people experience TMG as sweet from the glycine amino acid in the core of its structure. Each molecule of TMG has 3 methyl groups it can give... That means one molecule can elevate SAMe levels by recycling SAMe three times from Homocysteine which is associated with atherosclerosis much more strongly than is Cholesterol... SAMe is also strongly...",
    "enrichment_note": "TMG Syntropy Powder includes Vitamin B15 & B16 (Glen 2026-06-05)",
-   "qty_pricing": true
+   "qty_pricing": true,
+   "inactive": true,
+   "superseded_by": "tmg-syntropy-powder"
   },
   "cds-water-purifier--activator": {
    "name": "CDS Water Purifier & Activator",
@@ -11615,24 +11617,15 @@
    "url": "https://remedymatch.com/remedies/500-tmg",
    "ingredients": [
     {
-     "name": "TMG (Trimethylglycine)",
-     "dose": "400 mg"
-    },
-    {
-     "name": "Pangamic Acid",
-     "dose": "80 mg"
-    },
-    {
-     "name": "DMG (Dimethylglycine)",
-     "dose": "5 mg"
-    },
-    {
-     "name": "Mogroside V",
-     "dose": "10 mg"
+     "name": "TMG (Trimethylglycine / Anhydrous Betaine)",
+     "dose": "500 mg per scoop"
     }
    ],
-   "ingredients_source": "fmp_new",
-   "description": "TMG . TMG TMG TMG Background Trimethylglycine (TMG), also known as betaine, is a naturally occurring compound found in various foods such as spinach, beetroot, and quinoa[7]. Its discovery dates back to the 19th century, but its importance in human health has gained significant attention in recent years[4]. TMG plays a crucial role as a methyl donor in the body, contributing to numerous biochemical processes essential for cellular function and overall health[4]. Research into TMG has expanded rapidly, revealing its potential applications in various fields, including metabolism, cardiovascular..."
+   "ingredients_source": "manual-2026-09-16-pure-powder",
+   "description": "TMG . TMG TMG TMG Background Trimethylglycine (TMG), also known as betaine, is a naturally occurring compound found in various foods such as spinach, beetroot, and quinoa[7]. Its discovery dates back to the 19th century, but its importance in human health has gained significant attention in recent years[4]. TMG plays a crucial role as a methyl donor in the body, contributing to numerous biochemical processes essential for cellular function and overall health[4]. Research into TMG has expanded rapidly, revealing its potential applications in various fields, including metabolism, cardiovascular...",
+   "bottle_type": "120 caps",
+   "directions": "Take 1 to 2 scoops (500 mg to 1 g) up to 3 times daily in water or a drink, or as guided.",
+   "panel_note": "150 g Pure Powder, about 300 scoops."
   },
   "lipase": {
    "name": "Lipase",
@@ -12824,7 +12817,9 @@
      "dose": "5 mg",
      "compound_mg": 5.0
     }
-   ]
+   ],
+   "url": "https://remedymatch.com/remedies/syntropy/228-tmg-syntropy-powder-trimethylglycine",
+   "enrichment_note": "TMG Syntropy Powder includes Vitamin B15 & B16 (Glen 2026-06-05)"
   },
   "neuro-eye-drops": {
    "name": "Neuro+ Eye Drops",
