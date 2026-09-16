@@ -1538,7 +1538,8 @@ def render_fee_panel(state):
     return head + cur + controls + _fee_js() + "</div>"
 
 
-def render_clinical_checklist(items, layers=None, intake_priorities=None):
+def render_clinical_checklist(items, layers=None, intake_priorities=None,
+                             profile_unavailable=False):
     """Scannable editable checklist; completion follows the current remedy program."""
     items = items or []
     layer_groups = group_layers(layers or [])
@@ -1653,6 +1654,17 @@ def render_clinical_checklist(items, layers=None, intake_priorities=None):
     else:
         intake_strip = ""
 
+    # Glen, 2026-09-16. The profile is fetched from prod on every page load, and any
+    # failure returns an empty one, so a redeploy rendered this panel with no rows.
+    # An empty clinical summary reads as "this client has no history", which is the
+    # wrong thing to tell a practitioner. Say what actually happened instead.
+    if profile_unavailable:
+        warn_html = ("<div class=clinical-warn>Client history unavailable "
+                     "(couldn't reach console). This list may be incomplete, so do "
+                     "not read it as a complete history. Reload in a moment.</div>")
+    else:
+        warn_html = ""
+
     return ("<style>.clinical-summary{margin:18px 0 14px;padding:14px 16px;border:1px solid var(--line);"
             "border-left:4px solid var(--accent);border-radius:10px;background:var(--card)}"
             ".clinical-head{display:flex;justify-content:space-between;gap:12px;align-items:baseline;margin-bottom:10px}"
@@ -1685,6 +1697,9 @@ def render_clinical_checklist(items, layers=None, intake_priorities=None):
             ".clinical-balance .btn{padding:9px 12px}"
             ".clinical-remove{position:absolute;right:7px;top:5px;border:0;background:transparent;color:var(--muted);"
             "font-size:18px;line-height:1;cursor:pointer}.clinical-remove:hover{color:#ef8d8d}"
+            ".clinical-warn{margin:0 0 10px;padding:9px 11px;border:1px solid #a56a25;"
+            "border-radius:8px;background:rgba(196,125,39,.12);color:#d9a05b;font-size:12px;"
+            "line-height:1.45}"
             ".intake-priorities{margin-top:12px;padding:10px 12px;border:1px dashed var(--line);border-radius:9px}"
             ".intake-head{display:flex;justify-content:space-between;gap:10px;align-items:center}"
             ".intake-title{font-size:12px;font-weight:700;color:var(--muted)}"
@@ -1697,6 +1712,7 @@ def render_clinical_checklist(items, layers=None, intake_priorities=None):
             "<div class=food>Significant symptoms and conditions from intake</div></div>"
             f"<div class=clinical-count>{checked} of {len(items)} covered"
             "<span id=clinicalOrderStat style='margin-left:8px'></span></div></div>"
+            f"{warn_html}"
             f"<div class=clinical-grid>{rows}</div>"
             f"{intake_strip}"
             "<div class=clinical-add><input id=clinicalNew list=clinicalCatalog autocomplete=off placeholder='Search or add symptom or condition…' "
@@ -1719,7 +1735,8 @@ def render_clinical_proposals():
 
 def render_author_html(report, depth_values=None, transcript="", covered_by_layer=None,
                        narrative="", fee_state=None, transcript_updated="",
-                       clinical_checklist=None, dispensed=None, intake_priorities=None):
+                       clinical_checklist=None, dispensed=None, intake_priorities=None,
+                       profile_unavailable=False):
     tid = _e(report.get("test_id") or "")
     c = report.get("client") or {}
     import urllib.parse as _up
@@ -1828,7 +1845,8 @@ def render_author_html(report, depth_values=None, transcript="", covered_by_laye
                  "</div>"
                  "<div id=suggestpanel></div>" + render_clinical_proposals()
                  + render_clinical_checklist(clinical_checklist, report.get("layers") or [],
-                                            intake_priorities=intake_priorities)
+                                            intake_priorities=intake_priorities,
+                                            profile_unavailable=profile_unavailable)
                  + chain + session + narrative_section
                  + _AUTHOR_JS.replace("__TID__", tid)
                  + "<script>loadClinicalProposals();loadClinicalCatalog();initClinicalDrag()</script>",
