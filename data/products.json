@@ -5,7 +5,7 @@
  "_wholesale_schema": "Phase 1 wholesale pricing engine (dashboard/wholesale_pricing.py): a product MAY add optional fields — bottle_type (string; matches dashboard.shipping bottle_types.name, used to source the box-fit large-box capacity B), cogs_cents (int; landed product cost), fulfillment_cents (int; per-bottle pick/pack/ship), wholesale_discount_pct (int 0-100; fixed percent off retail for devices or other products that must not use the remedy volume curve). Retail = price_cents. cogs+fulfillment gate the wholesale margin floor; when unset the margin is left unverified (loud warning). Populate per product before wholesale go-live (data task, see spec 2026-06-01 section 5).",
  "products": {
   "myelin-syntropy": {
-   "name": "Myelin Syntropy",
+   "name": "Myelin Syntropy Powder",
    "price_cents": 6997,
    "regular_cents": 8000,
    "pinecone_title": "Myelin Syntropy",
