@@ -1019,6 +1019,15 @@ async function combineClinicalItems(btn){
  var j=await post('/author/__TID__/clinical-items/combine',
                   {absorbed:absorbed,survivor:survivor});
  if(j.ok)location.reload();else{btn.disabled=false;alert(j.error||'Could not combine.')}}
+async function clinicalToStresses(){
+ var s=document.getElementById('clin2stat');s.textContent=' adding…';
+ var j=await post('/author/__TID__/clinical-items/to-stresses',{});
+ if(!j.ok){s.textContent=j.error||'Could not add them.';return}
+ var bits=[];
+ bits.push(j.added.length+' added from '+j.checked+' checked');
+ if(j.no_pattern&&j.no_pattern.length)bits.push(j.no_pattern.length+' have no stress pattern yet: '+j.no_pattern.join(', '));
+ s.textContent=' '+bits.join(' · ');
+ loadStress()}
 async function addClinicalItem(){
  var input=document.getElementById('clinicalNew'),label=(input&&input.value||'').trim();
  if(!label)return;
@@ -1783,7 +1792,14 @@ def render_clinical_checklist(items, layers=None, intake_priorities=None,
             "<div class=clinical-add><input id=clinicalNew list=clinicalCatalog autocomplete=off placeholder='Search or add symptom or condition…' "
             "onkeydown=\"if(event.key==='Enter'){event.preventDefault();addClinicalItem()}\">"
             "<datalist id=clinicalCatalog></datalist>"
-            "<button class='btn ghost' onclick=addClinicalItem()>+ Add item</button></div></section>")
+            "<button class='btn ghost' onclick=addClinicalItem()>+ Add item</button></div>"
+            # Glen, 2026-09-16: the checked items' stress patterns join the Stresses
+            # list, so clinical and energetic findings are balanced as one set rather
+            # than in two places that never meet.
+            "<div class=btnrow style='margin-top:10px'>"
+            "<button class=btn onclick=clinicalToStresses()>"
+            "Add checked patterns &rarr; Stresses</button>"
+            "<span id=clin2stat class=food></span></div></section>")
 
 
 def render_clinical_proposals():

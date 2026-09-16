@@ -536,6 +536,41 @@ def _with_item(value, label):
     return ", ".join(parts)
 
 
+def clinical_patterns_as_stresses(cx, test_id, items, source="clinical"):
+    """Put each checked clinical item's STRESS PATTERN into the stresses list.
+
+    Glen, 2026-09-16: "Add the checked 'Stress pattern's from Clinical summary to the
+    list of Stresses so they can be better coordinated together in creating layers."
+
+    The two lists were separate, so a condition could not be balanced alongside the
+    energetic findings. The set-cover behind minimal remedies already treats a
+    non-scan stress the same as a scan one, so once a clinical pattern IS a stress it
+    is coordinated for free.
+
+    It is the PATTERN that crosses, never the condition label. The chain speaks in
+    stress patterns rather than the client's own words, which is why `balance_item`
+    prefers `pattern` over `label` too. An item with no pattern recorded is skipped
+    rather than falling back to the label: guessing here would put "my eyes hurt" in
+    a causal chain.
+
+    Returns the patterns actually added. `add_stress` already refuses a duplicate
+    normalised label, so pressing the button twice adds nothing the second time, and
+    two conditions sharing a pattern make one stress.
+    """
+    from dashboard.biofield_stress import add_stress
+
+    added = []
+    for item in items or []:
+        if not (item or {}).get("checked"):
+            continue
+        pattern = str(item.get("stress_pattern") or "").strip()
+        if not pattern:
+            continue
+        if add_stress(cx, test_id, pattern, source=source, balance="required"):
+            added.append(pattern)
+    return added
+
+
 def balance_item(cx, test_id, label, layer, remedies, resolve_name=lambda cx, name: name,
                  dosing=lambda cx, name: {}, pattern=""):
     """Place a clinical item on a layer and add all checked remedies to that layer.

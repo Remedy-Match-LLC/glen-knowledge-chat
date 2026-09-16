@@ -2242,6 +2242,39 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                         else "Hidden from this Biofield test")
         return {"ok": ok}
 
+    @app.route("/author/<test_id>/clinical-items/to-stresses", methods=["POST"])
+    def author_clinical_to_stresses(test_id):
+        """Add each CHECKED clinical item's stress pattern to the stresses list, so
+        the clinical and energetic findings are balanced as one set. Glen, 2026-09-16.
+
+        The checklist is rebuilt here rather than taken from the browser: the ticks
+        and the patterns both live in the per-test override store, and trusting the
+        page would let a stale tab add a tick that is no longer saved.
+        """
+        from dashboard.biofield_clinical_checklist import (
+            build as build_clinical_checklist, clinical_patterns_as_stresses,
+            stress_pattern,
+        )
+        from dashboard.biofield_clinical_proposals import (
+            apply_order, apply_selection, dismissed_labels, item_key,
+        )
+        with sqlite3.connect(db_path) as cx:
+            rep = authored_report(cx, test_id)
+            c_email = ((rep.get("client") or {}).get("email") or "").strip()
+            profile = fetch_profile(c_email) if c_email else {}
+            items = build_clinical_checklist(
+                profile or {}, rep.get("layers") or [], None,
+                stress_lookup=lambda label: stress_pattern(cx, label), cx=cx)
+            hidden = {item_key(l) for l in dismissed_labels(cx, test_id)}
+            items = [i for i in items if item_key(i.get("label")) not in hidden]
+            items = apply_selection(cx, test_id, apply_order(cx, test_id, items))
+            added = clinical_patterns_as_stresses(cx, test_id, items)
+            checked = sum(1 for i in items if i.get("checked"))
+            no_pattern = [i.get("label") for i in items
+                          if i.get("checked") and not (i.get("stress_pattern") or "").strip()]
+        return {"ok": True, "added": added, "checked": checked,
+                "no_pattern": no_pattern}
+
     @app.route("/author/<test_id>/clinical-items/combine", methods=["POST"])
     def author_clinical_items_combine(test_id):
         """Declare two conditions to be one. Glen, 2026-09-16.
