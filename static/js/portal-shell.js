@@ -138,12 +138,21 @@ function renderPhoneHeader() {
 // a Send button, no message-bubble container. static/client-portal.html renders
 // this only under the shell, and drops the composer row from the legacy "Ask Dr.
 // Glen" card in that case, so id="chatInput" still appears exactly once.
+// The thread container is part of the composer, not the Ask door. #chatMsgs lives inside the
+// Ask panel section, which renders hidden, so a client sending from the hub saw their message
+// and the answer rendered somewhere invisible. Glen, 2026-09-16: "I type, hit send, it
+// disappears, no response." The conversation now opens under the composer, where they are.
+//
+// It carries no id that #chatMsgs also uses. Two elements sharing an id is what the card's
+// own composer was removed to avoid, and sendChatMessage() resolves its host by id.
 function renderComposer() {
   return '<div class="shell-composer" id="shellComposer">' +
     '<div class="chat-input-row">' +
     '<input id="chatInput" type="text" placeholder="Ask me anything, or tell me what you need" autocomplete="off">' +
     '<button type="button" class="btn" id="chatSend">Send</button>' +
-    '</div></div>';
+    '</div>' +
+    '<div class="shell-chat-thread chat-msgs" id="shellChatThread" hidden></div>' +
+    '</div>';
 }
 
 // Task 9 (portal-shell-ia): question text to a door. Deliberately conservative: an

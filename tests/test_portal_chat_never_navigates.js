@@ -101,6 +101,11 @@ async function run(query, opts) {
   };
   const names = Object.keys(sandbox);
   const body = [
+    // appendChatBubble resolves the thread the client can actually SEE, because #chatMsgs
+    // sits inside <section data-panel="ask" hidden> and a client on the hub would otherwise
+    // be writing into a panel they cannot see. Those two helpers come with it.
+    fnSource('chatThreadHost'),
+    fnSource('_isChatHostHidden'),
     fnSource('appendChatBubble'),
     fnSource('appendChatDoorLink'),
     fnSource('sendChatMessage'),
