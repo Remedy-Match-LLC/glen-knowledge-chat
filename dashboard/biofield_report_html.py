@@ -964,6 +964,21 @@ async function loadClinicalProposals(){
    if(r.ok&&btn.dataset.status==='accepted'){location.reload()}else if(r.ok){btn.closest('.proposal-row').remove()}
    else{btn.disabled=false}}})
  }catch(e){box.innerHTML=''}}
+async function pullIntakePriorities(){
+ var rows=[].slice.call(document.querySelectorAll('.intake-list li:not(.here)'));
+ if(!rows.length)return;
+ var names=rows.map(function(li){
+  var n=li.cloneNode(true),note=n.querySelector('.intake-note');
+  if(note)note.remove();return (n.textContent||'').trim()}).filter(Boolean);
+ var btn=document.querySelector('.intake-head .btn');
+ if(btn){btn.disabled=true;btn.textContent='Adding '+names.length+'…'}
+ // Sequential, so the accepted order IS the intake's form order. The checklist
+ // appends accepted labels in the order they were accepted.
+ for(var i=0;i<names.length;i++){
+  var j=await post('/author/__TID__/clinical-items',{action:'add',label:names[i]});
+  if(!j.ok){if(btn){btn.disabled=false;btn.textContent='Pull '+names.length+' from intake'}
+   alert(j.error||('Could not add "'+names[i]+'"'));return}}
+ location.reload()}
 async function addClinicalItem(){
  var input=document.getElementById('clinicalNew'),label=(input&&input.value||'').trim();
  if(!label)return;
@@ -1511,7 +1526,7 @@ def render_fee_panel(state):
     return head + cur + controls + _fee_js() + "</div>"
 
 
-def render_clinical_checklist(items, layers=None):
+def render_clinical_checklist(items, layers=None, intake_priorities=None):
     """Scannable editable checklist; completion follows the current remedy program."""
     items = items or []
     layer_groups = group_layers(layers or [])
@@ -1586,6 +1601,46 @@ def render_clinical_checklist(items, layers=None):
                  "<button class='btn ghost' onclick=balanceClinicalItem(this)>Add to layer</button></div>"
                  "<button class=clinical-remove onclick=removeClinicalItem(this) "
                  "title='Remove from this checklist' aria-label='Remove item'>&times;</button></div>")
+    # Glen, 2026-09-16: pull the client's own stated priorities in. The intake asks
+    # for them "in order of importance", so FORM ORDER is the ranking and nothing here
+    # sorts on the 1-10 rating. Clients use that scale inconsistently: one gave three
+    # concerns a 10, another used 1 for the concern she came about.
+    # Same normaliser the checklist itself matches labels with, so "Eyes" from the
+    # checklist and "eyes" from intake are one item. Imported here, not at module
+    # level, because biofield_clinical_checklist pulls in the profile modules.
+    from dashboard.biofield_clinical_checklist import _norm as _norm_label
+    existing = {_norm_label(i.get("label")) for i in items}
+    chips, fresh = [], 0
+    for row in intake_priorities or []:
+        concern = str(row.get("concern") or "").strip()
+        if not concern:
+            continue
+        here = _norm_label(concern) in existing
+        fresh += 0 if here else 1
+        bits = []
+        if row.get("rating") is not None:
+            bits.append(f"rated {row['rating']}")
+        onset = row.get("years_since_onset")
+        if onset is not None:
+            # The column asks for a duration, but clients answer with either. Sharon
+            # Connour put 2020 and 2012; Steve Fox put 3 and 15. Anything that looks
+            # like a calendar year reads as a date, so it never says "2020 years".
+            bits.append(f"since {onset}" if onset >= 1900 else f"{onset} years")
+        if here:
+            bits.append("already listed")
+        note = f" <span class=intake-note>({' · '.join(bits)})</span>" if bits else ""
+        chips.append(f"<li{' class=here' if here else ''}>{_e(concern)}{note}</li>")
+    if chips:
+        label = f"Pull {fresh} from intake" if fresh else "All already listed"
+        intake_strip = (
+            "<div class=intake-priorities><div class=intake-head>"
+            "<span class=intake-title>Top Health Goals, as the client ranked them</span>"
+            f"<button type=button class='btn ghost' onclick=pullIntakePriorities() "
+            f"{'disabled' if not fresh else ''}>{label}</button></div>"
+            f"<ol class=intake-list>{''.join(chips)}</ol></div>")
+    else:
+        intake_strip = ""
+
     return ("<style>.clinical-summary{margin:18px 0 14px;padding:14px 16px;border:1px solid var(--line);"
             "border-left:4px solid var(--accent);border-radius:10px;background:var(--card)}"
             ".clinical-head{display:flex;justify-content:space-between;gap:12px;align-items:baseline;margin-bottom:10px}"
@@ -1618,6 +1673,11 @@ def render_clinical_checklist(items, layers=None):
             ".clinical-balance .btn{padding:9px 12px}"
             ".clinical-remove{position:absolute;right:7px;top:5px;border:0;background:transparent;color:var(--muted);"
             "font-size:18px;line-height:1;cursor:pointer}.clinical-remove:hover{color:#ef8d8d}"
+            ".intake-priorities{margin-top:12px;padding:10px 12px;border:1px dashed var(--line);border-radius:9px}"
+            ".intake-head{display:flex;justify-content:space-between;gap:10px;align-items:center}"
+            ".intake-title{font-size:12px;font-weight:700;color:var(--muted)}"
+            ".intake-list{margin:8px 0 0;padding-left:20px;font-size:12px;line-height:1.5}"
+            ".intake-list li.here{color:var(--muted)}.intake-note{color:var(--muted);font-size:11px}"
             ".clinical-add{display:flex;gap:7px;margin-top:10px}.clinical-add input{margin:0;max-width:360px}"
             "@media(max-width:760px){.clinical-grid{grid-template-columns:1fr}.clinical-balance{grid-template-columns:1fr}.clinical-balance .btn{grid-column:1/-1}}</style>"
             "<section class=clinical-summary><div class=clinical-head>"
@@ -1626,6 +1686,7 @@ def render_clinical_checklist(items, layers=None):
             f"<div class=clinical-count>{checked} of {len(items)} covered"
             "<span id=clinicalOrderStat style='margin-left:8px'></span></div></div>"
             f"<div class=clinical-grid>{rows}</div>"
+            f"{intake_strip}"
             "<div class=clinical-add><input id=clinicalNew list=clinicalCatalog autocomplete=off placeholder='Search or add symptom or condition…' "
             "onkeydown=\"if(event.key==='Enter'){event.preventDefault();addClinicalItem()}\">"
             "<datalist id=clinicalCatalog></datalist>"
@@ -1646,7 +1707,7 @@ def render_clinical_proposals():
 
 def render_author_html(report, depth_values=None, transcript="", covered_by_layer=None,
                        narrative="", fee_state=None, transcript_updated="",
-                       clinical_checklist=None, dispensed=None):
+                       clinical_checklist=None, dispensed=None, intake_priorities=None):
     tid = _e(report.get("test_id") or "")
     c = report.get("client") or {}
     import urllib.parse as _up
@@ -1754,7 +1815,8 @@ def render_author_html(report, depth_values=None, transcript="", covered_by_laye
                  "<button class='btn ghost' onclick=suggestRemedies()>Suggest minimal remedies</button>"
                  "</div>"
                  "<div id=suggestpanel></div>" + render_clinical_proposals()
-                 + render_clinical_checklist(clinical_checklist, report.get("layers") or [])
+                 + render_clinical_checklist(clinical_checklist, report.get("layers") or [],
+                                            intake_priorities=intake_priorities)
                  + chain + session + narrative_section
                  + _AUTHOR_JS.replace("__TID__", tid)
                  + "<script>loadClinicalProposals();loadClinicalCatalog();initClinicalDrag()</script>")

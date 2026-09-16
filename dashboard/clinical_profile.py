@@ -1,4 +1,5 @@
 """Build the console's mineable clinical profile from every intake store."""
+import json
 
 def _table_values(rows, *keys):
     out = []
@@ -22,6 +23,52 @@ def _answer_parts(answers):
     narrative += _table_values(answers.get("surgeries"), "procedure", "reason")
     narrative += _table_values(answers.get("family_history"), "relative", "condition", "age_onset")
     return conditions, narrative
+
+
+def _as_list(value):
+    """A discrete people column. canonical_tags writes these with json.dumps, so a
+    JSON list arrives here as a STRING. Splitting that on commas shredded it into
+    fragments ('["Adrenal Fatigue', 'Current', '2023"') which then showed up as rows
+    in the authoring Clinical summary. Parse first, comma-split only as a fallback."""
+    if isinstance(value, list):
+        return [str(x).strip() for x in value if str(x or "").strip()]
+    text = str(value or "").strip()
+    if not text:
+        return []
+    if text[0] in "[{":
+        try:
+            parsed = json.loads(text)
+        except Exception:
+            parsed = None
+        if isinstance(parsed, list):
+            return [str(x).strip() for x in parsed if str(x or "").strip()]
+    return [x.strip() for x in text.split(",") if x.strip()]
+
+
+def _intake_priorities(answers):
+    """The intake's Top Health Goals table, in the order the client typed it.
+
+    The form asks for concerns 'in order of importance', so form order IS the
+    client's ranking. The 1-10 rating is carried for display but is never a sort
+    key: of the three clients who have filled it in, one used it as importance
+    (three 10s) and one as a rank (eyes=1, the reason she came). Sorting on it
+    would bury her main concern."""
+    out = []
+    for row in (answers or {}).get("health_concerns") or []:
+        if not isinstance(row, dict):
+            continue
+        concern = str(row.get("concern") or "").strip()
+        if not concern:
+            continue
+        def _num(key):
+            raw = str(row.get(key) or "").strip()
+            try:
+                return int(float(raw))
+            except Exception:
+                return None
+        out.append({"concern": concern, "rating": _num("rating"),
+                    "years_since_onset": _num("years_since_onset")})
+    return out
 
 
 def _dedupe(values):
@@ -61,9 +108,8 @@ def consolidate(people=None, intake_row=None, product_history=None, extended_his
             "review_status": snapshot.get("review_status") or "",
         })
 
-    existing = profile.get("conditions") or []
-    if not isinstance(existing, list): existing = [x.strip() for x in str(existing).split(",") if x.strip()]
-    profile["conditions"] = _dedupe(existing + conditions)
+    profile["conditions"] = _dedupe(_as_list(profile.get("conditions")) + conditions)
+    profile["intake_priorities"] = _intake_priorities(answers)
     old = str(profile.get("challenges") or "").strip()
     profile["challenges"] = "\n".join(_dedupe(([old] if old else []) + narrative))
     old_goals = str(profile.get("goals") or "").strip()
