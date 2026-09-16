@@ -25,6 +25,7 @@ _STYLE = """
    margin-right:14px;font-family:ui-monospace,Menlo,Consolas,monospace}
  .opbrand b{color:#e6b800;font-weight:700}
  .opsub{color:#d4a843;letter-spacing:.14em;text-transform:uppercase;font-size:10px;font-weight:700}
+ .zerobuy{opacity:.55}
  .opclient{margin-left:10px;padding-left:10px;border-left:1px solid #2a2a33;color:#e6edf3;font-size:12px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:42vw}
  .opavatar{width:22px;height:22px;border-radius:50%;object-fit:cover;margin-left:8px;vertical-align:middle;border:1px solid #2a2a33;background:#22252d}
  .opspacer{flex:1}
@@ -1304,7 +1305,23 @@ def _xwrap(inp):
             "title='Show full text'>&#8690;</button><div class=full></div></span>")
 
 
-def _remedy_line(l, depth_values, only_remedy=False):
+def _bottles_chip(remedy, bottles_by_remedy):
+    """"11 bottles" beside a remedy, or "0 bottles" for one never bought.
+
+    Glen, 2026-09-16, wanted the number where the decision is made, not only in the
+    Previously-dispensed panel he has to open — and explicitly wanted a ZERO on a
+    product never purchased before, rather than a blank. A blank is ambiguous: it
+    reads as "no history looked up" as easily as "never had it"."""
+    name = (remedy or "").strip().lower()
+    if not name:
+        return ""      # no remedy chosen yet, so there is nothing to count
+    n = (bottles_by_remedy or {}).get(name) or 0
+    cls = "chip" if n else "chip zerobuy"
+    return (f"<span class='{cls}' title='Bottles this client has bought before'>"
+            f"{n} bottle{'' if n == 1 else 's'}</span>")
+
+
+def _remedy_line(l, depth_values, only_remedy=False, bottles_by_remedy=None):
     rid = _e(str(l.get("rid") or ""))
     p = "r" + rid
     g = lambda k: _e(l.get(k) or "")
@@ -1329,6 +1346,7 @@ def _remedy_line(l, depth_values, only_remedy=False):
             + depth +
             f"<button class=chip onclick=\"fillDose('{p}',true)\">dose</button>"
             f"<button class=chip onclick=\"suggestFor(this,'{p}')\">uses</button>"
+            f"{_bottles_chip(remedy, bottles_by_remedy)}"
             f"{confirm_btn}"
             f"<button class='btn savebtn saved' data-dirty=Update onclick=\"saveRemedy('{rid}',this)\">Saved &#10003;</button>"
             + remove_buttons +
@@ -1378,7 +1396,8 @@ def _covered_html(stresses, layer=None):
     return f"<div class=covered><span class=food>balances:</span> {shown}{add}</div>"
 
 
-def _render_chain_cards(report, depth_values, covered_by_layer=None):
+def _render_chain_cards(report, depth_values, covered_by_layer=None,
+                        bottles_by_remedy=None):
     covered_by_layer = covered_by_layer or {}
     cards = ""
     groups = group_layers(report.get("layers") or [])
@@ -1389,7 +1408,8 @@ def _render_chain_cards(report, depth_values, covered_by_layer=None):
         stored_layer = _e(str(g.get("stored_layer") or n))
         remedy_rows = [r for r in g["rows"] if (r.get("remedy") or "").strip()]
         only_remedy = len(remedy_rows) <= 1
-        lines = "".join(_remedy_line(r, depth_values, only_remedy=only_remedy)
+        lines = "".join(_remedy_line(r, depth_values, only_remedy=only_remedy,
+                                     bottles_by_remedy=bottles_by_remedy)
                         for r in g["rows"])
         head_in = _xwrap(f'<input id={gid}_head list=vocab value="{he}" title="{he}" oninput="dirtyLayer(this)">')
         tail_in = _xwrap(f'<input id={gid}_most list=vocab value="{me}" title="{me}" oninput="dirtyLayer(this)">')
@@ -1810,7 +1830,8 @@ def render_author_html(report, depth_values=None, transcript="", covered_by_laye
              "last card starts a new layer.</p>"
              "<div class=chainlayout>" + _render_layer_rail(groups) +
              "<div id=chaintbl class=chain>"
-             + _render_chain_cards(report, depth_values, covered_by_layer) + "</div>"
+             + _render_chain_cards(report, depth_values, covered_by_layer,
+                                   _bottles_by_remedy(dispensed)) + "</div>"
              "</div>"
              "<datalist id=vocab></datalist><datalist id=catalog></datalist>")
     session = (
@@ -1905,6 +1926,27 @@ def render_list_html(tests, q="", authored=None):
     return _page("Biofield Analysis", body)
 
 
+def _bottles_by_remedy(dispensed):
+    """{lowercased remedy name: bottles} from the dispensed rows already computed
+    for this client. Keyed on the name because a layer card holds a name, not a
+    slug, and the same name is what the dispensed panel shows."""
+    out = {}
+    for row in dispensed or []:
+        name = str((row or {}).get("name") or "").strip().lower()
+        n = (row or {}).get("bottles")
+        if name and n:
+            out[name] = n
+    return out
+
+
+def _bottles_label(row):
+    """"5 bottles", or an em dash for a row cached before the field existed."""
+    n = row.get("bottles")
+    if n is None:
+        return "&mdash;"
+    return f"{n} bottle{'' if n == 1 else 's'}"
+
+
 def render_dispensed_panel(rows, open_=False):
     """What this client has been dispensed before, most often first.
 
@@ -1939,6 +1981,10 @@ def render_dispensed_panel(rows, open_=False):
                 "<div class=disprow style='display:flex;align-items:center;gap:8px;padding:4px 0'>"
                 f"<span class=pill style='min-width:52px;text-align:right'>{r['pct']}%</span>"
                 f"<span class=food style='min-width:64px'>{r['count']} of {r['orders_considered']}</span>"
+                # Glen, 2026-09-16: orders containing it is not the same question as
+                # how much they actually took home.
+                f"<span class=pill style='min-width:74px;text-align:right' "
+                f"title='Bottles bought across these orders'>{_bottles_label(r)}</span>"
                 f"<button class='linkish' style='flex:1;text-align:left' "
                 f"onclick=\"pickCondition(this)\" title='Add this remedy to a condition'>{nm}</button>"
                 f"<span style='flex:1.2;display:flex;flex-wrap:wrap;gap:4px'>{chips}</span>"
