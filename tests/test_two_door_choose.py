@@ -81,7 +81,8 @@ def test_reveal_includes_choose_enabled_paid(monkeypatch):
     monkeypatch.setattr(appmod, "is_member", lambda email=None: True)
     monkeypatch.setattr(appmod, "_biofield_unlock_flags",
                         lambda row, email: {"first_approved": True, "top_unlocked": True,
-                                            "free_available": False, "paid": True})
+                                            "free_available": False, "paid": True,
+                                            "full_report": True})
     monkeypatch.setattr(appmod, "_resolve_ship_address", lambda e, d: {})
     monkeypatch.setattr(appmod, "_record_entry_unlock", lambda *a, **k: None)
     c = appmod.app.test_client()
@@ -98,7 +99,8 @@ def test_reveal_choose_enabled_dark_when_flag_off(monkeypatch):
     monkeypatch.setattr(appmod, "is_member", lambda email=None: True)
     monkeypatch.setattr(appmod, "_biofield_unlock_flags",
                         lambda row, email: {"first_approved": True, "top_unlocked": True,
-                                            "free_available": False, "paid": True})
+                                            "free_available": False, "paid": True,
+                                            "full_report": True})
     monkeypatch.setattr(appmod, "_resolve_ship_address", lambda e, d: {})
     monkeypatch.setattr(appmod, "_record_entry_unlock", lambda *a, **k: None)
     c = appmod.app.test_client()
