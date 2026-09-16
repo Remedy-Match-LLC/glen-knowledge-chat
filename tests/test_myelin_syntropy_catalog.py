@@ -8,7 +8,10 @@ CATALOG = Path(__file__).parents[1] / "data" / "products.json"
 def test_myelin_syntropy_is_a_sellable_functional_formulation():
     product = json.loads(CATALOG.read_text())["products"]["myelin-syntropy"]
 
-    assert product["name"] == "Myelin Syntropy"
+    # Renamed 2026-09-16 on Glen's instruction, to match the FileMaker record he
+    # created as "Myelin Syntropy Powder" — his convention for powders, and the name
+    # the invoice bottle-count lookup matches on. The slug is deliberately unchanged.
+    assert product["name"] == "Myelin Syntropy Powder"
     assert product["price_cents"] == 6997
     assert product["qty_pricing"] is True
     assert product["bottle_type"] == "120 caps"
