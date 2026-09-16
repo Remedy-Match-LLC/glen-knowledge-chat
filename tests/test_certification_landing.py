@@ -58,3 +58,19 @@ def test_certification_page_needs_no_auth():
     assert resp.status_code not in (401, 403)
     # a plain GET must not be redirected to a login/auth page
     assert resp.status_code not in (301, 302, 303, 307, 308)
+
+
+def test_certification_page_discloses_module_certification_price():
+    """The $200 per-module certification fee must appear on the sales page.
+
+    Without it a membership buyer cannot see the fee at all: the button that
+    names it is built in courses_blueprint only for a signed-in learner who has
+    already completed a module, so the price would first appear after purchase.
+    The totals line exists so the three paths can be compared honestly.
+    """
+    app = _app()
+    body = app.app.test_client().get("/certification").get_data(as_text=True)
+
+    assert "$200" in body
+    assert "3,564" in body
+    assert "3,588" in body
