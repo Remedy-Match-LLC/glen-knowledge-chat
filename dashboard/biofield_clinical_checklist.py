@@ -379,6 +379,66 @@ def ensure_alias_schema(cx):
     )""")
 
 
+def ensure_display_schema(cx):
+    """A name the practitioner gave a combined condition.
+
+    Glen, 2026-09-16: "You could suggest a name that I can edit if I want for the
+    combination", and confirmed it applies across clients.
+
+    Kept OUT of the label itself, deliberately. Every other action on the row keys off
+    the canonical label: remembered remedies, the stress pattern, the layer assignment
+    and the catalog are all stored against it. Renaming it would mint a new catalog term
+    per combination and strand everything recorded under the old one. This is a display
+    override, resolved at render time, and deleting the row restores the original name.
+    """
+    cx.execute("""CREATE TABLE IF NOT EXISTS biofield_clinical_display (
+        key TEXT PRIMARY KEY, label TEXT NOT NULL,
+        updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+    )""")
+
+
+def suggested_combined_label(survivor, absorbed):
+    """What to pre-fill when two conditions are folded. Editable before it is saved."""
+    a, b = str(survivor or "").strip(), str(absorbed or "").strip()
+    if not a:
+        return b
+    if not b or _norm(a) == _norm(b):
+        return a
+    return f"{a} + {b}"
+
+
+def set_display_label(cx, label, display):
+    """Name the combination. An empty or unchanged `display` clears the override."""
+    ensure_display_schema(cx)
+    key = _norm(label)
+    if not key:
+        return False
+    shown = str(display or "").strip()
+    if not shown or _norm(shown) == key:
+        cx.execute("DELETE FROM biofield_clinical_display WHERE key=?", (key,))
+        cx.commit()
+        return True
+    cx.execute("""INSERT INTO biofield_clinical_display (key,label,updated_at)
+        VALUES (?,?,CURRENT_TIMESTAMP)
+        ON CONFLICT(key) DO UPDATE SET label=excluded.label,
+          updated_at=CURRENT_TIMESTAMP""", (key, shown))
+    cx.commit()
+    return True
+
+
+def display_labels(cx):
+    """{canonical key: the name to show}. Empty when unavailable, never raising:
+    a missing override must not take the authoring page down."""
+    if cx is None:
+        return {}
+    try:
+        ensure_display_schema(cx)
+        return {r[0]: r[1] for r in cx.execute(
+            "SELECT key,label FROM biofield_clinical_display")}
+    except Exception:
+        return {}
+
+
 def alias_condition(cx, absorbed, survivor):
     """Fold `absorbed` into `survivor`. False when they are the same condition."""
     ensure_alias_schema(cx)
@@ -480,6 +540,9 @@ def build(profile, layers, stress_data=None, remedy_lookup=None, stress_lookup=N
                (row.get("remedy") or "").strip() for row in layers
                if (row.get("remedy") or "").strip()}
     balanced = [s for s in (stress_data or {}).get("balanced", []) if s.get("balanced_by")]
+    # Names the practitioner gave combined conditions. Read once: this loop runs per
+    # condition and a query each time would be a round trip per row.
+    shown = display_labels(cx)
     rows = []
     for label in profile_labels(profile, cx=cx):
         covered_by = ""
@@ -521,7 +584,11 @@ def build(profile, layers, stress_data=None, remedy_lookup=None, stress_lookup=N
                      "common_remedies": common_remedies[:MAX_COMMON_REMEDIES],
                      "stress_pattern": remembered or suggested,
                      "remembered_pattern": remembered,
-                     "pattern_is_suggested": bool(suggested)})
+                     "pattern_is_suggested": bool(suggested),
+                     # Display only. `label` stays canonical, because remembered
+                     # remedies, the stress pattern, the layer assignment and the
+                     # catalog are all stored against it.
+                     "display_label": shown.get(_norm(label)) or ""})
     return rows
 
 

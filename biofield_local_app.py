@@ -2224,17 +2224,26 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
 
         Stored as an alias, so nothing recorded against either name is rewritten and
         the fold can be undone by deleting one row."""
-        from dashboard.biofield_clinical_checklist import alias_condition
+        from dashboard.biofield_clinical_checklist import (
+            alias_condition, set_display_label)
         body = request.get_json(silent=True) or {}
         absorbed = str(body.get("absorbed") or "").strip()
         survivor = str(body.get("survivor") or "").strip()
+        # Glen, 2026-09-16, confirmed the name applies across clients. Optional: an empty
+        # one leaves the survivor's own name, which is what happened before this existed.
+        display = str(body.get("display") or "").strip()
         if not absorbed or not survivor:
             return {"ok": False, "error": "Pick the row to fold into this one."}, 400
         with sqlite3.connect(db_path) as cx:
             if not alias_condition(cx, absorbed, survivor):
                 return {"ok": False,
                         "error": "A condition cannot be combined with itself."}, 400
-        return {"ok": True, "absorbed": absorbed, "survivor": survivor}
+            # Named AFTER the fold succeeds. Naming a combination that was refused would
+            # rename a condition nobody combined.
+            if display:
+                set_display_label(cx, survivor, display)
+        return {"ok": True, "absorbed": absorbed, "survivor": survivor,
+                "display": display or survivor}
 
     @app.route("/author/<test_id>/clinical-catalog")
     def author_clinical_catalog(test_id):

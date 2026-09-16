@@ -1009,9 +1009,16 @@ async function combineClinicalItems(btn){
  if(!confirm('Combine "'+absorbed+'" into "'+survivor+'"? They become one condition '
    +'on every client, and "'+absorbed+'" stops appearing on its own. Its remembered '
    +'remedies move across. This can be undone.'))return;
+ // Glen, 2026-09-16: suggest a name he can edit. Cancel leaves the survivor's own name,
+ // which is what happened before this existed. The name is shown, never stored as the
+ // label: everything recorded against either condition keys off the canonical one.
+ var suggested=survivor+' + '+absorbed;
+ var shown=prompt('Name for the combined condition. This name is used for every client.',
+                  suggested);
+ if(shown===null)shown='';
  btn.disabled=true;
  var j=await post('/author/__TID__/clinical-items/combine',
-                  {absorbed:absorbed,survivor:survivor});
+                  {absorbed:absorbed,survivor:survivor,display:shown});
  if(j.ok)location.reload();else{btn.disabled=false;alert(j.error||'Could not combine.')}}
 async function addClinicalItem(){
  var input=document.getElementById('clinicalNew'),label=(input&&input.value||'').trim();
@@ -1655,7 +1662,10 @@ def render_clinical_checklist(items, layers=None, intake_priorities=None,
                  "<span class=clinical-grip title='Drag to reorder' aria-hidden=true>&#8942;&#8942;</span>"
                  f"<input class=clinical-check type=checkbox aria-label=\"Select {_e(label)}\""
                  f"{' checked' if done or chosen else ''} onchange=toggleClinicalItem(this)>"
-                 f"<span class=clinical-label>{_e(label)}</span>{remedy}"
+                 # The name the practitioner gave a combination, when there is one.
+                 # data-label above stays CANONICAL: every action on this row keys off
+                 # it, so showing a different name must not change what is stored.
+                 f"<span class=clinical-label>{_e(item.get('display_label') or label)}</span>{remedy}"
                  f"<div class=clinical-balance><div class=clinical-common>{common}</div>"
                  f"<div class=clinical-stress-row><label class=clinical-stress-label>Stress pattern (head &amp; tail)"
                  f"{'<span class=clinical-stress-hint>suggested</span>' if item.get('pattern_is_suggested') else ''}"
