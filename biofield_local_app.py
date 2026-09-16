@@ -1053,7 +1053,9 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
         return Response(render_author_html(rep, dv, transcript, covered_by_layer=covered,
                                            narrative=narrative, fee_state=fstate,
                                            clinical_checklist=clinical_checklist,
-                                           dispensed=dispensed),
+                                           dispensed=dispensed,
+                                           intake_priorities=(profile or {}).get(
+                                               "intake_priorities") or []),
                         mimetype="text/html")
 
     @app.route("/author/<test_id>/invoice-view")
