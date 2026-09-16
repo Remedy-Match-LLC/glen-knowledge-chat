@@ -549,6 +549,31 @@ def _hash_token(t: str) -> str:
     return hashlib.sha256(t.encode("utf-8")).hexdigest()
 
 
+# Which workspace each allowlisted owner email signs in AS. Until 2026-09-16 the
+# magic-link session hardcoded workspace:glen, so anyone signing in by link was recorded
+# as Glen. Rae was added to the allowlist that day, and attribution that names the wrong
+# person is worse than no attribution: her actions in the console would have been Glen's.
+#
+# An email with no entry here gets a scope derived from its local part, which
+# rbac.role_for_owner resolves to VA unless SCOPE_ROLES names it. Least privilege on the
+# way in, and visible in the token list, rather than silently granting owner to whoever
+# was added to CONSOLE_OWNER_EMAILS.
+_CONSOLE_OWNER_SCOPES = {
+    "drglenswartwout@gmail.com": "glen",
+    "this.elf@gmail.com": "glen",
+    "suerae1111@gmail.com": "rae",
+}
+
+
+def _console_owner_scope(email):
+    """(scope, display_name) for an allowlisted owner email."""
+    e = (email or "").strip().lower()
+    owner = _CONSOLE_OWNER_SCOPES.get(e)
+    if not owner:
+        owner = re.sub(r"[^a-z0-9]+", "", e.split("@", 1)[0]) or "scoped"
+    return "workspace:" + owner, owner.capitalize()
+
+
 def _console_owner_emails():
     """Explicit owner allowlist; otherwise use Glen's two known owner identities."""
     configured = os.environ.get("CONSOLE_OWNER_EMAILS", "")
@@ -648,10 +673,11 @@ def console_owner_login_verify():
             return invalid, 400
         email = row["email"]
         uname = "console-owner-" + hashlib.sha256(email.encode()).hexdigest()[:12]
+        _scope, _display = _console_owner_scope(email)
         cx.execute(
             "INSERT INTO workspace_users (name,display_name,scope) VALUES (?,?,?) "
             "ON CONFLICT(name) DO UPDATE SET display_name=excluded.display_name,scope=excluded.scope",
-            (uname, "Console Owner", "workspace:glen"))
+            (uname, _display, _scope))
         uid = cx.execute("SELECT id FROM workspace_users WHERE name=?", (uname,)).fetchone()[0]
         owner_token = secrets.token_urlsafe(32)
         cx.execute("INSERT INTO access_tokens (token,user_id,note) VALUES (?,?,?)",
