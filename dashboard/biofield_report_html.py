@@ -1008,6 +1008,19 @@ async function pullIntakePriorities(){
   if(!j.ok){if(btn){btn.disabled=false;btn.textContent='Pull '+names.length+' from intake'}
    alert(j.error||('Could not add "'+names[i]+'"'));return}}
  location.reload()}
+async function combineIntakeItems(btn){
+ var li=btn.closest('li'),pick=li.querySelector('.intake-combine-pick');
+ var survivor=btn.dataset.survivor, absorbed=(pick&&pick.value||'').trim();
+ if(!absorbed){alert('Pick the intake item to fold into this one.');return}
+ if(!confirm('Combine "'+absorbed+'" into "'+survivor+'"? They become one condition '
+   +'on every client, and pull in as a single row. This can be undone.'))return;
+ var shown=prompt('Name for the combined condition. This name is used for every client.',
+                  survivor+' + '+absorbed);
+ if(shown===null)shown='';
+ btn.disabled=true;
+ var j=await post('/author/__TID__/clinical-items/combine',
+                  {absorbed:absorbed,survivor:survivor,display:shown});
+ if(j.ok)location.reload();else{btn.disabled=false;alert(j.error||'Could not combine.')}}
 async function combineClinicalItems(btn){
  var row=btn.closest('.clinical-item'),pick=row.querySelector('.clinical-combine-pick');
  var survivor=row.dataset.label, absorbed=(pick&&pick.value||'').trim();
@@ -1015,9 +1028,16 @@ async function combineClinicalItems(btn){
  if(!confirm('Combine "'+absorbed+'" into "'+survivor+'"? They become one condition '
    +'on every client, and "'+absorbed+'" stops appearing on its own. Its remembered '
    +'remedies move across. This can be undone.'))return;
+ // Glen, 2026-09-16: suggest a name he can edit. Cancel leaves the survivor's own name,
+ // which is what happened before this existed. The name is shown, never stored as the
+ // label: everything recorded against either condition keys off the canonical one.
+ var suggested=survivor+' + '+absorbed;
+ var shown=prompt('Name for the combined condition. This name is used for every client.',
+                  suggested);
+ if(shown===null)shown='';
  btn.disabled=true;
  var j=await post('/author/__TID__/clinical-items/combine',
-                  {absorbed:absorbed,survivor:survivor});
+                  {absorbed:absorbed,survivor:survivor,display:shown});
  if(j.ok)location.reload();else{btn.disabled=false;alert(j.error||'Could not combine.')}}
 async function addClinicalItem(){
  var input=document.getElementById('clinicalNew'),label=(input&&input.value||'').trim();
@@ -1592,7 +1612,8 @@ def render_fee_panel(state):
 
 
 def render_clinical_checklist(items, layers=None, intake_priorities=None,
-                             profile_unavailable=False):
+                             profile_unavailable=False, alias_map=None,
+                             display_map=None):
     """Scannable editable checklist; completion follows the current remedy program."""
     items = items or []
     layer_groups = group_layers(layers or [])
@@ -1661,7 +1682,10 @@ def render_clinical_checklist(items, layers=None, intake_priorities=None,
                  "<span class=clinical-grip title='Drag to reorder' aria-hidden=true>&#8942;&#8942;</span>"
                  f"<input class=clinical-check type=checkbox aria-label=\"Select {_e(label)}\""
                  f"{' checked' if done or chosen else ''} onchange=toggleClinicalItem(this)>"
-                 f"<span class=clinical-label>{_e(label)}</span>{remedy}"
+                 # The name the practitioner gave a combination, when there is one.
+                 # data-label above stays CANONICAL: every action on this row keys off
+                 # it, so showing a different name must not change what is stored.
+                 f"<span class=clinical-label>{_e(item.get('display_label') or label)}</span>{remedy}"
                  f"<div class=clinical-balance><div class=clinical-common>{common}</div>"
                  f"<div class=clinical-stress-row><label class=clinical-stress-label>Stress pattern (head &amp; tail)"
                  f"{'<span class=clinical-stress-hint>suggested</span>' if item.get('pattern_is_suggested') else ''}"
@@ -1688,12 +1712,40 @@ def render_clinical_checklist(items, layers=None, intake_priorities=None,
     # level, because biofield_clinical_checklist pulls in the profile modules.
     from dashboard.biofield_clinical_checklist import _norm as _norm_label
     existing = {_norm_label(i.get("label")) for i in items}
-    chips, fresh = [], 0
+    # Glen, 2026-09-16: "Still no function to combine two stress patterns in Clinical
+    # Summary", clarified as this list rather than the head-and-tail field. Two of the
+    # client's own answers can be one condition, and pulling both in made two rows that
+    # then had to be combined by hand.
+    #
+    # Folded through the SAME alias store the checklist rows use, so a fold declared
+    # here is the same standing judgement, not a second parallel one. Glen confirmed it
+    # applies across clients.
+    from dashboard.biofield_clinical_checklist import resolve_alias as _resolve
+    aliases = alias_map or {}
+    shown_names = display_map or {}
+    folded_into = {}          # survivor key -> [the answers folded into it]
+    ordered = []              # survivor key, in the order the client ranked them
+    by_key = {}
     for row in intake_priorities or []:
         concern = str(row.get("concern") or "").strip()
         if not concern:
             continue
-        here = _norm_label(concern) in existing
+        survivor = _resolve(concern, aliases) if aliases else concern
+        key = _norm_label(survivor)
+        if key not in by_key:
+            by_key[key] = {"label": survivor, "rows": []}
+            ordered.append(key)
+        by_key[key]["rows"].append(row)
+        if _norm_label(concern) != key:
+            folded_into.setdefault(key, []).append(concern)
+
+    chips, fresh = [], 0
+    for key in ordered:
+        group = by_key[key]
+        # The chosen name for a combination, when there is one, else the survivor's.
+        concern = shown_names.get(key) or group["label"]
+        row = group["rows"][0]
+        here = key in existing
         fresh += 0 if here else 1
         bits = []
         if row.get("rating") is not None:
@@ -1706,8 +1758,23 @@ def render_clinical_checklist(items, layers=None, intake_priorities=None,
             bits.append(f"since {onset}" if onset >= 1900 else f"{onset} years")
         if here:
             bits.append("already listed")
+        merged = folded_into.get(key) or []
+        if merged:
+            # Name what was folded in. A line that silently swallowed one of the
+            # client's own answers would be worse than two lines.
+            bits.append("with " + ", ".join(sorted(merged)))
         note = f" <span class=intake-note>({' · '.join(bits)})</span>" if bits else ""
-        chips.append(f"<li{' class=here' if here else ''}>{_e(concern)}{note}</li>")
+        others = "".join(
+            f"<option value=\"{_e(by_key[k]['label'])}\">{_e(shown_names.get(k) or by_key[k]['label'])}</option>"
+            for k in ordered if k != key)
+        combine = (
+            "<span class=intake-combine>"
+            "<select class=intake-combine-pick aria-label='Intake item to fold into this one'>"
+            f"<option value=''>Combine another&hellip;</option>{others}</select>"
+            f"<button type=button class='btn ghost' data-survivor=\"{_e(group['label'])}\" "
+            "onclick=combineIntakeItems(this)>Combine into this</button></span>"
+        ) if len(ordered) > 1 else ""
+        chips.append(f"<li{' class=here' if here else ''}>{_e(concern)}{note}{combine}</li>")
     if chips:
         label = f"Pull {fresh} from intake" if fresh else "All already listed"
         intake_strip = (
@@ -1742,6 +1809,9 @@ def render_clinical_checklist(items, layers=None, intake_priorities=None,
             ".clinical-item.dragging{opacity:.45;border-color:var(--accent)}"
             ".clinical-item[draggable=true]{cursor:grab}.clinical-item[draggable=true]:active{cursor:grabbing}"
             ".clinical-check{grid-row:1/3;width:18px;height:18px;margin:0;accent-color:var(--ok);cursor:pointer}"
+            ".intake-combine{display:inline-flex;gap:5px;margin-left:8px;vertical-align:middle}"
+            ".intake-combine select{font-size:11px;padding:1px 3px;max-width:190px}"
+            ".intake-combine .btn{font-size:11px;padding:2px 7px}"
             ".clinical-label{font-weight:650;line-height:1.25}.clinical-remedy,.clinical-open{font-size:11px;margin-top:2px}"
             ".clinical-remedy{color:var(--ok)}.clinical-open{color:var(--muted)}"
             ".clinical-balance{grid-column:3;display:grid;grid-template-columns:minmax(160px,1fr) minmax(260px,1.25fr) auto;gap:8px;margin-top:9px;align-items:end}"
@@ -1801,7 +1871,7 @@ def render_clinical_proposals():
 def render_author_html(report, depth_values=None, transcript="", covered_by_layer=None,
                        narrative="", fee_state=None, transcript_updated="",
                        clinical_checklist=None, dispensed=None, intake_priorities=None,
-                       profile_unavailable=False):
+                       profile_unavailable=False, alias_map=None, display_map=None):
     tid = _e(report.get("test_id") or "")
     c = report.get("client") or {}
     import urllib.parse as _up
@@ -1912,7 +1982,8 @@ def render_author_html(report, depth_values=None, transcript="", covered_by_laye
                  "<div id=suggestpanel></div>" + render_clinical_proposals()
                  + render_clinical_checklist(clinical_checklist, report.get("layers") or [],
                                             intake_priorities=intake_priorities,
-                                            profile_unavailable=profile_unavailable)
+                                            profile_unavailable=profile_unavailable,
+                                            alias_map=alias_map, display_map=display_map)
                  + chain + session + narrative_section
                  + _AUTHOR_JS.replace("__TID__", tid)
                  + "<script>loadClinicalProposals();loadClinicalCatalog();initClinicalDrag()</script>",

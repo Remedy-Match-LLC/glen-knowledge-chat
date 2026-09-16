@@ -1058,13 +1058,26 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
         except Exception as _de:
             print(f"[dispensed] skipped: {_de!r}", flush=True)
             dispensed = []
+        # The folds the practitioner has declared, so the intake list can show two of
+        # the client's answers as the one condition they were combined into. Read here
+        # rather than in the renderer, which is a pure string builder with no database.
+        # A failure leaves both maps empty, which renders exactly as before.
+        _alias_map, _display_map = {}, {}
+        try:
+            from dashboard.biofield_clinical_checklist import (
+                aliases as _al, display_labels as _dl)
+            with sqlite3.connect(db_path) as _acx:
+                _alias_map, _display_map = _al(_acx), _dl(_acx)
+        except Exception as _ae:
+            print(f"[clinical] alias map skipped: {_ae!r}", flush=True)
         return Response(render_author_html(rep, dv, transcript, covered_by_layer=covered,
                                            narrative=narrative, fee_state=fstate,
                                            clinical_checklist=clinical_checklist,
                                            dispensed=dispensed,
                                            intake_priorities=(profile or {}).get(
                                                "intake_priorities") or [],
-                                           profile_unavailable=profile_unavailable),
+                                           profile_unavailable=profile_unavailable,
+                                           alias_map=_alias_map, display_map=_display_map),
                         mimetype="text/html")
 
     @app.route("/author/<test_id>/invoice-view")
@@ -2248,17 +2261,26 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
 
         Stored as an alias, so nothing recorded against either name is rewritten and
         the fold can be undone by deleting one row."""
-        from dashboard.biofield_clinical_checklist import alias_condition
+        from dashboard.biofield_clinical_checklist import (
+            alias_condition, set_display_label)
         body = request.get_json(silent=True) or {}
         absorbed = str(body.get("absorbed") or "").strip()
         survivor = str(body.get("survivor") or "").strip()
+        # Glen, 2026-09-16, confirmed the name applies across clients. Optional: an empty
+        # one leaves the survivor's own name, which is what happened before this existed.
+        display = str(body.get("display") or "").strip()
         if not absorbed or not survivor:
             return {"ok": False, "error": "Pick the row to fold into this one."}, 400
         with sqlite3.connect(db_path) as cx:
             if not alias_condition(cx, absorbed, survivor):
                 return {"ok": False,
                         "error": "A condition cannot be combined with itself."}, 400
-        return {"ok": True, "absorbed": absorbed, "survivor": survivor}
+            # Named AFTER the fold succeeds. Naming a combination that was refused would
+            # rename a condition nobody combined.
+            if display:
+                set_display_label(cx, survivor, display)
+        return {"ok": True, "absorbed": absorbed, "survivor": survivor,
+                "display": display or survivor}
 
     @app.route("/author/<test_id>/clinical-catalog")
     def author_clinical_catalog(test_id):

@@ -379,6 +379,66 @@ def ensure_alias_schema(cx):
     )""")
 
 
+def ensure_display_schema(cx):
+    """A name the practitioner gave a combined condition.
+
+    Glen, 2026-09-16: "You could suggest a name that I can edit if I want for the
+    combination", and confirmed it applies across clients.
+
+    Kept OUT of the label itself, deliberately. Every other action on the row keys off
+    the canonical label: remembered remedies, the stress pattern, the layer assignment
+    and the catalog are all stored against it. Renaming it would mint a new catalog term
+    per combination and strand everything recorded under the old one. This is a display
+    override, resolved at render time, and deleting the row restores the original name.
+    """
+    cx.execute("""CREATE TABLE IF NOT EXISTS biofield_clinical_display (
+        key TEXT PRIMARY KEY, label TEXT NOT NULL,
+        updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+    )""")
+
+
+def suggested_combined_label(survivor, absorbed):
+    """What to pre-fill when two conditions are folded. Editable before it is saved."""
+    a, b = str(survivor or "").strip(), str(absorbed or "").strip()
+    if not a:
+        return b
+    if not b or _norm(a) == _norm(b):
+        return a
+    return f"{a} + {b}"
+
+
+def set_display_label(cx, label, display):
+    """Name the combination. An empty or unchanged `display` clears the override."""
+    ensure_display_schema(cx)
+    key = _norm(label)
+    if not key:
+        return False
+    shown = str(display or "").strip()
+    if not shown or _norm(shown) == key:
+        cx.execute("DELETE FROM biofield_clinical_display WHERE key=?", (key,))
+        cx.commit()
+        return True
+    cx.execute("""INSERT INTO biofield_clinical_display (key,label,updated_at)
+        VALUES (?,?,CURRENT_TIMESTAMP)
+        ON CONFLICT(key) DO UPDATE SET label=excluded.label,
+          updated_at=CURRENT_TIMESTAMP""", (key, shown))
+    cx.commit()
+    return True
+
+
+def display_labels(cx):
+    """{canonical key: the name to show}. Empty when unavailable, never raising:
+    a missing override must not take the authoring page down."""
+    if cx is None:
+        return {}
+    try:
+        ensure_display_schema(cx)
+        return {r[0]: r[1] for r in cx.execute(
+            "SELECT key,label FROM biofield_clinical_display")}
+    except Exception:
+        return {}
+
+
 def alias_condition(cx, absorbed, survivor):
     """Fold `absorbed` into `survivor`. False when they are the same condition."""
     ensure_alias_schema(cx)
@@ -428,6 +488,60 @@ def absorbed_by(cx, survivor):
             "SELECT from_label FROM biofield_clinical_alias WHERE to_key=?", (key,))]
     except Exception:
         return []
+
+
+PATTERN_JOIN = " & "
+
+
+def _pattern_parts(value):
+    """A combined pattern split back into its functions, for containment checks."""
+    return [x.strip() for x in str(value or "").split(PATTERN_JOIN.strip()) if x.strip()]
+
+
+def combine_patterns(survivor_pattern, absorbed_patterns):
+    """The survivor's pattern with each absorbed condition's function appended.
+
+    Glen, 2026-09-16, on combining two rows: "add together any remedies listed and their
+    states". The remedies already followed the fold; the states did not, so folding
+    "Difficulty seeing in low light" into "Dry AMD" kept Macular Resilience and silently
+    dropped Dark Adaptation. A combined condition needs both functions restored.
+
+    ADDITIVE, deliberately. The survivor's own wording always leads and is never
+    rewritten, because it may be a term the practitioner typed for this client. Anything
+    already present, in any case, is not repeated.
+    """
+    out, seen = [], set()
+    for part in _pattern_parts(survivor_pattern):
+        if _norm(part) not in seen:
+            seen.add(_norm(part))
+            out.append(part)
+    for pattern in absorbed_patterns or []:
+        for part in _pattern_parts(pattern):
+            if part and _norm(part) not in seen:
+                seen.add(_norm(part))
+                out.append(part)
+    return PATTERN_JOIN.join(out)
+
+
+def absorbed_patterns(cx, survivor, stress_lookup=None):
+    """The effective stress pattern of every condition folded into `survivor`.
+
+    Effective means what that condition would have shown on its own row: what the
+    practitioner recorded for it, else its drafted suggestion. A fold must not lose the
+    seeded term just because nobody had typed over it.
+    """
+    out = []
+    for label in absorbed_by(cx, survivor):
+        recorded = ""
+        if stress_lookup:
+            recorded = (stress_lookup(label) or "").strip()
+        if not recorded and cx is not None:
+            try:
+                recorded = stress_pattern(cx, label)
+            except Exception:
+                recorded = ""
+        out.append(recorded or suggested_pattern(label))
+    return [x for x in out if x]
 
 
 def resolve_alias(label, alias_map, _depth=0):
@@ -480,6 +594,9 @@ def build(profile, layers, stress_data=None, remedy_lookup=None, stress_lookup=N
                (row.get("remedy") or "").strip() for row in layers
                if (row.get("remedy") or "").strip()}
     balanced = [s for s in (stress_data or {}).get("balanced", []) if s.get("balanced_by")]
+    # Names the practitioner gave combined conditions. Read once: this loop runs per
+    # condition and a query each time would be a round trip per row.
+    shown = display_labels(cx)
     rows = []
     for label in profile_labels(profile, cx=cx):
         covered_by = ""
@@ -516,12 +633,32 @@ def build(profile, layers, stress_data=None, remedy_lookup=None, stress_lookup=N
                             break
         remembered = (stress_lookup(label) or "").strip() if stress_lookup else ""
         suggested = "" if remembered else suggested_pattern(label)
+        # A folded condition brings its function with it. Appended to whatever this row
+        # already shows, never replacing it: see combine_patterns.
+        folded = absorbed_patterns(cx, label, stress_lookup)
+        if folded:
+            combined = combine_patterns(remembered or suggested, folded)
+            if remembered:
+                remembered = combined
+            else:
+                suggested = combined
         rows.append({"label": label, "checked": bool(covered_by),
                      "covered_by": covered_by, "layer": balanced_layer,
                      "common_remedies": common_remedies[:MAX_COMMON_REMEDIES],
                      "stress_pattern": remembered or suggested,
                      "remembered_pattern": remembered,
                      "pattern_is_suggested": bool(suggested)})
+        # Display only, and ONLY when a combination has been named. `label` stays
+        # canonical, because remembered remedies, the stress pattern, the layer
+        # assignment and the catalog are all stored against it.
+        #
+        # Added as a key rather than always present so an unnamed row is byte-identical
+        # to what every existing caller already receives. CI caught the first version:
+        # test_layer_remedy_checks_related_condition compares the whole row dict, and an
+        # always-present "display_label": "" failed it.
+        named = shown.get(_norm(label))
+        if named:
+            rows[-1]["display_label"] = named
     return rows
 
 
