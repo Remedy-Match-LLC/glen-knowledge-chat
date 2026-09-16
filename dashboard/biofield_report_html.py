@@ -595,6 +595,12 @@ async function consolidateBalances(source,sourceLabel,sel){var target=Number(sel
  astat('Consolidating balanced stresses…');
  var j=await post('/author/__TID__/layer/'+source+'/consolidate-balances',{target_layer:target});
  if(j&&j.ok)location.reload();else astat((j&&j.error)||'Consolidation failed.')}
+async function renameStress(sid,label){
+ var next=prompt('Correct this stress term:',label);
+ if(next===null)return; next=next.trim();
+ if(!next||next===label)return;
+ const j=await post('/author/__TID__/stress/'+sid+'/rename',{label:next});
+ if(j.ok){loadStress()}else{alert(j.error||'Could not rename it.')}}
 async function deleteStress(sid,label){if(!confirm('Delete tag "'+label+'" from this intake?'))return;
  const j=await post('/author/__TID__/stress/'+sid+'/delete',{});
  astat(j&&j.ok?'Tag deleted.':((j&&j.error)||'Delete failed.'));if(j&&j.ok)loadStress()}
@@ -2137,12 +2143,21 @@ def render_stress_panel(data):
         # Unassigned stresses: an Assign button auto-picks the best-fit layer (LLM).
         assign_btn = (f" <button class='btn ghost' style='font-size:11px' "
                       f"onclick=\"assignStress({sid})\">Assign</button>" if drag else "")
+        # Glen, 2026-09-16: "I need to be able to edit and/or delete stresses added
+        # from transcript." Those carry source='voice' (interpret_stresses ->
+        # add_voice_stress), and only 'tag' offered a control, so the ones he wanted
+        # to correct had none. Every hand-and-machine source is editable now.
+        # 'scan' stays alone: it comes from the E4L scan itself, and editing one would
+        # put the intake at odds with the scan it was built from.
         delete_btn = ""
-        if s.get("source") == "tag":
+        if s.get("source") != "scan":
             label_js = str(s.get("label") or "").replace("\\", "\\\\").replace("'", "\\'")
-            delete_btn = (f" <button class='btn ghost' style='font-size:11px;color:var(--err)' "
+            delete_btn = (f" <button class='btn ghost' style='font-size:11px' "
+                          f"onclick=\"renameStress({sid},'{_e(label_js)}')\" "
+                          "title='Correct the wording of this stress'>Edit</button>"
+                          f" <button class='btn ghost' style='font-size:11px;color:var(--err)' "
                           f"onclick=\"deleteStress({sid},'{_e(label_js)}')\" "
-                          "title='Delete this tag from the intake'>Delete</button>")
+                          "title='Delete this stress from the intake'>Delete</button>")
         # …and are still draggable onto a layer card as a manual override.
         drag_attr = (f" class=sdrag draggable=true ondragstart=\"stressDragStart(event,{sid})\" "
                      "ondragend=stressDragEnd(event) title='Drag onto a layer to cover it'"

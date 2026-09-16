@@ -1857,6 +1857,30 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
             set_layer_order(cx, test_id, order)
         return {"ok": True}
 
+    @app.route("/author/<test_id>/stress/<int:sid>/rename", methods=["POST"])
+    def author_stress_rename(test_id, sid):
+        """Correct the wording of a stress. Glen, 2026-09-16.
+
+        A scan-derived stress is not renameable here: it comes from the E4L scan and
+        editing it would put the intake at odds with the scan it was built from."""
+        from dashboard import biofield_stress as _st
+        label = str((request.get_json(silent=True) or {}).get("label") or "").strip()
+        if not label:
+            return {"ok": False, "error": "Enter a term."}, 400
+        with sqlite3.connect(db_path) as cx:
+            _st.init_stress_tables(cx)
+            row = cx.execute("SELECT source FROM biofield_auth_stress WHERE id=? AND test_id=?",
+                             (sid, _st._num(test_id))).fetchone()
+            if not row:
+                return {"ok": False, "error": "That stress is not on this intake."}, 404
+            if (row[0] or "") == "scan":
+                return {"ok": False,
+                        "error": "A scan stress cannot be renamed — it comes from the scan."}, 400
+            if not _st.rename_stress(cx, test_id, sid, label):
+                return {"ok": False,
+                        "error": f"Could not rename it. {label!r} may already be on this intake."}, 409
+        return {"ok": True, "label": label}
+
     @app.route("/author/<test_id>/stress/<int:sid>/cover", methods=["POST"])
     def author_stress_cover(test_id, sid):
         rids = (request.get_json(silent=True) or {}).get("rids") or []

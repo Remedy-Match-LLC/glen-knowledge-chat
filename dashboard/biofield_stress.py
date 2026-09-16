@@ -623,6 +623,53 @@ def delete_stress(cx, tid, stress_id):
     return True
 
 
+def rename_stress(cx, tid, stress_id, new_label):
+    """Rename one stress, moving its coverage with it.
+
+    Glen, 2026-09-16: a transcript interpretation can put a mangled term on the
+    intake, and he needs to correct it rather than delete and retype.
+
+    Coverage is keyed on `code`, which is the normalised label. Renaming the label
+    alone leaves every coverage row pointing at a code nothing has any more, so the
+    stress reads unbalanced and the remedies covering it disappear from the picture.
+    Both move together here, in one transaction.
+
+    False when the label is blank, the stress is not this test's, or the new name is
+    already on this test — the table's UNIQUE(test_id, source, code) would refuse it
+    anyway, and a silent failure is worse than a refusal the caller can report.
+    """
+    init_stress_tables(cx)
+    t = _num(tid)
+    label = str(new_label or "").strip()
+    if not label:
+        return False
+    new_code = _norm(label)
+    if not new_code:
+        return False
+    row = cx.execute(
+        "SELECT code FROM biofield_auth_stress WHERE test_id=? AND id=?",
+        (t, int(stress_id))).fetchone()
+    if not row:
+        return False
+    old_code = row[0]
+    if old_code == new_code:
+        cx.execute("UPDATE biofield_auth_stress SET label=?, updated_at=? WHERE id=?",
+                   (label, _now(), int(stress_id)))
+        cx.commit()
+        return True
+    clash = cx.execute(
+        "SELECT 1 FROM biofield_auth_stress WHERE test_id=? AND code=? AND id<>?",
+        (t, new_code, int(stress_id))).fetchone()
+    if clash:
+        return False
+    cx.execute("UPDATE biofield_auth_stress SET code=?, label=?, updated_at=? WHERE id=?",
+               (new_code, label, _now(), int(stress_id)))
+    cx.execute("UPDATE biofield_auth_remedy_coverage SET code=? WHERE test_id=? AND code=?",
+               (new_code, t, old_code))
+    cx.commit()
+    return True
+
+
 def stress_id_for(cx, tid, label):
     """id of the test's stress whose label normalizes to `label` (any source), or None.
     Matches by normalized label — mirrors add_stress's dedup — so it also finds a stress
