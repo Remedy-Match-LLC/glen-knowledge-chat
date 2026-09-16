@@ -25,6 +25,7 @@ _STYLE = """
    margin-right:14px;font-family:ui-monospace,Menlo,Consolas,monospace}
  .opbrand b{color:#e6b800;font-weight:700}
  .opsub{color:#d4a843;letter-spacing:.14em;text-transform:uppercase;font-size:10px;font-weight:700}
+ .zerobuy{opacity:.55}
  .opclient{margin-left:10px;padding-left:10px;border-left:1px solid #2a2a33;color:#e6edf3;font-size:12px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:42vw}
  .opspacer{flex:1}
  .opbar a.optab{display:inline-flex;align-items:center;height:100%;padding:0 13px;color:#9aa0b4;
@@ -1289,17 +1290,18 @@ def _xwrap(inp):
 
 
 def _bottles_chip(remedy, bottles_by_remedy):
-    """"11 bottles" beside a remedy this client has bought before, else nothing.
+    """"11 bottles" beside a remedy, or "0 bottles" for one never bought.
 
     Glen, 2026-09-16, wanted the number where the decision is made, not only in the
-    Previously-dispensed panel he has to open."""
+    Previously-dispensed panel he has to open — and explicitly wanted a ZERO on a
+    product never purchased before, rather than a blank. A blank is ambiguous: it
+    reads as "no history looked up" as easily as "never had it"."""
     name = (remedy or "").strip().lower()
     if not name:
-        return ""
-    n = (bottles_by_remedy or {}).get(name)
-    if not n:
-        return ""
-    return (f"<span class=chip title='Bottles this client has bought before'>"
+        return ""      # no remedy chosen yet, so there is nothing to count
+    n = (bottles_by_remedy or {}).get(name) or 0
+    cls = "chip" if n else "chip zerobuy"
+    return (f"<span class='{cls}' title='Bottles this client has bought before'>"
             f"{n} bottle{'' if n == 1 else 's'}</span>")
 
 

@@ -37,12 +37,12 @@ def test_a_line_with_no_quantity_counts_as_one():
     assert {r["name"]: r["bottles"] for r in rows} == {"Neuroprotect": 1, "Brain Boost": 1}
 
 
-def test_a_zero_quantity_line_still_counts_as_a_bottle():
-    """Real orders carry qty 0 lines — Rebecca Navo's #166 has six. Glen ruled
-    2026-09-16 that they count: the line exists, so it was dispensed."""
+def test_a_zero_quantity_line_counts_as_none():
+    """Real orders carry qty 0 lines — Rebecca Navo's #166 has six. They were
+    listed, not bought."""
     rows = frequency([_order("a@b.co", "2026-01-01",
                              [{"name": "Neuroprotect", "qty": 0}])], "a@b.co")
-    assert rows[0]["bottles"] == 1
+    assert rows[0]["bottles"] == 0
     assert rows[0]["count"] == 1
 
 

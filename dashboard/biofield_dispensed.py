@@ -43,16 +43,16 @@ def _label(item):
 
 
 def _qty(item):
-    """Bottles on one line, never fewer than one.
+    """Bottles on one line.
 
-    A missing, unreadable or zero quantity counts as one, because a line that exists
-    was dispensed at least once. Glen ruled on the zero case 2026-09-16 when shown
-    that real orders carry qty 0 lines (Rebecca Navo's #166 has six): they count."""
+    A missing or unreadable quantity is one bottle, because a line that exists was
+    bought at least once. An explicit 0 is honoured: real orders carry qty 0 lines
+    (Rebecca Navo's #166 has six) and those were listed, not bought."""
     raw = item.get("qty")
     if raw is None or str(raw).strip() == "":
         return 1
     try:
-        return max(1, int(float(str(raw).strip())))
+        return max(0, int(float(str(raw).strip())))
     except (TypeError, ValueError):
         return 1
 
