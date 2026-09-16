@@ -1058,13 +1058,26 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
         except Exception as _de:
             print(f"[dispensed] skipped: {_de!r}", flush=True)
             dispensed = []
+        # The folds the practitioner has declared, so the intake list can show two of
+        # the client's answers as the one condition they were combined into. Read here
+        # rather than in the renderer, which is a pure string builder with no database.
+        # A failure leaves both maps empty, which renders exactly as before.
+        _alias_map, _display_map = {}, {}
+        try:
+            from dashboard.biofield_clinical_checklist import (
+                aliases as _al, display_labels as _dl)
+            with sqlite3.connect(db_path) as _acx:
+                _alias_map, _display_map = _al(_acx), _dl(_acx)
+        except Exception as _ae:
+            print(f"[clinical] alias map skipped: {_ae!r}", flush=True)
         return Response(render_author_html(rep, dv, transcript, covered_by_layer=covered,
                                            narrative=narrative, fee_state=fstate,
                                            clinical_checklist=clinical_checklist,
                                            dispensed=dispensed,
                                            intake_priorities=(profile or {}).get(
                                                "intake_priorities") or [],
-                                           profile_unavailable=profile_unavailable),
+                                           profile_unavailable=profile_unavailable,
+                                           alias_map=_alias_map, display_map=_display_map),
                         mimetype="text/html")
 
     @app.route("/author/<test_id>/invoice-view")

@@ -490,6 +490,60 @@ def absorbed_by(cx, survivor):
         return []
 
 
+PATTERN_JOIN = " & "
+
+
+def _pattern_parts(value):
+    """A combined pattern split back into its functions, for containment checks."""
+    return [x.strip() for x in str(value or "").split(PATTERN_JOIN.strip()) if x.strip()]
+
+
+def combine_patterns(survivor_pattern, absorbed_patterns):
+    """The survivor's pattern with each absorbed condition's function appended.
+
+    Glen, 2026-09-16, on combining two rows: "add together any remedies listed and their
+    states". The remedies already followed the fold; the states did not, so folding
+    "Difficulty seeing in low light" into "Dry AMD" kept Macular Resilience and silently
+    dropped Dark Adaptation. A combined condition needs both functions restored.
+
+    ADDITIVE, deliberately. The survivor's own wording always leads and is never
+    rewritten, because it may be a term the practitioner typed for this client. Anything
+    already present, in any case, is not repeated.
+    """
+    out, seen = [], set()
+    for part in _pattern_parts(survivor_pattern):
+        if _norm(part) not in seen:
+            seen.add(_norm(part))
+            out.append(part)
+    for pattern in absorbed_patterns or []:
+        for part in _pattern_parts(pattern):
+            if part and _norm(part) not in seen:
+                seen.add(_norm(part))
+                out.append(part)
+    return PATTERN_JOIN.join(out)
+
+
+def absorbed_patterns(cx, survivor, stress_lookup=None):
+    """The effective stress pattern of every condition folded into `survivor`.
+
+    Effective means what that condition would have shown on its own row: what the
+    practitioner recorded for it, else its drafted suggestion. A fold must not lose the
+    seeded term just because nobody had typed over it.
+    """
+    out = []
+    for label in absorbed_by(cx, survivor):
+        recorded = ""
+        if stress_lookup:
+            recorded = (stress_lookup(label) or "").strip()
+        if not recorded and cx is not None:
+            try:
+                recorded = stress_pattern(cx, label)
+            except Exception:
+                recorded = ""
+        out.append(recorded or suggested_pattern(label))
+    return [x for x in out if x]
+
+
 def resolve_alias(label, alias_map, _depth=0):
     """The condition `label` folds into, following a chain of aliases.
 
@@ -579,6 +633,15 @@ def build(profile, layers, stress_data=None, remedy_lookup=None, stress_lookup=N
                             break
         remembered = (stress_lookup(label) or "").strip() if stress_lookup else ""
         suggested = "" if remembered else suggested_pattern(label)
+        # A folded condition brings its function with it. Appended to whatever this row
+        # already shows, never replacing it: see combine_patterns.
+        folded = absorbed_patterns(cx, label, stress_lookup)
+        if folded:
+            combined = combine_patterns(remembered or suggested, folded)
+            if remembered:
+                remembered = combined
+            else:
+                suggested = combined
         rows.append({"label": label, "checked": bool(covered_by),
                      "covered_by": covered_by, "layer": balanced_layer,
                      "common_remedies": common_remedies[:MAX_COMMON_REMEDIES],
