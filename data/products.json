@@ -2319,7 +2319,7 @@
    "fmp_id": "330"
   },
   "msm-syntropy": {
-   "name": "MSM Synergy",
+   "name": "MSM Syntropy Powder",
    "price_cents": 6997,
    "pinecone_title": "MSM Synergy",
    "url": "https://remedymatch.com/remedies/syntropy/135-msm-syntropy",
@@ -2353,7 +2353,8 @@
    "description": "MSM Synergy . Price: $69.97. MSM Synergy . MSM Synergy MSM Powder MSM is wonderful support for many functions including comfort, scar reduction and cleansing... MSM (Methylsulfonylmethane) is organic sulfur. It is also a methyl donor. It dissolves easily in water, with a slightly bitter and cooling taste. And it works fast, enhancing comfort in a few minutes. You can also brush your gums with it to support gum tissue regeneration... Reclaim Flexibility, Radiance, and Resilience With Pure MSM – The Beauty Mineral That Works from the Inside Out Imagine waking up without the stiffness… moving...",
    "bottle_type": "30 g",
    "fmp_id": "606",
-   "qty_pricing": true
+   "qty_pricing": true,
+   "regular_cents": 8000
   },
   "binder-complex": {
    "name": "Binder Complex",
@@ -3102,7 +3103,7 @@
    "ingredients_source": "t33",
    "description": "Transform . Price: $69.97.",
    "bottle_type": "30 g",
-   "fmp_id": "349"
+   "fmp_id": "881"
   },
   "vitreous-vitality": {
    "name": "Vitreous Vitality",
@@ -3672,7 +3673,8 @@
    "pinecone_title": "Neem Oil Roll-On",
    "url": "https://remedymatch.com/remedies/forms/liquids/oils/78-neem-oil-rollon",
    "bottle_type": "30roll",
-   "fmp_id": "384"
+   "fmp_id": "384",
+   "regular_cents": 8000
   },
   "es7-muscle": {
    "name": "ES7",
@@ -4690,7 +4692,7 @@
    "qty_pricing": true
   },
   "flow-ease": {
-   "name": "Flow Ease",
+   "name": "Flow Ease Powder",
    "price_cents": 6997,
    "pinecone_title": "Flow Ease",
    "url": "https://remedymatch.com/remedies/syntropy/36-flow-ease",
@@ -4728,7 +4730,8 @@
    "ingredients_source": "t33",
    "description": "Flow Ease . Price: $69.97.",
    "bottle_type": "30 g",
-   "fmp_id": "302"
+   "fmp_id": "302",
+   "regular_cents": 8000
   },
   "gas-ex-powder": {
    "name": "Gas Ex Powder",
@@ -5821,7 +5824,7 @@
    "enrichment_note": "Garlic raw named as the label says (#1628, 2026-09-10); pinned here so a rerun of apply_enrichment cannot revert it."
   },
   "hydrolyzed-collagen": {
-   "name": "Hydrolyzed Collagen",
+   "name": "Hydrolyzed Collagen Powder",
    "price_cents": 3997,
    "pinecone_title": "Hydrolyzed Collagen",
    "url": "https://remedymatch.com/remedies/forms/powders/pure-simple-singles/417-hydrolyzed-collagen",
@@ -5833,7 +5836,8 @@
    ],
    "ingredients_source": "store-recovery-2026-06-08",
    "bottle_type": "120 caps",
-   "fmp_id": "874"
+   "fmp_id": "874",
+   "regular_cents": 8000
   },
   "es12-female": {
    "name": "ES12",
@@ -10821,7 +10825,7 @@
    ]
   },
   "seaaminos": {
-   "name": "SeaAminos",
+   "name": "SeaAmino Powder",
    "price_cents": 3997,
    "pinecone_title": "SeaAminos",
    "url": "https://remedymatch.com/remedies/forms/powders/pure-simple-singles/410-seaaminos",
@@ -10844,7 +10848,8 @@
    "gk_stale": true,
    "gk_stale_reason": "GK page missing: Chalcones (Xanthoangelol & 4-Hydroxyderricin), Rosmarinic Acid",
    "bottle_type": "120 caps",
-   "fmp_id": "471"
+   "fmp_id": "471",
+   "regular_cents": 8000
   },
   "apigenin": {
    "name": "Apigenin",
@@ -11292,7 +11297,7 @@
    "bottle_type": "30ml"
   },
   "crucifer-complex": {
-   "name": "Crucifer Complex",
+   "name": "Crucifer Complex Powder",
    "price_cents": 6997,
    "pinecone_title": "Crucifer Complex",
    "url": "https://remedymatch.com/remedies/syntropy/434-crucifer-complex",
@@ -11314,7 +11319,8 @@
    "description": "Crucifer Complex . Crucifer Complex Crucifer Complex DIM is found in Kale at about 0.1% concentration. We add a standardized extract of DIM that is about 1,000 times more concentrated to boost the potent healing effects of our Crucifer Complex. That means a single serving provides as much DIM as 100 grams of Kale. That's about 3.5 ounces or close to a quarter of a pound. Kale and Collards are the only foods rated at 1000 on a scale of 0 to 1000. How many of us find it easy to eat enough of them? Crucifer Complex supplies both in concentrated form with the addition of the key phytonutrient...",
    "bottle_type": "30 g",
    "fmp_id": "582",
-   "qty_pricing": true
+   "qty_pricing": true,
+   "regular_cents": 8000
   },
   "hydrolized-pea-protein-aminos--pure--predigested": {
    "name": "Pea Protein Aminos",
@@ -12300,7 +12306,9 @@
    "no_groovekart": true,
    "regular_cents": 8000,
    "description": "1 scoop 2 times a day in drinks",
-   "bottle_type": "30 g"
+   "bottle_type": "30 g",
+   "inactive": true,
+   "superseded_by": "flow-ease"
   },
   "serenity-blue-green-balance": {
    "name": "Serenity Blue Green Balance",
@@ -12784,7 +12792,9 @@
    "no_groovekart": true,
    "regular_cents": 8000,
    "description": "1 scoop up to 2 times a day in drinks",
-   "bottle_type": "30 g"
+   "bottle_type": "30 g",
+   "inactive": true,
+   "superseded_by": "transform"
   },
   "brain-boost-nootropic": {
    "name": "Brain Boost Nootropic",
@@ -13416,7 +13426,9 @@
      "dose": "238 mg",
      "compound_mg": 238.0
     }
-   ]
+   ],
+   "inactive": true,
+   "superseded_by": "crucifer-complex"
   },
   "comfort-synovial-syntropy": {
    "name": "Comfort Synovial Syntropy",
@@ -13582,7 +13594,9 @@
      "dose": "",
      "purity_pct": 95.0
     }
-   ]
+   ],
+   "inactive": true,
+   "superseded_by": "msm-syntropy"
   },
   "relationship-shell-essence-in-terrain-restore": {
    "name": "Relationship Shell Essence in Terrain Restore",
@@ -16750,7 +16764,9 @@
    "no_groovekart": true,
    "regular_cents": 8000,
    "description": "1 scoop 3 times a day in drinks",
-   "bottle_type": "120 caps"
+   "bottle_type": "120 caps",
+   "inactive": true,
+   "superseded_by": "hydrolyzed-collagen"
   },
   "relax-powder": {
    "name": "*Relax Powder",
@@ -16761,7 +16777,9 @@
    "ingredients_source": "fmp_snap",
    "no_groovekart": true,
    "description": "1 scoop daily in drinks",
-   "bottle_type": "30 g"
+   "bottle_type": "30 g",
+   "inactive": true,
+   "superseded_by": "relax"
   },
   "bioavailability-blend-powder": {
    "name": "Bioavailability Blend Powder",
@@ -21110,7 +21128,9 @@
    "ingredients_source": "fmp_snap",
    "no_groovekart": true,
    "regular_cents": 8000,
-   "bottle_type": "30roll"
+   "bottle_type": "30roll",
+   "inactive": true,
+   "superseded_by": "neem-oil-rollon"
   },
   "ei13-hearing-learning-energetic-integrator-infoceutical": {
    "name": "EI13 Hearing & Learning Energetic Integrator Infoceutical",
@@ -21279,7 +21299,9 @@
    "no_groovekart": true,
    "regular_cents": 8000,
    "description": "1 scoop 3 times a day in drinks",
-   "bottle_type": "120 caps"
+   "bottle_type": "120 caps",
+   "inactive": true,
+   "superseded_by": "seaaminos"
   },
   "hydrolyzed-pea-protein-powder": {
    "name": "Hydrolyzed Pea Protein Powder",
