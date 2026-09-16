@@ -237,7 +237,7 @@
 
   function buildMyPath(trail) {
     var d = el("div", "js-mypath");
-    d.appendChild(el("h4", null, "My Path — this visit"));
+    d.appendChild(el("h4", null, "My Path: this visit"));
     trail.slice().reverse().forEach(function (v) {
       var a = el("a", null, v.t); a.href = v.p; d.appendChild(a);
     });
@@ -252,7 +252,10 @@
     var seenNext = false;
     journey.forEach(function (card, i) {
       if (i > 0) {
-        var link = el("span", "js-trail-link" + (journey[i - 1].status === "done" ? " done" : ""), "—");
+        // Separator between lands. A middle dot, never an em dash: Glen's rule covers
+        // every character a client reads, and the funnel already separates with "·"
+        // ("Remedy Match · Healing Oasis", "Healing Oasis · Membership").
+        var link = el("span", "js-trail-link" + (journey[i - 1].status === "done" ? " done" : ""), "·");
         pathEl.appendChild(link);
       }
       var meta = lands[card.key] || {};
@@ -363,7 +366,7 @@
         if (walletButton) walletButton.setAttribute("data-glow", String(Math.min(coupons.length, 3)));
         var panel = document.getElementById("js-wallet-body");
         if (panel) {
-          panel.innerHTML = coupons.length ? "" : "<p class='js-fpower'>No offers yet — complete a step to earn one.</p>";
+          panel.innerHTML = coupons.length ? "" : "<p class='js-fpower'>No offers yet. Complete a step to earn one.</p>";
           coupons.forEach(function (c) {
             panel.appendChild(el("div", "js-wallet-coupon",
               "<b>15% off</b> " + c.product_slug +
