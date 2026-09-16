@@ -14,7 +14,12 @@ def test_membership_page_lists_individual_household_and_biofield_benefits():
     assert "$1,497/yr" in text
     assert "Remedy Match" in text
     assert "Two levels of personalized guidance" in text
-    assert "Included with membership" in text
+    # Glen 2026-09-16: Remedy Match is the FREE matching of Functional Formulations
+    # to the free Energ4Life scan. It is not a paid benefit, so the card says so and
+    # the paid benefits list must not sell it back.
+    assert "Free with your scan" in text
+    assert "Included with membership" not in text
+    assert "Remedy Match reports" not in text
     assert "Personal Causal Biofield Analysis" in text
     assert "$200 for active members" in text
     assert "non-member price is $300" in text
