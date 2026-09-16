@@ -104,13 +104,22 @@ def build_invoice_lines(client, remedies, catalog, include_fee=True):
         except (TypeError, ValueError):
             qty = 1
         slug = resolve_line_slug(name, catalog)
-        if slug:
-            # These remedies came from the practitioner's authored Biofield
-            # analysis, so preserve that provenance through order creation and
-            # into Edit Invoice instead of falling back to source='self'.
-            lines.append({"slug": slug, "qty": qty, "source": "biofield"})
-        else:
+        if not slug:
             skipped.append(name)
+            continue
+        # One remedy can serve several layers — Steve Fox's 15 September report put
+        # Neuroprotect on three. That is still one product taken once, so it gets one
+        # line carrying the LARGEST bottle count, never one line per layer and never
+        # the counts added together. Without this the raise duplicated the line, and
+        # a second raise duplicated it again.
+        seen = next((l for l in lines if l["slug"] == slug), None)
+        if seen is not None:
+            seen["qty"] = max(seen["qty"], qty)
+            continue
+        # These remedies came from the practitioner's authored Biofield
+        # analysis, so preserve that provenance through order creation and
+        # into Edit Invoice instead of falling back to source='self'.
+        lines.append({"slug": slug, "qty": qty, "source": "biofield"})
     return {"lines": lines, "skipped": skipped}
 
 
