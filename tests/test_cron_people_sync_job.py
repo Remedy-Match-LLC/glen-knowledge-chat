@@ -65,6 +65,96 @@ def test_a_grandchild_holding_the_pipe_cannot_stretch_the_budget():
     assert "spawned" in res["stdout"]
 
 
+def _timeout_bin():
+    import shutil
+    return shutil.which("timeout") or shutil.which("gtimeout")
+
+
+def test_the_budget_is_enforced_outside_python_even_when_the_in_process_wait_never_fires(monkeypatch):
+    # On Render the in-process timer only fired at deploy shutdown. Model that: push the
+    # in-process backstop far past the test's limit. Only coreutils timeout can end it in time.
+    tb = _timeout_bin()
+    if not tb:
+        pytest.skip("no coreutils timeout on this machine")
+    monkeypatch.setattr(cron_runner.shutil, "which", lambda name: tb if name == "timeout" else None)
+    monkeypatch.setattr(cron_runner, "BACKSTOP_SECS", 120)
+    started = time.monotonic()
+    res = cron_runner.run_script([PY, "-c", "import time; print('working', flush=True); time.sleep(90)"], 2,
+                                 label="hard")
+    assert time.monotonic() - started < 10
+    assert res["timed_out"] and res["error"] == "timeout after 2s" and res["returncode"] in (124, 137)
+    assert "working" in res["stdout"]
+
+
+def test_a_child_that_ignores_sigterm_is_killed_after_the_grace(monkeypatch):
+    tb = _timeout_bin()
+    if not tb:
+        pytest.skip("no coreutils timeout on this machine")
+    monkeypatch.setattr(cron_runner.shutil, "which", lambda name: tb if name == "timeout" else None)
+    monkeypatch.setattr(cron_runner, "KILL_AFTER_SECS", 2)
+    monkeypatch.setattr(cron_runner, "BACKSTOP_SECS", 120)
+    code = "import signal,time; signal.signal(signal.SIGTERM, signal.SIG_IGN); time.sleep(90)"
+    started = time.monotonic()
+    res = cron_runner.run_script([PY, "-c", code], 2, label="stubborn")
+    elapsed = time.monotonic() - started
+    # The child ignored SIGTERM at 2s, so only the SIGKILL after the 2s grace can end it.
+    assert 3.5 <= elapsed < 12, elapsed
+    # timeout kills its own process group, so the parent sees -9 (measured on Render's Linux).
+    assert res["timed_out"] and res["returncode"] in (-9, 124, 137)
+    assert res["error"] == "timeout after 2s"
+
+
+def test_without_the_timeout_binary_the_runner_still_runs_with_its_in_process_budget(monkeypatch):
+    monkeypatch.setattr(cron_runner.shutil, "which", lambda name: None)
+    argv, hard = cron_runner.hard_budget_argv(["python3", "x.py"], 300)
+    assert argv == ["python3", "x.py"] and hard is False
+    res = cron_runner.run_script([PY, "-c", "print('plain')"], 20, label="plain")
+    assert res["ok"] and "plain" in res["stdout"]
+
+
+@pytest.mark.parametrize("code", [126, 127])
+def test_a_wrapper_that_cannot_run_the_program_is_a_start_failure_not_an_exit(code, monkeypatch, tmp_path):
+    # coreutils timeout exits 126 or 127 when it cannot run the program. A fake timeout that
+    # does exactly that stands in for it, since not every machine has coreutils.
+    fake = tmp_path / "timeout"
+    fake.write_text(f"#!/bin/sh\nexit {code}\n")
+    fake.chmod(0o755)
+    monkeypatch.setattr(cron_runner.shutil, "which",
+                        lambda name: str(fake) if name == "timeout" else os.popen(f"command -v {name}").read().strip() or None)
+    res = cron_runner.run_script([PY, "-c", "print('never runs')"], 20, label="wrapped")
+    assert not res["ok"] and res["returncode"] == code
+    assert res["error"] == "exception: could not start"
+
+
+def test_a_wrapper_killed_by_its_own_group_sigkill_counts_as_a_timeout(monkeypatch, tmp_path):
+    # On Linux, when the child ignores SIGTERM, coreutils timeout SIGKILLs its process group,
+    # itself included, and the parent sees -9. This fake timeout ends exactly that way, so
+    # the mapping is checked on machines without coreutils too.
+    fake = tmp_path / "timeout"
+    fake.write_text("#!/bin/sh\nkill -9 $$\n")
+    fake.chmod(0o755)
+    monkeypatch.setattr(cron_runner.shutil, "which", lambda name: str(fake) if name == "timeout" else None)
+    res = cron_runner.run_script([PY, "-c", "print('never runs')"], 7, label="killed")
+    assert res["returncode"] == -9
+    assert res["timed_out"] and res["error"] == "timeout after 7s" and not res["ok"]
+
+
+def test_a_missing_program_is_a_start_failure_even_with_the_wrapper(monkeypatch, tmp_path):
+    fake = tmp_path / "timeout"
+    fake.write_text("#!/bin/sh\nexit 127\n")
+    fake.chmod(0o755)
+    monkeypatch.setattr(cron_runner.shutil, "which", lambda name: str(fake) if name == "timeout" else None)
+    res = cron_runner.run_script(["/nonexistent/interpreter-xyz"], 5, label="missing")
+    assert not res["ok"] and res["returncode"] is None
+    assert res["error"] == "exception: FileNotFoundError"
+
+
+def test_the_wrapper_argv_signals_then_kills():
+    argv, hard = cron_runner.hard_budget_argv(["python3", "x.py", "--skip-people"], 300, timeout_bin="/usr/bin/timeout")
+    assert hard and argv == ["/usr/bin/timeout", "-k", str(cron_runner.KILL_AFTER_SECS), "300",
+                             "python3", "x.py", "--skip-people"]
+
+
 def test_a_child_that_cannot_start_is_a_failure_not_a_raise():
     res = cron_runner.run_script(["/nonexistent/interpreter-xyz"], 5)
     assert not res["ok"] and res["error"].startswith("exception: ")
