@@ -19504,9 +19504,13 @@ def console_biofield_intake():
         _key = _present_console_key()
         if _key != _dashboard.CONSOLE_SECRET:
             return jsonify({"error": "Unauthorized"}), 401
-    base = os.environ.get("BIOFIELD_LOCAL_URL", "http://127.0.0.1:8011")
-    key = request.args.get("key", "")
-    return redirect(base + ("/?key=" + key if key else "/"))
+    from dashboard.console_launcher import local_tool_url
+    # Hand over the key THIS SERVER holds, not the one the browser sent. op-nav.js
+    # builds its ?key= from localStorage, so after the 2026-09-16 rotation every
+    # browser was forwarding a dead key and the local app refused the only link its
+    # own error message tells you to use.
+    return redirect(local_tool_url("BIOFIELD_LOCAL_URL", "http://127.0.0.1:8011",
+                                   _dashboard.CONSOLE_SECRET))
 
 
 @app.route("/console/clinical-tags")
@@ -19519,9 +19523,9 @@ def console_clinical_tags():
         _key = _present_console_key()
         if _key != _dashboard.CONSOLE_SECRET:
             return jsonify({"error": "Unauthorized"}), 401
-    base = os.environ.get("BIOFIELD_LOCAL_URL", "http://127.0.0.1:8011")
-    key = request.args.get("key", "")
-    return redirect(base + "/clinical-tags" + ("?key=" + key if key else ""))
+    from dashboard.console_launcher import local_tool_url
+    return redirect(local_tool_url("BIOFIELD_LOCAL_URL", "http://127.0.0.1:8011",
+                                   _dashboard.CONSOLE_SECRET, path="/clinical-tags"))
 
 
 def _sales_console_ok():
