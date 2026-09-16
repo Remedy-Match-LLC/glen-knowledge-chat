@@ -149,7 +149,11 @@ def _default_fetch_profile(email):
         req = urllib.request.Request(url, headers={"X-Console-Key": key})
         return _json.load(urllib.request.urlopen(req, timeout=20)).get("profile", {})
     except Exception:
-        return {}
+        # None, not {}. A reachable console returns a profile carrying at least the
+        # email, so {} used to mean BOTH "this client has nothing on file" and "prod
+        # is restarting". The authoring page rendered an empty Clinical summary for
+        # the second case and Glen read it as a client with no history (2026-09-16).
+        return None
 
 
 def _default_fetch_recent_comms(email):
@@ -998,6 +1002,9 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                 if c_email and not (using_default_fetch_profile and os.environ.get("CI"))
                 else {}
             )
+            # None means the lookup FAILED, which is not an empty profile.
+            profile_unavailable = bool(c_email) and profile is None
+            profile = profile or {}
             accepted = accepted_labels(cx, test_id)
             if accepted:
                 profile = dict(profile or {})
@@ -1055,7 +1062,8 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                                            clinical_checklist=clinical_checklist,
                                            dispensed=dispensed,
                                            intake_priorities=(profile or {}).get(
-                                               "intake_priorities") or []),
+                                               "intake_priorities") or [],
+                                           profile_unavailable=profile_unavailable),
                         mimetype="text/html")
 
     @app.route("/author/<test_id>/invoice-view")
