@@ -42,8 +42,25 @@ def _label(item):
     return str(item.get("name") or item.get("slug") or "").strip()
 
 
+def _qty(item):
+    """Bottles on one line. A missing or unreadable quantity is one bottle, because
+    a line that exists was bought at least once. An explicit 0 is honoured: real
+    orders carry qty 0 lines (Rebecca Navo's #166 has six) and those were listed,
+    not bought."""
+    raw = item.get("qty")
+    if raw is None or str(raw).strip() == "":
+        return 1
+    try:
+        return max(0, int(float(str(raw).strip())))
+    except (TypeError, ValueError):
+        return 1
+
+
 def frequency(orders, email, limit=DEFAULT_LIMIT):
-    """[{name, slug, count, orders_considered, pct}] for this client, ranked.
+    """[{name, slug, count, bottles, orders_considered, pct}] for this client, ranked.
+
+    `count` is how many ORDERS contained it; `bottles` is how many were actually
+    bought. Three bottles on one invoice is count 1, bottles 3 (Glen, 2026-09-16).
 
     Ties break by name so the list is stable: a reference that reshuffles on
     every load cannot be used as one.
@@ -68,7 +85,7 @@ def frequency(orders, email, limit=DEFAULT_LIMIT):
     except (TypeError, ValueError):
         mine = mine[:DEFAULT_LIMIT]
 
-    counts, slugs = {}, {}
+    counts, slugs, bottles = {}, {}, {}
     for o in mine:
         items = o.get("items")
         seen = set()
@@ -78,11 +95,15 @@ def frequency(orders, email, limit=DEFAULT_LIMIT):
             name = _label(item)
             seen.add(name)
             slugs.setdefault(name, str(item.get("slug") or "").strip())
+            # Summed per LINE, not per order: one invoice can carry the same
+            # remedy twice, and both lines are bottles the client received.
+            bottles[name] = bottles.get(name, 0) + _qty(item)
         for name in seen:
             counts[name] = counts.get(name, 0) + 1
 
     total = len(mine)
     rows = [{"name": n, "slug": slugs.get(n, ""), "count": c,
+             "bottles": bottles.get(n, 0),
              "orders_considered": total, "pct": int(round(100.0 * c / total))}
             for n, c in counts.items()]
     rows.sort(key=lambda r: (-r["count"], r["name"].lower()))
@@ -144,7 +165,11 @@ def fmp_orders_for(history, name, email):
                     continue
                 product = _fmp_product(item.get("description"))
                 if product:
-                    items.append({"name": product, "slug": ""})
+                    # Carry the quantity. Dropping it made every FileMaker line
+                    # look like one bottle, and most of a long-standing client's
+                    # history lives there.
+                    items.append({"name": product, "slug": "",
+                                  "qty": item.get("qty")})
             out.append({"email": email, "created_at": str(o.get("date") or ""),
                         "status": str(o.get("status") or "done"), "items": items})
     return out

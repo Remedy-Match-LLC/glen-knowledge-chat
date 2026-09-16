@@ -1889,6 +1889,14 @@ def render_list_html(tests, q="", authored=None):
     return _page("Biofield Analysis", body)
 
 
+def _bottles_label(row):
+    """"5 bottles", or an em dash for a row cached before the field existed."""
+    n = row.get("bottles")
+    if n is None:
+        return "&mdash;"
+    return f"{n} bottle{'' if n == 1 else 's'}"
+
+
 def render_dispensed_panel(rows, open_=False):
     """What this client has been dispensed before, most often first.
 
@@ -1923,6 +1931,10 @@ def render_dispensed_panel(rows, open_=False):
                 "<div class=disprow style='display:flex;align-items:center;gap:8px;padding:4px 0'>"
                 f"<span class=pill style='min-width:52px;text-align:right'>{r['pct']}%</span>"
                 f"<span class=food style='min-width:64px'>{r['count']} of {r['orders_considered']}</span>"
+                # Glen, 2026-09-16: orders containing it is not the same question as
+                # how much they actually took home.
+                f"<span class=pill style='min-width:74px;text-align:right' "
+                f"title='Bottles bought across these orders'>{_bottles_label(r)}</span>"
                 f"<button class='linkish' style='flex:1;text-align:left' "
                 f"onclick=\"pickCondition(this)\" title='Add this remedy to a condition'>{nm}</button>"
                 f"<span style='flex:1.2;display:flex;flex-wrap:wrap;gap:4px'>{chips}</span>"
