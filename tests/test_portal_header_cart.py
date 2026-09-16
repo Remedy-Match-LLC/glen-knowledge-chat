@@ -62,7 +62,13 @@ def test_header_cart_count_tracks_shared_remedy_basket():
     assert '#curatedOrderItems .curated-order-item' in PORTAL
     assert 'row.getAttribute("data-qty")' in PORTAL
     assert 'window.setPortalHeaderCartCount(count)' in PORTAL
-    assert 'class="js-cart-icon"' not in SHELL
+    # Reversed 2026-09-15: commit cb367117 dropped the emoji cart icon in
+    # favor of a text-only "Cart" label. shell.css hides that label under
+    # 640px, so the phone-width button became a blank pill (live defect,
+    # seen 2026-09-15). The fix is a monochrome inline SVG, not the old
+    # emoji, kept for the icon-recognisability the label alone cannot give
+    # on phones.
+    assert 'class="js-cart-icon"' in SHELL
     assert 'class="js-cart-badge"' in SHELL
     assert 'cartBadge.textContent = String(count)' in SHELL
     assert 'cartBadge.hidden = count === 0' in SHELL

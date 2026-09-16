@@ -26,6 +26,16 @@
     }
   }
 
+  // Cart glyph, inline so no request or sprite sheet is needed. Decorative:
+  // the button already carries an aria-label, so the icon stays hidden from
+  // assistive tech. It renders at every width; on phones shell.css hides the
+  // text label under 640px and this is what keeps the button recognisable.
+  var CART_ICON_SVG = '<svg class="js-cart-icon" aria-hidden="true" focusable="false" ' +
+    'viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" ' +
+    'stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
+    '<circle cx="9" cy="21" r="1"></circle><circle cx="20" cy="21" r="1"></circle>' +
+    '<path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"></path></svg>';
+
   function el(tag, cls, html) {
     var e = document.createElement(tag);
     if (cls) e.className = cls;
@@ -107,6 +117,7 @@
     // members into the unrelated storefront cookie cart.
     if (/^\/portal\/(?:me|[^/]+)/.test(location.pathname)) {
       var cartBtn = el("button", "js-mypath-btn js-portal-cart-btn",
+        CART_ICON_SVG +
         '<span class="js-cart-label">Cart</span>' +
         '<span class="js-cart-badge" aria-hidden="true">0</span>');
       var cartBadge = cartBtn.querySelector(".js-cart-badge");
@@ -132,6 +143,7 @@
     if (/^\/(begin\/|shop(\/|$))/.test(location.pathname) &&
         !/^\/begin\/cart\/?$/.test(location.pathname)) {
       var storeCart = el("a", "js-mypath-btn js-store-cart-btn",
+        CART_ICON_SVG +
         '<span class="js-cart-label">Cart</span><span class="js-cart-badge" aria-hidden="true"></span>');
       storeCart.href = "/begin/cart";
       storeCart.hidden = true;
