@@ -646,6 +646,13 @@
     padding:14px 16px;background:var(--card);border:1px solid var(--line);border-radius:16px;
     box-shadow:0 1px 0 rgba(255,255,255,.02) inset, 0 10px 26px -18px rgba(0,0,0,.55)}
   .shell-composer .chat-input-row{margin-top:0}
+  /* The conversation opens under the composer when the Ask door is not the one the
+     client is looking at. Collapsed to nothing until there is something to show, so
+     the composer keeps its resting size. */
+  .shell-chat-thread{margin-top:12px;max-height:340px}
+  .shell-chat-thread[hidden]{display:none}
+  .chat-bubble.pending{align-self:flex-start;background:var(--card2);border:1px solid var(--line);
+    color:var(--muted);font-style:italic}
 
   /* Keep this the first max-width:760px block in the file. The responsive test
      finds these rules by scanning for the first such media query, so an earlier
@@ -8333,8 +8340,37 @@ function renderRelated(items){
 }
 // --- end community-related cards ---
 
-function appendChatBubble(role, text){
+// Whichever thread the client can actually SEE right now.
+//
+// #chatMsgs is inside the Ask panel section, which is rendered hidden. Under the shell the
+// composer sits at the top of every door, so a client on the hub wrote into a hidden panel:
+// message and the streamed answer both rendered where they could not be seen. Glen,
+// 2026-09-16: "I type, hit send, it disappears, no response."
+//
+// When the Ask door is open, #chatMsgs is the thread and nothing changes. Otherwise the
+// composer's own #shellChatThread is revealed and used. Both carry .chat-msgs, so the
+// bubbles look the same either way.
+function chatThreadHost(){
   var msgs = document.getElementById("chatMsgs");
+  if(msgs && !_isChatHostHidden(msgs)) return msgs;
+  var inline = document.getElementById("shellChatThread");
+  if(inline){ inline.hidden = false; return inline; }
+  return msgs;
+}
+
+// hidden is set on the SECTION, not on #chatMsgs, so check the ancestors. offsetParent is
+// not usable here: it is null for a display:none ancestor but also for position:fixed, and
+// the composer is inside a fixed shell mount on phones.
+function _isChatHostHidden(el){
+  for(var n = el; n; n = n.parentElement){
+    if(n.hidden) return true;
+    try{ if(n.style && n.style.display === "none") return true; }catch(e){}
+  }
+  return false;
+}
+
+function appendChatBubble(role, text){
+  var msgs = chatThreadHost();
   if(!msgs) return null;
   var div = document.createElement("div");
   div.className = "chat-bubble " + role;
@@ -8354,7 +8390,7 @@ function appendChatBubble(role, text){
 // matched query text via intentLinkLabel(); everything else falls back to the
 // generic door label exactly as before.
 function appendChatDoorLink(doorKey, queryText){
-  var msgs = document.getElementById("chatMsgs");
+  var msgs = chatThreadHost();
   if(!msgs || !window.PortalShell || typeof window.showDoor !== "function") return null;
   var meta = window.PortalShell.DOORS.filter(function(d){ return d.key === doorKey; })[0];
   if(!meta) return null;
@@ -8415,6 +8451,13 @@ async function sendChatMessage(){
   try{
     appendChatBubble("user", query);
     assistantBubble = appendChatBubble("assistant", "");
+    // An empty bubble reads as nothing happening. Carry a visible waiting state until the
+    // first token lands, then hand the bubble over to the answer. Glen, 2026-09-16:
+    // "the field should expand to show response, or at least activity preparing a response."
+    if(assistantBubble){
+      assistantBubble.className = "chat-bubble assistant pending";
+      assistantBubble.textContent = "Thinking\u2026";
+    }
     var assistantText = "";
     var resp = await fetch(
       "/api/portal/" + encodeURIComponent(token) + "/chat",
@@ -8435,7 +8478,7 @@ async function sendChatMessage(){
       var decoder = new TextDecoder();
       var buf = "";
       var streamDone = false;
-      var msgs = document.getElementById("chatMsgs");
+      var msgs = chatThreadHost();
       while(!streamDone){
         var chunk = await reader.read();
         if(chunk.done) break;
@@ -8451,7 +8494,11 @@ async function sendChatMessage(){
             var evt = JSON.parse(payload);
             if(evt.token){
               assistantText += evt.token;
-              if(assistantBubble) assistantBubble.textContent = assistantText;
+              if(assistantBubble){
+                // Hand the bubble over from "Thinking..." to the answer on the first token.
+                if(assistantBubble.className !== "chat-bubble assistant") assistantBubble.className = "chat-bubble assistant";
+                assistantBubble.textContent = assistantText;
+              }
               if(msgs) msgs.scrollTop = msgs.scrollHeight;
             } else if(evt.suggestion){
               var suggEl = renderSuggestion(evt.suggestion);
