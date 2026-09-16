@@ -2133,7 +2133,7 @@
   "neuroceramides": {
    "name": "Neuroceramides",
    "price_cents": 6997,
-   "remaining_inventory_units": 1,
+   "remaining_inventory_units": 0,
    "sell_through": true,
    "discontinue_when_sold_out": true,
    "successor_slug": "myelin-syntropy",
@@ -2254,7 +2254,9 @@
    "description": "Neuroceramides . Neuroceramides Neuroceramides Neuroceramides delivers Phytoceramides to the Central Nervous System, where they are used for biocommunication in the cell membrane, regulation of metabolism, neuroprotection and repair of the myelin sheath. ​In addition to ingredients designed to increase absorption and bioavailability, including transport across the blood-brain barrier, Neuroceramides includes Myelin Sheath Basic Protein to signal the immune system from the intestinal tract as a dietary protein. Approximately 80% of immune system cells are located in Peyer's Patches in the...",
    "gk_stale": true,
    "gk_stale_reason": "GK page missing: Magnesium, Chromium, Adenosyl 90% & Methyl 10% Cobalamin, TMG (Trimethylglycine), MK-7 (Menaquinone-7), MK-4 (Menaquinone-4), Phosphatidylserine, Trans-Resveratrol",
-   "gk_extra_accepted": true
+   "gk_extra_accepted": true,
+   "inactive": true,
+   "superseded_by": "myelin-syntropy"
   },
   "macular-wellness-lutein": {
    "name": "Macular Wellness Lutein",
@@ -12367,7 +12369,7 @@
   "myelin-repair-neuroceramides": {
    "name": "Myelin Repair Neuroceramides",
    "price_cents": 6997,
-   "remaining_inventory_units": 1,
+   "remaining_inventory_units": 0,
    "sell_through": true,
    "discontinue_when_sold_out": true,
    "successor_slug": "myelin-syntropy",
@@ -12567,7 +12569,9 @@
      "dose": "34.5 mg",
      "compound_mg": 34.5
     }
-   ]
+   ],
+   "inactive": true,
+   "superseded_by": "myelin-syntropy"
   },
   "immune-intelligence-powder": {
    "name": "Immune Intelligence Powder",
