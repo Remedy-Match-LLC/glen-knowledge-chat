@@ -38,10 +38,35 @@ from dashboard import products as pm
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 PRODUCTS = ROOT / "data" / "products.json"
 
+# THREE RENAMES ARE HELD, and the reason is money rather than taste.
+#
+# author_invoice computes a month's supply as ceil(doses/day * 30 / doses_per_bottle) and
+# reads doses_per_bottle from fmp_snap_products WHERE lower(product_name)=lower(?), exact,
+# with no slug fallback. No row means None, and bottles_needed falls back to qty 1.
+#
+# The name it looks up comes off the report layer, written by resolve_remedy_name, whose
+# candidate pool is FMP product names PLUS catalog names. So a name that exists only in the
+# catalog can reach a layer and then find no FileMaker row, silently invoicing one bottle
+# instead of three.
+#
+# Glen's three new Sublingual Powder names deliberately differ from FileMaker, which still
+# holds "Adrenal Syntropy Powder", "Endocrine Restore Powder" and "Sublingual B12 Powder".
+# They ship once those records are renamed. The retirements and was-prices are NOT held:
+# only the names carry this risk.
+#
+# The other five renames are safe for a good reason. The pairs rule moves the TWIN's name
+# onto the survivor, and the twin's name is already the FileMaker one. That is an argument
+# for the rule, not against it.
+HELD_PENDING_FILEMAKER_RENAME = {
+    "adrenal-syntropy": "Adrenal Syntropy Sublingual Powder",
+    "endocrine-restore": "Endocrine Restore Sublingual Powder",
+    "sublingual-b12": "B12 Sublingual Powder",
+}
+
 PAIRS = [
-    ("adrenal-syntropy", "adrenal-syntropy-powder", "Adrenal Syntropy Sublingual Powder"),
-    ("endocrine-restore", "endocrine-restore-powder", "Endocrine Restore Sublingual Powder"),
-    ("sublingual-b12", "sublingual-b12-powder", "B12 Sublingual Powder"),
+    ("adrenal-syntropy", "adrenal-syntropy-powder", "Adrenal Syntropy"),
+    ("endocrine-restore", "endocrine-restore-powder", "Endocrine Restore"),
+    ("sublingual-b12", "sublingual-b12-powder", "Sublingual B12"),
     ("flow-ease", "flow-ease-powder", "Flow Ease Powder"),
     ("msm-syntropy", "msm-syntropy-powder", "MSM Syntropy Powder"),
     ("seaaminos", "seaamino-powder", "SeaAmino Powder"),
@@ -199,3 +224,55 @@ def test_the_file_kept_its_formatting():
     raw = PRODUCTS.read_text()
     assert raw.endswith("}\n")
     assert '"aliases": ["Sleep Synergy"],' in raw
+
+
+# --- the held renames ------------------------------------------------------------------
+
+def test_the_three_sublingual_names_are_not_shipped_yet(products):
+    """Shipping these before FileMaker is renamed under-invoices a month's supply."""
+    for slug, intended in HELD_PENDING_FILEMAKER_RENAME.items():
+        assert products[slug]["name"] != intended, (
+            f"{slug} carries a catalog-only name; author_invoice would bill one bottle"
+        )
+
+
+def test_every_shipped_name_exists_in_the_filemaker_export():
+    """The invariant behind the hold, checked against the export rather than asserted.
+
+    Skips when the export is not in this checkout, and says so rather than passing quietly.
+    """
+    import csv
+    import os
+    # The export lives in the VAULT, not this repo, so this guard runs on Glen's Mac and
+    # skips in CI. It is the only check that can see FileMaker's side, so it is worth
+    # having even though it cannot run everywhere. The hold itself is pinned by
+    # test_the_three_sublingual_names_are_not_shipped_yet, which runs everywhere.
+    export = pathlib.Path(os.path.expanduser(
+        "~/AI-Training/00 System/fmp-extracts/bom-weekly/products.csv"))
+    if not export.exists():
+        pytest.skip("FileMaker export lives in the vault; not present in CI")
+    rows = list(csv.DictReader(export.open(encoding="utf-8-sig")))
+    col = next(c for c in rows[0] if c.strip().lower() in ("product_name", "product name", "name"))
+    fmp = {(r.get(col) or "").strip().lower() for r in rows}
+    products = json.loads(PRODUCTS.read_text())["products"]
+    # BROKEN BEFORE THIS BATCH, and not made worse by it. Measured against origin/main:
+    # each of these survivors already carried a name FileMaker does not have, so a layer
+    # carrying the catalog name already bills one bottle today. FileMaker calls them
+    # "Adrenal Syntropy Powder", "Endocrine Restore Powder", "Sublingual B12 Powder" and
+    # "Neem Oil Roll On".
+    #
+    # This is the correction to the brief that prompted the hold. It reported the three
+    # Sublingual names as breaks the rename CAUSES. They are not: neither the old name nor
+    # the new one matches. The rename is half of the fix, and lands once Glen renames the
+    # FileMaker records. Until then the catalog keeps the name it has, so the two halves
+    # arrive together rather than leaving a window where only one has moved.
+    BROKEN_BEFORE_THIS_BATCH = {
+        "adrenal syntropy", "endocrine restore", "sublingual b12", "neem oil roll-on",
+    }
+    missing = [products[k]["name"] for k, _, _ in PAIRS
+               if products[k]["name"].lower() not in fmp
+               and products[k]["name"].lower() not in BROKEN_BEFORE_THIS_BATCH]
+    assert not missing, (
+        "these shipped catalog names have no FileMaker product and would bill one "
+        f"bottle: {missing}"
+    )
