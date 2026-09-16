@@ -720,12 +720,13 @@
   "evox-session": {
    "name": "EVOX Session (prepaid)",
    "price_cents": 15000,
+   "member_price_cents": 5000,
    "info_only": true,
    "service": true,
    "service_value_cents": 19700,
    "source": "evox-service-2026-07-04",
    "regular_cents": 19700,
-   "_note": "Price reconciled 2026-07-20 (Glen): $150 actual (= the in-app EVOX booking rate), $197 as SRP/compare-at value."
+   "_note": "Price reconciled 2026-07-20 (Glen): $150 actual (= the in-app EVOX booking rate), $197 as SRP/compare-at value. Glen 2026-09-16 set the full ladder: $197 public value, $150 for a free member, $50 per session for a paid member. member_price_cents keys off _is_paid_member, the same real-membership check Biofield Analysis uses, so a non-member cannot self-serve the $50."
   },
   "free-and-easy": {
    "name": "Free & Easy",
