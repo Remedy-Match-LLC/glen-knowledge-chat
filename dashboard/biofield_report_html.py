@@ -1288,7 +1288,22 @@ def _xwrap(inp):
             "title='Show full text'>&#8690;</button><div class=full></div></span>")
 
 
-def _remedy_line(l, depth_values, only_remedy=False):
+def _bottles_chip(remedy, bottles_by_remedy):
+    """"11 bottles" beside a remedy this client has bought before, else nothing.
+
+    Glen, 2026-09-16, wanted the number where the decision is made, not only in the
+    Previously-dispensed panel he has to open."""
+    name = (remedy or "").strip().lower()
+    if not name:
+        return ""
+    n = (bottles_by_remedy or {}).get(name)
+    if not n:
+        return ""
+    return (f"<span class=chip title='Bottles this client has bought before'>"
+            f"{n} bottle{'' if n == 1 else 's'}</span>")
+
+
+def _remedy_line(l, depth_values, only_remedy=False, bottles_by_remedy=None):
     rid = _e(str(l.get("rid") or ""))
     p = "r" + rid
     g = lambda k: _e(l.get(k) or "")
@@ -1313,6 +1328,7 @@ def _remedy_line(l, depth_values, only_remedy=False):
             + depth +
             f"<button class=chip onclick=\"fillDose('{p}',true)\">dose</button>"
             f"<button class=chip onclick=\"suggestFor(this,'{p}')\">uses</button>"
+            f"{_bottles_chip(remedy, bottles_by_remedy)}"
             f"{confirm_btn}"
             f"<button class='btn savebtn saved' data-dirty=Update onclick=\"saveRemedy('{rid}',this)\">Saved &#10003;</button>"
             + remove_buttons +
@@ -1362,7 +1378,8 @@ def _covered_html(stresses, layer=None):
     return f"<div class=covered><span class=food>balances:</span> {shown}{add}</div>"
 
 
-def _render_chain_cards(report, depth_values, covered_by_layer=None):
+def _render_chain_cards(report, depth_values, covered_by_layer=None,
+                        bottles_by_remedy=None):
     covered_by_layer = covered_by_layer or {}
     cards = ""
     groups = group_layers(report.get("layers") or [])
@@ -1373,7 +1390,8 @@ def _render_chain_cards(report, depth_values, covered_by_layer=None):
         stored_layer = _e(str(g.get("stored_layer") or n))
         remedy_rows = [r for r in g["rows"] if (r.get("remedy") or "").strip()]
         only_remedy = len(remedy_rows) <= 1
-        lines = "".join(_remedy_line(r, depth_values, only_remedy=only_remedy)
+        lines = "".join(_remedy_line(r, depth_values, only_remedy=only_remedy,
+                                     bottles_by_remedy=bottles_by_remedy)
                         for r in g["rows"])
         head_in = _xwrap(f'<input id={gid}_head list=vocab value="{he}" title="{he}" oninput="dirtyLayer(this)">')
         tail_in = _xwrap(f'<input id={gid}_most list=vocab value="{me}" title="{me}" oninput="dirtyLayer(this)">')
@@ -1794,7 +1812,8 @@ def render_author_html(report, depth_values=None, transcript="", covered_by_laye
              "last card starts a new layer.</p>"
              "<div class=chainlayout>" + _render_layer_rail(groups) +
              "<div id=chaintbl class=chain>"
-             + _render_chain_cards(report, depth_values, covered_by_layer) + "</div>"
+             + _render_chain_cards(report, depth_values, covered_by_layer,
+                                   _bottles_by_remedy(dispensed)) + "</div>"
              "</div>"
              "<datalist id=vocab></datalist><datalist id=catalog></datalist>")
     session = (
@@ -1887,6 +1906,19 @@ def render_list_html(tests, q="", authored=None):
         "<table><tr><th>Client</th><th>Email</th><th>Date</th><th>Remedies</th></tr>"
         f"{rows}</table>")
     return _page("Biofield Analysis", body)
+
+
+def _bottles_by_remedy(dispensed):
+    """{lowercased remedy name: bottles} from the dispensed rows already computed
+    for this client. Keyed on the name because a layer card holds a name, not a
+    slug, and the same name is what the dispensed panel shows."""
+    out = {}
+    for row in dispensed or []:
+        name = str((row or {}).get("name") or "").strip().lower()
+        n = (row or {}).get("bottles")
+        if name and n:
+            out[name] = n
+    return out
 
 
 def _bottles_label(row):
