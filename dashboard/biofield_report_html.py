@@ -1006,7 +1006,7 @@ async function combineClinicalItems(btn){
  var row=btn.closest('.clinical-item'),pick=row.querySelector('.clinical-combine-pick');
  var survivor=row.dataset.label, absorbed=(pick&&pick.value||'').trim();
  if(!absorbed){alert('Pick the row to fold into this one.');return}
- if(!confirm('Combine "'+absorbed+'" into "'+survivor+'"?\n\nThey become one condition '
+ if(!confirm('Combine "'+absorbed+'" into "'+survivor+'"? They become one condition '
    +'on every client, and "'+absorbed+'" stops appearing on its own. Its remembered '
    +'remedies move across. This can be undone.'))return;
  btn.disabled=true;
