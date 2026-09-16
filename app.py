@@ -4293,8 +4293,13 @@ def _biofield_unlock_flags(row, email):
         fu_rid = None
     top_unlocked = bool(first_approved and fu_rid == row.get("id"))
     free_available = bool(first_approved and fu_rid is None)
+    # full_report is VISIBILITY, `paid` is membership. Keep them apart: `paid` drives
+    # member pricing, so widening it would give a free member member prices. Gated on
+    # first_approved so the flag can never publish an unapproved reveal.
+    full_report = bool(paid or (_free_full_reveal_enabled() and first_approved))
     return {"paid": paid, "first_approved": first_approved,
-            "top_unlocked": top_unlocked, "free_available": free_available}
+            "top_unlocked": top_unlocked, "free_available": free_available,
+            "full_report": full_report}
 
 
 def _biofield_visible_slugs(row, email):
@@ -4305,7 +4310,7 @@ def _biofield_visible_slugs(row, email):
         if not remedies:
             return []
         flags = _biofield_unlock_flags(row, email)
-        if flags["paid"]:
+        if flags["full_report"]:
             return [(r.get("slug") or "").strip() for r in remedies if (r.get("slug") or "").strip()]
         if flags["top_unlocked"]:
             s = (remedies[0].get("slug") or "").strip()
@@ -4357,9 +4362,15 @@ def begin_biofield_reveal(token):
     top_unlocked = flags["top_unlocked"]
     free_available = flags["free_available"]
     paid = flags["paid"]
+    # .get with `paid` as the default, not a bare lookup. Several tests stub
+    # _biofield_unlock_flags with a hand-built dict, and a bare lookup turned two of
+    # them into a 500 the moment this key was added. Degrading to `paid` is the
+    # pre-change behaviour, so a stub that has not caught up shows a blurred report
+    # rather than an error page.
+    full_report = flags.get("full_report", paid)
 
     _layers_raw = row.get("layers") or []
-    if paid:
+    if full_report:
         _layers_payload = [_biofield_layer_payload(L, include_remedy=True) for L in _layers_raw]
     else:
         _layers_payload = [_biofield_layer_payload(L, include_remedy=(top_unlocked and i == 0))
@@ -4372,7 +4383,7 @@ def begin_biofield_reveal(token):
     # own data on their own token) so ordering shows a review step, not a bare Stripe
     # screen. {} when unknown -> the form starts empty.
     _ship_prefill = _resolve_ship_address(email, {})
-    if paid:
+    if full_report:
         all_remedies = row.get("remedies") or []
         payload = {
             "interpretation": row.get("interpretation") or {},
@@ -4380,7 +4391,11 @@ def begin_biofield_reveal(token):
             "first_approved": first_approved,
             "free_available": False,
             "top_unlocked": True,
-            "paid": True,
+            # Truthful, NOT hardcoded True. A free member reading a full report under
+            # the flag is still not a member, and the page uses `paid` to decide
+            # whether to show the membership door. Sending True would hide the very
+            # CTA this change is supposed to feed.
+            "paid": paid,
             "trial_enabled": BIOFIELD_TRIAL_ENABLED,
             # The $1 unlock is retired. Without a live route out of this page the
             # CTA fell back to a disabled button reading "(unlocking soon)", which
@@ -7090,6 +7105,19 @@ def _cohort_pricing_enabled():
     until a cohort exists and the flag is flipped)."""
     return os.environ.get("COHORT_PRICING_ENABLED", "").strip().lower() in ("1", "true", "yes", "on")
 BIOFIELD_CART_ENABLED = os.environ.get("BIOFIELD_CART_ENABLED", "").strip().lower() in ("1", "true", "yes", "on")
+
+
+def _free_full_reveal_enabled():
+    """Glen 2026-09-16: "Let's unblur the full Remedy Match report for the free tier."
+
+    Default OFF, so nothing changes until the flag is set in Doppler. Read at call
+    time rather than at import, so the flip is a config change and not a redeploy.
+
+    It grants VISIBILITY only. It never makes `paid` true, because `paid` means real
+    membership and drives member pricing; conflating the two would hand a free member
+    member prices. And it still requires `first_approved`, so the flag cannot publish
+    a reveal Glen has not approved."""
+    return os.environ.get("FREE_FULL_REVEAL_ENABLED", "").strip().lower() in ("1", "true", "yes", "on")
 ASCEND_PERSONALIZED_ENABLED = os.environ.get("ASCEND_PERSONALIZED_ENABLED", "").strip().lower() in ("1", "true", "yes", "on")
 # The E4L bridge page. OFF is today's behavior exactly: /begin/scan 302s straight
 # through to the Energy4Life signup with the same utm threading, one hop later.
