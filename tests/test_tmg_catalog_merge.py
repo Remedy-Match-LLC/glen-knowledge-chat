@@ -115,3 +115,58 @@ def test_the_file_still_parses_and_kept_its_formatting():
     assert '"aliases": ["Sleep Synergy"],' in raw, (
         "the one hand-compacted array must survive a round trip through json.dumps"
     )
+
+
+def test_the_dead_slug_redirects_to_its_survivor(products):
+    """The retirement asked for by production, verified through the real resolver.
+
+    `superseded_slug` is the one implementation every consumer calls: app.py's
+    `_superseded` delegates to it and hands it the in-memory catalog, so the product
+    page, checkout, cart and images all follow the same walk. Testing it here tests
+    all of them.
+    """
+    from dashboard import products as pm
+    assert pm.superseded_slug(RETIRED, products) == BLEND
+
+
+def test_a_cart_line_added_as_the_dead_slug_stores_the_survivors(products):
+    """`_get_product` replayed exactly. A stored order line must not carry a dead slug."""
+    from dashboard import products as pm
+
+    def get_product(slug):
+        s = pm.superseded_slug(slug, products)
+        p = products.get(s)
+        if not p or p.get("inactive"):
+            return None
+        out = dict(p)
+        out["slug"] = s
+        return out
+
+    line = get_product(RETIRED)
+    assert line is not None, "the dead slug must still resolve to something sellable"
+    assert line["slug"] == BLEND
+    assert line["price_cents"] == 6997
+
+    # A record that is inactive with no successor stays unsellable: retired means retired.
+    assert get_product(BLEND)["slug"] == BLEND
+    assert get_product(PURE)["slug"] == PURE
+
+
+def test_no_other_retirement_regressed(products):
+    """11 entries on origin/main already carry superseded_by; this makes 12.
+
+    Production's brief said the field appeared on zero entries and the path had never
+    run. It is on 11 today and every target resolves, which is why this retirement is
+    ordinary rather than a first.
+    """
+    from dashboard import products as pm
+    broken = []
+    for slug, p in products.items():
+        if isinstance(p, dict) and p.get("superseded_by"):
+            target = pm.superseded_slug(slug, products)
+            if target == slug or (products.get(target) or {}).get("inactive"):
+                broken.append((slug, target))
+    assert not broken, f"these retirements resolve to nothing sellable: {broken}"
+    count = sum(1 for p in products.values()
+                if isinstance(p, dict) and p.get("superseded_by"))
+    assert count >= 12, f"expected at least 12 retirements, found {count}"
