@@ -26,6 +26,7 @@ _STYLE = """
  .opbrand b{color:#e6b800;font-weight:700}
  .opsub{color:#d4a843;letter-spacing:.14em;text-transform:uppercase;font-size:10px;font-weight:700}
  .opclient{margin-left:10px;padding-left:10px;border-left:1px solid #2a2a33;color:#e6edf3;font-size:12px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:42vw}
+ .opavatar{width:22px;height:22px;border-radius:50%;object-fit:cover;margin-left:8px;vertical-align:middle;border:1px solid #2a2a33;background:#22252d}
  .opspacer{flex:1}
  .opbar a.optab{display:inline-flex;align-items:center;height:100%;padding:0 13px;color:#9aa0b4;
    text-decoration:none;border-bottom:2px solid transparent}
@@ -166,23 +167,38 @@ async function vaudio(){stat('Rendering audio in your voice\\u2026 (~10-30s)');a
 </script>"""
 
 
-def _bar(client_name=""):
+def _bar(client_name="", client_email=""):
     """The sticky top bar. Glen, 2026-09-16: show the client beside the page name
     "so it is always visible as I scroll". The bar is already sticky, so naming the
-    client here is what keeps it on screen through a long authoring page."""
+    client here is what keeps it on screen through a long authoring page.
+
+    Later the same day: "show a small version of the client's image to the right of
+    their name (when available)". The photo comes from the deployed console's
+    /client-photo/<email>, which is console-gated and 404s when there is none, so
+    onerror removes the element and the bar closes up. "When available" is therefore
+    handled by the server, not by asking here first: this page is built as a string
+    with no network of its own.
+    """
     who = (client_name or "").strip()
     who_html = f"<span class=opclient>{_e(who)}</span>" if who else ""
+    mail = (client_email or "").strip().lower()
+    # No name means no avatar: a floating portrait with nothing to label it is worse
+    # than none, and the bar already reads as a page header rather than a client one.
+    if who and mail:
+        who_html += (f"<img class=opavatar alt='' loading=lazy "
+                     f"src='{CONSOLE_BASE}/client-photo/{_q(mail, safe='')}' "
+                     f"onerror='this.remove()'>")
     return ("<nav class=opbar><span class=opbrand>GLEN <b>&middot;</b> OPS</span>"
             "<span class=opsub>Biofield Intake</span>" + who_html + "<span class=opspacer></span>"
             "<a class=optab href='/'>All tests</a>"
             f"<a class=optab href='{CONSOLE_BASE}/console'>&larr; Console</a></nav>")
 
 
-def _page(title, body, client_name=""):
+def _page(title, body, client_name="", client_email=""):
     return (f"<!doctype html><html lang=en><head><meta charset=utf-8>"
             f"<meta name=viewport content='width=device-width,initial-scale=1'>"
             f"<title>{_e(title)}</title>{_STYLE}</head>"
-            f"<body>{_bar(client_name)}<div class=wrap>{body}</div></body></html>")
+            f"<body>{_bar(client_name, client_email)}<div class=wrap>{body}</div></body></html>")
 
 
 # The Match pillar's four steps (mirrors prod static/op-nav.js — kept in sync by hand since
@@ -1850,7 +1866,7 @@ def render_author_html(report, depth_values=None, transcript="", covered_by_laye
                  + chain + session + narrative_section
                  + _AUTHOR_JS.replace("__TID__", tid)
                  + "<script>loadClinicalProposals();loadClinicalCatalog();initClinicalDrag()</script>",
-                 client_name=(c.get("name") or ""))
+                 client_name=(c.get("name") or ""), client_email=(c.get("email") or ""))
 
 
 def render_list_html(tests, q="", authored=None):
