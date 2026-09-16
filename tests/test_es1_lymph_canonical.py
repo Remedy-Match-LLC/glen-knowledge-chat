@@ -172,5 +172,30 @@ def test_every_superseded_pointer_still_lands_on_a_live_product():
 
 
 def test_no_active_catalog_name_is_also_a_retired_name():
-    """A name that is both live and retired would make the redirect nondeterministic."""
+    """A name that is both live and retired would make the redirect nondeterministic.
+
+    Still true, but now true BY CONSTRUCTION rather than by luck: as of 2026-09-16
+    _deprecated_catalog_names() subtracts the live names. The pairs rule moves a retired
+    twin's name onto its survivor, so five names are held by both records, and the old
+    form of this test failed on all five.
+
+    Kept because a tautology that documents an invariant is still worth reading, and
+    paired below with the behaviour it exists to protect.
+    """
     assert not (ba._active_catalog_names() & ba._deprecated_catalog_names())
+
+
+def test_a_live_products_own_name_is_never_dropped_from_the_candidate_pool():
+    """The behaviour. Dropping it is the ES1 -> ES5 Auto-Immune failure, restated.
+
+    Each of these five is a survivor carrying the name of the twin retired into it. If
+    the exclusion set still held that name, _sellable_names() would drop it, the live
+    product would be unmatchable by its own name, and the matcher would drift to the
+    nearest stranger.
+    """
+    shared = [
+        "MSM Syntropy Powder", "Flow Ease Powder", "SeaAmino Powder",
+        "Crucifer Complex Powder", "Hydrolyzed Collagen Powder",
+    ]
+    kept = ba._sellable_names(shared)
+    assert kept == shared, f"these live names were dropped: {set(shared) - set(kept)}"

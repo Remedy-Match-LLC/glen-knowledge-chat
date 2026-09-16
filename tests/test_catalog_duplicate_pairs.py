@@ -148,10 +148,29 @@ def test_relax_powder_lands_on_stress_release(products):
     would resolve to nothing sellable, which is why this is asserted rather than assumed.
     """
     assert products["relax-powder"]["inactive"] is True
-    assert products["relax-powder"]["superseded_by"] == "relax"
     assert products["relax"]["inactive"] is True, "relax was already retired before this"
+    # DIRECT, not chained. Pointing at `relax` resolved correctly, because the resolver
+    # follows chains, but an existing invariant refuses it: a superseded_by target must
+    # itself be live, in ONE hop. CI caught it on four tests, and they are right. A chain
+    # through a dead record is harder to read and one edit away from a dead end.
+    assert products["relax-powder"]["superseded_by"] == "stress-release"
     line = _sellable(products, "relax-powder")
     assert line is not None and line["slug"] == "stress-release"
+
+
+def test_no_retirement_points_at_a_retired_product(products):
+    """The invariant CI taught me. One hop, and the target must be live.
+
+    Pinned here as well as in test_deprecated_remedy_resolution, because this file is
+    where the next catalog batch gets written and the chaining shortcut is tempting.
+    """
+    for slug, p in products.items():
+        if isinstance(p, dict) and p.get("superseded_by"):
+            target = p["superseded_by"]
+            assert target in products, f"{slug} -> unknown slug {target}"
+            assert not products[target].get("inactive"), (
+                f"{slug} -> {target}, which is itself retired"
+            )
 
 
 def test_relax_keeps_its_own_name(products):
