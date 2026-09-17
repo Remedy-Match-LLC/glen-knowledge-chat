@@ -7930,7 +7930,8 @@
    "name": "Trans-Resveratrol",
    "price_cents": 3997,
    "pinecone_title": "Trans-Resveratrol",
-   "url": "https://remedymatch.com/remedies/496-transresveratrol"
+   "url": "https://remedymatch.com/remedies/496-transresveratrol",
+   "bottle_type": "30 g"
   },
   "centrophenoxine": {
    "name": "Centrophenoxine",
@@ -8833,7 +8834,8 @@
    "name": "Ursolic Acid 50%",
    "price_cents": 3997,
    "pinecone_title": "Ursolic Acid 50%",
-   "url": "https://remedymatch.com/remedies/forms/powders/pure-simple-singles/387-ursolic-acid"
+   "url": "https://remedymatch.com/remedies/forms/powders/pure-simple-singles/387-ursolic-acid",
+   "bottle_type": "30 g"
   },
   "muscle-mass": {
    "name": "Muscle Mass",
@@ -10849,7 +10851,8 @@
    "name": "Apigenin",
    "price_cents": 4997,
    "pinecone_title": "Apigenin",
-   "url": "https://remedymatch.com/remedies/524-apigenin"
+   "url": "https://remedymatch.com/remedies/524-apigenin",
+   "bottle_type": "30 g"
   },
   "snake--dragon": {
    "name": "Snake & Dragon",
@@ -11382,7 +11385,8 @@
    "name": "Salvianolic Acid",
    "price_cents": 7997,
    "pinecone_title": "Salvianolic Acid",
-   "url": "https://remedymatch.com/remedies/494-salvianolic-acid"
+   "url": "https://remedymatch.com/remedies/494-salvianolic-acid",
+   "bottle_type": "30 g"
   },
   "ed8-stomach-driver": {
    "name": "ED8 Stomach Driver",
@@ -11416,7 +11420,8 @@
     }
    ],
    "ingredients_source": "manual",
-   "enrichment_note": "Single-ingredient Pure Powder (Glen). FMP 'Fulvic Acid Complex' match was wrong."
+   "enrichment_note": "Single-ingredient Pure Powder (Glen). FMP 'Fulvic Acid Complex' match was wrong.",
+   "bottle_type": "120 caps"
   },
   "ed11-liver-driver": {
    "name": "ED11 Liver Driver",
@@ -11492,7 +11497,8 @@
    "name": "Magnesium Acetyl-Taurate",
    "price_cents": 3997,
    "pinecone_title": "Magnesium Acetyl-Taurate",
-   "url": "https://remedymatch.com/remedies/508-magnesium-acetyltaurate"
+   "url": "https://remedymatch.com/remedies/508-magnesium-acetyltaurate",
+   "bottle_type": "30 g"
   },
   "dalpha-tocopherol-succinate": {
    "name": "d-Alpha Tocopherol Succinate",
@@ -11666,7 +11672,8 @@
    "name": "Honokiol",
    "price_cents": 3997,
    "pinecone_title": "Honokiol",
-   "url": "https://remedymatch.com/remedies/521-honokiol"
+   "url": "https://remedymatch.com/remedies/521-honokiol",
+   "bottle_type": "30 g"
   },
   "ed7-lung-driver": {
    "name": "ED7 Lung Driver",
@@ -11679,13 +11686,15 @@
    "name": "Serrapeptase",
    "price_cents": 3997,
    "pinecone_title": "Serrapeptase",
-   "url": "https://remedymatch.com/remedies/512-serrapeptase"
+   "url": "https://remedymatch.com/remedies/512-serrapeptase",
+   "bottle_type": "120 caps"
   },
   "polyphenols-camellia-sinensis": {
    "name": "Polyphenols (Camellia sinensis)",
    "price_cents": 3997,
    "pinecone_title": "Polyphenols (Camellia sinensis)",
-   "url": "https://remedymatch.com/remedies/492-polyphenols-camellia-sinensis"
+   "url": "https://remedymatch.com/remedies/492-polyphenols-camellia-sinensis",
+   "bottle_type": "120 caps"
   },
   "neutral-protease": {
    "name": "Neutral Protease",
