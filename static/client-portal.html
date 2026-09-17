@@ -651,6 +651,14 @@
      the composer keeps its resting size. */
   .shell-chat-thread{margin-top:12px;max-height:340px}
   .shell-chat-thread[hidden]{display:none}
+  /* Collapsible cards, Glen 2026-09-16: "Any medium to large cards need a button to
+     collapse/open. Remember the last state." The toggle sits in the heading so it is
+     where the eye already is, and the heading stays readable when collapsed. */
+  .card-fold{float:right;background:none;border:0;color:var(--muted);cursor:pointer;
+    font:inherit;font-size:.82rem;line-height:1.2;padding:2px 6px;border-radius:8px}
+  .card-fold:hover{color:var(--ink);background:var(--brand-soft)}
+  .card.is-folded > *:not(h2):not(h3){display:none}
+  .card.is-folded{padding-bottom:14px}
   /* Voice moved onto the composer on 2026-09-16. It used to sit in the Ask card,
      which is the hidden panel, so the mic was unreachable from the hub. */
   .shell-composer .chat-voice{margin-top:10px}
@@ -5653,6 +5661,9 @@ function render(d, v){
     });
   })();
   wireEntityRefs(document.getElementById("app") || document);
+  // After the cards exist, and on EVERY render: render() rebuilds them on each poll,
+  // so a toggle added once would vanish with the card it was attached to.
+  wireCardFolding();
 
   var chatSendEl = document.getElementById("chatSend");
   if(chatSendEl){ chatSendEl.addEventListener("click", sendChatMessage); }
@@ -8356,6 +8367,79 @@ function renderRelated(items){
 // When the Ask door is open, #chatMsgs is the thread and nothing changes. Otherwise the
 // composer's own #shellChatThread is revealed and used. Both carry .chat-msgs, so the
 // bubbles look the same either way.
+// Collapsible cards. Glen, 2026-09-16: "Any medium to large cards need a button to
+// collapse/open. Remember the last state."
+//
+// MEASURED, not listed. "Medium to large" is a height, and a hand-kept list of card ids
+// would drift the first time a card grew. Anything taller than CARD_FOLD_MIN_PX gets a
+// toggle; a card already remembered as folded keeps one whatever its collapsed height.
+//
+// The key is the card's id when it has one, else its heading text, because render()
+// rebuilds these on every poll and an index would point at a different card each time.
+//
+// localStorage is right for this and a server round trip would not be: it is a per-viewer
+// convenience, it never leaves the browser, and losing it costs a click. Every read and
+// write is wrapped, because it throws in a private window and returns nothing with site
+// data cleared, and the cards must render either way.
+var CARD_FOLD_MIN_PX = 320;
+
+function _cardFoldKey(card){
+  if(card.id) return "rm_fold_" + card.id;
+  var h = card.querySelector("h2,h3");
+  var t = (h && h.textContent || "").trim().toLowerCase().replace(/[^a-z0-9]+/g, "-");
+  return t ? "rm_fold_" + t : "";
+}
+
+function _cardFoldRead(key){
+  try{ return window.localStorage.getItem(key) === "1"; }catch(e){ return false; }
+}
+
+function _cardFoldWrite(key, folded){
+  try{ folded ? window.localStorage.setItem(key, "1") : window.localStorage.removeItem(key); }
+  catch(e){}
+}
+
+function wireCardFolding(){
+  // Delegated and wired ONCE. render() replaces app.innerHTML on every poll, so a
+  // listener bound to a button dies with it. This is the same mistake that made the
+  // portal composer's Send button look dead, and it is not worth making twice.
+  if(!window.__cardFoldWired){
+    window.__cardFoldWired = true;
+    document.addEventListener("click", function(e){
+      var btn = e.target && e.target.closest && e.target.closest(".card-fold");
+      if(!btn) return;
+      var card = btn.closest(".card");
+      if(!card) return;
+      var folded = !card.classList.contains("is-folded");
+      card.classList.toggle("is-folded", folded);
+      btn.textContent = folded ? "Show" : "Hide";
+      btn.setAttribute("aria-expanded", folded ? "false" : "true");
+      var key = _cardFoldKey(card);
+      if(key) _cardFoldWrite(key, folded);
+    });
+  }
+  var cards = document.querySelectorAll(".card");
+  for(var i = 0; i < cards.length; i++){
+    var card = cards[i];
+    var head = card.querySelector("h2,h3");
+    if(!head || card.querySelector(":scope > h2 > .card-fold, :scope > h3 > .card-fold")) continue;
+    var key = _cardFoldKey(card);
+    var remembered = key ? _cardFoldRead(key) : false;
+    // offsetHeight is 0 for a card in a hidden door. Those get a toggle only if they
+    // are already remembered folded, so opening that door does not surprise anyone.
+    if(!remembered && card.offsetHeight < CARD_FOLD_MIN_PX) continue;
+    var btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "card-fold";
+    btn.textContent = remembered ? "Show" : "Hide";
+    btn.setAttribute("aria-expanded", remembered ? "false" : "true");
+    btn.setAttribute("aria-label", "Collapse or expand " + (head.textContent || "this section"));
+    head.appendChild(btn);
+    if(remembered) card.classList.add("is-folded");
+  }
+}
+
+
 function chatThreadHost(reveal){
   var msgs = document.getElementById("chatMsgs");
   if(msgs && !_isChatHostHidden(msgs)) return msgs;
