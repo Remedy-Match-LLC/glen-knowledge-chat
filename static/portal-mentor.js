@@ -64,7 +64,16 @@
     if(!h.card)return !!h.panel.hidden;
     // h.msgs is the visible thread (see resolveHost), so walking up from it answers
     // "can the client see this conversation right now", which is the real question.
+    //
+    // EXCEPT for the composer's own thread. It ships `hidden` and stays that way until
+    // the first message, because an empty transcript should not take up space. That flag
+    // means "no messages yet", NOT "off screen": the composer around it is on every door.
+    // Reading it as off-screen made startListening() return early, so the microphone did
+    // nothing until the client typed something and sent it, which revealed the thread.
+    // Glen, 2026-09-16: "I can't click on microphone in the chat until I enter something
+    // manually." Start the walk ABOVE it.
     var el=h.msgs;
+    if(el&&el.id==="shellChatThread")el=el.parentElement;
     for(var n=el;n;n=n.parentElement){ if(n.hidden) return true; }
     var sec=(el&&el.closest)?el.closest("[data-panel]"):null;
     return sec?!!sec.hidden:false;
@@ -303,7 +312,7 @@
         const t="Continuous conversation is on, for five minutes at a time. Speak naturally, and I’ll listen again after each reply.";append("assistant",t);speak(t)}
       else{disableContinuous();if(listening)try{recognition.stop()}catch(e){}}});
     on(h.autoGuide,"change",()=>{try{localStorage.setItem("rm_mentor_auto_guide",h.autoGuide.checked?"on":"off")}catch(e){}
-      if(h.autoGuide.checked){const t="Automatic guidance is on. I’ll quietly orient you when you move to a new part of your portal.";append("assistant",t);speak(t)}});
+      if(h.autoGuide.checked){const t="Automatic guidance is on. I’ll quietly orient you when you move to a new part of your portal.";onReply(append("assistant",t),t)}});
     // The card's own sender is already wired to its input and Send button by
     // render(), so binding here would send every message twice.
     if(!h.card){on(h.send,"click",submit);on(h.input,"keydown",e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();submit()}})}
@@ -318,6 +327,17 @@
     const text="You’re now viewing "+(panelNames[name]||"this part of your portal")+
       (h.card?". Ask me here if you’d like an explanation or a recommended next step."
              :". Open me if you’d like an explanation or a recommended next step.");
-    const wasOpen=!hostHidden();if(!h.card&&h.panel.hidden)openMentor(false);append("assistant",text);
-    if(wasOpen&&!document.hidden)speak(text)},0)};
+    const wasOpen=!hostHidden();if(!h.card&&h.panel.hidden)openMentor(false);
+    const bubble=append("assistant",text);
+    // Glen, 2026-09-16: "The page guide voice is ai not mine." It used to call speak(),
+    // which is always the BROWSER voice. onReply already carries the policy for a spoken
+    // assistant line: Dr Glen's recorded voice normally, the browser one only under
+    // continuous conversation, where hands-free turn taking needs a reliable
+    // end-of-speech signal to hand the microphone back.
+    //
+    // It also fixes the overlap he reported minutes earlier, "two voices at the same
+    // time". The guide spoke through speechSynthesis while a reply was playing as TTS
+    // audio, and those are two independent channels, so both ran. attachAndSpeak calls
+    // stopActive() first, so the guide now interrupts rather than talks over.
+    if(wasOpen&&!document.hidden)onReply(bubble,text)},0)};
 })();
