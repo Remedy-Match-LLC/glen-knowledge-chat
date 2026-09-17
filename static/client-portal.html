@@ -3889,6 +3889,14 @@ function initFiveElementVoice(){
     if(!navigator.mediaDevices || !window.MediaRecorder){
       fiveVoiceSetStatus("Voice recording is not supported in this browser.", true); return;
     }
+    // Take the microphone back from continuous conversation before asking for it.
+    // SpeechRecognition and MediaRecorder compete, so with two-way chat running the
+    // recorder never starts, `stop.hidden=false` below never runs, and there is no way
+    // to finish the recording. Glen, 2026-09-16: "The 5-element voice analysis has no
+    // way to stop. (because I am in 5 min. 2-way conversation maybe?)"
+    if(window.PortalVoice && typeof window.PortalVoice.release === "function"){
+      try{ window.PortalVoice.release(); }catch(e){}
+    }
     try{
       _fiveVoiceStream = await navigator.mediaDevices.getUserMedia({audio:true});
       _fiveVoiceChunks = [];
@@ -3911,7 +3919,15 @@ function initFiveElementVoice(){
       update(); _fiveVoiceTimerId = setInterval(update, 250);
     }catch(error){
       fiveVoiceResetControls();
-      fiveVoiceSetStatus("Microphone access is needed to run your voice analysis.", true);
+      // Say WHICH problem it is. "Microphone access is needed" reads as a permission
+      // refusal, and sent a client to their browser settings when the real cause was
+      // another part of this page holding the microphone.
+      const busy = error && (error.name === "NotReadableError" ||
+                             error.name === "AbortError" ||
+                             error.name === "NotAllowedError" && _fiveVoiceStream);
+      fiveVoiceSetStatus(busy
+        ? "The microphone is busy. Turn off continuous conversation in the chat, then try again."
+        : "Microphone access is needed to run your voice analysis.", true);
     }
   });
   stop.addEventListener("click", ()=>{

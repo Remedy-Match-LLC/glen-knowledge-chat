@@ -64,7 +64,16 @@
     if(!h.card)return !!h.panel.hidden;
     // h.msgs is the visible thread (see resolveHost), so walking up from it answers
     // "can the client see this conversation right now", which is the real question.
+    //
+    // EXCEPT for the composer's own thread. It ships `hidden` and stays that way until
+    // the first message, because an empty transcript should not take up space. That flag
+    // means "no messages yet", NOT "off screen": the composer around it is on every door.
+    // Reading it as off-screen made startListening() return early, so the microphone did
+    // nothing until the client typed something and sent it, which revealed the thread.
+    // Glen, 2026-09-16: "I can't click on microphone in the chat until I enter something
+    // manually." Start the walk ABOVE it.
     var el=h.msgs;
+    if(el&&el.id==="shellChatThread")el=el.parentElement;
     for(var n=el;n;n=n.parentElement){ if(n.hidden) return true; }
     var sec=(el&&el.closest)?el.closest("[data-panel]"):null;
     return sec?!!sec.hidden:false;
@@ -88,6 +97,14 @@
   function setContext(){const c=pageContext();if(h&&h.contextLabel)h.contextLabel.textContent="Aware you’re viewing "+c.title;return c}
   function append(role,text){if(!h||!h.msgs)return null;
     const b=document.createElement("div");b.className=(h.card?"chat-bubble ":"mentor-bubble ")+role;
+    // Writing into the composer's thread must also OPEN it. It ships `hidden` until the
+    // first message, and only the page's appendChatBubble revealed it, so everything the
+    // mentor said on its own went in invisibly: the greeting, the "continuous
+    // conversation is on" confirmation, the cap warning and its Keep going button.
+    // Glen, 2026-09-16: "Continuous two-way isn't working. It's checked, but seems to not
+    // hear me. The mic shows not on, and cannot be turned on..." He had been told it was
+    // on, in a bubble he could not see.
+    if(h.msgs.hidden)h.msgs.hidden=false;
     b.textContent=text||"";h.msgs.appendChild(b);h.msgs.scrollTop=h.msgs.scrollHeight;return b}
   // The card renders its own thread through repopulateChatHistory(), which keeps
   // a practitioner reply in its own class with the author byline. Re-rendering it
@@ -255,7 +272,24 @@
     if(!tts){if(speakerOn)speak(text);return}
     if(speakerOn)tts.attachAndSpeak(bubble,text);else tts.attach(bubble,text);
   }
-  window.PortalVoice={armed:function(){return !!(h&&h.card)},onReply:onReply};
+  // Hand the microphone back. The 5-Element Voice Analysis records through
+  // getUserMedia + MediaRecorder, and continuous conversation holds the mic through
+  // SpeechRecognition, so the two compete and the recorder never starts. When it does
+  // not start, `start.hidden=true; stop.hidden=false` never runs and there is no way to
+  // stop, which is what Glen reported: "The 5-element voice analysis has no way to stop.
+  // (because I am in 5 min. 2-way conversation maybe?)" He was right about the cause.
+  //
+  // Deliberately more than stopping recognition: continuous would restart it a moment
+  // later through scheduleListening, taking the mic back mid-recording.
+  function releaseMicrophone(){
+    disableContinuous();
+    try{ if(recognition && listening) recognition.stop(); }catch(e){}
+    try{ if(window.speechSynthesis) speechSynthesis.cancel(); }catch(e){}
+    speaking=false;
+  }
+
+  window.PortalVoice={armed:function(){return !!(h&&h.card)},onReply:onReply,
+                      release:releaseMicrophone};
 
   // ---- host binding --------------------------------------------------------
   function on(el,evt,fn){if(!el)return;if(el.__mentorBound&&el.__mentorBound[evt])return;
@@ -303,7 +337,7 @@
         const t="Continuous conversation is on, for five minutes at a time. Speak naturally, and I’ll listen again after each reply.";append("assistant",t);speak(t)}
       else{disableContinuous();if(listening)try{recognition.stop()}catch(e){}}});
     on(h.autoGuide,"change",()=>{try{localStorage.setItem("rm_mentor_auto_guide",h.autoGuide.checked?"on":"off")}catch(e){}
-      if(h.autoGuide.checked){const t="Automatic guidance is on. I’ll quietly orient you when you move to a new part of your portal.";append("assistant",t);speak(t)}});
+      if(h.autoGuide.checked){const t="Automatic guidance is on. I’ll quietly orient you when you move to a new part of your portal.";onReply(append("assistant",t),t)}});
     // The card's own sender is already wired to its input and Send button by
     // render(), so binding here would send every message twice.
     if(!h.card){on(h.send,"click",submit);on(h.input,"keydown",e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();submit()}})}
@@ -318,6 +352,17 @@
     const text="You’re now viewing "+(panelNames[name]||"this part of your portal")+
       (h.card?". Ask me here if you’d like an explanation or a recommended next step."
              :". Open me if you’d like an explanation or a recommended next step.");
-    const wasOpen=!hostHidden();if(!h.card&&h.panel.hidden)openMentor(false);append("assistant",text);
-    if(wasOpen&&!document.hidden)speak(text)},0)};
+    const wasOpen=!hostHidden();if(!h.card&&h.panel.hidden)openMentor(false);
+    const bubble=append("assistant",text);
+    // Glen, 2026-09-16: "The page guide voice is ai not mine." It used to call speak(),
+    // which is always the BROWSER voice. onReply already carries the policy for a spoken
+    // assistant line: Dr Glen's recorded voice normally, the browser one only under
+    // continuous conversation, where hands-free turn taking needs a reliable
+    // end-of-speech signal to hand the microphone back.
+    //
+    // It also fixes the overlap he reported minutes earlier, "two voices at the same
+    // time". The guide spoke through speechSynthesis while a reply was playing as TTS
+    // audio, and those are two independent channels, so both ran. attachAndSpeak calls
+    // stopActive() first, so the guide now interrupts rather than talks over.
+    if(wasOpen&&!document.hidden)onReply(bubble,text)},0)};
 })();
