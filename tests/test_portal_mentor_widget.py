@@ -86,7 +86,17 @@ def test_background_portal_never_speaks_or_listens_and_auto_guidance_is_visual_f
     assert "const wasOpen=!hostHidden()" in MENTOR_CODE
     assert "if(!h.card)return !!h.panel.hidden;" in MENTOR_CODE
     assert "if(!h.card&&h.panel.hidden)openMentor(false)" in MENTOR_CODE
-    assert "if(wasOpen&&!document.hidden)speak(text)" in MENTOR_CODE
+    # 2026-09-16: the guide now speaks through onReply rather than speak(). Glen: "The
+    # page guide voice is ai not mine." onReply carries the policy for a spoken assistant
+    # line, which is Dr Glen's recorded voice unless continuous conversation is running.
+    #
+    # The GUARANTEE this pins is unchanged, and both halves of it are still asserted: the
+    # guide speaks only when the host was ALREADY open, and never when the tab is hidden.
+    # Only the thing that does the speaking moved, and it checks document.hidden too, in
+    # tts-output's attachAndSpeak and again in its speak().
+    assert "if(wasOpen&&!document.hidden)onReply(bubble,text)" in MENTOR_CODE
+    assert "const bubble=append(\"assistant\",text);" in MENTOR_CODE, (
+        "the guide must still render visually before anything is spoken")
 
 def test_widget_reuses_persistent_chat_and_supplies_page_context():
     assert 'fetch("/api/portal/"+encodeURIComponent(token)+"/chat"' in MENTOR_CODE
