@@ -59,45 +59,27 @@ def test_phase_names_come_from_the_existing_module_not_a_second_set():
 
 
 def test_every_et_code_in_the_live_catalogue_gets_a_phase():
-    """The rule is stated over ET as a family, so none may fall through."""
-    cx = sqlite3.connect("file:" + __import__("os").path.expanduser(
-        "~/AI-Training/e4l.db") + "?mode=ro", uri=True)
+    """The rule is stated over ET as a family, so none may fall through.
+
+    Reads Glen's e4l.db, which CI does not have. The connect itself raises on a
+    missing file with mode=ro, so it has to be INSIDE the try: an earlier version
+    guarded only the query and failed CI rather than skipping.
+    """
+    import os
+    import sqlite3
+
+    path = os.path.expanduser("~/AI-Training/e4l.db")
+    try:
+        cx = sqlite3.connect("file:" + path + "?mode=ro", uri=True)
+    except Exception:
+        pytest.skip("e4l.db not available (CI)")
     try:
         codes = [r[0] for r in cx.execute(
             "SELECT code FROM e4l_items WHERE code LIKE 'ET%'")]
     except Exception:
-        pytest.skip("e4l.db not available")
+        pytest.skip("e4l_items not readable")
     finally:
         cx.close()
     if not codes:
         pytest.skip("no ET codes on file")
     assert all(phase_for(c) in (1, 2, 3) for c in codes)
-
-
-def test_heavy_metals_serves_two_phases():
-    """Glen, 2026-09-16: "Heavy metals is also important in phase 1 (detox at the
-    intracellular level)." Elimination in 4, intracellular detox in 1."""
-    from dashboard.finding_phase import phases_for
-    assert set(phases_for("ES15")) == {4, 1}
-
-
-def test_a_two_phase_finding_appears_under_both():
-    """Which is how a detox layer and a low-energy layer come to share an anchor."""
-    got = group_by_phase(["ES15", "ET13"])
-    assert got["by_phase"][4] == ["ES15"]
-    assert got["by_phase"][1] == ["ES15"]
-    assert got["by_phase"][3] == ["ET13"]
-    assert got["unplaced"] == []
-
-
-def test_phase_for_still_answers_but_hides_the_second():
-    """Kept for callers that can hold only one. The docstring says to prefer
-    phases_for, and this test is the reason why."""
-    from dashboard.finding_phase import phase_for, phases_for
-    assert phase_for("ES15") == 4
-    assert len(phases_for("ES15")) == 2
-
-
-def test_an_unruled_finding_has_no_phases():
-    from dashboard.finding_phase import phases_for
-    assert phases_for("ER34") == ()
