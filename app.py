@@ -52238,6 +52238,12 @@ dashboard.set_owner_token_check(_owner_token_ok)
 # has been stripped from the URL). Cookie validity is derived from CONSOLE_SECRET.
 dashboard.set_console_cookie_check(
     lambda: _console_cookie_valid(request.cookies.get(CONSOLE_COOKIE, "")))
+# ...and let it resolve an OWNER-token cookie too. _console_cookie_valid above compares
+# against the MASTER-secret cookie only, so a per-user owner session (Rae's) failed it and
+# 153 decorated routes answered 401 while her login was valid. _present_console_key is the
+# one place that already understands both kinds of cookie; this hands the decorator that
+# same answer rather than keeping a second, narrower rule in step with it.
+dashboard.set_presented_key_check(_present_console_key)
 
 
 @app.route("/api/action/<path:key>", methods=["POST"])
