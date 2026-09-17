@@ -133,6 +133,8 @@
     transition:opacity .15s; height:42px; }
   #send-btn:hover{ opacity:0.85; }
   #send-btn:disabled{ opacity:0.4; cursor:not-allowed; }
+  .input-note{ font-size:12.5px; color:var(--gold); margin-top:8px; }
+  .input-note[hidden]{ display:none; }
 
   /* ── Secondary CTA ── */
   .scan-cta{ text-align:center; margin-top:22px; }
@@ -219,8 +221,15 @@
         <textarea id="query-input" data-mic
           placeholder="Share what&rsquo;s present for you&hellip;"
           rows="1" onkeydown="handleKey(event)" oninput="autoResize(this)"></textarea>
-        <button id="send-btn" onclick="sendQuery()">Send</button>
+        <button type="button" id="send-btn" onclick="sendQuery()">Send</button>
       </div>
+      <!-- Glen, 2026-09-16: "clicking Send on the chat takes me to top of page, and
+           doesn't process the message." It was doing the right thing for the wrong-
+           looking reason: sendQuery() refuses until Me or Someone else is chosen, and
+           scrolled the chooser into view. The chooser sits ~50 lines above the input, so
+           on a phone the page jumped, the message vanished, and the explanation was off
+           screen behind him. Say it HERE, where he is already looking. -->
+      <div class="input-note" id="input-note" role="status" aria-live="polite" hidden></div>
     </div>
 
     <div class="scan-cta">
@@ -255,6 +264,9 @@
       document.querySelectorAll('input[name="for_whom"]').forEach(function(r){
         r.addEventListener('change', function(){
           forWhom = r.value;
+          // The choice is made, so the note at the input is stale. Leaving it up would
+          // read as a standing warning against a message that is now fine to send.
+          clearInputNote();
           document.querySelectorAll('.whom-opt').forEach(function(o){ o.classList.remove('active'); });
           const lab = r.closest('.whom-opt');
           if (lab) lab.classList.add('active');
@@ -373,8 +385,14 @@
     }
 
     // ── Send ───────────────────────────────────────────────────────────────
+    function clearInputNote(){
+      const here = document.getElementById('input-note');
+      if (here) { here.hidden = true; here.textContent = ''; }
+    }
+
     async function sendQuery(){
       if (isLoading) return;
+      clearInputNote();
       const inp = document.getElementById('query-input');
       const query = (inp.value || '').trim();
       if (!query) return;
@@ -383,6 +401,13 @@
       if (!forWhom) {
         const note = document.getElementById('whom-note');
         if (note) { note.classList.add('warn'); note.textContent = 'First, choose who this is for: Me, or Someone else.'; }
+        // Say it at the input too. The chooser is far above the box, so scrolling to it
+        // reads as the page jumping to the top and losing the message.
+        const here = document.getElementById('input-note');
+        if (here) {
+          here.textContent = 'First choose who this is for, just above. Your message is still here.';
+          here.hidden = false;
+        }
         const whom = document.querySelector('.whom');
         if (whom) whom.scrollIntoView({ behavior: 'smooth', block: 'center' });
         return;
