@@ -97,6 +97,14 @@
   function setContext(){const c=pageContext();if(h&&h.contextLabel)h.contextLabel.textContent="Aware you’re viewing "+c.title;return c}
   function append(role,text){if(!h||!h.msgs)return null;
     const b=document.createElement("div");b.className=(h.card?"chat-bubble ":"mentor-bubble ")+role;
+    // Writing into the composer's thread must also OPEN it. It ships `hidden` until the
+    // first message, and only the page's appendChatBubble revealed it, so everything the
+    // mentor said on its own went in invisibly: the greeting, the "continuous
+    // conversation is on" confirmation, the cap warning and its Keep going button.
+    // Glen, 2026-09-16: "Continuous two-way isn't working. It's checked, but seems to not
+    // hear me. The mic shows not on, and cannot be turned on..." He had been told it was
+    // on, in a bubble he could not see.
+    if(h.msgs.hidden)h.msgs.hidden=false;
     b.textContent=text||"";h.msgs.appendChild(b);h.msgs.scrollTop=h.msgs.scrollHeight;return b}
   // The card renders its own thread through repopulateChatHistory(), which keeps
   // a practitioner reply in its own class with the author byline. Re-rendering it

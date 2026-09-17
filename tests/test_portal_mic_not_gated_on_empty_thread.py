@@ -68,7 +68,12 @@ const document_ = {
 };
 const window_ = {
   chatThreadHost(){ return els.shellChatThread; },
-  setTimeout(fn){ fn(); return 0; }, clearTimeout(){},
+  // Short timers run inline so the mic's restart backoff (250ms, capped at 4000ms) is
+  // observable in one tick. LONG ones must not, or the five minute continuous cap fires
+  // the instant it is armed and switches continuous straight back off. That is exactly
+  // what made this test report "continuous never opened the microphone" when the code
+  // was correct.
+  setTimeout(fn, ms){ if (!ms || ms <= 5000) fn(); return 0; }, clearTimeout(){},
   addEventListener(){},
   localStorage: { getItem(){ return null; }, setItem(){} },
   SpeechRecognition: function(){ return recognition; }
@@ -104,6 +109,30 @@ def test_the_mic_starts_with_an_empty_transcript():
                        timeout=60, cwd=str(ROOT))
     assert r.returncode == 0, (r.stdout or "") + (r.stderr or "")
     assert "OK" in r.stdout
+
+
+def test_the_mentors_own_messages_open_the_thread():
+    """Everything the mentor says on its own used to land invisibly.
+
+    The composer's thread ships `hidden` until the first message, and only the PAGE's
+    appendChatBubble revealed it. The mentor's append() wrote into it without opening it,
+    so the greeting, the "continuous conversation is on" confirmation, the cap warning
+    and its Keep going button were all written where nobody could see them.
+
+    Glen, 2026-09-16: "Continuous two-way isn't working. It's checked, but seems to not
+    hear me." He had been told it was on, in a bubble that was invisible.
+
+    Asserted on the source rather than executed: the surrounding behaviour runs through
+    asynchronous speech callbacks that a fake models badly, and a fake that models them
+    badly is how this file already reported a passing feature as broken once tonight.
+    """
+    src = MENTOR.read_text()
+    body = src[src.index("function append(role,text)"):]
+    body = body[:body.index("return b}") + 9]
+    assert "h.msgs.hidden=false" in body, (
+        "the mentor's append must OPEN the composer thread, or everything it says on its "
+        "own is written where the client cannot see it"
+    )
 
 
 def test_the_page_guide_uses_glens_voice_not_the_browsers():
