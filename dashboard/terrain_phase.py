@@ -1,98 +1,60 @@
-"""Which of Glen's Five Phases of Terrain an E4L finding belongs to.
-
-The phases (the 5 R's, see the `five-phases-of-terrain` skill):
-
-    1 Recharge   anergy, catabolic      cancer, degeneration, viral, low energy
-    2 Rejuvenate anabolic swing         aging, bacterial, parasite, metabolism, enzymes
-    3 Regenerate stable regenerative    regeneration, fungal, tissue cleansing, lymph, immune
-    4 Reclaim    allergy, elimination   allergy, toxicity / detoxification
-    5 Regulate   balance                stress, endocrine
-
-Glen's rules, 2026-09-16, given in his own words:
-
-- "Most of the ET terrains in e4l are linked to particular viral susceptibility
-  patterns which would be Phase 1. The exceptions are specified as Bacterial (2) and
-  Fungal (3)."
-- "Autonomic Nervous System: link to Phase 5." ED6 and EI11 are the two findings whose
-  own descriptions name the sympathetic/parasympathetic nerves.
-- "Heavy metals is also important in phase 1 (detox at the intracellular level)."
-
-**A finding can serve more than one phase.** ES15 Heavy Metals Detox is the case that
-proves it: Phase 4 as elimination, and Phase 1 as intracellular detox in the anergy
-terrain. So this returns a TUPLE, not a number. An earlier version returned a single
-phase and would have forced a choice that loses half the answer.
-
-Deliberately NOT guessed: the other 240 findings. ER, ENV, NUT, ES, MR, MB and most of
-ED and EI carry no phase here, and `phase_for` returns None for them rather than a
-plausible number. A wrong phase would group a layer around the wrong healing
-direction, which is worse than grouping on something else.
-
-Do not read the `terrain-phase:*` tags in e4l.db as a signal for this. 672 of the ~700
-tagged clients are `regenerate`, set by the `e4l:matrix-regulators` rule rather than by
-a reading; only two were set by a clinician.
-"""
-
-RECHARGE, REJUVENATE, REGENERATE, RECLAIM, REGULATE = 1, 2, 3, 4, 5
+"""Consumer-facing names for the 5 terrain phases (the BSI 'phase P' reading Glen
+speaks into a biofield transcript). Phase number (1-5) -> the Terrain R-name Glen
+reports on the client report + invoice. See the five-phases-of-terrain skill: the
+number ordering matches the depleted->excess terrain spectrum
+(Energize / Rejuvenate / Regenerate / Cleanse / Balance)."""
 
 PHASE_NAMES = {
-    RECHARGE: "Recharge",
-    REJUVENATE: "Rejuvenate",
-    REGENERATE: "Regenerate",
-    RECLAIM: "Reclaim",
-    REGULATE: "Regulate",
+    1: "Terrain Revive",
+    2: "Terrain Repair",
+    3: "Terrain Renew",
+    4: "Terrain Refresh",
+    5: "Terrain Relief",
 }
 
-# Ruled per finding. A tuple, because a finding can serve several phases.
-_RULED = {
-    "ET13": (REGENERATE,),        # Fungal Terrain
-    "ET14": (REJUVENATE,),        # Bacterial Terrain
-    "ED6": (REGULATE,),           # Heart Driver — sympathetic/parasympathetic
-    "EI11": (REGULATE,),          # Bone Marrow - Stomach Integrator — same
-    # Elimination AND intracellular detox in the anergy terrain. Glen, 2026-09-16.
-    "ES15": (RECLAIM, RECHARGE),  # Heavy Metals Detox
+PHASE_CLINICAL_NAMES = {
+    1: "Energize",
+    2: "Rejuvenate",
+    3: "Regenerate",
+    4: "Cleanse",
+    5: "Balance",
+}
+
+PHASE_DESCRIPTIONS = {
+    1: "This phase focuses on restoring foundational cellular energy and the body's capacity to begin healing.",
+    2: "This phase focuses on rebuilding compromised systems, including enzyme and microbial function.",
+    3: "This phase focuses on tissue restoration and restoring microbial coherence.",
+    4: "This phase focuses on clearing accumulated burdens after the body has built the capacity to move them.",
+    5: "This phase focuses on restoring endocrine, life-stress, and regulatory balance.",
 }
 
 
-def phases_for(code):
-    """Every phase a finding serves, as a tuple. Empty when Glen has not ruled on it.
-
-    Empty is a real answer and callers must handle it: grouping falls back to another
-    axis rather than inventing a healing direction.
-    """
-    code = str(code or "").strip().upper()
-    if not code:
-        return ()
-    if code in _RULED:
-        return _RULED[code]
-    if code.startswith("ET"):
-        # "Most of the ET terrains ... are linked to particular viral susceptibility
-        # patterns which would be Phase 1."
-        return (RECHARGE,)
-    return ()
+def phase_num(v):
+    """Coerce a spoken/stored phase to an int in 1..5, else None. Never raises.
+    Only a bare integer counts -- 'phase 3' returns None (the caller passes P)."""
+    try:
+        n = int(str(v).strip())
+    except (TypeError, ValueError):
+        return None
+    return n if n in PHASE_NAMES else None
 
 
-def phase_for(code):
-    """The FIRST phase, for a caller that can only hold one. Prefer phases_for:
-    ES15 serves two, and this hides the second."""
-    got = phases_for(code)
-    return got[0] if got else None
+def phase_name(v):
+    """'Terrain Refresh' for phase 4, '' when the phase is missing/out of range."""
+    return PHASE_NAMES.get(phase_num(v), "")
 
 
-def phase_name(phase):
-    return PHASE_NAMES.get(phase, "")
+def phase_display(v):
+    """'Terrain Refresh (Phase 4)', or '' when there is no valid phase."""
+    n = phase_num(v)
+    return f"{PHASE_NAMES[n]} (Phase {n})" if n else ""
 
 
-def group_by_phase(codes):
-    """{phase: [codes]} plus an "unplaced" bucket, order preserved within each.
-
-    A finding serving two phases appears under BOTH, which is the point: ES15 is how
-    a detox layer and a low-energy layer come to share an anchor.
-    """
-    out, unplaced = {}, []
-    for code in codes or []:
-        ps = phases_for(code)
-        if not ps:
-            unplaced.append(code)
-        for p in ps:
-            out.setdefault(p, []).append(code)
-    return {"by_phase": out, "unplaced": unplaced}
+def phase_narrative_description(v, location=""):
+    """Plain-language terrain context for the generated patient narrative."""
+    n = phase_num(v)
+    if not n:
+        return ""
+    loc = str(location or "").strip()
+    where = f" The reading located this phase at {loc}." if loc else ""
+    return f"Phase {n}, {PHASE_CLINICAL_NAMES[n]}: {PHASE_DESCRIPTIONS[n]}{where}"
