@@ -272,7 +272,24 @@
     if(!tts){if(speakerOn)speak(text);return}
     if(speakerOn)tts.attachAndSpeak(bubble,text);else tts.attach(bubble,text);
   }
-  window.PortalVoice={armed:function(){return !!(h&&h.card)},onReply:onReply};
+  // Hand the microphone back. The 5-Element Voice Analysis records through
+  // getUserMedia + MediaRecorder, and continuous conversation holds the mic through
+  // SpeechRecognition, so the two compete and the recorder never starts. When it does
+  // not start, `start.hidden=true; stop.hidden=false` never runs and there is no way to
+  // stop, which is what Glen reported: "The 5-element voice analysis has no way to stop.
+  // (because I am in 5 min. 2-way conversation maybe?)" He was right about the cause.
+  //
+  // Deliberately more than stopping recognition: continuous would restart it a moment
+  // later through scheduleListening, taking the mic back mid-recording.
+  function releaseMicrophone(){
+    disableContinuous();
+    try{ if(recognition && listening) recognition.stop(); }catch(e){}
+    try{ if(window.speechSynthesis) speechSynthesis.cancel(); }catch(e){}
+    speaking=false;
+  }
+
+  window.PortalVoice={armed:function(){return !!(h&&h.card)},onReply:onReply,
+                      release:releaseMicrophone};
 
   // ---- host binding --------------------------------------------------------
   function on(el,evt,fn){if(!el)return;if(el.__mentorBound&&el.__mentorBound[evt])return;

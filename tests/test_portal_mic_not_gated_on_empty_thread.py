@@ -171,3 +171,40 @@ def test_the_reason_is_written_down_where_the_check_lives():
     src = MENTOR.read_text()
     assert 'el.id==="shellChatThread"' in src
     assert "no messages yet" in src, "the flag's meaning must be stated at the check"
+
+
+def test_the_five_element_recorder_takes_the_microphone_back_first():
+    """Glen, 2026-09-16: "The 5-element voice analysis has no way to stop.
+    (because I am in 5 min. 2-way conversation maybe?)" He was right about the cause.
+
+    SpeechRecognition and MediaRecorder compete for the microphone. With continuous
+    conversation running, getUserMedia fails, so `start.hidden=true; stop.hidden=false`
+    never runs and the "Finish & analyze" button never appears. There IS a stop button;
+    it is only revealed once recording has actually begun.
+    """
+    page = (ROOT / "static" / "client-portal.html").read_text()
+    handler = page[page.index('start.addEventListener("click"'):]
+    handler = handler[:handler.index("getUserMedia")]
+    assert "PortalVoice.release()" in handler, (
+        "the recorder must release the mentor's microphone BEFORE asking for it"
+    )
+
+
+def test_releasing_also_stops_continuous_from_taking_it_straight_back():
+    """Stopping recognition alone is not enough: scheduleListening restarts it."""
+    src = MENTOR.read_text()
+    body = src[src.index("function releaseMicrophone()"):]
+    body = body[:body.index("\n  }") + 4]
+    assert "disableContinuous()" in body, (
+        "release must switch continuous OFF, or the mic is taken back mid-recording"
+    )
+
+
+def test_a_busy_microphone_is_not_reported_as_a_permission_problem():
+    """"Microphone access is needed" sends a client to their browser settings.
+
+    The real cause is another part of the same page holding the device.
+    """
+    page = (ROOT / "static" / "client-portal.html").read_text()
+    assert "The microphone is busy" in page
+    assert "Turn off continuous conversation" in page
