@@ -29,16 +29,28 @@ WHAT MUST NOT CHANGE: a VA token (Shaira, scope workspace:shaira, role 'va') is 
 rejected here. That is the whole point of _owner_token_check being the gate rather than
 "is this a valid token".
 """
-import importlib
-
 import pytest
 
 
 @pytest.fixture()
 def dash():
+    """Snapshot and restore, never reload.
+
+    importlib.reload(dashboard) resets the module globals, including the checks app.py
+    registers at import time, for EVERY test that runs afterwards in the same process.
+    Locally each file runs alone so nothing shows; CI runs one process and 20 unrelated
+    tests failed on payments, pricing and reward packs. Order-dependent contamination
+    from import state, and entirely mine.
+    """
     import dashboard
-    importlib.reload(dashboard)
-    return dashboard
+    saved = {name: getattr(dashboard, name, None) for name in
+             ("CONSOLE_SECRET", "_owner_token_check", "_console_cookie_check",
+              "_presented_key_check")}
+    try:
+        yield dashboard
+    finally:
+        for name, value in saved.items():
+            setattr(dashboard, name, value)
 
 
 def _wrap(dash, fn=None):
@@ -55,8 +67,13 @@ def _refused(dash, guarded):
 
 
 def test_the_registration_hook_exists(dash):
+    """The hook exists and is settable. It is NOT asserted to start as None: app.py
+    registers it at import, and demanding None here would only be true in a process
+    where app.py has never been imported."""
     assert hasattr(dash, "set_presented_key_check")
-    assert dash._presented_key_check is None, "it must start unregistered"
+    assert callable(dash.set_presented_key_check)
+    dash.set_presented_key_check(lambda: "probe")
+    assert dash._presented_key_check() == "probe"
 
 
 def test_a_cookie_borne_owner_token_is_accepted(dash, monkeypatch):
