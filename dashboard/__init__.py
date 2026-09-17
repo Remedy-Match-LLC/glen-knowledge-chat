@@ -19,11 +19,24 @@ _owner_token_check = None
 # here, without coupling this module to app.py's cookie machinery.
 _console_cookie_check = None
 
+# Registered by app.py via set_presented_key_check(). Resolves whatever credential this
+# request actually carries, INCLUDING a login cookie holding an owner token. The cookie
+# check above only knows the master-secret cookie, which is a narrower rule than the one
+# app.py already implements in _present_console_key().
+_presented_key_check = None
+
 
 def set_owner_token_check(fn):
     """Register the owner-token validator (see _owner_token_check)."""
     global _owner_token_check
     _owner_token_check = fn
+
+
+def set_presented_key_check(fn):
+    """Register the resolver for whatever credential a request carries (see
+    _presented_key_check)."""
+    global _presented_key_check
+    _presented_key_check = fn
 
 
 def set_console_cookie_check(fn):
@@ -50,9 +63,28 @@ def require_console_key(fn):
                     return fn(*args, **kwargs)
             except Exception:
                 pass
-        if key and _owner_token_check is not None:
+        # An OWNER token, however it was presented. `key` covers the header and ?key=;
+        # _presented_key_check resolves a LOGIN COOKIE holding an owner token, which is
+        # what a browser session actually carries.
+        #
+        # Rae could sign in and then got 401 on every console tab. Her cookie holds an
+        # owner token, by design: the verify route mints one so it can be revoked on its
+        # own and never escalates to the master secret. But _console_cookie_check above
+        # only recognises a cookie holding CONSOLE_SECRET itself, and this branch used to
+        # require `key`, which is empty for a cookie session. So she fell through to 401
+        # on all 153 routes behind this decorator while her session was perfectly valid,
+        # and the console asked for the key again on every tab.
+        # Glen, 2026-09-17: "when she navigates to different tabs, it requires the
+        # console key again."
+        presented = key
+        if not presented and _presented_key_check is not None:
             try:
-                if _owner_token_check(key):
+                presented = _presented_key_check() or ""
+            except Exception:
+                presented = ""
+        if presented and _owner_token_check is not None:
+            try:
+                if _owner_token_check(presented):
                     return fn(*args, **kwargs)
             except Exception:
                 pass
