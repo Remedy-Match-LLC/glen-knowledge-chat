@@ -2315,6 +2315,107 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
         return {"ok": True, "absorbed": absorbed, "survivor": survivor,
                 "display": display or survivor}
 
+    def _e4l_name(code):
+        """The E4L item's own tissue name for a code. A scan stress is labelled by its
+        full name, and the tissue map keys on the short one."""
+        if not code:
+            return ""
+        try:
+            import os as _os, sqlite3 as _s3
+            e = _s3.connect("file:" + _os.path.expanduser("~/AI-Training/e4l.db")
+                            + "?mode=ro", uri=True)
+            row = e.execute("SELECT name FROM e4l_items WHERE code=?", (code,)).fetchone()
+            e.close()
+            return (row[0] or "") if row else ""
+        except Exception:
+            return ""
+
+    def _organ_map():
+        try:
+            import importlib.util as _il, os as _os
+            sp = _il.spec_from_file_location(
+                "clinical_tagger",
+                _os.path.expanduser("~/AI-Training/02 Skills/clinical_tagger.py"))
+            m = _il.module_from_spec(sp); sp.loader.exec_module(m)
+            return m.ORGAN_SYSTEM_MAP
+        except Exception:
+            return {}
+
+    def _system_for(name):
+        om = _organ_map()
+        n = (name or "").strip().lower()
+        if om.get(n):
+            return om[n]
+        for part in n.split(" - "):
+            if om.get(part.strip()):
+                return om[part.strip()]
+        return None
+
+    @app.route("/author/<test_id>/balance-all", methods=["POST"])
+    def author_balance_all(test_id):
+        """Propose layers balancing the scan findings AND the clinical stresses
+        together, grouped by what each tissue does. Glen, 2026-09-16.
+
+        PROPOSES by default; writes only on {"apply": true}. The causal chain is the
+        intake's core clinical artifact, so a grouping stays a suggestion until he has
+        read it.
+        """
+        from dashboard import biofield_stress as _st
+        from dashboard.layer_grouping import group_findings
+        from dashboard.terrain_phase import phases_for
+        from dashboard.tissue_function import functions_for
+
+        body = request.get_json(silent=True) or {}
+        with sqlite3.connect(db_path) as cx:
+            rep = authored_report(cx, test_id)
+            chain = _chain_rows_for(rep)
+            data = _st.list_stresses(cx, test_id, chain)
+            existing = len(rep.get("layers") or [])
+            findings, seen = [], set()
+            for bucket in ("active", "unassigned"):
+                for st in data.get(bucket) or []:
+                    if st.get("balance") != "required":
+                        continue
+                    label = (st.get("label") or "").strip()
+                    code = (st.get("code") or "").strip()
+                    key = code or label
+                    if not key or key in seen:
+                        continue
+                    seen.add(key)
+                    tissue = _e4l_name(code) or label
+                    findings.append({
+                        "code": key, "name": label or tissue,
+                        "source": st.get("source"),
+                        "system": _system_for(tissue),
+                        "functions": functions_for(tissue),
+                        "phases": phases_for(code),
+                    })
+            layers = group_findings(findings)
+
+        if not body.get("apply"):
+            return {"ok": True, "proposed": True, "existing_layers": existing,
+                    "stresses": len(findings),
+                    "layers": [{"why": L["why"],
+                                "members": [{"code": m["code"], "name": m["name"],
+                                             "source": m.get("source")}
+                                            for m in L["members"]]}
+                               for L in layers]}
+        if existing and not body.get("force"):
+            return {"ok": False, "needs_confirm": True, "existing": existing,
+                    "error": f"This intake already has {existing} layer(s)."}
+        from dashboard.biofield_authoring import add_chain_row
+        made = 0
+        with sqlite3.connect(db_path) as cx:
+            n = existing
+            for L in layers:
+                n += 1
+                head = L["members"][0]["name"]
+                tail = ", ".join(m["name"] for m in L["members"][1:]) or head
+                add_chain_row(cx, test_id, n, head, tail, "",
+                              confirmed=0, origin="balance-all")
+                made += 1
+        return {"ok": True, "applied": True, "layers_added": made}
+
     @app.route("/author/<test_id>/clinical-catalog")
     def author_clinical_catalog(test_id):
         from dashboard.biofield_clinical_checklist import catalog_items
