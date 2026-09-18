@@ -69,7 +69,7 @@
       (<a href="https://openai.com/policies/privacy-policy" target="_blank" rel="noopener">privacy policy</a>)
       to be turned into text, and the audio is deleted straight after. The
       <strong>text</strong> of what I say is kept so my reflection can be prepared, and
-      I can ask for it to be deleted at any time by replying to any email from us.
+      I can delete this session myself with the box under my reflection.
     </label>
   </div>
 
@@ -83,6 +83,14 @@
   <div id="reflection" class="card" style="display:none;">
     <h2>What I heard in your voice</h2>
     <div id="reflectionContent"></div>
+    <div class="session-delete" id="sessionDelete" style="display:none;">
+      <label>
+        <input type="checkbox" id="deleteChk">
+        Delete this session. Tick this and the recording and everything worked out from
+        it are removed from our records straight away.
+      </label>
+      <span id="deleteStatus" role="status" aria-live="polite"></span>
+    </div>
   </div>
 
   <div id="optin" class="optin-section" style="display:none;">
@@ -109,8 +117,8 @@
   <p class="disc">
     This experience is for informational purposes only and does not constitute medical advice.
     Your audio is sent to OpenAI to be turned into text and is deleted straight after. The
-    text is kept so your reflection can be prepared, and you can ask us to delete it at any
-    time.
+    text is kept so your reflection can be prepared, and there is a box under your
+    reflection to delete the whole session whenever you want.
   </p>
 
 </div>
@@ -194,6 +202,13 @@ function renderReflection(a, remedy) {
     (a.dominant_element ? '<p>Your body is speaking most through the ' + a.dominant_element + ' element right now.</p>' : '') +
     (remedyName ? '<p>One place to begin: <strong>' + remedyName + '</strong>.</p>' : '');
   $('reflection').style.display = 'block';
+  // The box only appears when a delete is actually possible: a saved row AND a token.
+  // Offering it without one would be a button that cannot keep its promise.
+  if (analysis && analysis.id && analysis.delete_token) {
+    $('deleteChk').checked = false;          // never pre-ticked
+    $('deleteStatus').textContent = '';
+    $('sessionDelete').style.display = '';
+  }
   $('optin').style.display = 'block';
   $('status').textContent = '';
   // SP1.5: speak the reflection in Dr. Glen's voice (auto, with a Listen button to replay)
@@ -247,6 +262,27 @@ window.addEventListener('DOMContentLoaded', () => {
     $('recBtn').disabled = !this.checked;
     if (this.checked && $('status').textContent.startsWith('Please agree')) {
       $('status').textContent = '';
+    }
+  });
+  $('deleteChk').addEventListener('change', async function () {
+    if (!this.checked) { $('deleteStatus').textContent = ''; return; }
+    this.disabled = true;
+    $('deleteStatus').textContent = 'Deleting\u2026';
+    try {
+      const r = await fetch('/journal/entry/' + analysis.id + '/delete', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token: analysis.delete_token }) });
+      const d = await r.json();
+      if (r.ok && d.ok) {
+        $('deleteStatus').textContent = 'Deleted. Nothing from this session is kept.';
+        $('reflectionContent').textContent = '';
+      } else {
+        $('deleteStatus').textContent = 'Could not delete it. Reply to any email from us and we will.';
+        this.checked = false; this.disabled = false;
+      }
+    } catch (e) {
+      $('deleteStatus').textContent = 'Could not delete it. Reply to any email from us and we will.';
+      this.checked = false; this.disabled = false;
     }
   });
   $('recBtn').addEventListener('click', record);
