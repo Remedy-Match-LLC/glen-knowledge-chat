@@ -499,14 +499,36 @@ def aliases(cx):
 
 
 def absorbed_by(cx, survivor):
-    """Labels folded into this condition, so its remembered remedies follow it."""
+    """Every label folded into this condition, directly or through a chain.
+
+    Glen, 2026-09-18, on whether a chained fold carries: "yes". His own data holds
+    one, low estrogen folded into low progesterone and that into Adrenal Fatigue. He
+    has called all three one condition, so the first card's remedies must reach the
+    last survivor rather than stopping one step short.
+
+    `profile_labels` already walked a chain to find the surviving NAME; this walk is
+    the same relation read the other way. The seen set is the cycle guard, because
+    folding A into B and B into A is reachable from the buttons.
+    """
     if cx is None:
         return []
     try:
         ensure_alias_schema(cx)
-        key = _norm(survivor)
-        return [r[0] for r in cx.execute(
-            "SELECT from_label FROM biofield_clinical_alias WHERE to_key=?", (key,))]
+        out, seen, frontier = [], {_norm(survivor)}, [_norm(survivor)]
+        while frontier:
+            marks = ",".join("?" for _ in frontier)
+            rows = cx.execute(
+                "SELECT from_label FROM biofield_clinical_alias "
+                "WHERE to_key IN (%s)" % marks, frontier).fetchall()
+            frontier = []
+            for (label,) in rows:
+                key = _norm(label)
+                if key in seen:
+                    continue
+                seen.add(key)
+                out.append(label)
+                frontier.append(key)
+        return out
     except Exception:
         return []
 

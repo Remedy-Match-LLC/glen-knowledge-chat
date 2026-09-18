@@ -148,3 +148,40 @@ def test_without_a_history_lookup_nothing_changes(cx):
     """Every existing caller passes no lookup, so the fold must not require one."""
     alias_condition(cx, "Cataract", "Cataracts")
     assert remedies_for(cx, "Cataracts", historical=[]) is not None
+
+
+# ── A chain of folds carries all the way ─────────────────────────────────────────
+# Glen, 2026-09-18, asked whether a chained fold carries too: "yes". His own data has
+# one: low estrogen -> low progesterone -> Adrenal Fatigue. absorbed_by returned only
+# the direct fold, so the first card's remedies stopped one step short of the last
+# survivor. Labels already resolved through a chain; remedies did not follow them.
+
+def test_a_chained_folds_remedies_reach_the_final_survivor(cx):
+    remember_remedies(cx, "Lens opacity", ["From the first card"])
+    remember_remedies(cx, "Cataract", ["From the middle card"])
+    alias_condition(cx, "Lens opacity", "Cataract")
+    alias_condition(cx, "Cataract", "Cataracts")
+    got = {r["remedy"] for r in remedies_for(cx, "Cataracts")}
+    assert {"From the first card", "From the middle card"} <= got
+
+
+def test_a_chain_does_not_reach_sideways(cx):
+    """Two conditions folded into the same survivor are siblings, not a chain. The
+    survivor gets both; neither gets the other's."""
+    remember_remedies(cx, "Left one", ["Only on the left"])
+    remember_remedies(cx, "Right one", ["Only on the right"])
+    alias_condition(cx, "Left one", "Cataracts")
+    alias_condition(cx, "Right one", "Cataracts")
+    got = {r["remedy"] for r in remedies_for(cx, "Cataracts")}
+    assert {"Only on the left", "Only on the right"} <= got
+    assert "Only on the right" not in {r["remedy"] for r in remedies_for(cx, "Left one")}
+
+
+def test_a_cycle_of_folds_does_not_hang_the_remedy_walk(cx):
+    """A folded into B and B into A. The walk must terminate, as the label walk does."""
+    remember_remedies(cx, "A", ["From A"])
+    remember_remedies(cx, "B", ["From B"])
+    alias_condition(cx, "A", "B")
+    alias_condition(cx, "B", "A")
+    got = {r["remedy"] for r in remedies_for(cx, "B")}
+    assert "From A" in got
