@@ -48932,6 +48932,68 @@ def api_materials_search():
     except Exception as e: return fail(e)
 
 
+@app.route("/api/products/<slug>/suppliers", methods=["GET"])
+@require_console_key
+def api_product_suppliers_list(slug):
+    """Every supplier quote held for one catalog product, cheapest first.
+
+    Glen, 2026-09-18: "Can you add a way to store the products we sell?"
+
+    product_suppliers already existed with a bulk FMP importer, and could not answer him.
+    Its only key was fmp_product_id, and the products in question do not have one: the
+    tuning forks, the molecular hydrogen bottle and every Living Water ionizer are all
+    fmp_id NULL, as are 319 of the 1,075 live catalog products. It is keyed on the slug
+    now, which every product has.
+
+    The read path was also dormant. list_product_suppliers had no caller outside tests,
+    so nothing in the app had ever displayed one of these rows.
+    """
+    try:
+        p = _get_product(slug)
+        if not p:
+            return fail("unknown product", status=404)
+        rows = _materials.list_suppliers_for_product(slug)
+        priced = [r for r in rows if r.get("price") is not None]
+        return ok({
+            "slug": slug,
+            "name": p.get("name"),
+            "sell_price_cents": p.get("price_cents"),
+            "suppliers": rows,
+            # Stated rather than left to the caller: a spread is the whole point of
+            # holding more than one quote. None when fewer than two carry a price.
+            "quotes": len(rows),
+            "priced_quotes": len(priced),
+            "low": min((r["price"] for r in priced), default=None),
+            "high": max((r["price"] for r in priced), default=None),
+        })
+    except Exception as e:
+        return fail(e)
+
+
+@app.route("/api/products/<slug>/suppliers", methods=["POST"])
+@require_console_key
+def api_product_suppliers_add(slug):
+    """Record one quote against a product we sell.
+
+    A blank price is stored NULL, never 0, and a blank supplier name NULL rather than "".
+    Reading a blank as a value has cost this catalog three separate wrong numbers.
+    """
+    try:
+        if not _get_product(slug):
+            return fail("unknown product", status=404)
+        body = request.get_json(silent=True) or {}
+        if not (body.get("supplier_name") or "").strip() and not body.get("supplier_id"):
+            return fail("a supplier_name or supplier_id is required", status=400)
+        new_id = _materials.add_product_supplier(slug, body)
+        # Read it back. An insert that reported success and stored nothing would look
+        # identical to one that worked.
+        rows = _materials.list_suppliers_for_product(slug)
+        return ok({"id": new_id, "slug": slug, "suppliers": rows,
+                   "stored": any(r.get("id") == new_id for r in rows)})
+    except Exception as e:
+        return fail(e)
+
+
 @app.route("/api/materials/<int:mid>", methods=["GET"])
 @require_console_key
 def api_materials_get(mid):
