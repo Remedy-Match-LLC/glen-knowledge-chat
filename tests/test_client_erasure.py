@@ -116,3 +116,35 @@ def test_journal_entries_is_not_in_the_health_set():
     by the Delete-this-session box instead. Including it here would delete nothing (no
     email match) while implying it was covered."""
     assert "journal_entries" not in CE.HEALTH_TABLES
+
+
+def test_table_exists_is_backend_aware():
+    """The engine was SQLite-only at first: _table_exists queried sqlite_master, which
+    errors on Postgres, so it could not run against prod. It must branch on the backend."""
+    import pathlib
+    src = (pathlib.Path(__file__).resolve().parents[1]
+           / "dashboard" / "client_erasure.py").read_text()
+    body = src[src.index("def _table_exists"):]
+    body = body[:body.index("\ndef ")]
+    assert "backend_of" in body, "still SQLite-only; would error against Postgres"
+    assert "information_schema.tables" in body
+    assert "sqlite_master" in body, "the SQLite branch must remain for dev and CI"
+
+
+def test_a_fake_cursor_reporting_postgres_takes_the_information_schema_path(monkeypatch):
+    """Prove the branch actually routes, without a live Postgres."""
+    from dashboard import client_erasure as CE, db
+
+    seen = {}
+
+    class FakeCx:
+        def execute(self, sql, params=()):
+            seen["sql"] = sql
+            class R:
+                def fetchone(self_inner):
+                    return (1,)
+            return R()
+
+    monkeypatch.setattr(db, "backend_of", lambda cx: "postgres")
+    assert CE._table_exists(FakeCx(), "intake_responses") is True
+    assert "information_schema.tables" in seen["sql"]
