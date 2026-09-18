@@ -108,7 +108,6 @@ def analyze():
 
     audio_file = request.files["audio"]
     duration = float(request.form.get("duration_seconds", 0) or 0)
-    retain_audio = request.form.get("retain_audio", "false").lower() == "true"
     is_test = request.form.get("test", "false").lower() == "true"
     parent_entry_id = request.form.get("parent_entry_id") or None
     entry_type = request.form.get("entry_type") or ("affirmation_reading" if parent_entry_id else "journal")
@@ -128,8 +127,12 @@ def analyze():
     transcript = whisper.get("text", "").strip()
     words = whisper.get("words", []) or []
 
-    if not retain_audio:
-        os.unlink(audio_path)
+    # ALWAYS delete the audio. A `retain_audio` form flag used to leave the temp file on
+    # disk, and nothing ever referenced it again, so it was retention with no purpose and
+    # no purge. Glen has committed publicly to deleting scan recordings; a retain flag and
+    # that promise cannot both be true. Removed 2026-09-18 on his approval. No front end
+    # ever set it, which is not the same as it being unreachable: the route is public.
+    os.unlink(audio_path)
 
     if not transcript:
         return jsonify({"error": "empty transcript"}), 422

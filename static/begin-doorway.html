@@ -27,6 +27,10 @@
   .card h2 { font-size:1.15rem; margin:0 0 12px; color:var(--accent); }
   .card ul { margin:10px 0; padding-left:20px; }
   .card li { margin:5px 0; }
+  .voice-consent { margin:14px 0 4px; font-size:.9rem; color:var(--muted); text-align:left;
+                   max-width:42rem; margin-left:auto; margin-right:auto; }
+  .voice-consent label { display:flex; gap:.55rem; align-items:flex-start; line-height:1.45; }
+  .voice-consent input { margin-top:.25rem; flex:0 0 auto; }
   .optin-section { margin-top:28px; }
   .optin-section h2 { font-size:1.15rem; color:var(--ink); margin-bottom:6px; }
   .optin-section p { color:var(--muted); font-size:.97rem; margin-bottom:18px; }
@@ -58,8 +62,19 @@
 
   <button class="cta" id="beginBtn">I am ready to begin</button>
 
+  <div class="voice-consent" id="voiceConsent" style="display:none;">
+    <label>
+      <input type="checkbox" id="voiceChk">
+      I agree to record my voice here. The audio is sent to OpenAI
+      (<a href="https://openai.com/policies/privacy-policy" target="_blank" rel="noopener">privacy policy</a>)
+      to be turned into text, and the audio is deleted straight after. The
+      <strong>text</strong> of what I say is kept so my reflection can be prepared, and
+      I can ask for it to be deleted at any time by replying to any email from us.
+    </label>
+  </div>
+
   <div class="controls" id="controls" style="display:none;">
-    <button class="rec" id="recBtn">Start speaking</button>
+    <button class="rec" id="recBtn" disabled>Start speaking</button>
     <button class="stop" id="stopBtn" disabled>Stop</button>
     <span id="timer">0:00</span>
   </div>
@@ -93,7 +108,9 @@
 
   <p class="disc">
     This experience is for informational purposes only and does not constitute medical advice.
-    Your voice recording is processed to surface themes and is not stored beyond this session.
+    Your audio is sent to OpenAI to be turned into text and is deleted straight after. The
+    text is kept so your reflection can be prepared, and you can ask us to delete it at any
+    time.
   </p>
 
 </div>
@@ -107,6 +124,15 @@ let stream, mediaRecorder, chunks = [], startedAt = 0, timer = null, analysis = 
 const $ = id => document.getElementById(id);
 
 async function record() {
+  // CONSENT BEFORE THE MICROPHONE. Until 2026-09-18 getUserMedia ran here while the only
+  // consent checkbox on the page sat inside #optin, which is display:none at this point.
+  // The client could not see it, let alone agree, before their voice was captured and
+  // sent to OpenAI. The disabled button below is a hint; this is the actual gate, because
+  // record() is reachable from code as well as from the click.
+  if (!$('voiceChk') || !$('voiceChk').checked) {
+    $('status').textContent = 'Please agree to the recording note above first.';
+    return;
+  }
   try {
     stream = await navigator.mediaDevices.getUserMedia({
       audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
@@ -210,11 +236,19 @@ function beginExperience() {
     window.TTS.attachAndSpeak(introEl, spoken);
   }
   $('beginBtn').style.display = 'none';
+  // The consent appears WITH the controls, so it is on screen before the mic can open.
+  $('voiceConsent').style.display = '';
   $('controls').style.display = '';
 }
 
 window.addEventListener('DOMContentLoaded', () => {
   $('beginBtn').addEventListener('click', beginExperience);
+  $('voiceChk').addEventListener('change', function () {
+    $('recBtn').disabled = !this.checked;
+    if (this.checked && $('status').textContent.startsWith('Please agree')) {
+      $('status').textContent = '';
+    }
+  });
   $('recBtn').addEventListener('click', record);
   $('stopBtn').addEventListener('click', stop);
   $('optinBtn').addEventListener('click', submitOptin);
