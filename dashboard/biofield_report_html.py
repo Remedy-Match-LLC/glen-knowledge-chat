@@ -1672,9 +1672,38 @@ def render_fee_panel(state):
     return head + cur + controls + _fee_js() + "</div>"
 
 
+def _summary_bottles_chip(name, bottles_by_remedy, unavailable=False):
+    """"3 bottles" beside a remedy in the Clinical Summary, when it was bought before.
+
+    Glen, 2026-09-18: "the numbers also need to show in the clinical summary for
+    remedies that have been previously used."
+
+    A ZERO IS SHOWN, not a blank. Glen, 2026-09-18: "Need zeroes in Clinical summary on
+    remedies never purchased."
+
+    I first hid the chip on a zero, reading "for remedies that have been previously used"
+    as scoping WHICH remedies get a number. It scoped which ones have a number worth
+    reading. The rule is the same one he gave for the chain card on 2026-09-16 and it was
+    right both times: a blank reads as "no history looked up" as easily as "never had it",
+    and on a candidate list that ambiguity is worse, not better, because there are more
+    rows to misread.
+
+    When the history could not be READ at all, say so. Absent that, an unbought remedy and
+    an unreachable server look identical, which is the exact bug the dispensed panel had.
+    """
+    if unavailable:
+        return (" <span class=clinical-bottles-unknown title='Order history could not be "
+                "read, so this is not a count of zero'>history unavailable</span>")
+    n = (bottles_by_remedy or {}).get((name or "").strip().lower()) or 0
+    cls = "clinical-bottles" if n else "clinical-bottles zerobuy"
+    return (f" <span class='{cls}' title='Bottles this client has bought before'>"
+            f"{n} bottle{'' if n == 1 else 's'}</span>")
+
+
 def render_clinical_checklist(items, layers=None, intake_priorities=None,
                              profile_unavailable=False, alias_map=None,
-                             display_map=None):
+                             display_map=None, bottles_by_remedy=None,
+                             bottles_unavailable=False):
     """Scannable editable checklist; completion follows the current remedy program."""
     items = items or []
     layer_groups = group_layers(layers or [])
@@ -1725,7 +1754,8 @@ def render_clinical_checklist(items, layers=None, intake_priorities=None,
         common = "".join(
             f"<label><input class=clinical-remedy-choice type=checkbox value=\"{_e(name)}\""
             f"{' checked' if name.strip().lower() in chosen else ''}"
-            f" onchange=selectClinicalRemedy(this)> {_e(name)} "
+            f" onchange=selectClinicalRemedy(this)> {_e(name)}"
+            f"{_summary_bottles_chip(name, bottles_by_remedy, bottles_unavailable)} "
             f"<button type=button class=clinical-remedy-delete data-remedy=\"{_e(name)}\" "
             f"onclick=deleteClinicalRemedy(this) title='Delete remembered remedy'>&times;</button></label>"
             for name in item.get("common_remedies") or []
@@ -1868,6 +1898,11 @@ def render_clinical_checklist(items, layers=None, intake_priorities=None,
             ".clinical-item.done,.clinical-item.selected{border-color:rgba(88,190,135,.45);background:rgba(88,190,135,.08)}"
             ".clinical-grip{grid-row:1/4;color:var(--muted);font-size:12px;letter-spacing:-3px;cursor:grab}"
             ".clinical-item.dragging{opacity:.45;border-color:var(--accent)}"
+            ".clinical-bottles{display:inline-block;padding:1px 6px;margin-left:2px;border-radius:9px;"
+            "background:rgba(88,190,135,.16);color:var(--fg);font-size:11px;white-space:nowrap}"
+            ".clinical-bottles.zerobuy{background:rgba(255,255,255,.05);color:var(--muted)}"
+            ".clinical-bottles-unknown{display:inline-block;padding:1px 6px;margin-left:2px;"
+            "border-radius:9px;background:rgba(255,255,255,.06);color:var(--muted);font-size:11px}"
             ".clinical-item[draggable=true]{cursor:grab}.clinical-item[draggable=true]:active{cursor:grabbing}"
             ".clinical-check{grid-row:1/3;width:18px;height:18px;margin:0;accent-color:var(--ok);cursor:pointer}"
             ".intake-combine{display:inline-flex;gap:5px;margin-left:8px;vertical-align:middle}"
@@ -2069,7 +2104,9 @@ def render_author_html(report, depth_values=None, transcript="", covered_by_laye
                  + render_clinical_checklist(clinical_checklist, report.get("layers") or [],
                                             intake_priorities=intake_priorities,
                                             profile_unavailable=profile_unavailable,
-                                            alias_map=alias_map, display_map=display_map)
+                                            alias_map=alias_map, display_map=display_map,
+                                            bottles_by_remedy=_bottles_by_remedy(dispensed),
+                                            bottles_unavailable=bool(dispensed_error))
                  + chain + session + narrative_section
                  + _AUTHOR_JS.replace("__TID__", tid)
                  + "<script>loadClinicalProposals();loadClinicalCatalog();initClinicalDrag()</script>",
