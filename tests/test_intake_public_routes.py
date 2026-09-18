@@ -187,3 +187,60 @@ def test_form_still_prefills_for_a_non_submitted_email(client):
     assert f.get("answers", {}).get("first_name") == "Sam", (
         "a non-submitted intake returned no answers, so prefill is broken"
     )
+
+
+# --- a returning draft goes through the portal too, not the public funnel -------------
+#
+# Glen, 2026-09-18: "set up their portal on their first session, and take them through
+# logging in for any subsequent session." The submitted-intake guard is extended to a
+# DRAFT: a half-finished intake was still readable by anyone who typed the email, because
+# resuming a draft by re-entering the address was the funnel's own behaviour.
+
+def test_a_first_session_still_gets_a_token(client):
+    """No intake row yet: the funnel is unchanged and a genuine new person proceeds."""
+    r = _start(client, email="firsttimer@x.com")
+    body = r.get_json()
+    assert body.get("token"), "a brand-new intake got no session"
+    assert not body.get("existing")
+
+
+def test_a_returning_draft_gets_no_token_and_is_sent_to_the_portal(client):
+    """The residual this closes. After a first session leaves a draft, re-entering the
+    email on the funnel must not hand back a reading token."""
+    from dashboard import intake
+    with sqlite3.connect(client._appmod.LOG_DB) as cx:
+        intake.save_draft(cx, "drafter@x.com",
+                          {"email": "drafter@x.com", "chief_complaint": "sleep"},
+                          "2026-09-18T00:00:00")
+    r = _start(client, email="drafter@x.com")
+    body = r.get_json()
+    assert not body.get("token"), "a returning draft still handed back a reading token"
+    assert body.get("existing") is True
+    assert body.get("status") == "draft", "the page needs the status to word it right"
+
+
+def test_the_owner_of_a_draft_still_gets_the_portal_link(client):
+    from dashboard import intake
+    with sqlite3.connect(client._appmod.LOG_DB) as cx:
+        intake.save_draft(cx, "drafter@x.com", {"email": "drafter@x.com"},
+                          "2026-09-18T00:00:00")
+    client._sent.clear()
+    _start(client, email="drafter@x.com")
+    assert client._sent.get("email") == "drafter@x.com"
+    assert "token=" in (client._sent.get("url") or "")
+
+
+def test_a_submitted_intake_reports_its_status_too(client):
+    _submit(client, "done@x.com", {"diagnoses": "MS"})
+    body = _start(client, email="done@x.com").get_json()
+    assert body.get("existing") is True and body.get("status") == "submitted"
+
+
+def test_a_draft_left_by_start_itself_makes_the_next_start_a_return(client):
+    """start writes a name stub on the first call. The SECOND call must see that row and
+    route to the portal, which is the whole 'first session then log in' shape."""
+    first = _start(client, email="stub@x.com")
+    assert first.get_json().get("token"), "first session should proceed"
+    second = _start(client, email="stub@x.com")
+    b = second.get_json()
+    assert not b.get("token") and b.get("existing") is True

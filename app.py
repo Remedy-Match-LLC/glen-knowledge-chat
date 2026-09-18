@@ -33320,15 +33320,26 @@ def intake_public_start():
         _intake.init_intake_table(cx)
         _ip.init_intake_sessions_table(cx)
         _cu.find_or_create_by_email(cx, email=email, name=name)
-        # A SUBMITTED intake must never be resumed through the public funnel by email
-        # alone. Confirmed 2026-09-18 against Glen's own record: with no credential,
-        # start minted a token and form returned 36 stored fields -- diagnoses,
-        # medications, address. Knowing an email was the whole of the "auth". A submitted
-        # intake is edited through the PORTAL, whose token is the master credential and is
-        # emailed to the owner below. So here: send that link, mint NO reading token, and
-        # tell the browser the record exists. A brand-new email, or one with only an
-        # unsubmitted draft, still gets a token and the funnel is unchanged.
-        already = _intake.is_submitted(cx, email)
+        # ANY existing intake -- submitted OR a returning draft -- is resumed through the
+        # PORTAL, never the public funnel by email alone. Glen, 2026-09-18: "set up their
+        # portal on their first session, and take them through logging in for any
+        # subsequent session".
+        #
+        # First established 2026-09-18 for SUBMITTED intakes, after confirming against
+        # Glen's own record that start minted a token and form returned 36 stored fields
+        # with no credential. Extended here to a DRAFT: a half-finished intake was still
+        # readable by anyone who typed the email, because resuming a draft by re-entering
+        # the address was the funnel's own behaviour. It no longer is.
+        #
+        # A FIRST session (no intake row yet) is unchanged: it writes the name stub, mints
+        # the scoped token, and sets up the portal below. A RETURN (any row exists) gets no
+        # token; the owner continues via the secure link emailed to them, which the
+        # authenticated portal reads through /api/intake/state (portal-token gated). The
+        # status is returned so the page can say "continue" for a draft, "review" for a
+        # completed one.
+        _existing = _intake.get_response(cx, email)
+        already = _existing is not None
+        existing_status = (_existing["status"] if _existing else "") or ""
         if not already:
             parts = name.split()
             _ip.save_public_draft(cx, email, {
@@ -33349,7 +33360,7 @@ def intake_public_start():
     if already:
         # No token, so an attacker who typed a stranger's email gets no session, and the
         # real owner is pointed at the secure link now in their inbox.
-        return jsonify({"ok": True, "existing": True})
+        return jsonify({"ok": True, "existing": True, "status": existing_status})
     return jsonify({"ok": True, "token": token})
 
 
