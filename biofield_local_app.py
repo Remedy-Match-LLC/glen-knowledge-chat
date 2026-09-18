@@ -1035,6 +1035,7 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
             fstate = biofield_fee.build_fee_state(c_email, fee_get, get_no_charge(cx, test_id))
         # What this client has been dispensed before, ranked. Best-effort: a
         # reference panel must never be the reason the authoring page fails.
+        dispensed_error = None
         try:
             from dashboard import biofield_dispensed as _disp
             from dashboard import fmp_orders as _fmpo
@@ -1048,7 +1049,14 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
             except Exception as _fe:
                 print(f"[dispensed] fmp history skipped: {_fe!r}", flush=True)
             _older = _disp.fmp_orders_for(_hist, (rep.get("client") or {}).get("name"), c_email)
-            dispensed = _disp.frequency(list(client_orders(c_email)) + _older, c_email)
+            # Call the INJECTED seam, not the concrete function: client_orders is a
+            # create_app dependency and the author route's tests assert it is used.
+            # The default implementation returns a list that also carries the reason it
+            # may be empty, so a failed lookup can be told from an empty history without
+            # changing the seam's contract.
+            _client_orders = client_orders(c_email)
+            dispensed_error = getattr(_client_orders, "error", None)
+            dispensed = _disp.frequency(list(_client_orders) + _older, c_email)
             # The conditions each remedy is already used for, so the row can offer
             # them as one-click pairings.
             from dashboard.biofield_clinical_checklist import conditions_for_remedy
@@ -1058,6 +1066,7 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
         except Exception as _de:
             print(f"[dispensed] skipped: {_de!r}", flush=True)
             dispensed = []
+            dispensed_error = f"the dispensed panel failed to build ({type(_de).__name__})"
         # The folds the practitioner has declared, so the intake list can show two of
         # the client's answers as the one condition they were combined into. Read here
         # rather than in the renderer, which is a pure string builder with no database.
@@ -1074,6 +1083,7 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                                            narrative=narrative, fee_state=fstate,
                                            clinical_checklist=clinical_checklist,
                                            dispensed=dispensed,
+                                           dispensed_error=dispensed_error,
                                            intake_priorities=(profile or {}).get(
                                                "intake_priorities") or [],
                                            profile_unavailable=profile_unavailable,

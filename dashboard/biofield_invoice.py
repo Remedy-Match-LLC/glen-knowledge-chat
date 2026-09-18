@@ -245,17 +245,64 @@ def default_client_orders(email, limit=300):
     panel is a reference, and a reference that breaks the page it sits on is
     worse than one that is empty.
     """
+    rows, err = client_orders_with_status(email, limit)
+    # A list that also remembers WHY it is empty.
+    #
+    # client_orders is an injected seam on create_app, and the author route's tests
+    # assert it is called. Returning a tuple, or reaching past the seam to the concrete
+    # function, breaks both the injection and those tests. A list subclass keeps the
+    # existing contract exactly -- every current caller treats it as a list and a test
+    # may still inject a plain one -- while letting the panel ask `getattr(rows,
+    # "error", None)` and tell a failed lookup from an empty history.
+    out = _OrdersResult(rows)
+    out.error = err
+    return out
+
+
+class _OrdersResult(list):
+    """A list of orders carrying the reason it may be empty. See default_client_orders."""
+    error = None
+
+
+def client_orders_with_status(email, limit=300):
+    """(orders, error). The error is what makes an empty panel honest.
+
+    Glen, 2026-09-18: "I'm still not seeing how many bottles of each product have been
+    previously purchased", and "yes, make it show history unavailable".
+
+    The panel had been dead for at least a day and looked exactly like a client with no
+    purchases. The local app reads CONSOLE_SECRET at startup, its process predated the key
+    rotation, and every lookup came back 401. Returning [] on failure meant the page said
+    "No order history for this client yet" about a client who had plenty.
+
+    So failure and emptiness are now different answers. A caller that cannot use the error
+    still gets the old list-only contract from default_client_orders.
+    """
     base, key = _console()
-    if not base or not (email or "").strip():
-        return []
+    if not base:
+        return [], "no console key configured on this machine"
+    if not (email or "").strip():
+        return [], None                       # genuinely nothing to ask about
     try:
         url = f"{base}/api/orders?limit={int(limit)}&key=" + urllib.parse.quote(key)
         req = urllib.request.Request(url, headers={"X-Console-Key": key})
         with urllib.request.urlopen(req, timeout=10) as r:
-            return _json.loads(r.read().decode() or "{}").get("data") or []
+            return _json.loads(r.read().decode() or "{}").get("data") or [], None
     except Exception as e:
         print(f"[dispensed] order lookup skipped: {e!r}", flush=True)
-        return []
+        code = getattr(e, "code", None)
+        if code == 401:
+            # Name the actual remedy. A stale key is the failure this panel has actually
+            # had, and "unauthorized" alone sends the reader to the wrong place.
+            why = ("the console key this app started with is no longer valid — "
+                   "restart the local server to pick up the current one")
+        elif code == 502:
+            why = "the server was restarting (502); try again in a moment"
+        elif isinstance(e, TimeoutError) or "timed out" in str(e).lower():
+            why = "the order lookup timed out"
+        else:
+            why = f"the order lookup failed ({type(e).__name__})"
+        return [], why
 
 
 def default_latest_invoice(email):

@@ -207,6 +207,19 @@ def test_the_author_route_asks_for_this_clients_orders():
     assert len(call.args) >= 2, ast.unparse(call)
     orders_arg, email_arg = ast.unparse(call.args[0]), ast.unparse(call.args[1])
     assert "client_orders" in orders_arg, orders_arg
+    # Follow the name to its assignment. The substring above passes on a variable that
+    # merely LOOKS right; this checks the value actually came from the injected seam.
+    # Added 2026-09-18 after a refactor that captured the result in a local so the panel
+    # could read the failure reason off it. The refactor was correct and the old check
+    # could not tell it apart from one that quietly fed the panel something else.
+    tree = ast.parse(src)
+    assigns = [n for n in ast.walk(tree) if isinstance(n, ast.Assign)
+               and any(isinstance(t_, ast.Name) and "client_orders" in t_.id
+                       for t_ in n.targets)]
+    assert assigns, "nothing is assigned from the client_orders seam"
+    assert any("client_orders(c_email)" in ast.unparse(n.value) for n in assigns), (
+        "the panel's orders were not read from the injected seam for THIS client"
+    )
     # The email must be THIS client's, not a blank that would rank everyone.
     assert email_arg.strip() == "c_email", email_arg
 
