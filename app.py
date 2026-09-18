@@ -33320,12 +33320,22 @@ def intake_public_start():
         _intake.init_intake_table(cx)
         _ip.init_intake_sessions_table(cx)
         _cu.find_or_create_by_email(cx, email=email, name=name)
-        parts = name.split()
-        _ip.save_public_draft(cx, email, {
-            "first_name": parts[0] if parts else "",
-            "last_name": " ".join(parts[1:]) if len(parts) > 1 else "",
-            "email": email}, now.isoformat())
-        token = _ip.create_session(cx, email, name, now)
+        # A SUBMITTED intake must never be resumed through the public funnel by email
+        # alone. Confirmed 2026-09-18 against Glen's own record: with no credential,
+        # start minted a token and form returned 36 stored fields -- diagnoses,
+        # medications, address. Knowing an email was the whole of the "auth". A submitted
+        # intake is edited through the PORTAL, whose token is the master credential and is
+        # emailed to the owner below. So here: send that link, mint NO reading token, and
+        # tell the browser the record exists. A brand-new email, or one with only an
+        # unsubmitted draft, still gets a token and the funnel is unchanged.
+        already = _intake.is_submitted(cx, email)
+        if not already:
+            parts = name.split()
+            _ip.save_public_draft(cx, email, {
+                "first_name": parts[0] if parts else "",
+                "last_name": " ".join(parts[1:]) if len(parts) > 1 else "",
+                "email": email}, now.isoformat())
+        token = "" if already else _ip.create_session(cx, email, name, now)
         _ev.init_evox_tables(cx)
         _cp.init_client_portal_table(cx)
         portal_token = _ev.ensure_portal_token(cx, email, name)
@@ -33336,6 +33346,10 @@ def intake_public_start():
         send_evox_setup_link(email, name, setup_url)
     except Exception:
         app.logger.exception("intake portal-link send failed for %s", email)
+    if already:
+        # No token, so an attacker who typed a stranger's email gets no session, and the
+        # real owner is pointed at the secure link now in their inbox.
+        return jsonify({"ok": True, "existing": True})
     return jsonify({"ok": True, "token": token})
 
 
@@ -33350,9 +33364,14 @@ def intake_public_form():
         _ip.init_intake_sessions_table(cx)
         email = _ip.resolve_session(cx, request.args.get("token", ""), now)
         if email:
-            row = _intake.get_response(cx, email)
-            answers = (row["answers"] if row else {}) or {}
             submitted = _intake.is_submitted(cx, email)
+            # Only a DRAFT is prefilled. A submitted intake is never served through the
+            # public funnel -- it is edited via the portal. Without this, a token that
+            # resolves to a submitted email would disclose the whole clinical record, and
+            # that is the hole start's guard is the front door for. Two locks, one door.
+            if not submitted:
+                row = _intake.get_response(cx, email)
+                answers = (row["answers"] if row else {}) or {}
     return jsonify({"form": _intake.INTAKE_FORM, "answers": answers, "submitted": submitted})
 
 

@@ -185,6 +185,13 @@ $("#optin-btn").addEventListener("click", async ()=>{
   try{ const r=await fetch("/api/intake/public/start",{method:"POST",headers:{"Content-Type":"application/json"},
       body:JSON.stringify({name,email,tos_agreed:true,company})}); d=await r.json().catch(()=>({})); }
   catch(e){ d={}; }
+  if(d.existing){
+    // The email already has a completed intake. It is never re-opened here; a secure
+    // link to continue has been emailed to the owner. Saying so beats "went wrong", and
+    // it discloses nothing to a stranger who guessed the address.
+    err.textContent="You've already completed an intake. We've emailed you a secure link to review or update it.";
+    err.hidden=false; $("#optin-btn").disabled=false; return;
+  }
   if(!d.token){ err.textContent="Something went wrong. Please try again."; err.hidden=false; $("#optin-btn").disabled=false; return; }
   S.token=d.token;
   await loadForm();
