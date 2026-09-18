@@ -19637,6 +19637,54 @@ def api_console_sales_page_load(slug):
                     "sections": sections, "live_url": f"/begin/product/{slug}"})
 
 
+@app.route("/api/console/sales-page/<slug>/section", methods=["POST"])
+def api_console_sales_page_edit_section(slug):
+    """OWNER: replace ONE cached narrative section verbatim.
+
+    Why this exists. A cached section is served to the public the moment it exists
+    (begin_product_page_data reads it regardless of `state`), and until now the console
+    could only READ one. The only way to change a live sentence was to regenerate the
+    whole section, which rewrites copy nobody asked to change and, worse, re-derives it
+    from the same sources that produced the error.
+
+    The case that forced it, 2026-09-17: the Fulvic Acid page publicly read "Combined
+    with 100 mg of vitamin A". 100 mg is the weight of a 13.75% retinyl palmitate
+    material, so the activity is 25,000 IU, not 100 mg of the vitamin. One clause was
+    wrong in an otherwise fine paragraph.
+
+    An empty `text` DELETES the section, which drops the page back to generating fresh
+    rather than leaving a blank on it. That is the right lever when copy is wrong and no
+    replacement is ready: a wrong claim should come down before a new one goes up.
+    """
+    bad = _sales_console_ok()
+    if bad:
+        return bad
+    from dashboard import sales_pages as _sp
+    from dashboard import sales_copy as _sc
+    body = request.get_json(silent=True) or {}
+    section = (body.get("section") or "").strip()
+    if section not in _sc.NARRATIVE_SECTIONS:
+        return jsonify({"ok": False, "error": f"unknown section {section!r}",
+                        "allowed": list(_sc.NARRATIVE_SECTIONS)}), 400
+    if not _get_product(slug):
+        return jsonify({"ok": False, "error": "unknown product"}), 404
+    text = body.get("text")
+    if text is None:
+        return jsonify({"ok": False, "error": "text is required; send \"\" to clear"}), 400
+    text = str(text)
+    with db.connect(LOG_DB) as cx:
+        before = _sp.get_section(cx, slug, section)
+        if text.strip():
+            _sp.upsert_section(cx, slug, section, text, model="console-edit")
+        else:
+            _sp.upsert_section(cx, slug, section, "", model="console-edit")
+        after = _sp.get_section(cx, slug, section)
+    # Report what actually changed. A silent no-op here would look like a successful edit.
+    return jsonify({"ok": True, "slug": slug, "section": section,
+                    "changed": (before or "") != (after or ""),
+                    "was_chars": len(before or ""), "now_chars": len(after or "")})
+
+
 @app.route("/console/ingredient-pages")
 def console_ingredient_pages_page():
     return redirect("/console/pages#ingredient", code=302)
