@@ -91,3 +91,22 @@ def select(cx, *, since_iso: str, order: str = "desc", limit: int | None = None)
         sql += " LIMIT ?"
         params.append(int(limit))
     return [_decode(r) for r in cx.execute(sql, params).fetchall()]
+
+
+def delete_entry(cx, entry_id):
+    """Delete ONE journal entry outright. Returns True if a row went.
+
+    Glen, 2026-09-18: a "Delete this chat session" box, unchecked by default, one per
+    session. This is the whole-session half of that; paragraph-level is a later step and
+    needs the row RE-ANALYSED rather than edited, because the scores were computed over
+    the whole transcript.
+
+    THE WHOLE ROW GOES, not just the transcript. A journal row carries
+    transcript_embedding, top_themes, emotion_scores, polyvagal_state, lexical_metrics
+    and congruence, all derived from what the person said and several near-reversible.
+    Blanking the transcript and keeping the embedding would leave a machine-readable
+    trace of the same words while claiming the session was deleted.
+    """
+    cur = cx.execute("DELETE FROM journal_entries WHERE id=?", (int(entry_id),))
+    cx.commit()
+    return bool(cur.rowcount)

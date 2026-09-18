@@ -42,6 +42,8 @@ Hume's 48-emotion vocabulary is preserved as Haiku's output schema, which
 keeps tcm_mapper.py useful (QA cross-check) and future-proofs a successor swap.
 """
 
+import hashlib
+import hmac
 import json
 import logging
 import os
@@ -208,6 +210,10 @@ def analyze():
 
     response = {
         "id": saved_id,
+        # The handle that lets the client delete this session without being identified.
+        # Empty when no signing secret is set, which hides the box rather than offering
+        # a delete that cannot be authorised.
+        "delete_token": delete_token(saved_id),
         "transcript": transcript,
         "recorded_at": recorded_at_iso,
         "duration_seconds": duration,
@@ -617,3 +623,72 @@ def _embed_ada002(transcript: str) -> list:
 # Journal persistence now lives in dashboard/journal_store.py (local sqlite,
 # LOG_DB). The former Supabase REST helpers were removed when that project went
 # dark — see analyze()/today()/history() which call journal_store directly.
+
+
+# --- "Delete this chat session" -------------------------------------------------------
+#
+# Glen, 2026-09-18: 'a checkbox to "Delete this chat session" that is unchecked by
+# default. It would cover that particular session, one box for each session.'
+#
+# WHY THIS NEEDS NO IDENTITY, which is the point of the design. journal_blueprint records
+# every entry with a hardcoded user_id of "glen", so nothing knows WHOSE transcript any
+# row is. A per-person deletion path therefore cannot find what it promises to delete.
+# A per-SESSION box can: /journal/analyze already returns the row id to the browser, so
+# the client deletes the record in front of them and nobody has to be identified.
+#
+# WHY THE ID IS NOT ENOUGH ON ITS OWN. It is a guessable integer, so an unprotected route
+# lets anyone delete anyone's row. That is vandalism rather than disclosure, so it fails
+# in the safe direction, but a signed token costs nothing and stops a script clearing the
+# table. The token is an HMAC over the id and an expiry: stateless, no new column.
+
+_DELETE_SECRET = os.environ.get("SECRET_KEY") or os.environ.get("CONSOLE_SECRET", "")
+_DELETE_TTL_S = 24 * 3600
+
+
+def _delete_sig(entry_id, exp):
+    return hmac.new(_DELETE_SECRET.encode(),
+                    f"journal-delete:{int(entry_id)}:{int(exp)}".encode(),
+                    hashlib.sha256).hexdigest()[:40]
+
+
+def delete_token(entry_id, now=None):
+    """`<expiry>.<sig>` for one entry. Empty when no secret is configured, which leaves
+    the box absent rather than offering a delete that cannot be authorised."""
+    if not _DELETE_SECRET or not entry_id:
+        return ""
+    exp = int((now or datetime.now(timezone.utc)).timestamp()) + _DELETE_TTL_S
+    return f"{exp}.{_delete_sig(entry_id, exp)}"
+
+
+def _delete_token_ok(entry_id, token, now=None):
+    if not _DELETE_SECRET or not token or "." not in str(token):
+        return False
+    exp, _, sig = str(token).partition(".")
+    try:
+        exp = int(exp)
+    except ValueError:
+        return False
+    if (now or datetime.now(timezone.utc)).timestamp() > exp:
+        return False
+    return hmac.compare_digest(sig, _delete_sig(entry_id, exp))
+
+
+@journal_bp.route("/journal/entry/<int:entry_id>/delete", methods=["POST"])
+def delete_entry_route(entry_id):
+    """Delete one session on the client's say-so. Idempotent.
+
+    A second call for a row already gone returns ok with deleted false, rather than 404.
+    The client asked for it to be absent; telling them it failed because it is already
+    absent would be a worse answer, and a 404 also confirms which ids exist.
+    """
+    body = request.get_json(silent=True) or {}
+    token = body.get("token") or request.args.get("token") or ""
+    if not _delete_token_ok(entry_id, token):
+        return jsonify({"error": "bad_or_expired_token"}), 403
+    try:
+        with db.connect(LOG_DB) as cx:
+            gone = journal_store.delete_entry(cx, entry_id)
+    except Exception as e:
+        log.exception("journal delete failed")
+        return jsonify({"error": f"delete failed: {e}"}), 500
+    return jsonify({"ok": True, "deleted": bool(gone)})
