@@ -758,6 +758,23 @@ def _computed_set(active_tokens, coverage):
     return [p["remedy"] for p in minimal_remedies(active_tokens, coverage)["picks"]]
 
 
+def cover_tokens(tokens, coverage):
+    """Fewest remedies covering `tokens`, each with the TOKENS it covers.
+
+    The set-cover's own picks report LABELS, which is right for the panel and wrong
+    for anything that matches on tokens: biofield_program suppresses a later stress
+    by token, and a label would never match. Added 2026-09-17 for the Full and
+    Minimum program buttons, which cover one stage's tokens at a time rather than
+    the whole active set.
+    """
+    toks = set(tokens or ())
+    if not toks:
+        return []
+    return [{"remedy": r,
+             "covers": sorted(toks & coverage.get((r or "").strip().lower(), set()))}
+            for r in _computed_set(toks, coverage)]
+
+
 def suggest_minimal_remedies(cx, tid, chain_rows):
     """Fewest remedies covering active+required stresses. Returns picks + uncovered
     (kept for any caller that wants the raw computed set)."""

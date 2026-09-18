@@ -2534,34 +2534,52 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
             added = sum(1 for label in labels if _st.add_voice_stress(cx, test_id, label))
         return {"added": added}
 
+    def _interpreted_layers(cx, test_id):
+        """The transcript's layers, resolved and dosed, WITHOUT writing them.
+
+        Split out of the Interpret route on 2026-09-17 so the Full and Minimum
+        program buttons can hold the transcript's own layers in a proposal and write
+        them on the same confirm as the rest. Returns (layers, result) or raises.
+        """
+        transcript = get_notes(cx, test_id)
+        if not transcript.strip():
+            raise LookupError("no transcript yet -- record a session first")
+        glossary = ""
+        try:
+            from dashboard.biofield_catalog_terms import (
+                build_terms, glossary_text, GLOSSARY_CAP)
+            glossary = glossary_text(build_terms(cx, cap=GLOSSARY_CAP))
+        except Exception:
+            glossary = ""
+        result = interpret_transcript(transcript, interpret_complete, glossary)
+        out = []
+        for l in result.get("layers", []):
+            remedy = resolve_remedy_name(cx, l["remedy"])  # auto-correct + title-case ASR mangles
+            head = resolve_stress_name(cx, l["head"])      # capitalize/match stress names too
+            most_affected = resolve_stress_name(cx, l["most_affected"])
+            dosage, frequency, timing = l.get("dosage", ""), l.get("frequency", ""), l.get("timing", "")
+            if not (dosage and frequency and timing):  # ANY blank -> catalog fills THAT field
+                d = merge_dosing(dosage, frequency, timing, remedy_dosing(cx, remedy))
+                dosage, frequency, timing = d["dosage"], d["frequency"], d["timing"]
+            out.append({"layer": l.get("layer"), "head": head,
+                        "most_affected": most_affected, "remedy": remedy,
+                        "dosage": dosage, "frequency": frequency, "timing": timing})
+        return out, result
+
     @app.route("/author/<test_id>/interpret", methods=["POST"])
     def author_interpret(test_id):
         with sqlite3.connect(db_path) as cx:
-            transcript = get_notes(cx, test_id)
-            if not transcript.strip():
-                return {"added": 0, "error": "no transcript yet -- record a session first"}
-            glossary = ""
             try:
-                from dashboard.biofield_catalog_terms import (
-                    build_terms, glossary_text, GLOSSARY_CAP)
-                glossary = glossary_text(build_terms(cx, cap=GLOSSARY_CAP))
-            except Exception:
-                glossary = ""
-            try:
-                result = interpret_transcript(transcript, interpret_complete, glossary)
+                layers, result = _interpreted_layers(cx, test_id)
+            except LookupError as e:
+                return {"added": 0, "error": str(e)}
             except Exception as e:
                 return {"error": str(e)[:200]}
             added = 0
-            for l in result.get("layers", []):
-                remedy = resolve_remedy_name(cx, l["remedy"])  # auto-correct + title-case ASR mangles
-                head = resolve_stress_name(cx, l["head"])      # capitalize/match stress names too
-                most_affected = resolve_stress_name(cx, l["most_affected"])
-                dosage, frequency, timing = l.get("dosage", ""), l.get("frequency", ""), l.get("timing", "")
-                if not (dosage and frequency and timing):  # ANY blank -> catalog fills THAT field
-                    d = merge_dosing(dosage, frequency, timing, remedy_dosing(cx, remedy))
-                    dosage, frequency, timing = d["dosage"], d["frequency"], d["timing"]
-                add_chain_row(cx, test_id, l.get("layer"), head, most_affected,
-                              remedy, dosage, frequency, timing, confirmed=0)  # voice -> unconfirmed
+            for l in layers:
+                add_chain_row(cx, test_id, l["layer"], l["head"], l["most_affected"],
+                              l["remedy"], l["dosage"], l["frequency"], l["timing"],
+                              confirmed=0)  # voice -> unconfirmed
                 added += 1
             # Persist the scan's terrain reading (BSI 'phase P' + spoken location) on
             # the test. Per-field, so a re-interpret with no phase spoken won't wipe it.
@@ -2569,6 +2587,129 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                            location=result.get("location"))
         return {"added": added, "header": result.get("header", ""),
                 "phase": result.get("phase"), "location": result.get("location", "")}
+
+    @app.route("/author/<test_id>/program", methods=["POST"])
+    def author_program(test_id):
+        """One balancing program from all three stress sources, in Glen's order.
+
+        Glen, 2026-09-17: *"Priority sequence: 1. Spirit (transcript based layers,
+        stresses, and remedies) 2. Mind (history-based symptoms and conditions) - if
+        not already addressed by relevant remedies from step 1. 3. Body (scan
+        patterns) - if not already addressed by relevant remedies from 1 & 2."*
+
+        Two buttons, also his: `mode=full` suppresses a later stress only when a
+        placed remedy covers that exact stress, so the program is bigger.
+        `mode=minimum` also suppresses it when any of its functions is addressed, so
+        the program is smaller.
+
+        PROPOSES by default; writes only on {"apply": true}, the rule #1717 set.
+        """
+        from dashboard import biofield_stress as _st
+        from dashboard.biofield_program import build_program, token_of, FULL, MINIMUM
+        from dashboard.tissue_function import functions_for
+
+        body = request.get_json(silent=True) or {}
+        mode = (body.get("mode") or FULL).strip().lower()
+        if mode not in (FULL, MINIMUM):
+            return {"ok": False, "error": "mode must be 'full' or 'minimum'"}, 400
+
+        with sqlite3.connect(db_path) as cx:
+            rep = authored_report(cx, test_id)
+            chain = _chain_rows_for(rep)
+            existing = len(rep.get("layers") or [])
+            data = _st.list_stresses(cx, test_id, chain)
+            stresses, seen = [], set()
+            for bucket in ("active", "unassigned"):
+                for st in data.get(bucket) or []:
+                    key = (st.get("source"), st.get("code") or st.get("label"))
+                    if key in seen:
+                        continue
+                    seen.add(key)
+                    stresses.append(st)
+
+            coverage = {}
+            for remedy, code in cx.execute(
+                    "SELECT remedy, code FROM biofield_auth_remedy_coverage "
+                    "WHERE test_id=?", (int(str(test_id).lstrip("a") or 0),)).fetchall():
+                coverage.setdefault(remedy, set()).add(code)
+
+            # token -> label, so a suppression can be reported in his words and a
+            # token can be looked up as a tissue for the function test.
+            label_of = {token_of(st): (st.get("label") or "") for st in stresses}
+
+            def _functions_of(token):
+                # Same path as Balance All: the E4L item's own name is the tissue,
+                # falling back to the spoken or mined label.
+                tissue = _e4l_name(token) or label_of.get(token) or token
+                return functions_for(tissue)
+
+            # Spirit: the transcript's own layers, computed but NOT written.
+            spirit_meta, interpreted = {}, []
+            try:
+                interpreted, spirit_meta = _interpreted_layers(cx, test_id)
+            except LookupError:
+                interpreted = []       # no transcript: the program starts at Mind
+            except Exception as e:
+                return {"ok": False, "error": str(e)[:200]}, 400
+
+            seed = []
+            for l in interpreted:
+                toks = {token_of({"label": l["head"], "source": "voice"}),
+                        token_of({"label": l["most_affected"], "source": "voice"})}
+                toks |= coverage.get((l["remedy"] or "").strip().lower(), set())
+                seed.append({"remedy": l["remedy"],
+                             "covers": sorted(t for t in toks if t)})
+
+            prog = build_program(
+                stresses=stresses, spirit_layers=seed,
+                cover=lambda toks: _st.cover_tokens(toks, coverage),
+                functions_of=_functions_of, mode=mode)
+
+            if not body.get("apply"):
+                return {"ok": True, "proposed": True, "mode": mode,
+                        "existing_layers": existing,
+                        "transcript_layers": len(interpreted),
+                        "remedies": prog["remedies"],
+                        "stages": [{"stage": st["stage"],
+                                    "picks": [{"remedy": p["remedy"],
+                                               "covers": [label_of.get(c, c)
+                                                          for c in p.get("covers") or []]}
+                                              for p in st["picks"]],
+                                    "suppressed": st["suppressed"]}
+                                   for st in prog["stages"]]}
+
+            if existing and not body.get("force"):
+                return {"ok": False, "needs_confirm": True, "existing": existing,
+                        "error": f"This intake already has {existing} layer(s)."}
+
+            n, made = existing, 0
+            # The transcript's layers land exactly as the Interpret button writes
+            # them: unconfirmed, because he may still edit what he spoke.
+            for l in interpreted:
+                n += 1
+                add_chain_row(cx, test_id, n, l["head"], l["most_affected"],
+                              l["remedy"], l["dosage"], l["frequency"], l["timing"],
+                              confirmed=0, origin="program")
+                made += 1
+            if spirit_meta:
+                update_terrain(cx, test_id, phase=spirit_meta.get("phase"),
+                               location=spirit_meta.get("location"))
+            # Each stage's picks follow, mirroring _append_layers: the head is the
+            # root driver among the covered stresses, the tail keeps them all.
+            for st in prog["stages"]:
+                for p in st["picks"]:
+                    n += 1
+                    covers = [label_of.get(c, c) for c in p.get("covers") or []]
+                    head = next((c for c in covers
+                                 if c.strip().lower().endswith("driver")),
+                                covers[0] if covers else "")
+                    name = resolve_remedy_name(cx, p["remedy"])
+                    d = remedy_dosing(cx, name)
+                    add_chain_row(cx, test_id, n, head, ", ".join(covers)[:200], name,
+                                  d.get("dosage", ""), d.get("frequency", ""),
+                                  d.get("timing", ""), confirmed=1, origin="program")
+                    made += 1
+        return {"ok": True, "applied": True, "mode": mode, "layers_added": made}
 
     @app.route("/author/<test_id>/delete", methods=["POST"])
     def author_delete(test_id):

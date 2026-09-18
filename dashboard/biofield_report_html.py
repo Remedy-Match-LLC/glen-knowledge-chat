@@ -1071,6 +1071,35 @@ async function balanceAllApply(existing){
    +'still pick remedies afterwards.'))return;
  var j=await post('/author/__TID__/balance-all',{apply:true,force:true});
  if(j.ok){location.reload()}else{alert(j.error||'Could not add them.')}}
+async function program(mode){
+ var s=document.getElementById('progstat'),out=document.getElementById('progresult');
+ s.textContent=' building…';out.innerHTML='';
+ var j=await post('/author/__TID__/program',{mode:mode});
+ if(!j.ok){s.textContent=j.error||'Could not build it.';return}
+ var n=j.remedies.length;
+ s.textContent=' '+mode+': '+n+' remedy'+(n===1?'':'ies')+
+   (j.transcript_layers?', '+j.transcript_layers+' from the transcript':'');
+ var h='';
+ j.stages.forEach(function(st){
+  h+='<div style="margin-top:6px"><b>'+_esc(st.stage)+'</b><br>';
+  if(!st.picks.length&&!st.suppressed.length)h+='&nbsp;&nbsp;nothing here<br>';
+  st.picks.forEach(function(p){
+   h+='&nbsp;&nbsp;'+_esc(p.remedy)+' <span class=pill>'+
+      _esc((p.covers||[]).join(', '))+'</span><br>'});
+  st.suppressed.forEach(function(d){
+   h+='&nbsp;&nbsp;<span class=food>'+_esc(d.label)+' &mdash; already addressed by '+
+      _esc(d.by)+' ('+_esc(d.on)+')</span><br>'});
+  h+='</div>'});
+ if(j.existing_layers)h+='<div style="margin-top:8px">This intake already has '+
+   j.existing_layers+' layer(s); these would be added after them.</div>';
+ h+='<div class=btnrow style="margin-top:8px"><button class="btn" data-mode="'+
+    _esc(mode)+'" onclick="programApply(this.dataset.mode)">Add this '+_esc(mode)+
+    ' program</button></div>';
+ out.innerHTML=h}
+async function programApply(mode){
+ if(!confirm('Add this '+mode+' program to the causal chain?'))return;
+ var j=await post('/author/__TID__/program',{mode:mode,apply:true,force:true});
+ if(j.ok){location.reload()}else{alert(j.error||'Could not add it.')}}
 async function addClinicalItem(){
  var input=document.getElementById('clinicalNew'),label=(input&&input.value||'').trim();
  if(!label)return;
@@ -1899,7 +1928,16 @@ def render_clinical_checklist(items, layers=None, intake_priorities=None,
             "<div class=btnrow style='margin-top:10px'>"
             "<button class=btn onclick=balanceAll()>Balance All &rarr; propose layers</button>"
             "<span id=balstat class=food></span></div>"
-            "<div id=balresult class=food style='margin-top:6px'></div></section>")
+            "<div id=balresult class=food style='margin-top:6px'></div>"
+            # Glen, 2026-09-17: all three stress sources as one program, in his
+            # priority order -- Spirit, then Mind, then Body, each adding only what
+            # the earlier remedies have not addressed. Full suppresses on the exact
+            # stress; Minimum also suppresses on a shared function, so it is smaller.
+            "<div class=btnrow style='margin-top:10px'>"
+            "<button class=btn onclick=\"program('full')\">Full program</button>"
+            "<button class='btn ghost' onclick=\"program('minimum')\">Minimum program</button>"
+            "<span id=progstat class=food></span></div>"
+            "<div id=progresult class=food style='margin-top:6px'></div></section>")
 
 
 def render_clinical_proposals():
