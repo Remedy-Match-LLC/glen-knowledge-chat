@@ -6529,28 +6529,26 @@ def begin_match_chat():
 
 @app.route("/begin/match/voice-signal", methods=["POST"])
 def begin_match_voice_signal():
-    """Exploratory: log a voice-derived signal from the match page's mic dictation.
-    v1 stores the transcript + optional client metrics; acoustic tone analysis is Phase 2."""
-    data = request.get_json(silent=True) or {}
-    session_id = (request.cookies.get("amg_session") or (data.get("session_id") or "").strip())
-    email      = (data.get("email") or "").strip().lower()
-    transcript = (data.get("transcript") or "").strip()[:2000]
-    source     = (data.get("source") or "match-dictation").strip()[:40]
-    metrics    = data.get("metrics") or {}
-    try:
-        with _db_lock, db.connect(LOG_DB) as cx:
-            cx.execute("""CREATE TABLE IF NOT EXISTS voice_signals (
-                id INTEGER PRIMARY KEY AUTOINCREMENT, ts TEXT NOT NULL,
-                session_id TEXT, email TEXT, source TEXT,
-                transcript TEXT, metrics_json TEXT)""")
-            cx.execute("INSERT INTO voice_signals (ts, session_id, email, source, transcript, metrics_json) "
-                       "VALUES (?,?,?,?,?,?)",
-                       (datetime.now(timezone.utc).isoformat(), session_id, email, source,
-                        transcript, json.dumps(metrics)[:4000]))
-            cx.commit()
-        return jsonify({"ok": True})
-    except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 500
+    """Accepts and DISCARDS. Kept only so the existing page does not see a 404.
+
+    Glen approved removing this write, 2026-09-18. It stored a copy of whatever a client
+    dictated into the match chat box -- transcript, email, session id -- in a
+    `voice_signals` table. Three things were wrong with it at once:
+
+      NOBODY EVER READ IT. Grepped independently before removal: the whole repository
+      contained exactly two references, the CREATE and the INSERT below. No feature loses
+      anything, so the fix is to stop writing, not to secure it.
+
+      THE ROUTE HAD NO AUTH and took the email straight from the request body, so any
+      caller could insert transcripts under anybody's address.
+
+      THE CLIENT WAS NEVER TOLD. No disclosure anywhere on the page.
+
+    The route still returns ok so a cached page keeps working. The body is read and
+    dropped; nothing is stored. Delete the route once static/begin-match.html no longer
+    calls it.
+    """
+    return jsonify({"ok": True, "stored": False})
 
 
 # ── QuickBooks invoicing — write-layer diagnostics + test (console-key gated) ──
