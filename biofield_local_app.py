@@ -1019,7 +1019,11 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                 # minus anything forgotten. The picker counts the program list, so
                 # leaving it out here is what showed "No common remedies recorded yet"
                 # under a condition the dropdown had just offered as having several.
-                return remedies_for(cx, label, historical=stress_suggestions(cx, label))
+                # history_lookup lets a combined card carry the folded condition's
+                # history too: it is fetched per label, so a fold used to lose it.
+                return remedies_for(cx, label,
+                                    historical=stress_suggestions(cx, label),
+                                    history_lookup=lambda l: stress_suggestions(cx, l))
             clinical_checklist = build_clinical_checklist(
                 profile, rep.get("layers") or [], sdata,
                 remedy_lookup=clinical_remedies,

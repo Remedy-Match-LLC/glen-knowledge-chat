@@ -287,7 +287,7 @@ def program_remedies(label):
     return names
 
 
-def remedies_for(cx, label, historical=()):
+def remedies_for(cx, label, historical=(), history_lookup=None):
     """Every remedy offered against a condition, in one list.
 
     FileMaker history first (most-used leads), then anything added by hand, then
@@ -298,6 +298,12 @@ def remedies_for(cx, label, historical=()):
     The program list comes last because build() shows only the first 8 and Dry AMD
     alone supplies 9. An inherited default may fall off that end; a remedy the
     practitioner typed in must not, or `+ Remedy` looks like it did nothing.
+
+    A folded condition brings ALL THREE of its sets, not only the hand-added one.
+    Glen, 2026-09-18: *"When combining cards in Clinical summary, combine/add both
+    sets of remedies."* Its history needs `history_lookup`, because history is
+    fetched per label by the caller; without one the fold carries what it always
+    did, so every existing caller keeps working.
     """
     ensure_catalog_schema(cx)
     hidden = forgotten_remedies(cx, label)
@@ -321,11 +327,26 @@ def remedies_for(cx, label, historical=()):
     # A condition folded into this one brings its remembered remedies with it. They
     # were recorded against a name the practitioner has since declared to be the same
     # condition, so dropping them would lose real clinical work.
-    for absorbed in absorbed_by(cx, label):
+    folded = absorbed_by(cx, label)
+    for absorbed in folded:
         for name in custom_remedies(cx, absorbed):
             add(name)
+    # Its recorded history, when the caller can fetch history per label. Placed with
+    # the other recorded sets and above every program list, for the reason above.
+    if history_lookup:
+        for absorbed in folded:
+            for row in history_lookup(absorbed) or []:
+                if isinstance(row, dict):
+                    add(row.get("remedy"), row.get("count"))
+                else:
+                    add(row)
     for name in program_remedies(label):
         add(name)
+    # The folded condition's own program list last, so the surviving card's own
+    # inherited remedies still lead within that tier.
+    for absorbed in folded:
+        for name in program_remedies(absorbed):
+            add(name)
     return out
 
 
