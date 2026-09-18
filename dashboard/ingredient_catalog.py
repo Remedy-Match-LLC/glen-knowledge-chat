@@ -144,7 +144,8 @@ def init_ingredients_schema(cx: sqlite3.Connection) -> None:
 def search_ingredients(q="", limit=50, offset=0, db_path=None):
     with _connect(db_path) as cx:
         rows = cx.execute(
-            "SELECT * FROM ingredients WHERE name LIKE ? ORDER BY name LIMIT ? OFFSET ?",
+            "SELECT * FROM ingredients WHERE LOWER(name) LIKE LOWER(?) "
+            "ORDER BY name LIMIT ? OFFSET ?",
             (f"%{q}%", int(limit), int(offset)),
         ).fetchall()
     return [dict(r) for r in rows]
@@ -170,7 +171,8 @@ def list_sources_for_ingredient(ingredient_id, db_path=None):
 def list_suppliers(q="", limit=50, offset=0, db_path=None):
     with _connect(db_path) as cx:
         rows = cx.execute(
-            "SELECT * FROM suppliers WHERE company LIKE ? ORDER BY company LIMIT ? OFFSET ?",
+            "SELECT * FROM suppliers WHERE LOWER(company) LIKE LOWER(?) "
+            "ORDER BY company LIMIT ? OFFSET ?",
             (f"%{q}%", int(limit), int(offset)),
         ).fetchall()
     return [dict(r) for r in rows]

@@ -63,7 +63,8 @@ def init_formulations_schema(cx: sqlite3.Connection) -> None:
 def search_formulations(q="", limit=50, offset=0, db_path=None):
     with _connect(db_path) as cx:
         rows = cx.execute(
-            "SELECT * FROM formulations WHERE name LIKE ? ORDER BY name LIMIT ? OFFSET ?",
+            "SELECT * FROM formulations WHERE LOWER(name) LIKE LOWER(?) "
+            "ORDER BY name LIMIT ? OFFSET ?",
             (f"%{q}%", int(limit), int(offset)),
         ).fetchall()
     return [dict(r) for r in rows]
