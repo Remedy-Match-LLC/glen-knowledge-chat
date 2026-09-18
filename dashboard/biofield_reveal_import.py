@@ -64,7 +64,20 @@ def _run_synthesis(email, scan_id, e4l_db, catalog, today):
 
 
 def synthesize_reveal_layers(email, scan_id=None, *, e4l_db=DEFAULT_E4L_DB,
-                             catalog=DEFAULT_CATALOG, today, runner=None):
+                             catalog=DEFAULT_CATALOG, today, runner=None,
+                             is_animal=False):
+    """`is_animal` swaps the imported REMEDY only, never the layering.
+
+    Glen, 2026-09-18: for an animal, "Import Reveal -> Causal Chain should pull in the
+    recommended Infoceuticals, rather than FF's", using "the names you are currently
+    using: they name functions", and "you don't need to change the layering calculations".
+
+    So the FF-only synthesis and the layer ordering run exactly as before. For an animal,
+    each layer's remedy becomes the function it already names -- its primary pattern label,
+    which is the E4L infoceutical -- and the FF alternatives are dropped, because an animal
+    report recommends only infoceuticals (the same rule the publish gate enforces in
+    dashboard/analysis_autoconfirm.animal_formulation_reasons). A human is unchanged.
+    """
     runner = runner or _run_synthesis
     scan, raw = runner(email, scan_id, e4l_db, catalog, today)
     if not scan or not raw:
@@ -75,13 +88,21 @@ def synthesize_reveal_layers(email, scan_id=None, *, e4l_db=DEFAULT_E4L_DB,
     for L in raw:
         rem = L.get("remedy") or {}
         name = (rem.get("name") or "").strip() if isinstance(rem, dict) else ""
+        labels = [x for x in (L.get("pattern_labels") or []) if (x or "").strip()]
+        if is_animal:
+            # The recommended infoceutical is the function this layer already names.
+            remedy_name = labels[0] if labels else name
+            alternatives = []                 # no FF alternatives for an animal
+        else:
+            remedy_name = name
+            alternatives = L.get("alternatives") or []
         layers.append({"n": L.get("n"),
                        "title": (L.get("title") or "").strip(),
                        "summary": (L.get("summary") or "").strip(),
-                       "most_affected": ", ".join(L.get("pattern_labels") or []),
-                       "remedy_name": name,
+                       "most_affected": ", ".join(labels),
+                       "remedy_name": remedy_name,
                        "codes": list(L.get("patterns") or []),
-                       "alternatives": L.get("alternatives") or []})
+                       "alternatives": alternatives})
     return {"found": True, "scan_id": scan["scan_id"], "scan_date": scan["scan_date"],
             "days_ago": days, "fresh": days is not None and days < 7, "layers": layers}
 
