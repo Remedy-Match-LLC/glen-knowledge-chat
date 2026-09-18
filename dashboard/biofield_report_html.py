@@ -1954,7 +1954,8 @@ def render_clinical_proposals():
 
 def render_author_html(report, depth_values=None, transcript="", covered_by_layer=None,
                        narrative="", fee_state=None, transcript_updated="",
-                       clinical_checklist=None, dispensed=None, intake_priorities=None,
+                       clinical_checklist=None, dispensed=None, dispensed_error=None,
+                       intake_priorities=None,
                        profile_unavailable=False, alias_map=None, display_map=None):
     tid = _e(report.get("test_id") or "")
     c = report.get("client") or {}
@@ -2051,7 +2052,8 @@ def render_author_html(report, depth_values=None, transcript="", covered_by_laye
     fee_html = render_fee_panel(fee_state) if fee_state else ""
     # Reference panel, collapsed. None means the caller did not look it up;
     # an empty list means this client genuinely has no order history.
-    dispensed_html = "" if dispensed is None else render_dispensed_panel(dispensed)
+    dispensed_html = ("" if dispensed is None else
+                      render_dispensed_panel(dispensed, error=dispensed_error))
     return _page("Edit Biofield Test",
                  head + editor_header + fee_html + "<div id=e4lpanel></div>"
                  + dispensed_html
@@ -2131,7 +2133,7 @@ def _bottles_label(row):
     return f"{n} bottle{'' if n == 1 else 's'}"
 
 
-def render_dispensed_panel(rows, open_=False):
+def render_dispensed_panel(rows, open_=False, error=None):
     """What this client has been dispensed before, most often first.
 
     Collapsed by default: it is a reference, not the work. The raw count sits
@@ -2146,7 +2148,15 @@ def render_dispensed_panel(rows, open_=False):
     n = rows[0]["orders_considered"] if rows else 0
     head = ("<button class='btn ghost' onclick=toggleDispensed() id=dispbtn>"
             + ("Hide" if open_ else "Show") + " previously dispensed</button>")
-    if not rows:
+    if error:
+        # An empty panel used to say "no order history" whether the client had none or
+        # the lookup had failed. Those are opposite facts and it stated the reassuring
+        # one. Say which it is, and say what to do about it.
+        body = ("<div class=food style='margin-top:8px'>"
+                "<b>History unavailable.</b> " + _e(str(error)) +
+                "<br><span style='opacity:.75'>This is not a client with no purchases. "
+                "The panel could not read the order history at all.</span></div>")
+    elif not rows:
         body = ("<div class=food style='margin-top:8px'>No order history for this client yet.</div>")
     else:
         items = ""
