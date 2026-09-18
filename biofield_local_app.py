@@ -1484,8 +1484,21 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
             email = ((rep.get("client") or {}).get("email") or "").strip()
             if not email:
                 return {"ok": False, "reason": "No client selected yet"}
+            # An animal's causal chain recommends the E4L infoceuticals (function names),
+            # not our Functional Formulations. Glen, 2026-09-18. is_animal is species !=
+            # human, from the E4L species sync; unknown species reads as human, so a
+            # missing row leaves the FF path exactly as before.
+            from dashboard import client_species as _cspec
             try:
-                res = _ri.synthesize_reveal_layers(email, today=_dt.date.today().isoformat())
+                _sp = (_cspec.get(cx, email) or {}).get("species")
+                _is_animal = _cspec.is_animal(_sp)
+            except Exception:
+                # No species table or row: read as human, i.e. the FF path unchanged.
+                # Defaulting to animal would wrongly strip FFs from every human import.
+                _is_animal = False
+            try:
+                res = _ri.synthesize_reveal_layers(
+                    email, today=_dt.date.today().isoformat(), is_animal=_is_animal)
             except Exception as e:
                 return {"ok": False, "reason": f"Reveal synthesis failed: {e}"}
             if not res.get("found"):
