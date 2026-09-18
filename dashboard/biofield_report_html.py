@@ -1066,6 +1066,11 @@ async function balanceAll(){
     '<button class="btn" onclick="balanceAllApply('+(j.existing_layers||0)+')">'+
     'Add these '+j.layers.length+' layers</button></div>';
  out.innerHTML=h}
+async function balanceAllApply(existing){
+ if(!confirm('Add these layers to the causal chain? Nothing is balanced yet — you '
+   +'still pick remedies afterwards.'))return;
+ var j=await post('/author/__TID__/balance-all',{apply:true,force:true});
+ if(j.ok){location.reload()}else{alert(j.error||'Could not add them.')}}
 async function program(mode){
  var s=document.getElementById('progstat'),out=document.getElementById('progresult');
  s.textContent=' building…';out.innerHTML='';
@@ -1095,11 +1100,6 @@ async function programApply(mode){
  if(!confirm('Add this '+mode+' program to the causal chain?'))return;
  var j=await post('/author/__TID__/program',{mode:mode,apply:true,force:true});
  if(j.ok){location.reload()}else{alert(j.error||'Could not add it.')}}
-async function balanceAllApply(existing){
- if(!confirm('Add these layers to the causal chain? Nothing is balanced yet — you '
-   +'still pick remedies afterwards.'))return;
- var j=await post('/author/__TID__/balance-all',{apply:true,force:true});
- if(j.ok){location.reload()}else{alert(j.error||'Could not add them.')}}
 async function addClinicalItem(){
  var input=document.getElementById('clinicalNew'),label=(input&&input.value||'').trim();
  if(!label)return;

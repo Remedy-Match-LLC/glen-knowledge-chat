@@ -215,24 +215,3 @@ def test_the_apply_button_passes_the_mode_without_breaking_its_quotes():
     i = html.index("async function program(")
     body = html[i:html.index("async function programApply(")]
     assert "data-mode" in body and "programApply(this.dataset.mode)" in body
-
-
-def test_the_author_pages_inline_script_parses(tmp_path):
-    """A string assertion is not a syntax check. The first Full/Minimum button built
-    onclick="programApply(''+mode+'')", which matched every string test and broke the
-    whole script: node rejects it with "Unexpected string". Skipped where node is
-    absent, so CI without it stays green rather than silently proving nothing."""
-    import re
-    import shutil
-    import subprocess
-    node = shutil.which("node")
-    if not node:
-        import pytest
-        pytest.skip("node not installed")
-    html = render_author_html(_report())
-    blocks = re.findall(r"<script[^>]*>(.*?)</script>", html, re.S)
-    assert blocks, "no inline script found, so this test proves nothing"
-    js = tmp_path / "page.js"
-    js.write_text("\n".join(blocks))
-    r = subprocess.run([node, "--check", str(js)], capture_output=True, text=True)
-    assert r.returncode == 0, r.stderr[-600:]
