@@ -159,3 +159,26 @@ def test_any_shared_function_is_enough_to_suppress():
         mode=MINIMUM)
     assert prog["stages"][2]["picks"] == []
     assert prog["stages"][2]["suppressed"][0]["on"] == "signalling"
+
+
+# ── the cover call the route injects ──────────────────────────────────────────────
+from dashboard.biofield_stress import cover_tokens
+
+
+def test_cover_tokens_returns_the_tokens_it_covers_not_labels():
+    """build_program matches on tokens, so the cover must report tokens. Reporting
+    labels would silently suppress nothing."""
+    coverage = {"neuro magnesium": {"ED1", "ES3"}, "heart health": {"ED6"}}
+    picks = cover_tokens({"ED1", "ES3", "ED6"}, coverage)
+    got = {p["remedy"]: set(p["covers"]) for p in picks}
+    assert got == {"neuro magnesium": {"ED1", "ES3"}, "heart health": {"ED6"}}
+
+
+def test_cover_tokens_reports_only_the_tokens_asked_for():
+    coverage = {"neuro magnesium": {"ED1", "ES3", "MR2"}}
+    picks = cover_tokens({"ED1"}, coverage)
+    assert [set(p["covers"]) for p in picks] == [{"ED1"}]
+
+
+def test_cover_tokens_on_nothing_is_nothing():
+    assert cover_tokens(set(), {"x": {"ED1"}}) == []

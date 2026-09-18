@@ -188,3 +188,51 @@ def test_list_html_shows_authored_and_new_button():
     assert "Jane Doe" in html and "/author/a1" in html       # authored test -> editor
     assert "/author/new" in html                             # New test action
     assert "Lewis" in html                                   # FMP tests still listed
+
+
+def test_author_page_offers_both_program_buttons():
+    """Glen, 2026-09-17: "2 buttons: full (narrow, bigger program) - vs minimum
+    (wide, minimal program)"."""
+    html = render_author_html(_report())
+    assert "Full program" in html and "Minimum program" in html
+    assert "program('full')" in html and "program('minimum')" in html
+    # both go to the one route, which decides on mode
+    assert "/program" in html
+
+
+def test_the_program_buttons_do_not_apply_on_the_first_click():
+    html = render_author_html(_report())
+    i = html.index("async function program(")
+    body = html[i:i + 700]
+    assert "apply" not in body, "the first click must only propose"
+
+
+def test_the_apply_button_passes_the_mode_without_breaking_its_quotes():
+    """The first version built onclick="programApply(''+mode+'')", which closes the
+    JS string and never passes the mode."""
+    html = render_author_html(_report())
+    assert "programApply(''" not in html
+    i = html.index("async function program(")
+    body = html[i:html.index("async function programApply(")]
+    assert "data-mode" in body and "programApply(this.dataset.mode)" in body
+
+
+def test_the_author_pages_inline_script_parses(tmp_path):
+    """A string assertion is not a syntax check. The first Full/Minimum button built
+    onclick="programApply(''+mode+'')", which matched every string test and broke the
+    whole script: node rejects it with "Unexpected string". Skipped where node is
+    absent, so CI without it stays green rather than silently proving nothing."""
+    import re
+    import shutil
+    import subprocess
+    node = shutil.which("node")
+    if not node:
+        import pytest
+        pytest.skip("node not installed")
+    html = render_author_html(_report())
+    blocks = re.findall(r"<script[^>]*>(.*?)</script>", html, re.S)
+    assert blocks, "no inline script found, so this test proves nothing"
+    js = tmp_path / "page.js"
+    js.write_text("\n".join(blocks))
+    r = subprocess.run([node, "--check", str(js)], capture_output=True, text=True)
+    assert r.returncode == 0, r.stderr[-600:]
