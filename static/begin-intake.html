@@ -186,10 +186,12 @@ $("#optin-btn").addEventListener("click", async ()=>{
       body:JSON.stringify({name,email,tos_agreed:true,company})}); d=await r.json().catch(()=>({})); }
   catch(e){ d={}; }
   if(d.existing){
-    // The email already has a completed intake. It is never re-opened here; a secure
-    // link to continue has been emailed to the owner. Saying so beats "went wrong", and
-    // it discloses nothing to a stranger who guessed the address.
-    err.textContent="You've already completed an intake. We've emailed you a secure link to review or update it.";
+    // The email already has an intake, submitted or a returning draft. It is never
+    // re-opened here; a secure link is emailed to the owner, who continues in the
+    // authenticated portal. This discloses nothing to a stranger who guessed the address.
+    err.textContent = (d.status === "submitted")
+      ? "You've already completed an intake. We've emailed you a secure link to review or update it."
+      : "You've already started an intake. We've emailed you a secure link to sign in and continue it.";
     err.hidden=false; $("#optin-btn").disabled=false; return;
   }
   if(!d.token){ err.textContent="Something went wrong. Please try again."; err.hidden=false; $("#optin-btn").disabled=false; return; }
