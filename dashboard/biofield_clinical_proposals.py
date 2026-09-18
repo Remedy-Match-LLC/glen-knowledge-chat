@@ -149,6 +149,34 @@ def selections(cx, test_id):
     return out
 
 
+def selected_items(cx, test_id):
+    """[{"label", "remedies"}] for every CHECKED Clinical Summary factor on this test.
+
+    Glen, 2026-09-18: "Mind stage is the checked Clinical summary factors and their
+    checked remedies." build_program needs the LABEL, which `selections()` drops because
+    it keys by item_key for the page's own use.
+
+    IT DOES NOT FILTER OUT A FACTOR WITH NO REMEDIES, and that is the point. selections()
+    requires `remedies IS NOT NULL` for its own purpose; here a checked condition with
+    nothing against it is the thing Glen most needs to see, so it comes back with an
+    empty list and the program reports it as uncovered.
+    """
+    ensure_schema(cx)
+    out = []
+    for label, raw in cx.execute(
+        "SELECT label,remedies FROM biofield_clinical_selection "
+        "WHERE test_id=? ORDER BY rowid",
+        (str(test_id),),
+    ).fetchall():
+        try:
+            names = json.loads(raw or "[]")
+        except ValueError:
+            names = []
+        out.append({"label": str(label or "").strip(),
+                    "remedies": [str(n) for n in names if str(n or "").strip()]})
+    return [i for i in out if i["label"]]
+
+
 def save_pattern(cx, test_id, label, pattern):
     """The stress pattern typed for one item on this test (not yet the standing term)."""
     ensure_schema(cx)
