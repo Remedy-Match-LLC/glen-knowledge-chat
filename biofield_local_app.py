@@ -2389,7 +2389,10 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
         """
         from dashboard import biofield_stress as _st
         from dashboard.layer_grouping import group_findings
-        from dashboard.terrain_phase import phases_for
+        # phases_for lives in finding_phase, not terrain_phase: the finding map moved
+        # there on 2026-09-17 when terrain_phase was restored. This line named the old
+        # module and raised ImportError on every call, so Balance All never once ran.
+        from dashboard.finding_phase import phases_for
         from dashboard.tissue_function import functions_for
 
         body = request.get_json(silent=True) or {}
