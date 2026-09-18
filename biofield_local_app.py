@@ -2315,6 +2315,66 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
         return {"ok": True, "added": added, "checked": checked,
                 "no_pattern": no_pattern}
 
+    @app.route("/author/<test_id>/clinical-items/layers", methods=["POST"])
+    def author_clinical_items_layers(test_id):
+        """Layers from the Clinical Summary alone. Glen, 2026-09-18.
+
+        *"Add a button to create layers from the Clinical Summary checked patterns
+        and remedies only. (Full and minimum still pull in the e4l layers as well)"*
+
+        Deliberately narrower than the program buttons: it never reads a scan finding.
+        One layer per checked item's stress PATTERN, carrying that item's chosen
+        remedies. PROPOSES by default; writes only on {"apply": true}, the rule #1717
+        set for the causal chain.
+
+        The checklist is rebuilt here rather than taken from the browser, for the
+        reason the to-stresses route gives: a stale tab would otherwise add a tick
+        that is no longer saved.
+        """
+        from dashboard.biofield_clinical_checklist import (
+            build as build_clinical_checklist, clinical_layers, stress_pattern)
+        from dashboard.biofield_clinical_proposals import (
+            apply_order, apply_selection, dismissed_labels, item_key)
+
+        body = request.get_json(silent=True) or {}
+        with sqlite3.connect(db_path) as cx:
+            rep = authored_report(cx, test_id)
+            c_email = ((rep.get("client") or {}).get("email") or "").strip()
+            profile = fetch_profile(c_email) if c_email else {}
+            items = build_clinical_checklist(
+                profile or {}, rep.get("layers") or [], None,
+                stress_lookup=lambda label: stress_pattern(cx, label), cx=cx)
+            hidden = {item_key(l) for l in dismissed_labels(cx, test_id)}
+            items = [i for i in items if item_key(i.get("label")) not in hidden]
+            items = apply_selection(cx, test_id, apply_order(cx, test_id, items))
+            layers = clinical_layers(items)
+            existing = len(rep.get("layers") or [])
+            checked = sum(1 for i in items if i.get("checked"))
+            no_pattern = [i.get("label") for i in items
+                          if i.get("checked") and not (i.get("stress_pattern") or "").strip()]
+
+            if not body.get("apply"):
+                return {"ok": True, "proposed": True, "checked": checked,
+                        "existing_layers": existing, "no_pattern": no_pattern,
+                        "layers": [{"pattern": L["pattern"], "remedies": L["remedies"],
+                                    "label": L["label"]} for L in layers]}
+            if existing and not body.get("force"):
+                return {"ok": False, "needs_confirm": True, "existing": existing,
+                        "error": f"This intake already has {existing} layer(s)."}
+
+            n, made = existing, 0
+            for L in layers:
+                n += 1
+                remedies = L["remedies"] or [""]
+                for remedy in remedies:
+                    name = resolve_remedy_name(cx, remedy) if remedy else ""
+                    d = remedy_dosing(cx, name) if name else {}
+                    add_chain_row(cx, test_id, n, L["pattern"], L["label"] or L["pattern"],
+                                  name, d.get("dosage", ""), d.get("frequency", ""),
+                                  d.get("timing", ""), confirmed=0, origin="clinical")
+                    made += 1
+        return {"ok": True, "applied": True, "layers_added": made}
+
     @app.route("/author/<test_id>/clinical-items/combine", methods=["POST"])
     def author_clinical_items_combine(test_id):
         """Declare two conditions to be one. Glen, 2026-09-16.
