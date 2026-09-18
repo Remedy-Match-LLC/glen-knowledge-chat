@@ -90,3 +90,38 @@ def test_the_button_proposes_rather_than_applies():
     propose = _AUTHOR_JS[_AUTHOR_JS.index("async function balanceAll("):]
     propose = propose[:propose.index("async function balanceAllApply(")]
     assert "apply:true" not in propose.replace(" ", "")
+
+
+# ── The route itself, not just the grouping ──────────────────────────────────────
+# Glen, 2026-09-18: "Balance All -> propose layers hangs with the message grouping...".
+# It was not hanging. It was returning 500 on every call since it shipped, and the page
+# has no handler for a 500 so the status text never moves. The cause:
+#
+#   ImportError: cannot import name 'phases_for' from 'dashboard.terrain_phase'
+#
+# phases_for lives in dashboard/finding_phase.py, which was on the unmerged #1713. The
+# nine tests in this file all exercise group_findings directly, so not one of them ever
+# called the route, and a dormant path shipped unproven. This test calls it.
+
+def test_the_balance_all_route_answers(tmp_path, monkeypatch):
+    import sqlite3
+    monkeypatch.delenv("CONSOLE_SECRET", raising=False)
+    import dashboard
+    monkeypatch.setattr(dashboard, "CONSOLE_SECRET", "", raising=False)
+    from biofield_local_app import create_app
+    from dashboard.biofield_authoring import create_test, init_auth_tables
+    from dashboard.biofield_stress import add_stress, init_stress_tables
+
+    db = str(tmp_path / "chat_log.db")
+    with sqlite3.connect(db) as cx:
+        init_auth_tables(cx)
+        tid = create_test(cx, "Sharon", "s@example.com", "2026-09-18")
+        init_stress_tables(cx)
+        add_stress(cx, tid, "Kidney Driver", source="scan", balance="required")
+    client = create_app(db, fetch_profile=lambda email: {},
+                        fetch_recent_comms=lambda email: {}).test_client()
+
+    r = client.post(f"/author/{tid}/balance-all", json={})
+    assert r.status_code == 200, r.data[:300]
+    j = r.get_json()
+    assert j["ok"] is True and j["proposed"] is True
