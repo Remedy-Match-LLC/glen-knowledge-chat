@@ -2670,10 +2670,23 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                 seed.append({"remedy": l["remedy"],
                              "covers": sorted(t for t in toks if t)})
 
+            # MIND comes from the Clinical Summary, not the stress list. Glen,
+            # 2026-09-18: "Mind stage is the checked Clinical summary factors and their
+            # checked remedies." Note the KEY: the selection table uses the raw test_id
+            # ('a37') while the stress table uses the number ('37'). They disagree, and
+            # stripping the 'a' here would silently return nothing.
+            try:
+                from dashboard import biofield_clinical_proposals as _cp
+                mind_items = _cp.selected_items(cx, test_id)
+            except Exception as _me:
+                print(f"[program] clinical selections skipped: {_me!r}", flush=True)
+                mind_items = []
+
             prog = build_program(
                 stresses=stresses, spirit_layers=seed,
                 cover=lambda toks: _st.cover_tokens(toks, coverage),
-                functions_of=_functions_of, mode=mode)
+                functions_of=_functions_of, mode=mode, mind_items=mind_items,
+                covers_of=lambda r: coverage.get((r or '').strip().lower(), set()))
 
             if not body.get("apply"):
                 return {"ok": True, "proposed": True, "mode": mode,
@@ -2685,7 +2698,8 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                                                "covers": [label_of.get(c, c)
                                                           for c in p.get("covers") or []]}
                                               for p in st["picks"]],
-                                    "suppressed": st["suppressed"]}
+                                    "suppressed": st["suppressed"],
+                                    "uncovered": st.get("uncovered") or []}
                                    for st in prog["stages"]]}
 
             if existing and not body.get("force"):

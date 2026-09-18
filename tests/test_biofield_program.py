@@ -114,11 +114,23 @@ def test_a_stress_already_on_the_chain_is_not_a_finding():
     assert prog["remedies"] == []
 
 
-def test_glens_own_manual_stresses_ride_with_mind():
+def test_glens_own_manual_stresses_ride_with_spirit():
+    """CORRECTED 2026-09-18. This test was named ..._ride_with_mind and asserted stage 1.
+
+    Glen: "The manual biofield stress responses and balancing remedies in remote biofield
+    analysis come from coherent communication between the spirit of the tester as
+    surrogate and the spirit of the client, based on meaning associated with Gold."
+
+    A manual biofield response is a surrogate reading, not the practitioner's opinion, so
+    it is Spirit. Mind is symptoms and diagnoses -- Iridium, visual -- which is the
+    Clinical Summary plus what is mined from tags and communications.
+    """
     prog = build_program(
         stresses=[_s("Worthiness", "manual")],
         spirit_layers=[], cover=_one_remedy_each, mode=FULL)
-    assert [p["remedy"] for p in prog["stages"][1]["picks"]] == ["R-worthiness"]
+    stages = {s["stage"]: s for s in prog["stages"]}
+    assert [p["remedy"] for p in stages["spirit"]["picks"]] == ["R-worthiness"]
+    assert not stages["mind"]["picks"], "a manual response is not a Mind finding"
 
 
 def test_an_optional_stress_is_not_balanced():
