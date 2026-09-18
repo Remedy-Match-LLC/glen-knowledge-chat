@@ -19494,7 +19494,8 @@ def api_ask():
     """Ask & Guide — answer a systems question grounded in the Pinecone 'systems' namespace."""
     import dashboard as _dashboard
     key = _present_console_key()
-    if _dashboard.CONSOLE_SECRET and key != _dashboard.CONSOLE_SECRET:
+    if (_dashboard.CONSOLE_SECRET and key != _dashboard.CONSOLE_SECRET
+            and not _owner_token_ok(key)):
         return jsonify({"ok": False, "error": "unauthorized"}), 401
     q = ((request.get_json(silent=True) or {}).get("question") or "").strip()
     if not q:
@@ -19529,7 +19530,8 @@ def api_guide():
     import dashboard as _dashboard
     from dashboard import projects as _projects
     key = _present_console_key()
-    if _dashboard.CONSOLE_SECRET and key != _dashboard.CONSOLE_SECRET:
+    if (_dashboard.CONSOLE_SECRET and key != _dashboard.CONSOLE_SECRET
+            and not _owner_token_ok(key)):
         return jsonify({"ok": False, "error": "unauthorized"}), 401
     data = request.get_json(silent=True) or {}
     text = (data.get("text") or "").strip()
@@ -19557,6 +19559,17 @@ def console_biofield_intake():
     if _dashboard.CONSOLE_SECRET:
         _key = _present_console_key()
         if _key != _dashboard.CONSOLE_SECRET:
+            # An OWNER token is a real console credential, so this must not be a key
+            # prompt. It must also not be a redirect: local_tool_url puts the MASTER
+            # secret in the URL, and the owner token exists precisely so it can be
+            # revoked without ever escalating to that secret. So: say what this tab is.
+            if _owner_token_ok(_key):
+                return jsonify({
+                    "error": "local_tool", "tool": "Biofield Intake",
+                    "detail": ("This tab launches a tool running on Glen's own Mac, "
+                               "so it only works from that machine. Nothing is wrong "
+                               "with your sign-in."),
+                }), 409
             return jsonify({"error": "Unauthorized"}), 401
     from dashboard.console_launcher import local_tool_url
     # Hand over the key THIS SERVER holds, not the one the browser sent. op-nav.js
@@ -19576,6 +19589,17 @@ def console_clinical_tags():
     if _dashboard.CONSOLE_SECRET:
         _key = _present_console_key()
         if _key != _dashboard.CONSOLE_SECRET:
+            # An OWNER token is a real console credential, so this must not be a key
+            # prompt. It must also not be a redirect: local_tool_url puts the MASTER
+            # secret in the URL, and the owner token exists precisely so it can be
+            # revoked without ever escalating to that secret. So: say what this tab is.
+            if _owner_token_ok(_key):
+                return jsonify({
+                    "error": "local_tool", "tool": "Clinical Tags",
+                    "detail": ("This tab launches a tool running on Glen's own Mac, "
+                               "so it only works from that machine. Nothing is wrong "
+                               "with your sign-in."),
+                }), 409
             return jsonify({"error": "Unauthorized"}), 401
     from dashboard.console_launcher import local_tool_url
     return redirect(local_tool_url("BIOFIELD_LOCAL_URL", "http://127.0.0.1:8011",
@@ -19589,7 +19613,7 @@ def _sales_console_ok():
     import dashboard as _dashboard
     if _dashboard.CONSOLE_SECRET:
         _key = _present_console_key()
-        if _key != _dashboard.CONSOLE_SECRET:
+        if _key != _dashboard.CONSOLE_SECRET and not _owner_token_ok(_key):
             return jsonify({"error": "Unauthorized"}), 401
     return None
 
