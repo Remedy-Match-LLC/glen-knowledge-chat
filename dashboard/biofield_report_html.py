@@ -1048,6 +1048,29 @@ async function clinicalToStresses(){
  if(j.no_pattern&&j.no_pattern.length)bits.push(j.no_pattern.length+' have no stress pattern yet: '+j.no_pattern.join(', '));
  s.textContent=' '+bits.join(' · ');
  loadStress()}
+async function balanceAll(){
+ var s=document.getElementById('balstat'),out=document.getElementById('balresult');
+ s.textContent=' grouping…';out.innerHTML='';
+ var j=await post('/author/__TID__/balance-all',{});
+ if(!j.ok){s.textContent=j.error||'Could not group them.';return}
+ s.textContent=' '+j.layers.length+' layers from '+j.stresses+' stresses';
+ var h='';
+ j.layers.forEach(function(L,i){
+  h+='<div style="margin-top:6px"><b>Layer '+(i+1)+'</b> &mdash; '+_esc(L.why)+'<br>';
+  h+=L.members.map(function(m){return '&nbsp;&nbsp;'+_esc(m.name)+
+     (m.source&&m.source!=='scan'?' <span class=pill>'+_esc(m.source)+'</span>':'')}).join('<br>');
+  h+='</div>'});
+ if(j.existing_layers)h+='<div style="margin-top:8px">This intake already has '+
+   j.existing_layers+' layer(s); these would be added after them.</div>';
+ h+='<div class=btnrow style="margin-top:8px">'+
+    '<button class="btn" onclick="balanceAllApply('+(j.existing_layers||0)+')">'+
+    'Add these '+j.layers.length+' layers</button></div>';
+ out.innerHTML=h}
+async function balanceAllApply(existing){
+ if(!confirm('Add these layers to the causal chain? Nothing is balanced yet — you '
+   +'still pick remedies afterwards.'))return;
+ var j=await post('/author/__TID__/balance-all',{apply:true,force:true});
+ if(j.ok){location.reload()}else{alert(j.error||'Could not add them.')}}
 async function addClinicalItem(){
  var input=document.getElementById('clinicalNew'),label=(input&&input.value||'').trim();
  if(!label)return;
@@ -1869,7 +1892,14 @@ def render_clinical_checklist(items, layers=None, intake_priorities=None,
             "<div class=btnrow style='margin-top:10px'>"
             "<button class=btn onclick=clinicalToStresses()>"
             "Add checked patterns &rarr; Stresses</button>"
-            "<span id=clin2stat class=food></span></div></section>")
+            "<span id=clin2stat class=food></span></div>"
+            # Glen, 2026-09-16: one sequence balancing the clinical and the scan
+            # factors together, grouped by what each tissue does rather than where it
+            # sits. It PROPOSES; nothing is written until he reads it and confirms.
+            "<div class=btnrow style='margin-top:10px'>"
+            "<button class=btn onclick=balanceAll()>Balance All &rarr; propose layers</button>"
+            "<span id=balstat class=food></span></div>"
+            "<div id=balresult class=food style='margin-top:6px'></div></section>")
 
 
 def render_clinical_proposals():
