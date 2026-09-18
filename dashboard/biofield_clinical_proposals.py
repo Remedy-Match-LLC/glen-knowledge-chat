@@ -224,6 +224,13 @@ def apply_selection(cx, test_id, items):
         chosen = saved[key]
         item["selection_saved"] = True
         item["selected_remedies"] = chosen
+        # Glen, 2026-09-18: "a saved tick should mean checked". Until this, `checked`
+        # came only from build(), where it means "a remedy already on the causal chain
+        # covers this". On an intake whose chain is still empty every item read
+        # unchecked however many he had ticked, so "Add checked patterns" reported
+        # checked: 0 and added nothing. An emptied selection unchecks, the same rule
+        # the remedies follow, or unticking would silently re-tick on the next reload.
+        item["checked"] = bool(chosen)
         known = {str(name).strip().lower() for name in item.get("common_remedies") or []}
         # A tick must stay visible even if the remedy fell off the common list.
         item["common_remedies"] = list(item.get("common_remedies") or []) + [

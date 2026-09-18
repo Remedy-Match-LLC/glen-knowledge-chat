@@ -308,3 +308,153 @@ def test_a_suggested_term_is_marked_and_a_recorded_one_is_not(tmp_path, monkeypa
     assert 'value="Circadian Entrainment"' in page
     # The badge is gone; only its (always-present) stylesheet rule remains.
     assert "<span class=clinical-stress-hint>suggested</span>" not in page
+
+
+# ── A saved tick means checked ───────────────────────────────────────────────────
+# Glen, 2026-09-18: "Add checked patterns -> Stresses doesn't seem to do anything."
+# It did nothing because `checked` came only from build(): true when a remedy already
+# on the causal chain covers the condition. Sharon Connour's chain was empty, so every
+# item read unchecked however many he ticked, and the route reported checked: 0.
+# His ruling: "a saved tick should mean checked".
+
+def test_a_saved_tick_means_checked(tmp_path):
+    with sqlite3.connect(tmp_path / "x.db") as cx:
+        save_selection(cx, "a1", "Fatigue", ["Adrenal Restore"])
+        rows = apply_selection(cx, "a1", [{"label": "Fatigue", "covered_by": "",
+                                           "checked": False, "common_remedies": []}])
+        assert rows[0]["checked"] is True
+
+
+def test_clearing_every_tick_unchecks_it(tmp_path):
+    """A deliberately emptied selection wins outright, the rule apply_selection
+    already applies to the remedies. Otherwise unticking would silently re-tick."""
+    with sqlite3.connect(tmp_path / "x.db") as cx:
+        save_selection(cx, "a1", "Migraine", ["Neuroprotect"])
+        save_selection(cx, "a1", "Migraine", [])
+        rows = apply_selection(cx, "a1", [{"label": "Migraine", "covered_by": "Neuroprotect",
+                                           "checked": True, "common_remedies": []}])
+        assert rows[0]["checked"] is False
+
+
+def test_an_untouched_item_still_derives_checked_from_the_chain(tmp_path):
+    with sqlite3.connect(tmp_path / "x.db") as cx:
+        rows = apply_selection(cx, "a1", [{"label": "Migraine", "covered_by": "Neuroprotect",
+                                           "checked": True, "common_remedies": []}])
+        assert rows[0]["checked"] is True
+        assert "selection_saved" not in rows[0]
+
+
+# ── Layers from the Clinical Summary alone ───────────────────────────────────────
+# Glen, 2026-09-18: "Add a button to create layers from the Clinical Summary checked
+# patterns and remedies only. (Full and minimum still pull in the e4l layers as well)"
+# So this one is deliberately narrower than the program buttons: no scan findings.
+
+def test_each_checked_item_becomes_one_layer():
+    from dashboard.biofield_clinical_checklist import clinical_layers
+    items = [{"label": "Adrenal Fatigue", "checked": True, "stress_pattern": "Adrenal Support",
+              "selected_remedies": ["Adrenal Syntropy"]},
+             {"label": "Glaucoma suspect", "checked": True, "stress_pattern": "Ocular Flow",
+              "selected_remedies": ["OcuFlow Bedtime", "OcuFlow Daytime"]}]
+    got = clinical_layers(items)
+    assert [L["pattern"] for L in got] == ["Adrenal Support", "Ocular Flow"]
+    assert got[1]["remedies"] == ["OcuFlow Bedtime", "OcuFlow Daytime"]
+    assert got[0]["label"] == "Adrenal Fatigue"
+
+
+def test_an_unchecked_item_makes_no_layer():
+    from dashboard.biofield_clinical_checklist import clinical_layers
+    assert clinical_layers([{"label": "Migraine", "checked": False,
+                             "stress_pattern": "Neuro Calm",
+                             "selected_remedies": ["Neuroprotect"]}]) == []
+
+
+def test_a_checked_item_with_no_pattern_makes_no_layer():
+    """The chain speaks in stress patterns, never the client's own words. Guessing
+    here would put 'my eyes hurt' in a causal chain -- the rule to-stresses follows."""
+    from dashboard.biofield_clinical_checklist import clinical_layers
+    assert clinical_layers([{"label": "my eyes hurt", "checked": True,
+                             "stress_pattern": "", "selected_remedies": ["ACES"]}]) == []
+
+
+def test_a_checked_item_with_a_pattern_but_no_remedy_still_makes_a_layer():
+    """A layer may legitimately have no remedy yet; biofield_auth_layer_stress exists
+    for exactly that. The pattern is what earns the layer."""
+    from dashboard.biofield_clinical_checklist import clinical_layers
+    got = clinical_layers([{"label": "Hot flashes", "checked": True,
+                            "stress_pattern": "Endocrine Balance", "selected_remedies": []}])
+    assert len(got) == 1 and got[0]["remedies"] == []
+
+
+def test_two_checked_items_sharing_a_pattern_make_one_layer():
+    """The same pattern twice is one layer, or the chain gains a duplicate root."""
+    from dashboard.biofield_clinical_checklist import clinical_layers
+    got = clinical_layers([
+        {"label": "Hot flashes", "checked": True, "stress_pattern": "Endocrine Balance",
+         "selected_remedies": ["Endocrine Restore"]},
+        {"label": "Low progesterone", "checked": True, "stress_pattern": "Endocrine Balance",
+         "selected_remedies": ["Vital Energy Be"]}])
+    assert len(got) == 1
+    assert got[0]["remedies"] == ["Endocrine Restore", "Vital Energy Be"]
+    assert got[0]["label"] == "Hot flashes, Low progesterone"
+
+
+def test_a_remedy_repeated_across_two_items_appears_once():
+    from dashboard.biofield_clinical_checklist import clinical_layers
+    got = clinical_layers([
+        {"label": "A", "checked": True, "stress_pattern": "P", "selected_remedies": ["One"]},
+        {"label": "B", "checked": True, "stress_pattern": "P", "selected_remedies": ["One"]}])
+    assert got[0]["remedies"] == ["One"]
+
+
+def _chain_count(db, tid):
+    with sqlite3.connect(db) as cx:
+        return cx.execute("SELECT COUNT(*) FROM biofield_auth_chain WHERE test_id=?",
+                          (int(str(tid).lstrip("a") or 0),)).fetchone()[0]
+
+
+def _clinical_layers_app(tmp_path, monkeypatch):
+    monkeypatch.delenv("CONSOLE_SECRET", raising=False)
+    import dashboard
+    monkeypatch.setattr(dashboard, "CONSOLE_SECRET", "", raising=False)
+    db = str(tmp_path / "chat_log.db")
+    with sqlite3.connect(db) as cx:
+        init_auth_tables(cx)
+        tid = create_test(cx, "Sharon", "s@example.com", "2026-09-18")
+        save_selection(cx, tid, "Fatigue", ["Adrenal Syntropy"])
+        save_pattern(cx, tid, "Fatigue", "Adrenal Support")
+    app = create_app(db, fetch_profile=lambda email: {"conditions": ["Fatigue"]},
+                     fetch_recent_comms=lambda email: {})
+    return db, tid, app.test_client()
+
+
+def test_the_clinical_layers_button_proposes_without_writing(tmp_path, monkeypatch):
+    db, tid, client = _clinical_layers_app(tmp_path, monkeypatch)
+    j = client.post(f"/author/{tid}/clinical-items/layers", json={}).get_json()
+    assert j["ok"] and j["proposed"] is True
+    assert [L["pattern"] for L in j["layers"]] == ["Adrenal Support"]
+    assert j["layers"][0]["remedies"] == ["Adrenal Syntropy"]
+    assert _chain_count(db, tid) == 0, "the proposal wrote to the causal chain"
+
+
+def test_the_clinical_layers_button_writes_on_apply(tmp_path, monkeypatch):
+    db, tid, client = _clinical_layers_app(tmp_path, monkeypatch)
+    j = client.post(f"/author/{tid}/clinical-items/layers",
+                    json={"apply": True, "force": True}).get_json()
+    assert j["ok"] and j["applied"] is True and j["layers_added"] == 1
+    assert _chain_count(db, tid) == 1
+    with sqlite3.connect(db) as cx:
+        row = cx.execute("SELECT head, remedy, origin FROM biofield_auth_chain "
+                         "WHERE test_id=?", (int(str(tid).lstrip("a") or 0),)).fetchone()
+    assert row[0] == "Adrenal Support" and row[1] == "Adrenal Syntropy"
+
+
+def test_the_clinical_layers_button_sees_no_scan_findings(tmp_path, monkeypatch):
+    """Glen: this one is patterns and remedies from the Clinical Summary ONLY.
+    Full and Minimum are the buttons that pull the E4L layers in as well."""
+    db, tid, client = _clinical_layers_app(tmp_path, monkeypatch)
+    from dashboard.biofield_stress import add_stress, init_stress_tables
+    with sqlite3.connect(db) as cx:
+        init_stress_tables(cx)
+        add_stress(cx, tid, "ED12 Kidney Driver", source="scan", balance="required")
+    j = client.post(f"/author/{tid}/clinical-items/layers", json={}).get_json()
+    assert [L["pattern"] for L in j["layers"]] == ["Adrenal Support"]

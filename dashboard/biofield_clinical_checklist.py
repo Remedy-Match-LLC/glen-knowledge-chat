@@ -716,6 +716,55 @@ def _with_item(value, label):
     return ", ".join(parts)
 
 
+def clinical_layers(items):
+    """Checked clinical items as causal-chain layers, one per stress PATTERN.
+
+    Glen, 2026-09-18: *"Add a button to create layers from the Clinical Summary
+    checked patterns and remedies only. (Full and minimum still pull in the e4l
+    layers as well)"* So this is deliberately narrower than the program buttons: it
+    sees no scan findings at all.
+
+    It is the PATTERN that earns a layer, never the condition label, the rule
+    `clinical_patterns_as_stresses` already follows. An item with no pattern is
+    skipped rather than falling back to its label, because guessing here would put
+    "my eyes hurt" in a causal chain. A pattern with no remedy still earns its layer;
+    a layer may legitimately carry none yet.
+
+    Two conditions sharing a pattern make ONE layer carrying both their remedies,
+    because two layers with the same root would be a duplicate root. Order follows
+    the checklist, which is the order shown on the page.
+
+    Pure: no database and no writes. The caller decides whether to propose or apply.
+    """
+    out, by_pattern = [], {}
+    for item in items or []:
+        if not (item or {}).get("checked"):
+            continue
+        pattern = str((item or {}).get("stress_pattern") or "").strip()
+        if not pattern:
+            continue
+        key = _norm(pattern)
+        layer = by_pattern.get(key)
+        if layer is None:
+            layer = {"pattern": pattern, "remedies": [], "label": "",
+                     "labels": [], "_seen": set()}
+            by_pattern[key] = layer
+            out.append(layer)
+        label = str(item.get("label") or "").strip()
+        if label and label not in layer["labels"]:
+            layer["labels"].append(label)
+        for name in item.get("selected_remedies") or []:
+            name = str(name or "").strip()
+            low = name.lower()
+            if name and low not in layer["_seen"]:
+                layer["_seen"].add(low)
+                layer["remedies"].append(name)
+    for layer in out:
+        layer["label"] = ", ".join(layer["labels"])
+        layer.pop("_seen")
+    return out
+
+
 def clinical_patterns_as_stresses(cx, test_id, items, source="clinical"):
     """Put each checked clinical item's STRESS PATTERN into the stresses list.
 
