@@ -140,6 +140,7 @@
 
   <h1>Orders</h1>
   <div class="sub">Every order, from every channel, through one lifecycle.</div>
+  <div id="sizetotals" style="padding:6px 12px;color:#9aa0b4;font-size:13px"></div>
   <div id="hhbanner"></div>
   <div class="cols" id="board"></div>
   <section id="past-orders"></section>
@@ -311,7 +312,8 @@
         + ' &middot; '+esc(dateStr(o.created_at))+' &middot; <span class="src">'+esc(whereLabel(o))+'</span>'
         + (total?' &middot; '+total:'')
         + (o.physical_units>0?' &middot; '+Number(o.physical_units)+' unit'+(Number(o.physical_units)===1?'':'s')
-            +((o.pack_breakdown&&Number(o.pack_breakdown.cello_pack_units)>0)?' + '+Number(o.pack_breakdown.cello_pack_units)+' cello packs':''):'')
+            +((o.pack_breakdown&&Number(o.pack_breakdown.cello_pack_units)>0)?' + '+Number(o.pack_breakdown.cello_pack_units)+' cello packs':'')
+            +((o.pack_breakdown&&sizeText(o.pack_breakdown.by_size))?' ('+sizeText(o.pack_breakdown.by_size)+')':''):'')
         + (o.ledger_balance_cents!=null
             ? ' &middot; <span class="led-bal '+(o.ledger_balance_cents>0?'owed':'settled')+'">Paid $'
               +((o.ledger_paid_cents||0)/100).toFixed(2)+' &middot; Bal $'+(o.ledger_balance_cents/100).toFixed(2)+'</span>'
@@ -446,6 +448,22 @@
     act(id, 'orders.set_tracking', {tracking_number: tn});
   }
   function payBtn(id){ return '<button onclick="recordPay('+Number(id)+')">Record payment</button>'; }
+  // Bottles by size (Glen, 2026-09-19): on each order, and totalled across every open
+  // order, so shipping can be settled before an invoice is paid.
+  var SIZE_OPEN = function(o){ return ['shipped','delivered','done','cancelled'].indexOf(o.status) === -1; };
+  function sizeText(by){
+    var ks = Object.keys(by || {}).filter(function(k){ return Number(by[k]) > 0; });
+    ks.sort(function(a,b){ return (Number(by[b])-Number(by[a])) || (a<b?-1:1); });
+    return ks.map(function(k){ return Number(by[k]) + ' \u00d7 ' + esc(k); }).join(', ');
+  }
+  function sizeTotals(orders){
+    var t = {};
+    (orders || []).filter(SIZE_OPEN).forEach(function(o){
+      var by = (o.pack_breakdown && o.pack_breakdown.by_size) || {};
+      Object.keys(by).forEach(function(k){ t[k] = (t[k] || 0) + Number(by[k] || 0); });
+    });
+    return t;
+  }
   function printInvBtn(id){ return '<button onclick="printInvoice('+Number(id)+')">Print invoice</button>'; }
   function labelBtn(o){
     return o.label_url
@@ -563,6 +581,9 @@
     });
     orders = currentOrders;
     var board = document.getElementById('board'); board.innerHTML='';
+    var _st = sizeText(sizeTotals(currentOrders.concat(pastOrders)));   // old open orders count too
+    var _sz = document.getElementById('sizetotals');
+    if (_sz) _sz.innerHTML = _st ? '<b>Bottles on open orders:</b> ' + _st : '';
     if (q) {
       var note = document.createElement('div');
       note.style.cssText = 'padding:6px 12px;margin-bottom:8px;color:#9aa0b4;font-size:13px';
