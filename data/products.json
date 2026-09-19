@@ -8248,17 +8248,13 @@
    "url": "https://remedymatch.com/remedies/483-fulvic-acid",
    "ingredients": [
     {
-     "name": "Fulvic Acid",
-     "dose": "650 mg"
-    },
-    {
-     "name": "Vitamin A (as Retinyl Palmitate)",
-     "dose": "100 mg (25,000 IU)"
+     "name": "Fulvic Acid 95%",
+     "dose": "500 mg"
     }
    ],
-   "ingredients_source": "t33",
+   "ingredients_source": "manual",
    "description": "Fulvic Acid . Fulvic Acid Fulvic Acid Fulvic Acid Background Fulvic acid is a naturally-occurring organic product derived from humus, the organic material in soils produced by the decomposition of organic matter[1]. It is found in pre-historic deposits of lignite, a soft, brownish coal that has developed from peat through bacterial action over millions of years[1]. Fulvic acid was first isolated in 1919 and its chemical constitution was established through laboratory syntheses in 1882 and 1894[1]. This remarkable compound has been a cornerstone of traditional medicine and has gained attention...",
-   "enrichment_note": "Vitamin A line corrected 2026-09-17 (Glen: retinyl palmitate is the form). The 100 mg is the weight of the 13.75% retinyl palmitate material, delivering 25,000 IU. Source row FMSP46 'Vitamin A Palmitate' gives the equivalence: 7,500-25,000 IU = 30-100 mg. It was labelled 'Vitamin A 100 mg', which reads as 100 mg of the vitamin itself."
+   "enrichment_note": "Single-ingredient Pure Powder. Glen, 2026-09-18: \"yes, 500 mg Fulvic Acid 95% only\". Source: FMP raw 3519 'Fulvic Acid 95%' (Supernal Sublime), dosage_standard 500 mg, range 1000-2000 mg/day. The earlier 650 mg Fulvic Acid plus Vitamin A lines came from t33 row FOR000036, a concept note for one person, not this product."
   },
   "5mthf": {
    "name": "5-MTHF",
