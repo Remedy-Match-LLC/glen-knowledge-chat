@@ -38,35 +38,17 @@ from dashboard import products as pm
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 PRODUCTS = ROOT / "data" / "products.json"
 
-# THREE RENAMES ARE HELD, and the reason is money rather than taste.
+# THE THREE SUBLINGUAL RENAMES WERE HELD, then released.
 #
-# author_invoice computes a month's supply as ceil(doses/day * 30 / doses_per_bottle) and
-# reads doses_per_bottle from fmp_snap_products WHERE lower(product_name)=lower(?), exact,
-# with no slug fallback. No row means None, and bottles_needed falls back to qty 1.
-#
-# The name it looks up comes off the report layer, written by resolve_remedy_name, whose
-# candidate pool is FMP product names PLUS catalog names. So a name that exists only in the
-# catalog can reach a layer and then find no FileMaker row, silently invoicing one bottle
-# instead of three.
-#
-# Glen's three new Sublingual Powder names deliberately differ from FileMaker, which still
-# holds "Adrenal Syntropy Powder", "Endocrine Restore Powder" and "Sublingual B12 Powder".
-# They ship once those records are renamed. The retirements and was-prices are NOT held:
-# only the names carry this risk.
-#
-# The other five renames are safe for a good reason. The pairs rule moves the TWIN's name
-# onto the survivor, and the twin's name is already the FileMaker one. That is an argument
-# for the rule, not against it.
-HELD_PENDING_FILEMAKER_RENAME = {
-    "adrenal-syntropy": "Adrenal Syntropy Sublingual Powder",
-    "endocrine-restore": "Endocrine Restore Sublingual Powder",
-    "sublingual-b12": "B12 Sublingual Powder",
-}
+# They were held because author_invoice reads doses_per_bottle from fmp_snap_products by
+# exact name, and a catalog-only name found no FileMaker row. FileMaker renamed all three
+# records on 2026-09-16, and Glen ruled on 2026-09-19 that these bill per jar, which the
+# fallback already does. They shipped on their own in #1750; this batch now agrees.
 
 PAIRS = [
-    ("adrenal-syntropy", "adrenal-syntropy-powder", "Adrenal Syntropy"),
-    ("endocrine-restore", "endocrine-restore-powder", "Endocrine Restore"),
-    ("sublingual-b12", "sublingual-b12-powder", "Sublingual B12"),
+    ("adrenal-syntropy", "adrenal-syntropy-powder", "Adrenal Syntropy Sublingual Powder"),
+    ("endocrine-restore", "endocrine-restore-powder", "Endocrine Restore Sublingual Powder"),
+    ("sublingual-b12", "sublingual-b12-powder", "B12 Sublingual Powder"),
     ("flow-ease", "flow-ease-powder", "Flow Ease Powder"),
     ("msm-syntropy", "msm-syntropy-powder", "MSM Syntropy Powder"),
     ("seaaminos", "seaamino-powder", "SeaAmino Powder"),
@@ -245,16 +227,6 @@ def test_the_file_kept_its_formatting():
     assert '"aliases": ["Sleep Synergy"],' in raw
 
 
-# --- the held renames ------------------------------------------------------------------
-
-def test_the_three_sublingual_names_are_not_shipped_yet(products):
-    """Shipping these before FileMaker is renamed under-invoices a month's supply."""
-    for slug, intended in HELD_PENDING_FILEMAKER_RENAME.items():
-        assert products[slug]["name"] != intended, (
-            f"{slug} carries a catalog-only name; author_invoice would bill one bottle"
-        )
-
-
 def test_every_shipped_name_exists_in_the_filemaker_export():
     """The invariant behind the hold, checked against the export rather than asserted.
 
@@ -297,9 +269,17 @@ def test_every_shipped_name_exists_in_the_filemaker_export():
     BROKEN_BEFORE_THIS_BATCH = {
         "adrenal syntropy", "endocrine restore", "sublingual b12", "neem oil roll-on",
     }
+    # FileMaker renamed these three on 2026-09-16, after the 2026-09-14 export this reads.
+    # They match FileMaker now; a stale export cannot see it. Drop this set once the
+    # weekly export is refreshed past that date.
+    RENAMED_IN_FILEMAKER_AFTER_EXPORT = {
+        "adrenal syntropy sublingual powder", "endocrine restore sublingual powder",
+        "b12 sublingual powder",
+    }
     missing = [products[k]["name"] for k, _, _ in PAIRS
                if products[k]["name"].lower() not in fmp
-               and products[k]["name"].lower() not in BROKEN_BEFORE_THIS_BATCH]
+               and products[k]["name"].lower() not in BROKEN_BEFORE_THIS_BATCH
+               and products[k]["name"].lower() not in RENAMED_IN_FILEMAKER_AFTER_EXPORT]
     assert not missing, (
         "these shipped catalog names have no FileMaker product and would bill one "
         f"bottle: {missing}"
