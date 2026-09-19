@@ -107,3 +107,12 @@ def test_portal_template_contains_voice_card_and_hub_tile():
     assert 'id="fiveElementVoiceCard"' in html
     assert "five-element-voice`" in html
     assert "navigator.mediaDevices.getUserMedia" in html
+
+
+def test_the_five_element_card_asks_for_about_a_minute():
+    """Glen 2026-09-18: "let's ask for about a minute." The card used to ask for 30 to
+    90 seconds. The 90 second recorder cap stays, as headroom above the ask."""
+    html = (Path(__file__).resolve().parent.parent / "static" / "client-portal.html").read_text()
+    card = html[html.index('id="fiveElementVoiceCard"'):][:1500]
+    assert "Speak naturally for about a minute" in card
+    assert "30 to 90 seconds" not in card

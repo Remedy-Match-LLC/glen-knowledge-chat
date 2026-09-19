@@ -62,7 +62,7 @@ def test_no_client_page_says_voice_scan_unqualified():
 
 
 # A sentence that names Energy4Life's scan and gives it 30 seconds. Glen's own Five
-# Element Voice Scan legitimately runs 30 to 90 seconds, so the check is per LINE,
+# Element Voice Scan legitimately asks for about a minute, so the check is per LINE,
 # and only on lines that name the Energy4Life instrument.
 _E4L = re.compile(r"Bioenergetic Wellness Scan|Truly\.VIP/E4L|Energy4Life", re.I)
 _THIRTY = re.compile(r"\b(30|thirty)[ -]seconds?\b", re.I)
@@ -87,7 +87,7 @@ def test_the_duration_check_can_fire():
     assert _thirty_second_claims(
         '<p>A quick Bioenergetic Wellness Scan reads you. It takes about 30 seconds.</p>')
     assert not _thirty_second_claims(
-        "<p>Speak naturally for 30 to 90 seconds.</p><h2>Five Element Voice Scan</h2>")
+        "<p>Speak naturally for 30 seconds.</p><h2>Five Element Voice Scan</h2>")
 
 
 def test_the_renamed_pages_carry_the_real_name():
