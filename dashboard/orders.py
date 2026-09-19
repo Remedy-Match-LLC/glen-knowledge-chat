@@ -1094,6 +1094,14 @@ def _send_invoice_exec(params, ctx):
         cx.commit()
     except Exception as e:
         print(f"[orders] invoice_token persist skipped for order #{oid}: {e!r}", flush=True)
+    # When this was the last unpaid invoice in a household group, email each payer every
+    # link they may pay (PAYER_LINKS_EMAIL_ENABLED). Best-effort: never fails the send.
+    try:
+        from dashboard import payer_links as _pl
+        if _pl.enabled():
+            _pl.send_for(cx, get_order(cx, oid), _inbox.send_email, base)
+    except Exception as _e:
+        print(f"[payer-links] order #{oid}: {_e!r}", flush=True)
     return {"order_id": oid, "link": link,
             "message": f"{'Receipt' if paid else 'Invoice'} {ref} emailed to {email}."}
 
