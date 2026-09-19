@@ -28,13 +28,10 @@ ALLOWED = (
     '"Voice Scan"',
 )
 
-# One documented exception, not a silent skip. begin-voice.html offers a
-# "30-second bioenergetic voice scan", and 30 seconds contradicts the ten seconds
-# every other surface and the glen-client-copy skill give for the Bioenergetic
-# Wellness Scan. Until Glen says which instrument that card is, renaming it would
-# attach a wrong duration to a named instrument, which is worse than leaving it
-# vague. Remove this entry once he rules.
-PENDING = {"begin-voice.html"}
+# begin-voice.html used to sit here as the one exception, because it offered a
+# "30-second" scan. Glen ruled 2026-09-18: "The scan itself is a 10 second voice
+# sample counting out loud from one to 10." It is renamed, so nothing is exempt.
+PENDING = set()
 
 
 def _pages():
@@ -64,14 +61,33 @@ def test_no_client_page_says_voice_scan_unqualified():
         + "\n".join(f"  {o}" for o in offenders))
 
 
-def test_the_pending_exception_is_still_real():
-    """A skip that quietly stops applying is worse than no skip. If begin-voice no
-    longer has a bare use, this test fails and the entry must come out of PENDING."""
-    p = STATIC / "begin-voice.html"
-    if not p.exists():
-        return
-    assert _bare_uses(p.read_text(encoding="utf-8")), \
-        "begin-voice.html is clean now. Remove it from PENDING."
+# A sentence that names Energy4Life's scan and gives it 30 seconds. Glen's own Five
+# Element Voice Scan legitimately runs 30 to 90 seconds, so the check is per LINE,
+# and only on lines that name the Energy4Life instrument.
+_E4L = re.compile(r"Bioenergetic Wellness Scan|Truly\.VIP/E4L|Energy4Life", re.I)
+_THIRTY = re.compile(r"\b(30|thirty)[ -]seconds?\b", re.I)
+
+
+def _thirty_second_claims(text):
+    return [ln.strip()[:160] for ln in text.splitlines()
+            if _E4L.search(ln) and _THIRTY.search(ln)]
+
+
+def test_the_energy4life_scan_is_ten_seconds():
+    """Glen 2026-09-18: a 10 second voice sample, counting out loud from one to 10.
+    Pages said 30, and so did the chatbot's instructions in app.py."""
+    sources = list(_pages()) + [STATIC.parent / "app.py"]
+    offenders = [f"{p.name}: {hit}" for p in sources
+                 for hit in _thirty_second_claims(p.read_text(encoding="utf-8"))]
+    assert not offenders, "\n".join(offenders)
+
+
+def test_the_duration_check_can_fire():
+    """A control: the check must catch the exact wording that was live."""
+    assert _thirty_second_claims(
+        '<p>A quick Bioenergetic Wellness Scan reads you. It takes about 30 seconds.</p>')
+    assert not _thirty_second_claims(
+        "<p>Speak naturally for 30 to 90 seconds.</p><h2>Five Element Voice Scan</h2>")
 
 
 def test_the_renamed_pages_carry_the_real_name():
