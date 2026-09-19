@@ -644,3 +644,39 @@ def test_cancel_pending_merge(monkeypatch, tmp_db):
     assert r.status_code == 200
     with sqlite3.connect(tmp_db) as cx:
         assert cx.execute("SELECT status FROM pending_merges WHERE id=1").fetchone()[0] == "cancelled"
+
+
+def test_create_household_does_not_use_sqlite_only_last_insert_rowid(monkeypatch, tmp_db):
+    """Postgres has no last_insert_rowid(), so calling it 500'd every household create in
+    prd (Connour, 2026-09-19). Make SQLite reject it the same way and require a 200 whose
+    household id is the real row id."""
+    app = _app()
+    monkeypatch.setattr(app, "LOG_DB", tmp_db)
+    _seed_people_schema(tmp_db)
+    _seed_household_tables(tmp_db)
+    monkeypatch.setattr(app, "CONSOLE_SECRET", "testkey")
+    monkeypatch.setattr(app, "GHL_API_KEY", "")
+    head = _seed_person(tmp_db, "sharon@x.com", first="Sharon", last="Connour")
+    pet = _seed_person(tmp_db, "hershey@x.com", first="Hershey", last="Connour")
+
+    real_connect = app.db.connect
+    reached = {"n": 0}
+
+    def _no_rowid():
+        raise RuntimeError("last_insert_rowid is SQLite-only")
+
+    def connect_like_postgres(*a, **kw):
+        cx = real_connect(*a, **kw)
+        reached["n"] += 1
+        cx.create_function("last_insert_rowid", 0, _no_rowid)
+        return cx
+
+    monkeypatch.setattr(app.db, "connect", connect_like_postgres)
+    r = app.app.test_client().post(
+        "/api/households", headers={"X-Console-Key": "testkey"},
+        json={"name": "connour", "head_person_id": head, "member_person_ids": [head, pet]})
+    assert reached["n"] > 0
+    assert r.status_code == 200, r.data[:300]
+    with sqlite3.connect(tmp_db) as cx:
+        row_id = cx.execute("SELECT id FROM households WHERE slug='connour'").fetchone()[0]
+    assert r.get_json()["household"]["id"] == row_id
