@@ -1559,7 +1559,7 @@ function buildHubHtml(d, v){
   const understandTiles = [
     ["current", "My Analysis", "Your current scan, matches and healing path", undefined,
       progressFor("biofield", "Complete your Biofield Analysis", "Review your latest analysis")],
-    ["voice", "5-Element Voice", "Hear what your current voice pattern is expressing"],
+    ["voice", "Five Element Voice Scan", "Hear what your current voice pattern is expressing"],
     ["intake", "My Intake", "Build or continue your clinical health profile", undefined,
       progressFor("intake", "Complete your health intake", "Review or update your intake")],
   ];
@@ -4129,7 +4129,7 @@ function render(d, v){
       <h2>Order your first Biofield Analysis</h2>
       <p class="muted">We’ll guide you through each step. After payment, your secure preparation page will help you:</p>
       <ol class="small" style="line-height:1.8;margin:.6rem 0 1rem;padding-left:1.35rem">
-        <li>Complete a fresh voice scan</li>
+        <li>Complete a fresh Bioenergetic Wellness Scan</li>
         <li>Complete your intake form</li>
         <li>Upload a recent photo</li>
         <li>Confirm your payment and submit everything for your report</li>
@@ -4266,7 +4266,7 @@ function render(d, v){
   if (_hub) { _askHtml += _askCard; } else { part(null, _askCard); }
 
   const _fiveVoiceCard = `<div class="card" id="fiveElementVoiceCard">
-    <h2>Your 5-Element Voice Analysis</h2>
+    <h2>Your Five Element Voice Scan</h2>
     <p class="muted small" style="margin:.3rem 0 .7rem">Speak naturally for 30 to 90 seconds about how you have been feeling. Your words, pacing, and pauses are mapped across Wood, Fire, Earth, Metal, and Water.</p>
     <p class="small"><strong>Try this:</strong> “What has been taking most of my energy lately, and how does that feel in my body?”</p>
     <div class="five-voice-actions">
@@ -4452,8 +4452,8 @@ function render(d, v){
     clearInterval(_ppTimer); _ppTimer = null;
   } else if (d.biofield_status === "none") {
     part("scans", '<div class="card"><h2>Curious what your body is asking for?</h2>'
-      + '<p>A quick biofield voice scan reads your stress and terrain patterns and tailors your next steps. It takes about 30 seconds.</p>'
-      + '<a class="btn" href="https://Truly.VIP/E4L" target="_blank" rel="noopener">Do your free voice scan</a></div>');
+      + '<p>A quick Bioenergetic Wellness Scan reads your stress and terrain patterns and tailors your next steps. It takes about ten seconds: you count out loud from one to ten.</p>'
+      + '<a class="btn" href="https://Truly.VIP/E4L" target="_blank" rel="noopener">Do your free Bioenergetic Wellness Scan</a></div>');
   }
 
   // Biofield "healing path" — server-gated by status. Remedies/dosing never reach
@@ -4645,7 +4645,7 @@ function render(d, v){
     const sr = d.scan_recommendations;
     let s = `<div class="card scanrec-card">
       <h2>What your scan matched</h2>
-      <p class="muted" style="margin:0 0 .7rem">From your voice scan on ${esc(fmtDate(sr.scan_date))}.</p>`;
+      <p class="muted" style="margin:0 0 .7rem">From your Bioenergetic Wellness Scan on ${esc(fmtDate(sr.scan_date))}.</p>`;
     if (sr.infoceuticals.length) {
       s += `<p style="margin:.2rem 0 .4rem"><strong>Your infoceuticals</strong></p>`;
       s += sr.infoceuticals.map(i => {

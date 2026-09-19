@@ -41,6 +41,8 @@
 //   The committed snapshot was written from:
 //   git show aaa78c42:static/client-portal.html > /tmp/aaa78c42.html
 //   node tests/test_portal_flag_off_snapshot.js --write-snapshot /tmp/aaa78c42.html
+//   Regenerated 2026-09-18 for the scan-name rename (PR #1739). The diff was five
+//   lines, each "5-Element Voice Analysis" to "Five Element Voice Scan", nothing else.
 const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
