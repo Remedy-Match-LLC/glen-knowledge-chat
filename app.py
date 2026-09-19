@@ -53236,8 +53236,30 @@ def _release_to_shipment(cx, order_ids, *, created_by):
     from dashboard import combined_shipments as _cs
     if len(order_ids) < 2:
         return None
-    made = _cs.create_shipment(cx, order_ids, created_by=created_by)
-    sid = made["id"]
+    # Money, 2026-09-19: create_shipment refuses an order that is already grouped, and
+    # the sweep only printed the error. If some of these orders are already in an OPEN
+    # shipment, add the rest to it instead.
+    existing = None
+    for oid in order_ids:
+        o = _bos_orders.get_order(cx, int(oid)) or {}
+        gsid = o.get("group_shipment_id")
+        if gsid:
+            sh = _cs.get_shipment(cx, gsid)
+            if sh and sh.get("status") == "open":
+                existing = int(gsid)
+                break
+    if existing:
+        for oid in order_ids:
+            o = _bos_orders.get_order(cx, int(oid)) or {}
+            if not o.get("group_shipment_id"):
+                try:
+                    _cs.add_order(cx, existing, int(oid))
+                except ValueError as e:
+                    print(f"[hold-release] #{oid} could not join #{existing}: {e}", flush=True)
+        sid = existing
+    else:
+        made = _cs.create_shipment(cx, order_ids, created_by=created_by)
+        sid = made["id"]
     try:
         _recompute_combined_shipping(cx, sid)
     except Exception as e:
@@ -54353,6 +54375,17 @@ def api_orders_grant_member_access(oid):
                     "lines": priced["items_rec"]})
 
 
+def _resplit_shipment_after_cancel(cx, sid):
+    _recompute_combined_shipping(cx, sid)
+
+
+# Registered by name, so a second import of this module replaces rather than stacks it.
+_bos_orders.SHIPMENT_CHANGED_HOOKS[:] = [
+    h for h in _bos_orders.SHIPMENT_CHANGED_HOOKS
+    if getattr(h, "__name__", "") != "_resplit_shipment_after_cancel"]
+_bos_orders.SHIPMENT_CHANGED_HOOKS.append(_resplit_shipment_after_cancel)
+
+
 def _cancel_open_handoff_orders(cx, email):
     """Cancel a client's OPEN hand-off drafts (proposed, unpaid, NOT portal-published)
     so a re-hand-off replaces rather than piles up duplicate invoices. Published/paid
@@ -54370,6 +54403,57 @@ def _cancel_open_handoff_orders(cx, email):
     if ids:
         cx.commit()
     return ids
+
+
+def _replace_order(cx, old_ids, new_order_id):
+    """One replace step for an invoice update that produced a new order number.
+
+    Glen, 2026-09-19: "It should replace the old order functionally, even if it needs
+    a new order number. That would cancel the old order and put the new order into an
+    existing household order as a replacement."
+
+    The old orders are already cancelled. Here the new order takes their place in the
+    OPEN combined shipment and the open hold group, each old order is linked to it
+    (superseded_by_order_id), and the shipment's shipping is re-split. Order matters:
+    the new order joins before the old leave, so a group is never left empty and closed.
+    Returns True when the new order took an existing hold group's place."""
+    from dashboard import combined_shipments as _cs
+    from dashboard import household_holds as _holds
+    new_order_id = int(new_order_id)
+    _holds.init_hold_tables(cx)
+    olds = [o for o in (_bos_orders.get_order(cx, int(i)) for i in old_ids or []) if o]
+    took_hold = False
+    for o in olds:
+        gid = o.get("hold_group_id")
+        if gid and not took_hold:
+            row = cx.execute("SELECT status FROM household_holds WHERE id=?", (gid,)).fetchone()
+            if row and row[0] == "open":
+                _bos_orders.set_order_hold_group(cx, new_order_id, gid)
+                took_hold = True
+    sids = []
+    for o in olds:
+        sid = _bos_orders._ungroup_cancelled_from_shipment(cx, int(o["id"]), dissolve=False)
+        if sid and sid not in sids:
+            sids.append(sid)
+        if o.get("hold_group_id"):
+            _holds.remove_from_hold(cx, int(o["id"]))
+        _bos_orders.supersede_order(cx, int(o["id"]), new_order_id)
+    for sid in sids:
+        sh = _cs.get_shipment(cx, sid)
+        if not sh or sh.get("status") != "open":
+            continue
+        try:
+            _cs.add_order(cx, sid, new_order_id)
+        except ValueError as e:
+            print(f"[replace] #{new_order_id} could not join shipment #{sid}: {e}", flush=True)
+        if len(_bos_orders.orders_in_group(cx, sid)) < 2:
+            _cs.cancel_shipment(cx, sid)
+            continue
+        try:
+            _recompute_combined_shipping(cx, sid)
+        except Exception as e:
+            print(f"[replace] recompute failed for shipment #{sid}: {e!r}", flush=True)
+    return took_hold
 
 
 def _known_ship_address(email):
@@ -54483,9 +54567,11 @@ def api_orders_manual():
     # (proposed, unpaid, NOT yet published to the portal) so invoices never pile up.
     # Published/paid/confirmed orders are left alone (those are Rae's, deliberately out).
     cancelled_ids = []
+    _left_shipments = []
     if body.get("replace_open") and (customer.get("email") or "").strip():
         with _db_lock, db.connect(LOG_DB) as _ccx:
             cancelled_ids = _cancel_open_handoff_orders(_ccx, customer["email"])
+            _left_shipments = list(cancelled_ids)   # replaced by the new order below
     addr_in = customer.get("address") or {}
     # A Biofield hand-off posts no address. A blank ship-to can neither ship nor match a
     # household member's order for Combine, so fill it from what we already know.
@@ -54567,8 +54653,15 @@ def api_orders_manual():
             ship_credit_applied_cents=_sc_apply,
             invoice_note=((body.get("invoice_note") or "").strip() or None))
         _harvest_line_note_snippets(cx, items_rec)
+        _took_hold = False
+        if _left_shipments:
+            try:
+                _took_hold = _replace_order(cx, _left_shipments, oid)
+            except Exception as _e:
+                print(f"[replace] swap skipped for #{oid}: {_e!r}", flush=True)
         try:
-            _hold_new_order_and_invite(cx, oid)
+            if not _took_hold:
+                _hold_new_order_and_invite(cx, oid)
         except Exception as _e:
             print(f"[hold] hold+invite skipped: {_e!r}", flush=True)
         if _gift_rows and oid:
@@ -55464,12 +55557,28 @@ def api_console_plan_choice_send():
 # recomputed server-side; client-sent prices are ignored; the Stripe amount comes
 # from the order's server-side total. One token ⇄ one order.
 def _invoice_order_for_token(token):
+    """The order an invoice link opens.
+
+    Glen, 2026-09-19: "old links should open the new invoice." A link to a replaced
+    order follows superseded_by_order_id to the newest order in the chain. A link that
+    ends on a cancelled, unpaid order opens nothing, so it can never take payment. A
+    paid order still opens, cancelled or not, so its receipt stays reachable."""
     oid = _pp.order_id_from_invoice_token(token)
     if not oid:
         return None
     cx = db.connect(LOG_DB); cx.row_factory = _sqlite3.Row
     try:
-        return _bos_orders.get_order(cx, int(oid))
+        order = _bos_orders.get_order(cx, int(oid))
+        seen = set()
+        while order and order.get("superseded_by_order_id") and order["id"] not in seen:
+            seen.add(order["id"])
+            nxt = _bos_orders.get_order(cx, int(order["superseded_by_order_id"]))
+            if not nxt:
+                break
+            order = nxt
+        if order and order.get("status") == "cancelled" and order.get("pay_status") != "paid":
+            return None
+        return order
     finally:
         cx.close()
 
