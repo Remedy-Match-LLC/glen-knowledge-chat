@@ -75,9 +75,17 @@ def _norm(email):
 
 
 def _table_exists(cx, table):
-    row = cx.execute(
-        "SELECT name FROM sqlite_master WHERE type='table' AND name=?", (table,)).fetchone()
-    return row is not None
+    # Backend-aware. The engine was SQLite-only at first (sqlite_master), so it errored
+    # against prod Postgres and could not run there at all. Postgres names its catalog
+    # differently. Mirrors dashboard/affiliate_activity.py.
+    from dashboard import db as _db
+    if _db.backend_of(cx) == "postgres":
+        return cx.execute(
+            "SELECT 1 FROM information_schema.tables "
+            "WHERE table_schema = current_schema() AND table_name = ?",
+            (table,)).fetchone() is not None
+    return cx.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (table,)).fetchone() is not None
 
 
 def _count(cx, table, col, email):
