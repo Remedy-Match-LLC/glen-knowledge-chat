@@ -260,3 +260,37 @@ def test_narrative_numbers_layers_the_way_the_report_table_does():
     assert "- Layer 5 " not in user
     table = {g["head"]: g["layer"] for g in group_layers(layers)}
     assert table["A fib, Current"] == 4
+
+
+def test_each_layer_is_named_by_its_head_not_its_most_affected_list():
+    """Glen, 2026-09-19: he changed Hershey's layer 4 Head to "Lens", and the
+    narrative still led with its most-affected entry, "pinpoint cataracts"."""
+    s = build_narrative_prompt(_report(), "")["system"]
+    assert "NAME EACH LAYER BY ITS HEAD: open each layer's paragraph with the layer's Head" in s
+    assert "never let it replace the Head as the layer's subject" in s
+
+
+def test_scan_guidance_never_says_a_bare_voice_scan():
+    """Glen, 2026-09-18: "E4L" or "Five Element" names which voice scan; a bare
+    "voice scan" does not. Hershey's narrative wrote "the recent voice scan"."""
+    from dashboard.biofield_narrative import _SCAN_GUIDANCE
+    assert "Always call it the 'E4L voice scan', never a bare 'voice scan'" in _SCAN_GUIDANCE
+
+
+def test_a_remedy_less_anchor_row_is_not_counted_or_listed_as_a_remedy():
+    """Hershey Connour's layer 4 kept an empty anchor row beside Clear Lens Eyedrops.
+    Counted, it read as two remedies and the writer said the dose was not detailed."""
+    layers = [
+        {"layer": 1, "head": "Lens", "most_affected": "pinpoint cataracts",
+         "remedy": "", "dosage": "", "frequency": "", "timing": ""},
+        {"layer": 2, "head": "Lens", "most_affected": "pinpoint cataracts",
+         "remedy": "Clear Lens Eyedrops", "dosage": "", "frequency": "", "timing": ""},
+    ]
+    user = build_narrative_prompt({**_report(), "layers": layers}, "")["user"]
+    assert "Layer 1 (ONE layer; 1 remedy): Lens" in user
+    assert user.count("  - remedy:") == 1
+    assert "remedy: Clear Lens Eyedrops; dose: as directed" in user
+
+
+def test_narrative_is_plain_text():
+    assert "PLAIN TEXT ONLY: no markdown" in build_narrative_prompt(_report(), "")["system"]

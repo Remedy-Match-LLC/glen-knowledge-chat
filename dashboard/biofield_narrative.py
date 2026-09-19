@@ -101,6 +101,9 @@ _SYSTEM = (
     "recent/surface first, down to the deepest root). A numbered layer may contain multiple "
     "remedies. Keep all remedies carrying the same causal-layer identifier together in that one paragraph; "
     "never describe them as separate layers. Name every remedy and its dosing for that layer.\n"
+    "- NAME EACH LAYER BY ITS HEAD: open each layer's paragraph with the layer's Head, in the "
+    "practitioner's words, as what that layer is about. The 'most affected' list is supporting "
+    "detail beneath the Head; never let it replace the Head as the layer's subject.\n"
     "- DRAW THE RELATIONSHIPS: explain how each layer connects to the others -- how a surface "
     "layer sits on or is driven by a deeper root -- so the chain reads as one connected story, "
     "not a list.\n"
@@ -111,13 +114,19 @@ _SYSTEM = (
     "essence, even when the Head is not labeled Life Stress or Psychoemotional Stress. Do not list "
     "AI-matched or 'supportive' essences. First describe the indications of the LIFE STRESS "
     "ASSOCIATED ESSENCE found at the Head or Tail, then "
-    "describe the healing qualities of the THERAPEUTIC ESSENCE actually prescribed as the remedy. "
+    "describe the healing qualities of the THERAPEUTIC ESSENCE actually recommended as the remedy. "
     "Keep those roles distinct; the associated essence identifies the pattern, while the therapeutic "
     "essence is the treatment. REQUIRED OUTPUT: for every layer block containing 'LIFE STRESS "
     "ASSOCIATED ESSENCE / PATTERN', the layer paragraph MUST name that associated essence and "
     "state at least two of its supplied indications, then name the therapeutic essence and describe "
     "its supplied healing qualities. Never omit either half. Use only the catalog descriptions "
     "supplied in the layer block.\n"
+    "- PLAIN TEXT ONLY: no markdown, no asterisks, no bold, no headings. Still begin each "
+    "layer paragraph with its number, as '1.', '2.' and so on.\n"
+    "- NAME EVERY INFOCEUTICAL: whenever an infoceutical appears, give its full name with its "
+    "code (for example 'ED5 Circulation Driver'), never the code alone.\n"
+    "- NEVER use the words 'prescribe', 'prescribed', 'prescribes' or 'prescribing' for any "
+    "remedy. Say 'recommended'.\n"
     "- Plain English; translate any technical codes. No jargon, no emojis, no AI-pleasantry "
     "filler ('I hope you're well'). Open with substance.\n"
     "- GROUNDED VOICE: write the way a calm clinician speaks to a patient -- concrete, warm, "
@@ -138,7 +147,8 @@ _SYSTEM = (
 
 _SCAN_GUIDANCE = (
     "\n- If a RECENT E4L VOICE SCAN block is present, you may reference what the scan "
-    "showed as corroborating context for the causal chain. Use observation language; "
+    "showed as corroborating context for the causal chain. Always call it the 'E4L voice "
+    "scan', never a bare 'voice scan'. Use observation language; "
     "do not invent scan findings beyond those listed, and do not treat a scan marked "
     "stale as current.")
 
@@ -277,8 +287,12 @@ def _user_block(report, notes, scan=None, profile=None, animal=None):
         first = layer_rows[0]
         head = (first.get("head") or "").strip()
         affected = (first.get("most_affected") or "").strip()
+        # A layer keeps a remedy-less anchor row when its last remedy is removed. It is
+        # not a remedy: counting it told the writer Hershey Connour's layer 4 had two
+        # remedies, and it wrote "the specific remedy and dose were not detailed".
+        remedy_rows = [l for l in layer_rows if (l.get("remedy") or "").strip()]
         lines.append(
-            f"- Layer {display_ln} (ONE layer; {len(layer_rows)} remed{'y' if len(layer_rows) == 1 else 'ies'}): "
+            f"- Layer {display_ln} (ONE layer; {len(remedy_rows)} remed{'y' if len(remedy_rows) == 1 else 'ies'}): "
             f"{head} (most affected: {affected})")
         head_is_essence = _is_essence(head)
         tail_is_essence = _is_essence(affected)
@@ -293,15 +307,18 @@ def _user_block(report, notes, scan=None, profile=None, animal=None):
             lines.append(
                 f"  - LIFE STRESS ASSOCIATED ESSENCE / PATTERN: {associated}"
                 f"; indications: {associated_desc or '(catalog description unavailable)'}")
-        for l in layer_rows:
+        for l in remedy_rows:
             remedy = l.get("remedy") or ""
             role = "THERAPEUTIC ESSENCE" if is_life_stress else "remedy"
             qualities = _catalog_description(remedy) if is_life_stress else ""
+            # The report prints "(as directed)" for a remedy with no dosing; say the same
+            # here, or the writer reports the dose as missing.
+            dose = " ".join(x for x in (l.get("dosage") or "", l.get("frequency") or "",
+                                        l.get("timing") or "") if x.strip()) or "as directed"
             lines.append(
                 f"  - {role}: {remedy}"
                 f"{('; healing qualities: ' + qualities) if qualities else ''}; "
-                f"dose: {l.get('dosage') or ''} {l.get('frequency') or ''} "
-                f"{l.get('timing') or ''}".rstrip())
+                f"dose: {dose}")
     sb = _scan_block(scan)
     if sb:
         lines += ["", sb]
@@ -376,7 +393,22 @@ def generate_narrative(report, notes, complete, scan=None, profile=None, animal=
     p = build_narrative_prompt(report, notes, scan, profile, animal)
     text = complete(p["system"], p["user"])
     text = _enforce_animal_greeting(text, animal)
+    text = _enforce_no_prescribe(text)
     return _enforce_phase_name(text, report.get("phase"))
+
+
+_PRESCRIBE = {"prescribe": "recommend", "prescribes": "recommends",
+              "prescribed": "recommended", "prescribing": "recommending"}
+
+
+def _enforce_no_prescribe(text):
+    """Glen, 2026-09-18: "Never use the term prescribe." Rewrites the verb only;
+    'prescription' is left alone, since it names a client's own medication."""
+    def sub(m):
+        w = m.group(0)
+        r = _PRESCRIBE[w.lower()]
+        return r.capitalize() if w[0].isupper() else r
+    return re.sub(r"\bprescrib(?:e|es|ed|ing)\b", sub, text or "", flags=re.IGNORECASE)
 
 
 def _enforce_phase_name(text, phase):
