@@ -59,7 +59,7 @@ def has_unsubscribed_tag(tags):
 
 def _hub_unsubscribed(cx, email):
     try:
-        r = cx.execute("SELECT tags FROM people WHERE email=?", (email,)).fetchone()
+        r = cx.execute("SELECT tags FROM people WHERE lower(email)=?", (email,)).fetchone()
     except db.OperationalError:
         return False  # no people table on this connection (a test db, a side db)
     if not r:

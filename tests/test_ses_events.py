@@ -128,12 +128,53 @@ def test_complaint_blocks_the_address_and_marks_the_person(keypair):
     assert es.UNSUBSCRIBED_TAG in tags and "type:client" in tags
 
 
-def test_a_bounce_never_rewrites_an_existing_opt_out(keypair):
+def test_a_bounce_upgrades_an_existing_opt_out(keypair):
+    """Inverted 2026-09-18 on platform's review: a dead address says more than an
+    opt-out, and transactional mail must stop at it."""
     key, pem = keypair
     cx = _db()
     es.add_optout(cx, "dead@example.com", "unsubscribe-link:global")
-    _post(cx, pem, _signed(key, _note(BOUNCE)))
-    assert es.suppression_reason(cx, "dead@example.com") == "optout"
+    _, out = _post(cx, pem, _signed(key, _note(BOUNCE)))
+    assert out["blocked"] == 1
+    assert es.suppression_reason(cx, "dead@example.com") == "hard"
+
+
+def test_a_complaint_upgrades_an_opt_out_so_transactional_stops(keypair):
+    from dashboard import ses_mail as sm
+    key, pem = keypair
+    cx = _db()
+    es.add_optout(cx, "angry@example.com", "unsubscribe-link:global")
+    assert sm.block_reason(cx, "angry@example.com", marketing=False) is None
+    _post(cx, pem, _signed(key, _note(COMPLAINT)))
+    assert es.suppression_reason(cx, "angry@example.com") == "complaint"
+    assert sm.block_reason(cx, "angry@example.com", marketing=False) == "complaint"
+
+
+def test_a_bounce_never_downgrades_a_complaint(keypair):
+    key, pem = keypair
+    cx = _db()
+    es.add(cx, "dead@example.com", "complaint", "r", "ses-complaint")
+    _, out = _post(cx, pem, _signed(key, _note(BOUNCE)))
+    assert out["blocked"] == 0
+    assert es.suppression_reason(cx, "dead@example.com") == "complaint"
+
+
+def test_a_replayed_event_counts_nothing(keypair):
+    key, pem = keypair
+    cx = _db()
+    msg = _signed(key, _note(BOUNCE))
+    assert _post(cx, pem, msg)[1]["blocked"] == 1
+    assert _post(cx, pem, msg)[1]["blocked"] == 0
+
+
+def test_a_mixed_case_stored_address_still_gets_the_tag(keypair):
+    key, pem = keypair
+    cx = _db()
+    cx.execute("INSERT INTO people (id, email, tags) VALUES (8, 'Angry@Example.COM', '[]')")
+    _, out = _post(cx, pem, _signed(key, _note(COMPLAINT)))
+    assert out["people_marked"] == 1
+    tags = json.loads(cx.execute("SELECT tags FROM people WHERE id=8").fetchone()[0])
+    assert es.UNSUBSCRIBED_TAG in tags
 
 
 def test_a_tampered_message_is_refused(keypair):

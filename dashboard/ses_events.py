@@ -11,8 +11,8 @@ What each event does:
   Complaint          blocks the address (bounce_type 'complaint') and marks the hub
                      person `consent:unsubscribed`, because a spam report means the
                      person asked us to stop.
-An existing suppression row is never rewritten, so a bounce cannot downgrade an
-opt-out and a replayed event changes nothing.
+A row is replaced only by an event that says more: complaint over hard, and either
+over an opt-out or a GoHighLevel flag. A replayed event writes nothing.
 """
 from __future__ import annotations
 
@@ -105,10 +105,10 @@ def verify(msg: dict, *, fetch_cert=_fetch_cert) -> None:
 
 
 def _mark_person_unsubscribed(cx, email: str) -> bool:
-    try:
-        row = cx.execute("SELECT id, tags FROM people WHERE email=?", (email,)).fetchone()
-    except Exception:  # no people table on this connection
-        return False
+    # lower(email) matches how app.py looks people up. No try/except: on Postgres a
+    # failed statement aborts the transaction and would silently roll back the
+    # suppression rows written before it.
+    row = cx.execute("SELECT id, tags FROM people WHERE lower(email)=?", (email,)).fetchone()
     if not row:
         return False
     tags = es._tags_of(row[1])
@@ -116,6 +116,22 @@ def _mark_person_unsubscribed(cx, email: str) -> bool:
         return False
     tags = sorted(set(tags) | {es.UNSUBSCRIBED_TAG})
     cx.execute("UPDATE people SET tags=? WHERE id=?", (json.dumps(tags), row[0]))
+    return True
+
+
+# How much a row tells us. An event replaces a row only when it says more. A
+# complaint outranks a dead address, and both outrank an opt-out or a GoHighLevel
+# flag, because transactional mail still reaches an opt-out and must not reach
+# someone who marked us as spam.
+_RANK = {"complaint": 2, "hard": 1}
+
+
+def _block(cx, email: str, bounce_type: str, why: str, source: str) -> bool:
+    """Write or upgrade the row. True only when something was written."""
+    current = es._table_reason(cx, email)
+    if current is not None and _RANK.get(current, 0) >= _RANK[bounce_type]:
+        return False
+    es.add(cx, email, bounce_type, why, source, overwrite=True, commit=False)
     return True
 
 
@@ -131,17 +147,14 @@ def apply_event(cx, event: dict) -> dict:
         for r in b.get("bouncedRecipients") or []:
             email = es.normalize(r.get("emailAddress"))
             if email:
-                es.add(cx, email, "hard", why, "ses-bounce", overwrite=False, commit=False)
-                done["blocked"] += 1
+                done["blocked"] += int(_block(cx, email, "hard", why, "ses-bounce"))
     elif kind == "Complaint":
         c = event.get("complaint") or {}
         why = f"ses complaint {c.get('complaintFeedbackType') or ''}".strip()
         for r in c.get("complainedRecipients") or []:
             email = es.normalize(r.get("emailAddress"))
             if email:
-                es.add(cx, email, "complaint", why, "ses-complaint",
-                       overwrite=False, commit=False)
-                done["blocked"] += 1
+                done["blocked"] += int(_block(cx, email, "complaint", why, "ses-complaint"))
                 done["people_marked"] += int(_mark_person_unsubscribed(cx, email))
     cx.commit()
     return done

@@ -87,3 +87,13 @@ def test_action_add_then_list_and_suppress():
     assert es.is_suppressed(cx, "a@b.com") is True
     rows = esa._exec_list({}, {"cx": cx})["rows"]
     assert any(r["email"] == "a@b.com" and r["source"] == "bounce-scan" for r in rows)
+
+
+def test_hub_refusal_tag_matches_a_mixed_case_stored_address():
+    """app.py looks people up by lower(email). A stored 'Mixed@Case.com' carrying
+    the refusal tag must still suppress 'mixed@case.com'."""
+    cx = _cx()
+    cx.execute("CREATE TABLE people (id INTEGER PRIMARY KEY, email TEXT, tags TEXT)")
+    cx.execute("INSERT INTO people (email, tags) VALUES ('Mixed@Case.com', ?)",
+               ('["consent:unsubscribed"]',))
+    assert es.is_suppressed(cx, "mixed@case.com") is True
