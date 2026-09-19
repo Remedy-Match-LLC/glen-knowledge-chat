@@ -199,11 +199,68 @@ def _scan_block(scan):
     return "\n".join(lines)
 
 
-def _user_block(report, notes, scan=None, profile=None):
+# An animal's narrative is addressed to the OWNER and names the animal. Glen,
+# 2026-09-18: "Address the animal report to the owner (e.g. Aloha Sharon, Hershey's
+# Biofield Analysis...)", and, since no store records an animal's sex, "name only is
+# perfect". The human prompt above is not touched; these swap two of its rules.
+_HUMAN_OPEN = "- Open with 'Aloha <first name>,' then, when a TERRAIN READING is present, make the "
+_HUMAN_CLOSE = (
+    "'If you tend to be "
+    "highly sensitive or reactive, you can introduce each layer or each remedy one at a time and "
+    "adjust the dosage to your tolerance. Begin gently with new remedies, visualize the desired "
+    "healing effects, and observe how your body responds. Be sure to record or write any meaningful "
+    "observations or questions in your portal chat interface.'"
+)
+
+
+def _animal_system(base, animal):
+    pet = (animal.get("name") or "").strip() or "your animal"
+    owner = (animal.get("owner") or "").strip()
+    greeting = f"Aloha {owner}," if owner else "Aloha,"
+    opening = (f"- Open with '{greeting}' on its own line. Begin the first paragraph with "
+               f"'{pet}'s Biofield Analysis', then, when a TERRAIN READING is present, make that "
+               "first paragraph a plain-language description of that terrain phase and its location. ")
+    closing = (f"'If {pet} tends to be highly sensitive or reactive, you can introduce each layer "
+               f"or each remedy one at a time and adjust the dosage to {pet}'s tolerance. Begin "
+               f"gently with new remedies, visualize the desired healing effects, and observe how "
+               f"{pet} responds. Be sure to record or write any meaningful observations or "
+               f"questions in your portal chat interface.'")
+    assert _HUMAN_OPEN in base and _HUMAN_CLOSE in base, "narrative rules moved; update the animal swap"
+    system = base.replace(_HUMAN_OPEN, opening).replace(_HUMAN_CLOSE, closing)
+    species = (animal.get("species") or "animal").strip().lower()
+    return system + (
+        f"\nANIMAL CLIENT: this analysis is of {pet}, a {species}. The reader is "
+        f"{owner or 'the owner'}, who cares for {pet}. Write to the owner as 'you'; the body, "
+        f"the layers and the remedies are {pet}'s. Never call {pet} 'you'. Never refer to {pet} "
+        "with a pronoun: not 'he', 'she', 'him', 'his', 'her', 'hers' or 'it'. Nothing records "
+        f"the animal's sex, so repeat the name '{pet}' instead.\n"
+    )
+
+
+def _enforce_animal_greeting(text, animal):
+    """Correct an LLM that greets the animal instead of the owner."""
+    if not animal:
+        return text
+    pet = (animal.get("name") or "").strip()
+    owner = (animal.get("owner") or "").strip()
+    if not pet:
+        return text
+    greeting = f"Aloha {owner}," if owner else "Aloha,"
+    return re.sub(rf"^\s*Aloha\s+{re.escape(pet)}\b[^,\n]*,", greeting, text or "", count=1)
+
+
+def _user_block(report, notes, scan=None, profile=None, animal=None):
     c = report.get("client") or {}
-    lines = [f"PATIENT: {c.get('name') or ''}",
-             f"DATE: {report.get('date') or ''}",
-             ""]
+    if animal:
+        pet = (animal.get("name") or "").strip()
+        species = (animal.get("species") or "animal").strip().lower()
+        owner = (animal.get("owner") or "").strip() or "(unknown; greet with 'Aloha,')"
+        who = [f"ANIMAL (the subject of this analysis): {pet}, a {species}",
+               f"OWNER (the reader; address the letter to them): {owner}"]
+    else:
+        who = [f"PATIENT: {c.get('name') or ''}"]
+    lines = who + [f"DATE: {report.get('date') or ''}",
+                   ""]
     from dashboard.terrain_phase import phase_narrative_description
     terrain = phase_narrative_description(report.get("phase"), report.get("location"))
     if terrain:
@@ -312,17 +369,21 @@ def _system_with_scan(base, scan):
     return base + (_SCAN_GUIDANCE if _narrative_findings(scan) else "")
 
 
-def build_narrative_prompt(report, notes, scan=None, profile=None):
+def build_narrative_prompt(report, notes, scan=None, profile=None, animal=None):
     system = _system_with_scan(_SYSTEM, scan)
+    if animal:
+        system = _animal_system(system, animal)
     if _profile_content(profile):
         system += _PROFILE_GUIDANCE
-    return {"system": system, "user": _user_block(report, notes, scan, profile)}
+    return {"system": system, "user": _user_block(report, notes, scan, profile, animal)}
 
 
-def generate_narrative(report, notes, complete, scan=None, profile=None):
-    """complete(system, user) -> narrative text. scan = E4L context; profile = People-hub context."""
-    p = build_narrative_prompt(report, notes, scan, profile)
+def generate_narrative(report, notes, complete, scan=None, profile=None, animal=None):
+    """complete(system, user) -> narrative text. scan = E4L context; profile = People-hub
+    context; animal = {"name", "species", "owner"} when the client is an animal, else None."""
+    p = build_narrative_prompt(report, notes, scan, profile, animal)
     text = complete(p["system"], p["user"])
+    text = _enforce_animal_greeting(text, animal)
     return _enforce_phase_name(text, report.get("phase"))
 
 

@@ -133,6 +133,30 @@ def deepgram_browser_token():
         return os.environ["DEEPGRAM_API_KEY"]
 
 
+def _default_fetch_animal_owner(email):
+    """The first name of an animal client's owner: the first caregiver on the prod
+    portal who shares with them. "" when there is none or prod cannot be reached."""
+    import json as _json
+    import urllib.parse
+    import urllib.request
+    email = (email or "").strip()
+    if not email:
+        return ""
+    try:
+        key = os.environ["CONSOLE_SECRET"]
+        base = os.environ.get("PUBLIC_BASE_URL", "https://illtowell.com").rstrip("/")
+        url = f"{base}/api/console/biofield-portal?" + urllib.parse.urlencode({"email": email})
+        req = urllib.request.Request(url, headers={"X-Console-Key": key})
+        cgs = _json.load(urllib.request.urlopen(req, timeout=20)).get("caregivers") or []
+    except Exception:
+        return ""
+    for cg in cgs:
+        name = (cg.get("name") or "").strip()
+        if name:
+            return name
+    return ""
+
+
 def _default_fetch_profile(email):
     """Pull the prod consolidated clinical profile (People + all portal forms)."""
     import json as _json
@@ -596,7 +620,7 @@ def _install_log_redaction() -> None:
 def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                interpret_complete=None, scan_lookup=None, client_search=None,
                fetch_runner=None, fetch_profile=None, fetch_recent_comms=None,
-               fetch_client_photo=None,
+               fetch_client_photo=None, fetch_animal_owner=None,
                e4l_db=None, fee_get=None, fee_set=None, fee_clear=None,
                invoice_fetch_catalog=None, invoice_create=None, invoice_link=None,
                invoice_paid_check=None, invoice_latest=None, client_orders=None,
@@ -620,6 +644,7 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
     fetch_runner = fetch_runner  # None -> fetch_live uses the real scraper+parser
     using_default_fetch_profile = fetch_profile is None
     fetch_profile = fetch_profile or _default_fetch_profile
+    fetch_animal_owner = fetch_animal_owner or _default_fetch_animal_owner
     using_default_fetch_recent_comms = fetch_recent_comms is None
     fetch_recent_comms = fetch_recent_comms or _default_fetch_recent_comms
     using_default_fetch_client_photo = fetch_client_photo is None
@@ -673,6 +698,35 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
     def _report_for(cx, test_id):
         return (authored_report(cx, test_id) if str(test_id).startswith("a")
                 else causal_chain_report(cx, test_id))
+
+    def _animal_for(rep):
+        """{"name", "species", "owner"} when the report's client is an animal, else None.
+
+        Species comes from the E4L species column in e4l.db. Anything unreadable, no
+        row, or Human reads as a person, so a lookup failure leaves the human narrative
+        exactly as it was. The owner is fetched only for an animal."""
+        from dashboard import client_species as _cspec
+        c = rep.get("client") or {}
+        email = (c.get("email") or "").strip().lower()
+        if not email:
+            return None
+        try:
+            with sqlite3.connect(f"file:{e4l_db}?mode=ro", uri=True) as ecx:
+                row = ecx.execute(
+                    "SELECT species, animal_name FROM e4l_clients "
+                    "WHERE lower(trim(email))=? AND species IS NOT NULL AND species<>'' "
+                    "ORDER BY client_id DESC LIMIT 1", (email,)).fetchone()
+        except Exception:
+            return None
+        if not row or not _cspec.is_animal(row[0]):
+            return None
+        name = (row[1] or "").strip() or ((c.get("name") or "").split() or [""])[0]
+        try:
+            owner = (fetch_animal_owner(email) or "").strip()
+        except Exception:
+            owner = ""
+        return {"name": name, "species": row[0].strip(),
+                "owner": (owner.split() or [""])[0]}
 
     def _e4l(cx, test_id):
         """Scan context + rendered panel for a test's stored client email."""
@@ -2857,7 +2911,8 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
             except Exception:
                 prof = {}
             try:
-                text = generate_narrative(rep, notes, complete, scan=ctx, profile=prof)
+                text = generate_narrative(rep, notes, complete, scan=ctx, profile=prof,
+                                          animal=_animal_for(rep))
             except Exception as e:  # no API key / network / model error
                 return {"error": str(e)[:200]}
             save_narrative(cx, test_id, text)
