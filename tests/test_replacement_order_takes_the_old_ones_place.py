@@ -153,7 +153,10 @@ def test_a_cancelled_unpaid_order_link_opens_nothing_but_a_paid_one_still_opens(
     with _cx(db) as cx:
         O.set_order_status(cx, x, "cancelled")
     assert appmod._invoice_order_for_token(tok) is None
+    page = client.get(f"/invoice/{tok}")
+    assert page.status_code == 403 and b"invalid or has expired" in page.data
     with _cx(db) as cx:
         cx.execute("UPDATE orders SET pay_status='paid' WHERE id=?", (x,))
         cx.commit()
     assert appmod._invoice_order_for_token(tok)["id"] == x
+    assert client.get(f"/invoice/{tok}").status_code == 200

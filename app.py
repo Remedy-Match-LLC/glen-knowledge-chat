@@ -55740,7 +55740,9 @@ def _invoice_summary(order):
 
 @app.route("/invoice/<token>")
 def invoice_page(token):
-    if not _pp.order_id_from_invoice_token(token):
+    # Same lookup the invoice data uses: follows a replaced order to its replacement,
+    # and a cancelled unpaid order with none gets this page (Glen, 2026-09-19).
+    if not _invoice_order_for_token(token):
         return ("<!doctype html><meta charset=utf-8><title>Invoice</title>"
                 "<div style='font-family:sans-serif;max-width:480px;margin:80px auto;text-align:center'>"
                 "<h2>This invoice link is invalid or has expired.</h2>"
