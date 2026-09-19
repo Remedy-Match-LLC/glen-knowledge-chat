@@ -81,6 +81,11 @@ def init_household_tables(cx):
         cx.execute("ALTER TABLE household_members ADD COLUMN pay_share_scope TEXT DEFAULT 'amount_only'")
     except Exception:
         pass
+    # bill-with-caregiver (Glen, 2026-09-19): the member's invoice lines go onto the
+    # caregiver's order. Set on first use and remembered per link.
+    from dashboard import db as _db
+    if not _db.column_exists(cx, "household_members", "bill_with_caregiver"):
+        cx.execute("ALTER TABLE household_members ADD COLUMN bill_with_caregiver INTEGER DEFAULT 0")
     cx.commit()
 
     cx.execute("""
@@ -319,3 +324,43 @@ def confirm_consent(cx, primary_email, member_email):
                "consent_confirmed_at=? WHERE primary_email=? AND member_email=?", (_now(), p, m))
     cx.commit()
     return True
+
+
+# --- bill with caregiver ---------------------------------------------------------------
+#
+# Glen, 2026-09-19, on Sharon and Hershey Connour: "since she asked for a single invoice
+# including his remedy set we need a way to do that systematically ... And how that
+# preference would be remembered for future orders." He chose: merge the member's lines
+# into the caregiver's order.
+
+def billing_caregivers(cx, member_email):
+    """Caregivers who may be billed for this member: those can_pay allows (a pet's or
+    child's caregiver, or one the member granted pay-consent)."""
+    m = _norm(member_email)
+    return [c for c in caregivers_for(cx, m) if can_pay(cx, c["primary_email"], m)]
+
+
+def bill_with_caregiver_for(cx, member_email):
+    """The caregiver this member's invoices are remembered to go to, or None.
+
+    None when no link carries the flag, or when more than one does (ambiguous: the
+    operator must choose again rather than have the code guess)."""
+    m = _norm(member_email)
+    rows = cx.execute(
+        "SELECT primary_email FROM household_members WHERE member_email=? "
+        "AND COALESCE(bill_with_caregiver,0)=1", (m,)).fetchall()
+    emails = [r[0] for r in rows if can_pay(cx, r[0], m)]
+    return emails[0] if len(emails) == 1 else None
+
+
+def set_bill_with_caregiver(cx, caregiver_email, member_email, on=True):
+    """Remember (or forget) that this member bills to this caregiver. Only one link per
+    member carries the flag, so setting it on one clears the others."""
+    c, m = _norm(caregiver_email), _norm(member_email)
+    if on and not can_pay(cx, c, m):
+        raise ValueError(f"{c} may not pay for {m}")
+    if on:
+        cx.execute("UPDATE household_members SET bill_with_caregiver=0 WHERE member_email=?", (m,))
+    cx.execute("UPDATE household_members SET bill_with_caregiver=? "
+               "WHERE primary_email=? AND member_email=?", (1 if on else 0, c, m))
+    cx.commit()

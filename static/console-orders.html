@@ -246,8 +246,8 @@
       : (o.name||o.email||'Order #'+o.id);
     var items = (o.items||[]).map(function(i){ return (i.qty?i.qty+'x ':'')+esc(i.name||i.slug||''); }).join(', ');
     var acts = '';
-    if (o.status==='proposed') acts = editBtn(o.id) + ' ' + btn(o.id,'orders.confirm','Confirm') + ' ' + sendInvBtn(o) + ' ' + payBtn(o.id);
-    else if (o.status==='confirmed') acts = editBtn(o.id) + ' ' + sendInvBtn(o) + ' ' + payBtn(o.id);
+    if (o.status==='proposed') acts = editBtn(o.id) + ' ' + btn(o.id,'orders.confirm','Confirm') + ' ' + sendInvBtn(o) + ' ' + payBtn(o.id) + ' ' + carerBtn(o);
+    else if (o.status==='confirmed') acts = editBtn(o.id) + ' ' + sendInvBtn(o) + ' ' + payBtn(o.id) + ' ' + carerBtn(o);
     else if (o.status==='new' && !isPaidReady(o)) acts = editBtn(o.id) + ' ' + sendInvBtn(o) + ' ' + payBtn(o.id);
     else if (o.status==='new')     acts = editBtn(o.id) + ' ' + btn(o.id,'orders.mark_packed','Pack') + ' '
       + (isFreeOrder(o) ? btn(o.id,'orders.mark_done','Mark done') : sendInvBtn(o));
@@ -463,6 +463,31 @@
       Object.keys(by).forEach(function(k){ t[k] = (t[k] || 0) + Number(by[k] || 0); });
     });
     return t;
+  }
+  // Bill with caregiver (Glen, 2026-09-19): move an unpaid member order's lines onto the
+  // caregiver's invoice. Shown only when a caregiver may pay for this client.
+  function carerBtn(o){
+    var cs = o.billing_caregivers || [];
+    if (!cs.length || o.pay_status==='paid' || o.superseded_by_order_id) return '';
+    return '<button onclick="billCarer('+Number(o.id)+')">Add to caregiver\'s order</button>';
+  }
+  async function billCarer(id){
+    var o = (HH.byId && HH.byId[Number(id)]) || {};
+    var cs = o.billing_caregivers || [];
+    var carer = cs[0];
+    if (cs.length > 1){
+      carer = prompt('Which caregiver pays?\n\n' + cs.join('\n'), cs[0]);
+      if (!carer) return;
+    }
+    if (!confirm('Move order #' + id + ' onto ' + carer + '\'s invoice?\n\n'
+        + 'Each line is marked for ' + (o.name || 'this client') + '. Order #' + id
+        + ' is cancelled, and future invoices for this client go to ' + carer + '.')) return;
+    var r = await fetch('/api/orders/' + Number(id) + '/bill-with-caregiver',
+                        {method:'POST', headers:hdr(), body:JSON.stringify({caregiver_email: carer})});
+    var res = await r.json().catch(function(){ return {}; });
+    if (!res.ok) alert(res.error || 'Could not move the order.');
+    else alert('Moved onto order #' + res.order_id + (res.created ? ' (a new invoice)' : '') + '.');
+    load();
   }
   function printInvBtn(id){ return '<button onclick="printInvoice('+Number(id)+')">Print invoice</button>'; }
   function labelBtn(o){

@@ -1630,7 +1630,23 @@ def _fee_js():
         "if(j.order_id){var pb=document.createElement('button');pb.className='btn';pb.textContent='Publish invoice to portal';"
         "pb.onclick=function(){publishInvoice(j.order_id,pb);};out.appendChild(document.createElement('br'));out.appendChild(pb);}})"
         ".catch(function(){btn.disabled=false;s.textContent='';out.textContent='Could not reach the app to create the invoice.';});}"
-        "detectInvoice();"
+        "function loadCarer(){var row=document.getElementById('carerrow');if(!row)return;"
+        "fetch(_abase()+'/caregiver-billing').then(r=>r.json()).then(function(j){"
+        "var cs=(j&&j.caregivers)||[];if(!j.ok||!cs.length){row.style.display='none';return;}"
+        "row.innerHTML='';cs.forEach(function(c){var l=document.createElement('label');"
+        "l.style.marginRight='14px';var b=document.createElement('input');b.type='checkbox';"
+        "b.checked=(j.remembered===c);b.onchange=function(){setCarer(c,b.checked);};"
+        "l.appendChild(b);l.appendChild(document.createTextNode(' Bill with '+c+\"'s invoice\"));"
+        "row.appendChild(l);});var n=document.createElement('span');n.id='carerstat';n.className='food';"
+        "row.appendChild(n);row.style.display='';}).catch(function(){row.style.display='none';});}"
+        "function setCarer(c,on){var s=document.getElementById('carerstat');if(s)s.textContent=' saving...';"
+        "fetch(_abase()+'/caregiver-billing',{method:'POST',headers:{'Content-Type':'application/json'},"
+        "body:JSON.stringify({caregiver_email:c,on:on})}).then(r=>r.json()).then(function(j){"
+        "if(!j.ok){alert(j.error||'Could not save.');}loadCarer();"
+        "var s2=document.getElementById('carerstat');if(s2&&j.ok)s2.textContent=on?"
+        "' remembered: invoices go onto '+c+\"'s order\":' this client is billed on their own';})"
+        ".catch(function(){alert('Could not reach the app.');loadCarer();});}"
+        "detectInvoice();loadCarer();"
         "</script>")
 
 
@@ -1693,6 +1709,9 @@ def render_fee_panel(state):
         "Add remedies to invoice &rarr;</button>"
         "<button class='btn ghost' id=viewinvbtn onclick=viewInvoice()>View invoice &rarr;</button>"
         "<span id=invstat class=food></span></div>"
+        # Bill with caregiver (Glen, 2026-09-19): filled in by loadCarer() only when a
+        # caregiver may pay for this client. Ticking it is remembered for future invoices.
+        "<div class=btnrow id=carerrow style='margin-top:6px;display:none'></div>"
         "<div id=invresult class=food style='margin-top:6px'></div>")
     return head + cur + controls + _fee_js() + "</div>"
 

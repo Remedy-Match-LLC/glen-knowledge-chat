@@ -53854,6 +53854,10 @@ def _price_inhouse_invoice(lines_in, *, email, pickup, ship,
         _src = (ln.get("source") or "").strip()
         if _src:
             rec["source"] = _src
+        # Whose line this is on a caregiver's merged invoice (bill with caregiver).
+        _bf = (ln.get("billed_for") or "").strip().lower()
+        if _bf:
+            rec["billed_for"] = _bf
         if _fmt and _fmt != "bottle":
             rec["format"] = _fmt
         # Mark ONLY owner-typed per-line overrides, so Edit Invoice can tell them
@@ -54213,6 +54217,241 @@ def api_orders_edit(oid):
                     "lines": priced["items_rec"]})
 
 
+# --- bill with caregiver --------------------------------------------------------------
+#
+# Glen, 2026-09-19: a member's invoice lines go onto their caregiver's order, "per her
+# request", remembered for future orders. Rules he approved the same day:
+#   - lines carry billed_for (the member) and a "For <name>" note
+#   - re-billing a member REPLACES that member's lines, never adds a second set
+#   - the caregiver's open unpaid invoice takes them; with none open, a new one opens
+#   - whole-order quantity pricing only when the caregiver holds a family plan;
+#     otherwise the member's lines keep their own prices
+#   - fee lines move too; the member's own order is superseded AND cancelled
+
+_CAREGIVER_OPEN_STATUSES = ("proposed", "confirmed")
+
+
+def _caregiver_open_order(cx, caregiver_email):
+    row = cx.execute(
+        "SELECT id FROM orders WHERE lower(email)=? AND status IN (?,?) "
+        "AND COALESCE(pay_status,'unpaid')<>'paid' AND superseded_by_order_id IS NULL "
+        "ORDER BY id DESC LIMIT 1",
+        ((caregiver_email or "").strip().lower(),) + _CAREGIVER_OPEN_STATUSES).fetchone()
+    return _bos_orders.get_order(cx, int(row[0])) if row else None
+
+
+def _lines_from_items(items):
+    """Stored order items -> editor lines, keeping what a re-price must not lose:
+    frozen prices (override), notes, source, format, and whose line it is."""
+    out = []
+    for i in items or []:
+        if i.get("gift") or not i.get("slug"):
+            continue
+        ln = {"slug": i["slug"], "qty": int(i.get("qty") or 1)}
+        if i.get("override"):
+            ln["unit_cents"] = i.get("unit_cents")
+        for k in ("note", "source", "format", "billed_for"):
+            if i.get(k):
+                ln[k] = i[k]
+        out.append(ln)
+    return out
+
+
+def _for_note(member_name, note):
+    first = ((member_name or "").strip().split() or [""])[0]
+    tag = f"For {first}" if first else "For household member"
+    note = (note or "").strip()
+    return tag if not note or note.startswith(tag) else f"{tag}; {note}"
+
+
+def _bill_lines_to_caregiver(*, member_email, member_name, caregiver_email, lines_in,
+                             member_order=None, remember=True):
+    """Put a member's lines on the caregiver's open invoice, or on a new one.
+
+    lines_in are editor lines for the MEMBER. Raises ValueError when the caregiver may
+    not pay for this member."""
+    from dashboard import household as _hh, family_plan as _fp
+    member = (member_email or "").strip().lower()
+    carer = (caregiver_email or "").strip().lower()
+    cx = db.connect(LOG_DB)
+    cx.row_factory = _sqlite3.Row
+    try:
+        _hh.init_household_tables(cx)
+        if not _hh.can_pay(cx, carer, member):
+            raise ValueError(f"{carer} may not pay for {member}")
+        _fp.init_family_plan_table(cx)
+        family_level = _fp.is_active(cx, carer)
+        target = _caregiver_open_order(cx, carer)
+    finally:
+        cx.close()
+
+    # Without a family plan the member's lines keep the price they would have alone.
+    frozen = []
+    if not family_level:
+        solo = _price_inhouse_invoice([dict(l) for l in lines_in], email=member, pickup=False,
+                                      ship={"country": "US"}, points_redeem_cents_in=None)
+        solo_by_slug = {}
+        for rec in (solo or {}).get("items_rec") or []:
+            solo_by_slug.setdefault(rec.get("slug"), rec.get("unit_cents"))
+        frozen = [solo_by_slug.get(ln.get("slug")) for ln in lines_in]
+
+    member_lines = []
+    for idx, ln in enumerate(lines_in):
+        m = {k: v for k, v in ln.items() if k != "billed_for"}
+        m["billed_for"] = member
+        m["note"] = _for_note(member_name, ln.get("note"))
+        if frozen and m.get("unit_cents") in (None, "") and frozen[idx] is not None:
+            m["unit_cents"] = frozen[idx]
+        member_lines.append(m)
+
+    if target:
+        keep = [l for l in _lines_from_items(target.get("items"))
+                if (l.get("billed_for") or "") != member]
+        cx = db.connect(LOG_DB)
+        cx.row_factory = _sqlite3.Row
+        try:
+            priced, _ = _reprice_and_persist_invoice(
+                cx, target, keep + member_lines,
+                pickup=(target.get("channel") == "pickup"), strict_packaging=True)
+        finally:
+            cx.close()
+        if priced is None:
+            raise ValueError("no valid products to bill")
+        _push_invoice_edit_to_qbo(target.get("external_ref"), priced)
+        target_id, created, total = int(target["id"]), False, priced["total_cents"]
+    else:
+        cx = db.connect(LOG_DB)
+        try:
+            r = cx.execute("SELECT name FROM orders WHERE lower(email)=? AND COALESCE(name,'')<>'' "
+                           "ORDER BY id DESC LIMIT 1", (carer,)).fetchone()
+            cname = (r[0] if r else "") or ""
+        finally:
+            cx.close()
+        # Open it through the invoice route itself, so a new caregiver invoice gets
+        # everything any new invoice gets (hold, invite, address, shipping credit).
+        with app.test_client() as _c:
+            resp = _c.post("/api/orders/manual",
+                           headers={"X-Console-Key": CONSOLE_SECRET or ""},
+                           json={"customer": {"email": carer, "name": cname},
+                                 "lines": member_lines, "_caregiver_route": False})
+        body = resp.get_json(silent=True) or {}
+        if resp.status_code != 200 or not body.get("ok"):
+            raise ValueError("could not open the caregiver's invoice: "
+                             f"{body.get('error') or resp.status_code}")
+        target_id, created = int(body["order_id"]), True
+        total = (body.get("totals") or {}).get("total_cents")
+
+    if member_order and int(member_order["id"]) != target_id:
+        cx = db.connect(LOG_DB)
+        try:
+            _bos_orders.init_orders_table(cx)
+            _bos_orders.supersede_order(cx, int(member_order["id"]), target_id)
+            _bos_orders.set_order_status(cx, int(member_order["id"]), "cancelled")
+            cx.commit()
+        finally:
+            cx.close()
+    if remember:
+        cx = db.connect(LOG_DB)
+        try:
+            _hh.set_bill_with_caregiver(cx, carer, member, True)
+        finally:
+            cx.close()
+    return {"ok": True, "caregiver_email": carer, "order_id": target_id,
+            "created": created, "family_level": family_level, "total_cents": total,
+            "member_lines": len(member_lines),
+            "cancelled_member_order": int(member_order["id"]) if member_order else None,
+            "remembered": bool(remember)}
+
+
+@app.route("/api/orders/<int:oid>/caregiver-billing", methods=["GET"])
+def api_order_caregiver_billing(oid):
+    """What the Orders board needs to offer "Add to caregiver's order"."""
+    if _bos_actor() is None:
+        return jsonify({"ok": False, "error": "unauthorized"}), 401
+    from dashboard import household as _hh
+    cx = db.connect(LOG_DB)
+    cx.row_factory = _sqlite3.Row
+    try:
+        order = _bos_orders.get_order(cx, oid)
+        if not order:
+            return jsonify({"ok": False, "error": "order not found"}), 404
+        _hh.init_household_tables(cx)
+        email = (order.get("email") or "").strip().lower()
+        carers = [c["primary_email"] for c in _hh.billing_caregivers(cx, email)]
+        opens = {c: (_caregiver_open_order(cx, c) or {}).get("id") for c in carers}
+        return jsonify({"ok": True, "order_id": oid, "caregivers": carers,
+                        "open_orders": opens,
+                        "remembered": _hh.bill_with_caregiver_for(cx, email)})
+    finally:
+        cx.close()
+
+
+@app.route("/api/orders/<int:oid>/bill-with-caregiver", methods=["POST"])
+def api_order_bill_with_caregiver(oid):
+    """Owner or ops: move an unpaid member order's lines onto the caregiver's invoice."""
+    actor = _bos_actor()
+    if actor is None or actor.role not in (_bos_rbac.OWNER, _bos_rbac.OPS):
+        return jsonify({"ok": False, "error": "unauthorized"}), 401
+    from dashboard import household as _hh
+    body = request.get_json(silent=True) or {}
+    cx = db.connect(LOG_DB)
+    cx.row_factory = _sqlite3.Row
+    try:
+        order = _bos_orders.get_order(cx, oid)
+        if not order:
+            return jsonify({"ok": False, "error": "order not found"}), 404
+        if (order.get("pay_status") == "paid"
+                or order.get("status") not in _CAREGIVER_OPEN_STATUSES + ("new",)):
+            return jsonify({"ok": False, "error": "only an unpaid, open order can move"}), 409
+        if order.get("superseded_by_order_id"):
+            return jsonify({"ok": False, "error": "this order was already replaced"}), 409
+        _hh.init_household_tables(cx)
+        email = (order.get("email") or "").strip().lower()
+        carers = [c["primary_email"] for c in _hh.billing_caregivers(cx, email)]
+    finally:
+        cx.close()
+    carer = ((body.get("caregiver_email") or "").strip().lower()
+             or (carers[0] if len(carers) == 1 else ""))
+    if carer not in carers:
+        return jsonify({"ok": False, "error": "choose a caregiver", "caregivers": carers}), 400
+    try:
+        res = _bill_lines_to_caregiver(
+            member_email=email, member_name=order.get("name"), caregiver_email=carer,
+            lines_in=_lines_from_items(order.get("items")), member_order=order,
+            remember=body.get("remember", True) is not False)
+    except (ValueError, CheckoutError) as e:
+        return jsonify({"ok": False, "error": str(e)}), 400
+    return jsonify(res)
+
+
+@app.route("/api/console/caregiver-billing", methods=["GET", "POST"])
+def api_console_caregiver_billing():
+    """The Biofield invoice panel's control. GET ?email= says who could be billed and
+    what is remembered; POST {email, caregiver_email, on} sets the preference."""
+    if _bos_actor() is None:
+        return jsonify({"ok": False, "error": "unauthorized"}), 401
+    from dashboard import household as _hh
+    body = request.get_json(silent=True) or {}
+    src = request.args if request.method == "GET" else body
+    email = (src.get("email") or "").strip().lower()
+    if not email:
+        return jsonify({"ok": False, "error": "email required"}), 400
+    cx = db.connect(LOG_DB)
+    try:
+        _hh.init_household_tables(cx)
+        if request.method == "POST":
+            try:
+                _hh.set_bill_with_caregiver(cx, body.get("caregiver_email") or "", email,
+                                            bool(body.get("on", True)))
+            except ValueError as e:
+                return jsonify({"ok": False, "error": str(e)}), 400
+        return jsonify({"ok": True, "email": email,
+                        "caregivers": [c["primary_email"] for c in _hh.billing_caregivers(cx, email)],
+                        "remembered": _hh.bill_with_caregiver_for(cx, email)})
+    finally:
+        cx.close()
+
+
 @app.route("/api/orders/<int:oid>/supersede", methods=["POST"])
 def api_orders_supersede(oid):
     """Owner: link an obsolete order number to the order that replaced it."""
@@ -54415,6 +54654,38 @@ def api_orders_manual():
     lines_in = body.get("lines") or []
     if not lines_in:
         return jsonify({"ok": False, "error": "no line items"}), 400
+    # Bill with caregiver: a member whose invoices are remembered to go to a caregiver
+    # has these lines placed on the caregiver's invoice instead of an order of their own.
+    if body.get("_caregiver_route", True) is not False and (customer.get("email") or "").strip():
+        from dashboard import household as _hh
+        _mem = customer["email"].strip().lower()
+        _hcx = db.connect(LOG_DB)
+        _hcx.row_factory = _sqlite3.Row
+        try:
+            _hh.init_household_tables(_hcx)
+            _carer = _hh.bill_with_caregiver_for(_hcx, _mem)
+            _prior = None
+            if _carer and body.get("update_order_id"):
+                try:
+                    _prior = _bos_orders.get_order(_hcx, int(body["update_order_id"]))
+                except (TypeError, ValueError):
+                    _prior = None
+                if _prior and ((_prior.get("email") or "").strip().lower() != _mem
+                               or _prior.get("pay_status") == "paid"
+                               or _prior.get("status") not in _CAREGIVER_OPEN_STATUSES + ("new",)
+                               or _prior.get("superseded_by_order_id")):
+                    _prior = None
+        finally:
+            _hcx.close()
+        if _carer:
+            try:
+                res = _bill_lines_to_caregiver(
+                    member_email=_mem, member_name=customer.get("name"),
+                    caregiver_email=_carer, lines_in=lines_in, member_order=_prior)
+            except (ValueError, CheckoutError) as e:
+                return jsonify({"ok": False, "error": str(e)}), 400
+            return jsonify({**res, "billed_to_caregiver": True,
+                            "totals": {"total_cents": res.get("total_cents")}})
     # Biofield re-raise: update the existing unpaid order in place. This keeps its
     # stable order id and invoice token, instead of manufacturing order #N+1 every
     # time the practitioner refreshes remedies from the intake.
@@ -56876,6 +57147,26 @@ def bos_orders_create():
                 rows = _bos_orders.list_orders(cx, include_cancelled=False)
             for o in rows:
                 o["source_label"] = _order_board_source_label(o.get("source"))
+            # Bill with caregiver: which caregivers may take each order's lines. One query,
+            # on its own connection so a failure cannot abort the board's transaction.
+            try:
+                from dashboard import household as _hh
+                _hcx = db.connect(LOG_DB)
+                try:
+                    _hh.init_household_tables(_hcx)
+                    _payers = {}
+                    for _m, _p in _hcx.execute(
+                            "SELECT member_email, primary_email FROM household_members "
+                            "WHERE member_email<>primary_email AND (pay_consent=1 OR "
+                            "lower(trim(coalesce(relationship,''))) IN (?,?))",
+                            _hh.CAREGIVER_PAYS_RELATIONSHIPS).fetchall():
+                        _payers.setdefault((_m or "").strip().lower(), []).append(_p)
+                finally:
+                    _hcx.close()
+                for o in rows:
+                    o["billing_caregivers"] = _payers.get((o.get("email") or "").strip().lower(), [])
+            except Exception as _e:
+                print(f"[orders] caregiver annotate skipped: {_e!r}", flush=True)
             # Annotate each order with per-line fulfillment + backorder units, using a
             # single grouped query over order_fulfillments (no per-order round-trips).
             try:
