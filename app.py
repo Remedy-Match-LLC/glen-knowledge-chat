@@ -54330,6 +54330,34 @@ def _cancel_open_handoff_orders(cx, email):
     return ids
 
 
+def _known_ship_address(email):
+    """The client's last shipped-to address. A pet or child with none of their own
+    uses their caregiver's. Adults never borrow another member's address. {} if none."""
+    from dashboard import customers as _cust
+    from dashboard import household as _hh
+    em = (email or "").strip().lower()
+    if not em:
+        return {}
+    cx = db.connect(LOG_DB)
+    try:
+        own = _cust.last_address_for(cx, em)
+        if (own.get("address1") or "").strip():
+            return own
+        try:
+            _hh.init_household_tables(cx)
+            carers = _hh.caregivers_for(cx, em)
+        except Exception:
+            carers = []
+        for c in carers:
+            if c["relationship"].strip().lower() in ("pet", "child"):
+                theirs = _cust.last_address_for(cx, c["primary_email"])
+                if (theirs.get("address1") or "").strip():
+                    return theirs
+        return {}
+    finally:
+        cx.close()
+
+
 @app.route("/api/orders/manual", methods=["POST"])
 def api_orders_manual():
     """Create a proposed invoice (in-house order entry). Computes rule-based
@@ -54417,6 +54445,10 @@ def api_orders_manual():
         with _db_lock, db.connect(LOG_DB) as _ccx:
             cancelled_ids = _cancel_open_handoff_orders(_ccx, customer["email"])
     addr_in = customer.get("address") or {}
+    # A Biofield hand-off posts no address. A blank ship-to can neither ship nor match a
+    # household member's order for Combine, so fill it from what we already know.
+    if not pickup and not (addr_in.get("address1") or addr_in.get("street") or "").strip():
+        addr_in = _known_ship_address(customer.get("email")) or addr_in
     ship = {
         "name": customer.get("name") or "",
         "street": addr_in.get("address1") or addr_in.get("street") or "",

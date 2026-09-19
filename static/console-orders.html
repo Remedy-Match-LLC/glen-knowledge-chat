@@ -109,6 +109,7 @@
   #hhbar .link { background:none; border:none; color:var(--muted); cursor:pointer; font-weight:400; }
   #hhbanner { display:none; margin:0 12px 10px; padding:9px 13px; border-radius:10px;
     background:rgba(124,156,255,0.10); border:1px solid rgba(124,156,255,0.35); color:#c7d2ff; font-size:13px; }
+  #hhbanner .hh-row + .hh-row { margin-top:6px; }
   #hhbanner button { margin-left:8px; padding:3px 10px; border-radius:7px; border:1px solid #7c9cff;
     background:none; color:#9db4ff; cursor:pointer; }
   .hh-ship { border:1px solid rgba(124,156,255,0.5) !important; }
@@ -793,12 +794,15 @@
   function renderBanner(){
     var b = document.getElementById('hhbanner'); if(!b) return;
     if(!HH.enabled || !HH.clusters.length){ b.style.display='none'; return; }
-    var c = HH.clusters[0];
-    var names = c.orders.map(function(o){ return o.name||o.email||('#'+o.id); }).join(' + ');
-    b.innerHTML = '&#127968; These orders share '+(c.key_type==='household'?'a household':'an address')
-      + ' and could ship together: <b>'+esc(names)+'</b>'
-      + '<button onclick="combineCluster(0)">Combine</button>'
-      + (HH.clusters.length>1?' <span class="meta">(+'+(HH.clusters.length-1)+' more)</span>':'');
+    // One row and one Combine button per cluster. Only the first used to get a button;
+    // the rest showed as "(+N more)" with no way to act on them.
+    b.innerHTML = HH.clusters.map(function(c, i){
+      var names = c.orders.map(function(o){ return o.name||o.email||('#'+o.id); }).join(' + ');
+      return '<div class="hh-row">&#127968; These orders share '
+        + (c.key_type==='household'?'a household':'an address')
+        + ' and could ship together: <b>'+esc(names)+'</b>'
+        + '<button onclick="combineCluster('+i+')">Combine</button></div>';
+    }).join('');
     b.style.display='block';
   }
 
