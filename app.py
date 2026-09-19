@@ -53978,7 +53978,7 @@ def _harvest_line_note_snippets(cx, items):
 def _reprice_and_persist_invoice(cx, order, lines_in, *, pickup, discount_cents_in=None,
                                  adjustment_cents_in=None, invoice_note=None,
                                  address_override=None, shipping_override_cents_in=None,
-                                 strict_packaging=False):
+                                 strict_packaging=False, points_redeem_cents_in=None):
     """Reprice an order's line items at the current pricing (membership-aware) and
     persist the invoice. Shared by the manual invoice editor (/api/orders/<oid>/edit)
     and the one-click grant-and-reprice button. Carries the order's existing points +
@@ -54015,6 +54015,13 @@ def _reprice_and_persist_invoice(cx, order, lines_in, *, pickup, discount_cents_
     if priced is None:
         return None, None
     existing_points = int(order.get("points_redeemed_cents") or 0)
+    if points_redeem_cents_in not in (None, ""):
+        # Setting points on an existing invoice. Safe ONLY before payment: points leave
+        # the ledger in _settle_order_points when the order is paid, keyed on its
+        # external_ref, so an unpaid order with no redeem entry has spent nothing yet.
+        # Glen, 2026-09-19: "apply her points to 194".
+        existing_points = _points_to_set_on_unpaid_order(
+            order, priced, int(points_redeem_cents_in))
     priced["points_redeemed_cents"] = existing_points
     priced["total_cents"] = max(0, priced["total_cents"] - existing_points)
     # Same for a shipping credit already auto-applied to this order: carry it
@@ -54047,6 +54054,38 @@ def _reprice_and_persist_invoice(cx, order, lines_in, *, pickup, discount_cents_
         invoice_note=(invoice_note.strip() if isinstance(invoice_note, str) else None))
     _harvest_line_note_snippets(cx, priced["items_rec"])
     return priced, (order.get("pay_status") == "paid")
+
+
+def _points_to_set_on_unpaid_order(order, priced, want_cents):
+    """How many points (cents) may be set on this unpaid invoice.
+
+    Refuses (CheckoutError) a paid order, or one whose points already left the ledger.
+    Otherwise clamps to the smallest of: what was asked, the buyer's balance, the
+    order's pre-points total, and the per-item points floor (dashboard.pricing: points
+    never take an item below points_floor_pct of its list price)."""
+    from dashboard import points as _points, pricing as _pricing
+    if order.get("pay_status") == "paid":
+        raise CheckoutError("points can only be set on an unpaid order")
+    ref = (order.get("external_ref") or "").strip()
+    email = (order.get("email") or "").strip().lower()
+    _pcx = db.connect(LOG_DB)
+    try:
+        _points.init_points_table(_pcx)
+        if ref and _points.has_entry(_pcx, order_ref=ref, reason="redeem"):
+            raise CheckoutError("this order's points were already redeemed")
+        balance = _points.balance(_pcx, email) if email else 0
+    finally:
+        _pcx.close()
+    settings = _pricing.load_settings(_pricing_settings())
+    room = 0
+    for it in priced.get("items_rec") or []:
+        if it.get("gift") or it.get("kind") == "membership":
+            continue
+        p = _get_product(it.get("slug") or "") or {}
+        list_cents = int(p.get("price_cents") or it.get("unit_cents") or 0)
+        floor = _pricing.unit_floor_cents(p, list_cents, settings, "points")
+        room += max(0, int(it.get("unit_cents") or 0) - floor) * int(it.get("qty") or 1)
+    return max(0, min(int(want_cents), balance, room, int(priced.get("total_cents") or 0)))
 
 
 def _price_cap_notice(priced):
@@ -54143,7 +54182,8 @@ def api_orders_edit(oid):
                 shipping_override_cents_in=body.get("shipping_cents"),
                 invoice_note=body.get("invoice_note"),
                 address_override=(_addr_in if isinstance(_addr_in, dict) else None),
-                strict_packaging=True)
+                strict_packaging=True,
+                points_redeem_cents_in=body.get("points_redeem_cents"))
         except CheckoutError as e:
             return jsonify({"ok": False, "error": str(e)}), 400
         if priced is None:
