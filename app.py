@@ -48863,6 +48863,19 @@ def api_create_supplier():
         return fail(e)
 
 
+@app.route("/api/ingredients/<int:dup_id>/merge-into/<int:into_id>", methods=["POST"])
+@require_console_key
+def api_merge_duplicate_ingredient(dup_id, into_id):
+    """Fold a console-created duplicate into its original. Refuses with 409 when the
+    duplicate came from FileMaker or is in use; see merge_duplicate_ingredient."""
+    try:
+        return ok(_ingredients.merge_duplicate_ingredient(dup_id, into_id))
+    except ValueError as e:
+        return fail(str(e), status=409)
+    except Exception as e:
+        return fail(e)
+
+
 @app.route("/api/ingredients/<int:iid>/sources", methods=["POST"])
 @require_console_key
 def api_create_source(iid):

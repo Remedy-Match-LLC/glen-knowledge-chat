@@ -295,6 +295,55 @@ def create_source(ingredient_id, fields, db_path=None) -> int:
     return sid
 
 
+# Tables that point at an ingredient and are NOT moved by a merge. A row in any of them
+# means the duplicate is in use (a formula, a PO, stock, a production run, research), and
+# re-pointing those is a judgment, not cleanup. The merge refuses instead.
+_MERGE_BLOCKERS = ("formulation_items", "inventory_txns", "production_run_items",
+                   "po_items", "supplier_quotes", "ingredient_pathways", "pathway_atoms")
+
+
+def merge_duplicate_ingredient(dup_id, into_id, db_path=None) -> dict:
+    """Fold a console-created duplicate into the record it duplicates.
+
+    Moves the duplicate's ingredient_sources onto `into_id`, then deletes it. Written
+    for the 2026-09-18 FMSP46 canary, which minted four duplicates of existing records.
+
+    Refuses (ValueError) unless every one of these holds:
+      - the two ids differ and both exist
+      - the duplicate has NO fmp_id: an FMP-imported record is never deleted here
+      - nothing names the duplicate as its canonical_id
+      - no row in _MERGE_BLOCKERS points at the duplicate
+    """
+    from dashboard import db
+    dup_id, into_id = int(dup_id), int(into_id)
+    if dup_id == into_id:
+        raise ValueError("an ingredient cannot be merged into itself")
+    with _connect(db_path) as cx:
+        dup = cx.execute("SELECT id, fmp_id FROM ingredients WHERE id=?", (dup_id,)).fetchone()
+        into = cx.execute("SELECT id FROM ingredients WHERE id=?", (into_id,)).fetchone()
+        if not dup:
+            raise ValueError(f"no ingredient {dup_id}")
+        if not into:
+            raise ValueError(f"no ingredient {into_id}")
+        if str(dup["fmp_id"] or "").strip():
+            raise ValueError(f"ingredient {dup_id} came from FileMaker; only a "
+                             "console-created duplicate can be merged away")
+        if cx.execute("SELECT 1 FROM ingredients WHERE canonical_id=? LIMIT 1",
+                      (dup_id,)).fetchone():
+            raise ValueError(f"ingredient {dup_id} is another record's canonical_id")
+        used = [t for t in _MERGE_BLOCKERS
+                if db.column_exists(cx, t, "ingredient_id")
+                and cx.execute(f"SELECT 1 FROM {t} WHERE ingredient_id=? LIMIT 1",
+                               (dup_id,)).fetchone()]
+        if used:
+            raise ValueError(f"ingredient {dup_id} is in use by {', '.join(used)}")
+        moved = cx.execute("UPDATE ingredient_sources SET ingredient_id=? WHERE ingredient_id=?",
+                           (into_id, dup_id)).rowcount
+        cx.execute("DELETE FROM ingredients WHERE id=?", (dup_id,))
+        cx.commit()
+    return {"merged": dup_id, "into": into_id, "sources_moved": moved}
+
+
 # ---------------------------------------------------------------------------
 # Core-field editing (FMP override tracking)
 # ---------------------------------------------------------------------------
