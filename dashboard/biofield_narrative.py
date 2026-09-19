@@ -111,13 +111,17 @@ _SYSTEM = (
     "essence, even when the Head is not labeled Life Stress or Psychoemotional Stress. Do not list "
     "AI-matched or 'supportive' essences. First describe the indications of the LIFE STRESS "
     "ASSOCIATED ESSENCE found at the Head or Tail, then "
-    "describe the healing qualities of the THERAPEUTIC ESSENCE actually prescribed as the remedy. "
+    "describe the healing qualities of the THERAPEUTIC ESSENCE actually recommended as the remedy. "
     "Keep those roles distinct; the associated essence identifies the pattern, while the therapeutic "
     "essence is the treatment. REQUIRED OUTPUT: for every layer block containing 'LIFE STRESS "
     "ASSOCIATED ESSENCE / PATTERN', the layer paragraph MUST name that associated essence and "
     "state at least two of its supplied indications, then name the therapeutic essence and describe "
     "its supplied healing qualities. Never omit either half. Use only the catalog descriptions "
     "supplied in the layer block.\n"
+    "- NAME EVERY INFOCEUTICAL: whenever an infoceutical appears, give its full name with its "
+    "code (for example 'ED5 Circulation Driver'), never the code alone.\n"
+    "- NEVER use the words 'prescribe', 'prescribed', 'prescribes' or 'prescribing' for any "
+    "remedy. Say 'recommended'.\n"
     "- Plain English; translate any technical codes. No jargon, no emojis, no AI-pleasantry "
     "filler ('I hope you're well'). Open with substance.\n"
     "- GROUNDED VOICE: write the way a calm clinician speaks to a patient -- concrete, warm, "
@@ -384,7 +388,22 @@ def generate_narrative(report, notes, complete, scan=None, profile=None, animal=
     p = build_narrative_prompt(report, notes, scan, profile, animal)
     text = complete(p["system"], p["user"])
     text = _enforce_animal_greeting(text, animal)
+    text = _enforce_no_prescribe(text)
     return _enforce_phase_name(text, report.get("phase"))
+
+
+_PRESCRIBE = {"prescribe": "recommend", "prescribes": "recommends",
+              "prescribed": "recommended", "prescribing": "recommending"}
+
+
+def _enforce_no_prescribe(text):
+    """Glen, 2026-09-18: "Never use the term prescribe." Rewrites the verb only;
+    'prescription' is left alone, since it names a client's own medication."""
+    def sub(m):
+        w = m.group(0)
+        r = _PRESCRIBE[w.lower()]
+        return r.capitalize() if w[0].isupper() else r
+    return re.sub(r"\bprescrib(?:e|es|ed|ing)\b", sub, text or "", flags=re.IGNORECASE)
 
 
 def _enforce_phase_name(text, phase):
