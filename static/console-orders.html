@@ -755,6 +755,7 @@
       load();
     } catch(e){ if(!quiet) alert('Could not recalc pricing + shipping.'); load(); }
   }
+  function toggleBanner(){ HH.bannerOpen = !HH.bannerOpen; renderBanner(); }
   function combineCluster(i){
     var c = HH.clusters[i]; if(!c) return;
     HH.sel = {}; c.orders.forEach(function(o){ HH.sel[o.id]=true; });
@@ -794,14 +795,21 @@
   function renderBanner(){
     var b = document.getElementById('hhbanner'); if(!b) return;
     if(!HH.enabled || !HH.clusters.length){ b.style.display='none'; return; }
-    // One row and one Combine button per cluster. Only the first used to get a button;
-    // the rest showed as "(+N more)" with no way to act on them.
-    b.innerHTML = HH.clusters.map(function(c, i){
+    // One row and one Combine button per cluster. The first always shows; the rest open
+    // and close with a toggle. They used to show only as "(+N more)" with no way to act.
+    var n = HH.clusters.length;
+    var shown = HH.bannerOpen ? HH.clusters : HH.clusters.slice(0, 1);
+    b.innerHTML = shown.map(function(c, i){
       var names = c.orders.map(function(o){ return o.name||o.email||('#'+o.id); }).join(' + ');
       return '<div class="hh-row">&#127968; These orders share '
         + (c.key_type==='household'?'a household':'an address')
         + ' and could ship together: <b>'+esc(names)+'</b>'
-        + '<button onclick="combineCluster('+i+')">Combine</button></div>';
+        + '<button onclick="combineCluster('+i+')">Combine</button>'
+        + (i===0 && n>1
+            ? '<button class="hh-toggle" onclick="toggleBanner()">'
+              + (HH.bannerOpen ? 'Hide others' : 'Show all '+n) + '</button>'
+            : '')
+        + '</div>';
     }).join('');
     b.style.display='block';
   }

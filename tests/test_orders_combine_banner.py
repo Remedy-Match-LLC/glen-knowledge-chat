@@ -35,12 +35,21 @@ def test_every_cluster_gets_its_own_combine_button():
         "var el={style:{},innerHTML:''};"
         "var document={getElementById:function(){return el;}};"
         "var HH={enabled:true,clusters:" + json.dumps(clusters) + "};"
-        + _fn(src, "esc") + _fn(src, "renderBanner")
-        + "renderBanner(); process.stdout.write(el.innerHTML);"
+        + _fn(src, "esc") + _fn(src, "renderBanner") + _fn(src, "toggleBanner")
+        + "renderBanner(); var closed=el.innerHTML;"
+        + "toggleBanner(); var opened=el.innerHTML;"
+        + "toggleBanner(); var reclosed=el.innerHTML;"
+        + "process.stdout.write(JSON.stringify([closed,opened,reclosed]));"
     )
     r = subprocess.run(["node", "-e", script], capture_output=True, text=True)
     assert r.returncode == 0, r.stderr
-    html = r.stdout
-    assert re.findall(r"combineCluster\((\d+)\)", html) == ["0", "1", "2"]
-    assert "Sharon Connour + Hershey Connour" in html
-    assert "more)" not in html
+    closed, opened, reclosed = json.loads(r.stdout)
+    # Closed: the first pair, and a toggle that says how many there are.
+    assert re.findall(r"combineCluster\((\d+)\)", closed) == ["0"]
+    assert "Show all 3" in closed
+    # Open: every pair has its own Combine button, the Connours included.
+    assert re.findall(r"combineCluster\((\d+)\)", opened) == ["0", "1", "2"]
+    assert "Sharon Connour + Hershey Connour" in opened
+    assert "Hide others" in opened
+    assert reclosed == closed
+    assert "more)" not in closed + opened
