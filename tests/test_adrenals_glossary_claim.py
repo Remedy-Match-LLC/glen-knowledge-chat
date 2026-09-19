@@ -25,7 +25,9 @@ def test_the_adrenals_entry_makes_no_medication_claim():
     text = _adrenal()["description"].lower()
     for phrase in ("prescription", "steroid", "tapering", "rx forms", "reducing the need", "7-keto"):
         assert phrase not in text, phrase
-    assert "adrenal syntropy" in text and "endocrine restore powder" in text
+    assert "adrenal syntropy" in text and "endocrine restore" in text
+    # Glen, 2026-09-19: the prose uses the short names; the links carry the full ones.
+    assert "endocrine restore powder" not in text
 
 
 def test_the_adrenals_remedies_are_live_catalog_products():
@@ -41,7 +43,7 @@ def test_the_adrenals_remedies_are_live_catalog_products():
 
 APPROVED_ADRENAL = (
     "Supports the adrenals' natural anti-inflammatory function and our resilience under stress. "
-    "Supportive remedies: Adrenal Syntropy or Endocrine Restore Powder. Associated emotional conflict: "
+    "Supportive remedies: Adrenal Syntropy or Endocrine Restore. Associated emotional conflict: "
     "Self-Worth. Supportive essences: Self-Esteem Flower Essence, Worthiness Flower Essence.")
 
 # The public glossary JSON serves every string in an entry, snapshot fields included, and the
@@ -95,3 +97,12 @@ def test_the_claim_gate_catches_the_withdrawn_phrases():
               "a prescription steroid alternative"):
         assert pc._deny_hits(s), s
     assert pc._deny_hits("supports the adrenals' natural anti-inflammatory function") == []
+
+
+def test_no_glossary_prose_names_endocrine_restore_powder():
+    """Glen, 2026-09-19, option 2: short names in the prose. "Endocrine Restore Powder"
+    matches no product once the catalog carries FileMaker's full name."""
+    d = json.load(open(CATALOG, encoding="utf-8"))
+    for dim in d["dimensions"]:
+        for e in dim["entries"]:
+            assert "Endocrine Restore Powder" not in (e.get("description") or ""), e["slug"]
