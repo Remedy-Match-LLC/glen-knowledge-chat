@@ -236,3 +236,27 @@ def test_phase_2_is_rejuvenate_and_wrong_llm_term_is_corrected():
     )
     assert "Phase 2, Rejuvenate" in out
     assert "Phase 2, Regenerate" not in out
+
+
+def test_narrative_numbers_layers_the_way_the_report_table_does():
+    """Glen, 2026-09-18, on Michael Hill's report: the narrative listed each remedy of
+    one layer as its own layer (4, 5 and 6 for his three spleen remedies), and every
+    later number then disagreed with the report. His rows are stored as layers 4, 5
+    and 6 under one head. The editor and the Causal Chain table group by head, so the
+    narrative must use that same grouping, from the same function."""
+    from dashboard.biofield_report_html import group_layers
+    rows = [("Thymus", "Spike Shield"), ("Mercury", "Mercury Detox Syntropy Powder"),
+            ("Splenic infarct, Current", "Fibrolysis Factors"),
+            ("Splenic infarct, Current", "Fibrosolve"),
+            ("Splenic infarct, Current", "Spleen Support"),
+            ("A fib, Current", "Rhythm Restore")]
+    layers = [{"layer": i, "stored_layer": i, "head": h, "most_affected": "",
+               "remedy": r, "dosage": "1 cap", "frequency": "daily", "timing": ""}
+              for i, (h, r) in enumerate(rows, 1)]
+    user = build_narrative_prompt({**_report(), "layers": layers}, "")["user"]
+
+    assert "Layer 3 (ONE layer; 3 remedies): Splenic infarct, Current" in user
+    assert "Layer 4 (ONE layer; 1 remedy): A fib, Current" in user
+    assert "- Layer 5 " not in user
+    table = {g["head"]: g["layer"] for g in group_layers(layers)}
+    assert table["A fib, Current"] == 4
