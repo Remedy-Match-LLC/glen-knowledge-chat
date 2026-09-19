@@ -758,6 +758,15 @@ def pack_breakdown(items, catalog):
     catalog_list = None
     bottles = 0
     cello = 0
+    # Glen, 2026-09-19: "list the total number of bottles of each size", on unpaid
+    # orders too, so a shipping adjustment can be settled before payment. A product
+    # with no bottle_type is counted as "size not set" rather than guessed, so the
+    # gap shows instead of hiding behind the packer's fallback.
+    by_size = {}
+
+    def _add_size(label, n):
+        by_size[label] = by_size.get(label, 0) + n
+
     for it in (items or []):
         try:
             qty = int(it.get("qty") or 0)
@@ -775,17 +784,27 @@ def pack_breakdown(items, catalog):
             if catalog_list is None:
                 catalog_list = list(catalog.values())
             try:
-                n = len(_sh.bundle_component_products(p, catalog_list)) * qty
+                parts = _sh.bundle_component_products(p, catalog_list)
+                n = len(parts) * qty
+                sizes = [(c.get("bottle_type") or "size not set") for c in parts]
             except _sh.UnknownBundleComponent:
                 comps = p.get("bundle_component_slugs") or []
                 n = (sum(int(c.get("qty") or 1) for c in comps) if comps else 1) * qty
+                sizes = None
         else:
             n = qty
+            sizes = None
         if (it.get("format") or "").strip().lower() in _sh.CELLO_FORMATS:
             cello += n
+            _add_size("cello pack", n)
         else:
             bottles += n
-    return {"bottle_units": bottles, "cello_pack_units": cello}
+            if sizes:
+                for sz in sizes:
+                    _add_size(sz, qty)
+            else:
+                _add_size(p.get("bottle_type") or "size not set", n)
+    return {"bottle_units": bottles, "cello_pack_units": cello, "by_size": by_size}
 
 
 # Pre-payment invoices (proposed/confirmed) are not committed demand, so they are

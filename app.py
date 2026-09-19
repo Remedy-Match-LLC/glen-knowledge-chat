@@ -55607,7 +55607,10 @@ def _invoice_summary(order):
         "invoice_note": order.get("invoice_note") or "",
         "lines": [_invoice_line_view(l) for l in lines],
         "physical_units": _order_physical_units(order),
-        "pack_breakdown": _order_pack_breakdown(order),
+        # The customer invoice keeps the original two counts; per-size counts are for
+        # the Orders board only (a new field ships through every serializer it touches).
+        "pack_breakdown": {k: _order_pack_breakdown(order).get(k)
+                           for k in ("bottle_units", "cello_pack_units")},
         "subtotal_cents": subtotal,
         "discount_cents": int(order.get("discount_cents") or 0),
         "adjustment_cents": int(order.get("adjustment_cents") or 0),
