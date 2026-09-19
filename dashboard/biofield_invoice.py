@@ -157,7 +157,7 @@ def default_fetch_catalog():
     if not base:
         return []
     try:
-        url = f"{base}/api/console/biofield-portal/catalog?key=" + urllib.parse.quote(key)
+        url = f"{base}/api/console/biofield-portal/catalog"
         req = urllib.request.Request(url, headers={"X-Console-Key": key})
         with urllib.request.urlopen(req, timeout=8) as r:
             resp = _json.loads(r.read().decode() or "{}")
@@ -185,7 +185,7 @@ def default_create_order(customer, lines, replace_open=False, invoice_note=None,
                 "invoice_note": invoice_note or DEFAULT_INVOICE_NOTE}
         if update_order_id:
             body["update_order_id"] = int(update_order_id)
-        url = f"{base}/api/orders/manual?key=" + urllib.parse.quote(key)
+        url = f"{base}/api/orders/manual"
         req = urllib.request.Request(url, data=_json.dumps(body).encode(), method="POST",
                                      headers={"X-Console-Key": key, "Content-Type": "application/json"})
         with urllib.request.urlopen(req, timeout=20) as r:
@@ -208,8 +208,7 @@ def default_invoice_link(order_id):
     if not base or not order_id:
         return {"ok": False, "error": "link unavailable"}
     try:
-        url = (f"{base}/api/console/order/{int(order_id)}/invoice-link?key="
-               + urllib.parse.quote(key))
+        url = f"{base}/api/console/order/{int(order_id)}/invoice-link"
         req = urllib.request.Request(url, headers={"X-Console-Key": key})
         with urllib.request.urlopen(req, timeout=10) as r:
             resp = _json.loads(r.read().decode() or "{}")
@@ -339,8 +338,7 @@ def default_publish_invoice(order_id):
     if not base or not order_id:
         return {"ok": False, "error": "publish unavailable (no console config)"}
     try:
-        url = (f"{base}/api/console/order/{int(order_id)}/publish-to-portal?key="
-               + urllib.parse.quote(key))
+        url = f"{base}/api/console/order/{int(order_id)}/publish-to-portal"
         req = urllib.request.Request(url, data=b"{}", method="POST",
                                      headers={"Content-Type": "application/json", "X-Console-Key": key})
         with urllib.request.urlopen(req, timeout=10) as r:

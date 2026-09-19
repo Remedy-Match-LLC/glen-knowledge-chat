@@ -44318,12 +44318,13 @@ def queue_merge_from_candidate(cand_id):
         dupe_id = next(p for p in person_ids if p != keeper_id)
 
         now = datetime.now(timezone.utc).isoformat()
-        cx.execute("""
+        # RETURNING id: last_insert_rowid() is SQLite-only and fails on Postgres.
+        merge_id = cx.execute("""
             INSERT INTO pending_merges (candidate_id, keeper_person_id, dupe_person_id,
                                          queued_at, queued_by, status)
             VALUES (?, ?, ?, ?, ?, 'pending')
-        """, (cand_id, keeper_id, dupe_id, now, "glen"))
-        merge_id = cx.execute("SELECT last_insert_rowid()").fetchone()[0]
+            RETURNING id
+        """, (cand_id, keeper_id, dupe_id, now, "glen")).fetchone()[0]
         # Mark candidate as dismissed (it's now a pending_merge, not a household candidate)
         cx.execute("UPDATE household_candidates SET status='dismissed', resolved_at=?, resolved_by=? WHERE id=?",
                    (now, "glen-merge-queue", cand_id))
@@ -46234,11 +46235,11 @@ def todo_steps_post(todo_id):
     with _db_lock, db.connect(LOG_DB) as cx:
         row = cx.execute("SELECT COALESCE(MAX(sequence), 0) FROM todo_steps WHERE todo_id=?", (todo_id,)).fetchone()
         seq = (row[0] or 0) + 1
-        cx.execute(
-            "INSERT INTO todo_steps (todo_id, sequence, text, done) VALUES (?, ?, ?, 0)",
+        # RETURNING id: last_insert_rowid() is SQLite-only and fails on Postgres.
+        sid = cx.execute(
+            "INSERT INTO todo_steps (todo_id, sequence, text, done) VALUES (?, ?, ?, 0) RETURNING id",
             (todo_id, seq, text)
-        )
-        sid = cx.execute("SELECT last_insert_rowid()").fetchone()[0]
+        ).fetchone()[0]
         cx.commit()
     return jsonify({"ok": True, "id": sid, "sequence": seq})
 
