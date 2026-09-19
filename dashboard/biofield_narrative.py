@@ -267,21 +267,13 @@ def _user_block(report, notes, scan=None, profile=None, animal=None):
         lines += ["TERRAIN READING (use as the first paragraph after the greeting):",
                   terrain, ""]
     lines += ["CAUSAL CHAIN (top-down, most recent layer first to deepest root):"]
-    grouped = []
-    by_number = {}
-    for l in report.get("layers") or []:
-        # Authored reports give each remedy row its own display position in `layer`,
-        # while `stored_layer` preserves the actual card/layer shared by its remedies.
-        # FileMaker reports do not have `stored_layer`, and their `layer` is already
-        # the causal-layer identifier.
-        stored = l.get("stored_layer")
-        key = stored if stored is not None else l.get("layer")
-        key = key if key is not None else "?"
-        if key not in by_number:
-            by_number[key] = []
-            grouped.append((key, by_number[key]))
-        by_number[key].append(l)
-    for display_ln, (_, layer_rows) in enumerate(grouped, 1):
+    # Number the layers exactly as the editor's cards and the report's Causal Chain
+    # table do, with the same function. Grouping by stored layer number split Michael
+    # Hill's three spleen remedies, stored as layers 4, 5 and 6 under one head, into
+    # three layers and threw every later number off the report's (Glen, 2026-09-18).
+    from dashboard.biofield_report_html import group_layers
+    grouped = [(g["layer"], g["rows"]) for g in group_layers(report.get("layers") or [])]
+    for display_ln, layer_rows in grouped:
         first = layer_rows[0]
         head = (first.get("head") or "").strip()
         affected = (first.get("most_affected") or "").strip()
