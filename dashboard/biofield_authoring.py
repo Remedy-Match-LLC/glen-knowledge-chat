@@ -260,7 +260,15 @@ def _deprecated_catalog_names():
             v = _norm_name(p.get(key))
             if v:
                 out.add(v)
-    return frozenset(out)
+    # A name that a LIVE product also carries must never be excluded. The pairs rule
+    # moves a retired twin's name onto its survivor, so from 2026-09-16 five names are
+    # held by both: "MSM Syntropy Powder", "Flow Ease Powder", "SeaAmino Powder",
+    # "Crucifer Complex Powder" and "Hydrolyzed Collagen Powder". Without this the
+    # survivor's own name is dropped from the candidate pool and the matcher drifts to a
+    # neighbour, which is exactly the ES1 -> ES5 Auto-Immune failure this module was
+    # written to stop. Excluding it protects nothing: the name resolves to a live,
+    # sellable product.
+    return frozenset(out - set(_active_catalog_names()))
 
 
 def _sellable_names(names):
