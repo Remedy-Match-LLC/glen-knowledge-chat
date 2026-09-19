@@ -3829,6 +3829,9 @@ let _fiveVoiceStream = null;
 let _fiveVoiceChunks = [];
 let _fiveVoiceStartedAt = 0;
 let _fiveVoiceTimerId = null;
+// Glen, 2026-09-18: the Five Element Voice Scan asks for about a minute. Stop stays
+// unavailable for the first 20 seconds, the timer points at 60, and 90 is the hard stop.
+const FIVE_VOICE_MIN_S = 20, FIVE_VOICE_TARGET_S = 60, FIVE_VOICE_MAX_S = 90;
 
 function fiveVoiceSetStatus(message, isError){
   const el = document.getElementById("fiveVoiceStatus");
@@ -3917,12 +3920,13 @@ function initFiveElementVoice(){
       }, {once:true});
       _fiveVoiceStartedAt = Date.now();
       _fiveVoiceRecorder.start(500);
-      start.hidden = true; stop.hidden = false;
+      start.hidden = true; stop.hidden = false; stop.disabled = true;
       fiveVoiceSetStatus("Recording. Speak naturally; nothing is saved until you finish.", false);
       const update = ()=>{
         const seconds = Math.floor((Date.now() - _fiveVoiceStartedAt) / 1000);
-        if(timer) timer.textContent = `${seconds}s / 90s`;
-        if(seconds >= 90 && _fiveVoiceRecorder && _fiveVoiceRecorder.state === "recording") _fiveVoiceRecorder.stop();
+        if(timer) timer.textContent = `${seconds}s, about ${FIVE_VOICE_TARGET_S}s`;
+        if(seconds >= FIVE_VOICE_MIN_S && _fiveVoiceRecorder && _fiveVoiceRecorder.state === "recording") stop.disabled = false;
+        if(seconds >= FIVE_VOICE_MAX_S && _fiveVoiceRecorder && _fiveVoiceRecorder.state === "recording") _fiveVoiceRecorder.stop();
       };
       update(); _fiveVoiceTimerId = setInterval(update, 250);
     }catch(error){
@@ -3939,6 +3943,8 @@ function initFiveElementVoice(){
     }
   });
   stop.addEventListener("click", ()=>{
+    // The disabled button is the visible floor; this is the one that holds.
+    if((Date.now() - _fiveVoiceStartedAt) / 1000 < FIVE_VOICE_MIN_S) return;
     if(_fiveVoiceRecorder && _fiveVoiceRecorder.state === "recording") _fiveVoiceRecorder.stop();
   });
 }
