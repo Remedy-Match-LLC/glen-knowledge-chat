@@ -8839,6 +8839,83 @@ def email_click_redirect(token, source, slug):
     return redirect(dest, code=302)
 
 
+@app.route("/c/<token>/<campaign_key>/<dest_key>", methods=["GET"])
+def cadence_click_redirect(token, campaign_key, dest_key):
+    """Cadence email link (Glen, 2026-09-18: only clickers get the Interest emails).
+
+    The target comes ONLY from cadence_clicks.DESTINATIONS or a catalog-validated
+    product slug, never from the request, so this is not an open redirect. Anything
+    unknown lands on /. Always redirects: a recording failure never blocks the click.
+    A malformed campaign key or unknown token still redirects but records nothing."""
+    from dashboard import cadence_clicks as _cc
+    target, key = _cc.resolve(dest_key, _rec_valid_slug, portal_base())
+    try:
+        if target and _cc.valid_campaign(campaign_key):
+            from dashboard import email_click_tokens as _ect
+            with _db_lock, db.connect(LOG_DB) as cx:
+                _ect.init_email_click_tokens(cx)
+                email = _ect.email_for(cx, token)
+                if email:
+                    _cc.init_cadence_clicks(cx)
+                    _cc.record(cx, email, campaign_key, key,
+                               request.headers.get("User-Agent", ""))
+    except Exception as e:
+        print(f"[cadence] click not recorded: {e!r}", flush=True)
+    return redirect(target or "/", code=302)
+
+
+def _cadence_admin_ok():
+    """X-Console-Key header ONLY: the spec forbids the key in a query string, where it
+    would land in access logs. An unset secret refuses rather than opening the gate."""
+    import hmac
+    key = request.headers.get("X-Console-Key", "")
+    return bool(CONSOLE_SECRET) and bool(key) and hmac.compare_digest(key, CONSOLE_SECRET)
+
+
+@app.route("/api/admin/cadence/tokens", methods=["POST"])
+def api_admin_cadence_tokens():
+    """{"emails": [...]} -> {"tokens": {email: token}}, minting any missing.
+
+    Up to MAX_TOKEN_BATCH addresses per call (agreed with marketing: 1,000). An invalid
+    address is left out of "tokens" and listed in "invalid"; the call still succeeds."""
+    if not _cadence_admin_ok():
+        return jsonify({"ok": False, "error": "unauthorized"}), 401
+    from dashboard import cadence_clicks as _cc, email_click_tokens as _ect
+    emails = (request.get_json(silent=True) or {}).get("emails")
+    if not isinstance(emails, list):
+        return jsonify({"ok": False, "error": "emails must be a list"}), 400
+    if len(emails) > _cc.MAX_TOKEN_BATCH:
+        return jsonify({"ok": False, "error": f"at most {_cc.MAX_TOKEN_BATCH} emails per call; "
+                        "send the list in chunks", "max": _cc.MAX_TOKEN_BATCH}), 400
+    tokens, invalid = {}, []
+    with _db_lock, db.connect(LOG_DB) as cx:
+        _ect.init_email_click_tokens(cx)
+        for raw in emails:
+            e = (raw or "").strip().lower() if isinstance(raw, str) else ""
+            if not _cc.valid_email(e):
+                invalid.append(raw)
+                continue
+            if e not in tokens:
+                tokens[e] = _ect.token_for(cx, e)
+    return jsonify({"ok": True, "tokens": tokens, "invalid": invalid,
+                    "link_template": "/c/{token}/{campaign_key}/{dest_key}"})
+
+
+@app.route("/api/admin/cadence/clickers", methods=["GET"])
+def api_admin_cadence_clickers():
+    """?campaign_key=2026-w41 -> who clicked that week, first click time and where."""
+    if not _cadence_admin_ok():
+        return jsonify({"ok": False, "error": "unauthorized"}), 401
+    from dashboard import cadence_clicks as _cc
+    ck = (request.args.get("campaign_key") or "").strip()
+    if not _cc.valid_campaign(ck):
+        return jsonify({"ok": False, "error": "campaign_key must look like 2026-w41"}), 400
+    with _db_lock, db.connect(LOG_DB) as cx:
+        _cc.init_cadence_clicks(cx)
+        rows = _cc.clickers(cx, ck)
+    return jsonify({"ok": True, "campaign_key": ck, "count": len(rows), "clickers": rows})
+
+
 @app.route("/fs/<token>/<product_slug>", methods=["GET"])
 def fullscript_click_redirect(token, product_slug):
     """Tracked OUTBOUND redirect into Glen's Fullscript dispensary. Identity is
