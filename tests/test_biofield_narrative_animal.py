@@ -155,3 +155,26 @@ def test_route_owner_lookup_failure_still_names_the_animal(tmp_path):
     assert "'Aloha,'" in seen["s"]
     assert "Hershey's Biofield Analysis" in seen["s"]
     assert "narrative" in j
+
+
+# --- Glen, 2026-09-18: "Always include the names of infoceuticals. Never use the
+# term prescribe." These bind every narrative, human or animal. -------------------
+
+def test_prompt_requires_infoceutical_names_and_forbids_prescribe():
+    for animal in (None, _HERSHEY):
+        s = build_narrative_prompt(_report(), "", animal=animal)["system"]
+        assert "give its full name with its code" in s
+        assert "never the code alone" in s
+        assert "NEVER use the words 'prescribe'" in s
+        assert "actually prescribed" not in s
+
+
+def test_prescribe_is_rewritten_but_prescription_is_kept():
+    out = generate_narrative(
+        _report("Lewis Zardo"), "",
+        lambda s, u: "Aloha Lewis,\n\nPrescribed here is ED5. The remedy prescribed "
+                     "suits you. Keep your prescription medication.")
+    assert "prescrib" not in out.lower().replace("prescription", "")
+    assert out.count("Recommended here") == 1
+    assert "remedy recommended suits" in out
+    assert "your prescription medication" in out
