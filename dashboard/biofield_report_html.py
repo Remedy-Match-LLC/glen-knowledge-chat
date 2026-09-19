@@ -1938,12 +1938,17 @@ def render_clinical_checklist(items, layers=None, intake_priorities=None,
             ".clinical-balance{grid-column:3;display:grid;grid-template-columns:minmax(160px,1fr) minmax(260px,1.25fr) auto;gap:8px;margin-top:9px;align-items:end}"
             ".clinical-common{grid-column:1/-1;display:flex;flex-wrap:wrap;gap:5px 12px;font-size:11px;color:var(--muted)}"
             ".clinical-common label{white-space:nowrap}.clinical-common input{width:auto;margin:0 3px 0 0}"
-            ".clinical-stress-row{grid-column:1/-1;display:flex;gap:7px;align-items:end}"
+            # Glen, 2026-09-18: "Combine another row..." covered most of the stress field. The
+            # picker sized itself to its longest condition label and squeezed the field
+            # to 69px. The row now wraps, the field keeps 260px, the picker is capped.
+            ".clinical-stress-row{grid-column:1/-1;display:flex;flex-wrap:wrap;gap:7px;align-items:end}"
+            ".clinical-combine{display:flex;gap:5px;align-items:end;flex:0 1 auto;max-width:100%}"
+            ".clinical-combine-pick{max-width:240px;text-overflow:ellipsis}"
             ".clinical-stress-row .btn{white-space:nowrap}"
             ".clinical-stress-hint{margin-left:6px;padding:1px 6px;border:1px solid #a56a25;"
             "border-radius:8px;font-weight:600;text-transform:none;color:#d9a05b;"
             "background:rgba(196,125,39,.12)}"
-            ".clinical-stress-label{flex:1;min-width:0;font-size:11px;font-weight:700;color:var(--muted)}"
+            ".clinical-stress-label{flex:1 1 260px;min-width:260px;font-size:11px;font-weight:700;color:var(--muted)}"
             ".clinical-stress-label input{display:block;width:100%;margin-top:3px;padding:9px;"
             "color:var(--text);background:var(--card);border:1px solid var(--line)}"
             ".clinical-remedy-delete{border:0;background:transparent;color:var(--muted);font-size:16px;cursor:pointer;padding:0 2px}"
