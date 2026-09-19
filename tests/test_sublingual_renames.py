@@ -56,3 +56,15 @@ def test_the_chat_alias_points_at_the_live_b12_name():
     pre-#1750 name, which no live product carried."""
     aliases = json.loads((ROOT / "data" / "product-aliases.json").read_text())["aliases"]
     assert aliases["Sublingual B12"]["catalog_name"] == CAT["sublingual-b12"]["name"]
+
+
+def test_cistus_carries_glens_new_name_and_its_alias_follows():
+    """Glen, 2026-09-19: "cistus now named Cistus Shield ImmuniTea - update elsewhere".
+    The retired twin keeps "Cistus Synergy", which is how old references redirect."""
+    aliases = json.loads((ROOT / "data" / "product-aliases.json").read_text())["aliases"]
+    assert CAT["cistus-shield"]["name"] == "Cistus Shield ImmuniTea"
+    assert CAT["cistus-shield"]["fmp_id"] == "1193"
+    assert not CAT["cistus-shield"].get("inactive")
+    assert CAT["cistus-syntropy-immunitea"]["name"] == "Cistus Synergy"
+    assert CAT["cistus-syntropy-immunitea"]["superseded_by"] == "cistus-shield"
+    assert aliases["Cistus Synergy"]["catalog_name"] == "Cistus Shield ImmuniTea"
