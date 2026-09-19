@@ -36444,10 +36444,15 @@ def email_unsubscribe():
     for security appliances that follow every URL in a message.
     """
     from dashboard import unsubscribe as _un, email_suppression as _es
-    src = request.form if request.method == "POST" else request.args
-    email = (src.get("e") or "").strip().lower()
-    scope = (src.get("scope") or _un.GLOBAL).strip()
-    sig = (src.get("s") or "").strip()
+    # RFC 8058 one-click: the mail client POSTs `List-Unsubscribe=One-Click` to the
+    # List-Unsubscribe URL, so the address and signature arrive in the query string.
+    def _arg(k):
+        if request.method == "POST":
+            return request.form.get(k) or request.args.get(k)
+        return request.args.get(k)
+    email = (_arg("e") or "").strip().lower()
+    scope = (_arg("scope") or _un.GLOBAL).strip()
+    sig = (_arg("s") or "").strip()
     if not email or not _un.verify(email, scope, sig):
         return render_template_string(
             "<h2>That link is not valid</h2><p>Reply to any email from us and "
@@ -36468,6 +36473,25 @@ def email_unsubscribe():
         "<h2>You are unsubscribed</h2><p>{{ e }} will not receive further "
         "mailings. If this was a mistake, just reply to any earlier email and "
         "we will put you back.</p>", e=email)
+
+
+@app.route("/webhook/ses-events", methods=["POST"])
+def ses_events_webhook():
+    """Amazon SES bounces and complaints, posted by SNS. See dashboard/ses_events.py.
+
+    Refuses everything until SES_SNS_TOPIC_ARN is set. Every post is checked
+    against Amazon's signing certificate and that one topic before it is read."""
+    import contextlib
+    from dashboard import ses_events as _se
+
+    # The lock covers the write only. Certificate fetches happen before it.
+    @contextlib.contextmanager
+    def _cx():
+        with _db_lock, db.connect(LOG_DB) as cx:
+            yield cx
+
+    status, out = _se.handle(request.get_data(as_text=True), _cx)
+    return jsonify(out), status
 
 
 @app.route("/portal/claim", methods=["GET"])

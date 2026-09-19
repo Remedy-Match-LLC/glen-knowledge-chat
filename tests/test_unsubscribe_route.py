@@ -89,3 +89,23 @@ def test_a_scoped_signature_records_the_scope(tmp_path, monkeypatch):
         row = cx.execute("SELECT source FROM email_suppression WHERE email=?",
                          (e,)).fetchone()
     assert "weekly-live" in row[0]
+
+
+def test_one_click_post_reads_the_address_from_the_link(tmp_path, monkeypatch):
+    """RFC 8058: the mail client POSTs `List-Unsubscribe=One-Click` to the
+    List-Unsubscribe URL itself, so e, scope and s arrive in the query string."""
+    c, scratch = _client(tmp_path, monkeypatch)
+    e = "oneclick@example.com"
+    r = c.post(f"/email/unsubscribe?e={e}&scope=global&s={_sig(e)}",
+               data={"List-Unsubscribe": "One-Click"})
+    assert r.status_code == 200
+    assert _suppressed(scratch, e) is True
+
+
+def test_one_click_post_with_a_bad_signature_is_rejected(tmp_path, monkeypatch):
+    c, scratch = _client(tmp_path, monkeypatch)
+    e = "oneclick-victim@example.com"
+    r = c.post(f"/email/unsubscribe?e={e}&scope=global&s=forged",
+               data={"List-Unsubscribe": "One-Click"})
+    assert r.status_code == 400
+    assert _suppressed(scratch, e) is False
