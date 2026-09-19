@@ -22,6 +22,12 @@ def is_dependent(relationship):
     return (relationship or "").strip().lower() in DEPENDENT_RELATIONSHIPS
 
 
+# Members who cannot consent for themselves, so their caregiver may pay without a
+# consent flag. Glen, 2026-09-19: pets cannot consent; a parent or guardian consents
+# for a minor child. No age is stored, so "child" is taken as a minor.
+CAREGIVER_PAYS_RELATIONSHIPS = ("pet", "child")
+
+
 def default_cc_for(relationship):
     return 1 if is_dependent(relationship) else 0
 
@@ -161,21 +167,25 @@ def viewable_members_for(cx, primary_email):
 
 
 def can_pay(cx, payer_email, member_email):
-    """True iff the member granted this payer pay-consent. Self-pay never qualifies."""
+    """True iff the member granted this payer pay-consent, or is this payer's pet or
+    child (CAREGIVER_PAYS_RELATIONSHIPS). Self-pay never qualifies."""
     p, m = _norm(payer_email), _norm(member_email)
     if not p or not m or p == m:
         return False
     return cx.execute(
         "SELECT 1 FROM household_members WHERE primary_email=? AND member_email=? "
-        "AND pay_consent=1 LIMIT 1", (p, m)).fetchone() is not None
+        "AND (pay_consent=1 OR lower(trim(coalesce(relationship,''))) IN (?,?)) LIMIT 1",
+        (p, m) + CAREGIVER_PAYS_RELATIONSHIPS).fetchone() is not None
 
 
 def payable_members_for(cx, payer_email):
-    """Members who granted this payer pay-consent, with each one's share scope."""
+    """Members this payer may pay for (see can_pay), with each one's share scope."""
     rows = cx.execute(
         "SELECT member_email, label, COALESCE(pay_share_scope,'amount_only') "
-        "FROM household_members WHERE primary_email=? AND pay_consent=1 "
-        "ORDER BY created_at, id", (_norm(payer_email),)).fetchall()
+        "FROM household_members WHERE primary_email=? "
+        "AND (pay_consent=1 OR lower(trim(coalesce(relationship,''))) IN (?,?)) "
+        "AND coalesce(member_email,'') <> '' AND member_email <> primary_email "
+        "ORDER BY created_at, id", (_norm(payer_email),) + CAREGIVER_PAYS_RELATIONSHIPS).fetchall()
     return [{"member_email": r[0], "label": r[1] or "",
              "pay_share_scope": r[2] or "amount_only"} for r in rows]
 
