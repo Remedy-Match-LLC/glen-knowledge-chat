@@ -145,13 +145,19 @@ def test_operator_path_still_refuses_an_unmeasured_product(monkeypatch):
     assert "Lutein" in str(e.value)
 
 
-def test_the_three_operator_routes_ask_for_the_hard_stop():
+def test_the_operator_routes_ask_for_the_hard_stop():
     """Wiring check: the operator routes opt in, the token-authed customer control
-    on an invoice does not -- it has no operator to fix anything."""
+    on an invoice does not -- it has no operator to fix anything.
+
+    Four since 2026-09-19: bill-with-caregiver re-prices the caregiver's invoice on an
+    operator's action (Orders board or the Biofield panel), so it opts in too."""
     lines = (REPO / "app.py").read_text(encoding="utf-8").splitlines()
     wired = [l for l in lines
              if "strict_packaging=True" in l and not l.strip().startswith("#")]
-    assert len(wired) == 3, wired
+    assert len(wired) == 4, wired
+    src = (REPO / "app.py").read_text(encoding="utf-8")
+    body = src[src.index("def _bill_lines_to_caregiver("):src.index("def api_order_caregiver_billing(")]
+    assert "strict_packaging=True" in body, "the caregiver merge must use the hard stop"
 
 
 def test_pickup_still_skips_the_line_entirely(monkeypatch):
