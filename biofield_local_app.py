@@ -624,6 +624,7 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                e4l_db=None, fee_get=None, fee_set=None, fee_clear=None,
                invoice_fetch_catalog=None, invoice_create=None, invoice_link=None,
                invoice_paid_check=None, invoice_latest=None, client_orders=None,
+               caregiver_billing=None,
                ingredients_db=None,
                portal_link_fetch=None, auto_publish=None):
     app = Flask(__name__)
@@ -679,6 +680,7 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
     fee_set = fee_set or biofield_fee.default_fee_set
     fee_clear = fee_clear or biofield_fee.default_fee_clear
     invoice_fetch_catalog = invoice_fetch_catalog or biofield_invoice.default_fetch_catalog
+    caregiver_billing = caregiver_billing or biofield_invoice.default_caregiver_billing
     invoice_create = invoice_create or biofield_invoice.default_create_order
     invoice_link = invoice_link or biofield_invoice.default_invoice_link
     invoice_paid_check = invoice_paid_check or biofield_invoice.default_biofield_paid
@@ -1246,6 +1248,26 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
         with sqlite3.connect(db_path) as cx:
             state = biofield_fee.build_fee_state(email, fee_get, get_no_charge(cx, test_id))
         return {"ok": True, "html": render_fee_panel(state)}
+
+    @app.route("/author/<test_id>/caregiver-billing", methods=["GET", "POST"])
+    def author_caregiver_billing(test_id):
+        """Bill with caregiver (Glen, 2026-09-19): who may pay for this client, who is
+        remembered, and (POST {caregiver_email, on}) set it. Raising the invoice needs
+        no change here: the server routes a remembered member's lines itself."""
+        with sqlite3.connect(db_path) as cx:
+            rep = authored_report(cx, test_id)
+        email = ((rep.get("client") or {}).get("email") or "").strip()
+        if not email:
+            return {"ok": True, "caregivers": [], "remembered": None}
+        body = request.get_json(silent=True) or {}
+        if request.method == "POST":
+            res = caregiver_billing(email, body.get("caregiver_email") or "", bool(body.get("on")))
+        else:
+            res = caregiver_billing(email)
+        if not res.get("ok"):
+            return {"ok": False, "error": res.get("error") or "Could not reach the console."}, 502
+        return {"ok": True, "caregivers": res.get("caregivers") or [],
+                "remembered": res.get("remembered")}
 
     @app.route("/author/<test_id>/invoice", methods=["POST"])
     def author_invoice(test_id):

@@ -203,6 +203,29 @@ def default_create_order(customer, lines, replace_open=False, invoice_note=None,
         return {"ok": False, "error": "Couldn't reach the console to create the order."}
 
 
+def default_caregiver_billing(email, caregiver_email=None, on=None):
+    """Bill with caregiver: who may be billed for this client, and who is remembered.
+    With caregiver_email and on, sets the preference first. Returns {} on failure."""
+    base, key = _console()
+    if not base or not (email or "").strip():
+        return {}
+    try:
+        if caregiver_email is not None and on is not None:
+            req = urllib.request.Request(
+                f"{base}/api/console/caregiver-billing", method="POST",
+                data=_json.dumps({"email": email, "caregiver_email": caregiver_email,
+                                  "on": bool(on)}).encode(),
+                headers={"X-Console-Key": key, "Content-Type": "application/json"})
+        else:
+            req = urllib.request.Request(
+                f"{base}/api/console/caregiver-billing?email=" + urllib.parse.quote(email),
+                headers={"X-Console-Key": key})
+        with urllib.request.urlopen(req, timeout=10) as r:
+            return _json.loads(r.read().decode() or "{}")
+    except Exception:
+        return {}
+
+
 def default_invoice_link(order_id):
     base, key = _console()
     if not base or not order_id:
