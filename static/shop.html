@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <link rel="icon" type="image/png" href="/static/favicon.png">
+  <link rel="stylesheet" href="/static/entity-ref.css">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Shop · Dr. Glen Swartwout</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;600&family=Raleway:wght@600;700&display=swap" rel="stylesheet" />
+  <style>
+    :root{ --bg:#0a150d; --surface:#111f16; --surface-2:#162318; --border:#21472d;
+      --cream:#fdf4d8; --muted:#a89870; --gold:#d4a843; --green:#3d8a52;
+      --maxw:760px; --radius:14px; --ease:cubic-bezier(0.22,1,0.36,1);
+      --font:"Open Sans",system-ui,sans-serif; --heading:"Raleway",system-ui,sans-serif; }
+    *{box-sizing:border-box;margin:0;padding:0;}
+    body{ background:var(--bg); color:var(--cream); font-family:var(--font);
+      font-size:17px; line-height:1.7; -webkit-font-smoothing:antialiased;
+      background-image:radial-gradient(120% 80% at 50% -10%, rgba(212,168,67,0.07), transparent 60%);
+      background-attachment:fixed; }
+    h1,h2,h3{ font-family:var(--heading); font-weight:600; line-height:1.25; letter-spacing:-0.01em; }
+    a{ color:inherit; text-decoration:none; }
+    .shell{ max-width:var(--maxw); margin:0 auto; padding:0 24px 48px; }
+    .shop{ max-width:960px; }
+    .brandbar{ max-width:var(--maxw); margin:0 auto; padding:30px 24px 8px; display:flex; align-items:center; justify-content:center; gap:14px; }
+    .brand-mark{ width:7px; height:7px; border-radius:50%; background:var(--gold); box-shadow:0 0 0 4px rgba(212,168,67,0.12); }
+    .brand-name{ font-family:var(--heading); font-weight:600; font-size:13px; letter-spacing:0.32em; color:var(--muted); }
+
+    /* ── Header, search, groups ── */
+    .shop-head{ margin-top:34px; }
+    .shop-head h1{ font-size:clamp(24px,5vw,30px); color:var(--cream); }
+    .muted{ color:var(--muted); font-size:14.5px; margin-top:10px; line-height:1.6; }
+    .text-link{ color:var(--gold); font-family:var(--heading); font-weight:600; font-size:14.5px; }
+    .text-link:hover{ text-decoration:underline; }
+
+    .shop-bar{ display:flex; align-items:center; gap:14px; margin-top:22px; }
+    #shop-search{ flex:1 1 auto; min-width:0; background:var(--surface); border:1px solid var(--border);
+      border-radius:999px; padding:11px 18px; font-size:15px; font-family:var(--font); color:var(--cream); }
+    #shop-search::placeholder{ color:var(--muted); }
+    .cart-link{ flex:0 0 auto; font-family:var(--heading); font-weight:600; font-size:14px; color:var(--gold);
+      border:1px solid rgba(212,168,67,0.4); border-radius:999px; padding:11px 20px;
+      transition:border-color .2s var(--ease), background .2s var(--ease); }
+    .cart-link:hover{ border-color:var(--gold); background:rgba(212,168,67,0.08); }
+
+    .chips{ display:flex; flex-wrap:wrap; gap:8px; margin-top:18px; }
+    .chip{ font-family:var(--heading); font-weight:600; font-size:13px; color:var(--cream);
+      background:transparent; border:1px solid var(--border); border-radius:999px;
+      padding:7px 15px; cursor:pointer; max-width:100%; white-space:normal; text-align:left;
+      transition:border-color .2s var(--ease), background .2s var(--ease); }
+    .chip:hover{ border-color:var(--gold); }
+    .chip[aria-pressed="true"]{ background:var(--gold); color:#0a150d; border-color:var(--gold); }
+
+    #shop-status{ margin-top:18px; }
+
+    /* ── Product grid ── */
+    .grid{ display:grid; grid-template-columns:repeat(auto-fill,minmax(160px,1fr)); gap:14px; margin-top:18px; }
+    .card{ display:flex; flex-direction:column; background:var(--surface); border:1px solid var(--border);
+      border-radius:var(--radius); overflow:hidden; transition:border-color .2s var(--ease); }
+    .card:hover{ border-color:var(--gold); }
+    .card img{ width:100%; aspect-ratio:1/1; object-fit:cover; display:block; background:#f4f6f9; }
+    .ph{ width:100%; aspect-ratio:1/1; display:flex; align-items:center; justify-content:center;
+      font-family:var(--heading); font-weight:700; font-size:32px; color:var(--muted); background:var(--surface-2); }
+    .nm{ padding:10px 12px 2px; font-size:14px; font-weight:600; color:var(--cream); line-height:1.35; }
+    .pr{ padding:2px 12px 12px; font-size:13px; color:var(--gold); }
+
+    .sr-only{ position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden;
+      clip:rect(0,0,0,0); white-space:nowrap; border:0; }
+
+    #shop-search:focus-visible,
+    .cart-link:focus-visible,
+    .chip:focus-visible,
+    .text-link:focus-visible,
+    .card:focus-visible{ outline:2px solid var(--gold); outline-offset:3px; }
+
+    /* Light palette: --border (#E2D9C9) and --gold (#B08A3E) are both too faint
+       on white for the 3:1 / 4.5:1 checks PR 1679 used. Neutral borders move to
+       --muted (5.5:1 on white); gold text darkens to #7A5C1F (6.2:1). */
+    :root[data-theme="light"] #shop-search,
+    :root[data-theme="light"] .card,
+    :root[data-theme="light"] .chip{ border-color:var(--muted); }
+    :root[data-theme="light"] .pr,
+    :root[data-theme="light"] .text-link{ color:#7A5C1F; }
+    :root[data-theme="light"] .cart-link{ color:#7A5C1F; border-color:#B08A3E; }
+    :root[data-theme="light"] .cart-link:hover{ border-color:#7A5C1F; background:rgba(176,138,62,0.08); }
+    :root[data-theme="light"] .chip:hover{ border-color:#7A5C1F; }
+    :root[data-theme="light"] .chip[aria-pressed="true"]{ background:#B08A3E; border-color:#B08A3E; color:#0a150d; }
+    :root[data-theme="light"] #shop-search:focus-visible,
+    :root[data-theme="light"] .cart-link:focus-visible,
+    :root[data-theme="light"] .chip:focus-visible,
+    :root[data-theme="light"] .text-link:focus-visible,
+    :root[data-theme="light"] .card:focus-visible{ outline-color:#7A5C1F; }
+
+    @media(max-width:600px){
+      body{ font-size:16px; }
+      .shell{ padding:0 18px 40px; }
+      .shop-bar{ flex-direction:column; align-items:stretch; }
+      .cart-link{ text-align:center; }
+    }
+  </style>
+  <script src="/static/theme-toggle.js"></script>
+  <script src="/static/theme-mode.js"></script>
+  <script src="/static/text-size.js"></script>
+  <script src="/static/entity-ref.js"></script>
+</head>
+<body>
+  <div id="theme-toggle-wrap" style="position:fixed;top:14px;right:16px;z-index:50"><span class="theme-toggle" id="themeToggle" role="group" aria-label="Theme mode"></span></div>
+  <div class="brandbar"><span class="brand-mark" aria-hidden="true"></span>
+    <span class="brand-name">Remedy&nbsp;Match &nbsp;&middot;&nbsp; Healing&nbsp;Oasis</span></div>
+  <main class="shell shop">
+    <header class="shop-head">
+      <h1>Shop Dr. Glen's remedies</h1>
+      <p class="muted">Search by name, ingredient or what it is for. Not sure where to start?
+        <a class="text-link" href="/begin/match">Get matched to a remedy</a>.</p>
+      <div class="shop-bar">
+        <label class="sr-only" for="shop-search">Search remedies</label>
+        <input id="shop-search" type="search" placeholder="Search remedies" autocomplete="off">
+        <a class="cart-link" href="/begin/cart">Cart</a>
+      </div>
+      <div id="shop-groups" class="chips" role="group" aria-label="Shop by concern"></div>
+    </header>
+    <p id="shop-status" class="muted" aria-live="polite"></p>
+    <div id="shop-grid" class="grid"></div>
+  </main>
+  <script>
+  (function(){
+    var state = {q: "", group: ""}, timer = null;
+    var grid = document.getElementById("shop-grid"), status = document.getElementById("shop-status");
+    function money(c){ return "$" + (c/100).toFixed(2); }
+    function esc(s){ return String(s||"").replace(/[&<>"]/g, function(ch){
+      return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[ch]; }); }
+    function renderGroups(groups){
+      var box = document.getElementById("shop-groups");
+      box.innerHTML = ['<button type="button" class="chip" data-group="">All</button>']
+        .concat(groups.map(function(g){ return '<button type="button" class="chip" data-group="' +
+          esc(g.key) + '">' + esc(g.label) + '</button>'; })).join("");
+      box.querySelectorAll(".chip").forEach(function(b){
+        b.setAttribute("aria-pressed", String(b.dataset.group === state.group));
+        b.onclick = function(){ state.group = b.dataset.group; load(); };
+      });
+    }
+    function renderCards(products){
+      status.textContent = products.length === 1 ? "1 remedy"
+        : products.length ? products.length + " remedies" : "No remedies match that search.";
+      grid.innerHTML = products.map(function(p){
+        var img = p.image ? '<img src="' + esc(p.image) + '" alt="" loading="lazy">'
+                          : '<div class="ph" aria-hidden="true">' + esc(p.name.charAt(0)) + '</div>';
+        return '<a class="card" href="' + esc(p.url) + '">' + img + '<span class="nm">' + esc(p.name) +
+          '</span><span class="pr">from ' + money(p.price_cents) + '</span></a>';
+      }).join("");
+    }
+    function load(){
+      var qs = "?q=" + encodeURIComponent(state.q) + "&group=" + encodeURIComponent(state.group);
+      fetch("/api/shop/products" + qs, {credentials: "same-origin"})
+        .then(function(r){ return r.json(); })
+        .then(function(d){ if (!d.ok) throw 0; renderGroups(d.groups); renderCards(d.products); })
+        .catch(function(){ status.textContent = "The store could not load. Please try again."; });
+    }
+    document.getElementById("shop-search").addEventListener("input", function(e){
+      clearTimeout(timer); timer = setTimeout(function(){ state.q = e.target.value; load(); }, 250);
+    });
+    load();
+  })();
+  </script>
+  <script>if (window.RMTheme) window.RMTheme.mountToggle(document.getElementById('themeToggle'));</script>
+</body>
+</html>

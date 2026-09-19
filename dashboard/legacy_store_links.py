@@ -26,9 +26,9 @@ rewrites each released segment whole.
 """
 import re
 
-# Where a bare store link with no product page goes: the chat prompt's SHOPPING ROUTES
-# browse destination, the guided RemedyMatch conversation. /shop can replace it here later.
-BROWSE_ENTRY_PATH = "/begin/match"
+# Where a bare store link with no product page goes: the public store's browse page,
+# now that it exists (Task 3). Was the guided RemedyMatch conversation, /begin/match.
+BROWSE_ENTRY_PATH = "/shop"
 
 _HOST = r"(?:www\.)?remedymatch\.com"
 _TAIL = r"(?:[/?#][^\s<>\"'\]\)]*)?"
