@@ -10,8 +10,10 @@ never appear in one.
 from dashboard.order_destination import destination_for
 from dashboard.related_products import DO_NOT_RECOMMEND
 
-# [D3] What the store leaves out.
-EXCLUDED_FLAGS = ("inactive", "info_only", "service", "competitor")
+# [D3] What the store leaves out. `competitor` is deliberately absent: on a product record it
+# holds the price comparison that product's own page shows, not a rival's product. Filtering
+# on it hid the Mithreal baseball cap and blue zipper hoodie, and nothing else.
+EXCLUDED_FLAGS = ("inactive", "info_only", "service")
 
 
 def listable(product):

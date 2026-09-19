@@ -9,7 +9,10 @@ CATALOG = {
                    "description": "flora", "image": "/static/product-photos/m.webp"},
     "info-page": {"slug": "info-page", "name": "Info Page", "info_only": True},
     "consult": {"slug": "consult", "name": "Consult", "service": True},
-    "rival-cap": {"slug": "rival-cap", "name": "Rival Cap", "competitor": {"brand": "X"}},
+    # `competitor` on a product is the price comparison its own page shows, e.g. the Mithreal
+    # cap against DefenderShield's. It marks our product, never a rival's.
+    "mithreal-cap": {"slug": "mithreal-cap", "name": "Mithreal Cap", "price_cents": 5997,
+                     "competitor": {"brand": "DefenderShield", "price_cents": 6499}},
     "electrolyte-mineral-manna": {"slug": "electrolyte-mineral-manna",
                                   "name": "Electrolyte Mineral Manna", "price_cents": 4997},
 }
@@ -20,9 +23,9 @@ def get_product(slug):
     return dict(p) if p else None
 
 
-def test_listable_leaves_out_info_service_competitor_and_missing():
+def test_listable_leaves_out_info_service_and_missing():
     assert sc.listable(get_product("terrain-restore"))
-    for slug in ("info-page", "consult", "rival-cap"):
+    for slug in ("info-page", "consult"):
         assert not sc.listable(get_product(slug))
     assert not sc.listable(None)
 
@@ -48,7 +51,7 @@ def test_search_matches_name_description_and_ingredients():
 
 def test_empty_search_lists_every_listable_product_by_name():
     slugs = [c["slug"] for c in sc.search(CATALOG, get_product, "")]
-    assert slugs == ["electrolyte-mineral-manna", "microbiome", "terrain-restore"]
+    assert slugs == ["electrolyte-mineral-manna", "microbiome", "mithreal-cap", "terrain-restore"]
 
 
 def test_search_respects_the_limit():
@@ -65,3 +68,7 @@ def test_concern_groups_skip_unlistable_and_do_not_recommend_products():
     groups = sc.concern_groups(programs, get_product)
     assert groups == [{"key": "symptom-digestion", "label": "Digestive Discomfort / Bloating",
                        "slugs": ["microbiome", "terrain-restore"]}]
+
+
+def test_a_product_with_a_price_comparison_is_listed():
+    assert sc.listable(get_product("mithreal-cap"))
