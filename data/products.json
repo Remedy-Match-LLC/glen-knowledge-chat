@@ -4207,7 +4207,7 @@
    ]
   },
   "endocrine-restore": {
-   "name": "Endocrine Restore",
+   "name": "Endocrine Restore Sublingual Powder",
    "price_cents": 6997,
    "pinecone_title": "Endocrine Restore",
    "url": "https://remedymatch.com/remedies/syntropy/34-endocrine-restore",
@@ -4289,7 +4289,8 @@
    "description": "Endocrine Restore . Price: $69.97.",
    "bottle_type": "30 g",
    "fmp_id": "338",
-   "qty_pricing": true
+   "qty_pricing": true,
+   "regular_cents": 8000
   },
   "es13-coh": {
    "name": "ES13",
@@ -9249,7 +9250,7 @@
    "url": "https://remedymatch.com/remedies/modalities/biocommunication/infoceuticals/221-fat-metabolism"
   },
   "sublingual-b12": {
-   "name": "Sublingual B12",
+   "name": "B12 Sublingual Powder",
    "price_cents": 6997,
    "pinecone_title": "Sublingual B12",
    "url": "https://remedymatch.com/remedies/syntropy/133-sublingual-b12",
@@ -9271,7 +9272,8 @@
    "description": "Sublingual B12 . Price: $69.97.",
    "bottle_type": "30 g",
    "fmp_id": "323",
-   "qty_pricing": true
+   "qty_pricing": true,
+   "regular_cents": 8000
   },
   "shark-essence": {
    "name": "Shark Essence",
@@ -11725,7 +11727,7 @@
    "fmp_id": "593"
   },
   "adrenal-syntropy": {
-   "name": "Adrenal Syntropy",
+   "name": "Adrenal Syntropy Sublingual Powder",
    "price_cents": 6997,
    "pinecone_title": "Adrenal Syntropy",
    "url": "https://remedymatch.com/remedies/syntropy/109-adrenal-syntropy",
@@ -11775,7 +11777,8 @@
    "description": "Adrenal Syntropy . Adrenal Syntropy Adrenal Syntropy For many years we have instructed our clients to open their capsules of 7 Keto DHEA and hold the powder under their tongues for better efficacy. There is an abundant supply of circulation under the tongue, which carries the 7-Keto directly into the systemic blood supply. Any 7-Keto not absorbed in the mouth must go through the portal blood to be filtered through the liver before reaching the systemic blood supply. About 80% of that is broken down by the liver, so whatever can be absorbed in the mouth is about five times more efficient. The...",
    "bottle_type": "30 g",
    "fmp_id": "313",
-   "qty_pricing": true
+   "qty_pricing": true,
+   "regular_cents": 8000
   },
   "cinnamon-blue": {
    "name": "Cinnamon Blue",
@@ -12370,7 +12373,9 @@
    "no_groovekart": true,
    "regular_cents": 8000,
    "description": "Sublingual 7 Keto Sublingual 7 Keto 1 scoop dissolved and held in the mouth early in the day",
-   "bottle_type": "30 g"
+   "bottle_type": "30 g",
+   "inactive": true,
+   "superseded_by": "adrenal-syntropy"
   },
   "myelin-repair-neuroceramides": {
    "name": "Myelin Repair Neuroceramides",
@@ -12634,7 +12639,9 @@
    "no_groovekart": true,
    "regular_cents": 8000,
    "description": "1 scoop dissolved and held in the mouth early in the day",
-   "bottle_type": "30 g"
+   "bottle_type": "30 g",
+   "inactive": true,
+   "superseded_by": "sublingual-b12"
   },
   "endocrine-restore-powder": {
    "name": "Endocrine Restore Powder",
@@ -12751,7 +12758,9 @@
      "purity_pct": 60.0,
      "compound_mg": 10.0
     }
-   ]
+   ],
+   "inactive": true,
+   "superseded_by": "endocrine-restore"
   },
   "terrain-restore-drops": {
    "name": "Terrain Restore Drops",

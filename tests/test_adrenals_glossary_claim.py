@@ -33,7 +33,9 @@ def test_the_adrenals_entry_makes_no_medication_claim():
 def test_the_adrenals_remedies_are_live_catalog_products():
     cat = json.load(open(PRODUCTS))["products"]
     remedies = _adrenal()["remedies"]
-    assert [r["name"] for r in remedies] == ["Adrenal Syntropy", "Endocrine Restore Powder"]
+    # Link labels follow the 2026-09-19 sublingual renames; the prose is #1708's question.
+    assert [r["name"] for r in remedies] == ["Adrenal Syntropy Sublingual Powder",
+                                             "Endocrine Restore Sublingual Powder"]
     for r in remedies:
         slug = r["url"].rsplit("/", 1)[-1]
         assert slug in cat and not cat[slug].get("inactive"), slug
