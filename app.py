@@ -43914,12 +43914,13 @@ def create_household():
 
         slug = _household_slug(name, head_first, existing=_existing_household_slugs(cx))
 
-        cx.execute("""
+        # RETURNING id: last_insert_rowid() is SQLite-only and 500'd every create on Postgres.
+        household_id = cx.execute("""
             INSERT INTO households (slug, name, head_person_id, address, notes,
                                     created_at, updated_at, created_by)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        """, (slug, name, head_id, address, notes, ts, ts, created_by))
-        household_id = cx.execute("SELECT last_insert_rowid()").fetchone()[0]
+            RETURNING id
+        """, (slug, name, head_id, address, notes, ts, ts, created_by)).fetchone()[0]
 
         # Tag every member in DB. Head gets both household: and household-head:.
         # Also strip the legacy relationship:family-shared-email tag.
