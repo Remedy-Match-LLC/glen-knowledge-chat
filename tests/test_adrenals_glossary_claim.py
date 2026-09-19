@@ -108,3 +108,43 @@ def test_no_glossary_prose_names_endocrine_restore_powder():
     for dim in d["dimensions"]:
         for e in dim["entries"]:
             assert "Endocrine Restore Powder" not in (e.get("description") or ""), e["slug"]
+
+
+def test_no_glossary_text_names_the_old_b12_product():
+    """Glen, 2026-09-19: "Vitamin B12 Sublingual Powder is the new name - update
+    elsewhere", and yes to all five places in the glossary and stressor map."""
+    for path in ("data/clinical_theory_catalog.json", "data/e4l_stressor_map.json"):
+        text = open(path, encoding="utf-8").read()
+        assert "Sublingual B12" not in text, path
+        assert "B12 Sublingual Powder" in text or path.endswith("stressor_map.json"), path
+
+
+def test_no_glossary_link_points_at_the_old_store():
+    """Glen, 2026-09-19: "look for any links still pointing to the old store". Every
+    remedymatch.com product page now 404s, and a GroovePages builder link only opens in
+    the editor, so either one is a dead link in approved customer text."""
+    import json as _j
+    cat = _j.loads(open("data/clinical_theory_catalog.json", encoding="utf-8").read())
+    bad = [(e["slug"], r.get("name"), r.get("url"))
+           for dim in cat["dimensions"] for e in dim["entries"]
+           for r in (e.get("remedies") or [])
+           if "remedymatch.com" in (r.get("url") or "") or "groove.cm" in (r.get("url") or "")]
+    assert bad == [], bad
+
+
+def test_every_glossary_product_link_is_a_real_page_or_the_shop():
+    """A rewritten link must name a live product, or the browse page when the old
+    product is retired or the link was a search."""
+    import json as _j
+    cat = _j.loads(open("data/clinical_theory_catalog.json", encoding="utf-8").read())
+    products = _j.loads(open("data/products.json", encoding="utf-8").read())["products"]
+    for dim in cat["dimensions"]:
+        for e in dim["entries"]:
+            for r in (e.get("remedies") or []):
+                u = r.get("url") or ""
+                if "/begin/product/" in u:
+                    slug = u.rsplit("/", 1)[-1]
+                    assert slug in products, (e["slug"], slug)
+                    assert not products[slug].get("inactive"), (e["slug"], slug)
+                elif u.startswith("http"):
+                    assert u.endswith("/shop") or u.startswith("/"), (e["slug"], u)
