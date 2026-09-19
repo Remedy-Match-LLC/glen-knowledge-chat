@@ -35,10 +35,10 @@ const storeSrc = page.match(/var STORE_SOURCES = \[[^\]]*\];/);
 assert.ok(storeSrc, "STORE_SOURCES not found: the board cannot tell a store order apart");
 
 const ctx = {};
-new Function(extract("isPaidReady") + storeSrc[0] + extract("isStoreOrder")
+new Function(extract("isFreeOrder") + extract("isPaidReady") + storeSrc[0] + extract("isStoreOrder")
   + lanesSrc[0] + "return {LANES:LANES, isStoreOrder:isStoreOrder};").call(ctx);
 const { LANES, isStoreOrder } = new Function(
-  extract("isPaidReady") + storeSrc[0] + extract("isStoreOrder") + lanesSrc[0]
+  extract("isFreeOrder") + extract("isPaidReady") + storeSrc[0] + extract("isStoreOrder") + lanesSrc[0]
   + "return {LANES:LANES, isStoreOrder:isStoreOrder};")();
 
 function laneOf(o) {
@@ -73,6 +73,23 @@ for (const o of [storeOrder, realCart, storePaid, storeShipped]) {
   const hits = LANES.filter(l => l[2] ? l[2](o) : o.status === l[0]);
   assert.strictEqual(hits.length, 1,
     "order " + o.id + " matches " + hits.length + " lanes: " + hits.map(h => h[0]));
+}
+
+// 4b. A $0 order has nothing to collect, so it is ready, not awaiting payment.
+//     Order 185, a free digital manual, sat in "Store · confirm payment" with no
+//     way to close it (Glen, 2026-09-19). An EMPTY $0 order is not ready: no lines.
+const freeStore = { id: 5, source: "groovekart", status: "new", pay_status: "unpaid",
+                    total_cents: 0, items: [{ name: "DENAS manual" }] };
+const emptyCart = { id: 6, source: "portal", status: "new", pay_status: "unpaid",
+                    total_cents: 0, items: [] };
+const smallStore = { id: 7, source: "groovekart", status: "new", pay_status: "unpaid",
+                     total_cents: 100, items: [{ name: "x" }] };
+assert.strictEqual(laneOf(freeStore), "paid", "a $0 order still waits for a payment it can never get");
+assert.strictEqual(laneOf(emptyCart), "cart", "an empty $0 cart must not look ready");
+assert.strictEqual(laneOf(smallStore), "store-confirm", "a $1 order must still wait for payment");
+for (const o of [freeStore, emptyCart, smallStore]) {
+  const hits = LANES.filter(l => l[2] ? l[2](o) : o.status === l[0]);
+  assert.strictEqual(hits.length, 1, "order " + o.id + " matches " + hits.length + " lanes");
 }
 
 // 5. isStoreOrder must not guess from the channel or the total.
