@@ -401,7 +401,12 @@ def set_order_status(cx, order_id, status):
     cx.commit()
     if status == "cancelled" and cur.rowcount:
         try:
-            _ungroup_cancelled_from_shipment(cx, order_id)
+            _sid = _ungroup_cancelled_from_shipment(cx, order_id)
+            # Money, 2026-09-19: the members left behind still carried the old split,
+            # so a cancelled member's share of the parcel was never redistributed.
+            if _sid:
+                for _hook in SHIPMENT_CHANGED_HOOKS:
+                    _hook(cx, _sid)
         except Exception as e:  # never let group cleanup block the cancel
             print(f"[orders] ungroup-on-cancel skipped for #{order_id}: {e!r}", flush=True)
         try:
@@ -419,7 +424,13 @@ def set_order_status(cx, order_id, status):
     return cur.rowcount > 0
 
 
-def _ungroup_cancelled_from_shipment(cx, order_id):
+# Called as hook(cx, shipment_id) after a cancel leaves an OPEN shipment with 2+ members,
+# so the remaining members' shipping is re-split. app.py registers
+# _recompute_combined_shipping here; this module cannot import app.
+SHIPMENT_CHANGED_HOOKS = []
+
+
+def _ungroup_cancelled_from_shipment(cx, order_id, *, dissolve=True):
     """When an order is cancelled, drop it from any still-OPEN combined shipment so
     its stale group link can't block re-combining the remaining members. If that
     leaves the shipment with fewer than 2 members, dissolve it: un-group the lone
@@ -436,13 +447,21 @@ def _ungroup_cancelled_from_shipment(cx, order_id):
     cx.execute("UPDATE orders SET group_shipment_id=NULL, updated_at=? WHERE id=?",
                (_now(), order_id))
     remaining = cx.execute("SELECT id FROM orders WHERE group_shipment_id=?", (sid,)).fetchall()
+    if not dissolve:
+        # A replacement order is about to take this one's place (a re-issued hand-off).
+        # The caller re-attaches it and decides; dissolving now would strand the rest.
+        cx.commit()
+        return sid
     if len(remaining) < 2:
         for (rid,) in remaining:
             cx.execute("UPDATE orders SET group_shipment_id=NULL, updated_at=? WHERE id=?",
                        (_now(), rid))
         cx.execute("UPDATE combined_shipments SET status='cancelled', updated_at=? WHERE id=?",
                    (_now(), sid))
+        cx.commit()
+        return None
     cx.commit()
+    return sid
 
 
 def set_order_tracking(cx, order_id, tracking_number, shipment_id=None):

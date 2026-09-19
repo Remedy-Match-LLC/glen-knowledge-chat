@@ -91,15 +91,22 @@ def test_paid_invoice_blocked(tmp_path, monkeypatch):
 
 
 def test_cancelled_invoice_blocked(tmp_path, monkeypatch):
-    """A cancelled (still unpaid) order can't be repriced by the customer."""
+    """A cancelled (still unpaid) order can't be repriced by the customer.
+
+    Glen, 2026-09-19: a cancelled order with no replacement shows the "invalid or
+    expired" page, so its link now finds no order at all (404) before this route's
+    own 409 guard is reached. Either way nothing is repriced."""
     appmod, client, token = _client(tmp_path, monkeypatch)
     with sqlite3.connect(str(tmp_path / "chat_log.db")) as cx:
         cx.execute("UPDATE orders SET status='cancelled' WHERE id=1")
         cx.commit()
     r = client.post(f"/api/invoice/{token}/membership",
                     json={"action": "add", "tier": "month"})
-    assert r.status_code == 409
-    assert "no longer be changed" in (r.get_json().get("error") or "")
+    assert r.status_code == 404
+    assert "invalid or expired" in (r.get_json().get("error") or "")
+    with sqlite3.connect(str(tmp_path / "chat_log.db")) as cx:
+        items = cx.execute("SELECT items_json FROM orders WHERE id=1").fetchone()[0]
+    assert "membership" not in (items or ""), "a cancelled order was repriced"
 
 
 def test_already_member_blocked(tmp_path, monkeypatch):
