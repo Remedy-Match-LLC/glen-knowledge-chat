@@ -48,7 +48,7 @@ PRODUCTS = ROOT / "data" / "products.json"
 PAIRS = [
     ("adrenal-syntropy", "adrenal-syntropy-powder", "Adrenal Syntropy Sublingual Powder"),
     ("endocrine-restore", "endocrine-restore-powder", "Endocrine Restore Sublingual Powder"),
-    ("sublingual-b12", "sublingual-b12-powder", "B12 Sublingual Powder"),
+    ("sublingual-b12", "sublingual-b12-powder", "Vitamin B12 Sublingual Powder"),
     ("flow-ease", "flow-ease-powder", "Flow Ease Powder"),
     ("msm-syntropy", "msm-syntropy-powder", "MSM Syntropy Powder"),
     ("seaaminos", "seaamino-powder", "SeaAmino Powder"),
@@ -274,7 +274,7 @@ def test_every_shipped_name_exists_in_the_filemaker_export():
     # weekly export is refreshed past that date.
     RENAMED_IN_FILEMAKER_AFTER_EXPORT = {
         "adrenal syntropy sublingual powder", "endocrine restore sublingual powder",
-        "b12 sublingual powder",
+        "vitamin b12 sublingual powder",   # Glen 2026-09-19; FileMaker rename pending
     }
     missing = [products[k]["name"] for k, _, _ in PAIRS
                if products[k]["name"].lower() not in fmp
