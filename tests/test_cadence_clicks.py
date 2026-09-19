@@ -28,6 +28,7 @@ def env(tmp_path, monkeypatch):
     except Exception as e:
         pytest.skip(f"app not importable: {e}")
     appmod.app.config["TESTING"] = True
+    monkeypatch.setenv("PORTAL_BASE_URL", "https://myhealingoasis.com")
     monkeypatch.setattr(appmod, "CONSOLE_SECRET", KEY)
     monkeypatch.setattr(appmod, "_rec_valid_slug",
                         lambda s: "neuro-magnesium" if s == "neuro-magnesium" else None)
@@ -65,7 +66,8 @@ def test_membership_goes_to_the_other_domain_and_products_are_validated(env):
     r = client.get(f"/c/{tok}/{WEEK}/membership")
     assert r.headers["Location"] == "https://myhealingoasis.com/membership"
     r = client.get(f"/c/{tok}/{WEEK}/p-neuro-magnesium")
-    assert r.headers["Location"].endswith("/begin/product/neuro-magnesium")
+    # The store and cart live on the portal host (PORTAL_BASE_URL), not the funnel host.
+    assert r.headers["Location"] == "https://myhealingoasis.com/begin/product/neuro-magnesium"
     r = client.get(f"/c/{tok}/{WEEK}/p-not-a-product")
     assert r.headers["Location"].endswith("/")
     assert [c[2] for c in _clicks(db)] == ["membership", "p-neuro-magnesium"]

@@ -8848,7 +8848,7 @@ def cadence_click_redirect(token, campaign_key, dest_key):
     unknown lands on /. Always redirects: a recording failure never blocks the click.
     A malformed campaign key or unknown token still redirects but records nothing."""
     from dashboard import cadence_clicks as _cc
-    target, key = _cc.resolve(dest_key, _rec_valid_slug)
+    target, key = _cc.resolve(dest_key, _rec_valid_slug, portal_base())
     try:
         if target and _cc.valid_campaign(campaign_key):
             from dashboard import email_click_tokens as _ect

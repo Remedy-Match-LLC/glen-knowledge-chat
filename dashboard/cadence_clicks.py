@@ -55,18 +55,20 @@ def valid_email(email):
     return bool(EMAIL_RE.match((email or "").strip()))
 
 
-def resolve(dest_key, product_slug_check):
+def resolve(dest_key, product_slug_check, product_base=""):
     """dest_key -> (target, normalized key), or (None, None) for anything unknown.
 
     product_slug_check(slug) returns the catalog slug or None; only a slug it accepts
-    becomes a product page."""
+    becomes a product page. product_base is the STORE host (PORTAL_BASE_URL,
+    myhealingoasis.com): the cart lives there, not on the funnel host, so a product
+    click must land on it. It comes from server config, never from the request."""
     key = (dest_key or "").strip().lower()
     if key in DESTINATIONS:
         return DESTINATIONS[key], key
     if key.startswith(PRODUCT_PREFIX):
         slug = product_slug_check(key[len(PRODUCT_PREFIX):])
         if slug:
-            return f"/begin/product/{slug}", PRODUCT_PREFIX + slug
+            return f"{(product_base or '').rstrip('/')}/begin/product/{slug}", PRODUCT_PREFIX + slug
     return None, None
 
 
