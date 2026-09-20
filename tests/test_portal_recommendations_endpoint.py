@@ -82,7 +82,10 @@ def test_recommendation_links_go_to_the_new_product_page_never_groovekart(monkey
                          .read_text(encoding="utf-8"))["products"]
     from dashboard import products as _products_mod
     monkeypatch.setattr(_products_mod, "load_products", lambda: catalog)
-    assert "remedymatch.com" in (catalog["rescue"].get("url") or "")        # fixture guard
+    # Fixture guard. Since 2026-09-19 `url` names the new store and the retired
+    # GrooveKart address lives in `legacy_store_url`, which is what carries the old id.
+    assert "remedymatch.com" in (catalog["rescue"].get("legacy_store_url") or "")
+    assert catalog["rescue"]["url"].endswith("/begin/product/rescue")
     assert catalog["relax"].get("inactive") and catalog["relax"].get("superseded_by") == "stress-release"
     assert catalog["molecular-hydrogen-tablets"].get("inactive")
     assert not catalog["molecular-hydrogen-tablets"].get("superseded_by")
