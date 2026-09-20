@@ -42,10 +42,14 @@ def test_the_surviving_blend_keeps_everything_that_was_only_on_it(products):
 
 
 def test_the_surviving_blend_inherits_what_was_only_on_the_duplicate(products):
-    """The url and the enrichment note existed on the retired entry alone."""
+    """The enrichment note existed on the retired entry alone.
+
+    The url no longer carries identity: since 2026-09-19 every product's url is its own
+    page on the store host, so the survivor and the retired entry each name themselves
+    instead of sharing one old GrooveKart address."""
     b, r = products[BLEND], products[RETIRED]
-    assert b["url"] == r["url"]
-    assert b["url"].endswith("228-tmg-syntropy-powder-trimethylglycine")
+    assert b["url"].endswith(f"/begin/product/{BLEND}")
+    assert r["url"].endswith(f"/begin/product/{RETIRED}")
     assert b["enrichment_note"] == r["enrichment_note"]
     assert "Vitamin B15 & B16" in b["enrichment_note"]
 
@@ -103,7 +107,7 @@ def test_nothing_about_identity_moved(products):
     """A slug or name change here would break QuickBooks or an existing link."""
     assert products[PURE]["name"] == "TMG"
     assert products[PURE]["price_cents"] == 3997
-    assert products[PURE]["url"].endswith("500-tmg")
+    assert products[PURE]["url"].endswith(f"/begin/product/{PURE}")
     assert products[BLEND]["name"] == "TMG Syntropy Powder"
     assert products[RETIRED]["name"] == "TMG Powder (Trimethylglycine)"
 
