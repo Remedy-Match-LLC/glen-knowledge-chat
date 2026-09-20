@@ -62,3 +62,27 @@ def test_the_old_address_is_kept_so_old_links_still_resolve():
     m = L.build_map(CATALOG)
     assert m.get("85") == "/begin/product/nous-energy", m.get("85")
     assert len(m) > 300, len(m)
+
+
+def _atlas(name):
+    return json.loads((ROOT / "data" / name).read_text())["concepts"]
+
+
+def test_no_atlas_concept_links_at_the_old_store():
+    """Glen, 2026-09-19: take on the Atlas links too. Both files carry them: the seed is
+    the source, and the live graph is what /atlas/data serves."""
+    for name in ("atlas-concepts.json", "atlas-seed-input.json"):
+        bad = [(c["id"], l.get("title"), l.get("url")) for c in _atlas(name)
+               for l in (c.get("links") or []) if "remedymatch.com" in (l.get("url") or "")]
+        assert bad == [], (name, bad[:5])
+
+
+def test_every_atlas_product_link_names_a_real_product_or_the_shop():
+    for name in ("atlas-concepts.json", "atlas-seed-input.json"):
+        for c in _atlas(name):
+            for l in (c.get("links") or []):
+                u = l.get("url") or ""
+                if "/begin/product/" in u:
+                    assert u.rsplit("/", 1)[-1] in CATALOG, (name, c["id"], u)
+                elif u.startswith(NEW_STORE):
+                    assert u.endswith("/shop"), (name, c["id"], u)
