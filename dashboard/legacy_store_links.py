@@ -79,7 +79,10 @@ def build_map(products):
     """{old store id: new page path, or None when there is no linkable product}."""
     out = {}
     for slug, p in (products or {}).items():
-        url = (p or {}).get("url") or ""
+        # legacy_store_url holds the retired GrooveKart address, and its numeric id is
+        # what an old link in knowledge text or a chat answer carries. Since 2026-09-19
+        # `url` names the product's page on the new store, so the id lives here.
+        url = (p or {}).get("legacy_store_url") or (p or {}).get("url") or ""
         if "remedymatch.com" not in url.lower():
             continue
         pid = _product_id(url)

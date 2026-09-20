@@ -47,3 +47,18 @@ def test_every_chat_link_names_a_real_product_or_the_shop():
             assert slug in CATALOG, (name, slug)
         elif u.startswith(NEW_STORE):
             assert u.endswith("/shop"), (name, u)
+
+
+def test_the_old_address_is_kept_so_old_links_still_resolve():
+    """The trap this batch fell into, caught by CI on 2026-09-19.
+
+    dashboard.legacy_store_links builds its {old id -> new page} map from the catalog's
+    OLD GrooveKart addresses: an old link in knowledge text or a chat answer carries only
+    that numeric id. Repointing `url` erased the map, and every old link fell back to the
+    shop. The old address now lives in `legacy_store_url`."""
+    from dashboard import legacy_store_links as L
+    kept = [s for s, p in CATALOG.items() if "remedymatch.com" in (p.get("legacy_store_url") or "")]
+    assert len(kept) > 300, len(kept)
+    m = L.build_map(CATALOG)
+    assert m.get("85") == "/begin/product/nous-energy", m.get("85")
+    assert len(m) > 300, len(m)
