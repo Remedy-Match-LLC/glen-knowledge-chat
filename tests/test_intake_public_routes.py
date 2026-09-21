@@ -156,9 +156,17 @@ def test_form_never_returns_a_submitted_records_answers(client):
     from dashboard import intake_public as ip
     _submit(client, "victim@x.com", {"diagnoses": "MS", "medications": "tysabri"})
     # Forge exactly what the exploit had: a session bound to the victim's email.
+    #
+    # The session is created NOW, never on a fixed date. This used to read
+    # datetime(2026, 9, 18). Sessions live TOKEN_TTL_HOURS (72), so that session expired at
+    # midnight on 2026-09-21 and the token stopped resolving at all. The route then returned
+    # submitted=False with empty answers, the test failed, and it failed for the WRONG reason:
+    # no answers leaked, the forged session simply no longer existed. It blocked every PR
+    # opened that day. A test that forges a session must forge a LIVE one, or it stops
+    # reaching the branch it exists to guard.
     with sqlite3.connect(client._appmod.LOG_DB) as cx:
         from datetime import datetime
-        tok = ip.create_session(cx, "victim@x.com", "attacker", datetime(2026, 9, 18))
+        tok = ip.create_session(cx, "victim@x.com", "attacker", datetime.now())
     d = client.get("/api/intake/public/form?token=" + tok).get_json()
     assert d.get("submitted") is True
     assert d.get("answers") == {}, "the submitted clinical record was disclosed"
