@@ -148,3 +148,36 @@ def test_a_fake_cursor_reporting_postgres_takes_the_information_schema_path(monk
     monkeypatch.setattr(db, "backend_of", lambda cx: "postgres")
     assert CE._table_exists(FakeCx(), "intake_responses") is True
     assert "information_schema.tables" in seen["sql"]
+
+
+# --- the erasure log ---------------------------------------------------------------
+# Glen approved the console flow on 2026-09-20. An erasure that leaves no trace cannot
+# be shown to have been honoured, so every run records what it removed.
+
+def test_the_erasure_log_is_protected_from_a_later_erasure():
+    # If the log were erasable, erasing the same client twice would destroy the record
+    # of the first run. It must be in PROTECTED, not merely absent from HEALTH_TABLES.
+    assert "client_erasures" in CE.PROTECTED
+    assert "client_erasures" not in CE.HEALTH_TABLES
+
+
+def test_record_erasure_keeps_the_counts_the_actor_and_the_note(cx):
+    CE.init_erasure_log(cx)
+    CE.record_erasure(cx, "Victim@X.com", actor="glen",
+                      removed={"intake_responses": 1, "scan_analyses": 2},
+                      note="asked by email")
+    rows = CE.erasures_for(cx, "victim@x.com")
+    assert len(rows) == 1
+    assert rows[0]["removed"] == {"intake_responses": 1, "scan_analyses": 2}
+    assert rows[0]["total_rows"] == 3
+    assert rows[0]["actor"] == "glen"
+    assert rows[0]["note"] == "asked by email"
+    assert rows[0]["suppressed"] is False
+
+
+def test_the_log_survives_the_erasure_it_records(cx):
+    CE.init_erasure_log(cx)
+    removed = CE.erase(cx, "victim@x.com", confirm="victim@x.com")
+    CE.record_erasure(cx, "victim@x.com", actor="glen", removed=removed)
+    assert not CE.plan(cx, "victim@x.com"), "health rows should be gone"
+    assert len(CE.erasures_for(cx, "victim@x.com")) == 1, "the record must survive"

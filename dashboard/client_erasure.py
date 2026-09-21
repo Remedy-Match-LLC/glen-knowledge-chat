@@ -67,6 +67,9 @@ PROTECTED = frozenset({
     "purchase_history", "points_ledger", "subscriptions", "coupons",
     "member_reward_grants", "evox_session_credits", "sequence_enrollments",
     "analysis_quota",
+    # the record of the erasures themselves. Erasing the same client twice would
+    # otherwise destroy the proof that the first request was honoured.
+    "client_erasures",
 })
 
 
@@ -149,3 +152,60 @@ def _assert_disjoint():
     if overlap:
         raise AssertionError(
             f"a table is both health-erasable and protected: {sorted(overlap)}")
+
+
+# --- the record an erasure leaves behind -------------------------------------------
+# Glen approved the console flow on 2026-09-20. An erasure with no trace cannot be shown
+# to have been honoured, so each run records WHO was erased, by whom, and what went.
+#
+# This row keeps the address after the health data is gone. That is the point: it is the
+# proof, and it is why `client_erasures` is in PROTECTED rather than merely left out of
+# HEALTH_TABLES.
+
+import json as _json
+from datetime import datetime as _dt, timezone as _tz
+
+
+def init_erasure_log(cx, *, commit=True):
+    cx.execute(
+        "CREATE TABLE IF NOT EXISTS client_erasures ("
+        "id INTEGER PRIMARY KEY AUTOINCREMENT, email TEXT NOT NULL, actor TEXT, "
+        "removed_json TEXT, total_rows INTEGER, suppressed INTEGER DEFAULT 0, "
+        "note TEXT, created_at TEXT NOT NULL)")
+    cx.execute("CREATE INDEX IF NOT EXISTS ix_client_erasures_email "
+               "ON client_erasures(email)")
+    if commit:
+        cx.commit()
+
+
+def record_erasure(cx, email, *, actor, removed, note="", suppressed=False, commit=True):
+    """Write one row saying what was erased. `removed` is {table: rows} from erase()."""
+    init_erasure_log(cx, commit=False)
+    removed = dict(removed or {})
+    cx.execute(
+        "INSERT INTO client_erasures (email, actor, removed_json, total_rows, "
+        "suppressed, note, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        (_norm(email), str(actor or ""), _json.dumps(removed, sort_keys=True),
+         sum(removed.values()), 1 if suppressed else 0, str(note or ""),
+         _dt.now(_tz.utc).isoformat()))
+    if commit:
+        cx.commit()
+
+
+def erasures_for(cx, email):
+    """Every recorded erasure for this address, newest first. [] when there are none."""
+    if not _table_exists(cx, "client_erasures"):
+        return []
+    rows = cx.execute(
+        "SELECT id, email, actor, removed_json, total_rows, suppressed, note, created_at "
+        "FROM client_erasures WHERE email=? ORDER BY id DESC", (_norm(email),)).fetchall()
+    out = []
+    for r in rows:
+        try:
+            removed = _json.loads(r[3] or "{}")
+        except (TypeError, ValueError):
+            removed = {}
+        out.append({"id": r[0], "email": r[1], "actor": r[2], "removed": removed,
+                    "total_rows": r[4], "suppressed": bool(r[5]), "note": r[6],
+                    "created_at": r[7]})
+    return out
