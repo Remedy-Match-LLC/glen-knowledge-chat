@@ -366,3 +366,32 @@ def fetch_live(client_id=None, name=None, *, runner=None):
         return {"ok": False, "error": (e.stderr or str(e))[:300]}
     except Exception as e:
         return {"ok": False, "error": str(e)[:300]}
+
+
+def species_from_e4l(e4l_db, email):
+    """Species for `email` straight from e4l.db, or None.
+
+    The local Biofield Intake reads species HERE, not from dashboard.client_species.
+    That table is the prod mirror; on Glen's Mac chat_log.db has no such table, so a
+    lookup there threw, was caught, and every animal read as a person (Sasha
+    Takahashi, a cat, 2026-09-21). None means unknown, and callers read unknown as a
+    person, which leaves a human exactly as before.
+
+    Lives in this module, not client_species.py, because this is the file the
+    raw-connect guard (tests/test_no_raw_logdb_connect.py) already allows for e4l.db.
+    client_species.py writes the production database, so allow-listing it would let a
+    raw chat_log connect added there later pass unnoticed."""
+    e = (email or "").strip().lower()
+    if not e or not e4l_db:
+        return None
+    try:
+        with sqlite3.connect(f"file:{e4l_db}?mode=ro", uri=True) as ecx:
+            row = ecx.execute(
+                "SELECT species FROM e4l_clients "
+                "WHERE lower(trim(email))=? AND species IS NOT NULL AND species<>'' "
+                "ORDER BY client_id DESC LIMIT 1", (e,)).fetchone()
+    except sqlite3.Error:
+        return None
+    if not row:
+        return None
+    return (row[0] or "").strip() or None
