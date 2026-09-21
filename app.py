@@ -54108,39 +54108,23 @@ def _price_inhouse_invoice(lines_in, *, email, pickup, ship,
 
 
 def _push_invoice_edit_to_qbo(external_ref, priced):
-    """Best-effort: mirror an edited invoice onto its linked QBO invoice. Only acts when
-    external_ref is a numeric QBO invoice id (in-house INH-* orders have no QBO invoice).
-    Points fold into the QBO discount (as in checkout) so the QBO total matches the
-    console total; GET stays absorbed (not stamped on QBO, matching how invoices were
-    created). Returns {pushed: bool, warning?: str} — never raises."""
-    ref = (external_ref or "").strip()
-    if not ref.isdigit():
-        return {"pushed": False, "skipped": "no QBO invoice"}
-    try:
-        from dashboard import qbo_billing as _qb_local
-        qlines = []
-        for it in priced["items_rec"]:
-            p = _get_product(it.get("slug") or "")
-            qlines.append({"name": it["name"], "amount": round(int(it["unit_cents"]) / 100.0, 2),
-                           "qty": it["qty"], "item_id": (p or {}).get("qbo_item_id"),
-                           "description": it["name"]})
-        qlines += _shipping_line(priced["shipping_cents"])
-        # Fold the signed manual adjustment into the QBO discount so the QBO total
-        # matches the console total: a credit (negative) raises the discount; a debit
-        # (positive) lowers it. QBO's DiscountLineDetail can't go negative, so a
-        # surcharge that exceeds the discount can't be mirrored — warn in that case.
-        adj = int(priced.get("adjustment_cents") or 0)
-        qbo_discount = priced["discount_cents"] + priced["points_redeemed_cents"] - adj
-        warn = None
-        if qbo_discount < 0:
-            warn = ("QBO can't show a surcharge larger than the discount as a discount "
-                    f"line — the QBO total may be ${abs(qbo_discount) / 100:.2f} under the "
-                    "console total. Add a manual QBO adjustment line if needed.")
-            qbo_discount = 0
-        _qb_local.replace_invoice_lines(ref, qlines, discount_cents=qbo_discount, tax_cents=0)
-        return {"pushed": True, **({"warning": warn} if warn else {})}
-    except Exception as e:
-        return {"pushed": False, "warning": f"QBO sync failed: {type(e).__name__}: {e}"}
+    """RETIRED 2026-09-21. Never writes to QuickBooks. Kept, with its old return shape, so
+    the four callers need no change: they already handle a skip.
+
+    Glen, 2026-09-09: no invoices in QuickBooks, because they caused duplication and
+    accounting problems. Glen, 2026-09-21: "yes, stop it sending to QuickBooks".
+
+    This was the last live path that created QuickBooks product items. It skipped any
+    `INH-` reference, but an order from before the cutover that still held a numeric
+    QuickBooks invoice id pushed through qbo_billing.replace_invoice_lines, and that
+    calls find_or_create_item for any line without an item id. That is how the stray item
+    "sleep-syntropy" (QBO item 94) was created on 2026-07-27.
+
+    The mirror it performed (lines, discount folding, the surcharge warning) is in git
+    history before this commit if it is ever wanted back. It should come back as a
+    deliberate decision, not by restoring this function.
+    """
+    return {"pushed": False, "skipped": "QuickBooks sync retired 2026-09-21"}
 
 
 def _harvest_line_note_snippets(cx, items):
