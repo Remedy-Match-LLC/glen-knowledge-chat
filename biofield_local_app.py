@@ -638,12 +638,13 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
     # already reads; chat_log.db on Glen's Mac has no client_species table.
     def _animal_infoceuticals_for(cx, tid):
         from dashboard import client_species as _cspec
+        from dashboard.biofield_e4l import species_from_e4l as _species_from_e4l
         from dashboard.animal_infoceuticals import infoceutical_by_code
         from dashboard.biofield_portal_publish import load_catalog
         row = cx.execute("SELECT email FROM biofield_auth_tests WHERE id=?",
                          (int(str(tid).lstrip("a") or 0),)).fetchone()
         email = ((row[0] if row else "") or "").strip()
-        if not _cspec.is_animal(_cspec.species_from_e4l(e4l_db, email)):
+        if not _cspec.is_animal(_species_from_e4l(e4l_db, email)):
             return None
         return infoceutical_by_code(load_catalog())
 
@@ -1594,7 +1595,8 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
             # chat_log.db, which does not exist on Glen's Mac: the lookup threw, was
             # caught, and every animal imported as a person (Sasha, 2026-09-21).
             from dashboard import client_species as _cspec
-            _is_animal = _cspec.is_animal(_cspec.species_from_e4l(e4l_db, email))
+            from dashboard.biofield_e4l import species_from_e4l as _species_from_e4l
+            _is_animal = _cspec.is_animal(_species_from_e4l(e4l_db, email))
             try:
                 res = _ri.synthesize_reveal_layers(
                     email, today=_dt.date.today().isoformat(), is_animal=_is_animal)

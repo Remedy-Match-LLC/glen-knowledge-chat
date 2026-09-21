@@ -26,7 +26,7 @@ import pytest
 import dashboard.biofield_reveal_import as RI
 from dashboard import biofield_stress as st
 from dashboard.animal_infoceuticals import infoceutical_by_code
-from dashboard.client_species import species_from_e4l
+from dashboard.biofield_e4l import species_from_e4l
 
 CAT = "sasha@x.com"
 PERSON = "karin@x.com"
