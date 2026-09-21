@@ -77,7 +77,7 @@ def test_mine_profile_empty_profile(tmp_path):
 def test_mine_profile_zero_result_has_visible_message(tmp_path):
     db = str(tmp_path / "c.db"); client = _app(db, {}, []).test_client()
     tid = _new(client, "nobody@x.com")
-    assert "No new clinical stresses found." in client.get(f"/author/{tid}").get_data(as_text=True)
+    assert "No new stresses found in the profile." in client.get(f"/author/{tid}").get_data(as_text=True)
 
 
 def test_mine_profile_zero_result_has_visible_message(tmp_path):
@@ -85,7 +85,7 @@ def test_mine_profile_zero_result_has_visible_message(tmp_path):
     client = _app(db, {}, []).test_client()
     tid = _new(client, "nobody@x.com")
     html = client.get(f"/author/{tid}").get_data(as_text=True)
-    assert "No new clinical stresses found." in html
+    assert "No new stresses found in the profile." in html
 
 
 def test_mine_profile_failure_is_best_effort(tmp_path):
