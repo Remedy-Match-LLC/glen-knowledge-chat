@@ -3639,7 +3639,9 @@
     }
    ],
    "ingredients_source": "t33",
-   "description": "Quercetin Dihydrate Powder . Quercetin Dihydrate Powder Quercetin Dihydrate Powder Quercetin is the most researched of the thousands of botanical-source bioflavonoids. Bioflavonoids have a polyphenolic structure. The phenol ring structures have conjugated double bonds that allow the bonding electrons freedom to delocalize into an annular Coherence Zone™, and cycle around the ring at nearly infinite quantum energy levels. That means those electrons are free to shield the center of the ring from many electromagnetic stresses such as those induced by modern technologies. For more background on..."
+   "description": "Quercetin Dihydrate Powder . Quercetin Dihydrate Powder Quercetin Dihydrate Powder Quercetin is the most researched of the thousands of botanical-source bioflavonoids. Bioflavonoids have a polyphenolic structure. The phenol ring structures have conjugated double bonds that allow the bonding electrons freedom to delocalize into an annular Coherence Zone™, and cycle around the ring at nearly infinite quantum energy levels. That means those electrons are free to shield the center of the ring from many electromagnetic stresses such as those induced by modern technologies. For more background on...",
+   "inactive": true,
+   "superseded_by": "quercetin-dihydrate"
   },
   "molybdenum-syntropy": {
    "name": "Molybdenum Synergy",
@@ -8771,21 +8773,15 @@
    "pinecone_title": "Quercetin Dihydrate",
    "url": "https://myhealingoasis.com/begin/product/quercetin-dihydrate",
    "legacy_store_url": "https://remedymatch.com/remedies/491-quercetin-dihydrate",
+   "fmp_id": "547",
    "ingredients": [
     {
-     "name": "Wheat Grass Juice",
-     "dose": "300 mg"
-    },
-    {
      "name": "Quercetin Dihydrate",
-     "dose": "200 mg"
-    },
-    {
-     "name": "Zeolite",
-     "dose": "100 mg"
+     "dose": ""
     }
    ],
-   "ingredients_source": "t33",
+   "ingredients_source": "fmp-547-2026-09-20",
+   "directions": "Take 1 scoop 3 times daily in a drink, or as guided.",
    "description": "Quercetin Dihydrate . Quercetin Dihydrate Quercetin Dihydrate Quercetin Dihydrate Background Quercetin dihydrate is a naturally occurring flavonoid found in many fruits, vegetables, leaves, seeds, and grains[9]. Its discovery dates back to 1815 when Vogel and Pelletier isolated a \"yellow colouring-matter\" from plant sources[1]. The chemical structure of quercetin was identified in 1910 by Milobedzka and Lampe as diferuloylmethane[1]. Since its discovery, quercetin has been the subject of extensive research, revealing its potential in treating approximately 80 diseases[1]. Quercetin Dihydrate..."
   },
   "gerd-guard": {
@@ -21595,7 +21591,9 @@
    "no_groovekart": true,
    "regular_cents": 8000,
    "description": "1 scoop 3 times a day in drinks",
-   "bottle_type": "120 caps"
+   "bottle_type": "120 caps",
+   "inactive": true,
+   "superseded_by": "quercetin-dihydrate"
   },
   "potassium-citrate-pure-120-capsules": {
    "name": "Potassium Citrate, Pure 120 capsules",
