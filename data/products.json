@@ -8793,100 +8793,37 @@
    "qty_pricing": true,
    "ingredients": [
     {
-     "name": "Vitamin B6 (as P5P)",
-     "dose": ""
+     "name": "DGL Licorice (Glycyrrhiza glabra)",
+     "dose": "190 mg"
     },
     {
-     "name": "Vitamin B9 (Folate as 5-MTHF)",
-     "dose": ""
-    },
-    {
-     "name": "B12 (as Methylcobalamin)",
-     "dose": ""
-    },
-    {
-     "name": "B12 (as Adenosylcobalamin)",
-     "dose": ""
-    },
-    {
-     "name": "Vitamin E (as mixed Tocopherols)",
-     "dose": ""
-    },
-    {
-     "name": "HTP (Griffonia simplicifolia)",
-     "dose": ""
-    },
-    {
-     "name": "S-Acetyl Glutathione",
-     "dose": ""
+     "name": "Fennel (Foeniculum vulgare) 4:1",
+     "dose": "90 mg"
     },
     {
      "name": "Quercetin Dihydrate",
-     "dose": ""
+     "dose": "90 mg"
     },
     {
-     "name": "MSM (Methylsulfonylmethane)",
-     "dose": ""
+     "name": "Gingerol 10% (Zingiber officinale)",
+     "dose": "20 mg"
     },
     {
      "name": "Coral Calcium",
-     "dose": ""
+     "dose": "100 mg"
     },
     {
-     "name": "Calcium (from Coral)",
-     "dose": ""
-    },
-    {
-     "name": "DGL Licorice (Glycyrrhiza glabra)",
-     "dose": ""
-    },
-    {
-     "name": "DHA (from Algae)",
-     "dose": ""
-    },
-    {
-     "name": "Fennel (Foeniculum vulgare) (seed)",
-     "dose": ""
-    },
-    {
-     "name": "Gentian (Gentiana lutea) (root)",
-     "dose": ""
-    },
-    {
-     "name": "Artemisinin (Artemesia annua)",
-     "dose": ""
-    },
-    {
-     "name": "Luteolin (Reseda spp.)",
-     "dose": ""
-    },
-    {
-     "name": "Gingerol 40% (Zingiber officinalis)",
-     "dose": ""
-    },
-    {
-     "name": "Apigenin (Matricaria chamomilla)",
-     "dose": ""
-    },
-    {
-     "name": "Curcumin (Curcuma longa)",
-     "dose": ""
-    },
-    {
-     "name": "Polysaccharides (Aloe vera)",
-     "dose": ""
-    },
-    {
-     "name": "Moringa 100:1 (Moringa oleifera)",
-     "dose": ""
+     "name": "Mogroside V 50% (Siraitia grosvenorii)",
+     "dose": "8 mg"
     },
     {
      "name": "Piperine (Piper nigrum)",
-     "dose": ""
+     "dose": "2 mg"
     }
    ],
-   "ingredients_source": "gk",
-   "description": "GERD Guard . GERD Guard GERD Guard The Importance of Balancing the Body & the Brain in GERD The recent findings highlighting a 33% increase in dementia risk for long-term users of proton pump inhibitors (PPIs) signal a need to reassess our approach to treating gastroesophageal reflux disease (GERD). In this context, integrating insights from Oriental Medicine can provide a holistic perspective on health and well-being. Oriental Medicine and the Earth Element In Oriental Medicine, the Earth Element, encompassing the stomach, is closely linked to the process of thinking. This philosophy...",
+   "ingredients_source": "capsule-label-2026-09-21",
+   "directions": "Take 1 capsule before each meal that could cause symptoms, or even when symptoms begin.",
+   "description": "GERD Guard comes in two forms with the same formula and the same amount per dose. The capsules hold 30 doses. The powder holds 60 scoops in 30 g. Stir one level scoop into a little water and sip it slowly. Some people prefer the powder for its taste, and it needs no swallowing of capsules. Each batch is handcrafted in small runs in Hilo, Hawai'i.",
    "bottle_type": "30 Caps",
    "fmp_id": "377"
   },
