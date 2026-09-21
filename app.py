@@ -52957,6 +52957,86 @@ def console_client_360():
     return jsonify({"ok": True, **data})
 
 
+# Client health erasure. Dark until Glen switches it on, because it is the most
+# destructive action in the console and nothing it removes can be restored.
+_CLIENT_ERASURE_ENABLED = os.environ.get(
+    "CLIENT_ERASURE_ENABLED", "").strip().lower() in ("1", "true", "yes", "on")
+
+
+def _erasure_actor():
+    """The OWNER making this request, or None. The key must arrive in the HEADER.
+
+    `_present_console_key` also accepts `?key=`, which writes the master secret into
+    Render's access log. Every other console route lives with that. This one does not,
+    so a query-string key is not enough on its own to reach an irreversible delete."""
+    if not (request.headers.get("X-Console-Key", "")
+            or request.cookies.get(CONSOLE_COOKIE, "")):
+        return None
+    actor = _bos_actor()
+    if actor is None or actor.role != _bos_rbac.OWNER:
+        return None
+    return actor
+
+
+@app.route("/api/console/client-erasure/preview", methods=["POST"])
+def api_console_client_erasure_preview():
+    """What a health erasure WOULD remove for one client. Deletes nothing.
+
+    Also reports whether the address can still be emailed, because health data going
+    while the address stays on a send list is the failure this is meant to prevent."""
+    if not _CLIENT_ERASURE_ENABLED:
+        return jsonify({"ok": False, "error": "not found"}), 404
+    if _erasure_actor() is None:
+        return jsonify({"ok": False, "error": "unauthorized"}), 401
+    email = ((request.get_json(silent=True) or {}).get("email") or "").strip().lower()
+    if not email:
+        return jsonify({"ok": False, "error": "email required"}), 400
+    from dashboard import client_erasure as _ce, email_suppression as _es
+    with _db_lock, db.connect(LOG_DB) as cx:
+        tables = _ce.plan(cx, email)
+        _es.init_table(cx)
+        suppressed = _es.is_suppressed(cx, email)
+        prior = _ce.erasures_for(cx, email)
+    return jsonify({"ok": True, "email": email, "tables": tables,
+                    "total": sum(tables.values()), "suppressed": suppressed,
+                    "protected": sorted(_ce.PROTECTED), "prior": prior})
+
+
+@app.route("/api/console/client-erasure/erase", methods=["POST"])
+def api_console_client_erasure_erase():
+    """Delete one client's health data. IRREVERSIBLE.
+
+    `confirm` must be the same address as `email`: the operator types it, so a stale
+    page or a mis-click cannot erase whoever happens to be loaded. `also_suppress`
+    additionally stops the email, and never downgrades an existing hard bounce."""
+    if not _CLIENT_ERASURE_ENABLED:
+        return jsonify({"ok": False, "error": "not found"}), 404
+    actor = _erasure_actor()
+    if actor is None:
+        return jsonify({"ok": False, "error": "unauthorized"}), 401
+    body = request.get_json(silent=True) or {}
+    email = (body.get("email") or "").strip().lower()
+    confirm = (body.get("confirm") or "").strip().lower()
+    if not email:
+        return jsonify({"ok": False, "error": "email required"}), 400
+    if confirm != email:
+        return jsonify({"ok": False,
+                        "error": "the address you typed does not match this client"}), 400
+    from dashboard import client_erasure as _ce, email_suppression as _es
+    with _db_lock, db.connect(LOG_DB) as cx:
+        removed = _ce.erase(cx, email, confirm=email)
+        _es.init_table(cx)
+        if body.get("also_suppress"):
+            # overwrite=False: a hard bounce already recorded is the stronger fact.
+            _es.add(cx, email, "optout", "client erasure request",
+                    "console:client-erasure", overwrite=False)
+        suppressed = _es.is_suppressed(cx, email)
+        _ce.record_erasure(cx, email, actor=(actor.name or "owner"), removed=removed,
+                           note=(body.get("note") or ""), suppressed=suppressed)
+    return jsonify({"ok": True, "email": email, "removed": removed,
+                    "total": sum(removed.values()), "suppressed": suppressed})
+
+
 @app.route("/api/console/client-commerce-status", methods=["GET"])
 def console_client_commerce_status():
     """Owner-facing pricing, fulfillment, and membership status for People: Client."""

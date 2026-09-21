@@ -99,6 +99,23 @@
       <div class="sec-body" id="b-recs"></div></details>
     <details id="sec-docs"><summary>Documents <span class="head-note" id="h-docs"></span></summary>
       <div class="sec-body" id="b-docs"></div></details>
+    <details id="sec-erasure"><summary>Erase health data <span class="head-note" id="h-erasure"></span></summary>
+      <div class="sec-body" id="b-erasure">
+        <div class="commerce-note" id="erasure-scope"></div>
+        <div id="erasure-plan"></div>
+        <div id="erasure-confirm" style="display:none">
+          <label class="sub" for="erasure-typed">Type this client's email to confirm</label>
+          <input id="erasure-typed" autocomplete="off" spellcheck="false">
+          <label class="sub"><input type="checkbox" id="erasure-suppress"> Also stop emailing them</label>
+          <label class="sub" for="erasure-why">Note: who asked, and how</label>
+          <input id="erasure-why" autocomplete="off">
+          <div class="commerce-actions">
+            <button class="danger" id="erasure-go" disabled>Erase health data</button>
+            <button id="erasure-refresh">Refresh</button>
+          </div>
+        </div>
+        <div class="commerce-note" id="erasure-out"></div>
+      </div></details>
   </div>
 </div>
 <script>
@@ -498,6 +515,78 @@ function initPicker(){
       .catch(function(){ out.innerHTML=""; });
   });
 }
+
+// --- Erase health data -----------------------------------------------------------
+// Glen approved this flow on 2026-09-20. Preview first, type the address to confirm.
+// The section loads nothing until it is opened, so an ordinary client visit does not
+// ask the server what it would delete.
+var erasureLoaded=false;
+function erasureMsg(t,bad){
+  var el=document.getElementById("erasure-out");
+  el.textContent=t||""; el.style.color=bad?"#b00":"";
+}
+function erasureBody(){
+  return fetch("/api/console/client-erasure/preview",{method:"POST",
+      headers:Object.assign({"Content-Type":"application/json"},hdr()),
+      body:JSON.stringify({email:qsEmail()})});
+}
+function loadErasure(){
+  if(!qsEmail()){ erasureMsg("Load a client first."); return; }
+  erasureMsg("Reading\u2026");
+  erasureBody().then(function(r){
+    if(r.status===404){
+      document.getElementById("sec-erasure").style.display="none";
+      return null;
+    }
+    if(r.status===401){ showGate(); return null; }
+    if(!r.ok) throw new Error("Could not read the plan");
+    return r.json();
+  }).then(function(d){ if(d) renderErasure(d); })
+    .catch(function(e){ erasureMsg(e.message,true); });
+}
+function renderErasure(d){
+  document.getElementById("h-erasure").textContent =
+    d.total ? (d.total+" row"+(d.total===1?"":"s")) : "nothing to erase";
+  var rows=Object.keys(d.tables||{}).sort().map(function(t){
+    return "<li>"+esc(t)+" \u2014 "+d.tables[t]+"</li>"; }).join("");
+  var prior=(d.prior||[]).map(function(p){
+    return "<li>"+esc(p.created_at||"")+" by "+esc(p.actor||"")+": "+p.total_rows+
+           " rows"+(p.note?" \u2014 "+esc(p.note):"")+"</li>"; }).join("");
+  document.getElementById("erasure-plan").innerHTML =
+    (rows ? "<ul>"+rows+"</ul>" : "<p>No health rows for this client.</p>") +
+    (prior ? "<p class='sub'>Erased before:</p><ul>"+prior+"</ul>" : "");
+  document.getElementById("erasure-scope").innerHTML =
+    "Irreversible. Orders, points, subscriptions and opt-outs are never touched, and "+
+    "neither are carts, sign-ups or leads. Email status now: "+
+    (d.suppressed ? "suppressed." : "<strong>still emailable</strong>.");
+  document.getElementById("erasure-suppress").checked = !d.suppressed;
+  document.getElementById("erasure-confirm").style.display = d.total ? "" : "none";
+  var typed=document.getElementById("erasure-typed"), go=document.getElementById("erasure-go");
+  typed.placeholder=d.email||""; typed.value=""; go.disabled=true;
+  typed.oninput=function(){
+    go.disabled = typed.value.trim().toLowerCase() !== (d.email||"");
+  };
+  go.onclick=function(){
+    go.disabled=true; erasureMsg("Erasing\u2026");
+    fetch("/api/console/client-erasure/erase",{method:"POST",
+        headers:Object.assign({"Content-Type":"application/json"},hdr()),
+        body:JSON.stringify({email:d.email, confirm:typed.value.trim(),
+          also_suppress:document.getElementById("erasure-suppress").checked,
+          note:document.getElementById("erasure-why").value.trim()})})
+      .then(function(r){ return r.json().then(function(j){ return {r:r,j:j}; }); })
+      .then(function(x){
+        if(!x.r.ok) throw new Error(x.j.error||"Could not erase");
+        erasureMsg("Erased "+x.j.total+" rows. "+
+          (x.j.suppressed?"This address is now suppressed.":"Still emailable."));
+        loadErasure();
+      })
+      .catch(function(e){ erasureMsg(e.message,true); go.disabled=false; });
+  };
+}
+document.getElementById("sec-erasure").addEventListener("toggle",function(){
+  if(this.open && !erasureLoaded){ erasureLoaded=true; loadErasure(); }
+});
+document.getElementById("erasure-refresh").onclick=function(){ loadErasure(); };
 
 var email=qsEmail();
 if(email) load(email); else initPicker();
