@@ -2134,8 +2134,12 @@ def render_author_html(report, depth_values=None, transcript="", covered_by_laye
         "transcript saves to this test's notes and feeds the narrative. Wear a lav/AirPods for "
         "the codes.</p>"
         "<div class=btnrow style='margin-bottom:6px'>"
-        "<button id=phaseCap class=btn onclick='setPhase(1)'>Phase 1 &middot; Capture stresses</button>"
-        "<button id=phaseBal class='btn ghost' onclick='setPhase(2)'>Phase 2 &middot; Rejuvenate</button>"
+        # Steps, not phases (Glen 2026-09-21). "Phase" collides with the 5 Phases of
+        # Healing, and "Rejuvenate" is Phase 2 of the TERRAIN map, nothing to do with this
+        # second step. Step 2 runs interpret(), which phaseAct below already labels
+        # "Interpret", so the button uses that word. The ids and setPhase() are internal.
+        "<button id=phaseCap class=btn onclick='setPhase(1)'>Step 1 &middot; Capture stresses</button>"
+        "<button id=phaseBal class='btn ghost' onclick='setPhase(2)'>Step 2 &middot; Interpret</button>"
         "</div>"
         "<div class=btnrow>"
         "<button class=btn onclick=recStart()>&#9679; Record</button>"
