@@ -8827,6 +8827,48 @@
    "bottle_type": "30 Caps",
    "fmp_id": "377"
   },
+  "gerd-guard-powder": {
+   "name": "GERD Guard Powder",
+   "price_cents": 6997,
+   "pinecone_title": "GERD Guard Powder",
+   "url": "https://myhealingoasis.com/begin/product/gerd-guard-powder",
+   "qty_pricing": true,
+   "no_groovekart": true,
+   "ingredients": [
+    {
+     "name": "DGL Licorice (Glycyrrhiza glabra)",
+     "dose": "190 mg"
+    },
+    {
+     "name": "Fennel (Foeniculum vulgare) 4:1",
+     "dose": "90 mg"
+    },
+    {
+     "name": "Quercetin Dihydrate",
+     "dose": "90 mg"
+    },
+    {
+     "name": "Gingerol 10% (Zingiber officinale)",
+     "dose": "20 mg"
+    },
+    {
+     "name": "Coral Calcium",
+     "dose": "100 mg"
+    },
+    {
+     "name": "Mogroside V 50% (Siraitia grosvenorii)",
+     "dose": "8 mg"
+    },
+    {
+     "name": "Piperine (Piper nigrum)",
+     "dose": "2 mg"
+    }
+   ],
+   "ingredients_source": "powder-label-2026-09-21",
+   "directions": "Stir 1 level scoop into a little water and sip slowly before each meal that could cause symptoms, or even when symptoms begin.",
+   "description": "GERD Guard comes in two forms with the same formula and the same amount per dose. The capsules hold 30 doses. The powder holds 60 scoops in 30 g. Stir one level scoop into a little water and sip it slowly. Some people prefer the powder for its taste, and it needs no swallowing of capsules. Each batch is handcrafted in small runs in Hilo, Hawai'i.",
+   "bottle_type": "30 g"
+  },
   "licorice-omnipotent": {
    "name": "Licorice Omnipotent",
    "price_cents": 3997,

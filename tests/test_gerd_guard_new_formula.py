@@ -73,3 +73,46 @@ def test_the_capsules_keep_their_identity():
     assert p["price_cents"] == 6997
     assert p["fmp_id"] == "377"
     assert p["bottle_type"] == "30 Caps"
+
+
+# --- the powder, a second listing -----------------------------------------------------
+# Glen, 2026-09-21: "List both formats for sale." Price: "same price". Jar: "yes" to the
+# 100 ml cosmetic jar, which is bottle_type "30 g". The catalog has no variant mechanism;
+# three live X / X-powder twins already exist, so the powder is its own entry.
+
+POWDER = "gerd-guard-powder"
+POWDER_DIRECTIONS = ("Stir 1 level scoop into a little water and sip slowly before each meal "
+                     "that could cause symptoms, or even when symptoms begin.")
+
+
+def _pw():
+    return json.loads(io.open(CATALOG, encoding="utf-8").read())["products"][POWDER]
+
+
+def test_the_powder_carries_the_same_seven_at_the_same_amounts():
+    """Same formula, same amount per dose: one level scoop is 500 mg, one capsule is 500 mg."""
+    assert [(i["name"], i["dose"]) for i in _pw()["ingredients"]] == SEVEN
+
+
+def test_the_powder_directions_match_its_printed_label():
+    assert _pw()["directions"] == POWDER_DIRECTIONS
+
+
+def test_the_powder_is_priced_like_the_capsules():
+    assert _pw()["price_cents"] == 6997 == _p()["price_cents"]
+
+
+def test_the_powder_can_be_invoiced():
+    """/api/orders/manual prices with strict_packaging=True and REFUSES a line whose product
+    has no bottle_type. An entry without one could be listed but never invoiced."""
+    assert _pw()["bottle_type"] == "30 g"
+
+
+def test_the_powder_shares_the_approved_overview():
+    assert _pw()["description"] == OVERVIEW
+
+
+def test_the_powder_invents_no_compare_at_price():
+    """No regular_cents. Nothing ever sold at a higher price, so a strike-through would
+    imply a discount that never existed, on a page a buyer reads."""
+    assert "regular_cents" not in _pw()
