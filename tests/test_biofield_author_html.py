@@ -158,7 +158,9 @@ def test_author_page_has_session_recording_ui():
     assert "oninput='scheduleSessionSave()'" in html
     assert "await saveSessionNow(false)" in html
     assert "Autosaved:" in html
-    assert "Phase 2 &middot; Rejuvenate" in html
+    # Glen 2026-09-21: steps, not phases, and no terrain-map name on a step.
+    assert "Step 2 &middot; Interpret" in html
+    assert "Phase 2 &middot; Rejuvenate" not in html
 
 
 def test_author_page_delete_confirm_and_unconfirmed_highlight():
