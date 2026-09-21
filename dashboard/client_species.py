@@ -70,3 +70,27 @@ def get(cx, email):
         return None
     species, animal_name = row[0], row[1]
     return {"species": species, "animal_name": animal_name, "is_animal": is_animal(species)}
+
+
+def species_from_e4l(e4l_db, email):
+    """Species for `email` straight from the local e4l.db, or None.
+
+    The local Biofield Intake reads species HERE, not from client_species above. That
+    table is the prod mirror; on Glen's Mac chat_log.db has no such table, so a lookup
+    there threw, was caught, and every animal read as a person (Sasha Takahashi, a cat,
+    2026-09-21). e4l.db is the source the E4L scrape writes. None means unknown, and
+    the callers read unknown as a person, which leaves a human exactly as before."""
+    e = _norm(email)
+    if not e or not e4l_db:
+        return None
+    try:
+        with sqlite3.connect(f"file:{e4l_db}?mode=ro", uri=True) as ecx:
+            row = ecx.execute(
+                "SELECT species FROM e4l_clients "
+                "WHERE lower(trim(email))=? AND species IS NOT NULL AND species<>'' "
+                "ORDER BY client_id DESC LIMIT 1", (e,)).fetchone()
+    except sqlite3.Error:
+        return None
+    if not row:
+        return None
+    return (row[0] or "").strip() or None

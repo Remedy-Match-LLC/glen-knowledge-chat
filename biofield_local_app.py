@@ -630,6 +630,26 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
     app = Flask(__name__)
     # The clinical-tags ledger lives in the SEPARATE local e4l.db (not the app's chat_log.db).
     e4l_db = e4l_db or _e4l_db_path()
+
+    # The animal rule for every scan-based suggestion (Glen, 2026-09-18; Sasha
+    # Takahashi, a cat, 2026-09-21). biofield_stress knows nothing of e4l.db or the
+    # catalog, so it is told here how to recognise an animal's test and which
+    # infoceutical covers each code. Species comes from e4l.db, the store _animal_for
+    # already reads; chat_log.db on Glen's Mac has no client_species table.
+    def _animal_infoceuticals_for(cx, tid):
+        from dashboard import client_species as _cspec
+        from dashboard.animal_infoceuticals import infoceutical_by_code
+        from dashboard.biofield_portal_publish import load_catalog
+        row = cx.execute("SELECT email FROM biofield_auth_tests WHERE id=?",
+                         (int(str(tid).lstrip("a") or 0),)).fetchone()
+        email = ((row[0] if row else "") or "").strip()
+        if not _cspec.is_animal(_cspec.species_from_e4l(e4l_db, email)):
+            return None
+        return infoceutical_by_code(load_catalog())
+
+    from dashboard import biofield_stress as _stress_rules
+    _stress_rules.set_animal_lookup(_animal_infoceuticals_for)
+
     complete = complete or openai_complete
     tts = tts or elevenlabs_tts
     deepgram_token = deepgram_token or deepgram_browser_token
@@ -1567,16 +1587,14 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                 return {"ok": False, "reason": "No client selected yet"}
             # An animal's causal chain recommends the E4L infoceuticals (function names),
             # not our Functional Formulations. Glen, 2026-09-18. is_animal is species !=
-            # human, from the E4L species sync; unknown species reads as human, so a
-            # missing row leaves the FF path exactly as before.
+            # human; unknown species reads as human, so a missing row leaves the FF
+            # path exactly as before.
+            #
+            # Species comes from e4l.db. This used to read client_species in
+            # chat_log.db, which does not exist on Glen's Mac: the lookup threw, was
+            # caught, and every animal imported as a person (Sasha, 2026-09-21).
             from dashboard import client_species as _cspec
-            try:
-                _sp = (_cspec.get(cx, email) or {}).get("species")
-                _is_animal = _cspec.is_animal(_sp)
-            except Exception:
-                # No species table or row: read as human, i.e. the FF path unchanged.
-                # Defaulting to animal would wrongly strip FFs from every human import.
-                _is_animal = False
+            _is_animal = _cspec.is_animal(_cspec.species_from_e4l(e4l_db, email))
             try:
                 res = _ri.synthesize_reveal_layers(
                     email, today=_dt.date.today().isoformat(), is_animal=_is_animal)
@@ -2798,11 +2816,9 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                     seen.add(key)
                     stresses.append(st)
 
-            coverage = {}
-            for remedy, code in cx.execute(
-                    "SELECT remedy, code FROM biofield_auth_remedy_coverage "
-                    "WHERE test_id=?", (int(str(test_id).lstrip("a") or 0),)).fetchall():
-                coverage.setdefault(remedy, set()).add(code)
+            # The shared source, not a private copy of the table: it carries the animal
+            # rule, so Full and Minimum propose infoceuticals for an animal's scan.
+            coverage = _st.scan_coverage(cx, test_id)
 
             # token -> label, so a suppression can be reported in his words and a
             # token can be looked up as a tissue for the function test.
