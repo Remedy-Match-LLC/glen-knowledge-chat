@@ -387,7 +387,8 @@ def test_invoice_route_returns_order_id_and_links(tmp_path):
     def fake_catalog():
         return [{"name": "Liver Support", "slug": "liver-support"}]
 
-    def fake_create(customer, lines, replace_open=False, invoice_note=None):
+    def fake_create(customer, lines, replace_open=False, invoice_note=None,
+                    idempotency_key=""):
         return {"ok": True, "order_id": 42, "external_ref": "ER42", "total_cents": 30000,
                 "accepted_slugs": [l["slug"] for l in lines]}
 
@@ -415,7 +416,7 @@ def test_reraise_invoice_preserves_manual_lines(tmp_path):
     captured = {}
 
     def fake_create(customer, lines, replace_open=False, invoice_note=None,
-                    update_order_id=None):
+                    update_order_id=None, idempotency_key=""):
         captured.update(lines=lines, replace_open=replace_open,
                         update_order_id=update_order_id)
         return {"ok": True, "order_id": 43, "total_cents": 10000}
@@ -651,7 +652,8 @@ def test_handoff_skips_raise_when_analysis_paid(tmp_path, monkeypatch):
     client = create_app(
         db,
         invoice_fetch_catalog=lambda: [],   # remedy doesn't resolve -> skipped, like Steve's $300-only
-        invoice_create=lambda c, lines, replace_open=False, invoice_note=None: created_calls.append(lines) or {"ok": True, "order_id": 9},
+        invoice_create=lambda c, lines, replace_open=False, invoice_note=None,
+                               idempotency_key="": created_calls.append(lines) or {"ok": True, "order_id": 9},
         invoice_paid_check=lambda email: {"paid": True, "order_id": 37},
     ).test_client()
     j = client.post("/author/%s/handoff" % tid, json={}).get_json()
@@ -677,7 +679,8 @@ def test_handoff_raises_remedies_only_when_paid(tmp_path, monkeypatch):
     client = create_app(
         db,
         invoice_fetch_catalog=lambda: [{"name": "Liver Support", "slug": "liver-support"}],
-        invoice_create=lambda c, lines, replace_open=False, invoice_note=None: captured.update(lines=lines) or {"ok": True, "order_id": 5, "total_cents": 3000},
+        invoice_create=lambda c, lines, replace_open=False, invoice_note=None,
+                               idempotency_key="": captured.update(lines=lines) or {"ok": True, "order_id": 5, "total_cents": 3000},
         invoice_paid_check=lambda email: {"paid": True, "order_id": 37},
     ).test_client()
     j = client.post("/author/%s/handoff" % tid, json={}).get_json()
@@ -702,7 +705,8 @@ def test_handoff_route_raises_invoice(tmp_path, monkeypatch):
     # portal push succeeds (bypass prod); capture the order lines the raise sends
     monkeypatch.setattr(biofield_invoice, "default_handoff_push", lambda *a, **k: {"ok": True})
     captured = {}
-    def fake_create(cust, lines, replace_open=False, invoice_note=None):
+    def fake_create(cust, lines, replace_open=False, invoice_note=None,
+                    idempotency_key=""):
         captured["lines"] = lines
         return {"ok": True, "order_id": 77, "total_cents": 130000, "external_ref": "INH-x"}
     client = create_app(

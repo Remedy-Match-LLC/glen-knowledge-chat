@@ -167,7 +167,7 @@ def default_fetch_catalog():
 
 
 def default_create_order(customer, lines, replace_open=False, invoice_note=None,
-                         update_order_id=None):
+                         update_order_id=None, idempotency_key=""):
     """Create the hand-off invoice on prod. With replace_open=True (a re-hand-off),
     prod first cancels the client's prior OPEN hand-off drafts (proposed, unpaid, not
     yet published) so a repeated hand-off UPDATES rather than piling up duplicates;
@@ -185,6 +185,12 @@ def default_create_order(customer, lines, replace_open=False, invoice_note=None,
                 "invoice_note": invoice_note or DEFAULT_INVOICE_NOTE}
         if update_order_id:
             body["update_order_id"] = int(update_order_id)
+        # The authoring page mints one token per LOAD. Prod derives the order's
+        # external_ref from it, and orders is UNIQUE(source, external_ref), so a second
+        # click carrying the same token gets the first order back instead of raising a
+        # second. Absent or blank, prod keeps its old random reference per request.
+        if str(idempotency_key or "").strip():
+            body["idempotency_key"] = str(idempotency_key).strip()
         url = f"{base}/api/orders/manual"
         req = urllib.request.Request(url, data=_json.dumps(body).encode(), method="POST",
                                      headers={"X-Console-Key": key, "Content-Type": "application/json"})

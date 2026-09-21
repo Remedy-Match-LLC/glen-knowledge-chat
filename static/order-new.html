@@ -728,6 +728,14 @@ function onEmailInput(){
 $("c-email").addEventListener("input", onEmailInput);
 
 // ── create vs edit dispatch ──
+// The double-submit guard. /api/orders/manual derives the order's external_ref from
+// this token, and orders is UNIQUE(source, external_ref), so a second click carrying
+// the same token returns the first order instead of raising a second.
+function newSubmitToken(){
+  try{ return crypto.randomUUID(); }
+  catch(e){ return "t-"+Date.now()+"-"+Math.random().toString(36).slice(2); }
+}
+let SUBMIT_TOKEN = newSubmitToken();
 function submitOrder(){ return EDIT_OID ? editInvoice() : createInvoice(); }
 
 async function printInvoiceEdit(){
@@ -942,6 +950,7 @@ async function createInvoice(){
     method: $("o-method").value,
     pickup: $("pickup").checked,
     invoice_note: $("o-note").value.trim(),
+    idempotency_key: SUBMIT_TOKEN,
   };
   if (dRaw!=="") body.discount_cents = Math.round(parseFloat(dRaw)*100);
   const aRaw=$("o-adjust").value.trim();
@@ -955,6 +964,12 @@ async function createInvoice(){
     const j = await r.json();
     if (!j.ok){ toast(j.error||"failed","error"); return; }
     sessionStorage.removeItem(CUSTOMER_DRAFT_KEY);
+    // One token per form LOAD, replaced once an order has actually been raised. Both
+    // halves matter. A token minted per SUBMIT is a new token on every click, so it
+    // would catch nothing: two of the six duplicate pairs were a second or less apart,
+    // and one was zero. Keeping the token forever would instead fold a deliberate
+    // second order onto the first.
+    SUBMIT_TOKEN = newSubmitToken();
     LAST_ORDER=j; showInvoice(j);
     toast(j.warning || "Proposed invoice created", j.warning ? "error" : "ok");
     if (j.warning) alert(j.warning);   // special pricing missed: catch it before it's sent

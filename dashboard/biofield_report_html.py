@@ -314,10 +314,16 @@ def render_invoice_page(report, fee_state):
         "charged or emailed yet.</p>"
         "<button class=btn id=handoffbtn onclick=handoffToRae()>Add Recommended Products &rarr;</button>"
         " <span id=handoffstat class=food></span></div>"
-        "<script>function handoffToRae(){var b=document.getElementById('handoffbtn');"
+        "<script>"
+        "function orderToken(kind){if(!window.__ORDER_TOKEN_BASE){"
+        "try{window.__ORDER_TOKEN_BASE=crypto.randomUUID()}"
+        "catch(e){window.__ORDER_TOKEN_BASE='a-'+Date.now()+'-'+Math.random().toString(36).slice(2)}}"
+        "return window.__ORDER_TOKEN_BASE+':'+kind}"
+        "function handoffToRae(){var b=document.getElementById('handoffbtn');"
         "var s=document.getElementById('handoffstat');b.disabled=true;s.textContent=' staging...';"
         "fetch(location.pathname.replace(/\\/$/,'').replace(/\\/invoice-view$/,'')+'/handoff',"
-        "{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'})"
+        "{method:'POST',headers:{'Content-Type':'application/json'},"
+        "body:JSON.stringify({idempotency_key:orderToken('handoff')})})"
         ".then(r=>r.json()).then(function(j){b.disabled=false;"
         "if(j.ok){b.textContent='Products added \\u2713';var iv=j.invoice||{};"
         "var m=' '+j.layers+' layers pushed';"
@@ -522,6 +528,12 @@ function astat(t){document.getElementById('astat').textContent=t}
 function opt(v){return '<option value="'+String(v).replace(/"/g,'&quot;')+'">'}
 async function post(p,b){const r=await fetch(p,{method:'POST',
  headers:{'Content-Type':'application/json'},body:JSON.stringify(b)});return r.json()}
+function orderToken(kind){
+ if(!window.__ORDER_TOKEN_BASE){
+  try{window.__ORDER_TOKEN_BASE=crypto.randomUUID()}
+  catch(e){window.__ORDER_TOKEN_BASE='a-'+Date.now()+'-'+Math.random().toString(36).slice(2)}
+ }
+ return window.__ORDER_TOKEN_BASE+':'+kind}
 function rowVals(p){return {layer:val(p+'_layer'),head:val(p+'_head'),most_affected:val(p+'_most'),
  remedy:val(p+'_remedy'),dosage:val(p+'_dosage'),frequency:val(p+'_frequency'),timing:val(p+'_timing')}}
 function setE4L(j){if(j&&j.html!==undefined)document.getElementById('e4lpanel').innerHTML=j.html}
@@ -615,7 +627,8 @@ async function addLayerStress(input,layer){var label=(input.value||'').trim();if
 async function assignStress(sid){astat('Assigning…');const j=await post('/author/__TID__/stress/'+sid+'/assign',{});astat(j&&j.ok?('Assigned to its layer.'):((j&&j.error)||'Assign failed.'));setStress(j)}
 async function assignAllStresses(){astat('Assigning all…');const j=await post('/author/__TID__/stresses/assign-all',{});astat(j&&j.ok?('Assigned '+(j.assigned||0)+' stress(es).'):((j&&j.error)||'Assign failed.'));setStress(j)}
 async function saveHeader(){const j=await post('/author/__TID__/header',
- {name:val('h_name'),email:val('h_email'),date:val('h_date')});astat('Header saved.');setE4L(j)}
+ {name:val('h_name'),email:val('h_email'),date:val('h_date'),
+  idempotency_key:orderToken('header')});astat('Header saved.');setE4L(j)}
 async function refreshHeaderPhoto(){
  var img=document.getElementById('authorclientphoto'),email=val('h_email').trim();
  if(!img)return;
@@ -790,7 +803,8 @@ async function saveLayer(gid,btn){var card=document.querySelector('[data-gid="'+
  setSaved(btn);pulse(card);astat('Layer saved.')}
  finally{if(btn)btn.disabled=false}}
 async function savePendingEditor(){
- await post('/author/__TID__/header',{name:val('h_name'),email:val('h_email'),date:val('h_date')});
+ await post('/author/__TID__/header',{name:val('h_name'),email:val('h_email'),date:val('h_date'),
+  idempotency_key:orderToken('header')});
  var cards=[].slice.call(document.querySelectorAll('.lcard[data-rids]'));
  for(var ci=0;ci<cards.length;ci++){var card=cards[ci],gid=card.dataset.gid;
   var rids=(card.dataset.rids||'').split(',').filter(Boolean);
@@ -1575,6 +1589,10 @@ def _fee_js():
     toggleNoCharge is defined even when courtesy pricing is unavailable."""
     return (
         "<script>"
+        "function orderToken(kind){if(!window.__ORDER_TOKEN_BASE){"
+        "try{window.__ORDER_TOKEN_BASE=crypto.randomUUID()}"
+        "catch(e){window.__ORDER_TOKEN_BASE='a-'+Date.now()+'-'+Math.random().toString(36).slice(2)}}"
+        "return window.__ORDER_TOKEN_BASE+':'+kind}"
         "function preFee(v){document.getElementById('fee_amt').value=v;}"
         # author base: works on /author/<id> AND the /author/<id>/invoice-view page
         "function _abase(){return location.pathname.replace(/\\/$/,'').replace(/\\/invoice-view$/,'');}"
@@ -1615,7 +1633,8 @@ def _fee_js():
         "var s=document.getElementById('invstat');"
         "var out=document.getElementById('invresult');btn.disabled=true;s.textContent=' working...';out.textContent='';"
         "fetch(_abase()+'/invoice',{method:'POST',"
-        "headers:{'Content-Type':'application/json'},body:'{}'})"
+        "headers:{'Content-Type':'application/json'},"
+        "body:JSON.stringify({idempotency_key:orderToken('invoice')})})"
         ".then(r=>r.json()).then(j=>{s.textContent='';btn.disabled=false;"
         "if(!j.ok){out.textContent=j.error||'Could not create the invoice.';return;}"
         "var parts=[];"
