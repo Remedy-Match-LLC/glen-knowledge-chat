@@ -138,16 +138,16 @@ def test_the_withdrawn_formulas_stay_untyped(products, slug):
     )
 
 
-def test_the_quercetin_pair_is_still_one_product_under_two_slugs(products):
-    """The duplicate is not fixed here, only left un-entrenched. If someone later merges
-    them, this test should fail and be deleted deliberately."""
+def test_the_quercetin_pair_has_been_merged(products):
+    """INVERTED on 2026-09-20, deliberately, which is what the old version asked for.
+
+    This used to assert the pair was still two slugs carrying one formula and no fmp_id,
+    and it said that a later merge should make it fail and be deleted. Glen ruled the
+    merge that day, so it now asserts the other side: one survivor, one retired twin.
+    The full merge is covered by tests/test_quercetin_catalog_merge.py."""
     a, b = products["quercetin-dihydrate"], products["quercetin-dihydrate-powder"]
-    names = lambda p: [i.get("name") if isinstance(i, dict) else i
-                       for i in (p.get("ingredients") or [])]
-    assert names(a) == names(b) != []
-    assert not a.get("fmp_id") and not b.get("fmp_id"), (
-        "an fmp_id would mean the duplicate-pair scan can now see this pair"
-    )
+    assert a.get("fmp_id") == "547"
+    assert b.get("superseded_by") == "quercetin-dihydrate" and b.get("inactive") is True
 
 
 @pytest.mark.parametrize("slug", ["sacetyl-glutathione", "lcarnosine"])
