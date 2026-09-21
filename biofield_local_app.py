@@ -1209,7 +1209,8 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                     invoice = invoice_create(
                         {"name": d.get("name") or "", "email": email},
                         [{"slug": biofield_invoice.BIOFIELD_SLUG, "qty": 1}],
-                        invoice_note=biofield_invoice.DEFAULT_INVOICE_NOTE)
+                        invoice_note=biofield_invoice.DEFAULT_INVOICE_NOTE,
+                        idempotency_key=(d.get("idempotency_key") or ""))
         return {"ok": True, "e4l": ctx, "html": render_e4l_panel(ctx),
                 "invoice": invoice}
 
@@ -1331,7 +1332,9 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
             built["lines"] = biofield_invoice.merge_manual_invoice_lines(
                 built["lines"], previous.get("items") or [])
         note = biofield_invoice.build_invoice_note(rep.get("phase"), rep.get("location"))
-        create_kwargs = {"invoice_note": note}
+        create_kwargs = {"invoice_note": note,
+                         "idempotency_key": ((request.get_json(silent=True) or {})
+                                             .get("idempotency_key") or "")}
         if update_order_id:
             create_kwargs["update_order_id"] = update_order_id
         created = invoice_create(
@@ -1489,7 +1492,9 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                 # replace_open: a re-hand-off cancels prior open drafts, so no pileup.
                 note = biofield_invoice.build_invoice_note(rep.get("phase"), rep.get("location"))
                 created = invoice_create({"name": client.get("name"), "email": email},
-                                         built["lines"], replace_open=True, invoice_note=note)
+                                         built["lines"], replace_open=True, invoice_note=note,
+                                         idempotency_key=((request.get_json(silent=True) or {})
+                                                          .get("idempotency_key") or ""))
                 if created.get("ok"):
                     total = created.get("total_cents")
                     invoice = {"ok": True, "order_id": created.get("order_id"),

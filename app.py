@@ -54895,6 +54895,50 @@ def api_orders_manual():
             },
             "cancelled": [], "lines": priced["items_rec"],
         })
+    # Idempotent create. The form mints ONE token per page LOAD, so a double-click
+    # sends the same token twice and both requests derive the same external_ref.
+    # `orders` is UNIQUE(source, external_ref) and upsert_order already returns the
+    # existing row for that pair; minting `INH-` + uuid4 per request is what stopped
+    # that index ever seeing a repeat. Six duplicate pairs were cleaned up by hand
+    # between 2026-07-08 and 2026-09-19, one of them zero seconds apart.
+    #
+    # A time-window "is there a twin?" lookup was considered and rejected: it is a read
+    # followed by a write, and two clicks one second apart both read "no twin".
+    #
+    # Returning EARLY matters as much as not inserting. Everything below cancels prior
+    # open drafts, invites, and fulfils review gifts, and none of that may run twice
+    # for one click. A repeat gets the first order back, untouched.
+    _idem = str(body.get("idempotency_key") or "").strip()
+    _ext_fixed = ""
+    if _idem:
+        _ext_fixed = "INH-" + hashlib.sha256(
+            ("%s|%s" % ((customer.get("email") or "").strip().lower(), _idem)).encode()
+        ).hexdigest()[:16].upper()
+        _icx = db.connect(LOG_DB)
+        _icx.row_factory = _sqlite3.Row
+        try:
+            _seen = _icx.execute(
+                "SELECT id FROM orders WHERE source=? AND external_ref=?",
+                ("in-house", _ext_fixed)).fetchone()
+            _first = _bos_orders.get_order(_icx, int(_seen[0])) if _seen else None
+        finally:
+            _icx.close()
+        if _first:
+            _items = _first.get("items") or []
+            return jsonify({
+                "ok": True, "order_id": _first["id"], "external_ref": _ext_fixed,
+                "idempotent_repeat": True, "method": (body.get("method") or ""),
+                "totals": {
+                    "subtotal_cents": sum(int(i.get("line_cents") or 0) for i in _items),
+                    "discount_cents": int(_first.get("discount_cents") or 0),
+                    "adjustment_cents": int(_first.get("adjustment_cents") or 0),
+                    "shipping_cents": int(_first.get("shipping_cents") or 0),
+                    "get_cents": int(_first.get("get_cents") or 0),
+                    "points_redeemed_cents": int(_first.get("points_redeemed_cents") or 0),
+                    "total_cents": int(_first.get("total_cents") or 0),
+                },
+                "cancelled": [], "warning": "", "lines": _items})
+
     # An explicit `pickup` ALWAYS wins — order entry always posts the checkbox, so the
     # operator keeps the last word. Only an ABSENT key falls back to the client's saved
     # preference (#738): that is the Biofield hand-off, which posts no `pickup` at all
@@ -54985,7 +55029,9 @@ def api_orders_manual():
                 phone=customer.get("phone"))
         if person_id:
             _cust.upsert_person_address(cx, person_id, {**addr_in, "phone": customer.get("phone")})
-        ext = "INH-" + uuid.uuid4().hex[:10].upper()
+        # Derived from the token when the caller sent one (see above); otherwise a
+        # fresh random ref, which is what every caller that sends no token still gets.
+        ext = _ext_fixed or ("INH-" + uuid.uuid4().hex[:10].upper())
         oid = _bos_orders.upsert_order(
             cx, source="in-house", external_ref=ext, status="proposed",
             email=(customer.get("email") or ""), name=(customer.get("name") or ""),

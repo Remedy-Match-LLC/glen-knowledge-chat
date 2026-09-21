@@ -30,8 +30,11 @@ def client(tmp_path, monkeypatch):
         return [{"slug": "liver-support", "name": "Liver Support"}]
 
     def fake_create(customer, lines, replace_open=False, invoice_note=None,
-                    update_order_id=None):
+                    update_order_id=None, idempotency_key=""):
         calls["lines"] = lines
+        # Recorded, not ignored: the route's job is to forward the page's token, and a
+        # stub that swallowed it with **kw would let a dropped token look like a pass.
+        calls["idempotency_key"] = idempotency_key
         return {"ok": True, "order_id": 7, "external_ref": "INH-Z", "total_cents": 10000, "error": None,
                 "accepted_slugs": ["biofield-analysis", "liver-support"]}
 
@@ -58,6 +61,21 @@ def test_invoice_happy_path(client):
     # Biofield is the top line; Liver Support resolved; elixir skipped
     assert client._calls["lines"][0]["slug"] == "biofield-analysis"
     assert {"slug": "liver-support", "qty": 1, "source": "biofield"} in client._calls["lines"]
+
+
+def test_the_pages_double_submit_token_reaches_the_order_call(client):
+    """The authoring page mints one token per LOAD and sends it here. Prod derives the
+    order's external_ref from it, so a second click returns the first order instead of
+    raising a second. If this route drops it, the guard never reaches the database."""
+    client.post(f"/author/{client._tid}/invoice", json={"idempotency_key": "load-7:invoice"})
+    assert client._calls["idempotency_key"] == "load-7:invoice"
+
+
+def test_an_invoice_post_with_no_token_still_works(client):
+    """A page that has not been updated must keep raising invoices."""
+    r = client.post(f"/author/{client._tid}/invoice")
+    assert r.get_json()["ok"]
+    assert client._calls["idempotency_key"] == ""
 
 
 def test_view_latest_invoice(client):

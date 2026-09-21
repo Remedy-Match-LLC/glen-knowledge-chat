@@ -129,6 +129,15 @@
 </div>
 
 <script>
+// Double-submit guard. /api/orders/manual derives the order's external_ref from this
+// token, and orders is UNIQUE(source, external_ref), so a second click carrying the same
+// token returns the first order instead of raising a second. Per page LOAD, not per
+// submit: a token minted at submit is a new token on every click and catches nothing.
+function newOrderToken(){
+  try{ return crypto.randomUUID(); }
+  catch(e){ return 'r-' + Date.now() + '-' + Math.random().toString(36).slice(2); }
+}
+var ORDER_TOKEN = newOrderToken();
 function key(){ return localStorage.getItem('console_key') || ''; }
 (function(){
   var u = new URLSearchParams(location.search).get('key');
@@ -873,9 +882,14 @@ async function orderRemedies(card, d, btn){
   if(!window.confirm(msg)) return;
   btn.disabled = true;
   if(statusEl) statusEl.textContent = 'Creating order…';
-  var r = await api('POST', '/api/orders/manual', { customer: { email: d.email || '', name: d.client_name || '' }, lines: lines });
+  var r = await api('POST', '/api/orders/manual', { customer: { email: d.email || '', name: d.client_name || '' }, lines: lines,
+                                                    idempotency_key: ORDER_TOKEN + ':' + d.id });
   if(r.ok && r.json && r.json.ok){
     var oid = r.json.order_id;
+    // Replace the token now that an order exists. This screen deliberately offers
+    // "Create ANOTHER proposed order", so the token must not outlive the order it
+    // raised. Until then both clicks of a double-click carry the same one.
+    ORDER_TOKEN = newOrderToken();
     if(statusEl) statusEl.textContent = 'Proposed order #' + oid + ' created.';
     if(window.confirm('Order #' + oid + ' created (proposed). Open it on the Orders board?')){
       window.open('/console/orders?order=' + encodeURIComponent(oid) + '&key=' + encodeURIComponent(key()), '_blank');
