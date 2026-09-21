@@ -42903,7 +42903,12 @@ def _ingest_to_pinecone(text, title, namespace, speakers=""):
     for i in range(0, len(chunks), _INGEST_BATCH_SIZE):
         batch  = chunks[i:i + _INGEST_BATCH_SIZE]
         texts  = batch
-        resp   = _oa.embeddings.create(input=texts, model="text-embedding-3-small")
+        # ada-002, the same space embed() queries in. Both models are 1536 dimensions,
+        # so Pinecone accepted every 3-small upsert and nothing ever raised: a wrong
+        # SPACE is invisible where a wrong SIZE is not. Chunks written the other way
+        # ranked at random rather than low, which made every ingested transcript
+        # unfindable. Knowledge traced 369 of them here on 2026-09-20.
+        resp   = _oa.embeddings.create(input=texts, model="text-embedding-ada-002")
         vecs   = []
         for j, (chunk, emb) in enumerate(zip(batch, resp.data)):
             vecs.append({
