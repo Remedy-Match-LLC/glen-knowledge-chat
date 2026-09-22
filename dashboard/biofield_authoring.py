@@ -622,6 +622,13 @@ _DOSE_ALIASES = {
     "holy grail full spectrum m-10 ormus": "Holy Grail Full Spectrum Drops",
     "gi repair helicobacter pylori terrain support": "GI Repair",
     "rejuvenation": "Rejuv Infoceutical",
+    # Short infoceutical names that the prefix match sent to a DIFFERENT product
+    # (Glen, 2026-09-22, Peach Goddard's layer 9: "Energy" was dosed as Energy Flow
+    # Flower Essence, 10 drops 3 times a day). "Sleep" was reaching Sleep Syntropy,
+    # a capsule formula, and "Night" was reaching Night Vision.
+    "energy": "Energy/Source Infoceutical Feelgood",
+    "night": "Night Infoceutical",
+    "sleep": "Sleep Infoceutical",
 }
 
 
@@ -658,13 +665,15 @@ def remedy_dosing(cx, name):
     if not _has(cx, "fmp_snap_products"):
         return blank
     cx.row_factory = sqlite3.Row
-    r = _dose_row(cx, name)
+    # A named alias is a deliberate decision, so it outranks the loose prefix match
+    # inside _dose_row. Checked after it, an alias never ran whenever the prefix
+    # match found SOME product, which is exactly when it was wrong.
+    prod = _DOSE_ALIASES.get(_clean_product_name(name).lower())
+    r = _dose_row(cx, prod) if prod else None
+    if r is None:
+        r = _dose_row(cx, name)
     if r is None and re.search(r"\bsynergy\b", name or "", re.I):
         r = _dose_row(cx, re.sub(r"\bsynergy\b", "Syntropy", name, flags=re.I))
-    if r is None:
-        prod = _DOSE_ALIASES.get(_clean_product_name(name).lower())
-        if prod:
-            r = _dose_row(cx, prod)
     return {k: (r[k] or "") for k in blank} if r else blank
 
 
