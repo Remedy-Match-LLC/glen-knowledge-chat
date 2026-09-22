@@ -1626,9 +1626,7 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
         from dashboard import biofield_stress as _st
         with sqlite3.connect(db_path) as cx:
             rep = _report_for(cx, test_id)
-            chain_rows = [{"layer": l.get("layer"), "head": l.get("head"),
-                           "remedy": l.get("remedy"), "rid": l.get("rid")}
-                          for l in (rep.get("layers") or [])]
+            chain_rows = _chain_rows_for(rep)
             data = _st.list_stresses(cx, test_id, chain_rows)
         return {"data": data, "html": render_stress_panel(data)}
 
@@ -1639,10 +1637,7 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
         from dashboard import biofield_stress as _st
         with sqlite3.connect(db_path) as cx:
             rep = _report_for(cx, test_id)
-            layers_full = rep.get("layers") or []
-            chain_rows = [{"layer": l.get("layer"), "head": l.get("head"),
-                           "remedy": l.get("remedy"), "rid": l.get("rid")}
-                          for l in layers_full]
+            chain_rows = _chain_rows_for(rep)
             data = _st.list_stresses(cx, test_id, chain_rows)
             unassigned = data.get("unassigned") or []
             if stress_ids is None:
@@ -1666,7 +1661,7 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                 ln = picks.get(int(s.get("id")))
                 if ln is None:
                     continue
-                rids = _st.layer_rids(layers_full, ln)
+                rids = _st.layer_rids(chain_rows, ln)
                 if rids and _st.cover_stress(cx, test_id, int(s.get("id")), rids):
                     assigned += 1
             data = _st.list_stresses(cx, test_id, chain_rows)
@@ -1681,7 +1676,14 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
         return _do_stress_assign(test_id, None)
 
     def _chain_rows_for(rep):
-        return [{"layer": l.get("layer"), "head": l.get("head"),
+        """One entry per remedy row, carrying the row's STORED layer number.
+
+        An authored report's row "layer" is the row's POSITION (1..rows), not its
+        layer: Peach Goddard's 7 remedies in 4 layers read as layers 1..7. Stress
+        grouping, assignment and layer candidates all need the stored number, so that
+        rows sharing a layer group together and a number sent back from the panel
+        resolves to the same rows (layer_chain_rids reads the stored column)."""
+        return [{"layer": l.get("stored_layer", l.get("layer")), "head": l.get("head"),
                  "remedy": l.get("remedy"), "rid": l.get("rid")}
                 for l in (rep.get("layers") or [])]
 
