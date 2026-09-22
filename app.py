@@ -41722,10 +41722,23 @@ def _present_console_key():
     A master-secret cookie returns CONSOLE_SECRET (so the existing
     `== CONSOLE_SECRET` checks pass); an OWNER-token cookie returns that token
     itself (so `_owner_token_ok` passes) and NEVER escalates to the master
-    secret."""
+    secret.
+
+    A presented key that authenticates as nothing yields to a valid cookie. A
+    browser keeps the pre-rotation key in localStorage and sends it on every
+    call, which locked Glen and Rae out of Sell: Orders after the 2026-09-16
+    rotation while their login cookies were valid. A VALID key (master, owner or
+    VA token) always keeps its own identity."""
     k = request.headers.get("X-Console-Key", "") or request.args.get("key", "")
     if k:
-        return k
+        if not CONSOLE_SECRET or k == CONSOLE_SECRET or _role_for_token(k):
+            return k
+        return _cookie_console_key() or k
+    return _cookie_console_key()
+
+
+def _cookie_console_key():
+    """The key a valid login cookie stands for, or "" when there is none."""
     ck = request.cookies.get(CONSOLE_COOKIE, "")
     if not ck:
         return ""
@@ -41750,10 +41763,13 @@ def _console_browser_login():
     # X-Console-Key directly instead of going through _present_console_key().
     # This keeps the master secret out of JavaScript/localStorage while allowing
     # the existing API surface to migrate incrementally to cookie-aware auth.
-    if not request.headers.get("X-Console-Key") and not request.args.get("key"):
-        cookie_key = _present_console_key()
-        if cookie_key:
-            request.environ["HTTP_X_CONSOLE_KEY"] = cookie_key
+    # The same bridge replaces a stale presented key with the cookie's, because
+    # _auth() and other legacy readers take the header first and never consult
+    # _present_console_key().
+    presented = request.headers.get("X-Console-Key") or request.args.get("key") or ""
+    resolved = _present_console_key()
+    if resolved and resolved != presented:
+        request.environ["HTTP_X_CONSOLE_KEY"] = resolved
 
     if request.method != "GET":
         return None
