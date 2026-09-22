@@ -60,6 +60,31 @@ def dropship_line_cents(*, retail_cents, qty, modules, settings):
     }
 
 
+def _product_name(slug: str) -> str:
+    """The product's public name, for anything a person reads. Falls back to the slug."""
+    try:
+        import app as _app
+        p = _app._get_product(slug)
+        return (p or {}).get("name") or slug
+    except Exception:
+        return slug
+
+
+def _flat_ceiling_cents() -> int:
+    """The dearest item a practitioner's flat bottle price may reach: the standard
+    Functional Formulation price, read from the catalog so a price change carries it.
+
+    Glen, 2026-09-22: a flat price "for Functional Formulations generally doesn't
+    extend to larger than minimum size bottles". Ashley King's $40 had reached
+    WholOmega 120 gelcaps at $190 retail. He ruled the line at $69.97: anything
+    listed above it is a larger bottle and gets standard drop-ship pricing."""
+    try:
+        import app as _app
+        return int(_app._PRODUCTS.get("default_price_cents") or 6997)
+    except Exception:
+        return 6997
+
+
 def _practitioner_dropship_unit_cents(pid: str) -> int | None:
     """Stored practitioner-specific flat bottle price; None keeps standard pricing."""
     from dashboard import practitioner_settings as _ps
@@ -83,15 +108,18 @@ def quote_dropship_cart(cart: List[dict], practitioner: dict) -> dict:
     modules = int(practitioner.get("modules_completed", 0) or 0)
     settings = _settings()
     special_unit_cents = _practitioner_dropship_unit_cents(practitioner["id"])
+    ceiling = _flat_ceiling_cents() if special_unit_cents is not None else None
     lines = []
     subtotal_cents = 0
     for item in cart:
         slug = item["slug"]
         line_qty = int(item.get("qty", 1))
+        retail_cents = _retail_for(slug)
         dl = dropship_line_cents(
-            retail_cents=_retail_for(slug), qty=total_bottles,
+            retail_cents=retail_cents, qty=total_bottles,
             modules=modules, settings=settings)
-        unit_cents = special_unit_cents if special_unit_cents is not None else dl["unit_cents"]
+        flat_applies = special_unit_cents is not None and int(retail_cents) <= ceiling
+        unit_cents = special_unit_cents if flat_applies else dl["unit_cents"]
         line_cents = unit_cents * line_qty
         subtotal_cents += line_cents
         lines.append({
@@ -138,11 +166,12 @@ def build_dropship_order(cart: List[dict], practitioner: dict, *,
         slug = line["slug"]
         line_qty = line["qty"]
         unit_cents = line["unit_cents"]
+        name = _product_name(slug)
         lines.append({
-            "name": slug,
+            "name": name,
             "amount": unit_cents / 100.0,
             "qty": line_qty,
-            "description": f"{slug} (drop-ship wholesale)",
+            "description": f"{name} (drop-ship wholesale)",
         })
 
     from dashboard import tax as _tax

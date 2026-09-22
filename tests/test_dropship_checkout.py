@@ -103,7 +103,7 @@ def test_multi_line_cart_prices_off_total_bottles(monkeypatch):
 
 
 def test_practitioner_specific_flat_dropship_price(monkeypatch):
-    _stub_order(monkeypatch)
+    _stub_order(monkeypatch, retail=6997)
     monkeypatch.setattr(dc, "_practitioner_dropship_unit_cents",
                         lambda pid: 4000 if pid == "ashley" else None)
     ashley = {"id": "ashley", "modules_completed": 0,
@@ -123,7 +123,7 @@ def test_practitioner_specific_flat_dropship_price(monkeypatch):
 
 
 def test_practitioner_specific_price_matches_quote_and_checkout(monkeypatch):
-    _stub_order(monkeypatch)
+    _stub_order(monkeypatch, retail=6997)
     monkeypatch.setattr(dc, "_practitioner_dropship_unit_cents",
                         lambda pid: 4000 if pid == "ashley" else None)
     ashley = {"id": "ashley", "modules_completed": 0,
@@ -175,3 +175,72 @@ def test_empty_cart_rejected(monkeypatch):
     assert dc.build_dropship_order([], prac, patient_ship={}, method="zelle")["ok"] is False
     assert dc.build_dropship_order([{"slug": "a", "qty": 0}], prac,
         patient_ship={}, method="zelle")["ok"] is False
+
+
+# ── The flat price stops at the standard FF bottle (Glen, 2026-09-22) ─────────
+#
+# Ashley King's $40 flat bottle price reached WholOmega 120 gelcaps ($190 retail) on
+# order #203. Glen: "a price for Functional Formulations generally doesn't extend to
+# larger than minimum size bottles." Ruled the same day: the flat applies to items
+# listed at or below the standard FF price, $69.97; anything dearer is a larger bottle
+# and gets standard drop-ship pricing.
+
+def _ashley(monkeypatch, retail_by_slug):
+    _stub_order(monkeypatch)
+    monkeypatch.setattr(dc, "_retail_for", lambda slug: retail_by_slug[slug])
+    monkeypatch.setattr(dc, "_flat_ceiling_cents", lambda: 6997)
+    monkeypatch.setattr(dc, "_practitioner_dropship_unit_cents",
+                        lambda pid: 4000 if pid == "ashley" else None)
+    return {"id": "ashley", "modules_completed": 0,
+            "email": "ashley@example.com", "name": "Ashley"}
+
+
+def test_flat_price_does_not_reach_a_larger_bottle(monkeypatch):
+    ashley = _ashley(monkeypatch, {"wholomega": 6997, "wholomega-120-gelcaps": 19000})
+    cart = [{"slug": "wholomega", "qty": 1}, {"slug": "wholomega-120-gelcaps", "qty": 1}]
+    by = {l["slug"]: l for l in dc.quote_dropship_cart(cart, ashley)["lines"]}
+    standard = dc.dropship_line_cents(retail_cents=19000, qty=2, modules=0,
+                                      settings=dc._settings())["unit_cents"]
+    assert by["wholomega"]["unit_cents"] == 4000
+    assert by["wholomega-120-gelcaps"]["unit_cents"] == standard, (
+        "REGRESSION: the $40 flat reached the 120-gelcap bottle, as on order #203")
+    assert standard != 4000
+
+
+def test_flat_price_still_covers_items_below_the_ff_price(monkeypatch):
+    """Her $39.97 items (CoQ10, ESR, NAC...) keep the flat. Glen chose this line."""
+    ashley = _ashley(monkeypatch, {"coq10": 3997, "clear-the-way": 6997})
+    cart = [{"slug": "coq10", "qty": 1}, {"slug": "clear-the-way", "qty": 1}]
+    assert [l["unit_cents"] for l in dc.quote_dropship_cart(cart, ashley)["lines"]] == [4000, 4000]
+
+
+def test_checkout_charges_what_the_quote_showed(monkeypatch):
+    ashley = _ashley(monkeypatch, {"wholomega-120-gelcaps": 19000})
+    cart = [{"slug": "wholomega-120-gelcaps", "qty": 1}]
+    quote = dc.quote_dropship_cart(cart, ashley)
+    order = dc.build_dropship_order(cart, ashley, method="card",
+                                    patient_ship={"name": "P", "state": "HI", "country": "US"})
+    assert order["subtotal_cents"] == quote["subtotal_cents"] != 4000
+
+
+def test_ceiling_follows_the_catalog_ff_price():
+    """Tied to the catalog, so a future FF price change cannot silently strip every flat."""
+    import app as _app
+    assert dc._flat_ceiling_cents() == int(_app._PRODUCTS.get("default_price_cents"))
+
+
+def test_quickbooks_lines_carry_the_product_name_not_the_slug(monkeypatch):
+    """Glen, 2026-09-22: the invoice printed "lower case hyphenated" names."""
+    ashley = _ashley(monkeypatch, {"wholomega-120-gelcaps": 19000})
+    monkeypatch.setattr(dc, "_product_name",
+                        lambda slug: {"wholomega-120-gelcaps": "WholOmega 120 gelcaps"}[slug])
+    order = dc.build_dropship_order([{"slug": "wholomega-120-gelcaps", "qty": 1}], ashley,
+                                    patient_ship={"name": "P", "state": "HI", "country": "US"})
+    line = order["qbo_payload"]["lines"][0]
+    assert line["name"] == "WholOmega 120 gelcaps"
+    assert line["description"] == "WholOmega 120 gelcaps (drop-ship wholesale)"
+    assert order["lines"][0]["slug"] == "wholomega-120-gelcaps"   # the record keeps the slug
+
+
+def test_product_name_falls_back_to_the_slug_for_an_unknown_product():
+    assert dc._product_name("no-such-product-xyz") == "no-such-product-xyz"
