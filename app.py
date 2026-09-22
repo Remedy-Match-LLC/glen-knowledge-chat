@@ -34930,7 +34930,7 @@ def api_console_community_live_health():
 # Wednesday live classes. Glen, 2026-09-20: the free Wellness Whispering MasterClass goes
 # FIRST, at 2:00 PM HST, and Group Coaching second, at 3:00 PM HST, so the paid session has
 # no hard stop behind it. It had been squeezed to 50 to 68 minutes by the class after it.
-# First Wednesday at these times: 1 October 2026 (Glen, 2026-09-21).
+# First Wednesday at these times: 30 September 2026 (Glen, 2026-09-21).
 #
 # These hours must match BOTH recurring Zoom meetings on Glen's account. The publish step
 # asks Zoom for each Wednesday's occurrence at exactly these times, and a miss fails the
@@ -35041,7 +35041,7 @@ def api_console_community_live_bootstrap():
             master_start_raw = master_at.replace(tzinfo=None).isoformat()
             # Match an already-published class by its WEDNESDAY, not its exact start, and
             # move it to the current hour IN PLACE. Matching on the exact start used to be
-            # safe because the hour never changed. When it does (the 2026-10-01 swap), an
+            # safe because the hour never changed. When it does (the 2026-09-30 swap), an
             # exact match misses the old row, a second row is inserted at the new time, and
             # members see the class twice. Worse, a Group Coaching RSVP is keyed
             # "group-<calendar_events.id>", so a replacement row would orphan every RSVP.

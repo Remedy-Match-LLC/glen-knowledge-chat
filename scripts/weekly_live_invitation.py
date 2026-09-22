@@ -275,7 +275,7 @@ def _copy(first_name, portal_url, eligible, target_date, email=""):
                   "Group Coaching is a certification/full-membership upgrade benefit; "
                   "your current access does not include the private session.")
     text = (f"{greeting}\n\nThis {date_label}, our MentorshipU community activities are:\n\n"
-            # Glen, 2026-09-20, effective 2026-10-01: the free MasterClass first, Group
+            # Glen, 2026-09-20, effective 2026-09-30: the free MasterClass first, Group
             # Coaching second. These two lines must agree with LIVE_MASTERCLASS_HOUR and
             # LIVE_GROUP_COACHING_HOUR in app.py, which is where the events are published.
             "2:00 PM HST: Free Wellness Whispering MasterClass\n"

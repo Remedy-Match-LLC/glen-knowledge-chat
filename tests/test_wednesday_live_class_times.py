@@ -1,12 +1,13 @@
-"""The two Wednesday live classes swap times, effective Wednesday 1 October 2026.
+"""The two Wednesday live classes swap times, effective Wednesday 30 September 2026.
 
 Glen, 2026-09-20: the free Wellness Whispering MasterClass moves to 2:00 PM HST and Group
 Coaching moves to 3:00 PM HST, both weekly on Wednesday. He chose this so the PAID session
 has no hard stop behind it. The recordings showed why: Group Coaching ran 50 minutes, 1 hour
 8 and 58 minutes on 2, 9 and 16 September, squeezed by the free class after it.
 
-Glen, 2026-09-21: first Wednesday at the new times is 1 October, not 24 September, so members
-get a full week's notice in the 29 September invitation.
+Glen, 2026-09-21: first Wednesday at the new times is 30 September, not 23 September, so
+members get notice in the 28 September invitation. (2026-09-21 was a MONDAY; an earlier draft
+of this work said 1 October and 24 September, both a day off, from weekdays reckoned by hand.)
 
 Three things had to move together, and each test below pins one of them:
   - the publish step's hours (Monday publishes the next two Wednesdays),
@@ -89,8 +90,8 @@ def test_the_invitation_no_longer_carries_the_old_pairings():
 
 
 # --- events already published at the old times -----------------------------------------
-# On 2026-09-22 the OLD code publishes 24 Sep and 1 Oct at the old hours, and members RSVP
-# against those rows. The swap's first run must MOVE the 1 Oct rows, never duplicate them.
+# On Monday 2026-09-21 the OLD code published 23 Sep and 30 Sep at the old hours, and members
+# RSVP against those rows. The swap's first run must MOVE the 30 Sep rows, never duplicate them.
 
 import sqlite3
 from dashboard import db as _db
@@ -158,7 +159,7 @@ def published_at_old_times(monkeypatch, tmp_path):
         mc_id = _mc.create_event(cx, topic="Free Wellness Whispering MasterClass",
                                  description="x", start_ts=old_master.isoformat(),
                                  duration_min=60, price_cents=0, member_price_cents=0)
-        # A member who reserved the 1 October Group Coaching against the OLD row.
+        # A member who reserved the 30 September Group Coaching against the OLD row.
         _pc.register_group(cx, "group-77", "member@x.com", meeting_id="11111111111",
                            occurrence_id="occ-OLD", join_url="https://zoom.test/j/member")
         cx.commit()
