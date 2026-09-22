@@ -92,11 +92,18 @@ def test_build_maps_layers_dedups_and_prices(tmp_path):
     assert out["unresolved"] == []
     c = out["content"]
     assert c["biofield_status"] == "confirmed"
-    # 5 chain rows -> 5 walkthrough layers
-    assert len(c["layers"]) == 5
+    # 5 chain rows in 4 layers -> 4 walkthrough layers. Layer 2 carries two remedies
+    # and shows them on ONE card (Glen, 2026-09-22: "one card per layer with all its
+    # remedies"). This asserted 5 before, which was the defect.
+    assert len(c["layers"]) == 4
     l0 = c["layers"][0]
     assert l0["n"] == 1 and l0["title"] == "ED3 Cell Driver" and l0["remedy"] == "Vitality"
     assert l0["dosing"] == "1 capsule daily with food"
+    l1 = c["layers"][1]
+    assert l1["n"] == 2 and l1["title"] == "EI6 Kidney pH"
+    assert l1["remedy"] == "Chelation + Nous Energy"
+    assert l1["dosing"] == "Chelation: 1 capsule daily; Nous Energy: one a day"
+    assert [L["n"] for L in c["layers"]] == [1, 2, 3, 4]
     # reorder deduped to 5 unique slugs (Focus,Neuromagnesium -> one neuro-magnesium line)
     slugs = [it["slug"] for it in c["reorder_items"]]
     assert sorted(slugs) == ["chelation", "neuro-magnesium", "nous-energy",

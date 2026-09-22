@@ -148,53 +148,73 @@ def build_portal_content(cx, test_id, *, special_price_cents, catalog=None,
     name = (client.get("name") or "").strip()
     first = name.split()[0] if name else ""
 
+    # One portal layer per CAUSAL-CHAIN LAYER, not per remedy row. A layer can carry
+    # several remedies (Glen, 2026-09-22: "one card per layer with all its remedies").
+    # They share one card, with the remedies joined by " + ", the form the console
+    # portal editor already reads (syncOrderFromLayers splits on "+"). Grouping is the
+    # intake page's own group_layers, so the portal numbers layers as the page does.
+    from dashboard.biofield_report_html import group_layers
+    groups = group_layers(raw_layers)
+
     narrative = get_narrative(cx, test_id) or ""
-    segs = segment_narrative(narrative, raw_layers)
+    segs = segment_narrative(narrative, [g["rows"][0] for g in groups])
     if segs:
         greeting = f"Aloha {first}," if first else "Aloha,"
         meanings = segs
     else:
         greeting = narrative or (f"Aloha {first}," if first else "Aloha,")
-        meanings = [""] * len(raw_layers)
+        meanings = [""] * len(groups)
 
     layers, reorder, seen, unresolved = [], [], set(), []
-    for i, L in enumerate(raw_layers):
-        remedy = (L.get("remedy") or "").strip()
-        # Standard-dosage fallback: fill any dose field the practitioner left blank
-        # from the product catalog default (remedy_dosing -> fmp_snap_products), so
-        # every unblurred recommendation carries its standard schedule. merge_dosing
-        # fills per-field, so an authored value (a manual biofield test) always wins
-        # over the standard.
-        dose = merge_dosing(L.get("dosage"), L.get("frequency"), L.get("timing"),
-                            remedy_dosing(cx, remedy) if remedy else None)
+    for i, g in enumerate(groups):
+        names, dosings = [], []
+        for L in g["rows"]:
+            remedy = (L.get("remedy") or "").strip()
+            if not remedy:
+                continue
+            # Standard-dosage fallback: fill any dose field the practitioner left blank
+            # from the product catalog default (remedy_dosing -> fmp_snap_products), so
+            # every unblurred recommendation carries its standard schedule. merge_dosing
+            # fills per-field, so an authored value (a manual biofield test) always wins
+            # over the standard.
+            dose = merge_dosing(L.get("dosage"), L.get("frequency"), L.get("timing"),
+                                remedy_dosing(cx, remedy))
+            if remedy not in names:
+                names.append(remedy)
+                dosings.append((remedy, _dosing(dose)))
+            slug = resolve_remedy_slug(remedy, cat)
+            if slug is None:
+                if remedy not in unresolved:
+                    unresolved.append(remedy)
+                continue
+            if slug in seen:
+                continue
+            seen.add(slug)
+            reorder.append({"slug": slug,
+                            "qty": _bottle_quantity(cx, remedy, dose.get("frequency")),
+                            "price_cents": int(special_price_cents)})
+        if len(dosings) > 1:
+            dosing = "; ".join(f"{n}: {d}" if d else n for n, d in dosings)
+        else:
+            dosing = dosings[0][1] if dosings else ""
         layers.append({
-            "n": L.get("layer"),
-            "title": (L.get("head") or "").strip(),
+            "n": g["layer"],
+            "title": (g.get("head") or "").strip(),
             "meaning": meanings[i] if i < len(meanings) else "",
-            "remedy": remedy,
-            "dosing": _dosing(dose),
+            "remedy": " + ".join(names),
+            "dosing": dosing,
         })
-        if not remedy:
-            continue
-        slug = resolve_remedy_slug(remedy, cat)
-        if slug is None:
-            if remedy not in unresolved:
-                unresolved.append(remedy)
-            continue
-        if slug in seen:
-            continue
-        seen.add(slug)
-        reorder.append({"slug": slug,
-                        "qty": _bottle_quantity(cx, remedy, dose.get("frequency")),
-                        "price_cents": int(special_price_cents)})
 
     # Bake the ASSIGNED stresses under each layer (from list_stresses' by_layer grouping)
     # so the portal can show, per layer, which stress patterns that layer addresses.
+    # Each row carries its group's number AND its rid: without the rid, a stress placed
+    # on a layer by hand (biofield_auth_layer_stress, keyed by row id) was never read.
     # Best-effort; a stress lookup failure must never break a publish.
     try:
         from dashboard import biofield_stress as _bstr
-        _chain = [{"layer": L.get("layer"), "head": L.get("head"), "remedy": L.get("remedy")}
-                  for L in raw_layers]
+        _chain = [{"layer": g["layer"], "head": L.get("head"), "remedy": L.get("remedy"),
+                   "rid": L.get("rid")}
+                  for g in groups for L in g["rows"]]
         _sbl = {}
         for _grp in (_bstr.list_stresses(cx, test_id, _chain).get("by_layer") or []):
             _sbl[_grp.get("layer")] = [{"code": (s.get("code") or ""), "label": (s.get("label") or "")}

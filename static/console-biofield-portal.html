@@ -501,7 +501,9 @@ function syncOrderFromLayers(){
   const layers = collectLayers();
   const existing = {}; collectItems().forEach(it => existing[it.slug] = it);  // keep qty/price
   const slugs = [];
-  layers.forEach(L => (L.remedy||'').split('+').forEach(part => {
+  // Several remedies in one layer are joined with a SPACED plus (" + "). A bare
+  // "+" is part of names such as "Neuro+ Eye Drops", so it must not split them.
+  layers.forEach(L => (L.remedy||'').split(' + ').forEach(part => {
     const slug = CAT_BY_NAME[part.trim().toLowerCase()];
     if(slug && !slugs.includes(slug)) slugs.push(slug);
   }));
