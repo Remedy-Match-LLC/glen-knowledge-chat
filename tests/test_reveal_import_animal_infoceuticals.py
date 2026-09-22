@@ -68,9 +68,9 @@ def test_an_animal_with_no_labels_falls_back_to_the_synth_name():
     assert r["layers"][0]["remedy_name"] == "Fallback"
 
 
-def test_the_route_reads_species_and_passes_the_flag():
-    """The wiring. Unpassed, the fix is inert and every animal still imports FFs."""
-    import pathlib
-    src = (pathlib.Path(__file__).resolve().parents[1] / "biofield_local_app.py").read_text()
-    assert "client_species" in src
-    assert "is_animal=_is_animal" in src
+# The route wiring used to be checked here by grepping biofield_local_app.py for the
+# strings "client_species" and "is_animal=_is_animal". Both were present the whole
+# time the route read species from a table that does not exist on Glen's Mac, so
+# every animal imported as a person and this test stayed green (Sasha Takahashi,
+# 2026-09-21). The wiring is now proven by driving the real route:
+# tests/test_biofield_animal_infoceuticals.py::test_import_reveal_reads_species_from_e4l_db

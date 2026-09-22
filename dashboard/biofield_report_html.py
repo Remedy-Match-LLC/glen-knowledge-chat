@@ -983,14 +983,17 @@ async function captureStresses(){rstat('Capturing stresses from transcript…');
  var j=await post('/author/__TID__/capture-stresses',{});
  if(j.error){rstat('Capture: '+j.error);return}
  rstat('Added '+j.added+' stress(es).');loadStress()}
-async function mineProfile(){rstat('Mining client profile for stresses…');
- var j=await post('/author/__TID__/mine-profile',{});
- if(j.error){rstat('Mine profile: '+j.error);return}
- rstat(j.added?'Added '+j.added+' profile stress(es).':'No new clinical stresses found.');loadStress()}
-async function mineComms(){rstat('Mining recent comms for stresses…');
- var j=await post('/author/__TID__/mine-comms',{});
- if(j.error){rstat('Mine comms: '+j.error);return}
- rstat('Added '+j.added+' comm stress(es).');loadStress()}
+function mstat(t){var e=document.getElementById('minestat');if(e)e.textContent=t}
+async function mineProfile(){mstat('Mining the profile for stresses…');
+ try{var j=await post('/author/__TID__/mine-profile',{})}
+ catch(e){mstat('Mine profile failed: the server returned an error ('+e.message+').');return}
+ if(j.error){mstat('Mine profile: '+j.error);return}
+ mstat(j.added?'Added '+j.added+' stress(es) from the profile.':'No new stresses found in the profile.');loadStress()}
+async function mineComms(){mstat('Mining recent comms for stresses…');
+ try{var j=await post('/author/__TID__/mine-comms',{})}
+ catch(e){mstat('Mine comms failed: the server returned an error ('+e.message+').');return}
+ if(j.error){mstat('Mine comms: '+j.error);return}
+ mstat(j.added?'Added '+j.added+' stress(es) from recent comms.':'No new stresses found in recent comms.');loadStress()}
 async function loadClinicalProposals(){
  var box=document.getElementById('clinicalProposals');if(!box)return;
  try{var j=await (await fetch('/author/__TID__/clinical-proposals')).json(),items=j.items||[];
@@ -2134,8 +2137,12 @@ def render_author_html(report, depth_values=None, transcript="", covered_by_laye
         "transcript saves to this test's notes and feeds the narrative. Wear a lav/AirPods for "
         "the codes.</p>"
         "<div class=btnrow style='margin-bottom:6px'>"
-        "<button id=phaseCap class=btn onclick='setPhase(1)'>Phase 1 &middot; Capture stresses</button>"
-        "<button id=phaseBal class='btn ghost' onclick='setPhase(2)'>Phase 2 &middot; Rejuvenate</button>"
+        # Steps, not phases (Glen 2026-09-21). "Phase" collides with the 5 Phases of
+        # Healing, and "Rejuvenate" is Phase 2 of the TERRAIN map, nothing to do with this
+        # second step. Step 2 runs interpret(), which phaseAct below already labels
+        # "Interpret", so the button uses that word. The ids and setPhase() are internal.
+        "<button id=phaseCap class=btn onclick='setPhase(1)'>Step 1 &middot; Capture stresses</button>"
+        "<button id=phaseBal class='btn ghost' onclick='setPhase(2)'>Step 2 &middot; Interpret</button>"
         "</div>"
         "<div class=btnrow>"
         "<button class=btn onclick=recStart()>&#9679; Record</button>"
@@ -2170,6 +2177,9 @@ def render_author_html(report, depth_values=None, transcript="", covered_by_laye
                  + "<div class=btnrow style='margin:6px 0'>"
                  "<button class='btn ghost' onclick=mineProfile()>Mine profile &rarr; stresses</button>"
                  "<button class='btn ghost' onclick=mineComms()>Mine recent comms &rarr; stresses</button>"
+                 # Glen, 2026-09-21: both buttons "show no effect". Their result went to
+                 # #rstat in the Live session block, a different section of the page.
+                 "<span id=minestat class=food></span>"
                  "</div>"
                  "<div id=stresspanel></div>"
                  "<div class=btnrow style='margin:6px 0'>"

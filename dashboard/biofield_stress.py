@@ -143,28 +143,30 @@ def seed_from_scan(cx, tid, findings, coverage):
     return {"stresses": n, "required": req, "coverage": c}
 
 
+def _chain_names(remedy_names):
+    """Lowercased, de-duplicated, in chain order."""
+    return list(dict.fromkeys((n or "").strip().lower()
+                              for n in (remedy_names or []) if (n or "").strip()))
+
+
+# Both read scan_coverage, not the FF table directly. For an animal the table said an
+# FF on the chain balanced the stress (Sasha's stray Immune Modulation hid her ED14,
+# ET15 and ET6), and an infoceutical Glen then added balanced nothing, so the stress
+# stayed open and was proposed again. For a person scan_coverage IS the table.
 def covered_codes(cx, tid, remedy_names):
-    t = _num(tid)
-    names = [(n or "").strip().lower() for n in (remedy_names or []) if (n or "").strip()]
+    names = _chain_names(remedy_names)
     if not names:
         return set()
-    ph = ",".join("?" for _ in names)
-    rows = cx.execute(
-        f"SELECT DISTINCT code FROM biofield_auth_remedy_coverage "
-        f"WHERE test_id=? AND remedy IN ({ph})", (t, *names)).fetchall()
-    return {r[0] for r in rows}
+    coverage = scan_coverage(cx, tid)
+    return set().union(*(coverage.get(n, set()) for n in names))
 
 
 def _coverers(cx, tid, code, remedy_names):
-    t = _num(tid)
-    names = [(n or "").strip().lower() for n in (remedy_names or []) if (n or "").strip()]
+    names = _chain_names(remedy_names)
     if not names:
         return []
-    ph = ",".join("?" for _ in names)
-    rows = cx.execute(
-        f"SELECT remedy FROM biofield_auth_remedy_coverage "
-        f"WHERE test_id=? AND code=? AND remedy IN ({ph})", (t, code, *names)).fetchall()
-    return [r[0] for r in rows]
+    coverage = scan_coverage(cx, tid)
+    return [n for n in names if code in coverage.get(n, set())]
 
 
 def _norm(s):
@@ -699,17 +701,80 @@ def layer_chain_rids(cx, tid, layer):
     return [r[0] for r in rows]
 
 
+# The animal rule. Glen, 2026-09-18: the AUTOMATED interpretation of an animal's
+# scan recommends E4L infoceuticals, never Functional Formulations. On 2026-09-21 it
+# held only in Import Reveal, so every suggestion built here offered FFs to a cat.
+#
+# This module knows nothing of e4l.db or the catalog, so the app installs how to
+# tell: a callable (cx, tid) -> {code: infoceutical name} for an animal's test, else
+# None. Unset, which is how every direct unit test runs, every test reads as a person
+# and nothing changes.
+_animal_lookup = None
+
+
+def set_animal_lookup(fn):
+    global _animal_lookup
+    _animal_lookup = fn
+
+
+def animal_infoceuticals(cx, tid):
+    """{code: infoceutical name} when this test's client is an animal, else None.
+    A lookup that fails reads as a person, the same default Import Reveal uses:
+    reading unknown as an animal would strip the FFs from every human intake."""
+    if _animal_lookup is None:
+        return None
+    try:
+        return _animal_lookup(cx, tid) or None
+    except Exception:
+        return None
+
+
+def scan_coverage(cx, tid):
+    """remedy (lowercase) -> {codes} for this test's scan findings.
+
+    A person gets the FF coverage the scan import persisted. An animal gets, for each
+    of its scan codes, the one E4L infoceutical that names that code; a code with no
+    infoceutical is simply absent, so it reports uncovered rather than taking an FF.
+    The single source for every suggestion path and for the Full/Minimum program."""
+    animal = animal_infoceuticals(cx, tid)
+    if animal is None:
+        coverage = {}
+        for remedy, code in cx.execute(
+                "SELECT remedy, code FROM biofield_auth_remedy_coverage WHERE test_id=?",
+                (_num(tid),)).fetchall():
+            coverage.setdefault(remedy, set()).add(code)
+        return coverage
+    coverage = {}
+    for (code,) in cx.execute(
+            "SELECT DISTINCT code FROM biofield_auth_stress "
+            "WHERE test_id=? AND source='scan' AND code IS NOT NULL AND code<>''",
+            (_num(tid),)).fetchall():
+        name = animal.get(code)
+        if name:
+            coverage.setdefault(name.strip().lower(), set()).add(code)
+    return coverage
+
+
 def _remedy_context(cx, tid, chain_rows):
     """Set-cover inputs: active required tokens, token->label, remedy->codes coverage.
     Cover token = E4L code (scan) or _norm(label) (non-scan)."""
     data = list_stresses(cx, tid, chain_rows)
-    token_label, active_tokens, coverage = {}, set(), {}
-    # scan coverage from the persisted map
-    for remedy, code in cx.execute(
-            "SELECT remedy, code FROM biofield_auth_remedy_coverage WHERE test_id=?",
-            (_num(tid),)).fetchall():
-        coverage.setdefault(remedy, set()).add(code)
+    token_label, active_tokens = {}, set()
+    coverage = scan_coverage(cx, tid)
+    animal_map = animal_infoceuticals(cx, tid)
+    animal = animal_map is not None
     for s in data["active"]:
+        if animal and s.get("source") == "scan":
+            # seed_from_scan marked a code "required" only when an FF covers it. For an
+            # animal that proxy is wrong both ways: a code with an infoceutical but no
+            # FF read optional and was never proposed, and an ER code an FF happens to
+            # cover read required with nothing to give it. Required has always meant
+            # "something we sell covers it"; for an animal, that is an infoceutical.
+            code = s.get("code") or ""
+            if code and code in animal_map:
+                active_tokens.add(code)
+                token_label[code] = s.get("label") or code
+            continue
         if s.get("balance") != "required":
             continue
         if s.get("source") == "scan":
@@ -723,6 +788,10 @@ def _remedy_context(cx, tid, chain_rows):
                 continue
             active_tokens.add(tok)
             token_label[tok] = s.get("label") or tok
+            if animal:
+                # These are FFs Glen chose for people with this stress. An animal's
+                # stress stays uncovered here rather than inherit one.
+                continue
             for rem in historical_remedies(cx, s.get("label") or ""):
                 coverage.setdefault(rem, set()).add(tok)
     return active_tokens, token_label, coverage
@@ -849,6 +918,7 @@ def resolve_remedy_set(cx, tid, chain_rows, force_computed=False):
     active_tokens, token_label, coverage = _remedy_context(cx, tid, chain_rows)
     key, _toks = _pattern_key(active_tokens)
     remedies, source = None, "computed"
+    animal = animal_infoceuticals(cx, tid) is not None
     if not force_computed:
         saved = get_saved_remedy_set(cx, tid)
         if saved is not None:
@@ -857,6 +927,13 @@ def resolve_remedy_set(cx, tid, chain_rows, force_computed=False):
             pat = _get_pattern_set(cx, key)
             if pat is not None:
                 remedies, source = pat, "pattern"
+    if animal and remedies is not None:
+        # A saved set or a template can carry FFs: Sasha's test 42 had a saved set of
+        # them, and templates are learned mostly from people. An animal keeps only
+        # what its infoceutical coverage offers, and recomputes if nothing survives.
+        remedies = [r for r in remedies if (r or "").strip().lower() in coverage] or None
+        if remedies is None:
+            source = "computed"
     if remedies is None:
         remedies = _computed_set(active_tokens, coverage)
     picks, uncovered = _covers_for(remedies, active_tokens, token_label, coverage)
@@ -890,6 +967,11 @@ def layer_candidates(cx, tid, chain_rows, fallback_by_code=None, n=5):
             if low:
                 learned.add(low)
     fb = fallback_by_code or {}
+    animal = animal_infoceuticals(cx, tid)
+    if animal is not None:
+        # The caller's fallback is the FF formulation map. An animal's blank layer
+        # falls back to the infoceutical that names each code instead.
+        fb = {code: [name] for code, name in animal.items()}
     # Per-layer stress codes carried from the synthesis/reveal (biofield_auth_chain.codes).
     # The coverage-based stress ASSIGNMENT is sparse for hand-authored chains -- a layer
     # keeps its own patterns here so it can still generate candidates.
