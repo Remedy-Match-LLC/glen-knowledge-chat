@@ -722,6 +722,27 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
         return (authored_report(cx, test_id) if str(test_id).startswith("a")
                 else causal_chain_report(cx, test_id))
 
+    # rep["layers"] holds one ROW per remedy, and a layer can carry several remedies.
+    # Counting the rows reported Peach Goddard's 4 layers as "7 layer(s)" (Glen,
+    # 2026-09-22), and numbering new layers from that count left gaps. Count and
+    # number LAYERS with these two, never with len(rep["layers"]).
+    def _layer_count(rep):
+        from dashboard.biofield_report_html import group_layers
+        return len(group_layers(rep.get("layers") or []))
+
+    def _last_layer_no(rep):
+        """The highest stored layer number, so an appended layer follows it. A row's
+        "layer" key in an authored report is its ROW position; the stored number is
+        "stored_layer"."""
+        nums = []
+        for l in rep.get("layers") or []:
+            v = l.get("stored_layer", l.get("layer"))
+            try:
+                nums.append(int(v))
+            except (TypeError, ValueError):
+                continue
+        return max(nums, default=0)
+
     def _animal_for(rep):
         """{"name", "species", "owner"} when the report's client is an animal, else None.
 
@@ -1611,10 +1632,11 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                 return {"ok": False, "stale": True, "days_ago": res.get("days_ago"),
                         "reason": f"Latest scan is {res.get('days_ago')} days old "
                                   "— refresh to import, or import it anyway"}
-            existing = len(rep.get("layers") or [])
+            existing = _layer_count(rep)
             if existing and not force:
                 return {"ok": False, "needs_confirm": True, "existing": existing}
-            imported = _ri.import_layers_to_test(cx, test_id, res.get("layers") or [])
+            imported = _ri.import_layers_to_test(cx, test_id, res.get("layers") or [],
+                                                 after_layer=_last_layer_no(rep))
             # Pass already-synthesized layers so the pipeline runs only once per import
             _seed_stresses(cx, test_id, force=True, layers=res.get("layers") or [])
         # Reported back so an old scan behind a chain is never a silent fact.
@@ -2449,7 +2471,7 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
             items = [i for i in items if item_key(i.get("label")) not in hidden]
             items = apply_selection(cx, test_id, apply_order(cx, test_id, items))
             layers = clinical_layers(items)
-            existing = len(rep.get("layers") or [])
+            existing = _layer_count(rep)
             checked = sum(1 for i in items if i.get("checked"))
             no_pattern = [i.get("label") for i in items
                           if i.get("checked") and not (i.get("stress_pattern") or "").strip()]
@@ -2463,9 +2485,10 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                 return {"ok": False, "needs_confirm": True, "existing": existing,
                         "error": f"This intake already has {existing} layer(s)."}
 
-            n, made = existing, 0
+            n, made = _last_layer_no(rep), 0
             for L in layers:
                 n += 1
+                made += 1
                 remedies = L["remedies"] or [""]
                 for remedy in remedies:
                     name = resolve_remedy_name(cx, remedy) if remedy else ""
@@ -2473,7 +2496,6 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                     add_chain_row(cx, test_id, n, L["pattern"], L["label"] or L["pattern"],
                                   name, d.get("dosage", ""), d.get("frequency", ""),
                                   d.get("timing", ""), confirmed=0, origin="clinical")
-                    made += 1
         return {"ok": True, "applied": True, "layers_added": made}
 
     @app.route("/author/<test_id>/clinical-items/combine", methods=["POST"])
@@ -2561,7 +2583,7 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
             rep = authored_report(cx, test_id)
             chain = _chain_rows_for(rep)
             data = _st.list_stresses(cx, test_id, chain)
-            existing = len(rep.get("layers") or [])
+            existing = _layer_count(rep)
             findings, seen = [], set()
             for bucket in ("active", "unassigned"):
                 for st in data.get(bucket) or []:
@@ -2597,7 +2619,7 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
         from dashboard.biofield_authoring import add_chain_row
         made = 0
         with sqlite3.connect(db_path) as cx:
-            n = existing
+            n = _last_layer_no(rep)
             for L in layers:
                 n += 1
                 head = L["members"][0]["name"]
@@ -2807,7 +2829,7 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
         with sqlite3.connect(db_path) as cx:
             rep = authored_report(cx, test_id)
             chain = _chain_rows_for(rep)
-            existing = len(rep.get("layers") or [])
+            existing = _layer_count(rep)
             data = _st.list_stresses(cx, test_id, chain)
             stresses, seen = [], set()
             for bucket in ("active", "unassigned"):
@@ -2885,7 +2907,7 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                 return {"ok": False, "needs_confirm": True, "existing": existing,
                         "error": f"This intake already has {existing} layer(s)."}
 
-            n, made = existing, 0
+            n, made = _last_layer_no(rep), 0
             # The transcript's layers land exactly as the Interpret button writes
             # them: unconfirmed, because he may still edit what he spoke.
             for l in interpreted:

@@ -952,7 +952,7 @@ try{
     j=await post('/author/__TID__/e4l/import-reveal',body);
   }
   if(j && j.needs_confirm){
-    if(!confirm('This session already has '+j.existing+' rows — add the reveal layers anyway?')) return;
+    if(!confirm('This session already has '+j.existing+' layer(s). Add the reveal layers anyway?')) return;
     body.force=true;
     j=await post('/author/__TID__/e4l/import-reveal',body);
   }

@@ -119,16 +119,22 @@ def build_coverage(layers):
     return cov
 
 
-def import_layers_to_test(cx, tid, layers):
+def import_layers_to_test(cx, tid, layers, after_layer=0):
     """Create one needs-review (confirmed=0) chain row per reveal layer. Dosing is
     auto-filled from the product catalog when the remedy name resolves. Returns the
-    number of rows created."""
+    number of rows created.
+
+    `after_layer` is the intake's highest stored layer. Appending onto an intake that
+    already has layers numbers the reveal's layers after it; numbering them from 1
+    again would interleave them with the layers already there."""
     from dashboard.biofield_authoring import add_chain_row, remedy_dosing
     n = 0
     for L in layers or []:
         name = (L.get("remedy_name") or "").strip()
         d = remedy_dosing(cx, name) if name else {"dosage": "", "frequency": "", "timing": ""}
-        add_chain_row(cx, tid, L.get("n"), L.get("title") or "",
+        _n = L.get("n")
+        add_chain_row(cx, tid, (int(_n) + int(after_layer or 0)) if _n is not None else None,
+                      L.get("title") or "",
                       L.get("most_affected") or "", name,
                       dosage=d.get("dosage", ""), frequency=d.get("frequency", ""),
                       timing=d.get("timing", ""), confirmed=0, origin="scan",
