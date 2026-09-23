@@ -31,8 +31,13 @@ def evaluate_quality(content, *, resolve_slug, red_flag_terms):
         rem = (L.get("remedy") or "").strip()
         if not rem:
             reasons.append(f"layer {i}: empty remedy")
-        elif resolve_slug(rem) is None:
-            reasons.append(f"layer {i}: remedy not in catalog ({rem!r})")
+        else:
+            # A layer with several remedies joins them with " + " (one portal card
+            # per layer); each must resolve on its own. Split on the SPACED plus:
+            # product names such as "Neuro+ Eye Drops" contain a bare one.
+            for part in (x.strip() for x in rem.split(" + ")):
+                if part and resolve_slug(part) is None:
+                    reasons.append(f"layer {i}: remedy not in catalog ({part!r})")
         if not _dosing_present(L):
             reasons.append(f"layer {i}: missing dosing")
     if red_flag_terms:
