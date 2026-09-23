@@ -108,3 +108,12 @@ def test_the_paid_name_is_not_on_the_free_scan():
         for hit in re.findall(r"biofield[™\s]*voice scan", text, re.I):
             offenders.append(f"{p.name}: {hit!r}")
     assert not offenders, "the paid name is on the free scan: " + "; ".join(offenders)
+
+
+def test_portal_step_list_names_the_energy4life_scan():
+    """The portal Home step list said "Voice analysis" for the step that links to
+    Energy4Life. Found 2026-09-22 on a captured portal. Read from the source rather
+    than a render, because the step list is built server-side."""
+    src = (STATIC.parent / "dashboard" / "portal_onboarding.py").read_text(encoding="utf-8")
+    labels = re.findall(r'step\("voice",\s*"([^"]+)"', src)
+    assert labels == ["Bioenergetic Wellness Scan"], labels
