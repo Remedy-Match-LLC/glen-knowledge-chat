@@ -1068,13 +1068,33 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
             tid = create_test(cx, "", "", "")
         return redirect(f"/author/{tid}")
 
+    def _with_hand_added(cx, test_id, profile):
+        """The profile's conditions plus the items added by hand on this intake.
+
+        A hand-added item lives only as an accepted decision, never in the profile.
+        The page folded them in and the Clinical Summary buttons did not, so Alyssa
+        Fukushima's hand-added Sleep Difficulty showed ticked and never reached
+        "Clinical layers" (Glen, 2026-09-22). Every checklist build goes through here.
+        """
+        from dashboard.biofield_clinical_proposals import accepted_labels
+        profile = profile or {}
+        accepted = accepted_labels(cx, test_id)
+        if not accepted:
+            return profile
+        profile = dict(profile)
+        current = profile.get("conditions") or []
+        if isinstance(current, str):
+            current = [x.strip() for x in current.replace(";", ",").split(",") if x.strip()]
+        profile["conditions"] = list(current) + accepted
+        return profile
+
     @app.route("/author/<test_id>")
     def author_edit(test_id):
         from dashboard.biofield_report_html import group_layers
         from dashboard.biofield_stress import list_stresses
         from dashboard.biofield_clinical_checklist import build as build_clinical_checklist
         from dashboard.biofield_clinical_proposals import (
-            accepted_labels, apply_order, apply_selection, dismissed_labels, item_key,
+            apply_order, apply_selection, dismissed_labels, item_key,
         )
         from dashboard.biofield_authoring import stress_suggestions
         with sqlite3.connect(db_path) as cx:
@@ -1102,14 +1122,7 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
             )
             # None means the lookup FAILED, which is not an empty profile.
             profile_unavailable = bool(c_email) and profile is None
-            profile = profile or {}
-            accepted = accepted_labels(cx, test_id)
-            if accepted:
-                profile = dict(profile or {})
-                current = profile.get("conditions") or []
-                if isinstance(current, str):
-                    current = [x.strip() for x in current.replace(";", ",").split(",") if x.strip()]
-                profile["conditions"] = list(current) + accepted
+            profile = _with_hand_added(cx, test_id, profile)
             from dashboard.biofield_clinical_checklist import remedies_for
             from dashboard.biofield_clinical_checklist import stress_pattern
             def clinical_remedies(label):
@@ -2427,8 +2440,9 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
             rep = authored_report(cx, test_id)
             c_email = ((rep.get("client") or {}).get("email") or "").strip()
             profile = fetch_profile(c_email) if c_email else {}
+            profile = _with_hand_added(cx, test_id, profile)
             items = build_clinical_checklist(
-                profile or {}, rep.get("layers") or [], None,
+                profile, rep.get("layers") or [], None,
                 stress_lookup=lambda label: stress_pattern(cx, label), cx=cx)
             hidden = {item_key(l) for l in dismissed_labels(cx, test_id)}
             items = [i for i in items if item_key(i.get("label")) not in hidden]
@@ -2466,8 +2480,9 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
             rep = authored_report(cx, test_id)
             c_email = ((rep.get("client") or {}).get("email") or "").strip()
             profile = fetch_profile(c_email) if c_email else {}
+            profile = _with_hand_added(cx, test_id, profile)
             items = build_clinical_checklist(
-                profile or {}, rep.get("layers") or [], None,
+                profile, rep.get("layers") or [], None,
                 stress_lookup=lambda label: stress_pattern(cx, label), cx=cx)
             hidden = {item_key(l) for l in dismissed_labels(cx, test_id)}
             items = [i for i in items if item_key(i.get("label")) not in hidden]

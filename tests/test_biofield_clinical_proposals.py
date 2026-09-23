@@ -458,3 +458,32 @@ def test_the_clinical_layers_button_sees_no_scan_findings(tmp_path, monkeypatch)
         add_stress(cx, tid, "ED12 Kidney Driver", source="scan", balance="required")
     j = client.post(f"/author/{tid}/clinical-items/layers", json={}).get_json()
     assert [L["pattern"] for L in j["layers"]] == ["Adrenal Support"]
+
+
+def _hand_added_sleep(db, tid):
+    """Alyssa Fukushima, test a40, 2026-09-22: Sleep Difficulty was ADDED by hand on
+    the page, so it lives only as an accepted decision, never in the profile."""
+    with sqlite3.connect(db) as cx:
+        decide(cx, tid, "Sleep Difficulty", "accepted",
+               "Manually added to clinical checklist")
+        save_selection(cx, tid, "Sleep Difficulty", ["Sleep Syntropy"])
+        remember_stress_pattern(cx, "Sleep Difficulty", "Sleep Regulation")
+
+
+def test_the_clinical_layers_button_sees_a_hand_added_item(tmp_path, monkeypatch):
+    """Glen, 2026-09-22: two checked items, one layer proposed. The page folds
+    hand-added items into the checklist; the button rebuilt it without them."""
+    db, tid, client = _clinical_layers_app(tmp_path, monkeypatch)
+    _hand_added_sleep(db, tid)
+    j = client.post(f"/author/{tid}/clinical-items/layers", json={}).get_json()
+    assert j["checked"] == 2
+    assert [L["pattern"] for L in j["layers"]] == ["Adrenal Support", "Sleep Regulation"]
+    assert j["layers"][1]["remedies"] == ["Sleep Syntropy"]
+
+
+def test_add_checked_patterns_sees_a_hand_added_item(tmp_path, monkeypatch):
+    db, tid, client = _clinical_layers_app(tmp_path, monkeypatch)
+    _hand_added_sleep(db, tid)
+    j = client.post(f"/author/{tid}/clinical-items/to-stresses", json={}).get_json()
+    assert j["checked"] == 2
+    assert "Sleep Regulation" in j["added"]
