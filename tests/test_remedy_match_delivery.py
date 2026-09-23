@@ -36,4 +36,4 @@ def test_match_email_is_idempotent(monkeypatch, tmp_path):
         rme.drain(cx, lambda e, n, s, h, t: sent.append((e, n, s)), now=later)
         rme.drain(cx, lambda e, n, s, h, t: sent.append((e, n, s)), now=later)
     assert len(sent) == 1
-    assert "Trauma Relief in Terrain Restore" in sent[0][2]
+    assert sent[0][2] == "The remedy you found in our chat: Trauma Relief in Terrain Restore"

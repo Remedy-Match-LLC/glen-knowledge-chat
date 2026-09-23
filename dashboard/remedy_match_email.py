@@ -22,15 +22,16 @@ from datetime import datetime, timedelta, timezone
 QUIET_MINUTES = 30
 CAP_DAYS = 7
 
-SUBJECT = "Your remedy match: {product}"
+# Wording: Glen, 2026-09-23. Not "remedy match": that is the free scan report's name.
+SUBJECT = "The remedy you found in our chat: {product}"
 TEXT = ("Aloha{name},\n\n"
-        "Your remedy match is {product}.\n\n"
-        "You can read about it and order it here:\n{url}\n\n"
+        "Here's a link so you can explore the remedy you found in our chat:\n"
+        "{product}\n{url}\n\n"
         "Aloha,\nDr. Glen")
 HTML = ('<div style="font-family: \'arial black\', sans-serif; font-size: large">'
         "<p>Aloha{name},</p>"
-        "<p>Your remedy match is <b>{product}</b>.</p>"
-        '<p>You can read about it and order it here:<br><a href="{url}">{url_label}</a></p>'
+        "<p>Here's a link so you can explore the remedy you found in our chat:<br>"
+        '<a href="{url}">{product}</a></p>'
         "<p>Aloha,<br>Dr. Glen</p></div>")
 
 
@@ -78,12 +79,10 @@ def render(row):
     first = (row.get("name") or "").strip().split(" ")[0]
     name = (" " + first) if first else ""
     url = row["page_url"]
-    label = url.split("://", 1)[-1]
     esc = lambda s: (str(s).replace("&", "&amp;").replace("<", "&lt;")
                      .replace(">", "&gt;").replace('"', "&quot;"))
     return (SUBJECT.format(product=row["product_name"]),
-            HTML.format(name=esc(name), product=esc(row["product_name"]), url=esc(url),
-                        url_label=esc(label)),
+            HTML.format(name=esc(name), product=esc(row["product_name"]), url=esc(url)),
             TEXT.format(name=name, product=row["product_name"], url=url))
 
 

@@ -44,7 +44,8 @@ def test_a_chat_that_moves_between_options_sends_only_the_last_one():
     for i, p in enumerate(["OcuHeal", "Avenova", "Vitreous Vitality", "Microbiome"]):
         _enq(cx, product=p, slug=p.lower().replace(" ", "-"), at=T0 + timedelta(minutes=i))
     rme.drain(cx, send, now=T0 + timedelta(hours=2))
-    assert len(send.calls) == 1 and send.calls[0]["subject"] == "Your remedy match: Microbiome"
+    assert len(send.calls) == 1
+    assert send.calls[0]["subject"] == "The remedy you found in our chat: Microbiome"
 
 
 def test_one_email_per_chat_even_if_it_names_another_later():
@@ -73,10 +74,14 @@ def test_the_email_carries_no_ai_text_only_name_and_link():
     _enq(cx)
     rme.drain(cx, send, now=T0 + timedelta(hours=1))
     body = send.calls[0]["text"]
-    assert body == ("Aloha Maria,\n\nYour remedy match is Microbiome.\n\n"
-                    "You can read about it and order it here:\n"
-                    "https://illtowell.com/begin/product/microbiome\n\nAloha,\nDr. Glen")
-    assert "arial black" in send.calls[0]["html"]
+    assert body == ("Aloha Maria,\n\n"
+                    "Here's a link so you can explore the remedy you found in our chat:\n"
+                    "Microbiome\nhttps://illtowell.com/begin/product/microbiome\n\n"
+                    "Aloha,\nDr. Glen")
+    html = send.calls[0]["html"]
+    assert "arial black" in html
+    assert '<a href="https://illtowell.com/begin/product/microbiome">Microbiome</a>' in html
+    assert "remedy match" not in (body + html + send.calls[0]["subject"]).lower()
 
 
 def test_every_send_is_recorded_with_its_exact_body():
