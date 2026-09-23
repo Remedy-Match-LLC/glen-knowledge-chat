@@ -111,9 +111,14 @@ def _rows(cx, sql, params=()):
             pass
         return []
     rows = cur.fetchall()
-    if rows and hasattr(rows[0], "keys"):
-        return [dict(r) for r in rows]
-    cols = [d[0] for d in (cur.description or [])]
+    if not rows:
+        # Return before touching `description`: the Postgres cursor wrapper
+        # (dashboard.db._PgCursor) has none, and reading it raised on every empty
+        # result, which made the whole address step fail in production (#1790).
+        return []
+    if hasattr(rows[0], "keys"):          # sqlite3.Row, and Postgres HybridRow
+        return [{k: r[k] for k in r.keys()} for r in rows]
+    cols = [d[0] for d in (getattr(cur, "description", None) or [])]
     return [dict(zip(cols, r)) for r in rows]
 
 

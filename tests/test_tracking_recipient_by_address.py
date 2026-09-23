@@ -132,3 +132,43 @@ def test_missing_tables_resolve_to_nothing_rather_than_raising():
 ])
 def test_names_agree(label, first, last, ok):
     assert tr.names_agree(label, first, last) is ok
+
+
+# --- the Postgres cursor ------------------------------------------------------------------
+# Production's cursor wrapper (dashboard.db._PgCursor) returns HybridRow objects and has
+# NO `description`. Reading it on an empty result raised AttributeError in production,
+# so the address step failed every time and the watcher fell back to name-only (#1790).
+
+class _PgLikeCursor:
+    def __init__(self, rows):
+        self._rows = rows
+    def fetchall(self):
+        return self._rows            # deliberately no .description attribute
+
+
+class _PgLikeConn:
+    """Answers each query with rows built by dashboard.pgcompat.HybridRow, as prod does."""
+    def __init__(self, cx):
+        self._cx = cx
+    def execute(self, sql, params=()):
+        from dashboard.pgcompat import HybridRow
+        cur = self._cx.execute(sql, params)
+        cols = [d[0] for d in cur.description]
+        return _PgLikeCursor([HybridRow(cols, tuple(r)) for r in cur.fetchall()])
+    def rollback(self):
+        pass
+
+
+def test_an_empty_result_on_the_postgres_cursor_does_not_raise():
+    cx = _db()
+    cx.row_factory = None
+    r = tr.resolve_by_address(_PgLikeConn(cx), _ship("Ann Lee", "1 Main St", "10001"))
+    assert r["email"] is None and r["reason"].startswith("no board order")
+
+
+def test_filemaker_resolves_through_the_postgres_cursor():
+    cx = _db()
+    cx.row_factory = None
+    _fmp(cx, "1", "Judith", "Tom", "judith@example.com", "5 Kahala Ave", "96822")
+    r = tr.resolve_by_address(_PgLikeConn(cx), _ship("Judy Tom", "5 Kahala Ave", "96822"))
+    assert (r["email"], r["source"]) == ("judith@example.com", "fmp")
