@@ -5171,6 +5171,8 @@
    "url": "https://myhealingoasis.com/begin/product/prostate-protect",
    "legacy_store_url": "https://remedymatch.com/remedies/syntropy/222-prostate-protect",
    "qty_pricing": true,
+   "inactive": true,
+   "superseded_by": "man-manna",
    "ingredients": [
     {
      "name": "Pangamic Acid",
