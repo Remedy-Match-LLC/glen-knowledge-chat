@@ -6211,60 +6211,66 @@ def begin_match_page():
 
 
 def _email_remedy_match_once(email, name, session_id, match):
-    """Email a completed Glendalf/RemedyMatch result once per session + product.
-
-    The chat used to promise an emailed match after collecting an address but
-    only rendered the card in-browser.  Persist-before-send prevents duplicate
-    mail when the SSE request is retried; a failed send removes the claim so the
-    next turn can retry.
+    """Queue a completed Glendalf/RemedyMatch result for the client's email.
 
     OFF unless REMEDY_MATCH_EMAIL_ENABLED is set (Glen, 2026-09-22: "switch them
     off"). It had no switch and emailed one client 12 times in 31 hours, each
     carrying the extractor's unreviewed one-line "why": internal notes, a false
     "your scan prescribed it", and health claims in Glen's name. The match card in
     the chat is unaffected. Read at call time, so flipping it needs no redeploy.
-    Plan for a rebuilt version: platform/plans/2026-09-22-remedy-match-email-plan.
+    Rebuilt the same day to send automatically under the plan's rules
+    (platform/plans/2026-09-22-remedy-match-email-plan): returns True when queued.
     """
-    if os.environ.get("REMEDY_MATCH_EMAIL_ENABLED", "").strip().lower() not in (
-            "1", "true", "yes"):
+    if not _remedy_match_email_on():
         return False
-    email = (email or "").strip().lower()
+    # Rebuilt 2026-09-22, send-automatically on Glen's choice. This only QUEUES the
+    # chat's match; _drain_remedy_match_emails sends it once the chat has been quiet,
+    # at most one per chat and one per client per week, with no AI-written text.
+    # See dashboard/remedy_match_email.py.
     product = _canonical_match_name((match or {}).get("name"))
-    if "@" not in email or not product:
-        return False
-    key = f"{(session_id or '').strip()}|{product.lower()}"
+    slug = _resolve_buy_slug(product) if product else None
+    p = _get_product(slug) if slug else None
+    if not p or p.get("service") or p.get("info_only"):
+        return False                     # catalog products only
+    from dashboard import remedy_match_email as _rme
     with _db_lock, db.connect(LOG_DB) as cx:
-        cx.execute("""CREATE TABLE IF NOT EXISTS remedy_match_email_sent (
-            email TEXT NOT NULL, match_key TEXT NOT NULL, sent_at TEXT NOT NULL,
-            PRIMARY KEY(email, match_key))""")
-        try:
-            cx.execute("INSERT INTO remedy_match_email_sent(email,match_key,sent_at) VALUES (?,?,?)",
-                       (email, key, datetime.now(timezone.utc).isoformat()))
-            cx.commit()
-        except Exception:
-            return False
-    page = (match or {}).get("product_url") or (match or {}).get("buy_url") or ""
-    if page.startswith("/"):
-        page = PUBLIC_BASE_URL.rstrip("/") + page
-    safe_product = (product.replace("&", "&amp;").replace("<", "&lt;")
-                    .replace(">", "&gt;"))
-    safe_why = (str((match or {}).get("why") or "").replace("&", "&amp;")
-                .replace("<", "&lt;").replace(">", "&gt;"))
-    link = f'<p><a href="{page}">View {safe_product}</a></p>' if page else ""
-    html = (f"<p>Aloha{(' ' + name.strip()) if (name or '').strip() else ''},</p>"
-            f"<p>Your remedy match is <b>{safe_product}</b>.</p>"
-            f"<p>{safe_why}</p>{link}<p>Aloha,<br>Dr. Glen</p>")
-    text = (f"Your remedy match is {product}.\n\n{(match or {}).get('why') or ''}\n\n"
-            f"{page}\n\nAloha,\nDr. Glen")
+        return _rme.enqueue(
+            cx, email=email, name=name, session_id=session_id, product_slug=p["slug"],
+            product_name=p.get("name") or product,
+            page_url=PUBLIC_BASE_URL.rstrip("/") + "/begin/product/" + p["slug"])
+
+
+def _remedy_match_email_on():
+    return os.environ.get("REMEDY_MATCH_EMAIL_ENABLED", "").strip().lower() in (
+        "1", "true", "yes")
+
+
+@app.route("/api/console/remedy-match-emails", methods=["GET"])
+def api_console_remedy_match_emails():
+    """Owner: the recent queued and sent remedy match emails, with the exact body sent."""
+    actor = _bos_actor()
+    if actor is None or actor.role != _bos_rbac.OWNER:
+        return jsonify({"ok": False, "error": "unauthorized"}), 401
+    from dashboard import remedy_match_email as _rme
+    with _db_lock, db.connect(LOG_DB) as cx:
+        rows = _rme.recent(cx, limit=int(request.args.get("limit") or 100))
+    return jsonify({"ok": True, "enabled": _remedy_match_email_on(), "emails": rows})
+
+
+def _drain_remedy_match_emails():
+    """Scheduler job, every minute: send queued remedy matches whose chat is quiet."""
+    if not _remedy_match_email_on():
+        return
     try:
-        send_evox_email(email, name or "", f"Your remedy match: {product}",
-                        html, text, b"")
-        return True
-    except Exception:
+        from dashboard import remedy_match_email as _rme
+        def _send(email, name, subject, html, text):
+            send_evox_email(email, name, subject, html, text, b"")
         with _db_lock, db.connect(LOG_DB) as cx:
-            cx.execute("DELETE FROM remedy_match_email_sent WHERE email=? AND match_key=?",
-                       (email, key)); cx.commit()
-        raise
+            out = _rme.drain(cx, _send)
+        if any(out.values()):
+            print(f"[remedy-match-email] {out}", flush=True)
+    except Exception as e:
+        print(f"[remedy-match-email] drain failed: {e!r}", flush=True)
 
 
 @app.route("/begin/match/e4l-link")
@@ -47249,6 +47255,9 @@ def _start_scheduler():
                           id="biofield_bonuses")
         scheduler.add_job(_drain_sales_image_queue, "interval", minutes=1, id="sales_image_gen")
         scheduler.add_job(_drain_review_videos, "interval", minutes=1, id="review_videos")
+        # Flag-gated inside (REMEDY_MATCH_EMAIL_ENABLED): a no-op until switched on.
+        scheduler.add_job(_drain_remedy_match_emails, "interval", minutes=1,
+                          id="remedy_match_emails")
         scheduler.add_job(_run_image_tournament, "interval", hours=24, id="sales_image_tournament")
         scheduler.add_job(_run_image_evolution, "interval", hours=24, id="sales_image_evolution")
         scheduler.add_job(_run_prompt_topup, "interval", hours=24, id="sales_image_prompt_topup")

@@ -14,7 +14,11 @@ def test_confirmed_trauma_alias_resolves_to_real_catalog_page():
 
 
 def test_match_email_is_idempotent(monkeypatch, tmp_path):
-    # The email is off by default since 2026-09-22; this checks its behaviour when on.
+    """One email per chat. Rebuilt 2026-09-22: the chat QUEUES the match, repeat calls in
+    the same chat only update it, and the drain sends it once, with the catalog name."""
+    from datetime import datetime, timedelta, timezone
+    from dashboard import db
+    from dashboard import remedy_match_email as rme
     monkeypatch.setenv("REMEDY_MATCH_EMAIL_ENABLED", "1")
     monkeypatch.setattr(appmod, "LOG_DB", str(tmp_path / "chat_log.db"))
     sent = []
@@ -25,7 +29,11 @@ def test_match_email_is_idempotent(monkeypatch, tmp_path):
              "product_url": "/begin/product/trauma-relief-in-terrain-restore"}
     assert appmod._email_remedy_match_once(
         "maria@example.com", "Maria", "session-1", match)
-    assert not appmod._email_remedy_match_once(
-        "maria@example.com", "Maria", "session-1", match)
+    appmod._email_remedy_match_once("maria@example.com", "Maria", "session-1", match)
+    assert sent == []                              # nothing mailed from inside the chat
+    later = datetime.now(timezone.utc) + timedelta(hours=1)
+    with db.connect(appmod.LOG_DB) as cx:
+        rme.drain(cx, lambda e, n, s, h, t: sent.append((e, n, s)), now=later)
+        rme.drain(cx, lambda e, n, s, h, t: sent.append((e, n, s)), now=later)
     assert len(sent) == 1
-    assert "Trauma Relief in Terrain Restore" in sent[0][2]
+    assert sent[0][2] == "The remedy you found in our chat: Trauma Relief in Terrain Restore"
