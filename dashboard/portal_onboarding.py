@@ -183,7 +183,9 @@ def build_status(cx, email):
 
     biofield_done = _biofield_completed(cx, email)
     be_read = [
-        step("voice", "Voice analysis", has_scan, voice_href),
+        # Glen 2026-09-18: never an unqualified "voice scan". This step is the
+        # Energy4Life scan (it links to E4L), so it carries that scan's name.
+        step("voice", "Bioenergetic Wellness Scan", has_scan, voice_href),
         step("intake", "Intake", intake_done, "#intake",
              in_progress=intake_in_progress, progress=intake_progress),
         step("photo", "Photo", _safe(client_photos.has, cx, email), "#photo"),
