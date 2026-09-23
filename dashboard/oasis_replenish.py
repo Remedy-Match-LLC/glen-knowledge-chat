@@ -38,6 +38,7 @@ _CONSUMABLE_BOTTLE_TYPES = frozenset({
     "30ml", "15ml", "100ml",
     "dropper 5 ml", "dropper 30 ml", "dropper 50 ml",
     "30roll", "one-step",
+    "small powder jar",
 })
 
 # Real device/tool bottle_types (see dashboard/shipping.py PROD_BOTTLE_NAMES /

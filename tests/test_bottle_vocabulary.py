@@ -39,7 +39,7 @@ def test_prod_library_is_recorded_verbatim():
         "30ml", "Dropper 5 mL", "Dropper 30 mL", "Dropper 50 mL",
         "100ml", "15ml", "30roll", "handcradle", "toothbrush",
         "harmony-laser", "dowsing-rods", "own-box",
-        "book", "nasal-clip", "denas", "nightlight", "one-step"})
+        "book", "nasal-clip", "denas", "nightlight", "one-step", "Small powder jar"})
 
 
 def test_every_catalog_baseline_speaks_a_name_prod_knows():

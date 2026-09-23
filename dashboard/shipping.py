@@ -101,6 +101,9 @@ PROD_BOTTLE_NAMES = frozenset({
     # backfilled into prod's bottle_types by init_shipping_schema on deploy — the same
     # code-guaranteed ensure-insert used for 30ml — so prod knows it without a manual step.
     "one-step",
+    # Glen, 2026-09-23: the jar for the small pure powders (5-MTHF, Adenosyl Cobalamin).
+    # Backfilled on deploy like one-step, so prod knows it without a manual step.
+    "Small powder jar",
 })
 
 # Types the catalog needs that prod's library lacks. Empty: the last four were created.
@@ -182,6 +185,11 @@ _STANDARD_BOTTLES = [
     # capacity cap seeded below (Medium=1, Large=2) — geometry alone would tile two into
     # one Medium, but two tubs need a Large.
     ("one-step", "One Step tub — ~Ø140 x H190 real; per Glen USPS Medium (1) / Large (2), no packing — proxy Ø120 + cap M=1/L=2", 120, 190),
+    # Glen measured it 2026-09-23: jar Ø35 x H30 mm. Its scoop is a thin stick,
+    # 70 x 2 x 5 mm (about 0.7 cm3), that slides between jars, so the jar alone is the
+    # packing cylinder. (The 500 mg scoop, 1.5 x 1 x 6 cm, goes with the 30 g and 45 g
+    # powders, not this jar.)
+    ("Small powder jar", "Small powder jar Ø35 x H30 mm (~29 mL); its scoop is a thin 70x2x5 mm stick packed alongside. Glen 2026-09-23", 35, 30),
     # Cello refill pack: a 30-cap cellophane pouch (no rigid bottle), approximated as a
     # tight bounding cylinder — packs smaller than the "30 Caps" rigid bottle (Ø51x90) it
     # replaces for refill-format lines. NOT YET created in prod; Rae must add this row
@@ -300,6 +308,10 @@ def init_shipping_schema(cx: sqlite3.Connection) -> None:
     if have and "one-step" not in have:
         cx.execute("INSERT INTO bottle_types (name, notes, diameter_mm, height_mm) "
                    "VALUES ('one-step', 'One Step tub — proxy Ø120 x H190 → USPS Medium (1) / Large (bulk)', 120, 190)")
+    # And the small powder jar (Glen 2026-09-23), for the same reason.
+    if have and "Small powder jar" not in have:
+        cx.execute("INSERT INTO bottle_types (name, notes, diameter_mm, height_mm) "
+                   "VALUES (?, ?, ?, ?)", ("Small powder jar", "Small powder jar Ø35 x H30 mm (~29 mL); its scoop is a thin 70x2x5 mm stick packed alongside. Glen 2026-09-23", 35, 30))
 
     if pg:
         cx.execute("""
@@ -351,6 +363,17 @@ def init_shipping_schema(cx: sqlite3.Connection) -> None:
                              ["bottle_type_id", "box_size", "qty"],
                              [_osid, _bs, _q],
                              conflict_cols=["bottle_type_id", "box_size"])
+
+    # Small powder jar, Small-box count (2026-09-23), DERIVED from geometry (20 fit a
+    # Small), not counted by Rae. Seeding it lets a mixed order use the fractional
+    # matrix (e.g. 4 jars + 4 x 30 Caps = 4/20 + 4/6 -> Small) instead of falling to
+    # geometry, which over-boxes the Ø51 30-cap bottle to Medium. M and L stay with
+    # geometry, as they do for 30 Caps. Insert-or-ignore: a later /admin/shipping edit
+    # by Rae wins.
+    _sj = cx.execute("SELECT id FROM bottle_types WHERE name='Small powder jar'").fetchone()
+    if _sj:
+        insert_or_ignore(cx, "box_capacity", ["bottle_type_id", "box_size", "qty"],
+                         [_sj[0], "S", 20], conflict_cols=["bottle_type_id", "box_size"])
 
     # Mixed FF + Infoceutical Small-box fit, confirmed by Rae 2026-08-11:
     # four 30-capsule FF bottles plus two 30ml Infoceuticals fit one Small.
