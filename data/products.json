@@ -8392,7 +8392,8 @@
    "price_cents": 3997,
    "pinecone_title": "5-MTHF",
    "url": "https://myhealingoasis.com/begin/product/5mthf",
-   "legacy_store_url": "https://remedymatch.com/remedies/497-5mthf"
+   "legacy_store_url": "https://remedymatch.com/remedies/497-5mthf",
+   "bottle_type": "Small powder jar"
   },
   "mercury-detox-syntropy-powder": {
    "name": "Mercury Detox Syntropy Powder",
@@ -12271,7 +12272,8 @@
    "price_cents": 3997,
    "pinecone_title": "Adenosyl Cobalamin",
    "url": "https://myhealingoasis.com/begin/product/adenosyl-cobalamin",
-   "legacy_store_url": "https://remedymatch.com/remedies/498-adenosyl-cobalamin"
+   "legacy_store_url": "https://remedymatch.com/remedies/498-adenosyl-cobalamin",
+   "bottle_type": "Small powder jar"
   },
   "ed14-spleenthymus-driver": {
    "name": "ED14 Spleen/Thymus Driver",
