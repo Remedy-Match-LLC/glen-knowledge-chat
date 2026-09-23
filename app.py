@@ -6211,7 +6211,17 @@ def _email_remedy_match_once(email, name, session_id, match):
     only rendered the card in-browser.  Persist-before-send prevents duplicate
     mail when the SSE request is retried; a failed send removes the claim so the
     next turn can retry.
+
+    OFF unless REMEDY_MATCH_EMAIL_ENABLED is set (Glen, 2026-09-22: "switch them
+    off"). It had no switch and emailed one client 12 times in 31 hours, each
+    carrying the extractor's unreviewed one-line "why": internal notes, a false
+    "your scan prescribed it", and health claims in Glen's name. The match card in
+    the chat is unaffected. Read at call time, so flipping it needs no redeploy.
+    Plan for a rebuilt version: platform/plans/2026-09-22-remedy-match-email-plan.
     """
+    if os.environ.get("REMEDY_MATCH_EMAIL_ENABLED", "").strip().lower() not in (
+            "1", "true", "yes"):
+        return False
     email = (email or "").strip().lower()
     product = _canonical_match_name((match or {}).get("name"))
     if "@" not in email or not product:
