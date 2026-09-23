@@ -487,3 +487,31 @@ def test_add_checked_patterns_sees_a_hand_added_item(tmp_path, monkeypatch):
     j = client.post(f"/author/{tid}/clinical-items/to-stresses", json={}).get_json()
     assert j["checked"] == 2
     assert "Sleep Regulation" in j["added"]
+
+
+def test_a_remedy_shared_by_two_layers_lands_once_on_the_first():
+    """Glen, 2026-09-23, Alyssa Fukushima (a40): Stress Release went on layer 8 for
+    Stress, then again on layer 9 for Sleep. It belongs once, on the first layer."""
+    from dashboard.biofield_clinical_checklist import clinical_layers
+    got = clinical_layers([
+        {"label": "Stress", "checked": True, "stress_pattern": "Stress",
+         "selected_remedies": ["Stress Release", "Nous Energy"]},
+        {"label": "Sleep Difficulty", "checked": True, "stress_pattern": "Sleep Regulation",
+         "selected_remedies": ["Sleep Syntropy", "stress release"]}])
+    assert [L["remedies"] for L in got] == [
+        ["Stress Release", "Nous Energy"], ["Sleep Syntropy"]]
+
+
+def test_applying_clinical_layers_skips_a_remedy_already_on_the_chain(tmp_path, monkeypatch):
+    db, tid, client = _clinical_layers_app(tmp_path, monkeypatch)
+    with sqlite3.connect(db) as cx:
+        add_chain_row(cx, tid, 1, "Adrenal", "Adrenal", "Adrenal Syntropy",
+                      confirmed=1, origin="live")
+    j = client.post(f"/author/{tid}/clinical-items/layers",
+                    json={"apply": True, "force": True}).get_json()
+    assert j["ok"] and j["applied"] is True
+    with sqlite3.connect(db) as cx:
+        n = cx.execute("SELECT COUNT(*) FROM biofield_auth_chain WHERE test_id=? "
+                       "AND lower(remedy)='adrenal syntropy'",
+                       (int(str(tid).lstrip("a") or 0),)).fetchone()[0]
+    assert n == 1, "Adrenal Syntropy was added a second time"

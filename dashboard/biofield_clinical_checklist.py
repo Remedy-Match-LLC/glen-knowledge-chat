@@ -734,9 +734,13 @@ def clinical_layers(items):
     because two layers with the same root would be a duplicate root. Order follows
     the checklist, which is the order shown on the page.
 
+    A remedy lands ONCE, on the first layer that carries it. Glen, 2026-09-23: Alyssa
+    Fukushima's Stress Release went on Stress and again on Sleep Regulation, and it
+    should not be added a second time.
+
     Pure: no database and no writes. The caller decides whether to propose or apply.
     """
-    out, by_pattern = [], {}
+    out, by_pattern, seen = [], {}, set()
     for item in items or []:
         if not (item or {}).get("checked"):
             continue
@@ -746,8 +750,7 @@ def clinical_layers(items):
         key = _norm(pattern)
         layer = by_pattern.get(key)
         if layer is None:
-            layer = {"pattern": pattern, "remedies": [], "label": "",
-                     "labels": [], "_seen": set()}
+            layer = {"pattern": pattern, "remedies": [], "label": "", "labels": []}
             by_pattern[key] = layer
             out.append(layer)
         label = str(item.get("label") or "").strip()
@@ -756,12 +759,11 @@ def clinical_layers(items):
         for name in item.get("selected_remedies") or []:
             name = str(name or "").strip()
             low = name.lower()
-            if name and low not in layer["_seen"]:
-                layer["_seen"].add(low)
+            if name and low not in seen:
+                seen.add(low)
                 layer["remedies"].append(name)
     for layer in out:
         layer["label"] = ", ".join(layer["labels"])
-        layer.pop("_seen")
     return out
 
 
