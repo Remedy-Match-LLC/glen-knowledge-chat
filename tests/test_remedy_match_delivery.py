@@ -14,6 +14,8 @@ def test_confirmed_trauma_alias_resolves_to_real_catalog_page():
 
 
 def test_match_email_is_idempotent(monkeypatch, tmp_path):
+    # The email is off by default since 2026-09-22; this checks its behaviour when on.
+    monkeypatch.setenv("REMEDY_MATCH_EMAIL_ENABLED", "1")
     monkeypatch.setattr(appmod, "LOG_DB", str(tmp_path / "chat_log.db"))
     sent = []
     monkeypatch.setattr(appmod, "send_evox_email",
