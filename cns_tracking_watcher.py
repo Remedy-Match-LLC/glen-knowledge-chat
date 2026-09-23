@@ -62,7 +62,7 @@ from dashboard.tracking import (
 #   "harvested" — a single email precision-parsed from the order confirmation
 # "medium" (single but fuzzy GHL match) and "low"/none stay drafts for review, so
 # --auto-send never mails a guessed recipient.
-AUTO_SEND_CONFIDENCES = ("high", "harvested")
+AUTO_SEND_CONFIDENCES = ("high", "harvested", "address-board", "address-fmp")
 
 GMAIL_QUERY = 'from:noreply-ecns@usps.com subject:"Payment Confirmation"'
 TOKEN_PATH = Path(os.environ.get(
@@ -197,7 +197,8 @@ def make_persist_contact():
 
 def handle_confirmation(html, msg_id, cx, find_contact, draft_fn,
                         harvest_fn=None, persist_contact=None, send_fn=None,
-                        auto_send=False, dry_run=True, link_orders=False):
+                        auto_send=False, dry_run=True, link_orders=False,
+                        address_resolve=None):
     """Process one confirmation email's HTML. Returns a list of per-shipment
     result dicts. In dry-run, no drafts/sends/GHL writes/DB writes happen.
 
@@ -234,9 +235,37 @@ def handle_confirmation(html, msg_id, cx, find_contact, draft_fn,
         to = match["email"] if (match and conf in ("high", "medium")) else None
         ghl_contact_id = (match or {}).get("contact_id")
 
-        # No confident GHL match: try a precision-safe harvest from order emails.
+        # The SHIP-TO ADDRESS comes first (Glen, 2026-09-22): a board order at the
+        # address, else a FileMaker client there whose name agrees. See
+        # dashboard/tracking_recipient.py. A name-only GHL match then counts only when
+        # it names the same email; FileMaker against GHL with different emails is a
+        # conflict of equal standing and goes to review. The board outranks GHL.
+        review_reason = ""
+        addr = None
+        if address_resolve is not None:
+            try:
+                addr = address_resolve(s)
+            except Exception as exc:
+                addr = None
+                review_reason = f"address lookup failed: {type(exc).__name__}"
+        ghl_email = (to or "").strip().lower() or None
+        if addr and addr.get("email"):
+            a_email = addr["email"]
+            if addr.get("source") == "fmp" and ghl_email and ghl_email != a_email:
+                to, conf = None, "conflict"
+                review_reason = f"FileMaker has {a_email}, GHL has {ghl_email}"
+            else:
+                to, conf = a_email, f"address-{addr.get('source')}"
+                if ghl_email != a_email:
+                    ghl_contact_id = None      # that GHL contact is someone else
+        elif addr and addr.get("conflict"):
+            to, conf = None, "conflict"
+            review_reason = addr.get("reason") or "several people at the address"
+
+        # No confident match of any kind: try a precision-safe harvest from order
+        # emails. Never after a conflict: harvest is name-only and would pick a side.
         harvested = None
-        if to is None and harvest_fn is not None:
+        if to is None and conf != "conflict" and harvest_fn is not None:
             harvested = harvest_fn(s["recipient_name"])
             if harvested and harvested.get("email"):
                 to = harvested["email"]
@@ -308,6 +337,7 @@ def handle_confirmation(html, msg_id, cx, find_contact, draft_fn,
                             s.get("delivery_date")),
                         "notification_channel": "ghl" if status == "sent" else None,
                         "notification_error": notification_error,
+                        "review_reason": review_reason,
                         "order_link": order_link if not dry_run else None})
     return results
 
@@ -365,11 +395,14 @@ def run_watch(*, live=False, auto_send=False, days=14, max_messages=25,
             msg = svc.users().messages().get(
                 userId="me", id=mid, format="full").execute()
             html = _extract_html(msg.get("payload", {}))
+            from dashboard import tracking_recipient as _trc
             for r in handle_confirmation(html, mid, cx, find_contact_by_name,
                                          draft_fn, harvest_fn=harvest_fn,
                                          persist_contact=persist_contact,
                                          send_fn=send_fn, auto_send=auto_send,
-                                         dry_run=dry_run, link_orders=True):
+                                         dry_run=dry_run, link_orders=True,
+                                         address_resolve=lambda s, _cx=cx:
+                                             _trc.resolve_by_address(_cx, s)):
                 shipments += 1
                 totals[r["action"]] = totals.get(r["action"], 0) + 1
                 log(f"  [{r.get('confidence','-'):>6}] {r['recipient']:<22} "
