@@ -4264,7 +4264,10 @@ def _biofield_verify_token(th):
             _br.init_table(cx)
             _br.init_free_unlocks(cx)
             row = _br.get_by_token_hash(cx, th)
-            return True, row
+            # Glen's never-recommend rules, on every client-facing reveal route.
+            # See dashboard/reveal_screen.py.
+            from dashboard import reveal_screen as _rscreen
+            return True, _rscreen.screen(row)
     except Exception as e:
         print(f"[biofield-reveal] token verify failed: {e!r}", flush=True)
         return False, None
