@@ -9214,8 +9214,12 @@ def begin_product_page_data(slug):
         {"id": "cta",         "title": "Order",           "default_open": False, "body": {}},
     ]
     from dashboard.product_page_sections import filter_sections as _filter_sections
-    sections = _filter_sections(sections, has_ingredients=_has_ings, has_own_video=bool(_own_vids))
-    if _RELATED_PRODUCTS_ENABLED:
+    _is_service = bool(p.get("service"))
+    sections = _filter_sections(sections, has_ingredients=_has_ings,
+                                has_own_video=bool(_own_vids), is_service=_is_service)
+    # A service gets no "Dr. Glen recommends" box: on the EVOX page it recommended ED10
+    # Skin Driver. A related-services list would be new copy, so none is shown yet.
+    if _RELATED_PRODUCTS_ENABLED and not _is_service:
         try:
             from dashboard import related_products as _rp, related_store as _rstore
             _prods = _PRODUCTS.get("products") or {}
@@ -9403,6 +9407,8 @@ def begin_product_page_data(slug):
                         "regular": f"${_pc['regular_cents']/100:.2f}" if _pc.get("regular_cents") else ""}
                        if _pc else None),
         "ai_state": _ai_state,
+        # The page hides its "Your remedy" eyebrow for a service (EVOX, Biofield Analysis).
+        "is_service": _is_service,
         "sections": sections,
         "miron_assets": _MIRON_ASSETS["assets"] if _has_ings else [],
         "miron_story": _MIRON_ASSETS.get("story", []) if _has_ings else [],

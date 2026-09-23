@@ -1588,6 +1588,11 @@
 
     // ── Render product ────────────────────────────────────────────────────────
     function renderProduct(data){
+      // A service is not a remedy: no eyebrow, rather than new wording (EVOX, 2026-09-22).
+      if (data.is_service){
+        var eb = document.querySelector('#sp-product .eyebrow');
+        if (eb) eb.classList.add('hidden');
+      }
       document.getElementById('sp-name').textContent = data.name || 'Your remedy';
       document.title = (data.name || 'Product') + ' · Dr. Glen Swartwout';
       if (data.image){
