@@ -127,7 +127,7 @@ def test_magnesium_taurate_is_a_different_product_and_is_untouched(products):
 
 
 @pytest.mark.parametrize("slug", [
-    "quercetin-dihydrate", "quercetin-dihydrate-powder", "lutein", "lycopene"])
+    "quercetin-dihydrate-powder", "lutein", "lycopene"])
 def test_the_withdrawn_formulas_stay_untyped(products, slug):
     """Each is a multi-ingredient blend that was priced from ONE raw material's cost per
     gram. The band cannot read that, so a value here would look measured and be invented.
@@ -136,6 +136,18 @@ def test_the_withdrawn_formulas_stay_untyped(products, slug):
     assert products[slug].get("bottle_type") is None, (
         f"{slug} is a formula and its jar cannot come from a cost band"
     )
+
+
+def test_quercetin_takes_the_jar_glen_named_not_a_cost_band(products):
+    """quercetin-dihydrate left the withdrawn list on 2026-09-22, by the rule above.
+
+    It stopped being a blend when #1771 made it one pure powder (fmp 547), and its jar
+    came from Glen, not from a cost: "The last Quercetin label was designed for the same
+    size bottle as the MSM (same as 120 gelcaps of WholOmega)." That is the "fill or a
+    jar" the withdrawn test asks for. The retired twin stays untyped."""
+    assert products["quercetin-dihydrate"].get("bottle_type") == "120 caps"
+    assert products["quercetin-dihydrate"].get("bottle_type") == \
+        products["msm-powder"].get("bottle_type")
 
 
 def test_the_quercetin_pair_has_been_merged(products):
