@@ -8773,10 +8773,28 @@ def begin_product_page(slug):
     html = html.replace("__CART_PAGE_ENABLED__", "true" if _CART_PAGE_ENABLED else "false")
     resp = Response(html, mimetype="text/html")
     resp.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
-    if not request.cookies.get("amg_session"):
-        resp.set_cookie("amg_session", uuid.uuid4().hex, max_age=60 * 60 * 24 * 365,
+    session = request.cookies.get("amg_session")
+    if not session:
+        session = uuid.uuid4().hex
+        resp.set_cookie("amg_session", session, max_age=60 * 60 * 24 * 365,
                         httponly=True, samesite="Lax", secure=request.is_secure)
+    _record_store_arrival(product.get("slug") or slug, session)
     return resp
+
+
+def _record_store_arrival(product_slug, session):
+    """Log a tagged arrival (utm_source present) on a product page. A recording
+    failure never blocks the page. See dashboard/store_arrivals.py."""
+    try:
+        from dashboard import store_arrivals as _sa
+        if not _sa.should_record(request.args, request.headers.get("User-Agent", ""),
+                                 request.method):
+            return
+        with _db_lock, db.connect(LOG_DB) as cx:
+            _sa.init_store_arrivals(cx)
+            _sa.record(cx, product_slug, request.args, session)
+    except Exception as e:
+        print(f"[store-arrival] not recorded: {e!r}", flush=True)
 
 
 @app.route("/begin/cart")
@@ -8914,6 +8932,20 @@ def api_admin_cadence_clickers():
         _cc.init_cadence_clicks(cx)
         rows = _cc.clickers(cx, ck)
     return jsonify({"ok": True, "campaign_key": ck, "count": len(rows), "clickers": rows})
+
+
+@app.route("/api/admin/store-arrivals", methods=["GET"])
+def api_admin_store_arrivals():
+    """?days=30&source=groovekart -> tagged arrivals on product pages, by source,
+    product and day. Header key only, like the cadence routes."""
+    if not _cadence_admin_ok():
+        return jsonify({"ok": False, "error": "unauthorized"}), 401
+    from dashboard import store_arrivals as _sa
+    days = _sa.clamp_days(request.args.get("days"))
+    with _db_lock, db.connect(LOG_DB) as cx:
+        _sa.init_store_arrivals(cx)
+        out = _sa.report(cx, days, request.args.get("source", ""))
+    return jsonify({"ok": True, **out})
 
 
 @app.route("/fs/<token>/<product_slug>", methods=["GET"])
