@@ -9,7 +9,9 @@ The three things that would make this change dangerous, each pinned here:
   1. It must not widen `paid`. `paid` means real membership and drives member
      pricing (`_member_price_cents`), so a free member picking it up would get
      member prices on every SKU.
-  2. It must not bypass Glen's approval. `first_approved` still gates everything.
+  2. Glen's first approval: required until 2026-09-23, when he ruled "There should
+     no longer be a need to approve the first reveal." Under the flag an unapproved
+     reveal is now shown in full. With the flag off, approval still gates the unlock.
   3. With the flag off, behaviour must be byte-identical to before.
 """
 import app as appmod
@@ -50,11 +52,23 @@ def test_flag_on_does_not_make_a_free_member_paid(monkeypatch):
     assert f["full_report"] is True
 
 
-def test_flag_on_cannot_publish_an_unapproved_reveal(monkeypatch):
-    """Glen approves a reveal before anyone sees remedies. A visibility flag must
-    not be a way around that."""
+def test_flag_on_shows_an_unapproved_reveal_in_full(monkeypatch):
+    """Glen 2026-09-23: no first approval needed. A free member reads the full
+    report as soon as it exists, and may order from it."""
     f = _flags(monkeypatch, flag=True, member=False, approved=0)
-    assert f["full_report"] is False, "the flag bypassed first_approved"
+    assert f["full_report"] is True, "the flag still waits on first_approved"
+    assert f["paid"] is False
+    monkeypatch.setattr(appmod, "_active_membership_for_email", lambda e: None)
+    slugs = appmod._biofield_visible_slugs(_row(approved=0), "pat@example.com")
+    assert slugs == ["terrain-restore", "nous-energy", "brain-boost"]
+
+
+def test_flag_off_an_unapproved_reveal_stays_blurred(monkeypatch):
+    """The control for the change above. With the flag off, nothing about the
+    approval gate moved."""
+    f = _flags(monkeypatch, flag=False, member=False, approved=0)
+    assert f["full_report"] is False
+    assert f["top_unlocked"] is False and f["free_available"] is False
 
 
 def test_a_paid_member_sees_everything_either_way(monkeypatch):

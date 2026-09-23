@@ -4294,9 +4294,12 @@ def _biofield_unlock_flags(row, email):
     top_unlocked = bool(first_approved and fu_rid == row.get("id"))
     free_available = bool(first_approved and fu_rid is None)
     # full_report is VISIBILITY, `paid` is membership. Keep them apart: `paid` drives
-    # member pricing, so widening it would give a free member member prices. Gated on
-    # first_approved so the flag can never publish an unapproved reveal.
-    full_report = bool(paid or (_free_full_reveal_enabled() and first_approved))
+    # member pricing, so widening it would give a free member member prices.
+    # Glen 2026-09-23: "There should no longer be a need to approve the first reveal."
+    # He had reviewed and edited the matcher until its matches were accurate, so under
+    # the flag a free member sees the full report without waiting on first_approved.
+    # With the flag off, the one-time top unlock still requires his approval.
+    full_report = bool(paid or _free_full_reveal_enabled())
     return {"paid": paid, "first_approved": first_approved,
             "top_unlocked": top_unlocked, "free_available": free_available,
             "full_report": full_report}
@@ -7125,8 +7128,8 @@ def _free_full_reveal_enabled():
 
     It grants VISIBILITY only. It never makes `paid` true, because `paid` means real
     membership and drives member pricing; conflating the two would hand a free member
-    member prices. And it still requires `first_approved`, so the flag cannot publish
-    a reveal Glen has not approved."""
+    member prices. Until 2026-09-23 it also required `first_approved`; Glen then ruled
+    the first approval unnecessary, so the flag alone decides visibility."""
     return os.environ.get("FREE_FULL_REVEAL_ENABLED", "").strip().lower() in ("1", "true", "yes", "on")
 ASCEND_PERSONALIZED_ENABLED = os.environ.get("ASCEND_PERSONALIZED_ENABLED", "").strip().lower() in ("1", "true", "yes", "on")
 # The E4L bridge page. OFF is today's behavior exactly: /begin/scan 302s straight
