@@ -247,6 +247,7 @@ from dashboard.openai_failover import build_openai_client as _build_openai_clien
 from dashboard.people import set_person_tags, distinct_tags, dedupe_tags_ci
 from dashboard.name_case import normalize_person_names as _normalize_person_names
 from dashboard import affiliate_dashboard
+from dashboard.biofield_reveals import is_aller_free as _is_aller_free
 from dashboard import practitioner_slugs as _ps_signup
 from dashboard import ash_ally
 from dashboard import client_360
@@ -23532,8 +23533,7 @@ def _ff_auto_excluded(name):
         return False
     if nl in _FF_EXCLUDED_EXACT:
         return True
-    from dashboard.biofield_reveals import is_aller_free
-    if is_aller_free(nl):  # "Aller-Free Aid for Inhalant Allergies" is AllerFree (Glen 2026-09-24)
+    if _is_aller_free(nl):  # "Aller-Free Aid for Inhalant Allergies" is AllerFree (Glen 2026-09-24)
         return True
     return any(s in nl for s in _FF_EXCLUDED_SUBSTRINGS)
 
