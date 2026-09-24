@@ -407,7 +407,9 @@ def test_tail_rule_forbids_claims_and_invention():
                    "ONLY from that remedy's 'pathways source'",
                    "balancing these patterns supports",
                    "Never say a remedy treats, heals, cures, fixes or prevents",
-                   "never state or imply a diagnosis"):
+                   "never state or imply a diagnosis",
+                   "never invent a symptom or condition",
+                   "when it says none was supplied, name no pathway for it"):
         assert phrase in s, phrase
 
 
@@ -440,3 +442,11 @@ def test_the_video_script_carries_no_tail_block(monkeypatch):
 def test_a_paragraph_never_names_another_layers_remedy():
     assert ("Never name another layer's remedy in this paragraph."
             in build_narrative_prompt(_report(), "")["system"])
+
+
+def test_a_punctuation_only_tail_item_is_not_listed(monkeypatch):
+    _catalog(monkeypatch, {})
+    r = {**_report(), "layers": [
+        {"layer": 1, "head": "Liver", "most_affected": "Liver, -, Kidney",
+         "remedy": "Liver Support", "dosage": "", "frequency": "", "timing": ""}]}
+    assert "  - TAIL BEYOND THE HEAD: Kidney\n" in build_narrative_prompt(r, "")["user"]
