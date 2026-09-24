@@ -663,7 +663,7 @@ def fetch_email_dnd_v2():
         'Content-Type': 'application/json',
         'User-Agent': GHL_V2_UA,
     }
-    out, primaries, after = {}, set(), None
+    out, primaries, after, total = {}, set(), None, None
 
     def _done():
         # An extra address that is ANOTHER contact's primary is left to that
@@ -671,7 +671,14 @@ def fetch_email_dnd_v2():
         # another live contact's primary, all 15 that a block would reach under a
         # different name, 11 of them otherwise unblocked. Glen: "yes, narrow it".
         # A merged-away address is not one of these: GHL deletes the old contact.
-        return {cid: (st, msg, [a for a in extra if a not in primaries])
+        # The filter needs EVERY contact's primary. A read that ends short of GHL's
+        # own `total` may have missed one, so it sends no extras this run (review
+        # round 2, 2026-09-24). DND keeps its old behaviour.
+        complete = isinstance(total, int) and len(out) >= total
+        if not complete:
+            print(f'  GHL v2 read {len(out)} of {total} contacts — '
+                  'additional emails not carried this run')
+        return {cid: (st, msg, [a for a in extra if a not in primaries] if complete else [])
                 for cid, (st, msg, extra) in out.items()}
 
     try:
@@ -685,7 +692,10 @@ def fetch_email_dnd_v2():
                 print(f'  GHL v2 contact search error: {r.status_code} — '
                       'email DND not carried this run')
                 return None
-            page = (r.json() or {}).get('contacts') or []
+            body_json = r.json() or {}
+            page = body_json.get('contacts') or []
+            if isinstance(body_json.get('total'), int):
+                total = body_json['total']
             for c in page:
                 if c.get('id'):
                     out[c['id']] = (*_email_dnd_of(c), _additional_emails_of(c))

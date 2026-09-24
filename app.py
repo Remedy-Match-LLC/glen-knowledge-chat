@@ -40729,24 +40729,29 @@ def _upsert_person_additive(cx, person, ts=None):
                      if isinstance(a, str) and "@" in a} - {email}) \
         if isinstance(_extra, list) else []
 
+    # An extra address's reason names the contact it came from, so a block can be
+    # traced if the address later becomes another contact's primary.
+    _via = f" (extra address on GHL contact {person.get('ghl_id')})" if person.get("ghl_id") else " (extra address)"
+
     if _bounce_tag or _dnd_blocks_address or (dnd and _extra):
         from dashboard import email_suppression as _es
         _es.init_table(cx, commit=False)  # the caller holds the transaction
         # overwrite=False: an hourly sync never rewrites an existing row, so a
         # bounce scanner's row or an in-house opt-out keeps its own bounce_type.
         for _addr in [email] + _extra:
+            _suffix = "" if _addr == email else _via
             if _bounce_tag:
-                _es.add(cx, _addr, "hard", "GHL tag: email bounced", "ghl",
+                _es.add(cx, _addr, "hard", "GHL tag: email bounced" + _suffix, "ghl",
                         overwrite=False, commit=False)
             if _dnd_blocks_address:
                 _es.add(cx, _addr, "ghl-dnd",
-                        ("GHL email DND: " + _email_dnd_message)[:200] if _email_dnd_message
-                        else "GHL email DND active", "ghl",
+                        (("GHL email DND: " + _email_dnd_message)[:200] if _email_dnd_message
+                         else "GHL email DND active") + _suffix, "ghl",
                         overwrite=False, commit=False)
             # A refusal is the person's, and the primary records it as the
             # consent:unsubscribed tag. An extra address has no tag of its own here.
             if dnd and _addr != email:
-                _es.add(cx, _addr, "optout", "GHL refusal on this contact", "ghl",
+                _es.add(cx, _addr, "optout", "GHL refusal" + _via, "ghl",
                         overwrite=False, commit=False)
 
     def _apply_dnd(tagset):

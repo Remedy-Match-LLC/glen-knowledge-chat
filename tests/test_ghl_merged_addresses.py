@@ -216,7 +216,9 @@ V1_CONTACTS = [
 
 @pytest.fixture
 def ghl(monkeypatch):
-    state = {"v2": [], "posted": [], "secrets": {"GHL_PIT": "pit-fake"}}
+    # total=None: GHL's count is the number of contacts queued, as live. A test sets
+    # it to simulate a read that ends short.
+    state = {"v2": [], "posted": [], "total": None, "secrets": {"GHL_PIT": "pit-fake"}}
     monkeypatch.setattr(cron, "GHL_API_KEY", "v1-fake")
     monkeypatch.setattr(cron, "_get_secret", lambda name: state["secrets"].get(name, ""))
     monkeypatch.setattr(cron.time, "sleep", lambda s: None)
@@ -230,7 +232,10 @@ def ghl(monkeypatch):
             if isinstance(nxt, Exception):
                 raise nxt
             status, contacts = nxt
-            return _Resp(status, {"contacts": contacts})
+            if state["total"] is None:
+                state["total"] = len(contacts) + sum(
+                    len(q[1]) for q in state["v2"] if isinstance(q, tuple))
+            return _Resp(status, {"contacts": contacts, "total": state["total"]})
         state["posted"].extend(json)
         return _Resp(200, {"inserted": len(json), "updated": 0})
 
@@ -294,3 +299,39 @@ def test_an_extra_shared_with_no_other_contact_is_still_sent(ghl):
                         {"id": "c2", "email": "two@example.com"}])]
     cron.sync_people_from_ghl()
     assert _by_id(ghl["posted"])["c1"]["additional_emails"] == ["old@example.com"]
+
+
+def test_a_read_short_of_ghls_total_sends_no_extras(ghl):
+    """Review round 2: the other-contact filter needs every primary. A read that
+    stops early may have missed the contact whose primary an extra is."""
+    ghl["total"] = 5
+    ghl["v2"] = [(200, [{"id": "c1", "email": "main@example.com",
+                         "dndSettings": {"Email": {"status": "active", "message": "x"}},
+                         "additionalEmails": [{"email": "old@example.com"}]}])]
+    cron.sync_people_from_ghl()
+    c1 = _by_id(ghl["posted"])["c1"]
+    assert "additional_emails" not in c1
+    assert c1["email_dnd"] == "active", "DND keeps its old behaviour on a short read"
+
+
+def test_a_read_with_no_total_sends_no_extras(ghl, monkeypatch):
+    def no_total(url, headers=None, json=None, timeout=None):
+        if url.endswith("/contacts/search"):
+            return _Resp(200, {"contacts": [{"id": "c1", "email": "main@example.com",
+                                             "additionalEmails": [{"email": "old@example.com"}]}]})
+        ghl["posted"].extend(json)
+        return _Resp(200, {"inserted": len(json), "updated": 0})
+    monkeypatch.setattr(cron.requests, "post", no_total)
+    cron.sync_people_from_ghl()
+    assert "additional_emails" not in _by_id(ghl["posted"])["c1"]
+
+
+def test_an_extra_addresss_row_names_its_contact(app_db):
+    """Review round 2: rows are permanent, so a block must be traceable."""
+    app, path = app_db
+    _upsert(app, path, {"email": "main@x.com", "ghl_id": "c77", "tags": ["email bounced"],
+                        "additional_emails": ["old@x.com"]})
+    with sqlite3.connect(path) as cx:
+        reasons = dict(cx.execute("SELECT email, reason FROM email_suppression"))
+    assert reasons["main@x.com"] == "GHL tag: email bounced", "the primary's reason is unchanged"
+    assert "GHL contact c77" in reasons["old@x.com"]
