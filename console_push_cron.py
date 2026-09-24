@@ -663,7 +663,17 @@ def fetch_email_dnd_v2():
         'Content-Type': 'application/json',
         'User-Agent': GHL_V2_UA,
     }
-    out, after = {}, None
+    out, primaries, after = {}, set(), None
+
+    def _done():
+        # An extra address that is ANOTHER contact's primary is left to that
+        # contact's own signals. Measured 2026-09-24: 48 of 86 extra addresses were
+        # another live contact's primary, all 15 that a block would reach under a
+        # different name, 11 of them otherwise unblocked. Glen: "yes, narrow it".
+        # A merged-away address is not one of these: GHL deletes the old contact.
+        return {cid: (st, msg, [a for a in extra if a not in primaries])
+                for cid, (st, msg, extra) in out.items()}
+
     try:
         for _ in range(GHL_V2_MAX_PAGES):
             body = {'locationId': location, 'pageLimit': GHL_V2_PAGE}
@@ -679,9 +689,12 @@ def fetch_email_dnd_v2():
             for c in page:
                 if c.get('id'):
                     out[c['id']] = (*_email_dnd_of(c), _additional_emails_of(c))
+                primary = str(c.get('email') or '').strip().lower()
+                if primary:
+                    primaries.add(primary)
             after = page[-1].get('searchAfter') if page else None
             if len(page) < GHL_V2_PAGE or not after:
-                return out
+                return _done()
             time.sleep(GHL_V2_PAUSE_SECS)
     except Exception as e:
         print(f'  GHL v2 contact search failed: {e!r} — email DND not carried this run')

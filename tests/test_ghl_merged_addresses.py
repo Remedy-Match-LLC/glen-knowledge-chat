@@ -272,3 +272,25 @@ def test_a_failed_v2_read_sends_no_additional_emails(ghl, failure):
     cron.sync_people_from_ghl()
     assert ghl["posted"], "the v1 sync still ran"
     assert all("additional_emails" not in p for p in ghl["posted"])
+
+
+def test_an_extra_that_is_another_contacts_primary_is_not_sent(ghl, monkeypatch):
+    """Glen, 2026-09-24: narrow it. That contact's own signals decide its address."""
+    monkeypatch.setattr(cron, "GHL_V2_PAGE", 1)
+    ghl["v2"] = [
+        (200, [{"id": "c1", "email": "main@example.com", "searchAfter": [1, "c1"],
+                "additionalEmails": [{"email": "Partner@Example.com"},
+                                     {"email": "old@example.com"}]}]),
+        (200, [{"id": "c9", "email": "partner@example.com", "searchAfter": [2, "c9"]}]),
+        (200, []),
+    ]
+    cron.sync_people_from_ghl()
+    assert _by_id(ghl["posted"])["c1"]["additional_emails"] == ["old@example.com"]
+
+
+def test_an_extra_shared_with_no_other_contact_is_still_sent(ghl):
+    ghl["v2"] = [(200, [{"id": "c1", "email": "main@example.com",
+                         "additionalEmails": [{"email": "old@example.com"}]},
+                        {"id": "c2", "email": "two@example.com"}])]
+    cron.sync_people_from_ghl()
+    assert _by_id(ghl["posted"])["c1"]["additional_emails"] == ["old@example.com"]
