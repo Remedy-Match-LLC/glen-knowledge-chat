@@ -59,6 +59,8 @@
   #invoice pre { white-space:pre-wrap; font-family:ui-monospace,Menlo,monospace; font-size:13px; color:var(--text); }
   .inv-actions { display:flex; gap:10px; margin-top:14px; flex-wrap:wrap; }
   button.inv-sent { background:rgba(58,90,64,0.28); border-color:#3a5a40; color:#9fd3a6; }
+  .inv-send-status { margin-left:8px; font-size:14px; color:#9fd3a6; }
+  .inv-send-status.error { color:var(--red); } .inv-send-status.unknown { color:var(--accent-light); }
   .auth-warn { background:rgba(204,75,44,.08); border:1px solid var(--red); border-radius:8px; padding:14px; color:var(--red); margin-bottom:20px; display:none; }
   #toast { position:fixed; bottom:20px; right:20px; background:var(--surface); border:1px solid var(--border); border-radius:8px; padding:10px 16px; font-size:13px; opacity:0; transition:opacity .2s; pointer-events:none; }
   #toast.show { opacity:1; } #toast.error { border-color:var(--red); color:var(--red); } #toast.ok { border-color:var(--green); color:var(--green); }
@@ -162,7 +164,7 @@
       <div class="row grand"><span>Total</span><span id="t-total">$0.00</span></div>
     </div>
     <div style="margin-top:16px"><button id="submit-btn" class="primary" onclick="submitOrder()">Create proposed invoice</button>
-      <button id="send-inv-btn" class="ghost" style="display:none;margin-left:8px" onclick="sendInvoiceEdit()">Send invoice to customer</button>
+      <button id="send-inv-btn" class="ghost inv-send-btn" style="display:none;margin-left:8px" onclick="sendInvoice(this, EDIT_OID)">Send invoice to customer</button>
       <button id="print-inv-btn" class="ghost" style="display:none;margin-left:8px" onclick="printInvoiceEdit()">Print / Download PDF</button>
       <button id="grant-member-btn" class="ghost" style="display:none;margin-left:8px" onclick="grantMemberAccess()" title="Grant this client a 30-day member-access window and reprice this invoice at member pricing">Grant 30-day member access + reprice</button>
       <button id="review-hold-btn" class="ghost" style="display:none;margin-left:8px" onclick="toggleReviewHold()" title="Stop the automatic review request email for this order, for example when an item was missing or broken">Stop review emails for this order</button>
@@ -773,6 +775,7 @@ async function loadOrderForEdit(oid){
   $("print-inv-btn").style.display = "inline-block";
   $("grant-member-btn").style.display = "inline-block";
   loadReviewHold();
+  INV_ORDER = oid; INV_SENT_AT = o.invoice_sent_at || null;
   if (o.invoice_sent_at){ _sib.textContent = "Invoice Sent "+invSentStr(o.invoice_sent_at)+" (re-send)"; _sib.classList.add("inv-sent"); }
   // Prefill customer (read-only context — pricing/membership keyed off email).
   $("person_id").value = o.person_id||""; $("c-name").value = o.name||""; $("c-email").value = o.email||""; $("c-phone").value = o.phone||"";
@@ -970,6 +973,7 @@ async function createInvoice(){
     // and one was zero. Keeping the token forever would instead fold a deliberate
     // second order onto the first.
     SUBMIT_TOKEN = newSubmitToken();
+    invTrackOrder(j.order_id);   // a new order starts unsent; the same order returned keeps its state
     LAST_ORDER=j; showInvoice(j);
     toast(j.warning || "Proposed invoice created", j.warning ? "error" : "ok");
     if (j.warning) alert(j.warning);   // special pricing missed: catch it before it's sent
@@ -994,7 +998,7 @@ function showInvoice(j){
   inv.innerHTML=`<h2>Proposed invoice ${esc(j.external_ref)} created</h2><pre>${esc(summary)}</pre>`
     +`<div class="inv-actions">`
     +`<button class="primary" onclick="lifecycle('orders.confirm',{})">Confirm</button>`
-    +`<button class="ghost" onclick="lifecycle('orders.send_invoice',{})">Send invoice</button>`
+    +`<button class="ghost inv-send-btn${INV_SENT_AT?' inv-sent':''}" onclick="sendInvoice(this, LAST_ORDER&&LAST_ORDER.order_id)">${INV_SENT_AT?'Invoice Sent '+invSentStr(INV_SENT_AT)+' (re-send)':'Send invoice'}</button>`
     +`<button class="ghost" onclick="recordPayment()">Record payment</button>`
     +`<button class="mini" onclick="copyInv()">Copy</button>`
     +`<a class="mini" href="/console/orders?key=${encodeURIComponent(KEY)}" style="text-decoration:none">Open orders board</a></div>`;
@@ -1090,16 +1094,89 @@ async function saveClientPrices(){
   }catch(e){ toast(e.message,"error"); }
   btn.disabled=false;
 }
-async function sendInvoiceEdit(){
-  const btn=$("send-inv-btn"); btn.disabled=true;
+// Sending an invoice. Glen, 2026-09-24: "clicking Send Invoice shows no visible response,
+// so I can't tell if it sent or not." The only feedback was a 2.2 s toast in the corner,
+// and every click emails the customer again. So the result now stays beside the button,
+// and a second send asks first.
+let INV_SENT_AT = null;   // when the order on this page was last sent, if known
+let INV_UNSURE = false;   // an attempt ended without a clear answer, so it may have sent
+let INV_ORDER = null;     // the order those two describe
+let INV_SENDING = false;  // a send is in flight; a button drawn meanwhile must not start another
+function invTrackOrder(id){
+  if (String(INV_ORDER) !== String(id)){ INV_ORDER = id; INV_SENT_AT = null; INV_UNSURE = false; }
+}
+function fmtSentTime(iso){ try{ return new Date(iso).toLocaleString('en-US',{month:'numeric',day:'numeric',hour:'numeric',minute:'2-digit'}); }catch(e){ return ''; } }
+function invSendStatus(btn, text, kind){
+  let s = btn.nextElementSibling;
+  if (!s || !s.classList.contains('inv-send-status')){
+    s = document.createElement('span'); btn.insertAdjacentElement('afterend', s);
+  }
+  s.textContent = text; s.className = 'inv-send-status' + (kind ? ' '+kind : '');
+}
+// Replies that prove no email was attempted: the route or the dispatcher refused, or
+// _send_invoice_exec raised one of its checks that run before send_email. Any other
+// failure may follow a send that went, so it is reported as uncertain.
+const INV_PRE_SEND = /^(no db connection|invoice pay-link is disabled|order #\d+ (not found|is '|has no customer email))/;
+function invRefusedBeforeEmail(j){
+  if (!j) return null;
+  if (j.ok === false && j.error === "unauthorized") return "the page's access key was refused. Reopen this page from the console.";
+  if (j.status === "denied") return "this login is not allowed to send invoices.";
+  if (j.status === "error") return j.error || "unknown action";
+  if (j.status === "queued") return "the send is waiting for approval.";
+  if (j.status === "needs_confirmation") return "the server asked for confirmation first.";
+  const err = (j.result && j.result.error) || j.error || "";
+  return (j.status === "failed" && INV_PRE_SEND.test(err)) ? err : null;
+}
+async function sendInvoice(btn, orderId){
+  if (!orderId){ invSendStatus(btn, "Save the invoice before sending it.", "error"); return false; }
+  if (INV_SENDING){ invSendStatus(btn, "A send is already in progress.", "unknown"); return false; }
+  invTrackOrder(orderId);
+  if (INV_SENT_AT && !confirm("This invoice was already sent on "+fmtSentTime(INV_SENT_AT)
+      +".\nSend it again? The customer gets another email.")) return false;
+  if (!INV_SENT_AT && INV_UNSURE && !confirm("An earlier send may have gone out."
+      +"\nSend it again? The customer may get a second email.")) return false;
+  const label = btn.textContent, all = document.querySelectorAll(".inv-send-btn");
+  all.forEach(b => { b.disabled = true; });   // both buttons: no second send while one is in flight
+  INV_SENDING = true;
+  btn.textContent = "Sending…"; invSendStatus(btn, "Sending…", "");
+  let j = null, lost = "";
   try{
-    const r=await fetch("/api/action/orders.send_invoice",{method:"POST",headers:HEADERS,body:JSON.stringify({order_id:Number(EDIT_OID)})});
-    const j=await r.json();
-    if(!j||j.status!=="done"){ toast("Send failed: "+((j&&j.result&&j.result.error)||(j&&(j.reason||j.error))||"error"),"error"); btn.disabled=false; return; }
-    toast((j.result&&j.result.message)||"Invoice sent");
-    btn.textContent="Invoice Sent "+invSentStr(new Date().toISOString())+" (re-send)"; btn.classList.add("inv-sent");
-  }catch(e){ toast(e.message,"error"); }
-  btn.disabled=false;
+    const r = await fetch("/api/action/orders.send_invoice",{method:"POST",headers:HEADERS,body:JSON.stringify({order_id:Number(orderId)})});
+    try{ j = await r.json(); }catch(e){ lost = "the server answered "+r.status; }
+  }catch(e){ lost = e.message || "the connection failed"; }
+  all.forEach(b => { b.disabled = false; });
+  INV_SENDING = false;
+  // A reply for an order the page has since moved on from must not mark the new one.
+  const current = String(INV_ORDER) === String(orderId);
+  if (lost){
+    if (current) INV_UNSURE = true;
+    // The request may have reached the server, so do not claim it failed.
+    btn.textContent = label;
+    invSendStatus(btn, "Not known whether it sent ("+lost+"). Check order #"+orderId+" on the orders board before sending again.", "unknown");
+    toast("Send result unknown", "error"); return false;
+  }
+  if (!j || j.status!=="done"){
+    btn.textContent = label;
+    const refused = invRefusedBeforeEmail(j);
+    if (refused){
+      invSendStatus(btn, "Not sent: "+refused, "error"); toast("Not sent", "error"); return false;
+    }
+    // Anything else can come from a step after the email went (the sent-time write,
+    // the event log, a mail timeout after acceptance). So it may have gone.
+    const err = (j&&j.result&&j.result.error) || (j&&(j.reason||j.error)) || "no reason given";
+    if (current) INV_UNSURE = true;
+    invSendStatus(btn, "The server reported an error: "+err+". The email may still have gone. Check order #"
+      +orderId+" on the orders board before sending again.", "unknown");
+    toast("Send result unclear", "error"); return false;
+  }
+  if (current){ INV_SENT_AT = new Date().toISOString(); INV_UNSURE = false; }
+  const sentAt = new Date().toISOString();
+  const msg = ((j.result&&j.result.message) || "Invoice sent.").replace(/\.$/, "");
+  all.forEach(b => {
+    b.textContent = "Invoice Sent "+invSentStr(sentAt)+" (re-send)"; b.classList.add("inv-sent");
+  });
+  invSendStatus(btn, msg+" at "+fmtSentTime(sentAt)+".", "");
+  toast(msg); return true;
 }
 function recordPayment(){
   const a=prompt("Amount in dollars (blank = invoice total):","");
