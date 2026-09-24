@@ -72,7 +72,9 @@
     document.getElementById('grid').innerHTML = QUEUES.map(card).join('');
     QUEUES.forEach(function(q){
       fetch(q.endpoint, { headers: hdr() })
-        .then(function(r){ if(!r.ok) throw 0; return r.json(); })
+        .then(function(r){
+          if(r.status===401){ document.getElementById('app').style.display='none'; document.getElementById('gate').style.display=''; throw 0; }
+          if(!r.ok) throw 0; return r.json(); })
         .then(function(j){
           var n = q.count(j) || 0;
           var b = document.getElementById('badge-'+q.id);
@@ -82,6 +84,8 @@
     });
   }
 
-  if(key()){ document.getElementById('gate').style.display='none'; document.getElementById('app').style.display=''; loadAll(); }
+  // Try to load with or without a stored key: a signed-in owner's cookie is enough, and
+  // a 401 from the server brings the key prompt back (2026-09-24: Rae was stuck here).
+  document.getElementById('gate').style.display='none'; document.getElementById('app').style.display=''; loadAll();
 </script>
 </body></html>

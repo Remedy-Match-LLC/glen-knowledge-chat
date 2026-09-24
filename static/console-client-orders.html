@@ -116,7 +116,8 @@
     } catch(e){ msg.textContent='Error: '+e; }
   }
   document.getElementById('q').addEventListener('keydown', function(e){ if(e.key==='Enter') search(); });
-  if(key()) document.getElementById('gate').style.display='none';
+  // A signed-in owner's cookie is enough; a 401 on search says so (2026-09-24).
+  document.getElementById('gate').style.display='none';
 </script>
 </body>
 </html>

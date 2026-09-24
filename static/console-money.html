@@ -603,7 +603,9 @@
   })();
 
   // ---- init: reveal if already unlocked, else show gate ----
-  (function(){ if (key()){ document.getElementById('gate').style.display='none'; reveal(); } })();
+  // Try to load with or without a stored key: a signed-in owner's cookie is enough, and
+  // a 401 from the server brings the key prompt back (2026-09-24: Rae was stuck here).
+  document.getElementById('gate').style.display='none'; reveal();
 </script>
 </body>
 </html>

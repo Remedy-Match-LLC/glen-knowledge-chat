@@ -40086,10 +40086,18 @@ def leads_mark_ghl_synced():
 # ── GHL write-queue drain endpoints (for local-machine drain when WAF blocks Render→GHL) ──
 
 def _ghl_queue_auth():
+    """The Mac drain's webhook secret, or a console owner: the master key or an OWNER
+    token, sent as a header or held as a signed-in login cookie. Until 2026-09-24 an
+    owner token was refused here even though every other console route takes it, so
+    People: CRM showed Rae the key prompt while she was signed in. A VA token stays
+    refused."""
     ws = os.environ.get("WEBHOOK_SECRET", "")
     cs = os.environ.get("CONSOLE_SECRET", "")
     given = request.headers.get("X-Webhook-Secret", "") or request.headers.get("X-Console-Key", "")
-    return (ws and given == ws) or (cs and given == cs)
+    if ws and given == ws:
+        return True
+    key = _present_console_key()
+    return bool(cs and key and (key == cs or _owner_token_ok(key)))
 
 
 @app.route("/api/ghl/queue/pending", methods=["GET"])
