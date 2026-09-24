@@ -371,10 +371,14 @@ def _catalog_names_for_pool():
 def _best_match(spoken, names, cutoff):
     """Case-insensitive closest match: ASR lowercases, so we compare on lowercase and
     map back to the canonical-cased name. Returns None when nothing is close enough."""
+    # A "+" is scored as the spoken word "plus": ASR writes "ocuheal plus eye drops",
+    # which otherwise scored 0.872 against "OcuHeal Eye Drops" and 0.85 against
+    # "OcuHeal+ Eye Drops", so dictated OcuHeal+ was billed as OcuHeal (2026-09-24).
+    low = lambda s: " ".join(str(s or "").lower().replace("+", " plus ").split())
     by_low = {}
     for n in names:
-        by_low.setdefault(n.lower(), n)        # first canonical spelling wins
-    hit = difflib.get_close_matches((spoken or "").lower(), list(by_low), n=1, cutoff=cutoff)
+        by_low.setdefault(low(n), n)           # first canonical spelling wins
+    hit = difflib.get_close_matches(low(spoken), list(by_low), n=1, cutoff=cutoff)
     return by_low[hit[0]] if hit else None
 
 

@@ -1648,7 +1648,8 @@ def _is_gated_question(query, history_text=""):
 
 
 def _slugify_product(name: str) -> str:
-    s = name.lower().strip()
+    # "+" reads as "plus", so "OcuHeal+ Eye Drops" does not take OcuHeal's slug.
+    s = name.lower().strip().replace("+", " plus ")
     s = re.sub(r"[^a-z0-9]+", "-", s)
     s = re.sub(r"-{2,}", "-", s)
     return s.strip("-")[:40]
@@ -1913,7 +1914,12 @@ def _alias_catalog_slug(clinical_name: str, info: dict) -> tuple:
     if _ALIAS_SLUG_CACHE is None:
         by = {}
         for slug, p in products.items():
-            by[re.sub(r"[^a-z0-9]", "", slug.lower())] = slug
+            by[_alias_key(slug)] = slug
+            by.setdefault(_alias_key(p.get("name")), slug)
+        # Second pass: the name with its "+" dropped ("Air & Surface PRO"), as typed
+        # before "+" became "plus". setdefault, so it never takes a key another
+        # product already owns ("ocuhealeyedrops" stays OcuHeal's).
+        for slug, p in products.items():
             by.setdefault(re.sub(r"[^a-z0-9]", "", (p.get("name") or "").lower()), slug)
         _ALIAS_SLUG_CACHE = by
     # An explicit `slug` is authoritative. Name matching alone is brittle here:
@@ -1933,7 +1939,7 @@ def _alias_catalog_slug(clinical_name: str, info: dict) -> tuple:
         return pinned, False
 
     for candidate in (info.get("catalog_name"), clinical_name):
-        slug = _ALIAS_SLUG_CACHE.get(re.sub(r"[^a-z0-9]", "", (candidate or "").lower()))
+        slug = _ALIAS_SLUG_CACHE.get(_alias_key(candidate))
         if not slug:
             continue
         # Follow a retired SKU to its successor rather than linking a dead page
@@ -1949,6 +1955,12 @@ def _alias_catalog_slug(clinical_name: str, info: dict) -> tuple:
 
 
 _ALIAS_SLUG_CACHE = None
+
+
+def _alias_key(text):
+    """A product name or slug as a lookup key. A "+" is kept as "plus", so "OcuHeal+
+    Eye Drops" and "OcuHeal Eye Drops" are two keys, not one (2026-09-24)."""
+    return re.sub(r"[^a-z0-9]", "", str(text or "").lower().replace("+", "plus"))
 
 
 def _catalog_link_matches(text: str, aliases: dict, limit: int = 12) -> dict:
@@ -2057,7 +2069,7 @@ def _alias_price_hint(name: str, slug: str = "") -> str:
     products = (_PRODUCTS or {}).get("products", {}) or {}
     p = products.get(slug) if slug else None
     if p is None:
-        target = _ALIAS_SLUG_CACHE.get(re.sub(r"[^a-z0-9]", "", (name or "").lower())) \
+        target = _ALIAS_SLUG_CACHE.get(_alias_key(name)) \
             if _ALIAS_SLUG_CACHE else None
         p = products.get(target) if target else None
     if not p:
