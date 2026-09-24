@@ -23,7 +23,9 @@ MAX_COMMON_REMEDIES = 40
 
 
 def _norm(value):
-    value = re.sub(r"[^a-z0-9]+", " ", (value or "").lower()).strip()
+    # "+" reads as "plus": "OcuHeal+ Eye Drops" (10% DMSO) and "OcuHeal Eye Drops"
+    # (0.5%) shared one key, so saving one renamed the other's chip (2026-09-24).
+    value = re.sub(r"[^a-z0-9]+", " ", (value or "").lower().replace("+", " plus ")).strip()
     return " ".join(value.split())
 
 
@@ -57,6 +59,26 @@ def ensure_catalog_schema(cx):
         cx.execute("ALTER TABLE biofield_clinical_catalog ADD COLUMN hidden INTEGER NOT NULL DEFAULT 0")
     except Exception:
         pass
+    _rekey_plus_rows(cx)
+
+
+def _rekey_plus_rows(cx):
+    """Rows saved before "+" became "plus" carry the old key. Move each to its new key,
+    unless a row already sits there. Idempotent: a moved row is skipped next time.
+    On 2026-09-24 the local database held one such row (Clear Lens ... ACES+CAT)."""
+    rows = cx.execute(
+        "SELECT item_key, label, remedy_key, remedy FROM biofield_clinical_catalog "
+        "WHERE label LIKE '%+%' OR remedy LIKE '%+%'").fetchall()
+    for item_key, label, remedy_key, remedy in rows:
+        new_item, new_remedy = _norm(label), _norm(remedy)
+        if (new_item, new_remedy) == (item_key, remedy_key):
+            continue
+        if cx.execute("SELECT 1 FROM biofield_clinical_catalog "
+                      "WHERE item_key=? AND remedy_key=?", (new_item, new_remedy)).fetchone():
+            continue
+        cx.execute("UPDATE biofield_clinical_catalog SET item_key=?, remedy_key=? "
+                   "WHERE item_key=? AND remedy_key=?",
+                   (new_item, new_remedy, item_key, remedy_key))
 
 
 def ensure_stress_schema(cx):

@@ -117,7 +117,62 @@ def test_the_link_table_never_links_the_original_mention_to_ocuheal_plus(appmod)
 
 def test_the_word_plus_between_two_products_keeps_both(appmod):
     """Only a catalog "+" token is joined; "plus" as "and" links as "and" does."""
-    t = "Take Fibrolysis Factors {} Glutathione Syntropy daily"
+    # Round 3: "Harmony Laser" is matched with a gap, not by the squashed name, so
+    # joining "laser plus" into "laser+" would lose it. The catalog check prevents that.
+    t = "Take Harmony Soft Laser {} Brain Boost daily"
     with_plus = appmod._catalog_link_matches(t.format("plus"), {})
     assert with_plus == appmod._catalog_link_matches(t.format("and"), {})
-    assert len(with_plus) == 2, with_plus
+    assert "Harmony Laser" in with_plus, with_plus
+
+
+# ── saved remedies per condition: biofield_clinical_checklist ────────────────
+
+def _checklist_db():
+    from dashboard import biofield_clinical_checklist as ck
+    cx = sqlite3.connect(":memory:")
+    ck.ensure_catalog_schema(cx)
+    return ck, cx
+
+
+def _rows(cx):
+    return sorted(cx.execute("SELECT remedy, hidden FROM biofield_clinical_catalog").fetchall())
+
+
+def test_saving_ocuheal_plus_keeps_the_ocuheal_chip():
+    """Round 3: the second save renamed the first row to OcuHeal+."""
+    ck, cx = _checklist_db()
+    ck.remember_remedies(cx, "Cataract", ["OcuHeal Eye Drops"])
+    ck.remember_remedies(cx, "Cataract", ["OcuHeal+ Eye Drops"])
+    assert _rows(cx) == [("OcuHeal Eye Drops", 0), ("OcuHeal+ Eye Drops", 0)]
+
+
+def test_hiding_one_never_hides_the_other():
+    ck, cx = _checklist_db()
+    ck.remember_remedies(cx, "Cataract", ["OcuHeal Eye Drops", "OcuHeal+ Eye Drops"])
+    ck.forget_remedy(cx, "Cataract", "OcuHeal Eye Drops")
+    assert _rows(cx) == [("OcuHeal Eye Drops", 1), ("OcuHeal+ Eye Drops", 0)]
+
+
+def test_a_row_saved_under_the_old_key_is_moved_once():
+    ck, cx = _checklist_db()
+    cx.execute("INSERT INTO biofield_clinical_catalog (item_key,label,remedy_key,remedy,hidden) "
+               "VALUES ('pinpoint cataracts','Pinpoint cataracts',"
+               "'clear lens eye drops aces cat eye drops',"
+               "'Clear Lens Eye Drops ACES+CAT Eye Drops',1)")
+    ck.ensure_catalog_schema(cx)
+    ck.ensure_catalog_schema(cx)   # idempotent
+    got = cx.execute("SELECT remedy_key, hidden FROM biofield_clinical_catalog").fetchall()
+    assert got == [("clear lens eye drops aces plus cat eye drops", 1)]
+    # the hidden flag still applies under the new key
+    assert "clear lens eye drops aces plus cat eye drops" in ck.forgotten_remedies(cx, "Pinpoint cataracts")
+
+
+def test_the_move_leaves_an_old_row_alone_when_the_new_key_is_taken():
+    ck, cx = _checklist_db()
+    cx.execute("INSERT INTO biofield_clinical_catalog (item_key,label,remedy_key,remedy,hidden) "
+               "VALUES ('cataract','Cataract','ocuheal eye drops','OcuHeal+ Eye Drops',0)")
+    cx.execute("INSERT INTO biofield_clinical_catalog (item_key,label,remedy_key,remedy,hidden) "
+               "VALUES ('cataract','Cataract','ocuheal plus eye drops','OcuHeal+ Eye Drops',0)")
+    ck.ensure_catalog_schema(cx)
+    keys = sorted(r[0] for r in cx.execute("SELECT remedy_key FROM biofield_clinical_catalog"))
+    assert keys == ["ocuheal eye drops", "ocuheal plus eye drops"]

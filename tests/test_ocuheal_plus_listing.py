@@ -57,7 +57,7 @@ def test_the_panel_is_the_spec_in_order(products):
     assert [(i["name"], i["dose"]) for i in products[SLUG]["ingredients"]] == PANEL
 
 
-def test_only_dmso_and_the_base_differ_from_ocuheal(products):
+def test_the_base_gives_up_exactly_the_added_dmso(products):
     """Read from the catalog: the 9.5% DMSO came out of the base, so the two lines
     still sum to OcuHeal's 96% + 0.5%."""
     doses = {i["name"]: i["dose"] for i in products[SLUG]["ingredients"]}
