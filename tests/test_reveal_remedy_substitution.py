@@ -140,3 +140,19 @@ def test_is_aller_free_helper_matches_spellings_and_nothing_else():
         assert is_aller_free(t), t
     for t in ("Allergen II Homeopathic Complex", "Immune Modulation", "Sugar-Free", "", None):
         assert not is_aller_free(t), t
+
+
+def test_swap_drops_the_old_products_dosing():
+    # Live draft, 2026-09-24: Aller-Free with drops dosing must not keep it as Immune Modulation.
+    row = {"layers": [{"n": 2, "remedy": {"name": "Aller-Free Aid for Inhalant Allergies",
+                                          "slug": "aller-free-aid",
+                                          "dosing": "10 drops 3 times a day or as needed"}}]}
+    apply_remedy_substitutions(row)
+    rem = row["layers"][0]["remedy"]
+    assert rem["name"] == "Immune Modulation"
+    assert "drops" not in (rem.get("dosing") or "")
+
+
+def test_is_aller_free_needs_a_word_start():
+    from dashboard.biofield_reveals import is_aller_free
+    assert not is_aller_free("Smaller Free Range Eggs")

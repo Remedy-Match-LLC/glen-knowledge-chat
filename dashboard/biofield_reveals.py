@@ -134,12 +134,16 @@ REMEDY_SUBSTITUTIONS = {
 }
 
 
+_ALLER_FREE = re.compile(r"\baller[\s_-]*free")
+
+
 def is_aller_free(text):
     """True for any spelling of AllerFree. Glen, 2026-09-24: "Aller-Free is the correct
     spelling for AllerFree (same formula)". The catalog sells "Aller-Free Aid for Inhalant
-    Allergies" (slug aller-free-aid), which exact keys never matched. Letters only, so
-    hyphen, space and case variants all count. Shared with app._ff_auto_excluded."""
-    return "allerfree" in re.sub(r"[^a-z]", "", (text or "").lower())
+    Allergies" (slug aller-free-aid), which exact keys never matched. Hyphen, space and
+    case variants all count; a word must start at "aller", so "smaller free" does not.
+    Shared with app._ff_auto_excluded."""
+    return bool(_ALLER_FREE.search((text or "").lower()))
 
 
 def _sub_for(rem):
@@ -161,6 +165,10 @@ def _apply_sub(rem):
     for field in ("name", "slug", "meaning"):
         if sub.get(field):
             rem[field] = sub[field]
+    # The old remedy's dosing belongs to the old product: one Aller-Free draft carried
+    # "10 drops 3 times a day", which must not render under Immune Modulation capsules.
+    if "dosing" in rem:
+        rem["dosing"] = sub.get("dosing") or ""
 
 
 def apply_remedy_substitutions(row):
