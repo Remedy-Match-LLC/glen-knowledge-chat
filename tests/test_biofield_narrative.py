@@ -450,3 +450,10 @@ def test_a_punctuation_only_tail_item_is_not_listed(monkeypatch):
         {"layer": 1, "head": "Liver", "most_affected": "Liver, -, Kidney",
          "remedy": "Liver Support", "dosage": "", "frequency": "", "timing": ""}]}
     assert "  - TAIL BEYOND THE HEAD: Kidney\n" in build_narrative_prompt(r, "")["user"]
+
+
+def test_an_unnamed_filemaker_placeholder_is_not_an_ingredient(monkeypatch):
+    _catalog(monkeypatch, {}, ingredients={"Stress Release": [
+        {"name": "(unnamed FMP ingredient 5461)"}, {"name": "CBD"}]})
+    user = build_narrative_prompt(_tail_report(), "")["user"]
+    assert "pathways source: ingredients: CBD; dose" in user

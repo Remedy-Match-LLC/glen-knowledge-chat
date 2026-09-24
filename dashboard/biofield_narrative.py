@@ -421,7 +421,9 @@ def _pathways_source(name, exclude=()):
     skip = {str(x).strip().lower() for x in exclude} - {""}
     names = [str(i.get("name") or "").strip()
              for i in (_catalog_product(name).get("ingredients") or []) if isinstance(i, dict)]
-    names = [n for n in names if n and not any(c in n.lower() for c in skip)][:8]
+    # "(unnamed FMP ingredient 5461)" is a placeholder for a missing FileMaker name.
+    names = [n for n in names if n and "unnamed fmp ingredient" not in n.lower()
+             and not any(c in n.lower() for c in skip)][:8]
     return ("ingredients: " + ", ".join(names)) if names else "(none supplied; name no pathway)"
 
 
