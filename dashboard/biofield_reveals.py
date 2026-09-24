@@ -108,6 +108,7 @@ REMEDY_SUBSTITUTIONS = {
         "meaning": ("Immune Modulation is a syntropy botanical formula that strengthens your immune "
                     "defense against infection and toxins while calming the chronic, symptomatic "
                     "inflammation behind allergies and autoimmune flare-ups."),
+        "dosing": "1 capsule daily with food",  # FileMaker product Immune Modulation
     },
     "allerfree homeoenergetic drops": {
         "name": "Immune Modulation",
@@ -115,6 +116,7 @@ REMEDY_SUBSTITUTIONS = {
         "meaning": ("Immune Modulation is a syntropy botanical formula that strengthens your immune "
                     "defense against infection and toxins while calming the chronic, symptomatic "
                     "inflammation behind allergies and autoimmune flare-ups."),
+        "dosing": "1 capsule daily with food",  # FileMaker product Immune Modulation
     },
     # Bone Builder -> Neuro-Magnesium (Glen 2026-07-19)
     "bone builder": {

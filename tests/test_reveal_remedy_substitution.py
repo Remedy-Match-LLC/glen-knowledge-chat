@@ -150,7 +150,7 @@ def test_swap_drops_the_old_products_dosing():
     apply_remedy_substitutions(row)
     rem = row["layers"][0]["remedy"]
     assert rem["name"] == "Immune Modulation"
-    assert "drops" not in (rem.get("dosing") or "")
+    assert rem["dosing"] == "1 capsule daily with food"
 
 
 def test_is_aller_free_needs_a_word_start():
