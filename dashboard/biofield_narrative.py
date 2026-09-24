@@ -121,6 +121,17 @@ _SYSTEM = (
     "state at least two of its supplied indications, then name the therapeutic essence and describe "
     "its supplied healing qualities. Never omit either half. Use only the catalog descriptions "
     "supplied in the layer block.\n"
+    "- TAIL BEYOND THE HEAD: when a layer block carries 'TAIL BEYOND THE HEAD', add 2 to 4 "
+    "plain sentences to that layer's paragraph, after naming the Head. Describe the structure and "
+    "function of those tail areas and how they relate to the Head, so the reader sees why they "
+    "sit on one layer. A tail item may carry a remedy-style name such as 'Jejunum Rejuvenator' "
+    "or 'Liver Driver': describe the body area or function it names, not a product. Cover "
+    "every tail area listed, grouping related ones. Connect them to the client only where a CLIENT-STATED CONCERNS item "
+    "plainly relates; never invent a symptom or condition. Name one or two key pathways the "
+    "layer's remedies support, taken ONLY from that remedy's 'pathways source' (its listed "
+    "ingredients); when it says none was supplied, name no pathway for it. Frame it as balancing these patterns supports the "
+    "body's own function. Never say a remedy treats, heals, cures, fixes or prevents anything, "
+    "and never state or imply a diagnosis. Never name another layer's remedy in this paragraph.\n"
     "- PLAIN TEXT ONLY: no markdown, no asterisks, no bold, no headings. Still begin each "
     "layer paragraph with its number, as '1.', '2.' and so on.\n"
     "- NAME EVERY INFOCEUTICAL: whenever an infoceutical appears, give its full name with its "
@@ -259,7 +270,11 @@ def _enforce_animal_greeting(text, animal):
     return re.sub(rf"^\s*Aloha\s+{re.escape(pet)}\b[^,\n]*,", greeting, text or "", count=1)
 
 
-def _user_block(report, notes, scan=None, profile=None, animal=None):
+def _norm(text):
+    return re.sub(r"[^a-z0-9]", "", str(text or "").lower())
+
+
+def _user_block(report, notes, scan=None, profile=None, animal=None, with_tail=True):
     c = report.get("client") or {}
     if animal:
         pet = (animal.get("name") or "").strip()
@@ -283,6 +298,17 @@ def _user_block(report, notes, scan=None, profile=None, animal=None):
     # three layers and threw every later number off the report's (Glen, 2026-09-18).
     from dashboard.biofield_report_html import group_layers
     grouped = [(g["layer"], g["rows"]) for g in group_layers(report.get("layers") or [])]
+    # The portal splits this letter into layer cards by finding each layer's remedy
+    # name (segment_narrative). An ingredient containing another layer's remedy name,
+    # named in this layer's paragraph, would start that layer's card here.
+    from dashboard.biofield_portal_publish import _cue_candidates
+    # Remedy cues only: a head is a cue of last resort, and a short one ("Acid") would
+    # strip "Ascorbic Acid" from every other layer.
+    cues_by_layer = {ln: {c.lower() for r in rows if (r.get("remedy") or "").strip()
+                          for c in _cue_candidates({"remedy": r.get("remedy")})}
+                     for ln, rows in grouped}
+    other_cues = {ln: set().union(*[v for k, v in cues_by_layer.items() if k != ln])
+                  for ln in cues_by_layer}
     for display_ln, layer_rows in grouped:
         first = layer_rows[0]
         head = (first.get("head") or "").strip()
@@ -299,6 +325,24 @@ def _user_block(report, notes, scan=None, profile=None, animal=None):
         is_life_stress = ("life stress" in head.lower() or
                           "psychoemotional" in head.lower() or
                           head_is_essence or tail_is_essence)
+        # Glen, 2026-09-24: a tail naming more than the head gets its own description.
+        # A whole-tail essence is left to the life stress rule below.
+        # Every row's tail counts, not only the first's; items compare without case
+        # or punctuation, so "Liver." is the head "Liver" and "kidney" repeats "Kidney".
+        seen = {_norm(head)}
+        if tail_is_essence:
+            seen.add(_norm(affected))
+        beyond = []
+        for row in layer_rows:
+            for t in str(row.get("most_affected") or "").split(","):
+                t = t.strip()
+                if t and _norm(t) and _norm(t) not in seen:
+                    seen.add(_norm(t))
+                    beyond.append(t)
+        if beyond and with_tail:
+            lines.append(f"  - TAIL BEYOND THE HEAD: {'; '.join(beyond)}")
+            lines.append("    (write 2 to 4 sentences on these tail areas in this layer's "
+                         "paragraph, per the TAIL BEYOND THE HEAD rule)")
         if is_life_stress:
             associated = affected if tail_is_essence else head
             if not associated:
@@ -311,13 +355,16 @@ def _user_block(report, notes, scan=None, profile=None, animal=None):
             remedy = l.get("remedy") or ""
             role = "THERAPEUTIC ESSENCE" if is_life_stress else "remedy"
             qualities = _catalog_description(remedy) if is_life_stress else ""
+            pathways = (_pathways_source(remedy, other_cues[display_ln])
+                        if beyond and with_tail else "")
             # The report prints "(as directed)" for a remedy with no dosing; say the same
             # here, or the writer reports the dose as missing.
             dose = " ".join(x for x in (l.get("dosage") or "", l.get("frequency") or "",
                                         l.get("timing") or "") if x.strip()) or "as directed"
             lines.append(
                 f"  - {role}: {remedy}"
-                f"{('; healing qualities: ' + qualities) if qualities else ''}; "
+                f"{('; healing qualities: ' + qualities) if qualities else ''}"
+                f"{('; pathways source: ' + pathways) if pathways else ''}; "
                 f"dose: {dose}")
     sb = _scan_block(scan)
     if sb:
@@ -362,6 +409,22 @@ def _catalog_product(name):
         return product or {}
     except Exception:
         return {}
+
+
+def _pathways_source(name, exclude=()):
+    """What the writer may draw a remedy's pathways from: its ingredient names only.
+    Catalog descriptions carry disease claims ("healing the underlying causes of
+    Glaucoma"), prices and competitor comparisons, so they are never passed here.
+    An ingredient containing another layer's remedy name is left out: named in this layer's
+    paragraph, it would split the portal cards at the wrong place. Nothing found says
+    so, rather than leaving the writer free to invent a pathway."""
+    skip = {str(x).strip().lower() for x in exclude} - {""}
+    names = [str(i.get("name") or "").strip()
+             for i in (_catalog_product(name).get("ingredients") or []) if isinstance(i, dict)]
+    # "(unnamed FMP ingredient 5461)" is a placeholder for a missing FileMaker name.
+    names = [n for n in names if n and "unnamed fmp ingredient" not in n.lower()
+             and not any(c in n.lower() for c in skip)][:8]
+    return ("ingredients: " + ", ".join(names)) if names else "(none supplied; name no pathway)"
 
 
 def _is_essence(name):
@@ -449,7 +512,7 @@ _VIDEO_SYSTEM = (
 
 def build_video_script_prompt(report, notes, scan=None):
     return {"system": _system_with_scan(_VIDEO_SYSTEM, scan),
-            "user": _user_block(report, notes, scan)}
+            "user": _user_block(report, notes, scan, with_tail=False)}
 
 
 def generate_video_script(report, notes, complete, scan=None):
