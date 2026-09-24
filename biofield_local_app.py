@@ -2503,12 +2503,21 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                         "error": f"This intake already has {existing} layer(s)."}
 
             n, made = _last_layer_no(rep), 0
+            # A remedy already on the chain is not added again (Glen, 2026-09-23).
+            # Compared after name resolution, which is the name the chain stores.
+            on_chain = {str(r[0] or "").strip().lower() for r in cx.execute(
+                "SELECT remedy FROM biofield_auth_chain WHERE test_id=?",
+                (int(str(test_id).lstrip("a") or 0),)).fetchall()} - {""}
             for L in layers:
                 n += 1
                 made += 1
-                remedies = L["remedies"] or [""]
-                for remedy in remedies:
-                    name = resolve_remedy_name(cx, remedy) if remedy else ""
+                remedies = []
+                for remedy in L["remedies"]:
+                    name = resolve_remedy_name(cx, remedy) or remedy
+                    if name.strip().lower() not in on_chain:
+                        on_chain.add(name.strip().lower())
+                        remedies.append(name)
+                for name in remedies or [""]:
                     d = remedy_dosing(cx, name) if name else {}
                     add_chain_row(cx, test_id, n, L["pattern"], L["label"] or L["pattern"],
                                   name, d.get("dosage", ""), d.get("frequency", ""),
