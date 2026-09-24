@@ -347,16 +347,45 @@ def test_head_match_ignores_case_and_spacing(monkeypatch):
     assert "TAIL BEYOND THE HEAD" not in build_narrative_prompt(r, "")["user"]
 
 
-def test_remedy_pathways_come_only_from_the_supplied_catalog_description(monkeypatch):
-    _catalog(monkeypatch, {"Stress Release": "Supports the HPA axis and GABA tone.",
-                           "Nous Energy": ""})
+def test_remedy_pathways_come_only_from_ingredient_names(monkeypatch):
+    _catalog(monkeypatch, {"Stress Release": "Heals the causes of glaucoma. Price: $69.97."},
+             ingredients={"Stress Release": [{"name": "CBD", "dose": "10 mg"},
+                                             {"name": "L-Theanine"}]})
     user = build_narrative_prompt(_tail_report(), "")["user"]
-    assert ("remedy: Stress Release; pathways source: Supports the HPA axis and GABA tone."
-            in user)
-    # No description: the writer is told so, rather than left to invent one.
+    assert "remedy: Stress Release; pathways source: ingredients: CBD, L-Theanine; dose" in user
+    # The catalog description carries claims and prices: it never reaches the writer.
+    assert "glaucoma" not in user and "Price:" not in user
+    # No ingredients: the writer is told so, rather than left to invent one.
     assert "remedy: Nous Energy; pathways source: (none supplied; name no pathway)" in user
     # A layer whose tail only repeats its head carries no pathways source.
     assert "remedy: TMG Powder; dose:" in user
+
+
+def test_an_ingredient_that_is_another_layers_remedy_is_left_out(monkeypatch):
+    """Named in layer 2's paragraph, "TMG Powder" would start layer 1's portal card
+    there (segment_narrative finds each layer by its remedy name)."""
+    _catalog(monkeypatch, {}, ingredients={"Stress Release": [{"name": "tmg powder"},
+                                                              {"name": "CBD"}]})
+    user = build_narrative_prompt(_tail_report(), "")["user"]
+    assert "remedy: Stress Release; pathways source: ingredients: CBD; dose" in user
+
+
+def test_a_life_stress_layer_with_a_tail_still_gets_a_pathways_source(monkeypatch):
+    _catalog(monkeypatch, {})
+    r = {**_report(), "layers": [
+        {"layer": 1, "head": "Life Stress", "most_affected": "Life Stress, Liver",
+         "remedy": "Moonstone Gem Elixir", "dosage": "", "frequency": "", "timing": ""}]}
+    user = build_narrative_prompt(r, "")["user"]
+    assert "  - TAIL BEYOND THE HEAD: Liver" in user
+    assert "pathways source: (none supplied; name no pathway)" in user
+
+
+def test_an_essence_among_several_tail_items_is_not_dropped(monkeypatch):
+    _catalog(monkeypatch, {}, essences={"Anger"})
+    r = {**_report(), "layers": [
+        {"layer": 1, "head": "Liver", "most_affected": "Liver, Anger",
+         "remedy": "Liver Support", "dosage": "", "frequency": "", "timing": ""}]}
+    assert "  - TAIL BEYOND THE HEAD: Anger" in build_narrative_prompt(r, "")["user"]
 
 
 def test_an_essence_in_the_tail_stays_with_the_life_stress_rule(monkeypatch):
@@ -380,14 +409,3 @@ def test_tail_rule_forbids_claims_and_invention():
                    "Never say a remedy treats, heals, cures, fixes or prevents",
                    "never state or imply a diagnosis"):
         assert phrase in s, phrase
-
-
-def test_pathways_source_drops_a_price_only_description_and_adds_ingredients(monkeypatch):
-    _catalog(monkeypatch, {"Stress Release": "Stress Release . Price: $69.97.",
-                           "Nous Energy": "Nous Energy supports mitochondria. Price: $69.97."},
-             ingredients={"Stress Release": [{"name": "CBD", "dose": "10 mg"},
-                                             {"name": "L-Theanine"}]})
-    user = build_narrative_prompt(_tail_report(), "")["user"]
-    assert "remedy: Stress Release; pathways source: ingredients: CBD, L-Theanine; dose" in user
-    assert "remedy: Nous Energy; pathways source: Nous Energy supports mitochondria.; dose" in user
-    assert "Price:" not in user

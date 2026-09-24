@@ -128,7 +128,7 @@ _SYSTEM = (
     "or 'Liver Driver': describe the body area or function it names, not a product. Cover "
     "every tail area listed, grouping related ones. Connect them to the client only where a CLIENT-STATED CONCERNS item "
     "plainly relates; never invent a symptom or condition. Name one or two key pathways the "
-    "layer's remedies support, taken ONLY from that remedy's 'pathways source' (its description or its listed "
+    "layer's remedies support, taken ONLY from that remedy's 'pathways source' (its listed "
     "ingredients); when it says none was supplied, name no pathway for it. Frame it as balancing these patterns supports the "
     "body's own function. Never say a remedy treats, heals, cures, fixes or prevents anything, "
     "and never state or imply a diagnosis.\n"
@@ -294,6 +294,10 @@ def _user_block(report, notes, scan=None, profile=None, animal=None):
     # three layers and threw every later number off the report's (Glen, 2026-09-18).
     from dashboard.biofield_report_html import group_layers
     grouped = [(g["layer"], g["rows"]) for g in group_layers(report.get("layers") or [])]
+    remedies_by_layer = {ln: {(r.get("remedy") or "").strip() for r in rows} - {""}
+                         for ln, rows in grouped}
+    other_remedies = {ln: set().union(*[v for k, v in remedies_by_layer.items() if k != ln])
+                      for ln in remedies_by_layer}
     for display_ln, layer_rows in grouped:
         first = layer_rows[0]
         head = (first.get("head") or "").strip()
@@ -311,10 +315,12 @@ def _user_block(report, notes, scan=None, profile=None, animal=None):
                           "psychoemotional" in head.lower() or
                           head_is_essence or tail_is_essence)
         # Glen, 2026-09-24: a tail naming more than the head gets its own description.
-        # An essence in the tail is left to the life stress rule below.
+        # A whole-tail essence is left to the life stress rule below.
         head_key = head.lower()
         beyond = [t.strip() for t in affected.split(",")
-                  if t.strip() and t.strip().lower() != head_key and not _is_essence(t.strip())]
+                  if t.strip() and t.strip().lower() != head_key]
+        if tail_is_essence:
+            beyond = [t for t in beyond if t.lower() != affected.lower()]
         if beyond:
             lines.append(f"  - TAIL BEYOND THE HEAD: {'; '.join(beyond)}")
             lines.append("    (write 2 to 4 sentences on these tail areas in this layer's "
@@ -331,7 +337,7 @@ def _user_block(report, notes, scan=None, profile=None, animal=None):
             remedy = l.get("remedy") or ""
             role = "THERAPEUTIC ESSENCE" if is_life_stress else "remedy"
             qualities = _catalog_description(remedy) if is_life_stress else ""
-            pathways = (_pathways_source(remedy) if beyond and not is_life_stress else "")
+            pathways = (_pathways_source(remedy, other_remedies[display_ln]) if beyond else "")
             # The report prints "(as directed)" for a remedy with no dosing; say the same
             # here, or the writer reports the dose as missing.
             dose = " ".join(x for x in (l.get("dosage") or "", l.get("frequency") or "",
@@ -386,25 +392,18 @@ def _catalog_product(name):
         return {}
 
 
-def _pathways_source(name):
-    """What the writer may draw a remedy's pathways from: its catalog description and
-    its ingredient names. Many descriptions are empty or only "<Name> . Price: $69.97.",
-    so the ingredients carry the substance there. Nothing found says so, rather than
-    leaving the writer free to invent a pathway."""
-    import re
-    product = _catalog_product(name)
-    desc = re.sub(r"\s*Price:\s*\$[\d.,]+\.?", "", _catalog_description(name)).strip()
-    if re.sub(r"[^a-z0-9]", "", desc.lower()) == re.sub(r"[^a-z0-9]", "", (name or "").lower()):
-        desc = ""
-    names = [str(i.get("name") or "").strip() for i in (product.get("ingredients") or [])
-             if isinstance(i, dict)]
-    names = [n for n in names if n][:8]
-    parts = []
-    if desc:
-        parts.append(desc[:500].rstrip())
-    if names:
-        parts.append("ingredients: " + ", ".join(names))
-    return " | ".join(parts) or "(none supplied; name no pathway)"
+def _pathways_source(name, exclude=()):
+    """What the writer may draw a remedy's pathways from: its ingredient names only.
+    Catalog descriptions carry disease claims ("healing the underlying causes of
+    Glaucoma"), prices and competitor comparisons, so they are never passed here.
+    An ingredient that is another layer's remedy is left out: named in this layer's
+    paragraph, it would split the portal cards at the wrong place. Nothing found says
+    so, rather than leaving the writer free to invent a pathway."""
+    skip = {str(x).strip().lower() for x in exclude}
+    names = [str(i.get("name") or "").strip()
+             for i in (_catalog_product(name).get("ingredients") or []) if isinstance(i, dict)]
+    names = [n for n in names if n and n.lower() not in skip][:8]
+    return ("ingredients: " + ", ".join(names)) if names else "(none supplied; name no pathway)"
 
 
 def _is_essence(name):
