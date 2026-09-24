@@ -113,3 +113,17 @@ def test_filemaker_1200_maps_to_the_new_slug():
     m = json.load(open(os.path.join(ROOT, "data", "fmp_slug_map.json")))["resolved"]
     assert m["1200"] == SLUG
     assert m["493"] == "ocuheal-eye-drops"
+
+
+APPROVED_INTRO = (
+    "OcuHeal+ is OcuHeal Eye Drops with more DMSO. It carries the same botanical and "
+    "nutritional ingredients for the whole eye, including the retina, lens, cornea, "
+    "conjunctiva, lacrimal glands and tear film. DMSO rises from 0.5% to 10%, and the "
+    "Quinton sea water base (Quintessential Bioterrain Restore) makes room for it, from "
+    "96% to 86.5%. Use 1 drop in each eye 2 times a day."
+)
+
+
+def test_the_description_is_glens_approved_intro(products):
+    """Glen, 2026-09-24, in production's tab: "approve"."""
+    assert products[SLUG]["description"] == APPROVED_INTRO
