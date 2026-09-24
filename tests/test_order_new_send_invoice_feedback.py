@@ -23,8 +23,10 @@ pytestmark = pytest.mark.skipif(node is None, reason="node not installed")
 PAGE = (Path(__file__).resolve().parent.parent / "static" / "order-new.html").read_text()
 
 OK = {"status": "done", "result": {"message": "Invoice #196 emailed to a@example.com."}}
-REFUSED = {"status": "failed", "result": {
-    "error": "invoice pay-link is disabled (INVOICE_PAYLINK_ENABLED off)"}}
+# The dispatcher's real failure shape (dashboard/dispatch.py): the error is top level.
+REFUSED = {"status": "failed",
+           "error": "invoice pay-link is disabled (INVOICE_PAYLINK_ENABLED off)"}
+HTML, OFFLINE = "html", "offline"   # a 502 page that is not JSON; a fetch that rejects
 
 
 def _func(name):
@@ -43,21 +45,22 @@ def _func(name):
         j += 1
 
 
-def _run(order_id=196, *, reply=OK, sent_at=None, confirm=True, mode="json"):
-    """Click Send once. mode: json (server replies `reply`), html (a 502 page that is
-    not JSON), or offline (fetch rejects). Returns what the page ended up showing."""
-    if mode == "json":
-        fetch = f"async function fetch(){{ calls++; return {{status:200, json: async () => ({json.dumps(reply)})}}; }}"
-    elif mode == "html":
-        fetch = ("async function fetch(){ calls++; return {status:502, json: async () => {"
-                 " throw new SyntaxError('Unexpected token <'); }}; }")
-    else:
-        fetch = "async function fetch(){ calls++; throw new TypeError('Failed to fetch'); }"
+def _run(order_id=196, *, replies=(OK,), sent_at=None, confirm=True):
+    """Click the first of the page's two send buttons once per entry in `replies`.
+    Each entry is a JSON reply, HTML or OFFLINE. Returns what the page shows after."""
     body = """
-let calls = 0, asked = null, toasts = [];
+let calls = 0, asked = [], toasts = [], inflight = [];
+const REPLIES = %s;
 const HEADERS = {};
 function toast(m, k){ toasts.push([m, k || 'ok']); }
-function confirm(m){ asked = m; return %s; }
+function confirm(m){ asked.push(m); return %s; }
+async function fetch(){
+  inflight.push([btn.disabled, btn2.disabled]);
+  const r = REPLIES[calls++];
+  if (r === "offline") throw new TypeError('Failed to fetch');
+  if (r === "html") return {status: 502, json: async () => { throw new SyntaxError('Unexpected token <'); }};
+  return {status: 200, json: async () => r};
+}
 function makeEl(){
   const el = { textContent: '', className: '', disabled: false, nextElementSibling: null,
     insertAdjacentElement(pos, x){ this.nextElementSibling = x; return x; } };
@@ -66,22 +69,26 @@ function makeEl(){
   return el;
 }
 const btn = makeEl(); btn.textContent = 'Send invoice'; btn.className = 'ghost inv-send-btn';
-const document = { createElement: makeEl, querySelectorAll: () => [btn] };
-%s
-%s
-""" % ("true" if confirm else "false", fetch, "let INV_SENT_AT = %s;" % json.dumps(sent_at))
+const btn2 = makeEl(); btn2.textContent = 'Send invoice to customer'; btn2.className = 'ghost inv-send-btn';
+const document = { createElement: makeEl, querySelectorAll: () => [btn, btn2] };
+let INV_SENT_AT = %s;
+""" % (json.dumps(list(replies)), "true" if confirm else "false", json.dumps(sent_at))
+    body += re.search(r"(?m)^let INV_UNSURE = .*$", PAGE).group(0) + "\n"
     body += "".join(_func(n) for n in ("invSentStr", "fmtSentTime", "invSendStatus", "sendInvoice"))
     body += """
-sendInvoice(btn, %s).then(ret => { const s = btn.nextElementSibling;
-  console.log(JSON.stringify({ ret, calls, asked, toasts, label: btn.textContent,
-    disabled: btn.disabled, status: s ? s.textContent : null,
-    statusClass: s ? s.className : null, sentAt: INV_SENT_AT })); })
- .catch(e => console.log(JSON.stringify({ uncaught: String(e) })));
+(async () => { let ret;
+  for (let i = 0; i < REPLIES.length; i++) ret = await sendInvoice(btn, %s);
+  const s = btn.nextElementSibling;
+  console.log(JSON.stringify({ ret, calls, asked, toasts, inflight, label: btn.textContent,
+    label2: btn2.textContent, disabled: btn.disabled || btn2.disabled,
+    status: s ? s.textContent : null, statusClass: s ? s.className : null,
+    sentAt: INV_SENT_AT, unsure: INV_UNSURE }));
+})().catch(e => console.log(JSON.stringify({ uncaught: String(e) })));
 """ % json.dumps(order_id)
-    with tempfile.NamedTemporaryFile("w", suffix=".js", delete=False) as f:
-        f.write(body)
-        path = f.name
-    r = subprocess.run([node, path], capture_output=True, text=True, timeout=30)
+    with tempfile.TemporaryDirectory() as d:
+        path = Path(d) / "send_invoice.js"
+        path.write_text(body)
+        r = subprocess.run([node, str(path)], capture_output=True, text=True, timeout=30)
     assert r.returncode == 0, r.stderr[:800]
     out = json.loads(r.stdout.strip().splitlines()[-1])
     assert "uncaught" not in out, out
@@ -93,41 +100,53 @@ def test_a_send_leaves_a_line_saying_who_and_when():
     assert out["calls"] == 1
     assert out["status"].startswith("Invoice #196 emailed to a@example.com at ")
     assert out["statusClass"] == "inv-send-status"
-    assert out["label"].startswith("Invoice Sent ") and out["sentAt"]
-    assert out["disabled"] is False and out["ret"] is True
+    assert out["ret"] is True and out["sentAt"] and out["disabled"] is False
 
 
-def test_a_refused_send_says_not_sent_and_why():
-    out = _run(reply=REFUSED)
-    assert out["status"] == "Not sent: invoice pay-link is disabled (INVOICE_PAYLINK_ENABLED off)"
+def test_both_buttons_lock_during_a_send_and_both_show_sent():
+    out = _run()
+    assert out["inflight"] == [[True, True]]
+    assert out["label"].startswith("Invoice Sent ") and out["label2"].startswith("Invoice Sent ")
+
+
+def test_a_refused_send_says_so_with_the_servers_reason():
+    out = _run(replies=(REFUSED,))
+    assert out["status"] == "Send failed: invoice pay-link is disabled (INVOICE_PAYLINK_ENABLED off)"
     assert "error" in out["statusClass"].split()
-    assert out["label"] == "Send invoice" and out["sentAt"] is None
+    assert out["label"] == "Send invoice" and out["sentAt"] is None and out["disabled"] is False
 
 
-@pytest.mark.parametrize("mode", ["html", "offline"])
-def test_a_lost_reply_says_unknown_never_failed(mode):
+@pytest.mark.parametrize("lost", [HTML, OFFLINE])
+def test_a_lost_reply_says_unknown_never_failed(lost):
     # The request may have reached the server and sent the email.
-    out = _run(mode=mode)
+    out = _run(replies=(lost,))
     assert out["status"].startswith("Not known whether it sent")
-    assert "Not sent" not in out["status"]
+    assert "Send failed" not in out["status"]
     assert "unknown" in out["statusClass"].split()
     assert out["label"] == "Send invoice" and out["disabled"] is False
 
 
+@pytest.mark.parametrize("first", [HTML, OFFLINE, REFUSED])
+def test_a_retry_after_an_unclear_attempt_asks_first(first):
+    # A "failed" reply can come from a step after the email went, so it asks too.
+    out = _run(replies=(first, OK), confirm=False)
+    assert out["calls"] == 1 and len(out["asked"]) == 1
+    assert "may have gone out" in out["asked"][0]
+
+
 def test_a_second_send_asks_first_and_no_means_no_email():
     out = _run(sent_at="2026-09-24T18:45:29Z", confirm=False)
-    assert out["calls"] == 0 and out["asked"] and "already sent" in out["asked"]
+    assert out["calls"] == 0 and "already sent" in out["asked"][0]
     assert out["ret"] is False
 
 
 def test_a_second_send_goes_when_confirmed():
     out = _run(sent_at="2026-09-24T18:45:29Z", confirm=True)
-    assert out["asked"] and out["calls"] == 1 and out["ret"] is True
+    assert len(out["asked"]) == 1 and out["calls"] == 1 and out["ret"] is True
 
 
 def test_a_first_send_does_not_ask():
-    out = _run()
-    assert out["asked"] is None
+    assert _run()["asked"] == []
 
 
 def test_no_saved_order_sends_nothing():
