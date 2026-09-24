@@ -57,10 +57,14 @@ def test_the_panel_is_the_spec_in_order(products):
     assert [(i["name"], i["dose"]) for i in products[SLUG]["ingredients"]] == PANEL
 
 
-def test_only_dmso_and_the_base_differ_from_ocuheal():
-    """The 9.5% DMSO came out of the base; the two lines still sum to OcuHeal's 96.5%."""
-    base, dmso = PANEL[0], PANEL[1]
-    assert float(base[1].rstrip("%")) + float(dmso[1].rstrip("%")) == 96.5
+def test_only_dmso_and_the_base_differ_from_ocuheal(products):
+    """Read from the catalog: the 9.5% DMSO came out of the base, so the two lines
+    still sum to OcuHeal's 96% + 0.5%."""
+    doses = {i["name"]: i["dose"] for i in products[SLUG]["ingredients"]}
+    base = float(doses["Quintessential Bioterrain Restore"].rstrip("%"))
+    dmso = float(doses["DMSO (Dimethylsulfoxide)"].rstrip("%"))
+    assert (base, dmso) == (86.5, 10.0)
+    assert base + dmso == 96.5
 
 
 def test_the_directions_are_filemakers_dosage(products):
@@ -103,3 +107,9 @@ def test_page_data_serves_the_panel_and_directions(monkeypatch, tmp_path):
     assert [(i["name"], i["dose"]) for i in sec["body"]["ingredients"]] == PANEL
     assert sec["body"]["directions"] == DIRECTIONS
     assert c.get(f"/begin/product/{SLUG}").status_code == 200
+
+
+def test_filemaker_1200_maps_to_the_new_slug():
+    m = json.load(open(os.path.join(ROOT, "data", "fmp_slug_map.json")))["resolved"]
+    assert m["1200"] == SLUG
+    assert m["493"] == "ocuheal-eye-drops"

@@ -75,3 +75,23 @@ def test_the_alias_key_keeps_plus(appmod):
 @pytest.mark.parametrize("name", ["OcuHeal Eye Drops", "OcuHeal+ Eye Drops"])
 def test_the_narrative_reads_the_right_product(name):
     assert bn._catalog_product(name).get("name") == name
+
+
+# ── glossary "What may help" links: clinical_glossary ────────────────────────
+
+def test_the_glossary_links_each_name_to_its_own_product():
+    import json as _json
+    from dashboard import clinical_glossary as cg
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    products = _json.load(open(os.path.join(root, "data", "products.json")))["products"]
+    idx = cg.product_name_index(products)
+    assert cg.remedy_product_slug("OcuHeal Eye Drops", idx) == "ocuheal-eye-drops"
+    assert cg.remedy_product_slug("OcuHeal+ Eye Drops", idx) == "ocuheal-plus-eye-drops"
+    assert cg.remedy_product_slug("Air & Surface PRO", idx) == "air-surface-pro-plus"
+
+
+def test_a_plus_title_whose_key_never_had_plus_still_links(appmod, monkeypatch):
+    """Round 1: the key with "+" dropped is the fallback lookup."""
+    monkeypatch.setattr(appmod, "_ALIAS_SLUG_CACHE", {"fooeyedrops": "foo-eye-drops"})
+    monkeypatch.setattr(appmod, "_PRODUCTS", {"products": {"foo-eye-drops": {"name": "Foo Eye Drops"}}})
+    assert appmod._alias_catalog_slug("Foo+ Eye Drops", {})[0] == "foo-eye-drops"

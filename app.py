@@ -1939,7 +1939,10 @@ def _alias_catalog_slug(clinical_name: str, info: dict) -> tuple:
         return pinned, False
 
     for candidate in (info.get("catalog_name"), clinical_name):
-        slug = _ALIAS_SLUG_CACHE.get(_alias_key(candidate))
+        # Then the key with "+" dropped, as before 2026-09-24, for a name spelled
+        # with "+" whose catalog key never had it. Reached only when the "+" key misses.
+        slug = (_ALIAS_SLUG_CACHE.get(_alias_key(candidate))
+                or _ALIAS_SLUG_CACHE.get(re.sub(r"[^a-z0-9]", "", (candidate or "").lower())))
         if not slug:
             continue
         # Follow a retired SKU to its successor rather than linking a dead page
