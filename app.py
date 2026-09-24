@@ -34987,6 +34987,36 @@ def api_console_community_live_health():
                     "future_group_coaching": len(coaching)})
 
 
+# Wednesday live classes. Glen, 2026-09-20: the free Wellness Whispering MasterClass goes
+# FIRST, at 2:00 PM HST, and Group Coaching second, at 3:00 PM HST, so the paid session has
+# no hard stop behind it. It had been squeezed to 50 to 68 minutes by the class after it.
+# First Wednesday at these times: 30 September 2026 (Glen, 2026-09-21).
+#
+# These hours must match BOTH recurring Zoom meetings on Glen's account. The publish step
+# asks Zoom for each Wednesday's occurrence at exactly these times, and a miss fails the
+# whole publish, so changing an hour here without moving the Zoom meeting breaks Monday.
+LIVE_MASTERCLASS_HOUR = 14      # 2:00 PM HST
+LIVE_GROUP_COACHING_HOUR = 15   # 3:00 PM HST
+
+
+def _wednesday_live_starts(now):
+    """(masterclass_starts, group_coaching_starts) for this and next Wednesday, in HST.
+
+    Both lists share the same two DATES. "This Wednesday" rolls to next once its FIRST
+    class has begun. The old code rolled on Group Coaching's start, which was correct only
+    while Group Coaching came first; with the MasterClass first, a run at 2:30 on a
+    Wednesday would have split the two classes across two different weeks."""
+    first_hour = min(LIVE_MASTERCLASS_HOUR, LIVE_GROUP_COACHING_HOUR)
+    days = (2 - now.weekday()) % 7
+    first = (now + timedelta(days=days)).replace(
+        hour=first_hour, minute=0, second=0, microsecond=0)
+    if first <= now:
+        first += timedelta(days=7)
+    wednesdays = [first, first + timedelta(days=7)]
+    return ([w.replace(hour=LIVE_MASTERCLASS_HOUR) for w in wednesdays],
+            [w.replace(hour=LIVE_GROUP_COACHING_HOUR) for w in wednesdays])
+
+
 @app.route("/api/console/community-live/bootstrap", methods=["POST"])
 def api_console_community_live_bootstrap():
     """Publish this and next Wednesday from stable recurring Zoom series."""
@@ -34997,13 +35027,8 @@ def api_console_community_live_bootstrap():
     from dashboard import live_event_series as _les
     local_tz = ZoneInfo("Pacific/Honolulu")
     now = datetime.now(local_tz)
-    days = (2 - now.weekday()) % 7
-    group_start = (now + timedelta(days=days)).replace(
-        hour=14, minute=0, second=0, microsecond=0)
-    if group_start <= now:
-        group_start += timedelta(days=7)
-    group_starts = [group_start, group_start + timedelta(days=7)]
-    master_starts = [start.replace(hour=15) for start in group_starts]
+    master_starts, group_starts = _wednesday_live_starts(now)
+    group_start = group_starts[0]
     _init_calendar_table()
     zoom_token = _zoom.get_token(
         os.environ["ZOOM_ACCOUNT_ID"], os.environ["ZOOM_CLIENT_ID"],
@@ -35074,20 +35099,30 @@ def api_console_community_live_bootstrap():
                 group_starts, master_starts, group_occurrences, master_occurrences):
             group_start_raw = group_at.replace(tzinfo=None).isoformat()
             master_start_raw = master_at.replace(tzinfo=None).isoformat()
+            # Match an already-published class by its WEDNESDAY, not its exact start, and
+            # move it to the current hour IN PLACE. Matching on the exact start used to be
+            # safe because the hour never changed. When it does (the 2026-09-30 swap), an
+            # exact match misses the old row, a second row is inserted at the new time, and
+            # members see the class twice. Worse, a Group Coaching RSVP is keyed
+            # "group-<calendar_events.id>", so a replacement row would orphan every RSVP.
+            # Updating the same row keeps its id, and so keeps every reservation.
+            wed = group_at.date().isoformat() + "%"
             group = cx.execute(
                 "SELECT id FROM calendar_events WHERE status='visible' "
-                "AND lower(summary) LIKE '%group coaching%' AND start=? "
-                "ORDER BY id DESC LIMIT 1", (group_start_raw,)).fetchone()
+                "AND lower(summary) LIKE '%group coaching%' AND start LIKE ? "
+                "ORDER BY id DESC LIMIT 1", (wed,)).fetchone()
             master = cx.execute(
                 "SELECT id FROM masterclass_events "
-                "WHERE lower(topic) LIKE '%wellness whispering%' AND start_ts=? "
-                "ORDER BY id DESC LIMIT 1", (master_start_raw,)).fetchone()
+                "WHERE lower(topic) LIKE '%wellness whispering%' AND start_ts LIKE ? "
+                "ORDER BY id DESC LIMIT 1", (master_at.date().isoformat() + "%",)).fetchone()
             if group:
                 cx.execute(
-                    "UPDATE calendar_events SET location='Zoom',zoom_meeting_id=?,"
-                    "zoom_occurrence_id=?,zoom_registration_url=?,"
+                    'UPDATE calendar_events SET start=?,"end"=?,location=\'Zoom\','
+                    "zoom_meeting_id=?,zoom_occurrence_id=?,zoom_registration_url=?,"
                     "zoom_registration_required=1 WHERE id=?",
-                    (group_meeting["meeting_id"], group_occurrence,
+                    (group_start_raw,
+                     (group_at + timedelta(hours=1)).replace(tzinfo=None).isoformat(),
+                     group_meeting["meeting_id"], group_occurrence,
                      group_meeting.get("registration_url") or "", group[0]))
             else:
                 cx.execute(
@@ -35106,6 +35141,9 @@ def api_console_community_live_bootstrap():
                 created.append("group_coaching")
             if master:
                 event_id = master[0]
+                # Same reason as Group Coaching: move it, do not replace it.
+                cx.execute("UPDATE masterclass_events SET start_ts=? WHERE id=?",
+                           (master_start_raw, event_id))
             else:
                 event_id = _mc.create_event(
                     cx, topic="Free Wellness Whispering MasterClass",

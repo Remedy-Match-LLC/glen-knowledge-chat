@@ -275,8 +275,11 @@ def _copy(first_name, portal_url, eligible, target_date, email=""):
                   "Group Coaching is a certification/full-membership upgrade benefit; "
                   "your current access does not include the private session.")
     text = (f"{greeting}\n\nThis {date_label}, our MentorshipU community activities are:\n\n"
-            "2:00 PM HST: Group Coaching\n"
-            "3:00 PM HST: Free Wellness Whispering MasterClass\n\n"
+            # Glen, 2026-09-20, effective 2026-09-30: the free MasterClass first, Group
+            # Coaching second. These two lines must agree with LIVE_MASTERCLASS_HOUR and
+            # LIVE_GROUP_COACHING_HOUR in app.py, which is where the events are published.
+            "2:00 PM HST: Free Wellness Whispering MasterClass\n"
+            "3:00 PM HST: Group Coaching\n\n"
             f"{access}\n\nOpen your private MyHealingOasis Upcoming Live Events page to RSVP, "
             "add the sessions to your calendar, and receive your own private Zoom join link:\n\n"
             f"{portal_url}\n\nPlease do not share your private portal or join link.\n\n"
