@@ -23,7 +23,7 @@ PANEL = [
     ("MSM (Methylsulfonylmethane)", "1%"),
     ("N-Acetyl L-Carnosine", "0.5%"),
     ("Forskolin (Coleus forskohlii)", "0.1%"),
-    ("Puerarin (Pueraria mirifica)", "0.1%"),
+    ("Puerarin (Pueraria lobata)", "0.1%"),
     ("Vitamin A (Retinol)", "0.1%"),
     ("Vitamin B2 (Riboflavin 5-Phosphate)", "0.1%"),
     ("Vitamin B6 (Pyridoxal 5-Phosphate)", "0.1%"),
