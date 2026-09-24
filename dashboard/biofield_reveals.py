@@ -2,6 +2,7 @@
 ranked remedies, blurred until the top is approved). Distinct from
 portal_biofield_reports."""
 import json
+import re
 import sqlite3
 from datetime import datetime, timezone
 
@@ -133,12 +134,23 @@ REMEDY_SUBSTITUTIONS = {
 }
 
 
+def is_aller_free(text):
+    """True for any spelling of AllerFree. Glen, 2026-09-24: "Aller-Free is the correct
+    spelling for AllerFree (same formula)". The catalog sells "Aller-Free Aid for Inhalant
+    Allergies" (slug aller-free-aid), which exact keys never matched. Letters only, so
+    hyphen, space and case variants all count. Shared with app._ff_auto_excluded."""
+    return "allerfree" in re.sub(r"[^a-z]", "", (text or "").lower())
+
+
 def _sub_for(rem):
     if not isinstance(rem, dict):
         return None
-    for key in ((rem.get("slug") or "").strip().lower(), (rem.get("name") or "").strip().lower()):
+    keys = ((rem.get("slug") or "").strip().lower(), (rem.get("name") or "").strip().lower())
+    for key in keys:
         if key and key in REMEDY_SUBSTITUTIONS:
             return REMEDY_SUBSTITUTIONS[key]
+    if any(is_aller_free(k) for k in keys):
+        return REMEDY_SUBSTITUTIONS["allerfree"]
     return None
 
 

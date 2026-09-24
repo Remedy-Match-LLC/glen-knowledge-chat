@@ -95,3 +95,48 @@ def test_preference_swaps_in_layers_and_idempotent():
     apply_remedy_substitutions(row)  # second pass: swapped-in slugs are not keys
     assert row["layers"][0]["remedy"]["slug"] == "immune-modulation"
     assert row["layers"][1]["remedy"]["slug"] == "neuro-magnesium"
+
+
+# --- Aller-Free is the correct spelling of AllerFree, same formula (Glen 2026-09-24) ---
+# The live catalog sells "Aller-Free Aid for Inhalant Allergies" (slug aller-free-aid).
+# The keys above only matched the unhyphenated spelling, so 15 draft reveals carried it.
+
+import pytest
+
+
+@pytest.mark.parametrize("name,slug", [
+    ("Aller-Free Aid for Inhalant Allergies", "aller-free-aid"),
+    ("Aller-Free Aid for Inhalant Allergies", ""),          # by name alone
+    ("", "aller-free-aid"),                                  # by slug alone
+    ("AllerFree HomeoEnergetic Drops", "allerfree-homeoenergetic-drops"),
+    ("Aller Free", ""),                                      # spaced spelling
+    ("ALLER-FREE", ""),                                      # case
+])
+def test_every_aller_free_spelling_swaps_to_immune_modulation(name, slug):
+    row = {"remedies": [{"name": name, "slug": slug, "meaning": "old"}],
+           "layers": [{"n": 1, "remedy": {"name": name, "slug": slug}}]}
+    apply_remedy_substitutions(row)
+    for r in (row["remedies"][0], row["layers"][0]["remedy"]):
+        assert r["slug"] == "immune-modulation"
+        assert r["name"] == "Immune Modulation"
+
+
+@pytest.mark.parametrize("name,slug", [
+    ("Allergen II Homeopathic Complex in Terrain Restore", ""),
+    ("Allermet Homeopathic Complex in Terrain Restore", ""),
+    ("Immune Modulation", "immune-modulation"),
+    ("Sugar-Free Syrup", ""),
+])
+def test_other_allergy_and_free_products_untouched(name, slug):
+    row = {"remedies": [{"name": name, "slug": slug}]}
+    apply_remedy_substitutions(row)
+    assert row["remedies"][0]["name"] == name
+
+
+def test_is_aller_free_helper_matches_spellings_and_nothing_else():
+    from dashboard.biofield_reveals import is_aller_free
+    for t in ("Aller-Free Aid for Inhalant Allergies", "aller-free-aid", "AllerFree",
+              "aller free", "allerfree-homeoenergetic-drops"):
+        assert is_aller_free(t), t
+    for t in ("Allergen II Homeopathic Complex", "Immune Modulation", "Sugar-Free", "", None):
+        assert not is_aller_free(t), t
