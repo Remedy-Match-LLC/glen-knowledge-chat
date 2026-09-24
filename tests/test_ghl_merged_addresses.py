@@ -172,7 +172,9 @@ def test_a_non_list_additional_emails_is_ignored(app_db):
     app, path = app_db
     _upsert(app, path, {"email": "main@x.com", "tags": ["email bounced"],
                         "additional_emails": "old@x.com"})
-    assert _row(path, "old@x.com") is None
+    with sqlite3.connect(path) as cx:
+        rows = {r[0] for r in cx.execute("SELECT email FROM email_suppression")}
+    assert rows == {"main@x.com"}, "a string must not be read character by character"
 
 
 def test_a_stored_bounce_tag_alone_writes_nothing(app_db):
@@ -335,3 +337,32 @@ def test_an_extra_addresss_row_names_its_contact(app_db):
         reasons = dict(cx.execute("SELECT email, reason FROM email_suppression"))
     assert reasons["main@x.com"] == "GHL tag: email bounced", "the primary's reason is unchanged"
     assert "GHL contact c77" in reasons["old@x.com"]
+
+
+def test_a_read_one_contact_short_sends_no_extras(ghl):
+    """Round 3: the boundary. One missed contact may be the one whose primary it is."""
+    ghl["total"] = 3
+    ghl["v2"] = [(200, [{"id": "c1", "email": "main@example.com",
+                         "additionalEmails": [{"email": "old@example.com"}]},
+                        {"id": "c2", "email": "two@example.com"}])]
+    cron.sync_people_from_ghl()
+    assert "additional_emails" not in _by_id(ghl["posted"])["c1"]
+
+
+def test_another_contacts_primary_matches_in_any_case(ghl):
+    """Round 3: GHL held no mixed-case primary on 2026-09-24, but the filter must not
+    depend on that."""
+    ghl["v2"] = [(200, [{"id": "c1", "email": "main@example.com",
+                         "additionalEmails": [{"email": "partner@example.com"}]},
+                        {"id": "c9", "email": "Partner@Example.COM"}])]
+    cron.sync_people_from_ghl()
+    assert "additional_emails" not in _by_id(ghl["posted"])["c1"]
+
+
+def test_an_extra_addresss_opt_out_names_its_contact(app_db):
+    app, path = app_db
+    _upsert(app, path, {"email": "main@x.com", "ghl_id": "c77", "dnd": True,
+                        "additional_emails": ["old@x.com"]})
+    with sqlite3.connect(path) as cx:
+        reason = cx.execute("SELECT reason FROM email_suppression WHERE email='old@x.com'").fetchone()[0]
+    assert "GHL contact c77" in reason
