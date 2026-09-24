@@ -49,17 +49,20 @@ def _func(name):
         j += 1
 
 
-def _run(order_id=196, *, replies=(OK,), sent_at=None, confirm=True):
+def _run(order_id=196, *, replies=(OK,), sent_at=None, confirm=True, script=None):
     """Click the first of the page's two send buttons once per entry in `replies`.
-    Each entry is a JSON reply, HTML or OFFLINE. Returns what the page shows after."""
+    Each entry is a JSON reply, HTML or OFFLINE. Returns what the page shows after.
+    `script` replaces the clicks with custom JS; fetch then waits on `gate` if set."""
     body = """
 let calls = 0, asked = [], toasts = [], inflight = [];
 const REPLIES = %s;
 const HEADERS = {};
 function toast(m, k){ toasts.push([m, k || 'ok']); }
 function confirm(m){ asked.push(m); return %s; }
+let gate = null;
 async function fetch(){
   inflight.push([btn.disabled, btn2.disabled]);
+  if (gate) await gate;
   const r = REPLIES[calls++];
   if (r === "offline") throw new TypeError('Failed to fetch');
   if (r === "html") return {status: 502, json: async () => { throw new SyntaxError('Unexpected token <'); }};
@@ -76,21 +79,25 @@ const btn = makeEl(); btn.textContent = 'Send invoice'; btn.className = 'ghost i
 const btn2 = makeEl(); btn2.textContent = 'Send invoice to customer'; btn2.className = 'ghost inv-send-btn';
 const document = { createElement: makeEl, querySelectorAll: () => [btn, btn2] };
 let INV_SENT_AT = %s;
-""" % (json.dumps(list(replies)), "true" if confirm else "false", json.dumps(sent_at))
+let INV_ORDER = %s;
+""" % (json.dumps(list(replies)), "true" if confirm else "false", json.dumps(sent_at),
+       json.dumps(order_id if sent_at else None))
     body += re.search(r"(?m)^let INV_UNSURE = .*$", PAGE).group(0) + "\n"
     body += re.search(r"(?m)^const INV_PRE_SEND = .*$", PAGE).group(0) + "\n"
+    body += re.search(r"(?m)^let INV_SENDING = .*$", PAGE).group(0) + "\n"
     body += "".join(_func(n) for n in ("invSentStr", "fmtSentTime", "invSendStatus",
-                                       "invRefusedBeforeEmail", "sendInvoice"))
+                                       "invRefusedBeforeEmail", "invTrackOrder", "sendInvoice"))
     body += """
-(async () => { let ret;
-  for (let i = 0; i < REPLIES.length; i++) ret = await sendInvoice(btn, %s);
+(async () => { let ret, extra = {};
+  %s
   const s = btn.nextElementSibling;
   console.log(JSON.stringify({ ret, calls, asked, toasts, inflight, label: btn.textContent,
     label2: btn2.textContent, disabled: btn.disabled || btn2.disabled,
     status: s ? s.textContent : null, statusClass: s ? s.className : null,
-    sentAt: INV_SENT_AT, unsure: INV_UNSURE }));
+    sentAt: INV_SENT_AT, unsure: INV_UNSURE, order: INV_ORDER, sending: INV_SENDING, ...extra }));
 })().catch(e => console.log(JSON.stringify({ uncaught: String(e) })));
-""" % json.dumps(order_id)
+""" % (script or "for (let i = 0; i < REPLIES.length; i++) ret = await sendInvoice(btn, %s);"
+       % json.dumps(order_id))
     with tempfile.TemporaryDirectory() as d:
         path = Path(d) / "send_invoice.js"
         path.write_text(body)
@@ -121,6 +128,9 @@ def test_both_buttons_lock_during_a_send_and_both_show_sent():
     ({"status": "failed", "error": "order #196 is 'done' \u2014 an invoice can only be sent"}, "order #196 is 'done'"),
     (UNAUTHORIZED, "access key was refused"),
     (DENIED, "not allowed to send invoices"),
+    ({"status": "error", "error": "unknown action: orders.send_invoice"}, "unknown action"),
+    ({"status": "queued", "event_id": 9}, "waiting for approval"),
+    ({"status": "needs_confirmation", "summary": "x"}, "asked for confirmation"),
 ])
 def test_a_refusal_before_any_email_says_not_sent(reply, reason):
     out = _run(replies=(reply,))
@@ -195,12 +205,57 @@ def test_the_pre_send_list_matches_the_servers_checks_and_nothing_after():
     body = src[src.index("def _send_invoice_exec("):]
     body = body[:body.index("\ndef ", 1)]
     before, after = body.split("_inbox.send_email(", 1)
-    pattern = re.compile(re.search(r"(?m)^const INV_PRE_SEND = /(.*)/;$", PAGE).group(1))
+    src_pattern = re.search(r"(?m)^const INV_PRE_SEND = /(.*)/;$", PAGE).group(1)
+    # JS .test() is unanchored, so the ^ is what stops an after-send error that merely
+    # contains "not found" from reading as "Not sent". re.search mirrors .test().
+    assert src_pattern.startswith("^(")
+    pattern = re.compile(src_pattern)
     raised = re.findall(r'raise ValueError\(f?"([^"]*)"', before)
     assert len(raised) == 5, raised
     for msg in raised:
         example = re.sub(r"\{oid\}", "196", msg)
         example = re.sub(r"\{[^}]*\}", "done", example)
-        assert pattern.match(example), f"server check not recognised as pre-send: {msg}"
+        assert pattern.search(example), f"server check not recognised as pre-send: {msg}"
     for msg in re.findall(r'raise ValueError\(f?"([^"]*)"', after):
-        assert not pattern.match(re.sub(r"\{[^}]*\}", "x", msg)), msg
+        assert not pattern.search(re.sub(r"\{[^}]*\}", "x", msg)), msg
+
+
+def test_a_button_drawn_during_a_send_cannot_start_a_second_one():
+    # Saving in edit mode redraws the panel, and its fresh send button is not in the
+    # locked set. The in-flight flag must still stop it.
+    out = _run(script="""
+      let open; gate = new Promise(r => { open = r; });
+      const fresh = makeEl(); fresh.textContent = 'Send invoice';
+      const first = sendInvoice(btn, 196);
+      const second = await sendInvoice(fresh, 196);
+      open(); ret = await first;
+      extra = { second, freshStatus: fresh.nextElementSibling.textContent };""")
+    assert out["calls"] == 1 and out["second"] is False and out["ret"] is True
+    assert out["freshStatus"] == "A send is already in progress."
+    assert out["sending"] is False
+
+
+def test_a_new_order_starts_unsent_and_the_same_order_keeps_its_state():
+    out = _run(sent_at="2026-09-24T18:45:29Z", script="""
+      INV_UNSURE = true; invTrackOrder(196);
+      extra.same = [INV_SENT_AT, INV_UNSURE];
+      invTrackOrder("197");
+      extra.fresh = [INV_SENT_AT, INV_UNSURE, INV_ORDER];""")
+    assert out["same"] == ["2026-09-24T18:45:29Z", True]
+    assert out["fresh"] == [None, False, "197"]
+
+
+def test_a_late_reply_for_the_last_order_does_not_mark_the_new_one():
+    out = _run(script="""
+      let open; gate = new Promise(r => { open = r; });
+      const first = sendInvoice(btn, 196);
+      invTrackOrder(197);          // a new order was created while 196 was sending
+      open(); ret = await first;""")
+    assert out["ret"] is True and out["order"] == 197
+    assert out["sentAt"] is None and out["unsure"] is False
+    assert out["status"].startswith("Invoice #196 emailed")
+
+
+def test_every_place_the_page_learns_its_order_sets_the_state():
+    assert "invTrackOrder(j.order_id);" in _func("createInvoice")
+    assert "INV_ORDER = oid; INV_SENT_AT = o.invoice_sent_at || null;" in _func("loadOrderForEdit")

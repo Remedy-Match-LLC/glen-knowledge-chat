@@ -775,7 +775,7 @@ async function loadOrderForEdit(oid){
   $("print-inv-btn").style.display = "inline-block";
   $("grant-member-btn").style.display = "inline-block";
   loadReviewHold();
-  INV_SENT_AT = o.invoice_sent_at || null;
+  INV_ORDER = oid; INV_SENT_AT = o.invoice_sent_at || null;
   if (o.invoice_sent_at){ _sib.textContent = "Invoice Sent "+invSentStr(o.invoice_sent_at)+" (re-send)"; _sib.classList.add("inv-sent"); }
   // Prefill customer (read-only context — pricing/membership keyed off email).
   $("person_id").value = o.person_id||""; $("c-name").value = o.name||""; $("c-email").value = o.email||""; $("c-phone").value = o.phone||"";
@@ -973,7 +973,7 @@ async function createInvoice(){
     // and one was zero. Keeping the token forever would instead fold a deliberate
     // second order onto the first.
     SUBMIT_TOKEN = newSubmitToken();
-    if (!LAST_ORDER || LAST_ORDER.order_id !== j.order_id){ INV_SENT_AT = null; INV_UNSURE = false; }   // a new order, never sent
+    invTrackOrder(j.order_id);   // a new order starts unsent; the same order returned keeps its state
     LAST_ORDER=j; showInvoice(j);
     toast(j.warning || "Proposed invoice created", j.warning ? "error" : "ok");
     if (j.warning) alert(j.warning);   // special pricing missed: catch it before it's sent
@@ -1100,6 +1100,11 @@ async function saveClientPrices(){
 // and a second send asks first.
 let INV_SENT_AT = null;   // when the order on this page was last sent, if known
 let INV_UNSURE = false;   // an attempt ended without a clear answer, so it may have sent
+let INV_ORDER = null;     // the order those two describe
+let INV_SENDING = false;  // a send is in flight; a button drawn meanwhile must not start another
+function invTrackOrder(id){
+  if (String(INV_ORDER) !== String(id)){ INV_ORDER = id; INV_SENT_AT = null; INV_UNSURE = false; }
+}
 function fmtSentTime(iso){ try{ return new Date(iso).toLocaleString('en-US',{month:'numeric',day:'numeric',hour:'numeric',minute:'2-digit'}); }catch(e){ return ''; } }
 function invSendStatus(btn, text, kind){
   let s = btn.nextElementSibling;
@@ -1124,12 +1129,15 @@ function invRefusedBeforeEmail(j){
 }
 async function sendInvoice(btn, orderId){
   if (!orderId){ invSendStatus(btn, "Save the invoice before sending it.", "error"); return false; }
+  if (INV_SENDING){ invSendStatus(btn, "A send is already in progress.", "unknown"); return false; }
+  invTrackOrder(orderId);
   if (INV_SENT_AT && !confirm("This invoice was already sent on "+fmtSentTime(INV_SENT_AT)
       +".\nSend it again? The customer gets another email.")) return false;
   if (!INV_SENT_AT && INV_UNSURE && !confirm("An earlier send may have gone out."
       +"\nSend it again? The customer may get a second email.")) return false;
   const label = btn.textContent, all = document.querySelectorAll(".inv-send-btn");
   all.forEach(b => { b.disabled = true; });   // both buttons: no second send while one is in flight
+  INV_SENDING = true;
   btn.textContent = "Sending…"; invSendStatus(btn, "Sending…", "");
   let j = null, lost = "";
   try{
@@ -1137,8 +1145,11 @@ async function sendInvoice(btn, orderId){
     try{ j = await r.json(); }catch(e){ lost = "the server answered "+r.status; }
   }catch(e){ lost = e.message || "the connection failed"; }
   all.forEach(b => { b.disabled = false; });
+  INV_SENDING = false;
+  // A reply for an order the page has since moved on from must not mark the new one.
+  const current = String(INV_ORDER) === String(orderId);
   if (lost){
-    INV_UNSURE = true;
+    if (current) INV_UNSURE = true;
     // The request may have reached the server, so do not claim it failed.
     btn.textContent = label;
     invSendStatus(btn, "Not known whether it sent ("+lost+"). Check order #"+orderId+" on the orders board before sending again.", "unknown");
@@ -1153,17 +1164,18 @@ async function sendInvoice(btn, orderId){
     // Anything else can come from a step after the email went (the sent-time write,
     // the event log, a mail timeout after acceptance). So it may have gone.
     const err = (j&&j.result&&j.result.error) || (j&&(j.reason||j.error)) || "no reason given";
-    INV_UNSURE = true;
+    if (current) INV_UNSURE = true;
     invSendStatus(btn, "The server reported an error: "+err+". The email may still have gone. Check order #"
       +orderId+" on the orders board before sending again.", "unknown");
     toast("Send result unclear", "error"); return false;
   }
-  INV_SENT_AT = new Date().toISOString(); INV_UNSURE = false;
+  if (current){ INV_SENT_AT = new Date().toISOString(); INV_UNSURE = false; }
+  const sentAt = new Date().toISOString();
   const msg = ((j.result&&j.result.message) || "Invoice sent.").replace(/\.$/, "");
   all.forEach(b => {
-    b.textContent = "Invoice Sent "+invSentStr(INV_SENT_AT)+" (re-send)"; b.classList.add("inv-sent");
+    b.textContent = "Invoice Sent "+invSentStr(sentAt)+" (re-send)"; b.classList.add("inv-sent");
   });
-  invSendStatus(btn, msg+" at "+fmtSentTime(INV_SENT_AT)+".", "");
+  invSendStatus(btn, msg+" at "+fmtSentTime(sentAt)+".", "");
   toast(msg); return true;
 }
 function recordPayment(){
