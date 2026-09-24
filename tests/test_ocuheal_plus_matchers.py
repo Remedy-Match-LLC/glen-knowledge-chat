@@ -95,3 +95,29 @@ def test_a_plus_title_whose_key_never_had_plus_still_links(appmod, monkeypatch):
     monkeypatch.setattr(appmod, "_ALIAS_SLUG_CACHE", {"fooeyedrops": "foo-eye-drops"})
     monkeypatch.setattr(appmod, "_PRODUCTS", {"products": {"foo-eye-drops": {"name": "Foo Eye Drops"}}})
     assert appmod._alias_catalog_slug("Foo+ Eye Drops", {})[0] == "foo-eye-drops"
+
+
+# ── chat link table backstop: _catalog_link_matches ──────────────────────────
+
+@pytest.mark.parametrize("text, want", [
+    ("Try OcuHeal+ Eye Drops twice a day", "ocuheal-plus-eye-drops"),
+    ("Try OcuHeal Plus Eye Drops twice a day", "ocuheal-plus-eye-drops"),
+])
+def test_the_link_table_sends_plus_spelled_out_to_ocuheal_plus(appmod, text, want):
+    """Round 2: "OcuHeal Plus Eye Drops" linked the original's page."""
+    found = appmod._catalog_link_matches(text, {"OcuHeal Eye Drops": {}})
+    assert list(found.values()) == [appmod._catalog_page_url(want)], found
+
+
+def test_the_link_table_never_links_the_original_mention_to_ocuheal_plus(appmod):
+    found = appmod._catalog_link_matches("Try OcuHeal Eye Drops twice a day",
+                                         {"OcuHeal Eye Drops": {}})
+    assert appmod._catalog_page_url("ocuheal-plus-eye-drops") not in found.values(), found
+
+
+def test_the_word_plus_between_two_products_keeps_both(appmod):
+    """Only a catalog "+" token is joined; "plus" as "and" links as "and" does."""
+    t = "Take Fibrolysis Factors {} Glutathione Syntropy daily"
+    with_plus = appmod._catalog_link_matches(t.format("plus"), {})
+    assert with_plus == appmod._catalog_link_matches(t.format("and"), {})
+    assert len(with_plus) == 2, with_plus

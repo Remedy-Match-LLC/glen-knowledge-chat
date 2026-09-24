@@ -1988,6 +1988,19 @@ def _catalog_link_matches(text: str, aliases: dict, limit: int = 12) -> dict:
     text_toks = _catalog_name_tokens(text)
     if not text_toks:
         return {}
+    # "OcuHeal Plus Eye Drops" spelled out is the product named "OcuHeal+". Join
+    # "<word> plus" into "<word>+" only where the catalog has that "+" token, so a
+    # "Brain Boost plus Terrain Restore" message keeps both products (2026-09-24).
+    plus_toks = {t for info in products.values()
+                 for t in _catalog_name_tokens(info.get("name") or "") if t.endswith("+")}
+    if plus_toks and "plus" in text_toks:
+        joined = []
+        for t in text_toks:
+            if t == "plus" and joined and joined[-1] + "+" in plus_toks:
+                joined[-1] += "+"
+            else:
+                joined.append(t)
+        text_toks = joined
     squashed_text = "".join(text_toks)
     text_positions = {}
     for i, t in enumerate(text_toks):
