@@ -289,8 +289,105 @@ def test_a_remedy_less_anchor_row_is_not_counted_or_listed_as_a_remedy():
     user = build_narrative_prompt({**_report(), "layers": layers}, "")["user"]
     assert "Layer 1 (ONE layer; 1 remedy): Lens" in user
     assert user.count("  - remedy:") == 1
-    assert "remedy: Clear Lens Eyedrops; dose: as directed" in user
+    assert "remedy: Clear Lens Eyedrops;" in user and "; dose: as directed" in user
 
 
 def test_narrative_is_plain_text():
     assert "PLAIN TEXT ONLY: no markdown" in build_narrative_prompt(_report(), "")["system"]
+
+
+# Glen, 2026-09-24: "When the tail includes more than just the head, add a narrative
+# description of the tail integrating structure/function and how it relates to what we
+# know about the client ... while avoiding claims but expressing how balancing these
+# patterns is supportive. Consider highlighting key relevant pathways addressed by the
+# remedy or remedies on the layer."
+
+def _tail_report():
+    return {**_report(), "layers": [
+        {"layer": 1, "head": "Night", "most_affected": "Night",
+         "remedy": "TMG Powder", "dosage": "", "frequency": "", "timing": ""},
+        {"layer": 2, "head": "Stress",
+         "most_affected": "Stress, Nerve Terrain, Auditory Processing",
+         "remedy": "Stress Release", "dosage": "", "frequency": "", "timing": ""},
+        {"layer": 2, "head": "Stress",
+         "most_affected": "Stress, Nerve Terrain, Auditory Processing",
+         "remedy": "Nous Energy", "dosage": "", "frequency": "", "timing": ""},
+    ]}
+
+
+def _catalog(monkeypatch, descs, essences=(), ingredients=None):
+    monkeypatch.setattr(narrative_mod, "_catalog_description", lambda n: descs.get(n, ""))
+    monkeypatch.setattr(narrative_mod, "_catalog_product",
+                        lambda n: {"ingredients": (ingredients or {}).get(n, [])})
+    monkeypatch.setattr(narrative_mod, "_is_essence", lambda n: n in essences)
+
+
+def test_a_tail_beyond_the_head_is_listed_without_the_head(monkeypatch):
+    _catalog(monkeypatch, {})
+    user = build_narrative_prompt(_tail_report(), "")["user"]
+    assert "  - TAIL BEYOND THE HEAD: Nerve Terrain; Auditory Processing" in user
+    assert "(write 2 to 4 sentences on these tail areas in this layer's paragraph" in user
+    # Printed once for the layer, not once per remedy row.
+    assert user.count("  - TAIL BEYOND THE HEAD:") == 1
+
+
+def test_a_tail_that_only_repeats_the_head_adds_nothing(monkeypatch):
+    _catalog(monkeypatch, {})
+    user = build_narrative_prompt(_report(), "")["user"]
+    # Layer 1 "Night"/"Night" repeats the head; layer 2 "Acid"/"Liver" does not.
+    assert user.count("  - TAIL BEYOND THE HEAD:") == 1
+    assert "  - TAIL BEYOND THE HEAD: Liver" in user
+
+
+def test_head_match_ignores_case_and_spacing(monkeypatch):
+    _catalog(monkeypatch, {})
+    r = {**_report(), "layers": [
+        {"layer": 1, "head": "Thyroid ", "most_affected": " thyroid",
+         "remedy": "Thyroid Support", "dosage": "", "frequency": "", "timing": ""}]}
+    assert "TAIL BEYOND THE HEAD" not in build_narrative_prompt(r, "")["user"]
+
+
+def test_remedy_pathways_come_only_from_the_supplied_catalog_description(monkeypatch):
+    _catalog(monkeypatch, {"Stress Release": "Supports the HPA axis and GABA tone.",
+                           "Nous Energy": ""})
+    user = build_narrative_prompt(_tail_report(), "")["user"]
+    assert ("remedy: Stress Release; pathways source: Supports the HPA axis and GABA tone."
+            in user)
+    # No description: the writer is told so, rather than left to invent one.
+    assert "remedy: Nous Energy; pathways source: (none supplied; name no pathway)" in user
+    # A layer whose tail only repeats its head carries no pathways source.
+    assert "remedy: TMG Powder; dose:" in user
+
+
+def test_an_essence_in_the_tail_stays_with_the_life_stress_rule(monkeypatch):
+    _catalog(monkeypatch, {}, essences={"Sunflower Flower Essence"})
+    r = {**_report(), "layers": [
+        {"layer": 1, "head": "Grief", "most_affected": "Sunflower Flower Essence",
+         "remedy": "Moonstone Gem Elixir", "dosage": "", "frequency": "", "timing": ""}]}
+    user = build_narrative_prompt(r, "")["user"]
+    assert "LIFE STRESS ASSOCIATED ESSENCE / PATTERN: Sunflower Flower Essence" in user
+    assert "TAIL BEYOND THE HEAD" not in user
+
+
+def test_tail_rule_forbids_claims_and_invention():
+    s = build_narrative_prompt(_report(), "")["system"]
+    assert "TAIL BEYOND THE HEAD:" in s
+    for phrase in ("structure and function", "Cover every tail area listed",
+                   "describe the body area or function it names, not a product",
+                   "only where a CLIENT-STATED CONCERNS item plainly relates",
+                   "ONLY from that remedy's 'pathways source'",
+                   "balancing these patterns supports",
+                   "Never say a remedy treats, heals, cures, fixes or prevents",
+                   "never state or imply a diagnosis"):
+        assert phrase in s, phrase
+
+
+def test_pathways_source_drops_a_price_only_description_and_adds_ingredients(monkeypatch):
+    _catalog(monkeypatch, {"Stress Release": "Stress Release . Price: $69.97.",
+                           "Nous Energy": "Nous Energy supports mitochondria. Price: $69.97."},
+             ingredients={"Stress Release": [{"name": "CBD", "dose": "10 mg"},
+                                             {"name": "L-Theanine"}]})
+    user = build_narrative_prompt(_tail_report(), "")["user"]
+    assert "remedy: Stress Release; pathways source: ingredients: CBD, L-Theanine; dose" in user
+    assert "remedy: Nous Energy; pathways source: Nous Energy supports mitochondria.; dose" in user
+    assert "Price:" not in user

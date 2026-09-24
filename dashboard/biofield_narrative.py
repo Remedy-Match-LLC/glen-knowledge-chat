@@ -121,6 +121,17 @@ _SYSTEM = (
     "state at least two of its supplied indications, then name the therapeutic essence and describe "
     "its supplied healing qualities. Never omit either half. Use only the catalog descriptions "
     "supplied in the layer block.\n"
+    "- TAIL BEYOND THE HEAD: when a layer block carries 'TAIL BEYOND THE HEAD', add 2 to 4 "
+    "plain sentences to that layer's paragraph, after naming the Head. Describe the structure and "
+    "function of those tail areas and how they relate to the Head, so the reader sees why they "
+    "sit on one layer. A tail item may carry a remedy-style name such as 'Jejunum Rejuvenator' "
+    "or 'Liver Driver': describe the body area or function it names, not a product. Cover "
+    "every tail area listed, grouping related ones. Connect them to the client only where a CLIENT-STATED CONCERNS item "
+    "plainly relates; never invent a symptom or condition. Name one or two key pathways the "
+    "layer's remedies support, taken ONLY from that remedy's 'pathways source' (its description or its listed "
+    "ingredients); when it says none was supplied, name no pathway for it. Frame it as balancing these patterns supports the "
+    "body's own function. Never say a remedy treats, heals, cures, fixes or prevents anything, "
+    "and never state or imply a diagnosis.\n"
     "- PLAIN TEXT ONLY: no markdown, no asterisks, no bold, no headings. Still begin each "
     "layer paragraph with its number, as '1.', '2.' and so on.\n"
     "- NAME EVERY INFOCEUTICAL: whenever an infoceutical appears, give its full name with its "
@@ -299,6 +310,15 @@ def _user_block(report, notes, scan=None, profile=None, animal=None):
         is_life_stress = ("life stress" in head.lower() or
                           "psychoemotional" in head.lower() or
                           head_is_essence or tail_is_essence)
+        # Glen, 2026-09-24: a tail naming more than the head gets its own description.
+        # An essence in the tail is left to the life stress rule below.
+        head_key = head.lower()
+        beyond = [t.strip() for t in affected.split(",")
+                  if t.strip() and t.strip().lower() != head_key and not _is_essence(t.strip())]
+        if beyond:
+            lines.append(f"  - TAIL BEYOND THE HEAD: {'; '.join(beyond)}")
+            lines.append("    (write 2 to 4 sentences on these tail areas in this layer's "
+                         "paragraph, per the TAIL BEYOND THE HEAD rule)")
         if is_life_stress:
             associated = affected if tail_is_essence else head
             if not associated:
@@ -311,13 +331,15 @@ def _user_block(report, notes, scan=None, profile=None, animal=None):
             remedy = l.get("remedy") or ""
             role = "THERAPEUTIC ESSENCE" if is_life_stress else "remedy"
             qualities = _catalog_description(remedy) if is_life_stress else ""
+            pathways = (_pathways_source(remedy) if beyond and not is_life_stress else "")
             # The report prints "(as directed)" for a remedy with no dosing; say the same
             # here, or the writer reports the dose as missing.
             dose = " ".join(x for x in (l.get("dosage") or "", l.get("frequency") or "",
                                         l.get("timing") or "") if x.strip()) or "as directed"
             lines.append(
                 f"  - {role}: {remedy}"
-                f"{('; healing qualities: ' + qualities) if qualities else ''}; "
+                f"{('; healing qualities: ' + qualities) if qualities else ''}"
+                f"{('; pathways source: ' + pathways) if pathways else ''}; "
                 f"dose: {dose}")
     sb = _scan_block(scan)
     if sb:
@@ -362,6 +384,27 @@ def _catalog_product(name):
         return product or {}
     except Exception:
         return {}
+
+
+def _pathways_source(name):
+    """What the writer may draw a remedy's pathways from: its catalog description and
+    its ingredient names. Many descriptions are empty or only "<Name> . Price: $69.97.",
+    so the ingredients carry the substance there. Nothing found says so, rather than
+    leaving the writer free to invent a pathway."""
+    import re
+    product = _catalog_product(name)
+    desc = re.sub(r"\s*Price:\s*\$[\d.,]+\.?", "", _catalog_description(name)).strip()
+    if re.sub(r"[^a-z0-9]", "", desc.lower()) == re.sub(r"[^a-z0-9]", "", (name or "").lower()):
+        desc = ""
+    names = [str(i.get("name") or "").strip() for i in (product.get("ingredients") or [])
+             if isinstance(i, dict)]
+    names = [n for n in names if n][:8]
+    parts = []
+    if desc:
+        parts.append(desc[:500].rstrip())
+    if names:
+        parts.append("ingredients: " + ", ".join(names))
+    return " | ".join(parts) or "(none supplied; name no pathway)"
 
 
 def _is_essence(name):
