@@ -409,3 +409,34 @@ def test_tail_rule_forbids_claims_and_invention():
                    "Never say a remedy treats, heals, cures, fixes or prevents",
                    "never state or imply a diagnosis"):
         assert phrase in s, phrase
+
+
+def test_an_ingredient_containing_another_layers_remedy_name_is_left_out(monkeypatch):
+    """segment_narrative finds a layer by substring, so "TMG Powder Blend" named in
+    layer 2 would start layer 1's card there. A head is not a cue here: "Night"
+    must not strip "Nightshade-free base"."""
+    _catalog(monkeypatch, {}, ingredients={"Stress Release": [
+        {"name": "TMG Powder Blend"}, {"name": "Nightshade-free base"}, {"name": "CBD"}]})
+    user = build_narrative_prompt(_tail_report(), "")["user"]
+    assert "pathways source: ingredients: Nightshade-free base, CBD; dose" in user
+
+
+def test_tail_items_compare_without_punctuation_dedupe_and_read_every_row(monkeypatch):
+    _catalog(monkeypatch, {})
+    r = {**_report(), "layers": [
+        {"layer": 1, "head": "Liver.", "most_affected": "",
+         "remedy": "Liver Support", "dosage": "", "frequency": "", "timing": ""},
+        {"layer": 1, "head": "Liver.", "most_affected": "Liver, Kidney, kidney, Kidney ",
+         "remedy": "Kidney Support", "dosage": "", "frequency": "", "timing": ""}]}
+    assert "  - TAIL BEYOND THE HEAD: Kidney\n" in build_narrative_prompt(r, "")["user"]
+
+
+def test_the_video_script_carries_no_tail_block(monkeypatch):
+    _catalog(monkeypatch, {})
+    user = build_video_script_prompt(_tail_report(), "")["user"]
+    assert "TAIL BEYOND THE HEAD" not in user and "pathways source" not in user
+
+
+def test_a_paragraph_never_names_another_layers_remedy():
+    assert ("Never name another layer's remedy in this paragraph."
+            in build_narrative_prompt(_report(), "")["system"])

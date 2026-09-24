@@ -131,7 +131,7 @@ _SYSTEM = (
     "layer's remedies support, taken ONLY from that remedy's 'pathways source' (its listed "
     "ingredients); when it says none was supplied, name no pathway for it. Frame it as balancing these patterns supports the "
     "body's own function. Never say a remedy treats, heals, cures, fixes or prevents anything, "
-    "and never state or imply a diagnosis.\n"
+    "and never state or imply a diagnosis. Never name another layer's remedy in this paragraph.\n"
     "- PLAIN TEXT ONLY: no markdown, no asterisks, no bold, no headings. Still begin each "
     "layer paragraph with its number, as '1.', '2.' and so on.\n"
     "- NAME EVERY INFOCEUTICAL: whenever an infoceutical appears, give its full name with its "
@@ -270,7 +270,11 @@ def _enforce_animal_greeting(text, animal):
     return re.sub(rf"^\s*Aloha\s+{re.escape(pet)}\b[^,\n]*,", greeting, text or "", count=1)
 
 
-def _user_block(report, notes, scan=None, profile=None, animal=None):
+def _norm(text):
+    return re.sub(r"[^a-z0-9]", "", str(text or "").lower())
+
+
+def _user_block(report, notes, scan=None, profile=None, animal=None, with_tail=True):
     c = report.get("client") or {}
     if animal:
         pet = (animal.get("name") or "").strip()
@@ -294,10 +298,17 @@ def _user_block(report, notes, scan=None, profile=None, animal=None):
     # three layers and threw every later number off the report's (Glen, 2026-09-18).
     from dashboard.biofield_report_html import group_layers
     grouped = [(g["layer"], g["rows"]) for g in group_layers(report.get("layers") or [])]
-    remedies_by_layer = {ln: {(r.get("remedy") or "").strip() for r in rows} - {""}
-                         for ln, rows in grouped}
-    other_remedies = {ln: set().union(*[v for k, v in remedies_by_layer.items() if k != ln])
-                      for ln in remedies_by_layer}
+    # The portal splits this letter into layer cards by finding each layer's remedy
+    # name (segment_narrative). An ingredient containing another layer's remedy name,
+    # named in this layer's paragraph, would start that layer's card here.
+    from dashboard.biofield_portal_publish import _cue_candidates
+    # Remedy cues only: a head is a cue of last resort, and a short one ("Acid") would
+    # strip "Ascorbic Acid" from every other layer.
+    cues_by_layer = {ln: {c.lower() for r in rows if (r.get("remedy") or "").strip()
+                          for c in _cue_candidates({"remedy": r.get("remedy")})}
+                     for ln, rows in grouped}
+    other_cues = {ln: set().union(*[v for k, v in cues_by_layer.items() if k != ln])
+                  for ln in cues_by_layer}
     for display_ln, layer_rows in grouped:
         first = layer_rows[0]
         head = (first.get("head") or "").strip()
@@ -316,12 +327,19 @@ def _user_block(report, notes, scan=None, profile=None, animal=None):
                           head_is_essence or tail_is_essence)
         # Glen, 2026-09-24: a tail naming more than the head gets its own description.
         # A whole-tail essence is left to the life stress rule below.
-        head_key = head.lower()
-        beyond = [t.strip() for t in affected.split(",")
-                  if t.strip() and t.strip().lower() != head_key]
+        # Every row's tail counts, not only the first's; items compare without case
+        # or punctuation, so "Liver." is the head "Liver" and "kidney" repeats "Kidney".
+        seen = {_norm(head)}
         if tail_is_essence:
-            beyond = [t for t in beyond if t.lower() != affected.lower()]
-        if beyond:
+            seen.add(_norm(affected))
+        beyond = []
+        for row in layer_rows:
+            for t in str(row.get("most_affected") or "").split(","):
+                t = t.strip()
+                if t and _norm(t) and _norm(t) not in seen:
+                    seen.add(_norm(t))
+                    beyond.append(t)
+        if beyond and with_tail:
             lines.append(f"  - TAIL BEYOND THE HEAD: {'; '.join(beyond)}")
             lines.append("    (write 2 to 4 sentences on these tail areas in this layer's "
                          "paragraph, per the TAIL BEYOND THE HEAD rule)")
@@ -337,7 +355,8 @@ def _user_block(report, notes, scan=None, profile=None, animal=None):
             remedy = l.get("remedy") or ""
             role = "THERAPEUTIC ESSENCE" if is_life_stress else "remedy"
             qualities = _catalog_description(remedy) if is_life_stress else ""
-            pathways = (_pathways_source(remedy, other_remedies[display_ln]) if beyond else "")
+            pathways = (_pathways_source(remedy, other_cues[display_ln])
+                        if beyond and with_tail else "")
             # The report prints "(as directed)" for a remedy with no dosing; say the same
             # here, or the writer reports the dose as missing.
             dose = " ".join(x for x in (l.get("dosage") or "", l.get("frequency") or "",
@@ -396,13 +415,13 @@ def _pathways_source(name, exclude=()):
     """What the writer may draw a remedy's pathways from: its ingredient names only.
     Catalog descriptions carry disease claims ("healing the underlying causes of
     Glaucoma"), prices and competitor comparisons, so they are never passed here.
-    An ingredient that is another layer's remedy is left out: named in this layer's
+    An ingredient containing another layer's remedy name is left out: named in this layer's
     paragraph, it would split the portal cards at the wrong place. Nothing found says
     so, rather than leaving the writer free to invent a pathway."""
-    skip = {str(x).strip().lower() for x in exclude}
+    skip = {str(x).strip().lower() for x in exclude} - {""}
     names = [str(i.get("name") or "").strip()
              for i in (_catalog_product(name).get("ingredients") or []) if isinstance(i, dict)]
-    names = [n for n in names if n and n.lower() not in skip][:8]
+    names = [n for n in names if n and not any(c in n.lower() for c in skip)][:8]
     return ("ingredients: " + ", ".join(names)) if names else "(none supplied; name no pathway)"
 
 
@@ -491,7 +510,7 @@ _VIDEO_SYSTEM = (
 
 def build_video_script_prompt(report, notes, scan=None):
     return {"system": _system_with_scan(_VIDEO_SYSTEM, scan),
-            "user": _user_block(report, notes, scan)}
+            "user": _user_block(report, notes, scan, with_tail=False)}
 
 
 def generate_video_script(report, notes, complete, scan=None):
