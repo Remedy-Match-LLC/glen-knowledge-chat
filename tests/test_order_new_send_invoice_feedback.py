@@ -26,6 +26,10 @@ OK = {"status": "done", "result": {"message": "Invoice #196 emailed to a@example
 # The dispatcher's real failure shape (dashboard/dispatch.py): the error is top level.
 REFUSED = {"status": "failed",
            "error": "invoice pay-link is disabled (INVOICE_PAYLINK_ENABLED off)"}
+# A failure from a step after send_email (mark_invoice_sent, the event log): the email went.
+AFTER_SEND = {"status": "failed", "error": "database is locked"}
+UNAUTHORIZED = {"ok": False, "error": "unauthorized"}
+DENIED = {"status": "denied", "reason": "permission"}
 HTML, OFFLINE = "html", "offline"   # a 502 page that is not JSON; a fetch that rejects
 
 
@@ -74,7 +78,9 @@ const document = { createElement: makeEl, querySelectorAll: () => [btn, btn2] };
 let INV_SENT_AT = %s;
 """ % (json.dumps(list(replies)), "true" if confirm else "false", json.dumps(sent_at))
     body += re.search(r"(?m)^let INV_UNSURE = .*$", PAGE).group(0) + "\n"
-    body += "".join(_func(n) for n in ("invSentStr", "fmtSentTime", "invSendStatus", "sendInvoice"))
+    body += re.search(r"(?m)^const INV_PRE_SEND = .*$", PAGE).group(0) + "\n"
+    body += "".join(_func(n) for n in ("invSentStr", "fmtSentTime", "invSendStatus",
+                                       "invRefusedBeforeEmail", "sendInvoice"))
     body += """
 (async () => { let ret;
   for (let i = 0; i < REPLIES.length; i++) ret = await sendInvoice(btn, %s);
@@ -109,11 +115,27 @@ def test_both_buttons_lock_during_a_send_and_both_show_sent():
     assert out["label"].startswith("Invoice Sent ") and out["label2"].startswith("Invoice Sent ")
 
 
-def test_a_refused_send_says_so_with_the_servers_reason():
-    out = _run(replies=(REFUSED,))
-    assert out["status"] == "Send failed: invoice pay-link is disabled (INVOICE_PAYLINK_ENABLED off)"
+@pytest.mark.parametrize("reply, reason", [
+    (REFUSED, "invoice pay-link is disabled (INVOICE_PAYLINK_ENABLED off)"),
+    ({"status": "failed", "error": "order #196 has no customer email"}, "order #196 has no customer email"),
+    ({"status": "failed", "error": "order #196 is 'done' \u2014 an invoice can only be sent"}, "order #196 is 'done'"),
+    (UNAUTHORIZED, "access key was refused"),
+    (DENIED, "not allowed to send invoices"),
+])
+def test_a_refusal_before_any_email_says_not_sent(reply, reason):
+    out = _run(replies=(reply,))
+    assert out["status"].startswith("Not sent: ") and reason in out["status"]
     assert "error" in out["statusClass"].split()
-    assert out["label"] == "Send invoice" and out["sentAt"] is None and out["disabled"] is False
+    assert out["unsure"] is False and out["sentAt"] is None
+    assert out["label"] == "Send invoice" and out["disabled"] is False
+
+
+def test_a_failure_after_the_email_never_says_not_sent():
+    out = _run(replies=(AFTER_SEND,))
+    assert "Not sent" not in out["status"]
+    assert "database is locked" in out["status"] and "may still have gone" in out["status"]
+    assert "Check order #196" in out["status"]
+    assert "unknown" in out["statusClass"].split() and out["unsure"] is True
 
 
 @pytest.mark.parametrize("lost", [HTML, OFFLINE])
@@ -121,17 +143,21 @@ def test_a_lost_reply_says_unknown_never_failed(lost):
     # The request may have reached the server and sent the email.
     out = _run(replies=(lost,))
     assert out["status"].startswith("Not known whether it sent")
-    assert "Send failed" not in out["status"]
+    assert "Not sent" not in out["status"] and "Check order #196" in out["status"]
     assert "unknown" in out["statusClass"].split()
     assert out["label"] == "Send invoice" and out["disabled"] is False
 
 
-@pytest.mark.parametrize("first", [HTML, OFFLINE, REFUSED])
+@pytest.mark.parametrize("first", [HTML, OFFLINE, AFTER_SEND])
 def test_a_retry_after_an_unclear_attempt_asks_first(first):
-    # A "failed" reply can come from a step after the email went, so it asks too.
     out = _run(replies=(first, OK), confirm=False)
     assert out["calls"] == 1 and len(out["asked"]) == 1
     assert "may have gone out" in out["asked"][0]
+
+
+def test_a_retry_after_a_clean_refusal_does_not_ask():
+    out = _run(replies=(REFUSED, OK), confirm=False)
+    assert out["asked"] == [] and out["calls"] == 2 and out["ret"] is True
 
 
 def test_a_second_send_asks_first_and_no_means_no_email():
@@ -159,3 +185,22 @@ def test_both_send_buttons_use_it_and_edit_mode_knows_the_last_send():
     assert 'onclick="sendInvoice(this, LAST_ORDER&&LAST_ORDER.order_id)"' in PAGE
     assert "lifecycle('orders.send_invoice'" not in PAGE
     assert "INV_SENT_AT = o.invoice_sent_at || null;" in _func("loadOrderForEdit")
+
+
+def test_the_pre_send_list_matches_the_servers_checks_and_nothing_after():
+    """Every error _send_invoice_exec raises before send_email must be recognised as
+    'not sent', and the send failure itself must not be. Reads the server source, so a
+    reworded server check fails here instead of turning into a false 'may have gone'."""
+    src = (Path(__file__).resolve().parent.parent / "dashboard" / "orders.py").read_text()
+    body = src[src.index("def _send_invoice_exec("):]
+    body = body[:body.index("\ndef ", 1)]
+    before, after = body.split("_inbox.send_email(", 1)
+    pattern = re.compile(re.search(r"(?m)^const INV_PRE_SEND = /(.*)/;$", PAGE).group(1))
+    raised = re.findall(r'raise ValueError\(f?"([^"]*)"', before)
+    assert len(raised) == 5, raised
+    for msg in raised:
+        example = re.sub(r"\{oid\}", "196", msg)
+        example = re.sub(r"\{[^}]*\}", "done", example)
+        assert pattern.match(example), f"server check not recognised as pre-send: {msg}"
+    for msg in re.findall(r'raise ValueError\(f?"([^"]*)"', after):
+        assert not pattern.match(re.sub(r"\{[^}]*\}", "x", msg)), msg

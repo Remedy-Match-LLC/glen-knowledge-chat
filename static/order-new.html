@@ -1108,6 +1108,20 @@ function invSendStatus(btn, text, kind){
   }
   s.textContent = text; s.className = 'inv-send-status' + (kind ? ' '+kind : '');
 }
+// Replies that prove no email was attempted: the route or the dispatcher refused, or
+// _send_invoice_exec raised one of its checks that run before send_email. Any other
+// failure may follow a send that went, so it is reported as uncertain.
+const INV_PRE_SEND = /^(no db connection|invoice pay-link is disabled|order #\d+ (not found|is '|has no customer email))/;
+function invRefusedBeforeEmail(j){
+  if (!j) return null;
+  if (j.ok === false && j.error === "unauthorized") return "the page's access key was refused. Reopen this page from the console.";
+  if (j.status === "denied") return "this login is not allowed to send invoices.";
+  if (j.status === "error") return j.error || "unknown action";
+  if (j.status === "queued") return "the send is waiting for approval.";
+  if (j.status === "needs_confirmation") return "the server asked for confirmation first.";
+  const err = (j.result && j.result.error) || j.error || "";
+  return (j.status === "failed" && INV_PRE_SEND.test(err)) ? err : null;
+}
 async function sendInvoice(btn, orderId){
   if (!orderId){ invSendStatus(btn, "Save the invoice before sending it.", "error"); return false; }
   if (INV_SENT_AT && !confirm("This invoice was already sent on "+fmtSentTime(INV_SENT_AT)
@@ -1127,15 +1141,22 @@ async function sendInvoice(btn, orderId){
     INV_UNSURE = true;
     // The request may have reached the server, so do not claim it failed.
     btn.textContent = label;
-    invSendStatus(btn, "Not known whether it sent ("+lost+"). Reload the page to check before sending again.", "unknown");
+    invSendStatus(btn, "Not known whether it sent ("+lost+"). Check order #"+orderId+" on the orders board before sending again.", "unknown");
     toast("Send result unknown", "error"); return false;
   }
   if (!j || j.status!=="done"){
-    // "failed" can also come from a step after the email went, so it does not prove
-    // nothing was sent. Report the server's words and make a retry ask first.
-    const err = (j&&j.result&&j.result.error) || (j&&(j.reason||j.error)) || "unknown error";
-    INV_UNSURE = true; btn.textContent = label;
-    invSendStatus(btn, "Send failed: "+err, "error"); toast("Send failed: "+err, "error"); return false;
+    btn.textContent = label;
+    const refused = invRefusedBeforeEmail(j);
+    if (refused){
+      invSendStatus(btn, "Not sent: "+refused, "error"); toast("Not sent", "error"); return false;
+    }
+    // Anything else can come from a step after the email went (the sent-time write,
+    // the event log, a mail timeout after acceptance). So it may have gone.
+    const err = (j&&j.result&&j.result.error) || (j&&(j.reason||j.error)) || "no reason given";
+    INV_UNSURE = true;
+    invSendStatus(btn, "The server reported an error: "+err+". The email may still have gone. Check order #"
+      +orderId+" on the orders board before sending again.", "unknown");
+    toast("Send result unclear", "error"); return false;
   }
   INV_SENT_AT = new Date().toISOString(); INV_UNSURE = false;
   const msg = ((j.result&&j.result.message) || "Invoice sent.").replace(/\.$/, "");
