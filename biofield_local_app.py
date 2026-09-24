@@ -880,6 +880,26 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
     # fetches stay authed. No CONSOLE_SECRET -> open (e.g. bare local dev / tests).
     _secret = os.environ.get("CONSOLE_SECRET", "")
 
+    @app.after_request
+    def _fold_repeated_remedies(resp):
+        """After any successful write to an intake, fold each later layer that repeats
+        a remedy from an earlier one, when every row involved is still a proposal.
+        Glen, 2026-09-24. One hook, so all eleven chain writers are covered, and a new
+        one is covered without remembering to call it."""
+        tid = (request.view_args or {}).get("test_id")
+        if (request.method != "POST" or not tid or resp.status_code != 200
+                or not request.path.startswith("/author/")):
+            return resp
+        try:
+            from dashboard.biofield_chain_fold import auto_fold
+            with sqlite3.connect(db_path) as cx:
+                for f in auto_fold(cx, tid):
+                    print(f"[fold] {tid}: layer {f['layer']} into {f['into']} "
+                          f"({', '.join(f['remedies'])})", flush=True)
+        except Exception as e:
+            print(f"[fold] {tid}: skipped: {e!r}", flush=True)
+        return resp
+
     @app.before_request
     def _console_gate():
         if not _secret:
@@ -2523,6 +2543,24 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                                   name, d.get("dosage", ""), d.get("frequency", ""),
                                   d.get("timing", ""), confirmed=0, origin="clinical")
         return {"ok": True, "applied": True, "layers_added": made}
+
+    @app.route("/author/<test_id>/fold-duplicate", methods=["POST"])
+    def author_fold_duplicate(test_id):
+        """Glen approves a fold the page proposed, for a repeat on a confirmed layer.
+        Glen, 2026-09-24. See dashboard/biofield_chain_fold.py."""
+        from dashboard.biofield_chain_fold import fold_layer
+        body = request.get_json(silent=True) or {}
+        try:
+            layer = int(body.get("layer"))
+            rids = [int(r) for r in body.get("rids") or []]
+        except (TypeError, ValueError):
+            return {"ok": False, "error": "A layer and its rows are required"}, 400
+        with sqlite3.connect(db_path) as cx:
+            done = fold_layer(cx, test_id, layer, rids)
+        if not done:
+            return {"ok": False, "error": "The chain changed since the page loaded. "
+                                          "Reload and try again."}, 409
+        return {"ok": True, "folded": done["layer"], "into": done["into"]}
 
     @app.route("/author/<test_id>/clinical-items/combine", methods=["POST"])
     def author_clinical_items_combine(test_id):

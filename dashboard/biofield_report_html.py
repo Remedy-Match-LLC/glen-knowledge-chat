@@ -1194,6 +1194,11 @@ function clinicalStressTyped(input){
  var btn=input.closest('.clinical-item').querySelector('.clinical-stress-save');if(!btn)return;
  var now=(input.value||'').trim().toLowerCase(),was=(input.dataset.remembered||'').trim().toLowerCase();
  btn.hidden=!(now&&was&&now!==was)}
+async function foldLayer(layer,rids,btn){
+ btn.disabled=true;
+ var j=await post('/author/__TID__/fold-duplicate',{layer:layer,rids:rids});
+ if(j&&j.ok){location.reload();return}
+ btn.disabled=false;alert((j&&j.error)||'Could not fold the layer')}
 async function saveClinicalStress(input){
  var row=input.closest('.clinical-item');if(!row)return;
  var stat=document.getElementById('clinicalOrderStat');
@@ -2065,6 +2070,30 @@ def render_clinical_proposals():
             "</style><section id=clinicalProposals class=clinical-proposals aria-live=polite></section>")
 
 
+def _render_fold_notice(groups):
+    """Each later layer repeating a remedy from an earlier one, with a Fold button.
+    Glen, 2026-09-24: a repeat on a confirmed layer is proposed for his approval. An
+    all-proposal repeat folds on its own after the next write, so it shows here only
+    until then."""
+    from dashboard.biofield_chain_fold import duplicate_folds
+    items = []
+    for f in duplicate_folds(groups):
+        names = ", ".join(_e(r) for r in f["remedies"])
+        what = (f"Its tail joins layer {f['into']}&rsquo;s tail and layer {f['layer']} goes."
+                if f["whole"] else
+                f"Only that row goes. Layer {f['layer']} keeps its other remedies.")
+        rids = ",".join(str(int(r)) for r in f["rids"])
+        items.append(
+            f"<li>Layer {f['layer']} repeats {names} from layer {f['into']}. {what} "
+            f"<button type=button class='btn ghost' "
+            f"onclick=\"foldLayer({int(f['layer'])},[{rids}],this)\">"
+            f"Fold into layer {f['into']}</button></li>")
+    if not items:
+        return ""
+    return ("<div class=clinical-warn id=foldnotice><b>Repeated remedies.</b> "
+            "A remedy belongs on its earliest layer.<ul>" + "".join(items) + "</ul></div>")
+
+
 def render_author_html(report, depth_values=None, transcript="", covered_by_layer=None,
                        narrative="", fee_state=None, transcript_updated="",
                        clinical_checklist=None, dispensed=None, dispensed_error=None,
@@ -2125,6 +2154,7 @@ def render_author_html(report, depth_values=None, transcript="", covered_by_laye
              "Reorder layers by dragging in the numbered rail on the left (or drag a card by its "
              "&#10303; handle); &lsquo;add a remedy&rsquo; adds another remedy to a layer, and the "
              "last card starts a new layer.</p>"
+             + _render_fold_notice(groups) +
              "<div class=chainlayout>" + _render_layer_rail(groups) +
              "<div id=chaintbl class=chain>"
              + _render_chain_cards(report, depth_values, covered_by_layer,
