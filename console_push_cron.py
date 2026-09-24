@@ -628,8 +628,24 @@ def _email_dnd_of(contact):
             str(em.get('message') or '').strip())
 
 
+def _additional_emails_of(contact):
+    """A v2 contact's additionalEmails as sorted, lowercased addresses.
+
+    A GHL contact merge moves the merged-away address here (people, 2026-09-24). The
+    live shape is a list of {"email": ...}; a bare string is accepted too. The
+    primary address is left out, since it already travels as `email`."""
+    primary = str(contact.get('email') or '').strip().lower()
+    out = set()
+    for item in contact.get('additionalEmails') or []:
+        addr = item.get('email') if isinstance(item, dict) else item
+        addr = str(addr or '').strip().lower()
+        if '@' in addr and addr != primary:
+            out.add(addr)
+    return sorted(out)
+
+
 def fetch_email_dnd_v2():
-    """{contact_id: (status, message)} for every contact in the location, or None.
+    """{contact_id: (status, message, additional_emails)} for every contact, or None.
 
     None on ANY failure: no token, a non-200, a transport error, a bad body, or the
     page cap. A partial read is discarded too, so a failed run sends exactly the
@@ -647,7 +663,24 @@ def fetch_email_dnd_v2():
         'Content-Type': 'application/json',
         'User-Agent': GHL_V2_UA,
     }
-    out, after = {}, None
+    out, primaries, after, total = {}, set(), None, None
+
+    def _done():
+        # An extra address that is ANOTHER contact's primary is left to that
+        # contact's own signals. Measured 2026-09-24: 48 of 86 extra addresses were
+        # another live contact's primary, all 15 that a block would reach under a
+        # different name, 11 of them otherwise unblocked. Glen: "yes, narrow it".
+        # A merged-away address is not one of these: GHL deletes the old contact.
+        # The filter needs EVERY contact's primary. A read that ends short of GHL's
+        # own `total` may have missed one, so it sends no extras this run (review
+        # round 2, 2026-09-24). DND keeps its old behaviour.
+        complete = isinstance(total, int) and len(out) >= total
+        if not complete:
+            print(f'  GHL v2 read {len(out)} of {total} contacts — '
+                  'additional emails not carried this run')
+        return {cid: (st, msg, [a for a in extra if a not in primaries] if complete else [])
+                for cid, (st, msg, extra) in out.items()}
+
     try:
         for _ in range(GHL_V2_MAX_PAGES):
             body = {'locationId': location, 'pageLimit': GHL_V2_PAGE}
@@ -659,13 +692,19 @@ def fetch_email_dnd_v2():
                 print(f'  GHL v2 contact search error: {r.status_code} — '
                       'email DND not carried this run')
                 return None
-            page = (r.json() or {}).get('contacts') or []
+            body_json = r.json() or {}
+            page = body_json.get('contacts') or []
+            if isinstance(body_json.get('total'), int):
+                total = body_json['total']
             for c in page:
                 if c.get('id'):
-                    out[c['id']] = _email_dnd_of(c)
+                    out[c['id']] = (*_email_dnd_of(c), _additional_emails_of(c))
+                primary = str(c.get('email') or '').strip().lower()
+                if primary:
+                    primaries.add(primary)
             after = page[-1].get('searchAfter') if page else None
             if len(page) < GHL_V2_PAGE or not after:
-                return out
+                return _done()
             time.sleep(GHL_V2_PAUSE_SECS)
     except Exception as e:
         print(f'  GHL v2 contact search failed: {e!r} — email DND not carried this run')
@@ -761,10 +800,15 @@ def sync_people_from_ghl(batch_size=100):
             # Per-channel email DND from v2. The hub decides what it means: an
             # address-level block, or a refusal only alongside a refusal signal.
             if email_dnd is not None:
-                status, message = email_dnd.get(c.get('id') or '', ('', ''))
+                status, message, extra = email_dnd.get(c.get('id') or '', ('', '', []))
                 if status:
                     person['email_dnd'] = status
                     person['email_dnd_message'] = message
+                # Other addresses on the contact, most often left by a GHL merge. The
+                # hub blocks them with the contact's signals; it never makes people of them.
+                extra = [a for a in extra if a != email]
+                if extra:
+                    person['additional_emails'] = extra
             # merge custom fields
             for k, v in cf.items():
                 if k != 'organizations' and k != 'island':

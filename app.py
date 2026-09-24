@@ -40718,19 +40718,41 @@ def _upsert_person_additive(cx, person, ts=None):
     _dnd_blocks_address = _dnd_effect in ("address", "refusal")
     dnd = bool(person.get("dnd")) or _refusal_tag or _dnd_refusal
 
-    if _bounce_tag or _dnd_blocks_address:
+    # The contact's other addresses, most often left by a GHL contact merge (people,
+    # 2026-09-24). GHL's signals belong to the contact and do not say which address
+    # they came from, so each one blocks every address (Glen, 2026-09-24: "block all
+    # addresses"). They get suppression rows ONLY: making hub people of them would add
+    # a duplicate person for every merge. Signals come from the INCOMING payload, as
+    # for the primary, so a bounce tag stored in the hub never re-blocks anything.
+    _extra = person.get("additional_emails")
+    _extra = sorted({str(a).strip().lower() for a in _extra
+                     if isinstance(a, str) and "@" in a} - {email}) \
+        if isinstance(_extra, list) else []
+
+    # An extra address's reason names the contact it came from, so a block can be
+    # traced if the address later becomes another contact's primary.
+    _via = f" (extra address on GHL contact {person.get('ghl_id')})" if person.get("ghl_id") else " (extra address)"
+
+    if _bounce_tag or _dnd_blocks_address or (dnd and _extra):
         from dashboard import email_suppression as _es
         _es.init_table(cx, commit=False)  # the caller holds the transaction
         # overwrite=False: an hourly sync never rewrites an existing row, so a
         # bounce scanner's row or an in-house opt-out keeps its own bounce_type.
-        if _bounce_tag:
-            _es.add(cx, email, "hard", "GHL tag: email bounced", "ghl",
-                    overwrite=False, commit=False)
-        if _dnd_blocks_address:
-            _es.add(cx, email, "ghl-dnd",
-                    ("GHL email DND: " + _email_dnd_message)[:200] if _email_dnd_message
-                    else "GHL email DND active", "ghl",
-                    overwrite=False, commit=False)
+        for _addr in [email] + _extra:
+            _suffix = "" if _addr == email else _via
+            if _bounce_tag:
+                _es.add(cx, _addr, "hard", "GHL tag: email bounced" + _suffix, "ghl",
+                        overwrite=False, commit=False)
+            if _dnd_blocks_address:
+                _es.add(cx, _addr, "ghl-dnd",
+                        (("GHL email DND: " + _email_dnd_message)[:200] if _email_dnd_message
+                         else "GHL email DND active") + _suffix, "ghl",
+                        overwrite=False, commit=False)
+            # A refusal is the person's, and the primary records it as the
+            # consent:unsubscribed tag. An extra address has no tag of its own here.
+            if dnd and _addr != email:
+                _es.add(cx, _addr, "optout", "GHL refusal" + _via, "ghl",
+                        overwrite=False, commit=False)
 
     def _apply_dnd(tagset):
         return ((set(tagset) - {"consent:opted-in"}) | {"consent:unsubscribed"}) if dnd else set(tagset)
