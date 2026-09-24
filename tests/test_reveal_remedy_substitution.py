@@ -156,3 +156,18 @@ def test_swap_drops_the_old_products_dosing():
 def test_is_aller_free_needs_a_word_start():
     from dashboard.biofield_reveals import is_aller_free
     assert not is_aller_free("Smaller Free Range Eggs")
+
+
+def test_allerfree_drops_by_exact_name_gets_immune_modulation_dose():
+    row = {"remedies": [{"name": "AllerFree HomeoEnergetic Drops", "slug": "",
+                         "dosing": "10 drops 3 times a day or as needed"}]}
+    apply_remedy_substitutions(row)
+    assert row["remedies"][0]["dosing"] == "1 capsule daily with food"
+
+
+def test_swap_without_a_dose_blanks_the_old_products_dose():
+    # Relax -> Stress Release carries no dose of its own; Relax's dose must not survive.
+    row = {"remedies": [{"name": "Relax", "slug": "relax", "dosing": "2 capsules at bedtime"}]}
+    apply_remedy_substitutions(row)
+    assert row["remedies"][0]["slug"] == "stress-release"
+    assert row["remedies"][0]["dosing"] == ""
