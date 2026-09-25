@@ -110,3 +110,32 @@ def test_handoff_bills_the_largest_count_for_a_repeated_remedy(tmp_path):
         rep = authored_report(cx, aid)
     got = {r["name"]: r["qty"] for r in bh.report_remedies_for_invoice(db, rep, bi.bottles_needed)}
     assert got == {"IOP Syntropy": 2, "Candida Cleanse": 1}
+
+
+
+def test_reorder_basket_keeps_the_largest_when_the_earlier_layer_is_larger():
+    cx = sqlite3.connect(":memory:")
+    aid = _chain(cx)
+    add_chain_row(cx, aid, layer=3, head="Eye 2", most_affected="Pressure",
+                  remedy="IOP Syntropy", dosage="1 capsule", frequency="3 times daily")
+    update_chain_row(cx, ordered_chain(cx, aid)[0]["id"], bottles=3)   # EARLIER layer 3
+    update_chain_row(cx, ordered_chain(cx, aid)[2]["id"], bottles=2)   # later layer 2
+    catalog = {"iop-syntropy": {"name": "IOP Syntropy"},
+               "candida-cleanse": {"name": "Candida Cleanse"}}
+    items = bpp.build_portal_content(cx, aid, special_price_cents=0,
+                                     catalog=catalog)["content"]["reorder_items"]
+    assert {i["slug"]: i["qty"] for i in items}["iop-syntropy"] == 3
+
+
+def test_author_page_carries_the_invoice_qty_input_and_sends_it():
+    """Server-side check of the page: the input renders with the stored count, and
+    both save paths post it. (The page's JS is parsed by test_intake_pages_parse.)"""
+    from dashboard.biofield_report_html import render_author_html
+    cx = sqlite3.connect(":memory:")
+    aid = _chain(cx)
+    rid = ordered_chain(cx, aid)[0]["id"]
+    update_chain_row(cx, rid, bottles=3)
+    html = render_author_html(authored_report(cx, aid))
+    assert f'id="r{rid}_billqty"' in html and 'value="3"' in html
+    assert "bottles:val('r'+rid+'_billqty')" in html          # saveRemedy
+    assert "bottles:val(p+'_billqty')" in html                 # savePendingEditor

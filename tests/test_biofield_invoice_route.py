@@ -150,7 +150,7 @@ def test_bottles_saved_on_a_row_reach_the_invoice(client):
 
 
 def test_bottles_route_refuses_a_bad_count(client):
-    for bad in ("2.5", "0", "-2", "3e2", "25", "99999999999999999999"):
+    for bad in ("2.5", "0", "-2", "+4", "3e2", "25", "\u00b2", "99999999999999999999"):
         r = client.post(f"/author/{client._tid}/row/1", json={"bottles": bad})
         assert r.status_code == 400, bad
     assert client.post(f"/author/{client._tid}/row/1", json={"bottles": " 4 "}).get_json()["ok"]

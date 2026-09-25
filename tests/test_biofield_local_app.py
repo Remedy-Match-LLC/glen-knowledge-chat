@@ -820,3 +820,37 @@ def test_handoff_never_creates_service_only_invoice_when_products_do_not_resolve
     assert result["invoice"]["ok"] is False
     assert "service-only" in result["invoice"]["error"]
     assert created == []
+
+
+
+def test_handoff_bills_the_largest_count_for_a_remedy_on_two_layers(tmp_path, monkeypatch):
+    """One remedy on two layers is one product. The handoff invoice bills its largest
+    count, whichever layer holds it, as the Intake invoice does (Glen 2026-09-25)."""
+    from dashboard.biofield_authoring import (init_auth_tables, create_test, add_chain_row,
+                                              ordered_chain, update_chain_row)
+    from dashboard import biofield_invoice
+    monkeypatch.setattr(biofield_invoice, "default_handoff_push", lambda *a, **k: {"ok": True})
+    for first, second in ((3, 1), (1, 3)):
+        db = str(tmp_path / f"h{first}{second}.db")
+        cx = sqlite3.connect(db)
+        init_auth_tables(cx)
+        tid = create_test(cx, "Pt", "pt@x.com", "2026-07-08")
+        add_chain_row(cx, tid, 1, "A", "a", "Liver Support", "1 cap", "daily", "")
+        add_chain_row(cx, tid, 2, "B", "b", "Liver Support", "1 cap", "daily", "")
+        rows = ordered_chain(cx, tid)
+        update_chain_row(cx, rows[0]["id"], bottles=first)
+        update_chain_row(cx, rows[1]["id"], bottles=second)
+        cx.commit()
+        captured = {}
+        def fake_create(cust, lines, replace_open=False, invoice_note=None, idempotency_key=""):
+            captured["lines"] = lines
+            return {"ok": True, "order_id": 1, "total_cents": 1, "external_ref": "INH"}
+        client = create_app(
+            db,
+            invoice_fetch_catalog=lambda: [{"name": "Liver Support", "slug": "liver-support"}],
+            invoice_create=fake_create,
+            invoice_latest=lambda email: {"ok": False},
+        ).test_client()
+        assert client.post("/author/%s/handoff" % tid, json={}).get_json()["ok"] is True
+        got = [l for l in captured["lines"] if l["slug"] == "liver-support"]
+        assert len(got) == 1 and got[0]["qty"] == 3, (first, second, got)

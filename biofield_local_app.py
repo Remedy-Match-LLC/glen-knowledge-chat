@@ -1980,7 +1980,7 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
             if raw == "":
                 fields["bottles"] = None
             else:
-                if not raw.isdigit() or not (1 <= int(raw) <= 24):
+                if not (raw.isascii() and raw.isdigit()) or not (1 <= int(raw) <= 24):
                     return {"ok": False,
                             "error": "Bottles must be a whole number from 1 to 24, or blank for 1."}, 400
                 fields["bottles"] = int(raw)
