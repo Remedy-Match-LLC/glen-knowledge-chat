@@ -141,8 +141,9 @@ _ALLER_FREE = re.compile(r"\baller[\s_-]*free")
 
 def is_aller_free(text):
     """True for any spelling of AllerFree. Glen, 2026-09-24: "Aller-Free is the correct
-    spelling for AllerFree (same formula)". The catalog sells "Aller-Free Aid for Inhalant
-    Allergies" (slug aller-free-aid), which exact keys never matched. Hyphen, space and
+    spelling for AllerFree (same formula)". The catalog lists it as "Aller-Free Aid for
+    Inhalant Allergies" (slug aller-free-aid), a name Glen says is not the product's (2026-09-25),
+    which exact keys never matched. Hyphen, space and
     case variants all count; a word must start at "aller", so "smaller free" does not.
     Shared with app._ff_auto_excluded."""
     return bool(_ALLER_FREE.search((text or "").lower()))
