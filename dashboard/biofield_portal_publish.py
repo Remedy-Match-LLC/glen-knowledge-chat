@@ -97,7 +97,8 @@ def _cue_candidates(layer):
 # A layer's paragraph opens with its number: "1. ", "2) ", "**3.** ". Only a number at
 # the start of a PARAGRAPH counts: a list inside a paragraph, or a closing "Next steps"
 # list, is not a layer boundary (blind review, 2026-09-25).
-_NUM_PREFIX = re.compile(r"^[ \t]*(?:\*\*)?(\d{1,2})[.)](?:\*\*)?[ \t]+", re.MULTILINE)
+_NUM_PREFIX = re.compile(r"^[ \t]*(?:#{1,6}[ \t]*)?(?:\*\*)?(\d{1,2})[.)](?:\*\*)?[ \t]+",
+                         re.MULTILINE)
 _PARA_BREAK = re.compile(r"\n[ \t]*\n\s*")
 
 
@@ -167,9 +168,9 @@ def segment_narrative(narrative, layers):
     # the previous cut.
     prev = -1
     for i, pos in enumerate(positions):
-        para = text.rfind("\n\n", prev + 1, pos)
-        if para != -1:
-            positions[i] = para + 2
+        breaks = [m.end() for m in _PARA_BREAK.finditer(text, prev + 1, pos)]
+        if breaks:
+            positions[i] = breaks[-1]
         prev = positions[i]
     # positions are strictly increasing by construction (each search starts past
     # the previous hit). Slice between consecutive cue starts.

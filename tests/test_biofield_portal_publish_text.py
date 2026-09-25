@@ -135,3 +135,17 @@ def test_numbers_that_run_1_to_n_but_miss_their_layer_are_not_trusted():
     narr = "1. Terrain first.\n\n2. Vitality layer.\n\n3. Chelation layer, then Nous Energy."
     segs = bpp.segment_narrative(narr, LAYERS3)
     assert "Terrain" not in segs[0] and "Vitality" in segs[0]
+
+
+
+# Blind review round 2, 2026-09-25.
+def test_blank_lines_holding_spaces_still_count_as_paragraph_breaks():
+    narr = "Aloha,\n \nYour liver. Vitality.\n \nYour metals. Chelation.\n \nYour kidneys. Nous Energy."
+    segs = bpp.segment_narrative(narr, LAYERS3)
+    assert segs[0] == "Your liver. Vitality." and segs[1] == "Your metals. Chelation."
+
+
+def test_a_markdown_heading_number_is_stripped():
+    narr = "### 1. Vitality here.\n\n### 2. Chelation here.\n\n### 3. Nous Energy here."
+    assert bpp.segment_narrative(narr, LAYERS3) == [
+        "Vitality here.", "Chelation here.", "Nous Energy here."]
