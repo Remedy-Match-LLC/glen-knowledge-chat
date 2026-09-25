@@ -535,7 +535,8 @@
   }
   function editBtn(id){ return '<button onclick="editInvoice('+Number(id)+')">Edit</button>'; }
   // Open the data-entry form in edit mode (prefilled with this order's lines/prices).
-  function editInvoice(id){ location.href = '/orders/new?edit_order='+Number(id)+'&key='+encodeURIComponent(key()); }
+  // No key in the URL: the edit page reads the stored key or the login cookie itself.
+  function editInvoice(id){ location.href = '/orders/new?edit_order='+Number(id); }
   // Open the customer invoice page (with ?print=1 to auto-trigger the print dialog).
   // Open a blank tab synchronously first so the async fetch doesn't trip popup blockers.
   function printInvoice(id){

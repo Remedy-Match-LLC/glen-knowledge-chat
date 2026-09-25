@@ -1203,7 +1203,8 @@ function copyInv(){ const txt=$("invoice").querySelector("pre").textContent;
   navigator.clipboard.writeText(txt).then(()=>toast("Copied"),()=>toast("Clipboard blocked","error")); }
 
 async function init(){
-  if (!KEY){ $("auth-warn").style.display="block"; return; }
+  // A signed-in owner's login cookie is enough; a 401 from the first request shows the
+  // warning (2026-09-25: Rae was refused here with no stored key).
   try{ await loadCatalog(); }catch(e){ if(e.message!=="unauthorized") toast(e.message,"error"); return; }
   loadSnippets();   // populate the shared per-line note dropdown (non-blocking)
   if (EDIT_OID){ try{ await loadOrderForEdit(EDIT_OID); }catch(e){ toast(e.message,"error"); } }

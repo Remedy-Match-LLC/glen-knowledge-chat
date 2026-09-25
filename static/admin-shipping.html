@@ -545,10 +545,8 @@ async function clearProductBottle(slug) {
 
 // ── Init ─────────────────────────────────────────────────────────────────
 async function init() {
-  if (!KEY) {
-    document.getElementById("auth-warn").style.display = "block";
-    return;
-  }
+  // A signed-in owner's login cookie is enough; a 401 from the first request shows the
+  // warning (2026-09-25: Rae was refused here with no stored key).
   try {
     await loadRates();
     await loadBottles();
