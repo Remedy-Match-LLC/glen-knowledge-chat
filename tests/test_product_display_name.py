@@ -29,8 +29,10 @@ def test_invoice_identity_is_not_changed_by_display_name():
 def test_display_name_is_optional():
     """Every other product must render from `name` alone, unchanged."""
     prods = _products()
-    withdisp = [s for s, v in prods.items() if v.get("display_name")]
-    assert withdisp == ["immune-intelligence"], withdisp
+    withdisp = sorted(s for s, v in prods.items() if v.get("display_name"))
+    # Sulfur Syntropy joined 2026-09-24 (#1810): public pages use the new name while
+    # invoices keep matching QuickBooks by `name`.
+    assert withdisp == ["immune-intelligence", "sulfur-syntropy"], withdisp
     for slug, v in prods.items():
         if v.get("name"):
             assert (v.get("display_name") or v["name"]), slug
