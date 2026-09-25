@@ -9325,10 +9325,18 @@ def begin_product_page_data(slug):
     if _SALES_AI_COPY_ENABLED:
         import sqlite3 as _sq
         from dashboard import sales_pages as _sp
+        # `copy_pinned` in products.json lists sections Glen approved word for word. An AI
+        # draft never replaces those, and they carry no `ai` marker, so the page does not
+        # ask for one. Opt-in on purpose: 811 products carry a `description`, many of them
+        # scraped store text, and a blanket "pinned beats AI" would put that back on pages
+        # where the draft reads better. Found 2026-09-24: the Reverse Aging Program's
+        # approved description sat collapsed under an unreviewed AI intro.
+        _cp = p.get("copy_pinned")
+        _pinned = {x for x in _cp if isinstance(x, str)} if isinstance(_cp, (list, tuple)) else set()
         try:
             with db.connect(LOG_DB) as _cx:
                 for _s in sections:
-                    if _s["id"] not in ("intro", "description", "research"):
+                    if _s["id"] not in ("intro", "description", "research") or _s["id"] in _pinned:
                         continue
                     _draft = _sp.get_section(_cx, slug, _s["id"])
                     if _draft:

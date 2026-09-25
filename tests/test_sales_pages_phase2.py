@@ -215,3 +215,85 @@ def test_gen_strips_em_dash_from_streamed_and_persisted(monkeypatch, tmp_path):
         persisted = sp.get_section(cx, slug, "intro")
     assert persisted is not None, "Nothing was persisted"
     assert "—" not in persisted, "Em dash found in persisted section text"
+
+
+# ---------------------------------------------------------------------------
+# copy_pinned: sections Glen approved word for word are never replaced by an AI draft
+# ---------------------------------------------------------------------------
+
+def _pinned_product(appmod, slug, pinned):
+    p = dict(appmod._PRODUCTS["products"][slug])
+    p.update({"intro": "Approved intro.", "description": "Approved description.",
+              "copy_pinned": pinned})
+    return p
+
+
+def _page(appmod, monkeypatch, slug, product, drafts):
+    from dashboard import sales_pages as sp
+    monkeypatch.setitem(appmod._PRODUCTS["products"], slug, product)
+    with sqlite3.connect(appmod.LOG_DB) as cx:
+        for sec, body in drafts.items():
+            sp.upsert_section(cx, slug, sec, body)
+    data = appmod.app.test_client().get(f"/begin/product-page-data/{slug}").get_json()
+    return {s["id"]: s for s in data["sections"]}
+
+
+def test_a_pinned_section_keeps_the_approved_text_over_an_ai_draft(monkeypatch, tmp_path):
+    appmod = _reload_app(monkeypatch, tmp_path)
+    slug = next(iter(appmod._PRODUCTS["products"].keys()))
+    secs = _page(appmod, monkeypatch, slug, _pinned_product(appmod, slug, ["intro", "description"]),
+                 {"intro": "AI intro.", "description": "AI description."})
+    assert secs["intro"]["body"] == "Approved intro."
+    assert secs["description"]["body"] == "Approved description."
+    assert "ai" not in secs["intro"] and "ai" not in secs["description"]
+
+
+def test_an_unpinned_section_still_takes_the_ai_draft(monkeypatch, tmp_path):
+    """The control. Pinning one section must not freeze the others."""
+    appmod = _reload_app(monkeypatch, tmp_path)
+    slug = next(iter(appmod._PRODUCTS["products"].keys()))
+    secs = _page(appmod, monkeypatch, slug, _pinned_product(appmod, slug, ["intro"]),
+                 {"intro": "AI intro.", "description": "AI description."})
+    assert secs["intro"]["body"] == "Approved intro."
+    assert secs["description"]["body"] == "AI description." and secs["description"]["ai"] == "cached"
+
+
+def test_without_copy_pinned_a_description_is_still_replaced(monkeypatch, tmp_path):
+    """Opt-in: most products carry scraped descriptions the AI draft should keep beating."""
+    appmod = _reload_app(monkeypatch, tmp_path)
+    slug = next(iter(appmod._PRODUCTS["products"].keys()))
+    secs = _page(appmod, monkeypatch, slug, _pinned_product(appmod, slug, []),
+                 {"description": "AI description."})
+    assert secs["description"]["body"] == "AI description."
+
+
+def test_reverse_aging_program_pins_glens_approved_copy():
+    import json
+    path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "products.json")
+    with open(path) as f:
+        p = json.load(f)["products"]["reverse-aging-program"]
+    # All three narrative sections: no unreviewed AI text, so no "pending review" banner.
+    assert set(p["copy_pinned"]) == {"intro", "description", "research"}
+    assert p["description"].startswith(p["intro"])
+    assert "$419.82" in p["description"] and p["regular_cents"] == 41982
+
+
+def test_the_real_page_carries_no_ai_marker_so_no_banner(monkeypatch, tmp_path):
+    """The front end shows "pending his personal review" if ANY section has `ai`."""
+    appmod = _reload_app(monkeypatch, tmp_path)
+    from dashboard import sales_pages as sp
+    with sqlite3.connect(appmod.LOG_DB) as cx:
+        sp.upsert_section(cx, "reverse-aging-program", "intro", "AI intro.")
+    data = appmod.app.test_client().get("/begin/product-page-data/reverse-aging-program").get_json()
+    assert not any("ai" in s for s in data["sections"])
+    intro = next(s for s in data["sections"] if s["id"] == "intro")
+    assert intro["body"].startswith("The Reverse Aging Program is six remedies")
+
+
+def test_a_malformed_copy_pinned_does_not_break_the_page(monkeypatch, tmp_path):
+    appmod = _reload_app(monkeypatch, tmp_path)
+    slug = next(iter(appmod._PRODUCTS["products"].keys()))
+    for bad in (True, 3, "intro"):
+        p = dict(appmod._PRODUCTS["products"][slug]); p["copy_pinned"] = bad
+        monkeypatch.setitem(appmod._PRODUCTS["products"], slug, p)
+        assert appmod.app.test_client().get(f"/begin/product-page-data/{slug}").status_code == 200
