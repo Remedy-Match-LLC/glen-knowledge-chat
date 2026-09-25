@@ -1,3 +1,4 @@
+import json
 import sqlite3
 from dashboard import sales_pages as sp
 from dashboard import sales_copy as sc
@@ -333,3 +334,89 @@ def test_no_public_data_file_still_says_sulfur_synergy():
     for f in ("clinical_theory_catalog.json", "atlas-concepts.json", "atlas-seed-input.json"):
         with open(os.path.join(root, f)) as fh:
             assert "Sulfur Synergy" not in fh.read(), f
+
+
+# ---------------------------------------------------------------------------
+# copy_pinned also stops the GENERATED fallbacks: how-it-works, ingredients, benefits
+# 2026-09-25: Stamina Plus (50 ml drops) showed a generated capsule panel, generated
+# benefits and a generated how-it-works under its new, approved description.
+# ---------------------------------------------------------------------------
+
+def _generated(appmod, monkeypatch):
+    monkeypatch.setattr(appmod, "_product_card", lambda p: {
+        "description": "GEN desc.", "ingredients": [{"name": "GEN ingredient", "dose": "1 mg"}],
+        "benefits": ["GEN benefit"]})
+    monkeypatch.setattr(appmod, "_product_how", lambda p: "GEN how it works.")
+
+
+def test_pinned_generated_fields_are_withheld_on_both_routes(monkeypatch, tmp_path):
+    appmod = _reload_app(monkeypatch, tmp_path)
+    _generated(appmod, monkeypatch)
+    slug = next(iter(appmod._PRODUCTS["products"].keys()))
+    p = dict(appmod._PRODUCTS["products"][slug])
+    p.pop("ingredients", None); p.pop("benefits", None); p.pop("how_it_works", None)
+    p.update({"description": "Approved.", "intro": "Approved.",
+              "copy_pinned": ["intro", "description", "research", "ingredients", "benefits"]})
+    monkeypatch.setitem(appmod._PRODUCTS["products"], slug, p)
+    c = appmod.app.test_client()
+    data = c.get(f"/begin/product-data/{slug}").get_json()
+    assert data["ingredients"] == [] and data["benefits"] == [] and data["how_it_works"] == ""
+    page = c.get(f"/begin/product-page-data/{slug}").get_json()
+    secs = {s["id"]: s for s in page["sections"]}
+    assert secs["research"]["body"]["how_it_works"] == ""
+    assert "GEN" not in json.dumps(page)
+
+
+def test_unpinned_products_still_get_the_generated_fields(monkeypatch, tmp_path):
+    """The control: without copy_pinned nothing changes."""
+    appmod = _reload_app(monkeypatch, tmp_path)
+    _generated(appmod, monkeypatch)
+    slug = next(iter(appmod._PRODUCTS["products"].keys()))
+    p = dict(appmod._PRODUCTS["products"][slug])
+    p.pop("ingredients", None); p.pop("benefits", None); p.pop("copy_pinned", None)
+    monkeypatch.setitem(appmod._PRODUCTS["products"], slug, p)
+    data = appmod.app.test_client().get(f"/begin/product-data/{slug}").get_json()
+    assert data["benefits"] == ["GEN benefit"] and data["how_it_works"] == "GEN how it works."
+    assert data["ingredients"][0]["name"] == "GEN ingredient"
+
+
+def test_both_stamina_plus_entries_carry_the_new_formula():
+    path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "products.json")
+    with open(path) as f:
+        prods = json.load(f)["products"]
+    for slug in ("stamina-plus", "stamina-plus-full-b-complex-c-homeoenergetic-drops"):
+        p = prods[slug]
+        assert {"intro", "description", "research", "ingredients", "benefits"} <= set(p["copy_pinned"])
+        assert "3X homeopathic potency" in p["description"] and "Terrain Restore" in p["description"]
+        assert "20 known" not in p["description"]
+
+
+def test_pinned_research_keeps_the_learn_page_to_the_approved_text(monkeypatch, tmp_path):
+    appmod = _reload_app(monkeypatch, tmp_path)
+    called = []
+    monkeypatch.setattr(appmod._product_content, "get_or_generate",
+                        lambda p, t, force=False: called.append(t) or
+                        {"content": {"markdown": "GEN research: all 20 known B vitamins."}, "sources": [{"label": "x"}]})
+    slug = next(iter(appmod._PRODUCTS["products"].keys()))
+    p = dict(appmod._PRODUCTS["products"][slug]); p.update({"description": "Approved.", "copy_pinned": ["research"]})
+    monkeypatch.setitem(appmod._PRODUCTS["products"], slug, p)
+    d = appmod.app.test_client().get(f"/begin/learn-data/{slug}").get_json()
+    assert d["markdown"] == "Approved." and d["sources"] == [] and "learn_more" not in called
+    p["copy_pinned"] = []                       # the control: unpinned still generates
+    d = appmod.app.test_client().get(f"/begin/learn-data/{slug}").get_json()
+    assert d["markdown"].startswith("GEN research")
+
+
+def test_the_gen_route_refuses_a_pinned_section(monkeypatch, tmp_path):
+    appmod = _reload_app(monkeypatch, tmp_path)
+    from dashboard import sales_pages as sp
+    slug = next(iter(appmod._PRODUCTS["products"].keys()))
+    with sqlite3.connect(appmod.LOG_DB) as cx:
+        sp.upsert_section(cx, slug, "intro", "OLD cached draft.")
+    p = dict(appmod._PRODUCTS["products"][slug]); p["copy_pinned"] = ["intro"]
+    monkeypatch.setitem(appmod._PRODUCTS["products"], slug, p)
+    c = appmod.app.test_client()
+    r = c.get(f"/begin/product-page-gen/{slug}/intro")
+    assert r.status_code == 404 and b"OLD" not in r.data
+    p["copy_pinned"] = []                       # the control: unpinned still serves the cache
+    assert b"OLD cached draft" in c.get(f"/begin/product-page-gen/{slug}/intro").data

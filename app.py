@@ -8600,6 +8600,18 @@ def _product_card(product):
         return {"description": "", "ingredients": [], "benefits": []}
 
 
+def _pinned_copy(p):
+    """Sections Glen approved word for word, from a product's `copy_pinned` list.
+
+    For a pinned section the page shows only what products.json says. No AI draft
+    replaces it (begin_product_page_data), and no generated fallback fills it:
+    `research` drops the generated how-it-works text, `ingredients` and `benefits`
+    drop the generated card's lists. Opt-in: 811 products carry scraped copy that the
+    generated text reads better than. A non-list value pins nothing."""
+    cp = (p or {}).get("copy_pinned")
+    return {x for x in cp if isinstance(x, str)} if isinstance(cp, (list, tuple)) else set()
+
+
 def _product_how(product):
     """Cached 'How it works' mechanism text for a product (best-effort)."""
     if not _product_content:
@@ -9047,8 +9059,11 @@ def begin_product_data(slug):
     # Generated content (ingredients + benefits + short description). Static JSON
     # values override the generated card when present (lets Glen pin copy).
     card = _product_card(p) if not p.get("info_only") else {}
-    how = "" if p.get("info_only") else _product_how(p)
-    ingredients = p.get("ingredients") or card.get("ingredients", [])
+    _pin = _pinned_copy(p)
+    how = ("" if p.get("info_only") else
+           (p.get("how_it_works") or "") if "research" in _pin else _product_how(p))
+    ingredients = (p.get("ingredients") or []) if "ingredients" in _pin else (
+        p.get("ingredients") or card.get("ingredients", []))
     qty_tiers, formats = None, None
     if _qty_eligible(p):
         from dashboard import pricing as _pricing
@@ -9084,7 +9099,8 @@ def begin_product_data(slug):
                        if _comp else None),
         "description": p.get("description") or card.get("description", ""),
         "ingredients": ingredients,
-        "benefits": p.get("benefits") or card.get("benefits", []),
+        "benefits": ((p.get("benefits") or []) if "benefits" in _pin
+                     else (p.get("benefits") or card.get("benefits", []))),
         "how_it_works": how,
         "info_only": bool(p.get("info_only")), "affiliate_url": p.get("affiliate_url", ""),
         "payments_active": _QBO_PAYMENTS_ACTIVE or _STRIPE_ACTIVE,
@@ -9198,10 +9214,13 @@ def begin_product_page_data(slug):
     if not p:
         return jsonify({"error": "not found"}), 404
     card = _product_card(p) if not p.get("info_only") else {}
-    how = "" if p.get("info_only") else _product_how(p)
+    _pin = _pinned_copy(p)
+    how = ("" if p.get("info_only") else
+           (p.get("how_it_works") or "") if "research" in _pin else _product_how(p))
     from dashboard.ingredients import slugify as _slugify
     from dashboard import entity_refs as _er
-    _raw_ingredients = p.get("ingredients") or card.get("ingredients", [])
+    _raw_ingredients = ((p.get("ingredients") or []) if "ingredients" in _pin
+                        else (p.get("ingredients") or card.get("ingredients", [])))
     ingredients = []
     for _ing in _raw_ingredients:
         if isinstance(_ing, dict):
@@ -9332,8 +9351,7 @@ def begin_product_page_data(slug):
         # scraped store text, and a blanket "pinned beats AI" would put that back on pages
         # where the draft reads better. Found 2026-09-24: the Reverse Aging Program's
         # approved description sat collapsed under an unreviewed AI intro.
-        _cp = p.get("copy_pinned")
-        _pinned = {x for x in _cp if isinstance(x, str)} if isinstance(_cp, (list, tuple)) else set()
+        _pinned = _pin
         try:
             with db.connect(LOG_DB) as _cx:
                 for _s in sections:
@@ -9497,6 +9515,10 @@ def begin_product_page_gen(slug, section):
         return ("", 404)
     p = _get_product(slug)
     if not p:
+        return ("", 404)
+    if section in _pinned_copy(p):
+        # A pinned section is never generated or served from the draft cache: the page
+        # shows products.json text, and a direct request must not surface the old draft.
         return ("", 404)
 
     def generate():
@@ -11072,7 +11094,12 @@ def begin_learn_data(slug):
     if not p:
         return jsonify({"error": "not found"}), 404
     markdown, sources = "", []
-    if _product_content and not p.get("info_only"):
+    if "research" in _pinned_copy(p):
+        # Pinned research: the learn page shows Glen's approved text, never the generated
+        # research, which is built from the product's OLD store page. Found 2026-09-25:
+        # Stamina Plus's learn page still said "all 20 known B complex vitamins".
+        markdown = p.get("learn_markdown") or p.get("description", "")
+    elif _product_content and not p.get("info_only"):
         try:
             lm = _product_content.get_or_generate(p, "learn_more")
             markdown = lm["content"].get("markdown", "")
