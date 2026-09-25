@@ -11,6 +11,7 @@ from datetime import datetime, timezone
 
 from dashboard import db
 from dashboard import customers as _customers
+from dashboard import membership_products as _membership_products
 from dashboard import dbwrite
 
 # ---------------------------------------------------------------------------
@@ -795,7 +796,8 @@ def backfill_member_people(cx):
     now = _now_iso()
     rows = cx.execute(
         "SELECT DISTINCT email FROM subscriptions WHERE kind='membership' AND status='active' "
-        "UNION SELECT DISTINCT email FROM memberships WHERE expires_at > ?", (now,)).fetchall()
+        "UNION SELECT DISTINCT email FROM memberships WHERE "
+        + _membership_products.ACTIVE_GRANT_SQL, (now,)).fetchall()
     created = 0
     for (email,) in rows:
         em = (email or "").strip().lower()

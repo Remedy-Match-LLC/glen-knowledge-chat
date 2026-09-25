@@ -53,17 +53,29 @@ def grant_days(key, today):
 def _tier_sources():
     return tuple(t["source"] for t in TIERS.values())
 
+# Glen's member-for-life grant (POST /admin/membership/grant, lifetime=true). It is
+# stored with expires_at NULL, which `expires_at > now` never matches, so a lifetime
+# member was offered the live group they already own (money, 2026-09-24).
+LIFETIME_SOURCE = "owner_lifetime"
+
+# "Unexpired" for a memberships row: a future expiry, or a lifetime grant with none.
+# ONLY owner_lifetime: a NULL biofield_trial row (the $1 unlock, lifetime by design)
+# must not become a member. One bind parameter: now.
+ACTIVE_GRANT_SQL = (f"(expires_at > ? OR (expires_at IS NULL AND source = '{LIFETIME_SOURCE}'))")
+
+
 def owns_group(cx, email):
-    """True iff the email holds an active membership-tier grant. Namespaced to the
-    tier sources so prepay/continuous-care/founding grants are unaffected."""
+    """True iff the email holds an active membership-tier grant or Glen's lifetime
+    grant. Namespaced to those sources so prepay/continuous-care/founding grants are
+    unaffected."""
     if not email:
         return False
     now = datetime.datetime.utcnow().isoformat()
-    srcs = _tier_sources()
+    srcs = _tier_sources() + (LIFETIME_SOURCE,)
     ph = ",".join("?" * len(srcs))
     row = cx.execute(
         f"SELECT 1 FROM memberships WHERE lower(email)=lower(?) "
-        f"AND expires_at > ? AND source IN ({ph}) LIMIT 1",
+        f"AND {ACTIVE_GRANT_SQL} AND source IN ({ph}) LIMIT 1",
         (email, now, *srcs)).fetchone()
     return row is not None
 
