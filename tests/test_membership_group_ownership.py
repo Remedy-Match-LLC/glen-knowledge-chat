@@ -90,3 +90,32 @@ def test_the_member_backfill_includes_a_lifetime_member_only(tmp_path, monkeypat
                         lambda cx, email: made.append(email))
     assert subs.backfill_member_people(cx) == 2
     assert sorted(made) == ["dated@x.com", "life@x.com"]
+
+
+def test_the_console_member_backfill_route_picks_lifetime_members(tmp_path, monkeypatch):
+    """app.py's /api/console/backfill-member-people used `expires_at > ?` and skipped
+    NULL-expiry lifetime grants (money, 2026-09-24). Dry run: it names who it would add."""
+    import importlib, os
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-fake")
+    monkeypatch.setenv("PINECONE_API_KEY", "pcsk_fake")
+    import app as appmod
+    db = str(tmp_path / "chat_log.db")
+    monkeypatch.setattr(appmod, "LOG_DB", db)
+    monkeypatch.setattr(appmod, "_bos_actor", lambda: object())
+    cx = _mk_db_at(db)
+    cx.execute("CREATE TABLE subscriptions (email TEXT, kind TEXT, status TEXT)")
+    cx.execute("CREATE TABLE people (email TEXT)")
+    _grant_null(cx, "life@x.com", "owner_lifetime")
+    _grant_null(cx, "trial@x.com", "biofield_trial")
+    cx.commit(); cx.close()
+    r = appmod.app.test_client().post("/api/console/backfill-member-people?dry_run=1")
+    assert r.status_code == 200
+    assert r.get_json()["emails"] == ["life@x.com"]
+
+
+def _mk_db_at(path):
+    cx = sqlite3.connect(path)
+    cx.execute("""CREATE TABLE memberships (id TEXT PRIMARY KEY, email TEXT NOT NULL,
+        granted_at TEXT NOT NULL, expires_at TEXT, granted_by TEXT, source TEXT,
+        truly_vip_ref TEXT, notes TEXT, last_reminder_at TEXT)""")
+    return cx
