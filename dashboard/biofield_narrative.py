@@ -390,10 +390,11 @@ def _catalog_product(name):
         from dashboard.biofield_portal_publish import load_catalog
         from dashboard.practitioner_portal import name_to_slug
         catalog = load_catalog()
-        wanted = re.sub(r"[^a-z0-9]", "", name.lower())
+        # "+" is kept as "plus": OcuHeal+ must not be written from OcuHeal's page.
+        key = lambda t: re.sub(r"[^a-z0-9]", "", str(t or "").lower().replace("+", "plus"))
+        wanted = key(name)
         exact_slug = next((s for s, p in catalog.items()
-                           if re.sub(r"[^a-z0-9]", "", ((p or {}).get("name") or "").lower())
-                           == wanted), None)
+                           if key((p or {}).get("name")) == wanted), None)
         try:
             slug = exact_slug or name_to_slug(name, catalog)
         except Exception:
@@ -403,8 +404,7 @@ def _catalog_product(name):
             # Terrain Restore essences. Narrative context still needs their catalog
             # descriptions, so fall back to an exact punctuation-insensitive name.
             slug = next((s for s, p in catalog.items()
-                         if re.sub(r"[^a-z0-9]", "", ((p or {}).get("name") or "").lower())
-                         == wanted), None)
+                         if key((p or {}).get("name")) == wanted), None)
         product = catalog.get(slug) if slug else None
         return product or {}
     except Exception:

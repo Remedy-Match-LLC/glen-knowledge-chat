@@ -88,8 +88,13 @@ def get_dimension(key, catalog=None):
 
 # --- Phase 2: remedy name -> product slug ------------------------------------
 
-def _norm_name(s):
-    return re.sub(r"[^a-z0-9]+", " ", (s or "").lower()).strip()
+def _norm_name(s, plus=True):
+    """Lowercase words. "+" reads as "plus" so "OcuHeal+ Eye Drops" and "OcuHeal Eye
+    Drops" stay two products (2026-09-24)."""
+    text = (s or "").lower()
+    if plus:
+        text = text.replace("+", " plus ")
+    return re.sub(r"[^a-z0-9]+", " ", text).strip()
 
 
 def product_name_index(products):
@@ -105,6 +110,12 @@ def product_name_index(products):
             idx.setdefault(nm, slug)
     for slug in (products or {}):
         idx.setdefault(_norm_name(slug), slug)
+    # A "+" name as typed without it ("Air & Surface PRO"). setdefault, so it never
+    # takes a key another product already owns.
+    for slug, p in (products or {}).items():
+        nm = _norm_name(p.get("name") if isinstance(p, dict) else "", plus=False)
+        if nm:
+            idx.setdefault(nm, slug)
     return idx
 
 
