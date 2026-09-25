@@ -7,6 +7,9 @@ from urllib.parse import urlsplit as _urlsplit
 DO_NOT_RECOMMEND = frozenset({
     "electrolyte-mineral-manna",
     "fungifuge",
+    # AllerFree in both spellings -> Immune Modulation (Glen 2026-07-08; 2026-09-24).
+    "aller-free-aid",
+    "allerfree-homeoenergetic-drops",
 })
 
 
