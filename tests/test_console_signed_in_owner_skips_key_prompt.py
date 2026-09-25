@@ -136,7 +136,11 @@ def test_the_page_hides_the_prompt_at_load_without_a_condition(page):
     passed the earlier check)."""
     js = _script(page)
     call = FIRST_LOAD[page]
-    tail = r"[^\n]*\b%s\(\)" % call if call else ""
+    # Round 3: the call must FOLLOW DIRECTLY. "...='none'; if (key()) loadQueue();" and a
+    # trailing "// loadQueue();" both passed a looser pattern, and the first is Rae's bug.
+    app_on = r"document\.getElementById\('app'\)\.style\.display\s*=\s*''\s*;\s*"
+    tail = (r"\s*;\s*" + (app_on if page == "approvals" else "") + call + r"\(\)\s*;") if call \
+        else r"\s*;\s*$"
     assert re.search(r"(?m)^\s*" + GATE_OFF + tail, js), page
 
 
@@ -150,7 +154,7 @@ def test_no_stored_key_test_guards_the_prompt(page):
 def test_a_401_brings_the_prompt_back(page):
     js = _script(page)
     assert re.search(r"status\s*===\s*401\s*\)\s*\{[^}]*getElementById\('gate'\)\.style\.display\s*=\s*'(?:flex|)'",
-                     js) or re.search(r"refused\s*===\s*QUEUES\.length", js), page
+                     js), page
 
 
 def test_approvals_asks_auth_status_not_the_queues():
@@ -174,3 +178,61 @@ def test_money_reloads_its_tabs_after_the_key_is_entered():
     js = _script("money")
     unlock = re.search(r"function unlock\(\)\{(.*?)reveal\(\);\s*\}", js, re.S)
     assert unlock and "_moneyLoaded[t]=false" in unlock.group(1)
+
+
+def _function_body(js, name):
+    m = re.search(r"(?:async\s+)?function " + name + r"\s*\([^)]*\)\s*\{", js)
+    assert m, name
+    depth, start = 0, m.end() - 1
+    for i in range(start, len(js)):
+        depth += {"{": 1, "}": -1}.get(js[i], 0)
+        if depth == 0:
+            return js[start:i]
+    raise AssertionError(name)
+
+
+# The function whose 401 a first load actually hits. Money's first load is inside a
+# module (MoneyPayments), so it keeps the file-wide check above.
+FIRST_401 = {"crm": "loadQueue", "orders": "load", "pricing-settings": "load",
+             "taskboard": "load", "products": "loadCatalog", "client-orders": "search"}
+
+
+@pytest.mark.parametrize("page", sorted(FIRST_401))
+def test_the_first_load_itself_brings_the_prompt_back(page):
+    """Round 3: CRM has two 401 handlers; removing the one in loadQueue passed."""
+    body = _function_body(_script(page), FIRST_401[page])
+    assert re.search(r"status\s*===\s*401\s*\)\s*\{[^}]*getElementById\('gate'\)\.style\.display\s*=\s*'(?:flex|)'",
+                     body), page
+
+
+def test_approvals_loads_when_signed_in():
+    """Round 3: deleting loadAll() from start()'s success path passed."""
+    start = _function_body(_script("approvals"), "start")
+    assert re.search(r"return;\s*\}\s*loadAll\(\)\s*;", start)
+    assert re.search(r"\.catch\(function\(\)\{\s*loadAll\(\)\s*;\s*\}\)", start)
+
+
+def test_money_unlock_really_resets_the_tabs():
+    """Round 3: a comment or a no-op loop holding the literal passed a substring check."""
+    unlock = _function_body(_script("money"), "unlock")
+    assert re.search(r"(?m)^\s*Object\.keys\(_moneyLoaded\)\.forEach\(function\(t\)\{\s*"
+                     r"if\(t!=='lookup'\)\s*_moneyLoaded\[t\]=false;\s*\}\);", unlock)
+
+
+def test_client_orders_unlock_really_reruns_the_search():
+    unlock = _function_body(_script("client-orders"), "unlock")
+    assert re.search(r"(?m)^\s*if\(document\.getElementById\('q'\)\.value\.trim\(\)\.length>=2\)\s*search\(\);", unlock)
+
+
+def test_an_empty_webhook_secret_opens_nothing(client, monkeypatch):
+    """Round 3: with WEBHOOK_SECRET unset, "" == "" must not let anyone in."""
+    monkeypatch.setenv("WEBHOOK_SECRET", "")
+    assert _get(client) == 401
+    assert _get(client, headers={"X-Webhook-Secret": ""}) == 401
+
+
+def test_the_check_uses_the_module_console_secret(client, monkeypatch):
+    """Round 3: the module value, which _present_console_key also uses, decides."""
+    monkeypatch.setenv("CONSOLE_SECRET", "some-other-value")
+    assert _get(client, headers={"X-Console-Key": "test-secret"}) == 200
+    assert _get(client, headers={"X-Console-Key": "some-other-value"}) == 401
