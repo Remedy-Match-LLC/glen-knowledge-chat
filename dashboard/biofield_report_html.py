@@ -150,7 +150,8 @@ async function generate(){stat('Generating\\u2026');
  const r=await post('/test/__TID__/generate',{notes:document.getElementById('notes').value});
  document.getElementById('narr').value=r.narrative||('['+(r.error||'error')+']');
  showSaved(r.saved_label);
- stat(r.error?('Error: '+r.error):'Generated \\u2014 review, edit, then Save.')}
+ stat(r.error?('Error: '+r.error):((r.warnings&&r.warnings.length)?
+  ('Check before sending: '+r.warnings.join(' ')):'Generated \\u2014 review, edit, then Save.'))}
 async function saveNarr(){await post('/test/__TID__/narrative',
  {narrative:document.getElementById('narr').value});stat('Narrative saved.')}
 async function vgen(){stat('Generating script\\u2026');
@@ -768,14 +769,22 @@ function suggestFor(btn,rp){var card=btn.closest('.lcard');var s=card?val(card.d
    box.appendChild(b);box.appendChild(document.createTextNode(' '))})})}
 // Save buttons stay GREEN 'Saved ✓' after a save and flip to gold 'Update' the
 // moment their line/layer is edited again.
+// Clinical, 2026-09-25: what the narrative check still finds after one automatic retry.
+// Rebuilt from each generate and save response, so it clears once the text is fixed.
+function showNarrWarn(list){var box=document.getElementById('narrWarn');if(!box)return;
+ box.textContent='';list=list||[];box.hidden=!list.length;if(!list.length)return;
+ var h=document.createElement('b');h.textContent='Check before sending:';box.appendChild(h);
+ var ul=document.createElement('ul');list.forEach(function(t){var li=document.createElement('li');
+  li.textContent=t;ul.appendChild(li)});box.appendChild(ul)}
 async function genNarr(){var s=document.getElementById('narrStat');s.textContent='Generating… (~10-20s)';
  try{var j=await post('/test/__TID__/generate',{notes:val('sessText')});
   if(j.error){s.textContent='Error: '+j.error;return}
   document.getElementById('narrEd').value=j.narrative||'';setSaved(document.getElementById('narrSaveBtn'));
+  showNarrWarn(j.warnings);
   s.textContent='Generated & saved — review and edit if needed.'}
  catch(e){s.textContent='Error: '+e}}
-async function saveNarrEd(btn){await post('/test/__TID__/narrative',{narrative:val('narrEd')});
- setSaved(btn||document.getElementById('narrSaveBtn'));
+async function saveNarrEd(btn){var j=await post('/test/__TID__/narrative',{narrative:val('narrEd')});
+ setSaved(btn||document.getElementById('narrSaveBtn'));showNarrWarn(j&&j.warnings);
  document.getElementById('narrStat').textContent='Narrative saved.'}
 function setSaved(btn){if(!btn)return;btn.classList.add('saved');btn.textContent='Saved ✓'}
 function markDirty(btn){if(btn&&btn.classList.contains('saved')){
@@ -2107,11 +2116,22 @@ def _render_fold_notice(groups):
             "A remedy belongs on its earliest layer.<ul>" + "".join(items) + "</ul></div>")
 
 
+def _narrative_warning_box(warnings):
+    """The narrative check's findings, above the text Glen edits. Always rendered, hidden
+    when empty, so the page script can fill it after a generate or save."""
+    items = "".join(f"<li>{_e(w)}</li>" for w in (warnings or []))
+    body = f"<b>Check before sending:</b><ul>{items}</ul>" if items else ""
+    return (f"<div id=narrWarn class=narr-warn{'' if items else ' hidden'} "
+            f"style='border:1px solid #c9a227;background:#fff8e1;color:#5a4500;"
+            f"padding:8px 12px;margin:8px 0;border-radius:6px'>{body}</div>")
+
+
 def render_author_html(report, depth_values=None, transcript="", covered_by_layer=None,
                        narrative="", fee_state=None, transcript_updated="",
                        clinical_checklist=None, dispensed=None, dispensed_error=None,
                        intake_priorities=None,
-                       profile_unavailable=False, alias_map=None, display_map=None):
+                       profile_unavailable=False, alias_map=None, display_map=None,
+                       narrative_warnings=None):
     tid = _e(report.get("test_id") or "")
     c = report.get("client") or {}
     import urllib.parse as _up
@@ -2206,6 +2226,7 @@ def render_author_html(report, depth_values=None, transcript="", covered_by_laye
         "<button id=narrSaveBtn class='btn ghost savebtn' data-dirty=Update "
         "onclick=saveNarrEd(this)>Save narrative</button>"
         "<span id=narrStat class=food></span></div>"
+        f"{_narrative_warning_box(narrative_warnings)}"
         f"<textarea id=narrEd rows=14 oninput=\"markDirty(document.getElementById('narrSaveBtn'))\" "
         f"placeholder='Click Generate narrative to draft one from the transcript + chain…'>"
         f"{_e(narrative)}</textarea>")
