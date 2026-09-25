@@ -5721,7 +5721,9 @@
    "pinecone_title": "Stamina Plus",
    "url": "https://myhealingoasis.com/begin/product/stamina-plus",
    "legacy_store_url": "https://remedymatch.com/remedies/syntropy/108-stamina-plus",
-   "description": "Stamina Plus . Stamina Plus Stamina Plus Stamina Plus contains all 20 known B complex vitamins in activated, botanical complex and energized homeopathic forms to stimulate cellular uptake and utilization. Stamina Plus has a 30 year track record of effectiveness for stress relief and neurological support. It was formulated by Rev. Dr. Glen Swartwout. Stamina Plus . Bioavailability Factors: 34.5 mg Vitamin B13: Phosphatides 50% (Helianthus annua) EGb 761 (Ginkgo biloba) (24% Flavone Glycosides, 6% Lactones, <0.0005% Ginkgolic Acid) Vitamin B3 (as Niacin) 5 mg 25% Miracle Tree 100:1 (Moringa...",
+   "intro": "Stamina Plus is a HomeoEnergetic formula in drops.",
+   "copy_pinned": ["intro", "description", "research", "ingredients", "benefits"],
+   "description": "Stamina Plus is a HomeoEnergetic formula in drops. It is made from every ingredient in three of our B complex formulas: Rise & Shine, Vital Energy Be and Sustain. The ingredients are prepared at a 3X homeopathic potency. The base is Terrain Restore. Take 10 drops in the mouth, 3 times a day. A 50 ml bottle holds 100 doses.",
    "qty_pricing": true
   },
   "rejuv": {
@@ -12554,7 +12556,9 @@
    "ingredients_source": "fmp_snap",
    "no_groovekart": true,
    "regular_cents": 8000,
-   "description": "10 drops 3 times a day in mouth",
+   "intro": "Stamina Plus is a HomeoEnergetic formula in drops.",
+   "copy_pinned": ["intro", "description", "research", "ingredients", "benefits"],
+   "description": "Stamina Plus is a HomeoEnergetic formula in drops. It is made from every ingredient in three of our B complex formulas: Rise & Shine, Vital Energy Be and Sustain. The ingredients are prepared at a 3X homeopathic potency. The base is Terrain Restore. Take 10 drops in the mouth, 3 times a day. A 50 ml bottle holds 100 doses.",
    "bottle_type": "Dropper 50 mL"
   },
   "allerfree-homeoenergetic-drops": {
