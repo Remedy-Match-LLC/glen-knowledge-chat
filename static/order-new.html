@@ -146,7 +146,7 @@
     <div class="grid2">
       <div><label>Order discount $ (blank = rule-based)</label><input id="o-discount" type="number" step="0.01" placeholder="auto"></div>
       <div><label>Payment method</label>
-        <select id="o-method"><option>Credit card (Stripe)</option><option>eProcessing</option><option>Check</option><option>Cash</option><option>Venmo</option><option>PayPal</option><option>Zelle</option><option>Wise</option></select></div>
+        <select id="o-method"><option>Credit card (Stripe)</option><option>eProcessing</option><option>Authorize.net</option><option>Check</option><option>Cash</option><option>Venmo</option><option>PayPal</option><option>Zelle</option><option>Wise</option></select></div>
       <div><label>Points to apply $ (off the total)</label><input id="o-points" type="number" step="0.01" placeholder="0"><small id="o-points-avail" style="display:block;color:var(--muted);margin-top:3px"></small></div>
       <div><label>Adjustment $ (− credit / + debit)</label><input id="o-adjust" type="number" step="0.01" placeholder="0"></div>
       <div><label>Set total $ (auto-fills adjustment)</label><input id="o-total" type="number" step="0.01" placeholder="auto"></div>
@@ -197,7 +197,7 @@
     <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:end">
       <div><label>Amount $</label><input id="pay-amt" type="number" step="0.01" style="width:90px"></div>
       <div><label>Method</label>
-        <select id="pay-method"><option>Credit card (Stripe)</option><option>eProcessing</option><option>Check</option><option>Cash</option><option>Venmo</option><option>PayPal</option><option>Zelle</option><option>Wise</option></select></div>
+        <select id="pay-method"><option>Credit card (Stripe)</option><option>eProcessing</option><option>Authorize.net</option><option>Check</option><option>Cash</option><option>Venmo</option><option>PayPal</option><option>Zelle</option><option>Wise</option></select></div>
       <div><label>Date</label><input id="pay-date" type="date"></div>
       <button class="ghost" onclick="addPayment()">Add payment</button>
     </div>
