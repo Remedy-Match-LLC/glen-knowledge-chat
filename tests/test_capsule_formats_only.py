@@ -248,3 +248,38 @@ def test_the_order_form_resets_a_refill_it_knows_does_not_apply():
     r = subprocess.run([node, "-e", js], capture_output=True, text=True, timeout=30)
     assert r.returncode == 0, r.stderr
     assert json.loads(r.stdout) == [["refill", "bottle", "refill"], [True, False, None]]
+
+
+# ── review round 3 ───────────────────────────────────────────────────────────
+
+def test_a_stale_dropper_with_a_bottle_row_folds_to_one_line():
+    """Round 3: (bottle, 4) + (refill, 1) folded to (bottle, 4) + ("", 1): still two lines."""
+    import sqlite3
+    from dashboard import cart_store as cs
+    cx = sqlite3.connect(":memory:")
+    cs.init_cart_tables(cx)
+    cs.add_item(cx, "t", "drops", 4, fmt="bottle")
+    cs.add_item(cx, "t", "drops", 1, fmt="refill")
+    cs.add_item(cx, "t", "caps", 2, fmt="bottle")
+    cs.add_item(cx, "t", "caps", 1, fmt="refill")
+    ok = {"caps": True, "drops": False}
+    cs.fold_formats(cx, "t", lambda s, f: ok[s])
+    assert sorted((i["slug"], i["format"], i["qty"]) for i in cs.items(cx, "t")) == [
+        ("caps", "bottle", 2), ("caps", "refill", 1), ("drops", "", 5)]
+
+
+def test_the_portal_cello_default_never_applies_to_a_dropper():
+    """Round 3: reverting this to _qty_eligible set refill on every dropper for a
+    cellophane-default client, which the next line then refused with a 400."""
+    code = _code((ROOT / "app.py").read_text())
+    assert re.search(r"if not explicit_format and cello_default and _capsule_formats_ok\(product\):\s*\n\s*fmt = \"refill\"", code)
+    assert not re.search(r"cello_default and _qty_eligible\(", code)
+
+
+def test_the_needs_measuring_list_reads_the_cleaned_format(a, monkeypatch):
+    """Round 3: with the raw format, a dropper line marked refill resolved to the cello
+    pack type and dropped out of the order preview's "needs measuring" list."""
+    unmeasured = {"slug": "odd", "name": "Odd Drops", "price_cents": 6997, "qty_pricing": True}
+    monkeypatch.setattr(a, "_get_product", lambda s: unmeasured if s == "odd" else None)
+    monkeypatch.setattr(a._shipping, "is_shippable", lambda p: True)
+    assert a._packaging_review_for_lines([{"slug": "odd", "qty": 1, "format": "refill"}]) == ["Odd Drops"]
