@@ -846,6 +846,7 @@
    "name": "GI Repair Helicobacter Pylori Terrain Support",
    "qbo_item_id": "42",
    "price_cents": 6997,
+   "bottle_type": "30 Caps",
    "pinecone_title": "GI Repair",
    "qty_pricing": true,
    "ingredients": [
@@ -948,6 +949,7 @@
    "name": "Lens-Zyme Brunescense Buster",
    "qbo_item_id": "39",
    "price_cents": 6997,
+   "bottle_type": "30 Caps",
    "pinecone_title": "Lens-Zyme",
    "qty_pricing": true,
    "ingredients": [
@@ -3362,6 +3364,7 @@
   "seaamino-syntropy": {
    "name": "Seacure Synergy",
    "price_cents": 6997,
+   "bottle_type": "30 Caps",
    "pinecone_title": "Seacure Synergy",
    "url": "https://myhealingoasis.com/begin/product/seaamino-syntropy",
    "legacy_store_url": "https://remedymatch.com/remedies/syntropy/103-seaamino-syntropy",
@@ -3922,6 +3925,7 @@
   "vitamin-c-syntropy": {
    "name": "Synergy C",
    "price_cents": 6997,
+   "bottle_type": "30 Caps",
    "pinecone_title": "Synergy C",
    "url": "https://myhealingoasis.com/begin/product/vitamin-c-syntropy",
    "legacy_store_url": "https://remedymatch.com/remedies/syntropy/112-vitamin-c-syntropy",
@@ -7762,6 +7766,7 @@
   "shields-up": {
    "name": "Shields Up",
    "price_cents": 6997,
+   "bottle_type": "30 Caps",
    "pinecone_title": "Shields Up",
    "url": "https://myhealingoasis.com/begin/product/shields-up",
    "legacy_store_url": "https://remedymatch.com/remedies/syntropy/239-shields-up",
@@ -10353,6 +10358,7 @@
   "c15-syntropy-pentadecanoic-acid": {
    "name": "C15 Syntropy: Pentadecanoic Acid",
    "price_cents": 6997,
+   "bottle_type": "30 Caps",
    "pinecone_title": "C15 Syntropy: Pentadecanoic Acid",
    "url": "https://myhealingoasis.com/begin/product/c15-syntropy-pentadecanoic-acid",
    "legacy_store_url": "https://remedymatch.com/remedies/533-c15-syntropy-pentadecanoic-acid",
