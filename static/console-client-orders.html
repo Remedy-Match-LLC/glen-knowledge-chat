@@ -62,7 +62,9 @@
 <script>
   function key(){ return localStorage.getItem('console_key') || ''; }
   (function(){ var u=new URLSearchParams(location.search).get('key'); if(u) localStorage.setItem('console_key', u); })();
-  function unlock(){ localStorage.setItem('console_key', document.getElementById('key').value); document.getElementById('gate').style.display='none'; }
+  function unlock(){ localStorage.setItem('console_key', document.getElementById('key').value); document.getElementById('gate').style.display='none';
+    // Re-run the search that was refused, if there was one.
+    if(document.getElementById('q').value.trim().length>=2) search(); else document.getElementById('msg').textContent=''; }
   function hdr(){ return { 'X-Console-Key': key(), 'Content-Type':'application/json' }; }
   function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];}); }
   function money(v){ v=String(v==null?'':v).trim(); if(v==='') return ''; var n=parseFloat(v); return isNaN(n)?esc(v):('$'+n.toFixed(2)); }

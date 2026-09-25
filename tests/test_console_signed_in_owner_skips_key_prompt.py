@@ -124,12 +124,20 @@ def _script(page):
 GATE_OFF = r"document\.getElementById\('gate'\)\.style\.display\s*=\s*'none'"
 
 
+FIRST_LOAD = {"approvals": "start", "crm": "loadQueue", "money": "reveal", "orders": "load",
+              "pricing-settings": "load", "products": "loadAll", "taskboard": "load",
+              "client-orders": None}   # client orders loads nothing until a search
+
+
 @pytest.mark.parametrize("page", PAGES)
 def test_the_page_hides_the_prompt_at_load_without_a_condition(page):
     """A top-level statement, not one inside unlock() and not behind any test of a
-    stored key (round 1: the first version of this check matched unlock())."""
+    stored key, and it starts the page's first load (round 2: deleting the load call
+    passed the earlier check)."""
     js = _script(page)
-    assert re.search(r"(?m)^\s*" + GATE_OFF, js), page
+    call = FIRST_LOAD[page]
+    tail = r"[^\n]*\b%s\(\)" % call if call else ""
+    assert re.search(r"(?m)^\s*" + GATE_OFF + tail, js), page
 
 
 @pytest.mark.parametrize("page", PAGES)
@@ -145,11 +153,21 @@ def test_a_401_brings_the_prompt_back(page):
                      js) or re.search(r"refused\s*===\s*QUEUES\.length", js), page
 
 
-def test_approvals_asks_for_the_key_only_when_every_queue_refuses():
-    """Round 1: an owner session turns one failing queue's error into a 401."""
+def test_approvals_asks_auth_status_not_the_queues():
+    """Round 2: counting queue 401s missed a logged-out user whose queues failed for
+    another reason. One call to /api/console/auth-status decides the prompt."""
     js = _script("approvals")
-    assert re.search(r"if\s*\(\s*refused\s*===\s*QUEUES\.length\s*\)\s*\{[^}]*getElementById\('gate'\)", js)
-    assert not re.search(r"status\s*===\s*401\s*\)\s*\{\s*document\.getElementById\('app'\)", js)
+    start = re.search(r"function start\(\)\{(.*?)\n  \}", js, re.S)
+    assert start and "/api/console/auth-status" in start.group(1)
+    assert re.search(r"status\s*===\s*401\s*\)\s*\{[^}]*getElementById\('gate'\)", start.group(1))
+    load_all = re.search(r"function loadAll\(\)\{(.*?)\n  \}", js, re.S).group(1)
+    assert "gate" not in load_all, "a queue's 401 must not show the prompt"
+
+
+def test_client_orders_reruns_the_refused_search_after_unlock():
+    js = _script("client-orders")
+    unlock = re.search(r"function unlock\(\)\{(.*?)\}\s*$", js, re.S | re.M)
+    assert unlock and "search()" in unlock.group(1)
 
 
 def test_money_reloads_its_tabs_after_the_key_is_entered():
