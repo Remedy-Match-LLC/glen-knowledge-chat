@@ -447,7 +447,9 @@
     } catch(e){ out.style.display='block'; out.textContent = 'Error: ' + e; }
   }
 
-  if (key()) { document.getElementById('gate').style.display='none'; load(); }
+  // Try to load with or without a stored key: a signed-in owner's cookie is enough, and
+  // a 401 from the server brings the key prompt back (2026-09-24: Rae was stuck here).
+  document.getElementById('gate').style.display='none'; load();
 </script>
 </body>
 </html>

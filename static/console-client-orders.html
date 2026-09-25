@@ -62,7 +62,9 @@
 <script>
   function key(){ return localStorage.getItem('console_key') || ''; }
   (function(){ var u=new URLSearchParams(location.search).get('key'); if(u) localStorage.setItem('console_key', u); })();
-  function unlock(){ localStorage.setItem('console_key', document.getElementById('key').value); document.getElementById('gate').style.display='none'; }
+  function unlock(){ localStorage.setItem('console_key', document.getElementById('key').value); document.getElementById('gate').style.display='none';
+    // Re-run the search that was refused, if there was one.
+    if(document.getElementById('q').value.trim().length>=2) search(); else document.getElementById('msg').textContent=''; }
   function hdr(){ return { 'X-Console-Key': key(), 'Content-Type':'application/json' }; }
   function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];}); }
   function money(v){ v=String(v==null?'':v).trim(); if(v==='') return ''; var n=parseFloat(v); return isNaN(n)?esc(v):('$'+n.toFixed(2)); }
@@ -107,7 +109,7 @@
     var param = q.indexOf('@')>=0 ? ('email='+encodeURIComponent(q)) : ('name='+encodeURIComponent(q));
     try {
       var r=await fetch('/api/console/fmp-orders?'+param, {headers:hdr()});
-      if(r.status===401){ msg.textContent='Unauthorized — check the console key.'; return; }
+      if(r.status===401){ msg.textContent='Unauthorized — check the console key.'; document.getElementById('gate').style.display='flex'; return; }
       var d=await r.json();
       var res=(d.results||[]);
       if(!res.length){ msg.textContent='No matching clients.'; return; }
@@ -116,7 +118,8 @@
     } catch(e){ msg.textContent='Error: '+e; }
   }
   document.getElementById('q').addEventListener('keydown', function(e){ if(e.key==='Enter') search(); });
-  if(key()) document.getElementById('gate').style.display='none';
+  // A signed-in owner's cookie is enough; a 401 on search says so (2026-09-24).
+  document.getElementById('gate').style.display='none';
 </script>
 </body>
 </html>

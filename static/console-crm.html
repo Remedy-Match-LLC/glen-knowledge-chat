@@ -175,7 +175,9 @@
   document.addEventListener('click', function(e){ if(!e.target.closest('#crm-ac') && e.target!==document.getElementById('email')) crmAcHide(); });
   document.addEventListener('keydown', function(e){ if(e.key==='Escape') crmAcHide(); });
 
-  if (key()) { document.getElementById('gate').style.display='none'; loadQueue(); }
+  // Try to load with or without a stored key: a signed-in owner's cookie is enough, and
+  // a 401 from the server brings the key prompt back (2026-09-24: Rae was stuck here).
+  document.getElementById('gate').style.display='none'; loadQueue();
   // Deep-link: ?email= pre-fills the contact so a briefing record-link lands ready.
   (function(){
     var em = new URLSearchParams(location.search).get('email');

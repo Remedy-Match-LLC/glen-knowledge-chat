@@ -240,7 +240,10 @@
   function hdr(){ return { 'X-Console-Key': key(), 'Content-Type':'application/json' }; }
   function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];}); }
 
-  function unlock(){ localStorage.setItem('console_key', document.getElementById('key').value); document.getElementById('gate').style.display='none'; reveal(); }
+  function unlock(){ localStorage.setItem('console_key', document.getElementById('key').value); document.getElementById('gate').style.display='none';
+    // A tab that 401'd before the key was entered must load again.
+    Object.keys(_moneyLoaded).forEach(function(t){ if(t!=='lookup') _moneyLoaded[t]=false; });
+    reveal(); }
 
   var _moneyLoaded = { payments:false, receivables:false, lookup:true, royalties:false };
   function showMoneyTab(t){
@@ -603,7 +606,9 @@
   })();
 
   // ---- init: reveal if already unlocked, else show gate ----
-  (function(){ if (key()){ document.getElementById('gate').style.display='none'; reveal(); } })();
+  // Try to load with or without a stored key: a signed-in owner's cookie is enough, and
+  // a 401 from the server brings the key prompt back (2026-09-24: Rae was stuck here).
+  document.getElementById('gate').style.display='none'; reveal();
 </script>
 </body>
 </html>

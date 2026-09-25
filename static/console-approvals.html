@@ -68,6 +68,18 @@
     + '</div>';
   }
 
+  // One question decides the key prompt: /api/console/auth-status. A queue's own 401
+  // is not proof of no login (an owner session turns a server error into a 401), and
+  // counting refusals missed a user whose queues failed for another reason.
+  function start(){
+    fetch('/api/console/auth-status', { headers: hdr() })
+      .then(function(r){
+        if(r.status===401){ document.getElementById('app').style.display='none'; document.getElementById('gate').style.display=''; return; }
+        loadAll();
+      })
+      .catch(function(){ loadAll(); });
+  }
+
   function loadAll(){
     document.getElementById('grid').innerHTML = QUEUES.map(card).join('');
     QUEUES.forEach(function(q){
@@ -82,6 +94,8 @@
     });
   }
 
-  if(key()){ document.getElementById('gate').style.display='none'; document.getElementById('app').style.display=''; loadAll(); }
+  // Try to load with or without a stored key: a signed-in owner's cookie is enough, and
+  // a 401 from the server brings the key prompt back (2026-09-24: Rae was stuck here).
+  document.getElementById('gate').style.display='none'; document.getElementById('app').style.display=''; start();
 </script>
 </body></html>
