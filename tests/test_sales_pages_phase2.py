@@ -314,15 +314,17 @@ def test_prompt_falls_back_to_name_without_a_display_name():
     assert "Longevity" in user
 
 
-def test_sulfur_syntropy_renamed_on_the_page_not_on_the_invoice():
-    """Glen 2026-09-24: rename in public now; invoices wait for money to rename the QBO
-    item, because QBO finds the item by `name` and a new name would create a second item."""
+def test_sulfur_syntropy_renamed_everywhere_but_the_pinecone_title():
+    """Glen 2026-09-24. `name` feeds invoices, cart lines and packing lists. Money checked
+    that no live path creates a QBO item by name any more (invoice push retired 09-21,
+    paid-sale booking 08-29), so the name changes too. pinecone_title stays: Pinecone's
+    records are titled Sulfur Synergy, and older chatbot mentions still resolve by it."""
     import json
     path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "products.json")
     with open(path) as f:
         p = json.load(f)["products"]["sulfur-syntropy"]
     assert p["display_name"] == "Sulfur Syntropy"
-    assert p["name"] == "Sulfur Synergy" and p["pinecone_title"] == "Sulfur Synergy"
+    assert p["name"] == "Sulfur Syntropy" and p["pinecone_title"] == "Sulfur Synergy"
     assert "Synergy" not in p["description"]
 
 
