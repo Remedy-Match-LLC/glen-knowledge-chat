@@ -197,3 +197,71 @@ def test_herb_common_names_match_their_label_names():
 def test_five_elements_plural_keeps_its_name():
     t = "the Five Elements Voice Scan"
     assert ng.fix_scan_names(t) == t
+
+
+# ── blind review round 1, accuracy reviewer, 2026-09-25 ─────────────────────
+
+def _chk(text, chain, ing=None, names=None, ingredients=None, heads=""):
+    return ng.check_narrative(text, chain=chain, ingredients=ing or {},
+                              catalog_names=names or [], catalog_ingredients=ingredients or [],
+                              allowed_text=heads, heads_text=heads)
+
+
+def test_a_remedy_with_no_ingredients_may_not_be_credited_with_nutrients():
+    probs = _chk("ED11 Liver Driver supplies vitamin C and zinc.", ["ED11 Liver Driver"],
+                 {"ED11 Liver Driver": []}, ingredients=["Zinc (Orotate)"])
+    assert any("ED11 Liver Driver" in p for p in probs), probs
+
+
+def test_only_a_pronoun_carries_the_remedy_to_the_next_sentence():
+    ing = {"Sterol Max": []}
+    assert _chk("Sterol Max supports the acid layer. Leafy greens rich in magnesium help too.",
+                ["Sterol Max"], ing, ingredients=["Magnesium"]) == []
+    assert _chk("Sterol Max supports the acid layer. It supplies magnesium.",
+                ["Sterol Max"], ing, ingredients=["Magnesium"]) != []
+
+
+def test_ampersand_and_and_are_the_same_product_name():
+    probs = _chk("Free and Easy can also help.", ["B17 Max"], names=["Free & Easy"])
+    assert any("Free & Easy" in p for p in probs), probs
+
+
+def test_bare_vitamin_codes_and_short_nutrients_are_seen():
+    ing = {"B17 Max": ["Amygdalin, [Laetrile: drug name], B17", "Pangamic Acid"]}
+    assert _chk("B17 Max provides B12 and B6.", ["B17 Max"], ing) != []
+    assert _chk("B17 Max provides DHA.", ["B17 Max"], ing, ingredients=["DHA (Algal Oil)"]) != []
+
+
+def test_vitamin_b17_is_amygdalin():
+    ing = {"B17 Max": ["Amygdalin, [Laetrile: drug name], B17", "Pangamic Acid"]}
+    assert _chk("B17 Max provides vitamin B17 and vitamin B15.", ["B17 Max"], ing) == []
+
+
+def test_a_negated_nutrient_is_not_a_claim():
+    ing = {"B17 Max": ["Amygdalin"]}
+    assert _chk("B17 Max supports growth. It contains no curcumin.", ["B17 Max"], ing,
+                ingredients=["Curcumin"]) == []
+
+
+def test_scan_name_variants_do_not_double_words():
+    assert ng.fix_scan_names("Your E4L Bioenergetic Voice Scan showed stress.") == (
+        "Your Bioenergetic Wellness Scan showed stress.")
+    assert ng.fix_scan_names("an E4L voice scanning session") == (
+        "a Bioenergetic Wellness Scan session") or "voice" not in ng.fix_scan_names(
+        "an E4L voice scanning session").lower()
+    assert "voice" not in ng.fix_scan_names("the E4L voice analysis").lower()
+
+
+# ── found re-running the stricter check on the 36 saved letters ─────────────
+
+def test_a_chain_remedy_shortened_to_a_nutrient_word_is_not_a_claim():
+    ing = {"MSM Powder": ["MSM"], "Scar Silk": ["Gotu kola"]}
+    assert _chk("Scar Silk restores tissue. These will support healing, along with the "
+                "MSM on layer 1.", ["MSM Powder", "Scar Silk"], ing,
+                ingredients=["MSM", "Gotu kola"]) == []
+
+
+def test_a_catalog_name_inside_a_chain_label_is_that_ingredient():
+    ing = {"B17 Syntropy": ["Vitamin B9 (5-MTHF)"]}
+    assert _chk("Its folate comes as 5-MTHF, the active form.", ["B17 Syntropy"], ing,
+                names=["5-MTHF"]) == []

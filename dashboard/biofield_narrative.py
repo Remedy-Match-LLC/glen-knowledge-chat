@@ -471,8 +471,7 @@ def generate_narrative(report, notes, complete, scan=None, profile=None, animal=
     2026-09-25). Whatever is still wrong is appended to problems_out for the editor."""
     p = build_narrative_prompt(report, notes, scan, profile, animal)
     text = _finish(complete(p["system"], p["user"]), report, animal)
-    context = check_context(report, notes, scan, animal)
-    problems = narrative_problems(text, report, context)
+    problems = narrative_problems(text, report)
     if problems:
         retry = (p["user"] + "\n\nYOUR PREVIOUS DRAFT HAD THESE ERRORS. Write the whole "
                  "letter again, following every rule, without them:\n"
@@ -484,21 +483,12 @@ def generate_narrative(report, notes, complete, scan=None, profile=None, animal=
             print(f"[narrative] retry failed, keeping first draft: {e!r}", flush=True)
             second = None
         if second is not None:
-            second_problems = narrative_problems(second, report, context)
+            second_problems = narrative_problems(second, report)
             if len(second_problems) <= len(problems):
                 text, problems = second, second_problems
     if problems_out is not None:
         problems_out.extend(problems)
     return text
-
-
-def check_context(report, notes, scan, animal):
-    """What the writer was given, for deciding whether a product it names was invented.
-    The People-hub profile is left out on purpose: a product the client mentions is not
-    on the chain, and the page-load and save checks never have the profile, so generate
-    must judge the same way they do."""
-    p = build_narrative_prompt(report, notes, scan, None, animal)
-    return p["system"] + "\n" + p["user"]
 
 
 def _finish(text, report, animal):
@@ -513,9 +503,11 @@ def _ingredient_lines(name):
             for i in (_catalog_product(name).get("ingredients") or []) if isinstance(i, dict)]
 
 
-def narrative_problems(text, report, allowed_text):
-    """check_narrative against this report's chain and the catalog. allowed_text is what
-    the writer was given, so a product named there is not counted as invented."""
+def narrative_problems(text, report):
+    """check_narrative against this report's chain and the catalog. Only the chain's own
+    rows (remedies, Heads, Tails) permit a product name. Notes, scan findings and the
+    profile do not: "Consider Liver Support" in any of them is still not on the chain
+    (blind review, 2026-09-25). The same inputs on generate, save and page load."""
     rows = report.get("layers") or []
     chain = list(dict.fromkeys((r.get("remedy") or "").strip() for r in rows
                                if (r.get("remedy") or "").strip()))
@@ -531,7 +523,8 @@ def narrative_problems(text, report, allowed_text):
     return check_narrative(
         text, chain=chain, ingredients={c: _ingredient_lines(c) for c in chain},
         catalog_names=names, catalog_ingredients=ingredients,
-        allowed_text=allowed_text, heads_text=heads)
+        # The writer's fixed instructions name the service itself ("Biofield Analysis").
+        allowed_text=heads + "\n" + _SYSTEM + _SCAN_GUIDANCE, heads_text=heads)
 
 
 _PRESCRIBE = {"prescribe": "recommend", "prescribes": "recommends",

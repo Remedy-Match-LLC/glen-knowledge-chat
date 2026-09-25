@@ -115,11 +115,23 @@ def test_a_failed_retry_keeps_the_first_draft_and_its_warnings():
 def test_generate_and_save_judge_with_the_same_inputs():
     """The check never counts the People-hub profile as permission to name a product,
     so generate and a later save or page load give the same verdict."""
-    from dashboard.biofield_narrative import narrative_problems, check_context
+    from dashboard.biofield_narrative import narrative_problems
     rep = _report()
     text = "Aloha Jane,\n\n1. B17 Max supports growth. You already take Liver Support."
     profile = {"conditions": "Client already takes Liver Support"}
     problems = []
     generate_narrative(rep, "", lambda s, u: text, profile=profile, problems_out=problems)
-    assert problems == narrative_problems(text, rep, check_context(rep, "", None, None))
+    assert problems == narrative_problems(text, rep)
     assert any("Liver Support" in p for p in problems)
+
+
+def test_a_product_in_the_session_notes_is_still_off_chain():
+    from dashboard.biofield_narrative import narrative_problems
+    probs = narrative_problems("1. You may later add Liver Support.", _report())
+    assert any("Liver Support" in p for p in probs), probs
+
+
+def test_the_service_name_is_not_an_off_chain_product():
+    from dashboard.biofield_narrative import narrative_problems
+    assert narrative_problems("Aloha Jane,\n\nYour Biofield Analysis showed a clear chain.",
+                              _report()) == []
