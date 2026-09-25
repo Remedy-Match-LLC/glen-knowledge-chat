@@ -101,7 +101,7 @@ def test_ocuheal_serves_its_approved_text_over_a_stale_draft(appmod):
     for sid in ("intro", "description"):
         sec = _section(data, sid)
         assert "ai" not in sec, f"{sid} must be pinned"
-        assert OCU_TEXT in str(sec["body"]) and STALE not in str(sec["body"]), sid
+        assert sec["body"] == OCU_TEXT, sid   # equality: extra words must fail (round 3)
     assert _section(data, "ingredients")["body"]["directions"] == "1 drop in each eye 2 times a day."
     shown = str([_section(data, s)["body"] for s in ("intro", "description", "ingredients")])
     for stale in ("levetates", "Quintessential Terrain Restore) 96%", "(10 ppm)", "mirifica"):
@@ -114,7 +114,7 @@ def test_ocuheal_plus_serves_its_approved_intro_over_a_stale_draft(appmod):
     for sid in ("intro", "description"):
         sec = _section(data, sid)
         assert "ai" not in sec, sid
-        assert APPROVED_INTRO in str(sec["body"]) and STALE not in str(sec["body"]), sid
+        assert sec["body"] == APPROVED_INTRO, sid   # equality, not containment (round 3)
 
 
 def test_research_is_left_alone_until_knowledge_replaces_the_copy(appmod):
