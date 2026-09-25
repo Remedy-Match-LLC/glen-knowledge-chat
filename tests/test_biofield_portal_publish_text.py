@@ -76,3 +76,62 @@ def test_a_numbered_dose_inside_a_paragraph_is_not_a_boundary():
     narr = PEACH_LIKE.replace("It restores cells.", "It restores cells. Take it at 2. pm")
     segs = bpp.segment_narrative(narr, LAYERS3)
     assert segs[1].startswith("The second layer")
+
+
+# Blind review round 1, 2026-09-25: each probe below gave a client wrong card text.
+L2 = [{"remedy": "Vitality", "head": "Energy"}, {"remedy": "Chelation", "head": "Metals"}]
+
+
+def test_a_numbered_list_elsewhere_does_not_capture_the_cards():
+    narr = ("Aloha,\n\nThe first layer is energy, with Vitality.\n\nThe second is metals, "
+            "with Chelation.\n\nNext steps:\n1. Order your remedies\n2. Book a follow-up\n\n"
+            "In wellness")
+    segs = bpp.segment_narrative(narr, L2)
+    assert segs[0] == "The first layer is energy, with Vitality."
+    assert segs[1].startswith("The second is metals, with Chelation.")
+
+
+def test_a_numbered_terrain_paragraph_does_not_shift_the_cards():
+    narr = ("1. Terrain: Phase 1 Energize.\n\n2. Vitality layer.\n\n3. Chelation layer.\n\n"
+            "4. Nous Energy layer.\n\nIn wellness")
+    segs = bpp.segment_narrative(narr, LAYERS3)
+    assert "Vitality" in segs[0] and "Chelation" in segs[1] and "Nous Energy" in segs[2]
+    assert "Terrain" not in segs[0]
+
+
+def test_more_numbered_paragraphs_than_layers_is_not_trusted():
+    # Not trusted as numbered, so each card still opens at its own layer. An extra
+    # paragraph after the last layer lands on the last card, as the closing always has.
+    narr = "1. Vitality.\n\n2. Chelation.\n\n3. Nous Energy.\n\n4. Calm extra.\n\nIn wellness"
+    segs = bpp.segment_narrative(narr, LAYERS3)
+    assert [s.split(".")[0] for s in segs] == ["Vitality", "Chelation", "Nous Energy"], segs
+
+
+def test_windows_line_endings_split_at_paragraphs():
+    narr = ("Aloha,\r\n\r\nThe first layer: energy with Vitality.\r\n\r\nSecond: metals, "
+            "Chelation.\r\n\r\nThird: kidney, Nous Energy.\r\n\r\nIn wellness")
+    segs = bpp.segment_narrative(narr, LAYERS3)
+    assert segs[0] == "The first layer: energy with Vitality."
+    assert segs[1] == "Second: metals, Chelation."
+    assert segs[2].startswith("Third: kidney, Nous Energy.")
+
+
+def test_a_sub_list_inside_a_layer_keeps_the_numbered_split():
+    narr = ("1. First layer, Vitality. Steps:\n1. Take at breakfast\n2. Take at lunch\n\n"
+            "2. Second, Chelation.\n\n3. Third, Nous Energy.")
+    segs = bpp.segment_narrative(narr, LAYERS3)
+    assert segs[0].startswith("First layer, Vitality.") and "Take at lunch" in segs[0]
+    assert segs[1] == "Second, Chelation." and segs[2] == "Third, Nous Energy."
+
+
+def test_other_number_styles_are_stripped():
+    for a, b, c in (("**1.**", "**2.**", "**3.**"), ("1)", "2)", "3)")):
+        narr = f"{a} Vitality here.\n\n{b} Chelation here.\n\n{c} Nous Energy here."
+        segs = bpp.segment_narrative(narr, LAYERS3)
+        assert segs == ["Vitality here.", "Chelation here.", "Nous Energy here."], segs
+
+
+def test_numbers_that_run_1_to_n_but_miss_their_layer_are_not_trusted():
+    narr = "1. Terrain first.\n\n2. Vitality layer.\n\n3. Chelation layer, then Nous Energy."
+    segs = bpp.segment_narrative(narr, LAYERS3)
+    assert "Terrain" not in segs[0] and "Vitality" in segs[0]

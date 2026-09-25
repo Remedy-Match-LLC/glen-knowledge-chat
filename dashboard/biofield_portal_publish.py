@@ -94,28 +94,42 @@ def _cue_candidates(layer):
     return out
 
 
-# A layer's paragraph opens "1. ", "2. " at the start of a line; the writer is told to
-# number them. A number mid-line ("at 2. pm") is not a paragraph start.
-_LAYER_PARA = re.compile(r"(?m)^[ \t]*(\d{1,2})\.[ \t]+")
+# A layer's paragraph opens with its number: "1. ", "2) ", "**3.** ". Only a number at
+# the start of a PARAGRAPH counts: a list inside a paragraph, or a closing "Next steps"
+# list, is not a layer boundary (blind review, 2026-09-25).
+_NUM_PREFIX = re.compile(r"^[ \t]*(?:\*\*)?(\d{1,2})[.)](?:\*\*)?[ \t]+", re.MULTILINE)
+_PARA_BREAK = re.compile(r"\n[ \t]*\n\s*")
 
 
-def _numbered_segments(text, n):
-    """One segment per numbered paragraph 1..n, the number stripped (the card shows its
-    own). None unless each number appears once, in order, at the start of a line."""
-    starts = {}
-    for m in _LAYER_PARA.finditer(text):
-        k = int(m.group(1))
-        if 1 <= k <= n:
-            if k in starts:
-                return None
-            starts[k] = m
-    if len(starts) != n:
+def _paragraph_starts(text):
+    return [0] + [m.end() for m in _PARA_BREAK.finditer(text)]
+
+
+def _has_cue(segment, layer):
+    low = segment.lower()
+    return any(c.lower() in low for c in _cue_candidates(layer))
+
+
+def _numbered_segments(text, layers):
+    """One segment per numbered paragraph, the number stripped (the card shows its own).
+    Trusted only when the paragraph numbers run exactly 1..n and paragraph k names a cue
+    of layer k. A numbered terrain paragraph, extra numbers, or a stray list otherwise
+    shifted every card onto the wrong layer. None when not trusted."""
+    n = len(layers)
+    numbered = []
+    for start in _paragraph_starts(text):
+        m = _NUM_PREFIX.match(text, start)
+        if m:
+            numbered.append((int(m.group(1)), start, m.end()))
+    if [k for k, _, _ in numbered] != list(range(1, n + 1)):
         return None
-    ms = [starts[k] for k in range(1, n + 1)]
-    if any(ms[i].start() >= ms[i + 1].start() for i in range(n - 1)):
+    segs = []
+    for i, (_, _, body) in enumerate(numbered):
+        stop = numbered[i + 1][1] if i + 1 < n else len(text)
+        segs.append(text[body:stop].strip())
+    if not all(_has_cue(seg, layer) for seg, layer in zip(segs, layers)):
         return None
-    return [text[m.end():(ms[i + 1].start() if i + 1 < n else len(text))].strip()
-            for i, m in enumerate(ms)]
+    return segs
 
 
 def segment_narrative(narrative, layers):
@@ -126,10 +140,11 @@ def segment_narrative(narrative, layers):
     (clinical, 2026-09-25, Peach Goddard). The remedy cues remain the fallback for a
     narrative without clean numbering. Returns a list aligned to ``layers``; ``[]``
     when it cannot align."""
-    text = narrative or ""
+    # "\r\n" never matches the blank-line search below (blind review, 2026-09-25).
+    text = (narrative or "").replace("\r\n", "\n")
     if not text or not layers:
         return []
-    numbered = _numbered_segments(text, len(layers))
+    numbered = _numbered_segments(text, layers)
     if numbered:
         return numbered
     low = text.lower()
@@ -161,7 +176,7 @@ def segment_narrative(narrative, layers):
     segs = []
     for i, start in enumerate(positions):
         end = positions[i + 1] if i + 1 < len(positions) else len(text)
-        segs.append(text[start:end].strip())
+        segs.append(_NUM_PREFIX.sub("", text[start:end].strip(), count=1))
     return segs
 
 
