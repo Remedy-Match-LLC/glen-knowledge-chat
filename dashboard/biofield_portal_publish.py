@@ -94,13 +94,44 @@ def _cue_candidates(layer):
     return out
 
 
+# A layer's paragraph opens "1. ", "2. " at the start of a line; the writer is told to
+# number them. A number mid-line ("at 2. pm") is not a paragraph start.
+_LAYER_PARA = re.compile(r"(?m)^[ \t]*(\d{1,2})\.[ \t]+")
+
+
+def _numbered_segments(text, n):
+    """One segment per numbered paragraph 1..n, the number stripped (the card shows its
+    own). None unless each number appears once, in order, at the start of a line."""
+    starts = {}
+    for m in _LAYER_PARA.finditer(text):
+        k = int(m.group(1))
+        if 1 <= k <= n:
+            if k in starts:
+                return None
+            starts[k] = m
+    if len(starts) != n:
+        return None
+    ms = [starts[k] for k in range(1, n + 1)]
+    if any(ms[i].start() >= ms[i + 1].start() for i in range(n - 1)):
+        return None
+    return [text[m.end():(ms[i + 1].start() if i + 1 < n else len(text))].strip()
+            for i, m in enumerate(ms)]
+
+
 def segment_narrative(narrative, layers):
-    """Split the single narrative blob into one segment per layer, by locating
-    each layer's cue (remedy, else its first word, else head) in increasing
-    order. Returns a list aligned to ``layers``; ``[]`` when it cannot align."""
+    """Split the single narrative blob into one segment per layer.
+
+    By the writer's numbered paragraphs first. Cutting at each remedy's name started
+    every portal card mid-paragraph and ended it with the next layer's opening clause
+    (clinical, 2026-09-25, Peach Goddard). The remedy cues remain the fallback for a
+    narrative without clean numbering. Returns a list aligned to ``layers``; ``[]``
+    when it cannot align."""
     text = narrative or ""
     if not text or not layers:
         return []
+    numbered = _numbered_segments(text, len(layers))
+    if numbered:
+        return numbered
     low = text.lower()
     positions = []
     cursor = 0
@@ -115,6 +146,16 @@ def segment_narrative(narrative, layers):
             return []                          # a layer has no cue -> fall back
         positions.append(found)
         cursor = found + 1
+    # Narratives written before the paragraphs were numbered (a2 to a32 on 2026-09-25)
+    # still come apart at blank lines. Move each cut back to the start of the paragraph
+    # its cue sits in, so a card never opens mid-sentence, as long as that stays after
+    # the previous cut.
+    prev = -1
+    for i, pos in enumerate(positions):
+        para = text.rfind("\n\n", prev + 1, pos)
+        if para != -1:
+            positions[i] = para + 2
+        prev = positions[i]
     # positions are strictly increasing by construction (each search starts past
     # the previous hit). Slice between consecutive cue starts.
     segs = []
