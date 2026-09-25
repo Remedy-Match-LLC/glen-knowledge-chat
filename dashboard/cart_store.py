@@ -266,6 +266,36 @@ def set_format_quantities(cx, token, slug, bottle_qty, refill_qty):
     cx.commit()
 
 
+def fold_formats(cx, token, allowed):
+    """Fold rows whose format no longer applies into that product's plain row.
+
+    `allowed(slug, fmt)` says whether a non-blank format still applies. A row that
+    fails is added to the (slug, "") row and deleted, so one product is one line and
+    its quantity prices as one. 2026-09-25: refill/larger stopped applying to droppers
+    and powders, and carts saved before that held such rows. Returns rows folded.
+    """
+    rows = cx.execute("SELECT slug, fmt, qty FROM cart_items WHERE token=? AND fmt<>''",
+                      (token,)).fetchall()
+    folded = 0
+    for slug, fmt, qty in rows:
+        if fmt == "bottle" or allowed(slug, fmt):
+            continue
+        cx.execute("DELETE FROM cart_items WHERE token=? AND slug=? AND fmt=?", (token, slug, fmt))
+        hit = cx.execute("SELECT qty FROM cart_items WHERE token=? AND slug=? AND fmt=''",
+                         (token, slug)).fetchone()
+        if hit:
+            cx.execute("UPDATE cart_items SET qty=? WHERE token=? AND slug=? AND fmt=''",
+                       (_clamp(int(hit[0]) + int(qty)), token, slug))
+        else:
+            cx.execute("INSERT INTO cart_items(token, slug, fmt, qty, source, added_at) "
+                       "VALUES (?,?,?,?,?,?)", (token, slug, "", _clamp(qty), "", _now_iso()))
+        folded += 1
+    if folded:
+        _touch(cx, token)
+        cx.commit()
+    return folded
+
+
 def items(cx, token):
     rows = cx.execute(
         "SELECT slug, qty, fmt, source FROM cart_items WHERE token=? ORDER BY added_at, slug",

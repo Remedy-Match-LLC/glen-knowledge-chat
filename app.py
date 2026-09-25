@@ -7352,11 +7352,28 @@ def _capsule_formats_ok(p):
     # does for packing; review round 1. A product with neither is not capsules.
     bt = p.get("bottle_type") or ""
     if p.get("slug"):
-        try:
-            bt = _shipping.resolve_bottle_type(p["slug"], p) or bt
-        except Exception:
-            pass
+        bt = _bottle_type_override(p["slug"]) or bt
     return bt.strip().lower() in _CAPSULE_FORMAT_BOTTLES
+
+
+def _bottle_type_override(slug):
+    """product_bottle_types' value for `slug`, or "". Read once per request: the
+    check runs for every volume-priced product on a list (review round 2). A failed
+    read logs and falls back to the catalog, never raises."""
+    from flask import g, has_request_context
+    if has_request_context():
+        if not hasattr(g, "_bottle_overrides"):
+            try:
+                g._bottle_overrides = _shipping.list_product_bottle_overrides()
+            except Exception as e:
+                print(f"[formats] bottle override read failed: {e!r}", flush=True)
+                g._bottle_overrides = {}
+        return g._bottle_overrides.get(slug) or ""
+    try:
+        row = _shipping.resolve_bottle_type(slug, None)
+        return "" if row == _shipping.UNKNOWN_BOTTLE_TYPE else (row or "")
+    except Exception:
+        return ""
 
 
 def _clean_format(p, fmt):
@@ -22717,9 +22734,15 @@ def _cart_open_token(cx):
     return token
 
 
+def _format_still_applies(slug, fmt):
+    p = _get_product(slug)
+    return bool(p) and _clean_format(p, fmt) == (fmt or "").strip().lower()
+
+
 def _cart_payload(cx, token):
     if not token:
         return {"ok": True, "items": [], "count": 0}
+    _cart_store.fold_formats(cx, token, _format_still_applies)
     out, count = [], 0
     for it in _cart_store.items(cx, token):
         p = _get_product(it["slug"])
@@ -23036,6 +23059,7 @@ def api_cart_checkout():
             _cart_store.init_cart_tables(cx)
             anon_token = _cart_token_from_cookie()
             token = _cart_store.merge(cx, anon_token, email)
+            _cart_store.fold_formats(cx, token, _format_still_applies)
             cart = _cart_store.items(cx, token)
 
         if not cart:

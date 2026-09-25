@@ -185,3 +185,16 @@ def test_payment_not_enabled_yet_leaves_the_card_up_but_the_button_off():
     out = _setup_pay({"pay_status": "unpaid", "editable": False, "payable": True,
                       "total_cents": 9300, "paylink_enabled": False})
     assert out["cardHidden"] is False and out["disabled"] is True
+
+
+def test_lines_keep_refill_eligible_so_the_picker_can_show():
+    """Review round 2 (#1816): linesFromOrder copies a fixed field list and dropped
+    refill_eligible, so the packaging picker never showed, even for capsules."""
+    js = _fn("linesFromOrder")
+    out = _run("""
+      const ORDER = {lines:[{slug:'caps', name:'C', qty:1, unit_cents:1, refill_eligible:true},
+                            {slug:'drops', name:'D', qty:1, unit_cents:1, refill_eligible:false}]};
+      %s
+      console.log(JSON.stringify(linesFromOrder()));
+    """ % js)
+    assert [o["refill_eligible"] for o in out] == [True, False]

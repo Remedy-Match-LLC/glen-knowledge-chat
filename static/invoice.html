@@ -546,7 +546,8 @@ async function pushUpdate(){
 function linesFromOrder(){
   return ORDER.lines.map(l=>({slug:l.slug, name:l.name, qty:l.qty, unit_cents:l.unit_cents,
     kind:l.kind, tier:l.tier, note:l.note, format:l.format||'bottle',
-    service:l.service, srp_cents:l.srp_cents, regular_cents:l.regular_cents}));
+    service:l.service, srp_cents:l.srp_cents, regular_cents:l.regular_cents,
+    refill_eligible:l.refill_eligible}));
 }
 function renderFromOrder(){ LINES=linesFromOrder(); renderLines(); renderTotals(); }
 function setupPay(){

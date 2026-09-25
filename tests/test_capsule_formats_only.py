@@ -151,8 +151,8 @@ def test_both_pages_offer_refill_only_where_the_server_allows():
     inv = (ROOT / "static" / "invoice.html").read_text()
     assert re.search(r"const packaging = \([^;]*ORDER\.editable && l\.refill_eligible\)", inv)
     order = (ROOT / "static" / "order-new.html").read_text()
-    assert re.search(r"\$\{refillOk\(l\.slug\) \? `<select onchange=\"editLine\(\$\{i\},'format'", order)
-    assert "return !!(p && p.refill_eligible);" in order
+    assert re.search(r"\$\{refillOk\(l\.slug\) === true \? `<select onchange=\"editLine\(\$\{i\},'format'", order)
+    assert "return p ? !!p.refill_eligible : null;" in order
 
 
 def test_the_order_forms_product_list_carries_the_refill_flag(a, monkeypatch):
@@ -164,3 +164,87 @@ def test_the_order_forms_product_list_carries_the_refill_flag(a, monkeypatch):
     by = {p["slug"]: p for p in r.get_json()["products"]}
     assert by["brain-boost"]["refill_eligible"] is True
     assert by["ocuheal-plus-eye-drops"]["refill_eligible"] is False
+
+
+# ── review round 2 ───────────────────────────────────────────────────────────
+
+def test_a_stale_refill_cart_row_folds_into_the_plain_row():
+    """Carts saved before the change held (dropper, "refill"); adding it again made a
+    second row the page could not edit, and 4+1 priced worse than 5."""
+    import sqlite3
+    from dashboard import cart_store as cs
+    cx = sqlite3.connect(":memory:")
+    cs.init_cart_tables(cx)
+    cs.add_item(cx, "t", "drops", 2, fmt="refill")
+    cs.add_item(cx, "t", "drops", 1, fmt="")
+    cs.add_item(cx, "t", "caps", 3, fmt="refill")
+    ok = {"caps": True, "drops": False}
+    assert cs.fold_formats(cx, "t", lambda s, f: ok[s]) == 1
+    assert sorted((i["slug"], i["format"], i["qty"]) for i in cs.items(cx, "t")) == [
+        ("caps", "refill", 3), ("drops", "", 3)]
+    assert cs.fold_formats(cx, "t", lambda s, f: ok[s]) == 0, "idempotent"
+
+
+def test_a_stale_row_alone_becomes_the_plain_row():
+    import sqlite3
+    from dashboard import cart_store as cs
+    cx = sqlite3.connect(":memory:")
+    cs.init_cart_tables(cx)
+    cs.add_item(cx, "t", "drops", 2, fmt="larger")
+    cs.fold_formats(cx, "t", lambda s, f: False)
+    assert [(i["slug"], i["format"], i["qty"]) for i in cs.items(cx, "t")] == [("drops", "", 2)]
+
+
+def test_the_cart_payload_folds_before_it_shows(a, monkeypatch):
+    import sqlite3
+    monkeypatch.setattr(a, "_get_product", lambda s: {"drops": DROPS, "caps": CAPS}.get(s))
+    cx = sqlite3.connect(":memory:")
+    a._cart_store.init_cart_tables(cx)
+    a._cart_store.add_item(cx, "t", "drops", 2, fmt="refill")
+    a._cart_store.add_item(cx, "t", "drops", 1, fmt="")
+    got = a._cart_payload(cx, "t")
+    assert [(i["slug"], i["format"], i["qty"]) for i in got["items"]] == [("drops", "", 3)]
+
+
+def test_the_override_table_is_read_once_per_request(a, monkeypatch):
+    calls = []
+    monkeypatch.setattr(a._shipping, "list_product_bottle_overrides",
+                        lambda db_path=None: calls.append(1) or {"drops": "30 Caps"})
+    with a.app.test_request_context("/"):
+        assert a._capsule_formats_ok(DROPS) is True    # the override says capsules
+        for _ in range(50):
+            a._capsule_formats_ok(CAPS)
+    assert len(calls) == 1
+
+
+def test_a_failed_override_read_falls_back_to_the_catalog(a, monkeypatch):
+    def boom(db_path=None):
+        raise RuntimeError("db locked")
+    monkeypatch.setattr(a._shipping, "list_product_bottle_overrides", boom)
+    with a.app.test_request_context("/"):
+        assert a._capsule_formats_ok(CAPS) is True
+        assert a._capsule_formats_ok(DROPS) is False
+
+
+def test_the_order_form_resets_a_refill_it_knows_does_not_apply():
+    """Review round 2: the form showed "Bottle" but still posted "refill"."""
+    import json, shutil, subprocess
+    node = shutil.which("node")
+    if not node:
+        pytest.skip("node not installed")
+    src = (ROOT / "static" / "order-new.html").read_text()
+    start = src.index("function refillOk(")
+    body = src[start:src.index("\n}", start) + 2]
+    loop = re.search(r"for \(const l of LINES\) if \(refillOk\(l\.slug\) === false && l\.format === 'refill'\) l\.format = 'bottle';", src)
+    assert loop, "renderLines no longer resets an inapplicable refill"
+    js = """
+      const CATALOG = [{slug:'caps', refill_eligible:true}, {slug:'drops', refill_eligible:false}];
+      %s
+      const LINES = [{slug:'caps', format:'refill'}, {slug:'drops', format:'refill'},
+                     {slug:'retired-twin', format:'refill'}];
+      %s
+      console.log(JSON.stringify([LINES.map(l => l.format), ['caps','drops','x'].map(refillOk)]));
+    """ % (body, loop.group(0))
+    r = subprocess.run([node, "-e", js], capture_output=True, text=True, timeout=30)
+    assert r.returncode == 0, r.stderr
+    assert json.loads(r.stdout) == [["refill", "bottle", "refill"], [True, False, None]]
