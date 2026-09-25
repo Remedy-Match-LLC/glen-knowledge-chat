@@ -86,19 +86,7 @@ def test_portal_reorder_basket_uses_the_same_count():
     assert {i["slug"]: i["qty"] for i in items} == {"iop-syntropy": 3, "candida-cleanse": 1}
 
 
-# --- Review round 1: never cut an intentional open order, and agree across paths ---
-
-def test_carry_open_quantities_keeps_an_open_count_only_for_a_blank_line():
-    lines = [{"slug": "biofield-analysis", "qty": 1},
-             {"slug": "iop-syntropy", "qty": 1, "source": "biofield"},
-             {"slug": "candida-cleanse", "qty": 1, "source": "biofield"}]
-    existing = [{"slug": "iop-syntropy", "qty": 3}, {"slug": "candida-cleanse", "qty": 3},
-                {"slug": "biofield-analysis", "qty": 2}]
-    out = bi.carry_open_quantities(lines, existing, explicit_slugs={"candida-cleanse"})
-    q = {l["slug"]: l["qty"] for l in out}
-    assert q == {"biofield-analysis": 1, "iop-syntropy": 3, "candida-cleanse": 1}
-    assert lines[1]["qty"] == 1                      # input not mutated
-
+# --- Review round 1: every path agrees on a repeated remedy ---
 
 def test_reorder_basket_keeps_the_largest_count_for_a_repeated_remedy():
     cx = sqlite3.connect(":memory:")
@@ -114,12 +102,11 @@ def test_reorder_basket_keeps_the_largest_count_for_a_repeated_remedy():
     assert {i["slug"]: i["qty"] for i in items}["iop-syntropy"] == 3
 
 
-def test_handoff_marks_a_set_count_explicit(tmp_path):
+def test_handoff_bills_the_largest_count_for_a_repeated_remedy(tmp_path):
     db = str(tmp_path / "t.db")
     with sqlite3.connect(db) as cx:
         aid = _chain(cx)
         update_chain_row(cx, ordered_chain(cx, aid)[0]["id"], bottles=2)
         rep = authored_report(cx, aid)
-    got = {r["name"]: (r["qty"], r["explicit"])
-           for r in bh.report_remedies_for_invoice(db, rep, bi.bottles_needed)}
-    assert got == {"IOP Syntropy": (2, True), "Candida Cleanse": (1, False)}
+    got = {r["name"]: r["qty"] for r in bh.report_remedies_for_invoice(db, rep, bi.bottles_needed)}
+    assert got == {"IOP Syntropy": 2, "Candida Cleanse": 1}

@@ -69,7 +69,6 @@ def report_remedies_for_invoice(db_path, rep, bottles_needed):
             if nm:
                 # The line's own Bottles field, default 1 (Glen 2026-09-25). The
                 # bottles_needed argument is kept for callers but no longer decides.
-                from dashboard.biofield_invoice import line_bottles, line_bottles_set
-                out.append({"name": nm, "qty": line_bottles(L),
-                            "explicit": line_bottles_set(L) is not None})
+                from dashboard.biofield_invoice import line_bottles
+                out.append({"name": nm, "qty": line_bottles(L)})
     return out

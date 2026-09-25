@@ -1354,14 +1354,12 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
         if not email:
             return {"ok": False, "error": "Add a client email in the header first."}, 400
         # Per-remedy quantity = the line's Bottles field, default 1 (Glen 2026-09-25).
-        # "explicit" marks a count Glen set, which a re-raise must not override.
         remedies = []
         for l in (rep.get("layers") or []):
             nm = (l.get("remedy") or "").strip()
             if not nm:
                 continue
-            remedies.append({"name": nm, "qty": biofield_invoice.line_bottles(l),
-                             "explicit": biofield_invoice.line_bottles_set(l) is not None})
+            remedies.append({"name": nm, "qty": biofield_invoice.line_bottles(l)})
         catalog = invoice_fetch_catalog()
         # Never re-charge a Biofield Analysis the client already paid for: drop the fee
         # line when a paid analysis order exists, invoicing remedies only. If that leaves
@@ -1393,8 +1391,6 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
             else None
         )
         if update_order_id:
-            built["lines"] = biofield_invoice.carry_open_quantities(
-                built["lines"], previous.get("items") or [], built.get("explicit_slugs"))
             built["lines"] = biofield_invoice.merge_manual_invoice_lines(
                 built["lines"], previous.get("items") or [])
         note = biofield_invoice.build_invoice_note(rep.get("phase"), rep.get("location"))
@@ -1519,16 +1515,14 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
             # double-resolution path could silently drop every remedy and still
             # create a successful $300 service-only invoice.
             # One remedy on several layers keeps its LARGEST count, as the Intake
-            # invoice does; a count set on any of its lines marks it explicit.
-            qty_by_name, explicit_names = {}, set()
+            # invoice does.
+            qty_by_name = {}
             for r in remedies:
                 key = (r.get("name") or "").strip().lower()
                 if not key:
                     continue
                 qty_by_name[key] = max(qty_by_name.get(key, 1), max(1, int(r.get("qty") or 1)))
-                if r.get("explicit"):
-                    explicit_names.add(key)
-            resolved_remedies, explicit_slugs = [], set()
+            resolved_remedies = []
             for item in content.get("reorder_items") or []:
                 slug = (item.get("slug") or "").strip()
                 if not slug:
@@ -1539,19 +1533,10 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                     "qty": qty_by_name.get(name_key, 1),
                     "source": "biofield",
                 })
-                if name_key in explicit_names:
-                    explicit_slugs.add(slug)
             if resolved_remedies:
                 built["lines"] = ([{"slug": biofield_invoice.BIOFIELD_SLUG, "qty": 1}]
                                   if include_fee else []) + resolved_remedies
                 built["skipped"] = []
-                # replace_open below cancels the open draft, so carry its counts for
-                # any line whose Bottles field is blank (Glen 2026-09-25).
-                prev = invoice_latest(email) or {}
-                if (prev.get("ok") and prev.get("status") not in ("cancelled", "delivered", "done")
-                        and prev.get("pay_status") != "paid"):
-                    built["lines"] = biofield_invoice.carry_open_quantities(
-                        built["lines"], prev.get("items") or [], explicit_slugs)
             elif remedies and include_fee:
                 invoice = {
                     "ok": False,
