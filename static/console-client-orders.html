@@ -107,7 +107,7 @@
     var param = q.indexOf('@')>=0 ? ('email='+encodeURIComponent(q)) : ('name='+encodeURIComponent(q));
     try {
       var r=await fetch('/api/console/fmp-orders?'+param, {headers:hdr()});
-      if(r.status===401){ msg.textContent='Unauthorized — check the console key.'; return; }
+      if(r.status===401){ msg.textContent='Unauthorized — check the console key.'; document.getElementById('gate').style.display='flex'; return; }
       var d=await r.json();
       var res=(d.results||[]);
       if(!res.length){ msg.textContent='No matching clients.'; return; }

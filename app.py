@@ -40092,12 +40092,16 @@ def _ghl_queue_auth():
     People: CRM showed Rae the key prompt while she was signed in. A VA token stays
     refused."""
     ws = os.environ.get("WEBHOOK_SECRET", "")
-    cs = os.environ.get("CONSOLE_SECRET", "")
     given = request.headers.get("X-Webhook-Secret", "") or request.headers.get("X-Console-Key", "")
     if ws and given == ws:
         return True
+    # Never a ?key= in the URL: these routes never took one, and a secret in a URL
+    # lands in access logs. Header or login cookie only.
+    if request.args.get("key"):
+        return False
     key = _present_console_key()
-    return bool(cs and key and (key == cs or _owner_token_ok(key)))
+    # The module CONSOLE_SECRET, the same one _present_console_key compares against.
+    return bool(CONSOLE_SECRET and key and (key == CONSOLE_SECRET or _owner_token_ok(key)))
 
 
 @app.route("/api/ghl/queue/pending", methods=["GET"])
@@ -40118,7 +40122,8 @@ def ghl_queue_pending():
 def ghl_queue_result():
     if not _ghl_queue_auth():
         return jsonify({"error": "unauthorized"}), 401
-    data = request.get_json(force=True) or {}
+    # JSON only (both callers send it): a text/plain cross-site POST gets no body.
+    data = request.get_json(silent=True) or {}
     qid = data.get("id")
     status = data.get("status", "done")
     if not qid:

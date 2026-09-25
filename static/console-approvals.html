@@ -70,10 +70,17 @@
 
   function loadAll(){
     document.getElementById('grid').innerHTML = QUEUES.map(card).join('');
+    // Show the key prompt only when EVERY queue refuses. An owner session turns a
+    // failing queue's server error into a 401, so one 401 is not proof of no login.
+    var refused = 0;
     QUEUES.forEach(function(q){
       fetch(q.endpoint, { headers: hdr() })
         .then(function(r){
-          if(r.status===401){ document.getElementById('app').style.display='none'; document.getElementById('gate').style.display=''; throw 0; }
+          if(r.status===401){
+            refused += 1;
+            if(refused===QUEUES.length){ document.getElementById('app').style.display='none'; document.getElementById('gate').style.display=''; }
+            throw 0;
+          }
           if(!r.ok) throw 0; return r.json(); })
         .then(function(j){
           var n = q.count(j) || 0;

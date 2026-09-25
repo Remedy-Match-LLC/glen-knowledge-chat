@@ -87,6 +87,32 @@ def test_the_result_route_uses_the_same_check(client):
     assert c.post("/api/ghl/queue/result", json={}).status_code != 401
 
 
+# ── the queue route: what it must still refuse ───────────────────────────────
+
+@pytest.mark.parametrize("key", ["test-secret", "rae-owner-token"])
+def test_a_key_in_the_url_is_refused(client, key):
+    """Round 1: these routes never took ?key=, and a secret in a URL lands in logs."""
+    c = client.app.test_client()
+    assert c.get("/api/ghl/queue/pending?key=" + key).status_code == 401
+
+
+def test_a_text_plain_result_post_changes_nothing(client):
+    """Round 1: a cross-site form can send text/plain with no preflight."""
+    from dashboard import ghl_queue
+    with sqlite3.connect(client.LOG_DB) as cx:
+        qid = ghl_queue.enqueue(cx, op="tag_add", email="a@x.com", payload={"tag": "t"})
+        cx.commit()
+    c = client.app.test_client()
+    c.set_cookie(client.CONSOLE_COOKIE, "rae-owner-token")
+    r = c.post("/api/ghl/queue/result", data='{"id": %d, "status": "done"}' % qid,
+               headers={"Content-Type": "text/plain"})
+    assert r.status_code == 400
+    with sqlite3.connect(client.LOG_DB) as cx:
+        assert [row[0] for row in cx.execute("SELECT id FROM ghl_write_queue WHERE status='pending'")] == [qid]
+    r = c.post("/api/ghl/queue/result", json={"id": qid, "status": "done"})
+    assert r.status_code == 200, "the same call as JSON still works"
+
+
 # ── the pages ────────────────────────────────────────────────────────────────
 
 def _script(page):
@@ -95,19 +121,38 @@ def _script(page):
     return re.sub(r"(?m)^\s*//.*$", "", src)
 
 
+GATE_OFF = r"document\.getElementById\('gate'\)\.style\.display\s*=\s*'none'"
+
+
 @pytest.mark.parametrize("page", PAGES)
-def test_no_page_waits_for_a_stored_key_before_loading(page):
+def test_the_page_hides_the_prompt_at_load_without_a_condition(page):
+    """A top-level statement, not one inside unlock() and not behind any test of a
+    stored key (round 1: the first version of this check matched unlock())."""
     js = _script(page)
-    assert not re.search(r"if\s*\(\s*key\(\)\s*\)\s*\{?\s*document\.getElementById\('gate'\)", js), page
-    assert re.search(r"document\.getElementById\('gate'\)\.style\.display\s*=\s*'none'", js), page
+    assert re.search(r"(?m)^\s*" + GATE_OFF, js), page
 
 
-@pytest.mark.parametrize("page", [p for p in PAGES if p != "client-orders"])
-def test_a_401_still_brings_the_prompt_back(page):
+@pytest.mark.parametrize("page", PAGES)
+def test_no_stored_key_test_guards_the_prompt(page):
+    js = _script(page)
+    assert not re.search(r"if\s*\([^)]*(?:key\(\)|console_key)[^)]*\)\s*\)?\s*\{?\s*" + GATE_OFF, js), page
+
+
+@pytest.mark.parametrize("page", PAGES)
+def test_a_401_brings_the_prompt_back(page):
     js = _script(page)
     assert re.search(r"status\s*===\s*401\s*\)\s*\{[^}]*getElementById\('gate'\)\.style\.display\s*=\s*'(?:flex|)'",
-                     js), page
+                     js) or re.search(r"refused\s*===\s*QUEUES\.length", js), page
 
 
-def test_client_orders_says_unauthorised_on_a_401():
-    assert "status===401){ msg.textContent='Unauthorized" in _script("client-orders")
+def test_approvals_asks_for_the_key_only_when_every_queue_refuses():
+    """Round 1: an owner session turns one failing queue's error into a 401."""
+    js = _script("approvals")
+    assert re.search(r"if\s*\(\s*refused\s*===\s*QUEUES\.length\s*\)\s*\{[^}]*getElementById\('gate'\)", js)
+    assert not re.search(r"status\s*===\s*401\s*\)\s*\{\s*document\.getElementById\('app'\)", js)
+
+
+def test_money_reloads_its_tabs_after_the_key_is_entered():
+    js = _script("money")
+    unlock = re.search(r"function unlock\(\)\{(.*?)reveal\(\);\s*\}", js, re.S)
+    assert unlock and "_moneyLoaded[t]=false" in unlock.group(1)
