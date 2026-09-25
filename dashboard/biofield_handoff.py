@@ -67,5 +67,8 @@ def report_remedies_for_invoice(db_path, rep, bottles_needed):
         for L in (rep.get("layers") or []):
             nm = (L.get("remedy") or "").strip()
             if nm:
-                out.append({"name": nm, "qty": bottles_needed(L.get("frequency"), _dpb(nm))})
+                # The line's own Bottles field, default 1 (Glen 2026-09-25). The
+                # bottles_needed argument is kept for callers but no longer decides.
+                from dashboard.biofield_invoice import line_bottles
+                out.append({"name": nm, "qty": line_bottles(L)})
     return out

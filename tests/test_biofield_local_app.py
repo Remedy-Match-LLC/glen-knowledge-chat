@@ -598,7 +598,8 @@ def test_handoff_route_graceful(tmp_path):
 
 
 def test_report_remedies_for_invoice_qty():
-    # qty = bottles for a 30-day program from the authored frequency + FMP doses/bottle.
+    # qty = the line's Bottles field, default 1 (Glen 2026-09-25). Liver Support at
+    # twice a day used to bill 2 from the 30-day rule; it now bills 1 unless set.
     from dashboard import biofield_handoff, biofield_invoice
     cx = sqlite3.connect(":memory:")
     cx.execute("CREATE TABLE fmp_snap_products (product_name TEXT, doses_per_bottle INTEGER)")
@@ -612,13 +613,15 @@ def test_report_remedies_for_invoice_qty():
     dcx.execute("INSERT INTO fmp_snap_products VALUES ('Liver Support', 30)")
     dcx.commit(); dcx.close()
     rep = {"layers": [
-        {"remedy": "Liver Support", "frequency": "twice a day"},   # 2*30/30 = 2 bottles
+        {"remedy": "Liver Support", "frequency": "twice a day"},   # was 2; now 1
+        {"remedy": "Brain Cleanse", "frequency": "daily", "bottles": 3},  # set: 3
         {"remedy": "Infoceutical X", "frequency": "daily"},        # no FMP row -> qty 1
         {"remedy": "", "frequency": "daily"},                      # skipped (no name)
     ]}
     out = biofield_handoff.report_remedies_for_invoice(path, rep, biofield_invoice.bottles_needed)
     os.unlink(path)
-    assert out == [{"name": "Liver Support", "qty": 2}, {"name": "Infoceutical X", "qty": 1}]
+    assert out == [{"name": "Liver Support", "qty": 1}, {"name": "Brain Cleanse", "qty": 3},
+                   {"name": "Infoceutical X", "qty": 1}]
 
 
 def test_build_invoice_lines_include_fee_false():
@@ -719,9 +722,9 @@ def test_handoff_route_raises_invoice(tmp_path, monkeypatch):
     assert j["invoice"]["ok"] is True and j["invoice"]["order_id"] == 77
     slugs = [l["slug"] for l in captured["lines"]]
     assert slugs[0] == "biofield-analysis"           # fee always first
-    # 2 bottles for twice-daily, carrying the authored-analysis provenance through
-    # order creation (see build_invoice_lines).
-    assert {"slug": "liver-support", "qty": 2,
+    # 1 bottle unless the line sets more (Glen 2026-09-25), carrying the authored-
+    # analysis provenance through order creation (see build_invoice_lines).
+    assert {"slug": "liver-support", "qty": 1,
             "source": "biofield"} in captured["lines"]
 
 

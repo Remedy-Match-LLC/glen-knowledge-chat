@@ -88,6 +88,11 @@ def init_auth_tables(cx):
     except Exception:
         pass
     try:
+        # Bottles to bill for this line; NULL means 1 (Glen 2026-09-25).
+        cx.execute("ALTER TABLE biofield_auth_chain ADD COLUMN bottles INTEGER")
+    except Exception:
+        pass
+    try:
         # Per-layer stress codes (JSON list), carried from the synthesis/reveal so a
         # layer knows its own patterns even when the coverage map doesn't link them.
         cx.execute("ALTER TABLE biofield_auth_chain ADD COLUMN codes TEXT")
@@ -463,7 +468,7 @@ def update_chain_row(cx, rid, **fields):
     what the interpreter originally wrote (see was_edited). Confirming or re-ordering
     a row is not a value edit and deliberately leaves `updated_at` alone."""
     cols = ("layer", "head", "most_affected", "remedy", "dosage", "frequency",
-            "timing", "schedule_slot")
+            "timing", "schedule_slot", "bottles")
     sets, vals = [], []
     for k in cols:
         if k in fields:
@@ -746,7 +751,7 @@ def ordered_chain(cx, tid):
     cx.row_factory = sqlite3.Row
     rows = cx.execute(
         "SELECT id, layer, head, most_affected, remedy, dosage, frequency, timing, "
-        "schedule_slot, "
+        "schedule_slot, bottles, "
         "confirmed, origin FROM biofield_auth_chain "
         "WHERE test_id=? AND (TRIM(COALESCE(remedy,''))<>'' "
         "OR TRIM(COALESCE(head,''))<>'' OR TRIM(COALESCE(most_affected,''))<>'')",
@@ -764,6 +769,7 @@ def ordered_chain(cx, tid):
                     "dosage": r["dosage"] or "", "frequency": r["frequency"] or "",
                     "timing": r["timing"] or "",
                     "schedule_slot": r["schedule_slot"] or "",
+                    "bottles": r["bottles"],
                     "confirmed": 0 if r["confirmed"] == 0 else 1,
                     "origin": r["origin"] or "live",
                     "zone": "bottom" if unbalanced_scan(r) else "top"})

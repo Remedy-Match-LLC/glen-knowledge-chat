@@ -9,7 +9,7 @@ import requests
 
 from dashboard.practitioner_portal import name_to_slug
 from dashboard import wholesale_pricing as _pricing
-from dashboard.biofield_invoice import bottles_needed
+from dashboard.biofield_invoice import bottles_needed, line_bottles
 from dashboard.biofield_authoring import authored_report, remedy_dosing, merge_dosing
 from dashboard.biofield_narrative import get_narrative
 
@@ -191,7 +191,7 @@ def build_portal_content(cx, test_id, *, special_price_cents, catalog=None,
                 continue
             seen.add(slug)
             reorder.append({"slug": slug,
-                            "qty": _bottle_quantity(cx, remedy, dose.get("frequency")),
+                            "qty": line_bottles(L),
                             "price_cents": int(special_price_cents)})
         if len(dosings) > 1:
             dosing = "; ".join(f"{n}: {d}" if d else n for n, d in dosings)

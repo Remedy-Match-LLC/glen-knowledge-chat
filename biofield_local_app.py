@@ -1371,7 +1371,7 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                 nm = (l.get("remedy") or "").strip()
                 if not nm:
                     continue
-                qty = biofield_invoice.bottles_needed(l.get("frequency"), _doses_per_bottle(nm))
+                qty = biofield_invoice.line_bottles(l)   # default 1 (Glen 2026-09-25)
                 remedies.append({"name": nm, "qty": qty})
         catalog = invoice_fetch_catalog()
         # Never re-charge a Biofield Analysis the client already paid for: drop the fee
@@ -1982,6 +1982,13 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                   "frequency", "timing", "schedule_slot"):
             if k in d:
                 fields[k] = _layer_int(d[k]) if k == "layer" else d[k]
+        if "bottles" in d:
+            # Blank or unreadable stores NULL, which bills 1 (Glen 2026-09-25).
+            try:
+                n = int(str(d["bottles"]).strip())
+                fields["bottles"] = n if n >= 1 else None
+            except (TypeError, ValueError):
+                fields["bottles"] = None
         if "layer" in fields:
             new_layer = fields.pop("layer")
             from dashboard.biofield_authoring import reorder_chain

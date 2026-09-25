@@ -137,7 +137,7 @@ def test_build_uses_exact_individualized_sku_and_calculates_bottles():
     items = bpp.build_portal_content(
         cx, aid, special_price_cents=0, catalog=catalog)["content"]["reorder_items"]
     assert items == [
-        {"slug": "iop-syntropy", "qty": 3, "price_cents": 0},
+        {"slug": "iop-syntropy", "qty": 1, "price_cents": 0},   # 1 unless set (Glen 2026-09-25)
         {"slug": "living-with-soul-flower-essence-in-terrain-restore",
          "qty": 1, "price_cents": 0},
     ]

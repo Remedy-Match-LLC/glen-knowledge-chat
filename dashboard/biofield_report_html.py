@@ -788,6 +788,7 @@ async function saveRemedy(rid,btn){var card=btn.closest('.lcard');var gid=card.d
  try{await post('/author/__TID__/row/'+rid,{head:head,most_affected:most,
   remedy:val('r'+rid+'_remedy'),dosage:val('r'+rid+'_dosage'),
   frequency:val('r'+rid+'_frequency'),timing:val('r'+rid+'_timing'),
+  bottles:val('r'+rid+'_billqty'),
   reset_schedule_from_dosing:true});
  var rids=(card.dataset.rids||'').split(',').filter(Boolean);
  for(var i=0;i<rids.length;i++){if(rids[i]!==String(rid)){
@@ -1488,6 +1489,10 @@ def _remedy_line(l, depth_values, only_remedy=False, bottles_by_remedy=None):
             f"<input id=\"{p}_dosage\" class=dz value=\"{g('dosage')}\" placeholder=dose oninput=\"dirtyRow(this)\">"
             f"<input id=\"{p}_frequency\" class=dz value=\"{g('frequency')}\" placeholder=freq oninput=\"dirtyRow(this)\">"
             f"<input id=\"{p}_timing\" class=dz value=\"{g('timing')}\" placeholder=timing oninput=\"dirtyRow(this)\">"
+            f"<label class=food title='Bottles on the invoice. Blank bills 1.'>bill "
+            f"<input id=\"{p}_billqty\" class=bq type=number min=1 step=1 "
+            f"value=\"{_e(str(l.get('bottles') or ''))}\" placeholder=1 "
+            f"style='width:3.2em' oninput=\"dirtyRow(this)\"></label>"
             + depth +
             f"<button class=chip onclick=\"fillDose('{p}',true)\">dose</button>"
             f"<button class=chip onclick=\"suggestFor(this,'{p}')\">uses</button>"
