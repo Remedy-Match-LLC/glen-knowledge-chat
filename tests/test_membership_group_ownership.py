@@ -1,3 +1,4 @@
+import pytest
 import datetime, sqlite3, uuid
 from dashboard import membership_products as mp
 
@@ -119,3 +120,26 @@ def _mk_db_at(path):
         granted_at TEXT NOT NULL, expires_at TEXT, granted_by TEXT, source TEXT,
         truly_vip_ref TEXT, notes TEXT, last_reminder_at TEXT)""")
     return cx
+
+
+# ── the ASH-certification membership (bonus_cert), Glen 2026-09-25 ───────────
+
+def test_an_active_cert_membership_owns_group(tmp_path):
+    cx = _mk_db(tmp_path)
+    _grant(cx, "cert@x.com", "bonus_cert", 200)
+    assert mp.owns_group(cx, "cert@x.com") is True
+
+
+def test_an_expired_cert_membership_does_not(tmp_path):
+    cx = _mk_db(tmp_path)
+    _grant(cx, "old@x.com", "bonus_cert", -1)
+    assert mp.owns_group(cx, "old@x.com") is False
+
+
+@pytest.mark.parametrize("source", ["cash", "video", "studio_credit", "bonus_biofield",
+                                    "bonus_one_to_one", "bonus_healing_oasis", "bonus_hawaii",
+                                    "bonus_consultant"])
+def test_the_grants_glen_did_not_rule_on_stay_out(tmp_path, source):
+    cx = _mk_db(tmp_path)
+    _grant(cx, "x@x.com", source, 200)
+    assert mp.owns_group(cx, "x@x.com") is False
