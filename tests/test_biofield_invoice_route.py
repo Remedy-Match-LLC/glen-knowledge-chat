@@ -146,3 +146,44 @@ def test_bottles_saved_on_a_row_reach_the_invoice(client):
     client.post(f"/author/{client._tid}/row/1", json={"bottles": ""})
     client.post(f"/author/{client._tid}/invoice")
     assert {"slug": "liver-support", "qty": 1, "source": "biofield"} in client._calls["lines"]
+
+
+
+def test_bottles_route_refuses_a_bad_count(client):
+    for bad in ("2.5", "0", "-2", "3e2", "25", "99999999999999999999"):
+        r = client.post(f"/author/{client._tid}/row/1", json={"bottles": bad})
+        assert r.status_code == 400, bad
+    assert client.post(f"/author/{client._tid}/row/1", json={"bottles": " 4 "}).get_json()["ok"]
+
+
+def test_a_reraise_keeps_an_open_orders_count_when_the_field_is_blank(tmp_path, monkeypatch):
+    """Glen's unpaid multi-bottle orders are intentional. A re-raise with a blank
+    Bottles field must keep the open order's 3, not cut it to 1."""
+    import sqlite3
+    from dashboard import biofield_invoice as bi
+    monkeypatch.setattr(bi, "default_edit_order_link", lambda oid: "https://x")
+    db = str(tmp_path / "t.db")
+    with sqlite3.connect(db) as cx:
+        init_auth_tables(cx)
+        tid = create_test(cx, name="Debra Herndon", email="d@x.com", date="2026-09-02")
+        add_chain_row(cx, tid, layer=1, head="", most_affected="", remedy="Liver Support")
+    calls = {}
+    def fake_create(customer, lines, replace_open=False, invoice_note=None,
+                    update_order_id=None, idempotency_key=""):
+        calls["lines"] = lines
+        return {"ok": True, "order_id": 7, "external_ref": "INH-Z", "total_cents": 1,
+                "error": None, "accepted_slugs": [l["slug"] for l in lines]}
+    app = create_app(db_path=db,
+                     invoice_fetch_catalog=lambda: [{"slug": "liver-support", "name": "Liver Support"}],
+                     invoice_create=fake_create,
+                     invoice_link=lambda oid: {"ok": True, "print_url": "p", "error": None},
+                     invoice_latest=lambda email: {
+                         "ok": True, "order_id": 7, "status": "confirmed", "pay_status": "unpaid",
+                         "items": [{"slug": "liver-support", "qty": 3, "source": "biofield"}]})
+    app.testing = True
+    c = app.test_client()
+    c.post(f"/author/{tid}/invoice")
+    assert {"slug": "liver-support", "qty": 3, "source": "biofield"} in calls["lines"]
+    c.post(f"/author/{tid}/row/1", json={"bottles": "1"})     # Glen sets 1: that wins
+    c.post(f"/author/{tid}/invoice")
+    assert {"slug": "liver-support", "qty": 1, "source": "biofield"} in calls["lines"]

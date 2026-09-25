@@ -84,6 +84,43 @@ def line_bottles(line):
     return n if n >= 1 else 1
 
 
+def line_bottles_set(line):
+    """The line's own Bottles value when it was set (an int >= 1), else None."""
+    try:
+        n = int(str((line or {}).get("bottles") or "").strip())
+    except (TypeError, ValueError):
+        return None
+    return n if n >= 1 else None
+
+
+def carry_open_quantities(lines, existing_items, explicit_slugs=()):
+    """Keep an open order's bottle count where the Bottles field was left blank.
+
+    Glen's rule bills 1 unless a count is set, but orders raised before the field
+    existed carry intentional counts (Glen 2026-09-25: the unpaid multi-bottle orders
+    "look right"). A re-raise or re-handoff must not cut them to 1. A count set on the
+    line always wins; a blank line takes the open order's count for the same slug."""
+    have = {}
+    for item in existing_items or []:
+        slug = (item.get("slug") or "").strip()
+        try:
+            q = int(item.get("qty") or 0)
+        except (TypeError, ValueError):
+            q = 0
+        if slug and q > have.get(slug, 0):
+            have[slug] = q
+    explicit = set(explicit_slugs or ())
+    out = []
+    for line in lines or []:
+        line = dict(line)
+        slug = (line.get("slug") or "").strip()
+        if (slug and slug != BIOFIELD_SLUG and slug not in explicit
+                and have.get(slug, 0) > int(line.get("qty") or 1)):
+            line["qty"] = have[slug]
+        out.append(line)
+    return out
+
+
 def bottles_needed(freq_text, doses_per_bottle, program_days=30):
     """Bottles for the program = ceil(doses/day * days / doses_per_bottle), >= 1.
     Falls back to 1 when the frequency is unparseable OR doses_per_bottle is missing
@@ -107,9 +144,12 @@ def build_invoice_lines(client, remedies, catalog, include_fee=True):
     never mispriced."""
     lines = [{"slug": BIOFIELD_SLUG, "qty": 1}] if include_fee else []
     skipped = []
+    explicit_slugs = set()
     for r in remedies or []:
+        explicit = False
         if isinstance(r, dict):
             name, qty = (r.get("name") or "").strip(), r.get("qty")
+            explicit = bool(r.get("explicit"))
         else:
             name, qty = (r or "").strip(), 1
         if not name:
@@ -127,6 +167,8 @@ def build_invoice_lines(client, remedies, catalog, include_fee=True):
         # line carrying the LARGEST bottle count, never one line per layer and never
         # the counts added together. Without this the raise duplicated the line, and
         # a second raise duplicated it again.
+        if explicit:
+            explicit_slugs.add(slug)
         seen = next((l for l in lines if l["slug"] == slug), None)
         if seen is not None:
             seen["qty"] = max(seen["qty"], qty)
@@ -135,7 +177,7 @@ def build_invoice_lines(client, remedies, catalog, include_fee=True):
         # analysis, so preserve that provenance through order creation and
         # into Edit Invoice instead of falling back to source='self'.
         lines.append({"slug": slug, "qty": qty, "source": "biofield"})
-    return {"lines": lines, "skipped": skipped}
+    return {"lines": lines, "skipped": skipped, "explicit_slugs": explicit_slugs}
 
 
 def merge_manual_invoice_lines(new_lines, existing_items):

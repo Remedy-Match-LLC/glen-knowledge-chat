@@ -9,7 +9,7 @@ import requests
 
 from dashboard.practitioner_portal import name_to_slug
 from dashboard import wholesale_pricing as _pricing
-from dashboard.biofield_invoice import bottles_needed, line_bottles
+from dashboard.biofield_invoice import line_bottles
 from dashboard.biofield_authoring import authored_report, remedy_dosing, merge_dosing
 from dashboard.biofield_narrative import get_narrative
 
@@ -70,17 +70,6 @@ def _match(name, catalog):
         if (product.get("name") or "").strip().lower() == wanted:
             return slug
     return name_to_slug(name, catalog)
-
-
-def _bottle_quantity(cx, remedy, frequency):
-    try:
-        row = cx.execute(
-            "SELECT doses_per_bottle FROM fmp_snap_products "
-            "WHERE lower(product_name)=lower(?) LIMIT 1", (remedy,)).fetchone()
-        doses_per_bottle = row[0] if row else None
-    except Exception:
-        doses_per_bottle = None
-    return bottles_needed(frequency, doses_per_bottle)
 
 
 def _dosing(layer):
@@ -188,6 +177,11 @@ def build_portal_content(cx, test_id, *, special_price_cents, catalog=None,
                     unresolved.append(remedy)
                 continue
             if slug in seen:
+                # One remedy on several layers is one product: keep the largest
+                # count, as the invoice does (build_invoice_lines).
+                for it in reorder:
+                    if it["slug"] == slug:
+                        it["qty"] = max(it["qty"], line_bottles(L))
                 continue
             seen.add(slug)
             reorder.append({"slug": slug,

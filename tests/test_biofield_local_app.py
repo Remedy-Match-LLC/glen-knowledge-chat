@@ -620,8 +620,9 @@ def test_report_remedies_for_invoice_qty():
     ]}
     out = biofield_handoff.report_remedies_for_invoice(path, rep, biofield_invoice.bottles_needed)
     os.unlink(path)
-    assert out == [{"name": "Liver Support", "qty": 1}, {"name": "Brain Cleanse", "qty": 3},
-                   {"name": "Infoceutical X", "qty": 1}]
+    assert out == [{"name": "Liver Support", "qty": 1, "explicit": False},
+                   {"name": "Brain Cleanse", "qty": 3, "explicit": True},
+                   {"name": "Infoceutical X", "qty": 1, "explicit": False}]
 
 
 def test_build_invoice_lines_include_fee_false():
@@ -716,6 +717,7 @@ def test_handoff_route_raises_invoice(tmp_path, monkeypatch):
         db,
         invoice_fetch_catalog=lambda: [{"name": "Liver Support", "slug": "liver-support"}],
         invoice_create=fake_create,
+        invoice_latest=lambda email: {"ok": False},     # no open order; never reach prod
     ).test_client()
     j = client.post("/author/%s/handoff" % tid, json={}).get_json()
     assert j["ok"] is True
@@ -819,3 +821,33 @@ def test_handoff_never_creates_service_only_invoice_when_products_do_not_resolve
     assert result["invoice"]["ok"] is False
     assert "service-only" in result["invoice"]["error"]
     assert created == []
+
+
+
+def test_a_rehandoff_keeps_an_open_orders_count_when_the_field_is_blank(tmp_path, monkeypatch):
+    """replace_open cancels the open draft and rebuilds it. Glen's intentional
+    multi-bottle counts must survive that when the Bottles field is blank."""
+    from dashboard.biofield_authoring import init_auth_tables, create_test, add_chain_row
+    from dashboard import biofield_invoice
+    db = str(tmp_path / "chat_log.db")
+    cx = sqlite3.connect(db)
+    init_auth_tables(cx)
+    tid = create_test(cx, "Pt", "pt@x.com", "2026-07-08")
+    add_chain_row(cx, tid, 1, "Head", "Tail", "Liver Support", "1 cap", "twice a day", "")
+    cx.commit()
+    monkeypatch.setattr(biofield_invoice, "default_handoff_push", lambda *a, **k: {"ok": True})
+    captured = {}
+    def fake_create(cust, lines, replace_open=False, invoice_note=None, idempotency_key=""):
+        captured["lines"] = lines
+        return {"ok": True, "order_id": 78, "total_cents": 1, "external_ref": "INH-y"}
+    client = create_app(
+        db,
+        invoice_fetch_catalog=lambda: [{"name": "Liver Support", "slug": "liver-support"}],
+        invoice_create=fake_create,
+        invoice_latest=lambda email: {"ok": True, "order_id": 77, "status": "confirmed",
+                                      "pay_status": "unpaid",
+                                      "items": [{"slug": "liver-support", "qty": 3,
+                                                 "source": "biofield"}]},
+    ).test_client()
+    assert client.post("/author/%s/handoff" % tid, json={}).get_json()["ok"] is True
+    assert {"slug": "liver-support", "qty": 3, "source": "biofield"} in captured["lines"]
