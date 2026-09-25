@@ -15148,7 +15148,7 @@ def _grant_membership_line_on_paid(cx, order):
     if cx.execute("SELECT 1 FROM order_membership_grants WHERE order_ref=?",
                   (ref,)).fetchone():
         return "already"
-    if _mp.owns_group(cx, email):
+    if _mp.owns_group(cx, email, include_bonus=False):   # a bonus grant is not a paid membership
         return "member"  # already a paid member; do NOT claim (keeps the order
                          # grantable later if this membership lapses)
     # Do the customer upsert FIRST, while nothing about this grant is pending.
@@ -15199,7 +15199,7 @@ def _grant_biofield_line_on_paid(cx, order):
                "(order_ref TEXT PRIMARY KEY, email TEXT, granted_at TEXT)")
     if cx.execute("SELECT 1 FROM care_taster_grants WHERE order_ref=?", (ref,)).fetchone():
         return "already"
-    if _mp.owns_group(cx, email):
+    if _mp.owns_group(cx, email, include_bonus=False):   # a bonus grant is not a paid membership
         return "member"
     try:
         from dashboard import customers as _customers
@@ -56582,7 +56582,12 @@ def _invoice_membership_offer(order):
         if (order.get("pay_status") or "unpaid") == "paid":
             return None
         email = (order.get("email") or "").strip().lower()
-        if email:
+        # With a membership line already on the invoice, keep the offer: its card holds
+        # the only "Remove membership" button, and hiding it would trap a buyer who
+        # became a member (e.g. an ASH-certification grant) after the line was added.
+        _has_line = any((it.get("slug") or "").startswith("membership:")
+                        for it in (order.get("items") or []))
+        if email and not _has_line:
             with db.connect(LOG_DB) as _mc:
                 if _mp.owns_group(_mc, email):
                     return None

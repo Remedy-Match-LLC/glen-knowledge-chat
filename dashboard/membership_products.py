@@ -58,20 +58,28 @@ def _tier_sources():
 # member was offered the live group they already own (money, 2026-09-24).
 LIFETIME_SOURCE = "owner_lifetime"
 
+# The membership that comes with the ASH certification includes the live group
+# (Glen, 2026-09-25, relayed by money). Dated, so it owns only while unexpired.
+# Cash, video, studio_credit and the other bonus_* grants were not ruled on and stay out.
+GROUP_BONUS_SOURCES = ("bonus_cert",)
+
 # "Unexpired" for a memberships row: a future expiry, or a lifetime grant with none.
 # ONLY owner_lifetime: a NULL biofield_trial row (the $1 unlock, lifetime by design)
 # must not become a member. One bind parameter: now.
 ACTIVE_GRANT_SQL = (f"(expires_at > ? OR (expires_at IS NULL AND source = '{LIFETIME_SOURCE}'))")
 
 
-def owns_group(cx, email):
-    """True iff the email holds an active membership-tier grant or Glen's lifetime
-    grant. Namespaced to those sources so prepay/continuous-care/founding grants are
+def owns_group(cx, email, *, include_bonus=True):
+    """True iff the email holds an active membership-tier grant, Glen's lifetime
+    grant, or an active ASH-certification membership (bonus_cert). Namespaced to those sources so prepay/continuous-care/founding grants are
     unaffected."""
     if not email:
         return False
     now = datetime.datetime.utcnow().isoformat()
-    srcs = _tier_sources() + (LIFETIME_SOURCE,)
+    # include_bonus=False is for the paid-order grant hooks: a dated bonus grant is not a
+    # paid membership, so paying for one must still write a grant, and a Biofield buyer
+    # keeps the care-taster month (review round 1; Glen ruled on the group only).
+    srcs = _tier_sources() + (LIFETIME_SOURCE,) + (GROUP_BONUS_SOURCES if include_bonus else ())
     ph = ",".join("?" * len(srcs))
     row = cx.execute(
         f"SELECT 1 FROM memberships WHERE lower(email)=lower(?) "

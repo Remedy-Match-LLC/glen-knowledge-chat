@@ -117,3 +117,14 @@ def test_a_lifetime_biofield_trial_row_is_still_offered_the_live_group(tmp_path)
                "VALUES ('1','trial@x.com','2026-09-24',NULL,'biofield_trial')")
     offers = po.next_offers(cx, "trial@x.com", ["client"], enabled_keys=ALL)
     assert "live_group" in [o["key"] for o in offers]
+
+
+def test_an_active_cert_member_is_not_offered_the_live_group(tmp_path):
+    """Glen, 2026-09-25: the ASH-certification membership includes the live group."""
+    from dashboard import portal_offers as po
+    cx = _conn(tmp_path)
+    _memberships(cx)
+    cx.execute("INSERT INTO memberships (id,email,granted_at,expires_at,source) "
+               "VALUES ('1','cert@x.com','2026-09-24','2099-01-01T00:00:00','bonus_cert')")
+    offers = po.next_offers(cx, "cert@x.com", ["client"], enabled_keys=ALL)
+    assert "live_group" not in [o["key"] for o in offers]
