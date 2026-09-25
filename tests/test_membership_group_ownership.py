@@ -143,3 +143,11 @@ def test_the_grants_glen_did_not_rule_on_stay_out(tmp_path, source):
     cx = _mk_db(tmp_path)
     _grant(cx, "x@x.com", source, 200)
     assert mp.owns_group(cx, "x@x.com") is False
+
+
+def test_an_undated_cert_row_does_not_own_the_group(tmp_path):
+    """Round 3: only owner_lifetime may own with no expiry; a hand-inserted undated
+    bonus_cert row must not."""
+    cx = _mk_db(tmp_path)
+    _grant_null(cx, "undated@x.com", "bonus_cert")
+    assert mp.owns_group(cx, "undated@x.com") is False
