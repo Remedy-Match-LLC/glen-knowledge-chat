@@ -95,3 +95,31 @@ def test_editor_scripts_read_the_warnings():
     src = open(h.__file__).read()
     assert "showNarrWarn(j.warnings)" in src and "showNarrWarn(j&&j.warnings)" in src
     assert "r.warnings.join" in src
+
+
+def test_a_failed_retry_keeps_the_first_draft_and_its_warnings():
+    calls = []
+
+    def fake(system, user):
+        calls.append(1)
+        if len(calls) == 1:
+            return BAD
+        raise RuntimeError("429 rate limit")
+
+    problems = []
+    out = generate_narrative(_report(), "", fake, scan=_scan(), problems_out=problems)
+    assert out.startswith("Aloha Jane") and "Liver Support" in out
+    assert any("Liver Support" in p for p in problems)
+
+
+def test_generate_and_save_judge_with_the_same_inputs():
+    """The check never counts the People-hub profile as permission to name a product,
+    so generate and a later save or page load give the same verdict."""
+    from dashboard.biofield_narrative import narrative_problems, check_context
+    rep = _report()
+    text = "Aloha Jane,\n\n1. B17 Max supports growth. You already take Liver Support."
+    profile = {"conditions": "Client already takes Liver Support"}
+    problems = []
+    generate_narrative(rep, "", lambda s, u: text, profile=profile, problems_out=problems)
+    assert problems == narrative_problems(text, rep, check_context(rep, "", None, None))
+    assert any("Liver Support" in p for p in problems)

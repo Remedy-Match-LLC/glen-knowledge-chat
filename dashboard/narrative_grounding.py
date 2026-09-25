@@ -43,7 +43,8 @@ def clean_scan_description(desc):
 _SCAN_NAME_PATTERNS = [
     re.compile(r"\b(?:E4L|Energy4Life|Energy 4 Life)[\s-]+voice[\s-]+scans?\b", re.IGNORECASE),
     re.compile(r"\bBioenergetic[\s-]+Voice[\s-]+Analys[ie]s\b", re.IGNORECASE),
-    re.compile(r"(?<!element )(?<!element-)\bvoice[\s-]+scans?\b", re.IGNORECASE),
+    re.compile(r"(?<!element )(?<!element-)(?<!elements )(?<!elements-)\bvoice[\s-]+scans?\b",
+               re.IGNORECASE),
 ]
 
 
@@ -110,6 +111,13 @@ _SAME_NUTRIENT = [
     {"vitamin e", "tocopherol", "tocotrienol"},
     {"vitamin k2", "vitamin k", "menaquinone"},
     {"coenzyme q10", "coq10", "ubiquinol", "ubiquinone"},
+    {"silymarin", "milk thistle", "silybum"},
+    {"curcumin", "turmeric", "curcuma"},
+    {"egcg", "green tea"},
+    {"berberine", "dihydroberberine"},
+    {"nac", "n-acetyl cysteine", "n-acetylcysteine"},
+    {"glutathione", "s-acetyl glutathione"},
+    {"resveratrol", "trans-resveratrol"},
 ]
 
 
@@ -142,6 +150,18 @@ def _is_chain_product(name, chain):
     return any(n and c and (n in c or c in n) for c in (_squash(x) for x in chain))
 
 
+def _names_product(name, text):
+    """A capitalised product name in the text. A one-word name at a sentence start is
+    ordinary prose: "Sleep is when repair happens" does not name the product Sleep."""
+    for m in re.finditer(r"(?<![\w+])" + re.escape(name) + r"(?![\w+])", text):
+        if " " in name.strip():
+            return True
+        before = text[:m.start()].rstrip()
+        if before and not before.endswith((".", "!", "?", ":", "\n")) and not before[-1] in "\"'(":
+            return True
+    return False
+
+
 def _word_in(term, text, flags=re.IGNORECASE):
     return re.search(r"(?<![\w+])" + re.escape(term) + r"(?![\w+])", text, flags) is not None
 
@@ -165,7 +185,7 @@ def check_narrative(text, *, chain, ingredients, catalog_names, catalog_ingredie
     for name in sorted({n for n in catalog_names if n and len(n) >= 4}, key=len, reverse=True):
         if _is_chain_product(name, chain) or name.lower() in (allowed_text or "").lower():
             continue
-        if _word_in(name, text, flags=0):
+        if _names_product(name, text):
             problems.append(f"Names {name}, which is not on this client's chain.")
 
     heads_low = (heads_text or "").lower()
@@ -175,6 +195,8 @@ def check_narrative(text, *, chain, ingredients, catalog_names, catalog_ingredie
         if (len(t) >= 4 and t.lower() not in _NOT_NUTRIENTS and not t.lower().startswith("vitamin")
                 and t.lower() not in chain_low and t.lower() not in heads_low):
             vocab.add(t)
+    # Head and Tail words name body areas: "Silymarin Terrain" is not a nutrient claim.
+    terms = vocab | {t for t in _SYNONYM_TERMS if t not in heads_low}
     by_len = sorted(chain, key=len, reverse=True)
 
     for para in re.split(r"\n\s*\n", text):
@@ -185,8 +207,7 @@ def check_narrative(text, *, chain, ingredients, catalog_names, catalog_ingredie
                 if _word_in(r, rest):
                     named.append(r)
                     rest = re.sub(re.escape(r), " ", rest, flags=re.IGNORECASE)
-            nutrients = _vitamins_in(rest) + sorted(t for t in vocab | _SYNONYM_TERMS
-                                                    if _word_in(t, rest))
+            nutrients = _vitamins_in(rest) + sorted(t for t in terms if _word_in(t, rest))
             nutrients = list({n.lower(): n for n in reversed(nutrients)}.values())[::-1]
             if named:
                 last_remedies = named
@@ -194,7 +215,9 @@ def check_narrative(text, *, chain, ingredients, catalog_names, catalog_ingredie
             if not nutrients or not remedies:
                 continue
             for n in nutrients:
-                for r in remedies:
+                # A remedy with no known ingredient list cannot be checked. Unknown is
+                # not wrong (blind review: 894 of 1,092 catalog products carry none).
+                for r in (r for r in remedies if ingredients.get(r)):
                     if not _contains(ingredients.get(r), n):
                         problems.append(f"Says {r} provides {n}, which is not in its formula.")
     return list(dict.fromkeys(problems))

@@ -156,3 +156,44 @@ def test_another_catalog_spelling_of_a_chain_remedy_is_not_off_chain():
         catalog_names=["Clear Lens Eyedrops", "Clear Lens+ Eye Drops ACES+CAT Eye Drops"],
         catalog_ingredients=[], allowed_text="")
     assert probs == []
+
+
+# ── blind review round 1, 2026-09-25 ────────────────────────────────────────
+
+def test_a_remedy_with_no_known_ingredients_is_not_checked():
+    # Unknown is not wrong: 894 of 1,092 catalog products carry no ingredient list.
+    probs = ng.check_narrative(
+        "Sterol Max supports the acid layer. Leafy greens rich in magnesium help too.",
+        chain=["Sterol Max"], ingredients={"Sterol Max": []}, catalog_names=["Sterol Max"],
+        catalog_ingredients=["Magnesium (Citrate)"], allowed_text="")
+    assert probs == []
+
+
+def test_a_one_word_product_at_a_sentence_start_is_ordinary_prose():
+    probs = ng.check_narrative(
+        "Sleep is when repair happens. Comfort comes as the layer settles.",
+        chain=["B17 Max"], ingredients={}, catalog_names=["Sleep", "Comfort"],
+        catalog_ingredients=[], allowed_text="")
+    assert probs == []
+
+
+def test_a_one_word_product_mid_sentence_is_still_flagged():
+    probs = ng.check_narrative(
+        "Your layer also responds to Comfort taken at night.",
+        chain=["B17 Max"], ingredients={}, catalog_names=["Comfort"],
+        catalog_ingredients=[], allowed_text="")
+    assert any("Comfort" in p for p in probs)
+
+
+def test_herb_common_names_match_their_label_names():
+    probs = ng.check_narrative(
+        "Liver Support supports your liver with milk thistle and turmeric.",
+        chain=["Liver Support"], ingredients={"Liver Support": ["Silymarin", "Curcumin"]},
+        catalog_names=["Liver Support"], catalog_ingredients=["Silymarin", "Curcumin"],
+        allowed_text="")
+    assert probs == []
+
+
+def test_five_elements_plural_keeps_its_name():
+    t = "the Five Elements Voice Scan"
+    assert ng.fix_scan_names(t) == t

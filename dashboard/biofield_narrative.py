@@ -471,18 +471,34 @@ def generate_narrative(report, notes, complete, scan=None, profile=None, animal=
     2026-09-25). Whatever is still wrong is appended to problems_out for the editor."""
     p = build_narrative_prompt(report, notes, scan, profile, animal)
     text = _finish(complete(p["system"], p["user"]), report, animal)
-    problems = narrative_problems(text, report, p["system"] + "\n" + p["user"])
+    context = check_context(report, notes, scan, animal)
+    problems = narrative_problems(text, report, context)
     if problems:
         retry = (p["user"] + "\n\nYOUR PREVIOUS DRAFT HAD THESE ERRORS. Write the whole "
                  "letter again, following every rule, without them:\n"
                  + "\n".join("- " + x for x in problems))
-        second = _finish(complete(p["system"], retry), report, animal)
-        second_problems = narrative_problems(second, report, p["system"] + "\n" + p["user"])
-        if len(second_problems) <= len(problems):
-            text, problems = second, second_problems
+        try:
+            second = _finish(complete(p["system"], retry), report, animal)
+        except Exception as e:
+            # The first draft was paid for; a failed retry must not throw it away.
+            print(f"[narrative] retry failed, keeping first draft: {e!r}", flush=True)
+            second = None
+        if second is not None:
+            second_problems = narrative_problems(second, report, context)
+            if len(second_problems) <= len(problems):
+                text, problems = second, second_problems
     if problems_out is not None:
         problems_out.extend(problems)
     return text
+
+
+def check_context(report, notes, scan, animal):
+    """What the writer was given, for deciding whether a product it names was invented.
+    The People-hub profile is left out on purpose: a product the client mentions is not
+    on the chain, and the page-load and save checks never have the profile, so generate
+    must judge the same way they do."""
+    p = build_narrative_prompt(report, notes, scan, None, animal)
+    return p["system"] + "\n" + p["user"]
 
 
 def _finish(text, report, animal):

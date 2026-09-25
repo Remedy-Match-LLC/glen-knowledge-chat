@@ -3044,10 +3044,10 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
         if not (text or "").strip():
             return []
         try:
-            from dashboard.biofield_narrative import build_narrative_prompt, narrative_problems
+            from dashboard.biofield_narrative import check_context, narrative_problems
             ctx, rep = _e4l(cx, test_id)
-            p = build_narrative_prompt(rep, get_notes(cx, test_id) or "", scan=ctx)
-            return narrative_problems(text, rep, p["system"] + "\n" + p["user"])
+            return narrative_problems(text, rep, check_context(
+                rep, get_notes(cx, test_id) or "", ctx, _animal_for(rep)))
         except Exception as e:
             print(f"[narrative-check] {test_id}: {e!r}", flush=True)
             return []
