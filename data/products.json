@@ -1768,89 +1768,170 @@
    "pinecone_title": "OcuHeal Eye Drops",
    "url": "https://myhealingoasis.com/begin/product/ocuheal-eye-drops",
    "legacy_store_url": "https://remedymatch.com/remedies/syntropy/265-ocuheal-eye-drops",
-   "description": "OcuHeal Eye Drops . OcuHeal Eye Drops OcuHeal Eye Drops OcuHeal eye drops delivers botanical and nutritional healing ingredients for the whole eye, including the retina, lens, cornea, conjunctiva, lacrimal glands, and tear film… The OcuHeal ingredients are: Quinton (Quintessential Terrain Restore) 96% Quinton is a very special therapeutic saline solution that comes from the ocean. It supplies the full spectrum of electrolytes in sea water, but not just any sea water. It is sea water that levetates to the surface of the ocean from the pristine and ancient depths, supporting the flourishing of...",
+   "description": "OcuHeal Eye Drops carry botanical and nutritional ingredients for the whole eye, including the retina, lens, cornea, conjunctiva, lacrimal glands and tear film. The base is Quinton sea water (Quintessential Bioterrain Restore). Use 1 drop in each eye 2 times a day.",
    "bottle_type": "Dropper 5 mL",
    "fmp_id": "493",
-   "qty_pricing": true
+   "qty_pricing": true,
+   "ingredients": [
+    {
+     "name": "Quintessential Bioterrain Restore",
+     "dose": "96%"
+    },
+    {
+     "name": "MSM (Methylsulfonylmethane)",
+     "dose": "1%"
+    },
+    {
+     "name": "N-Acetyl L-Carnosine",
+     "dose": "1%"
+    },
+    {
+     "name": "DMSO (Dimethylsulfoxide)",
+     "dose": "0.5%"
+    },
+    {
+     "name": "Forskolin (Coleus forskohlii)",
+     "dose": "0.1%"
+    },
+    {
+     "name": "Puerarin (Pueraria lobata)",
+     "dose": "0.1%"
+    },
+    {
+     "name": "Vitamin A (Retinol)",
+     "dose": "0.1%"
+    },
+    {
+     "name": "Vitamin B2 (Riboflavin 5-Phosphate)",
+     "dose": "0.1%"
+    },
+    {
+     "name": "Vitamin B6 (Pyridoxal 5-Phosphate)",
+     "dose": "0.1%"
+    },
+    {
+     "name": "Vitamin C & Zinc (Zinc Ascorbate)",
+     "dose": "0.1%"
+    },
+    {
+     "name": "Vitamin E Complex",
+     "dose": "0.01%"
+    },
+    {
+     "name": "Lanosterol",
+     "dose": "0.01%"
+    },
+    {
+     "name": "Safranal 3% (Crocus sativus)",
+     "dose": "0.1%"
+    },
+    {
+     "name": "Cineraria (Cineraria maritima) (succus)",
+     "dose": "0.1%"
+    },
+    {
+     "name": "Silver (Nano)",
+     "dose": "0.0001%"
+    },
+    {
+     "name": "Serrapeptase (Serratia marcescens)",
+     "dose": "5C"
+    }
+   ],
+   "ingredients_source": "glen-panel-2026-09-24, carnosine 1% 2026-09-25",
+   "directions": "1 drop in each eye 2 times a day.",
+   "intro": "OcuHeal Eye Drops carry botanical and nutritional ingredients for the whole eye, including the retina, lens, cornea, conjunctiva, lacrimal glands and tear film. The base is Quinton sea water (Quintessential Bioterrain Restore). Use 1 drop in each eye 2 times a day.",
+   "copy_pinned": [
+    "ingredients",
+    "intro",
+    "description",
+    "benefits"
+   ]
   },
   "ocuheal-plus-eye-drops": {
-    "name": "OcuHeal+ Eye Drops",
-    "price_cents": 6997,
-    "pinecone_title": "OcuHeal+ Eye Drops",
-    "url": "https://myhealingoasis.com/begin/product/ocuheal-plus-eye-drops",
-    "qty_pricing": true,
-    "no_groovekart": true,
-    "ingredients": [
-      {
-        "name": "Quintessential Bioterrain Restore",
-        "dose": "86.5%"
-      },
-      {
-        "name": "DMSO (Dimethylsulfoxide)",
-        "dose": "10%"
-      },
-      {
-        "name": "MSM (Methylsulfonylmethane)",
-        "dose": "1%"
-      },
-      {
-        "name": "N-Acetyl L-Carnosine",
-        "dose": "0.5%"
-      },
-      {
-        "name": "Forskolin (Coleus forskohlii)",
-        "dose": "0.1%"
-      },
-      {
-        "name": "Puerarin (Pueraria lobata)",
-        "dose": "0.1%"
-      },
-      {
-        "name": "Vitamin A (Retinol)",
-        "dose": "0.1%"
-      },
-      {
-        "name": "Vitamin B2 (Riboflavin 5-Phosphate)",
-        "dose": "0.1%"
-      },
-      {
-        "name": "Vitamin B6 (Pyridoxal 5-Phosphate)",
-        "dose": "0.1%"
-      },
-      {
-        "name": "Vitamin C & Zinc (Zinc Ascorbate)",
-        "dose": "0.1%"
-      },
-      {
-        "name": "Vitamin E Complex",
-        "dose": "0.01%"
-      },
-      {
-        "name": "Lanosterol",
-        "dose": "0.01%"
-      },
-      {
-        "name": "Safranal 3% (Crocus sativus)",
-        "dose": "0.1%"
-      },
-      {
-        "name": "Cineraria (Cineraria maritima) (succus)",
-        "dose": "0.1%"
-      },
-      {
-        "name": "Silver (Nano)",
-        "dose": "0.0001%"
-      },
-      {
-        "name": "Serrapeptase (Serratia marcescens)",
-        "dose": "5C"
-      }
-    ],
-    "ingredients_source": "production-listing-spec-2026-09-24",
-    "directions": "1 drop in each eye 2 times a day.",
-    "description": "OcuHeal+ is OcuHeal Eye Drops with more DMSO. It carries the same botanical and nutritional ingredients for the whole eye, including the retina, lens, cornea, conjunctiva, lacrimal glands and tear film. DMSO rises from 0.5% to 10%, and the Quinton sea water base (Quintessential Bioterrain Restore) makes room for it, from 96% to 86.5%. Use 1 drop in each eye 2 times a day.",
-    "bottle_type": "Dropper 5 mL",
-    "fmp_id": "1200"
+   "name": "OcuHeal+ Eye Drops",
+   "price_cents": 6997,
+   "pinecone_title": "OcuHeal+ Eye Drops",
+   "url": "https://myhealingoasis.com/begin/product/ocuheal-plus-eye-drops",
+   "qty_pricing": true,
+   "no_groovekart": true,
+   "ingredients": [
+    {
+     "name": "Quintessential Bioterrain Restore",
+     "dose": "86.5%"
+    },
+    {
+     "name": "DMSO (Dimethylsulfoxide)",
+     "dose": "10%"
+    },
+    {
+     "name": "MSM (Methylsulfonylmethane)",
+     "dose": "1%"
+    },
+    {
+     "name": "N-Acetyl L-Carnosine",
+     "dose": "1%"
+    },
+    {
+     "name": "Forskolin (Coleus forskohlii)",
+     "dose": "0.1%"
+    },
+    {
+     "name": "Puerarin (Pueraria lobata)",
+     "dose": "0.1%"
+    },
+    {
+     "name": "Vitamin A (Retinol)",
+     "dose": "0.1%"
+    },
+    {
+     "name": "Vitamin B2 (Riboflavin 5-Phosphate)",
+     "dose": "0.1%"
+    },
+    {
+     "name": "Vitamin B6 (Pyridoxal 5-Phosphate)",
+     "dose": "0.1%"
+    },
+    {
+     "name": "Vitamin C & Zinc (Zinc Ascorbate)",
+     "dose": "0.1%"
+    },
+    {
+     "name": "Vitamin E Complex",
+     "dose": "0.01%"
+    },
+    {
+     "name": "Lanosterol",
+     "dose": "0.01%"
+    },
+    {
+     "name": "Safranal 3% (Crocus sativus)",
+     "dose": "0.1%"
+    },
+    {
+     "name": "Cineraria (Cineraria maritima) (succus)",
+     "dose": "0.1%"
+    },
+    {
+     "name": "Silver (Nano)",
+     "dose": "0.0001%"
+    },
+    {
+     "name": "Serrapeptase (Serratia marcescens)",
+     "dose": "5C"
+    }
+   ],
+   "ingredients_source": "production-listing-spec-2026-09-24, carnosine 1% 2026-09-25",
+   "directions": "1 drop in each eye 2 times a day.",
+   "description": "OcuHeal+ is OcuHeal Eye Drops with more DMSO. It carries the same botanical and nutritional ingredients for the whole eye, including the retina, lens, cornea, conjunctiva, lacrimal glands and tear film. DMSO rises from 0.5% to 10%, and the Quinton sea water base (Quintessential Bioterrain Restore) makes room for it, from 96% to 86.5%. Use 1 drop in each eye 2 times a day.",
+   "bottle_type": "Dropper 5 mL",
+   "fmp_id": "1200",
+   "intro": "OcuHeal+ is OcuHeal Eye Drops with more DMSO. It carries the same botanical and nutritional ingredients for the whole eye, including the retina, lens, cornea, conjunctiva, lacrimal glands and tear film. DMSO rises from 0.5% to 10%, and the Quinton sea water base (Quintessential Bioterrain Restore) makes room for it, from 96% to 86.5%. Use 1 drop in each eye 2 times a day.",
+   "copy_pinned": [
+    "ingredients",
+    "intro",
+    "description"
+   ]
   },
   "pms-relief": {
    "name": "PMS Relief",
