@@ -137,3 +137,39 @@ def test_offer_injected_for_unpaid_nonmember(tmp_path, monkeypatch):
     assert offer["gross_cents"] == 9900
     assert offer["savings_cents"] > 0
     assert "month" in offer["offered_tiers"]
+
+
+# ── the ASH-certification membership (bonus_cert) owns the group, 2026-09-25 ─
+
+def _grant(tmp_path, email, source, days=30):
+    from datetime import datetime, timedelta
+    with sqlite3.connect(str(tmp_path / "chat_log.db")) as cx:
+        cx.execute("INSERT INTO memberships (id, email, granted_at, expires_at, source) "
+                   "VALUES (?,?,?,?,?)",
+                   ("g-" + source + email, email, datetime.utcnow().isoformat(),
+                    (datetime.utcnow() + timedelta(days=days)).isoformat(), source))
+        cx.commit()
+
+
+def test_a_cert_holder_sees_no_join_offer(tmp_path, monkeypatch):
+    appmod, client, token = _client(tmp_path, monkeypatch, email="cert-inv@example.com")
+    _grant(tmp_path, "cert-inv@example.com", "bonus_cert")
+    assert client.get(f"/api/invoice/{token}").get_json()["order"].get("membership_offer") is None
+
+
+def test_a_cert_holder_cannot_add_membership(tmp_path, monkeypatch):
+    appmod, client, token = _client(tmp_path, monkeypatch, email="cert-add@example.com")
+    _grant(tmp_path, "cert-add@example.com", "bonus_cert")
+    r = client.post(f"/api/invoice/{token}/membership", json={"action": "add", "tier": "month"})
+    assert r.status_code == 409
+
+
+def test_a_line_added_before_the_cert_can_still_be_removed(tmp_path, monkeypatch):
+    """Round 2: the offer card holds the only Remove button; hiding it trapped the line."""
+    appmod, client, token = _client(tmp_path, monkeypatch, email="cert-trap@example.com")
+    assert client.post(f"/api/invoice/{token}/membership",
+                       json={"action": "add", "tier": "month"}).status_code == 200
+    _grant(tmp_path, "cert-trap@example.com", "bonus_cert")
+    assert client.get(f"/api/invoice/{token}").get_json()["order"].get("membership_offer") is not None
+    assert client.post(f"/api/invoice/{token}/membership",
+                       json={"action": "remove"}).status_code == 200
