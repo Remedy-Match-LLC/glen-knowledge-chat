@@ -420,3 +420,15 @@ def test_the_gen_route_refuses_a_pinned_section(monkeypatch, tmp_path):
     assert r.status_code == 404 and b"OLD" not in r.data
     p["copy_pinned"] = []                       # the control: unpinned still serves the cache
     assert b"OLD cached draft" in c.get(f"/begin/product-page-gen/{slug}/intro").data
+
+
+def test_no_public_data_file_still_says_glutathione_synergy():
+    """Glen 2026-09-25: Glutathione Syntropy in public. clinical_remedy_overrides.json keeps
+    the old name ON PURPOSE as an alias key, so older mentions still resolve."""
+    root = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data")
+    for f in ("clinical_theory_catalog.json", "atlas-concepts.json", "atlas-seed-input.json",
+              "prl_seed.json", "products.json"):
+        with open(os.path.join(root, f)) as fh:
+            assert "Glutathione Synergy" not in fh.read(), f
+    with open(os.path.join(root, "clinical_remedy_overrides.json")) as fh:
+        assert json.load(fh)["Glutathione Synergy"] == "glutathione-syntropy"
