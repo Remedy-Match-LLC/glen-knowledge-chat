@@ -26,7 +26,7 @@ def _app(monkeypatch, tmp_path):
     # A deterministic, shippable, non-FF product -- bottle_type "default" mirrors
     # the console order-entry test pattern in test_price_cart_cello_shipping.py.
     monkeypatch.setattr(a, "_get_product", lambda slug: {
-        "slug": "mag", "name": "Mag", "price_cents": 6997, "bottle_type": "default",
+        "slug": "mag", "name": "Mag", "price_cents": 6997, "bottle_type": "30 Caps", "qty_pricing": True,
     } if slug == "mag" else None)
     return a
 

@@ -7337,6 +7337,26 @@ def _qty_eligible(p):
     return bool(p.get("qty_pricing")) and not p.get("info_only")
 
 
+# The packaging formats above describe 30-capsule bottles. Volume pricing alone is the
+# wrong test for them: it is on for droppers, powders, sprays and oils too, so every
+# OcuHeal page offered "30 capsules per bottle" and a "Larger bottle" line booked a
+# product that does not exist (clinical, 2026-09-24). A product gets formats only when
+# its bottle_type says 30 capsules. One without a recorded bottle_type gets none.
+_CAPSULE_FORMAT_BOTTLES = {"30 caps"}
+
+
+def _capsule_formats_ok(p):
+    return _qty_eligible(p) and (p.get("bottle_type") or "").strip().lower() in _CAPSULE_FORMAT_BOTTLES
+
+
+def _clean_format(p, fmt):
+    """The format a line may carry: a non-default one only where it applies."""
+    fmt = (fmt or "").strip().lower()
+    if fmt in ("", "bottle"):
+        return fmt
+    return fmt if fmt in _FORMAT_LABELS and _capsule_formats_ok(p) else ""
+
+
 def _inhouse_ff_unit_cents(p, total_ff_qty, settings, *, program_member=False, line_qty=1):
     """Effective in-house unit price (cents) for a $69.97 functional-formulation
     capsule (_qty_eligible): a linear volume rate. Clamped at the wholesale
@@ -7611,7 +7631,7 @@ def _packaging_review_for_lines(lines):
         p = _get_product((line.get("slug") or "").strip())
         if not p or not _shipping.is_shippable(p):
             continue
-        fmt = (line.get("format") or "").strip().lower()
+        fmt = _clean_format(p, line.get("format"))
         if _shipping.packing_bottle_type(p, fmt) == _shipping.UNKNOWN_BOTTLE_TYPE:
             missing.append(p.get("name") or p.get("slug"))
     return list(dict.fromkeys(missing))
@@ -7849,7 +7869,7 @@ def _price_cart(cart, *, ship, coupon_pct=None, subscriber_tier_pct=None,
         # fulfillment note folded into the display name (kanban) and QBO line description
         # (invoice). "bottle"/unset -> plain product name. Keeps the QBO line NAME clean
         # for item mapping; only the description is decorated.
-        _fmt = (c.get("format") or "").strip().lower()
+        _fmt = _clean_format(p, c.get("format"))
         _fmt_label = _FORMAT_LABELS.get(_fmt, "")
         _disp_name = f'{p["name"]} ({_fmt_label})' if _fmt_label else p["name"]
         qbo_lines.append({"name": p["name"], "amount": round(it["unit_cents"] / 100.0, 2),
@@ -9075,7 +9095,7 @@ def begin_product_data(slug):
             u = _pricing.apply_discount(_base, _pricing.same_sku_pct(m, _s), _floor)
             qty_tiers.append({"min": m, "unit_cents": u, "unit": f"${u/100:.2f}",
                               "save": ((_base - u) // 100) if u < _base else 0})
-        formats = _FORMATS
+        formats = _FORMATS if _capsule_formats_ok(p) else None
     _comp = p.get("competitor") if isinstance(p.get("competitor"), dict) else None
     data = {
         # display_name lets a page title differ from the QBO/invoice identity in `name`.
@@ -11405,7 +11425,7 @@ def begin_checkout(slug):
     email  = (data.get("email") or "").strip().lower()
     name   = (data.get("name") or "").strip()
     method = (data.get("method") or "").strip().lower()   # zelle | wise | card
-    fmt    = (data.get("format") or "").strip().lower()    # bottle | larger | refill
+    fmt    = _clean_format(p, data.get("format"))    # bottle | larger | refill, where it applies
     try:
         qty = max(1, min(int(data.get("qty", 1) or 1), 99))
     except Exception:
@@ -22774,7 +22794,7 @@ def api_cart_add():
     p = _get_product(slug)
     if not p or p.get("info_only") or p.get("inactive"):
         return jsonify({"ok": False, "error": "That product is not available."}), 400
-    fmt = (data.get("format") or "").strip().lower()
+    fmt = _clean_format(p, data.get("format"))
     try:
         qty = max(1, min(int(data.get("qty", 1) or 1), 99))
     except (TypeError, ValueError):
@@ -24052,7 +24072,7 @@ def _portal_priced_lines(items, email=None):
         except Exception:
             qty = 1
         fmt = (it.get("format") or "").strip().lower()
-        if fmt not in ("", "bottle", "refill") or (fmt == "refill" and not _qty_eligible(p)):
+        if fmt not in ("", "bottle", "refill") or (fmt == "refill" and not _capsule_formats_ok(p)):
             fmt = ""
         fmt_label = _FORMAT_LABELS.get(fmt, "")
         display_name = f'{p["name"]} ({fmt_label})' if fmt_label else p["name"]
@@ -28327,7 +28347,7 @@ def api_portal_cart_set_format(token):
     product = _get_product(slug)
     if not product or product.get("inactive") or product.get("info_only"):
         return jsonify({"error": "Product is not available."}), 400
-    if to_fmt == "refill" and not _qty_eligible(product):
+    if to_fmt == "refill" and not _capsule_formats_ok(product):
         return jsonify({"error": "This product is available in a bottle only."}), 400
     with db.connect(LOG_DB) as cx:
         portal = _portal_record_for(cx, token)
@@ -28395,11 +28415,11 @@ def api_portal_order_add(token):
         return jsonify({"error": "That remedy is not available."}), 400
     explicit_format = "format" in body and body.get("format") not in (None, "")
     fmt = (body.get("format") or "").strip().lower()
-    if not explicit_format and cello_default and _qty_eligible(product):
+    if not explicit_format and cello_default and _capsule_formats_ok(product):
         fmt = "refill"
     if fmt not in ("", "bottle", "refill"):
         return jsonify({"error": "That packaging option is not available."}), 400
-    if fmt == "refill" and not _qty_eligible(product):
+    if fmt == "refill" and not _capsule_formats_ok(product):
         return jsonify({"error": "Cellophane refill packs are available for capsule formulations only."}), 400
     _lines, items_rec, _subtotal = _portal_priced_lines(
         [{"slug": slug, "qty": 1, "format": fmt}], email=email)
