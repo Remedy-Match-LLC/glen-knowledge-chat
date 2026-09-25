@@ -22718,7 +22718,7 @@ def _cart_payload(cx, token):
             "name": (p or {}).get("name", it["slug"]),
             "qty": it["qty"],
             "format": it["format"],
-            "refill_eligible": bool(p and _qty_eligible(p)),
+            "refill_eligible": bool(p and _capsule_formats_ok(p)),
             # `info_only` belongs in this expression, not just `inactive`: checkout
             # refuses info_only lines with "no longer available" (see
             # api_cart_checkout's unavailable scan), so a badge that calls them
@@ -24336,7 +24336,7 @@ def _portal_reorder_module(email):
                 "regular_cents": regular_cents, "your_cents": your_cents,
                 "is_member_price": your_cents < regular_cents,
                 "in_repertoire": in_rep,
-                "refill_eligible": bool(_qty_eligible(p)),
+                "refill_eligible": bool(_capsule_formats_ok(p)),
                 "channel": "portal",
                 "source_label": _portal_source_label("portal"),
                 "is_reorder": (slug in ph_slugs) or (slug in repeat_slugs),
@@ -24461,7 +24461,7 @@ def _portal_reorder_module(email):
             "regular_cents": regular_cents, "your_cents": your_cents,
             "is_member_price": your_cents < regular_cents,
             "in_repertoire": slug in rep_slugs,
-            "refill_eligible": bool(_qty_eligible(p)),
+            "refill_eligible": bool(_capsule_formats_ok(p)),
             "channel": channel,
             "source_label": _portal_source_label(channel),
             "is_reorder": (slug in ph_slugs) or (slug in repeat_slugs),
@@ -24519,7 +24519,7 @@ def _portal_reorder_module(email):
             "your_cents": invoice["unit_cents"],
             "is_member_price": invoice["unit_cents"] < regular_cents,
             "in_repertoire": slug in rep_slugs,
-            "refill_eligible": bool(p and _qty_eligible(p)),
+            "refill_eligible": bool(p and _capsule_formats_ok(p)),
             "channel": "clinic", "source_label": "Current invoice",
             "is_reorder": False, "current_invoice": invoice,
         })
@@ -25458,7 +25458,7 @@ def api_client_portal(token):
             "name": (p or {}).get("name", slug), "price_cents": special,
             "regular_price_cents": regular,
             "is_special": bool(special is not None and regular is not None and int(special) < int(regular)),
-            "refill_eligible": bool(p and _qty_eligible(p)),
+            "refill_eligible": bool(p and _capsule_formats_ok(p)),
             "available": bool(p)})
     client_findings = [{"code": f.get("code", ""), "name": f.get("name", ""),
                         "description": f.get("description", ""), "rank": f.get("rank")}
@@ -28157,7 +28157,7 @@ def api_portal_order_catalog(token):
             continue
         matches.append({"slug": slug, "name": items_rec[0]["name"],
                         "price_cents": items_rec[0]["unit_cents"],
-                        "refill_eligible": bool(_qty_eligible(product))})
+                        "refill_eligible": bool(_capsule_formats_ok(product))})
         if len(matches) >= 20:
             break
     return jsonify({"products": matches})
@@ -30846,7 +30846,7 @@ def api_client_portal_product_search(token):
         results.append({
             "slug": slug,
             "name": name,
-            "refill_eligible": bool(_qty_eligible(p)),
+            "refill_eligible": bool(_capsule_formats_ok(p)),
         })
     results.sort(key=lambda row: row["name"].lower())
     return jsonify({"ok": True, "products": results[:30]})

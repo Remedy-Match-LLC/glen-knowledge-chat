@@ -23,8 +23,8 @@ def _app(monkeypatch, tmp_path):
         import app as a; importlib.reload(a)
     except Exception as e:
         pytest.skip(f"app not importable: {e}")
-    # A deterministic, shippable, non-FF product -- bottle_type "default" mirrors
-    # the console order-entry test pattern in test_price_cart_cello_shipping.py.
+    # A deterministic, shippable 30-capsule formulation: refill packs apply only to
+    # those (_capsule_formats_ok, 2026-09-25).
     monkeypatch.setattr(a, "_get_product", lambda slug: {
         "slug": "mag", "name": "Mag", "price_cents": 6997, "bottle_type": "30 Caps", "qty_pricing": True,
     } if slug == "mag" else None)
@@ -35,10 +35,14 @@ def test_inhouse_invoice_refill_line_ships_cheaper_than_bottle_line(tmp_path, mo
     a = _app(monkeypatch, tmp_path)
     ship = {"country": "US", "zip": "01950", "state": "MA", "city": "X", "street": "1 A St"}
 
+    # 24 units: 2026-09-25 the fixture became a real 30-capsule product (refill packs
+    # apply only to those). Six 30-cap bottles ship at the same rate as six refills;
+    # at 24, bottles ship $32.00 and refills $23.00 (measured), so format must reach
+    # the cart for this to pass.
     bottle_result = a._price_inhouse_invoice(
-        [{"slug": "mag", "qty": 6}], email="c@x.com", pickup=False, ship=ship)
+        [{"slug": "mag", "qty": 24}], email="c@x.com", pickup=False, ship=ship)
     refill_result = a._price_inhouse_invoice(
-        [{"slug": "mag", "qty": 6, "format": "refill"}], email="c@x.com", pickup=False, ship=ship)
+        [{"slug": "mag", "qty": 24, "format": "refill"}], email="c@x.com", pickup=False, ship=ship)
 
     assert bottle_result is not None and refill_result is not None
     assert bottle_result["shipping_cents"] > 0

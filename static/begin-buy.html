@@ -626,6 +626,8 @@
                  '<span class="qf-text"><span class="qf-label">'+escHtml(f.label)+'</span>' +
                  (f.note ? '<span class="qf-note">'+escHtml(f.note)+'</span>' : '') + '</span></label>';
         }).join('');
+        // No formats (a dropper, powder or spray): hide the heading, not just its options.
+        document.getElementById('qp-format').style.display = (p.formats && p.formats.length) ? '' : 'none';
         chosenFormat = (p.formats && p.formats[0]) ? p.formats[0].id : 'bottle';
         document.querySelectorAll('input[name="fmt"]').forEach(function(r){
           r.addEventListener('change', function(){
