@@ -21,7 +21,7 @@ PANEL = [
     ("Quintessential Bioterrain Restore", "86.5%"),
     ("DMSO (Dimethylsulfoxide)", "10%"),
     ("MSM (Methylsulfonylmethane)", "1%"),
-    ("N-Acetyl L-Carnosine", "0.5%"),
+    ("N-Acetyl L-Carnosine", "1%"),   # Glen, 2026-09-25: back to 1%
     ("Forskolin (Coleus forskohlii)", "0.1%"),
     ("Puerarin (Pueraria lobata)", "0.1%"),
     ("Vitamin A (Retinol)", "0.1%"),
@@ -78,7 +78,8 @@ def test_ocuheal_stays_as_it_was(products):
     assert p["price_cents"] == 6997
     assert p["bottle_type"] == "Dropper 5 mL"
     assert p["url"].endswith("/begin/product/ocuheal-eye-drops")
-    assert "ingredients" not in p
+    # Its panel was corrected on 2026-09-25 (test_ocuheal_panels_match_the_bottle.py);
+    # this test pins only its identity.
 
 
 def test_the_new_entry_invents_no_old_store_link_or_compare_price(products):
