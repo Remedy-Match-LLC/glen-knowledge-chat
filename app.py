@@ -57490,7 +57490,8 @@ def api_console_repertoire_reseed():
     their repertoire — this route fixes that retroactively for everyone who is
     a paid member right now.
 
-    Candidate emails = active `memberships` grants (expires_at > now) UNION
+    Candidate emails = active `memberships` grants (expires_at > now, or a lifetime
+    owner_lifetime grant with none) UNION
     active kind='membership' `subscriptions` (mirrors the UNION already used by
     /api/console/backfill-member-people, ~app.py:29179). Each candidate is then
     filtered through _is_paid_member — the SAME gate the discount system uses —
