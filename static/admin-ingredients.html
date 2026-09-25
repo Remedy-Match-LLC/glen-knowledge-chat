@@ -3396,9 +3396,8 @@ async function sqDismiss() {
 
 // ── Init ─────────────────────────────────────────────────────────────────────
 function init() {
-  if (!KEY) {
-    document.getElementById("auth-warn").style.display = "block";
-  }
+  // No key-based warning: a signed-in owner's cookie is enough, and api() shows
+  // the warning on a real 401 (2026-09-25).
   (function(){ var t = new URLSearchParams(location.search).get('tab');
     if (t && document.getElementById('tab-' + t)) showTab(t); })();
 }

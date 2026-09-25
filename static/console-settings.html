@@ -202,7 +202,7 @@
 <script>
 (function() {
   const KEY = new URLSearchParams(location.search).get('key') || '';
-  if (!KEY) document.getElementById('auth-warn').style.display = 'block';
+  // A signed-in owner's cookie is enough; the warning shows only on a real 401.
 
   const toast = (msg, kind) => {
     const el = document.getElementById('toast');
@@ -217,6 +217,7 @@
   async function loadActiveMac() {
     try {
       const r = await fetch('/api/settings/active-mac', { headers: apiHeaders() });
+      if (r.status === 401) { document.getElementById('auth-warn').style.display = 'block'; return; }
       const j = await r.json();
       if (!j.ok) throw new Error(j.error || 'load failed');
       renderMacRadios(j.data);
