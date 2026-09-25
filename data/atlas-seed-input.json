@@ -224,11 +224,11 @@
     },
     {
       "id": "sulfur-synergy",
-      "label": "Sulfur Synergy",
+      "label": "Sulfur Syntropy",
       "aliases": [
         "sulfur syntropy"
       ],
-      "summary": "Sulfur Synergy is a Syntropy formulation centered on sulfur-based nutritional support.",
+      "summary": "Sulfur Syntropy is a Syntropy formulation centered on sulfur-based nutritional support.",
       "cluster": "detox-drainage",
       "parent": "detox-drainage",
       "namespaces": [
@@ -240,7 +240,7 @@
           "type": "product",
           "source": "remedymatch",
           "url": "https://myhealingoasis.com/begin/product/sulfur-syntropy",
-          "title": "Sulfur Synergy"
+          "title": "Sulfur Syntropy"
         }
       ]
     },

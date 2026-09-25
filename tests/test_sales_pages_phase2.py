@@ -297,3 +297,37 @@ def test_a_malformed_copy_pinned_does_not_break_the_page(monkeypatch, tmp_path):
         p = dict(appmod._PRODUCTS["products"][slug]); p["copy_pinned"] = bad
         monkeypatch.setitem(appmod._PRODUCTS["products"], slug, p)
         assert appmod.app.test_client().get(f"/begin/product-page-data/{slug}").status_code == 200
+
+
+# ---------------------------------------------------------------------------
+# display_name: copy uses the name on the page, invoices keep `name`
+# ---------------------------------------------------------------------------
+
+def test_prompt_uses_the_page_name_when_it_differs_from_the_invoice_name():
+    prod = {"name": "Sulfur Synergy", "display_name": "Sulfur Syntropy", "ingredients": []}
+    system, user = sc.build_section_prompt("intro", prod)
+    assert "Sulfur Syntropy" in user and "Sulfur Synergy" not in user
+
+
+def test_prompt_falls_back_to_name_without_a_display_name():
+    system, user = sc.build_section_prompt("intro", {"name": "Longevity", "ingredients": []})
+    assert "Longevity" in user
+
+
+def test_sulfur_syntropy_renamed_on_the_page_not_on_the_invoice():
+    """Glen 2026-09-24: rename in public now; invoices wait for money to rename the QBO
+    item, because QBO finds the item by `name` and a new name would create a second item."""
+    import json
+    path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "products.json")
+    with open(path) as f:
+        p = json.load(f)["products"]["sulfur-syntropy"]
+    assert p["display_name"] == "Sulfur Syntropy"
+    assert p["name"] == "Sulfur Synergy" and p["pinecone_title"] == "Sulfur Synergy"
+    assert "Synergy" not in p["description"]
+
+
+def test_no_public_data_file_still_says_sulfur_synergy():
+    root = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data")
+    for f in ("clinical_theory_catalog.json", "atlas-concepts.json", "atlas-seed-input.json"):
+        with open(os.path.join(root, f)) as fh:
+            assert "Sulfur Synergy" not in fh.read(), f

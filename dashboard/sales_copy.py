@@ -38,7 +38,10 @@ def _is_infoceutical(product):
     return "infoceutical" in identity.lower()
 
 def build_section_prompt(section, product):
-    name = product.get("name", "")
+    # The name the reader sees on the page. `name` stays the invoice/QBO identity, and
+    # display_name differs from it on purpose (Sulfur Syntropy, sold as Sulfur Synergy in
+    # QBO until money renames the item). Copy must use the page's name.
+    name = product.get("display_name") or product.get("name", "")
     ings = _ingredient_lines(product)
     desc = (product.get("description") or "").strip()
     brief = SECTION_BRIEFS[section]

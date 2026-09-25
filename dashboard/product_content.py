@@ -312,7 +312,7 @@ def _without_own_name(text: str, product: dict) -> str:
     named after what it is for ("Pterygium Eye Drops"), and naming itself must not blank
     its page. The words around the name are still checked, so a claim is still caught."""
     out = text or ""
-    for nm in {(product or {}).get("name") or "", (product or {}).get("pinecone_title") or ""}:
+    for nm in {(product or {}).get(k) or "" for k in ("name", "pinecone_title", "display_name")}:
         if nm.strip():
             out = re.sub(re.escape(nm.strip()), " ", out, flags=re.I)
     return out
@@ -341,7 +341,7 @@ def _gen_compliant(cl, system, user, max_tokens, check):
 
 def _generate_card(product, page):
     idx, cl, embed = _clients()
-    name = product.get("name", "")
+    name = product.get("display_name") or product.get("name", "")  # page name, see sales_copy
     page_text = (page or {}).get("text", "")
     if not page_text:
         return {"description": "", "ingredients": [], "benefits": []}
@@ -379,7 +379,7 @@ _LEARN_SYSTEM = (
 
 def _generate_learn_more(product, page, sources):
     idx, cl, embed = _clients()
-    name = product.get("name", "")
+    name = product.get("display_name") or product.get("name", "")  # page name, see sales_copy
     page_text = (page or {}).get("text", "")
     if not page_text and not sources:
         # No grounding material at all: never send an empty prompt (the model would
@@ -414,7 +414,7 @@ _HOW_SYSTEM = (
 
 def _generate_how_it_works(product, page):
     idx, cl, embed = _clients()
-    name = product.get("name", "")
+    name = product.get("display_name") or product.get("name", "")  # page name, see sales_copy
     page_text = (page or {}).get("text", "")
     if not page_text:
         return {"text": ""}

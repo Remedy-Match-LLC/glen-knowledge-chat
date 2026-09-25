@@ -2146,6 +2146,7 @@
   },
   "sulfur-syntropy": {
    "name": "Sulfur Synergy",
+   "display_name": "Sulfur Syntropy",
    "price_cents": 6997,
    "pinecone_title": "Sulfur Synergy",
    "url": "https://myhealingoasis.com/begin/product/sulfur-syntropy",
@@ -2222,7 +2223,7 @@
     }
    ],
    "ingredients_source": "db-formulations-2026-06-25",
-   "description": "Sulfur Synergy . Price: $69.97.",
+   "description": "Sulfur Syntropy . Price: $69.97.",
    "bottle_type": "30 Caps",
    "fmp_id": "385",
    "enrichment_note": "Garlic raw named as the label says (#1628, 2026-09-10); pinned here so a rerun of apply_enrichment cannot revert it."
