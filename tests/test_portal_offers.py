@@ -87,3 +87,33 @@ def test_membership_grant_hides_live_group_offer(tmp_path):
     cx.commit()
     offers = po.next_offers(cx, "grant@x.com", ["client"], enabled_keys=ALL)
     assert "live_group" not in [o["key"] for o in offers]
+
+
+def _memberships(cx):
+    cx.execute("""CREATE TABLE IF NOT EXISTS memberships (id TEXT PRIMARY KEY, email TEXT NOT NULL,
+        granted_at TEXT NOT NULL, expires_at TEXT, granted_by TEXT, source TEXT,
+        truly_vip_ref TEXT, notes TEXT, last_reminder_at TEXT)""")
+
+
+def test_a_lifetime_member_is_not_offered_the_live_group(tmp_path):
+    """Money, 2026-09-24: Glen made two members for life (owner_lifetime, expires_at
+    NULL). owns_group read only `expires_at > now`, so the portal offered them "Join
+    the Live Group" at $99/mo."""
+    from dashboard import portal_offers as po
+    cx = _conn(tmp_path)
+    _memberships(cx)
+    cx.execute("INSERT INTO memberships (id,email,granted_at,expires_at,source) "
+               "VALUES ('1','life@x.com','2026-09-24',NULL,'owner_lifetime')")
+    offers = po.next_offers(cx, "life@x.com", ["client"], enabled_keys=ALL)
+    assert "live_group" not in [o["key"] for o in offers]
+
+
+def test_a_lifetime_biofield_trial_row_is_still_offered_the_live_group(tmp_path):
+    """The $1 Biofield unlock is lifetime by design and must not become membership."""
+    from dashboard import portal_offers as po
+    cx = _conn(tmp_path)
+    _memberships(cx)
+    cx.execute("INSERT INTO memberships (id,email,granted_at,expires_at,source) "
+               "VALUES ('1','trial@x.com','2026-09-24',NULL,'biofield_trial')")
+    offers = po.next_offers(cx, "trial@x.com", ["client"], enabled_keys=ALL)
+    assert "live_group" in [o["key"] for o in offers]

@@ -1961,6 +1961,12 @@ def _alias_catalog_slug(clinical_name: str, info: dict) -> tuple:
 _ALIAS_SLUG_CACHE = None
 
 
+def _mp_active_grant_sql():
+    """The memberships "unexpired" clause, lifetime grants included. One param: now."""
+    from dashboard import membership_products as _m
+    return _m.ACTIVE_GRANT_SQL
+
+
 def _alias_key(text):
     """A product name or slug as a lookup key. A "+" is kept as "plus", so "OcuHeal+
     Eye Drops" and "OcuHeal Eye Drops" are two keys, not one (2026-09-24)."""
@@ -57210,7 +57216,7 @@ def api_console_backfill_member_people():
         missing = [r[0] for r in cx.execute(
             "SELECT DISTINCT m.email FROM ("
             "  SELECT email FROM subscriptions WHERE kind='membership' AND status='active' "
-            "  UNION SELECT email FROM memberships WHERE expires_at > ?) m "
+            "  UNION SELECT email FROM memberships WHERE " + _mp_active_grant_sql() + ") m "
             "WHERE m.email IS NOT NULL AND TRIM(m.email)<>'' "
             "AND NOT EXISTS (SELECT 1 FROM people p WHERE lower(p.email)=lower(m.email))", (now,)).fetchall()]
         if dry:
@@ -57484,7 +57490,8 @@ def api_console_repertoire_reseed():
     their repertoire — this route fixes that retroactively for everyone who is
     a paid member right now.
 
-    Candidate emails = active `memberships` grants (expires_at > now) UNION
+    Candidate emails = active `memberships` grants (expires_at > now, or a lifetime
+    owner_lifetime grant with none) UNION
     active kind='membership' `subscriptions` (mirrors the UNION already used by
     /api/console/backfill-member-people, ~app.py:29179). Each candidate is then
     filtered through _is_paid_member — the SAME gate the discount system uses —
@@ -57511,7 +57518,7 @@ def api_console_repertoire_reseed():
         candidates = [r[0] for r in cx.execute(
             "SELECT DISTINCT m.email FROM ("
             "  SELECT email FROM subscriptions WHERE kind='membership' AND status='active' "
-            "  UNION SELECT email FROM memberships WHERE expires_at > ?) m "
+            "  UNION SELECT email FROM memberships WHERE " + _mp_active_grant_sql() + ") m "
             "WHERE m.email IS NOT NULL AND TRIM(m.email)<>''", (now,)).fetchall()]
 
         members_seen = 0

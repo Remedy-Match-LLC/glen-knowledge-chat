@@ -6,7 +6,7 @@ def _cx():
     cx.executescript("""
       CREATE TABLE subscriptions (id INTEGER PRIMARY KEY AUTOINCREMENT, email TEXT,
         kind TEXT, status TEXT);
-      CREATE TABLE memberships (id TEXT PRIMARY KEY, email TEXT, expires_at TEXT);
+      CREATE TABLE memberships (id TEXT PRIMARY KEY, email TEXT, expires_at TEXT, source TEXT);
       CREATE TABLE people (id INTEGER PRIMARY KEY AUTOINCREMENT, email TEXT UNIQUE NOT NULL,
         name TEXT DEFAULT '', phone TEXT DEFAULT '', source TEXT DEFAULT '',
         created_at TEXT, updated_at TEXT);
