@@ -923,7 +923,7 @@
    "best_ff": null,
    "relation": "consider",
    "ff_alts": [
-    "Glutathione Synergy",
+    "Glutathione Syntropy",
     "Stone Solvent"
    ]
   },
@@ -937,7 +937,7 @@
     "Immune Support"
    ],
    "product_type": "supplement",
-   "best_ff": "Glutathione Synergy",
+   "best_ff": "Glutathione Syntropy",
    "relation": "substitute",
    "ff_alts": [
     "S-Acetyl Glutathione",
@@ -1518,7 +1518,7 @@
    "best_ff": "N-Acetyl Cysteine",
    "relation": "substitute",
    "ff_alts": [
-    "Glutathione Synergy",
+    "Glutathione Syntropy",
     "Stone Solvent"
    ]
   },
