@@ -98,3 +98,69 @@ def test_every_refill_eligible_flag_uses_the_capsule_check():
 def test_the_buy_page_hides_the_format_heading_when_there_are_none():
     js = (ROOT / "static" / "begin-buy.html").read_text()
     assert re.search(r"getElementById\('qp-format'\)\.style\.display\s*=\s*\(p\.formats\s*&&\s*p\.formats\.length\)\s*\?\s*''\s*:\s*'none'", js)
+
+
+# ── review round 1: the writers and displays that still stored refill ────────
+
+def test_the_inhouse_order_never_stores_refill_on_a_dropper(a, monkeypatch):
+    monkeypatch.setattr(a, "_get_product", lambda s: {"drops": DROPS, "caps": CAPS}.get(s))
+    ship = {"country": "US", "zip": "01950", "state": "MA", "city": "X", "street": "1 A St"}
+    out = a._price_inhouse_invoice([{"slug": "drops", "qty": 3, "format": "refill"}],
+                                   email="c@x.com", pickup=False, ship=ship)
+    assert [r.get("format", "") for r in out["items_rec"]] == [""]
+    out = a._price_inhouse_invoice([{"slug": "caps", "qty": 3, "format": "refill"}],
+                                   email="c@x.com", pickup=False, ship=ship)
+    assert [r.get("format") for r in out["items_rec"]] == ["refill"]
+
+
+def test_the_invoice_rebuild_turns_a_dropper_refill_into_a_bottle():
+    from dashboard import client_invoice_lines as cil
+    ok = {"caps": True, "drops": False}
+    got = cil.rebuild([{"slug": "drops", "qty": 1, "format": "refill"},
+                       {"slug": "caps", "qty": 1, "format": "refill"}], {},
+                      known=lambda s: True, refill_ok=lambda s: ok[s])
+    assert [(r["slug"], r["format"]) for r in got] == [("drops", "bottle"), ("caps", "refill")]
+
+
+def test_the_invoice_line_view_tells_the_page_where_refill_applies(a, monkeypatch):
+    monkeypatch.setattr(a, "_get_product", lambda s: {"drops": DROPS, "caps": CAPS}.get(s))
+    d = a._invoice_line_view({"slug": "drops", "name": "Drops", "qty": 1, "unit_cents": 1,
+                              "line_cents": 1, "format": "refill"})
+    c = a._invoice_line_view({"slug": "caps", "name": "Caps", "qty": 1, "unit_cents": 1,
+                              "line_cents": 1, "format": "refill"})
+    assert (d["format"], d["refill_eligible"]) == ("bottle", False)
+    assert (c["format"], c["refill_eligible"]) == ("refill", True)
+
+
+def test_the_override_table_decides_before_the_catalog(a, monkeypatch):
+    """Review round 1: packing honours product_bottle_types; so must formats."""
+    monkeypatch.setattr(a._shipping, "resolve_bottle_type",
+                        lambda slug, p, db_path=None: {"caps": "Dropper 5 mL", "drops": "30 Caps"}[slug])
+    assert a._capsule_formats_ok(CAPS) is False
+    assert a._capsule_formats_ok(DROPS) is True
+
+
+def test_the_portal_quantity_split_refuses_a_dropper(a, monkeypatch):
+    monkeypatch.setattr(a, "_get_product", lambda s: {"drops": DROPS}.get(s))
+    r = a.app.test_client().post("/api/portal/any-token/cart/set-format-quantities",
+                                 json={"slug": "drops", "bottle_qty": 1, "refill_qty": 1})
+    assert r.status_code == 400 and "bottle only" in r.get_json()["error"]
+
+
+def test_both_pages_offer_refill_only_where_the_server_allows():
+    inv = (ROOT / "static" / "invoice.html").read_text()
+    assert re.search(r"const packaging = \([^;]*ORDER\.editable && l\.refill_eligible\)", inv)
+    order = (ROOT / "static" / "order-new.html").read_text()
+    assert re.search(r"\$\{refillOk\(l\.slug\) \? `<select onchange=\"editLine\(\$\{i\},'format'", order)
+    assert "return !!(p && p.refill_eligible);" in order
+
+
+def test_the_order_forms_product_list_carries_the_refill_flag(a, monkeypatch):
+    import dashboard
+    monkeypatch.setattr(a, "CONSOLE_SECRET", "test-secret")
+    monkeypatch.setattr(dashboard, "CONSOLE_SECRET", "test-secret")
+    r = a.app.test_client().get("/api/products?all=1", headers={"X-Console-Key": "test-secret"})
+    assert r.status_code == 200
+    by = {p["slug"]: p for p in r.get_json()["products"]}
+    assert by["brain-boost"]["refill_eligible"] is True
+    assert by["ocuheal-plus-eye-drops"]["refill_eligible"] is False

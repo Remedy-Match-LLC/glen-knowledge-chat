@@ -371,7 +371,7 @@ function renderLines() {
       : (ORDER.editable ? '<span class="qty"><button onclick="bump('+i+',-1)">−</button>'
           + '<input type="number" min="0" value="'+l.qty+'" onchange="setQty('+i+',this.value)">'
           + '<button onclick="bump('+i+',1)">+</button></span>' : '<span class="muted">×'+l.qty+'</span>');
-    const packaging = (!l.service && l.kind!=='membership' && ORDER.editable)
+    const packaging = (!l.service && l.kind!=='membership' && ORDER.editable && l.refill_eligible)
       ? '<select aria-label="Packaging for '+esc(l.name)+'" onchange="setFormat('+i+',this.value)">'
           +'<option value="bottle"'+((l.format||'bottle')==='bottle'?' selected':'')+'>Bottle</option>'
           +'<option value="refill"'+(l.format==='refill'?' selected':'')+'>Capsules only (refill)</option></select>'

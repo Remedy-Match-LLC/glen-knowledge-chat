@@ -123,8 +123,11 @@ def test_every_rebuild_site_uses_the_one_builder():
 def test_delete_and_stepper_are_offered_on_exactly_the_same_lines():
     # A control that removes a line must not appear where the stepper is withheld.
     src = PAGE.read_text()
-    guard = "(!l.service && l.kind!=='membership' && ORDER.editable)"
-    assert src.count(guard) == 2, "packaging, delete: both must share the products-only guard"
+    guard = "(!l.service && l.kind!=='membership' && ORDER.editable"
+    assert src.count(guard + ")") == 1, "delete keeps the products-only guard"
+    # Packaging shares it and also needs a 30-capsule product (2026-09-25): an eye drop
+    # is never offered "Capsules only".
+    assert src.count(guard + " && l.refill_eligible)") == 1, "packaging: products-only guard + refill"
 
 
 # --- the pay button: shown when money is owed, not when the order is editable ---

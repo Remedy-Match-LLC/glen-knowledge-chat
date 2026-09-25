@@ -44,7 +44,9 @@ def test_invoice_update_preserves_terms_and_owner_override(monkeypatch):
     }
     captured = {}
     monkeypatch.setattr(appmod, "_invoice_order_for_token", lambda _token: order)
-    monkeypatch.setattr(appmod, "_get_product", lambda slug: {"name": slug, "price_cents": 6997})
+    # As the real iop-syntropy: a 30-capsule formulation, so a refill stays a refill.
+    monkeypatch.setattr(appmod, "_get_product", lambda slug: {"name": slug, "price_cents": 6997,
+                                                               "bottle_type": "30 Caps", "qty_pricing": True})
 
     def fake_reprice(_cx, _order, lines, **kwargs):
         captured.update(lines=lines, kwargs=kwargs)
