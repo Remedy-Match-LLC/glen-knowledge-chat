@@ -788,6 +788,7 @@ async function saveRemedy(rid,btn){var card=btn.closest('.lcard');var gid=card.d
  try{await post('/author/__TID__/row/'+rid,{head:head,most_affected:most,
   remedy:val('r'+rid+'_remedy'),dosage:val('r'+rid+'_dosage'),
   frequency:val('r'+rid+'_frequency'),timing:val('r'+rid+'_timing'),
+  bottles:val('r'+rid+'_billqty'),
   reset_schedule_from_dosing:true});
  var rids=(card.dataset.rids||'').split(',').filter(Boolean);
  for(var i=0;i<rids.length;i++){if(rids[i]!==String(rid)){
@@ -810,7 +811,8 @@ async function savePendingEditor(){
   var rids=(card.dataset.rids||'').split(',').filter(Boolean);
   for(var ri=0;ri<rids.length;ri++){var rid=rids[ri],p='r'+rid;
    await post('/author/__TID__/row/'+rid,{head:val(gid+'_head'),most_affected:val(gid+'_most'),
-    remedy:val(p+'_remedy'),dosage:val(p+'_dosage'),frequency:val(p+'_frequency'),timing:val(p+'_timing')})}}
+    remedy:val(p+'_remedy'),dosage:val(p+'_dosage'),frequency:val(p+'_frequency'),timing:val(p+'_timing'),
+    bottles:val(p+'_billqty')})}}
 }
 async function addRemedy(gid){var rem=val(gid+'_nr_remedy');if(!rem){astat('Enter a remedy.');return}
  var layer=val(gid+'_layer');if(!layer){var nums=[].slice.call(document.querySelectorAll('.lcard[data-rids] input[id$="_layer"]'))
@@ -1466,6 +1468,16 @@ def _bottles_chip(remedy, bottles_by_remedy):
             f"{n} bottle{'' if n == 1 else 's'}</span>")
 
 
+def _invoice_qty_input(p, l):
+    """Bottles to bill for this line (Glen 2026-09-25). Blank bills 1. Only on a
+    line with a remedy: an empty line has nothing to invoice."""
+    return (f"<label class=food title='Bottles to put on the invoice. Blank bills 1. "
+            f"The chip to the right counts bottles this client bought before.'>invoice qty "
+            f"<input id=\"{p}_billqty\" class=bq type=number min=1 max=24 step=1 "
+            f"value=\"{_e(str(l.get('bottles') or ''))}\" placeholder=1 "
+            f"style='width:3.2em' oninput=\"dirtyRow(this)\"></label>")
+
+
 def _remedy_line(l, depth_values, only_remedy=False, bottles_by_remedy=None):
     rid = _e(str(l.get("rid") or ""))
     p = "r" + rid
@@ -1488,6 +1500,7 @@ def _remedy_line(l, depth_values, only_remedy=False, bottles_by_remedy=None):
             f"<input id=\"{p}_dosage\" class=dz value=\"{g('dosage')}\" placeholder=dose oninput=\"dirtyRow(this)\">"
             f"<input id=\"{p}_frequency\" class=dz value=\"{g('frequency')}\" placeholder=freq oninput=\"dirtyRow(this)\">"
             f"<input id=\"{p}_timing\" class=dz value=\"{g('timing')}\" placeholder=timing oninput=\"dirtyRow(this)\">"
+            + (_invoice_qty_input(p, l) if remedy else "")
             + depth +
             f"<button class=chip onclick=\"fillDose('{p}',true)\">dose</button>"
             f"<button class=chip onclick=\"suggestFor(this,'{p}')\">uses</button>"

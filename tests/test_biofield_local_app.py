@@ -598,7 +598,8 @@ def test_handoff_route_graceful(tmp_path):
 
 
 def test_report_remedies_for_invoice_qty():
-    # qty = bottles for a 30-day program from the authored frequency + FMP doses/bottle.
+    # qty = the line's Bottles field, default 1 (Glen 2026-09-25). Liver Support at
+    # twice a day used to bill 2 from the 30-day rule; it now bills 1 unless set.
     from dashboard import biofield_handoff, biofield_invoice
     cx = sqlite3.connect(":memory:")
     cx.execute("CREATE TABLE fmp_snap_products (product_name TEXT, doses_per_bottle INTEGER)")
@@ -612,13 +613,15 @@ def test_report_remedies_for_invoice_qty():
     dcx.execute("INSERT INTO fmp_snap_products VALUES ('Liver Support', 30)")
     dcx.commit(); dcx.close()
     rep = {"layers": [
-        {"remedy": "Liver Support", "frequency": "twice a day"},   # 2*30/30 = 2 bottles
+        {"remedy": "Liver Support", "frequency": "twice a day"},   # was 2; now 1
+        {"remedy": "Brain Cleanse", "frequency": "daily", "bottles": 3},  # set: 3
         {"remedy": "Infoceutical X", "frequency": "daily"},        # no FMP row -> qty 1
         {"remedy": "", "frequency": "daily"},                      # skipped (no name)
     ]}
     out = biofield_handoff.report_remedies_for_invoice(path, rep, biofield_invoice.bottles_needed)
     os.unlink(path)
-    assert out == [{"name": "Liver Support", "qty": 2}, {"name": "Infoceutical X", "qty": 1}]
+    assert out == [{"name": "Liver Support", "qty": 1}, {"name": "Brain Cleanse", "qty": 3},
+                   {"name": "Infoceutical X", "qty": 1}]
 
 
 def test_build_invoice_lines_include_fee_false():
@@ -713,15 +716,16 @@ def test_handoff_route_raises_invoice(tmp_path, monkeypatch):
         db,
         invoice_fetch_catalog=lambda: [{"name": "Liver Support", "slug": "liver-support"}],
         invoice_create=fake_create,
+        invoice_latest=lambda email: {"ok": False},     # never reach prod from a test
     ).test_client()
     j = client.post("/author/%s/handoff" % tid, json={}).get_json()
     assert j["ok"] is True
     assert j["invoice"]["ok"] is True and j["invoice"]["order_id"] == 77
     slugs = [l["slug"] for l in captured["lines"]]
     assert slugs[0] == "biofield-analysis"           # fee always first
-    # 2 bottles for twice-daily, carrying the authored-analysis provenance through
-    # order creation (see build_invoice_lines).
-    assert {"slug": "liver-support", "qty": 2,
+    # 1 bottle unless the line sets more (Glen 2026-09-25), carrying the authored-
+    # analysis provenance through order creation (see build_invoice_lines).
+    assert {"slug": "liver-support", "qty": 1,
             "source": "biofield"} in captured["lines"]
 
 
@@ -816,3 +820,37 @@ def test_handoff_never_creates_service_only_invoice_when_products_do_not_resolve
     assert result["invoice"]["ok"] is False
     assert "service-only" in result["invoice"]["error"]
     assert created == []
+
+
+
+def test_handoff_bills_the_largest_count_for_a_remedy_on_two_layers(tmp_path, monkeypatch):
+    """One remedy on two layers is one product. The handoff invoice bills its largest
+    count, whichever layer holds it, as the Intake invoice does (Glen 2026-09-25)."""
+    from dashboard.biofield_authoring import (init_auth_tables, create_test, add_chain_row,
+                                              ordered_chain, update_chain_row)
+    from dashboard import biofield_invoice
+    monkeypatch.setattr(biofield_invoice, "default_handoff_push", lambda *a, **k: {"ok": True})
+    for first, second in ((3, 1), (1, 3)):
+        db = str(tmp_path / f"h{first}{second}.db")
+        cx = sqlite3.connect(db)
+        init_auth_tables(cx)
+        tid = create_test(cx, "Pt", "pt@x.com", "2026-07-08")
+        add_chain_row(cx, tid, 1, "A", "a", "Liver Support", "1 cap", "daily", "")
+        add_chain_row(cx, tid, 2, "B", "b", "Liver Support", "1 cap", "daily", "")
+        rows = ordered_chain(cx, tid)
+        update_chain_row(cx, rows[0]["id"], bottles=first)
+        update_chain_row(cx, rows[1]["id"], bottles=second)
+        cx.commit()
+        captured = {}
+        def fake_create(cust, lines, replace_open=False, invoice_note=None, idempotency_key=""):
+            captured["lines"] = lines
+            return {"ok": True, "order_id": 1, "total_cents": 1, "external_ref": "INH"}
+        client = create_app(
+            db,
+            invoice_fetch_catalog=lambda: [{"name": "Liver Support", "slug": "liver-support"}],
+            invoice_create=fake_create,
+            invoice_latest=lambda email: {"ok": False},
+        ).test_client()
+        assert client.post("/author/%s/handoff" % tid, json={}).get_json()["ok"] is True
+        got = [l for l in captured["lines"] if l["slug"] == "liver-support"]
+        assert len(got) == 1 and got[0]["qty"] == 3, (first, second, got)

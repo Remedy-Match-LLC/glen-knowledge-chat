@@ -49,23 +49,14 @@ def build_portal_seed(cx, test_id, resolve_slug, name=None):
     }
 
 
-def report_remedies_for_invoice(db_path, rep, bottles_needed):
-    """[{name, qty}] for each authored remedy for the invoice — qty = bottles for a
-    30-day program (doses/day from the authored frequency, doses_per_bottle from FMP;
-    falls back to 1). `bottles_needed(freq, doses_per_bottle)` is passed in to avoid a
-    circular import on biofield_invoice."""
-    import sqlite3
+def report_remedies_for_invoice(db_path, rep, bottles_needed=None):
+    """[{name, qty}] for each authored remedy for the invoice. qty is the line's own
+    Bottles field, default 1 (Glen 2026-09-25). `db_path` and `bottles_needed` are
+    kept for existing callers and no longer read."""
+    from dashboard.biofield_invoice import line_bottles
     out = []
-    with sqlite3.connect(db_path) as cx:
-        def _dpb(nm):
-            try:
-                r = cx.execute("SELECT doses_per_bottle FROM fmp_snap_products "
-                               "WHERE lower(product_name)=lower(?) LIMIT 1", (nm,)).fetchone()
-                return r[0] if r else None
-            except Exception:
-                return None
-        for L in (rep.get("layers") or []):
-            nm = (L.get("remedy") or "").strip()
-            if nm:
-                out.append({"name": nm, "qty": bottles_needed(L.get("frequency"), _dpb(nm))})
+    for L in (rep.get("layers") or []):
+        nm = (L.get("remedy") or "").strip()
+        if nm:
+            out.append({"name": nm, "qty": line_bottles(L)})
     return out

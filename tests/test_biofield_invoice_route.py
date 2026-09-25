@@ -133,3 +133,24 @@ def test_invoice_warns_when_biofield_line_dropped(tmp_path):
     r = app.test_client().post(f"/author/{tid}/invoice")
     j = r.get_json()
     assert j["ok"] and "Biofield Analysis line was not accepted" in j["warning"]
+
+
+def test_bottles_saved_on_a_row_reach_the_invoice(client):
+    """The Intake page's Bottles field: saved through the row route, billed by the
+    invoice route. Blank goes back to 1 (Glen 2026-09-25)."""
+    # Row 1 is Liver Support: the fixture's first chain row in a fresh database.
+    r = client.post(f"/author/{client._tid}/row/1", json={"bottles": "3"})
+    assert r.get_json()["ok"]
+    client.post(f"/author/{client._tid}/invoice")
+    assert {"slug": "liver-support", "qty": 3, "source": "biofield"} in client._calls["lines"]
+    client.post(f"/author/{client._tid}/row/1", json={"bottles": ""})
+    client.post(f"/author/{client._tid}/invoice")
+    assert {"slug": "liver-support", "qty": 1, "source": "biofield"} in client._calls["lines"]
+
+
+
+def test_bottles_route_refuses_a_bad_count(client):
+    for bad in ("2.5", "0", "-2", "+4", "3e2", "25", "\u00b2", "99999999999999999999"):
+        r = client.post(f"/author/{client._tid}/row/1", json={"bottles": bad})
+        assert r.status_code == 400, bad
+    assert client.post(f"/author/{client._tid}/row/1", json={"bottles": " 4 "}).get_json()["ok"]

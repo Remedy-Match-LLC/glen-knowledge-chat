@@ -1353,26 +1353,13 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
         email = (client.get("email") or "").strip()
         if not email:
             return {"ok": False, "error": "Add a client email in the header first."}, 400
-        # Per-remedy quantity = bottles for a 30-day program:
-        # ceil(doses/day * 30 / doses_per_bottle). doses/day comes from the authored
-        # frequency (per-client); doses_per_bottle from FMP (fmp_snap_products) by name.
-        # Falls back to qty 1 when frequency is unparseable or FMP has no doses_per_bottle
-        # (e.g. infoceuticals).
-        with sqlite3.connect(db_path) as _cxq:
-            def _doses_per_bottle(nm):
-                try:
-                    r = _cxq.execute("SELECT doses_per_bottle FROM fmp_snap_products "
-                                     "WHERE lower(product_name)=lower(?) LIMIT 1", (nm,)).fetchone()
-                    return r[0] if r else None
-                except Exception:
-                    return None
-            remedies = []
-            for l in (rep.get("layers") or []):
-                nm = (l.get("remedy") or "").strip()
-                if not nm:
-                    continue
-                qty = biofield_invoice.bottles_needed(l.get("frequency"), _doses_per_bottle(nm))
-                remedies.append({"name": nm, "qty": qty})
+        # Per-remedy quantity = the line's Bottles field, default 1 (Glen 2026-09-25).
+        remedies = []
+        for l in (rep.get("layers") or []):
+            nm = (l.get("remedy") or "").strip()
+            if not nm:
+                continue
+            remedies.append({"name": nm, "qty": biofield_invoice.line_bottles(l)})
         catalog = invoice_fetch_catalog()
         # Never re-charge a Biofield Analysis the client already paid for: drop the fee
         # line when a paid analysis order exists, invoicing remedies only. If that leaves
@@ -1527,10 +1514,14 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
             # truth instead of resolving the display names a second time. The old
             # double-resolution path could silently drop every remedy and still
             # create a successful $300 service-only invoice.
-            qty_by_name = {
-                (r.get("name") or "").strip().lower(): max(1, int(r.get("qty") or 1))
-                for r in remedies if (r.get("name") or "").strip()
-            }
+            # One remedy on several layers keeps its LARGEST count, as the Intake
+            # invoice does.
+            qty_by_name = {}
+            for r in remedies:
+                key = (r.get("name") or "").strip().lower()
+                if not key:
+                    continue
+                qty_by_name[key] = max(qty_by_name.get(key, 1), max(1, int(r.get("qty") or 1)))
             resolved_remedies = []
             for item in content.get("reorder_items") or []:
                 slug = (item.get("slug") or "").strip()
@@ -1982,6 +1973,17 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                   "frequency", "timing", "schedule_slot"):
             if k in d:
                 fields[k] = _layer_int(d[k]) if k == "layer" else d[k]
+        if "bottles" in d:
+            # Blank stores NULL, which bills 1 (Glen 2026-09-25). Anything else must be
+            # a whole number of bottles, 1 to 24; a typo is refused, not billed.
+            raw = str(d["bottles"] if d["bottles"] is not None else "").strip()
+            if raw == "":
+                fields["bottles"] = None
+            else:
+                if not (raw.isascii() and raw.isdigit()) or not (1 <= int(raw) <= 24):
+                    return {"ok": False,
+                            "error": "Bottles must be a whole number from 1 to 24, or blank for 1."}, 400
+                fields["bottles"] = int(raw)
         if "layer" in fields:
             new_layer = fields.pop("layer")
             from dashboard.biofield_authoring import reorder_chain

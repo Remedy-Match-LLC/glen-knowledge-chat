@@ -69,6 +69,21 @@ def doses_per_day(freq_text):
     return None
 
 
+def line_bottles(line):
+    """Bottles to bill for one Biofield line: the line's own `bottles` field, else 1.
+
+    Glen, 2026-09-25: "a single bottle gets entered on the invoice unless we specify
+    otherwise, or change it on the invoice ... default would be 1 for most every
+    product." It replaced a 30-day calculation (bottles_needed) that billed Peach
+    Goddard 3 Candida Cleanse off a titrated six-a-day and Debra Herndon 3 IOP
+    Syntropy. Anything blank, zero or unreadable is 1."""
+    try:
+        n = int(str((line or {}).get("bottles") or "").strip())
+    except (TypeError, ValueError):
+        return 1
+    return n if n >= 1 else 1
+
+
 def bottles_needed(freq_text, doses_per_bottle, program_days=30):
     """Bottles for the program = ceil(doses/day * days / doses_per_bottle), >= 1.
     Falls back to 1 when the frequency is unparseable OR doses_per_bottle is missing
