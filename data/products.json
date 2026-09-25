@@ -10152,6 +10152,8 @@
   "reverse-aging-program": {
    "name": "Reverse Aging Program",
    "price_cents": 35997,
+   "regular_cents": 41982,
+   "description": "The Reverse Aging Program is six remedies, one bottle each, chosen to support rejuvenation and regeneration: Longevity, Sanctuary C60, Vitality, Reverse AGE, Vitamin C Syntropy and Perfect Skin. Longevity supports your mitochondrial energy. Reverse AGE, Sanctuary C60 and Vitamin C Syntropy support your body's defenses against cellular damage. Vitality and Perfect Skin support your nervous system and your skin. Bought separately, the six cost $419.82. As a program, you pay $359.97 for the same six bottles.",
    "pinecone_title": "Reverse Aging Program",
    "url": "https://myhealingoasis.com/begin/product/reverse-aging-program",
    "legacy_store_url": "https://remedymatch.com/remedies/program/466-reverse-aging-program"
