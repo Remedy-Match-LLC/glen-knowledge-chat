@@ -371,7 +371,7 @@ function renderLines() {
       : (ORDER.editable ? '<span class="qty"><button onclick="bump('+i+',-1)">−</button>'
           + '<input type="number" min="0" value="'+l.qty+'" onchange="setQty('+i+',this.value)">'
           + '<button onclick="bump('+i+',1)">+</button></span>' : '<span class="muted">×'+l.qty+'</span>');
-    const packaging = (!l.service && l.kind!=='membership' && ORDER.editable)
+    const packaging = (!l.service && l.kind!=='membership' && ORDER.editable && l.refill_eligible)
       ? '<select aria-label="Packaging for '+esc(l.name)+'" onchange="setFormat('+i+',this.value)">'
           +'<option value="bottle"'+((l.format||'bottle')==='bottle'?' selected':'')+'>Bottle</option>'
           +'<option value="refill"'+(l.format==='refill'?' selected':'')+'>Capsules only (refill)</option></select>'
@@ -546,7 +546,8 @@ async function pushUpdate(){
 function linesFromOrder(){
   return ORDER.lines.map(l=>({slug:l.slug, name:l.name, qty:l.qty, unit_cents:l.unit_cents,
     kind:l.kind, tier:l.tier, note:l.note, format:l.format||'bottle',
-    service:l.service, srp_cents:l.srp_cents, regular_cents:l.regular_cents}));
+    service:l.service, srp_cents:l.srp_cents, regular_cents:l.regular_cents,
+    refill_eligible:l.refill_eligible}));
 }
 function renderFromOrder(){ LINES=linesFromOrder(); renderLines(); renderTotals(); }
 function setupPay(){

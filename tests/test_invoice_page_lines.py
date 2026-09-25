@@ -123,8 +123,11 @@ def test_every_rebuild_site_uses_the_one_builder():
 def test_delete_and_stepper_are_offered_on_exactly_the_same_lines():
     # A control that removes a line must not appear where the stepper is withheld.
     src = PAGE.read_text()
-    guard = "(!l.service && l.kind!=='membership' && ORDER.editable)"
-    assert src.count(guard) == 2, "packaging, delete: both must share the products-only guard"
+    guard = "(!l.service && l.kind!=='membership' && ORDER.editable"
+    assert src.count(guard + ")") == 1, "delete keeps the products-only guard"
+    # Packaging shares it and also needs a 30-capsule product (2026-09-25): an eye drop
+    # is never offered "Capsules only".
+    assert src.count(guard + " && l.refill_eligible)") == 1, "packaging: products-only guard + refill"
 
 
 # --- the pay button: shown when money is owed, not when the order is editable ---
@@ -182,3 +185,16 @@ def test_payment_not_enabled_yet_leaves_the_card_up_but_the_button_off():
     out = _setup_pay({"pay_status": "unpaid", "editable": False, "payable": True,
                       "total_cents": 9300, "paylink_enabled": False})
     assert out["cardHidden"] is False and out["disabled"] is True
+
+
+def test_lines_keep_refill_eligible_so_the_picker_can_show():
+    """Review round 2 (#1816): linesFromOrder copies a fixed field list and dropped
+    refill_eligible, so the packaging picker never showed, even for capsules."""
+    js = _fn("linesFromOrder")
+    out = _run("""
+      const ORDER = {lines:[{slug:'caps', name:'C', qty:1, unit_cents:1, refill_eligible:true},
+                            {slug:'drops', name:'D', qty:1, unit_cents:1, refill_eligible:false}]};
+      %s
+      console.log(JSON.stringify(linesFromOrder()));
+    """ % js)
+    assert [o["refill_eligible"] for o in out] == [True, False]

@@ -12,7 +12,7 @@ def test_format_rides_on_the_stored_line(tmp_path, monkeypatch):
     except Exception as e:
         pytest.skip(f"app not importable: {e}")
     monkeypatch.setattr(a, "_get_product", lambda slug: {"slug": "mag", "name": "Mag",
-        "price_cents": 6997, "bottle_type": "default"} if slug == "mag" else None)
+        "price_cents": 6997, "bottle_type": "30 Caps", "qty_pricing": True} if slug == "mag" else None)
     priced = a._price_inhouse_invoice([{"slug": "mag", "qty": 2, "format": "refill"}],
                                       email="", pickup=True, ship=None)
     rec = priced["items_rec"][0]

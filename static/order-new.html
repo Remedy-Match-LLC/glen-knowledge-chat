@@ -261,6 +261,14 @@ for (const id of CUSTOMER_DRAFT_FIELDS) {
   $(id).addEventListener("change", saveCustomerDraft);
 }
 
+// Cello refill packs apply to 30-capsule formulations only; the server says which
+// (refill_eligible on /api/products). A dropper or powder shows plain "Bottle".
+// true/false from the catalog; null when the slug is not in it (a retired twin, a
+// membership line), which keeps the line's stored format untouched.
+function refillOk(slug){
+  const p = (CATALOG||[]).find(x => x.slug === slug);
+  return p ? !!p.refill_eligible : null;
+}
 async function loadCatalog(){
   const r = await fetch("/api/products?all=1", { headers:HEADERS });
   if (r.status===401){ $("auth-warn").style.display="block"; throw new Error("unauthorized"); }
@@ -431,14 +439,17 @@ async function savePickupDefault(){
   }catch(e){ toast(e.message,"error"); }
 }
 function renderLines(){
+  // A line known NOT to take refill packs sends "bottle", so the preview's pack count
+  // and the shipping quote agree (review round 2).
+  for (const l of LINES) if (refillOk(l.slug) === false && l.format === 'refill') l.format = 'bottle';
   const tb=$("lines");
   tb.innerHTML = LINES.map((l,i)=>`<tr data-line-index="${i}">
     <td><div class="product-cell"><span class="drag-handle" draggable="true" title="Drag to reorder" aria-label="Drag ${esc(l.name)} to reorder">☰</span><span>${esc(l.name)}</span></div></td>
     <td><input type="number" min="0" value="${l.qty}" onchange="editLine(${i},'qty',this.value)" style="width:70px"></td>
-    <td><select onchange="editLine(${i},'format',this.value)">
+    <td>${refillOk(l.slug) === true ? `<select onchange="editLine(${i},'format',this.value)">
       <option value="bottle"${(l.format||'bottle')==='bottle'?' selected':''}>Bottle</option>
       <option value="refill"${l.format==='refill'?' selected':''}>Cello refill</option>
-    </select></td>
+    </select>` : `<span style="color:var(--muted)">${(refillOk(l.slug) === null && l.format==='refill') ? 'Cello refill' : 'Bottle'}</span>`}</td>
     <td><input id="u-${i}" type="number" step="0.01" value="${(l.unit_cents/100).toFixed(2)}" onchange="editLine(${i},'unit',this.value)" style="width:90px"></td>
     <td id="vp-${i}" style="font-size:12px;color:var(--muted)">…</td>
     <td id="ln-${i}">${dollars(l.qty*l.unit_cents)}</td>

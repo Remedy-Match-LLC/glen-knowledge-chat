@@ -13,7 +13,7 @@ def _app(monkeypatch, tmp_path):
         pytest.skip(f"app not importable: {e}")
     # a small deterministic catalog: one shippable 'default' product
     monkeypatch.setattr(a, "_get_product", lambda slug: {"slug": "mag", "name": "Mag",
-        "price_cents": 6997, "bottle_type": "default"} if slug == "mag" else None)
+        "price_cents": 6997, "bottle_type": "30 Caps", "qty_pricing": True} if slug == "mag" else None)
     return a
 
 def test_cello_lines_ship_cheaper_and_count_separately(tmp_path, monkeypatch):

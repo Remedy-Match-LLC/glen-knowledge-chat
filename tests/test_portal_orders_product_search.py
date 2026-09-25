@@ -14,7 +14,8 @@ class _Cx:
 def test_product_search_requires_valid_portal_and_returns_sellable_matches(monkeypatch):
     products = {
         "brain-boost": {"name": "Brain Boost", "description": "Focus support",
-                        "ingredients": ["Magnesium"], "qty_pricing": True},
+                        "ingredients": ["Magnesium"], "qty_pricing": True,
+                        "bottle_type": "30 Caps"},   # as the real product; refill needs capsules
         "calm": {"name": "Calm Formula", "description": "Relaxation",
                  "ingredients": ["Magnesium"], "inactive": True},
         "guide": {"name": "Wellness Guide", "description": "Information",

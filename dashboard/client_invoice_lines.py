@@ -28,10 +28,12 @@ def _qty(value):
         return 1
 
 
-def rebuild(posted, existing, *, known):
+def rebuild(posted, existing, *, known, refill_ok=None):
     """Server-trusted lines from `posted`, using `existing` {slug: stored line}.
 
     `known(slug)` decides whether a slug is a real, sellable product.
+    `refill_ok(slug)` decides whether refill packs apply (30-capsule products only,
+    2026-09-25); without it every product may take a refill, as before.
     """
     out = []
     for line in (posted or []):
@@ -42,6 +44,8 @@ def rebuild(posted, existing, *, known):
             continue
         old = existing.get(slug) or {}
         fmt = (line.get("format") or old.get("format") or "bottle").strip().lower()
+        if fmt == "refill" and refill_ok is not None and not refill_ok(slug):
+            fmt = "bottle"
         rec = {"slug": slug, "qty": _qty(line.get("qty")),
                "format": fmt if fmt in _FORMATS else "bottle"}
         # A price survives only as an owner override. Everything else re-prices, so
