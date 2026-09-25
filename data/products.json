@@ -7174,61 +7174,64 @@
    "fmp_id": "378"
   },
   "clear-lens-eye-drops": {
-   "name": "Clear Lens Eyedrops",
-   "price_cents": 6997,
-   "pinecone_title": "Clear Lens Eyedrops",
-   "url": "https://myhealingoasis.com/begin/product/clear-lens-eye-drops",
-   "legacy_store_url": "https://remedymatch.com/remedies/syntropy/19-clear-lens-eye-drops",
-   "ingredients": [
-    {
-     "name": "Quintessential Bioterrain Restore (Quinton seawater)",
-     "dose": ""
-    },
-    {
-     "name": "MSM (Methylsulfonylmethane)",
-     "dose": "97%"
-    },
-    {
-     "name": "DMSO (Dimethylsulfoxide)",
-     "dose": "1%"
-    },
-    {
-     "name": "N-Acetyl L-Carnosine",
-     "dose": "1%"
-    },
-    {
-     "name": "Vitamin A (Acetate)",
-     "dose": "0.1%"
-    },
-    {
-     "name": "Vitamin C & Zinc (as Zinc-Ascorbate)",
-     "dose": "0.1%"
-    },
-    {
-     "name": "Lanosterol",
-     "dose": "0.02%"
-    },
-    {
-     "name": "Saffron (Crocus sativa)",
-     "dose": "0.02%"
-    },
-    {
-     "name": "Vitamin E Complex",
-     "dose": "0.02%"
-    },
-    {
-     "name": "Cineraria maritima (succus)",
-     "dose": "0.01%"
-    },
-    {
-     "name": "Silver (Ionic)",
-     "dose": "0.001%"
-    }
-   ],
-   "ingredients_source": "store-recovery-2026-06-08",
-   "description": "Clear Lens Eyedrops . Price: $69.97.",
-   "bottle_type": "Dropper 5 mL",
-   "qty_pricing": true
+    "name": "Clear Lens Eyedrops",
+    "price_cents": 6997,
+    "pinecone_title": "Clear Lens Eyedrops",
+    "url": "https://myhealingoasis.com/begin/product/clear-lens-eye-drops",
+    "legacy_store_url": "https://remedymatch.com/remedies/syntropy/19-clear-lens-eye-drops",
+    "ingredients": [
+      {
+        "name": "Quintessential Bioterrain Restore",
+        "dose": "97%"
+      },
+      {
+        "name": "MSM (Methylsulfonylmethane)",
+        "dose": "1%"
+      },
+      {
+        "name": "DMSO (Dimethylsulfoxide)",
+        "dose": "1%"
+      },
+      {
+        "name": "N-Acetyl L-Carnosine",
+        "dose": "1%"
+      },
+      {
+        "name": "Micellized Vitamin A (as Acetate)",
+        "dose": "0.1%"
+      },
+      {
+        "name": "Vitamin C (as Zinc-Ascorbate)",
+        "dose": "0.1%"
+      },
+      {
+        "name": "Lanosterol",
+        "dose": "0.02%"
+      },
+      {
+        "name": "Saffron (Crocus sativus)",
+        "dose": "0.02%"
+      },
+      {
+        "name": "Vitamin E Complex",
+        "dose": "0.02%"
+      },
+      {
+        "name": "Cineraria maritima (succus)",
+        "dose": "0.01%"
+      },
+      {
+        "name": "Silver (Ionic)",
+        "dose": "0.0001%"
+      }
+    ],
+    "ingredients_source": "label-2026-09-25",
+    "description": "Clear Lens Eyedrops . Price: $69.97.",
+    "bottle_type": "Dropper 5 mL",
+    "qty_pricing": true,
+    "copy_pinned": [
+      "ingredients"
+    ]
   },
   "iron-syntropy": {
    "name": "Iron Syntropy",
