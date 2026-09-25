@@ -88,7 +88,7 @@ def test_a_comped_biofield_line_grants_too(cx):
 
 
 def test_already_member_does_not_regrant(cx, monkeypatch):
-    monkeypatch.setattr(app_mod._mp, "owns_group", lambda _cx, _e: True)
+    monkeypatch.setattr(app_mod._mp, "owns_group", lambda _cx, _e, **_k: True)
     o = _order_with_membership(cx, email="already@example.com", ref="INH-ALREADY")
     assert app_mod._grant_membership_line_on_paid(cx, o) == "member"
 
@@ -254,3 +254,41 @@ def test_grant_failing_AFTER_customer_commit_leaves_no_orphan_claim(tmp_path, mo
         "SELECT COUNT(*) FROM order_membership_grants WHERE order_ref=?",
         (ref,)).fetchone()[0] == 1
     assert app_mod._is_paid_member(email) is True
+
+
+# ── the ASH-certification membership (bonus_cert) owns the group, 2026-09-25 ─
+# It owns the live group for the offer and upsell, but it is not a PAID membership:
+# paying for a membership must still grant one, and a Biofield buyer keeps the
+# care-taster month (review round 1 of #1821).
+
+def _cert(cx, email, days=5):
+    from datetime import datetime, timedelta
+    now = datetime.utcnow()
+    cx.execute("INSERT INTO memberships (id,email,granted_at,expires_at,granted_by,source) "
+               "VALUES (?,?,?,?,?,?)", ("cert-" + email, email, now.isoformat(),
+                                         (now + timedelta(days=days)).isoformat(), "glen", "bonus_cert"))
+    cx.commit()
+
+
+def test_a_cert_holder_who_pays_for_membership_still_gets_it(cx):
+    _cert(cx, "cert@example.com")
+    o = _order_with_membership(cx, email="cert@example.com", ref="INH-CERTMEM")
+    assert app_mod._grant_membership_line_on_paid(cx, o) == "granted"
+    srcs = {r[0] for r in cx.execute("SELECT source FROM memberships WHERE email=?", ("cert@example.com",))}
+    assert "bonus_cert" in srcs and len(srcs) == 2, srcs
+
+
+def test_a_cert_holder_who_buys_a_biofield_keeps_the_care_taster_month(cx):
+    _cert(cx, "certbf@example.com")
+    oid = orders.upsert_order(
+        cx, source="inhouse", external_ref="INH-CERTBF", email="certbf@example.com",
+        total_cents=30000, items=[{"slug": "biofield-analysis", "qty": 1,
+                                  "unit_cents": 30000, "line_cents": 30000}])
+    assert app_mod._grant_biofield_line_on_paid(cx, orders.get_order(cx, oid)) == "granted"
+
+
+def test_a_cert_holder_owns_the_group_for_the_offer(cx):
+    from dashboard import membership_products as mp
+    _cert(cx, "offer@example.com")
+    assert mp.owns_group(cx, "offer@example.com") is True
+    assert mp.owns_group(cx, "offer@example.com", include_bonus=False) is False

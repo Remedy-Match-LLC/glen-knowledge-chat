@@ -15148,7 +15148,7 @@ def _grant_membership_line_on_paid(cx, order):
     if cx.execute("SELECT 1 FROM order_membership_grants WHERE order_ref=?",
                   (ref,)).fetchone():
         return "already"
-    if _mp.owns_group(cx, email):
+    if _mp.owns_group(cx, email, include_bonus=False):   # a bonus grant is not a paid membership
         return "member"  # already a paid member; do NOT claim (keeps the order
                          # grantable later if this membership lapses)
     # Do the customer upsert FIRST, while nothing about this grant is pending.
@@ -15199,7 +15199,7 @@ def _grant_biofield_line_on_paid(cx, order):
                "(order_ref TEXT PRIMARY KEY, email TEXT, granted_at TEXT)")
     if cx.execute("SELECT 1 FROM care_taster_grants WHERE order_ref=?", (ref,)).fetchone():
         return "already"
-    if _mp.owns_group(cx, email):
+    if _mp.owns_group(cx, email, include_bonus=False):   # a bonus grant is not a paid membership
         return "member"
     try:
         from dashboard import customers as _customers

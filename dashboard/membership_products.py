@@ -69,14 +69,17 @@ GROUP_BONUS_SOURCES = ("bonus_cert",)
 ACTIVE_GRANT_SQL = (f"(expires_at > ? OR (expires_at IS NULL AND source = '{LIFETIME_SOURCE}'))")
 
 
-def owns_group(cx, email):
+def owns_group(cx, email, *, include_bonus=True):
     """True iff the email holds an active membership-tier grant, Glen's lifetime
     grant, or an active ASH-certification membership (bonus_cert). Namespaced to those sources so prepay/continuous-care/founding grants are
     unaffected."""
     if not email:
         return False
     now = datetime.datetime.utcnow().isoformat()
-    srcs = _tier_sources() + (LIFETIME_SOURCE,) + GROUP_BONUS_SOURCES
+    # include_bonus=False is for the paid-order grant hooks: a dated bonus grant is not a
+    # paid membership, so paying for one must still write a grant, and a Biofield buyer
+    # keeps the care-taster month (review round 1; Glen ruled on the group only).
+    srcs = _tier_sources() + (LIFETIME_SOURCE,) + (GROUP_BONUS_SOURCES if include_bonus else ())
     ph = ",".join("?" * len(srcs))
     row = cx.execute(
         f"SELECT 1 FROM memberships WHERE lower(email)=lower(?) "
