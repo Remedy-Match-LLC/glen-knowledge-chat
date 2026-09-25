@@ -1844,7 +1844,8 @@
     "copy_pinned": [
       "ingredients",
       "intro",
-      "description"
+      "description",
+      "benefits"
     ]
   },
   "ocuheal-plus-eye-drops": {
@@ -1920,7 +1921,7 @@
         "dose": "5C"
       }
     ],
-    "ingredients_source": "production-listing-spec-2026-09-24",
+    "ingredients_source": "production-listing-spec-2026-09-24, carnosine 1% 2026-09-25",
     "directions": "1 drop in each eye 2 times a day.",
     "description": "OcuHeal+ is OcuHeal Eye Drops with more DMSO. It carries the same botanical and nutritional ingredients for the whole eye, including the retina, lens, cornea, conjunctiva, lacrimal glands and tear film. DMSO rises from 0.5% to 10%, and the Quinton sea water base (Quintessential Bioterrain Restore) makes room for it, from 96% to 86.5%. Use 1 drop in each eye 2 times a day.",
     "bottle_type": "Dropper 5 mL",

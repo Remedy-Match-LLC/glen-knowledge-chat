@@ -34,17 +34,33 @@ OCU_TEXT = ("OcuHeal Eye Drops carry botanical and nutritional ingredients for t
             "eye 2 times a day.")
 
 
-@pytest.fixture(scope="module")
-def client():
-    mp = pytest.MonkeyPatch()
-    mp.setenv("SALES_PAGES_ENABLED", "true")
-    mp.setenv("OPENAI_API_KEY", "sk-fake")
-    mp.setenv("PINECONE_API_KEY", "pcsk_fake")
-    import app as appmod
-    importlib.reload(appmod)
-    appmod.app.config["TESTING"] = True
-    yield appmod.app.test_client()
-    mp.undo()
+STALE = "STALE AI DRAFT TEXT"
+
+
+@pytest.fixture
+def appmod(monkeypatch, tmp_path):
+    """AI drafts ON and a stale draft seeded for every narrative section, so a passing
+    pin test proves the pin (round 1: without SALES_PAGES_AI_COPY no draft is ever
+    considered, and the pin tests passed with copy_pinned removed)."""
+    import sqlite3
+    monkeypatch.setenv("DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("SALES_PAGES_ENABLED", "true")
+    monkeypatch.setenv("SALES_PAGES_AI_COPY", "true")
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-fake")
+    monkeypatch.setenv("PINECONE_API_KEY", "pcsk_fake")
+    import app as a
+    importlib.reload(a)
+    a.app.config["TESTING"] = True
+    from dashboard import sales_pages as sp
+    with sqlite3.connect(a.LOG_DB) as cx:
+        for slug in EXPECTED:
+            for sec in ("intro", "description", "research"):
+                sp.upsert_section(cx, slug, sec, STALE)
+    return a
+
+
+def _get(a, slug):
+    return a.app.test_client().get(f"/begin/product-page-data/{slug}").get_json()
 
 
 def _section(data, sid):
@@ -52,46 +68,73 @@ def _section(data, sid):
 
 
 def _pairs(data):
-    ings = _section(data, "ingredients")["body"]["ingredients"]
-    return [(i["name"], i["dose"]) for i in ings]
+    return [(i["name"], i["dose"]) for i in _section(data, "ingredients")["body"]["ingredients"]]
 
 
 @pytest.mark.parametrize("slug", sorted(EXPECTED))
-def test_the_page_serves_exactly_the_bottle_panel(client, slug):
-    got = _pairs(client.get(f"/begin/product-page-data/{slug}").get_json())
+def test_the_page_serves_exactly_the_bottle_panel(appmod, slug):
+    got = _pairs(_get(appmod, slug))
     assert all(dose for _n, dose in got), "an empty dose is a failure"
     assert got == EXPECTED[slug]
 
 
-def test_only_dmso_and_the_base_differ():
-    a, b = EXPECTED["ocuheal-eye-drops"], EXPECTED["ocuheal-plus-eye-drops"]
-    diff = {n for n, d in a if dict(b).get(n) != d}
-    assert diff == {"Quintessential Bioterrain Restore", "DMSO (Dimethylsulfoxide)"}
+def test_only_dmso_and_the_base_differ_on_the_served_pages(appmod):
+    a = dict(_pairs(_get(appmod, "ocuheal-eye-drops")))
+    b = dict(_pairs(_get(appmod, "ocuheal-plus-eye-drops")))
+    assert {n for n in a if a[n] != b.get(n)} == {"Quintessential Bioterrain Restore",
+                                                   "DMSO (Dimethylsulfoxide)"}
 
 
-def test_the_equality_check_catches_one_wrong_percentage():
-    """Spec: prove the check by running it once with one percentage wrong."""
-    wrong = [(n, "0.5%" if n == "N-Acetyl L-Carnosine" else d) for n, d in EXPECTED["ocuheal-eye-drops"]]
-    assert wrong != EXPECTED["ocuheal-eye-drops"]
-    assert wrong[:15] != EXPECTED["ocuheal-eye-drops"][:15]
+def test_the_equality_check_catches_one_wrong_percentage(appmod, monkeypatch):
+    """Spec: prove the check once with one percentage wrong, through the endpoint."""
+    import copy
+    prods = copy.deepcopy(appmod._PRODUCTS)
+    for i in prods["products"]["ocuheal-eye-drops"]["ingredients"]:
+        if i["name"] == "N-Acetyl L-Carnosine":
+            i["dose"] = "0.5%"
+    monkeypatch.setattr(appmod, "_PRODUCTS", prods)
+    assert _pairs(_get(appmod, "ocuheal-eye-drops")) != EXPECTED["ocuheal-eye-drops"]
 
 
-def test_ocuheal_serves_its_approved_text_pinned(client):
-    data = client.get("/begin/product-page-data/ocuheal-eye-drops").get_json()
+def test_ocuheal_serves_its_approved_text_over_a_stale_draft(appmod):
+    data = _get(appmod, "ocuheal-eye-drops")
     for sid in ("intro", "description"):
         sec = _section(data, sid)
-        assert "ai" not in sec, f"{sid} must be pinned, not a cached draft"
-        assert OCU_TEXT in str(sec["body"]), sid
+        assert "ai" not in sec, f"{sid} must be pinned"
+        assert OCU_TEXT in str(sec["body"]) and STALE not in str(sec["body"]), sid
     assert _section(data, "ingredients")["body"]["directions"] == "1 drop in each eye 2 times a day."
-    text = str(data)
+    shown = str([_section(data, s)["body"] for s in ("intro", "description", "ingredients")])
     for stale in ("levetates", "Quintessential Terrain Restore) 96%", "(10 ppm)", "mirifica"):
-        assert stale not in text, stale
+        assert stale not in shown, stale
 
 
-def test_ocuheal_plus_serves_its_approved_intro_pinned(client):
+def test_ocuheal_plus_serves_its_approved_intro_over_a_stale_draft(appmod):
     from tests.test_ocuheal_plus_listing import APPROVED_INTRO
-    data = client.get("/begin/product-page-data/ocuheal-plus-eye-drops").get_json()
+    data = _get(appmod, "ocuheal-plus-eye-drops")
     for sid in ("intro", "description"):
         sec = _section(data, sid)
         assert "ai" not in sec, sid
-        assert APPROVED_INTRO in str(sec["body"]), sid
+        assert APPROVED_INTRO in str(sec["body"]) and STALE not in str(sec["body"]), sid
+
+
+def test_research_is_left_alone_until_knowledge_replaces_the_copy(appmod):
+    """Spec: research and learn are a separate step; this change does not pin them."""
+    assert _section(_get(appmod, "ocuheal-eye-drops"), "research").get("ai") == "cached"
+
+
+def test_the_buy_page_shows_no_stale_generated_benefits_for_ocuheal(appmod):
+    """Round 1: /begin/buy reads /begin/product-data; OcuHeal's benefits came from the
+    stale cached card. Pinning benefits with no catalog list withholds them."""
+    from dashboard import product_content as pc
+    import pytest as _pt
+    mp = _pt.MonkeyPatch()
+    mp.setattr(pc, "LOG_DB", appmod.LOG_DB)
+    try:
+        pc._cache_put("ocuheal-eye-drops", "card",
+                      {"description": "", "ingredients": ["Cineraria maritima (10 ppm)"],
+                       "benefits": ["STALE BENEFIT FROM THE OLD CARD"]}, [])
+        assert pc._cache_get("ocuheal-eye-drops", "card"), "setup: the stale card must be cached"
+        data = appmod.app.test_client().get("/begin/product-data/ocuheal-eye-drops").get_json()
+        assert "STALE BENEFIT" not in str(data.get("benefits"))
+    finally:
+        mp.undo()
