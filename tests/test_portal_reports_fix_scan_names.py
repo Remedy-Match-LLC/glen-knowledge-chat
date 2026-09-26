@@ -155,3 +155,27 @@ def test_a_row_too_deep_to_walk_is_skipped_not_fatal(tmp_path):
     _one(cx, {"n": "voice scan"})
     out = pbr.fix_scan_names_in_reports(cx)
     assert len(out["skipped"]) == 1 and len(out["changed"]) == 1
+
+
+# ── blind review round 2, 2026-09-26 ────────────────────────────────────────
+
+def test_a_link_inside_prose_is_left_exactly_as_written(tmp_path):
+    cx = sqlite3.connect(str(tmp_path / "t.db"))
+    _one(cx, {"greeting": "Watch https://x.com/e4l-voice-scan-guide before your voice scan review.",
+              "md": "See [the guide](https://x.com/voice-scan-2026.pdf) about the voice scan.",
+              "html": 'Open <a href="/files/voice-scan.pdf">the voice scan notes</a>.'})
+    pbr.fix_scan_names_in_reports(cx, apply=True)
+    c = json.loads(cx.execute("SELECT content_json FROM portal_biofield_reports").fetchone()[0])
+    assert c["greeting"] == ("Watch https://x.com/e4l-voice-scan-guide before your "
+                             "Bioenergetic Wellness Scan review.")
+    assert c["md"] == ("See [the guide](https://x.com/voice-scan-2026.pdf) about the "
+                       "Bioenergetic Wellness Scan.")
+    assert c["html"] == 'Open <a href="/files/voice-scan.pdf">the Bioenergetic Wellness Scan notes</a>.'
+
+
+def test_five_elements_as_a_plain_phrase_does_not_block_the_report(tmp_path):
+    cx = sqlite3.connect(str(tmp_path / "t.db"))
+    _one(cx, {"remedy": "Five Elements Tea", "narrative": "Your voice scan showed it."})
+    out = pbr.fix_scan_names_in_reports(cx, apply=True)
+    c = json.loads(cx.execute("SELECT content_json FROM portal_biofield_reports").fetchone()[0])
+    assert c["narrative"] == "Your Bioenergetic Wellness Scan showed it." and out["left_for_glen"] == []

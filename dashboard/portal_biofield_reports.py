@@ -133,13 +133,29 @@ def _looks_like_link(text):
                                          bool(re.search(r"\.[a-z0-9]{2,4}$", t, re.I)))
 
 
+# A web address, markdown link target or href inside prose is left exactly as written;
+# only the words around it are renamed (review round 2).
+_LINK_SPAN = re.compile(r"""https?://[^\s)\]"'<>]+|\]\([^)]*\)|href=["'][^"']*["']|"""
+                        r"""(?<![\w])/[\w./-]*voice[-_]scan[\w./-]*""", re.IGNORECASE)
+
+
+def _fix_prose(text, fix):
+    out, last = [], 0
+    for m in _LINK_SPAN.finditer(text):
+        out.append(fix(text[last:m.start()]) if m.start() > last else "")
+        out.append(m.group(0))
+        last = m.end()
+    out.append(fix(text[last:]) if last < len(text) else "")
+    return "".join(out)
+
+
 def _rewrite_strings(value, fix, path="", key=""):
     """Apply fix to every prose string inside a JSON-shaped value.
     Returns (new value, [changed field paths])."""
     if isinstance(value, str):
         if key.lower() in _LINK_KEYS or _looks_like_link(value):
             return value, []
-        new = fix(value)
+        new = _fix_prose(value, fix)
         return new, ([path or "."] if new != value else [])
     if isinstance(value, list):
         out, paths = [], []
@@ -156,6 +172,12 @@ def _rewrite_strings(value, fix, path="", key=""):
             paths += p
         return out, paths
     return value, []
+
+
+# The report names Glen's own instrument: "Five Element" beside "voice", in either order.
+# A plain "5 elements" or a product like "Five Elements Tea" does not count (review round 2).
+_FIVE_VOICE = re.compile(r"(?:five|5)[\s-]*elements?\W{0,6}voice|voice[\s-]+scans?\W{0,6}\(?\s*"
+                         r"(?:five|5)[\s-]*element", re.IGNORECASE)
 
 
 def _any_string(value, pred):
@@ -182,8 +204,7 @@ def fix_scan_names_in_reports(cx, *, apply=False):
     that names the Five Element Voice Scan anywhere keeps every bare "voice scan" and
     is listed for Glen. Returns {"rows", "changed", "left_for_glen", "raced", "skipped"};
     each item is {"id", "scan_date", "status", "fields"}: no email, no text."""
-    from dashboard.narrative_grounding import (
-        MENTIONS_FIVE, fix_scan_names, scan_name_problems)
+    from dashboard.narrative_grounding import fix_scan_names, scan_name_problems
     init_table(cx)
     rows = cx.execute("SELECT id, scan_date, content_json, status "
                       "FROM portal_biofield_reports ORDER BY id").fetchall()
@@ -192,7 +213,7 @@ def fix_scan_names_in_reports(cx, *, apply=False):
         item = {"id": rid, "scan_date": scan_date, "status": status}
         try:
             content = json.loads(cj or "{}")
-            five = _any_string(content, MENTIONS_FIVE.search)
+            five = _any_string(content, _FIVE_VOICE.search)
             new, fields = _rewrite_strings(content, lambda t: fix_scan_names(t, five))
             if _any_string(new, lambda t: scan_name_problems(t) or (
                     five and fix_scan_names(t) != t)):
