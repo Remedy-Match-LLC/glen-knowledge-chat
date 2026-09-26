@@ -124,6 +124,10 @@ def _numbered_segments(text, layers):
             numbered.append((int(m.group(1)), start, m.end()))
     if [k for k, _, _ in numbered] != list(range(1, n + 1)):
         return None
+    # A layer's remedy named before "1." means the numbers are something else, such as
+    # a closing "What to do" list (blind review round 3).
+    if any(_has_cue(text[:numbered[0][1]], layer) for layer in layers):
+        return None
     segs = []
     for i, (_, _, body) in enumerate(numbered):
         stop = numbered[i + 1][1] if i + 1 < n else len(text)
@@ -177,7 +181,9 @@ def segment_narrative(narrative, layers):
     segs = []
     for i, start in enumerate(positions):
         end = positions[i + 1] if i + 1 < len(positions) else len(text)
-        segs.append(_NUM_PREFIX.sub("", text[start:end].strip(), count=1))
+        seg = text[start:end].strip()
+        lead = _NUM_PREFIX.match(seg)         # only at the card's start, never a list inside
+        segs.append(seg[lead.end():] if lead else seg)
     return segs
 
 

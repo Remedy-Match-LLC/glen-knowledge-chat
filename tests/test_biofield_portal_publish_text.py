@@ -149,3 +149,26 @@ def test_a_markdown_heading_number_is_stripped():
     narr = "### 1. Vitality here.\n\n### 2. Chelation here.\n\n### 3. Nous Energy here."
     assert bpp.segment_narrative(narr, LAYERS3) == [
         "Vitality here.", "Chelation here.", "Nous Energy here."]
+
+
+# Blind review round 3, 2026-09-25: two regressions against main.
+def test_a_closing_action_list_does_not_replace_the_layer_text():
+    one = [{"remedy": "Liver Flow", "head": "Liver"}]
+    narr = ("Aloha Jane,\n\nYour liver is carrying old congestion. Liver Flow opens bile flow "
+            "over six weeks.\n\nWhat to do:\n\n1. Take Liver Flow twice daily with food.\n"
+            "2. Drink two litres of water.\n\nWarmly, Glen")
+    seg = bpp.segment_narrative(narr, one)[0]
+    assert "opens bile flow over six weeks" in seg, seg
+    two = [{"remedy": "Liver Flow", "head": "Liver"}, {"remedy": "Kidney Tonic", "head": "Kidney"}]
+    narr2 = ("Aloha,\n\nLiver Flow opens the liver.\n\nKidney Tonic supports the kidneys.\n\n"
+             "Next steps:\n\n1. Start Liver Flow now.\n\n2. Add Kidney Tonic after two weeks.\n\nWarmly")
+    segs = bpp.segment_narrative(narr2, two)
+    assert segs[0].startswith("Liver Flow opens the liver.") and segs[1].startswith("Kidney Tonic supports")
+
+
+def test_the_fallback_keeps_a_list_inside_a_card():
+    two = [{"remedy": "Liver Flow", "head": "Liver"}, {"remedy": "Kidney Tonic", "head": "Kidney"}]
+    narr = ("Dear Jane,\n\nLiver Flow opens the liver. Take it as follows:\n1. morning with food\n"
+            "2. evening\n\nKidney Tonic supports kidneys. Steps:\n1. drink water\n2. rest")
+    segs = bpp.segment_narrative(narr, two)
+    assert "\n1. morning with food" in segs[0] and "\n1. drink water" in segs[1], segs
