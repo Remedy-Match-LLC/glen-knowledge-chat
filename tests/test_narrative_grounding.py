@@ -417,4 +417,15 @@ def test_a_bare_voice_scan_beside_the_five_element_scan_is_left_for_glen():
     t = "Your Five Element Voice Scan showed Water weakness. The voice scan also showed a weak Kidney tone."
     assert ng.fix_scan_names(t) == t
     assert ng.scan_name_problems(t) != []
-    assert ng.scan_name_problems("The voice scan showed it.") == []
+    assert ng.scan_name_problems("The voice scan showed it.") != []   # renamed, and flagged when saved
+
+
+
+# Clinical, 2026-09-25: saved letters said "the fresh E4L Voice Scan", "your recent voice
+# scan". A check that only corrects at generation never flagged them.
+def test_saved_voice_scan_wording_is_flagged_in_any_case():
+    for t in ("the fresh E4L Voice Scan", "your recent voice scan showing",
+              "as corroborated by your recent voice scan.", "Your recent E4L Voice Scan"):
+        assert any("Bioenergetic Wellness Scan" in p for p in ng.scan_name_problems(t)), t
+    assert ng.scan_name_problems("Your Bioenergetic Wellness Scan showed it.") == []
+    assert ng.scan_name_problems("Your Five Element Voice Scan showed it.") == []

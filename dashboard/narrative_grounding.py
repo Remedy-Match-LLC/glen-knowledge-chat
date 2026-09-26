@@ -76,11 +76,16 @@ def _rename(m, text, bare=False):
 
 
 def scan_name_problems(text):
-    """A bare "voice scan" left alone because the letter also names the Five Element
-    Voice Scan: only Glen can say which instrument it means (review round 3)."""
-    if not _MENTIONS_FIVE.search(text or ""):
-        return []
+    """Scan names a client must not read. Any wording fix_scan_names would change is
+    reported, so a letter saved or edited by hand is caught on save and page load, not
+    only at generation (clinical, 2026-09-25: 29 of 37 saved letters said "voice scan").
+    A bare "voice scan" beside the Five Element Voice Scan is left for Glen to name."""
     out = []
+    fixed = fix_scan_names(text or "")
+    if fixed != (text or ""):
+        out.append(f"Says 'voice scan'; E4L's scan is the {WELLNESS_SCAN}.")
+    if not _MENTIONS_FIVE.search(text or ""):
+        return out
     for m in _SCAN_NAME_PATTERNS[-1].finditer(text or ""):
         if not _is_five_element(m, text):
             out.append("Says 'voice scan' beside the Five Element Voice Scan. Name which "
