@@ -24,7 +24,7 @@ def test_client_name_header_is_at_top_of_portal():
 
 
 def test_hub_places_where_you_are_before_the_onboarding_checklist():
-    banner = HTML.index('<div class="hub-banner"><div class="where">')
+    banner = HTML.index('<div class="hub-banner" data-fold-id="home-where-you-are" data-fold-open="1"><div class="where">')
     slot = HTML.index('id="portal-onboarding-slot"')
     calendar = HTML.index('${buildCalendarHtml(v,true)}', banner)
 
