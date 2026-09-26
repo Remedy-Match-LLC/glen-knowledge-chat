@@ -17,7 +17,7 @@ PAGE = ROOT / "static" / "client-portal.html"
 GLUE = ("foldSlug", "_foldWireClickOnce", "_foldWireLifecycleOnce", "_foldIdOf",
         "_foldCardsByDoor", "_foldDoorVisible", "_foldSetCard", "_foldApplyAll", "_foldToggle",
         "_foldClearLegacy", "_foldLoad", "_foldRefresh", "_foldSave", "_foldPut", "_foldFlush",
-        "wirePortalFolds", "_foldUseLocalDefault", "_foldBars", "_foldBarClick", "_foldAllOrRestore", "_foldMatchClient")
+        "wirePortalFolds", "_foldUseLocalDefault", "_foldOpenCard", "_foldDoorShown", "_foldBars", "_foldBarClick", "_foldAllOrRestore", "_foldMatchClient")
 
 
 def _fn_source(name):
@@ -162,6 +162,22 @@ __FNS__
   assert.deepStrictEqual(_foldsV2.state.seen, ['scans']);
   runTimers();
   assert.strictEqual(putCalls().length, 1);
+
+  // 2b. showing a door marks it seen and applies its default (final review round 3)
+  const sec2 = body.appendChild(el('SECTION')); sec2.setAttribute('data-door', 'billing'); sec2.hidden = true;
+  const inv = card('inv-1', 'Your invoice'); sec2.appendChild(inv);
+  const inv2 = card('inv-2', 'Your invoice'); sec2.appendChild(inv2);
+  wirePortalFolds();
+  assert.ok(_foldsV2.state.seen.indexOf('billing') === -1, 'hidden door must not be marked seen');
+  sec2.hidden = false;
+  _foldDoorShown();
+  assert.ok(_foldsV2.state.seen.indexOf('billing') !== -1, 'showing a door marks it seen');
+  // 2c. a deep link opens its card even when the default folded it
+  assert.ok(inv2.classList.contains('is-folded'));
+  _foldOpenCard('inv-2');
+  assert.ok(!inv2.classList.contains('is-folded'));
+  assert.strictEqual(_foldsV2.state.cards['inv-2'], false);
+  sec2.hidden = true;
 
   // 3. a card measuring 0px (hidden door) still gets its toggle: the 09-16 defect
   assert.strictEqual(toggles(p.c).length, 1);

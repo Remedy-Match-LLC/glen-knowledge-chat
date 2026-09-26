@@ -1268,6 +1268,8 @@ function terrainBanner(d, kind){
 // inline. Extracted so showDoor can trigger the same effects for every panel a
 // door reveals at once, and so the two routers cannot drift apart.
 function panelShown(name){
+  // A link to the intake form must land on it open, whatever the fold default did.
+  if (name === 'intake' && typeof _foldOpenCard === 'function') _foldOpenCard("portal-intake-card");
   // Task 7: fetch the suggestions queue every time the health panel becomes
   // active (fresh each visit -- a clinician or chat turn may have added one
   // since it was last open). loadHealthSuggestions() itself no-ops if
@@ -1327,6 +1329,7 @@ function showDoor(key, options){
     }catch(e){}
   }
   if(typeof window.mentorPageChanged === "function") window.mentorPageChanged(key);
+  if(typeof _foldDoorShown === "function") _foldDoorShown();
 }
 window.showDoor = showDoor;
 window.panelShown = panelShown;
@@ -2420,7 +2423,7 @@ function buildOrdersHtml(d){
     <div id="orders-basket" style="margin-top:1rem"></div>
   </div>`;
   invs.forEach(inv => {
-    body += `<div class="card invoice-card" data-fold-id="billing-invoice">
+    body += `<div class="card invoice-card" data-fold-id="billing-invoice-${foldSlug(inv.url || "")}">
       <h2>Your invoice</h2>
       <p>Amount due: <strong>$${esc(inv.amount_dollars)}</strong></p>
       <a class="btn" href="${esc(inv.link)}" target="_blank" rel="noopener">View &amp; pay invoice</a>
@@ -4350,7 +4353,7 @@ function render(d, v){
       inner = `<a class="btn" href="${esc(d.video.url)}" target="_blank" rel="noopener">${esc(d.video.label||"Watch your video")}</a>`;
     }
     part("scans", `
-      <div class="card video-card" data-fold-id="scans-video-message">
+      <div class="card video-card" data-fold-id="scans-video-message-${foldSlug(d.scan_date || "")}">
         <h2>Your personal message from Dr. Glen</h2>
         ${inner}
       </div>`);
@@ -4376,7 +4379,7 @@ function render(d, v){
   if(!d.scan_history_enabled && Array.isArray(d.invoices) && d.invoices.length){
     d.invoices.forEach(function(inv){
       part("billing", `
-        <div class="card invoice-card" data-fold-id="scans-invoice">
+        <div class="card invoice-card" data-fold-id="scans-invoice-${foldSlug(inv.url || "")}">
           <h2>Your invoice</h2>
           <p>Amount due: <strong>$${esc(inv.amount_dollars)}</strong></p>
           <a class="btn" href="${esc(inv.link)}" target="_blank" rel="noopener">View &amp; pay invoice</a>
@@ -4451,7 +4454,7 @@ function render(d, v){
     const line = capped
       ? "Still working on your Biofield Analysis, we'll text you the moment it's ready."
       : "This usually takes about a minute. It will appear right here.";
-    part("scans", `<div class="card prep" id="biofield-section"><h2>Preparing your Biofield Analysis…</h2>
+    part("scans", `<div class="card prep" id="biofield-section" data-fold-id="biofield-prep-${foldSlug(d.scan_date || "")}"><h2>Preparing your Biofield Analysis…</h2>
       ${capped ? "" : '<div class="spinner" aria-hidden="true"></div>'}
       <p class="prepline">${esc(line)}</p></div>`);
     // Kick the producer once per page load, then poll.
@@ -4561,7 +4564,7 @@ function render(d, v){
       const cta = actionable
         ? `<button class="btn full" id="bfInterestBtn" data-scan="${esc(curDate||"")}">View your scan analysis</button>`
         : `<p class="scan-old">This analysis is from an earlier scan.</p>`;
-      part("scans", `<div class="card primary" id="biofield-section"><h2>Your scan analysis</h2>
+      part("scans", `<div class="card primary" id="biofield-section" data-fold-id="biofield-${foldSlug(d.scan_date || "")}"><h2>Your scan analysis</h2>
         ${tabs}
         ${patternsBlock}
         ${bf.greeting?`<div class="muted${rvlCls}" style="margin:.1rem 0 .6rem${firstTime?";animation-delay:"+(findingsCount*120+300)+"ms":""}">${escGreeting(bf.greeting)}</div>`:""}
@@ -4637,7 +4640,7 @@ function render(d, v){
           const badge = document.getElementById("rr-new");
           if (badge) badge.remove();
         };
-        part("scans", `<div class="card" id="biofield-section">
+        part("scans", `<div class="card" id="biofield-section" data-fold-id="biofield-${foldSlug(d.scan_date || "")}-path">
           <div class="rr-header" data-scan="${esc(sd)}" style="display:flex;align-items:center;gap:10px;cursor:pointer">
             <strong>Biofield report — ${esc(sd || "")}</strong>
             ${isNew ? `<span id="rr-new" style="background:#d4a843;color:#000;font-size:.72rem;font-weight:700;padding:1px 7px;border-radius:10px">New</span>` : ""}
@@ -4647,7 +4650,7 @@ function render(d, v){
         </div>`);
       } else {
         // flag off: existing report body markup, unchanged
-        part("scans", `<div class="card" id="biofield-section"><h2>Your healing path</h2>
+        part("scans", `<div class="card" id="biofield-section" data-fold-id="biofield-${foldSlug(d.scan_date || "")}-path"><h2>Your healing path</h2>
           ${reportBody}</div>`);
       }
     }
@@ -8714,6 +8717,22 @@ function _foldMatchClient(){
       var btns = document.querySelectorAll(".fold-bar-match");
       for(var i = 0; i < btns.length; i++) btns[i].setAttribute("title", "Could not load the client's view");
     });
+}
+
+// A page just came into view: mark it seen and apply its layout now, not at the next
+// poll. Without this, switching pages never marked any page seen (final review).
+function _foldDoorShown(){
+  if(_foldsV2 && typeof _foldsV2 === "object") _foldApplyAll();
+}
+
+// Opens one card by name and saves it, e.g. when a link leads straight to it.
+function _foldOpenCard(id){
+  if(!_foldsV2 || typeof _foldsV2 !== "object") return;
+  if(_foldsV2.state.cards[id] === false) return;
+  _foldRev++;
+  _foldsV2.state = window.PortalFolds.setCard(_foldsV2.state, id, false);
+  _foldApplyAll();
+  _foldSave();
 }
 
 // Runs after every render. Until the record arrives the page shows its default layout.

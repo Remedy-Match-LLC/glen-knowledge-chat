@@ -56,3 +56,21 @@ def test_the_chat_card_never_folds():
     """Review round 2: a folded chat card hid the client's question and its answer."""
     page = (ROOT / "static" / "client-portal.html").read_text()
     assert re.search(r'id="chatCard"[^>]*data-fold-skip="1"|data-fold-skip="1"[^>]*id="chatCard"', page)
+
+
+
+def test_invoices_and_scan_cards_are_named_per_invoice_and_per_scan():
+    """Final review round 3: one fixed name let a new invoice inherit the old one's fold,
+    and each new scan's video and analysis inherit the last."""
+    page = (ROOT / "static" / "client-portal.html").read_text()
+    assert page.count('data-fold-id="billing-invoice-${foldSlug(inv.url') == 1
+    assert page.count('data-fold-id="scans-invoice-${foldSlug(inv.url') == 1
+    assert 'data-fold-id="scans-video-message-${foldSlug(d.scan_date' in page
+    assert page.count('data-fold-id="biofield-${foldSlug(d.scan_date') >= 3
+
+
+def test_the_intake_link_opens_the_intake_card():
+    page = (ROOT / "static" / "client-portal.html").read_text()
+    body = page[page.index("function panelShown(name){"):]
+    body = body[:body.index("\n}") + 2]
+    assert "_foldOpenCard(\"portal-intake-card\")" in body
