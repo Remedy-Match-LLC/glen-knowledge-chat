@@ -57,3 +57,12 @@ def test_a_house_bottled_product_keeps_its_miron_story(appmod):
     d = _page(appmod, "apoptogenesis")
     assert "comparison" in [s["id"] for s in d["sections"]]
     assert d["miron_assets"]
+
+
+def test_no_empty_watch_section_when_the_miron_video_is_withheld():
+    ids = [s["id"] for s in filter_sections(SECTIONS, has_ingredients=True, has_own_video=False,
+                                            in_miron=False)]
+    assert "video" not in ids
+    ids = [s["id"] for s in filter_sections(SECTIONS, has_ingredients=True, has_own_video=True,
+                                            in_miron=False)]
+    assert "video" in ids

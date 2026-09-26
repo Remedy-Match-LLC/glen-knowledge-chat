@@ -29,6 +29,8 @@ def filter_sections(sections, *, has_ingredients, has_own_video, is_service=Fals
     drop = set()
     if not in_miron:
         drop.add("comparison")
+        if not has_own_video:
+            drop.add("video")      # its only video was the Miron clip, now withheld
     if not has_ingredients:
         drop |= set(FORMULATION_ONLY)
         if not has_own_video:
