@@ -206,4 +206,25 @@ def test_panel_note_counts_as_ingredient_text(monkeypatch):
     monkeypatch.setattr(bn, "_catalog_product", lambda name: fake)
     lines = bn._ingredient_lines("Moisturize")
     assert any("Green Tea" in l for l in lines)
-    assert "Green Tea" in bn._pathways_source("Moisturize")
+    # the writer's pathways never present blend contents (Bioavailability Blend is an adjunct)
+    assert "Green Tea" not in bn._pathways_source("Moisturize")
+
+
+# Review round 2 of the catalog PR: a panel_note is ingredient text only when it holds a
+# blend's contents, and the writer never presents a blend's contents as pathways.
+def test_a_non_blend_panel_note_is_not_ingredient_text(monkeypatch):
+    import dashboard.biofield_narrative as bn
+    fake = {"name": "Fibrolysis Factors", "ingredients_source": "manual",
+            "ingredients": [{"name": "Serrapeptase"}], "panel_note": "Synergistic with Glutathione Syntropy."}
+    monkeypatch.setattr(bn, "_catalog_product", lambda name: fake)
+    assert bn._ingredient_lines("Fibrolysis Factors") == ["Serrapeptase"]
+
+
+def test_blend_contents_count_for_the_check_but_not_the_writers_pathways(monkeypatch):
+    import dashboard.biofield_narrative as bn
+    fake = {"name": "Curcu Guard", "ingredients_source": "label-read-2026-09-26",
+            "ingredients": [{"name": "Curcumin"}, {"name": "Bioavailability Blend"}],
+            "panel_note": "Bioavailability Blend (34.5 mg): Piperine (Piper nigrum), EGb 761 (Ginkgo biloba)"}
+    monkeypatch.setattr(bn, "_catalog_product", lambda name: fake)
+    assert any("Piperine" in l for l in bn._ingredient_lines("Curcu Guard"))
+    assert "Piperine" not in bn._pathways_source("Curcu Guard")

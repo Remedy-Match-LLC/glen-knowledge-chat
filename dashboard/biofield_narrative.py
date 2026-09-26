@@ -509,23 +509,28 @@ def _finish(text, report, animal):
 _UNTRUSTED_SOURCES = {"gk", "unverified"}
 
 
-def _trusted_ingredients(product):
-    """The product's ingredient entries, plus its panel_note as one more entry: blend
-    contents live there, not in the names (production, 2026-09-26). None when the list
-    is still an unverified GrooveKart scrape."""
+def _trusted_ingredients(product, with_blend=False):
+    """The product's ingredient entries. None when the list is still an unverified
+    GrooveKart scrape. with_blend: also the panel_note, but only when the panel lists a
+    blend, because that note holds the blend's contents (production, 2026-09-26). Other
+    notes ("Synergistic with Glutathione Syntropy") are not ingredients. The writer's
+    pathways never get it: a blend is an adjunct, not the product's own pathway."""
     src = str((product or {}).get("ingredients_source") or "").strip().lower()
     if src in _UNTRUSTED_SOURCES:
         return []
     items = list((product or {}).get("ingredients") or [])
     note = str((product or {}).get("panel_note") or "").strip()
-    if note:
+    has_blend = any("blend" in str((i or {}).get("name") or "").lower()
+                    for i in items if isinstance(i, dict))
+    if with_blend and note and has_blend:
         items.append({"name": note})
     return items
 
 
 def _ingredient_lines(name):
     return [str(i.get("name") or "").strip()
-            for i in _trusted_ingredients(_catalog_product(name)) if isinstance(i, dict)]
+            for i in _trusted_ingredients(_catalog_product(name), with_blend=True)
+            if isinstance(i, dict)]
 
 
 def _safe_problems(text, report):
