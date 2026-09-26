@@ -387,16 +387,27 @@ def test_a_folded_card_keeps_its_toggle_visible():
 
 
 def test_the_setting_off_styling_is_exactly_mains():
-    """Spec: with the setting off the old code path runs unchanged. Every new style rule is
-    scoped under body.folds-v2, which is only set once the server record is live."""
-    import subprocess as sp
-    main = sp.run(["git", "show", "origin/main:static/client-portal.html"], cwd=ROOT,
-                  capture_output=True, text=True).stdout
-    for rule in (".card-fold{float:right;", ".card.is-folded > *:not(h2):not(h3){display:none}",
-                 ".card.is-folded{padding-bottom:14px}"):
-        assert rule in main and rule in PAGE.read_text(), rule
-    new = [l for l in PAGE.read_text().splitlines() if "fold" in l and "{" in l and l.startswith("  .")]
-    assert not [l for l in new if l not in main], "an unscoped fold style was added"
+    """Spec: with the setting off the old code path runs unchanged. The legacy fold rules
+    are pinned below exactly as main had them, and every OTHER fold style rule must be
+    scoped under body.folds-v2, which is only set once the server record is live.
+    (No git here: CI's checkout has no origin/main.)"""
+    legacy = (
+        "  .card-fold{float:right;background:none;border:0;color:var(--muted);cursor:pointer;",
+        "  .card-fold:hover{color:var(--ink);background:var(--brand-soft)}",
+        "  .card.is-folded > *:not(h2):not(h3){display:none}",
+        "  .card.is-folded{padding-bottom:14px}",
+    )
+    older = ("  .calendar-fold{",)            # Live Events' own button, predates folding
+    page = PAGE.read_text()
+    css = page[page.index("<style>"):page.index("</style>")]
+    lines = css.splitlines()
+    for rule in legacy:
+        assert rule in lines, rule
+    styled = [l for l in lines if l.startswith("  ") and "{" in l and "fold" in l
+              and l.lstrip().startswith((".", "body"))]
+    stray = [l for l in styled if l not in legacy and not l.startswith(older)
+             and not l.lstrip().startswith("body.folds-v2 ")]
+    assert not stray, "an unscoped fold style was added: " + repr(stray)
 
 
 def test_the_page_loads_the_rules_module():
