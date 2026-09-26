@@ -124,9 +124,10 @@ def _numbered_segments(text, layers):
             numbered.append((int(m.group(1)), start, m.end()))
     if [k for k, _, _ in numbered] != list(range(1, n + 1)):
         return None
-    # A layer's remedy named before "1." means the numbers are something else, such as
-    # a closing "What to do" list (blind review round 3).
-    if any(_has_cue(text[:numbered[0][1]], layer) for layer in layers):
+    # Every layer already explained before "1." means the numbers are a recap, such as a
+    # closing "What to do" list (blind review round 3). An intro naming one or two
+    # remedies is normal and does not count.
+    if all(_has_cue(text[:numbered[0][1]], layer) for layer in layers):
         return None
     segs = []
     for i, (_, _, body) in enumerate(numbered):
