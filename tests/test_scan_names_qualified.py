@@ -4,7 +4,8 @@ Glen, 2026-09-18. There are two instruments and the bare phrase lets a client
 believe they got the other one:
 
     Bioenergetic Wellness Scan   Energy4Life's. Ten seconds, counting to ten.
-    Five Element Voice Scan      Glen's own.
+    Five Element Voice Analysis  Glen's own. Renamed from "Five Element Voice Scan" on
+                                 2026-09-26, so only Energy4Life's is ever a scan.
 
 "Bioenergetic Voice Analysis" and "E4L voice scan" are stale labels for the FIRST
 one, confirmed by Glen on the same day. Both were live.
@@ -22,7 +23,6 @@ STATIC = pathlib.Path(__file__).resolve().parent.parent / "static"
 # Full names that legitimately contain the words. Stripped before the check, so the
 # guard sees only the bare uses.
 ALLOWED = (
-    "Five Element Voice Scan",
     # Energy4Life's own menu label, quoted as theirs on begin-scan. Renaming it would
     # send a client hunting for a button that does not exist in their app.
     '"Voice Scan"',
@@ -57,7 +57,7 @@ def test_no_client_page_says_voice_scan_unqualified():
             offenders.append(f"{p.name}: ...{hit.strip()}...")
     assert not offenders, (
         "Glen 2026-09-18: name the instrument. Energy4Life's is the Bioenergetic "
-        "Wellness Scan, Glen's own is the Five Element Voice Scan:\n"
+        "Wellness Scan, Glen's own is the Five Element Voice Analysis:\n"
         + "\n".join(f"  {o}" for o in offenders))
 
 
@@ -87,7 +87,7 @@ def test_the_duration_check_can_fire():
     assert _thirty_second_claims(
         '<p>A quick Bioenergetic Wellness Scan reads you. It takes about 30 seconds.</p>')
     assert not _thirty_second_claims(
-        "<p>Speak naturally for 30 seconds.</p><h2>Five Element Voice Scan</h2>")
+        "<p>Speak naturally for 30 seconds.</p><h2>Five Element Voice Analysis</h2>")
 
 
 def test_the_renamed_pages_carry_the_real_name():
@@ -117,3 +117,11 @@ def test_portal_step_list_names_the_energy4life_scan():
     src = (STATIC.parent / "dashboard" / "portal_onboarding.py").read_text(encoding="utf-8")
     labels = re.findall(r'step\("voice",\s*"([^"]+)"', src)
     assert labels == ["Bioenergetic Wellness Scan"], labels
+
+
+def test_glens_instrument_carries_its_new_name():
+    """Glen, 2026-09-26: "Update name to Five Element Voice Analysis." A control, since
+    the guard above passes if the name is simply deleted."""
+    text = (STATIC / "client-portal.html").read_text(encoding="utf-8")
+    assert "Five Element Voice Analysis" in text
+    assert "Five Element Voice Scan" not in text

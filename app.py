@@ -36640,6 +36640,31 @@ def portal_group_join_return():
     return _redir("/portal/me?joined=1")
 
 
+@app.route("/admin/portal/biofield-reports/fix-scan-names", methods=["POST"])
+def admin_portal_reports_fix_scan_names():
+    """Rename E4L's scan to the Bioenergetic Wellness Scan inside stored portal reports.
+    Writes each report row's content only: no client_portals change, no status change,
+    no email. Dry run unless the body says {"apply": true}. Owner or console key only.
+    Glen, 2026-09-25, via clinical: "Let platform fix the older reports on portals."
+    """
+    if not _portal_open_is_owner():
+        return jsonify({"error": "unauthorized"}), 401
+    body = request.get_json(silent=True) or {}
+    apply = body.get("apply") is True
+    from dashboard import portal_biofield_reports as _pbr
+    with _db_lock, db.connect(LOG_DB) as cx:
+        out = _pbr.fix_scan_names_in_reports(cx, apply=apply)
+    return jsonify({"ok": True, "applied": apply, "rows": out["rows"],
+                    "changed": len(out["changed"]), "left_for_glen": len(out["left_for_glen"]),
+                    "raced": len(out["raced"]), "skipped": len(out["skipped"]),
+                    "changed_rows": out["changed"], "left_rows": out["left_for_glen"],
+                    "raced_rows": out["raced"], "skipped_rows": out["skipped"],
+                    "note": "changed = rows whose text is (or would be) renamed. left_for_glen "
+                            "= rows still holding scan wording for Glen to decide; a row can "
+                            "be in both. raced = edited by someone else mid-run, not written. "
+                            "skipped = unreadable, not written."})
+
+
 @app.route("/admin/portal/upsert", methods=["POST"])
 def admin_client_portal_upsert():
     """Seed/update a client portal on the live DB (the bridge, since Render can't

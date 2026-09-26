@@ -41,7 +41,9 @@ def clean_scan_description(desc):
 # ── scan names ──────────────────────────────────────────────────────────────
 
 _E4L = r"(?:E4L|Energy4Life|Energy 4 Life)[\s-]+"
-_SCAN_WORD = r"(?:scans?|scanning|analys[ie]s)"
+# "scanning" is not renamed: "during Bioenergetic Wellness Scan we saw" is not English.
+# It is left as written and reported by scan_name_problems (review, 2026-09-26).
+_SCAN_WORD = r"(?:scans?|analys[ie]s)"
 # Most specific first, so "E4L Bioenergetic Voice Scan" is replaced whole and no word
 # is doubled (blind review, 2026-09-25).
 _SCAN_NAME_PATTERNS = [
@@ -52,11 +54,14 @@ _SCAN_NAME_PATTERNS = [
 ]
 # Glen's own instrument, however it is formatted: "**Five Element** Voice Scan",
 # "Five Elements' Voice Scan", a line break between, or "voice scan (Five Element)".
+# Glen, 2026-09-26: it is now the Five Element Voice ANALYSIS, so only Energy4Life's is
+# ever a scan. Its old "Voice Scan" wording is renamed to that, never to E4L's name.
+FIVE_ELEMENT_NAME = "Voice Analysis"
 _FIVE_BEFORE = re.compile(r"(?:five|5)[\s-]*elements?['\u2019]?[\s*_'\u2019]*$", re.IGNORECASE)
 _FIVE_AFTER = re.compile(r"^[\s*_]*\(?\s*(?:five|5)[\s-]*element", re.IGNORECASE)
 
 
-_MENTIONS_FIVE = re.compile(r"(?:five|5)[\s-]*elements?", re.IGNORECASE)
+MENTIONS_FIVE = _MENTIONS_FIVE = re.compile(r"(?:five|5)[\s-]*elements?", re.IGNORECASE)
 
 
 def _is_five_element(m, text):
@@ -64,14 +69,43 @@ def _is_five_element(m, text):
                 or _FIVE_AFTER.search(text[m.end():m.end() + 30]))
 
 
-def _rename(m, text, bare=False):
+# "the E4L and Five Element voice scans" names BOTH instruments: renaming it as either
+# is wrong, so it is left and reported (review, 2026-09-26).
+_BOTH = re.compile(r"(?:E4L|Energy\s?4\s?Life|Bioenergetic)\W+(?:and|&|or)\W+(?:\*\*)?(?:five|5)"
+                   r"|(?:five|5)[\s-]*elements?\W+(?:and|&|or)\W+(?:E4L|Energy\s?4\s?Life|Bioenergetic)",
+                   re.IGNORECASE)
+
+
+def _is_glens(m, text):
+    """Glen's Five Element instrument alone, not a phrase naming both."""
+    window = text[max(0, m.start() - 45):m.end() + 45]
+    return _is_five_element(m, text) and not _BOTH.search(window)
+
+
+def _sentence_around(m, text):
+    start = max(text.rfind(c, 0, m.start()) for c in ".!?\n") + 1
+    ends = [i for i in (text.find(c, m.end()) for c in ".!?\n") if i != -1]
+    return text[start:min(ends) if ends else len(text)]
+
+
+def _rename(m, text, bare=False, five_context=False):
+    if _GLOSS.search(text[max(0, m.start() - 40):m.start()]):
+        return m.group(0)
     if _is_five_element(m, text):
+        # "Five Element Voice Scan" -> "Five Element Voice Analysis", plural kept. Only a
+        # bare "voice scan" match reaches here; E4L-qualified forms never sit beside it.
+        if not bare or not _is_glens(m, text):
+            return m.group(0)
+        return "Voice Analyses" if m.group(0).lower().endswith("scans") else FIVE_ELEMENT_NAME
+    # "Your Bioenergetic Wellness Scan (E4L voice scan)" would read the name twice.
+    # Left as written, and reported by scan_name_problems.
+    if WELLNESS_SCAN.lower() in _sentence_around(m, text).lower():
         return m.group(0)
     # A bare "voice scan" in a letter that also names the Five Element scan could be
     # either instrument. Leave it, and scan_name_problems tells Glen.
-    if bare and _MENTIONS_FIVE.search(text):
+    if bare and (five_context or _MENTIONS_FIVE.search(text)):
         return m.group(0)
-    plural = m.group(0).lower().endswith("scans")
+    plural = m.group(0).lower().endswith(("scans", "analyses"))
     return WELLNESS_SCAN + ("s" if plural else "")
 
 
@@ -79,27 +113,55 @@ def scan_name_problems(text):
     """Scan names a client must not read. Any wording fix_scan_names would change is
     reported, so a letter saved or edited by hand is caught on save and page load, not
     only at generation (clinical, 2026-09-25: 29 of 37 saved letters said "voice scan").
-    A bare "voice scan" beside the Five Element Voice Scan is left for Glen to name."""
+    A bare "voice scan" beside the Five Element Voice Analysis is left for Glen to name."""
     out = []
-    fixed = fix_scan_names(text or "")
-    if fixed != (text or ""):
-        out.append(f"Says 'voice scan'; E4L's scan is the {WELLNESS_SCAN}.")
-    if not _MENTIONS_FIVE.search(text or ""):
-        return out
-    for m in _SCAN_NAME_PATTERNS[-1].finditer(text or ""):
-        if not _is_five_element(m, text):
-            out.append("Says 'voice scan' beside the Five Element Voice Scan. Name which "
-                       "scan it means.")
+    text = text or ""
+    fixed = fix_scan_names(text)
+    if fixed != text:
+        out.append(f"Uses an old scan name. E4L's is the {WELLNESS_SCAN}; Glen's own is "
+                   f"the Five Element Voice Analysis.")
+    # Whatever the rename leaves behind still needs a person: beside the Five Element
+    # scan, a doubled name, or "voice scanning" (review, 2026-09-26).
+    for m in _ANY_VOICE.finditer(fixed):
+        glens_name = _is_glens(m, fixed) and m.group(0).lower().endswith(("analysis", "analyses"))
+        gloss = bool(_GLOSS.search(fixed[max(0, m.start() - 40):m.start()]))
+        if not glens_name and not gloss:
+            out.append(f"Still says '{m.group(0)}'. Name which scan it means.")
     return list(dict.fromkeys(out))
 
 
-def fix_scan_names(text):
+_ANY_VOICE = re.compile(r"\bvoice[\s-]+(?:scans?|scanning|analys[ie]s)\b", re.IGNORECASE)
+
+
+# Glen, 2026-09-26: a phrase naming both instruments is written out in full.
+BOTH_INSTRUMENTS = ("the Energy4Life (E4L) Bioenergetic Wellness Scan (voice scan) and our "
+                    "Five Element Voice Analysis")
+_E4L_FULL = "the Energy4Life (E4L) Bioenergetic Wellness Scan (voice scan)"
+_BOTH_E4L_FIRST = re.compile(
+    r"\b(?:the\s+)?(?:E4L|Energy\s?4\s?Life|Bioenergetic)\s+(?:and|&)\s+(?:\*\*)?(?:five|5)"
+    r"[\s-]*elements?(?:\*\*)?\s+voice[\s-]+(?:scans|analyses)\b", re.IGNORECASE)
+_BOTH_FIVE_FIRST = re.compile(
+    r"\b(?:the\s+|our\s+)?(?:\*\*)?(?:five|5)[\s-]*elements?(?:\*\*)?\s+(?:and|&)\s+"
+    r"(?:E4L|Energy\s?4\s?Life|Bioenergetic)\s+voice[\s-]+(?:scans|analyses)\b", re.IGNORECASE)
+# "(voice scan)" directly after E4L's full name is Glen's own gloss, and allowed.
+_GLOSS = re.compile(re.escape(WELLNESS_SCAN) + r"\s*\($", re.IGNORECASE)
+
+
+def fix_scan_names(text, five_context=False):
     """Every name for E4L's scan becomes the Bioenergetic Wellness Scan. Glen's own
-    Five Element Voice Scan is a different instrument and keeps its name."""
+    instrument is renamed from "Five Element Voice Scan" to the Five Element Voice
+    Analysis (Glen, 2026-09-26), never to E4L's name.
+    five_context: the surrounding document names the Five Element scan somewhere else,
+    so a bare "voice scan" here is left for Glen too (a report spans many fields)."""
     out = text or ""
+    out = _BOTH_E4L_FIRST.sub(BOTH_INSTRUMENTS, out)
+    out = _BOTH_FIVE_FIRST.sub("our Five Element Voice Analysis and " + _E4L_FULL, out)
     for i, pat in enumerate(_SCAN_NAME_PATTERNS):
         bare = i == len(_SCAN_NAME_PATTERNS) - 1
-        out = pat.sub(lambda m: _rename(m, out, bare), out)
+        out = pat.sub(lambda m: _rename(m, out, bare, five_context), out)
+    # "Voice Scan analysis" renamed would read "Voice Analysis analysis".
+    out = re.sub(r"\bVoice Analysis\s+analysis\b", "Voice Analysis", out)
+    out = re.sub(r"\bVoice Analys[ie]s\s+analyses\b", "Voice Analyses", out)
     return re.sub(r"\b([Aa])n (" + WELLNESS_SCAN + r")", r"\1 \2", out)
 
 

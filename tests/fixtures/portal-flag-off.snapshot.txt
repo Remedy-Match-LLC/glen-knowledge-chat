@@ -24,7 +24,7 @@
       <button class="btn" id="chatSend">Send</button>
     </div>
   </div><div class="card" id="fiveElementVoiceCard">
-    <h2>Your Five Element Voice Scan</h2>
+    <h2>Your Five Element Voice Analysis</h2>
     <p class="muted small" style="margin:.3rem 0 .7rem">Speak naturally for about a minute about how you have been feeling. Your words, pacing, and pauses are mapped across Wood, Fire, Earth, Metal, and Water.</p>
     <p class="small"><strong>Try this:</strong> “What has been taking most of my energy lately, and how does that feel in my body?”</p>
     <div class="five-voice-actions">
@@ -121,7 +121,7 @@
       <button class="btn" id="chatSend">Send</button>
     </div>
   </div><div class="card" id="fiveElementVoiceCard">
-    <h2>Your Five Element Voice Scan</h2>
+    <h2>Your Five Element Voice Analysis</h2>
     <p class="muted small" style="margin:.3rem 0 .7rem">Speak naturally for about a minute about how you have been feeling. Your words, pacing, and pauses are mapped across Wood, Fire, Earth, Metal, and Water.</p>
     <p class="small"><strong>Try this:</strong> “What has been taking most of my energy lately, and how does that feel in my body?”</p>
     <div class="five-voice-actions">
@@ -253,7 +253,7 @@
     </div>
   </div></section>
       <section data-panel="voice" hidden><button type="button" class="hub-back" onclick="showTab('hub')">‹ Back to hub</button><div class="card" id="fiveElementVoiceCard">
-    <h2>Your Five Element Voice Scan</h2>
+    <h2>Your Five Element Voice Analysis</h2>
     <p class="muted small" style="margin:.3rem 0 .7rem">Speak naturally for about a minute about how you have been feeling. Your words, pacing, and pauses are mapped across Wood, Fire, Earth, Metal, and Water.</p>
     <p class="small"><strong>Try this:</strong> “What has been taking most of my energy lately, and how does that feel in my body?”</p>
     <div class="five-voice-actions">
@@ -327,7 +327,7 @@
       <button class="btn" id="chatSend">Send</button>
     </div>
   </div><div class="card" id="fiveElementVoiceCard">
-    <h2>Your Five Element Voice Scan</h2>
+    <h2>Your Five Element Voice Analysis</h2>
     <p class="muted small" style="margin:.3rem 0 .7rem">Speak naturally for about a minute about how you have been feeling. Your words, pacing, and pauses are mapped across Wood, Fire, Earth, Metal, and Water.</p>
     <p class="small"><strong>Try this:</strong> “What has been taking most of my energy lately, and how does that feel in my body?”</p>
     <div class="five-voice-actions">
@@ -441,7 +441,7 @@
     </div>
   </div></section>
       <section data-panel="voice" hidden><button type="button" class="hub-back" onclick="showTab('hub')">‹ Back to hub</button><div class="card" id="fiveElementVoiceCard">
-    <h2>Your Five Element Voice Scan</h2>
+    <h2>Your Five Element Voice Analysis</h2>
     <p class="muted small" style="margin:.3rem 0 .7rem">Speak naturally for about a minute about how you have been feeling. Your words, pacing, and pauses are mapped across Wood, Fire, Earth, Metal, and Water.</p>
     <p class="small"><strong>Try this:</strong> “What has been taking most of my energy lately, and how does that feel in my body?”</p>
     <div class="five-voice-actions">

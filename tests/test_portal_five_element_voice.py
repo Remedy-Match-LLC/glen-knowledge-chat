@@ -103,7 +103,7 @@ def test_voice_analysis_rejects_invalid_duration(monkeypatch, tmp_db):
 
 def test_portal_template_contains_voice_card_and_hub_tile():
     html = (Path(__file__).resolve().parent.parent / "static" / "client-portal.html").read_text()
-    assert '"voice", "Five Element Voice Scan"' in html
+    assert '"voice", "Five Element Voice Analysis"' in html
     assert 'id="fiveElementVoiceCard"' in html
     assert "five-element-voice`" in html
     assert "navigator.mediaDevices.getUserMedia" in html
