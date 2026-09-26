@@ -473,13 +473,6 @@ def test_bioenergetic_voice_analysis_is_still_e4ls_scan():
 
 # ── review of the Five Element rename, 2026-09-26 ───────────────────────────
 
-def test_a_phrase_naming_both_instruments_is_left_and_flagged():
-    for t in ("We compared the E4L and Five Element voice scans.",
-              "the Energy4Life and 5-Element voice scans"):
-        assert ng.fix_scan_names(t) == t, t
-        assert ng.scan_name_problems(t) != [], t
-
-
 def test_no_doubled_analysis_and_plural_kept():
     assert ng.fix_scan_names("Your Five Element Voice Scan analysis shows Wood.") == (
         "Your Five Element Voice Analysis shows Wood.")
@@ -490,3 +483,26 @@ def test_no_doubled_analysis_and_plural_kept():
 def test_five_element_voice_scanning_is_flagged():
     t = "Your Five Element Voice Scanning session is booked."
     assert ng.scan_name_problems(t) != []
+
+
+# Glen, 2026-09-26: a phrase naming both instruments becomes "the Energy4Life (E4L)
+# Bioenergetic Wellness Scan (voice scan) and our Five Element Voice Analysis".
+BOTH = ("the Energy4Life (E4L) Bioenergetic Wellness Scan (voice scan) and our Five "
+        "Element Voice Analysis")
+
+
+def test_a_phrase_naming_both_instruments_gets_glens_wording():
+    for t in ("We compared the E4L and Five Element voice scans.",
+              "We compared the Energy4Life and 5-Element voice scans.",
+              "We compared E4L and Five Element voice scans."):
+        assert ng.fix_scan_names(t) == f"We compared {BOTH}.", t
+    assert ng.fix_scan_names("We compared the Five Element and E4L voice scans.") == (
+        "We compared our Five Element Voice Analysis and the Energy4Life (E4L) "
+        "Bioenergetic Wellness Scan (voice scan).")
+
+
+def test_glens_wording_is_clean_and_stable():
+    assert ng.scan_name_problems(f"We compared {BOTH}.") == []
+    assert ng.fix_scan_names(f"We compared {BOTH}.") == f"We compared {BOTH}."
+    # the parenthesis is allowed only right after E4L's full name
+    assert ng.scan_name_problems("Your results (voice scan) are in.") != []
