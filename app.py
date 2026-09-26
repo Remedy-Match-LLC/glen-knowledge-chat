@@ -25270,6 +25270,9 @@ def evox_run_reminders():
 
 @app.route("/portal/<token>")
 def client_portal_page(token):
+    sp = request.args.get("sp", "")
+    if sp:
+        return _redeem_staff_pass(token, sp)
     resp = send_from_directory(STATIC, "client-portal.html")
     # The portal shell contains its own recovery behavior and theme-safe error
     # styling. Never let a browser retain an older failure screen after a fix.
@@ -34308,6 +34311,9 @@ def api_console_portal_link():
         link, reissued = _cp.portal_link_for(cx, email, portal_base())
     if not link:
         return jsonify({"ok": True, "found": False, "email": email})
+    if _is_staff_request():
+        # A one-time staff pass, so the portal's own domain knows staff are viewing.
+        link += ("&" if "?" in link else "?") + "sp=" + _mint_staff_pass(email)
     return jsonify({"ok": True, "found": True, "email": email,
                     "link": link, "reissued": reissued})
 
@@ -42174,10 +42180,93 @@ def _cookie_console_key():
     return ""
 
 
+# ── Staff pass: the portal lives on another domain (PORTAL_BASE_URL), so the console
+#    login cookie never reaches it. The console's portal link carries a one-time pass,
+#    which the portal swaps for rm_staff_view. That cookie only RESTRICTS: it makes the
+#    browser ask first, skip background writes and show the banner. It opens nothing.
+#    Spec: docs/superpowers/specs/2026-09-26-portal-staff-guard-design.md
+STAFF_VIEW_COOKIE = "rm_staff_view"
+STAFF_VIEW_MAX_AGE = 12 * 60 * 60
+STAFF_PASS_TTL_MIN = 10
+
+
+def _staff_view_secret():
+    import dashboard as _dash
+    return CONSOLE_SECRET or _dash.CONSOLE_SECRET or ""
+
+
+def _staff_view_sig(exp):
+    return hmac.new(_staff_view_secret().encode("utf-8"), f"staff-view-v1|{exp}".encode(),
+                    hashlib.sha256).hexdigest()
+
+
+def _staff_view_cookie_ok():
+    """A valid, unexpired rm_staff_view cookie. Signed with the console secret, so
+    rotating the secret voids every copy."""
+    if not _staff_view_secret():
+        return False
+    exp_s, _, sig = (request.cookies.get(STAFF_VIEW_COOKIE, "") or "").partition(".")
+    try:
+        exp = int(exp_s)
+    except ValueError:
+        return False
+    if exp < int(time.time()):
+        return False
+    return hmac.compare_digest(sig, _staff_view_sig(exp))
+
+
+def _mint_staff_pass(email):
+    """A one-time pass, valid STAFF_PASS_TTL_MIN minutes, bound to one portal's email."""
+    tok = secrets.token_urlsafe(24)
+    now = _now_utc()
+    with _db_lock, db.connect(LOG_DB) as cx:
+        cx.execute("INSERT INTO auth_tokens (token_hash, email, purpose, created_at, expires_at) "
+                   "VALUES (?,?,?,?,?)",
+                   (_hash_token(tok), (email or "").strip().lower(), "staff_view_pass",
+                    now.isoformat(), (now + timedelta(minutes=STAFF_PASS_TTL_MIN)).isoformat()))
+        cx.commit()
+    return tok
+
+
+def _redeem_staff_pass(token, sp):
+    """Consume a pass for THIS portal, set rm_staff_view, and redirect to the same address
+    without the pass. A bad pass sets nothing and still strips itself from the address."""
+    from urllib.parse import urlencode
+    from dashboard import client_portal as _cp
+    rest = [(k, v) for k, v in request.args.items(multi=True) if k != "sp"]
+    resp = redirect(request.path + (("?" + urlencode(rest)) if rest else ""), code=302)
+    resp.headers["Cache-Control"] = "private, no-store, max-age=0"
+    try:
+        with _db_lock, db.connect(LOG_DB) as cx:
+            portal = _cp.get_portal_by_token(cx, token)
+            email = ((portal or {}).get("email") or "").strip().lower()
+            ok = False
+            if email and _staff_view_secret():
+                now = _now_utc().isoformat()
+                cur = cx.execute(
+                    "UPDATE auth_tokens SET consumed_at=? WHERE token_hash=? "
+                    "AND purpose='staff_view_pass' AND email=? AND consumed_at IS NULL "
+                    "AND expires_at>?", (now, _hash_token(sp), email, now))
+                ok = cur.rowcount == 1
+                cx.commit()
+        if ok:
+            exp = int(time.time()) + STAFF_VIEW_MAX_AGE
+            resp.set_cookie(STAFF_VIEW_COOKIE, f"{exp}.{_staff_view_sig(exp)}",
+                            max_age=STAFF_VIEW_MAX_AGE, httponly=True,
+                            secure=request.is_secure, samesite="Lax")
+        print(f"[staff-pass] redeemed={ok}", flush=True)
+    except Exception as e:
+        print(f"[staff-pass] {e!r}", flush=True)
+    return resp
+
+
 def _is_staff_request():
     """True when this request presents any valid console credential: the master key,
     or a per-user access token of ANY role, VAs included. Wider than
-    _portal_open_is_owner() on purpose: a VA must not act as a client unannounced."""
+    _portal_open_is_owner() on purpose: a VA must not act as a client unannounced.
+    A valid rm_staff_view cookie counts too, for the staff guard only."""
+    if _staff_view_cookie_ok():
+        return True
     key = _present_console_key()
     if not key:
         return False
