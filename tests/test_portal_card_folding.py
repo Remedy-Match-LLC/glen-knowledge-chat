@@ -183,9 +183,12 @@ console.log('OK');
 @pytest.mark.skipif(shutil.which("node") is None, reason="node not available")
 def test_card_folding_behaviour():
     fns = "\n".join(_fn_source(n) for n in
-                    ("_cardFoldKey", "_cardFoldRead", "_cardFoldWrite", "wireCardFolding"))
+                    ("_cardFoldKey", "_cardFoldRead", "_cardFoldWrite", "_foldWireClickOnce",
+                     "wireCardFolding"))
     # CARD_FOLD_MIN_PX is a var, not a function, so it is carried across explicitly.
-    fns = "var CARD_FOLD_MIN_PX = 320;\n" + fns
+    # _foldsV2 = false: this is the setting-off (legacy) path the server-backed folds
+    # fall back to (tests/test_portal_folds_glue.py covers the other).
+    fns = "var CARD_FOLD_MIN_PX = 320;\nvar _foldsV2 = false;\n" + fns
     script = HARNESS.replace("__FNS__", fns)
     r = subprocess.run(["node", "-e", script], capture_output=True, text=True, timeout=60)
     assert r.returncode == 0, (r.stdout or "") + (r.stderr or "")
@@ -195,7 +198,10 @@ def test_card_folding_behaviour():
 def test_the_toggle_is_delegated_and_wired_once():
     """render() rebuilds every card on each poll. A per-button listener dies with it."""
     page = PAGE.read_text()
-    body = page[page.index("function wireCardFolding()"):]
+    legacy = page[page.index("function wireCardFolding()"):]
+    legacy = legacy[:legacy.index("\n}") + 2]
+    assert "_foldWireClickOnce();" in legacy
+    body = page[page.index("function _foldWireClickOnce()"):]
     body = body[:body.index("\n}") + 2]
     assert "__cardFoldWired" in body, "the click handler must be wired once, not per render"
     assert 'document.addEventListener("click"' in body, "it must be delegated on document"
@@ -203,9 +209,8 @@ def test_the_toggle_is_delegated_and_wired_once():
 
 def test_folding_runs_on_every_render():
     page = PAGE.read_text()
-    assert page.count("wireCardFolding();") >= 1
     assert "wireEntityRefs(document.getElementById" in page
-    assert page.index("wireEntityRefs(document.getElementById") < page.index("  wireCardFolding();")
+    assert page.index("wireEntityRefs(document.getElementById") < page.index("  wirePortalFolds();")
 
 
 def test_a_folded_card_keeps_its_heading_visible():

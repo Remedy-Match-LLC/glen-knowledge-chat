@@ -654,6 +654,13 @@
   /* Collapsible cards, Glen 2026-09-16: "Any medium to large cards need a button to
      collapse/open. Remember the last state." The toggle sits in the heading so it is
      where the eye already is, and the heading stays readable when collapsed. */
+  body.folds-v2 .card{position:relative}
+  body.folds-v2 .fold-bar{display:flex;gap:8px;justify-content:flex-end;margin:0 0 8px}
+  body.folds-v2 .card > h2:first-of-type, body.folds-v2 .card > h3:first-of-type{padding-right:64px}
+  body.folds-v2 .card-fold{float:none;position:absolute;top:10px;right:10px}
+  body.folds-v2 .card.is-folded > .card-fold{display:inline-block}
+  body.folds-v2 .card:not(.is-folded) > h3.fold-title{display:none}
+  body.folds-v2 .card > h3.fold-title{margin:0;padding-right:64px}
   .card-fold{float:right;background:none;border:0;color:var(--muted);cursor:pointer;
     font:inherit;font-size:.82rem;line-height:1.2;padding:2px 6px;border-radius:8px}
   .card-fold:hover{color:var(--ink);background:var(--brand-soft)}
@@ -946,6 +953,7 @@
 <script src="/static/entity-ref.js"></script>
 <script src="/static/js/portal-conditions.js"></script>
 <script src="/static/js/portal-shell.js"></script>
+<script src="/static/js/portal-folds.js"></script>
 <script src="/static/js/portal-library.js"></script>
 <script src="/static/js/portal-documents.js"></script>
 <script src="/static/js/portal-historical-intakes.js"></script>
@@ -1072,7 +1080,7 @@ function supportProgramCardHtml(sp){
   const addBtn = sp.consult_recommended ? "" :
     `<button type="button" class="btn" id="spAddToInvoiceBtn" style="margin-top:.7rem"${spInvoiceAdded ? " disabled" : ""}>Add my program to my invoice</button>
      <p class="small" id="spAddToInvoiceMsg" style="margin-top:.4rem"${spInvoiceAdded ? "" : " hidden"}>${spInvoiceAdded ? SP_INVOICE_ADDED_MSG : ""}</p>`;
-  return `<div class="card support-program-card">
+  return `<div class="card support-program-card" data-fold-id="remedies-support-program">
       <h2>Your ${esc(sp.label || "")} Support Program</h2>
       ${supportProgramBodyHtml(sp)}
       ${factRows}${factMsg}
@@ -1260,6 +1268,8 @@ function terrainBanner(d, kind){
 // inline. Extracted so showDoor can trigger the same effects for every panel a
 // door reveals at once, and so the two routers cannot drift apart.
 function panelShown(name){
+  // A link to the intake form must land on it open, whatever the fold default did.
+  if (name === 'intake' && typeof _foldOpenCard === 'function') _foldOpenCard("portal-intake-card");
   // Task 7: fetch the suggestions queue every time the health panel becomes
   // active (fresh each visit -- a clinician or chat turn may have added one
   // since it was last open). loadHealthSuggestions() itself no-ops if
@@ -1319,6 +1329,7 @@ function showDoor(key, options){
     }catch(e){}
   }
   if(typeof window.mentorPageChanged === "function") window.mentorPageChanged(key);
+  if(typeof _foldDoorShown === "function") _foldDoorShown();
 }
 window.showDoor = showDoor;
 window.panelShown = panelShown;
@@ -1759,13 +1770,13 @@ function buildCalendarHtml(v,compact){
       ${e.description ? `<p class="muted small">${esc(e.description)}</p>` : ""}${action}${share}</article>`;
   }).join("");
   if(compact){
-    return `<div class="card calendar-summary" id="calendar-summary"><div class="calendar-summary-head"><h2>Upcoming Live Events</h2><button type="button" class="calendar-fold" id="calendar-fold" onclick="toggleCalendarSummary()">Hide</button></div><p class="calendar-tz">Times shown in ${esc(portalTimeZone())}</p><div id="calendar-summary-body"><div class="calendar-list">${rows || '<p class="muted">No upcoming events are scheduled yet.</p>'}</div>${allEvents.length>2?'<button class="btn full" onclick="showTab(\'calendar\')">See full calendar</button>':''}</div></div>`;
+    return `<div class="card calendar-summary" data-fold-skip="1" id="calendar-summary"><div class="calendar-summary-head"><h2>Upcoming Live Events</h2><button type="button" class="calendar-fold" id="calendar-fold" onclick="toggleCalendarSummary()">Hide</button></div><p class="calendar-tz">Times shown in ${esc(portalTimeZone())}</p><div id="calendar-summary-body"><div class="calendar-list">${rows || '<p class="muted">No upcoming events are scheduled yet.</p>'}</div>${allEvents.length>2?'<button class="btn full" onclick="showTab(\'calendar\')">See full calendar</button>':''}</div></div>`;
   }
   return `<div class="card" id="calendar-card"><h2>Live Calendar</h2><p class="calendar-tz">Times shown in ${esc(portalTimeZone())}</p>
     <p class="muted small">See what’s coming up. Events marked for paid members stay visible so you can plan ahead.</p><div class="calendar-list">${rows || '<p class="muted">No upcoming events are scheduled yet.</p>'}</div></div>`;
 }
 function buildAppointmentProposalHtml(){
-  return `<div class="card" id="appointment-proposals-card"><h2>Private Appointments</h2>
+  return `<div class="card" id="appointment-proposals-card" data-fold-open="1"><h2>Private Appointments</h2>
     <p class="muted small">Propose a Biofield consultation with Dr. Glen or an EVOX session with Rae. The appointment is booked after both sides confirm.</p>
     <details><summary class="btn full">Propose an appointment</summary><form class="appt-form" id="appt-proposal-form">
       <select name="session_type"><option value="biofield-consult">Biofield Analysis Consultation · Dr. Glen · Zoom</option><option value="evox">EVOX Session · Rae · Phone</option></select>
@@ -1842,7 +1853,7 @@ function healthFieldHtml(f){
 }
 function healthSectionHtml(sec){
   const fields = Array.isArray(sec.fields) ? sec.fields : [];
-  return `<div class="card health-section"><h2>${esc(sec.title)}</h2>
+  return `<div class="card health-section" data-fold-id="health-${foldSlug(sec.title)}"><h2>${esc(sec.title)}</h2>
     ${fields.map(healthFieldHtml).join("")}</div>`;
 }
 function buildHealthProfileHtml(v){
@@ -1851,9 +1862,9 @@ function buildHealthProfileHtml(v){
   const sections = Array.isArray(hp.sections) ? hp.sections : [];
   const body = sections.length
     ? sections.map(healthSectionHtml).join("")
-    : `<div class="card quiet"><p class="muted">Your health profile will appear here once your intake is on file.</p></div>`;
+    : `<div class="card quiet" data-fold-id="health-profile-empty"><p class="muted">Your health profile will appear here once your intake is on file.</p></div>`;
   return `<div class="portal-health">
-    <div class="card quiet health-profile-guide">
+    <div class="card quiet health-profile-guide" data-fold-id="health-profile-guide">
       <h2>Your saved Intake details</h2>
       <p class="muted">My Health Profile is where you can review the health history, symptoms, and other details you provided in your Intake.</p>
       <button type="button" class="btn ghost" onclick="showTab('intake')">Open or edit my Intake</button>
@@ -1863,14 +1874,14 @@ function buildHealthProfileHtml(v){
 function buildClinicalRecordHtml(v){
   const health = v && v.health_profile && v.health_profile.enabled
     ? buildHealthProfileHtml(v)
-    : `<div class="card quiet"><p class="muted">Your health profile will appear here once your intake is on file.</p></div>`;
+    : `<div class="card quiet" data-fold-id="health-profile-empty"><p class="muted">Your health profile will appear here once your intake is on file.</p></div>`;
   return `<div id="portal-clinical-record" class="portal-clinical-record">
-    <div class="card quiet"><div class="eyebrow">Your private health record</div>
+    <div class="card quiet" data-fold-id="health-private-record"><div class="eyebrow">Your private health record</div>
       <h1>My Clinical Record</h1>
       <p class="muted">Review your current health profile and keep your clinical documents together.</p></div>
     <div id="portal-health-profile">${health}</div>
-    <div id="portal-documents-mount"><div class="card quiet"><p class="muted">Loading your documents…</p></div></div>
-    <div id="portal-historical-intakes-mount"><div class="card quiet"><p class="muted">Loading past intake…</p></div></div>
+    <div id="portal-documents-mount"><div class="card quiet" data-fold-id="health-documents"><p class="muted">Loading your documents…</p></div></div>
+    <div id="portal-historical-intakes-mount"><div class="card quiet" data-fold-id="health-past-intake"><p class="muted">Loading past intake…</p></div></div>
   </div>`;
 }
 // ── Task 5: My Healing Oasis panel (render-only). Consumes v.oasis (Task 4's
@@ -1900,7 +1911,7 @@ function buildOasisReplenishHtml(oasis){
   const body = items.length
     ? items.map(oasisReplenishRowHtml).join("")
     : `<p class="muted small">Nothing to reorder yet.</p>`;
-  return `<div class="card"><h2>Replenish</h2>${body}</div>`;
+  return `<div class="card" data-fold-id="oasis-replenish"><h2>Replenish</h2>${body}</div>`;
 }
 function oasisOwnedFromUsRowHtml(item){
   const name = item.url
@@ -1988,10 +1999,10 @@ function buildOasisBuildOutHtml(oasis){
   // Empty state stays quiet (no card at all) rather than a hollow "nothing
   // yet" card competing with Recommended / owned above it.
   const wantedHtml = wanted.length
-    ? `<div class="card"><h2>Wanted, added from recommendations</h2>${wanted.map(oasisWantedRowHtml).join("")}</div>`
+    ? `<div class="card" data-fold-id="oasis-wanted"><h2>Wanted, added from recommendations</h2>${wanted.map(oasisWantedRowHtml).join("")}</div>`
     : "";
-  return `<div class="card"><h2>Tools you own with us</h2>${ownedUsHtml}</div>
-    <div class="card"><h2>Tools you own elsewhere</h2>${ownedExtHtml}
+  return `<div class="card" data-fold-id="oasis-tools-with-us"><h2>Tools you own with us</h2>${ownedUsHtml}</div>
+    <div class="card" data-fold-id="oasis-tools-elsewhere"><h2>Tools you own elsewhere</h2>${ownedExtHtml}
       <div style="margin-top:.6rem">
         <p class="small muted" style="margin:.2rem 0 .4rem">Add a tool you own</p>
         <input id="oasis-tool-name" placeholder="Tool name" style="width:100%;background:var(--card2);color:var(--ink);border:1px solid var(--line);border-radius:8px;padding:8px 10px;font-size:.9rem;margin-bottom:.4rem">
@@ -2000,7 +2011,7 @@ function buildOasisBuildOutHtml(oasis){
         <div id="oasis-tool-msg" class="small muted" style="margin-top:.4rem" hidden></div>
       </div>
     </div>
-    <div class="card"><h2>Recommended to complete your Oasis</h2>${roadmapHtml}</div>
+    <div class="card" data-fold-id="oasis-recommended"><h2>Recommended to complete your Oasis</h2>${roadmapHtml}</div>
     ${wantedHtml}`;
 }
 function buildOasisHtml(v){
@@ -2021,7 +2032,7 @@ function buildOasisHtml(v){
 // another tab, or this panel's own qty edits) is always reflected on next
 // visit without needing the whole portal payload re-fetched.
 function buildCartHtml(){
-  return `<div class="card"><h2>My Cart</h2><div id="cart-body" class="muted">Loading…</div>
+  return `<div class="card" data-fold-id="cart"><h2>My Cart</h2><div id="cart-body" class="muted">Loading…</div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:1rem">
       <button type="button" class="btn ghost portal-continue-shopping">Continue Shopping</button>
       <button type="button" class="btn portal-review-order">Review my order</button>
@@ -2376,7 +2387,7 @@ function buildScanHistoryHtml(d){
       ? dates.map(dt => scanHistoryRowHtml(dt, dt === cur, "")).join("")
       : `<p class="muted small">No past analyses yet.</p>`;
   }
-  return `<div class="card"><h2>Scan History</h2>${body}</div>`;
+  return `<div class="card" data-fold-id="scans-history-list"><h2>Scan History</h2>${body}</div>`;
 }
 // Orders & Invoices panel body — the same invoices/past_invoices data the old
 // combined "History & receipts" card rendered, just moved to its own tab.
@@ -2412,14 +2423,14 @@ function buildOrdersHtml(d){
     <div id="orders-basket" style="margin-top:1rem"></div>
   </div>`;
   invs.forEach(inv => {
-    body += `<div class="card invoice-card">
+    body += `<div class="card invoice-card" data-fold-id="billing-invoice-${foldSlug(inv.url || "")}" data-fold-open="1">
       <h2>Your invoice</h2>
       <p>Amount due: <strong>$${esc(inv.amount_dollars)}</strong></p>
       <a class="btn" href="${esc(inv.link)}" target="_blank" rel="noopener">View &amp; pay invoice</a>
     </div>`;
   });
   if(past.length){
-    body += `<div class="card"><h2>Past invoices</h2>`
+    body += `<div class="card" data-fold-id="billing-past-invoices"><h2>Past invoices</h2>`
       + past.map(inv => {
           const state = inv.paid ? "paid" : esc(inv.status || "invoice");
           const label = `$${esc(inv.amount_dollars)} ${state}${inv.when?" &middot; "+esc(inv.when):""}`;
@@ -2431,7 +2442,7 @@ function buildOrdersHtml(d){
       + `</div>`;
   }
   if(!invs.length && !past.length){
-    body += `<div class="card"><h2>Orders &amp; Invoices</h2><p class="muted">No invoices yet.</p></div>`;
+    body += `<div class="card" data-fold-id="billing-orders-invoices"><h2>Orders &amp; Invoices</h2><p class="muted">No invoices yet.</p></div>`;
   }
   return body;
 }
@@ -2709,12 +2720,12 @@ function buildRemediesHtml(v){
   </div>`;
 
   const fromHistoryCard = fromHistory.length
-    ? `<div class="card"><h2>Suggested remedies from your history</h2><p class="muted small">Matched from your history and symptoms. Your biofield scan will personalize these.</p><div>${fromHistoryRows}</div></div>`
+    ? `<div class="card" data-fold-id="remedies-suggested-from-history"><h2>Suggested remedies from your history</h2><p class="muted small">Matched from your history and symptoms. Your biofield scan will personalize these.</p><div>${fromHistoryRows}</div></div>`
     : "";
 
-  return `<div class="card"><h2>Top recommended for you</h2><div>${rankedRows}</div></div>
+  return `<div class="card" data-fold-id="remedies-top-recommended"><h2>Top recommended for you</h2><div>${rankedRows}</div></div>
     ${fromHistoryCard}
-    <div class="card"><h2>Products and supplements you take</h2><div>${externalRows}</div>${addForm}</div>`;
+    <div class="card" data-fold-id="remedies-products-you-take"><h2>Products and supplements you take</h2><div>${externalRows}</div>${addForm}</div>`;
 }
 
 // The biofield scan the page is currently viewing (null = newest, server default).
@@ -2855,7 +2866,7 @@ function showPortalLoadFailure(result){
   document.getElementById("notfound").hidden = true;
   const app = document.getElementById("app");
   app.hidden = false;
-  app.innerHTML = `<div class="card portal-load-alert" role="alert">
+  app.innerHTML = `<div class="card portal-load-alert" data-fold-id="portal-load-alert" role="alert">
     <h2>We couldn’t finish loading your healing home</h2>
     <p>${esc(portalLoadMessage(result))} Please try again.</p>
     <button type="button" class="btn" data-portal-retry>Try again</button>
@@ -2874,6 +2885,7 @@ function showPortalPartialWarning(results){
   const app = document.getElementById("app");
   const warning = document.createElement("div");
   warning.className = "card portal-load-alert";
+  warning.dataset.foldId = "portal-load-alert-inline";
   warning.setAttribute("role", "status");
   warning.innerHTML = `<b>Part of this page is temporarily unavailable.</b>
     <p class="muted small">${esc(portalLoadMessage(failed))}</p>
@@ -3260,7 +3272,7 @@ function renderHealthSuggestions(list){
   const host = document.getElementById("healthSuggestions");
   if (!host) return;
   if (!Array.isArray(list) || !list.length) { host.innerHTML = ""; return; }
-  host.innerHTML = `<div class="card health-suggestions-card"><h2>Suggested updates</h2>
+  host.innerHTML = `<div class="card health-suggestions-card" data-fold-id="health-suggestions"><h2>Suggested updates</h2>
     ${list.map(healthSuggestionItemHtml).join("")}</div>`;
 }
 // GET the pending queue and render it. Called every time the health panel
@@ -4147,7 +4159,7 @@ function render(d, v){
   }
 
   if (d.linked_practitioner_account) {
-    part("account", `<div class="card quiet">
+    part("account", `<div class="card quiet" data-fold-id="account-practitioner-account">
       <h2>Your practitioner account</h2>
       <p class="muted small">Manage certification, qualifications, clients, and practitioner ordering.</p>
       <a class="btn full" href="/portal/${encodeURIComponent(seg)}/practitioner-account">Open Practitioner Portal</a>
@@ -4160,7 +4172,7 @@ function render(d, v){
   // Flag-gated server-side (payload.program_page is only truthy-enabled when
   // PORTAL_PROGRAM_PAGE_ENABLED is on), so no extra client-side flag check needed.
   if (d.program_page && d.program_page.enabled) {
-    part("account", `<div class="card program-entry">
+    part("account", `<div class="card program-entry" data-fold-id="account-membership-entry">
       <h2>See everything your membership unlocks</h2>
       <p class="muted small">Your program, family options, and ways to share and grow.</p>
       <a class="btn full" href="${esc(d.program_page.url)}">Explore your program</a>
@@ -4188,7 +4200,7 @@ function render(d, v){
       const sel = (cur && cur === (m.email || "").toLowerCase()) ? " selected" : "";
       opts += `<option value="${esc(m.email)}"${sel}>${label}</option>`;
     }
-    part("scans", `<div class="card" style="display:flex;align-items:center;gap:10px">
+    part("scans", `<div class="card" data-fold-id="home-view-link" style="display:flex;align-items:center;gap:10px">
       <span style="color:var(--muted);font-size:.9rem">Viewing scans for</span>
       <select onchange="window.__hhGo(this.value)"
         style="padding:6px 10px;border-radius:8px;background:var(--card);color:inherit;border:1px solid var(--border)">
@@ -4207,7 +4219,7 @@ function render(d, v){
     let practImg = pb.photo_url ? `<img src="${esc(pb.photo_url)}" alt="${esc(pb.name||"")}" style="width:50px;height:50px;border-radius:50%;object-fit:cover;flex:0 0 auto;">` : "";
     // Practice logo mark at the right end — logos aren't square, so contain (no crop, no radius).
     let practLogo = pb.logo_url ? `<img src="${esc(pb.logo_url)}" alt="${esc(pb.practice_name||pb.name||"")}" style="max-height:32px;max-width:120px;object-fit:contain;flex:0 0 auto;">` : "";
-    part("chrome-top", `<div class="card your-practitioner-band"${accentStyle}>
+    part("chrome-top", `<div class="card your-practitioner-band" data-fold-id="home-your-practitioner"${accentStyle}>
       <div style="display:flex;align-items:center;gap:12px">
         ${practImg}
         <div style="flex:1">${practContent}</div>
@@ -4263,7 +4275,7 @@ function render(d, v){
       <input id="chatInput" type="text" placeholder="Ask about your scan or remedies..." autocomplete="off">
       <button class="btn" id="chatSend">Send</button>
     </div>`;
-  const _askCard = `<div class="card" id="chatCard">
+  const _askCard = `<div class="card" id="chatCard" data-fold-skip="1">
     <h2>Messages &amp; Order Help</h2>
     <p class="muted small" style="margin:.3rem 0 .7rem">Write here for help with products, orders, your healing path, or anything you need from Dr. Glen and the team.</p>
     <div id="chatMsgs" class="chat-msgs"></div>
@@ -4301,12 +4313,12 @@ function render(d, v){
     if (_hub) { _finderHtml += _finderCard; } else { part(null, _finderCard); }
   }
 
-  const _bodymapCard = `<div class="card quiet"><h2>Your Body Map</h2>
+  const _bodymapCard = `<div class="card quiet" data-fold-id="learn-body-map"><h2>Your Body Map</h2>
     <p class="muted small" style="margin:.3rem 0 .7rem">See your findings mapped onto a photo of your own face, or explore the full atlas of reflex maps — iris, sclera, ear, hands, feet and more.</p>
     <a class="btn full" href="/portal/${encodeURIComponent(seg)}/bodymap">Open your Body Map</a></div>`;
   if (_hub) { _bodymapHtml += _bodymapCard; } else { part(null, _bodymapCard); }
 
-  const _classesCard = `<div class="card quiet"><h2>My Courses</h2>
+  const _classesCard = `<div class="card quiet" data-fold-id="learn-my-courses"><h2>My Courses</h2>
     <p class="muted small" style="margin:.3rem 0 .7rem">Open the certification courses you qualify for, along with Dr. Glen's free MasterClasses and teachings.</p>
     <a class="btn full" href="/api/portal/${encodeURIComponent(seg)}/courses">Open MentorshipU</a></div>`;
   if (_hub) { _classesHtml += _classesCard; } else { part(null, _classesCard); }
@@ -4320,7 +4332,7 @@ function render(d, v){
       <button type="button" class="btn ghost" onclick="signOutPortal(this)">Sign out</button>
       <button type="button" class="btn" onclick="switchPortalAccount(this)">Switch account</button>
     </div>` : "";
-    const _accountCard = `<div class="card quiet"><h2>Your account</h2>
+    const _accountCard = `<div class="card quiet" data-fold-id="account-your-account"><h2>Your account</h2>
       <div class="kv"><span class="k">Email</span><span class="v">${esc(a.email||"")}</span></div>
       ${cityline?`<div class="kv"><span class="k">Location</span><span class="v">${esc(cityline)}</span></div>`:""}
       ${a.points_cents?`<div class="kv"><span class="k">Reward points</span><span class="v">${esc(money(a.points_cents))}</span></div>`:""}
@@ -4341,7 +4353,7 @@ function render(d, v){
       inner = `<a class="btn" href="${esc(d.video.url)}" target="_blank" rel="noopener">${esc(d.video.label||"Watch your video")}</a>`;
     }
     part("scans", `
-      <div class="card video-card">
+      <div class="card video-card" data-fold-id="scans-video-message-${foldSlug(d.scan_date || "")}" data-fold-open="1">
         <h2>Your personal message from Dr. Glen</h2>
         ${inner}
       </div>`);
@@ -4349,7 +4361,7 @@ function render(d, v){
 
   if(d.audio && d.audio.url){
     part("scans", `
-      <div class="card audio-card">
+      <div class="card audio-card" data-fold-id="scans-audio-walkthrough">
         <h2>Your audio walkthrough</h2>
         <audio controls preload="none" src="${esc(d.audio.url)}" style="width:100%"></audio>
         ${d.audio.label?`<p class="muted">${esc(d.audio.label)}</p>`:""}
@@ -4357,7 +4369,7 @@ function render(d, v){
   }
   if(d.report_pdf && d.report_pdf.url){
     part("scans", `
-      <div class="card report-card">
+      <div class="card report-card" data-fold-id="scans-written-report" data-fold-open="1">
         <h2>Your written report</h2>
         <a class="btn" href="${esc(d.report_pdf.url)}" target="_blank" rel="noopener" download>Download your report (PDF)</a>
       </div>`);
@@ -4367,7 +4379,7 @@ function render(d, v){
   if(!d.scan_history_enabled && Array.isArray(d.invoices) && d.invoices.length){
     d.invoices.forEach(function(inv){
       part("billing", `
-        <div class="card invoice-card">
+        <div class="card invoice-card" data-fold-id="scans-invoice-${foldSlug(inv.url || "")}" data-fold-open="1">
           <h2>Your invoice</h2>
           <p>Amount due: <strong>$${esc(inv.amount_dollars)}</strong></p>
           <a class="btn" href="${esc(inv.link)}" target="_blank" rel="noopener">View &amp; pay invoice</a>
@@ -4380,7 +4392,7 @@ function render(d, v){
     var value = o.analysis_value_cents ? " (a $" + Math.round(o.analysis_value_cents/100) + " value)" : "";
     var ff = "$" + ((o.ff_from_cents||0)/100).toFixed(2);
     part("billing", `
-      <div class="card options-card">
+      <div class="card options-card" data-fold-id="scans-options-pricing">
         <h2>Your options &amp; pricing</h2>
         <p><strong>Your Biofield Analysis &amp; remedies</strong> — your voice-scan reading and your personally matched remedies, right here in your private space. Order remedies whenever you like (from ${ff} each, a 30-day supply).</p>
         <p><strong>Personal Causal Biofield Analysis with Dr. Glen</strong> — the hands-on, deeper analysis, plus a Functional Formulations program designed for you and a consultation. <strong>${analysis}</strong>${value}${o.is_courtesy?" — your courtesy price":""}. Just reply to arrange it.</p>`);
@@ -4409,7 +4421,7 @@ function render(d, v){
   // Task 7: superseded by the Scan History + Orders & Invoices tabs when the flag
   // is on (buildScanHistoryHtml / buildOrdersHtml cover this same data there).
   if(!d.scan_history_enabled && (pastDates.length || pastInv.length)){
-    let hist = `<div class="card history-card"><h2>History &amp; receipts</h2>
+    let hist = `<div class="card history-card" data-fold-id="scans-history-receipts"><h2>History &amp; receipts</h2>
       <p class="muted" style="margin:0 0 .6rem">Your earlier analyses and invoices, for reference.</p>`;
     if(pastDates.length){
       hist += `<p class="muted" style="margin:.2rem 0 .3rem">Past analyses</p><div class="scantabs">`
@@ -4442,7 +4454,7 @@ function render(d, v){
     const line = capped
       ? "Still working on your Biofield Analysis, we'll text you the moment it's ready."
       : "This usually takes about a minute. It will appear right here.";
-    part("scans", `<div class="card prep" id="biofield-section"><h2>Preparing your Biofield Analysis…</h2>
+    part("scans", `<div class="card prep" id="biofield-section" data-fold-id="biofield-prep-${foldSlug(d.scan_date || "")}"><h2>Preparing your Biofield Analysis…</h2>
       ${capped ? "" : '<div class="spinner" aria-hidden="true"></div>'}
       <p class="prepline">${esc(line)}</p></div>`);
     // Kick the producer once per page load, then poll.
@@ -4457,7 +4469,7 @@ function render(d, v){
     // The analysis has landed (or we navigated away from pending) — stop polling.
     clearInterval(_ppTimer); _ppTimer = null;
   } else if (d.biofield_status === "none") {
-    part("scans", '<div class="card"><h2>Curious what your body is asking for?</h2>'
+    part("scans", '<div class="card" data-fold-id="scans-curious"><h2>Curious what your body is asking for?</h2>'
       + '<p>A quick Bioenergetic Wellness Scan reads your stress and terrain patterns and tailors your next steps. It takes about ten seconds: you count out loud from one to ten.</p>'
       + '<a class="btn" href="https://Truly.VIP/E4L" target="_blank" rel="noopener">Do your free Bioenergetic Wellness Scan</a></div>');
   }
@@ -4552,7 +4564,7 @@ function render(d, v){
       const cta = actionable
         ? `<button class="btn full" id="bfInterestBtn" data-scan="${esc(curDate||"")}">View your scan analysis</button>`
         : `<p class="scan-old">This analysis is from an earlier scan.</p>`;
-      part("scans", `<div class="card primary" id="biofield-section"><h2>Your scan analysis</h2>
+      part("scans", `<div class="card primary" id="biofield-section" data-fold-id="biofield-${foldSlug(d.scan_date || "")}" data-fold-open="1"><h2>Your scan analysis</h2>
         ${tabs}
         ${patternsBlock}
         ${bf.greeting?`<div class="muted${rvlCls}" style="margin:.1rem 0 .6rem${firstTime?";animation-delay:"+(findingsCount*120+300)+"ms":""}">${escGreeting(bf.greeting)}</div>`:""}
@@ -4628,7 +4640,7 @@ function render(d, v){
           const badge = document.getElementById("rr-new");
           if (badge) badge.remove();
         };
-        part("scans", `<div class="card" id="biofield-section">
+        part("scans", `<div class="card" id="biofield-section" data-fold-id="biofield-${foldSlug(d.scan_date || "")}-path">
           <div class="rr-header" data-scan="${esc(sd)}" style="display:flex;align-items:center;gap:10px;cursor:pointer">
             <strong>Biofield report — ${esc(sd || "")}</strong>
             ${isNew ? `<span id="rr-new" style="background:#d4a843;color:#000;font-size:.72rem;font-weight:700;padding:1px 7px;border-radius:10px">New</span>` : ""}
@@ -4638,7 +4650,7 @@ function render(d, v){
         </div>`);
       } else {
         // flag off: existing report body markup, unchanged
-        part("scans", `<div class="card" id="biofield-section"><h2>Your healing path</h2>
+        part("scans", `<div class="card" id="biofield-section" data-fold-id="biofield-${foldSlug(d.scan_date || "")}-path"><h2>Your healing path</h2>
           ${reportBody}</div>`);
       }
     }
@@ -4649,7 +4661,7 @@ function render(d, v){
   // (ER/MR) are what your practitioner runs on the device — shown, never a button.
   if (d.scan_recommendations) {
     const sr = d.scan_recommendations;
-    let s = `<div class="card scanrec-card">
+    let s = `<div class="card scanrec-card" data-fold-id="scans-scan-matches">
       <h2>What your scan matched</h2>
       <p class="muted" style="margin:0 0 .7rem">From your Bioenergetic Wellness Scan on ${esc(fmtDate(sr.scan_date))}.</p>`;
     if (sr.infoceuticals.length) {
@@ -4682,7 +4694,7 @@ function render(d, v){
       ["share_story", "Let Dr. Glen share my story"],
       ["video_testimonial", "I'd record a video testimonial"],
     ];
-    let s = `<div class="card sharing-card"><h2>Share &amp; Unlock</h2>
+    let s = `<div class="card sharing-card" data-fold-id="scans-share-unlock"><h2>Share &amp; Unlock</h2>
       <p class="muted" style="margin:0 0 .7rem">Choose what you're comfortable sharing. You're always in control and can change this anytime.</p>`;
     s += shareItems.map(([k, label]) =>
       `<label style="display:block;margin:.45rem 0"><input type="checkbox" data-sharing-toggle="${k}"${ds.toggles[k] ? " checked" : ""}> ${esc(label)}</label>`
@@ -4709,7 +4721,7 @@ function render(d, v){
   if (d.ff_matches_enabled) {
     const ffBody = d.ff_matches ? ffMatchesBodyHtml(d.ff_matches) : "";
     const showAddToInvoice = !!(d.ff_matches && d.ff_matches.covered && d.ff_matches.reviewed);
-    part("scans", `<div class="card ffmatch-card">
+    part("scans", `<div class="card ffmatch-card" data-fold-id="scans-formulation-matches">
       <h2>Your formulation matches</h2>
       <div id="ffMatchesBody">${ffBody}</div>
       <button type="button" class="btn" id="ffMatchesBtn" style="margin-top:.7rem">See my formulation matches</button>
@@ -4734,7 +4746,7 @@ function render(d, v){
   // the emotional/stress patterns in this client's scan, present only when
   // LIFE_STRESS_ENABLED is on and d.life_stress has at least one item.
   if (d.life_stress_enabled && d.life_stress) {
-    part("remedies", '<div class="card life-stress-card"><h2>Your Life Stress Essences</h2>'
+    part("remedies", '<div class="card life-stress-card" data-fold-id="remedies-life-stress-essences"><h2>Your Life Stress Essences</h2>'
           + lifeStressBodyHtml(d.life_stress) + '</div>');
   }
 
@@ -4742,7 +4754,7 @@ function render(d, v){
   // direct-order option grouped by focus area, present only when PRL_SUPPLEMENT_ENABLED
   // is on and this client's scan resolved to at least one covered focus area.
   if (d.prl_supplement_enabled && d.prl_supplement) {
-    part("remedies", `<div class="card prl-supplement-card">
+    part("remedies", `<div class="card prl-supplement-card" data-fold-id="remedies-prl-options">
       <h2>Premier Research Labs options</h2>
       ${prlSupplementBodyHtml(d.prl_supplement)}
     </div>`);
@@ -4753,7 +4765,7 @@ function render(d, v){
   // resolved to at least one candidate. Sibling of the PRL card above — same
   // grouped-list idiom, distinct product source.
   if (d.fullscript_enabled && d.fullscript) {
-    part("remedies", `<div class="card fullscript-card">
+    part("remedies", `<div class="card fullscript-card" data-fold-id="remedies-fullscript">
       <h2>Fullscript</h2>
       ${fullscriptBodyHtml(d.fullscript)}
     </div>`);
@@ -4767,7 +4779,7 @@ function render(d, v){
   // standing program, so there's no action button here, just the list + note.
   if (d.practitioner_program) {
     const pp = d.practitioner_program;
-    part("remedies", `<div class="card practitioner-program-card">
+    part("remedies", `<div class="card practitioner-program-card" data-fold-id="remedies-practitioner-program">
       <span class="pp-badge">From your practitioner</span>
       <h2>${esc(pp.label || "Your Practitioner's Program")}</h2>
       ${practitionerProgramBodyHtml(pp)}
@@ -4789,7 +4801,7 @@ function render(d, v){
       rows += `<div style="display:flex;align-items:center;gap:10px;padding:6px 0;border-bottom:1px solid var(--border)">
         <strong style="font-size:.95rem">${esc(s.scan_date)}</strong><span style="flex:1"></span>${tag}</div>`;
     }
-    part("scans", `<div class="card quiet"><h2 style="font-size:1rem">Scan history</h2>
+    part("scans", `<div class="card quiet" data-fold-id="scans-history"><h2 style="font-size:1rem">Scan history</h2>
       <p style="color:var(--muted);font-size:.85rem;margin:.2rem 0 .6rem">Every scan on file. Analyzed scans have a full report; others are available to analyze.</p>
       ${rows}</div>`);
   }
@@ -4805,7 +4817,7 @@ function render(d, v){
       ritems += `<div class="reitem"><span class="nm">${esc(it.name||it.slug)}${it.qty>1?` ×${esc(it.qty)}`:""}</span></div>`;
     });
     const rnote = rec.note ? `<p class="note small">${esc(rec.note)}</p>` : "";
-    part("solutions", `<div class="card reco-card"><h2>Your practitioner recommends</h2>
+    part("solutions", `<div class="card reco-card" data-fold-id="solutions-practitioner-recommends"><h2>Your practitioner recommends</h2>
       ${rnote}
       <div>${ritems}</div>
       <p class="muted small" style="margin:.7rem 0 1rem">Add these to your reorder list — your member price and shipping are calculated at checkout.</p>
@@ -4948,7 +4960,7 @@ function render(d, v){
       <h3 style="margin:1.25rem 0 .65rem">Previously ordered</h3>
       ${renderHistoryRows(historyRows)}
     </div>` : "";
-    part("remedies", `<div class="card"><h2>Your Remedies</h2>
+    part("remedies", `<div class="card" data-fold-id="remedies-your-remedies"><h2>Your Remedies</h2>
       <div>${invoiceGroups}${historyHtml}</div>
       ${historyRows.length ? `<p class="muted small" style="margin:.7rem 0 0">Shipping calculated at checkout.</p>` : ""}
       <p class="small err" id="remErr" hidden></p></div>`);
@@ -5047,7 +5059,7 @@ function render(d, v){
     }
     const heading = hasMembershipPitch ? "Everything your membership unlocks" : "More savings ahead";
     const becomeBtn = hasMembershipPitch ? `<a class="btn full" href="/prepay">Become a member</a>` : "";
-    part("account", `<div class="card upsell-card"><h2>${heading}</h2>
+    part("account", `<div class="card upsell-card" data-fold-id="account-upsell"><h2>${heading}</h2>
       ${pitchHtml}
       ${lockedHtml}
       ${becomeBtn}</div>`);
@@ -5062,7 +5074,7 @@ function render(d, v){
         <p class="lockedcopy muted small">${ICON_LOCK}<span>Unlock member pricing on this when you commit to ${months} months.</span></p>
       </div>`;
     });
-    part("account", `<div class="card"><h2>More savings ahead</h2>
+    part("account", `<div class="card" data-fold-id="account-more-savings"><h2>More savings ahead</h2>
       <div>${lrows}</div></div>`);
   }
 
@@ -5078,7 +5090,7 @@ function render(d, v){
     const saveLine = coversFee
       ? `<p class="muted small">You ordered ${times} in the last 30 days, and as a member those same remedies would have saved you <b>${esc(money(mu.savings_cents))}</b>, enough to cover your membership on remedies alone.</p>`
       : `<p class="muted small">You ordered ${times} in the last 30 days, and as a member those same remedies would have saved you <b>${esc(money(mu.savings_cents))}</b>, every month you reorder.</p>`;
-    part("account", `<div class="card upsell-card"><h2>Everything your membership unlocks</h2>
+    part("account", `<div class="card upsell-card" data-fold-id="account-membership-unlocks"><h2>Everything your membership unlocks</h2>
       <ul class="upsell-benefits small muted">
         <li>Live Zoom Q&amp;A + group coaching</li>
         <li>Expanded education</li>
@@ -5102,7 +5114,7 @@ function render(d, v){
     const revOffer = (v.supplement_review && v.supplement_review.status !== "off")
       ? `<p class="muted small" style="margin:.6rem 0 0">Taking something you're not sure about? <a href="https://illtowell.com/product-review">Get it reviewed free &rarr;</a></p>`
       : "";
-    part("billing", `<div class="card"><h2>Your orders</h2><div>${rows}</div>${revOffer}</div>`);
+    part("billing", `<div class="card" data-fold-id="billing-your-orders"><h2>Your orders</h2><div>${rows}</div>${revOffer}</div>`);
   }
 
   // Orders you're paying for (caregiver pay): orders a household member has
@@ -5118,7 +5130,7 @@ function render(d, v){
         <button class="btn cg-pay" data-order="${esc(String(o.order_id))}">Pay $${esc(o.amount_dollars)}</button>
         ${items}</div>`;
     });
-    const payerOrdersCard = `<div class="card"><h2>Orders you're paying for</h2>
+    const payerOrdersCard = `<div class="card" data-fold-id="billing-orders-you-pay"><h2>Orders you're paying for</h2>
       <p class="muted small">A household member asked you to cover these. Your payment is recorded as yours; their order and health records stay theirs.</p>
       <div>${rows}</div></div>`;
     if (_hub) { _payerOrdersHtml += payerOrdersCard; } else { part(null, payerOrdersCard); }
@@ -5176,7 +5188,7 @@ function render(d, v){
             `<span class="v muted small">${esc(s.points||0)} pts · ${esc(s.views||0)} views · ${esc(s.likes||0)} likes · ${esc(s.shares||0)} shares</span></div>`
           ).join("")
         : `<p class="muted small">No social shares yet.</p>`;
-      const _ambCard = `<div class="card quiet"><h2>Your Ambassador links</h2>
+      const _ambCard = `<div class="card quiet" data-fold-id="account-ambassador-links"><h2>Your Ambassador links</h2>
         <p class="muted">Open your dashboard for all shareable links and directions for using each one.</p>
         <a class="btn full" href="${esc(amb.portal_url || '/affiliate')}" target="_blank" rel="noopener">Open Ambassador Dashboard</a>
         <div class="kv"><span class="k">Share &amp; earn</span><span class="v"><a href="${esc(amb.referral_url)}" target="_blank" rel="noopener">${esc(amb.referral_url)}</a></span></div>
@@ -5198,14 +5210,14 @@ function render(d, v){
       // Referrals panel: reuse the same "Recent referrals" data as its own card.
       // Invite links stay in the refer panel and are not duplicated here.
       if (recentList.length) {
-        _referralsHtml += `<div class="card quiet"><h2>Recent referrals</h2>${recentHtml}</div>`;
+        _referralsHtml += `<div class="card quiet" data-fold-id="account-recent-referrals"><h2>Recent referrals</h2>${recentHtml}</div>`;
       }
     } else if(amb.status === "pending"){
-      const _ambCard = `<div class="card quiet"><h2>Ambassador</h2><p class="muted">Your ambassador application is under review.</p>
+      const _ambCard = `<div class="card quiet" data-fold-id="account-ambassador"><h2>Ambassador</h2><p class="muted">Your ambassador application is under review.</p>
         <a class="btn full" href="${esc(amb.portal_url || '/affiliate')}" target="_blank" rel="noopener">Check Application / Sign In</a></div>`;
       if (_hub) { _referHtml += _ambCard; } else { part(null, _ambCard); }
     } else {
-      const _ambCard = `<div class="card quiet"><h2>Become an Ambassador</h2>
+      const _ambCard = `<div class="card quiet" data-fold-id="account-become-ambassador"><h2>Become an Ambassador</h2>
         <p class="muted">Sign up to receive your shareable links, directions, and referral dashboard.</p>
         <a class="btn full" href="${esc(amb.signup_url)}" target="_blank" rel="noopener">Sign Up as an Ambassador</a></div>`;
       if (_hub) { _referHtml += _ambCard; } else { part(null, _ambCard); }
@@ -5224,7 +5236,7 @@ function render(d, v){
           return `<div class="kv"><span class="k">${label}</span><span class="v">${esc(BADGE[r.status]||r.status)}</span></div>${body}`;
         }).join("")
       : `<p class="muted small">No product reviews yet.</p>`;
-    part("account", `<div class="card quiet"><h2>Free Product Review</h2>
+    part("account", `<div class="card quiet" data-fold-id="account-free-product-review"><h2>Free Product Review</h2>
       <p class="muted">Taking a supplement you're not sure about? Submit it and Dr. Glen will review it for you, free.</p>
       <div style="margin:.5rem 0">
         <input id="pr-name" placeholder="Product name" style="width:100%;background:var(--card2);color:var(--ink);border:1px solid var(--line);border-radius:8px;padding:8px 10px;font-size:.9rem;margin-bottom:.4rem">
@@ -5261,7 +5273,7 @@ function render(d, v){
   // so anyone who unsubscribed via the email link can re-subscribe here.
   if(typeof d.notify_on !== "undefined"){
     const on = !!d.notify_on;
-    part("account", `<div class="card notifpref quiet">
+    part("account", `<div class="card notifpref quiet" data-fold-id="account-notifications">
       <p class="muted small" id="notifLine" style="margin:.2rem 0 .8rem">Remedy Match notifications: <b>${on?"On":"Off"}</b></p>
       <button class="btn${on?"":" full"}" id="notifBtn" data-on="${on?"1":"0"}">${on?"Turn off":"Turn on"}</button></div>`);
   }
@@ -5315,7 +5327,7 @@ function render(d, v){
         <input type="checkbox" class="hh-share" data-care="${esc(c.primary_email)}" ${ck}>
         Share my scans &amp; messages with ${esc(c.primary_email)}</label>`;
     }
-    part("account", `<div class="card quiet"><h2 style="font-size:1rem">Sharing</h2>${rows}</div>`);
+    part("account", `<div class="card quiet" data-fold-id="account-sharing"><h2 style="font-size:1rem">Sharing</h2>${rows}</div>`);
   }
 
   // Practitioner sharing: the client's own control over what their practitioner
@@ -5329,7 +5341,7 @@ function render(d, v){
         <input type="checkbox" class="pr-share" data-pid="${esc(c.practitioner_id)}" ${ck}>
         <span>${esc(c.consent ? c.text : c.current_text)}</span></label>`;
     }
-    part("account", `<div class="card quiet"><h2 style="font-size:1rem">Your practitioner</h2>${prows}
+    part("account", `<div class="card quiet" data-fold-id="account-your-practitioner"><h2 style="font-size:1rem">Your practitioner</h2>${prows}
       <div class="muted" style="font-size:.85rem;margin-top:.4rem">You can turn this off at any time.</div></div>`);
   }
 
@@ -5349,7 +5361,7 @@ function render(d, v){
         <input type="checkbox" class="hh-pay" data-care="${esc(c.primary_email)}" ${ck}>
         Let ${esc(c.primary_email)} pay for my orders</label>${scopeSel}`;
     }
-    const caregiverPaymentsCard = `<div class="card quiet"><h2 style="font-size:1rem">Caregiver payments</h2>${rows}
+    const caregiverPaymentsCard = `<div class="card quiet" data-fold-id="account-caregiver-payments"><h2 style="font-size:1rem">Caregiver payments</h2>${rows}
       <p class="muted small">They can pay your open invoices, and it shows as their expense. Your order and health records stay yours. Turn this off any time.</p></div>`;
     if (_hub) { _accountHtml += caregiverPaymentsCard; } else { part(null, caregiverPaymentsCard); }
   }
@@ -5361,7 +5373,7 @@ function render(d, v){
         <input type="checkbox" class="hh-cc" data-member="${esc(m.email)}" ${ck}>
         Email me about ${esc(m.label || m.email)}</label>`;
     }
-    part("account", `<div class="card"><h2 style="font-size:1rem">Family notifications</h2>${rows}</div>`);
+    part("account", `<div class="card" data-fold-id="account-family-notifications"><h2 style="font-size:1rem">Family notifications</h2>${rows}</div>`);
   }
 
   // Task 7: client-set scan preferences, in the Current panel's footer. Only
@@ -5383,7 +5395,7 @@ function render(d, v){
   // also render; only the [data-panel] wrappers are needed in that case.
   // `_hub` is declared once, early (before the first secondary card).
   if (_hub && !_referralsHtml) {
-    _referralsHtml = `<div class="card quiet"><p class="muted">Your referrals will appear here once someone joins.</p></div>`;
+    _referralsHtml = `<div class="card quiet" data-fold-id="account-referrals-empty"><p class="muted">Your referrals will appear here once someone joins.</p></div>`;
   }
   const _wrapPanels = d.scan_history_enabled || _hub;
   const _showOldTabs = d.scan_history_enabled && !_hub;
@@ -5419,7 +5431,7 @@ function render(d, v){
       <section data-panel="current"${_hub ? " hidden" : ""} data-door="scans">${_back("current")}${html}${_doors ? "" : legacyCurrentHtml()}</section>
       <section data-panel="history" hidden data-door="scans">${_back("history")}${historyHtml}</section>
       <section data-panel="orders" hidden data-door="billing">${_back("orders")}${ordersHtml}</section>
-      <section data-panel="intake" hidden data-door="scans">${_back("intake")}<div class="card" id="portal-intake-card"><div id="portal-intake-host"></div></div></section>${_hub ? `
+      <section data-panel="intake" hidden data-door="scans">${_back("intake")}<div class="card" id="portal-intake-card" data-fold-open="1"><div id="portal-intake-host"></div></div></section>${_hub ? `
       <section data-panel="ask" hidden data-door="learn">${_back("ask")}${_askHtml}</section>
       <section data-panel="voice" hidden data-door="scans">${_back("voice")}${_voiceHtml}</section>
       <section data-panel="records" hidden data-door="scans">${_back("records")}${buildClinicalRecordHtml(v)}</section>
@@ -5430,11 +5442,11 @@ function render(d, v){
       <section data-panel="calendar" hidden data-door="learn">${_back("calendar")}${_calendarHtml}</section>
       <section data-panel="offers" hidden data-door="account">${_back("offers")}${_offersHtml || buildOffersEmptyHtml(v)}</section>
       <section data-panel="photo" hidden data-door="account">${_back("photo")}${buildPhotoHtml()}</section>
-      <section data-panel="finder" hidden data-door="solutions">${_back("finder")}${_finderHtml || '<div class="card quiet"><p class="muted">The practitioner finder is not enabled for your portal yet.</p></div>'}</section>
+      <section data-panel="finder" hidden data-door="solutions">${_back("finder")}${_finderHtml || '<div class="card quiet" data-fold-id="learn-finder-disabled"><p class="muted">The practitioner finder is not enabled for your portal yet.</p></div>'}</section>
       <section data-panel="bodymap" hidden data-door="learn">${_back("bodymap")}${_bodymapHtml}</section>
       <section data-panel="classes" hidden data-door="learn">${_back("classes")}${_classesHtml}</section>
       <section data-panel="account" hidden data-door="account">${_back("account")}${_accountHtml}</section>
-      <section data-panel="refer" hidden data-door="account">${_back("refer")}${_referHtml || '<div class="card quiet"><p class="muted">Ambassador program details will appear here.</p></div>'}</section>
+      <section data-panel="refer" hidden data-door="account">${_back("refer")}${_referHtml || '<div class="card quiet" data-fold-id="account-ambassador-empty"><p class="muted">Ambassador program details will appear here.</p></div>'}</section>
       <section data-panel="referrals" hidden data-door="account">${_back("referrals")}${_referralsHtml}</section>
       ${_hub && v.remedies && v.remedies.enabled ? `<section id="remedies-panel" data-panel="remedies" hidden data-door="remedies">${_back("remedies")}${buildRemediesHtml(v)}</section>` : ""}
       <section data-panel="scan-report" hidden data-door="scans">${_back("scan-report")}${_doors ? partsFor("scans") : ""}</section>
@@ -5447,7 +5459,7 @@ function render(d, v){
     // The onboarding checklist is available independently of the hub and scan
     // history flags, so its #intake link must always have a real panel target.
     html = `<section data-panel="current" data-door="scans">${html}${legacyCurrentHtml()}</section>
-      <section data-panel="intake" hidden data-door="scans"><div class="card" id="portal-intake-card"><div id="portal-intake-host"></div></div></section>`;
+      <section data-panel="intake" hidden data-door="scans"><div class="card" id="portal-intake-card" data-fold-open="1"><div id="portal-intake-host"></div></div></section>`;
   }
 
   app.innerHTML = html;
@@ -5685,7 +5697,7 @@ function render(d, v){
   wireEntityRefs(document.getElementById("app") || document);
   // After the cards exist, and on EVERY render: render() rebuilds them on each poll,
   // so a toggle added once would vanish with the card it was attached to.
-  wireCardFolding();
+  wirePortalFolds();
 
   var chatSendEl = document.getElementById("chatSend");
   if(chatSendEl){ chatSendEl.addEventListener("click", sendChatMessage); }
@@ -7258,6 +7270,7 @@ function renderWaitlistAndUpsell(card, d){
 
   const upsell = document.createElement("div");
   upsell.className = "card";
+  upsell.dataset.foldId = "account-upsell-inline";
   upsell.style.marginTop = "1rem";
   const uh = document.createElement("h3");
   uh.style.margin = "0 0 .4rem";
@@ -8389,20 +8402,14 @@ function renderRelated(items){
 // When the Ask door is open, #chatMsgs is the thread and nothing changes. Otherwise the
 // composer's own #shellChatThread is revealed and used. Both carry .chat-msgs, so the
 // bubbles look the same either way.
-// Collapsible cards. Glen, 2026-09-16: "Any medium to large cards need a button to
-// collapse/open. Remember the last state."
+// Collapsible cards, the SETTING-OFF path only (PORTAL_FOLDS_V2 off). Glen, 2026-09-16:
+// "Any medium to large cards need a button to collapse/open. Remember the last state."
 //
-// MEASURED, not listed. "Medium to large" is a height, and a hand-kept list of card ids
-// would drift the first time a card grew. Anything taller than CARD_FOLD_MIN_PX gets a
-// toggle; a card already remembered as folded keeps one whatever its collapsed height.
-//
-// The key is the card's id when it has one, else its heading text, because render()
-// rebuilds these on every poll and an index would point at a different card each time.
-//
-// localStorage is right for this and a server round trip would not be: it is a per-viewer
-// convenience, it never leaves the browser, and losing it costs a click. Every read and
-// write is wrapped, because it throws in a private window and returns nothing with site
-// data cleared, and the cards must render either way.
+// Superseded by the server-backed folds below. Glen, 2026-09-25, reversed the reasoning
+// this path was built on: every card gets a toggle (not only tall ones), and the state
+// follows the person across devices, so it is stored on the server, not in localStorage.
+// Measured live, this path showed no toggles at all, because cards inside hidden doors
+// measure 0px. Kept unchanged so that turning the setting off restores today's portal.
 var CARD_FOLD_MIN_PX = 320;
 
 function _cardFoldKey(card){
@@ -8421,25 +8428,332 @@ function _cardFoldWrite(key, folded){
   catch(e){}
 }
 
-function wireCardFolding(){
-  // Delegated and wired ONCE. render() replaces app.innerHTML on every poll, so a
-  // listener bound to a button dies with it. This is the same mistake that made the
-  // portal composer's Send button look dead, and it is not worth making twice.
-  if(!window.__cardFoldWired){
-    window.__cardFoldWired = true;
-    document.addEventListener("click", function(e){
-      var btn = e.target && e.target.closest && e.target.closest(".card-fold");
-      if(!btn) return;
-      var card = btn.closest(".card");
-      if(!card) return;
-      var folded = !card.classList.contains("is-folded");
-      card.classList.toggle("is-folded", folded);
-      btn.textContent = folded ? "Show" : "Hide";
-      btn.setAttribute("aria-expanded", folded ? "false" : "true");
-      var key = _cardFoldKey(card);
-      if(key) _cardFoldWrite(key, folded);
-    });
+// ── Server-backed card folding (PORTAL_FOLDS_V2) ───────────────────────────
+// Spec: docs/superpowers/specs/2026-09-25-portal-folding-design.md. Glen, 2026-09-25:
+// the fold state follows the PERSON across devices, so it lives on the server, one
+// record per viewer per portal; staff folds never change the client's. The rules are
+// in static/js/portal-folds.js; these functions only apply them to the page. The
+// localStorage path above is now the setting-off path only.
+var _foldsV2;              // undefined: not loaded yet; false: setting off; object: live
+var _foldLoading = false;
+var _foldSaveTimer = null;
+var _foldSavePending = false;
+var _foldLifecycleWired = false;
+var _FOLD_SAVE_MS = 600;
+var _foldRev = 0;          // bumped on every local change; a stale refresh is dropped
+
+// Delegated and wired ONCE. render() replaces app.innerHTML on every poll, so a
+// listener bound to a button dies with it. This is the same mistake that made the
+// portal composer's Send button look dead, and it is not worth making twice.
+function _foldWireClickOnce(){
+  if(window.__cardFoldWired) return;
+  window.__cardFoldWired = true;
+  document.addEventListener("click", function(e){
+    var t = e.target;
+    if(!t || !t.closest) return;
+    if(typeof _foldBarClick === "function" && _foldBarClick(t)) return;
+    var btn = t.closest(".card-fold");
+    if(!btn) return;
+    var card = btn.closest(".card");
+    if(!card) return;
+    if(_foldsV2 && typeof _foldsV2 === "object"){ _foldToggle(card); return; }
+    var folded = !card.classList.contains("is-folded");
+    card.classList.toggle("is-folded", folded);
+    btn.textContent = folded ? "Show" : "Hide";
+    btn.setAttribute("aria-expanded", folded ? "false" : "true");
+    var key = _cardFoldKey(card);
+    if(key) _cardFoldWrite(key, folded);
+  });
+}
+
+function _foldWireLifecycleOnce(){
+  if(_foldLifecycleWired) return;
+  _foldLifecycleWired = true;
+  // A fold clicked just before the page closes is still saved.
+  window.addEventListener("pagehide", _foldFlush);
+  // Back to this tab: another device may have changed the record since.
+  document.addEventListener("visibilitychange", function(){
+    // Going hidden is the last event iOS Safari reliably delivers: save now.
+    if(document.visibilityState === "hidden"){ _foldFlush(); return; }
+    if(!_foldSavePending && _foldsV2 && typeof _foldsV2 === "object") _foldRefresh();
+  });
+  // A window can stay "visible" behind others and never see visibilitychange.
+  window.addEventListener("focus", function(){
+    if(!_foldSavePending && _foldsV2 && typeof _foldsV2 === "object") _foldRefresh();
+  });
+}
+
+function _foldIdOf(card){
+  return (card.dataset && card.dataset.foldId) || card.id || "";
+}
+
+// Foldable cards grouped by the door (page) they sit in, in page order. A card needs a
+// fixed name, a heading to stay visible when folded, and no data-fold-skip.
+function _foldCardsByDoor(){
+  var out = {};
+  var cards = document.querySelectorAll(".card");
+  for(var i = 0; i < cards.length; i++){
+    var c = cards[i];
+    if(!_foldIdOf(c) || (c.dataset && c.dataset.foldSkip)) continue;
+    // Any heading. A nested one (the intake form's) gets a direct-child title copy in
+    // _foldSetCard, because folding hides everything but direct headings.
+    if(!c.querySelector("h2,h3")) continue;
+    var host = c.closest("[data-door]");
+    var door = host ? host.dataset.door : "home";
+    (out[door] = out[door] || []).push(c);
   }
+  return out;
+}
+
+function _foldDoorVisible(door){
+  var secs = document.querySelectorAll('section[data-door="' + door + '"]');
+  for(var i = 0; i < secs.length; i++){ if(!secs[i].hidden) return true; }
+  return false;
+}
+
+// Every card gets the toggle, whatever its height: measuring cards inside hidden doors
+// is why the 2026-09-16 version showed none.
+function _foldSetCard(card, folded){
+  var btn = null;
+  for(var i = 0; i < card.children.length; i++){
+    if(card.children[i].classList.contains("card-fold")){ btn = card.children[i]; break; }
+  }
+  if(!btn){
+    var head = card.querySelector("h2,h3");
+    if(!card.querySelector(":scope > h2, :scope > h3")){
+      var title = document.createElement("h3");
+      title.className = "fold-title";
+      title.classList.add("fold-title");
+      title.textContent = String((head && head.textContent) || "").trim();
+      card.insertBefore(title, card.firstChild);
+    }
+    btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "card-fold";
+    btn.classList.add("card-fold");
+    btn.setAttribute("aria-label", "Hide or show " + String((head && head.textContent) || "this section").trim());
+    card.insertBefore(btn, card.firstChild);
+  }
+  card.classList.toggle("is-folded", !!folded);
+  btn.textContent = folded ? "Show" : "Hide";
+  btn.setAttribute("aria-expanded", folded ? "false" : "true");
+}
+
+function _foldApplyAll(){
+  var F = window.PortalFolds;
+  var byDoor = _foldCardsByDoor();
+  Object.keys(byDoor).forEach(function(door){
+    var cards = byDoor[door];
+    var ids = cards.map(_foldIdOf);
+    var openIds = cards.filter(function(c){ return c.dataset && c.dataset.foldOpen; }).map(_foldIdOf);
+    if(_foldsV2.state.seen.indexOf(door) === -1 && _foldDoorVisible(door)){
+      _foldsV2.state = F.markSeen(_foldsV2.state, door, ids, openIds);
+      _foldSave();
+    }
+    var r = F.resolveDoor(_foldsV2.state, ids, door, openIds);
+    cards.forEach(function(card){ _foldSetCard(card, r[_foldIdOf(card)]); });
+  });
+  if(typeof _foldBars === "function") _foldBars(byDoor);
+}
+
+function _foldToggle(card){
+  var id = _foldIdOf(card);
+  if(!id) return;
+  _foldRev++;
+  _foldsV2.state = window.PortalFolds.setCard(_foldsV2.state, id, !card.classList.contains("is-folded"));
+  _foldApplyAll();
+  _foldSave();
+}
+
+function _foldClearLegacy(){
+  try{
+    var ls = window.localStorage, drop = [];
+    for(var i = 0; i < ls.length; i++){ var k = ls.key(i); if(k && k.indexOf("rm_fold_") === 0) drop.push(k); }
+    drop.forEach(function(k){ ls.removeItem(k); });
+  }catch(e){}
+}
+
+function _foldLoad(){
+  if(_foldLoading) return;
+  _foldLoading = true;
+  fetch("/api/portal/" + encodeURIComponent(token) + "/folds", {credentials: "same-origin"})
+    .then(function(r){
+      // Setting off answers 404: the old code path runs, unchanged.
+      if(r.status === 404){ _foldsV2 = false; wireCardFolding(); return null; }
+      return r.ok ? r.json() : {failed: true};
+    })
+    .then(function(j){
+      if(!j || _foldsV2 === false) return;
+      if(j.failed){ _foldUseLocalDefault(); return; }
+      _foldsV2 = {state: window.PortalFolds.normalise(j.state), staff: j.viewer === "staff"};
+      document.body.classList.add("folds-v2");
+      _foldClearLegacy();
+      _foldApplyAll();
+    })
+    .catch(function(){ _foldUseLocalDefault(); })
+    .then(function(){ _foldLoading = false; });
+}
+
+// The server could not be reached, or refused (a VA's key). Spec: show the first-visit
+// default. This local record is never saved, or it would overwrite the real one; the
+// next render tries the server again.
+function _foldUseLocalDefault(){
+  if(_foldsV2 && typeof _foldsV2 === "object" && !_foldsV2.local) return;
+  if(!_foldsV2) _foldsV2 = {state: window.PortalFolds.emptyState(), staff: false, local: true};
+  document.body.classList.add("folds-v2");
+  _foldApplyAll();
+}
+
+function _foldRefresh(){
+  var rev = _foldRev;
+  fetch("/api/portal/" + encodeURIComponent(token) + "/folds", {credentials: "same-origin"})
+    .then(function(r){ return r.ok ? r.json() : null; })
+    .then(function(j){
+      if(!j || !_foldsV2 || typeof _foldsV2 !== "object" || _foldSavePending) return;
+      if(rev !== _foldRev) return;         // a newer local change wins over this answer
+      _foldsV2.state = window.PortalFolds.normalise(j.state);
+      _foldApplyAll();
+    })
+    .catch(function(){});
+}
+
+// A burst of clicks sends one save. A failed save is not retried on its own: the next
+// save carries the whole record, so nothing is lost beyond that attempt.
+function _foldSave(){
+  _foldSavePending = true;
+  if(_foldSaveTimer) clearTimeout(_foldSaveTimer);
+  _foldSaveTimer = setTimeout(function(){ _foldSaveTimer = null; _foldPut(false); }, _FOLD_SAVE_MS);
+}
+
+function _foldPut(keepalive){
+  if(!_foldsV2 || typeof _foldsV2 !== "object" || _foldsV2.local){ _foldSavePending = false; return; }
+  _foldSavePending = false;
+  var opts = {method: "PUT", credentials: "same-origin",
+              headers: {"Content-Type": "application/json"},
+              body: JSON.stringify({state: _foldsV2.state})};
+  if(keepalive) opts.keepalive = true;
+  try{
+    fetch("/api/portal/" + encodeURIComponent(token) + "/folds", opts).catch(function(){});
+  }catch(e){}
+}
+
+function _foldFlush(){
+  if(!_foldSavePending) return;
+  if(_foldSaveTimer){ clearTimeout(_foldSaveTimer); _foldSaveTimer = null; }
+  _foldPut(true);
+}
+
+// The page bar: Fold all / Restore for everyone, and Match client's view for staff only.
+// Rebuilt with each render, once per door, at the top of the door's first section.
+function _foldBars(byDoor){
+  var F = window.PortalFolds;
+  Object.keys(byDoor).forEach(function(door){
+    var sec = document.querySelector('section[data-door="' + door + '"]');
+    if(!sec) return;
+    var bar = null;
+    for(var i = 0; i < sec.children.length; i++){
+      if(sec.children[i].classList.contains("fold-bar")){ bar = sec.children[i]; break; }
+    }
+    if(!bar){
+      bar = document.createElement("div");
+      bar.className = "fold-bar";
+      bar.classList.add("fold-bar");
+      bar.setAttribute("data-fold-bar", door);
+      var all = document.createElement("button");
+      all.type = "button";
+      all.className = "fold-bar-all btn small";
+      all.classList.add("fold-bar-all");
+      bar.appendChild(all);
+      if(_foldsV2.staff){
+        var match = document.createElement("button");
+        match.type = "button";
+        match.className = "fold-bar-match btn small";
+        match.classList.add("fold-bar-match");
+        match.textContent = "Match client's view";
+        bar.appendChild(match);
+      }
+      sec.insertBefore(bar, sec.firstChild);
+    }
+    for(var j = 0; j < bar.children.length; j++){
+      var b = bar.children[j];
+      if(b.classList.contains("fold-bar-all")){
+        b.textContent = F.canRestore(_foldsV2.state, door) ? "Restore" : "Fold all";
+      }
+    }
+  });
+}
+
+// Called by the one delegated click handler. True when the click was on the bar.
+function _foldBarClick(t){
+  if(!_foldsV2 || typeof _foldsV2 !== "object") return false;
+  var all = t.closest(".fold-bar-all");
+  if(all){ _foldAllOrRestore(all.closest(".fold-bar").dataset.foldBar); return true; }
+  if(t.closest(".fold-bar-match")){ _foldMatchClient(); return true; }
+  return false;
+}
+
+function _foldAllOrRestore(door){
+  var F = window.PortalFolds;
+  var ids = (_foldCardsByDoor()[door] || []).map(_foldIdOf);
+  _foldRev++;
+  _foldsV2.state = F.canRestore(_foldsV2.state, door)
+    ? F.restore(_foldsV2.state, door) : F.foldAll(_foldsV2.state, door, ids);
+  _foldApplyAll();
+  _foldSave();
+}
+
+// Staff only. Copies the client's folds into this staff member's own record. The client's
+// record is only read: the save below goes to the server as this viewer's own.
+function _foldMatchClient(){
+  fetch("/api/portal/" + encodeURIComponent(token) + "/folds?of=client", {credentials: "same-origin"})
+    .then(function(r){ return r.ok ? r.json() : null; })
+    .then(function(j){
+      if(!j){ throw new Error("no client view"); }
+      _foldRev++;
+      _foldsV2.state = window.PortalFolds.adopt(j.state);
+      _foldApplyAll();
+      _foldSave();
+    })
+    .catch(function(){
+      var btns = document.querySelectorAll(".fold-bar-match");
+      for(var i = 0; i < btns.length; i++) btns[i].setAttribute("title", "Could not load the client's view");
+    });
+}
+
+// A page just came into view: mark it seen and apply its layout now, not at the next
+// poll. Without this, switching pages never marked any page seen (final review).
+function _foldDoorShown(){
+  if(_foldsV2 && typeof _foldsV2 === "object") _foldApplyAll();
+}
+
+// Opens one card by name and saves it, e.g. when a link leads straight to it.
+function _foldOpenCard(id){
+  if(!_foldsV2 || typeof _foldsV2 !== "object") return;
+  if(_foldsV2.state.cards[id] === false) return;
+  _foldRev++;
+  _foldsV2.state = window.PortalFolds.setCard(_foldsV2.state, id, false);
+  _foldApplyAll();
+  _foldSave();
+}
+
+// Runs after every render. Until the record arrives the page shows its default layout.
+function wirePortalFolds(){
+  _foldWireClickOnce();
+  _foldWireLifecycleOnce();
+  if(_foldsV2 === false){ wireCardFolding(); return; }
+  if(_foldsV2 && typeof _foldsV2 === "object" && !_foldsV2.local){ _foldApplyAll(); return; }
+  if(_foldsV2 && _foldsV2.local) _foldApplyAll();
+  _foldLoad();
+}
+
+// A card's fixed fold name, built from its data when the card is built in a loop
+// ("health-" + the section title). Lower case, hyphens, nothing else.
+function foldSlug(s){
+  return String(s || "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+}
+
+function wireCardFolding(){
+  _foldWireClickOnce();
   var cards = document.querySelectorAll(".card");
   for(var i = 0; i < cards.length; i++){
     var card = cards[i];

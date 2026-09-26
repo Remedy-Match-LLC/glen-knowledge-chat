@@ -23277,6 +23277,44 @@ def _portal_open_is_owner():
     return _owner_token_ok(key)
 
 
+def _portal_folds_enabled(email):
+    """PORTAL_FOLDS_V2 on for everyone, or this portal's email listed in
+    PORTAL_FOLDS_V2_EMAILS. Spec: docs/superpowers/specs/2026-09-25-portal-folding-design.md"""
+    if os.environ.get("PORTAL_FOLDS_V2", "").strip().lower() in ("1", "true", "yes", "on"):
+        return True
+    allow = {e.strip().lower() for e in
+             os.environ.get("PORTAL_FOLDS_V2_EMAILS", "").split(",") if e.strip()}
+    return (email or "").strip().lower() in allow
+
+
+def _workspace_user_id_for_token(token):
+    """The staff account behind a live access token, or None. The id, not the token,
+    names a staff fold record, so a reissued sign-in link keeps the same folds."""
+    if not token:
+        return None
+    try:
+        with db.connect(LOG_DB) as cx:
+            row = cx.execute(
+                "SELECT user_id FROM access_tokens WHERE token = ? AND revoked_at IS NULL",
+                (token,)).fetchone()
+    except Exception:
+        return None
+    return int(row[0]) if row else None
+
+
+def _portal_fold_viewer():
+    """Whose fold record this request reads and writes. 'client' when no console key is
+    presented; 'staff:master' or 'staff:user:<id>' for an owner; None for any other key
+    (a VA token, or garbage), which the route refuses rather than guessing."""
+    key = _present_console_key()
+    if not key:
+        return "client"
+    if not _portal_open_is_owner():
+        return None
+    uid = _workspace_user_id_for_token(key)
+    return "staff:master" if uid is None else f"staff:user:{uid}"
+
+
 def _client_login_enabled() -> bool:
     """Real client login (magic-link → session cookie), gated by CLIENT_LOGIN_ENABLED.
     LIVE in prod since 2026-06-26 (set in Doppler prd; see PRs #333/#334) as part of
@@ -25984,6 +26022,45 @@ def api_ebook_optin():
     # below (unauthenticated caller, any email typed in = live bearer token).
     _send_library_ready(email, name, tok, meta["title"], slug)
     return _cors(jsonify({"ok": True}), 200)
+
+
+@app.route("/api/portal/<token>/folds", methods=["GET", "PUT"])
+def api_portal_folds(token):
+    """One fold record per viewer per portal. Staff never write the client's record:
+    the viewer comes from the request's credentials, and there is no parameter that
+    names another viewer for a write. ?of=client lets staff READ the client's record
+    for Match client's view. Spec: docs/superpowers/specs/2026-09-25-portal-folding-design.md"""
+    from dashboard import client_portal as _cp
+    from dashboard import portal_folds as _pf
+    with db.connect(LOG_DB) as cx:
+        _cp.init_client_portal_table(cx)
+        portal = _portal_record_for(cx, token)
+    email = ((portal or {}).get("email") or "").strip().lower()
+    if not email or not _portal_folds_enabled(email):
+        return jsonify({"error": "not found"}), 404
+    viewer = _portal_fold_viewer()
+    if viewer is None:
+        return jsonify({"error": "forbidden"}), 403
+    if request.method == "GET":
+        of = request.args.get("of")
+        if of not in (None, "client"):
+            return jsonify({"error": "bad of"}), 400
+        target = "client" if of == "client" else viewer
+        with db.connect(LOG_DB) as cx:
+            _pf.init_table(cx)
+            state = _pf.get(cx, email, target)
+        return jsonify({"ok": True, "viewer": "client" if viewer == "client" else "staff",
+                        "state": state})
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict) or not isinstance(data.get("state"), dict):
+        return jsonify({"error": "bad body"}), 400
+    try:
+        with _db_lock, db.connect(LOG_DB) as cx:
+            _pf.init_table(cx)
+            state = _pf.put(cx, email, viewer, data["state"])
+    except _pf.TooLarge:
+        return jsonify({"error": "too large"}), 413
+    return jsonify({"ok": True, "state": state})
 
 
 @app.route("/api/portal/<token>/library", methods=["GET"])
