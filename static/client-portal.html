@@ -6,6 +6,108 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex,nofollow">
+<script id="staff-guard">
+/* Staff guard. Spec: docs/superpowers/specs/2026-09-26-portal-staff-guard-design.md
+   The first script on the page, so every later fetch goes through it. It tags this
+   page's own requests with X-Portal-View, which is how the server tells staff inside a
+   client's portal from staff in the console. When the server answers 409 staff_confirm,
+   it asks in the page, then re-sends once with X-Staff-Confirmed. It fails closed: if
+   the question cannot be shown, the action does not happen. */
+(function(){
+  var _fetch = window.fetch.bind(window);
+  var _turn = Promise.resolve();           // one question at a time
+
+  function _sameOrigin(input){
+    try {
+      var url = (input && typeof input === "object" && input.url) ? input.url : String(input);
+      return new URL(url, location.href).origin === location.origin;
+    } catch(e){ return false; }
+  }
+
+  window._staffConfirm = function(info){
+    return new Promise(function(resolve){
+      try {
+        var who = String((info && info.client) || "").trim() || "this client";
+        var box = document.createElement("div");
+        box.className = "staff-confirm";
+        box.setAttribute("role", "dialog");
+        box.setAttribute("aria-modal", "true");
+        var panel = document.createElement("div");
+        panel.className = "staff-confirm-panel";
+        var head = document.createElement("h2");
+        head.textContent = "Do this as " + who + "?";
+        var what = document.createElement("p");
+        what.textContent = String((info && info.action) || "");
+        var go = document.createElement("button");
+        go.type = "button"; go.className = "btn staff-confirm-go";
+        go.textContent = "Do it as " + who;
+        var no = document.createElement("button");
+        no.type = "button"; no.className = "btn staff-confirm-cancel";
+        no.textContent = "Cancel";
+        var row = document.createElement("div");
+        row.className = "staff-confirm-actions";
+        var done = false;
+        function finish(ok){
+          if (done) return;
+          done = true;
+          document.removeEventListener("keydown", onKey, true);
+          if (box.parentNode) box.parentNode.removeChild(box);
+          resolve(ok);
+        }
+        function onKey(e){
+          if (e.key === "Escape"){ if (e.preventDefault) e.preventDefault(); finish(false); }
+        }
+        go.addEventListener("click", function(){ finish(true); });
+        no.addEventListener("click", function(){ finish(false); });
+        row.appendChild(go); row.appendChild(no);
+        panel.appendChild(head); panel.appendChild(what); panel.appendChild(row);
+        box.appendChild(panel);
+        document.addEventListener("keydown", onKey, true);
+        document.body.appendChild(box);
+        no.focus();
+      } catch(e){ resolve(false); }
+    });
+  };
+
+  window._staffBanner = function(d){
+    var sv = d && d.staff_view;
+    if (!sv || document.getElementById("staffBanner")) return;
+    var b = document.createElement("div");
+    b.id = "staffBanner";
+    b.className = "staff-banner";
+    b.setAttribute("role", "status");
+    b.textContent = "You are viewing " + (String(sv.client || "").trim() || "this client") +
+      "'s portal as staff. Anything you do here asks first.";
+    document.body.insertBefore(b, document.body.firstChild);
+    document.body.classList.add("staff-view");
+  };
+
+  window.fetch = function(input, init){
+    if (!_sameOrigin(input)) return _fetch(input, init);
+    var opts = Object.assign({}, init || {});
+    var base = opts.headers || (input && typeof input === "object" && input.headers) || undefined;
+    var headers = new Headers(base);
+    headers.set("X-Portal-View", "1");
+    opts.headers = headers;
+    return _fetch(input, opts).then(function(resp){
+      if (resp.status !== 409) return resp;
+      return resp.clone().json().then(function(j){ return j && j.staff_confirm; },
+                                      function(){ return null; })
+        .then(function(info){
+          if (!info) return resp;
+          var asked = _turn.then(function(){ return window._staffConfirm(info); });
+          _turn = asked.then(function(){}, function(){});
+          return asked.then(function(ok){
+            if (!ok) return resp;
+            var again = new Headers(headers);
+            again.set("X-Staff-Confirmed", "1");
+            return _fetch(input, Object.assign({}, opts, {headers: again}));
+          }, function(){ return resp; });
+        });
+    });
+  };
+})();
+</script>
 <title>Your Healing Home · Remedy Match</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -895,6 +997,18 @@
   .portal-documents .doc-narrative{margin:.45rem 0 0;color:var(--ink);line-height:1.55;font-size:.96rem}
   .portal-documents .doc-pending{margin:.4rem 0 0;color:var(--muted);font-size:.9rem;font-style:italic}
   .portal-documents .doc-empty{color:var(--muted);margin:0}
+  /* Staff guard: the banner and the confirmation. Tokens only, so both themes work. */
+  .staff-banner{position:fixed;top:0;left:0;right:0;z-index:9000;padding:.55rem 16px;
+    background:var(--card2);color:var(--ink);border-bottom:2px solid var(--brand);
+    font:600 .92rem/1.35 "Raleway",sans-serif;text-align:center}
+  body.staff-view{padding-top:2.6rem}
+  .staff-confirm{position:fixed;inset:0;z-index:9100;display:flex;align-items:center;
+    justify-content:center;padding:16px;background:rgba(0,0,0,.45)}
+  .staff-confirm-panel{max-width:28rem;width:100%;background:var(--card);color:var(--ink);
+    border:1px solid var(--line);border-radius:12px;padding:1.1rem 1.2rem}
+  .staff-confirm-panel h2{margin:0 0 .5rem;font-size:1.15rem}
+  .staff-confirm-panel p{margin:0 0 1rem;line-height:1.5}
+  .staff-confirm-actions{display:flex;gap:.6rem;flex-wrap:wrap}
 </style>
 </head>
 <body>
@@ -5709,6 +5823,7 @@ function render(d, v){
     });
   })();
   wireEntityRefs(document.getElementById("app") || document);
+  if (window._staffBanner) window._staffBanner(d);
   // After the cards exist, and on EVERY render: render() rebuilds them on each poll,
   // so a toggle added once would vanish with the card it was attached to.
   wirePortalFolds();
