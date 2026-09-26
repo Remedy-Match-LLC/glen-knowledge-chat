@@ -2500,7 +2500,8 @@
       }
     ],
     "ingredients_source": "glen-confirmed-2026-09-26",
-    "note": "Glen 2026-09-26: grass-fed bovine type I and III (from Micro-Ingredients). Line stands."
+    "note": "Glen 2026-09-26: grass-fed bovine type I and III (from Micro-Ingredients). Line stands.",
+    "description": "Hydrolyzed Collagen Powder is a single-ingredient powder of hydrolyzed collagen from grass-fed cattle, Types I and III. Take 1 scoop in a drink 3 times a day, or as guided.\n\nContents: 100 g."
   },
   "zinc-taste-test": {
     "ingredients": [
@@ -2510,7 +2511,8 @@
       }
     ],
     "ingredients_source": "glen-confirmed-2026-09-26",
-    "note": "Glen 2026-09-26: Zinc Taste Test is Zinc Sulfate solution. Line stands."
+    "note": "Glen 2026-09-26: Zinc Taste Test is Zinc Sulfate solution. Line stands.",
+    "description": "Zinc Taste Test is a zinc sulfate solution taken as drops. Take 10 drops in the mouth as needed, or as guided.\n\nContents: 50 mL."
   },
   "electrolyte-mineral-manna": {
     "ingredients": [
@@ -2532,7 +2534,8 @@
       }
     ],
     "ingredients_source": "glen-confirmed-2026-09-26",
-    "note": "Glen 2026-09-26: keep its four lines. Still never-recommended."
+    "note": "Glen 2026-09-26: keep its four lines. Still never-recommended.",
+    "description": "Electrolyte Mineral Manna is a liquid of levitating sea mineral electrolytes and Manna ORMUS M-11 in alkaline antioxidant microwater. The water is low in deuterium, at 5 ppm."
   },
   "wash--rinse": {
     "ingredients": [
@@ -2546,7 +2549,8 @@
       }
     ],
     "ingredients_source": "glen-confirmed-2026-09-26",
-    "note": "Glen 2026-09-26: Wash is Sodium Bicarbonate; Rinse is Apple Cider Vinegar powder. Reformulation planned later."
+    "note": "Glen 2026-09-26: Wash is Sodium Bicarbonate; Rinse is Apple Cider Vinegar powder. Reformulation planned later.",
+    "description": "Wash & Rinse has two parts. The Wash is sodium bicarbonate (baking soda). The Rinse is apple cider vinegar powder."
   },
   "lcarnosine": {
     "ingredients": [
@@ -2556,7 +2560,8 @@
       }
     ],
     "ingredients_source": "glen-confirmed-2026-09-26",
-    "note": "Glen 2026-09-26: pure powder. Dose cleared: '30 g (bulk powder)' was the jar size, not a serving."
+    "note": "Glen 2026-09-26: pure powder. Dose cleared: '30 g (bulk powder)' was the jar size, not a serving.",
+    "description": "L-Carnosine is a single-ingredient pure powder of L-carnosine.\n\nContents: 30 g in a 50 mL violet glass bottle."
   },
   "food-tolerance": {
     "ingredients": [

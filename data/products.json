@@ -6151,7 +6151,18 @@
     }
    ],
    "ingredients_source": "glen-confirmed-2026-09-26",
-   "qty_pricing": true
+   "qty_pricing": true,
+   "intro": "Electrolyte Mineral Manna is a liquid of levitating sea mineral electrolytes and Manna ORMUS M-11 in alkaline antioxidant microwater. The water is low in deuterium, at 5 ppm.",
+   "description": "Electrolyte Mineral Manna is a liquid of levitating sea mineral electrolytes and Manna ORMUS M-11 in alkaline antioxidant microwater. The water is low in deuterium, at 5 ppm.",
+   "learn_markdown": "Electrolyte Mineral Manna is a liquid of levitating sea mineral electrolytes and Manna ORMUS M-11 in alkaline antioxidant microwater. The water is low in deuterium, at 5 ppm.",
+   "how_it_works": "",
+   "copy_pinned": [
+    "ingredients",
+    "intro",
+    "description",
+    "research",
+    "benefits"
+   ]
   },
   "sanctuary-c60": {
    "name": "Sanctuary C60",
@@ -6410,7 +6421,18 @@
    "ingredients_source": "glen-confirmed-2026-09-26",
    "bottle_type": "120 caps",
    "fmp_id": "874",
-   "regular_cents": 8000
+   "regular_cents": 8000,
+   "intro": "Hydrolyzed Collagen Powder is a single-ingredient powder of hydrolyzed collagen from grass-fed cattle, Types I and III. Take 1 scoop in a drink 3 times a day, or as guided.",
+   "description": "Hydrolyzed Collagen Powder is a single-ingredient powder of hydrolyzed collagen from grass-fed cattle, Types I and III. Take 1 scoop in a drink 3 times a day, or as guided.\n\nContents: 100 g.",
+   "learn_markdown": "Hydrolyzed Collagen Powder is a single-ingredient powder of hydrolyzed collagen from grass-fed cattle, Types I and III. Take 1 scoop in a drink 3 times a day, or as guided.\n\nContents: 100 g.",
+   "how_it_works": "",
+   "copy_pinned": [
+    "ingredients",
+    "intro",
+    "description",
+    "research",
+    "benefits"
+   ]
   },
   "es12-female": {
    "name": "ES12",
@@ -8268,7 +8290,17 @@
     }
    ],
    "ingredients_source": "glen-confirmed-2026-09-26",
-   "description": "Zinc Taste Test . Price: $39.97."
+   "description": "Zinc Taste Test is a zinc sulfate solution taken as drops. Take 10 drops in the mouth as needed, or as guided.\n\nContents: 50 mL.",
+   "intro": "Zinc Taste Test is a zinc sulfate solution taken as drops. Take 10 drops in the mouth as needed, or as guided.",
+   "learn_markdown": "Zinc Taste Test is a zinc sulfate solution taken as drops. Take 10 drops in the mouth as needed, or as guided.\n\nContents: 50 mL.",
+   "how_it_works": "",
+   "copy_pinned": [
+    "ingredients",
+    "intro",
+    "description",
+    "research",
+    "benefits"
+   ]
   },
   "shields-up": {
    "name": "Shields Up",
@@ -9891,7 +9923,18 @@
     }
    ],
    "ingredients_source": "glen-confirmed-2026-09-26",
-   "qty_pricing": true
+   "qty_pricing": true,
+   "intro": "Wash & Rinse has two parts. The Wash is sodium bicarbonate (baking soda). The Rinse is apple cider vinegar powder.",
+   "description": "Wash & Rinse has two parts. The Wash is sodium bicarbonate (baking soda). The Rinse is apple cider vinegar powder.",
+   "learn_markdown": "Wash & Rinse has two parts. The Wash is sodium bicarbonate (baking soda). The Rinse is apple cider vinegar powder.",
+   "how_it_works": "",
+   "copy_pinned": [
+    "ingredients",
+    "intro",
+    "description",
+    "research",
+    "benefits"
+   ]
   },
   "macular-wellness-zeaxanthin": {
    "name": "Macular Wellness Zeaxanthin",
@@ -12523,7 +12566,17 @@
     }
    ],
    "ingredients_source": "glen-confirmed-2026-09-26",
-   "description": "L-Carnosine . L-Carnosine L-Carnosine Remedy Match: $39.97 for 30g in 50 mL violet glass bottle (bottle retail value: $19 from Infinity Jars) Compare: Nootropics Depot $29.99/30g in plastic bottle L-Carnosine Powder: 30 grams in a Belgian violet glass bottle. L-Carnosine Background L-Carnosine (β-alanyl-L-histidine) is a naturally occurring dipeptide discovered over 100 years ago by Gulewitsch and Amiradžibi at the University of Charkow, Ukraine[1]. Its name derives from the Latin \"caro, carnis\" meaning meat, as it was first isolated from minced meat extract[1]. This endogenous compound is..."
+   "description": "L-Carnosine is a single-ingredient pure powder of L-carnosine.\n\nContents: 30 g in a 50 mL violet glass bottle.",
+   "intro": "L-Carnosine is a single-ingredient pure powder of L-carnosine.",
+   "learn_markdown": "L-Carnosine is a single-ingredient pure powder of L-carnosine.\n\nContents: 30 g in a 50 mL violet glass bottle.",
+   "how_it_works": "",
+   "copy_pinned": [
+    "ingredients",
+    "intro",
+    "description",
+    "research",
+    "benefits"
+   ]
   },
   "viscum-album": {
    "name": "Viscum album",
