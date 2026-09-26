@@ -654,10 +654,12 @@
   /* Collapsible cards, Glen 2026-09-16: "Any medium to large cards need a button to
      collapse/open. Remember the last state." The toggle sits in the heading so it is
      where the eye already is, and the heading stays readable when collapsed. */
-  .card-fold{float:right;background:none;border:0;color:var(--muted);cursor:pointer;
+  .card{position:relative}
+  .card > h2:first-of-type, .card > h3:first-of-type{padding-right:64px}
+  .card-fold{position:absolute;top:10px;right:10px;background:none;border:0;color:var(--muted);cursor:pointer;
     font:inherit;font-size:.82rem;line-height:1.2;padding:2px 6px;border-radius:8px}
   .card-fold:hover{color:var(--ink);background:var(--brand-soft)}
-  .card.is-folded > *:not(h2):not(h3){display:none}
+  .card.is-folded > *:not(h2):not(h3):not(.card-fold){display:none}
   .card.is-folded{padding-bottom:14px}
   /* Voice moved onto the composer on 2026-09-16. It used to sit in the Ask card,
      which is the hidden panel, so the mic was unreachable from the hub. */
@@ -946,6 +948,7 @@
 <script src="/static/entity-ref.js"></script>
 <script src="/static/js/portal-conditions.js"></script>
 <script src="/static/js/portal-shell.js"></script>
+<script src="/static/js/portal-folds.js"></script>
 <script src="/static/js/portal-library.js"></script>
 <script src="/static/js/portal-documents.js"></script>
 <script src="/static/js/portal-historical-intakes.js"></script>
@@ -5686,7 +5689,7 @@ function render(d, v){
   wireEntityRefs(document.getElementById("app") || document);
   // After the cards exist, and on EVERY render: render() rebuilds them on each poll,
   // so a toggle added once would vanish with the card it was attached to.
-  wireCardFolding();
+  wirePortalFolds();
 
   var chatSendEl = document.getElementById("chatSend");
   if(chatSendEl){ chatSendEl.addEventListener("click", sendChatMessage); }
@@ -8391,20 +8394,14 @@ function renderRelated(items){
 // When the Ask door is open, #chatMsgs is the thread and nothing changes. Otherwise the
 // composer's own #shellChatThread is revealed and used. Both carry .chat-msgs, so the
 // bubbles look the same either way.
-// Collapsible cards. Glen, 2026-09-16: "Any medium to large cards need a button to
-// collapse/open. Remember the last state."
+// Collapsible cards, the SETTING-OFF path only (PORTAL_FOLDS_V2 off). Glen, 2026-09-16:
+// "Any medium to large cards need a button to collapse/open. Remember the last state."
 //
-// MEASURED, not listed. "Medium to large" is a height, and a hand-kept list of card ids
-// would drift the first time a card grew. Anything taller than CARD_FOLD_MIN_PX gets a
-// toggle; a card already remembered as folded keeps one whatever its collapsed height.
-//
-// The key is the card's id when it has one, else its heading text, because render()
-// rebuilds these on every poll and an index would point at a different card each time.
-//
-// localStorage is right for this and a server round trip would not be: it is a per-viewer
-// convenience, it never leaves the browser, and losing it costs a click. Every read and
-// write is wrapped, because it throws in a private window and returns nothing with site
-// data cleared, and the cards must render either way.
+// Superseded by the server-backed folds below. Glen, 2026-09-25, reversed the reasoning
+// this path was built on: every card gets a toggle (not only tall ones), and the state
+// follows the person across devices, so it is stored on the server, not in localStorage.
+// Measured live, this path showed no toggles at all, because cards inside hidden doors
+// measure 0px. Kept unchanged so that turning the setting off restores today's portal.
 var CARD_FOLD_MIN_PX = 320;
 
 function _cardFoldKey(card){
@@ -8423,6 +8420,199 @@ function _cardFoldWrite(key, folded){
   catch(e){}
 }
 
+// ── Server-backed card folding (PORTAL_FOLDS_V2) ───────────────────────────
+// Spec: docs/superpowers/specs/2026-09-25-portal-folding-design.md. Glen, 2026-09-25:
+// the fold state follows the PERSON across devices, so it lives on the server, one
+// record per viewer per portal; staff folds never change the client's. The rules are
+// in static/js/portal-folds.js; these functions only apply them to the page. The
+// localStorage path above is now the setting-off path only.
+var _foldsV2;              // undefined: not loaded yet; false: setting off; object: live
+var _foldLoading = false;
+var _foldSaveTimer = null;
+var _foldSavePending = false;
+var _foldLifecycleWired = false;
+var _FOLD_SAVE_MS = 600;
+
+// Delegated and wired ONCE. render() replaces app.innerHTML on every poll, so a
+// listener bound to a button dies with it. This is the same mistake that made the
+// portal composer's Send button look dead, and it is not worth making twice.
+function _foldWireClickOnce(){
+  if(window.__cardFoldWired) return;
+  window.__cardFoldWired = true;
+  document.addEventListener("click", function(e){
+    var t = e.target;
+    if(!t || !t.closest) return;
+    if(typeof _foldBarClick === "function" && _foldBarClick(t)) return;
+    var btn = t.closest(".card-fold");
+    if(!btn) return;
+    var card = btn.closest(".card");
+    if(!card) return;
+    if(_foldsV2 && typeof _foldsV2 === "object"){ _foldToggle(card); return; }
+    var folded = !card.classList.contains("is-folded");
+    card.classList.toggle("is-folded", folded);
+    btn.textContent = folded ? "Show" : "Hide";
+    btn.setAttribute("aria-expanded", folded ? "false" : "true");
+    var key = _cardFoldKey(card);
+    if(key) _cardFoldWrite(key, folded);
+  });
+}
+
+function _foldWireLifecycleOnce(){
+  if(_foldLifecycleWired) return;
+  _foldLifecycleWired = true;
+  // A fold clicked just before the page closes is still saved.
+  window.addEventListener("pagehide", _foldFlush);
+  // Back to this tab: another device may have changed the record since.
+  document.addEventListener("visibilitychange", function(){
+    if(document.visibilityState === "visible" && !_foldSavePending
+       && _foldsV2 && typeof _foldsV2 === "object") _foldRefresh();
+  });
+}
+
+function _foldIdOf(card){
+  return (card.dataset && card.dataset.foldId) || card.id || "";
+}
+
+// Foldable cards grouped by the door (page) they sit in, in page order. A card needs a
+// fixed name, a heading to stay visible when folded, and no data-fold-skip.
+function _foldCardsByDoor(){
+  var out = {};
+  var cards = document.querySelectorAll(".card");
+  for(var i = 0; i < cards.length; i++){
+    var c = cards[i];
+    if(!_foldIdOf(c) || (c.dataset && c.dataset.foldSkip)) continue;
+    if(!c.querySelector("h2,h3")) continue;
+    var host = c.closest("[data-door]");
+    var door = host ? host.dataset.door : "home";
+    (out[door] = out[door] || []).push(c);
+  }
+  return out;
+}
+
+function _foldDoorVisible(door){
+  var secs = document.querySelectorAll('section[data-door="' + door + '"]');
+  for(var i = 0; i < secs.length; i++){ if(!secs[i].hidden) return true; }
+  return false;
+}
+
+// Every card gets the toggle, whatever its height: measuring cards inside hidden doors
+// is why the 2026-09-16 version showed none.
+function _foldSetCard(card, folded){
+  var btn = null;
+  for(var i = 0; i < card.children.length; i++){
+    if(card.children[i].classList.contains("card-fold")){ btn = card.children[i]; break; }
+  }
+  if(!btn){
+    var head = card.querySelector("h2,h3");
+    btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "card-fold";
+    btn.classList.add("card-fold");
+    btn.setAttribute("aria-label", "Hide or show " + String((head && head.textContent) || "this section").trim());
+    card.insertBefore(btn, card.firstChild);
+  }
+  card.classList.toggle("is-folded", !!folded);
+  btn.textContent = folded ? "Show" : "Hide";
+  btn.setAttribute("aria-expanded", folded ? "false" : "true");
+}
+
+function _foldApplyAll(){
+  var F = window.PortalFolds;
+  var byDoor = _foldCardsByDoor();
+  Object.keys(byDoor).forEach(function(door){
+    var cards = byDoor[door];
+    var ids = cards.map(_foldIdOf);
+    if(_foldsV2.state.seen.indexOf(door) === -1 && _foldDoorVisible(door)){
+      _foldsV2.state = F.markSeen(_foldsV2.state, door);
+      _foldSave();
+    }
+    var r = F.resolveDoor(_foldsV2.state, ids);
+    cards.forEach(function(card){ _foldSetCard(card, r[_foldIdOf(card)]); });
+  });
+  if(typeof _foldBars === "function") _foldBars(byDoor);
+}
+
+function _foldToggle(card){
+  var id = _foldIdOf(card);
+  if(!id) return;
+  _foldsV2.state = window.PortalFolds.setCard(_foldsV2.state, id, !card.classList.contains("is-folded"));
+  _foldApplyAll();
+  _foldSave();
+}
+
+function _foldClearLegacy(){
+  try{
+    var ls = window.localStorage, drop = [];
+    for(var i = 0; i < ls.length; i++){ var k = ls.key(i); if(k && k.indexOf("rm_fold_") === 0) drop.push(k); }
+    drop.forEach(function(k){ ls.removeItem(k); });
+  }catch(e){}
+}
+
+function _foldLoad(){
+  if(_foldLoading) return;
+  _foldLoading = true;
+  fetch("/api/portal/" + encodeURIComponent(token) + "/folds", {credentials: "same-origin"})
+    .then(function(r){
+      // Setting off answers 404: the old code path runs, unchanged.
+      if(r.status === 404){ _foldsV2 = false; wireCardFolding(); return null; }
+      return r.ok ? r.json() : null;
+    })
+    .then(function(j){
+      if(!j || _foldsV2 === false) return;
+      _foldsV2 = {state: window.PortalFolds.normalise(j.state), staff: j.viewer === "staff"};
+      _foldClearLegacy();
+      _foldApplyAll();
+    })
+    .catch(function(){})
+    .then(function(){ _foldLoading = false; });
+}
+
+function _foldRefresh(){
+  fetch("/api/portal/" + encodeURIComponent(token) + "/folds", {credentials: "same-origin"})
+    .then(function(r){ return r.ok ? r.json() : null; })
+    .then(function(j){
+      if(!j || !_foldsV2 || typeof _foldsV2 !== "object" || _foldSavePending) return;
+      _foldsV2.state = window.PortalFolds.normalise(j.state);
+      _foldApplyAll();
+    })
+    .catch(function(){});
+}
+
+// A burst of clicks sends one save. A failed save is not retried on its own: the next
+// save carries the whole record, so nothing is lost beyond that attempt.
+function _foldSave(){
+  _foldSavePending = true;
+  if(_foldSaveTimer) clearTimeout(_foldSaveTimer);
+  _foldSaveTimer = setTimeout(function(){ _foldSaveTimer = null; _foldPut(false); }, _FOLD_SAVE_MS);
+}
+
+function _foldPut(keepalive){
+  if(!_foldsV2 || typeof _foldsV2 !== "object") return;
+  _foldSavePending = false;
+  var opts = {method: "PUT", credentials: "same-origin",
+              headers: {"Content-Type": "application/json"},
+              body: JSON.stringify({state: _foldsV2.state})};
+  if(keepalive) opts.keepalive = true;
+  try{
+    fetch("/api/portal/" + encodeURIComponent(token) + "/folds", opts).catch(function(){});
+  }catch(e){}
+}
+
+function _foldFlush(){
+  if(!_foldSavePending) return;
+  if(_foldSaveTimer){ clearTimeout(_foldSaveTimer); _foldSaveTimer = null; }
+  _foldPut(true);
+}
+
+// Runs after every render. Until the record arrives the page shows its default layout.
+function wirePortalFolds(){
+  _foldWireClickOnce();
+  _foldWireLifecycleOnce();
+  if(_foldsV2 === false){ wireCardFolding(); return; }
+  if(_foldsV2 && typeof _foldsV2 === "object"){ _foldApplyAll(); return; }
+  _foldLoad();
+}
+
 // A card's fixed fold name, built from its data when the card is built in a loop
 // ("health-" + the section title). Lower case, hyphens, nothing else.
 function foldSlug(s){
@@ -8430,24 +8620,7 @@ function foldSlug(s){
 }
 
 function wireCardFolding(){
-  // Delegated and wired ONCE. render() replaces app.innerHTML on every poll, so a
-  // listener bound to a button dies with it. This is the same mistake that made the
-  // portal composer's Send button look dead, and it is not worth making twice.
-  if(!window.__cardFoldWired){
-    window.__cardFoldWired = true;
-    document.addEventListener("click", function(e){
-      var btn = e.target && e.target.closest && e.target.closest(".card-fold");
-      if(!btn) return;
-      var card = btn.closest(".card");
-      if(!card) return;
-      var folded = !card.classList.contains("is-folded");
-      card.classList.toggle("is-folded", folded);
-      btn.textContent = folded ? "Show" : "Hide";
-      btn.setAttribute("aria-expanded", folded ? "false" : "true");
-      var key = _cardFoldKey(card);
-      if(key) _cardFoldWrite(key, folded);
-    });
-  }
+  _foldWireClickOnce();
   var cards = document.querySelectorAll(".card");
   for(var i = 0; i < cards.length; i++){
     var card = cards[i];
