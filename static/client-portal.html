@@ -659,6 +659,9 @@
   body.folds-v2 .card > h2:first-of-type, body.folds-v2 .card > h3:first-of-type{padding-right:64px}
   body.folds-v2 .card-fold{float:none;position:absolute;top:10px;right:10px}
   body.folds-v2 .card.is-folded > .card-fold{display:inline-block}
+  /* !important: many cards' rows carry an inline style="display:flex", which beats a plain
+     rule, so "Scan history" stayed open when folded (Glen, 2026-09-26, live). */
+  body.folds-v2 .card.is-folded > *:not(h2):not(h3):not(.card-fold){display:none !important}
   body.folds-v2 .card:not(.is-folded) > h3.fold-title{display:none}
   body.folds-v2 .card > h3.fold-title{margin:0;padding-right:64px}
   .card-fold{float:right;background:none;border:0;color:var(--muted);cursor:pointer;
