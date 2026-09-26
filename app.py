@@ -33479,6 +33479,46 @@ def peer_thread_report(thread_id):
     return jsonify({"ok": True})
 
 
+@app.route("/api/console/bookings/cancel", methods=["POST"])
+def api_console_booking_cancel():
+    """Owner-only: cancel one EVOX/onboarding/consult booking and send NOTHING.
+
+    Glen, 2026-09-26: a welcome call booked by mistake from a console-opened portal was
+    to be cancelled 'with a short apology' that he sends himself, so no automatic email
+    may go out. Frees the slot (status 'cancelled'), takes the event off the Live
+    Calendar (calendar_events status 'cancelled'), and stops reminders (they select
+    status='booked' only). Find by id, or by email + start. Dry run unless apply is true.
+    """
+    if not _portal_open_is_owner():
+        return jsonify({"error": "unauthorized"}), 401
+    body = request.get_json(silent=True) or {}
+    apply = body.get("apply") is True
+    from dashboard import evox as _ev
+    with _db_lock, db.connect(LOG_DB) as cx:
+        cx.row_factory = sqlite3.Row
+        _ev.init_evox_tables(cx)
+        if body.get("id") is not None:
+            row = cx.execute("SELECT * FROM evox_bookings WHERE id=?", (int(body["id"]),)).fetchone()
+        else:
+            row = cx.execute(
+                "SELECT * FROM evox_bookings WHERE lower(email)=? AND start_ts=? ORDER BY id DESC",
+                ((body.get("email") or "").strip().lower(), (body.get("start") or "").strip())).fetchone()
+        if not row:
+            return jsonify({"error": "not_found"}), 404
+        booking = {k: row[k] for k in ("id", "email", "start_ts", "end_ts", "status",
+                                       "session_type", "practitioner", "calendar_event_id")}
+        if row["status"] != "booked":
+            return jsonify({"error": "not_booked", "booking": booking}), 409
+        if apply:
+            cx.execute("UPDATE evox_bookings SET status='cancelled' WHERE id=? AND status='booked'",
+                       (row["id"],))
+            if row["calendar_event_id"]:
+                cx.execute("UPDATE calendar_events SET status='cancelled' WHERE google_event_id=?",
+                           (row["calendar_event_id"],))
+            cx.commit()
+    return jsonify({"ok": True, "applied": apply, "booking": booking, "email_sent": False})
+
+
 @app.route("/api/onboarding/state")
 def onboarding_state():
     from dashboard import onboarding as _ob
