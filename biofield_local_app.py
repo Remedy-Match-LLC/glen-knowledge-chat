@@ -1214,8 +1214,11 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                 _alias_map, _display_map = _al(_acx), _dl(_acx)
         except Exception as _ae:
             print(f"[clinical] alias map skipped: {_ae!r}", flush=True)
+        with sqlite3.connect(db_path) as _ncx:
+            _narr_warnings = _narrative_warnings(_ncx, test_id, narrative)
         return Response(render_author_html(rep, dv, transcript, covered_by_layer=covered,
                                            narrative=narrative, fee_state=fstate,
+                                           narrative_warnings=_narr_warnings,
                                            clinical_checklist=clinical_checklist,
                                            dispensed=dispensed,
                                            dispensed_error=dispensed_error,
@@ -3028,9 +3031,24 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
 
     @app.route("/test/<test_id>/narrative", methods=["POST"])
     def narrative_save(test_id):
+        text = (request.get_json(silent=True) or {}).get("narrative", "")
         with sqlite3.connect(db_path) as cx:
-            save_narrative(cx, test_id, (request.get_json(silent=True) or {}).get("narrative", ""))
-        return {"ok": True}
+            save_narrative(cx, test_id, text)
+            warnings = _narrative_warnings(cx, test_id, text)
+        return {"ok": True, "warnings": warnings}
+
+    def _narrative_warnings(cx, test_id, text):
+        """What is still wrong in this narrative: products off the chain, nutrients on the
+        wrong remedy (clinical, 2026-09-25). Re-run on every save and page load, so a
+        warning clears once Glen fixes the sentence by hand. Never raises."""
+        if not (text or "").strip():
+            return []
+        try:
+            from dashboard.biofield_narrative import narrative_problems
+            return narrative_problems(text, _report_for(cx, test_id))
+        except Exception as e:
+            print(f"[narrative-check] {test_id}: {e!r}", flush=True)
+            return []
 
     @app.route("/test/<test_id>/generate", methods=["POST"])
     def narrative_generate(test_id):
@@ -3043,25 +3061,28 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                 prof = fetch_profile(((rep.get("client") or {}).get("email") or "").strip()) or {}
             except Exception:
                 prof = {}
+            warnings = []
             try:
                 text = generate_narrative(rep, notes, complete, scan=ctx, profile=prof,
-                                          animal=_animal_for(rep))
+                                          animal=_animal_for(rep), problems_out=warnings)
             except Exception as e:  # no API key / network / model error
                 return {"error": str(e)[:200]}
             save_narrative(cx, test_id, text)
-        return {"narrative": text, "saved_label": fmt_saved_hst(ts)}
+        return {"narrative": text, "saved_label": fmt_saved_hst(ts), "warnings": warnings}
 
     @app.route("/test/<test_id>/video-generate", methods=["POST"])
     def video_generate(test_id):
         notes = (request.get_json(silent=True) or {}).get("notes", "")
         with sqlite3.connect(db_path) as cx:
             ctx, rep = _e4l(cx, test_id)
+            warnings = []
             try:
-                script = generate_video_script(rep, notes, complete, scan=ctx)
+                script = generate_video_script(rep, notes, complete, scan=ctx,
+                                               problems_out=warnings)
             except Exception as e:
                 return {"error": str(e)[:200]}
             save_video_script(cx, test_id, script)
-        return {"script": script}
+        return {"script": script, "warnings": warnings}
 
     @app.route("/test/<test_id>/video-script", methods=["POST"])
     def video_script_save(test_id):

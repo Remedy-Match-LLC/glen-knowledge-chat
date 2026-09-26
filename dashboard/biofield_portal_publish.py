@@ -94,13 +94,68 @@ def _cue_candidates(layer):
     return out
 
 
+# A layer's paragraph opens with its number: "1. ", "2) ", "**3.** ". Only a number at
+# the start of a PARAGRAPH counts: a list inside a paragraph, or a closing "Next steps"
+# list, is not a layer boundary (blind review, 2026-09-25).
+_NUM_PREFIX = re.compile(r"^[ \t]*(?:#{1,6}[ \t]*)?(?:\*\*)?(\d{1,2})[.)](?:\*\*)?[ \t]+",
+                         re.MULTILINE)
+_PARA_BREAK = re.compile(r"\n[ \t]*\n\s*")
+
+
+def _paragraph_starts(text):
+    return [0] + [m.end() for m in _PARA_BREAK.finditer(text)]
+
+
+def _has_cue(segment, layer):
+    low = segment.lower()
+    return any(c.lower() in low for c in _cue_candidates(layer))
+
+
+def _numbered_segments(text, layers):
+    """One segment per numbered paragraph, the number stripped (the card shows its own).
+    Trusted only when the paragraph numbers run exactly 1..n and paragraph k names a cue
+    of layer k. A numbered terrain paragraph, extra numbers, or a stray list otherwise
+    shifted every card onto the wrong layer. None when not trusted."""
+    n = len(layers)
+    numbered = []
+    for start in _paragraph_starts(text):
+        m = _NUM_PREFIX.match(text, start)
+        if m:
+            numbered.append((int(m.group(1)), start, m.end()))
+    if [k for k, _, _ in numbered] != list(range(1, n + 1)):
+        return None
+    # A closing recap list ("What to do:\n\n1. Take Liver Flow...") repeats remedies the
+    # letter already explained, each in its own paragraph (blind review round 3). An intro
+    # naming the whole chain in one sentence is normal and keeps the numbering.
+    head = text[:numbered[0][1]]
+    paras = [p for p in _PARA_BREAK.split(head) if p.strip()]
+    with_cue = [p for p in paras if any(_has_cue(p, layer) for layer in layers)]
+    if paras and (paras[-1].rstrip().endswith(":") or len(with_cue) >= 2):
+        return None
+    segs = []
+    for i, (_, _, body) in enumerate(numbered):
+        stop = numbered[i + 1][1] if i + 1 < n else len(text)
+        segs.append(text[body:stop].strip())
+    if not all(_has_cue(seg, layer) for seg, layer in zip(segs, layers)):
+        return None
+    return segs
+
+
 def segment_narrative(narrative, layers):
-    """Split the single narrative blob into one segment per layer, by locating
-    each layer's cue (remedy, else its first word, else head) in increasing
-    order. Returns a list aligned to ``layers``; ``[]`` when it cannot align."""
-    text = narrative or ""
+    """Split the single narrative blob into one segment per layer.
+
+    By the writer's numbered paragraphs first. Cutting at each remedy's name started
+    every portal card mid-paragraph and ended it with the next layer's opening clause
+    (clinical, 2026-09-25, Peach Goddard). The remedy cues remain the fallback for a
+    narrative without clean numbering. Returns a list aligned to ``layers``; ``[]``
+    when it cannot align."""
+    # "\r\n" never matches the blank-line search below (blind review, 2026-09-25).
+    text = (narrative or "").replace("\r\n", "\n")
     if not text or not layers:
         return []
+    numbered = _numbered_segments(text, layers)
+    if numbered:
+        return numbered
     low = text.lower()
     positions = []
     cursor = 0
@@ -115,12 +170,24 @@ def segment_narrative(narrative, layers):
             return []                          # a layer has no cue -> fall back
         positions.append(found)
         cursor = found + 1
+    # Narratives written before the paragraphs were numbered (a2 to a32 on 2026-09-25)
+    # still come apart at blank lines. Move each cut back to the start of the paragraph
+    # its cue sits in, so a card never opens mid-sentence, as long as that stays after
+    # the previous cut.
+    prev = -1
+    for i, pos in enumerate(positions):
+        breaks = [m.end() for m in _PARA_BREAK.finditer(text, prev + 1, pos)]
+        if breaks:
+            positions[i] = breaks[-1]
+        prev = positions[i]
     # positions are strictly increasing by construction (each search starts past
     # the previous hit). Slice between consecutive cue starts.
     segs = []
     for i, start in enumerate(positions):
         end = positions[i + 1] if i + 1 < len(positions) else len(text)
-        segs.append(text[start:end].strip())
+        seg = text[start:end].strip()
+        lead = _NUM_PREFIX.match(seg)         # only at the card's start, never a list inside
+        segs.append(seg[lead.end():] if lead else seg)
     return segs
 
 

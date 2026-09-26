@@ -854,3 +854,20 @@ def test_handoff_bills_the_largest_count_for_a_remedy_on_two_layers(tmp_path, mo
         assert client.post("/author/%s/handoff" % tid, json={}).get_json()["ok"] is True
         got = [l for l in captured["lines"] if l["slug"] == "liver-support"]
         assert len(got) == 1 and got[0]["qty"] == 3, (first, second, got)
+
+
+def test_narrative_save_and_generate_return_the_check_warnings(tmp_path):
+    """Clinical, 2026-09-25: a narrative naming a product off the chain is flagged to
+    Glen on save, and after a generate whose retry still fails. A clean one is not."""
+    db = str(tmp_path / "chat_log.db")
+    _seed(db)
+    client = create_app(db, complete=lambda s, u: "Aloha Lewis,\n\nLiver Support aids the liver.",
+                        scan_lookup=lambda email: None).test_client()
+    bad = client.post("/test/10/narrative",
+                      json={"narrative": "Liver Support aids the liver."}).get_json()
+    assert any("Liver Support" in w for w in bad["warnings"]), bad
+    ok = client.post("/test/10/narrative",
+                     json={"narrative": "Sterol Max supports the acid layer."}).get_json()
+    assert ok["warnings"] == []
+    g = client.post("/test/10/generate", json={"notes": ""}).get_json()
+    assert any("Liver Support" in w for w in g["warnings"]), g

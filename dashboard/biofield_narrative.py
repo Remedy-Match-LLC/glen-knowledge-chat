@@ -9,6 +9,9 @@ import datetime
 import re
 import sqlite3
 
+from dashboard.narrative_grounding import (
+    check_narrative, clean_scan_description, fix_scan_names, scan_name_problems)
+
 
 def _now():
     return datetime.datetime.utcnow().isoformat(timespec="seconds") + "Z"
@@ -129,9 +132,13 @@ _SYSTEM = (
     "every tail area listed, grouping related ones. Connect them to the client only where a CLIENT-STATED CONCERNS item "
     "plainly relates; never invent a symptom or condition. Name one or two key pathways the "
     "layer's remedies support, taken ONLY from that remedy's 'pathways source' (its listed "
-    "ingredients); when it says none was supplied, name no pathway for it. Frame it as balancing these patterns supports the "
+    "ingredients); when it says none was supplied, name no pathway for it. Name a remedy's "
+    "ingredients only in a sentence that names that one remedy; never credit two remedies "
+    "with an ingredient list together. Frame it as balancing these patterns supports the "
     "body's own function. Never say a remedy treats, heals, cures, fixes or prevents anything, "
     "and never state or imply a diagnosis. Never name another layer's remedy in this paragraph.\n"
+    "- NAME ONLY THE CHAIN'S REMEDIES: never name a product, formula or supplement that is not "
+    "listed as a remedy in the CAUSAL CHAIN.\n"
     "- PLAIN TEXT ONLY: no markdown, no asterisks, no bold, no headings. Still begin each "
     "layer paragraph with its number, as '1.', '2.' and so on.\n"
     "- NAME EVERY INFOCEUTICAL: whenever an infoceutical appears, give its full name with its "
@@ -157,9 +164,10 @@ _SYSTEM = (
 
 
 _SCAN_GUIDANCE = (
-    "\n- If a RECENT E4L VOICE SCAN block is present, you may reference what the scan "
-    "showed as corroborating context for the causal chain. Always call it the 'E4L voice "
-    "scan', never a bare 'voice scan'. Use observation language; "
+    "\n- If a RECENT BIOENERGETIC WELLNESS SCAN block is present, you may reference what the scan "
+    "showed as corroborating context for the causal chain. Always call it the 'Bioenergetic "
+    "Wellness Scan'; never write 'voice scan'. Never name a product from the scan block; "
+    "only the CAUSAL CHAIN's remedies are recommended. Use observation language; "
     "do not invent scan findings beyond those listed, and do not treat a scan marked "
     "stale as current.")
 
@@ -210,10 +218,13 @@ def _scan_block(scan):
     days = scan.get("days_ago")
     age = f"{days} day{'s' if days != 1 else ''} ago" if days is not None else "date unknown"
     fresh = "fresh" if scan.get("fresh") else "STALE — older than the 2-week window"
-    lines = [f"RECENT E4L VOICE SCAN ({age}, {fresh}; scan {scan.get('scan_date') or ''}):"]
+    lines = [f"RECENT BIOENERGETIC WELLNESS SCAN (E4L; {age}, {fresh}; "
+             f"scan {scan.get('scan_date') or ''}):"]
     for f in findings:
         rank = f.get("rank")
-        desc = (f.get("description") or "").strip()
+        # Product suggestions and source tags are the practitioner's notes. Handed to the
+        # writer, "Consider: Liver Support" put Liver Support in Donna Banks's letter.
+        desc = clean_scan_description(f.get("description"))
         lines.append(f"- {('#' + str(rank) + ' ') if rank is not None else ''}"
                      f"{f.get('code') or ''} {f.get('name') or ''}"
                      f"{(' — ' + desc) if desc else ''}".rstrip())
@@ -450,14 +461,95 @@ def build_narrative_prompt(report, notes, scan=None, profile=None, animal=None):
     return {"system": system, "user": _user_block(report, notes, scan, profile, animal)}
 
 
-def generate_narrative(report, notes, complete, scan=None, profile=None, animal=None):
+def generate_narrative(report, notes, complete, scan=None, profile=None, animal=None,
+                       problems_out=None):
     """complete(system, user) -> narrative text. scan = E4L context; profile = People-hub
-    context; animal = {"name", "species", "owner"} when the client is an animal, else None."""
+    context; animal = {"name", "species", "owner"} when the client is an animal, else None.
+
+    The draft is checked for products off the chain and nutrients credited to the wrong
+    remedy. A failing draft is written once more, told exactly what was wrong (Glen,
+    2026-09-25). Whatever is still wrong is appended to problems_out for the editor."""
     p = build_narrative_prompt(report, notes, scan, profile, animal)
-    text = complete(p["system"], p["user"])
+    return _checked(p, complete, report, lambda t: _finish(t, report, animal), problems_out)
+
+
+def _checked(p, complete, report, finish, problems_out):
+    """Write, check, and on a failing draft write once more with its errors named.
+    Keeps whichever draft has fewer problems; leftovers go to problems_out."""
+    text = finish(complete(p["system"], p["user"]))
+    problems = _safe_problems(text, report)
+    if problems:
+        retry = (p["user"] + "\n\nYOUR PREVIOUS DRAFT HAD THESE ERRORS. Write the whole "
+                 "text again, following every rule, without them:\n"
+                 + "\n".join("- " + x for x in problems))
+        try:
+            second = finish(complete(p["system"], retry))
+        except Exception as e:
+            # The first draft was paid for; a failed retry must not throw it away.
+            print(f"[narrative] retry failed, keeping first draft: {e!r}", flush=True)
+            second = None
+        if second is not None:
+            second_problems = _safe_problems(second, report)
+            if len(second_problems) <= len(problems):
+                text, problems = second, second_problems
+    if problems_out is not None:
+        problems_out.extend(problems)
+    return text
+
+
+def _finish(text, report, animal):
     text = _enforce_animal_greeting(text, animal)
     text = _enforce_no_prescribe(text)
+    text = fix_scan_names(text)
     return _enforce_phase_name(text, report.get("phase"))
+
+
+def _ingredient_lines(name):
+    return [str(i.get("name") or "").strip()
+            for i in (_catalog_product(name).get("ingredients") or []) if isinstance(i, dict)]
+
+
+def _safe_problems(text, report):
+    """A fault in the check must never cost the paid-for draft."""
+    try:
+        return narrative_problems(text, report)
+    except Exception as e:
+        print(f"[narrative-check] {e!r}", flush=True)
+        return []
+
+
+def narrative_problems(text, report):
+    """check_narrative against this report's chain and the catalog. Only the chain's own
+    rows (remedies, Heads, Tails) permit a product name. Notes, scan findings and the
+    profile do not: "Consider Liver Support" in any of them is still not on the chain
+    (blind review, 2026-09-25). The same inputs on generate, save and page load."""
+    rows = report.get("layers") or []
+    # A row may hold two products, "Focus, Neuromagnesium"; each is checked on its own.
+    chain = list(dict.fromkeys(
+        part.strip() for r in rows
+        for part in re.split(r"\s*,\s*|\s+\+\s+", str(r.get("remedy") or ""))
+        if part.strip()))
+    heads = " ".join(f"{r.get('head') or ''} {r.get('most_affected') or ''}" for r in rows)
+    try:
+        from dashboard.biofield_portal_publish import load_catalog
+        catalog = load_catalog() or {}
+    except Exception:
+        catalog = {}
+    names = [str((p or {}).get("name") or "") for p in catalog.values()]
+    # Other catalog spellings of a chain remedy's own product ("OcuHeal" and "OcuHeal Eye
+    # Drops" when both are one entry) count as on the chain.
+    same = []
+    for c in chain:
+        prod = _catalog_product(c)
+        if prod:
+            same += [str(p.get("name") or "") for p in catalog.values()
+                     if p is prod or (p or {}).get("name") == prod.get("name")]
+    return scan_name_problems(text) + check_narrative(
+        text, chain=chain + [n for n in same if n and n not in chain], ingredients={c: _ingredient_lines(c) for c in chain},
+        catalog_names=names,
+        # The service itself is the one name allowed beyond the chain's own rows.
+        # Terrain Restore is the essence base, named inside essence products.
+        allowed_text=heads + "\nBiofield Analysis\nTerrain Restore", heads_text=heads)
 
 
 _PRESCRIBE = {"prescribe": "recommend", "prescribes": "recommends",
@@ -515,7 +607,8 @@ def build_video_script_prompt(report, notes, scan=None):
             "user": _user_block(report, notes, scan, with_tail=False)}
 
 
-def generate_video_script(report, notes, complete, scan=None):
-    """complete(system, user) -> short spoken walkthrough script. `scan` optional."""
+def generate_video_script(report, notes, complete, scan=None, problems_out=None):
+    """complete(system, user) -> short spoken walkthrough script. `scan` optional. The
+    client hears it, so it gets the letter's check and one retry (blind review)."""
     p = build_video_script_prompt(report, notes, scan)
-    return complete(p["system"], p["user"])
+    return _checked(p, complete, report, fix_scan_names, problems_out)

@@ -270,11 +270,13 @@ def test_each_layer_is_named_by_its_head_not_its_most_affected_list():
     assert "never let it replace the Head as the layer's subject" in s
 
 
-def test_scan_guidance_never_says_a_bare_voice_scan():
-    """Glen, 2026-09-18: "E4L" or "Five Element" names which voice scan; a bare
-    "voice scan" does not. Hershey's narrative wrote "the recent voice scan"."""
+def test_scan_guidance_names_the_bioenergetic_wellness_scan():
+    """Glen, 2026-09-18: E4L's instrument is the Bioenergetic Wellness Scan, and "voice
+    scan" never appears unqualified. The earlier guidance told the writer to say "E4L
+    voice scan", and Donna Banks's letter did (clinical, 2026-09-25)."""
     from dashboard.biofield_narrative import _SCAN_GUIDANCE
-    assert "Always call it the 'E4L voice scan', never a bare 'voice scan'" in _SCAN_GUIDANCE
+    assert "Always call it the 'Bioenergetic Wellness Scan'; never write 'voice scan'" in _SCAN_GUIDANCE
+    assert "E4L voice" not in _SCAN_GUIDANCE
 
 
 def test_a_remedy_less_anchor_row_is_not_counted_or_listed_as_a_remedy():
