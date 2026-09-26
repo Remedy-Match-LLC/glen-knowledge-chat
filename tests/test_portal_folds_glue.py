@@ -17,7 +17,7 @@ PAGE = ROOT / "static" / "client-portal.html"
 GLUE = ("foldSlug", "_foldWireClickOnce", "_foldWireLifecycleOnce", "_foldIdOf",
         "_foldCardsByDoor", "_foldDoorVisible", "_foldSetCard", "_foldApplyAll", "_foldToggle",
         "_foldClearLegacy", "_foldLoad", "_foldRefresh", "_foldSave", "_foldPut", "_foldFlush",
-        "wirePortalFolds", "_foldBars", "_foldBarClick", "_foldAllOrRestore", "_foldMatchClient")
+        "wirePortalFolds", "_foldUseLocalDefault", "_foldBars", "_foldBarClick", "_foldAllOrRestore", "_foldMatchClient")
 
 
 def _fn_source(name):
@@ -55,7 +55,12 @@ function el(tag, props){
     getAttribute(k){ return this.attrs[k]; },
     matches(sel){ return matches(this, sel); },
     closest(sel){ let n = this; while (n) { if (matches(n, sel)) return n; n = n.parentElement; } return null; },
-    querySelector(sel){ return desc(this).find(n => matches(n, sel)) || null; },
+    querySelector(sel){
+      if (sel.includes(':scope')) {
+        const tags = sel.split(',').map(x => x.replace(':scope', '').replace('>', '').trim().toUpperCase());
+        return this.children.find(c => tags.includes(c.tagName)) || null;
+      }
+      return desc(this).find(n => matches(n, sel)) || null; },
     querySelectorAll(sel){ return desc(this).filter(n => matches(n, sel)); },
   };
   Object.assign(e, props || {});
@@ -77,6 +82,7 @@ function matches(n, sel){
 const body = el('BODY');
 const listeners = {click: [], visibilitychange: []};
 const document = {
+  body,
   visibilityState: 'visible',
   querySelectorAll(sel){ return body.querySelectorAll(sel); },
   querySelector(sel){ return body.querySelector(sel); },
@@ -99,11 +105,11 @@ function click(target){ listeners.click.forEach(f => f({target})); }
 const calls = [];
 let reply = {status: 200, body: {ok: true, viewer: 'client', state: {cards: {}, seen: [], before_fold_all: {}}}};
 let replyFor = null;          // optional (url, opts) -> reply
-function fetch(url, opts){
+var fetch = function(url, opts){
   calls.push({url, method: (opts && opts.method) || 'GET', body: opts && opts.body, keepalive: !!(opts && opts.keepalive)});
   const r = replyFor ? (replyFor(url, opts) || reply) : reply;
   return Promise.resolve({status: r.status, ok: r.status < 300, json: () => Promise.resolve(r.body)});
-}
+};
 let timers = [];
 function setTimeout(f){ timers.push(f); return timers.length; }
 function clearTimeout(id){ if (id) timers[id - 1] = null; }
@@ -127,7 +133,10 @@ function page(){
   all = []; body.children = [];
   const sec = body.appendChild(el('SECTION')); sec.setAttribute('data-door', 'scans');
   const cards = {a: card('a', 'A'), b: card('b', 'B'), c: card('c', 'C'),
-                 skip: card('cal', 'Live', {foldSkip: '1'}), bare: card('bare', null)};
+                 skip: card('cal', 'Live', {foldSkip: '1'}), bare: card('bare', null),
+                 nested: card('intake', null)};
+  const wrap = el('DIV'); wrap.appendChild(el('H2', {textContent: 'Intake'}));
+  cards.nested.appendChild(wrap);
   Object.values(cards).forEach(x => sec.appendChild(x));
   return cards;
 }
@@ -160,6 +169,11 @@ __FNS__
   // 4. skipped and headless cards get none
   assert.strictEqual(toggles(p.skip).length, 0);
   assert.strictEqual(toggles(p.bare).length, 0);
+  // a heading NESTED inside the card is hidden when folded, so no toggle (review: intake)
+  assert.strictEqual(toggles(p.nested).length, 0);
+  assert.ok(!p.nested.classList.contains('is-folded'));
+  // new styling applies only once the server record is live
+  assert.ok(body.classList.contains('folds-v2'));
 
   // 5. clicking b opens it and saves after the debounce
   calls.length = 0;
@@ -194,6 +208,41 @@ __FNS__
   runTimers();
   assert.strictEqual(putCalls().length, 1, 'the flushed save was sent twice');
 
+  // 10b. going hidden (iOS's dependable last event) flushes a pending save
+  calls.length = 0;
+  click(toggles(p.a)[0]);
+  document.visibilityState = 'hidden';
+  listeners.visibilitychange.forEach(f => f());
+  assert.strictEqual(putCalls().length, 1);
+  assert.ok(putCalls()[0].keepalive);
+  document.visibilityState = 'visible';
+  runTimers();
+
+  // 10c. window focus re-reads the record too (a visible but unfocused window)
+  calls.length = 0;
+  (winListeners.focus || []).forEach(f => f());
+  await settle(); await settle();
+  assert.strictEqual(calls.filter(c => c.method === 'GET').length, 1);
+
+  // 10d. a refresh answered after a newer local click does not undo the click
+  calls.length = 0;
+  let release;
+  const slow = new Promise(r => { release = r; });
+  replyFor = (url, opts) => (!opts || !opts.method) ? {status: 200, body: {ok: true, viewer: 'client',
+    state: {cards: {a: false, b: false, c: false}, seen: ['scans'], before_fold_all: {}}}} : null;
+  const realFetch = fetch;
+  fetch = function(url, opts){
+    if (!opts || !opts.method) return slow.then(() => realFetch(url, opts));
+    return realFetch(url, opts);
+  };
+  (winListeners.focus || []).forEach(f => f());
+  click(toggles(p.c)[0]);
+  const wantC = p.c.classList.contains('is-folded');
+  runTimers();
+  release(); await settle(); await settle();
+  assert.strictEqual(p.c.classList.contains('is-folded'), wantC, 'a stale refresh undid a newer click');
+  fetch = realFetch; replyFor = null;
+
   // 11. legacy browser folds were cleared, other keys kept
   assert.ok(!('rm_fold_x' in store) && store.other === 'keep');
 
@@ -217,10 +266,16 @@ __FNS__
   // 9. a server error leaves it unknown, and the next render tries again
   _foldsV2 = undefined; _foldLoading = false; calls.length = 0;
   reply = {status: 500, body: {}};
-  page(); wirePortalFolds(); await settle(); await settle();
-  assert.strictEqual(_foldsV2, undefined);
-  page(); wirePortalFolds();
-  assert.strictEqual(calls.filter(c => c.method === 'GET').length, 2);
+  p = page(); wirePortalFolds(); await settle(); await settle();
+  assert.ok(_foldsV2 && _foldsV2.local, 'a failed load falls back to the first-visit default');
+  assert.strictEqual(toggles(p.a).length, 1);
+  assert.ok(p.b.classList.contains('is-folded'));
+  click(toggles(p.b)[0]); runTimers();
+  assert.strictEqual(putCalls().length, 0, 'a local fallback must never overwrite the server record');
+  reply = {status: 200, body: {ok: true, viewer: 'client', state: {cards: {a: true}, seen: ['scans'], before_fold_all: {}}}};
+  p = page(); wirePortalFolds(); await settle(); await settle();
+  assert.strictEqual(calls.filter(c => c.method === 'GET').length, 2, 'retried on the next render');
+  assert.ok(!_foldsV2.local && p.a.classList.contains('is-folded'));
 
   __TASK6__
   console.log('OK');
@@ -298,7 +353,21 @@ def test_server_backed_folding_behaviour(tmp_path):
 
 
 def test_a_folded_card_keeps_its_toggle_visible():
-    assert ".card.is-folded > *:not(h2):not(h3):not(.card-fold){display:none}" in PAGE.read_text()
+    page = PAGE.read_text()
+    assert "body.folds-v2 .card.is-folded > .card-fold{" in page
+
+
+def test_the_setting_off_styling_is_exactly_mains():
+    """Spec: with the setting off the old code path runs unchanged. Every new style rule is
+    scoped under body.folds-v2, which is only set once the server record is live."""
+    import subprocess as sp
+    main = sp.run(["git", "show", "origin/main:static/client-portal.html"], cwd=ROOT,
+                  capture_output=True, text=True).stdout
+    for rule in (".card-fold{float:right;", ".card.is-folded > *:not(h2):not(h3){display:none}",
+                 ".card.is-folded{padding-bottom:14px}"):
+        assert rule in main and rule in PAGE.read_text(), rule
+    new = [l for l in PAGE.read_text().splitlines() if "fold" in l and "{" in l and l.startswith("  .")]
+    assert not [l for l in new if l not in main], "an unscoped fold style was added"
 
 
 def test_the_page_loads_the_rules_module():

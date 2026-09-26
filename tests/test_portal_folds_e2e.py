@@ -61,7 +61,7 @@ def live(monkeypatch, tmp_path):
 COUNT_JS = """(door) => {
   const secs = [...document.querySelectorAll('section[data-door="' + door + '"]')].filter(s => !s.hidden);
   const cards = secs.flatMap(s => [...s.querySelectorAll('.card')]).filter(c =>
-      (c.dataset.foldId || c.id) && !c.dataset.foldSkip && c.querySelector('h2,h3'));
+      (c.dataset.foldId || c.id) && !c.dataset.foldSkip && c.querySelector(':scope > h2, :scope > h3'));
   const toggles = cards.filter(c => [...c.children].some(x => x.classList.contains('card-fold')));
   return {cards: cards.length, toggles: toggles.length};
 }"""
@@ -167,4 +167,33 @@ def test_staff_folds_never_change_the_clients_view(live):
                                 "c.classList.contains('is-folded')])) === want",
                                 arg=__import__("json").dumps(state(client), separators=(",", ":")))
         assert state(staff) == state(client)
+        b.close()
+
+
+
+HEADINGS_JS = """() => [...document.querySelectorAll('.card.is-folded')]
+  .filter(c => c.offsetParent !== null)
+  .map(c => ({id: c.dataset.foldId || c.id,
+              visible: [...c.children].some(x => /^H[23]$/.test(x.tagName) && x.offsetHeight > 0)}))
+  .filter(x => !x.visible).map(x => x.id)"""
+
+
+def test_no_folded_card_loses_its_heading(live):
+    """Final review, 2026-09-26: the intake card's heading is nested, so folding it left an
+    empty box. Fold everything on every door, then check each folded card still shows a
+    heading."""
+    base, token, _ = live
+    with sync_playwright() as p:
+        b = p.chromium.launch()
+        page = b.new_page()
+        _open(page, f"{base}/portal/{token}")
+        for door in _doors(page):
+            page.evaluate("(d) => showDoor(d)", door)
+            page.evaluate("() => wirePortalFolds()")
+            if page.locator(f'section[data-door="{door}"]:not([hidden]) .fold-bar-all').count():
+                page.evaluate("(d) => _foldAllOrRestore(d)", door)
+            blank = page.evaluate(HEADINGS_JS)
+            assert not blank, (door, blank)
+        page.evaluate("() => showTab('intake')")
+        assert not page.evaluate(HEADINGS_JS)
         b.close()

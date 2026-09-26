@@ -216,4 +216,4 @@ def test_folding_runs_on_every_render():
 def test_a_folded_card_keeps_its_heading_visible():
     """Collapsing must leave something to click, or the card cannot be reopened."""
     page = PAGE.read_text()
-    assert ".card.is-folded > *:not(h2):not(h3):not(.card-fold){display:none}" in page
+    assert ".card.is-folded > *:not(h2):not(h3){display:none}" in page

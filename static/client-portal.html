@@ -654,13 +654,15 @@
   /* Collapsible cards, Glen 2026-09-16: "Any medium to large cards need a button to
      collapse/open. Remember the last state." The toggle sits in the heading so it is
      where the eye already is, and the heading stays readable when collapsed. */
-  .card{position:relative}
-  .fold-bar{display:flex;gap:8px;justify-content:flex-end;margin:0 0 8px}
-  .card > h2:first-of-type, .card > h3:first-of-type{padding-right:64px}
-  .card-fold{position:absolute;top:10px;right:10px;background:none;border:0;color:var(--muted);cursor:pointer;
+  body.folds-v2 .card{position:relative}
+  body.folds-v2 .fold-bar{display:flex;gap:8px;justify-content:flex-end;margin:0 0 8px}
+  body.folds-v2 .card > h2:first-of-type, body.folds-v2 .card > h3:first-of-type{padding-right:64px}
+  body.folds-v2 .card-fold{float:none;position:absolute;top:10px;right:10px}
+  body.folds-v2 .card.is-folded > .card-fold{display:inline-block}
+  .card-fold{float:right;background:none;border:0;color:var(--muted);cursor:pointer;
     font:inherit;font-size:.82rem;line-height:1.2;padding:2px 6px;border-radius:8px}
   .card-fold:hover{color:var(--ink);background:var(--brand-soft)}
-  .card.is-folded > *:not(h2):not(h3):not(.card-fold){display:none}
+  .card.is-folded > *:not(h2):not(h3){display:none}
   .card.is-folded{padding-bottom:14px}
   /* Voice moved onto the composer on 2026-09-16. It used to sit in the Ask card,
      which is the hidden panel, so the mic was unreachable from the hub. */
@@ -8433,6 +8435,7 @@ var _foldSaveTimer = null;
 var _foldSavePending = false;
 var _foldLifecycleWired = false;
 var _FOLD_SAVE_MS = 600;
+var _foldRev = 0;          // bumped on every local change; a stale refresh is dropped
 
 // Delegated and wired ONCE. render() replaces app.innerHTML on every poll, so a
 // listener bound to a button dies with it. This is the same mistake that made the
@@ -8465,8 +8468,13 @@ function _foldWireLifecycleOnce(){
   window.addEventListener("pagehide", _foldFlush);
   // Back to this tab: another device may have changed the record since.
   document.addEventListener("visibilitychange", function(){
-    if(document.visibilityState === "visible" && !_foldSavePending
-       && _foldsV2 && typeof _foldsV2 === "object") _foldRefresh();
+    // Going hidden is the last event iOS Safari reliably delivers: save now.
+    if(document.visibilityState === "hidden"){ _foldFlush(); return; }
+    if(!_foldSavePending && _foldsV2 && typeof _foldsV2 === "object") _foldRefresh();
+  });
+  // A window can stay "visible" behind others and never see visibilitychange.
+  window.addEventListener("focus", function(){
+    if(!_foldSavePending && _foldsV2 && typeof _foldsV2 === "object") _foldRefresh();
   });
 }
 
@@ -8482,7 +8490,9 @@ function _foldCardsByDoor(){
   for(var i = 0; i < cards.length; i++){
     var c = cards[i];
     if(!_foldIdOf(c) || (c.dataset && c.dataset.foldSkip)) continue;
-    if(!c.querySelector("h2,h3")) continue;
+    // A DIRECT heading only: folding hides everything but direct headings, so a card
+    // whose heading is nested (the intake form) would fold into an empty box.
+    if(!c.querySelector(":scope > h2, :scope > h3")) continue;
     var host = c.closest("[data-door]");
     var door = host ? host.dataset.door : "home";
     (out[door] = out[door] || []).push(c);
@@ -8504,7 +8514,7 @@ function _foldSetCard(card, folded){
     if(card.children[i].classList.contains("card-fold")){ btn = card.children[i]; break; }
   }
   if(!btn){
-    var head = card.querySelector("h2,h3");
+    var head = card.querySelector(":scope > h2, :scope > h3");
     btn = document.createElement("button");
     btn.type = "button";
     btn.className = "card-fold";
@@ -8536,6 +8546,7 @@ function _foldApplyAll(){
 function _foldToggle(card){
   var id = _foldIdOf(card);
   if(!id) return;
+  _foldRev++;
   _foldsV2.state = window.PortalFolds.setCard(_foldsV2.state, id, !card.classList.contains("is-folded"));
   _foldApplyAll();
   _foldSave();
@@ -8556,23 +8567,37 @@ function _foldLoad(){
     .then(function(r){
       // Setting off answers 404: the old code path runs, unchanged.
       if(r.status === 404){ _foldsV2 = false; wireCardFolding(); return null; }
-      return r.ok ? r.json() : null;
+      return r.ok ? r.json() : {failed: true};
     })
     .then(function(j){
       if(!j || _foldsV2 === false) return;
+      if(j.failed){ _foldUseLocalDefault(); return; }
       _foldsV2 = {state: window.PortalFolds.normalise(j.state), staff: j.viewer === "staff"};
+      document.body.classList.add("folds-v2");
       _foldClearLegacy();
       _foldApplyAll();
     })
-    .catch(function(){})
+    .catch(function(){ _foldUseLocalDefault(); })
     .then(function(){ _foldLoading = false; });
 }
 
+// The server could not be reached, or refused (a VA's key). Spec: show the first-visit
+// default. This local record is never saved, or it would overwrite the real one; the
+// next render tries the server again.
+function _foldUseLocalDefault(){
+  if(_foldsV2 && typeof _foldsV2 === "object" && !_foldsV2.local) return;
+  if(!_foldsV2) _foldsV2 = {state: window.PortalFolds.emptyState(), staff: false, local: true};
+  document.body.classList.add("folds-v2");
+  _foldApplyAll();
+}
+
 function _foldRefresh(){
+  var rev = _foldRev;
   fetch("/api/portal/" + encodeURIComponent(token) + "/folds", {credentials: "same-origin"})
     .then(function(r){ return r.ok ? r.json() : null; })
     .then(function(j){
       if(!j || !_foldsV2 || typeof _foldsV2 !== "object" || _foldSavePending) return;
+      if(rev !== _foldRev) return;         // a newer local change wins over this answer
       _foldsV2.state = window.PortalFolds.normalise(j.state);
       _foldApplyAll();
     })
@@ -8588,7 +8613,7 @@ function _foldSave(){
 }
 
 function _foldPut(keepalive){
-  if(!_foldsV2 || typeof _foldsV2 !== "object") return;
+  if(!_foldsV2 || typeof _foldsV2 !== "object" || _foldsV2.local){ _foldSavePending = false; return; }
   _foldSavePending = false;
   var opts = {method: "PUT", credentials: "same-origin",
               headers: {"Content-Type": "application/json"},
@@ -8657,6 +8682,7 @@ function _foldBarClick(t){
 function _foldAllOrRestore(door){
   var F = window.PortalFolds;
   var ids = (_foldCardsByDoor()[door] || []).map(_foldIdOf);
+  _foldRev++;
   _foldsV2.state = F.canRestore(_foldsV2.state, door)
     ? F.restore(_foldsV2.state, door) : F.foldAll(_foldsV2.state, door, ids);
   _foldApplyAll();
@@ -8670,6 +8696,7 @@ function _foldMatchClient(){
     .then(function(r){ return r.ok ? r.json() : null; })
     .then(function(j){
       if(!j){ throw new Error("no client view"); }
+      _foldRev++;
       _foldsV2.state = window.PortalFolds.adopt(j.state);
       _foldApplyAll();
       _foldSave();
@@ -8685,7 +8712,8 @@ function wirePortalFolds(){
   _foldWireClickOnce();
   _foldWireLifecycleOnce();
   if(_foldsV2 === false){ wireCardFolding(); return; }
-  if(_foldsV2 && typeof _foldsV2 === "object"){ _foldApplyAll(); return; }
+  if(_foldsV2 && typeof _foldsV2 === "object" && !_foldsV2.local){ _foldApplyAll(); return; }
+  if(_foldsV2 && _foldsV2.local) _foldApplyAll();
   _foldLoad();
 }
 
