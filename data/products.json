@@ -3734,7 +3734,8 @@
     }
    ],
    "ingredients_source": "store-recovery-2026-06-08",
-   "fmp_id": "88"
+   "fmp_id": "88",
+   "miron_glass": false
   },
   "coconut-rose-msm-lotion": {
    "name": "MSM Coconut Rose Lotion",
@@ -3805,7 +3806,8 @@
     }
    ],
    "ingredients_source": "store-recovery-2026-06-08",
-   "fmp_id": "185"
+   "fmp_id": "185",
+   "miron_glass": false
   },
   "quercetin-dihydrate-powder": {
    "name": "Quercetin Dihydrate Powder",
@@ -3904,7 +3906,8 @@
      "dose": "100%"
     }
    ],
-   "ingredients_source": "store-recovery-2026-06-08"
+   "ingredients_source": "store-recovery-2026-06-08",
+   "miron_glass": false
   },
   "neem-oil-rollon": {
    "name": "Neem Oil Roll-On",

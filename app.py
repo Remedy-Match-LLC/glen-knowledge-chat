@@ -9295,10 +9295,14 @@ def begin_product_page_data(slug):
     # rotator/story, the Miron educational video) are misleading on a device/book/service
     # SKU that has no ingredient list, so they are withheld below (see product_page_sections).
     _has_ings = bool(ingredients)
+    # Only products Glen bottles in Miron violet glass get the Miron story, video and
+    # comparison. A resold product carries miron_glass: false (production, 2026-09-26,
+    # from Glen's bottle photos: the MSM lotions are in plastic squeeze bottles).
+    _miron = _has_ings and p.get("miron_glass") is not False
     _own_vids = list(p.get("videos", []))
     _vids = list(_own_vids)
     _mv = _MIRON_ASSETS.get("video")
-    if _has_ings and _mv and _mv.get("src"):
+    if _miron and _mv and _mv.get("src"):
         _vids.append({"src": _mv["src"], "title": _mv.get("title", ""), "provider": "mp4", "kind": "educational"})
     sections = [
         {"id": "intro",       "title": "What this does",  "default_open": True,  "body": intro},
@@ -9329,7 +9333,8 @@ def begin_product_page_data(slug):
     from dashboard.product_page_sections import filter_sections as _filter_sections
     _is_service = bool(p.get("service"))
     sections = _filter_sections(sections, has_ingredients=_has_ings,
-                                has_own_video=bool(_own_vids), is_service=_is_service)
+                                has_own_video=bool(_own_vids), is_service=_is_service,
+                                in_miron=_miron)
     # A service gets no "Dr. Glen recommends" box: on the EVOX page it recommended ED10
     # Skin Driver. A related-services list would be new copy, so none is shown yet.
     if _RELATED_PRODUCTS_ENABLED and not _is_service:
@@ -9530,8 +9535,8 @@ def begin_product_page_data(slug):
         # The page hides its "Your remedy" eyebrow for a service (EVOX, Biofield Analysis).
         "is_service": _is_service,
         "sections": sections,
-        "miron_assets": _MIRON_ASSETS["assets"] if _has_ings else [],
-        "miron_story": _MIRON_ASSETS.get("story", []) if _has_ings else [],
+        "miron_assets": _MIRON_ASSETS["assets"] if _miron else [],
+        "miron_story": _MIRON_ASSETS.get("story", []) if _miron else [],
         "open_sections": _read_open_sections(request.cookies.get("amg_session", ""),
                                              (get_authenticated_user(request) or {}).get("email", "")),
     }
