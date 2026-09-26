@@ -1054,5 +1054,1197 @@
     ],
     "ingredients_source": "gk, confirmed unchanged by Glen 2026-09-26",
     "note": "Glen 2026-09-26: 'WholOmega has not changed, so it can be used as is.'"
+  },
+  "acetaldehyde-detox": {
+    "ingredients": [
+      {
+        "name": "Vitamin B5: Calcium Pantothenate",
+        "dose": "120 mg"
+      },
+      {
+        "name": "Vitamin B8: Coenzyme A (Deficient Metabolite)",
+        "dose": "10 mg"
+      },
+      {
+        "name": "GSH Synergy (Reduced Glutathione & S-Acetyl Glutathione)",
+        "dose": "30 mg"
+      },
+      {
+        "name": "NAC (N-Acetyl Cysteine)",
+        "dose": "20 mg"
+      },
+      {
+        "name": "ATP (Adenosine Triphosphate)",
+        "dose": "10 mg"
+      },
+      {
+        "name": "Green Clay",
+        "dose": "30 mg"
+      },
+      {
+        "name": "Activated Charcoal (Cocos nucifera)",
+        "dose": "30 mg"
+      },
+      {
+        "name": "7-Keto DHEA",
+        "dose": "5 mg"
+      },
+      {
+        "name": "Bioavailability Blend",
+        "dose": "34.5 mg"
+      }
+    ],
+    "ingredients_source": "label-read-2026-09-26",
+    "description": "Other ingredients: Organic Pullulan Vegicaps, Healing Energy, Love and Prayer. 30 vegicaps per bottle.",
+    "directions": "1 to 3 capsules a day with food, or as guided.",
+    "panel_note": "Bioavailability Blend contains: Lipid Solubility: Phosphatides 50% (Helianthus annuus). Mucosa Integrity/Mineral Transport: Humic & Fulvic Acids. Nutrient Absorption: Moringa 100:1 (Moringa oleifera), Gingerol 10% (Zingiber officinale), Piperine (Piper nigrum). Vascular Delivery: EGb 761 (Ginkgo biloba) (24%, 6%, <0.0005%), Vitamin B3 (as Niacin) 5 mg, Vinpocetine (Vinca minor). Entourage Effect: Licorice Omnipotent (Glycyrrhiza glabra). Regulation of Healing: Spirit Minerals (ORMUS).",
+    "note": "Label-read 2026-09-26 by production, approved by Glen ('approve'); replaces GrooveKart rows."
+  },
+  "aces-eye-drops": {
+    "ingredients": [
+      {
+        "name": "Quinton (Micro-filtered Seawater)",
+        "dose": "97%"
+      },
+      {
+        "name": "MSM (Methylsulfonylmethane)",
+        "dose": "1%"
+      },
+      {
+        "name": "DMSO (Dimethylsulfoxide)",
+        "dose": "1%"
+      },
+      {
+        "name": "N-Acetyl L-Carnosine",
+        "dose": "1%"
+      },
+      {
+        "name": "Vitamin A (Retinyl Palmitate)",
+        "dose": "0.1%"
+      },
+      {
+        "name": "Vitamin C (Zinc Ascorbate)",
+        "dose": "0.1%"
+      },
+      {
+        "name": "Zinc (Zinc Ascorbate)",
+        "dose": "0.1%"
+      },
+      {
+        "name": "Vitamin E Complex",
+        "dose": "0.002%"
+      },
+      {
+        "name": "Silver (from Nano Silver)",
+        "dose": "0.001%"
+      }
+    ],
+    "ingredients_source": "label-read-2026-09-26",
+    "description": "5 mL per bottle, about 100 drops.",
+    "directions": "1 drop in each eye twice a day or as guided. Take at least 5 minutes away from other eyedrops. Keep refrigerated. Discontinue if drops become irritating.",
+    "note": "Label-read 2026-09-26 by production, approved by Glen ('approve'); replaces GrooveKart rows."
+  },
+  "appestat": {
+    "ingredients": [
+      {
+        "name": "Vitamin B6 (Pyridoxal 5-Phosphate)",
+        "dose": "2 mg"
+      },
+      {
+        "name": "Vitamin B12 (Methyl & Adenosylcobalamin)",
+        "dose": "600 mcg"
+      },
+      {
+        "name": "Vitamin B13: DMAE (Dimethylaminoethanol)",
+        "dose": "10 mg"
+      },
+      {
+        "name": "Vitamin C (Magnesium Ascorbate)",
+        "dose": "30 mg"
+      },
+      {
+        "name": "Vitamin D3 (Cholecalciferol)",
+        "dose": "200 IU"
+      },
+      {
+        "name": "GTF Chromium (Cr Polynicotinate)",
+        "dose": "120 mcg"
+      },
+      {
+        "name": "Magnesium (Magnesium Ascorbate)",
+        "dose": "3.7 mg"
+      },
+      {
+        "name": "GLA 20% (Gamma Linolenic Acid)",
+        "dose": "25 mg"
+      },
+      {
+        "name": "CLA 40% (Conjugated Linoleic Acid)",
+        "dose": "25 mg"
+      },
+      {
+        "name": "Caprylic Acid (Cocos nucifera)",
+        "dose": "25 mg"
+      },
+      {
+        "name": "ALCAR (Acetyl L-Carnitine)",
+        "dose": "25 mg"
+      },
+      {
+        "name": "NALT (N-Acetyl L-Tyrosine)",
+        "dose": "25 mg"
+      },
+      {
+        "name": "PEA (Phenylethylamine)",
+        "dose": "25 mg"
+      },
+      {
+        "name": "5-HTP (Griffonia simplicifolia)",
+        "dose": "25 mg"
+      },
+      {
+        "name": "L-Theanine (Camellia sinensis)",
+        "dose": "25 mg"
+      },
+      {
+        "name": "Hordenine (Hordeum vulgare)",
+        "dose": "25 mg"
+      },
+      {
+        "name": "Synephrine (Citrus aurantium)",
+        "dose": "20 mg"
+      },
+      {
+        "name": "Lipase 200 FIP units",
+        "dose": "10 mg"
+      },
+      {
+        "name": "Protease (Aspergillus niger) 40,000 units",
+        "dose": "10 mg"
+      },
+      {
+        "name": "Polyphenols (Camellia sinensis)",
+        "dose": "10 mg"
+      },
+      {
+        "name": "Polyphenols 30% (Cinnamomum cassia)",
+        "dose": "10 mg"
+      },
+      {
+        "name": "Quercetin Dihydrate (Sophora japonica)",
+        "dose": "10 mg"
+      },
+      {
+        "name": "Sumac Bran 50:1 (Cotinus coggygria)",
+        "dose": "10 mg"
+      },
+      {
+        "name": "OPCs (Vitis vinifera) (seed)",
+        "dose": "10 mg"
+      },
+      {
+        "name": "Gymnemic Acid 75% (Gymnema sylvestre)",
+        "dose": "25 mg"
+      },
+      {
+        "name": "Phaseolamin 5% (Phaseolus vulgaris)",
+        "dose": "25 mg"
+      },
+      {
+        "name": "Hydroxycitric Acid 60% (Garcinia cambogia)",
+        "dose": "25 mg"
+      },
+      {
+        "name": "Charantin 10% (Momordica charantia)",
+        "dose": "25 mg"
+      },
+      {
+        "name": "Myrrh (Commiphora myrrha)",
+        "dose": "10 mg"
+      },
+      {
+        "name": "Withanolides 10% (Withania somnifera)",
+        "dose": "10 mg"
+      },
+      {
+        "name": "Ginsenosides 80% (Panax quinquefolius)",
+        "dose": "10 mg"
+      },
+      {
+        "name": "Capsicum frutescens 160,000 HTU",
+        "dose": "1 mg"
+      },
+      {
+        "name": "Bioavailability Blend",
+        "dose": "34 mg"
+      }
+    ],
+    "ingredients_source": "label-read-2026-09-26",
+    "description": "Other ingredients: Chlorophyll Vegicaps, Healing Energy, Love and Prayer. 30 vegicaps per bottle.",
+    "directions": "1 capsule 30 to 45 minutes before meals, or as guided. Fiber Cleanse and Thermogenesis are synergistic.",
+    "panel_note": "Bioavailability Blend contains: EGb 761 (Ginkgo biloba), Niacin 8 mg, Moringa oleifera 100:1, Licorice Omnipotent (Glycyrrhiza glabra), Gingerol 10% (Zingiber officinale), Piperine (Piper nigrum), Vinpocetine (Vinca minor).",
+    "note": "Label-read 2026-09-26 by production, approved by Glen ('approve'); replaces GrooveKart rows."
+  },
+  "curcu-guard": {
+    "ingredients": [
+      {
+        "name": "Curcumin 95% (Curcuma longa)",
+        "dose": "210 mg"
+      },
+      {
+        "name": "Phosphatides 30% (Helianthus annuus)",
+        "dose": "250 mg"
+      },
+      {
+        "name": "Bioavailability Blend",
+        "dose": "34.5 mg"
+      }
+    ],
+    "ingredients_source": "label-read-2026-09-26",
+    "description": "Other ingredients: Chlorophyll vegicaps, Love. 30 vegicaps per bottle.",
+    "directions": "1 capsule up to 3 times a day with food.",
+    "panel_note": "Bioavailability Blend contains: Vitamin B3 (as Niacin) 5 mg; Vitamin B13 (Phosphatides 50%, Helianthus annuus); EGb 761 (Ginkgo biloba: 24% flavone glycosides, 6% lactones, <0.0005% ginkgolic acid); Miracle Tree 100:1 (Moringa oleifera); Licorice Omnipotent (Glycyrrhiza glabra); Vinpocetine (Vinca minor); Gingerol 10% (Zingiber officinale); Piperine (Piper nigrum); Fulvic Acid; Humic Acid; 11 Spirit Minerals.",
+    "note": "Label-read 2026-09-26 by production, approved by Glen ('approve'); replaces GrooveKart rows."
+  },
+  "dht-blocker": {
+    "ingredients": [
+      {
+        "name": "Vitamin A (Acetate)",
+        "dose": "900 mcg (3000 IU)"
+      },
+      {
+        "name": "Vitamin B7: Biotin",
+        "dose": "30 mcg"
+      },
+      {
+        "name": "Vitamin B9: Folate (5-MTHF)",
+        "dose": "400 mcg"
+      },
+      {
+        "name": "Vitamin E (D-alpha-Tocopherol Succinate)",
+        "dose": "15 mg"
+      },
+      {
+        "name": "Copper (Copper Glycinate)",
+        "dose": "450 mcg"
+      },
+      {
+        "name": "Iodine (from Laminaria digitata)",
+        "dose": "150 mcg"
+      },
+      {
+        "name": "Selenium (Methylselenocysteine)",
+        "dose": "100 mcg"
+      },
+      {
+        "name": "Silica 70% (Bambusa spp.)",
+        "dose": "10 mg"
+      },
+      {
+        "name": "Sulfur: MSM (Methylsulfonylmethane)",
+        "dose": "20 mg"
+      },
+      {
+        "name": "Zinc (Zinc Malate)",
+        "dose": "10 mg"
+      },
+      {
+        "name": "Pygeum (Pygeum africanum) (cortex)",
+        "dose": "15 mg"
+      },
+      {
+        "name": "MCT (Cocos nucifera)",
+        "dose": "20 mg"
+      },
+      {
+        "name": "Saw Palmetto 10:1 (Serenoa repens)",
+        "dose": "40 mg"
+      },
+      {
+        "name": "Quercetin Dihydrate (Sophora japonica)",
+        "dose": "20 mg"
+      },
+      {
+        "name": "Trans-Resveratrol (Polygonum cuspidatum)",
+        "dose": "80 mg"
+      },
+      {
+        "name": "Puerarin (Pueraria lobata)",
+        "dose": "15 mg"
+      },
+      {
+        "name": "DIM (Diindolylmethane) (Brassica oleracea)",
+        "dose": "20 mg"
+      },
+      {
+        "name": "Curcumin & Tetrahydrocurcumin (Curcuma longa)",
+        "dose": "20 mg"
+      },
+      {
+        "name": "Polyphenols (Camellia sinensis)",
+        "dose": "20 mg"
+      },
+      {
+        "name": "Reishi 30:1 (Ganoderma lucidum)",
+        "dose": "20 mg"
+      },
+      {
+        "name": "Asiaticosides (Centella asiatica)",
+        "dose": "20 mg"
+      },
+      {
+        "name": "Silymarin 80% (Silybum marianum)",
+        "dose": "20 mg"
+      },
+      {
+        "name": "Bioavailability Blend",
+        "dose": "34.5 mg"
+      }
+    ],
+    "ingredients_source": "label-read-2026-09-26",
+    "description": "Other ingredients: Organic Pullulan Vegicaps, Healing Energy, Love and Prayer. 30 enteric vegicaps per bottle.",
+    "directions": "1 to 2 capsules a day with food, or as guided.",
+    "panel_note": "Bioavailability Blend contains: Lipid Solubility: Phosphatides 50% (Helianthus annuus). Mucosa Integrity/Mineral Transport: Humic & Fulvic Acids. Nutrient Absorption: Moringa 100:1 (Moringa oleifera), Gingerol 10% (Zingiber officinale), Piperine (Piper nigrum). Vascular Delivery: EGb 761 (Ginkgo biloba) (24%, 6%, <0.0005%), Vitamin B3 (as Niacin) 5 mg, Vinpocetine (Vinca minor). Entourage Effect: Licorice Omnipotent (Glycyrrhiza glabra). Regulation of Healing: Spirit Minerals (ORMUS).",
+    "note": "Label-read 2026-09-26 by production, approved by Glen ('approve'); replaces GrooveKart rows."
+  },
+  "energessence": {
+    "ingredients": [
+      {
+        "name": "Aloe socotrina",
+        "dose": "3X"
+      },
+      {
+        "name": "Amygdala amara",
+        "dose": "4X"
+      },
+      {
+        "name": "Bee & Flower Pollen (Secale cereale)",
+        "dose": "3X"
+      },
+      {
+        "name": "Ginkgo biloba",
+        "dose": "3X"
+      },
+      {
+        "name": "Hydrocotyle asiatica",
+        "dose": "3X"
+      },
+      {
+        "name": "Laminaria",
+        "dose": "4X"
+      },
+      {
+        "name": "Medicago sativa",
+        "dose": "4X"
+      },
+      {
+        "name": "RNA-DNA from Yeast",
+        "dose": "3X"
+      },
+      {
+        "name": "Royal Jelly",
+        "dose": "4X"
+      },
+      {
+        "name": "Symphytum officinale",
+        "dose": "4X"
+      },
+      {
+        "name": "Zinc Monomethionine",
+        "dose": "7X"
+      },
+      {
+        "name": "5 ppm Low Deuterium Water",
+        "dose": "50%"
+      },
+      {
+        "name": "Alkaline Antioxidant Molecular Hydrogen Microwater",
+        "dose": "44%"
+      },
+      {
+        "name": "Quinton Ocean ORMUS & Trace Mineral Source",
+        "dose": "3%"
+      },
+      {
+        "name": "Manna ORMUS M-11",
+        "dose": "3%"
+      },
+      {
+        "name": "Aqueous Humic & Fulvic Substances",
+        "dose": "0.1%"
+      },
+      {
+        "name": "Holy Grail Full Spectrum ORMUS",
+        "dose": "5C"
+      }
+    ],
+    "ingredients_source": "label-read-2026-09-26",
+    "description": "50 mL per bottle, about 100 servings of 10 drops.",
+    "directions": "1 dropper in mouth 30 minutes before meals, or as guided.",
+    "note": "Label-read 2026-09-26 by production, approved by Glen ('approve'); replaces GrooveKart rows."
+  },
+  "hydrolyzed-whey": {
+    "ingredients": [
+      {
+        "name": "Hydrolyzed Whey (Bos taurus)",
+        "dose": "5000 mg"
+      }
+    ],
+    "ingredients_source": "label-read-2026-09-26",
+    "description": "Other ingredients: Healing Energy, Love and Prayer. 100 g per container, 20 scoops.",
+    "directions": "Up to 1-2 scoops up to 3 times a day in living water after exercise, or as guided.",
+    "note": "Label-read 2026-09-26 by production, approved by Glen ('approve'); replaces GrooveKart rows."
+  },
+  "iron-syntropy": {
+    "ingredients": [
+      {
+        "name": "Bismuth (as Bismuth Citrate)",
+        "dose": "5.2 mg"
+      },
+      {
+        "name": "Copper (as Copper Glycinate)",
+        "dose": "2 mg"
+      },
+      {
+        "name": "Germanium (as Biscarboxylethyl Germanium Sesquioxide)",
+        "dose": "2 mg"
+      },
+      {
+        "name": "Iron (II) (as Iron Bisglycinate)",
+        "dose": "36 mg"
+      },
+      {
+        "name": "Beet Juice Powder (Beta vulgaris)",
+        "dose": "30 mg"
+      },
+      {
+        "name": "Fulvic Acid",
+        "dose": "1 mg"
+      },
+      {
+        "name": "Vitamin A (as Retinyl Palmitate)",
+        "dose": "1.8 mg 5000 IU"
+      },
+      {
+        "name": "Vitamin B1 (as Benfotiamine)",
+        "dose": "1.5 mg"
+      },
+      {
+        "name": "Vitamin B4 (as Niacinamide)",
+        "dose": "10 mg"
+      },
+      {
+        "name": "Vitamin B6 (as Pyridoxal 5'-Phosphate)",
+        "dose": "2 mg"
+      },
+      {
+        "name": "Vitamin B9 (as L-5-Methyltetrahydrofolate)",
+        "dose": "400 mcg"
+      },
+      {
+        "name": "Vitamin B12 (as Adenosylcobalamin)",
+        "dose": "6 mcg"
+      },
+      {
+        "name": "Vitamin B13 as Lecithin (Helianthus annuus)",
+        "dose": "21 mg"
+      },
+      {
+        "name": "Vitamin D3 (Cholecalciferol)",
+        "dose": "46 mg 5000 IU"
+      },
+      {
+        "name": "EGb761 (Ginkgo biloba)",
+        "dose": "13 mg"
+      },
+      {
+        "name": "Vitamin B3 (as Niacin)",
+        "dose": "8 mg"
+      },
+      {
+        "name": "Moringa 100:1 (Moringa oleifera)",
+        "dose": "5 mg"
+      },
+      {
+        "name": "Licorice Omnipotent (Glycyrrhiza glabra)",
+        "dose": "3 mg"
+      },
+      {
+        "name": "Gingerol 40% (Zingiber officinale)",
+        "dose": "2 mg"
+      },
+      {
+        "name": "Piperine (Piper nigrum)",
+        "dose": "1 mg"
+      },
+      {
+        "name": "Vinpocetine (Vinca minor)",
+        "dose": "1 mg"
+      }
+    ],
+    "ingredients_source": "label-read-2026-09-26",
+    "description": "Other ingredients: Chlorophyll vegicaps, Healing Energy, Love & Prayer. 30 vegicaps per bottle.",
+    "directions": "1 capsule daily with food, or as guided.",
+    "note": "Label-read 2026-09-26 by production, approved by Glen ('approve'); replaces GrooveKart rows."
+  },
+  "lens-zyme": {
+    "ingredients": [
+      {
+        "name": "Vitamin B3 (from Nicotinamide Riboside)",
+        "dose": "20 mg"
+      },
+      {
+        "name": "Vitamin B5 (as Calcium Pantothenate)",
+        "dose": "10 mg"
+      },
+      {
+        "name": "Vitamin E (D-Alpha Tocopherol Succinate)",
+        "dose": "30 IU"
+      },
+      {
+        "name": "Zinc (as Zinc Carnosine)",
+        "dose": "5 mg"
+      },
+      {
+        "name": "NAC (N-Acetyl-Cysteine)",
+        "dose": "20 mg"
+      },
+      {
+        "name": "MSM (Methylsulfonylmethane)",
+        "dose": "30 mg"
+      },
+      {
+        "name": "L-Carnosine (from Zinc Carnosine)",
+        "dose": "16.7 mg"
+      },
+      {
+        "name": "EDTA (Calcium Disodium EDTA)",
+        "dose": "10 mg"
+      },
+      {
+        "name": "N-Acetyl L-Carnosine",
+        "dose": "25 mg"
+      },
+      {
+        "name": "Glutathione (S-Acetyl & Reduced GSH)",
+        "dose": "25 mg"
+      },
+      {
+        "name": "Lutein 80% (Tagetes spp.)",
+        "dose": "10 mg"
+      },
+      {
+        "name": "Anthocyanidins 25% (Vaccinium myrtillus)",
+        "dose": "10 mg"
+      },
+      {
+        "name": "Trans-Pterostilbene (Vaccinium cyanococcus)",
+        "dose": "10 mg"
+      },
+      {
+        "name": "Honokiol 50% (Magnolia officinalis)",
+        "dose": "10 mg"
+      },
+      {
+        "name": "TECA (Centella asiatica)",
+        "dose": "5 mg"
+      },
+      {
+        "name": "Yeast Enzyme Extract (80,000 units)",
+        "dose": "200 mg"
+      },
+      {
+        "name": "SOD (Superoxide Dismutase) 62,200 units",
+        "dose": "20 mg"
+      },
+      {
+        "name": "Catalase 2000 FIP",
+        "dose": "20 mg"
+      },
+      {
+        "name": "Bioavailability Blend",
+        "dose": "34.5 mg"
+      }
+    ],
+    "ingredients_source": "label-read-2026-09-26",
+    "description": "Other ingredients: Phthalate-Free Enteric Vegicaps, Healing Energy, Love and Prayer. 30 vegicaps per bottle.",
+    "directions": "1 to 3 capsules daily between meals, or as guided.",
+    "panel_note": "Bioavailability Blend contains: Lipid Solubility: Phosphatides 50% (Helianthus annuus). Mucosa Integrity/Mineral Transport: Humic & Fulvic Acids. Nutrient Absorption: Moringa 100:1 (Moringa oleifera), Gingerol 10% (Zingiber officinale), Piperine (Piper nigrum). Vascular Delivery: EGb 761 (Ginkgo biloba) (24%, 6%, <0.0005%), Vitamin B3 (as Niacin) 5 mg, Vinpocetine (Vinca minor). Entourage Effect: Licorice Omnipotent (Glycyrrhiza glabra). Regulation of Healing: Spirit Minerals (ORMUS).",
+    "note": "Label-read 2026-09-26 by production, approved by Glen ('approve'); replaces GrooveKart rows."
+  },
+  "migrafree": {
+    "ingredients": [
+      {
+        "name": "Vitamin B1 (Benfotiamine)",
+        "dose": "5 mg"
+      },
+      {
+        "name": "Vitamin B2 R5P (Riboflavin 5-Phosphate)",
+        "dose": "50 mg"
+      },
+      {
+        "name": "Vitamin B6 P5P (Pyridoxal 5-Phosphate)",
+        "dose": "5 mg"
+      },
+      {
+        "name": "Vitamin B7 Biotin",
+        "dose": "1 mg"
+      },
+      {
+        "name": "Vitamin B9 Folate (5-Methyltetrahydrofolate)",
+        "dose": "133 mcg"
+      },
+      {
+        "name": "Vitamin B12 (Adenosylcobalamin)",
+        "dose": "600 mcg"
+      },
+      {
+        "name": "Vitamin C (as Ascorbyl Palmitate)",
+        "dose": "20 mg"
+      },
+      {
+        "name": "Vitamin D3 (Cholecalciferol)",
+        "dose": "600 IU"
+      },
+      {
+        "name": "Vitamin E (mixed Tocopherols)",
+        "dose": "10 IU"
+      },
+      {
+        "name": "Coenzyme Q10 (Ubiquinol)",
+        "dose": "5 mg"
+      },
+      {
+        "name": "Magnesium (Threonate, Taurate & Malate)",
+        "dose": "8 mg"
+      },
+      {
+        "name": "Chromium (GTF Chromium)",
+        "dose": "120 mcg"
+      },
+      {
+        "name": "Selenium (Methylselenocysteine)",
+        "dose": "70 mcg"
+      },
+      {
+        "name": "S-Acetyl Glutathione & Reduced Glutathione",
+        "dose": "10 mg"
+      },
+      {
+        "name": "N-Acetyl Cysteine (NAC)",
+        "dose": "10 mg"
+      },
+      {
+        "name": "MSM (Methylsulfonylmethane)",
+        "dose": "30 mg"
+      },
+      {
+        "name": "Parthenolides 0.8% (Tanacetum parthenium)",
+        "dose": "50 mg"
+      },
+      {
+        "name": "Petasins 15% (Petasites vulgaris)",
+        "dose": "50 mg"
+      },
+      {
+        "name": "L-Theanine (Camellia sinensis)",
+        "dose": "10 mg"
+      },
+      {
+        "name": "Cilantro juice (Coriandrum sativum)",
+        "dose": "10 mg"
+      },
+      {
+        "name": "Withanolides 10% (Withania somnifera)",
+        "dose": "10 mg"
+      },
+      {
+        "name": "Flavones 10% (Passiflora incarnata)",
+        "dose": "10 mg"
+      },
+      {
+        "name": "Tetrahydrocurcumin & Curcumin (Curcuma longa)",
+        "dose": "10 mg"
+      },
+      {
+        "name": "Chlorella (Chlorella spp.) (broken cell wall)",
+        "dose": "10 mg"
+      },
+      {
+        "name": "Geranium 20:1 (Geranium maculatum)",
+        "dose": "10 mg"
+      },
+      {
+        "name": "CBD Full Spectrum (Cannabis spp.)",
+        "dose": "1 mg"
+      },
+      {
+        "name": "Vitamin B13: Phosphatides 50% (Helianthus annuus)",
+        "dose": "13 mg"
+      },
+      {
+        "name": "EGb 761 (Ginkgo biloba) (24%/6%/<0.0005%)",
+        "dose": "8 mg"
+      },
+      {
+        "name": "Vitamin B3 (as Niacin)",
+        "dose": "5 mg"
+      },
+      {
+        "name": "Moringa 100:1 (Moringa oleifera)",
+        "dose": "3 mg"
+      },
+      {
+        "name": "Licorice Omnipotent (Glycyrrhiza glabra)",
+        "dose": "2 mg"
+      },
+      {
+        "name": "Vinpocetine (Vinca minor)",
+        "dose": "1 mg"
+      },
+      {
+        "name": "Gingerol 40% (Zingiber officinale) & Piperine (Piper nigrum)",
+        "dose": "0.5 mg each"
+      },
+      {
+        "name": "Humic & Fulvic Acids",
+        "dose": "0.5 mg each"
+      }
+    ],
+    "ingredients_source": "label-read-2026-09-26",
+    "description": "Other ingredients: Chlorophyll Vegicaps, Healing Energy, Love and Prayer. 30 vegicaps per bottle.",
+    "directions": "1 to 3 capsules a day with food, or as guided.",
+    "note": "Label-read 2026-09-26 by production, approved by Glen ('approve'); replaces GrooveKart rows."
+  },
+  "moisture-eyes-night-oil": {
+    "ingredients": [
+      {
+        "name": "Sea Buckthorn Berry Oil (Hippophae rhamnoides)",
+        "dose": "40%"
+      },
+      {
+        "name": "Medium Chain Triglycerides (Cocos nucifera)",
+        "dose": "30%"
+      },
+      {
+        "name": "Kukui Nut Oil (Aleurites moluccanus)",
+        "dose": "20%"
+      },
+      {
+        "name": "Emu Oil (Dromaius novaehollandiae)",
+        "dose": "10%"
+      }
+    ],
+    "ingredients_source": "label-read-2026-09-26",
+    "description": "Other ingredients: 172 Hz Healing Energy, Love & Prayer. 5 mL per bottle.",
+    "directions": "Shake well, then apply topically around eyes.",
+    "note": "Label-read 2026-09-26 by production, approved by Glen ('approve'); replaces GrooveKart rows."
+  },
+  "moisturize": {
+    "ingredients": [
+      {
+        "name": "Vitamin A (Retinyl Acetate)",
+        "dose": "5000 IU"
+      },
+      {
+        "name": "Vitamin E (as Mixed Tocopherols)",
+        "dose": "20 IU"
+      },
+      {
+        "name": "Astaxanthin (Haematococcus pluvialis)",
+        "dose": "4 mg"
+      },
+      {
+        "name": "Phytoceramides 1% (Amorphophallus konjac)",
+        "dose": "150 mg"
+      },
+      {
+        "name": "Polyphenols",
+        "dose": "300 mg"
+      }
+    ],
+    "ingredients_source": "label-read-2026-09-26",
+    "description": "Other ingredients: Organic Pullulan vegicaps, Healing Energy, Love and Prayer. 30 vegicaps per bottle.",
+    "directions": "1 capsule up to 3 times daily with food or as guided.",
+    "panel_note": "Polyphenols (Proprietary Formula) contains: Catechins 80% (Camellia sinensis), Anthocyanidins 25% (Aristotelia chilensis).",
+    "note": "Label-read 2026-09-26 by production, approved by Glen ('approve'); replaces GrooveKart rows."
+  },
+  "natural-resource-az": {
+    "ingredients": [
+      {
+        "name": "Aloe socotrina",
+        "dose": "4X"
+      },
+      {
+        "name": "Amino Acids (all)",
+        "dose": "11X 14X 17X 32X"
+      },
+      {
+        "name": "Angelica archangelica",
+        "dose": "4X"
+      },
+      {
+        "name": "Apis mellifica",
+        "dose": "5X"
+      },
+      {
+        "name": "Aralia quinquefolia",
+        "dose": "4X"
+      },
+      {
+        "name": "Dimethylglycine",
+        "dose": "4X"
+      },
+      {
+        "name": "Calcium Ascorbate",
+        "dose": "4X"
+      },
+      {
+        "name": "Cell Salts (all)",
+        "dose": "8X 14X"
+      },
+      {
+        "name": "DNA",
+        "dose": "32X 62X 102X"
+      },
+      {
+        "name": "Eugenia caryophyllata",
+        "dose": "4X"
+      },
+      {
+        "name": "Fulvic Acid",
+        "dose": "2X"
+      },
+      {
+        "name": "Glandulars (all)",
+        "dose": "8X-32X"
+      },
+      {
+        "name": "GTF Chromium",
+        "dose": "4X"
+      },
+      {
+        "name": "Humic Acid",
+        "dose": "2X"
+      },
+      {
+        "name": "Krebs Cycle parts (all)",
+        "dose": "14X 32X"
+      },
+      {
+        "name": "Medicago sativa",
+        "dose": "4X"
+      },
+      {
+        "name": "Redox Signalling Molecules",
+        "dose": "2X"
+      },
+      {
+        "name": "Ribes nigrum",
+        "dose": "4X"
+      },
+      {
+        "name": "RNA",
+        "dose": "32X 62X 102X"
+      }
+    ],
+    "ingredients_source": "label-read-2026-09-26",
+    "description": "Other ingredients: Terrain Restore, Love and Prayer. 50 mL per bottle, about 100 servings of 10 drops.",
+    "directions": "10 drops 3 times a day in water, or as guided.",
+    "note": "Label-read 2026-09-26 by production, approved by Glen ('approve'); replaces GrooveKart rows."
+  },
+  "off-syrup": {
+    "ingredients": [
+      {
+        "name": "Aqueous Humic Substances",
+        "dose": "0.1%"
+      },
+      {
+        "name": "Holy Grail Full Spectrum ORMUS",
+        "dose": "5C"
+      },
+      {
+        "name": "Quinton Ocean ORMUS & Trace Mineral Source",
+        "dose": "3%"
+      },
+      {
+        "name": "Manna ORMUS M-11",
+        "dose": "3%"
+      },
+      {
+        "name": "Malabar nut (Adhatoda vasica) (folia)",
+        "dose": ""
+      },
+      {
+        "name": "Licorice (Glycyrrhiza glabra) (radix)",
+        "dose": ""
+      },
+      {
+        "name": "Holy Basil (Ocimum sanctum) (folia)",
+        "dose": ""
+      },
+      {
+        "name": "Ginger (Zingiber officinale) (radix)",
+        "dose": ""
+      },
+      {
+        "name": "Wild Cherry (Prunus serotina) (cortex)",
+        "dose": ""
+      },
+      {
+        "name": "Chebulic Myrobalan (Terminalia chebula) (fructus)",
+        "dose": ""
+      },
+      {
+        "name": "Long Pepper (Piper longum) (fructus)",
+        "dose": ""
+      },
+      {
+        "name": "Raspberry (Rubus spp.) (fructus)",
+        "dose": ""
+      },
+      {
+        "name": "Menthol",
+        "dose": ""
+      },
+      {
+        "name": "Vegetable Glycerine",
+        "dose": ""
+      },
+      {
+        "name": "Honey",
+        "dose": ""
+      }
+    ],
+    "ingredients_source": "label-read-2026-09-26",
+    "description": "50 mL per bottle, about 100 servings of 10 drops.",
+    "directions": "10 drops as needed, or as guided.",
+    "note": "Label-read 2026-09-26 by production, approved by Glen ('approve'); replaces GrooveKart rows."
+  },
+  "reverse-age": {
+    "ingredients": [
+      {
+        "name": "DHB (Dihydroberberine) (Phellodendron chinense) (cortex)",
+        "dose": "50 mg"
+      },
+      {
+        "name": "Carnosine (from Zinc Carnosine)",
+        "dose": "58 mg"
+      },
+      {
+        "name": "Na RALA (Stabilized Bioenhanced Na-R-Lipoate)",
+        "dose": "10 mg"
+      },
+      {
+        "name": "Zinc (from Zinc Carnosine)",
+        "dose": "5 mg"
+      },
+      {
+        "name": "Polyphenols",
+        "dose": "260 mg"
+      },
+      {
+        "name": "B1: Benfotiamine",
+        "dose": "75 mg"
+      }
+    ],
+    "ingredients_source": "label-read-2026-09-26",
+    "description": "Other ingredients: Organic Pullulan vegicaps, Healing Energy, Love and Prayer. 30 vegicaps per bottle.",
+    "directions": "1 to 3 capsules a day with food, as guided.",
+    "panel_note": "Polyphenols (Proprietary Complex) contains: Curcumin (Curcuma longa), Rosmarinic Acid 50% (Salvia rosmarinus), EMIQ (Enzymatically Modified Isoquercetin) (Sophora japonica).",
+    "note": "Label-read 2026-09-26 by production, approved by Glen ('approve'); replaces GrooveKart rows."
+  },
+  "sanctuary-c60": {
+    "ingredients": [
+      {
+        "name": "C60 (Buckminster Fullerenes)",
+        "dose": ""
+      },
+      {
+        "name": "Pacific Ocean ORMUS",
+        "dose": ""
+      },
+      {
+        "name": "Monatomic Rose Gold ORMUS",
+        "dose": ""
+      },
+      {
+        "name": "Phinheas Manna M11 ORMUS",
+        "dose": ""
+      },
+      {
+        "name": "Black Seed Oil (Nigella sativa)",
+        "dose": ""
+      }
+    ],
+    "ingredients_source": "label-read-2026-09-26",
+    "description": "Other ingredients: Healing Energy, Love and Prayer. 30 mL per bottle, about 60 servings of 10 drops.",
+    "directions": "Up to 10 drops 2 times a day.",
+    "note": "Label-read 2026-09-26 by production, approved by Glen ('approve'); replaces GrooveKart rows."
+  },
+  "sinus-terrain-nasal-spray": {
+    "ingredients": [
+      {
+        "name": "Quinton Hypertonic Ocean Minerals & ORMUS",
+        "dose": "99%"
+      },
+      {
+        "name": "Xylitol (Betula spp.)",
+        "dose": "0.75%"
+      },
+      {
+        "name": "Aqueous Humic Substances",
+        "dose": "0.1%"
+      },
+      {
+        "name": "Grapefruit Seed Extract (Citrus paradisi)",
+        "dose": "0.1%"
+      },
+      {
+        "name": "Iodine (Potassium Iodide)",
+        "dose": "0.1%"
+      }
+    ],
+    "ingredients_source": "label-read-2026-09-26",
+    "description": "Other ingredients: Miracule Water, Healing Energy, 172 Hz Scalar Field (the Dominant Harmonic Frequency of Nature), Love, and Prayer. 50 mL per bottle, about 100 sprays.",
+    "directions": "One spray in each nostril with inhale, three times a day, or as guided.",
+    "note": "Label-read 2026-09-26 by production, approved by Glen ('approve'); replaces GrooveKart rows."
+  },
+  "apoptogenesis": {
+    "ingredients": [
+      {
+        "name": "Vitamin A (Retinyl Palmitate)",
+        "dose": "5000 IU"
+      },
+      {
+        "name": "Vitamin C (Ascorbyl Palmitate)",
+        "dose": "50 mg"
+      },
+      {
+        "name": "Vitamin D3 (Cholecalciferol)",
+        "dose": "400 IU"
+      },
+      {
+        "name": "Vitamin E (D-Alpha Tocopheryl Succinate)",
+        "dose": "15 IU"
+      },
+      {
+        "name": "Coenzyme Q10 (Ubiquinone)",
+        "dose": "5 mg"
+      },
+      {
+        "name": "Magnesium (Mg Acetyl Taurate)",
+        "dose": "3 mg"
+      },
+      {
+        "name": "Zinc (Zinc Carnosine)",
+        "dose": "5 mg"
+      },
+      {
+        "name": "Iodine (Laminaria digitata)",
+        "dose": "150 mcg"
+      },
+      {
+        "name": "Selenium (Methylselenocysteine)",
+        "dose": "70 mcg"
+      },
+      {
+        "name": "Carnosine (Zinc Carnosine)",
+        "dose": "17 mg"
+      },
+      {
+        "name": "Acetyl Taurate (Mg Acetyl Taurate)",
+        "dose": "47 mg"
+      },
+      {
+        "name": "NAC (N-Acetyl L-Cysteine)",
+        "dose": "90 mg"
+      },
+      {
+        "name": "GSH (Reduced & S-Acetyl Glutathione)",
+        "dose": "5 mg"
+      },
+      {
+        "name": "Rutin (Sophora japonica)",
+        "dose": "10 mg"
+      },
+      {
+        "name": "Luteolin (Reseda spp.)",
+        "dose": "10 mg"
+      },
+      {
+        "name": "Apigenin (Apium graveolens)",
+        "dose": "10 mg"
+      },
+      {
+        "name": "Quercetin Dihydrate (Sophora japonica)",
+        "dose": "10 mg"
+      },
+      {
+        "name": "Silymarin 80% (Silybum marianum)",
+        "dose": "10 mg"
+      },
+      {
+        "name": "Ellagic Acid (Rubus spp.)",
+        "dose": "10 mg"
+      },
+      {
+        "name": "Polyphenols (Camellia sinensis)",
+        "dose": "10 mg"
+      },
+      {
+        "name": "Oat Straw 100:1 (Avena sativa)",
+        "dose": "15 mg"
+      },
+      {
+        "name": "Mistletoe 4:1 (Viscum album)",
+        "dose": "5 mg"
+      },
+      {
+        "name": "Withanolides 10% (Withania somnifera)",
+        "dose": "10 mg"
+      },
+      {
+        "name": "Ginsenosides 80% (Panax ginseng)",
+        "dose": "7 mg"
+      },
+      {
+        "name": "Noni (Morinda citrifolia) (fructus)",
+        "dose": "20 mg"
+      },
+      {
+        "name": "AHCC 50% (Lentinula edodes) (mycelia)",
+        "dose": "20 mg"
+      },
+      {
+        "name": "Berberine (Coptis chinensis)",
+        "dose": "15 mg"
+      },
+      {
+        "name": "Curcumin (Curcuma longa)",
+        "dose": "10 mg"
+      },
+      {
+        "name": "Chlorella (Chlorella spp.) (broken cell wall)",
+        "dose": "10 mg"
+      },
+      {
+        "name": "Allicin 25% (Allium sativum)",
+        "dose": "10 mg"
+      },
+      {
+        "name": "Phytoceramides (Amorphophallus konjac)",
+        "dose": "25 mg"
+      },
+      {
+        "name": "Bioavailability Blend",
+        "dose": "34.5 mg"
+      }
+    ],
+    "ingredients_source": "label-read-2026-09-26",
+    "description": "Other ingredients: organic pullulan vegicaps, Healing Energy, Love, and Prayer. 30 vegicaps per bottle.",
+    "directions": "1 to 3 capsules a day with food, or as guided.",
+    "panel_note": "Bioavailability Blend (34.5 mg): Phosphatides 50% (Helianthus annuus), Humic & Fulvic Acids, Moringa 100:1 (Moringa oleifera), Gingerol 10% (Zingiber officinale), Piperine (Piper nigrum), EGb 761 (Ginkgo biloba), Niacin 5 mg, Vinpocetine (Vinca minor), Licorice Omnipotent (Glycyrrhiza glabra), Spirit Minerals (ORMUS).",
+    "note": "Label-read 2026-09-26 by production, approved by Glen ('approve'); replaces GrooveKart rows."
   }
 }

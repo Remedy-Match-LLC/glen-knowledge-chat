@@ -195,3 +195,15 @@ def test_a_gk_ingredient_list_is_not_used(monkeypatch):
     assert bn._pathways_source("Curcu Guard") == "(none supplied; name no pathway)"
     fake["ingredients_source"] = "label-0225-read-2026-09-26"
     assert bn._ingredient_lines("Curcu Guard") == ["Curcumin 95% (Curcuma longa)"]
+
+
+# production, 2026-09-26: blend contents live in panel_note, not in the ingredient names.
+def test_panel_note_counts_as_ingredient_text(monkeypatch):
+    import dashboard.biofield_narrative as bn
+    fake = {"name": "Moisturize", "ingredients_source": "label-read-2026-09-26",
+            "ingredients": [{"name": "Bioavailability Blend", "dose": "34.5 mg"}],
+            "panel_note": "Bioavailability Blend (34.5 mg): Green Tea Catechins, Piperine (Piper nigrum)"}
+    monkeypatch.setattr(bn, "_catalog_product", lambda name: fake)
+    lines = bn._ingredient_lines("Moisturize")
+    assert any("Green Tea" in l for l in lines)
+    assert "Green Tea" in bn._pathways_source("Moisturize")

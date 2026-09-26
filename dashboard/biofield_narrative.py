@@ -510,10 +510,17 @@ _UNTRUSTED_SOURCES = {"gk", "unverified"}
 
 
 def _trusted_ingredients(product):
+    """The product's ingredient entries, plus its panel_note as one more entry: blend
+    contents live there, not in the names (production, 2026-09-26). None when the list
+    is still an unverified GrooveKart scrape."""
     src = str((product or {}).get("ingredients_source") or "").strip().lower()
     if src in _UNTRUSTED_SOURCES:
         return []
-    return (product or {}).get("ingredients") or []
+    items = list((product or {}).get("ingredients") or [])
+    note = str((product or {}).get("panel_note") or "").strip()
+    if note:
+        items.append({"name": note})
+    return items
 
 
 def _ingredient_lines(name):
