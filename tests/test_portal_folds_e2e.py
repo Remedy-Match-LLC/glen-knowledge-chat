@@ -213,3 +213,41 @@ def test_action_cards_open_on_a_first_visit(live):
         assert folded, "the fixture shows no action card"
         assert not [f for f in folded if f[1]], folded
         b.close()
+
+
+VISIBLE_IN_FOLDED_JS = """() => [...document.querySelectorAll('.card.is-folded')]
+  .filter(c => c.offsetParent !== null)
+  .flatMap(c => [...c.children]
+    .filter(x => !/^H[23]$/.test(x.tagName) && !x.classList.contains('card-fold')
+                 && getComputedStyle(x).display !== 'none')
+    .map(x => (c.dataset.foldId || c.id) + ' > ' + x.tagName + (x.getAttribute('style') ? '[style]' : '')))"""
+
+
+def test_a_folded_card_hides_all_its_content(live):
+    """Glen, 2026-09-26, live: "Scan History doesn't hide". Its rows carry an inline
+    style="display:flex", which beats the stylesheet's display:none. Fold every card on
+    every door and check nothing but the heading and the button stays visible."""
+    base, token, appmod = live
+    # Give the Scans door the available-scans rows that carry the inline display style.
+    real_view = appmod.app.view_functions.get("api_client_portal_view")
+    with sync_playwright() as p:
+        b = p.chromium.launch()
+        page = b.new_page()
+        _open(page, f"{base}/portal/{token}")
+        page.evaluate("""() => {
+          // inject an inline-styled row into every foldable card, like the Scan history rows
+          document.querySelectorAll('.card[data-fold-id]').forEach(c => {
+            const row = document.createElement('div');
+            row.setAttribute('style', 'display:flex;gap:10px');
+            row.textContent = 'row';
+            c.appendChild(row);
+          });
+        }""")
+        leaks = []
+        for door in _doors(page):
+            page.evaluate("(d) => showDoor(d)", door)
+            if page.locator(f'section[data-door="{door}"]:not([hidden]) .fold-bar-all').count():
+                page.evaluate("(d) => { if (window.PortalFolds.canRestore(_foldsV2.state, d)) _foldAllOrRestore(d); _foldAllOrRestore(d); }", door)
+            leaks += page.evaluate(VISIBLE_IN_FOLDED_JS)
+        assert not leaks, leaks[:10]
+        b.close()
