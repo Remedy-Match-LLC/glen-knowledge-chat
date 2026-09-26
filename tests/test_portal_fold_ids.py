@@ -52,10 +52,15 @@ def test_live_events_card_is_skipped():
 
 
 
-def test_the_chat_card_never_folds():
-    """Review round 2: a folded chat card hid the client's question and its answer."""
+def test_the_chat_card_folds_opens_first_and_reopens_on_a_reply():
+    """Review round 2: a folded chat card hid the client's question and its answer, so it
+    was skipped. Glen, 2026-09-26: every card folds. It now folds, opens on a first visit,
+    and chatThreadHost opens it before adding a bubble (browser test covers the last)."""
     page = (ROOT / "static" / "client-portal.html").read_text()
-    assert re.search(r'id="chatCard"[^>]*data-fold-skip="1"|data-fold-skip="1"[^>]*id="chatCard"', page)
+    assert 'id="chatCard" data-fold-open="1"' in page
+    assert not re.search(r'id="chatCard"[^>]*data-fold-skip', page)
+    host = page[page.index("function chatThreadHost(reveal){"):]
+    assert '_foldOpenCard("chatCard")' in host[:host.index("\n}")]
 
 
 
@@ -87,3 +92,14 @@ def test_action_cards_open_on_first_visit():
                  "appointment-proposals-card", "scans-written-report", "scans-video-message-",
                  'data-fold-id="biofield-${foldSlug(d.scan_date || "")}"'):
         assert name in joined, name
+
+
+
+def test_home_page_sections_carry_fold_names_and_open_first():
+    """Glen, 2026-09-26: the portal home page had no hide/show. Its tile groups and the
+    'Where you are' banner are not cards, so they carry fold names directly."""
+    page = (ROOT / "static" / "client-portal.html").read_text()
+    shell = (ROOT / "static" / "js" / "portal-shell.js").read_text()
+    assert 'class="hub-grid-group" data-fold-id="home-${foldSlug(label)}" data-fold-open="1"' in page
+    assert 'class="hub-banner" data-fold-id="home-where-you-are" data-fold-open="1"' in page
+    assert 'class="hub-banner" data-fold-id="home-where-you-are" data-fold-open="1"' in shell

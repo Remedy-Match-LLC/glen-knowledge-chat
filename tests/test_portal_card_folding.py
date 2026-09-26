@@ -55,7 +55,7 @@ function makeEl(tag){
     closest(sel){
       let n = this;
       while (n) {
-        if (sel === '.card' && n.className.includes('card') && !n.className.includes('card-fold')) return n;
+        if (sel.split(',').map(x => x.trim()).includes('.card') && n.className.includes('card') && !n.className.includes('card-fold')) return n;
         if (sel === '.card-fold' && n.className.includes('card-fold')) return n;
         n = n.parentElement;
       }

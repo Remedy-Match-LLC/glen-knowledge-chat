@@ -215,10 +215,10 @@ def test_action_cards_open_on_a_first_visit(live):
         b.close()
 
 
-VISIBLE_IN_FOLDED_JS = """() => [...document.querySelectorAll('.card.is-folded')]
+VISIBLE_IN_FOLDED_JS = """() => [...document.querySelectorAll('.card.is-folded, [data-fold-id].is-folded')]
   .filter(c => c.offsetParent !== null)
   .flatMap(c => [...c.children]
-    .filter(x => !/^H[23]$/.test(x.tagName) && !x.classList.contains('card-fold')
+    .filter(x => !/^H[23]$/.test(x.tagName) && !x.classList.contains('card-fold') && !x.classList.contains('glabel')
                  && getComputedStyle(x).display !== 'none')
     .map(x => (c.dataset.foldId || c.id) + ' > ' + x.tagName + (x.getAttribute('style') ? '[style]' : '')))"""
 
@@ -236,7 +236,7 @@ def test_a_folded_card_hides_all_its_content(live):
         _open(page, f"{base}/portal/{token}")
         page.evaluate("""() => {
           // inject an inline-styled row into every foldable card, like the Scan history rows
-          document.querySelectorAll('.card[data-fold-id]').forEach(c => {
+          document.querySelectorAll('[data-fold-id]').forEach(c => {
             const row = document.createElement('div');
             row.setAttribute('style', 'display:flex;gap:10px');
             row.textContent = 'row';
@@ -250,4 +250,66 @@ def test_a_folded_card_hides_all_its_content(live):
                 page.evaluate("(d) => { if (window.PortalFolds.canRestore(_foldsV2.state, d)) _foldAllOrRestore(d); _foldAllOrRestore(d); }", door)
             leaks += page.evaluate(VISIBLE_IN_FOLDED_JS)
         assert not leaks, leaks[:10]
+        b.close()
+
+
+
+def test_the_home_page_sections_fold(live):
+    """Glen, 2026-09-26: the portal home page had no hide/show. Its banner and tile
+    groups carry fold names, get a toggle, and open on the first visit."""
+    base, token, _ = live
+    with sync_playwright() as p:
+        b = p.chromium.launch()
+        page = b.new_page()
+        _open(page, f"{base}/portal/{token}")
+        # The fixture has no journey, so render the real home page for a client with one.
+        page.evaluate("""() => {
+          let sec = document.querySelector('section[data-door="home"]');
+          if (!sec) {                          // the fixture runs without the hub
+            sec = document.createElement('section');
+            sec.setAttribute('data-door', 'home');
+            document.getElementById('app').prepend(sec);
+          }
+          document.querySelectorAll('section[data-door]').forEach(x => { x.hidden = x !== sec; });
+          sec.innerHTML = window.PortalShell.renderHome({journey: {phases: [
+            {title: 'Energize', steps: [{label: 'Complete your scan', done: false}]}]}});
+          wirePortalFolds();
+        }""")
+        got = page.evaluate("""() => [...document.querySelectorAll('section[data-door="home"]:not([hidden]) [data-fold-id]')]
+          .map(c => ({id: c.dataset.foldId,
+                      toggle: [...c.children].some(x => x.classList.contains('card-fold')),
+                      folded: c.classList.contains('is-folded')}))""")
+        assert got, "the home page shows no named section"
+        assert all(g["toggle"] for g in got), got
+        assert not any(g["folded"] for g in got), got
+        b.close()
+
+
+def test_messages_card_has_a_box_folds_and_opens_on_a_reply(live):
+    """Glen, 2026-09-26: 'Messages & Order Help' had no input and no fold control. With
+    the shell on, the real composer (#chatInput) lives at the top of the page, so the card
+    gets its own box that sends through it: one #chatInput only. The card folds, and a
+    reply opens it again, so no answer lands out of sight (review round 2)."""
+    base, token, _ = live
+    with sync_playwright() as p:
+        b = p.chromium.launch()
+        page = b.new_page()
+        _open(page, f"{base}/portal/{token}")
+        page.evaluate("() => showTab('ask')")
+        page.wait_for_selector("#chatCardInput", state="visible")
+        assert page.locator("#chatInput").count() == 1
+        card = page.locator("#chatCard")
+        assert card.locator(":scope > .card-fold").count() == 1
+        # the card's box hands its text to the real composer and sends it
+        page.evaluate("() => { window.__sent = []; window.sendChatMessage = () => "
+                      "window.__sent.push(document.getElementById('chatInput').value); }")
+        page.fill("#chatCardInput", "Where is my order?")
+        page.click("#chatCardSend")
+        assert page.evaluate("() => window.__sent") == ["Where is my order?"]
+        assert page.input_value("#chatCardInput") == ""
+        # folded, then a reply arrives: the card opens and the bubble is visible
+        page.click("#chatCard > .card-fold")
+        assert "is-folded" in card.get_attribute("class")
+        page.evaluate("() => appendChatBubble('assistant', 'Your order shipped.')")
+        assert "is-folded" not in card.get_attribute("class")
         b.close()

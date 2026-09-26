@@ -15,7 +15,7 @@
       <h2>Your practitioner account</h2>
       <p class="muted small">Manage certification, qualifications, clients, and practitioner ordering.</p>
       <a class="btn full" href="/portal/SEG/practitioner-account">Open Practitioner Portal</a>
-    </div>[[renderEyeVisionReport]][[buildCalendarHtml]][[buildAppointmentProposalHtml]]<div class="card" id="chatCard" data-fold-skip="1">
+    </div>[[renderEyeVisionReport]][[buildCalendarHtml]][[buildAppointmentProposalHtml]]<div class="card" id="chatCard" data-fold-open="1">
     <h2>Messages &amp; Order Help</h2>
     <p class="muted small" style="margin:.3rem 0 .7rem">Write here for help with products, orders, your healing path, or anything you need from Dr. Glen and the team.</p>
     <div id="chatMsgs" class="chat-msgs"></div>
@@ -112,7 +112,7 @@
       <h2>Your practitioner account</h2>
       <p class="muted small">Manage certification, qualifications, clients, and practitioner ordering.</p>
       <a class="btn full" href="/portal/SEG/practitioner-account">Open Practitioner Portal</a>
-    </div>[[renderEyeVisionReport]][[buildCalendarHtml]][[buildAppointmentProposalHtml]]<div class="card" id="chatCard" data-fold-skip="1">
+    </div>[[renderEyeVisionReport]][[buildCalendarHtml]][[buildAppointmentProposalHtml]]<div class="card" id="chatCard" data-fold-open="1">
     <h2>Messages &amp; Order Help</h2>
     <p class="muted small" style="margin:.3rem 0 .7rem">Write here for help with products, orders, your healing path, or anything you need from Dr. Glen and the team.</p>
     <div id="chatMsgs" class="chat-msgs"></div>
@@ -243,7 +243,7 @@
         <button class="btn cg-pay" data-order="7">Pay $45.00</button>
         <div class="muted small" style="flex-basis:100%;margin-top:.2rem">Vitamin C</div></div></div></div>[[buildOrdersHtml]]</section>
       <section data-panel="intake" hidden><button type="button" class="hub-back" onclick="showTab('hub')">‹ Back to hub</button><div class="card" id="portal-intake-card" data-fold-open="1"><div id="portal-intake-host"></div></div></section>
-      <section data-panel="ask" hidden><button type="button" class="hub-back" onclick="showTab('hub')">‹ Back to hub</button><div class="card" id="chatCard" data-fold-skip="1">
+      <section data-panel="ask" hidden><button type="button" class="hub-back" onclick="showTab('hub')">‹ Back to hub</button><div class="card" id="chatCard" data-fold-open="1">
     <h2>Messages &amp; Order Help</h2>
     <p class="muted small" style="margin:.3rem 0 .7rem">Write here for help with products, orders, your healing path, or anything you need from Dr. Glen and the team.</p>
     <div id="chatMsgs" class="chat-msgs"></div>
@@ -318,7 +318,7 @@
       <div class="hello">Aloha Mary</div>
       <div class="sub">[[escGreeting]]</div>
       
-    </div>[[renderEyeVisionReport]][[buildCalendarHtml]][[buildAppointmentProposalHtml]]<div class="card" id="chatCard" data-fold-skip="1">
+    </div>[[renderEyeVisionReport]][[buildCalendarHtml]][[buildAppointmentProposalHtml]]<div class="card" id="chatCard" data-fold-open="1">
     <h2>Messages &amp; Order Help</h2>
     <p class="muted small" style="margin:.3rem 0 .7rem">Write here for help with products, orders, your healing path, or anything you need from Dr. Glen and the team.</p>
     <div id="chatMsgs" class="chat-msgs"></div>
@@ -431,7 +431,7 @@
         <button class="btn cg-pay" data-order="7">Pay $45.00</button>
         <div class="muted small" style="flex-basis:100%;margin-top:.2rem">Vitamin C</div></div></div></div>[[buildOrdersHtml]]</section>
       <section data-panel="intake" hidden><button type="button" class="hub-back" onclick="showTab('hub')">‹ Back to hub</button><div class="card" id="portal-intake-card" data-fold-open="1"><div id="portal-intake-host"></div></div></section>
-      <section data-panel="ask" hidden><button type="button" class="hub-back" onclick="showTab('hub')">‹ Back to hub</button><div class="card" id="chatCard" data-fold-skip="1">
+      <section data-panel="ask" hidden><button type="button" class="hub-back" onclick="showTab('hub')">‹ Back to hub</button><div class="card" id="chatCard" data-fold-open="1">
     <h2>Messages &amp; Order Help</h2>
     <p class="muted small" style="margin:.3rem 0 .7rem">Write here for help with products, orders, your healing path, or anything you need from Dr. Glen and the team.</p>
     <div id="chatMsgs" class="chat-msgs"></div>

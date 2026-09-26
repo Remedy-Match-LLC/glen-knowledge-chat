@@ -367,7 +367,7 @@ function renderHome(view) {
     ? '<p class="home-next">Next, ' + escapeHtml(nextStep.label) + '.</p>'
     : '';
 
-  var banner = '<div class="hub-banner"><div class="where">' +
+  var banner = '<div class="hub-banner" data-fold-id="home-where-you-are" data-fold-open="1"><div class="where">' +
     '<div class="eyebrow">Where you are</div>' +
     '<h2>' + escapeHtml(phase.title) + '</h2>' +
     progressHtml + nextHtml +

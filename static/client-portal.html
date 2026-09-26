@@ -662,6 +662,9 @@
   /* !important: many cards' rows carry an inline style="display:flex", which beats a plain
      rule, so "Scan history" stayed open when folded (Glen, 2026-09-26, live). */
   body.folds-v2 .card.is-folded > *:not(h2):not(h3):not(.card-fold){display:none !important}
+  body.folds-v2 [data-fold-id]{position:relative}
+  body.folds-v2 [data-fold-id].is-folded > *:not(h2):not(h3):not(.glabel):not(.card-fold){display:none !important}
+  body.folds-v2 [data-fold-id].is-folded > .card-fold{display:inline-block}
   body.folds-v2 .card:not(.is-folded) > h3.fold-title{display:none}
   body.folds-v2 .card > h3.fold-title{margin:0;padding-right:64px}
   .card-fold{float:right;background:none;border:0;color:var(--muted);cursor:pointer;
@@ -1654,13 +1657,13 @@ function buildHubHtml(d, v){
     `<a class="hub-tile${cardStates[key]&&cardStates[key].visited?" is-visited":""}" data-tile="${esc(key)}" href="${esc(href)}"${key === "brain" ? ' target="_blank" rel="noopener"' : ""} onclick="markHubCardOpened('${esc(key)}',this)">
        <span class="tname">${esc(name)}</span><span class="tdesc">${esc(desc)}</span></a>`;
   const grp = ([label,tiles]) =>
-    `<div class="hub-grid-group"><p class="glabel">${esc(label)}</p>
+    `<div class="hub-grid-group" data-fold-id="home-${foldSlug(label)}" data-fold-open="1"><p class="glabel">${esc(label)}</p>
        <div class="hub-tiles">${tiles.map(t => t.ext ? extTile(t.ext) : tile(t)).join("")}</div></div>`;
   const next = (d.next_step_label)
     ? `<div class="next"><div class="eyebrow">Your next step</div><div>${esc(d.next_step_label)}</div></div>`
     : "";
   return `<div class="portal-hub">
-    <div class="hub-banner"><div class="where">
+    <div class="hub-banner" data-fold-id="home-where-you-are" data-fold-open="1"><div class="where">
       <div class="eyebrow">Where you are</div>
       <h2>${esc(d.hub_headline || "Your healing home")}</h2></div>${next}
       <button type="button" class="hub-account" onclick="showTab('account')">Account</button></div>
@@ -4274,11 +4277,19 @@ function render(d, v){
   // elements sharing that id would silently wire Send to the wrong one. Off the
   // shell there is no composer at the top, so this card keeps its own, unchanged.
   // Same predicate as _chatVoice above and the shell mount below, deliberately.
-  const _composerRow = (v && v.shell_enabled && window.PortalShell) ? "" : `<div class="chat-input-row">
+  // Glen, 2026-09-26: with the composer at the top of the page, this card said "Write
+  // here" with no box in it. It gets its own box, #chatCardInput, which hands its text to
+  // the one real #chatInput and sends through sendChatMessage(): no id is shared.
+  const _composerRow = (v && v.shell_enabled && window.PortalShell) ? `<div class="chat-input-row">
+      <input id="chatCardInput" type="text" placeholder="Write your message here" autocomplete="off">
+      <button type="button" class="btn" id="chatCardSend">Send</button>
+    </div>` : `<div class="chat-input-row">
       <input id="chatInput" type="text" placeholder="Ask about your scan or remedies..." autocomplete="off">
       <button class="btn" id="chatSend">Send</button>
     </div>`;
-  const _askCard = `<div class="card" id="chatCard" data-fold-skip="1">
+  // It folds like every card (Glen's rule), opens on a first visit, and opens itself
+  // when a message is added, so no answer lands out of sight (see chatThreadHost).
+  const _askCard = `<div class="card" id="chatCard" data-fold-open="1">
     <h2>Messages &amp; Order Help</h2>
     <p class="muted small" style="margin:.3rem 0 .7rem">Write here for help with products, orders, your healing path, or anything you need from Dr. Glen and the team.</p>
     <div id="chatMsgs" class="chat-msgs"></div>
@@ -8457,7 +8468,7 @@ function _foldWireClickOnce(){
     if(typeof _foldBarClick === "function" && _foldBarClick(t)) return;
     var btn = t.closest(".card-fold");
     if(!btn) return;
-    var card = btn.closest(".card");
+    var card = btn.closest(".card, [data-fold-id]");
     if(!card) return;
     if(_foldsV2 && typeof _foldsV2 === "object"){ _foldToggle(card); return; }
     var folded = !card.classList.contains("is-folded");
@@ -8491,16 +8502,20 @@ function _foldIdOf(card){
 }
 
 // Foldable cards grouped by the door (page) they sit in, in page order. A card needs a
-// fixed name, a heading to stay visible when folded, and no data-fold-skip.
+// fixed name, a heading to stay visible when folded, and no data-fold-skip. Any other
+// section with a fold name counts too: the home page's banner and tile groups
+// (Glen, 2026-09-26: "every section or card folds").
+var _FOLDABLE = ".card, [data-fold-id]";
+var _FOLD_HEADS = "h2,h3,.glabel";
 function _foldCardsByDoor(){
   var out = {};
-  var cards = document.querySelectorAll(".card");
+  var cards = document.querySelectorAll(_FOLDABLE);
   for(var i = 0; i < cards.length; i++){
     var c = cards[i];
     if(!_foldIdOf(c) || (c.dataset && c.dataset.foldSkip)) continue;
     // Any heading. A nested one (the intake form's) gets a direct-child title copy in
     // _foldSetCard, because folding hides everything but direct headings.
-    if(!c.querySelector("h2,h3")) continue;
+    if(!c.querySelector(_FOLD_HEADS)) continue;
     var host = c.closest("[data-door]");
     var door = host ? host.dataset.door : "home";
     (out[door] = out[door] || []).push(c);
@@ -8522,8 +8537,8 @@ function _foldSetCard(card, folded){
     if(card.children[i].classList.contains("card-fold")){ btn = card.children[i]; break; }
   }
   if(!btn){
-    var head = card.querySelector("h2,h3");
-    if(!card.querySelector(":scope > h2, :scope > h3")){
+    var head = card.querySelector(_FOLD_HEADS);
+    if(!card.querySelector(":scope > h2, :scope > h3, :scope > .glabel")){
       var title = document.createElement("h3");
       title.className = "fold-title";
       title.classList.add("fold-title");
@@ -8779,9 +8794,43 @@ function wireCardFolding(){
 }
 
 
+// The Messages card's own box sends through the real composer. Delegated and wired once,
+// because render() rebuilds the card on every poll.
+function _wireChatCardBoxOnce(){
+  if(window.__chatCardBoxWired) return;
+  window.__chatCardBoxWired = true;
+  function send(){
+    var box = document.getElementById("chatCardInput");
+    var real = document.getElementById("chatInput");
+    if(!box || !real) return;
+    var text = (box.value || "").trim();
+    if(!text) return;
+    real.value = text;
+    box.value = "";
+    sendChatMessage();
+  }
+  document.addEventListener("click", function(e){
+    if(e.target && e.target.closest && e.target.closest("#chatCardSend")) send();
+  });
+  document.addEventListener("keydown", function(e){
+    if(e.target && e.target.id === "chatCardInput" && e.key === "Enter" && !e.shiftKey){
+      e.preventDefault();
+      send();
+    }
+  });
+}
+_wireChatCardBoxOnce();
+
 function chatThreadHost(reveal){
   var msgs = document.getElementById("chatMsgs");
-  if(msgs && !_isChatHostHidden(msgs)) return msgs;
+  if(msgs && !_isChatHostHidden(msgs)){
+    // A folded Messages card would take the bubble out of sight: open it first.
+    if(reveal && typeof _foldOpenCard === "function"){
+      var cc = document.getElementById("chatCard");
+      if(cc && cc.classList.contains("is-folded")) _foldOpenCard("chatCard");
+    }
+    return msgs;
+  }
   var inline = document.getElementById("shellChatThread");
   if(inline){ if(reveal) inline.hidden = false; return inline; }
   return msgs;
