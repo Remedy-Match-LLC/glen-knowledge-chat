@@ -58,6 +58,8 @@ Only lcarnosine's sentence names the container, and it took a second product to 
 """
 import json
 
+import re
+
 import pytest
 
 from dashboard.shipping import PROD_BOTTLE_NAMES
@@ -176,4 +178,5 @@ def test_the_evidence_for_the_violet_bottle_size_is_still_there(products):
     description rewrite silently removes the reason and the next session re-adds the jar."""
     d = products["lcarnosine"].get("description") or ""
     assert "50 mL violet glass bottle" in d
-    assert "30g" in d, "the fill and the container must both stay stated"
+    # Glen's approved copy (2026-09-26) states it as "30 g in a 50 mL violet glass bottle".
+    assert re.search(r"\b30\s?g\b", d), "the fill and the container must both stay stated"
