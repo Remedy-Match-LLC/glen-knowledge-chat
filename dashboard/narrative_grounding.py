@@ -41,7 +41,9 @@ def clean_scan_description(desc):
 # ── scan names ──────────────────────────────────────────────────────────────
 
 _E4L = r"(?:E4L|Energy4Life|Energy 4 Life)[\s-]+"
-_SCAN_WORD = r"(?:scans?|scanning|analys[ie]s)"
+# "scanning" is not renamed: "during Bioenergetic Wellness Scan we saw" is not English.
+# It is left as written and reported by scan_name_problems (review, 2026-09-26).
+_SCAN_WORD = r"(?:scans?|analys[ie]s)"
 # Most specific first, so "E4L Bioenergetic Voice Scan" is replaced whole and no word
 # is doubled (blind review, 2026-09-25).
 _SCAN_NAME_PATTERNS = [
@@ -64,14 +66,24 @@ def _is_five_element(m, text):
                 or _FIVE_AFTER.search(text[m.end():m.end() + 30]))
 
 
+def _sentence_around(m, text):
+    start = max(text.rfind(c, 0, m.start()) for c in ".!?\n") + 1
+    ends = [i for i in (text.find(c, m.end()) for c in ".!?\n") if i != -1]
+    return text[start:min(ends) if ends else len(text)]
+
+
 def _rename(m, text, bare=False, five_context=False):
     if _is_five_element(m, text):
+        return m.group(0)
+    # "Your Bioenergetic Wellness Scan (E4L voice scan)" would read the name twice.
+    # Left as written, and reported by scan_name_problems.
+    if WELLNESS_SCAN.lower() in _sentence_around(m, text).lower():
         return m.group(0)
     # A bare "voice scan" in a letter that also names the Five Element scan could be
     # either instrument. Leave it, and scan_name_problems tells Glen.
     if bare and (five_context or _MENTIONS_FIVE.search(text)):
         return m.group(0)
-    plural = m.group(0).lower().endswith("scans")
+    plural = m.group(0).lower().endswith(("scans", "analyses"))
     return WELLNESS_SCAN + ("s" if plural else "")
 
 
@@ -81,16 +93,19 @@ def scan_name_problems(text):
     only at generation (clinical, 2026-09-25: 29 of 37 saved letters said "voice scan").
     A bare "voice scan" beside the Five Element Voice Scan is left for Glen to name."""
     out = []
-    fixed = fix_scan_names(text or "")
-    if fixed != (text or ""):
+    text = text or ""
+    fixed = fix_scan_names(text)
+    if fixed != text:
         out.append(f"Says 'voice scan'; E4L's scan is the {WELLNESS_SCAN}.")
-    if not _MENTIONS_FIVE.search(text or ""):
-        return out
-    for m in _SCAN_NAME_PATTERNS[-1].finditer(text or ""):
-        if not _is_five_element(m, text):
-            out.append("Says 'voice scan' beside the Five Element Voice Scan. Name which "
-                       "scan it means.")
+    # Whatever the rename leaves behind still needs a person: beside the Five Element
+    # scan, a doubled name, or "voice scanning" (review, 2026-09-26).
+    for m in _ANY_VOICE.finditer(fixed):
+        if not _is_five_element(m, fixed):
+            out.append(f"Still says '{m.group(0)}'. Name which scan it means.")
     return list(dict.fromkeys(out))
+
+
+_ANY_VOICE = re.compile(r"\bvoice[\s-]+(?:scans?|scanning|analys[ie]s)\b", re.IGNORECASE)
 
 
 def fix_scan_names(text, five_context=False):

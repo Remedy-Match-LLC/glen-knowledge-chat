@@ -36658,7 +36658,11 @@ def admin_portal_reports_fix_scan_names():
                     "changed": len(out["changed"]), "left_for_glen": len(out["left_for_glen"]),
                     "raced": len(out["raced"]), "skipped": len(out["skipped"]),
                     "changed_rows": out["changed"], "left_rows": out["left_for_glen"],
-                    "raced_rows": out["raced"], "skipped_rows": out["skipped"]})
+                    "raced_rows": out["raced"], "skipped_rows": out["skipped"],
+                    "note": "changed = rows whose text is (or would be) renamed. left_for_glen "
+                            "= rows still holding scan wording for Glen to decide; a row can "
+                            "be in both. raced = edited by someone else mid-run, not written. "
+                            "skipped = unreadable, not written."})
 
 
 @app.route("/admin/portal/upsert", methods=["POST"])

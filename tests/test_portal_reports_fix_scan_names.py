@@ -179,3 +179,12 @@ def test_five_elements_as_a_plain_phrase_does_not_block_the_report(tmp_path):
     out = pbr.fix_scan_names_in_reports(cx, apply=True)
     c = json.loads(cx.execute("SELECT content_json FROM portal_biofield_reports").fetchone()[0])
     assert c["narrative"] == "Your Bioenergetic Wellness Scan showed it." and out["left_for_glen"] == []
+
+
+def test_five_element_split_across_fields_holds_the_report(tmp_path):
+    cx = sqlite3.connect(str(tmp_path / "t.db"))
+    _one(cx, {"title": "Five Element", "sub": "Voice Scan", "n": "The voice scan showed it."})
+    out = pbr.fix_scan_names_in_reports(cx, apply=True)
+    c = json.loads(cx.execute("SELECT content_json FROM portal_biofield_reports").fetchone()[0])
+    assert c["sub"] == "Voice Scan" and c["n"] == "The voice scan showed it."
+    assert len(out["left_for_glen"]) == 1

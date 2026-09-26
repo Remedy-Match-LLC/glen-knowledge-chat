@@ -180,6 +180,16 @@ _FIVE_VOICE = re.compile(r"(?:five|5)[\s-]*elements?\W{0,6}voice|voice[\s-]+scan
                          r"(?:five|5)[\s-]*element", re.IGNORECASE)
 
 
+def _strings(value):
+    if isinstance(value, str):
+        return [value]
+    if isinstance(value, list):
+        return [s for v in value for s in _strings(v)]
+    if isinstance(value, dict):
+        return [s for v in value.values() for s in _strings(v)]
+    return []
+
+
 def _any_string(value, pred):
     if isinstance(value, str):
         return bool(pred(value))
@@ -213,7 +223,9 @@ def fix_scan_names_in_reports(cx, *, apply=False):
         item = {"id": rid, "scan_date": scan_date, "status": status}
         try:
             content = json.loads(cj or "{}")
-            five = _any_string(content, _FIVE_VOICE.search)
+            # Read the whole report as one text: {"title": "Five Element", "sub": "Voice
+            # Scan"} names Glen's instrument across two fields (review round 3).
+            five = bool(_FIVE_VOICE.search(" ".join(_strings(content))))
             new, fields = _rewrite_strings(content, lambda t: fix_scan_names(t, five))
             if _any_string(new, lambda t: scan_name_problems(t) or (
                     five and fix_scan_names(t) != t)):

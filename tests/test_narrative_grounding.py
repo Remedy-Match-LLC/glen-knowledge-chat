@@ -248,9 +248,8 @@ def test_a_negated_nutrient_is_not_a_claim():
 def test_scan_name_variants_do_not_double_words():
     assert ng.fix_scan_names("Your E4L Bioenergetic Voice Scan showed stress.") == (
         "Your Bioenergetic Wellness Scan showed stress.")
-    assert ng.fix_scan_names("an E4L voice scanning session") == (
-        "a Bioenergetic Wellness Scan session") or "voice" not in ng.fix_scan_names(
-        "an E4L voice scanning session").lower()
+    # "voice scanning" is left and reported, not reworded (review, 2026-09-26).
+    assert ng.scan_name_problems("an E4L voice scanning session") != []
     assert "voice" not in ng.fix_scan_names("the E4L voice analysis").lower()
 
 
@@ -429,3 +428,22 @@ def test_saved_voice_scan_wording_is_flagged_in_any_case():
         assert any("Bioenergetic Wellness Scan" in p for p in ng.scan_name_problems(t)), t
     assert ng.scan_name_problems("Your Bioenergetic Wellness Scan showed it.") == []
     assert ng.scan_name_problems("Your Five Element Voice Scan showed it.") == []
+
+
+# ── portal report review round 3, 2026-09-26 ────────────────────────────────
+
+def test_no_doubled_name_and_the_leftover_is_reported():
+    t = "Your Bioenergetic Wellness Scan (E4L voice scan) showed it."
+    assert ng.fix_scan_names(t) == t
+    assert any("Still says" in p for p in ng.scan_name_problems(t))
+
+
+def test_plural_analyses_stay_plural():
+    assert ng.fix_scan_names("Your two E4L voice analyses agree.") == (
+        "Your two Bioenergetic Wellness Scans agree.")
+
+
+def test_voice_scanning_is_left_and_reported():
+    for t in ("during E4L voice scanning we saw", "during voice scanning we saw"):
+        assert ng.fix_scan_names(t) == t
+        assert any("voice scanning" in p for p in ng.scan_name_problems(t)), t
