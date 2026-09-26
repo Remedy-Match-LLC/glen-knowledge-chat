@@ -12700,12 +12700,13 @@
     }
    ],
    "ingredients_source": "reformulation-brief-2026-09-15, Glen new-now 2026-09-26",
-   "description": "Cinnamon Blue . Cinnamon Blue Cinnamon Blue Cinnamon Blue combines aromatic and flavorful Cinnamon Polyphenols with Methylene Blue (MeBlu). Methylene Blue Background: Methylene Blue is safe enough to be available without prescription and is on the World Health Organization's list of essential medicines. Modern hospitals use it to save lives in cases of severe trauma. Methylene Blue was discovered in 1876 and was first used as a dye for cloth. In medical science, it was noticed that staining pathogens with a dye could kill them. Methylene Blue was the first synthetic pharmaceutical and was...",
+   "description": "Cinnamon Blue is a liquid of methylene blue with Ceylon cinnamon (Cinnamomum verum) in purified water and ethanol.",
    "qty_pricing": true,
    "copy_pinned": [
     "intro",
     "description",
-    "research"
+    "research",
+    "benefits"
    ],
    "how_it_works": "",
    "intro": "Cinnamon Blue is a liquid of methylene blue with Ceylon cinnamon (Cinnamomum verum) in purified water and ethanol."
