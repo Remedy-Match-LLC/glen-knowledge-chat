@@ -659,6 +659,8 @@
   body.folds-v2 .card > h2:first-of-type, body.folds-v2 .card > h3:first-of-type{padding-right:64px}
   body.folds-v2 .card-fold{float:none;position:absolute;top:10px;right:10px}
   body.folds-v2 .card.is-folded > .card-fold{display:inline-block}
+  body.folds-v2 .card:not(.is-folded) > h3.fold-title{display:none}
+  body.folds-v2 .card > h3.fold-title{margin:0;padding-right:64px}
   .card-fold{float:right;background:none;border:0;color:var(--muted);cursor:pointer;
     font:inherit;font-size:.82rem;line-height:1.2;padding:2px 6px;border-radius:8px}
   .card-fold:hover{color:var(--ink);background:var(--brand-soft)}
@@ -4270,7 +4272,7 @@ function render(d, v){
       <input id="chatInput" type="text" placeholder="Ask about your scan or remedies..." autocomplete="off">
       <button class="btn" id="chatSend">Send</button>
     </div>`;
-  const _askCard = `<div class="card" id="chatCard">
+  const _askCard = `<div class="card" id="chatCard" data-fold-skip="1">
     <h2>Messages &amp; Order Help</h2>
     <p class="muted small" style="margin:.3rem 0 .7rem">Write here for help with products, orders, your healing path, or anything you need from Dr. Glen and the team.</p>
     <div id="chatMsgs" class="chat-msgs"></div>
@@ -8490,9 +8492,9 @@ function _foldCardsByDoor(){
   for(var i = 0; i < cards.length; i++){
     var c = cards[i];
     if(!_foldIdOf(c) || (c.dataset && c.dataset.foldSkip)) continue;
-    // A DIRECT heading only: folding hides everything but direct headings, so a card
-    // whose heading is nested (the intake form) would fold into an empty box.
-    if(!c.querySelector(":scope > h2, :scope > h3")) continue;
+    // Any heading. A nested one (the intake form's) gets a direct-child title copy in
+    // _foldSetCard, because folding hides everything but direct headings.
+    if(!c.querySelector("h2,h3")) continue;
     var host = c.closest("[data-door]");
     var door = host ? host.dataset.door : "home";
     (out[door] = out[door] || []).push(c);
@@ -8514,7 +8516,14 @@ function _foldSetCard(card, folded){
     if(card.children[i].classList.contains("card-fold")){ btn = card.children[i]; break; }
   }
   if(!btn){
-    var head = card.querySelector(":scope > h2, :scope > h3");
+    var head = card.querySelector("h2,h3");
+    if(!card.querySelector(":scope > h2, :scope > h3")){
+      var title = document.createElement("h3");
+      title.className = "fold-title";
+      title.classList.add("fold-title");
+      title.textContent = String((head && head.textContent) || "").trim();
+      card.insertBefore(title, card.firstChild);
+    }
     btn = document.createElement("button");
     btn.type = "button";
     btn.className = "card-fold";
@@ -8534,10 +8543,10 @@ function _foldApplyAll(){
     var cards = byDoor[door];
     var ids = cards.map(_foldIdOf);
     if(_foldsV2.state.seen.indexOf(door) === -1 && _foldDoorVisible(door)){
-      _foldsV2.state = F.markSeen(_foldsV2.state, door);
+      _foldsV2.state = F.markSeen(_foldsV2.state, door, ids);
       _foldSave();
     }
-    var r = F.resolveDoor(_foldsV2.state, ids);
+    var r = F.resolveDoor(_foldsV2.state, ids, door);
     cards.forEach(function(card){ _foldSetCard(card, r[_foldIdOf(card)]); });
   });
   if(typeof _foldBars === "function") _foldBars(byDoor);

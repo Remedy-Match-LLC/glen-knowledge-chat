@@ -28,17 +28,29 @@
 
   function copy(state){ return normalise(JSON.parse(JSON.stringify(state))); }
 
-  function resolveDoor(state, ids){
+  // The first-visit default (first card open, the rest folded) applies only while the
+  // page has not been seen. After that an unlisted card is new content and arrives open,
+  // and a card inserted above cannot fold the one being read (review, 2026-09-26).
+  function resolveDoor(state, ids, door){
+    var seen = !!door && state.seen.indexOf(door) !== -1;
     var out = {};
     ids.forEach(function(id, i){
-      out[id] = Object.prototype.hasOwnProperty.call(state.cards, id) ? state.cards[id] : i > 0;
+      out[id] = Object.prototype.hasOwnProperty.call(state.cards, id) ? state.cards[id]
+              : (seen ? false : i > 0);
     });
     return out;
   }
 
-  function markSeen(state, door){
+  // Marks the page seen, and writes the first-visit layout into the record so it is
+  // fixed from then on.
+  function markSeen(state, door, ids){
     var s = copy(state);
-    if(s.seen.indexOf(door) === -1) s.seen.push(door);
+    if(s.seen.indexOf(door) !== -1) return s;
+    if(ids){
+      var first = resolveDoor(s, ids, door);
+      Object.keys(first).forEach(function(id){ s.cards[id] = first[id]; });
+    }
+    s.seen.push(door);
     return s;
   }
 
@@ -50,7 +62,7 @@
 
   function foldAll(state, door, ids){
     var s = copy(state);
-    if(!s.before_fold_all[door]) s.before_fold_all[door] = resolveDoor(s, ids);
+    if(!s.before_fold_all[door]) s.before_fold_all[door] = resolveDoor(s, ids, door);
     ids.forEach(function(id){ s.cards[id] = true; });
     return s;
   }

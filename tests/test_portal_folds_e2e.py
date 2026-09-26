@@ -61,7 +61,7 @@ def live(monkeypatch, tmp_path):
 COUNT_JS = """(door) => {
   const secs = [...document.querySelectorAll('section[data-door="' + door + '"]')].filter(s => !s.hidden);
   const cards = secs.flatMap(s => [...s.querySelectorAll('.card')]).filter(c =>
-      (c.dataset.foldId || c.id) && !c.dataset.foldSkip && c.querySelector(':scope > h2, :scope > h3'));
+      (c.dataset.foldId || c.id) && !c.dataset.foldSkip && c.querySelector('h2,h3'));
   const toggles = cards.filter(c => [...c.children].some(x => x.classList.contains('card-fold')));
   return {cards: cards.length, toggles: toggles.length};
 }"""

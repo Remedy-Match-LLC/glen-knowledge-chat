@@ -63,3 +63,17 @@ assert.deepStrictEqual(F.normalise(null), F.emptyState());
 assert.deepStrictEqual(F.normalise({cards: 3}), F.emptyState());
 
 console.log('OK');
+
+// ── review round 2, 2026-09-26: the first-visit default applies on the FIRST visit only
+{
+  // before the page is seen: positional default
+  assert.deepStrictEqual(F.resolveDoor(F.emptyState(), ['a', 'b'], 'scans'), {a: false, b: true});
+  // markSeen snapshots that default, so it never re-applies
+  let s = F.markSeen(F.emptyState(), 'scans', ['a', 'b']);
+  assert.deepStrictEqual(s.cards, {a: false, b: true});
+  // a card inserted ABOVE later does not fold the card being read
+  assert.deepStrictEqual(F.resolveDoor(s, ['y', 'a', 'b'], 'scans'), {y: false, a: false, b: true});
+  // a new card on a seen page arrives open
+  assert.deepStrictEqual(F.resolveDoor(s, ['a', 'b', 'invoice'], 'scans'), {a: false, b: true, invoice: false});
+  console.log('OK2');
+}

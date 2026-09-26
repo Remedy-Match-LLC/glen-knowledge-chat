@@ -169,9 +169,13 @@ __FNS__
   // 4. skipped and headless cards get none
   assert.strictEqual(toggles(p.skip).length, 0);
   assert.strictEqual(toggles(p.bare).length, 0);
-  // a heading NESTED inside the card is hidden when folded, so no toggle (review: intake)
-  assert.strictEqual(toggles(p.nested).length, 0);
-  assert.ok(!p.nested.classList.contains('is-folded'));
+  // a heading NESTED inside the card (the intake form) gets a toggle, and a direct-child
+  // title copy that stays visible when folded (review round 2)
+  assert.strictEqual(toggles(p.nested).length, 1);
+  const ft = p.nested.children.filter(x => x.classList.contains('fold-title'));
+  assert.strictEqual(ft.length, 1);
+  assert.strictEqual(ft[0].tagName, 'H3');
+  assert.strictEqual(ft[0].textContent, 'Intake');
   // new styling applies only once the server record is live
   assert.ok(body.classList.contains('folds-v2'));
 

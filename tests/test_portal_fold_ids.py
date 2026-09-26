@@ -49,3 +49,10 @@ def test_the_scan_finds_cards_at_all():
 def test_live_events_card_is_skipped():
     page = (ROOT / "static" / "client-portal.html").read_text()
     assert re.search(r'class="card calendar-summary"[^>]*data-fold-skip="1"', page)
+
+
+
+def test_the_chat_card_never_folds():
+    """Review round 2: a folded chat card hid the client's question and its answer."""
+    page = (ROOT / "static" / "client-portal.html").read_text()
+    assert re.search(r'id="chatCard"[^>]*data-fold-skip="1"|data-fold-skip="1"[^>]*id="chatCard"', page)
