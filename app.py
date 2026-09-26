@@ -42158,6 +42158,20 @@ def _cookie_console_key():
     return ""
 
 
+def _is_staff_request():
+    """True when this request presents any valid console credential: the master key,
+    or a per-user access token of ANY role, VAs included. Wider than
+    _portal_open_is_owner() on purpose: a VA must not act as a client unannounced."""
+    key = _present_console_key()
+    if not key:
+        return False
+    import dashboard as _dash
+    if (CONSOLE_SECRET and key == CONSOLE_SECRET) or (
+            _dash.CONSOLE_SECRET and key == _dash.CONSOLE_SECRET):
+        return True
+    return _role_for_token(key) is not None
+
+
 @app.before_request
 def _console_browser_login():
     """Turn a browser's ?key=<master secret OR owner token> on a /console or
@@ -42204,6 +42218,47 @@ def _console_browser_login():
         max_age=CONSOLE_COOKIE_MAX_AGE, httponly=True,
         secure=request.is_secure, samesite="Lax")
     return resp
+
+
+def _staff_guard_client_name(path):
+    """Display name of the client whose portal a guarded request acts on, or "".
+    Used only for the confirmation wording, so it never raises."""
+    try:
+        from dashboard import client_portal as _cp
+        m = re.match(r"^/api/portal/([^/]+)/", path or "")
+        with db.connect(LOG_DB) as cx:
+            if m:
+                rec = _cp.get_portal_by_token(cx, m.group(1))
+                if rec:
+                    return (rec.get("name") or "").strip() or (rec.get("email") or "").split("@")[0]
+            tok = request.args.get("token", "")
+            ident = _evox_ident(cx, tok) if tok else None
+            if ident:
+                return (getattr(ident, "name", "") or "").strip() or ident.email.split("@")[0]
+    except Exception:
+        pass
+    return ""
+
+
+@app.before_request
+def _portal_staff_guard():
+    """A staff member inside a client's portal must confirm before acting as the client.
+    The portal page tags every request X-Portal-View: 1; console pages never do.
+    Runs after _console_browser_login, so a login cookie already counts as a key.
+    Spec: docs/superpowers/specs/2026-09-26-portal-staff-guard-design.md"""
+    if request.headers.get("X-Portal-View") != "1":
+        return None
+    from dashboard import staff_guard as _sg
+    kind = _sg.classify(request.method, request.path or "")
+    if kind in ("pass", "exempt") or not _is_staff_request():
+        return None
+    if kind == "background":
+        return "", 204
+    if request.headers.get("X-Staff-Confirmed") == "1":
+        return None
+    client = _staff_guard_client_name(request.path)
+    return jsonify({"staff_confirm": {"action": _sg.describe(request.path, client),
+                                      "client": client}}), 409
 
 
 @app.route("/api/console/auth-status", methods=["GET"])
