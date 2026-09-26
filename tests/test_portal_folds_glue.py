@@ -172,6 +172,15 @@ __FNS__
   sec2.hidden = false;
   _foldDoorShown();
   assert.ok(_foldsV2.state.seen.indexOf('billing') !== -1, 'showing a door marks it seen');
+  // 2b'. a card marked data-fold-open opens on the first visit (Glen: "open action cards")
+  const sec3 = body.appendChild(el('SECTION')); sec3.setAttribute('data-door', 'learn');
+  const l1 = card('l1', 'One'); const l2 = card('l2', 'Invoice', {foldOpen: '1'}); const l3 = card('l3', 'Three');
+  [l1, l2, l3].forEach(x => sec3.appendChild(x));
+  _foldDoorShown();
+  assert.ok(!l1.classList.contains('is-folded') && !l2.classList.contains('is-folded'));
+  assert.ok(l3.classList.contains('is-folded'));
+  sec3.hidden = true;
+
   // 2c. a deep link opens its card even when the default folded it
   assert.ok(inv2.classList.contains('is-folded'));
   _foldOpenCard('inv-2');

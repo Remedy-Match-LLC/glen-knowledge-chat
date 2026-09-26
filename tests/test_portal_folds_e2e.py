@@ -197,3 +197,19 @@ def test_no_folded_card_loses_its_heading(live):
         page.evaluate("() => showTab('intake')")
         assert not page.evaluate(HEADINGS_JS)
         b.close()
+
+
+def test_action_cards_open_on_a_first_visit(live):
+    """Glen, 2026-09-26, "open action cards": the scan video opens on the first visit to
+    Scans even though it is not the page's first card."""
+    base, token, _ = live
+    with sync_playwright() as p:
+        b = p.chromium.launch()
+        page = b.new_page()
+        _open(page, f"{base}/portal/{token}")
+        page.evaluate("() => showDoor('scans')")
+        folded = page.evaluate("""() => [...document.querySelectorAll('.card[data-fold-open]')]
+          .filter(c => c.offsetParent !== null).map(c => [c.dataset.foldId || c.id, c.classList.contains('is-folded')])""")
+        assert folded, "the fixture shows no action card"
+        assert not [f for f in folded if f[1]], folded
+        b.close()

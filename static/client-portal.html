@@ -1776,7 +1776,7 @@ function buildCalendarHtml(v,compact){
     <p class="muted small">See what’s coming up. Events marked for paid members stay visible so you can plan ahead.</p><div class="calendar-list">${rows || '<p class="muted">No upcoming events are scheduled yet.</p>'}</div></div>`;
 }
 function buildAppointmentProposalHtml(){
-  return `<div class="card" id="appointment-proposals-card"><h2>Private Appointments</h2>
+  return `<div class="card" id="appointment-proposals-card" data-fold-open="1"><h2>Private Appointments</h2>
     <p class="muted small">Propose a Biofield consultation with Dr. Glen or an EVOX session with Rae. The appointment is booked after both sides confirm.</p>
     <details><summary class="btn full">Propose an appointment</summary><form class="appt-form" id="appt-proposal-form">
       <select name="session_type"><option value="biofield-consult">Biofield Analysis Consultation · Dr. Glen · Zoom</option><option value="evox">EVOX Session · Rae · Phone</option></select>
@@ -2423,7 +2423,7 @@ function buildOrdersHtml(d){
     <div id="orders-basket" style="margin-top:1rem"></div>
   </div>`;
   invs.forEach(inv => {
-    body += `<div class="card invoice-card" data-fold-id="billing-invoice-${foldSlug(inv.url || "")}">
+    body += `<div class="card invoice-card" data-fold-id="billing-invoice-${foldSlug(inv.url || "")}" data-fold-open="1">
       <h2>Your invoice</h2>
       <p>Amount due: <strong>$${esc(inv.amount_dollars)}</strong></p>
       <a class="btn" href="${esc(inv.link)}" target="_blank" rel="noopener">View &amp; pay invoice</a>
@@ -4353,7 +4353,7 @@ function render(d, v){
       inner = `<a class="btn" href="${esc(d.video.url)}" target="_blank" rel="noopener">${esc(d.video.label||"Watch your video")}</a>`;
     }
     part("scans", `
-      <div class="card video-card" data-fold-id="scans-video-message-${foldSlug(d.scan_date || "")}">
+      <div class="card video-card" data-fold-id="scans-video-message-${foldSlug(d.scan_date || "")}" data-fold-open="1">
         <h2>Your personal message from Dr. Glen</h2>
         ${inner}
       </div>`);
@@ -4369,7 +4369,7 @@ function render(d, v){
   }
   if(d.report_pdf && d.report_pdf.url){
     part("scans", `
-      <div class="card report-card" data-fold-id="scans-written-report">
+      <div class="card report-card" data-fold-id="scans-written-report" data-fold-open="1">
         <h2>Your written report</h2>
         <a class="btn" href="${esc(d.report_pdf.url)}" target="_blank" rel="noopener" download>Download your report (PDF)</a>
       </div>`);
@@ -4379,7 +4379,7 @@ function render(d, v){
   if(!d.scan_history_enabled && Array.isArray(d.invoices) && d.invoices.length){
     d.invoices.forEach(function(inv){
       part("billing", `
-        <div class="card invoice-card" data-fold-id="scans-invoice-${foldSlug(inv.url || "")}">
+        <div class="card invoice-card" data-fold-id="scans-invoice-${foldSlug(inv.url || "")}" data-fold-open="1">
           <h2>Your invoice</h2>
           <p>Amount due: <strong>$${esc(inv.amount_dollars)}</strong></p>
           <a class="btn" href="${esc(inv.link)}" target="_blank" rel="noopener">View &amp; pay invoice</a>
@@ -4564,7 +4564,7 @@ function render(d, v){
       const cta = actionable
         ? `<button class="btn full" id="bfInterestBtn" data-scan="${esc(curDate||"")}">View your scan analysis</button>`
         : `<p class="scan-old">This analysis is from an earlier scan.</p>`;
-      part("scans", `<div class="card primary" id="biofield-section" data-fold-id="biofield-${foldSlug(d.scan_date || "")}"><h2>Your scan analysis</h2>
+      part("scans", `<div class="card primary" id="biofield-section" data-fold-id="biofield-${foldSlug(d.scan_date || "")}" data-fold-open="1"><h2>Your scan analysis</h2>
         ${tabs}
         ${patternsBlock}
         ${bf.greeting?`<div class="muted${rvlCls}" style="margin:.1rem 0 .6rem${firstTime?";animation-delay:"+(findingsCount*120+300)+"ms":""}">${escGreeting(bf.greeting)}</div>`:""}
@@ -5431,7 +5431,7 @@ function render(d, v){
       <section data-panel="current"${_hub ? " hidden" : ""} data-door="scans">${_back("current")}${html}${_doors ? "" : legacyCurrentHtml()}</section>
       <section data-panel="history" hidden data-door="scans">${_back("history")}${historyHtml}</section>
       <section data-panel="orders" hidden data-door="billing">${_back("orders")}${ordersHtml}</section>
-      <section data-panel="intake" hidden data-door="scans">${_back("intake")}<div class="card" id="portal-intake-card"><div id="portal-intake-host"></div></div></section>${_hub ? `
+      <section data-panel="intake" hidden data-door="scans">${_back("intake")}<div class="card" id="portal-intake-card" data-fold-open="1"><div id="portal-intake-host"></div></div></section>${_hub ? `
       <section data-panel="ask" hidden data-door="learn">${_back("ask")}${_askHtml}</section>
       <section data-panel="voice" hidden data-door="scans">${_back("voice")}${_voiceHtml}</section>
       <section data-panel="records" hidden data-door="scans">${_back("records")}${buildClinicalRecordHtml(v)}</section>
@@ -5459,7 +5459,7 @@ function render(d, v){
     // The onboarding checklist is available independently of the hub and scan
     // history flags, so its #intake link must always have a real panel target.
     html = `<section data-panel="current" data-door="scans">${html}${legacyCurrentHtml()}</section>
-      <section data-panel="intake" hidden data-door="scans"><div class="card" id="portal-intake-card"><div id="portal-intake-host"></div></div></section>`;
+      <section data-panel="intake" hidden data-door="scans"><div class="card" id="portal-intake-card" data-fold-open="1"><div id="portal-intake-host"></div></div></section>`;
   }
 
   app.innerHTML = html;
@@ -8545,11 +8545,12 @@ function _foldApplyAll(){
   Object.keys(byDoor).forEach(function(door){
     var cards = byDoor[door];
     var ids = cards.map(_foldIdOf);
+    var openIds = cards.filter(function(c){ return c.dataset && c.dataset.foldOpen; }).map(_foldIdOf);
     if(_foldsV2.state.seen.indexOf(door) === -1 && _foldDoorVisible(door)){
-      _foldsV2.state = F.markSeen(_foldsV2.state, door, ids);
+      _foldsV2.state = F.markSeen(_foldsV2.state, door, ids, openIds);
       _foldSave();
     }
-    var r = F.resolveDoor(_foldsV2.state, ids, door);
+    var r = F.resolveDoor(_foldsV2.state, ids, door, openIds);
     cards.forEach(function(card){ _foldSetCard(card, r[_foldIdOf(card)]); });
   });
   if(typeof _foldBars === "function") _foldBars(byDoor);

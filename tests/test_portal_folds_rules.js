@@ -77,3 +77,15 @@ console.log('OK');
   assert.deepStrictEqual(F.resolveDoor(s, ['a', 'b', 'invoice'], 'scans'), {a: false, b: true, invoice: false});
   console.log('OK2');
 }
+
+// ── Glen, 2026-09-26, "open action cards": named cards open on the first visit ─
+{
+  const open = ['inv'];
+  assert.deepStrictEqual(F.resolveDoor(F.emptyState(), ['a', 'inv', 'c'], 'billing', open),
+                         {a: false, inv: false, c: true});
+  const s = F.markSeen(F.emptyState(), 'billing', ['a', 'inv', 'c'], open);
+  assert.deepStrictEqual(s.cards, {a: false, inv: false, c: true});
+  // a client's own later fold of an action card is kept
+  assert.strictEqual(F.resolveDoor(F.setCard(s, 'inv', true), ['a', 'inv', 'c'], 'billing', open).inv, true);
+  console.log('OK3');
+}

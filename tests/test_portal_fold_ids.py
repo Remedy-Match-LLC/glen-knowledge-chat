@@ -74,3 +74,16 @@ def test_the_intake_link_opens_the_intake_card():
     body = page[page.index("function panelShown(name){"):]
     body = body[:body.index("\n}") + 2]
     assert "_foldOpenCard(\"portal-intake-card\")" in body
+
+
+
+def test_action_cards_open_on_first_visit():
+    """Glen, 2026-09-26: "open action cards". Invoices, the intake form, appointments,
+    and the scan report, video and analysis carry data-fold-open."""
+    page = (ROOT / "static" / "client-portal.html").read_text()
+    tags = [t for t in re.findall(r"<div class=\"card[^>]*>", page) if 'data-fold-open="1"' in t]
+    joined = " ".join(tags)
+    for name in ("billing-invoice-", "scans-invoice-", "portal-intake-card",
+                 "appointment-proposals-card", "scans-written-report", "scans-video-message-",
+                 'data-fold-id="biofield-${foldSlug(d.scan_date || "")}"'):
+        assert name in joined, name
