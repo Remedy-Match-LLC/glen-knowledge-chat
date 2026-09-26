@@ -23316,7 +23316,9 @@ def _portal_fold_viewer():
     (a VA token, or garbage), which the route refuses rather than guessing."""
     key = _present_console_key()
     if not key:
-        return "client"
+        # On the portal's own domain staff carry only rm_staff_view, which names no one.
+        # Their folds go to one shared staff record, never the client's (round 3).
+        return "staff" if _staff_touch() else "client"
     if not _portal_open_is_owner():
         return None
     uid = _workspace_user_id_for_token(key)
@@ -25270,6 +25272,9 @@ def evox_run_reminders():
 
 @app.route("/portal/<token>")
 def client_portal_page(token):
+    sp = request.args.get("sp", "")
+    if sp:
+        return _redeem_staff_pass(token, sp)
     resp = send_from_directory(STATIC, "client-portal.html")
     # The portal shell contains its own recovery behavior and theme-safe error
     # styling. Never let a browser retain an older failure screen after a fix.
@@ -25277,6 +25282,8 @@ def client_portal_page(token):
     resp.headers["Pragma"] = "no-cache"
     if not _client_login_enabled() or token == "me":
         return resp
+    if _staff_touch():
+        return resp     # staff never get the client's sign-in cookie (staff-guard spec)
 
     # A durable portal link is already an authentication credential. Bridge it
     # to the same short-lived browser session used by /portal/me so relative
@@ -25340,10 +25347,12 @@ def api_client_portal(token):
             portal = _portal_record_for(cx, token)
     if not portal:
         return jsonify({"error": "not found"}), 404
+    _staff_view = _staff_touch()
     try:
         from dashboard import notify_state as _ns
-        with _db_lock, db.connect(LOG_DB) as _cxe:
-            _ns.mark_engaged(_cxe, (portal.get("email") or ""))
+        if not _staff_view:          # a staff visit is not the client engaging
+            with _db_lock, db.connect(LOG_DB) as _cxe:
+                _ns.mark_engaged(_cxe, (portal.get("email") or ""))
     except Exception as e:
         print(f"[engaged] {e!r}", flush=True)
     _request_timing_checkpoint("engaged")
@@ -25357,7 +25366,7 @@ def api_client_portal(token):
     # re-point below), since the browsing session belongs to the account holder,
     # not whichever household member they may be viewing. Flag-gated + best-effort:
     # a merge failure must never break the portal load.
-    if _WISHLIST_ENABLED and email_for_reports:
+    if _WISHLIST_ENABLED and email_for_reports and not _staff_view:
         try:
             import sqlite3 as _wsq
             from dashboard import wishlist as _wl
@@ -25989,6 +25998,11 @@ def api_client_portal(token):
         except Exception as _e:
             print(f"[eye-vision-report/payload] {_e!r}", flush=True)
     _request_timing_checkpoint("optional_tail")
+    if _staff_view:
+        payload["staff_view"] = {"client": (portal.get("name") or "").strip()
+                                 or (portal.get("email") or "").split("@")[0]}
+        if not _is_staff_request():
+            payload["staff_view"]["expired"] = True
     return jsonify(payload)
 
 
@@ -32966,9 +32980,16 @@ def coach_thread_member_get():
         email, pair = _member_thread_ctx(cx, request.args.get("token", ""))
         if email is None or pair is None:
             return jsonify({"error": "not_found"}), 404
-        t = _ct.get_or_create_thread(cx, coach_email=pair["coach_email"], member_email=email)
-        _ct.mark_read(cx, t["id"], "member")
         vol = _cd.get_volunteer(cx, pair["coach_email"]) or {}
+        if _staff_touch():
+            # Staff read without creating the thread or clearing the member's unread.
+            t = _ct.thread_for_pair(cx, pair["coach_email"], email)
+            if t is None:
+                return jsonify({"coach_name": vol.get("name") or "Your coach",
+                                "status": "active", "can_post": True, "messages": []})
+        else:
+            t = _ct.get_or_create_thread(cx, coach_email=pair["coach_email"], member_email=email)
+            _ct.mark_read(cx, t["id"], "member")
         blocked = t["status"] == "blocked"
         return jsonify({"coach_name": vol.get("name") or "Your coach", "status": t["status"],
                         "can_post": not blocked,
@@ -33240,7 +33261,8 @@ def peer_state():
         if opted and not eligible:
             # Self-heal: a member who downgraded leaves the pool on their next visit.
             # (The matcher already excludes non-paid candidates; this keeps the record clean.)
-            _pc.set_optin(cx, email, False)
+            if not _staff_touch():
+                _pc.set_optin(cx, email, False)
             opted = False
         has_prop = bool(eligible and opted and _pc.next_candidate(cx, email, is_paid=_is_paid_member))
         return jsonify({"eligible": eligible, "opted_in": opted, "has_proposal": has_prop})
@@ -33412,7 +33434,8 @@ def peer_thread_get(thread_id):
         t, role = _peer_thread_role(cx, thread_id, ident.email)
         if role is None:
             return jsonify({"error": "forbidden"}), 403
-        _ct.mark_read(cx, thread_id, role)
+        if not _staff_touch():
+            _ct.mark_read(cx, thread_id, role)
         other = t["member_email"] if role == "coach" else t["coach_email"]
         blocked = t["status"] == "blocked"
         return jsonify({"other_first_name": _peer_first_name(cx, other), "status": t["status"],
@@ -34292,6 +34315,11 @@ def api_console_portal_link():
         link, reissued = _cp.portal_link_for(cx, email, portal_base())
     if not link:
         return jsonify({"ok": True, "found": False, "email": email})
+    if request.args.get("staff_open") == "1" and _is_staff_request():
+        # A one-time staff pass, so the portal's own domain knows staff are viewing.
+        # Only for the console's own "open portal" tab: the plain link is the one staff
+        # copy and send to the client, and a pass in it would put the client in staff view.
+        link += ("&" if "?" in link else "?") + "sp=" + _mint_staff_pass(email)
     return jsonify({"ok": True, "found": True, "email": email,
                     "link": link, "reissued": reissued})
 
@@ -42158,6 +42186,138 @@ def _cookie_console_key():
     return ""
 
 
+# ── Staff pass: the portal lives on another domain (PORTAL_BASE_URL), so the console
+#    login cookie never reaches it. The console's portal link carries a one-time pass,
+#    which the portal swaps for rm_staff_view. That cookie only RESTRICTS: it makes the
+#    browser ask first, skip background writes and show the banner. It opens nothing.
+#    Spec: docs/superpowers/specs/2026-09-26-portal-staff-guard-design.md
+STAFF_VIEW_COOKIE = "rm_staff_view"
+STAFF_VIEW_MAX_AGE = 12 * 60 * 60          # the signed staff view lasts this long
+STAFF_VIEW_COOKIE_KEEP = 30 * 24 * 60 * 60 # the cookie outlives it, so a LAPSED view is
+                                           # still recognised and fails closed (round 3)
+STAFF_PASS_TTL_MIN = 10
+
+
+def _staff_view_secret():
+    import dashboard as _dash
+    return CONSOLE_SECRET or _dash.CONSOLE_SECRET or ""
+
+
+def _staff_view_sig(exp):
+    return hmac.new(_staff_view_secret().encode("utf-8"), f"staff-view-v1|{exp}".encode(),
+                    hashlib.sha256).hexdigest()
+
+
+def _staff_view_state():
+    """'active' for a validly signed, unexpired rm_staff_view cookie; 'lapsed' for a
+    validly signed one past its 12 hours; None otherwise. Signed with the console
+    secret, so rotating the secret voids every copy."""
+    if not _staff_view_secret():
+        return None
+    exp_s, _, sig = (request.cookies.get(STAFF_VIEW_COOKIE, "") or "").partition(".")
+    try:
+        exp = int(exp_s)
+    except ValueError:
+        return None
+    if not hmac.compare_digest(sig, _staff_view_sig(exp)):
+        return None
+    return "active" if exp >= int(time.time()) else "lapsed"
+
+
+def _staff_view_cookie_ok():
+    return _staff_view_state() == "active"
+
+
+def _staff_lapsed():
+    """This browser was a staff view whose staff credential has since lapsed: a lapsed
+    rm_staff_view cookie, or a page that was loaded as a staff view (it sends
+    X-Portal-Staff-View). Treated as staff for every skip, and refused for writes."""
+    return (_staff_view_state() == "lapsed"
+            or request.headers.get("X-Portal-Staff-View") == "1")
+
+
+def _staff_touch():
+    """Staff, or lapsed staff: either way, never act or record as the client."""
+    return _is_staff_request() or _staff_lapsed()
+
+
+def _mint_staff_pass(email):
+    """A one-time pass, valid STAFF_PASS_TTL_MIN minutes, bound to one portal's email."""
+    tok = secrets.token_urlsafe(24)
+    now = _now_utc()
+    with _db_lock, db.connect(LOG_DB) as cx:
+        cx.execute("INSERT INTO auth_tokens (token_hash, email, purpose, created_at, expires_at) "
+                   "VALUES (?,?,?,?,?)",
+                   (_hash_token(tok), (email or "").strip().lower(), "staff_view_pass",
+                    now.isoformat(), (now + timedelta(minutes=STAFF_PASS_TTL_MIN)).isoformat()))
+        cx.commit()
+    return tok
+
+
+def _redeem_staff_pass(token, sp):
+    """Consume a pass for THIS portal, set rm_staff_view, and redirect to the same address
+    without the pass. A bad pass (used, expired, another portal's, or a database error)
+    fails closed: a short page that says to reopen from the console, with no cookie of
+    any kind. Loading the portal instead would put a staff browser in client mode."""
+    from urllib.parse import urlencode
+    from dashboard import client_portal as _cp
+    rest = [(k, v) for k, v in request.args.items(multi=True) if k != "sp"]
+    resp = redirect(request.path + (("?" + urlencode(rest)) if rest else ""), code=302)
+    resp.headers["Cache-Control"] = "private, no-store, max-age=0"
+    try:
+        with _db_lock, db.connect(LOG_DB) as cx:
+            portal = _cp.get_portal_by_token(cx, token)
+            email = ((portal or {}).get("email") or "").strip().lower()
+            ok = False
+            if email and _staff_view_secret():
+                now = _now_utc().isoformat()
+                cur = cx.execute(
+                    "UPDATE auth_tokens SET consumed_at=? WHERE token_hash=? "
+                    "AND purpose='staff_view_pass' AND email=? AND consumed_at IS NULL "
+                    "AND expires_at>?", (now, _hash_token(sp), email, now))
+                ok = cur.rowcount == 1
+                cx.commit()
+        if ok:
+            exp = int(time.time()) + STAFF_VIEW_MAX_AGE
+            resp.set_cookie(STAFF_VIEW_COOKIE, f"{exp}.{_staff_view_sig(exp)}",
+                            max_age=STAFF_VIEW_COOKIE_KEEP, httponly=True,
+                            secure=request.is_secure, samesite="Lax")
+        print(f"[staff-pass] redeemed={ok}", flush=True)
+    except Exception as e:
+        ok = False
+        print(f"[staff-pass] {e!r}", flush=True)
+    if not ok:
+        page = ("<!doctype html><meta charset=utf-8><meta name=robots content=noindex>"
+                "<meta name=viewport content='width=device-width, initial-scale=1'>"
+                "<title>Staff link expired</title><body style='font-family:sans-serif;"
+                "max-width:34rem;margin:3rem auto;padding:0 16px;line-height:1.5'>"
+                "<h1>This staff link has expired</h1><p>A staff link works once, for 10 "
+                "minutes. Open the portal again from the console.</p></body>")
+        from flask import make_response as _mkresp
+        bad = _mkresp(page, 200)
+        bad.headers["Cache-Control"] = "private, no-store, max-age=0"
+        return bad
+    return resp
+
+
+def _is_staff_request():
+    """True when this request presents any valid console credential: the master key,
+    or a per-user access token of ANY role, VAs included. Wider than
+    _portal_open_is_owner() on purpose: a VA must not act as a client unannounced.
+    A valid rm_staff_view cookie counts too, for the staff guard only."""
+    if _staff_view_cookie_ok():
+        return True
+    key = _present_console_key()
+    if not key:
+        return False
+    import dashboard as _dash
+    if (CONSOLE_SECRET and key == CONSOLE_SECRET) or (
+            _dash.CONSOLE_SECRET and key == _dash.CONSOLE_SECRET):
+        return True
+    # Owners (Rae) first, then any other role: VAs count as staff here too.
+    return _owner_token_ok(key) or _role_for_token(key) is not None
+
+
 @app.before_request
 def _console_browser_login():
     """Turn a browser's ?key=<master secret OR owner token> on a /console or
@@ -42204,6 +42364,56 @@ def _console_browser_login():
         max_age=CONSOLE_COOKIE_MAX_AGE, httponly=True,
         secure=request.is_secure, samesite="Lax")
     return resp
+
+
+def _staff_guard_client_name(path):
+    """Display name of the client whose portal a guarded request acts on, or "".
+    Used only for the confirmation wording, so it never raises."""
+    try:
+        from dashboard import client_portal as _cp
+        m = re.match(r"^/api/portal/([^/]+)/", path or "")
+        with db.connect(LOG_DB) as cx:
+            if m:
+                rec = _cp.get_portal_by_token(cx, m.group(1))
+                if rec:
+                    return (rec.get("name") or "").strip() or (rec.get("email") or "").split("@")[0]
+            tok = request.args.get("token", "")
+            ident = _evox_ident(cx, tok) if tok else None
+            if ident:
+                return (getattr(ident, "name", "") or "").strip() or ident.email.split("@")[0]
+    except Exception:
+        pass
+    return ""
+
+
+@app.before_request
+def _portal_staff_guard():
+    """A staff member inside a client's portal must confirm before acting as the client.
+    The portal page tags every request X-Portal-View: 1; console pages never do.
+    Runs after _console_browser_login, so a login cookie already counts as a key.
+    Spec: docs/superpowers/specs/2026-09-26-portal-staff-guard-design.md"""
+    if request.headers.get("X-Portal-View") != "1":
+        return None
+    from dashboard import staff_guard as _sg
+    kind = _sg.classify(request.method, request.path or "")
+    if kind in ("pass", "exempt"):
+        return None
+    if not _is_staff_request():
+        if not _staff_lapsed():
+            return None
+        # A staff view whose staff credential has since lapsed (the 12-hour cookie, or
+        # a rotated secret while the tab stayed open). Fail closed rather than act as
+        # the client. Only a page that received staff_view sends the header.
+        if kind == "background":
+            return "", 204
+        return jsonify({"staff_expired": True}), 409
+    if kind == "background":
+        return "", 204
+    if request.headers.get("X-Staff-Confirmed") == "1":
+        return None
+    client = _staff_guard_client_name(request.path)
+    return jsonify({"staff_confirm": {"action": _sg.describe(request.path, client),
+                                      "client": client}}), 409
 
 
 @app.route("/api/console/auth-status", methods=["GET"])

@@ -397,7 +397,7 @@ function openPortal(email){
   var portalTab=window.open("about:blank","_blank");
   if(!portalTab){ alert("Pop-up blocked. Allow pop-ups and try again."); return; }
   portalTab.opener=null;
-  fetch("/api/console/portal-link?email="+encodeURIComponent(email),{headers:hdr()})
+  fetch("/api/console/portal-link?staff_open=1&email="+encodeURIComponent(email),{headers:hdr()})
     .then(function(r){return r.json().then(function(j){return {r:r,j:j};});})
     .then(function(x){
       if(!x.r.ok || !x.j.ok || !x.j.found){ portalTab.close(); alert("No portal exists for this client."); return; }
