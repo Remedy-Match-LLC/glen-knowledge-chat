@@ -342,3 +342,79 @@ def test_an_infoceutical_by_its_short_name_cannot_be_credited_with_nutrients():
         chain=["ED11 Liver Energetic Driver Infoceutical"], ingredients={},
         catalog_names=[], allowed_text="")
     assert any("ED11 Liver Energetic Driver Infoceutical" in p and "zinc" in p for p in probs), probs
+
+
+# ── blind review round 3, false-alarm reviewer, 2026-09-25 ──────────────────
+
+NM = {"Neuro Magnesium": ["Magnesium (Threonate)", "Vitamin D3", "Lithium Orotate"],
+      "B17 Syntropy": ["Selenium (MSC)", "Vitamin A"], "Zinc Synergy": ["Zinc", "Copper"],
+      "Lymph Flow": ["Cleavers"], "Heart Health": ["Vitamin C", "Hawthorn"],
+      "Crab Apple Flower Essence in Terrain Restore": [], "ED11 Liver Energetic Driver Infoceutical": []}
+
+
+def _nm(text):
+    return ng.check_narrative(text, chain=list(NM), ingredients=NM, catalog_names=[],
+                              allowed_text="")
+
+
+def test_the_article_a_is_not_vitamin_a():
+    assert _nm("Neuro Magnesium provides vitamin D3 and a small amount of lithium orotate.") == []
+    assert _nm("Heart Health provides vitamin C, a key antioxidant.") == []
+
+
+def test_a_lowercase_phrase_is_not_the_remedy():
+    assert _nm("Healthy lymph flow depends on hydration and foods that provide potassium.") == []
+
+
+def test_two_remedies_in_contrasting_clauses_are_checked_separately():
+    assert _nm("B17 Syntropy provides selenium, while Zinc Synergy provides copper.") == []
+    assert _nm("B17 Syntropy provides selenium; Zinc Synergy provides copper.") == []
+
+
+def test_food_advice_after_a_pronoun_is_not_a_remedy_claim():
+    assert _nm("Take one capsule of B17 Syntropy with breakfast. They are best paired with "
+               "bananas, which are rich in potassium.") == []
+
+
+def test_a_which_clause_binds_to_the_remedy_just_before_it():
+    assert _nm("Crab Apple Flower Essence in Terrain Restore pairs with Neuro Magnesium, "
+               "which provides magnesium.") == []
+    assert _nm("ED11 Liver Driver works well alongside foods rich in selenium.") == []
+
+
+def test_the_original_faults_are_still_caught():
+    assert _nm("B17 Syntropy and Zinc Synergy provide vitamin A and selenium.") != []
+    assert _nm("Neuro Magnesium provides zinc.") != []
+    assert _nm("ED11 Liver Driver supplies zinc.") != []
+
+
+
+# ── blind review round 3, client-text reviewer, 2026-09-25 ──────────────────
+
+def test_a_missing_b1_is_not_hidden_by_b12():
+    assert _nm("Neuro Magnesium provides thiamine and vitamin D3.") != []
+    assert _nm("B17 Syntropy provides vitamin B1 and vitamin A.") != []
+
+
+def test_hyphenated_b_vitamins_are_read():
+    assert _nm("Neuro Magnesium provides vitamin B-12.") != []
+    assert any("Vitamin B12" in p for p in _nm("Neuro Magnesium provides B-12."))
+
+
+def test_a_title_does_not_end_the_sentence():
+    probs = _nm("Neuro Magnesium supplies vitamin D3, as Dr. Glen notes, and vitamin A.")
+    assert any("Vitamin A" in p for p in probs), probs
+
+
+def test_a_two_product_row_is_checked_product_by_product():
+    probs = ng.check_narrative("Zinc Synergy provides vitamin A.",
+                               chain=["Zinc Synergy", "Heart Health"], ingredients=NM,
+                               catalog_names=[], allowed_text="")
+    assert any("Zinc Synergy" in p for p in probs)
+
+
+def test_a_bare_voice_scan_beside_the_five_element_scan_is_left_for_glen():
+    t = "Your Five Element Voice Scan showed Water weakness. The voice scan also showed a weak Kidney tone."
+    assert ng.fix_scan_names(t) == t
+    assert ng.scan_name_problems(t) != []
+    assert ng.scan_name_problems("The voice scan showed it.") == []

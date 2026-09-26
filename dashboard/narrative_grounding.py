@@ -56,20 +56,45 @@ _FIVE_BEFORE = re.compile(r"(?:five|5)[\s-]*elements?['\u2019]?[\s*_'\u2019]*$",
 _FIVE_AFTER = re.compile(r"^[\s*_]*\(?\s*(?:five|5)[\s-]*element", re.IGNORECASE)
 
 
-def _rename(m, text):
-    if (_FIVE_BEFORE.search(text[max(0, m.start() - 30):m.start()])
-            or _FIVE_AFTER.search(text[m.end():m.end() + 30])):
+_MENTIONS_FIVE = re.compile(r"(?:five|5)[\s-]*elements?", re.IGNORECASE)
+
+
+def _is_five_element(m, text):
+    return bool(_FIVE_BEFORE.search(text[max(0, m.start() - 30):m.start()])
+                or _FIVE_AFTER.search(text[m.end():m.end() + 30]))
+
+
+def _rename(m, text, bare=False):
+    if _is_five_element(m, text):
+        return m.group(0)
+    # A bare "voice scan" in a letter that also names the Five Element scan could be
+    # either instrument. Leave it, and scan_name_problems tells Glen.
+    if bare and _MENTIONS_FIVE.search(text):
         return m.group(0)
     plural = m.group(0).lower().endswith("scans")
     return WELLNESS_SCAN + ("s" if plural else "")
+
+
+def scan_name_problems(text):
+    """A bare "voice scan" left alone because the letter also names the Five Element
+    Voice Scan: only Glen can say which instrument it means (review round 3)."""
+    if not _MENTIONS_FIVE.search(text or ""):
+        return []
+    out = []
+    for m in _SCAN_NAME_PATTERNS[-1].finditer(text or ""):
+        if not _is_five_element(m, text):
+            out.append("Says 'voice scan' beside the Five Element Voice Scan. Name which "
+                       "scan it means.")
+    return list(dict.fromkeys(out))
 
 
 def fix_scan_names(text):
     """Every name for E4L's scan becomes the Bioenergetic Wellness Scan. Glen's own
     Five Element Voice Scan is a different instrument and keeps its name."""
     out = text or ""
-    for pat in _SCAN_NAME_PATTERNS:
-        out = pat.sub(lambda m: _rename(m, out), out)
+    for i, pat in enumerate(_SCAN_NAME_PATTERNS):
+        bare = i == len(_SCAN_NAME_PATTERNS) - 1
+        out = pat.sub(lambda m: _rename(m, out, bare), out)
     return re.sub(r"\b([Aa])n (" + WELLNESS_SCAN + r")", r"\1 \2", out)
 
 
@@ -81,10 +106,11 @@ _NOT_NUTRIENTS = {
     "cellulose", "gelatin", "silica", "organic", "base", "terrain restore", "enteric",
     "fiber", "enzymes", "probiotic", "flower", "essence", "brandy", "alcohol",
 }
-_SENTENCE = re.compile(r"(?<=[.!?])\s+")
+# A title is not a sentence end: "as Dr. Glen notes" (review round 3).
+_SENTENCE = re.compile(r"(?<!\bDr\.)(?<!\bMr\.)(?<!\bMs\.)(?<!\bSt\.)(?<!\bMrs\.)(?<=[.!?])\s+")
+# Letters in capitals only: "vitamin D3 and a small amount" must not read "a" as A.
 _VITAMIN_LIST = re.compile(
-    r"\bvitamins?\s+((?:[A-K]\d{0,2}\b(?:\s*,\s*(?:and\s+)?|\s+and\s+|\s*&\s*)?)+)",
-    re.IGNORECASE)
+    r"\b[Vv]itamins?\s+((?:[A-K]\d{0,2}\b(?:\s*,\s*(?:and\s+)?|\s+and\s+|\s*&\s*)?)+)")
 
 
 def _term(ingredient):
@@ -107,7 +133,7 @@ _BRANDLIKE = re.compile(r"[a-z][A-Z]|\d|\+")
 # microbiome and the liver" claims nothing about its contents.
 _CLAIM = re.compile(
     r"\b(?:provid\w*|suppl(?:y|ies|ied|ying)|contain\w*|deliver\w*|offer\w*|gives?|"
-    r"bring\w*|includ\w*|carr(?:y|ies)|rich in|source of|made (?:with|from)|"
+    r"bring\w*|includ\w*|carr(?:y|ies)|made (?:with|from)|"
     r"ingredients?|featur\w*|combin\w*|pack\w*|blend of|formula of|with [\w\s,]{0,30}like)\b",
     re.IGNORECASE)
 _BARE_CODE = re.compile(r"(?<![\w-])(B\d{1,2}|D3|K2)(?![\w-])")
@@ -128,9 +154,10 @@ _NEGATION = re.compile(r"\b(?:no|not|without|free of|free from|none)\b[^.]{0,30}
 
 
 def _vitamins_in(sentence):
+    sentence = re.sub(r"\bB-(\d{1,2})\b", r"B\1", sentence)      # "B-12" is B12
     found = ["Vitamin " + c for c in _BARE_CODE.findall(sentence)]
     for m in _VITAMIN_LIST.finditer(sentence):
-        for letter in re.findall(r"\b[A-K]\d{0,2}\b", m.group(1), re.IGNORECASE):
+        for letter in re.findall(r"\b[A-K]\d{0,2}\b", m.group(1)):
             v = "Vitamin " + letter.upper()
             if v not in found:
                 found.append(v)
@@ -180,8 +207,10 @@ def _names_for(nutrient):
 
 
 def _contains(ingredients, nutrient):
+    """Word-bounded, so "vitamin b1" is not found inside "vitamin b12" (review round 3)."""
     names = _names_for(nutrient)
-    return any(name in str(i).lower() for i in ingredients or [] for name in names)
+    return any(re.search(r"(?<![\w])" + re.escape(name) + r"(?![\w])", str(i).lower())
+               for i in ingredients or [] for name in names)
 
 
 def _squash(name):
@@ -285,36 +314,68 @@ def check_narrative(text, *, chain, ingredients, catalog_names, allowed_text="",
     last_remedies = []                        # "This remedy..." may open the next paragraph
     for para in re.split(r"\n\s*\n", text):
         for sentence in _SENTENCE.split(para):
-            rest, named = sentence, []
-            for r in by_len:                       # longest first: "B17 Syntropy" before "B17"
-                if _word_in(r, rest):
-                    named.append(r)
-                    rest = re.sub(re.escape(r), " ", rest, flags=re.IGNORECASE)
-            # An infoceutical is often written by its code and a short name ("ED11 Liver
-            # Driver" for "ED11 Liver Energetic Driver Infoceutical").
-            for code, r in codes.items():
-                if r not in named and re.search(r"(?<![\w+])" + code + r"(?![\w+])", rest):
-                    named.append(r)
-                    rest = re.sub(r"(?<![\w+])" + code + r"(?:\s+[A-Z][\w/-]*)*", " ", rest)
-            # Only a pronoun ("It supplies...") carries the last remedy forward; "Leafy
-            # greens rich in magnesium" after a remedy sentence is not about that remedy.
-            remedies = named or (last_remedies if _PRONOUN_START.match(sentence) else [])
-            if named:
-                last_remedies = named
-            if not remedies or not _CLAIM.search(rest):
-                continue
-            nutrients = _vitamins_in(rest) + ([m.group(1) for m in term_re.finditer(rest)]
-                                              if term_re else [])
-            nutrients = list({n.lower(): n for n in reversed(nutrients)}.values())[::-1]
-            # "the MSM on layer 1" is the chain's MSM Powder, shortened, not a claim.
-            nutrients = [n for n in nutrients if not _negated(n, rest)
-                         and not any(c.startswith(n.lower() + " ") for c in chain_low)]
-            for n in nutrients:
-                for r in remedies:
-                    listed = ingredients.get(r) or []
-                    if not listed:
-                        problems.append(f"Credits {r} with {n}, but no ingredient list is "
-                                        f"on file for it.")
-                    elif not _contains(listed, n):
-                        problems.append(f"Says {r} provides {n}, which is not in its formula.")
+            # "X provides selenium, while Y provides copper" is two claims, not one
+            # about both (blind review round 3).
+            for clause in _CLAUSE.split(sentence):
+                problems += _clause_problems(clause, by_len, codes, ingredients, chain_low,
+                                             term_re, last_remedies)
+                named = _named_in(clause, by_len, codes)[0]
+                if named:
+                    last_remedies[:] = named
     return list(dict.fromkeys(problems))
+
+
+_CLAUSE = re.compile(r"\s*(?:;|,?\s+while\s+|,?\s+whereas\s+|,\s+but\s+)\s*", re.IGNORECASE)
+_WHICH = re.compile(r",\s+(?:which|that)\b")
+
+
+def _named_in(clause, by_len, codes):
+    """Chain remedies named in a clause, with their positions, and the clause with those
+    names blanked out. Case-sensitive: "healthy lymph flow" is not the remedy Lymph Flow."""
+    rest, found = clause, []
+    for r in by_len:                           # longest first: "B17 Syntropy" before "B17"
+        m = re.search(r"(?<![\w+])" + re.escape(r) + r"(?![\w+])", rest)
+        if m:
+            found.append((m.start(), r))
+            rest = rest[:m.start()] + " " * len(r) + rest[m.end():]
+    # An infoceutical is often written by its code and a short name ("ED11 Liver
+    # Driver" for "ED11 Liver Energetic Driver Infoceutical").
+    for code, r in codes.items():
+        m = re.search(r"(?<![\w+])" + code + r"(?:\s+[A-Z][\w/-]*)*", rest)
+        if r not in [x for _, x in found] and m:
+            found.append((m.start(), r))
+            rest = rest[:m.start()] + " " * (m.end() - m.start()) + rest[m.end():]
+    found.sort()
+    return [r for _, r in found], found, rest
+
+
+def _clause_problems(clause, by_len, codes, ingredients, chain_low, term_re, last_remedies):
+    named, positions, rest = _named_in(clause, by_len, codes)
+    # Only a pronoun ("It supplies...") carries the last remedy forward; "Leafy greens
+    # rich in magnesium" after a remedy sentence is not about that remedy.
+    remedies = named or (list(last_remedies) if _PRONOUN_START.match(clause) else [])
+    claim = _CLAIM.search(rest)
+    if not remedies or not claim:
+        return []
+    # "X pairs with Y, which provides magnesium": the claim belongs to Y.
+    which = _WHICH.search(clause)
+    if which and which.start() < claim.start() and positions:
+        before = [r for pos, r in positions if pos < which.start()]
+        if before:
+            remedies = [before[-1]]
+    nutrients = _vitamins_in(rest) + ([m.group(1) for m in term_re.finditer(rest)]
+                                      if term_re else [])
+    nutrients = list({n.lower(): n for n in reversed(nutrients)}.values())[::-1]
+    # "the MSM on layer 1" is the chain's MSM Powder, shortened, not a claim.
+    nutrients = [n for n in nutrients if not _negated(n, rest)
+                 and not (re.search(r"\bthe\s+" + re.escape(n) + r"\b", rest, re.IGNORECASE)
+                          and any(c.startswith(n.lower() + " ") for c in chain_low))]
+    out = []
+    for n in nutrients:
+        for r in remedies:
+            listed = ingredients.get(r) or []
+            if not listed:
+                out.append(f"Credits {r} with {n}, but no ingredient list is on file for it.")
+            elif not _contains(listed, n):
+                out.append(f"Says {r} provides {n}, which is not in its formula.")
+    return out

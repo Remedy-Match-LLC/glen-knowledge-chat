@@ -162,3 +162,22 @@ def test_the_video_script_is_checked_and_retried():
     problems = []
     out = generate_video_script(_report(), "", fake, scan=_scan(), problems_out=problems)
     assert len(calls) == 2 and problems == [] and "Liver Support" not in out
+
+
+def test_a_fault_inside_the_check_does_not_lose_the_draft(monkeypatch):
+    import dashboard.biofield_narrative as bn
+
+    def broken(text, report):
+        raise AttributeError("'int' object has no attribute 'strip'")
+    monkeypatch.setattr(bn, "narrative_problems", broken)
+    problems = []
+    out = generate_narrative(_report(), "", lambda s, u: BAD, problems_out=problems)
+    assert out.startswith("Aloha Jane") and problems == []
+
+
+
+def test_a_plus_in_a_product_name_is_not_a_row_separator():
+    from dashboard.biofield_narrative import narrative_problems
+    rep = _report()
+    rep["layers"][0]["remedy"] = "OcuHeal+"
+    assert not any("OcuHeal+" in p for p in narrative_problems("Use OcuHeal+ nightly.", rep))

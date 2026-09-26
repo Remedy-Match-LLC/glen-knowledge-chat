@@ -172,3 +172,12 @@ def test_the_fallback_keeps_a_list_inside_a_card():
             "2. evening\n\nKidney Tonic supports kidneys. Steps:\n1. drink water\n2. rest")
     segs = bpp.segment_narrative(narr, two)
     assert "\n1. morning with food" in segs[0] and "\n1. drink water" in segs[1], segs
+
+
+
+def test_an_intro_naming_the_whole_chain_keeps_the_numbered_cards():
+    narr = ("Dear Ann,\n\nYour three remedies are Vitality, Chelation and Nous Energy.\n\n"
+            "1. Vitality restores energy.\n\n2. Chelation clears metals.\n\n"
+            "3. Nous Energy steadies the mind.")
+    assert bpp.segment_narrative(narr, LAYERS3) == [
+        "Vitality restores energy.", "Chelation clears metals.", "Nous Energy steadies the mind."]

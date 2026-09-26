@@ -124,10 +124,13 @@ def _numbered_segments(text, layers):
             numbered.append((int(m.group(1)), start, m.end()))
     if [k for k, _, _ in numbered] != list(range(1, n + 1)):
         return None
-    # Every layer already explained before "1." means the numbers are a recap, such as a
-    # closing "What to do" list (blind review round 3). An intro naming one or two
-    # remedies is normal and does not count.
-    if all(_has_cue(text[:numbered[0][1]], layer) for layer in layers):
+    # A closing recap list ("What to do:\n\n1. Take Liver Flow...") repeats remedies the
+    # letter already explained, each in its own paragraph (blind review round 3). An intro
+    # naming the whole chain in one sentence is normal and keeps the numbering.
+    head = text[:numbered[0][1]]
+    paras = [p for p in _PARA_BREAK.split(head) if p.strip()]
+    with_cue = [p for p in paras if any(_has_cue(p, layer) for layer in layers)]
+    if paras and (paras[-1].rstrip().endswith(":") or len(with_cue) >= 2):
         return None
     segs = []
     for i, (_, _, body) in enumerate(numbered):

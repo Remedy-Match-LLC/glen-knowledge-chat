@@ -10,7 +10,7 @@ import re
 import sqlite3
 
 from dashboard.narrative_grounding import (
-    check_narrative, clean_scan_description, fix_scan_names)
+    check_narrative, clean_scan_description, fix_scan_names, scan_name_problems)
 
 
 def _now():
@@ -477,7 +477,7 @@ def _checked(p, complete, report, finish, problems_out):
     """Write, check, and on a failing draft write once more with its errors named.
     Keeps whichever draft has fewer problems; leftovers go to problems_out."""
     text = finish(complete(p["system"], p["user"]))
-    problems = narrative_problems(text, report)
+    problems = _safe_problems(text, report)
     if problems:
         retry = (p["user"] + "\n\nYOUR PREVIOUS DRAFT HAD THESE ERRORS. Write the whole "
                  "text again, following every rule, without them:\n"
@@ -489,7 +489,7 @@ def _checked(p, complete, report, finish, problems_out):
             print(f"[narrative] retry failed, keeping first draft: {e!r}", flush=True)
             second = None
         if second is not None:
-            second_problems = narrative_problems(second, report)
+            second_problems = _safe_problems(second, report)
             if len(second_problems) <= len(problems):
                 text, problems = second, second_problems
     if problems_out is not None:
@@ -509,14 +509,26 @@ def _ingredient_lines(name):
             for i in (_catalog_product(name).get("ingredients") or []) if isinstance(i, dict)]
 
 
+def _safe_problems(text, report):
+    """A fault in the check must never cost the paid-for draft."""
+    try:
+        return narrative_problems(text, report)
+    except Exception as e:
+        print(f"[narrative-check] {e!r}", flush=True)
+        return []
+
+
 def narrative_problems(text, report):
     """check_narrative against this report's chain and the catalog. Only the chain's own
     rows (remedies, Heads, Tails) permit a product name. Notes, scan findings and the
     profile do not: "Consider Liver Support" in any of them is still not on the chain
     (blind review, 2026-09-25). The same inputs on generate, save and page load."""
     rows = report.get("layers") or []
-    chain = list(dict.fromkeys((r.get("remedy") or "").strip() for r in rows
-                               if (r.get("remedy") or "").strip()))
+    # A row may hold two products, "Focus, Neuromagnesium"; each is checked on its own.
+    chain = list(dict.fromkeys(
+        part.strip() for r in rows
+        for part in re.split(r"\s*,\s*|\s+\+\s+", str(r.get("remedy") or ""))
+        if part.strip()))
     heads = " ".join(f"{r.get('head') or ''} {r.get('most_affected') or ''}" for r in rows)
     try:
         from dashboard.biofield_portal_publish import load_catalog
@@ -532,7 +544,7 @@ def narrative_problems(text, report):
         if prod:
             same += [str(p.get("name") or "") for p in catalog.values()
                      if p is prod or (p or {}).get("name") == prod.get("name")]
-    return check_narrative(
+    return scan_name_problems(text) + check_narrative(
         text, chain=chain + [n for n in same if n and n not in chain], ingredients={c: _ingredient_lines(c) for c in chain},
         catalog_names=names,
         # The service itself is the one name allowed beyond the chain's own rows.
