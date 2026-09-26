@@ -22,21 +22,21 @@ def test_classify(method, path, want):
 
 
 @pytest.mark.parametrize("path,needle", [
-    ("/api/onboarding/book", "books a real appointment and emails Peach and Rae"),
-    ("/api/consult/book", "books a real appointment and emails Peach and Rae"),
-    ("/calendar/register", "registers Peach for a live session with Zoom"),
-    ("/api/portal/T/checkout", "starts a payment as Peach"),
-    ("/api/portal/T/family-plan/cancel", "cancels Peach's subscription or plan"),
-    ("/api/portal/T/chat", "sends a chat message as Peach"),
-    ("/api/intake/submit", "submits Peach's intake form"),
-    ("/api/portal/T/cart/set-qty", "changes Peach's cart or invoice"),
-    ("/api/portal/T/share-consent", "changes Peach's consent or preferences"),
-    ("/api/portal/T/photo", "uploads a file to Peach's record"),
-    ("/api/coach-thread/member/message", "sends a message or request as Peach to another member"),
-    ("/api/portal/T/something-new", "This changes Peach's account."),
+    ("/api/onboarding/book", "books a real appointment and emails Mel and Rae"),
+    ("/api/consult/book", "books a real appointment and emails Mel and Rae"),
+    ("/calendar/register", "registers Mel for a live session with Zoom"),
+    ("/api/portal/T/checkout", "starts a payment as Mel"),
+    ("/api/portal/T/family-plan/cancel", "cancels Mel's subscription or plan"),
+    ("/api/portal/T/chat", "sends a chat message as Mel"),
+    ("/api/intake/submit", "submits Mel's intake form"),
+    ("/api/portal/T/cart/set-qty", "changes Mel's cart or invoice"),
+    ("/api/portal/T/share-consent", "changes Mel's consent or preferences"),
+    ("/api/portal/T/photo", "uploads a file to Mel's record"),
+    ("/api/coach-thread/member/message", "sends a message or request as Mel to another member"),
+    ("/api/portal/T/something-new", "This changes Mel's account."),
 ])
 def test_describe(path, needle):
-    assert needle in sg.describe(path, "Peach")
+    assert needle in sg.describe(path, "Mel")
 
 
 def test_describe_without_a_name():

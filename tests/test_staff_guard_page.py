@@ -70,7 +70,7 @@ window.fetch = function(input, init){
   return Promise.resolve(new Response(JSON.stringify(next.body), {status: next.status,
     headers: {'Content-Type': 'application/json'}}));
 };
-const STAFF_409 = {status: 409, body: {staff_confirm: {action: 'This books a real appointment and emails Peach and Rae.', client: 'Peach'}}};
+const STAFF_409 = {status: 409, body: {staff_confirm: {action: 'This books a real appointment and emails Mel and Rae.', client: 'Mel'}}};
 const tick = () => new Promise(r => setTimeout(r, 0));
 
 GUARD_SOURCE
@@ -93,8 +93,8 @@ GUARD_SOURCE
   await tick(); await tick(); await tick();
   assert.strictEqual(dialogs().length, 1);
   const txt = walk(dialogs()[0], []).map(n => n.textContent).join(' | ');
-  assert.ok(txt.includes('Do this as Peach?'), txt);
-  assert.ok(txt.includes('This books a real appointment and emails Peach and Rae.'), txt);
+  assert.ok(txt.includes('Do this as Mel?'), txt);
+  assert.ok(txt.includes('This books a real appointment and emails Mel and Rae.'), txt);
   assert.strictEqual(global.focused, byClass('staff-confirm-cancel'));
   byClass('staff-confirm-go').click();
   let r = await p;
@@ -157,12 +157,12 @@ GUARD_SOURCE
   // 7. the banner: shown once when staff_view is present, never otherwise
   _staffBanner({});
   assert.strictEqual(document.getElementById('staffBanner'), null);
-  _staffBanner({staff_view: {client: 'Peach Goddard'}});
-  _staffBanner({staff_view: {client: 'Peach Goddard'}});
+  _staffBanner({staff_view: {client: 'Mel Palmer'}});
+  _staffBanner({staff_view: {client: 'Mel Palmer'}});
   const banners = walk(document.body, []).filter(n => n.id === 'staffBanner');
   assert.strictEqual(banners.length, 1);
   assert.strictEqual(banners[0].textContent,
-    "You are viewing Peach Goddard's portal as staff. Anything you do here asks first.");
+    "You are viewing Mel Palmer's portal as staff. Anything you do here asks first.");
   assert.strictEqual(document.body.firstChild, banners[0]);
   console.log('OK');
 })().catch(e => { console.error(e); process.exit(1); });
