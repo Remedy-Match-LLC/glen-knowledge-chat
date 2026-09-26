@@ -181,3 +181,17 @@ def test_a_plus_in_a_product_name_is_not_a_row_separator():
     rep = _report()
     rep["layers"][0]["remedy"] = "OcuHeal+"
     assert not any("OcuHeal+" in p for p in narrative_problems("Use OcuHeal+ nightly.", rep))
+
+
+# Glen, 2026-09-26: ingredient lists scraped from GrooveKart ("gk") are not trusted until
+# replaced from the newest label. The writer names none of them and the check treats the
+# remedy as having no list on file.
+def test_a_gk_ingredient_list_is_not_used(monkeypatch):
+    import dashboard.biofield_narrative as bn
+    fake = {"name": "Curcu Guard", "ingredients_source": "gk",
+            "ingredients": [{"name": "Curcumin 95% (Curcuma longa)"}]}
+    monkeypatch.setattr(bn, "_catalog_product", lambda name: fake)
+    assert bn._ingredient_lines("Curcu Guard") == []
+    assert bn._pathways_source("Curcu Guard") == "(none supplied; name no pathway)"
+    fake["ingredients_source"] = "label-0225-read-2026-09-26"
+    assert bn._ingredient_lines("Curcu Guard") == ["Curcumin 95% (Curcuma longa)"]

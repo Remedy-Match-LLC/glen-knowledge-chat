@@ -431,7 +431,7 @@ def _pathways_source(name, exclude=()):
     so, rather than leaving the writer free to invent a pathway."""
     skip = {str(x).strip().lower() for x in exclude} - {""}
     names = [str(i.get("name") or "").strip()
-             for i in (_catalog_product(name).get("ingredients") or []) if isinstance(i, dict)]
+             for i in _trusted_ingredients(_catalog_product(name)) if isinstance(i, dict)]
     # "(unnamed FMP ingredient 5461)" is a placeholder for a missing FileMaker name.
     names = [n for n in names if n and "unnamed fmp ingredient" not in n.lower()
              and not any(c in n.lower() for c in skip)][:8]
@@ -504,9 +504,21 @@ def _finish(text, report, animal):
     return _enforce_phase_name(text, report.get("phase"))
 
 
+# Lists scraped from the old GrooveKart pages. Glen, 2026-09-26: replace them from the
+# newest label; until then the writer names none of their ingredients.
+_UNTRUSTED_SOURCES = {"gk", "unverified"}
+
+
+def _trusted_ingredients(product):
+    src = str((product or {}).get("ingredients_source") or "").strip().lower()
+    if src in _UNTRUSTED_SOURCES:
+        return []
+    return (product or {}).get("ingredients") or []
+
+
 def _ingredient_lines(name):
     return [str(i.get("name") or "").strip()
-            for i in (_catalog_product(name).get("ingredients") or []) if isinstance(i, dict)]
+            for i in _trusted_ingredients(_catalog_product(name)) if isinstance(i, dict)]
 
 
 def _safe_problems(text, report):

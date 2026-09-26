@@ -898,5 +898,161 @@
     "description": "Vagus Nerve Support Drops, 50 mL.",
     "note": "Glen 2026-09-14: this slug is Vagus Nerve Support Drops (FMP 460). The T33 amounts are per-bottle batch figures, so they are not shown as doses. Directions wait for Glen.",
     "bottle_type": "Dropper 50 mL"
+  },
+  "cinnamon-blue": {
+    "ingredients": [
+      {
+        "name": "Methylene Blue",
+        "dose": "4 mg per 10 drops"
+      },
+      {
+        "name": "Ceylon Cinnamon (Cinnamomum verum) polyphenol fraction",
+        "dose": ""
+      },
+      {
+        "name": "Ceylon Cinnamon bark oil (aroma fraction)",
+        "dose": ""
+      },
+      {
+        "name": "Purified Water",
+        "dose": ""
+      },
+      {
+        "name": "Ethanol 25% v/v",
+        "dose": ""
+      },
+      {
+        "name": "Tripotassium Citrate (buffer)",
+        "dose": ""
+      }
+    ],
+    "ingredients_source": "reformulation-brief-2026-09-15, Glen new-now 2026-09-26",
+    "note": "Glen 2026-09-26 'new now': reformulated Cinnamon Blue shown everywhere. Source: production/05 Formulations/cinnamon-blue/2026-09-15/reformulation-brief.md. Cinnamon doses not yet settled."
+  },
+  "wholomega": {
+    "ingredients": [
+      {
+        "name": "DHA (Docosahexaenoic Acid from Whole Algae Oil)",
+        "dose": ""
+      },
+      {
+        "name": "Safranal 3% (Crocus sativa)",
+        "dose": ""
+      },
+      {
+        "name": "Cyanidin-3-Glucosides (C3G) (Oryza sativa)",
+        "dose": ""
+      },
+      {
+        "name": "Vitamin C (Ascorbyl Palmitate)",
+        "dose": ""
+      },
+      {
+        "name": "Vitamin E (mixed Tocopherols)",
+        "dose": ""
+      },
+      {
+        "name": "Lemon Oil (Citrus spp.) (organic cold pressed)",
+        "dose": ""
+      },
+      {
+        "name": "Vitamin A (Retinyl Acetate)",
+        "dose": ""
+      },
+      {
+        "name": "Vitamin D3 (Cholecalciferol)",
+        "dose": ""
+      },
+      {
+        "name": "Vitamin K2 (MK-7)",
+        "dose": ""
+      }
+    ],
+    "ingredients_source": "gk, confirmed unchanged by Glen 2026-09-26",
+    "note": "Glen 2026-09-26: 'WholOmega has not changed, so it can be used as is.'"
+  },
+  "wholomega-120-capsules": {
+    "ingredients": [
+      {
+        "name": "DHA (Docosahexaenoic Acid from Whole Algae Oil)",
+        "dose": ""
+      },
+      {
+        "name": "Safranal 3% (Crocus sativa)",
+        "dose": ""
+      },
+      {
+        "name": "Cyanidin-3-Glucosides (C3G) (Oryza sativa)",
+        "dose": ""
+      },
+      {
+        "name": "Vitamin C (Ascorbyl Palmitate)",
+        "dose": ""
+      },
+      {
+        "name": "Vitamin E (mixed Tocopherols)",
+        "dose": ""
+      },
+      {
+        "name": "Lemon Oil (Citrus spp.) (organic cold pressed)",
+        "dose": ""
+      },
+      {
+        "name": "Vitamin A (Retinyl Acetate)",
+        "dose": ""
+      },
+      {
+        "name": "Vitamin D3 (Cholecalciferol)",
+        "dose": ""
+      },
+      {
+        "name": "Vitamin K2 (MK-7)",
+        "dose": ""
+      }
+    ],
+    "ingredients_source": "gk, confirmed unchanged by Glen 2026-09-26",
+    "note": "Glen 2026-09-26: 'WholOmega has not changed, so it can be used as is.'"
+  },
+  "wholomega-120-gelcaps": {
+    "ingredients": [
+      {
+        "name": "DHA (Docosahexaenoic Acid from Whole Algae Oil)",
+        "dose": ""
+      },
+      {
+        "name": "Safranal 3% (Crocus sativa)",
+        "dose": ""
+      },
+      {
+        "name": "Cyanidin-3-Glucosides (C3G) (Oryza sativa)",
+        "dose": ""
+      },
+      {
+        "name": "Vitamin C (Ascorbyl Palmitate)",
+        "dose": ""
+      },
+      {
+        "name": "Vitamin E (mixed Tocopherols)",
+        "dose": ""
+      },
+      {
+        "name": "Lemon Oil (Citrus spp.) (organic cold pressed)",
+        "dose": ""
+      },
+      {
+        "name": "Vitamin A (Retinyl Acetate)",
+        "dose": ""
+      },
+      {
+        "name": "Vitamin D3 (Cholecalciferol)",
+        "dose": ""
+      },
+      {
+        "name": "Vitamin K2 (MK-7)",
+        "dose": ""
+      }
+    ],
+    "ingredients_source": "gk, confirmed unchanged by Glen 2026-09-26",
+    "note": "Glen 2026-09-26: 'WholOmega has not changed, so it can be used as is.'"
   }
 }

@@ -10627,7 +10627,7 @@
      "dose": ""
     }
    ],
-   "ingredients_source": "gk",
+   "ingredients_source": "gk, confirmed unchanged by Glen 2026-09-26",
    "description": "NeurOmega . NeurOmega WholOmega 120 capsules NeurOmega delivers DHA to your cells, including the Retina, which has the highest level of DHA in the body. DHA is also the main fatty acid in the brain. It also supports the crystalline lens... Here's an example of the findings of a study on Saffron and cataract published in Molecular Vision: Results: Saffron demonstrated significant protection against selenite-induced cataractogenesis in vivo. The mean activities of superoxide dismutase, glutathione peroxidase, catalase, and glutathione levels were significantly increased in group III compared to...",
    "bottle_type": "30 Caps"
   },
@@ -11635,7 +11635,7 @@
      "dose": ""
     }
    ],
-   "ingredients_source": "gk",
+   "ingredients_source": "gk, confirmed unchanged by Glen 2026-09-26",
    "description": "NeurOmega . NeurOmega WholOmega 120 capsules NeurOmega delivers DHA to your cells, including the Retina, which has the highest level of DHA in the body. DHA is also the main fatty acid in the brain. It also supports the crystalline lens... Here's an example of the findings of a study on Saffron and cataract published in Molecular Vision: Results: Saffron demonstrated significant protection against selenite-induced cataractogenesis in vivo. The mean activities of superoxide dismutase, glutathione peroxidase, catalase, and glutathione levels were significantly increased in group III compared to...",
    "bottle_type": "120 caps",
    "inactive": true,
@@ -12201,14 +12201,30 @@
    "ingredients": [
     {
      "name": "Methylene Blue",
+     "dose": "4 mg per 10 drops"
+    },
+    {
+     "name": "Ceylon Cinnamon (Cinnamomum verum) polyphenol fraction",
      "dose": ""
     },
     {
-     "name": "Polyphenols 30% (Cinnamomum cassia) (bark)",
+     "name": "Ceylon Cinnamon bark oil (aroma fraction)",
+     "dose": ""
+    },
+    {
+     "name": "Purified Water",
+     "dose": ""
+    },
+    {
+     "name": "Ethanol 25% v/v",
+     "dose": ""
+    },
+    {
+     "name": "Tripotassium Citrate (buffer)",
      "dose": ""
     }
    ],
-   "ingredients_source": "gk",
+   "ingredients_source": "reformulation-brief-2026-09-15, Glen new-now 2026-09-26",
    "description": "Cinnamon Blue . Cinnamon Blue Cinnamon Blue Cinnamon Blue combines aromatic and flavorful Cinnamon Polyphenols with Methylene Blue (MeBlu). Methylene Blue Background: Methylene Blue is safe enough to be available without prescription and is on the World Health Organization's list of essential medicines. Modern hospitals use it to save lives in cases of severe trauma. Methylene Blue was discovered in 1876 and was first used as a dye for cloth. In medical science, it was noticed that staining pathogens with a dye could kill them. Methylene Blue was the first synthetic pharmaceutical and was...",
    "qty_pricing": true
   },
@@ -21643,7 +21659,7 @@
    "pinecone_title": "WholOmega 120 gelcaps",
    "qty_pricing": false,
    "fmp_id": "448",
-   "ingredients_source": "gk",
+   "ingredients_source": "gk, confirmed unchanged by Glen 2026-09-26",
    "no_groovekart": true,
    "regular_cents": 23000,
    "description": "4 capsules daily with heavier meal",
