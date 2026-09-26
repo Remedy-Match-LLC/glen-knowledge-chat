@@ -152,3 +152,80 @@ def test_staff_cookie_opens_no_console_route(client):
     c.get(f"/portal/{tok}?sp={_pass_for(c)}")
     r = c.get("/api/console/portal-link?email=brooke@example.com")
     assert r.status_code == 401
+
+
+# ── Review round 3, 2026-09-26 ──────────────────────────────────────────────────────
+
+def test_a_token_of_another_purpose_is_not_a_pass(client):
+    c, appmod = client
+    tok = _seed_portal(appmod)
+    with appmod.db.connect(appmod.LOG_DB) as cx:
+        cx.execute("INSERT INTO auth_tokens (token_hash, email, purpose, created_at, expires_at) "
+                   "VALUES (?,?,?,?,?)", (appmod._hash_token("magic-abc"), "brooke@example.com",
+                                          "magic_link", "2026-01-01T00:00:00+00:00",
+                                          "2999-01-01T00:00:00+00:00"))
+        cx.commit()
+    _refused_page(c.get(f"/portal/{tok}?sp=magic-abc"))
+
+
+def test_pass_lasts_ten_minutes_and_cookie_is_httponly(client):
+    from datetime import datetime
+    c, appmod = client
+    tok = _seed_portal(appmod)
+    sp = _pass_for(c)
+    with sqlite3.connect(appmod.LOG_DB) as cx:
+        made, exp = cx.execute("SELECT created_at, expires_at FROM auth_tokens "
+                               "WHERE purpose='staff_view_pass'").fetchone()
+    assert (datetime.fromisoformat(exp) - datetime.fromisoformat(made)).total_seconds() == 600
+    ck = _cookies(c.get(f"/portal/{tok}?sp={sp}"))
+    assert "HttpOnly" in ck
+
+
+def _signed(appmod, exp):
+    return f"{exp}.{appmod._staff_view_sig(exp)}"
+
+
+def test_lapsed_staff_cookie_fails_closed(client, monkeypatch):
+    """A staff browser whose 12-hour view lapsed must not turn back into the client:
+    no client sign-in, no engagement, and writes are refused as expired."""
+    c, appmod = client
+    monkeypatch.setattr(appmod, "_WISHLIST_ENABLED", True)
+    merged = []
+    monkeypatch.setattr(appmod, "_wishlist_merge_with_self", lambda *a, **k: merged.append(a))
+    tok = _seed_portal(appmod)
+    c.set_cookie("rm_staff_view", _signed(appmod, 1000))          # signed, long expired
+    calls = _record(monkeypatch, appmod, f"/api/portal/{tok}/chat")
+    r = c.post(f"/api/portal/{tok}/chat", json={}, headers=PV)
+    assert r.status_code == 409 and r.get_json() == {"staff_expired": True}
+    assert calls == []
+    d = c.get(f"/api/portal/{tok}").get_json()
+    assert d["staff_view"] == {"client": "Brooke Webb", "expired": True}
+    assert merged == []
+    from dashboard import notify_state as ns
+    with sqlite3.connect(appmod.LOG_DB) as cx:
+        assert ns.get_state(cx, "brooke@example.com")["engaged"] is False
+    assert "rm_portal_session" not in _cookies(c.get(f"/portal/{tok}"))
+
+
+def test_no_console_secret_means_no_staff_cookie(client, monkeypatch):
+    c, appmod = client
+    import dashboard
+    monkeypatch.setattr(appmod, "CONSOLE_SECRET", "")
+    monkeypatch.setattr(dashboard, "CONSOLE_SECRET", "")
+    tok = _seed_portal(appmod)
+    c.set_cookie("rm_staff_view", _signed(appmod, 9999999999))
+    calls = _record(monkeypatch, appmod, f"/api/portal/{tok}/chat")
+    assert c.post(f"/api/portal/{tok}/chat", json={}, headers=PV).status_code == 200
+    assert len(calls) == 1
+
+
+def test_staff_cookie_folds_never_write_the_client_record(client, monkeypatch):
+    c, appmod = client
+    monkeypatch.setenv("PORTAL_FOLDS_V2", "1")
+    tok = _seed_portal(appmod)
+    c.get(f"/portal/{tok}?sp={_pass_for(c)}")
+    r = c.put(f"/api/portal/{tok}/folds", json={"state": {"cards": {"x": True}}}, headers=PV)
+    assert r.status_code == 200
+    assert c.get(f"/api/portal/{tok}/folds").get_json()["viewer"] == "staff"
+    fresh = appmod.app.test_client()                               # the client's own browser
+    assert fresh.get(f"/api/portal/{tok}/folds").get_json()["state"].get("cards", {}) == {}

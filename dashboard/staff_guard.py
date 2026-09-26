@@ -13,6 +13,8 @@ EXEMPT = tuple(re.compile(p) for p in (
 ))
 BACKGROUND = tuple(re.compile(p) for p in (
     r"^/api/portal/[^/]+/cards/[^/]+/open$",
+    r"^/api/portal/[^/]+/open$",           # report read receipt
+    r"^/api/invoice/[^/]+/open$",          # invoice read receipt
     r"^/api/portal/[^/]+/process-request$",
     r"^/api/intake/save-draft$",
     r"^/api/portal/[^/]+/recommendation/section$",

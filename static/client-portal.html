@@ -104,15 +104,19 @@
     var sv = d && d.staff_view;
     if (!sv) return;
     window._staffViewActive = true;      // this page was loaded as a staff view
-    if (document.getElementById("staffBanner")) return;
-    var b = document.createElement("div");
-    b.id = "staffBanner";
-    b.className = "staff-banner";
-    b.setAttribute("role", "status");
-    b.textContent = "You are viewing " + (String(sv.client || "").trim() || "this client") +
-      "'s portal as staff. Anything you do here asks first.";
-    document.body.insertBefore(b, document.body.firstChild);
-    document.body.classList.add("staff-view");
+    var who = String(sv.client || "").trim() || "this client";
+    var b = document.getElementById("staffBanner");
+    if (!b){
+      b = document.createElement("div");
+      b.id = "staffBanner";
+      b.className = "staff-banner";
+      b.setAttribute("role", "status");
+      document.body.insertBefore(b, document.body.firstChild);
+    }
+    // Every render, so a view that lapses while the tab is open says so.
+    b.textContent = sv.expired
+      ? "Your staff view of " + who + "'s portal has expired. Open it again from the console."
+      : "You are viewing " + who + "'s portal as staff. Anything you do here asks first.";
   };
 
   window.fetch = function(input, init){
@@ -1034,11 +1038,12 @@
   .portal-documents .doc-pending{margin:.4rem 0 0;color:var(--muted);font-size:.9rem;font-style:italic}
   .portal-documents .doc-empty{color:var(--muted);margin:0}
   /* Staff guard: the banner and the confirmation. Tokens only, so both themes work. */
-  .staff-banner{position:fixed;top:0;left:0;right:0;z-index:9000;padding:.55rem 16px;
+  /* In the page flow, so it never covers content, and sticky just below the site
+     header (which is fixed, z-index 9999, and reserves --jshell-h on the body). */
+  .staff-banner{position:sticky;top:var(--jshell-h,0px);z-index:9998;padding:.55rem 16px;
     background:var(--card2);color:var(--ink);border-bottom:2px solid var(--brand);
     font:600 .92rem/1.35 "Raleway",sans-serif;text-align:center}
-  body.staff-view{padding-top:2.6rem}
-  .staff-confirm{position:fixed;inset:0;z-index:9100;display:flex;align-items:center;
+  .staff-confirm{position:fixed;inset:0;z-index:10050;display:flex;align-items:center;
     justify-content:center;padding:16px;background:rgba(0,0,0,.45)}
   .staff-confirm-panel{max-width:28rem;width:100%;background:var(--card);color:var(--ink);
     border:1px solid var(--line);border-radius:12px;padding:1.1rem 1.2rem}

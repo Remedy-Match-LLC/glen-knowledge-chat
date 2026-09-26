@@ -180,6 +180,12 @@ GUARD_SOURCE
   assert.strictEqual(byClass('staff-confirm-go'), undefined);
   byClass('staff-confirm-cancel').click();
   assert.strictEqual(dialogs().length, 0);
+
+  // 9. a lapsed staff view says so in the banner, on a fresh page
+  document.body.children = [];
+  _staffBanner({staff_view: {client: 'Mel Palmer', expired: true}});
+  assert.strictEqual(document.getElementById('staffBanner').textContent,
+    "Your staff view of Mel Palmer's portal has expired. Open it again from the console.");
   console.log('OK');
 })().catch(e => { console.error(e); process.exit(1); });
 """

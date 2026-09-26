@@ -47,6 +47,8 @@ def test_describe_without_a_name():
     ("POST", "/api/portal/T/recommendation/section", "background"),
     ("POST", "/api/portal/T/eye-vision-report/state", "background"),
     ("POST", "/api/portal/T/recommendation/click", "background"),
+    ("POST", "/api/portal/T/open", "background"),       # read receipt (round 3)
+    ("POST", "/api/invoice/T/open", "background"),
     ("POST", "/chat/tts", "exempt"),
     ("POST", "/portal/logout", "exempt"),
     ("POST", "/api/portal/T/recommendation/accept", "guard"),

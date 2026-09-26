@@ -23316,7 +23316,9 @@ def _portal_fold_viewer():
     (a VA token, or garbage), which the route refuses rather than guessing."""
     key = _present_console_key()
     if not key:
-        return "client"
+        # On the portal's own domain staff carry only rm_staff_view, which names no one.
+        # Their folds go to one shared staff record, never the client's (round 3).
+        return "staff" if _staff_touch() else "client"
     if not _portal_open_is_owner():
         return None
     uid = _workspace_user_id_for_token(key)
@@ -25280,7 +25282,7 @@ def client_portal_page(token):
     resp.headers["Pragma"] = "no-cache"
     if not _client_login_enabled() or token == "me":
         return resp
-    if _is_staff_request():
+    if _staff_touch():
         return resp     # staff never get the client's sign-in cookie (staff-guard spec)
 
     # A durable portal link is already an authentication credential. Bridge it
@@ -25345,7 +25347,7 @@ def api_client_portal(token):
             portal = _portal_record_for(cx, token)
     if not portal:
         return jsonify({"error": "not found"}), 404
-    _staff_view = _is_staff_request()
+    _staff_view = _staff_touch()
     try:
         from dashboard import notify_state as _ns
         if not _staff_view:          # a staff visit is not the client engaging
@@ -25999,6 +26001,8 @@ def api_client_portal(token):
     if _staff_view:
         payload["staff_view"] = {"client": (portal.get("name") or "").strip()
                                  or (portal.get("email") or "").split("@")[0]}
+        if not _is_staff_request():
+            payload["staff_view"]["expired"] = True
     return jsonify(payload)
 
 
@@ -32977,7 +32981,7 @@ def coach_thread_member_get():
         if email is None or pair is None:
             return jsonify({"error": "not_found"}), 404
         vol = _cd.get_volunteer(cx, pair["coach_email"]) or {}
-        if _is_staff_request():
+        if _staff_touch():
             # Staff read without creating the thread or clearing the member's unread.
             t = _ct.thread_for_pair(cx, pair["coach_email"], email)
             if t is None:
@@ -33257,7 +33261,7 @@ def peer_state():
         if opted and not eligible:
             # Self-heal: a member who downgraded leaves the pool on their next visit.
             # (The matcher already excludes non-paid candidates; this keeps the record clean.)
-            if not _is_staff_request():
+            if not _staff_touch():
                 _pc.set_optin(cx, email, False)
             opted = False
         has_prop = bool(eligible and opted and _pc.next_candidate(cx, email, is_paid=_is_paid_member))
@@ -33430,7 +33434,7 @@ def peer_thread_get(thread_id):
         t, role = _peer_thread_role(cx, thread_id, ident.email)
         if role is None:
             return jsonify({"error": "forbidden"}), 403
-        if not _is_staff_request():
+        if not _staff_touch():
             _ct.mark_read(cx, thread_id, role)
         other = t["member_email"] if role == "coach" else t["coach_email"]
         blocked = t["status"] == "blocked"
@@ -42188,7 +42192,9 @@ def _cookie_console_key():
 #    browser ask first, skip background writes and show the banner. It opens nothing.
 #    Spec: docs/superpowers/specs/2026-09-26-portal-staff-guard-design.md
 STAFF_VIEW_COOKIE = "rm_staff_view"
-STAFF_VIEW_MAX_AGE = 12 * 60 * 60
+STAFF_VIEW_MAX_AGE = 12 * 60 * 60          # the signed staff view lasts this long
+STAFF_VIEW_COOKIE_KEEP = 30 * 24 * 60 * 60 # the cookie outlives it, so a LAPSED view is
+                                           # still recognised and fails closed (round 3)
 STAFF_PASS_TTL_MIN = 10
 
 
@@ -42202,19 +42208,37 @@ def _staff_view_sig(exp):
                     hashlib.sha256).hexdigest()
 
 
-def _staff_view_cookie_ok():
-    """A valid, unexpired rm_staff_view cookie. Signed with the console secret, so
-    rotating the secret voids every copy."""
+def _staff_view_state():
+    """'active' for a validly signed, unexpired rm_staff_view cookie; 'lapsed' for a
+    validly signed one past its 12 hours; None otherwise. Signed with the console
+    secret, so rotating the secret voids every copy."""
     if not _staff_view_secret():
-        return False
+        return None
     exp_s, _, sig = (request.cookies.get(STAFF_VIEW_COOKIE, "") or "").partition(".")
     try:
         exp = int(exp_s)
     except ValueError:
-        return False
-    if exp < int(time.time()):
-        return False
-    return hmac.compare_digest(sig, _staff_view_sig(exp))
+        return None
+    if not hmac.compare_digest(sig, _staff_view_sig(exp)):
+        return None
+    return "active" if exp >= int(time.time()) else "lapsed"
+
+
+def _staff_view_cookie_ok():
+    return _staff_view_state() == "active"
+
+
+def _staff_lapsed():
+    """This browser was a staff view whose staff credential has since lapsed: a lapsed
+    rm_staff_view cookie, or a page that was loaded as a staff view (it sends
+    X-Portal-Staff-View). Treated as staff for every skip, and refused for writes."""
+    return (_staff_view_state() == "lapsed"
+            or request.headers.get("X-Portal-Staff-View") == "1")
+
+
+def _staff_touch():
+    """Staff, or lapsed staff: either way, never act or record as the client."""
+    return _is_staff_request() or _staff_lapsed()
 
 
 def _mint_staff_pass(email):
@@ -42256,7 +42280,7 @@ def _redeem_staff_pass(token, sp):
         if ok:
             exp = int(time.time()) + STAFF_VIEW_MAX_AGE
             resp.set_cookie(STAFF_VIEW_COOKIE, f"{exp}.{_staff_view_sig(exp)}",
-                            max_age=STAFF_VIEW_MAX_AGE, httponly=True,
+                            max_age=STAFF_VIEW_COOKIE_KEEP, httponly=True,
                             secure=request.is_secure, samesite="Lax")
         print(f"[staff-pass] redeemed={ok}", flush=True)
     except Exception as e:
@@ -42375,11 +42399,11 @@ def _portal_staff_guard():
     if kind in ("pass", "exempt"):
         return None
     if not _is_staff_request():
-        if request.headers.get("X-Portal-Staff-View") != "1":
+        if not _staff_lapsed():
             return None
-        # The page was loaded as a staff view, but its staff credential has since lapsed
-        # (the 12-hour cookie, or a rotated secret). Fail closed rather than act as the
-        # client. Only a page that received staff_view sends this header.
+        # A staff view whose staff credential has since lapsed (the 12-hour cookie, or
+        # a rotated secret while the tab stayed open). Fail closed rather than act as
+        # the client. Only a page that received staff_view sends the header.
         if kind == "background":
             return "", 204
         return jsonify({"staff_expired": True}), 409

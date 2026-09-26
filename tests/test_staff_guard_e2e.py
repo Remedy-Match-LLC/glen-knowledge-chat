@@ -110,3 +110,35 @@ def test_client_is_never_asked_and_sees_no_banner(live):
         assert page.query_selector("#staffBanner") is None
         assert page.query_selector(".staff-confirm") is None
         browser.close()
+
+
+VISIBLE_JS = """() => {
+  const b = document.getElementById('staffBanner');
+  const r = b.getBoundingClientRect();
+  const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+  const shell = document.getElementById('journey-shell');
+  const sr = shell ? shell.getBoundingClientRect() : {bottom: 0};
+  return {onTop: !!hit && b.contains(hit), below: r.top >= sr.bottom - 1, shell: !!shell};
+}"""
+
+
+@pytest.mark.parametrize("size", [(375, 812), (1280, 900)], ids=["phone", "desktop"])
+def test_banner_is_visible_below_the_site_header(live, monkeypatch, size):
+    """Round 3, 2026-09-26: the fixed banner sat under the site header (z-index 9999)."""
+    base, token, _ = live
+    import app as appmod
+    monkeypatch.setattr(appmod, "JOURNEY_SHELL_ENABLED", True)
+    with sync_playwright() as p:
+        browser = p.chromium.launch()
+        ctx = browser.new_context(extra_http_headers={"X-Console-Key": SECRET},
+                                  viewport={"width": size[0], "height": size[1]})
+        page = ctx.new_page()
+        page.goto(f"{base}/portal/{token}")
+        page.wait_for_selector("#staffBanner")
+        page.wait_for_selector("#journey-shell")
+        got = page.evaluate(VISIBLE_JS)
+        assert got == {"onTop": True, "below": True, "shell": True}, got
+        page.mouse.wheel(0, 1500)
+        page.wait_for_timeout(200)
+        assert page.evaluate(VISIBLE_JS)["onTop"] is True
+        browser.close()
