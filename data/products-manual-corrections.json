@@ -2247,5 +2247,205 @@
     "directions": "1 to 3 capsules a day with food, or as guided.",
     "panel_note": "Bioavailability Blend (34.5 mg): Phosphatides 50% (Helianthus annuus), Humic & Fulvic Acids, Moringa 100:1 (Moringa oleifera), Gingerol 10% (Zingiber officinale), Piperine (Piper nigrum), EGb 761 (Ginkgo biloba), Niacin 5 mg, Vinpocetine (Vinca minor), Licorice Omnipotent (Glycyrrhiza glabra), Spirit Minerals (ORMUS).",
     "note": "Label-read 2026-09-26 by production, approved by Glen ('approve'); replaces GrooveKart rows."
+  },
+  "pure--natural-msm-lotion": {
+    "ingredients": [
+      {
+        "name": "Triple UV Treated Deionized Water",
+        "dose": ""
+      },
+      {
+        "name": "Opti-MSM (Methylsulfonylmethane)",
+        "dose": "10%"
+      },
+      {
+        "name": "Fatty Acid Esters (plant derived emulsifier)",
+        "dose": ""
+      },
+      {
+        "name": "Organic Vegetable Glycerin",
+        "dose": ""
+      },
+      {
+        "name": "Organic Apricot Kernel Oil",
+        "dose": ""
+      },
+      {
+        "name": "Organic Sweet Almond Oil",
+        "dose": ""
+      },
+      {
+        "name": "Usnea Extract",
+        "dose": ""
+      },
+      {
+        "name": "Calendula Flower Extract",
+        "dose": ""
+      },
+      {
+        "name": "Organic Aloe Vera Extract 200:1",
+        "dose": ""
+      },
+      {
+        "name": "Vitamin E (d-alpha-tocopherol)",
+        "dose": ""
+      },
+      {
+        "name": "Vitamin C (Ascorbic Acid)",
+        "dose": ""
+      },
+      {
+        "name": "Vitamin D3 (cholecalciferol)",
+        "dose": ""
+      },
+      {
+        "name": "Grapefruit Seed Extract",
+        "dose": ""
+      },
+      {
+        "name": "100% Pure Tea Tree Oil",
+        "dose": ""
+      }
+    ],
+    "ingredients_source": "label-photo-2026-09-26",
+    "description": "An unscented MSM lotion for face and body, in an 8 fluid ounce bottle. It is made with 10% Opti-MSM, organic apricot kernel oil, organic sweet almond oil, organic vegetable glycerin, calendula flower extract, usnea extract and organic aloe vera extract. It also contains vitamins C, D3 and E, grapefruit seed extract and tea tree oil.\n\nContents: 8 fl oz.",
+    "directions": "",
+    "note": "Transcribed from bottle photos. INCI-style list with no amounts, so dose is blank except the printed MSM 10%."
+  },
+  "lavender-msm-lotion": {
+    "ingredients": [
+      {
+        "name": "Triple UV Treated Deionized Water (Aqua)",
+        "dose": ""
+      },
+      {
+        "name": "Dimethyl Sulfone (MSM, Sulfur)",
+        "dose": "10%"
+      },
+      {
+        "name": "Organic Vegetable Glycerin",
+        "dose": ""
+      },
+      {
+        "name": "Organic Prunus armeniaca (Apricot Kernel) Oil",
+        "dose": ""
+      },
+      {
+        "name": "Organic Prunus amygdalus (Sweet Almond) Oil",
+        "dose": ""
+      },
+      {
+        "name": "Organic Aloe barbadensis Extract 200:1",
+        "dose": ""
+      },
+      {
+        "name": "Usnea longissima (wild crafted)",
+        "dose": ""
+      },
+      {
+        "name": "Organic Calendula officinalis Flower Extract",
+        "dose": ""
+      },
+      {
+        "name": "Vitamin A (Palmitate)",
+        "dose": ""
+      },
+      {
+        "name": "Vitamin C (Citrate)",
+        "dose": ""
+      },
+      {
+        "name": "Vitamin E (Acetate)",
+        "dose": ""
+      },
+      {
+        "name": "Grapefruit Seed Extract (Citricidal)",
+        "dose": ""
+      },
+      {
+        "name": "100% pure essential Oil of Melaleuca alternifolia",
+        "dose": ""
+      },
+      {
+        "name": "Fatty Acid Esters derived from coconut pulp used as an emulsifier",
+        "dose": ""
+      },
+      {
+        "name": "Essential Oil of Lavandula officinalis (three different regions give this specific blend its unique aroma)",
+        "dose": ""
+      }
+    ],
+    "ingredients_source": "label-photo-2026-09-26",
+    "description": "A lavender MSM lotion for face and body, in an 8 fluid ounce bottle. It is made with 10% MSM, organic apricot kernel oil, organic sweet almond oil, organic vegetable glycerin, organic aloe extract, usnea and organic calendula flower extract. It also contains vitamins A, C and E, grapefruit seed extract, tea tree oil and lavender essential oil.\n\nContents: 8 fl oz.",
+    "directions": "",
+    "note": "Transcribed from bottle photos. INCI-style list with no amounts, so dose is blank except the printed MSM 10%."
+  },
+  "coconut-rose-msm-lotion": {
+    "ingredients": [
+      {
+        "name": "Triple UV Filtered Deionized Water",
+        "dose": ""
+      },
+      {
+        "name": "OptiMSM (Methylsulfonylmethane)",
+        "dose": "10%"
+      },
+      {
+        "name": "Fatty Acid Esters (plant derived emulsifier)",
+        "dose": ""
+      },
+      {
+        "name": "Organic Coconut Oil",
+        "dose": ""
+      },
+      {
+        "name": "Usnea Extract",
+        "dose": ""
+      },
+      {
+        "name": "Comfrey Root Extract",
+        "dose": ""
+      },
+      {
+        "name": "Calendula Flower Extract",
+        "dose": ""
+      },
+      {
+        "name": "Organic Jojoba Oil",
+        "dose": ""
+      },
+      {
+        "name": "Manuka Honey",
+        "dose": ""
+      },
+      {
+        "name": "Shea Butter",
+        "dose": ""
+      },
+      {
+        "name": "Organic Aloe Vera Extract 200:1",
+        "dose": ""
+      },
+      {
+        "name": "Vitamin E (d-alpha-tocopherol)",
+        "dose": ""
+      },
+      {
+        "name": "Vitamin C (Ascorbic Acid)",
+        "dose": ""
+      },
+      {
+        "name": "100% Pure Tea Tree Oil",
+        "dose": ""
+      },
+      {
+        "name": "Natural Scents",
+        "dose": ""
+      }
+    ],
+    "ingredients_source": "label-photo-2026-09-26",
+    "description": "Jubb's Coconut Rose Lotion is a naturally scented MSM lotion for face and body, in an 8 fluid ounce bottle. It is made with 10% OptiMSM, organic coconut oil, organic jojoba oil, shea butter, manuka honey, comfrey root extract, calendula flower extract, usnea extract and organic aloe vera extract. It also contains vitamins C and E, tea tree oil and natural scents.\n\nContents: 8 fl oz.",
+    "directions": "",
+    "note": "Transcribed from bottle photos. INCI-style list with no amounts, so dose is blank except the printed MSM 10%."
   }
 }

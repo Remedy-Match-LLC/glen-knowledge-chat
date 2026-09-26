@@ -3677,65 +3677,82 @@
    "legacy_store_url": "https://remedymatch.com/remedies/246-lavender-msm-lotion",
    "ingredients": [
     {
-     "name": "Triple UV Filtered Deionized Water (Aqua)",
+     "name": "Triple UV Treated Deionized Water (Aqua)",
      "dose": ""
     },
     {
-     "name": "Opti-MSM (Methylsulfonylmethane)",
+     "name": "Dimethyl Sulfone (MSM, Sulfur)",
      "dose": "10%"
     },
     {
-     "name": "Fatty Acid Esters from Coconut (Cocos nucifera) Pulp",
+     "name": "Organic Vegetable Glycerin",
      "dose": ""
     },
     {
-     "name": "Organic Coconut (Cocos nucifera) Oil",
+     "name": "Organic Prunus armeniaca (Apricot Kernel) Oil",
      "dose": ""
     },
     {
-     "name": "Usnea (Usnea spp.) Extract",
+     "name": "Organic Prunus amygdalus (Sweet Almond) Oil",
      "dose": ""
     },
     {
-     "name": "Organic Comfrey (Symphytum officinale) Root Extract",
+     "name": "Organic Aloe barbadensis Extract 200:1",
      "dose": ""
     },
     {
-     "name": "Calendula (Calendula officinalis) Flower Extract",
+     "name": "Usnea longissima (wild crafted)",
      "dose": ""
     },
     {
-     "name": "Organic Jojoba (Simmondsia chinensis) Oil",
+     "name": "Organic Calendula officinalis Flower Extract",
      "dose": ""
     },
     {
-     "name": "Manuka (Leptospermum scoparium) Honey",
+     "name": "Vitamin A (Palmitate)",
      "dose": ""
     },
     {
-     "name": "Shea (Vitellaria paradoxa) Butter",
+     "name": "Vitamin C (Citrate)",
      "dose": ""
     },
     {
-     "name": "Organic Aloe (Aloe vera) Extract 200:1",
+     "name": "Vitamin E (Acetate)",
      "dose": ""
     },
     {
-     "name": "Vitamin C (L-Ascorbic Acid)",
+     "name": "Grapefruit Seed Extract (Citricidal)",
      "dose": ""
     },
     {
-     "name": "Natural Vitamin E (d-Alpha Tocopherol)",
+     "name": "100% pure essential Oil of Melaleuca alternifolia",
      "dose": ""
     },
     {
-     "name": "Tea Tree (Melaleuca alternifolia) Essential Oil",
-     "dose": "100%"
+     "name": "Fatty Acid Esters derived from coconut pulp used as an emulsifier",
+     "dose": ""
+    },
+    {
+     "name": "Essential Oil of Lavandula officinalis (three different regions give this specific blend its unique aroma)",
+     "dose": ""
     }
    ],
-   "ingredients_source": "store-recovery-2026-06-08",
+   "ingredients_source": "label-photo-2026-09-26",
    "fmp_id": "88",
-   "miron_glass": false
+   "miron_glass": false,
+   "directions": "",
+   "intro": "A lavender MSM lotion for face and body, in an 8 fluid ounce bottle. It is made with 10% MSM, organic apricot kernel oil, organic sweet almond oil, organic vegetable glycerin, organic aloe extract, usnea and organic calendula flower extract. It also contains vitamins A, C and E, grapefruit seed extract, tea tree oil and lavender essential oil.",
+   "description": "A lavender MSM lotion for face and body, in an 8 fluid ounce bottle. It is made with 10% MSM, organic apricot kernel oil, organic sweet almond oil, organic vegetable glycerin, organic aloe extract, usnea and organic calendula flower extract. It also contains vitamins A, C and E, grapefruit seed extract, tea tree oil and lavender essential oil.\n\nContents: 8 fl oz.",
+   "learn_markdown": "## Ingredients as printed on the label\n\nTriple UV Treated Deionized Water (Aqua), Dimethyl Sulfone (10% MSM - Sulfur), Organic Vegetable Glycerin, Organic Prunus armeniaca (Apricot Kernel) Oil, Organic Prunus amygdalus (Sweet Almond) Oil, Organic Aloe Barbadensis Extract 200:1, Usnea longissima (wild crafted), Organic Calendula officinalis Flower Extract, Vitamin A (Palmitate), C (Citrate), E (Acetate), Grapefruit Seed Extract Citricidal®, 100% pure essential Oil of Melaleuca alternifolia, Fatty Acid Esters derived from coconut pulp used as an emulsifier. Essential Oil of Lavender officinalis (three different regions give this specific blend its unique aroma).",
+   "how_it_works": "",
+   "copy_pinned": [
+    "ingredients",
+    "intro",
+    "description",
+    "research",
+    "benefits"
+   ],
+   "bottle_type": "own-box"
   },
   "coconut-rose-msm-lotion": {
    "name": "MSM Coconut Rose Lotion",
@@ -3745,69 +3762,82 @@
    "legacy_store_url": "https://remedymatch.com/remedies/247-coconut-rose-msm-lotion",
    "ingredients": [
     {
-     "name": "Deionized Water (Aqua), triple UV filtered",
+     "name": "Triple UV Filtered Deionized Water",
      "dose": ""
     },
     {
-     "name": "Opti-MSM (Methylsulfonylmethane)",
+     "name": "OptiMSM (Methylsulfonylmethane)",
      "dose": "10%"
     },
     {
-     "name": "Fatty Acid Esters from Coconut (Cocos nucifera) Pulp",
+     "name": "Fatty Acid Esters (plant derived emulsifier)",
      "dose": ""
     },
     {
-     "name": "Organic Coconut (Cocos nucifera) Oil",
+     "name": "Organic Coconut Oil",
      "dose": ""
     },
     {
-     "name": "Usnea (Usnea spp.) Extract",
+     "name": "Usnea Extract",
      "dose": ""
     },
     {
-     "name": "Organic Comfrey (Symphytum officinale) Root Extract",
+     "name": "Comfrey Root Extract",
      "dose": ""
     },
     {
-     "name": "Calendula (Calendula officinalis) Flower Extract",
+     "name": "Calendula Flower Extract",
      "dose": ""
     },
     {
-     "name": "Organic Jojoba (Simmondsia chinensis) Oil",
+     "name": "Organic Jojoba Oil",
      "dose": ""
     },
     {
-     "name": "Manuka (Leptospermum scoparium) Honey",
+     "name": "Manuka Honey",
      "dose": ""
     },
     {
-     "name": "Shea (Vitellaria paradoxa) Butter",
+     "name": "Shea Butter",
      "dose": ""
     },
     {
-     "name": "Organic Aloe (Aloe vera) Extract 200:1",
+     "name": "Organic Aloe Vera Extract 200:1",
      "dose": ""
     },
     {
-     "name": "Vitamin C (L-Ascorbic Acid)",
+     "name": "Vitamin E (d-alpha-tocopherol)",
      "dose": ""
     },
     {
-     "name": "Natural Vitamin E (d-Alpha Tocopherol)",
+     "name": "Vitamin C (Ascorbic Acid)",
      "dose": ""
     },
     {
-     "name": "Tea Tree (Melaleuca alternifolia) Essential Oil",
-     "dose": "100% pure"
+     "name": "100% Pure Tea Tree Oil",
+     "dose": ""
     },
     {
      "name": "Natural Scents",
      "dose": ""
     }
    ],
-   "ingredients_source": "store-recovery-2026-06-08",
+   "ingredients_source": "label-photo-2026-09-26",
    "fmp_id": "185",
-   "miron_glass": false
+   "miron_glass": false,
+   "directions": "",
+   "intro": "Jubb's Coconut Rose Lotion is a naturally scented MSM lotion for face and body, in an 8 fluid ounce bottle. It is made with 10% OptiMSM, organic coconut oil, organic jojoba oil, shea butter, manuka honey, comfrey root extract, calendula flower extract, usnea extract and organic aloe vera extract. It also contains vitamins C and E, tea tree oil and natural scents.",
+   "description": "Jubb's Coconut Rose Lotion is a naturally scented MSM lotion for face and body, in an 8 fluid ounce bottle. It is made with 10% OptiMSM, organic coconut oil, organic jojoba oil, shea butter, manuka honey, comfrey root extract, calendula flower extract, usnea extract and organic aloe vera extract. It also contains vitamins C and E, tea tree oil and natural scents.\n\nContents: 8 fl oz.",
+   "learn_markdown": "## Ingredients as printed on the label\n\nTriple UV Filtered Deionized Water, OptiMSM® 10% (Methylsulfonylmethane), Fatty Acid Esters (plant derived emulsifier), Organic Coconut Oil, Usnea Extract, Comfrey Root Extract, Calendula Flower Extract, Organic Jojoba Oil, Manuka Honey, Shea Butter, Organic Aloe Vera Extract 200:1, Vitamin E (d-alpha-tocopherol), Vitamin C (Ascorbic Acid), 100% Pure Tea Tree Oil, and Natural Scents.",
+   "how_it_works": "",
+   "copy_pinned": [
+    "ingredients",
+    "intro",
+    "description",
+    "research",
+    "benefits"
+   ],
+   "bottle_type": "own-box"
   },
   "quercetin-dihydrate-powder": {
    "name": "Quercetin Dihydrate Powder",
@@ -3850,7 +3880,7 @@
    "legacy_store_url": "https://remedymatch.com/remedies/245-pure--natural-msm-lotion",
    "ingredients": [
     {
-     "name": "Triple UV Filtered Deionized Water (Aqua)",
+     "name": "Triple UV Treated Deionized Water",
      "dose": ""
     },
     {
@@ -3858,56 +3888,70 @@
      "dose": "10%"
     },
     {
-     "name": "Fatty Acid Esters from Coconut (Cocos nucifera) Pulp",
+     "name": "Fatty Acid Esters (plant derived emulsifier)",
      "dose": ""
     },
     {
-     "name": "Organic Coconut (Cocos nucifera) Oil",
+     "name": "Organic Vegetable Glycerin",
      "dose": ""
     },
     {
-     "name": "Usnea (Usnea spp.) Extract",
+     "name": "Organic Apricot Kernel Oil",
      "dose": ""
     },
     {
-     "name": "Organic Comfrey (Symphytum officinale) Root Extract",
+     "name": "Organic Sweet Almond Oil",
      "dose": ""
     },
     {
-     "name": "Calendula (Calendula officinalis) Flower Extract",
+     "name": "Usnea Extract",
      "dose": ""
     },
     {
-     "name": "Organic Jojoba (Simmondsia chinensis) Oil",
+     "name": "Calendula Flower Extract",
      "dose": ""
     },
     {
-     "name": "Manuka (Leptospermum scoparium) Honey",
+     "name": "Organic Aloe Vera Extract 200:1",
      "dose": ""
     },
     {
-     "name": "Shea (Vitellaria paradoxa) Butter",
+     "name": "Vitamin E (d-alpha-tocopherol)",
      "dose": ""
     },
     {
-     "name": "Organic Aloe (Aloe vera) Extract 200:1",
+     "name": "Vitamin C (Ascorbic Acid)",
      "dose": ""
     },
     {
-     "name": "Vitamin C (L-Ascorbic Acid)",
+     "name": "Vitamin D3 (cholecalciferol)",
      "dose": ""
     },
     {
-     "name": "Natural Vitamin E (d-Alpha Tocopherol)",
+     "name": "Grapefruit Seed Extract",
      "dose": ""
     },
     {
-     "name": "Tea Tree (Melaleuca alternifolia) Essential Oil",
-     "dose": "100%"
+     "name": "100% Pure Tea Tree Oil",
+     "dose": ""
     }
    ],
-   "ingredients_source": "store-recovery-2026-06-08",
-   "miron_glass": false
+   "ingredients_source": "label-photo-2026-09-26",
+   "miron_glass": false,
+   "directions": "",
+   "intro": "An unscented MSM lotion for face and body, in an 8 fluid ounce bottle. It is made with 10% Opti-MSM, organic apricot kernel oil, organic sweet almond oil, organic vegetable glycerin, calendula flower extract, usnea extract and organic aloe vera extract. It also contains vitamins C, D3 and E, grapefruit seed extract and tea tree oil.",
+   "description": "An unscented MSM lotion for face and body, in an 8 fluid ounce bottle. It is made with 10% Opti-MSM, organic apricot kernel oil, organic sweet almond oil, organic vegetable glycerin, calendula flower extract, usnea extract and organic aloe vera extract. It also contains vitamins C, D3 and E, grapefruit seed extract and tea tree oil.\n\nContents: 8 fl oz.",
+   "learn_markdown": "## Ingredients as printed on the label\n\nTriple UV Treated Deionized Water, Opti-MSM® 10% (Methylsulfonylmethane), Fatty Acid Esters (plant derived emulsifier), Organic Vegetable Glycerin, Organic Apricot Kernel Oil, Organic Sweet Almond Oil, Usnea Extract, Calendula Flower Extract, Organic Aloe Vera Extract 200:1, Vitamin E (d-alpha-tocopherol), Vitamin C (Ascorbic Acid), Vitamin D3 (cholecalciferol), Grapefruit Seed Extract and 100% Pure Tea Tree Oil.",
+   "how_it_works": "",
+   "copy_pinned": [
+    "ingredients",
+    "intro",
+    "description",
+    "research",
+    "benefits"
+   ],
+   "fmp_id": "89",
+   "bottle_type": "own-box"
   },
   "neem-oil-rollon": {
    "name": "Neem Oil Roll-On",
