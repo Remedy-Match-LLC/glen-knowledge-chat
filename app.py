@@ -25277,6 +25277,8 @@ def client_portal_page(token):
     resp.headers["Pragma"] = "no-cache"
     if not _client_login_enabled() or token == "me":
         return resp
+    if _is_staff_request():
+        return resp     # staff never get the client's sign-in cookie (staff-guard spec)
 
     # A durable portal link is already an authentication credential. Bridge it
     # to the same short-lived browser session used by /portal/me so relative
@@ -25340,10 +25342,12 @@ def api_client_portal(token):
             portal = _portal_record_for(cx, token)
     if not portal:
         return jsonify({"error": "not found"}), 404
+    _staff_view = _is_staff_request()
     try:
         from dashboard import notify_state as _ns
-        with _db_lock, db.connect(LOG_DB) as _cxe:
-            _ns.mark_engaged(_cxe, (portal.get("email") or ""))
+        if not _staff_view:          # a staff visit is not the client engaging
+            with _db_lock, db.connect(LOG_DB) as _cxe:
+                _ns.mark_engaged(_cxe, (portal.get("email") or ""))
     except Exception as e:
         print(f"[engaged] {e!r}", flush=True)
     _request_timing_checkpoint("engaged")
@@ -25989,6 +25993,9 @@ def api_client_portal(token):
         except Exception as _e:
             print(f"[eye-vision-report/payload] {_e!r}", flush=True)
     _request_timing_checkpoint("optional_tail")
+    if _staff_view:
+        payload["staff_view"] = {"client": (portal.get("name") or "").strip()
+                                 or (portal.get("email") or "").split("@")[0]}
     return jsonify(payload)
 
 
@@ -32966,9 +32973,16 @@ def coach_thread_member_get():
         email, pair = _member_thread_ctx(cx, request.args.get("token", ""))
         if email is None or pair is None:
             return jsonify({"error": "not_found"}), 404
-        t = _ct.get_or_create_thread(cx, coach_email=pair["coach_email"], member_email=email)
-        _ct.mark_read(cx, t["id"], "member")
         vol = _cd.get_volunteer(cx, pair["coach_email"]) or {}
+        if _is_staff_request():
+            # Staff read without creating the thread or clearing the member's unread.
+            t = _ct.thread_for_pair(cx, pair["coach_email"], email)
+            if t is None:
+                return jsonify({"coach_name": vol.get("name") or "Your coach",
+                                "status": "active", "can_post": True, "messages": []})
+        else:
+            t = _ct.get_or_create_thread(cx, coach_email=pair["coach_email"], member_email=email)
+            _ct.mark_read(cx, t["id"], "member")
         blocked = t["status"] == "blocked"
         return jsonify({"coach_name": vol.get("name") or "Your coach", "status": t["status"],
                         "can_post": not blocked,
@@ -33240,7 +33254,8 @@ def peer_state():
         if opted and not eligible:
             # Self-heal: a member who downgraded leaves the pool on their next visit.
             # (The matcher already excludes non-paid candidates; this keeps the record clean.)
-            _pc.set_optin(cx, email, False)
+            if not _is_staff_request():
+                _pc.set_optin(cx, email, False)
             opted = False
         has_prop = bool(eligible and opted and _pc.next_candidate(cx, email, is_paid=_is_paid_member))
         return jsonify({"eligible": eligible, "opted_in": opted, "has_proposal": has_prop})
@@ -33412,7 +33427,8 @@ def peer_thread_get(thread_id):
         t, role = _peer_thread_role(cx, thread_id, ident.email)
         if role is None:
             return jsonify({"error": "forbidden"}), 403
-        _ct.mark_read(cx, thread_id, role)
+        if not _is_staff_request():
+            _ct.mark_read(cx, thread_id, role)
         other = t["member_email"] if role == "coach" else t["coach_email"]
         blocked = t["status"] == "blocked"
         return jsonify({"other_first_name": _peer_first_name(cx, other), "status": t["status"],
