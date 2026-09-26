@@ -33,7 +33,7 @@ def test_dry_run_changes_nothing(tmp_path):
     before = _rows(cx)
     out = pbr.fix_scan_names_in_reports(cx)
     assert out["rows"] == 3
-    assert [c["scan_date"] for c in out["changed"]] == ["2026-06-01"]
+    assert [c["scan_date"] for c in out["changed"]] == ["2026-06-01", "2026-07-01"]
     assert [c["scan_date"] for c in out["left_for_glen"]] == ["2026-07-01"]
     assert _rows(cx) == before
 
@@ -49,7 +49,9 @@ def test_apply_rewrites_only_the_content_of_affected_rows(tmp_path):
     assert content["layers"][0]["meaning"] == "as corroborated by your Bioenergetic Wellness Scan."
     assert after["2026-06-01"][1:] == before["2026-06-01"][1:]      # status, updated_at kept
     assert after["2026-09-01"] == before["2026-09-01"]
-    assert after["2026-07-01"] == before["2026-07-01"]              # Five Element left alone
+    five = json.loads(after["2026-07-01"][0])["narrative"]         # Glen's renamed, bare left
+    assert five == "Your Five Element Voice Analysis showed Water. The voice scan also showed Kidney."
+    assert after["2026-07-01"][1:] == before["2026-07-01"][1:]
 
 
 def test_apply_twice_is_a_no_op(tmp_path):
@@ -81,12 +83,12 @@ def test_route_is_owner_only_dry_run_by_default_and_leaves_the_portal_alone(clie
     url = "/admin/portal/biofield-reports/fix-scan-names"
     assert c.post(url, json={}).status_code == 401
     dry = c.post(url, json={}, headers={"X-Console-Key": SECRET}).get_json()
-    assert dry["applied"] is False and dry["changed"] == 1 and dry["left_for_glen"] == 1
+    assert dry["applied"] is False and dry["changed"] == 2 and dry["left_for_glen"] == 1
     for truthy in ("true", 1, "yes"):
         assert c.post(url, json={"apply": truthy},
                       headers={"X-Console-Key": SECRET}).get_json()["applied"] is False
     done = c.post(url, json={"apply": True}, headers={"X-Console-Key": SECRET}).get_json()
-    assert done["applied"] is True and done["changed"] == 1
+    assert done["applied"] is True and done["changed"] == 2
     cx = sqlite3.connect(appmod.LOG_DB)
     assert cx.execute("SELECT content_json, updated_at FROM client_portals").fetchall() == portal_before
 

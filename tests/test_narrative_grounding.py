@@ -58,9 +58,11 @@ def test_bare_voice_scan_and_voice_analysis_are_renamed():
     assert ng.fix_scan_names("Bioenergetic Voice Analysis") == "Bioenergetic Wellness Scan"
 
 
-def test_five_element_voice_scan_is_left_alone():
+def test_five_element_voice_scan_is_renamed_to_glens_new_name_not_e4ls():
+    # Glen, 2026-09-26: his instrument is now the Five Element Voice Analysis.
     t = "Glen's Five Element Voice Scan and the five element voice scan"
-    assert ng.fix_scan_names(t) == t
+    assert ng.fix_scan_names(t) == (
+        "Glen's Five Element Voice Analysis and the five element Voice Analysis")
 
 
 def test_no_voice_scan_survives_in_any_case():
@@ -196,9 +198,8 @@ def test_herb_common_names_match_their_label_names():
     assert probs == []
 
 
-def test_five_elements_plural_keeps_its_name():
-    t = "the Five Elements Voice Scan"
-    assert ng.fix_scan_names(t) == t
+def test_five_elements_plural_becomes_the_voice_analysis():
+    assert ng.fix_scan_names("the Five Elements Voice Scan") == "the Five Elements Voice Analysis"
 
 
 # ── blind review round 1, accuracy reviewer, 2026-09-25 ─────────────────────
@@ -292,10 +293,13 @@ def test_common_botanicals_are_seen_without_a_catalog_label():
         assert _chk(f"B17 Max provides {herb}.", ["B17 Max"], ing) != [], herb
 
 
-def test_five_element_voice_scan_survives_formatting():
-    for t in ("Your **Five Element** Voice Scan", "the Five Element\nVoice Scan",
-              "the Five Elements' Voice Scan", "Glen's own voice scan (Five Element)"):
-        assert ng.fix_scan_names(t) == t, t
+def test_five_element_voice_scan_is_recognised_however_formatted():
+    for t, want in (("Your **Five Element** Voice Scan", "Your **Five Element** Voice Analysis"),
+                    ("the Five Element\nVoice Scan", "the Five Element\nVoice Analysis"),
+                    ("the Five Elements' Voice Scan", "the Five Elements' Voice Analysis"),
+                    ("Glen's own voice scan (Five Element)", "Glen's own Voice Analysis (Five Element)")):
+        assert ng.fix_scan_names(t) == want, t
+        assert "Bioenergetic" not in ng.fix_scan_names(t)
 
 
 def test_plural_voice_scans_stay_plural():
@@ -414,8 +418,9 @@ def test_a_two_product_row_is_checked_product_by_product():
 
 def test_a_bare_voice_scan_beside_the_five_element_scan_is_left_for_glen():
     t = "Your Five Element Voice Scan showed Water weakness. The voice scan also showed a weak Kidney tone."
-    assert ng.fix_scan_names(t) == t
-    assert ng.scan_name_problems(t) != []
+    assert ng.fix_scan_names(t) == ("Your Five Element Voice Analysis showed Water weakness. "
+                                    "The voice scan also showed a weak Kidney tone.")
+    assert any("Still says 'voice scan'" in p for p in ng.scan_name_problems(ng.fix_scan_names(t)))
     assert ng.scan_name_problems("The voice scan showed it.") != []   # renamed, and flagged when saved
 
 
@@ -427,7 +432,8 @@ def test_saved_voice_scan_wording_is_flagged_in_any_case():
               "as corroborated by your recent voice scan.", "Your recent E4L Voice Scan"):
         assert any("Bioenergetic Wellness Scan" in p for p in ng.scan_name_problems(t)), t
     assert ng.scan_name_problems("Your Bioenergetic Wellness Scan showed it.") == []
-    assert ng.scan_name_problems("Your Five Element Voice Scan showed it.") == []
+    assert ng.scan_name_problems("Your Five Element Voice Analysis showed it.") == []
+    assert ng.scan_name_problems("Your Five Element Voice Scan showed it.") != []   # old name
 
 
 # ── portal report review round 3, 2026-09-26 ────────────────────────────────
@@ -447,3 +453,19 @@ def test_voice_scanning_is_left_and_reported():
     for t in ("during E4L voice scanning we saw", "during voice scanning we saw"):
         assert ng.fix_scan_names(t) == t
         assert any("voice scanning" in p for p in ng.scan_name_problems(t)), t
+
+
+
+# Glen, 2026-09-26: "Update name to Five Element Voice Analysis."
+def test_five_element_voice_scan_becomes_five_element_voice_analysis():
+    for t, want in (("Your Five Element Voice Scan showed Water.",
+                     "Your Five Element Voice Analysis showed Water."),
+                    ("Your **Five Element** Voice Scan", "Your **Five Element** Voice Analysis"),
+                    ("the Five Elements' Voice Scan", "the Five Elements' Voice Analysis")):
+        assert ng.fix_scan_names(t) == want, t
+        assert ng.scan_name_problems(want) == [], want
+
+
+def test_bioenergetic_voice_analysis_is_still_e4ls_scan():
+    assert ng.fix_scan_names("Your Bioenergetic Voice Analysis agrees.") == (
+        "Your Bioenergetic Wellness Scan agrees.")

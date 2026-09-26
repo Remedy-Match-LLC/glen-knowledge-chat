@@ -1559,7 +1559,7 @@ function buildHubHtml(d, v){
   const understandTiles = [
     ["current", "My Analysis", "Your current scan, matches and healing path", undefined,
       progressFor("biofield", "Complete your Biofield Analysis", "Review your latest analysis")],
-    ["voice", "Five Element Voice Scan", "Hear what your current voice pattern is expressing"],
+    ["voice", "Five Element Voice Analysis", "Hear what your current voice pattern is expressing"],
     ["intake", "My Intake", "Build or continue your clinical health profile", undefined,
       progressFor("intake", "Complete your health intake", "Review or update your intake")],
   ];
@@ -3829,7 +3829,7 @@ let _fiveVoiceStream = null;
 let _fiveVoiceChunks = [];
 let _fiveVoiceStartedAt = 0;
 let _fiveVoiceTimerId = null;
-// Glen, 2026-09-18: the Five Element Voice Scan asks for about a minute. Stop stays
+// Glen, 2026-09-18: the Five Element Voice Analysis asks for about a minute. Stop stays
 // unavailable for the first 20 seconds, the timer points at 60, and 90 is the hard stop.
 const FIVE_VOICE_MIN_S = 20, FIVE_VOICE_TARGET_S = 60, FIVE_VOICE_MAX_S = 90;
 
@@ -4272,7 +4272,7 @@ function render(d, v){
   if (_hub) { _askHtml += _askCard; } else { part(null, _askCard); }
 
   const _fiveVoiceCard = `<div class="card" id="fiveElementVoiceCard">
-    <h2>Your Five Element Voice Scan</h2>
+    <h2>Your Five Element Voice Analysis</h2>
     <p class="muted small" style="margin:.3rem 0 .7rem">Speak naturally for about a minute about how you have been feeling. Your words, pacing, and pauses are mapped across Wood, Fire, Earth, Metal, and Water.</p>
     <p class="small"><strong>Try this:</strong> “What has been taking most of my energy lately, and how does that feel in my body?”</p>
     <div class="five-voice-actions">

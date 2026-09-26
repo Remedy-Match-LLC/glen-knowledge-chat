@@ -211,7 +211,7 @@ def fix_scan_names_in_reports(cx, *, apply=False):
 
     A row is written only if its content is unchanged since it was read, so another
     session's edit mid-run is never reverted; such rows are counted as "raced". A report
-    that names the Five Element Voice Scan anywhere keeps every bare "voice scan" and
+    that names the Five Element Voice Analysis (once "Voice Scan") anywhere keeps every bare "voice scan" and
     is listed for Glen. Returns {"rows", "changed", "left_for_glen", "raced", "skipped"};
     each item is {"id", "scan_date", "status", "fields"}: no email, no text."""
     from dashboard.narrative_grounding import fix_scan_names, scan_name_problems

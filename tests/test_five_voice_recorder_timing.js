@@ -1,7 +1,7 @@
 // tests/test_five_voice_recorder_timing.js
 // Run: node tests/test_five_voice_recorder_timing.js
 //
-// Glen, 2026-09-18, for the Five Element Voice Scan in the client portal:
+// Glen, 2026-09-18, for the Five Element Voice Analysis (then "Voice Scan") in the client portal:
 //   1. Stop is unavailable for the first 20 seconds.
 //   2. The timer reads "Ns, about 60s".
 //   3. The recording still stops itself at 90 seconds.

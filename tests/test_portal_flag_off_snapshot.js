@@ -43,6 +43,7 @@
 //   node tests/test_portal_flag_off_snapshot.js --write-snapshot /tmp/aaa78c42.html
 //   Regenerated 2026-09-18 for the scan-name rename (PR #1739). The diff was five
 //   lines, each "5-Element Voice Analysis" to "Five Element Voice Scan", nothing else.
+//   2026-09-26: the same lines became "Five Element Voice Analysis" (Glen's rename).
 //   Regenerated again 2026-09-18: "30 to 90 seconds" to "about a minute", per Glen.
 const assert = require('assert');
 const fs = require('fs');

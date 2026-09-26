@@ -54,6 +54,9 @@ _SCAN_NAME_PATTERNS = [
 ]
 # Glen's own instrument, however it is formatted: "**Five Element** Voice Scan",
 # "Five Elements' Voice Scan", a line break between, or "voice scan (Five Element)".
+# Glen, 2026-09-26: it is now the Five Element Voice ANALYSIS, so only Energy4Life's is
+# ever a scan. Its old "Voice Scan" wording is renamed to that, never to E4L's name.
+FIVE_ELEMENT_NAME = "Voice Analysis"
 _FIVE_BEFORE = re.compile(r"(?:five|5)[\s-]*elements?['\u2019]?[\s*_'\u2019]*$", re.IGNORECASE)
 _FIVE_AFTER = re.compile(r"^[\s*_]*\(?\s*(?:five|5)[\s-]*element", re.IGNORECASE)
 
@@ -74,7 +77,9 @@ def _sentence_around(m, text):
 
 def _rename(m, text, bare=False, five_context=False):
     if _is_five_element(m, text):
-        return m.group(0)
+        # "Five Element Voice Scan" -> "Five Element Voice Analysis". Only a bare
+        # "voice scan" match reaches here; the E4L-qualified forms never sit beside it.
+        return FIVE_ELEMENT_NAME if bare else m.group(0)
     # "Your Bioenergetic Wellness Scan (E4L voice scan)" would read the name twice.
     # Left as written, and reported by scan_name_problems.
     if WELLNESS_SCAN.lower() in _sentence_around(m, text).lower():
@@ -91,12 +96,13 @@ def scan_name_problems(text):
     """Scan names a client must not read. Any wording fix_scan_names would change is
     reported, so a letter saved or edited by hand is caught on save and page load, not
     only at generation (clinical, 2026-09-25: 29 of 37 saved letters said "voice scan").
-    A bare "voice scan" beside the Five Element Voice Scan is left for Glen to name."""
+    A bare "voice scan" beside the Five Element Voice Analysis is left for Glen to name."""
     out = []
     text = text or ""
     fixed = fix_scan_names(text)
     if fixed != text:
-        out.append(f"Says 'voice scan'; E4L's scan is the {WELLNESS_SCAN}.")
+        out.append(f"Uses an old scan name. E4L's is the {WELLNESS_SCAN}; Glen's own is "
+                   f"the Five Element Voice Analysis.")
     # Whatever the rename leaves behind still needs a person: beside the Five Element
     # scan, a doubled name, or "voice scanning" (review, 2026-09-26).
     for m in _ANY_VOICE.finditer(fixed):
@@ -110,7 +116,8 @@ _ANY_VOICE = re.compile(r"\bvoice[\s-]+(?:scans?|scanning|analys[ie]s)\b", re.IG
 
 def fix_scan_names(text, five_context=False):
     """Every name for E4L's scan becomes the Bioenergetic Wellness Scan. Glen's own
-    Five Element Voice Scan is a different instrument and keeps its name.
+    instrument is renamed from "Five Element Voice Scan" to the Five Element Voice
+    Analysis (Glen, 2026-09-26), never to E4L's name.
     five_context: the surrounding document names the Five Element scan somewhere else,
     so a bare "voice scan" here is left for Glen too (a report spans many fields)."""
     out = text or ""
