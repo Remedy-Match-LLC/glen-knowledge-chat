@@ -283,3 +283,33 @@ def test_the_home_page_sections_fold(live):
         assert all(g["toggle"] for g in got), got
         assert not any(g["folded"] for g in got), got
         b.close()
+
+
+def test_messages_card_has_a_box_folds_and_opens_on_a_reply(live):
+    """Glen, 2026-09-26: 'Messages & Order Help' had no input and no fold control. With
+    the shell on, the real composer (#chatInput) lives at the top of the page, so the card
+    gets its own box that sends through it: one #chatInput only. The card folds, and a
+    reply opens it again, so no answer lands out of sight (review round 2)."""
+    base, token, _ = live
+    with sync_playwright() as p:
+        b = p.chromium.launch()
+        page = b.new_page()
+        _open(page, f"{base}/portal/{token}")
+        page.evaluate("() => showTab('ask')")
+        page.wait_for_selector("#chatCardInput", state="visible")
+        assert page.locator("#chatInput").count() == 1
+        card = page.locator("#chatCard")
+        assert card.locator(":scope > .card-fold").count() == 1
+        # the card's box hands its text to the real composer and sends it
+        page.evaluate("() => { window.__sent = []; window.sendChatMessage = () => "
+                      "window.__sent.push(document.getElementById('chatInput').value); }")
+        page.fill("#chatCardInput", "Where is my order?")
+        page.click("#chatCardSend")
+        assert page.evaluate("() => window.__sent") == ["Where is my order?"]
+        assert page.input_value("#chatCardInput") == ""
+        # folded, then a reply arrives: the card opens and the bubble is visible
+        page.click("#chatCard > .card-fold")
+        assert "is-folded" in card.get_attribute("class")
+        page.evaluate("() => appendChatBubble('assistant', 'Your order shipped.')")
+        assert "is-folded" not in card.get_attribute("class")
+        b.close()

@@ -52,10 +52,15 @@ def test_live_events_card_is_skipped():
 
 
 
-def test_the_chat_card_never_folds():
-    """Review round 2: a folded chat card hid the client's question and its answer."""
+def test_the_chat_card_folds_opens_first_and_reopens_on_a_reply():
+    """Review round 2: a folded chat card hid the client's question and its answer, so it
+    was skipped. Glen, 2026-09-26: every card folds. It now folds, opens on a first visit,
+    and chatThreadHost opens it before adding a bubble (browser test covers the last)."""
     page = (ROOT / "static" / "client-portal.html").read_text()
-    assert re.search(r'id="chatCard"[^>]*data-fold-skip="1"|data-fold-skip="1"[^>]*id="chatCard"', page)
+    assert 'id="chatCard" data-fold-open="1"' in page
+    assert not re.search(r'id="chatCard"[^>]*data-fold-skip', page)
+    host = page[page.index("function chatThreadHost(reveal){"):]
+    assert '_foldOpenCard("chatCard")' in host[:host.index("\n}")]
 
 
 

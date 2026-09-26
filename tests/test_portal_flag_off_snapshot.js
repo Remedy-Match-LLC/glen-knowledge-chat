@@ -47,6 +47,8 @@
 //   Regenerated again 2026-09-18: "30 to 90 seconds" to "about a minute", per Glen.
 //   Regenerated 2026-09-26 for portal folding (PR #1828): 102 lines, each differing
 //   only by data-fold-id / data-fold-open / data-fold-skip attributes, nothing else.
+//   Regenerated 2026-09-26 again: the Messages card's data-fold-skip became
+//   data-fold-open (10 lines, that attribute only).
 const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
