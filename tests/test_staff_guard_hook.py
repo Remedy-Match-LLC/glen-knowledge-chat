@@ -4,6 +4,7 @@ Spec: docs/superpowers/specs/2026-09-26-portal-staff-guard-design.md
 Each guarded route's view function is swapped for a recorder, so "nothing ran" is
 checked directly: no booking, no email, no Zoom and no Stripe call can happen when the
 view itself never runs."""
+import re
 import sqlite3
 
 import pytest
@@ -140,3 +141,29 @@ def test_garbage_key_is_not_staff(client, monkeypatch):
     r = c.post("/api/onboarding/book", json={}, headers=_staff(key="not-a-real-key"))
     assert r.status_code == 200
     assert len(calls) == 1
+
+
+def test_every_background_pattern_matches_a_real_route(client):
+    """A pattern that matches no route silently turns a background write into a dialog."""
+    _, appmod = client
+    from dashboard import staff_guard as sg
+    posts = [re.sub(r"<[^>]+>", "X", r.rule) for r in appmod.app.url_map.iter_rules()
+             if {"POST", "PUT"} & set(r.methods or ())]
+    for pat in sg.BACKGROUND + sg.EXEMPT:
+        assert any(pat.search(p) for p in posts), f"{pat.pattern} matches no POST/PUT route"
+
+
+def test_expired_staff_view_page_is_refused_not_run(client, monkeypatch):
+    """A tab loaded as staff whose staff credential has since lapsed must not act as the
+    client. The page marks itself; the server refuses without running."""
+    c, appmod = client
+    tok = _seed_portal(appmod)
+    calls = _record(monkeypatch, appmod, f"/api/portal/{tok}/chat")
+    h = {**PV, "X-Portal-Staff-View": "1"}
+    r = c.post(f"/api/portal/{tok}/chat", json={}, headers=h)
+    assert r.status_code == 409
+    assert r.get_json() == {"staff_expired": True}
+    assert calls == []
+    bg = _record(monkeypatch, appmod, f"/api/portal/{tok}/process-request")
+    assert c.post(f"/api/portal/{tok}/process-request", json={}, headers=h).status_code == 204
+    assert bg == []

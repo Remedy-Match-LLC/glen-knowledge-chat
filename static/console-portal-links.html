@@ -111,7 +111,7 @@
     if(!portalTab){ note.innerHTML = '<span class="err">Pop-up blocked. Allow pop-ups and try again.</span>'; return; }
     portalTab.opener = null;
     try {
-      var r = await fetch('/api/console/portal-link?email='+encodeURIComponent(email), { headers: hdr() });
+      var r = await fetch('/api/console/portal-link?staff_open=1&email='+encodeURIComponent(email), { headers: hdr() });
       var j = await r.json();
       if(!r.ok || !j.ok || !j.found){
         portalTab.close();

@@ -159,7 +159,7 @@ async function api(method, path, body){
 
 async function viewClientPortal(email){
   var win = window.open('about:blank', '_blank');
-  var r = await api('GET', '/api/console/portal-link?email=' + encodeURIComponent(email || ''));
+  var r = await api('GET', '/api/console/portal-link?staff_open=1&email=' + encodeURIComponent(email || ''));
   if(r.ok && r.json && r.json.found && r.json.link){ win.location = r.json.link; return; }
   if(win) win.close();
   alert('No client portal exists for this email yet. Publish the portal first.');

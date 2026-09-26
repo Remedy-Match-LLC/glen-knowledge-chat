@@ -81,6 +81,7 @@ GUARD_SOURCE
   await fetch('/api/portal/T/chat', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: '{}'});
   assert.strictEqual(sent[0].headers.get('X-Portal-View'), '1');
   assert.strictEqual(sent[0].headers.get('Content-Type'), 'application/json');
+  assert.strictEqual(sent[0].headers.get('X-Portal-Staff-View'), null);
 
   // 1b. a cross-origin request is never tagged (a custom header would force a CORS preflight)
   sent = [];
@@ -164,6 +165,21 @@ GUARD_SOURCE
   assert.strictEqual(banners[0].textContent,
     "You are viewing Mel Palmer's portal as staff. Anything you do here asks first.");
   assert.strictEqual(document.body.firstChild, banners[0]);
+
+  // 8. a staff-view page marks its requests, and a lapsed staff view is refused, not run
+  sent = []; replies = [{status: 409, body: {staff_expired: true}}];
+  r = await fetch('/api/onboarding/book', {method: 'POST', body: '{}'});
+  assert.strictEqual(sent[0].headers.get('X-Portal-Staff-View'), '1');
+  assert.strictEqual(r.status, 409);
+  assert.strictEqual(sent.length, 1);
+  const notice = dialogs();
+  assert.strictEqual(notice.length, 1);
+  const ntxt = walk(notice[0], []).map(n => n.textContent).join(' | ');
+  assert.ok(ntxt.includes('Your staff view has expired'), ntxt);
+  assert.ok(ntxt.includes('Open the portal again from the console'), ntxt);
+  assert.strictEqual(byClass('staff-confirm-go'), undefined);
+  byClass('staff-confirm-cancel').click();
+  assert.strictEqual(dialogs().length, 0);
   console.log('OK');
 })().catch(e => { console.error(e); process.exit(1); });
 """
@@ -207,3 +223,17 @@ def test_every_portal_write_goes_through_fetch():
             for m in re.finditer(pat, src, re.I):
                 found.append(f"{path.name}: {src[m.start():m.start() + 60]!r}")
     assert found == [], "\n".join(found)
+
+
+CONSOLE = ROOT / "static"
+
+
+def test_console_open_buttons_ask_for_a_staff_pass():
+    """Only the buttons that OPEN a portal tab ask for a pass. The copy-to-send link box
+    must not, or the client would be put into staff view (review rounds 1 and 2)."""
+    for name in ("console-client.html", "console-biofield-reveals.html"):
+        assert "staff_open=1" in (CONSOLE / name).read_text(), name
+    links = (CONSOLE / "console-portal-links.html").read_text()
+    assert links.count("staff_open=1") == 1
+    at = links.find("staff_open=1")
+    assert "Opening portal" in links[max(0, at - 1200):at]

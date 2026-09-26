@@ -9,8 +9,6 @@ from dashboard import staff_guard as sg
     ("POST", "/api/portal/T/cards/abc/open", "background"),
     ("POST", "/api/portal/T/process-request", "background"),
     ("POST", "/api/intake/save-draft", "background"),
-    ("POST", "/api/portal/T/recommendation-section", "background"),
-    ("POST", "/api/portal/T/eye-vision-state", "background"),
     ("POST", "/api/portal/T/scene-pref", "background"),
     ("POST", "/api/onboarding/book", "guard"),
     ("POST", "/api/portal/T/chat", "guard"),
@@ -41,3 +39,33 @@ def test_describe(path, needle):
 
 def test_describe_without_a_name():
     assert sg.describe("/api/portal/T/chat", "") == "This sends a chat message as the client."
+
+
+# Review round 1, 2026-09-26: two background patterns matched no real route, and some
+# wording understated what a route does.
+@pytest.mark.parametrize("method,path,want", [
+    ("POST", "/api/portal/T/recommendation/section", "background"),
+    ("POST", "/api/portal/T/eye-vision-report/state", "background"),
+    ("POST", "/api/portal/T/recommendation/click", "background"),
+    ("POST", "/chat/tts", "exempt"),
+    ("POST", "/portal/logout", "exempt"),
+    ("POST", "/api/portal/T/recommendation/accept", "guard"),
+    ("POST", "/api/portal/T/eye-vision-report/request-review", "guard"),
+])
+def test_classify_real_routes(method, path, want):
+    assert sg.classify(method, path) == want
+
+
+@pytest.mark.parametrize("path,needle", [
+    ("/api/portal/T/appointment-proposals/4/confirm", "confirms an appointment for Mel and books it"),
+    ("/api/portal/T/appointment-proposals/4/messages", "sends an appointment request or reply to the team"),
+    ("/api/portal/T/pay-consent", "lets a caregiver pay Mel's orders"),
+    ("/api/peer/optin", "changes Mel's peer connection setting"),
+    ("/api/peer-thread/3/block", "blocks or reports a member as Mel"),
+    ("/api/coach-thread/member/report", "blocks or reports a member as Mel"),
+    ("/api/portal/T/request-analysis", "sends Mel's request for an analysis to the team"),
+    ("/api/portal/T/remedies/request-review", "sends Mel's request for a review to the team"),
+    ("/api/portal/T/recommendation/dismiss", "changes Mel's recommendations"),
+])
+def test_describe_says_what_happens(path, needle):
+    assert needle in sg.describe(path, "Mel")

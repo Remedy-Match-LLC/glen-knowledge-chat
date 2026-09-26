@@ -25364,7 +25364,7 @@ def api_client_portal(token):
     # re-point below), since the browsing session belongs to the account holder,
     # not whichever household member they may be viewing. Flag-gated + best-effort:
     # a merge failure must never break the portal load.
-    if _WISHLIST_ENABLED and email_for_reports:
+    if _WISHLIST_ENABLED and email_for_reports and not _staff_view:
         try:
             import sqlite3 as _wsq
             from dashboard import wishlist as _wl
@@ -34311,8 +34311,10 @@ def api_console_portal_link():
         link, reissued = _cp.portal_link_for(cx, email, portal_base())
     if not link:
         return jsonify({"ok": True, "found": False, "email": email})
-    if _is_staff_request():
+    if request.args.get("staff_open") == "1" and _is_staff_request():
         # A one-time staff pass, so the portal's own domain knows staff are viewing.
+        # Only for the console's own "open portal" tab: the plain link is the one staff
+        # copy and send to the client, and a pass in it would put the client in staff view.
         link += ("&" if "?" in link else "?") + "sp=" + _mint_staff_pass(email)
     return jsonify({"ok": True, "found": True, "email": email,
                     "link": link, "reissued": reissued})
@@ -42230,7 +42232,9 @@ def _mint_staff_pass(email):
 
 def _redeem_staff_pass(token, sp):
     """Consume a pass for THIS portal, set rm_staff_view, and redirect to the same address
-    without the pass. A bad pass sets nothing and still strips itself from the address."""
+    without the pass. A bad pass (used, expired, another portal's, or a database error)
+    fails closed: a short page that says to reopen from the console, with no cookie of
+    any kind. Loading the portal instead would put a staff browser in client mode."""
     from urllib.parse import urlencode
     from dashboard import client_portal as _cp
     rest = [(k, v) for k, v in request.args.items(multi=True) if k != "sp"]
@@ -42256,7 +42260,19 @@ def _redeem_staff_pass(token, sp):
                             secure=request.is_secure, samesite="Lax")
         print(f"[staff-pass] redeemed={ok}", flush=True)
     except Exception as e:
+        ok = False
         print(f"[staff-pass] {e!r}", flush=True)
+    if not ok:
+        page = ("<!doctype html><meta charset=utf-8><meta name=robots content=noindex>"
+                "<meta name=viewport content='width=device-width, initial-scale=1'>"
+                "<title>Staff link expired</title><body style='font-family:sans-serif;"
+                "max-width:34rem;margin:3rem auto;padding:0 16px;line-height:1.5'>"
+                "<h1>This staff link has expired</h1><p>A staff link works once, for 10 "
+                "minutes. Open the portal again from the console.</p></body>")
+        from flask import make_response as _mkresp
+        bad = _mkresp(page, 200)
+        bad.headers["Cache-Control"] = "private, no-store, max-age=0"
+        return bad
     return resp
 
 
@@ -42274,7 +42290,8 @@ def _is_staff_request():
     if (CONSOLE_SECRET and key == CONSOLE_SECRET) or (
             _dash.CONSOLE_SECRET and key == _dash.CONSOLE_SECRET):
         return True
-    return _role_for_token(key) is not None
+    # Owners (Rae) first, then any other role: VAs count as staff here too.
+    return _owner_token_ok(key) or _role_for_token(key) is not None
 
 
 @app.before_request
@@ -42355,8 +42372,17 @@ def _portal_staff_guard():
         return None
     from dashboard import staff_guard as _sg
     kind = _sg.classify(request.method, request.path or "")
-    if kind in ("pass", "exempt") or not _is_staff_request():
+    if kind in ("pass", "exempt"):
         return None
+    if not _is_staff_request():
+        if request.headers.get("X-Portal-Staff-View") != "1":
+            return None
+        # The page was loaded as a staff view, but its staff credential has since lapsed
+        # (the 12-hour cookie, or a rotated secret). Fail closed rather than act as the
+        # client. Only a page that received staff_view sends this header.
+        if kind == "background":
+            return "", 204
+        return jsonify({"staff_expired": True}), 409
     if kind == "background":
         return "", 204
     if request.headers.get("X-Staff-Confirmed") == "1":

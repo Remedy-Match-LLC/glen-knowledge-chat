@@ -37,7 +37,8 @@ def _seed_portal(appmod, email="brooke@example.com", name="Brooke Webb"):
 
 
 def _pass_for(c, email="brooke@example.com"):
-    r = c.get(f"/api/console/portal-link?email={email}", headers={"X-Console-Key": SECRET})
+    r = c.get(f"/api/console/portal-link?email={email}&staff_open=1",
+              headers={"X-Console-Key": SECRET})
     assert r.status_code == 200, r.get_data(as_text=True)
     link = r.get_json()["link"]
     return parse_qs(urlparse(link).query)["sp"][0]
@@ -65,6 +66,26 @@ def test_console_link_carries_a_pass(client):
     assert len(_pass_for(c)) >= 20
 
 
+def test_link_for_sending_to_the_client_carries_no_pass(client):
+    """The console's copy box sends this link to the client. A pass in it would put the
+    client into staff view (review rounds 1 and 2, 2026-09-26)."""
+    c, appmod = client
+    _seed_portal(appmod)
+    r = c.get("/api/console/portal-link?email=brooke@example.com",
+              headers={"X-Console-Key": SECRET})
+    assert "sp=" not in r.get_json()["link"]
+    with sqlite3.connect(appmod.LOG_DB) as cx:
+        n = cx.execute("SELECT COUNT(*) FROM auth_tokens WHERE purpose='staff_view_pass'").fetchone()[0]
+    assert n == 0
+
+
+def _refused_page(r):
+    assert r.status_code == 200
+    assert "Open the portal again from the console" in r.get_data(as_text=True)
+    assert "rm_staff_view=" not in _cookies(r)
+    assert "rm_portal_session" not in _cookies(r)
+
+
 def test_pass_sets_staff_cookie_strips_itself_and_gives_no_client_session(client):
     c, appmod = client
     tok = _seed_portal(appmod)
@@ -83,8 +104,7 @@ def test_pass_works_once(client):
     sp = _pass_for(c)
     c.get(f"/portal/{tok}?sp={sp}")
     c2 = appmod.app.test_client()
-    r = c2.get(f"/portal/{tok}?sp={sp}")
-    assert "rm_staff_view=" not in _cookies(r)
+    _refused_page(c2.get(f"/portal/{tok}?sp={sp}"))
 
 
 def test_expired_pass_sets_nothing(client):
@@ -94,8 +114,7 @@ def test_expired_pass_sets_nothing(client):
     with sqlite3.connect(appmod.LOG_DB) as cx:
         cx.execute("UPDATE auth_tokens SET expires_at='2000-01-01T00:00:00+00:00' "
                    "WHERE purpose='staff_view_pass'")
-    r = c.get(f"/portal/{tok}?sp={sp}")
-    assert "rm_staff_view=" not in _cookies(r)
+    _refused_page(c.get(f"/portal/{tok}?sp={sp}"))
 
 
 def test_pass_for_another_portal_sets_nothing(client):
@@ -103,8 +122,7 @@ def test_pass_for_another_portal_sets_nothing(client):
     _seed_portal(appmod)
     other = _seed_portal(appmod, email="kai@example.com", name="Kai")
     sp = _pass_for(c)                         # minted for brooke
-    r = c.get(f"/portal/{other}?sp={sp}")
-    assert "rm_staff_view=" not in _cookies(r)
+    _refused_page(c.get(f"/portal/{other}?sp={sp}"))
 
 
 def test_staff_cookie_alone_makes_portal_writes_ask_and_shows_banner(client, monkeypatch):

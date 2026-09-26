@@ -140,3 +140,16 @@ def test_peer_state_self_heal_only_for_the_client(client, monkeypatch, headers, 
         r = c.get("/api/peer/state?token=t", headers=headers)
     assert r.status_code == 200
     assert so.called is want_called
+
+
+@pytest.mark.parametrize("headers,want_called", [(STAFF, False), ({}, True)])
+def test_wishlist_merge_only_for_the_client(client, monkeypatch, headers, want_called):
+    """Staff's own anonymous shop wishlist must not merge into the client's (round 1)."""
+    c, appmod = client
+    tok = _seed_portal(appmod)
+    calls = []
+    monkeypatch.setattr(appmod, "_WISHLIST_ENABLED", True)
+    monkeypatch.setattr(appmod, "_wishlist_merge_with_self", lambda *a, **k: calls.append(a))
+    c.set_cookie("amg_session", "anon-shop-session")
+    assert c.get(f"/api/portal/{tok}", headers=headers).status_code == 200
+    assert bool(calls) is want_called

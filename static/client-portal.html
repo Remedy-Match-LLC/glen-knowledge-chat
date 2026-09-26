@@ -69,9 +69,42 @@
     });
   };
 
+  // A lapsed staff view is refused by the server (409 staff_expired). Say so, once.
+  window._staffExpired = function(){
+    try {
+      if (document.getElementById("staffExpired")) return;
+      var box = document.createElement("div");
+      box.className = "staff-confirm";
+      box.id = "staffExpired";
+      box.setAttribute("role", "dialog");
+      box.setAttribute("aria-modal", "true");
+      var panel = document.createElement("div");
+      panel.className = "staff-confirm-panel";
+      var head = document.createElement("h2");
+      head.textContent = "Your staff view has expired";
+      var what = document.createElement("p");
+      what.textContent = "Nothing was changed. Open the portal again from the console.";
+      var close = document.createElement("button");
+      close.type = "button"; close.className = "btn staff-confirm-cancel";
+      close.textContent = "Close";
+      close.addEventListener("click", function(){
+        if (box.parentNode) box.parentNode.removeChild(box);
+      });
+      var row = document.createElement("div");
+      row.className = "staff-confirm-actions";
+      row.appendChild(close);
+      panel.appendChild(head); panel.appendChild(what); panel.appendChild(row);
+      box.appendChild(panel);
+      document.body.appendChild(box);
+      close.focus();
+    } catch(e){}
+  };
+
   window._staffBanner = function(d){
     var sv = d && d.staff_view;
-    if (!sv || document.getElementById("staffBanner")) return;
+    if (!sv) return;
+    window._staffViewActive = true;      // this page was loaded as a staff view
+    if (document.getElementById("staffBanner")) return;
     var b = document.createElement("div");
     b.id = "staffBanner";
     b.className = "staff-banner";
@@ -88,12 +121,15 @@
     var base = opts.headers || (input && typeof input === "object" && input.headers) || undefined;
     var headers = new Headers(base);
     headers.set("X-Portal-View", "1");
+    if (window._staffViewActive) headers.set("X-Portal-Staff-View", "1");
     opts.headers = headers;
     return _fetch(input, opts).then(function(resp){
       if (resp.status !== 409) return resp;
-      return resp.clone().json().then(function(j){ return j && j.staff_confirm; },
+      return resp.clone().json().then(function(j){ return j || null; },
                                       function(){ return null; })
-        .then(function(info){
+        .then(function(j){
+          if (j && j.staff_expired){ window._staffExpired(); return resp; }
+          var info = j && j.staff_confirm;
           if (!info) return resp;
           var asked = _turn.then(function(){ return window._staffConfirm(info); });
           _turn = asked.then(function(){}, function(){});
