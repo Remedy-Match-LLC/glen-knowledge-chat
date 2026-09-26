@@ -26,6 +26,25 @@ per-user access token of any role, or the console login cookie. This is wider th
 `_portal_open_is_owner()`, which leaves out VA tokens. A VA must not act as a client
 unannounced either.
 
+### The staff pass, because the portal lives on another domain
+
+Added 2026-09-26, approved by Glen ("approved"). The console opens a portal on
+`PORTAL_BASE_URL` (myhealingoasis.com). The console login cookie belongs to illtowell.com, and a
+browser never sends it to the portal domain. Without a bridge, a staff browser inside the portal
+looks exactly like the client.
+
+- `GET /api/console/portal-link` adds `sp=<pass>` to the link it returns. The pass is random,
+  stored hashed in `auth_tokens` with purpose `staff_view_pass`, bound to that portal's email,
+  valid 10 minutes, and usable once.
+- `GET /portal/<token>?sp=<pass>` consumes a valid pass for that portal and answers 302 to the
+  same address without `sp`. It sets `rm_staff_view`: a signed, httponly, host-only cookie that
+  lasts 12 hours. An invalid, used, expired or mismatched pass is ignored, and the page loads as
+  it would for anyone holding the link.
+- A valid `rm_staff_view` cookie makes a request a staff request, for this guard only.
+- The cookie can only restrict: it makes the browser ask first, skip background writes, skip
+  the client sign-in cookie and show the banner. It opens no console route and reads nothing.
+- The cookie is signed with `CONSOLE_SECRET`, so rotating the secret voids every copy.
+
 Staff folds are the one exception. They write the staff member's own fold record, never the
 client's, so they need no confirmation.
 
@@ -157,6 +176,9 @@ The banner cannot be dismissed. It sits above the shell composer and does not co
 9. A VA token counts as staff.
 10. Browser check: staff open a portal, see the banner, and click a booking slot. The dialog
     shows the booking description. Cancel leaves nothing booked, and "Do it" books once.
+12. Staff pass: the console link carries `sp`. Opening it sets `rm_staff_view` and strips `sp`.
+    A second use, an expired pass, or a pass for another portal sets nothing. With the cookie,
+    a portal write gets 409 and the banner shows, with no console key present.
 11. Coverage check: every non-GET `fetch(` in the portal page and its scripts goes through the
     wrapper. The wrapper is installed before any other script runs.
 
