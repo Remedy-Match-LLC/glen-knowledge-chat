@@ -2447,5 +2447,49 @@
     "description": "MSM Coconut Rose Lotion is a naturally scented MSM lotion for face and body, in an 8 fluid ounce bottle. It is made with 10% OptiMSM, organic coconut oil, organic jojoba oil, shea butter, manuka honey, comfrey root extract, calendula flower extract, usnea extract and organic aloe vera extract. It also contains vitamins C and E, tea tree oil and natural scents.\n\nContents: 8 fl oz.",
     "directions": "",
     "note": "Transcribed from bottle photos. INCI-style list with no amounts, so dose is blank except the printed MSM 10%."
+  },
+  "adrenal-syntropy": {
+    "ingredients": [
+      {
+        "name": "7-Keto (7-Ketodehydroepiandrosterone)",
+        "dose": "5 mg"
+      },
+      {
+        "name": "Fat Soluble Vitamin C (Ascorbyl Palmitate)",
+        "dose": "60 mg"
+      },
+      {
+        "name": "D-Ribose",
+        "dose": "200 mg"
+      },
+      {
+        "name": "Diosgenin (Dioscorea villosa)",
+        "dose": "8 mg"
+      },
+      {
+        "name": "Rosavins 3%, Salidrosides 1% (Rhodiola rosea)",
+        "dose": "20 mg"
+      },
+      {
+        "name": "Huang Bai 20:1 (Phellodendron chinense)",
+        "dose": "20 mg"
+      },
+      {
+        "name": "Honokiol 50% (Magnolia officinalis)",
+        "dose": "20 mg"
+      },
+      {
+        "name": "Macamides 60% (Lepidium meyenii)",
+        "dose": "80 mg"
+      },
+      {
+        "name": "Mogroside V 80% (Siraitia grosvenorii)",
+        "dose": "3 mg"
+      }
+    ],
+    "ingredients_source": "label-read-2026-09-26",
+    "description": "Each scoop of Adrenal Syntropy Sublingual Powder combines 7-keto DHEA with fat-soluble vitamin C and D-ribose. Its botanical extracts are diosgenin, rhodiola, huang bai, honokiol and macamides, lightly sweetened with mogroside V. Take 1 scoop daily dissolved in mouth and held under tongue, or as guided.\n\nOther ingredients: Healing Energy, Love and Prayer. 30 g, about 60 scoops.",
+    "directions": "1 scoop daily dissolved in mouth and held under tongue, or as guided.",
+    "note": "Glen's bottle photos, label (c) August 2024, read 2026-09-26"
   }
 }
