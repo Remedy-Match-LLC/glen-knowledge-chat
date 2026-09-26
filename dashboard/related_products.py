@@ -41,7 +41,9 @@ def resolve_related(base_slug, *, manual, harvested, semantic, products, cap=12)
     reasons = {}
     for entry in manual:
         s = _entry_slug(entry)
-        if s and s != base_slug and s not in seen and s in products:
+        # A hand pick still obeys the never-recommend list (Glen's standing rule: listed
+        # and sold, never volunteered; production found none of it enforced here).
+        if s and s != base_slug and s not in seen and s in products and s not in DO_NOT_RECOMMEND:
             seen.add(s)
             featured_manual.append(s)
             r = _entry_reason(entry)

@@ -9337,7 +9337,10 @@ def begin_product_page_data(slug):
                                 in_miron=_miron)
     # A service gets no "Dr. Glen recommends" box: on the EVOX page it recommended ED10
     # Skin Driver. A related-services list would be new copy, so none is shown yet.
-    if _RELATED_PRODUCTS_ENABLED and not _is_service:
+    # Nor does a never-recommend product: a box headed "Dr. Glen recommends" on the
+    # Electrolyte Mineral Manna page reads as recommending it (production, 2026-09-26).
+    from dashboard.related_products import DO_NOT_RECOMMEND as _NEVER_REC
+    if _RELATED_PRODUCTS_ENABLED and not _is_service and slug not in _NEVER_REC:
         try:
             from dashboard import related_products as _rp, related_store as _rstore
             _prods = _PRODUCTS.get("products") or {}
