@@ -19,7 +19,7 @@ function historicalValue(value) {
 function renderHistoricalIntakes(payload) {
   var items = (payload && payload.items) || [];
   if (!items.length) {
-    return '<div class="card quiet"><h2>Past Intake</h2>' +
+    return '<div class="card quiet" data-fold-id="health-past-intake-list"><h2>Past Intake</h2>' +
       '<p class="muted">No reviewed historical intake records are available yet.</p></div>';
   }
   var cards = items.map(function (item) {
@@ -33,7 +33,7 @@ function renderHistoricalIntakes(payload) {
         escapeHistorical(field.label) + '</span>' + changed + '</div><p class="health-value">' +
         historicalValue(field.value) + '</p>' + copy + '</div>';
     }).join('');
-    return '<article class="card historical-intake" data-snapshot-id="' + escapeHistorical(item.id) + '">' +
+    return '<article class="card historical-intake" data-snapshot-id="' + escapeHistorical(item.id) + '" data-fold-id="historical-intake-' + escapeHistorical(item.id) + '">' +
       '<p class="eyebrow">Imported historical record</p><h2>' + escapeHistorical(item.form_name) + '</h2>' +
       '<p class="muted small">Completed ' + escapeHistorical(item.form_date || 'date unavailable') +
       ' · Source: ' + escapeHistorical(item.source_label) + '</p>' +
