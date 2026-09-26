@@ -1034,14 +1034,15 @@
    "intro": "Each vegicap of Lens Zyme combines vitamin B3 from nicotinamide riboside, B5 and E with zinc carnosine, NAC, MSM, EDTA, N-acetyl L-carnosine and glutathione. Botanical extracts are lutein, anthocyanidins, trans-pterostilbene, honokiol and TECA. Enzyme factors are yeast enzyme extract, SOD and catalase, with a blend that aids absorption. Take 1 to 3 capsules daily between meals, or as guided.",
    "description": "Other ingredients: Phthalate-Free Enteric Vegicaps, Healing Energy, Love and Prayer. 30 vegicaps per bottle.",
    "learn_markdown": "Each vegicap of Lens Zyme combines vitamin B3 from nicotinamide riboside, B5 and E with zinc carnosine, NAC, MSM, EDTA, N-acetyl L-carnosine and glutathione. Botanical extracts are lutein, anthocyanidins, trans-pterostilbene, honokiol and TECA. Enzyme factors are yeast enzyme extract, SOD and catalase, with a blend that aids absorption. Take 1 to 3 capsules daily between meals, or as guided.\n\nEach vegicap contains: Vitamin B3 (from Nicotinamide Riboside) 20 mg; Vitamin B5 (as Calcium Pantothenate) 10 mg; Vitamin E (D-Alpha Tocopherol Succinate) 30 IU; Zinc (as Zinc Carnosine) 5 mg; NAC (N-Acetyl-Cysteine) 20 mg; MSM (Methylsulfonylmethane) 30 mg; L-Carnosine (from Zinc Carnosine) 16.7 mg; EDTA (Calcium Disodium EDTA) 10 mg; N-Acetyl L-Carnosine 25 mg; Glutathione (S-Acetyl & Reduced GSH) 25 mg; Lutein 80% (Tagetes spp.) 10 mg; Anthocyanidins 25% (Vaccinium myrtillus) 10 mg; Trans-Pterostilbene (Vaccinium cyanococcus) 10 mg; Honokiol 50% (Magnolia officinalis) 10 mg; TECA (Centella asiatica) 5 mg; Yeast Enzyme Extract (80,000 units) 200 mg; SOD (Superoxide Dismutase) 62,200 units 20 mg; Catalase 2000 FIP 20 mg; Bioavailability Blend (34.5 mg): Lipid Solubility: Phosphatides 50% (Helianthus annuus). Mucosa Integrity/Mineral Transport: Humic & Fulvic Acids. Nutrient Absorption: Moringa 100:1 (Moringa oleifera), Gingerol 10% (Zingiber officinale), Piperine (Piper nigrum). Vascular Delivery: EGb 761 (Ginkgo biloba) (24%, 6%, <0.0005%), Vitamin B3 (as Niacin) 5 mg, Vinpocetine (Vinca minor). Entourage Effect: Licorice Omnipotent (Glycyrrhiza glabra). Regulation of Healing: Spirit Minerals (ORMUS).",
-   "how_it_works": "Each vegicap of Lens Zyme combines vitamin B3 from nicotinamide riboside, B5 and E with zinc carnosine, NAC, MSM, EDTA, N-acetyl L-carnosine and glutathione. Botanical extracts are lutein, anthocyanidins, trans-pterostilbene, honokiol and TECA. Enzyme factors are yeast enzyme extract, SOD and catalase, with a blend that aids absorption. Take 1 to 3 capsules daily between meals, or as guided.\n\nEach vegicap contains: Vitamin B3 (from Nicotinamide Riboside) 20 mg; Vitamin B5 (as Calcium Pantothenate) 10 mg; Vitamin E (D-Alpha Tocopherol Succinate) 30 IU; Zinc (as Zinc Carnosine) 5 mg; NAC (N-Acetyl-Cysteine) 20 mg; MSM (Methylsulfonylmethane) 30 mg; L-Carnosine (from Zinc Carnosine) 16.7 mg; EDTA (Calcium Disodium EDTA) 10 mg; N-Acetyl L-Carnosine 25 mg; Glutathione (S-Acetyl & Reduced GSH) 25 mg; Lutein 80% (Tagetes spp.) 10 mg; Anthocyanidins 25% (Vaccinium myrtillus) 10 mg; Trans-Pterostilbene (Vaccinium cyanococcus) 10 mg; Honokiol 50% (Magnolia officinalis) 10 mg; TECA (Centella asiatica) 5 mg; Yeast Enzyme Extract (80,000 units) 200 mg; SOD (Superoxide Dismutase) 62,200 units 20 mg; Catalase 2000 FIP 20 mg; Bioavailability Blend (34.5 mg): Lipid Solubility: Phosphatides 50% (Helianthus annuus). Mucosa Integrity/Mineral Transport: Humic & Fulvic Acids. Nutrient Absorption: Moringa 100:1 (Moringa oleifera), Gingerol 10% (Zingiber officinale), Piperine (Piper nigrum). Vascular Delivery: EGb 761 (Ginkgo biloba) (24%, 6%, <0.0005%), Vitamin B3 (as Niacin) 5 mg, Vinpocetine (Vinca minor). Entourage Effect: Licorice Omnipotent (Glycyrrhiza glabra). Regulation of Healing: Spirit Minerals (ORMUS).",
+   "how_it_works": "",
    "panel_note": "Bioavailability Blend contains: Lipid Solubility: Phosphatides 50% (Helianthus annuus). Mucosa Integrity/Mineral Transport: Humic & Fulvic Acids. Nutrient Absorption: Moringa 100:1 (Moringa oleifera), Gingerol 10% (Zingiber officinale), Piperine (Piper nigrum). Vascular Delivery: EGb 761 (Ginkgo biloba) (24%, 6%, <0.0005%), Vitamin B3 (as Niacin) 5 mg, Vinpocetine (Vinca minor). Entourage Effect: Licorice Omnipotent (Glycyrrhiza glabra). Regulation of Healing: Spirit Minerals (ORMUS).",
    "directions": "1 to 3 capsules daily between meals, or as guided.",
    "copy_pinned": [
     "ingredients",
     "intro",
     "description",
-    "research"
+    "research",
+    "benefits"
    ]
   },
   "medicinal-mushrooms": {
@@ -2066,14 +2067,15 @@
    "fmp_id": "364",
    "intro": "Each vegicap of Moisturize combines vitamin A as retinyl acetate, vitamin E as mixed tocopherols and astaxanthin. It adds phytoceramides 1% (Amorphophallus konjac) and a 300 mg polyphenol formula of catechins 80% and anthocyanidins 25%. Take 1 capsule up to 3 times daily with food or as guided.",
    "learn_markdown": "Each vegicap of Moisturize combines vitamin A as retinyl acetate, vitamin E as mixed tocopherols and astaxanthin. It adds phytoceramides 1% (Amorphophallus konjac) and a 300 mg polyphenol formula of catechins 80% and anthocyanidins 25%. Take 1 capsule up to 3 times daily with food or as guided.\n\nEach vegicap contains: Vitamin A (Retinyl Acetate) 5000 IU; Vitamin E (as Mixed Tocopherols) 20 IU; Astaxanthin (Haematococcus pluvialis) 4 mg; Phytoceramides 1% (Amorphophallus konjac) 150 mg; Polyphenols (300 mg): Catechins 80% (Camellia sinensis), Anthocyanidins 25% (Aristotelia chilensis).",
-   "how_it_works": "Each vegicap of Moisturize combines vitamin A as retinyl acetate, vitamin E as mixed tocopherols and astaxanthin. It adds phytoceramides 1% (Amorphophallus konjac) and a 300 mg polyphenol formula of catechins 80% and anthocyanidins 25%. Take 1 capsule up to 3 times daily with food or as guided.\n\nEach vegicap contains: Vitamin A (Retinyl Acetate) 5000 IU; Vitamin E (as Mixed Tocopherols) 20 IU; Astaxanthin (Haematococcus pluvialis) 4 mg; Phytoceramides 1% (Amorphophallus konjac) 150 mg; Polyphenols (300 mg): Catechins 80% (Camellia sinensis), Anthocyanidins 25% (Aristotelia chilensis).",
+   "how_it_works": "",
    "panel_note": "Polyphenols (Proprietary Formula) contains: Catechins 80% (Camellia sinensis), Anthocyanidins 25% (Aristotelia chilensis).",
    "directions": "1 capsule up to 3 times daily with food or as guided.",
    "copy_pinned": [
     "ingredients",
     "intro",
     "description",
-    "research"
+    "research",
+    "benefits"
    ]
   },
   "vitality": {
@@ -2224,13 +2226,14 @@
    "intro": "Natural Resource A-Z is a liquid. It holds all amino acids, all cell salts, all glandulars, all Krebs cycle parts, DNA and RNA at 8X to 102X. It also holds Aloe socotrina, Angelica archangelica, Apis mellifica, Aralia quinquefolia, dimethylglycine, calcium ascorbate, Eugenia caryophyllata, GTF chromium, Medicago sativa and Ribes nigrum at 4X or 5X, with fulvic acid, humic acid and redox signalling molecules at 2X. Take 10 drops 3 times a day in water, or as guided.",
    "description": "Other ingredients: Terrain Restore, Love and Prayer. 50 mL per bottle, about 100 servings of 10 drops.",
    "learn_markdown": "Natural Resource A-Z is a liquid. It holds all amino acids, all cell salts, all glandulars, all Krebs cycle parts, DNA and RNA at 8X to 102X. It also holds Aloe socotrina, Angelica archangelica, Apis mellifica, Aralia quinquefolia, dimethylglycine, calcium ascorbate, Eugenia caryophyllata, GTF chromium, Medicago sativa and Ribes nigrum at 4X or 5X, with fulvic acid, humic acid and redox signalling molecules at 2X. Take 10 drops 3 times a day in water, or as guided.\n\nPer serving (10 drops): Aloe socotrina 4X; Amino Acids (all) 11X 14X 17X 32X; Angelica archangelica 4X; Apis mellifica 5X; Aralia quinquefolia 4X; Dimethylglycine 4X; Calcium Ascorbate 4X; Cell Salts (all) 8X 14X; DNA 32X 62X 102X; Eugenia caryophyllata 4X; Fulvic Acid 2X; Glandulars (all) 8X-32X; GTF Chromium 4X; Humic Acid 2X; Krebs Cycle parts (all) 14X 32X; Medicago sativa 4X; Redox Signalling Molecules 2X; Ribes nigrum 4X; RNA 32X 62X 102X.",
-   "how_it_works": "Natural Resource A-Z is a liquid. It holds all amino acids, all cell salts, all glandulars, all Krebs cycle parts, DNA and RNA at 8X to 102X. It also holds Aloe socotrina, Angelica archangelica, Apis mellifica, Aralia quinquefolia, dimethylglycine, calcium ascorbate, Eugenia caryophyllata, GTF chromium, Medicago sativa and Ribes nigrum at 4X or 5X, with fulvic acid, humic acid and redox signalling molecules at 2X. Take 10 drops 3 times a day in water, or as guided.\n\nPer serving (10 drops): Aloe socotrina 4X; Amino Acids (all) 11X 14X 17X 32X; Angelica archangelica 4X; Apis mellifica 5X; Aralia quinquefolia 4X; Dimethylglycine 4X; Calcium Ascorbate 4X; Cell Salts (all) 8X 14X; DNA 32X 62X 102X; Eugenia caryophyllata 4X; Fulvic Acid 2X; Glandulars (all) 8X-32X; GTF Chromium 4X; Humic Acid 2X; Krebs Cycle parts (all) 14X 32X; Medicago sativa 4X; Redox Signalling Molecules 2X; Ribes nigrum 4X; RNA 32X 62X 102X.",
+   "how_it_works": "",
    "directions": "10 drops 3 times a day in water, or as guided.",
    "copy_pinned": [
     "ingredients",
     "intro",
     "description",
-    "research"
+    "research",
+    "benefits"
    ]
   },
   "sulfur-syntropy": {
@@ -2846,13 +2849,14 @@
    "intro": "Off Syrup combines Malabar nut, licorice, holy basil, ginger, wild cherry, chebulic myrobalan, long pepper and raspberry with menthol, vegetable glycerine and honey. The base holds aqueous humic substances, Holy Grail Full Spectrum ORMUS, Quinton Ocean ORMUS & Trace Mineral Source and Manna ORMUS M-11. Take 10 drops as needed, or as guided.",
    "description": "50 mL per bottle, about 100 servings of 10 drops.",
    "learn_markdown": "Off Syrup combines Malabar nut, licorice, holy basil, ginger, wild cherry, chebulic myrobalan, long pepper and raspberry with menthol, vegetable glycerine and honey. The base holds aqueous humic substances, Holy Grail Full Spectrum ORMUS, Quinton Ocean ORMUS & Trace Mineral Source and Manna ORMUS M-11. Take 10 drops as needed, or as guided.\n\nIngredients: Aqueous Humic Substances 0.1%; Holy Grail Full Spectrum ORMUS 5C; Quinton Ocean ORMUS & Trace Mineral Source 3%; Manna ORMUS M-11 3%; Malabar nut (Adhatoda vasica) (folia); Licorice (Glycyrrhiza glabra) (radix); Holy Basil (Ocimum sanctum) (folia); Ginger (Zingiber officinale) (radix); Wild Cherry (Prunus serotina) (cortex); Chebulic Myrobalan (Terminalia chebula) (fructus); Long Pepper (Piper longum) (fructus); Raspberry (Rubus spp.) (fructus); Menthol; Vegetable Glycerine; Honey.",
-   "how_it_works": "Off Syrup combines Malabar nut, licorice, holy basil, ginger, wild cherry, chebulic myrobalan, long pepper and raspberry with menthol, vegetable glycerine and honey. The base holds aqueous humic substances, Holy Grail Full Spectrum ORMUS, Quinton Ocean ORMUS & Trace Mineral Source and Manna ORMUS M-11. Take 10 drops as needed, or as guided.\n\nIngredients: Aqueous Humic Substances 0.1%; Holy Grail Full Spectrum ORMUS 5C; Quinton Ocean ORMUS & Trace Mineral Source 3%; Manna ORMUS M-11 3%; Malabar nut (Adhatoda vasica) (folia); Licorice (Glycyrrhiza glabra) (radix); Holy Basil (Ocimum sanctum) (folia); Ginger (Zingiber officinale) (radix); Wild Cherry (Prunus serotina) (cortex); Chebulic Myrobalan (Terminalia chebula) (fructus); Long Pepper (Piper longum) (fructus); Raspberry (Rubus spp.) (fructus); Menthol; Vegetable Glycerine; Honey.",
+   "how_it_works": "",
    "directions": "10 drops as needed, or as guided.",
    "copy_pinned": [
     "ingredients",
     "intro",
     "description",
-    "research"
+    "research",
+    "benefits"
    ]
   },
   "clear-the-way": {
@@ -4716,7 +4720,8 @@
     "ingredients",
     "intro",
     "description",
-    "research"
+    "research",
+    "benefits"
    ]
   },
   "immune-modulation": {
@@ -4923,13 +4928,14 @@
    "fmp_id": "444",
    "intro": "MigraFree combines vitamins B1, B2, B6, biotin, folate, B12, C, D3 and E with coenzyme Q10, magnesium, chromium, selenium, glutathione, NAC and MSM. Botanical extracts include parthenolides, petasins, L-theanine, cilantro juice, withanolides, Passiflora flavones, tetrahydrocurcumin and curcumin, chlorella, geranium and full spectrum CBD. Phosphatides, EGb 761, niacin, moringa, licorice, vinpocetine, gingerol, piperine and humic and fulvic acids aid absorption. Take 1 to 3 capsules a day with food, or as guided.",
    "learn_markdown": "MigraFree combines vitamins B1, B2, B6, biotin, folate, B12, C, D3 and E with coenzyme Q10, magnesium, chromium, selenium, glutathione, NAC and MSM. Botanical extracts include parthenolides, petasins, L-theanine, cilantro juice, withanolides, Passiflora flavones, tetrahydrocurcumin and curcumin, chlorella, geranium and full spectrum CBD. Phosphatides, EGb 761, niacin, moringa, licorice, vinpocetine, gingerol, piperine and humic and fulvic acids aid absorption. Take 1 to 3 capsules a day with food, or as guided.\n\nEach vegicap contains: Vitamin B1 (Benfotiamine) 5 mg; Vitamin B2 R5P (Riboflavin 5-Phosphate) 50 mg; Vitamin B6 P5P (Pyridoxal 5-Phosphate) 5 mg; Vitamin B7 Biotin 1 mg; Vitamin B9 Folate (5-Methyltetrahydrofolate) 133 mcg; Vitamin B12 (Adenosylcobalamin) 600 mcg; Vitamin C (as Ascorbyl Palmitate) 20 mg; Vitamin D3 (Cholecalciferol) 600 IU; Vitamin E (mixed Tocopherols) 10 IU; Coenzyme Q10 (Ubiquinol) 5 mg; Magnesium (Threonate, Taurate & Malate) 8 mg; Chromium (GTF Chromium) 120 mcg; Selenium (Methylselenocysteine) 70 mcg; S-Acetyl Glutathione & Reduced Glutathione 10 mg; N-Acetyl Cysteine (NAC) 10 mg; MSM (Methylsulfonylmethane) 30 mg; Parthenolides 0.8% (Tanacetum parthenium) 50 mg; Petasins 15% (Petasites vulgaris) 50 mg; L-Theanine (Camellia sinensis) 10 mg; Cilantro juice (Coriandrum sativum) 10 mg; Withanolides 10% (Withania somnifera) 10 mg; Flavones 10% (Passiflora incarnata) 10 mg; Tetrahydrocurcumin & Curcumin (Curcuma longa) 10 mg; Chlorella (Chlorella spp.) (broken cell wall) 10 mg; Geranium 20:1 (Geranium maculatum) 10 mg; CBD Full Spectrum (Cannabis spp.) 1 mg; Vitamin B13: Phosphatides 50% (Helianthus annuus) 13 mg; EGb 761 (Ginkgo biloba) (24%/6%/<0.0005%) 8 mg; Vitamin B3 (as Niacin) 5 mg; Moringa 100:1 (Moringa oleifera) 3 mg; Licorice Omnipotent (Glycyrrhiza glabra) 2 mg; Vinpocetine (Vinca minor) 1 mg; Gingerol 40% (Zingiber officinale) & Piperine (Piper nigrum) 0.5 mg each; Humic & Fulvic Acids 0.5 mg each.",
-   "how_it_works": "MigraFree combines vitamins B1, B2, B6, biotin, folate, B12, C, D3 and E with coenzyme Q10, magnesium, chromium, selenium, glutathione, NAC and MSM. Botanical extracts include parthenolides, petasins, L-theanine, cilantro juice, withanolides, Passiflora flavones, tetrahydrocurcumin and curcumin, chlorella, geranium and full spectrum CBD. Phosphatides, EGb 761, niacin, moringa, licorice, vinpocetine, gingerol, piperine and humic and fulvic acids aid absorption. Take 1 to 3 capsules a day with food, or as guided.\n\nEach vegicap contains: Vitamin B1 (Benfotiamine) 5 mg; Vitamin B2 R5P (Riboflavin 5-Phosphate) 50 mg; Vitamin B6 P5P (Pyridoxal 5-Phosphate) 5 mg; Vitamin B7 Biotin 1 mg; Vitamin B9 Folate (5-Methyltetrahydrofolate) 133 mcg; Vitamin B12 (Adenosylcobalamin) 600 mcg; Vitamin C (as Ascorbyl Palmitate) 20 mg; Vitamin D3 (Cholecalciferol) 600 IU; Vitamin E (mixed Tocopherols) 10 IU; Coenzyme Q10 (Ubiquinol) 5 mg; Magnesium (Threonate, Taurate & Malate) 8 mg; Chromium (GTF Chromium) 120 mcg; Selenium (Methylselenocysteine) 70 mcg; S-Acetyl Glutathione & Reduced Glutathione 10 mg; N-Acetyl Cysteine (NAC) 10 mg; MSM (Methylsulfonylmethane) 30 mg; Parthenolides 0.8% (Tanacetum parthenium) 50 mg; Petasins 15% (Petasites vulgaris) 50 mg; L-Theanine (Camellia sinensis) 10 mg; Cilantro juice (Coriandrum sativum) 10 mg; Withanolides 10% (Withania somnifera) 10 mg; Flavones 10% (Passiflora incarnata) 10 mg; Tetrahydrocurcumin & Curcumin (Curcuma longa) 10 mg; Chlorella (Chlorella spp.) (broken cell wall) 10 mg; Geranium 20:1 (Geranium maculatum) 10 mg; CBD Full Spectrum (Cannabis spp.) 1 mg; Vitamin B13: Phosphatides 50% (Helianthus annuus) 13 mg; EGb 761 (Ginkgo biloba) (24%/6%/<0.0005%) 8 mg; Vitamin B3 (as Niacin) 5 mg; Moringa 100:1 (Moringa oleifera) 3 mg; Licorice Omnipotent (Glycyrrhiza glabra) 2 mg; Vinpocetine (Vinca minor) 1 mg; Gingerol 40% (Zingiber officinale) & Piperine (Piper nigrum) 0.5 mg each; Humic & Fulvic Acids 0.5 mg each.",
+   "how_it_works": "",
    "directions": "1 to 3 capsules a day with food, or as guided.",
    "copy_pinned": [
     "ingredients",
     "intro",
     "description",
-    "research"
+    "research",
+    "benefits"
    ]
   },
   "macular-wellness-safranal": {
@@ -5135,13 +5141,14 @@
    "intro": "Energessence is a liquid. It holds Aloe socotrina, Amygdala amara, bee and flower pollen, Ginkgo biloba, Hydrocotyle asiatica, Laminaria, Medicago sativa, RNA-DNA from yeast, royal jelly, Symphytum officinale and zinc monomethionine at 3X to 7X. The base is 5 ppm low deuterium water, alkaline antioxidant molecular hydrogen microwater, Quinton Ocean ORMUS & Trace Mineral Source, Manna ORMUS M-11, aqueous humic and fulvic substances and Holy Grail Full Spectrum ORMUS 5C. Take 1 dropper in mouth 30 minutes before meals, or as guided.",
    "description": "50 mL per bottle, about 100 servings of 10 drops.",
    "learn_markdown": "Energessence is a liquid. It holds Aloe socotrina, Amygdala amara, bee and flower pollen, Ginkgo biloba, Hydrocotyle asiatica, Laminaria, Medicago sativa, RNA-DNA from yeast, royal jelly, Symphytum officinale and zinc monomethionine at 3X to 7X. The base is 5 ppm low deuterium water, alkaline antioxidant molecular hydrogen microwater, Quinton Ocean ORMUS & Trace Mineral Source, Manna ORMUS M-11, aqueous humic and fulvic substances and Holy Grail Full Spectrum ORMUS 5C. Take 1 dropper in mouth 30 minutes before meals, or as guided.\n\nPer serving (10 drops): Aloe socotrina 3X; Amygdala amara 4X; Bee & Flower Pollen (Secale cereale) 3X; Ginkgo biloba 3X; Hydrocotyle asiatica 3X; Laminaria 4X; Medicago sativa 4X; RNA-DNA from Yeast 3X; Royal Jelly 4X; Symphytum officinale 4X; Zinc Monomethionine 7X; 5 ppm Low Deuterium Water 50%; Alkaline Antioxidant Molecular Hydrogen Microwater 44%; Quinton Ocean ORMUS & Trace Mineral Source 3%; Manna ORMUS M-11 3%; Aqueous Humic & Fulvic Substances 0.1%; Holy Grail Full Spectrum ORMUS 5C.",
-   "how_it_works": "Energessence is a liquid. It holds Aloe socotrina, Amygdala amara, bee and flower pollen, Ginkgo biloba, Hydrocotyle asiatica, Laminaria, Medicago sativa, RNA-DNA from yeast, royal jelly, Symphytum officinale and zinc monomethionine at 3X to 7X. The base is 5 ppm low deuterium water, alkaline antioxidant molecular hydrogen microwater, Quinton Ocean ORMUS & Trace Mineral Source, Manna ORMUS M-11, aqueous humic and fulvic substances and Holy Grail Full Spectrum ORMUS 5C. Take 1 dropper in mouth 30 minutes before meals, or as guided.\n\nPer serving (10 drops): Aloe socotrina 3X; Amygdala amara 4X; Bee & Flower Pollen (Secale cereale) 3X; Ginkgo biloba 3X; Hydrocotyle asiatica 3X; Laminaria 4X; Medicago sativa 4X; RNA-DNA from Yeast 3X; Royal Jelly 4X; Symphytum officinale 4X; Zinc Monomethionine 7X; 5 ppm Low Deuterium Water 50%; Alkaline Antioxidant Molecular Hydrogen Microwater 44%; Quinton Ocean ORMUS & Trace Mineral Source 3%; Manna ORMUS M-11 3%; Aqueous Humic & Fulvic Substances 0.1%; Holy Grail Full Spectrum ORMUS 5C.",
+   "how_it_works": "",
    "directions": "1 dropper in mouth 30 minutes before meals, or as guided.",
    "copy_pinned": [
     "ingredients",
     "intro",
     "description",
-    "research"
+    "research",
+    "benefits"
    ]
   },
   "flow-ease": {
@@ -5320,14 +5327,15 @@
    "fmp_id": "484",
    "intro": "DHT Blocker combines vitamin A, biotin, folate as 5-MTHF and vitamin E with copper, iodine, selenium, silica, MSM and zinc. Botanical factors include pygeum, MCT, saw palmetto, quercetin, trans-resveratrol, puerarin, DIM, curcumin and tetrahydrocurcumin, green tea polyphenols, reishi, asiaticosides and silymarin. A blend that aids absorption completes the formula. Take 1 to 2 capsules a day with food, or as guided.",
    "learn_markdown": "DHT Blocker combines vitamin A, biotin, folate as 5-MTHF and vitamin E with copper, iodine, selenium, silica, MSM and zinc. Botanical factors include pygeum, MCT, saw palmetto, quercetin, trans-resveratrol, puerarin, DIM, curcumin and tetrahydrocurcumin, green tea polyphenols, reishi, asiaticosides and silymarin. A blend that aids absorption completes the formula. Take 1 to 2 capsules a day with food, or as guided.\n\nEach vegicap contains: Vitamin A (Acetate) 900 mcg (3000 IU); Vitamin B7: Biotin 30 mcg; Vitamin B9: Folate (5-MTHF) 400 mcg; Vitamin E (D-alpha-Tocopherol Succinate) 15 mg; Copper (Copper Glycinate) 450 mcg; Iodine (from Laminaria digitata) 150 mcg; Selenium (Methylselenocysteine) 100 mcg; Silica 70% (Bambusa spp.) 10 mg; Sulfur: MSM (Methylsulfonylmethane) 20 mg; Zinc (Zinc Malate) 10 mg; Pygeum (Pygeum africanum) (cortex) 15 mg; MCT (Cocos nucifera) 20 mg; Saw Palmetto 10:1 (Serenoa repens) 40 mg; Quercetin Dihydrate (Sophora japonica) 20 mg; Trans-Resveratrol (Polygonum cuspidatum) 80 mg; Puerarin (Pueraria lobata) 15 mg; DIM (Diindolylmethane) (Brassica oleracea) 20 mg; Curcumin & Tetrahydrocurcumin (Curcuma longa) 20 mg; Polyphenols (Camellia sinensis) 20 mg; Reishi 30:1 (Ganoderma lucidum) 20 mg; Asiaticosides (Centella asiatica) 20 mg; Silymarin 80% (Silybum marianum) 20 mg; Bioavailability Blend (34.5 mg): Lipid Solubility: Phosphatides 50% (Helianthus annuus). Mucosa Integrity/Mineral Transport: Humic & Fulvic Acids. Nutrient Absorption: Moringa 100:1 (Moringa oleifera), Gingerol 10% (Zingiber officinale), Piperine (Piper nigrum). Vascular Delivery: EGb 761 (Ginkgo biloba) (24%, 6%, <0.0005%), Vitamin B3 (as Niacin) 5 mg, Vinpocetine (Vinca minor). Entourage Effect: Licorice Omnipotent (Glycyrrhiza glabra). Regulation of Healing: Spirit Minerals (ORMUS).",
-   "how_it_works": "DHT Blocker combines vitamin A, biotin, folate as 5-MTHF and vitamin E with copper, iodine, selenium, silica, MSM and zinc. Botanical factors include pygeum, MCT, saw palmetto, quercetin, trans-resveratrol, puerarin, DIM, curcumin and tetrahydrocurcumin, green tea polyphenols, reishi, asiaticosides and silymarin. A blend that aids absorption completes the formula. Take 1 to 2 capsules a day with food, or as guided.\n\nEach vegicap contains: Vitamin A (Acetate) 900 mcg (3000 IU); Vitamin B7: Biotin 30 mcg; Vitamin B9: Folate (5-MTHF) 400 mcg; Vitamin E (D-alpha-Tocopherol Succinate) 15 mg; Copper (Copper Glycinate) 450 mcg; Iodine (from Laminaria digitata) 150 mcg; Selenium (Methylselenocysteine) 100 mcg; Silica 70% (Bambusa spp.) 10 mg; Sulfur: MSM (Methylsulfonylmethane) 20 mg; Zinc (Zinc Malate) 10 mg; Pygeum (Pygeum africanum) (cortex) 15 mg; MCT (Cocos nucifera) 20 mg; Saw Palmetto 10:1 (Serenoa repens) 40 mg; Quercetin Dihydrate (Sophora japonica) 20 mg; Trans-Resveratrol (Polygonum cuspidatum) 80 mg; Puerarin (Pueraria lobata) 15 mg; DIM (Diindolylmethane) (Brassica oleracea) 20 mg; Curcumin & Tetrahydrocurcumin (Curcuma longa) 20 mg; Polyphenols (Camellia sinensis) 20 mg; Reishi 30:1 (Ganoderma lucidum) 20 mg; Asiaticosides (Centella asiatica) 20 mg; Silymarin 80% (Silybum marianum) 20 mg; Bioavailability Blend (34.5 mg): Lipid Solubility: Phosphatides 50% (Helianthus annuus). Mucosa Integrity/Mineral Transport: Humic & Fulvic Acids. Nutrient Absorption: Moringa 100:1 (Moringa oleifera), Gingerol 10% (Zingiber officinale), Piperine (Piper nigrum). Vascular Delivery: EGb 761 (Ginkgo biloba) (24%, 6%, <0.0005%), Vitamin B3 (as Niacin) 5 mg, Vinpocetine (Vinca minor). Entourage Effect: Licorice Omnipotent (Glycyrrhiza glabra). Regulation of Healing: Spirit Minerals (ORMUS).",
+   "how_it_works": "",
    "panel_note": "Bioavailability Blend contains: Lipid Solubility: Phosphatides 50% (Helianthus annuus). Mucosa Integrity/Mineral Transport: Humic & Fulvic Acids. Nutrient Absorption: Moringa 100:1 (Moringa oleifera), Gingerol 10% (Zingiber officinale), Piperine (Piper nigrum). Vascular Delivery: EGb 761 (Ginkgo biloba) (24%, 6%, <0.0005%), Vitamin B3 (as Niacin) 5 mg, Vinpocetine (Vinca minor). Entourage Effect: Licorice Omnipotent (Glycyrrhiza glabra). Regulation of Healing: Spirit Minerals (ORMUS).",
    "directions": "1 to 2 capsules a day with food, or as guided.",
    "copy_pinned": [
     "ingredients",
     "intro",
     "description",
-    "research"
+    "research",
+    "benefits"
    ]
   },
   "longevity": {
@@ -6130,13 +6138,14 @@
    "qty_pricing": true,
    "intro": "Sanctuary C60 combines C60 (Buckminster fullerenes) with Pacific Ocean ORMUS, Monatomic Rose Gold ORMUS, Phinheas Manna M11 ORMUS and black seed oil (Nigella sativa). Take up to 10 drops 2 times a day.",
    "learn_markdown": "Sanctuary C60 combines C60 (Buckminster fullerenes) with Pacific Ocean ORMUS, Monatomic Rose Gold ORMUS, Phinheas Manna M11 ORMUS and black seed oil (Nigella sativa). Take up to 10 drops 2 times a day.\n\nIngredients: C60 (Buckminster Fullerenes); Pacific Ocean ORMUS; Monatomic Rose Gold ORMUS; Phinheas Manna M11 ORMUS; Black Seed Oil (Nigella sativa).",
-   "how_it_works": "Sanctuary C60 combines C60 (Buckminster fullerenes) with Pacific Ocean ORMUS, Monatomic Rose Gold ORMUS, Phinheas Manna M11 ORMUS and black seed oil (Nigella sativa). Take up to 10 drops 2 times a day.\n\nIngredients: C60 (Buckminster Fullerenes); Pacific Ocean ORMUS; Monatomic Rose Gold ORMUS; Phinheas Manna M11 ORMUS; Black Seed Oil (Nigella sativa).",
+   "how_it_works": "",
    "directions": "Up to 10 drops 2 times a day.",
    "copy_pinned": [
     "ingredients",
     "intro",
     "description",
-    "research"
+    "research",
+    "benefits"
    ]
   },
   "iron-out": {
@@ -6274,13 +6283,14 @@
    "intro": "Hydrolyzed Whey is a single-ingredient protein powder. Each 1-scoop serving holds 5000 mg of hydrolyzed whey (Bos taurus). Take up to 1-2 scoops up to 3 times a day in living water after exercise, or as guided.",
    "description": "Other ingredients: Healing Energy, Love and Prayer. 100 g per container, 20 scoops.",
    "learn_markdown": "Hydrolyzed Whey is a single-ingredient protein powder. Each 1-scoop serving holds 5000 mg of hydrolyzed whey (Bos taurus). Take up to 1-2 scoops up to 3 times a day in living water after exercise, or as guided.\n\nEach scoop contains: Hydrolyzed Whey (Bos taurus) 5000 mg.",
-   "how_it_works": "Hydrolyzed Whey is a single-ingredient protein powder. Each 1-scoop serving holds 5000 mg of hydrolyzed whey (Bos taurus). Take up to 1-2 scoops up to 3 times a day in living water after exercise, or as guided.\n\nEach scoop contains: Hydrolyzed Whey (Bos taurus) 5000 mg.",
+   "how_it_works": "",
    "directions": "Up to 1-2 scoops up to 3 times a day in living water after exercise, or as guided.",
    "copy_pinned": [
     "ingredients",
     "intro",
     "description",
-    "research"
+    "research",
+    "benefits"
    ]
   },
   "nerve-pulse": {
@@ -7374,14 +7384,15 @@
    "fmp_id": "308",
    "intro": "Each vegicap of Curcu Guard holds curcumin 95% (Curcuma longa) and phosphatides 30% (Helianthus annuus), with a blend that aids absorption. Take 1 capsule up to 3 times a day with food.",
    "learn_markdown": "Each vegicap of Curcu Guard holds curcumin 95% (Curcuma longa) and phosphatides 30% (Helianthus annuus), with a blend that aids absorption. Take 1 capsule up to 3 times a day with food.\n\nEach vegicap contains: Curcumin 95% (Curcuma longa) 210 mg; Phosphatides 30% (Helianthus annuus) 250 mg; Bioavailability Blend (34.5 mg): Vitamin B3 (as Niacin) 5 mg; Vitamin B13 (Phosphatides 50%, Helianthus annuus); EGb 761 (Ginkgo biloba: 24% flavone glycosides, 6% lactones, <0.0005% ginkgolic acid); Miracle Tree 100:1 (Moringa oleifera); Licorice Omnipotent (Glycyrrhiza glabra); Vinpocetine (Vinca minor); Gingerol 10% (Zingiber officinale); Piperine (Piper nigrum); Fulvic Acid; Humic Acid; 11 Spirit Minerals.",
-   "how_it_works": "Each vegicap of Curcu Guard holds curcumin 95% (Curcuma longa) and phosphatides 30% (Helianthus annuus), with a blend that aids absorption. Take 1 capsule up to 3 times a day with food.\n\nEach vegicap contains: Curcumin 95% (Curcuma longa) 210 mg; Phosphatides 30% (Helianthus annuus) 250 mg; Bioavailability Blend (34.5 mg): Vitamin B3 (as Niacin) 5 mg; Vitamin B13 (Phosphatides 50%, Helianthus annuus); EGb 761 (Ginkgo biloba: 24% flavone glycosides, 6% lactones, <0.0005% ginkgolic acid); Miracle Tree 100:1 (Moringa oleifera); Licorice Omnipotent (Glycyrrhiza glabra); Vinpocetine (Vinca minor); Gingerol 10% (Zingiber officinale); Piperine (Piper nigrum); Fulvic Acid; Humic Acid; 11 Spirit Minerals.",
+   "how_it_works": "",
    "panel_note": "Bioavailability Blend contains: Vitamin B3 (as Niacin) 5 mg; Vitamin B13 (Phosphatides 50%, Helianthus annuus); EGb 761 (Ginkgo biloba: 24% flavone glycosides, 6% lactones, <0.0005% ginkgolic acid); Miracle Tree 100:1 (Moringa oleifera); Licorice Omnipotent (Glycyrrhiza glabra); Vinpocetine (Vinca minor); Gingerol 10% (Zingiber officinale); Piperine (Piper nigrum); Fulvic Acid; Humic Acid; 11 Spirit Minerals.",
    "directions": "1 capsule up to 3 times a day with food.",
    "copy_pinned": [
     "ingredients",
     "intro",
     "description",
-    "research"
+    "research",
+    "benefits"
    ]
   },
   "vitamin-p-polyphenols": {
@@ -7712,13 +7723,14 @@
    "intro": "Iron Syntropy provides iron (II) as iron bisglycinate with beet juice powder, fulvic acid, bismuth, copper and germanium. Vitamins are A, B1 as benfotiamine, niacinamide, B6, B9, B12, B13 as lecithin and D3. Individually dosed bioavailability factors are EGb761, niacin, moringa, licorice, gingerol, piperine and vinpocetine. Take 1 capsule daily with food, or as guided.",
    "description": "Other ingredients: Chlorophyll vegicaps, Healing Energy, Love & Prayer. 30 vegicaps per bottle.",
    "learn_markdown": "Iron Syntropy provides iron (II) as iron bisglycinate with beet juice powder, fulvic acid, bismuth, copper and germanium. Vitamins are A, B1 as benfotiamine, niacinamide, B6, B9, B12, B13 as lecithin and D3. Individually dosed bioavailability factors are EGb761, niacin, moringa, licorice, gingerol, piperine and vinpocetine. Take 1 capsule daily with food, or as guided.\n\nEach vegicap contains: Bismuth (as Bismuth Citrate) 5.2 mg; Copper (as Copper Glycinate) 2 mg; Germanium (as Biscarboxylethyl Germanium Sesquioxide) 2 mg; Iron (II) (as Iron Bisglycinate) 36 mg; Beet Juice Powder (Beta vulgaris) 30 mg; Fulvic Acid 1 mg; Vitamin A (as Retinyl Palmitate) 1.8 mg 5000 IU; Vitamin B1 (as Benfotiamine) 1.5 mg; Vitamin B4 (as Niacinamide) 10 mg; Vitamin B6 (as Pyridoxal 5'-Phosphate) 2 mg; Vitamin B9 (as L-5-Methyltetrahydrofolate) 400 mcg; Vitamin B12 (as Adenosylcobalamin) 6 mcg; Vitamin B13 as Lecithin (Helianthus annuus) 21 mg; Vitamin D3 (Cholecalciferol) 46 mg 5000 IU; EGb761 (Ginkgo biloba) 13 mg; Vitamin B3 (as Niacin) 8 mg; Moringa 100:1 (Moringa oleifera) 5 mg; Licorice Omnipotent (Glycyrrhiza glabra) 3 mg; Gingerol 40% (Zingiber officinale) 2 mg; Piperine (Piper nigrum) 1 mg; Vinpocetine (Vinca minor) 1 mg.",
-   "how_it_works": "Iron Syntropy provides iron (II) as iron bisglycinate with beet juice powder, fulvic acid, bismuth, copper and germanium. Vitamins are A, B1 as benfotiamine, niacinamide, B6, B9, B12, B13 as lecithin and D3. Individually dosed bioavailability factors are EGb761, niacin, moringa, licorice, gingerol, piperine and vinpocetine. Take 1 capsule daily with food, or as guided.\n\nEach vegicap contains: Bismuth (as Bismuth Citrate) 5.2 mg; Copper (as Copper Glycinate) 2 mg; Germanium (as Biscarboxylethyl Germanium Sesquioxide) 2 mg; Iron (II) (as Iron Bisglycinate) 36 mg; Beet Juice Powder (Beta vulgaris) 30 mg; Fulvic Acid 1 mg; Vitamin A (as Retinyl Palmitate) 1.8 mg 5000 IU; Vitamin B1 (as Benfotiamine) 1.5 mg; Vitamin B4 (as Niacinamide) 10 mg; Vitamin B6 (as Pyridoxal 5'-Phosphate) 2 mg; Vitamin B9 (as L-5-Methyltetrahydrofolate) 400 mcg; Vitamin B12 (as Adenosylcobalamin) 6 mcg; Vitamin B13 as Lecithin (Helianthus annuus) 21 mg; Vitamin D3 (Cholecalciferol) 46 mg 5000 IU; EGb761 (Ginkgo biloba) 13 mg; Vitamin B3 (as Niacin) 8 mg; Moringa 100:1 (Moringa oleifera) 5 mg; Licorice Omnipotent (Glycyrrhiza glabra) 3 mg; Gingerol 40% (Zingiber officinale) 2 mg; Piperine (Piper nigrum) 1 mg; Vinpocetine (Vinca minor) 1 mg.",
+   "how_it_works": "",
    "directions": "1 capsule daily with food, or as guided.",
    "copy_pinned": [
     "ingredients",
     "intro",
     "description",
-    "research"
+    "research",
+    "benefits"
    ]
   },
   "sleep": {
@@ -8108,13 +8120,14 @@
    "intro": "Moisture-Eyes Night Oil is a topical oil for use around the eyes. It blends sea buckthorn berry oil 40%, medium chain triglycerides 30%, kukui nut oil 20% and emu oil 10%. Shake well, then apply topically around eyes.",
    "description": "Other ingredients: 172 Hz Healing Energy, Love & Prayer. 5 mL per bottle.",
    "learn_markdown": "Moisture-Eyes Night Oil is a topical oil for use around the eyes. It blends sea buckthorn berry oil 40%, medium chain triglycerides 30%, kukui nut oil 20% and emu oil 10%. Shake well, then apply topically around eyes.\n\nIngredients: Sea Buckthorn Berry Oil (Hippophae rhamnoides) 40%; Medium Chain Triglycerides (Cocos nucifera) 30%; Kukui Nut Oil (Aleurites moluccanus) 20%; Emu Oil (Dromaius novaehollandiae) 10%.",
-   "how_it_works": "Moisture-Eyes Night Oil is a topical oil for use around the eyes. It blends sea buckthorn berry oil 40%, medium chain triglycerides 30%, kukui nut oil 20% and emu oil 10%. Shake well, then apply topically around eyes.\n\nIngredients: Sea Buckthorn Berry Oil (Hippophae rhamnoides) 40%; Medium Chain Triglycerides (Cocos nucifera) 30%; Kukui Nut Oil (Aleurites moluccanus) 20%; Emu Oil (Dromaius novaehollandiae) 10%.",
+   "how_it_works": "",
    "directions": "Shake well, then apply topically around eyes.",
    "copy_pinned": [
     "ingredients",
     "intro",
     "description",
-    "research"
+    "research",
+    "benefits"
    ]
   },
   "mb3-cbh": {
@@ -8510,14 +8523,15 @@
    "fmp_id": "479",
    "intro": "Each Acetaldehyde Detox vegicap combines vitamin B5 as calcium pantothenate and coenzyme A with reduced and S-acetyl glutathione, NAC and ATP. It also holds green clay, activated charcoal and 7-keto DHEA, with a blend that aids absorption. Take 1 to 3 capsules a day with food, or as guided.",
    "learn_markdown": "Each Acetaldehyde Detox vegicap combines vitamin B5 as calcium pantothenate and coenzyme A with reduced and S-acetyl glutathione, NAC and ATP. It also holds green clay, activated charcoal and 7-keto DHEA, with a blend that aids absorption. Take 1 to 3 capsules a day with food, or as guided.\n\nEach vegicap contains: Vitamin B5: Calcium Pantothenate 120 mg; Vitamin B8: Coenzyme A (Deficient Metabolite) 10 mg; GSH Synergy (Reduced Glutathione & S-Acetyl Glutathione) 30 mg; NAC (N-Acetyl Cysteine) 20 mg; ATP (Adenosine Triphosphate) 10 mg; Green Clay 30 mg; Activated Charcoal (Cocos nucifera) 30 mg; 7-Keto DHEA 5 mg; Bioavailability Blend (34.5 mg): Lipid Solubility: Phosphatides 50% (Helianthus annuus). Mucosa Integrity/Mineral Transport: Humic & Fulvic Acids. Nutrient Absorption: Moringa 100:1 (Moringa oleifera), Gingerol 10% (Zingiber officinale), Piperine (Piper nigrum). Vascular Delivery: EGb 761 (Ginkgo biloba) (24%, 6%, <0.0005%), Vitamin B3 (as Niacin) 5 mg, Vinpocetine (Vinca minor). Entourage Effect: Licorice Omnipotent (Glycyrrhiza glabra). Regulation of Healing: Spirit Minerals (ORMUS).",
-   "how_it_works": "Each Acetaldehyde Detox vegicap combines vitamin B5 as calcium pantothenate and coenzyme A with reduced and S-acetyl glutathione, NAC and ATP. It also holds green clay, activated charcoal and 7-keto DHEA, with a blend that aids absorption. Take 1 to 3 capsules a day with food, or as guided.\n\nEach vegicap contains: Vitamin B5: Calcium Pantothenate 120 mg; Vitamin B8: Coenzyme A (Deficient Metabolite) 10 mg; GSH Synergy (Reduced Glutathione & S-Acetyl Glutathione) 30 mg; NAC (N-Acetyl Cysteine) 20 mg; ATP (Adenosine Triphosphate) 10 mg; Green Clay 30 mg; Activated Charcoal (Cocos nucifera) 30 mg; 7-Keto DHEA 5 mg; Bioavailability Blend (34.5 mg): Lipid Solubility: Phosphatides 50% (Helianthus annuus). Mucosa Integrity/Mineral Transport: Humic & Fulvic Acids. Nutrient Absorption: Moringa 100:1 (Moringa oleifera), Gingerol 10% (Zingiber officinale), Piperine (Piper nigrum). Vascular Delivery: EGb 761 (Ginkgo biloba) (24%, 6%, <0.0005%), Vitamin B3 (as Niacin) 5 mg, Vinpocetine (Vinca minor). Entourage Effect: Licorice Omnipotent (Glycyrrhiza glabra). Regulation of Healing: Spirit Minerals (ORMUS).",
+   "how_it_works": "",
    "panel_note": "Bioavailability Blend contains: Lipid Solubility: Phosphatides 50% (Helianthus annuus). Mucosa Integrity/Mineral Transport: Humic & Fulvic Acids. Nutrient Absorption: Moringa 100:1 (Moringa oleifera), Gingerol 10% (Zingiber officinale), Piperine (Piper nigrum). Vascular Delivery: EGb 761 (Ginkgo biloba) (24%, 6%, <0.0005%), Vitamin B3 (as Niacin) 5 mg, Vinpocetine (Vinca minor). Entourage Effect: Licorice Omnipotent (Glycyrrhiza glabra). Regulation of Healing: Spirit Minerals (ORMUS).",
    "directions": "1 to 3 capsules a day with food, or as guided.",
    "copy_pinned": [
     "ingredients",
     "intro",
     "description",
-    "research"
+    "research",
+    "benefits"
    ]
   },
   "nerve-repair": {
@@ -8768,14 +8782,15 @@
    "fmp_id": "546",
    "intro": "Each Appestat vegicap combines vitamins B6, B12, C and D3, GTF chromium and magnesium with DMAE, GLA, CLA, caprylic acid, ALCAR, NALT, PEA, 5-HTP, L-theanine, hordenine, synephrine, lipase and protease. Botanical extracts include green tea and cinnamon polyphenols, quercetin, sumac bran, OPCs, gymnemic acid, phaseolamin, hydroxycitric acid, charantin, myrrh, withanolides, ginsenosides and capsicum, with a blend that aids absorption. Take 1 capsule 30 to 45 minutes before meals, or as guided. Fiber Cleanse and Thermogenesis are synergistic.",
    "learn_markdown": "Each Appestat vegicap combines vitamins B6, B12, C and D3, GTF chromium and magnesium with DMAE, GLA, CLA, caprylic acid, ALCAR, NALT, PEA, 5-HTP, L-theanine, hordenine, synephrine, lipase and protease. Botanical extracts include green tea and cinnamon polyphenols, quercetin, sumac bran, OPCs, gymnemic acid, phaseolamin, hydroxycitric acid, charantin, myrrh, withanolides, ginsenosides and capsicum, with a blend that aids absorption. Take 1 capsule 30 to 45 minutes before meals, or as guided. Fiber Cleanse and Thermogenesis are synergistic.\n\nEach vegicap contains: Vitamin B6 (Pyridoxal 5-Phosphate) 2 mg; Vitamin B12 (Methyl & Adenosylcobalamin) 600 mcg; Vitamin B13: DMAE (Dimethylaminoethanol) 10 mg; Vitamin C (Magnesium Ascorbate) 30 mg; Vitamin D3 (Cholecalciferol) 200 IU; GTF Chromium (Cr Polynicotinate) 120 mcg; Magnesium (Magnesium Ascorbate) 3.7 mg; GLA 20% (Gamma Linolenic Acid) 25 mg; CLA 40% (Conjugated Linoleic Acid) 25 mg; Caprylic Acid (Cocos nucifera) 25 mg; ALCAR (Acetyl L-Carnitine) 25 mg; NALT (N-Acetyl L-Tyrosine) 25 mg; PEA (Phenylethylamine) 25 mg; 5-HTP (Griffonia simplicifolia) 25 mg; L-Theanine (Camellia sinensis) 25 mg; Hordenine (Hordeum vulgare) 25 mg; Synephrine (Citrus aurantium) 20 mg; Lipase 200 FIP units 10 mg; Protease (Aspergillus niger) 40,000 units 10 mg; Polyphenols (Camellia sinensis) 10 mg; Polyphenols 30% (Cinnamomum cassia) 10 mg; Quercetin Dihydrate (Sophora japonica) 10 mg; Sumac Bran 50:1 (Cotinus coggygria) 10 mg; OPCs (Vitis vinifera) (seed) 10 mg; Gymnemic Acid 75% (Gymnema sylvestre) 25 mg; Phaseolamin 5% (Phaseolus vulgaris) 25 mg; Hydroxycitric Acid 60% (Garcinia cambogia) 25 mg; Charantin 10% (Momordica charantia) 25 mg; Myrrh (Commiphora myrrha) 10 mg; Withanolides 10% (Withania somnifera) 10 mg; Ginsenosides 80% (Panax quinquefolius) 10 mg; Capsicum frutescens 160,000 HTU 1 mg; Bioavailability Blend (34 mg): EGb 761 (Ginkgo biloba), Niacin 8 mg, Moringa oleifera 100:1, Licorice Omnipotent (Glycyrrhiza glabra), Gingerol 10% (Zingiber officinale), Piperine (Piper nigrum), Vinpocetine (Vinca minor).",
-   "how_it_works": "Each Appestat vegicap combines vitamins B6, B12, C and D3, GTF chromium and magnesium with DMAE, GLA, CLA, caprylic acid, ALCAR, NALT, PEA, 5-HTP, L-theanine, hordenine, synephrine, lipase and protease. Botanical extracts include green tea and cinnamon polyphenols, quercetin, sumac bran, OPCs, gymnemic acid, phaseolamin, hydroxycitric acid, charantin, myrrh, withanolides, ginsenosides and capsicum, with a blend that aids absorption. Take 1 capsule 30 to 45 minutes before meals, or as guided. Fiber Cleanse and Thermogenesis are synergistic.\n\nEach vegicap contains: Vitamin B6 (Pyridoxal 5-Phosphate) 2 mg; Vitamin B12 (Methyl & Adenosylcobalamin) 600 mcg; Vitamin B13: DMAE (Dimethylaminoethanol) 10 mg; Vitamin C (Magnesium Ascorbate) 30 mg; Vitamin D3 (Cholecalciferol) 200 IU; GTF Chromium (Cr Polynicotinate) 120 mcg; Magnesium (Magnesium Ascorbate) 3.7 mg; GLA 20% (Gamma Linolenic Acid) 25 mg; CLA 40% (Conjugated Linoleic Acid) 25 mg; Caprylic Acid (Cocos nucifera) 25 mg; ALCAR (Acetyl L-Carnitine) 25 mg; NALT (N-Acetyl L-Tyrosine) 25 mg; PEA (Phenylethylamine) 25 mg; 5-HTP (Griffonia simplicifolia) 25 mg; L-Theanine (Camellia sinensis) 25 mg; Hordenine (Hordeum vulgare) 25 mg; Synephrine (Citrus aurantium) 20 mg; Lipase 200 FIP units 10 mg; Protease (Aspergillus niger) 40,000 units 10 mg; Polyphenols (Camellia sinensis) 10 mg; Polyphenols 30% (Cinnamomum cassia) 10 mg; Quercetin Dihydrate (Sophora japonica) 10 mg; Sumac Bran 50:1 (Cotinus coggygria) 10 mg; OPCs (Vitis vinifera) (seed) 10 mg; Gymnemic Acid 75% (Gymnema sylvestre) 25 mg; Phaseolamin 5% (Phaseolus vulgaris) 25 mg; Hydroxycitric Acid 60% (Garcinia cambogia) 25 mg; Charantin 10% (Momordica charantia) 25 mg; Myrrh (Commiphora myrrha) 10 mg; Withanolides 10% (Withania somnifera) 10 mg; Ginsenosides 80% (Panax quinquefolius) 10 mg; Capsicum frutescens 160,000 HTU 1 mg; Bioavailability Blend (34 mg): EGb 761 (Ginkgo biloba), Niacin 8 mg, Moringa oleifera 100:1, Licorice Omnipotent (Glycyrrhiza glabra), Gingerol 10% (Zingiber officinale), Piperine (Piper nigrum), Vinpocetine (Vinca minor).",
+   "how_it_works": "",
    "panel_note": "Bioavailability Blend contains: EGb 761 (Ginkgo biloba), Niacin 8 mg, Moringa oleifera 100:1, Licorice Omnipotent (Glycyrrhiza glabra), Gingerol 10% (Zingiber officinale), Piperine (Piper nigrum), Vinpocetine (Vinca minor).",
    "directions": "1 capsule 30 to 45 minutes before meals, or as guided. Fiber Cleanse and Thermogenesis are synergistic.",
    "copy_pinned": [
     "ingredients",
     "intro",
     "description",
-    "research"
+    "research",
+    "benefits"
    ]
   },
   "emf": {
@@ -9933,13 +9948,14 @@
    "intro": "Sinus Terrain Nasal Spray is a nasal spray of Quinton Hypertonic Ocean Minerals & ORMUS. It also holds xylitol, aqueous humic substances, grapefruit seed extract and iodine as potassium iodide. Use one spray in each nostril with inhale, three times a day, or as guided.",
    "description": "Other ingredients: Miracule Water, Healing Energy, 172 Hz Scalar Field (the Dominant Harmonic Frequency of Nature), Love, and Prayer. 50 mL per bottle, about 100 sprays.",
    "learn_markdown": "Sinus Terrain Nasal Spray is a nasal spray of Quinton Hypertonic Ocean Minerals & ORMUS. It also holds xylitol, aqueous humic substances, grapefruit seed extract and iodine as potassium iodide. Use one spray in each nostril with inhale, three times a day, or as guided.\n\nPer spray: Quinton Hypertonic Ocean Minerals & ORMUS 99%; Xylitol (Betula spp.) 0.75%; Aqueous Humic Substances 0.1%; Grapefruit Seed Extract (Citrus paradisi) 0.1%; Iodine (Potassium Iodide) 0.1%.",
-   "how_it_works": "Sinus Terrain Nasal Spray is a nasal spray of Quinton Hypertonic Ocean Minerals & ORMUS. It also holds xylitol, aqueous humic substances, grapefruit seed extract and iodine as potassium iodide. Use one spray in each nostril with inhale, three times a day, or as guided.\n\nPer spray: Quinton Hypertonic Ocean Minerals & ORMUS 99%; Xylitol (Betula spp.) 0.75%; Aqueous Humic Substances 0.1%; Grapefruit Seed Extract (Citrus paradisi) 0.1%; Iodine (Potassium Iodide) 0.1%.",
+   "how_it_works": "",
    "directions": "One spray in each nostril with inhale, three times a day, or as guided.",
    "copy_pinned": [
     "ingredients",
     "intro",
     "description",
-    "research"
+    "research",
+    "benefits"
    ]
   },
   "rhythm-restore": {
@@ -11209,14 +11225,15 @@
    "bottle_type": "30 Caps",
    "intro": "Each vegicap of Reverse AGE combines DHB (dihydroberberine), zinc carnosine and Na RALA. It adds benfotiamine and a 260 mg polyphenol complex of curcumin, rosmarinic acid and EMIQ. Take 1 to 3 capsules a day with food, as guided.",
    "learn_markdown": "Each vegicap of Reverse AGE combines DHB (dihydroberberine), zinc carnosine and Na RALA. It adds benfotiamine and a 260 mg polyphenol complex of curcumin, rosmarinic acid and EMIQ. Take 1 to 3 capsules a day with food, as guided.\n\nEach vegicap contains: DHB (Dihydroberberine) (Phellodendron chinense) (cortex) 50 mg; Carnosine (from Zinc Carnosine) 58 mg; Na RALA (Stabilized Bioenhanced Na-R-Lipoate) 10 mg; Zinc (from Zinc Carnosine) 5 mg; Polyphenols (260 mg): Curcumin (Curcuma longa), Rosmarinic Acid 50% (Salvia rosmarinus), EMIQ (Enzymatically Modified Isoquercetin) (Sophora japonica); B1: Benfotiamine 75 mg.",
-   "how_it_works": "Each vegicap of Reverse AGE combines DHB (dihydroberberine), zinc carnosine and Na RALA. It adds benfotiamine and a 260 mg polyphenol complex of curcumin, rosmarinic acid and EMIQ. Take 1 to 3 capsules a day with food, as guided.\n\nEach vegicap contains: DHB (Dihydroberberine) (Phellodendron chinense) (cortex) 50 mg; Carnosine (from Zinc Carnosine) 58 mg; Na RALA (Stabilized Bioenhanced Na-R-Lipoate) 10 mg; Zinc (from Zinc Carnosine) 5 mg; Polyphenols (260 mg): Curcumin (Curcuma longa), Rosmarinic Acid 50% (Salvia rosmarinus), EMIQ (Enzymatically Modified Isoquercetin) (Sophora japonica); B1: Benfotiamine 75 mg.",
+   "how_it_works": "",
    "panel_note": "Polyphenols (Proprietary Complex) contains: Curcumin (Curcuma longa), Rosmarinic Acid 50% (Salvia rosmarinus), EMIQ (Enzymatically Modified Isoquercetin) (Sophora japonica).",
    "directions": "1 to 3 capsules a day with food, as guided.",
    "copy_pinned": [
     "ingredients",
     "intro",
     "description",
-    "research"
+    "research",
+    "benefits"
    ]
   },
   "methylselenocysteine": {
@@ -13189,13 +13206,14 @@
    ],
    "intro": "ACES Eye Drops are made on a base of Quinton (micro-filtered seawater). Each drop also carries MSM, DMSO and N-acetyl L-carnosine, with vitamin A as retinyl palmitate, vitamin C and zinc as zinc ascorbate, vitamin E complex and silver from nano silver. Use 1 drop in each eye twice a day or as guided. Take at least 5 minutes away from other eyedrops. Keep refrigerated. Discontinue if drops become irritating.",
    "learn_markdown": "ACES Eye Drops are made on a base of Quinton (micro-filtered seawater). Each drop also carries MSM, DMSO and N-acetyl L-carnosine, with vitamin A as retinyl palmitate, vitamin C and zinc as zinc ascorbate, vitamin E complex and silver from nano silver. Use 1 drop in each eye twice a day or as guided. Take at least 5 minutes away from other eyedrops. Keep refrigerated. Discontinue if drops become irritating.\n\nIngredients: Quinton (Micro-filtered Seawater) 97%; MSM (Methylsulfonylmethane) 1%; DMSO (Dimethylsulfoxide) 1%; N-Acetyl L-Carnosine 1%; Vitamin A (Retinyl Palmitate) 0.1%; Vitamin C (Zinc Ascorbate) 0.1%; Zinc (Zinc Ascorbate) 0.1%; Vitamin E Complex 0.002%; Silver (from Nano Silver) 0.001%.",
-   "how_it_works": "ACES Eye Drops are made on a base of Quinton (micro-filtered seawater). Each drop also carries MSM, DMSO and N-acetyl L-carnosine, with vitamin A as retinyl palmitate, vitamin C and zinc as zinc ascorbate, vitamin E complex and silver from nano silver. Use 1 drop in each eye twice a day or as guided. Take at least 5 minutes away from other eyedrops. Keep refrigerated. Discontinue if drops become irritating.\n\nIngredients: Quinton (Micro-filtered Seawater) 97%; MSM (Methylsulfonylmethane) 1%; DMSO (Dimethylsulfoxide) 1%; N-Acetyl L-Carnosine 1%; Vitamin A (Retinyl Palmitate) 0.1%; Vitamin C (Zinc Ascorbate) 0.1%; Zinc (Zinc Ascorbate) 0.1%; Vitamin E Complex 0.002%; Silver (from Nano Silver) 0.001%.",
+   "how_it_works": "",
    "directions": "1 drop in each eye twice a day or as guided. Take at least 5 minutes away from other eyedrops. Keep refrigerated. Discontinue if drops become irritating.",
    "copy_pinned": [
     "ingredients",
     "intro",
     "description",
-    "research"
+    "research",
+    "benefits"
    ]
   },
   "bloodroot-cream": {
