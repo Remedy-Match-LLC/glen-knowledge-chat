@@ -17,7 +17,7 @@ PAGE = ROOT / "static" / "client-portal.html"
 GLUE = ("foldSlug", "_foldWireClickOnce", "_foldWireLifecycleOnce", "_foldIdOf",
         "_foldCardsByDoor", "_foldDoorVisible", "_foldSetCard", "_foldApplyAll", "_foldToggle",
         "_foldClearLegacy", "_foldLoad", "_foldRefresh", "_foldSave", "_foldPut", "_foldFlush",
-        "wirePortalFolds")
+        "wirePortalFolds", "_foldBars", "_foldBarClick", "_foldAllOrRestore", "_foldMatchClient")
 
 
 def _fn_source(name):
@@ -227,7 +227,57 @@ __FNS__
 })().catch(e => { console.error(e); process.exit(1); });
 """
 
-TASK6 = ""
+TASK6 = r"""
+  // ── Task 6: the page bar ─────────────────────────────────────────────────
+  _foldsV2 = undefined; _foldLoading = false; calls.length = 0; replyFor = null;
+  reply = {status: 200, body: {ok: true, viewer: 'client', state: {cards: {}, seen: [], before_fold_all: {}}}};
+  p = page(); wirePortalFolds(); await settle(); await settle();
+  const bars = () => body.children[0].children.filter(x => x.classList.contains('fold-bar'));
+  const btn = (cls) => bars()[0].children.find(x => x.classList.contains(cls));
+
+  // 1. a client sees one bar with Fold all and no match button
+  assert.strictEqual(bars().length, 1);
+  assert.strictEqual(btn('fold-bar-all').textContent, 'Fold all');
+  assert.ok(!btn('fold-bar-match'));
+
+  // 2. Fold all, then Restore returns the exact earlier states
+  const before = ['a', 'b', 'c'].map(k => p[k].classList.contains('is-folded'));
+  click(btn('fold-bar-all'));
+  assert.ok(['a', 'b', 'c'].every(k => p[k].classList.contains('is-folded')));
+  assert.strictEqual(btn('fold-bar-all').textContent, 'Restore');
+  click(btn('fold-bar-all'));
+  assert.deepStrictEqual(['a', 'b', 'c'].map(k => p[k].classList.contains('is-folded')), before);
+  assert.strictEqual(btn('fold-bar-all').textContent, 'Fold all');
+
+  // 3. a re-render does not duplicate the bar
+  wirePortalFolds(); wirePortalFolds();
+  assert.strictEqual(bars().length, 1);
+
+  // 4. staff see Match client's view; it reads ?of=client and saves as the staff record
+  _foldsV2 = undefined; _foldLoading = false; calls.length = 0; runTimers(); calls.length = 0;
+  const clientState = {cards: {a: true, b: false, c: false}, seen: ['scans'], before_fold_all: {}};
+  replyFor = (url) => url.endsWith('?of=client')
+    ? {status: 200, body: {ok: true, viewer: 'staff', state: clientState}}
+    : {status: 200, body: {ok: true, viewer: 'staff', state: {cards: {}, seen: [], before_fold_all: {}}}};
+  p = page(); wirePortalFolds(); await settle(); await settle();
+  assert.ok(btn('fold-bar-match'));
+  assert.strictEqual(btn('fold-bar-match').textContent, "Match client's view");
+  runTimers(); calls.length = 0;
+  click(btn('fold-bar-match')); await settle(); await settle();
+  assert.ok(calls.some(c => c.method === 'GET' && c.url.endsWith('?of=client')));
+  assert.deepStrictEqual(['a', 'b', 'c'].map(k => p[k].classList.contains('is-folded')), [true, false, false]);
+  runTimers();
+  const put = putCalls().pop();
+  assert.ok(put && !put.url.includes('of='));
+  assert.deepStrictEqual(JSON.parse(put.body).state.cards, clientState.cards);
+
+  // 5. a failed match leaves the staff view alone
+  const kept = JSON.stringify(_foldsV2.state);
+  replyFor = (url) => url.endsWith('?of=client') ? {status: 500, body: {}} : null;
+  click(btn('fold-bar-match')); await settle(); await settle();
+  assert.strictEqual(JSON.stringify(_foldsV2.state), kept);
+  assert.ok(btn('fold-bar-match').attrs.title, 'the failure must be visible on the button');
+"""
 
 
 def _script(task6=""):

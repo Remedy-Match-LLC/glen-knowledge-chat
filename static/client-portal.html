@@ -655,6 +655,7 @@
      collapse/open. Remember the last state." The toggle sits in the heading so it is
      where the eye already is, and the heading stays readable when collapsed. */
   .card{position:relative}
+  .fold-bar{display:flex;gap:8px;justify-content:flex-end;margin:0 0 8px}
   .card > h2:first-of-type, .card > h3:first-of-type{padding-right:64px}
   .card-fold{position:absolute;top:10px;right:10px;background:none;border:0;color:var(--muted);cursor:pointer;
     font:inherit;font-size:.82rem;line-height:1.2;padding:2px 6px;border-radius:8px}
@@ -8602,6 +8603,81 @@ function _foldFlush(){
   if(!_foldSavePending) return;
   if(_foldSaveTimer){ clearTimeout(_foldSaveTimer); _foldSaveTimer = null; }
   _foldPut(true);
+}
+
+// The page bar: Fold all / Restore for everyone, and Match client's view for staff only.
+// Rebuilt with each render, once per door, at the top of the door's first section.
+function _foldBars(byDoor){
+  var F = window.PortalFolds;
+  Object.keys(byDoor).forEach(function(door){
+    var sec = document.querySelector('section[data-door="' + door + '"]');
+    if(!sec) return;
+    var bar = null;
+    for(var i = 0; i < sec.children.length; i++){
+      if(sec.children[i].classList.contains("fold-bar")){ bar = sec.children[i]; break; }
+    }
+    if(!bar){
+      bar = document.createElement("div");
+      bar.className = "fold-bar";
+      bar.classList.add("fold-bar");
+      bar.setAttribute("data-fold-bar", door);
+      var all = document.createElement("button");
+      all.type = "button";
+      all.className = "fold-bar-all btn small";
+      all.classList.add("fold-bar-all");
+      bar.appendChild(all);
+      if(_foldsV2.staff){
+        var match = document.createElement("button");
+        match.type = "button";
+        match.className = "fold-bar-match btn small";
+        match.classList.add("fold-bar-match");
+        match.textContent = "Match client's view";
+        bar.appendChild(match);
+      }
+      sec.insertBefore(bar, sec.firstChild);
+    }
+    for(var j = 0; j < bar.children.length; j++){
+      var b = bar.children[j];
+      if(b.classList.contains("fold-bar-all")){
+        b.textContent = F.canRestore(_foldsV2.state, door) ? "Restore" : "Fold all";
+      }
+    }
+  });
+}
+
+// Called by the one delegated click handler. True when the click was on the bar.
+function _foldBarClick(t){
+  if(!_foldsV2 || typeof _foldsV2 !== "object") return false;
+  var all = t.closest(".fold-bar-all");
+  if(all){ _foldAllOrRestore(all.closest(".fold-bar").dataset.foldBar); return true; }
+  if(t.closest(".fold-bar-match")){ _foldMatchClient(); return true; }
+  return false;
+}
+
+function _foldAllOrRestore(door){
+  var F = window.PortalFolds;
+  var ids = (_foldCardsByDoor()[door] || []).map(_foldIdOf);
+  _foldsV2.state = F.canRestore(_foldsV2.state, door)
+    ? F.restore(_foldsV2.state, door) : F.foldAll(_foldsV2.state, door, ids);
+  _foldApplyAll();
+  _foldSave();
+}
+
+// Staff only. Copies the client's folds into this staff member's own record. The client's
+// record is only read: the save below goes to the server as this viewer's own.
+function _foldMatchClient(){
+  fetch("/api/portal/" + encodeURIComponent(token) + "/folds?of=client", {credentials: "same-origin"})
+    .then(function(r){ return r.ok ? r.json() : null; })
+    .then(function(j){
+      if(!j){ throw new Error("no client view"); }
+      _foldsV2.state = window.PortalFolds.adopt(j.state);
+      _foldApplyAll();
+      _foldSave();
+    })
+    .catch(function(){
+      var btns = document.querySelectorAll(".fold-bar-match");
+      for(var i = 0; i < btns.length; i++) btns[i].setAttribute("title", "Could not load the client's view");
+    });
 }
 
 // Runs after every render. Until the record arrives the page shows its default layout.
