@@ -12667,31 +12667,27 @@
    "legacy_store_url": "https://remedymatch.com/remedies/syntropy/109-adrenal-syntropy",
    "ingredients": [
     {
-     "name": "7-Keto DHEA (7-Ketodehydroepiandrosterone)",
+     "name": "7-Keto (7-Ketodehydroepiandrosterone)",
      "dose": "5 mg"
     },
     {
-     "name": "Vitamin C (Ascorbyl Palmitate)",
+     "name": "Fat Soluble Vitamin C (Ascorbyl Palmitate)",
      "dose": "60 mg"
     },
     {
-     "name": "100% D-Ribose",
+     "name": "D-Ribose",
      "dose": "200 mg"
     },
     {
-     "name": "Huang Bai 20:1 (Phellodendron chinense)",
+     "name": "Diosgenin (Dioscorea villosa)",
+     "dose": "8 mg"
+    },
+    {
+     "name": "Rosavins 3%, Salidrosides 1% (Rhodiola rosea)",
      "dose": "20 mg"
     },
     {
-     "name": "Withanolides 10% (Withania somnifera)",
-     "dose": "40 mg"
-    },
-    {
-     "name": "Ginsenosides 80% (Panax ginseng)",
-     "dose": "7 mg"
-    },
-    {
-     "name": "Rosavins 10% Salidrosides 5% (Rhodiola rosea)",
+     "name": "Huang Bai 20:1 (Phellodendron chinense)",
      "dose": "20 mg"
     },
     {
@@ -12699,20 +12695,31 @@
      "dose": "20 mg"
     },
     {
-     "name": "Diosgenin (Dioscorea villosa)",
-     "dose": "8 mg"
+     "name": "Macamides 60% (Lepidium meyenii)",
+     "dose": "80 mg"
     },
     {
      "name": "Mogroside V 80% (Siraitia grosvenorii)",
-     "dose": "2 mg"
+     "dose": "3 mg"
     }
    ],
-   "ingredients_source": "store-recovery-2026-06-08",
-   "description": "Adrenal Syntropy . Adrenal Syntropy Adrenal Syntropy For many years we have instructed our clients to open their capsules of 7 Keto DHEA and hold the powder under their tongues for better efficacy. There is an abundant supply of circulation under the tongue, which carries the 7-Keto directly into the systemic blood supply. Any 7-Keto not absorbed in the mouth must go through the portal blood to be filtered through the liver before reaching the systemic blood supply. About 80% of that is broken down by the liver, so whatever can be absorbed in the mouth is about five times more efficient. The...",
+   "ingredients_source": "label-read-2026-09-26",
+   "description": "Each scoop of Adrenal Syntropy Sublingual Powder combines 7-keto DHEA with fat-soluble vitamin C and D-ribose. Its botanical extracts are diosgenin, rhodiola, huang bai, honokiol and macamides, lightly sweetened with mogroside V. Take 1 scoop daily dissolved in mouth and held under tongue, or as guided.\n\nOther ingredients: Healing Energy, Love and Prayer. 30 g, about 60 scoops.",
    "bottle_type": "30 g",
    "fmp_id": "313",
    "qty_pricing": true,
-   "regular_cents": 8000
+   "regular_cents": 8000,
+   "directions": "1 scoop daily dissolved in mouth and held under tongue, or as guided.",
+   "intro": "Each scoop of Adrenal Syntropy Sublingual Powder combines 7-keto DHEA with fat-soluble vitamin C and D-ribose. Its botanical extracts are diosgenin, rhodiola, huang bai, honokiol and macamides, lightly sweetened with mogroside V. Take 1 scoop daily dissolved in mouth and held under tongue, or as guided.",
+   "learn_markdown": "Each scoop of Adrenal Syntropy Sublingual Powder combines 7-keto DHEA with fat-soluble vitamin C and D-ribose. Its botanical extracts are diosgenin, rhodiola, huang bai, honokiol and macamides, lightly sweetened with mogroside V. Take 1 scoop daily dissolved in mouth and held under tongue, or as guided.\n\n7-Keto (7-Ketodehydroepiandrosterone) 5 mg; Fat Soluble Vitamin C (Ascorbyl Palmitate) 60 mg; D-Ribose 200 mg; Diosgenin (Dioscorea villosa) 8 mg; Rosavins 3%, Salidrosides 1% (Rhodiola rosea) 20 mg; Huang Bai 20:1 (Phellodendron chinense) 20 mg; Honokiol 50% (Magnolia officinalis) 20 mg; Macamides 60% (Lepidium meyenii) 80 mg; Mogroside V 80% (Siraitia grosvenorii) 3 mg.",
+   "how_it_works": "",
+   "copy_pinned": [
+    "ingredients",
+    "intro",
+    "description",
+    "research",
+    "benefits"
+   ]
   },
   "cinnamon-blue": {
    "name": "Cinnamon Blue",
