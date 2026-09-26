@@ -167,13 +167,13 @@ const SIGS = [
   // unified into a single card with two independently gated halves. Both
   // signatures below resolve to the same push, which is expected: each
   // signature only has to be unique to that one push, not to each other.
-  ['account', 'class="card upsell-card"><h2>${heading}</h2>'],
+  ['account', 'class="card upsell-card" data-fold-id="account-upsell"><h2>${heading}</h2>'],
   ['account', 'hasMembershipPitch ? "Everything your membership unlocks" : "More savings ahead"'],
   // ...and the two originals, which is what a shell-off page still renders. They
   // are separate pushes, so a future merge that forgets the `_doors` gate again
   // removes these two signatures and this file goes red.
-  ['account', 'class="card"><h2>More savings ahead</h2>'],
-  ['account', 'class="card upsell-card"><h2>Everything your membership unlocks</h2>'],
+  ['account', 'class="card" data-fold-id="account-more-savings"><h2>More savings ahead</h2>'],
+  ['account', 'class="card upsell-card" data-fold-id="account-membership-unlocks"><h2>Everything your membership unlocks</h2>'],
   ['account', '<h2>Free Product Review</h2>'],
   ['account', 'class="card notifpref quiet"'],                 // notification preference
   ['account', '<h2 style="font-size:1rem">Sharing</h2>'],

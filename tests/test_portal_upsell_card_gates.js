@@ -219,11 +219,11 @@ function runLegacy(d) {                 // shell off: production today
   const { accountParts } = runLegacy({ locked_rows: LOCKED_ROWS, membership_upsell: membershipUpsell() });
   assert.strictEqual(accountParts.length, 2,
     'shell off + both gates: TWO cards, not one merged card');
-  assert.ok(accountParts[0].html.indexOf('<div class="card"><h2>More savings ahead</h2>') === 0,
+  assert.ok(accountParts[0].html.indexOf('<div class="card" data-fold-id="account-more-savings"><h2>More savings ahead</h2>') === 0,
     'shell off: the locked-rows card comes first, plain `card` class, original heading');
   assert.ok(accountParts[0].html.indexOf('upsell-card') === -1,
     'shell off: the locked-rows card must NOT carry the upsell-card gradient');
-  assert.ok(accountParts[1].html.indexOf('<div class="card upsell-card"><h2>Everything your membership unlocks</h2>') === 0,
+  assert.ok(accountParts[1].html.indexOf('<div class="card upsell-card" data-fold-id="account-membership-unlocks"><h2>Everything your membership unlocks</h2>') === 0,
     'shell off: the membership pitch is its own card, second');
   assert.ok(accountParts[1].html.indexOf('lockedrow') === -1,
     'shell off: the pitch card must not absorb the locked rows');
@@ -234,7 +234,7 @@ function runLegacy(d) {                 // shell off: production today
     membership_upsell: membershipUpsell({ already_member: true })
   });
   assert.strictEqual(accountParts.length, 1, 'shell off + locked only: one card');
-  assert.ok(accountParts[0].html.indexOf('<div class="card"><h2>More savings ahead</h2>') === 0,
+  assert.ok(accountParts[0].html.indexOf('<div class="card" data-fold-id="account-more-savings"><h2>More savings ahead</h2>') === 0,
     'shell off + locked only: plain card, not the upsell gradient');
   assert.ok(accountParts[0].html.indexOf('upsell-card') === -1,
     'shell off + locked only: no upsell-card class (that is the gradient regression)');
@@ -242,7 +242,7 @@ function runLegacy(d) {                 // shell off: production today
 {
   const { accountParts } = runLegacy({ membership_upsell: membershipUpsell() });
   assert.strictEqual(accountParts.length, 1, 'shell off + pitch only: one card');
-  assert.ok(accountParts[0].html.indexOf('<div class="card upsell-card"><h2>Everything your membership unlocks</h2>') === 0);
+  assert.ok(accountParts[0].html.indexOf('<div class="card upsell-card" data-fold-id="account-membership-unlocks"><h2>Everything your membership unlocks</h2>') === 0);
   assert.ok(accountParts[0].html.indexOf('Become a member') !== -1);
 }
 {
