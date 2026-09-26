@@ -89,3 +89,69 @@ def test_route_is_owner_only_dry_run_by_default_and_leaves_the_portal_alone(clie
     assert done["applied"] is True and done["changed"] == 1
     cx = sqlite3.connect(appmod.LOG_DB)
     assert cx.execute("SELECT content_json, updated_at FROM client_portals").fetchall() == portal_before
+
+
+# ── blind review round 1, 2026-09-26 ────────────────────────────────────────
+
+def _one(cx, content, status="confirmed"):
+    pbr.init_table(cx)
+    pbr.upsert_report(cx, "c@x.com", "2026-05-01", "s", content, status)
+
+
+def test_links_and_file_names_are_never_reworded(tmp_path):
+    cx = sqlite3.connect(str(tmp_path / "t.db"))
+    _one(cx, {"report_pdf": {"url": "https://cdn.x.com/reports/voice-scan-2026.pdf"},
+              "file": "voice scan notes.txt", "note": "/files/voice-scan.mp3",
+              "narrative": "Your voice scan showed it."})
+    pbr.fix_scan_names_in_reports(cx, apply=True)
+    c = json.loads(cx.execute("SELECT content_json FROM portal_biofield_reports").fetchone()[0])
+    assert c["report_pdf"]["url"] == "https://cdn.x.com/reports/voice-scan-2026.pdf"
+    assert c["file"] == "voice scan notes.txt" and c["note"] == "/files/voice-scan.mp3"
+    assert c["narrative"] == "Your Bioenergetic Wellness Scan showed it."
+
+
+def test_dry_run_names_the_changed_fields_without_their_text(tmp_path):
+    cx = sqlite3.connect(str(tmp_path / "t.db"))
+    _one(cx, {"layers": [{"meaning": "voice scan"}], "narrative": "ok"})
+    out = pbr.fix_scan_names_in_reports(cx)
+    assert out["changed"][0]["fields"] == ["layers[0].meaning"]
+    assert "voice" not in json.dumps(out)
+
+
+def test_a_report_naming_five_element_anywhere_keeps_every_bare_voice_scan(tmp_path):
+    cx = sqlite3.connect(str(tmp_path / "t.db"))
+    _one(cx, {"five": "Your Five Element Voice Scan showed Water.",
+              "e4l": "The voice scan showed liver stress.",
+              "q": "Your E4L voice scan agrees."})
+    out = pbr.fix_scan_names_in_reports(cx, apply=True)
+    c = json.loads(cx.execute("SELECT content_json FROM portal_biofield_reports").fetchone()[0])
+    assert c["e4l"] == "The voice scan showed liver stress."
+    assert c["q"] == "Your Bioenergetic Wellness Scan agrees."      # E4L-qualified is clear
+    assert len(out["left_for_glen"]) == 1
+
+
+def test_an_edit_landing_mid_run_is_not_reverted(tmp_path, monkeypatch):
+    cx = sqlite3.connect(str(tmp_path / "t.db"))
+    _one(cx, {"n": "voice scan", "pdf": "old"})
+    real = pbr._rewrite_strings
+
+    def racing(value, fix, path="", key=""):
+        if path == "":
+            pbr.upsert_report(cx, "c@x.com", "2026-05-01", "s", {"n": "voice scan", "pdf": "NEW"},
+                              "confirmed")
+        return real(value, fix, path, key)
+    monkeypatch.setattr(pbr, "_rewrite_strings", racing)
+    out = pbr.fix_scan_names_in_reports(cx, apply=True)
+    c = json.loads(cx.execute("SELECT content_json FROM portal_biofield_reports").fetchone()[0])
+    assert c["pdf"] == "NEW" and len(out["raced"]) == 1 and out["changed"] == []
+
+
+def test_a_row_too_deep_to_walk_is_skipped_not_fatal(tmp_path):
+    cx = sqlite3.connect(str(tmp_path / "t.db"))
+    pbr.init_table(cx)
+    deep = "[" * 3000 + '"voice scan"' + "]" * 3000
+    cx.execute("INSERT INTO portal_biofield_reports (email, scan_date, content_json, status) "
+               "VALUES ('d@x.com','2026-01-01',?,'confirmed')", (deep,))
+    _one(cx, {"n": "voice scan"})
+    out = pbr.fix_scan_names_in_reports(cx)
+    assert len(out["skipped"]) == 1 and len(out["changed"]) == 1

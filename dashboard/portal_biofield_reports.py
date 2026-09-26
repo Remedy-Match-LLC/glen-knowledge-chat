@@ -3,6 +3,7 @@ Source of truth for the biofield analysis; client_portals.content_json is the
 legacy fallback when a client has no rows here. See the 2026-06-17 spec."""
 import datetime
 import json
+import re
 import sqlite3
 
 
@@ -121,26 +122,40 @@ def report_pdf_urls(cx, emails):
     return out
 
 
-def _rewrite_strings(value, fix):
-    """Apply fix to every string inside a JSON-shaped value. Returns (new, changed)."""
+# Link and file fields are never reworded: ".../voice-scan-2026.pdf" renamed is a
+# broken link (review round 1).
+_LINK_KEYS = {"url", "href", "src", "path", "file", "filename", "link", "pdf_url", "audio_url"}
+
+
+def _looks_like_link(text):
+    t = text.strip()
+    return bool(t) and " " not in t and ("://" in t or t.startswith("/") or
+                                         bool(re.search(r"\.[a-z0-9]{2,4}$", t, re.I)))
+
+
+def _rewrite_strings(value, fix, path="", key=""):
+    """Apply fix to every prose string inside a JSON-shaped value.
+    Returns (new value, [changed field paths])."""
     if isinstance(value, str):
+        if key.lower() in _LINK_KEYS or _looks_like_link(value):
+            return value, []
         new = fix(value)
-        return new, new != value
+        return new, ([path or "."] if new != value else [])
     if isinstance(value, list):
-        out, changed = [], False
-        for v in value:
-            nv, c = _rewrite_strings(v, fix)
+        out, paths = [], []
+        for i, v in enumerate(value):
+            nv, p = _rewrite_strings(v, fix, f"{path}[{i}]", key)
             out.append(nv)
-            changed = changed or c
-        return out, changed
+            paths += p
+        return out, paths
     if isinstance(value, dict):
-        out, changed = {}, False
+        out, paths = {}, []
         for k, v in value.items():
-            nv, c = _rewrite_strings(v, fix)
+            nv, p = _rewrite_strings(v, fix, f"{path}.{k}" if path else str(k), str(k))
             out[k] = nv
-            changed = changed or c
-        return out, changed
-    return value, False
+            paths += p
+        return out, paths
+    return value, []
 
 
 def _any_string(value, pred):
@@ -159,33 +174,45 @@ def fix_scan_names_in_reports(cx, *, apply=False):
     Glen, 2026-09-25, via clinical: "Let platform fix the older reports on portals." The
     current reports were patched by clinical; the older rows could not be, because
     /admin/portal/upsert also rewrites the portal's main content and would move a client
-    back to that report. This writes content_json ONLY: never status, never
-    client_portals, never mail. Dry run unless apply=True.
+    back to that report. This writes content_json ONLY: never status, updated_at,
+    client_portals or mail. Dry run unless apply=True.
 
-    Returns {"rows": n scanned, "changed": [...], "left_for_glen": [...]}, each item
-    {"id", "scan_date", "status"}; left_for_glen lists rows where a bare "voice scan"
-    sits beside the Five Element Voice Scan and is left for Glen to name."""
-    from dashboard.narrative_grounding import fix_scan_names, scan_name_problems
+    A row is written only if its content is unchanged since it was read, so another
+    session's edit mid-run is never reverted; such rows are counted as "raced". A report
+    that names the Five Element Voice Scan anywhere keeps every bare "voice scan" and
+    is listed for Glen. Returns {"rows", "changed", "left_for_glen", "raced", "skipped"};
+    each item is {"id", "scan_date", "status", "fields"}: no email, no text."""
+    from dashboard.narrative_grounding import (
+        MENTIONS_FIVE, fix_scan_names, scan_name_problems)
     init_table(cx)
     rows = cx.execute("SELECT id, scan_date, content_json, status "
                       "FROM portal_biofield_reports ORDER BY id").fetchall()
-    changed, left = [], []
+    changed, left, raced, skipped = [], [], [], []
     for rid, scan_date, cj, status in rows:
+        item = {"id": rid, "scan_date": scan_date, "status": status}
         try:
             content = json.loads(cj or "{}")
-        except (TypeError, ValueError):
+            five = _any_string(content, MENTIONS_FIVE.search)
+            new, fields = _rewrite_strings(content, lambda t: fix_scan_names(t, five))
+            if _any_string(new, lambda t: scan_name_problems(t) or (
+                    five and fix_scan_names(t) != t)):
+                left.append(item)
+        except (TypeError, ValueError, RecursionError):
+            skipped.append(item)
             continue
-        new, did = _rewrite_strings(content, fix_scan_names)
-        item = {"id": rid, "scan_date": scan_date, "status": status}
-        if _any_string(new, scan_name_problems):
-            left.append(item)
-        if not did:
+        if not fields:
             continue
-        changed.append(item)
+        item = dict(item, fields=fields)
         if apply:
-            # updated_at is left alone too: the wording changed, the report did not.
-            cx.execute("UPDATE portal_biofield_reports SET content_json=? WHERE id=?",
-                       (json.dumps(new), rid))
+            # Compare-and-set on the text read above. updated_at is left alone: the
+            # wording changed, the report did not.
+            cur = cx.execute("UPDATE portal_biofield_reports SET content_json=? "
+                             "WHERE id=? AND content_json=?", (json.dumps(new), rid, cj))
+            if not cur.rowcount:
+                raced.append(item)
+                continue
+        changed.append(item)
     if apply and changed:
         cx.commit()
-    return {"rows": len(rows), "changed": changed, "left_for_glen": left}
+    return {"rows": len(rows), "changed": changed, "left_for_glen": left,
+            "raced": raced, "skipped": skipped}

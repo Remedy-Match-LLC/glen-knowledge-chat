@@ -36656,7 +36656,9 @@ def admin_portal_reports_fix_scan_names():
         out = _pbr.fix_scan_names_in_reports(cx, apply=apply)
     return jsonify({"ok": True, "applied": apply, "rows": out["rows"],
                     "changed": len(out["changed"]), "left_for_glen": len(out["left_for_glen"]),
-                    "changed_rows": out["changed"], "left_rows": out["left_for_glen"]})
+                    "raced": len(out["raced"]), "skipped": len(out["skipped"]),
+                    "changed_rows": out["changed"], "left_rows": out["left_for_glen"],
+                    "raced_rows": out["raced"], "skipped_rows": out["skipped"]})
 
 
 @app.route("/admin/portal/upsert", methods=["POST"])

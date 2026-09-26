@@ -56,7 +56,7 @@ _FIVE_BEFORE = re.compile(r"(?:five|5)[\s-]*elements?['\u2019]?[\s*_'\u2019]*$",
 _FIVE_AFTER = re.compile(r"^[\s*_]*\(?\s*(?:five|5)[\s-]*element", re.IGNORECASE)
 
 
-_MENTIONS_FIVE = re.compile(r"(?:five|5)[\s-]*elements?", re.IGNORECASE)
+MENTIONS_FIVE = _MENTIONS_FIVE = re.compile(r"(?:five|5)[\s-]*elements?", re.IGNORECASE)
 
 
 def _is_five_element(m, text):
@@ -64,12 +64,12 @@ def _is_five_element(m, text):
                 or _FIVE_AFTER.search(text[m.end():m.end() + 30]))
 
 
-def _rename(m, text, bare=False):
+def _rename(m, text, bare=False, five_context=False):
     if _is_five_element(m, text):
         return m.group(0)
     # A bare "voice scan" in a letter that also names the Five Element scan could be
     # either instrument. Leave it, and scan_name_problems tells Glen.
-    if bare and _MENTIONS_FIVE.search(text):
+    if bare and (five_context or _MENTIONS_FIVE.search(text)):
         return m.group(0)
     plural = m.group(0).lower().endswith("scans")
     return WELLNESS_SCAN + ("s" if plural else "")
@@ -93,13 +93,15 @@ def scan_name_problems(text):
     return list(dict.fromkeys(out))
 
 
-def fix_scan_names(text):
+def fix_scan_names(text, five_context=False):
     """Every name for E4L's scan becomes the Bioenergetic Wellness Scan. Glen's own
-    Five Element Voice Scan is a different instrument and keeps its name."""
+    Five Element Voice Scan is a different instrument and keeps its name.
+    five_context: the surrounding document names the Five Element scan somewhere else,
+    so a bare "voice scan" here is left for Glen too (a report spans many fields)."""
     out = text or ""
     for i, pat in enumerate(_SCAN_NAME_PATTERNS):
         bare = i == len(_SCAN_NAME_PATTERNS) - 1
-        out = pat.sub(lambda m: _rename(m, out, bare), out)
+        out = pat.sub(lambda m: _rename(m, out, bare, five_context), out)
     return re.sub(r"\b([Aa])n (" + WELLNESS_SCAN + r")", r"\1 \2", out)
 
 
