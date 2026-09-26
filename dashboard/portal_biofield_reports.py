@@ -119,3 +119,73 @@ def report_pdf_urls(cx, emails):
         if url:
             out[em] = url
     return out
+
+
+def _rewrite_strings(value, fix):
+    """Apply fix to every string inside a JSON-shaped value. Returns (new, changed)."""
+    if isinstance(value, str):
+        new = fix(value)
+        return new, new != value
+    if isinstance(value, list):
+        out, changed = [], False
+        for v in value:
+            nv, c = _rewrite_strings(v, fix)
+            out.append(nv)
+            changed = changed or c
+        return out, changed
+    if isinstance(value, dict):
+        out, changed = {}, False
+        for k, v in value.items():
+            nv, c = _rewrite_strings(v, fix)
+            out[k] = nv
+            changed = changed or c
+        return out, changed
+    return value, False
+
+
+def _any_string(value, pred):
+    if isinstance(value, str):
+        return bool(pred(value))
+    if isinstance(value, list):
+        return any(_any_string(v, pred) for v in value)
+    if isinstance(value, dict):
+        return any(_any_string(v, pred) for v in value.values())
+    return False
+
+
+def fix_scan_names_in_reports(cx, *, apply=False):
+    """Rename E4L's scan to the Bioenergetic Wellness Scan in every stored report.
+
+    Glen, 2026-09-25, via clinical: "Let platform fix the older reports on portals." The
+    current reports were patched by clinical; the older rows could not be, because
+    /admin/portal/upsert also rewrites the portal's main content and would move a client
+    back to that report. This writes content_json ONLY: never status, never
+    client_portals, never mail. Dry run unless apply=True.
+
+    Returns {"rows": n scanned, "changed": [...], "left_for_glen": [...]}, each item
+    {"id", "scan_date", "status"}; left_for_glen lists rows where a bare "voice scan"
+    sits beside the Five Element Voice Scan and is left for Glen to name."""
+    from dashboard.narrative_grounding import fix_scan_names, scan_name_problems
+    init_table(cx)
+    rows = cx.execute("SELECT id, scan_date, content_json, status "
+                      "FROM portal_biofield_reports ORDER BY id").fetchall()
+    changed, left = [], []
+    for rid, scan_date, cj, status in rows:
+        try:
+            content = json.loads(cj or "{}")
+        except (TypeError, ValueError):
+            continue
+        new, did = _rewrite_strings(content, fix_scan_names)
+        item = {"id": rid, "scan_date": scan_date, "status": status}
+        if _any_string(new, scan_name_problems):
+            left.append(item)
+        if not did:
+            continue
+        changed.append(item)
+        if apply:
+            # updated_at is left alone too: the wording changed, the report did not.
+            cx.execute("UPDATE portal_biofield_reports SET content_json=? WHERE id=?",
+                       (json.dumps(new), rid))
+    if apply and changed:
+        cx.commit()
+    return {"rows": len(rows), "changed": changed, "left_for_glen": left}

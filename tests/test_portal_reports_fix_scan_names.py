@@ -1,0 +1,91 @@
+"""Older portal reports still said "voice scan" (clinical, 2026-09-25). The fix writes a
+report row's content only: never the portal's main content, never status, never mail."""
+import json
+import sqlite3
+
+import pytest
+
+from dashboard import portal_biofield_reports as pbr
+
+SECRET = "test-secret"
+
+
+def _seed(cx):
+    pbr.init_table(cx)
+    pbr.upsert_report(cx, "a@x.com", "2026-06-01", "s1",
+                      {"narrative": "Your recent E4L Voice Scan showed stress.",
+                       "layers": [{"meaning": "as corroborated by your voice scan."}]}, "confirmed")
+    pbr.upsert_report(cx, "a@x.com", "2026-09-01", "s2",
+                      {"narrative": "Your Bioenergetic Wellness Scan showed calm."}, "confirmed")
+    pbr.upsert_report(cx, "b@x.com", "2026-07-01", "s3",
+                      {"narrative": "Your Five Element Voice Scan showed Water. The voice scan "
+                                    "also showed Kidney."}, "draft")
+
+
+def _rows(cx):
+    return {r[0]: (r[1], r[2], r[3]) for r in cx.execute(
+        "SELECT scan_date, content_json, status, updated_at FROM portal_biofield_reports")}
+
+
+def test_dry_run_changes_nothing(tmp_path):
+    cx = sqlite3.connect(str(tmp_path / "t.db"))
+    _seed(cx)
+    before = _rows(cx)
+    out = pbr.fix_scan_names_in_reports(cx)
+    assert out["rows"] == 3
+    assert [c["scan_date"] for c in out["changed"]] == ["2026-06-01"]
+    assert [c["scan_date"] for c in out["left_for_glen"]] == ["2026-07-01"]
+    assert _rows(cx) == before
+
+
+def test_apply_rewrites_only_the_content_of_affected_rows(tmp_path):
+    cx = sqlite3.connect(str(tmp_path / "t.db"))
+    _seed(cx)
+    before = _rows(cx)
+    pbr.fix_scan_names_in_reports(cx, apply=True)
+    after = _rows(cx)
+    content = json.loads(after["2026-06-01"][0])
+    assert content["narrative"] == "Your recent Bioenergetic Wellness Scan showed stress."
+    assert content["layers"][0]["meaning"] == "as corroborated by your Bioenergetic Wellness Scan."
+    assert after["2026-06-01"][1:] == before["2026-06-01"][1:]      # status, updated_at kept
+    assert after["2026-09-01"] == before["2026-09-01"]
+    assert after["2026-07-01"] == before["2026-07-01"]              # Five Element left alone
+
+
+def test_apply_twice_is_a_no_op(tmp_path):
+    cx = sqlite3.connect(str(tmp_path / "t.db"))
+    _seed(cx)
+    pbr.fix_scan_names_in_reports(cx, apply=True)
+    assert pbr.fix_scan_names_in_reports(cx, apply=True)["changed"] == []
+
+
+@pytest.fixture
+def client(monkeypatch, tmp_path):
+    import app as appmod
+    monkeypatch.setattr(appmod, "LOG_DB", str(tmp_path / "chat_log.db"))
+    appmod._init_auth_tables()
+    monkeypatch.setattr(appmod, "CONSOLE_SECRET", SECRET)
+    appmod.app.config["TESTING"] = True
+    return appmod.app.test_client(), appmod
+
+
+def test_route_is_owner_only_dry_run_by_default_and_leaves_the_portal_alone(client):
+    c, appmod = client
+    from dashboard import client_portal as cp
+    cx = sqlite3.connect(appmod.LOG_DB)
+    _seed(cx)
+    cp.init_client_portal_table(cx)
+    cp.upsert_portal(cx, "a@x.com", "A", {"greeting": "Your E4L voice scan is in."})
+    portal_before = cx.execute("SELECT content_json, updated_at FROM client_portals").fetchall()
+    cx.close()
+    url = "/admin/portal/biofield-reports/fix-scan-names"
+    assert c.post(url, json={}).status_code == 401
+    dry = c.post(url, json={}, headers={"X-Console-Key": SECRET}).get_json()
+    assert dry["applied"] is False and dry["changed"] == 1 and dry["left_for_glen"] == 1
+    for truthy in ("true", 1, "yes"):
+        assert c.post(url, json={"apply": truthy},
+                      headers={"X-Console-Key": SECRET}).get_json()["applied"] is False
+    done = c.post(url, json={"apply": True}, headers={"X-Console-Key": SECRET}).get_json()
+    assert done["applied"] is True and done["changed"] == 1
+    cx = sqlite3.connect(appmod.LOG_DB)
+    assert cx.execute("SELECT content_json, updated_at FROM client_portals").fetchall() == portal_before
