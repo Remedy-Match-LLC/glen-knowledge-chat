@@ -4392,7 +4392,7 @@
      "dose": ""
     }
    ],
-   "ingredients_source": "store-recovery-2026-06-08",
+   "ingredients_source": "unverified",
    "qty_pricing": true
   },
   "youth": {
@@ -6150,7 +6150,7 @@
      "dose": "5 ppm"
     }
    ],
-   "ingredients_source": "store-recovery-2026-06-08",
+   "ingredients_source": "glen-confirmed-2026-09-26",
    "qty_pricing": true
   },
   "sanctuary-c60": {
@@ -6407,7 +6407,7 @@
      "dose": ""
     }
    ],
-   "ingredients_source": "store-recovery-2026-06-08",
+   "ingredients_source": "glen-confirmed-2026-09-26",
    "bottle_type": "120 caps",
    "fmp_id": "874",
    "regular_cents": 8000
@@ -8267,7 +8267,7 @@
      "dose": ""
     }
    ],
-   "ingredients_source": "store-recovery-2026-06-08",
+   "ingredients_source": "glen-confirmed-2026-09-26",
    "description": "Zinc Taste Test . Price: $39.97."
   },
   "shields-up": {
@@ -9890,7 +9890,7 @@
      "dose": ""
     }
    ],
-   "ingredients_source": "store-recovery-2026-06-08",
+   "ingredients_source": "glen-confirmed-2026-09-26",
    "qty_pricing": true
   },
   "macular-wellness-zeaxanthin": {
@@ -10103,7 +10103,7 @@
      "dose": ""
     }
    ],
-   "ingredients_source": "store-recovery-2026-06-08",
+   "ingredients_source": "unverified",
    "qty_pricing": true
   },
   "angiogenx": {
@@ -10335,7 +10335,7 @@
      "dose": "50% (Activator solution)"
     }
    ],
-   "ingredients_source": "store-recovery-2026-06-08",
+   "ingredients_source": "unverified",
    "qty_pricing": true
   },
   "phosphatides": {
@@ -12519,10 +12519,10 @@
    "ingredients": [
     {
      "name": "L-Carnosine",
-     "dose": "30 g (bulk powder)"
+     "dose": ""
     }
    ],
-   "ingredients_source": "store-recovery-2026-06-08",
+   "ingredients_source": "glen-confirmed-2026-09-26",
    "description": "L-Carnosine . L-Carnosine L-Carnosine Remedy Match: $39.97 for 30g in 50 mL violet glass bottle (bottle retail value: $19 from Infinity Jars) Compare: Nootropics Depot $29.99/30g in plastic bottle L-Carnosine Powder: 30 grams in a Belgian violet glass bottle. L-Carnosine Background L-Carnosine (β-alanyl-L-histidine) is a naturally occurring dipeptide discovered over 100 years ago by Gulewitsch and Amiradžibi at the University of Charkow, Ukraine[1]. Its name derives from the Latin \"caro, carnis\" meaning meat, as it was first isolated from minced meat extract[1]. This endogenous compound is..."
   },
   "viscum-album": {

@@ -2491,5 +2491,217 @@
     "description": "Each scoop of Adrenal Syntropy Sublingual Powder combines 7-keto DHEA with fat-soluble vitamin C and D-ribose. Its botanical extracts are diosgenin, rhodiola, huang bai, honokiol and macamides, lightly sweetened with mogroside V. Take 1 scoop daily dissolved in mouth and held under tongue, or as guided.\n\nOther ingredients: Healing Energy, Love and Prayer. 30 g, about 60 scoops.",
     "directions": "1 scoop daily dissolved in mouth and held under tongue, or as guided.",
     "note": "Glen's bottle photos, label (c) August 2024, read 2026-09-26"
+  },
+  "hydrolyzed-collagen": {
+    "ingredients": [
+      {
+        "name": "Hydrolyzed Collagen (grass-fed bovine, Type I & III)",
+        "dose": ""
+      }
+    ],
+    "ingredients_source": "glen-confirmed-2026-09-26",
+    "note": "Glen 2026-09-26: grass-fed bovine type I and III (from Micro-Ingredients). Line stands."
+  },
+  "zinc-taste-test": {
+    "ingredients": [
+      {
+        "name": "Zinc Sulfate",
+        "dose": ""
+      }
+    ],
+    "ingredients_source": "glen-confirmed-2026-09-26",
+    "note": "Glen 2026-09-26: Zinc Taste Test is Zinc Sulfate solution. Line stands."
+  },
+  "electrolyte-mineral-manna": {
+    "ingredients": [
+      {
+        "name": "Levitating Sea Mineral Electrolytes",
+        "dose": ""
+      },
+      {
+        "name": "Manna ORMUS M-11",
+        "dose": ""
+      },
+      {
+        "name": "Alkaline Antioxidant Microwater",
+        "dose": ""
+      },
+      {
+        "name": "Low Deuterium Water",
+        "dose": "5 ppm"
+      }
+    ],
+    "ingredients_source": "glen-confirmed-2026-09-26",
+    "note": "Glen 2026-09-26: keep its four lines. Still never-recommended."
+  },
+  "wash--rinse": {
+    "ingredients": [
+      {
+        "name": "Sodium Bicarbonate (baking soda)",
+        "dose": ""
+      },
+      {
+        "name": "Vinegar Powder from Apple Cider Vinegar (Malus pumila)",
+        "dose": ""
+      }
+    ],
+    "ingredients_source": "glen-confirmed-2026-09-26",
+    "note": "Glen 2026-09-26: Wash is Sodium Bicarbonate; Rinse is Apple Cider Vinegar powder. Reformulation planned later."
+  },
+  "lcarnosine": {
+    "ingredients": [
+      {
+        "name": "L-Carnosine",
+        "dose": ""
+      }
+    ],
+    "ingredients_source": "glen-confirmed-2026-09-26",
+    "note": "Glen 2026-09-26: pure powder. Dose cleared: '30 g (bulk powder)' was the jar size, not a serving."
+  },
+  "food-tolerance": {
+    "ingredients": [
+      {
+        "name": "ACTH (adrenocorticotrophic hormone)",
+        "dose": ""
+      },
+      {
+        "name": "Adrenalinum (adrenaline)",
+        "dose": ""
+      },
+      {
+        "name": "Agaricus muscarius",
+        "dose": ""
+      },
+      {
+        "name": "Agaricus phalloides",
+        "dose": ""
+      },
+      {
+        "name": "Allium cepa",
+        "dose": ""
+      },
+      {
+        "name": "Allium sativum",
+        "dose": ""
+      },
+      {
+        "name": "Argentum nitricum",
+        "dose": ""
+      },
+      {
+        "name": "Avena sativa",
+        "dose": ""
+      },
+      {
+        "name": "Carbo vegetabilis",
+        "dose": ""
+      },
+      {
+        "name": "Coffea tosta",
+        "dose": ""
+      },
+      {
+        "name": "Gossypium herbaceum",
+        "dose": ""
+      },
+      {
+        "name": "Histaminum (histamine)",
+        "dose": ""
+      },
+      {
+        "name": "Hydrangea arborescens",
+        "dose": ""
+      },
+      {
+        "name": "Lac defloratum",
+        "dose": ""
+      },
+      {
+        "name": "Lactuca virosa",
+        "dose": ""
+      },
+      {
+        "name": "Ovi gallinae",
+        "dose": ""
+      },
+      {
+        "name": "Phaseolus",
+        "dose": ""
+      },
+      {
+        "name": "Russula foetens",
+        "dose": ""
+      },
+      {
+        "name": "Saccharomyces",
+        "dose": ""
+      },
+      {
+        "name": "Solanum lycopersicum",
+        "dose": ""
+      },
+      {
+        "name": "Solanum tuberosum",
+        "dose": ""
+      },
+      {
+        "name": "Stigmata maidis",
+        "dose": ""
+      },
+      {
+        "name": "Triticum repens",
+        "dose": ""
+      }
+    ],
+    "ingredients_source": "unverified",
+    "note": "Unverified 2026-09-26: Glen confirmed only 'homeopathic in a Terrain Restore base'; no label. The letter writer names none of its ingredients; the page list stays."
+  },
+  "shark-essence": {
+    "ingredients": [
+      {
+        "name": "Bovine Thymus",
+        "dose": ""
+      },
+      {
+        "name": "Peppermint (Mentha piperita)",
+        "dose": ""
+      },
+      {
+        "name": "Shark Cartilage",
+        "dose": ""
+      },
+      {
+        "name": "Squalene (shark liver oil)",
+        "dose": ""
+      },
+      {
+        "name": "Thymolum",
+        "dose": ""
+      }
+    ],
+    "ingredients_source": "unverified",
+    "note": "Unverified 2026-09-26: Glen confirmed only 'homeopathic in a Terrain Restore base'; no label. The letter writer names none of its ingredients; the page list stays."
+  },
+  "cds-water-purifier--activator": {
+    "ingredients": [
+      {
+        "name": "Sodium Chlorite",
+        "dose": "28% (Purifier solution)"
+      },
+      {
+        "name": "Pure Water",
+        "dose": "72% (Purifier solution)"
+      },
+      {
+        "name": "Citric Acid",
+        "dose": "50% (Activator solution)"
+      },
+      {
+        "name": "Miracule Water",
+        "dose": "50% (Activator solution)"
+      }
+    ],
+    "ingredients_source": "unverified",
+    "note": "Held by Glen 2026-09-26; unverified for the letter writer until he decides."
   }
 }
