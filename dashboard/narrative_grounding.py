@@ -69,6 +69,19 @@ def _is_five_element(m, text):
                 or _FIVE_AFTER.search(text[m.end():m.end() + 30]))
 
 
+# "the E4L and Five Element voice scans" names BOTH instruments: renaming it as either
+# is wrong, so it is left and reported (review, 2026-09-26).
+_BOTH = re.compile(r"(?:E4L|Energy\s?4\s?Life|Bioenergetic)\W+(?:and|&|or)\W+(?:\*\*)?(?:five|5)"
+                   r"|(?:five|5)[\s-]*elements?\W+(?:and|&|or)\W+(?:E4L|Energy\s?4\s?Life|Bioenergetic)",
+                   re.IGNORECASE)
+
+
+def _is_glens(m, text):
+    """Glen's Five Element instrument alone, not a phrase naming both."""
+    window = text[max(0, m.start() - 45):m.end() + 45]
+    return _is_five_element(m, text) and not _BOTH.search(window)
+
+
 def _sentence_around(m, text):
     start = max(text.rfind(c, 0, m.start()) for c in ".!?\n") + 1
     ends = [i for i in (text.find(c, m.end()) for c in ".!?\n") if i != -1]
@@ -77,9 +90,11 @@ def _sentence_around(m, text):
 
 def _rename(m, text, bare=False, five_context=False):
     if _is_five_element(m, text):
-        # "Five Element Voice Scan" -> "Five Element Voice Analysis". Only a bare
-        # "voice scan" match reaches here; the E4L-qualified forms never sit beside it.
-        return FIVE_ELEMENT_NAME if bare else m.group(0)
+        # "Five Element Voice Scan" -> "Five Element Voice Analysis", plural kept. Only a
+        # bare "voice scan" match reaches here; E4L-qualified forms never sit beside it.
+        if not bare or not _is_glens(m, text):
+            return m.group(0)
+        return "Voice Analyses" if m.group(0).lower().endswith("scans") else FIVE_ELEMENT_NAME
     # "Your Bioenergetic Wellness Scan (E4L voice scan)" would read the name twice.
     # Left as written, and reported by scan_name_problems.
     if WELLNESS_SCAN.lower() in _sentence_around(m, text).lower():
@@ -106,7 +121,8 @@ def scan_name_problems(text):
     # Whatever the rename leaves behind still needs a person: beside the Five Element
     # scan, a doubled name, or "voice scanning" (review, 2026-09-26).
     for m in _ANY_VOICE.finditer(fixed):
-        if not _is_five_element(m, fixed):
+        glens_name = _is_glens(m, fixed) and m.group(0).lower().endswith(("analysis", "analyses"))
+        if not glens_name:
             out.append(f"Still says '{m.group(0)}'. Name which scan it means.")
     return list(dict.fromkeys(out))
 
@@ -124,6 +140,9 @@ def fix_scan_names(text, five_context=False):
     for i, pat in enumerate(_SCAN_NAME_PATTERNS):
         bare = i == len(_SCAN_NAME_PATTERNS) - 1
         out = pat.sub(lambda m: _rename(m, out, bare, five_context), out)
+    # "Voice Scan analysis" renamed would read "Voice Analysis analysis".
+    out = re.sub(r"\bVoice Analysis\s+analysis\b", "Voice Analysis", out)
+    out = re.sub(r"\bVoice Analys[ie]s\s+analyses\b", "Voice Analyses", out)
     return re.sub(r"\b([Aa])n (" + WELLNESS_SCAN + r")", r"\1 \2", out)
 
 

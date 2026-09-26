@@ -469,3 +469,24 @@ def test_five_element_voice_scan_becomes_five_element_voice_analysis():
 def test_bioenergetic_voice_analysis_is_still_e4ls_scan():
     assert ng.fix_scan_names("Your Bioenergetic Voice Analysis agrees.") == (
         "Your Bioenergetic Wellness Scan agrees.")
+
+
+# ── review of the Five Element rename, 2026-09-26 ───────────────────────────
+
+def test_a_phrase_naming_both_instruments_is_left_and_flagged():
+    for t in ("We compared the E4L and Five Element voice scans.",
+              "the Energy4Life and 5-Element voice scans"):
+        assert ng.fix_scan_names(t) == t, t
+        assert ng.scan_name_problems(t) != [], t
+
+
+def test_no_doubled_analysis_and_plural_kept():
+    assert ng.fix_scan_names("Your Five Element Voice Scan analysis shows Wood.") == (
+        "Your Five Element Voice Analysis shows Wood.")
+    assert ng.fix_scan_names("Your Five Element Voice Scans from March and June agree.") == (
+        "Your Five Element Voice Analyses from March and June agree.")
+
+
+def test_five_element_voice_scanning_is_flagged():
+    t = "Your Five Element Voice Scanning session is booked."
+    assert ng.scan_name_problems(t) != []
