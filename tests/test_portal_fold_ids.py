@@ -87,3 +87,14 @@ def test_action_cards_open_on_first_visit():
                  "appointment-proposals-card", "scans-written-report", "scans-video-message-",
                  'data-fold-id="biofield-${foldSlug(d.scan_date || "")}"'):
         assert name in joined, name
+
+
+
+def test_home_page_sections_carry_fold_names_and_open_first():
+    """Glen, 2026-09-26: the portal home page had no hide/show. Its tile groups and the
+    'Where you are' banner are not cards, so they carry fold names directly."""
+    page = (ROOT / "static" / "client-portal.html").read_text()
+    shell = (ROOT / "static" / "js" / "portal-shell.js").read_text()
+    assert 'class="hub-grid-group" data-fold-id="home-${foldSlug(label)}" data-fold-open="1"' in page
+    assert 'class="hub-banner" data-fold-id="home-where-you-are" data-fold-open="1"' in page
+    assert 'class="hub-banner" data-fold-id="home-where-you-are" data-fold-open="1"' in shell

@@ -57,8 +57,9 @@ function el(tag, props){
     closest(sel){ let n = this; while (n) { if (matches(n, sel)) return n; n = n.parentElement; } return null; },
     querySelector(sel){
       if (sel.includes(':scope')) {
-        const tags = sel.split(',').map(x => x.replace(':scope', '').replace('>', '').trim().toUpperCase());
-        return this.children.find(c => tags.includes(c.tagName)) || null;
+        const parts = sel.split(',').map(x => x.replace(':scope', '').replace('>', '').trim());
+        return this.children.find(c => parts.some(p => p.startsWith('.') ? c.classList.contains(p.slice(1))
+                                                       : c.tagName === p.toUpperCase())) || null;
       }
       return desc(this).find(n => matches(n, sel)) || null; },
     querySelectorAll(sel){ return desc(this).filter(n => matches(n, sel)); },
@@ -73,6 +74,7 @@ function matches(n, sel){
     s = s.trim();
     if (s === 'h2' || s === 'h3') return n.tagName === s.toUpperCase();
     if (s === '[data-door]') return n.dataset.door !== undefined;
+    if (s === '[data-fold-id]') return n.dataset.foldId !== undefined;
     let m = s.match(/^section\[data-door="(.*)"\]$/);
     if (m) return n.tagName === 'SECTION' && n.dataset.door === m[1];
     if (s.startsWith('.')) return n.classList.contains(s.slice(1));
@@ -180,6 +182,21 @@ __FNS__
   assert.ok(!l1.classList.contains('is-folded') && !l2.classList.contains('is-folded'));
   assert.ok(l3.classList.contains('is-folded'));
   sec3.hidden = true;
+
+  // 2d. a non-card section with a fold name and a .glabel label folds too (the home
+  // page's tile groups; Glen, 2026-09-26: "every section or card folds")
+  const secH = body.appendChild(el('SECTION')); secH.setAttribute('data-door', 'home');
+  const grp = el('DIV', {cls: 'hub-grid-group'}); grp.setAttribute('data-fold-id', 'home-remedies');
+  grp.setAttribute('data-fold-open', '1');
+  grp.appendChild(el('P', {cls: 'glabel', textContent: 'Remedies'}));
+  grp.appendChild(el('DIV', {cls: 'hub-tiles'}));
+  secH.appendChild(grp);
+  _foldDoorShown();
+  assert.strictEqual(toggles(grp).length, 1, 'a tile group gets a toggle');
+  assert.ok(!grp.classList.contains('is-folded'), 'home groups open on the first visit');
+  click(toggles(grp)[0]);
+  assert.ok(grp.classList.contains('is-folded'));
+  secH.hidden = true;
 
   // 2c. a deep link opens its card even when the default folded it
   assert.ok(inv2.classList.contains('is-folded'));
