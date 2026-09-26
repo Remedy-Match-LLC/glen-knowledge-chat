@@ -48,9 +48,20 @@ _SCAN_NAME_PATTERNS = [
     re.compile(r"\b(?:" + _E4L + r")?Bioenergetic[\s-]+Voice[\s-]+" + _SCAN_WORD + r"\b",
                re.IGNORECASE),
     re.compile(r"\b" + _E4L + r"voice[\s-]+" + _SCAN_WORD + r"\b", re.IGNORECASE),
-    re.compile(r"(?<!element )(?<!element-)(?<!elements )(?<!elements-)\bvoice[\s-]+scans?\b",
-               re.IGNORECASE),
+    re.compile(r"\bvoice[\s-]+scans?\b", re.IGNORECASE),
 ]
+# Glen's own instrument, however it is formatted: "**Five Element** Voice Scan",
+# "Five Elements' Voice Scan", a line break between, or "voice scan (Five Element)".
+_FIVE_BEFORE = re.compile(r"(?:five|5)[\s-]*elements?['\u2019]?[\s*_'\u2019]*$", re.IGNORECASE)
+_FIVE_AFTER = re.compile(r"^[\s*_]*\(?\s*(?:five|5)[\s-]*element", re.IGNORECASE)
+
+
+def _rename(m, text):
+    if (_FIVE_BEFORE.search(text[max(0, m.start() - 30):m.start()])
+            or _FIVE_AFTER.search(text[m.end():m.end() + 30])):
+        return m.group(0)
+    plural = m.group(0).lower().endswith("scans")
+    return WELLNESS_SCAN + ("s" if plural else "")
 
 
 def fix_scan_names(text):
@@ -58,7 +69,7 @@ def fix_scan_names(text):
     Five Element Voice Scan is a different instrument and keeps its name."""
     out = text or ""
     for pat in _SCAN_NAME_PATTERNS:
-        out = pat.sub(WELLNESS_SCAN, out)
+        out = pat.sub(lambda m: _rename(m, out), out)
     return re.sub(r"\b([Aa])n (" + WELLNESS_SCAN + r")", r"\1 \2", out)
 
 
@@ -89,8 +100,30 @@ def _term(ingredient):
     return " ".join(words).strip()
 
 
+# A one-word product name is only worth flagging when it cannot be an ordinary word:
+# an internal capital, a digit or a plus (AngiogenX, OcuHeal+, 5-MTHF).
+_BRANDLIKE = re.compile(r"[a-z][A-Z]|\d|\+")
+# A sentence that claims what a remedy holds. "EI8 supports the balance between the
+# microbiome and the liver" claims nothing about its contents.
+_CLAIM = re.compile(
+    r"\b(?:provid\w*|suppl(?:y|ies|ied|ying)|contain\w*|deliver\w*|offer\w*|gives?|"
+    r"bring\w*|includ\w*|carr(?:y|ies)|rich in|source of|made (?:with|from)|"
+    r"ingredients?|featur\w*|combin\w*|pack\w*|blend of|formula of|with [\w\s,]{0,30}like)\b",
+    re.IGNORECASE)
 _BARE_CODE = re.compile(r"(?<![\w-])(B\d{1,2}|D3|K2)(?![\w-])")
-_PRONOUN_START = re.compile(r"^\W*(?:it|its|this|these|they|their|both)\b", re.IGNORECASE)
+_PRONOUN_START = re.compile(
+    r"^\W*(?:it|its|this|these|they|their|both|the (?:formula|remedy|blend)|"
+    r"this (?:formula|remedy|blend)|each)\b", re.IGNORECASE)
+# Nutrients and botanicals a letter may name that no catalog label happens to lead with.
+_COMMON_NUTRIENTS = {
+    "quercetin", "ashwagandha", "rhodiola", "glycine", "taurine", "selenium", "iodine",
+    "chromium", "boron", "lysine", "arginine", "carnitine", "omega-3", "fish oil",
+    "melatonin", "lutein", "zeaxanthin", "astaxanthin", "bilberry", "ginkgo", "magnesium",
+    "zinc", "iron", "calcium", "potassium", "copper", "manganese", "collagen", "probiotics",
+    "dha", "epa", "msm", "honokiol", "berberine", "amygdalin", "serrapeptase", "nattokinase",
+    "lumbrokinase", "bromelain", "fulvic acid", "humic acid", "apigenin", "luteolin",
+    "rutin", "taurine", "carnosine", "mistletoe", "saffron",
+}
 _NEGATION = re.compile(r"\b(?:no|not|without|free of|free from|none)\b[^.]{0,30}$", re.IGNORECASE)
 
 
@@ -156,10 +189,22 @@ def _squash(name):
 
 
 def _is_chain_product(name, chain):
-    """A catalog name is the chain's remedy under another spelling when one squashed name
-    contains the other: 'Clear Lens Eyedrops' and 'Clear Lens Eye Drops ACES+CAT'."""
+    """A catalog name is the chain's remedy under another spelling when the chain's own,
+    longer name contains it: 'Clear Lens Eyedrops' in 'Clear Lens Eye Drops ACES+CAT'.
+    Never the other way: a chain 'OcuHeal' does not make 'OcuHeal+ Eye Drops', or 'ES1'
+    'ES15 ...', the same product (blind review, 2026-09-25). Same-product spellings the
+    other way round are passed in by the caller as extra chain names."""
     n = _squash(name)
-    return any(n and c and (n in c or c in n) for c in (_squash(x) for x in chain))
+    if any(n and c and n in c for c in (_squash(x) for x in chain)):
+        return True
+    # Infoceuticals go by their code: "ED11 Liver Driver" is the chain's "ED11 Liver
+    # Energetic Driver Infoceutical" (blind review round 2).
+    code = _INFO_CODE.match(name or "")
+    return bool(code) and any(_INFO_CODE.match(x or "") and
+                              _INFO_CODE.match(x).group(1) == code.group(1) for x in chain)
+
+
+_INFO_CODE = re.compile(r"^\s*([A-Z]{1,3}\d{1,2})\b")
 
 
 def _names_product(name, text):
@@ -187,15 +232,19 @@ def _word_in(term, text, flags=re.IGNORECASE):
     return re.search(r"(?<![\w+])" + re.escape(term) + r"(?![\w+])", text, flags) is not None
 
 
-def check_narrative(text, *, chain, ingredients, catalog_names, catalog_ingredients,
-                    allowed_text="", heads_text=""):
+def check_narrative(text, *, chain, ingredients, catalog_names, allowed_text="", heads_text=""):
     """Problems a reader could be misled by, as plain sentences for Glen. Empty when clean.
 
     chain: remedy names on the client's chain. ingredients: {remedy: [ingredient line]}.
-    catalog_names / catalog_ingredients: the whole catalog, so a product or nutrient from
-    outside the chain is seen. allowed_text: everything the writer was given; a product
-    named there is not off-chain invention. heads_text: the chain's Head and Tail text,
-    whose words name body areas, not nutrients.
+    catalog_names: the whole catalog, so a product from outside the chain is seen.
+    allowed_text: names permitted beyond the chain (its Heads and Tails, the service).
+    heads_text: the chain's Head and Tail text, whose words name body areas.
+
+    Kept deliberately narrow. Blind review round 2 measured a check built on every
+    catalog label word ("Kale", "Honey", "English") flagging 13 of 42 correct sentences,
+    each flag costing a paid retry. Nutrients are now a curated list plus the chain's
+    own label terms, and only a sentence that CLAIMS contents ("provides", "contains")
+    is checked.
     """
     text = text or ""
     problems = []
@@ -203,48 +252,63 @@ def check_narrative(text, *, chain, ingredients, catalog_names, catalog_ingredie
     # A name that is part of a chain remedy's own label ("5-MTHF" in B17 Syntropy's
     # "Vitamin B9 (5-MTHF)") names that ingredient, not another product.
     chain_labels = " ".join(str(i) for c in chain for i in (ingredients.get(c) or [])).lower()
+    allowed_low = (allowed_text or "").lower()
 
     # Off-chain products: matched with case, because a product name is capitalised and
     # the same word in lower case is ordinary prose ("helps the body transform").
     for name in sorted({n for n in catalog_names if n and len(n) >= 4}, key=len, reverse=True):
-        if (_is_chain_product(name, chain) or name.lower() in (allowed_text or "").lower()
+        if " " not in name.strip() and not _BRANDLIKE.search(name):
+            continue                  # "Energy", "Sleep", "Clarity": ordinary words too
+        if (_is_chain_product(name, chain) or name.lower() in allowed_low
                 or name.lower() in chain_labels):
             continue
         if _names_product(name, text):
             problems.append(f"Names {name}, which is not on this client's chain.")
 
     heads_low = (heads_text or "").lower()
-    vocab = set()
-    for ing in catalog_ingredients or []:
-        t = _term(ing)
-        short_ok = len(t) == 3 and t.isalpha() and t.isupper()     # DHA, EPA, NAC
-        if ((len(t) >= 4 or short_ok) and t.lower() not in _NOT_NUTRIENTS and not t.lower().startswith("vitamin")
-                and t.lower() not in chain_low and t.lower() not in heads_low):
-            vocab.add(t)
+    own = set()
+    for c in chain:
+        for ing in ingredients.get(c) or []:
+            t = _term(ing)
+            short_ok = len(t) == 3 and t.isalpha() and t.isupper()     # DHA, EPA, NAC
+            if ((len(t) >= 4 or short_ok) and t.lower() not in _NOT_NUTRIENTS
+                    and not t.lower().startswith("vitamin") and t.lower() not in chain_low):
+                own.add(t)
     # Head and Tail words name body areas: "Silymarin Terrain" is not a nutrient claim.
-    terms = vocab | {t for t in _SYNONYM_TERMS if t not in heads_low}
+    terms = {t for t in own | _SYNONYM_TERMS | _COMMON_NUTRIENTS if t.lower() not in heads_low}
+    term_re = re.compile(r"(?<![\w+])(" + "|".join(
+        re.escape(t) for t in sorted(terms, key=len, reverse=True)) + r")(?![\w+])",
+        re.IGNORECASE) if terms else None
     by_len = sorted(chain, key=len, reverse=True)
+    codes = {_INFO_CODE.match(c).group(1): c for c in chain if _INFO_CODE.match(c or "")}
 
+    last_remedies = []                        # "This remedy..." may open the next paragraph
     for para in re.split(r"\n\s*\n", text):
-        last_remedies = []
         for sentence in _SENTENCE.split(para):
             rest, named = sentence, []
             for r in by_len:                       # longest first: "B17 Syntropy" before "B17"
                 if _word_in(r, rest):
                     named.append(r)
                     rest = re.sub(re.escape(r), " ", rest, flags=re.IGNORECASE)
-            nutrients = _vitamins_in(rest) + sorted(t for t in terms if _word_in(t, rest))
-            nutrients = list({n.lower(): n for n in reversed(nutrients)}.values())[::-1]
-            # "the MSM on layer 1" is the chain's MSM Powder, shortened, not a claim.
-            nutrients = [n for n in nutrients if not _negated(n, rest)
-                         and not any(c.startswith(n.lower() + " ") for c in chain_low)]
+            # An infoceutical is often written by its code and a short name ("ED11 Liver
+            # Driver" for "ED11 Liver Energetic Driver Infoceutical").
+            for code, r in codes.items():
+                if r not in named and re.search(r"(?<![\w+])" + code + r"(?![\w+])", rest):
+                    named.append(r)
+                    rest = re.sub(r"(?<![\w+])" + code + r"(?:\s+[A-Z][\w/-]*)*", " ", rest)
             # Only a pronoun ("It supplies...") carries the last remedy forward; "Leafy
             # greens rich in magnesium" after a remedy sentence is not about that remedy.
             remedies = named or (last_remedies if _PRONOUN_START.match(sentence) else [])
             if named:
                 last_remedies = named
-            if not nutrients or not remedies:
+            if not remedies or not _CLAIM.search(rest):
                 continue
+            nutrients = _vitamins_in(rest) + ([m.group(1) for m in term_re.finditer(rest)]
+                                              if term_re else [])
+            nutrients = list({n.lower(): n for n in reversed(nutrients)}.values())[::-1]
+            # "the MSM on layer 1" is the chain's MSM Powder, shortened, not a claim.
+            nutrients = [n for n in nutrients if not _negated(n, rest)
+                         and not any(c.startswith(n.lower() + " ") for c in chain_low)]
             for n in nutrients:
                 for r in remedies:
                     listed = ingredients.get(r) or []

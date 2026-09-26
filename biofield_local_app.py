@@ -3075,12 +3075,14 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
         notes = (request.get_json(silent=True) or {}).get("notes", "")
         with sqlite3.connect(db_path) as cx:
             ctx, rep = _e4l(cx, test_id)
+            warnings = []
             try:
-                script = generate_video_script(rep, notes, complete, scan=ctx)
+                script = generate_video_script(rep, notes, complete, scan=ctx,
+                                               problems_out=warnings)
             except Exception as e:
                 return {"error": str(e)[:200]}
             save_video_script(cx, test_id, script)
-        return {"script": script}
+        return {"script": script, "warnings": warnings}
 
     @app.route("/test/<test_id>/video-script", methods=["POST"])
     def video_script_save(test_id):

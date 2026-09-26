@@ -26,7 +26,7 @@ CATALOG_NAMES = list(ING) + ["Liver Support", "Free & Easy", "Transform", "Micro
 def _check(text, allowed_text="", chain=None, heads=""):
     return ng.check_narrative(
         text, chain=chain or list(ING), ingredients=ING, catalog_names=CATALOG_NAMES,
-        catalog_ingredients=CATALOG_INGREDIENTS, allowed_text=allowed_text, heads_text=heads)
+        allowed_text=allowed_text, heads_text=heads)
 
 
 # ── scan block cleaning ─────────────────────────────────────────────────────
@@ -97,9 +97,9 @@ def test_ingredients_credited_to_two_remedies_are_flagged():
 
 def test_ingredient_absent_from_the_named_remedy_is_flagged():
     probs = _check("AngiogenX provides vitamin C, magnesium, and zinc.")
-    joined = " | ".join(probs)
-    assert "AngiogenX" in joined
-    for n in ("Vitamin C", "Magnesium", "Zinc"):
+    joined = " | ".join(probs).lower()
+    assert "angiogenx" in joined
+    for n in ("vitamin c", "magnesium", "zinc"):
         assert n in joined, n
 
 
@@ -115,12 +115,15 @@ def test_shared_ingredient_across_two_remedies_passes():
 
 def test_pronoun_sentence_inherits_the_previous_remedy():
     probs = _check("AngiogenX supports circulation. It also provides zinc.")
-    assert any("AngiogenX" in p and "Zinc" in p for p in probs), probs
+    assert any("AngiogenX" in p and "zinc" in p.lower() for p in probs), probs
 
 
 def test_ingredient_from_outside_the_chain_is_flagged():
-    probs = _check("B17 Max supports energy with Coenzyme Q10.")
+    probs = _check("B17 Max supports energy with ingredients like Coenzyme Q10.")
     assert any("Coenzyme Q10" in p for p in probs), probs
+    # Known gap, accepted in review round 2: a bare "with" is not read as a claim,
+    # because "taken with raw honey" would be.
+    assert _check("B17 Max supports energy with Coenzyme Q10.") == []
 
 
 def test_ingredient_without_any_remedy_in_paragraph_is_not_flagged():
@@ -153,8 +156,7 @@ def test_another_catalog_spelling_of_a_chain_remedy_is_not_off_chain():
     probs = ng.check_narrative(
         "The use of Clear Lens Eyedrops supports eye health.",
         chain=["Clear Lens Eye Drops ACES+CAT Eye Drops"], ingredients={},
-        catalog_names=["Clear Lens Eyedrops", "Clear Lens+ Eye Drops ACES+CAT Eye Drops"],
-        catalog_ingredients=[], allowed_text="")
+        catalog_names=["Clear Lens Eyedrops", "Clear Lens+ Eye Drops ACES+CAT Eye Drops"], allowed_text="")
     assert probs == []
 
 
@@ -164,32 +166,32 @@ def test_a_remedy_with_no_known_ingredients_is_not_checked():
     # Unknown is not wrong: 894 of 1,092 catalog products carry no ingredient list.
     probs = ng.check_narrative(
         "Sterol Max supports the acid layer. Leafy greens rich in magnesium help too.",
-        chain=["Sterol Max"], ingredients={"Sterol Max": []}, catalog_names=["Sterol Max"],
-        catalog_ingredients=["Magnesium (Citrate)"], allowed_text="")
+        chain=["Sterol Max"], ingredients={"Sterol Max": []}, catalog_names=["Sterol Max"], allowed_text="")
     assert probs == []
 
 
 def test_a_one_word_product_at_a_sentence_start_is_ordinary_prose():
     probs = ng.check_narrative(
         "Sleep is when repair happens. Comfort comes as the layer settles.",
-        chain=["B17 Max"], ingredients={}, catalog_names=["Sleep", "Comfort"],
-        catalog_ingredients=[], allowed_text="")
+        chain=["B17 Max"], ingredients={}, catalog_names=["Sleep", "Comfort"], allowed_text="")
     assert probs == []
 
 
-def test_a_one_word_product_mid_sentence_is_still_flagged():
+def test_a_one_word_product_is_flagged_only_when_it_looks_like_a_brand():
+    # Review round 2: 82 one-word catalog names ("Energy", "Clarity") are ordinary words.
+    names = ["Comfort", "AngiogenX", "OcuHeal+"]
     probs = ng.check_narrative(
-        "Your layer also responds to Comfort taken at night.",
-        chain=["B17 Max"], ingredients={}, catalog_names=["Comfort"],
-        catalog_ingredients=[], allowed_text="")
-    assert any("Comfort" in p for p in probs)
+        "Your layer responds to Comfort at night, to AngiogenX, and to OcuHeal+ drops.",
+        chain=["B17 Max"], ingredients={}, catalog_names=names, allowed_text="")
+    assert not any("Comfort" in p for p in probs)
+    assert any("AngiogenX" in p for p in probs) and any("OcuHeal+" in p for p in probs)
 
 
 def test_herb_common_names_match_their_label_names():
     probs = ng.check_narrative(
         "Liver Support supports your liver with milk thistle and turmeric.",
         chain=["Liver Support"], ingredients={"Liver Support": ["Silymarin", "Curcumin"]},
-        catalog_names=["Liver Support"], catalog_ingredients=["Silymarin", "Curcumin"],
+        catalog_names=["Liver Support"],
         allowed_text="")
     assert probs == []
 
@@ -203,7 +205,7 @@ def test_five_elements_plural_keeps_its_name():
 
 def _chk(text, chain, ing=None, names=None, ingredients=None, heads=""):
     return ng.check_narrative(text, chain=chain, ingredients=ing or {},
-                              catalog_names=names or [], catalog_ingredients=ingredients or [],
+                              catalog_names=names or [],
                               allowed_text=heads, heads_text=heads)
 
 
@@ -265,3 +267,78 @@ def test_a_catalog_name_inside_a_chain_label_is_that_ingredient():
     ing = {"B17 Syntropy": ["Vitamin B9 (5-MTHF)"]}
     assert _chk("Its folate comes as 5-MTHF, the active form.", ["B17 Syntropy"], ing,
                 names=["5-MTHF"]) == []
+
+
+# ── blind review round 2, client-visible text, 2026-09-25 ───────────────────
+
+def test_a_longer_catalog_name_containing_a_chain_name_is_a_different_product():
+    for chain, text, name in (("OcuHeal", "Begin OcuHeal+ Eye Drops tonight.", "OcuHeal+ Eye Drops"),
+                              ("ES1", "Add ES15 Heavy Metals Energetic Star.", "ES15 Heavy Metals Energetic Star"),
+                              ("Energy", "Take Nous Energy daily.", "Nous Energy")):
+        probs = _chk(text, [chain], names=[name])
+        assert any(name in p for p in probs), (chain, probs)
+
+
+def test_the_formula_and_this_remedy_carry_the_remedy_forward():
+    ing = {"B17 Max": ["Amygdalin"]}
+    assert _chk("B17 Max supports the terrain. The formula also supplies zinc.",
+                ["B17 Max"], ing, ingredients=["Zinc"]) != []
+    assert _chk("B17 Max supports the terrain.\n\nThis remedy brings zinc.",
+                ["B17 Max"], ing, ingredients=["Zinc"]) != []
+
+
+def test_common_botanicals_are_seen_without_a_catalog_label():
+    ing = {"B17 Max": ["Amygdalin"]}
+    for herb in ("quercetin", "ashwagandha", "rhodiola"):
+        assert _chk(f"B17 Max provides {herb}.", ["B17 Max"], ing) != [], herb
+
+
+def test_five_element_voice_scan_survives_formatting():
+    for t in ("Your **Five Element** Voice Scan", "the Five Element\nVoice Scan",
+              "the Five Elements' Voice Scan", "Glen's own voice scan (Five Element)"):
+        assert ng.fix_scan_names(t) == t, t
+
+
+def test_plural_voice_scans_stay_plural():
+    assert ng.fix_scan_names("Your two voice scans show") == (
+        "Your two Bioenergetic Wellness Scans show")
+
+
+
+# ── blind review round 2, cost reviewer: correct clinical prose, no flags ────
+
+CORRECT = [
+    "EI8 Microbes-Liver Integrator supports the balance between the microbiome and the liver.",
+    "Rose Quartz Gem Elixir is made in Terrain Restore.",
+    "We are in Phase 1, Energize, where the focus is Energy and circulation.",
+    "B17 Max works best alongside raw honey and pure water.",
+    "Kale and dandelion greens support the liver alongside B17 Max.",
+]
+
+
+def test_correct_clinical_sentences_raise_no_flags():
+    for t in CORRECT:
+        probs = ng.check_narrative(
+            t, chain=["B17 Max", "EI8 Microbes-Liver Integrator Infoceutical",
+                      "Rose Quartz Gem Elixir"],
+            ingredients={"B17 Max": ["Amygdalin"]},
+            catalog_names=["Energy", "Terrain Restore", "Microbiome"],
+            allowed_text="Terrain Restore")
+        assert probs == [], (t, probs)
+
+
+def test_an_infoceutical_short_name_is_its_long_catalog_name():
+    probs = ng.check_narrative(
+        "ED11 Liver Driver supports liver flow.",
+        chain=["ED11 Liver Energetic Driver Infoceutical"], ingredients={},
+        catalog_names=["ED11 Liver Driver"], allowed_text="")
+    assert probs == []
+
+
+
+def test_an_infoceutical_by_its_short_name_cannot_be_credited_with_nutrients():
+    probs = ng.check_narrative(
+        "ED11 Liver Driver supplies zinc and selenium.",
+        chain=["ED11 Liver Energetic Driver Infoceutical"], ingredients={},
+        catalog_names=[], allowed_text="")
+    assert any("ED11 Liver Energetic Driver Infoceutical" in p and "zinc" in p for p in probs), probs

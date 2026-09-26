@@ -135,3 +135,30 @@ def test_the_service_name_is_not_an_off_chain_product():
     from dashboard.biofield_narrative import narrative_problems
     assert narrative_problems("Aloha Jane,\n\nYour Biofield Analysis showed a clear chain.",
                               _report()) == []
+
+
+def test_only_the_service_name_is_exempt_from_the_writers_instructions():
+    from dashboard.biofield_narrative import narrative_problems
+    assert any("ED5 Circulation Driver" in p for p in
+               narrative_problems("1. The ED5 Circulation Driver also helps.", _report()))
+    assert narrative_problems("Your Biofield Analysis showed it.", _report()) == []
+
+
+def test_another_catalog_spelling_of_the_same_product_is_on_chain():
+    from dashboard.biofield_narrative import narrative_problems
+    rep = _report()
+    rep["layers"][0]["remedy"] = "OcuHeal"
+    assert not any("OcuHeal" in p for p in narrative_problems("Take OcuHeal daily.", rep))
+
+
+def test_the_video_script_is_checked_and_retried():
+    from dashboard.biofield_narrative import generate_video_script
+    calls = []
+
+    def fake(system, user):
+        calls.append(user)
+        return BAD if len(calls) == 1 else GOOD
+
+    problems = []
+    out = generate_video_script(_report(), "", fake, scan=_scan(), problems_out=problems)
+    assert len(calls) == 2 and problems == [] and "Liver Support" not in out

@@ -470,14 +470,20 @@ def generate_narrative(report, notes, complete, scan=None, profile=None, animal=
     remedy. A failing draft is written once more, told exactly what was wrong (Glen,
     2026-09-25). Whatever is still wrong is appended to problems_out for the editor."""
     p = build_narrative_prompt(report, notes, scan, profile, animal)
-    text = _finish(complete(p["system"], p["user"]), report, animal)
+    return _checked(p, complete, report, lambda t: _finish(t, report, animal), problems_out)
+
+
+def _checked(p, complete, report, finish, problems_out):
+    """Write, check, and on a failing draft write once more with its errors named.
+    Keeps whichever draft has fewer problems; leftovers go to problems_out."""
+    text = finish(complete(p["system"], p["user"]))
     problems = narrative_problems(text, report)
     if problems:
         retry = (p["user"] + "\n\nYOUR PREVIOUS DRAFT HAD THESE ERRORS. Write the whole "
-                 "letter again, following every rule, without them:\n"
+                 "text again, following every rule, without them:\n"
                  + "\n".join("- " + x for x in problems))
         try:
-            second = _finish(complete(p["system"], retry), report, animal)
+            second = finish(complete(p["system"], retry))
         except Exception as e:
             # The first draft was paid for; a failed retry must not throw it away.
             print(f"[narrative] retry failed, keeping first draft: {e!r}", flush=True)
@@ -518,13 +524,20 @@ def narrative_problems(text, report):
     except Exception:
         catalog = {}
     names = [str((p or {}).get("name") or "") for p in catalog.values()]
-    ingredients = [str(i.get("name") or "") for p in catalog.values()
-                   for i in ((p or {}).get("ingredients") or []) if isinstance(i, dict)]
+    # Other catalog spellings of a chain remedy's own product ("OcuHeal" and "OcuHeal Eye
+    # Drops" when both are one entry) count as on the chain.
+    same = []
+    for c in chain:
+        prod = _catalog_product(c)
+        if prod:
+            same += [str(p.get("name") or "") for p in catalog.values()
+                     if p is prod or (p or {}).get("name") == prod.get("name")]
     return check_narrative(
-        text, chain=chain, ingredients={c: _ingredient_lines(c) for c in chain},
-        catalog_names=names, catalog_ingredients=ingredients,
-        # The writer's fixed instructions name the service itself ("Biofield Analysis").
-        allowed_text=heads + "\n" + _SYSTEM + _SCAN_GUIDANCE, heads_text=heads)
+        text, chain=chain + [n for n in same if n and n not in chain], ingredients={c: _ingredient_lines(c) for c in chain},
+        catalog_names=names,
+        # The service itself is the one name allowed beyond the chain's own rows.
+        # Terrain Restore is the essence base, named inside essence products.
+        allowed_text=heads + "\nBiofield Analysis\nTerrain Restore", heads_text=heads)
 
 
 _PRESCRIBE = {"prescribe": "recommend", "prescribes": "recommends",
@@ -582,7 +595,8 @@ def build_video_script_prompt(report, notes, scan=None):
             "user": _user_block(report, notes, scan, with_tail=False)}
 
 
-def generate_video_script(report, notes, complete, scan=None):
-    """complete(system, user) -> short spoken walkthrough script. `scan` optional."""
+def generate_video_script(report, notes, complete, scan=None, problems_out=None):
+    """complete(system, user) -> short spoken walkthrough script. `scan` optional. The
+    client hears it, so it gets the letter's check and one retry (blind review)."""
     p = build_video_script_prompt(report, notes, scan)
-    return fix_scan_names(complete(p["system"], p["user"]))
+    return _checked(p, complete, report, fix_scan_names, problems_out)

@@ -157,7 +157,8 @@ async function saveNarr(){await post('/test/__TID__/narrative',
 async function vgen(){stat('Generating script\\u2026');
  const r=await post('/test/__TID__/video-generate',{notes:document.getElementById('notes').value});
  document.getElementById('vscript').value=r.script||('['+(r.error||'error')+']');
- stat(r.error?('Error: '+r.error):'Script generated \\u2014 edit, then Save or Make audio.')}
+ stat(r.error?('Error: '+r.error):((r.warnings&&r.warnings.length)?
+  ('Check before sending: '+r.warnings.join(' ')):'Script generated \\u2014 edit, then Save or Make audio.'))}
 async function vsave(){await post('/test/__TID__/video-script',
  {script:document.getElementById('vscript').value});stat('Script saved.')}
 async function vaudio(){stat('Rendering audio in your voice\\u2026 (~10-30s)');await vsave();
