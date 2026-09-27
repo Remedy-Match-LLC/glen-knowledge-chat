@@ -63,9 +63,22 @@ a test fails if a discovered table is in neither the move set nor this list.
 whose person column equals the merged person id, is updated to the survivor's value. Each update
 is one `rekey` change row.
 
-**Clash.** When the update would break a unique rule, because the survivor already holds that
-row (for example `carts(email)` or `biofield_reveals(email, scan_date)`), the survivor's row wins.
-The merged row is saved whole as a `set_aside` change row, then deleted.
+**Clash.** Changed 2026-09-27 after review rounds 1 and 2, Glen: "written-rule". A clash is
+when moving a row would break a unique rule because the survivor already holds that row. A clash
+is settled automatically only for a table with a written rule:
+
+- `survivor`: the survivor's row wins (settings and "already done" markers).
+- `newest:<column>`: the row with the later value in that column wins (carts, caches, and a
+  remedy reveal for the same scan date, by its update time).
+- `sum:<column>`: the merged row's value is added to the survivor's (credits).
+
+The losing row is saved whole as a `set_aside` change row, then deleted. **A clash in a table
+with no written rule blocks the merge.** The preview names the table and both rows, and nothing
+is applied until the rule is written or the rows are resolved by hand. The hourly sweep uses the
+same rules; a clash it cannot settle is left in place and reported, never deleted.
+
+A unique rule is checked the way the database checks it: a NULL never clashes, and a partial or
+expression index is enforced by the database itself, whose refusal counts as a clash.
 
 **The person row.** The survivor's empty fields are filled from the merged person and the tags
 are combined, reusing the field rules in `_merge_two_people`. Then the merged `people` row is
@@ -140,9 +153,12 @@ Staff can switch either. Nothing is written by the preview.
 
 **Apply.** Owners only (Glen, Rae). The result lists what moved and links to the merge record.
 
-**Undo.** A button on the merge record. It replays the change log backwards: rekeys go back,
-set-aside rows are restored, the merged person row is recreated from its copy, and the aliases
-are removed. A row changed since the merge is skipped and listed rather than overwritten.
+**Undo.** A button on the merge record. The merged person row is recreated first, then the change
+log is replayed backwards: rekeys go back, set-aside rows are restored, and the aliases are
+removed. All changes to one row are checked together: if any of them no longer matches, the
+whole row is skipped and listed rather than split between two people. Undo removes the
+`merged-into` tag in GoHighLevel but never clears do-not-contact, because the client may have
+asked for it since; the result says so.
 
 ## Failure handling
 
