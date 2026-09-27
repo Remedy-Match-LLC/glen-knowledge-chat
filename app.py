@@ -45366,12 +45366,12 @@ def apply_pending_merge(merge_id):
                     "open": f"/console/merge?survivor={row[0]}&merged={row[1]}"}), 409
 
 
-def _person_merge_evidence(survivor_id, merged_id):
+def _person_merge_evidence(survivor_id, merged_id, resolutions=None):
     """Preview, evidence and suggestion for a proposed merge. Reads only. Runs outside
     _db_lock, because the mailbox search is a network call."""
     from dashboard import person_merge as _pm, person_merge_evidence as _ev
     with db.connect(LOG_DB) as cx:
-        p = _pm.preview(cx, survivor_id, merged_id)
+        p = _pm.preview(cx, survivor_id, merged_id, resolutions)
         ev = {}
         for side in ("survivor", "merged"):
             e = p[side]["email"]
@@ -45396,7 +45396,9 @@ def api_person_merge_preview():
     from dashboard import person_merge as _pm
     try:
         s, m = int(request.args.get("survivor", "")), int(request.args.get("merged", ""))
-        p, ev, sug = _person_merge_evidence(s, m)
+        # ?resolve=table:survivor,table2:merged  (the owner's choice for a clash with no rule)
+        res = dict(x.split(":", 1) for x in (request.args.get("resolve") or "").split(",") if ":" in x)
+        p, ev, sug = _person_merge_evidence(s, m, res)
     except (ValueError, _pm.MergeRefused) as e:
         return jsonify({"error": str(e) or "survivor and merged ids are required"}), 400
     return jsonify({**p, "evidence": ev, "suggestion": sug})
@@ -45414,15 +45416,18 @@ def api_person_merge_apply():
     except (TypeError, ValueError):
         return jsonify({"error": "survivor_id and merged_id are required"}), 400
     mail_old = body.get("mail_old")
+    res = body.get("resolutions") if isinstance(body.get("resolutions"), dict) else {}
     try:
-        p, ev, sug = _person_merge_evidence(s, m)
+        p, ev, sug = _person_merge_evidence(s, m, res)
     except _pm.MergeRefused as e:
         return jsonify({"error": str(e)}), 409
+    sug["owner_choices"] = dict(res)      # recorded on the merge (classification review)
     with _db_lock, db.connect(LOG_DB) as cx:
         try:
             mid = _pm.apply(cx, survivor_id=s, merged_id=m, mail_old=mail_old, evidence=ev,
                             suggestion=sug, applied_by=_merge_actor(),
-                            merge_people_fields=lambda c, a, b: _merge_people_for_tool(c, a, b))
+                            merge_people_fields=lambda c, a, b: _merge_people_for_tool(c, a, b),
+                            resolutions=res)
             moved = cx.execute("SELECT COUNT(*) FROM person_merge_changes WHERE merge_id=?",
                                (mid,)).fetchone()[0]
             cx.commit()

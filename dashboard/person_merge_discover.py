@@ -23,6 +23,12 @@ HISTORY_TABLES = frozenset({
     "remedy_match_email_queue", "review_invites", "client_erasures",
     "scan_reassignments", "referral_events", "stripe_failures", "users", "suppliers",
     "supplier_quotes", "journey_events",
+    # Found in production on 2026-09-27 (prod-queries/merge-unclassified-tables.py):
+    "fmp_clients",                    # a FileMaker mirror; the next FileMaker sync rewrites it
+    "escalation_queue", "identity_consolidation_audit", "membership_reconcile_alerts",
+    "query_log", "remedy_match_email_sent", "review_link_tokens",
+    "email_identity_aliases",         # an older alias table (people pillar); left as it is
+    "inquiry_practitioners", "practitioner_inquiry_opt_outs", "practitioner_suggestions",
 })
 MERGE_OWN_TABLES = frozenset({
     "person_merges", "email_aliases", "portal_token_aliases", "person_merge_changes",
@@ -64,6 +70,13 @@ MOVE_TABLES = frozenset({
     "supplement_reviews", "testimonial_invite_candidates", "topic_page_requests",
     "triage_invites",     # a health table for erasure (client_erasure.HEALTH_TABLES)
     "sequence_sends",     # joined to sequence_enrollments by address; moves with it
+    # Found in production on 2026-09-27; a repo scan had missed every one:
+    "biofield_month_grants", "biofield_reveal_spend_unlocks", "care_taster_grants",
+    "coach_sub_charges", "coach_waitlist", "coaching_interest", "community_signals",
+    "family_sub_charges", "family_sub_grants", "healing_oasis_requests", "journey_state",
+    "member_interest", "membership_product_grants", "memberships", "order_membership_grants",
+    "order_payments", "peer_interest", "peer_matches", "portal_library", "prepay_term_grants",
+    "quiz_responses", "studio_credit_intents", "voice_signals",
 })
 _PERSON_COLUMNS = ("person_id", "people_id")
 _SYSTEM_SCHEMAS = ("pg_catalog", "information_schema", "pg_toast")
@@ -85,6 +98,25 @@ def _is_person_col(name):
 def _sqlite_is_text(decl):
     d = (decl or "").upper()
     return d == "" or "TEXT" in d or "CHAR" in d
+
+
+def repo_tables_with_person_columns(src):
+    """Tables created in source text that carry an address or person column. Parses each
+    CREATE TABLE to its matching parenthesis, so a table inside a multi-statement
+    executescript block is found too (memberships was missed by a simpler regex)."""
+    import re
+    found = set()
+    for m in re.finditer(r'CREATE TABLE IF NOT EXISTS\s+"?(\w+)"?\s*\(', src):
+        depth, i = 1, m.end()
+        while i < len(src) and depth:
+            depth += {"(": 1, ")": -1}.get(src[i], 0)
+            i += 1
+        body = src[m.end():i]
+        cols = re.findall(r'(?:^|[,(\n"])\s*"?\s*(\w+)\s+(?:TEXT|INTEGER|REAL|BLOB|BYTEA|BIGINT|'
+                          r'DOUBLE|NUMERIC|TIMESTAMP)', body)
+        if any(_is_email_col(c) or _is_person_col(c) for c in cols):
+            found.add(m.group(1))
+    return found
 
 
 def qualified(schema, table):

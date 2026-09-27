@@ -240,3 +240,42 @@ def test_the_survivor_does_not_take_the_old_gohighlevel_contact(client):
                                                      "mail_old": "stop"}, headers=OWNER).status_code == 200
     with sqlite3.connect(appmod.LOG_DB) as cx:
         assert cx.execute("SELECT ghl_id FROM people WHERE id=2").fetchone()[0] in ("", None)
+
+
+def test_a_choice_unblocks_preview_and_apply(client):
+    c, appmod, _ = client
+    with sqlite3.connect(appmod.LOG_DB) as cx:
+        cx.execute("DROP TABLE IF EXISTS affiliate_signups")
+        cx.execute("CREATE TABLE affiliate_signups (id INTEGER PRIMARY KEY, email TEXT UNIQUE, slug TEXT)")
+        cx.execute("INSERT INTO affiliate_signups VALUES (1, ?, 'mel-aol')", (AOL,))
+        cx.execute("INSERT INTO affiliate_signups VALUES (2, ?, 'mel-gm')", (GMAIL,))
+    p = c.get("/api/console/people/merge/preview?survivor=2&merged=1", headers=OWNER).get_json()
+    assert p["needs_choice"] == ["affiliate_signups"] and "affiliate_signups" in p["blocked"]
+    p2 = c.get("/api/console/people/merge/preview?survivor=2&merged=1"
+               "&resolve=affiliate_signups:survivor", headers=OWNER).get_json()
+    assert "affiliate_signups" not in p2["blocked"]
+    assert c.post("/api/console/people/merge", json={"survivor_id": 2, "merged_id": 1,
+                                                     "mail_old": "stop"}, headers=OWNER).status_code == 409
+    r = c.post("/api/console/people/merge", json={"survivor_id": 2, "merged_id": 1, "mail_old": "stop",
+                                                  "resolutions": {"affiliate_signups": "survivor"}},
+               headers=OWNER)
+    assert r.status_code == 200, r.get_data(as_text=True)
+    with sqlite3.connect(appmod.LOG_DB) as cx:
+        assert cx.execute("SELECT slug FROM affiliate_signups").fetchall() == [("mel-gm",)]
+
+
+def test_the_owners_choices_are_recorded_on_the_merge(client):
+    c, appmod, _ = client
+    with sqlite3.connect(appmod.LOG_DB) as cx:
+        cx.execute("DROP TABLE IF EXISTS affiliate_signups")
+        cx.execute("CREATE TABLE affiliate_signups (id INTEGER PRIMARY KEY, email TEXT UNIQUE, slug TEXT)")
+        cx.execute("INSERT INTO affiliate_signups VALUES (1, ?, 'a')", (AOL,))
+        cx.execute("INSERT INTO affiliate_signups VALUES (2, ?, 'g')", (GMAIL,))
+    r = c.post("/api/console/people/merge", json={"survivor_id": 2, "merged_id": 1, "mail_old": "stop",
+                                                  "resolutions": {"affiliate_signups": "survivor"}},
+               headers=OWNER)
+    mid = r.get_json()["merge_id"]
+    with sqlite3.connect(appmod.LOG_DB) as cx:
+        sug = json.loads(cx.execute("SELECT suggestion_json FROM person_merges WHERE id=?",
+                                    (mid,)).fetchone()[0])
+    assert sug["owner_choices"] == {"affiliate_signups": "survivor"}

@@ -126,3 +126,38 @@ def test_a_blocked_merge_cannot_be_applied(live):
         assert "coach subscriptions" in page.inner_text("#preview")
         assert page.is_disabled("#apply-btn")
         b.close()
+
+
+def test_the_owner_chooses_for_a_clash_with_no_rule(live):
+    base, appmod = live
+    with sqlite3.connect(appmod.LOG_DB) as cx:
+        cx.execute("DROP TABLE IF EXISTS affiliate_signups")
+        cx.execute("CREATE TABLE affiliate_signups (id INTEGER PRIMARY KEY, email TEXT UNIQUE, slug TEXT)")
+        cx.execute("INSERT INTO affiliate_signups VALUES (1, ?, 'mel-aol')", (AOL,))
+        cx.execute("INSERT INTO affiliate_signups VALUES (2, ?, 'mel-gm')", (GMAIL,))
+    with sync_playwright() as p:
+        b = p.chromium.launch()
+        page = b.new_context(extra_http_headers={"X-Console-Key": SECRET}).new_page()
+        page.goto(f"{base}/console/merge?survivor=2&merged=1")
+        page.wait_for_selector("#apply-btn")
+        assert page.is_disabled("#apply-btn")
+        page.check('input[name="choice-affiliate_signups"][value="survivor"]')
+        page.wait_for_function("() => { const b = document.getElementById('apply-btn'); "
+                               "return b && !b.disabled; }")
+        # Changing who stays clears the choice: "survivor" would now mean the other record.
+        page.check('input[name="stay"][value="1"]')
+        page.wait_for_function("() => { const b = document.getElementById('apply-btn'); "
+                               "return b && b.disabled && document.querySelector("
+                               "'input[name=\"stay\"]:checked').value === '1'; }")
+        page.check('input[name="stay"][value="2"]')
+        page.wait_for_function("() => document.querySelector('input[name=\"stay\"]:checked') && "
+                               "document.querySelector('input[name=\"stay\"]:checked').value === '2'")
+        page.check('input[name="choice-affiliate_signups"][value="survivor"]')
+        page.wait_for_function("() => { const b = document.getElementById('apply-btn'); "
+                               "return b && !b.disabled; }")
+        page.click("#apply-btn")
+        page.click("#dlg-go")
+        page.wait_for_selector("#undo-btn")
+        with sqlite3.connect(appmod.LOG_DB) as cx:
+            assert cx.execute("SELECT slug FROM affiliate_signups").fetchall() == [("mel-gm",)]
+        b.close()
