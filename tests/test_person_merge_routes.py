@@ -1,5 +1,6 @@
 """Console routes for merging two people: preview, apply, undo.
 Spec: docs/superpowers/specs/2026-09-26-merge-two-people-design.md"""
+import json
 import sqlite3
 
 import pytest
@@ -161,3 +162,33 @@ def test_a_failed_gohighlevel_mark_is_retried_by_the_hourly_job(client, monkeypa
         assert cx.execute("SELECT ghl_status FROM person_merges WHERE id=?", (mid,)).fetchone()[0] == "ok"
     appmod._run_person_merge_sweep()
     assert len(calls) == 1
+
+
+def test_email_unsubscribe_and_bounce_tags_stay_with_the_old_address(client):
+    """Glen, 2026-09-27: they describe the address, and the old address stops getting
+    mail anyway. The survivor's own tags are untouched."""
+    c, appmod, _ = client
+    with sqlite3.connect(appmod.LOG_DB) as cx:
+        cx.execute("UPDATE people SET tags=? WHERE id=1",
+                   ('["vip","consent:unsubscribed","email bounced","Do Not Email"]',))
+        cx.execute("UPDATE people SET tags=? WHERE id=2", ('["b","consent:opted-in"]',))
+    r = c.post("/api/console/people/merge", json={"survivor_id": 2, "merged_id": 1,
+                                                  "mail_old": "stop"}, headers=OWNER)
+    assert r.status_code == 200, r.get_data(as_text=True)
+    with sqlite3.connect(appmod.LOG_DB) as cx:
+        tags = set(json.loads(cx.execute("SELECT tags FROM people WHERE id=2").fetchone()[0]))
+    assert tags == {"b", "consent:opted-in", "vip"}
+
+
+def test_the_hourly_sync_carries_no_unsubscribe_from_the_old_address(client):
+    _, appmod, _ = client
+    from dashboard import person_aliases as pa
+    with sqlite3.connect(appmod.LOG_DB) as cx:
+        pa.add_alias(cx, AOL, GMAIL, 1)
+        cx.execute("DELETE FROM people WHERE id=1")
+        cx.commit()
+        appmod._upsert_person_additive(cx, {"email": AOL, "tags": ["consent:unsubscribed",
+                                                                   "email bounced", "x"]})
+        cx.commit()
+        tags = set(json.loads(cx.execute("SELECT tags FROM people WHERE id=2").fetchone()[0]))
+    assert tags == {"b", "x"}

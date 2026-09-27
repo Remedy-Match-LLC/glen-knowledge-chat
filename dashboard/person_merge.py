@@ -23,7 +23,9 @@ ANALYSIS_KEYS = ("greeting", "video", "layers", "findings", "report_pdf", "audio
                  "reorder_items", "current_scan_date", "biofield_status", "auto_advance")
 # How a clash is settled, by table. Anything not here blocks.
 CLASH_RULES = {
-    "portal_notify_state": "survivor",     # notification settings; the kept page's token is carried
+    # Notification settings: the survivor's row, plus the merged row's text opt-out and phone
+    # when the survivor lacks them (Glen, 2026-09-27: a text opt-out is the person's choice).
+    "portal_notify_state": "notify",
     "portal_cart_seeded": "survivor",      # an "already seeded" marker
     "portal_fold_state": "survivor",       # which cards are folded
     "carts": "newest:updated_at",          # the cart touched last
@@ -217,6 +219,18 @@ def _settle(cx, log, t, row, other, keys, new):
         raise MergeBlocked([{"table": t.table, "column": t.column, "merged_row": row,
                              "survivor_row": other}])
     if rule == "survivor":
+        _set_aside(cx, log, t, row, keys)
+    elif rule == "notify":
+        carry = {}
+        if (row.get("opt_status") or "") == "out" and (other.get("opt_status") or "") != "out":
+            carry["opt_status"] = "out"
+        if (row.get("phone") or "").strip() and not (other.get("phone") or "").strip():
+            carry["phone"] = row["phone"]
+        where, args = _row_where(cx, t.schema, t.table, other, keys)
+        for col, val in carry.items():
+            log.add(t.schema, t.table, _key_of(other, keys), col, other.get(col), val, "rekey")
+            cx.execute(f'UPDATE {pd.qualified(t.schema, t.table)} SET "{col}"=? WHERE {where}',
+                       [val] + args)
         _set_aside(cx, log, t, row, keys)
     elif rule.startswith("newest:"):
         col = rule.split(":", 1)[1]

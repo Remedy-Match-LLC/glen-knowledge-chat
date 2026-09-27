@@ -26,7 +26,8 @@ DDL = [
     "CREATE TABLE codes (id INTEGER PRIMARY KEY, email TEXT, code TEXT, UNIQUE(email, code))",
     "CREATE TABLE client_portals (id INTEGER PRIMARY KEY, token_hash TEXT UNIQUE, email TEXT, "
     "name TEXT, content_json TEXT, created_at TEXT, updated_at TEXT)",
-    "CREATE TABLE portal_notify_state (email TEXT PRIMARY KEY, portal_token TEXT)",
+    "CREATE TABLE portal_notify_state (email TEXT PRIMARY KEY, portal_token TEXT, phone TEXT, "
+    "opt_status TEXT DEFAULT 'default')",
     "CREATE TABLE portal_card_state (person_id TEXT NOT NULL, card TEXT, "
     "PRIMARY KEY (person_id, card))",
 ]
@@ -62,8 +63,8 @@ def _seed(cx):
     cx.execute("INSERT INTO client_portals VALUES (51, 'hash-gmail', ?, 'Mel', ?, 't', "
                "'2026-07-25T00:00:00')",
                (GMAIL, json.dumps({"greeting": "July", "layers": [9], "schedule": "Mon"})))
-    cx.execute("INSERT INTO portal_notify_state VALUES (?, 'raw-aol')", (AOL,))
-    cx.execute("INSERT INTO portal_notify_state VALUES (?, 'raw-gmail')", (GMAIL,))
+    cx.execute("INSERT INTO portal_notify_state VALUES (?, 'raw-aol', '8085550100', 'out')", (AOL,))
+    cx.execute("INSERT INTO portal_notify_state VALUES (?, 'raw-gmail', '', 'default')", (GMAIL,))
     cx.execute("INSERT INTO portal_card_state VALUES ('1', 'welcome')")   # person number stored as text
     cx.commit()
 
@@ -181,6 +182,20 @@ def test_newer_portal_kept_combined_and_both_links_work(cx):
                                       "schedule": "Mon"}
     assert pa.token_alias(cx, "hash-gmail") == GMAIL
     assert cx.execute("SELECT portal_token FROM portal_notify_state").fetchall() == [("raw-aol",)]
+
+
+def test_a_text_opt_out_and_phone_carry_to_the_survivor(cx):
+    """Glen, 2026-09-27: a text opt-out is the person's choice and carries (round 3)."""
+    _apply(cx)
+    assert cx.execute("SELECT email, phone, opt_status FROM portal_notify_state").fetchall() == [
+        (GMAIL, "8085550100", "out")]
+
+
+def test_the_survivors_own_phone_is_kept(cx):
+    cx.execute("UPDATE portal_notify_state SET phone='8085559999' WHERE email=?", (GMAIL,))
+    _apply(cx)
+    assert cx.execute("SELECT phone, opt_status FROM portal_notify_state").fetchall() == [
+        ("8085559999", "out")]
 
 
 def test_apply_twice_and_bad_input_are_refused(cx):

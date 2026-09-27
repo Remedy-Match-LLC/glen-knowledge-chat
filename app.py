@@ -41076,11 +41076,43 @@ def _email_dnd_effect(status, message):
     return _EMAIL_DND_NON_REFUSAL_WRITERS.get(msg, "refusal")
 
 
+_EMAIL_ADDRESS_TAG_MARKERS = ("consent:unsubscribed", "email bounced", "email unsubscrib",
+                              "do not email", "spam complain")
+
+
+def _is_address_level_tag(tag):
+    """An email unsubscribe, bounce or refusal tag. It describes the ADDRESS, so a merge
+    leaves it with the old address (Glen, 2026-09-27). A text opt-out is carried separately."""
+    t = str(tag).strip().lower()
+    return any(m in t for m in _EMAIL_ADDRESS_TAG_MARKERS)
+
+
+def _merge_people_for_tool(cx, survivor_id, merged_id):
+    """_merge_two_people for the merge tool, minus the merged person's address-level email
+    tags: a dead old address must not silence the survivor's working one."""
+    before = cx.execute("SELECT tags FROM people WHERE id=?", (survivor_id,)).fetchone()
+    try:
+        own = set(json.loads((before[0] if before else None) or "[]"))
+    except Exception:
+        own = set()
+    result = _merge_two_people(cx, survivor_id, merged_id)
+    row = cx.execute("SELECT tags FROM people WHERE id=?", (survivor_id,)).fetchone()
+    try:
+        tags = set(json.loads((row[0] if row else None) or "[]"))
+    except Exception:
+        tags = set()
+    keep = sorted(t for t in tags if t in own or not _is_address_level_tag(t))
+    if keep != sorted(tags):
+        cx.execute("UPDATE people SET tags=? WHERE id=?", (json.dumps(keep), survivor_id))
+    return result
+
+
 def _alias_tags_to_survivor(cx, canon, person, ts):
     """A merged address arriving from a feeder: add its tags to the survivor and nothing
     else. No consent, DND, refusal, bounce or suppression effect crosses over, and no
     person is created (person merge spec, 2026-09-26). The merge's own tag is dropped."""
-    tags = [t for t in (person.get("tags") or []) if not str(t).startswith("merged-into-")]
+    tags = [t for t in (person.get("tags") or []) if not str(t).startswith("merged-into-")
+            and not _is_address_level_tag(t)]
     row = cx.execute("SELECT id, tags FROM people WHERE email=?", (canon,)).fetchone()
     if not row or not tags:
         return None
@@ -45327,7 +45359,7 @@ def api_person_merge_apply():
         try:
             mid = _pm.apply(cx, survivor_id=s, merged_id=m, mail_old=mail_old, evidence=ev,
                             suggestion=sug, applied_by=_merge_actor(),
-                            merge_people_fields=lambda c, a, b: _merge_two_people(c, a, b))
+                            merge_people_fields=lambda c, a, b: _merge_people_for_tool(c, a, b))
             moved = cx.execute("SELECT COUNT(*) FROM person_merge_changes WHERE merge_id=?",
                                (mid,)).fetchone()[0]
             cx.commit()

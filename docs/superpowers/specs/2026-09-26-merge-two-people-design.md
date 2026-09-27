@@ -124,6 +124,15 @@ Each entry point looks up `canonical_email` before anything else:
   `portal_identity._get_or_create_person`. An old address adds its tags to the survivor and
   never creates a person.
 
+## Consent
+
+Glen, 2026-09-27 ("yes"). A text-message opt-out and the phone number are the person's own
+choice: they carry to the survivor. The notification settings row keeps the survivor's values
+and takes the merged row's `opt_status='out'` and phone when the survivor lacks them. Email
+unsubscribe, bounce and refusal tags describe the address: they stay with the old address and
+are not carried into the survivor's tags, by the merge or by the hourly sync. The survivor's own
+tags are never removed.
+
 ## Mail
 
 Everything the app sends goes to the survivor's address. In GoHighLevel the old contact is either
