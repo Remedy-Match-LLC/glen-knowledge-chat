@@ -227,6 +227,8 @@ def validate_response(answers):
             continue  # optional in v1
         elif ftype == "multi_choice":
             allowed = {o["value"] for o in f.get("options") or []}
+            if isinstance(val, str) and not val.strip():
+                val = None      # an empty answer is no answer; it never blocks submit
             if not isinstance(val, list) or any(v not in allowed for v in val):
                 if val not in (None, []):
                     errors.append(fid)

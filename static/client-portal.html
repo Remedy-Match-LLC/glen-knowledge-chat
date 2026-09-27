@@ -7090,6 +7090,36 @@ function renderIntakeField(f, val, getters, fieldEls, onChange, suggestions, sav
     return wrap;
   }
 
+  // "Check all that apply" (systemic_symptoms). Without this branch the field fell through
+  // to a text box, the server refused the text, and no portal client could submit
+  // (2026-09-27). The answer is the list of option values, as begin-intake.html sends it.
+  if(ftype === "multi_choice"){
+    const group = document.createElement("div");
+    group.className = "intake-scale";
+    const chosen = new Set(Array.isArray(val) ? val : []);
+    const boxes = [];
+    (f.options || []).forEach(opt => {
+      const value = (typeof opt === "string") ? opt : opt.value;
+      const optLabel = document.createElement("label");
+      optLabel.className = "intake-scale-opt";
+      const box = document.createElement("input");
+      box.type = "checkbox";
+      box.value = value;
+      box.checked = chosen.has(value);
+      box.addEventListener("change", onChange);
+      optLabel.appendChild(box);
+      const span = document.createElement("span");
+      span.textContent = (typeof opt === "string") ? opt : opt.label;
+      optLabel.appendChild(span);
+      group.appendChild(optLabel);
+      boxes.push(box);
+    });
+    wrap.appendChild(group);
+    getters[f.id] = ()=> boxes.filter(box => box.checked).map(box => box.value);
+    fieldEls[f.id] = group;
+    return wrap;
+  }
+
   if(ftype === "single_choice"){
     const select = document.createElement("select");
     select.className = "intake-input";
