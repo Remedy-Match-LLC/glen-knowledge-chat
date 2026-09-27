@@ -107,12 +107,23 @@ def identity_by_provider_subject(cx, provider, subject):
     return row[0] if row else None
 
 
+def _canonical(cx, email):
+    """The survivor's address for a merged one (person merge spec, 2026-09-26). Falls
+    back to the address itself when the alias table is missing or unreadable."""
+    e = (email or "").strip().lower()
+    try:
+        from dashboard import person_aliases as _pal
+        return _pal.canonical_email(cx, e)
+    except Exception:
+        return e
+
+
 def person_by_verified_email(cx, email):
     """A unique canonical person match, or None. The production schema keeps
     email unique; the explicit two-row check also fails closed for legacy data."""
     rows = cx.execute(
         "SELECT id FROM people WHERE lower(email)=? LIMIT 2",
-        ((email or "").strip().lower(),),
+        (_canonical(cx, email),),
     ).fetchall()
     return rows[0][0] if len(rows) == 1 else None
 
@@ -234,7 +245,7 @@ def verify_password(cx, email, password, *, ip="", user_agent=""):
     """Return person_id on success, otherwise None. Public callers must use one
     generic failure response so this result cannot enumerate portal accounts."""
     init_portal_auth_tables(cx)
-    normalized = (email or "").strip().lower()
+    normalized = _canonical(cx, email)
     row = cx.execute(
         "SELECT p.id, c.password_hash, c.locked_until, c.failed_attempts FROM people p "
         "JOIN portal_credentials c ON c.person_id=p.id WHERE lower(p.email)=?",

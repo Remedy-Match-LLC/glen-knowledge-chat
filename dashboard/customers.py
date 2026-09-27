@@ -109,13 +109,24 @@ def upsert_person_address(cx, person_id, addr):
     return True
 
 
+def _canonical(cx, email):
+    """The survivor's address for a merged one (person merge spec, 2026-09-26). Falls
+    back to the address itself when the alias table is missing or unreadable."""
+    e = (email or "").strip().lower()
+    try:
+        from dashboard import person_aliases as _pal
+        return _pal.canonical_email(cx, e)
+    except Exception:
+        return e
+
+
 def find_or_create_by_email(cx, *, email, name="", phone="", source="order-entry"):
     """Return an existing person id for this email, or create a minimal record.
     Email is the unique key on `people`. `source` is FIRST-TOUCH only: it is written
     solely on creation, so an existing person keeps their original acquisition
     source (e.g. a client already on file who later submits a product review stays
     at their first source, not 'product-review')."""
-    em = (email or "").strip().lower()
+    em = _canonical(cx, email)
     if not em:
         return None
     row = cx.execute("SELECT id FROM people WHERE lower(email)=?", (em,)).fetchone()

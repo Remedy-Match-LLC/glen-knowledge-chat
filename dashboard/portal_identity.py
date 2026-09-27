@@ -60,12 +60,24 @@ def _ensure_people_table(cx) -> None:
     cx.commit()
 
 
+def _canonical(cx, email):
+    """The survivor's address for a merged one (person merge spec, 2026-09-26). Falls
+    back to the address itself when the alias table is missing or unreadable."""
+    e = (email or "").strip().lower()
+    try:
+        from dashboard import person_aliases as _pal
+        return _pal.canonical_email(cx, e)
+    except Exception:
+        return e
+
+
 def _get_or_create_person(cx, email: str, name: str = ""):
     """Resolve an email to (person_id, roles), lazily creating a minimal person
     row when the portal holder isn't in the hub yet. A portal-link holder is a
     `client` by default, so the client-facing blocks render. Richer enrichment
     (tags, address, history) happens elsewhere via app.upsert_person — this only
     guarantees the portal always has a person to hang roles on."""
+    email = _canonical(cx, email)
     row = cx.execute(
         "SELECT id, roles FROM people WHERE email=?", (email,)
     ).fetchone()
@@ -82,6 +94,23 @@ def _get_or_create_person(cx, email: str, name: str = ""):
     )
     cx.commit()
     return new_id, ["client"]
+
+
+def _survivor_person_id(cx, person_id):
+    """A merged person's number resolves to the survivor's, following chains. Links and
+    sessions issued before a merge remember the old number (person merge, review round 3)."""
+    pid = person_id
+    for _ in range(50):
+        try:
+            row = cx.execute("SELECT survivor_person_id FROM person_merges WHERE "
+                             "merged_person_id=? AND undone_at IS NULL ORDER BY id DESC LIMIT 1",
+                             (pid,)).fetchone()
+        except Exception:
+            return pid
+        if not row:
+            return pid
+        pid = row[0]
+    return pid
 
 
 def _roles_by_person_id(cx, person_id):
@@ -205,7 +234,8 @@ def consume_client_magic_link(cx, token) -> "int | None":
     cx.commit()
     if cur.rowcount != 1:   # lost the race to a concurrent submit
         return None
-    return _person_id_from_extra(extra)
+    pid = _person_id_from_extra(extra)
+    return _survivor_person_id(cx, pid) if pid else pid
 
 
 def identity_from_session(cx, session_token) -> "Identity | None":
@@ -230,6 +260,7 @@ def identity_from_session(cx, session_token) -> "Identity | None":
         return None
     if not person_id:
         return None
+    person_id = _survivor_person_id(cx, person_id)
     email, roles = _roles_by_person_id(cx, person_id)
     if email is None:
         return None

@@ -187,7 +187,24 @@ def get_portal_by_token(cx, token: str):
         "SELECT email, name, content_json FROM client_portals WHERE token_hash=?", (th,)
     ).fetchone()
     if not row:
-        return None
+        # A page removed by a person merge: its link opens the survivor's page.
+        try:
+            from dashboard import person_aliases as _pal
+            canon = _pal.token_alias(cx, th)
+        except Exception:
+            canon = None
+        if not canon:
+            return None
+        row = cx.execute("SELECT name, content_json FROM client_portals "
+                         "WHERE lower(trim(email))=? ORDER BY updated_at DESC LIMIT 1",
+                         (canon,)).fetchone()
+        if not row:
+            return None
+        try:
+            content = json.loads(row[1] or "{}")
+        except Exception:
+            content = {}
+        return {"email": canon, "name": row[0], "content": content}
     try:
         content = json.loads(row[2] or "{}")
     except Exception:

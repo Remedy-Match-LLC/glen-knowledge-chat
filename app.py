@@ -7555,6 +7555,7 @@ def _is_paid_member(email):
     second lookup. Fail-closed (False on error) so a lookup hiccup never hands a
     non-member a discount."""
     try:
+        email = _canonical_email(email)     # a merged address has the survivor's membership
         if email and _active_membership_for_email(email):
             if membership_category(email) != "trial":
                 return True
@@ -14342,6 +14343,54 @@ def ghl_update_tags(email, add=None, remove=None):
     return match["id"], err
 
 
+def _ghl_contact_for(email):
+    data, err = _ghl_get("/contacts/lookup", {"email": email})
+    if err:
+        return None, err
+    contacts = data.get("contacts", []) if isinstance(data, dict) else []
+    # Only a contact whose PRIMARY address is this one. The lookup can also match an extra
+    # address on another contact, which may be the survivor's own (review round 3).
+    want = (email or "").strip().lower()
+    contacts = [c for c in contacts if (c.get("email") or "").strip().lower() == want]
+    if not contacts:
+        return None, None
+    return min(contacts, key=lambda c: c.get("dateAdded") or "9999"), None
+
+
+def ghl_mark_merged(email, survivor_id, stop):
+    """After a person merge: tag the old address's contact merged-into-<survivor>, and
+    when `stop`, set do-not-contact so campaigns stop mailing it. The sync carries only
+    tags from a merged address, so this never reaches the survivor's consent.
+    Spec: docs/superpowers/specs/2026-09-26-merge-two-people-design.md"""
+    if not GHL_API_KEY:
+        return None, "GHL_API_KEY not set"
+    match, err = _ghl_contact_for(email)
+    if err or not match:
+        return None, err
+    tags = sorted(set(match.get("tags") or []) | {f"merged-into-{survivor_id}"})
+    payload = {"tags": tags}
+    if stop:
+        payload["dnd"] = True
+    _, err = _ghl_put(f"/contacts/{match['id']}", payload)
+    return match["id"], err
+
+
+def ghl_unmark_merged(email, survivor_id):
+    """Undo ghl_mark_merged: drop the tag. Do-not-contact is never cleared (review round 2)."""
+    if not GHL_API_KEY:
+        return None, "GHL_API_KEY not set"
+    match, err = _ghl_contact_for(email)
+    if err or not match:
+        return None, err
+    tag = f"merged-into-{survivor_id}"
+    have = set(match.get("tags") or [])
+    if tag not in have:
+        return match["id"], None
+    # Do-not-contact stays as it is: the client may have asked for it since the merge.
+    _, err = _ghl_put(f"/contacts/{match['id']}", {"tags": sorted(have - {tag})})
+    return match["id"], err
+
+
 def ghl_add_to_pipeline(contact_id, name="", email=""):
     """Create an opportunity in the E4L Onboarding pipeline at stage 1."""
     if not contact_id:
@@ -15354,12 +15403,16 @@ def _active_membership_for_email(email):
     if not email:
         return None
     from dashboard import member_access_policy as _map
+    # A merged address carries the survivor's membership (person merge spec, 2026-09-27).
+    canon = _canonical_email(_map.normalized(email))
     policy = _map.override_for(email)
+    if policy is None:
+        policy = _map.override_for(canon)
     if policy is True:
-        return _map.permanent_member_row(email)
+        return _map.permanent_member_row(canon)
     if policy is False:
         return None
-    email = _map.normalized(email)
+    email = canon
     with db.connect(LOG_DB) as cx:
         cx.row_factory = sqlite3.Row
         row = cx.execute(
@@ -16216,6 +16269,7 @@ def membership_category(email):
     if not email:
         return "none"
     from dashboard import member_access_policy as _map
+    email = _canonical_email(email)       # a merged address has the survivor's membership
     policy = _map.override_for(email)
     if policy is True:
         return "full"
@@ -36463,9 +36517,11 @@ def client_login_request():
         return limited
     if "@" in email:
         with _db_lock, db.connect(LOG_DB) as cx:
-            row = cx.execute("SELECT id, name FROM people WHERE email=?", (email,)).fetchone()
+            # A merged address signs in as the survivor; the link goes where it was asked for.
+            canon = _pi._canonical(cx, email)
+            row = cx.execute("SELECT id, name FROM people WHERE email=?", (canon,)).fetchone()
             if row:
-                magic = _pi.create_client_magic_link(cx, row[0], email)
+                magic = _pi.create_client_magic_link(cx, row[0], canon)
                 try:
                     sent_via, send_err = _send_full_report_email(
                         email, row[1] or "", "Your Remedy Match sign-in link",
@@ -36549,7 +36605,8 @@ def client_password_reset_request():
         return limited
     if "@" in email:
         with _db_lock, db.connect(LOG_DB) as cx:
-            row = cx.execute("SELECT id,name FROM people WHERE lower(email)=?", (email,)).fetchone()
+            row = cx.execute("SELECT id,name FROM people WHERE lower(email)=?",
+                             (_pa._canonical(cx, email),)).fetchone()
             if row:
                 token = _pa.create_password_reset(cx, row[0], email)
                 try:
@@ -40748,6 +40805,54 @@ def _pb_slug(name):
     return re.sub(r"[^a-z0-9]+", "-", (name or "").lower()).strip("-")
 
 
+def _pb_upsert_people_rows(norm, now_iso=None):
+    """Practice Better people into the hub, one transaction. A merged address is mapped to
+    its survivor first, so this never recreates a merged person (person merge spec)."""
+    now_iso = now_iso or datetime.now(timezone.utc).isoformat()
+    count = 0
+    for n in norm:
+        n["email"] = _canonical_email(n["email"])
+    with _db_lock, db.connect(LOG_DB) as cx:
+        cx.row_factory = sqlite3.Row
+        for n in norm:
+            row = cx.execute(
+                "SELECT tags FROM people WHERE email=?", (n["email"],)
+            ).fetchone()
+            if row:
+                try:
+                    existing = set(json.loads(row["tags"] or "[]"))
+                except Exception:
+                    existing = set()
+                merged = sorted(existing | set(n["pb_tags"]))
+                cx.execute("""
+                    UPDATE people SET
+                      pb_id      = CASE WHEN pb_id='' THEN ? ELSE pb_id END,
+                      first_name = CASE WHEN first_name='' THEN ? ELSE first_name END,
+                      last_name  = CASE WHEN last_name='' THEN ? ELSE last_name END,
+                      phone      = CASE WHEN phone='' THEN ? ELSE phone END,
+                      tags       = ?,
+                      source     = CASE WHEN source='' THEN 'practice-better' ELSE source END,
+                      updated_at = ?,
+                      synced_at  = ?
+                    WHERE email=?
+                """, (n["pb_id"], n["first"], n["last"], n["phone"],
+                      json.dumps(merged), now_iso, now_iso, n["email"]))
+            else:
+                cx.execute("""
+                    INSERT INTO people
+                      (email, first_name, last_name, name, phone, pb_id,
+                       tags, source, created_at, updated_at, synced_at)
+                    VALUES (?,?,?,?,?,?,?,?,?,?,?)
+                """, (n["email"], n["first"], n["last"],
+                      f"{n['first']} {n['last']}".strip(),
+                      n["phone"], n["pb_id"],
+                      json.dumps(sorted(set(n["pb_tags"]))),
+                      "practice-better", now_iso, now_iso, now_iso))
+            count += 1
+        cx.commit()
+    return count
+
+
 def sync_pb_to_people_and_ghl(dry_run=False, limit=None):
     """Walk every PB client record, resolve relatedTags → names, upsert into
     the people table (matching by email, additive tag merge), then push the
@@ -40806,44 +40911,7 @@ def sync_pb_to_people_and_ghl(dry_run=False, limit=None):
 
     # Phase 2 — SQLite upsert (one transaction)
     if not dry_run:
-        with _db_lock, db.connect(LOG_DB) as cx:
-            cx.row_factory = sqlite3.Row
-            for n in norm:
-                row = cx.execute(
-                    "SELECT tags FROM people WHERE email=?", (n["email"],)
-                ).fetchone()
-                if row:
-                    try:
-                        existing = set(json.loads(row["tags"] or "[]"))
-                    except Exception:
-                        existing = set()
-                    merged = sorted(existing | set(n["pb_tags"]))
-                    cx.execute("""
-                        UPDATE people SET
-                          pb_id      = CASE WHEN pb_id='' THEN ? ELSE pb_id END,
-                          first_name = CASE WHEN first_name='' THEN ? ELSE first_name END,
-                          last_name  = CASE WHEN last_name='' THEN ? ELSE last_name END,
-                          phone      = CASE WHEN phone='' THEN ? ELSE phone END,
-                          tags       = ?,
-                          source     = CASE WHEN source='' THEN 'practice-better' ELSE source END,
-                          updated_at = ?,
-                          synced_at  = ?
-                        WHERE email=?
-                    """, (n["pb_id"], n["first"], n["last"], n["phone"],
-                          json.dumps(merged), now_iso, now_iso, n["email"]))
-                else:
-                    cx.execute("""
-                        INSERT INTO people
-                          (email, first_name, last_name, name, phone, pb_id,
-                           tags, source, created_at, updated_at, synced_at)
-                        VALUES (?,?,?,?,?,?,?,?,?,?,?)
-                    """, (n["email"], n["first"], n["last"],
-                          f"{n['first']} {n['last']}".strip(),
-                          n["phone"], n["pb_id"],
-                          json.dumps(sorted(set(n["pb_tags"]))),
-                          "practice-better", now_iso, now_iso, now_iso))
-                summary["people_upserted"] += 1
-            cx.commit()
+        summary["people_upserted"] += _pb_upsert_people_rows(norm, now_iso)
     else:
         summary["people_upserted"] = len(norm)   # would-have count
 
@@ -41008,6 +41076,68 @@ def _email_dnd_effect(status, message):
     return _EMAIL_DND_NON_REFUSAL_WRITERS.get(msg, "refusal")
 
 
+_EMAIL_ADDRESS_TAG_MARKERS = ("consent:unsubscribed", "email bounced", "email unsubscrib",
+                              "do not email", "spam complain")
+
+
+def _is_address_level_tag(tag):
+    """An email unsubscribe, bounce or refusal tag. It describes the ADDRESS, so a merge
+    leaves it with the old address (Glen, 2026-09-27). A text opt-out is carried separately."""
+    t = str(tag).strip().lower()
+    return any(m in t for m in _EMAIL_ADDRESS_TAG_MARKERS)
+
+
+def _merge_people_for_tool(cx, survivor_id, merged_id):
+    """_merge_two_people for the merge tool, minus the merged person's address-level email
+    tags: a dead old address must not silence the survivor's working one."""
+    before = cx.execute("SELECT tags, ghl_id FROM people WHERE id=?", (survivor_id,)).fetchone()
+    try:
+        own = set(json.loads((before[0] if before else None) or "[]"))
+    except Exception:
+        own = set()
+    result = _merge_two_people(cx, survivor_id, merged_id)
+    # The survivor keeps its own GoHighLevel contact, never the old address's, which may be
+    # marked do-not-contact (final review round).
+    if before is not None and not (before[1] or "").strip():
+        cx.execute("UPDATE people SET ghl_id=? WHERE id=?", (before[1] or "", survivor_id))
+    row = cx.execute("SELECT tags FROM people WHERE id=?", (survivor_id,)).fetchone()
+    try:
+        tags = set(json.loads((row[0] if row else None) or "[]"))
+    except Exception:
+        tags = set()
+    keep = {t for t in tags if t in own or not _is_address_level_tag(t)}
+    # The sync's consent precedence, applied to the merged union too (Glen, 2026-09-27, via
+    # people-22: an opt-in carries): unsubscribed beats opted-in, opted-in beats cold.
+    if "consent:unsubscribed" in keep:
+        keep.discard("consent:opted-in")
+    if "consent:opted-in" in keep:
+        keep.discard("consent:cold-no-consent")
+    keep = sorted(keep)
+    if keep != sorted(tags):
+        cx.execute("UPDATE people SET tags=? WHERE id=?", (json.dumps(keep), survivor_id))
+    return result
+
+
+def _alias_tags_to_survivor(cx, canon, person, ts):
+    """A merged address arriving from a feeder: add its tags to the survivor and nothing
+    else. No consent, DND, refusal, bounce or suppression effect crosses over, and no
+    person is created (person merge spec, 2026-09-26). The merge's own tag is dropped."""
+    tags = [t for t in (person.get("tags") or []) if not str(t).startswith("merged-into-")
+            and not _is_address_level_tag(t)]
+    row = cx.execute("SELECT id, tags FROM people WHERE email=?", (canon,)).fetchone()
+    if not row or not tags:
+        return None
+    try:
+        have = set(json.loads(row[1] or "[]"))
+    except Exception:
+        have = set()
+    union = sorted(have | set(tags))
+    if union == sorted(have):
+        return None
+    cx.execute("UPDATE people SET tags=?, updated_at=? WHERE id=?", (json.dumps(union), ts, row[0]))
+    return "updated"
+
+
 def _upsert_person_additive(cx, person, ts=None):
     """Idempotent, additive upsert of one person into the people table, matching
     by email. JSON-array fields (tags, roles, …) are UNIONED with existing;
@@ -41020,6 +41150,13 @@ def _upsert_person_additive(cx, person, ts=None):
     email = (person.get("email") or "").strip().lower()
     if not email:
         return None
+    try:
+        from dashboard import person_aliases as _pal
+        canon = _pal.canonical_email(cx, email)
+    except Exception:
+        canon = email
+    if canon != email:
+        return _alias_tags_to_survivor(cx, canon, person, ts)
     cx.row_factory = sqlite3.Row
     existing = cx.execute("SELECT * FROM people WHERE email=?", (email,)).fetchone()
 
@@ -44075,6 +44212,54 @@ def _init_pending_merges_table():
 _init_pending_merges_table()
 
 
+# ── Person merge (spec: docs/superpowers/specs/2026-09-26-merge-two-people-design.md) ──
+# The alias tables are created at startup, before any request: on Postgres a lookup
+# against a missing table would abort the caller's whole transaction.
+def _init_person_merge_tables():
+    try:
+        from dashboard import person_aliases as _pal
+        with _db_lock, db.connect(LOG_DB) as cx:
+            _pal.init_tables(cx)
+    except Exception as e:
+        print(f"[person-alias] init failed: {e!r}", flush=True)
+
+
+_init_person_merge_tables()
+
+
+def _canonical_email(email):
+    """The survivor's address for a merged one; the address itself otherwise. Never raises."""
+    e = (email or "").strip().lower()
+    if not e:
+        return e
+    try:
+        from dashboard import person_aliases as _pal
+        with db.connect(LOG_DB) as cx:
+            return _pal.canonical_email(cx, e)
+    except Exception as ex:
+        print(f"[person-alias] lookup failed: {ex!r}", flush=True)
+        return e
+
+
+def _run_person_merge_sweep():
+    """Hourly: move records written under an old address since its merge, and retry any
+    GoHighLevel mark that failed."""
+    try:
+        from dashboard import person_merge as _pm
+        with _db_lock, db.connect(LOG_DB) as cx:
+            got = _pm.sweep(cx)
+            cx.commit()
+            pending = cx.execute("SELECT id, merged_email, survivor_person_id, mail_old FROM "
+                                 "person_merges WHERE undone_at IS NULL AND ghl_status='pending'"
+                                 ).fetchall()
+        blocked = sorted({b["table"] for b in got["blocked"]})
+        print(f"[person-merge-sweep] moved={got['moved']} blocked={blocked}", flush=True)
+        for mid, email, sid, mail_old in pending:
+            _person_merge_mark_ghl(mid, email, sid, mail_old)
+    except Exception as e:
+        print(f"[person-merge-sweep] failed: {e!r}", flush=True)
+
+
 _PEOPLE_SCALAR_COALESCE = [
     "phone", "dob", "birth_time", "birthplace", "gender", "city", "state",
     "country", "island", "profession", "title", "ghl_id", "pb_id",
@@ -44261,9 +44446,16 @@ def _people_search_query(params):
     clauses, args = [], []
     q = params.get("q", "").strip()
     if q:
-        clauses.append("(name LIKE ? OR email LIKE ? OR first_name LIKE ? OR last_name LIKE ?)")
         like = f"%{q}%"
-        args += [like, like, like, like]
+        canon = _canonical_email(q) if "@" in q else ""
+        if canon and canon != q.lower():
+            # A merged address finds its survivor.
+            clauses.append("(name LIKE ? OR email LIKE ? OR first_name LIKE ? OR last_name LIKE ? "
+                           "OR email = ?)")
+            args += [like, like, like, like, canon]
+        else:
+            clauses.append("(name LIKE ? OR email LIKE ? OR first_name LIKE ? OR last_name LIKE ?)")
+            args += [like, like, like, like]
     for fld in ("state", "island", "profession", "gender", "source", "city"):
         val = params.get(fld, "").strip()
         if val:
@@ -44407,7 +44599,7 @@ def upsert_people():
             email = (p.get("email") or "").strip().lower()
             if not email:
                 continue
-            if merge_tags:
+            if merge_tags or _canonical_email(email) != email:
                 res = _upsert_person_additive(cx, p, ts)
                 if res == "inserted":
                     inserted += 1
@@ -45108,21 +45300,149 @@ def list_pending_merges():
 def apply_pending_merge(merge_id):
     auth_err = _check_console_or_scoped_auth()
     if auth_err: return auth_err
-    with _db_lock, db.connect(LOG_DB) as cx:
+    # Retired 2026-09-26: this deleted the duplicate, moved nothing else, and the hourly
+    # sync recreated the deleted address. Merges now go through the merge page, which
+    # moves every record, keeps the old address as a way in, and can be undone.
+    # Spec: docs/superpowers/specs/2026-09-26-merge-two-people-design.md
+    with db.connect(LOG_DB) as cx:
         row = cx.execute("SELECT keeper_person_id, dupe_person_id, status FROM pending_merges WHERE id=?",
                           (merge_id,)).fetchone()
-        if not row:
-            return jsonify({"error": "merge not found"}), 404
-        if row[2] != "pending":
-            return jsonify({"error": f"merge is {row[2]}, not pending"}), 409
+    if not row:
+        return jsonify({"error": "merge not found"}), 404
+    return jsonify({"error": "retired",
+                    "message": "Open the merge page to preview and apply this merge.",
+                    "open": f"/console/merge?survivor={row[0]}&merged={row[1]}"}), 409
+
+
+def _person_merge_evidence(survivor_id, merged_id):
+    """Preview, evidence and suggestion for a proposed merge. Reads only. Runs outside
+    _db_lock, because the mailbox search is a network call."""
+    from dashboard import person_merge as _pm, person_merge_evidence as _ev
+    with db.connect(LOG_DB) as cx:
+        p = _pm.preview(cx, survivor_id, merged_id)
+        ev = {}
+        for side in ("survivor", "merged"):
+            e = p[side]["email"]
+            ev[e] = _ev.gather(cx, e, p[side]["id"], _ev.gmail_last_reply)
+    sug = _ev.suggest(ev, p["survivor"]["email"], datetime.now(timezone.utc))
+    sug["survivor_id"] = (p["survivor"]["id"] if sug["survivor"] == p["survivor"]["email"]
+                          else p["merged"]["id"])
+    return p, ev, sug
+
+
+def _merge_actor():
+    """Who applied or undid a merge, for the record. Callers have already checked the
+    owner gate; a key with no workspace user is the master key."""
+    uid = _workspace_user_id_for_token(_present_console_key())
+    return f"owner:user:{uid}" if uid is not None else "owner:master"
+
+
+@app.route("/api/console/people/merge/preview", methods=["GET"])
+def api_person_merge_preview():
+    if not _portal_console_ok() or not _is_staff_request():
+        return jsonify({"error": "unauthorized"}), 401
+    from dashboard import person_merge as _pm
+    try:
+        s, m = int(request.args.get("survivor", "")), int(request.args.get("merged", ""))
+        p, ev, sug = _person_merge_evidence(s, m)
+    except (ValueError, _pm.MergeRefused) as e:
+        return jsonify({"error": str(e) or "survivor and merged ids are required"}), 400
+    return jsonify({**p, "evidence": ev, "suggestion": sug})
+
+
+@app.route("/api/console/people/merge", methods=["POST"])
+def api_person_merge_apply():
+    """Owners only. Moves everything in one transaction, then marks GoHighLevel."""
+    if not _portal_open_is_owner():
+        return jsonify({"error": "owners only"}), 403
+    from dashboard import person_merge as _pm
+    body = request.get_json(silent=True) or {}
+    try:
+        s, m = int(body.get("survivor_id")), int(body.get("merged_id"))
+    except (TypeError, ValueError):
+        return jsonify({"error": "survivor_id and merged_id are required"}), 400
+    mail_old = body.get("mail_old")
+    try:
+        p, ev, sug = _person_merge_evidence(s, m)
+    except _pm.MergeRefused as e:
+        return jsonify({"error": str(e)}), 409
+    with _db_lock, db.connect(LOG_DB) as cx:
         try:
-            result = _merge_two_people(cx, row[0], row[1])
-        except ValueError as e:
-            return jsonify({"error": str(e)}), 400
-        cx.execute("UPDATE pending_merges SET status='applied', applied_at=? WHERE id=?",
-                   (datetime.now(timezone.utc).isoformat(), merge_id))
+            mid = _pm.apply(cx, survivor_id=s, merged_id=m, mail_old=mail_old, evidence=ev,
+                            suggestion=sug, applied_by=_merge_actor(),
+                            merge_people_fields=lambda c, a, b: _merge_people_for_tool(c, a, b))
+            moved = cx.execute("SELECT COUNT(*) FROM person_merge_changes WHERE merge_id=?",
+                               (mid,)).fetchone()[0]
+            cx.commit()
+        except _pm.MergeBlocked as e:
+            cx.rollback()
+            return jsonify({"error": f"{e}. Nothing was changed.",
+                            "blocked": sorted({c["table"] for c in e.clashes})}), 409
+        except _pm.MergeRefused as e:
+            cx.rollback()
+            return jsonify({"error": f"{e}. Nothing was changed."}), 409
+        except Exception as e:
+            cx.rollback()
+            print(f"[person-merge] apply failed: {e!r}", flush=True)
+            return jsonify({"error": "The merge failed part-way. Nothing was changed."}), 409
+    ghl_err = _person_merge_mark_ghl(mid, p["merged"]["email"], s, mail_old)
+    return jsonify({"ok": True, "merge_id": mid, "changes": moved, "ghl_error": ghl_err})
+
+
+def _person_merge_mark_ghl(merge_id, merged_email, survivor_id, mail_old):
+    """Mark the old contact in GoHighLevel and record the outcome. A failure stays
+    'pending' and the hourly job retries it (review round 2)."""
+    try:
+        _, err = ghl_mark_merged(merged_email, survivor_id, mail_old == "stop")
+    except Exception as e:
+        err = repr(e)
+    with _db_lock, db.connect(LOG_DB) as cx:
+        cx.execute("UPDATE person_merges SET ghl_status=?, ghl_error=? WHERE id=?",
+                   ("pending" if err else "ok", (str(err) if err else None), merge_id))
         cx.commit()
-    return jsonify({"ok": True, "result": result})
+    return err
+
+
+@app.route("/api/console/people/merge/<int:merge_id>/undo", methods=["POST"])
+def api_person_merge_undo(merge_id):
+    if not _portal_open_is_owner():
+        return jsonify({"error": "owners only"}), 403
+    from dashboard import person_merge as _pm
+    with _db_lock, db.connect(LOG_DB) as cx:
+        row = cx.execute("SELECT merged_email, survivor_person_id FROM person_merges WHERE id=?",
+                         (merge_id,)).fetchone()
+        try:
+            report = _pm.undo(cx, merge_id, _merge_actor())
+            cx.commit()
+        except _pm.MergeRefused as e:
+            cx.rollback()
+            return jsonify({"error": str(e)}), 409
+        except Exception as e:
+            cx.rollback()
+            print(f"[person-merge] undo failed: {e!r}", flush=True)
+            return jsonify({"error": "The undo failed part-way. Nothing was changed."}), 409
+    _, ghl_err = ghl_unmark_merged(row[0], row[1])
+    with _db_lock, db.connect(LOG_DB) as cx:
+        cx.execute("UPDATE person_merges SET ghl_status='undone' WHERE id=?", (merge_id,))
+        cx.commit()
+    return jsonify({"ok": True, **report, "ghl_error": ghl_err,
+                    "note": "Do-not-contact in GoHighLevel was left as it is."})
+
+
+@app.route("/api/console/people/merges/<int:merge_id>", methods=["GET"])
+def api_person_merge_record(merge_id):
+    if not _portal_console_ok() or not _is_staff_request():
+        return jsonify({"error": "unauthorized"}), 401
+    from dashboard import person_merge as _pm
+    with db.connect(LOG_DB) as cx:
+        rows = _pm._rows(cx, "SELECT id, survivor_person_id, merged_person_id, survivor_email, "
+                             "merged_email, mail_old, applied_by, applied_at, undone_at, undone_by, "
+                             "suggestion_json FROM person_merges WHERE id=?", (merge_id,))
+        if not rows:
+            return jsonify({"error": "not found"}), 404
+        n = cx.execute("SELECT COUNT(*) FROM person_merge_changes WHERE merge_id=?",
+                       (merge_id,)).fetchone()[0]
+    return jsonify({"merge": rows[0], "changes": n})
 
 
 @app.route("/api/pending-merges/<int:merge_id>/cancel", methods=["POST"])
@@ -47839,6 +48159,9 @@ def _start_scheduler():
         # start alongside the push. Status: GET /api/console/cron-status.
         scheduler.add_job(_run_people_sync, "interval", hours=1, id="people_sync",
                           next_run_time=datetime.now(timezone.utc) + timedelta(minutes=2))
+        # Records written under a merged address move to the survivor (person merge spec).
+        scheduler.add_job(_run_person_merge_sweep, "interval", hours=1, id="person_merge_sweep",
+                          next_run_time=datetime.now(timezone.utc) + timedelta(minutes=5))
         # Certification bonus Biofields: daily sweep at 15:00 UTC (5am HST). Flag-gated
         # (CERT_BONUS_ENABLED) inside _run_biofield_bonuses, so this is a safe no-op until on.
         scheduler.add_job(_run_biofield_bonuses, "cron", hour=15, minute=0,
@@ -58332,6 +58655,14 @@ def bos_finance_page():
 @app.route("/console/crm")
 def bos_crm_page():
     resp = send_from_directory(STATIC, "console-crm.html")
+    resp.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+    return resp
+
+
+@app.route("/console/merge")
+def console_merge_page():
+    """Merge two people. Spec: docs/superpowers/specs/2026-09-26-merge-two-people-design.md"""
+    resp = send_from_directory(STATIC, "console-merge.html")
     resp.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
     return resp
 

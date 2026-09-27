@@ -1,0 +1,263 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>Merge People · Console</title>
+<!-- Merge two people. Spec: docs/superpowers/specs/2026-09-26-merge-two-people-design.md -->
+<style>
+  :root{--bg:#f6f8f7;--card:#fff;--ink:#1a2b26;--muted:#5a6b66;--line:#dce4e0;--brand:#2f6f5e;
+        --good:#eaf5ef;--warn:#fff4e0;--bad:#fdecea;--shade:rgba(0,0,0,.45)}
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){--bg:#0f1714;--card:#17221e;--ink:#e8efec;--muted:#9fb0a9;
+      --line:#2a3a34;--brand:#7cc4ad;--good:#16302a;--warn:#33291a;--bad:#3a1f1d;--shade:rgba(0,0,0,.6)}}
+  :root[data-theme="dark"]{--bg:#0f1714;--card:#17221e;--ink:#e8efec;--muted:#9fb0a9;
+      --line:#2a3a34;--brand:#7cc4ad;--good:#16302a;--warn:#33291a;--bad:#3a1f1d;--shade:rgba(0,0,0,.6)}
+  body{font:15px/1.5 system-ui,-apple-system,sans-serif;margin:0;color:var(--ink);background:var(--bg)}
+  .wrap{max-width:900px;margin:0 auto;padding:20px 16px}
+  h1{margin:.2em 0 .1em;font-size:1.5rem}
+  .sub{color:var(--muted);font-size:13px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px;margin:12px 0}
+  .pick{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  .pick input{width:100%;box-sizing:border-box;padding:8px;border:1px solid var(--line);border-radius:8px;
+              background:var(--bg);color:var(--ink)}
+  .hits button{display:block;width:100%;text-align:left;margin-top:4px;padding:6px 8px;border:1px solid var(--line);
+               border-radius:6px;background:var(--card);color:var(--ink);cursor:pointer}
+  .chosen{margin-top:6px;font-weight:600}
+  .cols{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  table{width:100%;border-collapse:collapse;font-size:14px}
+  td,th{padding:5px 6px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
+  .note{padding:8px 10px;border-radius:8px;background:var(--good);margin:8px 0}
+  .note.warn{background:var(--warn)} .note.bad{background:var(--bad)}
+  .btn{padding:8px 14px;border-radius:8px;border:1px solid var(--brand);background:var(--brand);color:var(--bg);
+       font-weight:600;cursor:pointer}
+  .btn.ghost{background:transparent;color:var(--brand)}
+  .btn:disabled{opacity:.5;cursor:default}
+  label.opt{display:block;margin:4px 0}
+  .dialog{position:fixed;inset:0;background:var(--shade);display:flex;align-items:center;justify-content:center;padding:16px;z-index:100}
+  .dialog .panel{background:var(--card);color:var(--ink);border:1px solid var(--line);border-radius:12px;max-width:30rem;width:100%;padding:16px}
+  .row{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+  @media (max-width:640px){.pick,.cols{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<script src="/static/op-nav.js" data-active="people" data-sub="merge"></script>
+<div class="wrap">
+  <h1>Merge two people</h1>
+  <p class="sub">Every record moves to the person who stays. The other address keeps working as a way in. Every change is recorded and can be undone.</p>
+
+  <div class="card" id="picker">
+    <div class="pick">
+      <div><label for="qa">First person</label><input id="qa" placeholder="Name or email"><div class="hits" id="ha"></div><div class="chosen" id="ca"></div></div>
+      <div><label for="qb">Second person</label><input id="qb" placeholder="Name or email"><div class="hits" id="hb"></div><div class="chosen" id="cb"></div></div>
+    </div>
+    <div class="row"><button class="btn" id="preview-btn" disabled>Preview</button></div>
+  </div>
+
+  <div id="status"></div>
+  <div id="preview"></div>
+  <div id="record"></div>
+</div>
+
+<script>
+var chosen = {a: null, b: null};
+var current = null;          // the last preview
+
+function key(){ try { return localStorage.getItem("console_key") || ""; } catch(e){ return ""; } }
+function hdr(extra){ var h = extra || {}; var k = key(); if (k) h["X-Console-Key"] = k; return h; }
+function esc(s){ return String(s == null ? "" : s).replace(/[&<>"']/g, function(c){
+  return {"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]; }); }
+function status(msg, kind){ document.getElementById("status").innerHTML =
+  msg ? '<div class="note ' + (kind || "") + '">' + esc(msg) + '</div>' : ""; }
+function getJSON(url){ return fetch(url, {headers: hdr(), credentials: "same-origin"})
+  .then(function(r){ return r.json().then(function(j){ return {ok: r.ok, status: r.status, j: j}; }); }); }
+function postJSON(url, body){ return fetch(url, {method: "POST", credentials: "same-origin",
+  headers: hdr({"Content-Type": "application/json"}), body: JSON.stringify(body || {})})
+  .then(function(r){ return r.json().then(function(j){ return {ok: r.ok, status: r.status, j: j}; }); }); }
+
+function label(p){ return (p.name || "(no name)") + " · " + p.email + " · #" + p.id; }
+
+function choose(side, p){
+  chosen[side] = p;
+  document.getElementById("c" + side).textContent = label(p);
+  document.getElementById("h" + side).innerHTML = "";
+  document.getElementById("preview-btn").disabled = !(chosen.a && chosen.b && chosen.a.id !== chosen.b.id);
+}
+
+function search(side){
+  var q = document.getElementById("q" + side).value.trim();
+  if (q.length < 3) { document.getElementById("h" + side).innerHTML = ""; return; }
+  getJSON("/api/people?q=" + encodeURIComponent(q) + "&limit=8").then(function(x){
+    var box = document.getElementById("h" + side);
+    box.innerHTML = "";
+    ((x.j && x.j.people) || []).forEach(function(p){
+      var b = document.createElement("button");
+      b.type = "button"; b.textContent = label(p);
+      b.onclick = function(){ choose(side, p); };
+      box.appendChild(b);
+    });
+  });
+}
+
+function findPerson(q){
+  return getJSON("/api/people?q=" + encodeURIComponent(q) + "&limit=5").then(function(x){
+    var list = (x.j && x.j.people) || [];
+    var exact = list.filter(function(p){ return String(p.email).toLowerCase() === q.toLowerCase(); });
+    return exact[0] || list[0] || null;
+  });
+}
+
+function counts(p){
+  var rows = Object.keys(p.counts).sort().map(function(t){
+    var c = p.counts[t], k = p.clashes[t];
+    var rules = {"survivor": "the survivor's is kept", "sum": "added together", "newest": "the newest is kept"};
+    var clash = k ? ' <span class="sub">(' + k.count + ' in both: ' +
+      esc(k.rule ? rules[k.rule.split(":")[0]] : "no rule, this blocks the merge") + ')</span>' : "";
+    return "<tr><td>" + esc(t.replace(/_/g, " ")) + "</td><td>" + c[1] + "</td><td>" + c[0] + clash + "</td></tr>";
+  }).join("");
+  return "<table><tr><th>Records</th><th>" + esc(p.survivor.email) + "</th><th>" + esc(p.merged.email) + "</th></tr>" + rows + "</table>";
+}
+
+function evidence(p){
+  var names = {reply: "Last reply", signin: "Last sign-in", signin_link: "Last sign-in link",
+    click: "Last email click", scan: "Latest scan", order: "Latest order", intake: "Intake", booking: "Booking"};
+  var s = p.evidence[p.survivor.email] || {}, m = p.evidence[p.merged.email] || {};
+  var rows = Object.keys(names).map(function(k){
+    return "<tr><td>" + names[k] + "</td><td>" + esc((s[k] || "none").slice(0, 10)) + "</td><td>" + esc((m[k] || "none").slice(0, 10)) + "</td></tr>";
+  }).join("");
+  return "<table><tr><th>Evidence</th><th>" + esc(p.survivor.email) + "</th><th>" + esc(p.merged.email) + "</th></tr>" + rows + "</table>";
+}
+
+function renderPreview(p){
+  current = p;
+  var sug = p.suggestion;
+  var blocked = (p.blocked || []).length ? '<div class="note bad">These records exist under both addresses and there is no rule for them yet: ' +
+    esc(p.blocked.map(function(t){ return t.replace(/_/g, " "); }).join(", ")) +
+    '. Resolve them first. Nothing can be merged until then.</div>' : "";
+  var portal = p.portal.keep ? ("Portal page: " + p.portal.reason + "." +
+    (p.portal.from_other.length ? " Also copied from the other page: " + p.portal.from_other.join(", ") + "." : "")) : p.portal.reason;
+  document.getElementById("preview").innerHTML =
+    '<div class="card"><h2>Preview</h2>' +
+    '<p class="sub">Nothing has changed yet.</p>' +
+    '<div class="note">' + esc(sug.survivor_reason) + '</div>' +
+    '<div class="note warn">' + esc(sug.mail_reason) + '</div>' +
+    '<p>' + esc(portal) + '</p>' + blocked +
+    '<div class="cols"><div>' + counts(p) + '</div><div>' + evidence(p) + '</div></div>' +
+    '<h3>Who stays</h3>' +
+    '<label class="opt"><input type="radio" name="stay" value="' + p.survivor.id + '" checked> ' + esc(label(p.survivor)) + '</label>' +
+    '<label class="opt"><input type="radio" name="stay" value="' + p.merged.id + '"> ' + esc(label(p.merged)) + '</label>' +
+    '<h3>The other address in GoHighLevel</h3>' +
+    '<label class="opt"><input type="radio" name="mail" value="stop"' + (sug.mail_old === "stop" ? " checked" : "") + '> Stop mailing it</label>' +
+    '<label class="opt"><input type="radio" name="mail" value="keep"' + (sug.mail_old === "keep" ? " checked" : "") + '> Keep mailing it</label>' +
+    '<div class="row"><button class="btn" id="apply-btn"' + ((p.blocked || []).length ? " disabled" : "") +
+    '>Apply merge</button></div></div>';
+  // The preview always shows the survivor that Apply will use: choosing the other one
+  // re-runs the preview with the two swapped (review round 2).
+  Array.prototype.forEach.call(document.querySelectorAll('input[name="stay"]'), function(r){
+    r.onchange = function(){ if (+r.value !== p.survivor.id) runPreview(p.merged.id, p.survivor.id, false); };
+  });
+  document.getElementById("apply-btn").onclick = askApply;
+}
+
+function runPreview(s, m, follow){
+  status("Loading the preview.");
+  getJSON("/api/console/people/merge/preview?survivor=" + s + "&merged=" + m).then(function(x){
+    if (!x.ok) { status(x.j.error || "Could not load the preview.", "bad"); return; }
+    if (follow && x.j.suggestion.survivor_id !== x.j.survivor.id) {
+      runPreview(x.j.merged.id, x.j.survivor.id, false);     // start from the suggestion
+      return;
+    }
+    status("");
+    renderPreview(x.j);
+  });
+}
+
+function ask(title, text, goLabel, onGo){
+  var d = document.createElement("div");
+  d.className = "dialog"; d.setAttribute("role", "dialog"); d.setAttribute("aria-modal", "true");
+  d.innerHTML = '<div class="panel"><h2>' + esc(title) + '</h2><p>' + esc(text) + '</p>' +
+    '<div class="row"><button class="btn" id="dlg-go">' + esc(goLabel) + '</button>' +
+    '<button class="btn ghost" id="dlg-no">Cancel</button></div></div>';
+  document.body.appendChild(d);
+  function close(){ if (d.parentNode) d.parentNode.removeChild(d); document.removeEventListener("keydown", onKey, true); }
+  function onKey(e){ if (e.key === "Escape") close(); }
+  document.addEventListener("keydown", onKey, true);
+  d.querySelector("#dlg-no").onclick = close;
+  d.querySelector("#dlg-go").onclick = function(){ close(); onGo(); };
+  d.querySelector("#dlg-no").focus();
+}
+
+function askApply(){
+  var p = current, mail = (document.querySelector('input[name="mail"]:checked') || {}).value;
+  var moving = Object.keys(p.counts).reduce(function(n, t){ return n + p.counts[t][0]; }, 0);
+  ask("Merge " + p.merged.email + " into " + p.survivor.email + "?",
+      moving + " records move to " + p.survivor.email + ". " + p.merged.email +
+      " keeps working as a way in. GoHighLevel: " + (mail === "stop" ? "stop mailing it." : "keep mailing it.") +
+      " You can undo this from the merge record.",
+      "Merge", function(){
+        status("Merging.");
+        postJSON("/api/console/people/merge", {survivor_id: p.survivor.id, merged_id: p.merged.id, mail_old: mail})
+          .then(function(x){
+            if (!x.ok) { status((x.j.error || "The merge did not run. Nothing was changed.") +
+              (x.j.blocked ? " Blocked by: " + x.j.blocked.join(", ") + "." : ""), "bad"); return; }
+            status("Merged. " + x.j.changes + " records changed." +
+                   (x.j.ghl_error ? " GoHighLevel was not updated: " + x.j.ghl_error : ""), x.j.ghl_error ? "warn" : "");
+            document.getElementById("preview").innerHTML = "";
+            showRecord(x.j.merge_id);
+          });
+      });
+}
+
+function showRecord(id){
+  history.replaceState(null, "", "/console/merge?record=" + id);
+  getJSON("/api/console/people/merges/" + id).then(function(x){
+    if (!x.ok) { status(x.j.error || "Merge record not found.", "bad"); return; }
+    var m = x.j.merge;
+    document.getElementById("record").innerHTML = '<div class="card"><h2>Merge #' + m.id + '</h2>' +
+      '<p>' + esc(m.merged_email) + ' merged into ' + esc(m.survivor_email) + ' on ' + esc((m.applied_at || "").slice(0, 16).replace("T", " ")) +
+      ' by ' + esc(m.applied_by) + '. ' + x.j.changes + ' records changed.</p>' +
+      (m.undone_at ? '<div class="note warn">Undone on ' + esc(m.undone_at.slice(0, 16).replace("T", " ")) + '.</div>'
+                   : '<div class="row"><button class="btn ghost" id="undo-btn">Undo this merge</button></div>') + '</div>';
+    var u = document.getElementById("undo-btn");
+    if (u) u.onclick = function(){
+      ask("Undo this merge?", "Every recorded change is reversed and " + m.merged_email +
+          " becomes a separate person again. Records changed since the merge are left as they are and listed.",
+          "Undo", function(){
+            postJSON("/api/console/people/merge/" + m.id + "/undo", {}).then(function(y){
+              if (!y.ok) { status(y.j.error || "The undo did not run. Nothing was changed.", "bad"); return; }
+              var sk = y.j.skipped || [];
+              if ((y.j.kept || []).length) sk = sk.concat([{table: "text opt-out", reason: "kept, so no opt-out is lost"}]);
+              status("Undone. " + y.j.restored + " changes reversed. " + (y.j.note || "") +
+                     (sk.length ? " Left as they are: " + sk.map(function(s){ return s.table + " (" + s.reason + ")"; }).join("; ") : ""),
+                     sk.length ? "warn" : "");
+              showRecord(m.id);
+            });
+          });
+    };
+  });
+}
+
+(function start(){
+  ["a", "b"].forEach(function(side){
+    var t = null;
+    document.getElementById("q" + side).addEventListener("input", function(){ clearTimeout(t); t = setTimeout(function(){ search(side); }, 250); });
+  });
+  document.getElementById("preview-btn").onclick = function(){ runPreview(chosen.a.id, chosen.b.id, true); };
+  var q = new URLSearchParams(location.search);
+  if (q.get("record")) { showRecord(q.get("record")); return; }
+  if (q.get("survivor") && q.get("merged")) { runPreview(q.get("survivor"), q.get("merged"), true); return; }
+  if (q.get("pending")) {
+    getJSON("/api/pending-merges?status=pending").then(function(x){
+      var m = ((x.j && x.j.merges) || []).filter(function(r){ return String(r.id) === q.get("pending"); })[0];
+      if (m) runPreview(m.keeper.id, m.dupe.id, true); else status("That queued merge is no longer pending.", "warn");
+    });
+    return;
+  }
+  if (q.get("email")) {
+    findPerson(q.get("email")).then(function(p){ if (p) { document.getElementById("qa").value = p.email; choose("a", p); } });
+  }
+})();
+</script>
+</body>
+</html>

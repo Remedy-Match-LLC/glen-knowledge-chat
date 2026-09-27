@@ -595,7 +595,9 @@ def test_queue_merge_rejects_non_two_person_candidate(monkeypatch, tmp_db):
     assert "exactly 2-person" in r.get_json()["error"]
 
 
-def test_apply_pending_merge_executes_and_deletes_dupe(monkeypatch, tmp_db):
+def test_apply_pending_merge_is_retired(monkeypatch, tmp_db):
+    """The old apply deleted the duplicate and the hourly sync recreated it. It is retired
+    in favour of the merge page (spec: docs/superpowers/specs/2026-09-26-merge-two-people-design.md)."""
     app = _app()
     monkeypatch.setattr(app, "LOG_DB", tmp_db)
     _seed_people_schema(tmp_db); _seed_household_tables(tmp_db); _seed_pending_merges_table(tmp_db)
@@ -611,19 +613,13 @@ def test_apply_pending_merge_executes_and_deletes_dupe(monkeypatch, tmp_db):
 
     client = app.app.test_client()
     r = client.post("/api/pending-merges/1/apply", headers={"X-Console-Key": "testkey"})
-    assert r.status_code == 200
+    assert r.status_code == 409
+    body = r.get_json()
+    assert body["error"] == "retired"
+    assert body["open"] == f"/console/merge?survivor={p1}&merged={p2}"
     with sqlite3.connect(tmp_db) as cx:
-        # Keeper still exists, dupe gone
-        assert cx.execute("SELECT COUNT(*) FROM people WHERE id=?", (p1,)).fetchone()[0] == 1
-        assert cx.execute("SELECT COUNT(*) FROM people WHERE id=?", (p2,)).fetchone()[0] == 0
-        # Keeper has both tags
-        row = cx.execute("SELECT tags, phone FROM people WHERE id=?", (p1,)).fetchone()
-        tags = json.loads(row[0])
-        assert "client" in tags and "doctor" in tags
-        # Keeper's empty phone filled from dupe
-        assert row[1] == "+15551234567"
-        # Pending merge marked applied
-        assert cx.execute("SELECT status FROM pending_merges WHERE id=1").fetchone()[0] == "applied"
+        assert cx.execute("SELECT COUNT(*) FROM people WHERE id IN (?,?)", (p1, p2)).fetchone()[0] == 2
+        assert cx.execute("SELECT status FROM pending_merges WHERE id=1").fetchone()[0] == "pending"
 
 
 def test_cancel_pending_merge(monkeypatch, tmp_db):
