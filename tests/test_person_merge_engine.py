@@ -519,3 +519,49 @@ def test_undo_after_spending_past_the_survivors_own_balance(cx):
     pm.undo(cx, mid, "t")
     got = dict(cx.execute("SELECT email, credits FROM evox_session_credits").fetchall())
     assert got == {GMAIL: 2, AOL: 0}                   # never negative, never more than there is
+
+
+# ── A per-merge choice for a clash with no written rule (Glen, 2026-09-27: Peach's
+#    affiliate record, "yes" to keeping the survivor's) ────────────────────────────────
+
+def _affiliates(cx):
+    cx.execute("CREATE TABLE affiliate_signups (id INTEGER PRIMARY KEY, email TEXT UNIQUE, slug TEXT)")
+    cx.execute("INSERT INTO affiliate_signups VALUES (1, ?, 'mel-aol')", (AOL,))
+    cx.execute("INSERT INTO affiliate_signups VALUES (2, ?, 'mel-gm')", (GMAIL,))
+    cx.commit()
+
+
+def test_a_clash_with_no_rule_offers_a_choice(cx):
+    _affiliates(cx)
+    p = pm.preview(cx, 2, 1)
+    assert "affiliate_signups" in p["blocked"] and p["needs_choice"] == ["affiliate_signups"]
+    assert "affiliate_signups" not in pm.preview(cx, 2, 1,
+                                                 resolutions={"affiliate_signups": "survivor"})["blocked"]
+
+
+@pytest.mark.parametrize("choice,kept", [("survivor", "mel-gm"), ("merged", "mel-aol")])
+def test_the_chosen_record_stays_and_undo_restores_both(cx, choice, kept):
+    _affiliates(cx)
+    mid = _apply(cx, resolutions={"affiliate_signups": choice})
+    assert cx.execute("SELECT slug, email FROM affiliate_signups").fetchall() == [(kept, GMAIL)]
+    pm.undo(cx, mid, "t")
+    assert sorted(cx.execute("SELECT slug, email FROM affiliate_signups").fetchall()) == [
+        ("mel-aol", AOL), ("mel-gm", GMAIL)]
+
+
+def test_a_choice_cannot_settle_an_unreviewed_table_or_be_invented(cx):
+    cx.execute("CREATE TABLE practitioners (id INTEGER PRIMARY KEY, email TEXT)")
+    cx.execute("INSERT INTO practitioners VALUES (1, ?)", (AOL,))
+    cx.commit()
+    with pytest.raises(pm.MergeBlocked):
+        pm.apply(cx, survivor_id=2, merged_id=1, mail_old="stop", evidence={}, suggestion={},
+                 applied_by="t", merge_people_fields=_fields,
+                 resolutions={"practitioners": "survivor"})
+    cx.rollback()
+    cx.execute("DROP TABLE practitioners")
+    cx.commit()
+    with pytest.raises(pm.MergeRefused) as e:
+        pm.apply(cx, survivor_id=2, merged_id=1, mail_old="stop", evidence={}, suggestion={},
+                 applied_by="t", merge_people_fields=_fields,
+                 resolutions={"affiliate_signups": "whatever"})
+    assert not isinstance(e.value, pm.MergeBlocked) and "survivor or merged" in str(e.value)

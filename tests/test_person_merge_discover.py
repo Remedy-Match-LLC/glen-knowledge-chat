@@ -60,12 +60,7 @@ def test_every_repo_table_is_named_move_or_history():
     """Spec test 6: a new table with an address or person column must be classified."""
     src = "".join(pathlib.Path(f).read_text() for f in
                   [str(ROOT / "app.py")] + glob.glob(str(ROOT / "dashboard" / "*.py")))
-    found = set()
-    for m in re.finditer(r'CREATE TABLE IF NOT EXISTS\s+"?(\w+)"?\s*\((.*?)\)\s*["\']{1,3}', src, re.S):
-        cols = re.findall(r'(?:^|[,(\n"])\s*"?\s*(\w+)\s+(?:TEXT|INTEGER|REAL|BLOB|BYTEA|BIGINT)',
-                          m.group(2))
-        if any(pd._is_email_col(c) or pd._is_person_col(c) for c in cols):
-            found.add(m.group(1))
+    found = pd.repo_tables_with_person_columns(src)
     named = pd.MOVE_TABLES | pd.HISTORY_TABLES | pd.MERGE_OWN_TABLES
     assert sorted(found - named) == []
     assert not (pd.MOVE_TABLES & pd.HISTORY_TABLES)
@@ -109,3 +104,27 @@ def test_discovery_on_postgres_across_schemas(monkeypatch):
 def test_sequence_sends_move_with_their_enrollments():
     """sequences._candidates joins sends to enrollments by address; they must move together."""
     assert "sequence_sends" in pd.MOVE_TABLES and "sequence_enrollments" in pd.MOVE_TABLES
+
+
+def test_production_tables_found_on_2026_09_27_are_classified():
+    """Listed from production by prod-queries/merge-unclassified-tables.py: a repo scan
+    missed all 34 (lesson: feedback_a_repo_ddl_scan_is_not_the_table_list)."""
+    move = {"biofield_month_grants", "biofield_reveal_spend_unlocks", "care_taster_grants",
+            "coach_sub_charges", "coach_waitlist", "coaching_interest", "community_signals",
+            "family_sub_charges", "family_sub_grants", "healing_oasis_requests", "journey_state",
+            "member_interest", "membership_product_grants", "memberships",
+            "order_membership_grants", "order_payments", "peer_interest", "peer_matches",
+            "portal_library", "prepay_term_grants", "quiz_responses", "studio_credit_intents",
+            "voice_signals"}
+    history = {"fmp_clients", "escalation_queue", "identity_consolidation_audit",
+               "email_identity_aliases", "inquiry_practitioners", "practitioner_inquiry_opt_outs",
+               "practitioner_suggestions", "query_log", "remedy_match_email_sent",
+               "review_link_tokens", "membership_reconcile_alerts"}
+    assert move <= pd.MOVE_TABLES
+    assert history <= pd.HISTORY_TABLES
+
+
+def test_the_repo_scan_finds_tables_in_multi_statement_blocks():
+    """memberships is created inside an executescript block; the first scan missed it."""
+    src = (ROOT / "app.py").read_text()
+    assert "memberships" in pd.repo_tables_with_person_columns(src)

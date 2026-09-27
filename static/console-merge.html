@@ -63,6 +63,7 @@
 <script>
 var chosen = {a: null, b: null};
 var current = null;          // the last preview
+var choices = {};            // the owner's choice per clash with no written rule
 
 function key(){ try { return localStorage.getItem("console_key") || ""; } catch(e){ return ""; } }
 function hdr(extra){ var h = extra || {}; var k = key(); if (k) h["X-Console-Key"] = k; return h; }
@@ -132,9 +133,20 @@ function evidence(p){
 function renderPreview(p){
   current = p;
   var sug = p.suggestion;
-  var blocked = (p.blocked || []).length ? '<div class="note bad">These records exist under both addresses and there is no rule for them yet: ' +
-    esc(p.blocked.map(function(t){ return t.replace(/_/g, " "); }).join(", ")) +
-    '. Resolve them first. Nothing can be merged until then.</div>' : "";
+  var need = p.needs_choice || [];
+  var hard = (p.blocked || []).filter(function(t){ return need.indexOf(t) < 0; });
+  var blocked = hard.length ? '<div class="note bad">These tables are not reviewed yet: ' +
+    esc(hard.map(function(t){ return t.replace(/_/g, " "); }).join(", ")) +
+    '. Nothing can be merged until they are classified.</div>' : "";
+  var decide = need.length ? '<div class="note warn"><strong>Choose whose record stays.</strong> Both addresses hold one and there is no rule. The other is kept in the undo record.' +
+    need.map(function(t){
+      return '<div>' + esc(t.replace(/_/g, " ")) + ': ' +
+        '<label class="opt" style="display:inline"><input type="radio" name="choice-' + esc(t) + '" value="survivor"' + (choices[t] === "survivor" ? " checked" : "") + '> ' + esc(p.survivor.email) + '</label> ' +
+        '<label class="opt" style="display:inline"><input type="radio" name="choice-' + esc(t) + '" value="merged"' + (choices[t] === "merged" ? " checked" : "") + '> ' + esc(p.merged.email) + '</label></div>';
+    }).join("") + '</div>' : "";
+  var chosen = Object.keys(choices).filter(function(t){ return choices[t]; });
+  var settled = chosen.length ? '<div class="note">Your choice: ' + esc(chosen.map(function(t){
+    return t.replace(/_/g, " ") + " from " + (choices[t] === "survivor" ? p.survivor.email : p.merged.email); }).join(", ")) + '.</div>' : "";
   var portal = p.portal.keep ? ("Portal page: " + p.portal.reason + "." +
     (p.portal.from_other.length ? " Also copied from the other page: " + p.portal.from_other.join(", ") + "." : "")) : p.portal.reason;
   document.getElementById("preview").innerHTML =
@@ -142,7 +154,7 @@ function renderPreview(p){
     '<p class="sub">Nothing has changed yet.</p>' +
     '<div class="note">' + esc(sug.survivor_reason) + '</div>' +
     '<div class="note warn">' + esc(sug.mail_reason) + '</div>' +
-    '<p>' + esc(portal) + '</p>' + blocked +
+    '<p>' + esc(portal) + '</p>' + blocked + decide + settled +
     '<div class="cols"><div>' + counts(p) + '</div><div>' + evidence(p) + '</div></div>' +
     '<h3>Who stays</h3>' +
     '<label class="opt"><input type="radio" name="stay" value="' + p.survivor.id + '" checked> ' + esc(label(p.survivor)) + '</label>' +
@@ -157,12 +169,20 @@ function renderPreview(p){
   Array.prototype.forEach.call(document.querySelectorAll('input[name="stay"]'), function(r){
     r.onchange = function(){ if (+r.value !== p.survivor.id) runPreview(p.merged.id, p.survivor.id, false); };
   });
+  Array.prototype.forEach.call(document.querySelectorAll('input[name^="choice-"]'), function(r){
+    r.onchange = function(){
+      choices[r.name.slice(7)] = r.value;
+      runPreview(p.survivor.id, p.merged.id, false);
+    };
+  });
   document.getElementById("apply-btn").onclick = askApply;
 }
 
 function runPreview(s, m, follow){
   status("Loading the preview.");
-  getJSON("/api/console/people/merge/preview?survivor=" + s + "&merged=" + m).then(function(x){
+  var res = Object.keys(choices).map(function(t){ return t + ":" + choices[t]; }).join(",");
+  getJSON("/api/console/people/merge/preview?survivor=" + s + "&merged=" + m +
+          (res ? "&resolve=" + encodeURIComponent(res) : "")).then(function(x){
     if (!x.ok) { status(x.j.error || "Could not load the preview.", "bad"); return; }
     if (follow && x.j.suggestion.survivor_id !== x.j.survivor.id) {
       runPreview(x.j.merged.id, x.j.survivor.id, false);     // start from the suggestion
@@ -197,7 +217,8 @@ function askApply(){
       " You can undo this from the merge record.",
       "Merge", function(){
         status("Merging.");
-        postJSON("/api/console/people/merge", {survivor_id: p.survivor.id, merged_id: p.merged.id, mail_old: mail})
+        postJSON("/api/console/people/merge", {survivor_id: p.survivor.id, merged_id: p.merged.id,
+                                               mail_old: mail, resolutions: choices})
           .then(function(x){
             if (!x.ok) { status((x.j.error || "The merge did not run. Nothing was changed.") +
               (x.j.blocked ? " Blocked by: " + x.j.blocked.join(", ") + "." : ""), "bad"); return; }

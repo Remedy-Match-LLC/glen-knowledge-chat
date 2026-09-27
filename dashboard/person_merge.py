@@ -35,6 +35,9 @@ CLASH_RULES = {
     "evox_session_credits": "sum:credits",     # credits add up
 }
 _SKIP_GENERIC = {"people", "client_portals"}
+# An owner's choice, for one merge only, settles a clash in a table with no written rule
+# (Glen, 2026-09-27, Peach's affiliate record). Passed through as a parameter, never held
+# globally, so a preview running alongside an apply cannot change it.
 
 
 class MergeRefused(Exception):
@@ -213,14 +216,18 @@ def _rekey(cx, log, t, row, keys, new):
                [new] + args)
 
 
-def _settle(cx, log, t, row, other, keys, new):
-    """Settle a clash by the table's rule. Raises MergeBlocked when there is none."""
-    rule = CLASH_RULES.get(t.table)
+def _settle(cx, log, t, row, other, keys, new, choices=None):
+    """Settle a clash by the table's rule, or the owner's choice for this merge. Raises
+    MergeBlocked when there is neither."""
+    rule = CLASH_RULES.get(t.table) or (choices or {}).get(t.table)
     if not rule:
         raise MergeBlocked([{"table": t.table, "column": t.column, "merged_row": row,
                              "survivor_row": other}])
     if rule == "survivor":
         _set_aside(cx, log, t, row, keys)
+    elif rule == "merged":
+        _set_aside(cx, log, t, other, keys)
+        _rekey(cx, log, t, row, keys, new)
     elif rule == "notify":
         carry = {}
         if (row.get("opt_status") or "") == "out" and (other.get("opt_status") or "") != "out":
@@ -262,7 +269,7 @@ def _settle(cx, log, t, row, other, keys, new):
         _set_aside(cx, log, t, row, keys)
 
 
-def _move_target(cx, log, t, old, new, *, dry=False, blocked=None):
+def _move_target(cx, log, t, old, new, *, dry=False, blocked=None, choices=None):
     """Move one column's rows from `old` to `new`. Returns (moved, settled).
     `blocked`, when a list, collects unsettled clashes instead of raising (the sweep)."""
     moved = settled = 0
@@ -273,13 +280,14 @@ def _move_target(cx, log, t, old, new, *, dry=False, blocked=None):
         if dry:
             if other is not None:
                 settled += 1
-                if t.table not in CLASH_RULES and blocked is not None:
-                    blocked.append({"table": t.table, "column": t.column})
+                if (t.table not in CLASH_RULES and t.table not in (choices or {})
+                        and blocked is not None):
+                    blocked.append({"table": t.table, "column": t.column, "choice": True})
             else:
                 moved += 1
             continue
         if other is not None:
-            ok, err = _savepoint(cx, lambda: _settle(cx, log, t, row, other, keys, new))
+            ok, err = _savepoint(cx, lambda: _settle(cx, log, t, row, other, keys, new, choices))
             if not ok:
                 if isinstance(err, MergeBlocked) and blocked is not None:
                     blocked.extend(err.clashes)
@@ -409,8 +417,16 @@ def _carry_raw_token(cx, log, s_email, m_email):
 
 
 # ── Preview, apply ───────────────────────────────────────────────────────────
-def preview(cx, survivor_id, merged_id):
+def _choices(resolutions):
+    bad = {k: v for k, v in (resolutions or {}).items() if v not in ("survivor", "merged")}
+    if bad:
+        raise MergeRefused("a choice must be survivor or merged: " + ", ".join(sorted(bad)))
+    return {k: v for k, v in (resolutions or {}).items() if k not in CLASH_RULES}
+
+
+def preview(cx, survivor_id, merged_id, resolutions=None):
     """What apply would do. Writes nothing."""
+    choices = _choices(resolutions)
     s, m = _person(cx, survivor_id), _person(cx, merged_id)
     if not s or not m:
         raise MergeRefused("both people must exist")
@@ -425,7 +441,8 @@ def preview(cx, survivor_id, merged_id):
             prev = counts.get(t.table, [0, 0])
             counts[t.table] = [max(prev[0], n_m), max(prev[1], n_s)]
         if n_m:
-            _, n_clash = _move_target(cx, None, t, old, new, dry=True, blocked=blocked)
+            _, n_clash = _move_target(cx, None, t, old, new, dry=True, blocked=blocked,
+                                      choices=choices)
             if n_clash:
                 clashes[t.table] = {"count": clashes.get(t.table, {}).get("count", 0) + n_clash,
                                     "rule": CLASH_RULES.get(t.table)}
@@ -440,11 +457,14 @@ def preview(cx, survivor_id, merged_id):
     return {"survivor": {"id": survivor_id, "email": s_email, "name": s.get("name")},
             "merged": {"id": merged_id, "email": m_email, "name": m.get("name")},
             "counts": counts, "clashes": clashes,
-            "blocked": sorted({b["table"] for b in blocked}), "portal": portal}
+            "blocked": sorted({b["table"] for b in blocked}),
+            "needs_choice": sorted({b["table"] for b in blocked if b.get("choice")}),
+            "choices": choices, "portal": portal}
 
 
 def apply(cx, *, survivor_id, merged_id, mail_old, evidence, suggestion, applied_by,
-          merge_people_fields):
+          merge_people_fields, resolutions=None):
+    choices = _choices(resolutions)
     if survivor_id == merged_id:
         raise MergeRefused("a person cannot be merged into themselves")
     if mail_old not in ("stop", "keep"):
@@ -471,7 +491,7 @@ def apply(cx, *, survivor_id, merged_id, mail_old, evidence, suggestion, applied
     _portal_rule(cx, log, merge_id, s_email, m_email)
     for t in _generic_targets(cx):
         old, new = (m_email, s_email) if t.kind == "email" else (merged_id, survivor_id)
-        _move_target(cx, log, t, old, new)
+        _move_target(cx, log, t, old, new, choices=choices)
     merge_people_fields(cx, survivor_id, merged_id)
     cx.execute("UPDATE person_merges SET survivor_after_json=? WHERE id=?",
                (_dumps(_person(cx, survivor_id)), merge_id))
