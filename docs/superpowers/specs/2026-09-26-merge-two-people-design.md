@@ -71,9 +71,21 @@ The merged row is saved whole as a `set_aside` change row, then deleted.
 are combined, reusing the field rules in `_merge_two_people`. Then the merged `people` row is
 deleted; its copy is in `person_merges.merged_person_json`.
 
-**The old portal link.** The merged address's portal token is kept as an alias of the survivor's
-portal (a `portal_token_aliases` row: `token_hash`, `canonical_email`, `merge_id`).
-`get_portal_by_token` falls back to it, so the old link opens the survivor's portal.
+**The portal page.** Added 2026-09-26, Glen: "most recently updated", then "yes" to combining.
+The portal table allows more than one page per address, so a merge would leave two. One page is
+kept: the one updated most recently (the survivor's on a tie or a missing date). Its parts tied to
+one analysis stay together as a set: `greeting`, `video`, `layers`, `findings`, `report_pdf`,
+`audio`, `reorder_items`, `current_scan_date`, `biofield_status`, `auto_advance`. Any other part
+the kept page lacks is copied from the other page (for example `schedule`, `location`,
+`pricing_note`, `research`, `phase`). The other page is saved whole in the change log, then
+removed. Every analysis is also its own report row, so no report is lost. The preview says which
+parts come from which page.
+
+**The old portal links.** The removed page's token is kept as an alias of the survivor's portal
+(a `portal_token_aliases` row: `token_hash`, `canonical_email`, `merge_id`).
+`get_portal_by_token` falls back to it, so both old links open the kept page. When the kept page
+is the merged person's, the survivor's stored raw token becomes the kept page's token, so re-sent
+links carry it.
 
 **One transaction.** Apply runs in a single transaction. Any error rolls everything back and
 nothing is recorded as applied.
