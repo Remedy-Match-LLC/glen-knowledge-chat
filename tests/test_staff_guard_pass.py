@@ -229,3 +229,33 @@ def test_staff_cookie_folds_never_write_the_client_record(client, monkeypatch):
     assert c.get(f"/api/portal/{tok}/folds").get_json()["viewer"] == "staff"
     fresh = appmod.app.test_client()                               # the client's own browser
     assert fresh.get(f"/api/portal/{tok}/folds").get_json()["state"].get("cards", {}) == {}
+
+
+# ── The local Biofield app's "View Client Portal" (Glen, 2026-09-26: "fix those two paths")
+
+def _local_app_link(c, staff_open):
+    body = {"email": "brooke@example.com", "name": "Brooke Webb"}
+    if staff_open:
+        body["staff_open"] = True
+    r = c.post("/admin/portal/get-or-create-link", json=body, headers={"X-Console-Key": SECRET})
+    assert r.status_code == 200
+    return r.get_json()["url"]
+
+
+def test_local_app_open_link_carries_a_working_pass(client):
+    c, appmod = client
+    tok = _seed_portal(appmod)
+    url = _local_app_link(c, staff_open=True)
+    sp = parse_qs(urlparse(url).query)["sp"][0]
+    r = c.get(f"/portal/{tok}?sp={sp}")
+    assert r.status_code == 302 and "rm_staff_view=" in _cookies(r)
+
+
+def test_rollout_link_for_clients_carries_no_pass(client):
+    """The same route makes the links the rollout emails to clients."""
+    c, appmod = client
+    _seed_portal(appmod)
+    assert "sp=" not in _local_app_link(c, staff_open=False)
+    with sqlite3.connect(appmod.LOG_DB) as cx:
+        n = cx.execute("SELECT COUNT(*) FROM auth_tokens WHERE purpose='staff_view_pass'").fetchone()[0]
+    assert n == 0

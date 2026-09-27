@@ -243,3 +243,16 @@ def test_console_open_buttons_ask_for_a_staff_pass():
     assert links.count("staff_open=1") == 1
     at = links.find("staff_open=1")
     assert "Opening portal" in links[max(0, at - 1200):at]
+
+
+def test_editor_preview_opens_with_a_staff_pass():
+    """The Biofield portal editor's "Preview portal" link, after publish, must open the
+    portal as staff (Glen, 2026-09-26: "fix those two paths")."""
+    page = (CONSOLE / "console-biofield-portal.html").read_text()
+    at = page.find("const link = $('previewLink');")
+    assert at != -1
+    block = page[at:at + 900]
+    assert "link.onclick" in block and "previewAsStaff(" in block
+    fn = page.find("function previewAsStaff(")
+    assert fn != -1
+    assert "/api/console/portal-link?staff_open=1&email=" in page[fn:fn + 1200]

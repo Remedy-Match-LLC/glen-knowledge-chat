@@ -37110,7 +37110,12 @@ def admin_portal_get_or_create_link():
         _cp.init_client_portal_table(cx)
         _ns.init_table(cx)
         token = _cp.ensure_token(cx, email, name)
-    return jsonify({"ok": True, "email": email, "url": portal_link(token)})
+    url = portal_link(token)
+    if body.get("staff_open") is True and _is_staff_request():
+        # The local Biofield app's "View Client Portal" opens the portal for staff. The
+        # rollout's links go to clients and never ask for this. See the staff-guard spec.
+        url += ("&" if "?" in url else "?") + "sp=" + _mint_staff_pass(email)
+    return jsonify({"ok": True, "email": email, "url": url})
 
 
 @app.route("/admin/portal/rollout-enroll", methods=["POST"])
