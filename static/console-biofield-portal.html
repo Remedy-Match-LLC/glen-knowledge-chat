@@ -292,18 +292,6 @@ async function api(method, path, body){
   return {ok:r.ok, status:r.status, json: await r.json().catch(()=>({}))};
 }
 
-// Open the client's portal as staff, with a one-time staff pass (staff-guard spec).
-// The tab opens first, synchronously, so the pop-up blocker allows it.
-async function previewAsStaff(email){
-  const tab = window.open('about:blank', '_blank');
-  if(!tab){ setStatus('Pop-up blocked. Allow pop-ups and try again.', false); return; }
-  tab.opener = null;
-  const r = await api('GET', '/api/console/portal-link?staff_open=1&email=' + encodeURIComponent(email || ''));
-  if(r.ok && r.json && r.json.found && r.json.link){ tab.location.replace(r.json.link); return; }
-  tab.close();
-  setStatus('Could not open the portal.', false);
-}
-
 async function markConsultReady(ready){
   const email = ($('email')?.value || '').trim();
   if(!email){ $('consult-ready-msg').textContent = 'Enter an email first.'; return; }
@@ -778,10 +766,11 @@ async function publish(send){
   if(!r.ok){ setStatus(r.json.error || 'Publish failed.', false); return; }
   const link = $('previewLink');
   if(r.json.url){
-    link.href = r.json.url; link.style.display='inline-block';
-    // Open as staff: a one-time pass lets the portal show the staff banner and ask
-    // before any action. The plain href stays for the address itself.
-    link.onclick = function(ev){ ev.preventDefault(); previewAsStaff(email); };
+    // Open as staff through the console route, which adds a one-time staff pass, so the
+    // portal shows the staff banner and asks before any action. A plain href, so every
+    // kind of click works. The client's own link is still printed in the status line.
+    link.href = '/console/open-portal?email=' + encodeURIComponent(email);
+    link.style.display='inline-block';
   }
   let msg = (r.json.updated ? 'Updated — same link.' : 'Published! New portal link created.');
   let ok = true;

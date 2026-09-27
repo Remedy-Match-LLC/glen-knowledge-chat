@@ -34324,6 +34324,31 @@ def api_console_portal_link():
                     "link": link, "reissued": reissued})
 
 
+@app.route("/console/open-portal", methods=["GET"])
+def console_open_portal():
+    """Open a client's portal as staff, from a plain link. Mints a one-time staff pass and
+    redirects to the portal with it, so middle-click and "open in new tab" work as well as
+    a click (review rounds 1 and 2, 2026-09-26). Never reissues the client's link: without
+    the stored plain token it refuses rather than mint a new one, which would break the
+    link the client already has. See the staff-guard spec."""
+    if not _portal_console_ok() or not _is_staff_request():
+        return jsonify({"error": "unauthorized"}), 401
+    email = (request.args.get("email") or "").strip().lower()
+    from dashboard import client_portal as _cp
+    from dashboard import notify_state as _ns
+    with _db_lock, db.connect(LOG_DB) as cx:
+        _cp.init_client_portal_table(cx)
+        if not email or not cx.execute("SELECT 1 FROM client_portals WHERE email=?",
+                                       (email,)).fetchone():
+            return jsonify({"error": "no portal for that email"}), 404
+        if not _ns.get_state(cx, email).get("portal_token"):
+            return ("This portal's link has to be reissued before it can be opened here. "
+                    "Use People, then Open portal, which warns before it reissues."), 409
+        link, _ = _cp.portal_link_for(cx, email, portal_base())
+    return redirect(link + ("&" if "?" in link else "?") + "sp=" + _mint_staff_pass(email),
+                    code=302)
+
+
 @app.route("/api/console/portal-link/resend", methods=["POST"])
 def api_console_portal_link_resend():
     """Email a client their portal link (for someone who lost it and won't
