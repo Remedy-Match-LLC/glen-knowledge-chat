@@ -192,3 +192,19 @@ def test_the_hourly_sync_carries_no_unsubscribe_from_the_old_address(client):
         cx.commit()
         tags = set(json.loads(cx.execute("SELECT tags FROM people WHERE id=2").fetchone()[0]))
     assert tags == {"b", "x"}
+
+
+def test_the_text_opt_out_tag_carries(client):
+    """people-22, 2026-09-27: consent:sms-unsubscribed is the person's text opt-out and
+    carries with opt_status. Glen ("no"): an email unsubscribe does not carry."""
+    c, appmod, _ = client
+    with sqlite3.connect(appmod.LOG_DB) as cx:
+        cx.execute("UPDATE people SET tags=? WHERE id=1",
+                   ('["consent:sms-unsubscribed","consent:unsubscribed"]',))
+    r = c.post("/api/console/people/merge", json={"survivor_id": 2, "merged_id": 1,
+                                                  "mail_old": "stop"}, headers=OWNER)
+    assert r.status_code == 200
+    with sqlite3.connect(appmod.LOG_DB) as cx:
+        tags = set(json.loads(cx.execute("SELECT tags FROM people WHERE id=2").fetchone()[0]))
+    assert "consent:sms-unsubscribed" in tags
+    assert "consent:unsubscribed" not in tags
