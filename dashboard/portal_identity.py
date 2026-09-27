@@ -96,6 +96,23 @@ def _get_or_create_person(cx, email: str, name: str = ""):
     return new_id, ["client"]
 
 
+def _survivor_person_id(cx, person_id):
+    """A merged person's number resolves to the survivor's, following chains. Links and
+    sessions issued before a merge remember the old number (person merge, review round 3)."""
+    pid = person_id
+    for _ in range(50):
+        try:
+            row = cx.execute("SELECT survivor_person_id FROM person_merges WHERE "
+                             "merged_person_id=? AND undone_at IS NULL ORDER BY id DESC LIMIT 1",
+                             (pid,)).fetchone()
+        except Exception:
+            return pid
+        if not row:
+            return pid
+        pid = row[0]
+    return pid
+
+
 def _roles_by_person_id(cx, person_id):
     row = cx.execute("SELECT email, roles FROM people WHERE id=?", (person_id,)).fetchone()
     if not row:
@@ -217,7 +234,8 @@ def consume_client_magic_link(cx, token) -> "int | None":
     cx.commit()
     if cur.rowcount != 1:   # lost the race to a concurrent submit
         return None
-    return _person_id_from_extra(extra)
+    pid = _person_id_from_extra(extra)
+    return _survivor_person_id(cx, pid) if pid else pid
 
 
 def identity_from_session(cx, session_token) -> "Identity | None":
@@ -242,6 +260,7 @@ def identity_from_session(cx, session_token) -> "Identity | None":
         return None
     if not person_id:
         return None
+    person_id = _survivor_person_id(cx, person_id)
     email, roles = _roles_by_person_id(cx, person_id)
     if email is None:
         return None

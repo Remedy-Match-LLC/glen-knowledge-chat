@@ -154,3 +154,18 @@ def test_old_link_opens_a_page_stored_with_other_case(client):
     cx.commit()
     got = cp.get_portal_by_token(cx, "old-token")
     assert got and got["content"]["greeting"] == "Hi"
+
+
+def test_links_and_sessions_from_before_a_merge_reach_the_survivor(client):
+    """auth_tokens.extra remembers the merged person's number (review round 3)."""
+    _, appmod = client
+    from dashboard import portal_identity as pi
+    cx = _cx(appmod)
+    cx.execute("INSERT INTO person_merges (survivor_person_id, merged_person_id, survivor_email, "
+               "merged_email, applied_at) VALUES (2, 1, ?, ?, 't')", (GMAIL, AOL))
+    cx.commit()
+    session = pi.create_client_session(cx, 1, AOL)
+    got = pi.identity_from_session(cx, session)
+    assert got and got.person_id == 2 and got.email == GMAIL
+    link = pi.create_client_magic_link(cx, 1, AOL)
+    assert pi.consume_client_magic_link(cx, link) == 2

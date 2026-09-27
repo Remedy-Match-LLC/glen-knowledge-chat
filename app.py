@@ -14348,6 +14348,10 @@ def _ghl_contact_for(email):
     if err:
         return None, err
     contacts = data.get("contacts", []) if isinstance(data, dict) else []
+    # Only a contact whose PRIMARY address is this one. The lookup can also match an extra
+    # address on another contact, which may be the survivor's own (review round 3).
+    want = (email or "").strip().lower()
+    contacts = [c for c in contacts if (c.get("email") or "").strip().lower() == want]
     if not contacts:
         return None, None
     return min(contacts, key=lambda c: c.get("dateAdded") or "9999"), None

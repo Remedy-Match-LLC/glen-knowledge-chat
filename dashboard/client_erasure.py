@@ -91,8 +91,45 @@ def _table_exists(cx, table):
         "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (table,)).fetchone() is not None
 
 
+def _addresses(cx, email):
+    """Every address that is this person: the survivor's and each merged into it. A request
+    naming either address erases both (person merge, review round 3)."""
+    email = _norm(email)
+    try:
+        from dashboard import person_aliases as _pal
+        canon = _pal.canonical_email(cx, email)
+        out = {canon} | {a for a, _ in _pal.all_aliases(cx) if _pal.canonical_email(cx, a) == canon}
+    except Exception:
+        out = {email}
+    out.add(email)
+    return sorted(out)
+
+
 def _count(cx, table, col, email):
-    return cx.execute(f"SELECT COUNT(*) FROM {table} WHERE LOWER({col})=?", (email,)).fetchone()[0]
+    addrs = _addresses(cx, email)
+    marks = ",".join("?" for _ in addrs)
+    return cx.execute(f"SELECT COUNT(*) FROM {table} WHERE LOWER({col}) IN ({marks})",
+                      addrs).fetchone()[0]
+
+
+def _purge_merge_record(cx, addrs):
+    """The merge log keeps whole copies of set-aside rows and old values. For health tables
+    they are health data too: delete them, so an undo can never bring them back."""
+    try:
+        marks = ",".join("?" for _ in addrs)
+        merges = [r[0] for r in cx.execute(
+            f"SELECT id FROM person_merges WHERE merged_email IN ({marks}) "
+            f"OR survivor_email IN ({marks})", list(addrs) + list(addrs)).fetchall()]
+    except Exception:
+        return 0
+    n = 0
+    for mid in merges:
+        for cid, name in cx.execute("SELECT id, table_name FROM person_merge_changes WHERE "
+                                    "merge_id=?", (mid,)).fetchall():
+            if name.split(".")[-1] in HEALTH_TABLES:
+                cx.execute("DELETE FROM person_merge_changes WHERE id=?", (cid,))
+                n += 1
+    return n
 
 
 def plan(cx, email):
@@ -129,15 +166,20 @@ def erase(cx, email, *, confirm):
     if _norm(confirm) != email:
         raise ValueError("confirm must equal the email being erased; refusing")
 
+    addrs = _addresses(cx, email)
+    marks = ",".join("?" for _ in addrs)
     removed = {}
     for table, col in HEALTH_TABLES.items():
         if table in PROTECTED:                     # cannot happen given the invariant, but
             raise AssertionError(f"{table} is protected; refusing to erase it")
         if not _table_exists(cx, table):
             continue
-        cur = cx.execute(f"DELETE FROM {table} WHERE LOWER({col})=?", (email,))
+        cur = cx.execute(f"DELETE FROM {table} WHERE LOWER({col}) IN ({marks})", addrs)
         if cur.rowcount:
             removed[table] = cur.rowcount
+    purged = _purge_merge_record(cx, addrs)
+    if purged:
+        removed["person_merge_changes"] = purged
     cx.commit()
 
     # Assert the erasure actually applied: nothing matching remains in a health table.

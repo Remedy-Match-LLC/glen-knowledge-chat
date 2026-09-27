@@ -17,7 +17,7 @@ DDL = [
     "REFERENCES people(id), total REAL)",
     "CREATE TABLE carts (email TEXT PRIMARY KEY, items TEXT, updated_at TEXT)",
     "CREATE TABLE biofield_reveals (id INTEGER PRIMARY KEY, email TEXT, scan_date TEXT, "
-    "updated_at TEXT, UNIQUE(email, scan_date))",
+    "updated_at TEXT, first_approved INTEGER DEFAULT 0, UNIQUE(email, scan_date))",
     "CREATE TABLE evox_session_credits (email TEXT PRIMARY KEY, credits INTEGER)",
     "CREATE TABLE coach_subscriptions (member_email TEXT PRIMARY KEY, status TEXT)",
     "CREATE TABLE coach_threads (id INTEGER PRIMARY KEY, coach_email TEXT, member_email TEXT)",
@@ -27,10 +27,12 @@ DDL = [
     "CREATE TABLE client_portals (id INTEGER PRIMARY KEY, token_hash TEXT UNIQUE, email TEXT, "
     "name TEXT, content_json TEXT, created_at TEXT, updated_at TEXT)",
     "CREATE TABLE portal_notify_state (email TEXT PRIMARY KEY, portal_token TEXT)",
+    "CREATE TABLE portal_card_state (person_id TEXT NOT NULL, card TEXT, "
+    "PRIMARY KEY (person_id, card))",
 ]
 DATA_TABLES = ("people", "orders", "carts", "biofield_reveals", "evox_session_credits",
                "coach_subscriptions", "coach_threads", "ghl_write_queue", "tags_nokey", "codes",
-               "client_portals", "portal_notify_state")
+               "client_portals", "portal_notify_state", "portal_card_state")
 AOL, GMAIL = "mel@aol.com", "mel@gmail.com"
 
 
@@ -42,9 +44,9 @@ def _seed(cx):
     cx.execute("INSERT INTO orders VALUES (12, ?, 2, 5.0)", (GMAIL,))
     cx.execute("INSERT INTO carts VALUES (?, 'aol-cart', '2026-01-01')", (AOL,))
     cx.execute("INSERT INTO carts VALUES (?, 'gmail-cart', '2026-02-01')", (GMAIL,))
-    cx.execute("INSERT INTO biofield_reveals VALUES (20, ?, '2026-07-25', '2026-09-01')", (AOL,))
-    cx.execute("INSERT INTO biofield_reveals VALUES (21, ?, '2026-09-19', '2026-09-19')", (AOL,))
-    cx.execute("INSERT INTO biofield_reveals VALUES (22, ?, '2026-07-25', '2026-07-25')", (GMAIL,))
+    cx.execute("INSERT INTO biofield_reveals VALUES (20, ?, '2026-07-25', '2026-09-01', 0)", (AOL,))
+    cx.execute("INSERT INTO biofield_reveals VALUES (21, ?, '2026-09-19', '2026-09-19', 0)", (AOL,))
+    cx.execute("INSERT INTO biofield_reveals VALUES (22, ?, '2026-07-25', '2026-07-25', 0)", (GMAIL,))
     cx.execute("INSERT INTO evox_session_credits VALUES (?, 5)", (AOL,))
     cx.execute("INSERT INTO evox_session_credits VALUES (?, 1)", (GMAIL,))
     cx.execute("INSERT INTO coach_threads VALUES (30, ?, 'kai@x.com')", (AOL,))
@@ -62,6 +64,7 @@ def _seed(cx):
                (GMAIL, json.dumps({"greeting": "July", "layers": [9], "schedule": "Mon"})))
     cx.execute("INSERT INTO portal_notify_state VALUES (?, 'raw-aol')", (AOL,))
     cx.execute("INSERT INTO portal_notify_state VALUES (?, 'raw-gmail')", (GMAIL,))
+    cx.execute("INSERT INTO portal_card_state VALUES ('1', 'welcome')")   # person number stored as text
     cx.commit()
 
 
@@ -73,6 +76,14 @@ def _fields(cx, survivor_id, merged_id):
     cx.execute("UPDATE people SET name=?, tags=? WHERE id=?", (s[0] or m[0], json.dumps(tags),
                                                              survivor_id))
     cx.execute("DELETE FROM people WHERE id=?", (merged_id,))
+
+
+@pytest.fixture(autouse=True)
+def _test_tables_are_reviewed(monkeypatch):
+    """The fixture's own table names stand in for reviewed production tables."""
+    from dashboard import person_merge_discover as pd
+    monkeypatch.setattr(pd, "MOVE_TABLES", pd.MOVE_TABLES | {"tags_nokey", "codes", "subs",
+                                                             "body_map_photos"})
 
 
 @pytest.fixture
@@ -332,3 +343,110 @@ def test_round_trip_on_postgres_with_binary_and_json(monkeypatch):
             c.execute(f'DROP TABLE IF EXISTS "{t}" CASCADE')
         c.commit()
         c.close()
+
+
+def test_a_person_number_stored_as_text_moves(cx):
+    _apply(cx)
+    assert cx.execute("SELECT person_id FROM portal_card_state").fetchall() == [("2",)]
+
+
+def test_an_approved_reveal_beats_a_newer_draft(cx):
+    cx.execute("UPDATE biofield_reveals SET first_approved=1 WHERE id=22")
+    _apply(cx)
+    assert cx.execute("SELECT id FROM biofield_reveals ORDER BY id").fetchall() == [(21,), (22,)]
+
+
+def test_an_unreviewed_table_blocks_instead_of_moving(cx):
+    cx.execute("CREATE TABLE practitioners (id INTEGER PRIMARY KEY, email TEXT)")
+    cx.execute("INSERT INTO practitioners VALUES (1, ?)", (AOL,))
+    cx.commit()
+    assert "practitioners" in pm.preview(cx, 2, 1)["blocked"]
+    with pytest.raises(pm.MergeBlocked):
+        pm.apply(cx, survivor_id=2, merged_id=1, mail_old="stop", evidence={}, suggestion={},
+                 applied_by="t", merge_people_fields=_fields)
+    cx.rollback()
+    assert cx.execute("SELECT email FROM practitioners").fetchone()[0] == AOL
+
+
+def test_an_unreviewed_table_is_left_by_the_sweep(cx):
+    _apply(cx)
+    cx.execute("CREATE TABLE practitioners (id INTEGER PRIMARY KEY, email TEXT)")
+    cx.execute("INSERT INTO practitioners VALUES (1, ?)", (AOL,))
+    got = pm.sweep(cx)
+    assert "practitioners" in [b["table"] for b in got["blocked"]]
+    assert cx.execute("SELECT email FROM practitioners").fetchone()[0] == AOL
+
+
+def test_an_affiliate_clash_blocks(cx):
+    cx.execute("CREATE TABLE affiliate_signups (id INTEGER PRIMARY KEY, email TEXT UNIQUE, slug TEXT)")
+    cx.execute("INSERT INTO affiliate_signups VALUES (1, ?, 'mel-aol')", (AOL,))
+    cx.execute("INSERT INTO affiliate_signups VALUES (2, ?, 'mel-gm')", (GMAIL,))
+    cx.commit()
+    assert "affiliate_signups" in pm.preview(cx, 2, 1)["blocked"]
+
+
+def test_sweep_after_a_chain_logs_person_numbers_against_the_last_merge(cx):
+    _apply(cx)
+    cx.execute("INSERT INTO people VALUES (3, 'mel@proton.me', 'Mel', '[]')")
+    second = _apply(cx, survivor_id=3, merged_id=2)
+    cx.commit()
+    cx.execute("PRAGMA foreign_keys=OFF")
+    cx.execute("INSERT INTO orders VALUES (16, 'z@z.com', 1, 1.0)")
+    cx.commit()
+    cx.execute("PRAGMA foreign_keys=ON")
+    pm.sweep(cx)
+    assert cx.execute("SELECT person_id FROM orders WHERE id=16").fetchone()[0] == 3
+    got = {r[0] for r in cx.execute("SELECT merge_id FROM person_merge_changes WHERE "
+                                    "table_name='orders' AND key_json LIKE '%16%'")}
+    assert got == {second}
+
+
+@pytest.mark.skipif(not _pg_ok(), reason="PG_DSN for a test database not set")
+def test_postgres_refusal_does_not_poison_the_sweep_and_other_schemas_are_not_the_app(monkeypatch):
+    monkeypatch.setenv("DB_BACKEND", "postgres")
+    c = db.connect("/data/pm_engine_test.db")
+    other = db.connect("/data/pm_engine_other.db")
+    try:
+        for t in DATA_TABLES + MERGE_TABLES + ("subs",):
+            c.execute(f'DROP TABLE IF EXISTS "{t}" CASCADE')
+        other.execute('DROP TABLE IF EXISTS "client_portals" CASCADE')
+        for d in DDL:
+            c.execute(d)
+        pa.init_tables(c)
+        _seed(c)
+        # A newer page for the same address in ANOTHER schema must not be the one kept.
+        other.execute("CREATE TABLE client_portals (id INTEGER PRIMARY KEY, token_hash TEXT, "
+                      "email TEXT, name TEXT, content_json TEXT, created_at TEXT, updated_at TEXT)")
+        other.execute("INSERT INTO client_portals VALUES (90, 'h-other', ?, 'x', '{}', 't', "
+                      "'2099-01-01')", (GMAIL,))
+        other.execute("INSERT INTO client_portals VALUES (91, 'h-other2', ?, 'x', '{}', 't', "
+                      "'2099-01-01')", (AOL,))
+        other.commit()
+        c.commit()
+        _apply(c)
+        assert [tuple(r) for r in c.execute("SELECT id, email FROM client_portals").fetchall()] == [
+            (50, GMAIL)]
+        # The other schema's table is an ordinary table there: its rows move, none is kept
+        # or dropped as the app's portal page.
+        assert sorted(tuple(r) for r in other.execute("SELECT id, email FROM client_portals")) == [
+            (90, GMAIL), (91, GMAIL)]
+        # A partial unique index refuses one late row; the sweep must still move the next.
+        c.execute("CREATE TABLE subs (id INTEGER PRIMARY KEY, email TEXT, status TEXT)")
+        c.execute("CREATE UNIQUE INDEX subs_active ON subs(email) WHERE status='active'")
+        c.execute("INSERT INTO subs VALUES (1, ?, 'active')", (GMAIL,))
+        c.execute("INSERT INTO subs VALUES (2, ?, 'active')", (AOL,))
+        c.execute("INSERT INTO orders VALUES (17, ?, NULL, 1.0)", (AOL,))
+        got = pm.sweep(c)
+        c.commit()
+        assert "subs" in [b["table"] for b in got["blocked"]]
+        assert c.execute("SELECT email FROM orders WHERE id=17").fetchone()[0] == GMAIL
+    finally:
+        c.rollback()
+        other.rollback()
+        for t in DATA_TABLES + MERGE_TABLES + ("subs",):
+            c.execute(f'DROP TABLE IF EXISTS "{t}" CASCADE')
+        other.execute('DROP TABLE IF EXISTS "client_portals" CASCADE')
+        c.commit()
+        other.commit()
+        c.close()
+        other.close()

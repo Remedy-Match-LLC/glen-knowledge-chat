@@ -25,11 +25,11 @@ ANALYSIS_KEYS = ("greeting", "video", "layers", "findings", "report_pdf", "audio
 CLASH_RULES = {
     "portal_notify_state": "survivor",     # notification settings; the kept page's token is carried
     "portal_cart_seeded": "survivor",      # an "already seeded" marker
-    "affiliate_signups": "survivor",       # one affiliate record per person
     "portal_fold_state": "survivor",       # which cards are folded
     "carts": "newest:updated_at",          # the cart touched last
     "scan_freshness": "newest:last_scan_date",
-    "biofield_reveals": "newest:updated_at",   # same scan date under both: the later reveal
+    # Same scan date under both: an approved reveal first, then the later one (round 3).
+    "biofield_reveals": "prefer:first_approved,updated_at",
     "evox_session_credits": "sum:credits",     # credits add up
 }
 _SKIP_GENERIC = {"people", "client_portals"}
@@ -164,7 +164,13 @@ def _split_name(name):
 
 # ── Clashes ───────────────────────────────────────────────────────────────────
 def _match_sql(t):
-    return f'lower(trim("{t.column}"))=?' if t.kind == "email" else f'"{t.column}"=?'
+    # A person number may be stored as an integer or as text (portal_card_state); compare
+    # as text so Postgres never meets `text = integer` (review round 3).
+    return f'lower(trim("{t.column}"))=?' if t.kind == "email" else f'CAST("{t.column}" AS TEXT)=?'
+
+
+def _val(t, v):
+    return str(v) if t.kind == "person" else v
 
 
 def _clash_row(cx, t, row, new):
@@ -178,7 +184,7 @@ def _clash_row(cx, t, row, new):
             continue
         clause = _match_sql(t) + "".join(f' AND "{c}" = ?' for c in others)
         got = _rows(cx, f'SELECT * FROM {pd.qualified(t.schema, t.table)} WHERE {clause} LIMIT 1',
-                    [new] + [row[c] for c in others])
+                    [_val(t, new)] + [row[c] for c in others])
         if got:
             return got[0]
     return None
@@ -195,6 +201,7 @@ def _set_aside(cx, log, t, row, keys):
 
 
 def _rekey(cx, log, t, row, keys, new):
+    new = _val(t, new)        # a person number travels as text: fits integer and text columns
     where, args = _row_where(cx, t.schema, t.table, row, keys)
     after = dict(row)
     after[t.column] = new
@@ -218,6 +225,17 @@ def _settle(cx, log, t, row, other, keys, new):
             _rekey(cx, log, t, row, keys, new)
         else:
             _set_aside(cx, log, t, row, keys)
+    elif rule.startswith("prefer:"):
+        flag, col = rule.split(":", 1)[1].split(",")
+
+        def rank(r):
+            return (bool(r.get(flag)), str(r.get(col) or ""))
+
+        if rank(row) > rank(other):
+            _set_aside(cx, log, t, other, keys)
+            _rekey(cx, log, t, row, keys, new)
+        else:
+            _set_aside(cx, log, t, row, keys)
     elif rule.startswith("sum:"):
         col = rule.split(":", 1)[1]
         total = (other.get(col) or 0) + (row.get(col) or 0)
@@ -235,7 +253,7 @@ def _move_target(cx, log, t, old, new, *, dry=False, blocked=None):
     moved = settled = 0
     keys = pd.key_columns(cx, t.schema, t.table)
     for row in _rows(cx, f'SELECT * FROM {pd.qualified(t.schema, t.table)} WHERE {_match_sql(t)}',
-                     (old,)):
+                     (_val(t, old),)):
         other = _clash_row(cx, t, row, new)
         if dry:
             if other is not None:
@@ -268,10 +286,26 @@ def _move_target(cx, log, t, old, new, *, dry=False, blocked=None):
 
 
 def _generic_targets(cx, kinds=("email", "person")):
-    skip = pd.HISTORY_TABLES | pd.MERGE_OWN_TABLES
+    """Reviewed tables only (MOVE_TABLES). Anything else is never moved (round 3)."""
     own = _own_schema(cx)
-    return [t for t in pd.targets(cx) if t.table not in skip and t.kind in kinds
+    return [t for t in pd.targets(cx) if t.table in pd.MOVE_TABLES and t.kind in kinds
             and not (t.table in _SKIP_GENERIC and t.schema == own)]
+
+
+def _unreviewed_with_rows(cx, old_email, old_id, kinds=("email", "person")):
+    """Tables on neither reviewed list that hold this person's rows: they block."""
+    named = pd.MOVE_TABLES | pd.HISTORY_TABLES | pd.MERGE_OWN_TABLES
+    out = []
+    for t in pd.targets(cx):
+        if t.table in named or t.kind not in kinds:
+            continue
+        v = old_email if t.kind == "email" else old_id
+        if v is None:
+            continue
+        if cx.execute(f"SELECT 1 FROM {pd.qualified(t.schema, t.table)} WHERE {_match_sql(t)} "
+                      "LIMIT 1", (_val(t, v),)).fetchone():
+            out.append({"table": t.table, "column": t.column, "reason": "unreviewed table"})
+    return out
 
 
 # ── Tables the app itself reads through its own connection ────────────────────
@@ -370,8 +404,8 @@ def preview(cx, survivor_id, merged_id):
     for t in _generic_targets(cx):
         old, new = (m_email, s_email) if t.kind == "email" else (merged_id, survivor_id)
         q = pd.qualified(t.schema, t.table)
-        n_m = cx.execute(f'SELECT COUNT(*) FROM {q} WHERE {_match_sql(t)}', (old,)).fetchone()[0]
-        n_s = cx.execute(f'SELECT COUNT(*) FROM {q} WHERE {_match_sql(t)}', (new,)).fetchone()[0]
+        n_m = cx.execute(f'SELECT COUNT(*) FROM {q} WHERE {_match_sql(t)}', (_val(t, old),)).fetchone()[0]
+        n_s = cx.execute(f'SELECT COUNT(*) FROM {q} WHERE {_match_sql(t)}', (_val(t, new),)).fetchone()[0]
         if n_m or n_s:
             prev = counts.get(t.table, [0, 0])
             counts[t.table] = [max(prev[0], n_m), max(prev[1], n_s)]
@@ -380,6 +414,7 @@ def preview(cx, survivor_id, merged_id):
             if n_clash:
                 clashes[t.table] = {"count": clashes.get(t.table, {}).get("count", 0) + n_clash,
                                     "rule": CLASH_RULES.get(t.table)}
+    blocked.extend(_unreviewed_with_rows(cx, m_email, merged_id))
     plan = _portal_plan(cx, s_email, m_email)
     portal = {"keep": None, "reason": "neither person has a portal page", "from_other": []}
     if plan:
@@ -407,6 +442,9 @@ def apply(cx, *, survivor_id, merged_id, mail_old, evidence, suggestion, applied
         raise MergeRefused(f"{m_email} is already merged into another person")
     if pa.canonical_email(cx, s_email) != s_email:
         raise MergeRefused(f"{s_email} is itself merged into another person")
+    unreviewed = _unreviewed_with_rows(cx, m_email, merged_id)
+    if unreviewed:
+        raise MergeBlocked(unreviewed)
     merge_id = dbwrite.insert_returning_id(
         cx,
         "INSERT INTO person_merges (survivor_person_id, merged_person_id, survivor_email, "
@@ -575,6 +613,7 @@ def sweep(cx):
         for t in _generic_targets(cx, kinds=("email",)):
             n, s = _move_target(cx, log, t, alias, canonical, blocked=blocked)
             moved += n + s
+        blocked.extend(_unreviewed_with_rows(cx, alias, None, kinds=("email",)))
     for mg in _rows(cx, "SELECT id, merged_person_id, survivor_email FROM person_merges "
                         "WHERE undone_at IS NULL"):
         canon = pa.canonical_email(cx, mg["survivor_email"])

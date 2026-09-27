@@ -24,14 +24,14 @@ def _ghl(monkeypatch, appmod, contacts):
 
 
 def test_stop_sets_dnd_and_the_tag(app_, monkeypatch):
-    puts = _ghl(monkeypatch, app_, [{"id": "c1", "tags": ["a"], "dateAdded": "1"}])
+    puts = _ghl(monkeypatch, app_, [{"id": "c1", "email": AOL, "tags": ["a"], "dateAdded": "1"}])
     cid, err = app_.ghl_mark_merged(AOL, 2, stop=True)
     assert (cid, err) == ("c1", None)
     assert puts == [("/contacts/c1", {"tags": ["a", "merged-into-2"], "dnd": True})]
 
 
 def test_keep_sets_only_the_tag(app_, monkeypatch):
-    puts = _ghl(monkeypatch, app_, [{"id": "c1", "tags": [], "dateAdded": "1"}])
+    puts = _ghl(monkeypatch, app_, [{"id": "c1", "email": AOL, "tags": [], "dateAdded": "1"}])
     app_.ghl_mark_merged(AOL, 2, stop=False)
     assert puts == [("/contacts/c1", {"tags": ["merged-into-2"]})]
 
@@ -43,7 +43,7 @@ def test_no_contact_is_a_no_op(app_, monkeypatch):
 
 
 def test_unmark_without_the_tag_changes_nothing(app_, monkeypatch):
-    puts = _ghl(monkeypatch, app_, [{"id": "c1", "tags": ["a"], "dateAdded": "1"}])
+    puts = _ghl(monkeypatch, app_, [{"id": "c1", "email": AOL, "tags": ["a"], "dateAdded": "1"}])
     app_.ghl_unmark_merged(AOL, 2)
     assert puts == []
 
@@ -73,6 +73,14 @@ def test_the_marked_contact_never_reaches_the_survivors_consent(app_):
 
 def test_undo_never_clears_do_not_contact(app_, monkeypatch):
     """The client may have asked for do-not-contact since the merge (review round 2)."""
-    puts = _ghl(monkeypatch, app_, [{"id": "c1", "tags": ["a", "merged-into-2"], "dateAdded": "1"}])
+    puts = _ghl(monkeypatch, app_, [{"id": "c1", "email": AOL, "tags": ["a", "merged-into-2"], "dateAdded": "1"}])
     app_.ghl_unmark_merged(AOL, 2)
     assert puts == [("/contacts/c1", {"tags": ["a"]})]
+
+
+def test_a_contact_whose_primary_address_differs_is_never_touched(app_, monkeypatch):
+    """The lookup can match an extra address on the survivor's own contact (round 3)."""
+    puts = _ghl(monkeypatch, app_, [{"id": "c9", "email": GMAIL, "tags": [], "dateAdded": "1"}])
+    assert app_.ghl_mark_merged(AOL, 2, stop=True) == (None, None)
+    app_.ghl_unmark_merged(AOL, 2)
+    assert puts == []
