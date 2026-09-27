@@ -871,3 +871,32 @@ def test_narrative_save_and_generate_return_the_check_warnings(tmp_path):
     assert ok["warnings"] == []
     g = client.post("/test/10/generate", json={"notes": ""}).get_json()
     assert any("Liver Support" in w for w in g["warnings"]), g
+
+
+def test_view_portal_asks_the_server_for_a_staff_pass(tmp_path, monkeypatch):
+    """"View Client Portal" opens the portal as staff, so the default link fetch asks for
+    a one-time staff pass (Glen, 2026-09-26: "fix those two paths")."""
+    import biofield_local_app as bla
+    from dashboard.biofield_authoring import init_auth_tables, create_test
+    db = str(tmp_path / "chat_log.db")
+    with sqlite3.connect(db) as cx:
+        init_auth_tables(cx)
+        tid = create_test(cx, "Jane", "jane@example.com", "2026-08-08")
+    sent = {}
+
+    class _Resp:
+        ok = True
+        status_code = 200
+        def json(self):
+            return {"url": "https://myhealingoasis.com/portal/t?sp=pass"}
+
+    def _post(url, json=None, headers=None, timeout=None):
+        sent.update(url=url, body=json)
+        return _Resp()
+
+    monkeypatch.setattr(bla.requests, "post", _post)
+    r = create_app(db).test_client().get(f"/author/{tid}/view-portal")
+    assert r.status_code == 302
+    assert sent["url"].endswith("/admin/portal/get-or-create-link")
+    assert sent["body"]["staff_open"] is True
+    assert r.headers["Location"].endswith("?sp=pass")

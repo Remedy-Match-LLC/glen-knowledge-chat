@@ -229,3 +229,101 @@ def test_staff_cookie_folds_never_write_the_client_record(client, monkeypatch):
     assert c.get(f"/api/portal/{tok}/folds").get_json()["viewer"] == "staff"
     fresh = appmod.app.test_client()                               # the client's own browser
     assert fresh.get(f"/api/portal/{tok}/folds").get_json()["state"].get("cards", {}) == {}
+
+
+# ── The local Biofield app's "View Client Portal" (Glen, 2026-09-26: "fix those two paths")
+
+def _local_app_link(c, staff_open):
+    body = {"email": "brooke@example.com", "name": "Brooke Webb"}
+    if staff_open:
+        body["staff_open"] = True
+    r = c.post("/admin/portal/get-or-create-link", json=body, headers={"X-Console-Key": SECRET})
+    assert r.status_code == 200
+    return r.get_json()["url"]
+
+
+def test_local_app_open_link_carries_a_working_pass(client):
+    c, appmod = client
+    tok = _seed_portal(appmod)
+    url = _local_app_link(c, staff_open=True)
+    sp = parse_qs(urlparse(url).query)["sp"][0]
+    r = c.get(f"/portal/{tok}?sp={sp}")
+    assert r.status_code == 302 and "rm_staff_view=" in _cookies(r)
+
+
+def test_rollout_link_for_clients_carries_no_pass(client):
+    """The same route makes the links the rollout emails to clients."""
+    c, appmod = client
+    _seed_portal(appmod)
+    assert "sp=" not in _local_app_link(c, staff_open=False)
+    with sqlite3.connect(appmod.LOG_DB) as cx:
+        n = cx.execute("SELECT COUNT(*) FROM auth_tokens WHERE purpose='staff_view_pass'").fetchone()[0]
+    assert n == 0
+
+
+
+# ── /console/open-portal: a plain link that opens a portal as staff, for any kind of
+#    click (review rounds 1 and 2: middle-click skipped the editor preview's pass).
+
+def test_open_portal_route_redirects_with_a_working_pass(client):
+    c, appmod = client
+    tok = _seed_portal(appmod)
+    r = c.get("/console/open-portal?email=brooke@example.com", headers={"X-Console-Key": SECRET})
+    assert r.status_code == 302
+    loc = r.headers["Location"]
+    assert f"/portal/{tok}?" in loc and "sp=" in loc
+    sp = parse_qs(urlparse(loc).query)["sp"][0]
+    assert "rm_staff_view=" in _cookies(c.get(f"/portal/{tok}?sp={sp}"))
+
+
+def test_open_portal_route_refuses_non_staff(client):
+    c, appmod = client
+    _seed_portal(appmod)
+    assert c.get("/console/open-portal?email=brooke@example.com").status_code == 401
+    with sqlite3.connect(appmod.LOG_DB) as cx:
+        n = cx.execute("SELECT COUNT(*) FROM auth_tokens WHERE purpose='staff_view_pass'").fetchone()[0]
+    assert n == 0
+
+
+def test_open_portal_route_unknown_client(client):
+    c, appmod = client
+    r = c.get("/console/open-portal?email=nobody@example.com", headers={"X-Console-Key": SECRET})
+    assert r.status_code == 404
+
+
+def test_open_portal_route_never_reissues_the_clients_link(client):
+    """Without the stored plain token, building a link would mint a new one and break the
+    link the client already has. Refuse instead (review round 1)."""
+    c, appmod = client
+    _seed_portal(appmod)
+    from dashboard import notify_state as ns
+    with sqlite3.connect(appmod.LOG_DB) as cx:
+        ns.set_token(cx, "brooke@example.com", "")
+        before = cx.execute("SELECT token_hash FROM client_portals WHERE email=?",
+                            ("brooke@example.com",)).fetchone()[0]
+    r = c.get("/console/open-portal?email=brooke@example.com", headers={"X-Console-Key": SECRET})
+    assert r.status_code == 409
+    text = r.get_data(as_text=True)
+    assert "Nothing was changed" in text and "Open portal" not in text     # round 3
+    with sqlite3.connect(appmod.LOG_DB) as cx:
+        after = cx.execute("SELECT token_hash FROM client_portals WHERE email=?",
+                           ("brooke@example.com",)).fetchone()[0]
+    assert after == before
+
+
+
+def test_no_console_secret_means_no_pass_on_either_route(client, monkeypatch):
+    """With no console secret configured the console gates open for everyone, so the staff
+    check is the only thing that withholds a pass (review round 3)."""
+    c, appmod = client
+    import dashboard
+    monkeypatch.setattr(appmod, "CONSOLE_SECRET", "")
+    monkeypatch.setattr(dashboard, "CONSOLE_SECRET", "")
+    _seed_portal(appmod)
+    r = c.post("/admin/portal/get-or-create-link",
+               json={"email": "brooke@example.com", "staff_open": True})
+    assert r.status_code == 200 and "sp=" not in r.get_json()["url"]
+    assert c.get("/console/open-portal?email=brooke@example.com").status_code == 401
+    with sqlite3.connect(appmod.LOG_DB) as cx:
+        n = cx.execute("SELECT COUNT(*) FROM auth_tokens WHERE purpose='staff_view_pass'").fetchone()[0]
+    assert n == 0

@@ -765,7 +765,13 @@ async function publish(send){
   document.querySelectorAll('.pubaction').forEach(b=>b.disabled=false);
   if(!r.ok){ setStatus(r.json.error || 'Publish failed.', false); return; }
   const link = $('previewLink');
-  if(r.json.url){ link.href = r.json.url; link.style.display='inline-block'; }
+  if(r.json.url){
+    // Open as staff through the console route, which adds a one-time staff pass, so the
+    // portal shows the staff banner and asks before any action. A plain href, so every
+    // kind of click works. The client's own link is still printed in the status line.
+    link.href = '/console/open-portal?email=' + encodeURIComponent(email);
+    link.style.display='inline-block';
+  }
   let msg = (r.json.updated ? 'Updated — same link.' : 'Published! New portal link created.');
   let ok = true;
   if(send){
