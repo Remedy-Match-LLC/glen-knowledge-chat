@@ -58567,6 +58567,14 @@ def bos_crm_page():
     return resp
 
 
+@app.route("/console/merge")
+def console_merge_page():
+    """Merge two people. Spec: docs/superpowers/specs/2026-09-26-merge-two-people-design.md"""
+    resp = send_from_directory(STATIC, "console-merge.html")
+    resp.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+    return resp
+
+
 @app.route("/console/client")
 def console_client_page():
     resp = send_from_directory(STATIC, "console-client.html")

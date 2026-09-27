@@ -1893,13 +1893,13 @@ function renderPendingMergesPanel() {
     return `<div style="padding:10px;margin-bottom:6px;background:var(--hh-blue-row-bg);border:1px solid var(--hh-blue-border);border-radius:5px">
       <div style="font-size:11px;color:var(--hh-meta);margin-bottom:4px">queued ${m.queued_at.slice(0,10)} by ${_esc(m.queued_by)}</div>
       <div style="font-size:13px;margin-bottom:6px">
-        <span style="color:var(--hh-blue-text);font-weight:600">KEEP:</span> ${_esc(keeperName)} <span style="color:var(--hh-meta);font-size:11px">${_esc(m.keeper.email||'')}</span>
+        <span style="color:var(--hh-blue-text);font-weight:600">Keep:</span> ${_esc(keeperName)} <span style="color:var(--hh-meta);font-size:11px">${_esc(m.keeper.email||'')}</span>
       </div>
       <div style="font-size:13px;margin-bottom:8px">
-        <span style="color:var(--hh-red-text);font-weight:600">DELETE:</span> ${_esc(dupeName)} <span style="color:var(--hh-meta);font-size:11px">${_esc(m.dupe.email||'')}</span>
+        <span style="color:var(--hh-red-text);font-weight:600">Merge in:</span> ${_esc(dupeName)} <span style="color:var(--hh-meta);font-size:11px">${_esc(m.dupe.email||'')}</span>
       </div>
       <div style="display:flex;gap:6px">
-        <button onclick="pmbApply(${m.id})" style="padding:5px 10px;background:#7ab8f5;color:#0a0c12;border:none;border-radius:4px;font-size:11px;font-weight:600;cursor:pointer">Apply merge</button>
+        <button onclick="pmbApply(${m.id})" style="padding:5px 10px;background:#7ab8f5;color:#0a0c12;border:none;border-radius:4px;font-size:11px;font-weight:600;cursor:pointer">Review merge</button>
         <button onclick="pmbCancel(${m.id})" style="padding:5px 10px;background:transparent;color:var(--hh-meta);border:1px solid var(--hh-brown-border);border-radius:4px;font-size:11px;cursor:pointer">Cancel</button>
       </div>
     </div>`;
@@ -1907,16 +1907,9 @@ function renderPendingMergesPanel() {
   document.getElementById('pmb-panel').innerHTML = html;
 }
 
-async function pmbApply(mergeId) {
-  if (!confirm('Apply merge? The "DELETE" row will be permanently removed from the people table.')) return;
-  const r = await fetch(`${BASE}/api/pending-merges/${mergeId}/apply`,
-                        { method: 'POST', headers: { 'X-Console-Key': consoleKey } });
-  if (r.ok) {
-    loadPendingMerges();
-    if (typeof loadPeople === 'function') loadPeople();
-  } else {
-    alert('Apply failed: ' + ((await r.json()).error || 'unknown'));
-  }
+// The merge page previews, applies and can undo (spec: 2026-09-26-merge-two-people-design.md).
+function pmbApply(mergeId) {
+  window.open(`/console/merge?pending=${mergeId}`, '_blank', 'noopener');
 }
 
 async function pmbCancel(mergeId) {

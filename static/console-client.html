@@ -53,7 +53,8 @@
   <div id="hub" style="display:none">
     <h1 id="c-name">—</h1>
     <p class="sub" id="c-meta"></p>
-    <p><button id="open-portal" style="display:none">Open portal</button></p>
+    <p><button id="open-portal" style="display:none">Open portal</button>
+       <button id="merge-person" style="display:none">Merge with another person</button></p>
     <div class="health" id="account-health" aria-label="Account health"></div>
 
     <section class="commerce" aria-label="Client commerce status">
@@ -492,6 +493,9 @@ function load(email){
       var portalBtn=document.getElementById("open-portal");
       portalBtn.style.display="inline-block";
       portalBtn.onclick=function(){openPortal(email);};
+      var mergeBtn=document.getElementById("merge-person");
+      mergeBtn.style.display="inline-block";
+      mergeBtn.onclick=function(){ window.open("/console/merge?email="+encodeURIComponent(email),"_blank","noopener"); };
       loadCommerce();
       loadDocuments();
     })

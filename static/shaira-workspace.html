@@ -1176,16 +1176,10 @@ async function hhQueueMerge(candId) {
   } catch (e) { hhFlash('Queue-merge failed: ' + e.message, true); }
 }
 
-async function hhApplyMerge(mergeId) {
-  if (!confirm(`Apply merge #${mergeId}? This will permanently delete the dupe person row. Cannot be undone.`)) return;
-  try {
-    const r = await api(`/api/pending-merges/${mergeId}/apply`, { method: 'POST', body: {} });
-    const j = await r.json();
-    if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`);
-    const res = j.result || {};
-    hhFlash(`Merged: kept #${res.keeper_id}, deleted #${res.deleted_dupe_id}. Fields filled: ${(res.fields_filled||[]).length}, tags added: ${res.tags_added||0}.`);
-    loadHousehold();
-  } catch (e) { hhFlash('Apply failed: ' + e.message, true); }
+// The merge page previews, applies and can undo; applying is for owners (spec:
+// 2026-09-26-merge-two-people-design.md).
+function hhApplyMerge(mergeId) {
+  window.open(`/console/merge?pending=${mergeId}`, '_blank', 'noopener');
 }
 
 async function hhCancelMerge(mergeId) {
