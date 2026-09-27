@@ -10713,6 +10713,56 @@ def api_submit_testimonial():
                     "video_status": _video_status})
 
 
+@app.route("/api/console/testimonials/record", methods=["POST"])
+def api_console_record_testimonial():
+    """Owners record a testimonial a client sent another way (email, letter), verbatim.
+    Glen, 2026-09-27: "Be sure to record her testimonial in our testimonials". Recording is
+    not publishing: consent is stored only if the client gave it, so a testimonial without it
+    never reaches chat, the site or social media. No rating is invented: 0 means none given.
+    An existing testimonial from the same address is never overwritten."""
+    if not _portal_open_is_owner():
+        return jsonify({"ok": False, "error": "owners only"}), 403
+    data = request.get_json(silent=True) or {}
+    email = (data.get("email") or "").strip().lower()
+    name = (data.get("name") or "").strip()
+    body = (data.get("body") or "").strip()
+    source = (data.get("source") or "staff").strip()[:64]
+    consent = data.get("consent_public") is True
+    rating = data.get("rating")
+    if not email or "@" not in email or not body:
+        return jsonify({"ok": False, "error": "email and the client's text are required"}), 400
+    if rating in (None, "", 0):
+        rating = 0
+    else:
+        try:
+            rating = int(rating)
+        except (TypeError, ValueError):
+            rating = -1
+        if not 1 <= rating <= 5:
+            return jsonify({"ok": False, "error": "rating, when given, is 1 to 5"}), 400
+    from dashboard import product_reviews as _pr
+    from dashboard import review_scoring as _rs
+    with db.connect(LOG_DB) as cx:
+        _pr.init_table(cx)
+        if cx.execute("SELECT 1 FROM product_reviews WHERE product_slug='_results' AND email=?",
+                      (email,)).fetchone():
+            return jsonify({"ok": False, "error": "this client already has a testimonial on file; "
+                                                  "nothing was changed"}), 409
+        rid = _pr.upsert_review(cx, "_results", email, name, rating, body, kind="testimonial",
+                                consent_public=1 if consent else 0, source_tag=source)
+        _ctx = {"name": "Dr. Glen Swartwout — Biofield Analysis & Functional Formulations"}
+        score = _rs.score_review(_cl, _ctx, body, strip=_strip_dash)
+        _pr.set_ai_result(cx, rid, score["quality_points"], score["reasons"],
+                          score["recommend_publish"])
+        _pr.set_scores(cx, rid, compliance=score.get("compliance_score", 0),
+                       publication=score.get("publication_score", 0),
+                       authenticity=score.get("authenticity_score", 0),
+                       specificity=score.get("specificity_score", 0))
+    return jsonify({"ok": True, "review_id": rid, "status": "pending",
+                    "consent_public": bool(consent), "compliance_ok": score.get("compliance_ok"),
+                    "reasons": score.get("reasons", "")})
+
+
 # ── Phase 4: positive-sentiment-triggered testimonial invites (review-queue-first) ──
 
 def _ts_complete(system, user):
