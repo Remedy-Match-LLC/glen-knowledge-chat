@@ -303,7 +303,27 @@ def test_open_portal_route_never_reissues_the_clients_link(client):
                             ("brooke@example.com",)).fetchone()[0]
     r = c.get("/console/open-portal?email=brooke@example.com", headers={"X-Console-Key": SECRET})
     assert r.status_code == 409
+    text = r.get_data(as_text=True)
+    assert "Nothing was changed" in text and "Open portal" not in text     # round 3
     with sqlite3.connect(appmod.LOG_DB) as cx:
         after = cx.execute("SELECT token_hash FROM client_portals WHERE email=?",
                            ("brooke@example.com",)).fetchone()[0]
     assert after == before
+
+
+
+def test_no_console_secret_means_no_pass_on_either_route(client, monkeypatch):
+    """With no console secret configured the console gates open for everyone, so the staff
+    check is the only thing that withholds a pass (review round 3)."""
+    c, appmod = client
+    import dashboard
+    monkeypatch.setattr(appmod, "CONSOLE_SECRET", "")
+    monkeypatch.setattr(dashboard, "CONSOLE_SECRET", "")
+    _seed_portal(appmod)
+    r = c.post("/admin/portal/get-or-create-link",
+               json={"email": "brooke@example.com", "staff_open": True})
+    assert r.status_code == 200 and "sp=" not in r.get_json()["url"]
+    assert c.get("/console/open-portal?email=brooke@example.com").status_code == 401
+    with sqlite3.connect(appmod.LOG_DB) as cx:
+        n = cx.execute("SELECT COUNT(*) FROM auth_tokens WHERE purpose='staff_view_pass'").fetchone()[0]
+    assert n == 0

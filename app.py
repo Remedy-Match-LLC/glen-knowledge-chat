@@ -34342,8 +34342,9 @@ def console_open_portal():
                                        (email,)).fetchone():
             return jsonify({"error": "no portal for that email"}), 404
         if not _ns.get_state(cx, email).get("portal_token"):
-            return ("This portal's link has to be reissued before it can be opened here. "
-                    "Use People, then Open portal, which warns before it reissues."), 409
+            return ("This portal cannot be opened here without issuing a new link, and a "
+                    "new link would stop the client's current link from working. Nothing "
+                    "was changed. Ask the platform tab to restore the stored link."), 409
         link, _ = _cp.portal_link_for(cx, email, portal_base())
     return redirect(link + ("&" if "?" in link else "?") + "sp=" + _mint_staff_pass(email),
                     code=302)
