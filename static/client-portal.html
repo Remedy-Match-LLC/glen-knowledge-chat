@@ -1610,9 +1610,18 @@ const PORTAL_HASH_ROUTES = {
   // A portal without the finder enabled still lands on the panel, which explains
   // itself rather than dead-ending.
   finder:   {panel:"finder", target:"finder-card"},
+  // #calendar is what the Sunday live-session invitation links to. Sessions, "Reserve
+  // my spot" and "Join session" live only in the Live Calendar under Learn & Ask, and
+  // the bare portal link opened Home, which shows none of them. Two clients were stuck
+  // there in September 2026 (Peach Goddard; Robin Rohr, 2026-09-27). The nearest
+  // session is first in the list, so landing on the card puts this week's on top.
+  // alt: without the hub layout there is no calendar panel; the compact Upcoming Live
+  // Events card on the first page carries the same Reserve and Join buttons.
+  // openCard: the link opens its card over the fold state (see applyPortalHash).
+  calendar: {panel:"calendar", target:"calendar-card", alt:"calendar-summary", openCard:true},
 };
 
-function applyPortalHash(){
+function applyPortalHash(userAction){
   const key = decodeURIComponent((location.hash || "").replace(/^#/, "")).toLowerCase();
   const route = PORTAL_HASH_ROUTES[key];
   if(!route) return false;
@@ -1640,9 +1649,22 @@ function applyPortalHash(){
   }
   const wanted = portalPanelFor(route);
   const panel = document.querySelector(`[data-panel="${wanted}"]`);
+  // A deep link must land on its card OPEN. The fold state loads after render, so a
+  // card opened now could be folded again when it arrives: record the target, and
+  // _foldApplyAll opens it whenever it runs. Found 2026-09-27: #calendar would have
+  // landed on a folded Live Calendar, the same dead end the link exists to fix.
+  // Only routes that ask for it (openCard), and only when the link is FOLLOWED: the
+  // first application on load, a click, or a hashchange. render() calls this again
+  // after most actions, and re-opening then would undo a fold the client chose.
+  if(route.openCard && (userAction || window._portalHashOpened !== key)){
+    window._portalHashOpened = key;
+    window._foldDeepLinkOpen = route.target;
+    if(typeof _foldOpenCard === "function") _foldOpenCard(route.target);
+  }
   showTab(panel ? wanted : (document.querySelector('[data-panel="current"]') ? "current" : "hub"));
   window.setTimeout(()=>{
-    const target = document.getElementById(route.target);
+    const target = document.getElementById(route.target) ||
+                   (route.alt ? document.getElementById(route.alt) : null);
     if(target){
       target.setAttribute("tabindex", "-1");
       target.scrollIntoView({behavior:"smooth", block:"start"});
@@ -1659,7 +1681,7 @@ document.addEventListener("click", function(event){
   const key = decodeURIComponent((link.getAttribute("href") || "").replace(/^#/, "")).toLowerCase();
   if(!PORTAL_HASH_ROUTES[key]) return;
   event.preventDefault();
-  if(location.hash === "#" + key) applyPortalHash();
+  if(location.hash === "#" + key) applyPortalHash(true);
   else location.hash = key;
 });
 // Task 5: local in-panel toggle for the Oasis panel's two modes (Replenish /
@@ -8715,6 +8737,13 @@ function _foldSetCard(card, folded){
 
 function _foldApplyAll(){
   var F = window.PortalFolds;
+  // A deep link's card opens once, over the saved state (see applyPortalHash).
+  var _deepLinked = null;
+  if(window._foldDeepLinkOpen && _foldsV2 && typeof _foldsV2 === "object"){
+    _deepLinked = window._foldDeepLinkOpen;
+    _foldsV2.state = F.setCard(_foldsV2.state, _deepLinked, false);
+    window._foldDeepLinkOpen = null;
+  }
   var byDoor = _foldCardsByDoor();
   Object.keys(byDoor).forEach(function(door){
     var cards = byDoor[door];
@@ -8728,6 +8757,11 @@ function _foldApplyAll(){
     cards.forEach(function(card){ _foldSetCard(card, r[_foldIdOf(card)]); });
   });
   if(typeof _foldBars === "function") _foldBars(byDoor);
+  // Folding the cards above it can move a deep-linked card out of view: scroll again.
+  if(_deepLinked){
+    var _dl = document.getElementById(_deepLinked);
+    if(_dl) window.setTimeout(function(){ _dl.scrollIntoView({behavior:"smooth", block:"start"}); }, 0);
+  }
 }
 
 function _foldToggle(card){
