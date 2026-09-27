@@ -282,7 +282,8 @@ def _move_target(cx, log, t, old, new, *, dry=False, blocked=None, choices=None)
                 settled += 1
                 if (t.table not in CLASH_RULES and t.table not in (choices or {})
                         and blocked is not None):
-                    blocked.append({"table": t.table, "column": t.column, "choice": True})
+                    blocked.append({"table": t.table, "column": t.column,
+                                    "choice": t.table not in NO_CHOICE_TABLES})
             else:
                 moved += 1
             continue
@@ -417,10 +418,19 @@ def _carry_raw_token(cx, log, s_email, m_email):
 
 
 # ── Preview, apply ───────────────────────────────────────────────────────────
+# Paid schedules: a choice could drop a prepaid period, so a clash here is resolved by hand.
+NO_CHOICE_TABLES = frozenset({"subscriptions", "coach_subscriptions", "family_subscriptions",
+                              "memberships", "coupons", "points_ledger"})
+
+
 def _choices(resolutions):
     bad = {k: v for k, v in (resolutions or {}).items() if v not in ("survivor", "merged")}
     if bad:
         raise MergeRefused("a choice must be survivor or merged: " + ", ".join(sorted(bad)))
+    paid = sorted(k for k in (resolutions or {}) if k in NO_CHOICE_TABLES)
+    if paid:
+        raise MergeRefused("a clash in " + ", ".join(paid) + " must be resolved by hand, "
+                           "not by a choice: a prepaid period could be lost")
     return {k: v for k, v in (resolutions or {}).items() if k not in CLASH_RULES}
 
 

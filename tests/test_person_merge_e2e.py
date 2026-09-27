@@ -144,6 +144,17 @@ def test_the_owner_chooses_for_a_clash_with_no_rule(live):
         page.check('input[name="choice-affiliate_signups"][value="survivor"]')
         page.wait_for_function("() => { const b = document.getElementById('apply-btn'); "
                                "return b && !b.disabled; }")
+        # Changing who stays clears the choice: "survivor" would now mean the other record.
+        page.check('input[name="stay"][value="1"]')
+        page.wait_for_function("() => { const b = document.getElementById('apply-btn'); "
+                               "return b && b.disabled && document.querySelector("
+                               "'input[name=\"stay\"]:checked').value === '1'; }")
+        page.check('input[name="stay"][value="2"]')
+        page.wait_for_function("() => document.querySelector('input[name=\"stay\"]:checked') && "
+                               "document.querySelector('input[name=\"stay\"]:checked').value === '2'")
+        page.check('input[name="choice-affiliate_signups"][value="survivor"]')
+        page.wait_for_function("() => { const b = document.getElementById('apply-btn'); "
+                               "return b && !b.disabled; }")
         page.click("#apply-btn")
         page.click("#dlg-go")
         page.wait_for_selector("#undo-btn")

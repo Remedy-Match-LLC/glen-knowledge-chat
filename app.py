@@ -45369,6 +45369,7 @@ def api_person_merge_apply():
         p, ev, sug = _person_merge_evidence(s, m, res)
     except _pm.MergeRefused as e:
         return jsonify({"error": str(e)}), 409
+    sug["owner_choices"] = dict(res)      # recorded on the merge (classification review)
     with _db_lock, db.connect(LOG_DB) as cx:
         try:
             mid = _pm.apply(cx, survivor_id=s, merged_id=m, mail_old=mail_old, evidence=ev,

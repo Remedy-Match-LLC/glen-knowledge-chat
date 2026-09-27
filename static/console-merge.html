@@ -167,7 +167,12 @@ function renderPreview(p){
   // The preview always shows the survivor that Apply will use: choosing the other one
   // re-runs the preview with the two swapped (review round 2).
   Array.prototype.forEach.call(document.querySelectorAll('input[name="stay"]'), function(r){
-    r.onchange = function(){ if (+r.value !== p.survivor.id) runPreview(p.merged.id, p.survivor.id, false); };
+    r.onchange = function(){
+      if (+r.value === p.survivor.id) return;
+      // A choice is "survivor" or "merged"; swapping who stays would silently flip it.
+      choices = {};
+      runPreview(p.merged.id, p.survivor.id, false);
+    };
   });
   Array.prototype.forEach.call(document.querySelectorAll('input[name^="choice-"]'), function(r){
     r.onchange = function(){

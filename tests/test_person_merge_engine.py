@@ -565,3 +565,17 @@ def test_a_choice_cannot_settle_an_unreviewed_table_or_be_invented(cx):
                  applied_by="t", merge_people_fields=_fields,
                  resolutions={"affiliate_signups": "whatever"})
     assert not isinstance(e.value, pm.MergeBlocked) and "survivor or merged" in str(e.value)
+
+
+def test_a_choice_cannot_decide_between_two_paid_subscriptions(cx):
+    """A prepaid period on the losing row could be lost (classification review)."""
+    cx.execute("INSERT INTO coach_subscriptions VALUES (?, 'active')", (AOL,))
+    cx.execute("INSERT INTO coach_subscriptions VALUES (?, 'active')", (GMAIL,))
+    cx.commit()
+    with pytest.raises(pm.MergeRefused) as e:
+        pm.apply(cx, survivor_id=2, merged_id=1, mail_old="stop", evidence={}, suggestion={},
+                 applied_by="t", merge_people_fields=_fields,
+                 resolutions={"coach_subscriptions": "survivor"})
+    assert "by hand" in str(e.value)
+    p = pm.preview(cx, 2, 1)
+    assert "coach_subscriptions" in p["blocked"] and "coach_subscriptions" not in p["needs_choice"]

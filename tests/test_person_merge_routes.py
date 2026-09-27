@@ -262,3 +262,20 @@ def test_a_choice_unblocks_preview_and_apply(client):
     assert r.status_code == 200, r.get_data(as_text=True)
     with sqlite3.connect(appmod.LOG_DB) as cx:
         assert cx.execute("SELECT slug FROM affiliate_signups").fetchall() == [("mel-gm",)]
+
+
+def test_the_owners_choices_are_recorded_on_the_merge(client):
+    c, appmod, _ = client
+    with sqlite3.connect(appmod.LOG_DB) as cx:
+        cx.execute("DROP TABLE IF EXISTS affiliate_signups")
+        cx.execute("CREATE TABLE affiliate_signups (id INTEGER PRIMARY KEY, email TEXT UNIQUE, slug TEXT)")
+        cx.execute("INSERT INTO affiliate_signups VALUES (1, ?, 'a')", (AOL,))
+        cx.execute("INSERT INTO affiliate_signups VALUES (2, ?, 'g')", (GMAIL,))
+    r = c.post("/api/console/people/merge", json={"survivor_id": 2, "merged_id": 1, "mail_old": "stop",
+                                                  "resolutions": {"affiliate_signups": "survivor"}},
+               headers=OWNER)
+    mid = r.get_json()["merge_id"]
+    with sqlite3.connect(appmod.LOG_DB) as cx:
+        sug = json.loads(cx.execute("SELECT suggestion_json FROM person_merges WHERE id=?",
+                                    (mid,)).fetchone()[0])
+    assert sug["owner_choices"] == {"affiliate_signups": "survivor"}
