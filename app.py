@@ -41101,7 +41101,14 @@ def _merge_people_for_tool(cx, survivor_id, merged_id):
         tags = set(json.loads((row[0] if row else None) or "[]"))
     except Exception:
         tags = set()
-    keep = sorted(t for t in tags if t in own or not _is_address_level_tag(t))
+    keep = {t for t in tags if t in own or not _is_address_level_tag(t)}
+    # The sync's consent precedence, applied to the merged union too (Glen, 2026-09-27, via
+    # people-22: an opt-in carries): unsubscribed beats opted-in, opted-in beats cold.
+    if "consent:unsubscribed" in keep:
+        keep.discard("consent:opted-in")
+    if "consent:opted-in" in keep:
+        keep.discard("consent:cold-no-consent")
+    keep = sorted(keep)
     if keep != sorted(tags):
         cx.execute("UPDATE people SET tags=? WHERE id=?", (json.dumps(keep), survivor_id))
     return result

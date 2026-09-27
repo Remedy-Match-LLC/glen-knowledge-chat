@@ -208,3 +208,24 @@ def test_the_text_opt_out_tag_carries(client):
         tags = set(json.loads(cx.execute("SELECT tags FROM people WHERE id=2").fetchone()[0]))
     assert "consent:sms-unsubscribed" in tags
     assert "consent:unsubscribed" not in tags
+
+
+@pytest.mark.parametrize("survivor_tags,merged_tags,want", [
+    ('["b"]', '["consent:opted-in"]', {"b", "consent:opted-in"}),
+    ('["consent:unsubscribed"]', '["consent:opted-in"]', {"consent:unsubscribed"}),
+    ('["consent:cold-no-consent"]', '["consent:opted-in"]', {"consent:opted-in"}),
+])
+def test_an_email_opt_in_carries_and_the_collapse_rule_applies(client, survivor_tags,
+                                                               merged_tags, want):
+    """Glen, 2026-09-27 via people-22: "yes", an opt-in carries. The survivor's own
+    unsubscribe still beats it, and opted-in beats cold, as in the hourly sync."""
+    c, appmod, _ = client
+    with sqlite3.connect(appmod.LOG_DB) as cx:
+        cx.execute("UPDATE people SET tags=? WHERE id=1", (merged_tags,))
+        cx.execute("UPDATE people SET tags=? WHERE id=2", (survivor_tags,))
+    r = c.post("/api/console/people/merge", json={"survivor_id": 2, "merged_id": 1,
+                                                  "mail_old": "stop"}, headers=OWNER)
+    assert r.status_code == 200
+    with sqlite3.connect(appmod.LOG_DB) as cx:
+        tags = set(json.loads(cx.execute("SELECT tags FROM people WHERE id=2").fetchone()[0]))
+    assert tags == want
