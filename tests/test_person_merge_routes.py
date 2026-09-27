@@ -229,3 +229,14 @@ def test_an_email_opt_in_carries_and_the_collapse_rule_applies(client, survivor_
     with sqlite3.connect(appmod.LOG_DB) as cx:
         tags = set(json.loads(cx.execute("SELECT tags FROM people WHERE id=2").fetchone()[0]))
     assert tags == want
+
+
+def test_the_survivor_does_not_take_the_old_gohighlevel_contact(client):
+    c, appmod, _ = client
+    with sqlite3.connect(appmod.LOG_DB) as cx:
+        cx.execute("UPDATE people SET ghl_id='old-contact' WHERE id=1")
+        cx.execute("UPDATE people SET ghl_id='' WHERE id=2")
+    assert c.post("/api/console/people/merge", json={"survivor_id": 2, "merged_id": 1,
+                                                     "mail_old": "stop"}, headers=OWNER).status_code == 200
+    with sqlite3.connect(appmod.LOG_DB) as cx:
+        assert cx.execute("SELECT ghl_id FROM people WHERE id=2").fetchone()[0] in ("", None)

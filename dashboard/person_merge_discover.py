@@ -18,7 +18,7 @@ HISTORY_TABLES = frozenset({
     "ghl_write_queue", "portal_auth_events", "email_click_tokens", "cadence_clicks",
     "weekly_live_invitation_recipients", "portal_welcome_sent", "portal_token_welcome_sent",
     "ebook_library_welcome_sent", "email_suppression", "pending_merges", "fullscript_clicks",
-    "pb_events", "e4l_account_notification_messages", "sequence_sends", "inbox_hidden_senders",
+    "pb_events", "e4l_account_notification_messages", "inbox_hidden_senders",
     "analysis_autoconfirm_log", "kloud_instruction_emails", "payer_link_emails",
     "remedy_match_email_queue", "review_invites", "client_erasures",
     "scan_reassignments", "referral_events", "stripe_failures", "users", "suppliers",
@@ -63,6 +63,7 @@ MOVE_TABLES = frozenset({
     "studio_bridge_claims", "studio_credit_claims", "subscriptions", "supplement_review_access",
     "supplement_reviews", "testimonial_invite_candidates", "topic_page_requests",
     "triage_invites",     # a health table for erasure (client_erasure.HEALTH_TABLES)
+    "sequence_sends",     # joined to sequence_enrollments by address; moves with it
 })
 _PERSON_COLUMNS = ("person_id", "people_id")
 _SYSTEM_SCHEMAS = ("pg_catalog", "information_schema", "pg_toast")

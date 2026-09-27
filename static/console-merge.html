@@ -226,6 +226,7 @@ function showRecord(id){
             postJSON("/api/console/people/merge/" + m.id + "/undo", {}).then(function(y){
               if (!y.ok) { status(y.j.error || "The undo did not run. Nothing was changed.", "bad"); return; }
               var sk = y.j.skipped || [];
+              if ((y.j.kept || []).length) sk = sk.concat([{table: "text opt-out", reason: "kept, so no opt-out is lost"}]);
               status("Undone. " + y.j.restored + " changes reversed. " + (y.j.note || "") +
                      (sk.length ? " Left as they are: " + sk.map(function(s){ return s.table + " (" + s.reason + ")"; }).join("; ") : ""),
                      sk.length ? "warn" : "");

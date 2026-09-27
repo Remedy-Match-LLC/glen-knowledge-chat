@@ -104,3 +104,8 @@ def test_discovery_on_postgres_across_schemas(monkeypatch):
         other.commit()
         cx.close()
         other.close()
+
+
+def test_sequence_sends_move_with_their_enrollments():
+    """sequences._candidates joins sends to enrollments by address; they must move together."""
+    assert "sequence_sends" in pd.MOVE_TABLES and "sequence_enrollments" in pd.MOVE_TABLES

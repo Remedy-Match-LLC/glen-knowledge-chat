@@ -166,9 +166,10 @@ def _split_name(name):
 
 # ── Clashes ───────────────────────────────────────────────────────────────────
 def _match_sql(t):
-    # A person number may be stored as an integer or as text (portal_card_state); compare
-    # as text so Postgres never meets `text = integer` (review round 3).
-    return f'lower(trim("{t.column}"))=?' if t.kind == "email" else f'CAST("{t.column}" AS TEXT)=?'
+    # A person number may be stored as an integer or as text (portal_card_state). _val sends
+    # it as text, which both backends coerce to the column's type, and a plain comparison
+    # keeps the column's index usable (review round 3, final round).
+    return f'lower(trim("{t.column}"))=?' if t.kind == "email" else f'"{t.column}"=?'
 
 
 def _val(t, v):
@@ -543,9 +544,47 @@ def undo(cx, merge_id, undone_by):
         raise MergeRefused(f"could not recreate the merged person ({type(err).__name__})")
     changes = _rows(cx, "SELECT * FROM person_merge_changes WHERE merge_id=? ORDER BY seq DESC",
                     (merge_id,))
+    kept, handled, sum_rest, notify_out = [], set(), {}, False
+    # Consent and money are never reversed blindly (final review round, 2026-09-27).
+    for ch in changes:
+        schema, table = _split_name(ch["table_name"])
+        rule = CLASH_RULES.get(table, "")
+        if ch["action"] != "rekey":
+            continue
+        key = _loads(ch["key_json"])
+        where = " AND ".join(f'"{k}" {_eq(cx)} ?' for k in key if k != "__row__")
+        if rule == "notify" and ch["column_name"] == "opt_status":
+            # A carried text opt-out stays: a STOP sent since cannot be told apart from it.
+            handled.add(ch["id"])
+            kept.append({"table": table, "key": key, "kept": "text opt-out"})
+            if where:
+                cur = cx.execute(f'SELECT opt_status FROM {pd.qualified(schema, table)} WHERE {where}',
+                                 [v for k, v in key.items() if k != "__row__"]).fetchone()
+                notify_out = notify_out or bool(cur and cur[0] == "out")
+        elif rule.startswith("sum:") and ch["column_name"] == rule.split(":", 1)[1] and where:
+            # Split what is there now; never more than the survivor had, never new money.
+            col = ch["column_name"]
+            q = pd.qualified(schema, table)
+            args = [v for k, v in key.items() if k != "__row__"]
+            cur = cx.execute(f'SELECT "{col}" FROM {q} WHERE {where}', args).fetchone()
+            now = int((cur[0] if cur else 0) or 0)
+            had = int(float(ch["old_value"] or 0))
+            back = min(had, now)
+            cx.execute(f'UPDATE {q} SET "{col}"=? WHERE {where}', [back] + args)
+            sum_rest[table] = (col, now - back)
+            handled.add(ch["id"])
+            restored += 1
+    for ch in changes:
+        schema, table = _split_name(ch["table_name"])
+        if ch["action"] == "set_aside" and table == "portal_notify_state" and not notify_out:
+            s_row = _rows(cx, f"SELECT opt_status FROM {pd.qualified(schema, table)} "
+                              "WHERE lower(trim(email))=?", (_norm(mg["survivor_email"]),))
+            notify_out = bool(s_row and s_row[0].get("opt_status") == "out")
     # Group by row, so a row's changes are all undone or none are.
     groups, order = {}, []
     for ch in changes:
+        if ch["id"] in handled:
+            continue
         g = (ch["table_name"], ch["key_json"]) if ch["action"] == "rekey" else ("seq", ch["seq"])
         if g not in groups:
             groups[g] = []
@@ -557,6 +596,10 @@ def undo(cx, merge_id, undone_by):
         key = _loads(chs[0]["key_json"])
         if chs[0]["action"] == "set_aside":
             row = _loads(chs[0]["row_json"])
+            if table in sum_rest and sum_rest[table][0] in row:
+                row[sum_rest[table][0]] = sum_rest[table][1]
+            if table == "portal_notify_state" and notify_out and "opt_status" in row:
+                row["opt_status"] = "out"          # the person is opted out; so is this row
             ok, err = _savepoint(cx, lambda: _insert_row(cx, schema, table, row))
             if ok:
                 restored += 1
@@ -594,7 +637,7 @@ def undo(cx, merge_id, undone_by):
     pa.remove_merge_aliases(cx, merge_id)
     cx.execute("UPDATE person_merges SET undone_at=?, undone_by=? WHERE id=?",
                (_now(), undone_by, merge_id))
-    return {"restored": restored, "skipped": skipped}
+    return {"restored": restored, "skipped": skipped, "kept": kept}
 
 
 # ── The hourly sweep ─────────────────────────────────────────────────────────

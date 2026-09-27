@@ -169,3 +169,16 @@ def test_links_and_sessions_from_before_a_merge_reach_the_survivor(client):
     assert got and got.person_id == 2 and got.email == GMAIL
     link = pi.create_client_magic_link(cx, 1, AOL)
     assert pi.consume_client_magic_link(cx, link) == 2
+
+
+def test_a_session_after_an_undo_is_the_merged_person_again(client):
+    _, appmod = client
+    from dashboard import portal_identity as pi
+    cx = _cx(appmod)
+    cx.execute("INSERT INTO people (id, email, name, roles, tags, created_at, updated_at) "
+               "VALUES (1, ?, 'Mel', '[\"client\"]', '[]', 't', 't')", (AOL,))
+    cx.execute("INSERT INTO person_merges (survivor_person_id, merged_person_id, survivor_email, "
+               "merged_email, applied_at, undone_at) VALUES (2, 1, ?, ?, 't', 'u')", (GMAIL, AOL))
+    cx.commit()
+    got = pi.identity_from_session(cx, pi.create_client_session(cx, 1, AOL))
+    assert got and got.person_id == 1

@@ -209,6 +209,9 @@ def test_apply_twice_and_bad_input_are_refused(cx):
 
 
 def test_undo_restores_the_database_exactly(cx):
+    # No opt-out to carry: a carried opt-out is kept by undo on purpose (tested below).
+    cx.execute("UPDATE portal_notify_state SET opt_status='default' WHERE email=?", (AOL,))
+    cx.commit()
     before = _dump(cx)
     mid = _apply(cx)
     report = pm.undo(cx, mid, "test")
@@ -339,6 +342,7 @@ def test_round_trip_on_postgres_with_binary_and_json(monkeypatch):
                   "PRIMARY KEY (email, side))")
         pa.init_tables(c)
         _seed(c)
+        c.execute("UPDATE portal_notify_state SET opt_status='default' WHERE email=?", (AOL,))
         c.execute("INSERT INTO body_map_photos VALUES (?, 'front', ?, ?)",
                   (AOL, b"\x00\x01aol", json.dumps({"a": 1})))
         c.execute("INSERT INTO body_map_photos VALUES (?, 'front', ?, ?)",
@@ -465,3 +469,53 @@ def test_postgres_refusal_does_not_poison_the_sweep_and_other_schemas_are_not_th
         other.commit()
         c.close()
         other.close()
+
+
+# ── Final review round, 2026-09-27: undo must never lose an opt-out or create money ──
+
+def test_undo_keeps_a_stop_sent_after_the_merge(cx):
+    cx.execute("UPDATE portal_notify_state SET opt_status='default' WHERE email=?", (AOL,))
+    mid = _apply(cx)                                   # the phone carries to gmail
+    cx.execute("UPDATE portal_notify_state SET opt_status='out' WHERE email=?", (GMAIL,))  # STOP
+    pm.undo(cx, mid, "t")
+    rows = dict((r[0], (r[1], r[2])) for r in cx.execute(
+        "SELECT email, phone, opt_status FROM portal_notify_state"))
+    # every row holding that phone is opted out
+    assert all(st == "out" for ph, st in rows.values() if ph == "8085550100")
+    assert rows[GMAIL][1] == "out"
+
+
+def test_undo_never_clears_a_carried_opt_out(cx):
+    mid = _apply(cx)                                   # aol's 'out' carried to gmail
+    pm.undo(cx, mid, "t")
+    assert cx.execute("SELECT opt_status FROM portal_notify_state WHERE email=?",
+                      (GMAIL,)).fetchone()[0] == "out"
+    assert cx.execute("SELECT opt_status FROM portal_notify_state WHERE email=?",
+                      (AOL,)).fetchone()[0] == "out"
+
+
+def test_undo_never_creates_credits(cx):
+    mid = _apply(cx)                                   # 1 + 5 = 6 on gmail
+    cx.execute("UPDATE evox_session_credits SET credits=5 WHERE email=?", (GMAIL,))   # one spent
+    pm.undo(cx, mid, "t")
+    total = cx.execute("SELECT SUM(credits) FROM evox_session_credits").fetchone()[0]
+    assert total == 5
+    assert cx.execute("SELECT credits FROM evox_session_credits WHERE email=?",
+                      (GMAIL,)).fetchone()[0] == 1
+
+
+def test_undo_splits_unspent_credits_back_exactly(cx):
+    mid = _apply(cx)
+    pm.undo(cx, mid, "t")
+    assert dict(cx.execute("SELECT email, credits FROM evox_session_credits").fetchall()) == {
+        AOL: 5, GMAIL: 1}
+
+
+def test_undo_after_spending_past_the_survivors_own_balance(cx):
+    cx.execute("UPDATE evox_session_credits SET credits=3 WHERE email=?", (GMAIL,))
+    cx.commit()
+    mid = _apply(cx)                                   # 3 + 5 = 8
+    cx.execute("UPDATE evox_session_credits SET credits=2 WHERE email=?", (GMAIL,))   # six spent
+    pm.undo(cx, mid, "t")
+    got = dict(cx.execute("SELECT email, credits FROM evox_session_credits").fetchall())
+    assert got == {GMAIL: 2, AOL: 0}                   # never negative, never more than there is

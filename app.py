@@ -41090,12 +41090,16 @@ def _is_address_level_tag(tag):
 def _merge_people_for_tool(cx, survivor_id, merged_id):
     """_merge_two_people for the merge tool, minus the merged person's address-level email
     tags: a dead old address must not silence the survivor's working one."""
-    before = cx.execute("SELECT tags FROM people WHERE id=?", (survivor_id,)).fetchone()
+    before = cx.execute("SELECT tags, ghl_id FROM people WHERE id=?", (survivor_id,)).fetchone()
     try:
         own = set(json.loads((before[0] if before else None) or "[]"))
     except Exception:
         own = set()
     result = _merge_two_people(cx, survivor_id, merged_id)
+    # The survivor keeps its own GoHighLevel contact, never the old address's, which may be
+    # marked do-not-contact (final review round).
+    if before is not None and not (before[1] or "").strip():
+        cx.execute("UPDATE people SET ghl_id=? WHERE id=?", (before[1] or "", survivor_id))
     row = cx.execute("SELECT tags FROM people WHERE id=?", (survivor_id,)).fetchone()
     try:
         tags = set(json.loads((row[0] if row else None) or "[]"))
