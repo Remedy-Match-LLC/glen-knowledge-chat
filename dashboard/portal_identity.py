@@ -60,12 +60,24 @@ def _ensure_people_table(cx) -> None:
     cx.commit()
 
 
+def _canonical(cx, email):
+    """The survivor's address for a merged one (person merge spec, 2026-09-26). Falls
+    back to the address itself when the alias table is missing or unreadable."""
+    e = (email or "").strip().lower()
+    try:
+        from dashboard import person_aliases as _pal
+        return _pal.canonical_email(cx, e)
+    except Exception:
+        return e
+
+
 def _get_or_create_person(cx, email: str, name: str = ""):
     """Resolve an email to (person_id, roles), lazily creating a minimal person
     row when the portal holder isn't in the hub yet. A portal-link holder is a
     `client` by default, so the client-facing blocks render. Richer enrichment
     (tags, address, history) happens elsewhere via app.upsert_person — this only
     guarantees the portal always has a person to hang roles on."""
+    email = _canonical(cx, email)
     row = cx.execute(
         "SELECT id, roles FROM people WHERE email=?", (email,)
     ).fetchone()

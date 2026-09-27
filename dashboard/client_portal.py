@@ -187,7 +187,14 @@ def get_portal_by_token(cx, token: str):
         "SELECT email, name, content_json FROM client_portals WHERE token_hash=?", (th,)
     ).fetchone()
     if not row:
-        return None
+        # A page removed by a person merge: its link opens the survivor's page.
+        try:
+            from dashboard import person_aliases as _pal
+            canon = _pal.token_alias(cx, th)
+        except Exception:
+            canon = None
+        rec = get_portal_content_by_email(cx, canon) if canon else None
+        return {"email": canon, **rec} if rec else None
     try:
         content = json.loads(row[2] or "{}")
     except Exception:

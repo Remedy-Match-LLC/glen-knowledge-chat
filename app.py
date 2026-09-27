@@ -7555,6 +7555,7 @@ def _is_paid_member(email):
     second lookup. Fail-closed (False on error) so a lookup hiccup never hands a
     non-member a discount."""
     try:
+        email = _canonical_email(email)     # a merged address has the survivor's membership
         if email and _active_membership_for_email(email):
             if membership_category(email) != "trial":
                 return True
@@ -36463,9 +36464,11 @@ def client_login_request():
         return limited
     if "@" in email:
         with _db_lock, db.connect(LOG_DB) as cx:
-            row = cx.execute("SELECT id, name FROM people WHERE email=?", (email,)).fetchone()
+            # A merged address signs in as the survivor; the link goes where it was asked for.
+            canon = _pi._canonical(cx, email)
+            row = cx.execute("SELECT id, name FROM people WHERE email=?", (canon,)).fetchone()
             if row:
-                magic = _pi.create_client_magic_link(cx, row[0], email)
+                magic = _pi.create_client_magic_link(cx, row[0], canon)
                 try:
                     sent_via, send_err = _send_full_report_email(
                         email, row[1] or "", "Your Remedy Match sign-in link",
@@ -36549,7 +36552,8 @@ def client_password_reset_request():
         return limited
     if "@" in email:
         with _db_lock, db.connect(LOG_DB) as cx:
-            row = cx.execute("SELECT id,name FROM people WHERE lower(email)=?", (email,)).fetchone()
+            row = cx.execute("SELECT id,name FROM people WHERE lower(email)=?",
+                             (_pa._canonical(cx, email),)).fetchone()
             if row:
                 token = _pa.create_password_reset(cx, row[0], email)
                 try:
@@ -41008,6 +41012,25 @@ def _email_dnd_effect(status, message):
     return _EMAIL_DND_NON_REFUSAL_WRITERS.get(msg, "refusal")
 
 
+def _alias_tags_to_survivor(cx, canon, person, ts):
+    """A merged address arriving from a feeder: add its tags to the survivor and nothing
+    else. No consent, DND, refusal, bounce or suppression effect crosses over, and no
+    person is created (person merge spec, 2026-09-26). The merge's own tag is dropped."""
+    tags = [t for t in (person.get("tags") or []) if not str(t).startswith("merged-into-")]
+    row = cx.execute("SELECT id, tags FROM people WHERE email=?", (canon,)).fetchone()
+    if not row or not tags:
+        return None
+    try:
+        have = set(json.loads(row[1] or "[]"))
+    except Exception:
+        have = set()
+    union = sorted(have | set(tags))
+    if union == sorted(have):
+        return None
+    cx.execute("UPDATE people SET tags=?, updated_at=? WHERE id=?", (json.dumps(union), ts, row[0]))
+    return "updated"
+
+
 def _upsert_person_additive(cx, person, ts=None):
     """Idempotent, additive upsert of one person into the people table, matching
     by email. JSON-array fields (tags, roles, …) are UNIONED with existing;
@@ -41020,6 +41043,13 @@ def _upsert_person_additive(cx, person, ts=None):
     email = (person.get("email") or "").strip().lower()
     if not email:
         return None
+    try:
+        from dashboard import person_aliases as _pal
+        canon = _pal.canonical_email(cx, email)
+    except Exception:
+        canon = email
+    if canon != email:
+        return _alias_tags_to_survivor(cx, canon, person, ts)
     cx.row_factory = sqlite3.Row
     existing = cx.execute("SELECT * FROM people WHERE email=?", (email,)).fetchone()
 
@@ -44075,6 +44105,47 @@ def _init_pending_merges_table():
 _init_pending_merges_table()
 
 
+# ── Person merge (spec: docs/superpowers/specs/2026-09-26-merge-two-people-design.md) ──
+# The alias tables are created at startup, before any request: on Postgres a lookup
+# against a missing table would abort the caller's whole transaction.
+def _init_person_merge_tables():
+    try:
+        from dashboard import person_aliases as _pal
+        with _db_lock, db.connect(LOG_DB) as cx:
+            _pal.init_tables(cx)
+    except Exception as e:
+        print(f"[person-alias] init failed: {e!r}", flush=True)
+
+
+_init_person_merge_tables()
+
+
+def _canonical_email(email):
+    """The survivor's address for a merged one; the address itself otherwise. Never raises."""
+    e = (email or "").strip().lower()
+    if not e:
+        return e
+    try:
+        from dashboard import person_aliases as _pal
+        with db.connect(LOG_DB) as cx:
+            return _pal.canonical_email(cx, e)
+    except Exception as ex:
+        print(f"[person-alias] lookup failed: {ex!r}", flush=True)
+        return e
+
+
+def _run_person_merge_sweep():
+    """Hourly: move records written under an old address since its merge."""
+    try:
+        from dashboard import person_merge as _pm
+        with _db_lock, db.connect(LOG_DB) as cx:
+            moved = _pm.sweep(cx)
+            cx.commit()
+        print(f"[person-merge-sweep] moved={moved}", flush=True)
+    except Exception as e:
+        print(f"[person-merge-sweep] failed: {e!r}", flush=True)
+
+
 _PEOPLE_SCALAR_COALESCE = [
     "phone", "dob", "birth_time", "birthplace", "gender", "city", "state",
     "country", "island", "profession", "title", "ghl_id", "pb_id",
@@ -44261,9 +44332,16 @@ def _people_search_query(params):
     clauses, args = [], []
     q = params.get("q", "").strip()
     if q:
-        clauses.append("(name LIKE ? OR email LIKE ? OR first_name LIKE ? OR last_name LIKE ?)")
         like = f"%{q}%"
-        args += [like, like, like, like]
+        canon = _canonical_email(q) if "@" in q else ""
+        if canon and canon != q.lower():
+            # A merged address finds its survivor.
+            clauses.append("(name LIKE ? OR email LIKE ? OR first_name LIKE ? OR last_name LIKE ? "
+                           "OR email = ?)")
+            args += [like, like, like, like, canon]
+        else:
+            clauses.append("(name LIKE ? OR email LIKE ? OR first_name LIKE ? OR last_name LIKE ?)")
+            args += [like, like, like, like]
     for fld in ("state", "island", "profession", "gender", "source", "city"):
         val = params.get(fld, "").strip()
         if val:
@@ -44407,7 +44485,7 @@ def upsert_people():
             email = (p.get("email") or "").strip().lower()
             if not email:
                 continue
-            if merge_tags:
+            if merge_tags or _canonical_email(email) != email:
                 res = _upsert_person_additive(cx, p, ts)
                 if res == "inserted":
                     inserted += 1
@@ -47839,6 +47917,9 @@ def _start_scheduler():
         # start alongside the push. Status: GET /api/console/cron-status.
         scheduler.add_job(_run_people_sync, "interval", hours=1, id="people_sync",
                           next_run_time=datetime.now(timezone.utc) + timedelta(minutes=2))
+        # Records written under a merged address move to the survivor (person merge spec).
+        scheduler.add_job(_run_person_merge_sweep, "interval", hours=1, id="person_merge_sweep",
+                          next_run_time=datetime.now(timezone.utc) + timedelta(minutes=5))
         # Certification bonus Biofields: daily sweep at 15:00 UTC (5am HST). Flag-gated
         # (CERT_BONUS_ENABLED) inside _run_biofield_bonuses, so this is a safe no-op until on.
         scheduler.add_job(_run_biofield_bonuses, "cron", hour=15, minute=0,
