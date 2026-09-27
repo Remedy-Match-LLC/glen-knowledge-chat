@@ -14343,6 +14343,50 @@ def ghl_update_tags(email, add=None, remove=None):
     return match["id"], err
 
 
+def _ghl_contact_for(email):
+    data, err = _ghl_get("/contacts/lookup", {"email": email})
+    if err:
+        return None, err
+    contacts = data.get("contacts", []) if isinstance(data, dict) else []
+    if not contacts:
+        return None, None
+    return min(contacts, key=lambda c: c.get("dateAdded") or "9999"), None
+
+
+def ghl_mark_merged(email, survivor_id, stop):
+    """After a person merge: tag the old address's contact merged-into-<survivor>, and
+    when `stop`, set do-not-contact so campaigns stop mailing it. The sync carries only
+    tags from a merged address, so this never reaches the survivor's consent.
+    Spec: docs/superpowers/specs/2026-09-26-merge-two-people-design.md"""
+    if not GHL_API_KEY:
+        return None, "GHL_API_KEY not set"
+    match, err = _ghl_contact_for(email)
+    if err or not match:
+        return None, err
+    tags = sorted(set(match.get("tags") or []) | {f"merged-into-{survivor_id}"})
+    payload = {"tags": tags}
+    if stop:
+        payload["dnd"] = True
+    _, err = _ghl_put(f"/contacts/{match['id']}", payload)
+    return match["id"], err
+
+
+def ghl_unmark_merged(email, survivor_id):
+    """Undo ghl_mark_merged: drop the tag and clear do-not-contact. A contact without the
+    tag is left alone, since its do-not-contact was not set by the merge."""
+    if not GHL_API_KEY:
+        return None, "GHL_API_KEY not set"
+    match, err = _ghl_contact_for(email)
+    if err or not match:
+        return None, err
+    tag = f"merged-into-{survivor_id}"
+    have = set(match.get("tags") or [])
+    if tag not in have:
+        return match["id"], None
+    _, err = _ghl_put(f"/contacts/{match['id']}", {"tags": sorted(have - {tag}), "dnd": False})
+    return match["id"], err
+
+
 def ghl_add_to_pipeline(contact_id, name="", email=""):
     """Create an opportunity in the E4L Onboarding pipeline at stage 1."""
     if not contact_id:
