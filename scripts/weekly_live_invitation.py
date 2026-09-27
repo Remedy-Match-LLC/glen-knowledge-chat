@@ -287,16 +287,30 @@ def portal_link(token):
     return f"{PORTAL_BASE}/portal/{token}#calendar"
 
 
+def _access(eligible):
+    if eligible:
+        return ("Group Coaching is included with your certification or active full membership.\n"
+                "The Free Wellness Whispering MasterClass is also open to you.")
+    return ("The Free Wellness Whispering MasterClass is open to you.\n"
+            "Group Coaching is a certification/full-membership upgrade benefit; "
+            "your current access does not include the private session.")
+
+
+def _html_body(text, portal_url):
+    """Paragraphs, the times' separator as &middot; (no charset can garble it), and the
+    portal link as an explicit anchor (no linkifier can drop the #calendar fragment)."""
+    escaped = html.escape(text).replace("\n\n", "</p><p>").replace("\n", "<br>")
+    escaped = escaped.replace("\u00b7", "&middot;")
+    if portal_url:
+        shown = html.escape(portal_url)
+        escaped = escaped.replace(shown, f'<a href="{html.escape(portal_url, quote=True)}">{shown}</a>', 1)
+    return '<div style="font-family:Arial,sans-serif;font-size:16px;line-height:1.55"><p>' + escaped + "</p></div>"
+
+
 def _copy(first_name, portal_url, eligible, target_date, email=""):
     date_label = target_date.strftime("%A, %B %-d")
     greeting = f"Aloha {first_name}," if first_name else "Aloha,"
-    if eligible:
-        access = ("Group Coaching is included with your certification or active full membership.\n"
-                  "The Free Wellness Whispering MasterClass is also open to you.")
-    else:
-        access = ("The Free Wellness Whispering MasterClass is open to you.\n"
-                  "Group Coaching is a certification/full-membership upgrade benefit; "
-                  "your current access does not include the private session.")
+    access = _access(eligible)
     text = (f"{greeting}\n\nThis {date_label}, our MentorshipU community activities are:\n\n"
             # Glen, 2026-09-20, effective 2026-09-30: the free MasterClass first, Group
             # Coaching second. The hours come from app.py, where the events are published,
@@ -308,15 +322,7 @@ def _copy(first_name, portal_url, eligible, target_date, email=""):
             "add the sessions to your calendar, and receive your own private Zoom join link:\n\n"
             f"{portal_url}\n\nPlease do not share your private portal or join link.\n\n"
             "With aloha,\nDr. Glen Swartwout")
-    escaped = html.escape(text).replace("\n\n", "</p><p>").replace("\n", "<br>")
-    # The times' separator as an entity, so no charset handling can garble it.
-    escaped = escaped.replace("\u00b7", "&middot;")
-    if portal_url:
-        # An explicit anchor, so no mail client's linkifier can drop the #calendar
-        # fragment that opens the Live Calendar.
-        shown = html.escape(portal_url)
-        escaped = escaped.replace(shown, f'<a href="{html.escape(portal_url, quote=True)}">{shown}</a>', 1)
-    body_html = '<div style="font-family:Arial,sans-serif;font-size:16px;line-height:1.55"><p>' + escaped + "</p></div>"
+    body_html = _html_body(text, portal_url)
     if email:
         # Appended AFTER html.escape so the anchor stays markup. GHL adds no
         # unsubscribe footer to conversations-API mail; this sender adds its own.
@@ -557,17 +563,235 @@ def run(args):
     return 0 if final == "verified_queued" else 2
 
 
+# ---------------------------------------------------------------------------
+# Correction, 2026-09-27. Glen: "corrected calendar link email yes".
+# Sunday's invitation for 30 September linked portal Home, which shows no sessions and
+# no Reserve or Join button. The correction goes ONLY to people that campaign reached,
+# who are ALSO on a fresh consent list, re-checked for suppression and do-not-disturb,
+# once each (its own campaign id and ledger), and only when the LIVE portal routes
+# #calendar, so it cannot go out before the fix it points to.
+# ---------------------------------------------------------------------------
+REACHED = ("queued", "sent", "delivered", "opened", "clicked")
+
+
+def _correction_subject(target_date):
+    return f"The Live Calendar link for Wednesday, {target_date.strftime('%B %-d')}"
+
+
+def _greeting_name(first_name):
+    """A usable first name, or "". Six contacts carry a tapped chip label as their name
+    ("Sharper vision"); a name with a space, a digit or odd characters is not a name."""
+    name = (first_name or "").strip()
+    return name if name and len(name) <= 20 and name.replace("-", "").replace("'", "").isalpha() else ""
+
+
+def _correction_copy(first_name, portal_url, eligible, target_date, email=""):
+    name = _greeting_name(first_name)
+    greeting = f"Aloha {name}," if name else "Aloha,"
+    mc = session_times(target_date, appmod.LIVE_MASTERCLASS_HOUR)
+    gc = session_times(target_date, appmod.LIVE_GROUP_COACHING_HOUR)
+    if eligible:
+        sessions = (f"Free Wellness Whispering MasterClass: {mc}\n"
+                    f"Group Coaching: {gc}\n\n"
+                    "Group Coaching is included with your certification or active full membership.")
+    else:
+        # Group Coaching is not open to this reader, so its time is not listed.
+        sessions = f"Free Wellness Whispering MasterClass: {mc}"
+    text = (f"{greeting}\n\nThe link in Sunday's email opened the home page of your portal, "
+            "which does not show the live sessions. This link opens the Live Calendar, "
+            "where you can reserve your spot and get your own private Zoom join link:\n\n"
+            f"{portal_url}\n\n"
+            f"The sessions are on {target_date.strftime('%A, %B %-d')}.\n\n"
+            f"{sessions}\n\nPlease do not share your private portal or join link.\n\n"
+            "With aloha,\nDr. Glen Swartwout")
+    body_html = _html_body(text, portal_url)
+    if email:
+        from dashboard import unsubscribe as _un
+        text = text + _un.footer_text(email, "weekly-live")
+        body_html = body_html + _un.footer_html(email, "weekly-live")
+    return text, body_html
+
+
+def _live_portal_routes_calendar(fetch=None):
+    """True only if the portal the link points at already routes #calendar."""
+    fetch = fetch or (lambda url: urllib.request.urlopen(
+        urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"}), timeout=30
+    ).read().decode("utf-8", "replace"))
+    try:
+        page = fetch(f"{PORTAL_BASE}/static/client-portal.html")
+    except Exception:
+        return False
+    return 'calendar: {panel:"calendar"' in page
+
+
+def _lookup_contact(email):
+    """The GHL contact for exactly this address, or None if GHL has none.
+
+    Unlike _find_contact, a failed lookup RAISES. A 429 or 5xx read as "no contact"
+    would drop someone the original reached, silently, while the run reported success.
+    And the first search hit must really be this address."""
+    status, data = _api("POST", "/contacts/search", GHL_CONTACTS_VERSION, {
+        "locationId": os.environ["GHL_LOCATION_ID"], "pageLimit": 1,
+        "filters": [{"field": "email", "operator": "eq", "value": email}],
+    })
+    if status == 0 or status >= 400:
+        raise RuntimeError(f"GHL contact lookup failed ({status}); stopping the correction")
+    rows = data.get("contacts") or data.get("items") or []
+    row = rows[0] if rows else None
+    return row if row and _email(row.get("email")) == _email(email) else None
+
+
+def _refuse_if_running(cx, campaign_id, now=None):
+    """Two correction jobs at once would both mail everyone: a launcher that timed out,
+    then a re-launch. Refuse while another run of this campaign is 'sending'."""
+    row = cx.execute("SELECT status, updated_at FROM weekly_live_invitation_runs "
+                     "WHERE campaign_id=?", (campaign_id,)).fetchone()
+    if not row or row[0] != "sending":
+        return
+    try:
+        age = (now or datetime.now(timezone.utc)) - datetime.fromisoformat(row[1])
+    except (TypeError, ValueError):
+        age = timedelta(0)
+    if age < timedelta(hours=3):
+        raise RuntimeError(f"{campaign_id} is already sending (updated {row[1]}); "
+                           "check that job before starting another")
+
+
+def _reached(cx, campaign_id):
+    rows = cx.execute("SELECT email FROM weekly_live_invitation_recipients "
+                      "WHERE campaign_id=? AND status IN (" + ",".join("?" * len(REACHED)) + ")",
+                      (campaign_id, *REACHED)).fetchall()
+    return {_email(r[0]) for r in rows if _email(r[0])}
+
+
+def run_correction(args, *, portal_check=None, find_contact=None, send=None, sleep=None):
+    target_date = datetime.fromisoformat(args.date).date()
+    original_id = f"weekly-live-community-{target_date.isoformat()}"
+    campaign_id = original_id + "-correction"
+    subject = _correction_subject(target_date)
+    if any(bad in subject for bad in EM_DASH_FORMS):
+        raise RuntimeError("em dash in the correction subject")
+    only_list = getattr(args, "only_list", None)
+    if not only_list:
+        raise RuntimeError("--correction requires --only-list from live_invitation_allowlist.py")
+    fingerprints = allowlist.decode(only_list)
+    if not (portal_check or _live_portal_routes_calendar)():
+        raise RuntimeError("the live portal does not route #calendar yet; "
+                           "the correction would point at the same dead end")
+    find_contact = find_contact or _lookup_contact
+    send = send or _send
+    sleep = sleep or time.sleep
+    paid, certification = _authoritative_access_sets()
+    eligible = paid | certification
+    counts = {"reached_by_original": 0, "not_on_consent_list": 0, "suppressed": 0,
+              "dnd": 0, "no_contact": 0, "already_queued": 0, "queued": 0,
+              "failed": 0, "unknown": 0, "skipped_unknown": 0}
+    with appmod.db.connect(appmod.LOG_DB) as cx:
+        _init_run_tables(cx)
+        reached = _reached(cx, original_id)
+        counts["reached_by_original"] = len(reached)
+        if not reached:
+            raise RuntimeError(f"no recipients recorded for {original_id}")
+        audience = sorted(e for e in reached if allowlist.allows(fingerprints, e))
+        counts["not_on_consent_list"] = len(reached) - len(audience)
+        if args.dry_run:
+            print(json.dumps({"status": "DRY_RUN", "campaign_id": campaign_id,
+                              "subject": subject, "counts": counts,
+                              "would_check": len(audience)}, sort_keys=True))
+            return 0
+        _refuse_if_running(cx, campaign_id)
+        cx.execute(
+            "INSERT INTO weekly_live_invitation_runs "
+            "(campaign_id,target_date,campaign_name,subject,status,counts_json,started_at,updated_at) "
+            "VALUES (?,?,?,?,?,?,?,?) ON CONFLICT(campaign_id) DO UPDATE SET "
+            "subject=excluded.subject,status=excluded.status,counts_json=excluded.counts_json,"
+            "updated_at=excluded.updated_at",
+            (campaign_id, target_date.isoformat(), f"Weekly Live Correction | {target_date}",
+             subject, "sending", json.dumps(counts, sort_keys=True), _now(), _now()))
+        cx.commit()
+        sendable = []
+        for email in audience:
+            prior = _existing_status(cx, campaign_id, email)
+            if prior == "unknown":
+                counts["skipped_unknown"] += 1
+                continue
+            if prior in REACHED:
+                counts["already_queued"] += 1
+                continue
+            if email_suppression.is_suppressed(cx, email):
+                counts["suppressed"] += 1
+                _record_recipient(cx, campaign_id, email, "", "", "suppressed")
+                continue
+            contact = find_contact(email)
+            sleep(0.2)
+            if not contact:
+                counts["no_contact"] += 1
+                continue
+            if _dnd_email(contact):
+                counts["dnd"] += 1
+                _record_recipient(cx, campaign_id, email, contact.get("id") or "", "", "dnd")
+                continue
+            sendable.append((email, contact))
+        anchor = int(time.time())
+        stopped = None
+        for batch_no, offset in enumerate(range(0, len(sendable), 100), start=1):
+            batch = sendable[offset:offset + 100]
+            when = None if batch_no == 1 else anchor + (batch_no - 1) * 900
+            for email, contact in batch:
+                token = client_portal.ensure_token(cx, email, contact.get("name") or "")
+                text, body_html = _correction_copy((contact.get("firstName") or "").strip(),
+                                                   portal_link(token), email in eligible,
+                                                   target_date, email)
+                if any(bad in (text + body_html).lower()
+                       for bad in ("practicebetter", "practice better", "skool", "zoom.us/")):
+                    raise RuntimeError("deprecated or private destination in correction copy")
+                status, message_id, response = send(contact.get("id") or "", subject, text,
+                                                    body_html, email_to=email,
+                                                    scheduled_timestamp=when)
+                if status == 0:
+                    counts["unknown"] += 1
+                    stopped = contact.get("id") or ""
+                    _record_recipient(cx, campaign_id, email, stopped, "", "unknown",
+                                      f"no response: {json.dumps(response)[:300]}")
+                    break
+                if status < 400 and message_id:
+                    counts["queued"] += 1
+                    _record_recipient(cx, campaign_id, email, contact.get("id") or "",
+                                      message_id, "queued")
+                else:
+                    counts["failed"] += 1
+                    _record_recipient(cx, campaign_id, email, contact.get("id") or "",
+                                      message_id, "failed",
+                                      f"HTTP {status}: {json.dumps(response)[:350]}")
+                sleep(0.3)
+            if stopped is not None:
+                break
+        # Anyone the original reached but this run could not place is a person left out.
+        final = ("stopped_unknown" if stopped is not None else
+                 "verified_queued" if counts["failed"] == 0 and counts["no_contact"] == 0
+                 else "needs_attention")
+        cx.execute("UPDATE weekly_live_invitation_runs SET status=?,counts_json=?,updated_at=? "
+                   "WHERE campaign_id=?", (final, json.dumps(counts, sort_keys=True), _now(),
+                                           campaign_id))
+        cx.commit()
+    print(json.dumps({"status": final, "campaign_id": campaign_id, "subject": subject,
+                      "counts": counts}, sort_keys=True))
+    return 3 if final == "stopped_unknown" else (0 if final == "verified_queued" else 2)
+
+
 def main():
     parser = argparse.ArgumentParser()
     mode = parser.add_mutually_exclusive_group(required=True)
     mode.add_argument("--dry-run", action="store_true")
     mode.add_argument("--send", action="store_true")
     parser.add_argument("--date", required=True, help="Wednesday HST date, YYYY-MM-DD")
+    parser.add_argument("--correction", action="store_true",
+                        help="send the Live Calendar link correction for --date's campaign")
     parser.add_argument("--only-list", dest="only_list", default=None,
                         help="fingerprints from live_invitation_allowlist.py; required with --send")
     args = parser.parse_args()
     try:
-        raise SystemExit(run(args))
+        raise SystemExit(run_correction(args) if args.correction else run(args))
     except Exception as exc:
         print(json.dumps({"status": "FAILED", "error": str(exc)}), flush=True)
         raise
