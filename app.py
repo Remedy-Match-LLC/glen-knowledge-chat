@@ -45230,21 +45230,127 @@ def list_pending_merges():
 def apply_pending_merge(merge_id):
     auth_err = _check_console_or_scoped_auth()
     if auth_err: return auth_err
-    with _db_lock, db.connect(LOG_DB) as cx:
+    # Retired 2026-09-26: this deleted the duplicate, moved nothing else, and the hourly
+    # sync recreated the deleted address. Merges now go through the merge page, which
+    # moves every record, keeps the old address as a way in, and can be undone.
+    # Spec: docs/superpowers/specs/2026-09-26-merge-two-people-design.md
+    with db.connect(LOG_DB) as cx:
         row = cx.execute("SELECT keeper_person_id, dupe_person_id, status FROM pending_merges WHERE id=?",
                           (merge_id,)).fetchone()
-        if not row:
-            return jsonify({"error": "merge not found"}), 404
-        if row[2] != "pending":
-            return jsonify({"error": f"merge is {row[2]}, not pending"}), 409
+    if not row:
+        return jsonify({"error": "merge not found"}), 404
+    return jsonify({"error": "retired",
+                    "message": "Open the merge page to preview and apply this merge.",
+                    "open": f"/console/merge?survivor={row[0]}&merged={row[1]}"}), 409
+
+
+def _person_merge_evidence(survivor_id, merged_id):
+    """Preview, evidence and suggestion for a proposed merge. Reads only. Runs outside
+    _db_lock, because the mailbox search is a network call."""
+    from dashboard import person_merge as _pm, person_merge_evidence as _ev
+    with db.connect(LOG_DB) as cx:
+        p = _pm.preview(cx, survivor_id, merged_id)
+        ev = {}
+        for side in ("survivor", "merged"):
+            e = p[side]["email"]
+            ev[e] = _ev.gather(cx, e, p[side]["id"], _ev.gmail_last_reply)
+    sug = _ev.suggest(ev, p["survivor"]["email"], datetime.now(timezone.utc))
+    sug["survivor_id"] = (p["survivor"]["id"] if sug["survivor"] == p["survivor"]["email"]
+                          else p["merged"]["id"])
+    return p, ev, sug
+
+
+def _merge_actor():
+    """Who applied or undid a merge, for the record. Callers have already checked the
+    owner gate; a key with no workspace user is the master key."""
+    uid = _workspace_user_id_for_token(_present_console_key())
+    return f"owner:user:{uid}" if uid is not None else "owner:master"
+
+
+@app.route("/api/console/people/merge/preview", methods=["GET"])
+def api_person_merge_preview():
+    if not _portal_console_ok() or not _is_staff_request():
+        return jsonify({"error": "unauthorized"}), 401
+    from dashboard import person_merge as _pm
+    try:
+        s, m = int(request.args.get("survivor", "")), int(request.args.get("merged", ""))
+        p, ev, sug = _person_merge_evidence(s, m)
+    except (ValueError, _pm.MergeRefused) as e:
+        return jsonify({"error": str(e) or "survivor and merged ids are required"}), 400
+    return jsonify({**p, "evidence": ev, "suggestion": sug})
+
+
+@app.route("/api/console/people/merge", methods=["POST"])
+def api_person_merge_apply():
+    """Owners only. Moves everything in one transaction, then marks GoHighLevel."""
+    if not _portal_open_is_owner():
+        return jsonify({"error": "owners only"}), 403
+    from dashboard import person_merge as _pm
+    body = request.get_json(silent=True) or {}
+    try:
+        s, m = int(body.get("survivor_id")), int(body.get("merged_id"))
+    except (TypeError, ValueError):
+        return jsonify({"error": "survivor_id and merged_id are required"}), 400
+    mail_old = body.get("mail_old")
+    try:
+        p, ev, sug = _person_merge_evidence(s, m)
+    except _pm.MergeRefused as e:
+        return jsonify({"error": str(e)}), 409
+    with _db_lock, db.connect(LOG_DB) as cx:
         try:
-            result = _merge_two_people(cx, row[0], row[1])
-        except ValueError as e:
-            return jsonify({"error": str(e)}), 400
-        cx.execute("UPDATE pending_merges SET status='applied', applied_at=? WHERE id=?",
-                   (datetime.now(timezone.utc).isoformat(), merge_id))
-        cx.commit()
-    return jsonify({"ok": True, "result": result})
+            mid = _pm.apply(cx, survivor_id=s, merged_id=m, mail_old=mail_old, evidence=ev,
+                            suggestion=sug, applied_by=_merge_actor(),
+                            merge_people_fields=lambda c, a, b: _merge_two_people(c, a, b))
+            moved = cx.execute("SELECT COUNT(*) FROM person_merge_changes WHERE merge_id=?",
+                               (mid,)).fetchone()[0]
+            cx.commit()
+        except _pm.MergeRefused as e:
+            cx.rollback()
+            return jsonify({"error": f"{e}. Nothing was changed."}), 409
+        except Exception as e:
+            cx.rollback()
+            print(f"[person-merge] apply failed: {e!r}", flush=True)
+            return jsonify({"error": "The merge failed part-way. Nothing was changed."}), 409
+    _, ghl_err = ghl_mark_merged(p["merged"]["email"], s, mail_old == "stop")
+    return jsonify({"ok": True, "merge_id": mid, "changes": moved, "ghl_error": ghl_err})
+
+
+@app.route("/api/console/people/merge/<int:merge_id>/undo", methods=["POST"])
+def api_person_merge_undo(merge_id):
+    if not _portal_open_is_owner():
+        return jsonify({"error": "owners only"}), 403
+    from dashboard import person_merge as _pm
+    with _db_lock, db.connect(LOG_DB) as cx:
+        row = cx.execute("SELECT merged_email, survivor_person_id FROM person_merges WHERE id=?",
+                         (merge_id,)).fetchone()
+        try:
+            report = _pm.undo(cx, merge_id, _merge_actor())
+            cx.commit()
+        except _pm.MergeRefused as e:
+            cx.rollback()
+            return jsonify({"error": str(e)}), 409
+        except Exception as e:
+            cx.rollback()
+            print(f"[person-merge] undo failed: {e!r}", flush=True)
+            return jsonify({"error": "The undo failed part-way. Nothing was changed."}), 409
+    _, ghl_err = ghl_unmark_merged(row[0], row[1])
+    return jsonify({"ok": True, **report, "ghl_error": ghl_err})
+
+
+@app.route("/api/console/people/merges/<int:merge_id>", methods=["GET"])
+def api_person_merge_record(merge_id):
+    if not _portal_console_ok() or not _is_staff_request():
+        return jsonify({"error": "unauthorized"}), 401
+    from dashboard import person_merge as _pm
+    with db.connect(LOG_DB) as cx:
+        rows = _pm._rows(cx, "SELECT id, survivor_person_id, merged_person_id, survivor_email, "
+                             "merged_email, mail_old, applied_by, applied_at, undone_at, undone_by, "
+                             "suggestion_json FROM person_merges WHERE id=?", (merge_id,))
+        if not rows:
+            return jsonify({"error": "not found"}), 404
+        n = cx.execute("SELECT COUNT(*) FROM person_merge_changes WHERE merge_id=?",
+                       (merge_id,)).fetchone()[0]
+    return jsonify({"merge": rows[0], "changes": n})
 
 
 @app.route("/api/pending-merges/<int:merge_id>/cancel", methods=["POST"])
