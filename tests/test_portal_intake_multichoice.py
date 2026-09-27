@@ -151,3 +151,23 @@ def test_an_old_draft_already_stored_as_text_loads_with_the_text_moved(tmp_path)
     cx.commit()
     got = intake.get_response(cx, "c@x.com")["answers"]
     assert got == {"systemic_symptoms": [], "other_symptoms": "headaches most days"}
+
+
+def test_seeding_uses_the_normalized_answer(monkeypatch, tmp_path):
+    """Round 3: a stale tab submitting "Trouble sleeping" was stored as the list but seeded
+    nothing, because seeding read the raw text."""
+    import sqlite3
+    import app as appmod
+    from dashboard import condition_triage as ct
+    seeded = []
+    monkeypatch.setattr(ct, "seed_from_triage", lambda cx, email, key, extra: seeded.append(key))
+    monkeypatch.setattr(appmod, "_init_support_programs_tables", lambda cx: None)
+    appmod._seed_intake_systemic_symptoms(sqlite3.connect(str(tmp_path / "t.db")), "a@x.com",
+                                          {"systemic_symptoms": "Trouble sleeping"})
+    assert seeded == ["symptom-sleep"]
+
+
+@pytest.mark.parametrize("empty", ["[]", "''", '""', "[ ]"])
+def test_an_empty_list_stored_as_text_is_no_answer(empty):
+    got = intake.normalize_answers({"systemic_symptoms": empty})
+    assert got["systemic_symptoms"] == [] and not got.get("other_symptoms")

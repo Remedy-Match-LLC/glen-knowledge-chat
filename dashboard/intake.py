@@ -219,6 +219,8 @@ def normalize_answers(answers):
             continue
         text = out[f["id"]].strip()
         out[f["id"]] = []
+        if not text.strip("[]'\" "):
+            continue            # "[]", "''" and the like: an empty list stored as text
         # Text that is really the options (a Practice Better import stores the list as its
         # repr; the health profile editor stores one value; a label may be typed): the list.
         by_value = {o["value"]: o["value"] for o in f.get("options") or []}

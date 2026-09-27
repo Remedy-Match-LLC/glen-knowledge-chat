@@ -33826,7 +33826,9 @@ def intake_save_draft():
 def _seed_intake_systemic_symptoms(cx, email, answers):
     """Turn intake checklist selections into auditable condition recommendations."""
     from dashboard import condition_triage as _ct
-    selected = (answers or {}).get("systemic_symptoms") or []
+    from dashboard import intake as _intake
+    # The normalized answer, as stored: a stale tab may still send text (round 3).
+    selected = _intake.normalize_answers(answers or {}).get("systemic_symptoms") or []
     if not isinstance(selected, list):
         return
     _init_support_programs_tables(cx)
