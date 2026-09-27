@@ -708,10 +708,13 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
     invoice_latest = invoice_latest or biofield_invoice.default_latest_invoice
     client_orders = client_orders or biofield_invoice.default_client_orders
     def _default_portal_link_fetch(email, name):
+        # Used only by "View Client Portal", which staff open. staff_open asks for a
+        # one-time staff pass, so the portal shows the staff banner and asks before any
+        # action (deploy-chat staff-guard spec, 2026-09-26).
         base = os.environ.get("PUBLIC_BASE_URL", "https://illtowell.com").rstrip("/")
         key = os.environ.get("CONSOLE_SECRET", "")
         r = requests.post(base + "/admin/portal/get-or-create-link",
-                          json={"email": email, "name": name},
+                          json={"email": email, "name": name, "staff_open": True},
                           headers={"X-Console-Key": key}, timeout=30)
         if not r.ok:
             raise RuntimeError(f"portal lookup failed ({r.status_code})")
