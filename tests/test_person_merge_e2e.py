@@ -21,6 +21,8 @@ def live(monkeypatch, tmp_path):
     appmod._init_people_table()
     appmod._init_person_merge_tables()
     monkeypatch.setattr(appmod, "CONSOLE_SECRET", SECRET)
+    from dashboard import person_merge_discover as pd
+    monkeypatch.setattr(pd, "MOVE_TABLES", pd.MOVE_TABLES | {"orders_demo"})   # a stand-in table
     from dashboard import person_merge_evidence as ev
     monkeypatch.setattr(ev, "gmail_last_reply",
                         lambda e, service=None: "2026-09-20T00:00:00+00:00" if e == GMAIL else None)
