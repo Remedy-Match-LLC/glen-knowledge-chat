@@ -48,6 +48,31 @@ def test_an_empty_symptom_answer_never_blocks_submit():
     assert "systemic_symptoms" not in intake.validate_response(
         {"systemic_symptoms": ["symptom-fatigue"]})
     assert "systemic_symptoms" in intake.validate_response({"systemic_symptoms": ["not-an-option"]})
+    # Text from the old portal text box never blocks: it is moved, not refused (round 2).
+    assert "systemic_symptoms" not in intake.validate_response({"systemic_symptoms": "tired"})
+
+
+def test_typed_symptom_text_moves_to_other_symptoms_and_is_stored_as_a_list(tmp_path):
+    """A draft saved from the old text box keeps the client's words (review round 2)."""
+    import sqlite3
+    cx = sqlite3.connect(str(tmp_path / "t.db"))
+    cx.row_factory = sqlite3.Row
+    intake.init_intake_table(cx)
+    intake.save_draft(cx, "a@x.com", {"systemic_symptoms": "tired all the time",
+                                      "other_symptoms": "knee pain"}, "t")
+    got = intake.get_response(cx, "a@x.com")["answers"]
+    assert got["systemic_symptoms"] == []
+    assert got["other_symptoms"] == "knee pain\ntired all the time"
+    stored = json.loads(cx.execute("SELECT answers_json FROM intake_responses").fetchone()[0])
+    assert stored["systemic_symptoms"] == [] and "tired all the time" in stored["other_symptoms"]
+    intake.save_draft(cx, "b@x.com", {"systemic_symptoms": ""}, "t")
+    assert intake.get_response(cx, "b@x.com")["answers"]["systemic_symptoms"] == []
+
+
+def test_normalising_twice_does_not_repeat_the_text():
+    once = intake.normalize_answers({"systemic_symptoms": "tired"})
+    again = intake.normalize_answers(dict(once, systemic_symptoms="tired"))
+    assert again["other_symptoms"] == "tired"
 
 
 HARNESS = r"""
@@ -99,3 +124,30 @@ def test_portal_renders_symptoms_as_checkboxes_and_sends_a_list(tmp_path):
     js.write_text(HARNESS.replace("RENDERER", _renderer()).replace("FIELD", json.dumps(field)))
     out = subprocess.run(["node", str(js)], capture_output=True, text=True, timeout=30)
     assert out.returncode == 0 and "OK" in out.stdout, out.stderr + out.stdout
+
+
+
+@pytest.mark.parametrize("stored,want", [
+    ("['symptom-fatigue', 'symptom-sleep']", ["symptom-fatigue", "symptom-sleep"]),  # PB import
+    ("symptom-fatigue", ["symptom-fatigue"]),                    # health profile single select
+    ("Fatigue or low energy", ["symptom-fatigue"]),              # an option's label
+    ("symptom-fatigue, symptom-sleep", ["symptom-fatigue", "symptom-sleep"]),
+])
+def test_text_that_is_really_options_becomes_the_list(stored, want):
+    """Older paths stored the list as text (round 1): turn it back, don't move it to notes."""
+    got = intake.normalize_answers({"systemic_symptoms": stored})
+    assert got["systemic_symptoms"] == want and not got.get("other_symptoms")
+
+
+def test_an_old_draft_already_stored_as_text_loads_with_the_text_moved(tmp_path):
+    """Five production drafts hold typed text today; they were written before this fix."""
+    import sqlite3
+    cx = sqlite3.connect(str(tmp_path / "t.db"))
+    cx.row_factory = sqlite3.Row
+    intake.init_intake_table(cx)
+    cx.execute("INSERT INTO intake_responses (email, form_version, status, answers_json, created_at) "
+               "VALUES ('c@x.com', 'v', 'draft', ?, 't')",
+               (json.dumps({"systemic_symptoms": "headaches most days"}),))
+    cx.commit()
+    got = intake.get_response(cx, "c@x.com")["answers"]
+    assert got == {"systemic_symptoms": [], "other_symptoms": "headaches most days"}
