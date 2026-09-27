@@ -42,12 +42,6 @@ def test_no_contact_is_a_no_op(app_, monkeypatch):
     assert puts == []
 
 
-def test_unmark_removes_the_tag_and_clears_dnd(app_, monkeypatch):
-    puts = _ghl(monkeypatch, app_, [{"id": "c1", "tags": ["a", "merged-into-2"], "dateAdded": "1"}])
-    app_.ghl_unmark_merged(AOL, 2)
-    assert puts == [("/contacts/c1", {"tags": ["a"], "dnd": False})]
-
-
 def test_unmark_without_the_tag_changes_nothing(app_, monkeypatch):
     puts = _ghl(monkeypatch, app_, [{"id": "c1", "tags": ["a"], "dateAdded": "1"}])
     app_.ghl_unmark_merged(AOL, 2)
@@ -75,3 +69,10 @@ def test_the_marked_contact_never_reaches_the_survivors_consent(app_):
     tables = {r[0] for r in cx.execute("SELECT name FROM sqlite_master WHERE type='table'")}
     if "email_suppression" in tables:
         assert cx.execute("SELECT COUNT(*) FROM email_suppression").fetchone()[0] == 0
+
+
+def test_undo_never_clears_do_not_contact(app_, monkeypatch):
+    """The client may have asked for do-not-contact since the merge (review round 2)."""
+    puts = _ghl(monkeypatch, app_, [{"id": "c1", "tags": ["a", "merged-into-2"], "dateAdded": "1"}])
+    app_.ghl_unmark_merged(AOL, 2)
+    assert puts == [("/contacts/c1", {"tags": ["a"]})]

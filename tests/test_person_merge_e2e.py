@@ -78,3 +78,45 @@ def test_preview_apply_and_undo(live, size):
         page.wait_for_function("() => document.getElementById('status').innerText.includes('Undone')")
         assert _people(appmod) == [1, 2]
         b.close()
+
+
+def test_the_applied_survivor_is_always_the_shown_one(live, monkeypatch):
+    """Review round 2: the preview showed the suggested survivor selected but applied the
+    other. The preview now always runs with the selected survivor."""
+    base, appmod = live
+    from dashboard import person_merge_evidence as ev
+    monkeypatch.setattr(ev, "gmail_last_reply",
+                        lambda e, service=None: "2026-09-25T00:00:00+00:00" if e == AOL else None)
+    with sync_playwright() as p:
+        b = p.chromium.launch()
+        page = b.new_context(extra_http_headers={"X-Console-Key": SECRET}).new_page()
+        page.goto(f"{base}/console/merge?survivor=2&merged=1")
+        page.wait_for_function("() => document.querySelector('#preview h2') && "
+                               "document.getElementById('preview').innerText.includes('Suggested: aol')")
+        page.wait_for_selector("#apply-btn")
+        page.click("#apply-btn")
+        assert "into mel@aol.com" in page.inner_text(".dialog")
+        page.click("#dlg-no")
+        page.check(f'input[name="stay"][value="2"]')
+        page.wait_for_function("() => document.querySelector('input[name=\"stay\"]:checked') && "
+                               "document.querySelector('input[name=\"stay\"]:checked').value === '2'")
+        page.click("#apply-btn")
+        assert "into mel@gmail.com" in page.inner_text(".dialog")
+        page.click("#dlg-no")
+        b.close()
+
+
+def test_a_blocked_merge_cannot_be_applied(live):
+    base, appmod = live
+    with sqlite3.connect(appmod.LOG_DB) as cx:
+        cx.execute("CREATE TABLE coach_subscriptions (member_email TEXT PRIMARY KEY, status TEXT)")
+        cx.execute("INSERT INTO coach_subscriptions VALUES (?, 'active')", (AOL,))
+        cx.execute("INSERT INTO coach_subscriptions VALUES (?, 'active')", (GMAIL,))
+    with sync_playwright() as p:
+        b = p.chromium.launch()
+        page = b.new_context(extra_http_headers={"X-Console-Key": SECRET}).new_page()
+        page.goto(f"{base}/console/merge?survivor=2&merged=1")
+        page.wait_for_selector("#apply-btn")
+        assert "coach subscriptions" in page.inner_text("#preview")
+        assert page.is_disabled("#apply-btn")
+        b.close()

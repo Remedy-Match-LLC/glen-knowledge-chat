@@ -20,7 +20,8 @@ def init_tables(cx):
         survivor_email TEXT, merged_email TEXT,
         merged_person_json TEXT, survivor_before_json TEXT, survivor_after_json TEXT,
         evidence_json TEXT, suggestion_json TEXT, mail_old TEXT,
-        applied_by TEXT, applied_at TEXT, undone_at TEXT, undone_by TEXT)""")
+        applied_by TEXT, applied_at TEXT, undone_at TEXT, undone_by TEXT,
+        ghl_status TEXT, ghl_error TEXT)""")
     cx.execute("""CREATE TABLE IF NOT EXISTS email_aliases (
         alias_email TEXT PRIMARY KEY, canonical_email TEXT NOT NULL,
         merge_id INTEGER, created_at TEXT)""")
@@ -38,7 +39,7 @@ def init_tables(cx):
 
 def canonical_email(cx, email, _depth=0):
     e = _norm(email)
-    if not e or _depth > 10:
+    if not e or _depth > 50:
         return e
     row = cx.execute("SELECT canonical_email FROM email_aliases WHERE alias_email=?",
                      (e,)).fetchone()

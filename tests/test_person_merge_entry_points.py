@@ -115,3 +115,42 @@ def test_canonical_helper_survives_a_missing_table(client, tmp_path, monkeypatch
     _, appmod = client
     monkeypatch.setattr(appmod, "LOG_DB", str(tmp_path / "empty.db"))
     assert appmod._canonical_email(" Mel@AOL.com ") == AOL
+
+
+# ── Review round 1, 2026-09-27 ──────────────────────────────────────────────────────
+
+def test_active_membership_follows_the_alias(client):
+    _, appmod = client
+    cx = _cx(appmod)
+    appmod.init_membership_tables(cx)
+    cx.execute("INSERT INTO memberships (id, email, granted_at, expires_at, source) "
+               "VALUES ('m1', ?, '2026-01-01', '2999-01-01', 'test')", (GMAIL,))
+    cx.commit()
+    assert appmod._active_membership_for_email(AOL)["email"] == GMAIL
+
+
+def test_practice_better_sync_never_creates_the_old_person(client, monkeypatch):
+    _, appmod = client
+    cx = _cx(appmod)
+    before = cx.execute("SELECT COUNT(*) FROM people").fetchone()[0]
+    rows = [{"email": AOL, "first": "Mel", "last": "Palmer", "phone": "", "pb_id": "pb1",
+             "pb_tags": ["pb:client"]}]
+    appmod._pb_upsert_people_rows(rows)
+    after = cx.execute("SELECT COUNT(*) FROM people").fetchone()[0]
+    assert after == before
+    tags = json.loads(cx.execute("SELECT tags FROM people WHERE id=2").fetchone()[0])
+    assert "pb:client" in tags
+
+
+def test_old_link_opens_a_page_stored_with_other_case(client):
+    _, appmod = client
+    from dashboard import client_portal as cp
+    from dashboard import person_aliases as pa
+    cx = _cx(appmod)
+    cp.init_client_portal_table(cx)
+    cx.execute("INSERT INTO client_portals (token_hash, email, name, content_json, created_at, "
+               "updated_at) VALUES ('h-kept', ' Mel@Gmail.com', 'Mel', '{\"greeting\":\"Hi\"}', 't', 't')")
+    pa.add_token_alias(cx, cp._hash("old-token"), GMAIL, 1)
+    cx.commit()
+    got = cp.get_portal_by_token(cx, "old-token")
+    assert got and got["content"]["greeting"] == "Hi"

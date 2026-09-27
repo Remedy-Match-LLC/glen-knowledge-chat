@@ -126,3 +126,38 @@ def test_an_engine_failure_changes_nothing(client, monkeypatch):
     with sqlite3.connect(appmod.LOG_DB) as cx:
         assert cx.execute("SELECT COUNT(*) FROM person_merges").fetchone()[0] == 0
         assert cx.execute("SELECT COUNT(*) FROM email_aliases").fetchone()[0] == 0
+
+
+# ── Review rounds 1 and 2, 2026-09-27 ───────────────────────────────────────────────
+
+def test_a_blocked_merge_is_refused_and_named(client):
+    c, appmod, ghl = client
+    with sqlite3.connect(appmod.LOG_DB) as cx:
+        cx.execute("CREATE TABLE coach_subscriptions (member_email TEXT PRIMARY KEY, status TEXT)")
+        cx.execute("INSERT INTO coach_subscriptions VALUES (?, 'active')", (AOL,))
+        cx.execute("INSERT INTO coach_subscriptions VALUES (?, 'cancelled')", (GMAIL,))
+    p = c.get("/api/console/people/merge/preview?survivor=2&merged=1", headers=OWNER).get_json()
+    assert p["blocked"] == ["coach_subscriptions"]
+    r = c.post("/api/console/people/merge", json={"survivor_id": 2, "merged_id": 1,
+                                                  "mail_old": "stop"}, headers=OWNER)
+    assert r.status_code == 409
+    assert r.get_json()["blocked"] == ["coach_subscriptions"]
+    assert _people(appmod) == [1, 2] and ghl == []
+
+
+def test_a_failed_gohighlevel_mark_is_retried_by_the_hourly_job(client, monkeypatch):
+    c, appmod, ghl = client
+    monkeypatch.setattr(appmod, "ghl_mark_merged", lambda e, s, stop: (None, "timeout"))
+    mid = c.post("/api/console/people/merge", json={"survivor_id": 2, "merged_id": 1,
+                                                    "mail_old": "stop"}, headers=OWNER).get_json()["merge_id"]
+    with sqlite3.connect(appmod.LOG_DB) as cx:
+        assert cx.execute("SELECT ghl_status FROM person_merges WHERE id=?", (mid,)).fetchone()[0] == "pending"
+    calls = []
+    monkeypatch.setattr(appmod, "ghl_mark_merged",
+                        lambda e, s, stop: calls.append((e, s, stop)) or ("c1", None))
+    appmod._run_person_merge_sweep()
+    assert calls == [(AOL, 2, True)]
+    with sqlite3.connect(appmod.LOG_DB) as cx:
+        assert cx.execute("SELECT ghl_status FROM person_merges WHERE id=?", (mid,)).fetchone()[0] == "ok"
+    appmod._run_person_merge_sweep()
+    assert len(calls) == 1

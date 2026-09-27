@@ -109,7 +109,10 @@ function findPerson(q){
 
 function counts(p){
   var rows = Object.keys(p.counts).sort().map(function(t){
-    var c = p.counts[t], clash = p.clashes[t] ? ' <span class="sub">(' + p.clashes[t] + ' kept from ' + esc(p.survivor.email) + ')</span>' : "";
+    var c = p.counts[t], k = p.clashes[t];
+    var rules = {"survivor": "the survivor's is kept", "sum": "added together", "newest": "the newest is kept"};
+    var clash = k ? ' <span class="sub">(' + k.count + ' in both: ' +
+      esc(k.rule ? rules[k.rule.split(":")[0]] : "no rule, this blocks the merge") + ')</span>' : "";
     return "<tr><td>" + esc(t.replace(/_/g, " ")) + "</td><td>" + c[1] + "</td><td>" + c[0] + clash + "</td></tr>";
   }).join("");
   return "<table><tr><th>Records</th><th>" + esc(p.survivor.email) + "</th><th>" + esc(p.merged.email) + "</th></tr>" + rows + "</table>";
@@ -127,8 +130,10 @@ function evidence(p){
 
 function renderPreview(p){
   current = p;
-  var sug = p.suggestion, stay = sug.survivor_id === p.survivor.id;
-  var other = stay ? p.merged : p.survivor;
+  var sug = p.suggestion;
+  var blocked = (p.blocked || []).length ? '<div class="note bad">These records exist under both addresses and there is no rule for them yet: ' +
+    esc(p.blocked.map(function(t){ return t.replace(/_/g, " "); }).join(", ")) +
+    '. Resolve them first. Nothing can be merged until then.</div>' : "";
   var portal = p.portal.keep ? ("Portal page: " + p.portal.reason + "." +
     (p.portal.from_other.length ? " Also copied from the other page: " + p.portal.from_other.join(", ") + "." : "")) : p.portal.reason;
   document.getElementById("preview").innerHTML =
@@ -136,28 +141,32 @@ function renderPreview(p){
     '<p class="sub">Nothing has changed yet.</p>' +
     '<div class="note">' + esc(sug.survivor_reason) + '</div>' +
     '<div class="note warn">' + esc(sug.mail_reason) + '</div>' +
-    '<p>' + esc(portal) + '</p>' +
+    '<p>' + esc(portal) + '</p>' + blocked +
     '<div class="cols"><div>' + counts(p) + '</div><div>' + evidence(p) + '</div></div>' +
     '<h3>Who stays</h3>' +
-    '<label class="opt"><input type="radio" name="stay" value="' + p.survivor.id + '"' + (stay ? " checked" : "") + '> ' + esc(label(p.survivor)) + '</label>' +
-    '<label class="opt"><input type="radio" name="stay" value="' + p.merged.id + '"' + (!stay ? " checked" : "") + '> ' + esc(label(p.merged)) + '</label>' +
+    '<label class="opt"><input type="radio" name="stay" value="' + p.survivor.id + '" checked> ' + esc(label(p.survivor)) + '</label>' +
+    '<label class="opt"><input type="radio" name="stay" value="' + p.merged.id + '"> ' + esc(label(p.merged)) + '</label>' +
     '<h3>The other address in GoHighLevel</h3>' +
     '<label class="opt"><input type="radio" name="mail" value="stop"' + (sug.mail_old === "stop" ? " checked" : "") + '> Stop mailing it</label>' +
     '<label class="opt"><input type="radio" name="mail" value="keep"' + (sug.mail_old === "keep" ? " checked" : "") + '> Keep mailing it</label>' +
-    '<div class="row"><button class="btn" id="apply-btn">Apply merge</button></div></div>';
+    '<div class="row"><button class="btn" id="apply-btn"' + ((p.blocked || []).length ? " disabled" : "") +
+    '>Apply merge</button></div></div>';
+  // The preview always shows the survivor that Apply will use: choosing the other one
+  // re-runs the preview with the two swapped (review round 2).
   Array.prototype.forEach.call(document.querySelectorAll('input[name="stay"]'), function(r){
-    r.onchange = function(){
-      var s = +r.value, m = s === p.survivor.id ? p.merged.id : p.survivor.id;
-      if (s !== p.survivor.id) runPreview(s, m);
-    };
+    r.onchange = function(){ if (+r.value !== p.survivor.id) runPreview(p.merged.id, p.survivor.id, false); };
   });
   document.getElementById("apply-btn").onclick = askApply;
 }
 
-function runPreview(s, m){
+function runPreview(s, m, follow){
   status("Loading the preview.");
   getJSON("/api/console/people/merge/preview?survivor=" + s + "&merged=" + m).then(function(x){
     if (!x.ok) { status(x.j.error || "Could not load the preview.", "bad"); return; }
+    if (follow && x.j.suggestion.survivor_id !== x.j.survivor.id) {
+      runPreview(x.j.merged.id, x.j.survivor.id, false);     // start from the suggestion
+      return;
+    }
     status("");
     renderPreview(x.j);
   });
@@ -189,7 +198,8 @@ function askApply(){
         status("Merging.");
         postJSON("/api/console/people/merge", {survivor_id: p.survivor.id, merged_id: p.merged.id, mail_old: mail})
           .then(function(x){
-            if (!x.ok) { status(x.j.error || "The merge did not run. Nothing was changed.", "bad"); return; }
+            if (!x.ok) { status((x.j.error || "The merge did not run. Nothing was changed.") +
+              (x.j.blocked ? " Blocked by: " + x.j.blocked.join(", ") + "." : ""), "bad"); return; }
             status("Merged. " + x.j.changes + " records changed." +
                    (x.j.ghl_error ? " GoHighLevel was not updated: " + x.j.ghl_error : ""), x.j.ghl_error ? "warn" : "");
             document.getElementById("preview").innerHTML = "";
@@ -216,7 +226,7 @@ function showRecord(id){
             postJSON("/api/console/people/merge/" + m.id + "/undo", {}).then(function(y){
               if (!y.ok) { status(y.j.error || "The undo did not run. Nothing was changed.", "bad"); return; }
               var sk = y.j.skipped || [];
-              status("Undone. " + y.j.restored + " changes reversed." +
+              status("Undone. " + y.j.restored + " changes reversed. " + (y.j.note || "") +
                      (sk.length ? " Left as they are: " + sk.map(function(s){ return s.table + " (" + s.reason + ")"; }).join("; ") : ""),
                      sk.length ? "warn" : "");
               showRecord(m.id);
@@ -231,14 +241,14 @@ function showRecord(id){
     var t = null;
     document.getElementById("q" + side).addEventListener("input", function(){ clearTimeout(t); t = setTimeout(function(){ search(side); }, 250); });
   });
-  document.getElementById("preview-btn").onclick = function(){ runPreview(chosen.a.id, chosen.b.id); };
+  document.getElementById("preview-btn").onclick = function(){ runPreview(chosen.a.id, chosen.b.id, true); };
   var q = new URLSearchParams(location.search);
   if (q.get("record")) { showRecord(q.get("record")); return; }
-  if (q.get("survivor") && q.get("merged")) { runPreview(q.get("survivor"), q.get("merged")); return; }
+  if (q.get("survivor") && q.get("merged")) { runPreview(q.get("survivor"), q.get("merged"), true); return; }
   if (q.get("pending")) {
     getJSON("/api/pending-merges?status=pending").then(function(x){
       var m = ((x.j && x.j.merges) || []).filter(function(r){ return String(r.id) === q.get("pending"); })[0];
-      if (m) runPreview(m.keeper.id, m.dupe.id); else status("That queued merge is no longer pending.", "warn");
+      if (m) runPreview(m.keeper.id, m.dupe.id, true); else status("That queued merge is no longer pending.", "warn");
     });
     return;
   }

@@ -193,8 +193,18 @@ def get_portal_by_token(cx, token: str):
             canon = _pal.token_alias(cx, th)
         except Exception:
             canon = None
-        rec = get_portal_content_by_email(cx, canon) if canon else None
-        return {"email": canon, **rec} if rec else None
+        if not canon:
+            return None
+        row = cx.execute("SELECT name, content_json FROM client_portals "
+                         "WHERE lower(trim(email))=? ORDER BY updated_at DESC LIMIT 1",
+                         (canon,)).fetchone()
+        if not row:
+            return None
+        try:
+            content = json.loads(row[1] or "{}")
+        except Exception:
+            content = {}
+        return {"email": canon, "name": row[0], "content": content}
     try:
         content = json.loads(row[2] or "{}")
     except Exception:
