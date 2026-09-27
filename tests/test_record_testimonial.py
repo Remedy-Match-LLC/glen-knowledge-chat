@@ -61,7 +61,7 @@ def test_owner_records_it_without_consent_or_rating(client):
     assert row["email"] == "rebecca@example.com" and row["name"] == "Rebecca Navo"
     assert row["body"] == TEXT                      # verbatim, nothing edited
     assert row["consent_public"] == 0 and row["rating"] == 0 and row["status"] == "pending"
-    assert row["source_tag"] == "email:1a06422aceb72496"
+    assert row["source_tag"] == "staff:email:1a06422aceb72496"
     assert row["compliance_score"] == 3             # the scorer saw the verbatim text
     assert scored == [TEXT]
 
@@ -98,3 +98,11 @@ def test_only_owners_record(client):
     assert c.post("/api/console/testimonials/record", json=_body(),
                   headers={"X-Console-Key": VA}).status_code == 403
     assert c.post("/api/console/testimonials/record", json=_body()).status_code == 403
+
+
+def test_the_source_note_can_never_be_a_certification_tag(client):
+    """Approving a testimonial whose source_tag is a cert cohort grants a level (review)."""
+    c, appmod, _ = client
+    c.post("/api/console/testimonials/record", json=_body(source="ash-cert-l1 <b>"), headers=OWNER)
+    tag = _row(appmod)["source_tag"]
+    assert tag.startswith("staff:") and "<" not in tag and " " not in tag

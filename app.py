@@ -10726,7 +10726,9 @@ def api_console_record_testimonial():
     email = (data.get("email") or "").strip().lower()
     name = (data.get("name") or "").strip()
     body = (data.get("body") or "").strip()
-    source = (data.get("source") or "staff").strip()[:64]
+    # Always "staff:" first, cleaned like the public route's tag, so it can never equal a
+    # certification cohort tag, which grants a level when approved (review, 2026-09-27).
+    source = "staff:" + re.sub(r"[^\w.:\-]", "", (data.get("source") or "note"))[:58]
     consent = data.get("consent_public") is True
     rating = data.get("rating")
     if not email or "@" not in email or not body:
