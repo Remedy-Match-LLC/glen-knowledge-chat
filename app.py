@@ -246,7 +246,8 @@ FEEDBACK_VIEW_URL   = os.environ.get("FEEDBACK_VIEW_URL",   "https://Truly.VIP/F
 from dashboard.openai_failover import build_openai_client as _build_openai_client
 from dashboard.people import set_person_tags, distinct_tags, dedupe_tags_ci
 from dashboard.name_case import normalize_person_names as _normalize_person_names
-from dashboard.name_case import is_address as _is_address, name_from_parts as _name_from_parts
+from dashboard.name_case import (is_address as _is_address, name_from_parts as _name_from_parts,
+                                 strip_addresses as _strip_addresses)
 from dashboard import affiliate_dashboard
 from dashboard.biofield_reveals import is_aller_free as _is_aller_free
 from dashboard import practitioner_slugs as _ps_signup
@@ -41216,15 +41217,13 @@ def _upsert_person_additive(cx, person, ts=None):
     existing = cx.execute("SELECT * FROM people WHERE email=?", (email,)).fetchone()
 
     scalars = {k: person.get(k, "") for k in _PERSON_UPSERT_SCALARS}
+    # A name is never an email address (2026-09-27). The GHL sync sent one for a contact
+    # with no first or last name, and it replaced a real name here every hour.
+    for k in ("name", "first_name", "last_name"):
+        scalars[k] = _strip_addresses(str(scalars.get(k) or ""))
     # Capitalise here, not in a one-off: a stored name is replaced by any non-blank
     # incoming one below, so the next feeder run would undo a cleanup.
     _normalize_person_names(scalars)
-    # A name is never an email address (2026-09-27). The GHL sync sent one for a contact
-    # with no first or last name, and it replaced a real name here every hour.
-    if _is_address(scalars.get("name")):
-        scalars["name"] = ""
-    if not str(scalars.get("name") or "").strip():
-        scalars["name"] = _name_from_parts(scalars.get("first_name"), scalars.get("last_name"))
     arrays = {}
     for jf in _PERSON_UPSERT_JSON:
         v = person.get(jf, [])
@@ -41335,6 +41334,12 @@ def _upsert_person_additive(cx, person, ts=None):
         for k in _PERSON_UPSERT_SCALARS:
             if str(scalars[k]).strip():
                 upd[k] = scalars[k]
+        # A shorter version of the stored name never replaces it: GHL holding only "Peach"
+        # cut "Peach Goddard" every hour (review round 1, 2026-09-27).
+        stored = (existing["name"] or "").strip()
+        if "name" in upd and stored and not _is_address(stored):
+            if set(upd["name"].lower().split()) <= set(stored.lower().split()):
+                del upd["name"]
         # A stored address-as-name, or none, is rebuilt from the first and last names.
         if "name" not in upd and (_is_address(existing["name"])
                                   or not (existing["name"] or "").strip()):
@@ -41373,6 +41378,8 @@ def _upsert_person_additive(cx, person, ts=None):
         return "updated"
 
     ins = dict(scalars)
+    if not ins.get("name"):
+        ins["name"] = _name_from_parts(ins.get("first_name"), ins.get("last_name"))
     for jf in _PERSON_UPSERT_JSON:
         ins[jf] = json.dumps(sorted(set(arrays[jf])))
     ins["tags"] = json.dumps(dedupe_tags_ci(sorted(_collapse_consent(_apply_dnd(set(arrays.get("tags", [])))))))
@@ -44227,7 +44234,10 @@ def _repair_address_names(cx):
     for pid, name, first, last in rows:
         rebuilt = _name_from_parts(first, last)
         if _is_address(name) and rebuilt:
-            cx.execute("UPDATE people SET name=? WHERE id=?", (rebuilt, pid))
+            # Only if the name is still the one read: a save in between wins (round 2).
+            cur = cx.execute("UPDATE people SET name=? WHERE id=? AND name=?", (rebuilt, pid, name))
+            if getattr(cur, "rowcount", 1) == 0:
+                continue
             n += 1
     return n
 
@@ -44382,22 +44392,21 @@ def _merge_two_people(cx, keeper_id, dupe_id):
     updates = {}
     fields_filled = []
     # Names: the keeper's own win, but a blank or an address-as-name is empty (2026-09-27:
-    # Peach Goddard's surviving record held only her address as its name).
-    for col in ("first_name", "last_name", "name"):
-        try:
-            k_val, d_val = keeper[col], dupe[col]
-        except IndexError:
-            continue
-        k_empty = not (k_val or "").strip() or _is_address(k_val)
-        if k_empty and (d_val or "").strip() and not _is_address(d_val):
-            updates[col] = d_val
+    # Peach Goddard's surviving record held only her address as its name). An empty name is
+    # rebuilt from the keeper's first and last names, then taken from the dupe.
+    def _real(v):
+        return _strip_addresses(v or "")
+    for col in ("first_name", "last_name"):
+        if not _real(keeper[col]) and _real(dupe[col]):
+            updates[col] = _real(dupe[col])
             fields_filled.append(col)
-    final_name = updates.get("name", keeper["name"])
-    if not (final_name or "").strip() or _is_address(final_name):
-        rebuilt = _name_from_parts(updates.get("first_name", keeper["first_name"]),
-                                   updates.get("last_name", keeper["last_name"]))
-        if rebuilt:
-            updates["name"] = rebuilt
+    if not _real(keeper["name"]) or _is_address(keeper["name"]):
+        own = _name_from_parts(keeper["first_name"], keeper["last_name"])
+        best = own or _real(dupe["name"]) or _name_from_parts(
+            updates.get("first_name", keeper["first_name"]),
+            updates.get("last_name", keeper["last_name"]))
+        if best:
+            updates["name"] = best
             fields_filled.append("name")
     # Coalesce empty scalar fields
     for col in _PEOPLE_SCALAR_COALESCE:
@@ -44725,6 +44734,10 @@ def upsert_people():
                 "resources","issue_duration","form_completed_by",
                 "last_order_date","last_session_date","last_contact_date","notes",
             ]}
+            for k in ("name", "first_name", "last_name"):
+                fields[k] = _strip_addresses(str(fields.get(k) or ""))
+            if not fields["name"]:
+                fields["name"] = _name_from_parts(fields["first_name"], fields["last_name"])
             _normalize_person_names(fields)
             # JSON array fields
             for jf in ["organizations","tags","roles","terrain_concerns","body_systems",

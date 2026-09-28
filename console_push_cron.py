@@ -716,7 +716,8 @@ def fetch_email_dnd_v2():
 def _contact_name(c):
     """The contact's name, or "" when GHL holds none. Never the email address: that used
     to overwrite a real name in the People hub every hour (2026-09-27)."""
-    return f"{(c.get('firstName') or '').strip()} {(c.get('lastName') or '').strip()}".strip()
+    parts = [re.sub(r"<?[^\s@<>]+@[^\s@<>]+>?", " ", c.get(k) or "") for k in ("firstName", "lastName")]
+    return " ".join(" ".join(parts).split())
 
 
 def sync_people_from_ghl(batch_size=100):

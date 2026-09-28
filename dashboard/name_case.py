@@ -125,7 +125,15 @@ def is_address(value):
     return "@" in s and not any(c.isspace() for c in s)
 
 
+_ADDRESS_TOKEN = re.compile(r"<?[^\s@<>]+@[^\s@<>]+>?")
+
+
+def strip_addresses(value):
+    """The value with every email address in it removed, spaces tidied. "Peach d@x.com" is
+    "Peach"; "Ann @ Home Studio" has no address and is kept whole."""
+    return " ".join(_ADDRESS_TOKEN.sub(" ", value or "").split())
+
+
 def name_from_parts(first, last):
     """"First Last" from the two name fields, or "" when neither holds a real name."""
-    parts = [p.strip() for p in (first or "", last or "") if p and p.strip() and not is_address(p)]
-    return " ".join(parts)
+    return " ".join(p for p in (strip_addresses(first), strip_addresses(last)) if p)

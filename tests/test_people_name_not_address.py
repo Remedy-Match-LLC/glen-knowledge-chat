@@ -150,3 +150,70 @@ def test_repair_leaves_a_real_name_with_an_at_sign(app_db):
     with sqlite3.connect(db) as cx:
         assert app._repair_address_names(cx) == 0
     assert _person(db, "e@x.com")["name"] == "Ann @ Home Studio"
+
+
+# ── Review rounds 1 and 2 ────────────────────────────────────────────────────
+def test_blank_incoming_name_never_replaces_a_stored_real_name(app_db):
+    """Round 1 and 2: {'first_name': 'Pea'} alone turned "Peach Goddard" into "Pea"."""
+    app, db = app_db
+    _seed(db, "p@x.com", name="Peach Goddard", first="Peach", last="Goddard")
+    _upsert(app, db, {"email": "p@x.com", "name": "", "first_name": "Pea"})
+    assert _person(db, "p@x.com")["name"] == "Peach Goddard"
+
+
+def test_a_shorter_incoming_name_never_replaces_a_fuller_one(app_db):
+    """Round 1: GHL holding only "Peach" cut "Peach Goddard" to "Peach" every hour."""
+    app, db = app_db
+    _seed(db, "p@x.com", name="Peach Goddard", first="Peach", last="Goddard")
+    _upsert(app, db, {"email": "p@x.com", "name": "Peach", "first_name": "Peach"})
+    assert _person(db, "p@x.com")["name"] == "Peach Goddard"
+    _upsert(app, db, {"email": "p@x.com", "name": "Peach Smith"})       # a real change still lands
+    assert _person(db, "p@x.com")["name"] == "Peach Smith"
+
+
+def test_an_address_never_lands_in_first_or_last_name(app_db):
+    app, db = app_db
+    _seed(db, "p@x.com", name="Peach Goddard", first="Peach", last="Goddard")
+    _upsert(app, db, {"email": "p@x.com", "name": "b@x.com", "first_name": "b@x.com",
+                      "last_name": "c@x.com"})
+    p = _person(db, "p@x.com")
+    assert (p["name"], p["first_name"], p["last_name"]) == ("Peach Goddard", "Peach", "Goddard")
+
+
+def test_an_address_inside_a_name_is_removed():
+    from dashboard.name_case import strip_addresses
+    assert strip_addresses("Peach d@x.com") == "Peach"
+    assert strip_addresses("Peach Goddard <p@x.com>") == "Peach Goddard"
+    assert strip_addresses("p@x.com") == ""
+    assert strip_addresses("Ann @ Home Studio") == "Ann @ Home Studio"
+    assert strip_addresses(None) == ""
+
+
+def test_ghl_contact_name_drops_an_address_part():
+    sys.path.insert(0, str(ROOT))
+    import console_push_cron as cpc
+    assert cpc._contact_name({"firstName": "b@x.com", "lastName": "Lee"}) == "Lee"
+    assert cpc._contact_name({"firstName": "Peach", "lastName": "d@x.com"}) == "Peach"
+
+
+def test_merge_rebuilds_from_the_keepers_own_names_first(app_db):
+    """Round 1: a keeper with an address-as-name took the dupe's "P. Goddard" although its
+    own first and last names said Peach Goddard."""
+    app, db = app_db
+    keep = _seed(db, "gmail@x.com", name="gmail@x.com", first="Peach", last="Goddard")
+    dupe = _seed(db, "aol@x.com", name="P. Goddard", first="P.", last="Goddard")
+    with sqlite3.connect(db) as cx:
+        app._merge_two_people(cx, keep, dupe)
+        cx.commit()
+    assert _person(db, "gmail@x.com")["name"] == "Peach Goddard"
+
+
+def test_console_editor_never_saves_an_address_as_the_name(app_db, monkeypatch):
+    app, db = app_db
+    monkeypatch.setattr(app, "CONSOLE_SECRET", "k")
+    _seed(db, "p@x.com", name="Peach Goddard", first="Peach", last="Goddard")
+    r = app.app.test_client().post("/api/people", headers={"X-Console-Key": "k"},
+                                   json={"email": "p@x.com", "name": "p@x.com",
+                                         "first_name": "Peach", "last_name": "Goddard"})
+    assert r.status_code == 200
+    assert _person(db, "p@x.com")["name"] == "Peach Goddard"
