@@ -355,6 +355,49 @@ def supersede_order(cx, old_order_id, new_order_id):
     cx.commit()
 
 
+def search_client_orders(cx, q, limit=500):
+    """Every order for the client(s) a search names, newest first, cancelled included.
+
+    Glen, 2026-09-28: the Orders board's search shows ALL of a client's orders. It matches
+    name, email, phone (by digits) and order number (id or external_ref), then returns every
+    order sharing a matched order's email, so older orders beyond the board's own limit and
+    cancelled ones come with it. Replaced (superseded) order numbers stay hidden, as on the
+    board. Fewer than 2 characters matches nothing, unless it is an order number."""
+    import re
+    q = (q or "").strip().lower()
+    if len(q) < 2 and not q.isdigit():          # an order number may be one digit
+        return []
+    digits = re.sub(r"\D", "", q)
+    num = q.lstrip("#")
+    hits = set()
+    emails = set()
+    for oid, email, name, phone, ref in cx.execute(
+            "SELECT id, email, name, phone, external_ref FROM orders "
+            "WHERE superseded_by_order_id IS NULL").fetchall():
+        e = (email or "").strip().lower()
+        if num.isdigit() and len(num) < 4:
+            matched = str(oid) == num          # a short number is an order number, exactly
+        else:
+            matched = (q in (name or "").lower() or q in e or q in (ref or "").lower()
+                       or (num.isdigit() and str(oid) == num)
+                       or (len(digits) >= 4 and digits in re.sub(r"\D", "", phone or "")))
+        if matched:
+            hits.add(int(oid))
+            if e:
+                emails.add(e)
+    if not hits:
+        return []
+    rows = []
+    for r in cx.execute("SELECT * FROM orders WHERE superseded_by_order_id IS NULL "
+                        "ORDER BY id DESC").fetchall():
+        d = _row_to_dict(r)
+        if int(d["id"]) in hits or (d.get("email") or "").strip().lower() in emails:
+            rows.append(d)
+            if len(rows) >= limit:
+                break
+    return rows
+
+
 def list_orders_by_email(cx, email, limit=200):
     """A client's orders, most recent first (for the reorder cart). Caller sets
     cx.row_factory = sqlite3.Row."""

@@ -138,7 +138,12 @@
     <button onclick="unlock()" style="padding:10px 14px;margin-left:6px;border-radius:8px;border:1px solid var(--border);background:var(--gold);color:#0a150d;cursor:pointer">Unlock</button>
   </div></div>
 
-  <h1>Orders</h1>
+  <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
+    <h1>Orders</h1>
+    <input id="order-search" type="search" autocomplete="off" aria-label="Find a client's orders"
+      placeholder="Find a client: name, email, phone or order no."
+      style="flex:0 1 22rem;min-width:12rem;padding:8px 10px;border-radius:8px;border:1px solid var(--border);background:var(--card,#101a14);color:inherit;font:inherit">
+  </div>
   <div class="sub">Every order, from every channel, through one lifecycle.</div>
   <div id="sizetotals" style="padding:6px 12px;color:#9aa0b4;font-size:13px"></div>
   <div id="hhbanner"></div>
@@ -204,6 +209,19 @@
                ["cart","Cart", function(o){ return !isStoreOrder(o) && o.status==='new' && !isPaidReady(o); }],
                ["paid","Paid", function(o){ return o.status==='new' && isPaidReady(o); }],
                ["packed","Packed"],["shipped","Shipped"],["delivered","Delivered"],["done","Done"]];
+  // BEGIN order search
+  // Glen, 2026-09-28: find one client's cards. A search asks the server for EVERY order of
+  // the client it names (name, email, phone or order number), cancelled and completed
+  // included, so it does not depend on the board's newest-2,000 load. Clearing restores it.
+  function ordersUrl(search){
+    var s = (search || '').trim();
+    return s ? '/api/orders?q=' + encodeURIComponent(s) + '&limit=500' : '/api/orders?limit=2000';
+  }
+  function searchLanes(lanes, search){
+    return (search || '').trim() ? lanes.concat([["cancelled", "Cancelled"]]) : lanes;
+  }
+  // END order search
+  var SEARCH = (new URLSearchParams(location.search).get('q') || '').trim();
   function key(){ return localStorage.getItem('console_key') || ''; }
   // Auto-unlock: if arriving with ?key= (from the ops nav), seed the console key once.
   (function(){ var u=new URLSearchParams(location.search).get('key'); if(u) localStorage.setItem('console_key', u); })();
@@ -579,7 +597,7 @@
   }
 
   async function load(){
-    var r = await fetch('/api/orders?limit=2000', {headers:hdr()});
+    var r = await fetch(ordersUrl(SEARCH), {headers:hdr()});
     if (r.status===401){ document.getElementById('gate').style.display='flex'; return; }
     var orders = (await r.json()).data || [];
     // Combined-shipment feature flag + auto-suggest clusters (best-effort).
@@ -588,15 +606,9 @@
       if (sr.ok){ var sj = await sr.json(); HH.enabled = !!sj.enabled; HH.clusters = sj.clusters || []; HH.shipCredit = !!sj.ship_credit_enabled; }
     } catch(e){ HH.enabled = false; HH.clusters = []; }
     HH.byId = {}; orders.forEach(function(o){ HH.byId[o.id] = o; });  // for the combine confirm
-    // Header-search deep link (Records mode): /console/orders?q=<ref|name|email>
-    var q = (new URLSearchParams(location.search).get('q') || '').trim().toLowerCase();
-    if (q) {
-      orders = orders.filter(function(o){
-        return [o.id, '#'+o.id, o.external_ref, o.name, o.email].some(function(v){
-          return (v || '').toString().toLowerCase().indexOf(q) >= 0;
-        });
-      });
-    }
+    // A search (the box, or the header deep link /console/orders?q=...) is answered by the
+    // server with every order for that client; nothing is filtered here.
+    var q = SEARCH;
     // The operational board stays light: anything over 30 days old moves into
     // click-open calendar-month batches below. The cards remain in the DOM inside
     // native <details>, so browser Find can discover them and open their month.
@@ -604,7 +616,8 @@
     var pastOrders = [], currentOrders = [];
     orders.forEach(function(o){
       var ts = Date.parse(o.created_at || '');
-      ((isFinite(ts) && ts < monthCutoff) ? pastOrders : currentOrders).push(o);
+      // While searching, every one of the client's orders stays on the board.
+      ((!q && isFinite(ts) && ts < monthCutoff) ? pastOrders : currentOrders).push(o);
     });
     orders = currentOrders;
     var board = document.getElementById('board'); board.innerHTML='';
@@ -614,9 +627,9 @@
     if (q) {
       var note = document.createElement('div');
       note.style.cssText = 'padding:6px 12px;margin-bottom:8px;color:#9aa0b4;font-size:13px';
-      note.innerHTML = 'Filtered by "<b>' + q.replace(/[<>&]/g,'') + '</b>" — '
-        + orders.length + ' match' + (orders.length===1?'':'es')
-        + ' · <a href="/console/orders" style="color:#7c9cff">clear</a>';
+      note.innerHTML = 'All ' + orders.length + ' order' + (orders.length===1?'':'s')
+        + ' for "<b>' + esc(q) + '</b>", cancelled and completed included'
+        + ' · <a href="#" id="order-search-clear" style="color:#7c9cff">clear</a>';
       board.appendChild(note);
     }
     // Households columns: the active "Households" column (leftmost) holds shipments
@@ -642,7 +655,7 @@
         + openGids.map(function(id){ return shipmentCardHtml(id, groups[id]); }).join('');
       board.appendChild(gcol);
     }
-    LANES.forEach(function(l){
+    searchLanes(LANES, q).forEach(function(l){
       var pred = l[2] || function(o){ return o.status===l[0]; };
       var inLane = orders.filter(pred);
       var col = document.createElement('div'); col.className='col';
@@ -928,6 +941,24 @@
   // Try to load with or without a stored key: a signed-in owner's cookie is enough, and
   // a 401 from the server brings the key prompt back (2026-09-24: Rae was stuck here).
   document.getElementById('gate').style.display='none'; load();
+
+  // The search box: filters live (a short pause after typing), clearing restores the board.
+  (function(){
+    var box = document.getElementById('order-search'), t = null;
+    if (!box) return;
+    box.value = SEARCH;
+    function run(){
+      SEARCH = box.value.trim();
+      var u = new URL(location.href);
+      if (SEARCH) u.searchParams.set('q', SEARCH); else u.searchParams.delete('q');
+      history.replaceState(null, '', u.pathname + u.search + u.hash);
+      load();
+    }
+    box.addEventListener('input', function(){ clearTimeout(t); t = setTimeout(run, 300); });
+    document.addEventListener('click', function(e){
+      if (e.target && e.target.id === 'order-search-clear'){ e.preventDefault(); box.value = ''; run(); }
+    });
+  })();
 </script>
 </body>
 </html>
