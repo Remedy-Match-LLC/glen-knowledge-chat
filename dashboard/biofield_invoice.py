@@ -56,12 +56,8 @@ def resolve_line_slug(name, catalog):
     for it in catalog or []:
         if (it.get("name") or "").strip().lower() == name:
             return it.get("slug") or None
-    # A record's own aliases, then a retired name: never for a withdrawn product (round 2).
-    for it in catalog or []:
-        if it.get("inactive"):
-            continue
-        if any((a or "").strip().lower() == name for a in (it.get("aliases") or [])):
-            return it.get("slug") or None
+    # A retired name, never for a withdrawn product (round 2). The Intake app's catalog
+    # carries no aliases, which is why the name lives here (round 3).
     old = _RETIRED_NAMES.get(name)
     if old and any(it.get("slug") == old and not it.get("inactive") for it in catalog or []):
         return old

@@ -130,14 +130,15 @@ def test_the_upgrade_note_names_the_product():
 def test_an_inactive_product_is_never_billed_under_its_old_name():
     cat = [{"slug": SLUG, "name": NEW, "inactive": True}]
     assert bi.resolve_line_slug(OLD, cat) is None
-    assert bi.resolve_line_slug(OLD, [{"slug": SLUG, "name": NEW, "aliases": [OLD], "inactive": True}]) is None
 
 
-@pytest.mark.parametrize("name,want", [
-    ("Magnesium Synergy Capsules", None),        # an alias matches whole names only
-    ("Glutathione Synergy Complex", None),
-])
-def test_an_alias_never_matches_part_of_a_longer_name(name, want):
-    cat = _flipped()
-    got = pp.name_to_slug(name, cat)
-    assert got != SLUG
+@pytest.mark.parametrize("name", ["Magnesium Synergy Capsules", "Glutathione Synergy Complex"])
+def test_an_alias_never_matches_part_of_a_longer_name(name):
+    assert pp.name_to_slug(name, _flipped()) != SLUG      # an alias matches whole names only
+
+
+def test_the_alias_pass_sends_sleep_synergy_to_its_renamed_product():
+    """Round 3: the alias pass changed one existing answer. "Sleep Synergy" (QuickBooks item
+    48) went to the plain Sleep product by substring; it is Sleep Syntropy's old name (renamed
+    2026-09-15), so it now resolves there, for the assistant and the QuickBooks line import."""
+    assert pp.name_to_slug("Sleep Synergy", PRODUCTS) == "sleep-syntropy"
