@@ -180,3 +180,28 @@ def test_it_moves_the_row_on_postgres(monkeypatch):
         for t in ("portal_biofield_reports", "client_portals"):
             c.execute(f'DROP TABLE IF EXISTS "{t}" CASCADE')
         c.commit()
+
+
+def test_the_startup_fix_runs_once(monkeypatch, tmp_path):
+    """Round 3: at every boot it would flip back a line staff later set by hand."""
+    import os
+    os.environ.setdefault("PINECONE_API_KEY", "pc-dummy")
+    os.environ.setdefault("OPENAI_API_KEY", "sk-dummy")
+    import app
+    db = str(tmp_path / "chat_log.db")
+    cx = sqlite3.connect(db)
+    pbr.init_table(cx)
+    cx.execute("INSERT INTO portal_biofield_reports (email, scan_date, content_json) VALUES "
+               "('o@x.com', '2026-09-01', ?)", (json.dumps(_content(["Focus Neuro-Magnesium"], [PRESALE])),))
+    cx.commit()
+    cx.close()
+    monkeypatch.setattr(app, "LOG_DB", db)
+    app._rehome_focus_reorder_at_startup()
+    cx = sqlite3.connect(db)
+    assert _slugs(cx, "portal_biofield_reports", "o@x.com") == [FOCUS]
+    # Staff later set it back to the presale by hand; the next boot must leave it.
+    cx.execute("UPDATE portal_biofield_reports SET content_json=?",
+               (json.dumps(_content(["Focus Neuro-Magnesium"], [PRESALE])),))
+    cx.commit()
+    app._rehome_focus_reorder_at_startup()
+    assert _slugs(sqlite3.connect(db), "portal_biofield_reports", "o@x.com") == [PRESALE]

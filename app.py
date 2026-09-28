@@ -44419,9 +44419,19 @@ def _rehome_focus_reorder_at_startup():
     try:
         from dashboard import biofield_portal_publish as _bpp
         with db.connect(LOG_DB) as cx:
+            # Once only: a later boot must never flip back a line staff set by hand
+            # (review round 3). The record is written after a successful pass.
+            cx.execute("CREATE TABLE IF NOT EXISTS one_time_fixes (name TEXT PRIMARY KEY, "
+                       "done_at TEXT, result TEXT)")
+            cx.commit()
+            if cx.execute("SELECT 1 FROM one_time_fixes WHERE name='focus-reorder-rehome'").fetchone():
+                return
             n = _bpp.rehome_focus_reorder_items(cx)
-        if n:
-            print(f"[focus] moved {n} reorder row(s) to focus-neuro-magnesium-powder", flush=True)
+            cx.execute("INSERT INTO one_time_fixes (name, done_at, result) VALUES (?,?,?) "
+                       "ON CONFLICT (name) DO NOTHING",
+                       ("focus-reorder-rehome", datetime.now(timezone.utc).isoformat(), str(n)))
+            cx.commit()
+        print(f"[focus] moved {n} reorder row(s) to focus-neuro-magnesium-powder", flush=True)
     except Exception as e:
         print(f"[focus] reorder rehome skipped: {type(e).__name__}", flush=True)
 
