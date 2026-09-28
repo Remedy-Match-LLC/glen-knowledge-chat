@@ -6,7 +6,9 @@ def test_mapped_ingredient_returns_our_equivalent():
     up = ru.suggest_upgrade("Magnesium Glycinate", "Acme", catalog=_CAT)
     assert up and up["slug"] == "focus-neuro-magnesium-powder"
     assert up["url"] == "/begin/product/focus-neuro-magnesium-powder"
-    assert up["reason"]                    # a non-empty clinical reason
+    # Label-true (production, 2026-09-28): the jar holds threonate, zinc and lithium.
+    assert up["reason"] == ("Focus Neuro-Magnesium brings magnesium threonate together with "
+                            "zinc and lithium, the three brain minerals.")
 
 def test_unmapped_product_returns_none():
     assert ru.suggest_upgrade("Organic Kale Powder", "Acme", catalog=_CAT) is None

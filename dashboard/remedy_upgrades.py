@@ -20,8 +20,9 @@ from dashboard.order_destination import destination_for
 _UPGRADE_MAP = {
     "magnesium glycinate": {
         "slug": "focus-neuro-magnesium-powder",
-        "reason": "Focus Neuro-Magnesium pairs glycinate with taurate/threonate forms "
-                   "that cross the blood-brain barrier for calm, sleep, and cognition.",
+        # Label-true (production, 2026-09-28): threonate, zinc and lithium are in the jar.
+        "reason": "Focus Neuro-Magnesium brings magnesium threonate together with zinc "
+                   "and lithium, the three brain minerals.",
     },
     "fish oil": {
         "slug": "wholomega",

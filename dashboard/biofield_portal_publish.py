@@ -3,6 +3,7 @@
 Pure / none-raising builder + an injectable prod POST. PHI stays local; only the
 finished portal payload crosses to prod via the existing /admin/portal/upsert.
 """
+import json
 import re
 import secrets
 import requests
@@ -17,7 +18,10 @@ from dashboard.biofield_narrative import get_narrative
 # lowercased remedy text so "Focus, Neuromagnesium" and "Focus Neuro-Magnesium"
 # collapse to the same key.
 ALIAS_SLUGS = {
-    "focusneuromagnesium": "neuro-magnesium",
+    # Focus is the stocked jar; neuro-magnesium is the Founding Batch presale, which keeps
+    # its own name (production, approved by Glen 2026-09-28).
+    "focusneuromagnesium": "focus-neuro-magnesium-powder",
+    "focusneuromagnesiumpowder": "focus-neuro-magnesium-powder",
     "communityspiritformulainterrainrestore": "terrain-restore",
     # Cistus Syntropy Powder was replaced by Cistus Shield capsules (Glen, 2026-09-10).
     # `superseded_by` carries "Cistus" and "Cistus Synergy" forward on its own; these
@@ -36,6 +40,81 @@ def _norm_key(s):
 def load_catalog():
     """The slug-keyed products map (data/products.json 'products')."""
     return _pricing._load_catalog()
+
+
+_FOCUS, _PRESALE = "focus-neuro-magnesium-powder", "neuro-magnesium"
+
+
+def _remedy_keys(remedy):
+    """Alias keys for a layer's remedy text: the whole text and each remedy joined by
+    ' + ' or ';', so "Chelation + Focus Neuro-Magnesium" yields both."""
+    parts = [remedy or ""] + re.split(r"\s\+\s|;|\n", remedy or "")
+    return {re.sub(r"[^a-z0-9]", "", p.lower()) for p in parts if p.strip()}
+
+
+def _rehome_one(content):
+    """The content with its presale line moved to the stocked jar, or None to leave it.
+
+    Moves only when the layers name Focus and nothing else that reads as the presale
+    ("Neuro Magnesium" in any spelling), and the list holds a presale line but no jar line:
+    two lines may both be real, so they are left for a person (review round 2)."""
+    if not isinstance(content, dict):
+        return None
+    items = content.get("reorder_items") or []
+    if not isinstance(items, list):
+        return None
+    slugs = [i.get("slug") for i in items if isinstance(i, dict)]
+    if _PRESALE not in slugs or _FOCUS in slugs:
+        return None
+    focus = {k for k, v in ALIAS_SLUGS.items() if v == _FOCUS}
+    keys = set()
+    for L in content.get("layers") or []:
+        if isinstance(L, dict):
+            keys |= _remedy_keys(L.get("remedy"))
+    if not (keys & focus):
+        return None
+    # A presale spelling names neuro-magnesium without Focus. (The whole text of a joined
+    # layer, "Chelation + Focus Neuro-Magnesium", names Focus, and its parts are split out.)
+    if any("neuromagnesium" in k and "focus" not in k for k in keys):
+        return None
+    out = dict(content)
+    # The line keeps its own quantity and the special price set at publishing.
+    out["reorder_items"] = [dict(i, slug=_FOCUS) if isinstance(i, dict) and i.get("slug") == _PRESALE
+                            else i for i in items]
+    return out
+
+
+def rehome_focus_reorder_items(cx):
+    """Move stored reorder lines that came from a Focus remedy off the presale slug.
+
+    reorder_items is persisted portal content, so reports published before the alias moved
+    still hold neuro-magnesium for Focus (production counted 1 on 2026-09-28). Only rows whose
+    content mentions the presale slug are read. A row is written only if it is unchanged since
+    it was read, so a newer save wins. Idempotent. Returns the rows changed; commits."""
+    moved = 0
+    for table in ("portal_biofield_reports", "client_portals"):
+        try:
+            rows = cx.execute(f"SELECT id, content_json FROM {table} "
+                              "WHERE content_json LIKE '%\"neuro-magnesium\"%'").fetchall()
+        except Exception:  # noqa: BLE001 - table not created yet
+            try:
+                cx.rollback()
+            except Exception:  # noqa: BLE001
+                pass
+            continue
+        for rid, raw in rows:
+            try:
+                new = _rehome_one(json.loads(raw or "{}"))
+            except Exception:  # noqa: BLE001 - one bad report never stops the rest
+                new = None
+            if new is None:
+                continue
+            cur = cx.execute(f"UPDATE {table} SET content_json=? WHERE id=? AND content_json=?",
+                             (json.dumps(new), rid, raw))
+            if getattr(cur, "rowcount", 1):
+                moved += 1
+        cx.commit()
+    return moved
 
 
 def resolve_remedy_slug(name, catalog):

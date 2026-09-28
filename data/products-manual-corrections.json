@@ -2793,5 +2793,46 @@
     "ingredients_source": "label-read-2026-09-27",
     "panel_note": "Bioavailability Blend contains: Phosphatides 50% (Helianthus annuus), Humic & Fulvic Acids, Moringa 100:1 (Moringa oleifera), Gingerol 10% (Zingiber officinale), Piperine (Piper nigrum), EGb 761 (Ginkgo biloba) (24%, 6%, <0.0005%), Vitamin B3 (as Niacin) 5 mg, Vinpocetine (Vinca minor), Licorice Omnipotent (Glycyrrhiza glabra), Spirit Minerals (ORMUS).",
     "note": "Label-read 2026-09-27 by production, approved by Glen 2026-09-28 ('approve'); renamed to the label name; replaces the old store list."
+  },
+  "focus-neuro-magnesium-powder": {
+    "description": "Focus Neuro-Magnesium is a drink mix built on three brain minerals together: lithium as lithium orotate, magnesium as magnesium threonate, and zinc as zinc bisglycinate. Around them, green tea L-theanine backs a polyphenol blend of celery seed apigenin and turmeric curcumin. Vitamin B6 as pyridoxal 5'-phosphate and vitamin D3 as cholecalciferol round out the formula, sweetened with monk fruit mogroside V. Take 2 scoops a day in water, or as guided.\n\nOther ingredients: Healing Energy, Love and Prayer. Contents: 30 grams, 60 scoops.",
+    "directions": "2 scoops a day in living water, or as guided.",
+    "ingredients": [
+      {
+        "name": "Lithium Orotate",
+        "dose": "9 mg"
+      },
+      {
+        "name": "Magnesium (Threonate)",
+        "dose": "23.1 mg"
+      },
+      {
+        "name": "Zinc (Zinc Bisglycinate)",
+        "dose": "5 mg"
+      },
+      {
+        "name": "Green Tea L-Theanine (Camellia sinensis)",
+        "dose": "65 mg"
+      },
+      {
+        "name": "Polyphenols (Proprietary Formula)",
+        "dose": "50 mg"
+      },
+      {
+        "name": "Mogroside V 80% (Siraitia grosvenorii)",
+        "dose": "17 mg"
+      },
+      {
+        "name": "Vitamin B6 (Pyridoxal 5'-Phosphate)",
+        "dose": "3.35 mg"
+      },
+      {
+        "name": "Vitamin D3 (Cholecalciferol)",
+        "dose": "375 IU"
+      }
+    ],
+    "ingredients_source": "label-read-2026-09-28 (Neuro-Magnesium 0526.ai, (c) May 2026)",
+    "panel_note": "Amounts are per 500 mg scoop. Polyphenols (Proprietary Formula) contains: Celery Seed Apigenin (Apium graveolens), Turmeric Curcumin (Curcuma longa).",
+    "note": "Label-read 2026-09-28 by production, approved by Glen 2026-09-28 ('approve'); replaces the old store list. The neuro-magnesium presale listing is separate."
   }
 }

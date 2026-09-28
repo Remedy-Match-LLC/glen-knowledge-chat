@@ -13939,88 +13939,57 @@
    "pinecone_title": "Focus Neuro-Magnesium Powder",
    "qty_pricing": true,
    "fmp_id": "431",
-   "ingredients_source": "fmp-bom-2026-05-23",
+   "ingredients_source": "label-read-2026-09-28 (Neuro-Magnesium 0526.ai, (c) May 2026)",
    "no_groovekart": true,
    "regular_cents": 8000,
-   "description": "Magnesium drink mix for daytime and before sleep supplying Magnesium that crosses the blood brain barrier - unlike most forms. Includes Zinc and Lithium to complete the full trinity of brain minerals plus nutritional cofactors B6 and D3, and botanical synergists L-Theanine, Tetrahydrocurcumin and Apigenin. 1 scoop 2 times a day in water",
+   "description": "Focus Neuro-Magnesium is a drink mix built on three brain minerals together: lithium as lithium orotate, magnesium as magnesium threonate, and zinc as zinc bisglycinate. Around them, green tea L-theanine backs a polyphenol blend of celery seed apigenin and turmeric curcumin. Vitamin B6 as pyridoxal 5'-phosphate and vitamin D3 as cholecalciferol round out the formula, sweetened with monk fruit mogroside V. Take 2 scoops a day in water, or as guided.\n\nOther ingredients: Healing Energy, Love and Prayer. Contents: 30 grams, 60 scoops.",
    "bottle_type": "30 g",
    "ingredients": [
     {
-     "name": "Magnesium L-Threonate (7% Mg)",
-     "dose": "330 mg",
-     "standardized_pct": 7.0,
-     "standardized_as": "Mg",
-     "compound_mg": 330.0,
-     "active_mg": 23.1
+     "name": "Lithium Orotate",
+     "dose": "9 mg"
     },
     {
-     "name": "Magnesium Acetyl-Taurate (6% Mg)",
-     "dose": "",
-     "standardized_pct": 6.0,
-     "standardized_as": "Mg"
+     "name": "Magnesium (Threonate)",
+     "dose": "23.1 mg"
     },
     {
-     "name": "Vitamin C: Zinc Ascorbate (15% Zn)",
-     "dose": "",
-     "standardized_pct": 15.0,
-     "standardized_as": "Zn"
+     "name": "Zinc (Zinc Bisglycinate)",
+     "dose": "5 mg"
     },
     {
-     "name": "Vitamin B6: P5P (Pyridoxal 5-Phosphate)",
-     "dose": "3.35 mg",
-     "compound_mg": 3.35
+     "name": "Green Tea L-Theanine (Camellia sinensis)",
+     "dose": "65 mg"
     },
     {
-     "name": "Vitamin D3: Cholecalciferol 500,000 IU/g (1.25%)",
-     "dose": ".65 mg",
-     "purity_pct": 25.0
+     "name": "Polyphenols (Proprietary Formula)",
+     "dose": "50 mg"
     },
     {
-     "name": "Turmeric Tetrahydrocurcumin 99% (Curcuma longa)",
-     "dose": "33 mg",
-     "purity_pct": 99.0,
-     "compound_mg": 33.0
+     "name": "Mogroside V 80% (Siraitia grosvenorii)",
+     "dose": "17 mg"
     },
     {
-     "name": "*Monk Fruit Mogroside V 50% (Siraitia grosvenorii)",
-     "dose": "17 mg",
-     "purity_pct": 50.0,
-     "compound_mg": 17.0
+     "name": "Vitamin B6 (Pyridoxal 5'-Phosphate)",
+     "dose": "3.35 mg"
     },
     {
-     "name": "L-Theanine 99%",
-     "dose": "65 mg",
-     "purity_pct": 99.0,
-     "compound_mg": 65.0
-    },
-    {
-     "name": "Celery Seed Apigenin 98% (Apium graveolens) (semen)",
-     "dose": "17 mg",
-     "purity_pct": 98.0,
-     "compound_mg": 17.0
-    },
-    {
-     "name": "Zinc Bisglycinate (20% Zn)",
-     "dose": "25 mg",
-     "standardized_pct": 20.0,
-     "standardized_as": "Zn",
-     "compound_mg": 25.0,
-     "active_mg": 5.0
-    },
-    {
-     "name": "Lithium Orotate (3.83% Li)",
-     "dose": "9 mg",
-     "standardized_pct": 3.83,
-     "standardized_as": "Li",
-     "compound_mg": 9.0,
-     "active_mg": 0.3447
-    },
-    {
-     "name": "Micro-encapsulated Monk Fruit Mogroside V 50% (Siratia grosvenorii)",
-     "dose": "",
-     "purity_pct": 50.0
+     "name": "Vitamin D3 (Cholecalciferol)",
+     "dose": "375 IU"
     }
-   ]
+   ],
+   "panel_note": "Amounts are per 500 mg scoop. Polyphenols (Proprietary Formula) contains: Celery Seed Apigenin (Apium graveolens), Turmeric Curcumin (Curcuma longa).",
+   "directions": "2 scoops a day in living water, or as guided.",
+   "intro": "Focus Neuro-Magnesium is a drink mix built on three brain minerals together: lithium as lithium orotate, magnesium as magnesium threonate, and zinc as zinc bisglycinate. Around them, green tea L-theanine backs a polyphenol blend of celery seed apigenin and turmeric curcumin. Vitamin B6 as pyridoxal 5'-phosphate and vitamin D3 as cholecalciferol round out the formula, sweetened with monk fruit mogroside V. Take 2 scoops a day in water, or as guided.",
+   "copy_pinned": [
+    "ingredients",
+    "intro",
+    "description",
+    "research",
+    "benefits"
+   ],
+   "how_it_works": "",
+   "enrichment_note": "Correction of the stocked Focus jar's listing to its May 2026 label, by production 2026-09-28."
   },
   "clear-lens-eye-drops-aces-cat-eye-drops-2": {
    "name": "Clear Lens+ Eye Drops ACES+CAT Eye Drops",
