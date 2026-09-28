@@ -101,6 +101,19 @@ def test_the_holder_viewing_a_member_is_still_the_holder():
     assert fpl["holder"] is False
 
 
+def test_the_plan_line_is_about_the_signed_in_person():
+    """Round 3: 'active' came from the viewed member and 'holder' from the signed-in person,
+    so a parent with no plan viewing a plan-holding child read that she was covered."""
+    with sqlite3.connect(appmod.LOG_DB) as cx:
+        cx.row_factory = sqlite3.Row
+        fp.set_status(cx, HOLDER, "cancelled")
+        fp.activate(cx, MEMBER, next_charge_at="2026-10-28", customer_id="c2",
+                    payment_method_id="p2")
+        cx.commit()
+    fpl = appmod._portal_options_for(MEMBER, holder_email=HOLDER)["family_plan"]
+    assert fpl["active"] is False and fpl["holder"] is False
+
+
 HARNESS = r"""
 const assert = require('assert');
 function esc(s){ return String(s); }
@@ -146,6 +159,12 @@ FN
   await familyPlanCancel(b);
   assert.strictEqual(reloaded, 0);
   assert(b.after.join('').includes('The plan holder manages this plan.'));
+  // Only a 409 carries a sentence meant for the client (round 3): "not_found" never shows.
+  global.fetch = async () => ({ok: false, status: 404, json: async () => ({error: "not_found"})});
+  b = btn();
+  await familyPlanCancel(b);
+  assert(!b.after.join('').includes('not_found'));
+  assert(b.after.join('').includes('was not cancelled'));
   global.fetch = async () => ({ok: true, status: 200, json: async () => ({ok: true})});
   b = btn();
   await familyPlanCancel(b);

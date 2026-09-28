@@ -3248,7 +3248,9 @@ async function familyPlanCancel(cxl){
     let j = {};
     try{ j = await r.json(); }catch(_){}
     if(r.ok && j && j.ok){ window.location.reload(); return; }
-    cxl.insertAdjacentHTML("afterend", ` <span class="muted">${esc((j && j.error) || "The plan was not cancelled. Reply to any email from us and we will help.")}</span>`);
+    // Only a refusal (409) carries a sentence meant for the client (review round 3).
+    const msg = (r.status === 409 && j && j.error) || "The plan was not cancelled. Reply to any email from us and we will help.";
+    cxl.insertAdjacentHTML("afterend", ` <span class="muted">${esc(msg)}</span>`);
   }catch(_){ cxl.disabled = false; }
 }
 

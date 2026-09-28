@@ -24230,7 +24230,9 @@ def _portal_options_for(email, holder_email=None):
                         "price_cents": _fp.PLAN["amount_cents"],
                         "value_cents": _fp.PLAN["value_cents"],
                         "label": _fp.PLAN["label"],
-                        "active": bool(_fp.covers(cx, email)),
+                        # Both about the signed-in person, also while viewing a household
+                        # member (review round 3).
+                        "active": bool(_fp.covers(cx, holder_email or email)),
                         # Only the plan holder can cancel; a covered member is told who
                         # manages it (money-07, 2026-09-28).
                         # The SIGNED-IN person, not a member being viewed (?member=): a
