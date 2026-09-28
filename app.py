@@ -24231,6 +24231,9 @@ def _portal_options_for(email):
                         "value_cents": _fp.PLAN["value_cents"],
                         "label": _fp.PLAN["label"],
                         "active": bool(_fp.covers(cx, email)),
+                        # Only the plan holder can cancel; a covered member is told who
+                        # manages it (money-07, 2026-09-28).
+                        "holder": bool(_fp.is_active(cx, email)),
                     }
             except Exception as _e:
                 print(f"[portal-options/family] {_e!r}", flush=True)
@@ -32844,6 +32847,10 @@ def portal_family_plan_cancel(token):
                                      client_login_enabled=_client_login_enabled())
         if ident is None:
             return jsonify({"error": "not_found"}), 404
+        # A member covered by someone else's plan holds no plan row: the update used to
+        # change nothing and answer ok (money-07, 2026-09-28). Refuse instead.
+        if not _fp.is_active(cx, ident.email):
+            return jsonify({"ok": False, "error": "The plan holder manages this plan."}), 409
         _fp.set_status(cx, ident.email, "cancelled")
     return jsonify({"ok": True})
 

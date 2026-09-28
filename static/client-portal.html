@@ -3201,6 +3201,20 @@ function pollPending(){
 // .entity-ref[data-info] element shows the shared #entityPop on hover/focus/tap;
 // data-name/data-info are injected as textContent (never raw HTML).
 
+// The Family Plan line. Only the plan HOLDER gets Cancel: a member covered by someone
+// else's plan cannot cancel it (money-07, 2026-09-28; wording Glen's).
+function familyPlanLine(fpl){
+  if(fpl.active && fpl.holder){
+    return `<p><strong>${esc(fpl.label)}</strong> — you're on it. Everyone in your household with sharing on has their full analysis unlocked. <button type="button" class="linklike" data-fp-cancel="1">Cancel plan</button></p>`;
+  }
+  if(fpl.active){
+    return `<p><strong>${esc(fpl.label)}.</strong> Your membership comes through a family plan. The plan holder manages it, and so do we: reply to any email from us to change it.</p>`;
+  }
+  const fpPrice = "$" + Math.round(fpl.price_cents/100);
+  const fpValue = "$" + Math.round(fpl.value_cents/100);
+  return `<p><strong>${esc(fpl.label)}</strong> — full analysis for everyone in your household. <strong>${fpPrice}/month</strong> (a ${fpValue}/month value). <button type="button" class="btn" data-fp-subscribe="1">Start the Family Plan</button></p>`;
+}
+
 // Family Plan Subscribe/Cancel: delegated once on document (buttons are injected
 // via render()'s innerHTML, so a per-render listener would stack). Uses `seg`,
 // the same token variable the neighboring portal POSTs use (agree-tos,
@@ -4590,12 +4604,8 @@ function render(d, v){
     // Family Plan: only when the flag put it in the payload. Prices come from the
     // payload (dashboard/family_plan.PLAN), never hardcoded here.
     const fpl = o.family_plan;
-    if(fpl && fpl.active){
-      part("billing", `<p><strong>${esc(fpl.label)}</strong> — you're on it. Everyone in your household with sharing on has their full analysis unlocked. <button type="button" class="linklike" data-fp-cancel="1">Cancel plan</button></p>`);
-    } else if(fpl){
-      const fpPrice = "$" + Math.round(fpl.price_cents/100);
-      const fpValue = "$" + Math.round(fpl.value_cents/100);
-      part("billing", `<p><strong>${esc(fpl.label)}</strong> — full analysis for everyone in your household. <strong>${fpPrice}/month</strong> (a ${fpValue}/month value). <button type="button" class="btn" data-fp-subscribe="1">Start the Family Plan</button></p>`);
+    if(fpl){
+      part("billing", familyPlanLine(fpl));
     } else {
       part("billing", `<p class="muted">No monthly subscription, and nothing you need to sign up for.</p>`);
     }
