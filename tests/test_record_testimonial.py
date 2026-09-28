@@ -230,3 +230,22 @@ def test_an_overlong_wording_is_refused(client):
     r = c.post(f"/api/console/testimonials/{rid}/client-approved", json=_approved(body="x" * 5001),
                headers=OWNER)
     assert r.status_code == 400 and _row(appmod)["body"] == TEXT
+
+
+def test_an_unreadable_score_changes_nothing(client, monkeypatch):
+    """Round 3: a non-numeric score raised a 500 instead of the route's own refusal."""
+    c, appmod, _ = client
+    rid = _recorded(c)
+    from dashboard import review_scoring as rs
+    monkeypatch.setattr(rs, "score_review", lambda *a, **k: {"quality_points": "high",
+                                                             "compliance_score": "n/a"})
+    r = c.post(f"/api/console/testimonials/{rid}/client-approved", json=_approved(), headers=OWNER)
+    assert r.status_code == 503 and _row(appmod)["body"] == TEXT
+
+
+def test_an_email_style_consent_reference_is_kept_whole(client):
+    c, appmod, _ = client
+    rid = _recorded(c)
+    c.post(f"/api/console/testimonials/{rid}/client-approved",
+           json=_approved(consent_ref="msgid:<abc@mail.gmail.com>"), headers=OWNER)
+    assert _row(appmod)["consent_ref"] == "msgid:<abc@mail.gmail.com>"

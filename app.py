@@ -10782,7 +10782,7 @@ def api_console_testimonial_client_approved(rid):
     data = request.get_json(silent=True) or {}
     body = (data.get("body") or "").strip()
     name = (data.get("name") or "").strip()
-    ref = re.sub(r"[^\w.:\-]", "", str(data.get("consent_ref") or ""))[:80]
+    ref = re.sub(r"[^\w.:@<>\-]", "", str(data.get("consent_ref") or ""))[:120]
     if not body or len(body) > 5000 or data.get("consent_public") is not True or not ref:
         return jsonify({"ok": False, "error": "the approved wording, consent_public true and "
                                               "consent_ref (the consent message) are required"}), 400
@@ -10797,28 +10797,29 @@ def api_console_testimonial_client_approved(rid):
             return jsonify({"ok": False, "error": "only a pending testimonial can be reworded; "
                                                   "nothing was changed"}), 409
         original = row.get("original_body") or row.get("body") or ""
+        cx.commit()     # no transaction held open across the scoring call (review round 3)
         # Score first, then write the wording, consent and its scores in ONE conditional
         # update: never the new text beside the old score, and never onto a row approved or
         # reworded since it was read (review round 2).
         _ctx = {"name": "Dr. Glen Swartwout — Biofield Analysis & Functional Formulations"}
+        _c = lambda v: max(0, min(10, int(v or 0)))
         try:
             score = _rs.score_review(_cl, _ctx, body, strip=_strip_dash)
+            nums = [int(score.get("quality_points") or 0)] + [
+                _c(score.get(k)) for k in ("compliance_score", "publication_score",
+                                           "authenticity_score", "specificity_score")]
         except Exception as e:  # noqa: BLE001
             print(f"[testimonial-approved] scoring failed: {type(e).__name__}", flush=True)
             return jsonify({"ok": False, "error": "the wording could not be scored; nothing "
                                                   "was changed"}), 503
-        _c = lambda v: max(0, min(10, int(v or 0)))
         cur = cx.execute(
             "UPDATE product_reviews SET body=?, name=?, consent_public=1, consent_ref=?, "
             "original_body=?, ai_score=?, ai_verdict=?, ai_recommend_publish=?, "
             "compliance_score=?, publication_score=?, authenticity_score=?, specificity_score=? "
-            "WHERE id=? AND status='pending' AND body=?",
+            "WHERE id=? AND status='pending' AND COALESCE(body, '')=?",
             (body, name or row.get("name") or "", ref, original,
-             int(score.get("quality_points") or 0), score.get("reasons") or "",
-             1 if score.get("recommend_publish") else 0,
-             _c(score.get("compliance_score")), _c(score.get("publication_score")),
-             _c(score.get("authenticity_score")), _c(score.get("specificity_score")),
-             rid, row.get("body") or ""))
+             nums[0], score.get("reasons") or "", 1 if score.get("recommend_publish") else 0,
+             nums[1], nums[2], nums[3], nums[4], rid, row.get("body") or ""))
         if not getattr(cur, "rowcount", 0):
             cx.rollback()
             return jsonify({"ok": False, "error": "the testimonial changed while this was saved "
