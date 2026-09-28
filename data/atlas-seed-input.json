@@ -91,12 +91,12 @@
     },
     {
       "id": "synergy-c",
-      "label": "Synergy C",
+      "label": "Vitamin C Syntropy",
       "aliases": [
         "vitamin c syntropy",
         "synergy c syntropy"
       ],
-      "summary": "Synergy C is a comprehensive synergistic Vitamin C formulation incorporating the Syntropy coherence principle.",
+      "summary": "Vitamin C Syntropy is a comprehensive synergistic Vitamin C formulation incorporating the Syntropy coherence principle.",
       "cluster": "antioxidants",
       "parent": "antioxidants",
       "namespaces": [
@@ -108,7 +108,7 @@
           "type": "product",
           "source": "remedymatch",
           "url": "https://myhealingoasis.com/begin/product/vitamin-c-syntropy",
-          "title": "Synergy C"
+          "title": "Vitamin C Syntropy"
         }
       ]
     },

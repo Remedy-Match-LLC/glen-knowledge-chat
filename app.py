@@ -13340,25 +13340,29 @@ _COMPLEMENT_CACHE = {}
 # the title carries entities. pinecone_titles indexed first so they win a collision
 # with a different product's name; setdefault = first-wins (don't clobber).
 import html as _ihtml  # noqa: E402
-_RESOLVE_NAME_INDEX = {}
-for _ckey in ("pinecone_title", "name"):
-    for _s, _p in (_PRODUCTS.get("products") or {}).items():
-        if _p.get("inactive"):
+def _build_resolve_name_index(products):
+    idx = {}
+    for ckey in ("pinecone_title", "name"):
+        for s, p in (products or {}).items():
+            if not isinstance(p, dict) or p.get("inactive"):
+                continue
+            v = p.get(ckey)
+            if v:
+                idx.setdefault(_ihtml.unescape(v).strip().lower(), s)
+    # `aliases` are the spellings a record answers to but is not named after: an E4L scan says
+    # "BFA"; the catalog says "BFA Big Field Aligner Infoceutical". Indexed LAST with
+    # setdefault, so an alias can never shadow a real product's name or pinecone_title.
+    # Inactive records are skipped, exactly as above.
+    for s, p in (products or {}).items():
+        if not isinstance(p, dict) or p.get("inactive"):
             continue
-        _v = _p.get(_ckey)
-        if _v:
-            _RESOLVE_NAME_INDEX.setdefault(_ihtml.unescape(_v).strip().lower(), _s)
+        for a in (p.get("aliases") or []):
+            if a:
+                idx.setdefault(_ihtml.unescape(a).strip().lower(), s)
+    return idx
 
-# `aliases` are the spellings a record answers to but is not named after: an E4L scan says
-# "BFA"; the catalog says "BFA Big Field Aligner Infoceutical". Indexed LAST with setdefault,
-# so an alias can never shadow a real product's name or pinecone_title. Inactive records are
-# skipped, exactly as above.
-for _s, _p in (_PRODUCTS.get("products") or {}).items():
-    if _p.get("inactive"):
-        continue
-    for _a in (_p.get("aliases") or []):
-        if _a:
-            _RESOLVE_NAME_INDEX.setdefault(_ihtml.unescape(_a).strip().lower(), _s)
+
+_RESOLVE_NAME_INDEX = _build_resolve_name_index(_PRODUCTS.get("products") or {})
 
 
 def _resolve_complement(name):

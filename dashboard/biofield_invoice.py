@@ -36,6 +36,15 @@ def build_invoice_note(phase=None, location=""):
     return f"{tn} {DEFAULT_INVOICE_NOTE}" if tn else DEFAULT_INVOICE_NOTE
 
 
+# Retired product names still found on old records, mapped to the product's slug. The
+# Intake app builds invoices from a catalog that carries only slug, name and price, so an
+# alias in products.json never reaches it: the old name has to live here (2026-09-28:
+# clinical.db holds 248 visit_remedy rows named "Synergy C").
+_RETIRED_NAMES = {
+    "synergy c": "vitamin-c-syntropy",
+}
+
+
 def resolve_line_slug(name, catalog):
     """A remedy NAME -> a sellable catalog slug by EXACT (case-insensitive) match.
     No fuzzy matching: on an invoice a near-name substitution could bill the wrong
@@ -47,6 +56,11 @@ def resolve_line_slug(name, catalog):
     for it in catalog or []:
         if (it.get("name") or "").strip().lower() == name:
             return it.get("slug") or None
+    # A retired name, never for a withdrawn product (round 2). The Intake app's catalog
+    # carries no aliases, which is why the name lives here (round 3).
+    old = _RETIRED_NAMES.get(name)
+    if old and any(it.get("slug") == old and not it.get("inactive") for it in catalog or []):
+        return old
     return None
 
 

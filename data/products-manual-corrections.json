@@ -2708,5 +2708,90 @@
     ],
     "ingredients_source": "unverified",
     "note": "Held by Glen 2026-09-26; unverified for the letter writer until he decides."
+  },
+  "vitamin-c-syntropy": {
+    "description": "Each Vitamin C Syntropy vegicap gives you vitamin C as magnesium ascorbate and ascorbyl palmitate. Alongside it you get natural dry vitamin E as d-alpha tocopherol succinate, Na R-lipoate, and glutathione in two forms, S-acetyl and reduced GSH. You also get coenzyme Q10 as ubiquinone, plus superoxide dismutase and catalase. Rounding it out are vitamin A as retinyl palmitate, vitamin B5 as calcium pantothenate, and vitamin B6 as pyridoxal 5'-phosphate. Then come the polyphenols: quercetin dihydrate, hesperidin methyl chalcone, luteolin, fisetin and sumac. Magnesium threonate and magnesium ascorbate finish the formula, joined by a blend that aids absorption. Take 1 to 4 capsules a day before food, or as guided.\n\nOther ingredients: Phthalate-free enteric vegicaps, Healing Energy, Love and Prayer. 30 vegicaps.",
+    "directions": "1 to 4 capsules daily before food or as guided.",
+    "ingredients": [
+      {
+        "name": "Vitamin C (Mg Ascorbate & Ascorbyl Palmitate)",
+        "dose": "200 mg"
+      },
+      {
+        "name": "Natural Dry Vitamin E (D-Alpha Tocopherol Succinate)",
+        "dose": "10 IU"
+      },
+      {
+        "name": "Na R-Lipoate (Stabilized, Bio-enhanced)",
+        "dose": "20 mg"
+      },
+      {
+        "name": "Glutathione (S-Acetyl & Reduced GSH)",
+        "dose": "20 mg"
+      },
+      {
+        "name": "Coenzyme Q10 (Ubiquinone)",
+        "dose": "5 mg"
+      },
+      {
+        "name": "Superoxide Dismutase (SOD)",
+        "dose": "31,000 units 10 mg"
+      },
+      {
+        "name": "Catalase",
+        "dose": "1,000 FIP 10 mg"
+      },
+      {
+        "name": "Vitamin A (Retinyl Palmitate)",
+        "dose": "1667 IU"
+      },
+      {
+        "name": "Vitamin B5 (Calcium Pantothenate)",
+        "dose": "3.3 mg"
+      },
+      {
+        "name": "Vitamin B6 (Pyridoxal 5'-Phosphate)",
+        "dose": "0.7 mg"
+      },
+      {
+        "name": "Quercetin Dihydrate (Sophora japonica)",
+        "dose": "10 mg"
+      },
+      {
+        "name": "Hesperidin Methyl Chalcone (HMC) (Citrus spp.)",
+        "dose": "10 mg"
+      },
+      {
+        "name": "Luteolin (Reseda spp.)",
+        "dose": "10 mg"
+      },
+      {
+        "name": "Fisetin 50% (Cotinus coggygria)",
+        "dose": "20 mg"
+      },
+      {
+        "name": "Sumac 50:1 (Cotinus coggygria)",
+        "dose": "20 mg"
+      },
+      {
+        "name": "Magnesium Threonate",
+        "dose": "10 mg"
+      },
+      {
+        "name": "Magnesium Ascorbate",
+        "dose": "193 mg"
+      },
+      {
+        "name": "Magnesium (as Ascorbate & Threonate)",
+        "dose": "13.2 mg"
+      },
+      {
+        "name": "Bioavailability Blend",
+        "dose": "34.5 mg"
+      }
+    ],
+    "ingredients_source": "label-read-2026-09-27",
+    "panel_note": "Bioavailability Blend contains: Phosphatides 50% (Helianthus annuus), Humic & Fulvic Acids, Moringa 100:1 (Moringa oleifera), Gingerol 10% (Zingiber officinale), Piperine (Piper nigrum), EGb 761 (Ginkgo biloba) (24%, 6%, <0.0005%), Vitamin B3 (as Niacin) 5 mg, Vinpocetine (Vinca minor), Licorice Omnipotent (Glycyrrhiza glabra), Spirit Minerals (ORMUS).",
+    "note": "Label-read 2026-09-27 by production, approved by Glen 2026-09-28 ('approve'); renamed to the label name; replaces the old store list."
   }
 }

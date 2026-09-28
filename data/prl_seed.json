@@ -64,7 +64,7 @@
    "best_ff": "AllerFree",
    "relation": "substitute",
    "ff_alts": [
-    "Synergy C"
+    "Vitamin C Syntropy"
    ]
   },
   {
@@ -301,7 +301,7 @@
    "best_ff": "Magnesium Synergy",
    "relation": "substitute",
    "ff_alts": [
-    "Synergy C",
+    "Vitamin C Syntropy",
     "Bone Builder"
    ]
   },
@@ -316,7 +316,7 @@
    "best_ff": "Magnesium Synergy",
    "relation": "substitute",
    "ff_alts": [
-    "Synergy C",
+    "Vitamin C Syntropy",
     "Bone Builder"
    ]
   },
@@ -328,7 +328,7 @@
     "Essential Nutrients"
    ],
    "product_type": "supplement",
-   "best_ff": "Synergy C",
+   "best_ff": "Vitamin C Syntropy",
    "relation": "complement",
    "ff_alts": [
     "Bone Builder",
@@ -1839,7 +1839,7 @@
     "Inflammation Support"
    ],
    "product_type": "supplement",
-   "best_ff": "Synergy C",
+   "best_ff": "Vitamin C Syntropy",
    "relation": "substitute",
    "ff_alts": [
     "Vitamin P",

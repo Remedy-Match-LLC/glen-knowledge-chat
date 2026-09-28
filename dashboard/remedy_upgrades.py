@@ -60,7 +60,7 @@ _UPGRADE_MAP = {
     },
     "vitamin c": {
         "slug": "vitamin-c-syntropy",
-        "reason": "Synergy C delivers vitamin C with its synergist cofactors for "
+        "reason": "Vitamin C Syntropy delivers vitamin C with its synergist cofactors for "
                    "better utilization than ascorbic acid alone.",
     },
 }

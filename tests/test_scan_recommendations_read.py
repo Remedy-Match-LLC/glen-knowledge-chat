@@ -81,10 +81,15 @@ def test_the_two_duplicate_title_keys_still_resolve_as_before():
 def test_an_alias_never_shadows_a_real_product_name():
     """A collision would silently hand one product's code to another."""
     p = _products()
-    names = {(r.get("pinecone_title") or r.get("name") or "").strip().lower() for r in p.values()}
+    owner = {}
+    for s, r in p.items():
+        owner.setdefault((r.get("pinecone_title") or r.get("name") or "").strip().lower(), set()).add(s)
     for slug, rec in p.items():
         for a in rec.get("aliases") or []:
-            assert a.strip().lower() not in names, f"{slug} alias {a!r} collides with a product title"
+            # Its OWN title is fine: a renamed product keeps its old name as both alias and
+            # pinecone_title until knowledge re-titles the chunks (Vitamin C Syntropy, 2026-09-28).
+            others = owner.get(a.strip().lower(), set()) - {slug}
+            assert not others, f"{slug} alias {a!r} collides with {sorted(others)}"
 
 
 # tests/test_scan_recommendations_read.py  (part 2 of 2 — store read helpers + console
