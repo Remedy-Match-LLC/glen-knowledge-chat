@@ -76,17 +76,22 @@ def _invitation_text():
     return text
 
 
+# Since #1843 (Glen, 2026-09-27) each line is the session, then its time in Hawaii,
+# Pacific and Eastern: "Free Wellness Whispering MasterClass: 2:00 PM Hawaii · ...".
+
 def test_the_invitation_lists_the_masterclass_at_two_and_coaching_at_three():
     text = _invitation_text()
-    assert "2:00 PM HST: Free Wellness Whispering MasterClass" in text
-    assert "3:00 PM HST: Group Coaching" in text
-    assert text.index("2:00 PM HST") < text.index("3:00 PM HST"), "earlier class first"
+    mc = "Free Wellness Whispering MasterClass: 2:00 PM Hawaii"
+    gc = "Group Coaching: 3:00 PM Hawaii"
+    assert mc in text and gc in text
+    assert text.index(mc) < text.index(gc), "earlier class first"
 
 
 def test_the_invitation_no_longer_carries_the_old_pairings():
     text = _invitation_text()
-    assert "2:00 PM HST: Group Coaching" not in text
-    assert "3:00 PM HST: Free Wellness Whispering MasterClass" not in text
+    assert "Group Coaching: 2:00 PM Hawaii" not in text
+    assert "Free Wellness Whispering MasterClass: 3:00 PM Hawaii" not in text
+    assert "PM HST:" not in text, "the old single-zone format is back"
 
 
 # --- events already published at the old times -----------------------------------------

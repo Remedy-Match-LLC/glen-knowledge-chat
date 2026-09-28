@@ -36,6 +36,18 @@ GHL_BASE = "https://services.leadconnectorhq.com"
 GHL_CONTACTS_VERSION = "2021-07-28"
 GHL_MESSAGES_VERSION = "2021-04-15"
 HST = ZoneInfo("Pacific/Honolulu")
+# Glen, 2026-09-27: list the class times in Hawaii, Pacific and Eastern time. Computed
+# from each session's own date, so the mainland daylight-saving change stays right.
+MAINLAND = (("Pacific", ZoneInfo("America/Los_Angeles")),
+            ("Eastern", ZoneInfo("America/New_York")))
+
+
+def session_times(target_date, hour):
+    """'2:00 PM Hawaii · 5:00 PM Pacific · 8:00 PM Eastern' for a session at `hour` HST."""
+    start = datetime(target_date.year, target_date.month, target_date.day, hour, tzinfo=HST)
+    fmt = lambda d: d.strftime("%-I:%M %p")
+    return " · ".join([f"{fmt(start)} Hawaii"] +
+                      [f"{fmt(start.astimezone(z))} {label}" for label, z in MAINLAND])
 PORTAL_BASE = "https://myhealingoasis.com"
 FROM_ADDRESS = "Dr. Glen Swartwout <drglen@mail.remedymatch.com>"
 SOURCE_TAGS = ("pb:member", "e4l account")
@@ -264,6 +276,17 @@ def _event_gate(target_date):
             "masterclass_occurrence_id": master["zoom_occurrence_id"] if master else ""}
 
 
+def portal_link(token):
+    """The invitation's link: the client's own portal, opened at the Live Calendar.
+
+    The bare portal link opened Home, which shows no sessions and no Reserve or Join
+    button: those live only in the Live Calendar under Learn & Ask. Two clients were
+    stuck there in September 2026 (Peach Goddard; Robin Rohr, 2026-09-27). `#calendar`
+    is the portal's hash route to that card (PORTAL_HASH_ROUTES in client-portal.html),
+    and the nearest session is first in its list."""
+    return f"{PORTAL_BASE}/portal/{token}#calendar"
+
+
 def _copy(first_name, portal_url, eligible, target_date, email=""):
     date_label = target_date.strftime("%A, %B %-d")
     greeting = f"Aloha {first_name}," if first_name else "Aloha,"
@@ -276,15 +299,23 @@ def _copy(first_name, portal_url, eligible, target_date, email=""):
                   "your current access does not include the private session.")
     text = (f"{greeting}\n\nThis {date_label}, our MentorshipU community activities are:\n\n"
             # Glen, 2026-09-20, effective 2026-09-30: the free MasterClass first, Group
-            # Coaching second. These two lines must agree with LIVE_MASTERCLASS_HOUR and
-            # LIVE_GROUP_COACHING_HOUR in app.py, which is where the events are published.
-            "2:00 PM HST: Free Wellness Whispering MasterClass\n"
-            "3:00 PM HST: Group Coaching\n\n"
-            f"{access}\n\nOpen your private MyHealingOasis Upcoming Live Events page to RSVP, "
+            # Coaching second. The hours come from app.py, where the events are published,
+            # so the email cannot drift from the calendar.
+            f"Free Wellness Whispering MasterClass: "
+            f"{session_times(target_date, appmod.LIVE_MASTERCLASS_HOUR)}\n"
+            f"Group Coaching: {session_times(target_date, appmod.LIVE_GROUP_COACHING_HOUR)}\n\n"
+            f"{access}\n\nOpen the Live Calendar in your private MyHealingOasis portal to RSVP, "
             "add the sessions to your calendar, and receive your own private Zoom join link:\n\n"
             f"{portal_url}\n\nPlease do not share your private portal or join link.\n\n"
             "With aloha,\nDr. Glen Swartwout")
     escaped = html.escape(text).replace("\n\n", "</p><p>").replace("\n", "<br>")
+    # The times' separator as an entity, so no charset handling can garble it.
+    escaped = escaped.replace("\u00b7", "&middot;")
+    if portal_url:
+        # An explicit anchor, so no mail client's linkifier can drop the #calendar
+        # fragment that opens the Live Calendar.
+        shown = html.escape(portal_url)
+        escaped = escaped.replace(shown, f'<a href="{html.escape(portal_url, quote=True)}">{shown}</a>', 1)
     body_html = '<div style="font-family:Arial,sans-serif;font-size:16px;line-height:1.55"><p>' + escaped + "</p></div>"
     if email:
         # Appended AFTER html.escape so the anchor stays markup. GHL adds no
@@ -469,7 +500,7 @@ def run(args):
                                 " ".join(filter(None, [contact.get("firstName"),
                                                        contact.get("lastName")]))))
                 counts["portal_created_or_recovered"] += 1
-                portal_url = f"{PORTAL_BASE}/portal/{token}"
+                portal_url = portal_link(token)
                 first = (contact.get("firstName") or "").strip()
                 text, body_html = _copy(first, portal_url, email in eligible,
                                         target_date, email)

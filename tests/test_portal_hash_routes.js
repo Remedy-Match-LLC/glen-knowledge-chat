@@ -145,6 +145,18 @@ function panelsHolding(id, seen) {
       const push = PUSHES.find(function (p) { return c > p.start && c < p.end; });
       if (push && push.door && DETAIL_OF[push.door]) { out[DETAIL_OF[push.door]] = true; found = true; }
     }
+    // 5. a helper whose result is ASSIGNED to an accumulator inside render()
+    //    (`_calendarHtml = buildCalendarHtml(...)`), which the wrap renders into one
+    //    section. Only that exact shape counts: the assignment must start the line.
+    for (c = page.indexOf(fnName + '(', renderAt); c !== -1 && c < wrapStart;
+         c = page.indexOf(fnName + '(', c + 1)) {
+      const lineStart = page.lastIndexOf('\n', c) + 1;
+      const acc = /^\s*_(\w+)Html\s*\+?=\s*/.exec(page.slice(lineStart, c));
+      if (!acc || lineStart + acc[0].length !== c) continue;
+      const at = page.indexOf('${_' + acc[1] + 'Html', wrapStart);
+      const p = at !== -1 && at < wrapEnd ? sectionPanelAt(at) : null;
+      if (p) { out[p] = true; found = true; }
+    }
     assert.ok(found, 'helper ' + fnName + '() emits ' + needle + ' but is never rendered into a panel');
   }
   const panels = Object.keys(out);

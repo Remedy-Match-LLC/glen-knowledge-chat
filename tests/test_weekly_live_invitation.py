@@ -158,3 +158,101 @@ def test_em_dash_in_body_stops_the_run_before_the_event_gate(monkeypatch):
     with pytest.raises(RuntimeError, match="em dash found"):
         weekly.run(_ARGS)
     assert calls == []
+
+
+
+# --- the link lands on the Live Calendar, not Home -----------------------------------
+# Robin Rohr, 2026-09-27: "no ability to get into a meeting". The bare portal link opens
+# Home, which has no sessions and no Join button.
+
+def test_the_portal_link_opens_the_live_calendar():
+    w = weekly
+    assert w.portal_link("tok").endswith("/portal/tok#calendar")
+
+
+def test_the_send_loop_uses_the_calendar_link():
+    import inspect
+    w = weekly
+    src = inspect.getsource(w)
+    assert "portal_url = portal_link(token)" in src
+    assert 'f"{PORTAL_BASE}/portal/{token}"' not in src
+
+
+def test_the_copy_names_the_live_calendar():
+    import datetime
+    w = weekly
+    text, _ = w._copy("Glen", w.portal_link("tok"), True, datetime.date(2026, 9, 30))
+    assert "Live Calendar" in text and "#calendar" in text
+
+
+def test_the_calendar_route_exists_in_the_portal():
+    """The fragment is only useful if the portal routes it."""
+    import os
+    html = open(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                             "static", "client-portal.html")).read()
+    assert 'calendar: {panel:"calendar", target:"calendar-card", alt:"calendar-summary", openCard:true}' in html
+    assert html.count("openCard:true") == 1, "only #calendar opens its card"
+
+
+def test_the_email_link_is_an_explicit_anchor_with_the_fragment():
+    """No linkifier guesswork: the HTML body carries <a href=".../portal/tok#calendar">."""
+    import datetime
+    w = weekly
+    _, body = w._copy("Glen", w.portal_link("tok"), True, datetime.date(2026, 9, 30))
+    assert '<a href="' in body and 'portal/tok#calendar">' in body
+
+
+def test_a_deep_link_opens_its_card_over_the_fold_state():
+    """#calendar would have landed on a folded Live Calendar card (review round 1,
+    2026-09-27). The target is recorded before showTab and consumed by _foldApplyAll,
+    which runs whenever the fold state arrives, so a late load cannot fold it again."""
+    import os
+    html = open(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                             "static", "client-portal.html")).read()
+    hash_fn = html[html.index("function applyPortalHash(userAction){"):html.index('window.addEventListener("hashchange", applyPortalHash);')]
+    assert hash_fn.index("window._foldDeepLinkOpen = route.target;") < hash_fn.index("showTab(")
+    # only routes that ask, and only when the link is followed (not on every re-render)
+    assert "route.openCard && (userAction || window._portalHashOpened !== key)" in hash_fn
+    # round 3 survivors: record the key, open synchronously, fall back, clicks are user actions
+    assert "window._portalHashOpened = key;" in hash_fn
+    assert 'if(typeof _foldOpenCard === "function") _foldOpenCard(route.target);' in hash_fn
+    assert "(route.alt ? document.getElementById(route.alt) : null)" in hash_fn
+    assert 'if(location.hash === "#" + key) applyPortalHash(true);' in html
+    apply_fn = html[html.index("function _foldApplyAll(){"):html.index("function _foldToggle(card){")]
+    assert "_deepLinked = window._foldDeepLinkOpen;" in apply_fn
+    assert "F.setCard(_foldsV2.state, _deepLinked, false)" in apply_fn
+    assert "_dl.scrollIntoView" in apply_fn, "re-scroll after the folds settle"
+    assert "window._foldDeepLinkOpen = null" in apply_fn
+    assert 'calendar: {panel:"calendar", target:"calendar-card", alt:"calendar-summary", openCard:true}' in html
+    assert html.count("openCard:true") == 1, "only #calendar opens its card"
+
+
+
+# --- times in Hawaii, Pacific and Eastern (Glen, 2026-09-27) --------------------------
+
+def test_times_in_three_zones_during_mainland_daylight_time():
+    import datetime
+    assert weekly.session_times(datetime.date(2026, 9, 30), 14) == \
+        "2:00 PM Hawaii · 5:00 PM Pacific · 8:00 PM Eastern"
+
+
+def test_times_follow_the_mainland_clock_change():
+    """Hawaii keeps no daylight time; the mainland falls back on 1 November 2026."""
+    import datetime
+    assert weekly.session_times(datetime.date(2026, 11, 4), 14) == \
+        "2:00 PM Hawaii · 4:00 PM Pacific · 7:00 PM Eastern"
+
+
+def test_the_copy_carries_both_sessions_in_three_zones_in_order():
+    import datetime
+    text, _ = weekly._copy("Glen", weekly.portal_link("tok"), True, datetime.date(2026, 9, 30))
+    mc = text.index("Free Wellness Whispering MasterClass: 2:00 PM Hawaii · 5:00 PM Pacific · 8:00 PM Eastern")
+    gc = text.index("Group Coaching: 3:00 PM Hawaii · 6:00 PM Pacific · 9:00 PM Eastern")
+    assert mc < gc and "HST" not in text.split("With aloha")[0]
+
+
+
+def test_the_html_body_writes_the_separator_as_an_entity():
+    import datetime
+    text, body = weekly._copy("Glen", weekly.portal_link("tok"), True, datetime.date(2026, 9, 30))
+    assert "\u00b7" in text and "&middot;" in body and "\u00b7" not in body
