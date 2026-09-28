@@ -73,9 +73,15 @@ function status(msg, kind){ document.getElementById("status").innerHTML =
   msg ? '<div class="note ' + (kind || "") + '">' + esc(msg) + '</div>' : ""; }
 function getJSON(url){ return fetch(url, {headers: hdr(), credentials: "same-origin"})
   .then(function(r){ return r.json().then(function(j){ return {ok: r.ok, status: r.status, j: j}; }); }); }
+// A reply that is not JSON (a 502 page during a deploy) or no reply at all still resolves,
+// with an error the page can show: a silent failure left Glen pressing Apply (2026-09-27).
 function postJSON(url, body){ return fetch(url, {method: "POST", credentials: "same-origin",
   headers: hdr({"Content-Type": "application/json"}), body: JSON.stringify(body || {})})
-  .then(function(r){ return r.json().then(function(j){ return {ok: r.ok, status: r.status, j: j}; }); }); }
+  .then(function(r){ return r.json().then(function(j){ return {ok: r.ok, status: r.status, j: j}; },
+    function(){ return {ok: false, status: r.status, j: {error: "The server answered " + r.status +
+      " without a result. Nothing may have changed: reload to check."}}; }); },
+    function(){ return {ok: false, status: 0, j: {error: "The server could not be reached. " +
+      "Nothing may have changed: reload to check."}}; }); }
 
 function label(p){ return (p.name || "(no name)") + " · " + p.email + " · #" + p.id; }
 
@@ -163,7 +169,13 @@ function renderPreview(p){
     '<label class="opt"><input type="radio" name="mail" value="stop"' + (sug.mail_old === "stop" ? " checked" : "") + '> Stop mailing it</label>' +
     '<label class="opt"><input type="radio" name="mail" value="keep"' + (sug.mail_old === "keep" ? " checked" : "") + '> Keep mailing it</label>' +
     '<div class="row"><button class="btn" id="apply-btn"' + ((p.blocked || []).length ? " disabled" : "") +
-    '>Apply merge</button></div></div>';
+    '>Apply merge</button></div>' +
+    // Beside the button, not at the top of the page: the reason it is off, and every result.
+    '<div id="apply-msg" role="status" aria-live="polite">' + ((p.blocked || []).length
+      ? '<div class="note warn">Apply is off until every clash is settled. ' +
+        (need.length ? 'Choose whose record stays, above. ' : '') +
+        (hard.length ? 'Not reviewed yet: ' + esc(hard.join(", ").replace(/_/g, " ")) + '.' : '') + '</div>'
+      : '') + '</div></div>';
   // The preview always shows the survivor that Apply will use: choosing the other one
   // re-runs the preview with the two swapped (review round 2).
   Array.prototype.forEach.call(document.querySelectorAll('input[name="stay"]'), function(r){
@@ -221,15 +233,28 @@ function askApply(){
       " keeps working as a way in. GoHighLevel: " + (mail === "stop" ? "stop mailing it." : "keep mailing it.") +
       " You can undo this from the merge record.",
       "Merge", function(){
-        status("Merging.");
+        var btn = document.getElementById("apply-btn");
+        function say(msg, kind){
+          status(msg, kind);
+          var el = document.getElementById("apply-msg");
+          if (el) { el.innerHTML = '<div class="note ' + (kind || "") + '">' + esc(msg) + '</div>'; }
+        }
+        btn.disabled = true; btn.textContent = "Merging…";
+        say("Merging.");
         postJSON("/api/console/people/merge", {survivor_id: p.survivor.id, merged_id: p.merged.id,
                                                mail_old: mail, resolutions: choices})
           .then(function(x){
-            if (!x.ok) { status((x.j.error || "The merge did not run. Nothing was changed.") +
-              (x.j.blocked ? " Blocked by: " + x.j.blocked.join(", ") + "." : ""), "bad"); return; }
-            status("Merged. " + x.j.changes + " records changed." +
-                   (x.j.ghl_error ? " GoHighLevel was not updated: " + x.j.ghl_error : ""), x.j.ghl_error ? "warn" : "");
-            document.getElementById("preview").innerHTML = "";
+            if (!x.ok) {
+              btn.disabled = false; btn.textContent = "Apply merge";
+              say((x.j.error || "The merge did not run. Nothing was changed.") +
+                  (x.j.blocked ? " Blocked by: " + x.j.blocked.join(", ") + "." : ""), "bad");
+              return;
+            }
+            btn.textContent = "Merged";
+            say("Merged. " + x.j.changes + " records changed." +
+                (x.j.ghl_error ? " GoHighLevel was not updated: " + x.j.ghl_error : ""), x.j.ghl_error ? "warn" : "");
+            Array.prototype.forEach.call(document.querySelectorAll("#preview input"),
+                                         function(i){ i.disabled = true; });
             showRecord(x.j.merge_id);
           });
       });

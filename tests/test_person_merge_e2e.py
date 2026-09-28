@@ -161,3 +161,76 @@ def test_the_owner_chooses_for_a_clash_with_no_rule(live):
         with sqlite3.connect(appmod.LOG_DB) as cx:
             assert cx.execute("SELECT slug FROM affiliate_signups").fetchall() == [("mel-gm",)]
         b.close()
+
+
+# ── 2026-09-27: Glen pressed Apply three times and saw nothing ───────────────
+# Each attempt was refused (409), and the page wrote the reason into the status line at the
+# top, out of view. The button also never said the merge was done.
+def _open(p, base):
+    b = p.chromium.launch()
+    page = b.new_context(extra_http_headers={"X-Console-Key": SECRET},
+                         viewport={"width": 390, "height": 700}).new_page()
+    page.goto(f"{base}/console/merge?survivor=2&merged=1")
+    page.wait_for_selector("#apply-btn")
+    return b, page
+
+
+def test_a_refusal_is_shown_beside_the_button(live, monkeypatch):
+    base, appmod = live
+    from dashboard import person_merge as pm
+
+    def refuse(*a, **k):
+        raise pm.MergeBlocked([{"table": "carts", "column": "email"}])
+    monkeypatch.setattr(pm, "apply", refuse)
+    with sync_playwright() as p:
+        b, page = _open(p, base)
+        page.click("#apply-btn")
+        page.click("#dlg-go")
+        page.wait_for_function("() => document.getElementById('apply-msg') && "
+                               "document.getElementById('apply-msg').innerText.includes('carts')")
+        assert not page.is_disabled("#apply-btn")
+        assert page.inner_text("#apply-btn") == "Apply merge"
+        assert _people(appmod) == [1, 2]
+        b.close()
+
+
+def test_a_server_error_that_is_not_json_is_shown(live):
+    base, appmod = live
+    with sync_playwright() as p:
+        b, page = _open(p, base)
+        page.route("**/api/console/people/merge", lambda r: r.fulfill(
+            status=502, body="<html>Bad gateway</html>", content_type="text/html"))
+        page.click("#apply-btn")
+        page.click("#dlg-go")
+        page.wait_for_function("() => document.getElementById('apply-msg') && "
+                               "document.getElementById('apply-msg').innerText.includes('502')")
+        assert not page.is_disabled("#apply-btn")
+        b.close()
+
+
+def test_the_button_says_merged_when_done(live):
+    base, appmod = live
+    with sync_playwright() as p:
+        b, page = _open(p, base)
+        page.click("#apply-btn")
+        page.click("#dlg-go")
+        page.wait_for_selector("#undo-btn")
+        assert page.inner_text("#apply-btn") == "Merged"
+        assert page.is_disabled("#apply-btn")
+        assert "Merged." in page.inner_text("#apply-msg")
+        assert _people(appmod) == [2]
+        b.close()
+
+
+def test_a_switched_off_button_says_why(live):
+    base, appmod = live
+    with sqlite3.connect(appmod.LOG_DB) as cx:
+        cx.execute("DROP TABLE IF EXISTS affiliate_signups")
+        cx.execute("CREATE TABLE affiliate_signups (id INTEGER PRIMARY KEY, email TEXT UNIQUE, slug TEXT)")
+        cx.execute("INSERT INTO affiliate_signups VALUES (1, ?, 'mel-aol')", (AOL,))
+        cx.execute("INSERT INTO affiliate_signups VALUES (2, ?, 'mel-gm')", (GMAIL,))
+    with sync_playwright() as p:
+        b, page = _open(p, base)
+        assert page.is_disabled("#apply-btn")
+        assert "Choose whose record stays" in page.inner_text("#apply-msg")
+        b.close()

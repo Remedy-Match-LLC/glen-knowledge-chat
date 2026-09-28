@@ -193,6 +193,23 @@ def _clash_row(cx, t, row, new):
                     [_val(t, new)] + [row[c] for c in others])
         if got:
             return got[0]
+    # A partial unique index (one OPEN cart per address) clashes only when both rows meet its
+    # condition (2026-09-27: Peach Goddard's two open carts refused her merge).
+    for cols, pred in pd.partial_unique_sets(cx, t.schema, t.table):
+        if t.column not in cols:
+            continue
+        others = [c for c in cols if c != t.column]
+        if any(row[c] is None for c in others):
+            continue
+        q = pd.qualified(t.schema, t.table)
+        where, args = _row_where(cx, t.schema, t.table, row, pd.key_columns(cx, t.schema, t.table))
+        if not _rows(cx, f"SELECT 1 FROM {q} WHERE {where} AND ({pred}) LIMIT 1", args):
+            continue
+        clause = _match_sql(t) + "".join(f' AND "{c}" = ?' for c in others) + f" AND ({pred})"
+        got = _rows(cx, f"SELECT * FROM {q} WHERE {clause} LIMIT 1",
+                    [_val(t, new)] + [row[c] for c in others])
+        if got:
+            return got[0]
     return None
 
 
