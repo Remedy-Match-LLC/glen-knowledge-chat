@@ -24,7 +24,10 @@ def init_table(cx):
                  "compliance_score INTEGER DEFAULT 0", "publication_score INTEGER DEFAULT 0",
                  "authenticity_score INTEGER DEFAULT 0", "specificity_score INTEGER DEFAULT 0",
                  "audio_quality INTEGER DEFAULT 0", "visual_quality INTEGER DEFAULT 0",
-                 "gift_owner_email TEXT DEFAULT ''"):
+                 "gift_owner_email TEXT DEFAULT ''",
+                 # A client-approved rewording keeps the words first recorded, and names
+                 # the message the client consented in (2026-09-28).
+                 "original_body TEXT DEFAULT ''", "consent_ref TEXT DEFAULT ''"):
         try:
             cx.execute(f"ALTER TABLE product_reviews ADD COLUMN {_col}")
         except db.OperationalError:
@@ -69,7 +72,9 @@ def upsert_review(cx, slug, email, name, rating, body="", video_kind="", video_r
         "consent_public=excluded.consent_public, source_tag=excluded.source_tag, "
         "gift_owner_email=excluded.gift_owner_email, "
         "status='pending', ai_score=0, ai_verdict='', ai_recommend_publish=0, points_awarded=0, "
-        "featured=0, reviewed_at='', reviewed_by=''",
+        "featured=0, reviewed_at='', reviewed_by='', "
+        # New words carry no earlier consent or original (review, 2026-09-28).
+        "consent_ref='', original_body=''",
         (slug, e, name or "", int(rating), body or "", video_kind or "", video_ref or "",
          kind or "product", _norm_pid(practitioner_id), 1 if consent_public else 0,
          (source_tag or "")[:64], (gift_owner_email or "").strip().lower(), now))
