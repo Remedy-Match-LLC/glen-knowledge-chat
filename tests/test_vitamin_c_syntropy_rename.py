@@ -21,6 +21,7 @@ from dashboard import clinical_glossary as cg
 from dashboard import practitioner_portal as pp
 
 SLUG, NEW, OLD = "vitamin-c-syntropy", "Vitamin C Syntropy", "Synergy C"
+KEPT = json.loads('{"price_cents": 6997, "bottle_type": "30 Caps", "url": "https://myhealingoasis.com/begin/product/vitamin-c-syntropy", "legacy_store_url": "https://remedymatch.com/remedies/syntropy/112-vitamin-c-syntropy", "qty_pricing": true}')
 PRODUCTS = json.load(open("data/products.json", encoding="utf-8"))["products"]
 
 
@@ -43,7 +44,8 @@ def test_the_record_carries_the_label():
     assert p["how_it_works"] == ""
     for k in ("note", "notes", "rename_work", "apply_as"):
         assert k not in p
-    assert p["price_cents"] and p["bottle_type"]        # untouched live fields
+    # The live fields the spec leaves alone, exactly as they were (review round 2).
+    assert {k: p.get(k) for k in KEPT} == KEPT
     corr = json.load(open("data/products-manual-corrections.json", encoding="utf-8"))[SLUG]
     assert corr["ingredients"] == p["ingredients"]
 
@@ -121,3 +123,21 @@ def test_the_glossary_links_both_names(name):
 def test_the_upgrade_note_names_the_product():
     from dashboard import remedy_upgrades as ru
     assert "Vitamin C Syntropy" in ru._UPGRADE_MAP["vitamin c"]["reason"]
+
+
+
+# ── Review rounds 1 and 2 ────────────────────────────────────────────────────
+def test_an_inactive_product_is_never_billed_under_its_old_name():
+    cat = [{"slug": SLUG, "name": NEW, "inactive": True}]
+    assert bi.resolve_line_slug(OLD, cat) is None
+    assert bi.resolve_line_slug(OLD, [{"slug": SLUG, "name": NEW, "aliases": [OLD], "inactive": True}]) is None
+
+
+@pytest.mark.parametrize("name,want", [
+    ("Magnesium Synergy Capsules", None),        # an alias matches whole names only
+    ("Glutathione Synergy Complex", None),
+])
+def test_an_alias_never_matches_part_of_a_longer_name(name, want):
+    cat = _flipped()
+    got = pp.name_to_slug(name, cat)
+    assert got != SLUG

@@ -393,10 +393,14 @@ def name_to_slug(name, catalog) -> Optional[str]:
     if not name:
         return None
     nl = name.strip().lower()
+    # An alias answers to its whole name only: a renamed product keeps its old name once
+    # pinecone_title changes (Synergy C -> Vitamin C Syntropy, 2026-09-28), and never
+    # captures a longer name that merely contains it (review rounds 1 and 2).
     for slug, p in (catalog or {}).items():
-        # aliases too: a renamed product still answers to its old name once pinecone_title
-        # changes (Synergy C -> Vitamin C Syntropy, 2026-09-28).
-        for cand in (p.get("name"), p.get("pinecone_title"), *(p.get("aliases") or [])):
+        if any((a or "").strip().lower() == nl for a in (p.get("aliases") or [])):
+            return slug
+    for slug, p in (catalog or {}).items():
+        for cand in (p.get("name"), p.get("pinecone_title")):
             pn = (cand or "").lower()
             if pn and (nl == pn or (len(nl) > 4 and (nl in pn or pn in nl))):
                 return slug

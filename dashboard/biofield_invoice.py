@@ -56,11 +56,14 @@ def resolve_line_slug(name, catalog):
     for it in catalog or []:
         if (it.get("name") or "").strip().lower() == name:
             return it.get("slug") or None
-    for it in catalog or []:           # a record's own aliases, when the catalog carries them
+    # A record's own aliases, then a retired name: never for a withdrawn product (round 2).
+    for it in catalog or []:
+        if it.get("inactive"):
+            continue
         if any((a or "").strip().lower() == name for a in (it.get("aliases") or [])):
             return it.get("slug") or None
-    old = _RETIRED_NAMES.get(name)     # an exact retired name, only if its product is sold
-    if old and any(it.get("slug") == old for it in catalog or []):
+    old = _RETIRED_NAMES.get(name)
+    if old and any(it.get("slug") == old and not it.get("inactive") for it in catalog or []):
         return old
     return None
 
