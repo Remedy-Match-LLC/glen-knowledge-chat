@@ -246,6 +246,7 @@ FEEDBACK_VIEW_URL   = os.environ.get("FEEDBACK_VIEW_URL",   "https://Truly.VIP/F
 from dashboard.openai_failover import build_openai_client as _build_openai_client
 from dashboard.people import set_person_tags, distinct_tags, dedupe_tags_ci
 from dashboard.name_case import normalize_person_names as _normalize_person_names
+from dashboard.name_case import is_address as _is_address, name_from_parts as _name_from_parts
 from dashboard import affiliate_dashboard
 from dashboard.biofield_reveals import is_aller_free as _is_aller_free
 from dashboard import practitioner_slugs as _ps_signup
@@ -41218,6 +41219,12 @@ def _upsert_person_additive(cx, person, ts=None):
     # Capitalise here, not in a one-off: a stored name is replaced by any non-blank
     # incoming one below, so the next feeder run would undo a cleanup.
     _normalize_person_names(scalars)
+    # A name is never an email address (2026-09-27). The GHL sync sent one for a contact
+    # with no first or last name, and it replaced a real name here every hour.
+    if _is_address(scalars.get("name")):
+        scalars["name"] = ""
+    if not str(scalars.get("name") or "").strip():
+        scalars["name"] = _name_from_parts(scalars.get("first_name"), scalars.get("last_name"))
     arrays = {}
     for jf in _PERSON_UPSERT_JSON:
         v = person.get(jf, [])
@@ -41328,6 +41335,13 @@ def _upsert_person_additive(cx, person, ts=None):
         for k in _PERSON_UPSERT_SCALARS:
             if str(scalars[k]).strip():
                 upd[k] = scalars[k]
+        # A stored address-as-name, or none, is rebuilt from the first and last names.
+        if "name" not in upd and (_is_address(existing["name"])
+                                  or not (existing["name"] or "").strip()):
+            rebuilt = _name_from_parts(upd.get("first_name") or existing["first_name"],
+                                       upd.get("last_name") or existing["last_name"])
+            if rebuilt:
+                upd["name"] = rebuilt
         for jf in _PERSON_UPSERT_JSON:
             if jf not in cols:
                 continue
@@ -44193,6 +44207,30 @@ def _init_people_table():
             except Exception:
                 pass  # already present
         cx.commit()
+        try:
+            n = _repair_address_names(cx)
+            cx.commit()
+            if n:
+                print(f"[people] rebuilt {n} name(s) that held an email address", flush=True)
+        except Exception as e:
+            print(f"[people] name repair skipped: {type(e).__name__}", flush=True)
+
+
+def _repair_address_names(cx):
+    """Give back a real name to every person whose name is an email address and whose first
+    or last name holds one (2026-09-27: 73 in production). Idempotent: a repaired row no
+    longer matches. A row with nothing to rebuild from is left as it is. Returns the count.
+    Caller commits."""
+    rows = cx.execute("SELECT id, name, first_name, last_name FROM people "
+                      "WHERE name LIKE '%@%'").fetchall()
+    n = 0
+    for pid, name, first, last in rows:
+        rebuilt = _name_from_parts(first, last)
+        if _is_address(name) and rebuilt:
+            cx.execute("UPDATE people SET name=? WHERE id=?", (rebuilt, pid))
+            n += 1
+    return n
+
 
 _init_people_table()
 
@@ -44343,6 +44381,24 @@ def _merge_two_people(cx, keeper_id, dupe_id):
 
     updates = {}
     fields_filled = []
+    # Names: the keeper's own win, but a blank or an address-as-name is empty (2026-09-27:
+    # Peach Goddard's surviving record held only her address as its name).
+    for col in ("first_name", "last_name", "name"):
+        try:
+            k_val, d_val = keeper[col], dupe[col]
+        except IndexError:
+            continue
+        k_empty = not (k_val or "").strip() or _is_address(k_val)
+        if k_empty and (d_val or "").strip() and not _is_address(d_val):
+            updates[col] = d_val
+            fields_filled.append(col)
+    final_name = updates.get("name", keeper["name"])
+    if not (final_name or "").strip() or _is_address(final_name):
+        rebuilt = _name_from_parts(updates.get("first_name", keeper["first_name"]),
+                                   updates.get("last_name", keeper["last_name"]))
+        if rebuilt:
+            updates["name"] = rebuilt
+            fields_filled.append("name")
     # Coalesce empty scalar fields
     for col in _PEOPLE_SCALAR_COALESCE:
         try:

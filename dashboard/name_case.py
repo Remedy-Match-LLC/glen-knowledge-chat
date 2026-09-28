@@ -114,3 +114,18 @@ def normalize_person_names(fields):
     if "last_name" in fields:
         fields["last_name"] = normalize_name(fields["last_name"], leading_particle=True)
     return fields
+
+
+def is_address(value):
+    """True when a name field actually holds an email address (one token with an @).
+
+    The GoHighLevel sync used to send the address as the name for a contact with no first or
+    last name there (2026-09-27). "Ann @ Home Studio" has spaces and is left alone."""
+    s = (value or "").strip()
+    return "@" in s and not any(c.isspace() for c in s)
+
+
+def name_from_parts(first, last):
+    """"First Last" from the two name fields, or "" when neither holds a real name."""
+    parts = [p.strip() for p in (first or "", last or "") if p and p.strip() and not is_address(p)]
+    return " ".join(parts)
