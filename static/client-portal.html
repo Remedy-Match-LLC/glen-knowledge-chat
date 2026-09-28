@@ -1888,6 +1888,85 @@ function switchPortalAccount(button){
   return endPortalSession("/portal/login?switch=1", button);
 }
 
+// BEGIN client time zone
+// Each client's own zone (Glen, 2026-09-28). Booking times are naive Hawaii wall-clock
+// strings; they show in the client's zone with Hawaii time in brackets, the same text the
+// confirmation emails use (dashboard/client_time.describe). Starts as the browser's zone and
+// is replaced by the stored one when loadClientZone() returns.
+let CLIENT_TZ = "";
+function browserZone(){
+  try{ return Intl.DateTimeFormat().resolvedOptions().timeZone || ""; }catch(e){ return ""; }
+}
+function _tzOk(tz){
+  if(!tz) return false;
+  try{ new Intl.DateTimeFormat("en-US", {timeZone: tz}); return true; }catch(e){ return false; }
+}
+function _tzParts(date, tz){
+  const f = new Intl.DateTimeFormat("en-US", {timeZone: tz, weekday: "short", day: "numeric",
+    month: "short", hour: "numeric", minute: "2-digit", hour12: true});
+  const p = {};
+  f.formatToParts(date).forEach(x => { p[x.type] = x.value; });
+  return {day: `${p.weekday} ${p.day} ${p.month}`,
+          clock: `${p.hour}:${p.minute} ${String(p.dayPeriod || "").toLowerCase()}`};
+}
+function hawaiiTime(ts, tz){
+  const date = new Date(String(ts || "").slice(0, 19) + "-10:00");   // Hawaii keeps no DST
+  if(isNaN(date.getTime())) return String(ts || "").replace("T", " ");
+  const here = _tzParts(date, "Pacific/Honolulu");
+  const zone = tz === undefined ? CLIENT_TZ : tz;
+  if(!_tzOk(zone) || zone === "Pacific/Honolulu") return `${here.day}, ${here.clock} Hawaii time`;
+  const there = _tzParts(date, zone);
+  if(there.day === here.day && there.clock === here.clock) return `${here.day}, ${here.clock} Hawaii time`;
+  const hw = there.day === here.day ? here.clock : `${here.clock} ${here.day}`;
+  return `${there.day}, ${there.clock} (${hw} Hawaii)`;
+}
+async function loadClientZone(){
+  const guess = browserZone();
+  CLIENT_TZ = guess;
+  try{
+    const r = await fetch(`/api/portal/time-zone?token=${encodeURIComponent(seg)}`);
+    const j = r.ok ? await r.json() : {};
+    if(j && j.tz){ CLIENT_TZ = j.tz; }
+    else if(guess && r.ok){
+      const w = await fetch(`/api/portal/time-zone/browser?token=${encodeURIComponent(seg)}`,
+        {method: "POST", headers: {"Content-Type": "application/json"},
+         body: JSON.stringify({tz: guess})});
+      const k = w.status === 200 ? await w.json().catch(() => ({})) : {};
+      if(k && k.tz) CLIENT_TZ = k.tz;     // a choice saved elsewhere wins (round 2)
+    }
+  }catch(e){}
+  // The page rendered with the browser's zone; show it again in the stored one (round 1).
+  if(CLIENT_TZ !== guess) load({preserveActiveIntake: true, preserveActivePanel: true});
+  fillTimeZoneCard();
+}
+function fillTimeZoneCard(){
+  const box = document.getElementById("tz-body");
+  if(!box || box.dataset.filled === CLIENT_TZ) return;
+  let zones = [];
+  try{ zones = Intl.supportedValuesOf("timeZone"); }catch(e){}
+  if(CLIENT_TZ && zones.indexOf(CLIENT_TZ) < 0) zones.unshift(CLIENT_TZ);
+  if(zones.indexOf("Pacific/Honolulu") < 0) zones.unshift("Pacific/Honolulu");
+  box.innerHTML = `<label>Show my appointment times in
+      <select id="tz-select">${zones.map(z => `<option value="${esc(z)}"${z === CLIENT_TZ ? " selected" : ""}>${esc(z.replace(/_/g, " "))}</option>`).join("")}</select></label>
+    <button type="button" class="btn ghost" id="tz-save">Save</button> <span class="muted" id="tz-msg"></span>`;
+  box.dataset.filled = CLIENT_TZ;
+  document.getElementById("tz-save").onclick = async () => {
+    const tz = document.getElementById("tz-select").value;
+    const msg = document.getElementById("tz-msg");
+    try{
+      const r = await fetch(`/api/portal/time-zone?token=${encodeURIComponent(seg)}`, {method: "POST",
+        headers: {"Content-Type": "application/json"}, body: JSON.stringify({tz})});
+      const j = await r.json().catch(() => ({}));
+      if(r.ok && j.ok){
+        // The card sits in a panel, where load() renders nothing (review round 3): reload so
+        // every time on the page shows in the new zone.
+        CLIENT_TZ = j.tz; msg.textContent = "Saved."; location.reload();
+      }
+      else { msg.textContent = "That time zone was not saved."; }
+    }catch(e){ msg.textContent = "That time zone was not saved."; }
+  };
+}
+// END client time zone
 function portalTimeZone(){
   try{return Intl.DateTimeFormat().resolvedOptions().timeZone || "your local timezone"}catch(e){return "your local timezone"}
 }
@@ -4921,6 +5000,12 @@ function render(d, v){
     part("account", s);
   }
 
+  // Your time zone (Glen, 2026-09-28): appointment times show in it, Hawaii in brackets.
+  // Under the shell only, which production runs: the shell-off page stays as pinned.
+  if (_shell) part("account", `<div class="card quiet" id="tz-card" data-fold-id="account-time-zone"><h2>Your time zone</h2>
+    <p class="muted">Appointment times show in your time zone, with Hawaii time in brackets.</p>
+    <div id="tz-body"></div></div>`);
+
   // FF-matches card (Slice 3b, flag-gated): with FF_MATCHES_ENABLED off, d.ff_matches_enabled
   // is falsy and NEITHER the button NOR the card render — no DOM, no handler — so a client
   // never sees a button whose POST would 404. When on, the "See my formulation matches"
@@ -5497,9 +5582,9 @@ function render(d, v){
   if(v && v.consult){
     const c = v.consult;
     if(c.booked){
-      const when = (c.booked_start||"").replace("T"," ");
+      const when = hawaiiTime(c.booked_start||"");
       part("scans", `<div class="card" id="biofield-consult-card"><h2>Biofield Consult</h2>
-        <p class="muted">Your consult with Dr. Glen is booked for <b>${esc(when)} HST</b>.</p>
+        <p class="muted">Your consult with Dr. Glen is booked for <b>${esc(when)}</b>.</p>
         <button class="btn full" onclick="consultJoin()">Join your consult</button>
         <div id="consult-join-msg" class="muted" style="margin-top:.5rem"></div></div>`);
     } else if(c.ready){
@@ -5793,6 +5878,7 @@ function render(d, v){
   initAppointmentProposals();
 
   initOnboardingCard();
+  fillTimeZoneCard();
   initFiveElementVoice();
   if(d.element_state && d.element_state.source === "portal_voice" && d.element_state.element_scores){
     fiveVoiceRenderResult({
@@ -6592,7 +6678,7 @@ async function consultSchedule(){
   if(!box) return;
   const slots = d.slots || [];
   box.innerHTML = slots.length
-    ? slots.map(s => `<button class="btn" style="margin:.2rem .3rem .2rem 0" onclick="consultBook('${esc(s)}')">${esc(s.replace("T"," "))}</button>`).join("")
+    ? slots.map(s => `<button class="btn" style="margin:.2rem .3rem .2rem 0" onclick="consultBook('${esc(s)}')">${esc(hawaiiTime(s))}</button>`).join("")
     : `<p class="muted small">No open times this week. Please check back soon.</p>`;
 }
 
@@ -6602,7 +6688,7 @@ async function consultBook(start_ts){
   try{
     const r = await fetch(`/api/consult/book?token=${encodeURIComponent(seg)}`, {
       method: "POST", headers: {"Content-Type": "application/json"},
-      body: JSON.stringify({start_ts}),
+      body: JSON.stringify({start_ts, tz: CLIENT_TZ}),
     });
     d = await r.json();
     if(d && d.ok){
@@ -6626,7 +6712,7 @@ async function consultJoin(){
   const r = await fetch(`/api/consult/join?token=${encodeURIComponent(seg)}`);
   const d = await r.json();
   if(d && d.ok && d.join_url){ window.open(d.join_url, "_blank", "noopener"); return; }
-  const when = (d && d.start_ts ? d.start_ts.replace("T"," ")+" HST" : "your appointment time");
+  const when = (d && d.start_ts ? hawaiiTime(d.start_ts) : "your appointment time");
   document.getElementById("consult-join-msg").textContent =
     "Your consult is at " + when + ". The Join button opens 10 minutes before.";
 }
@@ -7237,9 +7323,9 @@ async function initOnboardingCard(){
 
 function renderOnboardingCard(card, booked){
   if(booked){
-    const when = (booked.start_ts||"").replace("T"," ");
+    const when = hawaiiTime(booked.start_ts||"");
     card.innerHTML = `<h2>Welcome call</h2>
-      <p class="muted">Your welcome call with Rae is booked for <b>${esc(when)} HST</b>. This is a phone call, and Rae will call you at your appointment time.</p>`;
+      <p class="muted">Your welcome call with Rae is booked for <b>${esc(when)}</b>. This is a phone call, and Rae will call you at your appointment time.</p>`;
     return;
   }
   card.innerHTML = `<h2>Book your welcome call</h2>
@@ -7258,7 +7344,7 @@ async function loadOnboardingSlots(){
   }catch(e){ d = {}; }
   const slots = d.slots || [];
   box.innerHTML = slots.length
-    ? slots.map(s => `<button class="btn" style="margin:.2rem .3rem .2rem 0" onclick="onboardingBook('${esc(s)}')">${esc(s.replace("T"," "))}</button>`).join("")
+    ? slots.map(s => `<button class="btn" style="margin:.2rem .3rem .2rem 0" onclick="onboardingBook('${esc(s)}')">${esc(hawaiiTime(s))}</button>`).join("")
     : `<p class="muted small">No open times right now. Please check back soon.</p>`;
 }
 
@@ -7267,7 +7353,7 @@ async function onboardingBook(start_ts){
   try{
     const r = await fetch(`/api/onboarding/book?token=${encodeURIComponent(seg)}`, {
       method: "POST", headers: {"Content-Type": "application/json"},
-      body: JSON.stringify({start_ts}),
+      body: JSON.stringify({start_ts, tz: CLIENT_TZ}),
     });
     d = await r.json();
     if(d && d.ok){
@@ -9277,6 +9363,7 @@ async function sendChatMessage(){
 }
 
 load();
+loadClientZone();
 </script>
 <script src="/static/portal-mentor.js"></script>
 <script src="/static/tts-output.js"></script>

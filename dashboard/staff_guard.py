@@ -21,6 +21,7 @@ BACKGROUND = tuple(re.compile(p) for p in (
     r"^/api/portal/[^/]+/recommendation/click$",
     r"^/api/portal/[^/]+/eye-vision-report/state$",
     r"^/api/portal/[^/]+/scene-pref$",
+    r"^/api/portal/time-zone/browser$",     # fills an empty zone; staff views save nothing
 ))
 _DESCRIPTIONS = [      # first match wins, so the specific patterns come first
     (r"^/api/(onboarding|consult)/book$", "books a real appointment and emails {c} and Rae"),
