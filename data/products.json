@@ -4076,7 +4076,7 @@
    "fmp_id": "328"
   },
   "vitamin-c-syntropy": {
-   "name": "Synergy C",
+   "name": "Vitamin C Syntropy",
    "price_cents": 6997,
    "bottle_type": "30 Caps",
    "pinecone_title": "Synergy C",
@@ -4085,44 +4085,32 @@
    "qty_pricing": true,
    "ingredients": [
     {
-     "name": "Vitamin C (from Magnesium Ascorbate & Ascorbyl Palmitate)",
+     "name": "Vitamin C (Mg Ascorbate & Ascorbyl Palmitate)",
      "dose": "200 mg"
     },
     {
-     "name": "Ascorbyl Palmitate",
-     "dose": "70 mg"
-    },
-    {
-     "name": "Magnesium Ascorbate",
-     "dose": "193 mg"
-    },
-    {
-     "name": "Vitamin E Complex (Mixed Tocopherols)",
+     "name": "Natural Dry Vitamin E (D-Alpha Tocopherol Succinate)",
      "dose": "10 IU"
     },
     {
-     "name": "R-Lipoic Acid (Stabilized Bio-enhanced)",
+     "name": "Na R-Lipoate (Stabilized, Bio-enhanced)",
      "dose": "20 mg"
     },
     {
-     "name": "S-Acetyl Glutathione",
-     "dose": "10 mg"
+     "name": "Glutathione (S-Acetyl & Reduced GSH)",
+     "dose": "20 mg"
     },
     {
-     "name": "Reduced Glutathione",
-     "dose": "10 mg"
+     "name": "Coenzyme Q10 (Ubiquinone)",
+     "dose": "5 mg"
     },
     {
-     "name": "SOD (Superoxide Dismutase)",
-     "dose": "10 mg"
+     "name": "Superoxide Dismutase (SOD)",
+     "dose": "31,000 units 10 mg"
     },
     {
      "name": "Catalase",
-     "dose": "10 mg"
-    },
-    {
-     "name": "Coenzyme Q10 (Ultra Absorption)",
-     "dose": "5 mg"
+     "dose": "1,000 FIP 10 mg"
     },
     {
      "name": "Vitamin A (Retinyl Palmitate)",
@@ -4133,23 +4121,15 @@
      "dose": "3.3 mg"
     },
     {
-     "name": "Vitamin B6 (Pyridoxal 5-Phosphate)",
+     "name": "Vitamin B6 (Pyridoxal 5'-Phosphate)",
      "dose": "0.7 mg"
-    },
-    {
-     "name": "Magnesium (as Ascorbate & Threonate)",
-     "dose": "13.2 mg"
-    },
-    {
-     "name": "Magnesium Threonate",
-     "dose": "10 mg"
     },
     {
      "name": "Quercetin Dihydrate (Sophora japonica)",
      "dose": "10 mg"
     },
     {
-     "name": "Hesperiden Methyl Chalcone (Citrus spp.)",
+     "name": "Hesperidin Methyl Chalcone (HMC) (Citrus spp.)",
      "dose": "10 mg"
     },
     {
@@ -4157,56 +4137,48 @@
      "dose": "10 mg"
     },
     {
-     "name": "Sumac 50:1 (Cotinus coggyrgria)",
+     "name": "Fisetin 50% (Cotinus coggygria)",
      "dose": "20 mg"
     },
     {
-     "name": "Vitamin B13: Phosphatides 50% (Helianthus annua)",
-     "dose": "13 mg"
+     "name": "Sumac 50:1 (Cotinus coggygria)",
+     "dose": "20 mg"
     },
     {
-     "name": "EGb 761 (Ginkgo biloba) (24% Flavone Glycosides, 6% Lactones, <0.0005% Ginkgolic Acid)",
-     "dose": "8 mg"
+     "name": "Magnesium Threonate",
+     "dose": "10 mg"
     },
     {
-     "name": "Vitamin B3 (as Niacin)",
-     "dose": "5 mg"
+     "name": "Magnesium Ascorbate",
+     "dose": "193 mg"
     },
     {
-     "name": "Moringa 100:1 (Moringa oleifera)",
-     "dose": "3 mg"
+     "name": "Magnesium (as Ascorbate & Threonate)",
+     "dose": "13.2 mg"
     },
     {
-     "name": "Spirit Minerals (ORMUS)",
-     "dose": "2 mg"
-    },
-    {
-     "name": "Vinpocetin (Vinca minor)",
-     "dose": "1 mg"
-    },
-    {
-     "name": "Licorice Omnipotent (Glycyrrhiza glabra)",
-     "dose": "0.5 mg"
-    },
-    {
-     "name": "Gingerol 10% (Zingiber officinalis)",
-     "dose": "0.5 mg"
-    },
-    {
-     "name": "Piperine (Piper nigrum)",
-     "dose": "0.5 mg"
-    },
-    {
-     "name": "Humic Acid",
-     "dose": "0.5 mg"
-    },
-    {
-     "name": "Fulvic Acid",
-     "dose": "0.5 mg"
+     "name": "Bioavailability Blend",
+     "dose": "34.5 mg"
     }
    ],
-   "ingredients_source": "t33",
-   "description": "Synergy C . Synergy C Vitamin C Syntropy Your complete intracellular antioxidant network… Synergy C now includes the intracellular anti-oxidants SOD and Catalase, while S-Acetyl Glutathione delivers pre-formed Glutathione to the intracellular compartment to support the cell's production of Glutathione Peroxidase. These antioxidant enzymes are the cell's front-line antioxidant defense against free radicals, and they are not used up in the process. Molecular Hydrogen is another key intracellular anti-oxidant, but we cannot put it in the capsule since it is a gas. We recommend our Living Water..."
+   "ingredients_source": "label-read-2026-09-27",
+   "description": "Each Vitamin C Syntropy vegicap gives you vitamin C as magnesium ascorbate and ascorbyl palmitate. Alongside it you get natural dry vitamin E as d-alpha tocopherol succinate, Na R-lipoate, and glutathione in two forms, S-acetyl and reduced GSH. You also get coenzyme Q10 as ubiquinone, plus superoxide dismutase and catalase. Rounding it out are vitamin A as retinyl palmitate, vitamin B5 as calcium pantothenate, and vitamin B6 as pyridoxal 5'-phosphate. Then come the polyphenols: quercetin dihydrate, hesperidin methyl chalcone, luteolin, fisetin and sumac. Magnesium threonate and magnesium ascorbate finish the formula, joined by a blend that aids absorption. Take 1 to 4 capsules a day before food, or as guided.\n\nOther ingredients: Phthalate-free enteric vegicaps, Healing Energy, Love and Prayer. 30 vegicaps.",
+   "fmp_id": "333",
+   "panel_note": "Bioavailability Blend contains: Phosphatides 50% (Helianthus annuus), Humic & Fulvic Acids, Moringa 100:1 (Moringa oleifera), Gingerol 10% (Zingiber officinale), Piperine (Piper nigrum), EGb 761 (Ginkgo biloba) (24%, 6%, <0.0005%), Vitamin B3 (as Niacin) 5 mg, Vinpocetine (Vinca minor), Licorice Omnipotent (Glycyrrhiza glabra), Spirit Minerals (ORMUS).",
+   "directions": "1 to 4 capsules daily before food or as guided.",
+   "intro": "Each Vitamin C Syntropy vegicap gives you vitamin C as magnesium ascorbate and ascorbyl palmitate. Alongside it you get natural dry vitamin E as d-alpha tocopherol succinate, Na R-lipoate, and glutathione in two forms, S-acetyl and reduced GSH. You also get coenzyme Q10 as ubiquinone, plus superoxide dismutase and catalase. Rounding it out are vitamin A as retinyl palmitate, vitamin B5 as calcium pantothenate, and vitamin B6 as pyridoxal 5'-phosphate. Then come the polyphenols: quercetin dihydrate, hesperidin methyl chalcone, luteolin, fisetin and sumac. Magnesium threonate and magnesium ascorbate finish the formula, joined by a blend that aids absorption. Take 1 to 4 capsules a day before food, or as guided.",
+   "learn_markdown": "Each Vitamin C Syntropy vegicap combines vitamin C as magnesium ascorbate and ascorbyl palmitate, natural dry vitamin E as d-alpha tocopherol succinate, Na R-lipoate, glutathione as S-acetyl and reduced GSH, coenzyme Q10 as ubiquinone, superoxide dismutase and catalase with vitamin A as retinyl palmitate, vitamin B5 as calcium pantothenate and vitamin B6 as pyridoxal 5'-phosphate. Polyphenols include quercetin dihydrate, hesperidin methyl chalcone, luteolin, fisetin and sumac, joined by magnesium threonate and magnesium ascorbate with a blend that aids absorption. Take 1 to 4 capsules daily before food or as guided.\n\nEach vegicap contains: Vitamin C (Mg Ascorbate & Ascorbyl Palmitate) 200 mg; Natural Dry Vitamin E (D-Alpha Tocopherol Succinate) 10 IU; Na R-Lipoate (Stabilized, Bio-enhanced) 20 mg; Glutathione (S-Acetyl & Reduced GSH) 20 mg; Coenzyme Q10 (Ubiquinone) 5 mg; Superoxide Dismutase (SOD) 31,000 units 10 mg; Catalase 1,000 FIP 10 mg; Vitamin A (Retinyl Palmitate) 1667 IU; Vitamin B5 (Calcium Pantothenate) 3.3 mg; Vitamin B6 (Pyridoxal 5'-Phosphate) 0.7 mg; Quercetin Dihydrate (Sophora japonica) 10 mg; Hesperidin Methyl Chalcone (HMC) (Citrus spp.) 10 mg; Luteolin (Reseda spp.) 10 mg; Fisetin 50% (Cotinus coggygria) 20 mg; Sumac 50:1 (Cotinus coggygria) 20 mg; Magnesium Threonate 10 mg; Magnesium Ascorbate 193 mg; Magnesium (as Ascorbate & Threonate) 13.2 mg; Bioavailability Blend 34.5 mg. Bioavailability Blend contains: Phosphatides 50% (Helianthus annuus), Humic & Fulvic Acids, Moringa 100:1 (Moringa oleifera), Gingerol 10% (Zingiber officinale), Piperine (Piper nigrum), EGb 761 (Ginkgo biloba) (24%, 6%, <0.0005%), Vitamin B3 (as Niacin) 5 mg, Vinpocetine (Vinca minor), Licorice Omnipotent (Glycyrrhiza glabra), Spirit Minerals (ORMUS).",
+   "copy_pinned": [
+    "ingredients",
+    "intro",
+    "description",
+    "research",
+    "benefits"
+   ],
+   "how_it_works": "",
+   "aliases": [
+    "Synergy C"
+   ]
   },
   "potassium-citrate": {
    "name": "Potassium Citrate",

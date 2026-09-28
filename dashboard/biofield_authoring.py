@@ -623,6 +623,7 @@ def remedy_catalog(cx, q="", limit=20):
 # bridge. Glen-confirmed aliases (reveal name lowercased -> FMP product name).
 # Extend as new divergences surface. See reference_reveal_dose_backfill.
 _DOSE_ALIASES = {
+    "synergy c": "Vitamin C Syntropy",         # FileMaker 333 renamed 3/17/2026
     "neuro magnesium": "Focus Neuro-Magnesium Powder",
     "neuro-magnesium": "Focus Neuro-Magnesium Powder",
     "neuroceramides": "Myelin Repair Neuroceramides",

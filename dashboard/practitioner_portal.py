@@ -394,7 +394,9 @@ def name_to_slug(name, catalog) -> Optional[str]:
         return None
     nl = name.strip().lower()
     for slug, p in (catalog or {}).items():
-        for cand in (p.get("name"), p.get("pinecone_title")):
+        # aliases too: a renamed product still answers to its old name once pinecone_title
+        # changes (Synergy C -> Vitamin C Syntropy, 2026-09-28).
+        for cand in (p.get("name"), p.get("pinecone_title"), *(p.get("aliases") or [])):
             pn = (cand or "").lower()
             if pn and (nl == pn or (len(nl) > 4 and (nl in pn or pn in nl))):
                 return slug
