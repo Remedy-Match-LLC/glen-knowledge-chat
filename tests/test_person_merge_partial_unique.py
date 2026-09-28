@@ -215,3 +215,24 @@ def test_postgres_include_columns_are_not_part_of_the_key(monkeypatch):
         c.rollback()
         c.execute('DROP TABLE IF EXISTS "inc_demo" CASCADE')
         c.commit()
+
+
+# ── Review round 3 ───────────────────────────────────────────────────────────
+def test_the_folded_cart_is_marked_merged_not_deleted(cx):
+    """Round 3: the shop marks a folded cart 'merged'. Deleting it let a signed-out browser
+    recreate an empty cart under the same token, and undo then failed on that token."""
+    _apply(cx)
+    assert ("t-aol-open", GMAIL, "merged") in _carts(cx) or ("t-aol-open", AOL, "merged") in _carts(cx)
+
+
+def test_undo_leaves_a_checked_out_cart_alone(cx):
+    """Round 3: undo must not take items out of a cart that has been ordered since."""
+    mid = _apply(cx)
+    cx.execute("UPDATE carts SET status='ordered' WHERE token='t-gm-open'")
+    cx.commit()
+    ordered = [r for r in _items(cx) if r[0] == "t-gm-open"]
+    res = pm.undo(cx, mid, undone_by="test")
+    cx.commit()
+    assert [r for r in _items(cx) if r[0] == "t-gm-open"] == ordered
+    assert not [r for r in _items(cx) if r[0] == "t-aol-open"]     # not copied back either
+    assert any(s["table"] == "cart_items" for s in res["skipped"])

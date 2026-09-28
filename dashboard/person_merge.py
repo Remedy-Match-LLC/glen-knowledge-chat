@@ -277,6 +277,12 @@ def _fold_cart_items(cx, log, schema, src, dst):
         _set_aside(cx, log, t, it, keys)
 
 
+def _mark_cart_merged(cx, log, t, cart, keys):
+    where, args = _row_where(cx, t.schema, t.table, cart, keys)
+    log.add(t.schema, t.table, _key_of(cart, keys), "status", cart.get("status"), "merged", "rekey")
+    cx.execute(f"UPDATE {pd.qualified(t.schema, t.table)} SET status='merged' WHERE {where}", args)
+
+
 def _settle(cx, log, t, row, other, keys, new, choices=None):
     """Settle a clash by the table's rule, or the owner's choice for this merge. Raises
     MergeBlocked when there is neither."""
@@ -301,16 +307,23 @@ def _settle(cx, log, t, row, other, keys, new, choices=None):
             cx.execute(f'UPDATE {pd.qualified(t.schema, t.table)} SET "{col}"=? WHERE {where}',
                        [val] + args)
         _set_aside(cx, log, t, row, keys)
+    elif rule.startswith("fold_cart:") and "token" in row and "status" in row:
+        # The folded cart is marked 'merged', as the shop marks it, never deleted: a
+        # signed-out browser holding its token would recreate it empty (review round 3).
+        col = rule.split(":", 1)[1]
+        if str(row.get(col) or "") > str(other.get(col) or ""):
+            _fold_cart_items(cx, log, t.schema, other.get("token"), row.get("token"))
+            _mark_cart_merged(cx, log, t, other, keys)
+        else:
+            _fold_cart_items(cx, log, t.schema, row.get("token"), other.get("token"))
+            _mark_cart_merged(cx, log, t, row, keys)
+        _rekey(cx, log, t, row, keys, new)
     elif rule.startswith("newest:") or rule.startswith("fold_cart:"):
         col = rule.split(":", 1)[1]
         if str(row.get(col) or "") > str(other.get(col) or ""):
-            if rule.startswith("fold_cart:"):
-                _fold_cart_items(cx, log, t.schema, other.get("token"), row.get("token"))
             _set_aside(cx, log, t, other, keys)
             _rekey(cx, log, t, row, keys, new)
         else:
-            if rule.startswith("fold_cart:"):
-                _fold_cart_items(cx, log, t.schema, row.get("token"), other.get("token"))
             _set_aside(cx, log, t, row, keys)
     elif rule.startswith("prefer:"):
         flag, col = rule.split(":", 1)[1].split(",")
@@ -640,6 +653,21 @@ def undo(cx, merge_id, undone_by):
     changes = _rows(cx, "SELECT * FROM person_merge_changes WHERE merge_id=? ORDER BY seq DESC",
                     (merge_id,))
     kept, handled, sum_rest, notify_out = [], set(), {}, False
+    # A folded cart's items are left where they are once the cart they joined is no longer
+    # open: it may have been ordered since (review round 3).
+    fold = [ch for ch in changes if _split_name(ch["table_name"])[1] == "cart_items"]
+    for ch in fold:
+        if ch["action"] not in ("added", "rekey"):
+            continue
+        schema = _split_name(ch["table_name"])[0]
+        token = (_loads(ch["key_json"]) or {}).get("token")
+        cur = cx.execute(f"SELECT status FROM {pd.qualified(schema, 'carts')} WHERE token=?",
+                         (token,)).fetchone()
+        if not cur or cur[0] != "open":
+            handled.update(c["id"] for c in fold)
+            skipped.append({"table": "cart_items", "key": {"token": token},
+                            "reason": "that cart is no longer open, so its items stay"})
+            break
     # Consent and money are never reversed blindly (final review round, 2026-09-27).
     for ch in changes:
         schema, table = _split_name(ch["table_name"])
