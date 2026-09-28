@@ -4,6 +4,7 @@ Production's store correction (production/05 Formulations/neuro-magnesium/2026-0
 store-correction.json), approved by Glen 2026-09-28 ("approve"). The stocked jar's references
 pointed at the presale listing; they move to focus-neuro-magnesium-powder. The presale is not
 touched."""
+import hashlib
 import json
 import sqlite3
 
@@ -12,6 +13,9 @@ from dashboard import client_portal as cp
 from dashboard import portal_biofield_reports as pbr
 
 FOCUS, PRESALE = "focus-neuro-magnesium-powder", "neuro-magnesium"
+# The presale entry as it stood before this change, and the live fields the spec keeps.
+PRESALE_SHA = "7bd8e29194caf1691ab388be0e459cfdda648f3ca0dc6e6a4fc2cf8185357bb7"
+KEPT = json.loads("{\"price_cents\": 6997, \"regular_cents\": 8000, \"qty_pricing\": true, \"bottle_type\": \"30 g\", \"no_groovekart\": true, \"pinecone_title\": \"Focus Neuro-Magnesium Powder\"}")
 
 
 def test_filemaker_431_is_the_stocked_jar():
@@ -19,7 +23,6 @@ def test_filemaker_431_is_the_stocked_jar():
 
 
 def test_the_catalog_carries_the_label_and_leaves_the_presale_alone():
-    import subprocess
     prods = json.load(open("data/products.json"))["products"]
     p = prods[FOCUS]
     assert p["name"] == "Focus Neuro-Magnesium Powder" and p["fmp_id"] == "431"
@@ -27,12 +30,9 @@ def test_the_catalog_carries_the_label_and_leaves_the_presale_alone():
     assert all(i["dose"] for i in p["ingredients"])
     for k in ("notes", "routing_work", "apply_as"):
         assert k not in p
-    was = json.loads(subprocess.run(["git", "show", "origin/main:data/products.json"],
-                                    capture_output=True, text=True).stdout)["products"]
-    assert prods[PRESALE] == was[PRESALE]
-    for k in ("price_cents", "regular_cents", "qty_pricing", "bottle_type", "no_groovekart",
-              "pinecone_title"):
-        assert p.get(k) == was[FOCUS].get(k), k
+    # Pinned values, not git: CI's checkout has no origin/main (it failed there).
+    assert hashlib.sha256(json.dumps(prods[PRESALE], sort_keys=True).encode()).hexdigest() == PRESALE_SHA
+    assert {k: p.get(k) for k in KEPT} == KEPT
     assert json.load(open("data/products-manual-corrections.json"))[FOCUS]["ingredients"] == p["ingredients"]
 
 
