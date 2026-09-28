@@ -73,9 +73,18 @@ function status(msg, kind){ document.getElementById("status").innerHTML =
   msg ? '<div class="note ' + (kind || "") + '">' + esc(msg) + '</div>' : ""; }
 function getJSON(url){ return fetch(url, {headers: hdr(), credentials: "same-origin"})
   .then(function(r){ return r.json().then(function(j){ return {ok: r.ok, status: r.status, j: j}; }); }); }
+// A reply that is not JSON (a 502 page during a deploy) or no reply at all still resolves,
+// with an error the page can show: a silent failure left Glen pressing Apply (2026-09-27).
 function postJSON(url, body){ return fetch(url, {method: "POST", credentials: "same-origin",
   headers: hdr({"Content-Type": "application/json"}), body: JSON.stringify(body || {})})
-  .then(function(r){ return r.json().then(function(j){ return {ok: r.ok, status: r.status, j: j}; }); }); }
+  .then(function(r){ return r.json().then(function(j){
+      if (j && typeof j === "object") return {ok: r.ok, status: r.status, j: j};
+      return {ok: false, unsure: true, status: r.status, j: {error: UNSURE(r.status)}}; },
+    function(){ return {ok: false, unsure: true, status: r.status, j: {error: UNSURE(r.status)}}; }); },
+    function(){ return {ok: false, unsure: true, status: 0, j: {error: UNSURE(0)}}; }); }
+// "unsure": the request may have run before the reply was lost (review round 1).
+function UNSURE(code){ return (code ? "The server answered " + code + " without a result. "
+  : "The server could not be reached. ") + "The merge may or may not have run: reload before trying again."; }
 
 function label(p){ return (p.name || "(no name)") + " · " + p.email + " · #" + p.id; }
 
@@ -112,7 +121,8 @@ function findPerson(q){
 function counts(p){
   var rows = Object.keys(p.counts).sort().map(function(t){
     var c = p.counts[t], k = p.clashes[t];
-    var rules = {"survivor": "the survivor's is kept", "sum": "added together", "newest": "the newest is kept"};
+    var rules = {"survivor": "the survivor's is kept", "sum": "added together", "newest": "the newest is kept",
+               "fold_cart": "the newest stays open and the other's items join it"};
     var clash = k ? ' <span class="sub">(' + k.count + ' in both: ' +
       esc(k.rule ? rules[k.rule.split(":")[0]] : "no rule, this blocks the merge") + ')</span>' : "";
     return "<tr><td>" + esc(t.replace(/_/g, " ")) + "</td><td>" + c[1] + "</td><td>" + c[0] + clash + "</td></tr>";
@@ -163,7 +173,13 @@ function renderPreview(p){
     '<label class="opt"><input type="radio" name="mail" value="stop"' + (sug.mail_old === "stop" ? " checked" : "") + '> Stop mailing it</label>' +
     '<label class="opt"><input type="radio" name="mail" value="keep"' + (sug.mail_old === "keep" ? " checked" : "") + '> Keep mailing it</label>' +
     '<div class="row"><button class="btn" id="apply-btn"' + ((p.blocked || []).length ? " disabled" : "") +
-    '>Apply merge</button></div></div>';
+    '>Apply merge</button></div>' +
+    // Beside the button, not at the top of the page: the reason it is off, and every result.
+    '<div id="apply-msg" role="status" aria-live="polite">' + ((p.blocked || []).length
+      ? '<div class="note warn">Apply is off until every clash is settled. ' +
+        (need.length ? 'Choose whose record stays, above. ' : '') +
+        (hard.length ? 'Not reviewed yet: ' + esc(hard.join(", ").replace(/_/g, " ")) + '.' : '') + '</div>'
+      : '') + '</div></div>';
   // The preview always shows the survivor that Apply will use: choosing the other one
   // re-runs the preview with the two swapped (review round 2).
   Array.prototype.forEach.call(document.querySelectorAll('input[name="stay"]'), function(r){
@@ -221,15 +237,36 @@ function askApply(){
       " keeps working as a way in. GoHighLevel: " + (mail === "stop" ? "stop mailing it." : "keep mailing it.") +
       " You can undo this from the merge record.",
       "Merge", function(){
-        status("Merging.");
+        var btn = document.getElementById("apply-btn");
+        function say(msg, kind){
+          status(msg, kind);
+          var el = document.getElementById("apply-msg");
+          if (el) { el.innerHTML = '<div class="note ' + (kind || "") + '">' + esc(msg) + '</div>'; }
+        }
+        btn.disabled = true; btn.textContent = "Merging…";
+        // Nothing on the preview changes while the merge runs (review round 2).
+        var inputs = Array.prototype.slice.call(document.querySelectorAll("#preview input"));
+        inputs.forEach(function(i){ i.disabled = true; });
+        say("Merging.");
         postJSON("/api/console/people/merge", {survivor_id: p.survivor.id, merged_id: p.merged.id,
                                                mail_old: mail, resolutions: choices})
           .then(function(x){
-            if (!x.ok) { status((x.j.error || "The merge did not run. Nothing was changed.") +
-              (x.j.blocked ? " Blocked by: " + x.j.blocked.join(", ") + "." : ""), "bad"); return; }
-            status("Merged. " + x.j.changes + " records changed." +
-                   (x.j.ghl_error ? " GoHighLevel was not updated: " + x.j.ghl_error : ""), x.j.ghl_error ? "warn" : "");
-            document.getElementById("preview").innerHTML = "";
+            if (x.ok && !x.j.merge_id) {
+              x = {ok: false, unsure: true, j: {error: UNSURE(x.status)}};
+            }
+            if (!x.ok) {
+              btn.textContent = "Apply merge";
+              if (!x.unsure) {                 // refused: nothing ran, so try again is safe
+                btn.disabled = false;
+                inputs.forEach(function(i){ i.disabled = false; });
+              }
+              say((x.j.error || "The merge did not run. Nothing was changed.") +
+                  (x.j.blocked ? " Blocked by: " + x.j.blocked.join(", ") + "." : ""), "bad");
+              return;
+            }
+            btn.textContent = "Merged";
+            say("Merged. " + x.j.changes + " records changed." +
+                (x.j.ghl_error ? " GoHighLevel was not updated: " + x.j.ghl_error : ""), x.j.ghl_error ? "warn" : "");
             showRecord(x.j.merge_id);
           });
       });

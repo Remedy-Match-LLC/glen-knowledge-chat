@@ -7,6 +7,7 @@ hash such as emailed_at or email_hash), or a column named person_id, people_id o
 
 Every table in the repo with such a column is named below, in MOVE_TABLES or HISTORY_TABLES;
 tests/test_person_merge_discover.py fails when a new one is in neither."""
+import re
 from collections import namedtuple
 
 from dashboard import db
@@ -174,6 +175,38 @@ def unique_sets(cx, schema, table):
         if pk and tuple(pk) not in sets:
             sets.append(tuple(pk))
     return sets
+
+
+def partial_unique_sets(cx, schema, table):
+    """(columns, predicate SQL) for every PARTIAL unique index with no expression, such as
+    ux_carts_open_email ON carts(email) WHERE status='open'. unique_sets leaves these out;
+    the merge engine needs them to see a clash before the database refuses the move
+    (2026-09-27: two open carts refused Peach Goddard's merge)."""
+    out = []
+    if _is_pg(cx):
+        rows = cx.execute(
+            "SELECT array_agg(a.attname ORDER BY array_position(ix.indkey, a.attnum)), "
+            "min(pg_get_expr(ix.indpred, ix.indrelid)) "
+            "FROM pg_index ix JOIN pg_class t ON t.oid=ix.indrelid "
+            "JOIN pg_namespace n ON n.oid=t.relnamespace "
+            # Key columns only: INCLUDE columns are stored, not unique (review round 2).
+            "JOIN pg_attribute a ON a.attrelid=t.oid "
+            "AND a.attnum=ANY((ix.indkey::int2[])[0:ix.indnkeyatts - 1]) "
+            "WHERE n.nspname=? AND t.relname=? AND ix.indisunique "
+            "AND ix.indpred IS NOT NULL AND ix.indexprs IS NULL GROUP BY ix.indexrelid",
+            (schema or "public", table)).fetchall()
+        return [(tuple(r[0]), r[1]) for r in rows if r[1]]
+    for idx in cx.execute(f'PRAGMA index_list("{table}")').fetchall():
+        if not idx[2] or not (len(idx) > 4 and idx[4]):
+            continue
+        cols = [r[2] for r in cx.execute(f'PRAGMA index_info("{idx[1]}")').fetchall()]
+        sql = (cx.execute("SELECT sql FROM sqlite_master WHERE type='index' AND name=?",
+                          (idx[1],)).fetchone() or [""])[0] or ""
+        sql = re.sub(r"--[^\n]*|/\*.*?\*/", " ", sql, flags=re.S).strip()   # comments
+        parts = re.split(r"\bWHERE\b", sql, flags=re.I)
+        if cols and all(cols) and len(parts) == 2:
+            out.append((tuple(cols), parts[1].strip()))
+    return out
 
 
 def key_columns(cx, schema, table):
