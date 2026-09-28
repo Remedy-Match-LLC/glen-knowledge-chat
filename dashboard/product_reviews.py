@@ -24,7 +24,10 @@ def init_table(cx):
                  "compliance_score INTEGER DEFAULT 0", "publication_score INTEGER DEFAULT 0",
                  "authenticity_score INTEGER DEFAULT 0", "specificity_score INTEGER DEFAULT 0",
                  "audio_quality INTEGER DEFAULT 0", "visual_quality INTEGER DEFAULT 0",
-                 "gift_owner_email TEXT DEFAULT ''"):
+                 "gift_owner_email TEXT DEFAULT ''",
+                 # A client-approved rewording keeps the words first recorded, and names
+                 # the message the client consented in (2026-09-28).
+                 "original_body TEXT DEFAULT ''", "consent_ref TEXT DEFAULT ''"):
         try:
             cx.execute(f"ALTER TABLE product_reviews ADD COLUMN {_col}")
         except db.OperationalError:

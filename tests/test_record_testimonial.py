@@ -106,3 +106,70 @@ def test_the_source_note_can_never_be_a_certification_tag(client):
     c.post("/api/console/testimonials/record", json=_body(source="ash-cert-l1 <b>"), headers=OWNER)
     tag = _row(appmod)["source_tag"]
     assert tag.startswith("staff:") and "<" not in tag and " " not in tag
+
+
+# ── The client approved an edited wording (Rebecca Navo, 2026-09-28) ─────────
+# She consented in writing to Glen's edited version. Recording refuses to overwrite, so an
+# owner replaces the wording through its own route: the original stays on the row, the
+# consent message is referenced, the text is scored again, and it stays PENDING.
+EDITED = "I have worked with Rae and Dr. Glen Swartwout for six to seven years."
+
+
+def _recorded(c):
+    return c.post("/api/console/testimonials/record", json=_body(), headers=OWNER).get_json()["review_id"]
+
+
+def _approved(**kw):
+    b = {"body": EDITED, "name": "Rebecca Navo, California Real Estate Agent",
+         "consent_public": True, "consent_ref": "gmail:1a0e5f5262f92c39"}
+    b.update(kw)
+    return b
+
+
+def test_owner_records_the_client_approved_wording(client):
+    c, appmod, scored = client
+    rid = _recorded(c)
+    r = c.post(f"/api/console/testimonials/{rid}/client-approved", json=_approved(), headers=OWNER)
+    assert r.status_code == 200, r.get_data(as_text=True)
+    row = _row(appmod)
+    assert row["body"] == EDITED and row["name"] == "Rebecca Navo, California Real Estate Agent"
+    assert row["consent_public"] == 1 and row["status"] == "pending"
+    assert row["original_body"] == TEXT
+    assert row["consent_ref"] == "gmail:1a0e5f5262f92c39"
+    assert scored[-1] == EDITED                      # the new wording was scored
+
+
+def test_a_second_edit_keeps_the_first_original(client):
+    c, appmod, _ = client
+    rid = _recorded(c)
+    c.post(f"/api/console/testimonials/{rid}/client-approved", json=_approved(), headers=OWNER)
+    c.post(f"/api/console/testimonials/{rid}/client-approved", json=_approved(body="Again."),
+           headers=OWNER)
+    row = _row(appmod)
+    assert row["body"] == "Again." and row["original_body"] == TEXT
+
+
+@pytest.mark.parametrize("bad", [{"consent_public": False}, {"consent_public": "yes"},
+                                 {"consent_ref": ""}, {"body": "  "}])
+def test_it_needs_the_wording_consent_and_its_reference(client, bad):
+    c, appmod, _ = client
+    rid = _recorded(c)
+    r = c.post(f"/api/console/testimonials/{rid}/client-approved", json=_approved(**bad),
+               headers=OWNER)
+    assert r.status_code == 400
+    assert _row(appmod)["body"] == TEXT and _row(appmod)["consent_public"] == 0
+
+
+def test_only_owners_and_only_pending(client):
+    c, appmod, _ = client
+    rid = _recorded(c)
+    r = c.post(f"/api/console/testimonials/{rid}/client-approved", json=_approved(),
+               headers={"X-Console-Key": VA})
+    assert r.status_code == 403
+    with sqlite3.connect(appmod.LOG_DB) as cx:
+        cx.execute("UPDATE product_reviews SET status='approved' WHERE id=?", (rid,))
+    r = c.post(f"/api/console/testimonials/{rid}/client-approved", json=_approved(), headers=OWNER)
+    assert r.status_code == 409
+    assert c.post("/api/console/testimonials/999/client-approved", json=_approved(),
+                  headers=OWNER).status_code == 404
+    assert _row(appmod)["body"] == TEXT
