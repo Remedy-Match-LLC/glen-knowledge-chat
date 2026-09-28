@@ -189,7 +189,9 @@ def partial_unique_sets(cx, schema, table):
             "min(pg_get_expr(ix.indpred, ix.indrelid)) "
             "FROM pg_index ix JOIN pg_class t ON t.oid=ix.indrelid "
             "JOIN pg_namespace n ON n.oid=t.relnamespace "
-            "JOIN pg_attribute a ON a.attrelid=t.oid AND a.attnum=ANY(ix.indkey) "
+            # Key columns only: INCLUDE columns are stored, not unique (review round 2).
+            "JOIN pg_attribute a ON a.attrelid=t.oid "
+            "AND a.attnum=ANY((ix.indkey::int2[])[0:ix.indnkeyatts - 1]) "
             "WHERE n.nspname=? AND t.relname=? AND ix.indisunique "
             "AND ix.indpred IS NOT NULL AND ix.indexprs IS NULL GROUP BY ix.indexrelid",
             (schema or "public", table)).fetchall()
@@ -200,6 +202,7 @@ def partial_unique_sets(cx, schema, table):
         cols = [r[2] for r in cx.execute(f'PRAGMA index_info("{idx[1]}")').fetchall()]
         sql = (cx.execute("SELECT sql FROM sqlite_master WHERE type='index' AND name=?",
                           (idx[1],)).fetchone() or [""])[0] or ""
+        sql = re.sub(r"--[^\n]*|/\*.*?\*/", " ", sql, flags=re.S).strip()   # comments
         parts = re.split(r"\bWHERE\b", sql, flags=re.I)
         if cols and all(cols) and len(parts) == 2:
             out.append((tuple(cols), parts[1].strip()))

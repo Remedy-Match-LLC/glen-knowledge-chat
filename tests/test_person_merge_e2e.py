@@ -204,7 +204,42 @@ def test_a_server_error_that_is_not_json_is_shown(live):
         page.click("#dlg-go")
         page.wait_for_function("() => document.getElementById('apply-msg') && "
                                "document.getElementById('apply-msg').innerText.includes('502')")
-        assert not page.is_disabled("#apply-btn")
+        # The merge may have run before the gateway failed: no second press until a reload
+        # (review round 1).
+        assert page.is_disabled("#apply-btn")
+        assert "reload" in page.inner_text("#apply-msg").lower()
+        b.close()
+
+
+def test_a_reply_without_a_merge_is_not_called_merged(live):
+    """Round 2: a 200 holding {} announced "Merged. undefined records changed"."""
+    base, appmod = live
+    with sync_playwright() as p:
+        b, page = _open(p, base)
+        page.route("**/api/console/people/merge", lambda r: r.fulfill(
+            status=200, body="{}", content_type="application/json"))
+        page.click("#apply-btn")
+        page.click("#dlg-go")
+        page.wait_for_function("() => document.getElementById('apply-msg') && "
+                               "document.getElementById('apply-msg').innerText.toLowerCase().includes('reload')")
+        assert page.inner_text("#apply-btn") != "Merged"
+        b.close()
+
+
+def test_the_preview_is_locked_while_a_merge_runs(live):
+    """Round 2: changing who stays mid-merge re-ran the preview and showed "Merged" beside
+    a different pair, with its Apply enabled."""
+    base, appmod = live
+    with sync_playwright() as p:
+        b, page = _open(p, base)
+        held = []
+        page.route("**/api/console/people/merge", lambda r: held.append(r))
+        page.click("#apply-btn")
+        page.click("#dlg-go")
+        page.wait_for_function("() => document.getElementById('apply-btn').innerText.startsWith('Merging')")
+        assert page.is_disabled('input[name="stay"][value="1"]')
+        held[0].continue_()
+        page.wait_for_selector("#undo-btn")
         b.close()
 
 

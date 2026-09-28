@@ -12,6 +12,7 @@ Clashes (Glen, 2026-09-27: "written-rule"): settled only by a rule in CLASH_RULE
 any other table blocks the merge (MergeBlocked) and, in the sweep, is left in place."""
 import base64
 import json
+import re
 from datetime import datetime, timezone
 
 from dashboard import db, dbwrite
@@ -28,7 +29,8 @@ CLASH_RULES = {
     "portal_notify_state": "notify",
     "portal_cart_seeded": "survivor",      # an "already seeded" marker
     "portal_fold_state": "survivor",       # which cards are folded
-    "carts": "newest:updated_at",          # the cart touched last
+    # The cart touched last stays open; the other's items fold into it (Glen, 2026-09-27).
+    "carts": "fold_cart:updated_at",
     "scan_freshness": "newest:last_scan_date",
     # Same scan date under both: an approved reveal first, then the later one (round 3).
     "biofield_reveals": "prefer:first_approved,updated_at",
@@ -203,7 +205,12 @@ def _clash_row(cx, t, row, new):
             continue
         q = pd.qualified(t.schema, t.table)
         where, args = _row_where(cx, t.schema, t.table, row, pd.key_columns(cx, t.schema, t.table))
-        if not _rows(cx, f"SELECT 1 FROM {q} WHERE {where} AND ({pred}) LIMIT 1", args):
+        # Judged on the row as it would be AFTER the move: the condition may name the
+        # address itself (review round 2).
+        moved = ", ".join((_param_as(cx, t) + f' AS "{c}"') if c == t.column else f'"{c}"'
+                          for c in row)
+        if not _rows(cx, f"SELECT 1 FROM (SELECT {moved} FROM {q} WHERE {where}) AS moved "
+                         f"WHERE ({pred}) LIMIT 1", [_val(t, new)] + args):
             continue
         clause = _match_sql(t) + "".join(f' AND "{c}" = ?' for c in others) + f" AND ({pred})"
         got = _rows(cx, f"SELECT * FROM {q} WHERE {clause} LIMIT 1",
@@ -211,6 +218,17 @@ def _clash_row(cx, t, row, new):
         if got:
             return got[0]
     return None
+
+
+def _param_as(cx, t):
+    """A placeholder typed like the column, so Postgres can compare it in a condition."""
+    if not _is_pg(cx):
+        return "?"
+    r = cx.execute("SELECT data_type FROM information_schema.columns WHERE table_schema=? "
+                   "AND table_name=? AND column_name=?",
+                   (t.schema or "public", t.table, t.column)).fetchone()
+    typ = r[0] if r and re.fullmatch(r"[a-z ]+", r[0] or "") else "text"
+    return f"CAST(? AS {typ})"
 
 
 def _key_of(row, keys):
@@ -231,6 +249,32 @@ def _rekey(cx, log, t, row, keys, new):
     log.add(t.schema, t.table, _key_of(after, keys), t.column, row[t.column], new, "rekey")
     cx.execute(f'UPDATE {pd.qualified(t.schema, t.table)} SET "{t.column}"=? WHERE {where}',
                [new] + args)
+
+
+def _fold_cart_items(cx, log, schema, src, dst):
+    """Fold one cart's items into another, the way the shop folds carts
+    (cart_store._fold_cart_items): the higher quantity wins for a product in both, nothing is
+    summed, and the source cart is left empty. Every change is logged, so undo puts each
+    item back in its own cart. Nothing is committed here."""
+    if not src or not dst or src == dst:
+        return
+    t = pd.Target(schema, "cart_items", "token", "cart")
+    keys = pd.key_columns(cx, schema, "cart_items")
+    q = pd.qualified(schema, "cart_items")
+    for it in _rows(cx, f"SELECT * FROM {q} WHERE token=?", (src,)):
+        have = _rows(cx, f"SELECT * FROM {q} WHERE token=? AND slug=? AND fmt=?",
+                     (dst, it["slug"], it["fmt"]))
+        if have:
+            if int(it["qty"]) > int(have[0]["qty"]):
+                where, args = _row_where(cx, schema, "cart_items", have[0], keys)
+                log.add(schema, "cart_items", _key_of(have[0], keys), "qty", have[0]["qty"],
+                        it["qty"], "rekey")
+                cx.execute(f"UPDATE {q} SET qty=? WHERE {where}", [it["qty"]] + args)
+        else:
+            added = dict(it, token=dst)
+            log.add(schema, "cart_items", _key_of(added, keys), "token", None, dst, "added", added)
+            _insert_row(cx, schema, "cart_items", added)
+        _set_aside(cx, log, t, it, keys)
 
 
 def _settle(cx, log, t, row, other, keys, new, choices=None):
@@ -257,12 +301,16 @@ def _settle(cx, log, t, row, other, keys, new, choices=None):
             cx.execute(f'UPDATE {pd.qualified(t.schema, t.table)} SET "{col}"=? WHERE {where}',
                        [val] + args)
         _set_aside(cx, log, t, row, keys)
-    elif rule.startswith("newest:"):
+    elif rule.startswith("newest:") or rule.startswith("fold_cart:"):
         col = rule.split(":", 1)[1]
         if str(row.get(col) or "") > str(other.get(col) or ""):
+            if rule.startswith("fold_cart:"):
+                _fold_cart_items(cx, log, t.schema, other.get("token"), row.get("token"))
             _set_aside(cx, log, t, other, keys)
             _rekey(cx, log, t, row, keys, new)
         else:
+            if rule.startswith("fold_cart:"):
+                _fold_cart_items(cx, log, t.schema, row.get("token"), other.get("token"))
             _set_aside(cx, log, t, row, keys)
     elif rule.startswith("prefer:"):
         flag, col = rule.split(":", 1)[1].split(",")
@@ -641,6 +689,17 @@ def undo(cx, merge_id, undone_by):
         chs = groups[g]
         schema, table = _split_name(chs[0]["table_name"])
         key = _loads(chs[0]["key_json"])
+        if chs[0]["action"] == "added":
+            # A row the merge created (a folded cart item): remove it if it is unchanged.
+            row = _loads(chs[0]["row_json"])
+            q = pd.qualified(schema, table)
+            where = " AND ".join(f'"{k}" {_eq(cx)} ?' for k in row)
+            cur = cx.execute(f"DELETE FROM {q} WHERE {where}", [row[k] for k in row])
+            if getattr(cur, "rowcount", 1):
+                restored += 1
+            else:
+                skipped.append({"table": table, "key": key, "reason": "changed since the merge"})
+            continue
         if chs[0]["action"] == "set_aside":
             row = _loads(chs[0]["row_json"])
             if table in sum_rest and sum_rest[table][0] in row:
