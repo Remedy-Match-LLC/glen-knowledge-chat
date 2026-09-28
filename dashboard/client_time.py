@@ -24,36 +24,57 @@ def valid_zone(tz):
 
 
 def _init(cx):
+    """Add the column once. A SELECT first, so the common case takes no table lock."""
+    try:
+        cx.execute("SELECT time_zone FROM people LIMIT 0")
+        return
+    except Exception:  # noqa: BLE001 - column missing
+        try:
+            cx.rollback()
+        except Exception:  # noqa: BLE001
+            pass
     try:
         cx.execute("ALTER TABLE people ADD COLUMN time_zone TEXT DEFAULT ''")
-    except Exception:  # noqa: BLE001 - already present
+    except Exception:  # noqa: BLE001 - another worker added it
         pass
+
+
+def _person_email(cx, email):
+    """The surviving person's address: a merged-away address saves onto the survivor."""
+    email = (email or "").strip().lower()
+    try:
+        from dashboard import person_aliases as _pa
+        return _pa.canonical_email(cx, email) or email
+    except Exception:  # noqa: BLE001 - no alias table yet
+        return email
 
 
 def get_zone(cx, email):
     """The client's stored zone, or '' when none is stored."""
     _init(cx)
-    row = cx.execute("SELECT time_zone FROM people WHERE lower(email)=lower(?) LIMIT 1",
-                     ((email or "").strip(),)).fetchone()
+    row = cx.execute("SELECT time_zone FROM people WHERE lower(email)=? LIMIT 1",
+                     (_person_email(cx, email),)).fetchone()
     return valid_zone(row[0] if row else "")
 
 
 def set_zone(cx, email, tz, source="chosen"):
-    """Store a zone. A zone the browser reported only fills an empty one: a zone the client
-    chose is never replaced by the browser's. Returns the zone now stored. Caller commits."""
+    """Store a zone on the person's own record and return what is stored ('' when there is no
+    such person: this never creates one). A zone the browser reported only fills an empty
+    value, in the same statement, so a choice saved by another worker is never replaced.
+    Caller commits."""
     tz = valid_zone(tz)
-    email = (email or "").strip().lower()
-    if not tz or not email:
+    if not tz:
         raise ValueError("unknown time zone")
     _init(cx)
-    if source == "browser" and get_zone(cx, email):
-        return get_zone(cx, email)
-    cur = cx.execute("UPDATE people SET time_zone=? WHERE lower(email)=?", (tz, email))
-    if not getattr(cur, "rowcount", 0):
-        now = datetime.utcnow().isoformat()
-        cx.execute("INSERT INTO people (email, time_zone, created_at, updated_at) VALUES (?,?,?,?)",
-                   (email, tz, now, now))
-    return tz
+    who = _person_email(cx, email)
+    if not who:
+        return ""
+    if source == "browser":
+        cx.execute("UPDATE people SET time_zone=? WHERE lower(email)=? "
+                   "AND COALESCE(time_zone, '')=''", (tz, who))
+    else:
+        cx.execute("UPDATE people SET time_zone=? WHERE lower(email)=?", (tz, who))
+    return get_zone(cx, who)
 
 
 def _clock(dt):
@@ -63,6 +84,14 @@ def _clock(dt):
 
 def _day(dt):
     return f"{dt:%a} {dt.day} {dt:%b}"
+
+
+def local_only(hawaii_ts, tz):
+    """'Wed 30 Sep, 2:00 pm' in the client's zone, with no Hawaii bracket (for staff emails)."""
+    zone = valid_zone(tz) or HAWAII
+    there = (datetime.fromisoformat(str(hawaii_ts)[:19]).replace(tzinfo=ZoneInfo(HAWAII))
+             .astimezone(ZoneInfo(zone)))
+    return f"{_day(there)}, {_clock(there)}"
 
 
 def describe(hawaii_ts, tz):

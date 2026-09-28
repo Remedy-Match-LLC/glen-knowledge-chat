@@ -5,6 +5,7 @@ only the onboarding config and the once-per-member lookup; the membership gate
 (_is_paid_member) lives in the route layer so this module stays free of
 app-layer imports (same shape as dashboard/consult.py)."""
 
+import hashlib
 import random
 
 ONBOARDING = {
@@ -28,8 +29,13 @@ def daily_slot_sample(slots, limit=3, seed=None):
     selected = []
     for day, day_slots in by_day.items():
         if len(day_slots) > limit:
-            pick = random.Random(f"{seed}|{day}") if seed else random
-            day_slots = pick.sample(sorted(day_slots), limit)
+            if seed:
+                # Each time gets its own rank for this client, so booking or losing one time
+                # leaves the others shown in place (review round 2).
+                rank = lambda s: hashlib.sha256(f"{seed}|{s}".encode()).hexdigest()
+                day_slots = sorted(day_slots, key=rank)[:limit]
+            else:
+                day_slots = random.sample(day_slots, limit)
         selected.extend(sorted(day_slots))
     return selected
 

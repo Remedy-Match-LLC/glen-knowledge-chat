@@ -32061,7 +32061,8 @@ def _consult_send_confirmations(email, booking):
         start = booking["start_ts"]
         tz = booking.get("client_tz") or ""
         nice = _ct.describe(start, tz)                       # the client's zone, Hawaii in brackets
-        staff = _ct.describe(start, "") + (f" (client's time: {nice})" if nice != _ct.describe(start, "") else "")
+        staff = _ct.describe(start, "") + (f"; for the client that is {_ct.local_only(start, tz)}"
+                                           if nice != _ct.describe(start, "") else "")
         portal = booking.get("portal_url") or ""
         join_line = ("At your appointment time, open your Healing Oasis portal and click "
                      "Join your consult" + (f": {portal}" if portal else "."))
@@ -32094,7 +32095,8 @@ def _onboarding_send_confirmations(email, booking):
         start = booking["start_ts"]
         tz = booking.get("client_tz") or ""
         nice = _ct.describe(start, tz)                       # the client's zone, Hawaii in brackets
-        staff = _ct.describe(start, "") + (f" (client's time: {nice})" if nice != _ct.describe(start, "") else "")
+        staff = _ct.describe(start, "") + (f"; for the client that is {_ct.local_only(start, tz)}"
+                                           if nice != _ct.describe(start, "") else "")
         phone = EVOX_RAE_PHONE or "the number on file"
         line = ("This is a phone call. Rae will call you at your appointment time at "
                 "the number on file. Questions before then? Reach out any time.")
@@ -33738,9 +33740,8 @@ def api_console_booking_cancel():
 
 @app.route("/api/portal/time-zone", methods=["GET", "POST"])
 def portal_time_zone():
-    """The client's own time zone (Glen, 2026-09-28). The portal sends the browser's zone on
-    a first visit (source "browser", fills only an empty one) and the client's choice from the
-    settings (source "chosen", always wins)."""
+    """The client's own time zone (Glen, 2026-09-28): GET it, or POST the client's choice
+    from the portal card, which always wins. A staff view is asked first, by the staff guard."""
     from dashboard import client_time as _ct
     with _db_lock, db.connect(LOG_DB) as cx:
         cx.row_factory = sqlite3.Row
@@ -33750,9 +33751,31 @@ def portal_time_zone():
         if request.method == "GET":
             return jsonify({"tz": _ct.get_zone(cx, ident.email)})
         body = request.get_json(silent=True) or {}
-        source = "browser" if body.get("source") == "browser" else "chosen"
         try:
-            tz = _ct.set_zone(cx, ident.email, body.get("tz"), source=source)
+            tz = _ct.set_zone(cx, ident.email, body.get("tz"), source="chosen")
+        except ValueError:
+            return jsonify({"ok": False, "error": "unknown time zone"}), 400
+        cx.commit()
+    if not tz:
+        return jsonify({"ok": False, "error": "no record to save it on"}), 404
+    return jsonify({"ok": True, "tz": tz})
+
+
+@app.route("/api/portal/time-zone/browser", methods=["POST"])
+def portal_time_zone_browser():
+    """The browser's zone, reported on a visit. It only fills an empty value, and a staff view
+    never saves its own zone onto the client (review round 1): a background write."""
+    from dashboard import client_time as _ct
+    if _staff_touch():
+        return ("", 204)
+    with _db_lock, db.connect(LOG_DB) as cx:
+        cx.row_factory = sqlite3.Row
+        ident = _evox_ident(cx, request.args.get("token", ""))
+        if ident is None:
+            return jsonify({"error": "not_found"}), 404
+        body = request.get_json(silent=True) or {}
+        try:
+            tz = _ct.set_zone(cx, ident.email, body.get("tz"), source="browser")
         except ValueError:
             return jsonify({"ok": False, "error": "unknown time zone"}), 400
         cx.commit()
@@ -33824,6 +33847,11 @@ def onboarding_book():
             return jsonify({"error": "slot_unavailable"}), 409
         try:
             from dashboard import client_time as _ct
+            if body.get("tz") and not _staff_touch():
+                try:        # the zone the portal showed, if none is stored yet (round 2)
+                    _ct.set_zone(cx, ident.email, body.get("tz"), source="browser")
+                except ValueError:
+                    pass
             _tz = _ct.get_zone(cx, ident.email)
             b = _ev.create_booking(cx, ident.email, start_ts, duration_min=15,
                                    practitioner="rae", session_type="onboarding",
@@ -34225,6 +34253,11 @@ def consult_book():
             return jsonify({"error": "slot_unavailable"}), 409
         try:
             from dashboard import client_time as _ct
+            if body.get("tz") and not _staff_touch():
+                try:        # the zone the portal showed, if none is stored yet (round 2)
+                    _ct.set_zone(cx, ident.email, body.get("tz"), source="browser")
+                except ValueError:
+                    pass
             _tz = _ct.get_zone(cx, ident.email)
             b = _ev.create_booking(cx, ident.email, start_ts, duration_min=30,
                                    practitioner="glen", session_type="biofield-consult",

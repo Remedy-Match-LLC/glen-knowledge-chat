@@ -61,11 +61,11 @@ def test_a_different_day_is_named():
 def test_the_browser_fills_an_empty_zone_and_never_overwrites_a_choice():
     tok = _seed_member(f"tz1-{RUN}@x.com")
     c = _client()
-    assert c.post(f"/api/portal/time-zone?token={tok}", json={"tz": LA, "source": "browser"}).status_code == 200
+    assert c.post(f"/api/portal/time-zone/browser?token={tok}", json={"tz": LA}).status_code == 200
     assert _zone(f"tz1-{RUN}@x.com") == LA
     c.post(f"/api/portal/time-zone?token={tok}", json={"tz": "Europe/London", "source": "chosen"})
     assert _zone(f"tz1-{RUN}@x.com") == "Europe/London"
-    c.post(f"/api/portal/time-zone?token={tok}", json={"tz": LA, "source": "browser"})
+    c.post(f"/api/portal/time-zone/browser?token={tok}", json={"tz": LA})
     assert _zone(f"tz1-{RUN}@x.com") == "Europe/London"          # a choice wins over the browser
     assert c.get(f"/api/portal/time-zone?token={tok}").get_json()["tz"] == "Europe/London"
 
@@ -161,4 +161,130 @@ def test_the_consult_confirmation_uses_the_zone_too():
     assert "Wed 30 Sep, 2:00 pm (11:00 am Hawaii)" in client.args[3]
     assert "HST" not in client.args[3]
     glen = [c_ for c_ in send.call_args_list if c_.args[0] != "c@x.com"][0]
-    assert "11:00 am Hawaii time" in glen.args[3] and "client's time" in glen.args[3]
+    assert "11:00 am Hawaii time" in glen.args[3] and "for the client that is" in glen.args[3]
+
+
+
+# ── Review rounds 1 and 2 ────────────────────────────────────────────────────
+def test_a_staff_view_never_saves_its_own_zone_onto_the_client(monkeypatch):
+    tok = _seed_member(f"tz4-{RUN}@x.com")
+    monkeypatch.setattr(appmod, "_staff_touch", lambda: True)
+    r = _client().post(f"/api/portal/time-zone/browser?token={tok}", json={"tz": HNL})
+    assert r.status_code == 204 and _zone(f"tz4-{RUN}@x.com") == ""
+
+
+def test_the_browser_report_is_a_background_write():
+    from dashboard import staff_guard as sg
+    assert sg.classify("POST", "/api/portal/time-zone/browser") == "background"
+    assert sg.classify("POST", "/api/portal/time-zone") == "guard"     # a choice is guarded
+
+
+def test_a_browser_report_never_replaces_a_choice_even_in_a_race(monkeypatch):
+    """Round 2: the empty-check and the write were separate; another worker's choice could
+    land between them."""
+    email = f"tz5-{RUN}@x.com"
+    _seed_member(email)
+    with sqlite3.connect(appmod.LOG_DB) as cx:
+        ct.set_zone(cx, email, "Europe/London", source="chosen")
+        cx.commit()
+        monkeypatch.setattr(ct, "get_zone", lambda cx_, e: "")      # the stale read
+        ct.set_zone(cx, email, LA, source="browser")
+        cx.commit()
+    monkeypatch.undo()
+    assert _zone(email) == "Europe/London"
+
+
+def test_saving_a_zone_never_creates_a_person():
+    email = f"ghost-{RUN}@x.com"
+    with sqlite3.connect(appmod.LOG_DB) as cx:
+        appmod._init_people_table()
+        assert ct.set_zone(cx, email, LA, source="chosen") == ""
+        cx.commit()
+        assert cx.execute("SELECT COUNT(*) FROM people WHERE email=?", (email,)).fetchone()[0] == 0
+
+
+def test_a_merged_address_saves_onto_the_surviving_person():
+    from dashboard import person_aliases as pa
+    alias, survivor = f"old-{RUN}@x.com", f"new-{RUN}@x.com"
+    _seed_member(survivor)
+    with sqlite3.connect(appmod.LOG_DB) as cx:
+        pa.init_tables(cx)
+        cx.execute("INSERT INTO email_aliases (alias_email, canonical_email, merge_id, created_at) "
+                   "VALUES (?,?,1,'t')", (alias, survivor))
+        ct.set_zone(cx, alias, LA, source="chosen")
+        cx.commit()
+        assert ct.get_zone(cx, alias) == LA
+    assert _zone(survivor) == LA
+
+
+def test_booked_times_leave_the_other_shown_times_in_place():
+    """Round 2: sampling a changed list reshuffled every time when one was booked."""
+    shown = ob.daily_slot_sample(DAY, seed="a@x.com")
+    unshown = [x for x in DAY if x not in shown]
+    assert ob.daily_slot_sample([x for x in DAY if x != unshown[0]], seed="a@x.com") == shown
+    after = ob.daily_slot_sample([x for x in DAY if x != shown[0]], seed="a@x.com")
+    assert shown[1] in after and shown[2] in after and len(after) == 3
+
+
+def test_a_first_booking_carries_the_zone_the_portal_showed():
+    """Round 2: a booking could reach the server before the browser's zone was saved."""
+    tok = _seed_member(f"tz6-{RUN}@x.com")
+    c = _client()
+    with mock.patch.object(appmod, "_is_paid_member", return_value=True), \
+         mock.patch.object(appmod, "send_evox_email"):
+        slot = c.get(f"/api/onboarding/availability?token={tok}").get_json()["slots"][0]
+        c.post(f"/api/onboarding/book?token={tok}", json={"start_ts": slot, "tz": LA})
+    with sqlite3.connect(appmod.LOG_DB) as cx:
+        tz = cx.execute("SELECT visitor_tz FROM evox_bookings WHERE email=? AND session_type='onboarding'",
+                        (f"tz6-{RUN}@x.com",)).fetchone()[0]
+    assert tz == LA and _zone(f"tz6-{RUN}@x.com") == LA
+
+
+def test_the_invite_holds_the_exact_instant_and_the_reminder_converts():
+    from datetime import datetime, timedelta
+    from dashboard import evox as ev
+    ics = ev.build_ics(uid="u", start_ts="2026-09-30T11:00:00", end_ts="2026-09-30T11:15:00",
+                       summary="s", description="d", location="Phone", tz_name=ct.HAWAII)
+    ics = ics.decode() if isinstance(ics, bytes) else ics
+    assert "DTSTART:20260930T210000Z" in ics                  # 11:00 Hawaii = 21:00 UTC
+    text, label = appmod._reminder_when("2026-09-30T11:00:00", ct.HAWAII, LA)
+    assert "14:00" in text or "2:00" in text
+
+
+def test_the_staff_email_has_no_nested_brackets():
+    b = {"start_ts": "2026-09-30T11:00:00", "end_ts": "2026-09-30T11:30:00", "ics_uid": "u2",
+         "portal_url": "https://x/portal/t", "client_tz": LA}
+    with mock.patch.object(appmod, "send_evox_email") as send:
+        appmod._consult_send_confirmations("c2@x.com", b)
+    glen = [c_ for c_ in send.call_args_list if c_.args[0] != "c2@x.com"][0].args[3]
+    assert "Wed 30 Sep, 11:00 am Hawaii time" in glen and "2:00 pm" in glen
+    assert "((" not in glen and "Hawaii))" not in glen
+
+
+RENDER_JS = r"""
+const assert = require('assert');
+let seg = "tok", loads = 0, onb = 0;
+function esc(s){ return String(s); }
+function load(){ loads++; }
+function initOnboardingCard(){ onb++; }
+global.document = {getElementById: () => null};
+BLOCK
+browserZone = () => "Europe/London";
+global.fetch = async () => ({ok: true, json: async () => ({tz: "America/New_York"})});
+(async () => {
+  await loadClientZone();
+  assert.strictEqual(CLIENT_TZ, "America/New_York");
+  assert.strictEqual(loads, 1);            // everything re-renders in the stored zone
+  console.log('OK');
+})().catch(e => { console.error(e); process.exit(1); });
+"""
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
+def test_the_portal_re_renders_when_the_stored_zone_differs(tmp_path):
+    page = open(os.path.join(ROOT, "static", "client-portal.html")).read()
+    a, b = page.find("// BEGIN client time zone"), page.find("// END client time zone")
+    js = tmp_path / "r.js"
+    js.write_text(RENDER_JS.replace("BLOCK", page[a:b]))
+    out = subprocess.run(["node", str(js)], capture_output=True, text=True, timeout=30)
+    assert out.returncode == 0 and "OK" in out.stdout, out.stderr + out.stdout

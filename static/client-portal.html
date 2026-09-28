@@ -1920,21 +1920,24 @@ function hawaiiTime(ts, tz){
   const hw = there.day === here.day ? here.clock : `${here.clock} ${here.day}`;
   return `${there.day}, ${there.clock} (${hw} Hawaii)`;
 }
-// END client time zone
 async function loadClientZone(){
-  CLIENT_TZ = browserZone();
+  const guess = browserZone();
+  CLIENT_TZ = guess;
   try{
     const r = await fetch(`/api/portal/time-zone?token=${encodeURIComponent(seg)}`);
     const j = r.ok ? await r.json() : {};
     if(j && j.tz){ CLIENT_TZ = j.tz; }
-    else if(CLIENT_TZ && r.ok){
-      fetch(`/api/portal/time-zone?token=${encodeURIComponent(seg)}`, {method: "POST",
-        headers: {"Content-Type": "application/json"},
-        body: JSON.stringify({tz: CLIENT_TZ, source: "browser"})}).catch(() => {});
+    else if(guess && r.ok){
+      const w = await fetch(`/api/portal/time-zone/browser?token=${encodeURIComponent(seg)}`,
+        {method: "POST", headers: {"Content-Type": "application/json"},
+         body: JSON.stringify({tz: guess})});
+      const k = w.status === 200 ? await w.json().catch(() => ({})) : {};
+      if(k && k.tz) CLIENT_TZ = k.tz;     // a choice saved elsewhere wins (round 2)
     }
   }catch(e){}
+  // The page rendered with the browser's zone; show it again in the stored one (round 1).
+  if(CLIENT_TZ !== guess) load({preserveActiveIntake: true, preserveActivePanel: true});
   fillTimeZoneCard();
-  initOnboardingCard();
 }
 function fillTimeZoneCard(){
   const box = document.getElementById("tz-body");
@@ -1952,13 +1955,14 @@ function fillTimeZoneCard(){
     const msg = document.getElementById("tz-msg");
     try{
       const r = await fetch(`/api/portal/time-zone?token=${encodeURIComponent(seg)}`, {method: "POST",
-        headers: {"Content-Type": "application/json"}, body: JSON.stringify({tz, source: "chosen"})});
+        headers: {"Content-Type": "application/json"}, body: JSON.stringify({tz})});
       const j = await r.json().catch(() => ({}));
-      if(r.ok && j.ok){ CLIENT_TZ = j.tz; box.dataset.filled = CLIENT_TZ; msg.textContent = "Saved."; initOnboardingCard(); }
+      if(r.ok && j.ok){ CLIENT_TZ = j.tz; load({preserveActiveIntake: true, preserveActivePanel: true}); }
       else { msg.textContent = "That time zone was not saved."; }
     }catch(e){ msg.textContent = "That time zone was not saved."; }
   };
 }
+// END client time zone
 function portalTimeZone(){
   try{return Intl.DateTimeFormat().resolvedOptions().timeZone || "your local timezone"}catch(e){return "your local timezone"}
 }
@@ -6680,7 +6684,7 @@ async function consultBook(start_ts){
   try{
     const r = await fetch(`/api/consult/book?token=${encodeURIComponent(seg)}`, {
       method: "POST", headers: {"Content-Type": "application/json"},
-      body: JSON.stringify({start_ts}),
+      body: JSON.stringify({start_ts, tz: CLIENT_TZ}),
     });
     d = await r.json();
     if(d && d.ok){
@@ -7345,7 +7349,7 @@ async function onboardingBook(start_ts){
   try{
     const r = await fetch(`/api/onboarding/book?token=${encodeURIComponent(seg)}`, {
       method: "POST", headers: {"Content-Type": "application/json"},
-      body: JSON.stringify({start_ts}),
+      body: JSON.stringify({start_ts, tz: CLIENT_TZ}),
     });
     d = await r.json();
     if(d && d.ok){
