@@ -273,3 +273,60 @@ def test_later_batches_are_spaced_fifteen_minutes(world, monkeypatch):
 
 def test_a_shouted_name_is_softened():
     assert weekly._greeting_name("JOHN") == "John"
+
+
+
+# --- round 3 review: guards no test covered ---------------------------------------------
+
+def _many(world, monkeypatch, n=150):
+    many = [f"p{i:03d}@x.com" for i in range(n)]
+    with sqlite3.connect(world.db) as cx:
+        for e in many:
+            weekly._record_recipient(cx, ORIGINAL, e, "", "", "queued")
+    monkeypatch.setattr(weekly.allowlist, "decode", lambda s: set(many))
+    for e in many:
+        world.contacts[e] = {"id": "c-" + e, "firstName": "Pat", "email": e}
+    return many
+
+
+def test_an_unanswered_send_stops_every_later_batch(world, monkeypatch):
+    # three batches, the failure in batch two: batch three must never start
+    _many(world, monkeypatch, 250)
+    calls = []
+
+    def dies_in_batch_two(cid, subject, text, body_html, email_to="", scheduled_timestamp=None):
+        calls.append(email_to)
+        return (0, "", {}) if len(calls) == 101 else (200, "m-" + email_to, {})
+    world.kw["send"] = dies_in_batch_two
+    assert weekly.run_correction(_args(), **world.kw) == 3
+    assert len(calls) == 101, "sending went on after an unanswered send"
+
+
+def test_batches_are_exactly_fifteen_minutes_apart(world, monkeypatch):
+    _many(world, monkeypatch, 250)
+    stamps = []
+    world.kw["send"] = lambda cid, subject, text, body_html, email_to="", scheduled_timestamp=None: \
+        (stamps.append(scheduled_timestamp), (200, "m-" + email_to, {}))[1]
+    weekly.run_correction(_args(), **world.kw)
+    assert stamps[200] - stamps[100] == 900
+
+
+def test_a_rejected_send_marks_the_run_for_attention(world):
+    world.kw["send"] = lambda cid, subject, text, body_html, email_to="", scheduled_timestamp=None: \
+        (400, "", {"error": "bad"})
+    assert weekly.run_correction(_args(), **world.kw) == 2
+
+
+def test_the_correction_flag_reaches_run_correction(monkeypatch):
+    seen = []
+    monkeypatch.setattr(weekly, "run_correction", lambda a: seen.append("correction") or 0)
+    monkeypatch.setattr(weekly, "run", lambda a: seen.append("invitation") or 0)
+    import sys
+    monkeypatch.setattr(sys, "argv", ["x", "--dry-run", "--correction", "--date", "2026-09-30",
+                                      "--only-list", "L"])
+    with pytest.raises(SystemExit):
+        weekly.main()
+    monkeypatch.setattr(sys, "argv", ["x", "--dry-run", "--date", "2026-09-30"])
+    with pytest.raises(SystemExit):
+        weekly.main()
+    assert seen == ["correction", "invitation"]

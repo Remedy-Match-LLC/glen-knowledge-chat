@@ -793,7 +793,7 @@ def run_correction(args, *, portal_check=None, find_contact=None, send=None, sle
                                            campaign_id))
         cx.commit()
     print(json.dumps({"status": final, "campaign_id": campaign_id, "subject": subject,
-                      "counts": counts}, sort_keys=True))
+                      "counts": counts, "unknown_contact_id": stopped}, sort_keys=True))
     return 3 if final == "stopped_unknown" else (0 if final == "verified_queued" else 2)
 
 
