@@ -3204,7 +3204,9 @@ function pollPending(){
 // The Family Plan line. Only the plan HOLDER gets Cancel: a member covered by someone
 // else's plan cannot cancel it (money-07, 2026-09-28; wording Glen's).
 function familyPlanLine(fpl){
-  if(fpl.active && fpl.holder){
+  // A payload without "holder" (an older server) keeps Cancel: the server refuses anyone
+  // who holds no plan (review round 2).
+  if(fpl.active && fpl.holder !== false){
     return `<p><strong>${esc(fpl.label)}</strong> — you're on it. Everyone in your household with sharing on has their full analysis unlocked. <button type="button" class="linklike" data-fp-cancel="1">Cancel plan</button></p>`;
   }
   if(fpl.active){
@@ -3231,15 +3233,24 @@ document.addEventListener("click", async (e) => {
       if(j && j.url){ window.location.href = j.url; } else { sub.disabled = false; }
     }catch(_){ sub.disabled = false; }
   } else if(cxl){
-    if(!window.confirm("Cancel the Family Plan? Household members lose their unlocked analysis at the end of the cycle.")) return;
-    cxl.disabled = true;
-    try{
-      await fetch(`/api/portal/${encodeURIComponent(seg)}/family-plan/cancel`,
-                  {method:"POST", credentials:"same-origin"});
-      window.location.reload();
-    }catch(_){ cxl.disabled = false; }
+    await familyPlanCancel(cxl);
   }
 });
+
+// Cancel the Family Plan. A refusal is shown beside the button, never a silent reload
+// (review round 1, 2026-09-28).
+async function familyPlanCancel(cxl){
+  if(!window.confirm("Cancel the Family Plan? Household members lose their unlocked analysis at the end of the cycle.")) return;
+  cxl.disabled = true;
+  try{
+    const r = await fetch(`/api/portal/${encodeURIComponent(seg)}/family-plan/cancel`,
+                          {method:"POST", credentials:"same-origin"});
+    let j = {};
+    try{ j = await r.json(); }catch(_){}
+    if(r.ok && j && j.ok){ window.location.reload(); return; }
+    cxl.insertAdjacentHTML("afterend", ` <span class="muted">${esc((j && j.error) || "The plan was not cancelled. Reply to any email from us and we will help.")}</span>`);
+  }catch(_){ cxl.disabled = false; }
+}
 
 // on_areds2 (and future client-reported facts): POST the toggle, re-render the
 // support-program card from the returned re-resolved program so items update live.
