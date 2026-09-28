@@ -24199,7 +24199,7 @@ def _ff_covered(cx, email):
         return False
 
 
-def _portal_options_for(email):
+def _portal_options_for(email, holder_email=None):
     """The client-facing options+pricing trio for the portal card. Prices are
     DATA-SOURCED (biofield-analysis catalog price + this client's courtesy override
     + FF base), never hardcoded. Best-effort — returns None on any error."""
@@ -24230,7 +24230,14 @@ def _portal_options_for(email):
                         "price_cents": _fp.PLAN["amount_cents"],
                         "value_cents": _fp.PLAN["value_cents"],
                         "label": _fp.PLAN["label"],
-                        "active": bool(_fp.covers(cx, email)),
+                        # Both about the signed-in person, also while viewing a household
+                        # member (review round 3).
+                        "active": bool(_fp.covers(cx, holder_email or email)),
+                        # Only the plan holder can cancel; a covered member is told who
+                        # manages it (money-07, 2026-09-28).
+                        # The SIGNED-IN person, not a member being viewed (?member=): a
+                        # holder viewing her son keeps her own Cancel (review round 1).
+                        "holder": bool(_fp.is_active(cx, holder_email or email)),
                     }
             except Exception as _e:
                 print(f"[portal-options/family] {_e!r}", flush=True)
@@ -25936,7 +25943,7 @@ def api_client_portal(token):
     # data-sourced prices + this client's courtesy.
     if _portal_options_enabled():
         try:
-            _opt = _portal_options_for(email_for_reports)
+            _opt = _portal_options_for(email_for_reports, holder_email=primary_email)
             if _opt:
                 payload["options"] = _opt
         except Exception as _e:
@@ -32844,6 +32851,13 @@ def portal_family_plan_cancel(token):
                                      client_login_enabled=_client_login_enabled())
         if ident is None:
             return jsonify({"error": "not_found"}), 404
+        # A member covered by someone else's plan holds no plan row: the update used to
+        # change nothing and answer ok (money-07, 2026-09-28). Refuse instead.
+        if not _fp.is_active(cx, ident.email):
+            own = _fp.get(cx, ident.email)
+            if own and own.get("status") == "cancelled":
+                return jsonify({"ok": True})      # a retry after a lost reply (round 2)
+            return jsonify({"ok": False, "error": "The plan holder manages this plan."}), 409
         _fp.set_status(cx, ident.email, "cancelled")
     return jsonify({"ok": True})
 
