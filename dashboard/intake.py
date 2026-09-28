@@ -205,10 +205,45 @@ def _fields():
             yield f
 
 
+# Where text typed into a check-all-that-apply field goes, so the client's words are kept.
+_MULTI_CHOICE_TEXT_TO = {"systemic_symptoms": "other_symptoms"}
+
+
+def normalize_answers(answers):
+    """A copy of `answers` where every multi_choice answer is a list. Text in one (the portal
+    rendered systemic_symptoms as a text box until 2026-09-27) is moved into its free-text
+    companion field, once, instead of being refused or lost. Empty text becomes []."""
+    out = dict(answers or {})
+    for f in _fields():
+        if f["type"] != "multi_choice" or not isinstance(out.get(f["id"]), str):
+            continue
+        text = out[f["id"]].strip()
+        out[f["id"]] = []
+        if not text.strip("[]'\" "):
+            continue            # "[]", "''" and the like: an empty list stored as text
+        # Text that is really the options (a Practice Better import stores the list as its
+        # repr; the health profile editor stores one value; a label may be typed): the list.
+        by_value = {o["value"]: o["value"] for o in f.get("options") or []}
+        by_label = {str(o["label"]).strip().lower(): o["value"] for o in f.get("options") or []}
+        parts = [x.strip().strip("'\"").strip() for x in text.strip("[]").split(",")]
+        parts = [x for x in parts if x]
+        picked = [by_value.get(x) or by_label.get(x.lower()) for x in parts]
+        if parts and all(picked):
+            out[f["id"]] = list(dict.fromkeys(picked))
+            continue
+        target = _MULTI_CHOICE_TEXT_TO.get(f["id"])
+        if text and target:
+            have = str(out.get(target) or "")
+            if text not in have:
+                out[target] = (have.rstrip() + "\n" + text) if have.strip() else text
+    return out
+
+
 def validate_response(answers):
     """Return the ids of required-but-missing or invalid fields (empty = valid).
     Tables are optional in v1 (a client may legitimately have none)."""
     errors = []
+    answers = normalize_answers(answers)
     for f in _fields():
         fid, ftype, req = f["id"], f["type"], f.get("required", False)
         val = answers.get(fid)
@@ -297,6 +332,7 @@ def list_suggestions(cx):
 
 def _upsert(cx, email, answers, status, now, submitted_at):
     email = (email or "").strip().lower()
+    answers = normalize_answers(answers)
     cx.execute(
         "INSERT INTO intake_responses (email, form_version, status, answers_json, created_at, submitted_at)"
         " VALUES (?,?,?,?,?,?)"
@@ -347,7 +383,12 @@ def _row_to_dict(row):
 def get_response(cx, email):
     row = cx.execute("SELECT * FROM intake_responses WHERE email=?",
                      ((email or "").strip().lower(),)).fetchone()
-    return _row_to_dict(row) if row else None
+    if not row:
+        return None
+    d = _row_to_dict(row)
+    if isinstance(d.get("answers"), dict):
+        d["answers"] = normalize_answers(d["answers"])   # a loaded draft shows the moved text
+    return d
 
 
 def mark_on_file(cx, email, now, note="Completed via Practice Better"):
