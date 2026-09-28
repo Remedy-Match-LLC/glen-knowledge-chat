@@ -220,6 +220,11 @@
   function searchLanes(lanes, search){
     return (search || '').trim() ? lanes.concat([["cancelled", "Cancelled"]]) : lanes;
   }
+  // Each load takes a ticket; a response that is no longer the latest is dropped, so a
+  // slow earlier search (or the full board) never overwrites a newer one (review).
+  var _loadSeq = 0;
+  function beginSearch(){ return ++_loadSeq; }
+  function isCurrent(ticket){ return ticket === _loadSeq; }
   // END order search
   var SEARCH = (new URLSearchParams(location.search).get('q') || '').trim();
   function key(){ return localStorage.getItem('console_key') || ''; }
@@ -597,14 +602,18 @@
   }
 
   async function load(){
+    var my = beginSearch();
     var r = await fetch(ordersUrl(SEARCH), {headers:hdr()});
+    if (!isCurrent(my)) return;
     if (r.status===401){ document.getElementById('gate').style.display='flex'; return; }
     var orders = (await r.json()).data || [];
+    if (!isCurrent(my)) return;
     // Combined-shipment feature flag + auto-suggest clusters (best-effort).
     try {
       var sr = await fetch('/api/console/shipments/suggestions', {headers:hdr()});
       if (sr.ok){ var sj = await sr.json(); HH.enabled = !!sj.enabled; HH.clusters = sj.clusters || []; HH.shipCredit = !!sj.ship_credit_enabled; }
     } catch(e){ HH.enabled = false; HH.clusters = []; }
+    if (!isCurrent(my)) return;
     HH.byId = {}; orders.forEach(function(o){ HH.byId[o.id] = o; });  // for the combine confirm
     // A search (the box, or the header deep link /console/orders?q=...) is answered by the
     // server with every order for that client; nothing is filtered here.

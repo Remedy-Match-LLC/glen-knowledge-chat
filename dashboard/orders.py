@@ -358,44 +358,69 @@ def supersede_order(cx, old_order_id, new_order_id):
 def search_client_orders(cx, q, limit=500):
     """Every order for the client(s) a search names, newest first, cancelled included.
 
-    Glen, 2026-09-28: the Orders board's search shows ALL of a client's orders. It matches
-    name, email, phone (by digits) and order number (id or external_ref), then returns every
-    order sharing a matched order's email, so older orders beyond the board's own limit and
-    cancelled ones come with it. Replaced (superseded) order numbers stay hidden, as on the
-    board. Fewer than 2 characters matches nothing, unless it is an order number."""
+    Glen, 2026-09-28: the Orders board's search shows ALL of a client's orders. Text matches
+    an order's name, email or external ref, or a name in People (the board shows that name
+    when an order has none). A number matches an order number or external ref exactly, never
+    inside another number (review). A phone matches on 7+ digits, ignoring a leading country
+    code 1. Every order sharing a matched email then comes with it, so older orders beyond the
+    board's own limit and cancelled ones are included. Replaced (superseded) order numbers stay
+    hidden, as on the board. Fewer than 2 characters matches nothing, unless it is a number."""
     import re
     q = (q or "").strip().lower()
-    if len(q) < 2 and not q.isdigit():          # an order number may be one digit
+    if len(q) < 2 and not q.isdigit():
         return []
-    digits = re.sub(r"\D", "", q)
-    num = q.lstrip("#")
-    hits = set()
-    emails = set()
-    for oid, email, name, phone, ref in cx.execute(
-            "SELECT id, email, name, phone, external_ref FROM orders "
-            "WHERE superseded_by_order_id IS NULL").fetchall():
-        e = (email or "").strip().lower()
-        if num.isdigit() and len(num) < 4:
-            matched = str(oid) == num          # a short number is an order number, exactly
-        else:
-            matched = (q in (name or "").lower() or q in e or q in (ref or "").lower()
-                       or (num.isdigit() and str(oid) == num)
-                       or (len(digits) >= 4 and digits in re.sub(r"\D", "", phone or "")))
-        if matched:
+    base = "superseded_by_order_id IS NULL"
+    num = q.lstrip("#").strip()
+    hits, emails = set(), set()
+
+    def take(rows):
+        for oid, email in rows:
             hits.add(int(oid))
-            if e:
-                emails.add(e)
-    if not hits:
+            if (email or "").strip():
+                emails.add(email.strip().lower())
+
+    if num.isdigit():
+        take(cx.execute(f"SELECT id, email FROM orders WHERE {base} AND (id=? OR external_ref=?)",
+                        (int(num), num)).fetchall())
+    else:
+        like = f"%{q}%"
+        take(cx.execute(
+            f"SELECT id, email FROM orders WHERE {base} AND (lower(coalesce(name,'')) LIKE ? "
+            "OR lower(coalesce(email,'')) LIKE ? OR lower(coalesce(external_ref,'')) LIKE ?)",
+            (like, like, like)).fetchall())
+        try:
+            for (e,) in cx.execute(
+                    "SELECT email FROM people WHERE lower(coalesce(name,'')) LIKE ? OR "
+                    "lower(coalesce(first_name,'') || ' ' || coalesce(last_name,'')) LIKE ?",
+                    (like, like)).fetchall():
+                if (e or "").strip():
+                    emails.add(e.strip().lower())
+        except Exception:  # noqa: BLE001 - no people table here
+            try:
+                cx.rollback()
+            except Exception:  # noqa: BLE001
+                pass
+
+    def _phone(d):
+        return d[1:] if len(d) == 11 and d.startswith("1") else d
+    digits = _phone(re.sub(r"\D", "", q))
+    if len(digits) >= 7:
+        for oid, email, phone in cx.execute(
+                f"SELECT id, email, phone FROM orders WHERE {base} AND coalesce(phone,'')<>''").fetchall():
+            if digits in _phone(re.sub(r"\D", "", phone or "")):
+                take([(oid, email)])
+    if not hits and not emails:
         return []
-    rows = []
-    for r in cx.execute("SELECT * FROM orders WHERE superseded_by_order_id IS NULL "
-                        "ORDER BY id DESC").fetchall():
-        d = _row_to_dict(r)
-        if int(d["id"]) in hits or (d.get("email") or "").strip().lower() in emails:
-            rows.append(d)
-            if len(rows) >= limit:
-                break
-    return rows
+    conds, args = [], []
+    if emails:
+        conds.append(f"lower(trim(email)) IN ({','.join('?' * len(emails))})")
+        args += sorted(emails)
+    if hits:
+        conds.append(f"id IN ({','.join('?' * len(hits))})")
+        args += sorted(hits)
+    cur = cx.execute(f"SELECT * FROM orders WHERE {base} AND ({' OR '.join(conds)}) "
+                     "ORDER BY id DESC LIMIT ?", args + [int(limit)])
+    return [_row_to_dict(r) for r in cur.fetchall()]
 
 
 def list_orders_by_email(cx, email, limit=200):
