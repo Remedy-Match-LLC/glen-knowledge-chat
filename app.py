@@ -10783,7 +10783,7 @@ def api_console_testimonial_client_approved(rid):
     body = (data.get("body") or "").strip()
     name = (data.get("name") or "").strip()
     ref = re.sub(r"[^\w.:\-]", "", str(data.get("consent_ref") or ""))[:80]
-    if not body or data.get("consent_public") is not True or not ref:
+    if not body or len(body) > 5000 or data.get("consent_public") is not True or not ref:
         return jsonify({"ok": False, "error": "the approved wording, consent_public true and "
                                               "consent_ref (the consent message) are required"}), 400
     from dashboard import product_reviews as _pr
@@ -10797,18 +10797,34 @@ def api_console_testimonial_client_approved(rid):
             return jsonify({"ok": False, "error": "only a pending testimonial can be reworded; "
                                                   "nothing was changed"}), 409
         original = row.get("original_body") or row.get("body") or ""
-        cx.execute("UPDATE product_reviews SET body=?, name=?, consent_public=1, consent_ref=?, "
-                   "original_body=? WHERE id=? AND status='pending'",
-                   (body, name or row.get("name") or "", ref, original, rid))
-        cx.commit()
+        # Score first, then write the wording, consent and its scores in ONE conditional
+        # update: never the new text beside the old score, and never onto a row approved or
+        # reworded since it was read (review round 2).
         _ctx = {"name": "Dr. Glen Swartwout — Biofield Analysis & Functional Formulations"}
-        score = _rs.score_review(_cl, _ctx, body, strip=_strip_dash)
-        _pr.set_ai_result(cx, rid, score["quality_points"], score["reasons"],
-                          score["recommend_publish"])
-        _pr.set_scores(cx, rid, compliance=score.get("compliance_score", 0),
-                       publication=score.get("publication_score", 0),
-                       authenticity=score.get("authenticity_score", 0),
-                       specificity=score.get("specificity_score", 0))
+        try:
+            score = _rs.score_review(_cl, _ctx, body, strip=_strip_dash)
+        except Exception as e:  # noqa: BLE001
+            print(f"[testimonial-approved] scoring failed: {type(e).__name__}", flush=True)
+            return jsonify({"ok": False, "error": "the wording could not be scored; nothing "
+                                                  "was changed"}), 503
+        _c = lambda v: max(0, min(10, int(v or 0)))
+        cur = cx.execute(
+            "UPDATE product_reviews SET body=?, name=?, consent_public=1, consent_ref=?, "
+            "original_body=?, ai_score=?, ai_verdict=?, ai_recommend_publish=?, "
+            "compliance_score=?, publication_score=?, authenticity_score=?, specificity_score=? "
+            "WHERE id=? AND status='pending' AND body=?",
+            (body, name or row.get("name") or "", ref, original,
+             int(score.get("quality_points") or 0), score.get("reasons") or "",
+             1 if score.get("recommend_publish") else 0,
+             _c(score.get("compliance_score")), _c(score.get("publication_score")),
+             _c(score.get("authenticity_score")), _c(score.get("specificity_score")),
+             rid, row.get("body") or ""))
+        if not getattr(cur, "rowcount", 0):
+            cx.rollback()
+            return jsonify({"ok": False, "error": "the testimonial changed while this was saved "
+                                                  "(approved, rejected or reworded); nothing was "
+                                                  "changed"}), 409
+        cx.commit()
     return jsonify({"ok": True, "review_id": rid, "status": "pending", "consent_public": True,
                     "compliance_ok": score.get("compliance_ok"), "reasons": score.get("reasons", "")})
 

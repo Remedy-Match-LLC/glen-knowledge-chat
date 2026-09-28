@@ -173,3 +173,60 @@ def test_only_owners_and_only_pending(client):
     assert c.post("/api/console/testimonials/999/client-approved", json=_approved(),
                   headers=OWNER).status_code == 404
     assert _row(appmod)["body"] == TEXT
+
+
+def test_a_failed_score_changes_nothing(client, monkeypatch):
+    """Round 2: the wording and consent were saved before scoring, beside the old score."""
+    c, appmod, _ = client
+    rid = _recorded(c)
+    from dashboard import review_scoring as rs
+
+    def boom(*a, **k):
+        raise RuntimeError("scorer down")
+    monkeypatch.setattr(rs, "score_review", boom)
+    r = c.post(f"/api/console/testimonials/{rid}/client-approved", json=_approved(), headers=OWNER)
+    assert r.status_code >= 500 or r.get_json().get("ok") is False
+    row = _row(appmod)
+    assert row["body"] == TEXT and row["consent_public"] == 0
+
+
+def test_approval_landing_mid_request_is_not_overwritten(client, monkeypatch):
+    """Round 2: approval between the read and the write left the edit unsaved but still
+    wrote the new wording's scores onto the approved row and answered ok."""
+    c, appmod, _ = client
+    rid = _recorded(c)
+    from dashboard import review_scoring as rs
+    real = rs.score_review
+
+    def approve_then_score(*a, **k):
+        with sqlite3.connect(appmod.LOG_DB) as cx:
+            cx.execute("UPDATE product_reviews SET status='approved', compliance_score=7 WHERE id=?",
+                       (rid,))
+        return real(*a, **k)
+    monkeypatch.setattr(rs, "score_review", approve_then_score)
+    r = c.post(f"/api/console/testimonials/{rid}/client-approved", json=_approved(), headers=OWNER)
+    assert r.status_code == 409
+    row = _row(appmod)
+    assert row["body"] == TEXT and row["compliance_score"] == 7 and row["consent_public"] == 0
+
+
+def test_a_resubmission_drops_the_old_consent_reference(client):
+    """Round 1: a later submission replaced the words but kept the consent message id, so the
+    row cited a written consent for words it no longer held."""
+    c, appmod, _ = client
+    rid = _recorded(c)
+    c.post(f"/api/console/testimonials/{rid}/client-approved", json=_approved(), headers=OWNER)
+    from dashboard import product_reviews as pr
+    with sqlite3.connect(appmod.LOG_DB) as cx:
+        pr.upsert_review(cx, "_results", "rebecca@example.com", "Rebecca", 5, "New words.",
+                         kind="testimonial")
+    row = _row(appmod)
+    assert row["body"] == "New words." and row["consent_ref"] == "" and row["original_body"] == ""
+
+
+def test_an_overlong_wording_is_refused(client):
+    c, appmod, _ = client
+    rid = _recorded(c)
+    r = c.post(f"/api/console/testimonials/{rid}/client-approved", json=_approved(body="x" * 5001),
+               headers=OWNER)
+    assert r.status_code == 400 and _row(appmod)["body"] == TEXT

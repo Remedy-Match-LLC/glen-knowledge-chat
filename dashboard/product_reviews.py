@@ -72,7 +72,9 @@ def upsert_review(cx, slug, email, name, rating, body="", video_kind="", video_r
         "consent_public=excluded.consent_public, source_tag=excluded.source_tag, "
         "gift_owner_email=excluded.gift_owner_email, "
         "status='pending', ai_score=0, ai_verdict='', ai_recommend_publish=0, points_awarded=0, "
-        "featured=0, reviewed_at='', reviewed_by=''",
+        "featured=0, reviewed_at='', reviewed_by='', "
+        # New words carry no earlier consent or original (review, 2026-09-28).
+        "consent_ref='', original_body=''",
         (slug, e, name or "", int(rating), body or "", video_kind or "", video_ref or "",
          kind or "product", _norm_pid(practitioner_id), 1 if consent_public else 0,
          (source_tag or "")[:64], (gift_owner_email or "").strip().lower(), now))
