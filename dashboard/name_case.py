@@ -125,15 +125,23 @@ def is_address(value):
     return "@" in s and not any(c.isspace() for c in s)
 
 
-_ADDRESS_TOKEN = re.compile(r"<?[^\s@<>]+@[^\s@<>]+>?")
+# An address needs a dotted domain: "Ann@Home Studio" and "J@ne" are left alone.
+_ADDRESS_TOKEN = re.compile(r"(?:mailto:)?<?[^\s@<>,;]+@[^\s@<>,;]+\.[^\s@<>,;]*[^\s@<>,;.]>?")
 
 
 def strip_addresses(value):
     """The value with every email address in it removed, spaces tidied. "Peach d@x.com" is
-    "Peach"; "Ann @ Home Studio" has no address and is kept whole."""
-    return " ".join(_ADDRESS_TOKEN.sub(" ", value or "").split())
+    "Peach"; "Ann @ Home Studio" has no address and is kept whole. Punctuation left dangling
+    by a removed address ("Jane <j@x.com>.") goes with it."""
+    s = value or ""
+    out = _ADDRESS_TOKEN.sub(" ", s)
+    if out == s:
+        return " ".join(s.split())
+    return " ".join(out.split()).strip(" ,;:.")
 
 
 def name_from_parts(first, last):
-    """"First Last" from the two name fields, or "" when neither holds a real name."""
-    return " ".join(p for p in (strip_addresses(first), strip_addresses(last)) if p)
+    """"First Last" from the two name fields, capitalised like any stored name, or "" when
+    neither holds a real name."""
+    return " ".join(p for p in (normalize_name(strip_addresses(first)),
+                                normalize_name(strip_addresses(last), leading_particle=True)) if p)

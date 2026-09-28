@@ -41334,19 +41334,21 @@ def _upsert_person_additive(cx, person, ts=None):
         for k in _PERSON_UPSERT_SCALARS:
             if str(scalars[k]).strip():
                 upd[k] = scalars[k]
-        # A shorter version of the stored name never replaces it: GHL holding only "Peach"
-        # cut "Peach Goddard" every hour (review round 1, 2026-09-27).
+        # The stored name as it should be: an address in it, or none, is rebuilt from the
+        # first and last names (review rounds 1 and 3, 2026-09-27).
         stored = (existing["name"] or "").strip()
-        if "name" in upd and stored and not _is_address(stored):
-            if set(upd["name"].lower().split()) <= set(stored.lower().split()):
+        clean = _strip_addresses(stored)
+        effective = stored
+        if clean != stored or not clean:
+            effective = _name_from_parts(upd.get("first_name") or existing["first_name"],
+                                         upd.get("last_name") or existing["last_name"]) or clean
+        # A shorter version never replaces it: GHL holding only "Peach" cut "Peach Goddard"
+        # every hour. The same words in new capitals still land.
+        if "name" in upd and effective:
+            if set(upd["name"].lower().split()) < set(effective.lower().split()):
                 del upd["name"]
-        # A stored address-as-name, or none, is rebuilt from the first and last names.
-        if "name" not in upd and (_is_address(existing["name"])
-                                  or not (existing["name"] or "").strip()):
-            rebuilt = _name_from_parts(upd.get("first_name") or existing["first_name"],
-                                       upd.get("last_name") or existing["last_name"])
-            if rebuilt:
-                upd["name"] = rebuilt
+        if "name" not in upd and effective and effective != stored:
+            upd["name"] = effective
         for jf in _PERSON_UPSERT_JSON:
             if jf not in cols:
                 continue
@@ -44214,13 +44216,18 @@ def _init_people_table():
             except Exception:
                 pass  # already present
         cx.commit()
-        try:
+
+
+def _repair_address_names_at_startup():
+    """Once per boot, not in _init_people_table: that also runs inside public routes."""
+    try:
+        with db.connect(LOG_DB) as cx:
             n = _repair_address_names(cx)
             cx.commit()
-            if n:
-                print(f"[people] rebuilt {n} name(s) that held an email address", flush=True)
-        except Exception as e:
-            print(f"[people] name repair skipped: {type(e).__name__}", flush=True)
+        if n:
+            print(f"[people] rebuilt {n} name(s) that held an email address", flush=True)
+    except Exception as e:
+        print(f"[people] name repair skipped: {type(e).__name__}", flush=True)
 
 
 def _repair_address_names(cx):
@@ -44232,17 +44239,29 @@ def _repair_address_names(cx):
                       "WHERE name LIKE '%@%'").fetchall()
     n = 0
     for pid, name, first, last in rows:
-        rebuilt = _name_from_parts(first, last)
-        if _is_address(name) and rebuilt:
+        clean = _strip_addresses(name)
+        if clean == (name or "").strip():
+            continue                                 # an @ that is not an address
+        rebuilt = _name_from_parts(first, last) or clean
+        if rebuilt:
             # Only if the name is still the one read: a save in between wins (round 2).
             cur = cx.execute("UPDATE people SET name=? WHERE id=? AND name=?", (rebuilt, pid, name))
             if getattr(cur, "rowcount", 1) == 0:
                 continue
             n += 1
+    # An address in the first or last name is removed too: greetings read the first name.
+    for col in ("first_name", "last_name"):
+        for pid, val in cx.execute(f"SELECT id, {col} FROM people WHERE {col} LIKE '%@%'").fetchall():
+            clean = _strip_addresses(val)
+            if clean != (val or "").strip():
+                cur = cx.execute(f"UPDATE people SET {col}=? WHERE id=? AND {col}=?", (clean, pid, val))
+                if getattr(cur, "rowcount", 1):
+                    n += 1
     return n
 
 
 _init_people_table()
+_repair_address_names_at_startup()
 
 
 # ── Households ────────────────────────────────────────────────────────────────

@@ -125,13 +125,13 @@ def test_repair_rebuilds_only_names_it_can(app_db):
     _seed(db, "c@x.com", name="Cara Moe", first="Cara", last="Moe")
     _seed(db, "d@x.com", name="d@x.com", first="d@x.com")       # first name is an address too
     with sqlite3.connect(db) as cx:
-        assert app._repair_address_names(cx) == 1
+        assert app._repair_address_names(cx) == 2               # a's name, d's first name
         cx.commit()
         assert app._repair_address_names(cx) == 0               # idempotent
     assert _person(db, "a@x.com")["name"] == "Ann Lee"
     assert _person(db, "b@x.com")["name"] == "b@x.com"
     assert _person(db, "c@x.com")["name"] == "Cara Moe"
-    assert _person(db, "d@x.com")["name"] == "d@x.com"
+    assert (_person(db, "d@x.com")["name"], _person(db, "d@x.com")["first_name"]) == ("d@x.com", "")
 
 
 def test_merge_takes_a_real_name_even_without_first_and_last(app_db):
@@ -217,3 +217,67 @@ def test_console_editor_never_saves_an_address_as_the_name(app_db, monkeypatch):
                                          "first_name": "Peach", "last_name": "Goddard"})
     assert r.status_code == 200
     assert _person(db, "p@x.com")["name"] == "Peach Goddard"
+
+
+# ── Review round 3 ───────────────────────────────────────────────────────────
+def test_table_setup_does_not_repair_names(app_db):
+    """Round 3: _init_people_table runs inside public routes, so the repair must not."""
+    app, db = app_db
+    _seed(db, "a@x.com", name="a@x.com", first="Ann", last="Lee")
+    app._init_people_table()
+    assert _person(db, "a@x.com")["name"] == "a@x.com"
+
+
+def test_a_stored_name_mixed_with_an_address_is_cleaned(app_db):
+    app, db = app_db
+    _seed(db, "p@x.com", name="Peach p@x.com")
+    _seed(db, "q@x.com", name="Q q@x.com", first="Quinn", last="Ray")
+    with sqlite3.connect(db) as cx:
+        assert app._repair_address_names(cx) == 2
+        cx.commit()
+    assert _person(db, "p@x.com")["name"] == "Peach"
+    assert _person(db, "q@x.com")["name"] == "Quinn Ray"
+    _seed(db, "r@x.com", name="Rae r@x.com", first="Rae", last="Lu")
+    _upsert(app, db, {"email": "r@x.com", "name": "Rae"})
+    assert _person(db, "r@x.com")["name"] == "Rae Lu"
+
+
+def test_a_capitalisation_fix_still_lands(app_db):
+    app, db = app_db
+    _seed(db, "p@x.com", name="peach goddard")
+    _upsert(app, db, {"email": "p@x.com", "name": "Peach Goddard"})
+    assert _person(db, "p@x.com")["name"] == "Peach Goddard"
+
+
+@pytest.mark.parametrize("raw,want", [
+    ("Ann@Home Studio", "Ann@Home Studio"),      # no dotted domain: not an address
+    ("J@ne Doe", "J@ne Doe"),
+    ("Peach,d@x.com", "Peach"),
+    ("Jane <j@x.com>.", "Jane"),
+    ("Jr. Smith", "Jr. Smith"),
+    ("mailto:a@b.com", ""),
+])
+def test_strip_addresses_edges(raw, want):
+    from dashboard.name_case import strip_addresses
+    assert strip_addresses(raw) == want
+
+
+def test_a_rebuilt_name_is_capitalised(app_db):
+    app, db = app_db
+    _seed(db, "a@x.com", name="a@x.com", first="ann", last="lee")
+    with sqlite3.connect(db) as cx:
+        app._repair_address_names(cx)
+        cx.commit()
+    assert _person(db, "a@x.com")["name"] == "Ann Lee"
+
+
+def test_repair_removes_an_address_from_first_and_last(app_db):
+    """Production had 9 people with an address in first or last name; greetings read first."""
+    app, db = app_db
+    _seed(db, "f@x.com", name="Fay Lin", first="f@x.com", last="Lin")
+    with sqlite3.connect(db) as cx:
+        assert app._repair_address_names(cx) == 1
+        cx.commit()
+        assert app._repair_address_names(cx) == 0
+    p = _person(db, "f@x.com")
+    assert (p["name"], p["first_name"], p["last_name"]) == ("Fay Lin", "", "Lin")
