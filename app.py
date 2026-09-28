@@ -32057,19 +32057,23 @@ def _consult_send_confirmations(email, booking):
     join instructions. No raw Zoom link (the client joins via the portal-gated
     button). Never raises into the booking response."""
     try:
-        from dashboard import evox as _ev
-        start = booking["start_ts"]; nice = start.replace("T", " ")
+        from dashboard import evox as _ev, client_time as _ct
+        start = booking["start_ts"]
+        tz = booking.get("client_tz") or ""
+        nice = _ct.describe(start, tz)                       # the client's zone, Hawaii in brackets
+        staff = _ct.describe(start, "") + (f" (client's time: {nice})" if nice != _ct.describe(start, "") else "")
         portal = booking.get("portal_url") or ""
         join_line = ("At your appointment time, open your Healing Oasis portal and click "
                      "Join your consult" + (f": {portal}" if portal else "."))
         ics = _ev.build_ics(uid=booking["ics_uid"], start_ts=start, end_ts=booking["end_ts"],
                             summary="Biofield Consult with Dr. Glen",
-                            description=join_line, location="Zoom (join from your portal)")
+                            description=join_line, location="Zoom (join from your portal)",
+                            tz_name=_ct.HAWAII)
         client_html = (f"<p>Your Biofield Consult with Dr. Glen is booked for "
-                       f"<b>{nice} HST</b>.</p><p>{join_line}</p>"
+                       f"<b>{nice}</b>.</p><p>{join_line}</p>"
                        "<p>The calendar invite is attached.</p>")
-        client_text = f"Biofield Consult booked for {nice} HST. {join_line}"
-        glen_html = f"<p>New Biofield Consult: <b>{email}</b> on <b>{nice} HST</b>.</p>"
+        client_text = f"Biofield Consult booked for {nice}. {join_line}"
+        glen_html = f"<p>New Biofield Consult: <b>{email}</b> on <b>{staff}</b>.</p>"
         for to, nm, subj, html, text in [
             (email, "", "Your Biofield Consult is booked", client_html, client_text),
             (GLEN_CONSULT_EMAIL, "Glen", f"Biofield Consult booked: {email}", glen_html, glen_html)]:
@@ -32086,18 +32090,21 @@ def _onboarding_send_confirmations(email, booking):
     invite. Phone call: Rae calls the member. Never raises into the booking
     response."""
     try:
-        from dashboard import evox as _ev
-        start = booking["start_ts"]; nice = start.replace("T", " ")
+        from dashboard import evox as _ev, client_time as _ct
+        start = booking["start_ts"]
+        tz = booking.get("client_tz") or ""
+        nice = _ct.describe(start, tz)                       # the client's zone, Hawaii in brackets
+        staff = _ct.describe(start, "") + (f" (client's time: {nice})" if nice != _ct.describe(start, "") else "")
         phone = EVOX_RAE_PHONE or "the number on file"
         line = ("This is a phone call. Rae will call you at your appointment time at "
                 "the number on file. Questions before then? Reach out any time.")
         ics = _ev.build_ics(uid=booking["ics_uid"], start_ts=start, end_ts=booking["end_ts"],
                             summary="New-member welcome call with Rae",
-                            description=line, location="Phone")
+                            description=line, location="Phone", tz_name=_ct.HAWAII)
         client_html = (f"<p>Welcome to Healing Oasis. Your welcome call with Rae is booked for "
-                       f"<b>{nice} HST</b>.</p><p>{line}</p><p>The calendar invite is attached.</p>")
-        client_text = f"Welcome call with Rae booked for {nice} HST. {line}"
-        rae_html = (f"<p>New welcome call: <b>{email}</b> on <b>{nice} HST</b>. "
+                       f"<b>{nice}</b>.</p><p>{line}</p><p>The calendar invite is attached.</p>")
+        client_text = f"Welcome call with Rae booked for {nice}. {line}"
+        rae_html = (f"<p>New welcome call: <b>{email}</b> on <b>{staff}</b>. "
                     f"Please call them at the number on file.</p>")
         for to, nm, subj, html, text in [
             (email, "", "Your welcome call with Rae is booked", client_html, client_text),
@@ -33729,6 +33736,29 @@ def api_console_booking_cancel():
     return jsonify({"ok": True, "applied": apply, "booking": booking, "email_sent": False})
 
 
+@app.route("/api/portal/time-zone", methods=["GET", "POST"])
+def portal_time_zone():
+    """The client's own time zone (Glen, 2026-09-28). The portal sends the browser's zone on
+    a first visit (source "browser", fills only an empty one) and the client's choice from the
+    settings (source "chosen", always wins)."""
+    from dashboard import client_time as _ct
+    with _db_lock, db.connect(LOG_DB) as cx:
+        cx.row_factory = sqlite3.Row
+        ident = _evox_ident(cx, request.args.get("token", ""))
+        if ident is None:
+            return jsonify({"error": "not_found"}), 404
+        if request.method == "GET":
+            return jsonify({"tz": _ct.get_zone(cx, ident.email)})
+        body = request.get_json(silent=True) or {}
+        source = "browser" if body.get("source") == "browser" else "chosen"
+        try:
+            tz = _ct.set_zone(cx, ident.email, body.get("tz"), source=source)
+        except ValueError:
+            return jsonify({"ok": False, "error": "unknown time zone"}), 400
+        cx.commit()
+    return jsonify({"ok": True, "tz": tz})
+
+
 @app.route("/api/onboarding/state")
 def onboarding_state():
     from dashboard import onboarding as _ob
@@ -33764,7 +33794,7 @@ def onboarding_availability():
         booked = _ev.booked_starts(cx)
         slots = _ev.available_slots(days, EVOX_HOURS, busy, booked, _hst_now(),
                                     duration_min=_ob.ONBOARDING["duration_min"])
-        return jsonify({"slots": _ob.daily_slot_sample(slots)})
+        return jsonify({"slots": _ob.daily_slot_sample(slots, seed=ident.email)})
 
 
 @app.route("/api/onboarding/book", methods=["POST"])
@@ -33793,9 +33823,12 @@ def onboarding_book():
                                                duration_min=_ob.ONBOARDING["duration_min"]):
             return jsonify({"error": "slot_unavailable"}), 409
         try:
+            from dashboard import client_time as _ct
+            _tz = _ct.get_zone(cx, ident.email)
             b = _ev.create_booking(cx, ident.email, start_ts, duration_min=15,
                                    practitioner="rae", session_type="onboarding",
-                                   medium="phone")
+                                   medium="phone", visitor_tz=_tz)
+            b["client_tz"] = _tz
         except _ev.SlotTaken:
             return jsonify({"error": "slot_taken"}), 409
         email = ident.email
@@ -34191,9 +34224,12 @@ def consult_book():
                                                _hst_now(), duration_min=30):
             return jsonify({"error": "slot_unavailable"}), 409
         try:
+            from dashboard import client_time as _ct
+            _tz = _ct.get_zone(cx, ident.email)
             b = _ev.create_booking(cx, ident.email, start_ts, duration_min=30,
                                    practitioner="glen", session_type="biofield-consult",
-                                   medium="video")
+                                   medium="video", visitor_tz=_tz)
+            b["client_tz"] = _tz
         except _ev.SlotTaken:
             return jsonify({"error": "slot_taken"}), 409
         email = ident.email

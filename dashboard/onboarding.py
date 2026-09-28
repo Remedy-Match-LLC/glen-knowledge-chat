@@ -15,16 +15,21 @@ ONBOARDING = {
 }
 
 
-def daily_slot_sample(slots, limit=3):
-    """Return at most ``limit`` random available times for each calendar day."""
+def daily_slot_sample(slots, limit=3, seed=None):
+    """Return at most ``limit`` random available times for each calendar day.
+
+    With a ``seed`` (the client's email) the choice holds steady for that client and day, so
+    a reload does not reshuffle the times, while different clients still see different ones
+    (Glen, 2026-09-28)."""
     by_day = {}
     for slot in slots:
         by_day.setdefault(slot[:10], []).append(slot)
 
     selected = []
-    for day_slots in by_day.values():
+    for day, day_slots in by_day.items():
         if len(day_slots) > limit:
-            day_slots = random.sample(day_slots, limit)
+            pick = random.Random(f"{seed}|{day}") if seed else random
+            day_slots = pick.sample(sorted(day_slots), limit)
         selected.extend(sorted(day_slots))
     return selected
 
