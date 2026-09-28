@@ -1957,7 +1957,11 @@ function fillTimeZoneCard(){
       const r = await fetch(`/api/portal/time-zone?token=${encodeURIComponent(seg)}`, {method: "POST",
         headers: {"Content-Type": "application/json"}, body: JSON.stringify({tz})});
       const j = await r.json().catch(() => ({}));
-      if(r.ok && j.ok){ CLIENT_TZ = j.tz; load({preserveActiveIntake: true, preserveActivePanel: true}); }
+      if(r.ok && j.ok){
+        // The card sits in a panel, where load() renders nothing (review round 3): reload so
+        // every time on the page shows in the new zone.
+        CLIENT_TZ = j.tz; msg.textContent = "Saved."; location.reload();
+      }
       else { msg.textContent = "That time zone was not saved."; }
     }catch(e){ msg.textContent = "That time zone was not saved."; }
   };

@@ -36,7 +36,10 @@ def _init(cx):
     try:
         cx.execute("ALTER TABLE people ADD COLUMN time_zone TEXT DEFAULT ''")
     except Exception:  # noqa: BLE001 - another worker added it
-        pass
+        try:
+            cx.rollback()       # leave no aborted transaction behind (review round 3)
+        except Exception:  # noqa: BLE001
+            pass
 
 
 def _person_email(cx, email):

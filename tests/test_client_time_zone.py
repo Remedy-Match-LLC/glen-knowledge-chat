@@ -288,3 +288,39 @@ def test_the_portal_re_renders_when_the_stored_zone_differs(tmp_path):
     js.write_text(RENDER_JS.replace("BLOCK", page[a:b]))
     out = subprocess.run(["node", str(js)], capture_output=True, text=True, timeout=30)
     assert out.returncode == 0 and "OK" in out.stdout, out.stderr + out.stdout
+
+
+SAVE_JS = r"""
+const assert = require('assert');
+let seg = "tok", reloaded = 0;
+function esc(s){ return String(s); }
+function load(){ return false; }                 // a panel is open: load() renders nothing
+const els = {};
+function el(id){ return els[id] || (els[id] = {id, dataset: {}, innerHTML: "", textContent: "", value: "Europe/London"}); }
+global.document = {getElementById: el};
+global.location = {reload: () => { reloaded++; }};
+global.window = {location: global.location};
+BLOCK
+Intl.supportedValuesOf = () => ["Europe/London", "Pacific/Honolulu"];
+global.fetch = async () => ({ok: true, json: async () => ({ok: true, tz: "Europe/London"})});
+fillTimeZoneCard();
+(async () => {
+  await el("tz-save").onclick();
+  assert.strictEqual(CLIENT_TZ, "Europe/London");
+  assert(el("tz-msg").textContent.includes("Saved"));
+  assert.strictEqual(reloaded, 1);               // every time shows again in the new zone
+  console.log('OK');
+})().catch(e => { console.error(e); process.exit(1); });
+"""
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
+def test_saving_a_zone_says_so_and_shows_every_time_in_it(tmp_path):
+    """Round 3: the card sits in a panel, where load() renders nothing, so Save showed no
+    'Saved' and left every time in the old zone."""
+    page = open(os.path.join(ROOT, "static", "client-portal.html")).read()
+    a, b = page.find("// BEGIN client time zone"), page.find("// END client time zone")
+    js = tmp_path / "s.js"
+    js.write_text(SAVE_JS.replace("BLOCK", page[a:b]))
+    out = subprocess.run(["node", str(js)], capture_output=True, text=True, timeout=30)
+    assert out.returncode == 0 and "OK" in out.stdout, out.stderr + out.stdout
