@@ -76,16 +76,55 @@ def test_only_focus_rows_move_to_the_stocked_jar():
     assert bpp.rehome_focus_reorder_items(cx) == 0                                # idempotent
 
 
-def test_a_moved_row_joins_an_existing_stocked_jar_line():
+def test_a_report_holding_both_lines_is_left_alone():
+    """Round 2: merging two lines guessed at quantities; both lines may be real."""
     cx = sqlite3.connect(":memory:")
     pbr.init_table(cx)
     c = _content(["Focus Neuro-Magnesium"], [PRESALE, FOCUS])
-    c["reorder_items"][1]["qty"] = 3          # the larger count sits on the SECOND line
     cx.execute("INSERT INTO portal_biofield_reports (email, scan_date, content_json) VALUES "
                "('j@x.com', '2026-09-01', ?)", (json.dumps(c),))
+    assert bpp.rehome_focus_reorder_items(cx) == 0
+    assert _slugs(cx, "portal_biofield_reports", "j@x.com") == [PRESALE, FOCUS]
+
+
+def test_any_presale_spelling_leaves_the_report_alone():
+    cx = sqlite3.connect(":memory:")
+    pbr.init_table(cx)
+    c = _content(["Focus Neuro-Magnesium", "Neuro Magnesium (presale)"], [PRESALE])
+    cx.execute("INSERT INTO portal_biofield_reports (email, scan_date, content_json) VALUES "
+               "('v@x.com', '2026-09-01', ?)", (json.dumps(c),))
+    assert bpp.rehome_focus_reorder_items(cx) == 0
+
+
+def test_a_malformed_report_does_not_stop_the_rest():
+    cx = sqlite3.connect(":memory:")
+    pbr.init_table(cx)
+    cx.execute("INSERT INTO portal_biofield_reports (email, scan_date, content_json) VALUES "
+               "('bad@x.com', '2026-08-01', ?)", ('{"reorder_items": ["neuro-magnesium"',))  # broken JSON
+    cx.execute("INSERT INTO portal_biofield_reports (email, scan_date, content_json) VALUES "
+               "('odd@x.com', '2026-08-02', ?)", ('["neuro-magnesium"]',))   # valid, not a dict
+    cx.execute("INSERT INTO portal_biofield_reports (email, scan_date, content_json) VALUES "
+               "('ok@x.com', '2026-09-01', ?)",
+               (json.dumps(_content(["Focus Neuro-Magnesium"], [PRESALE])),))
     assert bpp.rehome_focus_reorder_items(cx) == 1
-    items = json.loads(cx.execute("SELECT content_json FROM portal_biofield_reports").fetchone()[0])["reorder_items"]
-    assert items == [{"slug": FOCUS, "qty": 3, "price_cents": 5000}]
+    assert _slugs(cx, "portal_biofield_reports", "ok@x.com") == [FOCUS]
+
+
+def test_a_report_changed_since_it_was_read_is_not_overwritten(monkeypatch):
+    """Round 2: another worker's newer save must win."""
+    cx = sqlite3.connect(":memory:")
+    pbr.init_table(cx)
+    cx.execute("INSERT INTO portal_biofield_reports (email, scan_date, content_json) VALUES "
+               "('r@x.com', '2026-09-01', ?)", (json.dumps(_content(["Focus Neuro-Magnesium"], [PRESALE])),))
+    newer = json.dumps(_content(["Focus Neuro-Magnesium", "Vitality"], [PRESALE, "vitality"]))
+    real = bpp._rehome_one
+
+    def race(c):
+        cx.execute("UPDATE portal_biofield_reports SET content_json=?", (newer,))
+        return real(c)
+    monkeypatch.setattr(bpp, "_rehome_one", race)
+    assert bpp.rehome_focus_reorder_items(cx) == 0
+    assert cx.execute("SELECT content_json FROM portal_biofield_reports").fetchone()[0] == newer
 
 
 def test_the_app_moves_them_at_startup(monkeypatch, tmp_path):
@@ -103,3 +142,41 @@ def test_the_app_moves_them_at_startup(monkeypatch, tmp_path):
     monkeypatch.setattr(app, "LOG_DB", db)
     app._rehome_focus_reorder_at_startup()
     assert _slugs(sqlite3.connect(db), "portal_biofield_reports", "s@x.com") == [FOCUS]
+
+
+
+def _pg_ok():
+    import os
+    dsn = os.environ.get("PG_DSN", "")
+    return bool(dsn) and "test" in dsn          # never a real database
+
+
+import pytest  # noqa: E402
+
+
+@pytest.mark.skipif(not _pg_ok(), reason="PG_DSN for a test database not set")
+def test_it_moves_the_row_on_postgres(monkeypatch):
+    """Round 1: production is Postgres, which has no rowid; the fix did nothing there."""
+    from dashboard import db
+    monkeypatch.setenv("DB_BACKEND", "postgres")
+    c = db.connect("/data/focus_rehome_test.db")
+    try:
+        for t in ("portal_biofield_reports", "client_portals"):
+            c.execute(f'DROP TABLE IF EXISTS "{t}" CASCADE')
+        c.commit()
+        pbr.init_table(c)
+        cp.init_client_portal_table(c)
+        c.execute("INSERT INTO portal_biofield_reports (email, scan_date, content_json) VALUES "
+                  "('pg@x.com', '2026-09-01', ?)", (json.dumps(_content(["Focus Neuro-Magnesium"], [PRESALE])),))
+        c.execute("INSERT INTO portal_biofield_reports (email, scan_date, content_json) VALUES "
+                  "('pp@x.com', '2026-09-01', ?)", (json.dumps(_content(["Neuro Magnesium"], [PRESALE])),))
+        c.commit()
+        assert bpp.rehome_focus_reorder_items(c) == 1
+        got = {r[0]: [i["slug"] for i in json.loads(r[1])["reorder_items"]]
+               for r in c.execute("SELECT email, content_json FROM portal_biofield_reports").fetchall()}
+        assert got == {"pg@x.com": [FOCUS], "pp@x.com": [PRESALE]}
+    finally:
+        c.rollback()
+        for t in ("portal_biofield_reports", "client_portals"):
+            c.execute(f'DROP TABLE IF EXISTS "{t}" CASCADE')
+        c.commit()

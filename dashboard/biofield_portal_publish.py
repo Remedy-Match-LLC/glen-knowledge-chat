@@ -52,47 +52,68 @@ def _remedy_keys(remedy):
     return {re.sub(r"[^a-z0-9]", "", p.lower()) for p in parts if p.strip()}
 
 
+def _rehome_one(content):
+    """The content with its presale line moved to the stocked jar, or None to leave it.
+
+    Moves only when the layers name Focus and nothing else that reads as the presale
+    ("Neuro Magnesium" in any spelling), and the list holds a presale line but no jar line:
+    two lines may both be real, so they are left for a person (review round 2)."""
+    if not isinstance(content, dict):
+        return None
+    items = content.get("reorder_items") or []
+    if not isinstance(items, list):
+        return None
+    slugs = [i.get("slug") for i in items if isinstance(i, dict)]
+    if _PRESALE not in slugs or _FOCUS in slugs:
+        return None
+    focus = {k for k, v in ALIAS_SLUGS.items() if v == _FOCUS}
+    keys = set()
+    for L in content.get("layers") or []:
+        if isinstance(L, dict):
+            keys |= _remedy_keys(L.get("remedy"))
+    if not (keys & focus):
+        return None
+    # A presale spelling names neuro-magnesium without Focus. (The whole text of a joined
+    # layer, "Chelation + Focus Neuro-Magnesium", names Focus, and its parts are split out.)
+    if any("neuromagnesium" in k and "focus" not in k for k in keys):
+        return None
+    out = dict(content)
+    # The line keeps its own quantity and the special price set at publishing.
+    out["reorder_items"] = [dict(i, slug=_FOCUS) if isinstance(i, dict) and i.get("slug") == _PRESALE
+                            else i for i in items]
+    return out
+
+
 def rehome_focus_reorder_items(cx):
     """Move stored reorder lines that came from a Focus remedy off the presale slug.
 
     reorder_items is persisted portal content, so reports published before the alias moved
-    still hold neuro-magnesium for Focus (production counted 1 on 2026-09-28). A row moves
-    only when its layers name Focus and never the presale's own name; an ambiguous row is
-    left. Idempotent. Returns the number of rows changed; commits."""
-    focus = {k for k, v in ALIAS_SLUGS.items() if v == _FOCUS}
+    still hold neuro-magnesium for Focus (production counted 1 on 2026-09-28). Only rows whose
+    content mentions the presale slug are read. A row is written only if it is unchanged since
+    it was read, so a newer save wins. Idempotent. Returns the rows changed; commits."""
     moved = 0
     for table in ("portal_biofield_reports", "client_portals"):
         try:
-            rows = cx.execute(f"SELECT rowid, content_json FROM {table}").fetchall()
+            rows = cx.execute(f"SELECT id, content_json FROM {table} "
+                              "WHERE content_json LIKE '%\"neuro-magnesium\"%'").fetchall()
         except Exception:  # noqa: BLE001 - table not created yet
+            try:
+                cx.rollback()
+            except Exception:  # noqa: BLE001
+                pass
             continue
         for rid, raw in rows:
             try:
-                c = json.loads(raw or "{}")
-            except ValueError:
+                new = _rehome_one(json.loads(raw or "{}"))
+            except Exception:  # noqa: BLE001 - one bad report never stops the rest
+                new = None
+            if new is None:
                 continue
-            items = c.get("reorder_items") or []
-            if not any(isinstance(i, dict) and i.get("slug") == _PRESALE for i in items):
-                continue
-            keys = set()
-            for L in c.get("layers") or []:
-                keys |= _remedy_keys(L.get("remedy"))
-            if not (keys & focus) or "neuromagnesium" in keys:
-                continue
-            out, jar = [], None
-            for i in items:
-                if isinstance(i, dict) and i.get("slug") in (_PRESALE, _FOCUS):
-                    if jar is None:
-                        jar = dict(i, slug=_FOCUS)
-                        out.append(jar)
-                    else:
-                        jar["qty"] = max(jar.get("qty") or 0, i.get("qty") or 0)
-                else:
-                    out.append(i)
-            c["reorder_items"] = out
-            cx.execute(f"UPDATE {table} SET content_json=? WHERE rowid=?", (json.dumps(c), rid))
-            moved += 1
-    cx.commit()
+            cur = cx.execute(f"UPDATE {table} SET content_json=? WHERE id=? AND content_json=?",
+                             (json.dumps(new), rid, raw))
+            if getattr(cur, "rowcount", 1):
+                moved += 1
+        cx.commit()
     return moved
 
 
