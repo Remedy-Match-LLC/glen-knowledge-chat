@@ -713,6 +713,17 @@ def fetch_email_dnd_v2():
     return None
 
 
+def _contact_name(c):
+    """The contact's name, or "" when GHL holds none. Never the email address: that used
+    to overwrite a real name in the People hub every hour (2026-09-27)."""
+    # Same address pattern as dashboard/name_case.py: this job runs on its own.
+    addr = r"(?:mailto:)?<?[^\s@<>,;]+@[^\s@<>,;]+\.[^\s@<>,;]*[^\s@<>,;.]>?"
+    parts = [" ".join(re.sub(addr, " ", c.get(k) or "").split()).strip(" ,;:.")
+             if re.search(addr, c.get(k) or "") else " ".join((c.get(k) or "").split())
+             for k in ("firstName", "lastName")]
+    return " ".join(p for p in parts if p)
+
+
 def sync_people_from_ghl(batch_size=100):
     """Sync GHL contacts → Render people table.
 
@@ -760,7 +771,7 @@ def sync_people_from_ghl(batch_size=100):
 
             first = (c.get('firstName') or '').strip()
             last  = (c.get('lastName')  or '').strip()
-            name  = f'{first} {last}'.strip() or email
+            name  = _contact_name(c)
 
             # island: use GHL island field if set, else derive from city
             island = cf.get('island','')

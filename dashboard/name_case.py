@@ -114,3 +114,34 @@ def normalize_person_names(fields):
     if "last_name" in fields:
         fields["last_name"] = normalize_name(fields["last_name"], leading_particle=True)
     return fields
+
+
+def is_address(value):
+    """True when a name field actually holds an email address (one token with an @).
+
+    The GoHighLevel sync used to send the address as the name for a contact with no first or
+    last name there (2026-09-27). "Ann @ Home Studio" has spaces and is left alone."""
+    s = (value or "").strip()
+    return "@" in s and not any(c.isspace() for c in s)
+
+
+# An address needs a dotted domain: "Ann@Home Studio" and "J@ne" are left alone.
+_ADDRESS_TOKEN = re.compile(r"(?:mailto:)?<?[^\s@<>,;]+@[^\s@<>,;]+\.[^\s@<>,;]*[^\s@<>,;.]>?")
+
+
+def strip_addresses(value):
+    """The value with every email address in it removed, spaces tidied. "Peach d@x.com" is
+    "Peach"; "Ann @ Home Studio" has no address and is kept whole. Punctuation left dangling
+    by a removed address ("Jane <j@x.com>.") goes with it."""
+    s = value or ""
+    out = _ADDRESS_TOKEN.sub(" ", s)
+    if out == s:
+        return " ".join(s.split())
+    return " ".join(out.split()).strip(" ,;:.")
+
+
+def name_from_parts(first, last):
+    """"First Last" from the two name fields, capitalised like any stored name, or "" when
+    neither holds a real name."""
+    return " ".join(p for p in (normalize_name(strip_addresses(first)),
+                                normalize_name(strip_addresses(last), leading_particle=True)) if p)
