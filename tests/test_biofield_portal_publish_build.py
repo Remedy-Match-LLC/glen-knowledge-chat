@@ -7,7 +7,8 @@ CATALOG = {
     "vitality":       {"name": "Vitality"},
     "chelation":      {"name": "Chelation"},
     "nous-energy":    {"name": "Nous Energy"},
-    "neuro-magnesium":{"name": "Neuro Magnesium"},
+    "neuro-magnesium":{"name": "Neuro Magnesium"},                  # the Founding Batch presale
+    "focus-neuro-magnesium-powder": {"name": "Focus Neuro-Magnesium Powder"},   # the stocked jar
     "terrain-restore":{"name": "Terrain Restore"},
 }
 
@@ -104,9 +105,9 @@ def test_build_maps_layers_dedups_and_prices(tmp_path):
     assert l1["remedy"] == "Chelation + Nous Energy"
     assert l1["dosing"] == "Chelation: 1 capsule daily; Nous Energy: one a day"
     assert [L["n"] for L in c["layers"]] == [1, 2, 3, 4]
-    # reorder deduped to 5 unique slugs (Focus,Neuromagnesium -> one neuro-magnesium line)
+    # reorder deduped to 5 unique slugs (Focus,Neuromagnesium -> one line for the stocked jar)
     slugs = [it["slug"] for it in c["reorder_items"]]
-    assert sorted(slugs) == ["chelation", "neuro-magnesium", "nous-energy",
+    assert sorted(slugs) == ["chelation", "focus-neuro-magnesium-powder", "nous-energy",
                              "terrain-restore", "vitality"]
     assert all(it["price_cents"] == 5000 and it["qty"] == 1 for it in c["reorder_items"])
 

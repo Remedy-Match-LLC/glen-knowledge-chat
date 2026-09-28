@@ -3,6 +3,7 @@
 Pure / none-raising builder + an injectable prod POST. PHI stays local; only the
 finished portal payload crosses to prod via the existing /admin/portal/upsert.
 """
+import json
 import re
 import secrets
 import requests
@@ -17,7 +18,10 @@ from dashboard.biofield_narrative import get_narrative
 # lowercased remedy text so "Focus, Neuromagnesium" and "Focus Neuro-Magnesium"
 # collapse to the same key.
 ALIAS_SLUGS = {
-    "focusneuromagnesium": "neuro-magnesium",
+    # Focus is the stocked jar; neuro-magnesium is the Founding Batch presale, which keeps
+    # its own name (production, approved by Glen 2026-09-28).
+    "focusneuromagnesium": "focus-neuro-magnesium-powder",
+    "focusneuromagnesiumpowder": "focus-neuro-magnesium-powder",
     "communityspiritformulainterrainrestore": "terrain-restore",
     # Cistus Syntropy Powder was replaced by Cistus Shield capsules (Glen, 2026-09-10).
     # `superseded_by` carries "Cistus" and "Cistus Synergy" forward on its own; these
@@ -36,6 +40,60 @@ def _norm_key(s):
 def load_catalog():
     """The slug-keyed products map (data/products.json 'products')."""
     return _pricing._load_catalog()
+
+
+_FOCUS, _PRESALE = "focus-neuro-magnesium-powder", "neuro-magnesium"
+
+
+def _remedy_keys(remedy):
+    """Alias keys for a layer's remedy text: the whole text and each remedy joined by
+    ' + ' or ';', so "Chelation + Focus Neuro-Magnesium" yields both."""
+    parts = [remedy or ""] + re.split(r"\s\+\s|;|\n", remedy or "")
+    return {re.sub(r"[^a-z0-9]", "", p.lower()) for p in parts if p.strip()}
+
+
+def rehome_focus_reorder_items(cx):
+    """Move stored reorder lines that came from a Focus remedy off the presale slug.
+
+    reorder_items is persisted portal content, so reports published before the alias moved
+    still hold neuro-magnesium for Focus (production counted 1 on 2026-09-28). A row moves
+    only when its layers name Focus and never the presale's own name; an ambiguous row is
+    left. Idempotent. Returns the number of rows changed; commits."""
+    focus = {k for k, v in ALIAS_SLUGS.items() if v == _FOCUS}
+    moved = 0
+    for table in ("portal_biofield_reports", "client_portals"):
+        try:
+            rows = cx.execute(f"SELECT rowid, content_json FROM {table}").fetchall()
+        except Exception:  # noqa: BLE001 - table not created yet
+            continue
+        for rid, raw in rows:
+            try:
+                c = json.loads(raw or "{}")
+            except ValueError:
+                continue
+            items = c.get("reorder_items") or []
+            if not any(isinstance(i, dict) and i.get("slug") == _PRESALE for i in items):
+                continue
+            keys = set()
+            for L in c.get("layers") or []:
+                keys |= _remedy_keys(L.get("remedy"))
+            if not (keys & focus) or "neuromagnesium" in keys:
+                continue
+            out, jar = [], None
+            for i in items:
+                if isinstance(i, dict) and i.get("slug") in (_PRESALE, _FOCUS):
+                    if jar is None:
+                        jar = dict(i, slug=_FOCUS)
+                        out.append(jar)
+                    else:
+                        jar["qty"] = max(jar.get("qty") or 0, i.get("qty") or 0)
+                else:
+                    out.append(i)
+            c["reorder_items"] = out
+            cx.execute(f"UPDATE {table} SET content_json=? WHERE rowid=?", (json.dumps(c), rid))
+            moved += 1
+    cx.commit()
+    return moved
 
 
 def resolve_remedy_slug(name, catalog):

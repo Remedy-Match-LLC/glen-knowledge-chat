@@ -44413,6 +44413,22 @@ _init_people_table()
 _repair_address_names_at_startup()
 
 
+def _rehome_focus_reorder_at_startup():
+    """Published reports that list Focus Neuro-Magnesium under the presale's slug move to the
+    stocked jar (production, approved by Glen 2026-09-28; 1 row counted). Idempotent."""
+    try:
+        from dashboard import biofield_portal_publish as _bpp
+        with db.connect(LOG_DB) as cx:
+            n = _bpp.rehome_focus_reorder_items(cx)
+        if n:
+            print(f"[focus] moved {n} reorder row(s) to focus-neuro-magnesium-powder", flush=True)
+    except Exception as e:
+        print(f"[focus] reorder rehome skipped: {type(e).__name__}", flush=True)
+
+
+_rehome_focus_reorder_at_startup()
+
+
 # ── Households ────────────────────────────────────────────────────────────────
 def _init_households_tables():
     """Two tables: `households` for metadata, `household_candidates` for the
