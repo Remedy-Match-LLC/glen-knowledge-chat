@@ -58769,10 +58769,16 @@ def bos_orders_create():
             # orders out of the response.  Rows remain retained as cancelled history.
             _bos_orders.expire_abandoned_checkouts(cx)
             try:
-                rows = _bos_orders.list_orders(
-                    cx, status=request.args.get("status"),
-                    limit=min(int(request.args.get("limit", 200) or 200), 2000),
-                    include_cancelled=request.args.get("include_cancelled") == "1")
+                if (request.args.get("q") or "").strip():
+                    # The board's client search: every order for that client (Glen, 2026-09-28).
+                    rows = _bos_orders.search_client_orders(
+                        cx, request.args.get("q"),
+                        limit=min(int(request.args.get("limit", 500) or 500), 2000))
+                else:
+                    rows = _bos_orders.list_orders(
+                        cx, status=request.args.get("status"),
+                        limit=min(int(request.args.get("limit", 200) or 200), 2000),
+                        include_cancelled=request.args.get("include_cancelled") == "1")
             except (TypeError, ValueError):
                 rows = _bos_orders.list_orders(cx, include_cancelled=False)
             for o in rows:

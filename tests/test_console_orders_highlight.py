@@ -117,4 +117,5 @@ def test_old_orders_are_grouped_by_month_and_remain_findable():
     assert "document.createElement('details')" in html
     assert "section.addEventListener('beforematch'" in html
     assert "Command-F can find and reveal orders inside closed months" in html
-    assert "fetch('/api/orders?limit=2000'" in html
+    # The normal board still loads the newest 2,000; a search asks the server instead.
+    assert "'/api/orders?limit=2000'" in html and "fetch(ordersUrl(SEARCH)" in html
