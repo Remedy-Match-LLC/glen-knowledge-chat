@@ -296,6 +296,7 @@ HIDE_JS = r"""
 const assert = require('assert');
 const f = {style: {display: 'block'}, onsubmit: () => 'old'};
 global.document = {getElementById: id => id === 'retina-waitlist' ? f : null};
+global.location = {search: ''};
 FN
 renderWaitlist({});
 assert.strictEqual(f.style.display, 'none');
@@ -380,3 +381,47 @@ def test_a_blank_first_name_greets_with_hi(client, monkeypatch):
 def test_the_page_answers_the_confirmation_link():
     page = (ROOT / "static" / "begin-product.html").read_text()
     assert "get('waitlist') === 'confirmed'" in page
+
+
+# ── Review round 3 ───────────────────────────────────────────────────────────
+@pytest.mark.parametrize("bad", ["a@x.com,b@y.com", "a@x.com;b@y.com", "A <a@x.com>", "a@x",
+                                 "a b@x.com", "a@x.com\nb@y.com", "@x.com"])
+def test_only_one_plain_address_is_accepted(client, bad):
+    """Round 3: a comma list passed, and one request emailed every address in it."""
+    c, app = client
+    assert c.post(f"/api/waitlist/{SLUG}", json={"email": bad}).status_code == 400
+
+
+@pytest.mark.parametrize("raw,want", [("Mia", "Mia"), ("Anne-Marie O'Neil", "Anne-Marie O'Neil"),
+                                      ("José", "José"), ("Claim your refund at evil.example/x", ""),
+                                      ("<b>x</b>", ""), ("Mia 2", "")])
+def test_a_first_name_is_letters_only_or_nothing(raw, want):
+    """Round 3: the name goes into an email from Glen's Gmail; a link must not ride in it."""
+    assert pw.clean_first_name(raw) == want
+
+
+def test_one_address_gets_at_most_three_confirmation_emails(cx):
+    for i in range(3):
+        status, _ = pw.sign_up(cx, SLUG, "z@x.com")
+        assert status in ("new", "resend")
+        cx.execute("UPDATE product_waitlist SET confirm_sent_at='2020-01-01T00:00:00+00:00'")
+    assert pw.sign_up(cx, SLUG, "z@x.com") == ("capped", None)
+
+
+def test_a_daily_cap_stops_a_flood(cx, monkeypatch):
+    monkeypatch.setattr(pw, "DAILY_SENDS", 2)
+    assert pw.sign_up(cx, SLUG, "p1@x.com")[0] == "new"
+    assert pw.sign_up(cx, SLUG, "p2@x.com")[0] == "new"
+    assert pw.sign_up(cx, SLUG, "p3@x.com") == ("capped", None)
+
+
+def test_a_merge_keeps_the_confirmed_sign_up():
+    from dashboard import person_merge as pm
+    assert pm.CLASH_RULES["product_waitlist"] == "prefer:confirmed_at,emailed_at"
+
+
+def test_a_late_click_still_shows_its_message():
+    page = (ROOT / "static" / "begin-product.html").read_text()
+    a = page.find("function renderWaitlist(")
+    body = page[a:page.find("\n    }\n", a)]
+    assert body.find("get('waitlist')") < body.find("if (!data.waitlist")

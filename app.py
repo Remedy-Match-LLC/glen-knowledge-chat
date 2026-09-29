@@ -39821,6 +39821,7 @@ def _founding_enabled():
 
 
 _waitlist_velocity = VelocityLimiter()
+_WAITLIST_EMAIL = re.compile(r"[a-z0-9.!#$%&*+/=?^_`{|}~'-]+@[a-z0-9-]+(\.[a-z0-9-]+)*\.[a-z]{2,}")
 
 
 def _waitlist_open(slug):
@@ -39845,8 +39846,9 @@ def product_waitlist_sign_up(slug):
     if (body.get("company") or "").strip():          # honeypot -> silently drop bots
         return jsonify({"ok": True})
     email = (body.get("email") or "").strip().lower()
-    if (len(email) > 254 or "@" not in email or " " in email
-            or "." not in email.rsplit("@", 1)[-1]):
+    # One plain address only: a comma list passed a looser check and one request emailed
+    # every address in it (review round 3).
+    if len(email) > 254 or not _WAITLIST_EMAIL.fullmatch(email):
         return jsonify({"error": "email_required"}), 400
     # The trusted address, not the caller-written first X-Forwarded-For hop (review round 1).
     ip = _client_address.client_address(
@@ -39856,7 +39858,7 @@ def product_waitlist_sign_up(slug):
     if not allowed:
         return jsonify({"error": "rate_limited", "retry_after": retry}), 429
     _init_people_table()
-    first = " ".join(str(body.get("first_name") or "").split())[:80]
+    first = _pw.clean_first_name(body.get("first_name"))
     with _db_lock, db.connect(LOG_DB) as cx:
         _status, token = _pw.sign_up(cx, slug, email, first_name=first)
     if token:

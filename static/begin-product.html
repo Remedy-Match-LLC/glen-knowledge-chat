@@ -1561,13 +1561,26 @@
     function renderWaitlist(data){
       var f = document.getElementById('retina-waitlist');
       if (!f) return;
-      if (!data.waitlist || !data.waitlist.slug) {        // another product: no stale form (round 2)
-        f.style.display = 'none'; f.onsubmit = null; return;
-      }
-      f.style.display = 'block';
-      // Back from the confirmation link (Glen, 2026-09-29).
+      // Back from the confirmation link (Glen, 2026-09-29). Read first, so a click that
+      // lands after the presale closed still shows its message (round 3).
       var back = new URLSearchParams(location.search);
       var note = document.getElementById('retina-waitlist-msg');
+      var answer = back.get('waitlist');
+      if (!data.waitlist || !data.waitlist.slug) {        // another product: no stale form (round 2)
+        f.onsubmit = null;
+        if (answer === 'confirmed' || answer === 'expired') {
+          f.style.display = 'block';
+          Array.prototype.forEach.call(f.querySelectorAll('input,button,p:not(#retina-waitlist-msg)'),
+            function(el){ el.style.display = 'none'; });
+          note.textContent = answer === 'confirmed'
+            ? "You're on the list. We'll email you when Retina Renew is ready."
+            : 'That link has expired. Please join the waiting list again.';
+        } else {
+          f.style.display = 'none';
+        }
+        return;
+      }
+      f.style.display = 'block';
       if (back.get('waitlist') === 'confirmed') {
         note.textContent = "You're on the list. We'll email you when Retina Renew is ready.";
         f.email.disabled = true; f.first_name.disabled = true; f.querySelector('button').disabled = true;

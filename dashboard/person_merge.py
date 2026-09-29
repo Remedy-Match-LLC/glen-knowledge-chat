@@ -25,7 +25,7 @@ ANALYSIS_KEYS = ("greeting", "video", "layers", "findings", "report_pdf", "audio
 # How a clash is settled, by table. Anything not here blocks.
 CLASH_RULES = {
     # A waiting-list sign-up: the survivor's own row stays (2026-09-29, Retina Renew list).
-    "product_waitlist": "survivor",
+    "product_waitlist": "prefer:confirmed_at,emailed_at",   # the confirmed sign-up stays
     # Notification settings: the survivor's row, plus the merged row's text opt-out and phone
     # when the survivor lacks them (Glen, 2026-09-27: a text opt-out is the person's choice).
     "portal_notify_state": "notify",

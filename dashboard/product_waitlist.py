@@ -26,6 +26,10 @@ CONSENT_TEXT = "We will email you when Retina Renew launches, and nothing else u
 # Glen, 2026-09-29 ("confirm email"): a sign-up counts only once its owner clicks the link.
 CONFIRM_DAYS = 30
 RESEND_MINUTES = 10
+# Round 3: one address gets at most MAX_SENDS confirmation emails, and the whole list at most
+# DAILY_SENDS a day, so the form cannot be used to flood an inbox or Glen's Gmail quota.
+MAX_SENDS = 3
+DAILY_SENDS = 200
 
 
 def _now():
@@ -41,7 +45,7 @@ def init_table(cx):
                "product_slug TEXT NOT NULL, email TEXT NOT NULL, first_name TEXT DEFAULT '', "
                "consent_text TEXT NOT NULL, created_at TEXT NOT NULL, emailed_at TEXT DEFAULT '', "
                "confirm_hash TEXT DEFAULT '', confirm_sent_at TEXT DEFAULT '', "
-               "confirmed_at TEXT DEFAULT '', "
+               "confirmed_at TEXT DEFAULT '', confirm_sends INTEGER DEFAULT 0, "
                "PRIMARY KEY (product_slug, email))")
     cx.commit()
 
@@ -60,8 +64,23 @@ def _person_email(cx, email):
 
 
 def _listed_row(cx, slug, email):
-    return cx.execute("SELECT confirmed_at, confirm_sent_at FROM product_waitlist "
-                      "WHERE product_slug=? AND email=?", (slug, email)).fetchone()
+    return cx.execute("SELECT confirmed_at, confirm_sent_at, COALESCE(confirm_sends, 0) "
+                      "FROM product_waitlist WHERE product_slug=? AND email=?",
+                      (slug, email)).fetchone()
+
+
+def clean_first_name(raw):
+    """A first name of letters, spaces, hyphens and apostrophes, or '' (round 3): it goes into
+    an email sent from Glen's Gmail, so nothing else may ride in it."""
+    name = " ".join(str(raw or "").split())[:40]
+    ok = all(ch.isalpha() or ch in " -'’." for ch in name)
+    return name if name and ok and any(ch.isalpha() for ch in name) else ""
+
+
+def _sent_today(cx):
+    day = datetime.now(timezone.utc).date().isoformat()
+    return cx.execute("SELECT COUNT(*) FROM product_waitlist WHERE confirm_sent_at >= ?",
+                      (day,)).fetchone()[0]
 
 
 def _hash(token):
@@ -104,6 +123,7 @@ def sign_up(cx, slug, email, *, first_name=""):
     'new'       a new sign-up; send the email.
     'resend'    signed up before, not confirmed, last email over RESEND_MINUTES ago; send again.
     'throttled' signed up before, not confirmed, emailed recently; send nothing.
+    'capped'    this address, or the whole list today, has had its confirmation emails.
     'existing'  already confirmed (or a simultaneous duplicate); send nothing. Commits."""
     if slug not in LISTS:
         raise ValueError("no waiting list for this product")
@@ -119,15 +139,20 @@ def sign_up(cx, slug, email, *, first_name=""):
             return ("existing", None)
         if _ago(row[1]) < timedelta(minutes=RESEND_MINUTES):
             return ("throttled", None)
-        cx.execute("UPDATE product_waitlist SET confirm_hash=?, confirm_sent_at=? "
+        if int(row[2] or 0) >= MAX_SENDS or _sent_today(cx) >= DAILY_SENDS:
+            return ("capped", None)
+        cx.execute("UPDATE product_waitlist SET confirm_hash=?, confirm_sent_at=?, "
+                   "confirm_sends=COALESCE(confirm_sends,0)+1 "
                    "WHERE product_slug=? AND email=? AND COALESCE(confirmed_at,'')=''",
                    (_hash(token), _now(), slug, e))
         cx.commit()
         return ("resend", token)
+    if _sent_today(cx) >= DAILY_SENDS:
+        return ("capped", None)
     cur = cx.execute("INSERT INTO product_waitlist (product_slug, email, first_name, consent_text, "
-                     "created_at, confirm_hash, confirm_sent_at) VALUES (?,?,?,?,?,?,?) "
-                     "ON CONFLICT (product_slug, email) DO NOTHING",
-                     (slug, e, (first_name or "").strip()[:80], CONSENT_TEXT, _now(),
+                     "created_at, confirm_hash, confirm_sent_at, confirm_sends) "
+                     "VALUES (?,?,?,?,?,?,?,1) ON CONFLICT (product_slug, email) DO NOTHING",
+                     (slug, e, clean_first_name(first_name), CONSENT_TEXT, _now(),
                       _hash(token), _now()))
     cx.commit()
     if not getattr(cur, "rowcount", 1):
