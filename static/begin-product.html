@@ -305,7 +305,7 @@
       <div id="founding-soldout" style="display:none;padding:1rem;background:var(--surface,#f5f5f5);border-radius:12px;text-align:center;">
         <p style="font-weight:700;margin:0 0 0.5rem;">Batch No. 1 is sold out.</p>
         <p style="margin:0 0 1rem;color:var(--muted,#666);">Join the waitlist and be first to know when Batch No. 2 opens.</p>
-        <a id="founding-waitlist-link" href="/begin" class="cta-btn" style="display:inline-block;">Join the Waitlist</a>
+        <a id="founding-waitlist-link" href="#retina-waitlist" class="cta-btn" style="display:inline-block;">Join the Waitlist</a>
       </div>
       <!-- Free waiting list, below the Founding Batch reservation (Glen, 2026-09-28; words
            approved 2026-09-29). Shown only when page-data carries `waitlist`. -->
@@ -1560,7 +1560,10 @@
 
     function renderWaitlist(data){
       var f = document.getElementById('retina-waitlist');
-      if (!f || !data.waitlist || !data.waitlist.slug) return;
+      if (!f) return;
+      if (!data.waitlist || !data.waitlist.slug) {        // another product: no stale form (round 2)
+        f.style.display = 'none'; f.onsubmit = null; return;
+      }
       f.style.display = 'block';
       f.onsubmit = async function(e){
         e.preventDefault();

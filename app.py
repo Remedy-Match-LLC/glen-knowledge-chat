@@ -9560,7 +9560,7 @@ def begin_product_page_data(slug):
         print(f"[founding] product-page-data enrich failed: {_fe2!r}", flush=True)
     # A free waiting list, where one exists for this product (Retina Renew, 2026-09-28).
     from dashboard import product_waitlist as _pwl
-    if slug in _pwl.LISTS:
+    if slug in _pwl.LISTS and _waitlist_open(slug):
         _page_data["waitlist"] = {"slug": slug}
     if _WISHLIST_ENABLED:
         try:
@@ -39823,6 +39823,15 @@ def _founding_enabled():
 _waitlist_velocity = VelocityLimiter()
 
 
+def _waitlist_open(slug):
+    """A waiting list shows only while that product's founding presale runs (round 1)."""
+    try:
+        from dashboard import founding as _fd
+        return _founding_enabled() and bool(_fd.get_launch(slug))
+    except Exception:  # noqa: BLE001
+        return False
+
+
 @app.route("/api/waitlist/<slug>", methods=["POST"])
 def product_waitlist_sign_up(slug):
     """A free waiting-list sign-up (Retina Renew, 2026-09-28): email and an optional first
@@ -39830,7 +39839,7 @@ def product_waitlist_sign_up(slug):
     A filled hidden field is a bot and is dropped quietly; each visitor is rate limited.
     The answer never says whether an email was already on the list."""
     from dashboard import product_waitlist as _pw
-    if slug not in _pw.LISTS:
+    if slug not in _pw.LISTS or not _waitlist_open(slug):
         return jsonify({"error": "not_found"}), 404
     body = request.get_json(silent=True) or {}
     if (body.get("company") or "").strip():          # honeypot -> silently drop bots
@@ -39839,7 +39848,10 @@ def product_waitlist_sign_up(slug):
     if (len(email) > 254 or "@" not in email or " " in email
             or "." not in email.rsplit("@", 1)[-1]):
         return jsonify({"error": "email_required"}), 400
-    ip = client_ip(request.headers.get("X-Forwarded-For", ""), request.remote_addr or "")
+    # The trusted address, not the caller-written first X-Forwarded-For hop (review round 1).
+    ip = _client_address.client_address(
+        request.headers.get("X-Forwarded-For", ""), request.remote_addr or "",
+        request.headers.get("CF-Connecting-IP", ""))[0]
     allowed, retry = _waitlist_velocity.check("waitlist:" + ip, 3, 20)
     if not allowed:
         return jsonify({"error": "rate_limited", "retry_after": retry}), 429

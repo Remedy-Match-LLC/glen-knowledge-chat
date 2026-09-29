@@ -38,10 +38,50 @@ def init_table(cx):
     cx.commit()
 
 
+def _person_email(cx, email):
+    """The surviving person's address: a merged-away address tags the survivor (round 1)."""
+    try:
+        from dashboard import person_aliases as _pa
+        return _pa.canonical_email(cx, email) or email
+    except Exception:  # noqa: BLE001 - no alias table yet
+        try:
+            cx.rollback()
+        except Exception:  # noqa: BLE001
+            pass
+        return email
+
+
+def _already_listed(cx, slug, email):
+    return bool(cx.execute("SELECT 1 FROM product_waitlist WHERE product_slug=? AND email=?",
+                           (slug, email)).fetchone())
+
+
+def _tag_person(cx, email, tag, first_name, slug):
+    """Add the tag to the person's own record, creating a minimal person if needed. The write
+    applies only if the tags are unchanged since read, so a tag another worker removed
+    meanwhile (an opt-out) is never written back (review round 2)."""
+    for _ in range(5):
+        row = cx.execute("SELECT id, tags FROM people WHERE lower(email)=?", (email,)).fetchone()
+        if row is None:
+            cx.execute("INSERT INTO people (email, name, source, tags, created_at, updated_at) "
+                       "VALUES (?,?,?,?,?,?) ON CONFLICT (email) DO NOTHING",
+                       (email, (first_name or "").strip()[:80], "waitlist:" + slug,
+                        json.dumps([tag]), _now(), _now()))
+            continue
+        raw = row[1] or "[]"
+        tags = _pe.set_person_tags(json.loads(raw), add=[tag])
+        if tag in json.loads(raw):
+            return
+        cur = cx.execute("UPDATE people SET tags=? WHERE id=? AND COALESCE(tags,'[]')=?",
+                         (json.dumps(tags), row[0], raw))
+        if getattr(cur, "rowcount", 1):
+            return
+
+
 def sign_up(cx, slug, email, *, first_name=""):
     """Record one sign-up: 'new', or 'existing' when this email is already on the list.
-    A new sign-up tags the person in house (creating a minimal person when there is none)
-    and queues ONE GoHighLevel tag_add. Caller holds any lock; this commits."""
+    A new sign-up tags the person in house and queues ONE GoHighLevel tag_add. Two requests
+    for the same new email at once are still one sign-up (round 2). Commits."""
     tag = LISTS.get(slug)
     if not tag:
         raise ValueError("no waiting list for this product")
@@ -49,21 +89,16 @@ def sign_up(cx, slug, email, *, first_name=""):
     if not e:
         raise ValueError("email required")
     init_table(cx)
-    if cx.execute("SELECT 1 FROM product_waitlist WHERE product_slug=? AND email=?",
-                  (slug, e)).fetchone():
+    e = _norm(_person_email(cx, e))
+    if _already_listed(cx, slug, e):
         return "existing"
-    cx.execute("INSERT INTO product_waitlist (product_slug, email, first_name, consent_text, "
-               "created_at) VALUES (?,?,?,?,?)",
-               (slug, e, (first_name or "").strip()[:80], CONSENT_TEXT, _now()))
-    row = cx.execute("SELECT id, tags FROM people WHERE lower(email)=?", (e,)).fetchone()
-    if row is None:
-        cx.execute("INSERT INTO people (email, name, source, tags, created_at, updated_at) "
-                   "VALUES (?,?,?,?,?,?)",
-                   (e, (first_name or "").strip()[:80], "waitlist:" + slug, json.dumps([tag]),
-                    _now(), _now()))
-    else:
-        tags = _pe.set_person_tags(json.loads(row[1] or "[]"), add=[tag])
-        cx.execute("UPDATE people SET tags=? WHERE id=?", (json.dumps(tags), row[0]))
+    cur = cx.execute("INSERT INTO product_waitlist (product_slug, email, first_name, consent_text, "
+                     "created_at) VALUES (?,?,?,?,?) ON CONFLICT (product_slug, email) DO NOTHING",
+                     (slug, e, (first_name or "").strip()[:80], CONSENT_TEXT, _now()))
+    if not getattr(cur, "rowcount", 1):
+        cx.commit()
+        return "existing"
+    _tag_person(cx, e, tag, first_name, slug)
     _gq.init_ghl_queue_table(cx)
     _gq.enqueue(cx, op="tag_add", email=e, payload={"tags": [tag]}, actor="waitlist:" + slug)
     cx.commit()
@@ -71,27 +106,48 @@ def sign_up(cx, slug, email, *, first_name=""):
 
 
 def _reserved(cx, slug):
+    """Emails holding a live founding reservation. A missing table means none exist; any
+    OTHER failure raises, because failing open would email every reserver (round 2)."""
     try:
-        return {_norm(r[0]) for r in cx.execute(
-            "SELECT email FROM subscriptions WHERE founding=1 AND founding_slug=? "
-            "AND status!='cancelled'", (slug,)).fetchall()}
+        cx.execute("SELECT 1 FROM subscriptions LIMIT 0").fetchall()
     except Exception:  # noqa: BLE001 - no reservations table on a fresh database
         try:
             cx.rollback()
         except Exception:  # noqa: BLE001
             pass
         return set()
+    return {_norm(_person_email(cx, _norm(r[0]))) for r in cx.execute(
+        "SELECT email FROM subscriptions WHERE founding=1 AND founding_slug=? "
+        "AND status!='cancelled'", (slug,)).fetchall()}
+
+
+def _unmailable(cx):
+    """Addresses the launch email must skip: suppressed (bounced) or unsubscribed."""
+    out = set()
+    try:
+        out |= {_norm(r[0]) for r in cx.execute("SELECT email FROM email_suppression").fetchall()}
+    except Exception:  # noqa: BLE001 - no suppression table
+        try:
+            cx.rollback()
+        except Exception:  # noqa: BLE001
+            pass
+    for e, t in cx.execute("SELECT email, tags FROM people WHERE tags LIKE ?",
+                           ('%"consent:unsubscribed"%',)).fetchall():
+        if "consent:unsubscribed" in json.loads(t or "[]"):
+            out.add(_norm(e))
+    return out
 
 
 def waiters_to_email(cx, slug):
-    """Who gets the launch email: not yet emailed, and not holding a founding reservation."""
+    """Who gets the launch email: not yet emailed, not holding a founding reservation, not
+    suppressed and not unsubscribed."""
     init_table(cx)
-    reserved = _reserved(cx, slug)
+    skip = _reserved(cx, slug) | _unmailable(cx)
     rows = cx.execute("SELECT email, first_name, created_at FROM product_waitlist "
                       "WHERE product_slug=? AND COALESCE(emailed_at,'')='' ORDER BY created_at",
                       (slug,)).fetchall()
     return [{"email": r[0], "first_name": r[1], "created_at": r[2]}
-            for r in rows if _norm(r[0]) not in reserved]
+            for r in rows if _norm(r[0]) not in skip]
 
 
 def mark_emailed(cx, slug, email):

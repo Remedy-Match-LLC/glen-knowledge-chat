@@ -62,7 +62,7 @@ MOVE_TABLES = frozenset({
     "portal_extended_history", "portal_external_identities", "portal_fold_state",
     "portal_health_history", "portal_notify_state", "portal_process_requests",
     "portal_report_holds", "portal_triage", "practitioner_programs", "practitioner_recommendations",
-    "product_reviews", "purchase_history", "purity_photos", "purity_ratings_access", "quest_state",
+    "product_reviews", "product_waitlist", "purchase_history", "purity_photos", "purity_ratings_access", "quest_state",
     "recommendation_events", "recommendation_hidden", "recommendation_notes",
     "recommendation_section_state", "referral_codes", "referral_redemptions", "repertoire",
     "review_gifts", "sales_page_viewers", "sales_page_votes", "scan_analyses", "scan_freshness",

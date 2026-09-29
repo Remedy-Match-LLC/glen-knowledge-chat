@@ -122,6 +122,7 @@ def client(monkeypatch, tmp_path):
     app._init_people_table()
     from dashboard.chat_limits import VelocityLimiter
     monkeypatch.setattr(app, "_waitlist_velocity", VelocityLimiter())
+    monkeypatch.setattr(app, "_founding_enabled", lambda: True)       # the presale is running
     app.app.config["TESTING"] = True
     return app.app.test_client(), app
 
@@ -184,3 +185,117 @@ def test_the_seed_names_retina_renew():
     seed = (ROOT / "data" / "condition_programs_seed.json").read_text()
     assert "Retina Renew Neuro-Magnesium" in seed
     assert "Retina Restore" not in seed and "mapped to Neuro-Magnesium" not in seed
+
+
+# ── Review rounds 1 and 2 ────────────────────────────────────────────────────
+def test_a_merged_address_tags_the_surviving_person(cx):
+    from dashboard import person_aliases as pa
+    pa.init_tables(cx)
+    cx.execute("INSERT INTO people (email, tags, created_at, updated_at) VALUES ('new@x.com','[]','t','t')")
+    cx.execute("INSERT INTO email_aliases (alias_email, canonical_email, merge_id, created_at) "
+               "VALUES ('old@x.com', 'new@x.com', 1, 't')")
+    cx.commit()
+    pw.sign_up(cx, SLUG, "old@x.com")
+    assert cx.execute("SELECT COUNT(*) FROM people").fetchone()[0] == 1
+    assert TAG in _tags(cx, "new@x.com")
+    assert _queued(cx) == [("new@x.com", {"tags": [TAG]})]
+
+
+def test_a_reservation_lookup_that_fails_stops_the_list(cx, monkeypatch):
+    """Round 2: failing open would email every reserver."""
+    subs.init_subscriptions_table(cx)          # the table exists but has no founding columns
+    pw.sign_up(cx, SLUG, "a@x.com")
+    with pytest.raises(Exception):
+        pw.waiters_to_email(cx, SLUG)
+
+
+def test_no_reservations_table_means_no_reservers(cx):
+    pw.sign_up(cx, SLUG, "a@x.com")
+    assert [w["email"] for w in pw.waiters_to_email(cx, SLUG)] == ["a@x.com"]
+
+
+def test_suppressed_and_unsubscribed_addresses_are_left_out(cx):
+    from dashboard import email_suppression as es
+    es.init_table(cx) if hasattr(es, "init_table") else None
+    cx.execute("CREATE TABLE IF NOT EXISTS email_suppression (email TEXT PRIMARY KEY, bounce_type TEXT, "
+               "reason TEXT, source TEXT, created_at TEXT)")
+    for e in ("ok@x.com", "bounce@x.com", "unsub@x.com"):
+        pw.sign_up(cx, SLUG, e)
+    cx.execute("INSERT INTO email_suppression (email, reason) VALUES ('bounce@x.com', 'hard')")
+    cx.execute("UPDATE people SET tags=? WHERE email='unsub@x.com'",
+               (json.dumps([TAG, "consent:unsubscribed"]),))
+    cx.commit()
+    assert [w["email"] for w in pw.waiters_to_email(cx, SLUG)] == ["ok@x.com"]
+
+
+def test_a_tag_removed_meanwhile_is_never_written_back(cx, monkeypatch):
+    """Round 2: the read-modify-write could restore consent:opted-in removed by another worker."""
+    cx.execute("INSERT INTO people (email, tags, created_at, updated_at) VALUES "
+               "('c@x.com', '[\"consent:opted-in\"]', 't', 't')")
+    cx.commit()
+    real = pw._pe.set_person_tags
+
+    def meanwhile(current, add=None, remove=None):
+        if "consent:opted-in" in current:
+            cx.execute("UPDATE people SET tags='[]' WHERE email='c@x.com'")   # another worker
+        return real(current, add=add, remove=remove)
+    monkeypatch.setattr(pw._pe, "set_person_tags", meanwhile)
+    pw.sign_up(cx, SLUG, "c@x.com")
+    assert _tags(cx, "c@x.com") == [TAG]
+
+
+def test_a_simultaneous_duplicate_is_still_one_sign_up(cx, monkeypatch):
+    """Round 2: two workers both see no row; the second insert must not fail the request."""
+    pw.sign_up(cx, SLUG, "d@x.com")
+    monkeypatch.setattr(pw, "_already_listed", lambda *a, **k: False)
+    assert pw.sign_up(cx, SLUG, "d@x.com") == "existing"
+    assert len(_queued(cx)) == 1
+
+
+def test_the_list_shows_only_while_the_presale_runs(client, monkeypatch):
+    c, app = client
+    monkeypatch.setattr(app, "_founding_enabled", lambda: False)
+    assert "waitlist" not in c.get(f"/begin/product-page-data/{SLUG}").get_json()
+
+
+def test_the_rate_limit_keys_on_the_trusted_address(client, monkeypatch):
+    """Round 1: the first X-Forwarded-For hop is written by the caller."""
+    c, app = client
+    seen = []
+    real = app._client_address.client_address
+
+    def spy(*a, **k):
+        seen.append(a)
+        return real(*a, **k)
+    monkeypatch.setattr(app._client_address, "client_address", spy)
+    c.post(f"/api/waitlist/{SLUG}", json={"email": "f@x.com"}, headers={"X-Forwarded-For": "1.2.3.4"})
+    assert seen
+
+
+def test_the_sold_out_box_points_at_the_form():
+    page = (ROOT / "static" / "begin-product.html").read_text()
+    assert 'id="founding-waitlist-link" href="#retina-waitlist"' in page
+
+
+HIDE_JS = r"""
+const assert = require('assert');
+const f = {style: {display: 'block'}, onsubmit: () => 'old'};
+global.document = {getElementById: id => id === 'retina-waitlist' ? f : null};
+FN
+renderWaitlist({});
+assert.strictEqual(f.style.display, 'none');
+assert.strictEqual(f.onsubmit, null);
+console.log('OK');
+"""
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
+def test_the_form_hides_on_a_product_without_a_list(tmp_path):
+    page = (ROOT / "static" / "begin-product.html").read_text()
+    a = page.find("function renderWaitlist(")
+    b = page.find("\n    }\n", a) + 7
+    js = tmp_path / "h.js"
+    js.write_text(HIDE_JS.replace("FN", page[a:b]))
+    env = dict(os.environ, NODE_OPTIONS="")
+    out = subprocess.run(["node", str(js)], capture_output=True, text=True, timeout=30, env=env)
+    assert out.returncode == 0 and "OK" in out.stdout, out.stderr + out.stdout
