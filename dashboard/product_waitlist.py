@@ -3,15 +3,18 @@
 First list, 2026-09-28: Retina Renew, on the Neuro-Magnesium presale page (production's brief,
 production/05 Formulations/retina-renew-neuro-magnesium/2026-09-28/waitlist-brief.md). Glen:
 "yes in GHL for now, but make sure we are mirroring that in house". So a sign-up is recorded
-here first, with the consent wording it was given, tagged on the person's own record, and only
-then mirrored to GoHighLevel through ghl_write_queue. The in-house copy is the source of truth.
+here first, with the consent wording it was given. Once its owner clicks the confirmation link
+(Glen, 2026-09-29), it is tagged on the person's own record and only then mirrored to
+GoHighLevel through ghl_write_queue. The in-house copy is the source of truth.
 
 The consent covers the launch email only: a sign-up never adds consent:opted-in, which drives
 recurring mail. Anyone who reserves the founding batch is left out at send time; their tag
 stays, as history.
 """
+import hashlib
 import json
-from datetime import datetime, timezone
+import secrets
+from datetime import datetime, timedelta, timezone
 
 from dashboard import ghl_queue as _gq
 from dashboard import people as _pe
@@ -20,6 +23,9 @@ from dashboard import people as _pe
 LISTS = {"neuro-magnesium": "retina-renew-waitlist"}
 # Glen's approved wording, 2026-09-29, stored with every sign-up.
 CONSENT_TEXT = "We will email you when Retina Renew launches, and nothing else unless you ask."
+# Glen, 2026-09-29 ("confirm email"): a sign-up counts only once its owner clicks the link.
+CONFIRM_DAYS = 30
+RESEND_MINUTES = 10
 
 
 def _now():
@@ -34,6 +40,8 @@ def init_table(cx):
     cx.execute("CREATE TABLE IF NOT EXISTS product_waitlist ("
                "product_slug TEXT NOT NULL, email TEXT NOT NULL, first_name TEXT DEFAULT '', "
                "consent_text TEXT NOT NULL, created_at TEXT NOT NULL, emailed_at TEXT DEFAULT '', "
+               "confirm_hash TEXT DEFAULT '', confirm_sent_at TEXT DEFAULT '', "
+               "confirmed_at TEXT DEFAULT '', "
                "PRIMARY KEY (product_slug, email))")
     cx.commit()
 
@@ -51,9 +59,20 @@ def _person_email(cx, email):
         return email
 
 
-def _already_listed(cx, slug, email):
-    return bool(cx.execute("SELECT 1 FROM product_waitlist WHERE product_slug=? AND email=?",
-                           (slug, email)).fetchone())
+def _listed_row(cx, slug, email):
+    return cx.execute("SELECT confirmed_at, confirm_sent_at FROM product_waitlist "
+                      "WHERE product_slug=? AND email=?", (slug, email)).fetchone()
+
+
+def _hash(token):
+    return hashlib.sha256((token or "").encode()).hexdigest()
+
+
+def _ago(ts):
+    try:
+        return datetime.now(timezone.utc) - datetime.fromisoformat(ts)
+    except (TypeError, ValueError):
+        return timedelta.max
 
 
 def _tag_person(cx, email, tag, first_name, slug):
@@ -79,30 +98,70 @@ def _tag_person(cx, email, tag, first_name, slug):
 
 
 def sign_up(cx, slug, email, *, first_name=""):
-    """Record one sign-up: 'new', or 'existing' when this email is already on the list.
-    A new sign-up tags the person in house and queues ONE GoHighLevel tag_add. Two requests
-    for the same new email at once are still one sign-up (round 2). Commits."""
-    tag = LISTS.get(slug)
-    if not tag:
+    """Record a sign-up and return (status, token). The token goes in the confirmation email;
+    only its hash is stored. Nothing is tagged or mirrored until confirm().
+
+    'new'       a new sign-up; send the email.
+    'resend'    signed up before, not confirmed, last email over RESEND_MINUTES ago; send again.
+    'throttled' signed up before, not confirmed, emailed recently; send nothing.
+    'existing'  already confirmed (or a simultaneous duplicate); send nothing. Commits."""
+    if slug not in LISTS:
         raise ValueError("no waiting list for this product")
     e = _norm(email)
     if not e:
         raise ValueError("email required")
     init_table(cx)
     e = _norm(_person_email(cx, e))
-    if _already_listed(cx, slug, e):
-        return "existing"
+    row = _listed_row(cx, slug, e)
+    token = secrets.token_urlsafe(24)
+    if row is not None:
+        if (row[0] or "").strip():
+            return ("existing", None)
+        if _ago(row[1]) < timedelta(minutes=RESEND_MINUTES):
+            return ("throttled", None)
+        cx.execute("UPDATE product_waitlist SET confirm_hash=?, confirm_sent_at=? "
+                   "WHERE product_slug=? AND email=? AND COALESCE(confirmed_at,'')=''",
+                   (_hash(token), _now(), slug, e))
+        cx.commit()
+        return ("resend", token)
     cur = cx.execute("INSERT INTO product_waitlist (product_slug, email, first_name, consent_text, "
-                     "created_at) VALUES (?,?,?,?,?) ON CONFLICT (product_slug, email) DO NOTHING",
-                     (slug, e, (first_name or "").strip()[:80], CONSENT_TEXT, _now()))
+                     "created_at, confirm_hash, confirm_sent_at) VALUES (?,?,?,?,?,?,?) "
+                     "ON CONFLICT (product_slug, email) DO NOTHING",
+                     (slug, e, (first_name or "").strip()[:80], CONSENT_TEXT, _now(),
+                      _hash(token), _now()))
+    cx.commit()
+    if not getattr(cur, "rowcount", 1):
+        return ("existing", None)
+    return ("new", token)
+
+
+def confirm(cx, token):
+    """The owner clicked the link: mark the sign-up confirmed, tag the person in house and
+    queue ONE GoHighLevel tag_add. Returns the product slug, or None for an unknown, replaced
+    or expired link. A second click on a used link changes nothing and still returns the slug."""
+    if not token:
+        return None
+    init_table(cx)
+    row = cx.execute("SELECT product_slug, email, first_name, confirm_sent_at, confirmed_at "
+                     "FROM product_waitlist WHERE confirm_hash=?", (_hash(token),)).fetchone()
+    if row is None:
+        return None
+    slug, e, first_name, sent_at, confirmed_at = row
+    if (confirmed_at or "").strip():
+        return slug
+    if _ago(sent_at) > timedelta(days=CONFIRM_DAYS):
+        return None
+    cur = cx.execute("UPDATE product_waitlist SET confirmed_at=? WHERE product_slug=? AND email=? "
+                     "AND COALESCE(confirmed_at,'')=''", (_now(), slug, e))
     if not getattr(cur, "rowcount", 1):
         cx.commit()
-        return "existing"
+        return slug                        # another click confirmed it a moment ago
+    tag = LISTS[slug]
     _tag_person(cx, e, tag, first_name, slug)
     _gq.init_ghl_queue_table(cx)
     _gq.enqueue(cx, op="tag_add", email=e, payload={"tags": [tag]}, actor="waitlist:" + slug)
     cx.commit()
-    return "new"
+    return slug
 
 
 def _reserved(cx, slug):
@@ -139,12 +198,13 @@ def _unmailable(cx):
 
 
 def waiters_to_email(cx, slug):
-    """Who gets the launch email: not yet emailed, not holding a founding reservation, not
-    suppressed and not unsubscribed."""
+    """Who gets the launch email: confirmed, not yet emailed, not holding a founding
+    reservation, not suppressed and not unsubscribed."""
     init_table(cx)
     skip = _reserved(cx, slug) | _unmailable(cx)
     rows = cx.execute("SELECT email, first_name, created_at FROM product_waitlist "
-                      "WHERE product_slug=? AND COALESCE(emailed_at,'')='' ORDER BY created_at",
+                      "WHERE product_slug=? AND COALESCE(emailed_at,'')='' "
+                      "AND COALESCE(confirmed_at,'')<>'' ORDER BY created_at",
                       (slug,)).fetchall()
     return [{"email": r[0], "first_name": r[1], "created_at": r[2]}
             for r in rows if _norm(r[0]) not in skip]
@@ -161,6 +221,8 @@ def counts(cx, slug):
     init_table(cx)
     tag = LISTS.get(slug, "")
     signed = cx.execute("SELECT COUNT(*) FROM product_waitlist WHERE product_slug=?", (slug,)).fetchone()[0]
+    confirmed = cx.execute("SELECT COUNT(*) FROM product_waitlist WHERE product_slug=? "
+                           "AND COALESCE(confirmed_at,'')<>''", (slug,)).fetchone()[0]
     emailed = cx.execute("SELECT COUNT(*) FROM product_waitlist WHERE product_slug=? "
                          "AND COALESCE(emailed_at,'')<>''", (slug,)).fetchone()[0]
     tagged = sum(1 for (t,) in cx.execute("SELECT tags FROM people WHERE tags LIKE ?",
@@ -170,4 +232,5 @@ def counts(cx, slug):
                                            "WHERE op='tag_add' AND actor=?",
                                            ("waitlist:" + slug,)).fetchall()
                  if tag in (json.loads(p or "{}").get("tags") or []))
-    return {"signed_up": signed, "tagged_in_house": tagged, "ghl_queued": queued, "emailed": emailed}
+    return {"signed_up": signed, "confirmed": confirmed, "tagged_in_house": tagged,
+            "ghl_queued": queued, "emailed": emailed}

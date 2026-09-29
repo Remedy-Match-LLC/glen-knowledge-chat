@@ -44,6 +44,14 @@ def _tags(cx, email):
     return json.loads(row[0] or "[]") if row else None
 
 
+def _join(cx, email, **kw):
+    """Sign up AND click the confirmation link, for tests that need a confirmed member."""
+    status, token = pw.sign_up(cx, SLUG, email, **kw)
+    if token:
+        assert pw.confirm(cx, token) == SLUG
+    return status
+
+
 def _queued(cx):
     return [(r["email"], json.loads(r["payload_json"]))
             for r in cx.execute("SELECT email, payload_json FROM ghl_write_queue WHERE op='tag_add'")]
@@ -54,8 +62,12 @@ def test_the_consent_line_is_glens_approved_wording():
     assert pw.LISTS == {SLUG: TAG}
 
 
-def test_a_sign_up_is_kept_in_house_tagged_and_mirrored_once(cx):
-    assert pw.sign_up(cx, SLUG, " Ann@X.com ", first_name="Ann") == "new"
+def test_nothing_is_tagged_or_mirrored_until_the_link_is_clicked(cx):
+    status, token = pw.sign_up(cx, SLUG, " Ann@X.com ", first_name="Ann")
+    assert status == "new" and token
+    assert _tags(cx, "ann@x.com") is None and _queued(cx) == []
+    assert pw.waiters_to_email(cx, SLUG) == []
+    assert pw.confirm(cx, token) == SLUG
     row = cx.execute("SELECT * FROM product_waitlist").fetchone()
     assert (row["email"], row["first_name"], row["consent_text"]) == ("ann@x.com", "Ann", CONSENT)
     assert TAG in _tags(cx, "ann@x.com")
@@ -66,8 +78,8 @@ def test_a_sign_up_is_kept_in_house_tagged_and_mirrored_once(cx):
 def test_signing_up_twice_is_one_sign_up_and_keeps_other_tags(cx):
     cx.execute("INSERT INTO people (email, tags, created_at, updated_at) VALUES "
                "('bo@x.com', '[\"vip\"]', 't', 't')")
-    pw.sign_up(cx, SLUG, "bo@x.com")
-    assert pw.sign_up(cx, SLUG, "BO@x.com") == "existing"
+    _join(cx, "bo@x.com")
+    assert pw.sign_up(cx, SLUG, "BO@x.com") == ("existing", None)
     assert cx.execute("SELECT COUNT(*) FROM product_waitlist").fetchone()[0] == 1
     assert _tags(cx, "bo@x.com") == ["vip", TAG]
     assert len(_queued(cx)) == 1
@@ -77,7 +89,7 @@ def test_a_reserver_is_left_out_of_the_launch_email(cx):
     subs.init_subscriptions_table(cx)
     subs.migrate_add_founding_columns(cx)
     for e in ("wait@x.com", "res@x.com", "gone@x.com"):
-        pw.sign_up(cx, SLUG, e)
+        _join(cx, e)
     subs.create_founding_reservation(cx, email="res@x.com", stripe_customer_id="c",
                                      stripe_payment_method_id="p", items=[], ship_address={},
                                      founding_slug=SLUG)
@@ -92,10 +104,11 @@ def test_a_reserver_is_left_out_of_the_launch_email(cx):
 
 
 def test_the_counts_show_in_house_and_queued_side_by_side(cx):
-    pw.sign_up(cx, SLUG, "a@x.com")
-    pw.sign_up(cx, SLUG, "b@x.com")
-    assert pw.counts(cx, SLUG) == {"signed_up": 2, "tagged_in_house": 2, "ghl_queued": 2,
-                                   "emailed": 0}
+    _join(cx, "a@x.com")
+    _join(cx, "b@x.com")
+    pw.sign_up(cx, SLUG, "c@x.com")                  # not confirmed
+    assert pw.counts(cx, SLUG) == {"signed_up": 3, "confirmed": 2, "tagged_in_house": 2,
+                                   "ghl_queued": 2, "emailed": 0}
 
 
 def test_an_unknown_list_is_refused(cx):
@@ -168,6 +181,7 @@ WORDS = [
     "Join the waiting list",
     "We will email you when Retina Renew launches, and nothing else unless you ask.",
     "You're on the list. We'll email you when Retina Renew is ready.",
+    "Almost done. We've sent you an email. Click the link in it to confirm.",
 ]
 
 
@@ -195,7 +209,7 @@ def test_a_merged_address_tags_the_surviving_person(cx):
     cx.execute("INSERT INTO email_aliases (alias_email, canonical_email, merge_id, created_at) "
                "VALUES ('old@x.com', 'new@x.com', 1, 't')")
     cx.commit()
-    pw.sign_up(cx, SLUG, "old@x.com")
+    _join(cx, "old@x.com")
     assert cx.execute("SELECT COUNT(*) FROM people").fetchone()[0] == 1
     assert TAG in _tags(cx, "new@x.com")
     assert _queued(cx) == [("new@x.com", {"tags": [TAG]})]
@@ -204,13 +218,13 @@ def test_a_merged_address_tags_the_surviving_person(cx):
 def test_a_reservation_lookup_that_fails_stops_the_list(cx, monkeypatch):
     """Round 2: failing open would email every reserver."""
     subs.init_subscriptions_table(cx)          # the table exists but has no founding columns
-    pw.sign_up(cx, SLUG, "a@x.com")
+    _join(cx, "a@x.com")
     with pytest.raises(Exception):
         pw.waiters_to_email(cx, SLUG)
 
 
 def test_no_reservations_table_means_no_reservers(cx):
-    pw.sign_up(cx, SLUG, "a@x.com")
+    _join(cx, "a@x.com")
     assert [w["email"] for w in pw.waiters_to_email(cx, SLUG)] == ["a@x.com"]
 
 
@@ -220,7 +234,7 @@ def test_suppressed_and_unsubscribed_addresses_are_left_out(cx):
     cx.execute("CREATE TABLE IF NOT EXISTS email_suppression (email TEXT PRIMARY KEY, bounce_type TEXT, "
                "reason TEXT, source TEXT, created_at TEXT)")
     for e in ("ok@x.com", "bounce@x.com", "unsub@x.com"):
-        pw.sign_up(cx, SLUG, e)
+        _join(cx, e)
     cx.execute("INSERT INTO email_suppression (email, reason) VALUES ('bounce@x.com', 'hard')")
     cx.execute("UPDATE people SET tags=? WHERE email='unsub@x.com'",
                (json.dumps([TAG, "consent:unsubscribed"]),))
@@ -240,16 +254,17 @@ def test_a_tag_removed_meanwhile_is_never_written_back(cx, monkeypatch):
             cx.execute("UPDATE people SET tags='[]' WHERE email='c@x.com'")   # another worker
         return real(current, add=add, remove=remove)
     monkeypatch.setattr(pw._pe, "set_person_tags", meanwhile)
-    pw.sign_up(cx, SLUG, "c@x.com")
+    _join(cx, "c@x.com")
     assert _tags(cx, "c@x.com") == [TAG]
 
 
 def test_a_simultaneous_duplicate_is_still_one_sign_up(cx, monkeypatch):
     """Round 2: two workers both see no row; the second insert must not fail the request."""
-    pw.sign_up(cx, SLUG, "d@x.com")
-    monkeypatch.setattr(pw, "_already_listed", lambda *a, **k: False)
-    assert pw.sign_up(cx, SLUG, "d@x.com") == "existing"
+    _join(cx, "d@x.com")
+    monkeypatch.setattr(pw, "_listed_row", lambda *a, **k: None)
+    assert pw.sign_up(cx, SLUG, "d@x.com") == ("existing", None)
     assert len(_queued(cx)) == 1
+    assert cx.execute("SELECT COUNT(*) FROM product_waitlist").fetchone()[0] == 1
 
 
 def test_the_list_shows_only_while_the_presale_runs(client, monkeypatch):
@@ -299,3 +314,69 @@ def test_the_form_hides_on_a_product_without_a_list(tmp_path):
     env = dict(os.environ, NODE_OPTIONS="")
     out = subprocess.run(["node", str(js)], capture_output=True, text=True, timeout=30, env=env)
     assert out.returncode == 0 and "OK" in out.stdout, out.stderr + out.stdout
+
+
+
+# ── Confirmation (Glen, 2026-09-29: "confirm email"; wording approved) ───────────
+def test_clicking_the_link_twice_is_harmless(cx):
+    _, token = pw.sign_up(cx, SLUG, "t@x.com")
+    assert pw.confirm(cx, token) == SLUG and pw.confirm(cx, token) == SLUG
+    assert len(_queued(cx)) == 1
+
+
+def test_a_link_expires_after_30_days(cx):
+    _, token = pw.sign_up(cx, SLUG, "old@x.com")
+    cx.execute("UPDATE product_waitlist SET confirm_sent_at='2020-01-01T00:00:00+00:00'")
+    cx.commit()
+    assert pw.confirm(cx, token) is None
+    assert _tags(cx, "old@x.com") is None and _queued(cx) == []
+    assert pw.confirm(cx, "not-a-token") is None
+
+
+def test_signing_up_again_resends_at_most_every_ten_minutes(cx):
+    _, first = pw.sign_up(cx, SLUG, "r@x.com")
+    assert pw.sign_up(cx, SLUG, "r@x.com") == ("throttled", None)
+    cx.execute("UPDATE product_waitlist SET confirm_sent_at='2020-01-01T00:00:00+00:00'")
+    cx.commit()
+    status, second = pw.sign_up(cx, SLUG, "r@x.com")
+    assert status == "resend" and second and second != first
+    assert pw.confirm(cx, first) is None                       # only the newest link works
+    cx.execute("UPDATE product_waitlist SET confirm_sent_at=?", (pw._now(),))
+    assert pw.confirm(cx, second) == SLUG
+
+
+def test_the_confirmation_email_carries_the_approved_words(client, monkeypatch):
+    c, app = client
+    sent = []
+    monkeypatch.setattr(app._inbox, "send_email",
+                        lambda to, subject, body, **k: sent.append((to, subject, body)) or {"ok": True})
+    r = c.post(f"/api/waitlist/{SLUG}", json={"email": "m@x.com", "first_name": "Mia"})
+    assert r.status_code == 200
+    (to, subject, body), = sent
+    assert to == "m@x.com" and subject == "Confirm your Retina Renew launch email"
+    assert body.startswith("Hi Mia,\n\nPlease confirm you'd like an email when Retina Renew launches:\n")
+    assert "If you didn't ask for this, ignore this email and nothing more will be sent." in body
+    assert body.rstrip().endswith("Dr. Glen Swartwout")
+    link = [ln for ln in body.splitlines() if "/begin/waitlist/confirm/" in ln][0].strip()
+    token = link.rsplit("/", 1)[1]
+    r = c.get(f"/begin/waitlist/confirm/{token}")
+    assert r.status_code in (302, 303)
+    assert r.headers["Location"].endswith(f"/begin/product/{SLUG}?waitlist=confirmed")
+    with sqlite3.connect(app.LOG_DB) as cx:
+        assert TAG in json.loads(cx.execute("SELECT tags FROM people WHERE email='m@x.com'").fetchone()[0])
+    assert c.get("/begin/waitlist/confirm/bad").headers["Location"].endswith(
+        f"/begin/product/{SLUG}?waitlist=expired")
+
+
+def test_a_blank_first_name_greets_with_hi(client, monkeypatch):
+    c, app = client
+    sent = []
+    monkeypatch.setattr(app._inbox, "send_email",
+                        lambda to, subject, body, **k: sent.append(body) or {"ok": True})
+    c.post(f"/api/waitlist/{SLUG}", json={"email": "n@x.com"})
+    assert sent[0].startswith("Hi,\n\nPlease confirm")
+
+
+def test_the_page_answers_the_confirmation_link():
+    page = (ROOT / "static" / "begin-product.html").read_text()
+    assert "get('waitlist') === 'confirmed'" in page

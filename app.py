@@ -39856,9 +39856,37 @@ def product_waitlist_sign_up(slug):
     if not allowed:
         return jsonify({"error": "rate_limited", "retry_after": retry}), 429
     _init_people_table()
+    first = " ".join(str(body.get("first_name") or "").split())[:80]
     with _db_lock, db.connect(LOG_DB) as cx:
-        _pw.sign_up(cx, slug, email, first_name=str(body.get("first_name") or ""))
+        _status, token = _pw.sign_up(cx, slug, email, first_name=first)
+    if token:
+        # To the address typed, which is what the click proves (Glen, 2026-09-29).
+        try:
+            _inbox.send_email(email, "Confirm your Retina Renew launch email",
+                              _waitlist_confirm_body(first, token))
+        except Exception as e:  # noqa: BLE001 - the sign-up stands; they can sign up again
+            print(f"[waitlist] confirmation send failed: {type(e).__name__}", flush=True)
     return jsonify({"ok": True})
+
+
+def _waitlist_confirm_body(first_name, token):
+    """Glen's approved confirmation email, 2026-09-29."""
+    link = f"{PUBLIC_BASE_URL.rstrip('/')}/begin/waitlist/confirm/{token}"
+    greet = f"Hi {first_name}," if first_name else "Hi,"
+    return (f"{greet}\n\nPlease confirm you'd like an email when Retina Renew launches:\n{link}\n\n"
+            "If you didn't ask for this, ignore this email and nothing more will be sent.\n\n"
+            "Dr. Glen Swartwout\n")
+
+
+@app.route("/begin/waitlist/confirm/<token>")
+def product_waitlist_confirm(token):
+    """The link in the confirmation email: confirms the sign-up (tag in house, one GHL
+    tag_add) and returns to the product page, which says so."""
+    from dashboard import product_waitlist as _pw
+    with _db_lock, db.connect(LOG_DB) as cx:
+        slug = _pw.confirm(cx, token)
+    target = slug or next(iter(_pw.LISTS))
+    return redirect(f"/begin/product/{target}?waitlist={'confirmed' if slug else 'expired'}", 303)
 
 
 @app.route("/begin/founding/reserve", methods=["POST"])
