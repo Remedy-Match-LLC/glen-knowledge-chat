@@ -9558,6 +9558,10 @@ def begin_product_page_data(slug):
             _page_data["founding_video_url"] = _launch2.get("video_url", "")
     except Exception as _fe2:
         print(f"[founding] product-page-data enrich failed: {_fe2!r}", flush=True)
+    # A free waiting list, where one exists for this product (Retina Renew, 2026-09-28).
+    from dashboard import product_waitlist as _pwl
+    if slug in _pwl.LISTS:
+        _page_data["waitlist"] = {"slug": slug}
     if _WISHLIST_ENABLED:
         try:
             import sqlite3 as _wsq
@@ -39814,6 +39818,35 @@ def reorder_checkout():
 
 def _founding_enabled():
     return os.environ.get("FOUNDING_LAUNCH_ENABLED", "").strip().lower() in ("1", "true", "yes", "on")
+
+
+_waitlist_velocity = VelocityLimiter()
+
+
+@app.route("/api/waitlist/<slug>", methods=["POST"])
+def product_waitlist_sign_up(slug):
+    """A free waiting-list sign-up (Retina Renew, 2026-09-28): email and an optional first
+    name, no card. Kept in house first, then mirrored to GoHighLevel (product_waitlist).
+    A filled hidden field is a bot and is dropped quietly; each visitor is rate limited.
+    The answer never says whether an email was already on the list."""
+    from dashboard import product_waitlist as _pw
+    if slug not in _pw.LISTS:
+        return jsonify({"error": "not_found"}), 404
+    body = request.get_json(silent=True) or {}
+    if (body.get("company") or "").strip():          # honeypot -> silently drop bots
+        return jsonify({"ok": True})
+    email = (body.get("email") or "").strip().lower()
+    if (len(email) > 254 or "@" not in email or " " in email
+            or "." not in email.rsplit("@", 1)[-1]):
+        return jsonify({"error": "email_required"}), 400
+    ip = client_ip(request.headers.get("X-Forwarded-For", ""), request.remote_addr or "")
+    allowed, retry = _waitlist_velocity.check("waitlist:" + ip, 3, 20)
+    if not allowed:
+        return jsonify({"error": "rate_limited", "retry_after": retry}), 429
+    _init_people_table()
+    with _db_lock, db.connect(LOG_DB) as cx:
+        _pw.sign_up(cx, slug, email, first_name=str(body.get("first_name") or ""))
+    return jsonify({"ok": True})
 
 
 @app.route("/begin/founding/reserve", methods=["POST"])
