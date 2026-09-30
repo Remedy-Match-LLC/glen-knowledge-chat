@@ -70,6 +70,29 @@ def test_the_roll_on_carries_the_approved_intro(catalog):
         "Shake well, then roll on 3 times a day, or as guided.")
 
 
+def test_the_intro_and_label_lines_are_pinned(catalog):
+    """Production, 2026-09-29: the live intro was an AI draft and the panel's directions and
+    warning were empty. Glen's intro is pinned so no AI draft replaces it."""
+    p = catalog[NEW]
+    assert p["intro"] == p["description"]
+    assert {"intro", "description"} <= set(p["copy_pinned"])
+    assert p["directions"] == "Shake well. Roll on 3 times a day, or as guided."
+    assert p["warning"] == "For external use only."
+
+
+def test_the_page_serves_the_pinned_intro_and_label_lines(a, catalog, monkeypatch):
+    _no_ai(a, monkeypatch)
+    # With AI copy on (as in prod), an unpinned intro is marked "ai" and replaced.
+    monkeypatch.setattr(a, "_SALES_AI_COPY_ENABLED", True)
+    data = a.app.test_client().get("/begin/product-page-data/" + NEW).get_json()
+    secs = {s["id"]: s for s in data["sections"]}
+    assert secs["intro"]["body"] == catalog[NEW]["description"]
+    assert "ai" not in secs["intro"]
+    blob = json.dumps(data)
+    assert "Shake well. Roll on 3 times a day, or as guided." in blob
+    assert "For external use only." in blob
+
+
 def test_filemaker_95_maps_to_the_roll_on_only(catalog):
     assert json.load(open("data/fmp_slug_map.json"))["resolved"]["95"] == NEW
     # product_sales lets the last entry carrying an fmp_id win, so only one may carry 95.
