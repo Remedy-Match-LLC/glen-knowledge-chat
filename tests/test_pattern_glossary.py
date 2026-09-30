@@ -97,7 +97,8 @@ def test_pattern_remedies_carry_order_tier_and_conditions():
                       ("EI3", 1, 1, 1, None),
                       ("EI3", 2, 2, 2, '["leaky gut", "bloating"]'),
                       ("EI3", 3, 3, 2, "not json")])
-    r = pg.pattern_remedies(c, "EI3")
+    r = pg.pattern_remedies(c, "EI3", terms={"leaky gut": {"public": "leaky gut"},
+                                             "bloating": {"public": "bloating"}})
     assert r[0] == {"name": "Mucosa Syntropy", "priority": 1, "order_tier": 1, "conditions": []}
     assert r[1]["order_tier"] == 2 and r[1]["conditions"] == ["leaky gut", "bloating"]
     assert r[2]["order_tier"] == 2 and r[2]["conditions"] == []
@@ -124,6 +125,44 @@ def test_pattern_rows_follow_code_rows_and_code_row_decides():
                       ("MR2", "MR2", 1, 2, 2, '["fatigue"]')])
     assert [(x["name"], x["order_tier"]) for x in pg.pattern_remedies(c, "MR7")] == [
         ("Neuro-Magnesium", 1), ("Nous Energy", 1)]
-    assert [(x["name"], x["order_tier"], x["conditions"]) for x in pg.pattern_remedies(c, "MR2")] \
+    assert [(x["name"], x["order_tier"], x["conditions"])
+            for x in pg.pattern_remedies(c, "MR2", terms={"fatigue": {"public": "fatigue"}})] \
         == [("Nous Energy", 2, ["fatigue"])]
     assert pg.pattern_remedies(c, "ED1") == []
+
+
+def test_public_conditions_use_the_approved_wording_and_fail_closed():
+    terms = {"diabetes": {"public": "blood sugar balance"},
+             "high blood sugar": {"public": "blood sugar balance"},
+             "covid vaccine": {"hide": True, "reason": "x"},
+             "bloating": {"public": "bloating"}}
+    assert pg.public_conditions(["diabetes", "high blood sugar", "bloating"], terms) == [
+        "blood sugar balance", "bloating"]                       # deduped
+    assert pg.public_conditions(["covid vaccine"], terms) == []   # hidden
+    assert pg.public_conditions(["glaucoma"], terms) == []        # unmapped never shows raw
+    assert pg.public_conditions(["bloating"], {}) == []           # no terms file -> nothing
+
+
+def test_terms_file_covers_every_live_condition_and_shows_no_diagnosis():
+    import json, os
+    terms = pg.load_public_terms()
+    assert terms, "data/condition_public_terms.json missing or empty"
+    for v in terms.values():
+        assert v.get("hide") is True or str(v.get("public") or "").strip(), v
+        if v.get("hide"):
+            assert str(v.get("reason") or "").strip(), v
+    shown = " ".join(str(v.get("public") or "") for v in terms.values()).lower()
+    for dx in ("diabetes", "glaucoma", "cataract", "osteoporosis", "ptsd", "covid",
+               "neuropathy", "hypothyroid", "heart disease", "macular degeneration", "amd"):
+        assert dx not in shown.split(" ") and dx not in shown, dx
+    path = os.path.expanduser("~/AI-Training/e4l.db")
+    if not os.path.exists(path):
+        return
+    cx = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+    try:
+        live = {r[0] for r in cx.execute(
+            "SELECT DISTINCT j.value FROM e4l_formulation_map m, "
+            "json_each(m.qualifying_conditions) j")}
+    except sqlite3.OperationalError:
+        return
+    assert sorted(live - set(terms)) == []

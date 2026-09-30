@@ -1,6 +1,7 @@
 """Read-only reader over e4l.db for the public stress-pattern glossary. Pure; never
 writes; never raises into callers (open failure -> None / empty)."""
 import json
+import os
 import sqlite3
 
 from dashboard.ingredients import slugify as _slugify
@@ -101,13 +102,42 @@ def list_patterns(cx):
     return [{"category": c, "patterns": by_cat[c]} for c in ordered]
 
 
-def pattern_remedies(cx, code):
+_TERMS_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                           "data", "condition_public_terms.json")
+
+
+def load_public_terms(path=None):
+    """{stored condition: {"public": text} | {"hide": true, "reason": text}}.
+    Glen 2026-09-29: functional terms replace diagnoses in anything a client
+    sees. Unreadable -> {}, which shows no conditions at all."""
+    try:
+        with open(path or _TERMS_PATH, encoding="utf-8") as f:
+            return (json.load(f) or {}).get("terms") or {}
+    except Exception:
+        return {}
+
+
+def public_conditions(conditions, terms):
+    """Stored conditions -> the public wording, deduped, in order. A hidden one
+    is dropped, and so is one the terms file does not list: a new condition
+    must never reach the public page as a raw diagnosis."""
+    out = []
+    for c in conditions or []:
+        t = (terms or {}).get(c) or {}
+        pub = "" if t.get("hide") else str(t.get("public") or "").strip()
+        if pub and pub not in out:
+            out.append(pub)
+    return out
+
+
+def pattern_remedies(cx, code, terms=None):
     """The formulations mapped to an E4L pattern code ("what may help"): the
     code's own rows by priority, then general pattern rows, deduped by name
     (the first row for a name wins). Each item
     is {name, priority, order_tier, conditions}. order_tier 1 is first order (any
     one with the pattern); 2 is second order, which applies only with a history
-    of one of `conditions` (Glen 2026-09-28). A database without the tier columns
+    of one of `conditions` (Glen 2026-09-28). `conditions` is the PUBLIC wording
+    from `terms` (default: the approved terms file), never the stored text. A database without the tier columns
     reads as first order with no conditions. Empty list on any failure."""
     code = (code or "").strip()
     if not code:
@@ -132,6 +162,8 @@ def pattern_remedies(cx, code):
             continue
     if rows is None:
         return []
+    if terms is None:
+        terms = load_public_terms()
     out, seen = [], set()
     for r in rows:
         nm = (r["name"] or "").strip()
@@ -148,5 +180,6 @@ def pattern_remedies(cx, code):
             conds = []
         tier = 2 if r["order_tier"] == 2 else 1
         out.append({"name": nm, "priority": r["priority"] if r["priority"] is not None else 5,
-                    "order_tier": tier, "conditions": conds if tier == 2 else []})
+                    "order_tier": tier,
+                    "conditions": public_conditions(conds, terms) if tier == 2 else []})
     return out
