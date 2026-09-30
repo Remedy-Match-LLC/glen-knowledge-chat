@@ -82,7 +82,11 @@ def test_a_crawler_records_nothing(env, ua):
 
 def test_a_superseded_slug_is_recorded_as_the_live_product(env):
     appmod, client, db = env
-    client.get("/begin/product/msm?utm_source=GrooveKart", headers={"User-Agent": UA})
+    # A superseded slug now 302s to its survivor with the query string kept (Aller-Free
+    # spec, #1864). The arrival is recorded once, on the survivor, after the redirect.
+    r = client.get("/begin/product/msm?utm_source=GrooveKart", headers={"User-Agent": UA})
+    assert r.status_code == 302 and _rows(db) == []
+    client.get(r.headers["Location"], headers={"User-Agent": UA})
     assert [r[:2] for r in _rows(db)] == [("msm-powder", "groovekart")]
 
 
