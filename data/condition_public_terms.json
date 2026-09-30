@@ -5,7 +5,7 @@
    "public": "comfortable digestion"
   },
   "acidic ph": {
-   "public": "acidic ph"
+   "public": "acidic pH"
   },
   "acidity": {
    "public": "acidity"
@@ -133,7 +133,7 @@
    "public": "electrical sensitivity"
   },
   "emf exposure": {
-   "public": "emf exposure"
+   "public": "EMF exposure"
   },
   "emotional stress": {
    "public": "emotional stress"
@@ -142,7 +142,8 @@
    "public": "fatigue"
   },
   "female": {
-   "public": "women"
+   "hide": true,
+   "reason": "Glen 2026-09-30: read as 'fatigue or women'; hormone imbalance covers it"
   },
   "fibrosis": {
    "public": "tissue flexibility"
