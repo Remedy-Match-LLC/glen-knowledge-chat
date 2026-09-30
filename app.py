@@ -39880,11 +39880,32 @@ def _waitlist_confirm_body(first_name, token):
             "Dr. Glen Swartwout\n")
 
 
-@app.route("/begin/waitlist/confirm/<token>")
+_WAITLIST_CONFIRM_PAGE = """<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow"><title>Confirm your Retina Renew launch email</title>
+<style>body{{font-family:system-ui,-apple-system,sans-serif;display:flex;min-height:100vh;align-items:center;
+justify-content:center;margin:0;padding:16px;background:#f7f7f5;color:#1d2b22}}main{{text-align:center;max-width:28rem}}
+h1{{font-size:1.4rem;margin:0 0 1.2rem}}button{{font:inherit;font-weight:600;padding:12px 28px;border:0;
+border-radius:10px;background:#1f5c3d;color:#fff;cursor:pointer}}</style></head>
+<body><main><h1>Confirm your Retina Renew launch email</h1>
+<form method="post" action="/begin/waitlist/confirm/{token}"><button type="submit">Confirm</button></form>
+</main></body></html>"""
+
+
+@app.route("/begin/waitlist/confirm/<token>", methods=["GET", "HEAD", "POST"])
 def product_waitlist_confirm(token):
-    """The link in the confirmation email: confirms the sign-up (tag in house, one GHL
-    tag_add) and returns to the product page, which says so."""
+    """The link in the confirmation email. Opening it (GET or HEAD) only shows a one-button
+    page, because mail scanners open every link on arrival (Glen, 2026-09-29). The button
+    POSTs: that confirms the sign-up (tag in house, one GHL tag_add) and returns to the
+    product page, which says so."""
     from dashboard import product_waitlist as _pw
+    if request.method != "POST":
+        safe = "".join(ch for ch in (token or "") if ch.isalnum() or ch in "-_")[:64]
+        resp = Response(_WAITLIST_CONFIRM_PAGE.format(token=safe),
+                        mimetype="text/html")
+        resp.headers["Cache-Control"] = "no-store"
+        resp.headers["Referrer-Policy"] = "no-referrer"
+        return resp
     with _db_lock, db.connect(LOG_DB) as cx:
         slug = _pw.confirm(cx, token)
     target = slug or next(iter(_pw.LISTS))

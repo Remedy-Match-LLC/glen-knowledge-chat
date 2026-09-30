@@ -360,12 +360,12 @@ def test_the_confirmation_email_carries_the_approved_words(client, monkeypatch):
     assert body.rstrip().endswith("Dr. Glen Swartwout")
     link = [ln for ln in body.splitlines() if "/begin/waitlist/confirm/" in ln][0].strip()
     token = link.rsplit("/", 1)[1]
-    r = c.get(f"/begin/waitlist/confirm/{token}")
+    r = c.post(f"/begin/waitlist/confirm/{token}")
     assert r.status_code in (302, 303)
     assert r.headers["Location"].endswith(f"/begin/product/{SLUG}?waitlist=confirmed")
     with sqlite3.connect(app.LOG_DB) as cx:
         assert TAG in json.loads(cx.execute("SELECT tags FROM people WHERE email='m@x.com'").fetchone()[0])
-    assert c.get("/begin/waitlist/confirm/bad").headers["Location"].endswith(
+    assert c.post("/begin/waitlist/confirm/bad").headers["Location"].endswith(
         f"/begin/product/{SLUG}?waitlist=expired")
 
 
@@ -425,3 +425,33 @@ def test_a_late_click_still_shows_its_message():
     a = page.find("function renderWaitlist(")
     body = page[a:page.find("\n    }\n", a)]
     assert body.find("get('waitlist')") < body.find("if (!data.waitlist")
+
+
+
+def test_opening_the_link_shows_a_button_and_confirms_nothing(client, monkeypatch):
+    """Mail scanners open every link on arrival; only the button confirms (Glen, 2026-09-29)."""
+    c, app = client
+    sent = []
+    monkeypatch.setattr(app._inbox, "send_email",
+                        lambda to, subject, body, **k: sent.append(body) or {"ok": True})
+    c.post(f"/api/waitlist/{SLUG}", json={"email": "s@x.com"})
+    token = [ln for ln in sent[0].splitlines() if "/begin/waitlist/confirm/" in ln][0].rsplit("/", 1)[1]
+    for method in (c.get, c.head):
+        r = method(f"/begin/waitlist/confirm/{token}")
+        assert r.status_code == 200
+    page = c.get(f"/begin/waitlist/confirm/{token}").get_data(as_text=True)
+    assert "Confirm your Retina Renew launch email" in page
+    assert '<button type="submit">Confirm</button>' in page and 'method="post"' in page
+    assert 'name="robots" content="noindex' in page
+    with sqlite3.connect(app.LOG_DB) as cx:
+        assert cx.execute("SELECT COALESCE(confirmed_at,'') FROM product_waitlist "
+                          "WHERE email='s@x.com'").fetchone()[0] == ""
+        try:
+            queued = cx.execute("SELECT COUNT(*) FROM ghl_write_queue").fetchone()[0]
+        except sqlite3.OperationalError:      # nothing ever queued, so no table yet
+            queued = 0
+        assert queued == 0
+    assert c.post(f"/begin/waitlist/confirm/{token}").status_code in (302, 303)
+    with sqlite3.connect(app.LOG_DB) as cx:
+        assert cx.execute("SELECT COALESCE(confirmed_at,'') FROM product_waitlist "
+                          "WHERE email='s@x.com'").fetchone()[0] != ""
