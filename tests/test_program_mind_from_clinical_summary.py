@@ -223,9 +223,10 @@ def test_a_manual_biofield_response_is_spirit_not_mind():
 
 
 def test_mind_keeps_what_is_mined_from_history():
-    """Symptoms and diagnoses. Tags and communications are the patient's own reports."""
+    """Symptoms and diagnoses. Tags, communications and pasted notes (emails and phone
+    notes Glen pastes into Intake) are the patient's own reports."""
     from dashboard.biofield_program import MIND_SOURCES
-    assert set(MIND_SOURCES) == {"tag", "comm"}
+    assert set(MIND_SOURCES) == {"tag", "comm", "paste"}
 
 
 def test_the_scan_is_body():

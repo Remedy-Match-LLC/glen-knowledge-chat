@@ -1007,14 +1007,17 @@ async function mineComms(){mstat('Mining recent comms for stresses…');
  if(j.error){mstat('Mine comms: '+j.error);return}
  mstat(j.added?'Added '+j.added+' stress(es) from recent comms.':'No new stresses found in recent comms.');loadStress()}
 function pstat(t){var e=document.getElementById('pastestat');if(e)e.textContent=t}
-async function minePaste(){var box=document.getElementById('pasteNotes'),text=box?box.value:'';
+async function minePaste(btn){var box=document.getElementById('pasteNotes'),text=box?box.value:'';
  if(!text.trim()){pstat('Paste some notes first.');return}
- pstat('Finding stresses in the pasted notes…');
- try{var j=await post('/author/__TID__/mine-paste',{text:text})}
- catch(e){pstat('Pasted notes failed: the server returned an error ('+e.message+').');return}
- if(j.error){pstat('Pasted notes: '+j.error);return}
- box.value='';
- pstat(j.added?'Added '+j.added+' stress(es) from the pasted notes.':'No new stresses found in the pasted notes.');loadStress()}
+ pstat('Finding stresses in the pasted notes…');if(btn)btn.disabled=true;
+ try{var j;try{j=await post('/author/__TID__/mine-paste',{text:text})}
+  catch(e){pstat('Pasted notes failed: the server returned an error ('+e.message+').');return}
+  var sk=j.skipped?' Skipped '+j.skipped+' that looked like copied text.':'';
+  if(j.added>0)loadStress();
+  if(j.error){pstat('Pasted notes: '+j.error+(j.added>0?' Added '+j.added+' before that.':'')+sk);return}
+  if(box.value===text)box.value='';
+  pstat((j.added?'Added '+j.added+' stress(es) from the pasted notes.':'No new stresses found in the pasted notes.')+sk)}
+ finally{if(btn)btn.disabled=false}}
 async function loadClinicalProposals(){
  var box=document.getElementById('clinicalProposals');if(!box)return;
  try{var j=await (await fetch('/author/__TID__/clinical-proposals')).json(),items=j.items||[];
@@ -2260,9 +2263,9 @@ def render_author_html(report, depth_values=None, transcript="", covered_by_laye
                  # The text is mined into stresses and never stored.
                  "<div style='margin:6px 0'>"
                  "<label for=pasteNotes class=food>Paste notes (emails, phone notes)</label>"
-                 "<textarea id=pasteNotes rows=5 maxlength=50000></textarea>"
+                 "<textarea id=pasteNotes rows=5 maxlength=50000 autocomplete=off></textarea>"
                  "<div class=btnrow style='margin:4px 0'>"
-                 "<button class='btn ghost' onclick=minePaste()>Find stresses in pasted notes</button>"
+                 "<button class='btn ghost' onclick=minePaste(this)>Find stresses in pasted notes</button>"
                  "<span id=pastestat class=food></span>"
                  "</div></div>"
                  "<div id=stresspanel></div>"

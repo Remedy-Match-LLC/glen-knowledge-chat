@@ -821,23 +821,45 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
         return {"added": added}
 
     PASTE_MAX_CHARS = 50_000
+    PASTE_LABEL_MAX = 80
+    PASTE_FAILED = "Could not read the notes. Nothing more was added."
 
     def _mine_paste(cx, test_id, text):
         """Mine pasted notes (emails, phone notes) into 'paste' stresses. Brief
         2026-09-30 section 4: Rae consolidates a client's emails into one text for
         Glen to paste. Same mining and same "new" rule as _mine_comms: add_stress
         skips a label already on the test from any source.
-        The pasted text is client data and is never stored or logged here. Only the
-        resulting stress labels are written, exactly as for comms."""
+        The pasted text is client data and is never stored, logged or echoed. Only
+        the resulting stress labels are written, exactly as for comms. A label that
+        looks like copied text (over 80 characters, or holding a line break) is
+        skipped, so a model echoing the notes back cannot store them as a stress.
+        Refuses, like _mine_comms, when the test does not exist or has no client."""
         from dashboard.biofield_interpret import interpret_stresses
         from dashboard import biofield_stress as _st
+        from dashboard.biofield_authoring import init_auth_tables
+        if not re.fullmatch(r"a[1-9][0-9]*", str(test_id)):
+            return {"added": 0, "error": "That intake does not exist."}, 404
+        init_auth_tables(cx)
+        if not cx.execute("SELECT 1 FROM biofield_auth_tests WHERE id=?",
+                          (_st._num(test_id),)).fetchone():
+            return {"added": 0, "error": "That intake does not exist."}, 404
+        rep = _report_for(cx, test_id)
+        email = ((rep.get("client") or {}).get("email") or "").strip()
+        if not email:
+            return {"added": 0, "error": "No client selected yet"}
+        added = skipped = 0
         try:
-            labels = interpret_stresses(text, interpret_complete)
-            added = sum(1 for label in labels
-                        if _st.add_stress(cx, test_id, label, source="paste"))
-        except Exception as e:
-            return {"added": 0, "error": str(e)[:200]}
-        return {"added": added}
+            for label in interpret_stresses(text, interpret_complete):
+                label = label if isinstance(label, str) else ""
+                if len(label) > PASTE_LABEL_MAX or "\n" in label or "\r" in label:
+                    skipped += 1
+                    continue
+                if _st.add_stress(cx, test_id, label, source="paste"):
+                    added += 1
+        except Exception:
+            # Never echo the exception: its text can carry the pasted notes.
+            return {"added": added, "skipped": skipped, "error": PASTE_FAILED}
+        return {"added": added, "skipped": skipped}
 
     def _seed_stresses(cx, test_id, *, force=False, layers=None):
         """Synthesize reveal layers + seed the stress coverage map for this test.
@@ -2444,7 +2466,10 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
 
     @app.route("/author/<test_id>/mine-paste", methods=["POST"])
     def author_mine_paste(test_id):
-        text = (request.get_json(silent=True) or {}).get("text")
+        body = request.get_json(silent=True)
+        if not isinstance(body, dict):
+            return {"added": 0, "error": "Send the notes as {\"text\": ...}."}, 400
+        text = body.get("text")
         text = text if isinstance(text, str) else ""
         if not text.strip():
             return {"added": 0, "error": "Paste some notes first."}, 400
