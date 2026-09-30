@@ -46,6 +46,10 @@ _RETIRED_NAMES = {
     # Renamed "Aller-Free HomeoEnergetic Drops" 2026-09-25. The FMP snapshot, and so the
     # remedy picker and authored reports, still carry the old spelling.
     "allerfree homeoenergetic drops": "allerfree-homeoenergetic-drops",
+    # The powder became "Vitamin B12 Sublingual Drops" 2026-09-24 (same FileMaker 323).
+    # Reports authored before then still name the powder.
+    "vitamin b12 sublingual powder": "sublingual-b12",
+    "sublingual b12 powder": "sublingual-b12",   # the FMP snapshot name the picker offers
 }
 
 
