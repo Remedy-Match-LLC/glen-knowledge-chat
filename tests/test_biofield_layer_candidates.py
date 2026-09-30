@@ -95,3 +95,41 @@ def test_render_panel_html():
     assert 'data-remedy="Cardio Plus"' in html and "layerPick(this)" in html
     assert "used before" in html                    # learned flag surfaced
     assert render_layer_candidates_panel([]) == ""  # nothing to show
+
+
+_TIERS = {"by_code": {"ED1": {"heart health": (1, []), "cardio plus": (2, ["high blood pressure"])},
+                      "MB5": {"emotional stress release": (2, ["anxiety"])},
+                      "MR2": {"nous energy": (2, ["fatigue"])}},
+          "by_pattern": {"MR": {"nous energy": (1, [])}}}
+
+
+def test_second_order_conditions_rules():
+    from dashboard.biofield_stress import second_order_conditions as so
+    assert so("Cardio Plus", ["ED1"], _TIERS) == ["high blood pressure"]
+    assert so("Heart Health", ["ED1"], _TIERS) == []          # first order
+    assert so("Unmapped", ["ED1"], _TIERS) == []              # not in the map
+    assert so("Nous Energy", ["MR2"], _TIERS) == ["fatigue"]  # own row beats pattern row
+    assert so("Nous Energy", ["MR7"], _TIERS) == []           # pattern row, first order
+    assert so("Cardio Plus", ["ED1"], None) == []
+
+
+def test_candidates_tag_second_order_and_hide_nothing(tmp_path):
+    cx = _seed(tmp_path)
+    lc = layer_candidates(cx, "a5", _CHAIN, tiers=_TIERS,
+                          fallback_by_code={"MB5": ["Emotional Stress Release"]})
+    L1 = {c["remedy"].lower(): c for c in _layer(lc, 1)["candidates"]}
+    assert L1["cardio plus"]["second_order"] == ["high blood pressure"]
+    assert "second_order" not in L1["heart health"]
+    L3 = _layer(lc, 3)["candidates"][0]
+    assert L3["remedy"] == "Emotional Stress Release" and L3["second_order"] == ["anxiety"]
+
+
+def test_render_panel_shows_second_order_conditions():
+    from dashboard.biofield_report_html import render_layer_candidates_panel
+    html = render_layer_candidates_panel([{
+        "n": 1, "head": "Heart", "codes": ["ED1"], "default": ["Heart Health"],
+        "candidates": [{"remedy": "Cardio Plus", "covers": ["ED1"], "coverage": 1,
+                        "source": "coverage", "used_before": False, "is_default": False,
+                        "second_order": ["high blood pressure", "<b>x</b>"]}]}])
+    assert "second order: high blood pressure" in html
+    assert "<b>x</b>" not in html                   # escaped

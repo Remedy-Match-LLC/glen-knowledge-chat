@@ -81,3 +81,27 @@ def test_list_patterns_groups_and_excludes_empty(cx):
     assert flat["lead"]["has_desc"] is False and flat["lead"]["n_structures"] == 1
     cats = [g["category"] for g in groups]
     assert cats == sorted(set(cats), key=cats.index)   # each category once, stable
+
+
+def test_pattern_remedies_carry_order_tier_and_conditions():
+    c = sqlite3.connect(":memory:"); c.row_factory = sqlite3.Row
+    c.executescript(
+        "CREATE TABLE formulations (id INTEGER PRIMARY KEY, name TEXT NOT NULL);"
+        "CREATE TABLE e4l_formulation_map (id INTEGER PRIMARY KEY, item_code TEXT, "
+        " formulation_id INTEGER, priority INTEGER, order_tier INTEGER, qualifying_conditions TEXT);")
+    c.executemany("INSERT INTO formulations VALUES (?,?)",
+                  [(1, "Mucosa Syntropy"), (2, "Terrain Restore"), (3, "Odd")])
+    c.executemany("INSERT INTO e4l_formulation_map (item_code,formulation_id,priority,"
+                  "order_tier,qualifying_conditions) VALUES (?,?,?,?,?)", [
+                      ("EI3", 1, 1, 1, None),
+                      ("EI3", 2, 2, 2, '["leaky gut", "bloating"]'),
+                      ("EI3", 3, 3, 2, "not json")])
+    r = pg.pattern_remedies(c, "EI3")
+    assert r[0] == {"name": "Mucosa Syntropy", "priority": 1, "order_tier": 1, "conditions": []}
+    assert r[1]["order_tier"] == 2 and r[1]["conditions"] == ["leaky gut", "bloating"]
+    assert r[2]["order_tier"] == 2 and r[2]["conditions"] == []
+
+
+def test_pattern_remedies_old_schema_reads_as_first_order(cx):
+    r = pg.pattern_remedies(cx, "ED1")
+    assert all(x["order_tier"] == 1 and x["conditions"] == [] for x in r)

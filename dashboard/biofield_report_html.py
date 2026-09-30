@@ -2453,6 +2453,8 @@ def render_layer_candidates_panel(layer_candidates):
                 tags.append("functional")
             elif c.get("coverage"):
                 tags.append(f"covers {c['coverage']}")
+            if c.get("second_order"):
+                tags.append("second order: " + ", ".join(c["second_order"]))
             tag = (f" <span class=food>({_e(', '.join(tags))})</span>") if tags else ""
             cls = "btn ghost lcpick" + (" lccur" if c.get("is_default") else "")
             btns += (f"<button type=button class='{cls}' data-n=\"{_e(n)}\" "

@@ -1,5 +1,6 @@
 """Read-only reader over e4l.db for the public stress-pattern glossary. Pure; never
 writes; never raises into callers (open failure -> None / empty)."""
+import json
 import sqlite3
 
 from dashboard.ingredients import slugify as _slugify
@@ -103,17 +104,26 @@ def list_patterns(cx):
 def pattern_remedies(cx, code):
     """The formulations mapped to an E4L pattern code ("what may help"), ordered
     by priority then name, deduped by name (best/lowest priority wins). Each item
-    is {name, priority}. Empty list on any failure or unknown code."""
+    is {name, priority, order_tier, conditions}. order_tier 1 is first order (any
+    one with the pattern); 2 is second order, which applies only with a history
+    of one of `conditions` (Glen 2026-09-28). A database without the tier columns
+    reads as first order with no conditions. Empty list on any failure."""
     code = (code or "").strip()
     if not code:
         return []
+    sql = ("SELECT f.name AS name, m.priority AS priority, {extra} "
+           "FROM e4l_formulation_map m JOIN formulations f ON f.id = m.formulation_id "
+           "WHERE m.item_code = ? ORDER BY COALESCE(m.priority, 5), f.name")
     try:
-        rows = cx.execute(
-            "SELECT f.name AS name, m.priority AS priority "
-            "FROM e4l_formulation_map m JOIN formulations f ON f.id = m.formulation_id "
-            "WHERE m.item_code = ? ORDER BY COALESCE(m.priority, 5), f.name", (code,)).fetchall()
+        rows = cx.execute(sql.format(
+            extra="m.order_tier AS order_tier, m.qualifying_conditions AS conditions"),
+            (code,)).fetchall()
     except Exception:
-        return []
+        try:
+            rows = cx.execute(sql.format(
+                extra="NULL AS order_tier, NULL AS conditions"), (code,)).fetchall()
+        except Exception:
+            return []
     out, seen = [], set()
     for r in rows:
         nm = (r["name"] or "").strip()
@@ -121,5 +131,14 @@ def pattern_remedies(cx, code):
         if not nm or key in seen:
             continue
         seen.add(key)
-        out.append({"name": nm, "priority": r["priority"] if r["priority"] is not None else 5})
+        conds = []
+        try:
+            parsed = json.loads(r["conditions"] or "[]")
+            if isinstance(parsed, list):
+                conds = [str(c).strip() for c in parsed if str(c or "").strip()]
+        except Exception:
+            conds = []
+        tier = 2 if r["order_tier"] == 2 else 1
+        out.append({"name": nm, "priority": r["priority"] if r["priority"] is not None else 5,
+                    "order_tier": tier, "conditions": conds if tier == 2 else []})
     return out

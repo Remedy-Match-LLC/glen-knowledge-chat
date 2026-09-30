@@ -32,6 +32,8 @@
     ul.rx a.rx-link{color:var(--green);text-decoration:none;border-bottom:1px dashed var(--green)}
     ul.rx a.rx-link:hover{color:var(--gold);border-bottom-color:var(--gold)}
     .rx-note{color:var(--muted);font-size:.8rem;margin-top:.5rem}
+    .rx-sub{font-family:Raleway,sans-serif;font-size:.92rem;margin:.9rem 0 .4rem;color:var(--cream);font-weight:600}
+    .rx-cond{color:var(--muted)}
     .sf-sec{margin-top:1.6rem}
     .sf-sec h3{font-family:Raleway,sans-serif;font-size:1.05rem;margin:.2rem 0 .3rem;color:var(--cream)}
     .sf-intro{color:var(--muted);font-size:.82rem;margin:0 0 .6rem}
@@ -122,24 +124,45 @@
           host.insertBefore(head, host.firstChild);
         }
         // "What may help": mapped formulations, product-linked where resolved.
-        var rem = d.remedies || [];
-        if(rem.length){
+        // First order (order_tier 1) applies to anyone with the pattern. Second order
+        // applies only with a related history, so it is listed apart with its
+        // conditions. A second order remedy with no condition is not shown.
+        var remAll = d.remedies || [];
+        var rem = remAll.filter(function(r){ return r.order_tier !== 2; });
+        var rem2 = remAll.filter(function(r){
+          return r.order_tier === 2 && (r.conditions || []).length; });
+        function rxItem(r, conds){
+          var li = document.createElement('li');
+          if(r.product_slug){
+            var a = document.createElement('a'); a.className = 'rx-link';
+            a.href = '/begin/product/' + encodeURIComponent(r.product_slug);
+            a.target = '_blank'; a.rel = 'noopener'; a.textContent = r.name;
+            li.appendChild(a);
+          } else {
+            li.appendChild(document.createTextNode(r.name));
+          }
+          if(conds && conds.length){
+            var c = document.createElement('span'); c.className = 'rx-cond';
+            c.textContent = ': ' + conds.join(', ');
+            li.appendChild(c);
+          }
+          return li;
+        }
+        if(rem.length || rem2.length){
           var sec = document.getElementById('pat-remedies'); sec.className = 'rx-sec';
           var rh = document.createElement('h3'); rh.textContent = 'What may help'; sec.appendChild(rh);
-          var ul = document.createElement('ul'); ul.className = 'rx';
-          rem.forEach(function(r){
-            var li = document.createElement('li');
-            if(r.product_slug){
-              var a = document.createElement('a'); a.className = 'rx-link';
-              a.href = '/begin/product/' + encodeURIComponent(r.product_slug);
-              a.target = '_blank'; a.rel = 'noopener'; a.textContent = r.name;
-              li.appendChild(a);
-            } else {
-              li.appendChild(document.createTextNode(r.name));
-            }
-            ul.appendChild(li);
-          });
-          sec.appendChild(ul);
+          if(rem.length){
+            var ul = document.createElement('ul'); ul.className = 'rx';
+            rem.forEach(function(r){ ul.appendChild(rxItem(r)); });
+            sec.appendChild(ul);
+          }
+          if(rem2.length){
+            var rh2 = document.createElement('h4'); rh2.className = 'rx-sub';
+            rh2.textContent = 'May also help, depending on your history'; sec.appendChild(rh2);
+            var ul2 = document.createElement('ul'); ul2.className = 'rx';
+            rem2.forEach(function(r){ ul2.appendChild(rxItem(r, r.conditions)); });
+            sec.appendChild(ul2);
+          }
           var note = document.createElement('p'); note.className = 'rx-note';
           note.textContent = 'General support associated with this pattern — not a substitute for a personalized Biofield Analysis.';
           sec.appendChild(note);

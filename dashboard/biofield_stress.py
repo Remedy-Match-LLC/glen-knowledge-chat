@@ -942,7 +942,32 @@ def resolve_remedy_set(cx, tid, chain_rows, force_computed=False):
             "has_pattern": _get_pattern_set(cx, key) is not None}
 
 
-def layer_candidates(cx, tid, chain_rows, fallback_by_code=None, n=5):
+def second_order_conditions(name, codes, tiers):
+    """The qualifying conditions when `name` is a SECOND order remedy for these
+    codes, else []. `tiers` = {"by_code": {code: {name_lower: (tier, [conds])}},
+    "by_pattern": {prefix: {...}}}. A code's own row outranks a general pattern row
+    (Glen reviewed each code; the pattern row is the older default). First order on
+    any of the codes, or not mapped at all, -> []."""
+    if not tiers:
+        return []
+    low = (name or "").strip().lower()
+    by_code = tiers.get("by_code") or {}
+    by_pat = tiers.get("by_pattern") or {}
+    rows = [by_code[c][low] for c in codes if low in by_code.get(c, {})]
+    if not rows:
+        rows = [m[low] for pat, m in by_pat.items()
+                if low in m and any(str(c).startswith(pat) for c in codes)]
+    if not rows or any(t != 2 for t, _ in rows):
+        return []
+    out = []
+    for _, conds in rows:
+        for cd in conds or []:
+            if cd not in out:
+                out.append(cd)
+    return out
+
+
+def layer_candidates(cx, tid, chain_rows, fallback_by_code=None, n=5, tiers=None):
     """Per-layer ranked remedy pick-list that AUGMENTS the set-cover default.
 
     For each causal-chain layer, return the current pick(s) as `default` plus up to
@@ -956,7 +981,10 @@ def layer_candidates(cx, tid, chain_rows, fallback_by_code=None, n=5):
         the formulation map -- tagged source "functional", so a layer never shows
         nothing.
     Pure over `cx` (biofield_auth_* tables); e4l.db / the formulation map stay in
-    the caller, keeping this function's DB boundary clean and unit-testable."""
+    the caller, keeping this function's DB boundary clean and unit-testable.
+
+    `tiers` (see second_order_conditions) tags a second order candidate with
+    "second_order": [conditions]. Nothing is hidden: Glen chooses here."""
     stresses = list_stresses(cx, tid, chain_rows)
     active_tokens, _label, coverage = _remedy_context(cx, tid, chain_rows)
     key, _toks = _pattern_key(active_tokens)
@@ -1034,6 +1062,11 @@ def layer_candidates(cx, tid, chain_rows, fallback_by_code=None, n=5):
             dflt = next((c for c in scored if c.get("is_default")), None)
             if dflt:
                 capped = capped[:max(0, n - 1)] + [dflt]
+        if tiers and animal is None:
+            for c in capped:
+                so = second_order_conditions(c.get("remedy"), sorted(codes), tiers)
+                if so:
+                    c["second_order"] = so
         out.append({"n": L["layer"], "head": L.get("head") or "",
                     "codes": sorted(codes), "default": default_disp,
                     "candidates": capped})
