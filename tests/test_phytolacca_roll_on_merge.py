@@ -13,6 +13,7 @@ import json
 
 import pytest
 
+from dashboard import biofield_invoice
 from dashboard import legacy_store_links as lsl
 from dashboard import product_sales
 from dashboard import products as products_mod
@@ -30,7 +31,7 @@ def test_the_old_entry_is_retired_and_points_at_the_roll_on(catalog):
     assert catalog[OLD].get("inactive") is True
     assert catalog[OLD].get("superseded_by") == NEW
     assert products_mod.superseded_slug(OLD, catalog) == NEW
-    # Its old name stays, so old Biofield reports that name it still resolve.
+    # Its old name stays for old reports; invoices reach the survivor via _RETIRED_NAMES.
     assert catalog[OLD]["name"] == "Phytolacca Oil"
 
 
@@ -104,11 +105,54 @@ def a(monkeypatch, tmp_path):
     return appmod
 
 
-def test_the_roll_on_offers_no_capsule_bottles_or_refills(a, catalog):
-    assert a._capsule_formats_ok({**catalog[NEW], "slug": NEW}) is False
+def _no_ai(a, monkeypatch):
+    """The product-data route writes cached AI cards on first view; never call out."""
+    monkeypatch.setattr(a, "_product_card",
+                        lambda p: {"description": "", "ingredients": [], "benefits": []})
+    monkeypatch.setattr(a, "_product_how", lambda p: "")
+
+
+def test_the_roll_on_offers_no_capsule_bottles_or_refills(a, catalog, monkeypatch):
+    _no_ai(a, monkeypatch)
+    p = {**catalog[NEW], "slug": NEW}
+    assert a._capsule_formats_ok(p) is False
     data = a.app.test_client().get("/begin/product-data/" + NEW).get_json()
     assert data.get("formats") is None
     assert data["price_cents"] == 6997
+    # A stale or hand-made cart line asking for a capsule format is cleaned to none.
+    for fmt in ("refill", "larger", " Refill "):
+        assert a._clean_format(p, fmt) == ""
+
+
+def test_the_old_address_serves_the_roll_on(a, catalog, monkeypatch):
+    """An emailed /begin/product/phytolacca-oil link must still open a sellable page."""
+    _no_ai(a, monkeypatch)
+    c = a.app.test_client()
+    assert c.get("/begin/product/" + OLD).status_code == 200
+    data = c.get("/begin/product-data/" + OLD).get_json()
+    assert data["name"] == "Phytolacca americana Oil Roll-On"
+    assert data["price_cents"] == 6997
+    assert data.get("formats") is None
+
+
+def test_volume_pricing_never_goes_below_the_50_dollar_minimum(a, catalog):
+    p = {**catalog[NEW], "slug": NEW}
+    from dashboard import pricing
+    s = pricing.load_settings(None)
+    twelve = a._inhouse_ff_unit_cents(p, 12, s, line_qty=12)
+    assert twelve < 6997, "qty_pricing must give the roll-on volume tiers"
+    for qty in (12, 24, 100):
+        assert a._inhouse_ff_unit_cents(p, qty, s, line_qty=qty) >= 5000
+        assert a._inhouse_ff_unit_cents(p, qty, s, program_member=True, line_qty=qty) >= 5000
+    assert pricing.unit_floor_cents(p, 6997, s, "discount") >= 5000
+
+
+def test_old_biofield_lines_named_phytolacca_oil_still_invoice(catalog):
+    """The Intake app sends only active products, so the retired name must map here."""
+    active = [{**p, "slug": s} for s, p in catalog.items() if not p.get("inactive")]
+    assert biofield_invoice.resolve_line_slug("Phytolacca Oil", active) == NEW
+    assert biofield_invoice.resolve_line_slug("phytolacca oil ", active) == NEW
+    assert biofield_invoice.resolve_line_slug("Phytolacca americana Oil Roll-On", active) == NEW
 
 
 def _walk(node):
