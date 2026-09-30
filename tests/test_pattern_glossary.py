@@ -166,3 +166,24 @@ def test_terms_file_covers_every_live_condition_and_shows_no_diagnosis():
     except sqlite3.OperationalError:
         return
     assert sorted(live - set(terms)) == []
+
+
+def test_pattern_remedies_default_terms_never_show_a_stored_diagnosis():
+    """End to end with the real terms file: stored diagnoses become public terms."""
+    c = sqlite3.connect(":memory:"); c.row_factory = sqlite3.Row
+    c.executescript(
+        "CREATE TABLE formulations (id INTEGER PRIMARY KEY, name TEXT NOT NULL);"
+        "CREATE TABLE e4l_formulation_map (id INTEGER PRIMARY KEY, item_code TEXT, "
+        " finding_pattern TEXT, formulation_id INTEGER, priority INTEGER, order_tier INTEGER,"
+        " qualifying_conditions TEXT);")
+    c.executemany("INSERT INTO formulations VALUES (?,?)",
+                  [(1, "Reverse AGE"), (2, "Fungifuge"), (3, "Vax Only")])
+    c.executemany("INSERT INTO e4l_formulation_map (item_code,finding_pattern,formulation_id,"
+                  "priority,order_tier,qualifying_conditions) VALUES (?,?,?,?,?,?)", [
+                      ("ED15", "ED15", 1, 1, 2, '["diabetes", "high blood sugar", "aging"]'),
+                      ("ED15", "ED15", 2, 2, 2, '["must have taken candida cleanse first"]'),
+                      ("ED15", "ED15", 3, 3, 2, '["covid vaccine", "not in the file"]')])
+    r = {x["name"]: x["conditions"] for x in pg.pattern_remedies(c, "ED15")}
+    assert r["Reverse AGE"] == ["blood sugar balance", "aging"]
+    assert r["Fungifuge"] == ["only after a Candida Cleanse"]
+    assert r["Vax Only"] == []
