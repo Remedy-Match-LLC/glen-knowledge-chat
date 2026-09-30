@@ -52,6 +52,7 @@ _RETIRED_NAMES = {
     # The powder became "Vitamin B12 Sublingual Drops" 2026-09-24 (same FileMaker 323).
     # Reports authored before then still name the powder.
     "vitamin b12 sublingual powder": "sublingual-b12",
+    "sublingual b12 powder": "sublingual-b12",   # the FMP snapshot name the picker offers
 }
 
 
