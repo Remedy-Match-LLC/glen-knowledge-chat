@@ -19,7 +19,7 @@ SLUG = "sublingual-b12"
 TWIN = "sublingual-b12-powder"
 NAME = "Vitamin B12 Sublingual Drops"
 OLD_NAME = "Vitamin B12 Sublingual Powder"
-DIRECTIONS = "Hold 10 drops under the tongue once a day, early in the day, or as guided."
+DIRECTIONS = "Hold up to 10 drops under the tongue once a day, early in the day, or as guided."
 
 
 def _catalog():
