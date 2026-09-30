@@ -36,10 +36,10 @@ def _app(db, stresses=(), calls=None, raises=None):
                       fetch_recent_comms=lambda e: {}, interpret_complete=complete)
 
 
-def _new(client, email="j@x.com"):
+def _new(client, email="j@x.com", name="J"):
     tid = client.post("/author/new").headers["Location"].rstrip("/").split("/")[-1]
-    if email:
-        client.post(f"/author/{tid}/header", json={"name": "J", "email": email,
+    if email or name:
+        client.post(f"/author/{tid}/header", json={"name": name or "", "email": email or "",
                                                     "date": "2026-06-25"})
     return tid
 
@@ -130,14 +130,32 @@ def test_over_cap_is_400(tmp_path):
     assert client.post(f"/author/{tid}/mine-paste", json={"text": "a" * 50_000}).status_code == 200
 
 
-def test_no_client_email_refuses(tmp_path):
+def test_no_client_name_or_email_refuses(tmp_path):
     db = str(tmp_path / "p.db")
     calls = []
     client = _app(db, ["Poor sleep"], calls).test_client()
-    tid = _new(client, email=None)
+    tid = _new(client, email=None, name=None)
     j = client.post(f"/author/{tid}/mine-paste", json={"text": "notes"}).get_json()
     assert j == {"added": 0, "error": "No client selected yet"}
     assert calls == [] and _stress_count(db) == 0
+
+
+def test_name_only_intake_is_accepted(tmp_path):
+    """Phone-only clients: a name and no email is enough."""
+    db = str(tmp_path / "p.db")
+    client = _app(db, ["Poor sleep"]).test_client()
+    tid = _new(client, email=None, name="Agnes")
+    with sqlite3.connect(db) as cx:
+        assert cx.execute("SELECT email FROM biofield_auth_tests").fetchone()[0] in ("", None)
+    j = client.post(f"/author/{tid}/mine-paste", json={"text": "notes"}).get_json()
+    assert j == {"added": 1, "skipped": 0}
+
+
+def test_email_only_intake_is_accepted(tmp_path):
+    client = _app(str(tmp_path / "p.db"), ["Poor sleep"]).test_client()
+    tid = _new(client, email="j@x.com", name=None)
+    assert client.post(f"/author/{tid}/mine-paste",
+                       json={"text": "notes"}).get_json()["added"] == 1
 
 
 @pytest.mark.parametrize("tid", ["a99999", "0", "-1", "a0", "abc"])
@@ -164,6 +182,32 @@ def test_pasted_text_is_not_stored(tmp_path, capsys):
             assert MARKER.encode() not in fh.read(), f
     out = capsys.readouterr()
     assert MARKER not in out.out and MARKER not in out.err
+
+
+def test_pasted_text_is_never_logged(tmp_path, caplog):
+    import logging
+    caplog.set_level(logging.DEBUG)                                   # root logger
+    caplog.set_level(logging.DEBUG, logger="biofield_local_app")
+    caplog.set_level(logging.DEBUG, logger="werkzeug")
+    client = _app(str(tmp_path / "p.db"), ["Poor sleep"]).test_client()
+    tid = _new(client)
+    logging.getLogger("biofield_local_app").debug("canary %s", "seen")
+    r = client.post(f"/author/{tid}/mine-paste", json={"text": f"{MARKER} sleeps badly"})
+    assert r.get_json()["added"] == 1
+    assert "canary seen" in caplog.text                               # capture is live
+    assert MARKER not in caplog.text
+    assert all(MARKER not in str(rec.args) for rec in caplog.records)
+
+
+@pytest.mark.parametrize("label,kept", [
+    ("x" * 80, True), ("x" * 81, False), ("Poor\rsleep", False), ("Poor\nsleep", False)])
+def test_label_filter_boundaries(tmp_path, label, kept):
+    db = str(tmp_path / "p.db")
+    client = _app(db, [label]).test_client()
+    tid = _new(client)
+    j = client.post(f"/author/{tid}/mine-paste", json={"text": "notes"}).get_json()
+    assert j == ({"added": 1, "skipped": 0} if kept else {"added": 0, "skipped": 1})
+    assert _stress_count(db) == (1 if kept else 0)
 
 
 def test_interpreter_exception_is_not_echoed(tmp_path):
@@ -218,6 +262,7 @@ def test_page_has_paste_box_and_posts_to_route():
     assert "<textarea id=pasteNotes" in h
     box = h[h.index("<textarea id=pasteNotes"):]
     assert "autocomplete=off" in box[:box.index(">")]
+    assert "maxlength=50000" in box[:box.index(">")]
     assert "Find stresses in pasted notes" in h and "onclick=minePaste(this)" in h
     assert "function minePaste" in h and "/author/a7/mine-paste" in h
     body = h[h.index("function minePaste"):]
@@ -227,7 +272,15 @@ def test_page_has_paste_box_and_posts_to_route():
     assert "if(box.value===text)box.value=''" in body
     # loadStress() runs whenever something was added, before the error branch returns.
     assert body.index("if(j.added>0)loadStress()") < body.index("if(j.error)")
-    assert "Pasted notes" in h                        # the source's plain label
+    # The box is cleared only on success: after the error branch has returned.
+    err = body.index("if(j.error){")
+    err_end = body.index("return}", err) + len("return}")
+    assert "box.value=''" not in body[:err_end]
+    assert body.count("box.value=''") == 1 and body.index("box.value=''") > err_end
+    # The Balance All pill maps the source to its plain label.
+    bal = h[h.index("async function balanceAll"):]
+    bal = bal[:bal.index("\nasync function", 1)]
+    assert "_esc(({paste:'Pasted notes'})[m.source]||m.source)" in bal
 
 
 def test_paste_source_is_in_the_mind_stage():

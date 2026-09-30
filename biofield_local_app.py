@@ -833,7 +833,8 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
         the resulting stress labels are written, exactly as for comms. A label that
         looks like copied text (over 80 characters, or holding a line break) is
         skipped, so a model echoing the notes back cannot store them as a stress.
-        Refuses, like _mine_comms, when the test does not exist or has no client."""
+        Refuses when the test does not exist, or when its header has neither a client
+        name nor an email."""
         from dashboard.biofield_interpret import interpret_stresses
         from dashboard import biofield_stress as _st
         from dashboard.biofield_authoring import init_auth_tables
@@ -843,9 +844,10 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
         if not cx.execute("SELECT 1 FROM biofield_auth_tests WHERE id=?",
                           (_st._num(test_id),)).fetchone():
             return {"added": 0, "error": "That intake does not exist."}, 404
-        rep = _report_for(cx, test_id)
-        email = ((rep.get("client") or {}).get("email") or "").strip()
-        if not email:
+        # A name OR an email: phone-only clients are a named use of this box, and
+        # nothing here uses the email.
+        client = _report_for(cx, test_id).get("client") or {}
+        if not ((client.get("name") or "").strip() or (client.get("email") or "").strip()):
             return {"added": 0, "error": "No client selected yet"}
         added = skipped = 0
         try:
