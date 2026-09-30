@@ -10,7 +10,8 @@
         "A shielding pouch holds a phone, tablet or laptop while you carry it.",
         "For calls, the air-tube headset carries sound without a wire running to your head.",
         "For the day, Mithreal silver-lined clothing and hats go where you go.",
-        "For the car or the whole home, the Aulterra USB neutralizers plug into the space itself."
+        "For the car, the home or a device, the Aulterra neutralizers.",
+        "To wear, the Aulterra pendant in silver and gold."
       ],
       "products": ["circular-mithreal-silver-sleep-canopy", "square-mithreal-silver-sleep-canopy",
                    "large-mithreal-silver-lined-blanket", "small-mithreal-silver-lined-blanket",
@@ -30,7 +31,7 @@
     {
       "slug": "water-hydrogen",
       "title": "Water & Hydrogen",
-      "principle": "Water is the medium every cell lives in, so its quality shapes the terrain. Clean it first, then choose how you want to enrich it.\n\nPlate ionizers make alkaline, ionized water at the tap. Molecular hydrogen adds the smallest antioxidant molecule to the water you already drink. Filtration covers the water you bathe in as well as the water you drink.",
+      "principle": "Water is the medium every cell lives in, so its quality shapes the terrain. Clean it first, then choose how you want to enrich it.\n\nPlate ionizers make alkaline, ionized water at the tap. Molecular hydrogen adds the smallest antioxidant molecule to the water you already drink. A shower filter takes most of the chlorine out of the water you bathe in.",
       "choose_by_use": [
         "For the kitchen, choose a Living Water plate ionizer in 5, 9 or 15 plates.",
         "For travel and daily carry, the portable molecular hydrogen bottle.",
@@ -39,19 +40,19 @@
       ],
       "products": ["water-ionizer-5plate", "water-ionizer-9plate", "water-ionizer-15plate",
                    "molecular-hydrogen-bottle", "miracule-water-system",
-                   "cds-water-purifier--activator", "shower-filter"],
+                   "shower-filter"],
       "learn": ["ph-balance", "oxidative-stress-support"],
       "table_names": []
     },
     {
       "slug": "air",
       "title": "Air",
-      "principle": "You breathe all day and all night, so the air around you is part of your nutrition. Fresh air outdoors comes first.\n\nIndoors, a purifier cleans the air in a room and an ionizer adds negative ions to it. Choose by the space you want to cover.",
+      "principle": "You breathe all day and all night, so the air around you is part of your nutrition. Fresh air outdoors comes first.\n\nIndoors, a purifier cleans the air in a room and an ionizer adds ions to it. Choose by the space you want to cover.",
       "choose_by_use": [
         "For the home or office, the Air & Surface PRO+ covers a room.",
         "For the car or a cubicle, the FreshAir mobile purifier.",
         "For your own breathing zone on the move, the rechargeable wearable ionizer.",
-        "For the car alone, the plug-in car ionizer."
+        "For a smaller car option, the car ionizer."
       ],
       "products": ["air-surface-pro-plus", "freshair-mobile-purifier", "wearable-ionizer",
                    "car-ionizer"],
@@ -61,13 +62,14 @@
     {
       "slug": "light-photobiomodulation",
       "title": "Light & Photobiomodulation",
-      "principle": "Light is both a nutrient and a signal. Timing, wavelength, intensity and placement change what that signal means to the body.\n\nStart with the light environment: protect the night and seek daylight. Then choose targeted photobiomodulation when it fits your goal. Red and near-infrared light reach different depths. A room light, a handheld light and a helmet do different jobs.",
+      "principle": "Light is both a nutrient and a signal. Timing, wavelength, intensity and placement change what that signal means to the body.\n\nStart with the light environment: protect the night and seek daylight. Then choose targeted photobiomodulation when it fits your goal. Red and near-infrared light reach different depths. A handheld light, a laser and a helmet do different jobs.",
       "choose_by_use": [
         "For the evening, blue-blocking glasses protect the night.",
-        "For a local area, a handheld infrared light or a cold laser gives focused use.",
-        "For the head, the NIR helmet delivers near-infrared light with frequency programs.",
+        "For a local area, choose a handheld infrared light or one of the lasers.",
+        "For the head, the NIR helmet and the helmet package deliver near-infrared light.",
         "For the nasal passage, the near-infrared intranasal clip.",
-        "For the scalp, the hair growth helmet."
+        "For the scalp, the hair growth helmet.",
+        "After bathing, the infrared bamboo towel."
       ],
       "products": ["blue-blocking-photochromic-sunglasses", "infrared-therapy-flashlight",
                    "acupuncture-point-cold-laser", "harmony-laser", "nir-brain-frequency-helmet",
@@ -113,7 +115,7 @@
         "For 172 Hz filling a room, the Tibetan glass singing bowl.",
         "For 172 Hz by light, the Harmony laser or the NIR helmet.",
         "For other frequencies, the 1283 Hz Breath fork and the 5000 Hz Mind fork.",
-        "For reading your own frequencies, the Bioenergetic Wellness Scanner."
+        "For a hand-cradle scan, the Bioenergetic Wellness Scanner."
       ],
       "products": ["spirit-tuning-fork-172hz", "frosted-quartz-tuning-fork-172hz",
                    "tibetan-singing-bowl-172hz", "harmony-laser", "nir-brain-frequency-helmet",
