@@ -1,0 +1,173 @@
+{
+  "_comment": "Solution category pages. Spec: docs/superpowers/specs/2026-09-30-solution-category-pages-design.md. Product details come from data/products.json at render time; never copy them here. The first paragraph of each principle is the hub card line. Copy is a DRAFT until Glen approves it.",
+  "categories": [
+    {
+      "slug": "emf-protection",
+      "title": "EMF Protection",
+      "principle": "Start where you spend the most hours, and that is usually where you sleep. Distance, shielding and time are the three levers you control.\n\nShielding places a barrier between you and a source. Neutralizers are a different approach, used where shielding is not practical. Principle before product: change the environment first, then choose the tool that fits the gap that remains.",
+      "choose_by_use": [
+        "For the bedroom, a silver-lined sleep canopy or blanket covers the hours you are most still.",
+        "For a phone, tablet or laptop you carry, a shielding pouch keeps it off your body.",
+        "For calls, the air-tube headset carries sound without a wire running to your head.",
+        "For the day, Mithreal silver-lined clothing and hats go where you go.",
+        "For the car or the whole home, the Aulterra USB neutralizers plug into the space itself."
+      ],
+      "products": ["circular-mithreal-silver-sleep-canopy", "square-mithreal-silver-sleep-canopy",
+                   "large-mithreal-silver-lined-blanket", "small-mithreal-silver-lined-blanket",
+                   "emf-shielding-pouch-7-x-4-cell-phone", "emf-shielding-pouch-7-x-9-tablet",
+                   "emf-shielding-pouch-13-x-14-notebook", "emf-free-headset",
+                   "mithreal-silver-head-face-shield", "mithreal-knit-beanie-with-44-silver",
+                   "mithreal-silver-hoodie-hat-with-42-silver", "mithreal-silver-baseball-cap",
+                   "mithreal-silver-ivy-hat", "mithreal-silver-blue-zipper-hoodie",
+                   "mithreal-silver-long-sleeve-shirt", "mithreal-silver-t-shirt",
+                   "mithreal-t-shirt-with-70-silver", "boxers-with-mithreal-silver",
+                   "mithreal-silver-socks", "neutralizer-3-pack", "car-neutralizer-usb",
+                   "whole-house-neutralizer", "aulterra-energy-pendant-silver-gold",
+                   "book-emf-pollution-solutions"],
+      "learn": ["emf-sensitivity"],
+      "table_names": ["EMF reduction resources"]
+    },
+    {
+      "slug": "water-hydrogen",
+      "title": "Water & Hydrogen",
+      "principle": "Water is the medium every cell lives in, so its quality shapes the terrain. Clean it first, then choose how you want to enrich it.\n\nPlate ionizers make alkaline, ionized water at the tap. Molecular hydrogen adds the smallest antioxidant molecule to the water you already drink. Filtration covers the water you bathe in as well as the water you drink.",
+      "choose_by_use": [
+        "For the kitchen, a Living Water plate ionizer. More plates give a wider working range.",
+        "For travel and daily carry, the portable molecular hydrogen bottle.",
+        "For the shower, a filter that takes out most of the chlorine.",
+        "For a complete home system with hydrogen, the Miracule Water System."
+      ],
+      "products": ["water-ionizer-5plate", "water-ionizer-9plate", "water-ionizer-15plate",
+                   "molecular-hydrogen-bottle", "miracule-water-system",
+                   "cds-water-purifier--activator", "shower-filter"],
+      "learn": ["ph-balance", "oxidative-stress-support"],
+      "table_names": []
+    },
+    {
+      "slug": "air",
+      "title": "Air",
+      "principle": "You breathe more than ten thousand litres of air a day, so the air around you is part of your nutrition. Fresh air outdoors comes first.\n\nIndoors, a purifier cleans the room and an ionizer restores the charge that sealed rooms lose. Choose by the space you want to cover.",
+      "choose_by_use": [
+        "For the home or office, the Air & Surface PRO+ covers a room.",
+        "For the car or a cubicle, the FreshAir mobile purifier.",
+        "For your own breathing zone on the move, the rechargeable wearable ionizer.",
+        "For the car alone, the plug-in car ionizer."
+      ],
+      "products": ["air-surface-pro-plus", "freshair-mobile-purifier", "wearable-ionizer",
+                   "car-ionizer"],
+      "learn": ["oxygenation"],
+      "table_names": []
+    },
+    {
+      "slug": "light-photobiomodulation",
+      "title": "Light & Photobiomodulation",
+      "principle": "Light is both a nutrient and a signal. Timing, wavelength, intensity and placement change what that signal means to the body.\n\nStart with the light environment: protect the night and seek daylight. Then choose targeted photobiomodulation when it fits your goal. Red and near-infrared light reach different depths, and a room light, a handheld light and a helmet are not interchangeable.",
+      "choose_by_use": [
+        "For the evening, blue-blocking glasses protect the night.",
+        "For a local area, a handheld infrared light or a cold laser gives deliberate, focused use.",
+        "For the head, the NIR helmet delivers near-infrared light with frequency programs.",
+        "For the nasal passage, the near-infrared intranasal clip.",
+        "For the scalp, the hair growth helmet."
+      ],
+      "products": ["blue-blocking-photochromic-sunglasses", "infrared-therapy-flashlight",
+                   "acupuncture-point-cold-laser", "harmony-laser", "nir-brain-frequency-helmet",
+                   "photobiomodulation-package", "nir-nasal-clip", "hair-growth-helmet",
+                   "infrared-bamboo-bath-towel"],
+      "learn": ["mitochondrial-energy", "circadian-rhythm-support"],
+      "table_names": ["Photobiomodulation", "Infrared & Red Light Photobiomodulation", "Infrared"]
+    },
+    {
+      "slug": "pemf",
+      "title": "PEMF",
+      "principle": "Pulsed electromagnetic fields give patterned input for a repeatable, rest-based practice. A coil sends pulses that reach tissue without passing current through the skin.\n\nThe practical choice is less about which is stronger and more about coverage, programs, portability and how you will actually use it. A tool that fits your space and routine is the one you will use.",
+      "choose_by_use": [
+        "For broad coverage at home, the Kloud Maxi mat.",
+        "For a smaller or portable area with the same program family, the Kloud Mini.",
+        "For a handheld device with scanning and PEMF programs, NES miHealth."
+      ],
+      "products": ["kloud-pemf-maxi", "kloud-pemf-mini", "nes-mihealth"],
+      "learn": ["cellular-energy"],
+      "table_names": []
+    },
+    {
+      "slug": "microcurrent",
+      "title": "Microcurrent",
+      "principle": "Microcurrent delivers very small electrical currents, close to the body's own signalling levels. I reach for it both for long-standing challenges and to calm intense, acute ones.\n\nSome devices read the skin's response and adjust as they go. Others run set frequency programs. Choose by whether you want guided feedback or a program you can wear.",
+      "choose_by_use": [
+        "For responsive feedback at the skin, the DENAS PCM Pro.",
+        "For the eyes, the DENAS eye system and eyeglasses electrode.",
+        "For a programmable device you wear, the Microgen.",
+        "For a handheld device that also runs PEMF, NES miHealth and its vagus nerve kit."
+      ],
+      "products": ["denas-scenar", "denas-microcurrent-eye-system", "denas-eyeglasses-electrode",
+                   "microgen-microcurrent-generator", "nes-mihealth", "vagus-nerve-stimulation-kit"],
+      "learn": ["tissue-repair"],
+      "table_names": []
+    },
+    {
+      "slug": "frequency-sound",
+      "title": "Frequency & Sound",
+      "principle": "Everything vibrates, and the body responds to frequency. 172 Hz is a frequency I use often, and it can be delivered by sound, by light or by touch.\n\nA tuning fork or singing bowl carries it as sound and vibration. A laser or helmet carries it as pulsed light. Choose the delivery that suits how you like to practise.",
+      "choose_by_use": [
+        "For 172 Hz by sound and touch, the Spirit or Frosted Quartz tuning fork.",
+        "For 172 Hz filling a room, the Tibetan glass singing bowl.",
+        "For 172 Hz by light, the Harmony laser or the NIR helmet.",
+        "For other frequencies, the 1283 Hz Breath fork and the 5000 Hz Mind fork.",
+        "For reading your own frequencies, the Bioenergetic Wellness Scanner."
+      ],
+      "products": ["spirit-tuning-fork-172hz", "frosted-quartz-tuning-fork-172hz",
+                   "tibetan-singing-bowl-172hz", "harmony-laser", "nir-brain-frequency-helmet",
+                   "breath-tuning-fork-1283hz", "mind-tuning-fork-5000hz",
+                   "bioenergetic-wellness-scanner"],
+      "learn": ["biofield-coherence"],
+      "table_names": ["172 Hz"]
+    },
+    {
+      "slug": "fasting",
+      "title": "Fasting",
+      "principle": "Fasting gives the body time to rest from digestion and turn to renewal. It is a practice, and the first tool is the calendar.\n\nStart gently, with a longer overnight fast, and build from there with guidance that fits your health and history.",
+      "choose_by_use": [],
+      "products": [],
+      "learn": ["fasting"],
+      "table_names": ["Fasting resources"]
+    },
+    {
+      "slug": "stones-wearables",
+      "title": "Stones & Wearables",
+      "principle": "Minerals carry their own structure and charge. People have kept them close for as long as there are records.\n\nA stone can sit where you work or sleep, and a pendant goes with you through the day.",
+      "choose_by_use": [
+        "For a desk or bedside, the shungite plate.",
+        "For hands-on use, the smoky quartz tool.",
+        "For every day, the Aulterra pendant in silver and gold."
+      ],
+      "products": ["shungite-stick-plate", "smokey-quartz-healing-tool",
+                   "aulterra-energy-pendant-silver-gold"],
+      "learn": [],
+      "table_names": []
+    },
+    {
+      "slug": "books",
+      "title": "Books",
+      "principle": "My books teach the principles behind the tools and the remedies, so you can make your own choices with understanding.\n\nMost titles come in print and as an ebook. Achievement of Excellence is also an audiobook.",
+      "choose_by_use": [
+        "For vision, Refreshing Vision, Natural Eye Care, and the books on dry eye, cataract, glaucoma and the macula.",
+        "For EMF, Electromagnetic Pollution Solutions.",
+        "For remedies, Materia Medica and Anima Medica.",
+        "For the larger picture, The Living Universe, As Above, So Below and The Shire."
+      ],
+      "products": ["book-refreshing-vision", "book-refreshing-vision-ebook", "book-natural-eye-care",
+                   "book-dry-eye-relief", "book-dry-eye-relief-ebook", "book-cataract-solutions",
+                   "book-cataract-solutions-ebook", "book-healing-glaucoma",
+                   "book-healing-glaucoma-ebook", "book-macular-regeneration",
+                   "book-macular-regeneration-ebook", "book-emf-pollution-solutions",
+                   "book-emf-pollution-solutions-ebook", "book-materia-medica",
+                   "book-materia-medica-ebook", "book-anima-medica", "book-anima-medica-ebook",
+                   "book-nous-energy", "book-living-universe", "book-living-universe-ebook",
+                   "book-as-above-so-below", "book-the-shire", "book-the-shire-ebook",
+                   "book-alternative-medicine", "book-transforming-your-life-iv",
+                   "book-achievement-of-excellence", "book-achievement-of-excellence-audiobook"],
+      "learn": [],
+      "table_names": []
+    }
+  ]
+}
