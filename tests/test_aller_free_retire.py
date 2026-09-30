@@ -61,6 +61,10 @@ def _reload_app(monkeypatch, tmp_path):
     importlib.reload(appmod)
     assert appmod._SALES_AI_COPY_ENABLED is True  # the flag is on, so nothing passes vacuously
     monkeypatch.setattr(appmod, "_RELATED_PRODUCTS_ENABLED", False, raising=False)
+    # The drops have no pinned copy, so page-data would generate a card: never call out.
+    monkeypatch.setattr(appmod, "_product_card",
+                        lambda p: {"description": "", "ingredients": [], "benefits": []})
+    monkeypatch.setattr(appmod, "_product_how", lambda p: "")
     return appmod
 
 
