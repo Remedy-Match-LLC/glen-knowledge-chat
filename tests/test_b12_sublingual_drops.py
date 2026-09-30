@@ -64,7 +64,14 @@ def test_glens_intro_is_pinned_word_for_word():
 
 
 def test_the_page_serves_the_pinned_intro(appmod):
+    # A conflicting AI draft under the slug must never replace Glen's words (review round 2).
+    import sqlite3
+    from dashboard import sales_pages as sp
+    with sqlite3.connect(appmod.LOG_DB) as cx:
+        for sec in ("intro", "description"):
+            sp.upsert_section(cx, SLUG, sec, "AI DRAFT MARKER powder scoop")
     d = appmod.app.test_client().get(f"/begin/product-page-data/{SLUG}").get_json()
+    assert "AI DRAFT MARKER" not in json.dumps(d)
     secs = {x["id"]: x for x in d["sections"]}
     for sid in ("intro", "description"):
         assert secs[sid]["body"] == GLENS_INTRO
@@ -114,6 +121,8 @@ def test_the_invoice_resolves_the_new_name():
 def test_an_old_powder_line_still_invoices_the_drops():
     assert bi._RETIRED_NAMES["vitamin b12 sublingual powder"] == SLUG
     assert bi.resolve_line_slug(OLD_NAME, _live_catalog()) == SLUG
+    # The picker offers the FMP snapshot's name until the snapshot refreshes (review round 1).
+    assert bi.resolve_line_slug("Sublingual B12 Powder", _live_catalog()) == SLUG
 
 
 # --- routes --------------------------------------------------------------------------
