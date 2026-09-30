@@ -1006,6 +1006,15 @@ async function mineComms(){mstat('Mining recent comms for stresses…');
  catch(e){mstat('Mine comms failed: the server returned an error ('+e.message+').');return}
  if(j.error){mstat('Mine comms: '+j.error);return}
  mstat(j.added?'Added '+j.added+' stress(es) from recent comms.':'No new stresses found in recent comms.');loadStress()}
+function pstat(t){var e=document.getElementById('pastestat');if(e)e.textContent=t}
+async function minePaste(){var box=document.getElementById('pasteNotes'),text=box?box.value:'';
+ if(!text.trim()){pstat('Paste some notes first.');return}
+ pstat('Finding stresses in the pasted notes…');
+ try{var j=await post('/author/__TID__/mine-paste',{text:text})}
+ catch(e){pstat('Pasted notes failed: the server returned an error ('+e.message+').');return}
+ if(j.error){pstat('Pasted notes: '+j.error);return}
+ box.value='';
+ pstat(j.added?'Added '+j.added+' stress(es) from the pasted notes.':'No new stresses found in the pasted notes.');loadStress()}
 async function loadClinicalProposals(){
  var box=document.getElementById('clinicalProposals');if(!box)return;
  try{var j=await (await fetch('/author/__TID__/clinical-proposals')).json(),items=j.items||[];
@@ -1087,7 +1096,7 @@ async function balanceAll(){
  j.layers.forEach(function(L,i){
   h+='<div style="margin-top:6px"><b>Layer '+(i+1)+'</b> &mdash; '+_esc(L.why)+'<br>';
   h+=L.members.map(function(m){return '&nbsp;&nbsp;'+_esc(m.name)+
-     (m.source&&m.source!=='scan'?' <span class=pill>'+_esc(m.source)+'</span>':'')}).join('<br>');
+     (m.source&&m.source!=='scan'?' <span class=pill>'+_esc(({paste:'Pasted notes'})[m.source]||m.source)+'</span>':'')}).join('<br>');
   h+='</div>'});
  if(j.existing_layers)h+='<div style="margin-top:8px">This intake already has '+
    j.existing_layers+' layer(s); these would be added after them.</div>';
@@ -2246,6 +2255,16 @@ def render_author_html(report, depth_values=None, transcript="", covered_by_laye
                  # #rstat in the Live session block, a different section of the page.
                  "<span id=minestat class=food></span>"
                  "</div>"
+                 # Brief 2026-09-30 section 4: Rae consolidates a client's emails,
+                 # and anything outside the comms window or by phone, into one text.
+                 # The text is mined into stresses and never stored.
+                 "<div style='margin:6px 0'>"
+                 "<label for=pasteNotes class=food>Paste notes (emails, phone notes)</label>"
+                 "<textarea id=pasteNotes rows=5 maxlength=50000></textarea>"
+                 "<div class=btnrow style='margin:4px 0'>"
+                 "<button class='btn ghost' onclick=minePaste()>Find stresses in pasted notes</button>"
+                 "<span id=pastestat class=food></span>"
+                 "</div></div>"
                  "<div id=stresspanel></div>"
                  "<div class=btnrow style='margin:6px 0'>"
                  "<button class='btn ghost' onclick=suggestRemedies()>Suggest minimal remedies</button>"

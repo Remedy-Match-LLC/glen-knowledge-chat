@@ -820,6 +820,25 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
             return {"added": 0, "error": str(e)[:200]}
         return {"added": added}
 
+    PASTE_MAX_CHARS = 50_000
+
+    def _mine_paste(cx, test_id, text):
+        """Mine pasted notes (emails, phone notes) into 'paste' stresses. Brief
+        2026-09-30 section 4: Rae consolidates a client's emails into one text for
+        Glen to paste. Same mining and same "new" rule as _mine_comms: add_stress
+        skips a label already on the test from any source.
+        The pasted text is client data and is never stored or logged here. Only the
+        resulting stress labels are written, exactly as for comms."""
+        from dashboard.biofield_interpret import interpret_stresses
+        from dashboard import biofield_stress as _st
+        try:
+            labels = interpret_stresses(text, interpret_complete)
+            added = sum(1 for label in labels
+                        if _st.add_stress(cx, test_id, label, source="paste"))
+        except Exception as e:
+            return {"added": 0, "error": str(e)[:200]}
+        return {"added": added}
+
     def _seed_stresses(cx, test_id, *, force=False, layers=None):
         """Synthesize reveal layers + seed the stress coverage map for this test.
         The ONLY early return is the no-email guard — nothing to mine/seed without
@@ -2422,6 +2441,19 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
     def author_mine_comms(test_id):
         with sqlite3.connect(db_path) as cx:
             return _mine_comms(cx, test_id)
+
+    @app.route("/author/<test_id>/mine-paste", methods=["POST"])
+    def author_mine_paste(test_id):
+        text = (request.get_json(silent=True) or {}).get("text")
+        text = text if isinstance(text, str) else ""
+        if not text.strip():
+            return {"added": 0, "error": "Paste some notes first."}, 400
+        if len(text) > PASTE_MAX_CHARS:
+            return {"added": 0,
+                    "error": f"That is {len(text):,} characters. The limit is "
+                             f"{PASTE_MAX_CHARS:,}. Paste it in parts."}, 400
+        with sqlite3.connect(db_path) as cx:
+            return _mine_paste(cx, test_id, text)
 
     @app.route("/author/<test_id>/clinical-proposals")
     def author_clinical_proposals(test_id):

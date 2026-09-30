@@ -57,7 +57,8 @@ BODY_SOURCES = ("scan",)
 # rows -- an E4L code and a flower essence -- so Mind reported "nothing here" while six
 # checked conditions sat on the page above it. Those conditions live in
 # biofield_clinical_selection and nothing here ever read them.
-MIND_SOURCES = ("tag", "comm")
+# "paste" is mined history too: notes Glen pastes into Intake (brief 2026-09-30).
+MIND_SOURCES = ("tag", "comm", "paste")
 STAGES = (("spirit", SPIRIT_SOURCES), ("mind", MIND_SOURCES), ("body", BODY_SOURCES))
 
 
