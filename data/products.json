@@ -3131,7 +3131,9 @@
     }
    ],
    "ingredients_source": "store-recovery-2026-06-08",
-   "qty_pricing": true
+   "qty_pricing": true,
+   "inactive": true,
+   "superseded_by": "phytolacca-americana-oil-roll-on"
   },
   "vital-energy-be": {
    "name": "Vital Energy Be",
@@ -21180,14 +21182,28 @@
   },
   "phytolacca-americana-oil-roll-on": {
    "name": "Phytolacca americana Oil Roll-On",
-   "price_cents": 4000,
+   "price_cents": 6997,
    "pinecone_title": "Phytolacca americana Oil Roll-On",
-   "qty_pricing": false,
+   "qty_pricing": true,
    "fmp_id": "95",
-   "ingredients_source": "fmp_snap",
+   "ingredients": [
+    {
+     "name": "Poke Root 20:1 (Phytolacca americana)",
+     "dose": "500 mg"
+    },
+    {
+     "name": "Ozonated Castor Oil (Ricinus communis)",
+     "dose": "90% of the base"
+    },
+    {
+     "name": "Black Seed Oil (Nigella sativa)",
+     "dose": "10% of the base"
+    }
+   ],
+   "ingredients_source": "production-spec-2026-09-24",
    "no_groovekart": true,
    "regular_cents": 8000,
-   "description": "Roll on 3 times a day as needed",
+   "description": "Phytolacca americana Oil Roll-On carries 500 mg of a 20:1 poke root extract in a base of ozonated castor oil and black seed oil. It is for external use only. Shake well, then roll on 3 times a day, or as guided.",
    "bottle_type": "30roll"
   },
   "zinc-taste-test-drops": {

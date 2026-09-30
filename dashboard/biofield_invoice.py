@@ -42,6 +42,7 @@ def build_invoice_note(phase=None, location=""):
 # clinical.db holds 248 visit_remedy rows named "Synergy C").
 _RETIRED_NAMES = {
     "synergy c": "vitamin-c-syntropy",
+    "phytolacca oil": "phytolacca-americana-oil-roll-on",   # one listing, 2026-09-29
 }
 
 
