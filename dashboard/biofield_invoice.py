@@ -43,6 +43,9 @@ def build_invoice_note(phase=None, location=""):
 _RETIRED_NAMES = {
     "synergy c": "vitamin-c-syntropy",
     "phytolacca oil": "phytolacca-americana-oil-roll-on",   # one listing, 2026-09-29
+    # Renamed "Aller-Free HomeoEnergetic Drops" 2026-09-25. The FMP snapshot, and so the
+    # remedy picker and authored reports, still carry the old spelling.
+    "allerfree homeoenergetic drops": "allerfree-homeoenergetic-drops",
 }
 
 

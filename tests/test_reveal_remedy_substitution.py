@@ -70,6 +70,13 @@ def test_allerfree_by_full_drops_name():
     assert row["remedies"][0]["slug"] == "immune-modulation"
 
 
+def test_allerfree_by_new_drops_name():
+    # The drops were renamed "Aller-Free HomeoEnergetic Drops" (Glen 2026-09-25).
+    row = {"remedies": [{"name": "Aller-Free HomeoEnergetic Drops", "slug": ""}]}
+    apply_remedy_substitutions(row)
+    assert row["remedies"][0]["slug"] == "immune-modulation"
+
+
 def test_bone_builder_swapped_to_neuro_magnesium():
     row = {"remedies": [{"name": "Bone Builder", "slug": "bone-builder", "meaning": "old"}]}
     apply_remedy_substitutions(row)
@@ -109,6 +116,8 @@ import pytest
     ("Aller-Free Aid for Inhalant Allergies", ""),          # by name alone
     ("", "aller-free-aid"),                                  # by slug alone
     ("AllerFree HomeoEnergetic Drops", "allerfree-homeoenergetic-drops"),
+    ("Aller-Free HomeoEnergetic Drops", "allerfree-homeoenergetic-drops"),  # renamed 2026-09-25
+    ("Aller-Free HomeoEnergetic Drops", ""),
     ("Aller Free", ""),                                      # spaced spelling
     ("ALLER-FREE", ""),                                      # case
 ])
@@ -162,6 +171,14 @@ def test_allerfree_drops_by_exact_name_gets_immune_modulation_dose():
     row = {"remedies": [{"name": "AllerFree HomeoEnergetic Drops", "slug": "",
                          "dosing": "10 drops 3 times a day or as needed"}]}
     apply_remedy_substitutions(row)
+    assert row["remedies"][0]["dosing"] == "1 capsule daily with food"
+
+
+def test_aller_free_drops_by_new_name_gets_immune_modulation_dose():
+    row = {"remedies": [{"name": "Aller-Free HomeoEnergetic Drops", "slug": "",
+                         "dosing": "10 drops 3 times a day or as needed"}]}
+    apply_remedy_substitutions(row)
+    assert row["remedies"][0]["name"] == "Immune Modulation"
     assert row["remedies"][0]["dosing"] == "1 capsule daily with food"
 
 

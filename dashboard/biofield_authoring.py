@@ -642,22 +642,41 @@ _DOSE_ALIASES = {
 }
 
 
+_ALLER_FREE_SPELLING = re.compile(r"\bAller(-?)Free\b", re.I)
+
+
+def _spelling_variants(nm):
+    """`nm`, then the same name with the other AllerFree spelling. Glen ruled "Aller-Free"
+    the correct spelling (2026-09-24) and the drops were renamed, but the FMP snapshot
+    still says "AllerFree" until it refreshes. Trying both covers before and after."""
+    swapped = _ALLER_FREE_SPELLING.sub(
+        lambda m: "AllerFree" if m.group(1) else "Aller-Free", nm)
+    return [nm] if swapped == nm else [nm, swapped]
+
+
 def _dose_row(cx, name):
     """A fmp_snap_products dose row for `name`: exact, else the SHORTEST forward-
-    suffix product ('Adrenal Syntropy' -> 'Adrenal Syntropy Powder'). None if neither."""
+    suffix product ('Adrenal Syntropy' -> 'Adrenal Syntropy Powder'). None if neither.
+    Each stage also tries the other AllerFree / Aller-Free spelling."""
     nm = _clean_product_name(name)
     if not nm:
         return None
-    r = cx.execute(
-        "SELECT dosage, dosage_freq AS frequency, dosage_timing AS timing "
-        "FROM fmp_snap_products WHERE LOWER(TRIM(RTRIM(product_name,'* ')))=LOWER(TRIM(?)) LIMIT 1",
-        (nm,)).fetchone()
-    if r:
-        return r
-    return cx.execute(
-        "SELECT dosage, dosage_freq AS frequency, dosage_timing AS timing "
-        "FROM fmp_snap_products WHERE LOWER(TRIM(RTRIM(product_name,'* '))) LIKE LOWER(?) "
-        "ORDER BY LENGTH(product_name) ASC LIMIT 1", (nm + " %",)).fetchone()
+    variants = _spelling_variants(nm)
+    for v in variants:
+        r = cx.execute(
+            "SELECT dosage, dosage_freq AS frequency, dosage_timing AS timing "
+            "FROM fmp_snap_products WHERE LOWER(TRIM(RTRIM(product_name,'* ')))=LOWER(TRIM(?)) LIMIT 1",
+            (v,)).fetchone()
+        if r:
+            return r
+    for v in variants:
+        r = cx.execute(
+            "SELECT dosage, dosage_freq AS frequency, dosage_timing AS timing "
+            "FROM fmp_snap_products WHERE LOWER(TRIM(RTRIM(product_name,'* '))) LIKE LOWER(?) "
+            "ORDER BY LENGTH(product_name) ASC LIMIT 1", (v + " %",)).fetchone()
+        if r:
+            return r
+    return None
 
 
 def remedy_dosing(cx, name):
