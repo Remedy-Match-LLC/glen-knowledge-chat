@@ -9873,6 +9873,54 @@ def _topic_kickoff_build(slug, kind, name):
     _threading.Thread(target=_build, daemon=True).start()
 
 
+def _solution_learn_name(slug):
+    """The display name of an approved /learn/ topic, or None. A pending topic answers 200
+    with a noindex 'preparing' page, so linking it would send a visitor to a stub."""
+    if not TOPIC_PAGES_ENABLED:
+        return None  # /learn/<slug> answers 404 with the flag off
+    from dashboard import topic_pages as _tp, topic_render as _tr
+    try:
+        with _db_lock, db.connect(LOG_DB) as cx:
+            page = _tp.get_page(cx, slug)
+    except Exception:
+        return None
+    if not _tr.is_public(page):
+        return None
+    return (page or {}).get("name") or slug.replace("-", " ").title()
+
+
+def _solution_views():
+    """Every category joined to the live catalogue. None when the data file is unreadable,
+    or on the MentorshipU and portal hosts, where /learn/<slug> is not a topic page."""
+    from dashboard import solution_pages as _sp
+    if _on_mentorship_host() or _on_portal_host():
+        return None
+    try:
+        cats = _sp.load()
+    except (OSError, ValueError) as exc:
+        print(f"[solutions] data file unreadable: {exc!r}", flush=True)
+        return None
+    return [_sp.category_view(c, _get_product, learn_name=_solution_learn_name) for c in cats]
+
+
+@app.route("/solutions/")
+def solutions_hub():
+    from dashboard import solution_pages as _sp
+    views = [v for v in (_solution_views() or []) if _sp.is_visible(v)]
+    if not views:
+        return ("Not found", 404)
+    return Response(_sp.render_hub_html(views), mimetype="text/html")
+
+
+@app.route("/solutions/<slug>")
+def solutions_category(slug):
+    from dashboard import solution_pages as _sp
+    view = next((v for v in (_solution_views() or []) if v["slug"] == slug), None)
+    if view is None or not _sp.is_visible(view):
+        return ("Not found", 404)
+    return Response(_sp.render_category_html(view), mimetype="text/html")
+
+
 @app.route("/learn/patterns")
 def learn_patterns_index():
     return send_from_directory(STATIC, "patterns-index.html")
