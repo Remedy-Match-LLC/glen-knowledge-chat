@@ -455,3 +455,36 @@ def test_opening_the_link_shows_a_button_and_confirms_nothing(client, monkeypatc
     with sqlite3.connect(app.LOG_DB) as cx:
         assert cx.execute("SELECT COALESCE(confirmed_at,'') FROM product_waitlist "
                           "WHERE email='s@x.com'").fetchone()[0] != ""
+
+
+CONFIRMED_JS = r"""
+const assert = require('assert');
+function el(tag, id){ return {tagName: tag, id: id || '', style: {display: ''}, disabled: false, textContent: ''}; }
+const parts = [el('P'), el('P'), el('INPUT'), el('INPUT'), el('INPUT'), el('BUTTON'), el('P')];
+const note = el('P', 'retina-waitlist-msg');
+const f = {style: {display: 'none'}, onsubmit: null, email: parts[3], first_name: parts[2],
+  querySelector: () => parts[5],
+  querySelectorAll: () => parts};
+global.document = {getElementById: id => id === 'retina-waitlist' ? f : (id === 'retina-waitlist-msg' ? note : null)};
+global.location = {search: '?waitlist=confirmed'};
+FN
+renderWaitlist({waitlist: {slug: 'neuro-magnesium'}});
+assert.strictEqual(f.style.display, 'block');
+assert.strictEqual(note.textContent, "You're on the list. We'll email you when Retina Renew is ready.");
+assert(parts.every(p => p.style.display === 'none'), 'every other part of the form is hidden');
+console.log('OK');
+"""
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
+def test_once_confirmed_only_the_confirmation_line_shows(tmp_path):
+    """Glen, 2026-09-29: after confirming, the fields and the join button were still there
+    (greyed out) under 'Leave your email', which is confusing for someone already on the list."""
+    page = (ROOT / "static" / "begin-product.html").read_text()
+    a = page.find("function renderWaitlist(")
+    b = page.find("\n    }\n", a) + 7
+    js = tmp_path / "c.js"
+    js.write_text(CONFIRMED_JS.replace("FN", page[a:b]))
+    env = dict(os.environ, NODE_OPTIONS="")
+    out = subprocess.run(["node", str(js)], capture_output=True, text=True, timeout=30, env=env)
+    assert out.returncode == 0 and "OK" in out.stdout, out.stderr + out.stdout

@@ -1582,8 +1582,13 @@
       }
       f.style.display = 'block';
       if (back.get('waitlist') === 'confirmed') {
+        // Already on the list: only the confirmation line shows (Glen, 2026-09-29: the
+        // greyed-out fields and join button under "Leave your email" were confusing).
+        Array.prototype.forEach.call(f.querySelectorAll('input,button,p:not(#retina-waitlist-msg)'),
+          function(el){ el.style.display = 'none'; });
         note.textContent = "You're on the list. We'll email you when Retina Renew is ready.";
-        f.email.disabled = true; f.first_name.disabled = true; f.querySelector('button').disabled = true;
+        f.onsubmit = null;
+        return;
       } else if (back.get('waitlist') === 'expired') {
         note.textContent = 'That link has expired. Please join the waiting list again.';
       }
