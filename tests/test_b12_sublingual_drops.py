@@ -81,7 +81,7 @@ def test_the_page_serves_the_pinned_intro(appmod):
 def test_the_panel_per_10_drops():
     ings = _catalog()[SLUG]["ingredients"]
     assert ings == [
-        {"name": "Vitamin B12 (as Adenosylcobalamin 333 mcg and Methylcobalamin 3.3 mcg)", "dose": "337 mcg"},
+        {"name": "Vitamin B12 (Adenosyl & Methyl Cobalamin)", "dose": "337 mcg (333 mcg adenosylcobalamin, 3.3 mcg methylcobalamin)"},
         {"name": "D-Ribose", "dose": "277 mg"},
     ]
     assert _catalog()[SLUG]["ingredients_source"] == "label-2026-09-24"
@@ -172,3 +172,30 @@ def test_page_data_serves_the_directions(appmod):
     ing = next(s for s in d["sections"] if s["id"] == "ingredients")
     assert ing["body"]["directions"] == DIRECTIONS
     assert [i["name"] for i in ing["body"]["ingredients"]][-1] == "D-Ribose"
+
+
+def test_every_glossary_b12_remedy_name_resolves_to_the_drops():
+    """Review round 3: a typo in a glossary remedy name passed every test. Each B12 remedy
+    in both glossary files must resolve, by the glossary's own resolver, to this listing."""
+    from dashboard import clinical_glossary as cg
+    products = _catalog()
+    idx = cg.product_name_index({s: p for s, p in products.items() if not p.get("inactive")})
+    found = 0
+    for path in ("data/clinical_theory_catalog.json", "data/e4l_stressor_map.json"):
+        for name in _remedy_names(json.load(open(path))):
+            if "b12 sublingual" in name.lower():
+                found += 1
+                assert cg.remedy_product_slug(name, idx) == SLUG, (path, name)
+    assert found == 4   # plus 2 mentions inside descriptions: 6 uses in all
+
+
+def _remedy_names(node):
+    """Every "name" value in the file: the two glossaries nest remedies differently."""
+    if isinstance(node, dict):
+        if isinstance(node.get("name"), str):
+            yield node["name"]
+        for v in node.values():
+            yield from _remedy_names(v)
+    elif isinstance(node, list):
+        for v in node:
+            yield from _remedy_names(v)
