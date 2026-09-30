@@ -3,8 +3,8 @@
 Spec: production/05 Formulations/b12-sublingual-drops/2026-09-24/listing-spec.md. Glen
 approved the label (panel and directions), the FileMaker 323 rename and the product
 rulings: the powder "absorbs too much moisture to be stable", "same ingredients other
-than Microwater", "10 drops per dose", "once a day", "same price". The intro copy is
-still his to edit, so the listing carries no `intro` or `copy_pinned`.
+than Microwater", "10 drops per dose", "once a day", "same price". Glen edited the intro
+on 2026-09-30 ("Hold up to 10 drops... otherwise as above"); it is pinned.
 """
 import importlib
 import json
@@ -49,9 +49,26 @@ def test_the_bottle_is_the_30_ml_dropper_type_other_listings_use():
     assert sum(1 for p in cat.values() if p.get("bottle_type") == "30ml") > 1
 
 
-def test_the_intro_waits_for_glen():
+GLENS_INTRO = (
+    "Vitamin B12 Sublingual Drops carry the coenzyme forms of B12, adenosylcobalamin and "
+    "methylcobalamin, at a 100 to 1 ratio, with D-ribose, in Microwater. They replace our B12 "
+    "powder, which took up moisture from the air. Hold up to 10 drops under the tongue once a "
+    "day, early in the day.")
+
+
+def test_glens_intro_is_pinned_word_for_word():
     p = _catalog()[SLUG]
-    assert "intro" not in p and "copy_pinned" not in p
+    assert p["intro"] == GLENS_INTRO
+    assert p["description"] == GLENS_INTRO
+    assert {"intro", "description"} <= set(p["copy_pinned"])
+
+
+def test_the_page_serves_the_pinned_intro(appmod):
+    d = appmod.app.test_client().get(f"/begin/product-page-data/{SLUG}").get_json()
+    secs = {x["id"]: x for x in d["sections"]}
+    for sid in ("intro", "description"):
+        assert secs[sid]["body"] == GLENS_INTRO
+        assert "ai" not in secs[sid], sid
 
 
 def test_the_panel_per_10_drops():

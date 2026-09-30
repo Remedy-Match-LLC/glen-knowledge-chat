@@ -10091,7 +10091,12 @@
     }
    ],
    "ingredients_source": "label-2026-09-24",
-   "description": "Vitamin B12 Sublingual Drops carry the coenzyme forms of B12, adenosylcobalamin and methylcobalamin, at a 100 to 1 ratio, with D-ribose, in Microwater. They replace our B12 powder, which took up moisture from the air. Hold 10 drops under the tongue once a day, early in the day.",
+   "intro": "Vitamin B12 Sublingual Drops carry the coenzyme forms of B12, adenosylcobalamin and methylcobalamin, at a 100 to 1 ratio, with D-ribose, in Microwater. They replace our B12 powder, which took up moisture from the air. Hold up to 10 drops under the tongue once a day, early in the day.",
+   "description": "Vitamin B12 Sublingual Drops carry the coenzyme forms of B12, adenosylcobalamin and methylcobalamin, at a 100 to 1 ratio, with D-ribose, in Microwater. They replace our B12 powder, which took up moisture from the air. Hold up to 10 drops under the tongue once a day, early in the day.",
+   "copy_pinned": [
+    "intro",
+    "description"
+   ],
    "directions": "Hold 10 drops under the tongue once a day, early in the day, or as guided.",
    "bottle_type": "30ml",
    "fmp_id": "323",
