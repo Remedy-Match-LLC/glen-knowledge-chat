@@ -1156,7 +1156,7 @@ TIER_CATALOG = {
         # a descriptor ("cancel anytime", "6 months", "1 week") and striking those
         # through would be nonsense. `price_sub` is the line beneath the price.
         "price": "$300", "was": "$1,000", "value": "",
-        "price_sub": "$200 for active members \u00b7 includes your first month",
+        "price_sub": "$200 for paid members \u00b7 includes your first month",
         "included": "Your ASH Causal Biofield Analysis, a Functional Formulations™ program designed for you, and a consultation.",
         "cta_label": "Book your consultation"},
     "certification": {"slug": "certification", "n": 5,
