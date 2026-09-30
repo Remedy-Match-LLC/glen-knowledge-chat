@@ -7,7 +7,7 @@
       "principle": "Start where you spend the most hours, and that is usually where you sleep. Distance, shielding and time are the three levers you control.\n\nShielding places a barrier between you and a source. Neutralizers are a different approach, used where shielding is not practical. Principle before product: change the environment first, then choose the tool that fits the gap that remains.",
       "choose_by_use": [
         "For the bedroom, a silver-lined sleep canopy or blanket covers the hours you are most still.",
-        "For a phone, tablet or laptop you carry, a shielding pouch keeps it off your body.",
+        "A shielding pouch holds a phone, tablet or laptop while you carry it.",
         "For calls, the air-tube headset carries sound without a wire running to your head.",
         "For the day, Mithreal silver-lined clothing and hats go where you go.",
         "For the car or the whole home, the Aulterra USB neutralizers plug into the space itself."
@@ -32,10 +32,10 @@
       "title": "Water & Hydrogen",
       "principle": "Water is the medium every cell lives in, so its quality shapes the terrain. Clean it first, then choose how you want to enrich it.\n\nPlate ionizers make alkaline, ionized water at the tap. Molecular hydrogen adds the smallest antioxidant molecule to the water you already drink. Filtration covers the water you bathe in as well as the water you drink.",
       "choose_by_use": [
-        "For the kitchen, a Living Water plate ionizer. More plates give a wider working range.",
+        "For the kitchen, choose a Living Water plate ionizer in 5, 9 or 15 plates.",
         "For travel and daily carry, the portable molecular hydrogen bottle.",
         "For the shower, a filter that takes out most of the chlorine.",
-        "For a complete home system with hydrogen, the Miracule Water System."
+        "For a water system with hydrogen, the Miracule Water System."
       ],
       "products": ["water-ionizer-5plate", "water-ionizer-9plate", "water-ionizer-15plate",
                    "molecular-hydrogen-bottle", "miracule-water-system",
@@ -46,7 +46,7 @@
     {
       "slug": "air",
       "title": "Air",
-      "principle": "You breathe more than ten thousand litres of air a day, so the air around you is part of your nutrition. Fresh air outdoors comes first.\n\nIndoors, a purifier cleans the room and an ionizer restores the charge that sealed rooms lose. Choose by the space you want to cover.",
+      "principle": "You breathe all day and all night, so the air around you is part of your nutrition. Fresh air outdoors comes first.\n\nIndoors, a purifier cleans the air in a room and an ionizer adds negative ions to it. Choose by the space you want to cover.",
       "choose_by_use": [
         "For the home or office, the Air & Surface PRO+ covers a room.",
         "For the car or a cubicle, the FreshAir mobile purifier.",
@@ -61,10 +61,10 @@
     {
       "slug": "light-photobiomodulation",
       "title": "Light & Photobiomodulation",
-      "principle": "Light is both a nutrient and a signal. Timing, wavelength, intensity and placement change what that signal means to the body.\n\nStart with the light environment: protect the night and seek daylight. Then choose targeted photobiomodulation when it fits your goal. Red and near-infrared light reach different depths, and a room light, a handheld light and a helmet are not interchangeable.",
+      "principle": "Light is both a nutrient and a signal. Timing, wavelength, intensity and placement change what that signal means to the body.\n\nStart with the light environment: protect the night and seek daylight. Then choose targeted photobiomodulation when it fits your goal. Red and near-infrared light reach different depths. A room light, a handheld light and a helmet do different jobs.",
       "choose_by_use": [
         "For the evening, blue-blocking glasses protect the night.",
-        "For a local area, a handheld infrared light or a cold laser gives deliberate, focused use.",
+        "For a local area, a handheld infrared light or a cold laser gives focused use.",
         "For the head, the NIR helmet delivers near-infrared light with frequency programs.",
         "For the nasal passage, the near-infrared intranasal clip.",
         "For the scalp, the hair growth helmet."
@@ -79,7 +79,7 @@
     {
       "slug": "pemf",
       "title": "PEMF",
-      "principle": "Pulsed electromagnetic fields give patterned input for a repeatable, rest-based practice. A coil sends pulses that reach tissue without passing current through the skin.\n\nThe practical choice is less about which is stronger and more about coverage, programs, portability and how you will actually use it. A tool that fits your space and routine is the one you will use.",
+      "principle": "Pulsed electromagnetic fields give patterned input for a repeatable, rest-based practice. A coil sends pulses that reach tissue without passing current through the skin.\n\nChoose by coverage, programs and portability, not strength alone. Then ask how you will actually use it. A tool that fits your space and routine is the one you will use.",
       "choose_by_use": [
         "For broad coverage at home, the Kloud Maxi mat.",
         "For a smaller or portable area with the same program family, the Kloud Mini.",
@@ -92,7 +92,7 @@
     {
       "slug": "microcurrent",
       "title": "Microcurrent",
-      "principle": "Microcurrent delivers very small electrical currents, close to the body's own signalling levels. I reach for it both for long-standing challenges and to calm intense, acute ones.\n\nSome devices read the skin's response and adjust as they go. Others run set frequency programs. Choose by whether you want guided feedback or a program you can wear.",
+      "principle": "Microcurrent delivers very small electrical currents. It suits both a steady long-term practice and short, focused sessions.\n\nSome devices read the skin's response and adjust as they go. Others run set frequency programs. Choose by whether you want guided feedback or a program you can wear.",
       "choose_by_use": [
         "For responsive feedback at the skin, the DENAS PCM Pro.",
         "For the eyes, the DENAS eye system and eyeglasses electrode.",
@@ -107,7 +107,7 @@
     {
       "slug": "frequency-sound",
       "title": "Frequency & Sound",
-      "principle": "Everything vibrates, and the body responds to frequency. 172 Hz is a frequency I use often, and it can be delivered by sound, by light or by touch.\n\nA tuning fork or singing bowl carries it as sound and vibration. A laser or helmet carries it as pulsed light. Choose the delivery that suits how you like to practise.",
+      "principle": "Everything vibrates, and the body responds to frequency. 172 Hz is a frequency I use often. It can reach you by sound, by light or by touch.\n\nA tuning fork or singing bowl carries it as sound and vibration. A laser or helmet carries it as pulsed light. Choose the delivery that suits how you like to practise.",
       "choose_by_use": [
         "For 172 Hz by sound and touch, the Spirit or Frosted Quartz tuning fork.",
         "For 172 Hz filling a room, the Tibetan glass singing bowl.",
@@ -125,7 +125,7 @@
     {
       "slug": "fasting",
       "title": "Fasting",
-      "principle": "Fasting gives the body time to rest from digestion and turn to renewal. It is a practice, and the first tool is the calendar.\n\nStart gently, with a longer overnight fast, and build from there with guidance that fits your health and history.",
+      "principle": "Fasting gives the body time to rest from digestion and turn to renewal. It is a practice, and the first tool is the calendar.\n\nStart gently with a longer overnight fast. Build from there with guidance that fits your health and history.",
       "choose_by_use": [],
       "products": [],
       "learn": ["fasting"],
@@ -134,7 +134,7 @@
     {
       "slug": "stones-wearables",
       "title": "Stones & Wearables",
-      "principle": "Minerals carry their own structure and charge. People have kept them close for as long as there are records.\n\nA stone can sit where you work or sleep, and a pendant goes with you through the day.",
+      "principle": "Stones and minerals have been kept close in many traditions for their qualities.\n\nA stone can sit where you work or sleep, and a pendant goes with you through the day.",
       "choose_by_use": [
         "For a desk or bedside, the shungite plate.",
         "For hands-on use, the smoky quartz tool.",
@@ -148,12 +148,12 @@
     {
       "slug": "books",
       "title": "Books",
-      "principle": "My books teach the principles behind the tools and the remedies, so you can make your own choices with understanding.\n\nMost titles come in print and as an ebook. Achievement of Excellence is also an audiobook.",
+      "principle": "These books teach the principles behind the tools and the remedies, so you can make your own choices with understanding.\n\nMost titles come in print and as an ebook. Achievement of Excellence is also an audiobook.",
       "choose_by_use": [
-        "For vision, Refreshing Vision, Natural Eye Care, and the books on dry eye, cataract, glaucoma and the macula.",
+        "For vision, start with Refreshing Vision or Natural Eye Care. Separate books cover dry eye, cataract, glaucoma and the macula.",
         "For EMF, Electromagnetic Pollution Solutions.",
         "For remedies, Materia Medica and Anima Medica.",
-        "For the larger picture, The Living Universe, As Above, So Below and The Shire."
+        "For the larger picture, read The Living Universe and The Shire. As Above, So Below belongs here too."
       ],
       "products": ["book-refreshing-vision", "book-refreshing-vision-ebook", "book-natural-eye-care",
                    "book-dry-eye-relief", "book-dry-eye-relief-ebook", "book-cataract-solutions",
