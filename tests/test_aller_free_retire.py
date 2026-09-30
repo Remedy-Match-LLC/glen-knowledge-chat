@@ -106,8 +106,17 @@ def test_live_product_page_is_not_redirected(monkeypatch, tmp_path):
     assert NEW_NAME in r.get_data(as_text=True)
 
 
+
+def _unpin_survivor(appmod, monkeypatch):
+    """The drops now carry Glen's pinned copy (2026-09-30). These two tests exercise the AI
+    draft path under the survivor's slug, so they run with the pin taken off."""
+    entry = dict(appmod._PRODUCTS["products"][NEW])
+    entry.pop("copy_pinned", None)
+    monkeypatch.setitem(appmod._PRODUCTS["products"], NEW, entry)
+
 def test_page_data_for_old_slug_serves_the_survivor_not_the_old_draft(monkeypatch, tmp_path):
     appmod = _reload_app(monkeypatch, tmp_path)
+    _unpin_survivor(appmod, monkeypatch)
     _seed_marker(appmod, OLD)
     r = appmod.app.test_client().get(f"/begin/product-page-data/{OLD}")
     assert r.status_code == 200
@@ -143,6 +152,7 @@ class _FakeCl:
 
 def test_page_gen_for_old_slug_never_serves_or_writes_the_old_draft(monkeypatch, tmp_path):
     appmod = _reload_app(monkeypatch, tmp_path)
+    _unpin_survivor(appmod, monkeypatch)
     _seed_marker(appmod, OLD)
     fake = _FakeCl()
     monkeypatch.setattr(appmod, "_cl", fake)

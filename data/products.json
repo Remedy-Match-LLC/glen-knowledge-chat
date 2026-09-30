@@ -13251,7 +13251,14 @@
    "ingredients_source": "fmp_snap",
    "no_groovekart": true,
    "regular_cents": 8000,
-   "description": "10 drops 3 times a day or as needed",
+   "intro": "Aller-Free HomeoEnergetic Drops supports comfort with airborne allergy symptoms without drowsiness or suppression of immune functions. Aller-Free was formulated by Rev. Dr. Glen Swartwout and has been relied on for its clinical effectiveness for over 20 years. As a homeo-energetic formula, Aller-Free is gentle, with no known side effects.",
+   "description": "Aller-Free HomeoEnergetic Drops supports comfort with airborne allergy symptoms without drowsiness or suppression of immune functions. Aller-Free was formulated by Rev. Dr. Glen Swartwout and has been relied on for its clinical effectiveness for over 20 years. As a homeo-energetic formula, Aller-Free is gentle, with no known side effects. 50 mL dropper. Aller-Free ingredients: ACTH Adrenalinum Agrimonia Bellis perenis Camphora Chamomilla Equisetum arvense Formica rufa Fraxinus americana Glycerinum Histaminum Iodium Kali bichromicum Lac caninum Lac felinum Natrum muriaticum Prunus spinosa Pulsatilla Pyrus americana Salix nigra Solidago virgaurea Tabacum Taraxacum officinale Xerophyllum asphodeloides Yucca filamentosa. For allergy and immune support, Dr. Glen's current recommendation is Immune Modulation. The statements herein have not been evaluated by the Food and Drug Administration. This is not intended to diagnose, treat, cure, or prevent any disease.",
+   "directions": "10 drops 3 times a day or as needed.",
+   "copy_pinned": [
+    "intro",
+    "description",
+    "research"
+   ],
    "bottle_type": "Dropper 50 mL"
   },
   "aces-eye-drops": {
