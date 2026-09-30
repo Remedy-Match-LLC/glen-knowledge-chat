@@ -64,6 +64,7 @@
   .remedy-dd-item .mslug{ color:var(--muted); font-size:11px; }
   .remedy-alts{ margin:6px 0; display:flex; flex-wrap:wrap; align-items:center; gap:4px; }
   .remedy-alts .alt-lbl{ font-size:11px; color:var(--muted); }
+  .second-match{ font-size:11px; color:var(--warn, #e0b050); margin:4px 0 2px; }
   .alt-chip{ font-size:11px; padding:3px 8px; border:1px solid var(--line); border-radius:6px;
              background:#12151b; color:#cfd6df; cursor:pointer; }
   .alt-chip:hover{ border-color:#d4a843; }
@@ -576,6 +577,21 @@ function buildCard(d){
       nameInput.value = rem.name || '';
       row.appendChild(nameInput);
 
+      // Second order remedy: offered only because the client's history names one of
+      // its qualifying conditions. The note follows the remedy: a swap to another
+      // name clears it, a swap to a second order alternative sets that one's.
+      var secondNote = document.createElement('div');
+      secondNote.className = 'second-match';
+      function setSecond(conds){
+        conds = Array.isArray(conds) ? conds : [];
+        row.dataset.secondMatch = JSON.stringify(conds);
+        secondNote.textContent = conds.length ? 'Second match: ' + conds.join(', ') : '';
+        secondNote.style.display = conds.length ? '' : 'none';
+      }
+      setSecond(rem.second_match);
+      row.appendChild(secondNote);
+      nameInput.addEventListener('input', function(){ setSecond([]); });
+
       var slugLabel = document.createElement('label');
       slugLabel.textContent = 'Remedy slug';
       row.appendChild(slugLabel);
@@ -612,10 +628,13 @@ function buildCard(d){
           var b = document.createElement('button');
           b.type = 'button';
           b.className = 'alt-chip';
-          b.textContent = a.name + (a.score ? ' (' + a.score + ')' : '');
+          var secondTxt = (Array.isArray(a.second_match) && a.second_match.length)
+            ? ' (second match: ' + a.second_match.join(', ') + ')' : '';
+          b.textContent = a.name + (a.score ? ' (' + a.score + ')' : '') + secondTxt;
           b.onclick = function(){
             nameInput.value = a.name;
             slugInput.value = a.slug || '';
+            setSecond(a.second_match);
             meaningArea.value = 'A description for ' + a.name + ' will be generated when you save.';
           };
           altWrap.appendChild(b);
@@ -821,6 +840,15 @@ function collectLayers(card){
     try { patterns = JSON.parse(row.dataset.patterns || '[]'); } catch (e) {}
     try { patternLabels = JSON.parse(row.dataset.patternLabels || '[]'); } catch (e) {}
     try { alternatives = JSON.parse(row.dataset.alternatives || '[]'); } catch (e) {}
+    var secondMatch = [];
+    try { secondMatch = JSON.parse(row.dataset.secondMatch || '[]'); } catch (e) {}
+    var remedy = {
+      name: nameEl ? nameEl.value : '',
+      slug: slugEl ? slugEl.value : '',
+      meaning: meaningEl ? meaningEl.value : '',
+      remember: rememberEl ? rememberEl.checked : false
+    };
+    if (secondMatch.length) remedy.second_match = secondMatch;
     out.push({
       n: idx + 1,
       title: titleEl ? titleEl.value : '',
@@ -828,12 +856,7 @@ function collectLayers(card){
       patterns: patterns,
       pattern_labels: patternLabels,
       alternatives: alternatives,
-      remedy: {
-        name: nameEl ? nameEl.value : '',
-        slug: slugEl ? slugEl.value : '',
-        meaning: meaningEl ? meaningEl.value : '',
-        remember: rememberEl ? rememberEl.checked : false
-      }
+      remedy: remedy
     });
   });
   return out;

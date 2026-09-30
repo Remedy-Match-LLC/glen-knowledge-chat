@@ -1801,6 +1801,34 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
             print(f"[layer-fallback] {e!r}", flush=True)
         return fb
 
+    def _layer_tiers():
+        """First and second order tiers from the e4l.db formulation map, for tagging
+        the layer candidates: {"by_code": {code: {name_lower: (tier, [conds])}},
+        "by_pattern": {...}}. Empty on any error or before the tier columns exist."""
+        import json as _json
+        out = {"by_code": {}, "by_pattern": {}}
+        try:
+            with sqlite3.connect(e4l_db) as ecx:
+                rows = ecx.execute(
+                    "SELECT m.item_code, m.finding_pattern, f.name, m.order_tier, "
+                    "m.qualifying_conditions FROM e4l_formulation_map m "
+                    "JOIN formulations f ON f.id=m.formulation_id "
+                    "ORDER BY m.priority ASC, m.id ASC").fetchall()
+        except Exception as e:
+            print(f"[layer-tiers] {e!r}", flush=True)
+            return out
+        for code, pat, name, tier, conds in rows:
+            try:
+                cl = _json.loads(conds or "[]")
+                cl = [str(x) for x in cl if str(x or "").strip()] if isinstance(cl, list) else []
+            except Exception:
+                cl = []
+            key, bucket = (code, "by_code") if code else (pat, "by_pattern")
+            if key and name:
+                out[bucket].setdefault(key, {}).setdefault(
+                    name.strip().lower(), (tier, cl))
+        return out
+
     @app.route("/author/<test_id>/suggest-remedies")
     def author_suggest_remedies(test_id):
         from dashboard import biofield_stress as _st
@@ -1813,14 +1841,16 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
             if only_saved and _st.get_saved_remedy_set(cx, test_id) is None:
                 rep0 = _report_for(cx, test_id)
                 lc0 = _st.layer_candidates(cx, test_id, _chain_rows_for(rep0),
-                                           fallback_by_code=_layer_fallback_map())
+                                           fallback_by_code=_layer_fallback_map(),
+                                           tiers=_layer_tiers())
                 return {"ok": True, "html": render_layer_candidates_panel(lc0), "picks": [],
                         "uncovered": [], "source": None, "pattern_key": "",
                         "has_pattern": False, "layer_candidates": lc0}
             rep = _report_for(cx, test_id)
             chain = _chain_rows_for(rep)
             data = _st.resolve_remedy_set(cx, test_id, chain, force_computed=force)
-            lc = _st.layer_candidates(cx, test_id, chain, fallback_by_code=_layer_fallback_map())
+            lc = _st.layer_candidates(cx, test_id, chain, fallback_by_code=_layer_fallback_map(),
+                                      tiers=_layer_tiers())
         return _suggest_payload(data, lc)
 
     @app.route("/author/<test_id>/layer/<int:n>/select", methods=["POST"])
@@ -1854,7 +1884,8 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
             chain_rems = [(r.get("remedy") or "").strip() for r in chain if (r.get("remedy") or "").strip()]
             _st.save_remedy_set(cx, test_id, chain_rems)   # learn Glen's actual chain
             data = _st.resolve_remedy_set(cx, test_id, chain)
-            lc = _st.layer_candidates(cx, test_id, chain, fallback_by_code=_layer_fallback_map())
+            lc = _st.layer_candidates(cx, test_id, chain, fallback_by_code=_layer_fallback_map(),
+                                      tiers=_layer_tiers())
         return _suggest_payload(data, lc)
 
     @app.route("/author/<test_id>/remedy-set/suggest", methods=["POST"])

@@ -1,0 +1,558 @@
+{
+ "about": "Public wording for e4l_formulation_map qualifying_conditions. Glen approved 2026-09-29: functional terms replace diagnoses in anything a client sees. Matching keeps the stored condition. Every stored condition must appear here; an unmapped one is not shown publicly. Source: clinical/remedy-order-review/public-condition-terms.md in the vault.",
+ "terms": {
+  "acid reflux": {
+   "public": "comfortable digestion"
+  },
+  "acidic ph": {
+   "public": "acidic ph"
+  },
+  "acidity": {
+   "public": "acidity"
+  },
+  "acute stress": {
+   "public": "acute stress"
+  },
+  "acute symptoms": {
+   "public": "acute symptoms"
+  },
+  "adhesions": {
+   "public": "adhesions"
+  },
+  "adrenal fatigue": {
+   "public": "adrenal fatigue"
+  },
+  "aging": {
+   "public": "aging"
+  },
+  "allergy": {
+   "public": "allergy"
+  },
+  "amalgam fillings": {
+   "public": "amalgam fillings"
+  },
+  "anxiety": {
+   "public": "anxiety"
+  },
+  "auto-immune": {
+   "public": "immune balance"
+  },
+  "bladder issues": {
+   "public": "bladder issues"
+  },
+  "bloating": {
+   "public": "bloating"
+  },
+  "blood brain barrier issues": {
+   "public": "blood brain barrier issues"
+  },
+  "bone loss": {
+   "public": "bone density"
+  },
+  "bowel toxicity": {
+   "public": "bowel toxicity"
+  },
+  "brain fog": {
+   "public": "brain fog"
+  },
+  "candida": {
+   "public": "microbial balance"
+  },
+  "cataract": {
+   "public": "lens clarity"
+  },
+  "cellular mercury toxicity": {
+   "public": "mercury detox support"
+  },
+  "chronic cough": {
+   "public": "chronic cough"
+  },
+  "chronic illness": {
+   "public": "chronic illness"
+  },
+  "chronic inflammation": {
+   "public": "chronic inflammation"
+  },
+  "cloudy vision": {
+   "public": "lens clarity"
+  },
+  "cold": {
+   "public": "cold"
+  },
+  "cold intolerance": {
+   "public": "cold intolerance"
+  },
+  "constipation": {
+   "public": "constipation"
+  },
+  "covid": {
+   "public": "recovery after viral illness"
+  },
+  "covid vaccination": {
+   "hide": true,
+   "reason": "Glen 2026-09-29: not shown publicly"
+  },
+  "covid vaccine": {
+   "hide": true,
+   "reason": "Glen 2026-09-29: not shown publicly"
+  },
+  "degeneration": {
+   "public": "degeneration"
+  },
+  "dental work": {
+   "public": "dental work"
+  },
+  "diabetes": {
+   "public": "blood sugar balance"
+  },
+  "diabetic retinopathy": {
+   "public": "retinal circulation"
+  },
+  "digestive issues": {
+   "public": "digestive issues"
+  },
+  "digestive tract": {
+   "public": "digestive tract"
+  },
+  "digestive upset": {
+   "public": "digestive upset"
+  },
+  "disturbed dreams": {
+   "public": "disturbed dreams"
+  },
+  "drugs": {
+   "public": "medication use"
+  },
+  "dry skin": {
+   "public": "dry skin"
+  },
+  "dysbiosis": {
+   "public": "dysbiosis"
+  },
+  "electrical sensitivity": {
+   "public": "electrical sensitivity"
+  },
+  "emf exposure": {
+   "public": "emf exposure"
+  },
+  "emotional stress": {
+   "public": "emotional stress"
+  },
+  "fatigue": {
+   "public": "fatigue"
+  },
+  "female": {
+   "public": "women"
+  },
+  "fibrosis": {
+   "public": "tissue flexibility"
+  },
+  "flu": {
+   "public": "flu"
+  },
+  "food cravings": {
+   "public": "food cravings"
+  },
+  "fracture": {
+   "public": "fracture"
+  },
+  "frequent colds": {
+   "public": "frequent colds"
+  },
+  "frequent infections": {
+   "public": "frequent infections"
+  },
+  "frequent night urination": {
+   "public": "frequent night urination"
+  },
+  "fungal overgrowth": {
+   "public": "microbial balance"
+  },
+  "gastritis": {
+   "public": "stomach lining comfort"
+  },
+  "glare sensitivity": {
+   "public": "glare sensitivity"
+  },
+  "glaucoma": {
+   "public": "healthy eye pressure"
+  },
+  "glycation": {
+   "public": "glycation"
+  },
+  "gum problems": {
+   "public": "gum problems"
+  },
+  "gut dysbiosis": {
+   "public": "gut dysbiosis"
+  },
+  "gut irritation": {
+   "public": "gut irritation"
+  },
+  "gut issues": {
+   "public": "gut issues"
+  },
+  "gut toxicity": {
+   "public": "gut toxicity"
+  },
+  "h. pylori": {
+   "public": "stomach terrain balance"
+  },
+  "heart disease": {
+   "public": "heart function"
+  },
+  "heart palpitations": {
+   "public": "heart palpitations"
+  },
+  "heartburn": {
+   "public": "comfortable digestion"
+  },
+  "heavy metal exposure": {
+   "public": "heavy metal exposure"
+  },
+  "heavy metal toxicity": {
+   "public": "metal detox support"
+  },
+  "heavy metals": {
+   "public": "heavy metals"
+  },
+  "herpes family virus": {
+   "public": "response to viral challenges"
+  },
+  "high blood pressure": {
+   "public": "healthy blood pressure"
+  },
+  "high blood sugar": {
+   "public": "blood sugar balance"
+  },
+  "high cholesterol": {
+   "public": "healthy lipid levels"
+  },
+  "high eye pressure": {
+   "public": "healthy eye pressure"
+  },
+  "high fish intake": {
+   "public": "high fish intake"
+  },
+  "hormone imbalance": {
+   "public": "hormone imbalance"
+  },
+  "hyper immune": {
+   "public": "immune balance"
+  },
+  "hypothyroid": {
+   "public": "thyroid function"
+  },
+  "immune deficiency": {
+   "public": "immune strength"
+  },
+  "injury": {
+   "public": "injury"
+  },
+  "insomnia": {
+   "public": "insomnia"
+  },
+  "insulin resistance": {
+   "public": "insulin sensitivity"
+  },
+  "intestinal issues": {
+   "public": "intestinal issues"
+  },
+  "irregular heartbeat": {
+   "public": "heart rhythm"
+  },
+  "irregular periods": {
+   "public": "irregular periods"
+  },
+  "irritability": {
+   "public": "irritability"
+  },
+  "jet lag": {
+   "public": "jet lag"
+  },
+  "kidney issues": {
+   "public": "kidney issues"
+  },
+  "kidney tubule issues": {
+   "public": "kidney tubule issues"
+  },
+  "leaky gut": {
+   "public": "leaky gut"
+  },
+  "liver issues": {
+   "public": "liver issues"
+  },
+  "liver stress": {
+   "public": "liver stress"
+  },
+  "long covid": {
+   "public": "recovery after viral illness"
+  },
+  "loose stool": {
+   "public": "loose stool"
+  },
+  "low energy": {
+   "public": "low energy"
+  },
+  "low magnesium": {
+   "public": "low magnesium"
+  },
+  "low mood": {
+   "public": "low mood"
+  },
+  "low stamina": {
+   "public": "low stamina"
+  },
+  "low vitality": {
+   "public": "low vitality"
+  },
+  "lung scarring": {
+   "public": "lung tissue flexibility"
+  },
+  "lymph congestion": {
+   "public": "lymph congestion"
+  },
+  "lymph drainage": {
+   "public": "lymph drainage"
+  },
+  "lymph nodes": {
+   "public": "lymph nodes"
+  },
+  "macular degeneration": {
+   "public": "macular health"
+  },
+  "magnesium deficiency": {
+   "public": "magnesium deficiency"
+  },
+  "memory decline": {
+   "public": "memory decline"
+  },
+  "menstrual cramps": {
+   "public": "menstrual cramps"
+  },
+  "menstrual discomfort": {
+   "public": "menstrual discomfort"
+  },
+  "mental fatigue": {
+   "public": "mental fatigue"
+  },
+  "mercury exposure": {
+   "public": "mercury exposure"
+  },
+  "metabolic dysfunction": {
+   "public": "metabolic balance"
+  },
+  "mold exposure": {
+   "public": "mold exposure"
+  },
+  "mood swings": {
+   "public": "mood swings"
+  },
+  "motivation": {
+   "public": "motivation"
+  },
+  "muscle building": {
+   "public": "muscle building"
+  },
+  "muscle cramps": {
+   "public": "muscle cramps"
+  },
+  "muscle loss": {
+   "public": "muscle loss"
+  },
+  "muscle tension": {
+   "public": "muscle tension"
+  },
+  "must have taken candida cleanse first": {
+   "public": "only after a Candida Cleanse"
+  },
+  "nerve damage": {
+   "public": "nerve repair"
+  },
+  "nerve injury": {
+   "public": "nerve injury"
+  },
+  "nerve pain": {
+   "public": "nerve pain"
+  },
+  "neurodegeneration": {
+   "public": "brain and nerve resilience"
+  },
+  "neuropathy": {
+   "public": "nerve function"
+  },
+  "night vision difficulty": {
+   "public": "night vision difficulty"
+  },
+  "noise sensitivity": {
+   "public": "noise sensitivity"
+  },
+  "numbness": {
+   "public": "numbness"
+  },
+  "old injury": {
+   "public": "old injury"
+  },
+  "osteoporosis": {
+   "public": "bone density"
+  },
+  "over 40": {
+   "public": "age 40 and over"
+  },
+  "over age 40": {
+   "public": "age 40 and over"
+  },
+  "oxidation": {
+   "public": "oxidation"
+  },
+  "pain": {
+   "public": "pain"
+  },
+  "palpitations": {
+   "public": "palpitations"
+  },
+  "past surgery": {
+   "public": "past surgery"
+  },
+  "pms": {
+   "public": "menstrual comfort"
+  },
+  "poor absorption": {
+   "public": "poor absorption"
+  },
+  "poor circulation": {
+   "public": "poor circulation"
+  },
+  "poor eye circulation": {
+   "public": "poor eye circulation"
+  },
+  "poor focus": {
+   "public": "poor focus"
+  },
+  "poor memory": {
+   "public": "poor memory"
+  },
+  "problem skin": {
+   "public": "problem skin"
+  },
+  "prostate enlargement": {
+   "public": "prostate health"
+  },
+  "ptsd": {
+   "public": "emotional resilience after trauma"
+  },
+  "rough skin": {
+   "public": "rough skin"
+  },
+  "scar tissue": {
+   "public": "scar tissue"
+  },
+  "seeking ormus": {
+   "hide": true,
+   "reason": "Glen 2026-09-29: not shown publicly"
+  },
+  "sensitive digestion": {
+   "public": "sensitive digestion"
+  },
+  "shift work": {
+   "public": "shift work"
+  },
+  "skin aging": {
+   "public": "skin aging"
+  },
+  "skin irritation": {
+   "public": "skin irritation"
+  },
+  "sleep difficulty": {
+   "public": "sleep difficulty"
+  },
+  "sleep issues": {
+   "public": "sleep issues"
+  },
+  "slow digestion": {
+   "public": "slow digestion"
+  },
+  "slow healing": {
+   "public": "slow healing"
+  },
+  "slow recovery": {
+   "public": "slow recovery"
+  },
+  "spike protein exposure": {
+   "hide": true,
+   "reason": "Glen 2026-09-29: not shown publicly"
+  },
+  "spirit energy": {
+   "public": "spirit energy"
+  },
+  "spiritual growth": {
+   "public": "spiritual growth"
+  },
+  "spleen issues": {
+   "public": "spleen issues"
+  },
+  "standard american diet": {
+   "public": "processed food diet"
+  },
+  "stomach ulcer": {
+   "public": "stomach lining integrity"
+  },
+  "stress": {
+   "public": "stress"
+  },
+  "sugar regulation": {
+   "public": "sugar regulation"
+  },
+  "swelling extremities": {
+   "public": "swelling extremities"
+  },
+  "systemic immune issues": {
+   "public": "immune balance"
+  },
+  "tension": {
+   "public": "tension"
+  },
+  "tingling": {
+   "public": "tingling"
+  },
+  "tinnitus": {
+   "public": "ear comfort"
+  },
+  "tooth decay": {
+   "public": "tooth decay"
+  },
+  "tooth sensitivity": {
+   "public": "tooth sensitivity"
+  },
+  "toxicity": {
+   "public": "toxicity"
+  },
+  "toxin exposure": {
+   "public": "toxin exposure"
+  },
+  "varicose veins": {
+   "public": "vein tone"
+  },
+  "viral infection": {
+   "public": "response to viral challenges"
+  },
+  "weak digestion": {
+   "public": "weak digestion"
+  },
+  "weak immunity": {
+   "public": "weak immunity"
+  },
+  "weak kidneys": {
+   "public": "weak kidneys"
+  },
+  "weight gain": {
+   "public": "weight gain"
+  },
+  "weight management": {
+   "public": "weight management"
+  },
+  "wet amd": {
+   "public": "macular health"
+  }
+ }
+}
