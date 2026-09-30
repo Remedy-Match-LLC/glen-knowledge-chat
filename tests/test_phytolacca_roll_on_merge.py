@@ -57,6 +57,8 @@ def test_the_roll_on_carries_the_label_formula(catalog):
         ("Ozonated Castor Oil (Ricinus communis)", "90% of the base"),
         ("Black Seed Oil (Nigella sativa)", "10% of the base"),
     ]
+    # An untrusted source would drop this formula from Biofield letters.
+    assert catalog[NEW]["ingredients_source"] == "production-spec-2026-09-24"
     text = json.dumps(catalog[NEW]).lower()
     assert "decandra" not in text
 
