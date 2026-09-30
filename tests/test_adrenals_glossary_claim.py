@@ -116,7 +116,8 @@ def test_no_glossary_text_names_the_old_b12_product():
     for path in ("data/clinical_theory_catalog.json", "data/e4l_stressor_map.json"):
         text = open(path, encoding="utf-8").read()
         assert "Sublingual B12" not in text, path
-        assert "B12 Sublingual Powder" in text or path.endswith("stressor_map.json"), path
+        assert "B12 Sublingual Powder" not in text, path   # drops replaced it 2026-09-24
+        assert "B12 Sublingual Drops" in text, path
 
 
 def test_no_glossary_link_points_at_the_old_store():
