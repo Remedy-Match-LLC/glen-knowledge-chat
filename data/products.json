@@ -21203,7 +21203,14 @@
    "ingredients_source": "production-spec-2026-09-24",
    "no_groovekart": true,
    "regular_cents": 8000,
+   "intro": "Phytolacca americana Oil Roll-On carries 500 mg of a 20:1 poke root extract in a base of ozonated castor oil and black seed oil. It is for external use only. Shake well, then roll on 3 times a day, or as guided.",
    "description": "Phytolacca americana Oil Roll-On carries 500 mg of a 20:1 poke root extract in a base of ozonated castor oil and black seed oil. It is for external use only. Shake well, then roll on 3 times a day, or as guided.",
+   "directions": "Shake well. Roll on 3 times a day, or as guided.",
+   "warning": "For external use only.",
+   "copy_pinned": [
+    "intro",
+    "description"
+   ],
    "bottle_type": "30roll"
   },
   "zinc-taste-test-drops": {
