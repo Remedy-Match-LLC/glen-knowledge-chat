@@ -74,3 +74,26 @@ def test_route_reflects_live_chain(tmp_path):
     client.post(f"/author/{tid}/row", json={"layer": 1, "head": "x", "remedy": "Neuro Magnesium"})
     j = client.get(f"/author/{tid}/suggest-remedies").get_json()
     assert j["picks"] == [] and j["uncovered"] == []
+
+
+def test_route_tags_second_order_candidates_from_the_e4l_map(tmp_path):
+    db = str(tmp_path / "c.db")
+    e4l = str(tmp_path / "e4l.db")
+    ex = sqlite3.connect(e4l)
+    ex.executescript(
+        "CREATE TABLE formulations (id INTEGER PRIMARY KEY, name TEXT);"
+        "CREATE TABLE e4l_formulation_map (id INTEGER PRIMARY KEY, item_code TEXT,"
+        " finding_pattern TEXT, formulation_id INT, priority INT, order_tier INT,"
+        " qualifying_conditions TEXT);"
+        "INSERT INTO formulations VALUES (1, 'Neuro Magnesium');"
+        "INSERT INTO e4l_formulation_map VALUES (1, 'ED1', 'ED1', 1, 1, 2, '[\"low magnesium\"]');")
+    ex.commit(); ex.close()
+    client = create_app(db, scan_lookup=lambda e: _NONE, e4l_db=e4l).test_client()
+    tid = client.post("/author/new").headers["Location"].rstrip("/").split("/")[-1]
+    _seed(db, int(tid.lstrip("a")))
+    client.post(f"/author/{tid}/row", json={"layer": 1, "head": "Membrane", "remedy": "Neuro Magnesium"})
+    j = client.get(f"/author/{tid}/suggest-remedies").get_json()
+    L1 = next(L for L in j["layer_candidates"] if L["n"] == 1)
+    nm = next(c for c in L1["candidates"] if c["remedy"].lower() == "neuro magnesium")
+    assert nm["second_order"] == ["low magnesium"]
+    assert "second order: low magnesium" in j["html"]
