@@ -111,6 +111,7 @@ def test_second_order_conditions_rules():
     assert so("Nous Energy", ["MR2"], _TIERS) == ["fatigue"]  # own row beats pattern row
     assert so("Nous Energy", ["MR7"], _TIERS) == []           # pattern row, first order
     assert so("Cardio Plus", ["ED1"], None) == []
+    assert so("cardio-plus", ["ED1"], _TIERS) == ["high blood pressure"]   # spelling variant
 
 
 def test_candidates_tag_second_order_and_hide_nothing(tmp_path):

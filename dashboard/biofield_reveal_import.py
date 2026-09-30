@@ -52,10 +52,16 @@ def _run_synthesis(email, scan_id, e4l_db, catalog, today):
         synth = E.synthesize(patterns, history="", rules=E.load_rules(),
                              ff_names=E.curated_ff_names(cat), layer_count=6)
         synth["layers"] = E.order_layers_by_pattern_count(synth.get("layers") or [])
-        content = E.to_portal_content(
-            synth, cat, formulation_map=E.load_formulation_map(cx),
-            member_age=E.member_age_for_email(cx, email, today),
-            age_rules=E.load_age_rules(cx))
+        kw = dict(formulation_map=E.load_formulation_map(cx),
+                  member_age=E.member_age_for_email(cx, email, today),
+                  age_rules=E.load_age_rules(cx))
+        # Glen chooses on the Intake page, so the import keeps second order remedies
+        # (the layer candidates tag them). An older vault matcher has no tiers and no
+        # apply_tiers argument; it already keeps everything.
+        import inspect
+        if "apply_tiers" in inspect.signature(E.to_portal_content).parameters:
+            kw["apply_tiers"] = False
+        content = E.to_portal_content(synth, cat, **kw)
         payload = build_payload(content, email, scan["scan_date"],
                                 label_map=label_map, notify=False)
         return scan, ((payload or {}).get("layers") or [])

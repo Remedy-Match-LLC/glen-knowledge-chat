@@ -950,13 +950,19 @@ def second_order_conditions(name, codes, tiers):
     any of the codes, or not mapped at all, -> []."""
     if not tiers:
         return []
-    low = (name or "").strip().lower()
+
+    def key(n):   # "Neuro-Magnesium" and "Neuro Magnesium" are one product
+        return "".join(ch for ch in (n or "").lower() if ch.isalnum())
+    want = key(name)
     by_code = tiers.get("by_code") or {}
     by_pat = tiers.get("by_pattern") or {}
-    rows = [by_code[c][low] for c in codes if low in by_code.get(c, {})]
+
+    def hits(m):
+        return [v for n, v in (m or {}).items() if key(n) == want]
+    rows = [v for c in codes for v in hits(by_code.get(c))]
     if not rows:
-        rows = [m[low] for pat, m in by_pat.items()
-                if low in m and any(str(c).startswith(pat) for c in codes)]
+        rows = [v for pat, m in by_pat.items()
+                if any(str(c).startswith(pat) for c in codes) for v in hits(m)]
     if not rows or any(t != 2 for t, _ in rows):
         return []
     out = []

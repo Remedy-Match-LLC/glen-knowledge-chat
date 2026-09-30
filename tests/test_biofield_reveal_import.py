@@ -75,3 +75,48 @@ def test_no_scan_returns_not_found():
                                    runner=_runner(None))
     assert res == {"found": False, "scan_id": None, "scan_date": None,
                    "days_ago": None, "fresh": False, "layers": []}
+
+
+def _fake_vault(monkeypatch, with_tiers):
+    import sys
+    import types
+    seen = {}
+    E = types.ModuleType("e4l_synthesis")
+    E.latest_scan = lambda cx, email: {"scan_id": 1, "scan_date": "2026-09-01"}
+    E.pull_patterns = lambda cx, sid, limit=12: [{"item_code": "EI3"}]
+    E.load_catalog = lambda path: []
+    E.ff_only_catalog = lambda cat: cat
+    E.curated_ff_names = lambda cat: []
+    E.load_rules = lambda: ""
+    E.synthesize = lambda *a, **k: {"layers": []}
+    E.order_layers_by_pattern_count = lambda layers: layers
+    E.load_formulation_map = lambda cx: {}
+    E.member_age_for_email = lambda cx, email, today: None
+    E.load_age_rules = lambda cx: {}
+    if with_tiers:
+        def to_portal_content(synth, cat, formulation_map=None, member_age=None,
+                              age_rules=None, client_facts=None, apply_tiers=True):
+            seen["apply_tiers"] = apply_tiers
+            return {"layers": []}
+    else:
+        def to_portal_content(synth, cat, formulation_map=None, member_age=None,
+                              age_rules=None):
+            seen["old"] = True
+            return {"layers": []}
+    E.to_portal_content = to_portal_content
+    lib = types.ModuleType("e4l_reveal_lib")
+    lib.build_payload = lambda *a, **k: None
+    monkeypatch.setitem(sys.modules, "e4l_synthesis", E)
+    monkeypatch.setitem(sys.modules, "e4l_reveal_lib", lib)
+    return seen
+
+
+def test_intake_import_keeps_second_order_remedies(monkeypatch, tmp_path):
+    from dashboard import biofield_reveal_import as bri
+    db = tmp_path / "e.db"; sqlite3.connect(str(db)).close()
+    seen = _fake_vault(monkeypatch, with_tiers=True)
+    bri._run_synthesis("a@x.com", None, str(db), "cat.json", "2026-09-29")
+    assert seen == {"apply_tiers": False}
+    seen = _fake_vault(monkeypatch, with_tiers=False)      # an older vault matcher
+    bri._run_synthesis("a@x.com", None, str(db), "cat.json", "2026-09-29")
+    assert seen == {"old": True}
