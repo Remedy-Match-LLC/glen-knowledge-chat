@@ -62,8 +62,8 @@ def _gmail_service(token_file, scopes=None):
         from googleapiclient.discovery import build
         creds = Credentials.from_authorized_user_file(str(token_file), scopes)
         if creds.expired and creds.refresh_token:
+            # Never save: the file is shared, and saving narrows its scopes for every job.
             creds.refresh(Request())
-            token_file.write_text(creds.to_json())
         return build('gmail', 'v1', credentials=creds)
     except Exception as e:
         print(f'  Gmail init failed ({token_file.name}): {e}')
