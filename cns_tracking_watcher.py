@@ -90,8 +90,8 @@ def gmail_service(token_path=TOKEN_PATH):
     from googleapiclient.discovery import build
     creds = Credentials.from_authorized_user_file(str(token_path), SCOPES)
     if creds.expired and creds.refresh_token:
+        # Never save: the file is shared, and saving narrows its scopes for every job.
         creds.refresh(Request())
-        Path(token_path).write_text(creds.to_json())
     return build("gmail", "v1", credentials=creds)
 
 
