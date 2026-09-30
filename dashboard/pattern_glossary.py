@@ -102,8 +102,9 @@ def list_patterns(cx):
 
 
 def pattern_remedies(cx, code):
-    """The formulations mapped to an E4L pattern code ("what may help"), ordered
-    by priority then name, deduped by name (best/lowest priority wins). Each item
+    """The formulations mapped to an E4L pattern code ("what may help"): the
+    code's own rows by priority, then general pattern rows, deduped by name
+    (the first row for a name wins). Each item
     is {name, priority, order_tier, conditions}. order_tier 1 is first order (any
     one with the pattern); 2 is second order, which applies only with a history
     of one of `conditions` (Glen 2026-09-28). A database without the tier columns
@@ -111,19 +112,26 @@ def pattern_remedies(cx, code):
     code = (code or "").strip()
     if not code:
         return []
-    sql = ("SELECT f.name AS name, m.priority AS priority, {extra} "
-           "FROM e4l_formulation_map m JOIN formulations f ON f.id = m.formulation_id "
-           "WHERE m.item_code = ? ORDER BY COALESCE(m.priority, 5), f.name")
-    try:
-        rows = cx.execute(sql.format(
-            extra="m.order_tier AS order_tier, m.qualifying_conditions AS conditions"),
-            (code,)).fetchall()
-    except Exception:
+    base = ("SELECT f.name AS name, m.priority AS priority, {extra} "
+            "FROM e4l_formulation_map m JOIN formulations f ON f.id = m.formulation_id ")
+    by_code = ("WHERE m.item_code = ? ORDER BY COALESCE(m.priority, 5), f.name", (code,))
+    # A code's own rows come first, then the general pattern rows ("MR" for MR7),
+    # the same order the scan matcher uses; the first row for a name decides it.
+    with_pat = ("WHERE m.item_code = ? OR (m.item_code IS NULL AND m.finding_pattern <> '' "
+                "  AND substr(?, 1, length(m.finding_pattern)) = m.finding_pattern) "
+                "ORDER BY (m.item_code IS NULL), COALESCE(m.priority, 5), f.name", (code, code))
+    tiered = "m.order_tier AS order_tier, m.qualifying_conditions AS conditions"
+    untiered = "NULL AS order_tier, NULL AS conditions"
+    rows = None
+    for extra, (where, args) in ((tiered, with_pat), (untiered, with_pat),
+                                 (untiered, by_code)):   # older schemas
         try:
-            rows = cx.execute(sql.format(
-                extra="NULL AS order_tier, NULL AS conditions"), (code,)).fetchall()
+            rows = cx.execute(base.format(extra=extra) + where, args).fetchall()
+            break
         except Exception:
-            return []
+            continue
+    if rows is None:
+        return []
     out, seen = [], set()
     for r in rows:
         nm = (r["name"] or "").strip()

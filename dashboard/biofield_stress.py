@@ -959,10 +959,10 @@ def second_order_conditions(name, codes, tiers):
 
     def hits(m):
         return [v for n, v in (m or {}).items() if key(n) == want]
-    rows = [v for c in codes for v in hits(by_code.get(c))]
-    if not rows:
-        rows = [v for pat, m in by_pat.items()
-                if any(str(c).startswith(pat) for c in codes) for v in hits(m)]
+    rows = []
+    for c in codes:   # per code: its own row, else the pattern rows that cover it
+        rows += hits(by_code.get(c)) or [v for pat, m in by_pat.items()
+                                         if str(c).startswith(pat) for v in hits(m)]
     if not rows or any(t != 2 for t, _ in rows):
         return []
     out = []

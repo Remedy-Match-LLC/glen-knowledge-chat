@@ -110,6 +110,7 @@ def test_second_order_conditions_rules():
     assert so("Unmapped", ["ED1"], _TIERS) == []              # not in the map
     assert so("Nous Energy", ["MR2"], _TIERS) == ["fatigue"]  # own row beats pattern row
     assert so("Nous Energy", ["MR7"], _TIERS) == []           # pattern row, first order
+    assert so("Nous Energy", ["MR2", "MR7"], _TIERS) == []    # MR7 still takes the pattern row
     assert so("Cardio Plus", ["ED1"], None) == []
     assert so("cardio-plus", ["ED1"], _TIERS) == ["high blood pressure"]   # spelling variant
 

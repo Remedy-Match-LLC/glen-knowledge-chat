@@ -88,7 +88,8 @@ def test_pattern_remedies_carry_order_tier_and_conditions():
     c.executescript(
         "CREATE TABLE formulations (id INTEGER PRIMARY KEY, name TEXT NOT NULL);"
         "CREATE TABLE e4l_formulation_map (id INTEGER PRIMARY KEY, item_code TEXT, "
-        " formulation_id INTEGER, priority INTEGER, order_tier INTEGER, qualifying_conditions TEXT);")
+        " finding_pattern TEXT, formulation_id INTEGER, priority INTEGER, order_tier INTEGER,"
+        " qualifying_conditions TEXT);")
     c.executemany("INSERT INTO formulations VALUES (?,?)",
                   [(1, "Mucosa Syntropy"), (2, "Terrain Restore"), (3, "Odd")])
     c.executemany("INSERT INTO e4l_formulation_map (item_code,formulation_id,priority,"
@@ -105,3 +106,24 @@ def test_pattern_remedies_carry_order_tier_and_conditions():
 def test_pattern_remedies_old_schema_reads_as_first_order(cx):
     r = pg.pattern_remedies(cx, "ED1")
     assert all(x["order_tier"] == 1 and x["conditions"] == [] for x in r)
+
+
+def test_pattern_rows_follow_code_rows_and_code_row_decides():
+    c = sqlite3.connect(":memory:"); c.row_factory = sqlite3.Row
+    c.executescript(
+        "CREATE TABLE formulations (id INTEGER PRIMARY KEY, name TEXT NOT NULL);"
+        "CREATE TABLE e4l_formulation_map (id INTEGER PRIMARY KEY, item_code TEXT, "
+        " finding_pattern TEXT, formulation_id INTEGER, priority INTEGER, order_tier INTEGER,"
+        " qualifying_conditions TEXT);")
+    c.executemany("INSERT INTO formulations VALUES (?,?)",
+                  [(1, "Nous Energy"), (2, "Neuro-Magnesium")])
+    c.executemany("INSERT INTO e4l_formulation_map (item_code,finding_pattern,formulation_id,"
+                  "priority,order_tier,qualifying_conditions) VALUES (?,?,?,?,?,?)", [
+                      (None, "MR", 1, 1, 1, None),
+                      ("MR7", "MR7", 2, 1, 1, None),
+                      ("MR2", "MR2", 1, 2, 2, '["fatigue"]')])
+    assert [(x["name"], x["order_tier"]) for x in pg.pattern_remedies(c, "MR7")] == [
+        ("Neuro-Magnesium", 1), ("Nous Energy", 1)]
+    assert [(x["name"], x["order_tier"], x["conditions"]) for x in pg.pattern_remedies(c, "MR2")] \
+        == [("Nous Energy", 2, ["fatigue"])]
+    assert pg.pattern_remedies(c, "ED1") == []
