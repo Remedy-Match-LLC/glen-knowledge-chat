@@ -17,8 +17,8 @@ CAT = json.loads((ROOT / "data" / "products.json").read_text())["products"]
 RENAMED = {
     "adrenal-syntropy": ("Adrenal Syntropy Sublingual Powder", "313"),
     "endocrine-restore": ("Endocrine Restore Sublingual Powder", "338"),
-    # Glen, 2026-09-19: "Vitamin B12 Sublingual Powder is the new name - update elsewhere".
-    "sublingual-b12": ("Vitamin B12 Sublingual Powder", "323"),
+    # Glen, 2026-09-24: the powder took up moisture, so drops replace it on the same 323.
+    "sublingual-b12": ("Vitamin B12 Sublingual Drops", "323"),
 }
 
 
