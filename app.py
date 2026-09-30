@@ -9876,6 +9876,8 @@ def _topic_kickoff_build(slug, kind, name):
 def _solution_learn_name(slug):
     """The display name of an approved /learn/ topic, or None. A pending topic answers 200
     with a noindex 'preparing' page, so linking it would send a visitor to a stub."""
+    if not TOPIC_PAGES_ENABLED:
+        return None  # /learn/<slug> answers 404 with the flag off
     from dashboard import topic_pages as _tp, topic_render as _tr
     try:
         with _db_lock, db.connect(LOG_DB) as cx:
@@ -9888,8 +9890,11 @@ def _solution_learn_name(slug):
 
 
 def _solution_views():
-    """Every category joined to the live catalogue. None when the data file is unreadable."""
+    """Every category joined to the live catalogue. None when the data file is unreadable,
+    or on the MentorshipU and portal hosts, where /learn/<slug> is not a topic page."""
     from dashboard import solution_pages as _sp
+    if _on_mentorship_host() or _on_portal_host():
+        return None
     try:
         cats = _sp.load()
     except (OSError, ValueError) as exc:

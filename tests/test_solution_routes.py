@@ -71,3 +71,24 @@ def test_a_missing_data_file_is_404_not_500(client, monkeypatch, tmp_path):
     monkeypatch.setattr(sp, "DATA_PATH", tmp_path / "gone.json")
     assert client.get("/solutions/").status_code == 404
     assert client.get("/solutions/pemf").status_code == 404
+
+
+def test_learn_name_links_only_approved_topics_and_only_with_topic_pages_on(monkeypatch):
+    from dashboard import topic_pages as tp
+    pages = {"cellular-energy": {"state": "approved", "name": "Cellular Energy"},
+             "fasting": {"state": "pending", "name": "Fasting"}}
+    monkeypatch.setattr(tp, "get_page", lambda cx, slug: pages.get(slug))
+    monkeypatch.setattr(app, "TOPIC_PAGES_ENABLED", True)
+    assert app._solution_learn_name("cellular-energy") == "Cellular Energy"
+    assert app._solution_learn_name("fasting") is None
+    # /learn/<slug> answers 404 with the flag off, so a link to it would be dead.
+    monkeypatch.setattr(app, "TOPIC_PAGES_ENABLED", False)
+    assert app._solution_learn_name("cellular-energy") is None
+
+
+@pytest.mark.parametrize("host_check", ["_on_mentorship_host", "_on_portal_host"])
+def test_other_hosts_do_not_serve_solutions(client, monkeypatch, host_check):
+    # On those hosts /learn/<slug> is a course page or the portal, not a topic page.
+    monkeypatch.setattr(app, host_check, lambda: True)
+    assert client.get("/solutions/").status_code == 404
+    assert client.get("/solutions/pemf").status_code == 404
