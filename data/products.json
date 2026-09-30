@@ -230,7 +230,9 @@
    ],
    "ingredients_source": "t33",
    "description": "AllerFree . Price: $69.97.",
-   "qty_pricing": true
+   "qty_pricing": true,
+   "inactive": true,
+   "superseded_by": "allerfree-homeoenergetic-drops"
   },
   "bone-builder": {
    "name": "Bone Builder",
@@ -13241,7 +13243,7 @@
    "bottle_type": "Dropper 50 mL"
   },
   "allerfree-homeoenergetic-drops": {
-   "name": "AllerFree HomeoEnergetic Drops",
+   "name": "Aller-Free HomeoEnergetic Drops",
    "price_cents": 6997,
    "pinecone_title": "AllerFree HomeoEnergetic Drops",
    "qty_pricing": true,

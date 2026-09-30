@@ -229,6 +229,7 @@ def test_make_ff_items_for_llm_hallucination_dropped_via_candidate_constraint(ma
 # Aller-Free is the correct spelling of AllerFree, same formula (Glen 2026-09-24).
 @pytest.mark.parametrize("name", [
     "Aller-Free Aid for Inhalant Allergies", "Aller Free", "AllerFree HomeoEnergetic Drops",
+    "Aller-Free HomeoEnergetic Drops",  # renamed 2026-09-25
 ])
 def test_ff_auto_excluded_every_aller_free_spelling(name):
     assert _app()._ff_auto_excluded(name) is True
