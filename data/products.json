@@ -2689,94 +2689,126 @@
    "qty_pricing": true,
    "ingredients": [
     {
-     "name": "Selenium (from Methylselenocysteine)",
+     "name": "Vitamin A (Retinyl Acetate/Palmitate)",
+     "dose": "25,000 IU"
+    },
+    {
+     "name": "Beta Carotene (in Dunaliella salina carotenoids)",
+     "dose": "3 mg"
+    },
+    {
+     "name": "Vitamin B1 (Benfotiamine)",
+     "dose": "1.5 mg"
+    },
+    {
+     "name": "Vitamin B2 (Riboflavin 5-Phosphate)",
+     "dose": "1.7 mg"
+    },
+    {
+     "name": "Vitamin B5 (Calcium Pantothenate)",
+     "dose": "10 mg"
+    },
+    {
+     "name": "Vitamin B6 (Pyridoxal-5-Phosphate)",
+     "dose": "2 mg"
+    },
+    {
+     "name": "Phosphatidyl Choline 30% (Gallus gallus domesticus)",
+     "dose": "34 mg"
+    },
+    {
+     "name": "Vitamin C (Zinc Ascorbate)",
+     "dose": "28 mg"
+    },
+    {
+     "name": "Vitamin E (Mixed Tocopherols)",
+     "dose": "30 IU"
+    },
+    {
+     "name": "Magnesium (Magnesium Threonate)",
+     "dose": "4 mg"
+    },
+    {
+     "name": "Manganese (Manganese Glycinate)",
+     "dose": "2 mg"
+    },
+    {
+     "name": "Phosphorus (ATP: Adenosine Triphosphate)",
+     "dose": "7 mg"
+    },
+    {
+     "name": "Potassium (Potassium Orotate)",
+     "dose": "3.5 mg"
+    },
+    {
+     "name": "Selenium (Methylselenocysteine)",
      "dose": "70 mcg"
     },
     {
-     "name": "Zinc (as Zinc Carnosine)",
+     "name": "Zinc (Zinc Ascorbate)",
      "dose": "5 mg"
     },
     {
-     "name": "Bismuth Citrate",
-     "dose": "60 mg"
-    },
-    {
-     "name": "Vitamin U (Methylmethionine Sulfonium Chloride)",
-     "dose": "25 mg"
-    },
-    {
-     "name": "NAC (N-Acetyl Cysteine)",
-     "dose": "50 mg"
-    },
-    {
-     "name": "L-Carnosine (from Zinc Carnosine)",
-     "dose": "17 mg"
-    },
-    {
-     "name": "Mastic Gum (Pistacia vera)",
-     "dose": "125 mg"
-    },
-    {
-     "name": "DGL Licorice (Glycyrrhiza glabra)",
-     "dose": "65 mg"
-    },
-    {
-     "name": "Berberine HCl (Coptis chinensis)",
-     "dose": "50 mg"
-    },
-    {
-     "name": "DIM (Brassica oleracea)",
-     "dose": "35 mg"
-    },
-    {
-     "name": "Curcumin (Curcuma longa)",
-     "dose": "20 mg"
-    },
-    {
-     "name": "Boswellic Acid (Boswellia serrata)",
-     "dose": "20 mg"
-    },
-    {
-     "name": "Slippery Elm (Ulmus rubra)",
-     "dose": "20 mg"
-    },
-    {
-     "name": "Ginsenosides 80% (Panax ginseng)",
+     "name": "Polysaccharides (Aloe vera) (inner leaf)",
      "dose": "10 mg"
     },
     {
-     "name": "Catechins 80% (Camellia sinensis)",
-     "dose": "10 mg"
+     "name": "Humic Acid",
+     "dose": "1 mg"
     },
     {
-     "name": "Flavonoids 70% (from Propolis)",
-     "dose": "10 mg"
+     "name": "Fulvic Acid",
+     "dose": "1 mg"
+    },
+    {
+     "name": "Cilantro Juice Powder (Coriandrum sativum)",
+     "dose": "250 mg"
+    },
+    {
+     "name": "EGb 761 (Ginkgo biloba)",
+     "dose": "13 mg"
+    },
+    {
+     "name": "Vitamin B3 (as Niacin)",
+     "dose": "8 mg"
+    },
+    {
+     "name": "Moringa 100:1 (Moringa oleifera)",
+     "dose": "5 mg"
+    },
+    {
+     "name": "Licorice Omnipotent (Glycyrrhiza glabra)",
+     "dose": "3 mg"
     },
     {
      "name": "Gingerol 40% (Zingiber officinale)",
-     "dose": "10 mg"
+     "dose": "2 mg"
     },
     {
-     "name": "Baicalein (Scutellaria baicalensis)",
-     "dose": "10 mg"
-    },
-    {
-     "name": "Saponins 50% (Trigonella foenum-graecum)",
-     "dose": "10 mg"
-    },
-    {
-     "name": "Aqueous Humic Substance",
+     "name": "Piperine (Piper nigrum)",
      "dose": "1 mg"
     },
     {
-     "name": "Aqueous Fulvic Substance",
+     "name": "Vinpocetine (Vinca minor)",
      "dose": "1 mg"
     }
    ],
-   "ingredients_source": "t33",
-   "description": "Vitamin A Synergy . Vitamin A Synergy Vitamin A Syntropy This planned formula will be produced on first request. Bioavailability Factors: 34.5 mg Vitamin B13: Phosphatides 50% (Helianthus annua) EGb 761 (Ginkgo biloba) (24% Flavone Glycosides, 6% Lactones, <0.0005% Ginkgolic Acid) Vitamin B3 (as Niacin) 5 mg 25% Miracle Tree 100:1 (Moringa oleifera) Licorice Omnipotent (Glycyrrhiza glabra) Vinpocetine (Vinca minor) Gingerol 10% (Zingiber officinalis) Piperine (Piper nigrum) Fulvic Acid Humic Acid 11 Spirit Minerals Our Bioavailability Blend supplies 21 master ingredients formulated to: •...",
+   "ingredients_source": "label-read-2026-09-30",
+   "description": "Each Vitamin A Syntropy vegicap gives you 25,000 IU of vitamin A as retinyl acetate/palmitate, plus beta carotene from Dunaliella salina carotenoids. You're also getting vitamins B1, B2, B5 and B6, phosphatidyl choline from egg, vitamin C as zinc ascorbate and vitamin E as mixed tocopherols. The minerals are magnesium as threonate, manganese as glycinate, phosphorus as ATP, potassium as orotate, selenium as methylselenocysteine and zinc as ascorbate. Then aloe vera inner-leaf polysaccharides, humic and fulvic acids and cilantro juice powder work alongside a group of bioavailability factors. Take 1 capsule 1 to 3 times a day with food, or as guided.\n\nOther ingredients: Chlorophyll Vegicaps, Healing Energy, Love and Prayer. 30 vegicaps.",
    "bottle_type": "30 Caps",
-   "fmp_id": "539"
+   "fmp_id": "539",
+   "directions": "1 capsule 1 to 3 times daily with food, or as guided.",
+   "intro": "Each Vitamin A Syntropy vegicap gives you 25,000 IU of vitamin A as retinyl acetate/palmitate, plus beta carotene from Dunaliella salina carotenoids. You're also getting vitamins B1, B2, B5 and B6, phosphatidyl choline from egg, vitamin C as zinc ascorbate and vitamin E as mixed tocopherols. The minerals are magnesium as threonate, manganese as glycinate, phosphorus as ATP, potassium as orotate, selenium as methylselenocysteine and zinc as ascorbate. Then aloe vera inner-leaf polysaccharides, humic and fulvic acids and cilantro juice powder work alongside a group of bioavailability factors. Take 1 capsule 1 to 3 times a day with food, or as guided.",
+   "copy_pinned": [
+    "ingredients",
+    "intro",
+    "description",
+    "research",
+    "benefits"
+   ],
+   "how_it_works": "",
+   "learn_markdown": "Each Vitamin A Syntropy vegicap gives you 25,000 IU of vitamin A as retinyl acetate/palmitate, plus beta carotene from Dunaliella salina carotenoids. You're also getting vitamins B1, B2, B5 and B6, phosphatidyl choline from egg, vitamin C as zinc ascorbate and vitamin E as mixed tocopherols. The minerals are magnesium as threonate, manganese as glycinate, phosphorus as ATP, potassium as orotate, selenium as methylselenocysteine and zinc as ascorbate. Then aloe vera inner-leaf polysaccharides, humic and fulvic acids and cilantro juice powder work alongside a group of bioavailability factors. Take 1 capsule 1 to 3 times a day with food, or as guided.\n\nEach vegicap contains: Vitamin A (Retinyl Acetate/Palmitate) 25,000 IU; Beta Carotene (in Dunaliella salina carotenoids) 3 mg; Vitamin B1 (Benfotiamine) 1.5 mg; Vitamin B2 (Riboflavin 5-Phosphate) 1.7 mg; Vitamin B5 (Calcium Pantothenate) 10 mg; Vitamin B6 (Pyridoxal-5-Phosphate) 2 mg; Phosphatidyl Choline 30% (Gallus gallus domesticus) 34 mg; Vitamin C (Zinc Ascorbate) 28 mg; Vitamin E (Mixed Tocopherols) 30 IU; Magnesium (Magnesium Threonate) 4 mg; Manganese (Manganese Glycinate) 2 mg; Phosphorus (ATP: Adenosine Triphosphate) 7 mg; Potassium (Potassium Orotate) 3.5 mg; Selenium (Methylselenocysteine) 70 mcg; Zinc (Zinc Ascorbate) 5 mg; Polysaccharides (Aloe vera) (inner leaf) 10 mg; Humic Acid 1 mg; Fulvic Acid 1 mg; Cilantro Juice Powder (Coriandrum sativum) 250 mg; EGb 761 (Ginkgo biloba) 13 mg; Vitamin B3 (as Niacin) 8 mg; Moringa 100:1 (Moringa oleifera) 5 mg; Licorice Omnipotent (Glycyrrhiza glabra) 3 mg; Gingerol 40% (Zingiber officinale) 2 mg; Piperine (Piper nigrum) 1 mg; Vinpocetine (Vinca minor) 1 mg. Other ingredients: Chlorophyll Vegicaps, Healing Energy, Love and Prayer.",
+   "warning": "1 a day for one month for low Vitamin A. Up to 3 a day short term for Phase 1 terrain. Avoid during pregnancy or when planning a pregnancy."
   },
   "off-syrup": {
    "name": "Off Syrup",

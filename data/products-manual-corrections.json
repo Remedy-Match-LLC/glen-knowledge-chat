@@ -2834,5 +2834,118 @@
     "ingredients_source": "label-read-2026-09-28 (Neuro-Magnesium 0526.ai, (c) May 2026)",
     "panel_note": "Amounts are per 500 mg scoop. Polyphenols (Proprietary Formula) contains: Celery Seed Apigenin (Apium graveolens), Turmeric Curcumin (Curcuma longa).",
     "note": "Label-read 2026-09-28 by production, approved by Glen 2026-09-28 ('approve'); replaces the old store list. The neuro-magnesium presale listing is separate."
+  },
+  "vitamin-a-syntropy": {
+    "ingredients": [
+      {
+        "name": "Vitamin A (Retinyl Acetate/Palmitate)",
+        "dose": "25,000 IU"
+      },
+      {
+        "name": "Beta Carotene (in Dunaliella salina carotenoids)",
+        "dose": "3 mg"
+      },
+      {
+        "name": "Vitamin B1 (Benfotiamine)",
+        "dose": "1.5 mg"
+      },
+      {
+        "name": "Vitamin B2 (Riboflavin 5-Phosphate)",
+        "dose": "1.7 mg"
+      },
+      {
+        "name": "Vitamin B5 (Calcium Pantothenate)",
+        "dose": "10 mg"
+      },
+      {
+        "name": "Vitamin B6 (Pyridoxal-5-Phosphate)",
+        "dose": "2 mg"
+      },
+      {
+        "name": "Phosphatidyl Choline 30% (Gallus gallus domesticus)",
+        "dose": "34 mg"
+      },
+      {
+        "name": "Vitamin C (Zinc Ascorbate)",
+        "dose": "28 mg"
+      },
+      {
+        "name": "Vitamin E (Mixed Tocopherols)",
+        "dose": "30 IU"
+      },
+      {
+        "name": "Magnesium (Magnesium Threonate)",
+        "dose": "4 mg"
+      },
+      {
+        "name": "Manganese (Manganese Glycinate)",
+        "dose": "2 mg"
+      },
+      {
+        "name": "Phosphorus (ATP: Adenosine Triphosphate)",
+        "dose": "7 mg"
+      },
+      {
+        "name": "Potassium (Potassium Orotate)",
+        "dose": "3.5 mg"
+      },
+      {
+        "name": "Selenium (Methylselenocysteine)",
+        "dose": "70 mcg"
+      },
+      {
+        "name": "Zinc (Zinc Ascorbate)",
+        "dose": "5 mg"
+      },
+      {
+        "name": "Polysaccharides (Aloe vera) (inner leaf)",
+        "dose": "10 mg"
+      },
+      {
+        "name": "Humic Acid",
+        "dose": "1 mg"
+      },
+      {
+        "name": "Fulvic Acid",
+        "dose": "1 mg"
+      },
+      {
+        "name": "Cilantro Juice Powder (Coriandrum sativum)",
+        "dose": "250 mg"
+      },
+      {
+        "name": "EGb 761 (Ginkgo biloba)",
+        "dose": "13 mg"
+      },
+      {
+        "name": "Vitamin B3 (as Niacin)",
+        "dose": "8 mg"
+      },
+      {
+        "name": "Moringa 100:1 (Moringa oleifera)",
+        "dose": "5 mg"
+      },
+      {
+        "name": "Licorice Omnipotent (Glycyrrhiza glabra)",
+        "dose": "3 mg"
+      },
+      {
+        "name": "Gingerol 40% (Zingiber officinale)",
+        "dose": "2 mg"
+      },
+      {
+        "name": "Piperine (Piper nigrum)",
+        "dose": "1 mg"
+      },
+      {
+        "name": "Vinpocetine (Vinca minor)",
+        "dose": "1 mg"
+      }
+    ],
+    "ingredients_source": "label-read-2026-09-30",
+    "description": "Each Vitamin A Syntropy vegicap gives you 25,000 IU of vitamin A as retinyl acetate/palmitate, plus beta carotene from Dunaliella salina carotenoids. You're also getting vitamins B1, B2, B5 and B6, phosphatidyl choline from egg, vitamin C as zinc ascorbate and vitamin E as mixed tocopherols. The minerals are magnesium as threonate, manganese as glycinate, phosphorus as ATP, potassium as orotate, selenium as methylselenocysteine and zinc as ascorbate. Then aloe vera inner-leaf polysaccharides, humic and fulvic acids and cilantro juice powder work alongside a group of bioavailability factors. Take 1 capsule 1 to 3 times a day with food, or as guided.\n\nOther ingredients: Chlorophyll Vegicaps, Healing Energy, Love and Prayer. 30 vegicaps.",
+    "directions": "1 capsule 1 to 3 times daily with food, or as guided.",
+    "warning": "1 a day for one month for low Vitamin A. Up to 3 a day short term for Phase 1 terrain. Avoid during pregnancy or when planning a pregnancy.",
+    "note": "Replaces a 21-line gut and H. pylori formula matched from the old Formulations table row 'Vitamin U Complex'. Source: Vitamin_A_Syntropy_0124_1.88x6in_30v.ai, (c) January 2024, named by Glen 2026-09-30. Zingiber officinalis corrected to Zingiber officinale; Vinpocetin to Vinpocetine."
   }
 }
