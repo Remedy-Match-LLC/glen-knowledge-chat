@@ -189,6 +189,17 @@ def _default_fetch_recent_comms(email):
     email = (email or "").strip()
     if not email:
         return {}
+    # Restored 2026-09-30: cfdaf40d (27 Aug) inserted the photo fetcher here and cut this
+    # body, so every real email returned None and "Mine recent comms" found nothing.
+    try:
+        key = os.environ["CONSOLE_SECRET"]
+        base = os.environ.get("PUBLIC_BASE_URL", "https://illtowell.com").rstrip("/")
+        url = (f"{base}/api/people/recent-comms?key=" + urllib.parse.quote(key)
+               + "&q=" + urllib.parse.quote(email))
+        req = urllib.request.Request(url, headers={"X-Console-Key": key})
+        return _json.load(urllib.request.urlopen(req, timeout=20)) or {}
+    except Exception:
+        return {}
 
 
 def _default_fetch_client_photo(email):
