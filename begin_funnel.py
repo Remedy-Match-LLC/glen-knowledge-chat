@@ -1228,7 +1228,7 @@ TIER_PAGES = {
         "steps": [
             ('Your full Remedy Match report', 'Your voice scan read through Dr. Glen\u2019s clinical knowledge base, mapping your stress-pattern layers, the remedies matched to them, and how they change over time. This is the automated report, not a consultation.'),
             ('Ingredient and remedy research', 'The research summary, the traditional use, the related forms, and how each one connects to your formulations. Conviction is what makes anyone consistent.'),
-            ('Live weekly group coaching', 'Every Wednesday at 2:00 PM Hawaii time, with Dr. Glen. You are not guessing alone, which is the difference between starting and sustaining.'),
+            ('Live weekly group coaching', 'Every Wednesday at 3:00 PM Hawaii time, with Dr. Glen. You are not guessing alone, which is the difference between starting and sustaining.'),
             ('Member pricing, and $200 on a Causal Biofield Analysis', 'Member pricing on every formulation, and the personal analysis at $200 instead of $300.'),
             ('Your personal health dashboard', 'Your context, your path and Dr. Glen\u2019s replies, held in one place between sessions.'),
         ],
