@@ -57,7 +57,7 @@ def test_the_intro_waits_for_glen():
 def test_the_panel_per_10_drops():
     ings = _catalog()[SLUG]["ingredients"]
     assert ings == [
-        {"name": "Vitamin B12 (Adenosylcobalamin & Methylcobalamin)", "dose": "337 mcg"},
+        {"name": "Vitamin B12 (as Adenosylcobalamin 333 mcg and Methylcobalamin 3.3 mcg)", "dose": "337 mcg"},
         {"name": "D-Ribose", "dose": "277 mg"},
     ]
     assert _catalog()[SLUG]["ingredients_source"] == "label-2026-09-24"
