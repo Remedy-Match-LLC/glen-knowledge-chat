@@ -45,8 +45,9 @@ def test_the_listing_carries_filemakers_name_price_and_record():
 
 def test_the_bottle_is_the_30_ml_dropper_type_other_listings_use():
     cat = _catalog()
-    assert cat[SLUG]["bottle_type"] == "30ml"
-    assert sum(1 for p in cat.values() if p.get("bottle_type") == "30ml") > 1
+    # Glen, 2026-09-30 (via production): "50 mL".
+    assert cat[SLUG]["bottle_type"] == "Dropper 50 mL"
+    assert sum(1 for p in cat.values() if p.get("bottle_type") == "Dropper 50 mL") > 1
 
 
 GLENS_INTRO = (
