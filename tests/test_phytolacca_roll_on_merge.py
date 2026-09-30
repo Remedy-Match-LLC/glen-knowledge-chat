@@ -153,7 +153,10 @@ def test_the_old_address_serves_the_roll_on(a, catalog, monkeypatch):
     """An emailed /begin/product/phytolacca-oil link must still open a sellable page."""
     _no_ai(a, monkeypatch)
     c = a.app.test_client()
-    assert c.get("/begin/product/" + OLD).status_code == 200
+    r = c.get("/begin/product/" + OLD + "?utm_source=x")
+    assert r.status_code == 302   # superseded slugs redirect to the survivor (Aller-Free spec)
+    assert r.headers["Location"].endswith("/begin/product/" + NEW + "?utm_source=x")
+    assert c.get("/begin/product/" + NEW).status_code == 200
     data = c.get("/begin/product-data/" + OLD).get_json()
     assert data["name"] == "Phytolacca americana Oil Roll-On"
     assert data["price_cents"] == 6997
