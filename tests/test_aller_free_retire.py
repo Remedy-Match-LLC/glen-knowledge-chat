@@ -37,7 +37,9 @@ def test_phantom_listing_is_retired_to_the_drops():
 def test_drops_renamed_keeping_slug_and_pinecone_title():
     p = _catalog()[NEW]
     assert p["name"] == NEW_NAME
-    assert p["pinecone_title"] == OLD_DROPS_NAME  # exact filter until knowledge re-ingests
+    # Knowledge re-ingested under the new title 2026-09-30 (Glen ran it), so the exact
+    # Pinecone filter now uses the new name. The old title holds no chunks.
+    assert p["pinecone_title"] == NEW_NAME
     assert not p.get("inactive")
 
 
