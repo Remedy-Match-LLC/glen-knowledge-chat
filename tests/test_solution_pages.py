@@ -65,3 +65,57 @@ def test_problems_requires_each_table_name_exactly_once():
 
 def test_problems_flags_a_duplicate_category_slug():
     assert any("twice" in p for p in sp.problems([cat(), cat()], PRODUCTS, []))
+
+
+def _get(products):
+    def get_product(slug):
+        p = products.get(slug)
+        if p and p.get("superseded_by"):
+            return get_product(p["superseded_by"])
+        return dict(p, slug=slug) if p else None
+    return get_product
+
+
+VIEW_PRODUCTS = {
+    "pouch": {"name": "EMF Shielding Pouch 7” x 4” Cell Phone", "price_cents": 3500},
+    "old-pouch": {"name": "Old Pouch", "inactive": True, "superseded_by": "pouch"},
+    "gone": {"name": "Gone", "inactive": True},
+    "fungifuge": {"name": "Fungifuge", "price_cents": 4000},
+}
+
+
+def test_view_drops_inactive_and_excluded_and_dedupes_a_superseded_twin():
+    c = cat(products=["pouch", "old-pouch", "gone", "fungifuge"], learn=["emf-sensitivity"],
+            principle="First.\n\nSecond.")
+    v = sp.category_view(c, _get(VIEW_PRODUCTS), learn_name=lambda s: "EMF Sensitivity")
+    assert [p["slug"] for p in v["products"]] == ["pouch"]
+    assert v["products"][0]["url"] == "/begin/product/pouch"
+    assert v["principle"] == ["First.", "Second."]
+    assert v["learn"] == [{"slug": "emf-sensitivity", "name": "EMF Sensitivity"}]
+
+
+def test_view_drops_a_learn_page_that_is_not_public():
+    v = sp.category_view(cat(learn=["fasting"]), _get(VIEW_PRODUCTS), learn_name=lambda s: None)
+    assert v["learn"] == []
+
+
+def test_a_view_with_nothing_to_show_is_not_visible():
+    v = sp.category_view(cat(products=["gone"], learn=["fasting"]), _get(VIEW_PRODUCTS),
+                         learn_name=lambda s: None)
+    assert not sp.is_visible(v)
+
+
+def test_category_html_escapes_names_and_links_each_card():
+    c = cat(title="Water & Hydrogen", products=["pouch"], choose_by_use=["Travel <light>."])
+    html = sp.render_category_html(sp.category_view(c, _get(VIEW_PRODUCTS)))
+    assert "Water &amp; Hydrogen" in html
+    assert "Travel &lt;light&gt;." in html
+    assert 'href="/begin/product/pouch"' in html
+    assert "7” x 4”" in html and "$35.00" in html
+    assert "<script" not in html
+
+
+def test_hub_html_links_every_visible_category():
+    views = [sp.category_view(cat(slug="pemf", title="PEMF", principle="Pulse."), _get(PRODUCTS))]
+    html = sp.render_hub_html(views)
+    assert 'href="/solutions/pemf"' in html and "Pulse." in html
