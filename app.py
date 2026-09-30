@@ -9558,6 +9558,10 @@ def begin_product_page_data(slug):
             _page_data["founding_video_url"] = _launch2.get("video_url", "")
     except Exception as _fe2:
         print(f"[founding] product-page-data enrich failed: {_fe2!r}", flush=True)
+    # A free waiting list, where one exists for this product (Retina Renew, 2026-09-28).
+    from dashboard import product_waitlist as _pwl
+    if slug in _pwl.LISTS and _waitlist_open(slug):
+        _page_data["waitlist"] = {"slug": slug}
     if _WISHLIST_ENABLED:
         try:
             import sqlite3 as _wsq
@@ -39814,6 +39818,98 @@ def reorder_checkout():
 
 def _founding_enabled():
     return os.environ.get("FOUNDING_LAUNCH_ENABLED", "").strip().lower() in ("1", "true", "yes", "on")
+
+
+_waitlist_velocity = VelocityLimiter()
+_WAITLIST_EMAIL = re.compile(r"[a-z0-9.!#$%&*+/=?^_`{|}~'-]+@[a-z0-9-]+(\.[a-z0-9-]+)*\.[a-z]{2,}")
+
+
+def _waitlist_open(slug):
+    """A waiting list shows only while that product's founding presale runs (round 1)."""
+    try:
+        from dashboard import founding as _fd
+        return _founding_enabled() and bool(_fd.get_launch(slug))
+    except Exception:  # noqa: BLE001
+        return False
+
+
+@app.route("/api/waitlist/<slug>", methods=["POST"])
+def product_waitlist_sign_up(slug):
+    """A free waiting-list sign-up (Retina Renew, 2026-09-28): email and an optional first
+    name, no card. Kept in house first, then mirrored to GoHighLevel (product_waitlist).
+    A filled hidden field is a bot and is dropped quietly; each visitor is rate limited.
+    The answer never says whether an email was already on the list."""
+    from dashboard import product_waitlist as _pw
+    if slug not in _pw.LISTS or not _waitlist_open(slug):
+        return jsonify({"error": "not_found"}), 404
+    body = request.get_json(silent=True) or {}
+    if (body.get("company") or "").strip():          # honeypot -> silently drop bots
+        return jsonify({"ok": True})
+    email = (body.get("email") or "").strip().lower()
+    # One plain address only: a comma list passed a looser check and one request emailed
+    # every address in it (review round 3).
+    if len(email) > 254 or not _WAITLIST_EMAIL.fullmatch(email):
+        return jsonify({"error": "email_required"}), 400
+    # The trusted address, not the caller-written first X-Forwarded-For hop (review round 1).
+    ip = _client_address.client_address(
+        request.headers.get("X-Forwarded-For", ""), request.remote_addr or "",
+        request.headers.get("CF-Connecting-IP", ""))[0]
+    allowed, retry = _waitlist_velocity.check("waitlist:" + ip, 3, 20)
+    if not allowed:
+        return jsonify({"error": "rate_limited", "retry_after": retry}), 429
+    _init_people_table()
+    first = _pw.clean_first_name(body.get("first_name"))
+    with _db_lock, db.connect(LOG_DB) as cx:
+        _status, token = _pw.sign_up(cx, slug, email, first_name=first)
+    if token:
+        # To the address typed, which is what the click proves (Glen, 2026-09-29).
+        try:
+            _inbox.send_email(email, "Confirm your Retina Renew launch email",
+                              _waitlist_confirm_body(first, token))
+        except Exception as e:  # noqa: BLE001 - the sign-up stands; they can sign up again
+            print(f"[waitlist] confirmation send failed: {type(e).__name__}", flush=True)
+    return jsonify({"ok": True})
+
+
+def _waitlist_confirm_body(first_name, token):
+    """Glen's approved confirmation email, 2026-09-29."""
+    link = f"{PUBLIC_BASE_URL.rstrip('/')}/begin/waitlist/confirm/{token}"
+    greet = f"Hi {first_name}," if first_name else "Hi,"
+    return (f"{greet}\n\nPlease confirm you'd like an email when Retina Renew launches:\n{link}\n\n"
+            "If you didn't ask for this, ignore this email and nothing more will be sent.\n\n"
+            "Dr. Glen Swartwout\n")
+
+
+_WAITLIST_CONFIRM_PAGE = """<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow"><title>Confirm your Retina Renew launch email</title>
+<style>body{{font-family:system-ui,-apple-system,sans-serif;display:flex;min-height:100vh;align-items:center;
+justify-content:center;margin:0;padding:16px;background:#f7f7f5;color:#1d2b22}}main{{text-align:center;max-width:28rem}}
+h1{{font-size:1.4rem;margin:0 0 1.2rem}}button{{font:inherit;font-weight:600;padding:12px 28px;border:0;
+border-radius:10px;background:#1f5c3d;color:#fff;cursor:pointer}}</style></head>
+<body><main><h1>Confirm your Retina Renew launch email</h1>
+<form method="post" action="/begin/waitlist/confirm/{token}"><button type="submit">Confirm</button></form>
+</main></body></html>"""
+
+
+@app.route("/begin/waitlist/confirm/<token>", methods=["GET", "HEAD", "POST"])
+def product_waitlist_confirm(token):
+    """The link in the confirmation email. Opening it (GET or HEAD) only shows a one-button
+    page, because mail scanners open every link on arrival (Glen, 2026-09-29). The button
+    POSTs: that confirms the sign-up (tag in house, one GHL tag_add) and returns to the
+    product page, which says so."""
+    from dashboard import product_waitlist as _pw
+    if request.method != "POST":
+        safe = "".join(ch for ch in (token or "") if ch.isalnum() or ch in "-_")[:64]
+        resp = Response(_WAITLIST_CONFIRM_PAGE.format(token=safe),
+                        mimetype="text/html")
+        resp.headers["Cache-Control"] = "no-store"
+        resp.headers["Referrer-Policy"] = "no-referrer"
+        return resp
+    with _db_lock, db.connect(LOG_DB) as cx:
+        slug = _pw.confirm(cx, token)
+    target = slug or next(iter(_pw.LISTS))
+    return redirect(f"/begin/product/{target}?waitlist={'confirmed' if slug else 'expired'}", 303)
 
 
 @app.route("/begin/founding/reserve", methods=["POST"])
