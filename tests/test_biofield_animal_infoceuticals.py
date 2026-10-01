@@ -383,3 +383,11 @@ def test_an_ff_already_on_an_animals_chain_shows_only_as_the_current_pick(tmp_pa
     assert [c["remedy"] for c in not_infoceutical] == ["Immune Modulation"]
     assert all(c["source"] == "current" and c["is_default"] for c in not_infoceutical)
     assert ED14 in {c["remedy"].lower() for c in layer["candidates"]}
+
+
+def test_the_page_tells_glen_how_many_layers_have_no_remedy():
+    """Round 3: the count was returned and never shown."""
+    from dashboard import biofield_report_html as H
+    js = H._AUTHOR_JS
+    assert "if(j.no_remedy_layers){" in js
+    assert "have no infoceutical on the remedy list" in js

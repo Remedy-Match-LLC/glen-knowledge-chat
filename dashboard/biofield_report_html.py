@@ -990,8 +990,13 @@ async function importReveal0(){
     j=await post('/author/__TID__/e4l/import-reveal',body);
   }
   if(j && j.ok){
-    impStat(j.stale_override?('Imported a '+j.days_ago+'-day-old scan. Reloading\u2026'):'Imported. Reloading\u2026');
-    location.reload();
+    var msg=j.stale_override?('Imported a '+j.days_ago+'-day-old scan.'):'Imported.';
+    // An animal layer whose codes carry no remedy-list infoceutical imports blank
+    // (Rejuvenators, MR, nutrition, environment). Say so before the page reloads.
+    if(j.no_remedy_layers){
+      impStat(msg+' '+j.no_remedy_layers+' layer(s) have no infoceutical on the remedy list, so their remedy is blank.');
+      setTimeout(function(){location.reload()},4000);
+    }else{ impStat(msg+' Reloading\u2026'); location.reload(); }
   }
   else { impStat((j&&j.reason)||'Import failed.'); }
 }
