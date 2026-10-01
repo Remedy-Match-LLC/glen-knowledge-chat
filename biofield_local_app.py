@@ -1734,8 +1734,12 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
             from dashboard.biofield_e4l import species_from_e4l as _species_from_e4l
             _is_animal = _cspec.is_animal(_species_from_e4l(e4l_db, email))
             try:
+                # An animal's remedy is the FileMaker remedy-list name for its code (Glen,
+                # 2026-10-01), the list the picker and the dosing read.
+                from dashboard.biofield_authoring import infoceutical_names_by_code
                 res = _ri.synthesize_reveal_layers(
-                    email, today=_dt.date.today().isoformat(), is_animal=_is_animal)
+                    email, today=_dt.date.today().isoformat(), is_animal=_is_animal,
+                    infoceutical_names=infoceutical_names_by_code(cx) if _is_animal else None)
             except Exception as e:
                 return {"ok": False, "reason": f"Reveal synthesis failed: {e}"}
             if not res.get("found"):

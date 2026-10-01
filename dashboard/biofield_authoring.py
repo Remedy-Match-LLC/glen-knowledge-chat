@@ -619,6 +619,29 @@ def remedy_catalog(cx, q="", limit=20):
     return sorted(out, key=lambda r: r["name"].lower())[:limit]
 
 
+def infoceutical_names_by_code(cx):
+    """{code: remedy-list name} for every infoceutical in the FileMaker product list, the
+    list the Intake's remedy picker and remedy_dosing read. Glen, 2026-10-01: a scan code
+    becomes a remedy by its remedy-list name ("MB8 Love Infoceutical", not E4L's "Love
+    Hologram"), so the dosing fills as it does when he picks from the dropdown. Only names
+    that start with a code and say "Infoceutical"; a discontinue-intent product is skipped;
+    when two names claim one code the first alphabetically wins."""
+    import re as _re
+    if not _has(cx, "fmp_snap_products"):
+        return {}
+    out = {}
+    names = [r[0] for r in cx.execute(
+        "SELECT product_name FROM fmp_snap_products WHERE TRIM(COALESCE(product_name,''))<>''")]
+    for raw in sorted(names, key=lambda n: n.lower()):
+        if _is_discontinue_intent(raw):
+            continue
+        name = _clean_product_name(raw)
+        m = _re.match(r"^([A-Z]{2,3}\d{1,3})\s", name)
+        if m and "infoceutical" in name.lower():
+            out.setdefault(m.group(1), name)
+    return out
+
+
 # Reveal remedy names diverge from FMP product names in ways a suffix match can't
 # bridge. Glen-confirmed aliases (reveal name lowercased -> FMP product name).
 # Extend as new divergences surface. See reference_reveal_dose_backfill.
