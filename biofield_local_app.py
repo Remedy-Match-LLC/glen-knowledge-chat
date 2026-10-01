@@ -662,6 +662,20 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
     from dashboard import biofield_stress as _stress_rules
     _stress_rules.set_animal_lookup(_animal_infoceuticals_for)
 
+    # Glen, 2026-10-01: "if species is blank, ask me first". Before any path that proposes
+    # remedies, a client with no species on record (no E4L species, no answer from Glen)
+    # gets {"needs_species": true}; the page asks him and records it via /species.
+    # Replaces the 2026-09-15 default of treating a blank as a person in the Intake.
+    def _species_needed(cx, test_id):
+        from dashboard.biofield_e4l import species_from_e4l as _species_from_e4l
+        row = cx.execute("SELECT email FROM biofield_auth_tests WHERE id=?",
+                         (int(str(test_id).lstrip("a") or 0),)).fetchone()
+        email = ((row[0] if row else "") or "").strip()
+        if not email or _species_from_e4l(e4l_db, email):
+            return None
+        return {"ok": False, "needs_species": True,
+                "reason": "Species unknown: tell me if this client is a person or an animal."}
+
     complete = complete or openai_complete
     tts = tts or elevenlabs_tts
     deepgram_token = deepgram_token or deepgram_browser_token
@@ -1672,6 +1686,21 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
         return {"ok": bool(res.get("ok")), "error": res.get("error"),
                 "newer": newer, "e4l": after, "html": render_e4l_panel(after)}
 
+    @app.route("/author/<test_id>/species", methods=["POST"])
+    def author_species_answer(test_id):
+        """Record Glen's answer to "person or animal?" for a client with no species."""
+        from dashboard.biofield_e4l import record_species_answer
+        species = ((request.get_json(silent=True) or {}).get("species") or "").strip()
+        if not species:
+            return {"ok": False, "error": "species required"}, 400
+        with sqlite3.connect(db_path) as cx:
+            row = cx.execute("SELECT email FROM biofield_auth_tests WHERE id=?",
+                             (int(str(test_id).lstrip("a") or 0),)).fetchone()
+        email = ((row[0] if row else "") or "").strip()
+        if not email:
+            return {"ok": False, "error": "No client selected yet"}, 400
+        return {"ok": True, "species": record_species_answer(e4l_db, email, species)}
+
     @app.route("/author/<test_id>/e4l/import-reveal", methods=["POST"])
     def author_import_reveal(test_id):
         """Import the client's E4L reveal layers + remedies as needs-review
@@ -1691,10 +1720,12 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
             email = ((rep.get("client") or {}).get("email") or "").strip()
             if not email:
                 return {"ok": False, "reason": "No client selected yet"}
+            ask = _species_needed(cx, test_id)
+            if ask:
+                return ask
             # An animal's causal chain recommends the E4L infoceuticals (function names),
             # not our Functional Formulations. Glen, 2026-09-18. is_animal is species !=
-            # human; unknown species reads as human, so a missing row leaves the FF
-            # path exactly as before.
+            # human. Unknown species never reaches here: _species_needed asked Glen first.
             #
             # Species comes from e4l.db. This used to read client_species in
             # chat_log.db, which does not exist on Glen's Mac: the lookup threw, was
@@ -1922,6 +1953,9 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
             return {"ok": False, "error": "remedy required"}, 400
         tnum = int(str(test_id).lstrip("a") or 0)
         with sqlite3.connect(db_path) as cx:
+            ask = _species_needed(cx, test_id)
+            if ask:
+                return ask
             name = resolve_remedy_name(cx, remedy)         # 'heart health' -> 'Heart Health'
             d = remedy_dosing(cx, name)                    # auto-fill from the FF
             rows = cx.execute("SELECT id FROM biofield_auth_chain WHERE test_id=? AND layer=? "
@@ -1958,6 +1992,9 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
     def author_remedy_set_add_one(test_id):
         rem = (request.get_json(silent=True) or {}).get("remedy") or ""
         with sqlite3.connect(db_path) as cx:
+            ask = _species_needed(cx, test_id)
+            if ask:
+                return ask
             added = _append_layers(cx, test_id, [rem])
         return {"ok": True, "added": added}
 
@@ -1995,6 +2032,9 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
     def author_remedy_set_apply(test_id):
         rems = (request.get_json(silent=True) or {}).get("remedies") or []
         with sqlite3.connect(db_path) as cx:
+            ask = _species_needed(cx, test_id)
+            if ask:
+                return ask
             added = _append_layers(cx, test_id, rems)
         return {"ok": True, "added": added}
 

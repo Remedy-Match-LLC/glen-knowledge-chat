@@ -719,8 +719,9 @@ def set_animal_lookup(fn):
 
 def animal_infoceuticals(cx, tid):
     """{code: infoceutical name} when this test's client is an animal, else None.
-    A lookup that fails reads as a person, the same default Import Reveal uses:
-    reading unknown as an animal would strip the FFs from every human intake."""
+    A lookup that FAILS reads as a person: reading it as an animal would strip the FFs
+    from every human intake. A BLANK species is different: since 2026-10-01 the Intake's
+    remedy routes ask Glen first ("if species is blank, ask me first")."""
     if _animal_lookup is None:
         return None
     try:
