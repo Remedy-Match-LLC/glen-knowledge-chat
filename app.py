@@ -2752,7 +2752,7 @@ def _brief_synth_instruction() -> str:
         "   complete and personal answer opens up' — then offer EXACTLY ONE next step,\n"
         "   matched to the reader's readiness (see READINESS TRIAGE below).\n\n"
         "READINESS TRIAGE GOVERNS THE NEXT STEP. It SUPERSEDES the system prompt's default\n"
-        "behavior of offering the E4L voice scan / a generic action link on every answer.\n"
+        "behavior of offering the Bioenergetic Wellness Scan / a generic action link on every answer.\n"
         "Do NOT default to the E4L scan. Follow these rules exactly:\n"
         "  CURIOUS -> `page` (link the source/product page that answers it).\n"
         "  ENGAGED -> `email` (offer the personalized report; leave target empty).\n"

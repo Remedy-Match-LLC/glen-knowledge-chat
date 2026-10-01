@@ -42,5 +42,7 @@ def test_signup_fields_include_what_energy4life_requires():
 def test_the_chat_prompt_uses_the_full_scan_name():
     """Glen 2026-09-26: "E4L voice scan" is stale; "(voice scan)" only follows the full name."""
     src = Path("app.py").read_text()
-    assert "E4L voice scan" not in src
+    # The one docstring that still says it is a comment, not prompt text.
+    assert src.count("E4L voice scan") == 1
+    assert "The free E4L voice scan does NOT qualify" in src
     assert "Energy4Life (E4L) Bioenergetic Wellness Scan (voice scan)" in src
