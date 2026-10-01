@@ -725,9 +725,12 @@ def animal_infoceuticals(cx, tid):
     if _animal_lookup is None:
         return None
     try:
-        return _animal_lookup(cx, tid) or None
+        got = _animal_lookup(cx, tid)
     except Exception:
         return None
+    # An animal with an EMPTY map is still an animal: `or None` read it as a person and
+    # proposed FFs (review round 3, 2026-10-01). Only None means a person.
+    return got if isinstance(got, dict) else None
 
 
 def scan_coverage(cx, tid):

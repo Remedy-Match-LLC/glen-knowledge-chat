@@ -71,7 +71,7 @@ def _run_synthesis(email, scan_id, e4l_db, catalog, today):
 
 def synthesize_reveal_layers(email, scan_id=None, *, e4l_db=DEFAULT_E4L_DB,
                              catalog=DEFAULT_CATALOG, today, runner=None,
-                             is_animal=False):
+                             is_animal=False, infoceutical_names=None):
     """`is_animal` swaps the imported REMEDY only, never the layering.
 
     Glen, 2026-09-18: for an animal, "Import Reveal -> Causal Chain should pull in the
@@ -83,6 +83,17 @@ def synthesize_reveal_layers(email, scan_id=None, *, e4l_db=DEFAULT_E4L_DB,
     which is the E4L infoceutical -- and the FF alternatives are dropped, because an animal
     report recommends only infoceuticals (the same rule the publish gate enforces in
     dashboard/analysis_autoconfirm.animal_formulation_reasons). A human is unchanged.
+
+    Glen, 2026-10-01: the remedy is the remedy-list entry FOR THE CODE, never E4L's own label.
+    E4L's labels differ from the product names in ways no text match survives ("Love
+    Hologram" is "MB8 Love Infoceutical", "Lymph Star" is "ES1 Immune Energetic Star
+    Infoceutical", "Heart – Lung Integrator" has an en dash), and only the exact name fills
+    the dosing. A code with no remedy-list infoceutical is never a remedy: that keeps out the
+    Rejuvenators ("a setting on the miHealth which most clients do not have"), MR, BFA,
+    Environmental and Nutrition codes. They stay in most_affected as information. A layer
+    with no such code imports with a blank remedy (no_remedy), never an invented name; the
+    route reports the count. most_affected is unchanged: it prints on the client's report.
+    `infoceutical_names` is {code: product name}; it defaults to the live catalog.
     """
     runner = runner or _run_synthesis
     scan, raw = runner(email, scan_id, e4l_db, catalog, today)
@@ -90,14 +101,22 @@ def synthesize_reveal_layers(email, scan_id=None, *, e4l_db=DEFAULT_E4L_DB,
         return {"found": False, "scan_id": None, "scan_date": None,
                 "days_ago": None, "fresh": False, "layers": []}
     days = _days_ago(scan["scan_date"], today)
+    if is_animal and infoceutical_names is None:
+        from dashboard.animal_infoceuticals import infoceutical_by_code
+        from dashboard.biofield_portal_publish import load_catalog
+        infoceutical_names = infoceutical_by_code(load_catalog())
     layers = []
     for L in raw:
         rem = L.get("remedy") or {}
         name = (rem.get("name") or "").strip() if isinstance(rem, dict) else ""
         labels = [x for x in (L.get("pattern_labels") or []) if (x or "").strip()]
+        affected = ", ".join(labels)
         if is_animal:
-            # The recommended infoceutical is the function this layer already names.
-            remedy_name = labels[0] if labels else name
+            # The first of this layer's codes that the remedy list carries, by its exact name.
+            codes = [str(c).strip() for c in (L.get("patterns") or []) if str(c).strip()]
+            from dashboard.biofield_authoring import is_infoceutical_code
+            remedy_name = next((infoceutical_names[c] for c in codes
+                                if is_infoceutical_code(c) and c in infoceutical_names), "")
             alternatives = []                 # no FF alternatives for an animal
         else:
             remedy_name = name
@@ -105,9 +124,11 @@ def synthesize_reveal_layers(email, scan_id=None, *, e4l_db=DEFAULT_E4L_DB,
         layers.append({"n": L.get("n"),
                        "title": (L.get("title") or "").strip(),
                        "summary": (L.get("summary") or "").strip(),
-                       "most_affected": ", ".join(labels),
+                       "most_affected": affected,
                        "remedy_name": remedy_name,
                        "codes": list(L.get("patterns") or []),
+                       # Reported to Glen by the import route; never in a printed field.
+                       "no_remedy": bool(is_animal and not remedy_name),
                        "alternatives": alternatives})
     return {"found": True, "scan_id": scan["scan_id"], "scan_date": scan["scan_date"],
             "days_ago": days, "fresh": days is not None and days < 7, "layers": layers}

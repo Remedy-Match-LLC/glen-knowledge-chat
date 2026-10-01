@@ -265,6 +265,74 @@ def test_the_app_wires_the_animal_lookup(tmp_path, _open_gate):
     assert st.animal_infoceuticals(sqlite3.connect(db2), tid2) is None
 
 
+def _seed_fmp(db):
+    cx = sqlite3.connect(db)
+    cx.execute("CREATE TABLE IF NOT EXISTS fmp_snap_products "
+               "(id_pk INTEGER, product_name TEXT, active TEXT)")
+    cx.execute("INSERT INTO fmp_snap_products VALUES (1, 'ES1 Immune Energetic Star Infoceutical', 'Yes')")
+    cx.commit()
+
+
+def test_import_reveal_passes_the_filemaker_names_for_an_animal(tmp_path, monkeypatch, _open_gate):
+    """Review round 1: unwiring the route fell back to the web catalog silently."""
+    seen = {}
+
+    def capture(*a, **k):
+        seen["names"] = k.get("infoceutical_names")
+        return {"found": False}
+
+    monkeypatch.setattr(RI, "synthesize_reveal_layers", capture)
+    client, tid, db = _client(tmp_path, CAT)
+    _seed_fmp(db)
+    client.post(f"/author/{tid}/e4l/import-reveal", json={})
+    assert seen["names"] == {"ES1": "ES1 Immune Energetic Star Infoceutical"}
+
+
+def test_suggestions_use_the_same_filemaker_names_as_the_import(tmp_path, _open_gate):
+    """Review round 1: the import said ES1 "Immune", the suggestions said "Lymph", so ES1
+    read uncovered and apply-to-chain added a duplicate layer."""
+    _c, tid, db = _client(tmp_path, CAT)
+    _seed_fmp(db)
+    got = st.animal_infoceuticals(sqlite3.connect(db), tid)
+    assert got == {"ES1": "ES1 Immune Energetic Star Infoceutical"}
+
+
+def test_suggestions_never_fall_back_when_filemaker_carries_none(tmp_path, _open_gate):
+    """Round 3: a present-but-empty FileMaker list must not switch to the web names."""
+    _c, tid, db = _client(tmp_path, CAT)
+    cx = sqlite3.connect(db)
+    cx.execute("CREATE TABLE IF NOT EXISTS fmp_snap_products "
+               "(id_pk INTEGER, product_name TEXT, active TEXT)")
+    cx.execute("INSERT INTO fmp_snap_products VALUES (1, 'ES1 Immune Energetic Star Infoceutical', 'No')")
+    cx.commit()
+    assert st.animal_infoceuticals(sqlite3.connect(db), tid) == {}
+
+
+def test_the_web_fallback_is_filtered_to_infoceutical_families(tmp_path, _open_gate, monkeypatch):
+    """Round 3: with no FileMaker list, a web-catalog entry outside the five families is dropped."""
+    import dashboard.animal_infoceuticals as AI
+    monkeypatch.setattr(AI, "infoceutical_by_code", lambda cat: {
+        "ER17": "ER17 Scapula Rejuvenator Infoceutical",
+        "ES1": "ES1 Lymph Energetic Star Infoceutical"})
+    _c, tid, db = _client(tmp_path, CAT)
+    assert st.animal_infoceuticals(sqlite3.connect(db), tid) == {
+        "ES1": "ES1 Lymph Energetic Star Infoceutical"}
+
+
+def test_the_route_counts_layers_with_no_remedy(tmp_path, monkeypatch, _open_gate):
+    """Round 3: the count must come back, so the page can tell Glen."""
+    layers = [{"n": 1, "title": "A", "remedy_name": "ES1 Immune Energetic Star Infoceutical",
+               "codes": ["ES1"], "no_remedy": False},
+              {"n": 2, "title": "B", "remedy_name": "", "codes": ["ER17"], "no_remedy": True},
+              {"n": 3, "title": "C", "remedy_name": "", "codes": ["MR3"], "no_remedy": True}]
+    monkeypatch.setattr(RI, "synthesize_reveal_layers", lambda *a, **k: {
+        "found": True, "scan_id": 1, "scan_date": "2026-10-01", "days_ago": 0,
+        "fresh": True, "layers": layers})
+    client, tid, db = _client(tmp_path, CAT)
+    j = client.post(f"/author/{tid}/e4l/import-reveal", json={}).get_json()
+    assert j["ok"] is True and j["no_remedy_layers"] == 2
+
+
 # --- what counts as balancing a stress, for an animal ------------------------
 
 def _active_codes(cx, chain):
@@ -315,3 +383,11 @@ def test_an_ff_already_on_an_animals_chain_shows_only_as_the_current_pick(tmp_pa
     assert [c["remedy"] for c in not_infoceutical] == ["Immune Modulation"]
     assert all(c["source"] == "current" and c["is_default"] for c in not_infoceutical)
     assert ED14 in {c["remedy"].lower() for c in layer["candidates"]}
+
+
+def test_the_page_tells_glen_how_many_layers_have_no_remedy():
+    """Round 3: the count was returned and never shown."""
+    from dashboard import biofield_report_html as H
+    js = H._AUTHOR_JS
+    assert "if(j.no_remedy_layers){" in js
+    assert "have no infoceutical on the remedy list" in js
