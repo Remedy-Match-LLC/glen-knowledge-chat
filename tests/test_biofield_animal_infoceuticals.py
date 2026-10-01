@@ -297,6 +297,42 @@ def test_suggestions_use_the_same_filemaker_names_as_the_import(tmp_path, _open_
     assert got == {"ES1": "ES1 Immune Energetic Star Infoceutical"}
 
 
+def test_suggestions_never_fall_back_when_filemaker_carries_none(tmp_path, _open_gate):
+    """Round 3: a present-but-empty FileMaker list must not switch to the web names."""
+    _c, tid, db = _client(tmp_path, CAT)
+    cx = sqlite3.connect(db)
+    cx.execute("CREATE TABLE IF NOT EXISTS fmp_snap_products "
+               "(id_pk INTEGER, product_name TEXT, active TEXT)")
+    cx.execute("INSERT INTO fmp_snap_products VALUES (1, 'ES1 Immune Energetic Star Infoceutical', 'No')")
+    cx.commit()
+    assert st.animal_infoceuticals(sqlite3.connect(db), tid) == {}
+
+
+def test_the_web_fallback_is_filtered_to_infoceutical_families(tmp_path, _open_gate, monkeypatch):
+    """Round 3: with no FileMaker list, a web-catalog entry outside the five families is dropped."""
+    import dashboard.animal_infoceuticals as AI
+    monkeypatch.setattr(AI, "infoceutical_by_code", lambda cat: {
+        "ER17": "ER17 Scapula Rejuvenator Infoceutical",
+        "ES1": "ES1 Lymph Energetic Star Infoceutical"})
+    _c, tid, db = _client(tmp_path, CAT)
+    assert st.animal_infoceuticals(sqlite3.connect(db), tid) == {
+        "ES1": "ES1 Lymph Energetic Star Infoceutical"}
+
+
+def test_the_route_counts_layers_with_no_remedy(tmp_path, monkeypatch, _open_gate):
+    """Round 3: the count must come back, so the page can tell Glen."""
+    layers = [{"n": 1, "title": "A", "remedy_name": "ES1 Immune Energetic Star Infoceutical",
+               "codes": ["ES1"], "no_remedy": False},
+              {"n": 2, "title": "B", "remedy_name": "", "codes": ["ER17"], "no_remedy": True},
+              {"n": 3, "title": "C", "remedy_name": "", "codes": ["MR3"], "no_remedy": True}]
+    monkeypatch.setattr(RI, "synthesize_reveal_layers", lambda *a, **k: {
+        "found": True, "scan_id": 1, "scan_date": "2026-10-01", "days_ago": 0,
+        "fresh": True, "layers": layers})
+    client, tid, db = _client(tmp_path, CAT)
+    j = client.post(f"/author/{tid}/e4l/import-reveal", json={}).get_json()
+    assert j["ok"] is True and j["no_remedy_layers"] == 2
+
+
 # --- what counts as balancing a stress, for an animal ------------------------
 
 def _active_codes(cx, chain):
