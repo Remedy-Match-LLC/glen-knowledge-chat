@@ -37,3 +37,10 @@ def test_signup_fields_include_what_energy4life_requires():
     for f in ("name", "email", "date of birth", "gender", "species", "country", "address",
               "phone number", "password"):
         assert f in fields, f
+
+
+def test_the_chat_prompt_uses_the_full_scan_name():
+    """Glen 2026-09-26: "E4L voice scan" is stale; "(voice scan)" only follows the full name."""
+    src = Path("app.py").read_text()
+    assert "E4L voice scan" not in src
+    assert "Energy4Life (E4L) Bioenergetic Wellness Scan (voice scan)" in src
