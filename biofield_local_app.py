@@ -1273,6 +1273,13 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
             print(f"[clinical] alias map skipped: {_ae!r}", flush=True)
         with sqlite3.connect(db_path) as _ncx:
             _narr_warnings = _narrative_warnings(_ncx, test_id, narrative)
+        try:
+            from dashboard import history_links as _hlp
+            _hl_html = _hlp.render_panel(e4l_db, (rep.get("client") or {}).get("e4l_client_id") or "",
+                                         rep.get("date") or "")
+        except Exception as _he:
+            print(f"[history-links] panel skipped: {_he!r}", flush=True)
+            _hl_html = ""
         return Response(render_author_html(rep, dv, transcript, covered_by_layer=covered,
                                            narrative=narrative, fee_state=fstate,
                                            narrative_warnings=_narr_warnings,
@@ -1282,7 +1289,8 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                                            intake_priorities=(profile or {}).get(
                                                "intake_priorities") or [],
                                            profile_unavailable=profile_unavailable,
-                                           alias_map=_alias_map, display_map=_display_map),
+                                           alias_map=_alias_map, display_map=_display_map,
+                                           history_links_html=_hl_html),
                         mimetype="text/html")
 
     @app.route("/author/<test_id>/invoice-view")

@@ -2144,7 +2144,7 @@ def render_author_html(report, depth_values=None, transcript="", covered_by_laye
                        clinical_checklist=None, dispensed=None, dispensed_error=None,
                        intake_priorities=None,
                        profile_unavailable=False, alias_map=None, display_map=None,
-                       narrative_warnings=None):
+                       narrative_warnings=None, history_links_html=""):
     tid = _e(report.get("test_id") or "")
     c = report.get("client") or {}
     import urllib.parse as _up
@@ -2279,6 +2279,7 @@ def render_author_html(report, depth_values=None, transcript="", covered_by_laye
                                             alias_map=alias_map, display_map=display_map,
                                             bottles_by_remedy=_bottles_by_remedy(dispensed),
                                             bottles_unavailable=bool(dispensed_error))
+                 + history_links_html
                  + chain + session + narrative_section
                  + _AUTHOR_JS.replace("__TID__", tid)
                  + "<script>loadClinicalProposals();loadClinicalCatalog();initClinicalDrag()</script>",

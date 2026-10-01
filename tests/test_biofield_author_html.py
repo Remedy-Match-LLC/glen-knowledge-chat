@@ -217,3 +217,11 @@ def test_the_apply_button_passes_the_mode_without_breaking_its_quotes():
     i = html.index("async function program(")
     body = html[i:html.index("async function programApply(")]
     assert "data-mode" in body and "programApply(this.dataset.mode)" in body
+
+
+def test_history_links_panel_sits_after_the_clinical_summary():
+    from dashboard.biofield_report_html import render_author_html
+    page = render_author_html({"client": {"name": "A", "email": "a@x.com"}, "layers": [],
+                               "test_id": "a1"}, clinical_checklist=[],
+                               history_links_html="<section id=hlpanel></section>")
+    assert "<section id=hlpanel></section>" in page
