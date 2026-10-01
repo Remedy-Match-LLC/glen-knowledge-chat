@@ -21,8 +21,8 @@ def test_membership_page_lists_individual_household_and_biofield_benefits():
     assert "Included with membership" not in text
     assert "Remedy Match reports" not in text
     assert "Personal Causal Biofield Analysis" in text
-    assert "$200 for active members" in text
-    assert "non-member price is $300" in text
+    assert "$200 for paid members" in text
+    assert "free-member price is $300" in text
     assert "not a personal consultation or a Causal Biofield Analysis" in text
     assert "apply a $99 credit automatically" in text
     assert "/family-plan/checkout" in text
