@@ -45046,6 +45046,31 @@ def get_person(person_id):
     return jsonify(person)
 
 
+@app.route("/api/people/<int:person_id>/attributes", methods=["GET"])
+def get_person_attributes(person_id):
+    """The client's canonical clinical attributes WITH their source, for the vault's
+    history builder (history vs energetic findings, spec 2026-10-01). /api/people/<id>
+    blends these into the People fields and drops the source; the builder needs it to
+    label an uploaded report as such. Console key in the header only: this route never
+    reads ?key=, which Render's access log would keep."""
+    key = request.headers.get("X-Console-Key", "")
+    if not CONSOLE_SECRET or (key != CONSOLE_SECRET and not _owner_token_ok(key)):
+        return jsonify({"error": "Unauthorized"}), 401
+    from dashboard import canonical_tags as _ct
+    with db.connect(LOG_DB) as cx:
+        cx.row_factory = sqlite3.Row
+        row = cx.execute("SELECT email FROM people WHERE id=?", (person_id,)).fetchone()
+        if not row:
+            return jsonify({"error": "Not found"}), 404
+        _ct.init_tables(cx)
+        rows = cx.execute(
+            "SELECT field, value, source FROM person_attributes WHERE email=?"
+            " ORDER BY field, value",
+            ((row["email"] or "").strip().lower(),)).fetchall()
+    return jsonify({"attributes": [{"field": r["field"], "value": r["value"],
+                                    "source": r["source"] or ""} for r in rows]})
+
+
 @app.route("/api/people", methods=["POST"])
 def upsert_people():
     if CONSOLE_SECRET:
