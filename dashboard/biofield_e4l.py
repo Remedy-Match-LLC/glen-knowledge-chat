@@ -374,13 +374,19 @@ def species_from_e4l(e4l_db, email):
     The local Biofield Intake reads species HERE, not from dashboard.client_species.
     That table is the prod mirror; on Glen's Mac chat_log.db has no such table, so a
     lookup there threw, was caught, and every animal read as a person (Sasha
-    Takahashi, a cat, 2026-09-21). None means unknown, and callers read unknown as a
-    person, which leaves a human exactly as before.
+    Takahashi, a cat, 2026-09-21). None means unknown. The Biofield Intake then asks
+    Glen before proposing remedies; the automatic reveal paths still read unknown as a
+    person (Glen, 2026-10-01: "automatic reveals keep human as default").
 
     Lives in this module, not client_species.py, because this is the file the
     raw-connect guard (tests/test_no_raw_logdb_connect.py) already allows for e4l.db.
     client_species.py writes the production database, so allow-listing it would let a
-    raw chat_log connect added there later pass unnoticed."""
+    raw chat_log connect added there later pass unnoticed.
+
+    When the E4L scrape has no species, Glen's own answer (species_answers, written by
+    record_species_answer) is used. Glen, 2026-10-01: "if species is blank, ask me
+    first". None now means nobody knows, and the Intake asks him before proposing
+    remedies. Skylar, a dog with a blank scrape, was given FFs that day."""
     e = (email or "").strip().lower()
     if not e or not e4l_db:
         return None
@@ -390,8 +396,33 @@ def species_from_e4l(e4l_db, email):
                 "SELECT species FROM e4l_clients "
                 "WHERE lower(trim(email))=? AND species IS NOT NULL AND species<>'' "
                 "ORDER BY client_id DESC LIMIT 1", (e,)).fetchone()
+            if not row:
+                try:
+                    row = ecx.execute(
+                        "SELECT species FROM species_answers WHERE email=? "
+                        "AND species IS NOT NULL AND species<>''", (e,)).fetchone()
+                except sqlite3.OperationalError:   # no answers recorded yet
+                    row = None
     except sqlite3.Error:
         return None
     if not row:
         return None
     return (row[0] or "").strip() or None
+
+
+def record_species_answer(e4l_db, email, species):
+    """Store Glen's answer for a client whose E4L species is blank, so he is asked once.
+    `species` is "Human" or the animal ("Dog", "Cat", "Horse", ...). Returns the stored
+    value, or None when the input is unusable. Glen, 2026-10-01."""
+    e = (email or "").strip().lower()
+    sp = (species or "").strip()
+    if not e or not sp or not e4l_db:
+        return None
+    sp = sp[:1].upper() + sp[1:].lower()
+    with sqlite3.connect(e4l_db) as ecx:
+        ecx.execute("CREATE TABLE IF NOT EXISTS species_answers ("
+                    "email TEXT PRIMARY KEY, species TEXT NOT NULL, answered_at TEXT NOT NULL)")
+        ecx.execute("INSERT INTO species_answers (email, species, answered_at) "
+                    "VALUES (?, ?, datetime('now')) ON CONFLICT(email) DO UPDATE SET "
+                    "species=excluded.species, answered_at=excluded.answered_at", (e, sp))
+    return sp

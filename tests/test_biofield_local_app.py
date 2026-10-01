@@ -8,6 +8,14 @@ from dashboard.biofield_stress import add_voice_stress, init_stress_tables
 
 
 @pytest.fixture(autouse=True)
+def _species_known(monkeypatch):
+    """These tests are about a person's chain. A blank species now asks Glen first
+    (2026-10-01), so the client is known to be a person here."""
+    import dashboard.biofield_e4l as _be
+    monkeypatch.setattr(_be, "species_from_e4l", lambda e4l_db, email: "Human")
+
+
+@pytest.fixture(autouse=True)
 def _no_console_gate(monkeypatch):
     # Functional tests run without the console key (the gate is tested separately).
     monkeypatch.delenv("CONSOLE_SECRET", raising=False)

@@ -528,8 +528,21 @@ function val(id){var e=document.getElementById(id);return e?e.value:''}
 function set(id,v){var e=document.getElementById(id);if(e)e.value=v}
 function astat(t){document.getElementById('astat').textContent=t}
 function opt(v){return '<option value="'+String(v).replace(/"/g,'&quot;')+'">'}
-async function post(p,b){const r=await fetch(p,{method:'POST',
+async function post0(p,b){const r=await fetch(p,{method:'POST',
  headers:{'Content-Type':'application/json'},body:JSON.stringify(b)});return r.json()}
+// Glen, 2026-10-01: "if species is blank, ask me first". A route that would propose
+// remedies answers needs_species when nobody knows the species; ask once, record the
+// answer, then send the same request again.
+async function askSpecies(){
+ var sp;
+ if(confirm('Species is blank for this client.\\n\\nOK = a person.\\nCancel = an animal.'))sp='Human';
+ else{sp=prompt('Which animal? For example Dog, Cat or Horse.','Dog');
+  if(!sp||!sp.trim())return false}
+ var r=await post0('/author/__TID__/species',{species:sp.trim()});
+ return !!(r&&r.ok)}
+async function post(p,b){var j=await post0(p,b);
+ if(j&&j.needs_species){if(!(await askSpecies()))return j;j=await post0(p,b)}
+ return j}
 function orderToken(kind){
  if(!window.__ORDER_TOKEN_BASE){
   try{window.__ORDER_TOKEN_BASE=crypto.randomUUID()}
@@ -952,28 +965,35 @@ async function delTest(){if(!confirm('Delete this entire test? This cannot be un
  await post('/author/__TID__/delete',{});location.href='/'}
 async function confirmAll(){await post('/author/__TID__/confirm-all',{});location.reload()}
 async function confirmRow(rid){await post('/author/__TID__/row/'+rid+'/confirm',{});location.reload()}
+// Glen, 2026-10-01: the button shows it is working, beside it, until it finishes.
+function impStat(t){var e=document.getElementById('impStat');if(e)e.textContent=t;else astat(t)}
+function impBusy(on){var b=document.getElementById('impBtn');if(b)b.disabled=on;window.__impBusy=on}
 async function importReveal(){
-try{
+if(window.__impBusy)return;
+impBusy(true);impStat('Importing\u2026');
+try{await importReveal0()}catch(e){impStat('Import failed.')}
+finally{impBusy(false)}
+}
+async function importReveal0(){
   var body={};
   var j=await post('/author/__TID__/e4l/import-reveal',body);
   // An old scan is a judgement call, not a dead end: offer to import it anyway.
   if(j && j.stale){
     if(!confirm('The latest E4L scan is '+j.days_ago+' days old. Import it anyway?\\n\\n'
-                +'A fresh scan takes about ten seconds — count out loud, one to ten.')) return;
+                +'A fresh scan takes about ten seconds — count out loud, one to ten.')){ impStat('Cancelled.'); return; }
     body.allow_stale=true;
     j=await post('/author/__TID__/e4l/import-reveal',body);
   }
   if(j && j.needs_confirm){
-    if(!confirm('This session already has '+j.existing+' layer(s). Add the reveal layers anyway?')) return;
+    if(!confirm('This session already has '+j.existing+' layer(s). Add the reveal layers anyway?')){ impStat('Cancelled.'); return; }
     body.force=true;
     j=await post('/author/__TID__/e4l/import-reveal',body);
   }
   if(j && j.ok){
-    if(j.stale_override){ astat('Imported a '+j.days_ago+'-day-old scan.'); }
+    impStat(j.stale_override?('Imported a '+j.days_ago+'-day-old scan. Reloading\u2026'):'Imported. Reloading\u2026');
     location.reload();
   }
-  else { astat((j&&j.reason)||'Import failed.'); }
-}catch(e){ astat('Import failed.'); }
+  else { impStat((j&&j.reason)||'Import failed.'); }
 }
 // A <datalist> filters client-side over the options already loaded; it never re-queries
 // on input. So these fetches must return the WHOLE list — a low cap silently drops every
@@ -1393,7 +1413,8 @@ def render_e4l_panel(ctx):
             "testing fills the chain.</div>") if ctx.get("found") else ""
     days = ctx.get("days_ago")
     if ctx.get("found") and days is not None and days < 7:
-        imp = "<button class='btn' onclick=importReveal()>Import Reveal &rarr; Causal Chain</button>"
+        imp = ("<button class='btn' id=impBtn onclick=importReveal()>Import Reveal &rarr; Causal Chain</button>"
+               " <span id=impStat class=food></span>")
     elif ctx.get("found"):
         imp = (f"<button class='btn' disabled title='Refresh to a scan under 7 days old'>"
                f"Import Reveal &rarr; Causal Chain</button>"

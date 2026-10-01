@@ -13,6 +13,14 @@ import pytest
 
 
 @pytest.fixture(autouse=True)
+def _species_known(monkeypatch):
+    """These tests are about a person's chain. A blank species now asks Glen first
+    (2026-10-01), so the client is known to be a person here."""
+    import dashboard.biofield_e4l as _be
+    monkeypatch.setattr(_be, "species_from_e4l", lambda e4l_db, email: "Human")
+
+
+@pytest.fixture(autouse=True)
 def _no_gate(monkeypatch):
     monkeypatch.delenv("CONSOLE_SECRET", raising=False)
     import dashboard
