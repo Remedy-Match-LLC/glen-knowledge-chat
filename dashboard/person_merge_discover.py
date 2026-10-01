@@ -43,7 +43,7 @@ MOVE_TABLES = frozenset({
     "cert_bonus_grants", "cert_commitments", "cert_submissions", "client_conditions",
     "client_document_extractions", "client_documents", "client_facts", "client_identity_photos",
     "client_photos", "client_portals", "client_prefs", "client_prices", "client_scans",
-    "client_species", "coach_requests", "coach_subscriptions", "coach_threads", "coach_volunteers",
+    "client_species", "species_answers", "coach_requests", "coach_subscriptions", "coach_threads", "coach_volunteers",
     "coaching_windows", "cohort_members", "community_embeddings", "community_reactions",
     "condition_triage", "consult_eligibility", "coupons", "course_entitlements",
     "course_lesson_watched", "course_module_homework", "course_module_unlocks", "course_tokens",
