@@ -659,8 +659,11 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
             return None
         # The FileMaker remedy list, as Import Reveal uses (Glen, 2026-10-01), so a suggestion
         # and an imported row name the same product. The web catalog only if FileMaker is absent.
-        from dashboard.biofield_authoring import infoceutical_names_by_code
-        return infoceutical_names_by_code(cx) or infoceutical_by_code(load_catalog())
+        from dashboard.biofield_authoring import infoceutical_names_by_code, is_infoceutical_code
+        names = infoceutical_names_by_code(cx)
+        if names is None:                       # no FileMaker list at all
+            names = infoceutical_by_code(load_catalog())
+        return {c: n for c, n in names.items() if is_infoceutical_code(c)}
 
     from dashboard import biofield_stress as _stress_rules
     _stress_rules.set_animal_lookup(_animal_infoceuticals_for)
@@ -1742,7 +1745,7 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                 from dashboard.biofield_authoring import infoceutical_names_by_code
                 res = _ri.synthesize_reveal_layers(
                     email, today=_dt.date.today().isoformat(), is_animal=_is_animal,
-                    infoceutical_names=(infoceutical_names_by_code(cx) or None) if _is_animal else None)
+                    infoceutical_names=infoceutical_names_by_code(cx) if _is_animal else None)
             except Exception as e:
                 return {"ok": False, "reason": f"Reveal synthesis failed: {e}"}
             if not res.get("found"):

@@ -114,7 +114,9 @@ def synthesize_reveal_layers(email, scan_id=None, *, e4l_db=DEFAULT_E4L_DB,
         if is_animal:
             # The first of this layer's codes that the remedy list carries, by its exact name.
             codes = [str(c).strip() for c in (L.get("patterns") or []) if str(c).strip()]
-            remedy_name = next((infoceutical_names[c] for c in codes if c in infoceutical_names), "")
+            from dashboard.biofield_authoring import is_infoceutical_code
+            remedy_name = next((infoceutical_names[c] for c in codes
+                                if is_infoceutical_code(c) and c in infoceutical_names), "")
             alternatives = []                 # no FF alternatives for an animal
         else:
             remedy_name = name

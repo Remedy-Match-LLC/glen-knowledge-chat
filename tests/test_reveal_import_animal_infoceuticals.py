@@ -133,3 +133,32 @@ def test_the_web_catalog_fallback_carries_no_rejuvenator():
 # every animal imported as a person and this test stayed green (Sasha Takahashi,
 # 2026-09-21). The wiring is now proven by driving the real route:
 # tests/test_biofield_animal_infoceuticals.py::test_import_reveal_reads_species_from_e4l_db
+
+
+def test_a_rejuvenator_named_like_an_infoceutical_is_still_never_a_remedy(tmp_path):
+    """Review round 2: the ban must not rest on product naming."""
+    import sqlite3
+    from dashboard.biofield_authoring import infoceutical_names_by_code
+    names = {"ER17": "ER17 Scapula Rejuvenator Infoceutical", "MR3": "MR3 Calm Mind Infoceutical",
+             "ES1": "ES1 Immune Energetic Star Infoceutical"}
+    assert _one(["ER17", "MR3", "ES1"], ["a", "b", "c"], names=names)["remedy_name"] == \
+        "ES1 Immune Energetic Star Infoceutical"
+    assert _one(["ER17", "MR3"], ["a", "b"], names=names)["remedy_name"] == ""
+    cx = sqlite3.connect(str(tmp_path / "c.db"))
+    cx.execute("CREATE TABLE fmp_snap_products (id_pk INTEGER, product_name TEXT, active TEXT)")
+    for i, n in enumerate(names.values()):
+        cx.execute("INSERT INTO fmp_snap_products VALUES (?, ?, 'Yes')", (i, n))
+    assert infoceutical_names_by_code(cx) == {"ES1": "ES1 Immune Energetic Star Infoceutical"}
+
+
+def test_no_filemaker_list_is_none_but_an_empty_one_is_empty(tmp_path):
+    """Review round 2: only a missing list may fall back to the web catalog."""
+    import sqlite3
+    from dashboard.biofield_authoring import infoceutical_names_by_code
+    cx = sqlite3.connect(str(tmp_path / "c.db"))
+    assert infoceutical_names_by_code(cx) is None
+    cx.execute("CREATE TABLE fmp_snap_products (id_pk INTEGER, product_name TEXT, active TEXT)")
+    cx.execute("INSERT INTO fmp_snap_products VALUES (1, 'ES1 Immune Energetic Star Infoceutical', 'No')")
+    assert infoceutical_names_by_code(cx) == {}
+    L = _one(["ES1"], ["Lymph Star"], names={})
+    assert L["remedy_name"] == "" and L["no_remedy"] is True

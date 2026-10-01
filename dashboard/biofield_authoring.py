@@ -620,7 +620,8 @@ def remedy_catalog(cx, q="", limit=20):
 
 
 def infoceutical_names_by_code(cx):
-    """{code: remedy-list name} for every infoceutical in the FileMaker product list, the
+    """{code: remedy-list name} for every infoceutical in the FileMaker product list, or None
+    when there is no FileMaker list at all (an empty dict means the list carries none). The
     list the Intake's remedy picker and remedy_dosing read. Glen, 2026-10-01: a scan code
     becomes a remedy by its remedy-list name ("MB8 Love Infoceutical", not E4L's "Love
     Hologram"), so the dosing fills as it does when he picks from the dropdown. Only names
@@ -629,7 +630,7 @@ def infoceutical_names_by_code(cx):
     names claim one code the first alphabetically wins."""
     import re as _re
     if not _has(cx, "fmp_snap_products"):
-        return {}
+        return None                  # no FileMaker list at all: the caller may fall back
     cols = {r[1] for r in cx.execute("PRAGMA table_info(fmp_snap_products)")}
     where = "TRIM(COALESCE(product_name,''))<>''"
     if "active" in cols:
@@ -639,9 +640,21 @@ def infoceutical_names_by_code(cx):
     for raw in sorted(names, key=lambda n: n.lower()):
         name = _clean_product_name(raw)
         m = _re.match(r"^([A-Z]{2,3}\d{1,3})\s", name)
-        if m and "infoceutical" in name.lower():
+        if m and "infoceutical" in name.lower() and is_infoceutical_code(m.group(1)):
             out.setdefault(m.group(1), name)
     return out
+
+
+# The E4L families that are infoceuticals. ER (Rejuvenators, miHealth settings), MR, BFA,
+# Environmental and Nutrition are findings, never remedies (Glen, 2026-10-01), whatever a
+# product happens to be named. An allow-list, so a new family is excluded until named here.
+INFOCEUTICAL_FAMILIES = ("ED", "EI", "ES", "ET", "MB")
+
+
+def is_infoceutical_code(code):
+    import re as _re
+    m = _re.match(r"^([A-Z]{2,3})\d", (code or "").strip())
+    return bool(m) and m.group(1) in INFOCEUTICAL_FAMILIES
 
 
 # Reveal remedy names diverge from FMP product names in ways a suffix match can't
