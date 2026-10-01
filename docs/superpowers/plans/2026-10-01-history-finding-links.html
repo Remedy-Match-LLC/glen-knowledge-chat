@@ -1,0 +1,1503 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>History and Energetic Findings Links Implementation Plan</title><!-- source-sha256:b6c03adab555 --><style>
+  :root{--bg:#faf9f6;--panel:#fff;--ink:#1f2328;--muted:#5b6572;--line:#e3e0d8;
+    --ok:#2f6f4f;--okbg:#eef5f0;--warn:#8a4b1f;--warnbg:#fdf3e9;--code:#f2f1ec;}
+  @media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+    --bg:#16181c;--panel:#1e2126;--ink:#e6e6e3;--muted:#a0a8b4;--line:#31363d;
+    --ok:#6fbf94;--okbg:#1a241e;--warn:#e0a06a;--warnbg:#2a2118;--code:#252930;}}
+  :root[data-theme="dark"]{--bg:#16181c;--panel:#1e2126;--ink:#e6e6e3;--muted:#a0a8b4;
+    --line:#31363d;--ok:#6fbf94;--okbg:#1a241e;--warn:#e0a06a;--warnbg:#2a2118;--code:#252930;}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font:17px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;
+    -webkit-font-smoothing:antialiased}
+  .wrap{max-width:830px;margin:0 auto;padding:44px 24px 96px}
+  header{border-bottom:2px solid var(--line);padding-bottom:20px;margin-bottom:30px}
+  h1{font-size:33px;line-height:1.2;margin:0 0 8px;letter-spacing:-.02em}
+  .sub{color:var(--muted);font-size:15px;margin:0}
+  .badge{display:inline-block;background:var(--okbg);color:var(--ok);border:1px solid var(--ok);
+    border-radius:999px;padding:3px 12px;font-size:13px;font-weight:600;margin-bottom:12px}
+  h2{font-size:24px;margin:48px 0 12px;letter-spacing:-.01em;padding-top:14px;border-top:1px solid var(--line)}
+  h3{font-size:18px;margin:26px 0 8px}
+  p{margin:0 0 14px} ul,ol{margin:0 0 15px;padding-left:22px} li{margin-bottom:7px}
+  .answer{background:var(--okbg);border:2px solid var(--ok);border-radius:10px;padding:22px 26px;margin:26px 0}
+  .answer h2{margin:0 0 10px;border:0;padding:0;font-size:22px;color:var(--ok)}
+  .warn{background:var(--warnbg);border:1px solid var(--line);border-left:4px solid var(--warn);
+    border-radius:6px;padding:16px 20px;margin:20px 0}
+  .note{background:var(--panel);border:1px solid var(--line);border-left:4px solid var(--ok);
+    border-radius:6px;padding:16px 20px;margin:20px 0}
+  .warn p:last-child,.note p:last-child,.answer p:last-child{margin-bottom:0}
+  .tag{font-size:12px;font-weight:700;letter-spacing:.06em;color:var(--muted);display:block;margin-bottom:6px}
+  .tablewrap{overflow-x:auto;margin:20px 0}
+  table{border-collapse:collapse;width:100%;font-size:15px;min-width:500px}
+  th,td{text-align:left;padding:10px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{font-weight:700;font-size:13px;letter-spacing:.03em;color:var(--muted)}
+  tbody tr:last-child td{border-bottom:none}
+  code{background:var(--code);border-radius:4px;padding:2px 6px;
+    font:13.5px/1.4 ui-monospace,SFMono-Regular,Menlo,monospace}
+  .num{font-variant-numeric:tabular-nums;white-space:nowrap}
+  .step{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:18px 22px;margin:16px 0}
+  .step h3{margin-top:0}
+  .chk{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:6px 22px 14px;margin:16px 0}
+  .done{color:var(--ok);font-weight:700}
+  .missed{color:var(--warn);font-weight:700}
+  footer{margin-top:56px;padding-top:18px;border-top:1px solid var(--line);color:var(--muted);font-size:14px}
+
+  h1{font-size:30px;line-height:1.25;margin:44px 0 6px;padding-top:26px;
+     border-top:2px solid var(--line)}
+  h1:first-of-type{border-top:0;padding-top:0;margin-top:0}
+  h2{font-size:22px;margin:34px 0 6px}
+  h3{font-size:18px;margin:26px 0 4px;color:var(--muted)}
+  p{margin:12px 0}
+  ul,ol{margin:12px 0;padding-left:22px}
+  li{margin:5px 0}
+  code{background:var(--code);padding:1px 5px;border-radius:4px;
+       font:14px ui-monospace,SFMono-Regular,Menlo,monospace}
+  pre{background:var(--code);padding:14px 16px;border-radius:8px;overflow-x:auto}
+  pre code{background:none;padding:0}
+  hr{border:0;border-top:1px solid var(--line);margin:30px 0}
+  .tw{overflow-x:auto;margin:16px 0}
+  table{border-collapse:collapse;width:100%;font-size:15px}
+  th,td{border:1px solid var(--line);padding:7px 10px;text-align:left;vertical-align:top}
+  th{background:var(--code);font-weight:600}
+  blockquote{margin:14px 0;padding:10px 16px;border-left:3px solid var(--line);
+             background:var(--panel);color:var(--muted)}
+  .gen{background:var(--warnbg);color:var(--warn);border:1px solid var(--warn);
+       border-radius:8px;padding:12px 16px;margin:0 0 28px;font-size:14.5px}
+  .gen b{color:var(--warn)}
+</style></head><body><div class="wrap"><div class='gen'><b>Generated page. Do not edit.</b> This document is written in <code>../worktrees/wt-deploy-chat-e5ac8379/docs/superpowers/plans/2026-10-01-history-finding-links.md</code>. This page is produced from it by <code>00 System/render-md.py</code>, and the next run overwrites anything typed here.</div><h1>History and Energetic Findings Links Implementation Plan</h1>
+<blockquote><strong>For agentic workers:</strong> REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (<code>- [ ]</code>) syntax for tracking.</blockquote>
+<p><strong>Goal:</strong> Keep each client&#x27;s history apart from their E4L energetic findings, store which findings link to which reported conditions, and show those links to Glen on the authoring page.</p>
+<p><strong>Architecture:</strong> A new vault module <code>02 Skills/history_links.py</code> owns three new <code>e4l.db</code> tables. It builds a client&#x27;s history from People, intake, approved document extractions and the tag ledger, then links each scan&#x27;s findings to that history through a Glen-reviewed finding-to-condition table, using <code>remedy_tiers.condition_met</code>. deploy-chat gains one read-only API route (attribute sources) and a read-only panel on the local Biofield authoring page.</p>
+<p><strong>Tech Stack:</strong> Python 3, sqlite3, Flask (deploy-chat), pytest. No new dependencies.</p>
+<p><strong>Spec:</strong> <code>docs/superpowers/specs/2026-10-01-history-finding-links-design.md</code> (deploy-chat, branch <code>sess/e5ac8379</code>). Read it before starting.</p>
+<h2>Global Constraints</h2>
+<ul><li>Two repos. Vault code goes in a vault worktree: <code>git -C ~/AI-Training worktree add -b sess/e5ac8379-history-links ~/worktrees/vault-history-links main</code>. deploy-chat code goes in <code>~/worktrees/wt-deploy-chat-e5ac8379</code> on branch <code>sess/e5ac8379</code>. Never edit <code>~/AI-Training/02 Skills/</code> directly.</li><li>Vault tests: <code>cd &quot;&lt;worktree&gt;/02 Skills&quot; &amp;&amp; PYTHONDONTWRITEBYTECODE=1 python3 -m pytest -q -p no:cacheprovider tests/&lt;file&gt;</code>. Never run the full suite: it sends real email.</li><li>deploy-chat API tests need the app env: <code>doppler run -p remedy-match -c prd -- env DATA_DIR=&quot;$HOME/deploy-chat&quot; ~/.venvs/deploy-chat311/bin/python -m pytest -q tests/&lt;file&gt;</code>. Name test files explicitly, as a bash array if more than one.</li><li>Mutation checks: copy the file first (<code>cp f f.orig</code>), mutate, run, restore with <code>mv f.orig f</code>. Never <code>git checkout</code>, <code>git stash</code> or <code>git restore</code> to undo a mutation.</li><li>The console key travels in the <code>X-Console-Key</code> header only, never a URL.</li><li>Fail closed everywhere: no record, a read error, or more than one person on an address means no history and no links.</li><li>Nothing reaches a client, and nothing feeds remedy choice. <code>remedy_tiers</code> and <code>e4l_synthesis.tier_check</code> are not modified.</li><li>Chat-derived history is stored with <code>confirmed = 0</code> and the label &quot;from chat, unconfirmed&quot;.</li><li><code>terrain:</code> People tags are stored with the label &quot;from GoHighLevel, origin unknown&quot;.</li><li>Never print client names or emails in any script output. Counts only.</li><li>Glen reads HTML. Any document for him is markdown rendered with <code>python3 &quot;$HOME/AI-Training/00 System/render-md.py&quot; &lt;file.md&gt;</code>; give him the <code>.html</code> path.</li><li>Stage named files only. Never <code>git add -A</code>.</li></ul>
+<h2>Review Focus</h2>
+<ul><li>A ledger tag <code>focus:glaucoma-suspect</code> must link to &quot;high eye pressure&quot; and never to &quot;glaucoma&quot;. Test in Task 4.</li><li>If the attributes read fails but the People read succeeds, no People-field history may be written or retired. Test in Task 6.</li><li>A scan with no findings loaded yet must leave its existing links alone. Test in Task 7.</li><li>A test whose E4L client is a merged duplicate must show the canonical person&#x27;s links. Test in Task 9.</li><li>A note or phrase containing <code>&lt;script&gt;</code> must render escaped. Test in Task 9.</li></ul>
+<hr>
+<h3>Task 1: Tables and seed from the remedy rows</h3>
+<p><strong>Files:</strong></p>
+<ul><li>Create: <code>02 Skills/history_links.py</code></li><li>Test: <code>02 Skills/tests/test_history_links.py</code></li></ul>
+<p><strong>Interfaces:</strong></p>
+<ul><li>Produces: <code>init_tables(cx) -&gt; None</code>; <code>seed_from_remedy_rows(cx) -&gt; int</code> (rows inserted).</li></ul>
+<ul><li>[ ] <strong>Step 1: Write the failing test</strong></li></ul>
+<pre><code>&quot;&quot;&quot;History vs energetic findings (spec 2026-10-01, deploy-chat docs/superpowers/specs).&quot;&quot;&quot;
+import os
+import sqlite3
+import sys
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), &quot;..&quot;))
+
+import history_links as HL  # noqa: E402
+
+TODAY = &quot;2026-10-01&quot;
+
+
+def _map_db():
+    cx = sqlite3.connect(&quot;:memory:&quot;)
+    cx.executescript(
+        &quot;CREATE TABLE e4l_formulation_map(item_code TEXT, finding_pattern TEXT,&quot;
+        &quot; formulation_id INTEGER, priority INTEGER, order_tier INTEGER,&quot;
+        &quot; qualifying_conditions TEXT);&quot;)
+    cx.executemany(&quot;INSERT INTO e4l_formulation_map VALUES (?,?,?,?,?,?)&quot;, [
+        (&quot;ED5&quot;, &quot;ED5&quot;, 1, 1, 2, &#x27;[&quot;Leaky gut&quot;, &quot;brain fog&quot;]&#x27;),
+        (&quot;ED5&quot;, &quot;ED5&quot;, 2, 2, 2, &#x27;[&quot;leaky gut&quot;]&#x27;),            # duplicate pair
+        (&quot;ET6&quot;, &quot;ET6&quot;, 3, 1, 2, &#x27;[&quot;spike protein exposure&quot;]&#x27;),
+        (&quot;ED2&quot;, &quot;ED2&quot;, 4, 1, 1, &#x27;[&quot;irregular heartbeat&quot;]&#x27;),  # first order: not a seed
+        (None, &quot;MR&quot;, 5, 1, 2, &#x27;[&quot;acidic ph&quot;]&#x27;),              # pattern row: no code
+        (&quot;ES1&quot;, &quot;ES1&quot;, 6, 1, 2, &quot;not json&quot;)])
+    return cx
+
+
+def test_seed_takes_second_order_pairs_once():
+    cx = _map_db()
+    assert HL.seed_from_remedy_rows(cx) == 3
+    rows = cx.execute(&quot;SELECT item_code, condition, origin, reviewed, removed, note&quot;
+                      &quot; FROM finding_conditions ORDER BY item_code, condition&quot;).fetchall()
+    assert rows == [(&quot;ED5&quot;, &quot;brain fog&quot;, &quot;remedy-row&quot;, 0, 0, &quot;&quot;),
+                    (&quot;ED5&quot;, &quot;leaky gut&quot;, &quot;remedy-row&quot;, 0, 0, &quot;&quot;),
+                    (&quot;ET6&quot;, &quot;spike protein exposure&quot;, &quot;remedy-row&quot;, 0, 0, &quot;&quot;)]
+    assert HL.seed_from_remedy_rows(cx) == 0                 # idempotent
+
+
+def test_reseed_never_restores_a_removed_row():
+    cx = _map_db()
+    HL.seed_from_remedy_rows(cx)
+    cx.execute(&quot;UPDATE finding_conditions SET removed=1 WHERE condition=&#x27;brain fog&#x27;&quot;)
+    HL.seed_from_remedy_rows(cx)
+    assert cx.execute(&quot;SELECT removed FROM finding_conditions&quot;
+                      &quot; WHERE condition=&#x27;brain fog&#x27;&quot;).fetchone() == (1,)</code></pre>
+<ul><li>[ ] <strong>Step 2: Run it to verify it fails</strong></li></ul>
+<p>Run: <code>PYTHONDONTWRITEBYTECODE=1 python3 -m pytest -q -p no:cacheprovider tests/test_history_links.py</code> Expected: FAIL, <code>ModuleNotFoundError: No module named &#x27;history_links&#x27;</code>.</p>
+<ul><li>[ ] <strong>Step 3: Write the module with the schema and seed</strong></li></ul>
+<pre><code>&quot;&quot;&quot;History and energetic findings, kept apart and linked (Glen, 2026-10-01).
+
+Spec: deploy-chat docs/superpowers/specs/2026-10-01-history-finding-links-design.md
+
+History is what the client reports or what is recorded about them. Energetic
+findings are what an E4L scan shows (e4l_scan_results, unchanged). This module
+owns three tables in e4l.db:
+
+  client_history         one row per reported condition per client, with its source
+  finding_conditions     Glen-reviewed: which finding code goes with which condition
+  finding_history_links  per scan: this finding links to this history row, via this
+                         finding_conditions row
+
+Everything fails CLOSED: no record, a read error, or a household address means no
+history and no links. Nothing here reaches a client or feeds remedy choice.
+&quot;&quot;&quot;
+import os
+import sqlite3
+import urllib.error
+import urllib.parse
+
+import remedy_tiers as T
+
+SCHEMA = &quot;&quot;&quot;
+CREATE TABLE IF NOT EXISTS client_history(
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    client_id   INTEGER NOT NULL,
+    phrase      TEXT NOT NULL,
+    kind        TEXT NOT NULL DEFAULT &#x27;structured&#x27;,   -- &#x27;structured&#x27; | &#x27;narrative&#x27;
+    source      TEXT NOT NULL,
+    source_ref  TEXT NOT NULL DEFAULT &#x27;&#x27;,
+    confirmed   INTEGER NOT NULL DEFAULT 1,
+    first_seen  TEXT,
+    last_seen   TEXT,
+    retired_at  TEXT,
+    UNIQUE(client_id, phrase, source, source_ref));
+CREATE TABLE IF NOT EXISTS finding_conditions(
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    item_code   TEXT NOT NULL,
+    condition   TEXT NOT NULL,
+    origin      TEXT NOT NULL,                        -- &#x27;remedy-row&#x27; | &#x27;drafted&#x27; | &#x27;glen&#x27;
+    note        TEXT NOT NULL DEFAULT &#x27;&#x27;,
+    reviewed    INTEGER NOT NULL DEFAULT 0,
+    removed     INTEGER NOT NULL DEFAULT 0,
+    reviewed_at TEXT,
+    UNIQUE(item_code, condition));
+CREATE TABLE IF NOT EXISTS finding_history_links(
+    scan_id              INTEGER NOT NULL,
+    item_code            TEXT NOT NULL,
+    history_id           INTEGER NOT NULL,
+    finding_condition_id INTEGER NOT NULL,
+    linked_at            TEXT,
+    UNIQUE(scan_id, item_code, history_id, finding_condition_id));
+&quot;&quot;&quot;
+
+
+def init_tables(cx):
+    cx.executescript(SCHEMA)
+
+
+def _condition(text):
+    &quot;&quot;&quot;Stored form of a condition: lowercase, trimmed, inner spaces collapsed.&quot;&quot;&quot;
+    return &quot; &quot;.join(str(text or &quot;&quot;).lower().split())
+
+
+def seed_from_remedy_rows(cx):
+    &quot;&quot;&quot;Insert each (finding code, condition) pair named by a second-order remedy row.
+    INSERT OR IGNORE, so a row Glen removed or annotated is never touched.&quot;&quot;&quot;
+    init_tables(cx)
+    n = 0
+    rows = cx.execute(
+        &quot;SELECT item_code, qualifying_conditions FROM e4l_formulation_map&quot;
+        &quot; WHERE order_tier=2 AND trim(coalesce(item_code,&#x27;&#x27;))&lt;&gt;&#x27;&#x27;&quot;).fetchall()
+    for code, raw in rows:
+        for c in T.parse_conditions(raw):
+            c = _condition(c)
+            if c:
+                n += cx.execute(
+                    &quot;INSERT OR IGNORE INTO finding_conditions(item_code, condition, origin)&quot;
+                    &quot; VALUES (?,?,&#x27;remedy-row&#x27;)&quot;, (code.strip(), c)).rowcount
+    cx.commit()
+    return n</code></pre>
+<ul><li>[ ] <strong>Step 4: Run the tests to verify they pass</strong></li></ul>
+<p>Run: <code>PYTHONDONTWRITEBYTECODE=1 python3 -m pytest -q -p no:cacheprovider tests/test_history_links.py</code> Expected: 2 passed.</p>
+<ul><li>[ ] <strong>Step 5: Check the live seed count, read-only</strong></li></ul>
+<pre><code>cd &quot;$HOME/worktrees/vault-history-links/02 Skills&quot; &amp;&amp; PYTHONDONTWRITEBYTECODE=1 python3 - &lt;&lt;&#x27;EOF&#x27;
+import sqlite3, history_links as HL
+src = sqlite3.connect(&quot;file:&quot; + __import__(&quot;os&quot;).path.expanduser(&quot;~/AI-Training/e4l.db&quot;) + &quot;?mode=ro&quot;, uri=True)
+mem = sqlite3.connect(&quot;:memory:&quot;); src.backup(mem)
+print(&quot;seeded&quot;, HL.seed_from_remedy_rows(mem),
+      &quot;codes&quot;, mem.execute(&quot;SELECT count(DISTINCT item_code) FROM finding_conditions&quot;).fetchone()[0])
+EOF</code></pre>
+<p>Expected: <code>seeded 393 codes 86</code> (measured 2026-10-01; a different number means the map changed, so say so).</p>
+<ul><li>[ ] <strong>Step 6: Commit</strong></li></ul>
+<pre><code>cd ~/worktrees/vault-history-links &amp;&amp; git add &quot;02 Skills/history_links.py&quot; &quot;02 Skills/tests/test_history_links.py&quot; &amp;&amp; git commit -m &quot;History links: tables and seed from second-order remedy rows&quot;</code></pre>
+<hr>
+<h3>Task 2: Draft conditions for the uncovered finding codes</h3>
+<p><strong>Files:</strong></p>
+<ul><li>Create: <code>02 Skills/finding-condition-drafts.py</code></li><li>Modify: <code>02 Skills/history_links.py</code> (add <code>codes_to_draft</code>, <code>load_drafts</code>)</li><li>Test: <code>02 Skills/tests/test_history_links.py</code></li><li>Create (data, by the implementer): <code>clinical/remedy-order-review/finding-condition-drafts.json</code></li></ul>
+<p><strong>Interfaces:</strong></p>
+<ul><li>Consumes: <code>init_tables</code>, <code>_condition</code> (Task 1).</li><li>Produces: <code>codes_to_draft(cx) -&gt; dict</code> with keys <code>codes</code> (list of <code>{item_code, name, full_name, description}</code>) and <code>vocabulary</code> (sorted list of condition phrases); <code>load_drafts(cx, drafts) -&gt; int</code>.</li></ul>
+<ul><li>[ ] <strong>Step 1: Write the failing tests</strong></li></ul>
+<p>Append to <code>tests/test_history_links.py</code>:</p>
+<pre><code>def _items(cx):
+    cx.executescript(
+        &quot;CREATE TABLE e4l_items(item_code TEXT PRIMARY KEY, name TEXT, full_name TEXT,&quot;
+        &quot; e4l_description TEXT);&quot;
+        &quot;INSERT INTO e4l_items VALUES (&#x27;ED5&#x27;,&#x27;Circulation&#x27;,&#x27;ED5 Circulation&#x27;,&#x27;blood flow&#x27;);&quot;
+        &quot;INSERT INTO e4l_items VALUES (&#x27;ED9&#x27;,&#x27;Stomach&#x27;,&#x27;ED9 Stomach Driver&#x27;,&#x27;stomach&#x27;);&quot;
+        &quot;INSERT INTO e4l_items VALUES (&#x27;ET6&#x27;,&#x27;Spike&#x27;,&#x27;ET6 Spike&#x27;,&#x27;spike&#x27;);&quot;)
+    return cx
+
+
+def test_codes_to_draft_lists_only_uncovered_codes_and_the_vocabulary():
+    cx = _items(_map_db())
+    HL.seed_from_remedy_rows(cx)
+    out = HL.codes_to_draft(cx)
+    assert [c[&quot;item_code&quot;] for c in out[&quot;codes&quot;]] == [&quot;ED9&quot;]
+    assert out[&quot;codes&quot;][0] == {&quot;item_code&quot;: &quot;ED9&quot;, &quot;name&quot;: &quot;Stomach&quot;,
+                               &quot;full_name&quot;: &quot;ED9 Stomach Driver&quot;, &quot;description&quot;: &quot;stomach&quot;}
+    assert out[&quot;vocabulary&quot;] == [&quot;brain fog&quot;, &quot;leaky gut&quot;, &quot;spike protein exposure&quot;]
+
+
+def test_load_drafts_inserts_valid_rows_as_drafted_and_skips_the_rest():
+    cx = _items(_map_db())
+    HL.seed_from_remedy_rows(cx)
+    n = HL.load_drafts(cx, [
+        {&quot;item_code&quot;: &quot;ED9&quot;, &quot;condition&quot;: &quot; Macular  Degeneration &quot;},
+        {&quot;item_code&quot;: &quot;ED9&quot;, &quot;condition&quot;: &quot;&quot;},                 # blank
+        {&quot;item_code&quot;: &quot;XX1&quot;, &quot;condition&quot;: &quot;fatigue&quot;},          # unknown code
+        {&quot;item_code&quot;: &quot;ED5&quot;, &quot;condition&quot;: &quot;leaky gut&quot;},        # already seeded
+        &quot;not a dict&quot;])
+    assert n == 1
+    assert cx.execute(&quot;SELECT item_code, condition, origin, reviewed FROM finding_conditions&quot;
+                      &quot; WHERE origin=&#x27;drafted&#x27;&quot;).fetchall() == [
+        (&quot;ED9&quot;, &quot;macular degeneration&quot;, &quot;drafted&quot;, 0)]</code></pre>
+<ul><li>[ ] <strong>Step 2: Run to verify they fail</strong></li></ul>
+<p>Run: <code>PYTHONDONTWRITEBYTECODE=1 python3 -m pytest -q -p no:cacheprovider tests/test_history_links.py</code> Expected: 2 FAIL with <code>AttributeError: module &#x27;history_links&#x27; has no attribute &#x27;codes_to_draft&#x27;</code>.</p>
+<ul><li>[ ] <strong>Step 3: Implement</strong></li></ul>
+<p>Append to <code>history_links.py</code>:</p>
+<pre><code>def codes_to_draft(cx):
+    &quot;&quot;&quot;Finding codes with no finding_conditions row, and the condition phrases already
+    in use, for drafting. Finding descriptions only: no client data.&quot;&quot;&quot;
+    init_tables(cx)
+    covered = {r[0] for r in cx.execute(&quot;SELECT DISTINCT item_code FROM finding_conditions&quot;)}
+    codes = [{&quot;item_code&quot;: c, &quot;name&quot;: n or &quot;&quot;, &quot;full_name&quot;: f or &quot;&quot;, &quot;description&quot;: d or &quot;&quot;}
+             for c, n, f, d in cx.execute(
+                 &quot;SELECT item_code, name, full_name, e4l_description FROM e4l_items&quot;
+                 &quot; ORDER BY item_code&quot;).fetchall()
+             if c not in covered]
+    vocab = sorted({r[0] for r in cx.execute(&quot;SELECT condition FROM finding_conditions&quot;)})
+    return {&quot;codes&quot;: codes, &quot;vocabulary&quot;: vocab}
+
+
+def load_drafts(cx, drafts):
+    &quot;&quot;&quot;Insert Claude&#x27;s drafted rows, origin &#x27;drafted&#x27;, unreviewed. A code that is not in
+    e4l_items, a blank condition, or a pair that already exists is skipped.&quot;&quot;&quot;
+    init_tables(cx)
+    known = {r[0] for r in cx.execute(&quot;SELECT item_code FROM e4l_items&quot;)}
+    n = 0
+    for d in drafts or []:
+        if not isinstance(d, dict):
+            continue
+        code, cond = str(d.get(&quot;item_code&quot;) or &quot;&quot;).strip(), _condition(d.get(&quot;condition&quot;))
+        if code in known and cond:
+            n += cx.execute(&quot;INSERT OR IGNORE INTO finding_conditions(item_code, condition,&quot;
+                            &quot; origin) VALUES (?,?,&#x27;drafted&#x27;)&quot;, (code, cond)).rowcount
+    cx.commit()
+    return n</code></pre>
+<p>Create <code>02 Skills/finding-condition-drafts.py</code>:</p>
+<pre><code>#!/usr/bin/env python3
+&quot;&quot;&quot;Draft conditions for finding codes the remedy rows do not cover.
+
+  python3 &quot;02 Skills/finding-condition-drafts.py&quot; export     # writes the codes to draft
+  python3 &quot;02 Skills/finding-condition-drafts.py&quot; load       # dry run: counts only
+  python3 &quot;02 Skills/finding-condition-drafts.py&quot; load --apply
+
+Files live in clinical/remedy-order-review/. Descriptions only, no client data.
+&quot;&quot;&quot;
+import argparse
+import json
+import os
+import sqlite3
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import history_links as HL  # noqa: E402
+
+VAULT = os.path.expanduser(&quot;~/AI-Training&quot;)
+E4L_DB = os.path.join(VAULT, &quot;e4l.db&quot;)
+DIR = os.path.join(VAULT, &quot;clinical&quot;, &quot;remedy-order-review&quot;)
+EXPORT = os.path.join(DIR, &quot;finding-codes-to-draft.json&quot;)
+DRAFTS = os.path.join(DIR, &quot;finding-condition-drafts.json&quot;)
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument(&quot;action&quot;, choices=[&quot;export&quot;, &quot;load&quot;])
+    ap.add_argument(&quot;--apply&quot;, action=&quot;store_true&quot;)
+    a = ap.parse_args()
+    if a.action == &quot;export&quot;:
+        src = sqlite3.connect(f&quot;file:{E4L_DB}?mode=ro&quot;, uri=True)
+        mem = sqlite3.connect(&quot;:memory:&quot;)
+        src.backup(mem)
+        HL.seed_from_remedy_rows(mem)          # covered = seeded, as it will be live
+        out = HL.codes_to_draft(mem)
+        with open(EXPORT, &quot;w&quot;, encoding=&quot;utf-8&quot;) as f:
+            json.dump(out, f, indent=1)
+        print(f&quot;{len(out[&#x27;codes&#x27;])} codes to draft -&gt; {EXPORT}&quot;)
+        return
+    drafts = json.load(open(DRAFTS, encoding=&quot;utf-8&quot;))
+    if a.apply:
+        cx = sqlite3.connect(E4L_DB)
+    else:
+        cx = sqlite3.connect(&quot;:memory:&quot;)
+        sqlite3.connect(f&quot;file:{E4L_DB}?mode=ro&quot;, uri=True).backup(cx)
+    HL.seed_from_remedy_rows(cx)
+    n = HL.load_drafts(cx, drafts)
+    print(f&quot;{&#x27;wrote&#x27; if a.apply else &#x27;would write&#x27;} {n} drafted rows of {len(drafts)}&quot;)
+
+
+if __name__ == &quot;__main__&quot;:
+    main()</code></pre>
+<ul><li>[ ] <strong>Step 4: Run the tests to verify they pass</strong></li></ul>
+<p>Run: <code>PYTHONDONTWRITEBYTECODE=1 python3 -m pytest -q -p no:cacheprovider tests/test_history_links.py</code> Expected: 4 passed.</p>
+<ul><li>[ ] <strong>Step 5: Export and draft</strong></li></ul>
+<p>Run: <code>cd ~/worktrees/vault-history-links &amp;&amp; python3 &quot;02 Skills/finding-condition-drafts.py&quot; export</code> Expected: <code>176 codes to draft -&gt; .../finding-codes-to-draft.json</code> (measured 2026-10-01).</p>
+<p>Note: the script writes into the live vault folder <code>~/AI-Training/clinical/remedy-order-review/</code>, because <code>VAULT</code> is the live vault. That is intended. These two JSON files are review material, not code.</p>
+<p>Then draft. Read the export. For each code, write zero or more conditions it plausibly corresponds to, from its name, full name and description. Prefer a phrase from <code>vocabulary</code> when one fits. Use plain condition words the way a client would report them (&quot;macular degeneration&quot;, &quot;acid reflux&quot;). Never use a diagnosis the description does not support. A code with no plausible condition gets no row. Write the result to <code>clinical/remedy-order-review/finding-condition-drafts.json</code> as a list of <code>{&quot;item_code&quot;: ..., &quot;condition&quot;: ...}</code>.</p>
+<p>Then: <code>python3 &quot;02 Skills/finding-condition-drafts.py&quot; load</code> and report the dry-run count. Do NOT run <code>--apply</code> yet: the drafts land in <code>e4l.db</code> in Task 11, after the review round.</p>
+<ul><li>[ ] <strong>Step 6: Commit</strong></li></ul>
+<pre><code>cd ~/worktrees/vault-history-links &amp;&amp; git add &quot;02 Skills/history_links.py&quot; &quot;02 Skills/finding-condition-drafts.py&quot; &quot;02 Skills/tests/test_history_links.py&quot; &amp;&amp; git commit -m &quot;History links: export codes to draft and load drafted conditions&quot;</code></pre>
+<hr>
+<h3>Task 3: Read-only attributes route in deploy-chat</h3>
+<p><strong>Files:</strong></p>
+<ul><li>Modify: <code>app.py</code> (add a route directly after <code>get_person</code>, near line 45047)</li><li>Test: <code>tests/test_people_attributes_api.py</code></li></ul>
+<p><strong>Interfaces:</strong></p>
+<ul><li>Produces: <code>GET /api/people/&lt;id&gt;/attributes</code> with header <code>X-Console-Key</code>, returning <code>{&quot;attributes&quot;: [{&quot;field&quot;, &quot;value&quot;, &quot;source&quot;}]}</code>. 401 without the key in the header, 404 for an unknown id.</li></ul>
+<ul><li>[ ] <strong>Step 1: Write the failing test</strong></li></ul>
+<pre><code>&quot;&quot;&quot;GET /api/people/&lt;id&gt;/attributes: canonical attributes WITH their source.
+
+Isolated: monkeypatches app.LOG_DB to a temp sqlite db and app.CONSOLE_SECRET.
+Run via:
+  doppler run -p remedy-match -c prd -- env DATA_DIR=&quot;$HOME/deploy-chat&quot; \
+    ~/.venvs/deploy-chat311/bin/python -m pytest tests/test_people_attributes_api.py
+&quot;&quot;&quot;
+import os
+import sqlite3
+import sys
+from pathlib import Path
+
+import pytest
+
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
+if not os.environ.get(&quot;PINECONE_API_KEY&quot;):
+    pytest.skip(&quot;requires app env (use doppler run)&quot;, allow_module_level=True)
+
+import app  # noqa: E402
+
+
+@pytest.fixture
+def client(tmp_path, monkeypatch):
+    p = str(tmp_path / &quot;chat_log.db&quot;)
+    with sqlite3.connect(p) as cx:
+        cx.execute(&quot;CREATE TABLE people (id INTEGER PRIMARY KEY AUTOINCREMENT,&quot;
+                   &quot; email TEXT UNIQUE, tags TEXT DEFAULT &#x27;[]&#x27;)&quot;)
+        cx.execute(&quot;INSERT INTO people(id, email) VALUES (7, &#x27;A@x.com&#x27;)&quot;)
+        cx.execute(&quot;INSERT INTO people(id, email) VALUES (8, &#x27;b@x.com&#x27;)&quot;)
+        from dashboard import canonical_tags as ct
+        ct.init_tables(cx)
+        cx.executemany(
+            &quot;INSERT INTO person_attributes(email, field, value, value_norm, source, added_at)&quot;
+            &quot; VALUES (?,?,?,?,?,?)&quot;, [
+                (&quot;a@x.com&quot;, &quot;conditions&quot;, &quot;Glaucoma&quot;, &quot;glaucoma&quot;, &quot;document:41&quot;, &quot;t&quot;),
+                (&quot;a@x.com&quot;, &quot;conditions&quot;, &quot;Acid reflux&quot;, &quot;acid reflux&quot;, &quot;console&quot;, &quot;t&quot;),
+                (&quot;b@x.com&quot;, &quot;conditions&quot;, &quot;Gout&quot;, &quot;gout&quot;, &quot;document:9&quot;, &quot;t&quot;)])
+        cx.commit()
+    monkeypatch.setattr(app, &quot;LOG_DB&quot;, p)
+    monkeypatch.setattr(app, &quot;CONSOLE_SECRET&quot;, &quot;testkey&quot;)
+    return app.app.test_client()
+
+
+def test_returns_this_persons_attributes_with_source(client):
+    r = client.get(&quot;/api/people/7/attributes&quot;, headers={&quot;X-Console-Key&quot;: &quot;testkey&quot;})
+    assert r.status_code == 200
+    assert r.get_json() == {&quot;attributes&quot;: [
+        {&quot;field&quot;: &quot;conditions&quot;, &quot;value&quot;: &quot;Acid reflux&quot;, &quot;source&quot;: &quot;console&quot;},
+        {&quot;field&quot;: &quot;conditions&quot;, &quot;value&quot;: &quot;Glaucoma&quot;, &quot;source&quot;: &quot;document:41&quot;}]}
+
+
+def test_key_only_in_the_header(client):
+    assert client.get(&quot;/api/people/7/attributes&quot;).status_code == 401
+    assert client.get(&quot;/api/people/7/attributes?key=testkey&quot;).status_code == 401
+    assert client.get(&quot;/api/people/7/attributes&quot;,
+                      headers={&quot;X-Console-Key&quot;: &quot;wrong&quot;}).status_code == 401
+
+
+def test_unknown_person_is_404(client):
+    assert client.get(&quot;/api/people/99/attributes&quot;,
+                      headers={&quot;X-Console-Key&quot;: &quot;testkey&quot;}).status_code == 404</code></pre>
+<ul><li>[ ] <strong>Step 2: Run to verify it fails</strong></li></ul>
+<p>Run: <code>cd ~/worktrees/wt-deploy-chat-e5ac8379 &amp;&amp; doppler run -p remedy-match -c prd -- env DATA_DIR=&quot;$HOME/deploy-chat&quot; ~/.venvs/deploy-chat311/bin/python -m pytest -q tests/test_people_attributes_api.py</code> Expected: FAIL, 404 where 200 was expected.</p>
+<ul><li>[ ] <strong>Step 3: Implement the route</strong></li></ul>
+<p>Insert after the <code>get_person</code> function in <code>app.py</code>:</p>
+<pre><code>@app.route(&quot;/api/people/&lt;int:person_id&gt;/attributes&quot;, methods=[&quot;GET&quot;])
+def get_person_attributes(person_id):
+    &quot;&quot;&quot;The client&#x27;s canonical clinical attributes WITH their source, for the vault&#x27;s
+    history builder (history vs energetic findings, spec 2026-10-01). /api/people/&lt;id&gt;
+    blends these into the People fields and drops the source; the builder needs it to
+    label an uploaded report as such. Console key in the header only: this route never
+    reads ?key=, which Render&#x27;s access log would keep.&quot;&quot;&quot;
+    key = request.headers.get(&quot;X-Console-Key&quot;, &quot;&quot;)
+    if not CONSOLE_SECRET or (key != CONSOLE_SECRET and not _owner_token_ok(key)):
+        return jsonify({&quot;error&quot;: &quot;Unauthorized&quot;}), 401
+    from dashboard import canonical_tags as _ct
+    with db.connect(LOG_DB) as cx:
+        cx.row_factory = sqlite3.Row
+        row = cx.execute(&quot;SELECT email FROM people WHERE id=?&quot;, (person_id,)).fetchone()
+        if not row:
+            return jsonify({&quot;error&quot;: &quot;Not found&quot;}), 404
+        _ct.init_tables(cx)
+        rows = cx.execute(
+            &quot;SELECT field, value, source FROM person_attributes WHERE email=?&quot;
+            &quot; ORDER BY field, value&quot;,
+            ((row[&quot;email&quot;] or &quot;&quot;).strip().lower(),)).fetchall()
+    return jsonify({&quot;attributes&quot;: [{&quot;field&quot;: r[&quot;field&quot;], &quot;value&quot;: r[&quot;value&quot;],
+                                    &quot;source&quot;: r[&quot;source&quot;] or &quot;&quot;} for r in rows]})</code></pre>
+<ul><li>[ ] <strong>Step 4: Run the test to verify it passes</strong></li></ul>
+<p>Run the Step 2 command. Expected: 3 passed.</p>
+<ul><li>[ ] <strong>Step 5: Mutate the header guard</strong></li></ul>
+<p>Copy <code>app.py</code>, change <code>key = request.headers.get(&quot;X-Console-Key&quot;, &quot;&quot;)</code> to <code>key = request.headers.get(&quot;X-Console-Key&quot;, &quot;&quot;) or request.args.get(&quot;key&quot;, &quot;&quot;)</code>, run, expect <code>test_key_only_in_the_header</code> to fail, restore with <code>mv</code>.</p>
+<ul><li>[ ] <strong>Step 6: Commit</strong></li></ul>
+<pre><code>cd ~/worktrees/wt-deploy-chat-e5ac8379 &amp;&amp; git add app.py tests/test_people_attributes_api.py &amp;&amp; git commit -m &quot;People: read-only attributes route with source, for the history builder&quot;</code></pre>
+<hr>
+<h3>Task 4: History rows from each part of the client&#x27;s file</h3>
+<p><strong>Files:</strong></p>
+<ul><li>Modify: <code>02 Skills/history_links.py</code></li><li>Test: <code>02 Skills/tests/test_history_links.py</code></li></ul>
+<p><strong>Interfaces:</strong></p>
+<ul><li>Produces, each returning a list of dicts <code>{phrase, source, source_ref, confirmed, kind}</code>: <code>people_rows(person, attributes)</code>, <code>tag_rows(person)</code>, <code>intake_rows(intake)</code>, <code>ledger_history(ledger)</code> where <code>ledger</code> is a list of <code>(source, tag, status)</code> tuples.</li><li>Produces constants <code>TAG_SOURCES</code>, <code>LEDGER_SOURCES</code>, <code>PEOPLE_FIELDS</code>.</li></ul>
+<ul><li>[ ] <strong>Step 1: Write the failing tests</strong></li></ul>
+<pre><code>def _p(rows):
+    return sorted((r[&quot;phrase&quot;], r[&quot;source&quot;], r[&quot;source_ref&quot;], r[&quot;confirmed&quot;], r[&quot;kind&quot;])
+                  for r in rows)
+
+
+def test_people_rows_split_uploaded_reports_from_the_record():
+    person = {&quot;conditions&quot;: &#x27;[&quot;Glaucoma&quot;, &quot;Acid reflux&quot;]&#x27;, &quot;terrain_concerns&quot;: [&quot;Stress&quot;],
+              &quot;body_systems&quot;: &quot;&quot;}
+    attrs = [{&quot;field&quot;: &quot;conditions&quot;, &quot;value&quot;: &quot;Glaucoma&quot;, &quot;source&quot;: &quot;document:41&quot;},
+             {&quot;field&quot;: &quot;conditions&quot;, &quot;value&quot;: &quot;Acid reflux&quot;, &quot;source&quot;: &quot;console&quot;},
+             {&quot;field&quot;: &quot;goals&quot;, &quot;value&quot;: &quot;Sleep&quot;, &quot;source&quot;: &quot;document:41&quot;}]
+    assert _p(HL.people_rows(person, attrs)) == [
+        (&quot;acid reflux&quot;, &quot;people:conditions&quot;, &quot;conditions&quot;, 1, &quot;structured&quot;),
+        (&quot;glaucoma&quot;, &quot;document&quot;, &quot;41&quot;, 1, &quot;structured&quot;),
+        (&quot;stress&quot;, &quot;people:conditions&quot;, &quot;terrain_concerns&quot;, 1, &quot;structured&quot;)]
+
+
+def test_tag_rows_keep_history_prefixes_only():
+    person = {&quot;tags&quot;: [&quot;pb:hypertension&quot;, &quot;system:digestive&quot;, &quot;regulation:low&quot;,
+                       &quot;concern:sleep&quot;, &quot;terrain:Aging/Rejuvenation&quot;, &quot;clin:focus-afib&quot;,
+                       &quot;state:e4l-has-account&quot;, &quot;type:client&quot;, &quot;untagged&quot;]}
+    assert _p(HL.tag_rows(person)) == [
+        (&quot;aging rejuvenation&quot;, &quot;ghl:terrain&quot;, &quot;terrain:aging/rejuvenation&quot;, 1, &quot;structured&quot;),
+        (&quot;digestive&quot;, &quot;scoreapp&quot;, &quot;system:digestive&quot;, 1, &quot;structured&quot;),
+        (&quot;hypertension&quot;, &quot;pb&quot;, &quot;pb:hypertension&quot;, 1, &quot;structured&quot;),
+        (&quot;low&quot;, &quot;scoreapp&quot;, &quot;regulation:low&quot;, 1, &quot;structured&quot;),
+        (&quot;sleep&quot;, &quot;scoreapp&quot;, &quot;concern:sleep&quot;, 1, &quot;structured&quot;)]
+
+
+def test_intake_rows_keep_narrative_whole_and_leave_out_allergies():
+    intake = {&quot;health_concerns&quot;: [{&quot;concern&quot;: &quot;Bloating&quot;}],
+              &quot;diagnoses&quot;: [{&quot;diagnosis&quot;: &quot;Hashimoto&#x27;s&quot;}],
+              &quot;allergies&quot;: [{&quot;allergen&quot;: &quot;Mold&quot;}],
+              &quot;vaccinations&quot;: &quot;Covid vaccine 2021&quot;,
+              &quot;supplements&quot;: [{&quot;brand&quot;: &quot;X&quot;, &quot;name&quot;: &quot;Candida Cleanse&quot;, &quot;reason&quot;: &quot;&quot;}],
+              &quot;medications&quot;: [{&quot;medication&quot;: &quot;Timolol&quot;, &quot;reason&quot;: &quot;eye pressure&quot;}]}
+    assert _p(HL.intake_rows(intake)) == [
+        (&quot;bloating&quot;, &quot;intake&quot;, &quot;health_concerns&quot;, 1, &quot;structured&quot;),
+        (&quot;candida cleanse&quot;, &quot;intake:narrative&quot;, &quot;supplements&quot;, 1, &quot;narrative&quot;),
+        (&quot;covid vaccine 2021&quot;, &quot;intake:narrative&quot;, &quot;vaccinations&quot;, 1, &quot;narrative&quot;),
+        (&quot;eye pressure&quot;, &quot;intake:narrative&quot;, &quot;medications&quot;, 1, &quot;narrative&quot;),
+        (&quot;hashimoto s&quot;, &quot;intake&quot;, &quot;diagnoses&quot;, 1, &quot;structured&quot;),
+        (&quot;timolol&quot;, &quot;intake:narrative&quot;, &quot;medications&quot;, 1, &quot;narrative&quot;),
+        (&quot;x&quot;, &quot;intake:narrative&quot;, &quot;supplements&quot;, 1, &quot;narrative&quot;)]
+
+
+def test_ledger_history_maps_sources_and_marks_chat_unconfirmed():
+    ledger = [(&quot;intake:glen-directed&quot;, &quot;focus:glaucoma-suspect&quot;, &quot;active&quot;),
+              (&quot;pb-intake&quot;, &quot;focus:nocturia&quot;, &quot;active&quot;),
+              (&quot;pb-intake&quot;, &quot;focus:sleep&quot;, &quot;suggested&quot;),          # not active
+              (&quot;chatbot:query_log&quot;, &quot;focus:tinnitus&quot;, &quot;suggested&quot;),
+              (&quot;email&quot;, &quot;focus:gout&quot;, &quot;retired&quot;),
+              (&quot;e4l:scan_results&quot;, &quot;system:skeletal&quot;, &quot;active&quot;),   # a finding
+              (&quot;clinician&quot;, &quot;condition:oral-neoplasia&quot;, &quot;active&quot;)]
+    assert _p(HL.ledger_history(ledger)) == [
+        (&quot;frequent night urination&quot;, &quot;ledger:intake&quot;, &quot;focus:nocturia&quot;, 1, &quot;structured&quot;),
+        (&quot;high eye pressure&quot;, &quot;glen&quot;, &quot;focus:glaucoma-suspect&quot;, 1, &quot;structured&quot;),
+        (&quot;oral neoplasia&quot;, &quot;glen&quot;, &quot;condition:oral-neoplasia&quot;, 1, &quot;structured&quot;),
+        (&quot;tinnitus&quot;, &quot;chat&quot;, &quot;focus:tinnitus&quot;, 0, &quot;structured&quot;)]
+
+
+def test_a_glaucoma_suspect_tag_never_meets_glaucoma():
+    import remedy_tiers as T
+    (row,) = HL.ledger_history([(&quot;intake:glen-directed&quot;, &quot;focus:glaucoma-suspect&quot;, &quot;active&quot;)])
+    facts = {&quot;structured&quot;: [row[&quot;phrase&quot;]], &quot;narrative&quot;: &quot;&quot;, &quot;age&quot;: None, &quot;sex&quot;: &quot;&quot;}
+    assert T.condition_met(&quot;high eye pressure&quot;, facts)
+    assert not T.condition_met(&quot;glaucoma&quot;, facts)</code></pre>
+<ul><li>[ ] <strong>Step 2: Run to verify they fail</strong></li></ul>
+<p>Expected: the new tests FAIL with <code>AttributeError</code>.</p>
+<ul><li>[ ] <strong>Step 3: Implement</strong></li></ul>
+<p>Append to <code>history_links.py</code>:</p>
+<pre><code>PEOPLE_FIELDS = (&quot;conditions&quot;, &quot;terrain_concerns&quot;, &quot;body_systems&quot;)
+
+# People tag prefix -&gt; history source. Anything else on People tags is not history:
+# clin: copies the ledger, state: is a status flag, type:/consent: describe the account.
+TAG_SOURCES = {&quot;pb&quot;: &quot;pb&quot;, &quot;system&quot;: &quot;scoreapp&quot;, &quot;regulation&quot;: &quot;scoreapp&quot;,
+               &quot;concern&quot;: &quot;scoreapp&quot;, &quot;terrain&quot;: &quot;ghl:terrain&quot;}
+
+# Ledger source -&gt; history source. e4l:* sources are findings and never appear here.
+LEDGER_SOURCES = {
+    &quot;intake:glen-directed&quot;: &quot;glen&quot;, &quot;clinician&quot;: &quot;glen&quot;, &quot;note:internal&quot;: &quot;glen&quot;,
+    &quot;pb-intake&quot;: &quot;ledger:intake&quot;, &quot;pb-intake-backfill&quot;: &quot;ledger:intake&quot;,
+    &quot;pb-intake:self-report&quot;: &quot;ledger:intake&quot;,
+    &quot;chatbot:query_log&quot;: &quot;chat&quot;, &quot;journal:portal&quot;: &quot;chat&quot;, &quot;email&quot;: &quot;chat&quot;}
+
+
+def _row(phrase, source, ref=&quot;&quot;, confirmed=1, kind=&quot;structured&quot;):
+    return {&quot;phrase&quot;: phrase, &quot;source&quot;: source, &quot;source_ref&quot;: str(ref),
+            &quot;confirmed&quot;: confirmed, &quot;kind&quot;: kind}
+
+
+def people_rows(person, attributes):
+    &quot;&quot;&quot;People conditions, terrain concerns and body systems. A value that came from an
+    approved document extraction is labelled &#x27;document&#x27; with the document id; the
+    People GET blends those in without their source.&quot;&quot;&quot;
+    docs = {}
+    for a in attributes or []:
+        src = str(a.get(&quot;source&quot;) or &quot;&quot;)
+        if a.get(&quot;field&quot;) in PEOPLE_FIELDS and src.startswith(&quot;document:&quot;):
+            p = T.normalize(a.get(&quot;value&quot;))
+            if p:
+                docs.setdefault(p, src.split(&quot;:&quot;, 1)[1])
+    rows = [_row(p, &quot;document&quot;, ref) for p, ref in docs.items()]
+    for f in PEOPLE_FIELDS:
+        for v in T._as_list((person or {}).get(f)):
+            p = T.normalize(v)
+            if p and p not in docs:
+                rows.append(_row(p, &quot;people:conditions&quot;, f))
+    return rows
+
+
+def tag_rows(person):
+    rows = []
+    for t in T._as_list((person or {}).get(&quot;tags&quot;)):
+        s = str(t).strip()
+        if &quot;:&quot; not in s:
+            continue
+        src = TAG_SOURCES.get(s.split(&quot;:&quot;, 1)[0].strip().lower())
+        p = T._tag_text(s)
+        if src and p:
+            rows.append(_row(p, src, s.lower()))
+    return rows
+
+
+def intake_rows(intake):
+    &quot;&quot;&quot;Health concerns and diagnoses as structured history. Vaccinations, supplements
+    and medications stay whole as narrative: remedy_tiers searches those only for the
+    conditions Glen approved for narrative matching. Allergies are left out on purpose:
+    a mold allergy is not mold exposure.&quot;&quot;&quot;
+    a = intake or {}
+    rows = []
+    for key, col in ((&quot;health_concerns&quot;, &quot;concern&quot;), (&quot;diagnoses&quot;, &quot;diagnosis&quot;)):
+        for v in T._rows(a, key, col):
+            p = T.normalize(v)
+            if p:
+                rows.append(_row(p, &quot;intake&quot;, key))
+    narrative = [(&quot;vaccinations&quot;, str(a.get(&quot;vaccinations&quot;) or &quot;&quot;))]
+    narrative += [(&quot;supplements&quot;, x) for x in T._rows(a, &quot;supplements&quot;, &quot;brand&quot;, &quot;name&quot;, &quot;reason&quot;)]
+    narrative += [(&quot;medications&quot;, x) for x in T._rows(a, &quot;medications&quot;, &quot;medication&quot;, &quot;reason&quot;)]
+    narrative += [(&quot;otc_drugs&quot;, x) for x in T._rows(a, &quot;otc_drugs&quot;, &quot;medication&quot;, &quot;reason&quot;)]
+    for key, text in narrative:
+        p = T.normalize(text)
+        if p:
+            rows.append(_row(p, &quot;intake:narrative&quot;, key, kind=&quot;narrative&quot;))
+    return rows
+
+
+def ledger_history(ledger):
+    &quot;&quot;&quot;Ledger tags from intake, from Glen, and from chat. Active only, except chat,
+    where a suggested tag is kept too, unconfirmed. A tag Glen approved in
+    remedy_tiers.TAG_CONDITIONS stores its approved phrases, so &#x27;glaucoma suspect&#x27;
+    is stored as &#x27;high eye pressure&#x27; and never meets &#x27;glaucoma&#x27;.&quot;&quot;&quot;
+    rows = []
+    for source, tag, status in ledger or []:
+        src = LEDGER_SOURCES.get(source)
+        if not src:
+            continue
+        chat = src == &quot;chat&quot;
+        if status != &quot;active&quot; and not (chat and status == &quot;suggested&quot;):
+            continue
+        t = str(tag or &quot;&quot;).strip().lower()
+        for p in T.TAG_CONDITIONS.get(t) or [T._tag_text(t)]:
+            p = T.normalize(p)
+            if p:
+                rows.append(_row(p, src, t, confirmed=0 if chat else 1))
+    return rows</code></pre>
+<ul><li>[ ] <strong>Step 4: Run the tests to verify they pass</strong></li></ul>
+<p>Expected: 9 passed.</p>
+<ul><li>[ ] <strong>Step 5: Commit</strong></li></ul>
+<pre><code>cd ~/worktrees/vault-history-links &amp;&amp; git add &quot;02 Skills/history_links.py&quot; &quot;02 Skills/tests/test_history_links.py&quot; &amp;&amp; git commit -m &quot;History links: history rows from People, tags, intake and ledger&quot;</code></pre>
+<hr>
+<h3>Task 5: Write history additively, retire what disappeared</h3>
+<p><strong>Files:</strong></p>
+<ul><li>Modify: <code>02 Skills/history_links.py</code></li><li>Test: <code>02 Skills/tests/test_history_links.py</code></li></ul>
+<p><strong>Interfaces:</strong></p>
+<ul><li>Consumes: the row dicts from Task 4.</li><li>Produces: <code>write_history(cx, client_id, rows, sources_read, today) -&gt; None</code>. Only rows whose source is in <code>sources_read</code> are written, and only those sources can be retired. The caller commits.</li></ul>
+<ul><li>[ ] <strong>Step 1: Write the failing tests</strong></li></ul>
+<pre><code>def _hist(cx):
+    return sorted(cx.execute(&quot;SELECT phrase, source, first_seen, last_seen, retired_at&quot;
+                             &quot; FROM client_history&quot;).fetchall())
+
+
+def test_write_history_inserts_updates_and_retires():
+    cx = sqlite3.connect(&quot;:memory:&quot;)
+    HL.init_tables(cx)
+    a = HL._row(&quot;bloating&quot;, &quot;intake&quot;, &quot;health_concerns&quot;)
+    b = HL._row(&quot;gout&quot;, &quot;pb&quot;, &quot;pb:gout&quot;)
+    HL.write_history(cx, 1, [a, b], {&quot;intake&quot;, &quot;pb&quot;}, &quot;2026-09-01&quot;)
+    HL.write_history(cx, 1, [a], {&quot;intake&quot;, &quot;pb&quot;}, TODAY)
+    assert _hist(cx) == [(&quot;bloating&quot;, &quot;intake&quot;, &quot;2026-09-01&quot;, TODAY, None),
+                         (&quot;gout&quot;, &quot;pb&quot;, &quot;2026-09-01&quot;, &quot;2026-09-01&quot;, TODAY)]
+    HL.write_history(cx, 1, [a, b], {&quot;intake&quot;, &quot;pb&quot;}, &quot;2026-10-02&quot;)   # it came back
+    assert _hist(cx)[1] == (&quot;gout&quot;, &quot;pb&quot;, &quot;2026-09-01&quot;, &quot;2026-10-02&quot;, None)
+
+
+def test_a_source_that_was_not_read_is_neither_written_nor_retired():
+    cx = sqlite3.connect(&quot;:memory:&quot;)
+    HL.init_tables(cx)
+    HL.write_history(cx, 1, [HL._row(&quot;glaucoma&quot;, &quot;document&quot;, &quot;41&quot;)], {&quot;document&quot;}, &quot;2026-09-01&quot;)
+    HL.write_history(cx, 1, [HL._row(&quot;gout&quot;, &quot;document&quot;, &quot;9&quot;)], {&quot;pb&quot;}, TODAY)
+    assert _hist(cx) == [(&quot;glaucoma&quot;, &quot;document&quot;, &quot;2026-09-01&quot;, &quot;2026-09-01&quot;, None)]
+
+
+def test_write_history_keeps_clients_apart():
+    cx = sqlite3.connect(&quot;:memory:&quot;)
+    HL.init_tables(cx)
+    HL.write_history(cx, 1, [HL._row(&quot;gout&quot;, &quot;pb&quot;, &quot;pb:gout&quot;)], {&quot;pb&quot;}, TODAY)
+    HL.write_history(cx, 2, [], {&quot;pb&quot;}, TODAY)
+    assert _hist(cx) == [(&quot;gout&quot;, &quot;pb&quot;, TODAY, TODAY, None)]</code></pre>
+<ul><li>[ ] <strong>Step 2: Run to verify they fail</strong></li></ul>
+<p>Expected: FAIL with <code>AttributeError: ... &#x27;write_history&#x27;</code>.</p>
+<ul><li>[ ] <strong>Step 3: Implement</strong></li></ul>
+<pre><code>def write_history(cx, client_id, rows, sources_read, today):
+    &quot;&quot;&quot;Upsert this client&#x27;s history rows; retire rows of a source that was read but
+    no longer names them. A source that failed to read is left exactly as it was.&quot;&quot;&quot;
+    init_tables(cx)
+    seen = set()
+    for r in rows:
+        if r[&quot;source&quot;] not in sources_read:
+            continue
+        key = (r[&quot;phrase&quot;], r[&quot;source&quot;], r[&quot;source_ref&quot;])
+        if key in seen:
+            continue
+        seen.add(key)
+        cx.execute(
+            &quot;INSERT INTO client_history(client_id, phrase, kind, source, source_ref,&quot;
+            &quot; confirmed, first_seen, last_seen) VALUES (?,?,?,?,?,?,?,?)&quot;
+            &quot; ON CONFLICT(client_id, phrase, source, source_ref) DO UPDATE SET&quot;
+            &quot; last_seen=excluded.last_seen, retired_at=NULL,&quot;
+            &quot; confirmed=excluded.confirmed, kind=excluded.kind&quot;,
+            (client_id, r[&quot;phrase&quot;], r[&quot;kind&quot;], r[&quot;source&quot;], r[&quot;source_ref&quot;],
+             r[&quot;confirmed&quot;], today, today))
+    for hid, phrase, source, ref in cx.execute(
+            &quot;SELECT id, phrase, source, source_ref FROM client_history&quot;
+            &quot; WHERE client_id=? AND retired_at IS NULL&quot;, (client_id,)).fetchall():
+        if source in sources_read and (phrase, source, ref) not in seen:
+            cx.execute(&quot;UPDATE client_history SET retired_at=? WHERE id=?&quot;, (today, hid))</code></pre>
+<ul><li>[ ] <strong>Step 4: Run the tests to verify they pass</strong></li></ul>
+<p>Expected: 12 passed.</p>
+<ul><li>[ ] <strong>Step 5: Commit</strong></li></ul>
+<pre><code>cd ~/worktrees/vault-history-links &amp;&amp; git add &quot;02 Skills/history_links.py&quot; &quot;02 Skills/tests/test_history_links.py&quot; &amp;&amp; git commit -m &quot;History links: write history additively and retire per source read&quot;</code></pre>
+<hr>
+<h3>Task 6: Fetch the client&#x27;s file and build their history</h3>
+<p><strong>Files:</strong></p>
+<ul><li>Modify: <code>02 Skills/history_links.py</code></li><li>Test: <code>02 Skills/tests/test_history_links.py</code></li></ul>
+<p><strong>Interfaces:</strong></p>
+<ul><li>Consumes: <code>e4l_reveal_lib.PEOPLE_URL</code>, <code>PERSON_URL</code>, <code>INTAKE_URL</code>, <code>_get_json(url, key, opener)</code>; <code>e4l_synthesis.identities_on_email(cx, email)</code>, <code>merge_group(cx, client_id)</code>; Task 4 and 5 functions.</li><li>Produces: <code>fetch_client_inputs(email, opener=None) -&gt; dict | None</code> with keys <code>person</code>, <code>intake</code>, <code>attributes</code>, <code>read</code> (a set drawn from <code>{&quot;person&quot;, &quot;intake&quot;, &quot;attributes&quot;}</code>); <code>read_ledger(cx, client_ids) -&gt; list[(source, tag, status)]</code>; <code>build_client_history(cx, email, today, opener=None) -&gt; bool</code> (True only when the People read succeeded and history was written).</li></ul>
+<ul><li>[ ] <strong>Step 1: Write the failing tests</strong></li></ul>
+<pre><code>import json as _json  # noqa: E402
+
+import e4l_synthesis as E  # noqa: E402
+
+
+def _opener(person, intake=None, attrs=None, fail=()):
+    import io
+    import urllib.error
+
+    def op(req, timeout=None):
+        u = req.full_url
+        assert &quot;key=&quot; not in u and req.get_header(&quot;X-console-key&quot;) == &quot;k&quot;
+        if &quot;/api/people?&quot; in u:
+            return io.BytesIO(_json.dumps({&quot;people&quot;: [{&quot;email&quot;: &quot;a@x.com&quot;, &quot;id&quot;: 7}]}).encode())
+        if u.endswith(&quot;/attributes&quot;):
+            if &quot;attributes&quot; in fail:
+                raise urllib.error.HTTPError(u, 500, &quot;x&quot;, {}, None)
+            return io.BytesIO(_json.dumps({&quot;attributes&quot;: attrs or []}).encode())
+        if &quot;/api/people/&quot; in u:
+            return io.BytesIO(_json.dumps(person).encode())
+        if &quot;intake&quot; in fail:
+            raise OSError(&quot;down&quot;)
+        if intake is None:
+            raise urllib.error.HTTPError(u, 404, &quot;nf&quot;, {}, None)
+        return io.BytesIO(_json.dumps({&quot;answers&quot;: intake}).encode())
+    return op
+
+
+def _clients(*rows):
+    cx = sqlite3.connect(&quot;:memory:&quot;)
+    cx.executescript(&quot;CREATE TABLE e4l_clients(client_id INTEGER PRIMARY KEY, email TEXT,&quot;
+                     &quot; archived_at TEXT); CREATE TABLE client_clinical_tags(client_id&quot;
+                     &quot; INTEGER, axis TEXT, tag TEXT, status TEXT, source TEXT);&quot;)
+    E.init_identity_merges(cx)
+    cx.executemany(&quot;INSERT INTO e4l_clients VALUES (?,?,NULL)&quot;, rows)
+    HL.init_tables(cx)
+    return cx
+
+
+def test_build_writes_every_source(monkeypatch):
+    monkeypatch.setenv(&quot;CONSOLE_SECRET&quot;, &quot;k&quot;)
+    cx = _clients((1, &quot;a@x.com&quot;))
+    cx.execute(&quot;INSERT INTO client_clinical_tags VALUES&quot;
+               &quot; (1,&#x27;status&#x27;,&#x27;focus:afib&#x27;,&#x27;active&#x27;,&#x27;intake:glen-directed&#x27;)&quot;)
+    cx.execute(&quot;INSERT INTO client_clinical_tags VALUES&quot;
+               &quot; (1,&#x27;status&#x27;,&#x27;system:skeletal&#x27;,&#x27;active&#x27;,&#x27;e4l:scan_results&#x27;)&quot;)
+    op = _opener({&quot;id&quot;: 7, &quot;conditions&quot;: [&quot;Glaucoma&quot;], &quot;tags&quot;: [&quot;pb:gout&quot;]},
+                 {&quot;health_concerns&quot;: [{&quot;concern&quot;: &quot;Bloating&quot;}]},
+                 [{&quot;field&quot;: &quot;conditions&quot;, &quot;value&quot;: &quot;Glaucoma&quot;, &quot;source&quot;: &quot;document:41&quot;}])
+    assert HL.build_client_history(cx, &quot;a@x.com&quot;, TODAY, op) is True
+    assert sorted(cx.execute(&quot;SELECT phrase, source FROM client_history&quot;
+                             &quot; WHERE client_id=1&quot;).fetchall()) == [
+        (&quot;bloating&quot;, &quot;intake&quot;), (&quot;glaucoma&quot;, &quot;document&quot;), (&quot;gout&quot;, &quot;pb&quot;),
+        (&quot;irregular heartbeat&quot;, &quot;glen&quot;)]                  # approved tag phrase
+
+
+def test_attributes_failing_leaves_people_fields_untouched(monkeypatch):
+    monkeypatch.setenv(&quot;CONSOLE_SECRET&quot;, &quot;k&quot;)
+    cx = _clients((1, &quot;a@x.com&quot;))
+    HL.write_history(cx, 1, [HL._row(&quot;acid reflux&quot;, &quot;people:conditions&quot;, &quot;conditions&quot;)],
+                     {&quot;people:conditions&quot;}, &quot;2026-09-01&quot;)
+    op = _opener({&quot;id&quot;: 7, &quot;conditions&quot;: [&quot;Glaucoma&quot;]}, {}, fail=(&quot;attributes&quot;,))
+    assert HL.build_client_history(cx, &quot;a@x.com&quot;, TODAY, op) is True
+    assert cx.execute(&quot;SELECT phrase, retired_at FROM client_history&quot;
+                      &quot; WHERE source=&#x27;people:conditions&#x27;&quot;).fetchall() == [(&quot;acid reflux&quot;, None)]
+
+
+def test_intake_failing_leaves_intake_rows_untouched(monkeypatch):
+    monkeypatch.setenv(&quot;CONSOLE_SECRET&quot;, &quot;k&quot;)
+    cx = _clients((1, &quot;a@x.com&quot;))
+    HL.write_history(cx, 1, [HL._row(&quot;bloating&quot;, &quot;intake&quot;, &quot;health_concerns&quot;)],
+                     {&quot;intake&quot;}, &quot;2026-09-01&quot;)
+    assert HL.build_client_history(cx, &quot;a@x.com&quot;, TODAY,
+                                   _opener({&quot;id&quot;: 7}, fail=(&quot;intake&quot;,))) is True
+    assert cx.execute(&quot;SELECT retired_at FROM client_history&quot;).fetchall() == [(None,)]
+
+
+def test_build_fails_closed(monkeypatch):
+    monkeypatch.setenv(&quot;CONSOLE_SECRET&quot;, &quot;k&quot;)
+    op = _opener({&quot;id&quot;: 7, &quot;tags&quot;: [&quot;pb:gout&quot;]})
+    two = _clients((1, &quot;a@x.com&quot;), (2, &quot;a@x.com&quot;))                  # household
+    assert HL.build_client_history(two, &quot;a@x.com&quot;, TODAY, op) is False
+    none = _clients((1, &quot;b@x.com&quot;))
+    assert HL.build_client_history(none, &quot;a@x.com&quot;, TODAY, op) is False
+    assert HL.build_client_history(_clients((1, &quot;&quot;)), &quot;&quot;, TODAY, op) is False
+
+    def boom(req, timeout=None):
+        raise OSError(&quot;down&quot;)
+    one = _clients((1, &quot;a@x.com&quot;))
+    assert HL.build_client_history(one, &quot;a@x.com&quot;, TODAY, boom) is False
+    monkeypatch.delenv(&quot;CONSOLE_SECRET&quot;)
+    assert HL.build_client_history(one, &quot;a@x.com&quot;, TODAY, op) is False
+    for cx in (two, none, one):
+        assert cx.execute(&quot;SELECT count(*) FROM client_history&quot;).fetchone() == (0,)</code></pre>
+<ul><li>[ ] <strong>Step 2: Run to verify they fail</strong></li></ul>
+<p>Expected: FAIL with <code>AttributeError: ... &#x27;build_client_history&#x27;</code>.</p>
+<ul><li>[ ] <strong>Step 3: Implement</strong></li></ul>
+<pre><code>def fetch_client_inputs(email, opener=None):
+    &quot;&quot;&quot;The client&#x27;s People record, intake answers and attribute sources. None when
+    the key is missing, the lookup fails, or the address does not hold exactly one
+    People record. Intake and attributes are read separately: a failure there is
+    recorded by leaving it out of `read`, never by guessing.&quot;&quot;&quot;
+    import urllib.request
+    import e4l_reveal_lib as R
+    opener = opener or urllib.request.urlopen
+    try:
+        key = os.environ[&quot;CONSOLE_SECRET&quot;]
+        q = urllib.parse.quote(email)
+        ppl = R._get_json(R.PEOPLE_URL + q, key, opener).get(&quot;people&quot;) or []
+        same = [p for p in ppl if (p.get(&quot;email&quot;) or &quot;&quot;).strip().lower() == email.lower()]
+        if len(same) != 1 or not same[0].get(&quot;id&quot;):
+            return None
+        pid = int(same[0][&quot;id&quot;])
+        person = R._get_json(R.PERSON_URL + str(pid), key, opener)
+    except Exception:
+        return None
+    out = {&quot;person&quot;: person, &quot;intake&quot;: {}, &quot;attributes&quot;: [], &quot;read&quot;: {&quot;person&quot;}}
+    try:
+        out[&quot;intake&quot;] = (R._get_json(R.INTAKE_URL + q, key, opener) or {}).get(&quot;answers&quot;) or {}
+        out[&quot;read&quot;].add(&quot;intake&quot;)
+    except urllib.error.HTTPError as ex:
+        if ex.code == 404:                      # no intake on file is a clean read
+            out[&quot;read&quot;].add(&quot;intake&quot;)
+    except Exception:
+        pass
+    try:
+        out[&quot;attributes&quot;] = (R._get_json(R.PERSON_URL + str(pid) + &quot;/attributes&quot;, key,
+                                         opener) or {}).get(&quot;attributes&quot;) or []
+        out[&quot;read&quot;].add(&quot;attributes&quot;)
+    except Exception:
+        pass
+    return out
+
+
+def read_ledger(cx, client_ids):
+    ids = sorted(client_ids)
+    marks = &quot;,&quot;.join(&quot;?&quot; * len(ids))
+    return cx.execute(
+        f&quot;SELECT source, tag, status FROM client_clinical_tags WHERE client_id IN ({marks})&quot;
+        &quot; AND axis=&#x27;status&#x27;&quot;, ids).fetchall()
+
+
+def build_client_history(cx, email, today, opener=None):
+    &quot;&quot;&quot;Read the client&#x27;s whole file and write their history. True only when the
+    People read succeeded and history was written. A household address, no client,
+    or any failure before the write means False and nothing written.&quot;&quot;&quot;
+    import e4l_synthesis as E
+    email = (email or &quot;&quot;).strip()
+    if not email:
+        return False
+    try:
+        if E.identities_on_email(cx, email) != 1:
+            return False
+        cid = cx.execute(&quot;SELECT client_id FROM e4l_clients&quot;
+                         &quot; WHERE lower(trim(email))=lower(trim(?))&quot;, (email,)).fetchone()[0]
+        group = E.merge_group(cx, cid)
+    except Exception:
+        return False
+    inputs = fetch_client_inputs(email, opener)
+    if inputs is None:
+        return False
+    person, read = inputs[&quot;person&quot;], set()
+    rows = tag_rows(person)
+    read |= {&quot;pb&quot;, &quot;scoreapp&quot;, &quot;ghl:terrain&quot;}
+    if &quot;attributes&quot; in inputs[&quot;read&quot;]:
+        rows += people_rows(person, inputs[&quot;attributes&quot;])
+        read |= {&quot;people:conditions&quot;, &quot;document&quot;}
+    if &quot;intake&quot; in inputs[&quot;read&quot;]:
+        rows += intake_rows(inputs[&quot;intake&quot;])
+        read |= {&quot;intake&quot;, &quot;intake:narrative&quot;}
+    try:
+        rows += ledger_history(read_ledger(cx, group))
+        read |= {&quot;glen&quot;, &quot;ledger:intake&quot;, &quot;chat&quot;}
+    except Exception:
+        pass
+    try:
+        write_history(cx, cid, rows, read, today)
+        cx.commit()
+    except Exception:
+        cx.rollback()
+        return False
+    return True</code></pre>
+<ul><li>[ ] <strong>Step 4: Run the tests to verify they pass</strong></li></ul>
+<p>Expected: 16 passed.</p>
+<ul><li>[ ] <strong>Step 5: Commit</strong></li></ul>
+<pre><code>cd ~/worktrees/vault-history-links &amp;&amp; git add &quot;02 Skills/history_links.py&quot; &quot;02 Skills/tests/test_history_links.py&quot; &amp;&amp; git commit -m &quot;History links: fetch the client&#x27;s file and build history, fail closed&quot;</code></pre>
+<hr>
+<h3>Task 7: Link a scan&#x27;s findings to the history</h3>
+<p><strong>Files:</strong></p>
+<ul><li>Modify: <code>02 Skills/history_links.py</code></li><li>Test: <code>02 Skills/tests/test_history_links.py</code></li></ul>
+<p><strong>Interfaces:</strong></p>
+<ul><li>Consumes: <code>remedy_tiers.condition_met(condition, facts)</code>; <code>e4l_synthesis.merge_group</code>.</li><li>Produces: <code>link_scan(cx, scan_id, history_ok, today) -&gt; int | None</code> (links written, or None when nothing was touched); <code>process_scan(cx, email, scan_id, today, opener=None) -&gt; int | None</code>, which never raises.</li></ul>
+<ul><li>[ ] <strong>Step 1: Write the failing tests</strong></li></ul>
+<pre><code>def _scan_db():
+    cx = _clients((1, &quot;a@x.com&quot;), (2, &quot;a2@x.com&quot;))
+    cx.executescript(
+        &quot;CREATE TABLE e4l_scans(scan_id INTEGER PRIMARY KEY, client_id INTEGER, scan_date TEXT);&quot;
+        &quot;CREATE TABLE e4l_scan_results(scan_id INTEGER, item_code TEXT, priority_rank INTEGER);&quot;
+        &quot;INSERT INTO e4l_scans VALUES (10, 1, &#x27;2026-09-01&#x27;);&quot;
+        &quot;INSERT INTO e4l_scans VALUES (11, 2, &#x27;2026-09-02&#x27;);&quot;
+        &quot;INSERT INTO e4l_scans VALUES (12, 1, &#x27;2026-09-03&#x27;);&quot;
+        &quot;INSERT INTO e4l_scan_results VALUES (10,&#x27;ED5&#x27;,1),(10,&#x27;EI3&#x27;,2),(10,&#x27;ET6&#x27;,3);&quot;
+        &quot;INSERT INTO e4l_scan_results VALUES (11,&#x27;ED5&#x27;,1);&quot;)
+    cx.executemany(&quot;INSERT INTO finding_conditions(item_code, condition, origin) VALUES (?,?,?)&quot;, [
+        (&quot;ED5&quot;, &quot;leaky gut&quot;, &quot;remedy-row&quot;), (&quot;EI3&quot;, &quot;leaky gut&quot;, &quot;drafted&quot;),
+        (&quot;ET6&quot;, &quot;covid vaccination&quot;, &quot;remedy-row&quot;), (&quot;ED5&quot;, &quot;glaucoma&quot;, &quot;drafted&quot;)])
+    HL.write_history(cx, 1, [
+        HL._row(&quot;intestinal permeability&quot;, &quot;intake&quot;, &quot;health_concerns&quot;),
+        HL._row(&quot;no glaucoma&quot;, &quot;intake&quot;, &quot;diagnoses&quot;),
+        HL._row(&quot;covid vaccine 2021&quot;, &quot;intake:narrative&quot;, &quot;vaccinations&quot;, kind=&quot;narrative&quot;)],
+        {&quot;intake&quot;, &quot;intake:narrative&quot;}, TODAY)
+    return cx
+
+
+def _links(cx, scan_id):
+    return sorted(cx.execute(
+        &quot;SELECT l.item_code, h.phrase, f.condition FROM finding_history_links l&quot;
+        &quot; JOIN client_history h ON h.id=l.history_id&quot;
+        &quot; JOIN finding_conditions f ON f.id=l.finding_condition_id WHERE l.scan_id=?&quot;,
+        (scan_id,)).fetchall())
+
+
+def test_several_findings_link_to_one_condition_and_negation_holds():
+    cx = _scan_db()
+    assert HL.link_scan(cx, 10, True, TODAY) == 3
+    assert _links(cx, 10) == [
+        (&quot;ED5&quot;, &quot;intestinal permeability&quot;, &quot;leaky gut&quot;),
+        (&quot;EI3&quot;, &quot;intestinal permeability&quot;, &quot;leaky gut&quot;),
+        (&quot;ET6&quot;, &quot;covid vaccine 2021&quot;, &quot;covid vaccination&quot;)]
+
+
+def test_a_removed_row_makes_no_link():
+    cx = _scan_db()
+    cx.execute(&quot;UPDATE finding_conditions SET removed=1 WHERE item_code=&#x27;EI3&#x27;&quot;)
+    HL.link_scan(cx, 10, True, TODAY)
+    assert [x[0] for x in _links(cx, 10)] == [&quot;ED5&quot;, &quot;ET6&quot;]
+
+
+def test_failed_history_or_no_findings_keeps_old_links():
+    cx = _scan_db()
+    HL.link_scan(cx, 10, True, TODAY)
+    assert HL.link_scan(cx, 10, False, TODAY) is None
+    assert len(_links(cx, 10)) == 3
+    cx.execute(&quot;INSERT INTO finding_history_links VALUES (12,&#x27;ED5&#x27;,1,1,&#x27;x&#x27;)&quot;)
+    assert HL.link_scan(cx, 12, True, TODAY) is None          # no findings loaded
+    assert len(_links(cx, 12)) == 1
+    assert HL.link_scan(cx, 99, True, TODAY) is None          # no such scan
+
+
+def test_a_successful_empty_result_replaces_old_links():
+    cx = _scan_db()
+    HL.link_scan(cx, 10, True, TODAY)
+    HL.write_history(cx, 1, [], {&quot;intake&quot;, &quot;intake:narrative&quot;}, TODAY)   # all retired
+    assert HL.link_scan(cx, 10, True, TODAY) == 0
+    assert _links(cx, 10) == []
+
+
+def test_links_use_the_merge_group_and_never_another_person():
+    cx = _scan_db()
+    assert HL.link_scan(cx, 11, True, TODAY) == 0              # client 2 has no history
+    cx.execute(&quot;INSERT INTO e4l_identity_merges(dup_client_id, canonical_client_id)&quot;
+               &quot; VALUES (2, 1)&quot;)
+    assert HL.link_scan(cx, 11, True, TODAY) == 1
+
+
+def test_process_scan_never_raises(monkeypatch):
+    monkeypatch.setenv(&quot;CONSOLE_SECRET&quot;, &quot;k&quot;)
+    cx = _scan_db()
+
+    def boom(req, timeout=None):
+        raise OSError(&quot;down&quot;)
+    assert HL.process_scan(cx, &quot;a@x.com&quot;, 10, TODAY, boom) is None
+    assert HL.process_scan(sqlite3.connect(&quot;:memory:&quot;), &quot;a@x.com&quot;, 10, TODAY, boom) is None</code></pre>
+<ul><li>[ ] <strong>Step 2: Run to verify they fail</strong></li></ul>
+<p>Expected: FAIL with <code>AttributeError: ... &#x27;link_scan&#x27;</code>.</p>
+<ul><li>[ ] <strong>Step 3: Implement</strong></li></ul>
+<pre><code>def _facts(phrase, kind):
+    if kind == &quot;narrative&quot;:
+        return {&quot;structured&quot;: [], &quot;narrative&quot;: phrase, &quot;age&quot;: None, &quot;sex&quot;: &quot;&quot;}
+    return {&quot;structured&quot;: [phrase], &quot;narrative&quot;: &quot;&quot;, &quot;age&quot;: None, &quot;sex&quot;: &quot;&quot;}
+
+
+def link_scan(cx, scan_id, history_ok, today):
+    &quot;&quot;&quot;Replace this scan&#x27;s links in one step. Touches nothing (returns None) when the
+    history read failed, the scan is unknown, or its findings are not loaded yet, so
+    a failed run never erases links a good run made.&quot;&quot;&quot;
+    import e4l_synthesis as E
+    if not history_ok:
+        return None
+    init_tables(cx)
+    row = cx.execute(&quot;SELECT client_id FROM e4l_scans WHERE scan_id=?&quot;, (scan_id,)).fetchone()
+    if not row:
+        return None
+    codes = [r[0] for r in cx.execute(
+        &quot;SELECT DISTINCT item_code FROM e4l_scan_results WHERE scan_id=?&quot;, (scan_id,))]
+    if not codes:
+        return None
+    group = sorted(E.merge_group(cx, row[0]))
+    hist = cx.execute(
+        f&quot;SELECT id, phrase, kind FROM client_history WHERE client_id IN&quot;
+        f&quot; ({&#x27;,&#x27;.join(&#x27;?&#x27; * len(group))}) AND retired_at IS NULL&quot;, group).fetchall()
+    fcs = cx.execute(
+        f&quot;SELECT id, item_code, condition FROM finding_conditions WHERE removed=0&quot;
+        f&quot; AND item_code IN ({&#x27;,&#x27;.join(&#x27;?&#x27; * len(codes))})&quot;, codes).fetchall()
+    links = [(scan_id, code, hid, fid, today)
+             for fid, code, cond in fcs
+             for hid, phrase, kind in hist
+             if T.condition_met(cond, _facts(phrase, kind))]
+    cx.execute(&quot;SAVEPOINT link_scan&quot;)
+    try:
+        cx.execute(&quot;DELETE FROM finding_history_links WHERE scan_id=?&quot;, (scan_id,))
+        cx.executemany(&quot;INSERT OR IGNORE INTO finding_history_links VALUES (?,?,?,?,?)&quot;, links)
+        cx.execute(&quot;RELEASE link_scan&quot;)
+    except Exception:
+        cx.execute(&quot;ROLLBACK TO link_scan&quot;)
+        cx.execute(&quot;RELEASE link_scan&quot;)
+        raise
+    cx.commit()
+    return len(links)
+
+
+def process_scan(cx, email, scan_id, today, opener=None):
+    &quot;&quot;&quot;Build the client&#x27;s history, then link this scan. Never raises into the scan
+    script that calls it: a failure is printed and nothing is lost.&quot;&quot;&quot;
+    try:
+        ok = build_client_history(cx, email, today, opener)
+        return link_scan(cx, scan_id, ok, today)
+    except Exception as ex:  # noqa: BLE001
+        print(f&quot;[history-links] scan {scan_id} not linked ({type(ex).__name__})&quot;, flush=True)
+        return None</code></pre>
+<ul><li>[ ] <strong>Step 4: Run the tests to verify they pass</strong></li></ul>
+<p>Expected: 22 passed.</p>
+<ul><li>[ ] <strong>Step 5: Commit</strong></li></ul>
+<pre><code>cd ~/worktrees/vault-history-links &amp;&amp; git add &quot;02 Skills/history_links.py&quot; &quot;02 Skills/tests/test_history_links.py&quot; &amp;&amp; git commit -m &quot;History links: link a scan&#x27;s findings to history, replace in one step&quot;</code></pre>
+<hr>
+<h3>Task 8: Run on every new scan, and backfill past scans</h3>
+<p><strong>Files:</strong></p>
+<ul><li>Modify: <code>02 Skills/e4l-reveal-push.py</code>, <code>02 Skills/e4l-analysis-fulfill.py</code>, <code>02 Skills/scan-pull-fulfill.py</code>, <code>02 Skills/e4l-portal-import.py</code></li><li>Create: <code>02 Skills/history-links-backfill.py</code></li><li>Test: <code>02 Skills/tests/test_history_links.py</code></li></ul>
+<p><strong>Interfaces:</strong></p>
+<ul><li>Consumes: <code>process_scan</code>, <code>build_client_history</code>, <code>link_scan</code>.</li><li>Produces: <code>history-links-backfill.py</code> with <code>run(cx, today, opener=None) -&gt; dict</code> of counts.</li></ul>
+<ul><li>[ ] <strong>Step 1: Write the failing tests</strong></li></ul>
+<pre><code>def test_every_scan_script_links_its_scan():
+    import re
+    here = os.path.join(os.path.dirname(__file__), &quot;..&quot;)
+    want = {&quot;e4l-reveal-push.py&quot;: &quot;HL.process_scan(cx, email, scan[\&quot;scan_id\&quot;], _today)&quot;,
+            &quot;e4l-analysis-fulfill.py&quot;: &quot;HL.process_scan(cx, email, scan[\&quot;scan_id\&quot;], today)&quot;,
+            &quot;scan-pull-fulfill.py&quot;: &quot;HL.process_scan(cx, email, scan[\&quot;scan_id\&quot;], today)&quot;,
+            &quot;e4l-portal-import.py&quot;: &quot;HL.process_scan(cx, a.email, scan[\&quot;scan_id\&quot;], _today)&quot;}
+    for f, call in want.items():
+        src = open(os.path.join(here, f), encoding=&quot;utf-8&quot;).read()
+        assert &quot;import history_links as HL&quot; in src, f
+        assert src.count(call) == 1, f
+        # after the draft is built from the same connection, never before the scan resolves
+        assert src.index(call) &gt; src.index(&quot;fetch_client_facts(&quot;), f
+
+
+def _backfill():
+    import importlib.util
+    p = os.path.join(os.path.dirname(__file__), &quot;..&quot;, &quot;history-links-backfill.py&quot;)
+    spec = importlib.util.spec_from_file_location(&quot;history_links_backfill&quot;, p)
+    m = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(m)
+    return m
+
+
+def test_backfill_fetches_each_client_once_and_counts(monkeypatch):
+    monkeypatch.setenv(&quot;CONSOLE_SECRET&quot;, &quot;k&quot;)
+    cx = _scan_db()
+    calls = []
+    real = HL.fetch_client_inputs
+
+    def counting(email, opener=None):
+        calls.append(email)
+        return real(email, opener)
+    monkeypatch.setattr(HL, &quot;fetch_client_inputs&quot;, counting)
+    op = _opener({&quot;id&quot;: 7, &quot;tags&quot;: [&quot;pb:intestinal-permeability&quot;]}, {})
+    out = _backfill().run(cx, TODAY, op)
+    assert calls.count(&quot;a@x.com&quot;) == 1
+    assert out[&quot;scans&quot;] == 3 and out[&quot;clients_with_history&quot;] &gt;= 1
+    assert out[&quot;links&quot;] == len(_links(cx, 10)) + len(_links(cx, 11)) + len(_links(cx, 12))</code></pre>
+<ul><li>[ ] <strong>Step 2: Run to verify they fail</strong></li></ul>
+<p>Expected: FAIL (<code>assert &quot;import history_links as HL&quot; in src</code>, and no backfill file).</p>
+<ul><li>[ ] <strong>Step 3: Wire the four scripts</strong></li></ul>
+<p>In each, add <code>import history_links as HL  # noqa: E402</code> on the line after the existing <code>import e4l_synthesis as E</code> line (or after <code>from e4l_reveal_lib import ...</code> where that is the last local import). Then insert one line, at the indentation of the statement that follows:</p>
+<ul><li><code>e4l-reveal-push.py</code>: immediately before <code>payload = build_payload(content, email, scan[&quot;scan_date&quot;], ...)</code>: <code>HL.process_scan(cx, email, scan[&quot;scan_id&quot;], _today)</code></li><li><code>e4l-analysis-fulfill.py</code>: immediately before <code>return rp.build_payload(content, email, scan[&quot;scan_date&quot;], ...)</code>: <code>HL.process_scan(cx, email, scan[&quot;scan_id&quot;], today)</code></li><li><code>scan-pull-fulfill.py</code>: immediately before <code>payload = rp.build_payload(content, email, scan[&quot;scan_date&quot;], ...)</code>: <code>HL.process_scan(cx, email, scan[&quot;scan_id&quot;], today)</code></li><li><code>e4l-portal-import.py</code>: immediately before <code>name = (cx.execute(&quot;SELECT name FROM e4l_clients ...</code>: <code>HL.process_scan(cx, a.email, scan[&quot;scan_id&quot;], _today)</code></li></ul>
+<p>Each of these <code>cx</code> values is opened writable (<code>sqlite3.connect(E4L_DB)</code>); confirm that by reading the lines above the call. If any is opened <code>?mode=ro</code>, stop and report it.</p>
+<ul><li>[ ] <strong>Step 4: Write the backfill script</strong></li></ul>
+<pre><code>#!/usr/bin/env python3
+&quot;&quot;&quot;Build history and links for every past scan (spec 2026-10-01).
+
+Dry run by default: runs on an in-memory copy of e4l.db and prints counts only.
+--apply writes e4l.db. Prints no names or addresses.
+
+  doppler run --project remedy-match --config prd -- python3 &quot;02 Skills/history-links-backfill.py&quot;
+  doppler run --project remedy-match --config prd -- python3 &quot;02 Skills/history-links-backfill.py&quot; --apply
+&quot;&quot;&quot;
+import argparse
+import datetime
+import os
+import sqlite3
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import history_links as HL  # noqa: E402
+
+E4L_DB = os.path.expanduser(&quot;~/AI-Training/e4l.db&quot;)
+
+
+def run(cx, today, opener=None):
+    HL.init_tables(cx)
+    HL.seed_from_remedy_rows(cx)
+    scans = cx.execute(
+        &quot;SELECT s.scan_id, c.email FROM e4l_scans s JOIN e4l_clients c&quot;
+        &quot; ON c.client_id=s.client_id WHERE trim(coalesce(c.email,&#x27;&#x27;))&lt;&gt;&#x27;&#x27;&quot;
+        &quot; ORDER BY s.scan_date&quot;).fetchall()
+    built, out = {}, {&quot;scans&quot;: 0, &quot;linked_scans&quot;: 0, &quot;links&quot;: 0, &quot;untouched_scans&quot;: 0}
+    for scan_id, email in scans:
+        out[&quot;scans&quot;] += 1
+        key = email.strip().lower()
+        if key not in built:
+            try:
+                built[key] = HL.build_client_history(cx, email, today, opener)
+            except Exception:
+                built[key] = False
+        try:
+            n = HL.link_scan(cx, scan_id, built[key], today)
+        except Exception:
+            n = None
+        if n is None:
+            out[&quot;untouched_scans&quot;] += 1
+        else:
+            out[&quot;linked_scans&quot;] += 1
+            out[&quot;links&quot;] += n
+    out[&quot;clients_with_history&quot;] = sum(1 for v in built.values() if v)
+    out[&quot;clients_without_history&quot;] = sum(1 for v in built.values() if not v)
+    out[&quot;history_rows_by_source&quot;] = dict(cx.execute(
+        &quot;SELECT source, count(*) FROM client_history WHERE retired_at IS NULL&quot;
+        &quot; GROUP BY source ORDER BY source&quot;).fetchall())
+    out[&quot;links_from_unreviewed_rows&quot;] = cx.execute(
+        &quot;SELECT count(*) FROM finding_history_links l JOIN finding_conditions f&quot;
+        &quot; ON f.id=l.finding_condition_id WHERE f.reviewed=0&quot;).fetchone()[0]
+    return out
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument(&quot;--apply&quot;, action=&quot;store_true&quot;)
+    a = ap.parse_args()
+    if a.apply:
+        cx = sqlite3.connect(E4L_DB)
+    else:
+        cx = sqlite3.connect(&quot;:memory:&quot;)
+        sqlite3.connect(f&quot;file:{E4L_DB}?mode=ro&quot;, uri=True).backup(cx)
+    out = run(cx, datetime.date.today().isoformat())
+    print((&quot;APPLIED&quot; if a.apply else &quot;DRY RUN, nothing written&quot;), flush=True)
+    for k, v in out.items():
+        print(f&quot;  {k}: {v}&quot;)
+
+
+if __name__ == &quot;__main__&quot;:
+    main()</code></pre>
+<ul><li>[ ] <strong>Step 5: Run the tests to verify they pass</strong></li></ul>
+<p>Run: <code>PYTHONDONTWRITEBYTECODE=1 python3 -m pytest -q -p no:cacheprovider tests/test_history_links.py tests/test_remedy_tiers.py</code> Expected: all pass (24 new, 44 tier).</p>
+<ul><li>[ ] <strong>Step 6: Commit</strong></li></ul>
+<pre><code>cd ~/worktrees/vault-history-links &amp;&amp; git add &quot;02 Skills/e4l-reveal-push.py&quot; &quot;02 Skills/e4l-analysis-fulfill.py&quot; &quot;02 Skills/scan-pull-fulfill.py&quot; &quot;02 Skills/e4l-portal-import.py&quot; &quot;02 Skills/history-links-backfill.py&quot; &quot;02 Skills/tests/test_history_links.py&quot; &amp;&amp; git commit -m &quot;History links: link each new scan; dry-run backfill for past scans&quot;</code></pre>
+<hr>
+<h3>Task 9: The panel on the authoring page</h3>
+<p><strong>Files:</strong></p>
+<ul><li>Create: <code>dashboard/history_links.py</code> (deploy-chat)</li><li>Modify: <code>dashboard/biofield_report_html.py:2142</code> (<code>render_author_html</code> gains <code>history_links_html=&quot;&quot;</code>, placed right after <code>render_clinical_checklist(...)</code>)</li><li>Modify: <code>biofield_local_app.py:1276</code> (the <code>/author/&lt;test_id&gt;</code> route computes and passes it)</li><li>Test: <code>tests/test_history_links_panel.py</code></li></ul>
+<p><strong>Interfaces:</strong></p>
+<ul><li>Consumes: the three tables, <code>e4l_scans</code>, <code>e4l_items</code>, <code>e4l_identity_merges</code> in the local <code>e4l.db</code>.</li><li>Produces: <code>render_panel(e4l_db_path, e4l_client_id, date_test) -&gt; str</code> (HTML, or <code>&quot;&quot;</code> on any failure or when there is nothing to say).</li></ul>
+<ul><li>[ ] <strong>Step 1: Write the failing tests</strong></li></ul>
+<pre><code>&quot;&quot;&quot;History-to-finding links panel (spec 2026-10-01). Pure: no app env needed.&quot;&quot;&quot;
+import sqlite3
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
+from dashboard import history_links as HP  # noqa: E402
+
+
+def _db(tmp_path):
+    p = str(tmp_path / &quot;e4l.db&quot;)
+    cx = sqlite3.connect(p)
+    cx.executescript(&quot;&quot;&quot;
+    CREATE TABLE e4l_scans(scan_id INTEGER PRIMARY KEY, client_id INTEGER, scan_date TEXT);
+    CREATE TABLE e4l_items(item_code TEXT PRIMARY KEY, name TEXT, full_name TEXT);
+    CREATE TABLE e4l_identity_merges(dup_client_id INTEGER PRIMARY KEY,
+        canonical_client_id INTEGER NOT NULL, note TEXT, confirmed_at TEXT,
+        route_reports INTEGER NOT NULL DEFAULT 0);
+    CREATE TABLE client_history(id INTEGER PRIMARY KEY, client_id INTEGER, phrase TEXT,
+        kind TEXT, source TEXT, source_ref TEXT, confirmed INTEGER, first_seen TEXT,
+        last_seen TEXT, retired_at TEXT);
+    CREATE TABLE finding_conditions(id INTEGER PRIMARY KEY, item_code TEXT, condition TEXT,
+        origin TEXT, note TEXT, reviewed INTEGER, removed INTEGER, reviewed_at TEXT);
+    CREATE TABLE finding_history_links(scan_id INTEGER, item_code TEXT, history_id INTEGER,
+        finding_condition_id INTEGER, linked_at TEXT);
+    INSERT INTO e4l_scans VALUES (10, 1, &#x27;2026-08-01&#x27;), (11, 1, &#x27;2026-09-01&#x27;),
+                                 (12, 1, &#x27;2026-12-01&#x27;), (20, 5, &#x27;2026-09-05&#x27;);
+    INSERT INTO e4l_items VALUES (&#x27;ED5&#x27;,&#x27;Circulation&#x27;,&#x27;ED5 Circulation&#x27;),
+                                 (&#x27;ED9&#x27;,&#x27;Stomach&#x27;,&#x27;ED9 Stomach Driver&#x27;);
+    INSERT INTO client_history VALUES
+      (1,1,&#x27;macular degeneration&#x27;,&#x27;structured&#x27;,&#x27;document&#x27;,&#x27;41&#x27;,1,&#x27;x&#x27;,&#x27;x&#x27;,NULL),
+      (2,1,&#x27;tinnitus&#x27;,&#x27;structured&#x27;,&#x27;chat&#x27;,&#x27;focus:tinnitus&#x27;,0,&#x27;x&#x27;,&#x27;x&#x27;,NULL),
+      (3,1,&#x27;gout&#x27;,&#x27;structured&#x27;,&#x27;pb&#x27;,&#x27;pb:gout&#x27;,1,&#x27;x&#x27;,&#x27;x&#x27;,NULL),
+      (4,1,&#x27;old thing&#x27;,&#x27;structured&#x27;,&#x27;pb&#x27;,&#x27;pb:old&#x27;,1,&#x27;x&#x27;,&#x27;x&#x27;,&#x27;2026-09-01&#x27;);
+    INSERT INTO finding_conditions VALUES
+      (1,&#x27;ED9&#x27;,&#x27;macular degeneration&#x27;,&#x27;glen&#x27;,&#x27;Stomach &lt;b&gt;carries&lt;/b&gt; metals&#x27;,1,0,&#x27;x&#x27;),
+      (2,&#x27;ED5&#x27;,&#x27;tinnitus&#x27;,&#x27;drafted&#x27;,&#x27;&#x27;,0,0,NULL);
+    INSERT INTO finding_history_links VALUES (11,&#x27;ED9&#x27;,1,1,&#x27;x&#x27;), (11,&#x27;ED5&#x27;,2,2,&#x27;x&#x27;),
+                                             (10,&#x27;ED5&#x27;,3,2,&#x27;x&#x27;);
+    &quot;&quot;&quot;)
+    cx.commit()
+    return p
+
+
+def test_panel_shows_the_scan_on_or_before_the_test_date(tmp_path):
+    html = HP.render_panel(_db(tmp_path), &quot;1&quot;, &quot;2026-09-15&quot;)
+    assert &quot;2026-09-01&quot; in html and &quot;2026-12-01&quot; not in html
+    assert &quot;macular degeneration&quot; in html and &quot;ED9 Stomach Driver&quot; in html
+    assert &quot;uploaded report&quot; in html
+    assert &quot;from chat, unconfirmed&quot; in html
+    assert html.count(&quot;unreviewed&quot;) == 1                      # ED5 row only
+    assert &quot;gout&quot; not in html                                  # linked on another scan
+    assert &quot;1 reported condition no finding links to&quot; in html  # gout; retired not counted
+
+
+def test_notes_and_phrases_are_escaped(tmp_path):
+    html = HP.render_panel(_db(tmp_path), &quot;1&quot;, &quot;2026-09-15&quot;)
+    assert &quot;Stomach &amp;lt;b&amp;gt;carries&amp;lt;/b&amp;gt; metals&quot; in html
+    assert &quot;&lt;b&gt;carries&quot; not in html
+
+
+def test_a_merged_duplicate_shows_the_canonical_persons_links(tmp_path):
+    p = _db(tmp_path)
+    with sqlite3.connect(p) as cx:
+        cx.execute(&quot;INSERT INTO e4l_identity_merges(dup_client_id, canonical_client_id)&quot;
+                   &quot; VALUES (5, 1)&quot;)
+    # 2026-09-03: before client 5&#x27;s own scan 20, so the canonical scan 11 is the latest
+    assert &quot;macular degeneration&quot; in HP.render_panel(p, &quot;5&quot;, &quot;2026-09-03&quot;)
+
+
+def test_panel_is_empty_when_it_cannot_say_anything(tmp_path):
+    p = _db(tmp_path)
+    assert HP.render_panel(p, &quot;&quot;, &quot;2026-09-15&quot;) == &quot;&quot;
+    assert HP.render_panel(p, &quot;abc&quot;, &quot;2026-09-15&quot;) == &quot;&quot;
+    assert HP.render_panel(p, &quot;1&quot;, &quot;2026-07-01&quot;) == &quot;&quot;        # no scan yet
+    assert HP.render_panel(str(tmp_path / &quot;missing.db&quot;), &quot;1&quot;, &quot;2026-09-15&quot;) == &quot;&quot;</code></pre>
+<ul><li>[ ] <strong>Step 2: Run to verify they fail</strong></li></ul>
+<p>Run: <code>cd ~/worktrees/wt-deploy-chat-e5ac8379 &amp;&amp; ~/.venvs/deploy-chat311/bin/python -m pytest -q tests/test_history_links_panel.py</code> Expected: FAIL, <code>ImportError</code>.</p>
+<ul><li>[ ] <strong>Step 3: Implement the panel</strong></li></ul>
+<pre><code>&quot;&quot;&quot;History-to-finding links on the authoring page (spec 2026-10-01).
+
+Reads the local e4l.db read-only and writes nothing. The vault&#x27;s
+02 Skills/history_links.py owns the tables. Any failure renders nothing, so the
+authoring page never breaks on this panel. Glen&#x27;s view only: no client sees it.
+&quot;&quot;&quot;
+import html
+import os
+import sqlite3
+
+SOURCE_LABELS = {
+    &quot;people:conditions&quot;: &quot;People record&quot;, &quot;document&quot;: &quot;uploaded report&quot;,
+    &quot;intake&quot;: &quot;intake&quot;, &quot;intake:narrative&quot;: &quot;intake&quot;, &quot;pb&quot;: &quot;Practice Better&quot;,
+    &quot;scoreapp&quot;: &quot;ScoreApp quiz&quot;, &quot;ghl:terrain&quot;: &quot;from GoHighLevel, origin unknown&quot;,
+    &quot;glen&quot;: &quot;your tag&quot;, &quot;ledger:intake&quot;: &quot;intake tag&quot;, &quot;chat&quot;: &quot;from chat, unconfirmed&quot;}
+
+
+def _e(x):
+    return html.escape(str(x or &quot;&quot;), quote=True)
+
+
+def _group(cx, cid):
+    &quot;&quot;&quot;Same rule as e4l_synthesis.merge_group in the vault.&quot;&quot;&quot;
+    try:
+        canon = {int(d): int(c) for d, c in cx.execute(
+            &quot;SELECT dup_client_id, canonical_client_id FROM e4l_identity_merges&quot;)}
+    except sqlite3.Error:
+        return {cid}
+    c = canon.get(cid, cid)
+    return {cid, c} | {d for d, can in canon.items() if can == c}
+
+
+def render_panel(e4l_db_path, e4l_client_id, date_test):
+    try:
+        cid = int(str(e4l_client_id or &quot;&quot;).strip())
+    except ValueError:
+        return &quot;&quot;
+    if not os.path.exists(e4l_db_path):
+        return &quot;&quot;
+    try:
+        with sqlite3.connect(f&quot;file:{e4l_db_path}?mode=ro&quot;, uri=True) as cx:
+            return _render(cx, cid, str(date_test or &quot;&quot;).strip()[:10])
+    except sqlite3.Error:
+        return &quot;&quot;
+
+
+def _render(cx, cid, date_test):
+    group = sorted(_group(cx, cid))
+    marks = &quot;,&quot;.join(&quot;?&quot; * len(group))
+    q = (f&quot;SELECT scan_id, scan_date FROM e4l_scans WHERE client_id IN ({marks})&quot;
+         + (&quot; AND scan_date&lt;=?&quot; if date_test else &quot;&quot;) + &quot; ORDER BY scan_date DESC LIMIT 1&quot;)
+    scan = cx.execute(q, group + ([date_test] if date_test else [])).fetchone()
+    if not scan:
+        return &quot;&quot;
+    scan_id, scan_date = scan
+    rows = cx.execute(
+        &quot;SELECT h.id, h.phrase, h.source, l.item_code, coalesce(i.full_name, i.name, l.item_code),&quot;
+        &quot; f.reviewed, f.note FROM finding_history_links l&quot;
+        &quot; JOIN client_history h ON h.id=l.history_id&quot;
+        &quot; JOIN finding_conditions f ON f.id=l.finding_condition_id&quot;
+        &quot; LEFT JOIN e4l_items i ON i.item_code=l.item_code&quot;
+        &quot; WHERE l.scan_id=? ORDER BY h.phrase, l.item_code&quot;, (scan_id,)).fetchall()
+    linked_ids = {r[0] for r in rows}
+    active = cx.execute(
+        f&quot;SELECT id, phrase FROM client_history WHERE client_id IN ({marks})&quot;
+        &quot; AND retired_at IS NULL&quot;, group).fetchall()
+    unlinked = len({p for i, p in active if i not in linked_ids}
+                   - {r[1] for r in rows})
+    by_condition = {}
+    for hid, phrase, source, code, name, reviewed, note in rows:
+        c = by_condition.setdefault(phrase, {&quot;sources&quot;: set(), &quot;findings&quot;: []})
+        c[&quot;sources&quot;].add(SOURCE_LABELS.get(source, source))
+        c[&quot;findings&quot;].append((name, reviewed, note))
+    items = []
+    for phrase, c in by_condition.items():
+        finds = &quot;&quot;.join(
+            f&quot;&lt;li&gt;{_e(name)}&quot; + (&quot;&quot; if reviewed else &quot; &lt;span class=food&gt;unreviewed&lt;/span&gt;&quot;)
+            + (f&quot;&lt;div class=food&gt;{_e(note)}&lt;/div&gt;&quot; if note else &quot;&quot;) + &quot;&lt;/li&gt;&quot;
+            for name, reviewed, note in c[&quot;findings&quot;])
+        items.append(f&quot;&lt;li&gt;&lt;b&gt;{_e(phrase)}&lt;/b&gt; &lt;span class=food&gt;&quot;
+                     f&quot;{_e(&#x27;, &#x27;.join(sorted(c[&#x27;sources&#x27;])))}&lt;/span&gt;&lt;ul&gt;{finds}&lt;/ul&gt;&lt;/li&gt;&quot;)
+    if not items and not unlinked:
+        return &quot;&quot;
+    noun = &quot;condition&quot; if unlinked == 1 else &quot;conditions&quot;
+    return (&quot;&lt;section class=clinical-summary&gt;&lt;div class=clinical-head&gt;&quot;
+            f&quot;&lt;h3&gt;History and findings, scan of {_e(scan_date)}&lt;/h3&gt;&lt;/div&gt;&quot;
+            + (f&quot;&lt;ul&gt;{&#x27;&#x27;.join(items)}&lt;/ul&gt;&quot; if items else &quot;&lt;p class=food&gt;No links on this scan.&lt;/p&gt;&quot;)
+            + f&quot;&lt;p class=food&gt;{unlinked} reported {noun} no finding links to.&lt;/p&gt;&lt;/section&gt;&quot;)</code></pre>
+<ul><li>[ ] <strong>Step 4: Run the panel tests to verify they pass</strong></li></ul>
+<p>Expected: 4 passed.</p>
+<ul><li>[ ] <strong>Step 5: Wire it into the authoring page</strong></li></ul>
+<p>In <code>dashboard/biofield_report_html.py</code>, add <code>history_links_html=&quot;&quot;</code> as the last keyword parameter of <code>render_author_html</code>, and change <code>+ render_clinical_checklist(...)</code> so the call is followed by <code>+ history_links_html</code> before <code>+ chain + session + narrative_section</code>.</p>
+<p>In <code>biofield_local_app.py</code>, in the <code>/author/&lt;test_id&gt;</code> route just before <code>return Response(render_author_html(...</code>, add:</p>
+<pre><code>        try:
+            from dashboard import history_links as _hlp
+            _hl_html = _hlp.render_panel(e4l_db, rep.get(&quot;e4l_client_id&quot;) or &quot;&quot;,
+                                         rep.get(&quot;date&quot;) or &quot;&quot;)
+        except Exception as _he:
+            print(f&quot;[history-links] panel skipped: {_he!r}&quot;, flush=True)
+            _hl_html = &quot;&quot;</code></pre>
+<p>and pass <code>history_links_html=_hl_html</code> in the <code>render_author_html(...)</code> call. Read <code>authored_report</code> (<code>dashboard/biofield_authoring.py:833</code>) to confirm the test date key is <code>date</code>; if it is named differently, use that key and say so.</p>
+<p>Add to <code>tests/test_biofield_author_html.py</code>:</p>
+<pre><code>def test_history_links_panel_sits_after_the_clinical_summary():
+    from dashboard.biofield_report_html import render_author_html
+    page = render_author_html({&quot;client&quot;: {&quot;name&quot;: &quot;A&quot;, &quot;email&quot;: &quot;a@x.com&quot;}, &quot;layers&quot;: [],
+                               &quot;test_id&quot;: &quot;a1&quot;}, clinical_checklist=[],
+                               history_links_html=&quot;&lt;section id=hlpanel&gt;&lt;/section&gt;&quot;)
+    assert &quot;&lt;section id=hlpanel&gt;&lt;/section&gt;&quot; in page</code></pre>
+<p>Run: <code>~/.venvs/deploy-chat311/bin/python -m pytest -q tests/test_history_links_panel.py tests/test_biofield_author_html.py</code>. Expected: all pass. If the existing author test file needs more report keys to render, copy the minimal report dict its other tests use.</p>
+<ul><li>[ ] <strong>Step 6: Commit</strong></li></ul>
+<pre><code>cd ~/worktrees/wt-deploy-chat-e5ac8379 &amp;&amp; git add dashboard/history_links.py dashboard/biofield_report_html.py biofield_local_app.py tests/test_history_links_panel.py tests/test_biofield_author_html.py &amp;&amp; git commit -m &quot;Authoring page: history-to-finding links panel, read-only&quot;</code></pre>
+<hr>
+<h3>Task 10: The review page and its apply script</h3>
+<p><strong>Files:</strong></p>
+<ul><li>Create: <code>02 Skills/apply-finding-condition-review.py</code> (vault)</li><li>Modify: <code>02 Skills/history_links.py</code> (add <code>apply_review</code>)</li><li>Test: <code>02 Skills/tests/test_history_links.py</code></li><li>Create: the review page, an Artifact (see Step 5)</li></ul>
+<p><strong>Interfaces:</strong></p>
+<ul><li>Produces: <code>apply_review(cx, decisions, today) -&gt; dict</code> where <code>decisions = {&quot;rows&quot;: [{&quot;id&quot;: int, &quot;keep&quot;: bool, &quot;note&quot;: str}], &quot;added&quot;: [{&quot;item_code&quot;: str, &quot;condition&quot;: str, &quot;note&quot;: str}]}</code> and the result counts <code>reviewed</code>, <code>removed</code>, <code>added</code>, <code>skipped</code>.</li></ul>
+<ul><li>[ ] <strong>Step 1: Write the failing test</strong></li></ul>
+<pre><code>def test_apply_review_marks_rows_and_adds_glens_rows():
+    cx = _items(_map_db())
+    HL.seed_from_remedy_rows(cx)
+    ids = dict(cx.execute(&quot;SELECT condition, id FROM finding_conditions&quot;))
+    out = HL.apply_review(cx, {
+        &quot;rows&quot;: [{&quot;id&quot;: ids[&quot;leaky gut&quot;], &quot;keep&quot;: True, &quot;note&quot;: &quot;  gut  &quot;},
+                 {&quot;id&quot;: ids[&quot;brain fog&quot;], &quot;keep&quot;: False, &quot;note&quot;: &quot;&quot;},
+                 {&quot;id&quot;: 999, &quot;keep&quot;: True, &quot;note&quot;: &quot;&quot;}],
+        &quot;added&quot;: [{&quot;item_code&quot;: &quot;ED9&quot;, &quot;condition&quot;: &quot;Macular degeneration&quot;,
+                   &quot;note&quot;: &quot;Stomach Meridian carries heavy metal stresses to the Macula&quot;},
+                  {&quot;item_code&quot;: &quot;NOPE&quot;, &quot;condition&quot;: &quot;x&quot;, &quot;note&quot;: &quot;&quot;}]}, TODAY)
+    assert out == {&quot;reviewed&quot;: 2, &quot;removed&quot;: 1, &quot;added&quot;: 1, &quot;skipped&quot;: 2}
+    got = dict((c, (r, m, n)) for c, r, m, n in cx.execute(
+        &quot;SELECT condition, reviewed, removed, note FROM finding_conditions&quot;))
+    assert got[&quot;leaky gut&quot;] == (1, 0, &quot;gut&quot;)
+    assert got[&quot;brain fog&quot;] == (1, 1, &quot;&quot;)
+    assert got[&quot;macular degeneration&quot;] == (
+        1, 0, &quot;Stomach Meridian carries heavy metal stresses to the Macula&quot;)
+    assert got[&quot;spike protein exposure&quot;] == (0, 0, &quot;&quot;)        # untouched stays unreviewed</code></pre>
+<ul><li>[ ] <strong>Step 2: Run to verify it fails</strong></li></ul>
+<p>Expected: FAIL with <code>AttributeError: ... &#x27;apply_review&#x27;</code>.</p>
+<ul><li>[ ] <strong>Step 3: Implement</strong></li></ul>
+<pre><code>def apply_review(cx, decisions, today):
+    &quot;&quot;&quot;Write Glen&#x27;s review. Rows he did not touch stay unreviewed. A removed row is
+    kept with removed=1, so a re-seed never brings it back.&quot;&quot;&quot;
+    init_tables(cx)
+    out = {&quot;reviewed&quot;: 0, &quot;removed&quot;: 0, &quot;added&quot;: 0, &quot;skipped&quot;: 0}
+    for d in (decisions or {}).get(&quot;rows&quot;) or []:
+        keep = bool(d.get(&quot;keep&quot;))
+        n = cx.execute(
+            &quot;UPDATE finding_conditions SET reviewed=1, removed=?, note=?, reviewed_at=?&quot;
+            &quot; WHERE id=?&quot;, (0 if keep else 1, str(d.get(&quot;note&quot;) or &quot;&quot;).strip(), today,
+                            int(d.get(&quot;id&quot;) or 0))).rowcount
+        if not n:
+            out[&quot;skipped&quot;] += 1
+            continue
+        out[&quot;reviewed&quot;] += 1
+        out[&quot;removed&quot;] += 0 if keep else 1
+    known = {r[0] for r in cx.execute(&quot;SELECT item_code FROM e4l_items&quot;)}
+    for d in (decisions or {}).get(&quot;added&quot;) or []:
+        code, cond = str(d.get(&quot;item_code&quot;) or &quot;&quot;).strip(), _condition(d.get(&quot;condition&quot;))
+        if code not in known or not cond:
+            out[&quot;skipped&quot;] += 1
+            continue
+        cx.execute(
+            &quot;INSERT INTO finding_conditions(item_code, condition, origin, note, reviewed,&quot;
+            &quot; removed, reviewed_at) VALUES (?,?,&#x27;glen&#x27;,?,1,0,?)&quot;
+            &quot; ON CONFLICT(item_code, condition) DO UPDATE SET note=excluded.note,&quot;
+            &quot; reviewed=1, removed=0, reviewed_at=excluded.reviewed_at&quot;,
+            (code, cond, str(d.get(&quot;note&quot;) or &quot;&quot;).strip(), today))
+        out[&quot;added&quot;] += 1
+    cx.commit()
+    return out</code></pre>
+<p>Create <code>02 Skills/apply-finding-condition-review.py</code>:</p>
+<pre><code>#!/usr/bin/env python3
+&quot;&quot;&quot;Write Glen&#x27;s finding-to-condition review into e4l.db. Dry run by default.
+
+  python3 &quot;02 Skills/apply-finding-condition-review.py&quot; decisions.json
+  python3 &quot;02 Skills/apply-finding-condition-review.py&quot; decisions.json --apply
+
+decisions.json is exported from the review page&#x27;s store (see the plan, Task 10).
+&quot;&quot;&quot;
+import argparse
+import datetime
+import json
+import os
+import sqlite3
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import history_links as HL  # noqa: E402
+
+E4L_DB = os.path.expanduser(&quot;~/AI-Training/e4l.db&quot;)
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument(&quot;decisions&quot;)
+    ap.add_argument(&quot;--apply&quot;, action=&quot;store_true&quot;)
+    a = ap.parse_args()
+    decisions = json.load(open(a.decisions, encoding=&quot;utf-8&quot;))
+    if a.apply:
+        cx = sqlite3.connect(E4L_DB)
+    else:
+        cx = sqlite3.connect(&quot;:memory:&quot;)
+        sqlite3.connect(f&quot;file:{E4L_DB}?mode=ro&quot;, uri=True).backup(cx)
+    out = HL.apply_review(cx, decisions, datetime.date.today().isoformat())
+    print((&quot;APPLIED&quot; if a.apply else &quot;DRY RUN, nothing written&quot;), out)
+
+
+if __name__ == &quot;__main__&quot;:
+    main()</code></pre>
+<ul><li>[ ] <strong>Step 4: Run the tests to verify they pass</strong></li></ul>
+<p>Expected: all of <code>tests/test_history_links.py</code> pass.</p>
+<ul><li>[ ] <strong>Step 5: Build the review page</strong></li></ul>
+<p>Load the <code>artifact-design</code> and <code>artifact-capabilities</code> skills first. Model the page on the remedy order review page (https://claude.ai/artifact/Wdh65XPT9pbWtErtGKcg9y): read it with the Artifact tool&#x27;s <code>read</code> action and reuse its structure and store pattern.</p>
+<p>Content, from <code>e4l.db</code> after Task 11&#x27;s seed and drafts are applied: one block per finding code, with code, full name and description, then its <code>finding_conditions</code> rows. Each row has the condition, its origin in words (&quot;from a remedy row&quot;, &quot;Claude&#x27;s draft&quot;), a keep or remove choice, and a note box. Each finding has an &quot;add condition&quot; box with its own note box. A filter for &quot;unreviewed only&quot;. The page saves to its store under <code>rows/&lt;id&gt;</code> as <code>{keep, note}</code> and <code>added/&lt;n&gt;</code> as <code>{item_code, condition, note}</code>.</p>
+<p>To apply: read the store with <code>ArtifactData</code>, write <code>{&quot;rows&quot;: [...], &quot;added&quot;: [...]}</code> to <code>~/AI-Training/clinical/remedy-order-review/finding-condition-decisions.json</code>, run the script dry, show Glen the counts, then <code>--apply</code> on his yes. No client data goes on this page: findings and conditions only.</p>
+<ul><li>[ ] <strong>Step 6: Commit</strong></li></ul>
+<pre><code>cd ~/worktrees/vault-history-links &amp;&amp; git add &quot;02 Skills/history_links.py&quot; &quot;02 Skills/apply-finding-condition-review.py&quot; &quot;02 Skills/tests/test_history_links.py&quot; &amp;&amp; git commit -m &quot;History links: apply Glen&#x27;s finding-to-condition review&quot;</code></pre>
+<hr>
+<h3>Task 11: Prove it, review it, ship it</h3>
+<p><strong>Files:</strong> none new.</p>
+<ul><li>[ ] <strong>Step 1: Mutate every guard</strong></li></ul>
+<p>With the <code>cp</code> and <code>mv</code> rule, break each of these one at a time and confirm a test fails: <code>TAG_SOURCES</code> dropping <code>terrain</code>; <code>LEDGER_SOURCES</code> dropping a chat source; chat <code>confirmed=0</code> changed to 1; the <code>status != &quot;active&quot;</code> filter; the <code>document:</code> split in <code>people_rows</code>; <code>sources_read</code> filter in <code>write_history</code>; the retire condition; the household check and the blank email check in <code>build_client_history</code>; the <code>&quot;attributes&quot; in inputs[&quot;read&quot;]</code> gate; the 404-is-clean intake branch; <code>history_ok</code> gate, no-scan gate and no-findings gate in <code>link_scan</code>; <code>removed=0</code> filter; the merge group in <code>link_scan</code>; the <code>kind</code> narrative facts; <code>process_scan</code>&#x27;s catch-all; the header-only check in the attributes route; <code>html.escape</code> in the panel; the scan-date filter in the panel. Report any survivor and add a test for it.</p>
+<ul><li>[ ] <strong>Step 2: One review round</strong></li></ul>
+<p>A fresh Claude subagent, read-only, gets both diffs, the spec and this plan. Its question: &quot;How could this show Glen a link that is wrong, hide a true one, mix two people&#x27;s history, or erase links?&quot; Verify every finding before fixing it.</p>
+<ul><li>[ ] <strong>Step 3: Backfill dry run, then report to Glen</strong></li></ul>
+<p>Run: <code>cd ~/worktrees/vault-history-links &amp;&amp; doppler run --project remedy-match --config prd -- python3 &quot;02 Skills/history-links-backfill.py&quot;</code>. Show Glen the counts with the drafted-row count from Task 2, in one short message.</p>
+<ul><li>[ ] <strong>Step 4: Ship, in this order, each on Glen&#x27;s yes</strong></li></ul>
+<ol><li>Open the deploy-chat PR from <code>sess/e5ac8379</code> (spec, plan, route, panel). Ask Glen to merge it in the platform tab. After deploy, verify the live route: <code>GET https://illtowell.com/api/people/&lt;a test person id&gt;/attributes</code> with the header returns 200, and without it 401. The platform tab restarts the local Biofield app, because <code>biofield_local_app.py</code> changed.</li><li>Merge the vault branch <code>sess/e5ac8379-history-links</code> into vault <code>main</code>, after checking the touched files are clean there and unchanged since branching.</li><li>Back up e4l.db (<code>cp e4l.db e4l.db.bak-$(date +%Y%m%d-%H%M%S)-pre-history-links</code>), then run <code>finding-condition-drafts.py load --apply</code>, then the backfill with <code>--apply</code>.</li><li>Open one authored test for a client with links, and check the panel renders on the page.</li><li>Build the review page (Task 10, Step 5) and give Glen its link.</li></ol></div></body></html>
