@@ -15,6 +15,8 @@ def _db(tmp_path):
     cx = sqlite3.connect(p)
     cx.executescript("""
     CREATE TABLE e4l_scans(scan_id INTEGER PRIMARY KEY, client_id INTEGER, scan_date TEXT);
+    CREATE TABLE e4l_clients(client_id INTEGER PRIMARY KEY, email TEXT);
+    INSERT INTO e4l_clients VALUES (1, 'a@x.com'), (5, 'e@x.com'), (6, 'f@x.com');
     CREATE TABLE e4l_items(code TEXT PRIMARY KEY, name TEXT, full_name TEXT);
     CREATE TABLE e4l_identity_merges(dup_client_id INTEGER PRIMARY KEY,
         canonical_client_id INTEGER NOT NULL, note TEXT, confirmed_at TEXT,
@@ -240,3 +242,56 @@ def test_a_client_with_no_e4l_id_logs_no_panel_failure(tmp_path, _open_console, 
     r = app.test_client().get(f"/author/{tid}")
     assert r.status_code == 200 and b"History and findings" not in r.data
     assert "panel skipped" not in capsys.readouterr().out
+
+
+# ---- Final review fix wave (2026-10-01) ------------------------------------------------
+
+def test_a_link_through_a_removed_row_is_not_shown(tmp_path):          # C1
+    p = _db(tmp_path)
+    _edit(p, "UPDATE finding_conditions SET removed=1 WHERE id=1")
+    html = HP.render_panel(p, "1", "2026-09-15")
+    assert "ED9 Stomach Driver" not in html and "Stomach" not in html
+
+
+def test_a_link_to_a_retired_history_row_is_not_shown(tmp_path):       # I1
+    p = _db(tmp_path)
+    _edit(p, "UPDATE client_history SET retired_at='2026-09-10' WHERE id=1")
+    html = HP.render_panel(p, "1", "2026-09-15")
+    assert "macular degeneration" not in html and "ED9 Stomach Driver" not in html
+
+
+def test_the_unlinked_count_counts_only_active_structured_rows(tmp_path):   # M2
+    p = _db(tmp_path)
+    _edit(p, "INSERT INTO client_history VALUES"
+             " (8,1,'covid vaccine 2021','narrative','intake:narrative','vaccinations',1,'x','x',NULL),"
+             " (9,1,'possible lyme','hedged','intake','diagnoses',1,'x','x',NULL)")
+    assert "1 reported condition no finding links to" in HP.render_panel(p, "1", "2026-09-15")
+
+
+def test_a_finding_reached_from_two_sources_is_listed_once(tmp_path):   # M2
+    p = _db(tmp_path)
+    _edit(p, "INSERT INTO client_history VALUES"
+             " (6,1,'macular degeneration','structured','pb','pb:mac',1,'x','x',NULL)")
+    _edit(p, "INSERT INTO finding_history_links VALUES (11,'ED9',6,1,'x')")
+    html = HP.render_panel(p, "1", "2026-09-15")
+    assert html.count("ED9 Stomach Driver") == 1
+    assert "Practice Better, uploaded report" in html
+
+
+def test_a_shared_address_renders_nothing(tmp_path):                    # I3
+    p = _db(tmp_path)
+    _edit(p, "INSERT INTO e4l_clients VALUES (9, ' A@x.com ')")      # a second person
+    assert HP.render_panel(p, "1", "2026-09-15") == ""
+
+
+def test_a_merged_account_on_the_same_address_is_one_person(tmp_path):  # I3
+    p = _db(tmp_path)
+    _edit(p, "INSERT INTO e4l_clients VALUES (9, 'a@x.com')")
+    _edit(p, "INSERT INTO e4l_identity_merges(dup_client_id, canonical_client_id) VALUES (9, 1)")
+    assert "macular degeneration" in HP.render_panel(p, "1", "2026-09-15")
+
+
+def test_a_client_with_no_e4l_record_renders_nothing(tmp_path):         # I3, fail closed
+    p = _db(tmp_path)
+    _edit(p, "DELETE FROM e4l_clients WHERE client_id=1")
+    assert HP.render_panel(p, "1", "2026-09-15") == ""

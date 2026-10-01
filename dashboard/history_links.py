@@ -44,7 +44,27 @@ def render_panel(e4l_db_path, e4l_client_id, date_test):
         return ""
 
 
+def _people_on_address(cx, cid):
+    """Distinct people (merge groups) on this client's address, as the vault counts
+    them. 0 when the client has no e4l_clients row."""
+    row = cx.execute("SELECT email FROM e4l_clients WHERE client_id=?", (cid,)).fetchone()
+    if not row:
+        return 0
+    ids = [r[0] for r in cx.execute(
+        "SELECT client_id FROM e4l_clients WHERE lower(trim(email))=lower(trim(?))",
+        (row[0] or "",))]
+    seen, n = set(), 0
+    for i in ids:
+        if i not in seen:
+            seen |= _group(cx, i)
+            n += 1
+    return n
+
+
 def _render(cx, cid, date_test):
+    # One People record per address: with two people on it, history cannot be told apart.
+    if _people_on_address(cx, cid) != 1:
+        return ""
     group = sorted(_group(cx, cid))
     marks = ",".join("?" * len(group))
     q = (f"SELECT scan_id, scan_date FROM e4l_scans WHERE client_id IN ({marks})"
@@ -55,28 +75,29 @@ def _render(cx, cid, date_test):
     scan_id, scan_date = scan
     rows = cx.execute(
         "SELECT h.id, h.phrase, h.source, l.item_code, coalesce(i.full_name, i.name, l.item_code),"
-        " f.reviewed, f.note FROM finding_history_links l"
+        " f.reviewed, f.note, f.id FROM finding_history_links l"
         " JOIN client_history h ON h.id=l.history_id"
         " JOIN finding_conditions f ON f.id=l.finding_condition_id"
         " LEFT JOIN e4l_items i ON i.code=l.item_code"
-        " WHERE l.scan_id=? ORDER BY h.phrase, l.item_code", (scan_id,)).fetchall()
+        " WHERE l.scan_id=? AND f.removed=0 AND h.retired_at IS NULL"
+        " ORDER BY h.phrase, l.item_code", (scan_id,)).fetchall()
     linked_ids = {r[0] for r in rows}
     active = cx.execute(
         f"SELECT id, phrase FROM client_history WHERE client_id IN ({marks})"
-        " AND retired_at IS NULL", group).fetchall()
+        " AND retired_at IS NULL AND kind='structured'", group).fetchall()
     unlinked = len({p for i, p in active if i not in linked_ids}
                    - {r[1] for r in rows})
     by_condition = {}
-    for hid, phrase, source, code, name, reviewed, note in rows:
-        c = by_condition.setdefault(phrase, {"sources": set(), "findings": []})
+    for hid, phrase, source, code, name, reviewed, note, fid in rows:
+        c = by_condition.setdefault(phrase, {"sources": set(), "findings": {}})
         c["sources"].add(SOURCE_LABELS.get(source, source))
-        c["findings"].append((name, reviewed, note))
+        c["findings"].setdefault((code, fid), (name, reviewed, note))   # once per condition
     items = []
     for phrase, c in by_condition.items():
         finds = "".join(
             f"<li>{_e(name)}" + ("" if reviewed else " <span class=food>unreviewed</span>")
             + (f"<div class=food>{_e(note)}</div>" if note else "") + "</li>"
-            for name, reviewed, note in c["findings"])
+            for name, reviewed, note in c["findings"].values())
         items.append(f"<li><b>{_e(phrase)}</b> <span class=food>"
                      f"{_e(', '.join(sorted(c['sources'])))}</span><ul>{finds}</ul></li>")
     if not items and not unlinked:

@@ -224,4 +224,9 @@ def test_history_links_panel_sits_after_the_clinical_summary():
     page = render_author_html({"client": {"name": "A", "email": "a@x.com"}, "layers": [],
                                "test_id": "a1"}, clinical_checklist=[],
                                history_links_html="<section id=hlpanel></section>")
-    assert "<section id=hlpanel></section>" in page
+    summary = page.index("<div class=clinical-title>Clinical summary</div>")
+    panel = page.index("<section id=hlpanel></section>")
+    assert summary < panel
+    # the clinical summary section has closed before the panel opens
+    assert page.rfind("<section class=clinical-summary>", 0, panel) < page.rfind(
+        "</section>", 0, panel)
