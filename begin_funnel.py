@@ -545,7 +545,7 @@ _CROSSOVER_TO_ADVENTURE = {"label": "Actually, let me explore instead", "action"
 
 _MISSION_LABELS = {
     "remedy_match":       "Get your remedy match",
-    "e4l_scan":           "Start your voice scan",
+    "e4l_scan":           "Start your Bioenergetic Wellness Scan",
     "voice_distinctions": "Explore what your voice reveals",
     "practitioner":       "Find a practitioner near you",
     "product":            "See your recommended formula",
@@ -745,7 +745,7 @@ def stage_brand(key):
 
 JOURNEY_STEPS = [
     {"key": "scan", "label": stage_label("scan"), "paren": stage_brand("scan"), "steps": [
-        {"key": "voice_scan", "label": "Voice scan",          "src": ("gate", "scan"),       "href": None},
+        {"key": "voice_scan", "label": "Bioenergetic Wellness Scan", "src": ("gate", "scan"),       "href": None},
         {"key": "ww_course",  "label": "Wellness Whispering MasterClass & Community", "src": ("gate", "course_ww"),  "href": "https://truly.vip/WellnessWhispering"}]},
     {"key": "find", "label": stage_label("find"), "paren": stage_brand("find"), "steps": [
         {"key": "match_chat", "label": "Match via chat",      "src": ("gate", "question"),   "href": "/begin/match"},
@@ -1226,7 +1226,7 @@ TIER_PAGES = {
     "membership": {
         "lede": 'Free membership gives you a real start: your scan, one remedy revealed, the education library and your journey map. This is the moment you decide you are doing this properly and you want the whole picture, with a guide in the room.',
         "steps": [
-            ('Your full Remedy Match report', 'Your voice scan read through Dr. Glen\u2019s clinical knowledge base, mapping your stress-pattern layers, the remedies matched to them, and how they change over time. This is the automated report, not a consultation.'),
+            ('Your full Remedy Match report', 'Your Bioenergetic Wellness Scan read through Dr. Glen\u2019s clinical knowledge base, mapping your stress-pattern layers, the remedies matched to them, and how they change over time. This is the automated report, not a consultation.'),
             ('Ingredient and remedy research', 'The research summary, the traditional use, the related forms, and how each one connects to your formulations. Conviction is what makes anyone consistent.'),
             ('Live weekly group coaching', 'Every Wednesday at 3:00 PM Hawaii time, with Dr. Glen. You are not guessing alone, which is the difference between starting and sustaining.'),
             ('Member pricing, and $200 on a Causal Biofield Analysis', 'Member pricing on every formulation, and the personal analysis at $200 instead of $300.'),
@@ -1237,7 +1237,7 @@ TIER_PAGES = {
     "biofield-analysis": {
         "lede": 'You have read enough to know the body has its own intelligence, and that treating a symptom often leaves the cause quietly running underneath. What you do not have yet is a clear way to hear what your body is asking for right now.',
         "steps": [
-            ('The Causal Biofield Analysis', 'Dr. Glen personally reviews your patterns at a deeper causal level. This is the paid analysis with him. It is not the free ten second voice scan, and it is not the automated Remedy Match report that comes with membership.'),
+            ('The Causal Biofield Analysis', 'Dr. Glen personally reviews your patterns at a deeper causal level. This is the paid analysis with him. It is not the free ten-second Bioenergetic Wellness Scan, and it is not the automated Remedy Match report that comes with membership.'),
             ('A program designed for you', 'A Functional Formulations program built from what your own analysis showed, rather than a stack assembled for somebody else.'),
             ('A consultation with Dr. Glen', 'He walks you through what the analysis found, answers your questions, and makes sure you leave knowing what to do first.'),
         ],
