@@ -91,7 +91,8 @@ def synthesize_reveal_layers(email, scan_id=None, *, e4l_db=DEFAULT_E4L_DB,
     the dosing. A code with no remedy-list infoceutical is never a remedy: that keeps out the
     Rejuvenators ("a setting on the miHealth which most clients do not have"), MR, BFA,
     Environmental and Nutrition codes. They stay in most_affected as information. A layer
-    with no such code imports with a blank remedy and says so, rather than inventing a name.
+    with no such code imports with a blank remedy (no_remedy), never an invented name; the
+    route reports the count. most_affected is unchanged: it prints on the client's report.
     `infoceutical_names` is {code: product name}; it defaults to the live catalog.
     """
     runner = runner or _run_synthesis
@@ -114,9 +115,6 @@ def synthesize_reveal_layers(email, scan_id=None, *, e4l_db=DEFAULT_E4L_DB,
             # The first of this layer's codes that the remedy list carries, by its exact name.
             codes = [str(c).strip() for c in (L.get("patterns") or []) if str(c).strip()]
             remedy_name = next((infoceutical_names[c] for c in codes if c in infoceutical_names), "")
-            if not remedy_name:
-                affected = (affected + " " if affected else "") + \
-                    "(no remedy-list infoceutical for this layer's codes)"
             alternatives = []                 # no FF alternatives for an animal
         else:
             remedy_name = name
@@ -127,6 +125,8 @@ def synthesize_reveal_layers(email, scan_id=None, *, e4l_db=DEFAULT_E4L_DB,
                        "most_affected": affected,
                        "remedy_name": remedy_name,
                        "codes": list(L.get("patterns") or []),
+                       # Reported to Glen by the import route; never in a printed field.
+                       "no_remedy": bool(is_animal and not remedy_name),
                        "alternatives": alternatives})
     return {"found": True, "scan_id": scan["scan_id"], "scan_date": scan["scan_date"],
             "days_ago": days, "fresh": days is not None and days < 7, "layers": layers}

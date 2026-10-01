@@ -265,6 +265,38 @@ def test_the_app_wires_the_animal_lookup(tmp_path, _open_gate):
     assert st.animal_infoceuticals(sqlite3.connect(db2), tid2) is None
 
 
+def _seed_fmp(db):
+    cx = sqlite3.connect(db)
+    cx.execute("CREATE TABLE IF NOT EXISTS fmp_snap_products "
+               "(id_pk INTEGER, product_name TEXT, active TEXT)")
+    cx.execute("INSERT INTO fmp_snap_products VALUES (1, 'ES1 Immune Energetic Star Infoceutical', 'Yes')")
+    cx.commit()
+
+
+def test_import_reveal_passes_the_filemaker_names_for_an_animal(tmp_path, monkeypatch, _open_gate):
+    """Review round 1: unwiring the route fell back to the web catalog silently."""
+    seen = {}
+
+    def capture(*a, **k):
+        seen["names"] = k.get("infoceutical_names")
+        return {"found": False}
+
+    monkeypatch.setattr(RI, "synthesize_reveal_layers", capture)
+    client, tid, db = _client(tmp_path, CAT)
+    _seed_fmp(db)
+    client.post(f"/author/{tid}/e4l/import-reveal", json={})
+    assert seen["names"] == {"ES1": "ES1 Immune Energetic Star Infoceutical"}
+
+
+def test_suggestions_use_the_same_filemaker_names_as_the_import(tmp_path, _open_gate):
+    """Review round 1: the import said ES1 "Immune", the suggestions said "Lymph", so ES1
+    read uncovered and apply-to-chain added a duplicate layer."""
+    _c, tid, db = _client(tmp_path, CAT)
+    _seed_fmp(db)
+    got = st.animal_infoceuticals(sqlite3.connect(db), tid)
+    assert got == {"ES1": "ES1 Immune Energetic Star Infoceutical"}
+
+
 # --- what counts as balancing a stress, for an animal ------------------------
 
 def _active_codes(cx, chain):

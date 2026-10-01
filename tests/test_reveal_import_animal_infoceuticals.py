@@ -80,14 +80,17 @@ def test_a_rejuvenator_is_never_an_animal_remedy():
     assert "Scapula Rejuvenator" in L["most_affected"]          # kept as information
 
 
-def test_a_layer_with_no_remedy_list_code_imports_blank_and_says_so():
-    """Never an invented name, and never the FF for an animal."""
+def test_a_layer_with_no_remedy_list_code_imports_blank_and_is_flagged():
+    """Never an invented name, never the FF for an animal, and no internal note in
+    most_affected: that field prints on the client's report (review round 1)."""
     for codes, labels in ((["ER17", "MR3"], ["Scapula Rejuvenator", "Calm Mind"]),
                           (["ENV-Glyphosate", "BFA-Grounding"], ["Glyphosate", "Grounding"]),
                           ([], [])):
         L = _one(codes, labels)
         assert L["remedy_name"] == "", codes
-        assert "no remedy-list infoceutical" in L["most_affected"], codes
+        assert L["no_remedy"] is True, codes
+        assert L["most_affected"] == ", ".join(labels), codes
+    assert _one(["ES1"], ["Lymph Star"])["no_remedy"] is False
 
 
 def test_the_remedy_list_map_reads_filemaker_by_code(tmp_path):
@@ -96,18 +99,23 @@ def test_the_remedy_list_map_reads_filemaker_by_code(tmp_path):
     import sqlite3
     from dashboard.biofield_authoring import infoceutical_names_by_code
     cx = sqlite3.connect(str(tmp_path / "c.db"))
-    cx.execute("CREATE TABLE fmp_snap_products (id_pk INTEGER, product_name TEXT)")
-    for i, n in enumerate(["MB8 Love Infoceutical",
-                           "MB4 CCH Cerebral Cortex Hologram Infoceutical",
-                           "EI2 Heart/Lung Meridian Energetic Integrator Infoceutical",
-                           "ES1 Immune Energetic Star Infoceutical",
-                           "WholOmega", "Scapula Rejuvenator", ""]):
-        cx.execute("INSERT INTO fmp_snap_products VALUES (?, ?)", (i, n))
+    cx.execute("CREATE TABLE fmp_snap_products (id_pk INTEGER, product_name TEXT, active TEXT)")
+    for i, (n, act) in enumerate([("MB8 Love Infoceutical", "Yes"),
+                                  ("MB4 CCH Cerebral Cortex Hologram Infoceutical", "Yes"),
+                                  ("EI2 Heart/Lung Meridian Energetic Integrator Infoceutical", "Yes"),
+                                  ("ES1 Immune Energetic Star Infoceutical", "Yes"),
+                                  ("ES10 Stress - Video Processing Energetic Star Infoceutical*", "Yes"),
+                                  ("ET4 Retired Energetic Transformer Infoceutical", "No"),
+                                  ("WholOmega", "Yes"), ("Scapula Rejuvenator", "Yes"), ("", "Yes")]):
+        cx.execute("INSERT INTO fmp_snap_products VALUES (?, ?, ?)", (i, n, act))
     m = infoceutical_names_by_code(cx)
     assert m == {"MB8": "MB8 Love Infoceutical",
                  "MB4": "MB4 CCH Cerebral Cortex Hologram Infoceutical",
                  "EI2": "EI2 Heart/Lung Meridian Energetic Integrator Infoceutical",
-                 "ES1": "ES1 Immune Energetic Star Infoceutical"}
+                 "ES1": "ES1 Immune Energetic Star Infoceutical",
+                 # discontinue-intent stays, as in the picker; the marker is stripped
+                 "ES10": "ES10 Stress - Video Processing Energetic Star Infoceutical"}
+    assert "ET4" not in m                                     # inactive in FileMaker
     assert _one(["MB8"], ["Love Hologram"], names=m)["remedy_name"] == "MB8 Love Infoceutical"
 
 

@@ -624,17 +624,19 @@ def infoceutical_names_by_code(cx):
     list the Intake's remedy picker and remedy_dosing read. Glen, 2026-10-01: a scan code
     becomes a remedy by its remedy-list name ("MB8 Love Infoceutical", not E4L's "Love
     Hologram"), so the dosing fills as it does when he picks from the dropdown. Only names
-    that start with a code and say "Infoceutical"; a discontinue-intent product is skipped;
-    when two names claim one code the first alphabetically wins."""
+    that start with a code and say "Infoceutical". A product marked inactive in FileMaker is
+    skipped; a discontinue-intent one is kept, as the picker keeps it (still sellable). When two
+    names claim one code the first alphabetically wins."""
     import re as _re
     if not _has(cx, "fmp_snap_products"):
         return {}
+    cols = {r[1] for r in cx.execute("PRAGMA table_info(fmp_snap_products)")}
+    where = "TRIM(COALESCE(product_name,''))<>''"
+    if "active" in cols:
+        where += " AND lower(TRIM(COALESCE(active,''))) <> 'no'"
     out = {}
-    names = [r[0] for r in cx.execute(
-        "SELECT product_name FROM fmp_snap_products WHERE TRIM(COALESCE(product_name,''))<>''")]
+    names = [r[0] for r in cx.execute(f"SELECT product_name FROM fmp_snap_products WHERE {where}")]
     for raw in sorted(names, key=lambda n: n.lower()):
-        if _is_discontinue_intent(raw):
-            continue
         name = _clean_product_name(raw)
         m = _re.match(r"^([A-Z]{2,3}\d{1,3})\s", name)
         if m and "infoceutical" in name.lower():
