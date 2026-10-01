@@ -3,6 +3,8 @@ import sqlite3
 import sys
 from pathlib import Path
 
+import pytest
+
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from dashboard import history_links as HP  # noqa: E402
@@ -75,3 +77,166 @@ def test_panel_is_empty_when_it_cannot_say_anything(tmp_path):
     assert HP.render_panel(p, "abc", "2026-09-15") == ""
     assert HP.render_panel(p, "1", "2026-07-01") == ""        # no scan yet
     assert HP.render_panel(str(tmp_path / "missing.db"), "1", "2026-09-15") == ""
+
+
+# ---- Task 11: tests added after breaking each guard on purpose -------------------------
+
+def _edit(p, sql, *args):
+    with sqlite3.connect(p) as cx:
+        cx.execute(sql, args)
+
+
+def test_phrase_source_and_finding_name_are_each_escaped(tmp_path):
+    p = _db(tmp_path)
+    _edit(p, "UPDATE client_history SET phrase='<i>x</i>', source='odd<s>src' WHERE id=1")
+    _edit(p, "UPDATE e4l_items SET full_name='<u>Stomach</u>' WHERE code='ED9'")
+    html = HP.render_panel(p, "1", "2026-09-15")
+    assert "&lt;i&gt;x&lt;/i&gt;" in html and "<i>x" not in html          # phrase
+    assert "odd&lt;s&gt;src" in html and "odd<s>src" not in html          # source label
+    assert "&lt;u&gt;Stomach&lt;/u&gt;" in html and "<u>Stomach" not in html   # finding name
+
+
+def test_the_scan_date_is_escaped(tmp_path):
+    p = _db(tmp_path)
+    _edit(p, "UPDATE e4l_scans SET scan_date='2026-09-01<i>d</i>' WHERE scan_id=11")
+    html = HP.render_panel(p, "1", "2026-09-15")
+    assert "scan of 2026-09-01&lt;i&gt;d&lt;/i&gt;" in html and "<i>d" not in html
+
+
+def test_a_database_without_the_merge_table_still_renders(tmp_path):
+    p = _db(tmp_path)
+    _edit(p, "DROP TABLE e4l_identity_merges")
+    assert "macular degeneration" in HP.render_panel(p, "1", "2026-09-15")
+
+
+def test_a_scan_on_the_test_date_itself_is_the_one_shown(tmp_path):
+    p = _db(tmp_path)
+    assert "scan of 2026-09-01" in HP.render_panel(p, "1", "2026-09-01")
+    assert "scan of 2026-08-01" in HP.render_panel(p, "1", "2026-08-31")
+
+
+def _merged(tmp_path):
+    p = _db(tmp_path)
+    with sqlite3.connect(p) as cx:
+        cx.executescript("""
+        INSERT INTO e4l_identity_merges(dup_client_id, canonical_client_id) VALUES (5,1),(6,1);
+        INSERT INTO e4l_scans VALUES (30, 6, '2026-09-06');
+        INSERT INTO client_history VALUES
+          (7,6,'asthma','structured','pb','pb:asthma',1,'x','x',NULL);
+        INSERT INTO finding_conditions VALUES (3,'ED5','asthma','drafted','',0,0,NULL);
+        INSERT INTO finding_history_links VALUES (30,'ED5',7,3,'x');
+        """)
+    return p
+
+
+def test_the_canonical_client_sees_a_duplicates_later_scan(tmp_path):
+    html = HP.render_panel(_merged(tmp_path), "1", "2026-09-15")
+    assert "scan of 2026-09-06" in html and "asthma" in html
+
+
+def test_one_duplicate_sees_its_sibling_duplicates_scan(tmp_path):
+    html = HP.render_panel(_merged(tmp_path), "5", "2026-09-15")
+    assert "scan of 2026-09-06" in html and "asthma" in html
+
+
+def test_an_unlinked_count_ignores_a_phrase_that_is_linked_from_another_source(tmp_path):
+    p = _db(tmp_path)
+    _edit(p, "INSERT INTO client_history VALUES"
+             " (6,1,'macular degeneration','structured','pb','pb:mac',1,'x','x',NULL)")
+    assert "1 reported condition no finding links to" in HP.render_panel(p, "1", "2026-09-15")
+
+
+def test_the_unlinked_count_uses_the_plural_for_two_or_more(tmp_path):
+    p = _db(tmp_path)
+    _edit(p, "INSERT INTO client_history VALUES"
+             " (6,1,'asthma','structured','pb','pb:asthma',1,'x','x',NULL)")
+    assert "2 reported conditions no finding links to" in HP.render_panel(p, "1", "2026-09-15")
+
+
+def test_a_scan_with_history_but_no_links_says_so(tmp_path):
+    html = HP.render_panel(_db(tmp_path), "1", "2026-12-15")        # scan 12 has no links
+    assert "No links on this scan." in html
+    assert "3 reported conditions no finding links to" in html
+
+
+def test_a_scan_with_no_links_and_no_history_renders_nothing(tmp_path):
+    assert HP.render_panel(_db(tmp_path), "5", "2026-09-15") == ""
+
+
+def test_the_database_is_opened_read_only(tmp_path, monkeypatch):
+    p = _db(tmp_path)
+    opened = []
+    real = sqlite3.connect
+
+    def spy(*a, **k):
+        cx = real(*a, **k)
+        opened.append(cx)
+        return cx
+    monkeypatch.setattr(HP.sqlite3, "connect", spy)
+    assert HP.render_panel(p, "1", "2026-09-15") != ""
+    assert opened
+    for cx in opened:
+        with pytest.raises(sqlite3.OperationalError):
+            cx.execute("CREATE TABLE should_not_exist(a)")
+
+
+def test_a_database_without_the_link_tables_renders_nothing(tmp_path):
+    p = str(tmp_path / "old.db")
+    with sqlite3.connect(p) as cx:
+        cx.executescript("CREATE TABLE e4l_scans(scan_id INTEGER PRIMARY KEY, client_id INTEGER,"
+                         " scan_date TEXT); INSERT INTO e4l_scans VALUES (1, 1, '2026-09-01');")
+    assert HP.render_panel(p, "1", "2026-09-15") == ""
+
+
+# ---- the /author/<test_id> route ---------------------------------------------------------
+
+def _author_client(tmp_path):
+    from biofield_local_app import create_app
+    from dashboard.biofield_authoring import create_test, init_auth_tables, update_header
+    e4l = _db(tmp_path)
+    db = str(tmp_path / "chat.db")
+    with sqlite3.connect(db) as cx:
+        init_auth_tables(cx)
+        tid = create_test(cx, name="Pat", email="pat@x.com", date="2026-09-15")
+        update_header(cx, tid, client_id="1")
+    app = create_app(db_path=db, e4l_db=e4l, fetch_profile=lambda e: {})
+    app.testing = True
+    return app.test_client(), tid, e4l
+
+
+@pytest.fixture
+def _open_console(monkeypatch):
+    monkeypatch.delenv("CONSOLE_SECRET", raising=False)
+    import dashboard as _d
+    monkeypatch.setattr(_d, "CONSOLE_SECRET", "", raising=False)
+
+
+def test_the_author_page_carries_the_panel_for_this_client(tmp_path, _open_console):
+    c, tid, _ = _author_client(tmp_path)
+    r = c.get(f"/author/{tid}")
+    assert r.status_code == 200
+    assert b"History and findings, scan of 2026-09-01" in r.data
+
+
+def test_a_panel_failure_never_breaks_the_author_page(tmp_path, _open_console, monkeypatch):
+    c, tid, _ = _author_client(tmp_path)
+
+    def boom(*a, **k):
+        raise RuntimeError("panel")
+    monkeypatch.setattr(HP, "render_panel", boom)
+    r = c.get(f"/author/{tid}")
+    assert r.status_code == 200 and b"History and findings" not in r.data
+
+
+def test_a_client_with_no_e4l_id_logs_no_panel_failure(tmp_path, _open_console, capsys):
+    from biofield_local_app import create_app
+    from dashboard.biofield_authoring import create_test, init_auth_tables
+    db = str(tmp_path / "chat.db")
+    with sqlite3.connect(db) as cx:
+        init_auth_tables(cx)
+        tid = create_test(cx, name="Pat", email="pat@x.com", date="2026-09-15")
+    app = create_app(db_path=db, e4l_db=_db(tmp_path), fetch_profile=lambda e: {})
+    app.testing = True
+    r = app.test_client().get(f"/author/{tid}")
+    assert r.status_code == 200 and b"History and findings" not in r.data
+    assert "panel skipped" not in capsys.readouterr().out

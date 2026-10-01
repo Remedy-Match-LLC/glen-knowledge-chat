@@ -60,3 +60,34 @@ def test_key_only_in_the_header(client):
 def test_unknown_person_is_404(client):
     assert client.get("/api/people/99/attributes",
                       headers={"X-Console-Key": "testkey"}).status_code == 404
+
+
+# ---- Task 11: tests added after breaking each guard on purpose -------------------------
+
+def test_no_console_secret_means_no_access(client, monkeypatch):
+    monkeypatch.setattr(app, "CONSOLE_SECRET", "")
+    assert client.get("/api/people/7/attributes").status_code == 401
+    assert client.get("/api/people/7/attributes",
+                      headers={"X-Console-Key": ""}).status_code == 401
+
+
+def test_the_owner_token_is_accepted_in_the_header(client, monkeypatch):
+    monkeypatch.setattr(app, "_owner_token_ok", lambda k: k == "owner-token")
+    assert client.get("/api/people/7/attributes",
+                      headers={"X-Console-Key": "owner-token"}).status_code == 200
+    assert client.get("/api/people/7/attributes",
+                      headers={"X-Console-Key": "other"}).status_code == 401
+
+
+def test_a_missing_source_is_an_empty_string_and_rows_come_back_ordered(client):
+    with sqlite3.connect(app.LOG_DB) as cx:
+        cx.executemany(
+            "INSERT INTO person_attributes(email, field, value, value_norm, source, added_at)"
+            " VALUES (?,?,?,?,?,?)", [
+                ("a@x.com", "body_systems", "Zeta", "aaa", None, "t"),
+                ("a@x.com", "body_systems", "Alpha", "zzz", "document:2", "t")])
+    got = client.get("/api/people/7/attributes",
+                     headers={"X-Console-Key": "testkey"}).get_json()["attributes"]
+    assert [(a["field"], a["value"], a["source"]) for a in got] == [
+        ("body_systems", "Alpha", "document:2"), ("body_systems", "Zeta", ""),
+        ("conditions", "Acid reflux", "console"), ("conditions", "Glaucoma", "document:41")]
