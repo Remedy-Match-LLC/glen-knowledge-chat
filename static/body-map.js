@@ -534,8 +534,8 @@
     if (!pz.count) {
       const p = document.createElement("p"); p.className = "bm-hint";
       p.textContent = pz.has_photo
-        ? "None of your current findings map to the face yet. Explore the map, or get a voice scan to personalize it."
-        : "Add a photo in your portal and get a voice scan to see your findings mapped onto your own face.";
+        ? "None of your current findings map to the face yet. Explore the map, or get a Bioenergetic Wellness Scan to personalize it."
+        : "Add a photo in your portal and get a Bioenergetic Wellness Scan to see your findings mapped onto your own face.";
       panel.appendChild(p);
       return;
     }

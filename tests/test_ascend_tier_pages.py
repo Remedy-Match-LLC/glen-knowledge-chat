@@ -126,7 +126,7 @@ def test_the_free_scan_is_not_confused_with_the_paid_analysis():
     page = bf.TIER_PAGES["biofield-analysis"]
     t = all_text(page).lower()
     assert "biofield analysis" in t
-    assert "voice scan" in t, "the page does not distinguish the free scan"
+    assert "bioenergetic wellness scan" in t, "the page does not distinguish the free scan"
 
 
 def test_no_retired_platform_is_named():
@@ -188,7 +188,7 @@ def test_the_three_services_are_kept_apart():
     Causal Biofield Analysis are three different things. The live membership page
     says so explicitly, and conflating them is the mistake the skill warns about."""
     bio = all_text(bf.TIER_PAGES["biofield-analysis"]).lower()
-    assert "voice scan" in bio and "remedy match report" in bio, \
+    assert "bioenergetic wellness scan" in bio and "remedy match report" in bio, \
         "the Biofield page does not distinguish all three"
     mem = all_text(bf.TIER_PAGES["membership"]).lower()
     assert "not a consultation" in mem, \
