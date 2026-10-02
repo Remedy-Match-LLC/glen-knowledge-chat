@@ -17,7 +17,9 @@ def test_notify_runs_app_in_a_child_process(monkeypatch):
         return subprocess.CompletedProcess(cmd, 0, "", "")
 
     monkeypatch.setattr(subprocess, "run", fake_run)
-    sys.modules.pop("app", None)
+    # Hide app for this test only. Popping it for good made later tests import a
+    # second copy, and 110 of them lost their stand-ins in CI (2026-10-02).
+    monkeypatch.delitem(sys.modules, "app", raising=False)
     run_all._notify_glen("iabdm failed", "520")
     assert "app" not in sys.modules
     assert seen["cmd"][0] == sys.executable and "from app import" in seen["cmd"][2]
