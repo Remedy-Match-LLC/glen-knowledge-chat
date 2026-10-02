@@ -287,3 +287,22 @@ def test_an_invoice_line_with_the_july_name_bills_es1():
     catalog = [{"slug": s, **p} for s, p in _products().items()]
     assert resolve_line_slug(JULY_NAME, catalog) == LIVE_ES1
     assert resolve_line_slug(LIVE_NAME, catalog) == LIVE_ES1
+
+
+
+# Round 3: only a product that opts in has its aliases read by the remedy matcher.
+@pytest.mark.parametrize("spoken", ["BFA", "Sleep Synergy", "Synergy C"])
+def test_other_products_aliases_are_not_read_by_the_matcher(spoken):
+    assert _norm_name(spoken) not in ba._catalog_exact_aliases()
+
+
+@pytest.mark.parametrize("spoken", ["BFA", "Sleep Synergy"])
+def test_bfa_and_sleep_synergy_resolve_as_before(spoken):
+    """As on origin/main: left as written, so the invoice skips the line for Rae.
+    ("Synergy C" already redirects on main through its retired twin, unchanged here.)"""
+    got = resolve_remedy_name(_fmp_db_with(LIVE_NAME), spoken)
+    assert got == ba._title_case_name(spoken), f"{spoken!r} -> {got!r}"
+
+
+def test_es1_opts_in():
+    assert _products()[LIVE_ES1].get("report_aliases") is True

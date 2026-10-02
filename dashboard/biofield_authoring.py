@@ -365,7 +365,12 @@ def _catalog_exact_aliases():
 
     EXACT match only, never a fuzzy target. Round 1 of the ES1 review, 2026-10-02: in
     the fuzzy pool the short alias "ES1 Immune" scored about 0.9 against "ES5 Immune",
-    so a neighbour's spelling landed on ES1, the drift this guards against."""
+    so a neighbour's spelling landed on ES1, the drift this guards against.
+
+    Opt-in per product (`report_aliases: true`). Round 3: read for every product, the
+    alias "BFA" put the store-link-less BFA duplicate on reports and invoices, where a
+    bare "BFA" is left for Rae today. Which BFA is meant is Glen's call, so only a
+    product that opts in changes."""
     try:
         with open(_PRODUCTS_JSON) as f:
             products = (json.load(f).get("products") or {})
@@ -376,6 +381,8 @@ def _catalog_exact_aliases():
     taken = {_norm_name(p.get(k)) for p in live for k in ("name", "pinecone_title")}
     out = {}
     for p in live:
+        if p.get("report_aliases") is not True:
+            continue
         canon = (p.get("name") or "").strip()
         for a in (p.get("aliases") or []):
             v = _norm_name(a) if canon and isinstance(a, str) else ""
