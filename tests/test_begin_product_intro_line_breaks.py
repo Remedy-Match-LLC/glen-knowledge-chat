@@ -39,9 +39,8 @@ def test_shared_text_class_is_unchanged():
     assert rule and "white-space" not in rule.group(1)
 
 
-# Round 1 of the review: with no `intro`, the page falls back to the description's first
-# sentence. 170 of those fallbacks carry scraped line breaks nobody reviewed, and the new
-# rule would have shown them. The fallback is flattened so only a written intro keeps breaks.
+# Rounds 1 and 3 of the review: 170 description fallbacks and 10 written intros carry
+# scraped line breaks nobody reviewed. Only an approved (copy_pinned) intro keeps breaks.
 
 def _page_intro(monkeypatch, tmp_path, product):
     import importlib
@@ -66,7 +65,15 @@ def test_a_fallback_intro_from_the_description_is_flattened(monkeypatch, tmp_pat
     assert body == "Line one - bullet line three"
 
 
-def test_a_written_intro_keeps_its_line_breaks(monkeypatch, tmp_path):
-    """The control."""
-    body = _page_intro(monkeypatch, tmp_path, {"intro": "Para one.\nPara two.", "description": "x. y."})
+def test_an_approved_intro_keeps_its_line_breaks(monkeypatch, tmp_path):
+    """The control: copy_pinned marks it approved."""
+    body = _page_intro(monkeypatch, tmp_path, {"intro": "Para one.\nPara two.", "description": "x. y.",
+                                               "copy_pinned": ["intro"]})
     assert body == "Para one.\nPara two."
+
+
+def test_an_unapproved_written_intro_is_flattened(monkeypatch, tmp_path):
+    """Round 3: 10 written intros carry scraped breaks (one is a line of '&amp;nbsp;')."""
+    body = _page_intro(monkeypatch, tmp_path, {"intro": "Para one.\r\n&amp;nbsp;\r\nPara two.",
+                                               "description": "x. y."})
+    assert body == "Para one. &amp;nbsp; Para two."
