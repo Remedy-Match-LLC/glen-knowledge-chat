@@ -126,17 +126,57 @@ def test_a_shrunken_export_is_refused_and_the_copy_kept(db, tmp_path):
     assert _chain(db)[38][0] == "Vitamin P Polyphenols"
 
 
-def test_missing_table_and_client_tables_in_the_export_are_refused(db, tmp_path):
+def test_a_missing_table_is_refused_and_a_client_csv_beside_it_is_never_loaded(db, tmp_path):
     d = _export(tmp_path / "new", NEW)
     (d / "products_items.csv").unlink()
     with pytest.raises(RefreshRefused, match="products_items"):
         refresh_products(d, db)
     d2 = _export(tmp_path / "new2", NEW)
     (d2 / "client_remedy.csv").write_text("id,remedy\n", encoding="utf-8")
-    with pytest.raises(RefreshRefused, match="non-product"):
-        refresh_products(d2, db)
+    (d2 / "renamed-rows.csv").write_text("table,rowid,old,new\n", encoding="utf-8")
+    refresh_products(d2, db)
     with sqlite3.connect(db) as cx:
         assert cx.execute("SELECT COUNT(*) FROM fmp_snap_client_remedy").fetchone() == (1,)
+    assert "fmp_snap_renamed_rows" not in _tables(db)
+
+
+def test_a_shrunken_side_table_is_refused(db, tmp_path):
+    d = _export(tmp_path / "old2", OLD)
+    (d / "products_items.csv").write_text("id_pk,name\n" + "".join(
+        f"{i},x\n" for i in range(1, 21)), encoding="utf-8")
+    refresh_products(d, db)
+    d2 = _export(tmp_path / "new", NEW)          # products_items back to one row
+    with pytest.raises(RefreshRefused, match="products_items fell"):
+        refresh_products(d2, db)
+
+
+def test_a_product_gone_from_filemaker_needs_confirmation(db, tmp_path):
+    keep = [r for r in NEW if r["id_pk"] != "10"] + [_product(str(i), f"Extra {i}")
+                                                      for i in range(50, 60)]
+    d = _export(tmp_path / "new", keep)
+    with pytest.raises(RefreshRefused, match="no longer in FileMaker"):
+        refresh_products(d, db)
+    out = refresh_products(d, db, allow_removed=True)
+    assert out["removed"] == ["Sterol Max"]
+
+
+def test_products_sharing_a_name_renamed_apart_are_refused(tmp_path):
+    path = str(tmp_path / "db")
+    snapshot_csv_dir(_export(tmp_path / "old", [_product("1", "Twin"), _product("2", "Twin")]), path)
+    with pytest.raises(RefreshRefused, match="renamed apart"):
+        refresh_products(_export(tmp_path / "new", [_product("1", "Twin A"),
+                                                    _product("2", "Twin B")]), path)
+
+
+def test_a_non_duplicate_integrity_error_stops_the_run_and_deletes_nothing(db, tmp_path):
+    with sqlite3.connect(db) as cx:
+        cx.execute("CREATE UNIQUE INDEX one_remedy_per_test ON biofield_auth_chain(test_id, remedy)")
+        cx.execute("INSERT INTO biofield_auth_chain VALUES (41, 9, 'Vascular Integrity: Vitamin P "
+                   "Plus TECA', '2 capsules', 'daily', '', 1)")
+    with pytest.raises(sqlite3.IntegrityError):
+        refresh_products(_export(tmp_path / "new", NEW), db)
+    assert _chain(db)[38][0] == "Vitamin P Polyphenols"
+    assert 41 in _chain(db)
 
 
 def test_duplicate_or_blank_ids_are_refused(db, tmp_path):
@@ -146,12 +186,22 @@ def test_duplicate_or_blank_ids_are_refused(db, tmp_path):
         refresh_products(_export(tmp_path / "b", NEW + [_product("", "Orphan")]), db)
 
 
-def test_a_rename_whose_old_name_is_still_carried_is_not_moved(db, tmp_path):
-    # another product now carries "Vitamin P Polyphenols", so the stored name still resolves
+def test_an_old_name_taken_by_another_product_is_refused(db, tmp_path):
+    # id 374 is renamed and id 2000 takes its old name: the stored row would silently
+    # start meaning a different product, so the whole refresh stops
     new = NEW + [_product("2000", "Vitamin P Polyphenols")]
-    out = refresh_products(_export(tmp_path / "new", new), db)
-    assert not any(pk == "374" for pk, _, _ in out["renamed"])
+    with pytest.raises(RefreshRefused, match="carried by another product"):
+        refresh_products(_export(tmp_path / "new", new), db)
     assert _chain(db)[38][0] == "Vitamin P Polyphenols"
+
+
+def test_a_shared_name_kept_by_its_other_holder_is_left_alone(tmp_path):
+    path = str(tmp_path / "db")
+    snapshot_csv_dir(_export(tmp_path / "old", [_product("1", "Healing Glaucoma eBook"),
+                                                _product("2", "Healing Glaucoma eBook")]), path)
+    out = refresh_products(_export(tmp_path / "new", [_product("1", "Healing Glaucoma eBook 2"),
+                                                      _product("2", "Healing Glaucoma eBook")]), path)
+    assert out["renamed"] == []
 
 
 def test_a_failure_mid_swap_leaves_the_old_copy(db, tmp_path, monkeypatch):

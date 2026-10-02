@@ -11,7 +11,11 @@ so reloads are idempotent. These rows are PII/PHI (client emails, names, chains)
 keep them in the app's runtime DB; never commit the snapshot to git.
 """
 import csv
+import os
+import secrets
+import shutil
 import sqlite3
+import tempfile
 from pathlib import Path
 
 PREFIX = "fmp_snap_"
@@ -92,7 +96,7 @@ REQUIRED_PRODUCT_COLS = ("id_pk", "product_name", "active", "type", "dosage",
 STORED_NAME_COLUMNS = (("biofield_auth_chain", "remedy"),
                        ("biofield_auth_remedy_coverage", "remedy"))
 _TR_SUFFIX = " in terrain restore"
-STAGE_PREFIX = "fmp_stage_"
+STAGE_PREFIX = "fmp_stage_"     # each run appends its own token, so two runs never share
 PREV_PREFIX = "fmp_prev_"
 
 
@@ -116,47 +120,80 @@ def _cols(cx, table):
     return [r[1] for r in cx.execute(f"PRAGMA table_info({table})")]
 
 
-def _check_stage(cx, current_count, min_ratio):
+def _check_stage(cx, stage, min_ratio, allow_removed):
     have = _tables(cx)
-    missing = [t for t in PRODUCT_TABLES if STAGE_PREFIX + t not in have]
+    missing = [t for t in PRODUCT_TABLES if stage + t not in have]
     if missing:
         raise RefreshRefused(f"export is missing {missing}")
-    cols = set(_cols(cx, STAGE_PREFIX + "products"))
+    for t in PRODUCT_TABLES:
+        live = "fmp_snap_" + t
+        before = cx.execute(f"SELECT COUNT(*) FROM {live}").fetchone()[0] if live in have else 0
+        after = cx.execute(f"SELECT COUNT(*) FROM {stage}{t}").fetchone()[0]
+        if before and after < before * min_ratio:
+            raise RefreshRefused(f"{t} fell from {before} to {after}; refusing a partial export")
+    if "id_pk" in _cols(cx, stage + "products_items"):
+        n, distinct = cx.execute(f"SELECT COUNT(*), COUNT(DISTINCT id_pk) "
+                                 f"FROM {stage}products_items").fetchone()
+        if distinct != n:
+            raise RefreshRefused(f"products_items has {n - distinct} duplicate id_pk values")
+    if "fmp_snap_products" in have and not allow_removed:
+        gone = cx.execute(f"SELECT COUNT(*) FROM fmp_snap_products WHERE id_pk NOT IN "
+                          f"(SELECT id_pk FROM {stage}products)").fetchone()[0]
+        if gone:
+            raise RefreshRefused(f"{gone} products are no longer in FileMaker; "
+                                 "rerun with allow_removed once that is confirmed")
+    cols = set(_cols(cx, stage + "products"))
     lacking = [c for c in REQUIRED_PRODUCT_COLS if c not in cols]
     if lacking:
         raise RefreshRefused(f"products export lacks columns {lacking}")
     n, blank, distinct = cx.execute(
         f"SELECT COUNT(*), SUM(TRIM(COALESCE(id_pk,''))=''), COUNT(DISTINCT id_pk) "
-        f"FROM {STAGE_PREFIX}products").fetchone()
+        f"FROM {stage}products").fetchone()
     if not n:
         raise RefreshRefused("products export is empty")
     if blank:
         raise RefreshRefused(f"{blank} products have no id_pk")
     if distinct != n:
         raise RefreshRefused(f"{n - distinct} duplicate id_pk values")
-    if current_count and n < current_count * min_ratio:
-        raise RefreshRefused(
-            f"products fell from {current_count} to {n}; refusing a partial export")
 
 
-def product_renames(cx):
+def product_renames(cx, stage=STAGE_PREFIX):
     """[(id_pk, old_name, new_name)] between the live copy and the staged export.
 
-    A rename is skipped when its old name is still carried by some product in the
-    export: then the stored name still resolves and moving it would be a guess."""
+    A stored row holds only a name, so a rename can be carried only when that name
+    pointed at one product. Two cases are skipped, because the stored name still
+    resolves to the product it always did: the old name is blank, or another product
+    that already carried it still does. Two cases are refused, because moving a row
+    would be a guess: a DIFFERENT product has taken the old name, or two products
+    that shared the old name were renamed apart."""
     if "fmp_snap_products" not in _tables(cx):
         return []
     old = dict(cx.execute("SELECT id_pk, product_name FROM fmp_snap_products"))
-    new = dict(cx.execute(f"SELECT id_pk, product_name FROM {STAGE_PREFIX}products"))
-    still_named = {_norm(v) for v in new.values()}
-    out = []
+    new = dict(cx.execute(f"SELECT id_pk, product_name FROM {stage}products"))
+    holders_before, holders_after = {}, {}
+    for pk, v in old.items():
+        holders_before.setdefault(_norm(v), set()).add(pk)
+    for pk, v in new.items():
+        holders_after.setdefault(_norm(v), set()).add(pk)
+    out, plans = [], {}
     for pk, old_name in old.items():
         new_name = new.get(pk)
-        if new_name is None or _norm(old_name) == _norm(new_name):
+        key = _norm(old_name)
+        if new_name is None or not key or key == _norm(new_name) or not _clean(new_name):
             continue
-        if not _clean(new_name) or _norm(old_name) in still_named:
-            continue
+        takers = holders_after.get(key, set()) - holders_before.get(key, set())
+        if takers:
+            raise RefreshRefused(
+                f"'{_clean(old_name)}' was renamed and is now carried by another product "
+                f"(id {', '.join(sorted(takers))}); stored rows cannot be moved safely")
+        if holders_after.get(key):
+            continue                     # a product that always carried it still does
+        plans.setdefault(key, set()).add(_norm(new_name))
         out.append((pk, _clean(old_name), _clean(new_name)))
+    split = sorted(k for k, v in plans.items() if len(v) > 1)
+    if split:
+        raise RefreshRefused(f"products sharing the name {split} were renamed apart; "
+                             "stored rows cannot be moved safely")
     return sorted(out, key=lambda r: r[1].lower())
 
 
@@ -182,15 +219,24 @@ def _rewrite_stored_names(cx, renames):
             try:
                 cx.execute(f'UPDATE {table} SET "{col}"=? WHERE rowid=?', (new, rid))
             except sqlite3.IntegrityError:
-                # The same row already exists under the new name (a UNIQUE key), so the
-                # old-name row is a duplicate of it.
+                # Coverage is (test_id, remedy, code) and nothing else. When that exact
+                # row already exists under the new name, the old-name row says the same
+                # thing, so it goes. Anything else is not a duplicate and stops the run.
+                if table != "biofield_auth_remedy_coverage":
+                    raise
+                t_id, code = cx.execute(f"SELECT test_id, code FROM {table} WHERE rowid=?",
+                                        (rid,)).fetchone()
+                if not cx.execute(f"SELECT 1 FROM {table} WHERE test_id=? AND remedy=? "
+                                  "AND code=? AND rowid<>?", (t_id, new, code, rid)).fetchone():
+                    raise
                 cx.execute(f"DELETE FROM {table} WHERE rowid=?", (rid,))
                 new = "(duplicate removed)"
             changed.append((table, rid, val, new))
     return changed
 
 
-def refresh_products(export_dir, db_path, *, min_ratio=0.95, apply=True):
+def refresh_products(export_dir, db_path, *, min_ratio=0.95, apply=True,
+                     allow_removed=False):
     """Replace the fmp_snap_ product tables from a FileMaker export of PRODUCT_TABLES.
 
     The export is loaded into staging tables first and checked. Only if it passes are
@@ -202,21 +248,23 @@ def refresh_products(export_dir, db_path, *, min_ratio=0.95, apply=True):
     for t in PRODUCT_TABLES:
         if not (export_dir / f"{t}.csv").exists():
             raise RefreshRefused(f"{t}.csv is not in {export_dir}")
-    extra = sorted(p.stem for p in export_dir.glob("*.csv") if p.stem not in PRODUCT_TABLES)
-    if extra:
-        raise RefreshRefused(f"export holds non-product tables {extra}; refusing")
-    counts = snapshot_csv_dir(export_dir, db_path, prefix=STAGE_PREFIX)
+    stage = f"{STAGE_PREFIX}{os.getpid()}_{secrets.token_hex(3)}_"
+    with tempfile.TemporaryDirectory() as only:
+        # snapshot_csv_dir loads every CSV in a folder, so hand it the product ones only
+        for t in PRODUCT_TABLES:
+            shutil.copy(export_dir / f"{t}.csv", Path(only) / f"{t}.csv")
+        counts = snapshot_csv_dir(only, db_path, prefix=stage)
     with sqlite3.connect(db_path) as cx:
         try:
             current = (cx.execute("SELECT COUNT(*) FROM fmp_snap_products").fetchone()[0]
                        if "fmp_snap_products" in _tables(cx) else 0)
-            _check_stage(cx, current, min_ratio)
-            renames = product_renames(cx)
+            _check_stage(cx, stage, min_ratio, allow_removed)
+            renames = product_renames(cx, stage)
             old_ids = ({r[0] for r in cx.execute("SELECT id_pk FROM fmp_snap_products")}
                        if current else set())
             added = [_clean(r[1]) for r in cx.execute(
-                f"SELECT id_pk, product_name FROM {STAGE_PREFIX}products") if r[0] not in old_ids]
-            new_ids = {r[0] for r in cx.execute(f"SELECT id_pk FROM {STAGE_PREFIX}products")}
+                f"SELECT id_pk, product_name FROM {stage}products") if r[0] not in old_ids]
+            new_ids = {r[0] for r in cx.execute(f"SELECT id_pk FROM {stage}products")}
             removed = [_clean(r[1]) for r in cx.execute(
                 "SELECT id_pk, product_name FROM fmp_snap_products")
                 if r[0] not in new_ids] if current else []
@@ -225,11 +273,11 @@ def refresh_products(export_dir, db_path, *, min_ratio=0.95, apply=True):
                 cx.execute("BEGIN")
                 have = _tables(cx)
                 for t in PRODUCT_TABLES:
-                    live, prev, stage = "fmp_snap_" + t, PREV_PREFIX + t, STAGE_PREFIX + t
+                    live, prev = "fmp_snap_" + t, PREV_PREFIX + t
                     cx.execute(f"DROP TABLE IF EXISTS {prev}")
                     if live in have:
                         cx.execute(f"ALTER TABLE {live} RENAME TO {prev}")
-                    cx.execute(f"ALTER TABLE {stage} RENAME TO {live}")
+                    cx.execute(f"ALTER TABLE {stage}{t} RENAME TO {live}")
                 rewritten = _rewrite_stored_names(cx, renames)
                 cx.execute("COMMIT")
         except BaseException:
@@ -238,7 +286,7 @@ def refresh_products(export_dir, db_path, *, min_ratio=0.95, apply=True):
             raise
         finally:
             for t in PRODUCT_TABLES:
-                cx.execute(f"DROP TABLE IF EXISTS {STAGE_PREFIX}{t}")
+                cx.execute(f"DROP TABLE IF EXISTS {stage}{t}")
             cx.commit()
     return {"counts": counts, "previous_products": current, "renamed": renames,
             "added": added, "removed": removed, "rewritten": rewritten, "applied": apply}
