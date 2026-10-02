@@ -45,12 +45,14 @@ ES5_NAME = "ES5 Auto-Immune Energetic Star Infoceutical"
 
 @pytest.fixture(autouse=True)
 def _clear_caches():
-    for fn in ("_deprecated_catalog_names", "_active_catalog_names", "_superseded_name_map", "_catalog_alias_map"):
+    for fn in ("_deprecated_catalog_names", "_active_catalog_names", "_superseded_name_map",
+               "_catalog_alias_map", "_catalog_exact_aliases"):
         f = getattr(ba, fn, None)
         if f is not None and hasattr(f, "cache_clear"):
             f.cache_clear()
     yield
-    for fn in ("_deprecated_catalog_names", "_active_catalog_names", "_superseded_name_map", "_catalog_alias_map"):
+    for fn in ("_deprecated_catalog_names", "_active_catalog_names", "_superseded_name_map",
+               "_catalog_alias_map", "_catalog_exact_aliases"):
         f = getattr(ba, fn, None)
         if f is not None and hasattr(f, "cache_clear"):
             f.cache_clear()
@@ -246,6 +248,42 @@ def test_without_the_alias_the_july_name_is_not_an_exact_alias(tmp_path, monkeyp
     stripped = tmp_path / "products.json"
     stripped.write_text(json.dumps(data))
     monkeypatch.setattr(ba, "_PRODUCTS_JSON", str(stripped))
-    if hasattr(ba._catalog_alias_map, "cache_clear"):
-        ba._catalog_alias_map.cache_clear()
+    ba._catalog_alias_map.cache_clear()
+    ba._catalog_exact_aliases.cache_clear()
     assert _norm_name(JULY_NAME) not in ba._catalog_alias_map()
+
+
+# Round 1 of the review: a short alias in the FUZZY pool caught a neighbour's spelling.
+NEIGHBOURS = ["ES5 Immune", "ES 5 Immune", "ES5 Lymph", "ES4 Lymph", "ES11 Lymph",
+              "ES7 Immune", "ES8 Immune", "ES15 Immune", "ES21 Immune", "ET1 Immune"]
+
+
+@pytest.mark.parametrize("spoken", NEIGHBOURS)
+def test_a_neighbours_short_form_never_lands_on_es1(spoken):
+    for fmp_name in (DEAD_NAME, JULY_NAME, LIVE_NAME):
+        got = resolve_remedy_name(_fmp_db_with(fmp_name), spoken)
+        assert got != LIVE_NAME, f"{spoken!r} with FMP {fmp_name!r} drifted onto ES1"
+
+
+def test_aliases_are_not_fuzzy_targets():
+    pool = {n.lower() for n in ba._catalog_names_for_pool()}
+    assert "es1 immune" not in pool and "es1 lymph" not in pool
+
+
+def test_an_alias_never_takes_a_live_products_own_name(tmp_path, monkeypatch):
+    data = json.loads((ROOT / "data" / "products.json").read_text())
+    data["products"][LIVE_ES1]["aliases"].append(ES5_NAME)
+    data["products"]["es5-test"] = {"name": ES5_NAME}
+    stripped = tmp_path / "products.json"
+    stripped.write_text(json.dumps(data))
+    monkeypatch.setattr(ba, "_PRODUCTS_JSON", str(stripped))
+    ba._catalog_exact_aliases.cache_clear()
+    assert _norm_name(ES5_NAME) not in ba._catalog_exact_aliases()
+
+
+def test_an_invoice_line_with_the_july_name_bills_es1():
+    """Reports authored before the rename carry the July name; the invoice is exact-match only."""
+    from dashboard.biofield_invoice import resolve_line_slug
+    catalog = [{"slug": s, **p} for s, p in _products().items()]
+    assert resolve_line_slug(JULY_NAME, catalog) == LIVE_ES1
+    assert resolve_line_slug(LIVE_NAME, catalog) == LIVE_ES1

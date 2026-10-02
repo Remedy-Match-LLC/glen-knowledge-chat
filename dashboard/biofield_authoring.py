@@ -335,7 +335,7 @@ def _catalog_alias_map():
     record is renamed but its vector title is pinned: `es1-lymph` is now named
     "ES1 Lymph and Immune Energetic Star Infoceutical" while its title stays "ES1".
     Without the title as an alias, saying the bare code "ES1" fuzzy-matched **ES15**
-    (Heavy Metals). It also answers to its `aliases`, the names it had before a rename,
+    (Heavy Metals). It also answers to its `aliases` (see _catalog_exact_aliases),
     indexed last so an alias never shadows a real name. Matching an alias resolves to
     the canonical name, never to the alias."""
     try:
@@ -354,13 +354,32 @@ def _catalog_alias_map():
             v = _norm_name(p.get(key))
             if v:
                 out.setdefault(v, canon)
-    for p in products.values():
-        if p.get("inactive"):
-            continue
+    for v, canon in _catalog_exact_aliases().items():
+        out.setdefault(v, canon)
+    return out
+
+
+@functools.lru_cache(maxsize=1)
+def _catalog_exact_aliases():
+    """A live product's `aliases` (names it had before a rename, short forms) -> its name.
+
+    EXACT match only, never a fuzzy target. Round 1 of the ES1 review, 2026-10-02: in
+    the fuzzy pool the short alias "ES1 Immune" scored about 0.9 against "ES5 Immune",
+    so a neighbour's spelling landed on ES1, the drift this guards against."""
+    try:
+        with open(_PRODUCTS_JSON) as f:
+            products = (json.load(f).get("products") or {})
+    except Exception:
+        return {}
+    live = [p for p in products.values() if not p.get("inactive")]
+    # A real name or title always beats an alias, as in _catalog_alias_map.
+    taken = {_norm_name(p.get(k)) for p in live for k in ("name", "pinecone_title")}
+    out = {}
+    for p in live:
         canon = (p.get("name") or "").strip()
         for a in (p.get("aliases") or []):
             v = _norm_name(a) if canon and isinstance(a, str) else ""
-            if v:
+            if v and v not in taken:
                 out.setdefault(v, canon)
     return out
 
@@ -378,10 +397,6 @@ def _catalog_names_for_pool():
             continue
         for key in ("name", "pinecone_title"):
             v = (p.get(key) or "").strip()
-            if v:
-                out.append(v)
-        for a in (p.get("aliases") or []):
-            v = a.strip() if isinstance(a, str) else ""
             if v:
                 out.append(v)
     return out
@@ -438,7 +453,7 @@ def resolve_remedy_name(cx, spoken, cutoff=0.82):
         suffix = " in Terrain Restore"
     # An EXACT retired name is unambiguous: redirect to its survivor before any fuzzy
     # matching, or the excluded name drifts onto the nearest live stranger.
-    redirect = _superseded_name_map().get(_norm_name(core))
+    redirect = _superseded_name_map().get(_norm_name(core)) or _catalog_exact_aliases().get(_norm_name(core))
     if redirect:
         return redirect + suffix
     if _has(cx, "fmp_snap_products"):
