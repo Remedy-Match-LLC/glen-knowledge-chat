@@ -21,7 +21,7 @@ def test_member_repertoire_sku_gets_reorder_rate():
     out_mem = pricing.compute([_item("neuro-mag", 1)], settings=s,
                                repertoire_slugs={"neuro-mag"})
     assert out_mem["lines"][0]["line_total_cents"] < 5100  # ~$50
-    assert out_mem["lines"][0]["line_total_cents"] == 5000  # round(6997*0.71)
+    assert out_mem["lines"][0]["line_total_cents"] == 5000  # 6997*0.71 = 4968, rounded up to the $50 floor (Glen 2026-10-02)
 
 
 def test_non_repertoire_sku_unchanged_for_member():

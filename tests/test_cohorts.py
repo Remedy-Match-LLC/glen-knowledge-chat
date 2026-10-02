@@ -110,10 +110,10 @@ def test_savings_offer_picks_best_cheaper_plan():
         {"key": "half", "name": "Half off FF", "policy": {"type": "percent_off", "pct": 50, "scope": "ff"}},
     ]
     off = C.savings_offer(lines, current, cands)
-    assert off["cohort_key"] == "half"                    # 3498 < 5000 -> best
+    assert off["cohort_key"] == "half"                    # 3500 < 5000 -> best
     assert off["current_total_cents"] == 13994            # 6997*2
-    assert off["new_total_cents"] == 6996                 # 3498*2
-    assert off["savings_cents"] == 13994 - 6996
+    assert off["new_total_cents"] == 7000                 # 3500*2, whole dollars (Glen 2026-10-02)
+    assert off["savings_cents"] == 13994 - 7000
     # no candidate beats current -> None
     assert C.savings_offer(lines, [3000], cands) is None  # already below both plans
 
@@ -123,10 +123,10 @@ def test_best_cohort_price_is_lowest_applicable():
     cohorts = [
         {"policy": {"type": "flat_ff", "cents": 5000}},
         {"policy": {"type": "per_sku", "prices": {"nm": 4200}}},
-        {"policy": {"type": "percent_off", "pct": 50, "scope": "ff"}},   # 3498 for a 6997 FF
+        {"policy": {"type": "percent_off", "pct": 50, "scope": "ff"}},   # 3500 for a 6997 FF
     ]
-    # FF slug 'nm': min(5000, 4200, 3498) = 3498
-    assert C.best_cohort_price(cohorts, slug="nm", list_cents=6997, is_ff=True) == 3498
+    # FF slug 'nm': min(5000, 4200, 3500) = 3500
+    assert C.best_cohort_price(cohorts, slug="nm", list_cents=6997, is_ff=True) == 3500
     # a non-FF product only the 'all'-less policies apply -> here none apply -> None
     assert C.best_cohort_price([{"policy": {"type": "flat_ff", "cents": 5000}}],
                                slug="drops", list_cents=3997, is_ff=False) is None

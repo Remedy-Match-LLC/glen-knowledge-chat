@@ -9137,7 +9137,7 @@ def begin_product_data(slug):
         for m in (1, 3, 6, 12):
             u = _pricing.apply_discount(_base, _pricing.same_sku_pct(m, _s), _floor)
             qty_tiers.append({"min": m, "unit_cents": u, "unit": f"${u/100:.2f}",
-                              "save": ((_base - u) // 100) if u < _base else 0})
+                              "save": ((_base - u + 50) // 100) if u < _base else 0})
         formats = _FORMATS if _capsule_formats_ok(p) else None
     _comp = p.get("competitor") if isinstance(p.get("competitor"), dict) else None
     data = {

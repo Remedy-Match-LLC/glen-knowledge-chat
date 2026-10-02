@@ -196,7 +196,9 @@ def policy_unit_cents(policy, *, slug, list_cents, is_ff):
         scope = policy.get("scope") or "all"
         if scope == "ff" and not is_ff:
             return None
-        return int(round(int(list_cents) * (1 - float(policy["pct"]) / 100.0)))
+        # Whole dollars, rounded up, like every other percentage discount (Glen 2026-10-02).
+        from dashboard.pricing import apply_discount
+        return apply_discount(int(list_cents), float(policy["pct"]), 0)
     # volume / reorder_loyalty resolve in the caller, not here.
     return None
 

@@ -94,3 +94,19 @@ def test_points_still_subtract_to_the_cent():
                           settings=S, points_to_redeem_cents=135)
     assert out["lines"][0]["line_total_cents"] == 7000 - 135
     assert out["points_redeemed_cents"] == 135
+
+
+def test_a_percent_off_cohort_price_is_whole_dollars_too():
+    # Round 1 review: cohorts priced percent_off outside apply_discount, so a winning
+    # cohort line kept its cents. 15% off 69.97 = 59.47 -> 60.
+    from dashboard import cohorts
+    got = cohorts.policy_unit_cents({"type": "percent_off", "pct": 15}, slug="ff",
+                                    list_cents=6997, is_ff=True)
+    assert got == 6000
+
+
+@pytest.mark.parametrize("list_cents", [3500, 6997, 7000, 10000])
+@pytest.mark.parametrize("pct", [5, 10, 15, 29])
+def test_a_real_discount_is_never_rounded_away_on_a_full_price_bottle(list_cents, pct):
+    # The cents check above alone would pass an engine that never discounts.
+    assert pricing.apply_discount(list_cents, pct, 0) < list_cents

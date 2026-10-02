@@ -279,7 +279,7 @@ def test_manual_charges_ff_effective_no_double_discount(monkeypatch, tmp_path):
     assert r.status_code == 200
     j = r.get_json()
     assert j["ok"]
-    # Same-SKU qty6 charged at the effective 6075/unit; discount PRESERVED for a
+    # Same-SKU qty6 charged at the effective 6100/unit (whole dollars); discount PRESERVED for a
     # non-member because it's all one SKU (no mix/match involved).
     assert j["lines"][0]["unit_cents"] == 6100  # whole dollars, rounded up (Glen 2026-10-02)
     assert j["totals"]["subtotal_cents"] == 6100 * 6  # whole dollars, rounded up (Glen 2026-10-02)
