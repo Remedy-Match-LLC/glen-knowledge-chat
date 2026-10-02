@@ -37,11 +37,18 @@ def render_panel(e4l_db_path, e4l_client_id, date_test):
         return ""
     if not os.path.exists(e4l_db_path):
         return ""
+    # biofield_e4l is the one module allowed to open e4l.db directly
+    # (tests/test_no_raw_logdb_connect.py); its helper opens it read-only.
+    from dashboard import biofield_e4l as _be
+    cx = _be._connect_ro(e4l_db_path)
+    if cx is None:
+        return ""
     try:
-        with sqlite3.connect(f"file:{e4l_db_path}?mode=ro", uri=True) as cx:
-            return _render(cx, cid, str(date_test or "").strip()[:10])
+        return _render(cx, cid, str(date_test or "").strip()[:10])
     except sqlite3.Error:
         return ""
+    finally:
+        cx.close()
 
 
 def _people_on_address(cx, cid):

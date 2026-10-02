@@ -171,15 +171,18 @@ def test_the_database_is_opened_read_only(tmp_path, monkeypatch):
     real = sqlite3.connect
 
     def spy(*a, **k):
-        cx = real(*a, **k)
-        opened.append(cx)
-        return cx
+        opened.append((a, k))
+        return real(*a, **k)
     monkeypatch.setattr(HP.sqlite3, "connect", spy)
     assert HP.render_panel(p, "1", "2026-09-15") != ""
     assert opened
-    for cx in opened:
-        with pytest.raises(sqlite3.OperationalError):
-            cx.execute("CREATE TABLE should_not_exist(a)")
+    for a, k in opened:
+        # the panel closes its connection, so check how it was opened
+        assert str(a[0]).startswith("file:") and str(a[0]).endswith("?mode=ro"), a
+        assert k.get("uri") is True
+    with sqlite3.connect(p) as cx:
+        tables = {r[0] for r in cx.execute("SELECT name FROM sqlite_master")}
+    assert "should_not_exist" not in tables
 
 
 def test_a_database_without_the_link_tables_renders_nothing(tmp_path):
