@@ -755,15 +755,18 @@ function newSubmitToken(){
 let SUBMIT_TOKEN = newSubmitToken();
 function submitOrder(){ return EDIT_OID ? editInvoice() : createInvoice(); }
 
-async function printInvoiceEdit(){
-  if (!EDIT_OID) return;
+function printInvoiceEdit(){ return printInvoiceFor(EDIT_OID); }
+
+// One print path for both Edit Invoice and the panel shown after "Create proposed invoice".
+async function printInvoiceFor(oid){
+  if (!oid) return;
   try {
-    const r = await fetch("/api/console/order/"+Number(EDIT_OID)+"/invoice-link",
+    const r = await fetch("/api/console/order/"+Number(oid)+"/invoice-link",
                           {headers:HEADERS});
     const j = await r.json();
     if (!r.ok || !j.ok || !j.link) throw new Error(j.error||"Could not open invoice");
     // Popup blockers can discard a blank tab before this secure link is minted.
-    // Same-tab navigation is reliable everywhere; Back returns to Edit Invoice.
+    // Same-tab navigation is reliable everywhere; Back returns to this page.
     window.location.assign(j.link);
   } catch (e) {
     toast(e.message||"Could not open invoice", "error");
@@ -1015,6 +1018,7 @@ function showInvoice(j){
     +`<button class="primary" onclick="lifecycle('orders.confirm',{})">Confirm</button>`
     +`<button class="ghost inv-send-btn${INV_SENT_AT?' inv-sent':''}" onclick="sendInvoice(this, LAST_ORDER&&LAST_ORDER.order_id)">${INV_SENT_AT?'Invoice Sent '+invSentStr(INV_SENT_AT)+' (re-send)':'Send invoice'}</button>`
     +`<button class="ghost" onclick="recordPayment()">Record payment</button>`
+    +`<button class="ghost" onclick="printInvoiceFor(LAST_ORDER&&LAST_ORDER.order_id)">Print invoice</button>`
     +`<button class="mini" onclick="copyInv()">Copy</button>`
     +`<a class="mini" href="/console/orders?key=${encodeURIComponent(KEY)}" style="text-decoration:none">Open orders board</a></div>`;
   inv.style.display="block"; window.scrollTo({top:0,behavior:"smooth"});
