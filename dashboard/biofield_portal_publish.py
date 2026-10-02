@@ -322,6 +322,9 @@ def build_portal_content(cx, test_id, *, special_price_cents, catalog=None,
                 if remedy not in unresolved:
                     unresolved.append(remedy)
                 continue
+            from dashboard.biofield_invoice import RECOMMEND_ONLY_SLUGS
+            if slug in RECOMMEND_ONLY_SLUGS:
+                continue                      # shown on the report, never carted
             if slug in seen:
                 # One remedy on several layers is one product: keep the largest
                 # count, as the invoice does (build_invoice_lines).

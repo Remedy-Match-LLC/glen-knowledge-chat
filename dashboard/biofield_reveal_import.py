@@ -14,6 +14,25 @@ SKILLS = os.path.join(VAULT, "02 Skills")
 DEFAULT_E4L_DB = os.path.join(VAULT, "e4l.db")
 DEFAULT_CATALOG = os.path.expanduser("~/deploy-chat/data/products.json")
 
+# Glen, 2026-10-01: "For Rejuvenator layers, add the Harmony Laser as a 1st order remedy".
+# ER2 (Large Intestine) and ER33 (Thyroid) alone get no laser; mixed with other ERs the laser
+# carries his caution, approved 2026-10-01 ("perfect"). The store name, because the FileMaker
+# name ("Harmony Soft Laser 172 Hz/5 Hz ...") does not resolve to a product on publish.
+HARMONY_LASER = "Harmony Laser"
+CAUTION_ERS = frozenset({"ER2", "ER33"})
+HARMONY_CAUTION = ("Take care using infrared directly over the thyroid or the colon. "
+                   "Cleansing reactions are more likely there, so start with the smallest dose "
+                   "and increase only as you tolerate it.")
+
+
+def harmony_laser_for(codes):
+    """The Harmony Laser row for a layer's codes, or None. Humans and animals alike."""
+    import re as _re
+    ers = {c for c in (str(x).strip() for x in (codes or [])) if _re.fullmatch(r"ER\d+", c)}
+    if not ers or not (ers - CAUTION_ERS):
+        return None
+    return {"name": HARMONY_LASER, "caution": HARMONY_CAUTION if ers & CAUTION_ERS else ""}
+
 
 def _days_ago(scan_date, today):
     try:
@@ -127,6 +146,7 @@ def synthesize_reveal_layers(email, scan_id=None, *, e4l_db=DEFAULT_E4L_DB,
                        "most_affected": affected,
                        "remedy_name": remedy_name,
                        "codes": list(L.get("patterns") or []),
+                       "laser": harmony_laser_for(L.get("patterns") or []),
                        # Reported to Glen by the import route; never in a printed field.
                        "no_remedy": bool(is_animal and not remedy_name),
                        "alternatives": alternatives})
@@ -167,4 +187,16 @@ def import_layers_to_test(cx, tid, layers, after_layer=0):
                       timing=d.get("timing", ""), confirmed=0, origin="scan",
                       codes=L.get("codes") or [])
         n += 1
+        laser = L.get("laser")
+        if laser:
+            # An extra first-order remedy in the same layer, never in place of its remedy.
+            ld = remedy_dosing(cx, laser["name"])
+            timing = ld.get("timing", "")
+            if laser.get("caution"):
+                timing = (timing + " " if timing else "") + laser["caution"]
+            add_chain_row(cx, tid, (int(_n) + int(after_layer or 0)) if _n is not None else None,
+                          L.get("title") or "", L.get("most_affected") or "", laser["name"],
+                          dosage=ld.get("dosage", ""), frequency=ld.get("frequency", ""),
+                          timing=timing, confirmed=0, origin="scan", codes=L.get("codes") or [])
+            n += 1
     return n
