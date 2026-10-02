@@ -60,7 +60,7 @@
   "mithreal-silver-ivy-hat": {
    "name": "Ivy Hat with Mithreal Silver",
    "image": "/static/product-photos/mithreal-silver-ivy-hat.png",
-   "price_cents": 5997,
+   "price_cents": 6500,
    "regular_cents": 7997,
    "bottle_type": "own-box",
    "flat_shipping_cents": 1300,
@@ -22829,7 +22829,7 @@
   },
   "boxers-with-mithreal-silver": {
    "name": "Boxers with Mithreal™ Silver",
-   "price_cents": 9997,
+   "price_cents": 8000,
    "bottle_type": "own-box",
    "flat_shipping_cents": 3200,
    "source": "gk-physical-goods-import-2026-07-20",
@@ -22853,7 +22853,7 @@
   },
   "mithreal-knit-beanie-with-44-silver": {
    "name": "Mithreal™ Knit Beanie with 44% Silver",
-   "price_cents": 5997,
+   "price_cents": 6500,
    "bottle_type": "own-box",
    "flat_shipping_cents": 1300,
    "source": "gk-physical-goods-import-2026-07-20",
@@ -22861,7 +22861,7 @@
   },
   "mithreal-silver-head-face-shield": {
    "name": "Mithreal™ Silver Head/Face Shield",
-   "price_cents": 9997,
+   "price_cents": 9000,
    "bottle_type": "own-box",
    "flat_shipping_cents": 3200,
    "source": "gk-physical-goods-import-2026-07-20",
@@ -22869,7 +22869,7 @@
   },
   "mithreal-silver-hoodie-hat-with-42-silver": {
    "name": "Mithreal™ Silver Hoodie Hat with 42% Silver",
-   "price_cents": 5997,
+   "price_cents": 7500,
    "bottle_type": "own-box",
    "flat_shipping_cents": 1300,
    "source": "gk-physical-goods-import-2026-07-20",
@@ -22893,7 +22893,7 @@
   },
   "mithreal-silver-t-shirt": {
    "name": "Mithreal™ Silver T-shirt",
-   "price_cents": 19997,
+   "price_cents": 19000,
    "bottle_type": "own-box",
    "flat_shipping_cents": 3200,
    "source": "gk-physical-goods-import-2026-07-20",
@@ -22901,7 +22901,7 @@
   },
   "mithreal-t-shirt-with-70-silver": {
    "name": "Mithreal™ T-shirt with 70% Silver",
-   "price_cents": 11997,
+   "price_cents": 15000,
    "bottle_type": "own-box",
    "flat_shipping_cents": 3200,
    "source": "gk-physical-goods-import-2026-07-20",
@@ -22909,7 +22909,7 @@
   },
   "tank-top-with-42-silver": {
    "name": "Tank Top with 42% Silver",
-   "price_cents": 9997,
+   "price_cents": 11000,
    "bottle_type": "own-box",
    "flat_shipping_cents": 3200,
    "source": "gk-physical-goods-import-2026-07-20",
@@ -23072,7 +23072,7 @@
   },
   "small-mithreal-silver-lined-blanket": {
    "name": "Small Mithreal Silver-Lined Blanket",
-   "price_cents": 14997,
+   "price_cents": 18000,
    "bottle_type": "own-box",
    "flat_shipping_cents": 3200,
    "source": "gk-apparel-import-2026-07-20"
