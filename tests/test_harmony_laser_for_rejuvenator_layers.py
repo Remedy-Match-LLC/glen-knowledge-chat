@@ -78,3 +78,31 @@ def test_a_layer_with_only_caution_ers_gets_no_laser_row(tmp_path):
     cx.execute("INSERT INTO biofield_auth_tests (id) VALUES (7)")
     assert RI.import_layers_to_test(cx, "a7", res["layers"]) == 1
     assert "Harmony" not in str(cx.execute("SELECT remedy FROM biofield_auth_chain").fetchall())
+
+
+# --- Glen 2026-10-01: recommended on the report, never invoiced or carted ("no") ---
+
+def test_the_laser_is_never_an_invoice_line():
+    from dashboard import biofield_invoice as bi
+    catalog = [{"slug": "harmony-laser", "name": "Harmony Laser", "price_cents": 99700},
+               {"slug": "wholomega", "name": "WholOmega", "price_cents": 6997}]
+    got = bi.build_invoice_lines({}, ["WholOmega", "Harmony Laser"], catalog, include_fee=False)
+    assert [l["slug"] for l in got["lines"]] == ["wholomega"]
+    assert got["skipped"] == []                       # left out on purpose, not unresolved
+
+
+def test_the_laser_shows_on_the_portal_report_but_never_in_the_cart():
+    from dashboard import biofield_portal_publish as bpp
+    from dashboard.biofield_authoring import create_test, add_chain_row, init_auth_tables
+    cx = sqlite3.connect(":memory:")
+    init_auth_tables(cx)
+    aid = f"a{create_test(cx, 'C', 'c@x.com', '2026-10-01')}"
+    add_chain_row(cx, aid, layer=1, head="Layer 1", most_affected="x", remedy="WholOmega",
+                  dosage="1 capsule", frequency="twice daily")
+    add_chain_row(cx, aid, layer=1, head="Layer 1", most_affected="x", remedy="Harmony Laser",
+                  timing=CAUTION)
+    catalog = {"harmony-laser": {"name": "Harmony Laser"}, "wholomega": {"name": "WholOmega"}}
+    out = bpp.build_portal_content(cx, aid, special_price_cents=5000, catalog=catalog)
+    assert [i["slug"] for i in out["content"]["reorder_items"]] == ["wholomega"]
+    assert "Harmony Laser" in out["content"]["layers"][0]["remedy"]
+    assert out["unresolved"] == []

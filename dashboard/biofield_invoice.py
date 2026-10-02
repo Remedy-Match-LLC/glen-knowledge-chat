@@ -117,6 +117,13 @@ def bottles_needed(freq_text, doses_per_bottle, program_days=30):
     return max(1, math.ceil(dpd * program_days / dpb))
 
 
+# Recommended on a report, never billed or carted from it. Glen, 2026-10-01: the Harmony Laser
+# that Import Reveal adds to Rejuvenator layers does not go on the invoice or the portal cart
+# ("no"); the client buys it from its product page. It is a $997 device, and the portal applied
+# the report's supplement special price to it (review round 1 found $50).
+RECOMMEND_ONLY_SLUGS = frozenset({"harmony-laser"})
+
+
 def build_invoice_lines(client, remedies, catalog, include_fee=True):
     """Biofield Analysis is lines[0] (unless include_fee is False — e.g. the client
     already PAID for the analysis, so we invoice remedies only); then one line per
@@ -139,6 +146,8 @@ def build_invoice_lines(client, remedies, catalog, include_fee=True):
         slug = resolve_line_slug(name, catalog)
         if not slug:
             skipped.append(name)
+            continue
+        if slug in RECOMMEND_ONLY_SLUGS:
             continue
         # One remedy can serve several layers — Steve Fox's 15 September report put
         # Neuroprotect on three. That is still one product taken once, so it gets one
