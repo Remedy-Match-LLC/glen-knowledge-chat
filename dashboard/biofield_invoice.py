@@ -46,6 +46,9 @@ _RETIRED_NAMES = {
     # Renamed "Aller-Free HomeoEnergetic Drops" 2026-09-25. The FMP snapshot, and so the
     # remedy picker and authored reports, still carry the old spelling.
     "allerfree homeoenergetic drops": "allerfree-homeoenergetic-drops",
+    # Renamed "ES1 Lymph and Immune Energetic Star Infoceutical" 2026-10-02. Reports
+    # authored before then carry the July name.
+    "es1 lymph energetic star infoceutical": "es1-lymph",
 }
 
 

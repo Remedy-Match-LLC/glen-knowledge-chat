@@ -313,10 +313,10 @@ def test_the_web_fallback_is_filtered_to_infoceutical_families(tmp_path, _open_g
     import dashboard.animal_infoceuticals as AI
     monkeypatch.setattr(AI, "infoceutical_by_code", lambda cat: {
         "ER17": "ER17 Scapula Rejuvenator Infoceutical",
-        "ES1": "ES1 Lymph Energetic Star Infoceutical"})
+        "ES1": "ES1 Lymph and Immune Energetic Star Infoceutical"})
     _c, tid, db = _client(tmp_path, CAT)
     assert st.animal_infoceuticals(sqlite3.connect(db), tid) == {
-        "ES1": "ES1 Lymph Energetic Star Infoceutical"}
+        "ES1": "ES1 Lymph and Immune Energetic Star Infoceutical"}
 
 
 def test_the_route_counts_layers_with_no_remedy(tmp_path, monkeypatch, _open_gate):
