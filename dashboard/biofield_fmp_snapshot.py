@@ -196,6 +196,11 @@ def product_renames(cx, stage=STAGE_PREFIX):
                 f"(id {', '.join(sorted(takers))}); stored rows cannot be moved safely")
         if holders_after.get(key):
             continue                     # a product that always carried it still does
+        others = holders_after.get(_norm(new_name), set()) - {pk}
+        if others:
+            raise RefreshRefused(
+                f"'{_clean(old_name)}' was renamed to '{_clean(new_name)}', a name another "
+                f"product (id {', '.join(sorted(others))}) also carries; stored rows would merge")
         plans.setdefault(key, set()).add(_norm(new_name))
         out.append((pk, _clean(old_name), _clean(new_name)))
     split = sorted(k for k, v in plans.items() if len(v) > 1)

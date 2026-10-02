@@ -257,3 +257,66 @@ def test_an_export_that_lost_a_column_is_refused(db, tmp_path):
     (d / "products_phases.csv").write_text("id_pk\n1\n", encoding="utf-8")
     with pytest.raises(RefreshRefused, match="lacks columns"):
         refresh_products(d, db)
+
+
+def test_a_rename_onto_a_name_another_product_carries_is_refused(db, tmp_path):
+    # 374 renamed onto Sterol Max's name: its rows would merge with Sterol Max's
+    new = [_product("374", "Sterol Max")] + NEW[1:]
+    with pytest.raises(RefreshRefused, match="also carries"):
+        refresh_products(_export(tmp_path / "a", new), db)
+    # two products renamed onto one new name
+    new = NEW[:1] + [NEW[1], _product("11", "Vascular Integrity: Vitamin P Plus TECA"), NEW[3]]
+    with pytest.raises(RefreshRefused, match="also carries"):
+        refresh_products(_export(tmp_path / "b", new), db)
+    assert _chain(db)[38][0] == "Vitamin P Polyphenols"
+
+
+def test_saved_patterns_follow_the_rename(db, tmp_path):
+    import json
+    with sqlite3.connect(db) as cx:
+        cx.execute("CREATE TABLE biofield_remedy_pattern (pattern_key TEXT PRIMARY KEY, "
+                   "tokens_json TEXT, remedies_json TEXT, label TEXT, updated_at TEXT)")
+        cx.execute("INSERT INTO biofield_remedy_pattern VALUES ('k','[]',?, '', '')",
+                   ('["vitamin p polyphenols", "bad"]',))
+        cx.execute("CREATE TABLE biofield_auth_remedy_set (test_id INTEGER PRIMARY KEY, "
+                   "remedies_json TEXT, updated_at TEXT)")
+        cx.execute("INSERT INTO biofield_auth_remedy_set VALUES (1, 'not json', '')")
+        cx.execute("INSERT INTO biofield_auth_remedy_set VALUES (2, '{\"a\": 1}', '')")
+    refresh_products(_export(tmp_path / "new", NEW), db)
+    with sqlite3.connect(db) as cx:
+        assert json.loads(cx.execute("SELECT remedies_json FROM biofield_remedy_pattern"
+                                     ).fetchone()[0]) == ["vascular integrity: vitamin p plus teca", "bad"]
+        assert [r[0] for r in cx.execute("SELECT remedies_json FROM biofield_auth_remedy_set "
+                                         "ORDER BY test_id")] == ["not json", '{"a": 1}']
+
+
+def test_an_export_without_dosing_columns_is_refused_on_a_first_load(tmp_path):
+    d = tmp_path / "x"
+    d.mkdir()
+    (d / "products.csv").write_text("id_pk,product_name\n1,A\n", encoding="utf-8")
+    for t in ("products_items", "products_phases", "products_systems"):
+        (d / f"{t}.csv").write_text("id_pk,name\n1,x\n", encoding="utf-8")
+    with pytest.raises(RefreshRefused, match="lacks columns"):
+        refresh_products(d, str(tmp_path / "db"))
+
+
+def test_duplicate_item_ids_are_refused(db, tmp_path):
+    d = _export(tmp_path / "new", NEW)
+    (d / "products_items.csv").write_text("id_pk,name\n1,x\n1,y\n", encoding="utf-8")
+    with pytest.raises(RefreshRefused, match="products_items has 1 duplicate"):
+        refresh_products(d, db)
+
+
+def test_a_client_csv_beside_the_export_leaves_no_table_behind(db, tmp_path):
+    d = _export(tmp_path / "new", NEW)
+    (d / "client_remedy.csv").write_text("id,remedy\n1,x\n", encoding="utf-8")
+    refresh_products(d, db)
+    assert not [t for t in _tables(db) if t.startswith("fmp_stage") or "client_remedy" in t
+                and t != "fmp_snap_client_remedy"]
+
+
+def test_a_rename_to_a_blank_name_moves_nothing(db, tmp_path):
+    new = [_product("374", "")] + NEW[1:]
+    out = refresh_products(_export(tmp_path / "new", new), db)
+    assert not any(pk == "374" for pk, _, _ in out["renamed"])
+    assert _chain(db)[38][0] == "Vitamin P Polyphenols"
