@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>History and energetic findings, kept apart and linked</title><!-- source-sha256:4aedffebc17c --><style>
+  :root{--bg:#faf9f6;--panel:#fff;--ink:#1f2328;--muted:#5b6572;--line:#e3e0d8;
+    --ok:#2f6f4f;--okbg:#eef5f0;--warn:#8a4b1f;--warnbg:#fdf3e9;--code:#f2f1ec;}
+  @media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+    --bg:#16181c;--panel:#1e2126;--ink:#e6e6e3;--muted:#a0a8b4;--line:#31363d;
+    --ok:#6fbf94;--okbg:#1a241e;--warn:#e0a06a;--warnbg:#2a2118;--code:#252930;}}
+  :root[data-theme="dark"]{--bg:#16181c;--panel:#1e2126;--ink:#e6e6e3;--muted:#a0a8b4;
+    --line:#31363d;--ok:#6fbf94;--okbg:#1a241e;--warn:#e0a06a;--warnbg:#2a2118;--code:#252930;}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font:17px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;
+    -webkit-font-smoothing:antialiased}
+  .wrap{max-width:830px;margin:0 auto;padding:44px 24px 96px}
+  header{border-bottom:2px solid var(--line);padding-bottom:20px;margin-bottom:30px}
+  h1{font-size:33px;line-height:1.2;margin:0 0 8px;letter-spacing:-.02em}
+  .sub{color:var(--muted);font-size:15px;margin:0}
+  .badge{display:inline-block;background:var(--okbg);color:var(--ok);border:1px solid var(--ok);
+    border-radius:999px;padding:3px 12px;font-size:13px;font-weight:600;margin-bottom:12px}
+  h2{font-size:24px;margin:48px 0 12px;letter-spacing:-.01em;padding-top:14px;border-top:1px solid var(--line)}
+  h3{font-size:18px;margin:26px 0 8px}
+  p{margin:0 0 14px} ul,ol{margin:0 0 15px;padding-left:22px} li{margin-bottom:7px}
+  .answer{background:var(--okbg);border:2px solid var(--ok);border-radius:10px;padding:22px 26px;margin:26px 0}
+  .answer h2{margin:0 0 10px;border:0;padding:0;font-size:22px;color:var(--ok)}
+  .warn{background:var(--warnbg);border:1px solid var(--line);border-left:4px solid var(--warn);
+    border-radius:6px;padding:16px 20px;margin:20px 0}
+  .note{background:var(--panel);border:1px solid var(--line);border-left:4px solid var(--ok);
+    border-radius:6px;padding:16px 20px;margin:20px 0}
+  .warn p:last-child,.note p:last-child,.answer p:last-child{margin-bottom:0}
+  .tag{font-size:12px;font-weight:700;letter-spacing:.06em;color:var(--muted);display:block;margin-bottom:6px}
+  .tablewrap{overflow-x:auto;margin:20px 0}
+  table{border-collapse:collapse;width:100%;font-size:15px;min-width:500px}
+  th,td{text-align:left;padding:10px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{font-weight:700;font-size:13px;letter-spacing:.03em;color:var(--muted)}
+  tbody tr:last-child td{border-bottom:none}
+  code{background:var(--code);border-radius:4px;padding:2px 6px;
+    font:13.5px/1.4 ui-monospace,SFMono-Regular,Menlo,monospace}
+  .num{font-variant-numeric:tabular-nums;white-space:nowrap}
+  .step{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:18px 22px;margin:16px 0}
+  .step h3{margin-top:0}
+  .chk{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:6px 22px 14px;margin:16px 0}
+  .done{color:var(--ok);font-weight:700}
+  .missed{color:var(--warn);font-weight:700}
+  footer{margin-top:56px;padding-top:18px;border-top:1px solid var(--line);color:var(--muted);font-size:14px}
+
+  h1{font-size:30px;line-height:1.25;margin:44px 0 6px;padding-top:26px;
+     border-top:2px solid var(--line)}
+  h1:first-of-type{border-top:0;padding-top:0;margin-top:0}
+  h2{font-size:22px;margin:34px 0 6px}
+  h3{font-size:18px;margin:26px 0 4px;color:var(--muted)}
+  p{margin:12px 0}
+  ul,ol{margin:12px 0;padding-left:22px}
+  li{margin:5px 0}
+  code{background:var(--code);padding:1px 5px;border-radius:4px;
+       font:14px ui-monospace,SFMono-Regular,Menlo,monospace}
+  pre{background:var(--code);padding:14px 16px;border-radius:8px;overflow-x:auto}
+  pre code{background:none;padding:0}
+  hr{border:0;border-top:1px solid var(--line);margin:30px 0}
+  .tw{overflow-x:auto;margin:16px 0}
+  table{border-collapse:collapse;width:100%;font-size:15px}
+  th,td{border:1px solid var(--line);padding:7px 10px;text-align:left;vertical-align:top}
+  th{background:var(--code);font-weight:600}
+  blockquote{margin:14px 0;padding:10px 16px;border-left:3px solid var(--line);
+             background:var(--panel);color:var(--muted)}
+  .gen{background:var(--warnbg);color:var(--warn);border:1px solid var(--warn);
+       border-radius:8px;padding:12px 16px;margin:0 0 28px;font-size:14.5px}
+  .gen b{color:var(--warn)}
+</style></head><body><div class="wrap"><div class='gen'><b>Generated page. Do not edit.</b> This document is written in <code>../worktrees/wt-deploy-chat-e5ac8379/docs/superpowers/specs/2026-10-01-history-finding-links-design.md</code>. This page is produced from it by <code>00 System/render-md.py</code>, and the next run overwrites anything typed here.</div><h1>History and energetic findings, kept apart and linked</h1>
+<p>Design approved section by section with Glen on 2026-10-01. This is the written spec for his review.</p>
+<h2>Why</h2>
+<p>A client&#x27;s file holds two kinds of information. <strong>History</strong> is what the client reports or what is recorded about them. <strong>Energetic findings</strong> are what an E4L scan shows. Today the two are mixed. The tag ledger gives a scan-derived <code>system:</code> tag and a quiz-reported <code>system:</code> tag the same name, and only a source string tells them apart. Matching between them happens only while a report is being built, and the result is thrown away. Nothing records which finding matched which reported condition.</p>
+<p>Glen: &quot;We should separate the history from the energetic findings. Track both and track the relationship between them, i.e. where energetic findings correlate with the history.&quot;</p>
+<h2>What Glen chose</h2>
+<ul><li><strong>The first use is per client.</strong> Glen sees where a scan corresponds with what the client reported. The cross-client view (which findings tend to go with which conditions) comes later. The storage must support it, but nothing is built for it now.</li><li><strong>Glen&#x27;s view only.</strong> Links show in the local Biofield app, never to a client. A client-facing line would be a diagnostic claim and needs the client-copy rules and Glen&#x27;s review first.</li><li><strong>A reviewed finding-to-condition table decides what links.</strong> It is seeded from the second-order remedy rows and drafted for the remaining finding codes. Glen reviews it.</li><li><strong>The history reads the client&#x27;s entire file.</strong></li><li><strong>One condition can link to several findings on one scan.</strong></li><li><strong>Each finding-to-condition row carries an optional note</strong> on the nature of the relationship.</li></ul>
+<h2>What gets stored</h2>
+<p>All four live in <code>e4l.db</code>, beside the scans. <code>e4l.db</code> already syncs to the server.</p>
+<h3>1. <code>client_history</code></h3>
+<p>One row per reported condition per client.</p>
+<div class='tw'><table><thead><tr><th>Column</th><th>Meaning</th></tr></thead><tbody><tr><td><code>id</code></td><td>row id</td></tr><tr><td><code>client_id</code></td><td>the E4L client</td></tr><tr><td><code>phrase</code></td><td>the condition, normalised the way <code>remedy_tiers.normalize</code> does</td></tr><tr><td><code>source</code></td><td>where it came from (list below)</td></tr><tr><td><code>source_ref</code></td><td>which record within that source, e.g. a document id or a chat log id</td></tr><tr><td><code>confirmed</code></td><td>1 if Glen set or confirmed it, or it came from a source he controls; 0 for chat</td></tr><tr><td><code>first_seen</code>, <code>last_seen</code></td><td>dates</td></tr><tr><td><code>retired_at</code></td><td>set when the condition no longer appears in its source; never deleted</td></tr></tbody></table></div>
+<p>Unique on <code>(client_id, phrase, source, source_ref)</code>.</p>
+<p><strong>Sources</strong>, all of the client&#x27;s file:</p>
+<div class='tw'><table><thead><tr><th><code>source</code></th><th>Read from</th><th><code>confirmed</code></th></tr></thead><tbody><tr><td><code>people:conditions</code></td><td>People <code>conditions</code>, <code>terrain_concerns</code>, <code>body_systems</code></td><td>1</td></tr><tr><td><code>intake</code></td><td>intake answers: health concerns, diagnoses; vaccinations, supplements and medications</td><td>1</td></tr><tr><td><code>pb</code></td><td>People <code>pb:</code> tags (Practice Better)</td><td>1</td></tr><tr><td><code>scoreapp</code></td><td>People <code>system:</code>, <code>regulation:</code> and <code>concern:</code> tags from the ScoreApp quiz</td><td>1</td></tr><tr><td><code>ghl:terrain</code></td><td>People <code>terrain:</code> tags. Label shown: &quot;from GoHighLevel, origin unknown&quot;</td><td>1</td></tr><tr><td><code>document</code></td><td>uploaded clinical reports, approved document extractions only</td><td>1</td></tr><tr><td><code>glen</code></td><td>ledger tags from <code>intake:glen-directed</code>, <code>clinician</code>, <code>note:internal</code></td><td>1</td></tr><tr><td><code>ledger:intake</code></td><td>ledger tags from <code>pb-intake</code>, <code>pb-intake-backfill</code>, <code>pb-intake:self-report</code></td><td>1</td></tr><tr><td><code>chat</code></td><td>ledger tags from <code>chatbot:query_log</code>, <code>journal:portal</code>, <code>email</code></td><td><strong>0</strong></td></tr></tbody></table></div>
+<p>Excluded on purpose: ledger tags whose source starts <code>e4l:</code> (those are findings), People <code>clin:</code> tags (copies of the ledger), <code>state:</code> tags (status flags), and the intake&#x27;s allergy answers (a mold allergy is not mold exposure). A tag that names an allergy, such as <code>pb:food-allergy</code>, is history and is kept. Free-text narrative fields are not split into phrases. Where the tier matcher reads them today (supplements, medications, vaccinations), they are stored whole as <code>intake</code> rows and searched only for the narrative-approved conditions, as <code>remedy_tiers</code> already does.</p>
+<p><strong>Chat is unconfirmed.</strong> A client asking &quot;what helps glaucoma?&quot; has not said they have it. Chat rows are kept, shown with the label &quot;from chat, unconfirmed&quot;, and never feed remedy choice.</p>
+<h3>2. Energetic findings</h3>
+<p>Unchanged. They stay in <code>e4l_scan_results</code> (<code>scan_id</code>, <code>item_code</code>, <code>priority_rank</code>, <code>section_context</code>), with <code>e4l_items</code> as the lookup.</p>
+<h3>3. <code>finding_conditions</code></h3>
+<p>The reviewed table that decides what links.</p>
+<div class='tw'><table><thead><tr><th>Column</th><th>Meaning</th></tr></thead><tbody><tr><td><code>id</code></td><td>row id</td></tr><tr><td><code>item_code</code></td><td>the finding code, e.g. <code>ED5</code></td></tr><tr><td><code>condition</code></td><td>a condition phrase</td></tr><tr><td><code>origin</code></td><td><code>remedy-row</code> (seeded from a second-order row) or <code>drafted</code> (Claude) or <code>glen</code> (he added it)</td></tr><tr><td><code>note</code></td><td>optional, Glen&#x27;s own words on the nature of the relationship</td></tr><tr><td><code>reviewed</code></td><td>0 until Glen reviews the row; 1 after</td></tr><tr><td><code>removed</code></td><td>1 if Glen removed it. Kept, so a re-seed does not bring it back</td></tr><tr><td><code>reviewed_at</code></td><td>date</td></tr></tbody></table></div>
+<p>Unique on <code>(item_code, condition)</code>.</p>
+<p><strong>Seed.</strong> The 200 second-order rows give 393 finding-and-condition pairs across 86 of the 262 finding codes. Claude drafts conditions for the other 176 codes from each finding&#x27;s description and name, choosing phrases that already appear in <code>e4l_formulation_map</code> where one fits. All seeded rows start with <code>reviewed = 0</code>.</p>
+<p><strong>The note</strong> sits on the general row, so every link made from that row carries it. Glen&#x27;s example, for AMD and the Stomach Driver: &quot;Stomach Meridian typically carries heavy metal stresses directly to the Macula from the Stomach, which is responsible for ionizing both nutrient and toxic minerals boosting their absorption/bioavailability.&quot; Notes are stored as written, for Glen&#x27;s view. Later client reporting may use them as source material. Any client wording goes through the client-copy rules and his review first.</p>
+<h3>4. <code>finding_history_links</code></h3>
+<div class='tw'><table><thead><tr><th>Column</th><th>Meaning</th></tr></thead><tbody><tr><td><code>scan_id</code></td><td>the scan</td></tr><tr><td><code>item_code</code></td><td>the finding on that scan</td></tr><tr><td><code>history_id</code></td><td>the <code>client_history</code> row it matched</td></tr><tr><td><code>finding_condition_id</code></td><td>the <code>finding_conditions</code> row that made the match</td></tr><tr><td><code>linked_at</code></td><td>when the link was computed</td></tr></tbody></table></div>
+<p>Unique on <code>(scan_id, item_code, history_id, finding_condition_id)</code>. Several findings on one scan may link to the same history row. The note and the reviewed flag are read through <code>finding_condition_id</code>, so a note Glen writes later shows on links made earlier.</p>
+<h2>How links are made</h2>
+<ol><li><strong>Build the history.</strong> For one client, read the People record, intake answers, approved document extractions and the ledger, and write <code>client_history</code> additively. A phrase no longer present in its source gets <code>retired_at</code>. The household rule applies: if <code>identities_on_email</code> is not 1, the client gets no history rows written and no links. The People and intake reads use the same calls as <code>fetch_client_facts</code>, with the console key in the header.</li><li><strong>Match.</strong> For each finding on the scan, take its <code>finding_conditions</code> rows that are not <code>removed</code>. For each row, check the condition against the client&#x27;s active history with <code>remedy_tiers.condition_met</code>, which handles synonyms and negation. The history is passed per row so the match knows which <code>client_history</code> row satisfied it.</li><li><strong>Store.</strong> Replace that scan&#x27;s links in one transaction. If the run fails, or the scan has findings but the history read failed, the old links stay. An empty result replaces old links only when the history read succeeded.</li><li><strong>When.</strong> As each scan is processed, from the same scripts that build scan drafts. A one-time backfill runs over past scans, dry run first, with counts shown to Glen before it writes.</li></ol>
+<p>Links made from unreviewed rows are stored and shown, marked &quot;unreviewed&quot;.</p>
+<h2>What Glen sees</h2>
+<h3>Review page for <code>finding_conditions</code></h3>
+<p>Built like the remedy order review page. One block per finding code, showing its name and description, then its condition rows. For each row: the condition, its origin, a keep or remove choice, and a note box. An &quot;add condition&quot; box per finding. Saves to the page&#x27;s own store, then a script writes the reviewed rows into <code>e4l.db</code> after Glen says so.</p>
+<h3>Panel on the Biofield test page</h3>
+<p>On the local Biofield app&#x27;s test page, beside the Clinical Summary. For the test&#x27;s scan:</p>
+<ul><li>Each reported condition that links, with the findings on that scan that link to it.</li><li>The condition&#x27;s source label: Practice Better, your tag, uploaded report, ScoreApp quiz, &quot;from GoHighLevel, origin unknown&quot;, or &quot;from chat, unconfirmed&quot;.</li><li>&quot;Unreviewed&quot; beside any link whose row Glen has not reviewed.</li><li>The note, under the link, when the row has one.</li><li>One line at the bottom: how many reported conditions no finding links to.</li></ul>
+<p>The panel reads <code>e4l.db</code>; it writes nothing.</p>
+<h2>Safety</h2>
+<ul><li><strong>Fails closed.</strong> No record, a read error, or a household address means no history and no links.</li><li><strong>Reaches no client and no remedy choice.</strong> The links show only on Glen&#x27;s local page. Remedy tiers are unchanged and do not read these tables.</li><li><strong>Never deletes on an empty read.</strong> See step 3.</li><li><strong>Client data stays local.</strong> Nothing here is sent to a model. The draft conditions for the 176 codes come from finding descriptions, which hold no client data.</li></ul>
+<h2>Testing</h2>
+<p>Tests are written before the code. They cover:</p>
+<ul><li>the household rule, at history build and at linking;</li><li>negation: &quot;no glaucoma&quot; makes no history row that links;</li><li>chat rows stored with <code>confirmed = 0</code> and labelled;</li><li><code>e4l:</code> ledger tags, <code>clin:</code> and <code>state:</code> People tags never becoming history;</li><li>several findings on one scan linking to one condition;</li><li>a removed <code>finding_conditions</code> row making no link, and a re-seed not restoring it;</li><li>a rerun that reads no history keeping the old links;</li><li>a later note showing on an earlier link.</li></ul>
+<p>Each guard is broken on purpose to prove a test catches it. One review round runs before merge: the change shows Glen something, so the three-round rule does not bind, but it reads client data from many sources.</p>
+<h2>Not in this spec</h2>
+<ul><li>The cross-client view of which findings go with which conditions.</li><li>Any client-facing use of links or notes.</li><li>Feeding links or confirmed chat history into remedy choice.</li><li>Finding where GoHighLevel writes <code>terrain:</code> tags.</li></ul>
+<h2>Where the code goes</h2>
+<ul><li><code>02 Skills/</code> in the vault: the history builder, the linker, the seed and backfill scripts, and their tests. These run where <code>e4l.db</code> and the scan scripts are.</li><li>deploy-chat <code>biofield_local_app.py</code> and a new <code>dashboard/history_links.py</code>: the panel on the test page.</li><li>The review page: an artifact like the remedy order review, with its own store.</li></ul></div></body></html>
