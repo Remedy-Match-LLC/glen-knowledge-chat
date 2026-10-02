@@ -18,3 +18,14 @@ def test_the_ff_it_is_matched_to_still_holds_that_price():
     """The control: if the comparison product moved, this test's premise is stale."""
     assert PRODUCTS["nous-energy"]["price_cents"] == 6997
     assert PRODUCTS["nous-energy"]["bottle_type"] == PRODUCTS["vitamin-e-spectrum"]["bottle_type"]
+
+
+def test_vitamin_e_spectrum_carries_the_ff_flag():
+    """Round 1: at the FF price without the flag, buyers paid $69.97 with none of the FF
+    volume or member discounts. Glen said yes to treating it fully as an FF, 2026-10-02."""
+    assert PRODUCTS["vitamin-e-spectrum"].get("qty_pricing") is True
+
+
+def test_the_scar_bundle_follows_its_rule_at_the_new_price():
+    """Scar Reduction Program is 10% off its four parts; Glen accepted $251.89, 2026-10-02."""
+    assert PRODUCTS["scar-reduction-program"]["price_cents"] == 25189
