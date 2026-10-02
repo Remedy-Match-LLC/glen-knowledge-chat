@@ -372,18 +372,36 @@ def _log_run_complete(
 
 
 # ---------------------------------------------------------------------------
-# Failure notification — reuses app._send_full_report_email().
-# Imported lazily so a failing import here doesn't kill the whole run.
+# Failure notification — reuses app._send_full_report_email(), in a CHILD process.
+#
+# Importing app here runs its gevent monkey.patch_all() after ssl is already loaded.
+# On 2026-10-02 the first adapter failure (iabdm, HTTP 520) sent a notification, the
+# import patched ssl late, and every HTTPS call after it hit RecursionError: 11 more
+# adapters failed and no October CSV was written. A child process keeps that patch
+# out of the scraper.
 # ---------------------------------------------------------------------------
+_NOTIFY_CHILD = (
+    "import json, sys\n"
+    "from app import _send_full_report_email\n"
+    "a = json.loads(sys.stdin.read())\n"
+    "_send_full_report_email(to_email=a['to'], name='Glen', subject=a['subject'], body=a['body'])\n"
+)
+
+
 def _notify_glen(subject: str, body: str) -> None:
+    import json
+    import os
+    import subprocess
+    repo = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     try:
-        from app import _send_full_report_email
-        _send_full_report_email(
-            to_email="drglenswartwout@gmail.com",
-            name="Glen",
-            subject=subject,
-            body=body,
-        )
+        r = subprocess.run(
+            [sys.executable, "-c", _NOTIFY_CHILD],
+            input=json.dumps({"to": "drglenswartwout@gmail.com",
+                              "subject": subject, "body": body}),
+            cwd=repo, capture_output=True, text=True, timeout=120)
+        if r.returncode != 0:
+            last = (r.stderr.strip().splitlines() or ["no output"])[-1]
+            print(f"  WARN: could not send notification email: {last}", file=sys.stderr)
     except Exception as e:
         print(f"  WARN: could not send notification email: {e}", file=sys.stderr)
 
