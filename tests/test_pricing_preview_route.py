@@ -11,8 +11,8 @@ def test_preview_prices_a_known_product(monkeypatch):
         "subscriber_tier_pct": 15, "ship_to_state": "CA"})
     assert r.status_code == 200
     body = r.get_json()
-    assert body["lines"][0]["line_total_cents"] == 5950   # 15% off 7000
-    assert body["discount_cents"] == 1050
+    assert body["lines"][0]["line_total_cents"] == 6000   # 15% off 7000
+    assert body["discount_cents"] == 1000  # whole dollars, rounded up (Glen 2026-10-02)
 
 
 def test_preview_skips_unknown_product(monkeypatch):

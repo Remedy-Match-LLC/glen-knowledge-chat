@@ -52,8 +52,8 @@ def test_ff_unit_cents_member_uses_order_wide_qty():
     s = _pricing.load_settings(None)
     f = appmod._inhouse_ff_unit_cents
     assert f(FF, 1, s, program_member=True, line_qty=1) == 6997
-    assert f(FF, 3, s, program_member=True, line_qty=1) == 6628
-    assert f(FF, 6, s, program_member=True, line_qty=2) == 6075
+    assert f(FF, 3, s, program_member=True, line_qty=1) == 6700  # whole dollars, rounded up (Glen 2026-10-02)
+    assert f(FF, 6, s, program_member=True, line_qty=2) == 6100  # whole dollars, rounded up (Glen 2026-10-02)
     assert f(FF, 12, s, program_member=True, line_qty=1) == 5000   # FF $50 floor
     assert f(FF, 99, s, program_member=True, line_qty=1) == 5000
     assert f(NONFF, 12, s, program_member=True) == 7000            # non-FF unaffected
@@ -67,7 +67,7 @@ def test_ff_unit_cents_nonmember_uses_line_qty_same_sku():
     s = _pricing.load_settings(None)
     f = appmod._inhouse_ff_unit_cents
     assert f(FF, 6, s, program_member=False, line_qty=1) == 6997   # mix/match qty1 line -> list
-    assert f(FF, 6, s, program_member=False, line_qty=6) == 6075   # same-SKU qty6 == member@6
+    assert f(FF, 6, s, program_member=False, line_qty=6) == 6100   # same-SKU qty6 == member@6
     assert f(FF, 99, s, program_member=False, line_qty=12) == 5000  # same-SKU floor
     assert f(FF, 99, s, program_member=False, line_qty=1) == 6997  # huge order, qty1 line -> list
     assert f(NONFF, 99, s, program_member=False, line_qty=1) == 7000  # non-FF unaffected
@@ -93,8 +93,8 @@ def test_multi_ff_lines_member_share_total_rate():
     even a qty-2 line (order-wide mix/match)."""
     appmod = _app()
     s = _pricing.load_settings(None)
-    assert appmod._inhouse_ff_unit_cents(FF, 6, s, program_member=True, line_qty=4) == 6075
-    assert appmod._inhouse_ff_unit_cents(FF2, 6, s, program_member=True, line_qty=2) == 6075
+    assert appmod._inhouse_ff_unit_cents(FF, 6, s, program_member=True, line_qty=4) == 6100  # whole dollars, rounded up (Glen 2026-10-02)
+    assert appmod._inhouse_ff_unit_cents(FF2, 6, s, program_member=True, line_qty=2) == 6100  # whole dollars, rounded up (Glen 2026-10-02)
 
 
 def test_multi_ff_lines_nonmember_use_own_qty_not_total():
@@ -102,8 +102,8 @@ def test_multi_ff_lines_nonmember_use_own_qty_not_total():
     each line only sees its OWN qty -> no mix/match aggregation."""
     appmod = _app()
     s = _pricing.load_settings(None)
-    assert appmod._inhouse_ff_unit_cents(FF, 6, s, program_member=False, line_qty=4) == 6444  # vp(4)
-    assert appmod._inhouse_ff_unit_cents(FF2, 6, s, program_member=False, line_qty=2) == 6813  # vp(2)
+    assert appmod._inhouse_ff_unit_cents(FF, 6, s, program_member=False, line_qty=4) == 6500  # vp(4)
+    assert appmod._inhouse_ff_unit_cents(FF2, 6, s, program_member=False, line_qty=2) == 6900  # vp(2)
 
 
 def test_combined_family_shipment_pools_ff_volume_and_preserves_other_lines(monkeypatch):
@@ -153,10 +153,10 @@ def test_combined_family_shipment_pools_ff_volume_and_preserves_other_lines(monk
     first_after = orders.get_order(cx, first)
     second_after = orders.get_order(cx, second)
     by_slug = {item["slug"]: item for item in first_after["items"]}
-    assert by_slug["brain"]["unit_cents"] == 6444       # household qty 4
+    assert by_slug["brain"]["unit_cents"] == 6500       # household qty 4
     assert by_slug["bone"]["unit_cents"] == 4000        # explicit override frozen
     assert by_slug["mix"]["unit_cents"] == 7000         # non-FF frozen
-    assert second_after["items"][0]["unit_cents"] == 6444
+    assert second_after["items"][0]["unit_cents"] == 6500  # whole dollars, rounded up (Glen 2026-10-02)
     assert sum(member["new_shipping_cents"] for member in result["members"]) == 2300
     cx.close()
 
@@ -196,10 +196,10 @@ def test_price_preview_route_member(monkeypatch):
     j = r.get_json()
     assert j["ok"] and j["total_ff_qty"] == 6
     by = {l["slug"]: l for l in j["lines"]}
-    assert by["brain"]["is_ff"] and by["brain"]["effective_unit_cents"] == 6075  # order-wide vp(6)
-    assert by["bone"]["effective_unit_cents"] == 6075          # qty-2 FF line, order-wide rate
+    assert by["brain"]["is_ff"] and by["brain"]["effective_unit_cents"] == 6100  # order-wide vp(6)
+    assert by["bone"]["effective_unit_cents"] == 6100          # qty-2 FF line, order-wide rate
     assert (not by["mix"]["is_ff"]) and by["mix"]["effective_unit_cents"] == 7000
-    assert j["subtotal_cents"] == 6075 * 4 + 6075 * 2 + 7000 * 1
+    assert j["subtotal_cents"] == 6100 * 4 + 6100 * 2 + 7000 * 1  # whole dollars, rounded up (Glen 2026-10-02)
 
 
 def test_price_preview_route_nonmember(monkeypatch):
@@ -218,10 +218,10 @@ def test_price_preview_route_nonmember(monkeypatch):
     j = r.get_json()
     assert j["ok"] and j["total_ff_qty"] == 6   # still tallied, just not usable by a non-member
     by = {l["slug"]: l for l in j["lines"]}
-    assert by["brain"]["effective_unit_cents"] == 6444          # same-SKU vp(4), not vp(6)
-    assert by["bone"]["effective_unit_cents"] == 6813           # same-SKU vp(2), not vp(6)
+    assert by["brain"]["effective_unit_cents"] == 6500          # same-SKU vp(4), not vp(6)
+    assert by["bone"]["effective_unit_cents"] == 6900           # same-SKU vp(2), not vp(6)
     assert by["mix"]["effective_unit_cents"] == 7000
-    assert j["subtotal_cents"] == 6444 * 4 + 6813 * 2 + 7000 * 1
+    assert j["subtotal_cents"] == 6500 * 4 + 6900 * 2 + 7000 * 1  # whole dollars, rounded up (Glen 2026-10-02)
 
 
 def test_price_preview_owner_only():
@@ -279,10 +279,10 @@ def test_manual_charges_ff_effective_no_double_discount(monkeypatch, tmp_path):
     assert r.status_code == 200
     j = r.get_json()
     assert j["ok"]
-    # Same-SKU qty6 charged at the effective 6075/unit; discount PRESERVED for a
+    # Same-SKU qty6 charged at the effective 6100/unit (whole dollars); discount PRESERVED for a
     # non-member because it's all one SKU (no mix/match involved).
-    assert j["lines"][0]["unit_cents"] == 6075
-    assert j["totals"]["subtotal_cents"] == 6075 * 6
+    assert j["lines"][0]["unit_cents"] == 6100  # whole dollars, rounded up (Glen 2026-10-02)
+    assert j["totals"]["subtotal_cents"] == 6100 * 6  # whole dollars, rounded up (Glen 2026-10-02)
     assert j["totals"]["discount_cents"] == 0
 
 
@@ -339,8 +339,8 @@ def test_manual_member_six_different_skus_mixmatch(monkeypatch, tmp_path):
     assert j["ok"]
     assert len(j["lines"]) == 6
     for ln in j["lines"]:
-        assert ln["unit_cents"] == 6075                # order-wide vp(6)
-    assert j["totals"]["subtotal_cents"] == 6075 * 6
+        assert ln["unit_cents"] == 6100                # order-wide vp(6)
+    assert j["totals"]["subtotal_cents"] == 6100 * 6  # whole dollars, rounded up (Glen 2026-10-02)
     assert j["totals"]["discount_cents"] == 0
 
 

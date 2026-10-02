@@ -9,11 +9,12 @@ def _stub_products(monkeypatch):
 def test_price_cart_volume_and_shipping(monkeypatch):
     _stub_products(monkeypatch)
     # 6 units total → LINEAR volume 13.1818% off the 42000 line
-    # line_total_cents = round(42000*(1-0.131818)) = 36464; discount = 42000 - 36464 = 5536
+    # 7000*(1-0.131818) = 6077, rounded up to 6100 a bottle (Glen 2026-10-02):
+    # line_total_cents = 6 x 6100 = 36600; discount = 42000 - 36600 = 5400
     monkeypatch.setattr(appmod._shipping, "quote", lambda b: {"shipping_cents": 2295, "box": "M"})
     out = appmod._price_cart([{"slug":"brain-boost","qty":6}], ship={"state":"CA","country":"US"})
-    assert out["priced"]["lines"][0]["line_total_cents"] == 36464
-    assert out["discount_cents"] == 5536                      # engine discount, list - net
+    assert out["priced"]["lines"][0]["line_total_cents"] == 36600  # whole dollars, rounded up (Glen 2026-10-02)
+    assert out["discount_cents"] == 5400                      # engine discount, list - net
     assert out["shipping_cents"] == 2295
     # QBO lines carry LIST price (qty applied by QBO), discount is separate
     assert out["qbo_lines"][0]["amount"] == 70.0 and out["qbo_lines"][0]["qty"] == 6
@@ -60,5 +61,5 @@ def test_price_cart_member_gets_order_total_discount(monkeypatch):
     # so the order-total/program rate wins).
     for ln in out["priced"]["lines"]:
         assert ln["pct_applied"] == 29
-        assert ln["line_total_cents"] == 4970           # round(7000*(1-0.29))
-    assert out["discount_cents"] == 4060                # 2 * (7000-4970)
+        assert ln["line_total_cents"] == 5000           # 4970 rounded up (Glen 2026-10-02)
+    assert out["discount_cents"] == 4000                # 2 * (7000-5000)

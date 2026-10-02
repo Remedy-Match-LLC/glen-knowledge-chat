@@ -34,9 +34,9 @@ def test_begin_checkout_engine_records_discount_and_shipping(monkeypatch):
         "email":"buyer@x.com","name":"B","method":"card","qty":6,
         "address":{"state":"CA","country":"US","name":"B"}})
     assert r.status_code == 200
-    # 6 units → LINEAR volume 13.1818% off 42000 → discount 42000-36464=5536 passed to QBO
-    assert cap["qbo_payload"]["discount_cents"] == 5536
-    assert cap["order"]["discount_cents"] == 5536
+    # 6 units → 13.1818% off, 6100 a bottle rounded up (Glen 2026-10-02) → 42000-36600=5400 to QBO
+    assert cap["qbo_payload"]["discount_cents"] == 5400  # whole dollars, rounded up (Glen 2026-10-02)
+    assert cap["order"]["discount_cents"] == 5400  # whole dollars, rounded up (Glen 2026-10-02)
     assert cap["order"]["shipping_cents"] == 2295
     assert cap["order"]["source"] == "funnel"
     # paid-only: no real QBO customer exists at checkout time
@@ -63,9 +63,9 @@ def test_begin_checkout_member_gets_order_total_rate(monkeypatch):
         "email":"member@x.com","name":"M","method":"card","qty":1,
         "address":{"state":"CA","country":"US","name":"M"}})
     assert r.status_code == 200
-    # 29% order-total rate: 7000 - round(7000*(1-0.29)) = 7000-4970 = 2030
-    assert cap["qbo_payload"]["discount_cents"] == 2030
-    assert cap["order"]["discount_cents"] == 2030
+    # 29% order-total rate: 4970 rounded up to 5000 (Glen 2026-10-02), so 7000-5000 = 2000
+    assert cap["qbo_payload"]["discount_cents"] == 2000
+    assert cap["order"]["discount_cents"] == 2000
 
 def test_begin_checkout_guest_no_order_total_rate(monkeypatch):
     # Same single-qty/12-month product, but the guest email is not a paid member
