@@ -22,4 +22,4 @@ def test_product_data_shows_same_sku_qty_tiers(monkeypatch):
     c = appmod.app.test_client()
     d = c.get("/begin/product-data/brain").get_json()
     tiers = {t["min"]: t["unit_cents"] for t in d["qty_pricing"]}
-    assert tiers == {1: 6997, 3: 6628, 6: 6075, 12: 5000}
+    assert tiers == {1: 6997, 3: 6700, 6: 6100, 12: 5000}  # whole dollars, rounded up (Glen 2026-10-02)

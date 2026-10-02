@@ -46,12 +46,12 @@ def test_floor_uses_absolute_wholesale_override():
 
 def test_discount_applied_above_floor():
     # 15% off 7000 = 5950, above the 3990 floor → 5950
-    assert pricing.apply_discount(7000, 15, 3990) == 5950
+    assert pricing.apply_discount(7000, 15, 3990) == 6000  # whole dollars, rounded up (Glen 2026-10-02)
 
 
 def test_discount_clamped_to_floor():
     # 50% off 7000 = 3500, below the 3990 floor → clamp to 3990
-    assert pricing.apply_discount(7000, 50, 3990) == 3990
+    assert pricing.apply_discount(7000, 50, 3990) == 4000  # whole dollars, rounded up (Glen 2026-10-02)
 
 
 def test_zero_discount_is_list():
@@ -60,7 +60,7 @@ def test_zero_discount_is_list():
 
 def test_points_reduce_above_floor():
     # price 5950, points 1000, floor 3010 → 4950, used 1000
-    assert pricing.apply_points(5950, 1000, 3010) == (4950, 1000)
+    assert pricing.apply_points(6000, 1000, 3010) == (5000, 1000)  # whole dollars, rounded up (Glen 2026-10-02)
 
 
 def test_points_clamped_at_floor_partial_use():
@@ -69,7 +69,7 @@ def test_points_clamped_at_floor_partial_use():
 
 
 def test_points_none_requested():
-    assert pricing.apply_points(5950, 0, 3010) == (5950, 0)
+    assert pricing.apply_points(6000, 0, 3010) == (6000, 0)  # whole dollars, rounded up (Glen 2026-10-02)
 
 
 def test_volume_pct_at_anchors():
@@ -149,11 +149,12 @@ def test_compute_one_line_subscriber_tier_and_points():
     r = pricing.compute(items, settings=s, subscriber_tier_pct=15,
                         points_to_redeem_cents=1000, channel="retail",
                         ship_to_state="HI", tax_fn=_fake_tax)
-    # M=1 -> volume 0%; best-of(0,15)=15%. 15% off 7000 = 5950; points 1000 -> 4950
-    assert r["lines"][0]["line_total_cents"] == 4950
-    assert r["discount_cents"] == 1050
+    # M=1 -> volume 0%; best-of(0,15)=15%. 15% off 7000 = 5950, rounded up to the whole
+    # dollar 6000 (Glen 2026-10-02); points 1000 -> 5000
+    assert r["lines"][0]["line_total_cents"] == 5000
+    assert r["discount_cents"] == 1000
     assert r["points_redeemed_cents"] == 1000
-    assert r["get_cents"] == 198            # round(4950*0.04)
+    assert r["get_cents"] == 200            # round(5000*0.04)
 
 
 def test_compute_subscriber_tier_beats_coupon_no_stack():
@@ -163,7 +164,7 @@ def test_compute_subscriber_tier_beats_coupon_no_stack():
               "unit_cents": 7000, "months": 1, "volume_eligible": True}]
     r = pricing.compute(items, settings=s, subscriber_tier_pct=5, coupon_pct=40,
                         channel="retail", ship_to_state="HI", tax_fn=_fake_tax)
-    assert r["lines"][0]["line_total_cents"] == 6650   # 5% (sub), coupon ignored
+    assert r["lines"][0]["line_total_cents"] == 6700   # 5% (sub), coupon ignored
 
 
 def test_compute_open_mix_and_match_default_off_guest_gets_subscriber():
@@ -179,8 +180,8 @@ def test_compute_open_mix_and_match_default_off_guest_gets_subscriber():
     ]
     r = pricing.compute(items, settings=s, subscriber_tier_pct=15,
                         channel="retail", ship_to_state="CA", tax_fn=_fake_tax)
-    assert r["lines"][0]["line_total_cents"] == 5950   # 15% off 7000 (subscriber wins)
-    assert r["lines"][1]["line_total_cents"] == 5950
+    assert r["lines"][0]["line_total_cents"] == 6000   # 15% off 7000 (subscriber wins)
+    assert r["lines"][1]["line_total_cents"] == 6000  # whole dollars, rounded up (Glen 2026-10-02)
 
 
 def test_compute_program_member_beats_subscriber_via_order_total():
@@ -195,8 +196,8 @@ def test_compute_program_member_beats_subscriber_via_order_total():
     ]
     r = pricing.compute(items, settings=s, subscriber_tier_pct=15, program_member=True,
                         channel="retail", ship_to_state="CA", tax_fn=_fake_tax)
-    assert r["lines"][0]["line_total_cents"] == 4970   # round(7000*(1-0.29))
-    assert r["lines"][1]["line_total_cents"] == 4970
+    assert r["lines"][0]["line_total_cents"] == 5000   # round(7000*(1-0.29))
+    assert r["lines"][1]["line_total_cents"] == 5000  # whole dollars, rounded up (Glen 2026-10-02)
 
 
 def test_compute_same_sku_type1_open_to_all_no_membership():
@@ -207,7 +208,7 @@ def test_compute_same_sku_type1_open_to_all_no_membership():
          "unit_cents": 7000, "months": 6, "volume_eligible": True},
     ]
     r = pricing.compute(items, settings=s, channel="retail", ship_to_state="CA", tax_fn=_fake_tax)
-    assert r["lines"][0]["line_total_cents"] == 36464   # round(42000*(1-0.131818))
+    assert r["lines"][0]["line_total_cents"] == 36600   # round(42000*(1-0.131818))
 
 
 def test_compute_open_total_enabled_beats_no_membership():
@@ -225,8 +226,8 @@ def test_compute_open_total_enabled_beats_no_membership():
          "unit_cents": 7000, "months": 6, "volume_eligible": True},
     ]
     r = pricing.compute(items, settings=s, channel="retail", ship_to_state="CA", tax_fn=_fake_tax)
-    assert r["lines"][0]["line_total_cents"] == 4970   # round(7000*(1-0.29))
-    assert r["lines"][1]["line_total_cents"] == 4970
+    assert r["lines"][0]["line_total_cents"] == 5000   # round(7000*(1-0.29))
+    assert r["lines"][1]["line_total_cents"] == 5000  # whole dollars, rounded up (Glen 2026-10-02)
 
 
 def test_compute_pure_powder_excluded_from_volume_floored_at_30():

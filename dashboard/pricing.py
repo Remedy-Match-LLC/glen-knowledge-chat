@@ -71,9 +71,18 @@ def unit_floor_cents(product, list_cents, settings, kind):
 
 
 def apply_discount(list_cents, pct, floor_cents):
-    """Apply a single percentage discount, never below floor_cents."""
-    discounted = int(round(int(list_cents) * (1 - (pct or 0) / 100.0)))
-    return max(discounted, int(floor_cents))
+    """Apply a single percentage discount, never below floor_cents.
+
+    A discounted price is a whole dollar, rounded UP, and so is the floor it clamps to.
+    Glen 2026-10-02: "We're getting away from uneven dollar pricing." No discount leaves
+    the list price as the catalog has it, and rounding never lifts a price above its list.
+    Price PER UNIT: rounding a multi-unit line total would leave cents on each bottle."""
+    list_cents = int(list_cents)
+    if not pct or pct <= 0:
+        return list_cents
+    discounted = int(round(list_cents * (1 - pct / 100.0)))
+    price = max(discounted, int(floor_cents))
+    return min(-(-price // 100) * 100, list_cents)
 
 
 def apply_points(price_cents, points_cents, floor_cents):
@@ -184,10 +193,11 @@ def compute(items, *, settings, subscriber_tier_pct=None, coupon_pct=None,
             # line_pct/apply_discount work in 0-100 percent, so convert here.
             rep_pct = float(settings.get("repertoire_reorder_pct") or 0.0) * 100.0
         line_pct = max(t1, order_pct, base_pct, rep_pct)             # non-additive: best single offer
-        disc_floor = unit_floor_cents(p, unit_list, settings, "discount") * qty
+        disc_floor = unit_floor_cents(p, unit_list, settings, "discount")
         pts_floor = unit_floor_cents(p, unit_list, settings, "points") * qty
 
-        after_disc = apply_discount(line_list, line_pct, disc_floor)
+        # Per unit, then times qty, so every bottle is a whole dollar (see apply_discount).
+        after_disc = apply_discount(unit_list, line_pct, disc_floor) * qty
         after_pts, used = apply_points(after_disc, points_left, pts_floor)
         points_left -= used
 

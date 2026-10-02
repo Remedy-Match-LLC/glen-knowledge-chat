@@ -35,8 +35,8 @@ def test_begin_checkout_engine_records_discount_and_shipping(monkeypatch):
         "address":{"state":"CA","country":"US","name":"B"}})
     assert r.status_code == 200
     # 6 units → LINEAR volume 13.1818% off 42000 → discount 42000-36464=5536 passed to QBO
-    assert cap["qbo_payload"]["discount_cents"] == 5536
-    assert cap["order"]["discount_cents"] == 5536
+    assert cap["qbo_payload"]["discount_cents"] == 5400  # whole dollars, rounded up (Glen 2026-10-02)
+    assert cap["order"]["discount_cents"] == 5400  # whole dollars, rounded up (Glen 2026-10-02)
     assert cap["order"]["shipping_cents"] == 2295
     assert cap["order"]["source"] == "funnel"
     # paid-only: no real QBO customer exists at checkout time

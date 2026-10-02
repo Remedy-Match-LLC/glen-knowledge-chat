@@ -12,8 +12,8 @@ def test_price_cart_volume_and_shipping(monkeypatch):
     # line_total_cents = round(42000*(1-0.131818)) = 36464; discount = 42000 - 36464 = 5536
     monkeypatch.setattr(appmod._shipping, "quote", lambda b: {"shipping_cents": 2295, "box": "M"})
     out = appmod._price_cart([{"slug":"brain-boost","qty":6}], ship={"state":"CA","country":"US"})
-    assert out["priced"]["lines"][0]["line_total_cents"] == 36464
-    assert out["discount_cents"] == 5536                      # engine discount, list - net
+    assert out["priced"]["lines"][0]["line_total_cents"] == 36600  # whole dollars, rounded up (Glen 2026-10-02)
+    assert out["discount_cents"] == 5400                      # engine discount, list - net
     assert out["shipping_cents"] == 2295
     # QBO lines carry LIST price (qty applied by QBO), discount is separate
     assert out["qbo_lines"][0]["amount"] == 70.0 and out["qbo_lines"][0]["qty"] == 6

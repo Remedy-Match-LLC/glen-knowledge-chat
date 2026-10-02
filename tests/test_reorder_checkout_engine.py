@@ -35,8 +35,8 @@ def test_reorder_checkout_uses_engine_discount(monkeypatch):
                                           "address":{"state":"CA","country":"US","name":"A"}})
     assert r.status_code == 200
     # engine discount (LINEAR 13.1818% off 42000 -> 42000-36464=5536) passed to QBO
-    assert captured["qbo_payload"]["discount_cents"] == 5536
-    assert captured["order"]["discount_cents"] == 5536
+    assert captured["qbo_payload"]["discount_cents"] == 5400  # whole dollars, rounded up (Glen 2026-10-02)
+    assert captured["order"]["discount_cents"] == 5400  # whole dollars, rounded up (Glen 2026-10-02)
     assert captured["order"]["shipping_cents"] == 2295
     # paid-only: no real QBO customer exists at checkout time
     assert r.get_json()["customer_id"] == ""
