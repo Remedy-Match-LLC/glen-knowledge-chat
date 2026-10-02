@@ -215,3 +215,45 @@ def test_a_failure_mid_swap_leaves_the_old_copy(db, tmp_path, monkeypatch):
                           ).fetchone() == ("Vitamin P Polyphenols*",)
     assert _chain(db)[38][0] == "Vitamin P Polyphenols"
     assert not any(t.startswith(snap.STAGE_PREFIX) for t in _tables(db))
+
+
+def _add_lists_and_checklist(path):
+    from dashboard.biofield_clinical_checklist import ensure_catalog_schema
+    with sqlite3.connect(path) as cx:
+        cx.execute("CREATE TABLE biofield_auth_remedy_set (test_id INTEGER PRIMARY KEY, "
+                   "remedies_json TEXT, updated_at TEXT)")
+        cx.execute("INSERT INTO biofield_auth_remedy_set VALUES (9, ?, '')", (
+            '["vitamin p polyphenols", "sterol max", "vascular integrity: vitamin p plus teca"]',))
+        ensure_catalog_schema(cx)
+        cx.execute("INSERT INTO biofield_clinical_catalog(item_key,label,remedy_key,remedy) "
+                   "VALUES ('wet amd','Wet AMD','vitamin p polyphenols','Vitamin P Polyphenols')")
+
+
+def test_saved_remedy_sets_and_the_checklist_follow_the_rename(db, tmp_path):
+    import json
+    _add_lists_and_checklist(db)
+    refresh_products(_export(tmp_path / "new", NEW), db)
+    with sqlite3.connect(db) as cx:
+        names = json.loads(cx.execute("SELECT remedies_json FROM biofield_auth_remedy_set"
+                                      ).fetchone()[0])
+        assert names == ["vascular integrity: vitamin p plus teca", "sterol max"]
+        assert cx.execute("SELECT remedy_key, remedy FROM biofield_clinical_catalog").fetchall() == [
+            ("vascular integrity vitamin p plus teca", "Vascular Integrity: Vitamin P Plus TECA")]
+
+
+def test_a_checklist_holding_both_names_differently_shown_is_refused(db, tmp_path):
+    _add_lists_and_checklist(db)
+    with sqlite3.connect(db) as cx:
+        cx.execute("INSERT INTO biofield_clinical_catalog(item_key,label,remedy_key,remedy,hidden) "
+                   "VALUES ('wet amd','Wet AMD','vascular integrity vitamin p plus teca',"
+                   "'Vascular Integrity: Vitamin P Plus TECA',1)")
+    with pytest.raises(RefreshRefused, match="Glen decides"):
+        refresh_products(_export(tmp_path / "new", NEW), db)
+    assert _chain(db)[38][0] == "Vitamin P Polyphenols"
+
+
+def test_an_export_that_lost_a_column_is_refused(db, tmp_path):
+    d = _export(tmp_path / "new", NEW)
+    (d / "products_phases.csv").write_text("id_pk\n1\n", encoding="utf-8")
+    with pytest.raises(RefreshRefused, match="lacks columns"):
+        refresh_products(d, db)

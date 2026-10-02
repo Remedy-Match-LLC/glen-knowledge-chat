@@ -11,6 +11,7 @@ so reloads are idempotent. These rows are PII/PHI (client emails, names, chains)
 keep them in the app's runtime DB; never commit the snapshot to git.
 """
 import csv
+import json
 import os
 import secrets
 import shutil
@@ -95,6 +96,9 @@ REQUIRED_PRODUCT_COLS = ("id_pk", "product_name", "active", "type", "dosage",
 # Where a product name is stored as text. Each is (table, column).
 STORED_NAME_COLUMNS = (("biofield_auth_chain", "remedy"),
                        ("biofield_auth_remedy_coverage", "remedy"))
+# Where a JSON list of (lowercased) product names is stored.
+STORED_NAME_LISTS = (("biofield_auth_remedy_set", "remedies_json"),
+                     ("biofield_remedy_pattern", "remedies_json"))
 _TR_SUFFIX = " in terrain restore"
 STAGE_PREFIX = "fmp_stage_"     # each run appends its own token, so two runs never share
 PREV_PREFIX = "fmp_prev_"
@@ -127,6 +131,10 @@ def _check_stage(cx, stage, min_ratio, allow_removed):
         raise RefreshRefused(f"export is missing {missing}")
     for t in PRODUCT_TABLES:
         live = "fmp_snap_" + t
+        if live in have:
+            lost = [c for c in _cols(cx, live) if c not in set(_cols(cx, stage + t))]
+            if lost:
+                raise RefreshRefused(f"{t} export lacks columns {lost} that the copy has")
         before = cx.execute(f"SELECT COUNT(*) FROM {live}").fetchone()[0] if live in have else 0
         after = cx.execute(f"SELECT COUNT(*) FROM {stage}{t}").fetchone()[0]
         if before and after < before * min_ratio:
@@ -197,25 +205,84 @@ def product_renames(cx, stage=STAGE_PREFIX):
     return sorted(out, key=lambda r: r[1].lower())
 
 
+def _renamed(by_old, val):
+    """The new stored form of `val`, or None when it names no renamed product."""
+    key, suffix = _norm(val), ""
+    if key not in by_old and key.endswith(_TR_SUFFIX):
+        key = key[: -len(_TR_SUFFIX)].strip()
+        suffix = " in Terrain Restore"
+    new = by_old.get(key)
+    if not new:
+        return None
+    new = new + suffix
+    return new.lower() if val == val.lower() else new
+
+
+def _rewrite_name_lists(cx, by_old, have):
+    changed = []
+    for table, col in STORED_NAME_LISTS:
+        if table not in have or col not in _cols(cx, table):
+            continue
+        for rid, raw in cx.execute(f'SELECT rowid, "{col}" FROM {table}').fetchall():
+            try:
+                names = json.loads(raw or "[]")
+            except ValueError:
+                continue
+            if not isinstance(names, list):
+                continue
+            out = []
+            for v in names:
+                nv = _renamed(by_old, v) if isinstance(v, str) else None
+                nv = nv or v
+                if nv not in out:
+                    out.append(nv)
+            if out != names:
+                cx.execute(f'UPDATE {table} SET "{col}"=? WHERE rowid=?', (json.dumps(out), rid))
+                changed.append((table, rid, raw, json.dumps(out)))
+    return changed
+
+
+def _rewrite_clinical_catalog(cx, by_old, have):
+    """Glen's condition checklist: (item_key, remedy_key) is its key, so both move."""
+    table = "biofield_clinical_catalog"
+    if table not in have:
+        return []
+    from dashboard.biofield_clinical_checklist import _norm as checklist_key
+    changed = []
+    for rid, item, remedy, hidden in cx.execute(
+            f"SELECT rowid, item_key, remedy, hidden FROM {table}").fetchall():
+        new = _renamed(by_old, remedy)
+        if not new:
+            continue
+        key = checklist_key(new)
+        twin = cx.execute(f"SELECT hidden FROM {table} WHERE item_key=? AND remedy_key=? "
+                          "AND rowid<>?", (item, key, rid)).fetchone()
+        if twin is None:
+            cx.execute(f"UPDATE {table} SET remedy=?, remedy_key=? WHERE rowid=?",
+                       (new, key, rid))
+        elif twin[0] == hidden:
+            cx.execute(f"DELETE FROM {table} WHERE rowid=?", (rid,))   # same entry twice
+            new = "(duplicate removed)"
+        else:
+            raise RefreshRefused(f"checklist '{item}' lists both '{remedy}' and '{new}', "
+                                 "one hidden and one shown; Glen decides which stays")
+        changed.append((table, rid, remedy, new))
+    return changed
+
+
 def _rewrite_stored_names(cx, renames):
     """Move stored remedy names onto the renamed product. Returns the changed rows."""
     by_old = {_norm(o): n for _, o, n in renames}
     have = _tables(cx)
-    changed = []
+    changed = _rewrite_name_lists(cx, by_old, have) + _rewrite_clinical_catalog(cx, by_old, have)
     for table, col in STORED_NAME_COLUMNS:
         if table not in have or col not in _cols(cx, table):
             continue
         for rid, val in cx.execute(f'SELECT rowid, "{col}" FROM {table}').fetchall():
-            key, suffix = _norm(val), ""
-            if key not in by_old and key.endswith(_TR_SUFFIX):
-                key = key[: -len(_TR_SUFFIX)].strip()
-                suffix = " in Terrain Restore"
-            new = by_old.get(key)
+            # coverage stores names lowercased, and _renamed keeps that form
+            new = _renamed(by_old, val or "")
             if not new:
                 continue
-            new = new + suffix
-            if val == val.lower():
-                new = new.lower()        # coverage stores names lowercased; keep its form
             try:
                 cx.execute(f'UPDATE {table} SET "{col}"=? WHERE rowid=?', (new, rid))
             except sqlite3.IntegrityError:
