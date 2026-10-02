@@ -106,3 +106,41 @@ def test_the_laser_shows_on_the_portal_report_but_never_in_the_cart():
     assert [i["slug"] for i in out["content"]["reorder_items"]] == ["wholomega"]
     assert "Harmony Laser" in out["content"]["layers"][0]["remedy"]
     assert out["unresolved"] == []
+
+
+def test_rae_handoff_never_invoices_or_carts_the_laser(tmp_path, monkeypatch):
+    """Review round 3: the hand-off rebuilt its invoice from the seed's reorder_items, which
+    carried the laser, so a $997 line reached Rae's invoice and the client's cart."""
+    from biofield_local_app import create_app
+    from dashboard.biofield_authoring import init_auth_tables, create_test, add_chain_row
+    from dashboard import biofield_invoice
+    import dashboard as _d
+    monkeypatch.delenv("CONSOLE_SECRET", raising=False)
+    monkeypatch.setattr(_d, "CONSOLE_SECRET", "", raising=False)
+    db = str(tmp_path / "chat_log.db")
+    cx = sqlite3.connect(db)
+    init_auth_tables(cx)
+    cx.execute("CREATE TABLE fmp_snap_products (product_name TEXT, doses_per_bottle INTEGER)")
+    tid = create_test(cx, "Pat", "p@x.com", "2026-10-01")
+    add_chain_row(cx, tid, 1, "Head", "Tail", "Liver Support", "1 cap", "daily", "")
+    add_chain_row(cx, tid, 1, "Head", "Tail", "Harmony Laser", "", "", CAUTION)
+    cx.commit()
+    pushed = {}
+    monkeypatch.setattr(biofield_invoice, "default_handoff_push",
+                        lambda *a, **k: pushed.update(args=a, kw=k) or {"ok": True})
+    captured = {}
+    client = create_app(
+        db,
+        invoice_fetch_catalog=lambda: [{"name": "Liver Support", "slug": "liver-support"},
+                                       {"name": "Harmony Laser", "slug": "harmony-laser"}],
+        invoice_create=lambda c, lines, replace_open=False, invoice_note=None,
+                       idempotency_key="": captured.update(lines=lines) or {"ok": True, "order_id": 5},
+        invoice_paid_check=lambda email: {"paid": False},
+    ).test_client()
+    r = client.post("/author/%s/handoff" % tid, json={})
+    j = r.get_json()
+    assert j and j["ok"] is True, (r.status_code, r.data[:300])
+    slugs = [l["slug"] for l in captured["lines"]]
+    assert "liver-support" in slugs and "harmony-laser" not in slugs
+    assert "harmony-laser" not in repr(pushed)
+    assert "Harmony Laser" in repr(pushed)           # still on the report

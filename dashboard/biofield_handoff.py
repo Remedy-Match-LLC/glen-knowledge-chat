@@ -34,6 +34,9 @@ def build_portal_seed(cx, test_id, resolve_slug, name=None):
             slug = resolve_slug(remedy)
         except Exception:
             slug = None
+        from dashboard.biofield_invoice import RECOMMEND_ONLY_SLUGS
+        if slug in RECOMMEND_ONLY_SLUGS:
+            slug = None              # on the report, never carted or invoiced (Glen 2026-10-01)
         if slug and slug not in seen:
             seen.add(slug)
             reorder.append({"slug": slug, "name": remedy})
