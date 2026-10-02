@@ -1,4 +1,8 @@
-"""ES1 is Lymph, not Immune — and fixing that needs the matcher, not just the catalog.
+"""ES1 resolves to one live record, and fixing that needed the matcher, not just the catalog.
+
+Ruling history: July 2026 (#751) said ES1 is Lymph, not Immune. Glen, 2026-10-02: "Both
+are correct." The live name became "ES1 Lymph and Immune Energetic Star Infoceutical", and
+the July name stays spellable through `aliases`. The text below describes the July defect.
 
 `resolve_remedy_name` fuzzy-matches spoken remedy names against **FMP's** product
 names. FMP has exactly one ES1 row and it is misnamed "Immune". So saying the true
@@ -34,7 +38,8 @@ ROOT = Path(__file__).resolve().parent.parent
 LIVE_ES1 = "es1-lymph"
 DEAD_ES1 = "es1-immune-energetic-star-infoceutical"
 DEAD_NAME = "ES1 Immune Energetic Star Infoceutical"
-LIVE_NAME = "ES1 Lymph Energetic Star Infoceutical"
+LIVE_NAME = "ES1 Lymph and Immune Energetic Star Infoceutical"
+JULY_NAME = "ES1 Lymph Energetic Star Infoceutical"   # live name 2026-07 to 2026-10-02
 ES5_NAME = "ES5 Auto-Immune Energetic Star Infoceutical"
 
 
@@ -154,9 +159,9 @@ def test_resolution_is_identical_before_and_after_the_fmp_rename(spoken):
     assert resolve_remedy_name(_fmp_db_renamed(), spoken) == LIVE_NAME
 
 
-def test_the_renamed_fmp_row_does_not_reintroduce_the_immune_name():
+def test_the_renamed_fmp_row_does_not_reintroduce_the_retired_name():
     got = resolve_remedy_name(_fmp_db_renamed(), "ES1 Immune Energetic Star Infoceutical")
-    assert "Immune" not in got
+    assert got == LIVE_NAME
     assert "Auto-Immune" not in got
 
 
@@ -199,3 +204,48 @@ def test_a_live_products_own_name_is_never_dropped_from_the_candidate_pool():
     ]
     kept = ba._sellable_names(shared)
     assert kept == shared, f"these live names were dropped: {set(shared) - set(kept)}"
+
+
+# --- the 2026-10-02 rename: "Lymph and Immune" --------------------------------
+
+def _fmp_db_with(es1_name):
+    """FMP with its ES1 row under a given name, plus the three neighbours ES1 drifted to."""
+    cx = sqlite3.connect(":memory:")
+    cx.execute("CREATE TABLE fmp_snap_products (product_name TEXT, active TEXT)")
+    cx.executemany("INSERT INTO fmp_snap_products(product_name, active) VALUES (?, 'Yes')",
+                   [(es1_name,), (ES5_NAME,),
+                    ("ES8 Chill Energetic Star Infoceutical",),
+                    ("ES15 Heavy Metals Energetic Star Infoceutical",)])
+    cx.commit()
+    return cx
+
+
+def test_the_july_name_is_kept_as_an_alias():
+    assert JULY_NAME in _products()[LIVE_ES1]["aliases"]
+
+
+SIX_SPELLINGS = [LIVE_NAME, JULY_NAME, DEAD_NAME, "ES1", "ES1 Lymph", "ES1 Immune"]
+
+
+@pytest.mark.parametrize("fmp_name", [DEAD_NAME, JULY_NAME, LIVE_NAME])
+@pytest.mark.parametrize("spoken", SIX_SPELLINGS)
+def test_every_es1_spelling_resolves_to_the_new_name(spoken, fmp_name):
+    """Production's spec, 2026-10-02. FMP record 245 is renamed by hand and the snapshot
+    lags, so each spelling must land the same whatever FMP's row is called."""
+    got = resolve_remedy_name(_fmp_db_with(fmp_name), spoken)
+    assert got == LIVE_NAME, f"{spoken!r} with FMP {fmp_name!r} -> {got!r}"
+    for stranger in ("ES5", "ES8", "ES15"):
+        assert not got.startswith(stranger + " ")
+
+
+def test_without_the_alias_the_july_name_is_not_an_exact_alias(tmp_path, monkeypatch):
+    """The control: the alias, not luck, is what keeps the July name exact."""
+    assert ba._catalog_alias_map()[_norm_name(JULY_NAME)] == LIVE_NAME
+    data = json.loads((ROOT / "data" / "products.json").read_text())
+    data["products"][LIVE_ES1].pop("aliases")
+    stripped = tmp_path / "products.json"
+    stripped.write_text(json.dumps(data))
+    monkeypatch.setattr(ba, "_PRODUCTS_JSON", str(stripped))
+    if hasattr(ba._catalog_alias_map, "cache_clear"):
+        ba._catalog_alias_map.cache_clear()
+    assert _norm_name(JULY_NAME) not in ba._catalog_alias_map()

@@ -3582,7 +3582,8 @@
    "bottle_type": "30ml"
   },
   "es1-lymph": {
-   "name": "ES1 Lymph Energetic Star Infoceutical",
+   "name": "ES1 Lymph and Immune Energetic Star Infoceutical",
+   "aliases": ["ES1 Lymph Energetic Star Infoceutical", "ES1 Lymph", "ES1 Immune"],
    "price_cents": 3997,
    "pinecone_title": "ES1",
    "url": "https://myhealingoasis.com/begin/product/es1-lymph",

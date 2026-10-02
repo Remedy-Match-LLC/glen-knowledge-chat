@@ -333,9 +333,11 @@ def _catalog_alias_map():
 
     A product answers to BOTH its `name` and its `pinecone_title`. They diverge when a
     record is renamed but its vector title is pinned: `es1-lymph` is now named
-    "ES1 Lymph Energetic Star Infoceutical" while its title stays "ES1". Without the
-    title as an alias, saying the bare code "ES1" fuzzy-matched **ES15** (Heavy Metals).
-    Matching an alias resolves to the canonical name, never to the alias."""
+    "ES1 Lymph and Immune Energetic Star Infoceutical" while its title stays "ES1".
+    Without the title as an alias, saying the bare code "ES1" fuzzy-matched **ES15**
+    (Heavy Metals). It also answers to its `aliases`, the names it had before a rename,
+    indexed last so an alias never shadows a real name. Matching an alias resolves to
+    the canonical name, never to the alias."""
     try:
         with open(_PRODUCTS_JSON) as f:
             products = (json.load(f).get("products") or {})
@@ -350,6 +352,14 @@ def _catalog_alias_map():
             continue
         for key in ("name", "pinecone_title"):
             v = _norm_name(p.get(key))
+            if v:
+                out.setdefault(v, canon)
+    for p in products.values():
+        if p.get("inactive"):
+            continue
+        canon = (p.get("name") or "").strip()
+        for a in (p.get("aliases") or []):
+            v = _norm_name(a) if canon and isinstance(a, str) else ""
             if v:
                 out.setdefault(v, canon)
     return out
@@ -368,6 +378,10 @@ def _catalog_names_for_pool():
             continue
         for key in ("name", "pinecone_title"):
             v = (p.get(key) or "").strip()
+            if v:
+                out.append(v)
+        for a in (p.get("aliases") or []):
+            v = a.strip() if isinstance(a, str) else ""
             if v:
                 out.append(v)
     return out
