@@ -3,6 +3,7 @@ catalog + ingredients and the stale-GrooveKart-page work queue, and persists the
 'fixed' set on the /data disk (products.json itself is a read-only repo file)."""
 import json
 import os
+import re
 from dashboard.signals import signal as _signal, AMBER, GREEN, GRAY
 from dashboard.actions import action, LOW_WRITE
 from dashboard.rbac import OWNER, OPS, VA
@@ -11,6 +12,20 @@ from dashboard.shipping import is_shippable
 _REPO_DATA = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data")
 
 _FIXED_CACHE = None
+
+_ZERO_DOSE = re.compile(r"^\s*0(?:\.0+)?\s*(?:mg|mcg|µg|g|iu)?\s*$", re.I)
+
+
+def shown_ingredients(items):
+    """The ingredient rows a customer sees. A 0 mg row is dropped.
+
+    Glen, 2026-10-03: "Don't list the 0 mg ingredients", and "the 0 mg lines are
+    notes to consider for future formulation updates". So they stay in
+    products.json and are hidden only where a page or a copy prompt reads them."""
+    if not isinstance(items, list):
+        return items
+    return [i for i in items
+            if not (isinstance(i, dict) and _ZERO_DOSE.match(str(i.get("dose") or "")))]
 
 
 def _products_path():

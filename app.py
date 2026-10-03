@@ -9133,8 +9133,9 @@ def begin_product_data(slug):
     _pin = _pinned_copy(p)
     how = ("" if p.get("info_only") else
            (p.get("how_it_works") or "") if "research" in _pin else _product_how(p))
-    ingredients = (p.get("ingredients") or []) if "ingredients" in _pin else (
-        p.get("ingredients") or card.get("ingredients", []))
+    from dashboard.products import shown_ingredients as _shown_ings
+    ingredients = _shown_ings((p.get("ingredients") or []) if "ingredients" in _pin else (
+        p.get("ingredients") or card.get("ingredients", [])))
     qty_tiers, formats = None, None
     if _qty_eligible(p):
         from dashboard import pricing as _pricing
@@ -9291,8 +9292,9 @@ def begin_product_page_data(slug):
            (p.get("how_it_works") or "") if "research" in _pin else _product_how(p))
     from dashboard.ingredients import slugify as _slugify
     from dashboard import entity_refs as _er
-    _raw_ingredients = ((p.get("ingredients") or []) if "ingredients" in _pin
-                        else (p.get("ingredients") or card.get("ingredients", [])))
+    from dashboard.products import shown_ingredients as _shown_ings
+    _raw_ingredients = _shown_ings((p.get("ingredients") or []) if "ingredients" in _pin
+                                   else (p.get("ingredients") or card.get("ingredients", [])))
     ingredients = []
     for _ing in _raw_ingredients:
         if isinstance(_ing, dict):

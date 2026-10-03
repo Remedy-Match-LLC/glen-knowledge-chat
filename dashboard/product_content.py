@@ -150,7 +150,8 @@ def _page_text_from_product(product):
     or None when there is no manual data to ground on."""
     desc = (product.get("description") or "").strip()
     lines = []
-    for it in (product.get("ingredients") or []):
+    from dashboard.products import shown_ingredients
+    for it in shown_ingredients(product.get("ingredients") or []):
         if isinstance(it, dict):
             nm = (it.get("name") or "").strip()
             dose = (it.get("dose") or "").strip()
