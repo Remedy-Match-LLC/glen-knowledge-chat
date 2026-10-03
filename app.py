@@ -56495,8 +56495,8 @@ def _known_ship_address(email):
     from dashboard import customers as _cust
     from dashboard import household as _hh
     em = (email or "").strip().lower()
-    if not em:
-        return {}
+    if not em or _cust.is_own_email(em):
+        return {}   # Glen's own orders are tests; never fill them
 
     def _lookup(cx, e):
         # A source counts only when it is complete and shippable (US, known state,

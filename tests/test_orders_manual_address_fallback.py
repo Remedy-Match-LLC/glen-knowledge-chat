@@ -265,3 +265,24 @@ def test_a_whitespace_only_filemaker_street_is_ignored_not_a_crash(env):
     appmod, db = env
     _seed_fmp(db, "c1", "ws@x.com", ("\t\n", "Hilo", "HI", "96720", "USA"))
     assert _address(db, _post(appmod, "ws@x.com")).get("street", "") == ""
+
+
+def test_a_test_street_is_never_filled(env):
+    """Fulfillment review 2026-10-03: order 173 would have got "1 Test, Hilo"."""
+    appmod, db = env
+    _seed_order(db, "t@x.com", {"street": "1 Test", "city": "Hilo", "state": "HI",
+                                "zip": "96720", "country": "US"})
+    assert _address(db, _post(appmod, "t@x.com")).get("street", "") == ""
+
+
+def test_a_street_containing_test_as_part_of_a_word_still_fills(env):
+    appmod, db = env
+    _seed_order(db, "t@x.com", {"street": "12 Testa Ln", "city": "Hilo", "state": "HI",
+                                "zip": "96720", "country": "US"})
+    assert _address(db, _post(appmod, "t@x.com"))["street"] == "12 Testa Ln"
+
+
+def test_glens_own_email_is_never_filled(env):
+    appmod, db = env
+    _seed_order(db, "drglenswartwout@gmail.com", MESA)
+    assert _address(db, _post(appmod, "drglenswartwout@gmail.com")).get("street", "") == ""

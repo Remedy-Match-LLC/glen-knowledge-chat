@@ -84,6 +84,8 @@ EMAIL_SUBJECT = "tracking number"
 _TRACK_22 = re.compile(r"(9[0-9]{21})")
 
 
+from dashboard import customers as _customers
+
 def normalize_tracking(impb: str) -> Optional[str]:
     """Reduce an IMpb barcode string to the 22-digit USPS tracking number.
 
@@ -401,6 +403,19 @@ def _shipment_address_key(shipment: dict) -> tuple:
     )
 
 
+def label_street_lines(shipment: dict) -> tuple:
+    """(address1, address2) from a parsed label. The parser joins every line above
+    "CITY ST ZIP" into street, so a company or C/O line lands in it ("City of
+    Hercules 111 CIVIC DR"). The line just above the city is the delivery line;
+    any lines above it become address2."""
+    block = [ln.strip() for ln in str(shipment.get("address_block") or "").split(" / ")
+             if ln.strip()]
+    if len(block) >= 2 and _CSZ_RE.match(block[-1]):
+        street_lines = block[:-1]
+        return street_lines[-1], ", ".join(street_lines[:-1])
+    return str(shipment.get("street") or "").strip(), str(shipment.get("address2") or "").strip()
+
+
 def _audit_order_link(cx, shipment_id: int, status: str, reason: str,
                       order_ids: List[int]) -> dict:
     cx.execute(
@@ -532,10 +547,13 @@ def link_shipment_to_orders(cx: sqlite3.Connection, shipment_id: int,
     # orders (review round 3, 2026-10-03).
     if all(ship_key) and reason == "exact client email + recipient name":
         addr = _order_address(chosen[0])
-        if not str(addr.get("street") or addr.get("address1") or "").strip():
+        street, extra = label_street_lines(shipment)
+        if (not str(addr.get("street") or addr.get("address1") or "").strip()
+                and street and not _customers.is_test_street(street)
+                and not _customers.is_own_email(chosen[0].get("email"))):
             addr.update({
-                "street": str(shipment.get("street") or "").strip(),
-                "address2": str(shipment.get("address2") or "").strip(),
+                "street": street,
+                "address2": extra,
                 "city": str(shipment.get("city") or "").strip(),
                 "state": str(shipment.get("state") or "").strip(),
                 "zip": str(shipment.get("zip") or "").strip(),
