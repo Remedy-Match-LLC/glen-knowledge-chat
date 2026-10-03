@@ -76,13 +76,22 @@ def apply_discount(list_cents, pct, floor_cents):
     A discounted price is a whole dollar, rounded UP, and so is the floor it clamps to.
     Glen 2026-10-02: "We're getting away from uneven dollar pricing." No discount leaves
     the list price as the catalog has it, and rounding never lifts a price above its list.
-    Price PER UNIT: rounding a multi-unit line total would leave cents on each bottle."""
+    Price PER UNIT: rounding a multi-unit line total would leave cents on each bottle.
+
+    A discount that would round away to nothing (5% off $9.97 rounds back up to $9.97)
+    drops to the next whole dollar below list instead, if the floor allows: the buyer
+    always saves something. Glen 2026-10-02: "10% off a $10 item, so it would be $9"."""
     list_cents = int(list_cents)
     if not pct or pct <= 0:
         return list_cents
     discounted = int(round(list_cents * (1 - pct / 100.0)))
     price = max(discounted, int(floor_cents))
-    return min(-(-price // 100) * 100, list_cents)
+    price = min(-(-price // 100) * 100, list_cents)
+    if price >= list_cents and discounted < list_cents:
+        next_down = (list_cents - 1) // 100 * 100
+        if next_down >= int(floor_cents) and next_down > 0:
+            price = next_down
+    return price
 
 
 def apply_points(price_cents, points_cents, floor_cents):
