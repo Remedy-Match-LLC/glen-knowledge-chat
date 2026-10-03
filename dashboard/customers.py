@@ -5,6 +5,7 @@ address and the lookup/save helpers the order-entry form needs. Pure functions
 over a sqlite connection (cx) for testability; the people + orders tables live in
 the same LOG_DB."""
 import json
+import re
 from datetime import datetime, timezone
 
 from dashboard import dbwrite
@@ -198,6 +199,67 @@ def last_address_for(cx, email):
         if isinstance(a, dict) and (a.get("street") or a.get("address1") or "").strip():
             return _order_address_shape(a)
     return {}
+
+
+# FileMaker country text -> the two-letter code orders carry. Hawai'i ships as US.
+_FMP_COUNTRY = {
+    "USA": "US", "U.S.A.": "US", "US": "US", "U.S.": "US", "UNITED STATES": "US",
+    "HAWAII": "US", "KINGDOM OF HAWAI'I": "US", "KINGDOM OF HAWAII": "US",
+    "CANADA": "CA", "AUSTRALIA": "AU", "GREECE": "GR", "U.K.": "GB", "UK": "GB",
+    "ENGLAND": "GB", "GREAT-BRITAIN": "GB", "GREAT BRITAIN": "GB", "UNITED KINGDOM": "GB",
+    "GERMANY": "DE", "SWITZERLAND": "CH", "MEXICO": "MX", "FRANCE": "FR", "SPAIN": "ES",
+    "JAPAN": "JP", "HUNGARY": "HU", "SWEDEN": "SE", "PORTUGAL": "PT", "ITALY": "IT",
+    "DENMARK": "DK", "BULGARIA": "BG", "NEW ZEALAND": "NZ", "NEW-ZEALAND": "NZ",
+    "NETHERLANDS": "NL", "IRELAND": "IE", "FINLAND": "FI", "SOUTH AFRICA": "ZA",
+    "ISRAEL": "IL", "INDIA": "IN", "PHILIPPINES": "PH",
+}
+_US_ZIP = re.compile(r"^\d{5}(-\d{4})?$")
+
+
+def _fmp_country(country, postal_code):
+    """Two-letter code, or None when it cannot be told safely. A blank country
+    counts as US only with a US ZIP."""
+    c = (country or "").strip().upper()
+    if not c:
+        return "US" if _US_ZIP.match((postal_code or "").strip()) else None
+    return _FMP_COUNTRY.get(c)
+
+
+def fmp_address_for(cx, email):
+    """The FileMaker address for this email, only when it is unambiguous.
+
+    FileMaker addresses carry no shipping or billing type, 191 clients have more
+    than one street, and 386 emails sit on more than one client (local copy,
+    2026-10-03). Glen, 2026-10-03: "same street only". Every street on file for the
+    email must be the same, or this returns {} and the order stays blank for Rae."""
+    em = (email or "").strip().lower()
+    if not em:
+        return {}
+    try:
+        rows = cx.execute(
+            "SELECT a.street, a.city, a.province, a.postal_code, a.country "
+            "FROM fmp_client_addresses a JOIN fmp_clients c ON c.id_pk = a.id_fk_client "
+            "WHERE lower(c.email)=? AND trim(coalesce(a.street,''))<>''", (em,)).fetchall()
+    except Exception:
+        return {}   # projection tables not loaded
+    found = {}
+    for r in rows:
+        street, city, state, postal, country = (
+            (r[k] if hasattr(r, "keys") else r[i]) or ""
+            for i, k in enumerate(("street", "city", "province", "postal_code", "country")))
+        key = (" ".join(street.lower().replace(".", " ").replace(",", " ").split()),
+               "".join(ch for ch in postal if ch.isalnum()).lower()[:5])
+        found.setdefault(key, (street, city, state, postal, country))
+    if len(found) != 1:
+        return {}
+    street, city, state, postal, country = next(iter(found.values()))
+    code = _fmp_country(country, postal)
+    if not code:
+        return {}
+    lines = [ln.strip() for ln in street.replace("\r", "\n").split("\n") if ln.strip()]
+    return {"address1": lines[0], "address2": ", ".join(lines[1:]),
+            "city": city.strip(), "state": state.strip(), "zip": postal.strip(),
+            "country": code}
 
 
 def people_address_for(cx, email):

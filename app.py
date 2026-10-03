@@ -56489,8 +56489,9 @@ def _replace_order(cx, old_ids, new_order_id):
 
 def _known_ship_address(email):
     """The client's known address: their last shipped-to order, else their people
-    record. A pet or child with neither uses their caregiver's, looked up the same
-    way. Adults never borrow another member's address. {} if none."""
+    record, else FileMaker when every street on file agrees. A pet or child with
+    none uses their caregiver's, looked up the same way. Adults never borrow
+    another member's address. {} if none."""
     from dashboard import customers as _cust
     from dashboard import household as _hh
     em = (email or "").strip().lower()
@@ -56498,7 +56499,8 @@ def _known_ship_address(email):
         return {}
 
     def _lookup(cx, e):
-        for fn in (_cust.last_address_for, _cust.people_address_for):
+        for fn in (_cust.last_address_for, _cust.people_address_for,
+                   _cust.fmp_address_for):
             a = fn(cx, e)
             if (a.get("address1") or "").strip():
                 return a

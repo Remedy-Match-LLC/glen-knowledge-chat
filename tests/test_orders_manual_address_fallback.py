@@ -141,3 +141,60 @@ def test_a_pet_uses_the_caregivers_people_record(env):
         H.add_member(cx, "carer@x.com", "pet@x.com", "Rex", "pet")
         cx.commit()
     assert _address(db, _post(appmod, "pet@x.com"))["street"] == "12 Kino'ole St"
+
+
+def _seed_fmp(db, client_id, email, *addresses):
+    from dashboard import fmp_orders as F
+    with sqlite3.connect(db) as cx:
+        F.ensure_tables(cx)
+        cx.execute("INSERT INTO fmp_clients (id_pk, name_first, name_last, email) "
+                   "VALUES (?,?,?,?)", (client_id, "F", "M", email))
+        for i, (street, city, prov, postal, country) in enumerate(addresses):
+            cx.execute("INSERT INTO fmp_client_addresses (id_pk, id_fk_client, street, city, "
+                       "province, postal_code, country) VALUES (?,?,?,?,?,?,?)",
+                       (f"{client_id}-{i}", client_id, street, city, prov, postal, country))
+        cx.commit()
+
+
+HILO = ("12 Kino'ole St", "Hilo", "HI", "96720", "USA")
+
+
+def test_with_no_order_or_people_address_filemaker_is_used(env):
+    appmod, db = env
+    _seed_fmp(db, "c1", "fm@x.com", HILO)
+    a = _address(db, _post(appmod, "fm@x.com"))
+    assert (a["street"], a["city"], a["state"], a["zip"], a["country"]) == (
+        "12 Kino'ole St", "Hilo", "HI", "96720", "US")
+
+
+def test_filemaker_with_two_different_streets_leaves_it_blank(env):
+    """Glen, 2026-10-03: same street only."""
+    appmod, db = env
+    _seed_fmp(db, "c1", "fm@x.com", HILO, ("9 Other Rd", "Pahoa", "HI", "96778", "USA"))
+    assert _address(db, _post(appmod, "fm@x.com")).get("street", "") == ""
+
+
+def test_two_filemaker_clients_on_one_email_must_agree(env):
+    appmod, db = env
+    _seed_fmp(db, "c1", "fm@x.com", HILO)
+    _seed_fmp(db, "c2", "FM@x.com", ("9 Other Rd", "Pahoa", "HI", "96778", "USA"))
+    assert _address(db, _post(appmod, "fm@x.com")).get("street", "") == ""
+
+
+def test_the_same_street_on_two_records_counts_as_one(env):
+    appmod, db = env
+    _seed_fmp(db, "c1", "fm@x.com", HILO, ("12 Kino'ole St.", "Hilo", "HI", "96720", "USA"))
+    assert _address(db, _post(appmod, "fm@x.com"))["street"] == "12 Kino'ole St"
+
+
+def test_an_unknown_country_leaves_it_blank(env):
+    appmod, db = env
+    _seed_fmp(db, "c1", "fm@x.com", ("1 Rue X", "Brussels", "", "1000", "BELGIUM"))
+    assert _address(db, _post(appmod, "fm@x.com")).get("street", "") == ""
+
+
+def test_the_people_record_beats_filemaker(env):
+    appmod, db = env
+    _seed_person(db, "fm@x.com", address1="5 People Pl", zip="96720")
+    _seed_fmp(db, "c1", "fm@x.com", HILO)
+    assert _address(db, _post(appmod, "fm@x.com"))["street"] == "5 People Pl"
