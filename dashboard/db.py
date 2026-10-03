@@ -69,7 +69,8 @@ class _PgCursor:
     @property
     def description(self):
         # sqlite3.Cursor.description parity: one 7-tuple per column, name first,
-        # or None when the statement returned no rows. Without it,
+        # or None when the statement has no result set (CREATE, a plain INSERT).
+        # An empty SELECT still describes its columns, as in SQLite. Without it,
         # triage.resolve_invite raised on Postgres for every triage invite token,
         # and evox.get_readiness did the same until #1895.
         desc = self._cur.description
