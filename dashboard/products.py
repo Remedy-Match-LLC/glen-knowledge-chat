@@ -14,10 +14,13 @@ _REPO_DATA = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file
 _FIXED_CACHE = None
 
 _ZERO_DOSE = re.compile(r"^\s*0(?:\.0+)?\s*(?:mg|mcg|µg|g|iu)?\s*$", re.I)
+# FileMaker 5122, the enteric capsule shell. Glen, 2026-10-03: "hide the capsule
+# shell". Microbiome spells it "Enteric acid-resistant vegicap 00".
+_CAPSULE_SHELL = re.compile(r"^\s*enteric\s+acid[\s-]+resistant\s+veg(?:i\s*cap(?:sule)?|icap)\s+00\s*$", re.I)
 
 
 def shown_ingredients(items):
-    """The ingredient rows a customer sees. A 0 mg row is dropped.
+    """The ingredient rows a customer sees. A 0 mg row and the capsule shell are dropped.
 
     Glen, 2026-10-03: "Don't list the 0 mg ingredients", and "the 0 mg lines are
     notes to consider for future formulation updates". So they stay in
@@ -25,7 +28,8 @@ def shown_ingredients(items):
     if not isinstance(items, list):
         return items
     return [i for i in items
-            if not (isinstance(i, dict) and _ZERO_DOSE.match(str(i.get("dose") or "")))]
+            if not (isinstance(i, dict) and (_ZERO_DOSE.match(str(i.get("dose") or ""))
+                                             or _CAPSULE_SHELL.match(str(i.get("name") or ""))))]
 
 
 def _products_path():

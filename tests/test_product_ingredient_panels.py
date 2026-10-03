@@ -106,3 +106,20 @@ def test_the_generator_writes_sub_mg_as_mcg_and_keeps_zero_rows():
     assert panel == [{"name": "Chromium Polynicotinate", "dose": "483.5 mcg"},
                      {"name": "Goji", "dose": "0 mg"},
                      {"name": "MSM", "dose": "20 mg"}]
+
+
+def test_the_capsule_shell_is_hidden_but_kept_in_the_data(appmod):
+    """Glen, 2026-10-03: "hide the capsule shell" (FileMaker 5122)."""
+    raw = {i["name"] for sl, i in _panels("products.json") if sl == "lipid-zyme"}
+    assert "Enteric Acid Resistant Vegi Capsule 00" in raw
+    d = appmod.app.test_client().get("/begin/product-page-data/lipid-zyme").get_json()
+    ings = next(s for s in d["sections"] if s["id"] == "ingredients")["body"]["ingredients"]
+    assert "Enteric Acid Resistant Vegi Capsule 00" not in _doses(ings)
+    assert _doses(ings)
+
+
+def test_microbiomes_spelling_of_the_shell_is_hidden_too():
+    from dashboard.products import shown_ingredients
+    assert shown_ingredients([{"name": "Enteric acid-resistant vegicap 00", "dose": "1 ea."},
+                              {"name": "Inulin", "dose": "50 mg"}]) == [
+        {"name": "Inulin", "dose": "50 mg"}]
