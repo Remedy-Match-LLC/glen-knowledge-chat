@@ -37,6 +37,12 @@
   .health-item{background:#fff;border:1px solid #dce4e0;border-radius:999px;padding:7px 11px;font-size:13px}
   .health-item.good{border-color:#a8cdbd;background:#f0f8f4}
   .health-item.attn{border-color:#e1b5a9;background:#fff5f2}
+  /* Dark mode: op-nav.js sets body text to pale cream and darkens only its own list of
+     boxes, so these stayed white with cream text (contrast 1.02-1.10, Glen 2026-10-02). */
+  :root[data-theme="dark"] .commerce-card{background:#111f16;border-color:#21472d}
+  :root[data-theme="dark"] .health-item{background:#111f16;border-color:#21472d}
+  :root[data-theme="dark"] .health-item.good{background:#12291c;border-color:#2f6b4f}
+  :root[data-theme="dark"] .health-item.attn{background:#2a1714;border-color:#7a3b2e}
   @media(max-width:700px){.commerce{grid-template-columns:1fr}}
 </style>
 </head>
