@@ -52,18 +52,23 @@ def _purchased_slugs(cx, email):
 
 
 def evox_done(cx, email):
-    """EVOX ticks once setup is complete or an EVOX session is booked."""
+    """EVOX ticks once setup is complete or an EVOX session is booked.
+
+    Read-only. It never calls init_evox_tables: that runs ALTER TABLE, which takes
+    a table lock on Postgres, and this runs on every portal home load. A client
+    with no EVOX tables yet has nothing to tick. The reads run in a savepoint, so
+    a failed one cannot abort the transaction for build_status's later reads."""
     from dashboard import evox
-    try:
-        evox.init_evox_tables(cx)
+    from dashboard.biofield_prereqs import _guard
+
+    def _read():
         if evox.get_readiness(cx, email)["complete"]:
             return True
         return bool(cx.execute(
             "SELECT 1 FROM evox_bookings WHERE lower(email)=lower(?) "
             "AND status='booked' AND COALESCE(session_type,'evox')='evox' LIMIT 1",
             (email,)).fetchone())
-    except Exception:
-        return False
+    return bool(_guard(cx, _read, False))
 
 
 def accelerator_status(cx, email):

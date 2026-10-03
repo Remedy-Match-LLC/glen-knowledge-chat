@@ -95,6 +95,8 @@ def test_onboarding_evox_item_links_to_setup_with_token(client, monkeypatch):
 
 def test_evox_item_ticks_on_setup_complete():
     cx = sqlite3.connect(":memory:")
+    assert _ob.evox_done(cx, "c@x.com") is False  # no EVOX tables yet
+    _ev.init_evox_tables(cx)
     assert _ob.evox_done(cx, "c@x.com") is False
     for item in _ev.READINESS_ITEMS[:-1]:
         _ev.set_readiness_item(cx, "c@x.com", item, True)
@@ -123,3 +125,42 @@ def test_portal_card_shows_setup_instead_of_time_form():
     assert "kind==='evox'&&!evoxReady()" in html
     assert "time.hidden=blocked" in html
     assert "p.session_type==='evox'&&!evoxReady()" in html
+
+
+def test_failed_evox_read_still_lists_biofield_proposals(client, monkeypatch):
+    token = _token(client)
+    assert _propose(client, token, "biofield-consult").status_code == 201
+    def boom(cx, email):
+        raise RuntimeError("evox table unreadable")
+    monkeypatch.setattr(_ev, "get_readiness", boom)
+    monkeypatch.setattr(appmod, "_evox_readiness_for", boom)
+    r = client.get(f"/api/portal/{token}/appointment-proposals")
+    assert r.status_code == 200
+    d = r.get_json()
+    assert len(d["proposals"]) == 1
+    assert d["evox_readiness"]["complete"] is False
+    # The POST gate fails closed: no EVOX proposal is created and nobody is told.
+    with pytest.raises(RuntimeError):
+        _propose(client, token, "evox")
+    assert len(client.sent) == 1
+
+
+def test_evox_item_ticks_through_the_route_after_setup(client, monkeypatch):
+    """Drives the real route on the app's own connection shape (no row factory)."""
+    monkeypatch.setattr(appmod, "_PORTAL_ONBOARDING_ENABLED", True)
+    token = _token(client)
+    _ready()
+    d = client.get(f"/api/portal/{token}/onboarding").get_json()
+    heal = {s["key"]: s for s in d["status"]["phases"][2]["steps"]}
+    assert heal["evox"]["done"] is True
+
+
+def test_portal_reads_never_run_evox_table_setup(client, monkeypatch):
+    """init_evox_tables runs ALTER TABLE, which locks the table on Postgres."""
+    monkeypatch.setattr(appmod, "_PORTAL_ONBOARDING_ENABLED", True)
+    token = _token(client)
+    calls = []
+    monkeypatch.setattr(_ev, "init_evox_tables", lambda cx: calls.append(1))
+    assert client.get(f"/api/portal/{token}/appointment-proposals").status_code == 200
+    assert client.get(f"/api/portal/{token}/onboarding").status_code == 200
+    assert calls == []

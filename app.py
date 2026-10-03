@@ -35304,6 +35304,20 @@ def _evox_readiness_for(cx, email):
     return _ev.get_readiness(cx, email)
 
 
+def _evox_readiness_or_unknown(cx, email):
+    """For the GET only. Read-only, so no ALTER TABLE lock on each portal load.
+    A failed read reports EVOX as not ready and must not hide Biofield proposals.
+    The POST gates call _evox_readiness_for and fail closed."""
+    from dashboard import evox as _ev
+    from dashboard.biofield_prereqs import _guard
+    unknown = {"complete": False, "unknown": True}
+    try:
+        return _guard(cx, lambda: _ev.get_readiness(cx, email), unknown)
+    except Exception:
+        app.logger.exception("EVOX readiness read failed for the portal card")
+        return unknown
+
+
 @app.route("/api/portal/<token>/appointment-proposals", methods=["GET", "POST"])
 def api_portal_appointment_proposals(token):
     from dashboard import appointment_proposals as _ap
@@ -35313,10 +35327,12 @@ def api_portal_appointment_proposals(token):
         if ident is None:
             return jsonify({"error": "unauthorized"}), 401
         if request.method == "GET":
-            return jsonify({"ok": True, "proposals": _ap.list_for_client(cx, ident.email),
+            # Proposals are read first, so a failed EVOX read cannot touch them.
+            proposals = _ap.list_for_client(cx, ident.email)
+            return jsonify({"ok": True, "proposals": proposals,
                             "is_paid_member": bool(_is_paid_member(ident.email)),
                             "upgrade_url": "/membership",
-                            "evox_readiness": _evox_readiness_for(cx, ident.email)})
+                            "evox_readiness": _evox_readiness_or_unknown(cx, ident.email)})
         body = request.get_json(silent=True) or {}
         kind = (body.get("session_type") or "").strip()
         if not _appointment_client_entitled(cx, ident.email, kind):
