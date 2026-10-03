@@ -7,8 +7,8 @@ pullulan paragraph from the product-label-studio skill's product-page copy.
 Which capsule each product uses was confirmed by production from FileMaker and
 the newest label. Spike Shield is pullulan on Glen's word; FileMaker still lists
 the enteric shell for it, so it is set here by hand, not derived. Every other
-capsule product defaults to pullulan (Glen, 2026-10-03), except four whose own
-copy says enteric and which production has not confirmed.
+capsule product defaults to pullulan (Glen, 2026-10-03). Three are in chlorophyll
+vegicaps until their next production run (Glen, 2026-10-03), set by hand below.
 """
 
 CAPSULE_COPY = {
@@ -29,6 +29,12 @@ CAPSULE_COPY = {
                  "diseases."),
         "em": ["A. pullulans"],
     },
+    # Glen approved this wording in production's tab, 2026-10-03 ("ship").
+    "chlorophyll": {
+        "text": ("Each capsule is a chlorophyll vegicap, made mainly from plant cellulose. It "
+                 "contains no gelatin or other animal products."),
+        "em": [],
+    },
 }
 
 # Set by hand. Each confirmed by production from FileMaker and the newest label.
@@ -46,11 +52,17 @@ CAPSULE_BY_SLUG = {
     "lens-zyme": "drcaps",
     "vitamin-c-syntropy": "drcaps",
     "dht-blocker": "pullulan",
+    # Glen, 2026-10-03: "Chlorophyll vegicaps until the next production run. Then they'll
+    # be Pullulan." Nothing changes these automatically: move each to pullulan BY HAND
+    # when its next run ships. Without these lines their 30 Caps bottles fall through to
+    # pullulan, which is wrong for the jars on the shelf.
+    "appestat": "chlorophyll",        # -> pullulan at its next production run, by hand
+    "migrafree": "chlorophyll",       # -> pullulan at its next production run, by hand
+    "iron-syntropy": "chlorophyll",   # -> pullulan at its next production run, by hand
 }
 
-# Capsule type not yet confirmed: these may be chlorophyll capsules. No paragraph until
-# Glen answers (2026-10-03).
-UNCONFIRMED = frozenset({"appestat", "migrafree", "iron-syntropy"})
+# Capsule type not yet confirmed: no paragraph until Glen answers. Empty since 2026-10-03.
+UNCONFIRMED = frozenset()
 
 # Glen, 2026-10-03: the pullulan paragraph goes on every product in the pullulan
 # capsule, and the label studio rule makes pullulan the standard capsule. So any
@@ -59,7 +71,7 @@ CAPSULE_BOTTLES = frozenset({"30 caps", "120 caps"})
 
 
 def capsule_kind(slug, product=None):
-    """"drcaps", "pullulan", or None (not a capsule, or not confirmed)."""
+    """"drcaps", "pullulan", "chlorophyll", or None (not a capsule, or not confirmed)."""
     slug = slug or ""
     if slug in CAPSULE_BY_SLUG:
         return CAPSULE_BY_SLUG[slug]
