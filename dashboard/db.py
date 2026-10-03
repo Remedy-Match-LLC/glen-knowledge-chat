@@ -100,6 +100,7 @@ class _PgConn:
         self._conn = conn
         self._pool = pool
         self._released = False
+        self._on_release = None   # set by _connect_postgres: keeps the checked-out count
     def execute(self, sql, params=()):
         cur = self._conn.cursor()
         return _PgCursor(cur).execute(sql, params)
@@ -141,7 +142,11 @@ class _PgConn:
     def _release(self):
         if not self._released:
             self._released = True
-            self._pool.putconn(self._conn)
+            try:
+                self._pool.putconn(self._conn)
+            finally:
+                if self._on_release:
+                    self._on_release()
     def close(self):
         self._release()
     def __enter__(self):
@@ -161,6 +166,9 @@ class _PgConn:
 
 _PG_POOLS = {}          # dsn -> ConnectionPool
 _PG_ENSURED = set()     # (dsn, schema) already CREATE SCHEMA'd
+_PG_CHECKED_OUT = {}    # dsn -> connections this process holds right now
+_PG_LAST_HEAL = {}      # dsn -> monotonic time of the last pool replacement
+_PG_HEAL_EVERY = 60.0   # seconds; at most one replacement per pool per minute
 import threading as _threading
 _PG_LOCK = _threading.Lock()
 
@@ -168,21 +176,72 @@ def _get_pg_pool(dsn, timeout):
     with _PG_LOCK:
         pool = _PG_POOLS.get(dsn)
         if pool is None:
-            from psycopg_pool import ConnectionPool
-            # check= validates a pooled connection BEFORE handing it out and
-            # discards a dead one. Without it (the default is None) psycopg_pool
-            # never tests a connection on checkout, so one that Render's Postgres
-            # has closed while idle sits in the pool and is served to the next
-            # request, whose first I/O dies with
-            #   consuming input failed: SSL error: unexpected eof while reading
-            # 43 of those in 31 hours of production logs, each one a 500 to
-            # whoever made that request. max_lifetime (3600s) and max_idle (600s)
-            # already default sensibly and are deliberately left alone.
-            pool = ConnectionPool(dsn, min_size=2, max_size=10, open=True,
-                                  check=ConnectionPool.check_connection,
-                                  kwargs={"connect_timeout": max(1, int(round(timeout)))})
+            pool = _new_pg_pool(dsn, timeout)
             _PG_POOLS[dsn] = pool
         return pool
+
+def _new_pg_pool(dsn, timeout):
+    from psycopg_pool import ConnectionPool
+    # check= validates a pooled connection BEFORE handing it out and
+    # discards a dead one. Without it (the default is None) psycopg_pool
+    # never tests a connection on checkout, so one that Render's Postgres
+    # has closed while idle sits in the pool and is served to the next
+    # request, whose first I/O dies with
+    #   consuming input failed: SSL error: unexpected eof while reading
+    # 43 of those in 31 hours of production logs, each one a 500 to
+    # whoever made that request. max_lifetime (3600s) and max_idle (600s)
+    # already default sensibly and are deliberately left alone.
+    return ConnectionPool(dsn, min_size=2, max_size=10, open=True,
+                          check=ConnectionPool.check_connection,
+                          kwargs={"connect_timeout": max(1, int(round(timeout)))})
+
+
+def _pg_reachable(dsn):
+    """One direct connection, outside the pool. True if the database answers."""
+    try:
+        import psycopg
+        with psycopg.connect(dsn, connect_timeout=3) as c:
+            c.execute("SELECT 1")
+        return True
+    except Exception:
+        return False
+
+
+def _heal_pg_pool(dsn, pool):
+    """Replace a wedged pool. True if a usable pool is now registered for `dsn`.
+
+    2026-10-02, 19:06-20:01 UTC: Postgres dropped the connections, the pool's reconnect
+    worker went silent after 19:14 without ever giving up, and every DB route failed with
+    PoolTimeout for 55 minutes while the database was healthy. Only a restart fixed it.
+
+    Replace only when all hold: this process has no connection checked out (so the
+    timeout is not real load), the database answers a direct connection (so the pool,
+    not the database, is at fault), and no replacement ran in the last minute."""
+    import time
+    with _PG_LOCK:
+        if _PG_POOLS.get(dsn) is not pool:
+            return dsn in _PG_POOLS          # another request already replaced it
+        if _PG_CHECKED_OUT.get(dsn, 0) > 0:
+            return False
+        if time.monotonic() - _PG_LAST_HEAL.get(dsn, -1e9) < _PG_HEAL_EVERY:
+            return False
+    if not _pg_reachable(dsn):
+        return False
+    with _PG_LOCK:
+        if _PG_POOLS.get(dsn) is not pool or _PG_CHECKED_OUT.get(dsn, 0) > 0:
+            return _PG_POOLS.get(dsn) is not pool and dsn in _PG_POOLS
+        _PG_LAST_HEAL[dsn] = time.monotonic()
+        del _PG_POOLS[dsn]
+    print("[db] Postgres pool wedged: none checked out and the database answers; "
+          "replacing the pool", flush=True)
+    # Close the old pool off the request path: its stuck workers can take seconds to stop.
+    def _close_old():
+        try:
+            pool.close(timeout=1.0)
+        except Exception as e:
+            print(f"[db] closing the wedged pool failed (ignored): {type(e).__name__}", flush=True)
+    _threading.Thread(target=_close_old, name="pg-pool-close", daemon=True).start()
+    return True
 
 def _ensure_pg_schema(raw, dsn, schema):
     key = (dsn, schema)
@@ -206,7 +265,20 @@ def _connect_postgres(db_path: str, *, timeout: float):
     # psycopg_pool's default checkout wait is much longer than SQLite's bounded
     # busy timeout, leaving portal requests spinning behind the global loading
     # screen. Keep both backends on the same fail-fast contract.
-    raw = pool.getconn(timeout=max(0.1, float(timeout)))
+    from psycopg_pool import PoolTimeout
+    try:
+        raw = pool.getconn(timeout=max(0.1, float(timeout)))
+    except PoolTimeout:
+        if not _heal_pg_pool(dsn, pool):
+            raise
+        pool = _get_pg_pool(dsn, timeout)
+        raw = pool.getconn(timeout=max(0.1, float(timeout)))
+    with _PG_LOCK:
+        _PG_CHECKED_OUT[dsn] = _PG_CHECKED_OUT.get(dsn, 0) + 1
+
+    def _checked_in():
+        with _PG_LOCK:
+            _PG_CHECKED_OUT[dsn] = max(0, _PG_CHECKED_OUT.get(dsn, 0) - 1)
     try:
         _ensure_pg_schema(raw, dsn, schema)
         with raw.cursor() as c:
@@ -227,6 +299,11 @@ def _connect_postgres(db_path: str, *, timeout: float):
             )
         raw.commit()
     except Exception:
-        pool.putconn(raw)
+        try:
+            pool.putconn(raw)
+        finally:
+            _checked_in()
         raise
-    return _PgConn(raw, pool)
+    pc = _PgConn(raw, pool)
+    pc._on_release = _checked_in
+    return pc
