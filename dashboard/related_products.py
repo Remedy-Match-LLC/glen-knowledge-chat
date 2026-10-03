@@ -11,6 +11,9 @@ DO_NOT_RECOMMEND = frozenset({
     # the drops; both slugs stay here because manual picks bypass the inactive guard.
     "aller-free-aid",
     "allerfree-homeoenergetic-drops",
+    # Food Tolerance: available, not promoted; Immune Modulation instead (Glen 2026-10-03).
+    "food-tolerance",
+    "food-tolerance-homeoenergetic-drops",
 })
 
 

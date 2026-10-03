@@ -250,6 +250,7 @@ from dashboard.name_case import (is_address as _is_address, name_from_parts as _
                                  strip_addresses as _strip_addresses)
 from dashboard import affiliate_dashboard
 from dashboard.biofield_reveals import is_aller_free as _is_aller_free
+from dashboard.biofield_reveals import is_food_tolerance as _is_food_tolerance, is_hmc as _is_hmc
 from dashboard import practitioner_slugs as _ps_signup
 from dashboard import ash_ally
 from dashboard import client_360
@@ -2690,7 +2691,7 @@ RULES:
   - Do not volunteer deprecated platform names. If a client asks, state briefly that access has moved: individual client services live at MyHealingOasis.com and classroom/community learning lives at MentorshipU.com.
 - FORMULATION-FIRST ORDERING (symptoms & conditions): When answering about a symptom or condition, lead the recommendations with Glen's Functional Formulations — the Advanced Botanical Formulations and Advanced Nutritional Formulations — as the FIRST category, before any list of individual natural ingredients or single nutrients. The formulations are pre-combined for the terrain pattern, so they simplify implementation versus assembling separate ingredients. If you group recommendations under headings, an "Advanced Botanical Formulations" and/or "Advanced Nutritional Formulations" heading comes first; present individual ingredients only afterward, as an optional layer or as the mechanism behind the formulations. Within a formulation category, list the most condition-specific formulation first.
 - ACTIVE DISCOUNT CODE: When the request includes an ACTIVE DISCOUNT block, include today's code naturally — once per response, only when at least one product is recommended.
-- SELLABLE BUT NOT RECOMMENDED (distinct from discontinued): "Aller-Free HomeoEnergetic Drops" (also spelled "AllerFree") is still sold and can still be bought. Do NOT volunteer it — when recommending for allergy or immune terrain, recommend "Immune Modulation" instead. But NEVER tell anyone AllerFree is retired, discontinued, or unavailable, because it is none of those. If a client asks for AllerFree by name or asks where to buy it, give them its product page link from the injection table so they can complete the purchase, and you may add that Immune Modulation is Glen's current preference. "Not recommended" is about what you proactively suggest; it never means refusing a client the ability to buy something Glen still sells. "Electrolyte Mineral Manna" is in the same position: it is still sold and can be bought, but do NOT volunteer or recommend it for any need, and NEVER call it retired, discontinued, or unavailable. If a client asks for Electrolyte Mineral Manna by name or asks where to buy it, give them its product page link from the injection table.
+- SELLABLE BUT NOT RECOMMENDED (distinct from discontinued): "Aller-Free HomeoEnergetic Drops" (also spelled "AllerFree") is still sold and can still be bought. Do NOT volunteer it — when recommending for allergy or immune terrain, recommend "Immune Modulation" instead. But NEVER tell anyone AllerFree is retired, discontinued, or unavailable, because it is none of those. If a client asks for AllerFree by name or asks where to buy it, give them its product page link from the injection table so they can complete the purchase, and you may add that Immune Modulation is Glen's current preference. "Not recommended" is about what you proactively suggest; it never means refusing a client the ability to buy something Glen still sells. "Food Tolerance" (also spelled "Food-Tolerance", including Food Tolerance HomeoEnergetic Drops) is in the same position as AllerFree: still sold, never volunteered; recommend "Immune Modulation" in its place, and give its product page link if a client asks for it by name. Do not recommend HMC (hesperidin methyl chalcone) on its own either; recommend "Immune Modulation" instead. A formula that contains HMC, such as Vitreous Vitality, is unaffected. "Electrolyte Mineral Manna" is in the same position: it is still sold and can be bought, but do NOT volunteer or recommend it for any need, and NEVER call it retired, discontinued, or unavailable. If a client asks for Electrolyte Mineral Manna by name or asks where to buy it, give them its product page link from the injection table.
 - DEPRECATED PRODUCTS: The "Living Water Bottle" (prill-bead system) is DISCONTINUED as of 2026-04-27 and must NOT be recommended as a purchasable product. The Living Water concept (alkaline ionized water + molecular hydrogen) remains Glen's clinical recommendation. Route clients to a Water Ionizer — the ionizers PRODUCE molecular-hydrogen water, so they deliver both halves of the concept and are the primary recommendation — or, for a portable option, to the [Molecular Hydrogen bottle](https://illtowell.com/begin/product/molecular-hydrogen-bottle). "Molecular Hydrogen Tablets" are DISCONTINUED as of 2026-07-20 and must NOT be recommended or linked; recommend an ionizer or the portable bottle instead. The "Dental Regen Powder" is DISCONTINUED and must NOT be recommended as a purchasable product; do not name it in any recommendation. The "Endocrine Restore" and plain "Comfort" products are CONSOLIDATED into their canonical versions — recommend "Endocrine Restore Sublingual Powder" and "Comfort Synovial Syntropy" instead, and do not name the old "Endocrine Restore" or plain "Comfort". (For "AllerFree", see the separate NOT-RECOMMENDED rule below — it is NOT discontinued.) Only recommend "Fungifuge" as a follow-on to a Candida Cleanse, never as a standalone recommendation. "Bioavailability Blend" (and "Bioavailability Blend Powder") IS sellable, but ONLY as an adjunct — a small-dose enhancer taken together with other remedies (ours or others') to improve their bioavailability and delivery. Do NOT recommend it as a stand-alone remedy, and never suggest it on a Biofield reveal program. If a snippet has metadata `deprecated=true`, treat its product references as historical only — do not present discontinued products as available."""
 
 _LEVEL_INSTRUCTIONS = {
@@ -24049,6 +24050,9 @@ def _ff_auto_excluded(name):
         return True
     if _is_aller_free(nl):  # "Aller-Free Aid for Inhalant Allergies" is AllerFree (Glen 2026-09-24)
         return True
+    # Food Tolerance and HMC: available, not promoted; Immune Modulation instead (Glen 2026-10-03).
+    if _is_food_tolerance(nl) or _is_hmc(nl):
+        return True
     return any(s in nl for s in _FF_EXCLUDED_SUBSTRINGS)
 
 
@@ -24190,8 +24194,9 @@ def _ff_llm_rank(scan_labels, candidates):
             "- \"Bioavailability Blend\" (or \"Bioavailability Blend "
             "Powder\") is adjunct-only -- never select it as a standalone "
             "recommendation.\n"
-            "- Never select \"AllerFree\" -- \"Immune Modulation\" is the "
-            "replacement.\n"
+            "- Never select \"AllerFree\", \"Food Tolerance\" or \"HMC\" "
+            "(hesperidin methyl chalcone) on its own -- \"Immune Modulation\" is the "
+            "replacement. A formula that contains HMC is fine.\n"
             "- Only select \"Fungifuge\" as a follow-on to a Candida "
             "Cleanse, never as a standalone recommendation.\n"
             "- Do NOT include any dosing instructions or amounts.\n\n"
