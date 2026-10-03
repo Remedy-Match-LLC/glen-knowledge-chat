@@ -2,6 +2,7 @@
 
 Glen, 2026-10-03, relayed by production: the rule covers the single-ingredient store
 powders and the food powders ("food powders too"). 19 live slugs, plus 3 inactive twins.
+A second batch of 48 live slugs came from production the same day.
 A formula that contains MSM or quercetin must stay unaffected.
 """
 import json
@@ -19,11 +20,11 @@ def _norm(t):
     return re.sub(r"\s+", " ", (t or "").strip().lower())
 
 
-def test_every_slug_is_in_the_catalog_and_19_are_live():
+def test_every_slug_is_in_the_catalog_and_67_are_live():
     missing = sorted(s for s in PURE_POWDER_SLUGS if s not in CATALOG)
     assert not missing, missing
     live = [s for s in PURE_POWDER_SLUGS if not CATALOG[s].get("inactive")]
-    assert len(live) == 19, sorted(live)
+    assert len(live) == 67, sorted(live)  # 19 first batch, 48 second
 
 
 def test_names_are_exactly_the_catalog_names_of_the_slugs():
@@ -91,3 +92,19 @@ def test_the_pricing_helper_is_not_shadowed():
     import app as a
     assert a._is_pure_powder({"name": "Sumac Bran 50:1 Pure Powder", "slug": "x"})
     assert not a._is_pure_powder({"name": "MSM Powder", "slug": "msm-powder"})
+
+
+def test_second_batch_examples():
+    for s in ("curcumin", "coq10", "piperine", "licorice-omnipotent", "hydrolyzed-whey"):
+        assert is_pure_powder(slug=s), s
+    for n in ("Curcumin", "CoQ10", "Licorice Omnipotent", "Pea Protein Aminos"):
+        assert is_pure_powder(name=n), n
+    # A formula that names one of these ingredients is not matched
+    for n in ("Curcumin Syntropy", "CoQ10 Plus", "Spike Shield"):
+        assert not is_pure_powder(name=n), n
+
+
+def test_no_unlisted_product_is_caught():
+    caught = [s for s, v in CATALOG.items() if isinstance(v, dict)
+              and s not in PURE_POWDER_SLUGS and is_pure_powder(slug=s, name=v.get("name"))]
+    assert not caught, caught
