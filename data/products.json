@@ -21744,7 +21744,8 @@
    "bottle_type": "30ml",
    "aliases": [
     "Emotional Stress Release (MB5)",
-    "MB5 Emotional Stress Release Hologram"
+    "MB5 Emotional Stress Release Hologram",
+    "MB 5"
    ],
    "report_aliases": true,
    "qbo_item_id": "26"
@@ -22061,7 +22062,8 @@
    "bottle_type": "30ml",
    "aliases": [
     "EI8 Microbes-Liver Integrator",
-    "Microbes/Liver Meridian (EI-8)"
+    "Microbes/Liver Meridian (EI-8)",
+    "EI8 Microbes/Liver Meridian"
    ],
    "report_aliases": true,
    "qbo_item_id": "30"

@@ -56,6 +56,11 @@ def plan(products, rows):
         # code by prefix instead.
         twin_aliases = [a for t in r["retire"] for a in (out[t].get("aliases") or [])
                         if " " in a.strip()]
+        # A twin's vector title ("MB 5") is a spelling of the survivor too. Its name
+        # already redirects through superseded_by.
+        twin_aliases += [out[t].get("pinecone_title") for t in r["retire"]
+                         if out[t].get("pinecone_title") and " " in out[t]["pinecone_title"].strip()
+                         and out[t].get("pinecone_title") != out[t].get("name")]
         for a in [old_name] + list(r.get("aliases") or []) + twin_aliases:
             if a and a != r["name"] and a not in aliases:
                 aliases.append(a)

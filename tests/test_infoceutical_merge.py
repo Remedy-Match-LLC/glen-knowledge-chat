@@ -150,3 +150,24 @@ def test_the_bare_code_rule_covers_remedy_codes_only():
         assert re.fullmatch(pat, code), code
     for name in ("nac", "dha", "tmg"):
         assert not re.fullmatch(pat, name), name
+
+
+def test_old_vector_titles_reach_the_survivor_in_the_cart():
+    from dashboard.practitioner_portal import name_to_slug
+    P = _products()
+    assert name_to_slug("MB 5", P) == "mb5-esr-emotional-stress-release-infoceutical"
+    assert name_to_slug("EI8 Microbes/Liver Meridian", P) == \
+        "ei8-microbes-liver-meridian-energetic-integrator-infoceutical"
+
+
+def test_a_chain_under_an_old_name_accepts_the_survivors_name():
+    """Review round 3: in the three-way merges the narrative check flagged the survivor
+    as off-chain, which costs a paid retry."""
+    from dashboard.biofield_narrative import narrative_problems
+    for old, new in (("Microbes/Liver Meridian (EI-8)",
+                      "EI8 Microbes/Liver Meridian Energetic Integrator Infoceutical"),
+                     ("Emotional Stress Release (MB5)",
+                      "MB5 ESR Emotional Stress Release Infoceutical")):
+        rep = {"layers": [{"remedy": old, "head": "", "most_affected": ""}], "remedies": []}
+        probs = narrative_problems(f"1. Take the {new} daily.", rep)
+        assert not any(new in p for p in probs), probs
