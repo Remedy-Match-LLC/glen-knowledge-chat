@@ -28,6 +28,10 @@ PRODUCTS = Path(__file__).resolve().parent.parent / "data" / "products.json"
 # Spec points beyond the mapping rows. ES1's row carries no fmp_id; its retired twin
 # (retired in #751) holds 245, which production asked to move onto es1-lymph.
 CARRY = ("bottle_type", "qbo_item_id", "description")
+# Production, 2026-10-03: carry FileMaker's dosage directions only; leave other text out.
+DIRECTIONS = "build up 1 drop a day to 15 drops"
+# Production, 2026-10-03: FileMaker 432 reads sold_size 30 ml, as 298 and 418 do.
+SET_FIELDS = {"source": {"bottle_type": "30ml"}}
 EXTRA_FMP = {"es1-lymph": ("245", "es1-immune-energetic-star-infoceutical")}
 
 
@@ -64,11 +68,16 @@ def plan(products, rows):
             # has is never overwritten.
             for k in CARRY:
                 if not p.get(k) and q.get(k):
+                    if k == "description" and not q[k].startswith(DIRECTIONS):
+                        continue                 # only Glen's dosing line, never other copy
                     p[k] = q[k]
             q["inactive"] = True
             q["superseded_by"] = s
             fid = str(q.pop("fmp_id", "") or "")
             assert not fid or fid == p.get("fmp_id"), (t, fid, p.get("fmp_id"))
+    for s, fields in SET_FIELDS.items():
+        if s in survivors and not out[s].get("bottle_type"):
+            out[s].update(fields)
     for s, (fid, twin) in EXTRA_FMP.items():
         if s in survivors:
             assert str(out[twin].get("fmp_id") or "") == fid, twin

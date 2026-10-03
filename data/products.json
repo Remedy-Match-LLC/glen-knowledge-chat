@@ -7182,8 +7182,7 @@
    "aliases": [
     "ES10"
    ],
-   "report_aliases": true,
-   "description": "Blocks primarily caused by shock and trauma received visually. E.g., witnessing abuse or crime, observing the effects of war, etc.\nBioenergetically supports the clearing of these shocks and their effects on the body.\nDoes not deal with anatomical visual problems, but with the bioenergetic function of shock as related to the visual cortex, thalamus, and motor neurons (but not the motor cortex). It also correlates with the optical interpretation center of the cortex, supporting visual interpretation that has been impaired by shock. Blocks primarily caused by shock and trauma received visually. E.g., witnessing abuse or crime, observing the effects of war, etc.\nBioenergetically supports the clearing of these shocks and their effects on the body.\nDoes not deal with anatomical visual problems, but with the bioenergetic function of shock as related to the visual cortex, thalamus, and motor neurons (but not the motor cortex). It also correlates with the optical interpretation center of the cortex, supporting visual interpretation that has been impaired by shock. build up 1 drop a day to 15 drops stirred into a little water without touching metal daily on rising"
+   "report_aliases": true
   },
   "es8-chill": {
    "name": "ES8 Chill Energetic Star Infoceutical",
@@ -22756,7 +22755,8 @@
    "aliases": [
     "Source"
    ],
-   "report_aliases": true
+   "report_aliases": true,
+   "bottle_type": "30ml"
   },
   "pea-protein-aminos-pure-predigested": {
    "name": "Pea Protein Aminos - Pure & Predigested",

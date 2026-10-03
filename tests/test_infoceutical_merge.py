@@ -93,3 +93,22 @@ def test_survivors_keep_the_bottle_and_the_quickbooks_item():
     assert P["ei8-microbes-liver-meridian-energetic-integrator-infoceutical"]["qbo_item_id"] == "30" or \
         P["ei8-microbes-liver-meridian-energetic-integrator-infoceutical"]["qbo_item_id"] == 30
     assert P["bfa-big-field-aligner"]["bottle_type"] == "30ml"
+
+
+def test_only_the_dosing_line_is_carried_as_a_description():
+    """Production, 2026-10-03: FileMaker's dosage field is Glen's directions. Anything
+    else a twin held (ES10's product copy) is not carried."""
+    import subprocess
+    base = json.loads(subprocess.check_output(
+        ["git", "show", "origin/main:data/products.json"], cwd=ROOT))["products"]
+    P = _products()
+    carried = [r["survivor"] for r in ROWS
+               if not base[r["survivor"]].get("description") and P[r["survivor"]].get("description")]
+    assert len(carried) == 73, len(carried)
+    for s in carried:
+        assert P[s]["description"].startswith("build up 1 drop a day to 15 drops"), s
+    assert not P["es10-video"].get("description")
+
+
+def test_source_is_a_30ml_bottle():
+    assert _products()["source"]["bottle_type"] == "30ml"
