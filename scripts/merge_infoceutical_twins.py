@@ -126,7 +126,9 @@ def main(argv):
           f"{sum(1 for s in touched if after[s].get('inactive'))} retired, "
           f"{sum(1 for s in touched if not after[s].get('inactive'))} survivors")
     if "--write" in argv:
-        PRODUCTS.write_text(new, encoding="utf-8")
+        tmp = PRODUCTS.with_suffix(".json.tmp")
+        tmp.write_text(new, encoding="utf-8")
+        tmp.replace(PRODUCTS)                    # atomic on the same filesystem
         print("written", PRODUCTS)
 
 

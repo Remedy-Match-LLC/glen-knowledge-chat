@@ -60,6 +60,7 @@ def resolve_line_slug(name, catalog):
     name = (name or "").strip().lower()
     if not name:
         return None
+    norm = " ".join(name.split())
     for it in catalog or []:
         if (it.get("name") or "").strip().lower() == name:
             return it.get("slug") or None
@@ -71,7 +72,7 @@ def resolve_line_slug(name, catalog):
     # A product's own old names, exact only, for products that opt in (report_aliases).
     # The infoceutical merge (2026-10-03) renamed 80 survivors; reports authored before
     # carry "BFA Big Field Aligner", "PL Polarity", "ED1 Source Driver".
-    slug = _old_names().get(name)
+    slug = _old_names().get(norm)
     if slug and any(it.get("slug") == slug and not it.get("inactive") for it in catalog or []):
         return slug
     return None
@@ -94,10 +95,10 @@ def _old_names():
         if not isinstance(p, dict) or p.get("inactive") or p.get("report_aliases") is not True:
             continue
         for v in list(p.get("aliases") or []) + [p.get("pinecone_title")]:
-            k = (v or "").strip().lower() if isinstance(v, str) else ""
+            k = " ".join(v.lower().split()) if isinstance(v, str) else ""
             # A bare code ("ES1", "MB 1", "BFA") never bills: it is one keystroke from
             # its neighbour (ES1 vs ES13), and a bare "BFA" stays for Rae.
-            if not k or _re.fullmatch(r"[a-z]{2,3} ?\d*", k):
+            if not k or _re.fullmatch(r"(?:ed|ei|es|et|mb|mr|er|sk|pl|bfa) ?\d*", k):
                 continue
             if k in out and out[k] != s:
                 seen.add(k)

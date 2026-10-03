@@ -139,3 +139,14 @@ def test_the_fmp_matcher_skips_retired_twins():
     twin = {"name": "BFA Big Field Aligner Infoceutical", "inactive": True}
     got = m.match_products({"t": twin}, {"bfa big field aligner infoceutical": {"id_pk": "198"}})
     assert got["matched"] == {}
+
+
+def test_the_bare_code_rule_covers_remedy_codes_only():
+    import re
+    from dashboard import biofield_invoice as BI
+    src = open(BI.__file__, encoding="utf-8").read()
+    pat = re.search(r'_re\.fullmatch\(r"([^"]+)", k\)', src).group(1)
+    for code in ("es1", "mb 1", "bfa", "ed15", "pl"):
+        assert re.fullmatch(pat, code), code
+    for name in ("nac", "dha", "tmg"):
+        assert not re.fullmatch(pat, name), name
