@@ -51,7 +51,7 @@ SLUG = "neuro-magnesium"
 # used to assert the opposite: that it GOT the discount; that expectation was
 # the broad-eligibility bug this file originally caught in Task 5b, now
 # superseded by the FF-only restriction).
-NON_FF_SLUG = "ei8-microbes-liver-integrator"
+NON_FF_SLUG = "ei8-microbes-liver-meridian-energetic-integrator-infoceutical"  # the EI8 survivor of the 2026-10-03 merge
 
 
 # ── display === charge: _portal_priced_lines agrees with _price_cart/compute ──

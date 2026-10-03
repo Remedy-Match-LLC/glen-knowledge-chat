@@ -7749,7 +7749,10 @@ def _resolve_remedy_slug(r):
         # Infoceutical code fallback: the matcher pushes the bare code ("EI8") while
         # the catalog name is "EI8 Microbes-Liver Integrator". Match by code prefix so
         # infoceuticals resolve (and so are recommended, not dropped).
-        if re.match(r"^(ei|es|ed|et|mb|mr|sk|bfa)\d+$", low):
+        # Bare "BFA" has no digits. It resolved through its FileMaker twin's alias until the
+        # infoceutical merge (2026-10-03); the alias was not carried, because on reports a
+        # bare "BFA" stays for Rae (Glen's call, ES1 review round 3).
+        if re.match(r"^(?:(ei|es|ed|et|mb|mr|sk)\d+|bfa)$", low):
             for title, slug in _TITLE_TO_SLUG.items():
                 t = (title or "").strip().lower()
                 if t == low or t.split(" ")[0] == low:

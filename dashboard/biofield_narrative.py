@@ -559,15 +559,35 @@ def narrative_problems(text, report):
         catalog = load_catalog() or {}
     except Exception:
         catalog = {}
-    names = [str((p or {}).get("name") or "") for p in catalog.values()]
+    # A merged product keeps its old names as exact `aliases` (infoceuticals, 2026-10-03):
+    # "ED5 Circulation Driver" is still a product name a writer must not add off-chain.
+    def _spellings(p):
+        return [str((p or {}).get("name") or "")] + [
+            str(a) for a in ((p or {}).get("aliases") or []) if isinstance(a, str)]
+    names = [n for p in catalog.values() for n in _spellings(p)]
     # Other catalog spellings of a chain remedy's own product ("OcuHeal" and "OcuHeal Eye
     # Drops" when both are one entry) count as on the chain.
+    # A retired twin and its survivor (superseded_by) are one product too, so a chain
+    # written under an old infoceutical name accepts the survivor's name, and back.
+    def _root(p):
+        seen = set()
+        while p and p.get("superseded_by") and id(p) not in seen:
+            seen.add(id(p))
+            nxt = catalog.get(p["superseded_by"])
+            if not nxt:
+                break
+            p = nxt
+        return p
+
     same = []
     for c in chain:
         prod = _catalog_product(c)
         if prod:
-            same += [str(p.get("name") or "") for p in catalog.values()
-                     if p is prod or (p or {}).get("name") == prod.get("name")]
+            root = _root(prod)
+            same += [n for p in catalog.values()
+                     if p is prod or (p or {}).get("name") == prod.get("name")
+                     or (root is not None and _root(p) is root)
+                     for n in _spellings(p)]
     return scan_name_problems(text) + check_narrative(
         text, chain=chain + [n for n in same if n and n not in chain], ingredients={c: _ingredient_lines(c) for c in chain},
         catalog_names=names,

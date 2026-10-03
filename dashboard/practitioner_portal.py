@@ -399,6 +399,14 @@ def name_to_slug(name, catalog) -> Optional[str]:
     for slug, p in (catalog or {}).items():
         if any((a or "").strip().lower() == nl for a in (p.get("aliases") or [])):
             return slug
+    # An exact name or title beats any substring, wherever it sits in the catalog. After
+    # the infoceutical merge (2026-10-03) "ES13 COH Metabolism Energetic Star
+    # Infoceutical" contains es1-lymph's title "ES1", and the substring pass met es1-lymph
+    # first. This fixes exact spellings only: a near-miss such as "ES13 COH Metabolism"
+    # still substring-matches "ES1", as it did before the merge.
+    for slug, p in (catalog or {}).items():
+        if any((c or "").strip().lower() == nl for c in (p.get("name"), p.get("pinecone_title"))):
+            return slug
     for slug, p in (catalog or {}).items():
         for cand in (p.get("name"), p.get("pinecone_title")):
             pn = (cand or "").lower()

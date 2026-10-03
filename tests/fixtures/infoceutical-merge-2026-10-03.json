@@ -1,0 +1,1077 @@
+[
+ {
+  "code": "BFA",
+  "survivor": "bfa-big-field-aligner",
+  "name": "BFA Big Field Aligner Infoceutical",
+  "fmp_id": "198",
+  "retire": [
+   "bfa-big-field-aligner-infoceutical"
+  ],
+  "aliases": [
+   "BFA Big Field Aligner"
+  ],
+  "note": ""
+ },
+ {
+  "code": "ED1",
+  "survivor": "ed1-source-driver",
+  "name": "ED1 Source Energetic Driver Infoceutical",
+  "fmp_id": "201",
+  "retire": [
+   "ed1-source-energetic-driver-infoceutical"
+  ],
+  "aliases": [
+   "ED1 Source Driver"
+  ],
+  "note": ""
+ },
+ {
+  "code": "ED10",
+  "survivor": "ed10-skin-driver",
+  "name": "ED10 Skin Energetic Driver Infoceutical",
+  "fmp_id": "210",
+  "retire": [
+   "ed10-skin-energetic-driver-infoceutical"
+  ],
+  "aliases": [
+   "ED10 Skin Driver"
+  ],
+  "note": ""
+ },
+ {
+  "code": "ED11",
+  "survivor": "ed11-liver-driver",
+  "name": "ED11 Liver Energetic Driver Infoceutical",
+  "fmp_id": "211",
+  "retire": [
+   "ed11-liver-energetic-driver-infoceutical"
+  ],
+  "aliases": [
+   "ED11 Liver Driver"
+  ],
+  "note": ""
+ },
+ {
+  "code": "ED12",
+  "survivor": "ed12-kidney-driver",
+  "name": "ED12 Kidney Energetic Driver Infoceutical",
+  "fmp_id": "212",
+  "retire": [
+   "ed12-kidney-energetic-driver-infoceutical"
+  ],
+  "aliases": [
+   "ED12 Kidney Driver"
+  ],
+  "note": ""
+ },
+ {
+  "code": "ED13",
+  "survivor": "ed13-immunity-driver",
+  "name": "ED13 Immunity Energetic Driver Infoceutical",
+  "fmp_id": "213",
+  "retire": [
+   "ed13-immunity-energetic-driver-infoceutical"
+  ],
+  "aliases": [
+   "ED13 Immunity Driver"
+  ],
+  "note": ""
+ },
+ {
+  "code": "ED14",
+  "survivor": "ed14-spleenthymus-driver",
+  "name": "ED14 Spleen Energetic Driver Infoceutical",
+  "fmp_id": "214",
+  "retire": [
+   "ed14-spleen-energetic-driver-infoceutical"
+  ],
+  "aliases": [
+   "ED14 Spleen/Thymus Driver"
+  ],
+  "note": ""
+ },
+ {
+  "code": "ED15",
+  "survivor": "ed15-pancreas-driver-",
+  "name": "ED15 Pancreas Energetic Driver Infoceutical",
+  "fmp_id": "215",
+  "retire": [
+   "ed15-pancreas-energetic-driver-infoceutical"
+  ],
+  "aliases": [
+   "ED15 Pancreas Driver"
+  ],
+  "note": ""
+ },
+ {
+  "code": "ED16",
+  "survivor": "ed16-bone-driver",
+  "name": "ED16 Bone Energetic Driver Infoceutical",
+  "fmp_id": "216",
+  "retire": [
+   "ed16-bone-energetic-driver-infoceutical"
+  ],
+  "aliases": [
+   "ED16 Bone Driver"
+  ],
+  "note": ""
+ },
+ {
+  "code": "ED2",
+  "survivor": "ed2-imprinter-driver",
+  "name": "ED2 Heart Imprinter Energetic Driver Infoceutical",
+  "fmp_id": "202",
+  "retire": [
+   "ed2-heart-imprinter-energetic-driver-infoceutical"
+  ],
+  "aliases": [
+   "ED2 Imprinter Driver"
+  ],
+  "note": ""
+ },
+ {
+  "code": "ED3",
+  "survivor": "ed3-cell-driver",
+  "name": "ED3 Cell Energetic Driver Infoceutical",
+  "fmp_id": "203",
+  "retire": [
+   "ed3-cell-energetic-driver-infoceutical"
+  ],
+  "aliases": [
+   "ED3 Cell Driver"
+  ],
+  "note": ""
+ },
+ {
+  "code": "ED4",
+  "survivor": "ed4-nervous-system-driver",
+  "name": "ED4 Nerve Energetic Driver Infoceutical",
+  "fmp_id": "204",
+  "retire": [
+   "ed4-nerve-energetic-driver-infoceutical"
+  ],
+  "aliases": [
+   "ED4 Nervous System Driver"
+  ],
+  "note": ""
+ },
+ {
+  "code": "ED5",
+  "survivor": "ed5-circulation-driver",
+  "name": "ED5 Circulation Energetic Driver Infoceutical",
+  "fmp_id": "205",
+  "retire": [
+   "ed5-circulation-energetic-driver-infoceutical"
+  ],
+  "aliases": [
+   "ED5 Circulation Driver"
+  ],
+  "note": ""
+ },
+ {
+  "code": "ED6",
+  "survivor": "ed6-heart-driver",
+  "name": "ED6 Heart Energetic Driver Infoceutical",
+  "fmp_id": "206",
+  "retire": [
+   "ed6-heart-energetic-driver-infoceutical"
+  ],
+  "aliases": [
+   "ED6 Heart Driver"
+  ],
+  "note": ""
+ },
+ {
+  "code": "ED7",
+  "survivor": "ed7-lung-driver",
+  "name": "ED7 Lung Energetic Driver Infoceutical",
+  "fmp_id": "207",
+  "retire": [
+   "ed7-lung-energetic-driver-infoceutical"
+  ],
+  "aliases": [
+   "ED7 Lung Driver"
+  ],
+  "note": ""
+ },
+ {
+  "code": "ED8",
+  "survivor": "ed8-stomach-driver",
+  "name": "ED8 Stomach Energetic Driver Infoceutical",
+  "fmp_id": "208",
+  "retire": [
+   "ed8-stomach-energetic-driver-infoceutical"
+  ],
+  "aliases": [
+   "ED8 Stomach Driver"
+  ],
+  "note": ""
+ },
+ {
+  "code": "ED9",
+  "survivor": "ed9-muscle-driver",
+  "name": "ED9 Muscle Energetic Driver Infoceutical",
+  "fmp_id": "209",
+  "retire": [
+   "ed9-muscle-energetic-driver-infoceutical"
+  ],
+  "aliases": [
+   "ED9 Muscle Driver"
+  ],
+  "note": ""
+ },
+ {
+  "code": "EI1",
+  "survivor": "ei1-neurosensorycolon-meridian",
+  "name": "EI1 Neurosensory/Colon Meridian Energetic Integrator Infoceutical",
+  "fmp_id": "217",
+  "retire": [
+   "ei1-neurosensory-colon-meridian-energetic-integrator-infoceutical"
+  ],
+  "aliases": [
+   "EI1 Neurosensory/Colon Meridian"
+  ],
+  "note": ""
+ },
+ {
+  "code": "EI10",
+  "survivor": "ei10-circulationheart-protector-meridian",
+  "name": "EI10 Circulation/Pericardium Meridian Energetic Integrator Infoceutical",
+  "fmp_id": "226",
+  "retire": [
+   "ei10-circulation-pericardium-meridian-energetic-integrator-infoceutical"
+  ],
+  "aliases": [
+   "EI10 Circulation/Heart Protector Meridian"
+  ],
+  "note": ""
+ },
+ {
+  "code": "EI11",
+  "survivor": "ei11-bone-marrowstomach-meridian",
+  "name": "EI11 Stomach/Heavy Metal/Bone Marrow Meridian Energetic Integrator Infoceutical",
+  "fmp_id": "227",
+  "retire": [
+   "ei11-stomach-heavy-metal-bone-marrow-meridian-energetic-integrator-infoceutical"
+  ],
+  "aliases": [
+   "EI11 Bone Marrow/Stomach Meridian"
+  ],
+  "note": ""
+ },
+ {
+  "code": "EI12",
+  "survivor": "ei12-shockspleen-meridian",
+  "name": "EI12 Shock/Spleen Meridian Energetic Integrator Infoceutical",
+  "fmp_id": "228",
+  "retire": [
+   "ei12-shock-spleen-meridian-energetic-integrator-infoceutical"
+  ],
+  "aliases": [
+   "EI12 Shock/Spleen Meridian"
+  ],
+  "note": ""
+ },
+ {
+  "code": "EI13",
+  "survivor": "ei13--hearing--learning-",
+  "name": "EI13 Hearing & Learning Energetic Integrator Infoceutical",
+  "fmp_id": "413",
+  "retire": [
+   "ei13-hearing-learning-energetic-integrator-infoceutical"
+  ],
+  "aliases": [
+   "EI13"
+  ],
+  "note": ""
+ },
+ {
+  "code": "EI14",
+  "survivor": "ei14--vision--decisions-",
+  "name": "EI14 Vision & Decisions Energetic Integrator Infoceutical",
+  "fmp_id": "414",
+  "retire": [
+   "ei14-vision-decisions-energetic-integrator-infoceutical"
+  ],
+  "aliases": [
+   "EI14"
+  ],
+  "note": ""
+ },
+ {
+  "code": "EI15",
+  "survivor": "ei15--connection-sensing--controlling",
+  "name": "EI15 Connection: Sensing & Controlling Energetic Integrator Infoceutical",
+  "fmp_id": "415",
+  "retire": [
+   "ei15-connection-sensing-controlling-energetic-integrator-infoceutical"
+  ],
+  "aliases": [
+   "EI15"
+  ],
+  "note": ""
+ },
+ {
+  "code": "EI16",
+  "survivor": "ei16--feeling-forebrain--limbic-system-",
+  "name": "EI16 Thinking & Feeling Energetic Integrator Infoceutical",
+  "fmp_id": "416",
+  "retire": [
+   "ei16-thinking-feeling-energetic-integrator-infoceutical"
+  ],
+  "aliases": [
+   "EI16"
+  ],
+  "note": ""
+ },
+ {
+  "code": "EI2",
+  "survivor": "ei2-chest-heartlung-meridian",
+  "name": "EI2 Heart/Lung Meridian Energetic Integrator Infoceutical",
+  "fmp_id": "218",
+  "retire": [
+   "ei2-heart-lung-meridian-energetic-integrator-infoceutical"
+  ],
+  "aliases": [
+   "EI2 Chest: Heart/Lung Meridian"
+  ],
+  "note": ""
+ },
+ {
+  "code": "EI3",
+  "survivor": "ei3-mucous-membranessmall-intestine-meridian",
+  "name": "EI3 Mucosae/Small Intestine Meridian Energetic Integrator Infoceutical",
+  "fmp_id": "219",
+  "retire": [
+   "ei3-mucosae-small-intestine-meridian-energetic-integrator-infoceutical"
+  ],
+  "aliases": [
+   "EI3 Mucous Membranes/Small Intestine Meridian"
+  ],
+  "note": ""
+ },
+ {
+  "code": "EI4",
+  "survivor": "ei4-neurotransmittersheart-meridian",
+  "name": "EI4 Neurotransmitters/Heart Meridian Energetic Integrator Infoceutical",
+  "fmp_id": "220",
+  "retire": [
+   "ei4-neurotransmitters-heart-meridian-energetic-integrator-infoceutical"
+  ],
+  "aliases": [
+   "EI4 Neurotransmitters/Heart Meridian"
+  ],
+  "note": ""
+ },
+ {
+  "code": "EI5",
+  "survivor": "ei5-lymphaticsbladder-meridian",
+  "name": "EI5 Lymphatics/Bladder Meridian Energetic Integrator Infoceutical",
+  "fmp_id": "221",
+  "retire": [
+   "ei5-lymphatics-bladder-meridian-energetic-integrator-infoceutical"
+  ],
+  "aliases": [
+   "EI5 Lymphatics/Bladder Meridian"
+  ],
+  "note": ""
+ },
+ {
+  "code": "EI6",
+  "survivor": "ei6-kidney-meridian",
+  "name": "EI6 Kidney Meridian Energetic Integrator Infoceutical",
+  "fmp_id": "222",
+  "retire": [
+   "ei6-kidney-meridian-energetic-integrator-infoceutical"
+  ],
+  "aliases": [
+   "EI6 Kidney Meridian"
+  ],
+  "note": ""
+ },
+ {
+  "code": "EI7",
+  "survivor": "ei7-bloodgall-bladder-meridian",
+  "name": "EI7 Blood/Gallbladder Meridian Energetic Integrator Infoceutical",
+  "fmp_id": "223",
+  "retire": [
+   "ei7-blood-gallbladder-meridian-energetic-integrator-infoceutical"
+  ],
+  "aliases": [
+   "EI7 Blood/Gall Bladder Meridian"
+  ],
+  "note": ""
+ },
+ {
+  "code": "EI8",
+  "survivor": "ei8-microbes-liver-meridian-energetic-integrator-infoceutical",
+  "name": "EI8 Microbes/Liver Meridian Energetic Integrator Infoceutical",
+  "fmp_id": "224",
+  "retire": [
+   "ei8-microbes-liver-integrator",
+   "microbes-liver-meridian"
+  ],
+  "aliases": [
+   "EI8 Microbes-Liver Integrator",
+   "Microbes/Liver Meridian (EI-8)"
+  ],
+  "note": ""
+ },
+ {
+  "code": "EI9",
+  "survivor": "ei9-thyroidtriple-warmer-meridian",
+  "name": "EI9 Thyroid/Triple Burner Meridian Energetic Integrator Infoceutical",
+  "fmp_id": "225",
+  "retire": [
+   "ei9-thyroid-triple-burner-meridian-energetic-integrator-infoceutical"
+  ],
+  "aliases": [
+   "EI9 Thyroid/Triple Warmer Meridian"
+  ],
+  "note": ""
+ },
+ {
+  "code": "ES1",
+  "survivor": "es1-lymph",
+  "name": "ES1 Lymph and Immune Energetic Star Infoceutical",
+  "fmp_id": null,
+  "retire": [],
+  "aliases": [],
+  "note": ""
+ },
+ {
+  "code": "ES10",
+  "survivor": "es10-video",
+  "name": "ES10 Stress - Video Processing Energetic Star Infoceutical",
+  "fmp_id": "254",
+  "retire": [
+   "es10-stress-video-processing-energetic-star-infoceutical"
+  ],
+  "aliases": [
+   "ES10"
+  ],
+  "note": ""
+ },
+ {
+  "code": "ES11",
+  "survivor": "es11-male",
+  "name": "ES11 Male Energy Energetic Star Infoceutical",
+  "fmp_id": "255",
+  "retire": [
+   "es11-male-energy-energetic-star-infoceutical"
+  ],
+  "aliases": [
+   "ES11"
+  ],
+  "note": ""
+ },
+ {
+  "code": "ES12",
+  "survivor": "es12-female",
+  "name": "ES12 Female Energy Energetic Star Infoceutical",
+  "fmp_id": "256",
+  "retire": [
+   "es12-female-energy-energetic-star-infoceutical"
+  ],
+  "aliases": [
+   "ES12"
+  ],
+  "note": ""
+ },
+ {
+  "code": "ES13",
+  "survivor": "es13-coh",
+  "name": "ES13 COH Metabolism Energetic Star Infoceutical",
+  "fmp_id": "257",
+  "retire": [
+   "es13-coh-metabolism-energetic-star-infoceutical"
+  ],
+  "aliases": [
+   "ES13"
+  ],
+  "note": ""
+ },
+ {
+  "code": "ES14",
+  "survivor": "es14-cell-metabolism",
+  "name": "ES14 Cell Metabolism Energetic Star Infoceutical",
+  "fmp_id": "258",
+  "retire": [
+   "es14-cell-metabolism-energetic-star-infoceutical"
+  ],
+  "aliases": [
+   "ES14"
+  ],
+  "note": ""
+ },
+ {
+  "code": "ES15",
+  "survivor": "es15-heavy-metals",
+  "name": "ES15 Heavy Metals Energetic Star Infoceutical",
+  "fmp_id": "259",
+  "retire": [
+   "es15-heavy-metals-energetic-star-infoceutical"
+  ],
+  "aliases": [
+   "ES15"
+  ],
+  "note": ""
+ },
+ {
+  "code": "ES2",
+  "survivor": "es2-memory-imprint",
+  "name": "ES2 Memory Imprinter Energetic Star Infoceutical",
+  "fmp_id": "246",
+  "retire": [
+   "es2-memory-imprinter-energetic-star-infoceutical"
+  ],
+  "aliases": [
+   "ES2"
+  ],
+  "note": ""
+ },
+ {
+  "code": "ES3",
+  "survivor": "es3-nerve",
+  "name": "ES3 Nerve Function Energetic Star Infoceutical",
+  "fmp_id": "247",
+  "retire": [
+   "es3-nerve-function-energetic-star-infoceutical"
+  ],
+  "aliases": [
+   "ES3"
+  ],
+  "note": ""
+ },
+ {
+  "code": "ES4",
+  "survivor": "es4-triple-cavity",
+  "name": "ES4 Triple Cavity Energetic Star Infoceutical",
+  "fmp_id": "248",
+  "retire": [
+   "es4-triple-cavity-energetic-star-infoceutical"
+  ],
+  "aliases": [
+   "ES4"
+  ],
+  "note": ""
+ },
+ {
+  "code": "ES5",
+  "survivor": "es5-autoimmune",
+  "name": "ES5 Auto-Immune Energetic Star Infoceutical",
+  "fmp_id": "249",
+  "retire": [
+   "es5-auto-immune-energetic-star-infoceutical"
+  ],
+  "aliases": [
+   "ES5"
+  ],
+  "note": ""
+ },
+ {
+  "code": "ES6",
+  "survivor": "es6-circulation",
+  "name": "ES6 Circulation Lipids Energetic Star Infoceutical",
+  "fmp_id": "250",
+  "retire": [
+   "es6-circulation-lipids-energetic-star-infoceutical"
+  ],
+  "aliases": [
+   "ES6"
+  ],
+  "note": ""
+ },
+ {
+  "code": "ES7",
+  "survivor": "es7-muscle",
+  "name": "ES7 Muscles Enzymes Energetic Star Infoceutical",
+  "fmp_id": "251",
+  "retire": [
+   "es7-muscles-enzymes-energetic-star-infoceutical"
+  ],
+  "aliases": [
+   "ES7"
+  ],
+  "note": ""
+ },
+ {
+  "code": "ES8",
+  "survivor": "es8-chill",
+  "name": "ES8 Chill Energetic Star Infoceutical",
+  "fmp_id": "252",
+  "retire": [
+   "es8-chill-energetic-star-infoceutical"
+  ],
+  "aliases": [
+   "ES8"
+  ],
+  "note": ""
+ },
+ {
+  "code": "ES9",
+  "survivor": "es9-audio",
+  "name": "ES9 Shock - Auditory Processing Energetic Star Infoceutical",
+  "fmp_id": "253",
+  "retire": [
+   "es9-shock-auditory-processing-energetic-star-infoceutical"
+  ],
+  "aliases": [
+   "ES9"
+  ],
+  "note": ""
+ },
+ {
+  "code": "ET0",
+  "survivor": "et0-cns",
+  "name": "ET0 CNS Central Nervous System Energetic Terrain Infoceutical",
+  "fmp_id": "229",
+  "retire": [
+   "et0-cns-central-nervous-system-energetic-terrain-infoceutical"
+  ],
+  "aliases": [
+   "ET0 CNS"
+  ],
+  "note": ""
+ },
+ {
+  "code": "ET1",
+  "survivor": "et1-immune-1",
+  "name": "ET1 Imu-1 Immune Energetic Terrain Infoceutical",
+  "fmp_id": "230",
+  "retire": [
+   "et1-imu-1-immune-energetic-terrain-infoceutical"
+  ],
+  "aliases": [
+   "ET1 Immu 1: Immunity 1"
+  ],
+  "note": ""
+ },
+ {
+  "code": "ET10",
+  "survivor": "et10-liver-1",
+  "name": "ET10 Liv-1 Liver Energetic Terrain Infoceutical",
+  "fmp_id": "239",
+  "retire": [
+   "et10-liv-1-liver-energetic-terrain-infoceutical"
+  ],
+  "aliases": [
+   "ET10"
+  ],
+  "note": ""
+ },
+ {
+  "code": "ET11",
+  "survivor": "et11-liver-2",
+  "name": "ET11 Liv-2 Liver Energetic Terrain Infoceutical",
+  "fmp_id": "240",
+  "retire": [
+   "et11-liv-2-liver-energetic-terrain-infoceutical"
+  ],
+  "aliases": [
+   "ET11"
+  ],
+  "note": ""
+ },
+ {
+  "code": "ET12",
+  "survivor": "et12-liver-3",
+  "name": "ET12 Liv-3 Liver Energetic Terrain Infoceutical",
+  "fmp_id": "241",
+  "retire": [
+   "et12-liv-3-liver-energetic-terrain-infoceutical"
+  ],
+  "aliases": [
+   "ET12"
+  ],
+  "note": ""
+ },
+ {
+  "code": "ET13",
+  "survivor": "et13-fungus",
+  "name": "ET13 Fng Fungal Energetic Terrain Infoceutical",
+  "fmp_id": "242",
+  "retire": [
+   "et13-fng-fungal-energetic-terrain-infoceutical"
+  ],
+  "aliases": [
+   "ET13"
+  ],
+  "note": ""
+ },
+ {
+  "code": "ET14",
+  "survivor": "et14-bacteria",
+  "name": "ET14 Bac Bacterial Energetic Terrain Infoceutical",
+  "fmp_id": "243",
+  "retire": [
+   "et14-bac-bacterial-energetic-terrain-infoceutical"
+  ],
+  "aliases": [
+   "ET14"
+  ],
+  "note": ""
+ },
+ {
+  "code": "ET15",
+  "survivor": "et15-general",
+  "name": "ET15 GET General Energetic Terrain Infoceutical",
+  "fmp_id": "244",
+  "retire": [
+   "et15-get-general-energetic-terrain-infoceutical"
+  ],
+  "aliases": [
+   "ET15"
+  ],
+  "note": ""
+ },
+ {
+  "code": "ET16",
+  "survivor": "et16-glial-cell",
+  "name": "ET16 Glial Cell Terrain Infoceutical",
+  "fmp_id": "462",
+  "retire": [
+   "et16-glial-cell-terrain-infoceutical"
+  ],
+  "aliases": [
+   "ET16"
+  ],
+  "note": ""
+ },
+ {
+  "code": "ET2",
+  "survivor": "et2-immune-2",
+  "name": "ET2 Imu-2 Immune Energetic Terrain Infoceutical",
+  "fmp_id": "231",
+  "retire": [
+   "et2-imu-2-immune-energetic-terrain-infoceutical"
+  ],
+  "aliases": [
+   "ET2 Immu 2: Immunity 2"
+  ],
+  "note": ""
+ },
+ {
+  "code": "ET3",
+  "survivor": "et3-immune-3",
+  "name": "ET3 Imu-3 Immune Energetic Terrain Infoceutical",
+  "fmp_id": "232",
+  "retire": [
+   "et3-imu-3-immune-energetic-terrain-infoceutical"
+  ],
+  "aliases": [
+   "ET3 Immu 3: Immunity 3"
+  ],
+  "note": ""
+ },
+ {
+  "code": "ET4",
+  "survivor": "et4-nerve",
+  "name": "ET4 Nrv Nerve Energetic Terrain Infoceutical",
+  "fmp_id": "233",
+  "retire": [
+   "et4-nrv-nerve-energetic-terrain-infoceutical"
+  ],
+  "aliases": [
+   "ET4 Nerve: Nervous System"
+  ],
+  "note": ""
+ },
+ {
+  "code": "ET5",
+  "survivor": "et5-bsv",
+  "name": "ET5 BSV Viral Energetic Terrain Infoceutical",
+  "fmp_id": "234",
+  "retire": [
+   "et5-bsv-viral-energetic-terrain-infoceutical"
+  ],
+  "aliases": [
+   "ET5 BSV: Broad Spectrum Virus"
+  ],
+  "note": ""
+ },
+ {
+  "code": "ET6",
+  "survivor": "et6-cfi",
+  "name": "ET6 CFI Immune Energetic Terrain Infoceutical",
+  "fmp_id": "235",
+  "retire": [
+   "et6-cfi-immune-energetic-terrain-infoceutical"
+  ],
+  "aliases": [
+   "ET6 CFI: Colds Flu Immunity"
+  ],
+  "note": ""
+ },
+ {
+  "code": "ET7",
+  "survivor": "et7-cfs",
+  "name": "ET7 CFS Fatigue Energetic Terrain Infoceutical",
+  "fmp_id": "236",
+  "retire": [
+   "et7-cfs-fatigue-energetic-terrain-infoceutical"
+  ],
+  "aliases": [
+   "ET7 CFS: Chronic Fatigue Syndrome"
+  ],
+  "note": ""
+ },
+ {
+  "code": "ET8",
+  "survivor": "et8-neuro",
+  "name": "ET8 Neuro Energetic Terrain Infoceutical",
+  "fmp_id": "237",
+  "retire": [
+   "et8-neuro-energetic-terrain-infoceutical"
+  ],
+  "aliases": [
+   "ET8 Neuron  ET8"
+  ],
+  "note": ""
+ },
+ {
+  "code": "ET9",
+  "survivor": "et9-stomach",
+  "name": "ET9 Stm Stomach Energetic Terrain Infoceutical",
+  "fmp_id": "238",
+  "retire": [
+   "et9-stm-stomach-energetic-terrain-infoceutical"
+  ],
+  "aliases": [
+   "ET9"
+  ],
+  "note": ""
+ },
+ {
+  "code": "MB1",
+  "survivor": "mb1-bsh",
+  "name": "MB1 BSH Brainstem Hologram Infoceutical",
+  "fmp_id": "260",
+  "retire": [
+   "mb1-brain-stem-hologram",
+   "mb1-bsh-brainstem-hologram-infoceutical"
+  ],
+  "aliases": [
+   "MB 1",
+   "MB1 Brain Stem Hologram"
+  ],
+  "note": ""
+ },
+ {
+  "code": "MB2",
+  "survivor": "mb2-cmh",
+  "name": "MB2 CMH Cerebral Medulla Hologram Infoceutical",
+  "fmp_id": "263",
+  "retire": [
+   "mb2-cerebral-medulla-hologram",
+   "mb2-cmh-cerebral-medulla-hologram-infoceutical"
+  ],
+  "aliases": [
+   "MB 2",
+   "MB2 Cerebral Medulla Hologram"
+  ],
+  "note": ""
+ },
+ {
+  "code": "MB3",
+  "survivor": "mb3-cbh",
+  "name": "MB3 CBH Cerebellum Hologram Infoceutical",
+  "fmp_id": "264",
+  "retire": [
+   "mb3-cerebellum-hologram",
+   "mb3-cbh-cerebellum-hologram-infoceutical"
+  ],
+  "aliases": [
+   "MB 3",
+   "MB3 Cerebellum Hologram"
+  ],
+  "note": ""
+ },
+ {
+  "code": "MB4",
+  "survivor": "mb4-cch",
+  "name": "MB4 CCH Cerebral Cortex Hologram Infoceutical",
+  "fmp_id": "262",
+  "retire": [
+   "mb4-cerebral-cortex-hologram",
+   "mb4-cch-cerebral-cortex-hologram-infoceutical"
+  ],
+  "aliases": [
+   "MB 4",
+   "MB4 Cerebral Cortex Hologram"
+  ],
+  "note": ""
+ },
+ {
+  "code": "MB5",
+  "survivor": "mb5-esr-emotional-stress-release-infoceutical",
+  "name": "MB5 ESR Emotional Stress Release Infoceutical",
+  "fmp_id": "200",
+  "retire": [
+   "mb5-emotional-stress-release-hologram",
+   "esr"
+  ],
+  "aliases": [
+   "Emotional Stress Release (MB5)",
+   "MB5 Emotional Stress Release Hologram"
+  ],
+  "note": ""
+ },
+ {
+  "code": "MB6",
+  "survivor": "mb6-liberator",
+  "name": "MB6 Liberator Infoceutical",
+  "fmp_id": "261",
+  "retire": [
+   "mb6-liberator-infoceutical"
+  ],
+  "aliases": [
+   "MB6"
+  ],
+  "note": ""
+ },
+ {
+  "code": "MB7",
+  "survivor": "mb7-peace",
+  "name": "MB7 Peace Infoceutical",
+  "fmp_id": "267",
+  "retire": [
+   "mb7-peace-infoceutical"
+  ],
+  "aliases": [
+   "MB7"
+  ],
+  "note": ""
+ },
+ {
+  "code": "MB8",
+  "survivor": "mb8-love",
+  "name": "MB8 Love Infoceutical",
+  "fmp_id": "269",
+  "retire": [
+   "mb8-love-hologram",
+   "mb8-love-infoceutical"
+  ],
+  "aliases": [
+   "MB 8",
+   "MB8 Love Hologram"
+  ],
+  "note": ""
+ },
+ {
+  "code": "day",
+  "survivor": "day-infoceutical",
+  "name": "Day Infoceutical",
+  "fmp_id": "196",
+  "retire": [],
+  "aliases": [],
+  "note": ""
+ },
+ {
+  "code": "emf",
+  "survivor": "emf-infoceutical",
+  "name": "EMF Infoceutical",
+  "fmp_id": "270",
+  "retire": [],
+  "aliases": [],
+  "note": ""
+ },
+ {
+  "code": "energy",
+  "survivor": "energy",
+  "name": "Energy/Source Infoceutical Feelgood",
+  "fmp_id": "298",
+  "retire": [
+   "energy-source-infoceutical-feelgood"
+  ],
+  "aliases": [
+   "Energy"
+  ],
+  "note": ""
+ },
+ {
+  "code": "fat-metabolism",
+  "survivor": "fat-metabolism",
+  "name": "Fat Metabolism Infoceutical",
+  "fmp_id": "266",
+  "retire": [
+   "fat-metabolism-infoceutical"
+  ],
+  "aliases": [
+   "Fat Metabolism"
+  ],
+  "note": ""
+ },
+ {
+  "code": "night",
+  "survivor": "night",
+  "name": "Night Infoceutical",
+  "fmp_id": "197",
+  "retire": [
+   "night-infoceutical"
+  ],
+  "aliases": [
+   "Night"
+  ],
+  "note": ""
+ },
+ {
+  "code": "pl-polarity",
+  "survivor": "pl-polarity",
+  "name": "PL Polarity Infoceutical",
+  "fmp_id": "199",
+  "retire": [
+   "pl-polarity-infoceutical"
+  ],
+  "aliases": [
+   "PL Polarity"
+  ],
+  "note": ""
+ },
+ {
+  "code": "rejuv",
+  "survivor": "rejuv",
+  "name": "Rejuv Infoceutical",
+  "fmp_id": "271",
+  "retire": [
+   "rejuv-infoceutical"
+  ],
+  "aliases": [
+   "Rejuvenation"
+  ],
+  "note": ""
+ },
+ {
+  "code": "sleep",
+  "survivor": "sleep",
+  "name": "Sleep Infoceutical",
+  "fmp_id": "265",
+  "retire": [
+   "sleep-infoceutical"
+  ],
+  "aliases": [
+   "Sleep"
+  ],
+  "note": ""
+ },
+ {
+  "code": "source",
+  "survivor": "source",
+  "name": "Source Infoceutical",
+  "fmp_id": "432",
+  "retire": [],
+  "aliases": [
+   "Source"
+  ],
+  "note": ""
+ },
+ {
+  "code": "youth",
+  "survivor": "youth",
+  "name": "Youth Infoceutical",
+  "fmp_id": "418",
+  "retire": [],
+  "aliases": [],
+  "note": ""
+ }
+]

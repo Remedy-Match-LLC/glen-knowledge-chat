@@ -52,7 +52,8 @@ def test_fuzzy_match_tolerates_dropped_sku_qualifier():
     gets asked for as "Emotional Stress Release Hologram"."""
     matches = app._catalog_link_matches(
         "do you have the Emotional Stress Release Hologram", {})
-    assert "mb5-emotional-stress-release-hologram" in " ".join(matches.values())
+    # The infoceutical merge (2026-10-03) folded that listing into the MB5 survivor.
+    assert "mb5-esr-emotional-stress-release-infoceutical" in " ".join(matches.values())
 
 
 def test_fuzzy_match_tolerates_compound_word_split():
@@ -65,8 +66,8 @@ def test_fuzzy_match_tolerates_compound_word_split():
 
 def test_ambiguous_phrase_links_nothing_rather_than_guessing():
     """A confidently wrong product link is worse than none."""
-    # "Cerebral Cortex Hologram" maps to two distinct SKUs in the catalog.
-    assert app._catalog_link_matches("tell me about the Cerebral Cortex Hologram", {}) == {}
+    # "Cerebral Cortex Hologram" named two SKUs until the infoceutical merge (2026-10-03)
+    # made it one, so it is no longer an example of ambiguity.
     assert app._catalog_link_matches("what eye drops do you have", {}) == {}
 
 
