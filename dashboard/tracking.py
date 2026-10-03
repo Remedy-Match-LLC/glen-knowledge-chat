@@ -522,6 +522,26 @@ def link_shipment_to_orders(cx: sqlite3.Connection, shipment_id: int,
         "UPDATE orders SET tracking_number=?, shipment_id=?, updated_at=? WHERE id=?",
         (prior["tracking_number"], shipment_id, _iso_now(), order_id),
     )
+    # 29 of 56 shipped orders had no street on 2026-10-02, yet their label had one.
+    # When the matched order has none, record where the parcel actually went. A
+    # street already on the order is never overwritten, and a label missing any of
+    # street, city, state or ZIP writes nothing. A direct write on purpose: the
+    # order-edit route re-prices and pushes to QuickBooks.
+    if all(ship_key):
+        addr = _order_address(chosen[0])
+        if not str(addr.get("street") or addr.get("address1") or "").strip():
+            addr.update({
+                "street": str(shipment.get("street") or "").strip(),
+                "address2": str(shipment.get("address2") or "").strip(),
+                "city": str(shipment.get("city") or "").strip(),
+                "state": str(shipment.get("state") or "").strip(),
+                "zip": str(shipment.get("zip") or "").strip(),
+                "country": addr.get("country") or "US",
+            })
+            addr.setdefault("name", chosen[0].get("name") or "")
+            cx.execute("UPDATE orders SET address_json=? WHERE id=? AND "
+                       "(address_json IS NULL OR address_json=?)",
+                       (json.dumps(addr), order_id, chosen[0].get("address_json")))
     return _audit_order_link(cx, shipment_id, "linked", reason, [order_id])
 
 
