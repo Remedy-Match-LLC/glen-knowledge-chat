@@ -10,6 +10,7 @@ Rules (root CLAUDE.md and memory feedback_do_not_recommend_products):
   (AllerFree is not listed: the read path already swaps it for Immune Modulation,
    biofield_reveals.REMEDY_SUBSTITUTIONS, before this screen runs.)
   - Bioavailability Blend: an adjunct, never a stand-alone or a Biofield reveal item.
+  - Pure powders (dashboard.pure_powders): sold, never a Remedy Match (Glen 2026-10-03).
   - Fungifuge: only following a Candida Cleanse, so only when the same report carries it.
 
 Applied where a client reads or orders from a reveal (app._biofield_verify_token). The
@@ -21,6 +22,8 @@ away from sending them.
 """
 import copy
 import re
+
+from dashboard.pure_powders import is_pure_powder
 
 NEVER = {
     "electrolyte-mineral-manna": "Electrolyte Mineral Manna",
@@ -42,7 +45,8 @@ def _key(remedy):
 
 def _is_never(remedy):
     slug, name = _key(remedy)
-    return slug in NEVER or any(name.startswith(n) for n in _NEVER_NAMES)
+    return (slug in NEVER or any(name.startswith(n) for n in _NEVER_NAMES)
+            or is_pure_powder(slug=slug, name=name))
 
 
 def _is_fungifuge(remedy):

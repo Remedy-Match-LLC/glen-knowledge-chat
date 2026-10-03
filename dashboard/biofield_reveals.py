@@ -137,6 +137,12 @@ REMEDY_SUBSTITUTIONS = {
 
 
 _ALLER_FREE = re.compile(r"\baller[\s_-]*free")
+# Glen, 2026-10-03: "Immune Modulation can take the place of HMC, AllerFree, and Food
+# Tolerance. They are available, but not promoted." Food Tolerance stays sellable.
+# HMC (hesperidin methyl chalcone) is an ingredient, not a product of ours: matched by
+# NAME only, so a formula that contains it (Vitreous Vitality) is never suppressed.
+_FOOD_TOLERANCE = re.compile(r"\bfood[\s_-]*tolerance")
+_HMC = re.compile(r"^\s*(?:hmc|hesperidin[\s_-]*methyl[\s_-]*chalcone)\b")
 
 
 def is_aller_free(text):
@@ -148,6 +154,21 @@ def is_aller_free(text):
     return bool(_ALLER_FREE.search((text or "").lower()))
 
 
+def is_food_tolerance(text):
+    """True for any spelling of Food Tolerance: "Food-Tolerance", "FoodTolerance"."""
+    return bool(_FOOD_TOLERANCE.search((text or "").lower()))
+
+
+def is_hmc(text):
+    """True when the NAME is HMC itself, never for a formula that lists it."""
+    return bool(_HMC.search((text or "").lower()))
+
+
+def immune_modulation_instead(text):
+    """AllerFree, Food Tolerance or HMC: Immune Modulation takes its place."""
+    return is_aller_free(text) or is_food_tolerance(text) or is_hmc(text)
+
+
 def _sub_for(rem):
     if not isinstance(rem, dict):
         return None
@@ -155,8 +176,8 @@ def _sub_for(rem):
     for key in keys:
         if key and key in REMEDY_SUBSTITUTIONS:
             return REMEDY_SUBSTITUTIONS[key]
-    if any(is_aller_free(k) for k in keys):
-        return REMEDY_SUBSTITUTIONS["allerfree"]
+    if any(immune_modulation_instead(k) for k in keys):
+        return REMEDY_SUBSTITUTIONS["allerfree"]   # -> Immune Modulation
     return None
 
 
