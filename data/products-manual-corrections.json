@@ -2947,5 +2947,36 @@
     "directions": "1 capsule 1 to 3 times daily with food, or as guided.",
     "warning": "1 a day for one month for low Vitamin A. Up to 3 a day short term for Phase 1 terrain. Avoid during pregnancy or when planning a pregnancy.",
     "note": "Replaces a 21-line gut and H. pylori formula matched from the old Formulations table row 'Vitamin U Complex'. Source: Vitamin_A_Syntropy_0124_1.88x6in_30v.ai, (c) January 2024, named by Glen 2026-09-30. Zingiber officinalis corrected to Zingiber officinale; Vinpocetin to Vinpocetine."
+  },
+  "spike-shield": {
+    "ingredients": [
+      {
+        "name": "N-Acetyl-L-Cysteine (NAC)",
+        "dose": "150 mg"
+      },
+      {
+        "name": "Curcumin 95% (Curcuma longa) (rhizoma)",
+        "dose": "150 mg"
+      },
+      {
+        "name": "Quercetin Dihydrate 98%",
+        "dose": "150 mg"
+      },
+      {
+        "name": "Coenzyme Q10 (Ubiquinone) 98%",
+        "dose": "30 mg"
+      },
+      {
+        "name": "Black Seed Extract 20% TQ (Nigella sativa) (semen)",
+        "dose": "15 mg"
+      },
+      {
+        "name": "Piperine 95% (Piper nigrum)",
+        "dose": "2 mg"
+      }
+    ],
+    "ingredients_source": "fmp-2026-10-03",
+    "description": "Spike Shield . Spike Shield Spike Shield Full spectrum support in the face of toxic spike protein production, injection, exposure to shedding, or residual in body cells and tissues. Take 1 capsule daily with food, or as guided.",
+    "note": "August 2026 six-ingredient reformulation in a pullulan capsule; FileMaker 514 updated 2026-10-03 (Glen, via production). Replaces the 28-ingredient enteric formula."
   }
 }

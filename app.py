@@ -9443,6 +9443,9 @@ def begin_product_page_data(slug):
         _pinned = _pin
         try:
             with db.connect(LOG_DB) as _cx:
+                # Drafts written before `content_since` describe the old formula (Spike
+                # Shield, 2026-10-03). They are dropped, and the page asks for new ones.
+                _sp.reset_if_older(_cx, slug, str(p.get("content_since") or ""))
                 for _s in sections:
                     if _s["id"] not in ("intro", "description", "research") or _s["id"] in _pinned:
                         continue
@@ -9621,6 +9624,7 @@ def begin_product_page_gen(slug, section):
         try:
             try:
                 with db.connect(LOG_DB) as cx:
+                    _sp.reset_if_older(cx, slug, str(p.get("content_since") or ""))
                     cached = _sp.get_section(cx, slug, section)
             except Exception as _dbe:
                 print(f"[sales-gen] cache read failed (degrading to generate): {_dbe}", flush=True)

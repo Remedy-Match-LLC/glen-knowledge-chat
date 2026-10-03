@@ -436,12 +436,19 @@ def get_or_generate(product, content_type, force=False):
     """Return cached content for (product, content_type), generating + caching on miss.
     content_type in {'card', 'how_it_works', 'learn_more'}. `product` is _get_product(slug)."""
     slug = product.get("slug")
+    # `content_since` in products.json marks a reformulation: anything generated before
+    # it describes the old formula. Spike Shield, 2026-10-03: the cached text named 28
+    # old ingredients and "enteric" after the bottle changed to 6 in pullulan.
+    since = str(product.get("content_since") or "")
     if not force:
         hit = _cache_get(slug, content_type)
-        if hit:
+        if hit and not (since and str(hit.get("generated_at") or "") < since):
             return hit
 
-    page = _page_text(product) or _page_text_from_product(product)
+    # After a reformulation the catalog is the truth; the scraped store page in
+    # Pinecone still carries the old formula.
+    page = (_page_text_from_product(product) or _page_text(product)) if since else (
+        _page_text(product) or _page_text_from_product(product))
     if content_type == "card":
         content = _generate_card(product, page)
         sources = []
