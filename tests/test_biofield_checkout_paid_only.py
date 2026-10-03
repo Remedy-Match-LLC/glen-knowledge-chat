@@ -16,6 +16,9 @@ def _isolate_db(monkeypatch, tmp_path):
     the orders table must actually exist on the fresh db."""
     db = str(tmp_path / "log.db")
     monkeypatch.setattr(app, "LOG_DB", db)
+    # The buyer has finished the scan, intake and photo (Glen 2026-10-02 rule);
+    # test_biofield_checkout_prereqs.py covers the refusal itself.
+    monkeypatch.setattr(app, "_biofield_prereqs", lambda email: dict({"photo": True, "intake": True, "scan": True, "ready": True}))
     cx = sqlite3.connect(db)
     try:
         _orders_mod.init_orders_table(cx)

@@ -87,18 +87,21 @@ def test_photo_upload_stored_private_not_static(monkeypatch, tmp_path):
     assert str(appmod.STATIC) not in str(stored)
 
 
-def test_confirm_payment_seeds_paid_via_pb(monkeypatch, tmp_path):
+def test_confirm_payment_is_refused_and_records_nothing(monkeypatch, tmp_path):
+    """Inverted 2026-10-02. This test once pinned self-attested payment: any signed-in
+    person could post item=payment and be recorded as paid, with no receipt. That
+    unlocked booking and the paid Biofield pricing. Only a verified checkout or the
+    owner console may record a payment."""
     _db(monkeypatch, tmp_path)
     c = _auth_client("unpaid@x.com")
-    # not paid yet
     assert c.get("/api/biofield/ready").get_json()["paid"] is False
-    r = c.post("/api/biofield/confirm", json={"item": "payment"})
-    assert r.status_code == 200, r.get_data(as_text=True)
-    assert c.get("/api/biofield/ready").get_json()["paid"] is True
+    r = c.post("/api/biofield/confirm", json={"item": "payment", "receipt": "R-123"})
+    assert r.status_code == 400, r.get_data(as_text=True)
+    assert c.get("/api/biofield/ready").get_json()["paid"] is False
     cx = sqlite3.connect(appmod.LOG_DB); cx.row_factory = sqlite3.Row
     row = biofield_store.get(cx, "unpaid@x.com")
     cx.close()
-    assert row["paid_via"] == "pb"
+    assert not (row or {}).get("paid_at")
 
 
 def test_intake_autodetected_from_inbound_leads(monkeypatch, tmp_path):

@@ -8553,13 +8553,18 @@ def _settle_biofield_effects(md, sid):
         from dashboard import biofield_store as _bf
         bf_email = (md.get("email") or "").strip().lower()
         bf_inv = md.get("invoice_id") or ""
+        # Glen 2026-10-02: the $100 Remedy Match Program buys a member month, not
+        # a Biofield consultation. Recording it as a paid Biofield unlocked Glen's
+        # booking link and the paid-Biofield pricing, so only the $300 tier seeds it.
+        # A session with no tier predates the $100 tier and is the $300 one.
         if bf_email:
-            _bcx = db.connect(LOG_DB)
-            try:
-                _bf.init_table(_bcx)
-                _bf.seed_paid(_bcx, bf_email, via="stripe", order_ref=bf_inv)
-            finally:
-                _bcx.close()
+            if md.get("tier", PROGRAM_PREMIUM_TIER) != PROGRAM_SCALABLE_TIER:
+                _bcx = db.connect(LOG_DB)
+                try:
+                    _bf.init_table(_bcx)
+                    _bf.seed_paid(_bcx, bf_email, via="stripe", order_ref=bf_inv)
+                finally:
+                    _bcx.close()
             # ── Continuous Care taster: 30-day paid grant (flag-gated) ──
             # Shared with the Stripe webhook so a closed tab still delivers the
             # paid care window. Idempotent via care_taster_grants.
@@ -11506,15 +11511,18 @@ def studio_welcome():
 
 BIOFIELD_PRICE_CENTS = 30000   # $300 Causal Biofield Analysis (service, no shipping)
 _BIOFIELD_ITEM_NAME = "Causal Biofield Analysis"
+BIOFIELD_PREREQS_MESSAGE = ("Please complete your fresh Bioenergetic Wellness Scan, intake form "
+                            "and photo first. Payment opens once all three are done.")
 
 PROGRAM_PREMIUM_TIER = "premium"
 PROGRAM_SCALABLE_TIER = "scalable"
 # Single source of truth for the two program tiers. Premium = the existing $300 1:1
 # program (behavior unchanged); scalable = the $100 headline the $1-deposit front door
-# flows into.
+# flows into. Glen 2026-10-02: the $100 one is the Remedy Match Program, built from the
+# Bioenergetic Wellness Scan; "Biofield" names only the $300 consultation program.
 PROGRAM_TIERS = {
     PROGRAM_PREMIUM_TIER:  {"price_cents": BIOFIELD_PRICE_CENTS, "name": _BIOFIELD_ITEM_NAME},
-    PROGRAM_SCALABLE_TIER: {"price_cents": 10000,               "name": "Biofield Program"},
+    PROGRAM_SCALABLE_TIER: {"price_cents": 10000,               "name": "Remedy Match Program"},
 }
 
 
@@ -11573,12 +11581,24 @@ def biofield_checkout():
     if not _biofield_enabled():
         return jsonify({"ok": False, "error": "Biofield checkout is not available."}), 404
     data  = request.get_json(silent=True) or {}
-    email = (data.get("email") or "").strip().lower()
+    # The readiness page signs a client in by cookie and does not hold their email,
+    # so it posts none and the signed-in email is used.
+    email = (data.get("email") or "").strip().lower() or _biofield_email()
     name  = (data.get("name") or "").strip()
     tier  = (data.get("tier") or PROGRAM_PREMIUM_TIER).strip()
     tier  = tier if tier in PROGRAM_TIERS else PROGRAM_PREMIUM_TIER
     if not email:
         return jsonify({"ok": False, "error": "email required"}), 400
+    if tier == PROGRAM_PREMIUM_TIER:
+        # Glen 2026-10-02: a Biofield client finishes the scan, intake and photo
+        # before paying, "otherwise she pays and 'waits'". Checked here so every page
+        # that sells it is held to the same rule. Owner console invoices do not pass
+        # through this route and are unaffected.
+        prereqs = _biofield_prereqs(email)
+        if not prereqs.get("ready"):
+            return jsonify({"ok": False, "reason": "prereqs",
+                            "prereqs": prereqs,
+                            "error": BIOFIELD_PREREQS_MESSAGE}), 409
     if not _STRIPE_ACTIVE:
         return jsonify({"ok": False, "error": "card payment not active"}), 400
     try:
@@ -13056,6 +13076,7 @@ def begin_checkout_return():
     slug = ""
     paid = "0"
     _kind = ""
+    _tier = ""
     _bt_token = ""
     if sid:
         try:
@@ -13064,6 +13085,7 @@ def begin_checkout_return():
             md = sess.get("metadata") or {}
             slug = md.get("slug", "")
             _kind = md.get("kind", "")
+            _tier = md.get("tier", "")
             _bt_token = md.get("token", "")
             if sess.get("payment_status") == "paid":
                 paid = "1"
@@ -13319,7 +13341,9 @@ def begin_checkout_return():
         except Exception as e:
             print(f"[begin-return] {e!r}", flush=True)
     # Biofield checkouts land on the readiness gate; everything else returns to the funnel.
-    if _kind == "biofield":
+    # The $100 Remedy Match Program shares kind=biofield but includes no consultation
+    # (Glen 2026-10-02), so it takes the receipt path below instead of the gate.
+    if _kind == "biofield" and _tier != PROGRAM_SCALABLE_TIER:
         return _redir(f"/biofield/ready?paid={paid}")
     if _kind == "biofield_trial":
         return _redir(f"/begin/biofield/{_bt_token}")
@@ -13369,7 +13393,10 @@ def order_confirmation():
     if not (return_to.startswith("/portal/") or return_to == "/portal/me"
             or return_to.startswith(portal_base().rstrip("/") + "/portal/")
             or return_to in ("/reorder", f"{PUBLIC_BASE_URL.rstrip('/')}/reorder")):
-        return_to = "/portal/me" if md.get("kind") in ("portal-reorder", "client") else "/reorder"
+        # kind=biofield reaches this receipt only as the $100 Remedy Match Program,
+        # whose member month lives in the portal.
+        return_to = ("/portal/me" if md.get("kind") in ("portal-reorder", "client", "biofield")
+                     else "/reorder")
     return_label = ("Return to your client portal"
                     if "/portal/" in return_to else "Review your remedies")
 
@@ -38039,34 +38066,51 @@ def _has_paid_biofield(email):
 
 
 def _biofield_has_intake(email):
-    """True when an inbound_leads intake row exists for this email (mirrors the
-    intake query in the client-profile builder)."""
+    """True when any intake record exists for this email: the portal intake, an
+    inbound_leads row, or a self-confirmation. One answer for the readiness page,
+    the portal and the checkout (dashboard/biofield_prereqs)."""
     if not email:
         return False
     try:
+        from dashboard import biofield_prereqs as _bp
         with db.connect(LOG_DB) as cx:
-            row = cx.execute(
-                "SELECT 1 FROM inbound_leads "
-                "WHERE email=? AND source IN ('scoreapp','practice-better','concierge') "
-                "LIMIT 1", (email,)).fetchone()
-            return bool(row)
+            return _bp.has_intake(cx, email)
     except Exception:
         return False
 
 
 def _biofield_has_fresh_scan(email):
-    """True when the server-side scan-freshness index (pushed by the local e4l
-    ingestion) has a scan within the gate window for this email."""
+    """True when a scan within the gate window is on record: the scan-freshness
+    index (pushed by the local e4l ingestion), the portal's synced scans, or a
+    self-confirmation."""
     try:
-        from dashboard import scan_freshness as _sf
+        from dashboard import biofield_prereqs as _bp
         import datetime as _dt
         with db.connect(LOG_DB) as cx:
-            cx.row_factory = sqlite3.Row
-            _sf.init_table(cx)
-            return _sf.is_fresh(cx, email, today=_dt.date.today().isoformat(),
-                                window_days=7)
+            return _bp.has_fresh_scan(cx, email, today=_dt.date.today())
     except Exception:
         return False
+
+
+def _biofield_has_photo(email):
+    """True when a photo is on file from either the readiness page or the portal."""
+    try:
+        from dashboard import biofield_prereqs as _bp
+        with db.connect(LOG_DB) as cx:
+            return _bp.has_photo(cx, email)
+    except Exception:
+        return False
+
+
+def _biofield_prereqs(email):
+    """Glen 2026-10-02: scan, intake and photo come before a Biofield payment."""
+    try:
+        from dashboard import biofield_prereqs as _bp
+        import datetime as _dt
+        with db.connect(LOG_DB) as cx:
+            return _bp.status(cx, email, today=_dt.date.today())
+    except Exception:
+        return {"photo": False, "intake": False, "scan": False, "ready": False}
 
 
 E4L_SCANNED_TAG = "e4l:scanned"
@@ -38469,7 +38513,8 @@ def api_biofield_ready():
         cx.row_factory = sqlite3.Row
         _bf.init_table(cx)
         st = _gate.gate_state(cx, email, has_intake=_biofield_has_intake,
-                              has_fresh_scan=_biofield_has_fresh_scan)
+                              has_fresh_scan=_biofield_has_fresh_scan,
+                              has_photo=_biofield_has_photo)
     if st.get("booking_unlocked"):
         st["booking_url"] = os.environ.get("BIOFIELD_BOOKING_URL", "")
     return jsonify(st)
@@ -38587,13 +38632,15 @@ def api_biofield_confirm():
             _bf.set_scan_confirmed(cx, email, True)
         elif item == "intake":
             _bf.set_intake_confirmed(cx, email, True)
-        elif item == "payment":
-            ref = (data.get("receipt") or "").strip() or "pb-selfattest"
-            _bf.seed_paid(cx, email, via="pb", order_ref=ref)
         else:
+            # "payment" is refused here on purpose. It once let anyone signed in mark
+            # themselves paid with no receipt, which unlocked booking and the paid
+            # Biofield pricing. Only a verified checkout or the owner console records
+            # a payment now.
             return jsonify({"ok": False, "error": "unknown item"}), 400
         st = _gate.gate_state(cx, email, has_intake=_biofield_has_intake,
-                              has_fresh_scan=_biofield_has_fresh_scan)
+                              has_fresh_scan=_biofield_has_fresh_scan,
+                              has_photo=_biofield_has_photo)
     if st.get("booking_unlocked"):
         st["booking_url"] = os.environ.get("BIOFIELD_BOOKING_URL", "")
     return jsonify(st)
@@ -38615,7 +38662,8 @@ def api_biofield_book():
         cx.row_factory = sqlite3.Row
         _bf.init_table(cx)
         st = _gate.gate_state(cx, email, has_intake=_biofield_has_intake,
-                              has_fresh_scan=_biofield_has_fresh_scan)
+                              has_fresh_scan=_biofield_has_fresh_scan,
+                              has_photo=_biofield_has_photo)
         if not st.get("booking_unlocked"):
             return jsonify(st), 409
         _bf.set_booked(cx, email)

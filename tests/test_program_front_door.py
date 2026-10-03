@@ -303,3 +303,21 @@ def test_reveal_page_exposes_program_cta(monkeypatch, tmp_path):
     assert "program_enabled" in html, "'program_enabled' not found in begin-biofield.html"
     assert "/biofield/checkout" in html, "'/biofield/checkout' not found in begin-biofield.html"
     assert "scalable" in html, "'scalable' not found in begin-biofield.html"
+
+
+def test_program_return_grants_the_month_but_records_no_biofield(monkeypatch, tmp_path):
+    """Glen 2026-10-02: the $100 Remedy Match Program includes a member month and no
+    consultation. The month must still be granted when the paid-Biofield record is not."""
+    app_module = _load_app(); db = _fresh(app_module, monkeypatch, tmp_path)
+    monkeypatch.setattr(app_module, "PROGRAM_CARE_TASTER_ENABLED", True, raising=False)
+    _mock_paid_biofield_session(app_module, monkeypatch, email="buyer@x.com")
+    app_module.app.test_client().get("/begin/checkout-return?session_id=cs_1")
+    from dashboard import biofield_store
+    with sqlite3.connect(db) as cx:
+        cx.row_factory = sqlite3.Row
+        biofield_store.init_table(cx)
+        n = cx.execute("SELECT COUNT(*) FROM memberships WHERE email='buyer@x.com' "
+                       "AND source='care_taster'").fetchone()[0]
+        row = biofield_store.get(cx, "buyer@x.com")
+    assert n == 1
+    assert not (row or {}).get("paid_at")
