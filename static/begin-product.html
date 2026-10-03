@@ -489,6 +489,25 @@
         ul.appendChild(li);
       });
       wrapEl.appendChild(ul);
+      // The capsule paragraph (Glen, 2026-10-03): the shell is not an ingredient line.
+      // Text nodes only; the listed phrases (e.g. "A. pullulans") are set in italics.
+      var cap = body && body.capsule;
+      if (cap && cap.text){
+        var cp = document.createElement('p');
+        cp.className = 'sp-text sp-ing-capsule';
+        var rest = cap.text, ems = (cap.em || []).filter(Boolean);
+        while (rest){
+          var best = -1, hit = '';
+          ems.forEach(function(e){ var k = rest.indexOf(e); if (k >= 0 && (best < 0 || k < best)){ best = k; hit = e; } });
+          if (best < 0){ cp.appendChild(document.createTextNode(rest)); break; }
+          if (best > 0) cp.appendChild(document.createTextNode(rest.slice(0, best)));
+          var em = document.createElement('em');
+          em.textContent = hit;
+          cp.appendChild(em);
+          rest = rest.slice(best + hit.length);
+        }
+        wrapEl.appendChild(cp);
+      }
       // Suggested use, served straight from the catalog so no generated copy can
       // paraphrase a dose away.
       if (body && body.directions){
