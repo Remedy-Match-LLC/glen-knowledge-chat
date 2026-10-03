@@ -152,11 +152,15 @@ class _PgConn:
     def __enter__(self):
         return self
     def __exit__(self, exc_type, exc, tb):
-        if exc_type is None:
-            self._conn.commit()
-        else:
-            self._conn.rollback()
-        self._release()   # pooled resource: return on context exit
+        try:
+            if exc_type is None:
+                self._conn.commit()
+            else:
+                self._conn.rollback()
+        finally:
+            # Return it even when commit fails on a dead connection (round 3 of the
+            # pool review): otherwise the checked-out count stays up and blocks healing.
+            self._release()   # pooled resource: return on context exit
         return False
     def __del__(self):
         try:

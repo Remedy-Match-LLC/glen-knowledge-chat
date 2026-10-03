@@ -216,3 +216,38 @@ def test_the_count_lock_is_reentrant():
     with db._PG_COUNT_LOCK:
         db._count_checked_out("x", +1)
         db._count_checked_out("x", -1)
+
+
+
+# --- round 3 of the review ----------------------------------------------------
+
+def test_a_failed_probe_clears_the_in_flight_flag(env):
+    env["mp"].setattr(db, "_pg_reachable", lambda dsn: False)
+    db._PG_POOLS[DSN] = WedgedPool()
+    with pytest.raises(PoolTimeout):
+        db._connect_postgres("chat_log.db", timeout=1)
+    assert DSN not in db._PG_PROBING
+
+
+def test_a_commit_that_fails_on_exit_still_returns_the_connection(env):
+    class DeadRaw(Raw):
+        def commit(self):
+            raise RuntimeError("the connection is closed")
+
+    class DeadOnExitPool(GoodPool):
+        def __init__(self):
+            super().__init__()
+            self.first = True
+
+        def getconn(self, *, timeout):
+            self.out += 1
+            return Raw() if self.first else DeadRaw()
+
+    pool = DeadOnExitPool()
+    db._PG_POOLS[DSN] = pool
+    cx = db._connect_postgres("chat_log.db", timeout=1)
+    cx._conn = DeadRaw()                       # dies between checkout and exit
+    with pytest.raises(RuntimeError):
+        with cx:
+            pass
+    assert db._PG_CHECKED_OUT[DSN] == 0 and pool.out == 0
