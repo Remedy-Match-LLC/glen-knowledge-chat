@@ -51,7 +51,11 @@ def plan(products, rows):
         aliases = list(p.get("aliases") or [])
         # A twin's own aliases come too: the FileMaker BFA twin was the one that answered
         # to the bare code "BFA", so dropping them would leave "BFA" resolving to nothing.
-        twin_aliases = [a for t in r["retire"] for a in (out[t].get("aliases") or [])]
+        # Except a bare code: on reports a bare "BFA" stays for Rae (Glen's call, ES1 review
+        # round 3), and report_aliases would resolve it. app._resolve_remedy_slug finds the
+        # code by prefix instead.
+        twin_aliases = [a for t in r["retire"] for a in (out[t].get("aliases") or [])
+                        if " " in a.strip()]
         for a in [old_name] + list(r.get("aliases") or []) + twin_aliases:
             if a and a != r["name"] and a not in aliases:
                 aliases.append(a)

@@ -68,7 +68,41 @@ def resolve_line_slug(name, catalog):
     old = _RETIRED_NAMES.get(name)
     if old and any(it.get("slug") == old and not it.get("inactive") for it in catalog or []):
         return old
+    # A product's own old names, exact only, for products that opt in (report_aliases).
+    # The infoceutical merge (2026-10-03) renamed 80 survivors; reports authored before
+    # carry "BFA Big Field Aligner", "PL Polarity", "ED1 Source Driver".
+    slug = _old_names().get(name)
+    if slug and any(it.get("slug") == slug and not it.get("inactive") for it in catalog or []):
+        return slug
     return None
+
+
+def _old_names():
+    """Old name -> slug for live products that opt in (`report_aliases: true`): their
+    `aliases` and `pinecone_title`, exact and lowercased. A name two products answer to
+    is dropped, never guessed. Infoceutical merge, 2026-10-03."""
+    import json
+    import re as _re
+    try:
+        from dashboard.biofield_authoring import _PRODUCTS_JSON
+        with open(_PRODUCTS_JSON) as f:
+            products = json.load(f).get("products") or {}
+    except Exception:
+        return {}
+    out, seen = {}, set()
+    for s, p in products.items():
+        if not isinstance(p, dict) or p.get("inactive") or p.get("report_aliases") is not True:
+            continue
+        for v in list(p.get("aliases") or []) + [p.get("pinecone_title")]:
+            k = (v or "").strip().lower() if isinstance(v, str) else ""
+            # A bare code ("ES1", "MB 1", "BFA") never bills: it is one keystroke from
+            # its neighbour (ES1 vs ES13), and a bare "BFA" stays for Rae.
+            if not k or _re.fullmatch(r"[a-z]{2,3} ?\d*", k):
+                continue
+            if k in out and out[k] != s:
+                seen.add(k)
+            out[k] = s
+    return {k: v for k, v in out.items() if k not in seen}
 
 
 def doses_per_day(freq_text):

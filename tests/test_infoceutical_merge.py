@@ -107,3 +107,35 @@ def test_only_the_dosing_line_is_carried_as_a_description():
 
 def test_source_is_a_30ml_bottle():
     assert _products()["source"]["bottle_type"] == "30ml"
+
+
+def test_the_cart_resolver_prefers_an_exact_name_over_a_shorter_title():
+    """Review round 1: "ES1" (es1-lymph's title) is inside every ES1x name, and the
+    substring pass met es1-lymph first."""
+    from dashboard.practitioner_portal import name_to_slug
+    P = {s: p for s, p in _products().items() if not p.get("inactive")}
+    for r in ROWS:
+        assert name_to_slug(r["name"], P) == r["survivor"], r["name"]
+
+
+def test_an_invoice_line_under_an_old_name_reaches_the_survivor():
+    from dashboard.biofield_authoring import _catalog_exact_aliases
+    from dashboard.biofield_invoice import resolve_line_slug
+    _catalog_exact_aliases.cache_clear()
+    P = _products()
+    catalog = [{"slug": s, **p} for s, p in P.items() if not p.get("inactive")]
+    for old, slug in (("BFA Big Field Aligner", "bfa-big-field-aligner"),
+                      ("PL Polarity", "pl-polarity"), ("ED1 Source Driver", "ed1-source-driver")):
+        assert resolve_line_slug(old, catalog) == slug, old
+    assert resolve_line_slug("BFA", catalog) is None   # stays for Rae
+
+
+def test_the_fmp_matcher_skips_retired_twins():
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(
+        "m", ROOT / "scripts" / "match_products_to_fmp.py")
+    m = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(m)
+    twin = {"name": "BFA Big Field Aligner Infoceutical", "inactive": True}
+    got = m.match_products({"t": twin}, {"bfa big field aligner infoceutical": {"id_pk": "198"}})
+    assert got["matched"] == {}

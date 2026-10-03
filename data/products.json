@@ -9244,7 +9244,7 @@
     }
    ],
    "ingredients_source": "fmp-2026-10-03",
-   "description": "Spike Shield . Spike Shield Spike Shield Full spectrum support in the face of toxic spike protein production, injection, exposure to shedding, or residual in body cells and tissues. Take 1 capsule daily with food, or as guided.",
+   "description": "Full spectrum support in the face of toxic spike protein production, injection, exposure to shedding, or residual in body cells and tissues. Take 1 capsule daily with food, or as guided.",
    "gk_stale": true,
    "gk_stale_reason": "GK page missing: Bromelain, Tetrahydrocurcumin, N-Acetyl Cysteine (NAC), S-Acetyl Glutathione, Glutathione, Thymoquinone, Chitosan Oligosaccharide",
    "gk_extra_accepted": true,
@@ -9992,8 +9992,7 @@
    "legacy_store_url": "https://remedymatch.com/remedies/modalities/biocommunication/infoceuticals/142-bfa-big-field-aligner",
    "fmp_id": "198",
    "aliases": [
-    "BFA Big Field Aligner",
-    "BFA"
+    "BFA Big Field Aligner"
    ],
    "report_aliases": true,
    "bottle_type": "30ml",
@@ -23409,7 +23408,7 @@
    "bottle_type": "own-box",
    "flat_shipping_cents": 3200,
    "source": "gk-physical-goods-import-2026-07-20",
-   "intro": "The Mithreal™ Silver Long Sleeve Shirt protects the important organs of the Thorax and Abdomen...",
+   "intro": "The Mithreal™ Silver T-shirt protects the important organs of the thorax and abdomen. It is made of 100% silver for maximum protection against EMF. The silver also resists the fungal and bacterial growth that causes body odor on clothes.",
    "copy_pinned": [
     "intro"
    ]
@@ -23420,7 +23419,7 @@
    "bottle_type": "own-box",
    "flat_shipping_cents": 3200,
    "source": "gk-physical-goods-import-2026-07-20",
-   "intro": "The Mithreal™ Silver T-shirt protects the important organs of the Thorax and Abdomen...",
+   "intro": "The Mithreal™ T-shirt with 70% Silver protects the important organs of the thorax and abdomen. It is made of 70% silver and 30% rayon for comfort and durability. The silver also resists the fungal and bacterial growth that causes body odor on clothes.",
    "copy_pinned": [
     "intro"
    ]

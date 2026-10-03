@@ -14,7 +14,9 @@ def match_products(products, fmp_by_name):
     keys = list(fmp_by_name.keys())
     matched, review = {}, []
     for slug, p in products.items():
-        if p.get("fmp_id"):
+        # A retired twin keeps its FileMaker name; matching it would put the survivor's
+        # fmp_id back on it (infoceutical merge, 2026-10-03).
+        if p.get("fmp_id") or p.get("inactive"):
             continue
         nm = _norm(p.get("name"))
         row = fmp_by_name.get(nm)

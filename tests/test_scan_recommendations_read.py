@@ -33,8 +33,11 @@ def _products():
     return json.loads((ROOT / "data" / "products.json").read_text())["products"]
 
 
-def test_the_bfa_record_carries_the_bare_code_as_an_alias():
-    assert "BFA" in _products()[BFA_SLUG]["aliases"]
+def test_the_bare_code_bfa_is_not_a_report_alias():
+    """Infoceutical merge, 2026-10-03: the survivor resolves "BFA" by code prefix in
+    _resolve_remedy_slug. It must not carry "BFA" as an alias, because report_aliases
+    would then resolve a bare "BFA" on reports, which stays for Rae (Glen's call)."""
+    assert "BFA" not in (_products()[BFA_SLUG].get("aliases") or [])
 
 
 def test_the_aliased_record_is_the_one_with_a_bottle_type():
