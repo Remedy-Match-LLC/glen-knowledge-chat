@@ -559,15 +559,21 @@ def narrative_problems(text, report):
         catalog = load_catalog() or {}
     except Exception:
         catalog = {}
-    names = [str((p or {}).get("name") or "") for p in catalog.values()]
+    # A merged product keeps its old names as exact `aliases` (infoceuticals, 2026-10-03):
+    # "ED5 Circulation Driver" is still a product name a writer must not add off-chain.
+    def _spellings(p):
+        return [str((p or {}).get("name") or "")] + [
+            str(a) for a in ((p or {}).get("aliases") or []) if isinstance(a, str)]
+    names = [n for p in catalog.values() for n in _spellings(p)]
     # Other catalog spellings of a chain remedy's own product ("OcuHeal" and "OcuHeal Eye
     # Drops" when both are one entry) count as on the chain.
     same = []
     for c in chain:
         prod = _catalog_product(c)
         if prod:
-            same += [str(p.get("name") or "") for p in catalog.values()
-                     if p is prod or (p or {}).get("name") == prod.get("name")]
+            same += [n for p in catalog.values()
+                     if p is prod or (p or {}).get("name") == prod.get("name")
+                     for n in _spellings(p)]
     return scan_name_problems(text) + check_narrative(
         text, chain=chain + [n for n in same if n and n not in chain], ingredients={c: _ingredient_lines(c) for c in chain},
         catalog_names=names,

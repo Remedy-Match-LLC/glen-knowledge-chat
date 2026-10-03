@@ -18,7 +18,7 @@ def _app():
 
 def test_bare_infoceutical_code_resolves():
     app = _app()
-    assert app._resolve_remedy_slug({"name": "EI8"}) == "ei8-microbes-liver-integrator"
+    assert app._resolve_remedy_slug({"name": "EI8"}) == "ei8-microbes-liver-meridian-energetic-integrator-infoceutical"  # infoceutical merge, 2026-10-03
     assert app._resolve_remedy_slug({"name": "MR5"}) == "mr5-harmonize-emotions"
     # case-insensitive bare code
     assert app._resolve_remedy_slug({"name": "mr7"}) == "mr7-calcium-and-terrains"
@@ -27,7 +27,7 @@ def test_bare_infoceutical_code_resolves():
 def test_full_infoceutical_name_still_resolves():
     app = _app()
     assert app._resolve_remedy_slug(
-        {"name": "EI8 Microbes-Liver Integrator"}) == "ei8-microbes-liver-integrator"
+        {"name": "EI8 Microbes-Liver Integrator"}) == "ei8-microbes-liver-meridian-energetic-integrator-infoceutical"  # infoceutical merge, 2026-10-03
 
 
 def test_unknown_remedy_still_drops():

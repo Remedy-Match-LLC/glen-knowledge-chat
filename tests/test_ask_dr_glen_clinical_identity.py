@@ -14,7 +14,9 @@ def test_chat_prompt_forbids_voice_transcript_element_inference():
 
 def test_ed11_and_ed15_catalog_identities_are_canonical():
     products = json.loads((ROOT / "data" / "products.json").read_text())["products"]
-    assert products["ed11-liver-driver"]["name"] == "ED11 Liver Driver"
+    # Renamed to the FileMaker name in the infoceutical merge (2026-10-03)
+    assert products["ed11-liver-driver"]["name"] == "ED11 Liver Energetic Driver Infoceutical"
+    assert "ED11 Liver Driver" in products["ed11-liver-driver"]["aliases"]
     assert "Pancreas" not in products["ed11-liver-driver"]["pinecone_title"]
     assert products["ed15-pancreas-energetic-driver-infoceutical"]["name"].startswith(
         "ED15 Pancreas")

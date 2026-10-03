@@ -17,7 +17,7 @@ import pytest
 from dashboard import scan_recommendations as sr
 
 ROOT = Path(__file__).resolve().parent.parent
-BFA_SLUG = "bfa-big-field-aligner-infoceutical"
+BFA_SLUG = "bfa-big-field-aligner"  # the survivor of the 2026-10-03 merge
 
 
 def _app():
@@ -34,7 +34,7 @@ def _products():
 
 
 def test_the_bfa_record_carries_the_bare_code_as_an_alias():
-    assert _products()[BFA_SLUG]["aliases"] == ["BFA"]
+    assert "BFA" in _products()[BFA_SLUG]["aliases"]
 
 
 def test_the_aliased_record_is_the_one_with_a_bottle_type():
@@ -46,7 +46,8 @@ def test_the_aliased_record_is_the_one_with_a_bottle_type():
 
 
 def test_pinecone_title_is_untouched():
-    assert _products()[BFA_SLUG]["pinecone_title"] == "BFA Big Field Aligner Infoceutical"
+    # The survivor keeps its own vector title through the 2026-10-03 merge.
+    assert _products()[BFA_SLUG]["pinecone_title"] == "BFA Big Field Aligner"
 
 
 def test_the_bare_code_bfa_now_resolves_to_a_live_product():
@@ -59,7 +60,7 @@ def test_the_bare_code_bfa_now_resolves_to_a_live_product():
 def test_the_other_infoceutical_codes_still_resolve():
     app = _app()
     for code, expected in (("ED6", "ed6-heart-driver"), ("ES7", "es7-muscle"),
-                           ("ES1", "es1-lymph"), ("MB1", "mb1-brain-stem-hologram")):
+                           ("ES1", "es1-lymph"), ("MB1", "mb1-bsh")):
         assert app._resolve_remedy_slug({"name": code}) == expected
 
 
@@ -88,7 +89,9 @@ def test_an_alias_never_shadows_a_real_product_name():
         for a in rec.get("aliases") or []:
             # Its OWN title is fine: a renamed product keeps its old name as both alias and
             # pinecone_title until knowledge re-titles the chunks (Vitamin C Syntropy, 2026-09-28).
-            others = owner.get(a.strip().lower(), set()) - {slug}
+            # A retired twin folded into this product (superseded_by) is the same product.
+            twins = {s for s, r in p.items() if r.get("inactive") and r.get("superseded_by") == slug}
+            others = owner.get(a.strip().lower(), set()) - {slug} - twins
             assert not others, f"{slug} alias {a!r} collides with {sorted(others)}"
 
 

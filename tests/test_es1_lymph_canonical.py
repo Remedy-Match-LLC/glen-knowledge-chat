@@ -291,12 +291,14 @@ def test_an_invoice_line_with_the_july_name_bills_es1():
 
 
 # Round 3: only a product that opts in has its aliases read by the remedy matcher.
-@pytest.mark.parametrize("spoken", ["BFA", "Sleep Synergy", "Synergy C"])
+# "BFA" left these lists on 2026-10-03: the infoceutical merge left one BFA, so which BFA
+# is meant is no longer open. See test_bare_bfa_now_resolves_to_the_one_bfa.
+@pytest.mark.parametrize("spoken", ["Sleep Synergy", "Synergy C"])
 def test_other_products_aliases_are_not_read_by_the_matcher(spoken):
     assert _norm_name(spoken) not in ba._catalog_exact_aliases()
 
 
-@pytest.mark.parametrize("spoken", ["BFA", "Sleep Synergy"])
+@pytest.mark.parametrize("spoken", ["Sleep Synergy"])
 def test_bfa_and_sleep_synergy_resolve_as_before(spoken):
     """As on origin/main: left as written, so the invoice skips the line for Rae.
     ("Synergy C" already redirects on main through its retired twin, unchanged here.)"""
@@ -306,3 +308,9 @@ def test_bfa_and_sleep_synergy_resolve_as_before(spoken):
 
 def test_es1_opts_in():
     assert _products()[LIVE_ES1].get("report_aliases") is True
+
+
+def test_bare_bfa_now_resolves_to_the_one_bfa():
+    """Infoceutical merge, 2026-10-03: one BFA listing remains, and it answers to "BFA"."""
+    got = resolve_remedy_name(_fmp_db_with(LIVE_NAME), "BFA")
+    assert got == _products()["bfa-big-field-aligner"]["name"], got
