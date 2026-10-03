@@ -166,22 +166,7 @@ def rename_by_email(cx, email, *, name, first_name=None, last_name=None):
     return {"people_updated": people_updated, "orders_updated": orders_updated}
 
 
-def last_address_for(cx, email):
-    """The most recent shipping address this email shipped to (from orders), so a
-    repeat customer without a saved people-address still autofills."""
-    em = (email or "").strip().lower()
-    if not em:
-        return {}
-    row = cx.execute(
-        "SELECT address_json FROM orders WHERE lower(email)=? AND address_json IS NOT NULL "
-        "AND address_json NOT IN ('', '{}') ORDER BY created_at DESC, id DESC LIMIT 1",
-        (em,)).fetchone()
-    if not row:
-        return {}
-    try:
-        a = json.loads(row[0] if not hasattr(row, "keys") else row["address_json"])
-    except Exception:
-        return {}
+def _order_address_shape(a):
     # Normalise the orders address_json shape ({street,...}) to the people shape.
     return {
         "address1": a.get("street") or a.get("address1") or "",
@@ -189,3 +174,49 @@ def last_address_for(cx, email):
         "city": a.get("city") or "", "state": a.get("state") or "",
         "zip": a.get("zip") or "", "country": a.get("country") or "US",
     }
+
+
+def last_address_for(cx, email):
+    """The most recent shipping address this email shipped to (from orders), so a
+    repeat customer without a saved people-address still autofills.
+
+    Only an address with a street counts. A newer order saved with a blank street
+    (a hand-off, a portal order) used to win because its JSON was not empty, and
+    it hid the older order that had the real address."""
+    em = (email or "").strip().lower()
+    if not em:
+        return {}
+    rows = cx.execute(
+        "SELECT address_json FROM orders WHERE lower(email)=? AND address_json IS NOT NULL "
+        "AND address_json NOT IN ('', '{}') ORDER BY created_at DESC, id DESC LIMIT 50",
+        (em,)).fetchall()
+    for row in rows:
+        try:
+            a = json.loads(row[0] if not hasattr(row, "keys") else row["address_json"])
+        except Exception:
+            continue
+        if isinstance(a, dict) and (a.get("street") or a.get("address1") or "").strip():
+            return _order_address_shape(a)
+    return {}
+
+
+def people_address_for(cx, email):
+    """The shipping address saved on this email's people record, or {} when it has
+    no street. Several records can share an email: the most recently updated with a
+    street wins."""
+    em = (email or "").strip().lower()
+    if not em:
+        return {}
+    try:
+        row = cx.execute(
+            "SELECT address1, address2, city, state, zip, country FROM people "
+            "WHERE lower(email)=? AND trim(coalesce(address1,''))<>'' "
+            "ORDER BY updated_at DESC, id DESC LIMIT 1", (em,)).fetchone()
+    except Exception:
+        return {}   # an older people table without the address columns
+    if not row:
+        return {}
+    cols = ("address1", "address2", "city", "state", "zip", "country")
+    a = {c: (row[c] if hasattr(row, "keys") else row[i]) or "" for i, c in enumerate(cols)}
+    a["country"] = a["country"] or "US"
+    return a

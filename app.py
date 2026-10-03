@@ -56488,17 +56488,26 @@ def _replace_order(cx, old_ids, new_order_id):
 
 
 def _known_ship_address(email):
-    """The client's last shipped-to address. A pet or child with none of their own
-    uses their caregiver's. Adults never borrow another member's address. {} if none."""
+    """The client's known address: their last shipped-to order, else their people
+    record. A pet or child with neither uses their caregiver's, looked up the same
+    way. Adults never borrow another member's address. {} if none."""
     from dashboard import customers as _cust
     from dashboard import household as _hh
     em = (email or "").strip().lower()
     if not em:
         return {}
+
+    def _lookup(cx, e):
+        for fn in (_cust.last_address_for, _cust.people_address_for):
+            a = fn(cx, e)
+            if (a.get("address1") or "").strip():
+                return a
+        return {}
+
     cx = db.connect(LOG_DB)
     try:
-        own = _cust.last_address_for(cx, em)
-        if (own.get("address1") or "").strip():
+        own = _lookup(cx, em)
+        if own:
             return own
         try:
             _hh.init_household_tables(cx)
@@ -56507,8 +56516,8 @@ def _known_ship_address(email):
             carers = []
         for c in carers:
             if c["relationship"].strip().lower() in ("pet", "child"):
-                theirs = _cust.last_address_for(cx, c["primary_email"])
-                if (theirs.get("address1") or "").strip():
+                theirs = _lookup(cx, c["primary_email"])
+                if theirs:
                     return theirs
         return {}
     finally:
