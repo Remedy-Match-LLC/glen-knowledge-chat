@@ -46,8 +46,9 @@ def test_names_him_a_naturopathic_optometrist(prompts, name):
 
 @pytest.mark.parametrize("name", ["remedy_match", "post_purchase", "portal"])
 def test_carries_the_role_and_claims_rule_verbatim(prompts, name):
-    assert ROLE in _flat(prompts[name])
-    assert FINDINGS in _flat(prompts[name])
+    # Exactly once (round 3: a duplicated insertion passed a presence check).
+    assert _flat(prompts[name]).count(ROLE) == 1
+    assert _flat(prompts[name]).count(FINDINGS) == 1
 
 
 def test_the_rule_is_glens_wording():
