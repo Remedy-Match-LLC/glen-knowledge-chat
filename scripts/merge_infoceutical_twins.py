@@ -18,6 +18,10 @@ rewritten, and the run asserts every other product is unchanged.
 
     python3 scripts/merge_infoceutical_twins.py <infoceutical-merge.json>          # dry run
     python3 scripts/merge_infoceutical_twins.py <infoceutical-merge.json> --write
+
+Also used for tests/fixtures/catalog-merges-day-vagus-emf-2026-10-03.json, the three
+merges production specified on 2026-09-20 (Day, Vagus) and Glen confirmed on 2026-10-03
+(EMF: "EMF is the same infoceutical").
 """
 import copy
 import json
@@ -67,6 +71,8 @@ def plan(products, rows):
         if aliases:
             p["aliases"] = aliases
             p["report_aliases"] = True
+        # Optional fields a row sets on its survivor by hand (Vagus directions, 2026-10-03).
+        p.update(r.get("set") or {})
         for t in r["retire"]:
             q = out[t]
             assert not q.get("inactive"), t

@@ -1,0 +1,43 @@
+[
+ {
+  "code": "day",
+  "survivor": "day-infoceutical",
+  "name": "Day Infoceutical",
+  "fmp_id": "196",
+  "retire": [
+   "day"
+  ],
+  "aliases": [
+   "Day"
+  ],
+  "note": "Glen 2026-09-20: 'Day is an infoceutical, not a formula.' The 28-vitamin list on `day` is a 2020 Vital Energy Be iteration and is not carried."
+ },
+ {
+  "code": "emf",
+  "survivor": "emf-infoceutical",
+  "name": "EMF Infoceutical",
+  "fmp_id": "270",
+  "retire": [
+   "emf"
+  ],
+  "aliases": [
+   "EMF"
+  ],
+  "note": "Glen 2026-10-03, platform tab: 'EMF is the same infoceutical'."
+ },
+ {
+  "code": "vagus",
+  "survivor": "vagus-nerve-support",
+  "name": "Vagus Nerve Support",
+  "fmp_id": "460",
+  "retire": [
+   "vagus-nerve-support-drops"
+  ],
+  "aliases": [],
+  "set": {
+   "directions": "10 drops up to 3 times a day before meals.",
+   "enrichment_note": "Glen 2026-09-14: this slug is Vagus Nerve Support Drops (FMP 460). The T33 amounts are per-bottle batch figures, so they are not shown as doses. Directions wait for Glen. Glen answered the directions on 2026-09-30: \"10 drops up to 3 times a day before meals.\""
+  },
+  "note": "Spec production/02 Products/catalog-merges-2026-09-20.md section 2; directions Glen 2026-09-30. regular_cents not set (no ruling)."
+ }
+]
