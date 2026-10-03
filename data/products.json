@@ -6582,43 +6582,43 @@
   },
   "book-refreshing-vision": {
    "name": "Refreshing Vision (book)",
-   "price_cents": 1997,
+   "price_cents": 5000,
    "bottle_type": "book",
    "source": "manual-add-2026-07-10"
   },
   "book-cataract-solutions": {
    "name": "Cataract Solutions (book)",
-   "price_cents": 1997,
+   "price_cents": 3000,
    "bottle_type": "book",
    "source": "manual-add-2026-07-10"
   },
   "book-healing-glaucoma": {
    "name": "Healing Glaucoma (book)",
-   "price_cents": 1997,
+   "price_cents": 3000,
    "bottle_type": "book",
    "source": "manual-add-2026-07-10"
   },
   "book-macular-regeneration": {
    "name": "Macular Degeneration → Macular Regeneration (book)",
-   "price_cents": 1997,
+   "price_cents": 3000,
    "bottle_type": "book",
    "source": "manual-add-2026-07-10"
   },
   "book-emf-pollution-solutions": {
    "name": "Electromagnetic Pollution Solutions (book)",
-   "price_cents": 1997,
+   "price_cents": 3000,
    "bottle_type": "book",
    "source": "manual-add-2026-07-10"
   },
   "book-materia-medica": {
    "name": "Materia Medica (book)",
-   "price_cents": 1997,
+   "price_cents": 5000,
    "bottle_type": "book",
    "source": "manual-add-2026-07-10"
   },
   "book-anima-medica": {
    "name": "Anima Medica (book)",
-   "price_cents": 1997,
+   "price_cents": 5000,
    "bottle_type": "book",
    "source": "manual-add-2026-07-10"
   },
@@ -6642,7 +6642,7 @@
   },
   "book-dry-eye-relief": {
    "name": "Dry Eye Relief (book)",
-   "price_cents": 1997,
+   "price_cents": 3000,
    "bottle_type": "book",
    "source": "manual-add-2026-07-10",
    "intro": "Dry Eye Relief: Natural Medicine for Accelerated Self-Healing is volume 5 of Dr. Glen Swartwout's Natural Vision & Eye Care series. Your cornea has more nerve endings in each square millimeter than anywhere else in your body, and it is the most exposed moist surface you have. That is why dry eye symptoms are so hard to ignore. Your tears depend on water, oil and protein working together, and that balance responds to your environment, outside and inside. This book is about the inside: supporting the whole body so the front of your eye has the support it needs. It covers dozens of natural remedies associated with the causes underneath dry eyes. Which of them fit differs from person to person, and it can change from month to month for the same person. The book is a resource in that process. It is a reference book, not a substitute for an eye exam. A sudden change in your vision or severe eye pain needs care right away, and eyes that stay red or irritated are a reason to see your eye doctor. 103 pages, 9 by 6 inch paperback. The ebook is sold separately.",
@@ -22578,7 +22578,7 @@
    "intro": "Digital edition of Dr. Glen Swartwout's Dry Eye Relief. Delivered as a file — no shipping.",
    "description": "Digital edition of Dr. Glen Swartwout's Dry Eye Relief. Delivered as a file — no shipping. The print edition is sold separately and ships as a book.",
    "source": "gk-migration-2026-07-19",
-   "_note": "Digital edition of book-dry-eye-relief (print $19.97, ships). Digital is $9.97 and must never be packed or charged postage. Delivery is MANUAL today — the app has no automated file delivery."
+   "_note": "Digital edition of book-dry-eye-relief (print $30, ships). Digital is $9.97 and must never be packed or charged postage. Delivery is MANUAL today — the app has no automated file delivery."
   },
   "book-macular-regeneration-ebook": {
    "name": "Macular Degeneration → Macular Regeneration (ebook)",
@@ -22587,7 +22587,7 @@
    "intro": "Digital edition of Macular Degeneration → Macular Regeneration. Delivered as a file — no shipping.",
    "description": "Digital edition of Macular Degeneration → Macular Regeneration. Delivered as a file — no shipping. The print edition is sold separately and ships as a book.",
    "source": "gk-migration-2026-07-19",
-   "_note": "Digital edition of book-macular-regeneration (print $19.97, ships). Digital is $9.97 and must never be packed or charged postage. Delivery is MANUAL today — the app has no automated file delivery."
+   "_note": "Digital edition of book-macular-regeneration (print $30, ships). Digital is $9.97 and must never be packed or charged postage. Delivery is MANUAL today — the app has no automated file delivery."
   },
   "nir-brain-frequency-helmet": {
    "name": "NIR Brain Frequency Helmet",
