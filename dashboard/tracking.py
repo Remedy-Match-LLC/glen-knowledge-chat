@@ -527,7 +527,10 @@ def link_shipment_to_orders(cx: sqlite3.Connection, shipment_id: int,
     # street already on the order is never overwritten, and a label missing any of
     # street, city, state or ZIP writes nothing. A direct write on purpose: the
     # order-edit route re-prices and pushes to QuickBooks.
-    if all(ship_key):
+    # Only when the client's own email confirmed the match. A name + ZIP match can
+    # pick a namesake, and a written address is reused for that client's later
+    # orders (review round 3, 2026-10-03).
+    if all(ship_key) and reason == "exact client email + recipient name":
         addr = _order_address(chosen[0])
         if not str(addr.get("street") or addr.get("address1") or "").strip():
             addr.update({

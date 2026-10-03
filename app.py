@@ -56500,11 +56500,11 @@ def _known_ship_address(email):
 
     def _lookup(cx, e):
         # A source counts only when it is complete and shippable (US, known state,
-        # ZIP). Otherwise the next source is tried, and in the end the order stays
-        # blank for Rae, as it did before any fallback.
-        a = _cust.last_address_for(cx, e, accept=_cust.us_ship_ready)
-        if a:
-            return a
+        # ZIP). An earlier order with a street decides, shippable or not: when it
+        # cannot ship, the field stays blank for Rae rather than trying older
+        # records, which could be where the client used to live (review round 3).
+        if _cust.last_address_for(cx, e):
+            return _cust.last_address_for(cx, e, accept=_cust.us_ship_ready)
         for fn in (_cust.people_address_for, _cust.fmp_address_for):
             a = _cust.us_ship_ready(fn(cx, e))
             if a:

@@ -218,12 +218,18 @@ def test_spelled_out_country_and_state_are_normalised(env):
     assert (a["street"], a["state"], a["country"]) == ("12 Kino'ole St", "HI", "US")
 
 
-def test_an_incomplete_earlier_order_gives_way_to_a_complete_source(env):
+def test_an_incomplete_earlier_order_is_not_replaced_by_filemaker(env):
     appmod, db = env
     _seed_order(db, "inc@x.com", {"street": "12 K St", "city": "", "state": "", "zip": ""})
     _seed_fmp(db, "c1", "inc@x.com", HILO)
-    a = _address(db, _post(appmod, "inc@x.com"))
-    assert (a["street"], a["zip"]) == ("12 Kino'ole St", "96720")
+    assert _address(db, _post(appmod, "inc@x.com")).get("street", "") == ""
+
+
+def test_the_okina_spelling_is_hi(env):
+    appmod, db = env
+    _seed_person(db, "ok@x.com", address1="12 Kino'ole St", city="Hilo", state="Hawaiʻi",
+                 zip="96720")
+    assert _address(db, _post(appmod, "ok@x.com"))["state"] == "HI"
 
 
 def test_filemaker_kingdom_of_hawaii_with_no_province_is_hi(env):
@@ -233,9 +239,9 @@ def test_filemaker_kingdom_of_hawaii_with_no_province_is_hi(env):
     assert (a["state"], a["country"]) == ("HI", "US")
 
 
-def test_an_older_complete_order_beats_a_newer_incomplete_one(env):
-    """Round 2: the newest order with a street but no city must not end the search
-    over this client's orders."""
+def test_a_newer_order_that_cannot_ship_leaves_it_blank(env):
+    """Round 3: skipping the newest order for an older one ships to where the client
+    used to live. Blank goes to Rae instead. (Round 2 had chosen the older order.)"""
     appmod, db = env
     _seed_order(db, "o@x.com", MESA)
     from dashboard import orders as O
@@ -246,7 +252,7 @@ def test_an_older_complete_order_beats_a_newer_incomplete_one(env):
         cx.execute("UPDATE orders SET created_at='2999-01-01' WHERE external_ref='LATER-inc'")
         cx.commit()
     _seed_person(db, "o@x.com", address1="1 Old Rd", city="Hilo", state="HI", zip="96720")
-    assert _address(db, _post(appmod, "o@x.com"))["street"] == "5844 E Enrose St"
+    assert _address(db, _post(appmod, "o@x.com")).get("street", "") == ""
 
 
 def test_a_blank_province_copy_does_not_hide_an_agreeing_complete_one(env):

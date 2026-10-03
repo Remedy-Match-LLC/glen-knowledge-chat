@@ -192,8 +192,9 @@ def last_address_for(cx, email, accept=None):
     (a hand-off, a portal order) used to win because its JSON was not empty, and
     it hid the older order that had the real address.
 
-    accept, when given, maps a candidate to the address to use or {} to keep
-    looking at older orders (the ship-to fallback passes us_ship_ready)."""
+    accept, when given, checks the newest order with a street and returns {} when
+    it fails; older orders are never tried (the ship-to fallback passes
+    us_ship_ready). A connection used here must hold no unsaved writes."""
     em = (email or "").strip().lower()
     if not em:
         return {}
@@ -210,9 +211,9 @@ def last_address_for(cx, email, accept=None):
             shaped = _order_address_shape(a)
             if accept is None:
                 return shaped
-            got = accept(shaped)
-            if got:
-                return got
+            # Round 3: stop at the newest order with a street. Skipping it for an
+            # older one would ship to where the client used to live.
+            return accept(shaped) or {}
     return {}
 
 
@@ -243,7 +244,7 @@ def _fmp_country(country, postal_code):
 _US_STATES = {
     "ALABAMA": "AL", "ALASKA": "AK", "ARIZONA": "AZ", "ARKANSAS": "AR", "CALIFORNIA": "CA",
     "COLORADO": "CO", "CONNECTICUT": "CT", "DELAWARE": "DE", "DISTRICT OF COLUMBIA": "DC",
-    "FLORIDA": "FL", "GEORGIA": "GA", "HAWAII": "HI", "HAWAI'I": "HI", "IDAHO": "ID",
+    "FLORIDA": "FL", "GEORGIA": "GA", "HAWAII": "HI", "HAWAI'I": "HI", "HAWAIʻI": "HI", "HAWAIʼI": "HI", "IDAHO": "ID",
     "ILLINOIS": "IL", "INDIANA": "IN", "IOWA": "IA", "KANSAS": "KS", "KENTUCKY": "KY",
     "LOUISIANA": "LA", "MAINE": "ME", "MARYLAND": "MD", "MASSACHUSETTS": "MA",
     "MICHIGAN": "MI", "MINNESOTA": "MN", "MISSISSIPPI": "MS", "MISSOURI": "MO",
@@ -281,7 +282,7 @@ def us_ship_ready(addr):
     if (not street or not (a.get("city") or "").strip() or country != "US"
             or not state or not _US_ZIP.match((a.get("zip") or "").strip())):
         return {}
-    a["country"], a["state"] = "US", state
+    a["country"], a["state"], a["zip"] = "US", state, a["zip"].strip()
     return a
 
 

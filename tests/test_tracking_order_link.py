@@ -255,3 +255,14 @@ def test_a_label_missing_a_component_writes_nothing():
     partial = dict(SHIPMENT, city="")
     T.link_shipment_to_orders(cx, sid, partial, resolved_email="cyndi@example.com")
     assert _addr(cx, oid).get("street", "") == ""
+
+
+def test_a_name_and_zip_match_does_not_write_the_labels_address():
+    """Round 3: a name + ZIP match can be a namesake, and the written address would
+    be reused for that client's later orders."""
+    cx = _cx()
+    oid = _order(cx, "INH-1", email="someone-else@example.com", address=dict(BLANK, zip="85224"))
+    sid = T.record_shipment(cx, tracking_number=SHIPMENT["tracking"], status="drafted")
+    result = T.link_shipment_to_orders(cx, sid, SHIPMENT, resolved_email="cyndi@example.com")
+    assert result["status"] == "linked" and result["reason"] == "exact recipient name + ZIP"
+    assert _addr(cx, oid).get("street", "") == ""
