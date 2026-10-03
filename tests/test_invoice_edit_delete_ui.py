@@ -19,7 +19,9 @@ def test_edit_invoice_delete_requires_confirmation():
 def test_edit_invoice_has_print_download_pdf_button():
     assert 'id="print-inv-btn"' in SRC
     assert "Print / Download PDF" in SRC
-    assert '"/api/console/order/"+Number(EDIT_OID)+"/invoice-link"' in SRC
+    # Edit Invoice and the created-invoice panel share printInvoiceFor(oid) (2026-10-02).
+    assert "function printInvoiceEdit(){ return printInvoiceFor(EDIT_OID); }" in SRC
+    assert '"/api/console/order/"+Number(oid)+"/invoice-link"' in SRC
     assert '$("print-inv-btn").style.display = "inline-block"' in SRC
     assert "window.location.assign(j.link)" in SRC
     assert 'window.open("", "_blank")' not in SRC
