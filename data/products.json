@@ -1997,7 +1997,8 @@
   },
   "vitamin-e-spectrum": {
    "name": "Vitamin E Spectrum",
-   "price_cents": 3997,
+   "price_cents": 6997,
+   "qty_pricing": true,
    "pinecone_title": "Vitamin E Spectrum",
    "url": "https://myhealingoasis.com/begin/product/vitamin-e-spectrum",
    "legacy_store_url": "https://remedymatch.com/remedies/syntropy/124-vitamin-e-spectrum",
@@ -22502,7 +22503,7 @@
     }
    ],
    "bundle_description": "Internal and external scar-tissue support: Scar Silk, Scar Solve, Vitamin E Spectrum, and MSM Syntropy Powder.",
-   "price_cents": 22489
+   "price_cents": 25189
   },
   "dental-bundle": {
    "name": "Dental Bundle",

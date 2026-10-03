@@ -434,15 +434,15 @@ def test_membership_upsell_savings_only_counts_ff_products(client):
     membership_upsell projection must match — a non-FF product in the client's
     last-30-day history contributes ZERO to savings_cents (it stays at regular
     price even as a hypothetical member), only the FF line's real discount
-    counts. vitamin-e-spectrum has no qty_pricing flag -> non-FF; nous-energy
-    does -> FF."""
+    counts. esr (an infoceutical) has no qty_pricing flag -> non-FF; nous-energy
+    does -> FF. vitamin-e-spectrum was the non-FF here until it became an FF, 2026-10-02."""
     c, appmod = client
     email = "ffupsell@example.com"
     tok = _seed_portal(appmod, email)
     _seed_order(appmod, source="portal-reorder", email=email,
                 slugs_qty=[("nous-energy", 1)], days_ago=5, unit_cents=6997)  # FF
     _seed_order(appmod, source="reorder", email=email,
-                slugs_qty=[("vitamin-e-spectrum", 1)], days_ago=6, unit_cents=3997)  # non-FF
+                slugs_qty=[("esr", 1)], days_ago=6, unit_cents=3997)  # non-FF
 
     j = c.get(f"/api/portal/{tok}").get_json()
     up = j["membership_upsell"]
@@ -502,7 +502,7 @@ def test_locked_rows_tiered_by_age(client):
 def test_locked_rows_excludes_non_ff_products(client):
     """Glen 2026-07: only FF products (_qty_eligible) can ever carry member
     pricing, so locked_rows (the "unlock member pricing at 6/12mo" pitch)
-    must never list a non-FF SKU as unlockable. vitamin-e-spectrum has no
+    must never list a non-FF SKU as unlockable. esr (infoceutical drops) has no
     qty_pricing flag -> non-FF, but was broadly eligible under the old rule
     (not a pure powder) -- the exact case the old broad gate got wrong."""
     c, appmod = client
@@ -511,12 +511,12 @@ def test_locked_rows_excludes_non_ff_products(client):
     _seed_order(appmod, source="reorder", email=email,
                 slugs_qty=[("nous-energy", 1)], days_ago=120)  # FF
     _seed_order(appmod, source="reorder", email=email,
-                slugs_qty=[("vitamin-e-spectrum", 1)], days_ago=120)  # non-FF
+                slugs_qty=[("esr", 1)], days_ago=120)  # non-FF
 
     j = c.get(f"/api/portal/{tok}").get_json()
     by_slug = {r["slug"]: r for r in j["locked_rows"]}
     assert "nous-energy" in by_slug
-    assert "vitamin-e-spectrum" not in by_slug
+    assert "esr" not in by_slug
 
 
 def test_locked_rows_excludes_slugs_already_in_repertoire(client):
