@@ -53,3 +53,16 @@ def test_carries_the_role_and_claims_rule_verbatim(prompts, name):
 def test_the_rule_is_glens_wording():
     """Glen approved both lines, 2026-10-02: the role line, then the scan-finding line."""
     assert _flat(pc.ROLE_AND_CLAIMS).strip() == f"- {ROLE} - {FINDINGS}"
+
+
+def test_no_prompt_in_app_or_dashboard_calls_him_a_naturopathic_physician():
+    """Round 1: four more prompts (practitioner assist, three email drafts) said it, split
+    across two source lines, so a plain grep missed them. Join adjacent literals first."""
+    from pathlib import Path
+    root = Path(__file__).resolve().parent.parent
+    hits = []
+    for path in [root / "app.py", *sorted((root / "dashboard").glob("*.py"))]:
+        joined = re.sub(r'"\s*\n\s*"', "", path.read_text())
+        if re.search(r"naturopathic\s+physician", joined, re.I):
+            hits.append(path.name)
+    assert not hits, hits

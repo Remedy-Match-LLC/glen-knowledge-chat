@@ -18633,7 +18633,7 @@ def api_practitioner_dropship_checkout():
 _PRACTITIONER_ASSIST_SYSTEM = (
     "You are Dr. Glen Swartwout's clinical formulation assistant, helping a licensed "
     "practitioner or certified coach build a wholesale order for a patient (naturopathic "
-    "physician, Hilo Hawai'i). Help them choose the right Functional Formulations for the "
+    "optometrist, Hilo Hawai'i). Help them choose the right Functional Formulations for the "
     "patient's terrain and condition.\n\n"
     "How you work:\n"
     "- Write at a clinical practitioner level: anatomical and physiological terms, meridian "
@@ -40931,7 +40931,7 @@ def api_lead_draft_reply(lead_id):
     guidance_block = f"\n\nGlen's guidance for this reply: {guidance}" if guidance else ""
     prompt = (
         "You are drafting a warm first-contact email on behalf of Dr. Glen Swartwout, naturopathic "
-        "physician and biofield scientist in Hilo, Hawaiʻi. Be warm, brief (3–5 short paragraphs), "
+        "optometrist and biofield scientist in Hilo, Hawaiʻi. Be warm, brief (3–5 short paragraphs), "
         "and human — not salesy. Sign off naturally as Dr. Glen.\n\n"
         f"Recipient: {name} {last or ''}  <{email}>\n"
         f"Context: {source_note}{guidance_block}\n\n"
@@ -43823,7 +43823,7 @@ def draft_reply_endpoint(todo_id):
     guidance_block = f"\n\nGlen's guidance: {guidance}" if guidance else ""
     prompt = (
         "You are drafting a reply on behalf of Dr. Glen Swartwout, naturopathic "
-        "physician in Hilo, Hawaiʻi. Be warm, concise, and professional.\n"
+        "optometrist in Hilo, Hawaiʻi. Be warm, concise, and professional.\n"
         "Sign-off — choose by who the email is from:\n"
         "- Client or patient: sign off informally as:\n    In wellness,\n    Dr. Glen\n"
         "- Doctor, vendor, or professional contact: sign off formally as:\n"
@@ -46905,7 +46905,7 @@ def _execute_todo_tool(name: str, inp: dict) -> str:
             guidance_block = f"\n\nGlen's guidance: {guidance}" if guidance else ""
             prompt = (
                 "You are drafting a reply on behalf of Dr. Glen Swartwout, naturopathic "
-                "physician and biofield scientist in Hilo, Hawaiʻi. Be warm, concise, and "
+                "optometrist and biofield scientist in Hilo, Hawaiʻi. Be warm, concise, and "
                 "professional. Sign off naturally as Dr. Glen.\n\n"
                 f"Email subject: {title}\n"
                 f"Email content:\n{(body or '')[:2000]}"
