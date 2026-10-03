@@ -64,6 +64,22 @@ def get_page(cx, slug):
             "content": json.loads(row[2] or "{}"), "model": row[3], "generated_at": row[4]}
 
 
+def reset_if_older(cx, slug, since):
+    """Drop a page's AI drafts when they were generated before `since`.
+
+    `since` is a product's `content_since` (a reformulation date). The drafts then
+    describe the old formula. Conditional, so of two concurrent requests only one
+    resets, and the sections generated after it are kept. Returns True if it reset."""
+    if not since:
+        return False
+    now = _now()   # no init_table here: this runs on page views, and DDL locks on Postgres
+    cur = cx.execute(
+        "UPDATE sales_pages SET content_json='{}', state='draft', generated_at=?, updated_at=? "
+        "WHERE product_slug=? AND coalesce(generated_at,'') < ?", (now, now, slug, since))
+    cx.commit()
+    return cur.rowcount == 1
+
+
 def get_section(cx, slug, section):
     page = get_page(cx, slug)
     if not page:

@@ -8963,125 +8963,38 @@
    "qty_pricing": true,
    "ingredients": [
     {
-     "name": "Zinc Ascorbate Vitamin C",
-     "dose": "35.3 mg"
+     "name": "N-Acetyl-L-Cysteine (NAC)",
+     "dose": "150 mg"
     },
     {
-     "name": "Vitamin D3: Cholecalciferol",
-     "dose": "1 mg"
+     "name": "Curcumin 95% (Curcuma longa) (rhizoma)",
+     "dose": "150 mg"
     },
     {
-     "name": "Coenzyme Q10, CoQ10, Ubiquinone",
-     "dose": "5 mg"
+     "name": "Quercetin Dihydrate 98%",
+     "dose": "150 mg"
     },
     {
-     "name": "Pyrroloquinoline Quinone PQQ",
-     "dose": "5 mg"
+     "name": "Coenzyme Q10 (Ubiquinone) 98%",
+     "dose": "30 mg"
     },
     {
-     "name": "Bacillus subtilis",
-     "dose": "40 mg"
-    },
-    {
-     "name": "Pineapple proteolytic enzyme",
-     "dose": "40 mg"
-    },
-    {
-     "name": "Chinese pagoda tree Styphnolobium japonicum Japanese pagoda tree Chinese Scholar Sophora japonica Huai mi",
-     "dose": "20 mg"
-    },
-    {
-     "name": "Hesperidin Methyl Chalcone HMC 5, 7, 3'-trihydroxy-4'-methoxyflavanone hesperitin-7-O-rutinoside Hesperitin glycoside glucosyl hesperidin Vitamin P hesperitin G-hesperidin Diosmin",
-     "dose": "20 mg"
-    },
-    {
-     "name": "CBD",
-     "dose": "5 mg"
-    },
-    {
-     "name": "Shikimic Acid",
-     "dose": "20 mg"
-    },
-    {
-     "name": "Pinus spp.",
-     "dose": "20 mg"
-    },
-    {
-     "name": "Clinoptilolite Zeolite",
+     "name": "Black Seed Extract 20% TQ (Nigella sativa) (semen)",
      "dose": "15 mg"
     },
     {
-     "name": "Activated Coconut Charcoal",
-     "dose": "20 mg"
-    },
-    {
-     "name": "Polyphenols",
-     "dose": "15 mg"
-    },
-    {
-     "name": "Ashwagandha root extract Ayurvedic Ginseng Withania somnifera Withanolides",
-     "dose": "15 mg"
-    },
-    {
-     "name": "Dandelion Root extract",
-     "dose": "10 mg"
-    },
-    {
-     "name": "Polyphenols",
-     "dose": "15 mg"
-    },
-    {
-     "name": "Neem",
-     "dose": "6 mg"
-    },
-    {
-     "name": "Curcumin 95% HPLC",
-     "dose": "12.5 mg"
-    },
-    {
-     "name": "Tetrahydrocurcumin, water soluble Curcuminoid",
-     "dose": "12.5 mg"
-    },
-    {
-     "name": "NAC",
-     "dose": "100 mg"
-    },
-    {
-     "name": "S-Acetyl Glutathione, S-Acetyl GSH",
-     "dose": "10 mg"
-    },
-    {
-     "name": "Glutathione",
-     "dose": "10 mg"
-    },
-    {
-     "name": "Black Cumin Seed, black caraway, black seed, black cumin, fennel flower, nigella, nutmeg flower, Roman coriander,[3][6] black onion seed[8] and kalonji.[5]",
-     "dose": "20 mg"
-    },
-    {
-     "name": "Bioavailability Blend",
-     "dose": "34.5 mg"
-    },
-    {
-     "name": "Enteric Acid Resistant Vegi Capsule 00",
-     "dose": "1 ea."
-    },
-    {
-     "name": "Potassium Iodide KI",
-     "dose": "195 mcg"
-    },
-    {
-     "name": "button mushroom Chitosan, white mushroom, crimini, baby bella, portobello",
-     "dose": "20 mg"
+     "name": "Piperine 95% (Piper nigrum)",
+     "dose": "2 mg"
     }
    ],
-   "ingredients_source": "db-formulations-2026-06-25",
-   "description": "Spike Shield . Spike Shield Spike Shield Full spectrum support in the face of toxic spike protein production, injection, exposure to shedding, or residual in body cells and tissues. Take one to three on an empty stomach each day. Spike Shield . Each phthalate free enteric vegicap of Spike Shield supplies: Minerals: Iodine (from Laminaria digitata ) 150 mcg 100% Zinc (as Zinc Ascorbate) 5.3 mg 35% C60 (Buckminster Fullerene) 1 mg * Activated Charcoal (from Cocos nucifera ) 30 mg * Shungite 4 mg * Monatomic Gold with M-11 ORMUS 3 mg * Zeolite (Clinoptilolite) 30 mg * Coenzymes & Quinones:...",
+   "ingredients_source": "fmp-2026-10-03",
+   "description": "Spike Shield . Spike Shield Spike Shield Full spectrum support in the face of toxic spike protein production, injection, exposure to shedding, or residual in body cells and tissues. Take 1 capsule daily with food, or as guided.",
    "gk_stale": true,
    "gk_stale_reason": "GK page missing: Bromelain, Tetrahydrocurcumin, N-Acetyl Cysteine (NAC), S-Acetyl Glutathione, Glutathione, Thymoquinone, Chitosan Oligosaccharide",
    "gk_extra_accepted": true,
    "bottle_type": "30 Caps",
-   "fmp_id": "514"
+   "fmp_id": "514",
+   "content_since": "2026-10-03T00:00:00"
   },
   "fulvic-acid": {
    "name": "Fulvic Acid",
