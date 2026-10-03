@@ -26796,6 +26796,8 @@ def api_portal_onboarding(token):
             h = st.get("href") or ""
             if h.startswith("#"):
                 st["href"] = f"/portal/{token}{h}"
+            elif h == "/evox":
+                st["href"] = f"/evox?token={token}"
     return jsonify({"enabled": _PORTAL_ONBOARDING_ENABLED, "status": status})
 
 
@@ -35295,6 +35297,13 @@ def _notify_staff_of_appointment_proposal(proposal):
         to_email, to_name, f"Appointment time proposed by {proposal['client_email']}", body)
 
 
+def _evox_readiness_for(cx, email):
+    """The /evox setup checklist state. EVOX needs all four items before booking."""
+    from dashboard import evox as _ev
+    _ev.init_evox_tables(cx)
+    return _ev.get_readiness(cx, email)
+
+
 @app.route("/api/portal/<token>/appointment-proposals", methods=["GET", "POST"])
 def api_portal_appointment_proposals(token):
     from dashboard import appointment_proposals as _ap
@@ -35306,11 +35315,14 @@ def api_portal_appointment_proposals(token):
         if request.method == "GET":
             return jsonify({"ok": True, "proposals": _ap.list_for_client(cx, ident.email),
                             "is_paid_member": bool(_is_paid_member(ident.email)),
-                            "upgrade_url": "/membership"})
+                            "upgrade_url": "/membership",
+                            "evox_readiness": _evox_readiness_for(cx, ident.email)})
         body = request.get_json(silent=True) or {}
         kind = (body.get("session_type") or "").strip()
         if not _appointment_client_entitled(cx, ident.email, kind):
             return jsonify({"error": "upgrade_required", "upgrade_url": "/membership"}), 402
+        if kind == "evox" and not _evox_readiness_for(cx, ident.email)["complete"]:
+            return jsonify({"error": "evox_not_ready", "setup_url": f"/evox?token={token}"}), 403
         try:
             from zoneinfo import ZoneInfo
             local_start = datetime.fromisoformat((body.get("proposed_start") or "").strip())
@@ -35337,6 +35349,9 @@ def api_portal_appointment_confirm(token, proposal_id):
         proposal = _ap.get(cx, proposal_id) if ident else None
         if not proposal or proposal["client_email"].lower() != ident.email.lower():
             return jsonify({"error": "not_found"}), 404
+        if (proposal["session_type"] == "evox"
+                and not _evox_readiness_for(cx, ident.email)["complete"]):
+            return jsonify({"error": "evox_not_ready", "setup_url": f"/evox?token={token}"}), 403
         proposal = _ap.confirm(cx, proposal_id, "client")
         if proposal["client_confirmed"] and proposal["staff_confirmed"] and not proposal.get("booking_id"):
             if not _finalize_appointment(cx, proposal):

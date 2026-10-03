@@ -51,6 +51,21 @@ def _purchased_slugs(cx, email):
     return {slug for slug in out if slug}
 
 
+def evox_done(cx, email):
+    """EVOX ticks once setup is complete or an EVOX session is booked."""
+    from dashboard import evox
+    try:
+        evox.init_evox_tables(cx)
+        if evox.get_readiness(cx, email)["complete"]:
+            return True
+        return bool(cx.execute(
+            "SELECT 1 FROM evox_bookings WHERE lower(email)=lower(?) "
+            "AND status='booked' AND COALESCE(session_type,'evox')='evox' LIMIT 1",
+            (email,)).fetchone())
+    except Exception:
+        return False
+
+
 def accelerator_status(cx, email):
     """Merge automatic purchase proof with client-reported equipment ownership."""
     purchased = _purchased_slugs(cx, email)
@@ -208,6 +223,8 @@ def build_status(cx, email):
              "https://clinicalpraxis.com/pemf/", checkable=True),
         step("h2water", "Molecular hydrogen microwater", accelerators["h2water"],
              "https://clinicalpraxis.com/molecular-hydrogen-microwater/", checkable=True),
+        # The route adds the portal token, so /evox opens already signed in.
+        step("evox", "EVOX session with Rae", evox_done(cx, email), "/evox"),
     ]
     return {
         "phases": [

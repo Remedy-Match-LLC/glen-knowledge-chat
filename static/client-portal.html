@@ -418,6 +418,8 @@
   .appt-msg.staff{border-left:3px solid var(--brand)}
   .appt-msg audio{width:100%;margin-top:5px}
   .appt-form{display:grid;gap:8px;margin-top:10px}
+  .appt-time-fields{display:grid;gap:8px}
+  .appt-time-fields[hidden],.appt-evox-setup[hidden]{display:none}
   .calendar-fold{background:none;border:1px solid var(--line);border-radius:999px;color:var(--ink);cursor:pointer;padding:5px 11px}
   .calendar-tz{margin:.35rem 0 0;color:var(--muted);font-size:.78rem}
   /* Task 6: portal reorder module — remedies with qty, locked (forward-framed)
@@ -2042,32 +2044,51 @@ function buildAppointmentProposalHtml(){
     <p class="muted small">Propose a Biofield consultation with Dr. Glen or an EVOX session with Rae. The appointment is booked after both sides confirm.</p>
     <details><summary class="btn full">Propose an appointment</summary><form class="appt-form" id="appt-proposal-form">
       <select name="session_type"><option value="biofield-consult">Biofield Analysis Consultation · Dr. Glen · Zoom</option><option value="evox">EVOX Session · Rae · Phone</option></select>
-      <input name="proposed_start" type="datetime-local" required><select name="billing_mode"><option value="paid">Paid session</option><option value="prepaid">Pre-paid / session credit</option></select>
-      <button class="btn" type="submit">Send proposal</button><span class="small err" data-appt-error></span></form></details>
+      <div class="appt-evox-setup" data-evox-setup hidden></div>
+      <div class="appt-time-fields" data-appt-time><input name="proposed_start" type="datetime-local" required><select name="billing_mode"><option value="paid">Paid session</option><option value="prepaid">Pre-paid / session credit</option></select>
+      <button class="btn" type="submit">Send proposal</button></div><span class="small err" data-appt-error></span></form></details>
     <div id="appointment-proposals-list"><p class="muted small">Loading appointments…</p></div></div>`;
+}
+// EVOX needs the four /evox setup items before a time can be proposed or confirmed.
+// The server refuses either one with evox_not_ready, so this only explains why.
+let evoxReadiness=null;
+const EVOX_SETUP_ITEMS=[["pc_ok","A Windows 10 or 11 PC"],["cradle_ok","Hand cradle"],["headset_ok","Headset with a microphone"],["zyto_ok","ZYTO software checked with ZYTO support"]];
+function evoxSetupUrl(){return `/evox?token=${encodeURIComponent(seg)}`}
+function evoxSetupHtml(){
+  const items=EVOX_SETUP_ITEMS.map(([k,label])=>{const ok=!!(evoxReadiness&&evoxReadiness[k]);return `<li>${ok?'✓':'○'} ${esc(label)}</li>`}).join('');
+  return `<p class="small">An EVOX session needs these four things first:</p><ul class="small">${items}</ul><a class="btn" href="${evoxSetupUrl()}">Finish EVOX setup</a>`;
+}
+function evoxReady(){return !!(evoxReadiness&&evoxReadiness.complete)}
+function syncEvoxSetup(f){
+  if(!f)return; const kind=f.querySelector('[name="session_type"]').value, box=f.querySelector('[data-evox-setup]'), time=f.querySelector('[data-appt-time]');
+  const blocked=kind==='evox'&&!evoxReady();
+  box.hidden=!blocked; box.innerHTML=blocked?evoxSetupHtml():'';
+  time.hidden=blocked; f.querySelector('[name="proposed_start"]').required=!blocked;
 }
 async function loadAppointmentProposals(){
   const host=document.getElementById("appointment-proposals-list"); if(!host)return;
   try{
     const r=await fetch(`/api/portal/${encodeURIComponent(seg)}/appointment-proposals`), d=await r.json();
     if(!r.ok)throw new Error();
+    evoxReadiness=d.evox_readiness||null; syncEvoxSetup(document.getElementById('appt-proposal-form'));
     host.innerHTML=(d.proposals||[]).map(p=>{
       const mine=!!p.client_confirmed;
       const status=p.status==="confirmed"?"Confirmed":p.status==="conflict"?"Time conflict — please propose another time":(mine?`Waiting for ${p.practitioner==="glen"?"Dr. Glen":"Rae"}`:"Waiting for your confirmation");
       const messages=(p.messages||[]).map(m=>`<div class="appt-msg ${m.sender==='client'?'':'staff'}"><b>${m.sender==='client'?'You':esc(m.sender==='glen'?'Dr. Glen':'Rae')}</b>${m.text?`<div>${esc(m.text)}</div>`:''}${m.audio_filename?`<audio controls preload="none" src="/api/portal/${encodeURIComponent(seg)}/appointment-proposals/${p.id}/audio/${m.id}"></audio>`:''}</div>`).join('');
       return `<div class="appt-proposal"><b>${esc(p.session_label)}</b><div class="small">${esc(new Intl.DateTimeFormat(undefined,{dateStyle:'medium',timeStyle:'short'}).format(new Date(p.start_iso||p.proposed_start)))} · ${esc(p.medium)} · ${esc(p.billing_mode)}</div><span class="badge">${esc(status)}</span>
-        ${!mine?`<button class="btn appt-confirm" data-id="${p.id}">Confirm this time</button>`:''}<div class="appt-thread">${messages}</div>
+        ${!mine?(p.session_type==='evox'&&!evoxReady()?`<p class="small">Finish EVOX setup before confirming this time.</p><a class="btn" href="${evoxSetupUrl()}">Finish EVOX setup</a>`:`<button class="btn appt-confirm" data-id="${p.id}">Confirm this time</button>`):''}<div class="appt-thread">${messages}</div>
         <form class="appt-form appt-message" data-id="${p.id}"><textarea name="text" rows="2" placeholder="Send a private message…"></textarea><input name="audio" type="file" accept="audio/*"><button class="btn" type="submit">Send message</button></form></div>`;
     }).join('')||'<p class="muted small">No appointment proposals yet.</p>';
-    host.querySelectorAll('.appt-confirm').forEach(b=>b.onclick=async()=>{b.disabled=true;const r=await fetch(`/api/portal/${encodeURIComponent(seg)}/appointment-proposals/${b.dataset.id}/confirm`,{method:'POST'});if(r.ok)loadAppointmentProposals();else{const d=await r.json();alert(d.error==='slot_conflict'?'That time was just taken. Please propose another time.':'Could not confirm.')}});
+    host.querySelectorAll('.appt-confirm').forEach(b=>b.onclick=async()=>{b.disabled=true;const r=await fetch(`/api/portal/${encodeURIComponent(seg)}/appointment-proposals/${b.dataset.id}/confirm`,{method:'POST'});if(r.ok)loadAppointmentProposals();else{const d=await r.json();if(d.error==='evox_not_ready'){loadAppointmentProposals();return}alert(d.error==='slot_conflict'?'That time was just taken. Please propose another time.':'Could not confirm.')}});
     host.querySelectorAll('.appt-message').forEach(f=>f.onsubmit=async e=>{e.preventDefault();const r=await fetch(`/api/portal/${encodeURIComponent(seg)}/appointment-proposals/${f.dataset.id}/messages`,{method:'POST',body:new FormData(f)});if(r.ok)loadAppointmentProposals();else alert('Could not send that message.');});
   }catch(e){host.innerHTML='<p class="err small">Appointments could not load. Please try again.</p>'}
 }
 function initAppointmentProposals(){
   loadAppointmentProposals(); const f=document.getElementById('appt-proposal-form');if(!f)return;
+  f.querySelector('[name="session_type"]').onchange=()=>syncEvoxSetup(f);
   f.onsubmit=async e=>{e.preventDefault();const fd=new FormData(f),body=Object.fromEntries(fd.entries()),err=f.querySelector('[data-appt-error]');body.timezone=portalTimeZone();
     const r=await fetch(`/api/portal/${encodeURIComponent(seg)}/appointment-proposals`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}),d=await r.json();
-    if(r.status===402&&d.upgrade_url){location.href=d.upgrade_url;return}if(!r.ok){err.textContent='Could not send proposal.';return}f.reset();loadAppointmentProposals();};
+    if(r.status===402&&d.upgrade_url){location.href=d.upgrade_url;return}if(d.error==='evox_not_ready'){loadAppointmentProposals();return}if(!r.ok){err.textContent='Could not send proposal.';return}f.reset();loadAppointmentProposals();};
 }
 // My Health Profile panel body. Renders v.health_profile.sections (curated
 // goals/dimensions/history from dashboard/health_profile.py) as label/value
