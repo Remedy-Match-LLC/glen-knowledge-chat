@@ -109,3 +109,10 @@ def test_the_page_sets_a_pullulans_in_italics_and_nothing_else():
     parts = json.loads(out.stdout)
     assert [t for tag, t in parts if tag == "em"] == ["A. pullulans", "A. pullulans"]
     assert "".join(t for _, t in parts) == PULLULAN
+
+
+def test_dht_blocker_copy_says_pullulan_only():
+    """Glen, 2026-10-03: "DHT is pullulan". Its description also said "enteric"."""
+    d = json.load(open(os.path.join(ROOT, "data", "products.json")))["products"]["dht-blocker"]
+    assert "enteric" not in d["description"].lower()
+    assert "30 pullulan vegicaps per bottle" in d["description"]
