@@ -11516,6 +11516,12 @@ BIOFIELD_PRICE_CENTS = 30000   # $300 Causal Biofield Analysis (service, no ship
 _BIOFIELD_ITEM_NAME = "Causal Biofield Analysis"
 BIOFIELD_PREREQS_MESSAGE = ("Please complete your fresh Bioenergetic Wellness Scan, intake form "
                             "and photo first. Payment opens once all three are done.")
+# Glen 2026-10-02: the same program is not paid twice inside 21 days, "they should be
+# about a month apart or close to it". It stops a same-day double charge.
+BIOFIELD_REPEAT_WINDOW_DAYS = 21
+BIOFIELD_REPEAT_MESSAGE = ("A payment for this program is already on record from the last "
+                           "three weeks. If you meant to pay again, please contact "
+                           "support@RemedyMatch.com.")
 
 PROGRAM_PREMIUM_TIER = "premium"
 PROGRAM_SCALABLE_TIER = "scalable"
@@ -11576,6 +11582,58 @@ def _charge_cents(pc):
             + int(pc["shipping_cents"]))
 
 
+def _biofield_sessions(email, tier, days):
+    """This buyer's kind=biofield Stripe sessions for this tier from the last `days`
+    days, newest first. A session with no tier predates the $100 tier and is the $300
+    one. A generator: a failure on a later page leaves earlier sessions usable."""
+    from dashboard import stripe_pay as _sp
+    since = int(time.time()) - days * 86400
+    for s in _sp.sessions_for_email(email, since):
+        md = s.get("metadata") or {}
+        if md.get("kind") != "biofield":
+            continue
+        if (md.get("email") or "").strip().lower() != email:
+            continue
+        if (md.get("tier") or PROGRAM_PREMIUM_TIER) == tier:
+            yield s
+
+
+def _biofield_paid_recently(email, tier):
+    """True when Stripe holds a paid checkout for this email and this program tier in
+    the last BIOFIELD_REPEAT_WINDOW_DAYS days. Each tier counts on its own, so a $100
+    buyer can still move up to the $300. Rae's console invoices are not Stripe
+    checkouts and are not counted.
+
+    Stripe filters by when a session was created, and a session can be paid up to a
+    day later, so one extra day is read. A payment made a few hours over 21 days ago
+    can therefore still be refused, which is within "close to a month".
+
+    If Stripe cannot be read this returns False and logs it, so a Stripe fault does not
+    stop a sale. The open-session expiry in the route still covers two open tabs."""
+    try:
+        for s in _biofield_sessions(email, tier, BIOFIELD_REPEAT_WINDOW_DAYS + 1):
+            if s.get("payment_status") == "paid":
+                return True
+    except Exception as e:
+        app.logger.warning("biofield repeat check could not read Stripe: %r", e)
+    return False
+
+
+def _biofield_expire_other_open(email, tier, keep_id):
+    """Expire this buyer's other open checkouts for the same tier, so two tabs or a
+    double click cannot both be paid. Stripe sessions live at most a day, so two days
+    are read. Each match is expired as it is read, so a later page failing still
+    leaves the earlier ones closed. Run after the new session exists: if two requests race, the worst case is
+    that each expires the other and the buyer clicks again. Never raises."""
+    try:
+        from dashboard import stripe_pay as _sp
+        for s in _biofield_sessions(email, tier, 2):
+            if s.get("status") == "open" and s.get("id") and s.get("id") != keep_id:
+                _sp.expire_session(s["id"])
+    except Exception as e:
+        app.logger.warning("biofield open-session expiry failed: %r", e)
+
+
 @app.route("/biofield/checkout", methods=["POST"])
 def biofield_checkout():
     """Sell the $300 Biofield as a points-redeemable service. Ships dark behind
@@ -11609,6 +11667,9 @@ def biofield_checkout():
                             "error": BIOFIELD_PREREQS_MESSAGE}), 409
     if not _STRIPE_ACTIVE:
         return jsonify({"ok": False, "error": "card payment not active"}), 400
+    if _biofield_paid_recently(email, tier):
+        return jsonify({"ok": False, "reason": "repeat",
+                        "error": BIOFIELD_REPEAT_MESSAGE}), 409
     try:
         redeem = int(data.get("points_to_redeem_cents") or 0)
     except (TypeError, ValueError):
@@ -11650,6 +11711,8 @@ def biofield_checkout():
             metadata=metadata, success_url=success,
             cancel_url=f"{PUBLIC_BASE_URL}/begin")
         out["stripe_url"] = sess.get("url") or ""
+        if out["stripe_url"]:
+            _biofield_expire_other_open(email, tier, sess.get("id"))
     except Exception as e:
         print(f"[biofield] session create failed: {e!r}", flush=True)
         out["stripe_url"] = ""

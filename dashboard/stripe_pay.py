@@ -4,6 +4,7 @@ create a hosted Checkout Session for an amount, then verify payment on return.
 """
 
 import os
+from urllib.parse import urlencode
 
 import requests
 
@@ -300,6 +301,31 @@ def sessions_for_invoice(invoice_id: str, *, limit: int = 100) -> list:
              "payment_status": s.get("payment_status")}
             for s in (result.get("data") or [])
             if (s.get("metadata") or {}).get("invoice_id") == target]
+
+
+def sessions_for_email(email: str, created_gte: int, *, max_pages: int = 5):
+    """Yield the Checkout Sessions Stripe holds for this customer email created at or
+    after the unix time `created_gte`, newest first, as {id, created, status,
+    payment_status, metadata}. Stripe filters by email on its side, and matches it
+    exactly, so pass the email as the session was created with it. Raises if the list
+    runs past `max_pages` pages, so a caller never mistakes a truncated read for a
+    complete one. Sessions already yielded stay valid if a later page fails."""
+    after = ""
+    for _ in range(max(1, int(max_pages))):
+        q = {"limit": 100, "created[gte]": int(created_gte),
+             "customer_details[email]": email}
+        if after:
+            q["starting_after"] = after
+        j = _get(f"/checkout/sessions?{urlencode(q)}")
+        data = j.get("data") or []
+        for s in data:
+            yield {"id": s.get("id"), "created": s.get("created"),
+                   "status": s.get("status"), "payment_status": s.get("payment_status"),
+                   "metadata": s.get("metadata") or {}}
+        if not j.get("has_more") or not data:
+            return
+        after = data[-1].get("id") or ""
+    raise RuntimeError(f"more than {max_pages} pages of checkout sessions")
 
 
 def expire_session(session_id: str) -> dict:
