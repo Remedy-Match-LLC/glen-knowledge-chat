@@ -55,8 +55,8 @@ def init_evox_tables(cx) -> None:
 
 def get_readiness(cx, email: str) -> dict:
     email = (email or "").strip().lower()
-    # Named columns, never cur.description: the Postgres cursor wrapper has none,
-    # and reading it raised on every call in production (55 times on 2026-09-29).
+    # Named columns. Reading cur.description raised on every call in production
+    # (55 times on 2026-09-29), before the Postgres cursor wrapper had one.
     cols = READINESS_ITEMS + ("cradle_source",)
     r = cx.execute(f"SELECT {', '.join(cols)} FROM evox_readiness WHERE email=?",
                    (email,)).fetchone()

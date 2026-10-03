@@ -67,6 +67,17 @@ class _PgCursor:
         # sqlite3.Cursor.rowcount parity: rows affected by the last DML.
         return self._cur.rowcount
     @property
+    def description(self):
+        # sqlite3.Cursor.description parity: one 7-tuple per column, name first,
+        # or None when the statement has no result set (CREATE, a plain INSERT).
+        # An empty SELECT still describes its columns, as in SQLite. Without it,
+        # triage.resolve_invite raised on Postgres for every triage invite token,
+        # and evox.get_readiness did the same until #1895.
+        desc = self._cur.description
+        if desc is None:
+            return None
+        return tuple((d.name, None, None, None, None, None, None) for d in desc)
+    @property
     def lastrowid(self):
         # psycopg has no lastrowid; an INSERT that needs its new id must use
         # `INSERT ... RETURNING id` on Postgres. Fail loud (per-site fix during
