@@ -267,6 +267,23 @@ def us_state_code(state):
     return _US_STATES.get(st, "")
 
 
+# Glen's own addresses place test orders ("1 Test, Hilo"). A fill never comes from
+# them or goes to them (fulfillment review of the dry run, 2026-10-03).
+_OWN_EMAILS = frozenset({
+    "drglenswartwout@gmail.com", "this.elf@gmail.com",
+    "glen.swartwout@glenswartwout.com", "support@remedymatch.com",
+})
+_TEST_STREET = re.compile(r"\btest\b", re.I)
+
+
+def is_own_email(email):
+    return (email or "").strip().lower() in _OWN_EMAILS
+
+
+def is_test_street(street):
+    return bool(_TEST_STREET.search(street or ""))
+
+
 def us_ship_ready(addr):
     """A fallback address counts only when it can ship and be priced: US, with
     street, city, a known two-letter state and a US ZIP. Returns the address with
@@ -279,7 +296,8 @@ def us_ship_ready(addr):
     street = (a.get("address1") or a.get("street") or "").strip()
     country = _fmp_country(a.get("country"), a.get("zip")) or ""
     state = us_state_code(a.get("state"))
-    if (not street or not (a.get("city") or "").strip() or country != "US"
+    if (not street or is_test_street(street) or not (a.get("city") or "").strip()
+            or country != "US"
             or not state or not _US_ZIP.match((a.get("zip") or "").strip())):
         return {}
     a["country"], a["state"], a["zip"] = "US", state, a["zip"].strip()

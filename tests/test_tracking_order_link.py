@@ -266,3 +266,33 @@ def test_a_name_and_zip_match_does_not_write_the_labels_address():
     result = T.link_shipment_to_orders(cx, sid, SHIPMENT, resolved_email="cyndi@example.com")
     assert result["status"] == "linked" and result["reason"] == "exact recipient name + ZIP"
     assert _addr(cx, oid).get("street", "") == ""
+
+
+def test_a_company_line_on_the_label_goes_to_address2():
+    """Fulfillment review 2026-10-03: "City of Hercules / 111 CIVIC DR" must not
+    land in address1."""
+    cx = _cx()
+    oid = _order(cx, "INH-1", address=BLANK)
+    sid = T.record_shipment(cx, tracking_number=SHIPMENT["tracking"], status="drafted")
+    label = dict(SHIPMENT, street="ACME CO 1016 W CHICAGO CT",
+                 address_block="ACME CO / 1016 W CHICAGO CT / CHANDLER AZ 85224-5249 US")
+    T.link_shipment_to_orders(cx, sid, label, resolved_email="cyndi@example.com")
+    a = _addr(cx, oid)
+    assert (a["street"], a["address2"]) == ("1016 W CHICAGO CT", "ACME CO")
+
+
+def test_a_test_street_on_the_label_is_not_written():
+    cx = _cx()
+    oid = _order(cx, "INH-1", address=BLANK)
+    sid = T.record_shipment(cx, tracking_number=SHIPMENT["tracking"], status="drafted")
+    T.link_shipment_to_orders(cx, sid, dict(SHIPMENT, street="1 TEST"),
+                              resolved_email="cyndi@example.com")
+    assert _addr(cx, oid).get("street", "") == ""
+
+
+def test_glens_own_order_is_not_written():
+    cx = _cx()
+    oid = _order(cx, "INH-1", email="drglenswartwout@gmail.com", address=BLANK)
+    sid = T.record_shipment(cx, tracking_number=SHIPMENT["tracking"], status="drafted")
+    T.link_shipment_to_orders(cx, sid, SHIPMENT, resolved_email="drglenswartwout@gmail.com")
+    assert _addr(cx, oid).get("street", "") == ""
