@@ -108,3 +108,11 @@ def test_the_page_drops_the_old_ai_intro(appmod):
     assert secs["intro"].get("ai") == "pending"
     ings = secs["ingredients"]["body"]["ingredients"]
     assert [(i["name"], i["dose"]) for i in ings] == SIX
+
+
+def test_overview_starts_without_the_scrape_artefact():
+    import json
+    import pathlib
+    p = pathlib.Path(__file__).resolve().parent.parent / "data" / "products.json"
+    d = json.loads(p.read_text(encoding="utf-8"))["products"]["spike-shield"]["description"]
+    assert d.startswith("Full spectrum support in the face of"), d[:60]

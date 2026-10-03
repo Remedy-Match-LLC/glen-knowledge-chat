@@ -53,3 +53,28 @@ def test_body_intros_are_whole_sentences():
         intro = _products()[slug]["intro"].rstrip(".")
         assert intro and intro[-1].isalpha(), slug
         assert _products()[slug]["intro"].endswith("."), slug
+
+
+TSHIRTS = {  # Glen approved in the sales tab, 2026-10-03
+    "mithreal-silver-t-shirt": (
+        "The Mithreal™ Silver T-shirt protects the important organs of the thorax and "
+        "abdomen. It is made of 100% silver for maximum protection against EMF. The silver "
+        "also resists the fungal and bacterial growth that causes body odor on clothes."),
+    "mithreal-t-shirt-with-70-silver": (
+        "The Mithreal™ T-shirt with 70% Silver protects the important organs of the thorax "
+        "and abdomen. It is made of 70% silver and 30% rayon for comfort and durability. "
+        "The silver also resists the fungal and bacterial growth that causes body odor on "
+        "clothes."),
+}
+
+
+def test_tshirt_intros_are_the_approved_text():
+    for slug, text in TSHIRTS.items():
+        assert _products()[slug]["intro"] == text, slug
+
+
+def test_no_body_intro_trails_off_or_names_another_garment():
+    for slug in BODY:
+        intro = _products()[slug]["intro"]
+        assert "..." not in intro and "…" not in intro, slug
+    assert "Long Sleeve" not in _products()["mithreal-silver-t-shirt"]["intro"]
