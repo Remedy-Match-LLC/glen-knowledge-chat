@@ -29,6 +29,10 @@ def init_table(cx):
     from dashboard import db as _db
     if not _db.column_exists(cx, "biofield_readiness", "completed_at"):
         cx.execute("ALTER TABLE biofield_readiness ADD COLUMN completed_at TEXT")
+    # When the client last said "I recorded a fresh scan". A bare flag stayed true
+    # forever, so a click months ago still counted as a fresh scan.
+    if not _db.column_exists(cx, "biofield_readiness", "scan_confirmed_at"):
+        cx.execute("ALTER TABLE biofield_readiness ADD COLUMN scan_confirmed_at TEXT")
     cx.commit()
 
 
@@ -82,8 +86,9 @@ def set_scan_confirmed(cx, email, value):
     _ensure_row(cx, email)
     now = _now()
     cx.execute(
-        "UPDATE biofield_readiness SET scan_confirmed=?, updated_at=? WHERE email=?",
-        (1 if value else 0, now, email),
+        "UPDATE biofield_readiness SET scan_confirmed=?, scan_confirmed_at=?, updated_at=? "
+        "WHERE email=?",
+        (1 if value else 0, now if value else None, now, email),
     )
     cx.commit()
 

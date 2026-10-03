@@ -428,6 +428,20 @@ def _onboarding_block(cx, email):
         return {"eligible": False, "booked_start": None}
 
 
+def _biofield_prereqs_block(cx, email):
+    """Glen 2026-10-02: the Biofield card opens payment only once the fresh scan, intake
+    and photo are done. Same answer the checkout enforces (dashboard/biofield_prereqs)."""
+    from dashboard import biofield_prereqs as _bp
+    try:
+        out = _bp.status(cx, email, today=_bp.business_today())
+    except Exception:
+        out = {"photo": False, "intake": False, "scan": False, "ready": False}
+    out["scan_window_days"] = _bp.SCAN_WINDOW_DAYS
+    # Paid but not yet reported: the card must not offer a second payment.
+    out["paid"] = _bp.is_paid(cx, email)
+    return out
+
+
 def _journey_block(cx, email, paid_member=False):
     """Authoritative milestone state used by hub-card progress treatments."""
     try:
@@ -548,6 +562,7 @@ def get_portal_view(cx, person_id, *, offers_enabled_keys=None, scan_date=None,
         "consult": _consult_block(cx, email),
         "onboarding": _onboarding_block(cx, email),
         "journey": _journey_block(cx, email, paid_member=paid_member),
+        "biofield_prereqs": _biofield_prereqs_block(cx, email),
         "supplement_review": _supplement_reviews_block(cx, email, supplement_review_enabled),
         "remedies": _rb.build_block(cx, email, remedies_enabled),
         "oasis": _ob.build_block(cx, email, oasis_enabled, terrain_phase),

@@ -39,7 +39,7 @@
 <body>
 <div class="wrap">
   <h1>Your Biofield session readiness</h1>
-  <p class="sub" id="sub">Three quick things to have ready before we book your Causal Biofield Analysis.</p>
+  <p class="sub" id="sub">Three things to have ready before you pay for and book your Causal Biofield Analysis.</p>
 
   <div id="signin" class="card hide">
     <p>Enter the email you used at checkout, and we will send you a secure link to your readiness page.</p>
@@ -97,8 +97,10 @@
         <span class="dot" id="dot-pay"></span>
         <div class="body">
           <b>Payment</b>
-          <small>Your MyHealingOasis payment is confirmed automatically. If a completed payment is not showing, contact support@RemedyMatch.com.</small>
+          <small>Payment opens once the three items above are complete. A completed payment shows here automatically. If yours does not, contact support@RemedyMatch.com.</small>
           <div id="pay-actions">
+            <button class="small hide" id="payBtn" onclick="pay()">Pay for your Biofield Analysis</button>
+            <span class="status needed hide" id="payErr"></span>
           </div>
           <span class="status" id="st-pay"></span>
         </div>
@@ -106,7 +108,7 @@
     </div>
 
     <button class="primary hide" id="bookBtn" onclick="goBook()">Book your session</button>
-    <p class="booknote hide" id="bookLocked">Your Book your session button appears here once all three items are green.</p>
+    <p class="booknote hide" id="bookLocked">Your Book your session button will appear here once all four items are green.</p>
   </div>
 </div>
 
@@ -148,6 +150,9 @@ function render(st) {
   setItem("intake", (it.intake || {}).status === "green");
   setItem("scan", (it.scan || {}).status === "green");
   setItem("pay", !!st.paid);
+  // Glen 2026-10-02: payment comes after the scan, intake and photo.
+  const threeReady = ["photo", "intake", "scan"].every(k => (it[k] || {}).status === "green");
+  document.getElementById("payBtn").classList.toggle("hide", !!st.paid || !threeReady);
 
   const bookBtn = document.getElementById("bookBtn");
   const locked = document.getElementById("bookLocked");
@@ -169,6 +174,27 @@ async function sendLink() {
     credentials: "same-origin", body: JSON.stringify({ email })
   });
   document.getElementById("sent").classList.remove("hide");
+}
+
+async function pay() {
+  // No email is posted: signed_in tells /biofield/checkout to use the signed-in one.
+  const btn = document.getElementById("payBtn");
+  const err = document.getElementById("payErr");
+  err.classList.add("hide");
+  btn.disabled = true;
+  try {
+    const r = await fetch("/biofield/checkout", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      credentials: "same-origin", body: JSON.stringify({ signed_in: true })
+    });
+    const j = await r.json();
+    if (r.ok && j.stripe_url) { location.href = j.stripe_url; return; }
+    err.textContent = j.error || "Payment is not available right now. Please contact support@RemedyMatch.com.";
+  } catch (e) {
+    err.textContent = "Payment is not available right now. Please contact support@RemedyMatch.com.";
+  }
+  err.classList.remove("hide");
+  btn.disabled = false;
 }
 
 async function confirmItem(item) {

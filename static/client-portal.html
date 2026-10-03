@@ -4424,25 +4424,39 @@ function render(d, v){
     part("solutions", window.PortalConditions.renderWorkingOnCard());
   }
 
-  // First Biofield test: the unchecked onboarding item lands here. Payment
-  // continues to the secure readiness page, which walks the client through a
-  // fresh scan, intake, and photo. Consultation scheduling remains downstream
-  // of report publication in the Biofield Consult card below.
+  // First Biofield test: the unchecked onboarding item lands here. Glen 2026-10-02:
+  // the fresh scan, intake and photo come BEFORE payment, "otherwise she pays and
+  // 'waits'". The card shows each step's live state from v.biofield_prereqs, the same
+  // answer /biofield/checkout enforces, and the pay button opens only when all three
+  // are done. Consultation scheduling remains downstream of report publication.
   const journeySteps = ((((v || {}).journey || {}).phases || []).reduce((all, phase) =>
     all.concat(Array.isArray(phase.steps) ? phase.steps : []), []));
   const biofieldJourney = journeySteps.find(step => step.key === "biofield");
   if(biofieldJourney && biofieldJourney.done !== true){
+    const pre = (v || {}).biofield_prereqs || {};
+    const stepHref = (key, fallback) => {
+      const st = journeySteps.find(step => step.key === key);
+      return (st && st.href) || fallback;
+    };
+    const days = Number(pre.scan_window_days) || 7;
+    const prereqRow = (done, label, href, action) => `<li class="bf-prereq" data-done="${done ? "1" : "0"}">
+        <strong>${done ? "Done" : "Needed"}:</strong> ${esc(label)}
+        ${done ? "" : ` <a href="${esc(href)}">${esc(action)}</a>`}
+      </li>`;
+    const ready = pre.ready === true;
     part("scans", `<div class="card" id="biofield-order-card">
       <h2>Order your first Biofield Analysis</h2>
-      <p class="muted">We’ll guide you through each step. After payment, your secure preparation page will help you:</p>
+      <p class="muted">Complete three steps first. Payment opens once all three are done.</p>
       <ol class="small" style="line-height:1.8;margin:.6rem 0 1rem;padding-left:1.35rem">
-        <li>Complete a fresh Bioenergetic Wellness Scan</li>
-        <li>Complete your intake form</li>
-        <li>Upload a recent photo</li>
-        <li>Confirm your payment and submit everything for your report</li>
+        ${prereqRow(pre.scan === true, `A Bioenergetic Wellness Scan completed within the last ${days} days`,
+                    stepHref("voice", "https://Truly.VIP/E4L"), "Record your scan")}
+        ${prereqRow(pre.intake === true, "Your intake form", stepHref("intake", "#intake"), "Open your intake")}
+        ${prereqRow(pre.photo === true, "A recent photo", stepHref("photo", "#photo"), "Add your photo")}
       </ol>
       <p class="muted small">Once your report and program are generated, this portal will unlock consultation scheduling with Dr. Glen.</p>
-      <button class="btn full" id="biofieldOrderBtn" data-path="/biofield/checkout">Begin your Biofield Analysis</button>
+      ${pre.paid === true
+        ? `<p class="small"><strong>Your payment has been received.</strong> <a href="/biofield/ready">Open your preparation page</a> to book your session with Dr. Glen.</p>`
+        : `<button class="btn full" id="biofieldOrderBtn" data-path="/biofield/checkout"${ready ? "" : " disabled"}>${ready ? "Pay for your Biofield Analysis" : "Complete the three steps to pay"}</button>`}
       <p class="small err" id="biofieldOrderErr" hidden></p>
     </div>`);
   }

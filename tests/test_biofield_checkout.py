@@ -8,6 +8,9 @@ def _setup(monkeypatch, tmp_path):
     """Stub the money side: consent, QBO, Stripe, order ingest, LOG_DB."""
     db = str(tmp_path / "log.db")
     monkeypatch.setattr(appmod, "LOG_DB", db)
+    # The buyer has finished the scan, intake and photo (Glen 2026-10-02 rule);
+    # test_biofield_checkout_prereqs.py covers the refusal itself.
+    monkeypatch.setattr(appmod, "_biofield_prereqs", lambda email: dict({"photo": True, "intake": True, "scan": True, "ready": True}))
     # consent gate satisfied
     monkeypatch.setattr(appmod, "is_member", lambda sid, email: True)
     monkeypatch.setattr(appmod, "_STRIPE_ACTIVE", True, raising=False)
