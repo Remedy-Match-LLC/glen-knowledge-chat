@@ -9301,7 +9301,12 @@ def begin_product_page_data(slug):
                 _ing["info"] = _er.ingredient_ref(_icx, _ing.get("name", ""), _ing.get("slug", "")).get("info", "")
     except Exception:
         pass
+    # Only an approved intro (copy_pinned) keeps its line breaks; the page shows them with
+    # white-space:pre-line. Every other intro is flattened: 10 written intros and 170
+    # description fallbacks carry scraped breaks nobody reviewed.
     intro = p.get("intro") or (card.get("description", "") or "").split(". ")[0]
+    if "intro" not in _pinned_copy(p):
+        intro = " ".join(intro.split())
     # Formulation-only surfaces (ingredient list, the formula comparison table + its Miron
     # rotator/story, the Miron educational video) are misleading on a device/book/service
     # SKU that has no ingredient list, so they are withheld below (see product_page_sections).

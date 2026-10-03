@@ -70,6 +70,7 @@
 
     /* ── Section body styles ── */
     .sp-text{ font-size:14.5px; color:var(--cream); opacity:0.93; line-height:1.68; }
+    .sp-intro{ white-space:pre-line; }
     .sp-ingredients{ list-style:none; margin:0; padding:0; }
     .sp-ingredients li{ font-size:13.5px; color:var(--cream); opacity:0.9; padding:7px 0;
       border-bottom:1px solid rgba(33,71,45,0.4); line-height:1.5; }
@@ -384,7 +385,7 @@
     // ── Render section bodies (lazy on first open) ────────────────────────────
     function renderIntroBody(body){
       var p = document.createElement('p');
-      p.className = 'sp-text';
+      p.className = 'sp-text sp-intro';
       p.setAttribute('data-ai-text', '1');
       p.textContent = typeof body === 'string' ? body : '';
       return p;
