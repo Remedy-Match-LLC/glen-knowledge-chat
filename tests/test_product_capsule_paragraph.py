@@ -30,11 +30,28 @@ def test_the_wording_is_glens_word_for_word():
     assert C.CAPSULE_COPY["pullulan"]["em"] == ["A. pullulans"]
 
 
+def _products():
+    return json.load(open(os.path.join(ROOT, "data", "products.json")))["products"]
+
+
 def test_which_products_carry_which_paragraph():
-    assert {s for s, k in C.CAPSULE_BY_SLUG.items() if k == "drcaps"} == {
-        "glutathione-syntropy", "lipid-zyme", "scar-silk", "alkalize-bicarbonate-blend"}
-    assert C.capsule_for("spike-shield")["text"] == PULLULAN
-    assert C.capsule_for("microbiome") is None
+    P = _products()
+    kinds = {s: C.capsule_kind(s, p) for s, p in P.items()}
+    assert {s for s, k in kinds.items() if k == "drcaps"} == {
+        "glutathione-syntropy", "lipid-zyme", "scar-silk", "alkalize-bicarbonate-blend",
+        "microbiome"}
+    assert kinds["spike-shield"] == "pullulan" and kinds["spleen-support"] == "pullulan"
+    # Every other capsule bottle is pullulan, except the four not yet confirmed.
+    caps = {s for s, p in P.items() if str(p.get("bottle_type") or "").lower()
+            in ("30 caps", "120 caps")}
+    pinned_pullulan = {s for s, k in C.CAPSULE_BY_SLUG.items() if k == "pullulan"}
+    assert {s for s in caps if kinds[s] == "pullulan"} == (
+        (caps - set(C.CAPSULE_BY_SLUG) - set(C.UNCONFIRMED)) | (pinned_pullulan & caps))
+    for s in ("lens-zyme", "vitamin-c-syntropy", "dht-blocker", "appestat", "migrafree",
+              "iron-syntropy"):
+        assert kinds[s] is None
+    # Not a capsule: a dropper gets nothing.
+    assert C.capsule_for("x", {"bottle_type": "Dropper 50 mL"}) is None
 
 
 def test_every_mapped_slug_is_a_real_product():
@@ -63,7 +80,8 @@ def _ing_body(appmod, slug):
 
 def test_the_page_data_carries_the_paragraph(appmod):
     assert _ing_body(appmod, "lipid-zyme")["capsule"]["text"] == DRCAPS
-    assert _ing_body(appmod, "microbiome")["capsule"] is None
+    assert _ing_body(appmod, "dht-blocker")["capsule"] is None
+    assert _ing_body(appmod, "vitreous-vitality")["capsule"]["text"] == PULLULAN
 
 
 def test_the_page_sets_a_pullulans_in_italics_and_nothing_else():

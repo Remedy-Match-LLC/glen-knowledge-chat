@@ -9346,7 +9346,7 @@ def begin_product_page_data(slug):
                   "warning": p.get("warning", ""),
                   "note": p.get("panel_note", ""),
                   "note_link": p.get("panel_note_link") or None,
-                  "capsule": _capsule_for(slug)}},
+                  "capsule": _capsule_for(slug, p)}},
         {"id": "research",    "title": "The research",    "default_open": False,
          "body": {"how_it_works": how, "learn_url": f"/begin/learn/{slug}"}},
         {"id": "images",      "title": "Images",          "default_open": False, "body": {"images": p.get("page_images", [])}},
