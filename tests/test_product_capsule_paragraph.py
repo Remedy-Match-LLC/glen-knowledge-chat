@@ -22,12 +22,16 @@ PULLULAN = ("A. pullulans is a beneficial endophyte inside many food plants. A. 
             "health-promoting microbiome of many food plants from grapes to green beans, and "
             "also participates symbiotically as a beneficial endophyte inside the plants. It is "
             "used agriculturally in biological control of plant diseases.")
+CHLOROPHYLL = ("Each capsule is a chlorophyll vegicap, made mainly from plant cellulose. It "
+               "contains no gelatin or other animal products.")
 
 
 def test_the_wording_is_glens_word_for_word():
     assert C.CAPSULE_COPY["drcaps"]["text"] == DRCAPS
     assert C.CAPSULE_COPY["pullulan"]["text"] == PULLULAN
     assert C.CAPSULE_COPY["pullulan"]["em"] == ["A. pullulans"]
+    assert C.CAPSULE_COPY["chlorophyll"]["text"] == CHLOROPHYLL
+    assert C.CAPSULE_COPY["chlorophyll"]["em"] == []
 
 
 def _products():
@@ -49,8 +53,9 @@ def test_which_products_carry_which_paragraph():
     pinned_pullulan = {s for s, k in C.CAPSULE_BY_SLUG.items() if k == "pullulan"}
     assert {s for s in caps if kinds[s] == "pullulan"} == (
         (caps - set(C.CAPSULE_BY_SLUG) - set(C.UNCONFIRMED)) | (pinned_pullulan & caps))
+    # Glen, 2026-10-03: chlorophyll vegicaps until their next production run.
     for s in ("appestat", "migrafree", "iron-syntropy"):
-        assert kinds[s] is None
+        assert kinds[s] == "chlorophyll"
     # Not a capsule: a dropper gets nothing.
     assert C.capsule_for("x", {"bottle_type": "Dropper 50 mL"}) is None
 
@@ -83,7 +88,7 @@ def test_the_page_data_carries_the_paragraph(appmod):
     assert _ing_body(appmod, "lipid-zyme")["capsule"]["text"] == DRCAPS
     assert _ing_body(appmod, "dht-blocker")["capsule"]["text"] == PULLULAN
     assert _ing_body(appmod, "lens-zyme")["capsule"]["text"] == DRCAPS
-    assert _ing_body(appmod, "appestat")["capsule"] is None
+    assert _ing_body(appmod, "appestat")["capsule"]["text"] == CHLOROPHYLL
     assert _ing_body(appmod, "vitreous-vitality")["capsule"]["text"] == PULLULAN
 
 
@@ -116,3 +121,12 @@ def test_dht_blocker_copy_says_pullulan_only():
     d = json.load(open(os.path.join(ROOT, "data", "products.json")))["products"]["dht-blocker"]
     assert "enteric" not in d["description"].lower()
     assert "30 pullulan vegicaps per bottle" in d["description"]
+
+
+def test_the_chlorophyll_three_never_fall_through_to_pullulan():
+    """Their bottles are "30 Caps", so without the hand mapping they would read as
+    pullulan, which is wrong for the jars on the shelf until the next production run."""
+    P = _products()
+    for s in ("appestat", "migrafree", "iron-syntropy"):
+        assert str(P[s].get("bottle_type") or "").lower() in C.CAPSULE_BOTTLES, s
+        assert C.capsule_kind(s, P[s]) != "pullulan", s
