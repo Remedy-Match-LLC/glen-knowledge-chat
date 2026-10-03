@@ -9154,7 +9154,9 @@
    "url": "https://myhealingoasis.com/begin/product/emf",
    "legacy_store_url": "https://remedymatch.com/remedies/modalities/biocommunication/infoceuticals/213-emf",
    "info_only": true,
-   "affiliate_url": "https://remedymatch.com/remedies/modalities/biocommunication/infoceuticals/213-emf"
+   "affiliate_url": "https://remedymatch.com/remedies/modalities/biocommunication/infoceuticals/213-emf",
+   "inactive": true,
+   "superseded_by": "emf-infoceutical"
   },
   "nous-energy": {
    "name": "Nous Energy",
@@ -9649,7 +9651,9 @@
     }
    ],
    "ingredients_source": "t33",
-   "description": "Day . Day Day Provides support for the body to work with hydration as well as hydrogen and oxygen supply to the tissues. May engender a feeling of being more ‘awake’ during the day. Matches exclusively to many positive emotions for an optimistic and energized outlook during daytime. Ideally, use this Infoceutical shortly after sunrise, or early in the day after you’ve woken up. May help combat issues with Seasonal Affective disorder due to limited sunlight during Fall and Winter. Bottom Line: Sunlight Energy. You are powered up by sun energy. When natural daylight enters the eyes it streams..."
+   "description": "Day . Day Day Provides support for the body to work with hydration as well as hydrogen and oxygen supply to the tissues. May engender a feeling of being more ‘awake’ during the day. Matches exclusively to many positive emotions for an optimistic and energized outlook during daytime. Ideally, use this Infoceutical shortly after sunrise, or early in the day after you’ve woken up. May help combat issues with Seasonal Affective disorder due to limited sunlight during Fall and Winter. Bottom Line: Sunlight Energy. You are powered up by sun energy. When natural daylight enters the eyes it streams...",
+   "inactive": true,
+   "superseded_by": "day-infoceutical"
   },
   "quercetin-dihydrate": {
    "name": "Quercetin Dihydrate",
@@ -12320,8 +12324,10 @@
    ],
    "ingredients_source": "t33",
    "description": "Vagus Nerve Support Drops, 50 mL.",
-   "enrichment_note": "Glen 2026-09-14: this slug is Vagus Nerve Support Drops (FMP 460). The T33 amounts are per-bottle batch figures, so they are not shown as doses. Directions wait for Glen.",
-   "bottle_type": "Dropper 50 mL"
+   "enrichment_note": "Glen 2026-09-14: this slug is Vagus Nerve Support Drops (FMP 460). The T33 amounts are per-bottle batch figures, so they are not shown as doses. Directions wait for Glen. Glen answered the directions on 2026-09-30: \"10 drops up to 3 times a day before meals.\"",
+   "bottle_type": "Dropper 50 mL",
+   "fmp_id": "460",
+   "directions": "10 drops up to 3 times a day before meals."
   },
   "pl-polarity": {
    "name": "PL Polarity Infoceutical",
@@ -14636,12 +14642,13 @@
    "price_cents": 6997,
    "pinecone_title": "Vagus Nerve Support Drops",
    "qty_pricing": true,
-   "fmp_id": "460",
    "ingredients_source": "fmp_snap",
    "no_groovekart": true,
    "regular_cents": 8000,
    "description": "10 drops 3 times a day in drinks",
-   "bottle_type": "Dropper 50 mL"
+   "bottle_type": "Dropper 50 mL",
+   "inactive": true,
+   "superseded_by": "vagus-nerve-support"
   },
   "ozone-dental-paste-honest-o3-tooth-paste": {
    "name": "Ozone Dental Paste Honest O3 Tooth Paste",
@@ -21685,9 +21692,12 @@
    "fmp_id": "196",
    "ingredients_source": "fmp_snap",
    "no_groovekart": true,
-   "regular_cents": 4000,
    "description": "build up 1 drop a day to 15 drops stirred into a little water without touching metal daily on rising",
-   "bottle_type": "30ml"
+   "bottle_type": "30ml",
+   "aliases": [
+    "Day"
+   ],
+   "report_aliases": true
   },
   "night-infoceutical": {
    "name": "Night Infoceutical",
@@ -21739,7 +21749,6 @@
    "fmp_id": "200",
    "ingredients_source": "fmp_snap",
    "no_groovekart": true,
-   "regular_cents": 4000,
    "description": "build up 1 drop a day to 15 drops stirred into a little water without touching metal daily on rising",
    "bottle_type": "30ml",
    "aliases": [
@@ -22057,7 +22066,6 @@
    "fmp_id": "224",
    "ingredients_source": "fmp_snap",
    "no_groovekart": true,
-   "regular_cents": 4000,
    "description": "build up 1 drop a day to 15 drops stirred into a little water without touching metal daily on rising",
    "bottle_type": "30ml",
    "aliases": [
@@ -22648,9 +22656,12 @@
    "fmp_id": "270",
    "ingredients_source": "fmp_snap",
    "no_groovekart": true,
-   "regular_cents": 4000,
    "description": "build up 1 drop a day to 15 drops stirred into a little water without touching metal daily on rising",
-   "bottle_type": "30ml"
+   "bottle_type": "30ml",
+   "aliases": [
+    "EMF"
+   ],
+   "report_aliases": true
   },
   "rejuv-infoceutical": {
    "name": "Rejuv Infoceutical",
@@ -22751,7 +22762,6 @@
    "fmp_id": "432",
    "ingredients_source": "fmp_snap",
    "no_groovekart": true,
-   "regular_cents": 4000,
    "description": "build up 1 drop a day to 15 drops stirred into a little water without touching metal daily on rising",
    "aliases": [
     "Source"
