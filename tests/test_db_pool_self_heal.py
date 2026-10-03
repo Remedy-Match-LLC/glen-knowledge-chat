@@ -72,6 +72,7 @@ def env(monkeypatch):
     monkeypatch.setattr(db, "_PG_POOLS", {})
     monkeypatch.setattr(db, "_PG_CHECKED_OUT", {})
     monkeypatch.setattr(db, "_PG_LAST_HEAL", {})
+    monkeypatch.setattr(db, "_PG_PROBING", set())
     made = []
 
     def new_pool(dsn, timeout):
@@ -139,3 +140,79 @@ def test_checked_out_count_follows_every_release_path(env):
     b.close()
     b.close()                                 # a second release must not double count
     assert db._PG_CHECKED_OUT[DSN] == 0 and pool.out == 0
+
+
+# --- round 2 of the review ----------------------------------------------------
+
+class DrainedPool(WedgedPool):
+    """Timed out under real load, then drained: the second chance gets a connection."""
+
+    def __init__(self):
+        super().__init__()
+        self.calls = 0
+
+    def getconn(self, *, timeout):
+        self.calls += 1
+        if self.calls == 1:
+            raise PoolTimeout("busy")
+        return Raw()
+
+
+def test_a_pool_that_was_only_busy_is_kept(env):
+    busy = DrainedPool()
+    db._PG_POOLS[DSN] = busy
+    db._connect_postgres("chat_log.db", timeout=1).close()
+    assert db._PG_POOLS[DSN] is busy and not env["made"]
+
+
+def test_a_failed_probe_still_counts_against_the_rate_limit(env):
+    calls = []
+    env["mp"].setattr(db, "_pg_reachable", lambda dsn: calls.append(1) or False)
+    db._PG_POOLS[DSN] = WedgedPool()
+    for _ in range(3):
+        with pytest.raises(PoolTimeout):
+            db._connect_postgres("chat_log.db", timeout=1)
+    assert len(calls) == 1
+
+
+def test_only_one_probe_at_a_time(env):
+    db._PG_POOLS[DSN] = WedgedPool()
+    db._PG_PROBING.add(DSN)
+    with pytest.raises(PoolTimeout):
+        db._connect_postgres("chat_log.db", timeout=1)
+    assert not env["probes"]
+    db._PG_PROBING.discard(DSN)
+
+
+def test_a_pool_closed_under_a_waiter_retries_on_the_new_one(env):
+    from psycopg_pool import PoolClosed
+
+    class Closed(WedgedPool):
+        def getconn(self, *, timeout):
+            raise PoolClosed("closed")
+
+    db._PG_POOLS[DSN] = Closed()
+    good = GoodPool()
+    env["mp"].setattr(db, "_get_pg_pool", lambda dsn, t, _p=[Closed(), good]: _p.pop(0))
+    db._connect_postgres("chat_log.db", timeout=1).close()
+    assert good.out == 0
+
+
+def test_a_cancelled_setup_returns_the_connection_and_the_count(env):
+    """gevent's Timeout and GreenletExit are BaseException, not Exception."""
+    class Cancel(BaseException):
+        pass
+
+    pool = GoodPool()
+    db._PG_POOLS[DSN] = pool
+    env["mp"].setattr(db, "_ensure_pg_schema", lambda *_a: (_ for _ in ()).throw(Cancel()))
+    with pytest.raises(Cancel):
+        db._connect_postgres("chat_log.db", timeout=1)
+    assert pool.out == 0 and db._PG_CHECKED_OUT[DSN] == 0
+
+
+def test_the_count_lock_is_reentrant():
+    """A release from __del__ can run while this thread already holds the count lock."""
+    with db._PG_COUNT_LOCK:
+        db._count_checked_out("x", +1)
+        db._count_checked_out("x", -1)
