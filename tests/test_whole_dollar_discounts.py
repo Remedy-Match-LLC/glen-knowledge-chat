@@ -40,8 +40,27 @@ def test_no_discount_leaves_the_list_price_alone():
 
 
 def test_rounding_never_lifts_a_price_above_its_list():
-    # 1% off 3.97 = 3.93 -> 4.00 would exceed the list; the list is charged instead
-    assert pricing.apply_discount(397, 1, 0) == 397
+    # 1% off 3.97 = 3.93 -> 4.00 would exceed the list. A floor at 3.50 rules out the
+    # $1-minimum fallback (3.00), so the list is charged.
+    assert pricing.apply_discount(397, 1, 350) == 397
+
+
+@pytest.mark.parametrize("list_cents,pct,want", [
+    (997, 5, 900),     # 9.47 -> 10.00 would save nothing; the next dollar down instead
+    (1000, 5, 900),    # Glen's example: a $10 item ends at $9
+    (797, 10, 700),
+    (6997, 1, 6900),   # 69.27 -> 70.00 is above list
+    (397, 1, 300),
+])
+def test_a_discount_that_rounds_away_drops_to_the_next_dollar_down(list_cents, pct, want):
+    # Glen 2026-10-02, yes to: a discount that would round away to nothing gives the
+    # next whole dollar below the list instead, so the buyer always saves something.
+    assert pricing.apply_discount(list_cents, pct, 0) == want
+
+
+def test_the_next_dollar_down_still_respects_the_floor():
+    # 5% off 1.50: the next dollar down (1.00) is under the 1.40 floor, so no discount
+    assert pricing.apply_discount(150, 5, 140) == 150
 
 
 def test_an_uneven_floor_is_rounded_up_too():
