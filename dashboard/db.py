@@ -205,9 +205,19 @@ def _new_pg_pool(dsn, timeout):
     # 43 of those in 31 hours of production logs, each one a 500 to
     # whoever made that request. max_lifetime (3600s) and max_idle (600s)
     # already default sensibly and are deliberately left alone.
+    # TCP keepalives (round 1 of the pool review): a request blocked reading a socket the
+    # server has already dropped never returns on its own, and while it holds its
+    # connection the pool cannot be judged idle, so _heal_pg_pool never fires. With
+    # these the kernel declares such a socket dead after about 60 s (30 + 3 x 10).
     return ConnectionPool(dsn, min_size=2, max_size=10, open=True,
                           check=ConnectionPool.check_connection,
-                          kwargs={"connect_timeout": max(1, int(round(timeout)))})
+                          kwargs=_PG_CONNECT_KWARGS(timeout))
+
+
+def _PG_CONNECT_KWARGS(timeout):
+    return {"connect_timeout": max(1, int(round(timeout))),
+            "keepalives": 1, "keepalives_idle": 30,
+            "keepalives_interval": 10, "keepalives_count": 3}
 
 
 def _pg_reachable(dsn):

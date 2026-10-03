@@ -251,3 +251,11 @@ def test_a_commit_that_fails_on_exit_still_returns_the_connection(env):
         with cx:
             pass
     assert db._PG_CHECKED_OUT[DSN] == 0 and pool.out == 0
+
+
+
+def test_pool_connections_carry_tcp_keepalives():
+    """Round 1: a connection blocked on a dead socket held the count up forever."""
+    kw = db._PG_CONNECT_KWARGS(5)
+    assert kw["keepalives"] == 1 and kw["connect_timeout"] == 5
+    assert kw["keepalives_idle"] + kw["keepalives_interval"] * kw["keepalives_count"] <= 90
