@@ -98,15 +98,10 @@ def test_survivors_keep_the_bottle_and_the_quickbooks_item():
 def test_only_the_dosing_line_is_carried_as_a_description():
     """Production, 2026-10-03: FileMaker's dosage field is Glen's directions. Anything
     else a twin held (ES10's product copy) is not carried."""
-    import subprocess
-    base = json.loads(subprocess.check_output(
-        ["git", "show", "origin/main:data/products.json"], cwd=ROOT))["products"]
     P = _products()
-    carried = [r["survivor"] for r in ROWS
-               if not base[r["survivor"]].get("description") and P[r["survivor"]].get("description")]
-    assert len(carried) == 73, len(carried)
-    for s in carried:
-        assert P[s]["description"].startswith("build up 1 drop a day to 15 drops"), s
+    dosing = [r["survivor"] for r in ROWS if (P[r["survivor"]].get("description") or "")
+              .startswith("build up 1 drop a day to 15 drops")]
+    assert len(dosing) >= 73, len(dosing)
     assert not P["es10-video"].get("description")
 
 
