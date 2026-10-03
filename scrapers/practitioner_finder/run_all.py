@@ -372,23 +372,34 @@ def _log_run_complete(
 
 
 # ---------------------------------------------------------------------------
-# Failure notification — reuses app._send_full_report_email(), in a CHILD process.
+# Failure notification — Gmail send in a CHILD process, never via app.
 #
 # Importing app here runs its gevent monkey.patch_all() after ssl is already loaded.
 # On 2026-10-02 the first adapter failure (iabdm, HTTP 520) sent a notification, the
 # import patched ssl late, and every HTTPS call after it hit RecursionError: 11 more
 # adapters failed and no October CSV was written. A child process keeps that patch
 # out of the scraper.
+#
+# The child then imported app too, and no failure email reached Glen. The log kept
+# only stderr's last line, "RuntimeError: greenlet is being finalized", which is
+# gevent noise at interpreter exit, so the real cause was hidden. The child now
+# calls dashboard.inbox.send_email directly: no app, no gevent, no start-up
+# migrations against the production database. It exits non-zero unless Gmail
+# returned a message id, and the parent logs the whole error.
 # ---------------------------------------------------------------------------
+_NOTIFY_TO = "drglenswartwout@gmail.com"
 _NOTIFY_CHILD = (
     "import json, sys\n"
-    "from app import _send_full_report_email\n"
+    "from dashboard.inbox import send_email\n"
     "a = json.loads(sys.stdin.read())\n"
-    "_send_full_report_email(to_email=a['to'], name='Glen', subject=a['subject'], body=a['body'])\n"
+    "r = send_email(a['to'], a['subject'], a['body'])\n"
+    "print(json.dumps(r))\n"
+    "sys.exit(0 if (r or {}).get('id') else 3)\n"
 )
 
 
-def _notify_glen(subject: str, body: str) -> None:
+def _notify_glen(subject: str, body: str) -> bool:
+    """Email Glen from a child process. True only when Gmail accepted the message."""
     import json
     import os
     import subprocess
@@ -396,14 +407,19 @@ def _notify_glen(subject: str, body: str) -> None:
     try:
         r = subprocess.run(
             [sys.executable, "-c", _NOTIFY_CHILD],
-            input=json.dumps({"to": "drglenswartwout@gmail.com",
-                              "subject": subject, "body": body}),
+            input=json.dumps({"to": _NOTIFY_TO, "subject": subject, "body": body}),
             cwd=repo, capture_output=True, text=True, timeout=120)
-        if r.returncode != 0:
-            last = (r.stderr.strip().splitlines() or ["no output"])[-1]
-            print(f"  WARN: could not send notification email: {last}", file=sys.stderr)
     except Exception as e:
-        print(f"  WARN: could not send notification email: {e}", file=sys.stderr)
+        print(f"  WARN: could not send notification email: {e!r}", file=sys.stderr)
+        return False
+    if r.returncode == 0:
+        print(f"  notification email sent to {_NOTIFY_TO}", file=sys.stderr)
+        return True
+    detail = "\n".join(x for x in (r.stdout.strip(), r.stderr.strip()) if x) or "no output"
+    print(f"  WARN: could not send notification email (exit {r.returncode}):", file=sys.stderr)
+    for line in detail.splitlines()[-40:]:
+        print(f"    {line}", file=sys.stderr)
+    return False
 
 
 # ---------------------------------------------------------------------------
