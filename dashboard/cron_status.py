@@ -4,7 +4,7 @@ A job that times out used to print "[CRON] Exception" and record nothing, so 33 
 three days never reached the job-health digest. Each run now records its start and its result
 here, and GET /api/console/cron-status reads it back.
 
-Postgres in production: ON CONFLICT upserts only, no lastrowid, no cursor.description.
+Postgres in production: ON CONFLICT upserts only, no lastrowid.
 """
 from datetime import datetime, timedelta, timezone
 
