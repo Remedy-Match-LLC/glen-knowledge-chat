@@ -29,9 +29,10 @@ def test_ebooks_are_digital_purchasable_and_cheaper_than_print():
 
 
 def test_print_editions_still_ship_and_keep_their_own_price():
+    # Glen, 2026-10-03: print eye books are $30 (the July $19.97 was a placeholder).
     for slug in ("book-dry-eye-relief", "book-macular-regeneration"):
         p = app._get_product(slug)
-        assert p["price_cents"] == 1997
+        assert p["price_cents"] == 3000
         assert p.get("bottle_type") == "book"
         assert shipping.is_shippable(p) is True
 
