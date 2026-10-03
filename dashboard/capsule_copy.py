@@ -41,12 +41,16 @@ CAPSULE_BY_SLUG = {
     "microbiome": "drcaps",
     "spike-shield": "pullulan",
     "spleen-support": "pullulan",   # FileMaker line 5463; its old copy said enteric
+    # Glen, production's tab, 2026-10-03: "Lens-Zyme is enteric, as is vitamin C. DHT is
+    # pullulan". Enteric means DRcaps.
+    "lens-zyme": "drcaps",
+    "vitamin-c-syntropy": "drcaps",
+    "dht-blocker": "pullulan",
 }
 
-# Capsule type not yet confirmed: the first three say enteric in their own copy, the
-# last three may be chlorophyll capsules. No paragraph until Glen answers (2026-10-03).
-UNCONFIRMED = frozenset({"lens-zyme", "vitamin-c-syntropy", "dht-blocker",
-                         "appestat", "migrafree", "iron-syntropy"})
+# Capsule type not yet confirmed: these may be chlorophyll capsules. No paragraph until
+# Glen answers (2026-10-03).
+UNCONFIRMED = frozenset({"appestat", "migrafree", "iron-syntropy"})
 
 # Glen, 2026-10-03: the pullulan paragraph goes on every product in the pullulan
 # capsule, and the label studio rule makes pullulan the standard capsule. So any

@@ -39,16 +39,17 @@ def test_which_products_carry_which_paragraph():
     kinds = {s: C.capsule_kind(s, p) for s, p in P.items()}
     assert {s for s, k in kinds.items() if k == "drcaps"} == {
         "glutathione-syntropy", "lipid-zyme", "scar-silk", "alkalize-bicarbonate-blend",
-        "microbiome"}
+        "microbiome", "lens-zyme", "vitamin-c-syntropy"}
     assert kinds["spike-shield"] == "pullulan" and kinds["spleen-support"] == "pullulan"
-    # Every other capsule bottle is pullulan, except the four not yet confirmed.
+    # Glen, 2026-10-03: "Lens-Zyme is enteric, as is vitamin C. DHT is pullulan"
+    assert kinds["dht-blocker"] == "pullulan"
+    # Every other capsule bottle is pullulan, except the three not yet confirmed.
     caps = {s for s, p in P.items() if str(p.get("bottle_type") or "").lower()
             in ("30 caps", "120 caps")}
     pinned_pullulan = {s for s, k in C.CAPSULE_BY_SLUG.items() if k == "pullulan"}
     assert {s for s in caps if kinds[s] == "pullulan"} == (
         (caps - set(C.CAPSULE_BY_SLUG) - set(C.UNCONFIRMED)) | (pinned_pullulan & caps))
-    for s in ("lens-zyme", "vitamin-c-syntropy", "dht-blocker", "appestat", "migrafree",
-              "iron-syntropy"):
+    for s in ("appestat", "migrafree", "iron-syntropy"):
         assert kinds[s] is None
     # Not a capsule: a dropper gets nothing.
     assert C.capsule_for("x", {"bottle_type": "Dropper 50 mL"}) is None
@@ -80,7 +81,9 @@ def _ing_body(appmod, slug):
 
 def test_the_page_data_carries_the_paragraph(appmod):
     assert _ing_body(appmod, "lipid-zyme")["capsule"]["text"] == DRCAPS
-    assert _ing_body(appmod, "dht-blocker")["capsule"] is None
+    assert _ing_body(appmod, "dht-blocker")["capsule"]["text"] == PULLULAN
+    assert _ing_body(appmod, "lens-zyme")["capsule"]["text"] == DRCAPS
+    assert _ing_body(appmod, "appestat")["capsule"] is None
     assert _ing_body(appmod, "vitreous-vitality")["capsule"]["text"] == PULLULAN
 
 
@@ -106,3 +109,10 @@ def test_the_page_sets_a_pullulans_in_italics_and_nothing_else():
     parts = json.loads(out.stdout)
     assert [t for tag, t in parts if tag == "em"] == ["A. pullulans", "A. pullulans"]
     assert "".join(t for _, t in parts) == PULLULAN
+
+
+def test_dht_blocker_copy_says_pullulan_only():
+    """Glen, 2026-10-03: "DHT is pullulan". Its description also said "enteric"."""
+    d = json.load(open(os.path.join(ROOT, "data", "products.json")))["products"]["dht-blocker"]
+    assert "enteric" not in d["description"].lower()
+    assert "30 pullulan vegicaps per bottle" in d["description"]
