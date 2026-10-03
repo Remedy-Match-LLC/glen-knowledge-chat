@@ -212,3 +212,57 @@ def test_a_new_and_a_shipped_order_at_one_address_also_refuse():
     assert result["status"] == "ambiguous"
     for oid in (a, b):
         assert not (O.get_order(cx, oid)["tracking_number"] or "")
+
+
+BLANK = {"name": "Cyndi O'Brien", "street": "", "city": "", "state": "", "zip": ""}
+
+
+def _addr(cx, oid):
+    import json
+    row = cx.execute("SELECT address_json FROM orders WHERE id=?", (oid,)).fetchone()
+    return json.loads(row[0] or "{}")
+
+
+def test_a_linked_order_with_no_street_gets_the_labels_address():
+    cx = _cx()
+    oid = _order(cx, "INH-1", address=BLANK)
+    sid = T.record_shipment(cx, tracking_number=SHIPMENT["tracking"], status="drafted")
+    result = T.link_shipment_to_orders(cx, sid, SHIPMENT,
+                                       resolved_email="cyndi@example.com")
+    assert result["status"] == "linked" and result["order_ids"] == [oid]
+    a = _addr(cx, oid)
+    assert (a["street"], a["city"], a["state"], a["zip"]) == (
+        "1016 W CHICAGO CT", "CHANDLER", "AZ", "85224-5249")
+    assert a["name"] == "Cyndi O'Brien"
+
+
+def test_a_street_already_on_the_order_is_never_overwritten():
+    cx = _cx()
+    other = {"name": "Cyndi O'Brien", "street": "9 Elsewhere Ln", "city": "Mesa",
+             "state": "AZ", "zip": "85224"}
+    oid = _order(cx, "INH-1", address=other)
+    sid = T.record_shipment(cx, tracking_number=SHIPMENT["tracking"], status="drafted")
+    result = T.link_shipment_to_orders(cx, sid, SHIPMENT,
+                                       resolved_email="cyndi@example.com")
+    assert result["status"] == "linked"
+    assert _addr(cx, oid)["street"] == "9 Elsewhere Ln"
+
+
+def test_a_label_missing_a_component_writes_nothing():
+    cx = _cx()
+    oid = _order(cx, "INH-1", address=BLANK)
+    sid = T.record_shipment(cx, tracking_number=SHIPMENT["tracking"], status="drafted")
+    partial = dict(SHIPMENT, city="")
+    T.link_shipment_to_orders(cx, sid, partial, resolved_email="cyndi@example.com")
+    assert _addr(cx, oid).get("street", "") == ""
+
+
+def test_a_name_and_zip_match_does_not_write_the_labels_address():
+    """Round 3: a name + ZIP match can be a namesake, and the written address would
+    be reused for that client's later orders."""
+    cx = _cx()
+    oid = _order(cx, "INH-1", email="someone-else@example.com", address=dict(BLANK, zip="85224"))
+    sid = T.record_shipment(cx, tracking_number=SHIPMENT["tracking"], status="drafted")
+    result = T.link_shipment_to_orders(cx, sid, SHIPMENT, resolved_email="cyndi@example.com")
+    assert result["status"] == "linked" and result["reason"] == "exact recipient name + ZIP"
+    assert _addr(cx, oid).get("street", "") == ""
