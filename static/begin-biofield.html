@@ -1054,7 +1054,10 @@
             if (body && body.ok && body.stripe_url) {
               window.location = body.stripe_url;
             } else {
-              programMsg.textContent = "Something went wrong. Please try again.";
+              // A payment in the last 21 days is refused with its own message. Other
+              // errors are technical and keep the general one.
+              programMsg.textContent = (body && body.reason === "repeat" && body.error)
+                || "Something went wrong. Please try again.";
               programBtn.disabled = false;
             }
           }).catch(function () {

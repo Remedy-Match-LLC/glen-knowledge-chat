@@ -2,6 +2,16 @@
 import sqlite3
 import app as appmod
 from dashboard import biofield_store, points
+import pytest
+
+
+@pytest.fixture(autouse=True)
+def _no_live_stripe_history(monkeypatch):
+    """The checkout reads this buyer's Stripe history (the 21-day repeat check). Stub
+    it, so a run with a real key in the environment never calls Stripe."""
+    import dashboard.stripe_pay as _sp_hist
+    monkeypatch.setattr(_sp_hist, "sessions_for_email", lambda *a, **k: iter([]))
+    monkeypatch.setattr(_sp_hist, "expire_session", lambda *a, **k: {})
 
 
 def _setup(monkeypatch, tmp_path):
