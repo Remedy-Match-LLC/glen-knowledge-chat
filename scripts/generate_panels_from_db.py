@@ -12,6 +12,10 @@ _PACKAGING_UNITS = {"ea.", "ea"}
 def _dose_str(dose, unit):
     if dose is None:
         return ""
+    # Under 1 mg reads as mcg: 0.4835 mg is "483.5 mcg". The store once showed it
+    # as "4835 mg", and 15 other sub-milligram doses lost their "0." the same way.
+    if (unit or "").strip().lower() == "mg" and 0 < float(dose) < 1:
+        return f"{round(float(dose) * 1000, 3):g} mcg"
     d = int(dose) if float(dose) == int(dose) else dose
     return f"{d} {unit}".strip() if unit else f"{d}"
 

@@ -325,7 +325,7 @@
       },
       {
         "name": "MSC",
-        "dose": "13 mg"
+        "dose": "13 mcg"
       },
       {
         "name": "button mushroom Chitosan, white mushroom, crimini, baby bella, portobello",
@@ -438,7 +438,7 @@
   "vein-support": {
     "ingredients": [
       {
-        "name": "(unnamed FMP ingredient 5461)",
+        "name": "Bioavailability Blend",
         "dose": "34.5 mg"
       },
       {
@@ -637,7 +637,7 @@
       },
       {
         "name": "5-MTHF",
-        "dose": "1 mg"
+        "dose": "100 mcg"
       },
       {
         "name": "TMG, Trimethylglycine",
@@ -700,7 +700,7 @@
         "dose": "20 mg"
       },
       {
-        "name": "(unnamed FMP ingredient 5461)",
+        "name": "Bioavailability Blend",
         "dose": "34.5 mg"
       }
     ],
