@@ -1,23 +1,52 @@
-"""The AI prompts describe Glen as he describes himself.
+"""The client-facing AI prompts describe Glen as he describes himself, and limit claims.
 
 He is retired from licensed practice. Three prompts called him a "naturopathic physician"
-(found by R and D, 2026-10-02). Glen, 2026-10-02: "I tend to say Naturopathic Optometrist,
-or Doctor of Optometry and Natural Medicine."
+(found by R and D, 2026-10-02) and none limited health claims. Glen, 2026-10-02: "I tend to
+say Naturopathic Optometrist, or Doctor of Optometry and Natural Medicine", and for the
+role line, "consults" rather than "analyses biofield scans".
+
+Checked on the assembled runtime prompts (round 2 of the review): a source grep would miss
+split literals and text appended from elsewhere.
 """
-from pathlib import Path
+import importlib
+import re
 
-ROOT = Path(__file__).resolve().parent.parent
+import pytest
+
+import dashboard.portal_concierge as pc
+
+ROLE = ("Describe what a remedy supports, never a diagnosis or a cure. If asked about "
+        "Dr. Glen's licence or practice, say he is retired from licensed practice and now "
+        "formulates remedies, consults, and teaches.")
 
 
-def test_no_ai_prompt_calls_glen_a_naturopathic_physician():
-    for rel in ("app.py", "dashboard/portal_concierge.py"):
-        assert "naturopathic physician" not in (ROOT / rel).read_text().lower(), rel
+@pytest.fixture(scope="module")
+def prompts(tmp_path_factory):
+    mp = pytest.MonkeyPatch()
+    mp.setenv("DATA_DIR", str(tmp_path_factory.mktemp("data")))
+    import app as appmod
+    importlib.reload(appmod)
+    yield {"remedy_match": appmod._REMEDY_MATCH_SYSTEM,
+           "post_purchase": appmod._CONCIERGE_SYSTEM,
+           "portal": pc.system_prompt({"owned": ["X"], "findings": [{"name": "Y"}]})}
+    mp.undo()
 
 
-def test_each_prompt_names_him_a_naturopathic_optometrist():
-    import dashboard.portal_concierge as pc
-    assert "naturopathic optometrist" in pc.system_prompt({})
-    app_src = (ROOT / "app.py").read_text()
-    for anchor in ("_REMEDY_MATCH_SYSTEM = (", "_CONCIERGE_SYSTEM = ("):
-        block = app_src[app_src.index(anchor):app_src.index(anchor) + 400]
-        assert "(naturopathic optometrist, Hilo" in block, anchor
+def _flat(text):
+    return re.sub(r"\s+", " ", text)
+
+
+@pytest.mark.parametrize("name", ["remedy_match", "post_purchase", "portal"])
+def test_names_him_a_naturopathic_optometrist(prompts, name):
+    p = _flat(prompts[name]).lower()
+    assert "naturopathic optometrist" in p
+    assert "naturopathic physician" not in p
+
+
+@pytest.mark.parametrize("name", ["remedy_match", "post_purchase", "portal"])
+def test_carries_the_role_and_claims_rule_verbatim(prompts, name):
+    assert ROLE in _flat(prompts[name])
+
+
+def test_the_rule_is_glens_wording():
+    assert _flat(pc.ROLE_AND_CLAIMS).strip("- \n") == ROLE
