@@ -167,6 +167,13 @@ def rename_by_email(cx, email, *, name, first_name=None, last_name=None):
     return {"people_updated": people_updated, "orders_updated": orders_updated}
 
 
+def _rollback(cx):
+    try:
+        cx.rollback()
+    except Exception:
+        pass
+
+
 def _order_address_shape(a):
     # Normalise the orders address_json shape ({street,...}) to the people shape.
     return {
@@ -225,6 +232,51 @@ def _fmp_country(country, postal_code):
     return _FMP_COUNTRY.get(c)
 
 
+_US_STATES = {
+    "ALABAMA": "AL", "ALASKA": "AK", "ARIZONA": "AZ", "ARKANSAS": "AR", "CALIFORNIA": "CA",
+    "COLORADO": "CO", "CONNECTICUT": "CT", "DELAWARE": "DE", "DISTRICT OF COLUMBIA": "DC",
+    "FLORIDA": "FL", "GEORGIA": "GA", "HAWAII": "HI", "HAWAI'I": "HI", "IDAHO": "ID",
+    "ILLINOIS": "IL", "INDIANA": "IN", "IOWA": "IA", "KANSAS": "KS", "KENTUCKY": "KY",
+    "LOUISIANA": "LA", "MAINE": "ME", "MARYLAND": "MD", "MASSACHUSETTS": "MA",
+    "MICHIGAN": "MI", "MINNESOTA": "MN", "MISSISSIPPI": "MS", "MISSOURI": "MO",
+    "MONTANA": "MT", "NEBRASKA": "NE", "NEVADA": "NV", "NEW HAMPSHIRE": "NH",
+    "NEW JERSEY": "NJ", "NEW MEXICO": "NM", "NEW YORK": "NY", "NORTH CAROLINA": "NC",
+    "NORTH DAKOTA": "ND", "OHIO": "OH", "OKLAHOMA": "OK", "OREGON": "OR",
+    "PENNSYLVANIA": "PA", "RHODE ISLAND": "RI", "SOUTH CAROLINA": "SC",
+    "SOUTH DAKOTA": "SD", "TENNESSEE": "TN", "TEXAS": "TX", "UTAH": "UT", "VERMONT": "VT",
+    "VIRGINIA": "VA", "WASHINGTON": "WA", "WEST VIRGINIA": "WV", "WISCONSIN": "WI",
+    "WYOMING": "WY", "PUERTO RICO": "PR", "GUAM": "GU",
+}
+_US_CODES = set(_US_STATES.values())
+
+
+def us_state_code(state):
+    """Two-letter US state code, or "" when it cannot be told."""
+    st = " ".join((state or "").strip().upper().replace(".", "").split())
+    if st in _US_CODES:
+        return st
+    return _US_STATES.get(st, "")
+
+
+def us_ship_ready(addr):
+    """A fallback address counts only when it can ship and be priced: US, with
+    street, city, a known two-letter state and a US ZIP. Returns the address with
+    country and state normalised, or {}.
+
+    Round 1 review, 2026-10-03: a non-US fill made the hand-off fail with "We ship
+    to US addresses only", where a blank one lets Rae finish it. A spelled-out
+    "Hawaii" dropped GET, which is charged only on "HI"."""
+    a = dict(addr or {})
+    street = (a.get("address1") or a.get("street") or "").strip()
+    country = _fmp_country(a.get("country"), a.get("zip")) or ""
+    state = us_state_code(a.get("state"))
+    if (not street or not (a.get("city") or "").strip() or country != "US"
+            or not state or not _US_ZIP.match((a.get("zip") or "").strip())):
+        return {}
+    a["country"], a["state"] = "US", state
+    return a
+
+
 def fmp_address_for(cx, email):
     """The FileMaker address for this email, only when it is unambiguous.
 
@@ -241,6 +293,7 @@ def fmp_address_for(cx, email):
             "FROM fmp_client_addresses a JOIN fmp_clients c ON c.id_pk = a.id_fk_client "
             "WHERE lower(c.email)=? AND trim(coalesce(a.street,''))<>''", (em,)).fetchall()
     except Exception:
+        _rollback(cx)   # keep a Postgres transaction usable for the next lookup
         return {}   # projection tables not loaded
     found = {}
     for r in rows:
@@ -257,6 +310,9 @@ def fmp_address_for(cx, email):
     if not code:
         return {}
     lines = [ln.strip() for ln in street.replace("\r", "\n").split("\n") if ln.strip()]
+    if not state.strip() and (country or "").strip().upper() in (
+            "HAWAII", "KINGDOM OF HAWAI'I", "KINGDOM OF HAWAII"):
+        state = "HI"
     return {"address1": lines[0], "address2": ", ".join(lines[1:]),
             "city": city.strip(), "state": state.strip(), "zip": postal.strip(),
             "country": code}
@@ -273,8 +329,9 @@ def people_address_for(cx, email):
         row = cx.execute(
             "SELECT address1, address2, city, state, zip, country FROM people "
             "WHERE lower(email)=? AND trim(coalesce(address1,''))<>'' "
-            "ORDER BY updated_at DESC, id DESC LIMIT 1", (em,)).fetchone()
+            "ORDER BY coalesce(updated_at,'') DESC, id DESC LIMIT 1", (em,)).fetchone()
     except Exception:
+        _rollback(cx)   # keep a Postgres transaction usable for the next lookup
         return {}   # an older people table without the address columns
     if not row:
         return {}

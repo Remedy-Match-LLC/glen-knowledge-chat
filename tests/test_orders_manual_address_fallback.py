@@ -134,7 +134,8 @@ def test_an_earlier_order_beats_the_people_record(env):
 
 def test_a_pet_uses_the_caregivers_people_record(env):
     appmod, db = env
-    _seed_person(db, "carer@x.com", address1="12 Kino'ole St", city="Hilo", zip="96720")
+    _seed_person(db, "carer@x.com", address1="12 Kino'ole St", city="Hilo", state="HI",
+                 zip="96720")
     from dashboard import household as H
     with sqlite3.connect(db) as cx:
         H.init_household_tables(cx)
@@ -195,6 +196,37 @@ def test_an_unknown_country_leaves_it_blank(env):
 
 def test_the_people_record_beats_filemaker(env):
     appmod, db = env
-    _seed_person(db, "fm@x.com", address1="5 People Pl", zip="96720")
+    _seed_person(db, "fm@x.com", address1="5 People Pl", city="Hilo", state="HI", zip="96720")
     _seed_fmp(db, "c1", "fm@x.com", HILO)
     assert _address(db, _post(appmod, "fm@x.com"))["street"] == "5 People Pl"
+
+
+def test_a_non_us_filemaker_address_leaves_it_blank_and_the_hand_off_succeeds(env):
+    """Round 1: a Canadian fill made the post fail with "We ship to US addresses only"."""
+    appmod, db = env
+    _seed_fmp(db, "c1", "ca@x.com", ("1 Bay St", "Toronto", "ON", "M5J 2N8", "CANADA"))
+    assert _address(db, _post(appmod, "ca@x.com")).get("street", "") == ""
+
+
+def test_spelled_out_country_and_state_are_normalised(env):
+    """Round 1: "United States" blocked the post; "Hawaii" dropped GET, charged only on HI."""
+    appmod, db = env
+    _seed_person(db, "p@x.com", address1="12 Kino'ole St", city="Hilo", state="Hawaii",
+                 zip="96720", country="United States")
+    a = _address(db, _post(appmod, "p@x.com"))
+    assert (a["street"], a["state"], a["country"]) == ("12 Kino'ole St", "HI", "US")
+
+
+def test_an_incomplete_earlier_order_gives_way_to_a_complete_source(env):
+    appmod, db = env
+    _seed_order(db, "inc@x.com", {"street": "12 K St", "city": "", "state": "", "zip": ""})
+    _seed_fmp(db, "c1", "inc@x.com", HILO)
+    a = _address(db, _post(appmod, "inc@x.com"))
+    assert (a["street"], a["zip"]) == ("12 Kino'ole St", "96720")
+
+
+def test_filemaker_kingdom_of_hawaii_with_no_province_is_hi(env):
+    appmod, db = env
+    _seed_fmp(db, "c1", "k@x.com", ("12 Kino'ole St", "Hilo", "", "96720", "Kingdom of Hawai'i"))
+    a = _address(db, _post(appmod, "k@x.com"))
+    assert (a["state"], a["country"]) == ("HI", "US")
