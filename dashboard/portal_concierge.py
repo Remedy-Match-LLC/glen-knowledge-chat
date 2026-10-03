@@ -21,6 +21,7 @@ ROLE_AND_CLAIMS = (
     "- Describe what a remedy supports, never a diagnosis or a cure. If asked about Dr. Glen's "
     "licence or practice, say he is retired from licensed practice and now formulates "
     "remedies, consults, and teaches.\n"
+    "- Present a scan finding as what the scan reported, never as a diagnosis.\n"
 )
 
 _BASE = (

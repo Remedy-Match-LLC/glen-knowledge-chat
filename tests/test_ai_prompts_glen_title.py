@@ -18,6 +18,7 @@ import dashboard.portal_concierge as pc
 ROLE = ("Describe what a remedy supports, never a diagnosis or a cure. If asked about "
         "Dr. Glen's licence or practice, say he is retired from licensed practice and now "
         "formulates remedies, consults, and teaches.")
+FINDINGS = "Present a scan finding as what the scan reported, never as a diagnosis."
 
 
 @pytest.fixture(scope="module")
@@ -46,7 +47,9 @@ def test_names_him_a_naturopathic_optometrist(prompts, name):
 @pytest.mark.parametrize("name", ["remedy_match", "post_purchase", "portal"])
 def test_carries_the_role_and_claims_rule_verbatim(prompts, name):
     assert ROLE in _flat(prompts[name])
+    assert FINDINGS in _flat(prompts[name])
 
 
 def test_the_rule_is_glens_wording():
-    assert _flat(pc.ROLE_AND_CLAIMS).strip("- \n") == ROLE
+    """Glen approved both lines, 2026-10-02: the role line, then the scan-finding line."""
+    assert _flat(pc.ROLE_AND_CLAIMS).strip() == f"- {ROLE} - {FINDINGS}"
