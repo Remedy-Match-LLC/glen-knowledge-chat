@@ -9,9 +9,9 @@ steps, so a photo uploaded in the portal stayed red on the readiness page. This 
 is the one answer both use, and the checkout uses it too. Each step is satisfied by any
 of the records that can show it. Never raises: an unreadable record counts as not done.
 """
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 
-from dashboard import biofield_store, client_photos, client_scans, intake, scan_freshness
+from dashboard import client_photos, client_scans, intake, scan_freshness
 
 SCAN_WINDOW_DAYS = 7
 INTAKE_LEAD_SOURCES = ("scoreapp", "practice-better", "concierge")
@@ -28,19 +28,39 @@ def _norm(email):
     return (email or "").strip().lower()
 
 
+def _readiness(cx, email):
+    """The readiness page's own record, read by column position. biofield_store.get
+    needs a dict row factory, which the app's connections do not set, and a failed
+    read here once looked exactly like "nothing confirmed"."""
+    try:
+        r = cx.execute(
+            "SELECT photo_on_file, intake_confirmed, scan_confirmed, scan_confirmed_at "
+            "FROM biofield_readiness WHERE email=?", (email,)).fetchone()
+    except Exception:
+        try:
+            r = cx.execute(
+                "SELECT photo_on_file, intake_confirmed, scan_confirmed, NULL "
+                "FROM biofield_readiness WHERE email=?", (email,)).fetchone()
+        except Exception:
+            return {}
+    if not r:
+        return {}
+    return {"photo_on_file": r[0], "intake_confirmed": r[1],
+            "scan_confirmed": r[2], "scan_confirmed_at": r[3]}
+
+
 def has_photo(cx, email):
     e = _norm(email)
     if not e:
         return False
-    row = _safe(lambda: (biofield_store.get(cx, e) or {}).get("photo_on_file"))
-    return row or _safe(lambda: client_photos.has(cx, e))
+    return bool(_readiness(cx, e).get("photo_on_file")) or _safe(lambda: client_photos.has(cx, e))
 
 
 def has_intake(cx, email):
     e = _norm(email)
     if not e:
         return False
-    if _safe(lambda: (biofield_store.get(cx, e) or {}).get("intake_confirmed")):
+    if _readiness(cx, e).get("intake_confirmed"):
         return True
     if _safe(lambda: intake.is_submitted(cx, e)):
         return True
@@ -50,12 +70,19 @@ def has_intake(cx, email):
         (e, *INTAKE_LEAD_SOURCES)).fetchone())
 
 
+def utc_today():
+    """The date every caller should pass. Stored confirmations are UTC timestamps."""
+    return datetime.now(timezone.utc).date()
+
+
 def _within_window(scan_date, today):
+    """A date-only window. One day ahead is allowed: a scan dated in Hawai'i, a
+    confirmation stamped in UTC and the server clock can sit a calendar day apart."""
     try:
         d = date.fromisoformat(str(scan_date)[:10])
     except (TypeError, ValueError):
         return False
-    return today - timedelta(days=SCAN_WINDOW_DAYS) <= d <= today
+    return today - timedelta(days=SCAN_WINDOW_DAYS) <= d <= today + timedelta(days=1)
 
 
 def has_fresh_scan(cx, email, *, today):
@@ -64,7 +91,10 @@ def has_fresh_scan(cx, email, *, today):
         return False
     if isinstance(today, str):
         today = date.fromisoformat(today[:10])
-    if _safe(lambda: (biofield_store.get(cx, e) or {}).get("scan_confirmed")):
+    # A self-confirmation counts only while it is inside the window. One with no
+    # date predates scan_confirmed_at and is not trusted for a payment.
+    row = _readiness(cx, e)
+    if row.get("scan_confirmed") and _within_window(row.get("scan_confirmed_at"), today):
         return True
     if _safe(lambda: scan_freshness.is_fresh(cx, e, today=today.isoformat(),
                                              window_days=SCAN_WINDOW_DAYS)):

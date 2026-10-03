@@ -431,10 +431,9 @@ def _onboarding_block(cx, email):
 def _biofield_prereqs_block(cx, email):
     """Glen 2026-10-02: the Biofield card opens payment only once the fresh scan, intake
     and photo are done. Same answer the checkout enforces (dashboard/biofield_prereqs)."""
-    from datetime import date
     from dashboard import biofield_prereqs as _bp
     try:
-        out = _bp.status(cx, email, today=date.today())
+        out = _bp.status(cx, email, today=_bp.utc_today())
     except Exception:
         out = {"photo": False, "intake": False, "scan": False, "ready": False}
     out["scan_window_days"] = _bp.SCAN_WINDOW_DAYS

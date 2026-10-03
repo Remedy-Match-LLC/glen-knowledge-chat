@@ -177,7 +177,7 @@ async function sendLink() {
 }
 
 async function pay() {
-  // No email is posted: /biofield/checkout uses the signed-in email.
+  // No email is posted: signed_in tells /biofield/checkout to use the signed-in one.
   const btn = document.getElementById("payBtn");
   const err = document.getElementById("payErr");
   err.classList.add("hide");
@@ -185,7 +185,7 @@ async function pay() {
   try {
     const r = await fetch("/biofield/checkout", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      credentials: "same-origin", body: JSON.stringify({})
+      credentials: "same-origin", body: JSON.stringify({ signed_in: true })
     });
     const j = await r.json();
     if (r.ok && j.stripe_url) { location.href = j.stripe_url; return; }

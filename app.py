@@ -11581,9 +11581,13 @@ def biofield_checkout():
     if not _biofield_enabled():
         return jsonify({"ok": False, "error": "Biofield checkout is not available."}), 404
     data  = request.get_json(silent=True) or {}
-    # The readiness page signs a client in by cookie and does not hold their email,
-    # so it posts none and the signed-in email is used.
-    email = (data.get("email") or "").strip().lower() or _biofield_email()
+    # The readiness page signs a client in by cookie and does not hold their email, so
+    # it posts {"signed_in": true} and the signed-in email is used. Only on that flag:
+    # the portal offer button also posts no email, and must not fall through to
+    # whoever's cookie is on this browser (a caregiver, or Rae).
+    email = (data.get("email") or "").strip().lower()
+    if not email and data.get("signed_in") is True:
+        email = _biofield_email()
     name  = (data.get("name") or "").strip()
     tier  = (data.get("tier") or PROGRAM_PREMIUM_TIER).strip()
     tier  = tier if tier in PROGRAM_TIERS else PROGRAM_PREMIUM_TIER
@@ -11596,8 +11600,9 @@ def biofield_checkout():
         # through this route and are unaffected.
         prereqs = _biofield_prereqs(email)
         if not prereqs.get("ready"):
+            # No step detail: anyone can post any email here, and the detail would
+            # tell them how far that person has got.
             return jsonify({"ok": False, "reason": "prereqs",
-                            "prereqs": prereqs,
                             "error": BIOFIELD_PREREQS_MESSAGE}), 409
     if not _STRIPE_ACTIVE:
         return jsonify({"ok": False, "error": "card payment not active"}), 400
@@ -38085,9 +38090,8 @@ def _biofield_has_fresh_scan(email):
     self-confirmation."""
     try:
         from dashboard import biofield_prereqs as _bp
-        import datetime as _dt
         with db.connect(LOG_DB) as cx:
-            return _bp.has_fresh_scan(cx, email, today=_dt.date.today())
+            return _bp.has_fresh_scan(cx, email, today=_bp.utc_today())
     except Exception:
         return False
 
@@ -38106,9 +38110,8 @@ def _biofield_prereqs(email):
     """Glen 2026-10-02: scan, intake and photo come before a Biofield payment."""
     try:
         from dashboard import biofield_prereqs as _bp
-        import datetime as _dt
         with db.connect(LOG_DB) as cx:
-            return _bp.status(cx, email, today=_dt.date.today())
+            return _bp.status(cx, email, today=_bp.utc_today())
     except Exception:
         return {"photo": False, "intake": False, "scan": False, "ready": False}
 

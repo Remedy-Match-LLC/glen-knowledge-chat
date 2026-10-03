@@ -62,7 +62,7 @@ def test_unprepared_buyer_is_refused_and_nothing_is_charged(monkeypatch, tmp_pat
     assert r.status_code == 409, r.get_data(as_text=True)
     body = r.get_json()
     assert body["ok"] is False and body["reason"] == "prereqs"
-    assert body["prereqs"] == {"photo": False, "intake": False, "scan": False, "ready": False}
+    assert "prereqs" not in body, "a refusal must not reveal another person's progress"
     assert "amount" not in cap and "order" not in cap
 
 
@@ -75,7 +75,6 @@ def test_two_of_three_is_still_refused(monkeypatch, tmp_path):
     cx.close()
     r = appmod.app.test_client().post("/biofield/checkout", json={"email": E})
     assert r.status_code == 409
-    assert r.get_json()["prereqs"]["scan"] is False
     assert "amount" not in cap
 
 
@@ -93,9 +92,21 @@ def test_readiness_page_posts_no_email_and_the_signed_in_one_is_used(monkeypatch
     _prepare_in_portal(db, "signed@x.com")
     c = appmod.app.test_client()
     c.set_cookie("rm_biofield_email", "signed@x.com", domain="localhost")
-    r = c.post("/biofield/checkout", json={})
+    r = c.post("/biofield/checkout", json={"signed_in": True})
     assert r.status_code == 200, r.get_data(as_text=True)
     assert cap["email"] == "signed@x.com"
+
+
+def test_a_post_with_no_email_and_no_flag_never_uses_the_cookie(monkeypatch, tmp_path):
+    """Round 1 review: the portal offer button posts {}. With a caregiver's or Rae's
+    cookie on the browser, a bare fallback would have charged them instead."""
+    cap, db = _setup(monkeypatch, tmp_path)
+    _prepare_in_portal(db, "cookie@x.com")
+    c = appmod.app.test_client()
+    c.set_cookie("rm_biofield_email", "cookie@x.com", domain="localhost")
+    r = c.post("/biofield/checkout?token=someone-else", json={})
+    assert r.status_code == 400
+    assert "amount" not in cap
 
 
 def test_remedy_match_program_is_not_held_to_the_biofield_steps(monkeypatch, tmp_path):
@@ -167,3 +178,22 @@ def test_a_portal_photo_turns_the_readiness_page_photo_green(monkeypatch, tmp_pa
     c.set_cookie("rm_biofield_email", E, domain="localhost")
     st = c.get("/api/biofield/ready").get_json()
     assert st["items"]["photo"]["status"] == "green"
+
+
+def test_steps_confirmed_on_the_readiness_page_open_the_checkout(monkeypatch, tmp_path):
+    """End to end through the app's own connections. A dict-only read of the readiness
+    record failed silently there, so these confirmations were ignored at checkout."""
+    cap, db = _setup(monkeypatch, tmp_path)
+    cx = sqlite3.connect(db)
+    biofield_store.set_photo_on_file(cx, E, "x.jpg")
+    cx.close()
+    c = appmod.app.test_client()
+    c.set_cookie("rm_biofield_email", E, domain="localhost")
+    assert c.post("/biofield/checkout", json={"signed_in": True}).status_code == 409
+    for item in ("scan", "intake"):
+        assert c.post("/api/biofield/confirm", json={"item": item}).status_code == 200
+    st = c.get("/api/biofield/ready").get_json()
+    assert all(st["items"][k]["status"] == "green" for k in ("photo", "intake", "scan"))
+    r = c.post("/biofield/checkout", json={"signed_in": True})
+    assert r.status_code == 200, r.get_data(as_text=True)
+    assert cap["amount"] == 30000

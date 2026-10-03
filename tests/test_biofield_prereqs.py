@@ -13,8 +13,9 @@ E = "c@x.com"
 
 
 def _cx():
+    # No row factory: the app's connections return plain tuples, and a dict-only
+    # read once failed silently there while these tests passed.
     cx = sqlite3.connect(":memory:")
-    cx.row_factory = sqlite3.Row
     biofield_store.init_table(cx)
     client_photos.init_table(cx)
     client_scans.init_client_scans_table(cx)
@@ -41,8 +42,27 @@ def test_readiness_page_records_alone_make_a_client_ready():
     cx = _cx()
     biofield_store.set_photo_on_file(cx, E, "x.jpg")
     biofield_store.set_intake_confirmed(cx, E, True)
+    biofield_store.set_scan_confirmed(cx, E, True)   # stamped now, in UTC, by the store
+    assert bp.status(cx, E, today=bp.utc_today())["ready"] is True
+
+
+def test_a_self_confirmed_scan_expires_with_the_window():
+    """Round 2 review, 2026-10-02: the flag had no date, so one click counted forever."""
+    cx = _cx()
     biofield_store.set_scan_confirmed(cx, E, True)
-    assert bp.status(cx, E, today=TODAY)["ready"] is True
+    cx.execute("UPDATE biofield_readiness SET scan_confirmed_at=? WHERE email=?",
+               ("2026-09-24T12:00:00Z", E))
+    assert bp.has_fresh_scan(cx, E, today=TODAY) is False
+    cx.execute("UPDATE biofield_readiness SET scan_confirmed_at=? WHERE email=?",
+               ("2026-09-26T12:00:00Z", E))
+    assert bp.has_fresh_scan(cx, E, today=TODAY) is True
+
+
+def test_an_undated_old_self_confirmation_is_not_trusted():
+    cx = _cx()
+    biofield_store.set_scan_confirmed(cx, E, True)
+    cx.execute("UPDATE biofield_readiness SET scan_confirmed_at=NULL WHERE email=?", (E,))
+    assert bp.has_fresh_scan(cx, E, today=TODAY) is False
 
 
 def test_intake_lead_from_a_known_source_counts():

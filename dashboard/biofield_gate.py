@@ -17,9 +17,12 @@ def gate_state(cx, email, *, has_intake, has_fresh_scan=None, has_photo=None,
     if has_photo:
         photo = photo or bool(has_photo(email))
     intake = bool(row.get("intake_confirmed")) or bool(has_intake(email))
-    scan = bool(row.get("scan_confirmed"))
+    # With an injected freshness check, that check alone decides: it applies the
+    # window to a self-confirmation too, so this page and the checkout agree.
     if has_fresh_scan:
-        scan = scan or bool(has_fresh_scan(email))
+        scan = bool(has_fresh_scan(email))
+    else:
+        scan = bool(row.get("scan_confirmed"))
 
     def item(ok):
         return {"status": "green" if ok else "needed"}
