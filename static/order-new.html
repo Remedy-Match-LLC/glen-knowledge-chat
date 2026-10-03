@@ -845,6 +845,7 @@ function renderPayments(rows, bal){
   }).join('') || '<em>No payments recorded yet.</em>';
   $("pay-balance").textContent =
     `Paid $${(bal.paid_cents/100).toFixed(2)} · Refunded $${(bal.refunded_cents/100).toFixed(2)} · Balance $${(bal.balance_cents/100).toFixed(2)}`;
+  refreshInvMethod();
 }
 async function reloadPayments(){
   const r=await fetch(`/api/orders/${EDIT_OID}/payments`,{headers:HEADERS});
@@ -1010,26 +1011,45 @@ function showInvoice(j){
     +(t.adjustment_cents?`Adjustment: ${t.adjustment_cents<0?'−':'+'}${dollars(Math.abs(t.adjustment_cents))}\n`:'')
     +`Shipping: ${dollars(t.shipping_cents)}\nGET (absorbed): ${dollars(t.get_cents)}\n`
     +(t.points_redeemed_cents?`Points: -${dollars(t.points_redeemed_cents)}\n`:'')
-    +`TOTAL: ${dollars(t.total_cents)}\n`
-    +`Payment method: ${$("o-method").value}`;
+    +`TOTAL: ${dollars(t.total_cents)}\n`;
   const inv=$("invoice");
-  inv.innerHTML=`<h2>Proposed invoice ${esc(j.external_ref)} created</h2><pre>${esc(summary)}</pre>`
+  // The method line is live (Glen 2026-10-03): it was a snapshot of the dropdown when the
+  // card was drawn, so a Zelle payment recorded later still read "Credit card".
+  inv.innerHTML=`<h2>Proposed invoice ${esc(j.external_ref)} created</h2><pre>${esc(summary)}<span id="inv-method"></span></pre>`
     +`<div class="inv-actions">`
     +`<button class="primary" onclick="lifecycle('orders.confirm',{})">Confirm</button>`
     +`<button class="ghost inv-send-btn${INV_SENT_AT?' inv-sent':''}" onclick="sendInvoice(this, LAST_ORDER&&LAST_ORDER.order_id)">${INV_SENT_AT?'Invoice Sent '+invSentStr(INV_SENT_AT)+' (re-send)':'Send invoice'}</button>`
     +`<button class="ghost" onclick="recordPayment()">Record payment</button>`
+    +`<span id="rp-form" style="display:none;align-items:end;gap:6px;flex-wrap:wrap">`
+    +`<label style="text-transform:none">Amount $ <input id="rp-amt" type="number" step="0.01" placeholder="invoice total" style="width:110px"></label>`
+    +`<label style="text-transform:none">Method <select id="rp-method"></select></label>`
+    +`<button class="primary" onclick="submitRecordPayment()">Record</button>`
+    +`<button class="mini" onclick="$('rp-form').style.display='none'">Cancel</button></span>`
     +`<button class="ghost" onclick="printInvoiceFor(LAST_ORDER&&LAST_ORDER.order_id)">Print invoice</button>`
     +`<button class="mini" onclick="copyInv()">Copy</button>`
     +`<a class="mini" href="/console/orders?key=${encodeURIComponent(KEY)}" style="text-decoration:none">Open orders board</a></div>`;
   inv.style.display="block"; window.scrollTo({top:0,behavior:"smooth"});
+  refreshInvMethod();
+}
+// What the card says for payment: the methods actually recorded on this order, else the
+// method chosen in the Pricing & payment dropdown.
+let RECORDED_METHOD = "";
+function refreshInvMethod(){
+  const el=$("inv-method"); if(!el) return;
+  const paid=Object.values(PAY_ROWS).filter(r=>r.kind==='payment' && r.status!=='void').map(r=>r.method||'').filter(Boolean);
+  const uniq=[...new Set(paid)];
+  el.textContent = uniq.length ? `Payment method: ${uniq.join(", ")} (recorded)`
+    : RECORDED_METHOD ? `Payment method: ${RECORDED_METHOD} (recorded)`
+    : `Payment method: ${$("o-method").value}`;
 }
 async function lifecycle(key, params){
   if (!LAST_ORDER) return;
   params.order_id = LAST_ORDER.order_id;
   const r = await fetch("/api/action/"+key, {method:"POST", headers:HEADERS, body:JSON.stringify(params)});
   const j = await r.json();
-  if (!j || j.status!=="done") { toast("Action failed: "+((j&&j.result&&j.result.error)||(j&&(j.reason||j.error))||""),"error"); return; }
+  if (!j || j.status!=="done") { toast("Action failed: "+((j&&j.result&&j.result.error)||(j&&(j.reason||j.error))||""),"error"); return false; }
   toast((j.result&&j.result.message) || (key==="orders.confirm" ? "Invoice confirmed" : key==="orders.send_invoice" ? "Invoice sent" : "Payment recorded — in fulfillment"));
+  return true;
 }
 function invSentStr(iso){ try{ return new Date(iso).toLocaleDateString('en-US',{month:'numeric',day:'numeric',year:'2-digit'}); }catch(e){ return ''; } }
 function _cpEmail(){ return ($("c-email").value||"").trim().toLowerCase(); }
@@ -1197,11 +1217,20 @@ async function sendInvoice(btn, orderId){
   invSendStatus(btn, msg+" at "+fmtSentTime(sentAt)+".", "");
   toast(msg); return true;
 }
+// Record payment opens a small form with its own method dropdown (Glen 2026-10-03), so the
+// method is chosen at the moment of recording rather than read silently from the page.
 function recordPayment(){
-  const a=prompt("Amount in dollars (blank = invoice total):","");
-  const p={ method: $("o-method").value };
+  const sel=$("rp-method"); sel.innerHTML=$("o-method").innerHTML; sel.value=$("o-method").value;
+  $("rp-amt").value=""; $("rp-form").style.display="inline-flex"; $("rp-amt").focus();
+}
+async function submitRecordPayment(){
+  const method=$("rp-method").value, a=$("rp-amt").value;
+  const p={ method };
   if (a && !isNaN(parseFloat(a))) p.amount_cents=Math.round(parseFloat(a)*100);
-  lifecycle("orders.record_payment", p);
+  if (await lifecycle("orders.record_payment", p)){
+    RECORDED_METHOD=method; setMethod(method);
+    $("rp-form").style.display="none"; refreshInvMethod();
+  }
 }
 function copyInv(){ const txt=$("invoice").querySelector("pre").textContent;
   navigator.clipboard.writeText(txt).then(()=>toast("Copied"),()=>toast("Clipboard blocked","error")); }
@@ -1211,6 +1240,7 @@ async function init(){
   // warning (2026-09-25: Rae was refused here with no stored key).
   try{ await loadCatalog(); }catch(e){ if(e.message!=="unauthorized") toast(e.message,"error"); return; }
   loadSnippets();   // populate the shared per-line note dropdown (non-blocking)
+  $("o-method").addEventListener("change", refreshInvMethod);   // keep the card's method line live
   if (EDIT_OID){ try{ await loadOrderForEdit(EDIT_OID); }catch(e){ toast(e.message,"error"); } }
   else if (restoreCustomerDraft()) toast("Restored unsaved customer details");
   syncShippingUI();
