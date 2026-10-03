@@ -55,10 +55,12 @@ def init_evox_tables(cx) -> None:
 
 def get_readiness(cx, email: str) -> dict:
     email = (email or "").strip().lower()
-    cur = cx.execute("SELECT * FROM evox_readiness WHERE email=?", (email,))
-    cols = [c[0] for c in cur.description]
-    r = cur.fetchone()
-    row = dict(zip(cols, r)) if r is not None else None
+    # Named columns, never cur.description: the Postgres cursor wrapper has none,
+    # and reading it raised on every call in production (55 times on 2026-09-29).
+    cols = READINESS_ITEMS + ("cradle_source",)
+    r = cx.execute(f"SELECT {', '.join(cols)} FROM evox_readiness WHERE email=?",
+                   (email,)).fetchone()
+    row = {c: r[i] for i, c in enumerate(cols)} if r is not None else None
     if row is None:
         base = {k: False for k in READINESS_ITEMS}
         base.update({"email": email, "cradle_source": None, "complete": False})

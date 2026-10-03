@@ -164,3 +164,34 @@ def test_portal_reads_never_run_evox_table_setup(client, monkeypatch):
     assert client.get(f"/api/portal/{token}/appointment-proposals").status_code == 200
     assert client.get(f"/api/portal/{token}/onboarding").status_code == 200
     assert calls == []
+
+
+class _NoDescriptionConn:
+    """Postgres shape: dashboard.db._PgCursor has no .description."""
+    def __init__(self, cx):
+        self._cx = cx
+
+    def execute(self, sql, params=()):
+        cur = self._cx.execute(sql, params)
+
+        class _Cur:
+            def fetchone(self):
+                return cur.fetchone()
+
+            def fetchall(self):
+                return cur.fetchall()
+        return _Cur()
+
+    def commit(self):
+        self._cx.commit()
+
+
+def test_get_readiness_works_without_cursor_description():
+    raw = sqlite3.connect(":memory:")
+    _ev.init_evox_tables(raw)
+    cx = _NoDescriptionConn(raw)
+    assert _ev.get_readiness(cx, "c@x.com")["complete"] is False
+    for item in _ev.READINESS_ITEMS:
+        _ev.set_readiness_item(cx, "c@x.com", item, True, cradle_source="access")
+    st = _ev.get_readiness(cx, "C@x.com")
+    assert st["complete"] is True and st["cradle_source"] == "access"
