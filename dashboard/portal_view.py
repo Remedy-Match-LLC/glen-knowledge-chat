@@ -433,16 +433,12 @@ def _biofield_prereqs_block(cx, email):
     and photo are done. Same answer the checkout enforces (dashboard/biofield_prereqs)."""
     from dashboard import biofield_prereqs as _bp
     try:
-        out = _bp.status(cx, email, today=_bp.utc_today())
+        out = _bp.status(cx, email, today=_bp.business_today())
     except Exception:
         out = {"photo": False, "intake": False, "scan": False, "ready": False}
     out["scan_window_days"] = _bp.SCAN_WINDOW_DAYS
     # Paid but not yet reported: the card must not offer a second payment.
-    try:
-        from dashboard import biofield_store as _bf
-        out["paid"] = bool((_bf.get(cx, email) or {}).get("paid_at"))
-    except Exception:
-        out["paid"] = False
+    out["paid"] = _bp.is_paid(cx, email)
     return out
 
 

@@ -38091,7 +38091,7 @@ def _biofield_has_fresh_scan(email):
     try:
         from dashboard import biofield_prereqs as _bp
         with db.connect(LOG_DB) as cx:
-            return _bp.has_fresh_scan(cx, email, today=_bp.utc_today())
+            return _bp.has_fresh_scan(cx, email, today=_bp.business_today())
     except Exception:
         return False
 
@@ -38111,7 +38111,7 @@ def _biofield_prereqs(email):
     try:
         from dashboard import biofield_prereqs as _bp
         with db.connect(LOG_DB) as cx:
-            return _bp.status(cx, email, today=_bp.utc_today())
+            return _bp.status(cx, email, today=_bp.business_today())
     except Exception:
         return {"photo": False, "intake": False, "scan": False, "ready": False}
 

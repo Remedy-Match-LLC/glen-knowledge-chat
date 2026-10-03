@@ -43,7 +43,7 @@ def test_readiness_page_records_alone_make_a_client_ready():
     biofield_store.set_photo_on_file(cx, E, "x.jpg")
     biofield_store.set_intake_confirmed(cx, E, True)
     biofield_store.set_scan_confirmed(cx, E, True)   # stamped now, in UTC, by the store
-    assert bp.status(cx, E, today=bp.utc_today())["ready"] is True
+    assert bp.status(cx, E, today=bp.business_today())["ready"] is True
 
 
 def test_a_self_confirmed_scan_expires_with_the_window():
@@ -108,3 +108,48 @@ def test_blank_email_is_never_ready():
     cx = _cx()
     biofield_store.set_photo_on_file(cx, "", "x.jpg")
     assert bp.status(cx, "", today=TODAY)["ready"] is False
+
+
+def test_photo_is_required_for_ready():
+    """Round 3 review: dropping photo from `ready` kept every test green."""
+    cx = _cx()
+    intake.submit(cx, E, {}, "2026-10-01T00:00:00Z")
+    client_scans.upsert_scans(cx, E, [{"scan_date": "2026-10-01", "scan_id": "s1"}])
+    st = bp.status(cx, E, today=TODAY)
+    assert st["intake"] and st["scan"] and not st["photo"]
+    assert st["ready"] is False
+
+
+def test_a_confirmation_one_day_ahead_counts_two_days_does_not():
+    """A UTC stamp runs a calendar day ahead of Hawai'i from 14:00 HST."""
+    cx = _cx()
+    biofield_store.set_scan_confirmed(cx, E, True)
+    cx.execute("UPDATE biofield_readiness SET scan_confirmed_at=? WHERE email=?",
+               ("2026-10-03T02:00:00Z", E))
+    assert bp.has_fresh_scan(cx, E, today=TODAY) is True
+    cx.execute("UPDATE biofield_readiness SET scan_confirmed_at=? WHERE email=?",
+               ("2026-10-04T02:00:00Z", E))
+    assert bp.has_fresh_scan(cx, E, today=TODAY) is False
+
+
+def test_a_failed_read_does_not_poison_the_reads_after_it():
+    """A missing table must cost only its own source. On Postgres an unguarded
+    failure aborts the transaction, so every later read would fail too."""
+    cx = _cx()
+    cx.execute("DROP TABLE biofield_readiness")
+    client_photos.put(cx, E, b"jpeg", "image/jpeg")
+    intake.submit(cx, E, {}, "2026-10-01T00:00:00Z")
+    client_scans.upsert_scans(cx, E, [{"scan_date": "2026-10-01", "scan_id": "s1"}])
+    assert bp.status(cx, E, today=TODAY)["ready"] is True
+    assert cx.execute("SELECT 1").fetchone()[0] == 1
+
+
+def test_a_table_without_the_new_column_still_counts_photo_and_intake():
+    cx = _cx()
+    cx.execute("DROP TABLE biofield_readiness")
+    cx.execute("CREATE TABLE biofield_readiness (email TEXT PRIMARY KEY, paid_at TEXT, "
+               "photo_on_file INTEGER, intake_confirmed INTEGER, scan_confirmed INTEGER)")
+    cx.execute("INSERT INTO biofield_readiness VALUES (?, NULL, 1, 1, 1)", (E,))
+    st = bp.status(cx, E, today=TODAY)
+    assert st["photo"] and st["intake"]
+    assert st["scan"] is False, "an undated confirmation is not a fresh scan"

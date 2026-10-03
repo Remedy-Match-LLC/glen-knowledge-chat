@@ -197,3 +197,14 @@ def test_steps_confirmed_on_the_readiness_page_open_the_checkout(monkeypatch, tm
     r = c.post("/biofield/checkout", json={"signed_in": True})
     assert r.status_code == 200, r.get_data(as_text=True)
     assert cap["amount"] == 30000
+
+
+def test_the_portal_data_marks_a_paid_client_paid(monkeypatch, tmp_path):
+    """Round 3 review: if `paid` were lost, a paid client would be offered payment again."""
+    from dashboard import portal_view
+    cap, db = _setup(monkeypatch, tmp_path)
+    cx = sqlite3.connect(db)
+    assert portal_view._biofield_prereqs_block(cx, E)["paid"] is False
+    biofield_store.seed_paid(cx, E, via="stripe", order_ref="INVB")
+    assert portal_view._biofield_prereqs_block(cx, E)["paid"] is True
+    cx.close()

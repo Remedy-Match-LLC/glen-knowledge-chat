@@ -17,12 +17,16 @@ def gate_state(cx, email, *, has_intake, has_fresh_scan=None, has_photo=None,
     if has_photo:
         photo = photo or bool(has_photo(email))
     intake = bool(row.get("intake_confirmed")) or bool(has_intake(email))
-    # With an injected freshness check, that check alone decides: it applies the
-    # window to a self-confirmation too, so this page and the checkout agree.
-    if has_fresh_scan:
+    # Before payment, the injected freshness check alone decides: it applies the
+    # window to a self-confirmation too, so this page and the checkout agree. After
+    # payment the old rule stands, a confirmation counts as it always did, so no paid
+    # client loses a booking button they already had.
+    if has_fresh_scan and not paid:
         scan = bool(has_fresh_scan(email))
     else:
         scan = bool(row.get("scan_confirmed"))
+        if has_fresh_scan:
+            scan = scan or bool(has_fresh_scan(email))
 
     def item(ok):
         return {"status": "green" if ok else "needed"}
