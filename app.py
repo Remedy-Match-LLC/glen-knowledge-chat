@@ -56502,8 +56502,10 @@ def _known_ship_address(email):
         # A source counts only when it is complete and shippable (US, known state,
         # ZIP). Otherwise the next source is tried, and in the end the order stays
         # blank for Rae, as it did before any fallback.
-        for fn in (_cust.last_address_for, _cust.people_address_for,
-                   _cust.fmp_address_for):
+        a = _cust.last_address_for(cx, e, accept=_cust.us_ship_ready)
+        if a:
+            return a
+        for fn in (_cust.people_address_for, _cust.fmp_address_for):
             a = _cust.us_ship_ready(fn(cx, e))
             if a:
                 return a

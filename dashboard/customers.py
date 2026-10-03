@@ -184,19 +184,22 @@ def _order_address_shape(a):
     }
 
 
-def last_address_for(cx, email):
+def last_address_for(cx, email, accept=None):
     """The most recent shipping address this email shipped to (from orders), so a
     repeat customer without a saved people-address still autofills.
 
     Only an address with a street counts. A newer order saved with a blank street
     (a hand-off, a portal order) used to win because its JSON was not empty, and
-    it hid the older order that had the real address."""
+    it hid the older order that had the real address.
+
+    accept, when given, maps a candidate to the address to use or {} to keep
+    looking at older orders (the ship-to fallback passes us_ship_ready)."""
     em = (email or "").strip().lower()
     if not em:
         return {}
     rows = cx.execute(
         "SELECT address_json FROM orders WHERE lower(email)=? AND address_json IS NOT NULL "
-        "AND address_json NOT IN ('', '{}') ORDER BY created_at DESC, id DESC LIMIT 50",
+        "AND address_json NOT IN ('', '{}') ORDER BY created_at DESC, id DESC",
         (em,)).fetchall()
     for row in rows:
         try:
@@ -204,7 +207,12 @@ def last_address_for(cx, email):
         except Exception:
             continue
         if isinstance(a, dict) and (a.get("street") or a.get("address1") or "").strip():
-            return _order_address_shape(a)
+            shaped = _order_address_shape(a)
+            if accept is None:
+                return shaped
+            got = accept(shaped)
+            if got:
+                return got
     return {}
 
 
@@ -300,16 +308,22 @@ def fmp_address_for(cx, email):
         street, city, state, postal, country = (
             (r[k] if hasattr(r, "keys") else r[i]) or ""
             for i, k in enumerate(("street", "city", "province", "postal_code", "country")))
-        key = (" ".join(street.lower().replace(".", " ").replace(",", " ").split()),
+        lines = [ln.strip() for ln in street.replace("\r", "\n").split("\n") if ln.strip()]
+        if not lines:
+            continue   # whitespace only: SQL trim() leaves tabs and line breaks
+        key = (" ".join(" ".join(lines).lower().replace(".", " ").replace(",", " ").split()),
                "".join(ch for ch in postal if ch.isalnum()).lower()[:5])
-        found.setdefault(key, (street, city, state, postal, country))
+        # The same street on two records: keep the fuller one, so a blank province on
+        # one copy cannot hide an agreeing complete copy.
+        filled = sum(bool(str(v).strip()) for v in (city, state, postal, country))
+        if key not in found or filled > found[key][0]:
+            found[key] = (filled, lines, city, state, postal, country)
     if len(found) != 1:
         return {}
-    street, city, state, postal, country = next(iter(found.values()))
+    _, lines, city, state, postal, country = next(iter(found.values()))
     code = _fmp_country(country, postal)
     if not code:
         return {}
-    lines = [ln.strip() for ln in street.replace("\r", "\n").split("\n") if ln.strip()]
     if not state.strip() and (country or "").strip().upper() in (
             "HAWAII", "KINGDOM OF HAWAI'I", "KINGDOM OF HAWAII"):
         state = "HI"

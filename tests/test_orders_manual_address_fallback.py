@@ -128,7 +128,8 @@ def test_with_no_earlier_order_the_people_record_address_is_used(env):
 def test_an_earlier_order_beats_the_people_record(env):
     appmod, db = env
     _seed_order(db, "sharon@x.com", MESA)
-    _seed_person(db, "sharon@x.com", address1="1 Old Rd", zip="00001")
+    _seed_person(db, "sharon@x.com", address1="1 Old Rd", city="Hilo", state="HI",
+                 zip="96720")
     assert _address(db, _post(appmod, "sharon@x.com"))["street"] == "5844 E Enrose St"
 
 
@@ -230,3 +231,31 @@ def test_filemaker_kingdom_of_hawaii_with_no_province_is_hi(env):
     _seed_fmp(db, "c1", "k@x.com", ("12 Kino'ole St", "Hilo", "", "96720", "Kingdom of Hawai'i"))
     a = _address(db, _post(appmod, "k@x.com"))
     assert (a["state"], a["country"]) == ("HI", "US")
+
+
+def test_an_older_complete_order_beats_a_newer_incomplete_one(env):
+    """Round 2: the newest order with a street but no city must not end the search
+    over this client's orders."""
+    appmod, db = env
+    _seed_order(db, "o@x.com", MESA)
+    from dashboard import orders as O
+    with sqlite3.connect(db) as cx:
+        O.upsert_order(cx, source="in-house", external_ref="LATER-inc", email="o@x.com",
+                       name="Later", address={"street": "12 K St"}, items=[], total_cents=0,
+                       status="done")
+        cx.execute("UPDATE orders SET created_at='2999-01-01' WHERE external_ref='LATER-inc'")
+        cx.commit()
+    _seed_person(db, "o@x.com", address1="1 Old Rd", city="Hilo", state="HI", zip="96720")
+    assert _address(db, _post(appmod, "o@x.com"))["street"] == "5844 E Enrose St"
+
+
+def test_a_blank_province_copy_does_not_hide_an_agreeing_complete_one(env):
+    appmod, db = env
+    _seed_fmp(db, "c1", "dup@x.com", ("12 Kino'ole St", "Hilo", "", "96720", "USA"), HILO)
+    assert _address(db, _post(appmod, "dup@x.com"))["state"] == "HI"
+
+
+def test_a_whitespace_only_filemaker_street_is_ignored_not_a_crash(env):
+    appmod, db = env
+    _seed_fmp(db, "c1", "ws@x.com", ("\t\n", "Hilo", "HI", "96720", "USA"))
+    assert _address(db, _post(appmod, "ws@x.com")).get("street", "") == ""
