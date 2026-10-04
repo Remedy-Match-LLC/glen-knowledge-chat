@@ -5,6 +5,7 @@ higher one." Agnes Verches, a paid member, had a $69.97 flat Formula price saved
 outranked her member mix/match rate, so 17 Formulas on her invoice stayed at $69.97.
 """
 import sqlite3
+from ast import walk as ast_walk
 
 import pytest
 
@@ -110,10 +111,23 @@ def test_no_site_lets_a_special_replace_the_price_outright():
     import re
     import app as mod
     src = inspect.getsource(mod)
-    bad = re.findall(r"(?:your_cents|override|special|unit_cents)\s*=\s*"
+    bad = re.findall(r"(?:your_cents|override|special|unit_cents|analysis|courtesy)\s*=\s*"
                      r"(?:int\()?\s*(?:client_by_slug\[|client_ff_flat|_cp_by_slug\[|_cp_ff_flat"
                      r"|_cprices\.get\(|_ff_flat\b)", src)
     assert bad == [], bad
+    # Round 1: every function that READS a client's saved price must also apply the
+    # rule, so a new reader cannot slip past by naming its variable differently.
+    tree = __import__("ast").parse(src)
+    readers = ("get_price", "price_map", "get_ff_flat", "list_for")
+    # These list the saved specials themselves for the owner; they price nothing.
+    allowed = {"api_console_client_prices", "console_client_commerce_status"}
+    missing = []
+    for fn in [n for n in ast_walk(tree) if type(n).__name__ == "FunctionDef"]:
+        body = __import__("ast").get_source_segment(src, fn) or ""
+        if any(f".{r}(" in body for r in readers) and "_special_lowers_only" not in body \
+                and "_client_special_for" not in body and fn.name not in allowed:
+            missing.append(fn.name)
+    assert missing == [], missing
 
 
 def test_portal_a_saved_special_above_the_automatic_price_is_ignored(a):
@@ -131,3 +145,17 @@ def test_portal_a_saved_special_still_outranks_an_older_baked_price(a):
     _l, items, _sub = a._portal_priced_lines([{"slug": slug, "qty": 1, "price_cents": 3900}],
                                              email=OTHER)
     assert items[0]["unit_cents"] == 4200
+
+
+def test_the_lower_of_a_per_sku_special_and_the_flat_rate_wins(a):
+    """Glen, 2026-10-04, "yes": a $60 per-SKU special no longer hides a $40 flat rate."""
+    slug = _ffs(a, 1)[0]
+    _save(a, flat=4000, sku={slug: 6000}, email=OTHER)
+    assert _units(a, OTHER, [{"slug": slug, "qty": 1}])[slug] == 4000
+    assert a._client_special_for(slug, a._get_product(slug), {slug: 6000}, 4000) == 4000
+    assert a._client_special_for(slug, a._get_product(slug), {slug: 3000}, 4000) == 3000
+
+
+def test_the_flat_rate_never_applies_to_a_non_formula(a):
+    assert a._client_special_for("biofield-analysis", a._get_product("biofield-analysis"),
+                                 {}, 4000) is None
