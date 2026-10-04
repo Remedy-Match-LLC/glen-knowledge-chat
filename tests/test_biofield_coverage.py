@@ -23,5 +23,6 @@ def test_build_coverage_unions_and_lowercases():
         {"codes": ["ES3"], "remedy_name": "neuro magnesium"},
         {"codes": ["MB1"], "remedy_name": ""},
     ]
-    cov = build_coverage(layers)
+    import sqlite3
+    cov = build_coverage(layers, sqlite3.connect(":memory:"))
     assert cov == {"neuro magnesium": {"ED1", "ED2", "ES3"}}  # unioned, lowercased, empty-remedy skipped

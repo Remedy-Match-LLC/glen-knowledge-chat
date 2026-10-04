@@ -154,9 +154,12 @@ def synthesize_reveal_layers(email, scan_id=None, *, e4l_db=DEFAULT_E4L_DB,
             "days_ago": days, "fresh": days is not None and days < 7, "layers": layers}
 
 
-def build_coverage(layers, cx=None):
+def build_coverage(layers, cx):
     """Map each remedy (lowercased) to the set of scan stress codes it covers,
-    derived from the synthesized layers. Empty-remedy layers are skipped."""
+    derived from the synthesized layers. Empty-remedy layers are skipped.
+
+    `cx` is required: names go through the same redirect as import_layers_to_test, or
+    a coverage key and its chain row disagree and the balancing panel loses the match."""
     from dashboard.biofield_authoring import exact_canonical_name
     cov = {}
     for L in layers or []:
