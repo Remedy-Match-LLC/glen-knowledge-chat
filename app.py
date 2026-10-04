@@ -24736,15 +24736,17 @@ def _portal_priced_lines(items, email=None):
         # Current client pricing is authoritative across every cart source. An
         # older practitioner-baked line price is only a fallback when no current
         # saved per-SKU or eligible FF-flat price exists.
-        if slug in client_by_slug:
-            override = client_by_slug[slug]
-        elif client_ff_flat is not None and _qty_eligible(p):
-            override = int(client_ff_flat)
+        # A current saved special outranks an older baked line price, but only ever
+        # lowers the automatic price (Glen, 2026-10-04: "only ... a lower price").
+        _special = _client_special_for(slug, p, client_by_slug, client_ff_flat)
+        if _special is not None:
+            unit_cents = _special_lowers_only(_special, _inhouse_line_unit_cents(
+                p, None, total_ff_qty, settings, repertoire_slugs=rep_slugs,
+                program_member=program_member, line_qty=qty))
         else:
-            override = it.get("price_cents")
-        unit_cents = _inhouse_line_unit_cents(p, override, total_ff_qty, settings,
-                                              repertoire_slugs=rep_slugs,
-                                              program_member=program_member, line_qty=qty)
+            unit_cents = _inhouse_line_unit_cents(p, it.get("price_cents"), total_ff_qty, settings,
+                                                  repertoire_slugs=rep_slugs,
+                                                  program_member=program_member, line_qty=qty)
         subtotal_cents += unit_cents * qty
         lines.append({"name": p["name"], "amount": round(unit_cents / 100.0, 2),
                       "qty": qty, "item_id": p.get("qbo_item_id"), "description": display_name})
@@ -24982,12 +24984,10 @@ def _portal_reorder_module(email):
             regular_cents = int(p.get("price_cents") or 0)
             in_rep = slug in rep_slugs  # full set: display "in your repertoire" regardless of FF-ness
             your_cents = regular_cents
-            if slug in client_by_slug:
-                your_cents = client_by_slug[slug]
-            elif client_ff_flat is not None and _qty_eligible(p):
-                your_cents = int(client_ff_flat)
-            elif member and slug in rep_slugs_ff:  # FF-only: pricing
+            if member and slug in rep_slugs_ff:  # FF-only: pricing
                 your_cents = _rep_priced_unit_cents(p, repertoire_slugs=rep_slugs_ff, settings=settings)
+            your_cents = _special_lowers_only(
+                _client_special_for(slug, p, client_by_slug, client_ff_flat), your_cents)
             reorder.append({
                 "slug": slug, "name": p.get("name", slug), "qty": qty,
                 "regular_cents": regular_cents, "your_cents": your_cents,
@@ -25107,12 +25107,10 @@ def _portal_reorder_module(email):
         seen.add(slug)
         regular_cents = int(p.get("price_cents") or 0)
         your_cents = regular_cents
-        if slug in client_by_slug:
-            your_cents = client_by_slug[slug]
-        elif client_ff_flat is not None and _qty_eligible(p):
-            your_cents = int(client_ff_flat)
-        elif member and slug in rep_slugs_ff:
+        if member and slug in rep_slugs_ff:
             your_cents = _rep_priced_unit_cents(p, repertoire_slugs=rep_slugs_ff, settings=settings)
+        your_cents = _special_lowers_only(
+            _client_special_for(slug, p, client_by_slug, client_ff_flat), your_cents)
         reorder.append({
             "slug": slug, "name": p.get("name", slug), "qty": qty,
             "regular_cents": regular_cents, "your_cents": your_cents,
@@ -26109,14 +26107,13 @@ def api_client_portal(token):
         p = _get_product(slug) if slug else None
         regular = (p or {}).get("price_cents")
         override = it.get("price_cents")
-        if slug in _cp_by_slug:
-            special = int(_cp_by_slug[slug])
-        elif _cp_ff_flat is not None and p and _qty_eligible(p):
-            special = int(_cp_ff_flat)
-        elif override is not None:
-            special = int(override)
+        # A current saved special outranks an older baked price, but only ever lowers
+        # the regular price (Glen, 2026-10-04).
+        _saved = _client_special_for(slug, p, _cp_by_slug, _cp_ff_flat)
+        if _saved is not None:
+            special = _special_lowers_only(_saved, regular)
         else:
-            special = regular
+            special = int(override) if override is not None else regular
         display.append({
             "slug": slug, "qty": int(it.get("qty", 1) or 1),
             "name": (p or {}).get("name", slug), "price_cents": special,
@@ -29461,12 +29458,12 @@ def _ff_line_cents(cx, email, slug):
     p = _get_product(slug) if slug else None
     regular = int((p or {}).get("price_cents") or 0)
     special = _cp.get_price(cx, email, slug)          # per-SKU client special, None if unset
-    if special is not None:
-        return int(special)
-    flat = _cp.get_ff_flat(cx, email)                 # client's flat rate across all FFs
-    if flat is not None and p and _qty_eligible(p):   # FF-volume-eligible only
-        return int(flat)
-    return regular
+    if special is None:
+        flat = _cp.get_ff_flat(cx, email)             # client's flat rate across all FFs
+        if flat is not None and p and _qty_eligible(p):   # FF-volume-eligible only
+            special = flat
+    # A saved client special only ever lowers the price (Glen, 2026-10-04).
+    return int(_special_lowers_only(special, regular))
 
 
 @app.route("/api/portal/<token>/ff-matches/add-to-invoice", methods=["POST"])
@@ -55767,6 +55764,32 @@ def _earned_reorder_slugs(cx, email):
         return set()
 
 
+def _special_lowers_only(special_cents, otherwise_cents):
+    """A client special price applies only when it is LOWER than what the client would
+    otherwise pay. Glen, 2026-10-04: "A client special price should only override
+    pricing to give a lower price, not a higher one." Agnes Verches had a $69.97 flat
+    Formula price that pinned 17 Formulas above her member mix/match rate."""
+    if special_cents in (None, ""):
+        return otherwise_cents
+    try:
+        special = int(special_cents)
+    except (TypeError, ValueError):
+        return otherwise_cents
+    if otherwise_cents in (None, ""):
+        return special
+    return min(special, int(otherwise_cents))
+
+
+def _client_special_for(slug, product, by_slug, ff_flat):
+    """This client's saved special for one product: per-SKU first, else the all-Formula
+    flat rate for a Formula. None when neither applies."""
+    if (by_slug or {}).get(slug) is not None:
+        return by_slug[slug]
+    if ff_flat is not None and product and _qty_eligible(product):
+        return ff_flat
+    return None
+
+
 def _capped_override_unit(unit_cents, *, product, slug, cprices, ff_flat, price_at):
     """Adapter: this app's pricing context -> the shared, tested cap."""
     from dashboard import special_price_guard as _spg
@@ -55876,12 +55899,6 @@ def _price_inhouse_invoice(lines_in, *, email, pickup, ship,
                     program_member=program_member, line_qty=qty))
             if _was is not None:
                 price_caps.append({"slug": slug, "from_cents": _was, "to_cents": unit_cents})
-        elif _cprices.get(slug) is not None:
-            unit_cents = _inhouse_line_unit_cents(p, _cprices.get(slug), total_ff_qty, settings,
-                                                  program_member=program_member, line_qty=qty)
-        elif _ff_flat is not None and _qty_eligible(p):
-            unit_cents = _inhouse_line_unit_cents(p, _ff_flat, total_ff_qty, settings,
-                                                  program_member=program_member, line_qty=qty)
         else:
             unit_cents = _inhouse_line_unit_cents(p, None, total_ff_qty, settings,
                                                   repertoire_slugs=rep_slugs,
@@ -55893,6 +55910,9 @@ def _price_inhouse_invoice(lines_in, *, email, pickup, ship,
                 _cohort_loyalty_price(_loyalty, slug, _is_ff, _earned)):
                 if _cand is not None:
                     unit_cents = min(unit_cents, _cand)   # lowest wins among automatics
+            # A saved client special only ever lowers the line (Glen, 2026-10-04).
+            unit_cents = _special_lowers_only(
+                _client_special_for(slug, p, _cprices, _ff_flat), unit_cents)
         line_cents = unit_cents * qty
         subtotal_list += line_cents
         _fmt = _clean_format(p, ln.get("format"))   # refill/larger only where it applies
@@ -57103,14 +57123,7 @@ def api_orders_price_preview():
         ov = ln.get("unit_cents")
         is_ff = _qty_eligible(p)
         list_cents = int(p.get("price_cents") or 0)
-        if ov not in (None, ""):
-            _eff_ov = ov
-        elif _cprices.get(slug) is not None:
-            _eff_ov = _cprices.get(slug)
-        elif _ff_flat is not None and is_ff:
-            _eff_ov = _ff_flat
-        else:
-            _eff_ov = None
+        _eff_ov = ov if ov not in (None, "") else None
         unit = _inhouse_line_unit_cents(p, _eff_ov, total_ff_qty, settings,
                                         program_member=_ppm, line_qty=qty)
         if _eff_ov is None:   # cohort + earned loyalty compete with volume/list (lowest wins)
@@ -57118,6 +57131,8 @@ def api_orders_price_preview():
                           _cohort_loyalty_price(_loyalty, slug, is_ff, _earned)):
                 if _cand is not None:
                     unit = min(unit, _cand)
+            # A saved client special only ever lowers the line (Glen, 2026-10-04).
+            unit = _special_lowers_only(_client_special_for(slug, p, _cprices, _ff_flat), unit)
         overridden = ov not in (None, "")
         if overridden:
             unit, _ = _capped_override_unit(
