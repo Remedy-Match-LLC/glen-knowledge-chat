@@ -159,3 +159,17 @@ def test_the_lower_of_a_per_sku_special_and_the_flat_rate_wins(a):
 def test_the_flat_rate_never_applies_to_a_non_formula(a):
     assert a._client_special_for("biofield-analysis", a._get_product("biofield-analysis"),
                                  {}, 4000) is None
+
+
+@pytest.mark.parametrize("bad", [-1000, float("inf"), True, "junk"])
+def test_a_junk_special_is_ignored(a, bad):
+    slug = _ffs(a, 1)[0]
+    p = a._get_product(slug)
+    assert a._special_lowers_only(bad, 6997) == 6997
+    assert a._client_special_for(slug, p, {slug: bad}, 4000) == 4000
+
+
+def test_a_typed_price_caps_at_the_lower_special(a):
+    slug = _ffs(a, 1)[0]
+    _save(a, flat=4000, sku={slug: 6000}, email=OTHER)
+    assert _units(a, OTHER, [{"slug": slug, "qty": 1, "unit_cents": 7500}])[slug] == 4000

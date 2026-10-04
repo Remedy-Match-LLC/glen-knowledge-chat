@@ -55773,11 +55773,8 @@ def _special_lowers_only(special_cents, otherwise_cents):
     otherwise pay. Glen, 2026-10-04: "A client special price should only override
     pricing to give a lower price, not a higher one." Agnes Verches had a $69.97 flat
     Formula price that pinned 17 Formulas above her member mix/match rate."""
-    if special_cents in (None, ""):
-        return otherwise_cents
-    try:
-        special = int(special_cents)
-    except (TypeError, ValueError):
+    special = _valid_cents(special_cents)
+    if special is None:
         return otherwise_cents
     if otherwise_cents in (None, ""):
         return special
@@ -55796,27 +55793,37 @@ def _member_list_cents(product, email):
         return int(product.get("price_cents") or 0)
 
 
+def _valid_cents(v):
+    """A stored price as whole cents, or None when it is not a usable price. Zero is a
+    real courtesy; a negative or non-finite value is junk (round 2)."""
+    if v in (None, "") or isinstance(v, bool):
+        return None
+    try:
+        c = int(v)
+    except (TypeError, ValueError, OverflowError):
+        return None
+    return c if c >= 0 else None
+
+
 def _client_special_for(slug, product, by_slug, ff_flat):
     """This client's saved special for one product: the LOWER of a per-SKU special and,
     for a Formula, the all-Formula flat rate (Glen, 2026-10-04, "yes": a $60 per-SKU
     special no longer hides a $40 flat rate). None when neither applies."""
-    found = []
-    for v in ((by_slug or {}).get(slug),
-              ff_flat if (product and _qty_eligible(product)) else None):
-        try:
-            if v not in (None, ""):
-                found.append(int(v))
-        except (TypeError, ValueError):
-            continue
+    found = [c for c in (_valid_cents((by_slug or {}).get(slug)),
+                         _valid_cents(ff_flat) if (product and _qty_eligible(product)) else None)
+             if c is not None]
     return min(found) if found else None
 
 
 def _capped_override_unit(unit_cents, *, product, slug, cprices, ff_flat, price_at):
     """Adapter: this app's pricing context -> the shared, tested cap."""
     from dashboard import special_price_guard as _spg
+    # The ceiling is the lower of the two specials, the same one automatic pricing uses
+    # (round 2: a $75 typed price capped at a $60 per-SKU special despite a $40 flat).
+    saved = _client_special_for(slug, product, cprices, ff_flat)
     return _spg.capped_override(
-        unit_cents, {"ff_flat_cents": ff_flat, "sku": cprices or {}}, slug,
-        ff_eligible=lambda _s: _qty_eligible(product), price_at=price_at)
+        unit_cents, {"ff_flat_cents": None, "sku": ({slug: saved} if saved is not None else {})},
+        slug, ff_eligible=lambda _s: _qty_eligible(product), price_at=price_at)
 
 
 def _price_inhouse_invoice(lines_in, *, email, pickup, ship,
