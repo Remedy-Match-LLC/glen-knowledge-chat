@@ -269,3 +269,37 @@ def test_the_cache_drops_expired_entries(a, monkeypatch):
                         {("cert", f"e{i}@x.com"): (-1e9, False) for i in range(5001)})
     a._cached_payment_check("cert", AGNES, lambda e: False)
     assert len(a._PAYMENT_CACHE) == 1
+
+
+def test_a_partial_refund_on_a_card_order_keeps_it(a):
+    """Round 3: a card order is paid on the order row with no ledger payment."""
+    oid = _order(a, AGNES, ["biofield-analysis"])
+    from dashboard import order_payments as op
+    cx = sqlite3.connect(str(a.LOG_DB))
+    cx.row_factory = sqlite3.Row
+    op._insert(cx, oid, kind="refund", amount_cents=5000, method="card",
+               source="manual", external_ref=None, refunds_payment_id=None,
+               paid_at=None, note=None, actor=None)
+    cx.close()
+    assert a._mix_match_member(AGNES)
+
+
+def test_every_client_pricing_path_uses_the_mix_match_gate():
+    """Round 3: the reveal cart, the Biofield order preview, /begin checkout, reorder
+    subscribe and the owner price preview read real membership only, so they
+    disagreed with the invoice. The practitioner checkout stays on real membership."""
+    import ast
+    import inspect
+    import textwrap
+    import app as mod
+
+    def calls(fn):
+        fn = getattr(fn, "__wrapped__", fn)
+        tree = ast.parse(textwrap.dedent(inspect.getsource(fn)))
+        return {n.func.id for n in ast.walk(tree)
+                if isinstance(n, ast.Call) and isinstance(n.func, ast.Name)}
+
+    for name in ("_checkout_cart", "begin_biofield_order_preview", "begin_checkout",
+                 "api_orders_price_preview", "_price_inhouse_invoice", "reorder_subscribe"):
+        assert "_mix_match_member" in calls(getattr(mod, name)), name
+    assert "_mix_match_member" not in calls(mod.api_client_checkout)

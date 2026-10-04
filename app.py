@@ -4597,7 +4597,7 @@ def begin_biofield_order_preview(token):
         ship = _resolve_ship_address(email, {})
         # Gate Type-2 order-total pricing on membership so the preview matches what the
         # buyer is actually charged at checkout (begin_biofield_order_checkout does the same).
-        pc = _price_cart(items, ship=ship, program_member=_is_paid_member(email), email=email)
+        pc = _price_cart(items, ship=ship, program_member=_mix_match_member(email), email=email)
         priced = pc["priced"]
         lines = [{"slug": ln.get("slug"), "name": ln.get("name"), "qty": ln.get("qty"),
                   "list_cents": int(ln.get("list_cents") or 0),
@@ -7669,7 +7669,13 @@ def _paid_orders_with(cx, email, like_terms):
             continue
         try:
             b = _op.balance(cx, oid)
-            if int(b.get("paid_cents") or 0) - int(b.get("refunded_cents") or 0) <= 0:
+            paid = int(b.get("paid_cents") or 0)
+            if not int(b.get("ledger_paid_cents") or 0):
+                # A card order is paid on the order row, with no ledger payment. A
+                # ledger refund then switches balance()'s fallback off, so a $50
+                # refund on $300 read as nothing paid (round 3).
+                paid = max(paid, _orders_paid_cents(cx, oid))
+            if paid - int(b.get("refunded_cents") or 0) <= 0:
                 continue                      # refunded in full, or never really paid
         except Exception as e:
             print(f"[paid-check] ledger read failed for order {oid}: {e!r}", flush=True)
@@ -7677,6 +7683,12 @@ def _paid_orders_with(cx, email, like_terms):
             continue
         out.append((oid, _parse_paid_at(paid_at), items))
     return out
+
+
+def _orders_paid_cents(cx, oid):
+    r = cx.execute("SELECT COALESCE(paid_cents,0) FROM orders WHERE id=? "
+                   "AND COALESCE(pay_status,'')='paid'", (oid,)).fetchone()
+    return int(r[0] or 0) if r else 0
 
 
 def _rollback_quietly(cx):
@@ -11985,7 +11997,7 @@ def begin_checkout(slug):
         pc = _price_cart([{"slug": slug, "qty": qty, "format": fmt}], ship=ship,
                          coupon_pct=_eff_pct,
                          points_to_redeem_cents=redeem,
-                         program_member=_is_paid_member(email), email=email)
+                         program_member=_mix_match_member(email), email=email)
     except CheckoutError as ce:
         return jsonify({"ok": False, "error": str(ce)}), 400
     # Shipping credit (slice 2b, flag-gated): auto-apply the customer's outstanding
@@ -40145,7 +40157,7 @@ def _checkout_cart(email, cart, *, ship, points_to_redeem_cents=0, referral_code
         requested_redeem = min(requested_redeem, _bal)
     _ref_pct, _ref_ctx = _resolve_checkout_coupon_pct(referral_code, email)
     pc = _price_cart(cart, ship=ship, coupon_pct=_ref_pct, points_to_redeem_cents=requested_redeem,
-                     program_member=_is_paid_member(email), email=email)
+                     program_member=_mix_match_member(email), email=email)
     if not pc["qbo_lines"]:
         raise CheckoutError("Your cart is empty or those items are no longer available.")
     # Shipping credit (slice 2b, flag-gated) — same fold as the funnel: auto-apply the
@@ -40540,7 +40552,7 @@ def reorder_subscribe():
         from dashboard import subscriptions as _subs
         try:
             pc = _price_cart(cart, ship=ship, subscriber_order_count=0, subscriber_active=True,
-                             program_member=_is_paid_member(email), email=email)
+                             program_member=_mix_match_member(email), email=email)
         except CheckoutError as e:
             return jsonify({"ok": False, "error": str(e)}), 400
         if not pc["qbo_lines"]:
@@ -57042,7 +57054,7 @@ def api_orders_price_preview():
     # pricing (computed only — never persisted until payment; see Task 2 brief).
     _has_biofield = any((ln.get("slug") or "").strip() == "biofield-analysis"
                         for ln in (lines_in or []))
-    _ppm = (_is_paid_member(_pemail)
+    _ppm = (_mix_match_member(_pemail)
             or bool(_mp.cart_has_membership_tier(lines_in))
             or _has_biofield)
     # The order-wide mix/match rate — a paid-member-only perk (Glen 2026-07); a
