@@ -103,15 +103,49 @@ def test_scan_reveal_with_the_old_name_lands_as_the_new_one(tmp_path):
               (NEW,))
     layers = [{"n": 1, "title": "Vessels", "most_affected": "Capillaries",
                "remedy_name": OLD, "codes": ["ED7"]}]
-    assert build_coverage(layers) == {NEW.lower(): {"ED7"}}
+    assert build_coverage(layers, c) == {NEW.lower(): {"ED7"}}
     tid = create_test(c, "J", "j@x.com", "2026-10-03")
     import_layers_to_test(c, tid, layers)
     row = c.execute("SELECT remedy, dosage, frequency, timing FROM biofield_auth_chain").fetchone()
     assert tuple(row) == (NEW, "1 capsule", "daily", "with food")
 
 
+def _fmp(*names):
+    c = sqlite3.connect(":memory:")
+    c.execute("CREATE TABLE fmp_snap_products(product_name TEXT)")
+    c.executemany("INSERT INTO fmp_snap_products VALUES(?)", [(n,) for n in names])
+    return c
+
+
 def test_unknown_names_pass_through_unchanged():
     from dashboard.biofield_authoring import exact_canonical_name
-    assert exact_canonical_name("  Neuro Magnesium ") == "Neuro Magnesium"
-    assert exact_canonical_name("") == ""
-    assert exact_canonical_name(None) == ""
+    c = _fmp(NEW)
+    assert exact_canonical_name(c, "  Neuro Magnesium ") == "Neuro Magnesium"
+    assert exact_canonical_name(c, "") == ""
+    assert exact_canonical_name(c, None) == ""
+    assert exact_canonical_name(None, OLD) == OLD          # no snapshot, no redirect
+
+
+def test_terrain_restore_suffix_survives_the_redirect():
+    from dashboard.biofield_authoring import exact_canonical_name
+    assert exact_canonical_name(_fmp(NEW), OLD + " in Terrain Restore") == NEW + " in Terrain Restore"
+
+
+def test_a_name_filemaker_still_sells_is_never_rewritten():
+    """Round 1: every retired name redirecting moved 12 live FileMaker names, 8 onto
+    different dosing. Each of these has its own FileMaker row and must stay itself."""
+    from dashboard.biofield_authoring import exact_canonical_name, _superseded_name_map
+    from dashboard.biofield_authoring import _catalog_exact_aliases
+    moved = list(_superseded_name_map()) + list(_catalog_exact_aliases())
+    assert moved, "no redirects loaded, so this test proves nothing"
+    c = _fmp(*moved, *_superseded_name_map().values(), *_catalog_exact_aliases().values())
+    for n in moved:
+        assert exact_canonical_name(c, n) == n
+
+
+def test_no_redirect_when_filemaker_lacks_the_target():
+    """ES1's live catalog name has no FileMaker row, so redirecting would lose dosing."""
+    from dashboard.biofield_authoring import exact_canonical_name
+    assert exact_canonical_name(_fmp(), "ES1 Lymph Energetic Star Infoceutical") \
+        == "ES1 Lymph Energetic Star Infoceutical"
+    assert exact_canonical_name(_fmp(), OLD) == OLD

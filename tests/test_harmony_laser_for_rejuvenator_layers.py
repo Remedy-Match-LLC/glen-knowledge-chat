@@ -61,8 +61,7 @@ def test_import_adds_the_laser_beside_the_layers_remedy(tmp_path, is_animal):
     cx.execute("INSERT INTO biofield_auth_tests (id) VALUES (7)")
     n = RI.import_layers_to_test(cx, "a7", res["layers"])
     rows = cx.execute("SELECT layer, remedy, timing FROM biofield_auth_chain ORDER BY id").fetchall()
-    # The retired ES1 name lands on the live ES1 record (exact redirect, 2026-10-03).
-    first = "ES1 Lymph and Immune Energetic Star Infoceutical" if is_animal else "WholOmega"
+    first = "ES1 Immune Energetic Star Infoceutical" if is_animal else "WholOmega"
     assert n == 2
     assert rows[0][:2] == (1, first)
     assert rows[1][0] == 1 and rows[1][1] == "Harmony Laser"
