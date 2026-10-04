@@ -920,7 +920,7 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                     "SELECT 1 FROM biofield_auth_stress WHERE test_id=? AND source='scan' LIMIT 1",
                     (int(str(test_id).lstrip("a") or 0),)).fetchone():
                 if layers is not None:
-                    coverage = _ri.build_coverage(layers)
+                    coverage = _ri.build_coverage(layers, cx)
                     _st.seed_from_scan(cx, test_id, ctx.get("findings") or [], coverage)
                 else:
                     try:
@@ -928,7 +928,7 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                     except Exception:
                         pass  # synthesis failure: skip scan seeding, fall through to profile mining
                     else:
-                        coverage = _ri.build_coverage(res.get("layers") or [])
+                        coverage = _ri.build_coverage(res.get("layers") or [], cx)
                         _st.seed_from_scan(cx, test_id, ctx.get("findings") or [], coverage)
         # Always-on: mine profile stresses (best-effort, at most once per session).
         # Guard: skip when tag stresses already exist to avoid a redundant HTTP fetch

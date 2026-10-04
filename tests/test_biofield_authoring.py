@@ -242,16 +242,17 @@ def test_discontinue_asterisk_stripped_but_still_listed(tmp_path):
         "CREATE TABLE fmp_snap_products(id_pk TEXT,product_name TEXT,dosage TEXT,dosage_freq TEXT,dosage_timing TEXT);"
         "CREATE TABLE fmp_snap_products_phases(id_fk_product TEXT,text TEXT);"
         "CREATE TABLE fmp_snap_products_systems(id_fk_product TEXT,text TEXT);")
-    cx.execute("INSERT INTO fmp_snap_products VALUES('1','Vitamin P Polyphenols*','1 capsule','daily','with food')")
+    cx.execute("INSERT INTO fmp_snap_products VALUES('1','Zeta Test Polyphenols*','1 capsule','daily','with food')")
     cx.commit()
-    picks = remedy_catalog(cx, "Vitamin P")
-    assert [p["name"] for p in picks] == ["Vitamin P Polyphenols"]     # clean name, listed
+    # A made-up name: the real one was renamed to Vascular Integrity on 2026-10-03.
+    picks = remedy_catalog(cx, "Zeta Test")
+    assert [p["name"] for p in picks] == ["Zeta Test Polyphenols"]     # clean name, listed
     assert picks[0]["discontinue_intent"] is True                      # intent surfaced, not hidden
     # dosing resolves despite the stored asterisk, keyed on the clean name
-    assert remedy_dosing(cx, "Vitamin P Polyphenols") == {
+    assert remedy_dosing(cx, "Zeta Test Polyphenols") == {
         "dosage": "1 capsule", "frequency": "daily", "timing": "with food"}
     # fuzzy resolve of an ASR-mangled spoken name returns the clean canonical name
-    assert resolve_remedy_name(cx, "vitamin p polyphenals") == "Vitamin P Polyphenols"
+    assert resolve_remedy_name(cx, "zeta test polyphenals") == "Zeta Test Polyphenols"
 
 
 def test_resolve_remedy_name_title_cases_when_unmatched(tmp_path):

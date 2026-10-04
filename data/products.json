@@ -7663,7 +7663,14 @@
    "description": "Vascular Integrity: Vitamin P Plus TECA. Each vegicap supplies bilberry anthocyanidins, ginkgo, pine bark OPCs, grape seed OPCs, hesperidin methyl chalcone and gotu kola TECA. Vegan, with zero fillers or excipients. 30 vegicaps.",
    "bottle_type": "30 Caps",
    "directions": "Take 1 to 2 capsules daily with food, or as guided.",
-   "enrichment_note": "Label day 2026-09-14 (Glen): renamed from Vitamin P Polyphenols; formula and directions from the approved label."
+   "enrichment_note": "Label day 2026-09-14 (Glen): renamed from Vitamin P Polyphenols; formula and directions from the approved label.",
+   "fmp_id": "374",
+   "aliases": [
+    "Vitamin P Polyphenols",
+    "Vitamin P: Polyphenols",
+    "Vascular Integrity"
+   ],
+   "report_aliases": true
   },
   "bath-salt": {
    "name": "Bath Salt",

@@ -441,6 +441,34 @@ def _token_match(spoken, names, cutoff):
     return next(iter(hits)) if len(hits) == 1 else None
 
 
+def exact_canonical_name(cx, name):
+    """A name FileMaker no longer carries -> the live name it was renamed to. EXACT only.
+    Anything else comes back unchanged (stripped).
+
+    The scan reveal arrives with the remote synthesis's names. On 2026-10-03 it still said
+    "Vitamin P Polyphenols", renamed to Vascular Integrity, so the row got no dosing and
+    no invoice line. Round 1: redirecting every retired name rewrote 12 names FileMaker
+    still sells, 8 to different dosing (Transform Powder -> Transform capsules). So a name
+    redirects only when FileMaker lacks it AND has the target, which then carries dosing."""
+    core = (name or "").strip()
+    suffix = ""
+    if core.lower().endswith(" in terrain restore"):
+        core = core[: core.lower().rfind(" in terrain restore")].strip()
+        suffix = " in Terrain Restore"     # the casing resolve_remedy_name writes
+    if not core or cx is None or not _has(cx, "fmp_snap_products"):
+        return (name or "").strip()
+    live = {_norm_name(_clean_product_name(r[0])) for r in cx.execute(
+        "SELECT product_name FROM fmp_snap_products "
+        "WHERE TRIM(COALESCE(product_name,''))<>''").fetchall()}
+    n = _norm_name(core)
+    if n in live:
+        return (name or "").strip()
+    target = _superseded_name_map().get(n) or _catalog_exact_aliases().get(n)
+    if not target or _norm_name(target) not in live:
+        return (name or "").strip()
+    return target + suffix
+
+
 def resolve_remedy_name(cx, spoken, cutoff=0.82):
     """Best-effort auto-correct a (possibly ASR-mangled) remedy name to the closest
     catalog product (case-insensitive). Preserves an ' in Terrain Restore' suffix.
