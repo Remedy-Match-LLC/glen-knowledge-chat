@@ -129,6 +129,7 @@ def test_unknown_names_pass_through_unchanged():
 def test_terrain_restore_suffix_survives_the_redirect():
     from dashboard.biofield_authoring import exact_canonical_name
     assert exact_canonical_name(_fmp(NEW), OLD + " in Terrain Restore") == NEW + " in Terrain Restore"
+    assert exact_canonical_name(_fmp(NEW), OLD.upper() + " in terrain restore") == NEW + " in Terrain Restore"
 
 
 def test_a_name_filemaker_still_sells_is_never_rewritten():

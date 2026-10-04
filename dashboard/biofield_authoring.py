@@ -453,8 +453,8 @@ def exact_canonical_name(cx, name):
     core = (name or "").strip()
     suffix = ""
     if core.lower().endswith(" in terrain restore"):
-        suffix = core[core.lower().rfind(" in terrain restore"):]
-        core = core[: -len(suffix)].strip()
+        core = core[: core.lower().rfind(" in terrain restore")].strip()
+        suffix = " in Terrain Restore"     # the casing resolve_remedy_name writes
     if not core or cx is None or not _has(cx, "fmp_snap_products"):
         return (name or "").strip()
     live = {_norm_name(_clean_product_name(r[0])) for r in cx.execute(
