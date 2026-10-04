@@ -7572,6 +7572,11 @@ def _is_paid_member(email):
             # design, from the $1 unlock), was covered by an active family plan,
             # and was charged full price permanently. Glen 2026-09-12: nobody with
             # a plan should be eligible for a trial, so a plan always outranks one.
+        # Glen, 2026-10-03: a certification student who has PAID for the enrollment
+        # is a paid member through the end of the year (Agnes Verches: Biofield $200,
+        # mix/match on Formulas). Local records only, never a network lookup.
+        if email and _cert_member_window_open() and _paid_cert_student(email):
+            return True
         if email and _family_plan_enabled():
             from dashboard import family_plan as _fp
             with db.connect(LOG_DB) as cx:
@@ -7580,6 +7585,105 @@ def _is_paid_member(email):
         return False
     except Exception:
         return False
+
+
+# Last day (Hawaii time) a paid certification student counts as a paid member. Glen,
+# 2026-10-03: "every one should show as a paid member through the end of the year."
+CERT_MEMBER_UNTIL = "2026-12-31"
+# What a paid enrollment looks like on an invoiced order. A Stripe purchase also writes
+# a course entitlement (dashboard.course_entitlements.paid_level_for).
+CERT_ENROLLMENT_SLUGS = ("ash-practitioner-cert", "ash-practitioner-cert-monthly")
+
+
+def _cert_member_window_open(today=None):
+    if today is None:
+        from zoneinfo import ZoneInfo
+        today = datetime.now(ZoneInfo("Pacific/Honolulu")).date().isoformat()
+    return today <= CERT_MEMBER_UNTIL
+
+
+def _paid_cert_student(email):
+    """True when this email has paid for a certification enrollment: an active course
+    entitlement (Stripe), or a paid, non-cancelled order carrying an enrollment line
+    (an invoice paid by Zelle, Wise or card). Only a payment counts, so nobody can
+    give it to themselves by registering. Fails closed."""
+    email = (email or "").strip().lower()
+    if not email:
+        return False
+    try:
+        from dashboard import course_entitlements as _ce
+        with db.connect(LOG_DB) as cx:
+            try:
+                if _ce.paid_level_for(cx, email) >= 2:
+                    return True
+            except Exception as e:
+                print(f"[cert-member] entitlement read failed: {e!r}", flush=True)
+            rows = cx.execute(
+                "SELECT COALESCE(items_json,'') FROM orders "
+                "WHERE lower(COALESCE(email,''))=? AND COALESCE(pay_status,'')='paid' "
+                "AND COALESCE(status,'')<>'cancelled' AND COALESCE(items_json,'') LIKE ?",
+                (email, "%ash-practitioner-cert%")).fetchall()
+        for (raw,) in rows:
+            try:
+                items = json.loads(raw or "[]")
+            except (TypeError, ValueError):
+                continue
+            if any((it.get("slug") or "").strip() in CERT_ENROLLMENT_SLUGS
+                   for it in items if isinstance(it, dict)):
+                return True
+        return False
+    except Exception as e:
+        print(f"[cert-member] paid-enrollment check failed: {e!r}", flush=True)
+        return False
+
+
+# A paid Biofield Analysis includes a month of member benefits. Its remedies get the
+# mix/match rate for that month even when the care-taster grant was never written:
+# the grant is skipped for a $1-trial holder, whom pricing still treats as a trial.
+BIOFIELD_MIX_MATCH_DAYS = 30
+
+
+def _biofield_paid_within(email, days=BIOFIELD_MIX_MATCH_DAYS, now=None):
+    """True when a paid, non-cancelled order with a Biofield Analysis line was paid in
+    the last `days` days. Fails closed, and an unreadable paid_at does not count."""
+    email = (email or "").strip().lower()
+    if not email:
+        return False
+    try:
+        with db.connect(LOG_DB) as cx:
+            rows = cx.execute(
+                "SELECT COALESCE(paid_at,''), COALESCE(items_json,'') FROM orders "
+                "WHERE lower(COALESCE(email,''))=? AND COALESCE(pay_status,'')='paid' "
+                "AND COALESCE(status,'')<>'cancelled' AND COALESCE(items_json,'') LIKE ?",
+                (email, "%biofield-analysis%")).fetchall()
+        now = now or datetime.now(timezone.utc)
+        for paid_at, raw in rows:
+            try:
+                items = json.loads(raw or "[]")
+            except (TypeError, ValueError):
+                continue
+            if not any((it.get("slug") or "").strip() == "biofield-analysis"
+                       for it in items if isinstance(it, dict)):
+                continue
+            try:
+                t = datetime.fromisoformat(str(paid_at).strip().replace("Z", "+00:00"))
+            except ValueError:
+                continue
+            if t.tzinfo is None:
+                t = t.replace(tzinfo=timezone.utc)
+            if now - t <= timedelta(days=days):
+                return True
+        return False
+    except Exception as e:
+        print(f"[biofield-mixmatch] paid check failed: {e!r}", flush=True)
+        return False
+
+
+def _mix_match_member(email):
+    """Whether this buyer's Formulas price on the order-wide mix/match rate: a paid
+    member, or a client whose Biofield Analysis was paid in the last 30 days. Pricing
+    only: the $200 member Biofield price still keys off _is_paid_member."""
+    return bool(_is_paid_member(email) or _biofield_paid_within(email))
 
 
 def _is_certification_student(email):
@@ -22455,7 +22559,7 @@ def api_client_checkout(code):
                 bal_cents = _points.balance(_bcx, email, scope=_scope)
         except Exception:
             bal_cents = 0
-    _program_member = _is_paid_member(email)
+    _program_member = _mix_match_member(email)
     try:
         out = _dropship.build_client_order(
             items, prac, patient=patient, method=method,
@@ -24502,7 +24606,7 @@ def _portal_priced_lines(items, email=None):
     settings = _pricing.load_settings(_pricing_settings())
     total_ff_qty = _inhouse_total_ff_qty(items or [])
     rep_slugs = _resolve_repertoire_slugs(email)
-    program_member = _is_paid_member(email)
+    program_member = _mix_match_member(email)
     client_by_slug, client_ff_flat = {}, None
     if email:
         try:
@@ -55598,7 +55702,7 @@ def _price_inhouse_invoice(lines_in, *, email, pickup, ship,
     # the actual care_taster grant is still created by payment fulfillment.
     _has_biofield = any((ln.get("slug") or "").strip() == "biofield-analysis"
                         for ln in (lines_in or []))
-    program_member = (_is_paid_member(email)
+    program_member = (_mix_match_member(email)
                       or bool(_mp.cart_has_membership_tier(lines_in))
                       or _has_biofield)
     # A paid member's repertoire SKU set, resolved ONCE for the whole order (Task 5b —
