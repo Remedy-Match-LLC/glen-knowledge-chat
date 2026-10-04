@@ -5,7 +5,6 @@ higher one." Agnes Verches, a paid member, had a $69.97 flat Formula price saved
 outranked her member mix/match rate, so 17 Formulas on her invoice stayed at $69.97.
 """
 import sqlite3
-from ast import walk as ast_walk
 
 import pytest
 
@@ -115,17 +114,22 @@ def test_no_site_lets_a_special_replace_the_price_outright():
                      r"(?:int\()?\s*(?:client_by_slug\[|client_ff_flat|_cp_by_slug\[|_cp_ff_flat"
                      r"|_cprices\.get\(|_ff_flat\b)", src)
     assert bad == [], bad
-    # Round 1: every function that READS a client's saved price must also apply the
-    # rule, so a new reader cannot slip past by naming its variable differently.
-    tree = __import__("ast").parse(src)
-    readers = ("get_price", "price_map", "get_ff_flat", "list_for")
+    # Every function that READS a client's saved price must CALL _special_lowers_only.
+    # Checked on the syntax tree, so a comment naming the rule does not count, and
+    # async functions are included (round 3).
+    import ast
+    tree = ast.parse(src)
+    readers = {"get_price", "price_map", "get_ff_flat", "list_for"}
     # These list the saved specials themselves for the owner; they price nothing.
     allowed = {"api_console_client_prices", "console_client_commerce_status"}
     missing = []
-    for fn in [n for n in ast_walk(tree) if type(n).__name__ == "FunctionDef"]:
-        body = __import__("ast").get_source_segment(src, fn) or ""
-        if any(f".{r}(" in body for r in readers) and "_special_lowers_only" not in body \
-                and "_client_special_for" not in body and fn.name not in allowed:
+    for fn in ast.walk(tree):
+        if not isinstance(fn, (ast.FunctionDef, ast.AsyncFunctionDef)) or fn.name in allowed:
+            continue
+        calls = [n.func for n in ast.walk(fn) if isinstance(n, ast.Call)]
+        reads = any(isinstance(f, ast.Attribute) and f.attr in readers for f in calls)
+        applies = any(isinstance(f, ast.Name) and f.id == "_special_lowers_only" for f in calls)
+        if reads and not applies:
             missing.append(fn.name)
     assert missing == [], missing
 
