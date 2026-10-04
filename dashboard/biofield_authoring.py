@@ -441,6 +441,18 @@ def _token_match(spoken, names, cutoff):
     return next(iter(hits)) if len(hits) == 1 else None
 
 
+def exact_canonical_name(name):
+    """A retired name, or an opted-in old name, -> its live name. EXACT only, never fuzzy.
+    Anything else comes back unchanged (stripped).
+
+    The scan reveal arrives with the remote synthesis's names. On 2026-10-03 it still said
+    "Vitamin P Polyphenols", renamed to Vascular Integrity. Coverage and chain rows keyed
+    on the old name matched no FMP dosing and no invoice line."""
+    core = (name or "").strip()
+    n = _norm_name(core)
+    return _superseded_name_map().get(n) or _catalog_exact_aliases().get(n) or core
+
+
 def resolve_remedy_name(cx, spoken, cutoff=0.82):
     """Best-effort auto-correct a (possibly ASR-mangled) remedy name to the closest
     catalog product (case-insensitive). Preserves an ' in Terrain Restore' suffix.

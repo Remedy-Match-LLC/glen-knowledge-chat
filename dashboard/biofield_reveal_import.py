@@ -157,9 +157,10 @@ def synthesize_reveal_layers(email, scan_id=None, *, e4l_db=DEFAULT_E4L_DB,
 def build_coverage(layers):
     """Map each remedy (lowercased) to the set of scan stress codes it covers,
     derived from the synthesized layers. Empty-remedy layers are skipped."""
+    from dashboard.biofield_authoring import exact_canonical_name
     cov = {}
     for L in layers or []:
-        name = (L.get("remedy_name") or "").strip().lower()
+        name = exact_canonical_name(L.get("remedy_name")).lower()
         if not name:
             continue
         cov.setdefault(name, set()).update(L.get("codes") or [])
@@ -174,10 +175,10 @@ def import_layers_to_test(cx, tid, layers, after_layer=0):
     `after_layer` is the intake's highest stored layer. Appending onto an intake that
     already has layers numbers the reveal's layers after it; numbering them from 1
     again would interleave them with the layers already there."""
-    from dashboard.biofield_authoring import add_chain_row, remedy_dosing
+    from dashboard.biofield_authoring import add_chain_row, exact_canonical_name, remedy_dosing
     n = 0
     for L in layers or []:
-        name = (L.get("remedy_name") or "").strip()
+        name = exact_canonical_name(L.get("remedy_name"))
         d = remedy_dosing(cx, name) if name else {"dosage": "", "frequency": "", "timing": ""}
         _n = L.get("n")
         add_chain_row(cx, tid, (int(_n) + int(after_layer or 0)) if _n is not None else None,
@@ -190,6 +191,7 @@ def import_layers_to_test(cx, tid, layers, after_layer=0):
         laser = L.get("laser")
         if laser:
             # An extra first-order remedy in the same layer, never in place of its remedy.
+            laser = dict(laser, name=exact_canonical_name(laser.get("name")))
             ld = remedy_dosing(cx, laser["name"])
             timing = ld.get("timing", "")
             if laser.get("caution"):

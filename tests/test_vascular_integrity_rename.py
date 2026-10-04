@@ -88,3 +88,30 @@ def test_name_maps_carry_the_new_name():
     assert f'"catalog_name": "{OLD}"' not in (ROOT / "data" / "product-aliases.json").read_text()
     theory = (ROOT / "data" / "clinical_theory_catalog.json").read_text()
     assert f'"name": "{OLD}"' not in theory
+
+
+def test_scan_reveal_with_the_old_name_lands_as_the_new_one(tmp_path):
+    """The remote reveal still names the old product. Coverage and the chain row must
+    both carry the live name, or the balancing panel loses the match."""
+    from dashboard.biofield_authoring import create_test, init_auth_tables
+    from dashboard.biofield_reveal_import import build_coverage, import_layers_to_test
+    c = sqlite3.connect(str(tmp_path / "c.db"))
+    init_auth_tables(c)
+    c.execute("CREATE TABLE fmp_snap_products(id_pk TEXT, product_name TEXT, dosage TEXT, "
+              "dosage_freq TEXT, dosage_timing TEXT)")
+    c.execute("INSERT INTO fmp_snap_products VALUES('374',?,'1 capsule','daily','with food')",
+              (NEW,))
+    layers = [{"n": 1, "title": "Vessels", "most_affected": "Capillaries",
+               "remedy_name": OLD, "codes": ["ED7"]}]
+    assert build_coverage(layers) == {NEW.lower(): {"ED7"}}
+    tid = create_test(c, "J", "j@x.com", "2026-10-03")
+    import_layers_to_test(c, tid, layers)
+    row = c.execute("SELECT remedy, dosage, frequency, timing FROM biofield_auth_chain").fetchone()
+    assert tuple(row) == (NEW, "1 capsule", "daily", "with food")
+
+
+def test_unknown_names_pass_through_unchanged():
+    from dashboard.biofield_authoring import exact_canonical_name
+    assert exact_canonical_name("  Neuro Magnesium ") == "Neuro Magnesium"
+    assert exact_canonical_name("") == ""
+    assert exact_canonical_name(None) == ""
