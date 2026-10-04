@@ -230,3 +230,42 @@ def test_an_unreadable_orders_table_fails_closed(a, monkeypatch):
     monkeypatch.setattr(a.db, "connect", boom)
     assert not a._paid_cert_student(AGNES)
     assert not a._biofield_paid_within(AGNES)
+
+
+def test_a_future_dated_payment_does_not_count(a):
+    later = (datetime.now(timezone.utc) + timedelta(days=5)).isoformat()
+    _order(a, AGNES, ["biofield-analysis"], paid_at=later)
+    _order(a, AGNES, ["ash-practitioner-cert-monthly"], paid_at=later)
+    assert not a._mix_match_member(AGNES)
+
+
+def test_a_malformed_line_does_not_hide_a_real_payment(a):
+    _order(a, AGNES, [], items=[{"slug": 7}, {"name": ["x"]}])
+    _order(a, AGNES, ["biofield-analysis"])
+    assert a._mix_match_member(AGNES)
+
+
+def test_a_legacy_paid_order_refunded_in_the_ledger_does_not(a):
+    """A pre-ledger order carries paid_cents on the order row. A refund-only ledger
+    row turns that fallback off, so the order reads as refunded."""
+    oid = _order(a, AGNES, ["ash-practitioner-cert"])
+    from dashboard import order_payments as op
+    cx = sqlite3.connect(str(a.LOG_DB))
+    cx.row_factory = sqlite3.Row
+    op._insert(cx, oid, kind="refund", amount_cents=30000, method="zelle",
+               source="manual", external_ref=None, refunds_payment_id=None,
+               paid_at=None, note=None, actor=None)
+    cx.close()
+    assert not a._is_paid_member(AGNES)
+
+
+def test_a_legacy_paid_order_with_no_ledger_counts(a):
+    _order(a, AGNES, ["ash-practitioner-cert"])
+    assert a._is_paid_member(AGNES)
+
+
+def test_the_cache_drops_expired_entries(a, monkeypatch):
+    monkeypatch.setattr(a, "_PAYMENT_CACHE",
+                        {("cert", f"e{i}@x.com"): (-1e9, False) for i in range(5001)})
+    a._cached_payment_check("cert", AGNES, lambda e: False)
+    assert len(a._PAYMENT_CACHE) == 1

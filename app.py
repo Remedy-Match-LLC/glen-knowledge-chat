@@ -7617,8 +7617,28 @@ def _cached_payment_check(name, email, fn):
     if hit and now - hit[0] < _PAYMENT_CACHE_TTL_S:
         return hit[1]
     val = bool(fn(key[1]))
+    if len(_PAYMENT_CACHE) > 5000:      # bounded: drop expired entries (round 2)
+        for k in [k for k, (t, _v) in _PAYMENT_CACHE.items()
+                  if now - t >= _PAYMENT_CACHE_TTL_S]:
+            _PAYMENT_CACHE.pop(k, None)
     _PAYMENT_CACHE[key] = (now, val)
     return val
+
+
+def _line_text(it, key):
+    """A line field as stripped text, or "" when absent or not text. One malformed line
+    must not hide another line's payment (round 2)."""
+    v = it.get(key)
+    return v.strip() if isinstance(v, str) else ""
+
+
+def _paid_in_window(paid_at, now, days):
+    """Paid within the last `days` days, and not dated in the future (an hour of clock
+    skew allowed). Round 2: a future date counted, and for longer."""
+    if paid_at is None:
+        return False
+    age = now - paid_at
+    return timedelta(hours=-1) <= age <= timedelta(days=days)
 
 
 def _parse_paid_at(v):
@@ -7684,11 +7704,11 @@ def _paid_cert_student_uncached(email):
                 print(f"[cert-member] entitlement read failed: {e!r}", flush=True)
                 _rollback_quietly(cx)
             for _oid, paid_at, items in _paid_orders_with(cx, email, ["%ash-practitioner-cert%"]):
-                slugs = {(it.get("slug") or "").strip() for it in items}
+                slugs = {_line_text(it, "slug") for it in items}
                 if CERT_ONETIME_SLUG in slugs:
                     return True
-                if (CERT_MONTHLY_SLUG in slugs and paid_at is not None
-                        and now - paid_at <= timedelta(days=CERT_MONTHLY_DAYS)):
+                if CERT_MONTHLY_SLUG in slugs and _paid_in_window(paid_at, now,
+                                                                  CERT_MONTHLY_DAYS):
                     return True
         return False
     except Exception as e:
@@ -7710,11 +7730,11 @@ BIOFIELD_MIX_MATCH_DAYS = 30
 
 
 def _is_biofield_line(it):
-    slug = (it.get("slug") or "").strip()
+    slug = _line_text(it, "slug")
     if slug:
         return slug == "biofield-analysis"
     # A card checkout (_price_biofield) stores the line by name, with no slug.
-    return (it.get("name") or "").strip() == _BIOFIELD_ITEM_NAME
+    return _line_text(it, "name") == _BIOFIELD_ITEM_NAME
 
 
 def _biofield_paid_within_uncached(email, days=BIOFIELD_MIX_MATCH_DAYS, now=None):
@@ -7726,8 +7746,8 @@ def _biofield_paid_within_uncached(email, days=BIOFIELD_MIX_MATCH_DAYS, now=None
             found = _paid_orders_with(cx, email, ["%biofield-analysis%",
                                                   "%" + _BIOFIELD_ITEM_NAME + "%"])
         for _oid, paid_at, items in found:
-            if (paid_at is not None and any(_is_biofield_line(it) for it in items)
-                    and now - paid_at <= timedelta(days=days)):
+            if (any(_is_biofield_line(it) for it in items)
+                    and _paid_in_window(paid_at, now, days)):
                 return True
         return False
     except Exception as e:
