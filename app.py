@@ -7572,6 +7572,10 @@ def _is_paid_member(email):
             # design, from the $1 unlock), was covered by an active family plan,
             # and was charged full price permanently. Glen 2026-09-12: nobody with
             # a plan should be eligible for a trial, so a plan always outranks one.
+        # Glen, 2026-10-03: every certification student shows as a paid member through
+        # the end of the year (Agnes Verches: Biofield Analysis $200, not $300).
+        if email and _cert_member_window_open() and _cert_student_cached(email):
+            return True
         if email and _family_plan_enabled():
             from dashboard import family_plan as _fp
             with db.connect(LOG_DB) as cx:
@@ -7580,6 +7584,36 @@ def _is_paid_member(email):
         return False
     except Exception:
         return False
+
+
+# Last day (Hawaii time) a certification student counts as a paid member. Glen,
+# 2026-10-03: "every one should show as a paid member through the end of the year."
+CERT_MEMBER_UNTIL = "2026-12-31"
+_CERT_CACHE = {}           # email -> (checked_at_monotonic, bool)
+_CERT_CACHE_TTL_S = 300
+
+
+def _cert_member_window_open(today=None):
+    if today is None:
+        from zoneinfo import ZoneInfo
+        today = datetime.now(ZoneInfo("Pacific/Honolulu")).date().isoformat()
+    return today <= CERT_MEMBER_UNTIL
+
+
+def _cert_student_cached(email):
+    """_is_certification_student, cached for 5 minutes. _is_paid_member runs on every
+    price computation, and the student check is a network query. A failed lookup reads
+    as False (fail closed) and is cached like any answer, so it costs at most 5 minutes
+    of regular pricing."""
+    import time as _time
+    key = (email or "").strip().lower()
+    hit = _CERT_CACHE.get(key)
+    now = _time.monotonic()
+    if hit and now - hit[0] < _CERT_CACHE_TTL_S:
+        return hit[1]
+    val = bool(_is_certification_student(key))
+    _CERT_CACHE[key] = (now, val)
+    return val
 
 
 def _is_certification_student(email):
