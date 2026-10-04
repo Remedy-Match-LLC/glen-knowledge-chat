@@ -4597,7 +4597,7 @@ def begin_biofield_order_preview(token):
         ship = _resolve_ship_address(email, {})
         # Gate Type-2 order-total pricing on membership so the preview matches what the
         # buyer is actually charged at checkout (begin_biofield_order_checkout does the same).
-        pc = _price_cart(items, ship=ship, program_member=_is_paid_member(email), email=email)
+        pc = _price_cart(items, ship=ship, program_member=_mix_match_member(email), email=email)
         priced = pc["priced"]
         lines = [{"slug": ln.get("slug"), "name": ln.get("name"), "qty": ln.get("qty"),
                   "list_cents": int(ln.get("list_cents") or 0),
@@ -7572,6 +7572,11 @@ def _is_paid_member(email):
             # design, from the $1 unlock), was covered by an active family plan,
             # and was charged full price permanently. Glen 2026-09-12: nobody with
             # a plan should be eligible for a trial, so a plan always outranks one.
+        # Glen, 2026-10-03: a certification student who has PAID for the enrollment
+        # is a paid member through the end of the year (Agnes Verches: Biofield $200,
+        # mix/match on Formulas). Local records only, never a network lookup.
+        if email and _cert_member_window_open() and _paid_cert_student(email):
+            return True
         if email and _family_plan_enabled():
             from dashboard import family_plan as _fp
             with db.connect(LOG_DB) as cx:
@@ -7580,6 +7585,204 @@ def _is_paid_member(email):
         return False
     except Exception:
         return False
+
+
+# Last day (Hawaii time) a paid certification student counts as a paid member. Glen,
+# 2026-10-03: "every one should show as a paid member through the end of the year."
+CERT_MEMBER_UNTIL = "2026-12-31"
+# What a paid enrollment looks like on an invoiced order. A Stripe purchase also writes
+# a course entitlement with source 'stripe'. Other sources (the coach roster, the 12th
+# module approval) are not payments and do not count (review round 1).
+CERT_ONETIME_SLUG = "ash-practitioner-cert"
+CERT_MONTHLY_SLUG = "ash-practitioner-cert-monthly"
+CERT_MONTHLY_DAYS = 35          # one paid installment covers about a month, like a plan row
+_PAYMENT_CACHE = {}             # (check, email) -> (monotonic, bool)
+_PAYMENT_CACHE_TTL_S = 60
+
+
+def _cert_member_window_open(today=None):
+    if today is None:
+        from zoneinfo import ZoneInfo
+        today = datetime.now(ZoneInfo("Pacific/Honolulu")).date().isoformat()
+    return today <= CERT_MEMBER_UNTIL
+
+
+def _cached_payment_check(name, email, fn):
+    """A paid-order answer, cached for a minute. _is_paid_member runs on every price
+    computation, and a non-member now costs a query. A payment shows within a minute."""
+    import time as _time
+    key = (name, (email or "").strip().lower())
+    hit = _PAYMENT_CACHE.get(key)
+    now = _time.monotonic()
+    if hit and now - hit[0] < _PAYMENT_CACHE_TTL_S:
+        return hit[1]
+    val = bool(fn(key[1]))
+    if len(_PAYMENT_CACHE) > 5000:      # bounded: drop expired entries (round 2)
+        for k in [k for k, (t, _v) in _PAYMENT_CACHE.items()
+                  if now - t >= _PAYMENT_CACHE_TTL_S]:
+            _PAYMENT_CACHE.pop(k, None)
+    _PAYMENT_CACHE[key] = (now, val)
+    return val
+
+
+def _line_text(it, key):
+    """A line field as stripped text, or "" when absent or not text. One malformed line
+    must not hide another line's payment (round 2)."""
+    v = it.get(key)
+    return v.strip() if isinstance(v, str) else ""
+
+
+def _paid_in_window(paid_at, now, days):
+    """Paid within the last `days` days, and not dated in the future (an hour of clock
+    skew allowed). Round 2: a future date counted, and for longer."""
+    if paid_at is None:
+        return False
+    age = now - paid_at
+    return timedelta(hours=-1) <= age <= timedelta(days=days)
+
+
+def _parse_paid_at(v):
+    try:
+        t = datetime.fromisoformat(str(v or "").strip().replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return t if t.tzinfo else t.replace(tzinfo=timezone.utc)
+
+
+def _paid_orders_with(cx, email, like_terms):
+    """(id, paid_at, items) for this email's paid, non-cancelled orders whose items
+    match any LIKE term, keeping only those the ledger shows still paid (a full refund
+    leaves pay_status 'paid', so it is checked here)."""
+    from dashboard import order_payments as _op
+    cx.row_factory = sqlite3.Row      # order_payments.balance reads rows as dicts
+    where = " OR ".join("COALESCE(items_json,'') LIKE ?" for _ in like_terms)
+    rows = cx.execute(
+        "SELECT id, COALESCE(paid_at,''), COALESCE(items_json,'') FROM orders "
+        "WHERE lower(COALESCE(email,''))=? AND COALESCE(pay_status,'')='paid' "
+        f"AND COALESCE(status,'')<>'cancelled' AND ({where})",
+        (email, *like_terms)).fetchall()
+    out = []
+    for oid, paid_at, raw in rows:
+        try:
+            items = [it for it in json.loads(raw or "[]") if isinstance(it, dict)]
+        except (TypeError, ValueError):
+            continue
+        try:
+            b = _op.balance(cx, oid)
+            paid = int(b.get("paid_cents") or 0)
+            if not int(b.get("ledger_paid_cents") or 0):
+                # A card order is paid on the order row, with no ledger payment. A
+                # ledger refund then switches balance()'s fallback off, so a $50
+                # refund on $300 read as nothing paid (round 3).
+                paid = max(paid, _orders_paid_cents(cx, oid))
+            if paid - int(b.get("refunded_cents") or 0) <= 0:
+                continue                      # refunded in full, or never really paid
+        except Exception as e:
+            print(f"[paid-check] ledger read failed for order {oid}: {e!r}", flush=True)
+            _rollback_quietly(cx)
+            continue
+        out.append((oid, _parse_paid_at(paid_at), items))
+    return out
+
+
+def _orders_paid_cents(cx, oid):
+    r = cx.execute("SELECT COALESCE(paid_cents,0) FROM orders WHERE id=? "
+                   "AND COALESCE(pay_status,'')='paid'", (oid,)).fetchone()
+    return int(r[0] or 0) if r else 0
+
+
+def _rollback_quietly(cx):
+    try:
+        cx.rollback()      # Postgres: a failed statement aborts the transaction
+    except Exception:
+        pass
+
+
+def _paid_cert_student_uncached(email):
+    if not email:
+        return False
+    now = datetime.now(timezone.utc)
+    try:
+        with db.connect(LOG_DB) as cx:
+            try:
+                row = cx.execute(
+                    "SELECT 1 FROM course_entitlements WHERE lower(email)=? "
+                    "AND status='active' AND source='stripe' AND (kind='cert_onetime' "
+                    "OR (kind='plan' AND (expires_at IS NULL OR expires_at > ?))) LIMIT 1",
+                    (email, now.timestamp())).fetchone()
+                if row:
+                    return True
+            except Exception as e:
+                print(f"[cert-member] entitlement read failed: {e!r}", flush=True)
+                _rollback_quietly(cx)
+            for _oid, paid_at, items in _paid_orders_with(cx, email, ["%ash-practitioner-cert%"]):
+                slugs = {_line_text(it, "slug") for it in items}
+                if CERT_ONETIME_SLUG in slugs:
+                    return True
+                if CERT_MONTHLY_SLUG in slugs and _paid_in_window(paid_at, now,
+                                                                  CERT_MONTHLY_DAYS):
+                    return True
+        return False
+    except Exception as e:
+        print(f"[cert-member] paid-enrollment check failed: {e!r}", flush=True)
+        return False
+
+
+def _paid_cert_student(email):
+    """True when this email has PAID for a certification enrollment: an active Stripe
+    course entitlement, a paid one-time enrollment order, or a monthly installment paid
+    in the last 35 days. A full refund cancels it. Fails closed."""
+    return _cached_payment_check("cert", email, _paid_cert_student_uncached)
+
+
+# A paid Biofield Analysis includes a month of member benefits. Its remedies get the
+# mix/match rate for that month even when the care-taster grant was never written:
+# the grant is skipped for a $1-trial holder, whom pricing still treats as a trial.
+BIOFIELD_MIX_MATCH_DAYS = 30
+
+
+def _is_biofield_line(it):
+    slug = _line_text(it, "slug")
+    if slug:
+        return slug == "biofield-analysis"
+    # A card checkout (_price_biofield) stores the line by name, with no slug.
+    return _line_text(it, "name") == _BIOFIELD_ITEM_NAME
+
+
+def _biofield_paid_within_uncached(email, days=BIOFIELD_MIX_MATCH_DAYS, now=None):
+    if not email:
+        return False
+    now = now or datetime.now(timezone.utc)
+    try:
+        with db.connect(LOG_DB) as cx:
+            found = _paid_orders_with(cx, email, ["%biofield-analysis%",
+                                                  "%" + _BIOFIELD_ITEM_NAME + "%"])
+        for _oid, paid_at, items in found:
+            if (any(_is_biofield_line(it) for it in items)
+                    and _paid_in_window(paid_at, now, days)):
+                return True
+        return False
+    except Exception as e:
+        print(f"[biofield-mixmatch] paid check failed: {e!r}", flush=True)
+        return False
+
+
+def _biofield_paid_within(email):
+    """True when a Biofield Analysis was paid, and not refunded, in the last 30 days."""
+    return _cached_payment_check("biofield", email, _biofield_paid_within_uncached)
+
+
+def _mix_match_member(email):
+    """Whether this buyer's Formulas price on the order-wide mix/match rate: a paid
+    member, or a client whose Biofield Analysis was paid in the last 30 days. Pricing
+    only: the $200 member Biofield price still keys off _is_paid_member."""
+    if _is_paid_member(email):
+        return True
+    try:
+        email = _canonical_email(email)   # a merged address carries the survivor's orders
+    except Exception:
+        email = (email or "").strip().lower()
+    return _biofield_paid_within(email)
 
 
 def _is_certification_student(email):
@@ -11794,7 +11997,7 @@ def begin_checkout(slug):
         pc = _price_cart([{"slug": slug, "qty": qty, "format": fmt}], ship=ship,
                          coupon_pct=_eff_pct,
                          points_to_redeem_cents=redeem,
-                         program_member=_is_paid_member(email), email=email)
+                         program_member=_mix_match_member(email), email=email)
     except CheckoutError as ce:
         return jsonify({"ok": False, "error": str(ce)}), 400
     # Shipping credit (slice 2b, flag-gated): auto-apply the customer's outstanding
@@ -24502,7 +24705,7 @@ def _portal_priced_lines(items, email=None):
     settings = _pricing.load_settings(_pricing_settings())
     total_ff_qty = _inhouse_total_ff_qty(items or [])
     rep_slugs = _resolve_repertoire_slugs(email)
-    program_member = _is_paid_member(email)
+    program_member = _mix_match_member(email)
     client_by_slug, client_ff_flat = {}, None
     if email:
         try:
@@ -39954,7 +40157,7 @@ def _checkout_cart(email, cart, *, ship, points_to_redeem_cents=0, referral_code
         requested_redeem = min(requested_redeem, _bal)
     _ref_pct, _ref_ctx = _resolve_checkout_coupon_pct(referral_code, email)
     pc = _price_cart(cart, ship=ship, coupon_pct=_ref_pct, points_to_redeem_cents=requested_redeem,
-                     program_member=_is_paid_member(email), email=email)
+                     program_member=_mix_match_member(email), email=email)
     if not pc["qbo_lines"]:
         raise CheckoutError("Your cart is empty or those items are no longer available.")
     # Shipping credit (slice 2b, flag-gated) — same fold as the funnel: auto-apply the
@@ -40349,7 +40552,7 @@ def reorder_subscribe():
         from dashboard import subscriptions as _subs
         try:
             pc = _price_cart(cart, ship=ship, subscriber_order_count=0, subscriber_active=True,
-                             program_member=_is_paid_member(email), email=email)
+                             program_member=_mix_match_member(email), email=email)
         except CheckoutError as e:
             return jsonify({"ok": False, "error": str(e)}), 400
         if not pc["qbo_lines"]:
@@ -55598,7 +55801,7 @@ def _price_inhouse_invoice(lines_in, *, email, pickup, ship,
     # the actual care_taster grant is still created by payment fulfillment.
     _has_biofield = any((ln.get("slug") or "").strip() == "biofield-analysis"
                         for ln in (lines_in or []))
-    program_member = (_is_paid_member(email)
+    program_member = (_mix_match_member(email)
                       or bool(_mp.cart_has_membership_tier(lines_in))
                       or _has_biofield)
     # A paid member's repertoire SKU set, resolved ONCE for the whole order (Task 5b —
@@ -56851,7 +57054,7 @@ def api_orders_price_preview():
     # pricing (computed only — never persisted until payment; see Task 2 brief).
     _has_biofield = any((ln.get("slug") or "").strip() == "biofield-analysis"
                         for ln in (lines_in or []))
-    _ppm = (_is_paid_member(_pemail)
+    _ppm = (_mix_match_member(_pemail)
             or bool(_mp.cart_has_membership_tier(lines_in))
             or _has_biofield)
     # The order-wide mix/match rate — a paid-member-only perk (Glen 2026-07); a
