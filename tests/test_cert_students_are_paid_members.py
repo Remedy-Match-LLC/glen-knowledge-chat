@@ -8,7 +8,6 @@ through the end of the year."
 Round 1 of the first version found its signal self-assignable: anyone who registered as
 a coach became a paid member. Only a PAYMENT counts now, read from local records.
 """
-import importlib
 import json
 import sqlite3
 from datetime import datetime, timedelta, timezone
@@ -19,27 +18,38 @@ AGNES = "agnes@example.com"
 OTHER = "someone@example.com"
 
 
+_REAL_WINDOW = None
+
+
 @pytest.fixture
 def a(monkeypatch, tmp_path):
-    monkeypatch.setenv("DATA_DIR", str(tmp_path))
+    # Point the app's log database at a temp file. Reloading the module instead
+    # leaked into later test files (round 1 run: test_membership_lookup).
+    global _REAL_WINDOW
     import app as mod
-    importlib.reload(mod)
+    _REAL_WINDOW = _REAL_WINDOW or mod._cert_member_window_open
+    monkeypatch.setattr(mod, "LOG_DB", tmp_path / "chat_log.db")
+    monkeypatch.setattr(mod, "_PAYMENT_CACHE", {})
     monkeypatch.setattr(mod, "_active_membership_for_email", lambda e: None)
     monkeypatch.setattr(mod, "_family_plan_enabled", lambda: False)
     monkeypatch.setattr(mod, "_canonical_email", lambda e: (e or "").strip().lower())
     monkeypatch.setattr(mod, "_cert_member_window_open", lambda today=None: True)
     cx = sqlite3.connect(str(mod.LOG_DB))
-    cx.execute("CREATE TABLE IF NOT EXISTS orders(id INTEGER PRIMARY KEY, email TEXT, "
-               "status TEXT, pay_status TEXT, paid_at TEXT, items_json TEXT)")
+    from dashboard import orders as _orders
+    _orders.init_orders_table(cx)        # the app's real schema
+    from dashboard import order_payments as _op
+    _op.ensure_table(cx)                 # prod always has the ledger
     cx.commit()
     cx.close()
     return mod
 
 
-def _order(a, email, slugs, *, pay="paid", status="proposed", paid_at=None):
+def _order(a, email, slugs, *, pay="paid", status="proposed", paid_at=None, items=None):
     paid_at = paid_at or datetime.now(timezone.utc).isoformat()
     row = {"email": email, "status": status, "pay_status": pay, "paid_at": paid_at,
-           "items_json": json.dumps([{"slug": s, "qty": 1} for s in slugs])}
+           "paid_cents": 30000, "total_cents": 30000,
+           "items_json": json.dumps(items if items is not None
+                                    else [{"slug": s, "qty": 1} for s in slugs])}
     cx = sqlite3.connect(str(a.LOG_DB))
     # The app's own orders table has more required columns; give each a filler.
     for _cid, name, typ, notnull, default, pk in cx.execute("PRAGMA table_info(orders)"):
@@ -48,9 +58,21 @@ def _order(a, email, slugs, *, pay="paid", status="proposed", paid_at=None):
     import uuid
     row["external_ref"] = "T-" + uuid.uuid4().hex[:8]   # unique with source
     cols = ",".join(row)
-    cx.execute(f"INSERT INTO orders({cols}) VALUES({','.join('?' * len(row))})",
-               tuple(row.values()))
+    cur = cx.execute(f"INSERT INTO orders({cols}) VALUES({','.join('?' * len(row))})",
+                     tuple(row.values()))
     cx.commit()
+    cx.close()
+    return cur.lastrowid
+
+
+def _ledger(a, oid, kind, cents):
+    from dashboard import order_payments as op
+    cx = sqlite3.connect(str(a.LOG_DB))
+    cx.row_factory = sqlite3.Row
+    op.ensure_table(cx)
+    op._insert(cx, oid, kind=kind, amount_cents=cents, method="zelle", source="manual",
+               external_ref=None, refunds_payment_id=None, paid_at=None, note=None,
+               actor=None)
     cx.close()
 
 
@@ -85,14 +107,43 @@ def test_an_unpaid_or_cancelled_enrollment_does_not(a):
     assert not a._is_paid_member(AGNES)
 
 
-def test_a_stripe_course_entitlement_counts(a):
+@pytest.mark.parametrize("source,counts", [("stripe", True),
+                                           ("certification_roster", False),
+                                           ("module_certification", False)])
+def test_only_a_stripe_course_entitlement_counts(a, source, counts):
+    """Round 1: the coach roster and the 12th module approval write cert rows with no
+    payment. Only Stripe's are purchases."""
     from dashboard import course_entitlements as ce
     cx = sqlite3.connect(str(a.LOG_DB))
     ce.init_course_entitlements_table(cx)
     cx.execute("INSERT INTO course_entitlements(email,kind,status,source) "
-               "VALUES(?,?,?,?)", (AGNES, "cert_onetime", "active", "stripe"))
+               "VALUES(?,?,?,?)", (AGNES, "cert_onetime", "active", source))
     cx.commit()
     cx.close()
+    assert a._is_paid_member(AGNES) is counts
+
+
+def test_a_full_refund_cancels_the_enrollment(a):
+    oid = _order(a, AGNES, ["ash-practitioner-cert"])
+    _ledger(a, oid, "payment", 30000)
+    _ledger(a, oid, "refund", 30000)
+    assert not a._is_paid_member(AGNES)
+
+
+def test_a_partial_refund_keeps_it(a):
+    oid = _order(a, AGNES, ["ash-practitioner-cert"])
+    _ledger(a, oid, "payment", 30000)
+    _ledger(a, oid, "refund", 10000)
+    assert a._is_paid_member(AGNES)
+
+
+def test_a_monthly_installment_counts_for_35_days(a):
+    old = (datetime.now(timezone.utc) - timedelta(days=36)).isoformat()
+    _order(a, AGNES, ["ash-practitioner-cert-monthly"], paid_at=old)
+    assert not a._is_paid_member(AGNES)
+    a._PAYMENT_CACHE.clear()
+    _order(a, AGNES, ["ash-practitioner-cert-monthly"],
+           paid_at=(datetime.now(timezone.utc) - timedelta(days=10)).isoformat())
     assert a._is_paid_member(AGNES)
 
 
@@ -101,10 +152,9 @@ def test_a_near_name_slug_is_not_an_enrollment(a):
     assert not a._is_paid_member(AGNES)
 
 
-def test_the_window_closes_after_december_31(a, monkeypatch):
-    importlib.reload(a)   # the real window function, not the fixture's stub
-    assert a._cert_member_window_open("2026-12-31")
-    assert not a._cert_member_window_open("2027-01-01")
+def test_the_window_closes_after_december_31(a):
+    assert _REAL_WINDOW("2026-12-31")
+    assert not _REAL_WINDOW("2027-01-01")
 
 
 def test_a_paid_student_gets_the_member_biofield_price(a):
@@ -147,6 +197,25 @@ def test_an_old_unpaid_cancelled_or_undated_biofield_does_not(a, kw):
     _order(a, AGNES, ["biofield-analysis"], **kw)
     assert not a._mix_match_member(AGNES)
     assert _invoice_subtotal(a, AGNES) == _invoice_subtotal(a, OTHER)
+
+
+def test_a_refunded_biofield_does_not(a):
+    oid = _order(a, AGNES, ["biofield-analysis"])
+    _ledger(a, oid, "payment", 30000)
+    _ledger(a, oid, "refund", 30000)
+    assert not a._mix_match_member(AGNES)
+
+
+def test_a_card_paid_biofield_counts_by_its_line_name(a):
+    """Round 1: the card checkout stores the line by name, with no slug."""
+    _order(a, AGNES, [], items=[{"name": a._BIOFIELD_ITEM_NAME, "qty": 1,
+                                 "desc": a._BIOFIELD_ITEM_NAME}])
+    assert a._mix_match_member(AGNES)
+
+
+def test_the_remedy_match_program_is_not_a_biofield(a):
+    _order(a, AGNES, [], items=[{"name": "Remedy Match Program", "qty": 1}])
+    assert not a._mix_match_member(AGNES)
 
 
 def test_a_space_separated_naive_timestamp_reads(a):

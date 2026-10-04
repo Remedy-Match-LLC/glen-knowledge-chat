@@ -7591,8 +7591,13 @@ def _is_paid_member(email):
 # 2026-10-03: "every one should show as a paid member through the end of the year."
 CERT_MEMBER_UNTIL = "2026-12-31"
 # What a paid enrollment looks like on an invoiced order. A Stripe purchase also writes
-# a course entitlement (dashboard.course_entitlements.paid_level_for).
-CERT_ENROLLMENT_SLUGS = ("ash-practitioner-cert", "ash-practitioner-cert-monthly")
+# a course entitlement with source 'stripe'. Other sources (the coach roster, the 12th
+# module approval) are not payments and do not count (review round 1).
+CERT_ONETIME_SLUG = "ash-practitioner-cert"
+CERT_MONTHLY_SLUG = "ash-practitioner-cert-monthly"
+CERT_MONTHLY_DAYS = 35          # one paid installment covers about a month, like a plan row
+_PAYMENT_CACHE = {}             # (check, email) -> (monotonic, bool)
+_PAYMENT_CACHE_TTL_S = 60
 
 
 def _cert_member_window_open(today=None):
@@ -7602,39 +7607,100 @@ def _cert_member_window_open(today=None):
     return today <= CERT_MEMBER_UNTIL
 
 
-def _paid_cert_student(email):
-    """True when this email has paid for a certification enrollment: an active course
-    entitlement (Stripe), or a paid, non-cancelled order carrying an enrollment line
-    (an invoice paid by Zelle, Wise or card). Only a payment counts, so nobody can
-    give it to themselves by registering. Fails closed."""
-    email = (email or "").strip().lower()
+def _cached_payment_check(name, email, fn):
+    """A paid-order answer, cached for a minute. _is_paid_member runs on every price
+    computation, and a non-member now costs a query. A payment shows within a minute."""
+    import time as _time
+    key = (name, (email or "").strip().lower())
+    hit = _PAYMENT_CACHE.get(key)
+    now = _time.monotonic()
+    if hit and now - hit[0] < _PAYMENT_CACHE_TTL_S:
+        return hit[1]
+    val = bool(fn(key[1]))
+    _PAYMENT_CACHE[key] = (now, val)
+    return val
+
+
+def _parse_paid_at(v):
+    try:
+        t = datetime.fromisoformat(str(v or "").strip().replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return t if t.tzinfo else t.replace(tzinfo=timezone.utc)
+
+
+def _paid_orders_with(cx, email, like_terms):
+    """(id, paid_at, items) for this email's paid, non-cancelled orders whose items
+    match any LIKE term, keeping only those the ledger shows still paid (a full refund
+    leaves pay_status 'paid', so it is checked here)."""
+    from dashboard import order_payments as _op
+    cx.row_factory = sqlite3.Row      # order_payments.balance reads rows as dicts
+    where = " OR ".join("COALESCE(items_json,'') LIKE ?" for _ in like_terms)
+    rows = cx.execute(
+        "SELECT id, COALESCE(paid_at,''), COALESCE(items_json,'') FROM orders "
+        "WHERE lower(COALESCE(email,''))=? AND COALESCE(pay_status,'')='paid' "
+        f"AND COALESCE(status,'')<>'cancelled' AND ({where})",
+        (email, *like_terms)).fetchall()
+    out = []
+    for oid, paid_at, raw in rows:
+        try:
+            items = [it for it in json.loads(raw or "[]") if isinstance(it, dict)]
+        except (TypeError, ValueError):
+            continue
+        try:
+            b = _op.balance(cx, oid)
+            if int(b.get("paid_cents") or 0) - int(b.get("refunded_cents") or 0) <= 0:
+                continue                      # refunded in full, or never really paid
+        except Exception as e:
+            print(f"[paid-check] ledger read failed for order {oid}: {e!r}", flush=True)
+            _rollback_quietly(cx)
+            continue
+        out.append((oid, _parse_paid_at(paid_at), items))
+    return out
+
+
+def _rollback_quietly(cx):
+    try:
+        cx.rollback()      # Postgres: a failed statement aborts the transaction
+    except Exception:
+        pass
+
+
+def _paid_cert_student_uncached(email):
     if not email:
         return False
+    now = datetime.now(timezone.utc)
     try:
-        from dashboard import course_entitlements as _ce
         with db.connect(LOG_DB) as cx:
             try:
-                if _ce.paid_level_for(cx, email) >= 2:
+                row = cx.execute(
+                    "SELECT 1 FROM course_entitlements WHERE lower(email)=? "
+                    "AND status='active' AND source='stripe' AND (kind='cert_onetime' "
+                    "OR (kind='plan' AND (expires_at IS NULL OR expires_at > ?))) LIMIT 1",
+                    (email, now.timestamp())).fetchone()
+                if row:
                     return True
             except Exception as e:
                 print(f"[cert-member] entitlement read failed: {e!r}", flush=True)
-            rows = cx.execute(
-                "SELECT COALESCE(items_json,'') FROM orders "
-                "WHERE lower(COALESCE(email,''))=? AND COALESCE(pay_status,'')='paid' "
-                "AND COALESCE(status,'')<>'cancelled' AND COALESCE(items_json,'') LIKE ?",
-                (email, "%ash-practitioner-cert%")).fetchall()
-        for (raw,) in rows:
-            try:
-                items = json.loads(raw or "[]")
-            except (TypeError, ValueError):
-                continue
-            if any((it.get("slug") or "").strip() in CERT_ENROLLMENT_SLUGS
-                   for it in items if isinstance(it, dict)):
-                return True
+                _rollback_quietly(cx)
+            for _oid, paid_at, items in _paid_orders_with(cx, email, ["%ash-practitioner-cert%"]):
+                slugs = {(it.get("slug") or "").strip() for it in items}
+                if CERT_ONETIME_SLUG in slugs:
+                    return True
+                if (CERT_MONTHLY_SLUG in slugs and paid_at is not None
+                        and now - paid_at <= timedelta(days=CERT_MONTHLY_DAYS)):
+                    return True
         return False
     except Exception as e:
         print(f"[cert-member] paid-enrollment check failed: {e!r}", flush=True)
         return False
+
+
+def _paid_cert_student(email):
+    """True when this email has PAID for a certification enrollment: an active Stripe
+    course entitlement, a paid one-time enrollment order, or a monthly installment paid
+    in the last 35 days. A full refund cancels it. Fails closed."""
+    return _cached_payment_check("cert", email, _paid_cert_student_uncached)
 
 
 # A paid Biofield Analysis includes a month of member benefits. Its remedies get the
@@ -7643,35 +7709,25 @@ def _paid_cert_student(email):
 BIOFIELD_MIX_MATCH_DAYS = 30
 
 
-def _biofield_paid_within(email, days=BIOFIELD_MIX_MATCH_DAYS, now=None):
-    """True when a paid, non-cancelled order with a Biofield Analysis line was paid in
-    the last `days` days. Fails closed, and an unreadable paid_at does not count."""
-    email = (email or "").strip().lower()
+def _is_biofield_line(it):
+    slug = (it.get("slug") or "").strip()
+    if slug:
+        return slug == "biofield-analysis"
+    # A card checkout (_price_biofield) stores the line by name, with no slug.
+    return (it.get("name") or "").strip() == _BIOFIELD_ITEM_NAME
+
+
+def _biofield_paid_within_uncached(email, days=BIOFIELD_MIX_MATCH_DAYS, now=None):
     if not email:
         return False
+    now = now or datetime.now(timezone.utc)
     try:
         with db.connect(LOG_DB) as cx:
-            rows = cx.execute(
-                "SELECT COALESCE(paid_at,''), COALESCE(items_json,'') FROM orders "
-                "WHERE lower(COALESCE(email,''))=? AND COALESCE(pay_status,'')='paid' "
-                "AND COALESCE(status,'')<>'cancelled' AND COALESCE(items_json,'') LIKE ?",
-                (email, "%biofield-analysis%")).fetchall()
-        now = now or datetime.now(timezone.utc)
-        for paid_at, raw in rows:
-            try:
-                items = json.loads(raw or "[]")
-            except (TypeError, ValueError):
-                continue
-            if not any((it.get("slug") or "").strip() == "biofield-analysis"
-                       for it in items if isinstance(it, dict)):
-                continue
-            try:
-                t = datetime.fromisoformat(str(paid_at).strip().replace("Z", "+00:00"))
-            except ValueError:
-                continue
-            if t.tzinfo is None:
-                t = t.replace(tzinfo=timezone.utc)
-            if now - t <= timedelta(days=days):
+            found = _paid_orders_with(cx, email, ["%biofield-analysis%",
+                                                  "%" + _BIOFIELD_ITEM_NAME + "%"])
+        for _oid, paid_at, items in found:
+            if (paid_at is not None and any(_is_biofield_line(it) for it in items)
+                    and now - paid_at <= timedelta(days=days)):
                 return True
         return False
     except Exception as e:
@@ -7679,11 +7735,22 @@ def _biofield_paid_within(email, days=BIOFIELD_MIX_MATCH_DAYS, now=None):
         return False
 
 
+def _biofield_paid_within(email):
+    """True when a Biofield Analysis was paid, and not refunded, in the last 30 days."""
+    return _cached_payment_check("biofield", email, _biofield_paid_within_uncached)
+
+
 def _mix_match_member(email):
     """Whether this buyer's Formulas price on the order-wide mix/match rate: a paid
     member, or a client whose Biofield Analysis was paid in the last 30 days. Pricing
     only: the $200 member Biofield price still keys off _is_paid_member."""
-    return bool(_is_paid_member(email) or _biofield_paid_within(email))
+    if _is_paid_member(email):
+        return True
+    try:
+        email = _canonical_email(email)   # a merged address carries the survivor's orders
+    except Exception:
+        email = (email or "").strip().lower()
+    return _biofield_paid_within(email)
 
 
 def _is_certification_student(email):
@@ -22559,7 +22626,7 @@ def api_client_checkout(code):
                 bal_cents = _points.balance(_bcx, email, scope=_scope)
         except Exception:
             bal_cents = 0
-    _program_member = _mix_match_member(email)
+    _program_member = _is_paid_member(email)
     try:
         out = _dropship.build_client_order(
             items, prac, patient=patient, method=method,
