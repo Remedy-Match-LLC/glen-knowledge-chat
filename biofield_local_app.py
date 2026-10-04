@@ -3124,6 +3124,11 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
             if not body.get("apply"):
                 return {"ok": True, "proposed": True, "mode": mode,
                         "existing_layers": existing,
+                        # The layers already in the causal chain, shown under Spirit
+                        # (Glen 2026-10-03: two layers he had entered from the
+                        # transcript read "Spirit: nothing here"). Display only.
+                        "existing": [{"layer": r.get("layer"), "head": r.get("head") or "",
+                                      "remedy": r.get("remedy") or ""} for r in chain],
                         "transcript_layers": len(interpreted),
                         "remedies": prog["remedies"],
                         "stages": [{"stage": st["stage"],
