@@ -1148,7 +1148,12 @@ async function program(mode){
  var h='';
  j.stages.forEach(function(st){
   h+='<div style="margin-top:6px"><b>'+_esc(st.stage)+'</b><br>';
-  if(!st.picks.length&&!st.suppressed.length)h+='&nbsp;&nbsp;nothing here<br>';
+  // Spirit leads with the layers already in the causal chain (Glen 2026-10-03).
+  var ex=(st.stage==='spirit')?(j.existing||[]):[];
+  ex.forEach(function(e){
+   h+='&nbsp;&nbsp;Layer '+_esc(String(e.layer==null?'':e.layer))+': '+_esc(e.head)+
+      (e.remedy?' &rarr; '+_esc(e.remedy):'')+' <span class=pill>already in the chain</span><br>'});
+  if(!ex.length&&!st.picks.length&&!st.suppressed.length)h+='&nbsp;&nbsp;nothing here<br>';
   st.picks.forEach(function(p){
    h+='&nbsp;&nbsp;'+_esc(p.remedy)+' <span class=pill>'+
       _esc((p.covers||[]).join(', '))+'</span><br>'});

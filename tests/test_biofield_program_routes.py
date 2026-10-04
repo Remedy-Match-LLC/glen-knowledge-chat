@@ -106,3 +106,29 @@ def test_an_unknown_mode_is_refused(tmp_path):
     r = client.post(f"/author/{tid}/program", json={"mode": "whatever"})
     assert r.status_code == 400
     assert _chain_len(str(tmp_path / "c.db"), tid) == 0
+
+
+def test_layers_already_in_the_chain_are_returned_for_spirit(tmp_path):
+    """Glen, 2026-10-03: two layers he had entered read "Spirit: nothing here"."""
+    db = str(tmp_path / "c.db")
+    client = _app(db).test_client()
+    tid = _new(client)
+    client.post(f"/author/{tid}/program", json={"mode": "full", "apply": True})
+    n = _chain_len(db, tid)
+    assert n >= 1
+    j = client.post(f"/author/{tid}/program", json={"mode": "minimum"}).get_json()
+    assert j["existing_layers"] >= 1
+    assert len(j["existing"]) == n
+    assert any(e["remedy"] for e in j["existing"])
+    assert _chain_len(db, tid) == n          # still a proposal: nothing written
+
+
+def test_the_page_lists_existing_layers_under_spirit():
+    from dashboard import biofield_report_html as R
+    import inspect
+    src = inspect.getsource(R)
+    i = src.index("async function program(mode)")
+    body = src[i:src.index("\n}", i)]
+    assert "already in the chain" in body
+    assert "st.stage==='spirit'" in body
+    assert "if(!ex.length&&!st.picks.length&&!st.suppressed.length)" in body
