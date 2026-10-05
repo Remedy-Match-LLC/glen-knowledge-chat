@@ -295,9 +295,16 @@ function intentLinkLabel(text) {
 // If every phase is fully done, the last phase is shown as "where you are" so
 // a settled client still sees which phase they finished, just as one line
 // instead of an all-ticked checklist.
+// A video step (the Clinical Theory of Everything explainer) is offered, never
+// required: it does not reopen a finished phase, move the progress bar, or become
+// "Next". Otherwise adding it would un-complete every client who had finished.
+function _homeRequiredSteps(phase) {
+  return (Array.isArray(phase.steps) ? phase.steps : []).filter(function (s) { return !s.video; });
+}
+
 function _homeCurrentPhase(phases) {
   for (var i = 0; i < phases.length; i++) {
-    var steps = Array.isArray(phases[i].steps) ? phases[i].steps : [];
+    var steps = _homeRequiredSteps(phases[i]);
     for (var j = 0; j < steps.length; j++) {
       if (!steps[j].done) return { phase: phases[i], unfinished: true };
     }
@@ -349,7 +356,8 @@ function renderHome(view) {
     _homeIndexHtml() + '</div>';
 
   var phase = current.phase;
-  var steps = Array.isArray(phase.steps) ? phase.steps : [];
+  var allSteps = Array.isArray(phase.steps) ? phase.steps : [];
+  var steps = _homeRequiredSteps(phase);
   var total = steps.length;
   var doneCount = steps.filter(function (s) { return !!s.done; }).length;
   var percent = total ? Math.round(100 * doneCount / total) : 0;
@@ -375,11 +383,14 @@ function renderHome(view) {
 
   var stepsHtml = '';
   if (current.unfinished && total) {
-    stepsHtml = '<ul class="home-steps">' + steps.map(function (s) {
+    stepsHtml = '<ul class="home-steps">' + allSteps.map(function (s) {
       var state = s.done ? 'is-done' : (s.in_progress ? 'is-progress' : 'is-open');
       var mark = s.done ? 'Done' : (s.in_progress ? 'In progress' : 'Not started yet');
       var label = escapeHtml(s.label);
-      var text = s.href ? '<a href="' + escapeHtml(s.href) + '">' + label + '</a>' : label;
+      // A video leaves for Rumble, so it opens in its own tab and the portal stays.
+      // portal-onboarding.js saves "watched" from this link's data-video-step.
+      var target = s.video ? ' target="_blank" rel="noopener" data-video-step="' + escapeHtml(s.key) + '"' : '';
+      var text = s.href ? '<a href="' + escapeHtml(s.href) + '"' + target + '>' + label + '</a>' : label;
       return '<li class="home-step ' + state + '"><span class="home-step-mark">' +
         escapeHtml(mark) + '</span> ' + text + '</li>';
     }).join('') + '</ul>';

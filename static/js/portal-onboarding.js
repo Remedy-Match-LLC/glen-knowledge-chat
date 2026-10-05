@@ -38,6 +38,14 @@ function renderOnboarding(status) {
           '<span class="ob-progress-label">' + escapeHtml(st.progress.completed) + ' of ' +
           escapeHtml(st.progress.total) + ' pages</span></div>';
       }
+      if (st.video) {
+        // Opens in place under the line; the click handler below records "watched".
+        return '<li class="ob-step ob-video-step"><span class="ob-mark ' + markClass + '">' + mark +
+          '</span> <a class="ob-video-link" href="' + escapeHtml(st.href) + '" data-video="' +
+          escapeHtml(st.video) + '" data-step="' + escapeHtml(st.key) + '" data-done="' +
+          (st.done === true ? '1' : '0') + '">' + label + '</a>' +
+          '<div class="ob-video-frame" hidden></div></li>';
+      }
       if (st.checkable) {
         return '<li class="ob-step"><input class="ob-accelerator-check" type="checkbox" ' +
           'data-accelerator="' + escapeHtml(st.key) + '" aria-label="Mark ' + label +
@@ -259,7 +267,51 @@ if (typeof window !== 'undefined' && typeof document !== 'undefined') {
     }
     window.refreshPortalOnboarding = loadAndRender;
 
+    function saveWatched(stepKey) {
+      return fetch('/api/portal/' + token + '/onboarding/accelerator', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({key: stepKey, value: true})
+      });
+    }
+
+    // The Home screen's video link opens Rumble in a new tab; record it as watched.
+    document.addEventListener('click', function (event) {
+      var link = event.target.closest && event.target.closest('a[data-video-step]');
+      if (!link) return;
+      saveWatched(link.getAttribute('data-video-step'))
+        .then(function (response) { if (response.ok) loadAndRender(); })
+        .catch(function () {});
+    });
+
     mount.addEventListener('click', function (event) {
+      var video = event.target.closest && event.target.closest('.ob-video-link');
+      // Cmd/Ctrl/Shift-click keeps the browser's own "open in a new tab".
+      if (video && (event.metaKey || event.ctrlKey || event.shiftKey)) {
+        saveWatched(video.getAttribute('data-step'));
+        return;
+      }
+      if (video) {
+        event.preventDefault();
+        var frame = video.parentNode.querySelector('.ob-video-frame');
+        if (!frame) return;
+        if (!frame.hidden) { frame.hidden = true; frame.innerHTML = ''; return; }
+        frame.innerHTML = '<iframe src="' + escapeHtml(video.getAttribute('data-video')) +
+          '" width="640" height="360" style="max-width:100%;aspect-ratio:16/9;height:auto;border:0" ' +
+          'allow="autoplay; fullscreen" allowfullscreen title="' + escapeHtml(video.textContent) +
+          '"></iframe>';
+        frame.hidden = false;
+        if (video.getAttribute('data-done') !== '1') {
+          // Not re-rendered after saving: that would tear down the playing video.
+          saveWatched(video.getAttribute('data-step')).then(function (response) {
+            if (!response.ok) return;
+            video.setAttribute('data-done', '1');
+            var markEl = video.parentNode.querySelector('.ob-mark');
+            if (markEl) { markEl.className = 'ob-mark ob-mark-done'; markEl.textContent = '\u2713'; }
+          }).catch(function () {});
+        }
+        return;
+      }
       var link = event.target.closest && event.target.closest('a[href]');
       if (!link) return;
       var url;

@@ -27037,7 +27037,7 @@ def api_portal_onboarding_accelerator(token):
                            portal_onboarding as _ob)
     body = request.get_json(silent=True) or {}
     key = (body.get("key") or "").strip()
-    fact_key = _ob.ACCELERATOR_FACT_KEYS.get(key)
+    fact_key = _ob.ONBOARDING_FACT_KEYS.get(key)
     if not fact_key:
         return jsonify({"error": "unknown accelerator"}), 400
     with db.connect(LOG_DB) as cx:
