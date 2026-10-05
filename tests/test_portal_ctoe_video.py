@@ -107,7 +107,7 @@ def test_an_unwatched_video_does_not_reopen_a_finished_phase_on_home():
       const open = shell.renderHome({journey:{phases:[{key:'heal', title:'Accelerate healing',
         steps:[video, {key:'light', label:'Light', done:false, href:'#'}]}]}});
       if (!/Next, Light\\./.test(open)) { console.error('video became Next'); process.exit(1); }
-      if (!/href="https:\\/\\/rumble\\.com\\/v7gfl3s-x\\.html" target="_blank" rel="noopener"/.test(open)) {
+      if (!/href="https:\\/\\/rumble\\.com\\/v7gfl3s-x\\.html" target="_blank" rel="noopener" data-video-step="ctoe"/.test(open)) {
         console.error('home video link does not open in a new tab'); process.exit(1); }
       console.log('ok');
     ''')

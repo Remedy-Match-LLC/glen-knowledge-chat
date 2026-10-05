@@ -388,7 +388,8 @@ function renderHome(view) {
       var mark = s.done ? 'Done' : (s.in_progress ? 'In progress' : 'Not started yet');
       var label = escapeHtml(s.label);
       // A video leaves for Rumble, so it opens in its own tab and the portal stays.
-      var target = s.video ? ' target="_blank" rel="noopener"' : '';
+      // portal-onboarding.js saves "watched" from this link's data-video-step.
+      var target = s.video ? ' target="_blank" rel="noopener" data-video-step="' + escapeHtml(s.key) + '"' : '';
       var text = s.href ? '<a href="' + escapeHtml(s.href) + '"' + target + '>' + label + '</a>' : label;
       return '<li class="home-step ' + state + '"><span class="home-step-mark">' +
         escapeHtml(mark) + '</span> ' + text + '</li>';

@@ -267,8 +267,30 @@ if (typeof window !== 'undefined' && typeof document !== 'undefined') {
     }
     window.refreshPortalOnboarding = loadAndRender;
 
+    function saveWatched(stepKey) {
+      return fetch('/api/portal/' + token + '/onboarding/accelerator', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({key: stepKey, value: true})
+      });
+    }
+
+    // The Home screen's video link opens Rumble in a new tab; record it as watched.
+    document.addEventListener('click', function (event) {
+      var link = event.target.closest && event.target.closest('a[data-video-step]');
+      if (!link) return;
+      saveWatched(link.getAttribute('data-video-step'))
+        .then(function (response) { if (response.ok) loadAndRender(); })
+        .catch(function () {});
+    });
+
     mount.addEventListener('click', function (event) {
       var video = event.target.closest && event.target.closest('.ob-video-link');
+      // Cmd/Ctrl/Shift-click keeps the browser's own "open in a new tab".
+      if (video && (event.metaKey || event.ctrlKey || event.shiftKey)) {
+        saveWatched(video.getAttribute('data-step'));
+        return;
+      }
       if (video) {
         event.preventDefault();
         var frame = video.parentNode.querySelector('.ob-video-frame');
@@ -281,11 +303,7 @@ if (typeof window !== 'undefined' && typeof document !== 'undefined') {
         frame.hidden = false;
         if (video.getAttribute('data-done') !== '1') {
           // Not re-rendered after saving: that would tear down the playing video.
-          fetch('/api/portal/' + token + '/onboarding/accelerator', {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({key: video.getAttribute('data-step'), value: true})
-          }).then(function (response) {
+          saveWatched(video.getAttribute('data-step')).then(function (response) {
             if (!response.ok) return;
             video.setAttribute('data-done', '1');
             var markEl = video.parentNode.querySelector('.ob-mark');
