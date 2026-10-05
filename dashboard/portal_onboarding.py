@@ -99,14 +99,17 @@ def accelerator_status(cx, email):
 
 
 def ctoe_watched(cx, email):
-    """True once the client has opened the explainer from the portal."""
-    try:
-        client_facts.init_table(cx)
+    """True once the client has opened the explainer from the portal.
+
+    Read-only and inside a savepoint, like evox_done: a failed read on Postgres must
+    not abort the transaction for build_status's later reads. No table yet means no."""
+    from dashboard.biofield_prereqs import _guard
+
+    def _read():
         row = cx.execute("SELECT value FROM client_facts WHERE email=? AND fact_key=?",
                          ((email or "").strip().lower(), CTOE_VIDEO["fact_key"])).fetchone()
         return bool(row and row[0])
-    except Exception:
-        return False
+    return bool(_guard(cx, _read, False))
 
 
 def _has_scan(cx, email):

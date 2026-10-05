@@ -78,3 +78,38 @@ def test_the_tile_renders_a_link_that_opens_in_place():
     ''')
     out = subprocess.run(["node", "-e", js], cwd=".", capture_output=True, text=True)
     assert out.returncode == 0, out.stderr
+
+
+def test_a_failed_watched_read_does_not_break_the_later_reads():
+    """No client_facts table: the read fails inside its savepoint and the rest of
+    the status still builds."""
+    import sqlite3 as _sq
+    cx = _sq.connect(":memory:")
+    assert ob.ctoe_watched(cx, "x@x.com") is False
+    cx.execute("CREATE TABLE t (a)")
+    cx.execute("INSERT INTO t VALUES (1)")
+    assert cx.execute("SELECT a FROM t").fetchone()[0] == 1
+
+
+@pytest.mark.skipif(not shutil.which("node"), reason="node not available")
+def test_an_unwatched_video_does_not_reopen_a_finished_phase_on_home():
+    """Round 1: a client who had finished every heal step must still read
+    "You have completed this phase." The video is offered, never required."""
+    js = textwrap.dedent('''
+      const shell = require('./static/js/portal-shell.js');
+      const video = {key:'ctoe', label:'Watch: The Clinical Theory of Everything (7 min)',
+                     done:false, href:'https://rumble.com/v7gfl3s-x.html', video:'https://rumble.com/embed/v7e986a/'};
+      const done = k => ({key:k, label:k, done:true, href:'#'});
+      const finished = shell.renderHome({journey:{phases:[{key:'heal', title:'Accelerate healing',
+        steps:[video, done('light'), done('pemf'), done('h2water'), done('evox')]}]}});
+      if (!/You have completed this phase/.test(finished)) { console.error('video reopened the phase'); process.exit(1); }
+      if (!/aria-valuenow="100"/.test(finished)) { console.error('progress moved'); process.exit(1); }
+      const open = shell.renderHome({journey:{phases:[{key:'heal', title:'Accelerate healing',
+        steps:[video, {key:'light', label:'Light', done:false, href:'#'}]}]}});
+      if (!/Next, Light\\./.test(open)) { console.error('video became Next'); process.exit(1); }
+      if (!/href="https:\\/\\/rumble\\.com\\/v7gfl3s-x\\.html" target="_blank" rel="noopener"/.test(open)) {
+        console.error('home video link does not open in a new tab'); process.exit(1); }
+      console.log('ok');
+    ''')
+    out = subprocess.run(["node", "-e", js], cwd=".", capture_output=True, text=True)
+    assert out.returncode == 0, out.stderr
