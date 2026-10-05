@@ -23,6 +23,19 @@ ACCELERATOR_FACT_KEYS = {
     "h2water": "accelerate_h2water",
 }
 
+# The Clinical Theory of Everything explainer (Glen, 2026-10-05: "Link to rumble
+# rather than youtube"). It sits first in Accelerate healing for every client. The
+# three device steps below it stay reserved for the Healing Tools MasterClass.
+CTOE_VIDEO = {
+    "fact_key": "watched_ctoe",
+    "label": "Watch: The Clinical Theory of Everything (7 min)",
+    "watch_url": "https://rumble.com/v7gfl3s-clinical-theory-of-everything-how-spirit-physics-and-healing-connect.html",
+    "embed_url": "https://rumble.com/embed/v7e986a/?pub=5q5b3",
+}
+
+# Every fact a client can set from the onboarding tile, by step key.
+ONBOARDING_FACT_KEYS = dict(ACCELERATOR_FACT_KEYS, ctoe=CTOE_VIDEO["fact_key"])
+
 ACCELERATOR_PURCHASE_SLUGS = {
     "light": {"nir-nasal-clip", "nir-brain-frequency-helmet", "hair-growth-helmet",
               "photobiomodulation-package", "therapeutic-nightlight", "harmony-laser"},
@@ -83,6 +96,17 @@ def accelerator_status(cx, email):
         facts = {}
     return {key: bool(purchased & slugs) or bool(facts.get(ACCELERATOR_FACT_KEYS[key]))
             for key, slugs in ACCELERATOR_PURCHASE_SLUGS.items()}
+
+
+def ctoe_watched(cx, email):
+    """True once the client has opened the explainer from the portal."""
+    try:
+        client_facts.init_table(cx)
+        row = cx.execute("SELECT value FROM client_facts WHERE email=? AND fact_key=?",
+                         ((email or "").strip().lower(), CTOE_VIDEO["fact_key"])).fetchone()
+        return bool(row and row[0])
+    except Exception:
+        return False
 
 
 def _has_scan(cx, email):
@@ -222,6 +246,8 @@ def build_status(cx, email):
     ]
     accelerators = accelerator_status(cx, email)
     heal = [
+        step("ctoe", CTOE_VIDEO["label"], ctoe_watched(cx, email),
+             CTOE_VIDEO["watch_url"], video=CTOE_VIDEO["embed_url"]),
         step("light", "Light", accelerators["light"],
              "https://clinicalpraxis.com/photobiomodulation/", checkable=True),
         step("pemf", "PEMF", accelerators["pemf"],

@@ -936,6 +936,8 @@
   .ob-step{display:flex;align-items:baseline;gap:.5rem;font-size:.92rem;line-height:1.5;color:var(--ink)}
   .ob-step a{color:var(--ink);text-decoration:none;border-bottom:1px solid transparent}
   .ob-step a:hover,.ob-step a:focus-visible{color:var(--brand);border-bottom-color:var(--brand)}
+  .ob-video-step{flex-wrap:wrap}
+  .ob-video-frame{flex-basis:100%;margin:.4rem 0 .6rem}
   /* Fixed width keeps ✓ / ○ / • aligned into a column regardless of glyph width.
      Per-state color: portal-onboarding.js renderOnboarding() adds a state
      modifier class (ob-mark-done / ob-mark-open / ob-mark-resource) alongside
@@ -1120,7 +1122,7 @@
 <script src="/static/js/portal-library.js"></script>
 <script src="/static/js/portal-documents.js"></script>
 <script src="/static/js/portal-historical-intakes.js"></script>
-<script src="/static/js/portal-onboarding.js?v=20260820-starter-remedies"></script>
+<script src="/static/js/portal-onboarding.js?v=20261005-ctoe-video"></script>
 <script>
 // The last path segment is either an emailed portal token or the literal "me"
 // (the tokenless logged-in home, authed by the rm_portal_session cookie). Tokens
