@@ -4,6 +4,9 @@
   more through a practitioner than in the store.
 - A product with its own wholesale discount (the large-format books at $20) is based
   at that wholesale price in drop-ship and dispensary orders, not the $50 blended base.
+- Glen, later the same day: the drop-ship rule ($50 base and fee) applies only to
+  Functional Formulations, and "no discount unless otherwise specified". Anything else
+  drop-ships at its own wholesale price if it has one, else retail, with no fee.
 """
 from dashboard import dropship_checkout as dc
 from dashboard import practitioner_pricing as pp
@@ -30,15 +33,17 @@ def test_sku_base_uses_the_products_own_wholesale_discount():
     assert pp.sku_base_cents(1, 0, 4000, 50) == 2000
 
 
-def test_sku_base_without_a_discount_is_the_blended_curve():
+def test_sku_base_without_a_discount_is_the_blended_curve_for_an_ff_only():
     assert pp.sku_base_cents(1, 0, 4000, None) == pp.drop_ship_base_cents(1, 0) == 5000
+    assert pp.sku_base_cents(1, 0, 4000, None, is_ff=False) == 4000
 
 
 # ── drop-ship quote (practitioner pays) ──────────────────────────────────────
 
-def _stub_cart(monkeypatch, retail, pct):
+def _stub_cart(monkeypatch, retail, pct, ff=("ff",)):
     monkeypatch.setattr(dc, "_retail_for", lambda slug: retail[slug])
     monkeypatch.setattr(dc, "_wholesale_pct_for", lambda slug: pct.get(slug))
+    monkeypatch.setattr(dc, "_is_ff", lambda slug: slug in ff)
     monkeypatch.setattr(dc, "_practitioner_dropship_unit_cents", lambda pid: None)
 
 
@@ -46,10 +51,18 @@ def test_dropship_book_is_based_at_its_20_dollar_wholesale(monkeypatch):
     _stub_cart(monkeypatch, {"book": 4000}, {"book": 50})
     q = dc.quote_dropship_cart([{"slug": "book", "qty": 1}], {"id": "p1", "modules_completed": 0})
     line = q["lines"][0]
-    # base $20; fee 33% of ($40 - $20) = $6.60, whole dollars up: $7; the practitioner pays $27, not $50
+    # base $20 and no fee (not a Functional Formulation): the practitioner pays $20, not $50
     assert line["base_cents"] == 2000
-    assert line["fee_cents"] == 700
-    assert line["unit_cents"] == 2700
+    assert line["fee_cents"] == 0
+    assert line["unit_cents"] == 2000
+
+
+def test_dropship_non_ff_without_a_discount_is_retail_and_no_fee(monkeypatch):
+    # A $40 infoceutical: $40, not the $50 base.
+    _stub_cart(monkeypatch, {"info": 4000}, {})
+    q = dc.quote_dropship_cart([{"slug": "info", "qty": 1}], {"id": "p1", "modules_completed": 0})
+    line = q["lines"][0]
+    assert (line["base_cents"], line["fee_cents"], line["unit_cents"]) == (4000, 0, 4000)
 
 
 def test_dropship_formula_without_a_discount_is_unchanged(monkeypatch):
@@ -98,6 +111,7 @@ def test_selling_price_with_settings_floors_at_retail(monkeypatch, tmp_path):
 def test_dispensary_book_margin_uses_its_wholesale_base(monkeypatch):
     monkeypatch.setattr(dc, "_retail_for", lambda slug: 4000)
     monkeypatch.setattr(dc, "_wholesale_pct_for", lambda slug: 50)
+    monkeypatch.setattr(dc, "_is_ff", lambda slug: False)
     monkeypatch.setattr(dc, "practitioner_price_for", lambda pid, slug: 4000)
     import dashboard.tax as _tax
     monkeypatch.setattr(_tax, "compute_get_cents",
@@ -106,9 +120,9 @@ def test_dispensary_book_margin_uses_its_wholesale_base(monkeypatch):
         [{"slug": "book", "qty": 1}], {"id": "p1", "modules_completed": 0},
         patient={"email": "pat@x.com", "ship": {"name": "Pat", "state": "CA", "country": "US"}},
         method="card")
-    # patient pays $40; base $20, fee $7, so the practitioner earns $13 (was $0)
+    # patient pays $40; base $20, no fee, so the practitioner earns $20 (was $0)
     assert out["subtotal_cents"] == 4000
-    assert out["margin_cents"] == 1300
+    assert out["margin_cents"] == 2000
 
 
 # ── console override clamp ───────────────────────────────────────────────────
@@ -138,7 +152,7 @@ def test_flat_dropship_price_never_raises_a_line(monkeypatch):
     q = dc.quote_dropship_cart([{"slug": "book", "qty": 1}, {"slug": "ff", "qty": 1}],
                                {"id": "p1", "modules_completed": 0})
     units = {l["slug"]: l["unit_cents"] for l in q["lines"]}
-    assert units == {"book": 2700, "ff": 4000}
+    assert units == {"book": 2000, "ff": 4000}
 
 
 def test_discounted_products_stay_out_of_the_volume_count(monkeypatch):
@@ -156,6 +170,7 @@ def test_a_discount_never_takes_a_line_below_its_own_margin(monkeypatch):
     prices = {"ff": 7000, "cheap": 3500}
     monkeypatch.setattr(dc, "_retail_for", lambda slug: prices[slug])
     monkeypatch.setattr(dc, "_wholesale_pct_for", lambda slug: None)
+    monkeypatch.setattr(dc, "_is_ff", lambda slug: slug == "ff")
     monkeypatch.setattr(dc, "practitioner_price_for", lambda pid, slug: prices[slug])
     monkeypatch.setattr(_tax, "compute_get_cents",
                         lambda s, *, channel, ship_to_state, resale_ok=False: 0)
@@ -171,8 +186,27 @@ def test_a_discount_never_takes_a_line_below_its_own_margin(monkeypatch):
         {"id": "p1", "modules_completed": 0},
         patient={"email": "pat@x.com", "ship": {"name": "Pat", "state": "CA", "country": "US"}},
         method="card", effective_settings={"on": True})
-    ff = pp.quote_line(selling_cents=7000, qty=2, modules=0, settings=dc._settings())
+    ff = pp.quote_line(selling_cents=7000, qty=1, modules=0, settings=dc._settings())  # only FFs count
     # The $35 line has no margin (base above price), so it gets no discount and
     # takes nothing from the formula line's credit.
     assert out["subtotal_cents"] == 6300 + 3500
     assert out["margin_cents"] == ff["margin_cents"] - 700
+
+
+def test_wholomega_120_keeps_formulation_dropship_pricing():
+    """Glen, 2026-10-06: "formulation pricing" for the larger WholOmega bottle, $97 for one."""
+    import app as appmod
+    assert appmod._get_product("wholomega-120-gelcaps").get("ff_larger_size") is True
+    assert dc._dropship_ff("wholomega-120-gelcaps") is True
+    assert dc._dropship_ff("coq10") is False
+    line = dc.dropship_line_cents(retail_cents=19000, qty=1, modules=0, settings=dc._settings(),
+                                  is_ff=dc._dropship_ff("wholomega-120-gelcaps"))
+    assert line["unit_cents"] == 9700
+
+
+def test_non_ff_products_stay_out_of_the_volume_count(monkeypatch):
+    # 1 formula + 11 infoceuticals (no wholesale price): the formula is still 1 bottle on the curve.
+    _stub_cart(monkeypatch, {"info": 4000, "ff": 7000}, {})
+    q = dc.quote_dropship_cart([{"slug": "ff", "qty": 1}, {"slug": "info", "qty": 11}],
+                               {"id": "p1", "modules_completed": 0})
+    assert next(l for l in q["lines"] if l["slug"] == "ff")["base_cents"] == 5000

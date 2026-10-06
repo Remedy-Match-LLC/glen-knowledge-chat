@@ -22732,6 +22732,7 @@
   },
   "wholomega-120-gelcaps": {
    "name": "WholOmega 120 gelcaps",
+   "ff_larger_size": true,
    "price_cents": 19000,
    "pinecone_title": "WholOmega 120 gelcaps",
    "qty_pricing": false,

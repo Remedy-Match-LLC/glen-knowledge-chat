@@ -42,14 +42,20 @@ def map_floor_cents(retail_cents, map_cents):
     r = int(retail_cents or 0)
     return min(int(map_cents), r) if r > 0 else int(map_cents)
 
-def sku_base_cents(qty, modules_completed, retail_cents, wholesale_discount_pct=None):
-    """Drop-ship base for one product. A product with its own wholesale discount
-    (books, Molecular Hydrogen bottle) is based at retail less that discount,
-    the price a stocking order pays; anything else uses the blended curve."""
-    if wholesale_discount_pct is None:
+def sku_base_cents(qty, modules_completed, retail_cents, wholesale_discount_pct=None, is_ff=True):
+    """Drop-ship base for one product.
+
+    - Its own wholesale discount (books, Molecular Hydrogen bottle): retail less that
+      discount, the price a stocking order pays.
+    - A Functional Formulation without one: the blended volume curve.
+    - Anything else: retail. Glen, 2026-10-06: the drop-ship pricing rule applies only
+      to Functional Formulations, and there is "no discount unless otherwise specified"."""
+    if wholesale_discount_pct is not None:
+        pct = max(0, min(100, int(wholesale_discount_pct)))
+        return (int(retail_cents) * (100 - pct) + 50) // 100
+    if is_ff:
         return drop_ship_base_cents(qty, modules_completed)
-    pct = max(0, min(100, int(wholesale_discount_pct)))
-    return (int(retail_cents) * (100 - pct) + 50) // 100
+    return int(retail_cents)
 
 def service_fee_cents(selling_cents, base_cents, settings):
     """Flat fee = fee_pct of the markup (selling - base), never negative, rounded up to a
@@ -83,7 +89,7 @@ def resolve_selling_cents(price_input, *, retail_cents, map_cents):
         raise MapViolation(f"{s} below MAP {map_cents}")
     return s
 
-def quote_line(*, selling_cents, qty, modules, settings, base_cents=None):
+def quote_line(*, selling_cents, qty, modules, settings, base_cents=None, charge_fee=True):
     """Per-bottle economics for a drop-ship line. base = blended at this qty+cert;
     fee = 33% of markup; margin = selling - base - fee (>=0); dropship_wholesale = base+fee
     (what the practitioner pays in practitioner-paid mode).
@@ -91,9 +97,10 @@ def quote_line(*, selling_cents, qty, modules, settings, base_cents=None):
     NOTE: `selling_cents` must already have passed MAP validation via
     `resolve_selling_cents` — quote_line does NOT re-check MAP (the advertised-price floor
     is enforced at price resolution, before a quote is ever built).
-    `base_cents` replaces the blended base for a product with its own wholesale price."""
+    `base_cents` replaces the blended base (see sku_base_cents). `charge_fee` False drops
+    the service fee: it belongs to the Functional Formulation rule only (Glen 2026-10-06)."""
     base = drop_ship_base_cents(qty, modules) if base_cents is None else int(base_cents)
-    fee = service_fee_cents(selling_cents, base, settings)
+    fee = service_fee_cents(selling_cents, base, settings) if charge_fee else 0
     margin = max(0, int(selling_cents) - base - fee)
     return {
         "line_selling_cents": int(selling_cents),
