@@ -42,7 +42,7 @@ def test_the_copy_is_pinned(entry):
 
 
 def test_price_and_type_unchanged(entry):
-    assert entry["price_cents"] == 3000  # Glen, 2026-10-03
+    assert entry["price_cents"] == 2000  # Glen, 2026-10-06: sells at $20, SRP $30
     assert entry["bottle_type"] == "book"
 
 
