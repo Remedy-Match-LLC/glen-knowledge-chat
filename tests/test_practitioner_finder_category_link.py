@@ -40,7 +40,8 @@ def _run(query):
       const drillEls = {};
       for (const [id, subs] of Object.entries(drills)) {
         const d = el({}); d.classList._o = d;
-        d.subs = subs.map(s => { const e = el({sub: s}); e.classList._o = e; return e; });
+        d.subs = subs.map(s => { const e = el({sub: s}); e.classList._o = e;
+                                 if (s === '__all__') e.attrs['aria-pressed'] = 'true'; return e; });
         d.querySelectorAll = () => d.subs;
         drillEls['drill-' + id] = d;
       }
@@ -56,8 +57,10 @@ def _run(query):
       const pressed = chips.filter(c => c.attrs['aria-pressed'] === 'true').map(c => c.dataset.parent);
       const open = Object.entries(drillEls).filter(([k, d]) => d.classes.has('open')).map(([k]) => k);
       const subPressed = Object.values(drillEls).flatMap(d => d.subs)
-        .filter(s => s.attrs['aria-pressed'] === 'true').map(s => s.dataset.sub);
-      console.log(JSON.stringify({state: filterState, pressed, open, subPressed, searched}));
+        .filter(s => s.attrs['aria-pressed'] === 'true' && s.dataset.sub !== '__all__').map(s => s.dataset.sub);
+      const allPressed = Object.entries(drillEls).filter(([k, d]) =>
+        d.subs.some(s => s.dataset.sub === '__all__' && s.attrs['aria-pressed'] === 'true')).map(([k]) => k);
+      console.log(JSON.stringify({state: filterState, pressed, open, subPressed, allPressed, searched}));
     """ % (json.dumps(parents), json.dumps(drills), json.dumps(query), _fn())
     r = subprocess.run([node, "-e", js], capture_output=True, text=True, timeout=30)
     assert r.returncode == 0, r.stderr
@@ -70,6 +73,7 @@ def test_dental_biological_link_presses_both_chips_and_does_not_search():
     assert out["pressed"] == ["dental"]
     assert out["open"] == ["drill-dental"]
     assert out["subPressed"] == ["biological"]
+    assert "drill-dental" not in out["allPressed"]   # "All Dental" no longer shows pressed
     assert out["searched"] == 0
 
 
@@ -156,3 +160,11 @@ def test_portal_embed_location_prefill_unchanged():
 def test_category_prefill_runs_at_load_before_the_country_fetch():
     # applyUrlPrefill runs after the async country fetch; the category must already be set.
     assert SRC.index("\n    applyCategoryPrefill();\n") < SRC.index("\n    loadCountries();\n")
+
+
+def test_switching_category_shows_all_again():
+    """Review round 1: Eye Care then Dental after the link left Biological looking pressed
+    while the search sent the whole category."""
+    start = SRC.index("    document.querySelectorAll('.chip[data-parent]').forEach(btn => {")
+    handler = SRC[start:SRC.index("\n    });\n", start)]
+    assert "c.setAttribute('aria-pressed', c.dataset.sub === '__all__' ? 'true' : 'false')" in handler

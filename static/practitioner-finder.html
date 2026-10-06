@@ -779,6 +779,9 @@
           filterState.parent = parent;
           filterState.sub = '__all__';
           document.querySelectorAll('.chip[data-parent]').forEach(c => c.setAttribute('aria-pressed', 'false'));
+          // The search is reset to the whole category, so the sub-chips show "All" again.
+          document.querySelectorAll('.drill-down .sub-chip').forEach(c =>
+            c.setAttribute('aria-pressed', c.dataset.sub === '__all__' ? 'true' : 'false'));
           btn.setAttribute('aria-pressed', 'true');
           closeAllDrillDowns();
           if (parent !== '__all__') {
