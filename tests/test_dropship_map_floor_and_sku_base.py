@@ -241,3 +241,26 @@ def test_console_override_cannot_take_a_plain_product_below_retail(monkeypatch, 
         "default_markup_pct": 0, "overrides": {"device": 7000, "ff": 7000}}})
     got = {c["slug"]: c["clamped_to_cents"] for c in r.get_json()["clamped"]}
     assert got == {"device": 10000}   # the FF at $70 is allowed; the device is held at retail
+
+
+
+def test_dispensary_volume_count_is_formulations_only(monkeypatch):
+    """Round 3: 1 formula + 11 books in a dispensary cart prices the formula as 1 bottle."""
+    import dashboard.tax as _tax
+    prices = {"ff": 7000, "book": 4000}
+    monkeypatch.setattr(dc, "_retail_for", lambda slug: prices[slug])
+    monkeypatch.setattr(dc, "_wholesale_pct_for", lambda slug: 50 if slug == "book" else None)
+    monkeypatch.setattr(dc, "_is_ff", lambda slug: slug == "ff")
+    monkeypatch.setattr(dc, "practitioner_price_for", lambda pid, slug: prices[slug])
+    monkeypatch.setattr(_tax, "compute_get_cents",
+                        lambda s, *, channel, ship_to_state, resale_ok=False: 0)
+    out = dc.build_client_order(
+        [{"slug": "ff", "qty": 1}, {"slug": "book", "qty": 11}], {"id": "p1", "modules_completed": 0},
+        patient={"email": "pat@x.com", "ship": {"name": "Pat", "state": "CA", "country": "US"}},
+        method="card")
+    ff = pp.quote_line(selling_cents=7000, qty=1, modules=0, settings=dc._settings())
+    assert out["margin_cents"] == ff["margin_cents"] + 11 * 2000
+
+
+def test_own_wholesale_base_is_whole_dollars():
+    assert pp.sku_base_cents(1, 0, 3500, 50, is_ff=False) == 1800   # $17.50 rounds up

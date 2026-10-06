@@ -64,7 +64,7 @@ def sku_base_cents(qty, modules_completed, retail_cents, wholesale_discount_pct=
       to Functional Formulations, and there is "no discount unless otherwise specified"."""
     if wholesale_discount_pct is not None:
         pct = max(0, min(100, int(wholesale_discount_pct)))
-        return (int(retail_cents) * (100 - pct) + 50) // 100
+        return _wp.whole_dollar_cents((int(retail_cents) * (100 - pct) + 50) // 100)  # as stocking
     if is_ff:
         return drop_ship_base_cents(qty, modules_completed)
     return int(retail_cents)
