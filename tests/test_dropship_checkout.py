@@ -246,3 +246,29 @@ def test_quickbooks_lines_carry_the_product_name_not_the_slug(monkeypatch):
 
 def test_product_name_falls_back_to_the_slug_for_an_unknown_product():
     assert dc._product_name("no-such-product-xyz") == "no-such-product-xyz"
+
+
+def test_a_flat_price_reaches_a_70_dollar_ff_but_not_other_70_dollar_products(monkeypatch):
+    """Before whole dollars the flat ceiling was $69.97: every product at $69.97 was an FF,
+    and about 490 others (essences and more) sat at $70, above it, on standard pricing.
+    At a $70 ceiling, exactly $70 must count only for an FF (round 3 review)."""
+    _stub_order(monkeypatch, retail=7000)
+    monkeypatch.setattr(dc, "_practitioner_dropship_unit_cents",
+                        lambda pid: 4000 if pid == "ashley" else None)
+    ashley = {"id": "ashley", "modules_completed": 0,
+              "email": "ashley@example.com", "name": "Ashley"}
+    monkeypatch.setattr(dc, "_is_ff", lambda slug: slug == "ff")
+    q = dc.quote_dropship_cart([{"slug": "ff", "qty": 1}, {"slug": "essence", "qty": 1}],
+                               ashley)
+    units = {ln["slug"]: ln["unit_cents"] for ln in q["lines"]}
+    assert units["ff"] == 4000
+    assert units["essence"] != 4000
+
+
+def test_a_flat_price_still_reaches_cheaper_products(monkeypatch):
+    _stub_order(monkeypatch, retail=4000)
+    monkeypatch.setattr(dc, "_practitioner_dropship_unit_cents", lambda pid: 3500)
+    monkeypatch.setattr(dc, "_is_ff", lambda slug: False)
+    q = dc.quote_dropship_cart([{"slug": "info", "qty": 1}],
+                               {"id": "x", "modules_completed": 0})
+    assert q["lines"][0]["unit_cents"] == 3500

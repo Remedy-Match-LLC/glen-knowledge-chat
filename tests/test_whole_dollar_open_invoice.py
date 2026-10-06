@@ -157,3 +157,34 @@ def test_a_line_for_another_member_does_not_match():
     out = _appmod()._mark_issued_units(
         order, [{"slug": "thing", "qty": 1, "billed_for": "b@x.com"}])
     assert "issued_unit_cents" not in out[0]
+
+
+def _credit(db, cents):
+    from dashboard import points as P
+    with sqlite3.connect(db) as cx:
+        P.init_points_table(cx)
+        P.credit(cx, EMAIL, value_cents=cents, reason="earn", order_ref="OLD-1")
+        cx.commit()
+
+
+def test_the_order_builder_redeems_points_in_whole_dollars(tmp_path, monkeypatch):
+    appmod, _, db = _app(tmp_path, monkeypatch, unit_cents=7000)
+    _credit(db, 1347)
+    priced = appmod._price_inhouse_invoice(
+        [{"slug": "thing", "qty": 1}], email=EMAIL, pickup=True, ship={},
+        points_redeem_cents_in=1347)
+    assert priced["points_redeemed_cents"] == 1300
+    assert priced["total_cents"] == 7000 - 1300
+
+
+def test_the_customer_invoice_applies_points_in_whole_dollars(tmp_path, monkeypatch):
+    appmod, client, db = _app(tmp_path, monkeypatch, unit_cents=7000)
+    _credit(db, 1347)
+    from dashboard import practitioner_portal as PP
+    monkeypatch.setattr(PP, "_LOG_DB", Path(db))
+    token = PP.create_order_invoice_token(1)
+    r = client.post(f"/api/invoice/{token}/apply-points", json={"cents": 1347})
+    assert r.status_code == 200, r.get_json()
+    o = _order(db)
+    assert o["points_redeemed_cents"] == 1300
+    assert o["total_cents"] == 7000 - 1300

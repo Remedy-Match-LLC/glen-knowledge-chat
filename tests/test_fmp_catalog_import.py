@@ -100,3 +100,11 @@ def test_infoceutical_flat_price_overrides_fmp():
                            "type": "Infoceutical", "sold_price": "$40", "id_pk": "209"})
     assert e["price_cents"] == 4000          # flat $39.97, not FMP's $40
     assert e["qty_pricing"] is False         # infoceuticals are list price (not FF volume)
+
+
+def test_a_price_with_cents_imports_as_the_next_whole_dollar():
+    """Glen, 2026-10-01: every price is a whole dollar, rounded up."""
+    row = {"product_name": "Cents Test Drops", "type": "Tincture",
+           "sold_price": "69.97", "retail_sug_price": "79.97", "id_pk": "9001"}
+    _, e = build_entry(row)
+    assert e["price_cents"] == 7000 and e["regular_cents"] == 8000

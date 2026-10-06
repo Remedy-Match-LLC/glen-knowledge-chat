@@ -85,6 +85,28 @@ def _flat_ceiling_cents() -> int:
         return 7000
 
 
+def _is_ff(slug: str) -> bool:
+    """A Functional Formulation (qty_pricing). Monkeypatchable in tests."""
+    try:
+        import app as _app
+        return bool((_app._get_product(slug) or {}).get("qty_pricing"))
+    except Exception:
+        return False
+
+
+def _flat_applies(slug: str, retail_cents: int, ceiling: int) -> bool:
+    """Whether a practitioner's flat bottle price reaches this product.
+
+    Before whole dollars the ceiling was $69.97, and every product at exactly $69.97 was
+    a Functional Formulation; about 490 other products (essences and more) sat at $70,
+    just above it, and paid standard drop-ship pricing. With the ceiling at $70 the flat
+    price would have reached them too. So exactly $70 counts only for an FF."""
+    retail_cents = int(retail_cents)
+    if retail_cents < ceiling:
+        return True
+    return retail_cents == ceiling and _is_ff(slug)
+
+
 def _practitioner_dropship_unit_cents(pid: str) -> int | None:
     """Stored practitioner-specific flat bottle price; None keeps standard pricing."""
     from dashboard import practitioner_settings as _ps
@@ -118,7 +140,8 @@ def quote_dropship_cart(cart: List[dict], practitioner: dict) -> dict:
         dl = dropship_line_cents(
             retail_cents=retail_cents, qty=total_bottles,
             modules=modules, settings=settings)
-        flat_applies = special_unit_cents is not None and int(retail_cents) <= ceiling
+        flat_applies = (special_unit_cents is not None
+                        and _flat_applies(slug, retail_cents, ceiling))
         unit_cents = special_unit_cents if flat_applies else dl["unit_cents"]
         line_cents = unit_cents * line_qty
         subtotal_cents += line_cents
