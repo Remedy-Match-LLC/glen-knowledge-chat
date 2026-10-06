@@ -805,6 +805,33 @@
       });
     });
 
+    // Preselect a category from the URL (?category=dental&sub=biological), so a shared
+    // link opens with that filter pressed. It never searches on its own: the visitor
+    // types a place (Glen 2026-10-06). Values are matched against the chips on the
+    // page, never put into a selector, so an unknown value changes nothing.
+    function applyCategoryPrefill() {
+      const params = new URLSearchParams(window.location.search);
+      const cat = (params.get('category') || '').trim().toLowerCase();
+      if (!cat) return;
+      const chip = Array.from(document.querySelectorAll('.chip[data-parent]'))
+        .find(c => c.dataset.parent === cat);
+      if (!chip) return;
+      filterState.parent = cat;
+      filterState.sub = '__all__';
+      chip.setAttribute('aria-pressed', 'true');
+      const drill = document.getElementById(`drill-${cat}`);
+      if (!drill || cat === '__all__') return;
+      drill.classList.add('open');
+      const sub = (params.get('sub') || '').trim().toLowerCase();
+      const subChip = Array.from(drill.querySelectorAll('.sub-chip'))
+        .find(c => c.dataset.sub === sub);
+      if (!subChip) return;
+      drill.querySelectorAll('.sub-chip').forEach(c => c.setAttribute('aria-pressed', 'false'));
+      subChip.setAttribute('aria-pressed', 'true');
+      filterState.sub = sub;
+    }
+    applyCategoryPrefill();
+
     // Populate the country selector from the data, then guard the radius UI.
     const countrySelect = document.getElementById('country-select');
     const radiusSelect = document.getElementById('radius-select');
