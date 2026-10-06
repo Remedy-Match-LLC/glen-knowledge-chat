@@ -100,3 +100,60 @@ def test_the_rule_itself():
     assert keep(4968, 5000) == 4968
     assert keep(6900, 7000) == 7000          # a full dollar is a real change
     assert keep(7000, 6000) == 6000          # a fall always applies
+
+
+def test_a_typed_price_does_not_lend_its_issued_price_to_a_twin_line():
+    """Two identical lines issued at $69.50 and $69.97. The first is retyped; the second
+    must keep its own $69.97, not inherit the first one's $69.50 (round 2 review)."""
+    repo = Path(__file__).resolve().parent.parent
+    if str(repo) not in sys.path:
+        sys.path.insert(0, str(repo))
+    import app as appmod
+    order = {"pay_status": "unpaid", "items": [
+        {"slug": "thing", "qty": 1, "unit_cents": 6950},
+        {"slug": "thing", "qty": 1, "unit_cents": 6997}]}
+    out = appmod._mark_issued_units(order, [
+        {"slug": "thing", "qty": 1, "unit_cents": 6500},
+        {"slug": "thing", "qty": 1}])
+    assert "issued_unit_cents" not in out[0]
+    assert out[1]["issued_unit_cents"] == 6997
+
+
+def _appmod():
+    repo = Path(__file__).resolve().parent.parent
+    if str(repo) not in sys.path:
+        sys.path.insert(0, str(repo))
+    import app as appmod
+    return appmod
+
+
+def test_a_paid_order_keeps_its_prices_too():
+    """Editing a paid order's note or address must not lift its lines by cents and raise
+    a false "collect the difference" warning (round 1 review)."""
+    order = {"pay_status": "paid", "items": [{"slug": "thing", "qty": 1, "unit_cents": 6997}]}
+    out = _appmod()._mark_issued_units(order, [{"slug": "thing", "qty": 1}])
+    assert out[0]["issued_unit_cents"] == 6997
+
+
+def test_a_cleared_typed_price_goes_back_to_list():
+    """The owner typed $69.50 (stored as an override) and then cleared it: back to list."""
+    order = {"pay_status": "unpaid", "items": [
+        {"slug": "thing", "qty": 1, "unit_cents": 6950, "override": True}]}
+    out = _appmod()._mark_issued_units(order, [{"slug": "thing", "qty": 1}])
+    assert "issued_unit_cents" not in out[0]
+
+
+def test_the_customers_own_edit_matches_a_caregiver_line():
+    """client_invoice_lines.rebuild sends no billed_for; the stored line still matches."""
+    order = {"pay_status": "unpaid", "items": [
+        {"slug": "thing", "qty": 1, "unit_cents": 6997, "billed_for": "member@x.com"}]}
+    out = _appmod()._mark_issued_units(order, [{"slug": "thing", "qty": 1}])
+    assert out[0]["issued_unit_cents"] == 6997
+
+
+def test_a_line_for_another_member_does_not_match():
+    order = {"pay_status": "unpaid", "items": [
+        {"slug": "thing", "qty": 1, "unit_cents": 6997, "billed_for": "a@x.com"}]}
+    out = _appmod()._mark_issued_units(
+        order, [{"slug": "thing", "qty": 1, "billed_for": "b@x.com"}])
+    assert "issued_unit_cents" not in out[0]

@@ -84,5 +84,6 @@ def test_balance_is_binding_cap(monkeypatch):
                                points_to_redeem_cents=999999,
                                points_balance_cents=150)
 
-    assert out["points_redeemed_cents"] == 150
-    assert out["qbo_payload"]["discount_cents"] == 150
+    # Whole dollars only (Glen, 2026-10-01): a $1.50 balance redeems $1.
+    assert out["points_redeemed_cents"] == 100
+    assert out["qbo_payload"]["discount_cents"] == 100

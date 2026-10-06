@@ -15,6 +15,7 @@ Idempotent: a second run changes nothing. Usage: python3 scripts/whole_dollar_ca
 """
 
 import json
+import os
 import re
 import sys
 from pathlib import Path
@@ -166,7 +167,12 @@ def main():
     if bad:
         print("REFUSING, the result still has:\n  " + "\n  ".join(bad), file=sys.stderr)
         sys.exit(1)
-    PATH.write_text(text)
+    # Write beside it, then swap in one step, so an interrupted write never leaves a
+    # truncated catalog in place.
+    tmp = PATH.with_suffix(".json.tmp")
+    tmp.write_text(text)
+    json.loads(tmp.read_text())
+    os.replace(tmp, PATH)
     print("ok")
 
 

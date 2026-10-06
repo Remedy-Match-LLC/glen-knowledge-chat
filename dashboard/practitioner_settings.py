@@ -218,7 +218,8 @@ def price_cents_for(cx, pid: str, slug: str, *, retail_cents: int, map_cents: in
 
     overrides = pricing.get("overrides", {})
     if slug in overrides:
-        price = int(overrides[slug])
+        # A saved price with cents charges the next whole dollar (Glen, 2026-10-01).
+        price = -(-int(overrides[slug]) // 100) * 100
     else:
         markup_pct = pricing.get("default_markup_pct", 0)
         price = _pp.price_for_markup(markup_pct, retail_cents)

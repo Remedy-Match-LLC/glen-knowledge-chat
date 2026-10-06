@@ -196,3 +196,10 @@ def test_validate_rejects_dial_out_of_range():
 def test_validate_rejects_non_bool_enabled():
     assert any("boolean" in e for e in
                pp.validate_config({"standard": {"same_sku": {"enabled": "yes", "dial": 0.5}}}))
+
+
+def test_a_typed_selling_price_rounds_up_to_a_whole_dollar():
+    """Glen, 2026-10-01: practitioner prices are whole dollars, rounded up."""
+    assert pp.resolve_selling_cents({"price_cents": 7550}, retail_cents=7000,
+                                    map_cents=7000) == 7600
+    assert pp.price_for_markup(15, 6997) == 8100       # 8046.55 -> $81

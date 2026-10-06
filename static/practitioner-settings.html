@@ -97,18 +97,18 @@
     <!-- ── Pricing ─────────────────────────────────────────────────── -->
     <div class="panel">
       <h2>Pricing</h2>
-      <div class="muted" style="margin-top:6px">Set your default markup over retail. You can also set a specific dollar price per SKU. Prices are always at or above the MAP minimum of $67.</div>
+      <div class="muted" style="margin-top:6px">Set your default markup over retail. You can also set a specific dollar price per SKU. Prices are always at or above the MAP minimum of $70.</div>
 
       <label class="field-label" style="margin-top:16px">Default markup % (applied to all SKUs without a per-SKU override)</label>
       <div style="display:flex;align-items:center;gap:10px">
         <input type="number" id="default-markup" step="0.1" min="-99" max="500" placeholder="0" style="width:120px">
         <span class="companion" id="markup-companion"></span>
       </div>
-      <div class="warn-map" id="markup-warn-map">This markup puts some products below MAP ($67). They will be sold at $67 minimum.</div>
+      <div class="warn-map" id="markup-warn-map">This markup puts some products below MAP ($70). They will be sold at $70 minimum.</div>
 
       <div style="margin-top:18px">
         <div style="font-size:13px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px">Per-SKU overrides (cents)</div>
-        <div class="muted">Enter exact dollar price (in cents, e.g. 7500 for $75.00). Leave blank to use the default markup above. Prices below $67 will be raised to MAP.</div>
+        <div class="muted">Enter exact dollar price (in cents, e.g. 7500 for $75). Leave blank to use the default markup above. Prices below $70 will be raised to MAP, and cents round up to the next whole dollar.</div>
         <div id="sku-rows"></div>
         <div class="add-sku-row">
           <input type="text" id="new-slug" placeholder="product-slug">
@@ -283,7 +283,7 @@
   'use strict';
 
   var TOKEN = new URLSearchParams(location.search).get('token') || '';
-  var MAP_CENTS = 6700;  // $67 minimum
+  var MAP_CENTS = 7000;  // $70 minimum (Glen, 2026-10-06)
   var RETAIL_CENTS = 7000; // approximate retail for companion calc (~$70)
 
   // Storefront-card dirty flag. Only send `profile` in the save payload when
@@ -319,7 +319,7 @@
       var cents = skuOverrides[slug];
       var belowMap = cents < MAP_CENTS;
       return '<div class="sku-row" id="sku-' + esc(slug) + '">'
-        + '<div class="sku-label">' + esc(slug) + (belowMap ? ' <span style="color:var(--gold)">(will be raised to $67)</span>' : '') + '</div>'
+        + '<div class="sku-label">' + esc(slug) + (belowMap ? ' <span style="color:var(--gold)">(will be raised to $70)</span>' : '') + '</div>'
         + '<input type="number" value="' + cents + '" min="0" style="width:100%"'
         + '  onchange="updateSku(' + JSON.stringify(slug) + ',this.value)"'
         + '  oninput="updateSku(' + JSON.stringify(slug) + ',this.value)">'
@@ -705,7 +705,7 @@
             return c.slug + ': requested $' + (c.requested_cents / 100).toFixed(2)
               + ', raised to $' + (c.clamped_to_cents / 100).toFixed(2) + ' (MAP minimum).';
           });
-          clampedEl.textContent = 'Some prices were raised to the $67 MAP minimum: ' + notes.join(' ');
+          clampedEl.textContent = 'Some prices were raised to the $70 MAP minimum: ' + notes.join(' ');
           clampedEl.style.display = 'block';
         }
       })

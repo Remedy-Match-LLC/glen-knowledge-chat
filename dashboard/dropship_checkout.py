@@ -368,9 +368,10 @@ def build_client_order(cart: List[dict], practitioner: dict, *,
 
     # Fee-capped patient points redemption: never below product base (RM keeps
     # selling at >= base + the practitioner's full margin); RM absorbs the discount.
+    # Whole dollars only, 20 points at a time (Glen, 2026-10-01).
     redeem_cents = max(0, min(int(points_to_redeem_cents or 0),
                               int(points_balance_cents or 0),
-                              total_fee_cents))
+                              total_fee_cents)) // 100 * 100
 
     # Shipping credit (slice 2b, flag-gated by the caller which passes a 0 balance
     # when off): auto-apply the patient's outstanding ship_credit balance, bounded by

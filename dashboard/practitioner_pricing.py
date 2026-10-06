@@ -55,7 +55,7 @@ def resolve_selling_cents(price_input, *, retail_cents, map_cents):
     """price_input: {"price_cents": int} OR {"markup_pct": number} OR {} (default retail).
     Returns the selling price in cents; raises MapViolation if it is below MAP (advertised)."""
     if price_input.get("price_cents") is not None:
-        s = int(price_input["price_cents"])
+        s = _wp.whole_dollar_cents(int(price_input["price_cents"]))   # whole dollars, 2026-10
     elif price_input.get("markup_pct") is not None:
         s = price_for_markup(price_input["markup_pct"], retail_cents)
     else:

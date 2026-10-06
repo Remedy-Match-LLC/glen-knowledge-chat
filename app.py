@@ -21911,6 +21911,7 @@ def api_practitioner_settings_post():
             price_val = int(price_val)
         except (TypeError, ValueError):
             return jsonify({"ok": False, "error": f"override price for {slug!r} must be an integer (cents)"}), 400
+        price_val = -(-price_val // 100) * 100   # whole dollars, rounded up (2026-10-01)
         if price_val < map_cents:
             clamped.append({"slug": slug, "requested_cents": price_val, "clamped_to_cents": map_cents})
             price_val = map_cents
@@ -56162,27 +56163,39 @@ def _keep_issued_unit(issued, repriced):
     return repriced
 
 
+def _same_billed_for(stored, line):
+    """Whose line it is. The customer's own invoice edit (client_invoice_lines.rebuild)
+    sends no billed_for, so a line without one matches any stored line."""
+    want = (line.get("billed_for") or "").strip().lower()
+    return not want or (stored.get("billed_for") or "") == want
+
+
 def _mark_issued_units(order, lines_in):
-    """Copy each stored line's unit price onto the matching unchanged editor line of an
-    UNPAID order, as issued_unit_cents, for _keep_issued_unit. Matches on slug, qty and
-    billed_for, one stored line per editor line. A line with an explicit unit_cents is
-    the owner's own price and is left alone."""
-    if order.get("pay_status") == "paid":
-        return lines_in
+    """Copy each stored line's unit price onto the matching unchanged editor line, as
+    issued_unit_cents, for _keep_issued_unit. Paid orders too: an edit to a paid order's
+    note or address must not lift its lines by cents and raise a false "collect the
+    difference" warning. Matches on slug, qty,
+    billed_for and format, one stored line per editor line, in order. A line with an
+    explicit unit_cents is the owner's own price: it takes its match but gets no mark."""
     stored = [dict(i) for i in (order.get("items") or [])
               if i.get("slug") and not i.get("gift") and i.get("kind") != "membership"]
     out = []
     for ln in lines_in or []:
         ln = dict(ln)
-        if ln.get("unit_cents") in (None, ""):
-            for i in stored:
-                if (i.get("slug") == (ln.get("slug") or "").strip()
-                        and _line_qty(i) == _line_qty(ln)
-                        and (i.get("billed_for") or "") == (ln.get("billed_for") or "").strip().lower()
-                        and i.get("unit_cents") is not None):
+        for i in stored:
+            if (i.get("slug") == (ln.get("slug") or "").strip()
+                    and _line_qty(i) == _line_qty(ln)
+                    and _same_billed_for(i, ln)
+                    and (i.get("format") or "bottle") == (ln.get("format") or "bottle")
+                    and i.get("unit_cents") is not None):
+                # A typed price still consumes its stored line, so a second identical
+                # line cannot inherit the first one's price.
+                # A stored typed price (override) is not "issued by pricing": an owner
+                # clearing it means "back to list", so it gets no mark.
+                if ln.get("unit_cents") in (None, "") and not i.get("override"):
                     ln["issued_unit_cents"] = int(i["unit_cents"])
-                    stored.remove(i)
-                    break
+                stored.remove(i)
+                break
         out.append(ln)
     return out
 
@@ -58074,7 +58087,8 @@ def _invoice_line_view(l):
             #      $40/$35 before 2026-10, CDS $40/$35, WholOmega 120ct $230/$190).
             #   2. the flat $80 FF anchor, for a $70 FF (qty_pricing) carrying no
             #      explicit SRP. The FF flag matters since whole dollars (2026-10): about
-            #      490 essences were already $70 and never showed an $80 Value.
+            #      490 products were already $70. Most carry their own regular_cents and
+            #      anchor by rule 1; the few without one must not gain a flat $80.
             #   3. otherwise none: Value == Regular and the invoice prints no anchor.
             # info_only lines never anchor. A regular_cents <= price is incoherent data
             # and is ignored here rather than at render time.
