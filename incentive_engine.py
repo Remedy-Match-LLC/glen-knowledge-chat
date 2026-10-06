@@ -770,6 +770,11 @@ def _list_segment_cohort(segment_tags=("type:client", "consent:opted-in"),
             low = " ".join(t.lower() for t in tags)
             if "consent:unsubscribed" in tags or any(s in low for s in _NO_SEND_SUBSTRINGS):
                 continue
+            # An address-level block (bounce, GHL email DND) lives in email_suppression,
+            # not in the tags. Fail closed: a check that errors sends nothing.
+            from dashboard import email_suppression as _es
+            if _es.suppression_reason(cx, email):
+                continue
             emails.append(email)
         emails = list(dict.fromkeys(emails))
         if cap:
