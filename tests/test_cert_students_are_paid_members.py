@@ -80,7 +80,7 @@ def _ffs(a, n=3):
     P = a._PRODUCTS["products"]
     out = [s for s, p in P.items() if isinstance(p, dict) and p.get("qty_pricing")
            and not p.get("inactive") and not p.get("info_only")
-           and int(p.get("price_cents") or 0) == 6997][:n]
+           and int(p.get("price_cents") or 0) == 7000][:n]
     assert len(out) == n
     return out
 

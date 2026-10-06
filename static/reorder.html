@@ -199,7 +199,8 @@ async function loadAll(){
 function getPtsRedeemCents(){
   const v = parseFloat($('#ptsInput').value);
   if (!v || isNaN(v) || v <= 0) return 0;
-  return Math.round(Math.min(v, pointsBalanceCents / 100) * 100);
+  // Points redeem in whole dollars only (Glen, 2026-10-01).
+  return Math.floor(Math.min(v, pointsBalanceCents / 100)) * 100;
 }
 
 function onPtsInput(){

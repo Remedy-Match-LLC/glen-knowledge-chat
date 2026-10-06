@@ -61,7 +61,7 @@ def test_large_redemption_capped_at_total_fee(monkeypatch):
     base = dc.build_client_order(cart, prac, patient=patient, method="card",
                                 points_to_redeem_cents=0, points_balance_cents=0)
     baseline_margin = base["margin_cents"]
-    total_fee = 660  # 1 bottle: 33% * (7000 - 5000)
+    total_fee = 700  # 1 bottle: 33% * (7000 - 5000) = $6.60, rounded up to $7 (2026-10)
 
     _common_stubs(monkeypatch)
     out = dc.build_client_order(cart, prac, patient=patient, method="card",
@@ -84,5 +84,6 @@ def test_balance_is_binding_cap(monkeypatch):
                                points_to_redeem_cents=999999,
                                points_balance_cents=150)
 
-    assert out["points_redeemed_cents"] == 150
-    assert out["qbo_payload"]["discount_cents"] == 150
+    # Whole dollars only (Glen, 2026-10-01): a $1.50 balance redeems $1.
+    assert out["points_redeemed_cents"] == 100
+    assert out["qbo_payload"]["discount_cents"] == 100

@@ -7026,7 +7026,7 @@ def qbo_membership_test():
 
 # ── Funnel product checkout — product page → Buy → QBO invoice ────────────────
 _PRODUCTS = _load_json(DATA_DIR / "products.json",
-                       default={"default_price_cents": 6997, "products": {}})
+                       default={"default_price_cents": 7000, "products": {}})
 # Card/ACH online payment is gated until QuickBooks Payments is activated.
 _QBO_PAYMENTS_ACTIVE = os.environ.get("QBO_PAYMENTS_ACTIVE", "").strip().lower() in ("1", "true", "yes", "on")
 _STRIPE_ACTIVE = os.environ.get("STRIPE_ACTIVE", "").strip().lower() in ("1", "true", "yes", "on")
@@ -7327,10 +7327,10 @@ _ALT_PAY = {
 }
 
 
-# Functional Formulations ($69.97 base) — volume pricing is OPEN TO ALL, driven by the
+# Functional Formulations ($70 base) — volume pricing is OPEN TO ALL, driven by the
 # order-wide FF quantity through the pricing engine (_inhouse_ff_unit_cents below).
-_FF_BASE_CENTS = 6997     # $69.97 — the functional-formulation (FF) capsule regular price
-_FF_SRP_CENTS  = 8000     # $80.00 — FF SRP/Value anchor (shown above the $69.97 Regular)
+_FF_BASE_CENTS = 7000     # $70 — the functional-formulation (FF) capsule regular price
+_FF_SRP_CENTS  = 8000     # $80.00 — FF SRP/Value anchor (shown above the $70 Regular)
 _FORMATS = [
     {"id": "bottle", "label": "Standard bottles", "note": "30 capsules per bottle"},
     {"id": "larger", "label": "Larger bottle", "note": "90, 180, or 360 capsules in one bottle (quantity 3, 6, or 12)"},
@@ -7343,7 +7343,7 @@ _FORMAT_LABELS = {f["id"]: f["label"] for f in _FORMATS if f["id"] != "bottle"}
 
 def _qty_eligible(p):
     # A Functional Formulation that gets the volume curve. Keyed on the explicit
-    # qty_pricing FF flag (NOT on price == $69.97): flagging by price is fragile —
+    # qty_pricing FF flag (NOT on price == $70): flagging by price is fragile —
     # change FF pricing and volume silently dies, and it left ~55 real FFs (Scar
     # Solve, Nerve Repair, Neuro Magnesium, Terrain Restore…) without volume because
     # the flag was never set. info-only stays excluded. Flag the product = it's an FF.
@@ -7398,7 +7398,7 @@ def _clean_format(p, fmt):
 
 
 def _inhouse_ff_unit_cents(p, total_ff_qty, settings, *, program_member=False, line_qty=1):
-    """Effective in-house unit price (cents) for a $69.97 functional-formulation
+    """Effective in-house unit price (cents) for a $70 functional-formulation
     capsule (_qty_eligible): a linear volume rate. Clamped at the wholesale
     discount floor. Non-FF products return list price.
 
@@ -7412,7 +7412,7 @@ def _inhouse_ff_unit_cents(p, total_ff_qty, settings, *, program_member=False, l
     if not _qty_eligible(p):
         return int(p.get("price_cents") or 0)
     from dashboard import pricing as _pricing
-    # Base the volume math on the product's OWN price, not a hardcoded $69.97, so
+    # Base the volume math on the product's OWN price, not a hardcoded $70, so
     # changing FF pricing flows through instead of breaking the discount.
     base = int(p.get("price_cents") or 0)
     qty_for_rate = int(total_ff_qty or 0) if program_member else max(1, int(line_qty or 1))
@@ -7437,7 +7437,7 @@ def _line_qty(ln):
 
 
 def _inhouse_total_ff_qty(lines_in):
-    """Sum of qty across $69.97 functional-formulation lines in the cart."""
+    """Sum of qty across $70 functional-formulation lines in the cart."""
     tot = 0
     for ln in lines_in:
         p = _get_product((ln.get("slug") or "").strip())
@@ -7896,7 +7896,7 @@ def _get_product(slug):
         return None  # inactive products are not sellable/visible on the funnel
     out = dict(p)
     out["slug"] = slug
-    out.setdefault("price_cents", _PRODUCTS.get("default_price_cents", 6997))
+    out.setdefault("price_cents", _PRODUCTS.get("default_price_cents", 7000))
     return out
 
 
@@ -21911,6 +21911,7 @@ def api_practitioner_settings_post():
             price_val = int(price_val)
         except (TypeError, ValueError):
             return jsonify({"ok": False, "error": f"override price for {slug!r} must be an integer (cents)"}), 400
+        price_val = -(-price_val // 100) * 100   # whole dollars, rounded up (2026-10-01)
         if price_val < map_cents:
             clamped.append({"slug": slug, "requested_cents": price_val, "clamped_to_cents": map_cents})
             price_val = map_cents
@@ -55941,6 +55942,7 @@ def _price_inhouse_invoice(lines_in, *, email, pickup, ship,
             # A saved client special only ever lowers the line (Glen, 2026-10-04).
             unit_cents = _special_lowers_only(
                 _client_special_for(slug, p, _cprices, _ff_flat), unit_cents)
+            unit_cents = _keep_issued_unit(ln.get("issued_unit_cents"), unit_cents)
         line_cents = unit_cents * qty
         subtotal_list += line_cents
         _fmt = _clean_format(p, ln.get("format"))   # refill/larger only where it applies
@@ -56019,7 +56021,8 @@ def _price_inhouse_invoice(lines_in, *, email, pickup, ship,
             _pbal = _points.balance(_pcx, _pemail) if _pemail else 0
         finally:
             _pcx.close()
-        points_redeemed_cents = max(0, min(int(points_redeem_cents_in), total_cents, _pbal))
+        # Whole dollars only, 20 points at a time (Glen, 2026-10-01).
+        points_redeemed_cents = max(0, min(int(points_redeem_cents_in), total_cents, _pbal)) // 100 * 100
         total_cents -= points_redeemed_cents
     return {"items_rec": items_rec, "cart": cart, "subtotal_cents": subtotal_list,
             "shipping_cents": shipping_cents, "get_cents": get_cents,
@@ -56096,7 +56099,7 @@ def _reprice_and_persist_invoice(cx, order, lines_in, *, pickup, discount_cents_
     # would silently desync the ledger). We carry the order's already-redeemed points
     # forward unchanged and apply them to the recomputed total.
     priced = _price_inhouse_invoice(
-        lines_in, email=email, pickup=pickup, ship=ship,
+        _mark_issued_units(order, lines_in), email=email, pickup=pickup, ship=ship,
         discount_cents_in=discount_cents_in,
         adjustment_cents_in=adjustment_cents_in,
         shipping_override_cents_in=shipping_override_cents_in,
@@ -56146,6 +56149,57 @@ def _reprice_and_persist_invoice(cx, order, lines_in, *, pickup, discount_cents_
     return priced, (order.get("pay_status") == "paid")
 
 
+def _keep_issued_unit(issued, repriced):
+    """An open invoice keeps the price it was issued at (Glen, 2026-10-01, decision 3 of
+    the whole-dollar plan). Re-pricing an unchanged line at whole dollars would otherwise
+    lift a $69.97 or $49.68 line by up to 99 cents on any edit. A rise of a dollar or more
+    is a real change (membership removed, quantity rule) and still applies; a fall
+    always applies."""
+    if issued in (None, ""):
+        return repriced
+    issued = int(issued)
+    if issued < repriced < issued + 100:
+        return issued
+    return repriced
+
+
+def _same_billed_for(stored, line):
+    """Whose line it is. The customer's own invoice edit (client_invoice_lines.rebuild)
+    sends no billed_for, so a line without one matches any stored line."""
+    want = (line.get("billed_for") or "").strip().lower()
+    return not want or (stored.get("billed_for") or "") == want
+
+
+def _mark_issued_units(order, lines_in):
+    """Copy each stored line's unit price onto the matching unchanged editor line, as
+    issued_unit_cents, for _keep_issued_unit. Paid orders too: an edit to a paid order's
+    note or address must not lift its lines by cents and raise a false "collect the
+    difference" warning. Matches on slug, qty,
+    billed_for and format, one stored line per editor line, in order. A line with an
+    explicit unit_cents is the owner's own price: it takes its match but gets no mark."""
+    stored = [dict(i) for i in (order.get("items") or [])
+              if i.get("slug") and not i.get("gift") and i.get("kind") != "membership"]
+    out = []
+    for ln in lines_in or []:
+        ln = dict(ln)
+        for i in stored:
+            if (i.get("slug") == (ln.get("slug") or "").strip()
+                    and _line_qty(i) == _line_qty(ln)
+                    and _same_billed_for(i, ln)
+                    and (i.get("format") or "bottle") == (ln.get("format") or "bottle")
+                    and i.get("unit_cents") is not None):
+                # A typed price still consumes its stored line, so a second identical
+                # line cannot inherit the first one's price.
+                # A stored typed price (override) is not "issued by pricing": an owner
+                # clearing it means "back to list", so it gets no mark.
+                if ln.get("unit_cents") in (None, "") and not i.get("override"):
+                    ln["issued_unit_cents"] = int(i["unit_cents"])
+                stored.remove(i)
+                break
+        out.append(ln)
+    return out
+
+
 def _points_to_set_on_unpaid_order(order, priced, want_cents):
     """How many points (cents) may be set on this unpaid invoice.
 
@@ -56175,7 +56229,8 @@ def _points_to_set_on_unpaid_order(order, priced, want_cents):
         list_cents = int(p.get("price_cents") or it.get("unit_cents") or 0)
         floor = _pricing.unit_floor_cents(p, list_cents, settings, "points")
         room += max(0, int(it.get("unit_cents") or 0) - floor) * int(it.get("qty") or 1)
-    return max(0, min(int(want_cents), balance, room, int(priced.get("total_cents") or 0)))
+    # Whole dollars only, 20 points at a time (Glen, 2026-10-01).
+    return max(0, min(int(want_cents), balance, room, int(priced.get("total_cents") or 0))) // 100 * 100
 
 
 def _price_cap_notice(priced):
@@ -58029,8 +58084,11 @@ def _invoice_line_view(l):
             # Value (SRP) anchor shown struck-through above the Regular price, in order:
             #   1. the product's own regular_cents — FMP's retail_sug_price — when it is
             #      genuinely above the charge price (essences $80/$70, infoceuticals
-            #      $40/$39.97, CDS $40/$35, WholOmega 120ct $230/$190).
-            #   2. the flat $80 FF anchor, for a $69.97 FF carrying no explicit SRP.
+            #      $40/$35 before 2026-10, CDS $40/$35, WholOmega 120ct $230/$190).
+            #   2. the flat $80 FF anchor, for a $70 FF (qty_pricing) carrying no
+            #      explicit SRP. The FF flag matters since whole dollars (2026-10): about
+            #      490 products were already $70. Most carry their own regular_cents and
+            #      anchor by rule 1; the few without one must not gain a flat $80.
             #   3. otherwise none: Value == Regular and the invoice prints no anchor.
             # info_only lines never anchor. A regular_cents <= price is incoherent data
             # and is ignored here rather than at render time.
@@ -58038,7 +58096,8 @@ def _invoice_line_view(l):
             if p.get("info_only"):
                 srp = base
             elif not (isinstance(srp, int) and srp > base):
-                srp = _FF_SRP_CENTS if base == _FF_BASE_CENTS else base
+                srp = (_FF_SRP_CENTS if base == _FF_BASE_CENTS and _qty_eligible(p)
+                       else base)
             out["srp_cents"] = srp
     return out
 
@@ -58511,7 +58570,8 @@ def api_invoice_apply_points(token):
     requested = max(0, int((request.get_json(silent=True) or {}).get("cents") or 0))
     # Work from the pre-points (gross) total so re-applying is idempotent.
     gross_total = int(order.get("total_cents") or 0) + int(order.get("points_redeemed_cents") or 0)
-    new_points = max(0, min(requested, gross_total, _invoice_points_balance(order)))
+    # Whole dollars only, 20 points at a time (Glen, 2026-10-01).
+    new_points = max(0, min(requested, gross_total, _invoice_points_balance(order))) // 100 * 100
     new_total = gross_total - new_points
     cx = db.connect(LOG_DB); cx.row_factory = _sqlite3.Row
     try:

@@ -17,7 +17,7 @@ def test_build_entry_ff_gets_volume_pricing_and_regular_anchor():
     assert slug == "digestzymes-homeoenergetic-drops"
     # FMP's round '70' is shorthand for the $69.97 FF base; app derives the $80 Value
     # anchor from price == 6997 exactly, so importing at 7000 would kill the anchor.
-    assert e["price_cents"] == 6997 and e["regular_cents"] == 8000
+    assert e["price_cents"] == 7000 and e["regular_cents"] == 8000
     assert e["qty_pricing"] is True          # FF -> volume rate
     assert e["no_groovekart"] is True and e["fmp_id"] == "75"
 
@@ -98,5 +98,13 @@ def test_cents_strips_dollar_sign_and_commas():
 def test_infoceutical_flat_price_overrides_fmp():
     slug, e = build_entry({"product_name": "ED9 Muscle Energetic Driver Infoceutical",
                            "type": "Infoceutical", "sold_price": "$40", "id_pk": "209"})
-    assert e["price_cents"] == 3997          # flat $39.97, not FMP's $40
+    assert e["price_cents"] == 4000          # flat $39.97, not FMP's $40
     assert e["qty_pricing"] is False         # infoceuticals are list price (not FF volume)
+
+
+def test_a_price_with_cents_imports_as_the_next_whole_dollar():
+    """Glen, 2026-10-01: every price is a whole dollar, rounded up."""
+    row = {"product_name": "Cents Test Drops", "type": "Tincture",
+           "sold_price": "69.97", "retail_sug_price": "79.97", "id_pk": "9001"}
+    _, e = build_entry(row)
+    assert e["price_cents"] == 7000 and e["regular_cents"] == 8000

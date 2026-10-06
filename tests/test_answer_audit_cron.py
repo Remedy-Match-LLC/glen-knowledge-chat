@@ -42,7 +42,7 @@ def test_requires_cron_secret(client):
 def test_clean_answers_send_no_email(client, monkeypatch):
     app, c = client
     clean = ("[Terrain Restore](https://illtowell.com/begin/product/terrain-restore)"
-             " is $69.97 list price.")
+             " is $70 list price.")
     sent = _stub_audit(app, monkeypatch, lambda q: clean)
     r = c.post("/api/cron/answer-audit", headers={"X-Cron-Secret": "sekret"})
     body = r.get_json()

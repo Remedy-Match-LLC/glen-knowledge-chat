@@ -24,9 +24,9 @@ def test_floor_fully_certified_is_2500():
     assert certification_floor_cents(12) == 2500
 
 
-def test_floor_midway_six_modules_is_3250():
+def test_floor_midway_six_modules_is_3300():
     from dashboard.wholesale_pricing import certification_floor_cents
-    assert certification_floor_cents(6) == 3250
+    assert certification_floor_cents(6) == 3300   # $32.50 rounded up, whole dollars 2026-10
 
 
 def test_floor_clamps_below_zero_and_above_twelve():
@@ -47,14 +47,14 @@ def test_locked_uncertified_two_boxes_is_4000():
     assert blended_unit_price_cents(40, 0, 20) == 4000   # $40.00 floor
 
 
-def test_locked_certified_full_box_is_3750():
+def test_locked_certified_full_box_is_3800():
     from dashboard.wholesale_pricing import blended_unit_price_cents
-    assert blended_unit_price_cents(20, 12, 20) == 3750  # $37.50
+    assert blended_unit_price_cents(20, 12, 20) == 3800  # $37.50 rounded up to $38
 
 
-def test_locked_certified_thirty_is_3125():
+def test_locked_certified_thirty_is_3200():
     from dashboard.wholesale_pricing import blended_unit_price_cents
-    assert blended_unit_price_cents(30, 12, 20) == 3125  # $31.25
+    assert blended_unit_price_cents(30, 12, 20) == 3200  # $31.25 rounded up to $32
 
 
 def test_locked_certified_two_boxes_is_2500():
@@ -77,6 +77,15 @@ def test_floor_holds_beyond_two_boxes():
     assert blended_unit_price_cents(200, 12, 20) == 2500
 
 
+def test_every_wholesale_unit_price_is_a_whole_dollar():
+    """Glen, 2026-10-01: wholesale and practitioner prices round up to whole dollars."""
+    from dashboard.wholesale_pricing import blended_unit_price_cents
+    for B in (10, 20, 24):
+        for m in range(13):
+            for q in range(1, 3 * B):
+                assert blended_unit_price_cents(q, m, B) % 100 == 0, (q, m, B)
+
+
 def test_unit_price_monotonic_non_increasing():
     from dashboard.wholesale_pricing import blended_unit_price_cents
     prev = blended_unit_price_cents(1, 12, 20)
@@ -86,13 +95,22 @@ def test_unit_price_monotonic_non_increasing():
         prev = cur
 
 
-def test_order_total_monotonic_non_decreasing():
-    from dashboard.wholesale_pricing import blended_unit_price_cents
-    prev = 1 * blended_unit_price_cents(1, 12, 20)
-    for q in range(2, 61):
-        cur = q * blended_unit_price_cents(q, 12, 20)
-        assert cur >= prev, f"total dropped at q={q}: {cur} < {prev}"
-        prev = cur
+def test_order_total_dips_by_under_a_dollar_a_bottle():
+    """Whole-dollar unit prices make the total dip now and then when a bottle is added:
+    31 certified bottles $961, 32 bottles $960. Holding the total flat instead kept a
+    certified practitioner at $31 for 40 bottles, against the promised $25. Glen,
+    2026-10-06: "accept the dips". This pins how big a dip may be. The raw curve never
+    dips, and rounding up adds under a dollar a bottle, so a dip is always under $1 per
+    bottle already in the order."""
+    from dashboard.wholesale_pricing import _blended_raw_cents, blended_unit_price_cents
+    for B in (10, 20, 30):
+        for m in range(13):
+            for q in range(2, 3 * B):
+                u0 = blended_unit_price_cents(q - 1, m, B)
+                u1 = blended_unit_price_cents(q, m, B)
+                assert q * u1 > (q - 1) * u0 - 100 * (q - 1), (q, m, B, u0, u1)
+                assert q * _blended_raw_cents(q, m, B) >= \
+                    (q - 1) * _blended_raw_cents(q - 1, m, B), (q, m, B)
 
 
 def test_non_twenty_box_size_b12_uncertified():
@@ -242,8 +260,8 @@ def test_order_quote_applies_fixed_product_wholesale_discount():
     )
     assert q["total_bottles"] == 2
     assert q["blended_unit_price_cents"] == 0
-    assert q["lines"][0]["unit_price_cents"] == 12499
-    assert q["subtotal_cents"] == 24998
+    assert q["lines"][0]["unit_price_cents"] == 12500   # $124.985 -> $125, whole dollars
+    assert q["subtotal_cents"] == 25000
 
 
 def test_fixed_discount_device_does_not_inflate_remedy_volume_tier(tmp_path):
@@ -267,7 +285,7 @@ def test_fixed_discount_device_does_not_inflate_remedy_volume_tier(tmp_path):
     )
     lines = {line["slug"]: line for line in q["lines"]}
     assert lines["remedy"]["unit_price_cents"] == 5000
-    assert lines["device"]["unit_price_cents"] == 12499
+    assert lines["device"]["unit_price_cents"] == 12500
 
 
 def test_order_quote_margin_ok_true_with_warning_when_cogs_unset(tmp_path):

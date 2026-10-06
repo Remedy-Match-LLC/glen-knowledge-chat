@@ -106,11 +106,12 @@ def test_build_client_order_ship_credit_folded_into_discount(monkeypatch):
 # ── Preserved bookkeeping: margin, points, ship-credit, get_cents ─────────────
 
 def test_build_client_order_margin_preserved(monkeypatch):
-    """1 bottle @ S=$70, base $50, fee 33%*(7000-5000)=660 -> margin 1340 (unchanged math)."""
+    """1 bottle @ S=$70, base $50, fee 33%*(7000-5000)=$6.60 -> $7 (whole dollars, 2026-10)
+    -> margin $13."""
     _stub_common(monkeypatch)
     cart = [{"slug": "brain-boost", "qty": 1}]
     out = dc.build_client_order(cart, PRAC, patient=PATIENT, method="card")
-    assert out["margin_cents"] == 1340
+    assert out["margin_cents"] == 1300
 
 
 def test_build_client_order_get_recorded_not_charged(monkeypatch):

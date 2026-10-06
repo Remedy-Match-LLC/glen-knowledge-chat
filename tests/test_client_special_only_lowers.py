@@ -41,7 +41,7 @@ def _ffs(a, n=3):
     P = a._PRODUCTS["products"]
     out = [s for s, p in P.items() if isinstance(p, dict) and p.get("qty_pricing")
            and not p.get("inactive") and not p.get("info_only")
-           and int(p.get("price_cents") or 0) == 6997][:n]
+           and int(p.get("price_cents") or 0) == 7000][:n]
     assert len(out) == n
     return out
 
@@ -65,8 +65,8 @@ def test_a_flat_price_above_mix_and_match_no_longer_raises_the_invoice(a):
     ffs = _ffs(a)
     lines = [{"slug": s, "qty": 1} for s in ffs]
     member_rate = _units(a, AGNES, lines)
-    assert all(v < 6997 for v in member_rate.values()), member_rate
-    _save(a, flat=6997)
+    assert all(v < 7000 for v in member_rate.values()), member_rate
+    _save(a, flat=7000)
     assert _units(a, AGNES, lines) == member_rate
 
 
@@ -79,7 +79,7 @@ def test_a_flat_price_below_the_rate_still_applies(a):
 def test_a_per_sku_special_above_list_is_ignored(a):
     slug = _ffs(a, 1)[0]
     _save(a, sku={slug: 9000}, email=OTHER)
-    assert _units(a, OTHER, [{"slug": slug, "qty": 1}])[slug] == 6997
+    assert _units(a, OTHER, [{"slug": slug, "qty": 1}])[slug] == 7000
 
 
 def test_a_zero_courtesy_on_the_biofield_still_applies(a):
@@ -99,7 +99,7 @@ def test_the_ff_add_to_invoice_price_follows_the_rule(a):
     _save(a, flat=9000, email=OTHER)
     cx = sqlite3.connect(str(a.LOG_DB))
     cx.row_factory = sqlite3.Row
-    assert a._ff_line_cents(cx, OTHER, slug) == 6997
+    assert a._ff_line_cents(cx, OTHER, slug) == 7000
     cx.close()
 
 
@@ -138,7 +138,7 @@ def test_portal_a_saved_special_above_the_automatic_price_is_ignored(a):
     slug = _ffs(a, 1)[0]
     _save(a, sku={slug: 9000}, email=OTHER)
     _l, items, _sub = a._portal_priced_lines([{"slug": slug, "qty": 1}], email=OTHER)
-    assert items[0]["unit_cents"] == 6997
+    assert items[0]["unit_cents"] == 7000
 
 
 def test_portal_a_saved_special_still_outranks_an_older_baked_price(a):

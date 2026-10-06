@@ -162,7 +162,7 @@
       "aliases": [
         "shark essence syntropy"
       ],
-      "summary": "Shark Essence is a Syntropy formulation priced at $69.97 with limited published detail.",
+      "summary": "Shark Essence is a Syntropy formulation priced at $70 with limited published detail.",
       "cluster": "other",
       "parent": "other",
       "namespaces": [
@@ -339,7 +339,7 @@
       "aliases": [
         "transform syntropy"
       ],
-      "summary": "Transform is a Syntropy formulation with limited published detail beyond its $69.97 price.",
+      "summary": "Transform is a Syntropy formulation with limited published detail beyond its $70 price.",
       "cluster": "other",
       "parent": "other",
       "namespaces": [
@@ -473,7 +473,7 @@
       "aliases": [
         "soothe formula"
       ],
-      "summary": "A Syntropy remedy formulation priced at $69.97, likely for calming or soothing support.",
+      "summary": "A Syntropy remedy formulation priced at $70, likely for calming or soothing support.",
       "cluster": "other",
       "parent": "other",
       "namespaces": [
@@ -1235,7 +1235,7 @@
       "aliases": [
         "et10"
       ],
-      "summary": "An infoceutical terrain formulation in the biocommunication energetic terrains category priced at $39.97.",
+      "summary": "An infoceutical terrain formulation in the biocommunication energetic terrains category priced at $40.",
       "cluster": "energetic-medicine",
       "parent": "energetic-medicine",
       "namespaces": [
@@ -1257,7 +1257,7 @@
       "aliases": [
         "et11"
       ],
-      "summary": "An infoceutical terrain formulation in the biocommunication energetic terrains category priced at $39.97.",
+      "summary": "An infoceutical terrain formulation in the biocommunication energetic terrains category priced at $40.",
       "cluster": "energetic-medicine",
       "parent": "energetic-medicine",
       "namespaces": [
@@ -1303,7 +1303,7 @@
       "aliases": [
         "et12"
       ],
-      "summary": "An infoceutical terrain formulation in the biocommunication energetic terrains category priced at $39.97.",
+      "summary": "An infoceutical terrain formulation in the biocommunication energetic terrains category priced at $40.",
       "cluster": "energetic-medicine",
       "parent": "energetic-medicine",
       "namespaces": [
@@ -1864,7 +1864,7 @@
       "aliases": [
         "clear lens drops"
       ],
-      "summary": "A topical eye drop formulation priced at $69.97 aimed at supporting lens clarity.",
+      "summary": "A topical eye drop formulation priced at $70 aimed at supporting lens clarity.",
       "cluster": "eye-health",
       "parent": "eye-health",
       "namespaces": [
@@ -1886,7 +1886,7 @@
       "aliases": [
         "et0 cns infoceutical"
       ],
-      "summary": "A biocommunication infoceutical product targeting central nervous system support, priced at $39.97.",
+      "summary": "A biocommunication infoceutical product targeting central nervous system support, priced at $40.",
       "cluster": "brain-nervous",
       "parent": "brain-nervous",
       "namespaces": [
@@ -1908,7 +1908,7 @@
       "aliases": [
         "es 11"
       ],
-      "summary": "A biocommunication infoceutical remedy in the ES series, priced at $39.97.",
+      "summary": "A biocommunication infoceutical remedy in the ES series, priced at $40.",
       "cluster": "energetic-medicine",
       "parent": "energetic-medicine",
       "namespaces": [
@@ -1930,7 +1930,7 @@
       "aliases": [
         "es 5"
       ],
-      "summary": "A biocommunication infoceutical remedy in the ES series, priced at $39.97.",
+      "summary": "A biocommunication infoceutical remedy in the ES series, priced at $40.",
       "cluster": "energetic-medicine",
       "parent": "energetic-medicine",
       "namespaces": [
@@ -1953,7 +1953,7 @@
         "et3 immunity 3",
         "immu 3"
       ],
-      "summary": "A biocommunication infoceutical in the immunity series targeting immune support, priced at $39.97.",
+      "summary": "A biocommunication infoceutical in the immunity series targeting immune support, priced at $40.",
       "cluster": "immune",
       "parent": "immune",
       "namespaces": [
@@ -1975,7 +1975,7 @@
       "aliases": [
         "es 2"
       ],
-      "summary": "A biocommunication infoceutical remedy in the ES series, priced at $39.97.",
+      "summary": "A biocommunication infoceutical remedy in the ES series, priced at $40.",
       "cluster": "energetic-medicine",
       "parent": "energetic-medicine",
       "namespaces": [
@@ -1997,7 +1997,7 @@
       "aliases": [
         "es 8"
       ],
-      "summary": "A biocommunication infoceutical remedy in the ES series, priced at $39.97.",
+      "summary": "A biocommunication infoceutical remedy in the ES series, priced at $40.",
       "cluster": "energetic-medicine",
       "parent": "energetic-medicine",
       "namespaces": [
@@ -2020,7 +2020,7 @@
         "et2 immunity 2",
         "immu 2"
       ],
-      "summary": "A biocommunication infoceutical in the immunity series targeting immune support, priced at $39.97.",
+      "summary": "A biocommunication infoceutical in the immunity series targeting immune support, priced at $40.",
       "cluster": "immune",
       "parent": "immune",
       "namespaces": [
@@ -2042,7 +2042,7 @@
       "aliases": [
         "es 14"
       ],
-      "summary": "A biocommunication infoceutical remedy in the ES series, priced at $39.97.",
+      "summary": "A biocommunication infoceutical remedy in the ES series, priced at $40.",
       "cluster": "energetic-medicine",
       "parent": "energetic-medicine",
       "namespaces": [
@@ -2064,7 +2064,7 @@
       "aliases": [
         "es 12"
       ],
-      "summary": "A biocommunication infoceutical remedy in the ES series, priced at $39.97.",
+      "summary": "A biocommunication infoceutical remedy in the ES series, priced at $40.",
       "cluster": "energetic-medicine",
       "parent": "energetic-medicine",
       "namespaces": [
@@ -2087,7 +2087,7 @@
         "et1 immunity 1",
         "immu 1"
       ],
-      "summary": "A biocommunication infoceutical in the immunity series targeting immune support, priced at $39.97.",
+      "summary": "A biocommunication infoceutical in the immunity series targeting immune support, priced at $40.",
       "cluster": "immune",
       "parent": "immune",
       "namespaces": [
@@ -2109,7 +2109,7 @@
       "aliases": [
         "mb5"
       ],
-      "summary": "A biocommunication infoceutical remedy in the MB series, priced at $39.97.",
+      "summary": "A biocommunication infoceutical remedy in the MB series, priced at $40.",
       "cluster": "energetic-medicine",
       "parent": "energetic-medicine",
       "namespaces": [
@@ -2131,7 +2131,7 @@
       "aliases": [
         "es 4"
       ],
-      "summary": "A biocommunication infoceutical remedy in the ES series, priced at $39.97.",
+      "summary": "A biocommunication infoceutical remedy in the ES series, priced at $40.",
       "cluster": "energetic-medicine",
       "parent": "energetic-medicine",
       "namespaces": [
@@ -2154,7 +2154,7 @@
         "et8 neuron",
         "et8"
       ],
-      "summary": "A biocommunication infoceutical targeting neuronal support, priced at $39.97.",
+      "summary": "A biocommunication infoceutical targeting neuronal support, priced at $40.",
       "cluster": "brain-nervous",
       "parent": "brain-nervous",
       "namespaces": [
@@ -2177,7 +2177,7 @@
         "et7 cfs",
         "chronic fatigue infoceutical"
       ],
-      "summary": "A biocommunication infoceutical formulated to address chronic fatigue syndrome, priced at $39.97.",
+      "summary": "A biocommunication infoceutical formulated to address chronic fatigue syndrome, priced at $40.",
       "cluster": "conditions-systemic",
       "parent": "conditions-systemic",
       "namespaces": [
@@ -2199,7 +2199,7 @@
       "aliases": [
         "mb2"
       ],
-      "summary": "A biocommunication infoceutical remedy in the MB series, priced at $39.97.",
+      "summary": "A biocommunication infoceutical remedy in the MB series, priced at $40.",
       "cluster": "energetic-medicine",
       "parent": "energetic-medicine",
       "namespaces": [
@@ -2221,7 +2221,7 @@
       "aliases": [
         "es 9"
       ],
-      "summary": "A biocommunication infoceutical remedy in the ES series, priced at $39.97.",
+      "summary": "A biocommunication infoceutical remedy in the ES series, priced at $40.",
       "cluster": "energetic-medicine",
       "parent": "energetic-medicine",
       "namespaces": [
@@ -2244,7 +2244,7 @@
         "et5 bsv",
         "broad spectrum virus infoceutical"
       ],
-      "summary": "A biocommunication infoceutical designed to address broad-spectrum viral concerns, priced at $39.97.",
+      "summary": "A biocommunication infoceutical designed to address broad-spectrum viral concerns, priced at $40.",
       "cluster": "immune",
       "parent": "immune",
       "namespaces": [
@@ -2333,7 +2333,7 @@
       "aliases": [
         "free and easy"
       ],
-      "summary": "A syntropy formulation priced at $69.97 supporting ease and flow in the body.",
+      "summary": "A syntropy formulation priced at $70 supporting ease and flow in the body.",
       "cluster": "other",
       "parent": "other",
       "namespaces": [
@@ -2737,7 +2737,7 @@
       "id": "rejuvenation",
       "label": "Rejuvenation",
       "aliases": [],
-      "summary": "Rejuvenation is a biocommunication infoceutical formulation priced at $39.97.",
+      "summary": "Rejuvenation is a biocommunication infoceutical formulation priced at $40.",
       "cluster": "energetic-medicine",
       "parent": "energetic-medicine",
       "namespaces": [
@@ -2759,7 +2759,7 @@
       "aliases": [
         "mb4"
       ],
-      "summary": "MB 4 is a biocommunication infoceutical formulation priced at $39.97.",
+      "summary": "MB 4 is a biocommunication infoceutical formulation priced at $40.",
       "cluster": "energetic-medicine",
       "parent": "energetic-medicine",
       "namespaces": [
@@ -2825,7 +2825,7 @@
       "aliases": [
         "c60 sanctuary"
       ],
-      "summary": "Sanctuary C60 is a syntropy formulation containing carbon-60 molecules, priced at $69.97.",
+      "summary": "Sanctuary C60 is a syntropy formulation containing carbon-60 molecules, priced at $70.",
       "cluster": "antioxidants",
       "parent": "antioxidants",
       "namespaces": [
@@ -2847,7 +2847,7 @@
       "aliases": [
         "mb3"
       ],
-      "summary": "MB 3 is a biocommunication infoceutical formulation priced at $39.97.",
+      "summary": "MB 3 is a biocommunication infoceutical formulation priced at $40.",
       "cluster": "energetic-medicine",
       "parent": "energetic-medicine",
       "namespaces": [
@@ -2870,7 +2870,7 @@
         "ormus holy grail",
         "full spectrum ormus"
       ],
-      "summary": "Holy Grail Full Spectrum ORMUS is a syntropy ORMUS mineral formulation priced at $69.97.",
+      "summary": "Holy Grail Full Spectrum ORMUS is a syntropy ORMUS mineral formulation priced at $70.",
       "cluster": "minerals",
       "parent": "minerals",
       "namespaces": [
@@ -2892,7 +2892,7 @@
       "aliases": [
         "mb8"
       ],
-      "summary": "MB 8 is a biocommunication infoceutical formulation priced at $39.97.",
+      "summary": "MB 8 is a biocommunication infoceutical formulation priced at $40.",
       "cluster": "energetic-medicine",
       "parent": "energetic-medicine",
       "namespaces": [
@@ -2914,7 +2914,7 @@
       "aliases": [
         "mb 6"
       ],
-      "summary": "MB6 is a biocommunication infoceutical formulation priced at $39.97.",
+      "summary": "MB6 is a biocommunication infoceutical formulation priced at $40.",
       "cluster": "energetic-medicine",
       "parent": "energetic-medicine",
       "namespaces": [
@@ -2981,7 +2981,7 @@
       "aliases": [
         "emf infoceutical"
       ],
-      "summary": "EMF is a biocommunication infoceutical formulation addressing electromagnetic field exposure, priced at $39.97.",
+      "summary": "EMF is a biocommunication infoceutical formulation addressing electromagnetic field exposure, priced at $40.",
       "cluster": "energetic-medicine",
       "parent": "energetic-medicine",
       "namespaces": [
@@ -3003,7 +3003,7 @@
       "aliases": [
         "sleep infoceutical"
       ],
-      "summary": "Sleep is a biocommunication infoceutical formulation designed to support sleep, priced at $39.97.",
+      "summary": "Sleep is a biocommunication infoceutical formulation designed to support sleep, priced at $40.",
       "cluster": "energetic-medicine",
       "parent": "energetic-medicine",
       "namespaces": [
@@ -3025,7 +3025,7 @@
       "aliases": [
         "mb1"
       ],
-      "summary": "MB 1 is a biocommunication infoceutical formulation priced at $39.97.",
+      "summary": "MB 1 is a biocommunication infoceutical formulation priced at $40.",
       "cluster": "energetic-medicine",
       "parent": "energetic-medicine",
       "namespaces": [
@@ -3633,7 +3633,7 @@
         "digest zymes",
         "digestive enzymes"
       ],
-      "summary": "Digestzymes is a syntropy-category digestive enzyme formulation priced at $69.97.",
+      "summary": "Digestzymes is a syntropy-category digestive enzyme formulation priced at $70.",
       "cluster": "gut-digestive",
       "parent": "gut-digestive",
       "namespaces": [
@@ -3702,7 +3702,7 @@
         "ei 16",
         "infoceutical ei16"
       ],
-      "summary": "EI16 is a biocommunication infoceutical formulation priced at $39.97.",
+      "summary": "EI16 is a biocommunication infoceutical formulation priced at $40.",
       "cluster": "energetic-medicine",
       "parent": "energetic-medicine",
       "namespaces": [
@@ -3724,7 +3724,7 @@
       "aliases": [
         "molybdenum synergy formula"
       ],
-      "summary": "Molybdenum Synergy is a syntropy-category mineral formulation featuring molybdenum, priced at $69.97.",
+      "summary": "Molybdenum Synergy is a syntropy-category mineral formulation featuring molybdenum, priced at $70.",
       "cluster": "minerals",
       "parent": "minerals",
       "namespaces": [
@@ -3747,7 +3747,7 @@
         "medicinal mushroom formula",
         "mushroom blend"
       ],
-      "summary": "Medicinal Mushrooms is a syntropy-category fungal-based immune and adaptogenic formulation priced at $69.97.",
+      "summary": "Medicinal Mushrooms is a syntropy-category fungal-based immune and adaptogenic formulation priced at $70.",
       "cluster": "adaptogens",
       "parent": "adaptogens",
       "namespaces": [
@@ -3769,7 +3769,7 @@
       "aliases": [
         "fibrolysis formula"
       ],
-      "summary": "Fibrolysis Factors is a syntropy-category formulation designed to support fibrin breakdown, priced at $69.97.",
+      "summary": "Fibrolysis Factors is a syntropy-category formulation designed to support fibrin breakdown, priced at $70.",
       "cluster": "circulation-cardio",
       "parent": "circulation-cardio",
       "namespaces": [
@@ -4017,7 +4017,7 @@
       "aliases": [
         "sweet life formula"
       ],
-      "summary": "Sweet Life is a syntropy-category formulation likely targeting blood sugar balance, priced at $69.97.",
+      "summary": "Sweet Life is a syntropy-category formulation likely targeting blood sugar balance, priced at $70.",
       "cluster": "metabolic-bloodsugar",
       "parent": "metabolic-bloodsugar",
       "namespaces": [
@@ -4039,7 +4039,7 @@
       "aliases": [
         "relax formula"
       ],
-      "summary": "Relax is a syntropy-category formulation likely supporting nervous system calming and stress relief, priced at $69.97.",
+      "summary": "Relax is a syntropy-category formulation likely supporting nervous system calming and stress relief, priced at $70.",
       "cluster": "brain-nervous",
       "parent": "brain-nervous",
       "namespaces": [
@@ -4063,7 +4063,7 @@
         "hydrogen tablets",
         "molecular hydrogen"
       ],
-      "summary": "Molecular Hydrogen Tablets are an antioxidant supplement delivering dissolved molecular hydrogen, priced at $39.97.",
+      "summary": "Molecular Hydrogen Tablets are an antioxidant supplement delivering dissolved molecular hydrogen, priced at $40.",
       "cluster": "antioxidants",
       "parent": "antioxidants",
       "namespaces": [
@@ -5864,7 +5864,7 @@
       "aliases": [
         "aces eye drops"
       ],
-      "summary": "ACES Eyedrops is a Syntropy-brand topical eye remedy product offered at $69.97.",
+      "summary": "ACES Eyedrops is a Syntropy-brand topical eye remedy product offered at $70.",
       "cluster": "eye-health",
       "parent": "eye-health",
       "namespaces": [
@@ -6315,7 +6315,7 @@
       "id": "food-tolerance",
       "label": "Food Tolerance",
       "aliases": [],
-      "summary": "Food Tolerance is a syntropy formulation priced at $69.97 supporting dietary food tolerance responses.",
+      "summary": "Food Tolerance is a syntropy formulation priced at $70 supporting dietary food tolerance responses.",
       "cluster": "gut-digestive",
       "parent": "gut-digestive",
       "namespaces": [
@@ -6383,7 +6383,7 @@
       "aliases": [
         "scar solve remedy"
       ],
-      "summary": "Scar Solve is a remedy formulation priced at $69.97 for scar-related concerns.",
+      "summary": "Scar Solve is a remedy formulation priced at $70 for scar-related concerns.",
       "cluster": "conditions-systemic",
       "parent": "conditions-systemic",
       "namespaces": [
@@ -6427,7 +6427,7 @@
       "aliases": [
         "bath salts"
       ],
-      "summary": "Bath Salt is a simple single-ingredient powder remedy priced at $39.97.",
+      "summary": "Bath Salt is a simple single-ingredient powder remedy priced at $40.",
       "cluster": "detox-drainage",
       "parent": "detox-drainage",
       "namespaces": [
@@ -6473,7 +6473,7 @@
         "electrolyte manna",
         "mineral manna"
       ],
-      "summary": "Electrolyte Mineral Manna is a syntropy formulation supplying electrolyte minerals, priced at $69.97.",
+      "summary": "Electrolyte Mineral Manna is a syntropy formulation supplying electrolyte minerals, priced at $70.",
       "cluster": "minerals",
       "parent": "minerals",
       "namespaces": [
@@ -6495,7 +6495,7 @@
       "aliases": [
         "energessence syntropy"
       ],
-      "summary": "Energessence is a syntropy energy-support formulation priced at $69.97.",
+      "summary": "Energessence is a syntropy energy-support formulation priced at $70.",
       "cluster": "energetic-medicine",
       "parent": "energetic-medicine",
       "namespaces": [
@@ -6563,7 +6563,7 @@
       "aliases": [
         "natural resource a to z"
       ],
-      "summary": "Natural Resource A-Z is a comprehensive syntropy supplement formulation priced at $69.97.",
+      "summary": "Natural Resource A-Z is a comprehensive syntropy supplement formulation priced at $70.",
       "cluster": "foundations-terrain",
       "parent": "foundations-terrain",
       "namespaces": [
@@ -6586,7 +6586,7 @@
         "neem oil",
         "neem roll-on"
       ],
-      "summary": "Neem Oil Roll-On is a topical oil remedy priced at $39.97.",
+      "summary": "Neem Oil Roll-On is a topical oil remedy priced at $40.",
       "cluster": "herbs-botanicals",
       "parent": "herbs-botanicals",
       "namespaces": [
@@ -6608,7 +6608,7 @@
       "aliases": [
         "scar silk syntropy"
       ],
-      "summary": "Scar Silk is a syntropy formulation for scar support priced at $69.97.",
+      "summary": "Scar Silk is a syntropy formulation for scar support priced at $70.",
       "cluster": "conditions-systemic",
       "parent": "conditions-systemic",
       "namespaces": [
@@ -6654,7 +6654,7 @@
         "moisture eyes night",
         "night eye oil"
       ],
-      "summary": "Moisture Eyes Night Oil is a syntropy nighttime ocular oil formulation priced at $69.97.",
+      "summary": "Moisture Eyes Night Oil is a syntropy nighttime ocular oil formulation priced at $70.",
       "cluster": "eye-health",
       "parent": "eye-health",
       "namespaces": [
@@ -6790,7 +6790,7 @@
         "alkalize blend",
         "bicarbonate blend"
       ],
-      "summary": "Alkalize Bicarbonate Blend is a syntropy alkalizing formulation priced at $69.97.",
+      "summary": "Alkalize Bicarbonate Blend is a syntropy alkalizing formulation priced at $70.",
       "cluster": "foundations-terrain",
       "parent": "foundations-terrain",
       "namespaces": [

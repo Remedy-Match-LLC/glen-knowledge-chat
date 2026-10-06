@@ -70,7 +70,7 @@ def test_the_capsules_keep_their_identity():
     QuickBooks invoice identity and fmp_id 377 is the FileMaker join."""
     p = _p()
     assert p["name"] == "GERD Guard"
-    assert p["price_cents"] == 6997
+    assert p["price_cents"] == 7000
     assert p["fmp_id"] == "377"
     assert p["bottle_type"] == "30 Caps"
 
@@ -99,7 +99,7 @@ def test_the_powder_directions_match_its_printed_label():
 
 
 def test_the_powder_is_priced_like_the_capsules():
-    assert _pw()["price_cents"] == 6997 == _p()["price_cents"]
+    assert _pw()["price_cents"] == 7000 == _p()["price_cents"]
 
 
 def test_the_powder_can_be_invoiced():

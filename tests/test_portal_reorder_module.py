@@ -110,7 +110,7 @@ def test_reorder_list_has_distinct_skus_from_portal_history(client):
     row = next(r for r in j["reorder"] if r["slug"] == "neuro-magnesium")
     assert row["qty"] == 2
     assert row["name"]
-    assert row["regular_cents"] == 6997
+    assert row["regular_cents"] == 7000
     # provenance channel + website-referencing source_label on every row.
     from urllib.parse import urlparse
     portal_host = urlparse(appmod.portal_base()).hostname
@@ -361,7 +361,7 @@ def test_non_member_pays_regular_price(client):
 
     j = c.get(f"/api/portal/{tok}").get_json()
     row = next(r for r in j["reorder"] if r["slug"] == "neuro-magnesium")
-    assert row["your_cents"] == row["regular_cents"] == 6997
+    assert row["your_cents"] == row["regular_cents"] == 7000
     assert row["is_member_price"] is False
 
 
@@ -377,7 +377,7 @@ def test_saved_client_price_matches_your_remedies_and_checkout(client):
 
     payload = c.get(f"/api/portal/{tok}").get_json()
     row = next(r for r in payload["reorder"] if r["slug"] == "neuro-magnesium")
-    assert row["regular_cents"] == 6997
+    assert row["regular_cents"] == 7000
     assert row["your_cents"] == 4200
     assert row["is_member_price"] is True
 

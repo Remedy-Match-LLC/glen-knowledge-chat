@@ -38,7 +38,7 @@ def test_the_surviving_blend_keeps_everything_that_was_only_on_it(products):
     assert b["bottle_type"] == "30 g"
     assert b["regular_cents"] == 8000
     assert b["no_groovekart"] is True
-    assert b["price_cents"] == 6997
+    assert b["price_cents"] == 7000
 
 
 def test_the_surviving_blend_inherits_what_was_only_on_the_duplicate(products):
@@ -106,7 +106,7 @@ def test_bottle_type_is_a_container_not_a_dose_count():
 def test_nothing_about_identity_moved(products):
     """A slug or name change here would break QuickBooks or an existing link."""
     assert products[PURE]["name"] == "TMG"
-    assert products[PURE]["price_cents"] == 3997
+    assert products[PURE]["price_cents"] == 4000
     assert products[PURE]["url"].endswith(f"/begin/product/{PURE}")
     assert products[BLEND]["name"] == "TMG Syntropy Powder"
     assert products[RETIRED]["name"] == "TMG Powder (Trimethylglycine)"
@@ -149,7 +149,7 @@ def test_a_cart_line_added_as_the_dead_slug_stores_the_survivors(products):
     line = get_product(RETIRED)
     assert line is not None, "the dead slug must still resolve to something sellable"
     assert line["slug"] == BLEND
-    assert line["price_cents"] == 6997
+    assert line["price_cents"] == 7000
 
     # A record that is inactive with no successor stays unsellable: retired means retired.
     assert get_product(BLEND)["slug"] == BLEND

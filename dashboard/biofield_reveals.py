@@ -88,7 +88,7 @@ def _row(r):
 # recommended in a reveal, swapped for the product he wants recommended in its
 # place (both sellable). "AllerFree" -> "Immune Modulation" and "Bone Builder"
 # -> "Neuro-Magnesium" (immune-modulation and neuro-magnesium both resolve at
-# /begin/buy/ at $69.97). Reveal-scoped by design (per Glen 2026-07-19): the
+# /begin/buy/ at $70). Reveal-scoped by design (per Glen 2026-07-19): the
 # chatbot FF matcher is untouched. Same mechanism as Relax — swap once on the
 # shared row so display, entitlement, pricing, and checkout stay in sync.
 #

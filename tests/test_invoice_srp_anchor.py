@@ -3,7 +3,9 @@
 Priority: the product's own regular_cents (FMP retail_sug_price) when it exceeds the
 charge price, else the flat $80 anchor for a $69.97 FF, else no anchor at all.
 Before this was wired, regular_cents sat unread on 634 products and only FFs priced
-at exactly 6997 ever showed a Value.
+at exactly 6997 ever showed a Value. Whole dollars (2026-10) moved the FF base to 7000,
+and the flat $80 now also needs the FF flag, because about 490 non-FF products were
+already $70.
 """
 import importlib
 import sys
@@ -60,8 +62,16 @@ def test_special_price_products_use_their_own_srp_not_the_flat_80():
 def test_ff_without_explicit_srp_falls_back_to_the_flat_80():
     """151 FFs carry no regular_cents; the derived $80 rule must still hold."""
     appmod = _app()
-    out = _view(appmod, {"price_cents": 6997, "qty_pricing": True})
-    assert out["srp_cents"] == 8000 and out["regular_cents"] == 6997
+    out = _view(appmod, {"price_cents": 7000, "qty_pricing": True})
+    assert out["srp_cents"] == 8000 and out["regular_cents"] == 7000
+
+
+def test_a_70_dollar_non_ff_gets_no_flat_80():
+    """Essences were already $70 before whole dollars and never showed an $80 Value.
+    The flat anchor needs the FF flag, not only the $70 price."""
+    appmod = _app()
+    out = _view(appmod, {"price_cents": 7000})
+    assert out["srp_cents"] == 7000 == out["regular_cents"]
 
 
 def test_ff_with_explicit_srp_is_unchanged_at_80():

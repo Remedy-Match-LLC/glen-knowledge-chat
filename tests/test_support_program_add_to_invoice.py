@@ -33,7 +33,7 @@ UNTAGGED = "spuntagged@example.com"
 # Real FF-eligible catalog product (qty_pricing=True, not info_only), $69.97 base --
 # same fixture product used by tests/test_ff_add_to_invoice.py.
 FF_SLUG = "mucosa-syntropy-powder"
-FF_CATALOG_CENTS = 6997
+FF_CATALOG_CENTS = 7000
 
 WET_AMD_ITEMS = [
     {"slug": FF_SLUG, "name": "Mucosa Syntropy Powder", "dose": "1 or more/day"},

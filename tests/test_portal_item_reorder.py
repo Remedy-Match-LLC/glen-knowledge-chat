@@ -587,4 +587,4 @@ def test_item_reorder_ignores_client_posted_price(client, monkeypatch):
     assert r.status_code == 200
     # 1 cent posted price must be ignored — server prices it from the catalog.
     assert captured["stripe_lines"][0]["unit_cents"] != 1
-    assert captured["stripe_lines"][0]["unit_cents"] == 6997
+    assert captured["stripe_lines"][0]["unit_cents"] == 7000

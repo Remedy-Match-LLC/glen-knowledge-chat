@@ -6,15 +6,15 @@ def test_partner_block_reports_floor_from_modules():
     b = pp.partner_block(4)
     assert b["modules_completed"] == 4
     assert b["floor_cents"] == 3500                 # 4000 - 4*125
-    assert b["margin_low_cents"] == 6997 - 3500     # margin at $69.97 MAP
-    assert b["margin_high_cents"] == 7997 - 3500    # margin at $79.97 SRP
+    assert b["margin_low_cents"] == 7000 - 3500     # margin at the $70 MAP
+    assert b["margin_high_cents"] == 8000 - 3500    # margin at the $80 SRP
 
 
 def test_partner_block_certified_margin_range_is_64_to_69():
     b = pp.partner_block(12)
     assert b["floor_cents"] == 2500
     assert b["margin_low_pct"] == 64                # (6997-2500)/6997
-    assert b["margin_high_pct"] == 69               # (7997-2500)/7997
+    assert b["margin_high_pct"] == 69               # (8000-2500)/8000 = 68.75
 
 
 def test_partner_block_uncertified_and_clamping():

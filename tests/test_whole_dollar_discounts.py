@@ -107,12 +107,13 @@ def test_repertoire_reorder_rounds_up_too():
     assert line["line_total_cents"] == 5000                               # 49.70 -> floor 50
 
 
-def test_points_still_subtract_to_the_cent():
+def test_points_redeem_in_whole_dollars_only():
+    """Glen, 2026-10-01: points redeem in whole dollars, 20 points at a time."""
     out = pricing.compute([{"slug": "ff", "name": "FF", "qty": 1, "product": FF,
                             "unit_cents": 7000, "months": 1, "volume_eligible": True}],
                           settings=S, points_to_redeem_cents=135)
-    assert out["lines"][0]["line_total_cents"] == 7000 - 135
-    assert out["points_redeemed_cents"] == 135
+    assert out["lines"][0]["line_total_cents"] == 7000 - 100
+    assert out["points_redeemed_cents"] == 100
 
 
 def test_a_percent_off_cohort_price_is_whole_dollars_too():

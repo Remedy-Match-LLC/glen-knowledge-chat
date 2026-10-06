@@ -10,23 +10,25 @@ from dashboard import dropship_checkout as dc
 
 def test_dropship_unit_price_is_base_plus_retail_fee():
     # base from blended curve; fee = 33% of (retail - base); drop-ship unit = base + fee
-    # 1 bottle, uncertified: base $50.00, retail $70.00 -> fee 33%*(7000-5000)=660 -> unit 5660
+    # 1 bottle, uncertified: base $50.00, retail $70.00 -> fee 33%*(7000-5000)=$6.60,
+    # rounded up to $7 -> unit $57, a whole dollar (Glen, 2026-10-01)
     line = dc.dropship_line_cents(retail_cents=7000, qty=1, modules=0,
                                   settings=dc._settings())
     assert line["base_cents"] == 5000
-    assert line["fee_cents"] == 660
-    assert line["unit_cents"] == 5660          # what the practitioner pays per bottle
-    assert line["line_cents"] == 5660          # x qty 1
+    assert line["fee_cents"] == 700
+    assert line["unit_cents"] == 5700          # what the practitioner pays per bottle
+    assert line["line_cents"] == 5700          # x qty 1
 
 
 def test_dropship_unit_uses_blended_volume_and_cert():
-    # 12 bottles, fully certified: base $42.76, retail $70 -> fee 33%*(7000-4276)=899 -> 5175
+    # 12 bottles, fully certified: base $42.76 -> $43, retail $70 -> fee 33%*(7000-4300)
+    # = $8.91 -> $9 -> unit $52
     line = dc.dropship_line_cents(retail_cents=7000, qty=12, modules=12,
                                   settings=dc._settings())
-    assert line["base_cents"] == 4276
-    assert line["fee_cents"] == 899
-    assert line["unit_cents"] == 5175
-    assert line["line_cents"] == 5175 * 12
+    assert line["base_cents"] == 4300
+    assert line["fee_cents"] == 900
+    assert line["unit_cents"] == 5200
+    assert line["line_cents"] == 5200 * 12
 
 
 def test_dropship_fee_zero_when_retail_equals_base():
@@ -162,7 +164,7 @@ def test_shipping_is_added_to_practitioner_charge_and_qbo_payload(monkeypatch):
         method="card", shipping_cents=1300)
 
     assert out["shipping_cents"] == 1300
-    assert out["total"] == 69.60
+    assert out["total"] == 70.00   # $57 drop-ship bottle + $13 shipping
     assert out["qbo_payload"]["lines"][-1] == {
         "name": "Shipping (USPS)", "amount": 13.0, "qty": 1,
         "description": "USPS shipping",
@@ -244,3 +246,29 @@ def test_quickbooks_lines_carry_the_product_name_not_the_slug(monkeypatch):
 
 def test_product_name_falls_back_to_the_slug_for_an_unknown_product():
     assert dc._product_name("no-such-product-xyz") == "no-such-product-xyz"
+
+
+def test_a_flat_price_reaches_a_70_dollar_ff_but_not_other_70_dollar_products(monkeypatch):
+    """Before whole dollars the flat ceiling was $69.97: every product at $69.97 was an FF,
+    and about 490 others (essences and more) sat at $70, above it, on standard pricing.
+    At a $70 ceiling, exactly $70 must count only for an FF (round 3 review)."""
+    _stub_order(monkeypatch, retail=7000)
+    monkeypatch.setattr(dc, "_practitioner_dropship_unit_cents",
+                        lambda pid: 4000 if pid == "ashley" else None)
+    ashley = {"id": "ashley", "modules_completed": 0,
+              "email": "ashley@example.com", "name": "Ashley"}
+    monkeypatch.setattr(dc, "_is_ff", lambda slug: slug == "ff")
+    q = dc.quote_dropship_cart([{"slug": "ff", "qty": 1}, {"slug": "essence", "qty": 1}],
+                               ashley)
+    units = {ln["slug"]: ln["unit_cents"] for ln in q["lines"]}
+    assert units["ff"] == 4000
+    assert units["essence"] != 4000
+
+
+def test_a_flat_price_still_reaches_cheaper_products(monkeypatch):
+    _stub_order(monkeypatch, retail=4000)
+    monkeypatch.setattr(dc, "_practitioner_dropship_unit_cents", lambda pid: 3500)
+    monkeypatch.setattr(dc, "_is_ff", lambda slug: False)
+    q = dc.quote_dropship_cart([{"slug": "info", "qty": 1}],
+                               {"id": "x", "modules_completed": 0})
+    assert q["lines"][0]["unit_cents"] == 3500

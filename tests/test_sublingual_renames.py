@@ -47,7 +47,7 @@ def test_each_twin_retires_onto_its_survivor():
 
 def test_price_and_was_price_are_the_twins():
     for slug in RENAMED:
-        assert CAT[slug]["price_cents"] == 6997
+        assert CAT[slug]["price_cents"] == 7000
         assert CAT[slug]["regular_cents"] == CAT[slug + "-powder"]["regular_cents"] == 8000
 
 

@@ -76,13 +76,35 @@ def _flat_ceiling_cents() -> int:
 
     Glen, 2026-09-22: a flat price "for Functional Formulations generally doesn't
     extend to larger than minimum size bottles". Ashley King's $40 had reached
-    WholOmega 120 gelcaps at $190 retail. He ruled the line at $69.97: anything
+    WholOmega 120 gelcaps at $190 retail. He ruled the line at the standard FF price, now $70: anything
     listed above it is a larger bottle and gets standard drop-ship pricing."""
     try:
         import app as _app
-        return int(_app._PRODUCTS.get("default_price_cents") or 6997)
+        return int(_app._PRODUCTS.get("default_price_cents") or 7000)
     except Exception:
-        return 6997
+        return 7000
+
+
+def _is_ff(slug: str) -> bool:
+    """A Functional Formulation (qty_pricing). Monkeypatchable in tests."""
+    try:
+        import app as _app
+        return bool((_app._get_product(slug) or {}).get("qty_pricing"))
+    except Exception:
+        return False
+
+
+def _flat_applies(slug: str, retail_cents: int, ceiling: int) -> bool:
+    """Whether a practitioner's flat bottle price reaches this product.
+
+    Before whole dollars the ceiling was $69.97, and every product at exactly $69.97 was
+    a Functional Formulation; about 490 other products (essences and more) sat at $70,
+    just above it, and paid standard drop-ship pricing. With the ceiling at $70 the flat
+    price would have reached them too. So exactly $70 counts only for an FF."""
+    retail_cents = int(retail_cents)
+    if retail_cents < ceiling:
+        return True
+    return retail_cents == ceiling and _is_ff(slug)
 
 
 def _practitioner_dropship_unit_cents(pid: str) -> int | None:
@@ -118,7 +140,8 @@ def quote_dropship_cart(cart: List[dict], practitioner: dict) -> dict:
         dl = dropship_line_cents(
             retail_cents=retail_cents, qty=total_bottles,
             modules=modules, settings=settings)
-        flat_applies = special_unit_cents is not None and int(retail_cents) <= ceiling
+        flat_applies = (special_unit_cents is not None
+                        and _flat_applies(slug, retail_cents, ceiling))
         unit_cents = special_unit_cents if flat_applies else dl["unit_cents"]
         line_cents = unit_cents * line_qty
         subtotal_cents += line_cents
@@ -235,7 +258,7 @@ def _practitioner_price_cents(pid: str, slug: str, retail: int) -> int:
     """
     from dashboard import practitioner_settings as _ps
     settings = _settings()
-    map_floor = int(settings.get("map_default_cents", 6700))
+    map_floor = int(settings.get("map_default_cents", 7000))
     try:
         cx = db.connect(_LOG_DB)
         cx.row_factory = sqlite3.Row
@@ -368,9 +391,10 @@ def build_client_order(cart: List[dict], practitioner: dict, *,
 
     # Fee-capped patient points redemption: never below product base (RM keeps
     # selling at >= base + the practitioner's full margin); RM absorbs the discount.
+    # Whole dollars only, 20 points at a time (Glen, 2026-10-01).
     redeem_cents = max(0, min(int(points_to_redeem_cents or 0),
                               int(points_balance_cents or 0),
-                              total_fee_cents))
+                              total_fee_cents)) // 100 * 100
 
     # Shipping credit (slice 2b, flag-gated by the caller which passes a 0 balance
     # when off): auto-apply the patient's outstanding ship_credit balance, bounded by

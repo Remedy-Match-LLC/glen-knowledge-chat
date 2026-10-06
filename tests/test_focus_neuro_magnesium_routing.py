@@ -14,8 +14,9 @@ from dashboard import portal_biofield_reports as pbr
 
 FOCUS, PRESALE = "focus-neuro-magnesium-powder", "neuro-magnesium"
 # The presale entry as it stood before this change, and the live fields the spec keeps.
-PRESALE_SHA = "7bd8e29194caf1691ab388be0e459cfdda648f3ca0dc6e6a4fc2cf8185357bb7"
-KEPT = json.loads("{\"price_cents\": 6997, \"regular_cents\": 8000, \"qty_pricing\": true, \"bottle_type\": \"30 g\", \"no_groovekart\": true, \"pinecone_title\": \"Focus Neuro-Magnesium Powder\"}")
+PRESALE_SHA = "97e01882edbc8ebe4f35e5351aa3970956663c4bb855e1e9e071f1911873d7f0"  # price 6997 -> 7000, whole dollars 2026-10
+# price_cents 6997 -> 7000 with whole dollars, 2026-10.
+KEPT = json.loads("{\"price_cents\": 7000, \"regular_cents\": 8000, \"qty_pricing\": true, \"bottle_type\": \"30 g\", \"no_groovekart\": true, \"pinecone_title\": \"Focus Neuro-Magnesium Powder\"}")
 
 
 def test_filemaker_431_is_the_stocked_jar():

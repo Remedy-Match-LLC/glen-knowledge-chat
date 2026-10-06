@@ -73,8 +73,9 @@ def test_points_are_set_on_an_unpaid_order_up_to_the_balance(tmp_path, monkeypat
     r = _edit(client, points_redeem_cents=2713)
     assert r.status_code == 200, r.get_json()
     o = _order(db)
-    assert o["points_redeemed_cents"] == 2713
-    assert o["total_cents"] == 10000 - 2713
+    # Whole dollars only, 20 points at a time (Glen, 2026-10-01): $27.13 redeems $27.
+    assert o["points_redeemed_cents"] == 2700
+    assert o["total_cents"] == 10000 - 2700
 
 
 def test_the_balance_caps_the_request(tmp_path, monkeypatch):

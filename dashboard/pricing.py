@@ -13,9 +13,9 @@ DEFAULTS = {
     # flat beyond 12 — two anchors only, so the per-unit discount grows evenly with quantity
     # (not steep-early). Edit rows in the console to reshape.
     "volume_anchors": [[1, 0], [12, 29]],
-    "repertoire_reorder_pct": 0.29,   # member flat reorder rate on repertoire SKUs (~$50 on $69.97)
+    "repertoire_reorder_pct": 0.29,   # member flat reorder rate on repertoire SKUs (~$50 on $70)
     # Absolute per-unit price floor for volume-eligible FF (qty_pricing, not info_only):
-    # the ramp's 29% off $69.97 lands at $49.68, but the FF minimum unit price is a clean
+    # the ramp's 29% off $70 lands at $49.70, but the FF minimum unit price is a clean
     # $50. Applied only when list >= this floor, so cheaper FFs (e.g. 50%-off powders)
     # keep their own lower wholesale floor + full volume discount. Glen 2026-07-11.
     "ff_min_unit_cents": 5000,
@@ -94,12 +94,18 @@ def apply_discount(list_cents, pct, floor_cents):
     return price
 
 
+def whole_dollars(cents):
+    """Cents rounded DOWN to a whole dollar. Points redeem in whole dollars only, 20
+    points at a time (Glen, 2026-10-01), so a redemption never leaves cents on a price."""
+    return max(0, int(cents)) // 100 * 100
+
+
 def apply_points(price_cents, points_cents, floor_cents):
-    """Subtract points (in redemption-value cents) but never below floor_cents.
-    Returns (new_price_cents, points_actually_used_cents)."""
+    """Subtract points (in redemption-value cents) but never below floor_cents, in
+    whole dollars only. Returns (new_price_cents, points_actually_used_cents)."""
     price_cents = int(price_cents)
     reducible = max(0, price_cents - int(floor_cents))
-    used = min(max(0, int(points_cents)), reducible)
+    used = whole_dollars(min(max(0, int(points_cents)), reducible))
     return price_cents - used, used
 
 
@@ -181,7 +187,7 @@ def compute(items, *, settings, subscriber_tier_pct=None, coupon_pct=None,
     total_months = sum(int(it.get("months") or 0) for it in items if it.get("volume_eligible"))
     open_pct = open_total_pct(total_months, settings)
     prog_pct = program_total_pct(total_months, settings, program_member)
-    points_left = max(0, int(points_to_redeem_cents or 0))
+    points_left = whole_dollars(points_to_redeem_cents or 0)
     lines, subtotal, total_discount, total_points = [], 0, 0, 0
 
     for it in items:

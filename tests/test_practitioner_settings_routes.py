@@ -114,10 +114,10 @@ def test_post_override_below_map_is_clamped(monkeypatch, client):
     clamped_entry = data["clamped"][0]
     assert clamped_entry["slug"] == "retina-renew"
     assert clamped_entry["requested_cents"] == 6000
-    assert clamped_entry["clamped_to_cents"] == 6700  # MAP
+    assert clamped_entry["clamped_to_cents"] == 7000  # MAP, $70 (Glen, 2026-10-06)
 
     # stored prices reflect the clamp
-    assert data["pricing"]["overrides"]["retina-renew"] == 6700
+    assert data["pricing"]["overrides"]["retina-renew"] == 7000
     assert data["pricing"]["overrides"]["brain-boost"] == 7500
 
 
@@ -165,3 +165,21 @@ def test_client_review_emails_default_off_and_roundtrip(monkeypatch, client):
 
     client.post("/api/practitioner/settings", json={"client_review_emails": False})
     assert client.get("/api/practitioner/settings").get_json()["client_review_emails"] is False
+
+
+def test_a_saved_override_with_cents_is_stored_as_the_next_whole_dollar(monkeypatch, client):
+    """Glen, 2026-10-01: practitioner prices are whole dollars, rounded up."""
+    monkeypatch.setattr(appmod, "_practitioner_session_pid", lambda: "p1")
+    r = client.post("/api/practitioner/settings",
+                    json={"pricing": {"default_markup_pct": 0,
+                                      "overrides": {"brain-boost": 7550}}})
+    assert r.status_code == 200
+    assert r.get_json()["pricing"]["overrides"]["brain-boost"] == 7600
+
+
+def test_an_old_stored_override_with_cents_charges_the_next_whole_dollar(monkeypatch):
+    from dashboard import practitioner_settings as ps
+    monkeypatch.setattr(ps, "get_settings", lambda cx, pid: {
+        "pricing": {"overrides": {"brain-boost": 7497}, "default_markup_pct": 0}})
+    assert ps.price_cents_for(None, "p1", "brain-boost", retail_cents=7000,
+                              map_cents=7000) == 7500

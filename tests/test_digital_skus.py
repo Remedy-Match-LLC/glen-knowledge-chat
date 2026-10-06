@@ -24,7 +24,7 @@ def test_ebooks_are_digital_purchasable_and_cheaper_than_print():
         assert p.get("digital") is True, f"{slug} must be flagged digital"
         assert not p.get("info_only"), f"{slug} must stay purchasable"
         assert not p.get("service"), f"{slug} is a good, not a consultation"
-        assert p["price_cents"] == 997, slug
+        assert p["price_cents"] == 1000, slug   # $9.97 -> $10, whole dollars 2026-10
         assert shipping.is_shippable(p) is False, f"{slug} must not be packed"
 
 
@@ -72,7 +72,7 @@ def test_molecular_hydrogen_tablets_are_discontinued():
 
 def test_portable_hydrogen_bottle_still_sellable():
     p = app._get_product("molecular-hydrogen-bottle")
-    assert p and not p.get("inactive") and p["price_cents"] == 24997
+    assert p and not p.get("inactive") and p["price_cents"] == 25000
 
 
 def test_hydrogen_bottle_ships_large_box_not_ionizer_rate():
@@ -152,11 +152,11 @@ def test_previously_held_devices_now_imported_with_glens_answers():
     removed the need for a new prod bottle_type for the forks.
     """
     exp = {"whole-house-neutralizer": (8500, 1300),
-           "breath-tuning-fork-1283hz": (2997, 1300),
-           "mind-tuning-fork-5000hz": (4997, 1300),
-           "spirit-tuning-fork-172hz": (4997, 1300),
+           "breath-tuning-fork-1283hz": (3000, 1300),
+           "mind-tuning-fork-5000hz": (5000, 1300),
+           "spirit-tuning-fork-172hz": (5000, 1300),
            "frosted-quartz-tuning-fork-172hz": (29700, 1300),
-           "blue-blocking-photochromic-sunglasses": (12997, 1300),
+           "blue-blocking-photochromic-sunglasses": (13000, 1300),
            "healing-tools-package": (799700, 13200)}
     for slug, (price, flat) in exp.items():
         p = app._get_product(slug)

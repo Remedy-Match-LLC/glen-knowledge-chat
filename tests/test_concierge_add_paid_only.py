@@ -28,7 +28,7 @@ def _isolate_db(monkeypatch, tmp_path):
 # Real active (non info_only) catalog slug from data/products.json (same source
 # used by Task 4's tests/test_begin_checkout_paid_only.py).
 ADDON_SLUG = "brain-boost"
-ADDON_PRICE_CENTS = 6997  # data/products.json price_cents for ADDON_SLUG
+ADDON_PRICE_CENTS = 7000  # data/products.json price_cents for ADDON_SLUG
 
 
 def test_concierge_add_appends_to_order_no_qbo_call(monkeypatch, tmp_path):

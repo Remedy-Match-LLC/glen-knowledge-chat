@@ -24,16 +24,17 @@ TYPE_WHITELIST = {
     "Homeopathic", "Gemmotherapy", "Spirit Mineral", "Simple Solution", "Infoceutical",
 }
 FF_VOLUME_TYPES = {"Functional Formulation"}
-# Infoceuticals are all priced at a flat $39.97 (Glen), overriding FMP's per-row price.
-INFOCEUTICAL_PRICE_CENTS = 3997
-# FMP records the standard FF price as a round '70'; the real charge price is $69.97.
-# app._invoice_line_view derives the $80 Value anchor by testing price == 6997 exactly,
-# so an FF imported at $70.00 silently loses its anchor (Value collapses to Regular).
-# Normalize only the round-$70 shorthand — CDS ($35), WholOmega 120 ($190) et al are
-# genuinely different price points and pass through untouched.
-FF_ROUND_PRICE_CENTS = 7000
-FF_BASE_CENTS = 6997
+# Infoceuticals are all priced at a flat $40 (Glen), overriding FMP's per-row price.
+INFOCEUTICAL_PRICE_CENTS = 4000
+# Every imported price is a whole dollar, rounded UP (Glen, 2026-10-01: "$69.97 becomes
+# $70"). FMP's standard FF '70' is now the charge price as it stands; this import used to
+# rewrite it to $69.97, which would have undone the change on the next run.
 _DESC_FIELDS = ("healing_qualities", "indications", "zc_dosage_display")
+
+
+def _whole_dollar(cents):
+    """Round a cents price UP to the next whole dollar; None stays None."""
+    return None if cents is None else -(-int(cents) // 100) * 100
 
 
 def _cents(v):
@@ -70,11 +71,9 @@ def build_entry(row):
     name = clean_name(row.get("product_name"))
     is_ff = row.get("type") in FF_VOLUME_TYPES
     if row.get("type") == "Infoceutical":
-        price_cents = INFOCEUTICAL_PRICE_CENTS   # flat $39.97 for all infoceuticals
+        price_cents = INFOCEUTICAL_PRICE_CENTS   # flat $40 for all infoceuticals
     else:
-        price_cents = _cents(row.get("sold_price"))
-        if is_ff and price_cents == FF_ROUND_PRICE_CENTS:
-            price_cents = FF_BASE_CENTS          # FMP's '70' means $69.97 -> keeps the $80 Value
+        price_cents = _whole_dollar(_cents(row.get("sold_price")))
     if not name or not price_cents:   # skip no-name and $0 (comp/sample) — not sellable lines
         return None
     entry = {
@@ -86,7 +85,7 @@ def build_entry(row):
         "ingredients_source": "fmp_snap",
         "no_groovekart": True,
     }
-    reg = _cents(row.get("retail_sug_price"))
+    reg = _whole_dollar(_cents(row.get("retail_sug_price")))
     if reg and reg > price_cents:
         # The struck-through Value/SRP anchor the invoice prints above Regular
         # (app._invoice_line_view). Only meaningful ABOVE the charge price — FMP has a

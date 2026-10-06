@@ -253,8 +253,8 @@
     </div>
     <div class="muted" style="font-size:13px;margin:4px 0 10px">Practice-grade pricing on the same individualized Functional Formulations you already trust, to dispense or drop-ship to patients. A one-page summary you can print or share.</div>
     <div style="font-size:13.5px;line-height:1.5">
-      <p style="margin:6px 0 2px"><strong style="color:var(--gold)">Your pricing.</strong> Approved Practitioner: $50 a bottle wholesale (SRP $79.97, MAP $69.97), dropping to $40 at volume. No minimum. Mix and match across 150+ formulations. The order re-prices as it fills. Fulfillment 1 to 2 days; USPS 3 to 5 days.</p>
-      <p style="margin:6px 0 2px"><strong style="color:var(--gold)">Certification lowers your floor.</strong> Twelve modules, one per five-fold dimension. Each completed module drops your floor $1.25 a bottle; all twelve take your best case from $40 to $25 at volume once certified.</p>
+      <p style="margin:6px 0 2px"><strong style="color:var(--gold)">Your pricing.</strong> Approved Practitioner: $50 a bottle wholesale (SRP $80, MAP $70), dropping to $40 at volume. No minimum. Mix and match across 150+ formulations. The order re-prices as it fills. Fulfillment 1 to 2 days; USPS 3 to 5 days.</p>
+      <p style="margin:6px 0 2px"><strong style="color:var(--gold)">Certification lowers your floor.</strong> Twelve modules, one per five-fold dimension. Each completed module drops your floor about $1.25 a bottle; all twelve take your best case from $40 to $25 at volume once certified.</p>
       <p style="margin:6px 0 2px"><strong style="color:var(--gold)">Serve patients your way.</strong> Drop-ship (patients pay retail, you earn $20 a bottle in Wellness Credit), dispense at wholesale in your practice, or set patient pricing per patient or program.</p>
       <p style="margin:6px 0 2px"><strong style="color:var(--gold)">Referrals.</strong> Share your personal link; store credit applies automatically when someone you refer buys.</p>
     </div>
@@ -291,14 +291,14 @@
       </div>
       <div class="chartcard">
         <div class="ct">What you keep, certified</div>
-        <div class="cs">Your margin per bottle across the $69.97–$79.97 online retail range</div>
+        <div class="cs">Your margin per bottle across the $70–$80 online retail range</div>
         <div class="legend" id="mgLegend"></div>
         <div id="marginChart"></div>
       </div>
     </div>
 
-    <div class="callout"><div class="ic">💡</div><div><p><b>Certification pays for itself.</b> Every module lowers your floor by $1.25 a bottle. All twelve take your best case from $40 to $25, a $15 swing on every bottle at volume, recovered in a single reorder.</p></div></div>
-    <div class="callout"><div class="ic">🛡️</div><div><p><b>Your margin is protected.</b> Suggested retail is $79.97 a bottle, and the minimum advertised price is $69.97. No one, including us, advertises below $69.97, so you are never undercut and your clients see consistent pricing.</p></div></div>
+    <div class="callout"><div class="ic">💡</div><div><p><b>Certification pays for itself.</b> Every module lowers your floor by about $1.25 a bottle. All twelve take your best case from $40 to $25, a $15 swing on every bottle at volume, recovered in a single reorder.</p></div></div>
+    <div class="callout"><div class="ic">🛡️</div><div><p><b>Your margin is protected.</b> Suggested retail is $80 a bottle, and the minimum advertised price is $70. No one, including us, advertises below $70, so you are never undercut and your clients see consistent pricing.</p></div></div>
 
     <div class="kicker">Certification</div>
     <div class="pp-h2">Accelerated Self Healing&trade; Certification</div>
@@ -496,7 +496,7 @@
   <section class="pane" data-pane="training" role="tabpanel" aria-label="Training">
   <div class="panel">
     <h2>Accelerated Self Healing&trade; Certification</h2>
-    <div class="muted" style="font-size:13px;margin:4px 0 12px">Twelve five-fold dimensions of healing. Each module you complete lowers your wholesale floor $1.25 a bottle.</div>
+    <div class="muted" style="font-size:13px;margin:4px 0 12px">Twelve five-fold dimensions of healing. Each module you complete lowers your wholesale floor about $1.25 a bottle.</div>
     <div id="tr-progress" style="margin:12px 0">
       <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:5px">
         <span class="muted">Modules completed</span>
@@ -1581,7 +1581,7 @@ function render(d){
   if(pt){
     var total = pt.modules_total || 12;
     var pb = $('pp-progbar'); if(pb) pb.style.width = Math.round((pt.modules_completed||0)/total*100) + '%';
-    var fn = $('pp-floor-note'); if(fn) fn.textContent = 'Each module lowers your floor $1.25. You are at ' + money(pt.floor_cents) + ' per bottle at volume; fully certified is ' + money(2500) + '.';
+    var fn = $('pp-floor-note'); if(fn) fn.textContent = 'Each module lowers your floor about $1.25. You are at ' + money(pt.floor_cents) + ' per bottle at volume; fully certified is ' + money(2500) + '.';
     if($('pp-floor')) $('pp-floor').textContent = money(pt.floor_cents);
     if($('pp-margin')) $('pp-margin').textContent = pt.margin_low_pct + '–' + pt.margin_high_pct + '%';
   }
@@ -2040,7 +2040,7 @@ document.addEventListener('click', function(e){
       wsTiers.forEach(function(s){ var d=document.createElement('span'); d.className='lg'; d.innerHTML='<i style="background:'+cssv(s.c)+'"></i>'+s.name; lg.appendChild(d); }); }
   }
 
-  var marg=[{l:'Single bottle',lo:19.97,hi:29.97,pr:'29–37%'},{l:'Full box',lo:32.47,hi:42.47,pr:'46–53%'},{l:'Two boxes',lo:44.97,hi:54.97,pr:'64–69%'}];
+  var marg=[{l:'Single bottle',lo:20,hi:30,pr:'29–38%'},{l:'Full box',lo:32,hi:42,pr:'46–53%'},{l:'Two boxes',lo:45,hi:55,pr:'64–69%'}];
   function renderMargin(){
     var host=document.getElementById('marginChart'); if(!host) return; host.innerHTML='';
     var W=360,H=300,L=10,R=14,T=34,B=40,col=cssv('--single'), pw=W-L-R,ph=H-T-B,ymax=62,yBase=T+ph;
@@ -2054,14 +2054,14 @@ document.addEventListener('click', function(e){
       grad.appendChild(el('stop',{offset:'1','stop-color':col,'stop-opacity':'0.35'})); defs.appendChild(grad);
       svg.appendChild(el('path',{d:topRoundRect(x,yHi,bw,yBase-yHi,4),fill:'url(#'+gid+')'}));
       var hit=el('rect',{x:x,y:yHi,width:bw,height:yBase-yHi,fill:'transparent'}); hit.style.cursor='pointer';
-      hit.addEventListener('mouseenter',function(e){ showTip(e,'<b>'+m.l+'</b><br>$'+m.lo.toFixed(2)+' at $69.97 MAP  →  $'+m.hi.toFixed(2)+' at $79.97 retail<br>'+m.pr+' margin'); });
+      hit.addEventListener('mouseenter',function(e){ showTip(e,'<b>'+m.l+'</b><br>$'+m.lo.toFixed(2)+' at $70 MAP  →  $'+m.hi.toFixed(2)+' at $80 retail<br>'+m.pr+' margin'); });
       hit.addEventListener('mouseleave',hideTip); svg.appendChild(hit);
       var pc=el('text',{x:cx,y:yHi-10,'text-anchor':'middle',class:'vlab'}); pc.setAttribute('fill',cssv('--good')); pc.textContent=m.pr; svg.appendChild(pc);
       var lb=el('text',{x:cx,y:yBase+20,'text-anchor':'middle',class:'ax'}); lb.textContent=m.l; svg.appendChild(lb); });
     host.appendChild(svg);
     var lg=document.getElementById('mgLegend'); if(lg){ lg.innerHTML='';
-      var a=document.createElement('span'); a.className='lg'; a.innerHTML='<i style="width:11px;height:11px;border-radius:3px;background:'+col+'"></i>at $69.97 MAP';
-      var b=document.createElement('span'); b.className='lg'; b.innerHTML='<i style="width:11px;height:11px;border-radius:3px;background:'+col+';opacity:.35"></i>up to $79.97';
+      var a=document.createElement('span'); a.className='lg'; a.innerHTML='<i style="width:11px;height:11px;border-radius:3px;background:'+col+'"></i>at $70 MAP';
+      var b=document.createElement('span'); b.className='lg'; b.innerHTML='<i style="width:11px;height:11px;border-radius:3px;background:'+col+';opacity:.35"></i>up to $80';
       lg.appendChild(a); lg.appendChild(b); }
   }
 
