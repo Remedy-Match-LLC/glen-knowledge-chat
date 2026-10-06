@@ -37,7 +37,7 @@ def _live_catalog():
 def test_the_listing_carries_filemakers_name_price_and_record():
     p = _catalog()[SLUG]
     assert p["name"] == NAME           # the invoice reads FileMaker by this exact name
-    assert p["price_cents"] == 6997
+    assert p["price_cents"] == 7000   # whole dollars since #1921
     assert p["fmp_id"] == "323"
     assert p["qty_pricing"] is True    # unchanged by the switch
     assert not p.get("inactive") and not p.get("superseded_by")
