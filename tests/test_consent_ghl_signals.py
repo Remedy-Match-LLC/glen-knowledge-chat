@@ -26,6 +26,8 @@ if str(REPO) not in sys.path:
 from dashboard import email_suppression as es  # noqa: E402
 
 EMAIL_SERVICE = "Received Permanent Bounce/Spam/Unsubscribe from Email Service"
+# The exact text GHL v2 returned on 340 contacts, read 2026-10-06.
+EMAIL_SERVICE_LIVE = "Received Permanent Bounce/Spam/Unsubscribe from Email Service Provider"
 
 
 @pytest.fixture
@@ -132,8 +134,9 @@ Z016_01 = "Updated from workflow_49556753-45ee-45d2-a6b1-c576f6c26b88"
 Z016_02 = "Updated from workflow_6d0f6dc3-fbe5-48c8-aa0b-b6db3ce92878"
 
 
-@pytest.mark.parametrize("message", [EMAIL_SERVICE, "Updated by contact merge", Z015_4],
-                         ids=["a-email-service", "b-contact-merge", "d-z015-4-bounced"])
+@pytest.mark.parametrize("message", [EMAIL_SERVICE_LIVE, EMAIL_SERVICE, "Updated by contact merge", Z015_4],
+                         ids=["a-email-service-live-text", "a2-email-service-short", "b-contact-merge",
+                              "d-z015-4-bounced"])
 def test_an_email_dnd_alone_is_address_level(app_db, message):
     app, path = app_db
     _seed(path, "d@x.com", ["type:client", "consent:opted-in"])
@@ -286,3 +289,11 @@ def test_an_existing_consent_unsubscribed_is_never_removed(app_db):
     t = _tags(path, "gone@x.com")
     assert "consent:unsubscribed" in t and "consent:opted-in" not in t
     assert _suppressed(path, "gone@x.com") is True
+
+
+def test_the_live_email_service_text_is_address_level_not_a_refusal():
+    """2026-10-06: GHL writes "...Email Service Provider". Only the short form was listed,
+    so the exact match failed closed and stamped consent:unsubscribed every hour."""
+    import app
+    assert app._email_dnd_effect("active", EMAIL_SERVICE_LIVE) == "address"
+    assert app._email_dnd_effect("active", EMAIL_SERVICE_LIVE + " (extra)") == "refusal"  # still exact
