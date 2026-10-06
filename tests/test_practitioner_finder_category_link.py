@@ -91,8 +91,68 @@ def test_no_params_is_a_no_op():
     assert out["state"] == {"parent": None, "sub": "__all__"} and out["pressed"] == []
 
 
-def test_prefill_runs_on_load_and_location_prefill_still_searches():
-    assert "\n    applyCategoryPrefill();\n" in SRC
-    start = SRC.index("function applyUrlPrefill() {")
-    body = SRC[start:SRC.index("\n    }\n", start)]
-    assert "if (!loc) return;" in body and "runSearch();" in body
+def _url_fn():
+    start = SRC.index("    function applyUrlPrefill() {")
+    return SRC[start:SRC.index("\n    }\n", start) + 6]
+
+
+def _run_both(query):
+    """Category prefill at load, then the location prefill as loadCountries calls it.
+    Records the filter, location and country at the moment each search starts."""
+    node = shutil.which("node")
+    if not node:
+        pytest.skip("node not installed")
+    parents = re.findall(r'class="chip" data-parent="([^"]+)"', SRC)
+    drills = {}
+    for drill_id, body in re.findall(r'<div class="drill-down" id="drill-([^"]+)">(.*?)\n  </div>', SRC, re.S):
+        drills[drill_id] = re.findall(r'data-sub="([^"]+)"', body)
+    js = """
+      const parents = %s, drills = %s, query = %s;
+      function el(data) { const e = {dataset: data, attrs: {}, classes: new Set(),
+        setAttribute(k, v) { this.attrs[k] = v; }}; e.classList = {add: c => e.classes.add(c)}; return e; }
+      const chips = parents.map(p => el({parent: p}));
+      const drillEls = {};
+      for (const [id, subs] of Object.entries(drills)) {
+        const d = el({}); d.subs = subs.map(s => el({sub: s})); d.querySelectorAll = () => d.subs;
+        drillEls['drill-' + id] = d;
+      }
+      const locationInput = {value: ''};
+      const countrySelect = {value: 'US', querySelector: sel => /value="(US|CA|ANY)"/.test(sel) ? {} : null};
+      const document = {
+        querySelectorAll: sel => sel === '.chip[data-parent]' ? chips : [],
+        getElementById: id => id === 'location-input' ? locationInput : (drillEls[id] || null),
+      };
+      const window = {location: {search: query}};
+      const filterState = {parent: null, sub: '__all__'};
+      const searches = [];
+      function syncRadiusForCountry() {}
+      function runSearch() { searches.push({parent: filterState.parent, sub: filterState.sub,
+                                            location: locationInput.value, country: countrySelect.value}); }
+      %s
+      %s
+      applyCategoryPrefill();
+      applyUrlPrefill();
+      console.log(JSON.stringify(searches));
+    """ % (json.dumps(parents), json.dumps(drills), json.dumps(query), _fn(), _url_fn())
+    r = subprocess.run([node, "-e", js], capture_output=True, text=True, timeout=30)
+    assert r.returncode == 0, r.stderr
+    return json.loads(r.stdout)
+
+
+def test_all_four_params_search_once_with_the_filter_already_set():
+    searches = _run_both("?location=Hilo%2C+HI&country=ca&category=dental&sub=biological")
+    assert searches == [{"parent": "dental", "sub": "biological", "location": "Hilo, HI", "country": "CA"}]
+
+
+def test_category_without_a_location_never_searches():
+    assert _run_both("?category=dental&sub=biological") == []
+
+
+def test_portal_embed_location_prefill_unchanged():
+    assert _run_both("?location=96720") == [
+        {"parent": None, "sub": "__all__", "location": "96720", "country": "US"}]
+
+
+def test_category_prefill_runs_at_load_before_the_country_fetch():
+    # applyUrlPrefill runs after the async country fetch; the category must already be set.
+    assert SRC.index("\n    applyCategoryPrefill();\n") < SRC.index("\n    loadCountries();\n")
