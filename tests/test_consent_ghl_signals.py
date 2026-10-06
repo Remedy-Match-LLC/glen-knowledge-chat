@@ -148,11 +148,12 @@ def test_an_email_dnd_alone_is_address_level(app_db, message):
     assert _suppressed(path, "d@x.com") is True
 
 
-def test_an_email_dnd_plus_a_spam_tag_is_a_refusal(app_db):
+@pytest.mark.parametrize("message", [EMAIL_SERVICE_LIVE, EMAIL_SERVICE], ids=["live", "short"])
+def test_an_email_dnd_plus_a_spam_tag_is_a_refusal(app_db, message):
     app, path = app_db
     _seed(path, "s@x.com", ["type:client", "consent:opted-in"])
     _upsert(app, path, {"email": "s@x.com", "tags": ["spam complaint"],
-                        "email_dnd": "active", "email_dnd_message": EMAIL_SERVICE})
+                        "email_dnd": "active", "email_dnd_message": message})
     t = _tags(path, "s@x.com")
     assert "consent:unsubscribed" in t and "consent:opted-in" not in t
     assert _row(path, "s@x.com") == ("ghl-dnd", "ghl")
