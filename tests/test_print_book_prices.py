@@ -86,3 +86,15 @@ def test_standard_books_retail_at_20_dollars_in_the_cart():
             assert out["subtotal_list_cents"] == 2000 * qty, (slug, qty)
             if qty == 1:  # several copies take the cart-wide volume discount, by design
                 assert out["discount_cents"] == 0, slug
+
+
+def test_product_page_shows_20_with_the_30_srp_crossed_out(monkeypatch, tmp_path):
+    """The page reads "regular" for the struck-through price. Round 3 found nothing pinned it."""
+    import app
+    monkeypatch.setattr(app, "LOG_DB", str(tmp_path / "chat_log.db"))
+    app._init_people_table()
+    app.app.config["TESTING"] = True
+    c = app.app.test_client()
+    for slug in STANDARD:
+        d = c.get(f"/begin/product-page-data/{slug}").get_json()
+        assert (d["price"], d["regular"]) == ("$20.00", "$30.00"), slug
