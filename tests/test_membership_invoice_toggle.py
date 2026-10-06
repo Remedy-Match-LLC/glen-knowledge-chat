@@ -55,7 +55,7 @@ def test_add_then_remove_membership_reprices(tmp_path, monkeypatch):
     j2 = rem.get_json()["order"]
     assert not any(l["slug"] == "membership:month" for l in j2["lines"])
     ff2 = [l for l in j2["lines"] if l["slug"] != "membership:month"]
-    assert all(l["unit_cents"] == 6997 for l in ff2)    # reverted to list
+    assert all(l["unit_cents"] == 7000 for l in ff2)    # reverted to list, $70 since 2026-10
 
 
 def test_add_is_idempotent(tmp_path, monkeypatch):

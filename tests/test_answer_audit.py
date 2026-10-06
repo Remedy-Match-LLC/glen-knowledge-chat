@@ -63,4 +63,4 @@ def test_does_not_flag_a_correct_answer(products):
 def test_does_not_flag_a_correct_cheap_product(products):
     assert aa.audit(
         "[Terrain Restore](https://illtowell.com/begin/product/terrain-restore) "
-        "is $69.97 list price.", products) == []
+        "is $70 list price.", products) == []

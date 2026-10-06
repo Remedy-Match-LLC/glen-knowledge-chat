@@ -13,7 +13,7 @@ def test_myelin_syntropy_is_a_sellable_functional_formulation():
     # created as "Myelin Syntropy Powder" — his convention for powders, and the name
     # the invoice bottle-count lookup matches on. The slug is deliberately unchanged.
     assert product["name"] == "Myelin Syntropy Powder"
-    assert product["price_cents"] == 6997
+    assert product["price_cents"] == 7000
     assert product["qty_pricing"] is True
     assert product["bottle_type"] == "120 caps"
     assert product["net_weight_g"] == 106.7

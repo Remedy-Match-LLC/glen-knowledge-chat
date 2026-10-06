@@ -34,7 +34,7 @@ def test_the_slug_is_unchanged(products):
 
 
 def test_the_price_did_not_move(products):
-    assert products["myelin-syntropy"]["price_cents"] == 6997
+    assert products["myelin-syntropy"]["price_cents"] == 7000
 
 
 def test_the_predecessors_are_untouched_by_this_change(products):

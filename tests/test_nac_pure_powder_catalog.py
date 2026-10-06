@@ -49,7 +49,7 @@ def test_name_and_price_are_untouched(products):
     """The name is the QuickBooks invoice identity, and Glen kept the price."""
     p = products[SLUG]
     assert p["name"] == "N-Acetyl Cysteine"
-    assert p["price_cents"] == 3997
+    assert p["price_cents"] == 4000
 
 
 def test_correction_is_recorded_so_enrichment_cannot_revert_it(corrections, products):

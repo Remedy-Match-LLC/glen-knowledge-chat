@@ -75,7 +75,7 @@ def test_price_cart_flag_off_regular_price(monkeypatch, tmp_path):
         ship={"country": "US", "state": "TX"},
         email="member@x.com",
     )
-    assert out["priced"]["lines"][0]["line_total_cents"] == 6997
+    assert out["priced"]["lines"][0]["line_total_cents"] == 7000
 
 
 def test_price_cart_non_member_regular_price(monkeypatch, tmp_path):
@@ -91,7 +91,7 @@ def test_price_cart_non_member_regular_price(monkeypatch, tmp_path):
         ship={"country": "US", "state": "TX"},
         email="nonmember@x.com",
     )
-    assert out["priced"]["lines"][0]["line_total_cents"] == 6997
+    assert out["priced"]["lines"][0]["line_total_cents"] == 7000
 
 
 ####################################################################
@@ -380,4 +380,4 @@ def test_price_cart_fresh_db_no_repertoire_table_does_not_crash(monkeypatch, tmp
     )
     # No repertoire row exists yet either way, so regular price -- the point of
     # this test is that it doesn't raise.
-    assert out["priced"]["lines"][0]["line_total_cents"] == 6997
+    assert out["priced"]["lines"][0]["line_total_cents"] == 7000

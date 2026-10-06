@@ -39,7 +39,7 @@ def test_the_description_carries_the_immune_modulation_line_and_the_disclaimer(e
 
 def test_directions_and_the_rest_are_unchanged(entry):
     assert entry["directions"] == "10 drops 3 times a day or as needed."
-    assert entry["price_cents"] == 6997 and entry["bottle_type"] == "Dropper 50 mL"
+    assert entry["price_cents"] == 7000 and entry["bottle_type"] == "Dropper 50 mL"
     assert entry["pinecone_title"] == "Aller-Free HomeoEnergetic Drops"
 
 

@@ -61,7 +61,7 @@ def test_large_redemption_capped_at_total_fee(monkeypatch):
     base = dc.build_client_order(cart, prac, patient=patient, method="card",
                                 points_to_redeem_cents=0, points_balance_cents=0)
     baseline_margin = base["margin_cents"]
-    total_fee = 660  # 1 bottle: 33% * (7000 - 5000)
+    total_fee = 700  # 1 bottle: 33% * (7000 - 5000) = $6.60, rounded up to $7 (2026-10)
 
     _common_stubs(monkeypatch)
     out = dc.build_client_order(cart, prac, patient=patient, method="card",

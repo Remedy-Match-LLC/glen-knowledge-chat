@@ -40,7 +40,7 @@ def test_the_ruling_is_recorded_on_the_product():
 
 def test_identity_untouched():
     """Slug, name and price carry the QuickBooks identity."""
-    assert P["name"] == "Fulvic Acid" and P["price_cents"] == 3997
+    assert P["name"] == "Fulvic Acid" and P["price_cents"] == 4000   # $39.97 -> $40, 2026-10
 
 
 def test_its_sibling_still_carries_glens_own_correction():

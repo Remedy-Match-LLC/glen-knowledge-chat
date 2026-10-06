@@ -63,7 +63,7 @@ def test_the_clear_lens_survivor_is_live_and_owns_no_fmp_id():
     # Keeps its own name: an active record may not wear a retired one's name
     # (test_es1_lymph_canonical.test_no_active_catalog_name_is_also_a_retired_name).
     assert e["name"] == "Clear Lens Eyedrops"
-    assert e["price_cents"] == 6997 and e["bottle_type"] == "Dropper 5 mL"
+    assert e["price_cents"] == 7000 and e["bottle_type"] == "Dropper 5 mL"
     assert e.get("ingredients"), "the survivor must be the record carrying ingredients"
     assert "fmp_id" not in e, "fmp_id 372 stays on the retired twin so 372 still resolves"
 

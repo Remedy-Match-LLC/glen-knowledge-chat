@@ -15,16 +15,17 @@ def test_sum_less_10pct_simple():
                   {"slug": "aces-eye-drops", "qty": 1},
                   {"slug": "moisturize", "qty": 1},
                   {"slug": "wholomega", "qty": 1}]}
-    # 3 * 6997 = 20991 ; * 0.9 = 18891.9 -> 18892
-    assert compute_bundle_price_cents(bundle, CATALOG) == 18892
+    # 3 * 6997 = 20991 ; * 0.9 = 18891.9 -> 18900, rounded up to a whole dollar
+    # (Glen, 2026-10-01)
+    assert compute_bundle_price_cents(bundle, CATALOG) == 18900
 
 def test_sum_less_10pct_with_qty():
     bundle = {"bundle": True, "price_rule": "components_less_10pct",
               "bundle_component_slugs": [
                   {"slug": "iop-syntropy", "qty": 3},
                   {"slug": "ocuflow-daytime", "qty": 2}]}
-    # 5 * 6997 = 34985 ; * 0.9 = 31486.5 -> 31486  (banker's rounding of .5 -> even)
-    assert compute_bundle_price_cents(bundle, CATALOG) == 31486
+    # 5 * 6997 = 34985 ; * 0.9 = 31486.5 -> 31500, rounded up to a whole dollar
+    assert compute_bundle_price_cents(bundle, CATALOG) == 31500
 
 def test_unknown_component_raises():
     bundle = {"bundle": True, "price_rule": "components_less_10pct",

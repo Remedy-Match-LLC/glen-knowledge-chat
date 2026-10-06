@@ -69,7 +69,7 @@ def test_retired_wholomega_still_maps_to_the_storefront():
     assert p is not None
     assert p["slug"] == "wholomega"
     assert p["bottle_type"] == "30 Caps"
-    assert p["price_cents"] == 6997
+    assert p["price_cents"] == 7000
 
 
 def test_retired_twin_keeps_its_fmp_id_so_fmp_lookups_still_resolve():

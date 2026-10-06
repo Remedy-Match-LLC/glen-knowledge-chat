@@ -1,9 +1,10 @@
 """Rule pricing for bundle SKUs: one-time price = 10% off the summed retail
-(price_cents) of the bundle's components, resolved by slug.
+(price_cents) of the bundle's components, resolved by slug, rounded UP to a
+whole dollar. Glen 2026-10-01: prices are whole dollars, rounded up.
 
 Pure module — no Flask, no I/O. The caller passes the products dict."""
 
-DEFAULT_PRICE_CENTS = 6997
+DEFAULT_PRICE_CENTS = 7000
 
 
 def resolve_component(slug: str, products: dict):
@@ -27,7 +28,7 @@ def resolve_component(slug: str, products: dict):
 
 
 def compute_bundle_price_cents(product: dict, products: dict) -> int:
-    """round(0.9 * sum(component price_cents * qty)) in integer cents.
+    """0.9 * sum(component price_cents * qty), rounded up to a whole dollar, in cents.
     Raises KeyError if any component slug does not resolve to a sellable product."""
     total = 0
     for comp in product.get("bundle_component_slugs") or []:
@@ -37,4 +38,4 @@ def compute_bundle_price_cents(product: dict, products: dict) -> int:
         if p is None:
             raise KeyError(f"unresolvable bundle component slug: {slug!r}")
         total += int(p.get("price_cents", DEFAULT_PRICE_CENTS)) * qty
-    return int(round(total * 0.9))
+    return -(-(total * 9) // 1000) * 100

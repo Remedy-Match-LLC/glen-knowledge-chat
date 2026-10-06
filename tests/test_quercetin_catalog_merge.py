@@ -54,7 +54,7 @@ def test_the_survivor_keeps_slug_name_price_and_link():
     a merge that changed either would break invoicing or an existing link."""
     p = _catalog()[SURVIVOR]
     assert p["name"] == "Quercetin Dihydrate"
-    assert p["price_cents"] == 3997
+    assert p["price_cents"] == 4000
     assert p["url"].endswith("/begin/product/quercetin-dihydrate")
     assert p.get("inactive") is not True, "the survivor must not be retired"
     assert "superseded_by" not in p

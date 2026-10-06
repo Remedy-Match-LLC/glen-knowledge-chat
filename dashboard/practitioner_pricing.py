@@ -17,7 +17,7 @@ from dashboard import pricing as _pricing
 
 DEFAULTS = {
     "fee_pct": 0.33,            # service fee on the practitioner's markup (drop-ship only)
-    "map_default_cents": 6700,  # $67 minimum advertised price (per-SKU override in console)
+    "map_default_cents": 7000,  # $70 minimum advertised price, Glen 2026-10-06 (per-SKU override in console)
 }
 
 def load_settings(overrides):
@@ -33,15 +33,18 @@ def drop_ship_base_cents(qty, modules_completed):
     return _wp.blended_unit_price_cents(int(qty), int(modules_completed), _wp.DEFAULT_B)
 
 def service_fee_cents(selling_cents, base_cents, settings):
-    """Flat fee = fee_pct of the markup (selling - base), never negative. Drop-ship only."""
+    """Flat fee = fee_pct of the markup (selling - base), never negative, rounded up to a
+    whole dollar so the practitioner's drop-ship price (base + fee) is whole. Drop-ship only."""
     markup = max(0, int(selling_cents) - int(base_cents))
-    return int(round(settings["fee_pct"] * markup))
+    return _wp.whole_dollar_cents(int(round(settings["fee_pct"] * markup)))
 
 class MapViolation(ValueError):
     """Selling price resolves below the Minimum Advertised Price."""
 
 def price_for_markup(markup_pct, retail_cents):
-    return int(round(int(retail_cents) * (1 + float(markup_pct) / 100.0)))
+    """Selling price for a % markup on retail, rounded up to a whole dollar."""
+    return _wp.whole_dollar_cents(
+        int(round(int(retail_cents) * (1 + float(markup_pct) / 100.0))))
 
 def markup_pct_for(price_cents, retail_cents):
     if not retail_cents:

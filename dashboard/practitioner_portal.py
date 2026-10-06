@@ -967,8 +967,8 @@ def decide_application(practitioner_id, *, approve: bool, notes="", now=None) ->
 
 # Partner Program "Your standing" retail anchors (the online retail range the
 # margin band is measured against). MAP = minimum advertised price.
-_PARTNER_MAP_CENTS = 6997      # $69.97 minimum advertised price
-_PARTNER_SRP_CENTS = 7997      # $79.97 suggested retail
+_PARTNER_MAP_CENTS = 7000      # $70 minimum advertised price (Glen, 2026-10-06)
+_PARTNER_SRP_CENTS = 8000      # $80 suggested retail
 _PARTNER_SINGLE_CENTS = 5000   # $50 single-bottle wholesale
 
 
@@ -976,12 +976,12 @@ def partner_block(modules_completed, *, wellness_credit_cents=0,
                   dispensary_credit_cents=0) -> dict:
     """The Partner Program 'Your standing' summary: certification progress, the
     resulting volume wholesale floor (same curve as the wholesale chart), and the
-    per-bottle margin range across the $69.97 MAP -> $79.97 SRP online retail
+    per-bottle margin range across the $70 MAP -> $80 SRP online retail
     range. Pure + defensive; callers pass the credit figures from portal_data."""
     mc = max(0, min(int(modules_completed or 0), pricing.N_MODULES))
     floor = pricing.certification_floor_cents(mc)
-    lo = _PARTNER_MAP_CENTS - floor    # margin per bottle at the $69.97 MAP
-    hi = _PARTNER_SRP_CENTS - floor    # margin per bottle at the $79.97 SRP
+    lo = _PARTNER_MAP_CENTS - floor    # margin per bottle at the $70 MAP
+    hi = _PARTNER_SRP_CENTS - floor    # margin per bottle at the $80 SRP
     return {
         "modules_completed": mc,
         "modules_total": pricing.N_MODULES,

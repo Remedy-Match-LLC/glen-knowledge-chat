@@ -54,8 +54,8 @@ def test_build_client_order_charges_patient_credits_margin(monkeypatch):
     assert out["doc_number"] == ""
     assert isinstance(out["invoice_id"], str) and len(out["invoice_id"]) == 32
     assert out["ship_to"]["name"] == "Pat"        # ships to the patient
-    # 1 bottle @ S=$70, base $50, fee 33%*(7000-5000)=660 -> margin 1340
-    assert out["margin_cents"] == 1340
+    # 1 bottle @ S=$70, base $50, fee 33%*(7000-5000)=$6.60 rounded up to $7 -> margin $13
+    assert out["margin_cents"] == 1300
     assert out["qbo_payload"]["lines"][0]["amount"] == 70.0   # patient is charged S, not wholesale
     assert out["total"] == 70.0
 

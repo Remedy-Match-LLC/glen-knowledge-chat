@@ -64,8 +64,9 @@ def test_points_reduce_above_floor():
 
 
 def test_points_clamped_at_floor_partial_use():
-    # price 4000, want 2000 off, floor 3010 → only 990 usable → 3010, used 990
-    assert pricing.apply_points(4000, 2000, 3010) == (3010, 990)
+    # price 4000, want 2000 off, floor 3010 → 990 above the floor, but points redeem in
+    # whole dollars only (Glen, 2026-10-01) → 900 used → 3100
+    assert pricing.apply_points(4000, 2000, 3010) == (3100, 900)
 
 
 def test_points_none_requested():
@@ -272,7 +273,8 @@ def test_compute_points_exceed_all_floor_headroom():
     # Discount floor = round(7000*0.57) = 3990; points floor = round(7000*0.43) = 3010.
     # After 0% discount, price stays at 7000 per line.
     # Reducible headroom per line = 7000 - 3010 = 3990 each; total = 7980.
-    # We request way more than that (20000) → should clamp and only consume 7980.
+    # We request way more than that (20000) → should clamp. Points redeem in whole
+    # dollars only (Glen, 2026-10-01), so each line uses 3900 of its 3990 → 7800.
     items = [
         {"slug": "a", "name": "A", "qty": 1,
          "product": {"slug": "a", "price_cents": 7000},
@@ -283,9 +285,9 @@ def test_compute_points_exceed_all_floor_headroom():
     ]
     r = pricing.compute(items, settings=s, points_to_redeem_cents=20000,
                         tax_fn=_fake_tax)
-    assert r["lines"][0]["line_total_cents"] == 3010   # clamped at points floor
-    assert r["lines"][1]["line_total_cents"] == 3010   # clamped at points floor
-    assert r["points_redeemed_cents"] == 7980          # total headroom consumed, not 20000
+    assert r["lines"][0]["line_total_cents"] == 3100   # last whole dollar above the floor
+    assert r["lines"][1]["line_total_cents"] == 3100
+    assert r["points_redeemed_cents"] == 7800          # whole-dollar headroom, not 20000
 
 
 def test_unit_floor_unknown_kind_raises():

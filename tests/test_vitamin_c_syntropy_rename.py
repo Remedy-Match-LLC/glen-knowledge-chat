@@ -21,7 +21,8 @@ from dashboard import clinical_glossary as cg
 from dashboard import practitioner_portal as pp
 
 SLUG, NEW, OLD = "vitamin-c-syntropy", "Vitamin C Syntropy", "Synergy C"
-KEPT = json.loads('{"price_cents": 6997, "bottle_type": "30 Caps", "url": "https://myhealingoasis.com/begin/product/vitamin-c-syntropy", "legacy_store_url": "https://remedymatch.com/remedies/syntropy/112-vitamin-c-syntropy", "qty_pricing": true}')
+# price_cents 6997 -> 7000 with whole dollars, 2026-10.
+KEPT = json.loads('{"price_cents": 7000, "bottle_type": "30 Caps", "url": "https://myhealingoasis.com/begin/product/vitamin-c-syntropy", "legacy_store_url": "https://remedymatch.com/remedies/syntropy/112-vitamin-c-syntropy", "qty_pricing": true}')
 PRODUCTS = json.load(open("data/products.json", encoding="utf-8"))["products"]
 
 

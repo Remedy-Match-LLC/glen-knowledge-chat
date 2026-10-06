@@ -210,7 +210,7 @@ def test_pinned_slug_that_does_not_exist_never_falls_back_to_storefront():
 
 def test_molecular_hydrogen_bottle_is_sellable():
     p = app._get_product("molecular-hydrogen-bottle")
-    assert p and p["price_cents"] == 24997
+    assert p and p["price_cents"] == 25000   # $249.97 -> $250, whole dollars 2026-10
     assert p["bottle_type"] == "own-box", "device must not pack as a bottle"
 
 

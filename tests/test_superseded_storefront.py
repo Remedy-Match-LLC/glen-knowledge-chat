@@ -81,5 +81,5 @@ def test_cart_line_on_the_retired_slug_prices_and_packs_the_survivor():
     appmod = _app()
     from dashboard import shipping as S
     p = appmod._get_product("aces-eyedrops")
-    assert p["price_cents"] == 6997
+    assert p["price_cents"] == 7000
     assert S.resolve_bottle_type(p["slug"], p) == "Dropper 5 mL"

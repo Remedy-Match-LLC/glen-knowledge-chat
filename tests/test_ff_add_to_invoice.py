@@ -24,7 +24,7 @@ FREE = "free@example.com"
 
 # Real FF-eligible catalog product (qty_pricing=True, not info_only), $69.97 base.
 FF_SLUG = "mucosa-syntropy-powder"
-FF_CATALOG_CENTS = 6997
+FF_CATALOG_CENTS = 7000
 
 
 def _app():

@@ -276,7 +276,9 @@ def test_reverse_aging_program_pins_glens_approved_copy():
     # All three narrative sections: no unreviewed AI text, so no "pending review" banner.
     assert set(p["copy_pinned"]) == {"intro", "description", "research"}
     assert p["description"].startswith(p["intro"])
-    assert "$419.82" in p["description"] and p["regular_cents"] == 41982
+    # Figures moved with whole dollars (2026-10): six at $70 is $420, the program $360.
+    assert "$420" in p["description"] and p["regular_cents"] == 42000
+    assert "$360" in p["description"] and p["price_cents"] == 36000
 
 
 def test_the_real_page_carries_no_ai_marker_so_no_banner(monkeypatch, tmp_path):

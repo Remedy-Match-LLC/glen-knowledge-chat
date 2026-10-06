@@ -45,7 +45,7 @@ def test_msm_powder_keeps_its_identity():
     """The ruling changes what is in the jar, not what the jar is or costs."""
     p = _catalog()["msm-powder"]
     assert p["name"] == "MSM Powder"
-    assert p["price_cents"] == 3997
+    assert p["price_cents"] == 4000
     assert p["fmp_id"] == "90"
 
 

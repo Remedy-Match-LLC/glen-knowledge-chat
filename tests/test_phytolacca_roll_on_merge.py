@@ -41,7 +41,7 @@ def test_the_roll_on_is_live_terminal_and_priced(catalog):
     assert products_mod.superseded_slug(NEW, catalog) == NEW
     assert p["name"] == "Phytolacca americana Oil Roll-On"   # FileMaker 95, exactly
     assert p["fmp_id"] == "95"
-    assert p["price_cents"] == 6997
+    assert p["price_cents"] == 7000
     assert p["regular_cents"] == 8000
     # qty_pricing brings the $50 minimum unit price; turning it off to dodge capsule
     # formats would let 12 units reach $49.68 each (spec, review round 2).
@@ -143,7 +143,7 @@ def test_the_roll_on_offers_no_capsule_bottles_or_refills(a, catalog, monkeypatc
     assert a._capsule_formats_ok(p) is False
     data = a.app.test_client().get("/begin/product-data/" + NEW).get_json()
     assert data.get("formats") is None
-    assert data["price_cents"] == 6997
+    assert data["price_cents"] == 7000
     # A stale or hand-made cart line asking for a capsule format is cleaned to none.
     for fmt in ("refill", "larger", " Refill "):
         assert a._clean_format(p, fmt) == ""
@@ -159,7 +159,7 @@ def test_the_old_address_serves_the_roll_on(a, catalog, monkeypatch):
     assert c.get("/begin/product/" + NEW).status_code == 200
     data = c.get("/begin/product-data/" + OLD).get_json()
     assert data["name"] == "Phytolacca americana Oil Roll-On"
-    assert data["price_cents"] == 6997
+    assert data["price_cents"] == 7000
     assert data.get("formats") is None
 
 

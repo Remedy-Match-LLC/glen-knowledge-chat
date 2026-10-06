@@ -47,7 +47,7 @@ def test_the_entry_matches_filemaker_1200(products):
     p = products[SLUG]
     assert p["name"] == "OcuHeal+ Eye Drops", "the invoice matches FileMaker by exact name"
     assert p["fmp_id"] == "1200"
-    assert p["price_cents"] == 6997
+    assert p["price_cents"] == 7000
     assert p["bottle_type"] == "Dropper 5 mL"
     assert p["qty_pricing"] is True
     assert p["url"] == f"https://myhealingoasis.com/begin/product/{SLUG}"
@@ -75,7 +75,7 @@ def test_ocuheal_stays_as_it_was(products):
     p = products["ocuheal-eye-drops"]
     assert p["name"] == "OcuHeal Eye Drops"
     assert p["fmp_id"] == "493"
-    assert p["price_cents"] == 6997
+    assert p["price_cents"] == 7000
     assert p["bottle_type"] == "Dropper 5 mL"
     assert p["url"].endswith("/begin/product/ocuheal-eye-drops")
     # Its panel was corrected on 2026-09-25 (test_ocuheal_panels_match_the_bottle.py);

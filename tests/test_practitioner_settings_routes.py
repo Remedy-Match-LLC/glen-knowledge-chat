@@ -114,10 +114,10 @@ def test_post_override_below_map_is_clamped(monkeypatch, client):
     clamped_entry = data["clamped"][0]
     assert clamped_entry["slug"] == "retina-renew"
     assert clamped_entry["requested_cents"] == 6000
-    assert clamped_entry["clamped_to_cents"] == 6700  # MAP
+    assert clamped_entry["clamped_to_cents"] == 7000  # MAP, $70 (Glen, 2026-10-06)
 
     # stored prices reflect the clamp
-    assert data["pricing"]["overrides"]["retina-renew"] == 6700
+    assert data["pricing"]["overrides"]["retina-renew"] == 7000
     assert data["pricing"]["overrides"]["brain-boost"] == 7500
 
 

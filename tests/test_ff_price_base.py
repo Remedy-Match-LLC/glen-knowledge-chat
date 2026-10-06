@@ -61,7 +61,7 @@ def test_on_base_ff_gets_the_80_dollar_value_anchor():
          "qty": 1, "unit_cents": 6997, "line_cents": 6997}
     )
     assert out["srp_cents"] == 8000        # Value
-    assert out["regular_cents"] == 6997    # Regular
+    assert out["regular_cents"] == 7000    # Regular
 
 
 def test_catalog_names_have_no_embedded_newlines():

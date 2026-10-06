@@ -76,13 +76,13 @@ def _flat_ceiling_cents() -> int:
 
     Glen, 2026-09-22: a flat price "for Functional Formulations generally doesn't
     extend to larger than minimum size bottles". Ashley King's $40 had reached
-    WholOmega 120 gelcaps at $190 retail. He ruled the line at $69.97: anything
+    WholOmega 120 gelcaps at $190 retail. He ruled the line at the standard FF price, now $70: anything
     listed above it is a larger bottle and gets standard drop-ship pricing."""
     try:
         import app as _app
-        return int(_app._PRODUCTS.get("default_price_cents") or 6997)
+        return int(_app._PRODUCTS.get("default_price_cents") or 7000)
     except Exception:
-        return 6997
+        return 7000
 
 
 def _practitioner_dropship_unit_cents(pid: str) -> int | None:
@@ -235,7 +235,7 @@ def _practitioner_price_cents(pid: str, slug: str, retail: int) -> int:
     """
     from dashboard import practitioner_settings as _ps
     settings = _settings()
-    map_floor = int(settings.get("map_default_cents", 6700))
+    map_floor = int(settings.get("map_default_cents", 7000))
     try:
         cx = db.connect(_LOG_DB)
         cx.row_factory = sqlite3.Row

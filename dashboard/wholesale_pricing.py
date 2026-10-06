@@ -38,10 +38,17 @@ _CATALOG_CACHE: Optional[Dict[str, dict]] = None
 
 # ── Certification floor ───────────────────────────────────────────────────────
 
+def whole_dollar_cents(cents: int) -> int:
+    """Round a price in cents UP to the next whole dollar. Glen, 2026-10-01: wholesale
+    and practitioner prices are whole dollars, rounded up, like every other price."""
+    return -(-int(cents) // 100) * 100
+
+
 def certification_floor_cents(modules_completed: int) -> int:
-    """F = 4000 - clamp(modules, 0, 12) * 125  ->  [2500, 4000] cents."""
+    """F = 4000 - clamp(modules, 0, 12) * 125, rounded up to a whole dollar
+    ->  [2500, 4000] cents, in steps of $1 or $2."""
     m = max(0, min(N_MODULES, int(modules_completed)))
-    return FLOOR_BASE_CENTS - m * MODULE_STEP_CENTS
+    return whole_dollar_cents(FLOOR_BASE_CENTS - m * MODULE_STEP_CENTS)
 
 
 # ── Blended unit price ────────────────────────────────────────────────────────
@@ -53,7 +60,13 @@ def _lerp(qa: int, pa: int, qb: int, pb: int, q: int) -> int:
 
 
 def blended_unit_price_cents(q: int, modules_completed: int, B: int) -> int:
-    """Blended per-bottle price (cents) for an order of ``q`` total bottles."""
+    """Blended per-bottle price (cents) for an order of ``q`` total bottles,
+    rounded up to a whole dollar."""
+    return whole_dollar_cents(_blended_raw_cents(q, modules_completed, B))
+
+
+def _blended_raw_cents(q: int, modules_completed: int, B: int) -> int:
+    """The piecewise-linear curve itself, before whole-dollar rounding."""
     if B < 2:
         B = 2
     F = certification_floor_cents(modules_completed)
@@ -175,9 +188,8 @@ def order_quote(
         line_unit = unit
         if discount is not None:
             discount = max(0, min(100, int(discount)))
-            line_unit = (
-                int(p["retail_cents"]) * (100 - discount) + 50
-            ) // 100
+            line_unit = whole_dollar_cents(
+                (int(p["retail_cents"]) * (100 - discount) + 50) // 100)
         lines.append({
             "slug": slug,
             "name": p["name"],

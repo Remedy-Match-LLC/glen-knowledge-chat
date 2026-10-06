@@ -32,7 +32,7 @@ def test_vagus_has_glens_directions_and_no_struck_price():
     assert v["directions"] == "10 drops up to 3 times a day before meals."
     assert "answered the directions on 2026-09-30" in v["enrichment_note"]
     assert not v.get("regular_cents")
-    assert v["price_cents"] == 6997 and v["bottle_type"] == "Dropper 50 mL"
+    assert v["price_cents"] == 7000 and v["bottle_type"] == "Dropper 50 mL"
     assert len(v["ingredients"]) == 24
 
 

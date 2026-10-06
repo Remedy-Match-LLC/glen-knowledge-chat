@@ -665,9 +665,9 @@ def test_priced_lines_fall_back_to_catalog():
     import app as appmod
     lines, items_rec, subtotal = appmod._portal_priced_lines(
         [{"slug": "nous-energy", "qty": 1}])
-    # catalog price for nous-energy is $69.97
-    assert subtotal == 6997
-    assert lines[0]["amount"] == 69.97
+    # catalog price for nous-energy is $70
+    assert subtotal == 7000
+    assert lines[0]["amount"] == 70.0
 
 
 def test_api_portal_shows_regular_and_special_price(client):
@@ -681,7 +681,7 @@ def test_api_portal_shows_regular_and_special_price(client):
     j = r.get_json()
     it = j["reorder_items"][0]
     assert it["price_cents"] == 2500            # the special price (what he pays)
-    assert it["regular_price_cents"] == 6997    # the struck-through catalog price
+    assert it["regular_price_cents"] == 7000    # the struck-through catalog price
     assert it["is_special"] is True
     assert j["pricing_note"] == "Your certified-practitioner price."
 
