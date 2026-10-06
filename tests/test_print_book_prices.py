@@ -48,6 +48,7 @@ def test_large_format_books_wholesale_at_20_dollars():
         assert out["lines"][0]["unit_price_cents"] == 2000, slug
 
 
-def test_large_format_ebooks_stay_at_997():
+def test_large_format_ebooks_are_10_dollars():
+    """#1919 left the ebooks at $9.97; whole dollars (Glen, 2026-10-01) take them to $10."""
     for slug in LARGE_FORMAT:
-        assert PRODUCTS[slug + "-ebook"]["price_cents"] == 997, slug
+        assert PRODUCTS[slug + "-ebook"]["price_cents"] == 1000, slug
