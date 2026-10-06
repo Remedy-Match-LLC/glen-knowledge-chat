@@ -73,7 +73,7 @@ def _curve_bottles(cart, terms):
     """Bottles that count toward the blended volume curve: Functional Formulations with
     no wholesale discount of their own, the only lines priced on it. Everything else is
     priced off its own retail and stays out of the count, as in a stocking order."""
-    return sum(int(i.get("qty", 0)) for i in cart
+    return sum(int(i.get("qty", 1)) for i in cart          # as the line loops count it
                if terms[i["slug"]][0] is None and terms[i["slug"]][1])
 
 
@@ -298,7 +298,9 @@ def _practitioner_price_cents(pid: str, slug: str, retail: int) -> int:
     """
     from dashboard import practitioner_settings as _ps
     settings = _settings()
-    map_floor = _pp.map_floor_cents(retail, settings.get("map_default_cents", 7000))
+    map_floor = _pp.selling_floor_cents(
+        retail, settings.get("map_default_cents", 7000),
+        discountable=_dropship_ff(slug) or _wholesale_pct_for(slug) is not None)
     try:
         cx = db.connect(_LOG_DB)
         cx.row_factory = sqlite3.Row

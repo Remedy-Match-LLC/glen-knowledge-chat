@@ -95,6 +95,8 @@ def test_selling_price_with_settings_floors_at_retail(monkeypatch, tmp_path):
     db_file = tmp_path / "log.db"
     monkeypatch.setattr(dc, "_LOG_DB", str(db_file))
     monkeypatch.setattr(dc.db, "connect", lambda path: sqlite3.connect(path))
+    monkeypatch.setattr(dc, "_dropship_ff", lambda slug: slug == "ff")
+    monkeypatch.setattr(dc, "_wholesale_pct_for", lambda slug: None)
     cx = sqlite3.connect(str(db_file))
     ps.init_settings_table(cx)
     # Stored overrides the error fallback could never produce (it returns retail).
@@ -131,9 +133,8 @@ def test_console_override_floors_at_retail_below_map(monkeypatch, tmp_path):
     import app as appmod
     monkeypatch.setattr(appmod, "LOG_DB", tmp_path / "chat_log.db")
     monkeypatch.setattr(appmod, "_practitioner_session_pid", lambda: "p1")
-    prices = {"info": 3000, "ff": 7500}
-    monkeypatch.setattr(appmod, "_get_product",
-                        lambda slug: {"price_cents": prices[slug]} if slug in prices else None)
+    cat = {"info": {"price_cents": 3000}, "ff": {"price_cents": 7500, "qty_pricing": True}}
+    monkeypatch.setattr(appmod, "_get_product", lambda slug: cat.get(slug))
     r = appmod.app.test_client().post("/api/practitioner/settings", json={"pricing": {
         "default_markup_pct": 0,
         "overrides": {"info": 2500, "ff": 6000, "unknown": 6000}}})
@@ -210,3 +211,33 @@ def test_non_ff_products_stay_out_of_the_volume_count(monkeypatch):
     q = dc.quote_dropship_cart([{"slug": "ff", "qty": 1}, {"slug": "info", "qty": 11}],
                                {"id": "p1", "modules_completed": 0})
     assert next(l for l in q["lines"] if l["slug"] == "ff")["base_cents"] == 5000
+
+
+
+# ── round 2 (final): a product with no discount never sells below retail ─────
+
+def test_selling_floor_is_retail_for_a_product_with_no_discount():
+    assert pp.selling_floor_cents(10000, 7000, discountable=False) == 10000
+    assert pp.selling_floor_cents(10000, 7000, discountable=True) == 7000
+    assert pp.selling_floor_cents(4000, 7000, discountable=False) == 4000
+    assert pp.selling_floor_cents(None, 7000, discountable=False) == 7000
+
+
+def test_dispensary_price_floor_for_a_plain_100_dollar_product(monkeypatch):
+    monkeypatch.setattr(dc.db, "connect", _boom)
+    monkeypatch.setattr(dc, "_is_ff", lambda slug: False)
+    monkeypatch.setattr(dc, "_wholesale_pct_for", lambda slug: None)
+    monkeypatch.setattr(dc, "_dropship_ff", lambda slug: False)
+    assert dc._practitioner_price_cents("p1", "device", 10000) == 10000
+
+
+def test_console_override_cannot_take_a_plain_product_below_retail(monkeypatch, tmp_path):
+    import app as appmod
+    monkeypatch.setattr(appmod, "LOG_DB", tmp_path / "chat_log.db")
+    monkeypatch.setattr(appmod, "_practitioner_session_pid", lambda: "p1")
+    cat = {"device": {"price_cents": 10000}, "ff": {"price_cents": 7500, "qty_pricing": True}}
+    monkeypatch.setattr(appmod, "_get_product", lambda slug: cat.get(slug))
+    r = appmod.app.test_client().post("/api/practitioner/settings", json={"pricing": {
+        "default_markup_pct": 0, "overrides": {"device": 7000, "ff": 7000}}})
+    got = {c["slug"]: c["clamped_to_cents"] for c in r.get_json()["clamped"]}
+    assert got == {"device": 10000}   # the FF at $70 is allowed; the device is held at retail

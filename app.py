@@ -21913,7 +21913,11 @@ def api_practitioner_settings_post():
             return jsonify({"ok": False, "error": f"override price for {slug!r} must be an integer (cents)"}), 400
         price_val = -(-price_val // 100) * 100   # whole dollars, rounded up (2026-10-01)
         # A product retailing below MAP is floored at its own retail (Glen 2026-10-06).
-        floor = _ppr.map_floor_cents((_get_product(slug) or {}).get("price_cents"), map_cents)
+        _p = _get_product(slug) or {}
+        floor = _ppr.selling_floor_cents(
+            _p.get("price_cents"), map_cents,
+            discountable=bool(_p.get("qty_pricing") or _p.get("ff_larger_size")
+                              or _p.get("wholesale_discount_pct") is not None))
         if price_val < floor:
             clamped.append({"slug": slug, "requested_cents": price_val, "clamped_to_cents": floor})
             price_val = floor

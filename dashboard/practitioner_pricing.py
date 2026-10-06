@@ -42,6 +42,18 @@ def map_floor_cents(retail_cents, map_cents):
     r = int(retail_cents or 0)
     return min(int(map_cents), r) if r > 0 else int(map_cents)
 
+def selling_floor_cents(retail_cents, map_cents, *, discountable=True):
+    """The lowest price a practitioner may sell this product at, to a patient.
+
+    A product with no discount of its own (not a Functional Formulation, no wholesale
+    price) is drop-shipped at retail, so it is never sold below retail: "no discount
+    unless otherwise specified" (Glen 2026-10-06). Anything else floors at
+    map_floor_cents."""
+    r = int(retail_cents or 0)
+    if not discountable and r > 0:
+        return r
+    return map_floor_cents(retail_cents, map_cents)
+
 def sku_base_cents(qty, modules_completed, retail_cents, wholesale_discount_pct=None, is_ff=True):
     """Drop-ship base for one product.
 
