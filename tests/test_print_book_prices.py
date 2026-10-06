@@ -68,14 +68,21 @@ def test_standard_books_show_the_30_dollar_srp_crossed_out():
 def test_standard_books_wholesale_at_10_dollars():
     from dashboard.wholesale_pricing import order_quote
     for slug in STANDARD:
-        out = order_quote([{"slug": slug, "qty": 1}], {"modules_completed": 0},
-                          catalog=PRODUCTS)
-        assert out["lines"][0]["unit_price_cents"] == 1000, slug
+        for qty in (1, 3, 40):
+            for modules in (0, 5, 12):
+                out = order_quote([{"slug": slug, "qty": qty}],
+                                  {"modules_completed": modules}, catalog=PRODUCTS)
+                line = out["lines"][0]
+                assert line["unit_price_cents"] == 1000, (slug, qty, modules)
+                assert line["line_total_cents"] == 1000 * qty, (slug, qty, modules)
 
 
 def test_standard_books_retail_at_20_dollars_in_the_cart():
     import app
     for slug in STANDARD:
-        out = app._price_cart([{"slug": slug, "qty": 1}],
-                              ship={"state": "CA", "country": "US"})
-        assert out["subtotal_list_cents"] == 2000, (slug, out["subtotal_list_cents"])
+        for qty in (1, 3):
+            out = app._price_cart([{"slug": slug, "qty": qty}],
+                                  ship={"state": "CA", "country": "US"})
+            assert out["subtotal_list_cents"] == 2000 * qty, (slug, qty)
+            if qty == 1:  # several copies take the cart-wide volume discount, by design
+                assert out["discount_cents"] == 0, slug
