@@ -164,7 +164,31 @@ def test_category_prefill_runs_at_load_before_the_country_fetch():
 
 def test_switching_category_shows_all_again():
     """Review round 1: Eye Care then Dental after the link left Biological looking pressed
-    while the search sent the whole category."""
+    while the search sent the whole category. Clicks the page's own handler in node."""
+    node = shutil.which("node")
+    if not node:
+        pytest.skip("node not installed")
     start = SRC.index("    document.querySelectorAll('.chip[data-parent]').forEach(btn => {")
-    handler = SRC[start:SRC.index("\n    });\n", start)]
-    assert "c.setAttribute('aria-pressed', c.dataset.sub === '__all__' ? 'true' : 'false')" in handler
+    handler = SRC[start:SRC.index("\n    });\n", start) + 8]
+    js = """
+      function el(data, pressed) { const e = {dataset: data, attrs: {'aria-pressed': pressed || 'false'},
+        handlers: {}, setAttribute(k, v) { this.attrs[k] = v; },
+        addEventListener(t, f) { this.handlers[t] = f; }}; e.classList = {add() {}}; return e; }
+      const chips = [el({parent: 'eye_care'}), el({parent: 'dental'}, 'true')];
+      const subs = [el({sub: '__all__'}), el({sub: 'biological'}, 'true')];
+      const document = {
+        querySelectorAll: sel => sel === '.chip[data-parent]' ? chips
+                               : sel === '.drill-down .sub-chip' ? subs : [],
+        getElementById: () => null,
+      };
+      const filterState = {parent: 'dental', sub: 'biological'};
+      function closeAllDrillDowns() {} function runSearch() {}
+      %s
+      chips[0].handlers.click();   // Eye Care
+      chips[1].handlers.click();   // Dental
+      console.log(JSON.stringify({sub: filterState.sub,
+                                  pressed: subs.filter(s => s.attrs['aria-pressed'] === 'true').map(s => s.dataset.sub)}));
+    """ % handler
+    r = subprocess.run([node, "-e", js], capture_output=True, text=True, timeout=30)
+    assert r.returncode == 0, r.stderr
+    assert json.loads(r.stdout) == {"sub": "__all__", "pressed": ["__all__"]}
