@@ -78,13 +78,19 @@ def test_selling_price_fallback_keeps_map_above_it(monkeypatch):
 
 def test_selling_price_with_settings_floors_at_retail(monkeypatch, tmp_path):
     import sqlite3
+    from dashboard import practitioner_settings as ps
     db_file = tmp_path / "log.db"
     monkeypatch.setattr(dc, "_LOG_DB", str(db_file))
     monkeypatch.setattr(dc.db, "connect", lambda path: sqlite3.connect(path))
-    # No stored settings: default markup 0, so the price is retail, floored at retail.
-    assert dc._practitioner_price_cents("p1", "info", 3000) == 3000
-    # Above MAP is untouched.
-    assert dc._practitioner_price_cents("p1", "ff", 7000) == 7000
+    cx = sqlite3.connect(str(db_file))
+    ps.init_settings_table(cx)
+    # Stored overrides the error fallback could never produce (it returns retail).
+    ps.set_pricing(cx, "p1", {"default_markup_pct": 0,
+                              "overrides": {"info": 2500, "info2": 3500, "ff": 6000}})
+    cx.close()
+    assert dc._practitioner_price_cents("p1", "info", 3000) == 3000   # below retail: floored at retail
+    assert dc._practitioner_price_cents("p1", "info2", 3000) == 3500  # markup above retail kept
+    assert dc._practitioner_price_cents("p1", "ff", 7000) == 6700     # above MAP: floored at MAP
 
 
 # ── dispensary order (patient pays the practitioner's price) ─────────────────
@@ -121,3 +127,52 @@ def test_console_override_floors_at_retail_below_map(monkeypatch, tmp_path):
     assert r.status_code == 200 and data["ok"] is True
     got = {c["slug"]: c["clamped_to_cents"] for c in data["clamped"]}
     assert got == {"info": 3000, "ff": 6700, "unknown": 6700}
+
+
+# ── round 1 review fixes ─────────────────────────────────────────────────────
+
+def test_flat_dropship_price_never_raises_a_line(monkeypatch):
+    _stub_cart(monkeypatch, {"book": 4000, "ff": 6997}, {"book": 50})
+    monkeypatch.setattr(dc, "_practitioner_dropship_unit_cents", lambda pid: 4000)
+    monkeypatch.setattr(dc, "_flat_ceiling_cents", lambda: 6997)
+    q = dc.quote_dropship_cart([{"slug": "book", "qty": 1}, {"slug": "ff", "qty": 1}],
+                               {"id": "p1", "modules_completed": 0})
+    units = {l["slug"]: l["unit_cents"] for l in q["lines"]}
+    assert units == {"book": 2660, "ff": 4000}
+
+
+def test_discounted_products_stay_out_of_the_volume_count(monkeypatch):
+    # 1 formula + 11 books: the formula is priced as 1 bottle ($50 base), as in a stocking order.
+    _stub_cart(monkeypatch, {"book": 4000, "ff": 7000}, {"book": 50})
+    q = dc.quote_dropship_cart([{"slug": "ff", "qty": 1}, {"slug": "book", "qty": 11}],
+                               {"id": "p1", "modules_completed": 0})
+    ff = next(l for l in q["lines"] if l["slug"] == "ff")
+    assert ff["base_cents"] == 5000
+
+
+def test_a_discount_never_takes_a_line_below_its_own_margin(monkeypatch):
+    import app as appmod
+    import dashboard.tax as _tax
+    prices = {"ff": 7000, "cheap": 3500}
+    monkeypatch.setattr(dc, "_retail_for", lambda slug: prices[slug])
+    monkeypatch.setattr(dc, "_wholesale_pct_for", lambda slug: None)
+    monkeypatch.setattr(dc, "practitioner_price_for", lambda pid, slug: prices[slug])
+    monkeypatch.setattr(_tax, "compute_get_cents",
+                        lambda s, *, channel, ship_to_state, resale_ok=False: 0)
+    monkeypatch.setattr(appmod, "_qty_eligible", lambda p: True)
+    monkeypatch.setattr(appmod, "_get_product", lambda slug: {})
+    monkeypatch.setattr(dc._pricing, "open_total_pct", lambda q, e: 0.0)
+    monkeypatch.setattr(dc._pricing, "program_total_pct", lambda q, e, m: 0.0)
+    monkeypatch.setattr(dc._pricing, "same_sku_pct", lambda q, e: 0.10)
+    monkeypatch.setattr(dc._pricing, "unit_floor_cents", lambda *a: 0)
+    monkeypatch.setattr(dc._pricing, "apply_discount", lambda s, pct, f: int(s * (1 - pct)))
+    out = dc.build_client_order(
+        [{"slug": "ff", "qty": 1}, {"slug": "cheap", "qty": 1}],
+        {"id": "p1", "modules_completed": 0},
+        patient={"email": "pat@x.com", "ship": {"name": "Pat", "state": "CA", "country": "US"}},
+        method="card", effective_settings={"on": True})
+    ff = pp.quote_line(selling_cents=7000, qty=2, modules=0, settings=dc._settings())
+    # The $35 line has no margin (base above price), so it gets no discount and
+    # takes nothing from the formula line's credit.
+    assert out["subtotal_cents"] == 6300 + 3500
+    assert out["margin_cents"] == ff["margin_cents"] - 700
