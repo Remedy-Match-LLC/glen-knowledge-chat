@@ -32,6 +32,25 @@ def drop_ship_base_cents(qty, modules_completed):
     practitioner's certification level (same curve as wholesale stocking)."""
     return _wp.blended_unit_price_cents(int(qty), int(modules_completed), _wp.DEFAULT_B)
 
+def map_floor_cents(retail_cents, map_cents):
+    """The lowest price a practitioner may sell this product at.
+
+    Glen, 2026-10-06: a product that retails below the minimum advertised price
+    is floored at its own retail, so a patient never pays more through a
+    practitioner than in the store ($30 infoceutical: $30, not $67). A missing
+    retail keeps the house minimum."""
+    r = int(retail_cents or 0)
+    return min(int(map_cents), r) if r > 0 else int(map_cents)
+
+def sku_base_cents(qty, modules_completed, retail_cents, wholesale_discount_pct=None):
+    """Drop-ship base for one product. A product with its own wholesale discount
+    (books, Molecular Hydrogen bottle) is based at retail less that discount,
+    the price a stocking order pays; anything else uses the blended curve."""
+    if wholesale_discount_pct is None:
+        return drop_ship_base_cents(qty, modules_completed)
+    pct = max(0, min(100, int(wholesale_discount_pct)))
+    return (int(retail_cents) * (100 - pct) + 50) // 100
+
 def service_fee_cents(selling_cents, base_cents, settings):
     """Flat fee = fee_pct of the markup (selling - base), never negative, rounded up to a
     whole dollar so the practitioner's drop-ship price (base + fee) is whole. Drop-ship only."""
@@ -64,15 +83,16 @@ def resolve_selling_cents(price_input, *, retail_cents, map_cents):
         raise MapViolation(f"{s} below MAP {map_cents}")
     return s
 
-def quote_line(*, selling_cents, qty, modules, settings):
+def quote_line(*, selling_cents, qty, modules, settings, base_cents=None):
     """Per-bottle economics for a drop-ship line. base = blended at this qty+cert;
     fee = 33% of markup; margin = selling - base - fee (>=0); dropship_wholesale = base+fee
     (what the practitioner pays in practitioner-paid mode).
 
     NOTE: `selling_cents` must already have passed MAP validation via
     `resolve_selling_cents` — quote_line does NOT re-check MAP (the advertised-price floor
-    is enforced at price resolution, before a quote is ever built)."""
-    base = drop_ship_base_cents(qty, modules)
+    is enforced at price resolution, before a quote is ever built).
+    `base_cents` replaces the blended base for a product with its own wholesale price."""
+    base = drop_ship_base_cents(qty, modules) if base_cents is None else int(base_cents)
     fee = service_fee_cents(selling_cents, base, settings)
     margin = max(0, int(selling_cents) - base - fee)
     return {

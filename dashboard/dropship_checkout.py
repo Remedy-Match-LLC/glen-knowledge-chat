@@ -45,12 +45,20 @@ def _retail_for(slug: str) -> int:
     return _app._get_product(slug)["price_cents"]
 
 
-def dropship_line_cents(*, retail_cents, qty, modules, settings):
+def _wholesale_pct_for(slug: str):
+    """The product's own wholesale discount %, or None. Monkeypatchable in tests."""
+    import app as _app
+    return (_app._get_product(slug) or {}).get("wholesale_discount_pct")
+
+
+def dropship_line_cents(*, retail_cents, qty, modules, settings, wholesale_discount_pct=None):
     """Per-line drop-ship economics. Fee is 33% of (retail - base) — RM's standard cut,
     since the patient price is private in practitioner-paid mode. Reuses Plan 1's
     quote_line with selling=retail."""
+    base = (None if wholesale_discount_pct is None else
+            _pp.sku_base_cents(qty, modules, retail_cents, wholesale_discount_pct))
     q = _pp.quote_line(selling_cents=int(retail_cents), qty=int(qty),
-                       modules=int(modules), settings=settings)
+                       modules=int(modules), settings=settings, base_cents=base)
     unit = q["dropship_wholesale_cents"]          # base + fee
     return {
         "base_cents": q["base_cents"],
@@ -139,7 +147,8 @@ def quote_dropship_cart(cart: List[dict], practitioner: dict) -> dict:
         retail_cents = _retail_for(slug)
         dl = dropship_line_cents(
             retail_cents=retail_cents, qty=total_bottles,
-            modules=modules, settings=settings)
+            modules=modules, settings=settings,
+            wholesale_discount_pct=_wholesale_pct_for(slug))
         flat_applies = (special_unit_cents is not None
                         and _flat_applies(slug, retail_cents, ceiling))
         unit_cents = special_unit_cents if flat_applies else dl["unit_cents"]
@@ -258,7 +267,7 @@ def _practitioner_price_cents(pid: str, slug: str, retail: int) -> int:
     """
     from dashboard import practitioner_settings as _ps
     settings = _settings()
-    map_floor = int(settings.get("map_default_cents", 7000))
+    map_floor = _pp.map_floor_cents(retail, settings.get("map_default_cents", 7000))
     try:
         cx = db.connect(_LOG_DB)
         cx.row_factory = sqlite3.Row
@@ -359,8 +368,11 @@ def build_client_order(cart: List[dict], practitioner: dict, *,
         # S: practitioner's selling price for this slug (>= MAP)
         s_cents = practitioner_price_for(pid, slug)
         # base/fee/margin use total_bottles for the blended curve
+        _pct = _wholesale_pct_for(slug)
         q = _pp.quote_line(selling_cents=s_cents, qty=total_bottles,
-                           modules=modules, settings=settings)
+                           modules=modules, settings=settings,
+                           base_cents=(None if _pct is None else _pp.sku_base_cents(
+                               total_bottles, modules, _retail_for(slug), _pct)))
         if eff:
             prod = _app._get_product(slug) or {}
             elig = bool(_app._qty_eligible(prod))
