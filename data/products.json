@@ -6690,7 +6690,9 @@
   },
   "book-refreshing-vision": {
    "name": "Refreshing Vision (book)",
-   "price_cents": 5000,
+   "price_cents": 4000,
+   "regular_cents": 5000,
+   "wholesale_discount_pct": 50,
    "bottle_type": "book",
    "source": "manual-add-2026-07-10"
   },
@@ -6720,13 +6722,17 @@
   },
   "book-materia-medica": {
    "name": "Materia Medica (book)",
-   "price_cents": 5000,
+   "price_cents": 4000,
+   "regular_cents": 5000,
+   "wholesale_discount_pct": 50,
    "bottle_type": "book",
    "source": "manual-add-2026-07-10"
   },
   "book-anima-medica": {
    "name": "Anima Medica (book)",
-   "price_cents": 5000,
+   "price_cents": 4000,
+   "regular_cents": 5000,
+   "wholesale_discount_pct": 50,
    "bottle_type": "book",
    "source": "manual-add-2026-07-10"
   },
