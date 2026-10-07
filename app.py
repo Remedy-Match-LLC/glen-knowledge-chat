@@ -5633,6 +5633,35 @@ def _chat_page_link_index():
     return index
 
 
+def _consented_session_email(session_id):
+    """The email this browser session gave with the Terms on the opt-in gate, else "".
+    Only a session row that has both an email and tos_agreed_at counts."""
+    if not session_id:
+        return ""
+    try:
+        with _db_lock, db.connect(LOG_DB) as cx:
+            state = begin_funnel.get_state(cx, session_id=session_id)
+        if state.get("tos_agreed_at"):
+            return (state.get("email") or "").strip().lower()
+    except Exception as e:
+        print(f"[match] consented email lookup failed: {e!r}", flush=True)
+    return ""
+
+
+def _begin_chat_identity(req, session_id, email):
+    """(tier, email) for a /begin/match/chat turn.
+
+    The opt-in gate stores the consented email in journey state, and the browser does
+    not echo it back in JSON. _resolve_chat_tier reads only the request and a portal
+    sign-in, so a visitor who opted in on this session ("Remember me": email + Terms)
+    arrived with no email. The match card showed, but the remedy email had no address
+    to queue to, and only GHL's free-course welcome went out (reproduced on prod,
+    2026-10-07). So fall back to this session's consented email."""
+    tier, eff = _resolve_chat_tier(req, session_id, email)
+    email = email or eff or _consented_session_email(session_id)
+    return tier, email
+
+
 def _resolve_chat_tier(req, session_id, email):
     """Best-effort; fail open to 'anonymous' on any error."""
     try:
@@ -6377,12 +6406,7 @@ def begin_match_chat():
         email = auth_user["email"]
         if not name and auth_user.get("name"):
             name = auth_user["name"]
-    _tier, _eff_email = _resolve_chat_tier(request, session_id, email)
-    # The opt-in gate stores the verified/consented email in journey state.  The
-    # browser intentionally does not echo it back in JSON, so use the effective
-    # server-side identity instead of discarding it.
-    if not email and _eff_email:
-        email = _eff_email
+    _tier, email = _begin_chat_identity(request, session_id, email)
     _blocked = _velocity_guard(request, _tier, session_id)
     if _blocked is not None:
         return _blocked
