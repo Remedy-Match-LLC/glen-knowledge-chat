@@ -133,11 +133,13 @@ def resolve_remedy_slug(name, catalog):
 
 
 def _live(slug, catalog):
-    """A stored slug must name the survivor, never the record it replaced."""
+    """A stored slug must name the survivor, never the record it replaced. An off-sale
+    record with no survivor stores nothing (Molybdenum Syntropy, 2026-10-07)."""
     if not slug:
         return None
     from dashboard.products import superseded_slug
-    return superseded_slug(slug, catalog or {})
+    live = superseded_slug(slug, catalog or {})
+    return None if ((catalog or {}).get(live) or {}).get("inactive") else live
 
 
 def _match(name, catalog):

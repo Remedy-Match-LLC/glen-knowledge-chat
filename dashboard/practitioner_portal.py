@@ -11,9 +11,11 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import secrets
 import sqlite3
 from dashboard import db
+from dashboard.ambiguous_product_names import is_ambiguous_product_name
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import List, Optional, Tuple
@@ -389,38 +391,73 @@ def _load_pairings() -> dict:
 def name_to_slug(name, catalog) -> Optional[str]:
     """Resolve a product NAME to a products.json slug (exact or fuzzy substring,
     matching either the catalog name or its pinecone_title) so the assistant can
-    add it to the cart."""
-    if not name:
+    add it to the cart. An off-sale (`inactive`) product resolves to its live
+    replacement (`superseded_by`), else to nothing."""
+    if not name or is_ambiguous_product_name(name):   # "Seacure" is two products
         return None
-    nl = name.strip().lower()
+    catalog = catalog or {}
+    return _live(_name_to_any_slug(name.strip().lower(), catalog), catalog)
+
+
+def _live(slug, catalog):
+    """`slug` if it is on sale, else its live replacement, else None (round 1,
+    2026-10-07: off-sale Molybdenum Syntropy reached the wholesale cart)."""
+    if not slug:
+        return None
+    from dashboard.products import superseded_slug
+    live = superseded_slug(slug, catalog)
+    p = catalog.get(live)
+    return live if p and not p.get("inactive") else None
+
+
+def _name_to_any_slug(nl, catalog):
     # An alias answers to its whole name only: a renamed product keeps its old name once
     # pinecone_title changes (Synergy C -> Vitamin C Syntropy, 2026-09-28), and never
     # captures a longer name that merely contains it (review rounds 1 and 2).
-    for slug, p in (catalog or {}).items():
+    for slug, p in catalog.items():
         if any((a or "").strip().lower() == nl for a in (p.get("aliases") or [])):
             return slug
     # An exact name or title beats any substring, wherever it sits in the catalog. After
     # the infoceutical merge (2026-10-03) "ES13 COH Metabolism Energetic Star
     # Infoceutical" contains es1-lymph's title "ES1", and the substring pass met es1-lymph
-    # first. This fixes exact spellings only: a near-miss such as "ES13 COH Metabolism"
-    # still substring-matches "ES1", as it did before the merge.
-    for slug, p in (catalog or {}).items():
+    # first.
+    for slug, p in catalog.items():
         if any((c or "").strip().lower() == nl for c in (p.get("name"), p.get("pinecone_title"))):
             return slug
-    for slug, p in (catalog or {}).items():
+    # Substring, first hit in file order, as always. One exception: a catalog name whose
+    # last word is a single letter must not end inside a longer word. "Synergy C" sat
+    # inside "Magnesium Synergy Capsules" and sent it to Vitamin C Syntropy (2026-09-30).
+    # Wider rules (whole words, longest overlap) were measured on 12,086 clinical names
+    # in review round 1 and moved hundreds of other names, many onto wrong products.
+    if len(nl) <= 4:
+        return None
+    for slug, p in catalog.items():
         for cand in (p.get("name"), p.get("pinecone_title")):
             pn = (cand or "").lower()
-            if pn and (nl == pn or (len(nl) > 4 and (nl in pn or pn in nl))):
+            if not pn:
+                continue
+            if nl in pn:
+                return slug
+            if pn in nl and not _ends_inside_a_word(pn, nl):
                 return slug
     return None
 
 
+def _ends_inside_a_word(pn, text):
+    """True when `pn` ends in a one-letter word and every place it occurs in `text`
+    runs on into a longer word ("synergy c" in "synergy capsules")."""
+    if len(pn.split()[-1]) != 1:
+        return False
+    return re.search(re.escape(pn) + r"(?![a-z0-9])", text) is None
+
+
 def is_orderable(slug, catalog=None) -> bool:
-    """A product is wholesale-orderable only if it exists and is not info_only
-    (external products like EMF/Kloud on the Centropix store are not)."""
+    """A product is wholesale-orderable only if it exists, is not info_only
+    (external products like EMF/Kloud on the Centropix store are not), and is not
+    off sale (`inactive`: Molybdenum Syntropy, 2026-10-06)."""
     cat = catalog if catalog is not None else pricing._load_catalog()
     p = cat.get(slug)
-    return bool(p) and not p.get("info_only")
+    return bool(p) and not p.get("info_only") and not p.get("inactive")
 
 
 def resolve_named_products(items, catalog=None) -> List[dict]:

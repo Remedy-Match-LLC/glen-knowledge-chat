@@ -180,11 +180,11 @@
     },
     {
       "id": "seacure-synergy",
-      "label": "Seacure Synergy",
+      "label": "SeaAmino Syntropy",
       "aliases": [
         "seacure syntropy"
       ],
-      "summary": "Seacure Synergy is a Syntropy formulation aimed at enhancing nutrient absorption, circulation, and tissue delivery.",
+      "summary": "SeaAmino Syntropy is a Syntropy formulation aimed at enhancing nutrient absorption, circulation, and tissue delivery.",
       "cluster": "gut-digestive",
       "parent": "gut-digestive",
       "namespaces": [
@@ -196,17 +196,17 @@
           "type": "product",
           "source": "remedymatch",
           "url": "https://myhealingoasis.com/begin/product/seaamino-syntropy",
-          "title": "Seacure Synergy"
+          "title": "SeaAmino Syntropy"
         }
       ]
     },
     {
       "id": "vitamin-d-synergy",
-      "label": "Vitamin D Synergy",
+      "label": "Vitamin D Syntropy",
       "aliases": [
         "vitamin d syntropy"
       ],
-      "summary": "Vitamin D Synergy is a comprehensive formulation supporting calcium metabolism, immunity, and nerve function via Vitamin D.",
+      "summary": "Vitamin D Syntropy is a comprehensive formulation supporting calcium metabolism, immunity, and nerve function via Vitamin D.",
       "cluster": "foundations-terrain",
       "parent": "foundations-terrain",
       "namespaces": [
@@ -218,7 +218,7 @@
           "type": "product",
           "source": "remedymatch",
           "url": "https://myhealingoasis.com/begin/product/vitamin-d-syntropy",
-          "title": "Vitamin D Synergy"
+          "title": "Vitamin D Syntropy"
         }
       ]
     },
@@ -2777,11 +2777,12 @@
     },
     {
       "id": "zinc-synergy",
-      "label": "Zinc Synergy",
+      "label": "Zinc Syntropy",
       "aliases": [
-        "zinc synergy supplement"
+        "zinc synergy supplement",
+        "zinc syntropy supplement"
       ],
-      "summary": "Zinc Synergy addresses zinc deficiency linked to oxidative aging, immunosenescence, and chronic disease risk.",
+      "summary": "Zinc Syntropy addresses zinc deficiency linked to oxidative aging, immunosenescence, and chronic disease risk.",
       "cluster": "minerals",
       "parent": "minerals",
       "namespaces": [
@@ -2793,7 +2794,7 @@
           "type": "product",
           "source": "remedymatch",
           "url": "https://myhealingoasis.com/begin/product/zinc-syntropy",
-          "title": "Zinc Synergy"
+          "title": "Zinc Syntropy"
         }
       ]
     },
@@ -3154,11 +3155,11 @@
     },
     {
       "id": "vitamin-a-synergy",
-      "label": "Vitamin A Synergy",
+      "label": "Vitamin A Syntropy",
       "aliases": [
         "vitamin a syntropy"
       ],
-      "summary": "Vitamin A Synergy is a planned formula combining vitamin A with bioavailability-enhancing botanicals including ginkgo and moringa.",
+      "summary": "Vitamin A Syntropy is a formula combining vitamin A with bioavailability-enhancing botanicals including ginkgo and moringa.",
       "cluster": "eye-health",
       "parent": "eye-health",
       "namespaces": [
@@ -3170,7 +3171,7 @@
           "type": "product",
           "source": "remedymatch",
           "url": "https://myhealingoasis.com/begin/product/vitamin-a-syntropy",
-          "title": "Vitamin A Synergy"
+          "title": "Vitamin A Syntropy"
         }
       ]
     },
@@ -3720,11 +3721,12 @@
     },
     {
       "id": "molybdenum-synergy",
-      "label": "Molybdenum Synergy",
+      "label": "Molybdenum Syntropy",
       "aliases": [
-        "molybdenum synergy formula"
+        "molybdenum synergy formula",
+        "molybdenum syntropy formula"
       ],
-      "summary": "Molybdenum Synergy is a syntropy-category mineral formulation featuring molybdenum, priced at $70.",
+      "summary": "Molybdenum Syntropy is a syntropy-category mineral formulation featuring molybdenum, priced at $70.",
       "cluster": "minerals",
       "parent": "minerals",
       "namespaces": [
@@ -3736,7 +3738,7 @@
           "type": "product",
           "source": "remedymatch",
           "url": "https://myhealingoasis.com/begin/product/molybdenum-syntropy",
-          "title": "Molybdenum Synergy"
+          "title": "Molybdenum Syntropy"
         }
       ]
     },
@@ -6740,12 +6742,13 @@
     },
     {
       "id": "magnesium-synergy",
-      "label": "Magnesium Synergy",
+      "label": "Magnesium Syntropy",
       "aliases": [
         "magnesium syntropy",
-        "magnesium synergy blend"
+        "magnesium synergy blend",
+        "magnesium syntropy blend"
       ],
-      "summary": "Magnesium Synergy is a syntropy formulation providing multiple bioavailable magnesium forms including magnesium threonate for blood-brain barrier crossing.",
+      "summary": "Magnesium Syntropy is a syntropy formulation providing multiple bioavailable magnesium forms including magnesium threonate for blood-brain barrier crossing.",
       "cluster": "minerals",
       "parent": "minerals",
       "namespaces": [
@@ -6757,7 +6760,7 @@
           "type": "product",
           "source": "remedymatch",
           "url": "https://myhealingoasis.com/begin/product/magnesium-syntropy",
-          "title": "Magnesium Synergy"
+          "title": "Magnesium Syntropy"
         }
       ]
     },

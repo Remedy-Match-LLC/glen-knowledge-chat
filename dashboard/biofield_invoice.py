@@ -13,6 +13,8 @@ import os
 import urllib.parse
 import urllib.request
 
+from dashboard.ambiguous_product_names import is_ambiguous_product_name
+
 BIOFIELD_SLUG = "biofield-analysis"
 
 DEFAULT_INVOICE_NOTE = "Biofield Analysis and remedies. Payable by Credit Card or Zelle."
@@ -53,6 +55,15 @@ _RETIRED_NAMES = {
     # Reports authored before then still name the powder.
     "vitamin b12 sublingual powder": "sublingual-b12",
     "sublingual b12 powder": "sublingual-b12",   # the FMP snapshot name the picker offers
+    # Six Synergy names became Syntropy 2026-09-30. clinical.db holds 137 visit_remedy
+    # rows under the first five. Molybdenum is off sale, so its old name bills nothing.
+    "magnesium synergy": "magnesium-syntropy",
+    "vitamin a synergy": "vitamin-a-syntropy",
+    "zinc synergy": "zinc-syntropy",
+    "vitamin d synergy": "vitamin-d-syntropy",
+    "vitamin d synergy powder": "vitamin-d-syntropy",
+    "seacure synergy": "seaamino-syntropy",
+    "molybdenum synergy": "molybdenum-syntropy",
 }
 
 
@@ -62,7 +73,7 @@ def resolve_line_slug(name, catalog):
     SKU (ES1 vs ES13, Vitamin A vs Vitamin D). A non-exact name returns None and the
     caller lists it as skipped for manual add against the real catalog."""
     name = (name or "").strip().lower()
-    if not name:
+    if not name or is_ambiguous_product_name(name):   # "Seacure" is two products
         return None
     norm = " ".join(name.split())
     for it in catalog or []:

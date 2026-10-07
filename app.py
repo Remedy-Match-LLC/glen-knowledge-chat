@@ -13714,6 +13714,22 @@ _PAIRINGS = _load_json(DATA_DIR / "upsell-pairings.json", default={"pairings": {
 # "Stress Release" vs "Emotional Stress Release" false match).
 _TITLE_TO_SLUG = {(p.get("pinecone_title") or p.get("name")): s
                   for s, p in (_PRODUCTS.get("products") or {}).items()}
+# A renamed product is found by its new name before its vector is re-titled, and by its
+# old names after. setdefault, so a real title always wins. Aliases only for products
+# that opt in (`report_aliases`): a bare "BFA" stays unresolved (2026-10-02).
+def _index_names_and_aliases(index, products):
+    for slug, p in products.items():
+        if p.get("name"):
+            index.setdefault(p["name"], slug)
+    for slug, p in products.items():
+        if p.get("report_aliases") is True:
+            for a in (p.get("aliases") or []):
+                if isinstance(a, str) and a:
+                    index.setdefault(a, slug)
+    return index
+
+
+_index_names_and_aliases(_TITLE_TO_SLUG, _PRODUCTS.get("products") or {})
 _COMPLEMENT_CACHE = {}
 
 # Resolve a remedy by EITHER its catalog name or pinecone_title, HTML-unescaped and
@@ -13764,6 +13780,12 @@ def _resolve_complement(name):
     except Exception as e:
         print(f"[concierge] resolve {name}: {e}", flush=True)
     slug = _TITLE_TO_SLUG.get(title) if title else None
+    if slug:
+        # An off-sale product is neither added nor opened on the store: its vector still
+        # carries the old page's url and price (Molybdenum Syntropy, 2026-10-07).
+        slug = _live_slug(slug)
+        if not slug:
+            url = price = None
     out = {"name": name, "title": title, "url": url, "price": price,
            "slug": slug, "in_catalog": bool(slug)}
     _COMPLEMENT_CACHE[key] = out
@@ -19021,7 +19043,9 @@ def _assist_resolve_products(items):
                                  namespace="specific-formulations", include_metadata=True)
                 if res.matches and res.matches[0].score >= 0.83:
                     title = (res.matches[0].metadata or {}).get("title")
-                    slug = _TITLE_TO_SLUG.get(title)
+                    # Past a retired record to its replacement, or nothing: an off-sale
+                    # vector ("Molybdenum Synergy") must not get an Add button.
+                    slug = _live_slug(_TITLE_TO_SLUG.get(title))
             except Exception as e:
                 print(f"[assist] semantic resolve {nm!r}: {e!r}", flush=True)
         if not slug or slug in seen or (cat.get(slug) or {}).get("info_only"):

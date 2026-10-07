@@ -31,7 +31,7 @@ _UPGRADE_MAP = {
     },
     "vitamin d": {
         "slug": "vitamin-d-syntropy",
-        "reason": "Vitamin D Synergy pairs D3 with the cofactors (K2, etc.) that route "
+        "reason": "Vitamin D Syntropy pairs D3 with the cofactors (K2, etc.) that route "
                    "calcium correctly, rather than D3 alone.",
     },
     "turmeric": {
@@ -46,7 +46,7 @@ _UPGRADE_MAP = {
     },
     "zinc": {
         "slug": "zinc-syntropy",
-        "reason": "Zinc Synergy balances zinc with copper and other cofactors to avoid "
+        "reason": "Zinc Syntropy balances zinc with copper and other cofactors to avoid "
                    "the copper depletion single-ingredient zinc can cause.",
     },
     "b12": {

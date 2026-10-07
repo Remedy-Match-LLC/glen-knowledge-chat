@@ -160,7 +160,7 @@
    "relation": "substitute",
    "ff_alts": [
     "Pea Protein Aminos",
-    "Seacure Synergy"
+    "SeaAmino Syntropy"
    ]
   },
   {
@@ -298,7 +298,7 @@
     "Essential Nutrients"
    ],
    "product_type": "supplement",
-   "best_ff": "Magnesium Synergy",
+   "best_ff": "Magnesium Syntropy",
    "relation": "substitute",
    "ff_alts": [
     "Vitamin C Syntropy",
@@ -313,7 +313,7 @@
     "Essential Nutrients"
    ],
    "product_type": "supplement",
-   "best_ff": "Magnesium Synergy",
+   "best_ff": "Magnesium Syntropy",
    "relation": "substitute",
    "ff_alts": [
     "Vitamin C Syntropy",
@@ -454,7 +454,7 @@
    "best_ff": "Hydrolyzed Collagen",
    "relation": "substitute",
    "ff_alts": [
-    "Seacure Synergy",
+    "SeaAmino Syntropy",
     "Perfect Skin"
    ]
   },
@@ -578,7 +578,7 @@
     "Healthy Aging"
    ],
    "product_type": "supplement",
-   "best_ff": "Vitamin D Synergy",
+   "best_ff": "Vitamin D Syntropy",
    "relation": "substitute",
    "ff_alts": [
     "Cholecalciferol"
@@ -725,7 +725,7 @@
    "best_ff": "NeurOmega",
    "relation": "substitute",
    "ff_alts": [
-    "Seacure Synergy"
+    "SeaAmino Syntropy"
    ]
   },
   {
@@ -1239,7 +1239,7 @@
     "Mood and Stress Management"
    ],
    "product_type": "supplement",
-   "best_ff": "Zinc Synergy",
+   "best_ff": "Zinc Syntropy",
    "relation": "substitute",
    "ff_alts": [
     "Zinc Ascorbate",
@@ -1272,7 +1272,7 @@
     "Active Living"
    ],
    "product_type": "supplement",
-   "best_ff": "Magnesium Synergy",
+   "best_ff": "Magnesium Syntropy",
    "relation": "substitute",
    "ff_alts": [
     "Focus Neuro-Magnesium",
@@ -1502,7 +1502,7 @@
    "relation": "complement",
    "ff_alts": [
     "Stamina Plus",
-    "Vitamin A Synergy",
+    "Vitamin A Syntropy",
     "Bioavailability Blend"
    ]
   },
@@ -2211,7 +2211,7 @@
     "Healthy Aging"
    ],
    "product_type": "supplement",
-   "best_ff": "Vitamin D Synergy",
+   "best_ff": "Vitamin D Syntropy",
    "relation": "substitute",
    "ff_alts": [
     "Cholecalciferol"
@@ -2226,7 +2226,7 @@
     "Healthy Aging"
    ],
    "product_type": "supplement",
-   "best_ff": "Vitamin D Synergy",
+   "best_ff": "Vitamin D Syntropy",
    "relation": "substitute",
    "ff_alts": [
     "Bone Builder"

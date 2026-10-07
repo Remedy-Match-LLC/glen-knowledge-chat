@@ -11,6 +11,8 @@ import json
 import os
 import re
 
+from dashboard.ambiguous_product_names import is_ambiguous_product_name
+
 _REPO_DATA = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data")
 _FILENAME = "clinical_theory_catalog.json"
 _OVERRIDES_FILENAME = "clinical_remedy_overrides.json"
@@ -102,7 +104,20 @@ def product_name_index(products):
     Also indexes the normalised SLUG (deterministic fallback) so a remedy named
     after the slug rather than the display name still resolves — e.g. product
     "Sleep Synergy" (slug sleep-syntropy) matches a remedy called "Sleep Syntropy".
-    Display names take precedence over slug keys."""
+    Display names take precedence over slug keys. A retired (`inactive`) product
+    stays in, because its page sends the reader on to its live replacement. One with
+    no live replacement is left out, so its name stays plain text rather than linking
+    to a page that sells nothing (Molybdenum Syntropy, 2026-10-06; review round 3)."""
+    from dashboard.products import superseded_slug
+    all_products = products or {}
+
+    def _sells(s, p):
+        if not (isinstance(p, dict) and p.get("inactive")):
+            return True
+        live = superseded_slug(s, all_products)
+        p2 = all_products.get(live)
+        return live != s and isinstance(p2, dict) and not p2.get("inactive")
+    products = {s: p for s, p in all_products.items() if _sells(s, p)}
     idx = {}
     for slug, p in (products or {}).items():
         nm = _norm_name(p.get("name") if isinstance(p, dict) else "")
@@ -143,7 +158,7 @@ def remedy_product_slug(name, name_index, overrides=None):
     """Product slug for a remedy name: exact normalised match, then curated
     override (by exact or normalised name); else None. No fuzzy matching."""
     nm = _norm_name(name)
-    if not nm:
+    if not nm or is_ambiguous_product_name(nm):   # "Seacure" is two products
         return None
     if name_index and nm in name_index:
         return name_index[nm]
