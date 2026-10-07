@@ -1243,6 +1243,11 @@
       const nameInput = addField('Your name', 'input', { type: 'text', required: '', autocomplete: 'name' });
       const emailInput = addField('Your email address', 'input', { type: 'email', required: '', autocomplete: 'email' });
       const phoneInput = addField('Your phone (optional)', 'input', { type: 'tel', autocomplete: 'tel' });
+      // Optional text opt-in, wording approved by Glen 2026-10-06. Unticked by default.
+      const smsWrap = document.createElement('div');
+      smsWrap.innerHTML = "<label class=\"sms-consent\" style=\"display:flex;gap:8px;align-items:flex-start;font-weight:400;font-size:13px;line-height:1.4;margin:6px 0 12px;text-transform:none\"><input type=\"checkbox\" style=\"width:auto;margin:3px 0 0;flex:none\"><span>Text me about my orders, appointments and account. Message frequency varies. Message and data rates may apply. Reply STOP to stop or HELP for help. See our <a href=\"/privacy\" target=\"_blank\" rel=\"noopener\">Privacy Policy</a> and <a href=\"/terms\" target=\"_blank\" rel=\"noopener\">Terms</a>.</span></label>";
+      modal.appendChild(smsWrap);
+      const smsInput = smsWrap.querySelector('input');
       const challengeInput = addField("What's the main thing you're working through?", 'textarea', { required: '', placeholder: "What's the main thing you're working through?" });
       const goalInput = addField('What does success look like for you?', 'textarea', { required: '', placeholder: 'What does success look like for you?' });
 
@@ -1316,6 +1321,7 @@
             client_name,
             client_email,
             client_phone,
+            sms_consent: smsInput.checked,
             main_challenge,
             main_goal,
             practitioner_ids: [...selectedIds]

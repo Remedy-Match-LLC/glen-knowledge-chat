@@ -41,14 +41,24 @@ def test_unsubscribe_link_opts_out(client):
     assert N.get_state(sqlite3.connect(appmod.LOG_DB), "u@y.com")["opt_status"] == "out"
 
 
-def test_twilio_inbound_stop_start(client):
+def test_twilio_inbound_stop_start(client, monkeypatch):
+    # The route acts only on a Twilio-signed request (tests/test_sms_consent.py covers that).
+    import base64, hashlib, hmac
     c, appmod = client
+    monkeypatch.setenv("TWILIO_AUTH_TOKEN", "tok")
+
+    def post(data):
+        url = "https://illtowell.com/sms/inbound"
+        mac = hmac.new(b"tok", (url + "".join(k + v for k, v in sorted(data.items()))).encode(),
+                       hashlib.sha1).digest()
+        c.post("/sms/inbound", data=data, base_url="https://illtowell.com",
+               headers={"X-Twilio-Signature": base64.b64encode(mac).decode()})
     import sqlite3
     from dashboard import notify_state as N
     cx = sqlite3.connect(appmod.LOG_DB); N.set_phone(cx, "t@y.com", "+15551230000"); cx.commit()
-    c.post("/sms/inbound", data={"From": "+15551230000", "Body": "STOP"})
+    post({"From": "+15551230000", "Body": "STOP"})
     assert N.get_state(sqlite3.connect(appmod.LOG_DB), "t@y.com")["opt_status"] == "out"
-    c.post("/sms/inbound", data={"From": "+15551230000", "Body": "START"})
+    post({"From": "+15551230000", "Body": "START"})
     assert N.get_state(sqlite3.connect(appmod.LOG_DB), "t@y.com")["opt_status"] == "in"
 
 

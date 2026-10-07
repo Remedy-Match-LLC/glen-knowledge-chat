@@ -35,6 +35,7 @@
     </div>
     <label>Practice / business name</label><input id="practice" placeholder="Optional">
     <label>Phone</label><input id="phone" type="tel" autocomplete="tel" placeholder="Optional">
+    <label class="sms-consent" style="display:flex;gap:8px;align-items:flex-start;font-weight:400;font-size:13px;line-height:1.4;margin:6px 0 12px;text-transform:none"><input type="checkbox" id="sms_consent" style="width:auto;margin:3px 0 0;flex:none"><span>Text me about my orders, appointments and account. Message frequency varies. Message and data rates may apply. Reply STOP to stop or HELP for help. See our <a href="/privacy" target="_blank" rel="noopener">Privacy Policy</a> and <a href="/terms" target="_blank" rel="noopener">Terms</a>.</span></label>
     <label>Credentials / notes</label><textarea id="notes" rows="2" placeholder="Optional — license, certification, anything we should know"></textarea>
     <label class="tos"><input id="tos" type="checkbox">
       <span>I understand this is wellness coaching and education, not medical advice, and I agree to the
@@ -64,6 +65,7 @@ $("submit").addEventListener("click", async () => {
         license_state: $("state").value.trim(),
         practice_name: $("practice").value.trim(),
         phone: $("phone").value.trim(),
+        sms_consent: $("sms_consent").checked,
         credentials: $("notes").value.trim(),
         tos: true
       })
