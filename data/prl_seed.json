@@ -738,7 +738,7 @@
     "Healthy Aging"
    ],
    "product_type": "supplement",
-   "best_ff": "Iron Synergy",
+   "best_ff": "Iron Syntropy",
    "relation": "substitute",
    "ff_alts": [
     "Spleen Support"
@@ -959,7 +959,7 @@
    "relation": "consider",
    "ff_alts": [
     "Man Manna",
-    "Cistus Synergy"
+    "Cistus Shield ImmuniTea"
    ]
   },
   {
@@ -975,7 +975,7 @@
    "best_ff": "Polyphenols (Camellia sinensis)",
    "relation": "complement",
    "ff_alts": [
-    "Cistus Synergy",
+    "Cistus Shield ImmuniTea",
     "Man Manna"
    ]
   },
@@ -1112,7 +1112,7 @@
    "best_ff": "Immune Modulation",
    "relation": "substitute",
    "ff_alts": [
-    "Cistus Synergy",
+    "Cistus Shield ImmuniTea",
     "VirEx"
    ]
   },
@@ -1128,7 +1128,7 @@
    "best_ff": "Immune Modulation",
    "relation": "substitute",
    "ff_alts": [
-    "Cistus Synergy",
+    "Cistus Shield ImmuniTea",
     "VirEx"
    ]
   },
@@ -1599,7 +1599,7 @@
    "best_ff": "Immune Modulation",
    "relation": "substitute",
    "ff_alts": [
-    "Cistus Synergy",
+    "Cistus Shield ImmuniTea",
     "VirEx",
     "Spleen Support"
    ]
@@ -1805,7 +1805,7 @@
     "Healthy Aging"
    ],
    "product_type": "supplement",
-   "best_ff": "Iron Synergy",
+   "best_ff": "Iron Syntropy",
    "relation": "substitute",
    "ff_alts": [
     "Iron Out",
