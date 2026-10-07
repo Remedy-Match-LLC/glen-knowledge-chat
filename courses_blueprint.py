@@ -456,12 +456,13 @@ def lesson_page(course_slug, module_slug, lesson_slug):
             f'.then(function(r){{return r.json()}}).then(function(d){{'
             f'document.getElementById("mu-hw-ok").textContent=d.ok?("Submitted."+(d.feedback?" "+d.feedback:"")):(d.error||"Error");}});}}'
             f'</script></div>')
-    body += hw_html
+    if course.homework:
+        body += hw_html
 
     cert_price_set = bool(os.environ.get("STRIPE_MODULE_CERT_PRICE_ID", "").strip())
     import app as _appmod  # late import: the certifiable-module set
-    cert_certifiable = (course_slug != _appmod._CERT_COURSE
-                        or module_slug in _appmod._CERT_REQUIRED_MODULES)
+    cert_certifiable = course.certifiable and (course_slug != _appmod._CERT_COURSE
+                                               or module_slug in _appmod._CERT_REQUIRED_MODULES)
     if email and cert_price_set and cert_certifiable:
         cert_module = next((m for m in course.modules if m.slug == module_slug), None)
         cert_lesson_slugs = [l.slug for l in cert_module.lessons] if cert_module else []
@@ -523,7 +524,7 @@ def courses_submit_homework(course_slug, module_slug):
     except FileNotFoundError:
         return jsonify({"error": "not found"}), 404
     module = next((m for m in course.modules if m.slug == module_slug), None)
-    if module is None:
+    if module is None or not course.homework:
         return jsonify({"error": "not found"}), 404
     assignment = _HOMEWORK_ASSIGNMENT.get(module_slug, _HOMEWORK_DEFAULT)
     cx = _connect()
@@ -714,6 +715,8 @@ def courses_certify_module(course_slug, module_slug):
     # toward the credential; refuse to sell a dead-end certification for a
     # non-required module (e.g. the intro).
     if course_slug == appmod._CERT_COURSE and module_slug not in appmod._CERT_REQUIRED_MODULES:
+        return jsonify({"error": "not certifiable"}), 404
+    if not course.certifiable:
         return jsonify({"error": "not certifiable"}), 404
     lesson_slugs = [l.slug for l in module.lessons]
 

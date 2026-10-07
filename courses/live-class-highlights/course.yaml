@@ -1,5 +1,7 @@
 title: Live Class Highlights
 description: Short teaching segments from Dr. Glen's Wednesday classes, by date.
+homework: false
+certifiable: false
 modules:
   - slug: 01-2026
     title: "2026"

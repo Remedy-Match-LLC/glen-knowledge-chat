@@ -21,12 +21,24 @@ def _lessons():
     return [l for m in course.modules for l in m.lessons]
 
 
-def test_nine_dated_lessons_all_public():
+# One lesson per class. 23 and 30 September each had a MasterClass and a Group Coaching.
+EXPECTED = [
+    "2026-07-08-dfy-wellness-foresight-masterclass",
+    "2026-07-15-dfy-wellness-foresight-masterclass",
+    "2026-07-22-dfy-wellness-foresight-masterclass",
+    "2026-08-19-free-wellness-whispering-masterclass",
+    "2026-08-26-free-wellness-whispering-masterclass",
+    "2026-09-23-free-wellness-whispering-masterclass",
+    "2026-09-23-group-coaching",
+    "2026-09-30-free-wellness-whispering-masterclass",
+    "2026-09-30-group-coaching",
+]
+
+
+def test_exact_lessons_in_date_order_all_public():
     lessons = _lessons()
-    assert len(lessons) == 9
+    assert [l.slug for l in lessons] == EXPECTED
     assert {l.access for l in lessons} == {"public"}
-    slugs = [l.slug for l in lessons]
-    assert slugs == sorted(slugs), "lessons run in date order"
 
 
 def test_each_lesson_keeps_exactly_one_rumble_video_after_sanitizing():
@@ -65,3 +77,56 @@ def test_course_is_listed_on_the_course_index(client):
     r = client.get("/learn", base_url=_MHOST)
     assert r.status_code == 200
     assert b'href="/learn/live-class-highlights"' in r.data
+
+
+def _client_and_app(monkeypatch, tmp_path):
+    monkeypatch.setenv("DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("COURSES_ROOT", REPO_COURSES)
+    monkeypatch.setenv("MENTORSHIP_BASE_URL", _MHOST)
+    import app as appmod
+    importlib.reload(appmod)
+    monkeypatch.setattr(appmod, "send_mentorship_setup_link", lambda *a, **k: ("test", None))
+    appmod.app.config["TESTING"] = True
+    return appmod.app.test_client(), appmod
+
+
+def _signed_in_with_module_done(appmod, email="h@example.com"):
+    """A learner who has watched every lesson and has a homework row, the state
+    in which a certifiable course offers the $200 module certification."""
+    import sqlite3
+    from dashboard import course_progress as cp
+    from dashboard import course_tokens
+    lessons = _lessons()
+    with sqlite3.connect(appmod.LOG_DB) as cx:
+        course_tokens.init_course_tokens_table(cx)
+        tok = course_tokens.mint_course_token(cx, email, "T")
+        for l in lessons:
+            cp.mark_watched(cx, email, SLUG, l.module_slug, l.slug)
+        cp.record_homework(cx, email, SLUG, lessons[0].module_slug, "takeaways")
+    return tok, lessons[0]
+
+
+def test_no_homework_box_and_no_certification_offer(monkeypatch, tmp_path):
+    c, appmod = _client_and_app(monkeypatch, tmp_path)
+    monkeypatch.setenv("STRIPE_MODULE_CERT_PRICE_ID", "price_modcert")
+    tok, lesson = _signed_in_with_module_done(appmod)
+    r = c.get(f"/learn/{SLUG}/{lesson.module_slug}/{lesson.slug}?token={tok}", base_url=_MHOST)
+    assert r.status_code == 200
+    body = r.get_data(as_text=True)
+    assert "left out to protect their privacy" in body
+    assert "Homework" not in body
+    assert "Certify this module" not in body
+    assert "/certify" not in body
+
+
+def test_certify_and_homework_routes_refuse_this_course(monkeypatch, tmp_path):
+    c, appmod = _client_and_app(monkeypatch, tmp_path)
+    monkeypatch.setenv("STRIPE_MODULE_CERT_PRICE_ID", "price_modcert")
+    monkeypatch.setenv("STRIPE_ACTIVE", "true")
+    tok, lesson = _signed_in_with_module_done(appmod)
+    r = c.post(f"/api/courses/{SLUG}/{lesson.module_slug}/certify?token={tok}", json={}, base_url=_MHOST)
+    assert r.status_code == 404
+    assert r.get_json()["error"] == "not certifiable"
+    r = c.post(f"/api/courses/{SLUG}/{lesson.module_slug}/homework?token={tok}",
+               json={"payload": "my notes"}, base_url=_MHOST)
+    assert r.status_code == 404
