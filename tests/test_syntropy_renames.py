@@ -272,10 +272,19 @@ def test_invoice_line_end_to_end(old, slug, remedy, qty):
 
 # ── clinical overrides ───────────────────────────────────────────────────────
 
-@pytest.mark.parametrize("name,slug", ACCEPT + [("Molybdenum Synergy", "molybdenum-syntropy"),
-                                                ("Molybdenum Syntropy", "molybdenum-syntropy")])
+@pytest.mark.parametrize("name,slug", ACCEPT)
 def test_clinical_links_find_each_name(catalog, name, slug):
     assert remedy_product_slug(name, product_name_index(catalog), load_overrides()) == slug
+
+
+@pytest.mark.parametrize("name", ["Molybdenum Synergy", "Molybdenum Syntropy"])
+def test_clinical_links_never_point_at_off_sale_molybdenum(catalog, name):
+    """Round 2: a glossary link renders as /begin/product/<slug>, a page selling nothing."""
+    assert remedy_product_slug(name, product_name_index(catalog), load_overrides()) is None
+
+
+def test_no_override_points_at_off_sale_molybdenum():
+    assert "molybdenum-syntropy" not in load_overrides().values()
 
 
 @pytest.mark.parametrize("name", AMBIGUOUS)
@@ -294,15 +303,40 @@ def test_overrides_are_keyed_in_lower_case():
     Case key misses "SeaCure Synergy"."""
     ov = load_overrides()
     for s, (old, _, _) in RENAMES.items():
-        assert ov[old.lower()] == s
+        if s in LIVE:
+            assert ov[old.lower()] == s
 
 
 # ── portal cart ──────────────────────────────────────────────────────────────
 
-@pytest.mark.parametrize("name,slug", ACCEPT + [("Molybdenum Synergy", "molybdenum-syntropy"),
-                                                ("Molybdenum Syntropy", "molybdenum-syntropy")])
+@pytest.mark.parametrize("name,slug", ACCEPT)
 def test_cart_finds_each_name(catalog, name, slug):
     assert name_to_slug(name, catalog) == slug
+
+
+@pytest.mark.parametrize("name", ["Molybdenum Synergy", "Molybdenum Syntropy", "Molybdenum"])
+def test_cart_never_offers_off_sale_molybdenum(catalog, name):
+    """Round 1: the assistant gave it an Add button and the cart accepted it."""
+    assert name_to_slug(name, catalog) is None
+
+
+def test_off_sale_products_are_not_orderable():
+    from dashboard.practitioner_portal import is_orderable
+    cat = _catalog()
+    assert is_orderable("molybdenum-syntropy", cat) is False
+    assert is_orderable("magnesium-syntropy", cat) is True
+    assert all(not is_orderable(s, cat) for s, p in cat.items() if p.get("inactive"))
+
+
+def test_cart_sends_a_retired_twin_to_its_replacement():
+    cat = {"old": {"name": "Old Powder", "inactive": True, "superseded_by": "new"},
+           "new": {"name": "New Capsules"},
+           "gone": {"name": "Gone Formula", "inactive": True}}
+    assert name_to_slug("Old Powder", cat) == "new"
+    assert name_to_slug("Gone Formula", cat) is None
+    loop = {"a": {"name": "Alpha Blend", "inactive": True, "superseded_by": "b"},
+            "b": {"name": "Beta Blend", "inactive": True, "superseded_by": "a"}}
+    assert name_to_slug("Alpha Blend", loop) is None
 
 
 @pytest.mark.parametrize("name", AMBIGUOUS)
@@ -319,12 +353,24 @@ def test_cart_never_reads_synergy_c_inside_synergy_capsules(catalog):
     assert name_to_slug("Magnesium Synergy Capsules", catalog) in ("magnesium-syntropy", None)
 
 
-def test_cart_substring_matches_whole_words_only():
-    cat = {"es1-lymph": {"name": "ES1 Lymph", "pinecone_title": "ES1"},
-           "vitamin-c-syntropy": {"name": "Vitamin C Syntropy", "pinecone_title": "Synergy C"}}
+def test_a_one_letter_ending_never_runs_into_a_longer_word():
+    cat = {"vitamin-c-syntropy": {"name": "Vitamin C Syntropy", "pinecone_title": "Synergy C"},
+           "vital": {"name": "Vital Energy Be"}}
     assert name_to_slug("Magnesium Synergy Capsules", cat) is None
     assert name_to_slug("Synergy C capsules", cat) == "vitamin-c-syntropy"
-    assert name_to_slug("ES13 Something", cat) is None
+    assert name_to_slug("take Synergy C daily", cat) == "vitamin-c-syntropy"
+    # Round 1: a wider whole-word rule moved these; a two-letter ending still matches.
+    assert name_to_slug("Vital Energy Bee", cat) == "vital"
+
+
+@pytest.mark.parametrize("name,slug", [("Ocuflow Day", "ocuflow-daytime"),
+                                       ("Vital Energy Bee", "vital-energy-be"),
+                                       ("Digestzymes in Terrain Restore", "digestzymes"),
+                                       ("Ginger", "gingerol")])
+def test_cart_keeps_how_other_short_forms_resolved(name, slug):
+    """Round 1 measured whole-word and longest-overlap rules on 12,086 clinical names;
+    both moved names like these onto other products. They resolve as they did."""
+    assert name_to_slug(name, _catalog()) == slug
 
 
 # ── app title lookup ─────────────────────────────────────────────────────────
@@ -419,3 +465,8 @@ def test_product_alias_map_points_at_the_new_names():
         assert doc[old]["catalog_name"] == new
         assert doc[new]["catalog_name"] == new
         assert doc[new]["url"].endswith("/" + slug)
+
+
+def test_seacure_syntropy_gets_the_capsules_dose():
+    """Round 1: dictation sends "Seacure Syntropy" to SeaAmino Syntropy; dosing agrees."""
+    assert ba.remedy_dosing(_snap(), "Seacure Syntropy")["dosage"] == "dose-381"

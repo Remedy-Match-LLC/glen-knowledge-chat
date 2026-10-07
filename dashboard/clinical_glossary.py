@@ -104,7 +104,11 @@ def product_name_index(products):
     Also indexes the normalised SLUG (deterministic fallback) so a remedy named
     after the slug rather than the display name still resolves — e.g. product
     "Sleep Synergy" (slug sleep-syntropy) matches a remedy called "Sleep Syntropy".
-    Display names take precedence over slug keys."""
+    Display names take precedence over slug keys. An off-sale (`inactive`) product
+    is left out, so its name stays plain text rather than linking to a page that
+    sells nothing (Molybdenum Syntropy, 2026-10-06)."""
+    products = {s: p for s, p in (products or {}).items()
+                if not (isinstance(p, dict) and p.get("inactive"))}
     idx = {}
     for slug, p in (products or {}).items():
         nm = _norm_name(p.get("name") if isinstance(p, dict) else "")

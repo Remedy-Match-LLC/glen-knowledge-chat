@@ -750,6 +750,7 @@ _DOSE_ALIASES = {
     # "SeaAmino Syntropy". FileMaker 395 was renamed that morning, so a snapshot taken
     # before then still says "Vitamin D Synergy": try the new name, then the old.
     "seacure synergy": "SeaAmino Syntropy",
+    "seacure syntropy": "SeaAmino Syntropy",   # what the rewrite below would try
     "vitamin d synergy powder": ("Vitamin D Syntropy", "Vitamin D Synergy"),
     "vitamin d syntropy": ("Vitamin D Syntropy", "Vitamin D Synergy"),
 }
