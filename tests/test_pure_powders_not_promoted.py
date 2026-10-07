@@ -24,7 +24,9 @@ def test_every_slug_is_in_the_catalog_and_67_are_live():
     missing = sorted(s for s in PURE_POWDER_SLUGS if s not in CATALOG)
     assert not missing, missing
     live = [s for s in PURE_POWDER_SLUGS if not CATALOG[s].get("inactive")]
-    assert len(live) == 67, sorted(live)  # 19 first batch, 48 second
+    # 19 first batch, 48 second, less serrapeptase: off sale 2026-10-07, because Glen
+    # ruled it is never sold as a powder (it needs an enteric capsule).
+    assert len(live) == 66, sorted(live)
 
 
 def test_names_are_exactly_the_catalog_names_of_the_slugs():
@@ -34,7 +36,7 @@ def test_names_are_exactly_the_catalog_names_of_the_slugs():
 def test_they_stay_sellable():
     for s in PURE_POWDER_SLUGS:
         if s in ("hydrolyzed-collagen-powder", "quercetin-dihydrate-powder-60-grams",
-                 "seaamino-powder"):
+                 "seaamino-powder", "serrapeptase"):
             continue
         assert not CATALOG[s].get("inactive"), s
 

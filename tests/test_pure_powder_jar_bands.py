@@ -68,7 +68,7 @@ from dashboard.shipping import PROD_BOTTLE_NAMES
 BANDS = {
     "humic-acid":                    ("120 caps", None,   "packer ruling, relayed"),
     "polyphenols-camellia-sinensis": ("120 caps", None,   "packer ruling, relayed"),
-    "serrapeptase":                  ("120 caps", None,   "packer ruling, relayed"),
+    # serrapeptase left 2026-10-07: off sale, never sold as a powder (Glen).
     "salvianolic-acid":              ("30 g",     None,   "packer ruling, relayed"),
     "transresveratrol":              ("30 g",     None,   "packer ruling, relayed"),
     "honokiol":                      ("30 g",     None,   "packer ruling, relayed"),
