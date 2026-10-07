@@ -470,3 +470,74 @@ def test_product_alias_map_points_at_the_new_names():
 def test_seacure_syntropy_gets_the_capsules_dose():
     """Round 1: dictation sends "Seacure Syntropy" to SeaAmino Syntropy; dosing agrees."""
     assert ba.remedy_dosing(_snap(), "Seacure Syntropy")["dosage"] == "dose-381"
+
+
+# ── review round 3 ───────────────────────────────────────────────────────────
+
+@pytest.mark.parametrize("name", ["Zinc", "Iron", "Sea"])
+def test_cart_never_substring_matches_a_short_word(name):
+    """Without the length floor, "Zinc" went to Zinc Taste Test and "Sea" to the capsules."""
+    assert name_to_slug(name, _catalog()) is None
+
+
+class _Match:
+    def __init__(self, title):
+        self.score = 0.95
+        self.metadata = {"title": title, "url": "https://example.test/old-page", "price": 70}
+
+
+class _Idx:
+    def __init__(self, title):
+        self.title = title
+
+    def query(self, **_kw):
+        return type("R", (), {"matches": [_Match(self.title)]})()
+
+
+@pytest.mark.parametrize("spoken", ["Molybdenum", "Molybdenum Syntropy"])
+def test_assistant_never_offers_off_sale_molybdenum_by_vector(monkeypatch, spoken):
+    """Round 3: the semantic fallback met the old vector title and gave an Add button."""
+    import app as a
+    monkeypatch.setattr(a, "embed", lambda _n: [0.0])
+    monkeypatch.setattr(a, "_idx", _Idx("Molybdenum Synergy"))
+    assert a._assist_resolve_products([{"name": spoken, "why": "x"}]) == []
+
+
+def test_assistant_vector_fallback_still_finds_a_live_product(monkeypatch):
+    import app as a
+    monkeypatch.setattr(a, "embed", lambda _n: [0.0])
+    monkeypatch.setattr(a, "_idx", _Idx("Zinc Synergy"))
+    (hit,) = a._assist_resolve_products([{"name": "zinc for taste", "why": "x"}])
+    assert hit["slug"] == "zinc-syntropy"
+
+
+def test_concierge_neither_adds_nor_opens_off_sale_molybdenum(monkeypatch):
+    import app as a
+    monkeypatch.setattr(a, "embed", lambda _n: [0.0])
+    monkeypatch.setattr(a, "_idx", _Idx("Molybdenum Synergy"))
+    a._COMPLEMENT_CACHE.clear()
+    c = a._resolve_complement("Molybdenum Synergy")
+    a._COMPLEMENT_CACHE.clear()
+    assert not c["in_catalog"] and not c["url"] and c["slug"] is None
+
+
+def test_publish_stores_no_slug_for_off_sale_molybdenum():
+    from dashboard.biofield_portal_publish import resolve_remedy_slug
+    cat = _catalog()
+    for name in ("Molybdenum Syntropy", "Molybdenum Synergy"):
+        assert resolve_remedy_slug(name, cat) is None
+    assert resolve_remedy_slug("Zinc Synergy", cat) in ("zinc-syntropy", None)
+    assert resolve_remedy_slug("Zinc Syntropy", cat) == "zinc-syntropy"
+
+
+def test_glossary_keeps_links_for_retired_twins_with_a_replacement():
+    """Round 3: skipping every inactive product dropped 250 rows of working links."""
+    cat = _catalog()
+    idx = product_name_index(cat)
+    retired = [(s, p) for s, p in cat.items() if p.get("inactive") and p.get("superseded_by")
+               and p["superseded_by"] in cat and not cat[p["superseded_by"]].get("inactive")]
+    assert len(retired) > 100
+    from dashboard.clinical_glossary import _norm_name
+    for s, p in retired:
+        assert _norm_name(s) in idx, s
+    assert "molybdenum syntropy" not in idx and "molybdenum syntropy" not in idx.values()

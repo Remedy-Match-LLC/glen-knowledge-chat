@@ -402,16 +402,12 @@ def name_to_slug(name, catalog) -> Optional[str]:
 def _live(slug, catalog):
     """`slug` if it is on sale, else its live replacement, else None (round 1,
     2026-10-07: off-sale Molybdenum Syntropy reached the wholesale cart)."""
-    seen = set()
-    while slug and slug not in seen:
-        seen.add(slug)
-        p = catalog.get(slug) or {}
-        if not p:
-            return None
-        if not p.get("inactive"):
-            return slug
-        slug = (p.get("superseded_by") or "").strip()
-    return None
+    if not slug:
+        return None
+    from dashboard.products import superseded_slug
+    live = superseded_slug(slug, catalog)
+    p = catalog.get(live)
+    return live if p and not p.get("inactive") else None
 
 
 def _name_to_any_slug(nl, catalog):
