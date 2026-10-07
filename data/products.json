@@ -2702,7 +2702,7 @@
   "vitamin-a-syntropy": {
    "name": "Vitamin A Syntropy",
    "price_cents": 7000,
-   "pinecone_title": "Vitamin A Synergy",
+   "pinecone_title": "Vitamin A Syntropy",
    "aliases": [
     "Vitamin A Synergy"
    ],
@@ -3536,7 +3536,7 @@
    "name": "SeaAmino Syntropy",
    "price_cents": 7000,
    "bottle_type": "30 Caps",
-   "pinecone_title": "Seacure Synergy",
+   "pinecone_title": "SeaAmino Syntropy",
    "aliases": [
     "Seacure Synergy"
    ],
@@ -9447,7 +9447,7 @@
   "vitamin-d-syntropy": {
    "name": "Vitamin D Syntropy",
    "price_cents": 7000,
-   "pinecone_title": "Vitamin D Synergy",
+   "pinecone_title": "Vitamin D Syntropy",
    "aliases": [
     "Vitamin D Synergy",
     "Vitamin D Synergy Powder"
@@ -11907,7 +11907,7 @@
   "magnesium-syntropy": {
    "name": "Magnesium Syntropy",
    "price_cents": 7000,
-   "pinecone_title": "Magnesium Synergy",
+   "pinecone_title": "Magnesium Syntropy",
    "aliases": [
     "Magnesium Synergy"
    ],
@@ -13330,7 +13330,7 @@
   "zinc-syntropy": {
    "name": "Zinc Syntropy",
    "price_cents": 7000,
-   "pinecone_title": "Zinc Synergy",
+   "pinecone_title": "Zinc Syntropy",
    "aliases": [
     "Zinc Synergy"
    ],
