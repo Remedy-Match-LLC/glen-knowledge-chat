@@ -69,14 +69,20 @@ def resolve(slug):
     return {"slug": slug, "name": name, "fmp": _fmp_for(name)}
 
 
-@lru_cache(maxsize=1)
+_GROUPS_CACHE = None
+
+
 def _groups_by_page():
-    """{page slug: group} from ingredient_formulations.json, built from the formula data."""
-    try:
-        groups = json.loads(_GROUPS.read_text()).get("groups", {}) or {}
-    except Exception:
-        return {}
-    return {pg: g for g in groups.values() for pg in (g.get("pages") or [])}
+    """{page slug: group} from ingredient_formulations.json, built from the formula data.
+    Cached only after a good read, so one failed read is retried rather than kept."""
+    global _GROUPS_CACHE
+    if _GROUPS_CACHE is None:
+        try:
+            groups = json.loads(_GROUPS.read_text()).get("groups", {}) or {}
+        except Exception:
+            return {}
+        _GROUPS_CACHE = {pg: g for g in groups.values() for pg in (g.get("pages") or [])}
+    return _GROUPS_CACHE
 
 
 def formulations_with(name):

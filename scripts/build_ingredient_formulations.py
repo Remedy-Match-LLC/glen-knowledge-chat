@@ -37,9 +37,13 @@ GROUPS = {
 
 def build():
     prods = json.load(open(PRODUCTS))["products"]
-    by_fmp = {}
+    by_fmp, retired_fmp = {}, set()
     for slug, p in prods.items():
-        if p.get("fmp_id") is not None and not p.get("inactive"):
+        if p.get("fmp_id") is None:
+            continue
+        if p.get("inactive"):
+            retired_fmp.add(str(p["fmp_id"]))
+        else:
             by_fmp.setdefault(str(p["fmp_id"]), []).append(slug)
     cx = sqlite3.connect(f"file:{DB}?mode=ro", uri=True)
     out = {"_source": "scripts/build_ingredient_formulations.py from ingredients.db product_ingredients",
@@ -51,6 +55,9 @@ def build():
         items, unmatched = [], []
         for pid, pname, mg in rows:
             slugs = by_fmp.get(str(pid), [])
+            if not slugs and str(pid) in retired_fmp:
+                print(f"  skipped, off sale: {pname} (FileMaker {pid})")
+                continue
             if len(slugs) != 1:
                 unmatched.append((pid, pname, slugs))
                 continue
@@ -64,9 +71,11 @@ def build():
         out["groups"][key] = {"fmp_ingredient_id": g["fmp_ingredient_id"], "pages": g["pages"],
                               "ruled": g["ruled"], "products": items}
         print(f"{key}: {[(i['slug'], i['mg']) for i in items]}")
-    with open(OUT, "w") as f:
+    tmp = OUT + ".tmp"
+    with open(tmp, "w") as f:
         json.dump(out, f, indent=1, ensure_ascii=False)
         f.write("\n")
+    os.replace(tmp, OUT)   # atomic: a reader never sees a half-written file
 
 
 if __name__ == "__main__":

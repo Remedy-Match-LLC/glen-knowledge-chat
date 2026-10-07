@@ -69,3 +69,36 @@ def test_the_atlas_serrapeptase_concept_links_clear_the_way():
     prod = [l for l in c["links"] if l.get("type") == "product"]
     assert prod == [{"source": "remedymatch", "title": "Clear the Way", "type": "product",
                      "url": "https://myhealingoasis.com/begin/product/clear-the-way"}]
+    seed = json.load(open(os.path.join(ROOT, "data", "atlas-seed-input.json")))["concepts"]
+    links = [l for c in seed if (c.get("label") or "") == "Serrapeptase" for l in c.get("links") or []]
+    assert [(l["title"], l["url"]) for l in links if l.get("type") == "product"] == [
+        ("Clear the Way", "https://myhealingoasis.com/begin/product/clear-the-way")]
+
+
+def test_a_failed_read_is_retried_not_cached(monkeypatch, tmp_path):
+    monkeypatch.setattr(I, "_GROUPS_CACHE", None)
+    good = I._GROUPS
+    monkeypatch.setattr(I, "_GROUPS", tmp_path / "missing.json")
+    assert I._groups_by_page() == {}
+    monkeypatch.setattr(I, "_GROUPS", good)
+    assert "serrapeptase" in I._groups_by_page()
+
+
+def test_the_generator_skips_an_off_sale_formula(monkeypatch, tmp_path):
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(
+        "bif", os.path.join(ROOT, "scripts", "build_ingredient_formulations.py"))
+    bif = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(bif)
+    if not os.path.exists(bif.DB):
+        import pytest
+        pytest.skip("formula database is on Glen's machine only")
+    prods = json.load(open(bif.PRODUCTS))
+    prods["products"]["scar-silk"]["inactive"] = True
+    pj = tmp_path / "products.json"
+    pj.write_text(json.dumps(prods))
+    monkeypatch.setattr(bif, "PRODUCTS", str(pj))
+    monkeypatch.setattr(bif, "OUT", str(tmp_path / "out.json"))
+    bif.build()
+    got = json.load(open(tmp_path / "out.json"))["groups"]["serrapeptase"]["products"]
+    assert [i["slug"] for i in got] == ["clear-the-way", "fibrosolve", "lipid-zyme"]
