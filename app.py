@@ -41787,7 +41787,11 @@ _EMAIL_DND_ACTIVE = frozenset({"active", "permanent", "true"})
 #   "address": block the address (email_suppression ghl-dnd), leave consent alone.
 #   "none":    write nothing for email.
 _EMAIL_DND_NON_REFUSAL_WRITERS = {
-    # GHL's email service. One message for bounce, spam and unsubscribe alike.
+    # GHL's email service. One message for bounce, spam and unsubscribe alike. Live GHL
+    # writes the "...Provider" form: 340 of the 673 consent-apply people carried it on
+    # 2026-10-06 and, with only the short form listed, failed closed to a refusal every
+    # hour. The short form is kept in case another writer uses it.
+    "Received Permanent Bounce/Spam/Unsubscribe from Email Service Provider": "address",
     "Received Permanent Bounce/Spam/Unsubscribe from Email Service": "address",
     "Updated by contact merge": "address",
     # Z-015-4 Email Bounced.

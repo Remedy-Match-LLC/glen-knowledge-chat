@@ -77,6 +77,20 @@ def test_cohort_only_opted_in_clients(env):
     assert sorted(c["email"] for c in cohort) == ["client@x.com"]
 
 
+def test_cohort_skips_an_address_level_block(env):
+    """An address blocked only by an email_suppression row (GHL email DND, a bounce scan)
+    keeps consent:opted-in in its tags, so the tag filter alone would send to it."""
+    app, ie, db, sent = env
+    from dashboard import email_suppression as es
+    _add_person(db, "client@x.com", ["type:client", "consent:opted-in"])
+    _add_person(db, "dnd@x.com", ["type:client", "consent:opted-in"])
+    with sqlite3.connect(db) as cx:
+        es.init_table(cx)
+        es.add(cx, "dnd@x.com", "ghl-dnd", "GHL email DND active", "ghl")
+    cohort = ie._list_segment_cohort(("type:client", "consent:opted-in"))
+    assert sorted(c["email"] for c in cohort) == ["client@x.com"]
+
+
 def test_cohort_bootstraps_users(env):
     app, ie, db, sent = env
     _add_person(db, "new@x.com", ["type:client", "consent:opted-in"])
