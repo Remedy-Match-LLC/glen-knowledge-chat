@@ -24,6 +24,7 @@ HISTORY_TABLES = frozenset({
     "remedy_match_email_queue", "review_invites", "client_erasures",
     "scan_reassignments", "referral_events", "stripe_failures", "users", "suppliers",
     "supplier_quotes", "journey_events",
+    "sms_consent_events",             # a text consent log keyed by phone; never rewritten
     # Found in production on 2026-09-27 (prod-queries/merge-unclassified-tables.py):
     "fmp_clients",                    # a FileMaker mirror; the next FileMaker sync rewrites it
     "escalation_queue", "identity_consolidation_audit", "membership_reconcile_alerts",

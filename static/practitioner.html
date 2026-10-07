@@ -895,6 +895,7 @@
         <div class="field">
           <label for="f_phone">Phone<span class="req">*</span></label>
           <input id="f_phone" name="phone" type="tel" required>
+          <label class="sms-consent" style="display:flex;gap:8px;align-items:flex-start;font-weight:400;font-size:13px;line-height:1.4;margin:6px 0 12px;text-transform:none"><input type="checkbox" id="f_sms_consent" name="sms_consent" style="width:auto;margin:3px 0 0;flex:none"><span>Text me about my orders, appointments and account. Message frequency varies. Message and data rates may apply. Reply STOP to stop or HELP for help. See our <a href="/privacy" target="_blank" rel="noopener">Privacy Policy</a> and <a href="/terms" target="_blank" rel="noopener">Terms</a>.</span></label>
         </div>
       </div>
 
@@ -1087,6 +1088,7 @@
       full_name:      form.full_name.value.trim(),
       email:          form.email.value.trim(),
       phone:          form.phone.value.trim(),
+      sms_consent:    form.sms_consent.checked,
       practice_name:  form.practice_name.value.trim(),
       practice_type:  form.practice_type.value.trim(),
       license_info:   form.license_info.value.trim(),

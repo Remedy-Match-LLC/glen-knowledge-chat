@@ -83,7 +83,8 @@ _MAINTENANCE_TRUTHY = {"1", "true", "yes", "on"}
 # cutover operator can still run the migration tool and act during the freeze.
 # Do NOT add normal money/order/portal/checkout prefixes here — those writes
 # are exactly what MAINTENANCE_MODE exists to freeze.
-_MAINTENANCE_EXEMPT_PREFIXES = ("/admin", "/console", "/api/admin", "/api/console")
+# /sms/: a STOP sent during maintenance must still be recorded; Twilio does not retry.
+_MAINTENANCE_EXEMPT_PREFIXES = ("/admin", "/console", "/api/admin", "/api/console", "/sms/")
 
 # Request timing for the customer-facing surfaces that can otherwise fail as an
 # undifferentiated endless spinner. Route labels come from Flask's URL rule, never
@@ -18255,6 +18256,8 @@ def practitioner_application():
     if tools_interest:
         tags.append("practitioner-tools-interested")
 
+    _record_sms_opt_in(data, phone, email, "form:practitioner-application")
+
     contact_id, created, err = ghl_upsert_contact(
         email, first_name, last_name, phone,
         source_tag="practitioner-application",
@@ -18404,6 +18407,8 @@ def api_practitioner_register():
                            extra_tags=[f"portal-{clean['portal_role']}"])
     except Exception as e:
         print(f"[practitioner-register] GHL upsert failed: {e!r}", flush=True)
+    _record_sms_opt_in(request.get_json(silent=True), clean.get("phone"), clean["email"],
+                       "form:practitioner-register")
     module_pay = None
     if clean["portal_role"] == "coach":
         try:
@@ -31474,17 +31479,58 @@ def api_cron_sourcing_scan():
 
 @app.route("/sms/inbound", methods=["POST"])
 def sms_inbound():
+    """Twilio posts every text sent to our number here. STOP and START write the
+    text consent record (dashboard/sms_consent.py); HELP is answered.
+
+    Only a request signed with TWILIO_AUTH_TOKEN is acted on. Without the token
+    nothing is recorded, so a forged STOP or START cannot change anyone's consent.
+    Replies go out only when SMS_AUTO_REPLIES is "on". Unset means no reply, because
+    nothing texts until the Twilio campaign is registered (communication, 2026-10-06)."""
     from dashboard import notify_state as _ns
-    frm = (request.form.get("From") or request.values.get("From") or "").strip()
-    body = (request.form.get("Body") or request.values.get("Body") or "").strip().upper()
+    from dashboard import sms_consent as _sc
+    from xml.sax.saxutils import escape as _xml_escape
+    params = list(request.form.items(multi=True))
+    sig = request.headers.get("X-Twilio-Signature", "")
+    token = os.environ.get("TWILIO_AUTH_TOKEN", "")
+    urls = {request.url, "https://" + request.host + request.full_path.rstrip("?")}
+    if not any(_sc.twilio_signature_ok(token, u, params, sig) for u in urls):
+        return ("", 403)
+    frm = (request.form.get("From") or "").strip()
+    kind = _sc.keyword(request.form.get("Body"))
+    reply = None
     with _db_lock, db.connect(LOG_DB) as cx:
         email = _ns.email_by_phone(cx, frm)
-        if email:
-            if body in ("STOP", "STOPALL", "UNSUBSCRIBE", "CANCEL", "QUIT"):
+        sid = (request.form.get("MessageSid") or "").strip() or None
+        if kind == "stop":
+            _sc.record(cx, frm, "out", "sms:STOP", email=email, message_sid=sid)
+            if email:
                 _ns.set_opt(cx, email, "out")
-            elif body in ("START", "YES", "UNSTOP"):
-                _ns.set_opt(cx, email, "in")
+            reply = _sc.REPLY_STOP
+        elif kind == "start":
+            # Not mirrored into notify_state: that state is shared with the email
+            # unsubscribe link, and a text START must never undo an email opt-out.
+            _sc.record(cx, frm, "in", "sms:START", email=email, message_sid=sid)
+            reply = _sc.REPLY_OPT_IN
+        elif kind == "help":
+            reply = _sc.REPLY_HELP
+    if reply and os.environ.get("SMS_AUTO_REPLIES", "").strip().lower() == "on":
+        xml = ('<?xml version="1.0" encoding="UTF-8"?><Response><Message>'
+               + _xml_escape(reply) + "</Message></Response>")
+        return Response(xml, mimetype="text/xml")
     return ("", 204)
+
+
+def _record_sms_opt_in(form_body, phone, email, source):
+    """A ticked text opt-in box on a form becomes a consent event. Never raises:
+    a failure here must not fail the form, since agreeing is optional."""
+    if not (isinstance(form_body, dict) and form_body.get("sms_consent") is True and phone):
+        return
+    try:
+        from dashboard import sms_consent as _sc
+        with _db_lock, db.connect(LOG_DB) as cx:
+            _sc.record(cx, phone, "in", source, email=email)
+    except Exception as e:
+        print(f"[sms-consent] {source} record failed: {e!r}", flush=True)
 
 
 @app.route("/sms/status", methods=["POST"])
@@ -42396,8 +42442,8 @@ def enroll_segment_in_workflow(workflow_id, segment_tags=("type:client", "consen
             except Exception:
                 tags = set()
             if "consent:unsubscribed" in tags or any(
-                    s in " ".join(t.lower() for t in tags)
-                    for s in ("email bounced", "do not email", "unsubscribed")):
+                    s in " ".join(t.lower() for t in tags if t != "consent:sms-unsubscribed")
+                    for s in ("email bounced", "do not email", "unsubscribed")):   # a text STOP is not email
                 continue
             summary["matched"] += 1
             if enrolled_tag in tags:
@@ -52080,6 +52126,8 @@ def practitioner_finder_inquiry():
         plain_claim   = secrets.token_urlsafe(32)
         send_tokens.append((rec, plain_reply, plain_optout, plain_claim))
 
+    _record_sms_opt_in(data, client_phone, client_email, "form:practitioner-finder-inquiry")
+
     with _db_lock, db.connect(LOG_DB) as cx:
         # inquiries row
         cx.execute(
@@ -53960,6 +54008,9 @@ def api_wholesale_apply():
     except Exception as e:
         print(f"[wholesale-apply] submit failed: {e!r}", flush=True)
         return jsonify({"ok": False, "error": "Could not submit your application. Please try again."}), 500
+
+    _record_sms_opt_in(request.get_json(silent=True), clean.get("phone"), clean["email"],
+                       "form:wholesale-apply")
 
     # Applying also makes them a Tier-1 Member (they agreed to the ToS here).
     sid = request.cookies.get("amg_session") or uuid.uuid4().hex

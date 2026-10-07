@@ -54,6 +54,7 @@
       <input type="email" id="email" autocomplete="email" required>
       <label>Phone</label>
       <input type="tel" id="phone" autocomplete="tel">
+      <label class="sms-consent" style="display:flex;gap:8px;align-items:flex-start;font-weight:400;font-size:13px;line-height:1.4;margin:6px 0 12px;text-transform:none"><input type="checkbox" id="sms_consent" style="width:auto;margin:3px 0 0;flex:none"><span>Text me about my orders, appointments and account. Message frequency varies. Message and data rates may apply. Reply STOP to stop or HELP for help. See our <a href="/privacy" target="_blank" rel="noopener">Privacy Policy</a> and <a href="/terms" target="_blank" rel="noopener">Terms</a>.</span></label>
       <label>Practice name</label>
       <input type="text" id="practice_name">
 
@@ -101,7 +102,8 @@ $('form').addEventListener('submit', function(e){
   $('submit').disabled = true; $('submit').textContent = 'Creating…';
   var payload = {
     name: $('name').value.trim(), email: $('email').value.trim(),
-    phone: $('phone').value.trim(), practice_name: $('practice_name').value.trim(),
+    phone: $('phone').value.trim(), sms_consent: $('sms_consent').checked,
+    practice_name: $('practice_name').value.trim(),
     portal_role: role, license_number: $('license_number').value.trim(),
     license_state: $('license_state').value.trim(),
     resale_license_number: $('resale_license_number').value.trim()
