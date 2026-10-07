@@ -80,8 +80,10 @@ def load_course(course_slug: str, root: str | None = None) -> Course:
         title=str(spec.get("title", "")),
         description=str(spec.get("description", "")),
         modules=modules,
-        homework=spec.get("homework", True) is not False,
-        certifiable=spec.get("certifiable", True) is not False,
+        # Fail closed: only a bare YAML true, or no key at all, turns these on.
+        # A quoted "false" must not quietly bring back homework or the paid cert.
+        homework=spec.get("homework", True) is True,
+        certifiable=spec.get("certifiable", True) is True,
     )
 
 

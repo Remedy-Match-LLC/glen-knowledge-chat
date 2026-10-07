@@ -130,3 +130,27 @@ def test_certify_and_homework_routes_refuse_this_course(monkeypatch, tmp_path):
     r = c.post(f"/api/courses/{SLUG}/{lesson.module_slug}/homework?token={tok}",
                json={"payload": "my notes"}, base_url=_MHOST)
     assert r.status_code == 404
+
+
+@pytest.mark.parametrize("value", ['"false"', '"no"', "0", '"true"', "null"])
+def test_flags_fail_closed_on_anything_but_a_bare_true(tmp_path, value):
+    d = tmp_path / "c" / "m"
+    d.mkdir(parents=True)
+    (d / "l.md").write_text("---\ntitle: L\naccess: public\n---\nbody\n")
+    (tmp_path / "c" / "course.yaml").write_text(
+        f"title: C\nhomework: {value}\ncertifiable: {value}\n"
+        "modules:\n  - slug: m\n    title: M\n    lessons: [l]\n")
+    course = cc.load_course("c", root=str(tmp_path))
+    assert course.homework is False
+    assert course.certifiable is False
+
+
+def test_flags_default_on_when_absent_or_true(tmp_path):
+    for slug, extra in (("a", ""), ("b", "homework: true\ncertifiable: true\n")):
+        d = tmp_path / slug / "m"
+        d.mkdir(parents=True)
+        (d / "l.md").write_text("---\ntitle: L\naccess: public\n---\nbody\n")
+        (tmp_path / slug / "course.yaml").write_text(
+            f"title: C\n{extra}modules:\n  - slug: m\n    title: M\n    lessons: [l]\n")
+        course = cc.load_course(slug, root=str(tmp_path))
+        assert course.homework is True and course.certifiable is True, slug
