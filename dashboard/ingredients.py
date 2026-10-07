@@ -79,7 +79,9 @@ def _groups_by_page():
     if _GROUPS_CACHE is None:
         try:
             groups = json.loads(_GROUPS.read_text()).get("groups", {}) or {}
-        except Exception:
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).warning("ingredient_formulations.json unreadable: %s", e)
             return {}
         _GROUPS_CACHE = {pg: g for g in groups.values() for pg in (g.get("pages") or [])}
     return _GROUPS_CACHE

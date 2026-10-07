@@ -81,3 +81,19 @@ def test_product_page_links_ingredients():
     content = html_path.read_text(encoding="utf-8")
     assert "/begin/ingredient/" in content
     assert "_blank" in content
+
+
+def test_serrapeptase_page_serves_the_four_formulas_with_the_note(monkeypatch, tmp_path):
+    """Drives the real route, so a change that rebuilt rows without `note` fails here."""
+    app_module = _load_app(); db = _fresh(app_module, monkeypatch, tmp_path)
+    monkeypatch.setattr(app_module, "_active_membership_for_email", lambda e: {"ok": True})
+    monkeypatch.setattr(app_module, "INGREDIENT_PAGES_PAID_ONLY", True, raising=False)
+    monkeypatch.setattr(app_module, "get_authenticated_user", lambda req: {"email": "paid@x.com"})
+    from dashboard import ingredient_pages as ip
+    with sqlite3.connect(db) as cx:
+        ip.upsert_section(cx, "serrapeptase", "what_it_is", "Hello.")
+        ip.set_state(cx, "serrapeptase", "approved", by="glen")
+    body = app_module.app.test_client().get("/begin/ingredient-page-data/serrapeptase").get_json()
+    rows = body["formulations"]
+    assert [r["slug"] for r in rows] == ["clear-the-way", "scar-silk", "fibrosolve", "lipid-zyme"]
+    assert "enteric capsule" in rows[0]["note"] and all("note" not in r for r in rows[1:])
