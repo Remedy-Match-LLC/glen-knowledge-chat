@@ -502,13 +502,21 @@ def test_glossary_names_molybdenum_only_as_the_mineral():
     assert [r["name"] for r in e["remedies"]] == ["Sulfur Syntropy", "Thyroid Support"]
 
 
-def test_atlas_retires_molybdenum_and_no_edge_points_at_it():
+def test_atlas_drops_molybdenum_and_no_edge_points_at_it():
+    """The repo copy drops the concept outright. The live disk copy keeps it with status
+    "retired" (reversible); a retired record left here would make the drift check
+    (atlas-rebuild-from-live.py --check) report the repo ahead of live on every run."""
     concepts = json.loads((ROOT / "data" / "atlas-concepts.json").read_text())["concepts"]
-    (mo,) = [c for c in concepts if c["id"] == "molybdenum-synergy"]
-    assert mo["status"] == "retired"
+    assert "molybdenum-synergy" not in {c["id"] for c in concepts}
+    assert {c.get("status") for c in concepts} == {"live"}
     assert not [c["id"] for c in concepts if "molybdenum-synergy" in (c.get("neighbors") or [])]
-    served = [c for c in concepts if c.get("status") == "live"]
-    assert "molybdenum-synergy" not in {c["id"] for c in served}
+    # The real reader that /atlas/data serves, pointed at the repo copy.
+    import atlas_store
+    from unittest import mock
+    with mock.patch.object(atlas_store, "CONCEPTS_PATH", ROOT / "data" / "atlas-concepts.json"):
+        served = atlas_store.build_graph()["concepts"]
+    ids = {c["id"] for c in served}
+    assert "molybdenum-synergy" not in ids and "zinc-synergy" in ids
     seed = (ROOT / "data" / "atlas-seed-input.json").read_text()
     assert '"molybdenum-synergy"' not in seed
 

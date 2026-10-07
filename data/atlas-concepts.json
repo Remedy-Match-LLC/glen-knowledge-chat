@@ -19339,45 +19339,6 @@
   },
   {
    "aliases": [
-    "molybdenum synergy formula",
-    "molybdenum syntropy formula"
-   ],
-   "cluster": "minerals",
-   "coords": {
-    "x": 0.662,
-    "y": 0.174
-   },
-   "id": "molybdenum-synergy",
-   "label": "Molybdenum Syntropy",
-   "links": [
-    {
-     "source": "remedymatch",
-     "title": "Molybdenum Syntropy",
-     "type": "product",
-     "url": "https://myhealingoasis.com/begin/product/molybdenum-syntropy"
-    },
-    {
-     "source": "youtube",
-     "title": "Comprehensive Functional Formulations Deliver More Healing With Each Dose...",
-     "type": "video",
-     "url": "https://youtu.be/yzJzp06IChE"
-    }
-   ],
-   "namespaces": [
-    "specific-formulations"
-   ],
-   "neighbors": [
-    "electrolyte-mineral-manna",
-    "magnesium-synergy",
-    "sulfur-synergy",
-    "energessence"
-   ],
-   "parent": "minerals",
-   "status": "retired",
-   "summary": "Molybdenum Syntropy is a syntropy-category mineral formulation featuring molybdenum, priced at $70."
-  },
-  {
-   "aliases": [
     "1-monolaurin",
     "glyceryl monolaurate",
     "lauricidin"
