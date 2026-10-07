@@ -52,7 +52,7 @@ def test_the_copy_is_pinned_and_the_ai_explainer_emptied(catalog):
 
 def test_name_price_and_filemaker_id_untouched(catalog):
     p = catalog[SLUG]
-    assert p["name"] == "Vitamin A Synergy"   # the rename ships separately
+    assert p["name"] == "Vitamin A Syntropy"  # renamed with the other five Synergy names
     assert p["price_cents"] == 7000
     assert p["fmp_id"] == "539"
     assert p["bottle_type"] == "30 Caps"

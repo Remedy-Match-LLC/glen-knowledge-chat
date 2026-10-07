@@ -18,6 +18,7 @@ import sqlite3
 
 from dashboard import db
 from dashboard import dbwrite
+from dashboard.ambiguous_product_names import is_ambiguous_product_name
 from dashboard.biofield_schedule import build_schedule
 from dashboard.biofield_dimensions import DEPTH_KEY, depth_label, depth_match, get_tag
 
@@ -486,6 +487,9 @@ def resolve_remedy_name(cx, spoken, cutoff=0.82):
     if low.endswith("in terrain restore"):
         core = spoken[: low.rfind("in terrain restore")].strip()
         suffix = " in Terrain Restore"
+    # A name that means two products ("Seacure") is left for a person, before any step.
+    if is_ambiguous_product_name(core):
+        return _title_case_name(core) + suffix
     # An EXACT retired name is unambiguous: redirect to its survivor before any fuzzy
     # matching, or the excluded name drifts onto the nearest live stranger.
     redirect = _superseded_name_map().get(_norm_name(core)) or _catalog_exact_aliases().get(_norm_name(core))
@@ -741,6 +745,13 @@ _DOSE_ALIASES = {
     "energy": "Energy/Source Infoceutical Feelgood",
     "night": "Night Infoceutical",
     "sleep": "Sleep Infoceutical",
+    # Six Synergy names became Syntropy (2026-09-30). The rewrite below turns "Seacure
+    # Synergy" into "Seacure Syntropy", which FileMaker never carried: 381 is now
+    # "SeaAmino Syntropy". FileMaker 395 was renamed that morning, so a snapshot taken
+    # before then still says "Vitamin D Synergy": try the new name, then the old.
+    "seacure synergy": "SeaAmino Syntropy",
+    "vitamin d synergy powder": ("Vitamin D Syntropy", "Vitamin D Synergy"),
+    "vitamin d syntropy": ("Vitamin D Syntropy", "Vitamin D Synergy"),
 }
 
 
@@ -759,21 +770,25 @@ def _spelling_variants(nm):
 def _dose_row(cx, name):
     """A fmp_snap_products dose row for `name`: exact, else the SHORTEST forward-
     suffix product ('Adrenal Syntropy' -> 'Adrenal Syntropy Powder'). None if neither.
-    Each stage also tries the other AllerFree / Aller-Free spelling."""
+    Each stage also tries the other AllerFree / Aller-Free spelling. The row carries
+    `id_pk` when the snapshot has it, so a caller can tell which FileMaker row it is."""
     nm = _clean_product_name(name)
     if not nm:
         return None
     variants = _spelling_variants(nm)
+    cols = "dosage, dosage_freq AS frequency, dosage_timing AS timing"
+    if _has_col(cx, "fmp_snap_products", "id_pk"):
+        cols += ", id_pk"
     for v in variants:
         r = cx.execute(
-            "SELECT dosage, dosage_freq AS frequency, dosage_timing AS timing "
+            f"SELECT {cols} "
             "FROM fmp_snap_products WHERE LOWER(TRIM(RTRIM(product_name,'* ')))=LOWER(TRIM(?)) LIMIT 1",
             (v,)).fetchone()
         if r:
             return r
     for v in variants:
         r = cx.execute(
-            "SELECT dosage, dosage_freq AS frequency, dosage_timing AS timing "
+            f"SELECT {cols} "
             "FROM fmp_snap_products WHERE LOWER(TRIM(RTRIM(product_name,'* '))) LIKE LOWER(?) "
             "ORDER BY LENGTH(product_name) ASC LIMIT 1", (v + " %",)).fetchone()
         if r:
@@ -795,12 +810,19 @@ def remedy_dosing(cx, name):
             return {k: remedy[k] for k in blank}
     if not _has(cx, "fmp_snap_products"):
         return blank
+    # "Seacure" is two products; the prefix match would pick one of them.
+    if is_ambiguous_product_name(_clean_product_name(name)):
+        return blank
     cx.row_factory = sqlite3.Row
     # A named alias is a deliberate decision, so it outranks the loose prefix match
     # inside _dose_row. Checked after it, an alias never ran whenever the prefix
     # match found SOME product, which is exactly when it was wrong.
     prod = _DOSE_ALIASES.get(_clean_product_name(name).lower())
-    r = _dose_row(cx, prod) if prod else None
+    r = None
+    for target in ((prod,) if isinstance(prod, str) else prod or ()):
+        r = _dose_row(cx, target)
+        if r is not None:
+            break
     if r is None:
         r = _dose_row(cx, name)
     if r is None and re.search(r"\bsynergy\b", name or "", re.I):

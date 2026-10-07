@@ -13714,6 +13714,22 @@ _PAIRINGS = _load_json(DATA_DIR / "upsell-pairings.json", default={"pairings": {
 # "Stress Release" vs "Emotional Stress Release" false match).
 _TITLE_TO_SLUG = {(p.get("pinecone_title") or p.get("name")): s
                   for s, p in (_PRODUCTS.get("products") or {}).items()}
+# A renamed product is found by its new name before its vector is re-titled, and by its
+# old names after. setdefault, so a real title always wins. Aliases only for products
+# that opt in (`report_aliases`): a bare "BFA" stays unresolved (2026-10-02).
+def _index_names_and_aliases(index, products):
+    for slug, p in products.items():
+        if p.get("name"):
+            index.setdefault(p["name"], slug)
+    for slug, p in products.items():
+        if p.get("report_aliases") is True:
+            for a in (p.get("aliases") or []):
+                if isinstance(a, str) and a:
+                    index.setdefault(a, slug)
+    return index
+
+
+_index_names_and_aliases(_TITLE_TO_SLUG, _PRODUCTS.get("products") or {})
 _COMPLEMENT_CACHE = {}
 
 # Resolve a remedy by EITHER its catalog name or pinecone_title, HTML-unescaped and

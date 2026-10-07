@@ -2700,9 +2700,13 @@
    "_note": "DISCONTINUED (Glen 2026-07-20). Molecular hydrogen now comes from the Water Ionizers, which produce molecular-hydrogen water, or the portable Molecular Hydrogen bottle."
   },
   "vitamin-a-syntropy": {
-   "name": "Vitamin A Synergy",
+   "name": "Vitamin A Syntropy",
    "price_cents": 7000,
    "pinecone_title": "Vitamin A Synergy",
+   "aliases": [
+    "Vitamin A Synergy"
+   ],
+   "report_aliases": true,
    "url": "https://myhealingoasis.com/begin/product/vitamin-a-syntropy",
    "legacy_store_url": "https://remedymatch.com/remedies/syntropy/327-vitamin-a-syntropy",
    "qty_pricing": true,
@@ -3529,10 +3533,15 @@
    "qty_pricing": true
   },
   "seaamino-syntropy": {
-   "name": "Seacure Synergy",
+   "name": "SeaAmino Syntropy",
    "price_cents": 7000,
    "bottle_type": "30 Caps",
    "pinecone_title": "Seacure Synergy",
+   "aliases": [
+    "Seacure Synergy"
+   ],
+   "report_aliases": true,
+   "fmp_id": "381",
    "url": "https://myhealingoasis.com/begin/product/seaamino-syntropy",
    "legacy_store_url": "https://remedymatch.com/remedies/syntropy/103-seaamino-syntropy",
    "qty_pricing": true,
@@ -3595,7 +3604,7 @@
     }
    ],
    "ingredients_source": "manual",
-   "description": "Seacure Synergy . Seacure Synergy SeaAmino Syntropy Seacure Synergy is based on a traditional Nordic remedy of amino acids from enzymatically pre-digested white fish protein with added synergists for enhanced bioavailability. This combination of botanical and nutritional synergists boosts the already high healing benefits of hydrolyzed peptides from white fish, which include: 1. High Bioavailability and Digestibility Smaller peptide size : The hydrolysis process breaks down protein into smaller peptides, making them easier to digest and absorb. Efficient nutrient uptake : Helps ensure the...",
+   "description": "SeaAmino Syntropy is based on a traditional Nordic remedy of amino acids from enzymatically pre-digested white fish protein with added synergists for enhanced bioavailability. This combination of botanical and nutritional synergists boosts the already high healing benefits of hydrolyzed peptides from white fish, which include: 1. High Bioavailability and Digestibility Smaller peptide size : The hydrolysis process breaks down protein into smaller peptides, making them easier to digest and absorb. Efficient nutrient uptake : Helps ensure the...",
    "enrichment_note": "Section A: appended Bioavailability-Factors extras per Glen. Source: Glen's Products-Worklist.md."
   },
   "es3-nerve": {
@@ -3939,9 +3948,14 @@
    "superseded_by": "quercetin-dihydrate"
   },
   "molybdenum-syntropy": {
-   "name": "Molybdenum Synergy",
+   "name": "Molybdenum Syntropy",
    "price_cents": 7000,
    "pinecone_title": "Molybdenum Synergy",
+   "aliases": [
+    "Molybdenum Synergy"
+   ],
+   "report_aliases": true,
+   "inactive": true,
    "url": "https://myhealingoasis.com/begin/product/molybdenum-syntropy",
    "legacy_store_url": "https://remedymatch.com/remedies/syntropy/322-molybdenum-syntropy",
    "qty_pricing": true
@@ -9431,9 +9445,14 @@
    "qty_pricing": true
   },
   "vitamin-d-syntropy": {
-   "name": "Vitamin D Synergy",
+   "name": "Vitamin D Syntropy",
    "price_cents": 7000,
    "pinecone_title": "Vitamin D Synergy",
+   "aliases": [
+    "Vitamin D Synergy",
+    "Vitamin D Synergy Powder"
+   ],
+   "report_aliases": true,
    "url": "https://myhealingoasis.com/begin/product/vitamin-d-syntropy",
    "legacy_store_url": "https://remedymatch.com/remedies/syntropy/123-vitamin-d-syntropy",
    "qty_pricing": true,
@@ -9548,7 +9567,7 @@
     }
    ],
    "ingredients_source": "manual",
-   "description": "Vitamin D Synergy . Vitamin D Synergy Vitamin D Syntropy Vitamin D is formed in the skin when sunlight transforms cholesterol made by enzymatic activity in the liver. Vitamin D is not only the vitamin of light, it is also a hormone, like the other hormones the body makes from cholesterol as a precursor. Vitamin D is crucial for many functions including Calcium metabolism, immunity and nerve function… Individuals who take more than 2,000 IU per day of vitamin D should have their vitamin D levels monitored. Vitamin D Synergy . Each Chlorophyll Vegicap supplies: Coenzyme Synergists: Vitamin A...",
+   "description": "Vitamin D is formed in the skin when sunlight transforms cholesterol made by enzymatic activity in the liver. Vitamin D is not only the vitamin of light, it is also a hormone, like the other hormones the body makes from cholesterol as a precursor. Vitamin D is crucial for many functions including Calcium metabolism, immunity and nerve function… Individuals who take more than 2,000 IU per day of vitamin D should have their vitamin D levels monitored. Vitamin D Syntropy . Each Chlorophyll Vegicap supplies: Coenzyme Synergists: Vitamin A...",
    "enrichment_note": "Section A: appended Bioavailability-Factors extras per Glen (Fulvic Acid, Humic Acid, Spirit Minerals). Source: Glen's Products-Worklist.md.",
    "bottle_type": "30 Caps",
    "fmp_id": "395"
@@ -11886,9 +11905,13 @@
    "description": "build up 1 drop a day to 15 drops stirred into a little water without touching metal daily on rising"
   },
   "magnesium-syntropy": {
-   "name": "Magnesium Synergy",
+   "name": "Magnesium Syntropy",
    "price_cents": 7000,
    "pinecone_title": "Magnesium Synergy",
+   "aliases": [
+    "Magnesium Synergy"
+   ],
+   "report_aliases": true,
    "url": "https://myhealingoasis.com/begin/product/magnesium-syntropy",
    "legacy_store_url": "https://remedymatch.com/remedies/syntropy/71-magnesium-syntropy",
    "qty_pricing": true,
@@ -11995,7 +12018,7 @@
     }
    ],
    "ingredients_source": "db-formulations-2026-06-25",
-   "description": "Magnesium Synergy . Magnesium Synergy Magnesium Syntropy Magnesium Synergy includes a full spectrum of special purpose and highly bioavailable forms of Magnesium. Magnesium Syntropy includes Magnesium Threonate, the only form to cross the blood-brain barrier. Also included are ingredients to boost intestinal and cellular absorption. Synergistic Coenzymes (the active form of vitamins) and Minerals are now included as well. And as always, our formula doesn't include anything you don't want, like excipients, binders, fillers, stearates, phthalates, etc. Because of soil depletion, the American...",
+   "description": "Magnesium Syntropy includes a full spectrum of special purpose and highly bioavailable forms of Magnesium. Magnesium Syntropy includes Magnesium Threonate, the only form to cross the blood-brain barrier. Also included are ingredients to boost intestinal and cellular absorption. Synergistic Coenzymes (the active form of vitamins) and Minerals are now included as well. And as always, our formula doesn't include anything you don't want, like excipients, binders, fillers, stearates, phthalates, etc. Because of soil depletion, the American...",
    "bottle_type": "30 Caps",
    "fmp_id": "355"
   },
@@ -12053,6 +12076,9 @@
    "name": "SeaAmino Powder",
    "price_cents": 4000,
    "pinecone_title": "SeaAminos",
+   "aliases": [
+    "SeaAmino"
+   ],
    "url": "https://myhealingoasis.com/begin/product/seaaminos",
    "legacy_store_url": "https://remedymatch.com/remedies/forms/powders/pure-simple-singles/410-seaaminos",
    "ingredients": [
@@ -13302,9 +13328,13 @@
    "description": "build up 1 drop a day to 15 drops stirred into a little water without touching metal daily on rising"
   },
   "zinc-syntropy": {
-   "name": "Zinc Synergy",
+   "name": "Zinc Syntropy",
    "price_cents": 7000,
    "pinecone_title": "Zinc Synergy",
+   "aliases": [
+    "Zinc Synergy"
+   ],
+   "report_aliases": true,
    "url": "https://myhealingoasis.com/begin/product/zinc-syntropy",
    "legacy_store_url": "https://remedymatch.com/remedies/syntropy/263-zinc-syntropy",
    "qty_pricing": true,
@@ -13373,7 +13403,7 @@
     }
    ],
    "ingredients_source": "production-sheet-2026-07-27",
-   "description": "Zinc Synergy . Zinc Synergy Zinc Syntropy Zinc acts as a cofactor for 2,000 different enzymes, more than any other vitamin or mineral. Zinc is essential for immunity, wound healing and all the special senses: vision, hearing, taste and smell. Low levels can cause craving of salty and spicy foods. Only 8% of Americans fail to take in an adequate amount of Zinc in their daily diet as defined by currently accepted standards, yet Zinc deficiency is one of the most common micronutrient deficiencies. Phytates in grains bind Zinc, reducing its bioavailability, making grain-based diets another...",
+   "description": "Zinc acts as a cofactor for 2,000 different enzymes, more than any other vitamin or mineral. Zinc is essential for immunity, wound healing and all the special senses: vision, hearing, taste and smell. Low levels can cause craving of salty and spicy foods. Only 8% of Americans fail to take in an adequate amount of Zinc in their daily diet as defined by currently accepted standards, yet Zinc deficiency is one of the most common micronutrient deficiencies. Phytates in grains bind Zinc, reducing its bioavailability, making grain-based diets another...",
    "gk_stale": true,
    "gk_stale_reason": "GK page missing: Magnesium",
    "bottle_type": "30 Caps",

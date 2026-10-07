@@ -11,6 +11,8 @@ import json
 import os
 import re
 
+from dashboard.ambiguous_product_names import is_ambiguous_product_name
+
 _REPO_DATA = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data")
 _FILENAME = "clinical_theory_catalog.json"
 _OVERRIDES_FILENAME = "clinical_remedy_overrides.json"
@@ -143,7 +145,7 @@ def remedy_product_slug(name, name_index, overrides=None):
     """Product slug for a remedy name: exact normalised match, then curated
     override (by exact or normalised name); else None. No fuzzy matching."""
     nm = _norm_name(name)
-    if not nm:
+    if not nm or is_ambiguous_product_name(nm):   # "Seacure" is two products
         return None
     if name_index and nm in name_index:
         return name_index[nm]

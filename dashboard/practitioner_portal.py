@@ -11,9 +11,11 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import secrets
 import sqlite3
 from dashboard import db
+from dashboard.ambiguous_product_names import is_ambiguous_product_name
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import List, Optional, Tuple
@@ -390,7 +392,7 @@ def name_to_slug(name, catalog) -> Optional[str]:
     """Resolve a product NAME to a products.json slug (exact or fuzzy substring,
     matching either the catalog name or its pinecone_title) so the assistant can
     add it to the cart."""
-    if not name:
+    if not name or is_ambiguous_product_name(name):   # "Seacure" is two products
         return None
     nl = name.strip().lower()
     # An alias answers to its whole name only: a renamed product keeps its old name once
@@ -407,12 +409,19 @@ def name_to_slug(name, catalog) -> Optional[str]:
     for slug, p in (catalog or {}).items():
         if any((c or "").strip().lower() == nl for c in (p.get("name"), p.get("pinecone_title"))):
             return slug
+    # Substrings match whole words only: "synergy c" sat inside "synergy capsules" and
+    # sent "Magnesium Synergy Capsules" to Vitamin C Syntropy (2026-09-30).
     for slug, p in (catalog or {}).items():
         for cand in (p.get("name"), p.get("pinecone_title")):
             pn = (cand or "").lower()
-            if pn and (nl == pn or (len(nl) > 4 and (nl in pn or pn in nl))):
+            if pn and (nl == pn or (len(nl) > 4 and (_has_words(pn, nl) or _has_words(nl, pn)))):
                 return slug
     return None
+
+
+def _has_words(text, part):
+    """`part` occurs in `text` with no letter or digit touching either end."""
+    return re.search(r"(?<![a-z0-9])" + re.escape(part) + r"(?![a-z0-9])", text) is not None
 
 
 def is_orderable(slug, catalog=None) -> bool:
