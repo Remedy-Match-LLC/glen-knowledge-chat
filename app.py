@@ -5648,21 +5648,6 @@ def _consented_session_email(session_id):
     return ""
 
 
-def _begin_chat_identity(req, session_id, email):
-    """(tier, email) for a /begin/match/chat turn.
-
-    The opt-in gate stores the consented email in journey state, and the browser does
-    not echo it back in JSON. _resolve_chat_tier reads only the request and a portal
-    sign-in, so a visitor who opted in on this session ("Remember me": email + Terms)
-    arrived with no email. The match card showed, but the remedy email had no address
-    to queue to, and only GHL's free-course welcome went out (reproduced on prod,
-    2026-10-07). So fall back to this session's consented email."""
-    # The tier needs no re-resolve: _resolve_chat_tier already counts a session that
-    # accepted the Terms (is_member by session), with or without the email.
-    tier, eff = _resolve_chat_tier(req, session_id, email)
-    return tier, (email or eff or _consented_session_email(session_id))
-
-
 def _resolve_chat_tier(req, session_id, email):
     """Best-effort; fail open to 'anonymous' on any error."""
     try:
@@ -6407,7 +6392,12 @@ def begin_match_chat():
         email = auth_user["email"]
         if not name and auth_user.get("name"):
             name = auth_user["name"]
-    _tier, email = _begin_chat_identity(request, session_id, email)
+    _tier, _eff_email = _resolve_chat_tier(request, session_id, email)
+    # The opt-in gate stores the verified/consented email in journey state.  The
+    # browser intentionally does not echo it back in JSON, so use the effective
+    # server-side identity instead of discarding it.
+    if not email and _eff_email:
+        email = _eff_email
     _blocked = _velocity_guard(request, _tier, session_id)
     if _blocked is not None:
         return _blocked
@@ -6587,11 +6577,18 @@ def begin_match_chat():
         # (recommending a remedy for their condition requires ToS agreement).
         if match_evt and _member:
             yield sse({"match": match_evt})
-            if email:
+            # The hero chat posts no email, so a visitor who opted in on this session
+            # ("Remember me": email + Terms) chatted with none, and no remedy email ever
+            # queued; only GHL's free-course welcome went out (reproduced on prod
+            # 2026-10-07). The session's consented email addresses the queue ONLY. It is
+            # not used for personal context, the ally or logs, so on a shared browser the
+            # next person's chat never carries the first person's intake.
+            _to = email or _consented_session_email(session_id)
+            if _to:
                 try:
-                    _email_remedy_match_once(email, name, session_id, match_evt)
+                    _email_remedy_match_once(_to, name, session_id, match_evt)
                 except Exception as e:
-                    print(f"[match] result email failed for {email}: {e!r}", flush=True)
+                    print(f"[match] result email failed for {_to}: {e!r}", flush=True)
 
         try:
             _q_texts = [m.get("content", "") for m in (history or []) if m.get("role") == "user"]
