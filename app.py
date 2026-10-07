@@ -5657,9 +5657,10 @@ def _begin_chat_identity(req, session_id, email):
     arrived with no email. The match card showed, but the remedy email had no address
     to queue to, and only GHL's free-course welcome went out (reproduced on prod,
     2026-10-07). So fall back to this session's consented email."""
+    # The tier needs no re-resolve: _resolve_chat_tier already counts a session that
+    # accepted the Terms (is_member by session), with or without the email.
     tier, eff = _resolve_chat_tier(req, session_id, email)
-    email = email or eff or _consented_session_email(session_id)
-    return tier, email
+    return tier, (email or eff or _consented_session_email(session_id))
 
 
 def _resolve_chat_tier(req, session_id, email):

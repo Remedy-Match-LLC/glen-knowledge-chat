@@ -16,6 +16,7 @@ def _client(monkeypatch, tmp_path):
     with db.connect(app.LOG_DB) as cx:
         begin_funnel.init_journey_tables(cx)
     monkeypatch.setattr(app, "ghl_onboard_contact", lambda *a, **k: None, raising=False)
+    monkeypatch.setattr(app, "_active_membership_for_email", lambda e: None)
     c = app.app.test_client()
     c.set_cookie("amg_session", "sess-test-1", domain="localhost")
     return c
@@ -55,3 +56,35 @@ def test_an_email_in_the_request_wins(monkeypatch, tmp_path):
     with app.app.test_request_context("/begin/match/chat", method="POST"):
         from flask import request
         assert app._begin_chat_identity(request, "sess-test-1", "b@example.com")[1] == "b@example.com"
+
+
+def test_the_chat_route_uses_the_consented_identity(monkeypatch, tmp_path):
+    """Drives /begin/match/chat itself, with retrieval and the model stubbed out. The
+    route looks up the member's context by email before any model call, so recording
+    that lookup shows which email the route resolved."""
+    c = _client(monkeypatch, tmp_path)
+    seen = []
+    monkeypatch.setattr(app, "_velocity_guard", lambda *a, **k: None)
+    monkeypatch.setattr(app, "embed", lambda text: [0.0])
+    monkeypatch.setattr(app, "_match_query_namespaces", lambda vec: [])
+    monkeypatch.setattr(app, "_member_context_for_email", lambda e: seen.append(e) or {})
+    from dashboard import db
+    with db.connect(app.LOG_DB) as cx:     # the household check reads this table first
+        cx.execute("CREATE TABLE IF NOT EXISTS people (name TEXT, email TEXT)")
+
+    class _Stop:
+        def __getattr__(self, name):
+            raise RuntimeError("model call stubbed out")
+    monkeypatch.setattr(app, "_cl", _Stop())
+
+    def turn():
+        try:
+            c.post("/begin/match/chat", json={"query": "hi", "email": ""}).get_data()
+        except Exception:
+            pass
+
+    turn()
+    assert seen == []                       # a new visitor has no email
+    c.post("/begin/unlock", json={"trigger": "tos", "email": "v@example.com", "tos": True})
+    turn()
+    assert seen == ["v@example.com"]
