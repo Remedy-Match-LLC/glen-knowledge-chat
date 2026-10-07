@@ -2464,7 +2464,7 @@
     },
     {
       "id": "neuromega",
-      "label": "NeurOmega",
+      "label": "WholOmega",
       "aliases": [
         "neuromega",
         "wholomega"
@@ -2481,7 +2481,7 @@
           "type": "product",
           "source": "remedymatch",
           "url": "https://myhealingoasis.com/begin/product/wholomega-120-gelcaps",
-          "title": "NeurOmega"
+          "title": "WholOmega"
         }
       ]
     },
@@ -13006,7 +13006,7 @@
         "ocular hypertension",
         "open-angle glaucoma"
       ],
-      "summary": "Vision-threatening optic nerve condition addressed with OcuHeal drops, OcuFlow, Neuroprotect, and NeurOmega natural protocols.",
+      "summary": "Vision-threatening optic nerve condition addressed with OcuHeal drops, OcuFlow, Neuroprotect, and WholOmega natural protocols.",
       "cluster": "conditions-vision",
       "parent": "conditions-vision",
       "namespaces": [
