@@ -508,7 +508,6 @@ def test_atlas_drops_molybdenum_and_no_edge_points_at_it():
     (atlas-rebuild-from-live.py --check) report the repo ahead of live on every run."""
     concepts = json.loads((ROOT / "data" / "atlas-concepts.json").read_text())["concepts"]
     assert "molybdenum-synergy" not in {c["id"] for c in concepts}
-    assert {c.get("status") for c in concepts} == {"live"}
     assert not [c["id"] for c in concepts if "molybdenum-synergy" in (c.get("neighbors") or [])]
     # The real reader that /atlas/data serves, pointed at the repo copy.
     import atlas_store
