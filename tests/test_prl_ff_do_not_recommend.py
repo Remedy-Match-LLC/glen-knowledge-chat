@@ -123,3 +123,39 @@ def test_the_card_keeps_the_prl_product_and_drops_a_blocked_chip(monkeypatch, tm
         row = out["focus_areas"][0]["products"][0]
         assert row["name"] == "pH Minerals"
         assert (row["ff"] or {}).get("slug") == want
+
+
+def _fs_db(tmp_path, best_ff):
+    import sqlite3
+    from dashboard import fullscript as fs
+    db = str(tmp_path / "f.db")
+    cx = sqlite3.connect(db)
+    cx.row_factory = sqlite3.Row
+    fs.init_tables(cx)
+    fs.sync_from_seed(cx, {
+        "products": [{"name": "Mag Taurate", "brand": "Jarrow", "product_slug": "mag-taurate",
+                      "external_id": "P1", "best_ff": best_ff, "relation": "substitute",
+                      "focus_tags": [], "ff_alts": [], "product_type": "supplement",
+                      "url": None, "source": "seed", "active": 1}],
+        "focus_area_products": [{"focus_area_id": 9, "focus_area_name": "Minerals",
+                                 "fs_product_name": "Mag Taurate", "rank": 0}],
+        "focus_area_items": [{"focus_area_id": 9, "item_code": "ED4"}],
+    })
+    cx.execute("CREATE TABLE IF NOT EXISTS scan_recommendations (email TEXT, scan_id TEXT,"
+               " scan_date TEXT, item_code TEXT, priority_rank INTEGER, label TEXT)")
+    cx.execute("INSERT INTO scan_recommendations VALUES ('a@b.com','s1','2026-07-01','ED4',1,'ED4')")
+    cx.commit()
+    cx.close()
+    return db
+
+
+@pytest.mark.parametrize("best_ff,want", [("Electrolyte Mineral Manna", None),
+                                           ("Clear the Way", "clear-the-way")])
+def test_the_fullscript_card_drops_a_blocked_chip(monkeypatch, tmp_path, best_ff, want):
+    """Drives the real Fullscript card builder, so a call site that bypassed the view fails."""
+    monkeypatch.setattr(app, "LOG_DB", _fs_db(tmp_path, best_ff))
+    monkeypatch.setattr(app, "_fullscript_enabled", lambda: True)
+    out = app._fullscript_for("a@b.com", "2026-07-01")
+    row = out["groups"][0]["products"][0]
+    assert row["name"] == "Mag Taurate"
+    assert (row["ff"] or {}).get("slug") == want
