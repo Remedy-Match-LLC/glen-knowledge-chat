@@ -121,3 +121,31 @@ def test_a_signed_in_client_skips_confirmation(monkeypatch, tmp_path):
     _turn(c)
     email, product, proven = rec["queued"][-1]
     assert (email.lower(), product, proven) == ("client@example.com", "Clear the Way", True)
+
+
+def test_an_email_typed_in_the_request_is_never_queued(monkeypatch, tmp_path):
+    """Anyone can type any address in the request body; only a sign-in or this browser's
+    own opt-in may address the queue."""
+    c = _client(monkeypatch, tmp_path)
+    rec = _chat_rig(monkeypatch)
+    c.post("/begin/unlock", json={"trigger": "tos", "email": "me@example.com", "tos": True})
+    c.post("/begin/match/chat", json={"query": "dry eyes", "email": "stranger@example.com"}).get_data()
+    assert [q[0] for q in rec["queued"]] == ["me@example.com"]
+
+
+def test_the_route_reaches_the_real_queue_as_awaiting_confirm(monkeypatch, tmp_path):
+    c = _client(monkeypatch, tmp_path)     # the chat rig, without the queue stub
+    monkeypatch.setattr(app, "_velocity_guard", lambda *a, **k: None)
+    monkeypatch.setattr(app, "embed", lambda text: [0.0])
+    monkeypatch.setattr(app, "_match_query_namespaces", lambda vec: [])
+    monkeypatch.setattr(app, "_is_gated_question", lambda q: False)
+    monkeypatch.setattr(app, "_cl", _FakeClient())
+    monkeypatch.setattr(app, "_member_context_for_email", lambda e: {})
+    monkeypatch.setenv("REMEDY_MATCH_EMAIL_ENABLED", "1")
+    c.post("/begin/unlock", json={"trigger": "tos", "email": "real@example.com", "tos": True})
+    _turn(c)
+    from dashboard import db, remedy_match_email as rme
+    with db.connect(app.LOG_DB) as cx:
+        rows = rme.recent(cx)
+    assert [(r["email"], r["product_name"], r["status"]) for r in rows] == [
+        ("real@example.com", "Clear the Way", "awaiting_confirm")]

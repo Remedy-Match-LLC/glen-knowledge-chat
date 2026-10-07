@@ -6634,11 +6634,13 @@ def begin_match_chat():
             # 2026-10-07). The session's consented email addresses the queue ONLY. It is
             # not used for personal context, the ally or logs, so on a shared browser the
             # next person's chat never carries the first person's intake.
-            _to = email or _consented_session_email(session_id)
-            # Only a portal sign-in proves the address. Any other address waits for its
-            # owner to click a confirmation link first (Glen, 2026-10-07: "confirm first").
-            _proven = bool(auth_user) and (_to or "").strip().lower() == (
-                (auth_user.get("email") or "").strip().lower())
+            # Address: a portal sign-in, else this browser's own opt-in. Never the email
+            # in the request body: anyone can type any address there. Only the sign-in
+            # proves it; an opt-in address waits for its owner to click a confirmation
+            # link first (Glen, 2026-10-07: "confirm first").
+            _signed_in = ((auth_user or {}).get("email") or "").strip().lower()
+            _to = _signed_in or _consented_session_email(session_id)
+            _proven = bool(_signed_in)
             if _to:
                 try:
                     _email_remedy_match_once(_to, name, session_id, match_evt, proven=_proven)

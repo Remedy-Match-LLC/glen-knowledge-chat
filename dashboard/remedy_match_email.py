@@ -14,9 +14,10 @@ these rules (platform/plans/2026-09-22-remedy-match-email-plan):
   4. At most one per client per CAP_DAYS.
   5. Every send is recorded with its exact body.
   6. Confirm first (Glen, 2026-10-07). An address not yet proven (a portal sign-in proves
-     it) waits as 'awaiting_confirm'. The drain mails one confirmation link, without the
-     product name; clicking it confirms the address for good and releases the match.
-     A match whose address is not confirmed within CONFIRM_DAYS is dropped.
+     it) waits as 'awaiting_confirm'. The drain mails one confirmation link per address per
+     CONFIRM_DAYS, without the product name; clicking it confirms the address for good and
+     releases the match. A match not confirmed within CONFIRM_DAYS is dropped. Only a
+     confirmed address is ever sent a product email.
 
 Sending claims a row with one atomic UPDATE before mailing, so two scheduler processes
 running the drain at once cannot both send it.
@@ -26,7 +27,7 @@ from datetime import datetime, timedelta, timezone
 QUIET_MINUTES = 30
 CAP_DAYS = 7
 CONFIRM_DAYS = 7
-CONFIRM_RESEND_HOURS = 24
+CONFIRM_RESEND_HOURS = 24 * CONFIRM_DAYS     # one confirmation per address per window
 
 # Wording: Glen, 2026-09-23. Not "remedy match": that is the free scan report's name.
 SUBJECT = "The remedy you found in our chat: {product}"
@@ -43,13 +44,13 @@ HTML = ('<div style="font-family: \'arial black\', sans-serif; font-size: large"
 
 # Confirmation wording: Glen, 2026-10-07 ("yes" to the draft). No product name in it.
 CONFIRM_SUBJECT = "Confirm your email to get your remedy link"
-CONFIRM_TEXT = ("Aloha{name},\n\n"
+CONFIRM_TEXT = ("Aloha,\n\n"
                 "Please confirm this is your email, and I'll send you the link to the remedy "
                 "you found in our chat:\n{url}\n\n"
                 "If you didn't chat with us, you can ignore this message.\n\n"
                 "Aloha,\nDr. Glen")
 CONFIRM_HTML = ('<div style="font-family: \'arial black\', sans-serif; font-size: large">'
-                "<p>Aloha{name},</p>"
+                "<p>Aloha,</p>"
                 "<p>Please confirm this is your email, and I'll send you the link to the remedy "
                 "you found in our chat:</p>"
                 '<p><a href="{url}">Confirm my email</a></p>'
@@ -166,8 +167,7 @@ def enqueue(cx, *, email, name, session_id, product_slug, product_name, page_url
         "ON CONFLICT(email, session_id) DO UPDATE SET name=excluded.name, "
         "product_slug=excluded.product_slug, product_name=excluded.product_name, "
         "page_url=excluded.page_url, updated_at=excluded.updated_at, "
-        "status=CASE WHEN excluded.status='pending' THEN 'pending' "
-        "ELSE remedy_match_email_queue.status END "
+        "status=excluded.status "
         "WHERE remedy_match_email_queue.status IN ('pending', 'awaiting_confirm')",
         (email, session_id, (name or "").strip(), product_slug, product_name, page_url,
          stamp, status))
@@ -175,13 +175,12 @@ def enqueue(cx, *, email, name, session_id, product_slug, product_name, page_url
     return bool(cur.rowcount)
 
 
-def render_confirm(name, url):
-    first = (name or "").strip().split(" ")[0]
-    nm = (" " + first) if first else ""
+def render_confirm(url):
+    """Glen's wording exactly. No name: it would come from whoever typed it, and go to
+    an inbox that has not confirmed anything yet."""
     esc = lambda s: (str(s).replace("&", "&amp;").replace("<", "&lt;")
                      .replace(">", "&gt;").replace('"', "&quot;"))
-    return (CONFIRM_SUBJECT, CONFIRM_HTML.format(name=esc(nm), url=esc(url)),
-            CONFIRM_TEXT.format(name=nm, url=url))
+    return (CONFIRM_SUBJECT, CONFIRM_HTML.format(url=esc(url)), CONFIRM_TEXT.format(url=url))
 
 
 def _confirmations(cx, send_fn, confirm_url, now):
@@ -206,8 +205,6 @@ def _confirmations(cx, send_fn, confirm_url, now):
             "AND (c.sent_at IS NULL OR c.sent_at <= ?) GROUP BY q.email", (resend,))):
         import secrets
         token = secrets.token_urlsafe(24)
-        prev = cx.execute("SELECT sent_at FROM remedy_match_email_confirm WHERE email=?",
-                          (row["email"],)).fetchone()
         claim = cx.execute(
             "INSERT INTO remedy_match_email_confirm (email, token_hash, sent_at) "
             "VALUES (?,?,?) ON CONFLICT(email) DO UPDATE SET token_hash=excluded.token_hash, "
@@ -221,18 +218,13 @@ def _confirmations(cx, send_fn, confirm_url, now):
         cx.execute("INSERT INTO remedy_match_email_confirm_tokens (token_hash, email, sent_at) "
                    "VALUES (?,?,?)", (_hash(token), row["email"], _iso(now)))
         cx.commit()
-        subject, html, text = render_confirm(row.get("name"), confirm_url(token))
+        subject, html, text = render_confirm(confirm_url(token))
         try:
-            send_fn(row["email"], row.get("name") or "", subject, html, text)
+            send_fn(row["email"], "", subject, html, text)
             out["confirm_sent"] += 1
         except Exception:
-            # Nothing reached them: drop this link and restore the resend timer, so the
-            # next drain tries again rather than waiting a day.
-            cx.execute("DELETE FROM remedy_match_email_confirm_tokens WHERE token_hash=?",
-                       (_hash(token),))
-            cx.execute("UPDATE remedy_match_email_confirm SET sent_at=? WHERE email=?",
-                       (prev[0] if prev else None, row["email"]))
-            cx.commit()
+            # Keep the timer and the link: a send can raise after the mail was accepted,
+            # and a retry every minute would flood the inbox. No resend inside the window.
             out["confirm_failed"] += 1
     return out
 
@@ -266,6 +258,12 @@ def drain(cx, send_fn, *, confirm_url=None, now=None):
     now = now or _now()
     due = _iso(now - timedelta(minutes=QUIET_MINUTES))
     out = {"sent": 0, "capped": 0, "failed": 0}
+    # Only a confirmed address is sent a product email. A row still 'pending' for an
+    # unconfirmed address (queued before confirm-first shipped) goes back to waiting.
+    cx.execute("UPDATE remedy_match_email_queue SET status='awaiting_confirm' "
+               "WHERE status='pending' AND email NOT IN (SELECT email FROM "
+               "remedy_match_email_confirm WHERE confirmed_at IS NOT NULL)")
+    cx.commit()
     out.update(_confirmations(cx, send_fn, confirm_url, now))
     for row in _rows(cx.execute(
             "SELECT email, session_id, name, product_slug, product_name, page_url "
