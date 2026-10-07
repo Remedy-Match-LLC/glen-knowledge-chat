@@ -223,7 +223,7 @@
    "best_ff": "Macular Wellness Astaxanthin",
    "relation": "substitute",
    "ff_alts": [
-    "NeurOmega",
+    "WholOmega",
     "Neuroprotect"
    ]
   },
@@ -646,7 +646,7 @@
     "Mood and Stress Management"
    ],
    "product_type": "supplement",
-   "best_ff": "NeurOmega",
+   "best_ff": "WholOmega",
    "relation": "substitute",
    "ff_alts": [
     "Neuroprotect"
@@ -706,7 +706,7 @@
     "Inflammation Support"
    ],
    "product_type": "supplement",
-   "best_ff": "NeurOmega",
+   "best_ff": "WholOmega",
    "relation": "substitute",
    "ff_alts": [
     "Neuroprotect"
@@ -722,7 +722,7 @@
     "Brain Support"
    ],
    "product_type": "supplement",
-   "best_ff": "NeurOmega",
+   "best_ff": "WholOmega",
    "relation": "substitute",
    "ff_alts": [
     "SeaAmino Syntropy"
