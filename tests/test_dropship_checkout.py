@@ -77,6 +77,7 @@ def test_build_dropship_order_invoices_practitioner_ships_patient(monkeypatch):
 
 def _stub_order(monkeypatch, retail=7000, get=0):
     monkeypatch.setattr(dc, "_retail_for", lambda slug: retail)
+    monkeypatch.setattr(dc, "_is_ff", lambda slug: True)   # these carts model Functional Formulations
 
     def boom(*a, **k):
         raise AssertionError("build_dropship_order must not touch QBO invoicing (paid-only)")

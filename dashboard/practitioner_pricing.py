@@ -32,6 +32,46 @@ def drop_ship_base_cents(qty, modules_completed):
     practitioner's certification level (same curve as wholesale stocking)."""
     return _wp.blended_unit_price_cents(int(qty), int(modules_completed), _wp.DEFAULT_B)
 
+def map_floor_cents(retail_cents, map_cents):
+    """The lowest price a practitioner may sell this product at.
+
+    Glen, 2026-10-06: a product that retails below the minimum advertised price
+    is floored at its own retail, so a patient never pays more through a
+    practitioner than in the store ($30 infoceutical: $30, not $67). A missing
+    retail keeps the house minimum."""
+    r = int(retail_cents or 0)
+    return min(int(map_cents), r) if r > 0 else int(map_cents)
+
+def selling_floor_cents(retail_cents, map_cents, *, discountable=True):
+    """The lowest price a practitioner may sell this product at, to a patient.
+
+    A product with no discount of its own (not a Functional Formulation, no wholesale
+    price) is drop-shipped at retail, so it is never sold below retail: "no discount
+    unless otherwise specified" (Glen 2026-10-06). Anything else floors at
+    map_floor_cents."""
+    r = int(retail_cents or 0)
+    if not discountable and r > 0:
+        return r
+    return map_floor_cents(retail_cents, map_cents)
+
+def sku_base_cents(qty, modules_completed, retail_cents, wholesale_discount_pct=None, is_ff=True,
+                   bottle_share=1.0):
+    """Drop-ship base for one product.
+
+    - Its own wholesale discount (books, Molecular Hydrogen bottle): retail less that
+      discount, the price a stocking order pays.
+    - A Functional Formulation without one: the blended volume curve.
+    - Anything else: retail. Glen, 2026-10-06: the drop-ship pricing rule applies only
+      to Functional Formulations, and there is "no discount unless otherwise specified"."""
+    if wholesale_discount_pct is not None:
+        pct = max(0, min(100, int(wholesale_discount_pct)))
+        return _wp.whole_dollar_cents((int(retail_cents) * (100 - pct) + 50) // 100)  # as stocking
+    if is_ff:
+        base = drop_ship_base_cents(qty, modules_completed)
+        # A product that is part of one bottle (the CDS pair) takes its share of the base.
+        return base if bottle_share == 1 else _wp.whole_dollar_cents(int(round(base * bottle_share)))
+    return int(retail_cents)
+
 def service_fee_cents(selling_cents, base_cents, settings):
     """Flat fee = fee_pct of the markup (selling - base), never negative, rounded up to a
     whole dollar so the practitioner's drop-ship price (base + fee) is whole. Drop-ship only."""
@@ -64,16 +104,18 @@ def resolve_selling_cents(price_input, *, retail_cents, map_cents):
         raise MapViolation(f"{s} below MAP {map_cents}")
     return s
 
-def quote_line(*, selling_cents, qty, modules, settings):
+def quote_line(*, selling_cents, qty, modules, settings, base_cents=None, charge_fee=True):
     """Per-bottle economics for a drop-ship line. base = blended at this qty+cert;
     fee = 33% of markup; margin = selling - base - fee (>=0); dropship_wholesale = base+fee
     (what the practitioner pays in practitioner-paid mode).
 
     NOTE: `selling_cents` must already have passed MAP validation via
     `resolve_selling_cents` — quote_line does NOT re-check MAP (the advertised-price floor
-    is enforced at price resolution, before a quote is ever built)."""
-    base = drop_ship_base_cents(qty, modules)
-    fee = service_fee_cents(selling_cents, base, settings)
+    is enforced at price resolution, before a quote is ever built).
+    `base_cents` replaces the blended base (see sku_base_cents). `charge_fee` False drops
+    the service fee: it belongs to the Functional Formulation rule only (Glen 2026-10-06)."""
+    base = drop_ship_base_cents(qty, modules) if base_cents is None else int(base_cents)
+    fee = service_fee_cents(selling_cents, base, settings) if charge_fee else 0
     margin = max(0, int(selling_cents) - base - fee)
     return {
         "line_selling_cents": int(selling_cents),

@@ -31,6 +31,7 @@ def _stub_qb_tax(monkeypatch, cap):
         raise AssertionError("build_client_order must not touch QBO invoicing (paid-only)")
     monkeypatch.setattr(dc.qb, "find_or_create_customer", boom)
     monkeypatch.setattr(dc.qb, "create_invoice", boom)
+    monkeypatch.setattr(dc, "_is_ff", lambda slug: True)   # these carts model Functional Formulations
     import dashboard.tax as _tax
     monkeypatch.setattr(
         _tax, "compute_get_cents",

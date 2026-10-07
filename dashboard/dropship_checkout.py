@@ -45,12 +45,60 @@ def _retail_for(slug: str) -> int:
     return _app._get_product(slug)["price_cents"]
 
 
-def dropship_line_cents(*, retail_cents, qty, modules, settings):
+def _wholesale_pct_for(slug: str):
+    """The product's own wholesale discount %, or None. Monkeypatchable in tests."""
+    import app as _app
+    return (_app._get_product(slug) or {}).get("wholesale_discount_pct")
+
+
+def _dropship_ff(slug: str) -> bool:
+    """Priced by the Functional Formulation drop-ship rule: a standard FF bottle, or a
+    larger bottle of one marked `ff_larger_size` (WholOmega 120 gelcaps, Glen 2026-10-06:
+    "formulation pricing"). qty_pricing sits on the standard bottle only."""
+    if _is_ff(slug):
+        return True
+    try:
+        import app as _app
+        return bool((_app._get_product(slug) or {}).get("ff_larger_size"))
+    except Exception:
+        return False
+
+
+def _bottle_share(slug: str) -> float:
+    """How much of one formulation bottle this product is. CDS and CDS Activator always
+    sell as a pair, priced as one bottle (Glen 2026-10-06), so each is 0.5."""
+    try:
+        import app as _app
+        return float((_app._get_product(slug) or {}).get("ff_bottle_share") or 1)
+    except Exception:
+        return 1.0
+
+
+def _line_terms(cart):
+    """slug -> (wholesale_discount_pct, is_ff, bottle_share) for each cart line."""
+    return {i["slug"]: (_wholesale_pct_for(i["slug"]), _dropship_ff(i["slug"]),
+                        _bottle_share(i["slug"])) for i in cart}
+
+
+def _curve_bottles(cart, terms):
+    """Bottles that count toward the blended volume curve: Functional Formulations with
+    no wholesale discount of their own, the only lines priced on it. Everything else is
+    priced off its own retail and stays out of the count, as in a stocking order."""
+    return int(round(sum(int(i.get("qty", 1)) * terms[i["slug"]][2]   # qty as the line loops count it
+                         for i in cart if terms[i["slug"]][0] is None and terms[i["slug"]][1])))
+
+
+def dropship_line_cents(*, retail_cents, qty, modules, settings, wholesale_discount_pct=None,
+                        is_ff=True, bottle_share=1.0):
     """Per-line drop-ship economics. Fee is 33% of (retail - base) — RM's standard cut,
     since the patient price is private in practitioner-paid mode. Reuses Plan 1's
     quote_line with selling=retail."""
+    base = (None if (wholesale_discount_pct is None and is_ff and bottle_share == 1) else
+            _pp.sku_base_cents(qty, modules, retail_cents, wholesale_discount_pct, is_ff,
+                               bottle_share=bottle_share))
     q = _pp.quote_line(selling_cents=int(retail_cents), qty=int(qty),
-                       modules=int(modules), settings=settings)
+                       modules=int(modules), settings=settings, base_cents=base,
+                       charge_fee=is_ff)
     unit = q["dropship_wholesale_cents"]          # base + fee
     return {
         "base_cents": q["base_cents"],
@@ -129,6 +177,8 @@ def quote_dropship_cart(cart: List[dict], practitioner: dict) -> dict:
         return {"lines": [], "subtotal_cents": 0}
     modules = int(practitioner.get("modules_completed", 0) or 0)
     settings = _settings()
+    terms = _line_terms(cart)
+    curve_bottles = _curve_bottles(cart, terms)
     special_unit_cents = _practitioner_dropship_unit_cents(practitioner["id"])
     ceiling = _flat_ceiling_cents() if special_unit_cents is not None else None
     lines = []
@@ -138,11 +188,14 @@ def quote_dropship_cart(cart: List[dict], practitioner: dict) -> dict:
         line_qty = int(item.get("qty", 1))
         retail_cents = _retail_for(slug)
         dl = dropship_line_cents(
-            retail_cents=retail_cents, qty=total_bottles,
-            modules=modules, settings=settings)
+            retail_cents=retail_cents, qty=curve_bottles,
+            modules=modules, settings=settings,
+            wholesale_discount_pct=terms[slug][0], is_ff=terms[slug][1],
+            bottle_share=terms[slug][2])
         flat_applies = (special_unit_cents is not None
                         and _flat_applies(slug, retail_cents, ceiling))
-        unit_cents = special_unit_cents if flat_applies else dl["unit_cents"]
+        # A practitioner's flat price only ever lowers a line (a $40 book: $27, not a $40 flat).
+        unit_cents = min(special_unit_cents, dl["unit_cents"]) if flat_applies else dl["unit_cents"]
         line_cents = unit_cents * line_qty
         subtotal_cents += line_cents
         lines.append({
@@ -258,7 +311,9 @@ def _practitioner_price_cents(pid: str, slug: str, retail: int) -> int:
     """
     from dashboard import practitioner_settings as _ps
     settings = _settings()
-    map_floor = int(settings.get("map_default_cents", 7000))
+    map_floor = _pp.selling_floor_cents(
+        retail, settings.get("map_default_cents", 7000),
+        discountable=_dropship_ff(slug) or _wholesale_pct_for(slug) is not None)
     try:
         cx = db.connect(_LOG_DB)
         cx.row_factory = sqlite3.Row
@@ -314,7 +369,8 @@ def build_client_order(cart: List[dict], practitioner: dict, *,
       the return-handler resolves it when booking the Sales Receipt.
     - Each line is priced at S = practitioner_price_for(pid, slug) (>= MAP),
       optionally reduced by the practitioner-effective volume discount.
-    - base/fee/margin computed via quote_line(selling_cents=S, qty=total_bottles).
+    - base/fee/margin computed via quote_line(selling_cents=S, qty=curve bottles),
+      or from the product's own wholesale base when it has one.
     - Ship to patient["ship"]; source = "dispensary".
     - GET recorded-not-charged on the patient's ship-to state.
     - NO wallet redeem (the margin is credited on PAID, not here).
@@ -348,6 +404,8 @@ def build_client_order(cart: List[dict], practitioner: dict, *,
         open_pct = _pricing.open_total_pct(total_ff, eff)
         prog_pct = _pricing.program_total_pct(total_ff, eff, program_member)
 
+    terms = _line_terms(cart)
+    curve_bottles = _curve_bottles(cart, terms)
     lines = []
     subtotal_cents = 0
     total_margin_cents = 0
@@ -358,9 +416,14 @@ def build_client_order(cart: List[dict], practitioner: dict, *,
         line_qty = int(item.get("qty", 1))
         # S: practitioner's selling price for this slug (>= MAP)
         s_cents = practitioner_price_for(pid, slug)
-        # base/fee/margin use total_bottles for the blended curve
-        q = _pp.quote_line(selling_cents=s_cents, qty=total_bottles,
-                           modules=modules, settings=settings)
+        # base/fee/margin use the curve's bottle count, or the product's own wholesale base
+        _pct, _ff, _share = terms[slug]
+        q = _pp.quote_line(selling_cents=s_cents, qty=curve_bottles,
+                           modules=modules, settings=settings,
+                           base_cents=(None if (_pct is None and _ff and _share == 1) else _pp.sku_base_cents(
+                               curve_bottles, modules, _retail_for(slug), _pct, _ff,
+                               bottle_share=_share)),
+                           charge_fee=_ff)
         if eff:
             prod = _app._get_product(slug) or {}
             elig = bool(_app._qty_eligible(prod))
@@ -371,6 +434,9 @@ def build_client_order(cart: List[dict], practitioner: dict, *,
                 line_pct = 0.0
             floor = _pricing.unit_floor_cents(prod, s_cents, eff, "discount")
             paid_unit = _pricing.apply_discount(s_cents, line_pct, floor)
+            # The discount comes out of this line's margin and never past it, so a
+            # low-margin line cannot draw down the credit earned on other lines.
+            paid_unit = max(paid_unit, s_cents - q["margin_cents"])
         else:
             paid_unit = s_cents   # baseline: patient pays flat S
         # The discount is taken out of the practitioner's margin.

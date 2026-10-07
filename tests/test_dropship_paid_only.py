@@ -89,6 +89,7 @@ def env(monkeypatch):
     monkeypatch.setattr(qbo_billing, "find_or_create_customer", boom)
 
     monkeypatch.setattr(dc, "_retail_for", lambda slug: 7000)
+    monkeypatch.setattr(dc, "_is_ff", lambda slug: True)   # a Functional Formulation cart
     monkeypatch.setattr(tax, "compute_get_cents",
                         lambda subtotal, *, channel, ship_to_state, resale_ok=False: 275)
 
