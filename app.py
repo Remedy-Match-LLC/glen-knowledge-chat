@@ -30025,13 +30025,24 @@ PRL_LINK = "https://truly.vip/prl"  # Glen's practitioner ordering link (code 02
 
 
 def _prl_ff_view(best_ff, relation):
+    """The Functional Formulation a channel card suggests beside a PRL or Fullscript
+    product, or None. The crosswalk is vault data and can name a product Glen never
+    recommends (Electrolyte Mineral Manna, AllerFree), a retired one, or no product
+    at all. So the suggestion shows only when the name resolves to a sellable slug
+    that is not on DO_NOT_RECOMMEND. The channel product itself still shows."""
     if not best_ff:
         return None
     try:
         slug = _resolve_remedy_slug({"name": best_ff})
     except Exception:
         slug = None
-    return {"name": best_ff, "relation": relation or "consider", "slug": slug}
+    from dashboard.related_products import DO_NOT_RECOMMEND
+    if not slug or slug in DO_NOT_RECOMMEND:
+        return None
+    # Show the name of the product the chip links to. A crosswalk label can be a
+    # retired name ("Relax") that resolves to its live successor.
+    name = ((_get_product(slug) or {}).get("name") or best_ff).strip()
+    return {"name": name, "relation": relation or "consider", "slug": slug}
 
 
 def _prl_supplement_for(email, scan_date):
@@ -30131,14 +30142,8 @@ _FULLSCRIPT_HEADINGS = {
 
 
 def _fullscript_ff_view(best_ff, relation):
-    """Same shape as _prl_ff_view so both channel cards render identically."""
-    if not best_ff:
-        return None
-    try:
-        slug = _resolve_remedy_slug({"name": best_ff})
-    except Exception:
-        slug = None
-    return {"name": best_ff, "relation": relation or "consider", "slug": slug}
+    """Same rule as _prl_ff_view so both channel cards render identically."""
+    return _prl_ff_view(best_ff, relation)
 
 
 def _fullscript_for(email, scan_date):
