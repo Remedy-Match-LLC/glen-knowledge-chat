@@ -40,7 +40,8 @@ def test_an_unproven_address_gets_a_confirmation_not_the_remedy(tmp_path):
     out = rme.drain(cx, lambda *a: sent.append(a), confirm_url=URL, now=T0 + timedelta(hours=1))
     assert out["sent"] == 0 and out["confirm_sent"] == 1
     (email, name, subject, html, text), = sent
-    assert email == "v@example.com" and subject == rme.CONFIRM_SUBJECT
+    assert email == "v@example.com"
+    assert subject == "Confirm your email to get your remedy link"     # Glen's wording
     assert "Clear the Way" not in subject + html + text      # never names the product
     assert "/begin/confirm-email?t=" in text and "Confirm my email" in html
     assert text.startswith("Aloha,\n\nPlease confirm this is your email, and I'll send you "
@@ -48,6 +49,12 @@ def test_an_unproven_address_gets_a_confirmation_not_the_remedy(tmp_path):
     assert text.endswith("\n\nIf you didn't chat with us, you can ignore this message."
                          "\n\nAloha,\nDr. Glen")
     assert "Vee" not in text + html          # no name typed by a visitor
+    import re
+    plain = re.sub(r"<[^>]+>", " ", html)
+    plain = re.sub(r"\s+", " ", plain).strip()
+    assert plain == ("Aloha, Please confirm this is your email, and I'll send you the link "
+                     "to the remedy you found in our chat: Confirm my email If you didn't "
+                     "chat with us, you can ignore this message. Aloha, Dr. Glen")
 
 
 def test_clicking_the_link_releases_the_remedy_email(tmp_path):

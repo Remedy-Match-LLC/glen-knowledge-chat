@@ -6354,7 +6354,7 @@ def begin_confirm_email():
             ok = False
         if ok:
             head = "Thank you, your email is confirmed"
-            body = ("<p>Your remedy link is on its way. It should arrive within a few "
+            body = ("<p>If a remedy link is waiting for you, it will arrive within a few "
                     "minutes.</p>")
         else:
             head, status = "This link has expired", 410
@@ -6643,7 +6643,10 @@ def begin_match_chat():
             _proven = bool(_signed_in)
             if _to:
                 try:
-                    _email_remedy_match_once(_to, name, session_id, match_evt, proven=_proven)
+                    # The greeting name only for a signed-in client: an opt-in name is typed
+                    # by whoever is at the keyboard and could reach someone else's inbox.
+                    _email_remedy_match_once(_to, name if _proven else "", session_id,
+                                             match_evt, proven=_proven)
                 except Exception as e:
                     print(f"[match] result email failed: {type(e).__name__}", flush=True)
 

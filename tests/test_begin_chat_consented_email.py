@@ -64,7 +64,8 @@ def _chat_rig(monkeypatch):
     monkeypatch.setattr(app, "_member_context_for_email", lambda e: rec["context"].append(e) or {})
     monkeypatch.setattr(app, "_email_remedy_match_once",
                         lambda email, name, sid, match, proven=False:
-                        rec["queued"].append((email, match["name"], proven)))
+                        rec["queued"].append((email, match["name"], proven))
+                        or rec.setdefault("names", []).append(name))
     return rec
 
 
@@ -149,3 +150,11 @@ def test_the_route_reaches_the_real_queue_as_awaiting_confirm(monkeypatch, tmp_p
         rows = rme.recent(cx)
     assert [(r["email"], r["product_name"], r["status"]) for r in rows] == [
         ("real@example.com", "Clear the Way", "awaiting_confirm")]
+
+
+def test_an_opt_in_name_never_reaches_the_email(monkeypatch, tmp_path):
+    c = _client(monkeypatch, tmp_path)
+    rec = _chat_rig(monkeypatch)
+    c.post("/begin/unlock", json={"trigger": "tos", "email": "v@example.com", "tos": True})
+    c.post("/begin/match/chat", json={"query": "dry eyes", "email": "", "name": "Mallory"}).get_data()
+    assert rec["names"] == [""]
