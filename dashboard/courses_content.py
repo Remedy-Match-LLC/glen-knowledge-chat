@@ -35,6 +35,10 @@ class Course:
     title: str
     description: str
     modules: list
+    # A course.yaml may switch these off, e.g. a highlights reel with nothing to
+    # hand in and no credential. Both default on, so existing courses are unchanged.
+    homework: bool = True
+    certifiable: bool = True
 
 
 def courses_root() -> str:
@@ -76,6 +80,10 @@ def load_course(course_slug: str, root: str | None = None) -> Course:
         title=str(spec.get("title", "")),
         description=str(spec.get("description", "")),
         modules=modules,
+        # Fail closed: only a bare YAML true, or no key at all, turns these on.
+        # A quoted "false" must not quietly bring back homework or the paid cert.
+        homework=spec.get("homework", True) is True,
+        certifiable=spec.get("certifiable", True) is True,
     )
 
 
