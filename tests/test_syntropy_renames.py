@@ -445,8 +445,7 @@ def test_clinical_theory_live_fields_name_no_old_name():
 def test_atlas_keeps_old_search_words_and_adds_new_ones():
     for path in ("data/atlas-concepts.json", "data/atlas-seed-input.json"):
         text = (ROOT / path).read_text()
-        for word in ("magnesium synergy blend", "molybdenum synergy formula",
-                     "zinc synergy supplement"):
+        for word in ("magnesium synergy blend", "zinc synergy supplement"):
             assert f'"{word}"' in text
             assert f'"{word.replace("synergy", "syntropy")}"' in text
 
@@ -460,11 +459,58 @@ def test_atlas_vitamin_a_summary_drops_planned():
 
 def test_product_alias_map_points_at_the_new_names():
     doc = json.loads((ROOT / "data" / "product-aliases.json").read_text())["aliases"]
-    for old, new, slug in (("Magnesium Synergy", "Magnesium Syntropy", "magnesium-syntropy"),
-                           ("Molybdenum Synergy", "Molybdenum Syntropy", "molybdenum-syntropy")):
-        assert doc[old]["catalog_name"] == new
-        assert doc[new]["catalog_name"] == new
-        assert doc[new]["url"].endswith("/" + slug)
+    old, new, slug = "Magnesium Synergy", "Magnesium Syntropy", "magnesium-syntropy"
+    assert doc[old]["catalog_name"] == new
+    assert doc[new]["catalog_name"] == new
+    assert doc[new]["url"].endswith("/" + slug)
+
+
+# ── Molybdenum was never produced ───────────────────────────────────────────
+# Glen, 2026-10-07: "no - not produced. Only an idea." It leaves every surface that
+# recommends or links it. The catalog record stays, inactive, for order history.
+
+def test_chat_links_never_name_molybdenum():
+    doc = json.loads((ROOT / "data" / "product-aliases.json").read_text())["aliases"]
+    assert not [k for k, v in doc.items() if "molybdenum-syntropy" in json.dumps(v)]
+
+
+def test_scan_suggestions_never_recommend_molybdenum():
+    text = (ROOT / "data" / "e4l_stressor_map.json").read_text()
+    assert "Molybdenum Syntropy" not in text and "Molybdenum Synergy" not in text
+    doc = json.loads(text)
+    found = []
+
+    def walk(o):
+        if isinstance(o, dict):
+            if o.get("slug") == "nut-mo":
+                found.append(o)
+            for v in o.values():
+                walk(v)
+        elif isinstance(o, list):
+            for v in o:
+                walk(v)
+    walk(doc)
+    (mo,) = found
+    assert mo["remedies"] == [] and mo["name"] == "Molybdenum"   # the mineral stays
+
+
+def test_glossary_names_molybdenum_only_as_the_mineral():
+    doc = json.loads((ROOT / "data" / "clinical_theory_catalog.json").read_text())
+    (e,) = [e for d in doc["dimensions"] for e in d["entries"] if e.get("slug") == "molybdenum"]
+    assert e["description"] == ("Molybdenum is important for endocrine regulation.You can find "
+                                "Molybdenum in Sulfur Syntropy and Thyroid Support")
+    assert [r["name"] for r in e["remedies"]] == ["Sulfur Syntropy", "Thyroid Support"]
+
+
+def test_atlas_retires_molybdenum_and_no_edge_points_at_it():
+    concepts = json.loads((ROOT / "data" / "atlas-concepts.json").read_text())["concepts"]
+    (mo,) = [c for c in concepts if c["id"] == "molybdenum-synergy"]
+    assert mo["status"] == "retired"
+    assert not [c["id"] for c in concepts if "molybdenum-synergy" in (c.get("neighbors") or [])]
+    served = [c for c in concepts if c.get("status") == "live"]
+    assert "molybdenum-synergy" not in {c["id"] for c in served}
+    seed = (ROOT / "data" / "atlas-seed-input.json").read_text()
+    assert '"molybdenum-synergy"' not in seed
 
 
 def test_seacure_syntropy_gets_the_capsules_dose():

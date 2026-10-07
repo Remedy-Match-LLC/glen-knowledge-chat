@@ -3720,29 +3720,6 @@
       ]
     },
     {
-      "id": "molybdenum-synergy",
-      "label": "Molybdenum Syntropy",
-      "aliases": [
-        "molybdenum synergy formula",
-        "molybdenum syntropy formula"
-      ],
-      "summary": "Molybdenum Syntropy is a syntropy-category mineral formulation featuring molybdenum, priced at $70.",
-      "cluster": "minerals",
-      "parent": "minerals",
-      "namespaces": [
-        "specific-formulations"
-      ],
-      "disposition": "auto",
-      "links": [
-        {
-          "type": "product",
-          "source": "remedymatch",
-          "url": "https://myhealingoasis.com/begin/product/molybdenum-syntropy",
-          "title": "Molybdenum Syntropy"
-        }
-      ]
-    },
-    {
       "id": "medicinal-mushrooms",
       "label": "Medicinal Mushrooms",
       "aliases": [

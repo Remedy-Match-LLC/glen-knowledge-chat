@@ -9828,7 +9828,6 @@
     "specific-formulations"
    ],
    "neighbors": [
-    "molybdenum-synergy",
     "energessence",
     "holy-grail-full-spectrum-ormus",
     "molecular-hydrogen-tablets"
@@ -14079,7 +14078,6 @@
    ],
    "neighbors": [
     "energessence",
-    "molybdenum-synergy",
     "medicinal-mushrooms",
     "sanctuary-c60"
    ],
@@ -19331,7 +19329,6 @@
     "ingredients"
    ],
    "neighbors": [
-    "molybdenum-synergy",
     "methylselenocysteine",
     "acetaldehyde-detox",
     "adenosyl-cobalamin"
@@ -19376,7 +19373,7 @@
     "energessence"
    ],
    "parent": "minerals",
-   "status": "live",
+   "status": "retired",
    "summary": "Molybdenum Syntropy is a syntropy-category mineral formulation featuring molybdenum, priced at $70."
   },
   {

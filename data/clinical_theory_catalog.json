@@ -1289,7 +1289,7 @@
      "slug": "molybdenum",
      "name": "Molybdenum",
      "alt_name": "",
-     "description": "Molybdenum is important for endocrine regulation.You can find Molybdenum in Sulfur Syntropy and Thyroid Support as well as Molybdenum Syntropy",
+     "description": "Molybdenum is important for endocrine regulation.You can find Molybdenum in Sulfur Syntropy and Thyroid Support",
      "remedies": [
       {
        "name": "Sulfur Syntropy",
@@ -1298,10 +1298,6 @@
       {
        "name": "Thyroid Support",
        "url": "https://myhealingoasis.com/begin/product/thyroid-support"
-      },
-      {
-       "name": "Molybdenum Syntropy",
-       "url": "https://myhealingoasis.com/shop"
       }
      ]
     },
