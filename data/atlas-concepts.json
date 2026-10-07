@@ -9828,7 +9828,6 @@
     "specific-formulations"
    ],
    "neighbors": [
-    "molybdenum-synergy",
     "energessence",
     "holy-grail-full-spectrum-ormus",
     "molecular-hydrogen-tablets"
@@ -14079,7 +14078,6 @@
    ],
    "neighbors": [
     "energessence",
-    "molybdenum-synergy",
     "medicinal-mushrooms",
     "sanctuary-c60"
    ],
@@ -19331,7 +19329,6 @@
     "ingredients"
    ],
    "neighbors": [
-    "molybdenum-synergy",
     "methylselenocysteine",
     "acetaldehyde-detox",
     "adenosyl-cobalamin"
@@ -19339,45 +19336,6 @@
    "parent": "minerals",
    "status": "live",
    "summary": "Molybdenum is an essential trace mineral cofactor for sulfite oxidase, aldehyde oxidase, and xanthine oxidase enzymes."
-  },
-  {
-   "aliases": [
-    "molybdenum synergy formula",
-    "molybdenum syntropy formula"
-   ],
-   "cluster": "minerals",
-   "coords": {
-    "x": 0.662,
-    "y": 0.174
-   },
-   "id": "molybdenum-synergy",
-   "label": "Molybdenum Syntropy",
-   "links": [
-    {
-     "source": "remedymatch",
-     "title": "Molybdenum Syntropy",
-     "type": "product",
-     "url": "https://myhealingoasis.com/begin/product/molybdenum-syntropy"
-    },
-    {
-     "source": "youtube",
-     "title": "Comprehensive Functional Formulations Deliver More Healing With Each Dose...",
-     "type": "video",
-     "url": "https://youtu.be/yzJzp06IChE"
-    }
-   ],
-   "namespaces": [
-    "specific-formulations"
-   ],
-   "neighbors": [
-    "electrolyte-mineral-manna",
-    "magnesium-synergy",
-    "sulfur-synergy",
-    "energessence"
-   ],
-   "parent": "minerals",
-   "status": "live",
-   "summary": "Molybdenum Syntropy is a syntropy-category mineral formulation featuring molybdenum, priced at $70."
   },
   {
    "aliases": [

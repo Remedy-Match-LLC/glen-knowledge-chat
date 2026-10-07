@@ -1193,11 +1193,7 @@
      "affects": [
       "Liver"
      ],
-     "remedies": [
-      {
-       "name": "Molybdenum Syntropy"
-      }
-     ],
+     "remedies": [],
      "tier": "strong",
      "source": "NIH ODS",
      "url": "https://ods.od.nih.gov/factsheets/Molybdenum-HealthProfessional/",
