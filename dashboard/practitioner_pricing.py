@@ -54,7 +54,8 @@ def selling_floor_cents(retail_cents, map_cents, *, discountable=True):
         return r
     return map_floor_cents(retail_cents, map_cents)
 
-def sku_base_cents(qty, modules_completed, retail_cents, wholesale_discount_pct=None, is_ff=True):
+def sku_base_cents(qty, modules_completed, retail_cents, wholesale_discount_pct=None, is_ff=True,
+                   bottle_share=1.0):
     """Drop-ship base for one product.
 
     - Its own wholesale discount (books, Molecular Hydrogen bottle): retail less that
@@ -66,7 +67,9 @@ def sku_base_cents(qty, modules_completed, retail_cents, wholesale_discount_pct=
         pct = max(0, min(100, int(wholesale_discount_pct)))
         return _wp.whole_dollar_cents((int(retail_cents) * (100 - pct) + 50) // 100)  # as stocking
     if is_ff:
-        return drop_ship_base_cents(qty, modules_completed)
+        base = drop_ship_base_cents(qty, modules_completed)
+        # A product that is part of one bottle (the CDS pair) takes its share of the base.
+        return base if bottle_share == 1 else _wp.whole_dollar_cents(int(round(base * bottle_share)))
     return int(retail_cents)
 
 def service_fee_cents(selling_cents, base_cents, settings):

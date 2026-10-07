@@ -264,3 +264,22 @@ def test_dispensary_volume_count_is_formulations_only(monkeypatch):
 
 def test_own_wholesale_base_is_whole_dollars():
     assert pp.sku_base_cents(1, 0, 3500, 50, is_ff=False) == 1800   # $17.50 rounds up
+
+
+# ── CDS and CDS Activator sell as a pair, priced as one formulation bottle ───
+
+def test_cds_pair_drop_ships_as_one_formulation_bottle(monkeypatch):
+    """Glen, 2026-10-06: "the two sell as a pair always"; the pair drop-ships as one bottle."""
+    monkeypatch.setattr(dc, "_practitioner_dropship_unit_cents", lambda pid: None)
+    q = dc.quote_dropship_cart([{"slug": "cds", "qty": 1}, {"slug": "cds-activator", "qty": 1}],
+                               {"id": "p1", "modules_completed": 0})
+    by = {l["slug"]: l for l in q["lines"]}
+    # each half: base $25 (half of $50), fee 33% of ($35 - $25) = $3.30 -> $4; pair $58, not $100
+    assert by["cds"]["base_cents"] == by["cds-activator"]["base_cents"] == 2500
+    assert q["subtotal_cents"] == 5800
+
+
+def test_cds_pair_counts_as_one_bottle_on_the_curve():
+    terms = {"cds": (None, True, 0.5), "cds-activator": (None, True, 0.5), "ff": (None, True, 1.0)}
+    cart = [{"slug": "cds", "qty": 3}, {"slug": "cds-activator", "qty": 3}, {"slug": "ff", "qty": 2}]
+    assert dc._curve_bottles(cart, terms) == 5

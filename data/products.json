@@ -18422,6 +18422,7 @@
   },
   "cds": {
    "name": "CDS",
+   "ff_bottle_share": 0.5,
    "price_cents": 3500,
    "pinecone_title": "CDS",
    "qty_pricing": true,
@@ -22870,6 +22871,7 @@
   },
   "cds-activator": {
    "name": "CDS Activator",
+   "ff_bottle_share": 0.5,
    "price_cents": 3500,
    "pinecone_title": "CDS Activator",
    "qty_pricing": true,

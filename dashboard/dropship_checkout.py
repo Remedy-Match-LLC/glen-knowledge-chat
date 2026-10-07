@@ -64,26 +64,38 @@ def _dropship_ff(slug: str) -> bool:
         return False
 
 
+def _bottle_share(slug: str) -> float:
+    """How much of one formulation bottle this product is. CDS and CDS Activator always
+    sell as a pair, priced as one bottle (Glen 2026-10-06), so each is 0.5."""
+    try:
+        import app as _app
+        return float((_app._get_product(slug) or {}).get("ff_bottle_share") or 1)
+    except Exception:
+        return 1.0
+
+
 def _line_terms(cart):
-    """slug -> (wholesale_discount_pct, is_ff) for each cart line."""
-    return {i["slug"]: (_wholesale_pct_for(i["slug"]), _dropship_ff(i["slug"])) for i in cart}
+    """slug -> (wholesale_discount_pct, is_ff, bottle_share) for each cart line."""
+    return {i["slug"]: (_wholesale_pct_for(i["slug"]), _dropship_ff(i["slug"]),
+                        _bottle_share(i["slug"])) for i in cart}
 
 
 def _curve_bottles(cart, terms):
     """Bottles that count toward the blended volume curve: Functional Formulations with
     no wholesale discount of their own, the only lines priced on it. Everything else is
     priced off its own retail and stays out of the count, as in a stocking order."""
-    return sum(int(i.get("qty", 1)) for i in cart          # as the line loops count it
-               if terms[i["slug"]][0] is None and terms[i["slug"]][1])
+    return int(round(sum(int(i.get("qty", 1)) * terms[i["slug"]][2]   # qty as the line loops count it
+                         for i in cart if terms[i["slug"]][0] is None and terms[i["slug"]][1])))
 
 
 def dropship_line_cents(*, retail_cents, qty, modules, settings, wholesale_discount_pct=None,
-                        is_ff=True):
+                        is_ff=True, bottle_share=1.0):
     """Per-line drop-ship economics. Fee is 33% of (retail - base) — RM's standard cut,
     since the patient price is private in practitioner-paid mode. Reuses Plan 1's
     quote_line with selling=retail."""
-    base = (None if (wholesale_discount_pct is None and is_ff) else
-            _pp.sku_base_cents(qty, modules, retail_cents, wholesale_discount_pct, is_ff))
+    base = (None if (wholesale_discount_pct is None and is_ff and bottle_share == 1) else
+            _pp.sku_base_cents(qty, modules, retail_cents, wholesale_discount_pct, is_ff,
+                               bottle_share=bottle_share))
     q = _pp.quote_line(selling_cents=int(retail_cents), qty=int(qty),
                        modules=int(modules), settings=settings, base_cents=base,
                        charge_fee=is_ff)
@@ -178,7 +190,8 @@ def quote_dropship_cart(cart: List[dict], practitioner: dict) -> dict:
         dl = dropship_line_cents(
             retail_cents=retail_cents, qty=curve_bottles,
             modules=modules, settings=settings,
-            wholesale_discount_pct=terms[slug][0], is_ff=terms[slug][1])
+            wholesale_discount_pct=terms[slug][0], is_ff=terms[slug][1],
+            bottle_share=terms[slug][2])
         flat_applies = (special_unit_cents is not None
                         and _flat_applies(slug, retail_cents, ceiling))
         # A practitioner's flat price only ever lowers a line (a $40 book: $27, not a $40 flat).
@@ -404,11 +417,12 @@ def build_client_order(cart: List[dict], practitioner: dict, *,
         # S: practitioner's selling price for this slug (>= MAP)
         s_cents = practitioner_price_for(pid, slug)
         # base/fee/margin use the curve's bottle count, or the product's own wholesale base
-        _pct, _ff = terms[slug]
+        _pct, _ff, _share = terms[slug]
         q = _pp.quote_line(selling_cents=s_cents, qty=curve_bottles,
                            modules=modules, settings=settings,
-                           base_cents=(None if (_pct is None and _ff) else _pp.sku_base_cents(
-                               curve_bottles, modules, _retail_for(slug), _pct, _ff)),
+                           base_cents=(None if (_pct is None and _ff and _share == 1) else _pp.sku_base_cents(
+                               curve_bottles, modules, _retail_for(slug), _pct, _ff,
+                               bottle_share=_share)),
                            charge_fee=_ff)
         if eff:
             prod = _app._get_product(slug) or {}
