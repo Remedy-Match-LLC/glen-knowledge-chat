@@ -61,7 +61,7 @@
     "Healthy Aging"
    ],
    "product_type": "supplement",
-   "best_ff": "AllerFree",
+   "best_ff": "Immune Modulation",
    "relation": "substitute",
    "ff_alts": [
     "Vitamin C Syntropy"
@@ -203,7 +203,7 @@
     "Mood and Stress Management"
    ],
    "product_type": "supplement",
-   "best_ff": "Relax",
+   "best_ff": "Stress Release",
    "relation": "complement",
    "ff_alts": [
     "Stamina Plus",
@@ -223,7 +223,7 @@
    "best_ff": "Macular Wellness Astaxanthin",
    "relation": "substitute",
    "ff_alts": [
-    "NeurOmega",
+    "WholOmega",
     "Neuroprotect"
    ]
   },
@@ -287,7 +287,7 @@
    "best_ff": "Bone Builder",
    "relation": "substitute",
    "ff_alts": [
-    "Connective Tissue Support"
+    "Comfort"
    ]
   },
   {
@@ -398,7 +398,7 @@
    "relation": "substitute",
    "ff_alts": [
     "Brain Boost Nootropic",
-    "Neuroceramides",
+    "Myelin Syntropy Powder",
     "Brain Cleanse"
    ]
   },
@@ -646,7 +646,7 @@
     "Mood and Stress Management"
    ],
    "product_type": "supplement",
-   "best_ff": "NeurOmega",
+   "best_ff": "WholOmega",
    "relation": "substitute",
    "ff_alts": [
     "Neuroprotect"
@@ -706,7 +706,7 @@
     "Inflammation Support"
    ],
    "product_type": "supplement",
-   "best_ff": "NeurOmega",
+   "best_ff": "WholOmega",
    "relation": "substitute",
    "ff_alts": [
     "Neuroprotect"
@@ -722,7 +722,7 @@
     "Brain Support"
    ],
    "product_type": "supplement",
-   "best_ff": "NeurOmega",
+   "best_ff": "WholOmega",
    "relation": "substitute",
    "ff_alts": [
     "SeaAmino Syntropy"
@@ -738,7 +738,7 @@
     "Healthy Aging"
    ],
    "product_type": "supplement",
-   "best_ff": "Iron Synergy",
+   "best_ff": "Iron Syntropy",
    "relation": "substitute",
    "ff_alts": [
     "Spleen Support"
@@ -959,7 +959,7 @@
    "relation": "consider",
    "ff_alts": [
     "Man Manna",
-    "Cistus Synergy"
+    "Cistus Shield ImmuniTea"
    ]
   },
   {
@@ -975,7 +975,7 @@
    "best_ff": "Polyphenols (Camellia sinensis)",
    "relation": "complement",
    "ff_alts": [
-    "Cistus Synergy",
+    "Cistus Shield ImmuniTea",
     "Man Manna"
    ]
   },
@@ -991,7 +991,7 @@
    "relation": "consider",
    "ff_alts": [
     "Transform",
-    "Prostate Protect"
+    "Man Manna"
    ]
   },
   {
@@ -1007,7 +1007,7 @@
    "relation": "substitute",
    "ff_alts": [
     "Hydrolyzed Collagen",
-    "Connective Tissue Support"
+    "Comfort"
    ]
   },
   {
@@ -1112,7 +1112,7 @@
    "best_ff": "Immune Modulation",
    "relation": "substitute",
    "ff_alts": [
-    "Cistus Synergy",
+    "Cistus Shield ImmuniTea",
     "VirEx"
    ]
   },
@@ -1128,7 +1128,7 @@
    "best_ff": "Immune Modulation",
    "relation": "substitute",
    "ff_alts": [
-    "Cistus Synergy",
+    "Cistus Shield ImmuniTea",
     "VirEx"
    ]
   },
@@ -1162,7 +1162,6 @@
    "best_ff": "Comfort",
    "relation": "substitute",
    "ff_alts": [
-    "Connective Tissue Support",
     "Rejuvenation"
    ]
   },
@@ -1175,11 +1174,11 @@
     "Mood and Stress Management"
    ],
    "product_type": "supplement",
-   "best_ff": "Relax",
+   "best_ff": "Stress Release",
    "relation": "complement",
    "ff_alts": [
     "Brain Boost Nootropic",
-    "Focus Neuro-Magnesium",
+    "Focus Neuro-Magnesium Powder",
     "Clarity"
    ]
   },
@@ -1275,7 +1274,7 @@
    "best_ff": "Magnesium Syntropy",
    "relation": "substitute",
    "ff_alts": [
-    "Focus Neuro-Magnesium",
+    "Focus Neuro-Magnesium Powder",
     "Magnesium Taurate",
     "Magnesium Acetyl-Taurate"
    ]
@@ -1448,7 +1447,6 @@
    "best_ff": "Man Manna",
    "relation": "complement",
    "ff_alts": [
-    "Prostate Protect",
     "ES11"
    ]
   },
@@ -1502,8 +1500,7 @@
    "relation": "complement",
    "ff_alts": [
     "Stamina Plus",
-    "Vitamin A Syntropy",
-    "Bioavailability Blend"
+    "Vitamin A Syntropy"
    ]
   },
   {
@@ -1549,7 +1546,7 @@
    "best_ff": "Neuroprotect",
    "relation": "substitute",
    "ff_alts": [
-    "Neuroceramides",
+    "Myelin Syntropy Powder",
     "Brain Boost Nootropic"
    ]
   },
@@ -1599,7 +1596,7 @@
    "best_ff": "Immune Modulation",
    "relation": "substitute",
    "ff_alts": [
-    "Cistus Synergy",
+    "Cistus Shield ImmuniTea",
     "VirEx",
     "Spleen Support"
    ]
@@ -1613,7 +1610,7 @@
     "Healthy Aging"
    ],
    "product_type": "topical",
-   "best_ff": "Phytolacca Oil",
+   "best_ff": "Phytolacca americana Oil Roll-On",
    "relation": "complement",
    "ff_alts": [
     "Ozonated Olive Oil",
@@ -1755,11 +1752,10 @@
     "Whole Body Mineral Health"
    ],
    "product_type": "supplement",
-   "best_ff": "Electrolyte Mineral Manna",
+   "best_ff": "Alkalize Bicarbonate Blend",
    "relation": "substitute",
    "ff_alts": [
-    "Alkalize Bicarbonate Blend",
-    "Focus Neuro-Magnesium"
+    "Focus Neuro-Magnesium Powder"
    ]
   },
   {
@@ -1770,11 +1766,9 @@
     "Essential Nutrients"
    ],
    "product_type": "supplement",
-   "best_ff": "Electrolyte Mineral Manna",
+   "best_ff": "Alkalize Bicarbonate Blend",
    "relation": "substitute",
-   "ff_alts": [
-    "Alkalize Bicarbonate Blend"
-   ]
+   "ff_alts": []
   },
   {
    "name": "Phyto Methylate",
@@ -1805,7 +1799,7 @@
     "Healthy Aging"
    ],
    "product_type": "supplement",
-   "best_ff": "Iron Synergy",
+   "best_ff": "Iron Syntropy",
    "relation": "substitute",
    "ff_alts": [
     "Iron Out",
@@ -1823,9 +1817,7 @@
    "product_type": "food",
    "best_ff": null,
    "relation": "consider",
-   "ff_alts": [
-    "Electrolyte Mineral Manna"
-   ]
+   "ff_alts": []
   },
   {
    "name": "Plant Vitamin C, Premier",
@@ -1842,7 +1834,7 @@
    "best_ff": "Vitamin C Syntropy",
    "relation": "substitute",
    "ff_alts": [
-    "Vitamin P",
+    "Vascular Integrity: Vitamin P Plus TECA",
     "Ascorbyl Palmitate"
    ]
   },
@@ -1906,9 +1898,7 @@
    "product_type": "food",
    "best_ff": null,
    "relation": "consider",
-   "ff_alts": [
-    "Electrolyte Mineral Manna"
-   ]
+   "ff_alts": []
   },
   {
    "name": "Premier Probiotic (30 Softgels)",
@@ -1997,8 +1987,8 @@
     "Healthy Aging"
    ],
    "product_type": "supplement",
-   "best_ff": null,
-   "relation": null,
+   "best_ff": "Man Manna",
+   "relation": "complement",
    "ff_alts": []
   },
   {
@@ -2049,9 +2039,11 @@
     "Liver Support"
    ],
    "product_type": "supplement",
-   "best_ff": null,
-   "relation": null,
-   "ff_alts": []
+   "best_ff": "Medicinal Mushrooms",
+   "relation": "substitute",
+   "ff_alts": [
+    "Immune Modulation"
+   ]
   },
   {
    "name": "RenaVen™",
@@ -2062,8 +2054,8 @@
     "Kidney Support"
    ],
    "product_type": "supplement",
-   "best_ff": null,
-   "relation": null,
+   "best_ff": "Microbiome",
+   "relation": "complement",
    "ff_alts": []
   },
   {
@@ -2078,9 +2070,13 @@
     "Immune support"
    ],
    "product_type": "supplement",
-   "best_ff": null,
-   "relation": null,
-   "ff_alts": []
+   "best_ff": "Longevity",
+   "relation": "complement",
+   "ff_alts": [
+    "Mitochondrial Biogenesis",
+    "One Step",
+    "Macular Wellness Astaxanthin"
+   ]
   },
   {
    "name": "Taurine Blend, Premier",
@@ -2112,9 +2108,7 @@
    "product_type": "supplement",
    "best_ff": "Man Manna",
    "relation": "complement",
-   "ff_alts": [
-    "Prostate Protect"
-   ]
+   "ff_alts": []
   },
   {
    "name": "ThyroVen™",
@@ -2125,9 +2119,11 @@
     "Healthy Aging"
    ],
    "product_type": "supplement",
-   "best_ff": null,
-   "relation": null,
-   "ff_alts": []
+   "best_ff": "Thyroid Support",
+   "relation": "substitute",
+   "ff_alts": [
+    "Thermogenesis"
+   ]
   },
   {
    "name": "Tranquinol®",
@@ -2139,9 +2135,12 @@
     "Brain Support"
    ],
    "product_type": "supplement",
-   "best_ff": null,
-   "relation": null,
-   "ff_alts": []
+   "best_ff": "Stress Release",
+   "relation": "substitute",
+   "ff_alts": [
+    "Sleep Syntropy",
+    "Focus Neuro-Magnesium Powder"
+   ]
   },
   {
    "name": "Turmeric, Premier",
@@ -2172,7 +2171,7 @@
    "best_ff": "Brain Boost Nootropic",
    "relation": "complement",
    "ff_alts": [
-    "Focus Neuro-Magnesium"
+    "Focus Neuro-Magnesium Powder"
    ]
   },
   {
@@ -2185,9 +2184,11 @@
     "Prostate and Urinary Tract Support"
    ],
    "product_type": "supplement",
-   "best_ff": null,
-   "relation": null,
-   "ff_alts": []
+   "best_ff": "Pollen Power",
+   "relation": "substitute",
+   "ff_alts": [
+    "Man Manna"
+   ]
   },
   {
    "name": "UriVen™",
@@ -2198,9 +2199,11 @@
     "Bladder Support"
    ],
    "product_type": "supplement",
-   "best_ff": null,
-   "relation": null,
-   "ff_alts": []
+   "best_ff": "Flow Ease",
+   "relation": "complement",
+   "ff_alts": [
+    "Blood Cleanse"
+   ]
   },
   {
    "name": "Vitamin D3 For KIDS, Premier",
@@ -2271,9 +2274,12 @@
     "Thyroid and Hormone Support"
    ],
    "product_type": "supplement",
-   "best_ff": null,
-   "relation": null,
-   "ff_alts": []
+   "best_ff": "Estro-Clear",
+   "relation": "substitute",
+   "ff_alts": [
+    "Thyroid Support",
+    "Spike Shield"
+   ]
   },
   {
    "name": "Sunflower Lecithin, Premier",

@@ -14,3 +14,13 @@ def test_seed_shape_and_integrity():
     # relations are within the taxonomy or null
     for p in d["products"]:
         assert p["relation"] in (None, "substitute", "complement", "consider")
+
+
+def test_a_trademark_mark_does_not_hide_the_crosswalk_row():
+    """The crosswalk writes "Tranquinol"; the catalog writes "Tranquinol®". An exact
+    lookup gave 9 products no suggestion until 2026-10-07."""
+    import json, os
+    seed = json.load(open(os.path.join(os.path.dirname(__file__), "..", "data", "prl_seed.json")))
+    by = {p["name"]: p for p in seed["products"]}
+    assert by["Tranquinol®"]["best_ff"] == "Stress Release"
+    assert by["ThyroVen™"]["best_ff"] == "Thyroid Support"
