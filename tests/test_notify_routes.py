@@ -58,8 +58,10 @@ def test_twilio_inbound_stop_start(client, monkeypatch):
     cx = sqlite3.connect(appmod.LOG_DB); N.set_phone(cx, "t@y.com", "+15551230000"); cx.commit()
     post({"From": "+15551230000", "Body": "STOP"})
     assert N.get_state(sqlite3.connect(appmod.LOG_DB), "t@y.com")["opt_status"] == "out"
+    # START is recorded in sms_consent, never in this state: the email unsubscribe link
+    # shares it, and a text START must not undo an email opt-out.
     post({"From": "+15551230000", "Body": "START"})
-    assert N.get_state(sqlite3.connect(appmod.LOG_DB), "t@y.com")["opt_status"] == "in"
+    assert N.get_state(sqlite3.connect(appmod.LOG_DB), "t@y.com")["opt_status"] == "out"
 
 
 def test_open_marks_engaged(client):

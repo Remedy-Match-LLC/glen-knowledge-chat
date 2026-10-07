@@ -83,7 +83,8 @@ _MAINTENANCE_TRUTHY = {"1", "true", "yes", "on"}
 # cutover operator can still run the migration tool and act during the freeze.
 # Do NOT add normal money/order/portal/checkout prefixes here — those writes
 # are exactly what MAINTENANCE_MODE exists to freeze.
-_MAINTENANCE_EXEMPT_PREFIXES = ("/admin", "/console", "/api/admin", "/api/console")
+# /sms/: a STOP sent during maintenance must still be recorded; Twilio does not retry.
+_MAINTENANCE_EXEMPT_PREFIXES = ("/admin", "/console", "/api/admin", "/api/console", "/sms/")
 
 # Request timing for the customer-facing surfaces that can otherwise fail as an
 # undifferentiated endless spinner. Route labels come from Flask's URL rule, never
@@ -31499,15 +31500,16 @@ def sms_inbound():
     reply = None
     with _db_lock, db.connect(LOG_DB) as cx:
         email = _ns.email_by_phone(cx, frm)
+        sid = (request.form.get("MessageSid") or "").strip() or None
         if kind == "stop":
-            _sc.record(cx, frm, "out", "sms:STOP", email=email)
+            _sc.record(cx, frm, "out", "sms:STOP", email=email, message_sid=sid)
             if email:
                 _ns.set_opt(cx, email, "out")
             reply = _sc.REPLY_STOP
         elif kind == "start":
-            _sc.record(cx, frm, "in", "sms:START", email=email)
-            if email:
-                _ns.set_opt(cx, email, "in")
+            # Not mirrored into notify_state: that state is shared with the email
+            # unsubscribe link, and a text START must never undo an email opt-out.
+            _sc.record(cx, frm, "in", "sms:START", email=email, message_sid=sid)
             reply = _sc.REPLY_OPT_IN
         elif kind == "help":
             reply = _sc.REPLY_HELP
@@ -42440,8 +42442,8 @@ def enroll_segment_in_workflow(workflow_id, segment_tags=("type:client", "consen
             except Exception:
                 tags = set()
             if "consent:unsubscribed" in tags or any(
-                    s in " ".join(t.lower() for t in tags)
-                    for s in ("email bounced", "do not email", "unsubscribed")):
+                    s in " ".join(t.lower() for t in tags if t != "consent:sms-unsubscribed")
+                    for s in ("email bounced", "do not email", "unsubscribed")):   # a text STOP is not email
                 continue
             summary["matched"] += 1
             if enrolled_tag in tags:

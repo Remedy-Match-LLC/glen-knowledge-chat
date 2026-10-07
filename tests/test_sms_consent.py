@@ -133,14 +133,68 @@ def test_stop_from_an_unknown_number_is_still_recorded(client):
     assert sc.status(_db(appmod), "+18085559999") == "out"
 
 
-def test_existing_portal_notify_opt_still_follows(client):
+def test_stop_sets_portal_notify_out_but_start_never_undoes_an_email_unsubscribe(client):
     c, appmod = client
     from dashboard import notify_state as N
-    cx = _db(appmod); N.set_phone(cx, "t@y.com", "+15551230000"); cx.commit()
-    _text(c, "STOP", frm="+15551230000")
-    assert N.get_state(_db(appmod), "t@y.com")["opt_status"] == "out"
+    cx = _db(appmod); N.set_phone(cx, "t@y.com", "+15551230000"); N.set_opt(cx, "t@y.com", "out")
+    cx.commit()
     _text(c, "START", frm="+15551230000")
-    assert N.get_state(_db(appmod), "t@y.com")["opt_status"] == "in"
+    assert N.get_state(_db(appmod), "t@y.com")["opt_status"] == "out"
+    assert sc.status(_db(appmod), "+15551230000") == "in"
+
+
+def test_a_repeated_twilio_message_is_recorded_once(client):
+    c, appmod = client
+    def send(body, sid):
+        data = {"From": "+18085550123", "Body": body, "MessageSid": sid}
+        return c.post("/sms/inbound", data=data, headers={"X-Twilio-Signature": _sign(data)},
+                      base_url="https://illtowell.com")
+    send("START", "SM1"); send("STOP", "SM2"); send("START", "SM1")      # SM1 retried or replayed
+    assert sc.status(_db(appmod), "+18085550123") == "out"
+    assert _db(appmod).execute("SELECT COUNT(*) FROM sms_consent_events").fetchone()[0] == 2
+
+
+def test_a_form_tick_cannot_reverse_a_stop(tmp_path):
+    cx = sqlite3.connect(tmp_path / "x.db")
+    sc.record(cx, "+18085550123", "out", "sms:STOP")
+    assert sc.record(cx, "808-555-0123", "in", "form:practitioner-finder-inquiry") is False
+    assert sc.status(cx, "8085550123") == "out"
+    assert sc.record(cx, "+18085550123", "in", "sms:START") is True
+    assert sc.status(cx, "8085550123") == "in"
+
+
+def test_a_form_tick_after_a_form_tick_is_fine(tmp_path):
+    cx = sqlite3.connect(tmp_path / "x.db")
+    assert sc.record(cx, "808-555-0123", "in", "form:a") is True
+    assert sc.record(cx, "808-555-0123", "in", "form:b") is True
+
+
+def test_two_countries_with_the_same_last_ten_digits_stay_apart(tmp_path):
+    cx = sqlite3.connect(tmp_path / "x.db")
+    sc.record(cx, "+44 8085550123", "in", "form:a")
+    assert sc.status(cx, "+1 808 555 0123") is None
+    assert sc.status(cx, "(808) 555-0123") is None
+    assert sc.status(cx, "+448085550123") == "in"
+
+
+def test_a_phone_with_trailing_text_still_gets_the_tag(tmp_path):
+    cx = sqlite3.connect(tmp_path / "x.db")
+    cx.execute("CREATE TABLE people (id INTEGER PRIMARY KEY, email TEXT, phone TEXT, tags TEXT, "
+               "updated_at TEXT)")
+    cx.execute("INSERT INTO people VALUES (1, 'a@x.com', '808-555-0123 (cell)', '[]', NULL)")
+    sc.record(cx, "+18085550123", "out", "sms:STOP")
+    assert json.loads(cx.execute("SELECT tags FROM people").fetchone()[0]) == [sc.SMS_OPT_OUT_TAG]
+
+
+def test_a_failed_tag_update_keeps_the_consent_event(tmp_path):
+    cx = sqlite3.connect(tmp_path / "x.db")                 # no people table at all
+    assert sc.record(cx, "+18085550123", "out", "sms:STOP") is True
+    assert sc.status(cx, "+18085550123") == "out"
+
+
+def test_sms_inbound_is_open_during_maintenance():
+    import app as appmod
+    assert any("/sms/inbound".startswith(p) for p in appmod._MAINTENANCE_EXEMPT_PREFIXES)
 
 
 def test_help_and_chatter_record_nothing(client):
@@ -313,3 +367,15 @@ def test_the_recorder_takes_only_a_real_tick_with_a_phone(client, body, phone, w
     _, appmod = client
     appmod._record_sms_opt_in(body, phone, "a@x.com", "form:test")
     assert sc.status(_db(appmod), "8085550123") == want
+
+
+def test_a_text_stop_does_not_drop_someone_from_an_email_workflow(client):
+    _, appmod = client
+    cx = _db(appmod)
+    cx.execute("INSERT INTO people (id, email, phone, tags) VALUES (1, 'a@x.com', '', ?)",
+               (json.dumps(["type:client", "consent:opted-in", "consent:sms-unsubscribed"]),))
+    cx.execute("INSERT INTO people (id, email, phone, tags) VALUES (2, 'b@x.com', '', ?)",
+               (json.dumps(["type:client", "consent:opted-in", "consent:unsubscribed"]),))
+    cx.commit()
+    out = appmod.enroll_segment_in_workflow("wf-test-1234", dry_run=True)
+    assert out["matched"] == 1          # the text opt-out stays in; the email one stays out
