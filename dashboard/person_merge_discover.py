@@ -21,7 +21,7 @@ HISTORY_TABLES = frozenset({
     "ebook_library_welcome_sent", "email_suppression", "pending_merges", "fullscript_clicks",
     "pb_events", "e4l_account_notification_messages", "inbox_hidden_senders",
     "analysis_autoconfirm_log", "kloud_instruction_emails", "payer_link_emails",
-    "remedy_match_email_queue", "review_invites", "client_erasures",
+    "remedy_match_email_queue", "remedy_match_email_confirm", "review_invites", "client_erasures",
     "scan_reassignments", "referral_events", "stripe_failures", "users", "suppliers",
     "supplier_quotes", "journey_events",
     "sms_consent_events",             # a text consent log keyed by phone; never rewritten

@@ -19,7 +19,8 @@ def _enq(cx, session="s1", product="Microbiome", slug="microbiome", at=T0,
          email="maria@example.com"):
     return rme.enqueue(cx, email=email, name="Maria Sutryn", session_id=session,
                        product_slug=slug, product_name=product,
-                       page_url=f"https://illtowell.com/begin/product/{slug}", now=at)
+                       page_url=f"https://illtowell.com/begin/product/{slug}",
+                       proven=True, now=at)   # send rules for a proven address
 
 
 class Sender:

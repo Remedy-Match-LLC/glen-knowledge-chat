@@ -13,6 +13,10 @@ these rules (platform/plans/2026-09-22-remedy-match-email-plan):
      that moves between options just replaces its pending match; only the last is sent.
   4. At most one per client per CAP_DAYS.
   5. Every send is recorded with its exact body.
+  6. Confirm first (Glen, 2026-10-07). An address not yet proven (a portal sign-in proves
+     it) waits as 'awaiting_confirm'. The drain mails one confirmation link, without the
+     product name; clicking it confirms the address for good and releases the match.
+     A match whose address is not confirmed within CONFIRM_DAYS is dropped.
 
 Sending claims a row with one atomic UPDATE before mailing, so two scheduler processes
 running the drain at once cannot both send it.
@@ -21,6 +25,8 @@ from datetime import datetime, timedelta, timezone
 
 QUIET_MINUTES = 30
 CAP_DAYS = 7
+CONFIRM_DAYS = 7
+CONFIRM_RESEND_HOURS = 24
 
 # Wording: Glen, 2026-09-23. Not "remedy match": that is the free scan report's name.
 SUBJECT = "The remedy you found in our chat: {product}"
@@ -33,6 +39,22 @@ HTML = ('<div style="font-family: \'arial black\', sans-serif; font-size: large"
         "<p>Here's a link so you can explore the remedy you found in our chat:<br>"
         '<a href="{url}">{product}</a></p>'
         "<p>Aloha,<br>Dr. Glen</p></div>")
+
+
+# Confirmation wording: Glen, 2026-10-07 ("yes" to the draft). No product name in it.
+CONFIRM_SUBJECT = "Confirm your email to get your remedy link"
+CONFIRM_TEXT = ("Aloha{name},\n\n"
+                "Please confirm this is your email, and I'll send you the link to the remedy "
+                "you found in our chat:\n{url}\n\n"
+                "If you didn't chat with us, you can ignore this message.\n\n"
+                "Aloha,\nDr. Glen")
+CONFIRM_HTML = ('<div style="font-family: \'arial black\', sans-serif; font-size: large">'
+                "<p>Aloha{name},</p>"
+                "<p>Please confirm this is your email, and I'll send you the link to the remedy "
+                "you found in our chat:</p>"
+                '<p><a href="{url}">Confirm my email</a></p>'
+                "<p>If you didn't chat with us, you can ignore this message.</p>"
+                "<p>Aloha,<br>Dr. Glen</p></div>")
 
 
 def _now():
@@ -50,29 +72,136 @@ def init(cx):
         updated_at TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending',
         sent_at TEXT, reason TEXT, subject TEXT, body_text TEXT,
         PRIMARY KEY (email, session_id))""")
+    cx.execute("""CREATE TABLE IF NOT EXISTS remedy_match_email_confirm (
+        email TEXT PRIMARY KEY, token_hash TEXT, sent_at TEXT, confirmed_at TEXT)""")
     cx.commit()
 
 
-def enqueue(cx, *, email, name, session_id, product_slug, product_name, page_url, now=None):
+def _hash(token):
+    import hashlib
+    return hashlib.sha256((token or "").encode()).hexdigest()
+
+
+def is_confirmed(cx, email):
+    init(cx)
+    row = cx.execute("SELECT confirmed_at FROM remedy_match_email_confirm WHERE email=?",
+                     ((email or "").strip().lower(),)).fetchone()
+    return bool(row and row[0])
+
+
+def mark_confirmed(cx, email, now=None):
+    """Record an address as proven (a portal sign-in, or a clicked link) and release its
+    waiting matches into the normal queue."""
+    email = (email or "").strip().lower()
+    if "@" not in email:
+        return
+    init(cx)
+    stamp = _iso(now or _now())
+    cx.execute("INSERT INTO remedy_match_email_confirm (email, confirmed_at) VALUES (?,?) "
+               "ON CONFLICT(email) DO UPDATE SET confirmed_at=excluded.confirmed_at "
+               "WHERE remedy_match_email_confirm.confirmed_at IS NULL",
+               (email, stamp))
+    cx.execute("UPDATE remedy_match_email_queue SET status='pending' "
+               "WHERE email=? AND status='awaiting_confirm'", (email,))
+    cx.commit()
+
+
+def confirm(cx, token, now=None):
+    """The address a confirmation link belongs to, now confirmed; None when the token is
+    unknown or older than CONFIRM_DAYS."""
+    if not token:
+        return None
+    init(cx)
+    now = now or _now()
+    row = cx.execute("SELECT email, sent_at, confirmed_at FROM remedy_match_email_confirm "
+                     "WHERE token_hash=?", (_hash(token),)).fetchone()
+    if not row:
+        return None
+    email, sent_at, confirmed_at = row[0], row[1], row[2]
+    if not confirmed_at:
+        try:
+            if now - datetime.fromisoformat(sent_at) > timedelta(days=CONFIRM_DAYS):
+                return None
+        except (TypeError, ValueError):
+            return None
+    mark_confirmed(cx, email, now=now)
+    return email
+
+
+def enqueue(cx, *, email, name, session_id, product_slug, product_name, page_url,
+            proven=False, now=None):
     """Record (or replace) this chat's pending match. A chat already sent or skipped is
-    left alone: one email per chat. Returns True when a pending row now holds it."""
+    left alone: one email per chat. `proven` says the caller knows the address belongs to
+    the visitor (a portal sign-in). Otherwise the row waits for confirmation unless the
+    address was confirmed before. Returns True when a row now holds the match."""
     email = (email or "").strip().lower()
     session_id = (session_id or "").strip()
     if "@" not in email or not session_id or not product_slug or not page_url:
         return False
     init(cx)
+    if proven:
+        mark_confirmed(cx, email, now=now)
+    status = "pending" if (proven or is_confirmed(cx, email)) else "awaiting_confirm"
     stamp = _iso(now or _now())
     cur = cx.execute(
         "INSERT INTO remedy_match_email_queue (email, session_id, name, product_slug, "
-        "product_name, page_url, updated_at, status) VALUES (?,?,?,?,?,?,?,'pending') "
+        "product_name, page_url, updated_at, status) VALUES (?,?,?,?,?,?,?,?) "
         "ON CONFLICT(email, session_id) DO UPDATE SET name=excluded.name, "
         "product_slug=excluded.product_slug, product_name=excluded.product_name, "
         "page_url=excluded.page_url, updated_at=excluded.updated_at "
-        "WHERE remedy_match_email_queue.status='pending'",
+        "WHERE remedy_match_email_queue.status IN ('pending', 'awaiting_confirm')",
         (email, session_id, (name or "").strip(), product_slug, product_name, page_url,
-         stamp))
+         stamp, status))
     cx.commit()
     return bool(cur.rowcount)
+
+
+def render_confirm(name, url):
+    first = (name or "").strip().split(" ")[0]
+    nm = (" " + first) if first else ""
+    esc = lambda s: (str(s).replace("&", "&amp;").replace("<", "&lt;")
+                     .replace(">", "&gt;").replace('"', "&quot;"))
+    return (CONFIRM_SUBJECT, CONFIRM_HTML.format(name=esc(nm), url=esc(url)),
+            CONFIRM_TEXT.format(name=nm, url=url))
+
+
+def _confirmations(cx, send_fn, confirm_url, now):
+    """Mail one confirmation link per waiting address, at most once per
+    CONFIRM_RESEND_HOURS, and drop waiting matches older than CONFIRM_DAYS."""
+    out = {"confirm_sent": 0, "confirm_failed": 0, "expired": 0}
+    stale = _iso(now - timedelta(days=CONFIRM_DAYS))
+    cur = cx.execute("UPDATE remedy_match_email_queue SET status='skipped', "
+                     "reason='address not confirmed' "
+                     "WHERE status='awaiting_confirm' AND updated_at <= ?", (stale,))
+    cx.commit()
+    out["expired"] = cur.rowcount or 0
+    if confirm_url is None:
+        return out
+    resend = _iso(now - timedelta(hours=CONFIRM_RESEND_HOURS))
+    for row in _rows(cx.execute(
+            "SELECT q.email, MAX(q.name) AS name FROM remedy_match_email_queue q "
+            "LEFT JOIN remedy_match_email_confirm c ON c.email = q.email "
+            "WHERE q.status='awaiting_confirm' AND c.confirmed_at IS NULL "
+            "AND (c.sent_at IS NULL OR c.sent_at <= ?) GROUP BY q.email", (resend,))):
+        import secrets
+        token = secrets.token_urlsafe(24)
+        claim = cx.execute(
+            "INSERT INTO remedy_match_email_confirm (email, token_hash, sent_at) "
+            "VALUES (?,?,?) ON CONFLICT(email) DO UPDATE SET token_hash=excluded.token_hash, "
+            "sent_at=excluded.sent_at WHERE remedy_match_email_confirm.confirmed_at IS NULL "
+            "AND (remedy_match_email_confirm.sent_at IS NULL "
+            "OR remedy_match_email_confirm.sent_at <= ?)",
+            (row["email"], _hash(token), _iso(now), resend))
+        cx.commit()
+        if claim.rowcount != 1:
+            continue                       # another process took it
+        subject, html, text = render_confirm(row.get("name"), confirm_url(token))
+        try:
+            send_fn(row["email"], row.get("name") or "", subject, html, text)
+            out["confirm_sent"] += 1
+        except Exception:
+            out["confirm_failed"] += 1
+    return out
 
 
 def render(row):
@@ -96,13 +225,15 @@ def _rows(cur):
     return [dict(zip(cols, r)) for r in rows]
 
 
-def drain(cx, send_fn, *, now=None):
-    """Send every pending match whose chat has been quiet for QUIET_MINUTES.
+def drain(cx, send_fn, *, confirm_url=None, now=None):
+    """Send every pending match whose chat has been quiet for QUIET_MINUTES, and one
+    confirmation link per waiting address. confirm_url(token) builds the link.
     send_fn(email, name, subject, html, text) raises on failure. Returns counts."""
     init(cx)
     now = now or _now()
     due = _iso(now - timedelta(minutes=QUIET_MINUTES))
     out = {"sent": 0, "capped": 0, "failed": 0}
+    out.update(_confirmations(cx, send_fn, confirm_url, now))
     for row in _rows(cx.execute(
             "SELECT email, session_id, name, product_slug, product_name, page_url "
             "FROM remedy_match_email_queue WHERE status='pending' AND updated_at <= ? "

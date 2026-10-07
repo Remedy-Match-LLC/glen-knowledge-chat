@@ -63,7 +63,8 @@ def _chat_rig(monkeypatch):
     monkeypatch.setattr(app, "_cl", _FakeClient())
     monkeypatch.setattr(app, "_member_context_for_email", lambda e: rec["context"].append(e) or {})
     monkeypatch.setattr(app, "_email_remedy_match_once",
-                        lambda email, name, sid, match: rec["queued"].append((email, match["name"])))
+                        lambda email, name, sid, match, proven=False:
+                        rec["queued"].append((email, match["name"], proven)))
     return rec
 
 
@@ -81,7 +82,8 @@ def test_an_opted_in_visitor_gets_the_match_queued_to_their_email(monkeypatch, t
     assert r.status_code == 200 and r.get_json()["tos_agreed_at"]
     body = _turn(c)
     assert '"match"' in body
-    assert rec["queued"] == [("visitor@example.com", "Clear the Way")]
+    # Not signed in: queued, but as unproven, so it waits for confirmation.
+    assert rec["queued"] == [("visitor@example.com", "Clear the Way", False)]
 
 
 def test_the_consented_email_never_loads_personal_context(monkeypatch, tmp_path):
@@ -109,3 +111,13 @@ def test_another_session_does_not_borrow_the_email(monkeypatch, tmp_path):
     assert app._consented_session_email("sess-test-1") == "a@example.com"
     assert app._consented_session_email("someone-else") == ""
     assert app._consented_session_email("") == ""
+
+
+def test_a_signed_in_client_skips_confirmation(monkeypatch, tmp_path):
+    c = _client(monkeypatch, tmp_path)
+    rec = _chat_rig(monkeypatch)
+    monkeypatch.setattr(app, "get_authenticated_user", lambda req: {"email": "Client@Example.com"})
+    c.post("/begin/unlock", json={"trigger": "tos", "email": "client@example.com", "tos": True})
+    _turn(c)
+    email, product, proven = rec["queued"][-1]
+    assert (email.lower(), product, proven) == ("client@example.com", "Clear the Way", True)

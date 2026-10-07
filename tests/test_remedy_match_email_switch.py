@@ -51,7 +51,8 @@ def test_switched_on_it_queues_and_never_sends_at_once(app_mod, monkeypatch):
     with db.connect(app_mod.LOG_DB) as cx:
         row = rme.recent(cx)[0]
     assert row["page_url"].endswith("/begin/product/microbiome")
-    assert row["status"] == "pending"
+    # Not signed in, so the address waits for confirmation (Glen, 2026-10-07).
+    assert row["status"] == "awaiting_confirm"
 
 
 def test_a_service_or_off_catalog_match_is_never_queued(app_mod, monkeypatch):
