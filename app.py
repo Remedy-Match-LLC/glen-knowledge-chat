@@ -6334,35 +6334,49 @@ def _drain_remedy_match_emails():
         print(f"[remedy-match-email] drain failed: {e!r}", flush=True)
 
 
-@app.route("/begin/confirm-email")
+@app.route("/begin/confirm-email", methods=["GET", "POST"])
 def begin_confirm_email():
-    """The link in the remedy email's confirmation message. Confirms the address and
-    releases its waiting match; the drain then sends it within a minute or two."""
+    """The link in the remedy email's confirmation message. GET only shows a Confirm
+    button, because mail scanners open links on their own; the POST it sends confirms
+    the address and releases its waiting match, which the drain sends within minutes."""
+    import html as _html
     from flask import make_response
     from dashboard import remedy_match_email as _rme
-    token = (request.args.get("t") or "").strip()[:200]
-    try:
-        with _db_lock, db.connect(LOG_DB) as cx:
-            ok = bool(_rme.confirm(cx, token))
-    except Exception as e:
-        print(f"[remedy-match-email] confirm failed: {e!r}", flush=True)
-        ok = False
-    if ok:
-        head, body = ("Thank you, your email is confirmed",
-                      "Your remedy link is on its way. It should arrive within a few minutes.")
+    token = ((request.form.get("t") if request.method == "POST" else request.args.get("t"))
+             or "").strip()[:200]
+    status = 200
+    if request.method == "POST":
+        try:
+            with _db_lock, db.connect(LOG_DB) as cx:
+                ok = bool(_rme.confirm(cx, token))
+        except Exception as e:
+            print(f"[remedy-match-email] confirm failed: {type(e).__name__}", flush=True)
+            ok = False
+        if ok:
+            head = "Thank you, your email is confirmed"
+            body = ("<p>Your remedy link is on its way. It should arrive within a few "
+                    "minutes.</p>")
+        else:
+            head, status = "This link has expired", 410
+            body = "<p>Please chat with us again, and we'll send you a fresh link.</p>"
     else:
-        head, body = ("This link has expired",
-                      "Please chat with us again, and we'll send you a fresh link.")
+        head = "Confirm your email"
+        body = ('<p>Press the button to confirm this is your email.</p>'
+                '<form method="post" action="/begin/confirm-email">'
+                f'<input type="hidden" name="t" value="{_html.escape(token)}">'
+                '<button type="submit">Confirm my email</button></form>')
     page = ('<!doctype html><html lang="en"><head><meta charset="utf-8">'
             '<meta name="viewport" content="width=device-width,initial-scale=1">'
+            '<meta name="robots" content="noindex">'
             f'<title>{head}</title><style>'
             'body{margin:0;background:#0a150d;color:#f4ecd8;font:17px/1.6 Georgia,serif;'
             'display:flex;min-height:100vh;align-items:center;justify-content:center;padding:16px}'
             'main{max-width:480px;text-align:center}h1{font-size:24px;margin:0 0 12px}'
-            'a{color:#d4af37}</style></head><body><main>'
-            f'<h1>{head}</h1><p>{body}</p><p><a href="/begin">Back to the chat</a></p>'
+            'a{color:#d4af37}button{font:inherit;padding:12px 22px;border:0;border-radius:8px;'
+            'background:#d4af37;color:#0a150d;cursor:pointer}</style></head><body><main>'
+            f'<h1>{head}</h1>{body}<p><a href="/begin">Back to the chat</a></p>'
             '</main></body></html>')
-    resp = make_response(page, 200 if ok else 410)
+    resp = make_response(page, status)
     resp.headers["Cache-Control"] = "no-store"
     resp.headers["Referrer-Policy"] = "no-referrer"
     return resp
@@ -6629,7 +6643,7 @@ def begin_match_chat():
                 try:
                     _email_remedy_match_once(_to, name, session_id, match_evt, proven=_proven)
                 except Exception as e:
-                    print(f"[match] result email failed for {_to}: {e!r}", flush=True)
+                    print(f"[match] result email failed: {type(e).__name__}", flush=True)
 
         try:
             _q_texts = [m.get("content", "") for m in (history or []) if m.get("role") == "user"]

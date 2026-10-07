@@ -74,6 +74,9 @@ def init(cx):
         PRIMARY KEY (email, session_id))""")
     cx.execute("""CREATE TABLE IF NOT EXISTS remedy_match_email_confirm (
         email TEXT PRIMARY KEY, token_hash TEXT, sent_at TEXT, confirmed_at TEXT)""")
+    # One row per link sent, so a resend never cancels a link already delivered.
+    cx.execute("""CREATE TABLE IF NOT EXISTS remedy_match_email_confirm_tokens (
+        token_hash TEXT PRIMARY KEY, email TEXT NOT NULL, sent_at TEXT NOT NULL)""")
     cx.commit()
 
 
@@ -101,9 +104,23 @@ def mark_confirmed(cx, email, now=None):
                "ON CONFLICT(email) DO UPDATE SET confirmed_at=excluded.confirmed_at "
                "WHERE remedy_match_email_confirm.confirmed_at IS NULL",
                (email, stamp))
-    cx.execute("UPDATE remedy_match_email_queue SET status='pending' "
-               "WHERE email=? AND status='awaiting_confirm'", (email,))
+    _release(cx, now or _now(), email)
     cx.commit()
+
+
+def _release(cx, now, email=None):
+    """Move waiting matches of confirmed addresses into the normal queue, but only those
+    still inside CONFIRM_DAYS. With no email, every confirmed address: this also heals a
+    match written as waiting while another process was confirming its address."""
+    fresh = _iso(now - timedelta(days=CONFIRM_DAYS))
+    sql = ("UPDATE remedy_match_email_queue SET status='pending' "
+           "WHERE status='awaiting_confirm' AND updated_at > ? AND email IN "
+           "(SELECT email FROM remedy_match_email_confirm WHERE confirmed_at IS NOT NULL)")
+    args = [fresh]
+    if email:
+        sql += " AND email=?"
+        args.append(email)
+    cx.execute(sql, tuple(args))
 
 
 def confirm(cx, token, now=None):
@@ -113,12 +130,12 @@ def confirm(cx, token, now=None):
         return None
     init(cx)
     now = now or _now()
-    row = cx.execute("SELECT email, sent_at, confirmed_at FROM remedy_match_email_confirm "
+    row = cx.execute("SELECT email, sent_at FROM remedy_match_email_confirm_tokens "
                      "WHERE token_hash=?", (_hash(token),)).fetchone()
     if not row:
         return None
-    email, sent_at, confirmed_at = row[0], row[1], row[2]
-    if not confirmed_at:
+    email, sent_at = row[0], row[1]
+    if not is_confirmed(cx, email):
         try:
             if now - datetime.fromisoformat(sent_at) > timedelta(days=CONFIRM_DAYS):
                 return None
@@ -148,7 +165,9 @@ def enqueue(cx, *, email, name, session_id, product_slug, product_name, page_url
         "product_name, page_url, updated_at, status) VALUES (?,?,?,?,?,?,?,?) "
         "ON CONFLICT(email, session_id) DO UPDATE SET name=excluded.name, "
         "product_slug=excluded.product_slug, product_name=excluded.product_name, "
-        "page_url=excluded.page_url, updated_at=excluded.updated_at "
+        "page_url=excluded.page_url, updated_at=excluded.updated_at, "
+        "status=CASE WHEN excluded.status='pending' THEN 'pending' "
+        "ELSE remedy_match_email_queue.status END "
         "WHERE remedy_match_email_queue.status IN ('pending', 'awaiting_confirm')",
         (email, session_id, (name or "").strip(), product_slug, product_name, page_url,
          stamp, status))
@@ -175,6 +194,8 @@ def _confirmations(cx, send_fn, confirm_url, now):
                      "WHERE status='awaiting_confirm' AND updated_at <= ?", (stale,))
     cx.commit()
     out["expired"] = cur.rowcount or 0
+    _release(cx, now)
+    cx.commit()
     if confirm_url is None:
         return out
     resend = _iso(now - timedelta(hours=CONFIRM_RESEND_HOURS))
@@ -185,6 +206,8 @@ def _confirmations(cx, send_fn, confirm_url, now):
             "AND (c.sent_at IS NULL OR c.sent_at <= ?) GROUP BY q.email", (resend,))):
         import secrets
         token = secrets.token_urlsafe(24)
+        prev = cx.execute("SELECT sent_at FROM remedy_match_email_confirm WHERE email=?",
+                          (row["email"],)).fetchone()
         claim = cx.execute(
             "INSERT INTO remedy_match_email_confirm (email, token_hash, sent_at) "
             "VALUES (?,?,?) ON CONFLICT(email) DO UPDATE SET token_hash=excluded.token_hash, "
@@ -195,11 +218,21 @@ def _confirmations(cx, send_fn, confirm_url, now):
         cx.commit()
         if claim.rowcount != 1:
             continue                       # another process took it
+        cx.execute("INSERT INTO remedy_match_email_confirm_tokens (token_hash, email, sent_at) "
+                   "VALUES (?,?,?)", (_hash(token), row["email"], _iso(now)))
+        cx.commit()
         subject, html, text = render_confirm(row.get("name"), confirm_url(token))
         try:
             send_fn(row["email"], row.get("name") or "", subject, html, text)
             out["confirm_sent"] += 1
         except Exception:
+            # Nothing reached them: drop this link and restore the resend timer, so the
+            # next drain tries again rather than waiting a day.
+            cx.execute("DELETE FROM remedy_match_email_confirm_tokens WHERE token_hash=?",
+                       (_hash(token),))
+            cx.execute("UPDATE remedy_match_email_confirm SET sent_at=? WHERE email=?",
+                       (prev[0] if prev else None, row["email"]))
+            cx.commit()
             out["confirm_failed"] += 1
     return out
 

@@ -109,16 +109,72 @@ def test_the_token_is_stored_only_as_a_hash(tmp_path):
 
 
 def test_the_confirm_page_route(monkeypatch, tmp_path):
+    """GET only shows a button (mail scanners open links); the POST confirms."""
     import app
     monkeypatch.setattr(app, "LOG_DB", str(tmp_path / "chat_log.db"))
     from dashboard import db
     with db.connect(app.LOG_DB) as cx:
-        _enqueue(cx)
+        _enqueue(cx, now=datetime.now(timezone.utc))
         sent = []
         rme.drain(cx, lambda *a: sent.append(a), confirm_url=URL, now=datetime.now(timezone.utc))
     token = sent[0][4].split("?t=")[1].split()[0]
     c = app.app.test_client()
     r = c.get("/begin/confirm-email?t=" + token)
+    assert r.status_code == 200 and b"Confirm my email" in r.data
+    with db.connect(app.LOG_DB) as cx:
+        assert not rme.is_confirmed(cx, "v@example.com")       # a scanner's GET does nothing
+    r = c.post("/begin/confirm-email", data={"t": token})
     assert r.status_code == 200 and b"confirmed" in r.data
     assert r.headers["Referrer-Policy"] == "no-referrer"
-    assert c.get("/begin/confirm-email?t=wrong").status_code == 410
+    with db.connect(app.LOG_DB) as cx:
+        assert rme.is_confirmed(cx, "v@example.com")
+    assert c.post("/begin/confirm-email", data={"t": "wrong"}).status_code == 410
+
+
+def test_a_resend_keeps_the_earlier_link_working(tmp_path):
+    cx = _cx(tmp_path)
+    _enqueue(cx)
+    sent = []
+    rme.drain(cx, lambda *a: sent.append(a), confirm_url=URL, now=T0)
+    first = sent[0][4].split("?t=")[1].split()[0]
+    rme.drain(cx, lambda *a: sent.append(a), confirm_url=URL, now=T0 + timedelta(hours=25))
+    assert len(sent) == 2
+    assert rme.confirm(cx, first, now=T0 + timedelta(hours=26)) == "v@example.com"
+
+
+def test_a_failed_confirmation_send_is_retried_next_drain(tmp_path):
+    cx = _cx(tmp_path)
+    _enqueue(cx)
+    def boom(*a):
+        raise RuntimeError("smtp down")
+    out = rme.drain(cx, boom, confirm_url=URL, now=T0)
+    assert out["confirm_failed"] == 1
+    assert cx.execute("SELECT COUNT(*) FROM remedy_match_email_confirm_tokens").fetchone()[0] == 0
+    sent = []
+    rme.drain(cx, lambda *a: sent.append(a), confirm_url=URL, now=T0 + timedelta(minutes=1))
+    assert len(sent) == 1
+
+
+def test_a_late_click_does_not_release_a_week_old_match(tmp_path):
+    cx = _cx(tmp_path)
+    _enqueue(cx, now=T0)
+    sent = []
+    rme.drain(cx, lambda *a: sent.append(a), confirm_url=URL, now=T0 + timedelta(days=6))
+    token = sent[0][4].split("?t=")[1].split()[0]
+    assert rme.confirm(cx, token, now=T0 + timedelta(days=8)) == "v@example.com"
+    assert _status(cx) == "awaiting_confirm"
+    rme.drain(cx, lambda *a: sent.append(a), confirm_url=URL, now=T0 + timedelta(days=8))
+    assert _status(cx) == "skipped" and len(sent) == 1
+
+
+def test_a_match_written_as_waiting_after_confirmation_is_healed(tmp_path):
+    """Race: another process confirmed the address between is_confirmed and the insert."""
+    cx = _cx(tmp_path)
+    rme.mark_confirmed(cx, "v@example.com", now=T0)
+    cx.execute("INSERT INTO remedy_match_email_queue (email, session_id, name, product_slug, "
+               "product_name, page_url, updated_at, status) VALUES "
+               "('v@example.com','s9','V','clear-the-way','Clear the Way','u',?,'awaiting_confirm')",
+               (T0.isoformat(),))
+    cx.commit()
+    rme.drain(cx, lambda *a: None, confirm_url=URL, now=T0 + timedelta(minutes=1))
+    assert _status(cx, session="s9") == "pending"
