@@ -13090,7 +13090,7 @@
    ],
    "parent": "conditions-vision",
    "status": "live",
-   "summary": "Vision-threatening optic nerve condition addressed with OcuHeal drops, OcuFlow, Neuroprotect, and NeurOmega natural protocols."
+   "summary": "Vision-threatening optic nerve condition addressed with OcuHeal drops, OcuFlow, Neuroprotect, and WholOmega natural protocols."
   },
   {
    "aliases": [
@@ -20102,11 +20102,11 @@
     "y": 0.1622
    },
    "id": "neuromega",
-   "label": "NeurOmega",
+   "label": "WholOmega",
    "links": [
     {
      "source": "remedymatch",
-     "title": "NeurOmega",
+     "title": "WholOmega",
      "type": "product",
      "url": "https://myhealingoasis.com/begin/product/wholomega-120-gelcaps"
     },
