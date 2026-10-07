@@ -1,7 +1,7 @@
 """Assemble data/prl_seed.json from the vault PRL-catalog assets.
 Run locally (Glen's machine) whenever the vault maps change; commit the output.
 """
-import json, os
+import json, os, re
 
 VAULT = os.path.expanduser("~/AI-Training/production/02 Products/PRL-catalog")
 CATALOG = os.path.join(VAULT, "prl_catalog_enriched.json")
@@ -88,9 +88,19 @@ def normalize_product_name(name, catalog_names):
     return name
 
 
+def _bare(name):
+    return re.sub(r"[\u2122\u00ae]", "", name or "").strip().lower()
+
+
 def build():
     catalog = {p["name"]: p for p in json.load(open(CATALOG))["products"]}
     xwalk = {r["prl"]: r for r in json.load(open(CROSSWALK))["rows"]}
+    # The crosswalk writes "Tranquinol" where the catalog writes "Tranquinol®", so an
+    # exact lookup silently gave 9 products no suggestion. Fall back to the name with
+    # its trademark marks removed, but only when exactly one row matches.
+    by_bare = {}
+    for k in xwalk:
+        by_bare.setdefault(_bare(k), []).append(k)
     fa = json.load(open(FA_MAP))["focus_areas"]
     catalog_names = set(catalog.keys())
 
@@ -100,7 +110,10 @@ def build():
 
     products = []
     for name, p in catalog.items():
-        x = xwalk.get(name, {})
+        x = xwalk.get(name)
+        if x is None:
+            hits = by_bare.get(_bare(name), [])
+            x = xwalk[hits[0]] if len(hits) == 1 else {}
         products.append({
             "name": name,
             "external_id": None,  # backfilled from mirror captures over time
