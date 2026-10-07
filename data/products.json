@@ -13085,7 +13085,8 @@
    "pinecone_title": "Serrapeptase",
    "url": "https://myhealingoasis.com/begin/product/serrapeptase",
    "legacy_store_url": "https://remedymatch.com/remedies/512-serrapeptase",
-   "bottle_type": "120 caps"
+   "bottle_type": "120 caps",
+   "inactive": true
   },
   "polyphenols-camellia-sinensis": {
    "name": "Polyphenols (Camellia sinensis)",
