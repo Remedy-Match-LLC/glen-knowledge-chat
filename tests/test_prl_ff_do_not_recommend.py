@@ -81,3 +81,45 @@ def test_the_chip_shows_the_name_of_the_product_it_links_to():
     v = app._prl_ff_view("Relax", "consider")
     assert v["slug"] == "stress-release"
     assert v["name"] == "Stress Release"
+
+
+def _card_db(tmp_path, best_ff, mirror):
+    import sqlite3
+    from dashboard import prl_supplement as prl
+    db = str(tmp_path / "c.db")
+    cx = sqlite3.connect(db)
+    cx.row_factory = sqlite3.Row
+    prl.init_tables(cx)
+    prl.sync_from_seed(cx, {
+        "products": [{"name": "pH Minerals", "url": "u", "best_ff": best_ff,
+                      "relation": "equivalent", "focus_tags": [], "ff_alts": [],
+                      "external_id": "1", "product_type": "supplement"}],
+        "focus_area_products": [{"focus_area_id": 9, "focus_area_name": "Minerals",
+                                 "prl_product_name": "pH Minerals", "rank": 0}],
+        "focus_area_items": [{"focus_area_id": 9, "item_code": "ED4"}],
+    })
+    cx.execute("CREATE TABLE IF NOT EXISTS scan_recommendations (email TEXT, scan_id TEXT,"
+               " scan_date TEXT, item_code TEXT, priority_rank INTEGER, label TEXT)")
+    cx.execute("INSERT INTO scan_recommendations VALUES ('a@b.com','s1','2026-07-01','ED4',1,'ED4')")
+    if mirror:
+        cx.execute("INSERT INTO prl_scan_mirror VALUES ('s1', ?, '2026-07-13')", (json.dumps(
+            {"patterns": [{"Name": "Minerals", "PatternItems": [],
+                           "PRLProducts": [{"Name": "pH Minerals"}]}]}),))
+    cx.commit()
+    cx.close()
+    return db
+
+
+@pytest.mark.parametrize("mirror", [False, True], ids=["derived", "mirror"])
+def test_the_card_keeps_the_prl_product_and_drops_a_blocked_chip(monkeypatch, tmp_path, mirror):
+    """Drives the real card builder on both paths, so a path that bypassed the view fails."""
+    for best_ff, want in [("Electrolyte Mineral Manna", None), ("Clear the Way", "clear-the-way")]:
+        here = tmp_path / best_ff.replace(" ", "")
+        here.mkdir()
+        monkeypatch.setattr(app, "LOG_DB", _card_db(here, best_ff, mirror))
+        monkeypatch.setenv("PRL_SUPPLEMENT_ENABLED", "1")
+        out = app._prl_supplement_for("a@b.com", "2026-07-01")
+        assert out["source"] == ("mirror" if mirror else "derived")
+        row = out["focus_areas"][0]["products"][0]
+        assert row["name"] == "pH Minerals"
+        assert (row["ff"] or {}).get("slug") == want
