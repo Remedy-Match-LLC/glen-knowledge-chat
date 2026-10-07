@@ -36,14 +36,31 @@ def test_a_name_that_is_no_product_is_not_suggested():
     assert app._prl_ff_view("NeurOmega", "consider") is None
 
 
-def test_a_retired_product_with_no_successor_is_not_suggested():
+def _first(pred):
     prods = json.load(open(os.path.join(ROOT, "data", "products.json")))["products"]
-    retired = [p["name"] for p in prods.values()
-               if p.get("inactive") and not p.get("superseded_slug")
-               and not app._resolve_remedy_slug({"name": p["name"]})]
-    assert retired, "fixture: expected at least one retired product with no successor"
-    for name in retired[:20]:
-        assert app._prl_ff_view(name, "consider") is None, name
+    return next(s for s, p in prods.items() if pred(s, p))
+
+
+@pytest.mark.parametrize("make", [
+    lambda: _first(lambda s, p: p.get("inactive") and app._get_product(s) is None),
+    lambda: "no-such-product-slug",
+    lambda: "electrolyte-mineral-manna",
+    lambda: "allerfree-homeoenergetic-drops",
+])
+def test_whatever_the_resolver_returns_a_dead_or_blocked_slug_never_shows(monkeypatch, make):
+    """The view must not trust the resolver: an inactive, unknown or blocked slug is dropped."""
+    slug = make()
+    monkeypatch.setattr(app, "_resolve_remedy_slug", lambda r: slug)
+    assert app._prl_ff_view("Anything", "consider") is None
+    assert app._fullscript_ff_view("Anything", "consider") is None
+
+
+def test_a_lookup_error_drops_the_chip_and_does_not_raise(monkeypatch):
+    monkeypatch.setattr(app, "_resolve_remedy_slug", lambda r: "clear-the-way")
+    def boom(slug):
+        raise RuntimeError("catalog down")
+    monkeypatch.setattr(app, "_get_product", boom)
+    assert app._prl_ff_view("Clear the Way", "consider") is None
 
 
 def test_a_sellable_product_is_still_suggested():

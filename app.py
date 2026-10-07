@@ -30032,17 +30032,18 @@ def _prl_ff_view(best_ff, relation):
     that is not on DO_NOT_RECOMMEND. The channel product itself still shows."""
     if not best_ff:
         return None
+    from dashboard.related_products import DO_NOT_RECOMMEND
     try:
         slug = _resolve_remedy_slug({"name": best_ff})
+        product = _get_product(slug) if slug else None   # None when inactive or unknown
     except Exception:
-        slug = None
-    from dashboard.related_products import DO_NOT_RECOMMEND
-    if not slug or slug in DO_NOT_RECOMMEND:
+        return None
+    if not product or slug in DO_NOT_RECOMMEND or product.get("slug") in DO_NOT_RECOMMEND:
         return None
     # Show the name of the product the chip links to. A crosswalk label can be a
     # retired name ("Relax") that resolves to its live successor.
-    name = ((_get_product(slug) or {}).get("name") or best_ff).strip()
-    return {"name": name, "relation": relation or "consider", "slug": slug}
+    name = (product.get("name") or best_ff).strip()
+    return {"name": name, "relation": relation or "consider", "slug": product.get("slug") or slug}
 
 
 def _prl_supplement_for(email, scan_date):
