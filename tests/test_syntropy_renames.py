@@ -114,7 +114,8 @@ def test_each_record_carries_the_new_name_and_keeps_the_old(slug):
     old, new, _ = RENAMES[slug]
     p = _catalog()[slug]
     assert p["name"] == new
-    assert p["pinecone_title"] == old          # flips later, after knowledge re-titles
+    # Flipped 2026-10-07 after knowledge re-titled the vectors; Molybdenum has no vector.
+    assert p["pinecone_title"] == (old if slug == "molybdenum-syntropy" else new)
     assert old in p["aliases"]
     assert p["report_aliases"] is True
 
