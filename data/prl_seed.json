@@ -2070,9 +2070,11 @@
     "Immune support"
    ],
    "product_type": "supplement",
-   "best_ff": "Trans-Resveratrol",
+   "best_ff": "Longevity",
    "relation": "complement",
    "ff_alts": [
+    "Mitochondrial Biogenesis",
+    "One Step",
     "Macular Wellness Astaxanthin"
    ]
   },
@@ -2272,9 +2274,10 @@
     "Thyroid and Hormone Support"
    ],
    "product_type": "supplement",
-   "best_ff": "Thyroid Support",
-   "relation": "complement",
+   "best_ff": "Estro-Clear",
+   "relation": "substitute",
    "ff_alts": [
+    "Thyroid Support",
     "Spike Shield"
    ]
   },
