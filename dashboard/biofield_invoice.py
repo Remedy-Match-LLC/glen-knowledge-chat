@@ -49,6 +49,10 @@ _RETIRED_NAMES = {
     # Renamed "ES1 Lymph and Immune Energetic Star Infoceutical" 2026-10-02. Reports
     # authored before then carry the July name.
     "es1 lymph energetic star infoceutical": "es1-lymph",
+    # The powder became "Vitamin B12 Sublingual Drops" 2026-09-24 (same FileMaker 323).
+    # Reports authored before then still name the powder.
+    "vitamin b12 sublingual powder": "sublingual-b12",
+    "sublingual b12 powder": "sublingual-b12",   # the FMP snapshot name the picker offers
 }
 
 

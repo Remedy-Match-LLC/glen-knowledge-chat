@@ -10326,28 +10326,30 @@
    "description": "build up 1 drop a day to 15 drops stirred into a little water without touching metal daily on rising"
   },
   "sublingual-b12": {
-   "name": "Vitamin B12 Sublingual Powder",
+   "name": "Vitamin B12 Sublingual Drops",
    "price_cents": 7000,
    "pinecone_title": "Sublingual B12",
    "url": "https://myhealingoasis.com/begin/product/sublingual-b12",
    "legacy_store_url": "https://remedymatch.com/remedies/syntropy/133-sublingual-b12",
    "ingredients": [
     {
-     "name": "Vitamin B12 (as Adenosyl Cobalamin)",
-     "dose": "600 mcg"
-    },
-    {
-     "name": "Vitamin B12 (as Methyl Cobalamin)",
-     "dose": "6 mcg"
+     "name": "Vitamin B12 (Adenosyl & Methyl Cobalamin)",
+     "dose": "337 mcg (333 mcg adenosylcobalamin, 3.3 mcg methylcobalamin)"
     },
     {
      "name": "D-Ribose",
-     "dose": "500 mg"
+     "dose": "277 mg"
     }
    ],
-   "ingredients_source": "t33",
-   "description": "Sublingual B12 . Price: $70.",
-   "bottle_type": "30 g",
+   "ingredients_source": "label-2026-09-24",
+   "intro": "Vitamin B12 Sublingual Drops carry the coenzyme forms of B12, adenosylcobalamin and methylcobalamin, at a 100 to 1 ratio, with D-ribose, in Microwater. They replace our B12 powder, which took up moisture from the air. Hold up to 10 drops under the tongue once a day, early in the day.",
+   "description": "Vitamin B12 Sublingual Drops carry the coenzyme forms of B12, adenosylcobalamin and methylcobalamin, at a 100 to 1 ratio, with D-ribose, in Microwater. They replace our B12 powder, which took up moisture from the air. Hold up to 10 drops under the tongue once a day, early in the day.",
+   "copy_pinned": [
+    "intro",
+    "description"
+   ],
+   "directions": "Hold up to 10 drops under the tongue once a day, early in the day, or as guided.",
+   "bottle_type": "30ml",
    "fmp_id": "323",
    "qty_pricing": true,
    "regular_cents": 8000
