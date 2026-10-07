@@ -186,6 +186,17 @@ def test_a_phone_with_trailing_text_still_gets_the_tag(tmp_path):
     assert json.loads(cx.execute("SELECT tags FROM people").fetchone()[0]) == [sc.SMS_OPT_OUT_TAG]
 
 
+def test_a_stop_never_tags_a_different_number_sharing_the_last_four(tmp_path):
+    cx = sqlite3.connect(tmp_path / "x.db")
+    cx.execute("CREATE TABLE people (id INTEGER PRIMARY KEY, email TEXT, phone TEXT, tags TEXT, "
+               "updated_at TEXT)")
+    cx.execute("INSERT INTO people VALUES (1, 'a@x.com', '808-555-0123', '[]', NULL)")
+    cx.execute("INSERT INTO people VALUES (2, 'b@x.com', '415-777-0123', '[]', NULL)")
+    sc.record(cx, "+18085550123", "out", "sms:STOP")
+    tags = dict(cx.execute("SELECT id, tags FROM people").fetchall())
+    assert json.loads(tags[1]) == [sc.SMS_OPT_OUT_TAG] and json.loads(tags[2]) == []
+
+
 def test_a_failed_tag_update_keeps_the_consent_event(tmp_path):
     cx = sqlite3.connect(tmp_path / "x.db")                 # no people table at all
     assert sc.record(cx, "+18085550123", "out", "sms:STOP") is True

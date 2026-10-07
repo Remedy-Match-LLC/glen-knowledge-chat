@@ -767,7 +767,8 @@ def _list_segment_cohort(segment_tags=("type:client", "consent:opted-in"),
                 tags = set(json.loads(p["tags"] or "[]"))
             except Exception:
                 tags = set()
-            low = " ".join(t.lower() for t in tags)
+            # a text STOP (consent:sms-unsubscribed) is not an email opt-out
+            low = " ".join(t.lower() for t in tags if t != "consent:sms-unsubscribed")
             if "consent:unsubscribed" in tags or any(s in low for s in _NO_SEND_SUBSTRINGS):
                 continue
             # An address-level block (bounce, GHL email DND) lives in email_suppression,

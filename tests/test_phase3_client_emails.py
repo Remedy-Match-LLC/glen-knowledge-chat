@@ -77,6 +77,14 @@ def test_cohort_only_opted_in_clients(env):
     assert sorted(c["email"] for c in cohort) == ["client@x.com"]
 
 
+def test_cohort_keeps_someone_who_only_stopped_texts(env):
+    """A text STOP (consent:sms-unsubscribed) never stops email (Glen 2026-10-06, PR #1925)."""
+    app, ie, db, sent = env
+    _add_person(db, "texts-off@x.com", ["type:client", "consent:opted-in", "consent:sms-unsubscribed"])
+    cohort = ie._list_segment_cohort(("type:client", "consent:opted-in"))
+    assert [c["email"] for c in cohort] == ["texts-off@x.com"]
+
+
 def test_cohort_skips_an_address_level_block(env):
     """An address blocked only by an email_suppression row (GHL email DND, a bounce scan)
     keeps consent:opted-in in its tags, so the tag filter alone would send to it."""
