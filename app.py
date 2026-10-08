@@ -2139,6 +2139,88 @@ def _product_guidance_hint(slug: str) -> str:
     return f" | class: {kind}" + (f" | purpose: {purpose}" if purpose else "")
 
 
+_NAMED_FACTS_MAX_PRODUCTS = 3
+_NAMED_FACTS_MAX_CHARS = 1600
+
+
+def _named_product_facts(query_text: str, aliases: dict) -> str:
+    """Approved store text for the catalog products the user names in the question.
+
+    The chat does not search `specific-formulations`, so a product whose facts live
+    only there reaches the model as a table row with a link and an intro. Asked
+    "How much Angiostasis should I take?" (2026-10-08), the model had no dose or
+    caution, filled the gap from wet-AMD answers about AngiogenX, and told the
+    client they meant AngiogenX. This block carries the product's own description,
+    directions and caution, so the answer comes from the approved text.
+    """
+    if not query_text:
+        return ""
+    products = (_PRODUCTS or {}).get("products", {}) or {}
+    if not products:
+        return ""
+    slugs = []
+    ql = query_text.lower()
+    named = [k for k in aliases if k and k.lower() in ql]
+    for clinical_name in sorted(named):
+        # The longest name wins: "Molecular Hydrogen Tablets" (retired) must not
+        # bring in "Molecular Hydrogen", the portable bottle, by substring.
+        if any(clinical_name.lower() in other.lower() and clinical_name != other
+               for other in named):
+            continue
+        slug, retired = _alias_catalog_slug(clinical_name, aliases[clinical_name])
+        if slug and not retired:
+            slugs.append(slug)
+    for url in _catalog_link_matches(query_text, aliases).values():
+        slugs.append(url.rstrip("/").rsplit("/", 1)[-1])
+    blocks = []
+    for slug in dict.fromkeys(slugs):
+        product = products.get(slug) or {}
+        if not product or product.get("inactive"):
+            continue
+        name = (product.get("name") or slug).strip()
+        desc = re.sub(r"[ \t]+", " ", (product.get("description") or "").strip())
+        if len(desc) > _NAMED_FACTS_MAX_CHARS:
+            desc = desc[:_NAMED_FACTS_MAX_CHARS].rsplit(" ", 1)[0] + "..."
+        parts = [f"### {name}"]
+        if desc:
+            parts.append(desc)
+        for label, key in (("Directions", "directions"), ("Caution", "warning")):
+            val = (product.get(key) or "").strip()
+            if val and val not in desc:
+                parts.append(f"{label}: {val}")
+        if len(parts) > 1:
+            blocks.append("\n".join(parts))
+        if len(blocks) >= _NAMED_FACTS_MAX_PRODUCTS:
+            break
+    if not blocks:
+        return ""
+    return (
+        "PRODUCT FACTS FOR THE PRODUCT(S) THE USER NAMED. This is the approved store "
+        "text and it outranks every snippet about this product. Each product here exists "
+        "under the name the user used, so never tell them they meant a different product. "
+        "Describe it only by what this text says. Give its dose from this text and repeat "
+        "its full caution. Do not attach to it any condition, mechanism, pairing or dose "
+        "that the snippets give for a different product, even one with a similar name. "
+        "Name no disease or condition it is for unless this text or the user's question "
+        "names it. Pair or compare it only with products this text names. In such an "
+        "answer, name no other product at all unless this text or the user names it.\n"
+        "When the question asks what the product is, what is in it, how to take it or "
+        "whether it is safe, skip any consensus or mainstream-view structure. Answer "
+        "directly from this text, briefly, then the Sources line and the CTA line. Do not "
+        "describe what mainstream medicine says about related conditions, and do not list "
+        "diseases or conditions as examples of where it helps, even in passing.\n\n"
+        + "\n\n".join(blocks)
+    )
+
+
+def named_product_facts_block(query_text: str) -> str:
+    """The facts block, or "". It goes LAST in the user message, after the synthesis
+    instruction. Read-back 2026-10-08: placed before the snippets, 8 of 16 answers
+    failed; placed after them but before the instruction, 2 of 16 failed."""
+    facts = _named_product_facts(query_text, _PRODUCT_ALIASES.get("aliases", {}) or {})
+    return f"\n\n{facts}" if facts else ""
+
+
 def build_product_directive(snippets_text: str = "", query_text: str = ""):
     """Build the per-request product-routing directive injected into the
     synthesis prompt. Includes the alias map and today's coupon if any.
@@ -5921,6 +6003,7 @@ def chat():
             f"RETRIEVED SNIPPETS:\n{context_str}\n\n"
             f"{product_block}"
             f"{synth_instr}"
+            f"{named_product_facts_block(query)}"
         })
 
         # ── Consent gate (Tier-0 Visitor → Tier-1 Member) ────────────────────
@@ -14222,6 +14305,7 @@ def _generate_full_answer(query: str, level: str, is_logged_in: bool = False):
         f"RETRIEVED SNIPPETS:\n{context_str}\n\n"
         f"{product_block}"
         f"{synth_instr}"
+        f"{named_product_facts_block(query)}"
     )
 
     answer = ""
@@ -14395,6 +14479,7 @@ def _full_report_stream(log_id, query, level, session_id,
             f"RETRIEVED SNIPPETS:\n{context_str}\n\n"
             f"{product_block}"
             f"{synth_instr}"
+            f"{named_product_facts_block(query)}"
         )
 
         try:
