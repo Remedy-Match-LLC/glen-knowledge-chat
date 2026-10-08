@@ -9663,6 +9663,11 @@ def begin_product_page_data(slug):
     sections = _filter_sections(sections, has_ingredients=_has_ings,
                                 has_own_video=bool(_own_vids), is_service=_is_service,
                                 in_miron=_miron)
+    # A product with AI images off has no Images section: its photos are in the top gallery,
+    # and an empty section would open to nothing.
+    from dashboard.sales_images import ai_images_off as _ai_images_off
+    if _ai_images_off(p.get("slug") or slug):
+        sections = [s for s in sections if s["id"] != "images"]
     # A service gets no "Dr. Glen recommends" box: on the EVOX page it recommended ED10
     # Skin Driver. A related-services list would be new copy, so none is shown yet.
     # Nor does a never-recommend product: a box headed "Dr. Glen recommends" on the
@@ -11567,7 +11572,9 @@ def api_console_backfill_dispensary_referrals():
 @app.route("/begin/product-image-gen/<slug>", methods=["POST"])
 def begin_product_image_gen(slug):
     from dashboard import sales_images as _si
-    if not _SALES_AI_IMAGES_ENABLED or not _get_product(slug) or _si.ai_images_off(slug):
+    _p = _get_product(slug)
+    if not _SALES_AI_IMAGES_ENABLED or not _p or _si.ai_images_off(slug) \
+            or _si.ai_images_off(_p.get("slug") or slug):
         return ("", 404)
     with db.connect(LOG_DB) as cx:
         if _SALES_IMAGE_VARIATIONS_ENABLED:

@@ -152,8 +152,7 @@ def test_the_images_section_never_says_generating(appmod, monkeypatch, variation
     # Any `state` other than "ready" leaves the page on "Generating" and posting to image-gen.
     monkeypatch.setattr(appmod, "_SALES_IMAGE_VARIATIONS_ENABLED", variations)
     d = appmod.app.test_client().get(f"/begin/product-page-data/{SLUG}").get_json()
-    img = next(s for s in d["sections"] if s["id"] == "images")
-    assert img["body"] == {"images": []}, img["body"]
+    assert "images" not in [s["id"] for s in d["sections"]]
     # The control: another product on the same app does get a state, so the check can fail.
     d2 = appmod.app.test_client().get("/begin/product-page-data/angiogenx").get_json()
     img2 = next(s for s in d2["sections"] if s["id"] == "images")
@@ -205,7 +204,12 @@ def test_the_image_serve_pick_and_vote_routes_refuse_the_slug(appmod, monkeypatc
     assert c.post(f"/begin/product-image-pick/{SLUG}", json=body).status_code == 404
     assert c.post(f"/begin/product-image-vote/{SLUG}", json=body).status_code == 404
     # The control: the same calls for another product are not refused.
+    other = appmod._SALES_IMG_DIR / "angiogenx"
+    other.mkdir(parents=True, exist_ok=True)
+    (other / "mechanism-1.png").write_bytes(b"\x89PNG fake")
+    assert c.get("/begin/product-image/angiogenx/mechanism-1.png").status_code == 200
     assert c.post("/begin/product-image-pick/angiogenx", json=body).status_code == 200
+    assert c.post("/begin/product-image-vote/angiogenx", json=body).status_code == 200
 
 
 def test_the_tournament_never_renders_for_the_slug(appmod, monkeypatch):
@@ -219,3 +223,8 @@ def test_the_tournament_never_renders_for_the_slug(appmod, monkeypatch):
     monkeypatch.setattr(sp, "ensure_pair", lambda cx, slug, kind, vs: (seen.append(slug), None)[1])
     appmod._run_image_tournament()
     assert SLUG not in seen
+
+
+def test_the_learn_page_serves_the_description(appmod):
+    d = appmod.app.test_client().get(f"/begin/learn-data/{SLUG}").get_json()
+    assert d["markdown"] == DESCRIPTION
