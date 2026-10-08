@@ -1,5 +1,5 @@
 {
-  "version": "2026-07-24",
+  "version": "2026-10-08",
   "red": [
     {"canonical": "magnesium stearate",
      "aliases": ["magnesium stearate", "vegetable stearate", "stearic acid", "vegetable magnesium stearate"],
@@ -21,7 +21,14 @@
      "rationale": "Hydrogenated oils introduce trans fats."},
     {"canonical": "carrageenan",
      "aliases": ["carrageenan"],
-     "rationale": "Carrageenan is a pro-inflammatory thickener."}
+     "rationale": "Carrageenan is a pro-inflammatory thickener."},
+    {"canonical": "phthalate enteric coating",
+     "aliases": ["phthalate", "hypromellose phthalate", "hydroxypropyl methylcellulose phthalate", "hpmcp", "cellulose acetate phthalate", "polyvinyl acetate phthalate", "pvap"],
+     "rationale": "Glen 2026-10-08: an enteric capsule that is not phthalate-free fails. Shellac is not covered by this ruling. \"CAP\" is not an alias: it would match \"veggie cap\"."},
+    {"canonical": "enteric capsule, phthalate-free not stated",
+     "aliases": ["enteric", "enterically", "delayed release", "acid resistant", "gastro resistant", "gastroresistant"],
+     "unless_label": ["phthalate free", "drcaps", "drcap", "dr caps"],
+     "rationale": "Glen 2026-10-08: an enteric capsule whose label does not say phthalate-free fails until the maker confirms it. Confirm with the maker. Glen's figure, no source recorded: about 80% of enteric capsules use phthalates. DRcaps (hypromellose and gellan gum) are phthalate-free."}
   ],
   "yellow": [
     {"canonical": "silicon dioxide",

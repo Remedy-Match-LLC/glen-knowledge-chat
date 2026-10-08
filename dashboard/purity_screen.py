@@ -11,6 +11,9 @@ Contract for `other_ingredients`:
 import re
 
 
+_DASHES = re.compile("[\u2010-\u2015\u2212-]")
+
+
 def _normalize(name):
     """Lowercase and strip common descriptors so aliases match real labels."""
     s = (name or "").lower()
@@ -20,7 +23,7 @@ def _normalize(name):
     # "Magnesium-Stearate") still matches the space-joined alias
     # ("magnesium stearate"). The word-boundary regex in _hits treats "-" as
     # a delimiter, so without this the hyphenated form would silently miss.
-    s = s.replace("-", " ")
+    s = _DASHES.sub(" ", s)
     s = " ".join(s.split()).strip()
     return _strip_negations(s)
 
@@ -35,6 +38,8 @@ def _strip_negations(s):
     hydrogenated palm oil" leaves "palm oil", which no longer matches the
     "hydrogenated palm oil" alias).
     """
+    # "free of hypromellose phthalate" -- a negated phthalate name of up to three words.
+    s = re.sub(r"\b(?:free of|free from|without)\s+(?:[a-z0-9]+\s+){0,3}phthalates?\b", " ", s)
     # "free of gelatin" -- explicit "free of X" phrasing.
     s = re.sub(r"\bfree of ([a-z0-9]+)\b", " ", s)
     # "non gelatin" / "non hydrogenated" -- "non" prefix (already
@@ -47,11 +52,49 @@ def _strip_negations(s):
     return " ".join(s.split()).strip()
 
 
-def _hits(normalized_item, entries):
+def _has(text, alias):
+    plural = "s?" if len(alias) > 4 else ""
+    return re.search(r"(?<![a-z0-9])" + re.escape(alias) + plural + r"(?![a-z0-9])", text) is not None
+
+
+# "non phthalate", "no phthalates", "free of/from phthalates", "without phthalates", "phthalates free"
+# (hyphens are already spaces). A denial like "not phthalate free" is not matched by any of these.
+_PHTHALATE_FREE = re.compile(
+    r"\b(?:non|no)\s+phthalates?\b"
+    r"|\b(?:without|free of|free from)\s+(?:[a-z0-9]+\s+){0,3}?phthalates?\b"
+    r"|\bphthalates?\s+free\b")
+
+
+def _groups(other_ingredients):
+    """Re-join items the splitter cut inside brackets ("DRcaps (hypromellose", "gellan gum)"),
+    so each item maps to the bracket group it came from. Returns one group index per item."""
+    out, depth, g = [], 0, -1
+    for raw in other_ingredients or []:
+        if depth <= 0:
+            g += 1
+            depth = 0
+        out.append(g)
+        r = raw or ""
+        depth += r.count("(") + r.count("[") - r.count(")") - r.count("]")
+    return out
+
+
+def _exempt_text(items):
+    """A bracket group's text, normalised with negations KEPT ("phthalate free" stays visible),
+    then with denials removed ("no DRcaps", "not DRcaps", "non DRcaps"), so only an affirmed
+    exemption counts."""
+    s = _DASHES.sub(" ", " ; ".join(items).lower())
+    s = _PHTHALATE_FREE.sub(" phthalate free ", s)
+    s = re.sub(r"\b(?:no|not|non|without)\s+[a-z0-9]+", " ", s)
+    return " ".join(s.split())
+
+
+def _hits(normalized_item, entries, label_text=""):
     for e in entries:
+        if any(_has(label_text, u) for u in e.get("unless_label") or []):
+            continue
         for alias in e["aliases"]:
-            pattern = r"(?<![a-z0-9])" + re.escape(alias) + r"(?![a-z0-9])"
-            if re.search(pattern, normalized_item):
+            if _has(normalized_item, alias):
                 return True
     return False
 
@@ -62,11 +105,13 @@ def screen_label(actives, other_ingredients, avoidlist):
         return {"color": "unrated", "red_hits": [], "yellow_hits": [],
                 "avoidlist_version": version}
     red_hits, yellow_hits = [], []
-    for raw in other_ingredients:
+    groups = _groups(other_ingredients)
+    for i, raw in enumerate(other_ingredients):
         norm = _normalize(raw)
-        if _hits(norm, avoidlist["red"]):
+        own = _exempt_text([x for x, g in zip(other_ingredients, groups) if g == groups[i]])
+        if _hits(norm, avoidlist["red"], own):
             red_hits.append(raw)
-        elif _hits(norm, avoidlist["yellow"]):
+        elif _hits(norm, avoidlist["yellow"], own):
             yellow_hits.append(raw)
     if red_hits:
         color = "red"
