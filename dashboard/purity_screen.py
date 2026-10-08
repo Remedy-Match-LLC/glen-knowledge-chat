@@ -11,6 +11,9 @@ Contract for `other_ingredients`:
 import re
 
 
+_DASHES = re.compile("[\u2010-\u2015\u2212-]")
+
+
 def _normalize(name):
     """Lowercase and strip common descriptors so aliases match real labels."""
     s = (name or "").lower()
@@ -20,7 +23,7 @@ def _normalize(name):
     # "Magnesium-Stearate") still matches the space-joined alias
     # ("magnesium stearate"). The word-boundary regex in _hits treats "-" as
     # a delimiter, so without this the hyphenated form would silently miss.
-    s = s.replace("-", " ")
+    s = _DASHES.sub(" ", s)
     s = " ".join(s.split()).strip()
     return _strip_negations(s)
 
@@ -36,7 +39,7 @@ def _strip_negations(s):
     "hydrogenated palm oil" alias).
     """
     # "free of hypromellose phthalate" -- a negated phthalate name of up to three words.
-    s = re.sub(r"\b(?:free of|free from|without|no|non)\s+(?:[a-z0-9]+\s+){0,3}phthalates?\b", " ", s)
+    s = re.sub(r"\b(?:free of|free from|without)\s+(?:[a-z0-9]+\s+){0,3}phthalates?\b", " ", s)
     # "free of gelatin" -- explicit "free of X" phrasing.
     s = re.sub(r"\bfree of ([a-z0-9]+)\b", " ", s)
     # "non gelatin" / "non hydrogenated" -- "non" prefix (already
@@ -50,13 +53,16 @@ def _strip_negations(s):
 
 
 def _has(text, alias):
-    return re.search(r"(?<![a-z0-9])" + re.escape(alias) + r"s?(?![a-z0-9])", text) is not None
+    plural = "s?" if len(alias) > 4 else ""
+    return re.search(r"(?<![a-z0-9])" + re.escape(alias) + plural + r"(?![a-z0-9])", text) is not None
 
 
 # "non phthalate", "no phthalates", "free of/from phthalates", "without phthalates", "phthalates free"
 # (hyphens are already spaces). A denial like "not phthalate free" is not matched by any of these.
 _PHTHALATE_FREE = re.compile(
-    r"\b(?:non|no|without|free of|free from)\s+(?:[a-z0-9]+\s+){0,3}?phthalates?\b|\bphthalates?\s+free\b")
+    r"\b(?:non|no)\s+phthalates?\b"
+    r"|\b(?:without|free of|free from)\s+(?:[a-z0-9]+\s+){0,3}?phthalates?\b"
+    r"|\bphthalates?\s+free\b")
 
 
 def _groups(other_ingredients):
@@ -68,7 +74,8 @@ def _groups(other_ingredients):
             g += 1
             depth = 0
         out.append(g)
-        depth += (raw or "").count("(") - (raw or "").count(")")
+        r = raw or ""
+        depth += r.count("(") + r.count("[") - r.count(")") - r.count("]")
     return out
 
 
@@ -76,7 +83,7 @@ def _exempt_text(items):
     """A bracket group's text, normalised with negations KEPT ("phthalate free" stays visible),
     then with denials removed ("no DRcaps", "not DRcaps", "non DRcaps"), so only an affirmed
     exemption counts."""
-    s = " ; ".join(items).lower().replace("-", " ")
+    s = _DASHES.sub(" ", " ; ".join(items).lower())
     s = _PHTHALATE_FREE.sub(" phthalate free ", s)
     s = re.sub(r"\b(?:no|not|non|without)\s+[a-z0-9]+", " ", s)
     return " ".join(s.split())

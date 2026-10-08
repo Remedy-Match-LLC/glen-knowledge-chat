@@ -123,3 +123,33 @@ def test_every_way_of_saying_phthalate_free_passes(line):
 ])
 def test_plurals_and_borrowed_claims_still_fail(line):
     assert _label(line)["color"] == "red"
+
+
+@pytest.mark.parametrize("line", [
+    "Enteric coating (non-GMO hypromellose phthalate)",   # "non" negates GMO, not the phthalate
+    "Non-GMO hypromellose phthalate",
+    "Non-GMO cellulose acetate phthalate",
+    "Non-GMO bovine gelatin phthalate-free capsule",       # gelatin still fails
+    "Delayed\u2013release capsule",                         # en dash
+    "Acid\u2011resistant capsule",                          # non-breaking hyphen
+    "Gastro-resistant capsule (hypromellose)",
+    "Gastroresistant capsule",
+    "Enterically coated tablet",
+])
+def test_round3_false_greens_now_fail(line):
+    assert _label(line)["color"] == "red"
+
+
+@pytest.mark.parametrize("line", [
+    "Enteric capsule (phthalate\u2013free)",
+    "Enteric capsule [hypromellose, phthalate-free]",
+    "Enteric capsule (DRcap)",
+    "Delayed-release capsule (hypromellose, gellan gum, DRcaps)",  # exemption in another split item, same bracket
+    "Lakes Region spring water",
+])
+def test_round3_false_reds_now_pass(line):
+    assert _label(line)["color"] == "green"
+
+
+def test_aluminum_lakes_still_fail():
+    assert _label("Aluminum lake")["color"] == "red"
