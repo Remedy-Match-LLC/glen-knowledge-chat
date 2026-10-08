@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>Story pages · Console</title>
+<style>
+:root{--bg:#0a150d;--surface:#111f16;--border:#21472d;--cream:#fdf4d8;--muted:#a89870;--gold:#d4a843;--bad:#e07a5f;}
+*{box-sizing:border-box;}
+body{margin:0;background:var(--bg);color:var(--cream);font:15px/1.5 system-ui,sans-serif;}
+main{max-width:1000px;margin:0 auto;padding:24px 16px 60px;}
+h1{color:var(--gold);font-size:1.5rem;margin:0 0 4px;}
+h2{font-size:1.1rem;margin:28px 0 8px;}
+p.note{color:var(--muted);margin:0 0 16px;}
+table{width:100%;border-collapse:collapse;}
+th,td{border-top:1px solid var(--border);padding:8px 6px;text-align:left;vertical-align:top;font-size:14px;}
+th{color:var(--muted);font-weight:600;}
+a{color:var(--gold);}
+button{background:var(--surface);color:var(--cream);border:1px solid var(--border);border-radius:8px;padding:5px 10px;margin:2px;cursor:pointer;font-size:13px;}
+button:hover{border-color:var(--gold);}
+button.go{border-color:var(--gold);}
+code{font-size:12px;color:var(--muted);}
+textarea,input{width:100%;background:var(--surface);color:var(--cream);border:1px solid var(--border);border-radius:8px;padding:8px;font:13px/1.4 ui-monospace,monospace;}
+label{display:block;margin:10px 0 4px;color:var(--muted);font-size:13px;}
+#msg{min-height:1.5em;margin:12px 0;}
+#msg.err{color:var(--bad);}
+</style>
+</head>
+<body>
+<main>
+<h1>Story pages</h1>
+<p class="note">Steps run in order: compliance, then the giver's approval, then Glen publishes.
+Any edit sends a page back to draft. Each step is tied to the content hash shown here,
+so preview the page before you run a step.</p>
+<div id="msg"></div>
+<table>
+<thead><tr><th>Page</th><th>State</th><th>Hash</th><th>Clicks</th><th>Actions</th></tr></thead>
+<tbody id="rows"><tr><td colspan="5">Loading.</td></tr></tbody>
+</table>
+
+<h2>Create or edit a page</h2>
+<p class="note">Edit loads a page into this form. Saving an existing page resets it to draft.</p>
+<label for="f-slug">Story slug (lowercase, hyphens)</label><input id="f-slug">
+<label for="f-tid">Testimonial id (product_reviews row)</label><input id="f-tid">
+<label for="f-name">Name line</label><input id="f-name">
+<label for="f-ref">Giver's referral slug (may be empty)</label><input id="f-ref">
+<label for="f-content">Content JSON: {"story": "...", "links": [{"label": "...", "path": "/begin/product/..."}]}</label>
+<textarea id="f-content" rows="12"></textarea>
+<p><button class="go" onclick="save('create')">Create</button>
+<button class="go" onclick="save('edit')">Save edit</button></p>
+</main>
+<script>
+const $ = (id) => document.getElementById(id);
+function say(text, bad){ const m=$('msg'); m.textContent=text; m.className=bad?'err':''; }
+function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+let PAGES = {};
+
+async function act(key, body){
+  const r = await fetch('/api/action/story_page.'+key, {method:'POST', credentials:'same-origin',
+    headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
+  const j = await r.json().catch(()=>({}));
+  if (r.status !== 200) { say('Refused: '+(j.error||r.status), true); return null; }
+  if (j.status !== 'done') { say('Refused: '+(j.reason||j.error||j.status), true); return null; }
+  if (!j.result.ok) { say('Refused: '+j.result.error+(j.result.detail?' ('+j.result.detail+')':''), true); return null; }
+  say(body.slug+' is now '+j.result.state+'.');
+  load();
+  return j.result;
+}
+
+async function load(){
+  const r = await fetch('/api/console/stories', {credentials:'same-origin'});
+  if (r.status !== 200) { $('rows').innerHTML='<tr><td colspan="5">Log in to the console first.</td></tr>'; return; }
+  const j = await r.json();
+  const clicks = {};
+  (j.clicks||[]).forEach(c => { clicks[c.story_slug] = (clicks[c.story_slug]||0) + c.clicks; });
+  PAGES = {};
+  const rows = (j.pages||[]).map(p => {
+    PAGES[p.story_slug] = p;
+    const s = esc(p.story_slug);
+    return '<tr><td><b>'+esc(p.name_line)+'</b><br><code>'+s+'</code></td>'
+      + '<td>'+esc(p.state)+'</td><td><code>'+esc(p.current_hash.slice(0,12))+'</code></td>'
+      + '<td>'+(clicks[p.story_slug]||0)+'</td><td>'
+      + '<a href="/console/stories/'+s+'/preview" target="_blank" rel="noopener">Preview</a> '
+      + (p.state==='published' ? '<a href="/stories/'+s+'" target="_blank" rel="noopener">Live</a> ' : '')
+      + '<br><button data-a="check" data-s="'+s+'">1. Compliance</button>'
+      + '<button data-a="giver_approve" data-s="'+s+'">2. Giver approved</button>'
+      + '<button data-a="publish" data-s="'+s+'">3. Publish</button>'
+      + '<button data-a="withdraw" data-s="'+s+'">Withdraw</button>'
+      + '<button data-a="load" data-s="'+s+'">Edit</button></td></tr>';
+  });
+  $('rows').innerHTML = rows.join('') || '<tr><td colspan="5">No story pages yet.</td></tr>';
+}
+
+$('rows').addEventListener('click', (ev) => {
+  const b = ev.target.closest('button'); if (!b) return;
+  const slug = b.dataset.s, a = b.dataset.a, p = PAGES[slug]; if (!p) return;
+  const h = p.current_hash;
+  if (a === 'check') {
+    const note = prompt('Compliance result for '+slug+' (glen-client-copy). Hash '+h.slice(0,12));
+    if (note) act('check', {slug, note, content_hash: h});
+  } else if (a === 'giver_approve') {
+    const ref = prompt('Reference to the giver\'s written approval of this page (for example a Gmail message id)');
+    if (ref) act('giver_approve', {slug, consent_ref: ref, content_hash: h});
+  } else if (a === 'publish') {
+    if (confirm('Publish '+slug+' at /stories/'+slug+'?')) act('publish', {slug, content_hash: h});
+  } else if (a === 'withdraw') {
+    if (confirm('Take '+slug+' down now?')) act('withdraw', {slug});
+  } else if (a === 'load') {
+    $('f-slug').value = p.story_slug; $('f-tid').value = p.testimonial_id;
+    $('f-name').value = p.name_line; $('f-ref').value = p.ref_slug;
+    $('f-content').value = JSON.stringify(p.content, null, 2);
+  }
+});
+
+function save(kind){
+  let content;
+  try { content = JSON.parse($('f-content').value); } catch(e) { say('Content is not valid JSON.', true); return; }
+  const body = {slug: $('f-slug').value.trim(), content, name_line: $('f-name').value,
+                ref_slug: $('f-ref').value.trim()};
+  if (kind === 'create' || $('f-tid').value.trim()) body.testimonial_id = parseInt($('f-tid').value, 10);
+  act(kind, body);
+}
+load();
+</script>
+</body>
+</html>
