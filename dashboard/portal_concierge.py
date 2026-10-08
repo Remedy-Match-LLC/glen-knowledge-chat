@@ -14,6 +14,20 @@ def build_context(content, orders):
     return {"layers": layers, "findings": findings, "owned": owned,
             "has_data": bool(layers or findings or owned)}
 
+# Glen, 2026-10-08: the live chat answered "What is AngioGenX?" with a mechanism, a reason
+# for a caution, a dose rationale and labels that no retrieved source gave. An invented
+# mechanism turns "supports" into a treatment claim in his voice. Shared by app.py's main
+# chat prompt (_SYSTEM_BASE) and the three client-facing prompts, each placing it right after
+# ROLE_AND_CLAIMS. Kept out of ROLE_AND_CLAIMS itself, which is Glen's approved wording.
+SOURCED_PRODUCT_CLAIMS = (
+    "- PRODUCT CLAIMS COME ONLY FROM SOURCES: state a product's purpose, ingredients, dose and "
+    "cautions only as the retrieved snippets or product data give them. Do not explain how a "
+    "product works, why its dose is set, or why a caution exists, and add no labels such as "
+    "'clinically active' or 'adaptogen', unless a retrieved source says so. This holds even "
+    "where a format asks for mechanism or rationale. Describe what a formula supports, never "
+    "what it treats or prevents.\n"
+)
+
 # Glen, 2026-10-02: how the AI states his role and what it may claim. Shared by the three
 # client-facing prompts (this one, and app.py's Remedy Match guide and post-purchase concierge).
 # State the role he holds, never a disqualification.
@@ -29,7 +43,7 @@ _BASE = (
     "Hilo Hawai'i) inside this client's private portal. They are a known client; help them "
     "with their scan findings, their remedies and protocol (what to take when), reorders, and "
     "well-matched complements. Calm, consultative, never pushy: they are served and in control.\n"
-    + ROLE_AND_CLAIMS +
+    + ROLE_AND_CLAIMS + SOURCED_PRODUCT_CLAIMS +
     "- Ground every answer in THEIR data below; reference their actual findings/remedies by name.\n"
     "- Ask ONE gentle question at a time when you need more. Functional Formulations first.\n"
     "- For protocol, reorder-timing, dosing, and lifestyle questions, guide them to the answer "

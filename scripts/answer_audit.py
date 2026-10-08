@@ -25,6 +25,9 @@ For each question, against the answer the live bot actually returns:
   3. PRICES ARE REAL         — every dollar figure equals a price or shipping
                                figure of a product named in that answer
   4. NO RETIRED DESTINATIONS — no practicebetter.io, no GrooveKart storefront
+  5. NO INVENTED MECHANISM   — for the "claim" questions only, none of the
+                               phrases the bot invented about AngioGenX on
+                               2026-10-08 (how it works, why a caution exists)
 
 Findings are reported, never auto-fixed: a false positive here is cheap, a
 wrong "all clear" is not.
@@ -61,7 +64,17 @@ QUESTIONS = [
     ("route", "where do I access the free ASH MasterClass course"),
     ("dep",   "can I still get Dental Regen Powder"),
     ("dep",   "do you sell molecular hydrogen tablets"),
+    ("claim", "What is AngioGenX and how does it help the eyes?"),
+    ("claim", "How much AngioGenX should I take and why?"),
 ]
+
+# 2026-10-08: the live bot answered the AngioGenX questions above with a mechanism,
+# a reason for a caution, a dose rationale and labels that no retrieved source gave.
+# Checked only on "claim" answers, where none of these belongs.
+INVENTED_CLAIM_PHRASES = (
+    "neovascular", "vascular remodeling", "hemostasis", "maximizes bioavailability",
+    "clinically active", "adaptogen", "endothelial",
+)
 
 MONEY = re.compile(r"\$\s?([0-9][0-9,]*(?:\.[0-9]{2})?)")
 MDLINK = re.compile(r"\[([^\]]+)\]\((https?://[^)\s]+)\)")
@@ -100,10 +113,19 @@ def money_cents(s):
     return int(round(float(s.replace(",", "")) * 100))
 
 
-def audit(answer, products):
-    """Return a list of finding strings for one answer."""
+def audit(answer, products, group=None):
+    """Return a list of finding strings for one answer. `group` is the question's
+    group from QUESTIONS; "claim" answers are also checked for invented mechanism."""
     out = []
     links = MDLINK.findall(answer)
+
+    # 5. invented mechanism, caution reason or label (claim questions only)
+    if group == "claim":
+        low = answer.lower()
+        for phrase in INVENTED_CLAIM_PHRASES:
+            if phrase in low:
+                out.append(f"CLAIM: says '{phrase}', which no source gave; "
+                           f"it explains how the product works or adds a label")
 
     # 4. retired destinations
     for pat, what in ((r"practicebetter\.io", "Practice Better URL"),
@@ -176,7 +198,7 @@ def main():
             total += 1
             continue
         asked += 1
-        findings = audit(answer, products)
+        findings = audit(answer, products, group)
         flag = "FLAGGED" if findings else "ok"
         print(f"[{group}] {q}\n  {flag}")
         for f in findings:

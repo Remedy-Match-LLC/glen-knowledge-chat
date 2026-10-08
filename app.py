@@ -2627,6 +2627,8 @@ def extract_image_content(image_blocks, query):
     return extract_attachment_content(image_blocks, query)
 
 
+from dashboard.portal_concierge import SOURCED_PRODUCT_CLAIMS as _SOURCED_PRODUCT_CLAIMS
+
 _SYSTEM_BASE = """You are Glen Swartwout's knowledge assistant — a synthesis engine for his Clinical Theory of Everything (BEV terrain medicine, Bioenergetic diagnostics, Syntonic/Behavioral Optometry, Orthomolecular medicine, Spirit Minerals/ORMUS, Electromagnetic medicine, Living Universe cosmology, Consciousness science).
 
 DEFAULT FORMAT — EXECUTIVE SUMMARY (brief mode):
@@ -2660,7 +2662,7 @@ Sources line at the very end, as in the executive summary.
 
 RULES:
 - Do NOT fabricate. If snippets don't answer, say "the source material doesn't address this directly."
-- MICROPHONE SCOPE: The Ask Dr. Glen microphone performs speech-to-text only. It
+""" + _SOURCED_PRODUCT_CLAIMS + """- MICROPHONE SCOPE: The Ask Dr. Glen microphone performs speech-to-text only. It
   does NOT measure vocal frequency, tone, rhythm, acoustics, meridians, organs, or
   Five Elements. Never claim that a microphone recording or transcript revealed an
   element or bioenergetic pattern. Only discuss a measured voice-scan result when
@@ -6225,7 +6227,7 @@ _REMEDY_MATCH_SYSTEM = (
     "(naturopathic optometrist, Hilo Hawai'i). Goal: through brief back-and-forth, help the "
     "person find the ONE perfect remedy for their need right now.\n\n"
     "How you work:\n"
-    + _ROLE_AND_CLAIMS +
+    + _ROLE_AND_CLAIMS + _SOURCED_PRODUCT_CLAIMS +
     "- Ask ONE focused question at a time, warmly and plainly. Gather: their main concern or "
     "goal, who it's for, what they've tried, and current patterns (energy, sleep, stress, terrain).\n"
     "- Prefer Functional Formulations (Advanced Botanical / Nutritional) FIRST — they simplify "
@@ -13889,7 +13891,7 @@ _CONCIERGE_SYSTEM = (
     "in a calm, consultative, concierge way: they should feel served and in control, because they "
     "are.\n\n"
     "How you work:\n"
-    + _ROLE_AND_CLAIMS +
+    + _ROLE_AND_CLAIMS + _SOURCED_PRODUCT_CLAIMS +
     "- Open by affirming their choice and what it supports. Then ask ONE gentle question at a time "
     "to understand their fuller goal or terrain (energy, sleep, stress, digestion, what else they "
     "are working on).\n"
@@ -31473,7 +31475,7 @@ def _run_answer_audit():
             flagged.append((q, [f"ASK FAILED: {e!r}"]))
             continue
         asked += 1
-        findings = aa.audit(answer, products)
+        findings = aa.audit(answer, products, group)
         if findings:
             flagged.append((q, findings))
 
