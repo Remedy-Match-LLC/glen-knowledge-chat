@@ -32,7 +32,10 @@ def test_the_catalog_carries_the_label_and_leaves_the_presale_alone():
     for k in ("notes", "routing_work", "apply_as"):
         assert k not in p
     # Pinned values, not git: CI's checkout has no origin/main (it failed there).
-    assert hashlib.sha256(json.dumps(prods[PRESALE], sort_keys=True).encode()).hexdigest() == PRESALE_SHA
+    # The presale gained one field, fmp_id 1196 (Retina Renew, Glen 2026-10-07); nothing else moved.
+    presale = dict(prods[PRESALE])
+    assert presale.pop("fmp_id") == "1196"
+    assert hashlib.sha256(json.dumps(presale, sort_keys=True).encode()).hexdigest() == PRESALE_SHA
     assert {k: p.get(k) for k in KEPT} == KEPT
     assert json.load(open("data/products-manual-corrections.json"))[FOCUS]["ingredients"] == p["ingredients"]
 
