@@ -29,5 +29,8 @@ def validate(al):
             aliases = e.get("aliases")
             if not aliases or not all(isinstance(a, str) and a.strip() for a in aliases):
                 raise ValueError(f"{bucket} entry {e.get('canonical')!r} needs non-empty aliases")
+            unless = e.get("unless_label", [])
+            if not isinstance(unless, list) or not all(isinstance(u, str) and u.strip() for u in unless):
+                raise ValueError(f"{bucket} entry {e.get('canonical')!r}: unless_label must list strings")
             if not (e.get("rationale") or "").strip():
                 raise ValueError(f"{bucket} entry {e.get('canonical')!r} needs a rationale")

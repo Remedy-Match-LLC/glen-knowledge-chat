@@ -47,11 +47,24 @@ def _strip_negations(s):
     return " ".join(s.split()).strip()
 
 
-def _hits(normalized_item, entries):
+def _has(text, alias):
+    return re.search(r"(?<![a-z0-9])" + re.escape(alias) + r"(?![a-z0-9])", text) is not None
+
+
+def _label_text(other_ingredients):
+    """The whole label, normalised but with negations KEPT, so "phthalate free" is visible.
+    The splitter cuts inside brackets ("DRcaps (hypromellose", "gellan gum)"), so an
+    exemption has to be read across the label, not from one item."""
+    s = " ; ".join(other_ingredients or []).lower().replace("-", " ")
+    return " ".join(s.split())
+
+
+def _hits(normalized_item, entries, label_text=""):
     for e in entries:
+        if any(_has(label_text, u) for u in e.get("unless_label") or []):
+            continue
         for alias in e["aliases"]:
-            pattern = r"(?<![a-z0-9])" + re.escape(alias) + r"(?![a-z0-9])"
-            if re.search(pattern, normalized_item):
+            if _has(normalized_item, alias):
                 return True
     return False
 
@@ -62,11 +75,12 @@ def screen_label(actives, other_ingredients, avoidlist):
         return {"color": "unrated", "red_hits": [], "yellow_hits": [],
                 "avoidlist_version": version}
     red_hits, yellow_hits = [], []
+    label = _label_text(other_ingredients)
     for raw in other_ingredients:
         norm = _normalize(raw)
-        if _hits(norm, avoidlist["red"]):
+        if _hits(norm, avoidlist["red"], label):
             red_hits.append(raw)
-        elif _hits(norm, avoidlist["yellow"]):
+        elif _hits(norm, avoidlist["yellow"], label):
             yellow_hits.append(raw)
     if red_hits:
         color = "red"
