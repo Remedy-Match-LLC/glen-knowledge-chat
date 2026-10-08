@@ -10413,81 +10413,57 @@
    "qty_pricing": true,
    "ingredients": [
     {
-     "name": "Vitamin D3: Cholecalciferol",
-     "dose": "3 mg"
+     "name": "Pine Bark OPCs 95% (Pinus pinaster) (cortex)",
+     "dose": "158 mg"
     },
     {
-     "name": "MSC",
-     "dose": "33 mcg"
+     "name": "Trans-Resveratrol 98% (Polygonum cuspidatum) (radix)",
+     "dose": "100 mg"
     },
     {
-     "name": "Mistletoe 4:1, European mistletoe, common mistletoe",
-     "dose": "50 mg"
+     "name": "Curcumin 95% (Curcuma longa) (rhizoma)",
+     "dose": "100 mg"
     },
     {
-     "name": "Honokiol",
-     "dose": "66 mg"
+     "name": "Notoginsenosides 80% (Panax notoginseng) (radix)",
+     "dose": "75 mg"
     },
     {
-     "name": "Sweet Wormwood",
+     "name": "Crocin 45% (Gardenia jasminoides) (fructus)",
      "dose": "33 mg"
-    },
-    {
-     "name": "Green Tea; Organic; 98% Polyphenols/50% EGCG Standardized Extract",
-     "dose": "66 mg"
-    },
-    {
-     "name": "Curcumin 95% HPLC",
-     "dose": "66 mg"
-    },
-    {
-     "name": "Tetrahydrocurcumin, water soluble Curcuminoid",
-     "dose": "0 mg"
-    },
-    {
-     "name": "Gensenosides",
-     "dose": "12 mg"
-    },
-    {
-     "name": "Trans-Resveratrol",
-     "dose": "50 mg"
-    },
-    {
-     "name": "5,6,7-trihydroxyflavone",
-     "dose": "33 mg"
-    },
-    {
-     "name": "Sumac",
-     "dose": ""
-    },
-    {
-     "name": "Celery extract (seed specified by Geekee) Apium graveolens 4’,5,7-trihydroxyflavone",
-     "dose": "16 mg"
-    },
-    {
-     "name": "Saffron",
-     "dose": "6 mg"
-    },
-    {
-     "name": "EMIQ, Isoquercetin, Isoquercitrin",
-     "dose": "16 mg"
-    },
-    {
-     "name": "Sumac",
-     "dose": "66 mg"
-    },
-    {
-     "name": "Camellia sinensis",
-     "dose": ""
     }
    ],
-   "ingredients_source": "db-formulations-2026-06-25",
-   "description": "AngiogenX . AngiogenX AngiogenX AngiogenX combines nutritional and botanical support for issues involving unwanted angioneogenesis. New blood vessel growth is needed for wound healing, such as immediately following surgery or other trauma . CAUTION: Stop taking this formula while healing from injuries or a few days before surgical procedures and afterward until cicatrization (scar formation) seals the wounds . With a visible wound that would be when the scab falls off, or the surgeon needs no further follow-up visits. If there are stitches that are not self-absorbing, that is also when those...",
-   "gk_stale": true,
-   "gk_stale_reason": "GK page missing: Tetrahydrocurcumin, Fisetin, Safranal, Enzymatically Modified Isoquercetrin",
-   "gk_extra_accepted": true,
+   "ingredients_source": "label-2026-10-05",
+   "intro": "AngiogenX supports the health of the small blood vessels in your eyes. It combines pine bark OPCs, trans-resveratrol, curcumin, notoginseng and crocin from gardenia fruit.",
+   "description": "Each vegicap supplies 158 mg pine bark OPCs 95%, 100 mg trans-resveratrol 98%, 100 mg curcumin 95%, 75 mg notoginsenosides 80% and 33 mg crocin 45%. There are no fillers or excipients.\n\nOther ingredients: Certified Organic Pullulan Vegicap, Healing Energy, Love, and Prayer. 30 vegicaps per bottle.\n\nCaution: Avoid use while healing a wound or any other tissue injury, such as a cut, fracture, sprain or burn. Also avoid use during menses or in pregnancy. Stop a few days before surgery. Resume once healing is complete. If you take a blood thinner, consult your physician before use.",
+   "directions": "Take 1 capsule daily with food, or as guided.",
+   "warning": "Avoid use while healing a wound or any other tissue injury, such as a cut, fracture, sprain or burn. Also avoid use during menses or in pregnancy. Stop a few days before surgery. Resume once healing is complete. If you take a blood thinner, consult your physician before use.",
+   "benefits": [],
+   "how_it_works": "",
+   "copy_pinned": [
+    "ingredients",
+    "intro",
+    "description",
+    "benefits",
+    "research"
+   ],
+   "content_since": "2026-10-08",
    "bottle_type": "30 Caps",
-   "fmp_id": "411"
+   "fmp_id": "411",
+   "images": [
+    {
+     "src": "/static/product-photos/angiogenx-1.webp",
+     "alt": "Orange flowers, golden roots and two bowls of yellow and orange powder on a white wooden table"
+    },
+    {
+     "src": "/static/product-photos/angiogenx-2.webp",
+     "alt": "A smiling woman in a sunlit kitchen holding a bowl of golden powder"
+    },
+    {
+     "src": "/static/product-photos/angiogenx-3.webp",
+     "alt": "Close view of a blue and gold eye framed by green leaves and an orange flower"
+    }
+   ]
   },
   "stress-release": {
    "name": "Stress Release",

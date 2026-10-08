@@ -2978,5 +2978,35 @@
     "ingredients_source": "fmp-2026-10-03",
     "description": "Full spectrum support in the face of toxic spike protein production, injection, exposure to shedding, or residual in body cells and tissues. Take 1 capsule daily with food, or as guided.",
     "note": "August 2026 six-ingredient reformulation in a pullulan capsule; FileMaker 514 updated 2026-10-03 (Glen, via production). Replaces the 28-ingredient enteric formula."
+  },
+  "angiogenx": {
+    "ingredients": [
+      {
+        "name": "Pine Bark OPCs 95% (Pinus pinaster) (cortex)",
+        "dose": "158 mg"
+      },
+      {
+        "name": "Trans-Resveratrol 98% (Polygonum cuspidatum) (radix)",
+        "dose": "100 mg"
+      },
+      {
+        "name": "Curcumin 95% (Curcuma longa) (rhizoma)",
+        "dose": "100 mg"
+      },
+      {
+        "name": "Notoginsenosides 80% (Panax notoginseng) (radix)",
+        "dose": "75 mg"
+      },
+      {
+        "name": "Crocin 45% (Gardenia jasminoides) (fructus)",
+        "dose": "33 mg"
+      }
+    ],
+    "ingredients_source": "label-2026-10-05",
+    "description": "Each vegicap supplies 158 mg pine bark OPCs 95%, 100 mg trans-resveratrol 98%, 100 mg curcumin 95%, 75 mg notoginsenosides 80% and 33 mg crocin 45%. There are no fillers or excipients.\n\nOther ingredients: Certified Organic Pullulan Vegicap, Healing Energy, Love, and Prayer. 30 vegicaps per bottle.\n\nCaution: Avoid use while healing a wound or any other tissue injury, such as a cut, fracture, sprain or burn. Also avoid use during menses or in pregnancy. Stop a few days before surgery. Resume once healing is complete. If you take a blood thinner, consult your physician before use.",
+    "directions": "Take 1 capsule daily with food, or as guided.",
+    "warning": "Avoid use while healing a wound or any other tissue injury, such as a cut, fracture, sprain or burn. Also avoid use during menses or in pregnancy. Stop a few days before surgery. Resume once healing is complete. If you take a blood thinner, consult your physician before use.",
+    "bottle_type": "30 Caps",
+    "note": "October 2026 five-ingredient eye formula, one capsule a day; FileMaker 411 updated 2026-10-05 (Glen, via formulation). Replaces the 17-line June 2025 formulations-database list. Spec: production/05 Formulations/_store-updates/2026-10-06-angiogenx.md."
   }
 }
