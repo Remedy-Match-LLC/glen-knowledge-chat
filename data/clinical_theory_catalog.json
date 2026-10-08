@@ -546,7 +546,7 @@
      "slug": "vitreous-humor",
      "name": "Vitreous Humor",
      "alt_name": "Corpus Vitreum",
-     "description": "[*\"The statements herein have not been evaluated by the Food and Drug Administration. This is not intended to diagnose, treat, cure, or prevent any disease.\"] T.D.C. ← Explore the whole framework Begin your healing journey free →",
+     "description": "",
      "remedies": []
     }
    ],
@@ -834,7 +834,7 @@
      "slug": "triple-warmer-meridian",
      "name": "Triple Warmer Meridian",
      "alt_name": "Meridian Komplex 9",
-     "description": "The Triple Warmer Meridian is also called the Triple Cavity, Three Heater, or Triple Burner Meridian, and we also refer to it as the Endocrine Meridian.The Triple Warmer Meridian is a Yang Vessel in the Fire Element complementary to the Yin Circulation Meridian.This pattern is also related to Chakra 6 in the Kern-Pharma system.Consider formulas including Endocrine Restore, Adrenal Syntropy, Stress Release, and Sleep Syntropy for Endocrine Meridian support.[*\"The statements herein have not been evaluated by the Food and Drug Administration. This is not intended to diagnose, treat, cure, or prevent any disease.\"] T.D.C.",
+     "description": "The Triple Warmer Meridian is also called the Triple Cavity, Three Heater, or Triple Burner Meridian, and we also refer to it as the Endocrine Meridian.The Triple Warmer Meridian is a Yang Vessel in the Fire Element complementary to the Yin Circulation Meridian.This pattern is also related to Chakra 6 in the Kern-Pharma system.Consider formulas including Endocrine Restore, Adrenal Syntropy, Stress Release, and Sleep Syntropy for Endocrine Meridian support.",
      "remedies": []
     }
    ],
@@ -1120,7 +1120,7 @@
      "slug": "phase-5-balance",
      "name": "Phase 5: Balance",
      "alt_name": "Oligo Elements Zn, Ni, Co, Cu",
-     "description": "Phase 5 deals with balancing life stresses as well as hormonal regulation.Biochemistry:﻿",
+     "description": "Phase 5 deals with balancing life stresses as well as hormonal regulation.",
      "remedies": [],
      "description_snapshot_2026_07_14": "(Oligo Elements Zn, Ni, Co, Cu)Phase 5 deals with balancing life stresses as well as hormonal regulation"
     },
@@ -1236,7 +1236,7 @@
      "slug": "iron",
      "name": "Iron",
      "alt_name": "",
-     "description": "Iron is better not to supplement unless you know you are deficient.As with Copper, excess Iron is an oxidizing agent.People with below average Iron levels live longer than those with above average levels.If you are Iron deficient, Iron Synergy is the ideal source",
+     "description": "Iron is better not to supplement unless you know you are deficient.As with Copper, excess Iron is an oxidizing agent.People with below average Iron levels live longer than those with above average levels.If you are Iron deficient, Iron Syntropy is the ideal source.",
      "remedies": [
       {
        "name": "Iron Synergy",
@@ -1728,7 +1728,7 @@
      "slug": "vitamin-b17-amygdalin",
      "name": "Vitamin B17: Amygdalin",
      "alt_name": "",
-     "description": "Amygdalin was identified by its scientific discoverers as Vitamin B17 with the associated deficiency condition being Cancer.Cancer is not recognized by governments as a Vitamin deficiency disease, so Amygdalin is not regulated as a Vitamin by governments.B17 Synergy provides a comprehensive Amygdalin support system",
+     "description": "Amygdalin was identified by its scientific discoverers as Vitamin B17 with the associated deficiency condition being Cancer.Cancer is not recognized by governments as a Vitamin deficiency disease, so Amygdalin is not regulated as a Vitamin by governments.B17 Syntropy provides a comprehensive Amygdalin support system.",
      "remedies": [
       {
        "name": "B17 Synergy",
@@ -2070,7 +2070,7 @@
      "slug": "s-adenosyl-methionine",
      "name": "S-Adenosyl Methionine",
      "alt_name": "SAMe; SAMe",
-     "description": "SAMe elevates mood, helps repair serious liver damage, and regenerates cartilage.SAMe becomes Homocysteine when it donates its Methyl group.Homocysteine is strongly linked to atherosclerosis, so TMG Syntropy Powder supplies Methyl donors that recycle Homocysteine back to the beneficial SAMe form.",
+     "description": "SAMe elevates mood, helps repair serious liver damage, and regenerates cartilage.SAMe becomes Homocysteine when it donates its Methyl group.Homocysteine is strongly linked to atherosclerosis, so TMG Syntropy Powder supplies Methyl donors that recycle Homocysteine back to the beneficial SAMe form.That way the dosage of SAMe also keeps working longer and better.",
      "remedies": [
       {
        "name": "TMG Syntropy Powder",
@@ -2307,7 +2307,7 @@
      "slug": "thyroxine",
      "name": "Thyroxine",
      "alt_name": "",
-     "description": "Thyroid hormones Thyroxine (T4) and Triiodothyronine (T3) regulate the basal metabolic rate.The Thyroid also make Calcitonin which regulates Calcium metabolism and bone formation.Since the adrenals regulate short term boosts in metabolic rate, the two work in tandem.If there are deficiencies in one, it puts more stress on the other to compensate...Our Thyroid Support combines precursors and co-factors for Thyroid hormone production along with synergistic botanicals.[*\"The statements herein have not been evaluated by the Food and Drug Administration. This is not intended to diagnose, treat, cure, or prevent any disease.\"] T.D.C.",
+     "description": "Thyroid hormones Thyroxine (T4) and Triiodothyronine (T3) regulate the basal metabolic rate.The Thyroid also make Calcitonin which regulates Calcium metabolism and bone formation.Since the adrenals regulate short term boosts in metabolic rate, the two work in tandem.If there are deficiencies in one, it puts more stress on the other to compensate...Our Thyroid Support combines precursors and co-factors for Thyroid hormone production along with synergistic botanicals.",
      "remedies": [
       {
        "name": "Thyroid Support",
