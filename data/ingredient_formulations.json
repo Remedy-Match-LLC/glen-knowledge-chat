@@ -1,0 +1,33 @@
+{
+ "_source": "scripts/build_ingredient_formulations.py from ingredients.db product_ingredients",
+ "groups": {
+  "serrapeptase": {
+   "fmp_ingredient_id": 272,
+   "pages": [
+    "serrapeptase",
+    "serrapeptase-400-000-u-g-serratiopeptida",
+    "serrapeptase-bacterium-in-gut-of-bombyx-"
+   ],
+   "ruled": "Glen, 2026-10-07",
+   "products": [
+    {
+     "slug": "clear-the-way",
+     "mg": 500.0,
+     "note": "Serrapeptase in an enteric capsule, so it releases in the small intestine."
+    },
+    {
+     "slug": "scar-silk",
+     "mg": 150.0
+    },
+    {
+     "slug": "fibrosolve",
+     "mg": 25.0
+    },
+    {
+     "slug": "lipid-zyme",
+     "mg": 17.0
+    }
+   ]
+  }
+ }
+}

@@ -8,6 +8,7 @@ from pathlib import Path
 _ROOT = Path(__file__).resolve().parent.parent
 _FMP = _ROOT / "data" / "fmp-ingredient-content.json"
 _PRODUCTS = _ROOT / "data" / "products.json"
+_GROUPS = _ROOT / "data" / "ingredient_formulations.json"
 
 
 def slugify(name):
@@ -68,12 +69,44 @@ def resolve(slug):
     return {"slug": slug, "name": name, "fmp": _fmp_for(name)}
 
 
+_GROUPS_CACHE = None
+
+
+def _groups_by_page():
+    """{page slug: group} from ingredient_formulations.json, built from the formula data.
+    Cached only after a good read, so one failed read is retried rather than kept."""
+    global _GROUPS_CACHE
+    if _GROUPS_CACHE is None:
+        try:
+            groups = json.loads(_GROUPS.read_text()).get("groups", {}) or {}
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).warning("ingredient_formulations.json unreadable: %s", e)
+            return {}
+        _GROUPS_CACHE = {pg: g for g in groups.values() for pg in (g.get("pages") or [])}
+    return _GROUPS_CACHE
+
+
 def formulations_with(name):
+    """Products to link from an ingredient page. An ingredient Glen asked to link by formula
+    data (ingredient_formulations.json) lists every live product whose formula contains it,
+    in the file's order. Any other ingredient keeps the exact-name match."""
     target = slugify(name)
     out = []
     try:
         prods = json.loads(_PRODUCTS.read_text()).get("products", {})
     except Exception:
+        return out
+    group = _groups_by_page().get(target)
+    if group:
+        for item in group.get("products") or []:
+            p = prods.get(item.get("slug"))
+            if not p or p.get("inactive"):
+                continue
+            row = {"slug": item["slug"], "name": p.get("name", item["slug"])}
+            if item.get("note"):
+                row["note"] = item["note"]
+            out.append(row)
         return out
     for pslug, p in prods.items():
         for ing in (p.get("ingredients") or []):

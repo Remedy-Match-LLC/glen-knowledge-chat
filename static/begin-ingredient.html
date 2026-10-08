@@ -74,6 +74,7 @@
       display:block; margin-bottom:1px; }
     .form-link{ color:var(--gold); text-decoration:underline; text-underline-offset:3px; }
     .form-link:hover{ opacity:0.8; }
+    .form-note{ color:var(--muted); font-size:13px; }
 
     /* ── State panels ── */
     .locked-panel{ text-align:center; padding:52px 24px; }
@@ -396,6 +397,12 @@
         a.href = '/begin/product/' + encodeURIComponent(f.slug);
         a.textContent = f.name || f.slug;
         li.appendChild(a);
+        if (f.note){
+          var note = document.createElement('span');
+          note.className = 'form-note';
+          note.textContent = ' ' + f.note;
+          li.appendChild(note);
+        }
         ul.appendChild(li);
       });
       wrap.appendChild(ul);
