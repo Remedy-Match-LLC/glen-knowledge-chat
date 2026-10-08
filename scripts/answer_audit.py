@@ -29,6 +29,10 @@ For each question, against the answer the live bot actually returns:
                                phrases the bot invented about AngioGenX on
                                2026-10-08 (how it works, why a caution exists)
 
+The claim check is a canary for known invented phrases, not proof of source
+fidelity: a clean claim answer can still say something no source supports, and
+a flagged phrase may turn out to be sourced.
+
 Findings are reported, never auto-fixed: a false positive here is cheap, a
 wrong "all clear" is not.
 
@@ -73,7 +77,7 @@ QUESTIONS = [
 # Checked only on "claim" answers, where none of these belongs.
 INVENTED_CLAIM_PHRASES = (
     "neovascular", "vascular remodeling", "hemostasis", "maximizes bioavailability",
-    "clinically active", "adaptogen", "endothelial",
+    "clinically active", "adaptogen",
 )
 
 MONEY = re.compile(r"\$\s?([0-9][0-9,]*(?:\.[0-9]{2})?)")
@@ -124,8 +128,8 @@ def audit(answer, products, group=None):
         low = answer.lower()
         for phrase in INVENTED_CLAIM_PHRASES:
             if phrase in low:
-                out.append(f"CLAIM: says '{phrase}', which no source gave; "
-                           f"it explains how the product works or adds a label")
+                out.append(f"CLAIM: says '{phrase}', a phrase the bot has invented "
+                           f"before; check whether a retrieved source states this")
 
     # 4. retired destinations
     for pat, what in ((r"practicebetter\.io", "Practice Better URL"),
@@ -210,8 +214,9 @@ def main():
 
     print(f"\n{asked}/{len(qs)} answered · {total} finding(s)")
     if total:
-        print("\nFindings are reported, not fixed. Each one is a claim the bot made "
-              "that the catalog does not support — check before changing anything.")
+        print("\nFindings are reported, not fixed. Each is a price or link the catalog "
+              "does not support, or a product claim to check against the sources. "
+              "Check before changing anything.")
     return 1 if total else 0
 
 

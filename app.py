@@ -31485,9 +31485,11 @@ def _run_answer_audit():
             flagged.append((q, findings))
 
     if flagged:
-        lines = ["The weekly answer audit flagged claims the live bot made that the "
-                 "catalog does not support. Each is a claim to VERIFY, not an "
-                 "auto-fix — a wrong price or wrong-product link reaches customers.\n"]
+        lines = ["The weekly answer audit flagged answers from the live bot. A PRICE, "
+                 "LINK or ROUTING finding is a claim the catalog does not support. A "
+                 "CLAIM finding is a product claim the bot has invented before: check "
+                 "whether a retrieved source states it. Each is a claim to VERIFY, not "
+                 "an auto-fix.\n"]
         for q, findings in flagged:
             lines.append(f"Q: {q}")
             for f in findings:
