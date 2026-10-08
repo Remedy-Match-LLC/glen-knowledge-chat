@@ -16,17 +16,29 @@ def init_tables(cx):
             pass
     cx.commit()
 
+# Products whose page never shows AI-made images. Glen ruled out a blood-vessel picture for
+# Angiostasis (2026-10-08), and the mechanism prompt would draw one. Checked here, inside
+# enqueue and list_pending, so every caller is covered: page view, variations, backfill, scheduler.
+NO_AI_IMAGES = frozenset({"angiostasis"})
+
+def ai_images_off(slug):
+    return slug in NO_AI_IMAGES
+
 def enqueue(cx, slug):
+    if ai_images_off(slug):
+        return False
     init_tables(cx); now = _now()
     cx.execute("INSERT INTO sales_image_queue (product_slug, state, requested_at, updated_at) "
                "VALUES (?, 'pending', ?, ?) ON CONFLICT(product_slug) DO UPDATE SET "
                "state='pending', requested_at=?, updated_at=?", (slug, now, now, now, now))
     cx.commit()
+    return True
 
 def list_pending(cx):
     init_tables(cx)
     return [r[0] for r in cx.execute(
-        "SELECT product_slug FROM sales_image_queue WHERE state='pending' ORDER BY requested_at").fetchall()]
+        "SELECT product_slug FROM sales_image_queue WHERE state='pending' ORDER BY requested_at").fetchall()
+            if not ai_images_off(r[0])]
 
 def _set_state(cx, slug, state):
     init_tables(cx)

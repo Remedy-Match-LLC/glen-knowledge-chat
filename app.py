@@ -9776,7 +9776,9 @@ def begin_product_page_data(slug):
         from dashboard import sales_images as _si2
         try:
             _img_sec = next((s for s in sections if s["id"] == "images"), None)
-            if _img_sec is not None:
+            # An opted-out product keeps the plain gallery body with no `state`: any state
+            # other than "ready" makes the page show "Generating" and post to image-gen.
+            if _img_sec is not None and not _si2.ai_images_off(slug):
                 with db.connect(LOG_DB) as _cx2:
                     if _SALES_IMAGE_VARIATIONS_ENABLED:
                         _grouped = _si2.display_images_grouped(_cx2, slug)
@@ -11562,9 +11564,9 @@ def api_console_backfill_dispensary_referrals():
 
 @app.route("/begin/product-image-gen/<slug>", methods=["POST"])
 def begin_product_image_gen(slug):
-    if not _SALES_AI_IMAGES_ENABLED or not _get_product(slug):
-        return ("", 404)
     from dashboard import sales_images as _si
+    if not _SALES_AI_IMAGES_ENABLED or not _get_product(slug) or _si.ai_images_off(slug):
+        return ("", 404)
     with db.connect(LOG_DB) as cx:
         if _SALES_IMAGE_VARIATIONS_ENABLED:
             if not _si.needs_topup(cx, slug):
@@ -59953,8 +59955,8 @@ def admin_sales_images_backfill():
                                      else [arg] if arg else [])
         enq = []
         for s in targets:
-            if _si.needs_topup(cx, s):
-                _si.enqueue(cx, s); enq.append(s)
+            if _si.needs_topup(cx, s) and _si.enqueue(cx, s):
+                enq.append(s)
     return jsonify({"ok": True, "enqueued": enq, "count": len(enq)})
 
 
