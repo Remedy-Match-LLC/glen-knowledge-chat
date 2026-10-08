@@ -3008,5 +3008,44 @@
     "warning": "Avoid use while healing a wound or any other tissue injury, such as a cut, fracture, sprain or burn. Also avoid use during menses or in pregnancy. Stop a few days before surgery. Resume once healing is complete. If you take a blood thinner, consult your physician before use.",
     "bottle_type": "30 Caps",
     "note": "October 2026 five-ingredient eye formula, one capsule a day; FileMaker 411 updated 2026-10-05 (Glen, via formulation). Replaces the 17-line June 2025 formulations-database list. Spec: production/05 Formulations/_store-updates/2026-10-06-angiogenx.md."
+  },
+  "angiostasis": {
+    "ingredients": [
+      {
+        "name": "Green Tea EGCG 50% (Camellia sinensis)",
+        "dose": "150 mg"
+      },
+      {
+        "name": "Silymarin 80% (Silybum marianum) (fructus)",
+        "dose": "125 mg"
+      },
+      {
+        "name": "Curcumin (Curcuma longa) (rhizoma)",
+        "dose": "100 mg"
+      },
+      {
+        "name": "Pterostilbene (Pterocarpus marsupium)",
+        "dose": "50 mg"
+      },
+      {
+        "name": "Honokiol (Magnolia grandiflora) (cortex)",
+        "dose": "50 mg"
+      },
+      {
+        "name": "Selenium (as Methylselenocysteine)",
+        "dose": "205 mcg"
+      }
+    ],
+    "ingredients_source": "label-2026-10-08",
+    "description": "Each vegicap supplies 150 mg green tea extract (EGCG 50%), 125 mg silymarin 80%, 100 mg curcumin, 50 mg pterostilbene, 50 mg honokiol and 205 mcg selenium as methylselenocysteine. There are no fillers or excipients.\n\nTake 1 capsule daily with the evening meal, or as guided.\n\nAngiostasis is synergistic with Brain Cleanse, which is taken at bedtime.\n\nOther ingredients: Certified Organic Pullulan Vegicap, Healing Energy, Love, and Prayer. 30 vegicaps per bottle.\n\nCaution: May cause drowsiness. Avoid use while healing a wound or any other tissue injury, such as a cut, fracture, sprain or burn. Also avoid use during menses, in pregnancy or while breastfeeding. Stop a few days before surgery. Resume once healing is complete. If you take a blood thinner, consult your physician before use. If you are under medical treatment, consult your physician before use.",
+    "directions": "Take 1 capsule daily with the evening meal, or as guided.",
+    "warning": "May cause drowsiness. Avoid use while healing a wound or any other tissue injury, such as a cut, fracture, sprain or burn. Also avoid use during menses, in pregnancy or while breastfeeding. Stop a few days before surgery. Resume once healing is complete. If you take a blood thinner, consult your physician before use. If you are under medical treatment, consult your physician before use.",
+    "panel_note": "Synergistic with Brain Cleanse.",
+    "panel_note_link": {
+      "label": "Brain Cleanse",
+      "url": "/begin/product/brain-cleanse"
+    },
+    "bottle_type": "30 Caps",
+    "note": "New product, October 2026, one capsule a day; FileMaker 1201 (Glen \"approve\", 2026-10-08, via formulation). Spec: production/05 Formulations/_store-updates/2026-10-08-angiostasis.md."
   }
 }

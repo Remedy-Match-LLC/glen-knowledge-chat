@@ -9663,6 +9663,11 @@ def begin_product_page_data(slug):
     sections = _filter_sections(sections, has_ingredients=_has_ings,
                                 has_own_video=bool(_own_vids), is_service=_is_service,
                                 in_miron=_miron)
+    # A product with AI images off has no Images section: its photos are in the top gallery,
+    # and an empty section would open to nothing.
+    from dashboard.sales_images import ai_images_off as _ai_images_off
+    if _ai_images_off(p.get("slug") or slug):
+        sections = [s for s in sections if s["id"] != "images"]
     # A service gets no "Dr. Glen recommends" box: on the EVOX page it recommended ED10
     # Skin Driver. A related-services list would be new copy, so none is shown yet.
     # Nor does a never-recommend product: a box headed "Dr. Glen recommends" on the
@@ -9776,7 +9781,9 @@ def begin_product_page_data(slug):
         from dashboard import sales_images as _si2
         try:
             _img_sec = next((s for s in sections if s["id"] == "images"), None)
-            if _img_sec is not None:
+            # An opted-out product keeps the plain gallery body with no `state`: any state
+            # other than "ready" makes the page show "Generating" and post to image-gen.
+            if _img_sec is not None and not _si2.ai_images_off(slug):
                 with db.connect(LOG_DB) as _cx2:
                     if _SALES_IMAGE_VARIATIONS_ENABLED:
                         _grouped = _si2.display_images_grouped(_cx2, slug)
@@ -9804,7 +9811,8 @@ def begin_product_page_data(slug):
                             _img_sec["body"] = {"images": [], "state": "none"}
         except Exception as _e:
             print(f"[sales-img] page-data marker skipped: {_e}", flush=True)
-    if _SALES_IMAGE_PICK_ENABLED and not _SALES_IMAGE_VARIATIONS_ENABLED:
+    from dashboard.sales_images import ai_images_off as _ai_images_off
+    if _SALES_IMAGE_PICK_ENABLED and not _SALES_IMAGE_VARIATIONS_ENABLED and not _ai_images_off(slug):
         import sqlite3 as _sq3
         from dashboard import sales_images as _si3, sales_votes as _sv3, sales_image_prompts as _sip3
         try:
@@ -10670,7 +10678,8 @@ def begin_ingredient_page_gen(slug, section):
 
 @app.route("/begin/product-image/<slug>/<filename>")
 def begin_product_image(slug, filename):
-    if not re.match(r'^[\w\-]+\.png$', filename):
+    from dashboard.sales_images import ai_images_off as _ai_images_off
+    if not re.match(r'^[\w\-]+\.png$', filename) or _ai_images_off(slug):
         return ("", 404)
     d = _SALES_IMG_DIR / slug
     if not (d / filename).exists():
@@ -11562,9 +11571,11 @@ def api_console_backfill_dispensary_referrals():
 
 @app.route("/begin/product-image-gen/<slug>", methods=["POST"])
 def begin_product_image_gen(slug):
-    if not _SALES_AI_IMAGES_ENABLED or not _get_product(slug):
-        return ("", 404)
     from dashboard import sales_images as _si
+    _p = _get_product(slug)
+    if not _SALES_AI_IMAGES_ENABLED or not _p or _si.ai_images_off(slug) \
+            or _si.ai_images_off(_p.get("slug") or slug):
+        return ("", 404)
     with db.connect(LOG_DB) as cx:
         if _SALES_IMAGE_VARIATIONS_ENABLED:
             if not _si.needs_topup(cx, slug):
@@ -11582,7 +11593,8 @@ def begin_product_image_gen(slug):
 @app.route("/begin/product-image-pick/<slug>", methods=["POST"])
 def begin_product_image_pick(slug):
     from dashboard import sales_image_prompts as _sip
-    if not _SALES_IMAGE_PICK_ENABLED or not _get_product(slug):
+    from dashboard.sales_images import ai_images_off as _ai_images_off
+    if not _SALES_IMAGE_PICK_ENABLED or not _get_product(slug) or _ai_images_off(slug):
         return ("", 404)
     data = request.get_json(silent=True) or {}
     kind = (data.get("kind") or "").strip()
@@ -11612,7 +11624,8 @@ def begin_product_image_pick(slug):
 @app.route("/begin/product-image-vote/<slug>", methods=["POST"])
 def begin_product_image_vote(slug):
     from dashboard import sales_image_prompts as _sip
-    if not _SALES_IMAGE_VOTE_ENABLED or not _get_product(slug):
+    from dashboard.sales_images import ai_images_off as _ai_images_off
+    if not _SALES_IMAGE_VOTE_ENABLED or not _get_product(slug) or _ai_images_off(slug):
         return ("", 404)
     data = request.get_json(silent=True) or {}
     kind = (data.get("kind") or "").strip()
@@ -49057,7 +49070,7 @@ def _run_image_tournament():
     now = _dt.datetime.now(_dt.timezone.utc).isoformat()
     for slug in slugs:
         p = _get_product(slug)
-        if not p:
+        if not p or _si.ai_images_off(slug):
             continue
         for kind in _sip.IMAGE_KINDS:
             try:
@@ -59953,8 +59966,8 @@ def admin_sales_images_backfill():
                                      else [arg] if arg else [])
         enq = []
         for s in targets:
-            if _si.needs_topup(cx, s):
-                _si.enqueue(cx, s); enq.append(s)
+            if _si.needs_topup(cx, s) and _si.enqueue(cx, s):
+                enq.append(s)
     return jsonify({"ok": True, "enqueued": enq, "count": len(enq)})
 
 
