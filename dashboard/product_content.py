@@ -403,12 +403,15 @@ def _generate_learn_more(product, page, sources):
     return {"markdown": markdown}
 
 
-# ── Generation: "How it works" (short mechanism explainer) ────────────────────
+# ── Generation: "How it works" (sourced only, 2026-10-08) ─────────────────────────
 _HOW_SYSTEM = (
     "You write a short 'How it works' explainer for a Functional Formulation. " + _VOICE + "\n\n"
-    "From the SUPPLIED PAGE COPY, explain in plain language HOW the formula works in the body, the "
-    "mechanism, what the key ingredients do and why they were chosen to work together. 90-150 words, "
-    "2-3 short paragraphs, warm and clear. This is the mechanism, not a citation list and not a "
+    "From the SUPPLIED PAGE COPY and product data only, describe in plain language what the "
+    "formula supports and what its key ingredients are there to support, as the page copy states "
+    "it. Give a mechanism, a reason ingredients were chosen, or a reason for a dose or caution "
+    "only where the page copy states it; never add one. Describe what it supports, never what it "
+    "treats or prevents. If the page copy says little, write less rather than fill the gap. "
+    "Up to 150 words, 2-3 short paragraphs, warm and clear. Not a citation list and not a "
     "benefits list. Output plain text only (no markdown headers, no citations)."
 )
 

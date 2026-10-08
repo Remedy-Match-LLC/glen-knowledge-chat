@@ -3,19 +3,23 @@ NARRATIVE_SECTIONS = ("intro", "description", "research")
 COMPLIANCE = (
     "Use structure/function language only (supports, promotes, helps maintain). "
     "Do NOT claim to diagnose, treat, cure, or prevent any disease. Make no medical "
-    "claims and cite no invented studies. This is educational and not a substitute for "
+    "claims and cite no invented studies. Give a mechanism, a design rationale, or a reason "
+    "for a dose or caution only where the details given below state it; never invent one. "
+    "This is educational and not a substitute for "
     "medical advice. Do not use em dashes; use commas."
 )
 
 SECTION_BRIEFS = {
     "intro": ("Write ONE warm, concrete paragraph (about 2-4 sentences): what this product "
-              "does for the person and why it matters, grounded in its ingredients or, when no "
-              "ingredients are listed, in what the product is and how it works."),
+              "supports for the person and why it matters, grounded in its listed ingredients "
+              "and description as given below."),
     "description": ("Write a fuller plain-language overview in 2-3 short paragraphs: what the "
-                    "product is, what it is built from or how it works, and who it is for."),
-    "research": ("Explain how it works in lay language, 1-2 short paragraphs, grounded in the "
-                 "mechanisms of the listed ingredients or, when none are listed, the product's "
-                 "described mechanism."),
+                    "product is, what it is built from, what it supports as the details below "
+                    "state it, and who it is for."),
+    "research": ("In lay language, 1-2 short paragraphs, describe what the product and its "
+                 "listed ingredients support, as the description and ingredient details below "
+                 "state it. Describe a mechanism only where those details state one; otherwise "
+                 "stay with what it supports."),
 }
 
 def _ingredient_lines(product):
@@ -69,7 +73,7 @@ def build_section_prompt(section, product):
             parts.append(f"Description:\n{desc}")
         parts.append("This is an energetic-frequency Infoceutical: it has no ingredient list "
                      "and delivers no nutrients. Ground the copy in what this Infoceutical is "
-                     "and how it works energetically, using its name and any description above.")
+                     "and what it supports energetically, using its name and any description above.")
         parts.append(f"Task: {brief}\n\nReturn only the copy itself, with no headings, "
                      "labels, or preamble.")
         return system, "\n\n".join(parts)
@@ -82,7 +86,7 @@ def build_section_prompt(section, product):
               "grounded, and specific: no fluff, no AI-pleasantry filler, no cliches. Write only "
               "about THIS product, using the details given below. Some products (devices, tools, "
               "books) have no ingredient list: for those, ground the copy in the product "
-              "description and how it works. Never ask for missing information, and never invent "
+              "description. Never ask for missing information, and never invent "
               "an ingredient list, a formula, or nutrients the product does not have. " + COMPLIANCE)
     parts = [f"Product: {name}"]
     if desc:

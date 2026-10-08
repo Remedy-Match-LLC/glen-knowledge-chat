@@ -64,3 +64,45 @@ def test_does_not_flag_a_correct_cheap_product(products):
     assert aa.audit(
         "[Terrain Restore](https://illtowell.com/begin/product/terrain-restore) "
         "is $70 list price.", products) == []
+
+
+# 2026-10-08: the live bot's AngioGenX answer, trimmed to the invented clauses.
+_ANGIOGENX_LIVE = (
+    "These five clinically active compounds, including notoginseng (a traditional "
+    "adaptogen), strengthen vascular endothelial function and reduce the drivers of "
+    "abnormal vessel growth (neovascularization). Stop before surgery (it supports "
+    "vascular remodeling, which can interfere with hemostasis during recovery). "
+    "Single daily capsule maximizes bioavailability and tissue uptake."
+)
+
+
+def test_claim_questions_are_in_the_question_set():
+    claim = [q for g, q in aa.QUESTIONS if g == "claim"]
+    assert "What is AngioGenX and how does it help the eyes?" in claim
+    assert "How much AngioGenX should I take and why?" in claim
+
+
+def test_catches_every_invented_mechanism_phrase(products):
+    f = aa.audit(_ANGIOGENX_LIVE, products, "claim")
+    for phrase in ("neovascular", "vascular remodeling", "hemostasis",
+                   "maximizes bioavailability", "clinically active", "adaptogen"):
+        assert any(f"'{phrase}'" in x for x in f), (phrase, f)
+    # The finding asks for a check; it does not assert the phrase is unsourced.
+    assert all("check whether a retrieved source states this" in x for x in f), f
+
+
+def test_endothelial_is_not_flagged(products):
+    """Review 2026-10-08: the likeliest phrase to be sourced, so it was dropped."""
+    assert aa.audit("AngioGenX supports endothelial health.", products, "claim") == []
+
+
+def test_claim_check_runs_only_on_claim_questions(products):
+    """The phrases can be legitimate elsewhere; only claim answers are checked."""
+    assert aa.audit(_ANGIOGENX_LIVE, products) == []
+    assert aa.audit(_ANGIOGENX_LIVE, products, "price") == []
+
+
+def test_a_sourced_angiogenx_answer_passes(products):
+    assert aa.audit("AngioGenX supports healthy circulation in the eyes. Take one "
+                    "capsule daily. Stop two weeks before surgery.",
+                    products, "claim") == []
