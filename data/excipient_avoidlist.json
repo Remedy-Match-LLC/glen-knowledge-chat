@@ -27,7 +27,7 @@
      "rationale": "Glen 2026-10-08: an enteric capsule that is not phthalate-free fails. Shellac is not covered by this ruling. \"CAP\" is not an alias: it would match \"veggie cap\"."},
     {"canonical": "enteric capsule, phthalate-free not stated",
      "aliases": ["enteric", "delayed release", "acid resistant"],
-     "unless_label": ["phthalate free", "drcaps", "dr caps", "gellan"],
+     "unless_label": ["phthalate free", "drcaps", "dr caps"],
      "rationale": "Glen 2026-10-08: an enteric capsule whose label does not say phthalate-free fails until the maker confirms it. Confirm with the maker. Glen's figure, no source recorded: about 80% of enteric capsules use phthalates. DRcaps (hypromellose and gellan gum) are phthalate-free."}
   ],
   "yellow": [

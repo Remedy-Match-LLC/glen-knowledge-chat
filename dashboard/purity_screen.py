@@ -51,11 +51,25 @@ def _has(text, alias):
     return re.search(r"(?<![a-z0-9])" + re.escape(alias) + r"(?![a-z0-9])", text) is not None
 
 
-def _label_text(other_ingredients):
-    """The whole label, normalised but with negations KEPT, so "phthalate free" is visible.
-    The splitter cuts inside brackets ("DRcaps (hypromellose", "gellan gum)"), so an
-    exemption has to be read across the label, not from one item."""
-    s = " ; ".join(other_ingredients or []).lower().replace("-", " ")
+def _groups(other_ingredients):
+    """Re-join items the splitter cut inside brackets ("DRcaps (hypromellose", "gellan gum)"),
+    so each item maps to the bracket group it came from. Returns one group index per item."""
+    out, depth, g = [], 0, -1
+    for raw in other_ingredients or []:
+        if depth <= 0:
+            g += 1
+            depth = 0
+        out.append(g)
+        depth += (raw or "").count("(") - (raw or "").count(")")
+    return out
+
+
+def _exempt_text(items):
+    """A bracket group's text, normalised with negations KEPT ("phthalate free" stays visible),
+    then with denials removed ("no DRcaps", "not DRcaps", "non DRcaps"), so only an affirmed
+    exemption counts."""
+    s = " ; ".join(items).lower().replace("-", " ")
+    s = re.sub(r"\b(?:no|not|non|without)\s+[a-z0-9]+", " ", s)
     return " ".join(s.split())
 
 
@@ -75,12 +89,13 @@ def screen_label(actives, other_ingredients, avoidlist):
         return {"color": "unrated", "red_hits": [], "yellow_hits": [],
                 "avoidlist_version": version}
     red_hits, yellow_hits = [], []
-    label = _label_text(other_ingredients)
-    for raw in other_ingredients:
+    groups = _groups(other_ingredients)
+    for i, raw in enumerate(other_ingredients):
         norm = _normalize(raw)
-        if _hits(norm, avoidlist["red"], label):
+        own = _exempt_text([x for x, g in zip(other_ingredients, groups) if g == groups[i]])
+        if _hits(norm, avoidlist["red"], own):
             red_hits.append(raw)
-        elif _hits(norm, avoidlist["yellow"], label):
+        elif _hits(norm, avoidlist["yellow"], own):
             yellow_hits.append(raw)
     if red_hits:
         color = "red"

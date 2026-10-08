@@ -74,7 +74,6 @@ def test_enteric_without_phthalate_free_fails(line):
     "Other ingredients: Phthalate-Free Enteric Vegicaps, Healing Energy, Love and Prayer",
     "Phthalate-free enteric vegicaps",
     "DRcaps (hypromellose, gellan gum)",
-    "Delayed-release capsule (hypromellose, gellan gum)",
     "Hypromellose capsule, rice bran",
 ])
 def test_phthalate_free_or_drcaps_enteric_passes(line):
@@ -89,3 +88,13 @@ def test_glens_drcaps_paragraph_screens_clean():
 
 def test_a_stated_phthalate_still_fails_even_on_an_enteric_label_that_says_drcaps():
     assert _label("DRcaps, hypromellose phthalate")["color"] == "red"
+
+
+@pytest.mark.parametrize("line", [
+    "Delayed-release capsule (hypromellose, gellan gum)",      # gellan alone proves nothing
+    "Enteric capsule (hypromellose), contains no gellan gum",
+    "Enteric capsule (not DRcaps)",
+    "DRcaps outer capsule, enteric inner capsule (hypromellose)",  # exemption stays in its own group
+])
+def test_an_exemption_must_be_affirmed_and_belong_to_the_same_capsule(line):
+    assert _label(line)["color"] == "red"
