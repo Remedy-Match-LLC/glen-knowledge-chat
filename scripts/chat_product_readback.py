@@ -4,12 +4,9 @@ Builds the same brief-mode prompt as chat(): retrieval over NAMESPACES, build_co
 build_product_directive, the self-healing system prompt, and the same model. Then checks
 the answer against required and forbidden phrases. It writes nothing and sends no mail.
 
-Run with only the three API keys, never the whole Doppler config:
+Run it through the vault runner, which passes only the three API keys:
 
-    doppler run -p remedy-match -c dev --command \
-      'env -i PATH="$PATH" HOME="$HOME" ANTHROPIC_API_KEY="$ANTHROPIC_API_KEY" \
-       OPENAI_API_KEY="$OPENAI_API_KEY" PINECONE_API_KEY="$PINECONE_API_KEY" \
-       python3 scripts/chat_product_readback.py angiostasis'
+    bash "$HOME/AI-Training/00 System/scripts/chat-readback.sh" angiostasis 4 <worktree>
 
 Exit 1 when any check fails.
 """
