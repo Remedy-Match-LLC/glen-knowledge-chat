@@ -35,6 +35,8 @@ def _strip_negations(s):
     hydrogenated palm oil" leaves "palm oil", which no longer matches the
     "hydrogenated palm oil" alias).
     """
+    # "free of hypromellose phthalate" -- a negated phthalate name of up to three words.
+    s = re.sub(r"\b(?:free of|free from|without|no|non)\s+(?:[a-z0-9]+\s+){0,3}phthalates?\b", " ", s)
     # "free of gelatin" -- explicit "free of X" phrasing.
     s = re.sub(r"\bfree of ([a-z0-9]+)\b", " ", s)
     # "non gelatin" / "non hydrogenated" -- "non" prefix (already
@@ -48,7 +50,13 @@ def _strip_negations(s):
 
 
 def _has(text, alias):
-    return re.search(r"(?<![a-z0-9])" + re.escape(alias) + r"(?![a-z0-9])", text) is not None
+    return re.search(r"(?<![a-z0-9])" + re.escape(alias) + r"s?(?![a-z0-9])", text) is not None
+
+
+# "non phthalate", "no phthalates", "free of/from phthalates", "without phthalates", "phthalates free"
+# (hyphens are already spaces). A denial like "not phthalate free" is not matched by any of these.
+_PHTHALATE_FREE = re.compile(
+    r"\b(?:non|no|without|free of|free from)\s+(?:[a-z0-9]+\s+){0,3}?phthalates?\b|\bphthalates?\s+free\b")
 
 
 def _groups(other_ingredients):
@@ -69,6 +77,7 @@ def _exempt_text(items):
     then with denials removed ("no DRcaps", "not DRcaps", "non DRcaps"), so only an affirmed
     exemption counts."""
     s = " ; ".join(items).lower().replace("-", " ")
+    s = _PHTHALATE_FREE.sub(" phthalate free ", s)
     s = re.sub(r"\b(?:no|not|non|without)\s+[a-z0-9]+", " ", s)
     return " ".join(s.split())
 

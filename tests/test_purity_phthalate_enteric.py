@@ -98,3 +98,28 @@ def test_a_stated_phthalate_still_fails_even_on_an_enteric_label_that_says_drcap
 ])
 def test_an_exemption_must_be_affirmed_and_belong_to_the_same_capsule(line):
     assert _label(line)["color"] == "red"
+
+
+@pytest.mark.parametrize("line", [
+    "Enteric capsule (non-phthalate), rice flour",
+    "Non-phthalate enteric coating",
+    "Enteric capsule (free of phthalates)",
+    "Enteric capsule (free from phthalates)",
+    "Enteric capsule (no phthalates)",
+    "Enteric capsule (phthalates-free)",
+    "Phthalates-free delayed-release capsule",
+    "Enteric capsule free of hypromellose phthalate",
+])
+def test_every_way_of_saying_phthalate_free_passes(line):
+    assert _label(line)["color"] == "green"
+
+
+@pytest.mark.parametrize("line", [
+    "Cellulose acetate phthalates",
+    "Coating: phthalates",
+    "Enteric-coated tablet, BPA and phthalate-free bottle",   # the bottle's claim is not the tablet's
+    "Enteric capsule (hypromellose), gellan gum",
+    "Enteric capsule (not phthalate-free)",
+])
+def test_plurals_and_borrowed_claims_still_fail(line):
+    assert _label(line)["color"] == "red"
