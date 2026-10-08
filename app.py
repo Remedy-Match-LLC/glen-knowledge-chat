@@ -3196,6 +3196,15 @@ def ask_page():
     return _redirect("/", code=302)
 
 
+@app.route("/vascular-integrity")
+def vascular_integrity_short():
+    # Short address Glen asked for, 2026-10-07. 302, not 301, so the target can change
+    # later without browsers holding the old one. A query string (UTM tags) carries over.
+    from flask import redirect as _redirect
+    qs = request.query_string.decode("utf-8", "ignore")
+    return _redirect("/begin/product/vitamin-p-polyphenols" + ("?" + qs if qs else ""), code=302)
+
+
 @app.route("/concierge")
 def concierge_page():
     resp = send_from_directory(STATIC, "concierge.html")
