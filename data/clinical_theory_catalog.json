@@ -1184,13 +1184,8 @@
      "slug": "copper",
      "name": "Copper",
      "alt_name": "",
-     "description": "Copper is an essential mineral in balance with Zinc.Because Copper excess promotes oxidation, it is wise to minimize Copper supplementation unless you are deficient in Copper, or are taking a lot of Zinc over time.If you are Copper deficient, consider Copper Synergy",
-     "remedies": [
-      {
-       "name": "Copper Synergy",
-       "url": "https://myhealingoasis.com/shop"
-      }
-     ]
+     "description": "Copper is an essential mineral in balance with Zinc.Because Copper excess promotes oxidation, it is wise to minimize Copper supplementation unless you are deficient in Copper, or are taking a lot of Zinc over time.",
+     "remedies": []
     },
     {
      "slug": "gold",
@@ -1318,15 +1313,11 @@
      "slug": "phosphorus",
      "name": "Phosphorus",
      "alt_name": "",
-     "description": "Phosphorus forms very high energy bonds which are used to store metabolic energy in Adenosine Triphosphate (ATP).Phosphorus is abundant in animal foods, grains, and nuts, and is inflammatory in excess.Most of the body's Phosphorus is bound in the bones in the mineral form Hydroxyapatite, which is supplied in Bone Builder.ATP Synergy supplies Phosphorus in the energy storage form Adenosine Triphosphate",
+     "description": "Phosphorus forms very high energy bonds which are used to store metabolic energy in Adenosine Triphosphate (ATP).Phosphorus is abundant in animal foods, grains, and nuts, and is inflammatory in excess.Most of the body's Phosphorus is bound in the bones in the mineral form Hydroxyapatite, which is supplied in Bone Builder.",
      "remedies": [
       {
        "name": "Bone Builder",
        "url": "https://myhealingoasis.com/begin/product/bone-builder"
-      },
-      {
-       "name": "ATP Synergy",
-       "url": "https://myhealingoasis.com/shop"
       }
      ]
     },
@@ -1426,7 +1417,7 @@
      "slug": "sulfur",
      "name": "Sulfur",
      "alt_name": "",
-     "description": "In Homeopathy, Sulfur is seen as the most centrifugal or detoxifying mineral.It is a key remedy associated with Phase 4: Cleansing terrain.Sulfur is one of our essential Macrominerals, and we need it in organic forms.A broad spectrum of beneficial organic forms of Sulfur compounds are included in Sulfur Syntropy.Glutathione Syntropy, Rescue, SAMe Synergy and Glucoraphanin Synergy are also excellent sources of organic Sulfur",
+     "description": "In Homeopathy, Sulfur is seen as the most centrifugal or detoxifying mineral.It is a key remedy associated with Phase 4: Cleansing terrain.Sulfur is one of our essential Macrominerals, and we need it in organic forms.A broad spectrum of beneficial organic forms of Sulfur compounds are included in Sulfur Syntropy.Glutathione Syntropy and Rescue are also excellent sources of organic Sulfur",
      "remedies": [
       {
        "name": "Sulfur Syntropy",
@@ -1439,14 +1430,6 @@
       {
        "name": "Rescue",
        "url": "https://myhealingoasis.com/begin/product/rescue"
-      },
-      {
-       "name": "SAMe Synergy",
-       "url": "https://myhealingoasis.com/shop"
-      },
-      {
-       "name": "Glucoraphanin Synergy",
-       "url": "https://myhealingoasis.com/shop"
       }
      ]
     },
@@ -1540,7 +1523,7 @@
        "url": "https://myhealingoasis.com/shop"
       }
      ],
-     "description_live": "Chlorine and Chloride are toxic forms of this halogen mineral.The biggest exposure to toxic Chlorine gas is when taking hot showers in unfiltered municipal water treated with Chlorine.Avoid showering in unfiltered water, and avoid drinking unfiltered tap water.Check out our water filtering technologies for the shower and for turning tap water into healing Living Water.Copper is both an essential mineral and a potentially toxic mineral, promoting oxidation and aging when in excess.The safety range with Copper is quite narrow, so Copper supplementation is typically only recommended when deficient or when taking lots of Zinc over time since Zinc and Copper work in balance with each other.For supplementing low Copper consider Copper Synergy.For balancing excess Copper consider Zinc Synergy and Chelation.Iron is essential, but excess promotes oxidation and aging.Even normal but above average levels of Iron are associated with reduced life expectancy.To reduce excess Iron in the body, check out Iron Out."
+     "description_live": "Chlorine and Chloride are toxic forms of this halogen mineral.The biggest exposure to toxic Chlorine gas is when taking hot showers in unfiltered municipal water treated with Chlorine.Avoid showering in unfiltered water, and avoid drinking unfiltered tap water.Check out our water filtering technologies for the shower and for turning tap water into healing Living Water.Copper is both an essential mineral and a potentially toxic mineral, promoting oxidation and aging when in excess.The safety range with Copper is quite narrow, so Copper supplementation is typically only recommended when deficient or when taking lots of Zinc over time since Zinc and Copper work in balance with each other.For balancing excess Copper consider Zinc Syntropy and Chelation.Iron is essential, but excess promotes oxidation and aging.Even normal but above average levels of Iron are associated with reduced life expectancy.To reduce excess Iron in the body, check out Iron Out."
     },
     {
      "slug": "lead",
@@ -2087,11 +2070,11 @@
      "slug": "s-adenosyl-methionine",
      "name": "S-Adenosyl Methionine",
      "alt_name": "SAMe; SAMe",
-     "description": "SAMe elevates mood, helps repair serious liver damage, and regenerates cartilage.SAMe becomes Homocysteine when it donates its Methyl group.Homocysteine is strongly linked to atherosclerosis, so our SAMe Synergy includes a full range of Methyl donors to recycle Homocysteine back to the beneficial SAMe form.That way the dosage of SAMe also keeps working longer and better.",
+     "description": "SAMe elevates mood, helps repair serious liver damage, and regenerates cartilage.SAMe becomes Homocysteine when it donates its Methyl group.Homocysteine is strongly linked to atherosclerosis, so TMG Syntropy Powder supplies Methyl donors that recycle Homocysteine back to the beneficial SAMe form.",
      "remedies": [
       {
-       "name": "SAMe Synergy",
-       "url": "https://myhealingoasis.com/shop"
+       "name": "TMG Syntropy Powder",
+       "url": "https://myhealingoasis.com/begin/product/tmg-syntropy-powder"
       }
      ],
      "description_snapshot_2026_07_14": "SAMe elevates mood, helps repair serious liver damage, and regenerates cartilage.SAMe becomes Homocysteine when it donates its Methyl group.Homocysteine is strongly linked to atherosclerosis, so our SAMe Synergy includes a full range of Methyl donors to recycle Homocysteine back to the beneficial SAMe form.That way the dosage of SAMe also keeps working longer and better"
