@@ -28,6 +28,13 @@ SOURCED_PRODUCT_CLAIMS = (
     "what it treats or prevents.\n"
 )
 
+# The short form, for per-turn instructions and format lines that ask for mechanism or
+# rationale. The system rule above says the same at length.
+SOURCED_PRODUCT_NOTE = (
+    "For a named product, give its mechanism, dose reasons, caution reasons and labels only "
+    "as a retrieved source states them."
+)
+
 # Glen, 2026-10-02: how the AI states his role and what it may claim. Shared by the three
 # client-facing prompts (this one, and app.py's Remedy Match guide and post-purchase concierge).
 # State the role he holds, never a disqualification.
