@@ -152,9 +152,8 @@ def test_the_images_section_never_says_generating(appmod, monkeypatch, variation
     # Any `state` other than "ready" leaves the page on "Generating" and posting to image-gen.
     monkeypatch.setattr(appmod, "_SALES_IMAGE_VARIATIONS_ENABLED", variations)
     d = appmod.app.test_client().get(f"/begin/product-page-data/{SLUG}").get_json()
-    img = next((s for s in d["sections"] if s["id"] == "images"), None)
-    if img is not None:
-        assert "state" not in img["body"] and "grouped" not in img["body"], img["body"]
+    img = next(s for s in d["sections"] if s["id"] == "images")
+    assert img["body"] == {"images": []}, img["body"]
     # The control: another product on the same app does get a state, so the check can fail.
     d2 = appmod.app.test_client().get("/begin/product-page-data/angiogenx").get_json()
     img2 = next(s for s in d2["sections"] if s["id"] == "images")
@@ -177,3 +176,46 @@ def test_product_data_sends_no_benefits_and_no_how_it_works(appmod):
     assert d["price_cents"] == 7000
     assert d["formats"] is not None
     assert [i["src"] for i in d["images"]] == PHOTOS
+
+
+def test_stored_ai_images_are_never_offered(appmod, monkeypatch):
+    # Rows written by any path stay off the page, in every image mode.
+    from dashboard import sales_images as si
+    with sqlite3.connect(appmod.LOG_DB) as cx:
+        for kind in ("botanical", "mechanism"):
+            for v in (1, 2):
+                si.record_image(cx, SLUG, kind, v, f"{kind}-{v}.png")
+    c = appmod.app.test_client()
+    for variations, pick in ((False, False), (False, True), (True, False)):
+        monkeypatch.setattr(appmod, "_SALES_IMAGE_VARIATIONS_ENABLED", variations)
+        monkeypatch.setattr(appmod, "_SALES_IMAGE_PICK_ENABLED", pick)
+        d = c.get(f"/begin/product-page-data/{SLUG}").get_json()
+        assert f"/begin/product-image/{SLUG}/" not in json.dumps(d), (variations, pick)
+
+
+def test_the_image_serve_pick_and_vote_routes_refuse_the_slug(appmod, monkeypatch):
+    monkeypatch.setattr(appmod, "_SALES_IMAGE_PICK_ENABLED", True)
+    monkeypatch.setattr(appmod, "_SALES_IMAGE_VOTE_ENABLED", True)
+    d = appmod._SALES_IMG_DIR / SLUG
+    d.mkdir(parents=True, exist_ok=True)
+    (d / "mechanism-1.png").write_bytes(b"\x89PNG fake")
+    c = appmod.app.test_client()
+    assert c.get(f"/begin/product-image/{SLUG}/mechanism-1.png").status_code == 404
+    body = {"kind": "mechanism", "variant": 1}
+    assert c.post(f"/begin/product-image-pick/{SLUG}", json=body).status_code == 404
+    assert c.post(f"/begin/product-image-vote/{SLUG}", json=body).status_code == 404
+    # The control: the same calls for another product are not refused.
+    assert c.post("/begin/product-image-pick/angiogenx", json=body).status_code == 200
+
+
+def test_the_tournament_never_renders_for_the_slug(appmod, monkeypatch):
+    from dashboard import sales_images as si
+    with sqlite3.connect(appmod.LOG_DB) as cx:
+        si.record_image(cx, SLUG, "mechanism", 1, "mechanism-1.png")
+    monkeypatch.setattr(appmod, "_SALES_IMAGE_TOURNAMENT_ENABLED", True)
+    seen = []
+    monkeypatch.setattr(appmod, "_render_challenger", lambda slug, kind, p: seen.append(slug))
+    from dashboard import sales_image_pairs as sp
+    monkeypatch.setattr(sp, "ensure_pair", lambda cx, slug, kind, vs: (seen.append(slug), None)[1])
+    appmod._run_image_tournament()
+    assert SLUG not in seen

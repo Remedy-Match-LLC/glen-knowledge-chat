@@ -9806,7 +9806,8 @@ def begin_product_page_data(slug):
                             _img_sec["body"] = {"images": [], "state": "none"}
         except Exception as _e:
             print(f"[sales-img] page-data marker skipped: {_e}", flush=True)
-    if _SALES_IMAGE_PICK_ENABLED and not _SALES_IMAGE_VARIATIONS_ENABLED:
+    from dashboard.sales_images import ai_images_off as _ai_images_off
+    if _SALES_IMAGE_PICK_ENABLED and not _SALES_IMAGE_VARIATIONS_ENABLED and not _ai_images_off(slug):
         import sqlite3 as _sq3
         from dashboard import sales_images as _si3, sales_votes as _sv3, sales_image_prompts as _sip3
         try:
@@ -10672,7 +10673,8 @@ def begin_ingredient_page_gen(slug, section):
 
 @app.route("/begin/product-image/<slug>/<filename>")
 def begin_product_image(slug, filename):
-    if not re.match(r'^[\w\-]+\.png$', filename):
+    from dashboard.sales_images import ai_images_off as _ai_images_off
+    if not re.match(r'^[\w\-]+\.png$', filename) or _ai_images_off(slug):
         return ("", 404)
     d = _SALES_IMG_DIR / slug
     if not (d / filename).exists():
@@ -11584,7 +11586,8 @@ def begin_product_image_gen(slug):
 @app.route("/begin/product-image-pick/<slug>", methods=["POST"])
 def begin_product_image_pick(slug):
     from dashboard import sales_image_prompts as _sip
-    if not _SALES_IMAGE_PICK_ENABLED or not _get_product(slug):
+    from dashboard.sales_images import ai_images_off as _ai_images_off
+    if not _SALES_IMAGE_PICK_ENABLED or not _get_product(slug) or _ai_images_off(slug):
         return ("", 404)
     data = request.get_json(silent=True) or {}
     kind = (data.get("kind") or "").strip()
@@ -11614,7 +11617,8 @@ def begin_product_image_pick(slug):
 @app.route("/begin/product-image-vote/<slug>", methods=["POST"])
 def begin_product_image_vote(slug):
     from dashboard import sales_image_prompts as _sip
-    if not _SALES_IMAGE_VOTE_ENABLED or not _get_product(slug):
+    from dashboard.sales_images import ai_images_off as _ai_images_off
+    if not _SALES_IMAGE_VOTE_ENABLED or not _get_product(slug) or _ai_images_off(slug):
         return ("", 404)
     data = request.get_json(silent=True) or {}
     kind = (data.get("kind") or "").strip()
@@ -49059,7 +49063,7 @@ def _run_image_tournament():
     now = _dt.datetime.now(_dt.timezone.utc).isoformat()
     for slug in slugs:
         p = _get_product(slug)
-        if not p:
+        if not p or _si.ai_images_off(slug):
             continue
         for kind in _sip.IMAGE_KINDS:
             try:
