@@ -36,3 +36,16 @@ def test_the_seven_descriptions():
     assert chem["s-adenosyl-methionine"]["description"].endswith(
         "beneficial SAMe form.That way the dosage of SAMe also keeps working longer and better.")
     assert chem["thyroxine"]["description"].endswith("along with synergistic botanicals.")
+
+
+def test_the_remedy_labels_name_the_syntropy_products():
+    # Production spec 2026-10-08-ct-catalogue-remedy-labels: the label only; links unchanged.
+    chem = _dims()["chemistry"]
+    assert chem["iron"]["remedies"] == [
+        {"name": "Iron Syntropy", "url": "https://myhealingoasis.com/begin/product/iron-syntropy"}]
+    assert chem["vitamin-b17-amygdalin"]["remedies"] == [
+        {"name": "B17 Syntropy", "url": "https://myhealingoasis.com/begin/product/b17-syntropy"}]
+    for key, entries in _dims().items():
+        for slug, e in entries.items():
+            served = json.dumps({k: v for k, v in e.items() if not k.startswith("description_snapshot")})
+            assert "Iron Synergy" not in served and "B17 Synergy" not in served, (key, slug)
