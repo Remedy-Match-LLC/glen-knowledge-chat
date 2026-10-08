@@ -10598,7 +10598,7 @@ def stories_index():
     if not _stories_enabled():
         return ("Not found", 404)
     with _db_lock, db.connect(LOG_DB) as cx:
-        rows = _sp.list_published(cx)
+        rows = _sp.list_servable(cx)
     return Response(_sr.render_index_html(rows), mimetype="text/html")
 
 
@@ -10608,7 +10608,7 @@ def stories_sitemap():
     if not _stories_enabled():
         return ("Not found", 404)
     with _db_lock, db.connect(LOG_DB) as cx:
-        rows = _sp.list_published(cx)
+        rows = _sp.list_servable(cx)
     return Response(_sr.render_sitemap_xml(rows, PUBLIC_BASE_URL), mimetype="application/xml")
 
 
@@ -10624,7 +10624,8 @@ def story_page(slug):
         return ("Not found", 404)
     with _db_lock, db.connect(LOG_DB) as cx:
         page = _sp.get(cx, slug)
-    if not _sp.is_public(page):
+        ok = bool(page) and _sp.servable(cx, page)
+    if not ok:
         return ("Not found", 404)
     return Response(_sr.render_page_html(page), mimetype="text/html")
 
@@ -10684,9 +10685,6 @@ def api_console_stories_list():
                     "clicks": clicks})
 
 
-_STORY_CLICK_SKIP_PREFIXES = ("/api/", "/console", "/admin", "/static/", "/stories")
-
-
 def _story_set_cookie_value(resp, name):
     """The value a response is already setting for cookie `name`, or ""."""
     for h in resp.headers.getlist("Set-Cookie"):
@@ -10696,58 +10694,80 @@ def _story_set_cookie_value(resp, name):
     return ""
 
 
+def _story_strip_cookie(resp, name):
+    """Remove every Set-Cookie for `name` from a response. Returns how many."""
+    cookies = resp.headers.getlist("Set-Cookie")
+    keep = [h for h in cookies if not h.split(";", 1)[0].strip().startswith(name + "=")]
+    if len(keep) == len(cookies):
+        return 0
+    resp.headers.remove("Set-Cookie")
+    for h in keep:
+        resp.headers.add("Set-Cookie", h)
+    return len(cookies) - len(keep)
+
+
+def _story_ref_is_approved(cx, ref):
+    try:
+        return cx.execute(
+            "SELECT 1 FROM affiliate_signups WHERE slug=? AND status='approved'",
+            (ref,)).fetchone() is not None
+    except Exception:  # noqa: BLE001 - no table means no credit
+        try:
+            cx.rollback()   # clear an aborted Postgres transaction
+        except Exception:  # noqa: BLE001
+            pass
+        return False
+
+
 @app.after_request
 def _story_click_capture(resp):
-    """Count a click from a story page: a GET landing that carries ?story=<slug> for a
-    published story. One row per (story, target path, session). Stores the story slug,
-    the path, the time and a hash of the anonymous amg_session cookie, nothing else.
+    """Clicks and referral credit for links on story pages. Acts only when the request
+    carries ?story= and STORIES_ENABLED is on. Never breaks the response.
 
-    A valid ?ref= equal to that story's own ref slug, for an approved affiliate, is
-    persisted as rm_ref through the shared first-touch helper, so the giver is
-    credited even on pages that do not read ?ref= themselves.
+    Referral: a ?ref= on a story link credits only that story's own ref slug, and
+    only when it is an approved affiliate. Any other ?ref= on a ?story= request is
+    not allowed to set or overwrite rm_ref, whichever handler tried to: its
+    Set-Cookie is removed here. A matching ref is persisted through the shared
+    first-touch helper when the page itself did not already set it.
 
-    Never breaks the response."""
+    Click: recorded only when the path is EXACTLY one of that published story's
+    stored link paths, the response succeeded, the caller is not a bot, and the
+    visitor already has an amg_session cookie. No session is ever created here.
+    The row holds the story slug, that stored path, the time and a hash of the
+    session. Nothing from the query string is stored. One row per (story, path,
+    session hash), so the table is bounded by real visitors times real links."""
     if "story" not in request.args:
         return resp
     try:
-        if request.method != "GET" or not _stories_enabled() or resp.status_code >= 400:
-            return resp
-        path = request.path or ""
-        if not path.startswith("/") or path.startswith(_STORY_CLICK_SKIP_PREFIXES):
+        if not _stories_enabled():
             return resp
         from dashboard import story_pages as _sp
-        from dashboard import store_arrivals as _sa
         slug = (request.args.get("story") or "").strip().lower()
-        if not _sp.valid_slug(slug) or _sa.is_bot(request.headers.get("User-Agent", "")):
-            return resp
-        session = ((request.cookies.get("amg_session") or "").strip()
-                   or _story_set_cookie_value(resp, "amg_session"))
-        new_session = not session
-        if new_session:
-            session = uuid.uuid4().hex
         ref = (request.args.get("ref") or "").strip()
+        page = None
         with _db_lock, db.connect(LOG_DB) as cx:
-            page = _sp.get(cx, slug)
-            if not _sp.is_public(page):
-                return resp
-            _sp.record_click(cx, slug, path, _sp.hash_session(session))
-            credit = False
-            if ref and ref == (page.get("ref_slug") or "") and _REF_SLUG_RE.match(ref):
-                try:
-                    credit = cx.execute(
-                        "SELECT 1 FROM affiliate_signups WHERE slug=? AND status='approved'",
-                        (ref,)).fetchone() is not None
-                except Exception:  # noqa: BLE001 - no table means no credit
-                    credit = False
-                    try:
-                        cx.rollback()   # clear an aborted Postgres transaction
-                    except Exception:  # noqa: BLE001
-                        pass
+            if _sp.valid_slug(slug):
+                page = _sp.get(cx, slug)
+                if page and not _sp.servable(cx, page):
+                    page = None
+            own_ref = (page or {}).get("ref_slug") or ""
+            credit = bool(ref and own_ref and ref == own_ref and _REF_SLUG_RE.match(ref)
+                          and _story_ref_is_approved(cx, ref))
+            if ref and not credit:
+                _story_strip_cookie(resp, "rm_ref")
+
+            path = request.path or ""
+            link_paths = {(ln or {}).get("path") for ln in
+                          ((page or {}).get("content") or {}).get("links") or []
+                          if isinstance(ln, dict)}
+            session = (request.cookies.get("amg_session") or "").strip()
+            if (page and request.method == "GET" and resp.status_code < 400
+                    and path in link_paths and session):
+                from dashboard import store_arrivals as _sa
+                if not _sa.is_bot(request.headers.get("User-Agent", "")):
+                    _sp.record_click(cx, slug, path, _sp.hash_session(session))
         if credit and not _story_set_cookie_value(resp, "rm_ref"):
             _persist_ref_attribution(resp, request, ref)
-        if new_session:
-            resp.set_cookie("amg_session", session, max_age=60 * 60 * 24 * 365,
-                            httponly=True, samesite="Lax", secure=request.is_secure)
     except Exception as e:  # noqa: BLE001 - counting must never break the page
         print(f"[story-click] not recorded: {e!r}", flush=True)
     return resp
@@ -54780,13 +54800,30 @@ def _role_for_token(token):
     return _bos_rbac.actor_for_scope(row[0]).role
 
 
+def _name_for_token(token):
+    """The workspace user name behind a per-user access token, as _auth reads it
+    (e.g. "rae"), or "" when the token resolves to nobody."""
+    if not token:
+        return ""
+    try:
+        with db.connect(LOG_DB) as cx:
+            row = cx.execute(
+                "SELECT u.name FROM access_tokens t "
+                "JOIN workspace_users u ON u.id = t.user_id "
+                "WHERE t.token = ? AND t.revoked_at IS NULL", (token,)).fetchone()
+    except Exception:
+        return ""
+    return (row[0] or "") if row else ""
+
+
 def _bos_actor():
     """Resolve the calling actor: owner master key (CONSOLE_SECRET) first, then a
-    per-user access token -> its rbac role (Rae=owner, Shaira=va)."""
+    per-user access token -> its rbac role (Rae=owner, Shaira=va), named after its
+    workspace user so the audit trail records a person, not a token prefix."""
     key = _present_console_key()
     return _bos_rbac.resolve_actor(
         key, console_secret=dashboard.CONSOLE_SECRET,
-        token=key, role_for_token=_role_for_token)
+        token=key, role_for_token=_role_for_token, name_for_token=_name_for_token)
 
 
 # Let the legacy require_console_key decorator accept an OWNER-role per-user token

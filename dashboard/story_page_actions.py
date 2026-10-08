@@ -16,17 +16,21 @@ from dashboard.actions import register_action, Action, LOW_WRITE, get_action
 from dashboard.rbac import OWNER, OPS
 from dashboard import story_pages as _sp
 
-# The name dashboard.rbac.resolve_actor gives the master console key (Glen).
-MASTER_ACTOR_NAME = "owner"
-
-
-def _actor_name(actor):
-    return (getattr(actor, "name", "") or getattr(actor, "role", "") or "console")
+# The master console key is Glen's. Stamps record his name, not the key's label.
+MASTER_PERSON = "glen"
 
 
 def _is_glen(actor):
     return (actor is not None and getattr(actor, "role", "") == OWNER
-            and getattr(actor, "name", "") == MASTER_ACTOR_NAME)
+            and bool(getattr(actor, "master", False)))
+
+
+def _actor_name(actor):
+    """A person's name for the stamps: "glen" for the master key, else the workspace
+    user name _bos_actor resolved. Never a token or part of one."""
+    if _is_glen(actor):
+        return MASTER_PERSON
+    return (getattr(actor, "name", "") or "unknown-user")
 
 
 def _slug(params):
@@ -64,7 +68,8 @@ def _exec_edit(params, ctx):
     kw = {k: params[k] for k in ("content", "name_line", "ref_slug", "testimonial_id")
           if k in params}
     try:
-        page = _sp.update(ctx["cx"], slug, by=_actor_name(ctx.get("actor")), **kw)
+        page = _sp.update(ctx["cx"], slug, expected_hash=params.get("content_hash") or "",
+                          by=_actor_name(ctx.get("actor")), **kw)
     except _sp.StoryError as e:
         return _refused(slug, e)
     return _result(page)
@@ -99,7 +104,7 @@ def _exec_publish(params, ctx):
         return {"ok": False, "slug": slug, "error": "owner_only",
                 "detail": "step 3 is Glen's, with the master console key"}
     try:
-        page = _sp.mark_published(ctx["cx"], slug, by="glen",
+        page = _sp.mark_published(ctx["cx"], slug, by=MASTER_PERSON,
                                   content_hash=params.get("content_hash") or "")
     except _sp.StoryError as e:
         return _refused(slug, e)

@@ -41,6 +41,9 @@ def owner_money_threshold():
 class Actor:
     role: str
     name: str = ""
+    # True only when the caller presented the master console key (Glen). An owner-role
+    # per-user token (Rae) is OWNER too, so the role alone cannot say who it is.
+    master: bool = False
 
 
 def policy_for(role, risk_tier, *, amount=None, threshold=None):
@@ -53,14 +56,23 @@ def policy_for(role, risk_tier, *, amount=None, threshold=None):
     return POLICY.get(role, {}).get(risk_tier, DENY)
 
 
-def resolve_actor(console_key, *, console_secret, token=None, role_for_token=None):
-    """Owner master key first (backward compatible), then optional token->role."""
+def resolve_actor(console_key, *, console_secret, token=None, role_for_token=None,
+                  name_for_token=None):
+    """Owner master key first (backward compatible), then optional token->role.
+
+    With `name_for_token`, a token actor is named after its workspace user (e.g.
+    "rae"), so audit rows and stamps carry a person's name, never part of a token.
+    Without it the old token-prefix name is kept for existing callers."""
     if console_secret and console_key and console_key == console_secret:
-        return Actor(role=OWNER, name="owner")
+        return Actor(role=OWNER, name="owner", master=True)
     if token and role_for_token:
         role = role_for_token(token)
         if role in ROLES:
-            return Actor(role=role, name=str(token)[:8])
+            if name_for_token is not None:
+                name = (name_for_token(token) or "").strip() or "unknown-user"
+            else:
+                name = str(token)[:8]
+            return Actor(role=role, name=name)
     return None
 
 

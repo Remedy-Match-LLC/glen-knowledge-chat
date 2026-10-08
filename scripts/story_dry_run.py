@@ -46,7 +46,9 @@ def build_page(data):
     return {
         "story_slug": slug, "slug": slug, "name_line": name_line, "ref_slug": ref_slug,
         "content": content, "state": "draft", "testimonial_id": data.get("testimonial_id", 0),
-        "content_hash": "", "current_hash": _sp.compute_hash(content, name_line),
+        "content_hash": "",
+        "current_hash": _sp.compute_hash(content, name_line, ref_slug,
+                                         data.get("testimonial_id", 0)),
     }
 
 

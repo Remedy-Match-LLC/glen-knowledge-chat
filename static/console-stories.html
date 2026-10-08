@@ -55,6 +55,7 @@ const $ = (id) => document.getElementById(id);
 function say(text, bad){ const m=$('msg'); m.textContent=text; m.className=bad?'err':''; }
 function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 let PAGES = {};
+let LOADED = {slug: '', hash: ''};  // the version the edit form was loaded from
 
 async function act(key, body){
   const r = await fetch('/api/action/story_page.'+key, {method:'POST', credentials:'same-origin',
@@ -110,6 +111,7 @@ $('rows').addEventListener('click', (ev) => {
     $('f-slug').value = p.story_slug; $('f-tid').value = p.testimonial_id;
     $('f-name').value = p.name_line; $('f-ref').value = p.ref_slug;
     $('f-content').value = JSON.stringify(p.content, null, 2);
+    LOADED = {slug: p.story_slug, hash: p.current_hash};
   }
 });
 
@@ -119,7 +121,11 @@ function save(kind){
   const body = {slug: $('f-slug').value.trim(), content, name_line: $('f-name').value,
                 ref_slug: $('f-ref').value.trim()};
   if (kind === 'create' || $('f-tid').value.trim()) body.testimonial_id = parseInt($('f-tid').value, 10);
-  act(kind, body);
+  if (kind === 'edit') {
+    if (LOADED.slug !== body.slug) { say('Load the page with its Edit button first.', true); return; }
+    body.content_hash = LOADED.hash;   // a stale copy is refused with "conflict"
+  }
+  act(kind, body).then(r => { if (r && kind === 'edit') LOADED = {slug: body.slug, hash: r.content_hash}; });
 }
 load();
 </script>

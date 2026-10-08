@@ -58,12 +58,34 @@ def test_gate_and_clicks_on_postgres(cx):
     with pytest.raises(sp.StoryError) as e:
         sp.mark_published(cx, "jane-doe", by="glen", content_hash=p["content_hash"])
     assert e.value.code == "hash_mismatch"
-    p = sp.update(cx, "jane-doe", content=CONTENT)
+    with pytest.raises(sp.StoryError) as e:     # a stale editor copy is refused
+        sp.update(cx, "jane-doe", expected_hash=p["current_hash"], content=CONTENT)
+    assert e.value.code == "conflict"
+    p = sp.update(cx, "jane-doe", expected_hash=sp.get(cx, "jane-doe")["current_hash"],
+                  content=CONTENT)
     assert p["state"] == "draft" and p["content_hash"] == ""
     p = sp.mark_checked(cx, "jane-doe", by="m", note="ok", content_hash=p["current_hash"])
     p = sp.mark_giver_approved(cx, "jane-doe", by="r", consent_ref="c", content_hash=p["content_hash"])
+    # Consent revoked: step 3 refuses, and the in-SQL re-check runs on Postgres too.
+    cx.execute("UPDATE product_reviews SET status='withdrawn' WHERE id=?", (tid,))
+    cx.commit()
+    with pytest.raises(sp.StoryError) as e:
+        sp.mark_published(cx, "jane-doe", by="glen", content_hash=p["content_hash"])
+    assert e.value.code == "no_consent"
+    fake = {"id": tid, "kind": "testimonial", "consent_public": 1, "status": "approved"}
+    real_get = sp.get_testimonial
+    sp.get_testimonial = lambda c, t: fake
+    try:
+        with pytest.raises(sp.StoryError) as e:
+            sp.mark_published(cx, "jane-doe", by="glen", content_hash=p["content_hash"])
+        assert e.value.code == "conflict"
+    finally:
+        sp.get_testimonial = real_get
+    cx.execute("UPDATE product_reviews SET status='approved' WHERE id=?", (tid,))
+    cx.commit()
     p = sp.mark_published(cx, "jane-doe", by="glen", content_hash=p["content_hash"])
     assert p["state"] == "published"
+    assert [x["story_slug"] for x in sp.list_servable(cx)] == ["jane-doe"]
     assert [x["story_slug"] for x in sp.list_published(cx)] == ["jane-doe"]
     h = sp.hash_session("s1")
     assert sp.record_click(cx, "jane-doe", "/begin/product/x", h) is True

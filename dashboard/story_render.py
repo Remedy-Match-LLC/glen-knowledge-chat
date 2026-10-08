@@ -23,7 +23,7 @@ _EXTRA_STYLE = (
     "<style>"
     ".story-kicker{color:var(--muted);font-size:14px;letter-spacing:0.04em;"
     "font-family:var(--heading);margin:18px 0 0;}"
-    ".story-text{margin-top:22px;white-space:normal;}"
+    ".story-text{margin-top:22px;white-space:pre-wrap;overflow-wrap:anywhere;}"
     ".story-photo{margin:22px 0 4px;}"
     ".story-photo img{max-width:100%;height:auto;border-radius:12px;"
     "border:1px solid var(--border);}"
@@ -61,16 +61,10 @@ def tag_link(path, *, story_slug, ref_slug=""):
     return path + ("?" + urlencode(params) if params else "")
 
 
-def _paragraphs(text):
-    """Blank-line-separated paragraphs; single newlines become <br>. The words are
-    escaped and otherwise left exactly as stored."""
-    out = []
-    for block in str(text or "").replace("\r\n", "\n").split("\n\n"):
-        if not block.strip():
-            continue
-        lines = [_esc(ln) for ln in block.strip("\n").split("\n")]
-        out.append("<p>" + "<br>".join(lines) + "</p>")
-    return "".join(out)
+def _story_text(text):
+    """The giver's words exactly as stored: escaped, nothing trimmed, split or joined.
+    The block is styled white-space:pre-wrap, so spaces and line breaks show as typed."""
+    return _esc(text if isinstance(text, str) else "")
 
 
 def _document(title, meta_desc, body_inner, *, noindex=False, banner=""):
@@ -98,7 +92,7 @@ def _page_body(page):
     if isinstance(photo, dict) and photo.get("src") and _sp.PHOTO_SRC_RE.match(photo["src"]):
         parts.append(f'<figure class="story-photo"><img src="{_esc(photo["src"])}" '
                      f'alt="{_esc(photo.get("alt") or "")}"></figure>')
-    parts.append(f'<section class="story-text">{_paragraphs(content.get("story"))}</section>')
+    parts.append(f'<div class="story-text">{_story_text(content.get("story"))}</div>')
     items = []
     for ln in content.get("links") or []:
         if not isinstance(ln, dict):

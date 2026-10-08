@@ -176,11 +176,17 @@ def _dump(content):
     return json.dumps(content, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
 
 
-def compute_hash(content, name_line):
-    """sha256 over the canonical content JSON and the name line."""
+def compute_hash(content, name_line, ref_slug, testimonial_id):
+    """sha256 over everything an approval covers: the canonical content JSON, the
+    name line, the giver's ref slug and the testimonial row id."""
     if isinstance(content, str):
         content = json.loads(content or "{}")
-    payload = _dump({"content": content, "name_line": name_line or ""})
+    try:
+        tid = int(testimonial_id or 0)
+    except (TypeError, ValueError):
+        tid = 0
+    payload = _dump({"content": content, "name_line": name_line or "",
+                     "ref_slug": ref_slug or "", "testimonial_id": tid})
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
@@ -221,6 +227,31 @@ def get_testimonial(cx, testimonial_id):
     return {k: row[i] for i, k in enumerate(keys)}
 
 
+# Testimonial statuses that end consent, whatever consent_public says.
+REVOKED_STATUSES = ("rejected", "withdrawn")
+
+
+def consent_ok(t):
+    """True while the testimonial row still carries public consent."""
+    return bool(t) and (t.get("kind") or "") == "testimonial" \
+        and int(t.get("consent_public") or 0) == 1 \
+        and (t.get("status") or "").strip().lower() not in REVOKED_STATUSES
+
+
+# The same rule inside SQL, so a compare-and-set re-checks consent at write time
+# and the testimonial cannot change between the read and the write.
+_CONSENT_SQL = (
+    "EXISTS (SELECT 1 FROM product_reviews r WHERE r.id = story_pages.testimonial_id "
+    "AND r.kind = 'testimonial' AND r.consent_public = 1 "
+    "AND LOWER(COALESCE(r.status, '')) NOT IN ('rejected', 'withdrawn'))"
+)
+
+
+def _require_consent(cx, page):
+    if not consent_ok(get_testimonial(cx, page["testimonial_id"])):
+        raise StoryError("no_consent", "the testimonial has no public consent")
+
+
 def _require_testimonial(cx, testimonial_id):
     t = get_testimonial(cx, testimonial_id)
     if not t or (t.get("kind") or "") != "testimonial":
@@ -240,7 +271,8 @@ def _row_to_page(row):
     except ValueError:
         page["content"] = {}
     page["slug"] = page["story_slug"]
-    page["current_hash"] = compute_hash(page["content"], page["name_line"])
+    page["current_hash"] = compute_hash(page["content"], page["name_line"],
+                                        page["ref_slug"], page["testimonial_id"])
     return page
 
 
@@ -270,6 +302,16 @@ def list_published(cx):
 
 def is_public(page):
     return bool(page) and page.get("state") == "published"
+
+
+def servable(cx, page):
+    """Published AND its testimonial row is still consented. The public routes use
+    this, so revoking consent on the row takes the page down."""
+    return is_public(page) and consent_ok(get_testimonial(cx, page["testimonial_id"]))
+
+
+def list_servable(cx):
+    return [p for p in list_published(cx) if servable(cx, p)]
 
 
 # ── write ────────────────────────────────────────────────────────────────────
@@ -302,13 +344,18 @@ def create(cx, slug, *, testimonial_id, content, name_line="", ref_slug="", by="
 _UNSET = object()
 
 
-def update(cx, slug, *, content=_UNSET, name_line=_UNSET, ref_slug=_UNSET,
+def update(cx, slug, *, expected_hash, content=_UNSET, name_line=_UNSET, ref_slug=_UNSET,
            testimonial_id=_UNSET, by=""):
     """Edit a page. Any real change resets it to draft and clears every step stamp,
-    so it must pass all three steps again. An edit that changes nothing is a no-op."""
+    so it must pass all three steps again. An edit that changes nothing is a no-op.
+
+    `expected_hash` is the hash of the page the editor loaded. A save from a stale
+    copy is refused with `conflict`, so two editors cannot overwrite each other."""
     page = get(cx, slug)
     if not page:
         raise StoryError("not_found", slug)
+    if (expected_hash or "") != page["current_hash"]:
+        raise StoryError("conflict", "the page changed since you loaded it; reload it")
     new = {
         "content_json": page["content_json"],
         "name_line": page["name_line"],
@@ -333,13 +380,22 @@ def update(cx, slug, *, content=_UNSET, name_line=_UNSET, ref_slug=_UNSET,
     if not changed:
         return page
     clears = ", ".join(f"{c}=''" for c in _STEP_STAMPS)
-    cx.execute(
-        "UPDATE story_pages SET content_json=?, name_line=?, ref_slug=?, testimonial_id=?, "
-        f"state='draft', content_hash='', {clears}, updated_at=? WHERE story_slug=?",
-        (new["content_json"], new["name_line"], new["ref_slug"], new["testimonial_id"],
-         _now(), slug))
-    cx.commit()
+    _cas(cx,
+         "UPDATE story_pages SET content_json=?, name_line=?, ref_slug=?, testimonial_id=?, "
+         f"state='draft', content_hash='', {clears}, updated_at=? WHERE {_IDENT_SQL}",
+         (new["content_json"], new["name_line"], new["ref_slug"], new["testimonial_id"],
+          _now()) + _ident(page))
     return get(cx, slug)
+
+
+# Every compare-and-set names the exact page it read: all four approved fields.
+_IDENT_SQL = ("story_slug=? AND content_json=? AND name_line=? AND ref_slug=? "
+              "AND testimonial_id=?")
+
+
+def _ident(page):
+    return (page["story_slug"], page["content_json"], page["name_line"],
+            page["ref_slug"], int(page["testimonial_id"] or 0))
 
 
 def _cas(cx, sql, params):
@@ -363,16 +419,13 @@ def mark_checked(cx, slug, *, by, note, content_hash):
         raise StoryError("missing_note", "record the compliance result")
     if content_hash != page["current_hash"]:
         raise StoryError("hash_mismatch", "the page changed since it was reviewed")
-    t = _require_testimonial(cx, page["testimonial_id"])
-    if not int(t.get("consent_public") or 0):
-        raise StoryError("no_consent", "the testimonial has no public consent")
+    _require_consent(cx, page)
     now = _now()
     _cas(cx,
          "UPDATE story_pages SET state='checked', compliance_at=?, compliance_by=?, "
          "compliance_note=?, content_hash=?, updated_at=? "
-         "WHERE story_slug=? AND state='draft' AND content_json=? AND name_line=?",
-         (now, by.strip(), note.strip(), page["current_hash"], now,
-          slug, page["content_json"], page["name_line"]))
+         f"WHERE {_IDENT_SQL} AND state='draft' AND {_CONSENT_SQL}",
+         (now, by.strip(), note.strip(), page["current_hash"], now) + _ident(page))
     return get(cx, slug)
 
 
@@ -391,14 +444,13 @@ def mark_giver_approved(cx, slug, *, by, consent_ref, content_hash):
         raise StoryError("hash_mismatch", "the page changed since step 1")
     if content_hash != page["content_hash"]:
         raise StoryError("hash_mismatch", "the giver approved a different version")
+    _require_consent(cx, page)
     now = _now()
     _cas(cx,
          "UPDATE story_pages SET state='giver_approved', giver_approved_at=?, "
          "giver_approved_by=?, giver_consent_ref=?, updated_at=? "
-         "WHERE story_slug=? AND state='checked' AND content_hash=? "
-         "AND content_json=? AND name_line=?",
-         (now, by.strip(), consent_ref.strip(), now,
-          slug, page["content_hash"], page["content_json"], page["name_line"]))
+         f"WHERE {_IDENT_SQL} AND state='checked' AND content_hash=? AND {_CONSENT_SQL}",
+         (now, by.strip(), consent_ref.strip(), now) + _ident(page) + (page["content_hash"],))
     return get(cx, slug)
 
 
@@ -415,13 +467,13 @@ def mark_published(cx, slug, *, by, content_hash):
         raise StoryError("hash_mismatch", "the page changed since step 2")
     if content_hash != page["content_hash"]:
         raise StoryError("hash_mismatch", "this is not the version the giver approved")
+    _require_consent(cx, page)
     now = _now()
     _cas(cx,
          "UPDATE story_pages SET state='published', published_at=?, published_by=?, "
-         "updated_at=? WHERE story_slug=? AND state='giver_approved' AND content_hash=? "
-         "AND content_json=? AND name_line=?",
-         (now, by.strip(), now,
-          slug, page["content_hash"], page["content_json"], page["name_line"]))
+         f"updated_at=? WHERE {_IDENT_SQL} AND state='giver_approved' AND content_hash=? "
+         f"AND {_CONSENT_SQL}",
+         (now, by.strip(), now) + _ident(page) + (page["content_hash"],))
     return get(cx, slug)
 
 
