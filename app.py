@@ -5633,6 +5633,21 @@ def _chat_page_link_index():
     return index
 
 
+def _consented_session_email(session_id):
+    """The email this browser session gave with the Terms on the opt-in gate, else "".
+    Only a session row that has both an email and tos_agreed_at counts."""
+    if not session_id:
+        return ""
+    try:
+        with _db_lock, db.connect(LOG_DB) as cx:
+            state = begin_funnel.get_state(cx, session_id=session_id)
+        if state.get("tos_agreed_at"):
+            return (state.get("email") or "").strip().lower()
+    except Exception as e:
+        print(f"[match] consented email lookup failed: {e!r}", flush=True)
+    return ""
+
+
 def _resolve_chat_tier(req, session_id, email):
     """Best-effort; fail open to 'anonymous' on any error."""
     try:
@@ -6253,7 +6268,7 @@ def begin_match_page():
     return resp
 
 
-def _email_remedy_match_once(email, name, session_id, match):
+def _email_remedy_match_once(email, name, session_id, match, proven=False):
     """Queue a completed Glendalf/RemedyMatch result for the client's email.
 
     OFF unless REMEDY_MATCH_EMAIL_ENABLED is set (Glen, 2026-09-22: "switch them
@@ -6280,7 +6295,8 @@ def _email_remedy_match_once(email, name, session_id, match):
         return _rme.enqueue(
             cx, email=email, name=name, session_id=session_id, product_slug=p["slug"],
             product_name=p.get("name") or product,
-            page_url=PUBLIC_BASE_URL.rstrip("/") + "/begin/product/" + p["slug"])
+            page_url=PUBLIC_BASE_URL.rstrip("/") + "/begin/product/" + p["slug"],
+            proven=proven)
 
 
 def _remedy_match_email_on():
@@ -6308,12 +6324,62 @@ def _drain_remedy_match_emails():
         from dashboard import remedy_match_email as _rme
         def _send(email, name, subject, html, text):
             send_evox_email(email, name, subject, html, text, b"")
+        def _confirm_url(token):
+            return PUBLIC_BASE_URL.rstrip("/") + "/begin/confirm-email?t=" + token
         with _db_lock, db.connect(LOG_DB) as cx:
-            out = _rme.drain(cx, _send)
+            out = _rme.drain(cx, _send, confirm_url=_confirm_url)
         if any(out.values()):
             print(f"[remedy-match-email] {out}", flush=True)
     except Exception as e:
         print(f"[remedy-match-email] drain failed: {e!r}", flush=True)
+
+
+@app.route("/begin/confirm-email", methods=["GET", "POST"])
+def begin_confirm_email():
+    """The link in the remedy email's confirmation message. GET only shows a Confirm
+    button, because mail scanners open links on their own; the POST it sends confirms
+    the address and releases its waiting match, which the drain sends within minutes."""
+    import html as _html
+    from flask import make_response
+    from dashboard import remedy_match_email as _rme
+    token = ((request.form.get("t") if request.method == "POST" else request.args.get("t"))
+             or "").strip()[:200]
+    status = 200
+    if request.method == "POST":
+        try:
+            with _db_lock, db.connect(LOG_DB) as cx:
+                ok = bool(_rme.confirm(cx, token))
+        except Exception as e:
+            print(f"[remedy-match-email] confirm failed: {type(e).__name__}", flush=True)
+            ok = False
+        if ok:
+            head = "Thank you, your email is confirmed"
+            body = ("<p>If a remedy link is waiting for you, it will arrive within a few "
+                    "minutes.</p>")
+        else:
+            head, status = "This link has expired", 410
+            body = "<p>Please chat with us again, and we'll send you a fresh link.</p>"
+    else:
+        head = "Confirm your email"
+        body = ('<p>Press the button to confirm this is your email.</p>'
+                '<form method="post" action="/begin/confirm-email">'
+                f'<input type="hidden" name="t" value="{_html.escape(token)}">'
+                '<button type="submit">Confirm my email</button></form>')
+    page = ('<!doctype html><html lang="en"><head><meta charset="utf-8">'
+            '<meta name="viewport" content="width=device-width,initial-scale=1">'
+            '<meta name="robots" content="noindex">'
+            f'<title>{head}</title><style>'
+            'body{margin:0;background:#0a150d;color:#f4ecd8;font:17px/1.6 Georgia,serif;'
+            'display:flex;min-height:100vh;align-items:center;justify-content:center;padding:16px}'
+            'main{max-width:480px;text-align:center}h1{font-size:24px;margin:0 0 12px}'
+            'a{color:#d4af37}button{font:inherit;padding:12px 22px;border:0;border-radius:8px;'
+            'background:#d4af37;color:#0a150d;cursor:pointer}</style></head><body><main>'
+            f'<h1>{head}</h1>{body}<p><a href="/begin">Back to the chat</a></p>'
+            '</main></body></html>')
+    resp = make_response(page, status)
+    resp.headers["Cache-Control"] = "no-store"
+    resp.headers["Referrer-Policy"] = "no-referrer"
+    return resp
 
 
 @app.route("/begin/match/e4l-link")
@@ -6562,11 +6628,27 @@ def begin_match_chat():
         # (recommending a remedy for their condition requires ToS agreement).
         if match_evt and _member:
             yield sse({"match": match_evt})
-            if email:
+            # The hero chat posts no email, so a visitor who opted in on this session
+            # ("Remember me": email + Terms) chatted with none, and no remedy email ever
+            # queued; only GHL's free-course welcome went out (reproduced on prod
+            # 2026-10-07). The session's consented email addresses the queue ONLY. It is
+            # not used for personal context, the ally or logs, so on a shared browser the
+            # next person's chat never carries the first person's intake.
+            # Address: a portal sign-in, else this browser's own opt-in. Never the email
+            # in the request body: anyone can type any address there. Only the sign-in
+            # proves it; an opt-in address waits for its owner to click a confirmation
+            # link first (Glen, 2026-10-07: "confirm first").
+            _signed_in = ((auth_user or {}).get("email") or "").strip().lower()
+            _to = _signed_in or _consented_session_email(session_id)
+            _proven = bool(_signed_in)
+            if _to:
                 try:
-                    _email_remedy_match_once(email, name, session_id, match_evt)
+                    # The greeting name only for a signed-in client: an opt-in name is typed
+                    # by whoever is at the keyboard and could reach someone else's inbox.
+                    _email_remedy_match_once(_to, name if _proven else "", session_id,
+                                             match_evt, proven=_proven)
                 except Exception as e:
-                    print(f"[match] result email failed for {email}: {e!r}", flush=True)
+                    print(f"[match] result email failed: {type(e).__name__}", flush=True)
 
         try:
             _q_texts = [m.get("content", "") for m in (history or []) if m.get("role") == "user"]

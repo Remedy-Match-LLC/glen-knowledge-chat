@@ -28,8 +28,9 @@ def test_match_email_is_idempotent(monkeypatch, tmp_path):
              "why": "It matches the pattern you described.",
              "product_url": "/begin/product/trauma-relief-in-terrain-restore"}
     assert appmod._email_remedy_match_once(
-        "maria@example.com", "Maria", "session-1", match)
-    appmod._email_remedy_match_once("maria@example.com", "Maria", "session-1", match)
+        "maria@example.com", "Maria", "session-1", match, proven=True)
+    appmod._email_remedy_match_once("maria@example.com", "Maria", "session-1", match,
+                                    proven=True)
     assert sent == []                              # nothing mailed from inside the chat
     later = datetime.now(timezone.utc) + timedelta(hours=1)
     with db.connect(appmod.LOG_DB) as cx:
