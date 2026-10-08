@@ -13332,6 +13332,10 @@
    "name": "Zinc Syntropy",
    "price_cents": 7000,
    "pinecone_title": "Zinc Syntropy",
+   "intro": "Zinc is a cofactor for about 2,000 enzymes, more than any other mineral.\n\nYour body relies on it for immunity, wound healing, and the special senses: vision, hearing, taste and smell.\n\nLow zinc can show up as a craving for salty and spicy foods.\n\nZinc Syntropy combines three forms of zinc: zinc L-carnosine, zinc bisglycinate and zinc citrate.\n\nTogether they supply 21 mg of zinc in each capsule.\n\nL-carnosine adds antioxidant support, and mixed tocopherols bring the whole vitamin E family.\n\nA small amount of copper (1.5 mg) keeps zinc and copper in balance, because zinc taken alone over time can lower copper.\n\nRiboflavin 5-phosphate and vitamin D3 complete the formula.\n\nPhytates in grains bind zinc and reduce how much the body absorbs, so a grain-based diet can fall short even when intake looks adequate.",
+   "copy_pinned": [
+    "intro"
+   ],
    "aliases": [
     "Zinc Synergy"
    ],
