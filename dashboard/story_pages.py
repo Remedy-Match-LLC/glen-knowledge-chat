@@ -24,6 +24,8 @@ import hashlib
 import json
 import re
 
+from dashboard import db as _db
+
 STATES = ("draft", "checked", "giver_approved", "published", "withdrawn")
 
 # Story slug: lowercase words joined by single hyphens. No dots, so it can never be
@@ -276,28 +278,45 @@ def _row_to_page(row):
     return page
 
 
+def _read(cx, sql, params=(), *, one=False):
+    """A read that never writes. The tables are created at app startup (and by
+    create()); a missing table reads as empty instead of running DDL per request."""
+    try:
+        cur = cx.execute(sql, params)
+        return cur.fetchone() if one else cur.fetchall()
+    except _db.OperationalError:
+        try:
+            cx.rollback()   # clear an aborted Postgres transaction
+        except Exception:  # noqa: BLE001
+            pass
+        return None if one else []
+
+
 def get(cx, slug):
-    init_table(cx)
-    row = cx.execute(
-        f"SELECT {', '.join(_COLS)} FROM story_pages WHERE story_slug=?", (slug or "",)
-    ).fetchone()
+    row = _read(cx, f"SELECT {', '.join(_COLS)} FROM story_pages WHERE story_slug=?",
+                (slug or "",), one=True)
     return _row_to_page(row) if row else None
 
 
 def list_all(cx):
-    init_table(cx)
-    rows = cx.execute(
-        f"SELECT {', '.join(_COLS)} FROM story_pages ORDER BY updated_at DESC").fetchall()
+    rows = _read(cx, f"SELECT {', '.join(_COLS)} FROM story_pages ORDER BY updated_at DESC")
     return [_row_to_page(r) for r in rows]
 
 
 def list_published(cx):
     """Published pages only, newest first."""
-    init_table(cx)
-    rows = cx.execute(
-        f"SELECT {', '.join(_COLS)} FROM story_pages WHERE state='published' "
-        "ORDER BY published_at DESC").fetchall()
+    rows = _read(cx, f"SELECT {', '.join(_COLS)} FROM story_pages WHERE state='published' "
+                 "ORDER BY published_at DESC")
     return [_row_to_page(r) for r in rows]
+
+
+def ref_is_approved(cx, ref):
+    """True when `ref` is an approved affiliate slug. Read only."""
+    if not valid_ref_slug(ref or ""):
+        return False
+    row = _read(cx, "SELECT 1 FROM affiliate_signups WHERE slug=? AND status='approved'",
+                (ref,), one=True)
+    return row is not None
 
 
 def is_public(page):
@@ -498,17 +517,31 @@ def hash_session(session_id):
     return hashlib.sha256(raw).hexdigest()[:32]
 
 
+# Clicks recorded per story, per target path, per UTC day, at most. The session is
+# an anonymous cookie the browser holds, and there is no server-side list of real
+# sessions to check it against, so a script inventing cookies could otherwise add
+# rows without limit. Past the cap the day's count stays at the cap.
+MAX_CLICKS_PER_DAY = 500
+
+
 def record_click(cx, story_slug, target_path, session_hash):
-    """Count one click per (story, target, session). Returns True if it was new."""
-    init_table(cx)
+    """Count one click per (story, target, session), at most MAX_CLICKS_PER_DAY per
+    story and target per UTC day. Returns True if a row was written. Writes nothing
+    otherwise. The table is created at startup, not here."""
     if not valid_slug(story_slug) or not session_hash:
         return False
     target = (target_path or "")[:TARGET_PATH_MAX]
     if not target.startswith("/"):
         return False
+    now = _now()
+    day = now[:10]
+    row = _read(cx, "SELECT COUNT(*) FROM story_clicks WHERE story_slug=? AND target_path=? "
+                "AND clicked_at >= ?", (story_slug, target, day), one=True)
+    if row is not None and int(row[0]) >= MAX_CLICKS_PER_DAY:
+        return False
     cur = cx.execute(
         "INSERT OR IGNORE INTO story_clicks (story_slug, target_path, session_hash, clicked_at) "
-        "VALUES (?, ?, ?, ?)", (story_slug, target, session_hash, _now()))
+        "VALUES (?, ?, ?, ?)", (story_slug, target, session_hash, now))
     n = cur.rowcount
     cx.commit()
     return n == 1
@@ -516,8 +549,6 @@ def record_click(cx, story_slug, target_path, session_hash):
 
 def click_counts(cx):
     """Unique clicks per story and target, for the console."""
-    init_table(cx)
-    rows = cx.execute(
-        "SELECT story_slug, target_path, COUNT(*) FROM story_clicks "
-        "GROUP BY story_slug, target_path ORDER BY story_slug, target_path").fetchall()
+    rows = _read(cx, "SELECT story_slug, target_path, COUNT(*) FROM story_clicks "
+                 "GROUP BY story_slug, target_path ORDER BY story_slug, target_path")
     return [{"story_slug": r[0], "target_path": r[1], "clicks": int(r[2])} for r in rows]

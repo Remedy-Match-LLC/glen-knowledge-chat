@@ -57,6 +57,8 @@ def main(argv=None):
     ap.add_argument("json_file")
     ap.add_argument("--preview", action="store_true",
                     help="add the console's not-published banner and hash")
+    ap.add_argument("--ref-approved", action="store_true",
+                    help="treat ref_slug as an approved affiliate, so links carry ?ref=")
     args = ap.parse_args(argv)
     data = json.loads(Path(args.json_file).read_text(encoding="utf-8"))
     try:
@@ -64,8 +66,8 @@ def main(argv=None):
     except _sp.StoryError as e:
         print(f"refused: {e}", file=sys.stderr)
         return 2
-    html = (_sr.render_preview_html(page, testimonial=None) if args.preview
-            else _sr.render_page_html(page))
+    html = (_sr.render_preview_html(page, testimonial=None, ref_approved=args.ref_approved)
+            if args.preview else _sr.render_page_html(page, ref_approved=args.ref_approved))
     sys.stdout.write(html)
     return 0
 

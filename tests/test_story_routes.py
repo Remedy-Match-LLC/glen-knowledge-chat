@@ -462,3 +462,82 @@ def test_ref_slug_pattern_matches_app():
     a = _load_app()
     from dashboard import story_pages as sp
     assert sp.REF_SLUG_RE.pattern == a._REF_SLUG_RE.pattern
+
+
+# ── review round 3 ───────────────────────────────────────────────────────────
+
+def test_route_renders_ref_only_for_an_approved_affiliate(env):
+    _to(env, "published", ref_slug="jane")
+    body = env.client.get("/stories/jane-doe").get_data(as_text=True)
+    assert "/begin/quiz?ref=jane&amp;story=jane-doe" in body
+    c = sqlite3.connect(env.db_path)
+    c.execute("UPDATE affiliate_signups SET status='pending' WHERE slug='jane'")
+    c.commit()
+    c.close()
+    body = env.client.get("/stories/jane-doe").get_data(as_text=True)
+    assert 'href="/begin/quiz?story=jane-doe"' in body and "ref=jane" not in body
+    prev = env.client.get("/console/stories/jane-doe/preview", headers=env.glen).get_data(as_text=True)
+    assert "ref=jane&amp;" not in prev and "not an approved affiliate" in prev
+
+
+class _CountingLock:
+    def __init__(self):
+        self.acquired = 0
+
+    def __enter__(self):
+        self.acquired += 1
+        return self
+
+    def __exit__(self, *a):
+        return False
+
+
+def _run_hook(env, monkeypatch, url):
+    """Call the hook directly and record every SQL statement it runs and every
+    acquisition of the global DB lock."""
+    import dashboard.db as dbmod
+    from flask import Response
+    stmts = []
+    real_connect = dbmod.connect
+
+    def tracing(path, **kw):
+        c = real_connect(path, **kw)
+        c.set_trace_callback(stmts.append)
+        return c
+    monkeypatch.setattr(dbmod, "connect", tracing)
+    lock = _CountingLock()
+    monkeypatch.setattr(env.app, "_db_lock", lock)
+    with env.app.app.test_request_context(url, headers={"Cookie": "amg_session=sess-x",
+                                                            "User-Agent": "Mozilla/5.0"}):
+        env.app._story_click_capture(Response("x"))
+    writes = [s for s in stmts if s.lstrip().upper().startswith(("CREATE", "INSERT", "UPDATE",
+                                                                 "DELETE", "COMMIT"))]
+    return writes, lock.acquired
+
+
+def test_hook_without_a_click_runs_no_ddl_no_write_no_lock(env, monkeypatch):
+    _to(env, "published")
+    writes, locks = _run_hook(env, monkeypatch, "/begin/explore?story=jane-doe")
+    assert writes == [] and locks == 0
+    writes, locks = _run_hook(env, monkeypatch, "/begin/quiz?story=no-such-story")
+    assert writes == [] and locks == 0
+
+
+def test_hook_with_a_click_writes_once_under_the_lock(env, monkeypatch):
+    _to(env, "published")
+    writes, locks = _run_hook(env, monkeypatch, "/begin/quiz?story=jane-doe")
+    assert locks == 1
+    assert [w for w in writes if w.lstrip().upper().startswith("CREATE")] == []
+    assert any(w.lstrip().upper().startswith("INSERT") for w in writes)
+
+
+def test_story_link_strips_rm_ref_set_from_a_non_ref_source(env, monkeypatch):
+    """/sample/<slug> sets rm_ref from its PATH, with no ?ref= at all. On a ?story=
+    request that cookie is removed too: only the story's own approved ref credits."""
+    monkeypatch.setenv("PUBLIC_SURFACE_ENABLED", "true")
+    _to(env, "published", ref_slug="jane")
+    _add_affiliate(env, "other-aff")
+    r = env.app.app.test_client().get("/sample/other-aff")
+    assert _rm_ref(r) == ["rm_ref=other-aff"]                 # the handler does set it
+    r = env.app.app.test_client().get("/sample/other-aff?story=jane-doe")
+    assert _rm_ref(r) == []

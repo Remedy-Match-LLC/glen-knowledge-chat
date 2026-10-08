@@ -4,6 +4,7 @@ Pure-module tests: they do not import app.py, so they boot no Flask app and send
 no email. Route tests live in tests/test_story_routes.py.
 """
 import json
+import re
 import sqlite3
 import subprocess
 import sys
@@ -379,10 +380,25 @@ def test_invalid_ref_slug_dropped_at_render(bad):
         "/begin/product/x?story=jane-doe"
 
 
-def test_rendered_page_links_carry_ref_and_story(cx):
+def test_rendered_page_links_carry_ref_only_when_approved(cx):
     p = _publish(cx, ref_slug="jane")
-    out = sr.render_page_html(p)
+    out = sr.render_page_html(p, ref_approved=True)
     assert 'href="/begin/product/neuro-magnesium?ref=jane&amp;story=jane-doe"' in out
+    for out in (sr.render_page_html(p), sr.render_page_html(p, ref_approved=False),
+                sr.render_preview_html(p)):
+        assert 'href="/begin/product/neuro-magnesium?story=jane-doe"' in out
+        assert "ref=jane" not in out
+
+
+def test_ref_is_approved_reads_affiliate_signups(cx):
+    assert sp.ref_is_approved(cx, "jane") is False          # no table: not approved
+    cx.execute("CREATE TABLE affiliate_signups (slug TEXT, status TEXT)")
+    cx.execute("INSERT INTO affiliate_signups VALUES ('jane', 'approved'), ('pend', 'pending')")
+    cx.commit()
+    assert sp.ref_is_approved(cx, "jane") is True
+    assert sp.ref_is_approved(cx, "pend") is False
+    assert sp.ref_is_approved(cx, "nobody") is False
+    assert sp.ref_is_approved(cx, "bad slug!") is False
 
 
 def test_preview_marked_not_published_and_noindex(cx):
@@ -410,7 +426,10 @@ def test_dry_run_script_renders_from_json(tmp_path):
     out = subprocess.run([sys.executable, str(REPO / "scripts" / "story_dry_run.py"), str(f)],
                          capture_output=True, text=True, check=True).stdout
     assert "Jane Doe, Teacher" in out and sr.FDA_STATEMENT in out
-    assert "?ref=jane&amp;story=jane-doe" in out
+    assert "?story=jane-doe" in out and "ref=jane" not in out     # unapproved by default
+    approved = subprocess.run([sys.executable, str(REPO / "scripts" / "story_dry_run.py"), str(f),
+                               "--ref-approved"], capture_output=True, text=True, check=True).stdout
+    assert "?ref=jane&amp;story=jane-doe" in approved
     prev = subprocess.run([sys.executable, str(REPO / "scripts" / "story_dry_run.py"), str(f),
                            "--preview"], capture_output=True, text=True, check=True).stdout
     assert "not published" in prev
@@ -553,3 +572,88 @@ def test_stale_edit_refused(cx):
         sp.update(cx, "jane-doe", expected_hash=loaded, name_line="Jane Doe, Nurse")
     assert e.value.code == "conflict"
     assert sp.get(cx, "jane-doe")["name_line"] == "Jane Doe, Teacher"
+
+
+# ── review round 3 ───────────────────────────────────────────────────────────
+
+def _inject_before_write(monkeypatch, cx, action):
+    """Run `action` inside _require_consent, which every step calls after its read
+    and before its compare-and-set write: a concurrent change in that window."""
+    real = sp._require_consent
+
+    def racing(c, page):
+        real(c, page)
+        action()
+    monkeypatch.setattr(sp, "_require_consent", racing)
+
+
+@pytest.mark.parametrize("step", [1, 2, 3])
+@pytest.mark.parametrize("race", ["withdraw", "moved_elsewhere"])
+def test_step_refuses_a_state_change_between_read_and_write(cx, monkeypatch, step, race):
+    """The SQL state clause is the only guard against this race: content and consent
+    are unchanged, so only state differs between the read and the write."""
+    p = _draft(cx)
+    if step >= 2:
+        p = sp.mark_checked(cx, "jane-doe", by="m", note="ok", content_hash=p["current_hash"])
+    if step == 3:
+        p = sp.mark_giver_approved(cx, "jane-doe", by="r", consent_ref="c",
+                                   content_hash=p["content_hash"])
+    before = p["state"]
+    if race == "withdraw":
+        def action():
+            sp.withdraw(cx, "jane-doe", by="rae")
+        expect = "withdrawn"
+    else:
+        # A different state the row could be in when the write lands.
+        other = {1: "checked", 2: "giver_approved", 3: "published"}[step]
+        def action():
+            cx.execute("UPDATE story_pages SET state=? WHERE story_slug='jane-doe'", (other,))
+            cx.commit()
+        expect = other
+    _inject_before_write(monkeypatch, cx, action)
+    h = p["current_hash"] if step == 1 else p["content_hash"]
+    with pytest.raises(sp.StoryError) as e:
+        if step == 1:
+            sp.mark_checked(cx, "jane-doe", by="m", note="ok", content_hash=h)
+        elif step == 2:
+            sp.mark_giver_approved(cx, "jane-doe", by="r", consent_ref="c", content_hash=h)
+        else:
+            sp.mark_published(cx, "jane-doe", by="glen", content_hash=h)
+    assert e.value.code == "conflict"
+    after = sp.get(cx, "jane-doe")
+    assert after["state"] == expect != before
+    # No step stamp from the refused write landed.
+    stamp = {1: "compliance_at", 2: "giver_approved_at", 3: "published_at"}[step]
+    if race == "withdraw":
+        assert after[stamp] == p[stamp]
+
+
+def test_click_cap_per_story_path_day(cx, monkeypatch):
+    monkeypatch.setattr(sp, "MAX_CLICKS_PER_DAY", 3)
+    got = [sp.record_click(cx, "jane-doe", "/begin/quiz", sp.hash_session(f"s{i}"))
+           for i in range(6)]
+    assert got == [True, True, True, False, False, False]
+    assert sp.record_click(cx, "jane-doe", "/begin/product/x", sp.hash_session("s9")) is True
+    n = cx.execute("SELECT COUNT(*) FROM story_clicks WHERE target_path='/begin/quiz'").fetchone()[0]
+    assert n == 3
+
+
+def test_click_cap_is_per_day(cx, monkeypatch):
+    monkeypatch.setattr(sp, "MAX_CLICKS_PER_DAY", 1)
+    cx.execute("INSERT INTO story_clicks (story_slug, target_path, session_hash, clicked_at) "
+               "VALUES ('jane-doe', '/begin/quiz', 'old', '2020-01-01T00:00:00+00:00')")
+    cx.commit()
+    assert sp.record_click(cx, "jane-doe", "/begin/quiz", sp.hash_session("new")) is True
+
+
+def test_reads_run_no_ddl_and_no_writes(tmp_path):
+    """get/list/click_counts/ref_is_approved never CREATE or write, even with the
+    tables missing; they read as empty."""
+    c = sqlite3.connect(str(tmp_path / "empty.db"))
+    stmts = []
+    c.set_trace_callback(stmts.append)
+    assert sp.get(c, "jane-doe") is None
+    assert sp.list_all(c) == [] and sp.list_published(c) == []
+    assert sp.click_counts(c) == [] and sp.ref_is_approved(c, "jane") is False
+    assert not [x for x in stmts if re.match(r"\s*(CREATE|INSERT|UPDATE|DELETE)", x, re.I)]
+    assert c.execute("SELECT name FROM sqlite_master").fetchall() == []

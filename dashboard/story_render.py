@@ -82,10 +82,11 @@ def _document(title, meta_desc, body_inner, *, noindex=False, banner=""):
     )
 
 
-def _page_body(page):
+def _page_body(page, ref_approved):
     content = page.get("content") or {}
     slug = page.get("story_slug") or page.get("slug") or ""
-    ref = page.get("ref_slug") or ""
+    # ?ref= only for an approved affiliate. Otherwise the link carries ?story= alone.
+    ref = (page.get("ref_slug") or "") if ref_approved else ""
     parts = ['<main><p class="story-kicker">A story</p>',
              f"<h1>{_esc(page.get('name_line'))}</h1>"]
     photo = content.get("photo")
@@ -112,13 +113,13 @@ def _title(page):
     return f"{page.get('name_line') or 'A story'} · Stories"
 
 
-def render_page_html(page):
+def render_page_html(page, *, ref_approved=False):
     """The public page. Callers must check story_pages.is_public first."""
     return _document(_title(page), f"A story shared by {page.get('name_line') or ''}.",
-                     _page_body(page))
+                     _page_body(page, ref_approved))
 
 
-def render_preview_html(page, *, testimonial=None):
+def render_preview_html(page, *, testimonial=None, ref_approved=False):
     """Console preview of a page in any state. Marked not published, never indexed."""
     state = page.get("state") or "draft"
     banner = ('<div class="preview-banner">Preview, not published'
@@ -129,7 +130,9 @@ def render_preview_html(page, *, testimonial=None):
     meta = [f"State: <code>{_esc(state)}</code>",
             f"Content hash: <code>{_esc(page.get('current_hash'))}</code>",
             f"Hash at last step: <code>{_esc(page.get('content_hash') or 'none')}</code>",
-            f"Ref slug: <code>{_esc(page.get('ref_slug') or 'none')}</code>",
+            f"Ref slug: <code>{_esc(page.get('ref_slug') or 'none')}</code>"
+            + (" (approved affiliate, links carry it)" if ref_approved and page.get("ref_slug")
+               else " (not an approved affiliate, links omit it)" if page.get("ref_slug") else ""),
             f"Testimonial id: <code>{_esc(page.get('testimonial_id'))}</code>"]
     if testimonial:
         body = testimonial.get("body") or ""
@@ -144,7 +147,8 @@ def render_preview_html(page, *, testimonial=None):
                        ("Step 3", "published_at")):
         meta.append(f"{label}: <code>{_esc(page.get(key) or 'not done')}</code>")
     banner += '<div class="preview-meta">' + "<br>".join(meta) + "</div>"
-    return _document(_title(page), "", _page_body(page), noindex=True, banner=banner)
+    return _document(_title(page), "", _page_body(page, ref_approved), noindex=True,
+                     banner=banner)
 
 
 def render_index_html(pages):

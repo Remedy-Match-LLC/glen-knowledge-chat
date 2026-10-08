@@ -10625,9 +10625,10 @@ def story_page(slug):
     with _db_lock, db.connect(LOG_DB) as cx:
         page = _sp.get(cx, slug)
         ok = bool(page) and _sp.servable(cx, page)
+        ref_ok = ok and _sp.ref_is_approved(cx, page.get("ref_slug") or "")
     if not ok:
         return ("Not found", 404)
-    return Response(_sr.render_page_html(page), mimetype="text/html")
+    return Response(_sr.render_page_html(page, ref_approved=ref_ok), mimetype="text/html")
 
 
 def _story_staff_actor():
@@ -10659,9 +10660,11 @@ def console_story_preview(slug):
     with _db_lock, db.connect(LOG_DB) as cx:
         page = _sp.get(cx, slug)
         testimonial = _sp.get_testimonial(cx, page["testimonial_id"]) if page else None
+        ref_ok = bool(page) and _sp.ref_is_approved(cx, page.get("ref_slug") or "")
     if not page:
         return ("Not found", 404)
-    resp = Response(_sr.render_preview_html(page, testimonial=testimonial), mimetype="text/html")
+    resp = Response(_sr.render_preview_html(page, testimonial=testimonial, ref_approved=ref_ok),
+                    mimetype="text/html")
     resp.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
     resp.headers["X-Robots-Tag"] = "noindex, nofollow"
     return resp
@@ -10706,36 +10709,28 @@ def _story_strip_cookie(resp, name):
     return len(cookies) - len(keep)
 
 
-def _story_ref_is_approved(cx, ref):
-    try:
-        return cx.execute(
-            "SELECT 1 FROM affiliate_signups WHERE slug=? AND status='approved'",
-            (ref,)).fetchone() is not None
-    except Exception:  # noqa: BLE001 - no table means no credit
-        try:
-            cx.rollback()   # clear an aborted Postgres transaction
-        except Exception:  # noqa: BLE001
-            pass
-        return False
-
-
 @app.after_request
 def _story_click_capture(resp):
     """Clicks and referral credit for links on story pages. Acts only when the request
     carries ?story= and STORIES_ENABLED is on. Never breaks the response.
 
-    Referral: a ?ref= on a story link credits only that story's own ref slug, and
-    only when it is an approved affiliate. Any other ?ref= on a ?story= request is
-    not allowed to set or overwrite rm_ref, whichever handler tried to: its
-    Set-Cookie is removed here. A matching ref is persisted through the shared
-    first-touch helper when the page itself did not already set it.
+    Referral: on a ?story= request, rm_ref may be set only to that story's own ref
+    slug, and only when it is an approved affiliate. Any other rm_ref Set-Cookie on
+    the response is removed, whichever handler set it and from whichever parameter
+    (?ref=, ?aff=, ?a=, utm). The browser capture scripts (static/ref-capture.js and
+    the copy in static/index.html) do nothing on a ?story= URL, so this hook is the
+    only path that credits a story link. A matching ref goes through the shared
+    first-touch helper, so an existing attribution is never overwritten.
 
     Click: recorded only when the path is EXACTLY one of that published story's
     stored link paths, the response succeeded, the caller is not a bot, and the
     visitor already has an amg_session cookie. No session is ever created here.
     The row holds the story slug, that stored path, the time and a hash of the
     session. Nothing from the query string is stored. One row per (story, path,
-    session hash), so the table is bounded by real visitors times real links."""
+    session hash), capped per story and path per day (story_pages.MAX_CLICKS_PER_DAY).
+
+    Cost: reads only, with no DDL (the tables are created at startup). The global
+    DB lock is taken only for the one write, when a click is actually recorded."""
     if "story" not in request.args:
         return resp
     try:
@@ -10745,27 +10740,28 @@ def _story_click_capture(resp):
         slug = (request.args.get("story") or "").strip().lower()
         ref = (request.args.get("ref") or "").strip()
         page = None
-        with _db_lock, db.connect(LOG_DB) as cx:
+        credit = False
+        record = False
+        path = request.path or ""
+        session = (request.cookies.get("amg_session") or "").strip()
+        with db.connect(LOG_DB) as cx:
             if _sp.valid_slug(slug):
                 page = _sp.get(cx, slug)
                 if page and not _sp.servable(cx, page):
                     page = None
             own_ref = (page or {}).get("ref_slug") or ""
-            credit = bool(ref and own_ref and ref == own_ref and _REF_SLUG_RE.match(ref)
-                          and _story_ref_is_approved(cx, ref))
-            if ref and not credit:
-                _story_strip_cookie(resp, "rm_ref")
-
-            path = request.path or ""
-            link_paths = {(ln or {}).get("path") for ln in
-                          ((page or {}).get("content") or {}).get("links") or []
-                          if isinstance(ln, dict)}
-            session = (request.cookies.get("amg_session") or "").strip()
-            if (page and request.method == "GET" and resp.status_code < 400
-                    and path in link_paths and session):
-                from dashboard import store_arrivals as _sa
-                if not _sa.is_bot(request.headers.get("User-Agent", "")):
-                    _sp.record_click(cx, slug, path, _sp.hash_session(session))
+            credit = bool(ref and own_ref and ref == own_ref and _sp.ref_is_approved(cx, ref))
+            if page and request.method == "GET" and resp.status_code < 400 and session:
+                link_paths = {ln.get("path") for ln in (page.get("content") or {}).get("links") or []
+                              if isinstance(ln, dict)}
+                if path in link_paths:
+                    from dashboard import store_arrivals as _sa
+                    record = not _sa.is_bot(request.headers.get("User-Agent", ""))
+        if not credit:
+            _story_strip_cookie(resp, "rm_ref")
+        if record:
+            with _db_lock, db.connect(LOG_DB) as cx:
+                _sp.record_click(cx, slug, path, _sp.hash_session(session))
         if credit and not _story_set_cookie_value(resp, "rm_ref"):
             _persist_ref_attribution(resp, request, ref)
     except Exception as e:  # noqa: BLE001 - counting must never break the page
@@ -56025,8 +56021,13 @@ _mpa.configure(client=_cl, send=_inbox.send_email, strip=_strip_dash,
                base_url=PUBLIC_BASE_URL, retriever=_mentor_retriever)
 
 # ── Story-page console actions (create / edit / three-step gate / withdraw) ──
-from dashboard import story_page_actions as _spa
-_spa.register()
+# Tables are created here, at startup, so the public routes and the click hook only
+# read (and write only when a click is recorded).
+from dashboard import story_page_actions as _stpa
+from dashboard import story_pages as _stp_store
+with db.connect(LOG_DB) as _stp_cx:
+    _stp_store.init_table(_stp_cx)
+_stpa.register()
 
 # ── Begin #4a: Biofield reveal console actions (edit / approve + magic link) ──
 from dashboard import biofield_reveal_actions as _bra
