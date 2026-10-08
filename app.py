@@ -10592,6 +10592,191 @@ def mentor_page_request(slug):
     return jsonify({"ok": True, "state": "preparing"})
 
 
+# ── Story pages (/stories): published giver stories ─────────────────────────
+# Spec: vault platform/plans/stories-phase-1-spec.md (Glen approved 2026-10-08).
+# Off by default. Read live, not at import, so a Doppler change on redeploy and a
+# test's monkeypatch both take effect. When off, all three public routes 404.
+def _stories_enabled():
+    return os.environ.get("STORIES_ENABLED", "").strip().lower() in ("1", "true", "yes", "on")
+
+
+@app.route("/stories")
+def stories_index():
+    from dashboard import story_pages as _sp, story_render as _sr
+    if not _stories_enabled():
+        return ("Not found", 404)
+    with _db_lock, db.connect(LOG_DB) as cx:
+        rows = _sp.list_servable(cx)
+    return Response(_sr.render_index_html(rows), mimetype="text/html")
+
+
+@app.route("/stories/sitemap.xml")
+def stories_sitemap():
+    from dashboard import story_pages as _sp, story_render as _sr
+    if not _stories_enabled():
+        return ("Not found", 404)
+    with _db_lock, db.connect(LOG_DB) as cx:
+        rows = _sp.list_servable(cx)
+    return Response(_sr.render_sitemap_xml(rows, PUBLIC_BASE_URL), mimetype="application/xml")
+
+
+@app.route("/stories/<slug>")
+def story_page(slug):
+    """A published story. Every other state, and every unknown slug, is a 404, so a
+    draft never leaks."""
+    from dashboard import story_pages as _sp, story_render as _sr
+    if not _stories_enabled():
+        return ("Not found", 404)
+    slug = (slug or "").strip().lower()
+    if not _sp.valid_slug(slug):
+        return ("Not found", 404)
+    with _db_lock, db.connect(LOG_DB) as cx:
+        page = _sp.get(cx, slug)
+        ok = bool(page) and _sp.servable(cx, page)
+        ref_ok = ok and _sp.ref_is_approved(cx, page.get("ref_slug") or "")
+    if not ok:
+        return ("Not found", 404)
+    return Response(_sr.render_page_html(page, ref_approved=ref_ok), mimetype="text/html")
+
+
+def _story_staff_actor():
+    """The console actor for story-page console routes, or None. Fails closed: an
+    unset CONSOLE_SECRET admits nobody here (resolve_actor needs a real match)."""
+    actor = _bos_actor()
+    if actor is None or actor.role not in (_bos_rbac.OWNER, _bos_rbac.OPS):
+        return None
+    return actor
+
+
+@app.route("/console/stories")
+def console_stories_page():
+    """Console list of story pages with the gate buttons. The page holds no data;
+    it reads /api/console/stories, which needs the console key."""
+    resp = send_from_directory(STATIC, "console-stories.html")
+    resp.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+    return resp
+
+
+@app.route("/console/stories/<slug>/preview")
+def console_story_preview(slug):
+    """Preview a story page in any state, marked not published. Console key only.
+    Works with STORIES_ENABLED off, so a page can be reviewed before launch."""
+    from dashboard import story_pages as _sp, story_render as _sr
+    if _story_staff_actor() is None:
+        return ("Unauthorized", 401)
+    slug = (slug or "").strip().lower()
+    with _db_lock, db.connect(LOG_DB) as cx:
+        page = _sp.get(cx, slug)
+        testimonial = _sp.get_testimonial(cx, page["testimonial_id"]) if page else None
+        ref_ok = bool(page) and _sp.ref_is_approved(cx, page.get("ref_slug") or "")
+    if not page:
+        return ("Not found", 404)
+    resp = Response(_sr.render_preview_html(page, testimonial=testimonial, ref_approved=ref_ok),
+                    mimetype="text/html")
+    resp.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+    resp.headers["X-Robots-Tag"] = "noindex, nofollow"
+    return resp
+
+
+@app.route("/api/console/stories", methods=["GET"])
+def api_console_stories_list():
+    """Every story page in any state, with its click counts. Console key only.
+    Gate actions go through POST /api/action/story_page.<step>."""
+    from dashboard import story_pages as _sp
+    if _story_staff_actor() is None:
+        return jsonify({"ok": False, "error": "unauthorized"}), 401
+    with _db_lock, db.connect(LOG_DB) as cx:
+        pages = _sp.list_all(cx)
+        clicks = _sp.click_counts(cx)
+    keep = ("story_slug", "testimonial_id", "name_line", "content", "ref_slug", "state",
+            "compliance_at", "compliance_by", "compliance_note", "giver_approved_at",
+            "giver_approved_by", "giver_consent_ref", "published_at", "published_by",
+            "withdrawn_at", "withdrawn_by", "content_hash", "current_hash", "updated_at")
+    return jsonify({"ok": True, "pages": [{k: p[k] for k in keep} for p in pages],
+                    "clicks": clicks})
+
+
+def _story_set_cookie_value(resp, name):
+    """The value a response is already setting for cookie `name`, or ""."""
+    for h in resp.headers.getlist("Set-Cookie"):
+        head = h.split(";", 1)[0]
+        if head.startswith(name + "="):
+            return head[len(name) + 1:].strip().strip('"')
+    return ""
+
+
+def _story_strip_cookie(resp, name):
+    """Remove every Set-Cookie for `name` from a response. Returns how many."""
+    cookies = resp.headers.getlist("Set-Cookie")
+    keep = [h for h in cookies if not h.split(";", 1)[0].strip().startswith(name + "=")]
+    if len(keep) == len(cookies):
+        return 0
+    resp.headers.remove("Set-Cookie")
+    for h in keep:
+        resp.headers.add("Set-Cookie", h)
+    return len(cookies) - len(keep)
+
+
+@app.after_request
+def _story_click_capture(resp):
+    """Clicks and referral credit for links on story pages. Acts only when the request
+    carries ?story= and STORIES_ENABLED is on. Never breaks the response.
+
+    Referral: on a ?story= request, rm_ref may be set only to that story's own ref
+    slug, and only when it is an approved affiliate. Any other rm_ref Set-Cookie on
+    the response is removed, whichever handler set it and from whichever parameter
+    (?ref=, ?aff=, ?a=, utm). The browser capture scripts (static/ref-capture.js and
+    the copy in static/index.html) do nothing on a ?story= URL, so this hook is the
+    only path that credits a story link. A matching ref goes through the shared
+    first-touch helper, so an existing attribution is never overwritten.
+
+    Click: recorded only when the path is EXACTLY one of that published story's
+    stored link paths, the response succeeded, the caller is not a bot, and the
+    visitor already has an amg_session cookie. No session is ever created here.
+    The row holds the story slug, that stored path, the time and a hash of the
+    session. Nothing from the query string is stored. One row per (story, path,
+    session hash), capped per story and path per day (story_pages.MAX_CLICKS_PER_DAY).
+
+    Cost: reads only, with no DDL (the tables are created at startup). The global
+    DB lock is taken only for the one write, when a click is actually recorded."""
+    if "story" not in request.args:
+        return resp
+    try:
+        if not _stories_enabled():
+            return resp
+        from dashboard import story_pages as _sp
+        slug = (request.args.get("story") or "").strip().lower()
+        ref = (request.args.get("ref") or "").strip()
+        page = None
+        credit = False
+        record = False
+        path = request.path or ""
+        session = (request.cookies.get("amg_session") or "").strip()
+        with db.connect(LOG_DB) as cx:
+            if _sp.valid_slug(slug):
+                page = _sp.get(cx, slug)
+                if page and not _sp.servable(cx, page):
+                    page = None
+            own_ref = (page or {}).get("ref_slug") or ""
+            credit = bool(ref and own_ref and ref == own_ref and _sp.ref_is_approved(cx, ref))
+            if page and request.method == "GET" and resp.status_code < 400 and session:
+                link_paths = {ln.get("path") for ln in (page.get("content") or {}).get("links") or []
+                              if isinstance(ln, dict)}
+                if path in link_paths:
+                    from dashboard import store_arrivals as _sa
+                    record = not _sa.is_bot(request.headers.get("User-Agent", ""))
+        if not credit:
+            _story_strip_cookie(resp, "rm_ref")
+        if record:
+            with _db_lock, db.connect(LOG_DB) as cx:
+                _sp.record_click(cx, slug, path, _sp.hash_session(session))
+        if credit and not _story_set_cookie_value(resp, "rm_ref"):
+            _persist_ref_attribution(resp, request, ref)
+    except Exception as e:  # noqa: BLE001 - counting must never break the page
+        print(f"[story-click] not recorded: {e!r}", flush=True)
+    return resp
+
+
 @app.route("/<key>.txt")
 def indexnow_key_file(key):
     """Serve the IndexNow key-ownership file at /<key>.txt when it matches the
@@ -54624,13 +54809,30 @@ def _role_for_token(token):
     return _bos_rbac.actor_for_scope(row[0]).role
 
 
+def _name_for_token(token):
+    """The workspace user name behind a per-user access token, as _auth reads it
+    (e.g. "rae"), or "" when the token resolves to nobody."""
+    if not token:
+        return ""
+    try:
+        with db.connect(LOG_DB) as cx:
+            row = cx.execute(
+                "SELECT u.name FROM access_tokens t "
+                "JOIN workspace_users u ON u.id = t.user_id "
+                "WHERE t.token = ? AND t.revoked_at IS NULL", (token,)).fetchone()
+    except Exception:
+        return ""
+    return (row[0] or "") if row else ""
+
+
 def _bos_actor():
     """Resolve the calling actor: owner master key (CONSOLE_SECRET) first, then a
-    per-user access token -> its rbac role (Rae=owner, Shaira=va)."""
+    per-user access token -> its rbac role (Rae=owner, Shaira=va), named after its
+    workspace user so the audit trail records a person, not a token prefix."""
     key = _present_console_key()
     return _bos_rbac.resolve_actor(
         key, console_secret=dashboard.CONSOLE_SECRET,
-        token=key, role_for_token=_role_for_token)
+        token=key, role_for_token=_role_for_token, name_for_token=_name_for_token)
 
 
 # Let the legacy require_console_key decorator accept an OWNER-role per-user token
@@ -55830,6 +56032,15 @@ from dashboard import mentor_page_actions as _mpa
 _mpa.register()
 _mpa.configure(client=_cl, send=_inbox.send_email, strip=_strip_dash,
                base_url=PUBLIC_BASE_URL, retriever=_mentor_retriever)
+
+# ── Story-page console actions (create / edit / three-step gate / withdraw) ──
+# Tables are created here, at startup, so the public routes and the click hook only
+# read (and write only when a click is recorded).
+from dashboard import story_page_actions as _stpa
+from dashboard import story_pages as _stp_store
+with db.connect(LOG_DB) as _stp_cx:
+    _stp_store.init_table(_stp_cx)
+_stpa.register()
 
 # ── Begin #4a: Biofield reveal console actions (edit / approve + magic link) ──
 from dashboard import biofield_reveal_actions as _bra

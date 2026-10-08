@@ -1,0 +1,554 @@
+"""Story pages: a published page per giver story, served at /stories/<slug>.
+
+Spec: platform/plans/stories-phase-1-spec.md (vault), approved by Glen 2026-10-08.
+
+A story page points at one `product_reviews` row (kind='testimonial') by id. This
+module READS that row and never writes it.
+
+The publishing gate has three steps, in order, each recorded with who and when:
+
+    draft --compliance--> checked --giver_approve--> giver_approved --publish--> published
+
+Any change to the content, the name line, the ref slug or the testimonial id sends the
+page back to `draft` and clears every step stamp. Each step also takes the hash of the
+content the approver saw. A step refuses when that hash differs from the page as stored,
+and steps 2 and 3 also refuse when the stored hash from the previous step no longer
+matches. Every step is a compare-and-set UPDATE, so two approvers cannot race a stale
+page through.
+
+Works on SQLite and Postgres through dashboard.db: '?' placeholders, no lastrowid,
+INSERT OR IGNORE (translated to ON CONFLICT DO NOTHING on Postgres).
+"""
+import datetime
+import hashlib
+import json
+import re
+
+from dashboard import db as _db
+
+STATES = ("draft", "checked", "giver_approved", "published", "withdrawn")
+
+# Story slug: lowercase words joined by single hyphens. No dots, so it can never be
+# "sitemap.xml", and no slashes.
+SLUG_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
+SLUG_MAX = 80
+# Same pattern as app._REF_SLUG_RE (a test pins the two together). Kept here so this
+# module does not import app.
+REF_SLUG_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
+# A link target is a site-relative path only: no scheme, no host, no query string.
+# The tracking query is added at render time.
+LINK_PATH_RE = re.compile(r"^/(?!/)[A-Za-z0-9/_.\-]*$")
+PHOTO_SRC_RE = re.compile(r"^(?:/static/[A-Za-z0-9/_.\-]+|https://[A-Za-z0-9.\-]+/[A-Za-z0-9/_.\-%]*)$")
+
+STORY_MAX = 20000
+NAME_LINE_MAX = 200
+LABEL_MAX = 200
+LINKS_MAX = 20
+TARGET_PATH_MAX = 200
+
+_COLS = (
+    "story_slug", "testimonial_id", "name_line", "content_json", "ref_slug", "state",
+    "compliance_at", "compliance_by", "compliance_note",
+    "giver_approved_at", "giver_approved_by", "giver_consent_ref",
+    "published_at", "published_by", "withdrawn_at", "withdrawn_by",
+    "content_hash", "created_at", "updated_at",
+)
+_STEP_STAMPS = (
+    "compliance_at", "compliance_by", "compliance_note",
+    "giver_approved_at", "giver_approved_by", "giver_consent_ref",
+    "published_at", "published_by",
+)
+
+
+class StoryError(ValueError):
+    """A refused operation. `code` is a short machine-readable reason."""
+
+    def __init__(self, code, detail=""):
+        super().__init__(f"{code}: {detail}" if detail else code)
+        self.code = code
+        self.detail = detail
+
+
+def _now():
+    return datetime.datetime.now(datetime.timezone.utc).isoformat()
+
+
+def init_table(cx):
+    cx.execute(
+        "CREATE TABLE IF NOT EXISTS story_pages ("
+        "story_slug TEXT PRIMARY KEY, "
+        "testimonial_id INTEGER NOT NULL DEFAULT 0, "
+        "name_line TEXT NOT NULL DEFAULT '', "
+        "content_json TEXT NOT NULL DEFAULT '{}', "
+        "ref_slug TEXT NOT NULL DEFAULT '', "
+        "state TEXT NOT NULL DEFAULT 'draft', "
+        "compliance_at TEXT NOT NULL DEFAULT '', "
+        "compliance_by TEXT NOT NULL DEFAULT '', "
+        "compliance_note TEXT NOT NULL DEFAULT '', "
+        "giver_approved_at TEXT NOT NULL DEFAULT '', "
+        "giver_approved_by TEXT NOT NULL DEFAULT '', "
+        "giver_consent_ref TEXT NOT NULL DEFAULT '', "
+        "published_at TEXT NOT NULL DEFAULT '', "
+        "published_by TEXT NOT NULL DEFAULT '', "
+        "withdrawn_at TEXT NOT NULL DEFAULT '', "
+        "withdrawn_by TEXT NOT NULL DEFAULT '', "
+        "content_hash TEXT NOT NULL DEFAULT '', "
+        "created_at TEXT NOT NULL DEFAULT '', "
+        "updated_at TEXT NOT NULL DEFAULT '')"
+    )
+    cx.execute(
+        "CREATE TABLE IF NOT EXISTS story_clicks ("
+        "id INTEGER PRIMARY KEY AUTOINCREMENT, "
+        "story_slug TEXT NOT NULL, "
+        "target_path TEXT NOT NULL, "
+        "session_hash TEXT NOT NULL, "
+        "clicked_at TEXT NOT NULL, "
+        "UNIQUE(story_slug, target_path, session_hash))"
+    )
+    cx.commit()
+
+
+# ── validation ───────────────────────────────────────────────────────────────
+
+def valid_slug(slug):
+    s = slug or ""
+    return len(s) <= SLUG_MAX and bool(SLUG_RE.match(s))
+
+
+def valid_ref_slug(ref):
+    return bool(REF_SLUG_RE.match(ref or ""))
+
+
+def valid_link_path(path):
+    return bool(LINK_PATH_RE.match(path or ""))
+
+
+def normalize_content(content):
+    """Validate and return the canonical content dict, or raise StoryError.
+
+    Shape: {"story": str, "links": [{"label": str, "path": "/..."}],
+            "photo": {"src": str, "alt": str}  (optional)}
+    The story text is stored exactly as given. Nothing is trimmed inside it.
+    """
+    if isinstance(content, str):
+        try:
+            content = json.loads(content)
+        except ValueError:
+            raise StoryError("bad_content", "content is not JSON")
+    if not isinstance(content, dict):
+        raise StoryError("bad_content", "content must be an object")
+    unknown = set(content) - {"story", "links", "photo"}
+    if unknown:
+        raise StoryError("bad_content", f"unknown keys: {sorted(unknown)}")
+    story = content.get("story")
+    if not isinstance(story, str) or not story.strip():
+        raise StoryError("bad_content", "story text is required")
+    if len(story) > STORY_MAX:
+        raise StoryError("bad_content", "story text is too long")
+    links_in = content.get("links") or []
+    if not isinstance(links_in, list) or len(links_in) > LINKS_MAX:
+        raise StoryError("bad_content", "links must be a list")
+    links = []
+    for ln in links_in:
+        if not isinstance(ln, dict):
+            raise StoryError("bad_content", "each link is an object")
+        label = ln.get("label")
+        path = ln.get("path")
+        if not isinstance(label, str) or not label.strip() or len(label) > LABEL_MAX:
+            raise StoryError("bad_content", "each link needs a label")
+        if not isinstance(path, str) or not valid_link_path(path):
+            raise StoryError("bad_link", f"link path must be a site path like /begin/product/x: {path!r}")
+        links.append({"label": label, "path": path})
+    out = {"story": story, "links": links}
+    photo = content.get("photo")
+    if photo:
+        if not isinstance(photo, dict):
+            raise StoryError("bad_content", "photo must be an object")
+        src = photo.get("src")
+        alt = photo.get("alt") or ""
+        if not isinstance(src, str) or not PHOTO_SRC_RE.match(src):
+            raise StoryError("bad_photo", "photo src must be /static/... or https://")
+        if not isinstance(alt, str):
+            raise StoryError("bad_photo", "photo alt must be text")
+        out["photo"] = {"src": src, "alt": alt}
+    return out
+
+
+def _dump(content):
+    return json.dumps(content, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
+
+
+def compute_hash(content, name_line, ref_slug, testimonial_id):
+    """sha256 over everything an approval covers: the canonical content JSON, the
+    name line, the giver's ref slug and the testimonial row id."""
+    if isinstance(content, str):
+        content = json.loads(content or "{}")
+    try:
+        tid = int(testimonial_id or 0)
+    except (TypeError, ValueError):
+        tid = 0
+    payload = _dump({"content": content, "name_line": name_line or "",
+                     "ref_slug": ref_slug or "", "testimonial_id": tid})
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def default_name_line(full_name):
+    """First name plus last initial: 'Jane Doe' -> 'Jane D.'"""
+    parts = [p for p in (full_name or "").split() if p]
+    if not parts:
+        return ""
+    if len(parts) == 1:
+        return parts[0]
+    return f"{parts[0]} {parts[-1][0].upper()}."
+
+
+# ── testimonial (read only) ──────────────────────────────────────────────────
+
+def get_testimonial(cx, testimonial_id):
+    """Read one product_reviews row. Never writes, and never calls its init_table
+    (which ALTERs the table). Returns None when absent or unreadable."""
+    try:
+        tid = int(testimonial_id)
+    except (TypeError, ValueError):
+        return None
+    try:
+        cur = cx.execute(
+            "SELECT id, kind, name, body, original_body, consent_public, consent_ref, "
+            "compliance_score, status FROM product_reviews WHERE id=?", (tid,))
+        row = cur.fetchone()
+    except Exception:  # noqa: BLE001 - missing table/column reads as "not found"
+        try:
+            cx.rollback()
+        except Exception:  # noqa: BLE001
+            pass
+        return None
+    if not row:
+        return None
+    keys = ("id", "kind", "name", "body", "original_body", "consent_public",
+            "consent_ref", "compliance_score", "status")
+    return {k: row[i] for i, k in enumerate(keys)}
+
+
+# Testimonial statuses that end consent, whatever consent_public says.
+REVOKED_STATUSES = ("rejected", "withdrawn")
+
+
+def consent_ok(t):
+    """True while the testimonial row still carries public consent."""
+    return bool(t) and (t.get("kind") or "") == "testimonial" \
+        and int(t.get("consent_public") or 0) == 1 \
+        and (t.get("status") or "").strip().lower() not in REVOKED_STATUSES
+
+
+# The same rule inside SQL, so a compare-and-set re-checks consent at write time
+# and the testimonial cannot change between the read and the write.
+_CONSENT_SQL = (
+    "EXISTS (SELECT 1 FROM product_reviews r WHERE r.id = story_pages.testimonial_id "
+    "AND r.kind = 'testimonial' AND r.consent_public = 1 "
+    "AND LOWER(COALESCE(r.status, '')) NOT IN ('rejected', 'withdrawn'))"
+)
+
+
+def _require_consent(cx, page):
+    if not consent_ok(get_testimonial(cx, page["testimonial_id"])):
+        raise StoryError("no_consent", "the testimonial has no public consent")
+
+
+def _require_testimonial(cx, testimonial_id):
+    t = get_testimonial(cx, testimonial_id)
+    if not t or (t.get("kind") or "") != "testimonial":
+        raise StoryError("testimonial_not_found", f"no testimonial row {testimonial_id!r}")
+    return t
+
+
+# ── read ─────────────────────────────────────────────────────────────────────
+
+def _row_to_page(row):
+    page = {k: row[i] for i, k in enumerate(_COLS)}
+    for k in _COLS:
+        if page[k] is None:
+            page[k] = 0 if k == "testimonial_id" else ""
+    try:
+        page["content"] = json.loads(page["content_json"] or "{}")
+    except ValueError:
+        page["content"] = {}
+    page["slug"] = page["story_slug"]
+    page["current_hash"] = compute_hash(page["content"], page["name_line"],
+                                        page["ref_slug"], page["testimonial_id"])
+    return page
+
+
+def _read(cx, sql, params=(), *, one=False):
+    """A read that never writes. The tables are created at app startup (and by
+    create()); a missing table reads as empty instead of running DDL per request."""
+    try:
+        cur = cx.execute(sql, params)
+        return cur.fetchone() if one else cur.fetchall()
+    except _db.OperationalError:
+        try:
+            cx.rollback()   # clear an aborted Postgres transaction
+        except Exception:  # noqa: BLE001
+            pass
+        return None if one else []
+
+
+def get(cx, slug):
+    row = _read(cx, f"SELECT {', '.join(_COLS)} FROM story_pages WHERE story_slug=?",
+                (slug or "",), one=True)
+    return _row_to_page(row) if row else None
+
+
+def list_all(cx):
+    rows = _read(cx, f"SELECT {', '.join(_COLS)} FROM story_pages ORDER BY updated_at DESC")
+    return [_row_to_page(r) for r in rows]
+
+
+def list_published(cx):
+    """Published pages only, newest first."""
+    rows = _read(cx, f"SELECT {', '.join(_COLS)} FROM story_pages WHERE state='published' "
+                 "ORDER BY published_at DESC")
+    return [_row_to_page(r) for r in rows]
+
+
+def ref_is_approved(cx, ref):
+    """True when `ref` is an approved affiliate slug. Read only."""
+    if not valid_ref_slug(ref or ""):
+        return False
+    row = _read(cx, "SELECT 1 FROM affiliate_signups WHERE slug=? AND status='approved'",
+                (ref,), one=True)
+    return row is not None
+
+
+def is_public(page):
+    return bool(page) and page.get("state") == "published"
+
+
+def servable(cx, page):
+    """Published AND its testimonial row is still consented. The public routes use
+    this, so revoking consent on the row takes the page down."""
+    return is_public(page) and consent_ok(get_testimonial(cx, page["testimonial_id"]))
+
+
+def list_servable(cx):
+    return [p for p in list_published(cx) if servable(cx, p)]
+
+
+# ── write ────────────────────────────────────────────────────────────────────
+
+def create(cx, slug, *, testimonial_id, content, name_line="", ref_slug="", by=""):
+    """Create a draft. Refuses an existing slug, a bad slug, or a missing testimonial."""
+    init_table(cx)
+    slug = (slug or "").strip()
+    if not valid_slug(slug):
+        raise StoryError("bad_slug", "lowercase letters, digits and single hyphens")
+    if get(cx, slug):
+        raise StoryError("exists", slug)
+    t = _require_testimonial(cx, testimonial_id)
+    content = normalize_content(content)
+    name_line = (name_line or "").strip() or default_name_line(t.get("name") or "")
+    if not name_line or len(name_line) > NAME_LINE_MAX:
+        raise StoryError("bad_name_line", "a name line is required")
+    ref_slug = (ref_slug or "").strip()
+    if ref_slug and not valid_ref_slug(ref_slug):
+        raise StoryError("bad_ref_slug", ref_slug)
+    now = _now()
+    cx.execute(
+        "INSERT INTO story_pages (story_slug, testimonial_id, name_line, content_json, "
+        "ref_slug, state, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 'draft', ?, ?)",
+        (slug, int(t["id"]), name_line, _dump(content), ref_slug, now, now))
+    cx.commit()
+    return get(cx, slug)
+
+
+_UNSET = object()
+
+
+def update(cx, slug, *, expected_hash, content=_UNSET, name_line=_UNSET, ref_slug=_UNSET,
+           testimonial_id=_UNSET, by=""):
+    """Edit a page. Any real change resets it to draft and clears every step stamp,
+    so it must pass all three steps again. An edit that changes nothing is a no-op.
+
+    `expected_hash` is the hash of the page the editor loaded. A save from a stale
+    copy is refused with `conflict`, so two editors cannot overwrite each other."""
+    page = get(cx, slug)
+    if not page:
+        raise StoryError("not_found", slug)
+    if (expected_hash or "") != page["current_hash"]:
+        raise StoryError("conflict", "the page changed since you loaded it; reload it")
+    new = {
+        "content_json": page["content_json"],
+        "name_line": page["name_line"],
+        "ref_slug": page["ref_slug"],
+        "testimonial_id": page["testimonial_id"],
+    }
+    if content is not _UNSET:
+        new["content_json"] = _dump(normalize_content(content))
+    if name_line is not _UNSET:
+        nl = (name_line or "").strip()
+        if not nl or len(nl) > NAME_LINE_MAX:
+            raise StoryError("bad_name_line", "a name line is required")
+        new["name_line"] = nl
+    if ref_slug is not _UNSET:
+        rs = (ref_slug or "").strip()
+        if rs and not valid_ref_slug(rs):
+            raise StoryError("bad_ref_slug", rs)
+        new["ref_slug"] = rs
+    if testimonial_id is not _UNSET:
+        new["testimonial_id"] = int(_require_testimonial(cx, testimonial_id)["id"])
+    changed = any(new[k] != page[k] for k in new)
+    if not changed:
+        return page
+    clears = ", ".join(f"{c}=''" for c in _STEP_STAMPS)
+    _cas(cx,
+         "UPDATE story_pages SET content_json=?, name_line=?, ref_slug=?, testimonial_id=?, "
+         f"state='draft', content_hash='', {clears}, updated_at=? WHERE {_IDENT_SQL}",
+         (new["content_json"], new["name_line"], new["ref_slug"], new["testimonial_id"],
+          _now()) + _ident(page))
+    return get(cx, slug)
+
+
+# Every compare-and-set names the exact page it read: all four approved fields.
+_IDENT_SQL = ("story_slug=? AND content_json=? AND name_line=? AND ref_slug=? "
+              "AND testimonial_id=?")
+
+
+def _ident(page):
+    return (page["story_slug"], page["content_json"], page["name_line"],
+            page["ref_slug"], int(page["testimonial_id"] or 0))
+
+
+def _cas(cx, sql, params):
+    cur = cx.execute(sql, params)
+    n = cur.rowcount
+    cx.commit()
+    if n != 1:
+        raise StoryError("conflict", "the page changed while this step ran; reload it")
+
+
+def mark_checked(cx, slug, *, by, note, content_hash):
+    """Step 1, compliance. Needs a draft, a note, and the hash of the page reviewed."""
+    page = get(cx, slug)
+    if not page:
+        raise StoryError("not_found", slug)
+    if page["state"] != "draft":
+        raise StoryError("wrong_state", f"step 1 needs draft, page is {page['state']}")
+    if not (by or "").strip():
+        raise StoryError("missing_by", "who ran the compliance check")
+    if not (note or "").strip():
+        raise StoryError("missing_note", "record the compliance result")
+    if content_hash != page["current_hash"]:
+        raise StoryError("hash_mismatch", "the page changed since it was reviewed")
+    _require_consent(cx, page)
+    now = _now()
+    _cas(cx,
+         "UPDATE story_pages SET state='checked', compliance_at=?, compliance_by=?, "
+         "compliance_note=?, content_hash=?, updated_at=? "
+         f"WHERE {_IDENT_SQL} AND state='draft' AND {_CONSENT_SQL}",
+         (now, by.strip(), note.strip(), page["current_hash"], now) + _ident(page))
+    return get(cx, slug)
+
+
+def mark_giver_approved(cx, slug, *, by, consent_ref, content_hash):
+    """Step 2, the giver approves the whole page. Needs a consent reference."""
+    page = get(cx, slug)
+    if not page:
+        raise StoryError("not_found", slug)
+    if page["state"] != "checked":
+        raise StoryError("wrong_state", f"step 2 needs checked, page is {page['state']}")
+    if not (by or "").strip():
+        raise StoryError("missing_by", "who recorded the approval")
+    if not (consent_ref or "").strip():
+        raise StoryError("missing_consent_ref", "the giver's written approval reference")
+    if page["content_hash"] != page["current_hash"]:
+        raise StoryError("hash_mismatch", "the page changed since step 1")
+    if content_hash != page["content_hash"]:
+        raise StoryError("hash_mismatch", "the giver approved a different version")
+    _require_consent(cx, page)
+    now = _now()
+    _cas(cx,
+         "UPDATE story_pages SET state='giver_approved', giver_approved_at=?, "
+         "giver_approved_by=?, giver_consent_ref=?, updated_at=? "
+         f"WHERE {_IDENT_SQL} AND state='checked' AND content_hash=? AND {_CONSENT_SQL}",
+         (now, by.strip(), consent_ref.strip(), now) + _ident(page) + (page["content_hash"],))
+    return get(cx, slug)
+
+
+def mark_published(cx, slug, *, by, content_hash):
+    """Step 3, Glen approves. The owner-only rule is enforced by the console action."""
+    page = get(cx, slug)
+    if not page:
+        raise StoryError("not_found", slug)
+    if page["state"] != "giver_approved":
+        raise StoryError("wrong_state", f"step 3 needs giver_approved, page is {page['state']}")
+    if not (by or "").strip():
+        raise StoryError("missing_by", "who published")
+    if page["content_hash"] != page["current_hash"]:
+        raise StoryError("hash_mismatch", "the page changed since step 2")
+    if content_hash != page["content_hash"]:
+        raise StoryError("hash_mismatch", "this is not the version the giver approved")
+    _require_consent(cx, page)
+    now = _now()
+    _cas(cx,
+         "UPDATE story_pages SET state='published', published_at=?, published_by=?, "
+         f"updated_at=? WHERE {_IDENT_SQL} AND state='giver_approved' AND content_hash=? "
+         f"AND {_CONSENT_SQL}",
+         (now, by.strip(), now) + _ident(page) + (page["content_hash"],))
+    return get(cx, slug)
+
+
+def withdraw(cx, slug, *, by=""):
+    """Take a page down at once. The record and its stamps are kept."""
+    page = get(cx, slug)
+    if not page:
+        raise StoryError("not_found", slug)
+    now = _now()
+    cx.execute(
+        "UPDATE story_pages SET state='withdrawn', withdrawn_at=?, withdrawn_by=?, "
+        "updated_at=? WHERE story_slug=?", (now, (by or "").strip(), now, slug))
+    cx.commit()
+    return get(cx, slug)
+
+
+# ── clicks ───────────────────────────────────────────────────────────────────
+
+def hash_session(session_id):
+    """One-way hash of the anonymous session cookie. Only the hash is stored."""
+    raw = ("story-click:" + (session_id or "")).encode("utf-8")
+    return hashlib.sha256(raw).hexdigest()[:32]
+
+
+# Clicks recorded per story, per target path, per UTC day, at most. The session is
+# an anonymous cookie the browser holds, and there is no server-side list of real
+# sessions to check it against, so a script inventing cookies could otherwise add
+# rows without limit. Past the cap the day's count stays at the cap.
+MAX_CLICKS_PER_DAY = 500
+
+
+def record_click(cx, story_slug, target_path, session_hash):
+    """Count one click per (story, target, session), at most MAX_CLICKS_PER_DAY per
+    story and target per UTC day. Returns True if a row was written. Writes nothing
+    otherwise. The table is created at startup, not here."""
+    if not valid_slug(story_slug) or not session_hash:
+        return False
+    target = (target_path or "")[:TARGET_PATH_MAX]
+    if not target.startswith("/"):
+        return False
+    now = _now()
+    day = now[:10]
+    row = _read(cx, "SELECT COUNT(*) FROM story_clicks WHERE story_slug=? AND target_path=? "
+                "AND clicked_at >= ?", (story_slug, target, day), one=True)
+    if row is not None and int(row[0]) >= MAX_CLICKS_PER_DAY:
+        return False
+    cur = cx.execute(
+        "INSERT OR IGNORE INTO story_clicks (story_slug, target_path, session_hash, clicked_at) "
+        "VALUES (?, ?, ?, ?)", (story_slug, target, session_hash, now))
+    n = cur.rowcount
+    cx.commit()
+    return n == 1
+
+
+def click_counts(cx):
+    """Unique clicks per story and target, for the console."""
+    rows = _read(cx, "SELECT story_slug, target_path, COUNT(*) FROM story_clicks "
+                 "GROUP BY story_slug, target_path ORDER BY story_slug, target_path")
+    return [{"story_slug": r[0], "target_path": r[1], "clicks": int(r[2])} for r in rows]
