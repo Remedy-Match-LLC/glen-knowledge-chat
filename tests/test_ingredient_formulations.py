@@ -60,19 +60,20 @@ def test_the_page_shows_the_note_as_text_not_html():
     assert "note.textContent = ' ' + f.note" in block and "innerHTML" not in block
 
 
-def test_the_atlas_serrapeptase_concept_links_clear_the_way():
+def test_the_atlas_serrapeptase_concept_links_no_product():
+    # It linked Clear the Way until 2026-10-09. The spec 2026-10-08-clear-the-way.md (Glen
+    # "approve", 2026-10-09) removed the link: the concept's summary cites Alzheimer's
+    # inflammation markers, and disease teaching stays apart from the sale.
     for f in ("atlas-concepts.json", "atlas-seed-input.json"):
         raw = open(os.path.join(ROOT, "data", f), encoding="utf-8").read()
         assert "/begin/product/serrapeptase\"" not in raw, f
     concepts = json.load(open(os.path.join(ROOT, "data", "atlas-concepts.json")))["concepts"]
     c = next(c for c in concepts if c["id"] == "serrapeptase")
-    prod = [l for l in c["links"] if l.get("type") == "product"]
-    assert prod == [{"source": "remedymatch", "title": "Clear the Way", "type": "product",
-                     "url": "https://myhealingoasis.com/begin/product/clear-the-way"}]
+    assert [l for l in c["links"] if l.get("type") == "product"] == []
+    assert [l for l in c["links"] if l.get("type") == "video"], "the video links stay"
     seed = json.load(open(os.path.join(ROOT, "data", "atlas-seed-input.json")))["concepts"]
     links = [l for c in seed if (c.get("label") or "") == "Serrapeptase" for l in c.get("links") or []]
-    assert [(l["title"], l["url"]) for l in links if l.get("type") == "product"] == [
-        ("Clear the Way", "https://myhealingoasis.com/begin/product/clear-the-way")]
+    assert [l for l in links if l.get("type") == "product"] == []
 
 
 def test_a_failed_read_is_retried_not_cached(monkeypatch, tmp_path):

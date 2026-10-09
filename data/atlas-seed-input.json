@@ -1416,12 +1416,11 @@
     },
     {
       "id": "5-ways-quot-clear-the-way-quot-naturally-transforms-tissue-h",
-      "label": "5 Ways &quot;Clear the Way&quot; Naturally Transforms Tissue Healing",
+      "label": "Clear the Way",
       "aliases": [
-        "clear the way",
-        "scar tissue formula"
+        "clear the way"
       ],
-      "summary": "Syntropy formula designed to dissolve scar tissue and support tissue healing naturally.",
+      "summary": "Clear the Way supplies serrapeptase, an enzyme first found in a bacterium from the silkworm's gut. It supports the body's natural clearance of fibrin and other non-living proteins, so that fluids and circulation can flow freely.",
       "cluster": "programs-protocols",
       "parent": "programs-protocols",
       "namespaces": [
@@ -5380,14 +5379,7 @@
         "specific-formulations"
       ],
       "disposition": "auto",
-      "links": [
-        {
-          "type": "product",
-          "source": "remedymatch",
-          "url": "https://myhealingoasis.com/begin/product/clear-the-way",
-          "title": "Clear the Way"
-        }
-      ]
+      "links": []
     },
     {
       "id": "tmg",

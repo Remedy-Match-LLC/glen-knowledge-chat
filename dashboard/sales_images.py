@@ -17,9 +17,10 @@ def init_tables(cx):
     cx.commit()
 
 # Products whose page never shows AI-made images. Glen ruled out a blood-vessel picture for
-# Angiostasis (2026-10-08), and the mechanism prompt would draw one. Checked here, inside
+# Angiostasis (2026-10-08), and the mechanism prompt would draw one. Clear the Way carries
+# two approved photos (spec 2026-10-08-clear-the-way). Checked here, inside
 # enqueue and list_pending, so every caller is covered: page view, variations, backfill, scheduler.
-NO_AI_IMAGES = frozenset({"angiostasis"})
+NO_AI_IMAGES = frozenset({"angiostasis", "clear-the-way"})
 
 def ai_images_off(slug):
     return slug in NO_AI_IMAGES

@@ -83,8 +83,7 @@
   },
   {
    "aliases": [
-    "clear the way",
-    "scar tissue formula"
+    "clear the way"
    ],
    "cluster": "programs-protocols",
    "coords": {
@@ -92,7 +91,7 @@
     "y": 0.5358
    },
    "id": "5-ways-quot-clear-the-way-quot-naturally-transforms-tissue-h",
-   "label": "5 Ways &quot;Clear the Way&quot; Naturally Transforms Tissue Healing",
+   "label": "Clear the Way",
    "links": [
     {
      "source": "remedymatch",
@@ -124,7 +123,7 @@
    ],
    "parent": "programs-protocols",
    "status": "live",
-   "summary": "Syntropy formula designed to dissolve scar tissue and support tissue healing naturally."
+   "summary": "Clear the Way supplies serrapeptase, an enzyme first found in a bacterium from the silkworm's gut. It supports the body's natural clearance of fibrin and other non-living proteins, so that fluids and circulation can flow freely."
   },
   {
    "aliases": [
@@ -24877,12 +24876,6 @@
    "id": "serrapeptase",
    "label": "Serrapeptase",
    "links": [
-    {
-     "source": "remedymatch",
-     "title": "Clear the Way",
-     "type": "product",
-     "url": "https://myhealingoasis.com/begin/product/clear-the-way"
-    },
     {
      "source": "clip",
      "title": "Parkinson's and Alzheimer's Improving in Weeks with Near-Infrared",

@@ -2922,9 +2922,6 @@
    "pinecone_title": "Clear the Way",
    "url": "https://myhealingoasis.com/begin/product/clear-the-way",
    "legacy_store_url": "https://remedymatch.com/remedies/syntropy/20-clear-the-way",
-   "description": "Clear the Way Functional Formulation — 30 capsules.",
-   "bottle_type": "30 Caps",
-   "fmp_id": "1125",
    "qty_pricing": true,
    "ingredients": [
     {
@@ -2933,7 +2930,33 @@
      "compound_mg": 500.0
     }
    ],
-   "ingredients_source": "fmp-bom-2026-05-23"
+   "ingredients_source": "label-2026-10-08",
+   "intro": "Clear the Way supplies serrapeptase, an enzyme first found in a bacterium from the silkworm's gut. It supports the body's natural clearance of fibrin and other non-living proteins, so that fluids and circulation can flow freely.",
+   "description": "Each capsule supplies 500 mg serrapeptase at 400,000 units per gram, about 200,000 units. There are no fillers or excipients.\n\nTake 1 capsule daily on an empty stomach, between meals, or as guided.\n\nOther ingredients: Phthalate-free DRcaps\u2122 delayed-release vegicap (hypromellose, gellan gum), Healing Energy, Love, and Prayer. 30 vegicaps per bottle.\n\nCaution: If you take a blood thinner, consult your physician before use.",
+   "directions": "Take 1 capsule daily on an empty stomach, between meals, or as guided.",
+   "warning": "If you take a blood thinner, consult your physician before use.",
+   "benefits": [],
+   "how_it_works": "",
+   "copy_pinned": [
+    "ingredients",
+    "intro",
+    "description",
+    "benefits",
+    "research"
+   ],
+   "content_since": "2026-10-09T16:12:28Z",
+   "bottle_type": "30 Caps",
+   "fmp_id": "1125",
+   "images": [
+    {
+     "src": "/static/product-photos/clear-the-way-1.webp",
+     "alt": "White silkworm cocoons on green leaves in a woven basket, beside a skein of raw silk"
+    },
+    {
+     "src": "/static/product-photos/clear-the-way-2.webp",
+     "alt": "A clear stream running over rounded stones through tree ferns"
+    }
+   ]
   },
   "clarity": {
    "name": "Clarity",
