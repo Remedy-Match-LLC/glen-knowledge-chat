@@ -1514,6 +1514,7 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                 "external_ref": created.get("external_ref"),
                 "added": added_count,
                 "skipped": built["skipped"],
+                "not_ready": built.get("not_ready") or [],
                 "warning": warning,
                 "total_dollars": biofield_fee.cents_to_dollars(total) if total is not None else ""}
 
@@ -1613,7 +1614,7 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
             resolved_remedies = []
             for item in content.get("reorder_items") or []:
                 slug = (item.get("slug") or "").strip()
-                if not slug:
+                if not slug or biofield_invoice.is_not_ready(slug, catalog):
                     continue
                 name_key = (item.get("name") or "").strip().lower()
                 resolved_remedies.append({
@@ -1625,7 +1626,7 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                 built["lines"] = ([{"slug": biofield_invoice.BIOFIELD_SLUG, "qty": 1}]
                                   if include_fee else []) + resolved_remedies
                 built["skipped"] = []
-            elif remedies and include_fee:
+            elif remedies and include_fee and not built.get("not_ready"):
                 invoice = {
                     "ok": False,
                     "error": ("The Biofield products could not be matched to the catalog; "
@@ -1657,6 +1658,7 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                                "no_charge": no_charge,
                                "lines": len(built["lines"]),
                                "skipped": built.get("skipped") or [],
+                               "not_ready": built.get("not_ready") or [],
                                "replaced": len(created.get("cancelled") or []),
                                "total_dollars": biofield_fee.cents_to_dollars(total) if total is not None else ""}
                 else:

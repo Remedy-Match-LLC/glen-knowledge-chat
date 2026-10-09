@@ -515,27 +515,80 @@ def test_concierge_add_is_refused_before_the_order_changes(client, monkeypatch):
     assert found == []
 
 
-def test_portal_order_my_remedies_goes_through_without_the_scar_line(client, logdb, monkeypatch):
-    """A Macular Pucker client's curated list holds Scar Soft Drink. The order goes
-    through without it, and the page gets its name and link."""
+def _portal_checkout_stubs(monkeypatch, reorder, recs=()):
+    """A portal whose curated list is `reorder` and whose accepted recommendations
+    are `recs`. Returns the list each pricing call receives."""
     monkeypatch.setattr(app, "_portal_record_for", lambda cx, token: {
-        "email": "mp@x.com", "name": "MP", "content": {"reorder_items": [
-            {"slug": "scar-silk", "qty": 1}, {"slug": SCAR, "qty": 1},
-            {"slug": "scar-solve", "qty": 1}]}})
-    monkeypatch.setattr(app, "_merge_accepted_recommendation_items",
-                        lambda cx, email, base: list(base))
+        "email": "mp@x.com", "name": "MP", "content": {"reorder_items": reorder}})
+    monkeypatch.setattr(app, "_portal_entitled_slugs", lambda email: set())
+    monkeypatch.setattr(app, "_accepted_recommendation_slugs", lambda cx, email: set(recs))
     priced = []
     real = app._portal_priced_lines
     monkeypatch.setattr(app, "_portal_priced_lines",
                         lambda items, email=None: priced.append(list(items)) or real(items, email=email))
     monkeypatch.setattr(app, "_stripe_checkout_url_for_reorder", lambda *a, **k: "https://pay/x")
     monkeypatch.setattr(app, "_STRIPE_ACTIVE", True)
-    r = client.post("/api/portal/tok/checkout", json={"method": "card"})
+    return priced
+
+
+def _as_the_page_posts(rows):
+    """static/client-portal.html reorder(): every order row, with catalog_order:true."""
+    return {"checkout_request_id": "a" * 20, "method": "card", "catalog_order": True,
+            "items": [{"slug": r["slug"], "qty": r["qty"], "format": None} for r in rows]}
+
+
+def test_portal_order_my_remedies_goes_through_without_the_scar_line(client, logdb, monkeypatch):
+    """Round 3, F1. A Macular Pucker client's curated list holds Scar Soft Drink. The
+    real button posts every row with catalog_order:true. The order goes through without
+    the Scar line, and the reply names it with its page."""
+    reorder = [{"slug": "scar-silk", "qty": 1}, {"slug": SCAR, "qty": 1},
+               {"slug": "scar-solve", "qty": 2}]
+    priced = _portal_checkout_stubs(monkeypatch, reorder)
+    r = client.post("/api/portal/tok/checkout", json=_as_the_page_posts(reorder))
     body = r.get_json()
     assert r.status_code == 200 and body["ok"] is True, body
-    assert [i["slug"] for i in priced[0]] == ["scar-silk", "scar-solve"]
-    assert len(priced[0]) == 2
+    assert [(i["slug"], i["qty"]) for i in priced[0]] == [("scar-silk", 1), ("scar-solve", 2)]
     assert body["not_ready"] == [{"name": "Scar Soft Drink", "url": URL}]
+
+
+def test_portal_posted_scar_from_an_accepted_recommendation_is_skipped(client, logdb, monkeypatch):
+    priced = _portal_checkout_stubs(monkeypatch, [{"slug": "scar-silk", "qty": 1}], recs={SCAR})
+    rows = [{"slug": "scar-silk", "qty": 1}, {"slug": SCAR, "qty": 1}]
+    r = client.post("/api/portal/tok/checkout", json=_as_the_page_posts(rows))
+    body = r.get_json()
+    assert r.status_code == 200, body
+    assert [i["slug"] for i in priced[0]] == ["scar-silk"]
+    assert body["not_ready"] == [{"name": "Scar Soft Drink", "url": URL}]
+
+
+def test_portal_posted_scar_the_client_did_not_get_from_a_list_is_refused(client, logdb, monkeypatch):
+    priced = _portal_checkout_stubs(monkeypatch, [{"slug": "scar-silk", "qty": 1}])
+    rows = [{"slug": "scar-silk", "qty": 1}, {"slug": SCAR, "qty": 1}]
+    r = client.post("/api/portal/tok/checkout", json=_as_the_page_posts(rows))
+    _refused(r)
+    assert priced == []
+
+
+def test_portal_display_shows_scar_as_name_and_link_with_no_price(client, logdb, monkeypatch):
+    """The curated list shows a not-ready product as its name and page, with no price.
+    The page renders no order row for it, so the button never posts it."""
+    from dashboard import client_portal as cp
+    app._init_auth_tables()
+    monkeypatch.setattr(app, "_merge_accepted_recommendation_items",
+                        lambda cx, email, base: list(base))
+    with sqlite3.connect(logdb) as cx:
+        cp.init_client_portal_table(cx)
+        tok, _ = cp.upsert_portal(cx, "mp@x.com", "MP", {
+            "greeting": "Aloha", "layers": [],
+            "reorder_items": [{"slug": "scar-silk", "qty": 1}, {"slug": SCAR, "qty": 1}]})
+    items = {i["slug"]: i for i in client.get(f"/api/portal/{tok}").get_json()["reorder_items"]}
+    assert items["scar-silk"]["price_cents"] and "not_ready" not in items["scar-silk"]
+    scar = items[SCAR]
+    assert scar["name"] == "Scar Soft Drink" and scar["not_ready"] == {"url": URL}
+    assert scar["price_cents"] is None and scar["available"] is False
+    page = open(os.path.join(os.path.dirname(__file__), "..", "static",
+                             "client-portal.html")).read()
+    assert 'class="reitem not-ready-item"' in page
 
 
 def test_portal_cart_is_never_seeded_with_a_not_ready_recommendation(logdb, monkeypatch):

@@ -26555,6 +26555,16 @@ def api_client_portal(token):
                 _saved, _member_list_cents(p, email_for_reports) if p else regular)
         else:
             special = int(override) if override is not None else regular
+        _nr = _waitlist_block(slug) if p else None
+        if _nr:
+            # Not ready to order (2026-10-09): name and page link only, no price, and the
+            # page renders no order row for it, so it is never posted.
+            display.append({"slug": slug, "qty": int(it.get("qty", 1) or 1),
+                            "name": p.get("name", slug), "price_cents": None,
+                            "regular_price_cents": None, "is_special": False,
+                            "refill_eligible": False, "available": False,
+                            "not_ready": {"url": f"/begin/product/{p.get('slug') or slug}"}})
+            continue
         display.append({
             "slug": slug, "qty": int(it.get("qty", 1) or 1),
             "name": (p or {}).get("name", slug), "price_cents": special,
@@ -32128,6 +32138,10 @@ def api_client_portal_checkout(token):
     posted = body.get("items")
     if posted is None and (body.get("slug") or "").strip():
         posted = [{"slug": body.get("slug"), "qty": body.get("qty", 1)}]
+    # Lines not ready to order that came from this client's curated list or an accepted
+    # recommendation are skipped and named back, never blocking the order (review
+    # rounds 1 and 3, 2026-10-09). The portal's own button posts those rows.
+    not_ready = []
     if posted:
         if not isinstance(posted, list) or not posted:
             return jsonify({"error": "Invalid items."}), 400
@@ -32137,9 +32151,11 @@ def api_client_portal_checkout(token):
         # slugs into the entitled set so a never-before-purchased recommended remedy
         # (e.g. its own per-row "Reorder" button) is purchasable. Only accepted-rec
         # slugs are added; general entitlement is NOT broadened.
+        _rec_slugs = set()
         try:
             with db.connect(LOG_DB) as _rcx:
-                entitled = entitled | _accepted_recommendation_slugs(_rcx, email)
+                _rec_slugs = set(_accepted_recommendation_slugs(_rcx, email))
+                entitled = entitled | _rec_slugs
         except Exception:
             pass  # entitlement-union failure must never break checkout
         # The practitioner-curated list displayed in this portal is also an
@@ -32152,6 +32168,7 @@ def api_client_portal_checkout(token):
         }
         entitled |= {(it.get("slug") or "").strip().lower()
                      for it in curated if isinstance(it, dict) and it.get("slug")}
+        _from_lists = set(curated_by_slug) | {(x or "").strip().lower() for x in _rec_slugs}
         # The customer's own saved-and-chosen wishlist item is authorization to
         # buy it, same as an accepted recommendation. This read is unconditional:
         # the order-review add control uses the same private store even when the
@@ -32171,6 +32188,10 @@ def api_client_portal_checkout(token):
             product = _get_product(slug) if slug else None
             item_name = ((product or {}).get("name") or slug or "That item").strip()
             if slug and product and _waitlist_refusal(slug):
+                if slug in _from_lists:
+                    _keep, _nr = _split_not_ready([{"slug": slug}])
+                    not_ready += [n for n in _nr if n not in not_ready]
+                    continue
                 return jsonify({"error": _waitlist_refusal(slug),
                                 **_wl_fields(_waitlist_refusal(slug))}), 400
             if not slug or not product or not _is_orderable(product.get("slug") or slug, product):
@@ -32203,7 +32224,6 @@ def api_client_portal_checkout(token):
     # Curated and recommended lines that are not ready to order are skipped, never
     # block the rest, and are named back with their page (review round 1, 2026-10-09).
     # A posted line the client chose themselves was refused above.
-    not_ready = []
     if posted is None:
         items, not_ready = _split_not_ready(items)
     lines, items_rec, subtotal_cents = _portal_priced_lines(items, email=email)
@@ -35849,7 +35869,9 @@ def api_console_biofield_catalog():
     items = []
     for p in _bos_products.catalog(with_ingredients_only=False):
         items.append({"slug": p.get("slug"), "name": p.get("name"),
-                      "price_cents": p.get("price_cents")})
+                      "price_cents": p.get("price_cents"),
+                      # The Intake app leaves a not-ready product off its invoice.
+                      "waitlist_only": _waitlist_block(p.get("slug")) is not None})
     return jsonify({"products": items})
 
 
