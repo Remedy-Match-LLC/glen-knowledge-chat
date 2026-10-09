@@ -48,3 +48,19 @@ def test_module_completion_reset_is_read_from_course_yaml(tmp_path):
     (tmp_path / "c1" / "course.yaml").write_text(
         "title: C\nmodules:\n  - slug: m1\n    title: M\n    lessons:\n      - l1\n")
     assert cc.load_course("c1", str(tmp_path)).modules[0].completion_reset == ""
+
+
+def test_a_bad_completion_reset_is_ignored(tmp_path):
+    from dashboard import courses_content as cc
+    d = tmp_path / "c1" / "m1"
+    d.mkdir(parents=True)
+    (d / "l1.md").write_text("---\ntitle: L\naccess: paid\n---\nx\n")
+    for bad in ("Oct 9 2026", "10/9/2026", "'2026-10-9'", "yes"):
+        (tmp_path / "c1" / "course.yaml").write_text(
+            f"title: C\nmodules:\n  - slug: m1\n    title: M\n    completion_reset: {bad}\n"
+            "    lessons:\n      - l1\n")
+        assert cc.load_course("c1", str(tmp_path)).modules[0].completion_reset == "", bad
+    (tmp_path / "c1" / "course.yaml").write_text(
+        "title: C\nmodules:\n  - slug: m1\n    title: M\n    completion_reset: '2026-10-09'\n"
+        "    lessons:\n      - l1\n")
+    assert cc.load_course("c1", str(tmp_path)).modules[0].completion_reset == "2026-10-09"

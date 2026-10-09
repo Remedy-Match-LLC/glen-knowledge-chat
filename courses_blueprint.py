@@ -499,7 +499,7 @@ def lesson_page(course_slug, module_slug, lesson_slug):
         cx2 = _connect()
         try:
             from dashboard import course_progress as cp
-            cp.init_progress_tables(cx2)  # Postgres: a SELECT on a missing table poisons the txn
+            cp.ensure_progress_tables(cx2)  # Postgres: a SELECT on a missing table poisons the txn
             cert_completed = cp.module_completed(
                 cx2, email, course_slug, module_slug, cert_lesson_slugs,
                 reset_before=cert_module.completion_reset if cert_module else "")
@@ -571,6 +571,9 @@ def courses_submit_homework(course_slug, module_slug):
         fb = homework_analysis.analyze(module_slug, assignment, payload)  # advisory, never raises
         cp.record_homework(cx, email, course_slug, module_slug, payload,
                            ai_rating=fb.get("rating") or None, ai_feedback=fb.get("feedback") or None)
+        # Record completion the moment it is earned, so a later lesson cannot take it away.
+        cp.module_completed(cx, email, course_slug, module_slug, [l.slug for l in module.lessons],
+                            reset_before=module.completion_reset)
     finally:
         cx.close()
     return jsonify({"ok": True, "rating": fb.get("rating", ""), "feedback": fb.get("feedback", "")})
@@ -601,6 +604,10 @@ def courses_mark_watched(course_slug, module_slug, lesson_slug):
         if lesson.access == "paid" and not _paid_module_open(cx, email, course, module_slug):
             return jsonify({"error": "forbidden"}), 403
         cp.mark_watched(cx, email, course_slug, module_slug, lesson_slug)
+        # Record completion the moment it is earned, so a later lesson cannot take it away.
+        mod = next(m for m in course.modules if m.slug == module_slug)
+        cp.module_completed(cx, email, course_slug, module_slug, [l.slug for l in mod.lessons],
+                            reset_before=mod.completion_reset)
     finally:
         cx.close()
     return jsonify({"ok": True})
@@ -755,7 +762,7 @@ def courses_certify_module(course_slug, module_slug):
 
     cx = _connect()
     try:
-        cp.init_progress_tables(cx)  # Postgres: a SELECT on a missing table poisons the txn
+        cp.ensure_progress_tables(cx)  # Postgres: a SELECT on a missing table poisons the txn
         if not cp.module_completed(cx, email, course_slug, module_slug, lesson_slugs,
                                    reset_before=module.completion_reset):
             return jsonify({"error": "module not completed"}), 403

@@ -48,7 +48,7 @@ MOVE_TABLES = frozenset({
     "client_species", "species_answers", "coach_requests", "coach_subscriptions", "coach_threads", "coach_volunteers",
     "coaching_windows", "cohort_members", "community_embeddings", "community_reactions",
     "condition_triage", "consult_eligibility", "coupons", "course_entitlements",
-    "course_lesson_watched", "course_module_homework", "course_module_unlocks", "course_tokens",
+    "course_lesson_watched", "course_module_completed", "course_module_homework", "course_module_unlocks", "course_tokens",
     "course_unlock_pref", "dispensary_orders", "e4l_accounts", "ebook_grants", "evox_bookings",
     "evox_readiness", "evox_session_credits", "eye_vision_review_requests",
     "eye_vision_suggestion_reviews", "family_subscriptions", "ff_match_drafts", "fireside_sessions",

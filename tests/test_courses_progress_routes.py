@@ -100,3 +100,38 @@ def test_first_request_backfills_and_a_new_lesson_keeps_credit(client, monkeypat
     with sqlite3.connect(appmod.LOG_DB) as cx:
         assert cp.module_completed(cx, "done@x.com", "ash-intro", "01-intro",
                                    [l.slug for l in mod.lessons]) is True
+
+
+def test_watching_the_last_lesson_records_completion(client, monkeypatch):
+    c, appmod = client
+    import courses_blueprint
+    monkeypatch.setattr(courses_blueprint, "_completion_backfill_done", True)
+    from dashboard import course_progress as cp
+    with sqlite3.connect(appmod.LOG_DB) as cx:
+        cp.init_progress_tables(cx)
+        cp.mark_watched(cx, "last@x.com", "ash-intro", "01-intro", "02-welcome")
+        cp.record_homework(cx, "last@x.com", "ash-intro", "01-intro", "reflection")
+        assert cp.completed_at(cx, "last@x.com", "ash-intro", "01-intro") is None
+    tok = _token(appmod, "last@x.com")
+    r = c.post(f"/api/courses/ash-intro/01-intro/01-out-takes/watched?token={tok}", base_url=_MHOST)
+    assert r.status_code == 200
+    with sqlite3.connect(appmod.LOG_DB) as cx:
+        assert cp.completed_at(cx, "last@x.com", "ash-intro", "01-intro")
+
+
+def test_submitting_homework_records_completion(client, monkeypatch):
+    c, appmod = client
+    import courses_blueprint
+    monkeypatch.setattr(courses_blueprint, "_completion_backfill_done", True)
+    from dashboard import course_progress as cp, homework_analysis
+    monkeypatch.setattr(homework_analysis, "analyze", lambda *a, **k: {"rating": "", "feedback": ""})
+    with sqlite3.connect(appmod.LOG_DB) as cx:
+        cp.init_progress_tables(cx)
+        for l in ("01-out-takes", "02-welcome"):
+            cp.mark_watched(cx, "hwlast@x.com", "ash-intro", "01-intro", l)
+    tok = _token(appmod, "hwlast@x.com")
+    r = c.post(f"/api/courses/ash-intro/01-intro/homework?token={tok}",
+               json={"payload": "my reflection"}, base_url=_MHOST)
+    assert r.status_code == 200
+    with sqlite3.connect(appmod.LOG_DB) as cx:
+        assert cp.completed_at(cx, "hwlast@x.com", "ash-intro", "01-intro")

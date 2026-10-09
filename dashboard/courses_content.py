@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import datetime
 import os
+import re
 from dataclasses import dataclass
 
 import frontmatter
@@ -43,6 +45,16 @@ class Course:
     certifiable: bool = True
 
 
+def _reset_date(v) -> str:
+    """A module's completion_reset as YYYY-MM-DD (a UTC date), or "" if absent or
+    not in that form. Ignored rather than guessed: a misread date would void
+    credit learners earned. tests/test_courses_lint.py fails on a bad one."""
+    if isinstance(v, datetime.date):
+        return v.isoformat()[:10]
+    s = str(v or "").strip()
+    return s if re.fullmatch(r"\d{4}-\d{2}-\d{2}", s) else ""
+
+
 def courses_root() -> str:
     env = os.environ.get("COURSES_ROOT")
     if env:
@@ -77,7 +89,7 @@ def load_course(course_slug: str, root: str | None = None) -> Course:
             lp = os.path.join(cdir, m["slug"], f"{lslug}.md")
             lessons.append(load_lesson(lp, course_slug, m["slug"]))
         modules.append(Module(slug=m["slug"], title=str(m.get("title", "")), lessons=lessons,
-                              completion_reset=str(m.get("completion_reset") or "").strip()))
+                              completion_reset=_reset_date(m.get("completion_reset"))))
     return Course(
         slug=course_slug,
         title=str(spec.get("title", "")),

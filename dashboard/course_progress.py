@@ -36,6 +36,18 @@ def init_progress_tables(cx) -> None:
     cx.commit()
 
 
+def ensure_progress_tables(cx) -> None:
+    """init_progress_tables for request paths: never raises, and rolls back a
+    failed DDL so the Postgres transaction is usable for the reads after it."""
+    try:
+        init_progress_tables(cx)
+    except Exception:
+        try:
+            cx.rollback()
+        except Exception:
+            pass
+
+
 def mark_watched(cx, email, course, module, lesson) -> None:
     init_progress_tables(cx)
     cx.execute(
@@ -121,7 +133,10 @@ def module_completed(cx, email, course, module, lesson_slugs, reset_before="") -
         try:
             _record_completed(cx, email, course, module)
         except Exception:
-            pass
+            try:
+                cx.rollback()  # Postgres: leave the transaction usable
+            except Exception:
+                pass
         return True
     except Exception:
         return False
