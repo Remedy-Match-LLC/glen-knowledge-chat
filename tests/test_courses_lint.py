@@ -43,3 +43,19 @@ def test_missing_lesson_file_is_flagged(tmp_path):
     os.remove(os.path.join(str(tmp_path), "ash-intro", "01-intro", "02-welcome.md"))
     errs = cl.lint_courses(root=str(tmp_path))
     assert any("02-welcome" in e for e in errs)
+
+
+def test_bad_completion_reset_is_flagged(tmp_path):
+    write_sample_course(str(tmp_path))
+    p = os.path.join(str(tmp_path), "ash-intro", "course.yaml")
+    y = open(p).read().replace("    title: Introduction\n", "    title: Introduction\n    completion_reset: Oct 9 2026\n")
+    open(p, "w").write(y)
+    errs = cl.lint_courses(root=str(tmp_path))
+    assert any("completion_reset" in e for e in errs)
+    open(p, "w").write(y.replace("Oct 9 2026", "2026-10-09"))
+    assert cl.lint_courses(root=str(tmp_path)) == []
+
+
+def test_real_courses_have_valid_completion_resets():
+    # A misread reset date would void credit learners earned (Glen, 2026-10-09).
+    assert [e for e in cl.lint_courses() if "completion_reset" in e] == []

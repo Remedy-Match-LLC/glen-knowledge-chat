@@ -27,6 +27,46 @@ from dashboard import bodymap_homework
 from dashboard.courses_sanitize import sanitize_html, strip_duplicate_lead_heading
 
 courses_bp = Blueprint("courses", __name__)
+
+_completion_backfill_done = False   # tests set True to skip the scan
+_completion_backfill_next = 0.0     # monotonic time of the next scan
+_completion_backfill_lock = threading.Lock()
+_BACKFILL_EVERY_S = 3600            # a completion that slipped past every recording path waits at most this long
+_BACKFILL_RETRY_S = 300
+
+
+@courses_bp.before_app_request
+def _backfill_module_completions():
+    """Hourly per process, record everyone who has completed a module under its
+    current lessons, so a lesson added in a LATER deploy cannot take that credit
+    away (Glen, 2026-10-09). Idempotent and never raises. The request that runs
+    the scan waits for it; any other thread that finds it running skips it."""
+    global _completion_backfill_next
+    if _completion_backfill_done or _time.monotonic() < _completion_backfill_next:
+        return
+    if not _completion_backfill_lock.acquire(blocking=False):
+        return
+    try:
+        _completion_backfill_next = _time.monotonic() + _BACKFILL_RETRY_S
+        try:
+            from dashboard import course_progress as cp
+            mods = [(c.slug, m) for c in cc.list_courses() for m in c.modules]
+            lessons = {(cs, m.slug): [l.slug for l in m.lessons] for cs, m in mods}
+            resets = {(cs, m.slug): m.completion_reset for cs, m in mods if m.completion_reset}
+            cx = _connect()
+            try:
+                n = cp.backfill_completions(cx, lessons, resets)
+            finally:
+                cx.close()
+            if n >= 0:
+                _completion_backfill_next = _time.monotonic() + _BACKFILL_EVERY_S
+                print(f"[courses] module completions backfilled: {n} new, {len(lessons)} modules", flush=True)
+            else:
+                print("[courses] module completion backfill FAILED; retrying in 5 minutes", flush=True)
+        except Exception as e:
+            print(f"[courses] module completion backfill FAILED: {e}; retrying in 5 minutes", flush=True)
+    finally:
+        _completion_backfill_lock.release()
 _write_lock = threading.Lock()
 _STATIC_DIR = Path(__file__).resolve().parent / "static"
 
@@ -256,7 +296,8 @@ def _paid_module_open(cx, email, course_obj, module_slug) -> bool:
     lesson_slugs = [l.slug for l in module.lessons]
     full_cert = (course_entitlements.paid_level_for(cx, email) == 2
                  or _certification_roster_access(email, course_obj.slug))
-    completed = course_progress.module_completed(cx, email, course_obj.slug, module_slug, lesson_slugs)
+    completed = course_progress.module_completed(cx, email, course_obj.slug, module_slug, lesson_slugs,
+                                                 reset_before=module.completion_reset)
     unlocked = module_slug in course_module_unlocks.unlocked_modules(cx, email, course_obj.slug)
     drip = course_entitlements.drip_active(cx, email)
     return ca.module_access(full_cert=full_cert, completed=completed, unlocked=unlocked, drip_active=drip)
@@ -469,7 +510,10 @@ def lesson_page(course_slug, module_slug, lesson_slug):
         cx2 = _connect()
         try:
             from dashboard import course_progress as cp
-            cert_completed = cp.module_completed(cx2, email, course_slug, module_slug, cert_lesson_slugs)
+            cp.ensure_progress_tables(cx2)  # Postgres: a SELECT on a missing table poisons the txn
+            cert_completed = cp.module_completed(
+                cx2, email, course_slug, module_slug, cert_lesson_slugs,
+                reset_before=cert_module.completion_reset if cert_module else "")
             cert_status = (module_certifications.status_for(cx2, email, course_slug, module_slug)
                            if cert_completed else None)
         finally:
@@ -538,6 +582,9 @@ def courses_submit_homework(course_slug, module_slug):
         fb = homework_analysis.analyze(module_slug, assignment, payload)  # advisory, never raises
         cp.record_homework(cx, email, course_slug, module_slug, payload,
                            ai_rating=fb.get("rating") or None, ai_feedback=fb.get("feedback") or None)
+        # Record completion the moment it is earned, so a later lesson cannot take it away.
+        cp.module_completed(cx, email, course_slug, module_slug, [l.slug for l in module.lessons],
+                            reset_before=module.completion_reset)
     finally:
         cx.close()
     return jsonify({"ok": True, "rating": fb.get("rating", ""), "feedback": fb.get("feedback", "")})
@@ -568,6 +615,10 @@ def courses_mark_watched(course_slug, module_slug, lesson_slug):
         if lesson.access == "paid" and not _paid_module_open(cx, email, course, module_slug):
             return jsonify({"error": "forbidden"}), 403
         cp.mark_watched(cx, email, course_slug, module_slug, lesson_slug)
+        # Record completion the moment it is earned, so a later lesson cannot take it away.
+        mod = next(m for m in course.modules if m.slug == module_slug)
+        cp.module_completed(cx, email, course_slug, module_slug, [l.slug for l in mod.lessons],
+                            reset_before=mod.completion_reset)
     finally:
         cx.close()
     return jsonify({"ok": True})
@@ -722,7 +773,9 @@ def courses_certify_module(course_slug, module_slug):
 
     cx = _connect()
     try:
-        if not cp.module_completed(cx, email, course_slug, module_slug, lesson_slugs):
+        cp.ensure_progress_tables(cx)  # Postgres: a SELECT on a missing table poisons the txn
+        if not cp.module_completed(cx, email, course_slug, module_slug, lesson_slugs,
+                                   reset_before=module.completion_reset):
             return jsonify({"error": "module not completed"}), 403
         st = module_certifications.status_for(cx, email, course_slug, module_slug)
     finally:
