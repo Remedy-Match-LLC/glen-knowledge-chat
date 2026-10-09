@@ -28,22 +28,26 @@ from dashboard.courses_sanitize import sanitize_html, strip_duplicate_lead_headi
 
 courses_bp = Blueprint("courses", __name__)
 
-_completion_backfill_done = False
+_completion_backfill_done = False   # tests set True to skip the scan
+_completion_backfill_next = 0.0     # monotonic time of the next scan
 _completion_backfill_lock = threading.Lock()
+_BACKFILL_EVERY_S = 3600            # a completion that slipped past every recording path waits at most this long
+_BACKFILL_RETRY_S = 300
 
 
 @courses_bp.before_app_request
-def _backfill_module_completions_once():
-    """Once per process, record everyone who has completed a module under its
+def _backfill_module_completions():
+    """Hourly per process, record everyone who has completed a module under its
     current lessons, so a lesson added in a LATER deploy cannot take that credit
-    away (Glen, 2026-10-09). Insert-only, idempotent, never raises."""
-    global _completion_backfill_done
-    if _completion_backfill_done:
+    away (Glen, 2026-10-09). Insert-only, idempotent, never raises, never blocks
+    a request: a thread that finds the scan running skips it."""
+    global _completion_backfill_next
+    if _completion_backfill_done or _time.monotonic() < _completion_backfill_next:
         return
-    with _completion_backfill_lock:
-        if _completion_backfill_done:
-            return
-        _completion_backfill_done = True
+    if not _completion_backfill_lock.acquire(blocking=False):
+        return
+    try:
+        _completion_backfill_next = _time.monotonic() + _BACKFILL_RETRY_S
         try:
             from dashboard import course_progress as cp
             lessons = {(c.slug, m.slug): [l.slug for l in m.lessons]
@@ -53,9 +57,15 @@ def _backfill_module_completions_once():
                 n = cp.backfill_completions(cx, lessons)
             finally:
                 cx.close()
-            print(f"[courses] module completions backfilled: {n} new, {len(lessons)} modules", flush=True)
+            if n >= 0:
+                _completion_backfill_next = _time.monotonic() + _BACKFILL_EVERY_S
+                print(f"[courses] module completions backfilled: {n} new, {len(lessons)} modules", flush=True)
+            else:
+                print("[courses] module completion backfill FAILED; retrying in 5 minutes", flush=True)
         except Exception as e:
-            print(f"[courses] module completion backfill skipped: {e}", flush=True)
+            print(f"[courses] module completion backfill FAILED: {e}; retrying in 5 minutes", flush=True)
+    finally:
+        _completion_backfill_lock.release()
 _write_lock = threading.Lock()
 _STATIC_DIR = Path(__file__).resolve().parent / "static"
 

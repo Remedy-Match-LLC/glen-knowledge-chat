@@ -100,6 +100,10 @@ def completed_at(cx, email, course, module):
             (_norm(email), course, module)).fetchone()
         return row[0] if row else None
     except Exception:
+        try:
+            cx.rollback()  # Postgres: a failed SELECT must not poison the reads after it
+        except Exception:
+            pass
         return None
 
 
@@ -123,7 +127,10 @@ def _live_completed(cx, email, course, module, lesson_slugs) -> bool:
 
 def module_completed(cx, email, course, module, lesson_slugs, reset_before="") -> bool:
     """True if completion is on record (and not older than reset_before), else
-    checks the current lessons live and records a fresh completion."""
+    checks the current lessons live and records a fresh completion.
+    A reset therefore means: credit is judged against the current lessons again.
+    A learner who has watched every current lesson and handed in homework is
+    complete again at once; one missing a lesson is not."""
     try:
         at = completed_at(cx, email, course, module)
         if at and (not reset_before or at >= str(reset_before)):
@@ -145,7 +152,7 @@ def module_completed(cx, email, course, module, lesson_slugs, reset_before="") -
 def backfill_completions(cx, lessons_by_module) -> int:
     """Record everyone who has completed a module under its CURRENT lessons.
     lessons_by_module: {(course, module): [lesson slugs]}. Insert-only and
-    idempotent. Returns the number of new records. Never raises."""
+    idempotent. Returns the number of new records, or -1 if it failed. Never raises."""
     try:
         init_progress_tables(cx)
         rows = cx.execute(
@@ -164,4 +171,8 @@ def backfill_completions(cx, lessons_by_module) -> int:
         cx.commit()
         return n
     except Exception:
-        return 0
+        try:
+            cx.rollback()
+        except Exception:
+            pass
+        return -1

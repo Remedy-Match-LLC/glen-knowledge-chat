@@ -52,7 +52,13 @@ def _reset_date(v) -> str:
     if isinstance(v, datetime.date):
         return v.isoformat()[:10]
     s = str(v or "").strip()
-    return s if re.fullmatch(r"\d{4}-\d{2}-\d{2}", s) else ""
+    if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", s):
+        return ""
+    try:
+        datetime.date.fromisoformat(s)  # rejects a date that does not exist, e.g. 2026-99-99
+    except ValueError:
+        return ""
+    return s
 
 
 def courses_root() -> str:

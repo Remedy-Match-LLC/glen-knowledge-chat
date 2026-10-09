@@ -87,6 +87,7 @@ def test_first_request_backfills_and_a_new_lesson_keeps_credit(client, monkeypat
             cp.mark_watched(cx, "done@x.com", "ash-intro", "01-intro", l)
         cp.record_homework(cx, "done@x.com", "ash-intro", "01-intro", "reflection")
     monkeypatch.setattr(courses_blueprint, "_completion_backfill_done", False)
+    monkeypatch.setattr(courses_blueprint, "_completion_backfill_next", 0.0)
     c.get("/learn", base_url=_MHOST)
     with sqlite3.connect(appmod.LOG_DB) as cx:
         assert cp.completed_at(cx, "done@x.com", "ash-intro", "01-intro")
@@ -135,3 +136,30 @@ def test_submitting_homework_records_completion(client, monkeypatch):
     assert r.status_code == 200
     with sqlite3.connect(appmod.LOG_DB) as cx:
         assert cp.completed_at(cx, "hwlast@x.com", "ash-intro", "01-intro")
+
+
+def test_backfill_retries_after_a_failure_and_rescans_hourly(client, monkeypatch):
+    c, appmod = client
+    import courses_blueprint as cb
+    from dashboard import course_progress as cp
+    calls = []
+    results = iter([-1, 0])
+    monkeypatch.setattr(cp, "backfill_completions", lambda cx, lessons: calls.append(1) or next(results))
+    clock = [1000.0]
+    monkeypatch.setattr(cb._time, "monotonic", lambda: clock[0])
+    monkeypatch.setattr(cb, "_completion_backfill_done", False)
+    monkeypatch.setattr(cb, "_completion_backfill_next", 0.0)
+    c.get("/learn", base_url=_MHOST)
+    assert len(calls) == 1                      # failed
+    c.get("/learn", base_url=_MHOST)
+    assert len(calls) == 1                      # not before the retry delay
+    clock[0] += cb._BACKFILL_RETRY_S + 1
+    c.get("/learn", base_url=_MHOST)
+    assert len(calls) == 2                      # retried, succeeded
+    clock[0] += cb._BACKFILL_RETRY_S + 1
+    c.get("/learn", base_url=_MHOST)
+    assert len(calls) == 2                      # success waits the full hour
+    clock[0] += cb._BACKFILL_EVERY_S
+    monkeypatch.setattr(cp, "backfill_completions", lambda cx, lessons: calls.append(1) or 0)
+    c.get("/learn", base_url=_MHOST)
+    assert len(calls) == 3

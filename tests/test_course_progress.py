@@ -95,14 +95,14 @@ def test_backfill_skips_modules_it_was_not_given(cx):
 def test_reset_date_clears_older_credit(cx):
     _complete(cx, "r@x.com", ["01-a"])
     assert cp.module_completed(cx, "r@x.com", "ash", "09-terrain", ["01-a"]) is True
-    cx.execute("UPDATE course_module_completed SET completed_at='2026-10-01T00:00:00Z'")
+    cx.execute("UPDATE course_module_completed SET completed_at='2001-01-01T00:00:00Z'")
     lessons = ["01-a", "02-new"]
-    # Glen resets the module on 2026-10-09: the older credit no longer counts.
-    assert cp.module_completed(cx, "r@x.com", "ash", "09-terrain", lessons, reset_before="2026-10-09") is False
-    # Credit earned after the reset does count, and is recorded afresh.
+    # Glen resets the module: credit recorded before the reset date no longer counts,
+    # and the learner is judged against the current lessons again.
+    assert cp.module_completed(cx, "r@x.com", "ash", "09-terrain", lessons, reset_before="2001-01-02") is False
     cp.mark_watched(cx, "r@x.com", "ash", "09-terrain", "02-new")
-    assert cp.module_completed(cx, "r@x.com", "ash", "09-terrain", lessons, reset_before="2026-10-09") is True
-    assert cp.completed_at(cx, "r@x.com", "ash", "09-terrain") > "2026-10-09"
+    assert cp.module_completed(cx, "r@x.com", "ash", "09-terrain", lessons, reset_before="2001-01-02") is True
+    assert cp.completed_at(cx, "r@x.com", "ash", "09-terrain") > "2001-01-02"
 
 
 def test_reset_date_does_not_touch_newer_credit(cx):
@@ -112,8 +112,11 @@ def test_reset_date_does_not_touch_newer_credit(cx):
                                reset_before="2000-01-01") is True
 
 
-def test_completion_record_reads_never_raise():
+def test_completion_record_reads_never_raise_and_roll_back():
     class Boom:
+        rolled = 0
         def execute(self, *a, **k): raise RuntimeError("db down")
+        def rollback(self): Boom.rolled += 1
     assert cp.completed_at(Boom(), "a", "b", "c") is None
-    assert cp.backfill_completions(Boom(), {("b", "c"): ["x"]}) == 0
+    assert Boom.rolled == 1
+    assert cp.backfill_completions(Boom(), {("b", "c"): ["x"]}) == -1  # failure is not "0 new"
