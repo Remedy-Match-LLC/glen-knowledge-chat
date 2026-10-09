@@ -35,7 +35,24 @@ CASES = {
         },
         "forbidden": [r"tumou?r", r"cancer", r"wet\s*AMD", r"macular", r"AngiogenX"],
     },
+    "clear-the-way": {
+        "questions": [
+            "What is Clear the Way?",
+            "How much Clear the Way should I take each day?",
+        ],
+        "required": {
+            0: ["Clear the Way", "serrapeptase", "blood thinner"],
+            1: ["1 capsule", "empty stomach", "blood thinner"],
+        },
+        "forbidden": [r"dissolv", r"resorb", r"reduc\w*\s+(?:\w+\s+){0,3}scar", r"break\w*\s+down\s+scar",
+                      r"tumou?r", r"cancer"],
+    },
 }
+
+
+def _facts(question: str) -> str:
+    # Absent before PR #1951, so the same script measures main as the baseline.
+    return getattr(app, "named_product_facts_block", lambda q: "")(question)
 
 
 def ask(question: str) -> str:
@@ -47,7 +64,7 @@ def ask(question: str) -> str:
                f"RETRIEVED SNIPPETS:\n{context_str}\n\n"
                f"{product_block}"
                f"{app._brief_synth_instruction()}"
-               f"{app.named_product_facts_block(question)}")
+               f"{_facts(question)}")
     msg = app._cl.messages.create(
         model="claude-haiku-4-5-20251001", max_tokens=1024,
         system=app.get_system_prompt("self-healing"),
