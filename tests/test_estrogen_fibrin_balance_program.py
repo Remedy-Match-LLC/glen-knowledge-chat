@@ -250,3 +250,11 @@ def test_lowercase_names_clients_type(fresh_app, question, slug):
 def test_fibrolysis_in_ordinary_wording_matches_nothing(fresh_app):
     assert fresh_app._named_product_spans("fibrolysis factors in the blood",
                                           fresh_app._PRODUCTS["products"]) == {}
+
+
+@pytest.mark.parametrize("question", [
+    "what is the appestat?", "what is the appestat and how does it work",
+    "whats the angiostasis?", "how much of the clear the way for my lymph"])
+def test_the_article_cue_is_for_the_program_name_only(fresh_app, question):
+    # Review round 3: "the appestat" is the body's appetite set point.
+    assert fresh_app.named_product_facts_block(question) == "", question

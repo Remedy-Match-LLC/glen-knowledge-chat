@@ -2185,8 +2185,7 @@ _CUE_NAMES = frozenset({
 _PRODUCT_CUE_BEFORE = re.compile(
     r"\b(?:what\s+is|what's|whats|how\s+much|how\s+many|dose\s+of|dosage\s+of|take|taking|"
     r"buy|order|ordered|(?:capsules?|caps|bottles?|scoops?|drops)\s+of)"
-    # "how much of the Estrogen and Fibrin Balance Program" (2026-10-09)
-    r"(?:\s+of)?(?:\s+the)?\s*$", re.IGNORECASE)
+    r"(?P<the>(?:\s+of)?(?:\s+the))?\s*$", re.IGNORECASE)
 _PRODUCT_CUE_AFTER = re.compile(
     r"^\s*(?:dose|dosage|capsules?|caps|bottles?|product|supplement|formula|safe|interact)\b",
     re.IGNORECASE)
@@ -2204,8 +2203,13 @@ def _has_product_cue(text: str, start: int, end: int) -> bool:
     have no cue, or run the name into a longer phrase."""
     if not _AFTER_NAME_OK.search(text[end:end + 20]):
         return False
-    return bool(_PRODUCT_CUE_BEFORE.search(text[max(0, start - 20):start])
-                or _PRODUCT_CUE_AFTER.search(text[end:end + 20]))
+    before = _PRODUCT_CUE_BEFORE.search(text[max(0, start - 24):start])
+    # "how much of the Estrogen and Fibrin Balance Program" takes "of the"; a single
+    # word does not: "what is the appestat?" asks about the body's appetite set point
+    # (review round 3, 2026-10-09).
+    if before and before.group("the") and not text[start:end].lower().endswith("program"):
+        before = None
+    return bool(before or _PRODUCT_CUE_AFTER.search(text[end:end + 20]))
 
 
 def _named_product_spans(query_text: str, products: dict) -> dict:
