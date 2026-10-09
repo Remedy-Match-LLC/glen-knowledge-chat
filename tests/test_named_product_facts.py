@@ -9,6 +9,7 @@ Review round 1 (2026-10-09) found plain-substring matching brought products into
 questions ("relax", "uncomfortable", "heavy metals"), and aliases mapped old names onto
 other products. Only a pinned product's own name, as whole words, now counts.
 """
+import importlib
 import inspect
 import json
 
@@ -101,8 +102,74 @@ def test_every_answer_path_appends_the_block_after_the_instruction():
         assert src.index("{synth_instr}") < src.index("named_product_facts_block(query)"), fn.__name__
 
 
-def test_a_gated_turn_drops_the_block():
+def test_a_gated_turn_keeps_the_label_text_as_label_information():
+    # Glen, 2026-10-09: a non-member who names a product gets its label dose and caution.
+    q = "How much Angiostasis should I take, and are there any cautions?"
+    open_, gated = app.named_product_facts_block(q), app.named_product_facts_block(q, gated=True)
+    assert app._GATED_FACTS_NOTE not in open_
+    assert app._GATED_FACTS_NOTE in gated
+    assert ANGIO["directions"] in gated and ANGIO["warning"] in gated
     src = inspect.getsource(app.chat)
     gate = src.index("_system = _system + _EDUCATE_ONLY_POLICY")
-    after = src[gate:gate + 400]
-    assert "named_product_facts_block(query)" in after and '.replace(_facts, "")' in after
+    after = src[gate:gate + 700]
+    assert "named_product_facts_block(query, gated=True)" in after
+
+
+def test_the_sources_line_and_the_cta_point_at_this_product():
+    block = app.named_product_facts_block("What is Angiostasis?")
+    assert "The Sources line names this product text only" in block
+    assert "a page CTA links this product's Page" in block
+    assert "Page: " in block and block.split("Page: ")[1].split("\n")[0].endswith(
+        "/begin/product/angiostasis")
+
+
+def test_a_product_with_no_text_brings_no_block():
+    # Seven pinned Mithreal apparel items have no description, directions or caution.
+    products = app._PRODUCTS["products"]
+    slug = "mithreal-silver-socks"
+    p = products[slug]
+    assert p.get("copy_pinned") and not (p.get("description") or p.get("directions")
+                                          or p.get("warning")), slug
+    assert set(app._named_product_spans(f"Tell me about {p['name']}", products)) == {slug}
+    assert app.named_product_facts_block(f"Tell me about {p['name']}") == ""
+
+
+class _FakeStream:
+    def __init__(self, sink, **kw):
+        sink.append(kw)
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        return False
+
+    @property
+    def text_stream(self):
+        return iter(["ok"])
+
+
+@pytest.mark.parametrize("gated", [True, False])
+def test_the_chat_route_sends_the_gated_variant_on_a_gated_turn(monkeypatch, tmp_path, gated):
+    sent = []
+    # Own data dir (every table), as tests/test_angiostasis_new_product.py does, and no
+    # outbound call from the follow-up-question helper.
+    monkeypatch.setenv("DATA_DIR", str(tmp_path))
+    importlib.reload(app)
+    monkeypatch.setattr(app._cl.messages, "create", lambda **kw: (_ for _ in ()).throw(
+        RuntimeError("no live calls in tests")))
+    monkeypatch.setattr(app, "embed", lambda text: [0.0] * 1536)
+    monkeypatch.setattr(app, "query_all_namespaces", lambda vec: ["one match"])
+    monkeypatch.setattr(app, "build_context", lambda m: ("snippet about AngiogenX", []))
+    monkeypatch.setattr(app, "is_member", lambda *a, **k: False)
+    monkeypatch.setattr(app, "_is_gated_question", lambda *a, **k: gated)
+    monkeypatch.setattr(app._cl.messages, "stream", lambda **kw: _FakeStream(sent, **kw))
+    q = "How much Angiostasis should I take, and are there any cautions?"
+    r = app.app.test_client().post("/chat", json={"query": q, "level": "self-healing",
+                                                  "mode": "brief"}, buffered=True)
+    assert sent, r.get_data(as_text=True)[:500]
+    last = sent[-1]["messages"][-1]["content"]
+    assert ANGIO["warning"] in last
+    assert last.count("PRODUCT FACTS FOR THE PRODUCT") == 1   # swapped, not appended
+    assert (app._GATED_FACTS_NOTE in last) is gated
+    assert (app._EDUCATE_ONLY_POLICY in sent[-1]["system"]) is gated

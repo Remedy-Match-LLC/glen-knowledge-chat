@@ -2141,6 +2141,20 @@ def _product_guidance_hint(slug: str) -> str:
 
 
 _NAMED_FACTS_MAX_PRODUCTS = 3
+# Glen, 2026-10-09 ("yess"): a non-member who names a product gets its label text. On a
+# gated turn the chat had dropped this block, then gave a dose anyway from snippets about
+# a different product (AngiogenX for Angiostasis), which was worse than the label.
+_GATED_FACTS_NOTE = (
+    "This user has not yet agreed to the Terms. The consent rule still holds: do not tailor "
+    "anything to their body or condition, and do not recommend this product for a condition. "
+    "You may read back this label text as label information: what the product is, and "
+    "\"The label directions are ...\" and \"The label caution is ...\" in the label's words. "
+    "This overrides the rule above about naming a condition from the user's question: even "
+    "if they name their own condition, do not say this product is for, helps or suits it, "
+    "and do not say the dose suits them. Then invite them to agree to the Terms for guidance "
+    "on their own situation, before the Sources and CTA lines. Name no other product and no "
+    "pairing, even one this text names. Link the Page only as the product page, never as a "
+    "next step for their condition.\n")
 _NAMED_FACTS_MAX_CHARS = 1600
 # Pinned products whose name is an everyday word, so a sentence can start with it.
 _COMMON_WORD_NAMES = frozenset({"moisturize"})
@@ -2182,7 +2196,7 @@ def _named_product_spans(query_text: str, products: dict) -> dict:
                        for o, o_sp in spans.items())}
 
 
-def _named_product_facts(query_text: str) -> str:
+def _named_product_facts(query_text: str, gated: bool = False) -> str:
     """Approved store text for the catalog products the user names in the question.
 
     The chat does not search `specific-formulations`, so a product whose facts live
@@ -2206,14 +2220,14 @@ def _named_product_facts(query_text: str) -> str:
         desc = re.sub(r"[ \t]+", " ", desc).strip()
         if len(desc) > _NAMED_FACTS_MAX_CHARS:
             desc = desc[:_NAMED_FACTS_MAX_CHARS].rsplit(" ", 1)[0] + "..."
-        parts = [f"### {name}"]
+        parts = [f"### {name}", f"Page: {_catalog_page_url(slug)}"]
         if desc:
             parts.append(desc)
         for label, key in (("Directions", "directions"), ("Caution", "warning")):
             val = (product.get(key) or "").strip()
             if val and val not in desc:
                 parts.append(f"{label}: {val}")
-        if len(parts) > 1:
+        if len(parts) > 2:
             blocks.append("\n".join(parts))
         if len(blocks) >= _NAMED_FACTS_MAX_PRODUCTS:
             break
@@ -2235,17 +2249,20 @@ def _named_product_facts(query_text: str) -> str:
         "whether it is safe, skip any consensus or mainstream-view structure. Answer "
         "directly from this text, briefly, then the Sources line and the CTA line. Do not "
         "describe what mainstream medicine says about related conditions, and do not list "
-        "diseases or conditions as examples of where it helps, even in passing.\n\n"
+        "diseases or conditions as examples of where it helps, even in passing. The Sources "
+        "line names this product text only, and a page CTA links this product's Page.\n"
+        + (_GATED_FACTS_NOTE if gated else "") + "\n"
         + "\n\n".join(blocks)
     )
 
 
-def named_product_facts_block(query_text: str) -> str:
+def named_product_facts_block(query_text: str, gated: bool = False) -> str:
     """The facts block, or "". It goes LAST in the user message, after the synthesis
     instruction. Read-back 2026-10-08: placed before the snippets, 8 of 16 answers
     failed; placed after them but before the instruction, 2 of 16 failed.
-    On a gated educate-only turn chat() removes it: it tells the model to give a dose."""
-    facts = _named_product_facts(query_text)
+    On a gated turn chat() swaps in the gated variant, which frames the dose and caution
+    as label information (Glen, 2026-10-09)."""
+    facts = _named_product_facts(query_text, gated)
     return f"\n\n{facts}" if facts else ""
 
 
@@ -6046,10 +6063,13 @@ def chat():
             _system = _ally_ov + "\n\n" + _system
         if not is_member(session_id, email) and _is_gated_question(query):
             _system = _system + _EDUCATE_ONLY_POLICY
-            # The facts block says to give a dose; educate-only says name no product.
+            # A non-member who names a product gets its label text, framed as label
+            # information (Glen, 2026-10-09). Dropping it made the model answer from
+            # snippets about a different product.
             _facts = named_product_facts_block(query)
             if _facts:
-                messages[-1]["content"] = messages[-1]["content"].replace(_facts, "")
+                messages[-1]["content"] = messages[-1]["content"].replace(
+                    _facts, named_product_facts_block(query, gated=True))
             yield sse({"gate": True})
         # ──────────────────────────────────────────────────────────────────────
 
