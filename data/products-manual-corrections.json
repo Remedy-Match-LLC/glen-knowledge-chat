@@ -3047,5 +3047,20 @@
     },
     "bottle_type": "30 Caps",
     "note": "New product, October 2026, one capsule a day; FileMaker 1201 (Glen \"approve\", 2026-10-08, via formulation). Spec: production/05 Formulations/_store-updates/2026-10-08-angiostasis.md."
+  },
+  "clear-the-way": {
+   "ingredients": [
+    {
+     "name": "Serrapeptase 400,000 u/g (Serratiopeptidase) (Serratia marcescens)",
+     "dose": "500 mg",
+     "compound_mg": 500.0
+    }
+   ],
+   "ingredients_source": "label-2026-10-08",
+   "description": "Each capsule supplies 500 mg serrapeptase at 400,000 units per gram, about 200,000 units. There are no fillers or excipients.\n\nTake 1 capsule daily on an empty stomach, between meals, or as guided.\n\nOther ingredients: Phthalate-free DRcaps\u2122 delayed-release vegicap (hypromellose, gellan gum), Healing Energy, Love, and Prayer. 30 vegicaps per bottle.\n\nCaution: If you take a blood thinner, consult your physician before use.",
+   "directions": "Take 1 capsule daily on an empty stomach, between meals, or as guided.",
+   "warning": "If you take a blood thinner, consult your physician before use.",
+   "bottle_type": "30 Caps",
+   "note": "October 2026 batch CTW-20261008-10, serrapeptase 500 mg in DRcaps, one capsule a day (Glen, via formulation). Spec: production/05 Formulations/_store-updates/2026-10-08-clear-the-way.md."
   }
 }
