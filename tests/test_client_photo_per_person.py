@@ -53,7 +53,7 @@ def _no_fetch(email, client_id=None):
 # --- the person resolver -------------------------------------------------------------
 
 @pytest.mark.parametrize("name,want", [
-    ("Dana Hale", "101"), ("dana hale", "101"), ("Dan Hale", "101"),
+    ("Dana Hale", "101"), ("dana hale", "101"), ("Dan Hale", None),   # no short forms (review round 2)
     ("Ella Hale", "105"),
     ("Hale", None), ("", None), ("Dana Smith", None), ("D Hale", None),
 ])
@@ -67,7 +67,8 @@ def test_a_one_record_email_still_needs_the_name_to_match(tmp_path):
     # resolved to the parent and their upload became the parent's photo.
     with sqlite3.connect(_db(tmp_path)) as cx:
         assert cph.fmp_person_for(cx, "solo@example.com", "Sam Solo") == "900"
-        assert cph.fmp_person_for(cx, "solo@example.com", "Samuel Solo") == "900"
+        assert cph.fmp_person_for(cx, "solo@example.com", "Samuel Solo") is None
+        assert cph.fmp_person_for(cx, "solo@example.com", "sam  solo.") == "900"
         assert cph.fmp_person_for(cx, "solo@example.com", "Jane Newkid") is None
         assert cph.fmp_person_for(cx, "solo@example.com", "") is None
         assert cph.fmp_person_for(cx, "nobody@example.com", "Sam Solo") is None
@@ -180,7 +181,7 @@ def test_candidates_list_every_family_photo_and_the_pick_saves_for_this_person(t
     keys = [x["key"] for x in j["candidates"]]
     assert sorted(keys) == ["102", "105", "email"]
     assert c.get(j["candidates"][0]["url"]).status_code == 200
-    r = c.post(f"/test/{tid}/photo-pick", json={"key": "102"}).get_json()
+    r = c.post(f"/test/{tid}/photo-pick", json={"key": "102", "name": "Dana Hale"}).get_json()
     assert r["ok"] and r["person"] == "101"
     with sqlite3.connect(db) as cx:
         assert cph.get_for_client(cx, "101")["blob"] == b"CARL"
@@ -195,7 +196,7 @@ def test_a_pick_needs_the_intake_name_to_name_one_person(tmp_path):
         cph.put_for_client(cx, "105", FAMILY, b"ELLA", "image/png", source="fmp")
     tid = _intake(db, "Hale Family", FAMILY)
     c = create_app(db, fetch_client_photo=_no_fetch).test_client()
-    assert c.post(f"/test/{tid}/photo-pick", json={"key": "105"}).status_code == 409
+    assert c.post(f"/test/{tid}/photo-pick", json={"key": "105", "name": "Hale Family"}).status_code == 409
     j = c.get(f"/client-photo-candidates/{FAMILY}?name=Hale%20Family").get_json()
     assert j["shared"] is True and j["person"] is None
 
@@ -206,7 +207,7 @@ def test_a_pick_cannot_reach_another_emails_photo(tmp_path):
         cph.put_for_client(cx, "900", "solo@example.com", b"SAM", "image/png", source="fmp")
     tid = _intake(db, "Dana Hale", FAMILY)
     c = create_app(db, fetch_client_photo=_no_fetch).test_client()
-    assert c.post(f"/test/{tid}/photo-pick", json={"key": "900"}).status_code == 404
+    assert c.post(f"/test/{tid}/photo-pick", json={"key": "900", "name": "Dana Hale"}).status_code == 404
     assert c.get(f"/client-photo-candidate/{FAMILY}/900").status_code == 404
     assert c.get("/client-photo-candidates/solo@example.com").get_json()["shared"] is False
 
@@ -299,3 +300,62 @@ def test_the_onboarding_photo_step_uses_the_same_rule(tmp_path):
         assert done("101") is False
         cph.put_for_client(cx, "101", FAMILY, b"DANA", "image/png", source="fmp")
         assert done("101") is True
+
+
+# --- review round 2 ------------------------------------------------------------------
+
+def test_a_reused_filemaker_id_is_never_offered_or_resolved(tmp_path):
+    db = _db(tmp_path, extra=[("105", "other@example.com", "Mona", "Kay")])
+    with sqlite3.connect(db) as cx:
+        cph.put_for_client(cx, "105", "other@example.com", b"MONA", "image/png", source="fmp")
+        cph.put_for_client(cx, "102", FAMILY, b"CARL", "image/png", source="fmp")
+        assert cph.fmp_person_for(cx, FAMILY, "Ella Hale") is None
+    tid = _intake(db, "Dana Hale", FAMILY)
+    c = create_app(db, fetch_client_photo=_no_fetch).test_client()
+    j = c.get(f"/client-photo-candidates/{FAMILY}?name=Dana%20Hale").get_json()
+    assert [x["key"] for x in j["candidates"]] == ["102"]
+    assert c.get(f"/client-photo-candidate/{FAMILY}/105").status_code == 404
+    assert c.post(f"/test/{tid}/photo-pick",
+                  json={"key": "105", "name": "Dana Hale"}).status_code == 404
+
+
+def test_a_pick_for_a_name_the_intake_no_longer_has_is_refused(tmp_path):
+    db = _db(tmp_path)
+    with sqlite3.connect(db) as cx:
+        cph.put_for_client(cx, "102", FAMILY, b"CARL", "image/png", source="fmp")
+    tid = _intake(db, "Dana Hale", FAMILY)
+    c = create_app(db, fetch_client_photo=_no_fetch).test_client()
+    r = c.post(f"/test/{tid}/photo-pick", json={"key": "102", "name": "Ella Hale"})
+    assert r.status_code == 409
+    assert c.post(f"/test/{tid}/photo-pick", json={"key": "102"}).status_code == 409
+    with sqlite3.connect(db) as cx:
+        assert cph.get_for_client(cx, "101") is None
+
+
+def test_an_unreadable_filemaker_table_shows_and_saves_nothing(tmp_path):
+    db = _db(tmp_path)
+    with sqlite3.connect(db) as cx:
+        cph.put(cx, FAMILY, b"HOUSE", "image/png", source="intake-survey")
+        cx.execute("ALTER TABLE fmp_snap_clients RENAME COLUMN email TO email_gone")
+    assert cph.fmp_people_for_email(sqlite3.connect(db), FAMILY) is None
+    tid = _intake(db, "Dana Hale", FAMILY)
+    c = create_app(db, fetch_client_photo=_no_fetch).test_client()
+    assert c.get(f"/client-photo/{FAMILY}?name=Dana%20Hale").status_code == 404
+    import io
+    r = c.post(f"/test/{tid}/photo", data={"photo": (io.BytesIO(b"NEW"), "p.png")},
+               content_type="multipart/form-data")
+    assert r.status_code == 503
+    with sqlite3.connect(db) as cx:
+        assert cph.get(cx, FAMILY)["blob"] == b"HOUSE"
+
+
+def test_a_refresh_never_undoes_a_newer_local_pick(tmp_path):
+    db = _db(tmp_path)
+    with sqlite3.connect(db) as cx:
+        cph.put_for_client(cx, "101", FAMILY, b"PICKED", "image/png", source="console")
+
+    def fetch(email, client_id=None):
+        return {"blob": b"STALE", "content_type": "image/png", "source": "console",
+                "updated_at": "2026-01-01T00:00:00Z"}
+    c = create_app(db, fetch_client_photo=fetch).test_client()
+    assert c.get(f"/client-photo/{FAMILY}?name=Dana%20Hale").data == b"PICKED"

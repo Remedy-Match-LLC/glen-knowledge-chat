@@ -732,6 +732,9 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                 return False
             with sqlite3.connect(db_path) as cx:
                 if client_id:
+                    mine = _cph.get_for_client(cx, client_id)
+                    if mine and (mine.get("updated_at") or "") >= (rec.get("updated_at") or ""):
+                        return False      # a newer local pick must not be undone (round 2)
                     written = _cph.put_for_client(cx, client_id, email, rec["blob"],
                                                   rec.get("content_type"),
                                                   source=rec.get("source") or "portal-self",
@@ -767,7 +770,7 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                 rec = _cph.get_for_client(cx, pid)
             if rec:
                 return rec, pid
-        if len(people) > 1 or (people and not pid):
+        if people is None or len(people) > 1 or (people and not pid):
             return None, pid
         _refresh_client_photo(email)
         with sqlite3.connect(db_path) as cx:
@@ -1173,6 +1176,8 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
                 return jsonify({"ok": False, "error": "this test has no client email"}), 400
             people = _cph.fmp_people_for_email(cx, email)
             pid = _cph.fmp_person_for(cx, email, name)
+            if people is None:
+                return jsonify({"ok": False, "error": "FileMaker clients could not be read; try again"}), 503
             if pid:
                 _cph.put_for_client(cx, pid, email, blob, ctype, source="fmp-intake-upload")
             elif people:
@@ -1195,10 +1200,14 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
         with sqlite3.connect(db_path) as cx:
             people = _cph.fmp_people_for_email(cx, email)
             pid = _cph.fmp_person_for(cx, email, name)
+        if people is None:
+            return jsonify({"ok": False, "error": "FileMaker clients could not be read"}), 503
         out = {"ok": True, "shared": len(people) > 1, "count": len(people),
                "person": pid, "candidates": []}
         if len(people) < 2:
             return jsonify(out)
+        with sqlite3.connect(db_path) as cx:
+            people = [(cid, full) for cid, full in people if not _cph.id_is_reused(cx, cid)]
         for cid, full in people:
             _refresh_client_photo(email, cid)
         _refresh_client_photo(email)
@@ -1217,8 +1226,11 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
     def client_photo_candidate(email, key):
         from dashboard import client_photos as _cph
         with sqlite3.connect(db_path) as cx:
-            ids = {cid for cid, _ in _cph.fmp_people_for_email(cx, email)}
-            if len(ids) < 2:
+            ids = {cid for cid, _ in (_cph.fmp_people_for_email(cx, email) or [])
+                   if not _cph.id_is_reused(cx, cid)}
+            if len(ids) < 2 and key != "email":
+                return Response("", status=404)
+            if key == "email" and len(_cph.fmp_people_for_email(cx, email) or []) < 2:
                 return Response("", status=404)
             rec = (_cph.get(cx, email) if key == "email"
                    else _cph.get_for_client(cx, key) if key in ids else None)
@@ -1233,10 +1245,17 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
         """Save a candidate photo as THIS intake's person's own photo, locally and on
         prod, keyed by their FileMaker id. Never writes the shared email row."""
         from dashboard import client_photos as _cph
-        key = str((request.get_json(silent=True) or {}).get("key") or "").strip()
+        body = request.get_json(silent=True) or {}
+        key = str(body.get("key") or "").strip()
         with sqlite3.connect(db_path) as cx:
             email, name = _test_person(cx, test_id)
-            ids = {cid for cid, _ in _cph.fmp_people_for_email(cx, email)}
+            # The page names the person it showed the choice for. If the saved intake now
+            # names someone else, the pick would land on the wrong person (round 2).
+            if _cph._name_key(body.get("name") or "") != _cph._name_key(name):
+                return jsonify({"ok": False, "error": (
+                    "The intake name changed. Save the header, then pick again.")}), 409
+            ids = {cid for cid, _ in (_cph.fmp_people_for_email(cx, email) or [])
+                   if not _cph.id_is_reused(cx, cid)}
             pid = _cph.fmp_person_for(cx, email, name)
             if not pid:
                 return jsonify({"ok": False, "error": (

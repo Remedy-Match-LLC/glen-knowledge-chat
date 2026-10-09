@@ -193,50 +193,52 @@ def _name_key(name):
 
 def fmp_people_for_email(cx, email):
     """[(id_pk, full name)] of the FileMaker client records on an email (local snapshot).
-    [] when the snapshot table is absent, as on the prod web service."""
+    [] when the snapshot table is absent, as on the prod web service. None when the
+    table is there but cannot be read: an identity lookup that failed must not look
+    like one that found nobody (review round 2), so callers show and save nothing."""
     e = _norm(email)
     if not e:
         return []
+    try:
+        if not cx.execute("SELECT name FROM sqlite_master WHERE type='table' "
+                          "AND name='fmp_snap_clients'").fetchone():
+            return []
+    except Exception:
+        pass                                   # not SQLite: try the query itself
     try:
         rows = cx.execute(
             "SELECT id_pk, name_first, name_last FROM fmp_snap_clients "
             "WHERE lower(trim(email))=?", (e,)).fetchall()
     except Exception:
-        return []
+        return None
     return [(str(r[0]), f"{r[1] or ''} {r[2] or ''}".strip()) for r in rows if r[0] is not None]
 
 
 def fmp_person_for(cx, email, name):
     """The one FileMaker id_pk this email and name name, or None (fail closed).
 
-    The record on the email whose name matches, where a first name may be a short form
-    of the other ("Deb" for "Debbie") when the last names match. This holds for a
-    one-record email too: a family member with no FileMaker record of their own, on a
-    parent's email, must not resolve to the parent (review 2026-10-09). Anything other
-    than exactly one match is None. An id_pk that FileMaker also uses for a differently
-    named record is None: 33 ids are shared (2026-10-09)."""
+    The record on the email whose full name matches exactly, ignoring case and
+    punctuation. No short forms: "Ann" must not resolve to "Anna" (review round 2).
+    This holds for a one-record email too: a family member with no FileMaker record of
+    their own, on a parent's email, must not resolve to the parent (round 1). Anything
+    other than exactly one match is None, and so is an id FileMaker uses on more than
+    one record (33 ids are reused, 2026-10-09)."""
     people = fmp_people_for_email(cx, email)
-    if not people:
-        return None
     want = _name_key(name)
-    wf, _, wl = want.partition(" ")
-    wl = wl.split(" ")[-1] if wl else ""
-
-    def _same(full):
-        k = _name_key(full)
-        if k == want:
-            return True
-        f, _, l = k.partition(" ")
-        l = l.split(" ")[-1] if l else ""
-        return bool(wf and wl and l == wl and min(len(f), len(wf)) >= 3
-                    and (f.startswith(wf) or wf.startswith(f)))
-    hits = [p for p in people if _same(p[1])]
+    if not people or not want:
+        return None
+    hits = [p for p in people if _name_key(p[1]) == want]
     if len(hits) != 1:
         return None
     pk = hits[0][0]
+    return None if id_is_reused(cx, pk) else pk
+
+
+def id_is_reused(cx, pk):
+    """True when FileMaker uses this id_pk on more than one client record, or when that
+    cannot be checked. Such an id names no one person."""
     try:
-        names = {_name_key(f"{r[0] or ''} {r[1] or ''}") for r in cx.execute(
-            "SELECT name_first, name_last FROM fmp_snap_clients WHERE id_pk=?", (pk,)).fetchall()}
+        return cx.execute("SELECT COUNT(*) FROM fmp_snap_clients WHERE id_pk=?",
+                          (str(pk),)).fetchone()[0] != 1
     except Exception:
-        names = set()
-    return pk if len(names) <= 1 else None
+        return True

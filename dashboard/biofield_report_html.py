@@ -370,7 +370,7 @@ async function loadPhotoPicks(tid, email, name, boxId, imgId){
     b.onclick=async function(){
       b.disabled=true;
       var r; try{ r=await (await fetch('/test/'+tid+'/photo-pick',{method:'POST',
-        headers:{'Content-Type':'application/json'},body:JSON.stringify({key:c.key})})).json(); }
+        headers:{'Content-Type':'application/json'},body:JSON.stringify({key:c.key,name:name||''})})).json(); }
       catch(e){ r={ok:false,error:String(e)}; }
       b.disabled=false;
       if(!r.ok){ head.textContent='Error: '+(r.error||'failed'); return; }
