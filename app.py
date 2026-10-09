@@ -59474,6 +59474,33 @@ def api_console_fmp_orders():
     return jsonify({"ok": True, "results": results})
 
 
+@app.route("/api/console/fmp-product-buyers", methods=["POST"])
+def api_console_fmp_product_buyers():
+    """Count FMP buyers of named products across all clients, legacy included.
+    Read-only, numbers only: no email, name or id leaves this route. POST only
+    because the optional compare lists are too long for a URL. Console-gated."""
+    if _bos_actor() is None:
+        return jsonify({"ok": False, "error": "unauthorized"}), 401
+    from dashboard import fmp_orders as _fo
+    body = request.get_json(silent=True) or {}
+    products, groups, compare = body.get("products"), body.get("groups") or {}, body.get("compare") or {}
+    ok = (isinstance(products, dict) and 0 < len(products) <= 50
+          and all(isinstance(ts, list) and 0 < len(ts) <= 20
+                  and all(isinstance(t, str) and 2 <= len(t.strip()) <= 60 for t in ts)
+                  for ts in products.values())
+          and isinstance(groups, dict) and len(groups) <= 20
+          and all(isinstance(v, list) for v in groups.values())
+          and isinstance(compare, dict)
+          and all(isinstance(v, dict) and all(isinstance(es, list) and len(es) <= 20000
+                                              for es in v.values()) for v in compare.values()))
+    if not ok:
+        return jsonify({"ok": False, "error": "products {label: [2-60 char terms]} required"}), 400
+    products = {k: [t.strip() for t in ts] for k, ts in products.items()}
+    with db.connect(LOG_DB) as cx:
+        result = _fo.product_buyer_counts(cx, products, groups, compare)
+    return jsonify({"ok": True, **result})
+
+
 @app.route("/api/console/fmp-history-rebuild", methods=["POST"])
 @require_console_key
 def api_console_fmp_history_rebuild():
