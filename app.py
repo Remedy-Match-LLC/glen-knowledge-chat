@@ -13,6 +13,7 @@ except ImportError:
 
 import os
 import sys
+import html
 import re
 import json
 import uuid
@@ -2137,6 +2138,115 @@ def _product_guidance_hint(slug: str) -> str:
     if len(purpose) > 220:
         purpose = purpose[:217].rsplit(" ", 1)[0] + "..."
     return f" | class: {kind}" + (f" | purpose: {purpose}" if purpose else "")
+
+
+_NAMED_FACTS_MAX_PRODUCTS = 3
+_NAMED_FACTS_MAX_CHARS = 1600
+# Pinned products whose name is an everyday word, so a sentence can start with it.
+_COMMON_WORD_NAMES = frozenset({"moisturize"})
+# A facts block tells the model the product exists and to give its dose, which would
+# recommend a product Glen ruled must never be recommended.
+from dashboard.related_products import DO_NOT_RECOMMEND as _DO_NOT_RECOMMEND_FACTS  # noqa: E402
+_PRICE_SENTENCE = re.compile(r"\s*Price:\s*\$[\d,.]+\.?")
+
+
+def _named_product_spans(query_text: str, products: dict) -> dict:
+    """{slug: (start, end)} for each pinned, active product named in the question.
+
+    Only a product's own catalog name counts, never an alias: an alias can name an old
+    or consolidated product, and the block tells the model the name is real. The whole
+    name must stand as words, cased as in the catalog: "clear the way for my lymph" and
+    "reverse age naturally" are not product names (review round 3). A product whose name
+    is an everyday word (Moisturize) never qualifies, and neither does one Glen has
+    ruled must never be recommended. Only products with
+    `copy_pinned` qualify: their store text is Glen-approved, and older descriptions
+    carry claims and price lines (review round 1, 2026-10-09).
+    """
+    query_text = html.unescape(query_text).replace("\u2122", "")
+    spans = {}
+    for slug, p in products.items():
+        if (not p.get("copy_pinned") or p.get("inactive") or p.get("info_only")
+                or slug in _DO_NOT_RECOMMEND_FACTS or slug in _COMMON_WORD_NAMES):
+            continue
+        name = html.unescape(p.get("name") or "").replace("\u2122", "").strip()
+        if not name:
+            continue
+        words = name.split()
+        pattern = r"(?<![\w+])" + r"\s+".join(re.escape(w) for w in words) + r"(?![\w+])"
+        m = re.search(pattern, query_text)
+        if m:
+            spans[slug] = m.span()
+    # The longest name wins: "Stamina Plus" inside "Stamina Plus: Full B complex ..."
+    return {s: sp for s, sp in spans.items()
+            if not any(o != s and o_sp[0] <= sp[0] and sp[1] <= o_sp[1] and o_sp != sp
+                       for o, o_sp in spans.items())}
+
+
+def _named_product_facts(query_text: str) -> str:
+    """Approved store text for the catalog products the user names in the question.
+
+    The chat does not search `specific-formulations`, so a product whose facts live
+    only there reaches the model as a table row with a link and an intro. Asked
+    "How much Angiostasis should I take?" (2026-10-08), the model had no dose or
+    caution, filled the gap from wet-AMD answers about AngiogenX, and told the
+    client they meant AngiogenX. This block carries the product's own description,
+    directions and caution, so the answer comes from the approved text.
+    """
+    if not query_text:
+        return ""
+    products = (_PRODUCTS or {}).get("products", {}) or {}
+    if not products:
+        return ""
+    spans = _named_product_spans(query_text, products)
+    blocks = []
+    for slug in sorted(spans, key=lambda s: spans[s][0]):
+        product = products[slug]
+        name = html.unescape(product.get("name") or slug).strip()
+        desc = _PRICE_SENTENCE.sub("", html.unescape(product.get("description") or ""))
+        desc = re.sub(r"[ \t]+", " ", desc).strip()
+        if len(desc) > _NAMED_FACTS_MAX_CHARS:
+            desc = desc[:_NAMED_FACTS_MAX_CHARS].rsplit(" ", 1)[0] + "..."
+        parts = [f"### {name}"]
+        if desc:
+            parts.append(desc)
+        for label, key in (("Directions", "directions"), ("Caution", "warning")):
+            val = (product.get(key) or "").strip()
+            if val and val not in desc:
+                parts.append(f"{label}: {val}")
+        if len(parts) > 1:
+            blocks.append("\n".join(parts))
+        if len(blocks) >= _NAMED_FACTS_MAX_PRODUCTS:
+            break
+    if not blocks:
+        return ""
+    return (
+        "PRODUCT FACTS FOR THE PRODUCT(S) THE USER NAMED. This is the approved store "
+        "text and it outranks every snippet about this product. Each product here exists "
+        "under the name the user used, so never tell them they meant a different product. "
+        "Describe it only by what this text says. Add no mechanism, origin story or action "
+        "verb (dissolve, break down, remove, reduce, shrink) that this text does not use. "
+        "Give its dose from this text and repeat "
+        "its full caution, every sentence of it, in its own words. Do not attach to it any condition, mechanism, pairing or dose "
+        "that the snippets give for a different product, even one with a similar name. "
+        "Name no disease or condition it is for unless this text or the user's question "
+        "names it. Pair or compare it only with products this text names. In such an "
+        "answer, name no other product at all unless this text or the user names it.\n"
+        "When the question asks what the product is, what is in it, how to take it or "
+        "whether it is safe, skip any consensus or mainstream-view structure. Answer "
+        "directly from this text, briefly, then the Sources line and the CTA line. Do not "
+        "describe what mainstream medicine says about related conditions, and do not list "
+        "diseases or conditions as examples of where it helps, even in passing.\n\n"
+        + "\n\n".join(blocks)
+    )
+
+
+def named_product_facts_block(query_text: str) -> str:
+    """The facts block, or "". It goes LAST in the user message, after the synthesis
+    instruction. Read-back 2026-10-08: placed before the snippets, 8 of 16 answers
+    failed; placed after them but before the instruction, 2 of 16 failed.
+    On a gated educate-only turn chat() removes it: it tells the model to give a dose."""
+    facts = _named_product_facts(query_text)
+    return f"\n\n{facts}" if facts else ""
 
 
 def build_product_directive(snippets_text: str = "", query_text: str = ""):
@@ -5921,6 +6031,7 @@ def chat():
             f"RETRIEVED SNIPPETS:\n{context_str}\n\n"
             f"{product_block}"
             f"{synth_instr}"
+            f"{named_product_facts_block(query)}"
         })
 
         # ── Consent gate (Tier-0 Visitor → Tier-1 Member) ────────────────────
@@ -5935,6 +6046,10 @@ def chat():
             _system = _ally_ov + "\n\n" + _system
         if not is_member(session_id, email) and _is_gated_question(query):
             _system = _system + _EDUCATE_ONLY_POLICY
+            # The facts block says to give a dose; educate-only says name no product.
+            _facts = named_product_facts_block(query)
+            if _facts:
+                messages[-1]["content"] = messages[-1]["content"].replace(_facts, "")
             yield sse({"gate": True})
         # ──────────────────────────────────────────────────────────────────────
 
@@ -14222,6 +14337,7 @@ def _generate_full_answer(query: str, level: str, is_logged_in: bool = False):
         f"RETRIEVED SNIPPETS:\n{context_str}\n\n"
         f"{product_block}"
         f"{synth_instr}"
+        f"{named_product_facts_block(query)}"
     )
 
     answer = ""
@@ -14395,6 +14511,7 @@ def _full_report_stream(log_id, query, level, session_id,
             f"RETRIEVED SNIPPETS:\n{context_str}\n\n"
             f"{product_block}"
             f"{synth_instr}"
+            f"{named_product_facts_block(query)}"
         )
 
         try:
