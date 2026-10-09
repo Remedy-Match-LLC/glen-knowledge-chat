@@ -488,10 +488,20 @@ def waitlist_block(slug, catalog=None) -> Optional[dict]:
     return None
 
 
-def waitlist_refusal(block) -> str:
-    """The refusal a buyer sees for a waitlist_only product (spec 2026-10-09)."""
-    return (f"{block['name']} is not ready to order yet. "
-            f"Join the waiting list on its page: /begin/product/{block['slug']}")
+class WaitlistRefusal(str):
+    """The refusal sentence, verbatim from the spec, carrying its product page as `.url`
+    so a JSON caller can send the link as its own field (review round 1, 2026-10-09)."""
+    url = ""
+
+
+def waitlist_refusal(block) -> "WaitlistRefusal":
+    """The refusal a buyer sees for a waitlist_only product (spec 2026-10-09):
+    "{name} is not ready to order yet. Join the waiting list on its page." The page
+    rides as `.url`."""
+    r = WaitlistRefusal(f"{block['name']} is not ready to order yet. "
+                        "Join the waiting list on its page.")
+    r.url = f"/begin/product/{block['slug']}"
+    return r
 
 
 def is_orderable(slug, catalog=None) -> bool:

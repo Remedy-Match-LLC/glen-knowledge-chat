@@ -213,14 +213,21 @@ def sign_up(cx, slug, email, *, first_name=""):
     return ("new", token)
 
 
-def slug_for_token(cx, token):
-    """The list a confirmation token belongs to, or None. Read-only: it never confirms."""
+def token_status(cx, token):
+    """(slug, "pending" | "confirmed") for a confirmation token, or (None, None) for an
+    unknown, replaced or expired one. Read-only: it never confirms."""
     if not token:
-        return None
+        return (None, None)
     init_table(cx)
-    row = cx.execute("SELECT product_slug FROM product_waitlist WHERE confirm_hash=?",
-                     (_hash(token),)).fetchone()
-    return row[0] if row and row[0] in LISTS else None
+    row = cx.execute("SELECT product_slug, confirm_sent_at, confirmed_at FROM product_waitlist "
+                     "WHERE confirm_hash=?", (_hash(token),)).fetchone()
+    if not row or row[0] not in LISTS:
+        return (None, None)
+    if (row[2] or "").strip():
+        return (row[0], "confirmed")
+    if _ago(row[1]) > timedelta(days=CONFIRM_DAYS):
+        return (None, None)
+    return (row[0], "pending")
 
 
 def confirm(cx, token):

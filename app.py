@@ -4731,9 +4731,11 @@ def begin_biofield_order_preview(token):
         if not items:
             return jsonify({"ok": True, "lines": [], "subtotal_cents": 0,
                             "shipping_cents": 0, "savings_cents": 0, "total_cents": 0})
-        _wl = _cart_waitlist_refusal(items)
-        if _wl:
-            return jsonify({"ok": False, "error": _wl}), 200
+        # Matched-set lines not ready to order are skipped and named back (2026-10-09).
+        items, not_ready = _split_not_ready(items)
+        if not items:
+            return jsonify({"ok": True, "lines": [], "subtotal_cents": 0, "shipping_cents": 0,
+                            "savings_cents": 0, "total_cents": 0, "not_ready": not_ready})
         ship = _resolve_ship_address(email, {})
         # Gate Type-2 order-total pricing on membership so the preview matches what the
         # buyer is actually charged at checkout (begin_biofield_order_checkout does the same).
@@ -4749,7 +4751,7 @@ def begin_biofield_order_preview(token):
         return jsonify({"ok": True, "lines": lines, "subtotal_cents": subtotal,
                         "shipping_cents": shipping,
                         "savings_cents": int(priced.get("discount_cents") or 0),
-                        "total_cents": subtotal + shipping})
+                        "total_cents": subtotal + shipping, "not_ready": not_ready})
     except Exception as e:
         print(f"[biofield-cart] preview failed: {e!r}", flush=True)
         return jsonify({"ok": False}), 200
@@ -4789,14 +4791,17 @@ def begin_biofield_order_checkout(token):
                                 "error": "These matches aren't unlocked yet — "
                                          "unlock your full analysis to order them."}), 400
             return jsonify({"ok": False, "error": "Your cart is empty."}), 400
-        _wl = _cart_waitlist_refusal(items)
-        if _wl:
-            return jsonify({"ok": False, "error": _wl}), 400
+        # Matched-set lines not ready to order are skipped, never block the rest
+        # (review round 1, 2026-10-09).
+        items, not_ready = _split_not_ready(items)
+        if not items:
+            return jsonify({"ok": False, "not_ready": not_ready,
+                            "error": "None of these remedies is ready to order yet."}), 400
         ship = _resolve_ship_address(email, body.get("address") or {})
         try:
             res = _checkout_cart(email, items, ship=ship)
         except CheckoutError as e:
-            return jsonify({"ok": False, "error": str(e)}), 400
+            return jsonify({"ok": False, "error": str(e), **_wl_fields(e)}), 400
         out, stripe_url = res["out"], res["stripe_url"]
         try:
             from dashboard import recommendation_events as _re
@@ -4807,7 +4812,8 @@ def begin_biofield_order_checkout(token):
         except Exception:
             pass
         _pe = {"payment_error": _CARD_UNAVAILABLE} if (_STRIPE_ACTIVE and not stripe_url) else {}
-        return jsonify({"ok": True, "stripe_url": stripe_url, **out, **_pe})
+        return jsonify({"ok": True, "stripe_url": stripe_url, **out, **_pe,
+                        "not_ready": not_ready})
     except Exception as e:
         app.logger.exception("biofield order checkout failed")
         return jsonify({"ok": False, "error": f"{type(e).__name__}: {e}"}), 500
@@ -8160,6 +8166,32 @@ def _waitlist_refusal(slug):
     from dashboard import practitioner_portal as _ppw
     b = _waitlist_block(slug)
     return _ppw.waitlist_refusal(b) if b else None
+
+
+def _split_not_ready(items):
+    """(orderable items, not-ready list) for lines that came from a curated list or a
+    recommendation. A waitlist_only line is skipped, never invoiced and never allowed to
+    block the rest; it is returned as {name, url} so the page can show its name with a
+    link to its page (spec, "Programs and recommendations"; review round 1, 2026-10-09).
+    A line the client added themselves is refused instead, by the callers' own checks."""
+    keep, not_ready = [], []
+    for it in (items or []):
+        slug = (it.get("slug") if isinstance(it, dict) else it) or ""
+        b = _waitlist_block(slug)
+        if b:
+            not_ready.append({"name": b["name"], "url": f"/begin/product/{b['slug']}"})
+        else:
+            keep.append(it)
+    return keep, not_ready
+
+
+def _wl_fields(msg):
+    """{"url": the product page} when `msg` is a waitlist refusal, else {}. JSON callers
+    send the spec's sentence as `error` and the page link as its own field."""
+    url = getattr(msg, "url", "") or ""
+    if not url and isinstance(msg, BaseException) and msg.args:
+        url = getattr(msg.args[0], "url", "") or ""
+    return {"url": url} if url else {}
 
 
 def _cart_waitlist_refusal(lines, skip_zero_qty=True):
@@ -12293,7 +12325,7 @@ def begin_checkout(slug):
         return jsonify({"ok": True, "info_only": True, "affiliate_url": p.get("affiliate_url", "")})
     _wl = _waitlist_refusal(p.get("slug") or slug)
     if _wl:
-        return jsonify({"ok": False, "error": _wl, "waitlist": True}), 400
+        return jsonify({"ok": False, "error": _wl, "waitlist": True, **_wl_fields(_wl)}), 400
     data   = request.get_json(silent=True) or {}
     email  = (data.get("email") or "").strip().lower()
     name   = (data.get("name") or "").strip()
@@ -14296,7 +14328,10 @@ def begin_concierge_add():
         return jsonify({"ok": False, "need_optin": True,
                         "error": "Please agree to our Terms to continue."}), 403
     p = _get_product(slug)
-    if not p or p.get("info_only"):
+    _wl = _waitlist_refusal(slug) if p else None
+    if _wl:
+        return jsonify({"ok": False, "error": _wl, **_wl_fields(_wl)}), 400
+    if not p or not _is_orderable(p.get("slug") or slug, p):
         return jsonify({"ok": False, "error": "not an addable catalog product"}), 400
     if not invoice_id:
         return jsonify({"ok": False, "error": "invoice_id required"}), 400
@@ -19015,7 +19050,8 @@ def api_practitioner_cart():
         return jsonify({"ok": False,
                         "error": _waitlist_refusal(slug)
                         or "That item is ordered separately (e.g. on the Centropix store), "
-                           "not through wholesale."}), 400
+                           "not through wholesale.",
+                        **_wl_fields(_waitlist_refusal(slug))}), 400
     _pp.cart_set(pid, slug, qty)
     return jsonify({"ok": True, **(_pp.portal_data(pid) or {})})
 
@@ -19272,7 +19308,7 @@ def api_practitioner_dropship_checkout():
             items, prac, patient_ship=ship, method=method,
             shipping_cents=shipping_cents)
     except CheckoutError as e:
-        return jsonify({"ok": False, "error": str(e)}), 400
+        return jsonify({"ok": False, "error": str(e), **_wl_fields(e)}), 400
     except Exception as e:
         print(f"[dropship-checkout] failed: {e!r}", flush=True)
         return jsonify({"ok": False, "error": "Checkout failed. Please try again."}), 500
@@ -22994,7 +23030,7 @@ def api_client_checkout(code):
         return jsonify({"ok": False, "error": "email required"}), 400
     _wl = _cart_waitlist_refusal(items if isinstance(items, list) else [])
     if _wl:
-        return jsonify({"ok": False, "error": _wl}), 400
+        return jsonify({"ok": False, "error": _wl, **_wl_fields(_wl)}), 400
 
     # 2. Consent gate — mirrors begin_checkout exactly: session cookie + email.
     _sid = request.cookies.get("amg_session", "")
@@ -23780,7 +23816,8 @@ def api_cart_add():
     p = _get_product(slug)
     if not p or not _is_orderable(p.get("slug") or slug, p):
         return jsonify({"ok": False, "error": _waitlist_refusal(slug)
-                        or "That product is not available."}), 400
+                        or "That product is not available.",
+                        **_wl_fields(_waitlist_refusal(slug))}), 400
     fmt = _clean_format(p, data.get("format"))
     try:
         qty = max(1, min(int(data.get("qty", 1) or 1), 99))
@@ -23822,7 +23859,7 @@ def api_cart_set_qty():
         _raising = False
     _wl = _waitlist_refusal(slug) if _raising else None
     if _wl:
-        return jsonify({"ok": False, "error": _wl}), 400
+        return jsonify({"ok": False, "error": _wl, **_wl_fields(_wl)}), 400
     with db.connect(LOG_DB) as cx:
         _cart_store.init_cart_tables(cx)
         token = _cart_open_token(cx)
@@ -24028,7 +24065,7 @@ def api_cart_checkout():
 
         _wl = _cart_waitlist_refusal(cart)
         if _wl:
-            return jsonify({"ok": False, "error": _wl}), 400
+            return jsonify({"ok": False, "error": _wl, **_wl_fields(_wl)}), 400
         unavailable = []
         for c in cart:
             p = _get_product(c["slug"])
@@ -24069,7 +24106,7 @@ def api_cart_checkout():
         except CheckoutError as e:
             with db.connect(LOG_DB) as cx:
                 _cart_store.release_claim(cx, token)
-            return jsonify({"ok": False, "error": str(e)}), 400
+            return jsonify({"ok": False, "error": str(e), **_wl_fields(e)}), 400
 
         out = res.get("out") or {}
         stripe_url = res.get("stripe_url") or ""
@@ -29296,8 +29333,8 @@ def _portal_open_cart(cx, portal, *, seed=True):
         pass
     for item in curated:
         slug = (item.get("slug") or "").strip().lower() if isinstance(item, dict) else ""
-        if not slug or not _get_product(slug):
-            continue
+        if not slug or not _get_product(slug) or _waitlist_block(slug):
+            continue  # a not-ready recommendation is never seeded into the cart (2026-10-09)
         already = cx.execute(
             "SELECT 1 FROM portal_cart_seeded WHERE email=? AND slug=?", (email, slug)
         ).fetchone()
@@ -29453,7 +29490,8 @@ def api_portal_cart_set_format(token):
         return jsonify({"error": "Choose bottle or cellophane refill pack."}), 400
     product = _get_product(slug)
     if not product or not _is_orderable(product.get("slug") or slug, product):
-        return jsonify({"error": _waitlist_refusal(slug) or "Product is not available."}), 400
+        return jsonify({"error": _waitlist_refusal(slug) or "Product is not available.",
+                        **_wl_fields(_waitlist_refusal(slug))}), 400
     if to_fmt == "refill" and not _capsule_formats_ok(product):
         return jsonify({"error": "This product is available in a bottle only."}), 400
     with db.connect(LOG_DB) as cx:
@@ -29474,7 +29512,8 @@ def api_portal_cart_set_format_quantities(token):
     slug = (data.get("slug") or "").strip().lower()
     product = _get_product(slug)
     if not product or not _is_orderable(product.get("slug") or slug, product):
-        return jsonify({"error": _waitlist_refusal(slug) or "Product is not available."}), 400
+        return jsonify({"error": _waitlist_refusal(slug) or "Product is not available.",
+                        **_wl_fields(_waitlist_refusal(slug))}), 400
     if not _capsule_formats_ok(product):
         return jsonify({"error": "This product is available in a bottle only."}), 400
     try:
@@ -29520,7 +29559,8 @@ def api_portal_order_add(token):
     product = _get_product(slug)
     if not product or not _is_orderable(product.get("slug") or slug, product):
         return jsonify({"error": _waitlist_refusal(slug)
-                        or "That remedy is not available."}), 400
+                        or "That remedy is not available.",
+                        **_wl_fields(_waitlist_refusal(slug))}), 400
     explicit_format = "format" in body and body.get("format") not in (None, "")
     fmt = (body.get("format") or "").strip().lower()
     if not explicit_format and cello_default and _capsule_formats_ok(product):
@@ -32127,7 +32167,8 @@ def api_client_portal_checkout(token):
             product = _get_product(slug) if slug else None
             item_name = ((product or {}).get("name") or slug or "That item").strip()
             if slug and product and _waitlist_refusal(slug):
-                return jsonify({"error": _waitlist_refusal(slug)}), 400
+                return jsonify({"error": _waitlist_refusal(slug),
+                                **_wl_fields(_waitlist_refusal(slug))}), 400
             if not slug or not product or not _is_orderable(product.get("slug") or slug, product):
                 return jsonify({"error": f"{item_name} isn't available to order."}), 400
             if not catalog_order and slug not in entitled:
@@ -32155,13 +32196,16 @@ def api_client_portal_checkout(token):
                 items = _merge_accepted_recommendation_items(_rcx, email, base_items)
         except Exception:
             items = base_items  # merge failure must never break checkout
-    # A cart holding a waitlist_only product is refused whole (2026-10-09).
-    _wl = _cart_waitlist_refusal(items)
-    if _wl:
-        return jsonify({"error": _wl}), 400
+    # Curated and recommended lines that are not ready to order are skipped, never
+    # block the rest, and are named back with their page (review round 1, 2026-10-09).
+    # A posted line the client chose themselves was refused above.
+    not_ready = []
+    if posted is None:
+        items, not_ready = _split_not_ready(items)
     lines, items_rec, subtotal_cents = _portal_priced_lines(items, email=email)
     if not lines:
-        return jsonify({"error": "Your remedies are no longer available — please reach out and we'll help."}), 400
+        return jsonify({"error": "Your remedies are no longer available — please reach out and we'll help.",
+                        "not_ready": not_ready}), 400
     if method == "card" and not _STRIPE_ACTIVE:
         return jsonify({"error": "Card checkout is temporarily unavailable. Please reach out and we'll help."}), 503
     try:
@@ -32214,7 +32258,7 @@ def api_client_portal_checkout(token):
             order_id = persist_portal_order()
             zelle = _ALT_PAY["zelle"]
             return jsonify({"ok": True, "method": "zelle", "order_ref": checkout_ref,
-                            "order_id": order_id,
+                            "order_id": order_id, "not_ready": not_ready,
                             "total_cents": order_total_cents,
                             "shipping_cents": shipping_cents, "pay_instructions": {
                                 "label": zelle["label"], "to": zelle["to"],
@@ -32225,7 +32269,7 @@ def api_client_portal_checkout(token):
         if not stripe_url:
             return jsonify({"error": _CARD_UNAVAILABLE}), 502
         order_id = persist_portal_order()
-        return jsonify({"ok": True, "stripe_url": stripe_url,
+        return jsonify({"ok": True, "stripe_url": stripe_url, "not_ready": not_ready,
                         "order_id": order_id, "order_ref": checkout_ref})
     except Exception as e:
         app.logger.exception("portal checkout failed")
@@ -40047,7 +40091,7 @@ def api_console_dropship_reissue():
             _pre = _bos_orders.get_order(cx, oid) or {}
         _wl = _cart_waitlist_refusal(_pre.get("items") or [])
         if _wl:
-            return jsonify({"error": f"order #{oid}: {_wl}"}), 400
+            return jsonify({"error": f"order #{oid}: {_wl}", **_wl_fields(_wl)}), 400
     replacements = []
     for oid in order_ids:
         with db.connect(LOG_DB) as cx:
@@ -40146,7 +40190,7 @@ def api_console_dropship_create():
             return jsonify({"ok": False, "error": f"unknown product: {slug}"}), 400
         _wl = _waitlist_refusal(slug)
         if _wl:
-            return jsonify({"ok": False, "error": _wl}), 400
+            return jsonify({"ok": False, "error": _wl, **_wl_fields(_wl)}), 400
         items.append({"slug": slug, "qty": qty})
     if not items:
         return jsonify({"ok": False, "error": "items are required"}), 400
@@ -40156,7 +40200,7 @@ def api_console_dropship_create():
             items, practitioner, patient_ship=ship, method="card",
             shipping_cents=shipping_cents)
     except CheckoutError as e:
-        return jsonify({"ok": False, "error": str(e)}), 400
+        return jsonify({"ok": False, "error": str(e), **_wl_fields(e)}), 400
     if not out.get("ok"):
         return jsonify(out), 422
     stripe_url = _stripe_checkout_url_for_order(out, practitioner["email"], "")
@@ -40707,7 +40751,7 @@ def reorder_checkout():
                                  points_to_redeem_cents=requested_redeem,
                                  referral_code=referral_code)
         except CheckoutError as e:
-            return jsonify({"ok": False, "error": str(e)}), 400
+            return jsonify({"ok": False, "error": str(e), **_wl_fields(e)}), 400
         out, stripe_url = res["out"], res["stripe_url"]
         if not stripe_url and not res.get("no_payment_required"):
             return jsonify({"ok": False, "error": _CARD_UNAVAILABLE}), 503
@@ -40829,9 +40873,11 @@ def product_waitlist_confirm(token):
     if request.method != "POST":
         safe = "".join(ch for ch in (token or "") if ch.isalnum() or ch in "-_")[:64]
         with db.connect(LOG_DB) as cx:
-            slug = _pw.slug_for_token(cx, safe)
+            slug, state = _pw.token_status(cx, safe)
         if not slug:
             return _page(_WAITLIST_EXPIRED_PAGE)
+        if state == "confirmed":
+            return redirect(f"/begin/product/{slug}?waitlist=confirmed", 303)
         return _page(_WAITLIST_CONFIRM_PAGE.format(
             token=safe, title=html.escape(_pw.TEXTS[slug]["page_title"])))
     with _db_lock, db.connect(LOG_DB) as cx:
@@ -41050,7 +41096,7 @@ def reorder_subscribe():
             pc = _price_cart(cart, ship=ship, subscriber_order_count=0, subscriber_active=True,
                              program_member=_mix_match_member(email), email=email)
         except CheckoutError as e:
-            return jsonify({"ok": False, "error": str(e)}), 400
+            return jsonify({"ok": False, "error": str(e), **_wl_fields(e)}), 400
         if not pc["qbo_lines"]:
             return jsonify({"ok": False,
                             "error": "Your cart is empty or those items are no longer available."}), 400
@@ -56817,7 +56863,7 @@ def api_orders_edit(oid):
         return jsonify({"ok": False, "error": "no line items"}), 400
     _wl = _cart_waitlist_refusal(lines_in if isinstance(lines_in, list) else [])
     if _wl:
-        return jsonify({"ok": False, "error": _wl}), 400
+        return jsonify({"ok": False, "error": _wl, **_wl_fields(_wl)}), 400
     pickup = bool(body.get("pickup"))
     cx = db.connect(LOG_DB)
     cx.row_factory = _sqlite3.Row
@@ -56839,7 +56885,7 @@ def api_orders_edit(oid):
                 strict_packaging=True,
                 points_redeem_cents_in=body.get("points_redeem_cents"))
         except CheckoutError as e:
-            return jsonify({"ok": False, "error": str(e)}), 400
+            return jsonify({"ok": False, "error": str(e), **_wl_fields(e)}), 400
         if priced is None:
             return jsonify({"ok": False, "error": "no valid products"}), 400
     finally:
@@ -57215,7 +57261,7 @@ def api_orders_grant_member_access(oid):
                 cx, order, lines_in, pickup=pickup,   # invoice_note=None -> note preserved
                 strict_packaging=True)
         except CheckoutError as e:
-            return jsonify({"ok": False, "error": str(e)}), 400
+            return jsonify({"ok": False, "error": str(e), **_wl_fields(e)}), 400
         if priced is None:
             return jsonify({"ok": False, "error": "no valid products on this order"}), 400
     finally:
@@ -57383,7 +57429,7 @@ def api_orders_manual():
         return jsonify({"ok": False, "error": "no line items"}), 400
     _wl = _cart_waitlist_refusal(lines_in if isinstance(lines_in, list) else [])
     if _wl:
-        return jsonify({"ok": False, "error": _wl}), 400
+        return jsonify({"ok": False, "error": _wl, **_wl_fields(_wl)}), 400
     # Bill with caregiver: a member whose invoices are remembered to go to a caregiver
     # has these lines placed on the caregiver's invoice instead of an order of their own.
     if body.get("_caregiver_route", True) is not False and (customer.get("email") or "").strip():
@@ -57444,7 +57490,7 @@ def api_orders_manual():
                     pickup=(order.get("channel") == "pickup"),
                     invoice_note=body.get("invoice_note"))
             except CheckoutError as e:
-                return jsonify({"ok": False, "error": str(e)}), 400
+                return jsonify({"ok": False, "error": str(e), **_wl_fields(e)}), 400
             if priced is None:
                 return jsonify({"ok": False, "error": "no valid products"}), 400
         finally:
@@ -57556,7 +57602,7 @@ def api_orders_manual():
             points_redeem_cents_in=body.get("points_redeem_cents"),
             strict_packaging=True)
     except CheckoutError as e:
-        return jsonify({"ok": False, "error": str(e)}), 400
+        return jsonify({"ok": False, "error": str(e), **_wl_fields(e)}), 400
     if priced is None:
         return jsonify({"ok": False, "error": "no valid products"}), 400
     items_rec = priced["items_rec"]
@@ -57788,7 +57834,7 @@ def api_orders_shipping_preview():
         shipping_cents = _bos_orders.effective_shipping_cents(False, pc.get("shipping_cents"))
         get_cents = int((pc.get("priced") or {}).get("get_cents") or 0)
     except CheckoutError as e:
-        return jsonify({"ok": False, "error": str(e)}), 400
+        return jsonify({"ok": False, "error": str(e), **_wl_fields(e)}), 400
     return jsonify({"ok": True, "shipping_cents": shipping_cents,
                     "get_cents": get_cents, "pickup": False})
 
@@ -58875,7 +58921,7 @@ def api_invoice_membership(token):
         priced, _was_paid = _reprice_and_persist_invoice(
             cx, order, payload, pickup=(order.get("channel") == "pickup"))
     except CheckoutError as e:
-        return jsonify({"ok": False, "error": str(e)}), 400
+        return jsonify({"ok": False, "error": str(e), **_wl_fields(e)}), 400
     finally:
         cx.close()
     if priced is None:
@@ -59006,7 +59052,7 @@ def api_invoice_update(token):
                                 refill_ok=lambda _s: _capsule_formats_ok(_get_product(_s) or {}),
                                 refusal=_waitlist_refusal)
     except _cil.NotOrderable as e:
-        return jsonify({"ok": False, "error": str(e)}), 400
+        return jsonify({"ok": False, "error": str(e), **_wl_fields(e)}), 400
     if not lines_in:
         return jsonify({"ok": False, "error": "no valid items"}), 400
     cx = db.connect(LOG_DB); cx.row_factory = _sqlite3.Row
@@ -59023,7 +59069,7 @@ def api_invoice_update(token):
             return jsonify({"ok": False, "error": "no valid items"}), 400
         updated = _bos_orders.get_order(cx, order["id"])
     except CheckoutError as e:
-        return jsonify({"ok": False, "error": str(e)}), 400
+        return jsonify({"ok": False, "error": str(e), **_wl_fields(e)}), 400
     finally:
         cx.close()
     try:
@@ -60132,7 +60178,7 @@ def bos_orders_create():
     b = request.get_json(silent=True) or {}
     _wl = _cart_waitlist_refusal(b.get("items") if isinstance(b.get("items"), list) else [])
     if _wl:
-        return jsonify({"ok": False, "error": _wl}), 400
+        return jsonify({"ok": False, "error": _wl, **_wl_fields(_wl)}), 400
     ref = str(b.get("external_ref") or f"manual-{_bos_orders._now()}")
     cx = db.connect(LOG_DB)
     cx.row_factory = _sqlite3.Row

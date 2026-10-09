@@ -24,8 +24,9 @@ from dashboard import practitioner_portal as pp
 from dashboard import wholesale_checkout as wc
 
 SCAR = "scar-soft-drink"
-REFUSAL = ("Scar Soft Drink is not ready to order yet. Join the waiting list on its page: "
-           "/begin/product/scar-soft-drink")
+# The spec's sentence, verbatim; the page travels as a separate `url` field.
+REFUSAL = "Scar Soft Drink is not ready to order yet. Join the waiting list on its page."
+URL = "/begin/product/scar-soft-drink"
 BUNDLE = "test-scar-core-bundle"
 
 
@@ -62,8 +63,9 @@ def _no_payment(monkeypatch):
 
 def _refused(r, code=400):
     assert r.status_code == code, (r.status_code, r.get_data(as_text=True)[:300])
-    text = r.get_data(as_text=True)
-    assert "Scar Soft Drink is not ready to order yet" in text, text[:300]
+    body = r.get_json() or {}
+    assert REFUSAL in (body.get("error") or ""), body
+    assert body.get("url") == URL, body
 
 
 # ── The predicate ─────────────────────────────────────────────────────────────
@@ -77,7 +79,8 @@ def test_the_product_carries_waitlist_only_in_the_catalog_file():
 def test_the_predicate_refuses_it_and_names_it(catalog):
     assert pp.is_orderable(SCAR, catalog) is False
     assert pp.waitlist_block(SCAR, catalog) == {"slug": SCAR, "name": "Scar Soft Drink"}
-    assert pp.waitlist_refusal(pp.waitlist_block(SCAR, catalog)) == REFUSAL
+    msg = pp.waitlist_refusal(pp.waitlist_block(SCAR, catalog))
+    assert msg == REFUSAL and msg.url == URL
 
 
 def test_a_bundle_names_its_waitlist_only_component(catalog):
@@ -132,7 +135,8 @@ def test_build_order_refuses_before_redeeming_credit(monkeypatch, catalog):
     monkeypatch.setattr(wc.wallet, "redeem_for_order", lambda *a, **k: redeemed.append(a) or 0)
     out = wc.build_order([{"slug": SCAR, "qty": 1}], {"id": "p1", "modules_completed": 1},
                          catalog=catalog)
-    assert out["ok"] is False and out["error"] == REFUSAL and redeemed == []
+    assert out["ok"] is False and out["error"] == REFUSAL and out["url"] == URL
+    assert redeemed == []
 
 
 def test_invoice_rebuild_refuses_a_posted_line_whole():
@@ -420,13 +424,89 @@ def test_console_dropship_reissue_is_refused_before_any_order_changes(client, mo
     assert expired == []
 
 
-def test_biofield_order_checkout_is_refused(client, monkeypatch):
+def _biofield(monkeypatch):
     monkeypatch.setattr(app, "BIOFIELD_CART_ENABLED", True)
     monkeypatch.setattr(app, "_biofield_verify_token", lambda th: (True, {"email": "b@x.com"}))
     monkeypatch.setattr(app, "_biofield_visible_slugs", lambda row, email: [SCAR, "scar-silk"])
     monkeypatch.setattr(app, "is_member", lambda *a, **k: True)
+
+
+def test_biofield_matched_set_orders_without_the_scar_line(client, monkeypatch):
+    """Review round 1: a matched-set line not ready to order is skipped and named, and
+    never blocks the rest of the order."""
+    _biofield(monkeypatch)
     seen = []
-    monkeypatch.setattr(app, "_checkout_cart", lambda *a, **k: seen.append(a))
-    _refused(client.post("/begin/biofield/tok/order-checkout", json={
-        "items": [{"slug": "scar-silk", "qty": 1}, {"slug": SCAR, "qty": 1}]}))
-    assert seen == []
+    monkeypatch.setattr(app, "_checkout_cart",
+                        lambda email, items, **k: seen.append(items) or
+                        {"out": {"invoice_id": "r1"}, "stripe_url": "https://pay/x"})
+    r = client.post("/begin/biofield/tok/order-checkout", json={
+        "items": [{"slug": "scar-silk", "qty": 1}, {"slug": SCAR, "qty": 1}]})
+    assert r.status_code == 200 and r.get_json()["ok"] is True
+    assert [i["slug"] for i in seen[0]] == ["scar-silk"] and len(seen[0]) == 1
+    assert r.get_json()["not_ready"] == [{"name": "Scar Soft Drink", "url": URL}]
+
+
+def test_biofield_preview_names_the_skipped_line(client, monkeypatch):
+    _biofield(monkeypatch)
+    p = client.post("/begin/biofield/tok/order-preview", json={
+        "items": [{"slug": "scar-silk", "qty": 1}, {"slug": SCAR, "qty": 1}]}).get_json()
+    assert [l["slug"] for l in p["lines"]] == ["scar-silk"]
+    assert p["not_ready"] == [{"name": "Scar Soft Drink", "url": URL}]
+
+
+# ── Review round 1 (2026-10-09) ───────────────────────────────────────────────
+
+def test_concierge_add_is_refused_before_the_order_changes(client, monkeypatch):
+    monkeypatch.setattr(app, "is_member", lambda *a, **k: True)
+    found = []
+    monkeypatch.setattr(app._bos_orders, "find_order_by_external_ref",
+                        lambda cx, ref: found.append(ref))
+    monkeypatch.setattr(app._bos_orders, "set_order_qbo_lines",
+                        lambda *a, **k: found.append("write"))
+    _refused(client.post("/begin/concierge/add", json={
+        "slug": SCAR, "invoice_id": "ref1", "email": "c@x.com"}))
+    assert found == []
+
+
+def test_portal_order_my_remedies_goes_through_without_the_scar_line(client, logdb, monkeypatch):
+    """A Macular Pucker client's curated list holds Scar Soft Drink. The order goes
+    through without it, and the page gets its name and link."""
+    monkeypatch.setattr(app, "_portal_record_for", lambda cx, token: {
+        "email": "mp@x.com", "name": "MP", "content": {"reorder_items": [
+            {"slug": "scar-silk", "qty": 1}, {"slug": SCAR, "qty": 1},
+            {"slug": "scar-solve", "qty": 1}]}})
+    monkeypatch.setattr(app, "_merge_accepted_recommendation_items",
+                        lambda cx, email, base: list(base))
+    priced = []
+    real = app._portal_priced_lines
+    monkeypatch.setattr(app, "_portal_priced_lines",
+                        lambda items, email=None: priced.append(list(items)) or real(items, email=email))
+    monkeypatch.setattr(app, "_stripe_checkout_url_for_reorder", lambda *a, **k: "https://pay/x")
+    monkeypatch.setattr(app, "_STRIPE_ACTIVE", True)
+    r = client.post("/api/portal/tok/checkout", json={"method": "card"})
+    body = r.get_json()
+    assert r.status_code == 200 and body["ok"] is True, body
+    assert [i["slug"] for i in priced[0]] == ["scar-silk", "scar-solve"]
+    assert len(priced[0]) == 2
+    assert body["not_ready"] == [{"name": "Scar Soft Drink", "url": URL}]
+
+
+def test_portal_cart_is_never_seeded_with_a_not_ready_recommendation(logdb, monkeypatch):
+    portal = {"email": "seed@x.com", "content": {"reorder_items": [
+        {"slug": "scar-silk", "qty": 1}, {"slug": SCAR, "qty": 1}]}}
+    monkeypatch.setattr(app, "_merge_accepted_recommendation_items",
+                        lambda cx, email, base: list(base))
+    with app.app.test_request_context("/"):
+        with sqlite3.connect(logdb) as cx:
+            token = app._portal_open_cart(cx, portal, seed=True)
+            slugs = [r["slug"] for r in CS.items(cx, token)]
+    assert slugs == ["scar-silk"]
+
+
+def test_the_real_product_data_route_offers_no_way_to_buy():
+    d = app.app.test_client().get(f"/begin/product-data/{SCAR}").get_json()
+    assert d["waitlist_only"] is True
+    assert d["price"] == "" and d["price_cents"] is None and d["regular"] == ""
+    for k in ("qty_pricing", "formats", "autoship", "cta_url"):
+        assert not d.get(k), k
+    assert d["autoship_eligible"] is False

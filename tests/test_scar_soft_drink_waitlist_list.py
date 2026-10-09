@@ -201,3 +201,19 @@ def test_scar_sign_ups_do_not_use_retinas_daily_allowance(cx, monkeypatch):
     assert pw.sign_up(cx, SCAR, "a2@x.com")[0] == "new"
     assert pw.sign_up(cx, SCAR, "a3@x.com") == ("capped", None)
     assert pw.sign_up(cx, RETINA, "b1@x.com")[0] == "new"
+
+
+def test_an_expired_or_used_link_does_not_show_the_confirm_button(client):
+    c, sent = client
+    c.post(f"/api/waitlist/{SCAR}", json={"email": "u@x.com"})
+    token = [ln for ln in sent[0][2].splitlines() if "/begin/waitlist/confirm/" in ln][0].rsplit("/", 1)[1]
+    c.post(f"/begin/waitlist/confirm/{token}")
+    used = c.get(f"/begin/waitlist/confirm/{token}")
+    assert used.status_code == 303 and used.headers["Location"].endswith("?waitlist=confirmed")
+    c.post(f"/api/waitlist/{SCAR}", json={"email": "old@x.com"})
+    token2 = [ln for ln in sent[1][2].splitlines() if "/begin/waitlist/confirm/" in ln][0].rsplit("/", 1)[1]
+    with sqlite3.connect(app.LOG_DB) as db:
+        db.execute("UPDATE product_waitlist SET confirm_sent_at='2020-01-01T00:00:00+00:00' "
+                   "WHERE email='old@x.com'")
+    page = c.get(f"/begin/waitlist/confirm/{token2}").get_data(as_text=True)
+    assert "That link has expired or is not valid" in page and "Confirm</button>" not in page
