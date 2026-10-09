@@ -55,7 +55,7 @@ def test_a_bad_completion_reset_is_ignored(tmp_path):
     d = tmp_path / "c1" / "m1"
     d.mkdir(parents=True)
     (d / "l1.md").write_text("---\ntitle: L\naccess: paid\n---\nx\n")
-    for bad in ("Oct 9 2026", "10/9/2026", "'2026-10-9'", "yes", "'2026-99-99'", "'2026-02-30'"):
+    for bad in ("Oct 9 2026", "10/9/2026", "'2026-10-9'", "yes", "'2026-99-99'", "'2026-02-30'", "'20261009'", "20261009"):
         (tmp_path / "c1" / "course.yaml").write_text(
             f"title: C\nmodules:\n  - slug: m1\n    title: M\n    completion_reset: {bad}\n"
             "    lessons:\n      - l1\n")

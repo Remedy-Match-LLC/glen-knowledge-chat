@@ -120,3 +120,26 @@ def test_completion_record_reads_never_raise_and_roll_back():
     assert cp.completed_at(Boom(), "a", "b", "c") is None
     assert Boom.rolled == 1
     assert cp.backfill_completions(Boom(), {("b", "c"): ["x"]}) == -1  # failure is not "0 new"
+
+
+def test_credit_from_the_reset_day_itself_does_not_count(cx):
+    _complete(cx, "day@x.com", ["01-a"])
+    assert cp.module_completed(cx, "day@x.com", "ash", "09-terrain", ["01-a"]) is True
+    lessons = ["01-a", "02-new"]
+    cx.execute("UPDATE course_module_completed SET completed_at='2026-10-09T05:00:00Z'")
+    assert cp.module_completed(cx, "day@x.com", "ash", "09-terrain", lessons, reset_before="2026-10-09") is False
+    cx.execute("UPDATE course_module_completed SET completed_at='2026-10-10T00:00:01Z'")
+    assert cp.module_completed(cx, "day@x.com", "ash", "09-terrain", lessons, reset_before="2026-10-09") is True
+
+
+def test_backfill_restamps_a_voided_record_only_if_complete_now(cx):
+    _complete(cx, "v@x.com", ["01-a", "02-new"])
+    _complete(cx, "w@x.com", ["01-a"])
+    for e in ("v@x.com", "w@x.com"):
+        cp.module_completed(cx, e, "ash", "09-terrain", ["01-a"])
+    cx.execute("UPDATE course_module_completed SET completed_at='2001-01-01T00:00:00Z'")
+    n = cp.backfill_completions(cx, {("ash", "09-terrain"): ["01-a", "02-new"]},
+                                {("ash", "09-terrain"): "2001-01-01"})
+    assert n == 1
+    assert cp.completed_at(cx, "v@x.com", "ash", "09-terrain") > "2001-01-02"
+    assert cp.completed_at(cx, "w@x.com", "ash", "09-terrain") == "2001-01-01T00:00:00Z"

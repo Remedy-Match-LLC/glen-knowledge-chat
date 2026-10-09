@@ -144,7 +144,7 @@ def test_backfill_retries_after_a_failure_and_rescans_hourly(client, monkeypatch
     from dashboard import course_progress as cp
     calls = []
     results = iter([-1, 0])
-    monkeypatch.setattr(cp, "backfill_completions", lambda cx, lessons: calls.append(1) or next(results))
+    monkeypatch.setattr(cp, "backfill_completions", lambda *a: calls.append(1) or next(results))
     clock = [1000.0]
     monkeypatch.setattr(cb._time, "monotonic", lambda: clock[0])
     monkeypatch.setattr(cb, "_completion_backfill_done", False)
@@ -160,6 +160,6 @@ def test_backfill_retries_after_a_failure_and_rescans_hourly(client, monkeypatch
     c.get("/learn", base_url=_MHOST)
     assert len(calls) == 2                      # success waits the full hour
     clock[0] += cb._BACKFILL_EVERY_S
-    monkeypatch.setattr(cp, "backfill_completions", lambda cx, lessons: calls.append(1) or 0)
+    monkeypatch.setattr(cp, "backfill_completions", lambda *a: calls.append(1) or 0)
     c.get("/learn", base_url=_MHOST)
     assert len(calls) == 3

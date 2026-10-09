@@ -39,8 +39,8 @@ _BACKFILL_RETRY_S = 300
 def _backfill_module_completions():
     """Hourly per process, record everyone who has completed a module under its
     current lessons, so a lesson added in a LATER deploy cannot take that credit
-    away (Glen, 2026-10-09). Insert-only, idempotent, never raises, never blocks
-    a request: a thread that finds the scan running skips it."""
+    away (Glen, 2026-10-09). Idempotent and never raises. The request that runs
+    the scan waits for it; any other thread that finds it running skips it."""
     global _completion_backfill_next
     if _completion_backfill_done or _time.monotonic() < _completion_backfill_next:
         return
@@ -50,11 +50,12 @@ def _backfill_module_completions():
         _completion_backfill_next = _time.monotonic() + _BACKFILL_RETRY_S
         try:
             from dashboard import course_progress as cp
-            lessons = {(c.slug, m.slug): [l.slug for l in m.lessons]
-                       for c in cc.list_courses() for m in c.modules}
+            mods = [(c.slug, m) for c in cc.list_courses() for m in c.modules]
+            lessons = {(cs, m.slug): [l.slug for l in m.lessons] for cs, m in mods}
+            resets = {(cs, m.slug): m.completion_reset for cs, m in mods if m.completion_reset}
             cx = _connect()
             try:
-                n = cp.backfill_completions(cx, lessons)
+                n = cp.backfill_completions(cx, lessons, resets)
             finally:
                 cx.close()
             if n >= 0:

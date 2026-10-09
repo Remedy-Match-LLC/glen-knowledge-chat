@@ -136,3 +136,64 @@ def test_non_required_module_not_certifiable(client, monkeypatch):
     r = c.post(_URL, base_url=_MHOST, query_string={"token": tok})
     assert r.status_code == 404
     assert r.get_json() == {"error": "not certifiable"}
+
+
+def _add_lesson(tmp_root, reset=None):
+    import os
+    base = os.path.join(tmp_root, "courses", _COURSE)
+    with open(os.path.join(base, _MODULE, "02-extra.md"), "w") as f:
+        f.write("---\ntitle: Extra\naccess: paid\ndownloads: []\n---\n<p>New.</p>\n")
+    y = open(os.path.join(base, "course.yaml")).read()
+    extra = f"    completion_reset: '{reset}'\n" if reset else ""
+    y = y.replace("    title: Advanced Practice\n", "    title: Advanced Practice\n" + extra)
+    y = y.replace("      - 01-advanced\n", "      - 01-advanced\n      - 02-extra\n")
+    open(os.path.join(base, "course.yaml"), "w").write(y)
+
+
+def _record_old_completion(appmod, email):
+    from dashboard import course_progress as cp
+    with sqlite3.connect(appmod.LOG_DB) as cx:
+        assert cp.module_completed(cx, email, _COURSE, _MODULE, [_LESSON]) is True
+        cx.execute("UPDATE course_module_completed SET completed_at='2001-01-01T00:00:00Z'")
+
+
+def test_certify_keeps_credit_after_a_lesson_is_added(client, monkeypatch, tmp_path):
+    c, appmod = client
+    _stripe_on(monkeypatch)
+    from dashboard import stripe_pay
+    monkeypatch.setattr(stripe_pay, "create_price_checkout_session",
+                        lambda price_id, **k: {"id": "cs", "url": "https://stripe.test/cs"})
+    email = "kept@example.com"
+    tok = _mint_token(appmod, email)
+    _complete_module(appmod, email)
+    _record_old_completion(appmod, email)
+    _add_lesson(str(tmp_path))
+    r = c.post(f"{_URL}?token={tok}", base_url=_MHOST)
+    assert r.status_code == 200
+
+
+def test_certify_honours_a_reset(client, monkeypatch, tmp_path):
+    c, appmod = client
+    _stripe_on(monkeypatch)
+    email = "reset@example.com"
+    tok = _mint_token(appmod, email)
+    _complete_module(appmod, email)
+    _record_old_completion(appmod, email)
+    _add_lesson(str(tmp_path), reset="2001-01-01")
+    r = c.post(f"{_URL}?token={tok}", base_url=_MHOST)
+    assert r.status_code == 403
+
+
+def test_paid_access_honours_a_reset(client, monkeypatch, tmp_path):
+    c, appmod = client
+    import courses_blueprint as cb
+    from dashboard import courses_content as cc
+    email = "gate@example.com"
+    _complete_module(appmod, email)
+    _record_old_completion(appmod, email)
+    _add_lesson(str(tmp_path))
+    with sqlite3.connect(appmod.LOG_DB) as cx:
+        assert cb._paid_module_open(cx, email, cc.load_course(_COURSE), _MODULE) is True
+    _add_lesson(str(tmp_path), reset="2001-01-01")
+    with sqlite3.connect(appmod.LOG_DB) as cx:
+        assert cb._paid_module_open(cx, email, cc.load_course(_COURSE), _MODULE) is False

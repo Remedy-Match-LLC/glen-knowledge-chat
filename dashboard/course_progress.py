@@ -125,6 +125,13 @@ def _live_completed(cx, email, course, module, lesson_slugs) -> bool:
     return bool(hw and hw.get("submitted_at"))
 
 
+def _counts(at, reset_before) -> bool:
+    """A recorded completion counts if there is no reset, or it was recorded on a
+    UTC date AFTER the reset date. Credit from the reset day itself does not
+    count: the natural step is to add a lesson and set today's date."""
+    return bool(at) and (not reset_before or at[:10] > str(reset_before))
+
+
 def module_completed(cx, email, course, module, lesson_slugs, reset_before="") -> bool:
     """True if completion is on record (and not older than reset_before), else
     checks the current lessons live and records a fresh completion.
@@ -132,8 +139,7 @@ def module_completed(cx, email, course, module, lesson_slugs, reset_before="") -
     A learner who has watched every current lesson and handed in homework is
     complete again at once; one missing a lesson is not."""
     try:
-        at = completed_at(cx, email, course, module)
-        if at and (not reset_before or at >= str(reset_before)):
+        if _counts(completed_at(cx, email, course, module), reset_before):
             return True
         if not _live_completed(cx, email, course, module, lesson_slugs):
             return False
@@ -149,10 +155,11 @@ def module_completed(cx, email, course, module, lesson_slugs, reset_before="") -
         return False
 
 
-def backfill_completions(cx, lessons_by_module) -> int:
+def backfill_completions(cx, lessons_by_module, resets=None) -> int:
     """Record everyone who has completed a module under its CURRENT lessons.
-    lessons_by_module: {(course, module): [lesson slugs]}. Insert-only and
-    idempotent. Returns the number of new records, or -1 if it failed. Never raises."""
+    lessons_by_module: {(course, module): [lesson slugs]}; resets: {(course,
+    module): "YYYY-MM-DD"}. A record that a reset voided is re-stamped if the
+    learner is complete under the current lessons. Idempotent. Returns the number of new records, or -1 if it failed. Never raises."""
     try:
         init_progress_tables(cx)
         rows = cx.execute(
@@ -161,12 +168,15 @@ def backfill_completions(cx, lessons_by_module) -> int:
         n = 0
         for email, course, module in rows:
             lessons = lessons_by_module.get((course, module))
-            if not lessons or completed_at(cx, email, course, module):
+            reset = (resets or {}).get((course, module), "")
+            if not lessons or _counts(completed_at(cx, email, course, module), reset):
                 continue
             if _live_completed(cx, email, course, module, lessons):
                 cur = cx.execute(
-                    "INSERT OR IGNORE INTO course_module_completed(email, course, module, completed_at) "
-                    "VALUES(?,?,?,?)", (email, course, module, _now()))
+                    "INSERT INTO course_module_completed(email, course, module, completed_at) "
+                    "VALUES(?,?,?,?) ON CONFLICT(email, course, module) "
+                    "DO UPDATE SET completed_at=excluded.completed_at",
+                    (email, course, module, _now()))
                 n += cur.rowcount or 0
         cx.commit()
         return n
