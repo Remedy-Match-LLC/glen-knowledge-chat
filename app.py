@@ -27409,7 +27409,7 @@ def api_portal_onboarding(token):
             return jsonify({"error": "not found"}), 404
         email = (portal.get("email") or "").strip().lower()
         with _request_timing_step("onboarding"):
-            status = _ob.build_status(cx, email)
+            status = _ob.build_status(cx, email, _portal_photo_identity(portal))
     for ph in status.get("phases", []):
         for st in ph.get("steps", []):
             h = st.get("href") or ""
@@ -27442,7 +27442,7 @@ def api_portal_onboarding_accelerator(token):
             return jsonify({"error": "not found"}), 404
         email = (portal.get("email") or "").strip().lower()
         _cf.set_fact(cx, email, fact_key, bool(body.get("value")))
-        status = _ob.build_status(cx, email)
+        status = _ob.build_status(cx, email, _portal_photo_identity(portal))
     return jsonify({"ok": True, "status": status})
 
 

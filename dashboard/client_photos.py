@@ -175,13 +175,12 @@ def for_client_surface(cx, email, client_id=None):
     """The photo a CLIENT-facing page (portal, Body Map) may show, or None.
 
     The person's own row by FileMaker client id; otherwise only a photo the client
-    uploaded themselves through their own portal link. An email-keyed photo from any
-    other source may belong to a family member who shares the address: Debra Herndon's
-    portal showed her daughter's photo on 2026-10-09. Glen: show nothing, never a guess."""
+    uploaded themselves through a portal that has no client id. An email-keyed photo
+    from any other source, or under a portal that does name a person, may belong to a
+    family member who shares the address: Debra Herndon's portal showed her daughter's
+    photo on 2026-10-09. Glen: show nothing, never a guess."""
     if client_id:
-        rec = get_for_client(cx, client_id)
-        if rec:
-            return rec
+        return get_for_client(cx, client_id)
     rec = get(cx, email) if email else None
     if rec and (rec.get("source") or "").strip().lower() == "portal-self":
         return rec
@@ -210,29 +209,28 @@ def fmp_people_for_email(cx, email):
 def fmp_person_for(cx, email, name):
     """The one FileMaker id_pk this email and name name, or None (fail closed).
 
-    One record on the email: that record. Several: the record whose name matches, where
-    a first name may be a short form of the other ("Deb" for "Debra") when the last
-    names match; anything other than exactly one match is None. An id_pk that FileMaker
-    also uses for a differently named record is None: 33 ids are shared (2026-10-09)."""
+    The record on the email whose name matches, where a first name may be a short form
+    of the other ("Deb" for "Debra") when the last names match. This holds for a
+    one-record email too: a family member with no FileMaker record of their own, on a
+    parent's email, must not resolve to the parent (review 2026-10-09). Anything other
+    than exactly one match is None. An id_pk that FileMaker also uses for a differently
+    named record is None: 33 ids are shared (2026-10-09)."""
     people = fmp_people_for_email(cx, email)
     if not people:
         return None
     want = _name_key(name)
-    if len(people) == 1:
-        hits = people
-    else:
-        wf, _, wl = want.partition(" ")
-        wl = wl.split(" ")[-1] if wl else ""
+    wf, _, wl = want.partition(" ")
+    wl = wl.split(" ")[-1] if wl else ""
 
-        def _same(full):
-            k = _name_key(full)
-            if k == want:
-                return True
-            f, _, l = k.partition(" ")
-            l = l.split(" ")[-1] if l else ""
-            return bool(wf and wl and l == wl and min(len(f), len(wf)) >= 3
-                        and (f.startswith(wf) or wf.startswith(f)))
-        hits = [p for p in people if _same(p[1])]
+    def _same(full):
+        k = _name_key(full)
+        if k == want:
+            return True
+        f, _, l = k.partition(" ")
+        l = l.split(" ")[-1] if l else ""
+        return bool(wf and wl and l == wl and min(len(f), len(wf)) >= 3
+                    and (f.startswith(wf) or wf.startswith(f)))
+    hits = [p for p in people if _same(p[1])]
     if len(hits) != 1:
         return None
     pk = hits[0][0]

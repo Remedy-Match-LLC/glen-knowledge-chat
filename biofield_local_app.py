@@ -753,20 +753,21 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
         """The photo Biofield Intake shows for this intake's person, or None.
 
         The person's own row when the email and name resolve to one FileMaker record.
-        On an email several records share, nothing else: the operator picks from the
-        candidates instead (Glen, 2026-10-09). A one-record email keeps its email row."""
+        The email-keyed row only when that is the whole story: no FileMaker record on
+        the email, or exactly one and the name is theirs. On an email several records
+        share, or a name FileMaker does not have, nothing: the operator picks from the
+        candidates instead (Glen, 2026-10-09)."""
         from dashboard import client_photos as _cph
         with sqlite3.connect(db_path) as cx:
             people = _cph.fmp_people_for_email(cx, email)
-            pid = _cph.fmp_person_for(cx, email, name) if name else (
-                people[0][0] if len(people) == 1 else None)
+            pid = _cph.fmp_person_for(cx, email, name)
         if pid:
             _refresh_client_photo(email, pid)
             with sqlite3.connect(db_path) as cx:
                 rec = _cph.get_for_client(cx, pid)
             if rec:
                 return rec, pid
-        if len(people) > 1:
+        if len(people) > 1 or (people and not pid):
             return None, pid
         _refresh_client_photo(email)
         with sqlite3.connect(db_path) as cx:
@@ -1174,10 +1175,10 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
             pid = _cph.fmp_person_for(cx, email, name)
             if pid:
                 _cph.put_for_client(cx, pid, email, blob, ctype, source="fmp-intake-upload")
-            elif len(people) > 1:
+            elif people:
                 return jsonify({"ok": False, "error": (
-                    f"{len(people)} FileMaker clients share this email and the intake name "
-                    "matches none of them exactly. Fix the intake name first.")}), 409
+                    f"The intake name matches none of the {len(people)} FileMaker "
+                    "client(s) on this email. Fix the intake name first.")}), 409
             else:
                 _cph.put(cx, email, blob, ctype, source="fmp-intake-upload")
         prod_pushed = _push_photo(email, pid, blob, ctype, "fmp-intake-upload")
