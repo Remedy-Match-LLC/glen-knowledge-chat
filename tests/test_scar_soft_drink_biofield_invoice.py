@@ -28,12 +28,26 @@ def test_invoice_lines_leave_a_not_ready_remedy_off():
 
 
 def test_console_catalog_marks_scar_and_a_bundle_holding_it(monkeypatch):
+    # Its own catalog: the full CI run reaches this test after others have replaced
+    # app's in-memory products (it passed alone and failed only in the suite).
+    products = {
+        SCAR: {"name": "Scar Soft Drink", "waitlist_only": True},
+        "scar-silk": {"name": "Scar Silk"},
+        "scar-reduction-program": {"name": "Scar Support Program", "bundle": True,
+                                   "bundle_component_slugs": [{"slug": "scar-silk", "qty": 1}]},
+        "scar-core-test": {"name": "Core", "bundle": True,
+                           "bundle_component_slugs": [{"slug": SCAR, "qty": 1}]},
+    }
+    monkeypatch.setattr(app, "_PRODUCTS", {"products": products})
+    monkeypatch.setattr(app._bos_products, "catalog",
+                        lambda **kw: [dict(v, slug=k, price_cents=7000) for k, v in products.items()])
     monkeypatch.setattr(app, "_portal_console_ok", lambda: True)
     rows = {p["slug"]: p for p in
             app.app.test_client().get("/api/console/biofield-portal/catalog").get_json()["products"]}
     assert rows[SCAR]["waitlist_only"] is True
     assert rows["scar-silk"]["waitlist_only"] is False
     assert rows["scar-reduction-program"]["waitlist_only"] is False
+    assert rows["scar-core-test"]["waitlist_only"] is True
 
 
 def test_handoff_invoice_leaves_scar_off_and_the_portal_keeps_its_name(tmp_path, monkeypatch):
