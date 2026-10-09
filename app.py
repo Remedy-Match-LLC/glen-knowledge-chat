@@ -4731,6 +4731,9 @@ def begin_biofield_order_preview(token):
         if not items:
             return jsonify({"ok": True, "lines": [], "subtotal_cents": 0,
                             "shipping_cents": 0, "savings_cents": 0, "total_cents": 0})
+        _wl = _cart_waitlist_refusal(items)
+        if _wl:
+            return jsonify({"ok": False, "error": _wl}), 200
         ship = _resolve_ship_address(email, {})
         # Gate Type-2 order-total pricing on membership so the preview matches what the
         # buyer is actually charged at checkout (begin_biofield_order_checkout does the same).
@@ -4786,6 +4789,9 @@ def begin_biofield_order_checkout(token):
                                 "error": "These matches aren't unlocked yet — "
                                          "unlock your full analysis to order them."}), 400
             return jsonify({"ok": False, "error": "Your cart is empty."}), 400
+        _wl = _cart_waitlist_refusal(items)
+        if _wl:
+            return jsonify({"ok": False, "error": _wl}), 400
         ship = _resolve_ship_address(email, body.get("address") or {})
         try:
             res = _checkout_cart(email, items, ship=ship)
@@ -8127,6 +8133,56 @@ def _get_product(slug):
     return out
 
 
+def _waitlist_block(slug):
+    """The waitlist_only product (itself or a bundle component) that stops `slug` being
+    ordered, or None. The one predicate is practitioner_portal.is_orderable; this hands
+    it app's in-memory catalog. Scar Soft Drink, 2026-10-09."""
+    from dashboard import practitioner_portal as _ppw
+    return _ppw.waitlist_block((slug or "").strip(), _PRODUCTS.get("products") or {})
+
+
+def _is_orderable(slug, p=None):
+    """practitioner_portal.is_orderable against app's catalog, for this exact slug. A
+    caller holding a product (from _get_product) passes it as `p`, and the predicate
+    reads that record for this slug; a catalog listing passes each raw slug, so a retired
+    duplicate stays excluded."""
+    from dashboard import practitioner_portal as _ppw
+    cat = _PRODUCTS.get("products") or {}
+    slug = (slug or "").strip()
+    if p is not None:
+        cat = {**cat, slug: p}
+    return _ppw.is_orderable(slug, cat)
+
+
+def _waitlist_refusal(slug):
+    """The buyer-facing refusal for a waitlist_only slug, or None when it is orderable
+    as far as the waiting list goes."""
+    from dashboard import practitioner_portal as _ppw
+    b = _waitlist_block(slug)
+    return _ppw.waitlist_refusal(b) if b else None
+
+
+def _cart_waitlist_refusal(lines, skip_zero_qty=True):
+    """The refusal for the first waitlist_only line in a cart or order, or None. Lines
+    are dicts carrying "slug". A cart holding one is refused whole (spec 2026-10-09).
+    skip_zero_qty=False for _price_cart, which prices a qty-0 line as one."""
+    for c in (lines or []):
+        if isinstance(c, dict):
+            try:
+                if (skip_zero_qty and c.get("qty") is not None
+                        and int(c.get("qty")) <= 0):
+                    continue  # a zero-qty reference line orders nothing
+            except (TypeError, ValueError):
+                pass
+            slug = c.get("slug")
+        else:
+            slug = c
+        msg = _waitlist_refusal(slug)
+        if msg:
+            return msg
+    return None
+
+
 def _superseded(slug):
     """Follow a deprecated product's `superseded_by` pointer to its live twin.
 
@@ -8297,7 +8353,8 @@ def _cart_has_noautoship_bundle(cart):
 def _price_cart(cart, *, ship, coupon_pct=None, subscriber_tier_pct=None,
                 subscriber_order_count=None, subscriber_active=True,
                 points_to_redeem_cents=0, channel="retail", program_member=False,
-                email=None, allow_unknown_packaging=False, strict_packaging=False):
+                email=None, allow_unknown_packaging=False, strict_packaging=False,
+                allow_waitlist=False):
     """Price a reorder/checkout cart through the pricing engine + shipping.
     Returns {priced, qbo_lines, discount_cents, points_redeemed_cents, shipping_cents,
     items_rec, subtotal_list_cents}. Raises CheckoutError for non-US ship-to.
@@ -8306,8 +8363,16 @@ def _price_cart(cart, *, ship, coupon_pct=None, subscriber_tier_pct=None,
     active paid member (_is_paid_member), resolves that member's repertoire SKU set
     and forwards it to the pricing engine so repertoire reorders price at the flat
     member rate. Gated on CURRENT membership at read time — no stored per-SKU expiry.
-    Flag off (or no/non-member email) -> repertoire_slugs stays None, pricing unchanged."""
+    Flag off (or no/non-member email) -> repertoire_slugs stays None, pricing unchanged.
+
+    A cart holding a waitlist_only product, or a bundle with one, raises CheckoutError
+    naming it before anything is priced (Scar Soft Drink, 2026-10-09). allow_waitlist
+    is only for re-quoting shipping on orders already placed."""
     from dashboard import pricing as _pricing, tax as _tax
+    if not allow_waitlist:
+        _wl = _cart_waitlist_refusal(cart, skip_zero_qty=False)
+        if _wl:
+            raise CheckoutError(_wl)
     rep_slugs = None
     if REPERTOIRE_ENABLED and email and _is_paid_member(email):
         try:
@@ -9289,8 +9354,12 @@ def _sales_page_url(name):
 
 @app.route("/begin/buy/<slug>")
 def begin_buy_page(slug):
-    if not _get_product(slug):
+    p = _get_product(slug)
+    if not p:
         return ("", 404)
+    if _waitlist_block(p.get("slug") or slug):
+        # Not ready to order (Scar Soft Drink, 2026-10-09): its page takes the waiting list.
+        return redirect(f"/begin/product/{p['slug']}")
     resp = send_from_directory(STATIC, "begin-buy.html")
     resp.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
     if not request.cookies.get("amg_session"):
@@ -9648,7 +9717,37 @@ def begin_product_data(slug):
             data["founding_video_url"] = _launch.get("video_url", "")
     except Exception as _fe:
         print(f"[founding] product-data enrich failed: {_fe!r}", flush=True)
+    _apply_waitlist_page_data(data, p.get("slug") or slug, p)
     return jsonify(data)
+
+
+def _apply_waitlist_page_data(data, slug, p):
+    """Shape a product page's data for a waiting list (2026-10-09).
+
+    Any product with an open list gets `waitlist` {slug, texts}. A `waitlist_only`
+    product also loses everything that sells it: price, compare-at, quantity tiers,
+    formats, autoship, the CTA section and its buy link. Its page shows the
+    waiting-list form in their place."""
+    from dashboard import product_waitlist as _pwl
+    if slug in _pwl.LISTS and _waitlist_open(slug):
+        t = _pwl.TEXTS[slug]
+        data["waitlist"] = {"slug": slug, "intro": t["intro"], "consent": t["consent"],
+                            "reserve_line": t["reserve_line"], "success": t["success"]}
+    if not p.get("waitlist_only"):
+        return data
+    data["waitlist_only"] = True
+    data["price"] = ""
+    data["price_cents"] = None
+    data["regular"] = ""
+    data["competitor"] = None
+    for k in ("qty_pricing", "formats", "autoship", "cta_url", "founding",
+              "founding_video_url"):
+        data.pop(k, None)
+    data["autoship_eligible"] = False
+    if isinstance(data.get("sections"), list):
+        data["sections"] = [sec for sec in data["sections"]
+                            if not (isinstance(sec, dict) and sec.get("id") == "cta")]
+    return data
 
 
 def _related_semantic(slug, k=12):
@@ -10029,10 +10128,10 @@ def begin_product_page_data(slug):
             _page_data["founding_video_url"] = _launch2.get("video_url", "")
     except Exception as _fe2:
         print(f"[founding] product-page-data enrich failed: {_fe2!r}", flush=True)
-    # A free waiting list, where one exists for this product (Retina Renew, 2026-09-28).
-    from dashboard import product_waitlist as _pwl
-    if slug in _pwl.LISTS and _waitlist_open(slug):
-        _page_data["waitlist"] = {"slug": slug}
+    # A free waiting list, where one exists for this product (Retina Renew, 2026-09-28;
+    # Scar Soft Drink, 2026-10-09). Its texts travel with it, so the page names only
+    # this list's product.
+    _apply_waitlist_page_data(_page_data, slug, p)
     if _WISHLIST_ENABLED:
         try:
             import sqlite3 as _wsq
@@ -12192,6 +12291,9 @@ def begin_checkout(slug):
         return jsonify({"ok": False, "error": "unknown product"}), 404
     if p.get("info_only"):
         return jsonify({"ok": True, "info_only": True, "affiliate_url": p.get("affiliate_url", "")})
+    _wl = _waitlist_refusal(p.get("slug") or slug)
+    if _wl:
+        return jsonify({"ok": False, "error": _wl, "waitlist": True}), 400
     data   = request.get_json(silent=True) or {}
     email  = (data.get("email") or "").strip().lower()
     name   = (data.get("name") or "").strip()
@@ -18911,8 +19013,9 @@ def api_practitioner_cart():
         qty = 0
     if qty > 0 and not _pp.is_orderable(slug):
         return jsonify({"ok": False,
-                        "error": "That item is ordered separately (e.g. on the Centropix store), "
-                                 "not through wholesale."}), 400
+                        "error": _waitlist_refusal(slug)
+                        or "That item is ordered separately (e.g. on the Centropix store), "
+                           "not through wholesale."}), 400
     _pp.cart_set(pid, slug, qty)
     return jsonify({"ok": True, **(_pp.portal_data(pid) or {})})
 
@@ -19260,7 +19363,7 @@ def _assist_orderable_catalog_text():
     """Compact, deterministic allowlist injected into every assistant turn."""
     rows = []
     for slug, product in sorted((_PRODUCTS.get("products") or {}).items()):
-        if not product or product.get("inactive") or product.get("info_only"):
+        if not product or not _is_orderable(slug, product):
             continue
         rows.append(f"- {slug}: {product.get('name') or slug}")
     return "\n".join(rows)
@@ -22853,7 +22956,7 @@ def api_client_catalog(code):
 
     items = []
     for slug, p in (_PRODUCTS.get("products") or {}).items():
-        if not p or p.get("inactive") or p.get("info_only"):
+        if not p or not _is_orderable(slug, p):
             continue
         if _is_pure_powder(p):
             continue
@@ -22889,6 +22992,9 @@ def api_client_checkout(code):
 
     if not email:
         return jsonify({"ok": False, "error": "email required"}), 400
+    _wl = _cart_waitlist_refusal(items if isinstance(items, list) else [])
+    if _wl:
+        return jsonify({"ok": False, "error": _wl}), 400
 
     # 2. Consent gate — mirrors begin_checkout exactly: session cookie + email.
     _sid = request.cookies.get("amg_session", "")
@@ -23046,7 +23152,7 @@ def _build_ff_catalog():
     Excludes Pure Powders and info_only items — mirrors /api/client/<code>/catalog."""
     catalog = []
     for slug, p in (_PRODUCTS.get("products") or {}).items():
-        if not p or p.get("inactive") or p.get("info_only"):
+        if not p or not _is_orderable(slug, p):
             continue
         if _is_pure_powder(p):
             continue
@@ -23602,7 +23708,8 @@ def _cart_payload(cx, token):
             # refuses info_only lines with "no longer available" (see
             # api_cart_checkout's unavailable scan), so a badge that calls them
             # available contradicts the error the customer is about to get.
-            "available": bool(p) and not p.get("inactive") and not p.get("info_only"),
+            # And not waitlist_only (2026-10-09): checkout refuses it, so the badge must too.
+            "available": bool(p) and _is_orderable(p.get("slug") or it["slug"], p),
         })
         # Counts EVERY line, including unavailable ones, so this number always
         # matches the tile badge from dashboard/cart_block.py. An unavailable row
@@ -23671,8 +23778,9 @@ def api_cart_add():
     data = request.get_json(silent=True) or {}
     slug = (data.get("slug") or "").strip().lower()
     p = _get_product(slug)
-    if not p or p.get("info_only") or p.get("inactive"):
-        return jsonify({"ok": False, "error": "That product is not available."}), 400
+    if not p or not _is_orderable(p.get("slug") or slug, p):
+        return jsonify({"ok": False, "error": _waitlist_refusal(slug)
+                        or "That product is not available."}), 400
     fmt = _clean_format(p, data.get("format"))
     try:
         qty = max(1, min(int(data.get("qty", 1) or 1), 99))
@@ -23708,6 +23816,13 @@ def api_cart_set_qty():
     data = request.get_json(silent=True) or {}
     slug = (data.get("slug") or "").strip().lower()
     fmt = (data.get("format") or "").strip().lower()
+    try:
+        _raising = int(data.get("qty", 0) or 0) > 0
+    except (TypeError, ValueError):
+        _raising = False
+    _wl = _waitlist_refusal(slug) if _raising else None
+    if _wl:
+        return jsonify({"ok": False, "error": _wl}), 400
     with db.connect(LOG_DB) as cx:
         _cart_store.init_cart_tables(cx)
         token = _cart_open_token(cx)
@@ -23911,10 +24026,13 @@ def api_cart_checkout():
         if not cart:
             return jsonify({"ok": False, "error": "Your cart is empty."}), 400
 
+        _wl = _cart_waitlist_refusal(cart)
+        if _wl:
+            return jsonify({"ok": False, "error": _wl}), 400
         unavailable = []
         for c in cart:
             p = _get_product(c["slug"])
-            if not p or p.get("inactive") or p.get("info_only"):
+            if not p or not _is_orderable(p.get("slug") or c["slug"], p):
                 unavailable.append(c["slug"])
         if unavailable:
             return jsonify({"ok": False, "unavailable": unavailable,
@@ -29137,7 +29255,7 @@ def api_portal_order_catalog(token):
     for product in _catalog_products():
         slug = (product.get("slug") or "").strip().lower()
         name = (product.get("name") or slug).strip()
-        if (not slug or product.get("inactive") or product.get("info_only")
+        if (not slug or not _is_orderable(slug, product)
                 or query not in f"{name} {slug}".lower()):
             continue
         _lines, items_rec, _subtotal = _portal_priced_lines(
@@ -29334,8 +29452,8 @@ def api_portal_cart_set_format(token):
     if to_fmt not in {"bottle", "refill"}:
         return jsonify({"error": "Choose bottle or cellophane refill pack."}), 400
     product = _get_product(slug)
-    if not product or product.get("inactive") or product.get("info_only"):
-        return jsonify({"error": "Product is not available."}), 400
+    if not product or not _is_orderable(product.get("slug") or slug, product):
+        return jsonify({"error": _waitlist_refusal(slug) or "Product is not available."}), 400
     if to_fmt == "refill" and not _capsule_formats_ok(product):
         return jsonify({"error": "This product is available in a bottle only."}), 400
     with db.connect(LOG_DB) as cx:
@@ -29355,8 +29473,8 @@ def api_portal_cart_set_format_quantities(token):
     data = request.get_json(silent=True) or {}
     slug = (data.get("slug") or "").strip().lower()
     product = _get_product(slug)
-    if not product or product.get("inactive") or product.get("info_only"):
-        return jsonify({"error": "Product is not available."}), 400
+    if not product or not _is_orderable(product.get("slug") or slug, product):
+        return jsonify({"error": _waitlist_refusal(slug) or "Product is not available."}), 400
     if not _capsule_formats_ok(product):
         return jsonify({"error": "This product is available in a bottle only."}), 400
     try:
@@ -29400,8 +29518,9 @@ def api_portal_order_add(token):
         return jsonify({"error": "not found"}), 404
     email = (portal.get("email") or "").strip().lower()
     product = _get_product(slug)
-    if not product or product.get("inactive") or product.get("info_only"):
-        return jsonify({"error": "That remedy is not available."}), 400
+    if not product or not _is_orderable(product.get("slug") or slug, product):
+        return jsonify({"error": _waitlist_refusal(slug)
+                        or "That remedy is not available."}), 400
     explicit_format = "format" in body and body.get("format") not in (None, "")
     fmt = (body.get("format") or "").strip().lower()
     if not explicit_format and cello_default and _capsule_formats_ok(product):
@@ -29800,10 +29919,14 @@ def api_portal_ff_add_to_invoice(token):
         _cp_init.init_table(cx)
         items = []
         for it in draft["items"]:
+            if _waitlist_block(it.get("slug") or ""):
+                continue  # not ready to order: listed on the page, never invoiced (2026-10-09)
             unit = _ff_line_cents(cx, email, it.get("slug") or "")
             items.append({"slug": it.get("slug") or "", "name": it.get("name") or "",
                           "qty": 1, "unit_cents": unit, "line_cents": unit,
                           "source": "scan"})
+        if not items:
+            return jsonify({"error": "nothing ready to order yet"}), 409
         total = sum(i["line_cents"] for i in items)
         _bos_orders.upsert_order(
             cx, source="in-house", external_ref=ext, status="proposed",
@@ -30691,10 +30814,14 @@ def api_portal_support_program_add_to_invoice(token):
         items = []
         for it in raw_items:  # PRIMARY items only -- alts are either/or, not auto-added
             slug = (it.get("slug") or "").strip()
+            if _waitlist_block(slug):
+                continue  # not ready to order: listed on the page, never invoiced (2026-10-09)
             unit = _ff_line_cents(cx, email, slug)
             items.append({"slug": slug, "name": it.get("name") or slug,
                           "qty": 1, "unit_cents": unit, "line_cents": unit,
                           "source": "intake"})
+        if not items:
+            return jsonify({"error": "nothing ready to order yet"}), 409
         total = sum(i["line_cents"] for i in items)
         _bos_orders.upsert_order(
             cx, source="in-house", external_ref=ext, status="proposed",
@@ -31194,7 +31321,7 @@ def api_portal_chat(token):
             from dashboard.chat_cart import explicit_cart_items as _chat_cart_items
             chat_catalog = []
             for product_slug, product in (_PRODUCTS.get("products") or {}).items():
-                if product.get("info_only") or product.get("inactive"):
+                if not _is_orderable(product_slug, product):
                     continue
                 chat_catalog.append({
                     "slug": product_slug,
@@ -31866,7 +31993,7 @@ def api_client_portal_product_search(token):
         if raw.get("inactive") or raw.get("info_only"):
             continue
         p = _get_product(slug)
-        if not p or p.get("inactive") or p.get("info_only"):
+        if not p or not _is_orderable(p.get("slug") or slug, p):
             continue
         name = (p.get("name") or slug).strip()
         ingredients = p.get("ingredients") or []
@@ -31999,8 +32126,9 @@ def api_client_portal_checkout(token):
             slug = (it.get("slug") or "").strip().lower()
             product = _get_product(slug) if slug else None
             item_name = ((product or {}).get("name") or slug or "That item").strip()
-            if (not slug or not product or product.get("inactive")
-                    or product.get("info_only")):
+            if slug and product and _waitlist_refusal(slug):
+                return jsonify({"error": _waitlist_refusal(slug)}), 400
+            if not slug or not product or not _is_orderable(product.get("slug") or slug, product):
                 return jsonify({"error": f"{item_name} isn't available to order."}), 400
             if not catalog_order and slug not in entitled:
                 return jsonify({"error": f"{item_name} isn't available to order."}), 400
@@ -32027,6 +32155,10 @@ def api_client_portal_checkout(token):
                 items = _merge_accepted_recommendation_items(_rcx, email, base_items)
         except Exception:
             items = base_items  # merge failure must never break checkout
+    # A cart holding a waitlist_only product is refused whole (2026-10-09).
+    _wl = _cart_waitlist_refusal(items)
+    if _wl:
+        return jsonify({"error": _wl}), 400
     lines, items_rec, subtotal_cents = _portal_priced_lines(items, email=email)
     if not lines:
         return jsonify({"error": "Your remedies are no longer available — please reach out and we'll help."}), 400
@@ -39907,6 +40039,15 @@ def api_console_dropship_reissue():
         return jsonify({"error": "practitioner_id and order_ids are required"}), 400
 
     from dashboard import stripe_pay as _sp
+    # Refuse the whole reissue, before any order is touched, if one holds a product
+    # that is not ready to order (waitlist_only, 2026-10-09).
+    for oid in order_ids:
+        with db.connect(LOG_DB) as cx:
+            cx.row_factory = _sqlite3.Row
+            _pre = _bos_orders.get_order(cx, oid) or {}
+        _wl = _cart_waitlist_refusal(_pre.get("items") or [])
+        if _wl:
+            return jsonify({"error": f"order #{oid}: {_wl}"}), 400
     replacements = []
     for oid in order_ids:
         with db.connect(LOG_DB) as cx:
@@ -40003,6 +40144,9 @@ def api_console_dropship_create():
             return jsonify({"ok": False, "error": f"invalid quantity for {slug}"}), 400
         if not slug or not _get_product(slug):
             return jsonify({"ok": False, "error": f"unknown product: {slug}"}), 400
+        _wl = _waitlist_refusal(slug)
+        if _wl:
+            return jsonify({"ok": False, "error": _wl}), 400
         items.append({"slug": slug, "qty": qty})
     if not items:
         return jsonify({"ok": False, "error": "items are required"}), 400
@@ -40584,7 +40728,14 @@ _WAITLIST_EMAIL = re.compile(r"[a-z0-9.!#$%&*+/=?^_`{|}~'-]+@[a-z0-9-]+(\.[a-z0-
 
 
 def _waitlist_open(slug):
-    """A waiting list shows only while that product's founding presale runs (round 1)."""
+    """A waiting list is open while that product's founding presale runs (round 1), or
+    while the product is waitlist_only (Scar Soft Drink, 2026-10-09). The second does not
+    depend on the founding flag."""
+    from dashboard import product_waitlist as _pwo
+    if slug not in _pwo.LISTS:
+        return False
+    if ((_PRODUCTS.get("products") or {}).get(slug) or {}).get("waitlist_only"):
+        return True
     try:
         from dashboard import founding as _fd
         return _founding_enabled() and bool(_fd.get_launch(slug))
@@ -40594,8 +40745,8 @@ def _waitlist_open(slug):
 
 @app.route("/api/waitlist/<slug>", methods=["POST"])
 def product_waitlist_sign_up(slug):
-    """A free waiting-list sign-up (Retina Renew, 2026-09-28): email and an optional first
-    name, no card. Kept in house first, then mirrored to GoHighLevel (product_waitlist).
+    """A free waiting-list sign-up (Retina Renew 2026-09-28, Scar Soft Drink 2026-10-09):
+    email and an optional first name, no card. Kept in house first, then mirrored to GoHighLevel (product_waitlist).
     A filled hidden field is a bot and is dropped quietly; each visitor is rate limited.
     The answer never says whether an email was already on the list."""
     from dashboard import product_waitlist as _pw
@@ -40623,32 +40774,42 @@ def product_waitlist_sign_up(slug):
     if token:
         # To the address typed, which is what the click proves (Glen, 2026-09-29).
         try:
-            _inbox.send_email(email, "Confirm your Retina Renew launch email",
-                              _waitlist_confirm_body(first, token))
+            _inbox.send_email(email, _pw.TEXTS[slug]["subject"],
+                              _waitlist_confirm_body(first, token, slug))
         except Exception as e:  # noqa: BLE001 - the sign-up stands; they can sign up again
             print(f"[waitlist] confirmation send failed: {type(e).__name__}", flush=True)
     return jsonify({"ok": True})
 
 
-def _waitlist_confirm_body(first_name, token):
-    """Glen's approved confirmation email, 2026-09-29."""
+def _waitlist_confirm_body(first_name, token, slug="neuro-magnesium"):
+    """Glen's approved confirmation email, 2026-09-29: each list's own lead line, then the
+    link, then Retina Renew's closing lines unchanged (2026-10-09)."""
+    from dashboard import product_waitlist as _pwb
     link = f"{PUBLIC_BASE_URL.rstrip('/')}/begin/waitlist/confirm/{token}"
     greet = f"Hi {first_name}," if first_name else "Hi,"
-    return (f"{greet}\n\nPlease confirm you'd like an email when Retina Renew launches:\n{link}\n\n"
+    return (f"{greet}\n\n{_pwb.TEXTS[slug]['body_lead']}\n{link}\n\n"
             "If you didn't ask for this, ignore this email and nothing more will be sent.\n\n"
             "Dr. Glen Swartwout\n")
 
 
-_WAITLIST_CONFIRM_PAGE = """<!DOCTYPE html>
+_WAITLIST_PAGE_HEAD = """<!DOCTYPE html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="robots" content="noindex, nofollow"><title>Confirm your Retina Renew launch email</title>
+<meta name="robots" content="noindex, nofollow"><title>{title}</title>
 <style>body{{font-family:system-ui,-apple-system,sans-serif;display:flex;min-height:100vh;align-items:center;
 justify-content:center;margin:0;padding:16px;background:#f7f7f5;color:#1d2b22}}main{{text-align:center;max-width:28rem}}
 h1{{font-size:1.4rem;margin:0 0 1.2rem}}button{{font:inherit;font-weight:600;padding:12px 28px;border:0;
 border-radius:10px;background:#1f5c3d;color:#fff;cursor:pointer}}</style></head>
-<body><main><h1>Confirm your Retina Renew launch email</h1>
-<form method="post" action="/begin/waitlist/confirm/{token}"><button type="submit">Confirm</button></form>
+<body><main><h1>{title}</h1>
+{action}
 </main></body></html>"""
+# The confirmation page names the token's own list (2026-10-09).
+_WAITLIST_CONFIRM_PAGE = _WAITLIST_PAGE_HEAD.replace("{action}", (
+    '<form method="post" action="/begin/waitlist/confirm/{token}">'
+    '<button type="submit">Confirm</button></form>'))
+# An unknown or expired token names no product and points to the store home.
+_WAITLIST_EXPIRED_PAGE = _WAITLIST_PAGE_HEAD.format(
+    title="That link has expired or is not valid",
+    action='<p><a href="/">Go to the store</a></p>')
 
 
 @app.route("/begin/waitlist/confirm/<token>", methods=["GET", "HEAD", "POST"])
@@ -40658,17 +40819,27 @@ def product_waitlist_confirm(token):
     POSTs: that confirms the sign-up (tag in house, one GHL tag_add) and returns to the
     product page, which says so."""
     from dashboard import product_waitlist as _pw
-    if request.method != "POST":
-        safe = "".join(ch for ch in (token or "") if ch.isalnum() or ch in "-_")[:64]
-        resp = Response(_WAITLIST_CONFIRM_PAGE.format(token=safe),
-                        mimetype="text/html")
+
+    def _page(html):
+        resp = Response(html, mimetype="text/html")
         resp.headers["Cache-Control"] = "no-store"
         resp.headers["Referrer-Policy"] = "no-referrer"
         return resp
+
+    if request.method != "POST":
+        safe = "".join(ch for ch in (token or "") if ch.isalnum() or ch in "-_")[:64]
+        with db.connect(LOG_DB) as cx:
+            slug = _pw.slug_for_token(cx, safe)
+        if not slug:
+            return _page(_WAITLIST_EXPIRED_PAGE)
+        return _page(_WAITLIST_CONFIRM_PAGE.format(
+            token=safe, title=html.escape(_pw.TEXTS[slug]["page_title"])))
     with _db_lock, db.connect(LOG_DB) as cx:
         slug = _pw.confirm(cx, token)
-    target = slug or next(iter(_pw.LISTS))
-    return redirect(f"/begin/product/{target}?waitlist={'confirmed' if slug else 'expired'}", 303)
+    if not slug:
+        # No longer sent to the first list's page (2026-10-09): name no product.
+        return _page(_WAITLIST_EXPIRED_PAGE)
+    return redirect(f"/begin/product/{slug}?waitlist=confirmed", 303)
 
 
 @app.route("/begin/founding/reserve", methods=["POST"])
@@ -55730,7 +55901,10 @@ def _recompute_combined_shipping(cx, sid):
         if not cart:
             return 0
         try:
-            return int((_price_cart(cart, ship=ship_addr, channel="retail") or {}).get("shipping_cents") or 0)
+            # Orders already placed: re-quote their shipping even if a line has since
+            # become waitlist_only, or a failure here would bill $0 shipping.
+            return int((_price_cart(cart, ship=ship_addr, channel="retail", allow_waitlist=True)
+                        or {}).get("shipping_cents") or 0)
         except Exception as e:
             print(f"[combined-ship] price failed: {e!r}", flush=True)
             return 0
@@ -56641,6 +56815,9 @@ def api_orders_edit(oid):
     lines_in = body.get("lines") or []
     if not lines_in:
         return jsonify({"ok": False, "error": "no line items"}), 400
+    _wl = _cart_waitlist_refusal(lines_in if isinstance(lines_in, list) else [])
+    if _wl:
+        return jsonify({"ok": False, "error": _wl}), 400
     pickup = bool(body.get("pickup"))
     cx = db.connect(LOG_DB)
     cx.row_factory = _sqlite3.Row
@@ -57204,6 +57381,9 @@ def api_orders_manual():
     lines_in = body.get("lines") or []
     if not lines_in:
         return jsonify({"ok": False, "error": "no line items"}), 400
+    _wl = _cart_waitlist_refusal(lines_in if isinstance(lines_in, list) else [])
+    if _wl:
+        return jsonify({"ok": False, "error": _wl}), 400
     # Bill with caregiver: a member whose invoices are remembered to go to a caregiver
     # has these lines placed on the caregiver's invoice instead of an order of their own.
     if body.get("_caregiver_route", True) is not False and (customer.get("email") or "").strip():
@@ -58820,9 +59000,13 @@ def api_invoice_update(token):
     existing = {(it.get("slug") or "").strip(): it
                 for it in (order.get("items") or []) if (it.get("slug") or "").strip()}
     from dashboard import client_invoice_lines as _cil
-    lines_in = _cil.rebuild(body.get("lines"), existing,
-                            known=lambda _s: _get_product(_s) is not None,
-                            refill_ok=lambda _s: _capsule_formats_ok(_get_product(_s) or {}))
+    try:
+        lines_in = _cil.rebuild(body.get("lines"), existing,
+                                known=lambda _s: _get_product(_s) is not None,
+                                refill_ok=lambda _s: _capsule_formats_ok(_get_product(_s) or {}),
+                                refusal=_waitlist_refusal)
+    except _cil.NotOrderable as e:
+        return jsonify({"ok": False, "error": str(e)}), 400
     if not lines_in:
         return jsonify({"ok": False, "error": "no valid items"}), 400
     cx = db.connect(LOG_DB); cx.row_factory = _sqlite3.Row
@@ -59946,6 +60130,9 @@ def bos_orders_create():
         return resp
     # --- existing POST body unchanged below ---
     b = request.get_json(silent=True) or {}
+    _wl = _cart_waitlist_refusal(b.get("items") if isinstance(b.get("items"), list) else [])
+    if _wl:
+        return jsonify({"ok": False, "error": _wl}), 400
     ref = str(b.get("external_ref") or f"manual-{_bos_orders._now()}")
     cx = db.connect(LOG_DB)
     cx.row_factory = _sqlite3.Row

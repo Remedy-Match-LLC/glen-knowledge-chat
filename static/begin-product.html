@@ -306,19 +306,21 @@
       <div id="founding-soldout" style="display:none;padding:1rem;background:var(--surface,#f5f5f5);border-radius:12px;text-align:center;">
         <p style="font-weight:700;margin:0 0 0.5rem;">Batch No. 1 is sold out.</p>
         <p style="margin:0 0 1rem;color:var(--muted,#666);">Join the waitlist and be first to know when Batch No. 2 opens.</p>
-        <a id="founding-waitlist-link" href="#retina-waitlist" class="cta-btn" style="display:inline-block;">Join the Waitlist</a>
+        <a id="founding-waitlist-link" href="#product-waitlist" class="cta-btn" style="display:inline-block;">Join the Waitlist</a>
       </div>
       <!-- Free waiting list, below the Founding Batch reservation (Glen, 2026-09-28; words
-           approved 2026-09-29). Shown only when page-data carries `waitlist`. -->
-      <form id="retina-waitlist" style="display:none;margin:1rem 0;padding:1rem;background:var(--surface,#f5f5f5);border-radius:12px;" novalidate>
-        <p style="font-weight:700;margin:0 0 0.4rem;">Not ready to reserve? Join the waiting list.</p>
-        <p style="margin:0 0 0.8rem;color:var(--muted,#666);">Leave your email and we will send you one email when Retina Renew launches. No card, no charge.</p>
+           approved 2026-09-29). Shown only when page-data carries `waitlist`, whose texts
+           fill the reserve line, intro and consent: each list names only its own product
+           (Scar Soft Drink, 2026-10-09). -->
+      <form id="product-waitlist" style="display:none;margin:1rem 0;padding:1rem;background:var(--surface,#f5f5f5);border-radius:12px;" novalidate>
+        <p id="waitlist-reserve" style="font-weight:700;margin:0 0 0.4rem;"></p>
+        <p id="waitlist-intro" style="margin:0 0 0.8rem;color:var(--muted,#666);"></p>
         <input name="first_name" type="text" autocomplete="given-name" placeholder="First name (optional)" aria-label="First name (optional)" style="width:100%;margin:0 0 0.5rem;padding:10px;border-radius:8px;border:1px solid var(--line,#ccc);font:inherit">
         <input name="email" type="email" required autocomplete="email" placeholder="Email" aria-label="Email" style="width:100%;margin:0 0 0.5rem;padding:10px;border-radius:8px;border:1px solid var(--line,#ccc);font:inherit">
         <input name="company" type="text" tabindex="-1" autocomplete="off" aria-hidden="true" style="position:absolute;left:-9999px;width:1px;height:1px;opacity:0">
         <button type="submit" class="cta-btn">Join the waiting list</button>
-        <p style="margin:0.6rem 0 0;font-size:0.9em;color:var(--muted,#666);">We will email you when Retina Renew launches, and nothing else unless you ask.</p>
-        <p id="retina-waitlist-msg" role="status" aria-live="polite" style="margin:0.6rem 0 0;font-weight:600;"></p>
+        <p id="waitlist-consent" style="margin:0.6rem 0 0;font-size:0.9em;color:var(--muted,#666);"></p>
+        <p id="product-waitlist-msg" role="status" aria-live="polite" style="margin:0.6rem 0 0;font-weight:600;"></p>
       </form>
 
       <div id="sp-sections" class="sections"></div>
@@ -1579,34 +1581,42 @@
     }
 
     function renderWaitlist(data){
-      var f = document.getElementById('retina-waitlist');
+      var f = document.getElementById('product-waitlist');
       if (!f) return;
       // Back from the confirmation link (Glen, 2026-09-29). Read first, so a click that
       // lands after the presale closed still shows its message (round 3).
       var back = new URLSearchParams(location.search);
-      var note = document.getElementById('retina-waitlist-msg');
+      var note = document.getElementById('product-waitlist-msg');
       var answer = back.get('waitlist');
-      if (!data.waitlist || !data.waitlist.slug) {        // another product: no stale form (round 2)
+      var w = data.waitlist || null;
+      // Each list's own words (2026-10-09): the page names only this list's product.
+      var success = (w && w.success) || "You're on the list.";
+      if (!w || !w.slug) {        // another product: no stale form (round 2)
         f.onsubmit = null;
         if (answer === 'confirmed' || answer === 'expired') {
           f.style.display = 'block';
-          Array.prototype.forEach.call(f.querySelectorAll('input,button,p:not(#retina-waitlist-msg)'),
+          Array.prototype.forEach.call(f.querySelectorAll('input,button,p:not(#product-waitlist-msg)'),
             function(el){ el.style.display = 'none'; });
           note.textContent = answer === 'confirmed'
-            ? "You're on the list. We'll email you when Retina Renew is ready."
+            ? success
             : 'That link has expired. Please join the waiting list again.';
         } else {
           f.style.display = 'none';
         }
         return;
       }
+      [['waitlist-reserve', w.reserve_line], ['waitlist-intro', w.intro],
+       ['waitlist-consent', w.consent]].forEach(function(pair){
+        var el = document.getElementById(pair[0]);
+        if (el){ el.textContent = pair[1] || ''; el.style.display = pair[1] ? '' : 'none'; }
+      });
       f.style.display = 'block';
       if (back.get('waitlist') === 'confirmed') {
         // Already on the list: only the confirmation line shows (Glen, 2026-09-29: the
         // greyed-out fields and join button under "Leave your email" were confusing).
-        Array.prototype.forEach.call(f.querySelectorAll('input,button,p:not(#retina-waitlist-msg)'),
+        Array.prototype.forEach.call(f.querySelectorAll('input,button,p:not(#product-waitlist-msg)'),
           function(el){ el.style.display = 'none'; });
-        note.textContent = "You're on the list. We'll email you when Retina Renew is ready.";
+        note.textContent = success;
         f.onsubmit = null;
         return;
       } else if (back.get('waitlist') === 'expired') {
@@ -1614,12 +1624,12 @@
       }
       f.onsubmit = async function(e){
         e.preventDefault();
-        var msg = document.getElementById('retina-waitlist-msg');
+        var msg = document.getElementById('product-waitlist-msg');
         var email = (f.email.value || '').trim();
         if (!email || email.indexOf('@') < 0) { msg.textContent = 'Please enter your email.'; return; }
         var btn = f.querySelector('button'); btn.disabled = true;
         try {
-          var r = await fetch('/api/waitlist/' + encodeURIComponent(data.waitlist.slug), {
+          var r = await fetch('/api/waitlist/' + encodeURIComponent(w.slug), {
             method: 'POST', headers: {'Content-Type': 'application/json'}, credentials: 'same-origin',
             body: JSON.stringify({email: email, first_name: (f.first_name.value || '').trim(),
                                   company: f.company.value || ''})});
@@ -1723,7 +1733,9 @@
       }
 
       var openSet = Array.isArray(data.open_sections) ? data.open_sections : [];
-      var ctaUrl = data.cta_url || ('/begin/buy/' + encodeURIComponent(slug));
+      // Not ready to order (waitlist_only, 2026-10-09): every buy link points at the form.
+      var ctaUrl = data.waitlist_only ? '#product-waitlist'
+        : (data.cta_url || ('/begin/buy/' + encodeURIComponent(slug)));
       var mironAssets = Array.isArray(data.miron_assets) ? data.miron_assets : [];
       var mironStory = Array.isArray(data.miron_story) ? data.miron_story : [];
       var container = document.getElementById('sp-sections');
@@ -1747,7 +1759,7 @@
 
       renderFounding(data);
       renderWaitlist(data);
-      /*__CART_CONTROL_CALL_START__*/renderCartControl(slug);/*__CART_CONTROL_CALL_END__*/
+      /*__CART_CONTROL_CALL_START__*/if (!data.waitlist_only) { renderCartControl(slug); }/*__CART_CONTROL_CALL_END__*/
       show('sp-product');
       show('sp-back');
     }
