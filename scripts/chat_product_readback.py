@@ -29,6 +29,7 @@ CASES = {
         ],
         # Each question's answer must contain every phrase (case-insensitive).
         "required": {
+            0: ["Angiostasis", "green tea"],
             1: ["1 capsule", "evening meal", "drowsiness", "breastfeeding",
                 "blood thinner", "medical treatment"],
         },

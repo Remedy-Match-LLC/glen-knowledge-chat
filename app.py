@@ -13,6 +13,7 @@ except ImportError:
 
 import os
 import sys
+import html
 import re
 import json
 import uuid
@@ -2141,9 +2142,38 @@ def _product_guidance_hint(slug: str) -> str:
 
 _NAMED_FACTS_MAX_PRODUCTS = 3
 _NAMED_FACTS_MAX_CHARS = 1600
+_PRICE_SENTENCE = re.compile(r"\s*Price:\s*\$[\d,.]+\.?")
 
 
-def _named_product_facts(query_text: str, aliases: dict) -> str:
+def _named_product_spans(query_text: str, products: dict) -> dict:
+    """{slug: (start, end)} for each pinned, active product named in the question.
+
+    Only a product's own catalog name counts, never an alias: an alias can name an old
+    or consolidated product, and the block tells the model the name is real. The whole
+    name must stand as words. A one-word name must also be capitalised as in the
+    catalog, so "how can I moisturize" does not bring in Moisturize. Only products with
+    `copy_pinned` qualify: their store text is Glen-approved, and older descriptions
+    carry claims and price lines (review round 1, 2026-10-09).
+    """
+    spans = {}
+    for slug, p in products.items():
+        if not p.get("copy_pinned") or p.get("inactive") or p.get("info_only"):
+            continue
+        name = html.unescape(p.get("name") or "").replace("\u2122", "").strip()
+        if not name:
+            continue
+        words = name.split()
+        pattern = r"(?<![\w+])" + r"\s+".join(re.escape(w) for w in words) + r"(?![\w+])"
+        m = re.search(pattern, query_text, re.IGNORECASE if len(words) > 1 else 0)
+        if m:
+            spans[slug] = m.span()
+    # The longest name wins: "Stamina Plus" inside "Stamina Plus: Full B complex ..."
+    return {s: sp for s, sp in spans.items()
+            if not any(o != s and o_sp[0] <= sp[0] and sp[1] <= o_sp[1] and o_sp != sp
+                       for o, o_sp in spans.items())}
+
+
+def _named_product_facts(query_text: str) -> str:
     """Approved store text for the catalog products the user names in the question.
 
     The chat does not search `specific-formulations`, so a product whose facts live
@@ -2158,27 +2188,13 @@ def _named_product_facts(query_text: str, aliases: dict) -> str:
     products = (_PRODUCTS or {}).get("products", {}) or {}
     if not products:
         return ""
-    slugs = []
-    ql = query_text.lower()
-    named = [k for k in aliases if k and k.lower() in ql]
-    for clinical_name in sorted(named):
-        # The longest name wins: "Molecular Hydrogen Tablets" (retired) must not
-        # bring in "Molecular Hydrogen", the portable bottle, by substring.
-        if any(clinical_name.lower() in other.lower() and clinical_name != other
-               for other in named):
-            continue
-        slug, retired = _alias_catalog_slug(clinical_name, aliases[clinical_name])
-        if slug and not retired:
-            slugs.append(slug)
-    for url in _catalog_link_matches(query_text, aliases).values():
-        slugs.append(url.rstrip("/").rsplit("/", 1)[-1])
+    spans = _named_product_spans(query_text, products)
     blocks = []
-    for slug in dict.fromkeys(slugs):
-        product = products.get(slug) or {}
-        if not product or product.get("inactive"):
-            continue
-        name = (product.get("name") or slug).strip()
-        desc = re.sub(r"[ \t]+", " ", (product.get("description") or "").strip())
+    for slug in sorted(spans, key=lambda s: spans[s][0]):
+        product = products[slug]
+        name = html.unescape(product.get("name") or slug).strip()
+        desc = _PRICE_SENTENCE.sub("", html.unescape(product.get("description") or ""))
+        desc = re.sub(r"[ \t]+", " ", desc).strip()
         if len(desc) > _NAMED_FACTS_MAX_CHARS:
             desc = desc[:_NAMED_FACTS_MAX_CHARS].rsplit(" ", 1)[0] + "..."
         parts = [f"### {name}"]
@@ -2216,8 +2232,9 @@ def _named_product_facts(query_text: str, aliases: dict) -> str:
 def named_product_facts_block(query_text: str) -> str:
     """The facts block, or "". It goes LAST in the user message, after the synthesis
     instruction. Read-back 2026-10-08: placed before the snippets, 8 of 16 answers
-    failed; placed after them but before the instruction, 2 of 16 failed."""
-    facts = _named_product_facts(query_text, _PRODUCT_ALIASES.get("aliases", {}) or {})
+    failed; placed after them but before the instruction, 2 of 16 failed.
+    On a gated educate-only turn chat() removes it: it tells the model to give a dose."""
+    facts = _named_product_facts(query_text)
     return f"\n\n{facts}" if facts else ""
 
 
@@ -6018,6 +6035,10 @@ def chat():
             _system = _ally_ov + "\n\n" + _system
         if not is_member(session_id, email) and _is_gated_question(query):
             _system = _system + _EDUCATE_ONLY_POLICY
+            # The facts block says to give a dose; educate-only says name no product.
+            _facts = named_product_facts_block(query)
+            if _facts:
+                messages[-1]["content"] = messages[-1]["content"].replace(_facts, "")
             yield sse({"gate": True})
         # ──────────────────────────────────────────────────────────────────────
 

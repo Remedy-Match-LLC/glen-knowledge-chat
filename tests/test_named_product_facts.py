@@ -4,9 +4,15 @@ The chat does not search `specific-formulations`. Asked "How much Angiostasis sh
 take?" on 2026-10-08, the model had only a link row, took AngiogenX's dose from wet-AMD
 snippets and told the client they meant AngiogenX. named_product_facts_block carries the
 product's own store text into the prompt.
+
+Review round 1 (2026-10-09) found plain-substring matching brought products into ordinary
+questions ("relax", "uncomfortable", "heavy metals"), and aliases mapped old names onto
+other products. Only a pinned product's own name, as whole words, now counts.
 """
 import inspect
 import json
+
+import pytest
 
 import app
 
@@ -21,9 +27,25 @@ def test_a_named_product_brings_its_directions_and_full_caution():
     assert "never tell them they meant a different product" in block
 
 
-def test_no_named_product_means_no_block():
-    assert app.named_product_facts_block("How do I support healthy circulation?") == ""
-    assert app.named_product_facts_block("") == ""
+def test_a_multi_word_name_matches_in_any_case():
+    assert "### Clear the Way" in app.named_product_facts_block("what dose of clear the way?")
+
+
+@pytest.mark.parametrize("question", [
+    "How do I support healthy circulation?",
+    "",
+    "How can I relax before bed?",
+    "I feel uncomfortable after meals",
+    "I want to transform my health",
+    "more energy and vitality please",
+    "How do I detox heavy metals?",
+    "how do I moisturize dry skin?",        # Moisturize is a pinned one-word name
+    "what is angiostasis?",                 # a one-word name must be capitalised
+    "What is AngiostasisXYZ123?",           # the whole name must stand as a word
+    "Tell me about Dental Regen Powder",    # an old name: aliases never count
+])
+def test_ordinary_or_unknown_wording_brings_no_block(question):
+    assert app.named_product_facts_block(question) == "", question
 
 
 def test_only_the_named_product_is_carried():
@@ -32,36 +54,48 @@ def test_only_the_named_product_is_carried():
     assert "### AngiogenX" not in block
 
 
-def test_a_retired_product_brings_no_facts(monkeypatch):
+def test_an_unpinned_product_brings_no_facts():
     products = app._PRODUCTS["products"]
-    slug, retired = next((s, p) for s, p in products.items()
-                         if p.get("inactive") and not p.get("superseded_by")
-                         and len(p.get("name") or "") >= 12)
-    # Give it text, so an empty block can only come from the inactive check.
-    monkeypatch.setitem(retired, "directions", "Take 9 capsules.")
-    assert app.named_product_facts_block(f"What is {retired['name']}?") == "", slug
-    monkeypatch.delitem(retired, "inactive")
-    assert "Take 9 capsules." in app.named_product_facts_block(f"What is {retired['name']}?"), slug
+    slug, p = next((s, p) for s, p in products.items()
+                   if not p.get("copy_pinned") and not p.get("inactive")
+                   and len((p.get("name") or "").split()) >= 2 and p.get("description"))
+    assert app.named_product_facts_block(f"What is {p['name']}?") == "", slug
+
+
+def test_an_inactive_pinned_product_brings_no_facts(monkeypatch):
+    monkeypatch.setitem(app._PRODUCTS["products"]["angiostasis"], "inactive", True)
+    assert app.named_product_facts_block("What is Angiostasis?") == ""
+
+
+def test_the_longest_name_wins():
+    products = {"a": {"name": "Stamina Plus", "copy_pinned": ["intro"], "description": "A."},
+                "b": {"name": "Stamina Plus: Full B", "copy_pinned": ["intro"], "description": "B."}}
+    assert set(app._named_product_spans("Is Stamina Plus: Full B good?", products)) == {"b"}
+    assert set(app._named_product_spans("Is Stamina Plus good?", products)) == {"a"}
+
+
+def test_a_price_line_is_stripped(monkeypatch):
+    monkeypatch.setitem(app._PRODUCTS["products"]["angiostasis"], "description",
+                        "Angiostasis . Price: $70. Each vegicap supplies green tea.")
+    block = app.named_product_facts_block("What is Angiostasis?")
+    assert "Price:" not in block and "$70" not in block
+    assert "Each vegicap supplies green tea." in block
 
 
 def test_the_block_is_capped_at_three_products():
     block = app.named_product_facts_block(
-        "Compare Angiostasis, AngiogenX, Brain Cleanse, Terrain Restore and Clear the Way")
-    assert 1 <= block.count("### ") <= app._NAMED_FACTS_MAX_PRODUCTS
+        "Compare Angiostasis, AngiogenX, Clear the Way, Appestat and Iron Syntropy")
+    assert block.count("### ") == app._NAMED_FACTS_MAX_PRODUCTS
 
 
 def test_every_answer_path_appends_the_block_after_the_instruction():
     for fn in (app.chat, app._generate_full_answer, app._full_report_stream):
         src = inspect.getsource(fn)
-        assert src.count("named_product_facts_block(query)") == 1, fn.__name__
         assert src.index("{synth_instr}") < src.index("named_product_facts_block(query)"), fn.__name__
 
 
-def test_the_facts_builder_refuses_an_inactive_slug_itself(monkeypatch):
-    # Both resolvers already drop retired products. This holds if one stops doing so.
-    products = app._PRODUCTS["products"]
-    slug = next(s for s, p in products.items() if p.get("inactive"))
-    monkeypatch.setitem(products[slug], "directions", "Take 9 capsules.")
-    monkeypatch.setattr(app, "_catalog_link_matches",
-                        lambda text, aliases: {"X": f"https://x/begin/product/{slug}"})
-    assert app.named_product_facts_block("anything at all") == "", slug
+def test_a_gated_turn_drops_the_block():
+    src = inspect.getsource(app.chat)
+    gate = src.index("_system = _system + _EDUCATE_ONLY_POLICY")
+    after = src[gate:gate + 400]
+    assert "named_product_facts_block(query)" in after and '.replace(_facts, "")' in after
