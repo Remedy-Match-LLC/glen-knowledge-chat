@@ -446,7 +446,16 @@ def _journey_block(cx, email, paid_member=False):
     """Authoritative milestone state used by hub-card progress treatments."""
     try:
         from dashboard import portal_onboarding as _journey
-        status = _journey.build_status(cx, email)
+        # The portal names its FileMaker person; the Photo step counts only that
+        # person's own photo, as the onboarding API does (review round 3, 2026-10-09).
+        client_id = None
+        try:
+            from dashboard import client_portal as _cp
+            rec = _cp.get_portal_content_by_email(cx, email) or {}
+            client_id = str((rec.get("content") or {}).get("client_id") or "").strip() or None
+        except Exception:
+            client_id = None
+        status = _journey.build_status(cx, email, client_id)
         status["member"] = bool(paid_member)
         return status
     except Exception:

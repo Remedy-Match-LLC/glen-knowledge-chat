@@ -179,7 +179,7 @@ def _biofield_completed(cx, email):
                  cx, email)
 
 
-def build_status(cx, email):
+def build_status(cx, email, client_id=None):
     email = (email or "").strip().lower()
     conditions_done = (
         _has_source(cx, email, "condition") or _has_condition_history(cx, email)
@@ -235,7 +235,10 @@ def build_status(cx, email):
         step("voice", "Bioenergetic Wellness Scan", has_scan, voice_href),
         step("intake", "Intake", intake_done, "#intake",
              in_progress=intake_in_progress, progress=intake_progress),
-        step("photo", "Photo", _safe(client_photos.has, cx, email), "#photo"),
+        # Done only when the portal can show the photo: this person's own, never a
+        # family member's on a shared email (2026-10-09).
+        step("photo", "Photo", _safe(lambda c, e: bool(client_photos.for_client_surface(
+            c, e, client_id)), cx, email), "#photo"),
         # Once checked, Biofield is a report link and must not retain an older
         # ?scan_date= selection made from Scan History. Before completion it
         # opens the first-test order and preparation workflow.
