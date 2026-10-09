@@ -54,6 +54,9 @@ CAPSULE_BY_SLUG = {
     "dht-blocker": "pullulan",
     # Glen made batch CTW-20261008-10 in phthalate-free DRcaps (spec 2026-10-08-clear-the-way).
     "clear-the-way": "drcaps",
+    # Fibrosolve's June 2026 label says "Enteric vegicaps"; Glen, 2026-10-09: "yes. That
+    # applies to all our enteric capsules" (spec 2026-10-09-estrogen-fibrin-balance-program).
+    "fibrosolve": "drcaps",
     # Glen, 2026-10-03: "Chlorophyll vegicaps until the next production run. Then they'll
     # be Pullulan." Nothing changes these automatically: move each to pullulan BY HAND
     # when its next run ships. Without these lines their 30 Caps bottles fall through to

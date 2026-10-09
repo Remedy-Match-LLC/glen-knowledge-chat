@@ -43,7 +43,7 @@ def test_which_products_carry_which_paragraph():
     kinds = {s: C.capsule_kind(s, p) for s, p in P.items()}
     assert {s for s, k in kinds.items() if k == "drcaps"} == {
         "glutathione-syntropy", "lipid-zyme", "scar-silk", "alkalize-bicarbonate-blend",
-        "microbiome", "lens-zyme", "vitamin-c-syntropy", "clear-the-way"}
+        "microbiome", "lens-zyme", "vitamin-c-syntropy", "clear-the-way", "fibrosolve"}
     assert kinds["spike-shield"] == "pullulan" and kinds["spleen-support"] == "pullulan"
     # Glen, 2026-10-03: "Lens-Zyme is enteric, as is vitamin C. DHT is pullulan"
     assert kinds["dht-blocker"] == "pullulan"

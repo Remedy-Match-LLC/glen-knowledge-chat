@@ -10,6 +10,7 @@ PORTED = [
     "crystalline-lens-program", "gut-terrain-program", "dry-eye-relief-program",
     "macular-wellness-program", "glucose-tolerance-program", "brain-program",
     "scar-reduction-program", "iop-program", "dental-bundle", "sleep-bundle",
+    "estrogen-fibrin-balance-program",
 ]
 DEVICE_BUNDLES = {"dental-bundle", "sleep-bundle"}
 

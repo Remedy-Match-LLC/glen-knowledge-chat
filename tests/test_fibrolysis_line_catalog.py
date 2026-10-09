@@ -16,9 +16,11 @@ Both fixes also live in data/products-manual-corrections.json, which is what
 scripts/apply_enrichment.py replays. Pinning products.json alone would let the
 next enrichment run revert the page while this file still passed.
 
-Masses are from FMP BOM extract 2026-08-31 and must sum to that extract's
-zc_total_mg (490 and 487.5), which is what proves the zero-quantity lines carry
-no mass and so do not belong on the panel.
+Fibrolysis Factors' masses are from FMP BOM extract 2026-08-31 and must sum to that
+extract's zc_total_mg (487.5), which is what proves the zero-quantity lines carry no
+mass and so do not belong on the panel. Fibrosolve follows its June 2026 label (Glen,
+2026-10-09: the bottles carry it): 18 + 100 + 25 + a 350 mg bromelain and protease
+blend = 493 mg; the protease line is inside the blend and adds no mass of its own.
 """
 import importlib
 import json
@@ -33,12 +35,13 @@ CORRECTIONS = os.path.join(ROOT, "data", "products-manual-corrections.json")
 
 EXPECTED = {
     "fibrosolve": {
-        "total_mg": 490.0,
+        "total_mg": 493.0,
         "ingredients": [
-            ("Lumbrokinase", "15 mg"),
-            ("Nattokinase (Bacillus subtilis)", "100 mg"),
-            ("Serrapeptase", "25 mg"),
-            ("Bromelain", "350 mg"),
+            ("Lumbrokinase", "18 mg (20,000 IU/mg)"),
+            ("Nattokinase (Bacillus subtilis)", "100 mg (20,000 FU/g)"),
+            ("Serrapeptase", "25 mg (400,000 u/g)"),
+            ("Bromelain", "350 mg proprietary blend with protease (2,400 GDU/g)"),
+            ("Protease (Aspergillus niger)", "in the 350 mg blend (600,000 u/g)"),
         ],
     },
     "fibrolysis-factors": {
@@ -55,7 +58,10 @@ EXPECTED = {
 
 
 def _mg(dose):
-    return float(re.match(r"([\d.]+)\s*mg$", dose).group(1))
+    """A line's own mass: the leading "N mg". A line that sits inside another line's
+    blend ("in the 350 mg blend ...") adds none."""
+    m = re.match(r"([\d.]+)\s*mg\b", dose)
+    return float(m.group(1)) if m else 0.0
 
 
 @pytest.fixture(scope="module")
@@ -149,24 +155,21 @@ def test_no_zero_quantity_rows(products, slug):
 
 
 def test_fibrolysis_factors_description_carries_dosing(products):
-    """1 to 2 capsules, not FMP's 1: Glen's ruling 2026-09-08.
-
-    The 2026-06-06 spec sets each per-capsule dose so that 2 capsules reach the
-    active's minimum therapeutic dose (EGCG at the 400 mg trial floor). At 1
-    capsule every active sits at half its minimum, so re-deriving this field
-    from FMP product 356, which still reads "1 capsule" / "daily", under-doses
-    the formula by its own design.
+    """1 to 3 capsules a day with food, as the bottles on the shelf say (Glen,
+    2026-10-09). FMP product 356 still reads "1 capsule" / "daily", so this field
+    must not be re-derived from the FMP extract.
     """
     desc = products["fibrolysis-factors"]["description"]
     assert "Price: $69.97" not in desc, "placeholder description is back"
     assert "with food" in desc
-    assert "1 to 2 capsules daily" in desc
+    assert "1 to 3 capsules a day" in desc
+    assert "1 to 2 capsules" not in desc
     assert "1 capsule daily" not in desc, "reverted to the FMP extract's dosage field"
 
 
 def test_fibrosolve_description_keeps_the_bleeding_warning(products):
     desc = products["fibrosolve"]["description"]
-    for term in ("anticoagulant", "bleeding", "pregnancy", "surgery", "empty stomach"):
+    for term in ("anticoagulant", "bleeding", "pregnancy", "surgery", "between meals"):
         assert term in desc.lower()
 
 
@@ -181,7 +184,8 @@ def test_correction_is_recorded_so_enrichment_cannot_revert_it(corrections, slug
     """products.json is the output; the corrections file is the source constant."""
     c = corrections[slug]
     assert [(i["name"], i["dose"]) for i in c["ingredients"]] == EXPECTED[slug]["ingredients"]
-    assert c["ingredients_source"] == "fmp-bom-2026-08-31"
+    assert c["ingredients_source"] == {"fibrosolve": "label-2026-06",
+                                       "fibrolysis-factors": "fmp-bom-2026-08-31"}[slug]
 
 
 def test_apply_enrichment_replays_every_corrected_field():
@@ -233,9 +237,9 @@ def test_page_data_serves_the_panel(monkeypatch, tmp_path):
     assert not fsb["note"], "note must not leak onto products that have none"
     # Dosing and the contraindication must survive the AI draft, which replaces the
     # description section wholesale. Serving them here is what makes that true.
-    assert body["directions"] == "Take 1 to 2 capsules daily with food."
+    assert body["directions"] == "Take 1 to 3 capsules a day with food, or as guided."
     assert not body["warning"]
-    assert fsb["directions"].startswith("Take 1 capsule 1 to 2 times daily")
+    assert fsb["directions"] == "Take 1 to 2 capsules a day between meals, or as guided."
     for term in ("anticoagulant", "bleeding", "pregnancy", "surgery"):
         assert term in fsb["warning"].lower(), term
 
@@ -246,9 +250,9 @@ def test_label_lines_are_not_left_to_the_generated_copy(products):
     generator's input, not what the reader sees, so a dose and a contraindication
     have to be their own fields."""
     ff = products["fibrolysis-factors"]
-    assert ff["directions"] == "Take 1 to 2 capsules daily with food."
+    assert ff["directions"] == "Take 1 to 3 capsules a day with food, or as guided."
     fs = products["fibrosolve"]
-    assert "empty stomach" in fs["directions"]
+    assert "between meals" in fs["directions"]
     assert "anticoagulant" in fs["warning"].lower()
     src = open(os.path.join(ROOT, "static", "begin-product.html")).read()
     for token in ("body.directions", "body.warning", "Suggested use: ", "Caution: "):

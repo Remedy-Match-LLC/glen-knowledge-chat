@@ -9914,7 +9914,8 @@ def begin_product_page_data(slug):
     _is_service = bool(p.get("service"))
     sections = _filter_sections(sections, has_ingredients=_has_ings,
                                 has_own_video=bool(_own_vids), is_service=_is_service,
-                                in_miron=_miron)
+                                in_miron=_miron, is_bundle=bool(p.get("bundle")),
+                                has_research_text=bool((how or "").strip()))
     # A product with AI images off has no Images section: its photos are in the top gallery,
     # and an empty section would open to nothing.
     from dashboard.sales_images import ai_images_off as _ai_images_off
