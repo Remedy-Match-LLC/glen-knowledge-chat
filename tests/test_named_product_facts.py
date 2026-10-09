@@ -233,6 +233,7 @@ def test_no_lowercase_phrase_name_matches_an_ordinary_sentence():
     "how much clear the way should i take?", "is clear the way safe with aspirin?",
     "clear the way dose?", "I'm taking reverse age, is that ok",
     "how many capsules of stamina plus", "what is angiostasis?",
+    "I take clear the way every day",
     "how much angiostasis do i take?"])
 def test_lowercase_phrase_names_match_beside_a_product_cue(question):
     assert app._named_product_spans(question, app._PRODUCTS["products"]), question
@@ -260,19 +261,42 @@ def test_generic_or_run_on_lowercase_wording_matches_nothing(question):
     (["What is Angiostasis?"], "Tell me more"),
     (["What is Angiostasis?"], "Any side effects of ibuprofen?"),
     (["What is Angiostasis?"], "what's the dose of vitamin d"),
+    # Review round 3: another subject named anywhere in the message.
+    (["What is Angiostasis?"], "Does metformin have side effects?"),
+    (["What is Angiostasis?"], "Is it safe to drive after the scan?"),
+    (["What is Angiostasis?"], "is this ok to ask here?"),
+    (["What is Angiostasis?"], "side effects in children"),
+    # Review round 3: a turn in between changed the subject without naming a product.
+    (["What is Angiostasis?", "What about vitamin D?"], "How much should I take?"),
+    (["What is Angiostasis?", "I also take turmeric"], "How much should I take?"),
 ])
 def test_a_message_with_its_own_subject_carries_nothing(prior, question):
     assert app.named_product_facts_block(question, prior_user_turns=prior) == "", question
 
 
-def test_a_follow_up_walks_back_over_turns_that_named_nothing():
-    prior = ["What is Clear the Way?", "Is it made in the USA?"]
+def test_a_follow_up_walks_back_only_over_other_follow_ups():
+    prior = ["What is Clear the Way?", "How much should I take?"]
     block = app.named_product_facts_block("Any side effects?", prior_user_turns=prior)
     assert "### Clear the Way" in block
-    prior = ["What is Angiostasis?", "Compare Angiostasis and AngiogenX", "ok"]
+    prior = ["What is Angiostasis?", "Compare Angiostasis and AngiogenX", "what dose?"]
     assert app.named_product_facts_block("How much should I take?", prior_user_turns=prior) == ""
-    far = ["What is Angiostasis?", "a", "b", "c"]          # beyond the three-turn lookback
+    far = ["What is Angiostasis?", "what dose?", "Is it safe?", "any cautions?"]   # beyond 3
     assert app.named_product_facts_block("How much should I take?", prior_user_turns=far) == ""
+
+
+@pytest.mark.parametrize("question", [
+    "Is it safe for kids?", "Is it safe for my dog?", "What's the recommended dose?",
+    "what dose?", "How much to take?", "how many should I take?",
+    "Any interactions with warfarin?", "Is it ok while pregnant?"])
+def test_plain_follow_ups_carry(question):
+    block = app.named_product_facts_block(question, prior_user_turns=["What is Angiostasis?"])
+    assert "### Angiostasis" in block, question
+
+
+def test_a_malformed_history_turn_is_ignored():
+    prior = [["not", "text"], None, "What is Angiostasis?"]
+    block = app.named_product_facts_block("How much should I take?", prior_user_turns=prior)
+    assert "### Angiostasis" in block
 
 
 def test_every_cue_name_is_a_pinned_product():

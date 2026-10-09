@@ -2190,7 +2190,7 @@ _PRODUCT_CUE_AFTER = re.compile(
 # name into a longer noun phrase ("reverse age discrimination").
 _AFTER_NAME_OK = re.compile(
     r"^\s*(?:$|[?.!,;:)]|(?:should|do|does|did|is|are|can|could|will|would|i|safe|dose|"
-    r"dosage|capsules?|caps|bottles?|interact|with|and|or)\b)", re.IGNORECASE)
+    r"dosage|capsules?|caps|bottles?|interact|with|and|or|every|each)\b)", re.IGNORECASE)
 
 
 def _has_product_cue(text: str, start: int, end: int) -> bool:
@@ -2305,46 +2305,58 @@ def _named_product_facts(query_text: str, gated: bool = False) -> str:
     )
 
 
-# A follow-up carries the earlier product only when it asks about dose or safety of
-# "it/this" and brings no subject of its own. "What can I take for sleep?", "How long does
-# shipping take?" and "Does it work for macular degeneration?" carry nothing (review
-# rounds 1 and 2, 2026-10-09).
-_FOLLOW_UP_CUE = re.compile(
-    r"^\s*(?:(?:and|so|ok|okay|thanks)[,.!]?\s+)?(?:how\s+(?:much|often)\s+(?:of\s+(?:it|this|them)\s+)?"
-    r"(?:should|do|can|could|would|will|must)\s+i\b"
-    r"|how\s+many\s+(?:capsules?|caps|drops|scoops?)\s+(?:should|do|can|a\s+day|per\s+day|daily)\b"
-    r"|what(?:'s|\s+is)\s+the\s+(?:dose|dosage)\s*[?.!]?\s*$|(?:the\s+)?(?:dose|dosage)\s*[?.!]?\s*$)"
-    r"|\b(?:is|are)\s+(?:it|this|they)\s+(?:safe|ok|okay)\b"
-    r"|\b(?:can|should|could|do)\s+i\s+take\s+(?:it|this|them)\b"
-    r"|\bwhen\s+(?:do|should)\s+i\s+take\s+(?:it|this|them)\b"
-    r"|\b(?:side\s+effects?|cautions?|interactions?)\b(?!\s+(?:of|from|on)\s+(?!it\b|this\b|them\b))",
-    re.IGNORECASE)
-# The message names its own subject: "for sleep", "for my joints".
+# A follow-up carries the earlier product only when the whole message asks about the dose
+# or safety of "it/this" and brings no subject of its own. "What can I take for sleep?",
+# "Does metformin have side effects?" and "Is it safe to drive after the scan?" carry
+# nothing (review rounds 1 to 3, 2026-10-09). Each form is anchored to the start.
+_FOLLOW_UP_LEAD = r"^\s*(?:(?:and|so|but|also|ok|okay|thanks)[,.!]?\s+)?"
+_FOLLOW_UP_DOSE = re.compile(
+    _FOLLOW_UP_LEAD + r"(?:how\s+(?:much|often)\s+(?:of\s+(?:it|this|them)\s+)?"
+    r"(?:should|do|can|could|would|will|must)\s+i\b|how\s+much\s+to\s+take\b"
+    r"|how\s+many(?:\s+(?:capsules?|caps|drops|scoops?))?\s+(?:should|do|can|a\s+day|per\s+day|daily)\b"
+    r"|(?:what(?:'s|\s+is)\s+the\s+|what\s+)?(?:recommended\s+|usual\s+|daily\s+)?(?:dose|dosage)\s*[?.!]?\s*$"
+    r"|(?:when|how)\s+(?:do|should)\s+i\s+take\s+(?:it|this|them)\b)", re.IGNORECASE)
+_FOLLOW_UP_SAFETY = re.compile(
+    _FOLLOW_UP_LEAD + r"(?:(?:is|are)\s+(?:it|this|they|that)\s+(?:safe|ok|okay)"
+    r"(?=\s*(?:$|[?.!,]|with\b|while\b|during\b|if\b|when\b|for\b|to\s+take\b|in\s+pregnancy\b))"
+    r"|(?:can|should|could)\s+i\s+take\s+(?:it|this|them)\b"
+    r"|(?:does\s+(?:it|this)\s+have\s+|are\s+there\s+|what\s+are\s+the\s+)?(?:any\s+)?"
+    r"(?:side\s+effects?|cautions?|interactions?|warnings?|contraindications?)\b"
+    r"(?!\s+(?:of|from|on|in)\s+(?!it\b|this\b|them\b)))", re.IGNORECASE)
+# A dose question that names its own subject: "for sleep", "for my joints".
 _OWN_SUBJECT = re.compile(r"\bfor\s+(?!it\b|this\b|them\b|me\b|a\s+day\b|how\s+long\b)\w+",
                           re.IGNORECASE)
 _FOLLOW_UP_LOOKBACK = 3
+
+
+def _is_follow_up(text) -> bool:
+    """True when the whole message asks about the dose or safety of "it/this"."""
+    if not isinstance(text, str) or len(text.split()) > 15:
+        return False
+    if _FOLLOW_UP_SAFETY.search(text):
+        return True
+    return bool(_FOLLOW_UP_DOSE.search(text)) and not _OWN_SUBJECT.search(text)
 
 
 def _carried_query(query_text: str, prior_user_turns) -> str:
     """The query, or the earlier user turn whose product this follow-up is about
     ("How much should I take?" after "What is Angiostasis?").
 
-    Carried only when this message names no product, has 15 words or fewer, asks about
-    dose or safety of "it/this", and names no subject of its own. Walks back over up to
-    three earlier user turns that named no product; the first that names exactly one
-    product is carried, and one naming two or more carries nothing."""
+    Carried only when this message names no product and is a follow-up (_is_follow_up).
+    Walks back over up to three earlier user turns, each of which must itself be a
+    follow-up, to the turn that named the product; that turn must name exactly one. Any
+    other turn in between ("What about vitamin D?") ends the walk and carries nothing."""
     products = (_PRODUCTS or {}).get("products", {}) or {}
     if not query_text or not prior_user_turns or _named_product_spans(query_text, products):
         return query_text
-    if (len(query_text.split()) > 15 or not _FOLLOW_UP_CUE.search(query_text)
-            or _OWN_SUBJECT.search(query_text)):
+    if not _is_follow_up(query_text):
         return query_text
-    turns = [t for t in prior_user_turns if (t or "").strip()][-_FOLLOW_UP_LOOKBACK:]
-    for turn in reversed(turns):
+    turns = [t for t in prior_user_turns if isinstance(t, str) and t.strip()]
+    for turn in reversed(turns[-_FOLLOW_UP_LOOKBACK:]):
         named = _named_product_spans(turn, products)
-        if len(named) == 1:
-            return turn
         if named:
+            return turn if len(named) == 1 else query_text
+        if not _is_follow_up(turn):
             return query_text
     return query_text
 
