@@ -5913,7 +5913,7 @@
    "copy_pinned": [
     "description"
    ],
-   "content_since": "2026-10-09T22:57:25Z"
+   "content_since": "2026-10-09T23:04:21Z"
   },
   "ocuflow-daytime": {
    "name": "OcuFlow Daytime",
@@ -21670,7 +21670,7 @@
    "copy_pinned": [
     "description"
    ],
-   "content_since": "2026-10-09T22:57:25Z"
+   "content_since": "2026-10-09T23:04:21Z"
   },
   "fibrosolve": {
    "name": "Fibrosolve",
@@ -21712,7 +21712,7 @@
     "description",
     "ingredients"
    ],
-   "content_since": "2026-10-09T22:57:25Z"
+   "content_since": "2026-10-09T23:04:21Z"
   },
   "estrogen-fibrin-balance-program": {
    "name": "Estrogen and Fibrin Balance Program",
@@ -21744,6 +21744,8 @@
    "intro": "The Estrogen and Fibrin Balance Program includes Fibrosolve, Fibrolysis Factors and Estro-Clear. Take Fibrosolve 1 to 2 capsules a day between meals. Take Fibrolysis Factors 1 to 3 capsules a day with food. Take Estro-Clear 1 capsule 1 to 2 times a day with oils or a fatty meal. Each product may be taken as guided.\n\nCautions: Fibrosolve is not for use with anticoagulant or antiplatelet medication, with a bleeding disorder, during pregnancy, or within about two weeks of surgery. Estro-Clear contains piperine, which can raise blood levels of some medications. Consult your health professional before use with medications, thyroid or hormone-sensitive conditions, pregnancy, or nursing.",
    "description": "Fibrosolve, Fibrolysis Factors and Estro-Clear together, for 10% less than the three bought separately.",
    "ingredients": [],
+   "ingredients_source": "manual",
+   "enrichment_note": "Estrogen and Fibrin Balance Program, approved by Glen 2026-10-09. The intro carries the program directions and cautions. Spec: production/05 Formulations/_store-updates/2026-10-09-estrogen-fibrin-balance-program.md.",
    "how_it_works": "",
    "research": "",
    "benefits": [],
@@ -21754,7 +21756,7 @@
     "ingredients",
     "benefits"
    ],
-   "content_since": "2026-10-09T22:57:25Z"
+   "content_since": "2026-10-09T23:04:21Z"
   },
   "sedativa-homeopathic-in-terrain-restore": {
    "name": "Sedativa Homeopathic in Terrain Restore",

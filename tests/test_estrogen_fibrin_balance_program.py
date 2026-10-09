@@ -86,6 +86,29 @@ def test_the_corrections_file_matches_so_enrichment_cannot_revert(products, corr
         assert corrections[slug].get(field) == products[slug].get(field), (slug, field)
 
 
+def test_the_enrichment_replay_restores_the_approved_texts(products, corrections):
+    """Overwrite the approved fields with junk, then run apply_enrichment's own replay.
+    Every approved value must come back. The replay never sets copy_pinned or
+    content_since, and main() writes the whole record back, so those stay as they are."""
+    import copy
+    from scripts.apply_enrichment import apply_corrections
+    approved = copy.deepcopy(products)
+    damaged = copy.deepcopy(products)
+    for slug in THREE + (BUNDLE,):
+        for field in ("intro", "description", "directions", "warning", "ingredients"):
+            if field in damaged[slug]:
+                damaged[slug][field] = [{"name": "junk", "dose": "1 mg"}] if field == "ingredients" else "junk"
+    apply_corrections(damaged, copy.deepcopy(corrections))
+    for slug in THREE + (BUNDLE,):
+        for field in ("intro", "description", "directions", "warning", "ingredients"):
+            if field == "ingredients" and slug == BUNDLE:
+                continue  # empty list: nothing to restore, nothing junk can reach a page
+            assert damaged[slug].get(field) == approved[slug].get(field), (slug, field)
+        # The replay leaves no other trace on these four records.
+        rest = set(approved[slug]) - {"ingredients"}
+        assert {f: damaged[slug].get(f) for f in rest} == {f: approved[slug][f] for f in rest}, slug
+
+
 @pytest.mark.parametrize("slug", THREE + (BUNDLE,))
 def test_content_since_is_a_utc_timestamp(products, slug):
     assert re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z", products[slug]["content_since"])
@@ -149,7 +172,12 @@ def fresh_app(monkeypatch, tmp_path):
     from dashboard import db, sales_pages
     with db.connect(appmod.LOG_DB) as cx:
         sales_pages.init_table(cx)
-    return appmod
+    yield appmod
+    # Put the environment back, then reload again, so later tests in the same run do not
+    # inherit this temp data dir and AI-copy setting. A test that passed alone failed in
+    # the full CI run on #1956 for exactly this.
+    monkeypatch.undo()
+    importlib.reload(appmod)
 
 
 def test_the_bundle_page_serves_only_its_approved_sections(fresh_app):
@@ -202,6 +230,12 @@ def test_a_bundle_dose_question_carries_the_programs_doses_and_cautions(fresh_ap
                  "Estro-Clear 1 capsule 1 to 2 times a day"):
         assert dose in block
     assert BUNDLE_INTRO.split("\n\n")[1] in block
+
+
+def test_a_lowercase_bundle_question_gets_the_whole_intro(fresh_app):
+    block = fresh_app._named_product_facts(
+        "how much of the estrogen and fibrin balance program should i take?")
+    assert BUNDLE_INTRO in block
 
 
 @pytest.mark.parametrize("question,slug", [

@@ -2180,11 +2180,13 @@ _CASE_FREE_NAMES = frozenset({
 _CUE_NAMES = frozenset({
     "angiostasis", "apoptogenesis", "appestat", "clear-the-way", "reverse-age",
     "stamina-plus", "off-syrup", "acetaldehyde-detox", "sinus-terrain-nasal-spray",
-    "fibrolysis-factors",
+    "fibrolysis-factors", "estrogen-fibrin-balance-program",
 })
 _PRODUCT_CUE_BEFORE = re.compile(
     r"\b(?:what\s+is|what's|whats|how\s+much|how\s+many|dose\s+of|dosage\s+of|take|taking|"
-    r"buy|order|ordered|(?:capsules?|caps|bottles?|scoops?|drops)\s+of)\s*$", re.IGNORECASE)
+    r"buy|order|ordered|(?:capsules?|caps|bottles?|scoops?|drops)\s+of)"
+    # "how much of the Estrogen and Fibrin Balance Program" (2026-10-09)
+    r"(?:\s+of)?(?:\s+the)?\s*$", re.IGNORECASE)
 _PRODUCT_CUE_AFTER = re.compile(
     r"^\s*(?:dose|dosage|capsules?|caps|bottles?|product|supplement|formula|safe|interact)\b",
     re.IGNORECASE)
