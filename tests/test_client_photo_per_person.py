@@ -359,3 +359,26 @@ def test_a_refresh_never_undoes_a_newer_local_pick(tmp_path):
                 "updated_at": "2026-01-01T00:00:00Z"}
     c = create_app(db, fetch_client_photo=fetch).test_client()
     assert c.get(f"/client-photo/{FAMILY}?name=Dana%20Hale").data == b"PICKED"
+
+
+# --- review round 3 ------------------------------------------------------------------
+
+def test_the_portal_hub_photo_step_counts_this_persons_own_upload(tmp_path, monkeypatch):
+    appmod, tok = _portal(tmp_path, monkeypatch, {"client_id": "101"})
+    from dashboard import portal_view as pv
+    with sqlite3.connect(appmod.LOG_DB) as cx:
+        def photo_done():
+            st = pv._journey_block(cx, FAMILY)
+            return [x for ph in st["phases"] for x in ph["steps"] if x["key"] == "photo"][0]["done"]
+        cph.put(cx, FAMILY, b"ELLA", "image/png", source="portal-self")
+        assert photo_done() is False             # another member's upload on the email
+        cph.put_for_client(cx, "101", FAMILY, b"DANA", "image/png", source="portal-self")
+        assert photo_done() is True
+
+
+def test_the_biofield_checkout_gate_sees_a_per_person_upload(tmp_path):
+    from dashboard import biofield_prereqs as bp
+    with sqlite3.connect(str(tmp_path / "x.db")) as cx:
+        assert bp.has_photo(cx, FAMILY) is False
+        cph.put_for_client(cx, "101", FAMILY, b"DANA", "image/png", source="portal-self")
+        assert bp.has_photo(cx, FAMILY) is True

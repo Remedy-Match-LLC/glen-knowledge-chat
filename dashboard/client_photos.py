@@ -115,6 +115,19 @@ def has(cx, email):
     return get(cx, email) is not None
 
 
+def has_any_for_email(cx, email):
+    """True when any photo is filed under this email, email-keyed or per person. A
+    portal with a client id saves its upload per person only, so has() misses it."""
+    if has(cx, email):
+        return True
+    e = _norm(email)
+    if not e:
+        return False
+    init_table(cx)
+    return cx.execute("SELECT 1 FROM client_identity_photos WHERE email=? "
+                      "AND image_blob IS NOT NULL LIMIT 1", (e,)).fetchone() is not None
+
+
 def put_for_client(cx, client_id, email, blob, content_type, source="upload", force=True):
     """Upsert one person's photo, keyed by FileMaker client id. force=False skips when
     the existing photo's source outranks `source`, so a bulk FileMaker load never
