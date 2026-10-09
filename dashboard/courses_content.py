@@ -27,6 +27,8 @@ class Module:
     slug: str
     title: str
     lessons: list
+    # ISO date. Completion recorded before it no longer counts; set only on Glen's word.
+    completion_reset: str = ""
 
 
 @dataclass
@@ -74,7 +76,8 @@ def load_course(course_slug: str, root: str | None = None) -> Course:
         for lslug in m.get("lessons", []) or []:
             lp = os.path.join(cdir, m["slug"], f"{lslug}.md")
             lessons.append(load_lesson(lp, course_slug, m["slug"]))
-        modules.append(Module(slug=m["slug"], title=str(m.get("title", "")), lessons=lessons))
+        modules.append(Module(slug=m["slug"], title=str(m.get("title", "")), lessons=lessons,
+                              completion_reset=str(m.get("completion_reset") or "").strip()))
     return Course(
         slug=course_slug,
         title=str(spec.get("title", "")),

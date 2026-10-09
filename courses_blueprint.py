@@ -27,6 +27,35 @@ from dashboard import bodymap_homework
 from dashboard.courses_sanitize import sanitize_html, strip_duplicate_lead_heading
 
 courses_bp = Blueprint("courses", __name__)
+
+_completion_backfill_done = False
+_completion_backfill_lock = threading.Lock()
+
+
+@courses_bp.before_app_request
+def _backfill_module_completions_once():
+    """Once per process, record everyone who has completed a module under its
+    current lessons, so a lesson added in a LATER deploy cannot take that credit
+    away (Glen, 2026-10-09). Insert-only, idempotent, never raises."""
+    global _completion_backfill_done
+    if _completion_backfill_done:
+        return
+    with _completion_backfill_lock:
+        if _completion_backfill_done:
+            return
+        _completion_backfill_done = True
+        try:
+            from dashboard import course_progress as cp
+            lessons = {(c.slug, m.slug): [l.slug for l in m.lessons]
+                       for c in cc.list_courses() for m in c.modules}
+            cx = _connect()
+            try:
+                n = cp.backfill_completions(cx, lessons)
+            finally:
+                cx.close()
+            print(f"[courses] module completions backfilled: {n} new, {len(lessons)} modules", flush=True)
+        except Exception as e:
+            print(f"[courses] module completion backfill skipped: {e}", flush=True)
 _write_lock = threading.Lock()
 _STATIC_DIR = Path(__file__).resolve().parent / "static"
 
@@ -256,7 +285,8 @@ def _paid_module_open(cx, email, course_obj, module_slug) -> bool:
     lesson_slugs = [l.slug for l in module.lessons]
     full_cert = (course_entitlements.paid_level_for(cx, email) == 2
                  or _certification_roster_access(email, course_obj.slug))
-    completed = course_progress.module_completed(cx, email, course_obj.slug, module_slug, lesson_slugs)
+    completed = course_progress.module_completed(cx, email, course_obj.slug, module_slug, lesson_slugs,
+                                                 reset_before=module.completion_reset)
     unlocked = module_slug in course_module_unlocks.unlocked_modules(cx, email, course_obj.slug)
     drip = course_entitlements.drip_active(cx, email)
     return ca.module_access(full_cert=full_cert, completed=completed, unlocked=unlocked, drip_active=drip)
@@ -469,7 +499,10 @@ def lesson_page(course_slug, module_slug, lesson_slug):
         cx2 = _connect()
         try:
             from dashboard import course_progress as cp
-            cert_completed = cp.module_completed(cx2, email, course_slug, module_slug, cert_lesson_slugs)
+            cp.init_progress_tables(cx2)  # Postgres: a SELECT on a missing table poisons the txn
+            cert_completed = cp.module_completed(
+                cx2, email, course_slug, module_slug, cert_lesson_slugs,
+                reset_before=cert_module.completion_reset if cert_module else "")
             cert_status = (module_certifications.status_for(cx2, email, course_slug, module_slug)
                            if cert_completed else None)
         finally:
@@ -722,7 +755,9 @@ def courses_certify_module(course_slug, module_slug):
 
     cx = _connect()
     try:
-        if not cp.module_completed(cx, email, course_slug, module_slug, lesson_slugs):
+        cp.init_progress_tables(cx)  # Postgres: a SELECT on a missing table poisons the txn
+        if not cp.module_completed(cx, email, course_slug, module_slug, lesson_slugs,
+                                   reset_before=module.completion_reset):
             return jsonify({"error": "module not completed"}), 403
         st = module_certifications.status_for(cx, email, course_slug, module_slug)
     finally:

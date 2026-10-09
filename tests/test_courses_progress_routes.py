@@ -75,3 +75,28 @@ def test_homework_unauthorized_without_token(client):
     c, _ = client
     r = c.post("/api/courses/ash-intro/01-intro/homework", json={"payload": "x"}, base_url=_MHOST)
     assert r.status_code == 401
+
+
+def test_first_request_backfills_and_a_new_lesson_keeps_credit(client, monkeypatch, tmp_path):
+    c, appmod = client
+    import courses_blueprint
+    from dashboard import course_progress as cp, courses_content as cc
+    with sqlite3.connect(appmod.LOG_DB) as cx:
+        cp.init_progress_tables(cx)
+        for l in ("01-out-takes", "02-welcome"):
+            cp.mark_watched(cx, "done@x.com", "ash-intro", "01-intro", l)
+        cp.record_homework(cx, "done@x.com", "ash-intro", "01-intro", "reflection")
+    monkeypatch.setattr(courses_blueprint, "_completion_backfill_done", False)
+    c.get("/learn", base_url=_MHOST)
+    with sqlite3.connect(appmod.LOG_DB) as cx:
+        assert cp.completed_at(cx, "done@x.com", "ash-intro", "01-intro")
+    # A deploy adds a lesson to the module.
+    root = tmp_path / "courses" / "ash-intro"
+    (root / "01-intro" / "03-new.md").write_text("---\ntitle: New\naccess: member\n---\nx\n")
+    y = (root / "course.yaml").read_text().replace("      - 02-welcome\n", "      - 02-welcome\n      - 03-new\n")
+    (root / "course.yaml").write_text(y)
+    mod = next(m for m in cc.load_course("ash-intro").modules if m.slug == "01-intro")
+    assert [l.slug for l in mod.lessons][-1] == "03-new"
+    with sqlite3.connect(appmod.LOG_DB) as cx:
+        assert cp.module_completed(cx, "done@x.com", "ash-intro", "01-intro",
+                                   [l.slug for l in mod.lessons]) is True
