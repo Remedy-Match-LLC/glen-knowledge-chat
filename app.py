@@ -2172,6 +2172,7 @@ _CASE_FREE_NAMES = frozenset({
     "ocuheal-eye-drops", "ocuheal-plus-eye-drops", "lens-zyme", "curcu-guard",
     "iron-syntropy", "zinc-syntropy", "vitamin-a-syntropy", "vitamin-c-syntropy",
     "adrenal-syntropy", "sanctuary-c60", "phytolacca-americana-oil-roll-on",
+    "fibrosolve", "estro-clear",
 })
 # Pinned products whose name a client may type in lowercase, beside a product cue. Every
 # other pinned name is a generic description ("l-carnosine", "DHT blocker", "hydrolyzed
@@ -2179,6 +2180,7 @@ _CASE_FREE_NAMES = frozenset({
 _CUE_NAMES = frozenset({
     "angiostasis", "apoptogenesis", "appestat", "clear-the-way", "reverse-age",
     "stamina-plus", "off-syrup", "acetaldehyde-detox", "sinus-terrain-nasal-spray",
+    "fibrolysis-factors",
 })
 _PRODUCT_CUE_BEFORE = re.compile(
     r"\b(?:what\s+is|what's|whats|how\s+much|how\s+many|dose\s+of|dosage\s+of|take|taking|"
@@ -2272,6 +2274,12 @@ def _named_product_facts(query_text: str, gated: bool = False) -> str:
         parts = [f"### {name}", f"Page: {_catalog_page_url(slug)}"]
         if desc:
             parts.append(desc)
+        # A bundle has no directions or warning of its own: its approved intro carries
+        # every component's dose and the cautions (Estrogen and Fibrin Balance Program,
+        # 2026-10-09). Carried whole, only when Glen pinned it.
+        intro = (product.get("intro") or "").strip()
+        if product.get("bundle") and intro and "intro" in _pinned_copy(product):
+            parts.append(f"Program directions and cautions:\n{intro}")
         for label, key in (("Directions", "directions"), ("Caution", "warning")):
             val = (product.get(key) or "").strip()
             if val and val not in desc:
@@ -9914,8 +9922,13 @@ def begin_product_page_data(slug):
     _is_service = bool(p.get("service"))
     sections = _filter_sections(sections, has_ingredients=_has_ings,
                                 has_own_video=bool(_own_vids), is_service=_is_service,
-                                in_miron=_miron, is_bundle=bool(p.get("bundle")),
-                                has_research_text=bool((how or "").strip()))
+                                in_miron=_miron,
+                                # Only a bundle that PINS an empty research text loses the
+                                # section. `how` is read before the AI step, so testing it
+                                # would strip "The research" from every bundle whose draft
+                                # failed to generate (review round 1, 2026-10-09).
+                                is_bundle=bool(p.get("bundle")) and "research" in _pin,
+                                has_research_text=bool((p.get("how_it_works") or "").strip()))
     # A product with AI images off has no Images section: its photos are in the top gallery,
     # and an empty section would open to nothing.
     from dashboard.sales_images import ai_images_off as _ai_images_off

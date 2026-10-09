@@ -136,11 +136,19 @@ def fresh_app(monkeypatch, tmp_path):
     depend on what earlier tests in the run did to app's in-memory products."""
     monkeypatch.setenv("DATA_DIR", str(tmp_path))
     monkeypatch.setenv("SALES_PAGES_ENABLED", "true")
+    # AI copy on, so an unpinned section would carry an "ai" marker and fail the
+    # allowlist test below.
+    monkeypatch.setenv("SALES_PAGES_AI_COPY", "true")
     monkeypatch.setenv("OPENAI_API_KEY", "sk-fake")
     monkeypatch.setenv("PINECONE_API_KEY", "pcsk_fake")
     import app as appmod
     importlib.reload(appmod)
     appmod.app.config["TESTING"] = True
+    # The AI step marks unpinned sections only once its table exists; without it the
+    # step is skipped and the allowlist test could not see an unpinned section.
+    from dashboard import db, sales_pages
+    with db.connect(appmod.LOG_DB) as cx:
+        sales_pages.init_table(cx)
     return appmod
 
 
@@ -175,3 +183,36 @@ def test_fibrosolve_page_serves_the_label_panel_and_drcaps(fresh_app):
 def test_the_chat_carries_each_products_label_dose(fresh_app, question, directions):
     block = fresh_app._named_product_facts(question)
     assert block and directions in block, question
+
+
+def test_another_bundle_keeps_its_research_when_generation_returns_nothing(fresh_app, monkeypatch):
+    # Review round 1: the drop must not reach a bundle that never pinned "research".
+    monkeypatch.setattr(fresh_app, "_product_how", lambda p: "")
+    data = fresh_app.app.test_client().get(
+        "/begin/product-page-data/macular-wellness-program").get_json()
+    assert "research" in [s["id"] for s in data["sections"]]
+
+
+def test_a_bundle_dose_question_carries_the_programs_doses_and_cautions(fresh_app):
+    block = fresh_app._named_product_facts(
+        "How much of the Estrogen and Fibrin Balance Program should I take?")
+    assert BUNDLE_INTRO in block
+    for dose in ("Fibrosolve 1 to 2 capsules a day between meals",
+                 "Fibrolysis Factors 1 to 3 capsules a day with food",
+                 "Estro-Clear 1 capsule 1 to 2 times a day"):
+        assert dose in block
+    assert BUNDLE_INTRO.split("\n\n")[1] in block
+
+
+@pytest.mark.parametrize("question,slug", [
+    ("how much fibrosolve should i take", "fibrosolve"),
+    ("is estro-clear safe?", "estro-clear"),
+    ("how much fibrolysis factors should i take?", "fibrolysis-factors"),
+])
+def test_lowercase_names_clients_type(fresh_app, question, slug):
+    assert slug in fresh_app._named_product_spans(question, fresh_app._PRODUCTS["products"])
+
+
+def test_fibrolysis_in_ordinary_wording_matches_nothing(fresh_app):
+    assert fresh_app._named_product_spans("fibrolysis factors in the blood",
+                                          fresh_app._PRODUCTS["products"]) == {}
