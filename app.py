@@ -2142,6 +2142,11 @@ def _product_guidance_hint(slug: str) -> str:
 
 _NAMED_FACTS_MAX_PRODUCTS = 3
 _NAMED_FACTS_MAX_CHARS = 1600
+# Pinned products whose name is an everyday word, so a sentence can start with it.
+_COMMON_WORD_NAMES = frozenset({"moisturize"})
+# A facts block tells the model the product exists and to give its dose, which would
+# recommend a product Glen ruled must never be recommended.
+from dashboard.related_products import DO_NOT_RECOMMEND as _DO_NOT_RECOMMEND_FACTS  # noqa: E402
 _PRICE_SENTENCE = re.compile(r"\s*Price:\s*\$[\d,.]+\.?")
 
 
@@ -2150,21 +2155,25 @@ def _named_product_spans(query_text: str, products: dict) -> dict:
 
     Only a product's own catalog name counts, never an alias: an alias can name an old
     or consolidated product, and the block tells the model the name is real. The whole
-    name must stand as words. A one-word name must also be capitalised as in the
-    catalog, so "how can I moisturize" does not bring in Moisturize. Only products with
+    name must stand as words, cased as in the catalog: "clear the way for my lymph" and
+    "reverse age naturally" are not product names (review round 3). A product whose name
+    is an everyday word (Moisturize) never qualifies, and neither does one Glen has
+    ruled must never be recommended. Only products with
     `copy_pinned` qualify: their store text is Glen-approved, and older descriptions
     carry claims and price lines (review round 1, 2026-10-09).
     """
+    query_text = html.unescape(query_text).replace("\u2122", "")
     spans = {}
     for slug, p in products.items():
-        if not p.get("copy_pinned") or p.get("inactive") or p.get("info_only"):
+        if (not p.get("copy_pinned") or p.get("inactive") or p.get("info_only")
+                or slug in _DO_NOT_RECOMMEND_FACTS or slug in _COMMON_WORD_NAMES):
             continue
         name = html.unescape(p.get("name") or "").replace("\u2122", "").strip()
         if not name:
             continue
         words = name.split()
         pattern = r"(?<![\w+])" + r"\s+".join(re.escape(w) for w in words) + r"(?![\w+])"
-        m = re.search(pattern, query_text, re.IGNORECASE if len(words) > 1 else 0)
+        m = re.search(pattern, query_text)
         if m:
             spans[slug] = m.span()
     # The longest name wins: "Stamina Plus" inside "Stamina Plus: Full B complex ..."

@@ -27,8 +27,10 @@ def test_a_named_product_brings_its_directions_and_full_caution():
     assert "never tell them they meant a different product" in block
 
 
-def test_a_multi_word_name_matches_in_any_case():
-    assert "### Clear the Way" in app.named_product_facts_block("what dose of clear the way?")
+def test_a_multi_word_name_matches_in_catalog_casing_only():
+    assert "### Clear the Way" in app.named_product_facts_block("What dose of Clear the Way?")
+    assert app.named_product_facts_block("Can I clear the way for my lymph?") == ""
+    assert app.named_product_facts_block("Clear the way for my lymph?") == ""
 
 
 @pytest.mark.parametrize("question", [
@@ -43,6 +45,11 @@ def test_a_multi_word_name_matches_in_any_case():
     "what is angiostasis?",                 # a one-word name must be capitalised
     "What is AngiostasisXYZ123?",           # the whole name must stand as a word
     "Tell me about Dental Regen Powder",    # an old name: aliases never count
+    "reverse age naturally",                # review round 3
+    "I have acetaldehyde detox issues after drinking",
+    "Moisturize my skin. What helps?",      # an everyday word never qualifies
+    "Is Electrolyte Mineral Manna good?",   # never recommended (Glen)
+    "Dose of Aller-Free HomeoEnergetic Drops?",
 ])
 def test_ordinary_or_unknown_wording_brings_no_block(question):
     assert app.named_product_facts_block(question) == "", question
