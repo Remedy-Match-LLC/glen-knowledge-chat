@@ -25,7 +25,7 @@ CASES = {
     "angiostasis": {
         "questions": [
             "What is Angiostasis?",
-            "How much Angiostasis should I take each day?",
+            "How much Angiostasis should I take, and are there any cautions?",
         ],
         # Each question's answer must contain every phrase (case-insensitive).
         "required": {
@@ -38,7 +38,7 @@ CASES = {
     "clear-the-way": {
         "questions": [
             "What is Clear the Way?",
-            "How much Clear the Way should I take each day?",
+            "How much Clear the Way should I take, and are there any cautions?",
         ],
         "required": {
             0: ["Clear the Way", "serrapeptase", "blood thinner"],
@@ -55,34 +55,62 @@ def _facts(question: str) -> str:
     return getattr(app, "named_product_facts_block", lambda q: "")(question)
 
 
-def ask(question: str) -> str:
+# A conversation that already holds the pre-fix wrong answer (knowledge-5a, 2026-10-09:
+# the live chat repeated "You're asking about AngiogenX" after the fix deployed).
+POISONED = {
+    "angiostasis": [
+        {"role": "user", "content": "How much Angiostasis should I take?"},
+        {"role": "assistant", "content": "I notice your question uses Angiostasis, but the "
+         "product is AngiogenX. Take 1 capsule daily with food. It supports wet AMD and "
+         "healthy capillaries, and pairs with Clear the Way."},
+    ],
+    "clear-the-way": [
+        {"role": "user", "content": "What is Clear the Way?"},
+        {"role": "assistant", "content": "Clear the Way is a serrapeptase tissue editor that "
+         "helps dissolve accumulated scar tissue, including the capsule around tumors."},
+    ],
+}
+
+
+def ask(question: str, history=None, gate=False) -> tuple:
+    """(answer, gated). history: earlier [{"role", "content"}] turns, as chat() sends
+    them. gate=True runs the non-member consent classifier as chat() does."""
     vec = app.embed(question)
     context_str, _ = app.build_context(app.query_all_namespaces(vec))
     directive = app.build_product_directive(snippets_text=context_str, query_text=question)
     product_block = f"{directive}\n\n" if directive else ""
+    facts = _facts(question)
+    system = app.get_system_prompt("self-healing")
+    gated = bool(gate and app._is_gated_question(question))
+    if gated:
+        system += app._EDUCATE_ONLY_POLICY
+        facts = ""      # chat() removes the block on a gated turn
     content = (f"USER QUESTION: {question}\n\n"
                f"RETRIEVED SNIPPETS:\n{context_str}\n\n"
                f"{product_block}"
                f"{app._brief_synth_instruction()}"
-               f"{_facts(question)}")
+               f"{facts}")
     msg = app._cl.messages.create(
-        model="claude-haiku-4-5-20251001", max_tokens=1024,
-        system=app.get_system_prompt("self-healing"),
-        messages=[{"role": "user", "content": content}])
-    return "".join(b.text for b in msg.content if getattr(b, "type", "") == "text")
+        model="claude-haiku-4-5-20251001", max_tokens=1024, system=system,
+        messages=list(history or [])[-6:] + [{"role": "user", "content": content}])
+    return "".join(b.text for b in msg.content if getattr(b, "type", "") == "text"), gated
 
 
-def main(case_name: str, runs: int = 1) -> int:
+def main(case_name: str, runs: int = 1, session: bool = False, gate: bool = False,
+         poisoned: bool = False) -> int:
+    """session=True asks the questions in one conversation, as a client would."""
     case = CASES[case_name]
     failures = 0
     for n in range(runs):
+        history = list(POISONED.get(case_name, [])) if poisoned else []
         for i, q in enumerate(case["questions"]):
-            answer = ask(q)
+            answer, gated = ask(q, history if (session or poisoned) else None, gate)
+            history += [{"role": "user", "content": q}, {"role": "assistant", "content": answer}]
             missing = [p for p in case["required"].get(i, []) if p.lower() not in answer.lower()]
             found = [p for p in case["forbidden"] if re.search(p, answer, re.I)]
             ok = not missing and not found
             failures += not ok
-            print(f"=== run {n + 1} | {q} | {'PASS' if ok else 'FAIL'}")
+            print(f"=== run {n + 1} | {q} | {'PASS' if ok else 'FAIL'}{' | GATED' if gated else ''}")
             if missing:
                 print(f"missing: {missing}")
             if found:
@@ -93,4 +121,7 @@ def main(case_name: str, runs: int = 1) -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main(sys.argv[1], int(sys.argv[2]) if len(sys.argv) > 2 else 1))
+    args = [a for a in sys.argv[1:] if not a.startswith("--")]
+    sys.exit(main(args[0], int(args[1]) if len(args) > 1 else 1,
+                  session="--session" in sys.argv, gate="--gate" in sys.argv,
+                  poisoned="--poisoned" in sys.argv))
