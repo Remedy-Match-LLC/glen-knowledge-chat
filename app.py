@@ -2164,6 +2164,46 @@ from dashboard.related_products import DO_NOT_RECOMMEND as _DO_NOT_RECOMMEND_FAC
 _PRICE_SENTENCE = re.compile(r"\s*Price:\s*\$[\d,.]+\.?")
 
 
+# Pinned products whose name is a coined word nobody uses in ordinary speech, so it
+# matches in any case. Angiostasis, Apoptogenesis and Appestat are NOT here: each is also
+# a biology term ("angiostasis in tumours"), so in lowercase they need a cue (review 2026-10-09).
+_CASE_FREE_NAMES = frozenset({
+    "angiogenx", "migrafree", "energessence",
+    "ocuheal-eye-drops", "ocuheal-plus-eye-drops", "lens-zyme", "curcu-guard",
+    "iron-syntropy", "zinc-syntropy", "vitamin-a-syntropy", "vitamin-c-syntropy",
+    "adrenal-syntropy", "sanctuary-c60", "phytolacca-americana-oil-roll-on",
+})
+# Pinned products whose name a client may type in lowercase, beside a product cue. Every
+# other pinned name is a generic description ("l-carnosine", "DHT blocker", "hydrolyzed
+# whey") and matches only in catalog casing.
+_CUE_NAMES = frozenset({
+    "angiostasis", "apoptogenesis", "appestat", "clear-the-way", "reverse-age",
+    "stamina-plus", "off-syrup", "acetaldehyde-detox", "sinus-terrain-nasal-spray",
+})
+_PRODUCT_CUE_BEFORE = re.compile(
+    r"\b(?:what\s+is|what's|whats|how\s+much|how\s+many|dose\s+of|dosage\s+of|take|taking|"
+    r"buy|order|ordered|(?:capsules?|caps|bottles?|scoops?|drops)\s+of)\s*$", re.IGNORECASE)
+_PRODUCT_CUE_AFTER = re.compile(
+    r"^\s*(?:dose|dosage|capsules?|caps|bottles?|product|supplement|formula|safe|interact)\b",
+    re.IGNORECASE)
+# What may follow a lowercase name: the end of a clause or a word that cannot extend the
+# name into a longer noun phrase ("reverse age discrimination").
+_AFTER_NAME_OK = re.compile(
+    r"^\s*(?:$|[?.!,;:)]|(?:should|do|does|did|is|are|can|could|will|would|i|safe|dose|"
+    r"dosage|capsules?|caps|bottles?|interact|with|and|or|every|each)\b)", re.IGNORECASE)
+
+
+def _has_product_cue(text: str, start: int, end: int) -> bool:
+    """True when the words beside a lowercase product name read as asking about the
+    product: "how much clear the way should I take", "clear the way dose", "is clear the
+    way safe". "Can I clear the way for my lymph" and "about reverse age discrimination"
+    have no cue, or run the name into a longer phrase."""
+    if not _AFTER_NAME_OK.search(text[end:end + 20]):
+        return False
+    return bool(_PRODUCT_CUE_BEFORE.search(text[max(0, start - 20):start])
+                or _PRODUCT_CUE_AFTER.search(text[end:end + 20]))
+
+
 def _named_product_spans(query_text: str, products: dict) -> dict:
     """{slug: (start, end)} for each pinned, active product named in the question.
 
@@ -2188,6 +2228,15 @@ def _named_product_spans(query_text: str, products: dict) -> dict:
         words = name.split()
         pattern = r"(?<![\w+])" + r"\s+".join(re.escape(w) for w in words) + r"(?![\w+])"
         m = re.search(pattern, query_text)
+        if not m:
+            # Any case: a coined name cannot occur in ordinary speech. A name that is also
+            # an everyday phrase ("clear the way", "reverse age") needs a product cue
+            # beside it (formulation-9d and Glen, 2026-10-09: clients type lowercase).
+            for mi in re.finditer(pattern, query_text, re.IGNORECASE):
+                if slug in _CASE_FREE_NAMES or (slug in _CUE_NAMES
+                                                 and _has_product_cue(query_text, *mi.span())):
+                    m = mi
+                    break
         if m:
             spans[slug] = m.span()
     # The longest name wins: "Stamina Plus" inside "Stamina Plus: Full B complex ..."
@@ -2256,13 +2305,79 @@ def _named_product_facts(query_text: str, gated: bool = False) -> str:
     )
 
 
-def named_product_facts_block(query_text: str, gated: bool = False) -> str:
+# A follow-up carries the earlier product only when the whole message asks about the dose
+# or safety of "it/this" and brings no subject of its own. "What can I take for sleep?",
+# "Does metformin have side effects?" and "Is it safe to drive after the scan?" carry
+# nothing (review rounds 1 to 3, 2026-10-09). Each form is anchored to the start.
+_FOLLOW_UP_LEAD = r"^\s*(?:(?:and|so|but|also|ok|okay|thanks)[,.!]?\s+)?"
+_FOLLOW_UP_DOSE = re.compile(
+    _FOLLOW_UP_LEAD + r"(?:how\s+(?:much|often)\s+(?:of\s+(?:it|this|them)\s+)?"
+    r"(?:should|do|can|could|would|will|must)\s+i\b|how\s+much\s+to\s+take\b"
+    r"|how\s+many(?:\s+(?:capsules?|caps|drops|scoops?))?\s+(?:should|do|can|a\s+day|per\s+day|daily)\b"
+    r"|(?:what(?:'s|\s+is)\s+the\s+|what\s+)?(?:recommended\s+|usual\s+|daily\s+)?(?:dose|dosage)\s*[?.!]?\s*$"
+    r"|(?:when|how)\s+(?:do|should)\s+i\s+take\s+(?:it|this|them)\b)", re.IGNORECASE)
+_FOLLOW_UP_SAFETY = re.compile(
+    _FOLLOW_UP_LEAD + r"(?:(?:is|are)\s+(?:it|this|they|that)\s+(?:safe|ok|okay)"
+    r"(?=\s*(?:$|[?.!,]|with\b|while\b|during\b|if\b|when\b|for\b|to\s+take\b|in\s+pregnancy\b))"
+    r"|(?:can|should|could)\s+i\s+take\s+(?:it|this|them)\b"
+    r"|(?:does\s+(?:it|this)\s+have\s+|are\s+there\s+|what\s+are\s+the\s+)?(?:any\s+)?"
+    r"(?:side\s+effects?|cautions?|interactions?|warnings?|contraindications?)\b"
+    r"(?!\s+(?:of|from|on|in)\s+(?!it\b|this\b|them\b)))", re.IGNORECASE)
+# A dose question that names its own subject: "for sleep", "for my joints".
+_OWN_SUBJECT = re.compile(r"\bfor\s+(?!it\b|this\b|them\b|me\b|a\s+day\b|how\s+long\b)\w+",
+                          re.IGNORECASE)
+_FOLLOW_UP_LOOKBACK = 3
+
+
+def _is_follow_up(text) -> bool:
+    """True when the whole message asks about the dose or safety of "it/this"."""
+    if not isinstance(text, str) or len(text.split()) > 15:
+        return False
+    if _FOLLOW_UP_SAFETY.search(text):
+        return True
+    return bool(_FOLLOW_UP_DOSE.search(text)) and not _OWN_SUBJECT.search(text)
+
+
+def _carried_query(query_text: str, prior_user_turns) -> str:
+    """The query, or the earlier user turn whose product this follow-up is about
+    ("How much should I take?" after "What is Angiostasis?").
+
+    Carried only when this message names no product and is a follow-up (_is_follow_up).
+    Walks back over up to three earlier user turns, each of which must itself be a
+    follow-up, to the turn that named the product; that turn must name exactly one. Any
+    other turn in between ("What about vitamin D?") ends the walk and carries nothing."""
+    products = (_PRODUCTS or {}).get("products", {}) or {}
+    if not query_text or not prior_user_turns or _named_product_spans(query_text, products):
+        return query_text
+    if not _is_follow_up(query_text):
+        return query_text
+    turns = [t for t in prior_user_turns if isinstance(t, str) and t.strip()]
+    for turn in reversed(turns[-_FOLLOW_UP_LOOKBACK:]):
+        named = _named_product_spans(turn, products)
+        if named:
+            return turn if len(named) == 1 else query_text
+        if not _is_follow_up(turn):
+            return query_text
+    return query_text
+
+
+def named_product_facts_block(query_text: str, gated: bool = False,
+                              prior_user_turns=None) -> str:
     """The facts block, or "". It goes LAST in the user message, after the synthesis
     instruction. Read-back 2026-10-08: placed before the snippets, 8 of 16 answers
     failed; placed after them but before the instruction, 2 of 16 failed.
     On a gated turn chat() swaps in the gated variant, which frames the dose and caution
-    as label information (Glen, 2026-10-09)."""
-    facts = _named_product_facts(query_text, gated)
+    as label information (Glen, 2026-10-09). `prior_user_turns` lets a short follow-up
+    with no product name carry the product the previous question named."""
+    carried = _carried_query(query_text, prior_user_turns)
+    facts = _named_product_facts(carried, gated)
+    if facts and carried != query_text:
+        products = (_PRODUCTS or {}).get("products", {}) or {}
+        slug = next(iter(_named_product_spans(carried, products)))
+        name = html.unescape(products[slug].get("name") or slug).strip()
+        facts = (f"FOLLOW-UP: the user's message is about {name}, which they named in their "
+                 f"previous question. Answer it about {name} from the text below, in the "
+                 f"format the text below sets for a dose or safety question.\n" + facts)
     return f"\n\n{facts}" if facts else ""
 
 
@@ -6042,13 +6157,14 @@ def chat():
         )
         product_block = f"{product_directive}\n\n" if product_directive else ""
 
+        _prior_user = [m["content"] for m in messages if m.get("role") == "user"]
         messages.append({"role": "user", "content":
             f"USER QUESTION: {query}\n\n"
             f"{attachment_context}"
             f"RETRIEVED SNIPPETS:\n{context_str}\n\n"
             f"{product_block}"
             f"{synth_instr}"
-            f"{named_product_facts_block(query)}"
+            f"{named_product_facts_block(query, prior_user_turns=_prior_user)}"
         })
 
         # ── Consent gate (Tier-0 Visitor → Tier-1 Member) ────────────────────
@@ -6066,10 +6182,11 @@ def chat():
             # A non-member who names a product gets its label text, framed as label
             # information (Glen, 2026-10-09). Dropping it made the model answer from
             # snippets about a different product.
-            _facts = named_product_facts_block(query)
+            _facts = named_product_facts_block(query, prior_user_turns=_prior_user)
             if _facts:
                 messages[-1]["content"] = messages[-1]["content"].replace(
-                    _facts, named_product_facts_block(query, gated=True))
+                    _facts, named_product_facts_block(query, gated=True,
+                                                      prior_user_turns=_prior_user))
             yield sse({"gate": True})
         # ──────────────────────────────────────────────────────────────────────
 
