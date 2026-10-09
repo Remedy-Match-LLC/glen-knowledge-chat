@@ -84,7 +84,8 @@ def ask(question: str, history=None, gate=False) -> tuple:
     gated = bool(gate and app._is_gated_question(question))
     if gated:
         system += app._EDUCATE_ONLY_POLICY
-        facts = ""      # chat() removes the block on a gated turn
+        # chat() swaps in the gated variant (label information), Glen 2026-10-09
+        facts = getattr(app, "named_product_facts_block", lambda q, gated=False: "")(question, gated=True)
     content = (f"USER QUESTION: {question}\n\n"
                f"RETRIEVED SNIPPETS:\n{context_str}\n\n"
                f"{product_block}"

@@ -101,8 +101,22 @@ def test_every_answer_path_appends_the_block_after_the_instruction():
         assert src.index("{synth_instr}") < src.index("named_product_facts_block(query)"), fn.__name__
 
 
-def test_a_gated_turn_drops_the_block():
+def test_a_gated_turn_keeps_the_label_text_as_label_information():
+    # Glen, 2026-10-09: a non-member who names a product gets its label dose and caution.
+    q = "How much Angiostasis should I take, and are there any cautions?"
+    open_, gated = app.named_product_facts_block(q), app.named_product_facts_block(q, gated=True)
+    assert app._GATED_FACTS_NOTE not in open_
+    assert app._GATED_FACTS_NOTE in gated
+    assert ANGIO["directions"] in gated and ANGIO["warning"] in gated
     src = inspect.getsource(app.chat)
     gate = src.index("_system = _system + _EDUCATE_ONLY_POLICY")
-    after = src[gate:gate + 400]
-    assert "named_product_facts_block(query)" in after and '.replace(_facts, "")' in after
+    after = src[gate:gate + 700]
+    assert "named_product_facts_block(query, gated=True)" in after
+
+
+def test_the_sources_line_and_the_cta_point_at_this_product():
+    block = app.named_product_facts_block("What is Angiostasis?")
+    assert "The Sources line names this product text only" in block
+    assert "a page CTA links this product's Page" in block
+    assert "Page: " in block and block.split("Page: ")[1].split("\n")[0].endswith(
+        "/begin/product/angiostasis")
