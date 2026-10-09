@@ -2148,7 +2148,12 @@ _GATED_FACTS_NOTE = (
     "This user has not yet agreed to the Terms. The consent rule still holds: do not tailor "
     "anything to their body or condition, and do not recommend this product for a condition. "
     "You may read back this label text as label information: what the product is, and "
-    "\"The label directions are ...\" and \"The label caution is ...\" in the label's words.\n")
+    "\"The label directions are ...\" and \"The label caution is ...\" in the label's words. "
+    "This overrides the rule above about naming a condition from the user's question: even "
+    "if they name their own condition, do not say this product is for, helps or suits it, "
+    "and do not say the dose suits them. Then invite them to agree to the Terms for guidance "
+    "on their own situation. Link the Page only as the product page, never as a next step "
+    "for their condition.\n")
 _NAMED_FACTS_MAX_CHARS = 1600
 # Pinned products whose name is an everyday word, so a sentence can start with it.
 _COMMON_WORD_NAMES = frozenset({"moisturize"})
