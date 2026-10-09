@@ -9,6 +9,7 @@ Review round 1 (2026-10-09) found plain-substring matching brought products into
 questions ("relax", "uncomfortable", "heavy metals"), and aliases mapped old names onto
 other products. Only a pinned product's own name, as whole words, now counts.
 """
+import importlib
 import inspect
 import json
 
@@ -149,8 +150,14 @@ class _FakeStream:
 
 
 @pytest.mark.parametrize("gated", [True, False])
-def test_the_chat_route_sends_the_gated_variant_on_a_gated_turn(monkeypatch, gated):
+def test_the_chat_route_sends_the_gated_variant_on_a_gated_turn(monkeypatch, tmp_path, gated):
     sent = []
+    # Own data dir (every table), as tests/test_angiostasis_new_product.py does, and no
+    # outbound call from the follow-up-question helper.
+    monkeypatch.setenv("DATA_DIR", str(tmp_path))
+    importlib.reload(app)
+    monkeypatch.setattr(app._cl.messages, "create", lambda **kw: (_ for _ in ()).throw(
+        RuntimeError("no live calls in tests")))
     monkeypatch.setattr(app, "embed", lambda text: [0.0] * 1536)
     monkeypatch.setattr(app, "query_all_namespaces", lambda vec: ["one match"])
     monkeypatch.setattr(app, "build_context", lambda m: ("snippet about AngiogenX", []))
@@ -163,5 +170,6 @@ def test_the_chat_route_sends_the_gated_variant_on_a_gated_turn(monkeypatch, gat
     assert sent, r.get_data(as_text=True)[:500]
     last = sent[-1]["messages"][-1]["content"]
     assert ANGIO["warning"] in last
+    assert last.count("PRODUCT FACTS FOR THE PRODUCT") == 1   # swapped, not appended
     assert (app._GATED_FACTS_NOTE in last) is gated
     assert (app._EDUCATE_ONLY_POLICY in sent[-1]["system"]) is gated
