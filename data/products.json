@@ -20389,6 +20389,7 @@
   },
   "scar-soft-drink": {
    "name": "Scar Soft Drink",
+   "waitlist_only": true,
    "price_cents": 7000,
    "pinecone_title": "Scar Soft Drink",
    "qty_pricing": true,
@@ -23092,7 +23093,7 @@
    "price_cents": 31500
   },
   "scar-reduction-program": {
-   "name": "Scar Reduction Program",
+   "name": "Scar Support Program",
    "bundle": true,
    "price_rule": "components_less_10pct",
    "autoship_eligible": true,

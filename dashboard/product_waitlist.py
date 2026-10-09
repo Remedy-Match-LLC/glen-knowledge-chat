@@ -10,6 +10,11 @@ GoHighLevel through ghl_write_queue. The in-house copy is the source of truth.
 The consent covers the launch email only: a sign-up never adds consent:opted-in, which drives
 recurring mail. Anyone who reserves the founding batch is left out at send time; their tag
 stays, as history.
+
+Second list, 2026-10-09: Scar Soft Drink, which is `waitlist_only` until tetrahydrocurcumin is
+in stock (spec production/05 Formulations/_store-updates/2026-10-09-scar-reduction-program.md).
+Every string a person sees is per list (TEXTS); each row stores the consent it was given, and
+each list has its own daily send allowance.
 """
 import hashlib
 import json
@@ -20,14 +25,56 @@ from dashboard import ghl_queue as _gq
 from dashboard import people as _pe
 
 # One list per product slug, with the tag it carries in house and in GoHighLevel.
-LISTS = {"neuro-magnesium": "retina-renew-waitlist"}
-# Glen's approved wording, 2026-09-29, stored with every sign-up.
-CONSENT_TEXT = "We will email you when Retina Renew launches, and nothing else unless you ask."
+LISTS = {"neuro-magnesium": "retina-renew-waitlist",
+         "scar-soft-drink": "scar-soft-drink-waitlist"}
+
+# Every string a person sees, per list. Retina Renew's are Glen's approved wording of
+# 2026-09-29, word for word, except the consent (Glen, 2026-10-09: "fix Retina Renew also";
+# the old text promised "nothing else unless you ask", untrue for people already on the
+# mailing list). Scar Soft Drink's: Glen, 2026-10-09, "other 5 are fine" and "yes" to the
+# consent. `reserve_line` is Retina Renew's only: Scar Soft Drink has nothing to reserve.
+TEXTS = {
+    "neuro-magnesium": {
+        "product": "Retina Renew",
+        "consent": ("We will email you when Retina Renew launches. Joining this list does not "
+                    "add you to any other mailing list."),
+        "intro": ("Leave your email and we will send you one email when Retina Renew launches. "
+                  "No card, no charge."),
+        "reserve_line": "Not ready to reserve? Join the waiting list.",
+        "subject": "Confirm your Retina Renew launch email",
+        "body_lead": "Please confirm you'd like an email when Retina Renew launches:",
+        "page_title": "Confirm your Retina Renew launch email",
+        "success": "You're on the list. We'll email you when Retina Renew is ready.",
+    },
+    "scar-soft-drink": {
+        "product": "Scar Soft Drink",
+        "consent": ("We will email you when Scar Soft Drink and the new Scar Support Program "
+                    "bundles are ready to order. Joining this list does not add you to any "
+                    "other mailing list."),
+        "intro": ("Scar Soft Drink is not ready to order yet. Join the waiting list and we will "
+                  "email you when Scar Soft Drink and the new Scar Support Program bundles "
+                  "are ready. No card, no charge."),
+        "reserve_line": "",
+        "subject": "Confirm your Scar Soft Drink email",
+        "body_lead": ("Please confirm you'd like an email when Scar Soft Drink and the new Scar "
+                      "Support Program bundles are ready to order:"),
+        "page_title": "Confirm your Scar Soft Drink email",
+        "success": ("We'll email you when Scar Soft Drink and the new Scar Support Program "
+                    "bundles are ready."),
+    },
+}
+# Retina Renew's consent, kept as the module constant earlier code and tests import.
+CONSENT_TEXT = TEXTS["neuro-magnesium"]["consent"]
+# What Retina Renew rows signed up before 2026-10-09 agreed to. They keep it: a stored
+# consent is never rewritten.
+RETINA_CONSENT_BEFORE_2026_10_09 = ("We will email you when Retina Renew launches, and nothing "
+                                    "else unless you ask.")
 # Glen, 2026-09-29 ("confirm email"): a sign-up counts only once its owner clicks the link.
 CONFIRM_DAYS = 30
 RESEND_MINUTES = 10
-# Round 3: one address gets at most MAX_SENDS confirmation emails, and the whole list at most
+# Round 3: one address gets at most MAX_SENDS confirmation emails, and each list at most
 # DAILY_SENDS a day, so the form cannot be used to flood an inbox or Glen's Gmail quota.
+# Per list since 2026-10-09, so Scar sign-ups never use up Retina Renew's allowance.
 MAX_SENDS = 3
 DAILY_SENDS = 200
 
@@ -47,6 +94,11 @@ def init_table(cx):
                "confirm_hash TEXT DEFAULT '', confirm_sent_at TEXT DEFAULT '', "
                "confirmed_at TEXT DEFAULT '', confirm_sends INTEGER DEFAULT 0, "
                "PRIMARY KEY (product_slug, email))")
+    # Confirmation emails sent, per list per UTC day (review round 2, 2026-10-09). A row's
+    # confirm_sent_at is overwritten on a resend, so counting rows missed every resend.
+    cx.execute("CREATE TABLE IF NOT EXISTS product_waitlist_sends ("
+               "product_slug TEXT NOT NULL, day TEXT NOT NULL, sends INTEGER NOT NULL DEFAULT 0, "
+               "PRIMARY KEY (product_slug, day))")
     cx.commit()
 
 
@@ -77,10 +129,26 @@ def clean_first_name(raw):
     return name if name and ok and any(ch.isalpha() for ch in name) else ""
 
 
-def _sent_today(cx):
-    day = datetime.now(timezone.utc).date().isoformat()
-    return cx.execute("SELECT COUNT(*) FROM product_waitlist WHERE confirm_sent_at >= ?",
-                      (day,)).fetchone()[0]
+def _today():
+    return datetime.now(timezone.utc).date().isoformat()
+
+
+def _sent_today(cx, slug):
+    """Confirmation emails this list sent today (UTC), resends included."""
+    row = cx.execute("SELECT sends FROM product_waitlist_sends WHERE product_slug=? AND day=?",
+                     (slug, _today())).fetchone()
+    return int(row[0]) if row else 0
+
+
+def _count_send(cx, slug):
+    cx.execute("INSERT INTO product_waitlist_sends (product_slug, day, sends) VALUES (?,?,1) "
+               "ON CONFLICT (product_slug, day) DO UPDATE SET sends = product_waitlist_sends.sends + 1",
+               (slug, _today()))
+
+
+def texts(slug):
+    """The strings a person sees for this list, or None when there is no list."""
+    return TEXTS.get(slug)
 
 
 def _hash(token):
@@ -139,25 +207,45 @@ def sign_up(cx, slug, email, *, first_name=""):
             return ("existing", None)
         if _ago(row[1]) < timedelta(minutes=RESEND_MINUTES):
             return ("throttled", None)
-        if int(row[2] or 0) >= MAX_SENDS or _sent_today(cx) >= DAILY_SENDS:
+        if int(row[2] or 0) >= MAX_SENDS or _sent_today(cx, slug) >= DAILY_SENDS:
             return ("capped", None)
         cx.execute("UPDATE product_waitlist SET confirm_hash=?, confirm_sent_at=?, "
                    "confirm_sends=COALESCE(confirm_sends,0)+1 "
                    "WHERE product_slug=? AND email=? AND COALESCE(confirmed_at,'')=''",
                    (_hash(token), _now(), slug, e))
+        _count_send(cx, slug)
         cx.commit()
         return ("resend", token)
-    if _sent_today(cx) >= DAILY_SENDS:
+    if _sent_today(cx, slug) >= DAILY_SENDS:
         return ("capped", None)
     cur = cx.execute("INSERT INTO product_waitlist (product_slug, email, first_name, consent_text, "
                      "created_at, confirm_hash, confirm_sent_at, confirm_sends) "
                      "VALUES (?,?,?,?,?,?,?,1) ON CONFLICT (product_slug, email) DO NOTHING",
-                     (slug, e, clean_first_name(first_name), CONSENT_TEXT, _now(),
+                     (slug, e, clean_first_name(first_name), TEXTS[slug]["consent"], _now(),
                       _hash(token), _now()))
-    cx.commit()
     if not getattr(cur, "rowcount", 1):
+        cx.commit()
         return ("existing", None)
+    _count_send(cx, slug)
+    cx.commit()
     return ("new", token)
+
+
+def token_status(cx, token):
+    """(slug, "pending" | "confirmed") for a confirmation token, or (None, None) for an
+    unknown, replaced or expired one. Read-only: it never confirms."""
+    if not token:
+        return (None, None)
+    init_table(cx)
+    row = cx.execute("SELECT product_slug, confirm_sent_at, confirmed_at FROM product_waitlist "
+                     "WHERE confirm_hash=?", (_hash(token),)).fetchone()
+    if not row or row[0] not in LISTS:
+        return (None, None)
+    if (row[2] or "").strip():
+        return (row[0], "confirmed")
+    if _ago(row[1]) > timedelta(days=CONFIRM_DAYS):
+        return (None, None)
+    return (row[0], "pending")
 
 
 def confirm(cx, token):

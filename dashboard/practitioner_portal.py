@@ -451,13 +451,81 @@ def _ends_inside_a_word(pn, text):
     return re.search(re.escape(pn) + r"(?![a-z0-9])", text) is None
 
 
+def waitlist_block(slug, catalog=None) -> Optional[dict]:
+    """The `waitlist_only` product that stops `slug` being ordered, or None.
+
+    A product that is made but not yet ready to sell (Scar Soft Drink, 2026-10-09) carries
+    `waitlist_only`; its page takes waiting-list sign-ups instead. The slug itself follows
+    `superseded_by` past a retired duplicate, as checkout does. A bundle is blocked when an
+    ACTIVE component is `waitlist_only`, at any depth (a bundle inside a bundle), with a
+    cycle guard. An INACTIVE component is never checked and never followed: the old bundle
+    scar-reduction-program lists the retired msm-syntropy-powder record and stays on sale
+    (formulation, 2026-10-09; review round 2).
+    Returns {"slug", "name"} of the blocking product."""
+    cat = catalog if catalog is not None else pricing._load_catalog()
+
+    def _resolve(s):
+        seen = set()
+        while s and s not in seen:
+            seen.add(s)
+            p = cat.get(s)
+            if not p:
+                return s, None
+            nxt = p.get("superseded_by")
+            if p.get("inactive") and nxt and nxt != s:
+                s = nxt
+                continue
+            return s, p
+        return s, None
+
+    def _components(p, seen):
+        if not p.get("bundle"):
+            return None
+        for comp in (p.get("bundle_component_slugs") or []):
+            cs = (comp or {}).get("slug")
+            cp = cat.get(cs) if cs else None
+            if not cp or cp.get("inactive") or cs in seen:
+                continue
+            if cp.get("waitlist_only"):
+                return {"slug": cs, "name": cp.get("name") or cs}
+            hit = _components(cp, seen | {cs})
+            if hit:
+                return hit
+        return None
+
+    s, p = _resolve(slug)
+    if not p:
+        return None
+    if p.get("waitlist_only"):
+        return {"slug": s, "name": p.get("name") or s}
+    return _components(p, {s})
+
+
+class WaitlistRefusal(str):
+    """The refusal sentence, verbatim from the spec, carrying its product page as `.url`
+    so a JSON caller can send the link as its own field (review round 1, 2026-10-09)."""
+    url = ""
+
+
+def waitlist_refusal(block) -> "WaitlistRefusal":
+    """The refusal a buyer sees for a waitlist_only product (spec 2026-10-09):
+    "{name} is not ready to order yet. Join the waiting list on its page." The page
+    rides as `.url`."""
+    r = WaitlistRefusal(f"{block['name']} is not ready to order yet. "
+                        "Join the waiting list on its page.")
+    r.url = f"/begin/product/{block['slug']}"
+    return r
+
+
 def is_orderable(slug, catalog=None) -> bool:
-    """A product is wholesale-orderable only if it exists, is not info_only
-    (external products like EMF/Kloud on the Centropix store are not), and is not
-    off sale (`inactive`: Molybdenum Syntropy, 2026-10-06)."""
+    """A product is orderable only if it exists, is not info_only (external products
+    like EMF/Kloud on the Centropix store are not), is not off sale (`inactive`:
+    Molybdenum Syntropy, 2026-10-06), and is not waiting-list only, itself or as a
+    bundle component (`waitlist_only`: Scar Soft Drink, 2026-10-09)."""
     cat = catalog if catalog is not None else pricing._load_catalog()
     p = cat.get(slug)
-    return bool(p) and not p.get("info_only") and not p.get("inactive")
+    return (bool(p) and not p.get("info_only") and not p.get("inactive")
+            and waitlist_block(slug, cat) is None)
 
 
 def resolve_named_products(items, catalog=None) -> List[dict]:

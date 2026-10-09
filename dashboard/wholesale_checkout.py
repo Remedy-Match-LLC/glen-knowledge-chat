@@ -49,7 +49,17 @@ def build_order(cart_items: List[dict], practitioner: dict, *, method=None,
     -- so the redemption is idempotent per checkout without QBO existing yet.
 
     practitioner needs: id (uuid), modules_completed, email, name.
-    Returns the checkout result dict (ok / error)."""
+    Returns the checkout result dict (ok / error).
+
+    A cart holding a waitlist_only product (or a bundle with one) is refused whole,
+    before pricing, credit redemption or any booking (Scar Soft Drink, 2026-10-09)."""
+    from dashboard import practitioner_portal as _pp
+    for it in (cart_items or []):
+        block = _pp.waitlist_block((it or {}).get("slug"), catalog)
+        if block:
+            msg = _pp.waitlist_refusal(block)
+            return {"ok": False, "error": str(msg), "url": msg.url,
+                    "code": "waitlist_only", "slug": block["slug"]}
     quote = pricing.order_quote(cart_items, practitioner, db_path=db_path, catalog=catalog)
     if quote["total_bottles"] <= 0:
         return {"ok": False, "error": "empty_cart"}

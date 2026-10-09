@@ -184,7 +184,7 @@ def build_invoice_lines(client, remedies, catalog, include_fee=True):
     {"name","qty"} dict (qty = bottles needed). Unresolvable names go to 'skipped',
     never mispriced."""
     lines = [{"slug": BIOFIELD_SLUG, "qty": 1}] if include_fee else []
-    skipped = []
+    skipped, not_ready = [], []
     for r in remedies or []:
         if isinstance(r, dict):
             name, qty = (r.get("name") or "").strip(), r.get("qty")
@@ -202,6 +202,12 @@ def build_invoice_lines(client, remedies, catalog, include_fee=True):
             continue
         if slug in RECOMMEND_ONLY_SLUGS:
             continue
+        # A not-ready product (waitlist_only, or a bundle holding one) stays on the
+        # report as a name with its page link. It adds nothing to the invoice.
+        if is_not_ready(slug, catalog):
+            if name not in not_ready:
+                not_ready.append(name)
+            continue
         # One remedy can serve several layers — Steve Fox's 15 September report put
         # Neuroprotect on three. That is still one product taken once, so it gets one
         # line carrying the LARGEST bottle count, never one line per layer and never
@@ -215,7 +221,12 @@ def build_invoice_lines(client, remedies, catalog, include_fee=True):
         # analysis, so preserve that provenance through order creation and
         # into Edit Invoice instead of falling back to source='self'.
         lines.append({"slug": slug, "qty": qty, "source": "biofield"})
-    return {"lines": lines, "skipped": skipped}
+    return {"lines": lines, "skipped": skipped, "not_ready": not_ready}
+
+
+def is_not_ready(slug, catalog):
+    """True when the console catalog marks this slug waitlist_only."""
+    return any(it.get("slug") == slug and it.get("waitlist_only") for it in catalog or [])
 
 
 def merge_manual_invoice_lines(new_lines, existing_items):

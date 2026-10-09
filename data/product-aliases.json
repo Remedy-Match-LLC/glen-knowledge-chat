@@ -116,7 +116,7 @@
     },
     "Scar Soft": {
       "catalog_name": "Scar Soft",
-      "note": "New product — check current availability at remedymatch.com. Bot phrasing: \"Scar Soft (new — check availability).\"",
+      "note": "Scar Soft Drink is not ready to order yet. Join the waiting list on its page: /begin/product/scar-soft-drink. Bot phrasing: \"Scar Soft Drink (not ready to order yet; join the waiting list on its page).\"",
       "slug": "scar-soft-drink"
     },
     "AngiogenX": {

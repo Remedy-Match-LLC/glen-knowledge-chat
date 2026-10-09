@@ -946,7 +946,12 @@
             var lines = (p.lines || []).map(function(l){
               return '<div class="r-line"><span>'+esc(l.name || l.slug || "Remedy")+(l.qty>1?" ×"+l.qty:"")+'</span><span>$'+(((l.line_total_cents||0))/100).toFixed(2)+'</span></div>';
             }).join("");
-            rItems.innerHTML = lines + '<div class="r-line r-total"><span>Total</span><span>$'+(((p.total_cents||0))/100).toFixed(2)+' + shipping</span></div>';
+            // Matched remedies not ready to order are named with a link to their page,
+            // and are not in the order (Scar Soft Drink, 2026-10-09).
+            var notReady = (p.not_ready || []).map(function(n){
+              return '<div class="r-line"><span><a href="'+esc(n.url)+'">'+esc(n.name)+'</a> is not ready to order yet</span><span></span></div>';
+            }).join("");
+            rItems.innerHTML = lines + notReady + '<div class="r-line r-total"><span>Total</span><span>$'+(((p.total_cents||0))/100).toFixed(2)+' + shipping</span></div>';
           }
         }).catch(function(){});
         validateReview();
