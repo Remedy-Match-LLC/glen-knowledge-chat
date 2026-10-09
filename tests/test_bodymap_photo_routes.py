@@ -65,7 +65,7 @@ def test_face_falls_back_to_client_photos(tmp_path, monkeypatch):
 
 @pytest.mark.parametrize("source", ["fmp", "intake-survey", "console", "fmp-intake-upload"])
 def test_face_never_falls_back_to_an_email_photo_someone_else_supplied(tmp_path, monkeypatch, source):
-    # 2026-10-09: Debra Herndon's Body Map showed her daughter's photo, an email-keyed
+    # 2026-10-09: a mother's Body Map showed her daughter's photo, an email-keyed
     # row from an intake-survey import on the family's shared email.
     appmod = _app(tmp_path, monkeypatch)
     tok = _token(appmod, "c@x.com")

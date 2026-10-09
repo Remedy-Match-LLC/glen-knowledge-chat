@@ -177,7 +177,7 @@ def for_client_surface(cx, email, client_id=None):
     The person's own row by FileMaker client id; otherwise only a photo the client
     uploaded themselves through a portal that has no client id. An email-keyed photo
     from any other source, or under a portal that does name a person, may belong to a
-    family member who shares the address: Debra Herndon's portal showed her daughter's
+    family member who shares the address: a mother's portal showed her daughter's
     photo on 2026-10-09. Glen: show nothing, never a guess."""
     if client_id:
         return get_for_client(cx, client_id)
@@ -210,7 +210,7 @@ def fmp_person_for(cx, email, name):
     """The one FileMaker id_pk this email and name name, or None (fail closed).
 
     The record on the email whose name matches, where a first name may be a short form
-    of the other ("Deb" for "Debra") when the last names match. This holds for a
+    of the other ("Deb" for "Debbie") when the last names match. This holds for a
     one-record email too: a family member with no FileMaker record of their own, on a
     parent's email, must not resolve to the parent (review 2026-10-09). Anything other
     than exactly one match is None. An id_pk that FileMaker also uses for a differently
