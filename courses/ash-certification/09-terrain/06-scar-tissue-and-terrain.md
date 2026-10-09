@@ -9,4 +9,4 @@ title: Scar Tissue and Terrain
 <p>Contraction of the connective tissue matrix often results in functional disturbances that can appear 3, 6 or 12 months after the original trauma, or on anniversaries of these times.</p>
 <p>Due to sustained constriction in flow through the tissue, it becomes a site of deposition and increased risk for degenerative processes.</p>
 <p>Chronic inflammation as the immune system efforts to clear the way for restored flow according to the original blueprint also results in stress effects both locally and systemically.</p>
-<p>Tumor formation is typically initiated at such sites after decades of failure to restore terrain and biofield health.</p>
+<p>Tumor formation is often initiated at such sites after decades of failure to restore terrain and biofield health.</p>
