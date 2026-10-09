@@ -189,7 +189,7 @@ def _bar(client_name="", client_email=""):
     # than none, and the bar already reads as a page header rather than a client one.
     if who and mail:
         who_html += (f"<img class=opavatar alt='' loading=lazy "
-                     f"src='{CONSOLE_BASE}/client-photo/{_q(mail, safe='')}' "
+                     f"src='/client-photo/{_q(mail, safe='')}?name={_q(who, safe='')}' "
                      f"onerror='this.remove()'>")
     return ("<nav class=opbar><span class=opbrand>GLEN <b>&middot;</b> OPS</span>"
             "<span class=opsub>Biofield Intake</span>" + who_html + "<span class=opspacer></span>"
@@ -347,8 +347,46 @@ def render_invoice_page(report, fee_state):
     return _page(f"Invoice — {c.get('name') or ''}", body)
 
 
+# Glen, 2026-10-09: when several FileMaker clients share one email, show their photos
+# here to choose from, never on a client surface. The pick is saved for this person.
+_PHOTO_PICK_JS = """<script>
+async function loadPhotoPicks(tid, email, name, boxId, imgId){
+  var box=document.getElementById(boxId); if(!box) return; box.textContent='';
+  if(!email) return;
+  var j; try{ j=await (await fetch('/client-photo-candidates/'+encodeURIComponent(email)
+    +'?name='+encodeURIComponent(name||''))).json(); }catch(e){ return; }
+  if(!j||!j.shared) return;
+  var head=document.createElement('div'); head.className='food';
+  head.textContent = j.count+' FileMaker clients share this email. ' + (!j.person
+    ? 'The intake name matches none of them exactly, so no photo shows. Fix the name to pick one.'
+    : (j.candidates.length ? 'Pick this client\u2019s photo:' : 'No photo is on file for any of them.'));
+  box.appendChild(head);
+  if(!j.person) return;
+  j.candidates.forEach(function(c){
+    var w=document.createElement('div'); w.style.cssText='display:inline-block;margin:6px 8px 0 0;text-align:center;vertical-align:top';
+    var im=document.createElement('img'); im.src=c.url; im.alt='';
+    im.style.cssText='width:72px;height:72px;object-fit:cover;border-radius:8px;display:block;margin:0 auto 4px';
+    var b=document.createElement('button'); b.className='btn ghost'; b.textContent='Use '+c.label;
+    b.onclick=async function(){
+      b.disabled=true;
+      var r; try{ r=await (await fetch('/test/'+tid+'/photo-pick',{method:'POST',
+        headers:{'Content-Type':'application/json'},body:JSON.stringify({key:c.key})})).json(); }
+      catch(e){ r={ok:false,error:String(e)}; }
+      b.disabled=false;
+      if(!r.ok){ head.textContent='Error: '+(r.error||'failed'); return; }
+      var img=document.getElementById(imgId);
+      if(img){ img.src='/client-photo/'+encodeURIComponent(email)+'?name='+encodeURIComponent(name||'')
+        +'&t='+Date.now(); img.style.display='block'; }
+      head.textContent = r.prod_pushed ? 'Saved for this client.' : 'Saved locally (prod push pending).';
+    };
+    w.appendChild(im); w.appendChild(b); box.appendChild(w);
+  });
+}
+</script>"""
+
+
 _PHOTO_JS = """<script>
-async function uploadPhoto(tid, eq){
+async function uploadPhoto(tid, eq, nq){
   var f=document.getElementById('photofile');
   if(!f||!f.files||!f.files[0])return;
   var stat=document.getElementById('photostat'); stat.textContent='Uploading\\u2026';
@@ -358,7 +396,7 @@ async function uploadPhoto(tid, eq){
     var j=await r.json();
     if(j.ok){
       var img=document.getElementById('clientphoto');
-      img.src='/client-photo/'+eq+'?t='+Date.now(); img.style.display='block';
+      img.src='/client-photo/'+eq+'?name='+nq+'&t='+Date.now(); img.style.display='block';
       stat.textContent = j.prod_pushed ? 'Saved.' : 'Saved locally (prod push pending).';
     } else { stat.textContent='Error: '+(j.error||'failed'); }
   }catch(e){ stat.textContent='Error: '+e; }
@@ -381,18 +419,22 @@ def render_report_html(report, notes="", narrative="", video_script="", stresses
     _email_raw = (c.get("email") or "").strip()
     if _email_raw:
         _eq = _up.quote(_email_raw, safe="")
+        _nq = _up.quote((c.get("name") or "").strip(), safe="")
         _tidp = _e(report.get("test_id") or "")
         head += (
             "<div class=photobox style='display:flex;gap:14px;align-items:flex-start;margin:4px 0 16px'>"
             "<img id=clientphoto alt='' "
             "style='width:180px;height:180px;object-fit:cover;border-radius:10px;"
             "border:1px solid var(--line);background:#0c0e12;display:block' "
-            f"src='/client-photo/{_eq}' onerror=\"this.style.display='none'\">"
+            f"src='/client-photo/{_eq}?name={_nq}' onerror=\"this.style.display='none'\">"
             "<div><label class=btn style='cursor:pointer;display:inline-block'>Upload photo"
             f"<input id=photofile type=file accept='image/*' style='display:none' "
-            f"onchange=\"uploadPhoto('{_tidp}','{_eq}')\"></label>"
-            "<div id=photostat class=food style='margin-top:6px'></div></div></div>"
-            + _PHOTO_JS)
+            f"onchange=\"uploadPhoto('{_tidp}','{_eq}','{_nq}')\"></label>"
+            "<div id=photostat class=food style='margin-top:6px'></div>"
+            "<div id=photopicks></div></div></div>"
+            + _PHOTO_JS + _PHOTO_PICK_JS
+            + f"<script>loadPhotoPicks('{_tidp}',decodeURIComponent('{_eq}'),"
+              f"decodeURIComponent('{_nq}'),'photopicks','clientphoto')</script>")
     tid_link = _e(report.get("test_id") or "")
     head += (f'<p class=sub><a href="/test/{tid_link}/report" target="_blank">Open clean report</a>'
              f' &nbsp;·&nbsp; <a href="/test/{tid_link}/report.pdf" target="_blank">Print/Download PDF</a></p>')
@@ -645,14 +687,18 @@ async function saveHeader(){const j=await post('/author/__TID__/header',
  {name:val('h_name'),email:val('h_email'),date:val('h_date'),
   idempotency_key:orderToken('header')});astat('Header saved.');setE4L(j)}
 async function refreshHeaderPhoto(){
- var img=document.getElementById('authorclientphoto'),email=val('h_email').trim();
+ var img=document.getElementById('authorclientphoto'),email=val('h_email').trim(),
+     pname=val('h_name').trim();
+ if(window.loadPhotoPicks)loadPhotoPicks('__TID__',email,pname,'authorphotopicks','authorclientphoto');
  if(!img)return;
  if(!email){img.removeAttribute('src');img.style.display='none';return}
  try{
-  var j=await (await fetch('/client-photo-framing/'+encodeURIComponent(email))).json();
+  var j=await (await fetch('/client-photo-framing/'+encodeURIComponent(email)
+   +'?name='+encodeURIComponent(pname))).json();
   if(j.ok)img.style.objectPosition=j.focus_x+'% '+j.focus_y+'%';
  }catch(e){img.style.objectPosition='50% 42%'}
- img.style.display='none';img.src='/client-photo/'+encodeURIComponent(email)+'?t='+Date.now();
+ img.style.display='none';img.src='/client-photo/'+encodeURIComponent(email)
+   +'?name='+encodeURIComponent(pname)+'&t='+Date.now();
 }
 // --- E4L client picker: name autocomplete -> email (dropdown if duplicates) -> date
 var E4L_CLIENT_ID=null;
@@ -2180,7 +2226,9 @@ def render_author_html(report, depth_values=None, transcript="", covered_by_laye
     c = report.get("client") or {}
     import urllib.parse as _up
     photo_email = (c.get("email") or "").strip()
-    photo_src = (f"/client-photo/{_up.quote(photo_email, safe='')}" if photo_email else "")
+    photo_name = (c.get("name") or "").strip()
+    photo_src = (f"/client-photo/{_up.quote(photo_email, safe='')}"
+                 f"?name={_up.quote(photo_name, safe='')}" if photo_email else "")
     head = (_workflow_nav("intake", c.get("email") or "")
             + _client_tabs("edit", tid, c.get("email") or "")
             + f"<p><a href='/'>&larr; All tests</a> &nbsp;&middot;&nbsp; "
@@ -2221,7 +2269,10 @@ def render_author_html(report, depth_values=None, transcript="", covered_by_laye
         "<img id=authorclientphoto class=authorheadphoto alt='Selected client headshot' "
         f"style='display:{'block' if photo_src else 'none'}' src='{_e(photo_src)}' "
         "onload=\"this.style.display='block'\" onerror=\"this.style.display='none'\">"
-        "</div>")
+        "</div><div id=authorphotopicks></div>" + _PHOTO_PICK_JS
+        + f"<script>loadPhotoPicks('{tid}',decodeURIComponent('{_up.quote(photo_email, safe='')}'),"
+          f"decodeURIComponent('{_up.quote(photo_name, safe='')}'),'authorphotopicks',"
+          "'authorclientphoto')</script>")
     groups = group_layers(report.get("layers") or [])
     chain = ("<h2>Causal chain "
              "<button class='btn ghost' id=depthbtn onclick=toggleDepth() "

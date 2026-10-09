@@ -115,11 +115,19 @@ def has(cx, email):
     return get(cx, email) is not None
 
 
-def put_for_client(cx, client_id, email, blob, content_type, source="upload"):
+def put_for_client(cx, client_id, email, blob, content_type, source="upload", force=True):
+    """Upsert one person's photo, keyed by FileMaker client id. force=False skips when
+    the existing photo's source outranks `source`, so a bulk FileMaker load never
+    replaces a photo the client uploaded through their own portal."""
     cid = str(client_id or "").strip()
     if not cid or not blob:
         return None
     init_table(cx)
+    if not force:
+        row = cx.execute("SELECT source FROM client_identity_photos WHERE client_id=?",
+                         (cid,)).fetchone()
+        if row and _rank(source) < _rank(row[0]):
+            return None
     cx.execute(
         "INSERT INTO client_identity_photos("
         "client_id,email,image_blob,content_type,source,updated_at) VALUES(?,?,?,?,?,?) "
@@ -161,3 +169,76 @@ def set_framing_for_client(cx, client_id, focus_x, focus_y, zoom):
         "WHERE client_id=?", (focus_x, focus_y, zoom, _now(), cid))
     cx.commit()
     return cur.rowcount > 0
+
+
+def for_client_surface(cx, email, client_id=None):
+    """The photo a CLIENT-facing page (portal, Body Map) may show, or None.
+
+    The person's own row by FileMaker client id; otherwise only a photo the client
+    uploaded themselves through their own portal link. An email-keyed photo from any
+    other source may belong to a family member who shares the address: Debra Herndon's
+    portal showed her daughter's photo on 2026-10-09. Glen: show nothing, never a guess."""
+    if client_id:
+        rec = get_for_client(cx, client_id)
+        if rec:
+            return rec
+    rec = get(cx, email) if email else None
+    if rec and (rec.get("source") or "").strip().lower() == "portal-self":
+        return rec
+    return None
+
+
+def _name_key(name):
+    return " ".join("".join(ch for ch in (name or "").lower() if ch.isalnum() or ch == " ").split())
+
+
+def fmp_people_for_email(cx, email):
+    """[(id_pk, full name)] of the FileMaker client records on an email (local snapshot).
+    [] when the snapshot table is absent, as on the prod web service."""
+    e = _norm(email)
+    if not e:
+        return []
+    try:
+        rows = cx.execute(
+            "SELECT id_pk, name_first, name_last FROM fmp_snap_clients "
+            "WHERE lower(trim(email))=?", (e,)).fetchall()
+    except Exception:
+        return []
+    return [(str(r[0]), f"{r[1] or ''} {r[2] or ''}".strip()) for r in rows if r[0] is not None]
+
+
+def fmp_person_for(cx, email, name):
+    """The one FileMaker id_pk this email and name name, or None (fail closed).
+
+    One record on the email: that record. Several: the record whose name matches, where
+    a first name may be a short form of the other ("Deb" for "Debra") when the last
+    names match; anything other than exactly one match is None. An id_pk that FileMaker
+    also uses for a differently named record is None: 33 ids are shared (2026-10-09)."""
+    people = fmp_people_for_email(cx, email)
+    if not people:
+        return None
+    want = _name_key(name)
+    if len(people) == 1:
+        hits = people
+    else:
+        wf, _, wl = want.partition(" ")
+        wl = wl.split(" ")[-1] if wl else ""
+
+        def _same(full):
+            k = _name_key(full)
+            if k == want:
+                return True
+            f, _, l = k.partition(" ")
+            l = l.split(" ")[-1] if l else ""
+            return bool(wf and wl and l == wl and min(len(f), len(wf)) >= 3
+                        and (f.startswith(wf) or wf.startswith(f)))
+        hits = [p for p in people if _same(p[1])]
+    if len(hits) != 1:
+        return None
+    pk = hits[0][0]
+    try:
+        names = {_name_key(f"{r[0] or ''} {r[1] or ''}") for r in cx.execute(
+            "SELECT name_first, name_last FROM fmp_snap_clients WHERE id_pk=?", (pk,)).fetchall()}
+    except Exception:
+        names = set()
+    return pk if len(names) <= 1 else None

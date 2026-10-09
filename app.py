@@ -27938,14 +27938,14 @@ def api_portal_photo_framing(token):
         portal = _portal_record_for(cx, token)
         email = (portal.get("email") or "").strip().lower() if portal else ""
         client_id = _portal_photo_identity(portal)
-        rec = (_cph.get_for_client(cx, client_id) if client_id else
-               (_cph.get(cx, email) if email else None))
+        rec = _cph.for_client_surface(cx, email, client_id)
         if not rec:
             return jsonify({"ok": False, "error": "not found"}), 404
+        own_row = bool(client_id and _cph.get_for_client(cx, client_id))
         if request.method == "POST":
             data = request.get_json(silent=True) or {}
             try:
-                if client_id:
+                if own_row:
                     _cph.set_framing_for_client(cx, client_id, data.get("focus_x", 50),
                                                 data.get("focus_y", 42), data.get("zoom", 1))
                 else:
@@ -27953,7 +27953,7 @@ def api_portal_photo_framing(token):
                                      data.get("focus_y", 42), data.get("zoom", 1))
             except (TypeError, ValueError):
                 return jsonify({"ok": False, "error": "invalid framing"}), 400
-            rec = (_cph.get_for_client(cx, client_id) if client_id else _cph.get(cx, email))
+            rec = _cph.for_client_surface(cx, email, client_id)
     return jsonify({"ok": True, "focus_x": rec["focus_x"],
                     "focus_y": rec["focus_y"], "zoom": rec["zoom"]})
 
@@ -27969,9 +27969,7 @@ def api_portal_photo_serve(token):
             _cp.init_client_portal_table(cx)
             portal = _portal_record_for(cx, token)
             email = (portal.get("email") or "").strip().lower() if portal else ""
-            client_id = _portal_photo_identity(portal)
-            rec = (_cph.get_for_client(cx, client_id) if client_id else
-                   (_cph.get(cx, email) if email else None))
+            rec = _cph.for_client_surface(cx, email, _portal_photo_identity(portal))
     if not rec:
         return Response("", status=404)
     resp = Response(rec["blob"], mimetype=rec["content_type"])
@@ -28048,7 +28046,9 @@ def api_portal_bodymap_photo_serve(token):
         email = (portal.get("email") or "").strip().lower() if portal else ""
         rec = _bmp.get(cx, email, system, side) if email else None
         if not rec and system == "face" and email:
-            rec = _cph.get(cx, email)   # {blob, content_type} identity-portrait fallback
+            # Identity-portrait fallback: this person's own photo only, never an
+            # email-keyed one a family member may have supplied (2026-10-09).
+            rec = _cph.for_client_surface(cx, email, _portal_photo_identity(portal))
     if not rec:
         return Response("", status=404)
     return _serve_bodymap_photo(rec)
@@ -28897,8 +28897,9 @@ def _portal_bodymap_data(cx, email, content, system="face"):
         rec = _bmp.get(cx, email, system, slot_side)   # photo bytes present?
         if rec:
             out["has_photo"] = True
-        elif system == "face" and _cph.has(cx, email):
-            out["has_photo"] = True            # client_photos portrait fallback
+        elif system == "face" and _cph.for_client_surface(
+                cx, email, str((content or {}).get("client_id") or "").strip()):
+            out["has_photo"] = True            # this person's own portrait (fallback)
     except Exception:
         pass
     findings_out, lit, seen = [], [], set()
@@ -35365,7 +35366,8 @@ def api_console_client_photo():
         if client_id:
             _cph.put_for_client(cx, client_id, email, blob,
                                 (body.get("content_type") or "image/jpeg"),
-                                source=(body.get("source") or "console"))
+                                source=(body.get("source") or "console"),
+                                force=bool(body.get("force", True)))
         else:
             _cph.put(cx, email, blob, (body.get("content_type") or "image/jpeg"),
                      source=(body.get("source") or "console"),

@@ -202,8 +202,9 @@ def _default_fetch_recent_comms(email):
         return {}
 
 
-def _default_fetch_client_photo(email):
-    """Pull the portal's current client photo + nondestructive framing."""
+def _default_fetch_client_photo(email, client_id=None):
+    """Pull the portal's current client photo + nondestructive framing. With client_id,
+    that person's own photo (client_identity_photos), never the email-keyed one."""
     import base64 as _b64
     import json as _json
     import urllib.parse
@@ -214,8 +215,10 @@ def _default_fetch_client_photo(email):
     try:
         key = os.environ["CONSOLE_SECRET"]
         base = os.environ.get("PUBLIC_BASE_URL", "https://illtowell.com").rstrip("/")
-        url = (base + "/api/console/client-photo?email=" + urllib.parse.quote(email)
-               + "&key=" + urllib.parse.quote(key))
+        # The key goes in the header only: a credential in a URL lands in server logs.
+        url = base + "/api/console/client-photo?email=" + urllib.parse.quote(email)
+        if client_id:
+            url += "&client_id=" + urllib.parse.quote(str(client_id))
         req = urllib.request.Request(url, headers={"X-Console-Key": key})
         data = _json.load(urllib.request.urlopen(req, timeout=20))
         if not data.get("ok") or not data.get("image"):
@@ -704,29 +707,95 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
     fetch_client_photo = fetch_client_photo or _default_fetch_client_photo
     photo_refresh_at = {}
 
-    def _refresh_client_photo(email):
-        """Best-effort portal -> local sync, throttled across the paired image/framing reads."""
+    def _refresh_client_photo(email, client_id=None):
+        """Best-effort portal -> local sync, throttled across the paired image/framing
+        reads. With client_id it syncs that person's own row, not the email's."""
         import time
         from dashboard import client_photos as _cph
         email = (email or "").strip().lower()
         if not email or (using_default_fetch_client_photo and os.environ.get("CI")):
             return False
+        key = (email, str(client_id or ""))
         now = time.monotonic()
-        if now - photo_refresh_at.get(email, 0) < 30:
+        if now - photo_refresh_at.get(key, 0) < 30:
             return False
-        photo_refresh_at[email] = now
+        photo_refresh_at[key] = now
         try:
-            rec = fetch_client_photo(email) or {}
+            if client_id:
+                try:
+                    rec = fetch_client_photo(email, client_id=client_id) or {}
+                except TypeError:          # an injected fetcher without per-person support
+                    return False
+            else:
+                rec = fetch_client_photo(email) or {}
             if not rec.get("blob"):
                 return False
             with sqlite3.connect(db_path) as cx:
-                written = _cph.put(cx, email, rec["blob"], rec.get("content_type"),
-                                   source=rec.get("source") or "portal-self", force=False)
-                if written:
-                    _cph.set_framing(cx, email, rec.get("focus_x", 50),
-                                     rec.get("focus_y", 42), rec.get("zoom", 1))
+                if client_id:
+                    written = _cph.put_for_client(cx, client_id, email, rec["blob"],
+                                                  rec.get("content_type"),
+                                                  source=rec.get("source") or "portal-self",
+                                                  force=False)
+                    if written:
+                        _cph.set_framing_for_client(cx, client_id, rec.get("focus_x", 50),
+                                                    rec.get("focus_y", 42), rec.get("zoom", 1))
+                else:
+                    written = _cph.put(cx, email, rec["blob"], rec.get("content_type"),
+                                       source=rec.get("source") or "portal-self", force=False)
+                    if written:
+                        _cph.set_framing(cx, email, rec.get("focus_x", 50),
+                                         rec.get("focus_y", 42), rec.get("zoom", 1))
             return bool(written)
         except Exception:
+            return False
+
+    def _operator_photo(email, name):
+        """The photo Biofield Intake shows for this intake's person, or None.
+
+        The person's own row when the email and name resolve to one FileMaker record.
+        On an email several records share, nothing else: the operator picks from the
+        candidates instead (Glen, 2026-10-09). A one-record email keeps its email row."""
+        from dashboard import client_photos as _cph
+        with sqlite3.connect(db_path) as cx:
+            people = _cph.fmp_people_for_email(cx, email)
+            pid = _cph.fmp_person_for(cx, email, name) if name else (
+                people[0][0] if len(people) == 1 else None)
+        if pid:
+            _refresh_client_photo(email, pid)
+            with sqlite3.connect(db_path) as cx:
+                rec = _cph.get_for_client(cx, pid)
+            if rec:
+                return rec, pid
+        if len(people) > 1:
+            return None, pid
+        _refresh_client_photo(email)
+        with sqlite3.connect(db_path) as cx:
+            return _cph.get(cx, email), pid
+
+    def _test_person(cx, test_id):
+        rep = (authored_report(cx, test_id) if str(test_id).startswith("a")
+               else causal_chain_report(cx, test_id))
+        c = rep.get("client") or {}
+        return (c.get("email") or "").strip().lower(), (c.get("name") or "").strip()
+
+    def _push_photo(email, client_id, blob, ctype, source):
+        """Best-effort push of an operator photo to prod; per person when client_id."""
+        base = os.environ.get("PORTAL_PUBLISH_BASE_URL", "")
+        key = os.environ.get("CONSOLE_SECRET", "")
+        if not base:
+            return False
+        try:
+            import base64 as _b64, json as _json, urllib.request as _u
+            payload = {"email": email, "content_type": ctype, "source": source,
+                       "image": _b64.b64encode(blob).decode()}
+            if client_id:
+                payload["client_id"] = str(client_id)
+            r = _u.Request(base.rstrip("/") + "/api/console/client-photo",
+                           data=_json.dumps(payload).encode(), method="POST",
+                           headers={"X-Console-Key": key, "Content-Type": "application/json"})
+            return bool(_json.load(_u.urlopen(r, timeout=30)).get("ok"))
+        except Exception as e:
+            print(f"[client-photo] prod push failed: {e}", flush=True)
             return False
     fee_get = fee_get or biofield_fee.default_fee_get
     fee_set = fee_set or biofield_fee.default_fee_set
@@ -1069,10 +1138,7 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
     def client_photo(email):
         """Serve a client's photo (local store). Gated by the console cookie like the
         rest of the intake app. 404 when absent so <img onerror> hides cleanly."""
-        from dashboard import client_photos as _cph
-        _refresh_client_photo(email)
-        with sqlite3.connect(db_path) as cx:
-            rec = _cph.get(cx, email)
+        rec, _pid = _operator_photo(email, request.args.get("name", ""))
         if not rec:
             return Response("", status=404)
         resp = Response(rec["blob"], mimetype=rec["content_type"])
@@ -1082,10 +1148,7 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
     @app.route("/client-photo-framing/<path:email>")
     def client_photo_framing(email):
         """Return the same nondestructive face focal point used by portal avatars."""
-        from dashboard import client_photos as _cph
-        _refresh_client_photo(email)
-        with sqlite3.connect(db_path) as cx:
-            rec = _cph.get(cx, email)
+        rec, _pid = _operator_photo(email, request.args.get("name", ""))
         if not rec:
             return jsonify({"ok": False, "error": "not found"}), 404
         return jsonify({"ok": True, "focus_x": rec.get("focus_x", 50),
@@ -1104,28 +1167,88 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
             return jsonify({"ok": False, "error": "no image uploaded"}), 400
         ctype = (getattr(f, "mimetype", "") or "image/jpeg")
         with sqlite3.connect(db_path) as cx:
-            rep = (authored_report(cx, test_id) if str(test_id).startswith("a")
-                   else causal_chain_report(cx, test_id))
-            email = ((rep.get("client") or {}).get("email") or "").strip().lower()
+            email, name = _test_person(cx, test_id)
             if not email:
                 return jsonify({"ok": False, "error": "this test has no client email"}), 400
-            _cph.put(cx, email, blob, ctype, source="fmp-intake-upload")
-        prod_pushed = False
-        base = os.environ.get("PORTAL_PUBLISH_BASE_URL", "")
-        key = os.environ.get("CONSOLE_SECRET", "")
-        if base:
-            try:
-                import base64 as _b64, json as _json, urllib.request as _u
-                body = _json.dumps({"email": email, "content_type": ctype,
-                                    "source": "fmp-intake-upload",
-                                    "image": _b64.b64encode(blob).decode()}).encode()
-                r = _u.Request(base.rstrip("/") + "/api/console/client-photo", data=body,
-                               method="POST", headers={"X-Console-Key": key,
-                               "Content-Type": "application/json"})
-                prod_pushed = bool(_json.load(_u.urlopen(r, timeout=30)).get("ok"))
-            except Exception as e:
-                print(f"[client-photo] prod push failed: {e}", flush=True)
+            people = _cph.fmp_people_for_email(cx, email)
+            pid = _cph.fmp_person_for(cx, email, name)
+            if pid:
+                _cph.put_for_client(cx, pid, email, blob, ctype, source="fmp-intake-upload")
+            elif len(people) > 1:
+                return jsonify({"ok": False, "error": (
+                    f"{len(people)} FileMaker clients share this email and the intake name "
+                    "matches none of them exactly. Fix the intake name first.")}), 409
+            else:
+                _cph.put(cx, email, blob, ctype, source="fmp-intake-upload")
+        prod_pushed = _push_photo(email, pid, blob, ctype, "fmp-intake-upload")
         return jsonify({"ok": True, "email": email, "prod_pushed": prod_pushed})
+
+    @app.route("/client-photo-candidates/<path:email>")
+    def client_photo_candidates(email):
+        """On an email several FileMaker clients share, every photo on file for any of
+        them, so the operator can pick this person's (Glen, 2026-10-09). Operator only:
+        no client surface calls this."""
+        import urllib.parse
+        from dashboard import client_photos as _cph
+        name = request.args.get("name", "")
+        with sqlite3.connect(db_path) as cx:
+            people = _cph.fmp_people_for_email(cx, email)
+            pid = _cph.fmp_person_for(cx, email, name)
+        out = {"ok": True, "shared": len(people) > 1, "count": len(people),
+               "person": pid, "candidates": []}
+        if len(people) < 2:
+            return jsonify(out)
+        for cid, full in people:
+            _refresh_client_photo(email, cid)
+        _refresh_client_photo(email)
+        q = urllib.parse.quote(email.strip().lower(), safe="")
+        with sqlite3.connect(db_path) as cx:
+            for cid, full in people:
+                if _cph.get_for_client(cx, cid):
+                    out["candidates"].append({"key": cid, "label": f"{full}'s photo",
+                                              "url": f"/client-photo-candidate/{q}/{cid}"})
+            if _cph.get(cx, email):
+                out["candidates"].append({"key": "email", "label": "Household photo (not assigned)",
+                                          "url": f"/client-photo-candidate/{q}/email"})
+        return jsonify(out)
+
+    @app.route("/client-photo-candidate/<path:email>/<key>")
+    def client_photo_candidate(email, key):
+        from dashboard import client_photos as _cph
+        with sqlite3.connect(db_path) as cx:
+            ids = {cid for cid, _ in _cph.fmp_people_for_email(cx, email)}
+            if len(ids) < 2:
+                return Response("", status=404)
+            rec = (_cph.get(cx, email) if key == "email"
+                   else _cph.get_for_client(cx, key) if key in ids else None)
+        if not rec:
+            return Response("", status=404)
+        resp = Response(rec["blob"], mimetype=rec["content_type"])
+        resp.headers["Cache-Control"] = "no-store"
+        return resp
+
+    @app.route("/test/<test_id>/photo-pick", methods=["POST"])
+    def pick_client_photo(test_id):
+        """Save a candidate photo as THIS intake's person's own photo, locally and on
+        prod, keyed by their FileMaker id. Never writes the shared email row."""
+        from dashboard import client_photos as _cph
+        key = str((request.get_json(silent=True) or {}).get("key") or "").strip()
+        with sqlite3.connect(db_path) as cx:
+            email, name = _test_person(cx, test_id)
+            ids = {cid for cid, _ in _cph.fmp_people_for_email(cx, email)}
+            pid = _cph.fmp_person_for(cx, email, name)
+            if not pid:
+                return jsonify({"ok": False, "error": (
+                    "The intake name matches none of the FileMaker clients on this email "
+                    "exactly. Fix the intake name first.")}), 409
+            rec = (_cph.get(cx, email) if key == "email"
+                   else _cph.get_for_client(cx, key) if key in ids else None)
+            if not rec:
+                return jsonify({"ok": False, "error": "that photo is not on file"}), 404
+            _cph.put_for_client(cx, pid, email, rec["blob"], rec["content_type"],
+                                source="console")
+        prod_pushed = _push_photo(email, pid, rec["blob"], rec["content_type"], "console")
+        return jsonify({"ok": True, "person": pid, "prod_pushed": prod_pushed})
 
     @app.route("/test/<test_id>/report")
     def report_present(test_id):
