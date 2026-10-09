@@ -293,3 +293,31 @@ def test_a_waiting_list_product_says_so(fresh_app):
 def test_a_waiting_list_product_carries_no_unapproved_description(fresh_app):
     block = fresh_app._named_product_facts("Can I order Scar Soft Drink?")
     assert "1 scoop 2 times a day" not in block
+
+
+def test_the_survivor_is_never_retired_info_only_or_never_recommended(fresh_app):
+    products = {"old": {"inactive": True}, "older": {"inactive": True, "superseded_by": "old"},
+                "ext": {"info_only": True}, "live": {}}
+    assert fresh_app._named_facts_survivor("old", products) is None
+    assert fresh_app._named_facts_survivor("older", products) is None
+    assert fresh_app._named_facts_survivor("ext", products) is None
+    assert fresh_app._named_facts_survivor("live", products) == "live"
+    banned = next(iter(fresh_app._DO_NOT_RECOMMEND_FACTS))
+    assert fresh_app._named_facts_survivor(banned, {banned: {}}) is None
+
+
+def test_the_panel_hides_zero_mg_note_rows(fresh_app, monkeypatch):
+    fs = dict(fresh_app._PRODUCTS["products"]["fibrosolve"])
+    fs["ingredients"] = fs["ingredients"] + [{"name": "Future Note Herb", "dose": "0 mg"}]
+    monkeypatch.setitem(fresh_app._PRODUCTS["products"], "fibrosolve", fs)
+    block = fresh_app._named_product_facts("What is in Fibrosolve?")
+    assert "Lumbrokinase" in block and "Future Note Herb" not in block
+
+
+def test_an_unpinned_waiting_list_product_carries_no_dose_or_caution(fresh_app, monkeypatch):
+    sd = dict(fresh_app._PRODUCTS["products"]["scar-soft-drink"])
+    sd.update(directions="Take 9 scoops.", warning="Unapproved caution.")
+    monkeypatch.setitem(fresh_app._PRODUCTS["products"], "scar-soft-drink", sd)
+    block = fresh_app._named_product_facts("Can I order Scar Soft Drink?")
+    assert "Availability:" in block and "No dose or ingredient text is approved" in block
+    assert "9 scoops" not in block and "Unapproved caution" not in block
