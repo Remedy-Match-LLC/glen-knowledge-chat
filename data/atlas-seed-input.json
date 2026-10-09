@@ -651,8 +651,9 @@
     },
     {
       "id": "msm-synergy",
-      "label": "MSM Synergy",
+      "label": "MSM Syntropy Powder",
       "aliases": [
+        "msm synergy",
         "msm synergy formula",
         "methylsulfonylmethane synergy"
       ],
@@ -668,7 +669,7 @@
           "type": "product",
           "source": "remedymatch",
           "url": "https://myhealingoasis.com/begin/product/msm-syntropy",
-          "title": "MSM Synergy"
+          "title": "MSM Syntropy Powder"
         }
       ]
     },
