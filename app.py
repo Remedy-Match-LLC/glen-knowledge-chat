@@ -2141,6 +2141,19 @@ def _product_guidance_hint(slug: str) -> str:
 
 
 _NAMED_FACTS_MAX_PRODUCTS = 3
+
+
+def _named_facts_survivor(slug, products):
+    """`slug`, or the live record a retired one names in `superseded_by`; None if absent."""
+    seen = set()
+    while slug and slug not in seen and slug in products:
+        seen.add(slug)
+        p = products[slug] or {}
+        if p.get("inactive") and p.get("superseded_by"):
+            slug = p["superseded_by"]
+            continue
+        return slug
+    return None
 # Glen, 2026-10-09 ("yess"): a non-member who names a product gets its label text. On a
 # gated turn the chat had dropped this block, then gave a dose anyway from snippets about
 # a different product (AngiogenX for Angiostasis), which was worse than the label.
@@ -2227,7 +2240,10 @@ def _named_product_spans(query_text: str, products: dict) -> dict:
     query_text = html.unescape(query_text).replace("\u2122", "")
     spans = {}
     for slug, p in products.items():
-        if (not p.get("copy_pinned") or p.get("inactive") or p.get("info_only")
+        # A waiting-list product qualifies unpinned: its block carries only the
+        # availability sentence checkout gives, never its unapproved description.
+        if (not (p.get("copy_pinned") or p.get("waitlist_only")) or p.get("inactive")
+                or p.get("info_only")
                 or slug in _DO_NOT_RECOMMEND_FACTS or slug in _COMMON_WORD_NAMES):
             continue
         name = html.unescape(p.get("name") or "").replace("\u2122", "").strip()
@@ -2274,7 +2290,7 @@ def _named_product_facts(query_text: str, gated: bool = False) -> str:
         product = products[slug]
         name = html.unescape(product.get("name") or slug).strip()
         desc = _PRICE_SENTENCE.sub("", html.unescape(product.get("description") or ""))
-        desc = re.sub(r"[ \t]+", " ", desc).strip()
+        desc = re.sub(r"[ \t]+", " ", desc).strip() if product.get("copy_pinned") else ""
         if len(desc) > _NAMED_FACTS_MAX_CHARS:
             desc = desc[:_NAMED_FACTS_MAX_CHARS].rsplit(" ", 1)[0] + "..."
         parts = [f"### {name}", f"Page: {_catalog_page_url(slug)}"]
@@ -2286,10 +2302,33 @@ def _named_product_facts(query_text: str, gated: bool = False) -> str:
         intro = (product.get("intro") or "").strip()
         if product.get("bundle") and intro and "intro" in _pinned_copy(product):
             parts.append(f"Program directions and cautions:\n{intro}")
+        # Each component's own page. Without it the model linked all three products to
+        # the program's page (knowledge-5a, 2026-10-09). A retired component record is
+        # followed to its survivor, so no link goes to an inactive slug.
+        comps = []
+        for c in (product.get("bundle_component_slugs") or []) if product.get("bundle") else []:
+            cslug = _named_facts_survivor(c.get("slug") if isinstance(c, dict) else c, products)
+            if cslug:
+                cname = html.unescape(products[cslug].get("name") or cslug).strip()
+                comps.append(f"- {cname}: {_catalog_page_url(cslug)}")
+        if comps:
+            parts.append("Products in this program, each with its own page:\n" + "\n".join(comps))
+        # The approved panel, verbatim, so "what is in it" is answered from the label.
+        if "ingredients" in _pinned_copy(product):
+            ings = [f"- {i['name']}" + (f": {i['dose']}" if i.get("dose") else "")
+                    for i in (product.get("ingredients") or [])
+                    if isinstance(i, dict) and (i.get("name") or "").strip()]
+            if ings:
+                parts.append("Ingredients, per capsule or serving, from the label:\n"
+                             + "\n".join(ings))
         for label, key in (("Directions", "directions"), ("Caution", "warning")):
             val = (product.get(key) or "").strip()
             if val and val not in desc:
                 parts.append(f"{label}: {val}")
+        # A waiting-list product: the same sentence checkout gives.
+        refusal = _waitlist_refusal(slug)
+        if refusal:
+            parts.append(f"Availability: {refusal}")
         if len(parts) > 2:
             blocks.append("\n".join(parts))
         if len(blocks) >= _NAMED_FACTS_MAX_PRODUCTS:
