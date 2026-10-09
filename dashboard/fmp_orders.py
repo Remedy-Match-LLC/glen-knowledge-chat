@@ -240,6 +240,89 @@ def client_order_history(cx, *, client_id=None, email=None, name=None):
     return out
 
 
+LEGACY_STATUS = "Historical"   # set on every Invoices.fmp12 row by legacy_fmp_invoices
+
+
+def _key(v):
+    """FMP ids arrive with stray padding ('6057  ') and float tails ('23.0')."""
+    v = (v or "").strip()
+    return v[:-2] if v.endswith(".0") and v[:-2].isdigit() else v
+
+
+def product_buyer_counts(cx, products, groups=None, compare=None):
+    """Count FMP buyers of named products across EVERY client. Numbers only.
+
+    products: {label: [substring, ...]}, matched case-insensitively on the line
+    description. groups: {name: [label, ...]}.
+    compare: {group: {source: [email, ...]}}, other systems' buyers of that group,
+    used only for overlap counts.
+
+    Splits legacy (Invoices.fmp12, status Historical) from the current FMP file,
+    and reports how many invoices reach a client and an email, so a count is
+    never read without its coverage. Returns no email, name or id.
+    """
+    cx.row_factory = None
+    email = {_key(c): (e or "").strip().lower()
+             for c, e in cx.execute("SELECT id_pk, email FROM fmp_clients").fetchall()}
+    inv = {}
+    for iid, cid, status in cx.execute(
+            "SELECT id_pk, id_fk_client, status FROM fmp_invoices").fetchall():
+        inv[_key(iid)] = ("legacy" if (status or "") == LEGACY_STATUS else "current", _key(cid))
+
+    cover = {s: {"invoices": 0, "linked_to_client": 0, "client_has_email": 0}
+             for s in ("legacy", "current")}
+    for src, cid in inv.values():
+        cover[src]["invoices"] += 1
+        if cid in email:
+            cover[src]["linked_to_client"] += 1
+            if email[cid]:
+                cover[src]["client_has_email"] += 1
+
+    terms = {lab: [t.lower() for t in ts] for lab, ts in products.items()}
+    hits = {lab: {s: {"invoices": set(), "clients": set(), "emails": set()}
+                  for s in ("legacy", "current")} for lab in terms}
+    orphan_lines = {lab: 0 for lab in terms}
+    for iid, desc in cx.execute(
+            "SELECT id_fk_invoice, description FROM fmp_invoice_items").fetchall():
+        d = (desc or "").lower()
+        labs = [lab for lab, ts in terms.items() if any(t in d for t in ts)]
+        if not labs:
+            continue
+        src, cid = inv.get(_key(iid), (None, None))
+        for lab in labs:
+            if src is None:
+                orphan_lines[lab] += 1
+                continue
+            h = hits[lab][src]
+            h["invoices"].add(_key(iid))
+            if cid in email:
+                h["clients"].add(cid)
+                if email[cid]:
+                    h["emails"].add(email[cid])
+
+    out_products = {lab: {s: {k: len(v) for k, v in h.items()} for s, h in by.items()}
+                    for lab, by in hits.items()}
+    for lab in out_products:
+        out_products[lab]["lines_without_invoice"] = orphan_lines[lab]
+
+    out_groups = {}
+    for name, labs in (groups or {}).items():
+        cmp = {s: {(e or "").strip().lower() for e in es if (e or "").strip()}
+               for s, es in ((compare or {}).get(name) or {}).items()}
+        labs = [lab for lab in labs if lab in hits]
+        g = {s: set().union(*[hits[lab][s]["emails"] for lab in labs]) for s in ("legacy", "current")}
+        clients = set().union(*[hits[lab][s]["clients"] for lab in labs for s in ("legacy", "current")])
+        fmp = g["legacy"] | g["current"]
+        no_email = {c for c in clients if not email.get(c)}
+        out_groups[name] = {
+            "legacy_emails": len(g["legacy"]), "current_emails": len(g["current"]),
+            "fmp_emails": len(fmp), "fmp_clients_without_email": len(no_email),
+            "overlap_with": {s: len(fmp & es) for s, es in cmp.items()},
+            "total_unique_emails": len(fmp.union(*cmp.values())) if cmp else len(fmp),
+        }
+    return {"coverage": cover, "products": out_products, "groups": out_groups}
+
+
 def to_payload(cx):
     """Dump the four projection tables as a JSON-able dict for the prod push."""
     spec = {"clients": ("fmp_clients", _CLIENT_COLS), "invoices": ("fmp_invoices", _INV_COLS),
