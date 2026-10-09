@@ -2164,29 +2164,42 @@ from dashboard.related_products import DO_NOT_RECOMMEND as _DO_NOT_RECOMMEND_FAC
 _PRICE_SENTENCE = re.compile(r"\s*Price:\s*\$[\d,.]+\.?")
 
 
-# Pinned products whose name contains a coined word, so it matches in any case. Every
-# other pinned name is also an everyday phrase or a generic description ("hydrolyzed
-# whey", "l-carnosine") and matches in lowercase only next to a product cue.
+# Pinned products whose name is a coined word nobody uses in ordinary speech, so it
+# matches in any case. Angiostasis, Apoptogenesis and Appestat are NOT here: each is also
+# a biology term ("angiostasis in tumours"), so in lowercase they need a cue (review 2026-10-09).
 _CASE_FREE_NAMES = frozenset({
-    "angiostasis", "angiogenx", "apoptogenesis", "appestat", "migrafree", "energessence",
+    "angiogenx", "migrafree", "energessence",
     "ocuheal-eye-drops", "ocuheal-plus-eye-drops", "lens-zyme", "curcu-guard",
     "iron-syntropy", "zinc-syntropy", "vitamin-a-syntropy", "vitamin-c-syntropy",
     "adrenal-syntropy", "sanctuary-c60", "phytolacca-americana-oil-roll-on",
 })
+# Pinned products whose name a client may type in lowercase, beside a product cue. Every
+# other pinned name is a generic description ("l-carnosine", "DHT blocker", "hydrolyzed
+# whey") and matches only in catalog casing.
+_CUE_NAMES = frozenset({
+    "angiostasis", "apoptogenesis", "appestat", "clear-the-way", "reverse-age",
+    "stamina-plus", "off-syrup", "acetaldehyde-detox", "sinus-terrain-nasal-spray",
+})
 _PRODUCT_CUE_BEFORE = re.compile(
-    r"\b(?:what\s+is|what's|whats|about|much|many|dose\s+of|dosage\s+of|take|taking|"
-    r"took|use|using|buy|order|ordered|try|trying|started|start|"
-    r"(?:capsules?|caps|bottles?|scoops?|drops)\s+of)\s*$",
-    re.IGNORECASE)
+    r"\b(?:what\s+is|what's|whats|how\s+much|how\s+many|dose\s+of|dosage\s+of|take|taking|"
+    r"buy|order|ordered|(?:capsules?|caps|bottles?|scoops?|drops)\s+of)\s*$", re.IGNORECASE)
 _PRODUCT_CUE_AFTER = re.compile(
-    r"^\s*(?:dose|dosage|capsules?|caps|bottles?|product|supplement|formula|daily|per\s+day|"
-    r"each\s+day|a\s+day|safe|interact|with\s+food)\b", re.IGNORECASE)
+    r"^\s*(?:dose|dosage|capsules?|caps|bottles?|product|supplement|formula|safe|interact)\b",
+    re.IGNORECASE)
+# What may follow a lowercase name: the end of a clause or a word that cannot extend the
+# name into a longer noun phrase ("reverse age discrimination").
+_AFTER_NAME_OK = re.compile(
+    r"^\s*(?:$|[?.!,;:)]|(?:should|do|does|did|is|are|can|could|will|would|i|safe|dose|"
+    r"dosage|capsules?|caps|bottles?|interact|with|and|or)\b)", re.IGNORECASE)
 
 
 def _has_product_cue(text: str, start: int, end: int) -> bool:
-    """True when the words right beside a lowercase product name read as asking about
-    the product: "how much clear the way", "clear the way dose", "is clear the way safe".
-    "Can I clear the way for my lymph" has neither."""
+    """True when the words beside a lowercase product name read as asking about the
+    product: "how much clear the way should I take", "clear the way dose", "is clear the
+    way safe". "Can I clear the way for my lymph" and "about reverse age discrimination"
+    have no cue, or run the name into a longer phrase."""
+    if not _AFTER_NAME_OK.search(text[end:end + 20]):
+        return False
     return bool(_PRODUCT_CUE_BEFORE.search(text[max(0, start - 20):start])
                 or _PRODUCT_CUE_AFTER.search(text[end:end + 20]))
 
@@ -2220,7 +2233,8 @@ def _named_product_spans(query_text: str, products: dict) -> dict:
             # an everyday phrase ("clear the way", "reverse age") needs a product cue
             # beside it (formulation-9d and Glen, 2026-10-09: clients type lowercase).
             for mi in re.finditer(pattern, query_text, re.IGNORECASE):
-                if slug in _CASE_FREE_NAMES or _has_product_cue(query_text, *mi.span()):
+                if slug in _CASE_FREE_NAMES or (slug in _CUE_NAMES
+                                                 and _has_product_cue(query_text, *mi.span())):
                     m = mi
                     break
         if m:
@@ -2291,28 +2305,48 @@ def _named_product_facts(query_text: str, gated: bool = False) -> str:
     )
 
 
+# A follow-up carries the earlier product only when it asks about dose or safety of
+# "it/this" and brings no subject of its own. "What can I take for sleep?", "How long does
+# shipping take?" and "Does it work for macular degeneration?" carry nothing (review
+# rounds 1 and 2, 2026-10-09).
 _FOLLOW_UP_CUE = re.compile(
-    r"\b(?:how\s+much|how\s+many|dose|dosage|take|taking|safe|side\s+effects?|cautions?|"
-    r"pregnan\w*|breastfeed\w*|blood\s+thinner|with\s+food|empty\s+stomach|when|how\s+long|"
-    r"it|this|that\s+one|ingredients?|what's\s+in)\b", re.IGNORECASE)
+    r"^\s*(?:(?:and|so|ok|okay|thanks)[,.!]?\s+)?(?:how\s+(?:much|often)\s+(?:of\s+(?:it|this|them)\s+)?"
+    r"(?:should|do|can|could|would|will|must)\s+i\b"
+    r"|how\s+many\s+(?:capsules?|caps|drops|scoops?)\s+(?:should|do|can|a\s+day|per\s+day|daily)\b"
+    r"|what(?:'s|\s+is)\s+the\s+(?:dose|dosage)\s*[?.!]?\s*$|(?:the\s+)?(?:dose|dosage)\s*[?.!]?\s*$)"
+    r"|\b(?:is|are)\s+(?:it|this|they)\s+(?:safe|ok|okay)\b"
+    r"|\b(?:can|should|could|do)\s+i\s+take\s+(?:it|this|them)\b"
+    r"|\bwhen\s+(?:do|should)\s+i\s+take\s+(?:it|this|them)\b"
+    r"|\b(?:side\s+effects?|cautions?|interactions?)\b(?!\s+(?:of|from|on)\s+(?!it\b|this\b|them\b))",
+    re.IGNORECASE)
+# The message names its own subject: "for sleep", "for my joints".
+_OWN_SUBJECT = re.compile(r"\bfor\s+(?!it\b|this\b|them\b|me\b|a\s+day\b|how\s+long\b)\w+",
+                          re.IGNORECASE)
+_FOLLOW_UP_LOOKBACK = 3
 
 
 def _carried_query(query_text: str, prior_user_turns) -> str:
-    """The query, or the previous user turn when this is a follow-up about the one
-    product that turn named ("How much should I take?" after "What is Angiostasis?").
+    """The query, or the earlier user turn whose product this follow-up is about
+    ("How much should I take?" after "What is Angiostasis?").
 
-    Carried only when this message names no product, is short, reads as a follow-up,
-    and the most recent earlier user turn named exactly one product. A topic change
-    ("what about for sleep?") carries nothing, so normal recommendations still apply."""
+    Carried only when this message names no product, has 15 words or fewer, asks about
+    dose or safety of "it/this", and names no subject of its own. Walks back over up to
+    three earlier user turns that named no product; the first that names exactly one
+    product is carried, and one naming two or more carries nothing."""
     products = (_PRODUCTS or {}).get("products", {}) or {}
     if not query_text or not prior_user_turns or _named_product_spans(query_text, products):
         return query_text
-    if len(query_text.split()) > 15 or not _FOLLOW_UP_CUE.search(query_text):
+    if (len(query_text.split()) > 15 or not _FOLLOW_UP_CUE.search(query_text)
+            or _OWN_SUBJECT.search(query_text)):
         return query_text
-    last = next((t for t in reversed(list(prior_user_turns)) if (t or "").strip()), "")
-    if len(_named_product_spans(last, products)) != 1:
-        return query_text
-    return last
+    turns = [t for t in prior_user_turns if (t or "").strip()][-_FOLLOW_UP_LOOKBACK:]
+    for turn in reversed(turns):
+        named = _named_product_spans(turn, products)
+        if len(named) == 1:
+            return turn
+        if named:
+            return query_text
+    return query_text
 
 
 def named_product_facts_block(query_text: str, gated: bool = False,

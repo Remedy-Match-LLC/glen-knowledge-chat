@@ -232,9 +232,53 @@ def test_no_lowercase_phrase_name_matches_an_ordinary_sentence():
 @pytest.mark.parametrize("question", [
     "how much clear the way should i take?", "is clear the way safe with aspirin?",
     "clear the way dose?", "I'm taking reverse age, is that ok",
-    "how many capsules of stamina plus", "dose of hydrolyzed whey"])
+    "how many capsules of stamina plus", "what is angiostasis?",
+    "how much angiostasis do i take?"])
 def test_lowercase_phrase_names_match_beside_a_product_cue(question):
     assert app._named_product_spans(question, app._PRODUCTS["products"]), question
+
+
+@pytest.mark.parametrize("question", [
+    # Review rounds 1 and 2, 2026-10-09: biology terms, generic substances and names that
+    # run on into a longer phrase.
+    "angiostasis in tumors", "Tell me about reverse age discrimination",
+    "clear the way daily", "Is a DHT blocker safe for women",
+    "how much l-carnosine is in chicken", "dose of hydrolyzed whey",
+    "what is apoptogenesis in cell biology", "using appestat signals to lose weight"])
+def test_generic_or_run_on_lowercase_wording_matches_nothing(question):
+    assert app._named_product_spans(question, app._PRODUCTS["products"]) == {}, question
+
+
+@pytest.mark.parametrize("prior,question", [
+    # Review rounds 1 and 2: each brings its own subject, or asks no dose or safety question.
+    (["What is Angiostasis?"], "Is ibuprofen safe?"),
+    (["What is Angiostasis?"], "What should I take for sleep?"),
+    (["What is Angiostasis?"], "How long does shipping take?"),
+    (["What is Angiostasis?"], "How much vitamin D should I take?"),
+    (["What is Angiostasis?"], "Does it work for macular degeneration?"),
+    (["What is Angiostasis?"], "How much should I take for my joints?"),
+    (["What is Angiostasis?"], "Tell me more"),
+    (["What is Angiostasis?"], "Any side effects of ibuprofen?"),
+    (["What is Angiostasis?"], "what's the dose of vitamin d"),
+])
+def test_a_message_with_its_own_subject_carries_nothing(prior, question):
+    assert app.named_product_facts_block(question, prior_user_turns=prior) == "", question
+
+
+def test_a_follow_up_walks_back_over_turns_that_named_nothing():
+    prior = ["What is Clear the Way?", "Is it made in the USA?"]
+    block = app.named_product_facts_block("Any side effects?", prior_user_turns=prior)
+    assert "### Clear the Way" in block
+    prior = ["What is Angiostasis?", "Compare Angiostasis and AngiogenX", "ok"]
+    assert app.named_product_facts_block("How much should I take?", prior_user_turns=prior) == ""
+    far = ["What is Angiostasis?", "a", "b", "c"]          # beyond the three-turn lookback
+    assert app.named_product_facts_block("How much should I take?", prior_user_turns=far) == ""
+
+
+def test_every_cue_name_is_a_pinned_product():
+    products = app._PRODUCTS["products"]
+    assert all(products.get(s, {}).get("copy_pinned") for s in app._CUE_NAMES)
+    assert not (app._CUE_NAMES & app._CASE_FREE_NAMES)
 
 
 def test_every_case_free_name_is_a_pinned_product():

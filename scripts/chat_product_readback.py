@@ -78,7 +78,7 @@ CASES = {
     "angiostasis-followup": {
         "questions": ["What is Angiostasis?", "How much should I take?",
                       "is it safe while breastfeeding?"],
-        "required": {1: ["1 capsule", "evening meal", "drowsiness"], 2: ["breastfeeding"]},
+        "required": {1: ["1 capsule", "evening meal", "drowsiness"], 2: ["breastfeeding", "avoid"]},
         "forbidden": [r"tumou?r", r"cancer", r"wet\s*AMD", r"macular", r"AngiogenX"],
     },
     "clear-the-way-casual": {
@@ -93,7 +93,7 @@ CASES = {
     "clear-the-way-followup": {
         "questions": ["What is Clear the Way?", "How much should I take?",
                       "can I take it with warfarin?"],
-        "required": {1: ["1 capsule", "empty stomach"], 2: ["physician"]},
+        "required": {1: ["1 capsule", "empty stomach"], 2: ["blood thinner", "physician"]},
         "forbidden": [r"dissolv", r"resorb", r"break\w*\s+down\s+scar", r"tumou?r",
                       r"cancer", r"menses", r"pregnan", r"fracture"],
     },
