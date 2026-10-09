@@ -100,6 +100,7 @@ def main(case_name: str, runs: int = 1, session: bool = False, gate: bool = Fals
          poisoned: bool = False) -> int:
     """session=True asks the questions in one conversation, as a client would."""
     case = CASES[case_name]
+    print(f"case={case_name} runs={runs} session={session} gate={gate} poisoned={poisoned}")
     failures = 0
     for n in range(runs):
         history = list(POISONED.get(case_name, [])) if poisoned else []
