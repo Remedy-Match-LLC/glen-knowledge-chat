@@ -217,3 +217,49 @@ def test_an_expired_or_used_link_does_not_show_the_confirm_button(client):
                    "WHERE email='old@x.com'")
     page = c.get(f"/begin/waitlist/confirm/{token2}").get_data(as_text=True)
     assert "That link has expired or is not valid" in page and "Confirm</button>" not in page
+
+
+def test_a_resend_counts_toward_the_daily_cap(cx, monkeypatch):
+    """Review round 2: the cap counted rows, and a resend overwrote its row's time."""
+    monkeypatch.setattr(pw, "DAILY_SENDS", 2)
+    assert pw.sign_up(cx, SCAR, "r1@x.com")[0] == "new"
+    cx.execute("UPDATE product_waitlist SET confirm_sent_at='2020-01-01T00:00:00+00:00'")
+    cx.commit()
+    assert pw.sign_up(cx, SCAR, "r1@x.com")[0] == "resend"
+    assert pw._sent_today(cx, SCAR) == 2
+    assert pw.sign_up(cx, SCAR, "r2@x.com") == ("capped", None)
+
+
+RETINA_LATE_JS = r"""
+const assert = require('assert');
+function el(tag, id){ return {tagName: tag, id: id || '', style: {display: ''}, textContent: ''}; }
+const parts = [el('P'), el('INPUT'), el('BUTTON')];
+const note = el('P', 'product-waitlist-msg');
+const f = {style: {display: 'none'}, onsubmit: null, querySelectorAll: () => parts};
+global.document = {getElementById: id => id === 'product-waitlist' ? f : (id === 'product-waitlist-msg' ? note : null)};
+global.location = {search: '?waitlist=confirmed'};
+FN
+renderWaitlist(DATA);
+assert.strictEqual(note.textContent, "You're on the list. We'll email you when Retina Renew is ready.");
+console.log('OK');
+"""
+
+
+def test_a_late_retina_confirmation_reads_retinas_own_note(client, tmp_path):
+    """Review round 2: after the presale closes, a valid Retina confirmation must still
+    show Retina's note. Rendered through the page's own function with the real page-data."""
+    import os, shutil, subprocess
+    from pathlib import Path
+    if shutil.which("node") is None:
+        pytest.skip("node is not installed")
+    c, _ = client                                  # the founding presale is OFF here
+    data = c.get(f"/begin/product-page-data/{RETINA}").get_json()
+    assert "waitlist" not in data
+    page = (Path(__file__).resolve().parent.parent / "static" / "begin-product.html").read_text()
+    a = page.find("function renderWaitlist(")
+    b = page.find("\n    }\n", a) + 7
+    js = tmp_path / "late.js"
+    js.write_text(RETINA_LATE_JS.replace("FN", page[a:b]).replace("DATA", json.dumps(data)))
+    out = subprocess.run(["node", str(js)], capture_output=True, text=True, timeout=30,
+                         env=dict(os.environ, NODE_OPTIONS=""))
+    assert out.returncode == 0 and "OK" in out.stdout, out.stderr + out.stdout

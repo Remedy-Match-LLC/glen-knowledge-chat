@@ -455,10 +455,12 @@ def waitlist_block(slug, catalog=None) -> Optional[dict]:
     """The `waitlist_only` product that stops `slug` being ordered, or None.
 
     A product that is made but not yet ready to sell (Scar Soft Drink, 2026-10-09) carries
-    `waitlist_only`; its page takes waiting-list sign-ups instead. A bundle is blocked when
-    any component is `waitlist_only`, following `superseded_by` as pricing does. An
-    INACTIVE component never blocks a bundle: the old bundle scar-reduction-program lists the
-    retired msm-syntropy-powder record and stays on sale (formulation, 2026-10-09).
+    `waitlist_only`; its page takes waiting-list sign-ups instead. The slug itself follows
+    `superseded_by` past a retired duplicate, as checkout does. A bundle is blocked when an
+    ACTIVE component is `waitlist_only`, at any depth (a bundle inside a bundle), with a
+    cycle guard. An INACTIVE component is never checked and never followed: the old bundle
+    scar-reduction-program lists the retired msm-syntropy-powder record and stays on sale
+    (formulation, 2026-10-09; review round 2).
     Returns {"slug", "name"} of the blocking product."""
     cat = catalog if catalog is not None else pricing._load_catalog()
 
@@ -476,16 +478,27 @@ def waitlist_block(slug, catalog=None) -> Optional[dict]:
             return s, p
         return s, None
 
+    def _components(p, seen):
+        if not p.get("bundle"):
+            return None
+        for comp in (p.get("bundle_component_slugs") or []):
+            cs = (comp or {}).get("slug")
+            cp = cat.get(cs) if cs else None
+            if not cp or cp.get("inactive") or cs in seen:
+                continue
+            if cp.get("waitlist_only"):
+                return {"slug": cs, "name": cp.get("name") or cs}
+            hit = _components(cp, seen | {cs})
+            if hit:
+                return hit
+        return None
+
     s, p = _resolve(slug)
     if not p:
         return None
     if p.get("waitlist_only"):
         return {"slug": s, "name": p.get("name") or s}
-    for comp in (p.get("bundle_component_slugs") or []) if p.get("bundle") else []:
-        cs, cp = _resolve((comp or {}).get("slug"))
-        if cp and cp.get("waitlist_only"):
-            return {"slug": cs, "name": cp.get("name") or cs}
-    return None
+    return _components(p, {s})
 
 
 class WaitlistRefusal(str):

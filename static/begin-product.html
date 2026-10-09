@@ -1590,7 +1590,8 @@
       var answer = back.get('waitlist');
       var w = data.waitlist || null;
       // Each list's own words (2026-10-09): the page names only this list's product.
-      var success = (w && w.success) || "You're on the list.";
+      var success = (w && w.success)
+        || (data.waitlist_closed && data.waitlist_closed.success) || "You're on the list.";
       if (!w || !w.slug) {        // another product: no stale form (round 2)
         f.onsubmit = null;
         if (answer === 'confirmed' || answer === 'expired') {

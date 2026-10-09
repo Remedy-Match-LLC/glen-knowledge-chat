@@ -88,6 +88,37 @@ def test_a_bundle_names_its_waitlist_only_component(catalog):
     assert pp.waitlist_block(BUNDLE, catalog)["slug"] == SCAR
 
 
+def test_a_bundle_inside_a_bundle_is_refused(catalog, monkeypatch):
+    """Review round 2: outer -> inner -> scar-soft-drink was orderable."""
+    monkeypatch.setitem(catalog, "test-outer", {
+        "name": "Outer", "bundle": True, "price_cents": 30000,
+        "bundle_component_slugs": [{"slug": "scar-solve", "qty": 1}, {"slug": BUNDLE, "qty": 1}]})
+    assert pp.is_orderable("test-outer", catalog) is False
+    assert pp.waitlist_block("test-outer", catalog)["slug"] == SCAR
+
+
+def test_a_bundle_cycle_does_not_loop(catalog, monkeypatch):
+    monkeypatch.setitem(catalog, "test-a", {"name": "A", "bundle": True,
+                                            "bundle_component_slugs": [{"slug": "test-b"}]})
+    monkeypatch.setitem(catalog, "test-b", {"name": "B", "bundle": True,
+                                            "bundle_component_slugs": [{"slug": "test-a"}]})
+    assert pp.waitlist_block("test-a", catalog) is None
+
+
+@pytest.mark.parametrize("component", [
+    {"name": "Old Scar", "inactive": True, "waitlist_only": True},
+    {"name": "Old Scar", "inactive": True, "superseded_by": SCAR},
+])
+def test_an_inactive_component_never_blocks_its_bundle(catalog, monkeypatch, component):
+    """Review round 2, per formulation: only ACTIVE components are checked."""
+    monkeypatch.setitem(catalog, "test-old-scar", component)
+    monkeypatch.setitem(catalog, "test-bundle-inactive", {
+        "name": "B", "bundle": True, "price_cents": 10000,
+        "bundle_component_slugs": [{"slug": "scar-silk"}, {"slug": "test-old-scar"}]})
+    assert pp.waitlist_block("test-bundle-inactive", catalog) is None
+    assert pp.is_orderable("test-bundle-inactive", catalog) is True
+
+
 def test_the_old_bundle_with_an_inactive_component_stays_on_sale(catalog):
     old = catalog["scar-reduction-program"]
     assert {"slug": "msm-syntropy-powder", "qty": 1} in old["bundle_component_slugs"]
@@ -124,10 +155,13 @@ def test_price_cart_refuses_a_zero_qty_line_it_would_price_as_one():
         app._price_cart([{"slug": SCAR, "qty": 0}], ship={"country": "US"})
 
 
-def test_shipping_on_orders_already_placed_is_still_quoted():
-    pc = app._price_cart([{"slug": SCAR, "qty": 1}], ship={"country": "US"},
-                         allow_waitlist=True)
-    assert pc["shipping_cents"] >= 0
+def test_shipping_on_orders_already_placed_is_still_quoted(monkeypatch):
+    """Review round 2: a known nonzero charge, and every placed line stays in the quote."""
+    monkeypatch.setattr(app, "_shipping_for_cart", lambda box_counts, total_bottles: 1300)
+    pc = app._price_cart([{"slug": "scar-silk", "qty": 1}, {"slug": SCAR, "qty": 2}],
+                         ship={"country": "US"}, allow_waitlist=True)
+    assert pc["shipping_cents"] == 1300
+    assert [(l["slug"], l["qty"]) for l in pc["items_rec"]] == [("scar-silk", 1), (SCAR, 2)]
 
 
 def test_build_order_refuses_before_redeeming_credit(monkeypatch, catalog):
@@ -235,31 +269,44 @@ def test_reorder_subscribe_is_refused(client, monkeypatch):
     assert calls == []
 
 
-def test_the_autoship_charge_job_refuses_and_keeps_the_date(monkeypatch, tmp_path):
+def test_the_autoship_charge_job_refuses_and_keeps_the_date(monkeypatch, tmp_path, capsys):
+    """A normal autoship in the same run is charged (the control); the Scar one fails for
+    the waitlist reason, is not charged, and keeps its date (review round 2)."""
     from dashboard import subscriptions as subs
     path = str(tmp_path / "chat_log.db")
     monkeypatch.setattr(app, "LOG_DB", path)
     monkeypatch.setenv("CRON_SECRET", "cron-test")
     monkeypatch.setattr(app, "_subscriptions_enabled", lambda: True)
-    calls = _no_payment(monkeypatch)
+    monkeypatch.setattr(app, "_ingest_order", lambda **k: None)
     monkeypatch.setattr(app, "_send_subscription_email", lambda *a, **k: ("smtp", None))
+    monkeypatch.setattr(app, "_active_membership_for_email", lambda email: None)
+    monkeypatch.setattr(app, "_is_paid_member", lambda email: False)
+    charged = []
+    monkeypatch.setattr(app.stripe_pay, "charge_off_session",
+                        lambda cus, pm, cents, **k: charged.append(k.get("metadata", {}).get("sub"))
+                        or {"status": "succeeded", "id": "ch_test"})
     with sqlite3.connect(path) as cx:
         cx.row_factory = sqlite3.Row
         subs.init_subscriptions_table(cx)
         subs.migrate_add_failed_count(cx)
-        sid = subs.create(cx, email="auto@x.com", stripe_customer_id="cus_t",
-                          stripe_payment_method_id="pm_t",
-                          items=[{"slug": "scar-silk", "qty": 1}, {"slug": SCAR, "qty": 1}],
-                          cadence_months=1, ship_address={"state": "CA", "country": "US"},
-                          next_charge_date="2000-01-01")
+        ids = {}
+        for key, items in (("control", [{"slug": "scar-silk", "qty": 1}]),
+                           ("scar", [{"slug": "scar-silk", "qty": 1}, {"slug": SCAR, "qty": 1}])):
+            ids[key] = subs.create(cx, email=f"{key}@x.com", stripe_customer_id="cus_t",
+                                   stripe_payment_method_id="pm_t", items=items,
+                                   cadence_months=1, ship_address={"state": "CA", "country": "US"},
+                                   next_charge_date="2000-01-01")
         cx.commit()
     r = app.app.test_client().post("/api/cron/charge-subscriptions",
                                    headers={"X-Cron-Secret": "cron-test"})
-    assert r.status_code == 200 and r.get_json()["failed"] >= 1
-    assert "charge_off_session" not in calls
+    assert r.status_code == 200, r.get_data(as_text=True)[:300]
+    out = capsys.readouterr().out
+    assert charged == [str(ids["control"])], (r.get_json(), out[-2500:])   # the control
+    assert f"price_cart sub={ids['scar']}" in out and REFUSAL in out      # the reason
     with sqlite3.connect(path) as cx:
-        assert cx.execute("SELECT next_charge_date FROM subscriptions WHERE id=?",
-                          (sid,)).fetchone()[0] == "2000-01-01"
+        dates = dict(cx.execute("SELECT id, next_charge_date FROM subscriptions").fetchall())
+    assert dates[ids["scar"]] == "2000-01-01"
+    assert dates[ids["control"]] != "2000-01-01"
 
 
 # ── Client portal and invoice routes ──────────────────────────────────────────

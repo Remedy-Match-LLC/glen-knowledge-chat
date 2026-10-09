@@ -94,6 +94,11 @@ def init_table(cx):
                "confirm_hash TEXT DEFAULT '', confirm_sent_at TEXT DEFAULT '', "
                "confirmed_at TEXT DEFAULT '', confirm_sends INTEGER DEFAULT 0, "
                "PRIMARY KEY (product_slug, email))")
+    # Confirmation emails sent, per list per UTC day (review round 2, 2026-10-09). A row's
+    # confirm_sent_at is overwritten on a resend, so counting rows missed every resend.
+    cx.execute("CREATE TABLE IF NOT EXISTS product_waitlist_sends ("
+               "product_slug TEXT NOT NULL, day TEXT NOT NULL, sends INTEGER NOT NULL DEFAULT 0, "
+               "PRIMARY KEY (product_slug, day))")
     cx.commit()
 
 
@@ -124,11 +129,21 @@ def clean_first_name(raw):
     return name if name and ok and any(ch.isalpha() for ch in name) else ""
 
 
+def _today():
+    return datetime.now(timezone.utc).date().isoformat()
+
+
 def _sent_today(cx, slug):
-    """Confirmation emails this list sent today (UTC)."""
-    day = datetime.now(timezone.utc).date().isoformat()
-    return cx.execute("SELECT COUNT(*) FROM product_waitlist WHERE product_slug=? "
-                      "AND confirm_sent_at >= ?", (slug, day)).fetchone()[0]
+    """Confirmation emails this list sent today (UTC), resends included."""
+    row = cx.execute("SELECT sends FROM product_waitlist_sends WHERE product_slug=? AND day=?",
+                     (slug, _today())).fetchone()
+    return int(row[0]) if row else 0
+
+
+def _count_send(cx, slug):
+    cx.execute("INSERT INTO product_waitlist_sends (product_slug, day, sends) VALUES (?,?,1) "
+               "ON CONFLICT (product_slug, day) DO UPDATE SET sends = product_waitlist_sends.sends + 1",
+               (slug, _today()))
 
 
 def texts(slug):
@@ -198,6 +213,7 @@ def sign_up(cx, slug, email, *, first_name=""):
                    "confirm_sends=COALESCE(confirm_sends,0)+1 "
                    "WHERE product_slug=? AND email=? AND COALESCE(confirmed_at,'')=''",
                    (_hash(token), _now(), slug, e))
+        _count_send(cx, slug)
         cx.commit()
         return ("resend", token)
     if _sent_today(cx, slug) >= DAILY_SENDS:
@@ -207,9 +223,11 @@ def sign_up(cx, slug, email, *, first_name=""):
                      "VALUES (?,?,?,?,?,?,?,1) ON CONFLICT (product_slug, email) DO NOTHING",
                      (slug, e, clean_first_name(first_name), TEXTS[slug]["consent"], _now(),
                       _hash(token), _now()))
-    cx.commit()
     if not getattr(cur, "rowcount", 1):
+        cx.commit()
         return ("existing", None)
+    _count_send(cx, slug)
+    cx.commit()
     return ("new", token)
 
 

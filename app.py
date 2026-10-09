@@ -9765,6 +9765,10 @@ def _apply_waitlist_page_data(data, slug, p):
         t = _pwl.TEXTS[slug]
         data["waitlist"] = {"slug": slug, "intro": t["intro"], "consent": t["consent"],
                             "reserve_line": t["reserve_line"], "success": t["success"]}
+    elif slug in _pwl.LISTS:
+        # The list has closed, but a late click on a confirmation link still lands here
+        # and must read this list's own success note (review round 2).
+        data["waitlist_closed"] = {"success": _pwl.TEXTS[slug]["success"]}
     if not p.get("waitlist_only"):
         return data
     data["waitlist_only"] = True
