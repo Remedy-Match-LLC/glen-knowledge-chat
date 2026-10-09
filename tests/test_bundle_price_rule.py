@@ -51,3 +51,5 @@ def test_live_catalog_prices_match_rule():
                 f"{slug}: stored {p.get('price_cents')} != rule {expected}")
             checked += 1
     assert checked >= 10, f"expected >=10 rule-priced bundles, saw {checked}"
+    # Glen, 2026-10-09: three $70 products less 10%.
+    assert products["estrogen-fibrin-balance-program"]["price_cents"] == 18900

@@ -2172,6 +2172,7 @@ _CASE_FREE_NAMES = frozenset({
     "ocuheal-eye-drops", "ocuheal-plus-eye-drops", "lens-zyme", "curcu-guard",
     "iron-syntropy", "zinc-syntropy", "vitamin-a-syntropy", "vitamin-c-syntropy",
     "adrenal-syntropy", "sanctuary-c60", "phytolacca-americana-oil-roll-on",
+    "fibrosolve", "estro-clear",
 })
 # Pinned products whose name a client may type in lowercase, beside a product cue. Every
 # other pinned name is a generic description ("l-carnosine", "DHT blocker", "hydrolyzed
@@ -2179,10 +2180,12 @@ _CASE_FREE_NAMES = frozenset({
 _CUE_NAMES = frozenset({
     "angiostasis", "apoptogenesis", "appestat", "clear-the-way", "reverse-age",
     "stamina-plus", "off-syrup", "acetaldehyde-detox", "sinus-terrain-nasal-spray",
+    "fibrolysis-factors", "estrogen-fibrin-balance-program",
 })
 _PRODUCT_CUE_BEFORE = re.compile(
     r"\b(?:what\s+is|what's|whats|how\s+much|how\s+many|dose\s+of|dosage\s+of|take|taking|"
-    r"buy|order|ordered|(?:capsules?|caps|bottles?|scoops?|drops)\s+of)\s*$", re.IGNORECASE)
+    r"buy|order|ordered|(?:capsules?|caps|bottles?|scoops?|drops)\s+of)"
+    r"(?P<the>(?:\s+of)?(?:\s+the))?\s*$", re.IGNORECASE)
 _PRODUCT_CUE_AFTER = re.compile(
     r"^\s*(?:dose|dosage|capsules?|caps|bottles?|product|supplement|formula|safe|interact)\b",
     re.IGNORECASE)
@@ -2200,8 +2203,13 @@ def _has_product_cue(text: str, start: int, end: int) -> bool:
     have no cue, or run the name into a longer phrase."""
     if not _AFTER_NAME_OK.search(text[end:end + 20]):
         return False
-    return bool(_PRODUCT_CUE_BEFORE.search(text[max(0, start - 20):start])
-                or _PRODUCT_CUE_AFTER.search(text[end:end + 20]))
+    before = _PRODUCT_CUE_BEFORE.search(text[max(0, start - 24):start])
+    # "how much of the Estrogen and Fibrin Balance Program" takes "of the"; a single
+    # word does not: "what is the appestat?" asks about the body's appetite set point
+    # (review round 3, 2026-10-09).
+    if before and before.group("the") and not text[start:end].lower().endswith("program"):
+        before = None
+    return bool(before or _PRODUCT_CUE_AFTER.search(text[end:end + 20]))
 
 
 def _named_product_spans(query_text: str, products: dict) -> dict:
@@ -2272,6 +2280,12 @@ def _named_product_facts(query_text: str, gated: bool = False) -> str:
         parts = [f"### {name}", f"Page: {_catalog_page_url(slug)}"]
         if desc:
             parts.append(desc)
+        # A bundle has no directions or warning of its own: its approved intro carries
+        # every component's dose and the cautions (Estrogen and Fibrin Balance Program,
+        # 2026-10-09). Carried whole, only when Glen pinned it.
+        intro = (product.get("intro") or "").strip()
+        if product.get("bundle") and intro and "intro" in _pinned_copy(product):
+            parts.append(f"Program directions and cautions:\n{intro}")
         for label, key in (("Directions", "directions"), ("Caution", "warning")):
             val = (product.get(key) or "").strip()
             if val and val not in desc:
@@ -9914,7 +9928,13 @@ def begin_product_page_data(slug):
     _is_service = bool(p.get("service"))
     sections = _filter_sections(sections, has_ingredients=_has_ings,
                                 has_own_video=bool(_own_vids), is_service=_is_service,
-                                in_miron=_miron)
+                                in_miron=_miron,
+                                # Only a bundle that PINS an empty research text loses the
+                                # section. `how` is read before the AI step, so testing it
+                                # would strip "The research" from every bundle whose draft
+                                # failed to generate (review round 1, 2026-10-09).
+                                is_bundle=bool(p.get("bundle")) and "research" in _pin,
+                                has_research_text=bool((p.get("how_it_works") or "").strip()))
     # A product with AI images off has no Images section: its photos are in the top gallery,
     # and an empty section would open to nothing.
     from dashboard.sales_images import ai_images_off as _ai_images_off
