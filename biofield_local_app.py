@@ -1137,7 +1137,7 @@ def create_app(db_path=DEFAULT_DB, complete=None, tts=None, deepgram_token=None,
         try:
             prev = _published_special(test_id)
         except Exception:
-            prev = None   # the price box opens empty; never block the page
+            prev = "unknown"   # the box says so; never block the page
         return Response(render_report_html(rep, notes, narrative, vscript, stresses=stresses,
                                            notes_updated=notes_updated, courtesy_cents=prev),
                         mimetype="text/html")

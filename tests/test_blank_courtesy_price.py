@@ -137,12 +137,17 @@ def _page(courtesy_cents):
 
 
 def test_the_box_opens_with_the_last_published_price():
-    assert "Leave blank for store prices.','50.00');" in _page(5000)
+    assert "var lastPrice='50.00';" in _page(5000)
 
 
 @pytest.mark.parametrize("prev", [None, 0])
 def test_the_box_opens_empty_when_no_price_was_published(prev):
-    assert "Leave blank for store prices.','');" in _page(prev)
+    page = _page(prev)
+    assert "var lastPrice='';" in page and "could not be read" not in page
+
+
+def test_an_unreadable_last_price_is_said_out_loud():
+    assert "The last published price could not be read." in _page("unknown")
 
 
 _RUN = """
@@ -167,3 +172,15 @@ def test_the_button_publishes_blank_and_refuses_zero(answer, posted):
     assert out["posted"] == posted, (answer, out)
     if posted is None:
         assert out["msg"], answer   # never a silent stop
+
+
+def test_a_second_publish_on_the_same_page_reopens_with_the_price_used():
+    import json, subprocess
+    js = (_RUN.replace("function prompt(){return ANSWER;}",
+                       "var asked=[];var answers=['50',null];"
+                       "function prompt(m,d){asked.push(d);return answers.shift();}")
+          + _node_js()
+          + "\npublishPortal().then(publishPortal).then(function(){"
+            "console.log(JSON.stringify(asked));});")
+    out = subprocess.run(["node", "-e", js], capture_output=True, text=True, check=True)
+    assert json.loads(out.stdout.strip()) == ["", "50"]
