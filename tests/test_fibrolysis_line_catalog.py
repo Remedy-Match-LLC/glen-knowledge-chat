@@ -116,7 +116,8 @@ ESTRO_CLEAR = [
     ("DIM 98% (diindolylmethane)", "100 mg"),
     ("Broccoli extract (Brassica oleracea), 17% glucoraphanin", "85 mg"),
     ("Vitamin C (L-ascorbic acid)", "50 mg"),
-    ("Black pepper extract (95% piperine)", "5 mg"),
+    # Glen, 2026-10-10: the store keeps these names, and black pepper adds its species.
+    ("Black pepper extract (Piper nigrum), 95% piperine", "5 mg"),
     ("Vitamin D3 (cholecalciferol)", "2,000 IU"),
     ("Black mustard seed (Brassica nigra)", "2.5 mg"),
     ("Iodine (from potassium iodide)", "150 mcg"),
