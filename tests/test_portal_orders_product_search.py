@@ -66,3 +66,15 @@ def test_orders_panel_contains_search_basket_and_catalog_checkout():
     assert 'data-cart-split=' in html
     assert 'set-format-quantities' in html
     assert 'ordersBasket.flatMap' in html
+
+
+def test_orders_basket_offers_zelle_and_shows_its_instructions():
+    # Carol Hemphill, 2026-10-10: the Orders basket went straight to Stripe with no
+    # Zelle choice. It now sends the chosen method and renders the Zelle reply.
+    html = (Path(appmod.__file__).parent / "static" / "client-portal.html").read_text()
+
+    assert 'id="ordersPaymentMethods"' in html
+    assert 'name="ordersPayMethod" value="zelle"' in html
+    assert "method:ordersPayMethod()," in html
+    assert 'if(j.method === "zelle" && j.pay_instructions)' in html
+    assert "zi.innerHTML = zelleInstructionsHtml(j);" in html
