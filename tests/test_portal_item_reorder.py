@@ -336,6 +336,8 @@ def test_portal_zelle_option_returns_exact_total_recipient_and_memo(client, monk
     assert body["pay_instructions"]["memo"] == "portal-zelle_order_12345678"
     assert ingested["shipping_cents"] == expected_ship
     assert ingested["total_cents"] == 4400 + expected_ship
+    # Marked as Zelle so the 24-hour abandoned-cart expiry leaves it alone.
+    assert ingested["pay_method"] == "zelle"
 
 
 def test_portal_checkout_passes_itemized_lines_to_stripe(client, monkeypatch):

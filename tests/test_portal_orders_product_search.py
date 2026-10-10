@@ -77,7 +77,10 @@ def test_orders_basket_offers_zelle_and_shows_its_instructions():
     assert 'name="ordersPayMethod" value="zelle"' in html
     assert "method:ordersPayMethod()," in html
     assert 'if(j.method === "zelle" && j.pay_instructions)' in html
-    assert 'sessionStorage.setItem("rm_orders_zelle", zelleInstructionsHtml(j))' in html
+    # Keyed per portal, so another client's portal in the same tab never shows them.
+    assert 'return "rm_orders_zelle:" + token;' in html
+    assert "setOrdersZelleDone([zelleInstructionsHtml(j)].concat(ordersZelleDone())" in html
+    assert "if(j.stripe_url){ setOrdersZelleDone([]);" in html
     # The placed order must leave the basket, or a re-render re-arms "Place order"
     # and a second tap creates a second unpaid order.
     assert "ordersBasket = []; saveOrdersBasket(); renderOrdersBasket();" in html

@@ -2745,8 +2745,7 @@ function renderOrdersBasket(){
   if(!host) return;
   // Zelle instructions for an order already placed live outside the basket, so
   // editing a new basket never hides them or re-opens the placed order.
-  let zelleDone = "";
-  try { zelleDone = sessionStorage.getItem("rm_orders_zelle") || ""; } catch(e) {}
+  const zelleDone = ordersZelleDone().join("");
   if(!ordersBasket.length){ host.innerHTML = zelleDone + `<p class="muted small">Your basket is empty.</p>`; return; }
   const rows = ordersBasket.map(it => {
     const bottleQty = it.refillEligible ? Number(it.bottleQty ?? (it.format === 'refill' ? 0 : it.qty)) || 0 : Number(it.qty) || 1;
@@ -2771,6 +2770,19 @@ function renderOrdersBasket(){
     </fieldset>
     <button type="button" class="btn full" id="orders-place-order">Place order</button>
     <p id="orders-order-message" class="small" hidden></p>`;
+}
+
+// Zelle instructions for orders placed from this portal in this tab. Keyed by the
+// portal token, so staff opening another client's portal never see these.
+function ordersZelleKey(){ return "rm_orders_zelle:" + token; }
+function ordersZelleDone(){
+  try { return JSON.parse(sessionStorage.getItem(ordersZelleKey()) || "[]"); } catch(e) { return []; }
+}
+function setOrdersZelleDone(list){
+  try {
+    if(list.length) sessionStorage.setItem(ordersZelleKey(), JSON.stringify(list));
+    else sessionStorage.removeItem(ordersZelleKey());
+  } catch(e) {}
 }
 
 // The Orders basket used to go straight to Stripe. The checkout endpoint already
@@ -2871,11 +2883,11 @@ document.addEventListener("click", async function(ev){
         if(attempt) throw fetchErr;
       }
     }
-    if(j.stripe_url){ location.href = j.stripe_url; return; }
+    if(j.stripe_url){ setOrdersZelleDone([]); location.href = j.stripe_url; return; }
     if(j.method === "zelle" && j.pay_instructions){
       // The order exists now. Empty the basket so a later tap cannot place it
       // again under a new request id, and keep the instructions on screen.
-      try { sessionStorage.setItem("rm_orders_zelle", zelleInstructionsHtml(j)); } catch(e) {}
+      setOrdersZelleDone([zelleInstructionsHtml(j)].concat(ordersZelleDone()).slice(0, 5));
       ordersBasket = []; saveOrdersBasket(); renderOrdersBasket();
       return;
     }
