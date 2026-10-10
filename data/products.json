@@ -506,7 +506,7 @@
     },
     {
      "name": "L-Theanine",
-     "dose": ""
+     "dose": "0 mg"
     },
     {
      "name": "Melatonin",
@@ -538,11 +538,11 @@
     },
     {
      "name": "Hops",
-     "dose": ""
+     "dose": "0 mg"
     },
     {
      "name": "Bacosides",
-     "dose": ""
+     "dose": "0 mg"
     }
    ],
    "ingredients_source": "db-formulations-2026-06-25",
@@ -3014,7 +3014,7 @@
     },
     {
      "name": "Tetrahydrocurcumin, water soluble Curcuminoid",
-     "dose": ""
+     "dose": "0 mg"
     },
     {
      "name": "S-Acetyl Glutathione, S-Acetyl GSH",
@@ -3748,15 +3748,15 @@
     },
     {
      "name": "Black pepper extract in Trikatu",
-     "dose": ""
+     "dose": "0 mg"
     },
     {
      "name": "Sulforaphane",
-     "dose": ""
+     "dose": "0 mg"
     },
     {
      "name": "Saffron",
-     "dose": ""
+     "dose": "0 mg"
     },
     {
      "name": "Astaxanthin",
@@ -10603,7 +10603,7 @@
     },
     {
      "name": "Honokiol",
-     "dose": ""
+     "dose": "0 mg"
     },
     {
      "name": "L-Theanine",
@@ -10623,7 +10623,7 @@
     },
     {
      "name": "Rosmarinic acid",
-     "dose": ""
+     "dose": "0 mg"
     },
     {
      "name": "(formerly Rosmarinus officinalis)",
@@ -10639,7 +10639,7 @@
     },
     {
      "name": "PS",
-     "dose": ""
+     "dose": "0 mg"
     },
     {
      "name": "Xanthan Gum is made by Xanthomonas campestris fermenting bacterium",
@@ -12204,7 +12204,7 @@
     },
     {
      "name": "Saikosaponin A",
-     "dose": ""
+     "dose": "0 mg"
     },
     {
      "name": "Asian water plantain, ze xie",
@@ -12212,7 +12212,7 @@
     },
     {
      "name": "Alisma",
-     "dose": ""
+     "dose": "0 mg"
     },
     {
      "name": "Rehmannia 50:1 root extract",
@@ -12220,11 +12220,11 @@
     },
     {
      "name": "Rehmannia",
-     "dose": ""
+     "dose": "0 mg"
     },
     {
      "name": "Catalpol",
-     "dose": ""
+     "dose": "0 mg"
     },
     {
      "name": "Ashitaba",
@@ -12240,7 +12240,7 @@
     },
     {
      "name": "Saffron",
-     "dose": ""
+     "dose": "0 mg"
     },
     {
      "name": "Latin names: Caulis mutong, Akebia caulis, Akebia trifoliata, Aristolochia manshuriensis Chinese name: mu tong Other names: chocolate vine, clematis stem",
@@ -12252,11 +12252,11 @@
     },
     {
      "name": "total acid (Glycyrrhizic acid, Glycyrrhizinic acid)",
-     "dose": ""
+     "dose": "0 mg"
     },
     {
      "name": "Glycyrrhizin is a triterpenoid saponin, a type of natural compound found in the roots and rhizomes of the licorice plant. It is relatively insoluble in water and has a bitter taste. Glycyrrhizinate, on the other hand, is the sodium salt of glycyrrhizin, making it more soluble in water. This modified form is often used in pharmaceutical applications due to its increased bioavailability and reduced gastrointestinal side effects.",
-     "dose": ""
+     "dose": "0 mg"
     },
     {
      "name": "Glycyrrhiza glabra",
@@ -14770,7 +14770,7 @@
     },
     {
      "name": "Portobello Chitosan Oligosaccharide (Agaricus bisporus) 98% deacetylated",
-     "dose": ""
+     "dose": "0 mg"
     }
    ]
   },
@@ -20420,7 +20420,7 @@
     },
     {
      "name": "MSM (Methylsulfonylmethane)",
-     "dose": ""
+     "dose": "0 mg"
     },
     {
      "name": "Yuzu Spray-Dried Fruit Juice (Citrus junos)",
@@ -20451,7 +20451,7 @@
     },
     {
      "name": "Finger Lime Freeze-Dried Fruit Juice (Citrus australasica)",
-     "dose": ""
+     "dose": "0 mg"
     },
     {
      "name": "Zinc Bisglycinate (20% Zn)",
