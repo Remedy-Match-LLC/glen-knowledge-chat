@@ -10049,7 +10049,11 @@ def begin_product_page_data(slug):
     for _ing in _raw_ingredients:
         if isinstance(_ing, dict):
             _ing = dict(_ing)
-            _ing["slug"] = _slugify(_ing.get("name") or "")
+            # A renamed label line keeps the page it already had (`page_slug`): Glen
+            # approved Fibrolysis Factors' label names on 2026-10-10, and three of its
+            # ingredient pages were built under the old names.
+            _ing["slug"] = _ing.pop("page_slug", None) or _slugify(_ing.get("name") or "")
+            _ing.pop("page_name", None)
         else:
             _ing = {"name": str(_ing), "dose": "", "slug": _slugify(str(_ing))}
         ingredients.append(_ing)

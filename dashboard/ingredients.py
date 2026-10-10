@@ -51,6 +51,10 @@ def _name_index():
             nm = nm.strip()
             if nm:
                 idx.setdefault(slugify(nm), nm)
+            # A renamed label line keeps its old page resolving (Fibrolysis Factors,
+            # 2026-10-10): the page is named as before, not after the new label text.
+            if isinstance(ing, dict) and ing.get("page_slug"):
+                idx.setdefault(ing["page_slug"], (ing.get("page_name") or nm).strip())
     return idx
 
 
@@ -111,7 +115,8 @@ def formulations_with(name):
     for pslug, p in prods.items():
         for ing in (p.get("ingredients") or []):
             nm = (ing.get("name") if isinstance(ing, dict) else ing) or ""
-            if slugify(nm) == target:
+            if slugify(nm) == target or (isinstance(ing, dict)
+                                         and ing.get("page_slug") == target):
                 out.append({"slug": pslug, "name": p.get("name", pslug)})
                 break
     return out
