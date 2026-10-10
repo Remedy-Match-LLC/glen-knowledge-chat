@@ -64,3 +64,17 @@ def test_an_unpaid_zelle_order_is_not_abandoned(tmp_path):
     states = {r[0]: r[1] for r in cx.execute(
         "SELECT external_ref, status FROM orders").fetchall()}
     assert states == {"zelle-order": "new", "card-cart": "cancelled"}
+
+
+def test_a_card_retry_under_a_zelle_request_id_still_expires(tmp_path):
+    # Zelle try saved, response lost, customer switches to card under the same request
+    # id. The card branch writes pay_method "" so the abandoned card checkout expires.
+    cx = orders.sqlite3.connect(tmp_path / "orders.db")
+    cx.row_factory = orders.sqlite3.Row
+    orders.init_orders_table(cx)
+    orders.upsert_order(cx, source="portal-reorder", external_ref="portal-x", pay_method="zelle")
+    orders.upsert_order(cx, source="portal-reorder", external_ref="portal-x", pay_method="")
+    now = datetime(2026, 10, 10, 12, tzinfo=timezone.utc)
+    cx.execute("UPDATE orders SET created_at=?", ((now - timedelta(hours=30)).isoformat(),))
+    cx.commit()
+    assert orders.expire_abandoned_checkouts(cx, now=now) == 1

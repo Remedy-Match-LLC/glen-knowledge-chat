@@ -32501,7 +32501,9 @@ def api_client_portal_checkout(token):
         stripe_url = _stripe_checkout_url_for_reorder(out, email)
         if not stripe_url:
             return jsonify({"error": _CARD_UNAVAILABLE}), 502
-        order_id = persist_portal_order()
+        # "" clears a 'zelle' mark left by an earlier Zelle try under the same
+        # request id, so an abandoned card checkout still expires.
+        order_id = persist_portal_order(pay_method="")
         return jsonify({"ok": True, "stripe_url": stripe_url, "not_ready": not_ready,
                         "order_id": order_id, "order_ref": checkout_ref})
     except Exception as e:

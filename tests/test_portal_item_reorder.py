@@ -346,8 +346,8 @@ def test_portal_checkout_passes_itemized_lines_to_stripe(client, monkeypatch):
         "greeting": "hi", "video": {}, "layers": [],
         "reorder_items": [{"slug": "nous-energy", "qty": 2, "price_cents": 2500}],
     })
-    captured = {}
-    monkeypatch.setattr(appmod, "_ingest_order", lambda *a, **k: None)
+    captured, ingested = {}, {}
+    monkeypatch.setattr(appmod, "_ingest_order", lambda *a, **k: ingested.update(k))
     monkeypatch.setattr(appmod, "_STRIPE_ACTIVE", True)
 
     def fake_stripe(out, email):
@@ -364,6 +364,8 @@ def test_portal_checkout_passes_itemized_lines_to_stripe(client, monkeypatch):
         {"name": "Nous Energy", "qty": 2, "unit_cents": 2500},
         {"name": "Shipping (USPS)", "qty": 1, "unit_cents": expected_ship},
     ]
+    # A card order clears any Zelle mark from an earlier try under the same request id.
+    assert ingested["pay_method"] == ""
 
 
 def test_order_catalog_search_and_add_authorizes_same_checkout(client, monkeypatch):
