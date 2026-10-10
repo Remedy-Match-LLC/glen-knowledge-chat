@@ -9852,6 +9852,10 @@ def begin_product_data(slug):
     from dashboard.products import shown_ingredients as _shown_ings
     ingredients = _shown_ings((p.get("ingredients") or []) if "ingredients" in _pin else (
         p.get("ingredients") or card.get("ingredients", [])))
+    # page_slug and page_name route a renamed line to its old page; they are not for
+    # the buyer (review, 2026-10-10).
+    ingredients = [{k: v for k, v in i.items() if k not in ("page_slug", "page_name")}
+                   if isinstance(i, dict) else i for i in (ingredients or [])]
     qty_tiers, formats = None, None
     if _qty_eligible(p):
         from dashboard import pricing as _pricing

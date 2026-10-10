@@ -375,3 +375,26 @@ def test_what_is_in_fibrolysis_factors_gets_the_panel(fresh_app):
     for name, dose in FF_PANEL:
         assert f"- {name}: {dose}" in block
     assert "page_slug" not in block
+
+
+def test_a_renamed_line_opens_no_second_page():
+    from dashboard import ingredients as ing
+    ing._name_index.cache_clear()
+    idx = ing._name_index()
+    for name in ("Frankincense: Boswellic Acid 95% (Boswellia serrata)",
+                 "Gotu Kola Asiaticosides 80% (Centella asiatica)"):
+        assert ing.slugify(name) not in idx, name
+
+
+def test_the_public_product_data_carries_no_routing_keys(fresh_app):
+    data = fresh_app.app.test_client().get("/begin/product-data/fibrolysis-factors").get_json()
+    assert not any("page_slug" in i or "page_name" in i for i in data["ingredients"])
+    assert [i["name"] for i in data["ingredients"]] == [n for n, _ in FF_PANEL]
+
+
+def test_research_still_matches_the_old_page_names():
+    from dashboard import product_content as pc
+    norms = [pc._norm_ing(n) for i in [{"name": "Gotu Kola Asiaticosides 80% (Centella asiatica)",
+                                        "page_name": "Gotu kola (Centella asiatica)"}]
+             for n in (i["name"], i["page_name"])]
+    assert pc._ingredient_in_product("Gotu kola (Centella asiatica)", norms)

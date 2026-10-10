@@ -47,11 +47,12 @@ EXPECTED = {
     "fibrolysis-factors": {
         "total_mg": 487.5,
         "ingredients": [
-            ("Frankincense (Boswellia serrata)", "50 mg"),
+            # Glen's approved label names, in label order (2026-10-10).
             ("Green Tea Extract, Organic (98% Polyphenols / 50% EGCG)", "200 mg"),
             ("Salvianolic Acid B 20% (Salvia miltiorrhiza)", "125 mg"),
-            ("Trans-Resveratrol", "75 mg"),
-            ("Gotu kola (Centella asiatica)", "37.5 mg"),
+            ("Trans-Resveratrol 98% (Polygonum cuspidatum)", "75 mg"),
+            ("Frankincense: Boswellic Acid 95% (Boswellia serrata)", "50 mg"),
+            ("Gotu Kola Asiaticosides 80% (Centella asiatica)", "37.5 mg"),
         ],
     },
 }
