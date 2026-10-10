@@ -9852,6 +9852,10 @@ def begin_product_data(slug):
     from dashboard.products import shown_ingredients as _shown_ings
     ingredients = _shown_ings((p.get("ingredients") or []) if "ingredients" in _pin else (
         p.get("ingredients") or card.get("ingredients", [])))
+    # page_slug and page_name route a renamed line to its old page; they are not for
+    # the buyer (review, 2026-10-10).
+    ingredients = [{k: v for k, v in i.items() if k not in ("page_slug", "page_name")}
+                   if isinstance(i, dict) else i for i in (ingredients or [])]
     qty_tiers, formats = None, None
     if _qty_eligible(p):
         from dashboard import pricing as _pricing
@@ -10049,7 +10053,11 @@ def begin_product_page_data(slug):
     for _ing in _raw_ingredients:
         if isinstance(_ing, dict):
             _ing = dict(_ing)
-            _ing["slug"] = _slugify(_ing.get("name") or "")
+            # A renamed label line keeps the page it already had (`page_slug`): Glen
+            # approved Fibrolysis Factors' label names on 2026-10-10, and three of its
+            # ingredient pages were built under the old names.
+            _ing["slug"] = _ing.pop("page_slug", None) or _slugify(_ing.get("name") or "")
+            _ing.pop("page_name", None)
         else:
             _ing = {"name": str(_ing), "dose": "", "slug": _slugify(str(_ing))}
         ingredients.append(_ing)

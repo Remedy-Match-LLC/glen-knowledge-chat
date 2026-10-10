@@ -116,7 +116,7 @@ def test_content_since_is_a_utc_timestamp(products, slug):
 
 def test_the_pins_carry_these_texts_into_the_chat(products):
     assert products["fibrosolve"]["copy_pinned"] == ["description", "ingredients", "research"]
-    assert products["fibrolysis-factors"]["copy_pinned"] == ["description"]
+    assert products["fibrolysis-factors"]["copy_pinned"] == ["description", "ingredients"]
     assert products["estro-clear"]["copy_pinned"] == ["description"]
     assert products["fibrosolve"]["ingredients_source"] == "label-2026-06"
 
@@ -330,3 +330,71 @@ def test_an_unpinned_waiting_list_product_carries_no_dose_or_caution(fresh_app, 
     block = fresh_app._named_product_facts("Can I order Scar Soft Drink?")
     assert "Availability:" in block and "No dose or ingredient text is approved" in block
     assert "9 scoops" not in block and "Unapproved caution" not in block
+
+
+FF_PANEL = [
+    ("Green Tea Extract, Organic (98% Polyphenols / 50% EGCG)", "200 mg"),
+    ("Salvianolic Acid B 20% (Salvia miltiorrhiza)", "125 mg"),
+    ("Trans-Resveratrol 98% (Polygonum cuspidatum)", "75 mg"),
+    ("Frankincense: Boswellic Acid 95% (Boswellia serrata)", "50 mg"),
+    ("Gotu Kola Asiaticosides 80% (Centella asiatica)", "37.5 mg"),
+]
+FF_PAGES = {"Trans-Resveratrol 98% (Polygonum cuspidatum)": "trans-resveratrol",
+            "Frankincense: Boswellic Acid 95% (Boswellia serrata)":
+                "frankincense-boswellia-serrata",
+            "Gotu Kola Asiaticosides 80% (Centella asiatica)": "gotu-kola-centella-asiatica"}
+
+
+def test_fibrolysis_factors_carries_glens_approved_panel(products, corrections):
+    # Glen, 2026-10-10, formulation tab: "proposed, plus add Frankincense to the
+    # proposed description of Boswellia".
+    for src in (products, corrections):
+        ings = src["fibrolysis-factors"]["ingredients"]
+        assert [(i["name"], i["dose"]) for i in ings] == FF_PANEL
+    assert products["fibrolysis-factors"]["copy_pinned"] == ["description", "ingredients"]
+
+
+def test_renamed_lines_keep_their_ingredient_pages(fresh_app):
+    data = fresh_app.app.test_client().get(
+        "/begin/product-page-data/fibrolysis-factors").get_json()
+    body = next(s for s in data["sections"] if s["id"] == "ingredients")["body"]
+    got = {i["name"]: i["slug"] for i in body["ingredients"]}
+    for name, slug in FF_PAGES.items():
+        assert got[name] == slug
+    assert not any("page_slug" in i or "page_name" in i for i in body["ingredients"])
+    from dashboard import ingredients as ing
+    ing._name_index.cache_clear()
+    for slug in FF_PAGES.values():
+        info = ing.resolve(slug)
+        assert info, slug
+        assert "fibrolysis-factors" in [f["slug"] for f in ing.formulations_with(info["name"])]
+
+
+def test_what_is_in_fibrolysis_factors_gets_the_panel(fresh_app):
+    block = fresh_app._named_product_facts("What is in Fibrolysis Factors?")
+    for name, dose in FF_PANEL:
+        assert f"- {name}: {dose}" in block
+    assert "page_slug" not in block
+
+
+def test_a_renamed_line_opens_no_second_page():
+    from dashboard import ingredients as ing
+    ing._name_index.cache_clear()
+    idx = ing._name_index()
+    for name in ("Frankincense: Boswellic Acid 95% (Boswellia serrata)",
+                 "Gotu Kola Asiaticosides 80% (Centella asiatica)"):
+        assert ing.slugify(name) not in idx, name
+
+
+def test_the_public_product_data_carries_no_routing_keys(fresh_app):
+    data = fresh_app.app.test_client().get("/begin/product-data/fibrolysis-factors").get_json()
+    assert not any("page_slug" in i or "page_name" in i for i in data["ingredients"])
+    assert [i["name"] for i in data["ingredients"]] == [n for n, _ in FF_PANEL]
+
+
+def test_research_still_matches_the_old_page_names():
+    from dashboard import product_content as pc
+    norms = [pc._norm_ing(n) for i in [{"name": "Gotu Kola Asiaticosides 80% (Centella asiatica)",
+                                        "page_name": "Gotu kola (Centella asiatica)"}]
+             for n in (i["name"], i["page_name"])]
+    assert pc._ingredient_in_product("Gotu kola (Centella asiatica)", norms)

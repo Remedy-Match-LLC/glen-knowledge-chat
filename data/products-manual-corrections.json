@@ -86,26 +86,32 @@
   },
   "fibrolysis-factors": {
     "ingredients": [
-      {
-        "name": "Frankincense (Boswellia serrata)",
-        "dose": "50 mg"
-      },
-      {
-        "name": "Green Tea Extract, Organic (98% Polyphenols / 50% EGCG)",
-        "dose": "200 mg"
-      },
-      {
-        "name": "Salvianolic Acid B 20% (Salvia miltiorrhiza)",
-        "dose": "125 mg"
-      },
-      {
-        "name": "Trans-Resveratrol",
-        "dose": "75 mg"
-      },
-      {
-        "name": "Gotu kola (Centella asiatica)",
-        "dose": "37.5 mg"
-      }
+     {
+      "name": "Green Tea Extract, Organic (98% Polyphenols / 50% EGCG)",
+      "dose": "200 mg"
+     },
+     {
+      "name": "Salvianolic Acid B 20% (Salvia miltiorrhiza)",
+      "dose": "125 mg"
+     },
+     {
+      "name": "Trans-Resveratrol 98% (Polygonum cuspidatum)",
+      "dose": "75 mg",
+      "page_slug": "trans-resveratrol",
+      "page_name": "Trans-Resveratrol"
+     },
+     {
+      "name": "Frankincense: Boswellic Acid 95% (Boswellia serrata)",
+      "dose": "50 mg",
+      "page_slug": "frankincense-boswellia-serrata",
+      "page_name": "Frankincense (Boswellia serrata)"
+     },
+     {
+      "name": "Gotu Kola Asiaticosides 80% (Centella asiatica)",
+      "dose": "37.5 mg",
+      "page_slug": "gotu-kola-centella-asiatica",
+      "page_name": "Gotu kola (Centella asiatica)"
+     }
     ],
     "ingredients_source": "fmp-bom-2026-08-31",
     "description": "Botanical formula, five standardized actives at 487.5 mg per capsule. Take 1 to 3 capsules a day with food, or as guided.",
