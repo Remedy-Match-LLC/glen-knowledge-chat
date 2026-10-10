@@ -5890,6 +5890,14 @@ def privacy_page():
     return resp
 
 
+@app.route("/shipping/international")
+def shipping_international_page():
+    # Approved by Glen 2026-10-10 (marketing/04 Copy/international-shipping-page-2026-10-10).
+    resp = send_from_directory(STATIC, "shipping-international.html")
+    resp.headers["Cache-Control"] = "public, max-age=3600"
+    return resp
+
+
 @app.route("/widget.js")
 def widget_js():
     resp = send_from_directory(STATIC, "widget.js")
