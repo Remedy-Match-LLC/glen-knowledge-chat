@@ -32481,12 +32481,14 @@ def api_client_portal_checkout(token):
                "cancel_url": f"{portal_base()}/portal/{_urlquote(token, safe='')}",
                "return_to": f"{portal_base()}/portal/{_urlquote(token, safe='')}",
                "stripe_line_items": stripe_line_items}
-        def persist_portal_order():
+        def persist_portal_order(pay_method=None):
+            # pay_method="zelle" keeps an unpaid Zelle order out of the 24-hour
+            # abandoned-checkout expiry: the customer pays from their bank later.
             oid = _ingest_order(
                 source="portal-reorder", external_ref=checkout_ref, email=email,
                 name=ship.get("name", ""), items=items_rec,
                 total_cents=order_total_cents, shipping_cents=shipping_cents,
-                address=ship, channel="retail")
+                address=ship, channel="retail", pay_method=pay_method)
             try:
                 with db.connect(LOG_DB) as _lcx:
                     _bos_orders.set_order_qbo_lines(_lcx, checkout_ref, qbo_payload)
@@ -32494,7 +32496,7 @@ def api_client_portal_checkout(token):
                 print(f"[portal-reorder] persist qbo_lines failed: {_e!r}", flush=True)
             return oid
         if method == "zelle":
-            order_id = persist_portal_order()
+            order_id = persist_portal_order(pay_method="zelle")
             zelle = _ALT_PAY["zelle"]
             return jsonify({"ok": True, "method": "zelle", "order_ref": checkout_ref,
                             "order_id": order_id, "not_ready": not_ready,
@@ -32507,7 +32509,9 @@ def api_client_portal_checkout(token):
         stripe_url = _stripe_checkout_url_for_reorder(out, email)
         if not stripe_url:
             return jsonify({"error": _CARD_UNAVAILABLE}), 502
-        order_id = persist_portal_order()
+        # "" clears a 'zelle' mark left by an earlier Zelle try under the same
+        # request id, so an abandoned card checkout still expires.
+        order_id = persist_portal_order(pay_method="")
         return jsonify({"ok": True, "stripe_url": stripe_url, "not_ready": not_ready,
                         "order_id": order_id, "order_ref": checkout_ref})
     except Exception as e:

@@ -2743,7 +2743,10 @@ function saveOrdersBasket(){
 function renderOrdersBasket(){
   const host = document.getElementById("orders-basket");
   if(!host) return;
-  if(!ordersBasket.length){ host.innerHTML = `<p class="muted small">Your basket is empty.</p>`; return; }
+  // Zelle instructions for an order already placed live outside the basket, so
+  // editing a new basket never hides them or re-opens the placed order.
+  const zelleDone = ordersZelleDone().join("");
+  if(!ordersBasket.length){ host.innerHTML = zelleDone + `<p class="muted small">Your basket is empty.</p>`; return; }
   const rows = ordersBasket.map(it => {
     const bottleQty = it.refillEligible ? Number(it.bottleQty ?? (it.format === 'refill' ? 0 : it.qty)) || 0 : Number(it.qty) || 1;
     const refillQty = it.refillEligible ? Number(it.refillQty ?? (it.format === 'refill' ? it.qty : 0)) || 0 : 0;
@@ -2758,9 +2761,49 @@ function renderOrdersBasket(){
       <button type="button" class="linkbtn" data-orders-remove="${esc(it.slug)}">Remove</button>
     </span></div>`;
   }).join("");
-  host.innerHTML = `<h3 style="margin:.3rem 0">Your basket</h3>${rows}
+  const method = ordersPayMethod();
+  host.innerHTML = zelleDone + `<h3 style="margin:.3rem 0">Your basket</h3>${rows}
+    <fieldset id="ordersPaymentMethods" style="border:1px solid var(--line);border-radius:10px;padding:.8rem;margin:.8rem 0">
+      <legend class="small"><strong>Payment method</strong></legend>
+      <label style="display:block;margin:.25rem 0"><input type="radio" name="ordersPayMethod" value="card"${method === "zelle" ? "" : " checked"}> Credit or debit card</label>
+      <label style="display:block;margin:.45rem 0 .25rem"><input type="radio" name="ordersPayMethod" value="zelle"${method === "zelle" ? " checked" : ""}> Zelle (US)</label>
+    </fieldset>
     <button type="button" class="btn full" id="orders-place-order">Place order</button>
     <p id="orders-order-message" class="small" hidden></p>`;
+}
+
+// Zelle instructions for orders placed from this portal in this tab. Keyed by the
+// portal token, so staff opening another client's portal never see these.
+function ordersZelleKey(){ return "rm_orders_zelle:" + token; }
+function ordersZelleDone(){
+  try { return JSON.parse(sessionStorage.getItem(ordersZelleKey()) || "[]"); } catch(e) { return []; }
+}
+function setOrdersZelleDone(list){
+  try {
+    if(list.length) sessionStorage.setItem(ordersZelleKey(), JSON.stringify(list));
+    else sessionStorage.removeItem(ordersZelleKey());
+  } catch(e) {}
+}
+
+// The Orders basket used to go straight to Stripe. The checkout endpoint already
+// supports Zelle, so this basket offers the same choice as the reorder card.
+function ordersPayMethod(){
+  return (document.querySelector('input[name="ordersPayMethod"]:checked') || {}).value || "card";
+}
+
+function zelleInstructionsHtml(cj){
+  const z = cj.pay_instructions || {};
+  const link = z.pay_link || z.bank_url || "";
+  return `<div class="note" style="margin-top:1rem"><strong>Your Zelle payment instructions</strong>
+    ${cj.order_id ? `<div class="kv"><span>Order</span><strong>#${esc(cj.order_id)}</strong></div>` : ""}
+    <div class="kv"><span>Amount</span><strong>${esc(money(cj.total_cents || 0))}</strong></div>
+    <div class="kv"><span>Shipping included</span><strong>${esc(money(cj.shipping_cents || 0))}</strong></div>
+    <div class="kv"><span>Send to</span><strong>${esc(z.to || "")}</strong></div>
+    <div class="kv"><span>Memo / order reference</span><strong>${esc(z.memo || "")}</strong></div>
+    <p class="small">In your bank’s Zelle screen, enter the recipient, exact amount, and memo above. Confirm the recipient name in your bank before sending.</p>
+    ${z.qr_image_url ? `<div style="margin:.75rem 0"><img src="${esc(z.qr_image_url)}" alt="Scan to pay Remedy Match with Zelle" style="display:block;width:220px;max-width:100%;background:#fff;padding:8px;border-radius:8px"></div><strong class="small">Scan this code with Zelle in your banking app.</strong>` : ""}
+    ${link ? `<p><a class="btn" href="${esc(link)}" rel="noopener">${z.pay_link ? "Open Zelle payment page" : "Find or open your bank for Zelle"}</a></p>` : ""}
+    <p class="small muted">${esc(z.note || "")}</p></div>`;
 }
 
 document.addEventListener("submit", async function(ev){
@@ -2819,6 +2862,7 @@ document.addEventListener("click", async function(ev){
     }
     const payload = JSON.stringify({
       checkout_request_id:place.dataset.checkoutRequestId,
+      method:ordersPayMethod(),
       catalog_order:true,
       items:ordersBasket.flatMap(it => it.refillEligible ? [
         {slug:it.slug, qty:Number(it.bottleQty ?? (it.format === 'refill' ? 0 : it.qty)) || 0, format:"bottle"},
@@ -2839,7 +2883,14 @@ document.addEventListener("click", async function(ev){
         if(attempt) throw fetchErr;
       }
     }
-    if(j.stripe_url){ location.href = j.stripe_url; return; }
+    if(j.stripe_url){ setOrdersZelleDone([]); location.href = j.stripe_url; return; }
+    if(j.method === "zelle" && j.pay_instructions){
+      // The order exists now. Empty the basket so a later tap cannot place it
+      // again under a new request id, and keep the instructions on screen.
+      setOrdersZelleDone([zelleInstructionsHtml(j)].concat(ordersZelleDone()).slice(0, 5));
+      ordersBasket = []; saveOrdersBasket(); renderOrdersBasket();
+      return;
+    }
     throw new Error(j.error || "Checkout is temporarily unavailable.");
   } catch(e) {
     if(msg){ msg.textContent = e.message || "Checkout is temporarily unavailable."; msg.className="small err"; msg.hidden=false; }
