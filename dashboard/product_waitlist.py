@@ -26,7 +26,8 @@ from dashboard import people as _pe
 
 # One list per product slug, with the tag it carries in house and in GoHighLevel.
 LISTS = {"neuro-magnesium": "retina-renew-waitlist",
-         "scar-soft-drink": "scar-soft-drink-waitlist"}
+         "scar-soft-drink": "scar-soft-drink-waitlist",
+         "fungal-nail-repair": "fungal-nail-repair-waitlist"}
 
 # Every string a person sees, per list. Retina Renew's are Glen's approved wording of
 # 2026-09-29, word for word, except the consent (Glen, 2026-10-09: "fix Retina Renew also";
@@ -61,6 +62,21 @@ TEXTS = {
         "page_title": "Confirm your Scar Soft Drink email",
         "success": ("We'll email you when Scar Soft Drink and the new Scar Support Program "
                     "bundles are ready."),
+    },
+    # Third list, 2026-10-10: Fungal Nail Repair has never been made. Glen: "the
+    # formulation needs completion and production" (formulation tab, via formulation-1b).
+    # DRAFT wording, modelled on Scar Soft Drink's: waits for Glen's approval.
+    "fungal-nail-repair": {
+        "product": "Fungal Nail Repair",
+        "consent": ("We will email you when Fungal Nail Repair is ready to order. Joining this "
+                    "list does not add you to any other mailing list."),
+        "intro": ("Fungal Nail Repair is not ready to order yet. Join the waiting list and we "
+                  "will email you when it is ready. No card, no charge."),
+        "reserve_line": "",
+        "subject": "Confirm your Fungal Nail Repair email",
+        "body_lead": "Please confirm you'd like an email when Fungal Nail Repair is ready to order:",
+        "page_title": "Confirm your Fungal Nail Repair email",
+        "success": "We'll email you when Fungal Nail Repair is ready.",
     },
 }
 # Retina Renew's consent, kept as the module constant earlier code and tests import.
