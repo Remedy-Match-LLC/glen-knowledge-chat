@@ -77,4 +77,7 @@ def test_orders_basket_offers_zelle_and_shows_its_instructions():
     assert 'name="ordersPayMethod" value="zelle"' in html
     assert "method:ordersPayMethod()," in html
     assert 'if(j.method === "zelle" && j.pay_instructions)' in html
-    assert "zi.innerHTML = zelleInstructionsHtml(j);" in html
+    assert 'sessionStorage.setItem("rm_orders_zelle", zelleInstructionsHtml(j))' in html
+    # The placed order must leave the basket, or a re-render re-arms "Place order"
+    # and a second tap creates a second unpaid order.
+    assert "ordersBasket = []; saveOrdersBasket(); renderOrdersBasket();" in html

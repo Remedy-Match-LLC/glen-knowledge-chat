@@ -2743,7 +2743,11 @@ function saveOrdersBasket(){
 function renderOrdersBasket(){
   const host = document.getElementById("orders-basket");
   if(!host) return;
-  if(!ordersBasket.length){ host.innerHTML = `<p class="muted small">Your basket is empty.</p>`; return; }
+  // Zelle instructions for an order already placed live outside the basket, so
+  // editing a new basket never hides them or re-opens the placed order.
+  let zelleDone = "";
+  try { zelleDone = sessionStorage.getItem("rm_orders_zelle") || ""; } catch(e) {}
+  if(!ordersBasket.length){ host.innerHTML = zelleDone + `<p class="muted small">Your basket is empty.</p>`; return; }
   const rows = ordersBasket.map(it => {
     const bottleQty = it.refillEligible ? Number(it.bottleQty ?? (it.format === 'refill' ? 0 : it.qty)) || 0 : Number(it.qty) || 1;
     const refillQty = it.refillEligible ? Number(it.refillQty ?? (it.format === 'refill' ? it.qty : 0)) || 0 : 0;
@@ -2759,15 +2763,14 @@ function renderOrdersBasket(){
     </span></div>`;
   }).join("");
   const method = ordersPayMethod();
-  host.innerHTML = `<h3 style="margin:.3rem 0">Your basket</h3>${rows}
+  host.innerHTML = zelleDone + `<h3 style="margin:.3rem 0">Your basket</h3>${rows}
     <fieldset id="ordersPaymentMethods" style="border:1px solid var(--line);border-radius:10px;padding:.8rem;margin:.8rem 0">
       <legend class="small"><strong>Payment method</strong></legend>
       <label style="display:block;margin:.25rem 0"><input type="radio" name="ordersPayMethod" value="card"${method === "zelle" ? "" : " checked"}> Credit or debit card</label>
       <label style="display:block;margin:.45rem 0 .25rem"><input type="radio" name="ordersPayMethod" value="zelle"${method === "zelle" ? " checked" : ""}> Zelle (US)</label>
     </fieldset>
     <button type="button" class="btn full" id="orders-place-order">Place order</button>
-    <p id="orders-order-message" class="small" hidden></p>
-    <div id="orders-zelle-instructions" hidden></div>`;
+    <p id="orders-order-message" class="small" hidden></p>`;
 }
 
 // The Orders basket used to go straight to Stripe. The checkout endpoint already
@@ -2870,10 +2873,10 @@ document.addEventListener("click", async function(ev){
     }
     if(j.stripe_url){ location.href = j.stripe_url; return; }
     if(j.method === "zelle" && j.pay_instructions){
-      const zi = document.getElementById("orders-zelle-instructions");
-      zi.innerHTML = zelleInstructionsHtml(j);
-      zi.hidden = false;
-      place.textContent = "Zelle instructions ready";
+      // The order exists now. Empty the basket so a later tap cannot place it
+      // again under a new request id, and keep the instructions on screen.
+      try { sessionStorage.setItem("rm_orders_zelle", zelleInstructionsHtml(j)); } catch(e) {}
+      ordersBasket = []; saveOrdersBasket(); renderOrdersBasket();
       return;
     }
     throw new Error(j.error || "Checkout is temporarily unavailable.");
