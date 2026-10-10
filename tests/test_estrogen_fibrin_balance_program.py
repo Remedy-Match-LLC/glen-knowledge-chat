@@ -330,3 +330,16 @@ def test_an_unpinned_waiting_list_product_carries_no_dose_or_caution(fresh_app, 
     block = fresh_app._named_product_facts("Can I order Scar Soft Drink?")
     assert "Availability:" in block and "No dose or ingredient text is approved" in block
     assert "9 scoops" not in block and "Unapproved caution" not in block
+
+
+@pytest.mark.parametrize("question", [
+    "Can Fibrolysis Factors dissolve fibroids?",
+    "Does Fibrosolve help with scar tissue?",
+    "What is the Estrogen and Fibrin Balance Program?",
+])
+def test_no_condition_is_named_with_a_product_even_when_the_user_names_it(fresh_app, question):
+    # Glen, 2026-10-09, "yes, chat too".
+    block = fresh_app.named_product_facts_block(question)
+    assert "even one the user names" in block
+    assert "the product page makes no claim about that condition" in block
+    assert "unless this text or the user's question names it" not in block

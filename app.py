@@ -2354,8 +2354,16 @@ def _named_product_facts(query_text: str, gated: bool = False) -> str:
         "Give its dose from this text and repeat "
         "its full caution, every sentence of it, in its own words. Do not attach to it any condition, mechanism, pairing or dose "
         "that the snippets give for a different product, even one with a similar name. "
-        "Name no disease or condition it is for unless this text or the user's question "
-        "names it. Pair or compare it only with products this text names. In such an "
+        # Glen, 2026-10-09, "yes, chat too": no condition is named with a product, in
+        # chat as on product pages. A live answer had said enzyme support "can genuinely
+        # shift fibroid patterns" when the user named fibroids.
+        "Never say or suggest that this product treats, helps, dissolves, shrinks or is "
+        "for any disease or condition, even one the user names. If the user asks about a "
+        "condition, say what this text says the product supports, in its words. Then say "
+        "the product page makes no claim about that condition, and that their own health "
+        "provider is the one to evaluate it. In that answer cite no study, article or "
+        "clinical observation about the condition. "
+        "Pair or compare it only with products this text names. In such an "
         "answer, name no other product at all unless this text or the user names it.\n"
         "When the question asks what the product is, what is in it, how to take it or "
         "whether it is safe, skip any consensus or mainstream-view structure. Answer "
@@ -2424,6 +2432,26 @@ def _carried_query(query_text: str, prior_user_turns) -> str:
     return query_text
 
 
+# A question that asks whether a named product helps a condition (Glen, 2026-10-09, "yes,
+# chat too"). The rule in the facts preamble alone failed 6 of 9 live answers, so these
+# questions also get a closing instruction, the position the model follows best.
+_CONDITION_ASK = re.compile(
+    r"\b(?:help|helps|helpful|treat|treats|treatment|cure|cures|dissolve|dissolves|shrink|"
+    r"shrinks|heal|heals|fix|fixes|reverse|reverses|get\s+rid\s+of|work\s+for|works\s+for|"
+    r"good\s+for|right\s+for|for\s+my|reduce|reduces|eliminate|i\s+have|i've\s+got|"
+    r"diagnosed)\b", re.I)
+_CONDITION_ANSWER = (
+    "CONDITION QUESTION. The user asked whether the product above helps a disease or "
+    "condition. This instruction outranks the answer structure given earlier. Answer in "
+    "three short paragraphs and nothing else. First, what the product supports, using only "
+    "the words of the product text above. Second, one sentence saying the product page "
+    "makes no claim about that condition, and that their own health provider is the one to "
+    "evaluate it. Third, its dose and full caution from the text above. Do not say it "
+    "treats, helps, dissolves, shrinks, reduces or works on the condition. Do not describe "
+    "the condition, its causes, conventional care, studies, articles or clinical "
+    "observation. Name no other product, herb or practice.")
+
+
 def named_product_facts_block(query_text: str, gated: bool = False,
                               prior_user_turns=None) -> str:
     """The facts block, or "". It goes LAST in the user message, after the synthesis
@@ -2441,6 +2469,8 @@ def named_product_facts_block(query_text: str, gated: bool = False,
         facts = (f"FOLLOW-UP: the user's message is about {name}, which they named in their "
                  f"previous question. Answer it about {name} from the text below, in the "
                  f"format the text below sets for a dose or safety question.\n" + facts)
+    if facts and _CONDITION_ASK.search(html.unescape(query_text or "")):
+        facts += "\n\n" + _CONDITION_ANSWER
     return f"\n\n{facts}" if facts else ""
 
 
