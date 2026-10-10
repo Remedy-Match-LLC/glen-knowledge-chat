@@ -115,7 +115,7 @@ def test_content_since_is_a_utc_timestamp(products, slug):
 
 
 def test_the_pins_carry_these_texts_into_the_chat(products):
-    assert products["fibrosolve"]["copy_pinned"] == ["description", "ingredients"]
+    assert products["fibrosolve"]["copy_pinned"] == ["description", "ingredients", "research"]
     assert products["fibrolysis-factors"]["copy_pinned"] == ["description"]
     assert products["estro-clear"]["copy_pinned"] == ["description"]
     assert products["fibrosolve"]["ingredients_source"] == "label-2026-06"
@@ -201,6 +201,15 @@ def test_fibrosolve_page_serves_the_label_panel_and_drcaps(fresh_app):
     from dashboard.capsule_copy import CAPSULE_COPY
     assert body["capsule"]["text"] == CAPSULE_COPY["drcaps"]["text"]
     assert "pullulan" not in json.dumps(body).lower()
+
+
+def test_fibrosolve_serves_no_generated_research_text(fresh_app, monkeypatch):
+    # The regenerated "How it works" added "on an empty stomach" to the label's "between
+    # meals" (formulation-9d, 2026-10-09). Research is pinned, so no AI text is served.
+    monkeypatch.setattr(fresh_app, "_product_how",
+                        lambda p: "Take one to two capsules on an empty stomach.")
+    data = fresh_app.app.test_client().get("/begin/product-page-data/fibrosolve").get_json()
+    assert "empty stomach" not in json.dumps(data).lower()
 
 
 @pytest.mark.parametrize("question,directions", [
