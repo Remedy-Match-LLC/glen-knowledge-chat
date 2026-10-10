@@ -21,3 +21,14 @@ def test_no_blank_dose_and_zero_lines_hidden(slug):
     p = json.load(open("data/products.json"))["products"][slug]
     assert not [i["name"] for i in p["ingredients"] if not str(i.get("dose", "")).strip()]
     assert len(shown_ingredients(p["ingredients"])) == SHOWN[slug]
+
+
+def test_copy_and_image_prompts_skip_hidden_lines():
+    # A hidden 0 mg line must not reach generated sales copy or image prompts either.
+    from dashboard import sales_copy, sales_image_prompts
+    p = {"name": "X", "ingredients": [{"name": "Shown Root", "dose": "50 mg"},
+                                      {"name": "Hidden Saffron", "dose": "0 mg"}]}
+    assert "Hidden Saffron" not in sales_copy._ingredient_lines(p)
+    assert "Shown Root" in sales_copy._ingredient_lines(p)
+    assert "- Hidden Saffron" not in sales_image_prompts._ingredient_lines(p)
+    assert "- Shown Root" in sales_image_prompts._ingredient_lines(p)
